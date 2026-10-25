@@ -245,7 +245,6 @@ internal struct FrameRayTracingShaderTable
     internal GraphIdentity Identity;
     internal GraphRayTracingShaderTable Definition;
     internal RayTracingShaderTable Resource;
-    internal GraphParameterResourceBinding[] Inventory;
     internal RayTracingShaderTableBoundaryState[] EntryBoundaryStates;
     internal ResourceContentState Contents;
 }

@@ -20,6 +20,7 @@ public sealed partial class AssetProject
     private readonly SemaphoreSlim _importGate = new(1, 1);
     private readonly string _projectRoot;
     private readonly string _manifestDirectory;
+    private readonly string? _importedAssetPackPath;
     private readonly IReadOnlyList<IAssetSourceImporter> _importers;
     private readonly string[] _shaderIncludeDirectories;
 
@@ -27,7 +28,8 @@ public sealed partial class AssetProject
         string projectRoot,
         IEnumerable<IAssetSourceImporter> importers,
         string? manifestDirectory = null,
-        IReadOnlyList<string>? shaderIncludeDirectories = null)
+        IReadOnlyList<string>? shaderIncludeDirectories = null,
+        string? importedAssetPackPath = null)
     {
         _projectRoot = Path.GetFullPath(projectRoot);
         _manifestDirectory = RequireProjectPath(_projectRoot, manifestDirectory ?? Path.Combine(_projectRoot, "Library", "AssetManifest"), allowProjectRoot: true);
@@ -35,6 +37,8 @@ public sealed partial class AssetProject
         _shaderIncludeDirectories = shaderIncludeDirectories?
             .Select(path => Path.GetFullPath(Path.Combine(_projectRoot, path))).ToArray() ?? [];
 
+        _importedAssetPackPath = importedAssetPackPath is null ? null
+            : RequireProjectPath(_projectRoot, importedAssetPackPath);
         Manifest = AssetManifest.Load(_manifestDirectory);
     }
 
@@ -42,10 +46,12 @@ public sealed partial class AssetProject
 
     public AssetManifest Manifest { get; private set; }
 
-    public LooseAssetStorage CreateStorage()
+    public IAssetStorage CreateStorage()
     {
         lock (_gate)
-            return new LooseAssetStorage(_projectRoot, Manifest);
+            return Manifest.Assets.Values.Any(static entry => entry.PackPath.Length != 0)
+                ? new ProjectAssetStorage(_projectRoot, Manifest)
+                : new LooseAssetStorage(_projectRoot, Manifest);
     }
 
     public Guid RegisterAsset(AssetEntry entry)
@@ -286,10 +292,11 @@ public sealed partial class AssetProject
 
     private void AddMissingAssetDiagnostics(List<AssetDiagnostic> diagnostics)
     {
+        HashSet<Guid> missingPacked = FindMissingPackedAssets();
         foreach ((Guid assetGuid, AssetEntry record) in Manifest.Assets)
         {
             string fullPath = FullPath(record.Path);
-            if (File.Exists(fullPath))
+            if (record.PackPath.Length == 0 ? File.Exists(fullPath) : !missingPacked.Contains(record.AssetGuid))
             {
                 continue;
             }
@@ -371,7 +378,8 @@ public sealed partial class AssetProject
             subAssetKey,
             info.Dependencies,
             info.DefinitionPath,
-            info.Version);
+            info.Version,
+            info.PackPath);
 
         if (saveManifest)
         {

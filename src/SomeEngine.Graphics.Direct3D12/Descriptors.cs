@@ -508,8 +508,8 @@ internal sealed unsafe partial class D3D12Backend
                         "The descriptor-generation identity domain is exhausted.");
                 }
 
-                DescriptorRecord?[] resources = GrowCopy(_resources, _nextResource);
-                DescriptorRecord?[] samplers = GrowCopy(_samplers, _nextSampler);
+                DescriptorRecord?[] resources = GrowCopy(_resources, _nextResource, _pendingResources.Count);
+                DescriptorRecord?[] samplers = GrowCopy(_samplers, _nextSampler, _pendingSamplers.Count);
                 ApplyPending(resources, _pendingResources);
                 ApplyPending(samplers, _pendingSamplers);
                 cancellationToken.ThrowIfCancellationRequested();
@@ -521,7 +521,8 @@ internal sealed unsafe partial class D3D12Backend
                     Math.Max(1u, _nextResource),
                     Math.Max(1u, _nextSampler),
                     resources,
-                    samplers);
+                    samplers,
+                    _current);
                 try
                 {
                     cancellationToken.ThrowIfCancellationRequested();
@@ -670,6 +671,9 @@ internal sealed unsafe partial class D3D12Backend
 
         private void StageRetirementTombstones()
         {
+            if (_pendingRetirementHead is null)
+                return;
+
             int resourceCount = 0;
             int samplerCount = 0;
             for (DescriptorRange? range = _pendingRetirementHead;
@@ -846,9 +850,11 @@ internal sealed unsafe partial class D3D12Backend
             }
         }
 
-        private static DescriptorRecord?[] GrowCopy(DescriptorRecord?[] source, uint count)
+        private static DescriptorRecord?[] GrowCopy(DescriptorRecord?[] source, uint count, int updateCount)
         {
             int length = checked((int)count);
+            if (updateCount == 0 && length == source.Length)
+                return source;
             DescriptorRecord?[] result = new DescriptorRecord?[length];
             source.AsSpan().CopyTo(result);
             return result;
@@ -1056,7 +1062,8 @@ internal sealed unsafe partial class D3D12Backend
             uint resourceCount,
             uint samplerCount,
             DescriptorRecord?[] resources,
-            DescriptorRecord?[] samplers)
+            DescriptorRecord?[] samplers,
+            DescriptorGeneration? previous = null)
         {
             int retainedCapacity = checked(
                 CountRetainedRecords(resources) + CountRetainedRecords(samplers));
@@ -1064,32 +1071,72 @@ internal sealed unsafe partial class D3D12Backend
             int retainedCount = 0;
             ID3D12DescriptorHeap* resourceHeap = null;
             ID3D12DescriptorHeap* samplerHeap = null;
+            ID3D12DescriptorHeap* previousResourceHeap = previous is not null &&
+                resourceCount == previous.ResourceCount &&
+                ReferenceEquals(resources, previous._resourceRecords)
+                ? previous._resources
+                : null;
+            ID3D12DescriptorHeap* previousSamplerHeap = previous is not null &&
+                samplerCount == previous.SamplerCount &&
+                ReferenceEquals(samplers, previous._samplerRecords)
+                ? previous._samplers
+                : null;
             try
             {
-                resourceHeap = CreateHeap(
-                    device,
-                    DescriptorHeapType.CbvSrvUav,
-                    resourceCount,
-                    nodeMask);
-                samplerHeap = CreateHeap(
-                    device,
-                    DescriptorHeapType.Sampler,
-                    samplerCount,
-                    nodeMask);
-                CopyRecords(
-                    device,
-                    resourceHeap,
-                    DescriptorHeapType.CbvSrvUav,
-                    resources,
-                    retained,
-                    ref retainedCount);
-                CopyRecords(
-                    device,
-                    samplerHeap,
-                    DescriptorHeapType.Sampler,
-                    samplers,
-                    retained,
-                    ref retainedCount);
+                if (previousResourceHeap is not null)
+                {
+                    _ = previousResourceHeap->AddRef();
+                    resourceHeap = previousResourceHeap;
+                }
+                else
+                {
+                    resourceHeap = CreateHeap(
+                        device,
+                        DescriptorHeapType.CbvSrvUav,
+                        resourceCount,
+                        nodeMask);
+                }
+                if (previousSamplerHeap is not null)
+                {
+                    _ = previousSamplerHeap->AddRef();
+                    samplerHeap = previousSamplerHeap;
+                }
+                else
+                {
+                    samplerHeap = CreateHeap(
+                        device,
+                        DescriptorHeapType.Sampler,
+                        samplerCount,
+                        nodeMask);
+                }
+                if (previousResourceHeap is not null)
+                {
+                    RetainRecords(resources, retained, ref retainedCount);
+                }
+                else
+                {
+                    CopyRecords(
+                        device,
+                        resourceHeap,
+                        DescriptorHeapType.CbvSrvUav,
+                        resources,
+                        retained,
+                        ref retainedCount);
+                }
+                if (previousSamplerHeap is not null)
+                {
+                    RetainRecords(samplers, retained, ref retainedCount);
+                }
+                else
+                {
+                    CopyRecords(
+                        device,
+                        samplerHeap,
+                        DescriptorHeapType.Sampler,
+                        samplers,
+                        retained,
+                        ref retainedCount);
+                }
                 return new DescriptorGeneration(
                     identity,
                     resourceCount,
@@ -1218,6 +1265,21 @@ internal sealed unsafe partial class D3D12Backend
             return result;
         }
 
+        private static void RetainRecords(
+            DescriptorRecord?[] records,
+            DescriptorRecord[] retained,
+            ref int retainedCount)
+        {
+            foreach (DescriptorRecord? record in records)
+            {
+                if (record?.Source is not null)
+                {
+                    record.Retain();
+                    retained[retainedCount++] = record;
+                }
+            }
+        }
+
         private static void CopyRecords(
             D3D12Device device,
             ID3D12DescriptorHeap* heap,
@@ -1228,6 +1290,10 @@ internal sealed unsafe partial class D3D12Backend
         {
             CpuDescriptorHandle destination = ResourceTrace.GetCPUDescriptorHandleForHeapStart(heap);
             uint increment = device.DescriptorIncrement(type);
+            int capacity = Math.Min(64, records.Length);
+            Span<CpuDescriptorHandle> sources = stackalloc CpuDescriptorHandle[capacity];
+            Span<CpuDescriptorHandle> destinations = stackalloc CpuDescriptorHandle[capacity];
+            int copyCount = 0;
             for (int index = 0; index < records.Length; index++)
             {
                 DescriptorRecord? record = records[index];
@@ -1240,9 +1306,17 @@ internal sealed unsafe partial class D3D12Backend
                         record.Retain();
                         retained[retainedCount++] = record;
                     }
-                    DeviceQueryTrace.CopyDescriptorsSimple(device.Native, 1, target, source.Cpu, type);
+                    sources[copyCount] = source.Cpu;
+                    destinations[copyCount++] = target;
+                    if (copyCount == capacity)
+                    {
+                        CopyDescriptorRanges(device, sources[..copyCount], destinations[..copyCount], type);
+                        copyCount = 0;
+                    }
                     continue;
                 }
+                CopyDescriptorRanges(device, sources[..copyCount], destinations[..copyCount], type);
+                copyCount = 0;
                 if (record is not null &&
                     record.Type == ResourceBindingType.Sampler &&
                     !record.AllowDummySampler)
@@ -1260,6 +1334,26 @@ internal sealed unsafe partial class D3D12Backend
                             TextureDimension: TextureViewDimension.Texture2D)),
                     target,
                     allowDummySampler: record is null || record.AllowDummySampler);
+            }
+            CopyDescriptorRanges(device, sources[..copyCount], destinations[..copyCount], type);
+
+            static void CopyDescriptorRanges(
+                D3D12Device copyDevice,
+                ReadOnlySpan<CpuDescriptorHandle> copySources,
+                ReadOnlySpan<CpuDescriptorHandle> copyDestinations,
+                DescriptorHeapType heapType)
+            {
+                if (copySources.IsEmpty) return;
+                if (copySources.Length == 1)
+                {
+                    DeviceQueryTrace.CopyDescriptorsSimple(
+                        copyDevice.Native, 1, copyDestinations[0], copySources[0], heapType);
+                    return;
+                }
+                fixed (CpuDescriptorHandle* sourceHandles = copySources)
+                fixed (CpuDescriptorHandle* destinationHandles = copyDestinations)
+                    DeviceQueryTrace.CopyDescriptors(copyDevice.Native, checked((uint)copySources.Length),
+                        destinationHandles, sourceHandles, heapType);
             }
         }
     }

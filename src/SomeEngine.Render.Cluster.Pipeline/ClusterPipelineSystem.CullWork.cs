@@ -1,6 +1,7 @@
 using SomeEngine.Graphics;
 using SomeEngine.Render.Materials;
 using SomeEngine.RenderGraph;
+using SomeEngine.Render.Assets;
 
 namespace SomeEngine.Render.Cluster.Pipeline;
 
@@ -49,21 +50,22 @@ public sealed partial class ClusterPipelineSystem
                 BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopyDestination | extra, label));
     }
 
-    private GraphPassId RecordPersistentCull(ref RenderGraphEdit graph, in FrameResources frame,
-        GraphBufferId views, uint mode, GraphBufferId drawArguments,
-        GraphBufferId base0, GraphBufferId base1, GraphBufferId base2, bool target,
+    private void RecordPersistentCull(ref RenderGraphEdit graph, in FrameResources frame,
+        GraphBufferId views, GraphBufferId drawArguments,
+        GraphBufferId base0, GraphBufferId base1, GraphBufferId base2,
         int phase, string label, GraphRegionId region)
     {
+        bool target = phase >= 2;
+        uint mode = phase % 2 != 0 ? 2u : target ? 1u : 0u;
         uint maximumViews = target ? _renderContext.MaximumInvocationCount : frame.ViewCount;
-        ClusterComputePipeline traversal = _pipelines!.GetTraversal(target, maximumViews > 1u);
+        LinkedComputePipeline traversal = _pipelines!.GetTraversal(target, maximumViews > 1u);
         GraphBufferSlice parameters = UploadUniform(ref graph,
-            new ClusterTraversalLevelUniforms { MaxNodes = _options.MaxCandidates, TraversalMode = mode },
-            $"Cluster {label} work parameters");
-        var dispatch = new ClusterDispatchParameters(new DispatchArguments(1, 1, 1));
+            new ClusterTraversalLevelUniforms { MaxNodes = _options.MaxCandidates, TraversalMode = mode });
+        var dispatch = new DispatchArguments(1, 1, 1);
         GraphPassId id = graph.AddComputeFramePass($"Cull Cluster {label} work", PassQueueSelection.AnyOfType(QueueType.Graphics),
             dispatch, new PassOptions(RepeatCommands: true), traversal.Pipeline, traversal.ParameterLayout,
-            default, static (ref PassDefinition _, ref ClusterDispatchParameters _) => { },
-            ClusterDispatchParameters.Record, region: region);
+            default, static (ref PassDefinition _, ref DispatchArguments _) => { },
+            RecordDispatch, region: region);
         PassDefinition pass = graph.GetPass(id);
         var inputs = ShaderResourceLayout.Resolve<(string Name, ResourceBindingType Type)>(
             traversal.ParameterLayout, static (name, type) => (name, type));
@@ -116,7 +118,6 @@ public sealed partial class ClusterPipelineSystem
             }
         }
         frame.Work.Phases[phase] = id;
-        return id;
 
         static void Read(ref RenderGraphEdit graph, ref PassDefinition pass, GraphBufferId buffer, uint stride = 0) =>
             pass.Bind(graph.CreateBufferSrv(buffer, structureStride: stride), PipelineSync.ComputeShading);

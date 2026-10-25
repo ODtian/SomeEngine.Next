@@ -69,6 +69,7 @@ public sealed record SourceOutput
     /// <summary>Inputs additional to, or different from, the source-wide Inputs list.</summary>
     public required IReadOnlyList<FileDependency> Dependencies { get; init; }
     public required string AssetPath { get; init; }
+    public string PackPath { get; init; } = "";
     public Guid Version { get; init; }
     public string ContentHash { get; init; } = "";
     public IReadOnlyList<Guid> AssetDependencies { get; init; } = [];
@@ -98,6 +99,7 @@ public sealed class SourceBuildRecord
                 || input.RelativePath is null || input.ContentHash is null || input.RelativePath.Contains('\0'))
             || value.Outputs.Any(static output => output is null || output.SubAssetKey is null
                 || output.InputHash is null || output.AssetPath is null || output.AssetPath.Contains('\0')
+                || output.PackPath is null || output.PackPath.Contains('\0')
                 || output.ContentHash is null || output.Dependencies is null || output.AssetDependencies is null))
             return new();
         return value;
@@ -125,6 +127,7 @@ public sealed partial class SourceMeta
         build.Outputs = build.Outputs.Select(output => output with
         {
             AssetPath = Path.GetFullPath(Path.Combine(directory, output.AssetPath)),
+            PackPath = output.PackPath.Length == 0 ? "" : Path.GetFullPath(Path.Combine(directory, output.PackPath)),
         }).ToList();
         var result = new SourceMeta
         {
@@ -157,6 +160,7 @@ public sealed partial class SourceMeta
             Outputs = meta.Outputs.Select(output => output with
             {
                 AssetPath = Path.GetRelativePath(directory, output.AssetPath).Replace('\\', '/'),
+                PackPath = output.PackPath.Length == 0 ? "" : Path.GetRelativePath(directory, output.PackPath).Replace('\\', '/'),
             }).ToList(),
         };
         files.AddWrite(GetMetaPath(sourcePath), JsonSerializer.SerializeToUtf8Bytes(data, SourceMetaJsonContext.Default.SourceMetaDocument));

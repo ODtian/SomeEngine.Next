@@ -48,15 +48,19 @@ internal sealed class GraphStructureIndex
         var identities = previous.ResourceIdentities.ToBuilder();
         foreach (GraphIdentity identity in changes.Buffers)
         {
-            GraphBuffer? before = previous.Structure.Buffers.Contains(identity) ? previous.Structure.Buffers.Get(identity) : null;
-            GraphBuffer? after = Structure.Buffers.Contains(identity) ? Structure.Buffers.Get(identity) : null;
+            GraphBuffer? before = previous.Structure.Buffers.TryGetDenseIndex(identity, out int beforeIndex)
+                ? previous.Structure.Buffers.Rows[beforeIndex] : null;
+            GraphBuffer? after = Structure.Buffers.TryGetDenseIndex(identity, out int afterIndex)
+                ? Structure.Buffers.Rows[afterIndex] : null;
             Update(identity, before?.PersistentResource ?? before?.RegisteredResource,
                 after?.PersistentResource ?? after?.RegisteredResource);
         }
         foreach (GraphIdentity identity in changes.Textures)
         {
-            GraphTexture? before = previous.Structure.Textures.Contains(identity) ? previous.Structure.Textures.Get(identity) : null;
-            GraphTexture? after = Structure.Textures.Contains(identity) ? Structure.Textures.Get(identity) : null;
+            GraphTexture? before = previous.Structure.Textures.TryGetDenseIndex(identity, out int beforeIndex)
+                ? previous.Structure.Textures.Rows[beforeIndex] : null;
+            GraphTexture? after = Structure.Textures.TryGetDenseIndex(identity, out int afterIndex)
+                ? Structure.Textures.Rows[afterIndex] : null;
             Update(identity, before?.PersistentResource ?? before?.RegisteredResource,
                 after?.PersistentResource ?? after?.RegisteredResource);
         }
@@ -97,15 +101,21 @@ internal sealed class GraphStructureIndex
         }
         UpdateViewAdjacency(previous.Structure, structure, changes, viewResources, resourceViews);
 
-        // Resource edits invalidate only their dependent views. Those row copies also
-        // isolate newly created GPU views from readers of the preceding structure.
-        foreach (GraphIdentity resource in changes.Buffers.Concat(changes.Textures))
-            foreach (GraphIdentity view in resourceViews.GetValueOrDefault(resource, []))
-                if (structure.Views.Contains(view))
-                {
-                    structure.Views.GetMutable(view).PersistentView = null;
-                    changes.TouchView(view);
-                }
+        // Resource description edits invalidate only their dependent views. Those row copies
+        // also isolate newly created GPU views from readers of the preceding structure.
+        if (changes.ResourceDescriptions is { } descriptions)
+        {
+            foreach (GraphIdentity resource in changes.Buffers.Concat(changes.Textures))
+            {
+                if (!descriptions.Contains(resource)) continue;
+                foreach (GraphIdentity view in resourceViews.GetValueOrDefault(resource, []))
+                    if (structure.Views.Contains(view))
+                    {
+                        structure.Views.GetMutable(view).PersistentView = null;
+                        changes.TouchView(view);
+                    }
+            }
+        }
         ValidateTouched(graph, structure, changes, resourceAccesses, resourceViews);
         foreach (GraphIdentity target in changes.AffectedResources.Concat(changes.Views).Concat(changes.PersistentBindings))
             foreach (GraphIdentity dependent in bindingDependents.GetValueOrDefault(target, []))
@@ -170,7 +180,10 @@ internal sealed class GraphStructureIndex
         statistics = new GraphIndexUpdateStatistics(0, 0, reordered.Count, 0);
         return new GraphStructureIndex(structure)
         {
-            ReadbackPasses = UpdateReadbackPasses(previous.ReadbackPasses, structure.Passes, changes.Passes),
+            ReadbackPasses = !changes.PassMembershipChanged &&
+                previous.Structure.Passes.Count == structure.Passes.Count
+                ? previous.ReadbackPasses
+                : UpdateReadbackPasses(previous.ReadbackPasses, structure.Passes, changes.Passes),
             ParameterInputAccesses = UpdateInputs(previous.ParameterInputAccesses, previous.Structure.Accesses, structure.Accesses, changes.Accesses, static row => row.ParameterInput),
             TextureInputViews = UpdateInputs(previous.TextureInputViews, previous.Structure.Views, structure.Views, changes.Views, static row => row.TextureInput),
             TextureInputAccesses = UpdateInputs(previous.TextureInputAccesses, previous.Structure.Accesses, structure.Accesses, changes.Accesses, static row => row.TextureInput),
@@ -198,11 +211,11 @@ internal sealed class GraphStructureIndex
         var readbacks = new List<GraphIdentity>(previous);
         foreach (GraphIdentity identity in changes)
         {
-            if (passes.Contains(identity) && passes.Get(identity).CallbackStorage is ReadbackCommands)
+            if (passes.TryGetDenseIndex(identity, out int index) && passes.Rows[index].CallbackStorage is ReadbackCommands)
             {
-                if (!readbacks.Contains(identity)) readbacks.Add(identity);
+                if (previous.Length == 0 || !readbacks.Contains(identity)) readbacks.Add(identity);
             }
-            else readbacks.Remove(identity);
+            else if (previous.Length != 0) readbacks.Remove(identity);
         }
         readbacks.Sort((left, right) => passes.DenseIndex(left).CompareTo(passes.DenseIndex(right)));
         return readbacks.ToArray();
@@ -216,8 +229,10 @@ internal sealed class GraphStructureIndex
         var values = previous.ToBuilder();
         foreach (GraphIdentity identity in changes)
         {
-            TInput? oldInput = before.Contains(identity) ? readInput(before.Get(identity)) : null;
-            TInput? newInput = after.Contains(identity) ? readInput(after.Get(identity)) : null;
+            TInput? oldInput = before.TryGetDenseIndex(identity, out int beforeIndex)
+                ? readInput(before.Rows[beforeIndex]) : null;
+            TInput? newInput = after.TryGetDenseIndex(identity, out int afterIndex)
+                ? readInput(after.Rows[afterIndex]) : null;
             if (ReferenceEquals(oldInput, newInput)) continue;
             if (oldInput is not null)
             {
@@ -302,10 +317,11 @@ internal sealed class GraphStructureIndex
                 if (binding.Value.IsValid) targets.Add(binding.Value);
                 if (binding.SecondaryValue.IsValid) targets.Add(binding.SecondaryValue);
             }
-            if (structure.Passes.Contains(holder))
+            if (structure.Passes.TryGetDenseIndex(holder, out int passIndex))
             {
-                targets.UnionWith(structure.Passes.Get(holder).PersistentBindings);
-                targets.UnionWith(structure.Passes.Get(holder).ViewReferences);
+                GraphPass pass = structure.Passes.Rows[passIndex];
+                targets.UnionWith(pass.PersistentBindings);
+                targets.UnionWith(pass.ViewReferences);
             }
             if (targets.Count == 0) continue;
             references.Add(holder, targets.ToArray());
@@ -315,9 +331,9 @@ internal sealed class GraphStructureIndex
 
     private static IEnumerable<GraphParameterResourceBinding> EnumerateBindings(GraphStructure structure, GraphIdentity holder)
     {
-        if (structure.Passes.Contains(holder)) return structure.Passes.Get(holder).ParameterBindings;
-        if (structure.PersistentBindings.Contains(holder)) return structure.PersistentBindings.Get(holder).Inventory;
-        if (structure.ShaderTables.Contains(holder)) return structure.ShaderTables.Get(holder).Inventory;
+        if (structure.Passes.TryGetDenseIndex(holder, out int passIndex)) return structure.Passes.Rows[passIndex].ParameterBindings;
+        if (structure.PersistentBindings.TryGetDenseIndex(holder, out int bindingsIndex)) return structure.PersistentBindings.Rows[bindingsIndex].Inventory;
+        if (structure.ShaderTables.TryGetDenseIndex(holder, out int tableIndex)) return structure.ShaderTables.Rows[tableIndex].Inventory;
         return [];
     }
 
@@ -325,9 +341,9 @@ internal sealed class GraphStructureIndex
     {
         foreach (GraphParameterResourceBinding binding in EnumerateBindings(structure, holder))
             binding.ValidateStatic(structure, device);
-        if (structure.Passes.Contains(holder))
+        if (structure.Passes.TryGetDenseIndex(holder, out int passIndex))
         {
-            GraphPass pass = structure.Passes.Get(holder);
+            GraphPass pass = structure.Passes.Rows[passIndex];
             foreach (GraphIdentity view in pass.ViewReferences)
                 if (!structure.Views.Contains(view)) throw new ArgumentException("A Pass references a removed view.");
             foreach (GraphIdentity bindings in pass.PersistentBindings)
@@ -370,14 +386,14 @@ internal sealed class GraphStructureIndex
     {
         foreach (GraphIdentity accessId in changes.Accesses)
         {
-            if (previous.Accesses.Contains(accessId))
+            if (previous.Accesses.TryGetDenseIndex(accessId, out int previousIndex))
             {
-                PassResourceAccess old = previous.Accesses.Get(accessId);
+                PassResourceAccess old = previous.Accesses.Rows[previousIndex];
                 if (old.BufferInput is null && old.TextureInput is null && old.ParameterInput is null) RemoveAdjacency(resourceAccesses, old.Target, accessId);
                 RemoveAdjacency(passAccesses, old.Pass, accessId);
             }
-            if (!next.Accesses.Contains(accessId)) continue;
-            PassResourceAccess current = next.Accesses.Get(accessId);
+            if (!next.Accesses.TryGetDenseIndex(accessId, out int nextIndex)) continue;
+            PassResourceAccess current = next.Accesses.Rows[nextIndex];
             if (current.BufferInput is null && current.TextureInput is null && current.ParameterInput is null) AddAdjacency(resourceAccesses, current.Target, accessId);
             AddAdjacency(passAccesses, current.Pass, accessId);
         }
@@ -397,12 +413,12 @@ internal sealed class GraphStructureIndex
             if (viewResources.TryGetValue(viewId, out GraphIdentity[]? oldResources))
                 foreach (GraphIdentity resource in oldResources)
                     RemoveAdjacency(resourceViews, resource, viewId);
-            else if (previous.Views.Contains(viewId))
-                foreach (GraphIdentity resource in ResolveViewResources(previous.Views.Get(viewId)))
+            else if (previous.Views.TryGetDenseIndex(viewId, out int previousIndex))
+                foreach (GraphIdentity resource in ResolveViewResources(previous.Views.Rows[previousIndex]))
                     RemoveAdjacency(resourceViews, resource, viewId);
             viewResources.Remove(viewId);
-            if (!next.Views.Contains(viewId)) continue;
-            GraphIdentity[] resources = ResolveViewResources(next.Views.Get(viewId));
+            if (!next.Views.TryGetDenseIndex(viewId, out int nextIndex)) continue;
+            GraphIdentity[] resources = ResolveViewResources(next.Views.Rows[nextIndex]);
             viewResources.Add(viewId, resources);
             foreach (GraphIdentity resource in resources)
                 AddAdjacency(resourceViews, resource, viewId);
@@ -433,10 +449,11 @@ internal sealed class GraphStructureIndex
             }
             GraphBuffer buffer = structure.Buffers.GetMutable(id);
             ValidateBuffer(buffer);
-            buffer.Requirements = graph.Backend.GetBufferMemoryRequirements(
-                graph.Device,
-                buffer.Description,
-                buffer.MemoryType);
+            if (changes.ResourceDescriptions?.Contains(id) == true)
+                buffer.Requirements = graph.Backend.GetBufferMemoryRequirements(
+                    graph.Device,
+                    buffer.Description,
+                    buffer.MemoryType);
             ValidateResourceDependents(structure, id, resourceAccesses, resourceViews, graph);
         }
         foreach (GraphIdentity id in changes.Textures)
@@ -448,19 +465,20 @@ internal sealed class GraphStructureIndex
             }
             GraphTexture texture = structure.Textures.GetMutable(id);
             ValidateTexture(texture);
-            texture.Requirements = graph.Backend.GetTextureMemoryRequirements(
-                graph.Device,
-                texture.BorrowDescription());
+            if (changes.ResourceDescriptions?.Contains(id) == true)
+                texture.Requirements = graph.Backend.GetTextureMemoryRequirements(
+                    graph.Device,
+                    texture.BorrowDescription());
             ValidateResourceDependents(structure, id, resourceAccesses, resourceViews, graph);
         }
         foreach (GraphIdentity id in changes.QueryPools)
         {
-            if (!structure.QueryPools.Contains(id))
+            if (!structure.QueryPools.TryGetDenseIndex(id, out int poolIndex))
             {
                 RejectReferencedRemoval(id, resourceAccesses, resourceViews);
                 continue;
             }
-            GraphQueryPool pool = structure.QueryPools.Get(id);
+            GraphQueryPool pool = structure.QueryPools.Rows[poolIndex];
             if (!ReferenceEquals(pool.Resource.Device, graph.Device))
                 throw new ArgumentException("QueryPool belongs to another Device.");
             if (pool.Resource.Description.Count == 0)
@@ -469,12 +487,12 @@ internal sealed class GraphStructureIndex
         }
         foreach (GraphIdentity id in changes.ShaderTables)
         {
-            if (!structure.ShaderTables.Contains(id))
+            if (!structure.ShaderTables.TryGetDenseIndex(id, out int tableIndex))
             {
                 RejectReferencedRemoval(id, resourceAccesses, resourceViews);
                 continue;
             }
-            GraphRayTracingShaderTable table = structure.ShaderTables.Get(id);
+            GraphRayTracingShaderTable table = structure.ShaderTables.Rows[tableIndex];
             if (!ReferenceEquals(table.Resource.Device, graph.Device))
                 throw new ArgumentException("RayTracingShaderTable belongs to another Device.");
             foreach (ref readonly GraphParameterResourceBinding binding in table.Inventory.AsSpan())
@@ -483,21 +501,23 @@ internal sealed class GraphStructureIndex
         }
         foreach (GraphIdentity id in changes.PersistentBindings)
         {
-            if (!structure.PersistentBindings.Contains(id)) continue;
-            GraphPersistentParameterBindings bindings = structure.PersistentBindings.Get(id);
+            if (!structure.PersistentBindings.TryGetDenseIndex(id, out int bindingsIndex)) continue;
+            GraphPersistentParameterBindings bindings = structure.PersistentBindings.Rows[bindingsIndex];
             if (!ReferenceEquals(bindings.Resource.Device, graph.Device))
                 throw new ArgumentException("PersistentParameterBindings belong to another Device.");
             foreach (ref readonly GraphParameterResourceBinding binding in bindings.Inventory.AsSpan())
                 binding.ValidateStatic(structure, graph.Device);
         }
         foreach (GraphIdentity id in changes.Views)
-            if (structure.Views.Contains(id)) ValidateView(structure, structure.Views.Get(id));
+            if (structure.Views.TryGetDenseIndex(id, out int viewIndex))
+                ValidateView(structure, structure.Views.Rows[viewIndex]);
         foreach (GraphIdentity id in changes.Accesses)
-            if (structure.Accesses.Contains(id)) ValidateAccess(structure, structure.Accesses.Get(id));
+            if (structure.Accesses.TryGetDenseIndex(id, out int accessIndex))
+                ValidateAccess(structure, structure.Accesses.Rows[accessIndex]);
         foreach (GraphIdentity id in changes.Passes)
         {
-            if (!structure.Passes.Contains(id)) continue;
-            GraphPass pass = structure.Passes.Get(id);
+            if (!structure.Passes.TryGetDenseIndex(id, out int passIndex)) continue;
+            GraphPass pass = structure.Passes.Rows[passIndex];
             ValidatePass(graph, pass);
             foreach (GraphIdentity bindings in pass.PersistentBindings)
                 if (!structure.PersistentBindings.Contains(bindings))
@@ -533,14 +553,14 @@ internal sealed class GraphStructureIndex
 
     private static bool IsTransient(GraphStructure structure, in GraphIdentity resource)
     {
-        if (structure.Buffers.Contains(resource))
+        if (structure.Buffers.TryGetDenseIndex(resource, out int bufferIndex))
         {
-            GraphBuffer row = structure.Buffers.Get(resource);
+            GraphBuffer row = structure.Buffers.Rows[bufferIndex];
             return row.Ownership == RenderGraphResourceOwnership.GraphOwned &&
                 row.Lifetime == RenderGraphResourceLifetime.PerFrame;
         }
-        if (!structure.Textures.Contains(resource)) return false;
-        GraphTexture texture = structure.Textures.Get(resource);
+        if (!structure.Textures.TryGetDenseIndex(resource, out int textureIndex)) return false;
+        GraphTexture texture = structure.Textures.Rows[textureIndex];
         return texture.Ownership == RenderGraphResourceOwnership.GraphOwned &&
             texture.Lifetime == RenderGraphResourceLifetime.PerFrame;
     }

@@ -19,7 +19,30 @@ public abstract partial class Asset
         BlockDescriptions = header.BlockDescriptions;
     }
 
-    protected async ValueTask<AssetEntry> SaveBlockContentAsync(string path, string pathSuffix, CancellationToken cancellationToken)
+    /// <summary>Writes this asset to a caller-owned readable, writable, seekable stream at position zero.</summary>
+    /// <remarks>The returned entry has no file path. The stream remains open, including after failure.</remarks>
+    public async ValueTask<AssetEntry> WriteAsync(Stream destination, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(destination);
+        if (!destination.CanRead)
+            throw new ArgumentException("Asset output needs a readable stream for its content version.", nameof(destination));
+        cancellationToken.ThrowIfCancellationRequested();
+        using Asset copy = Duplicate();
+        return await copy.WriteBlockContentAsync(async (writer, entry, token) =>
+        {
+            await writer.WriteAsync(destination, cancellationToken: token).ConfigureAwait(false);
+            Guid version = await BinaryDocument.ReadVersionAsync(destination, token).ConfigureAwait(false);
+            return entry with { Path = "", Version = version };
+        }, cancellationToken).ConfigureAwait(false);
+    }
+
+    protected ValueTask<AssetEntry> SaveBlockContentAsync(string path, string pathSuffix, CancellationToken cancellationToken)
+        => WriteBlockContentAsync((writer, entry, token) => SaveFileAsync(writer, path, pathSuffix, entry, token),
+            cancellationToken);
+
+    private async ValueTask<AssetEntry> WriteBlockContentAsync(
+        Func<BinaryDocumentWriter, AssetEntry, CancellationToken, ValueTask<AssetEntry>> write,
+        CancellationToken cancellationToken)
     {
         var header = new AssetHeader { Id = Id, Name = Name, AssetType = AssetType };
         var writer = BinaryDocumentWriter.Create(header);
@@ -29,7 +52,7 @@ public abstract partial class Asset
             ValidateContent();
             await WriteBlocksAsync(writer, retained, cancellationToken).ConfigureAwait(false);
             header.BlockDescriptions = _blockDescriptions;
-            return await SaveFileAsync(writer, path, pathSuffix,
+            return await write(writer,
                 Describe(AssetHeader.SchemaFingerprint, header.BlockDescriptions.SelectMany(static block => block.References)),
                 cancellationToken).ConfigureAwait(false);
         }

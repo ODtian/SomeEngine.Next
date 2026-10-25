@@ -110,6 +110,25 @@ public sealed class ParallelDispatchTests
     }
 
     [Fact]
+    public void LargeParallelBatchesInvokeEachBatchBeforeReportingFailure()
+    {
+        using var scheduler = new Scheduler(new JobRuntimeConfig
+        {
+            WorkerCount = 0,
+            ManagedPayloadPolicy = ManagedPayloadPolicy.Allow,
+        });
+        var attempted = new List<int>();
+        JobHandle handle = scheduler.ScheduleParallel(
+            new ParallelData.RecordAndThrowJob(attempted),
+            int.MaxValue,
+            batchSize: 1_500_000_000);
+
+        Assert.Throws<InvalidOperationException>(() => handle.Complete());
+
+        Assert.Equal([0, 1_500_000_000], attempted);
+    }
+
+    [Fact]
     public void InvalidBatchSizeThrows()
     {
         var values = new int[1];
@@ -217,6 +236,22 @@ public sealed class ParallelDispatchTests
                 _attempted[index] = 1;
                 if ((index & 1) == 0)
                     throw new InvalidOperationException("batch failed");
+            }
+        }
+
+        internal readonly struct RecordAndThrowJob : IJobParallelFor
+        {
+            private readonly List<int> _attempted;
+
+            internal RecordAndThrowJob(List<int> attempted)
+            {
+                _attempted = attempted;
+            }
+
+            public void Execute(int index)
+            {
+                _attempted.Add(index);
+                throw new InvalidOperationException();
             }
         }
 

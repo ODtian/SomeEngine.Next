@@ -162,6 +162,94 @@ public sealed class RenderDeviceTextureTests
     }
 
     [Fact]
+    public async Task OverlappingGraphsRequireDistinctTextureAllocations()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using Device device = CreateWarpDevice(backend, "Overlapping texture frames");
+        using var renderDevice = new RenderDevice(backend, device);
+        using var firstGraph = CreateGraph(backend, device);
+        using var secondGraph = CreateGraph(backend, device);
+        var description = new TextureDesc(GraphicsTextureDimension.Texture2D,
+            2, 2, 1, 2, 1, 1, Format.R8UNorm, TextureUsages.Sampled | TextureUsages.CopyDestination);
+        TexturePixels fine = Tile(0, 0, 2, 2, [1, 2, 3, 4]);
+        TexturePixels coarse = Tile(1, 0, 1, 1, [11]);
+        using EngineTexture texture = EngineTexture.Create(description, [fine.Tile, coarse.Tile],
+            [coarse], GraphicsTextureViewDimension.Texture2D);
+        var completions = new QueueCompletion[firstGraph.MaximumQueueCompletionCount];
+        RhiTexture resource;
+        {
+            RenderGraphFrame frame = firstGraph.BeginFrame();
+            try
+            {
+                resource = renderDevice.PrepareTexture(ref frame, ReadOnlySpan<GraphPassId>.Empty, texture);
+                _ = frame.Execute(completions);
+            }
+            finally { frame.Dispose(); }
+        }
+        Assert.Equal(1u, renderDevice.GetTextureSrv(texture).Description.Range.FirstMipLevel);
+        ulong revision = texture.Revision;
+        {
+            RenderGraphFrame first = firstGraph.BeginFrame();
+            try
+            {
+                Assert.Same(resource, renderDevice.PrepareTexture(ref first, ReadOnlySpan<GraphPassId>.Empty, texture));
+                texture.AddPixels([fine], revision);
+                Assert.Equal(revision, texture.Revision);
+                RenderGraphFrame second = secondGraph.BeginFrame();
+                try
+                {
+                    Exception? failure = null;
+                    try { _ = renderDevice.PrepareTexture(ref second, ReadOnlySpan<GraphPassId>.Empty, texture); }
+                    catch (Exception error) { failure = error; }
+                    Assert.IsType<InvalidOperationException>(failure);
+                    Assert.Same(resource, renderDevice.GetTexture(texture));
+                    Assert.Equal(1u, renderDevice.GetTextureSrv(texture).Description.Range.FirstMipLevel);
+
+                    first.Dispose();
+                    Assert.Same(resource, renderDevice.PrepareTexture(ref second, ReadOnlySpan<GraphPassId>.Empty, texture));
+                    _ = second.Execute(completions);
+                }
+                finally { second.Dispose(); }
+            }
+            finally { first.Dispose(); }
+        }
+        Assert.Equal(revision, texture.Revision);
+        Assert.Equal(0u, renderDevice.GetTextureSrv(texture).Description.Range.FirstMipLevel);
+
+        Task update;
+        RhiTexture replacement;
+        {
+            RenderGraphFrame first = firstGraph.BeginFrame();
+            try
+            {
+                Assert.Same(resource, renderDevice.PrepareTexture(ref first, ReadOnlySpan<GraphPassId>.Empty, texture));
+                update = texture.UpdateAsync(description,
+                    [Tile(0, 0, 2, 2, [5, 6, 7, 8]), Tile(1, 0, 1, 1, [19])],
+                    GraphicsTextureViewDimension.Texture2D).AsTask();
+                Assert.True(texture.IsUpdating);
+                RenderGraphFrame second = secondGraph.BeginFrame();
+                try
+                {
+                    replacement = renderDevice.PrepareTexture(ref second, ReadOnlySpan<GraphPassId>.Empty, texture);
+                    Assert.NotSame(resource, replacement);
+                    first.Dispose();
+                    Assert.True(texture.IsUpdating);
+                    Assert.False(update.IsCompleted);
+                    _ = second.Execute(completions);
+                }
+                finally { second.Dispose(); }
+            }
+            finally { first.Dispose(); }
+        }
+        await update.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal(revision + 1, texture.Revision);
+        Assert.Same(replacement, renderDevice.GetTexture(texture));
+        Assert.Equal(0u, renderDevice.GetTextureSrv(texture).Description.Range.FirstMipLevel);
+        renderDevice.WaitForTrackedSubmissions(TimeSpan.FromSeconds(10));
+    }
+
+    [Fact]
     public async Task CanceledFirstPreparationDoesNotCommitUploadState()
     {
         if (!OperatingSystem.IsWindows())
@@ -188,8 +276,10 @@ public sealed class RenderDeviceTextureTests
         _ = renderDevice.GetTextureSrv(asset);
     }
 
-    [Fact]
-    public async Task BlockCompressedBootstrapUsesItsNativeCopyFootprint_DoesNotThrow()
+    [Theory]
+    [InlineData(Format.BC7UNorm)]
+    [InlineData(Format.BC7UNormSrgb)]
+    public async Task BlockCompressedBootstrapUsesItsNativeCopyFootprint_DoesNotThrow(Format sampledFormat)
     {
         if (!OperatingSystem.IsWindows())
             return;
@@ -204,7 +294,7 @@ public sealed class RenderDeviceTextureTests
                 MipLevelCount = 1,
                 ArrayLayerCount = 1,
                 Format = Format.BC7UNorm,
-                SampledFormat = Format.BC7UNorm,
+                SampledFormat = sampledFormat,
                 SampledDimension = GraphicsTextureViewDimension.Texture2D,
                 MipTiles =
                 [

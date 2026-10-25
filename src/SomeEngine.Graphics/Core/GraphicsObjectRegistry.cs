@@ -42,6 +42,8 @@ internal sealed class GraphicsObjectRegistry
         lock (_gate)
         {
             _accepting = false;
+            if (_children.Count == 0)
+                return null;
             GraphicsObject? head = null;
             foreach (GraphicsObject child in _children)
             {

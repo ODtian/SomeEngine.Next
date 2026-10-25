@@ -6,8 +6,6 @@ namespace SomeEngine.Render.Cluster.Pipeline;
 public sealed partial class ClusterPipelineSystem
 {
     private int _measurementSimulationFrame;
-    private (ulong Volumes, ulong Properties, ulong Ranges) _decalBufferSizes;
-    private BlendDecalBuffers _decalMeasurementBuffers;
 
     /// <summary>Completed blend GPU measurements, identified by the caller's simulation frame.</summary>
     public event Action<ClusterBlendMetrics>? BlendFrameCompleted;
@@ -35,7 +33,7 @@ public sealed partial class ClusterPipelineSystem
             GraphData.ShadeGroups.Values.OrderBy(group => group.Stage.BinIndex).Select(group => group.Pass).ToArray());
         if (GraphData.BlendMeasurements is { } previous && !previous.HasPasses(passes)) RemoveBlendMeasurements(ref edit);
         GraphData.BlendMeasurements ??= new(_backend, _device, _graph, ref edit,
-            passes, CreateBlendMeasurementBuffers(), decals.Work, ReceiveBlendFrame);
+            passes, CreateBlendMeasurementBuffers(ref edit), decals.Work, ReceiveBlendFrame);
         ClusterBlendMeasurements measurements = GraphData.BlendMeasurements;
         if (GraphData.Stencil is { } stencil)
             stencil.SetSourceReady(ref edit, transparent?.ColorPass ?? stencil.ClearPass, measurements);
@@ -47,7 +45,7 @@ public sealed partial class ClusterPipelineSystem
         GraphData.BlendMeasurements = null;
     }
 
-    private BlendMeasurementBuffers CreateBlendMeasurementBuffers()
+    private BlendMeasurementBuffers CreateBlendMeasurementBuffers(ref RenderGraphEdit edit)
     {
         ulong tileViewBytes = _options.BlendIndex == ClusterBlendIndex.Xy ? (ulong)_viewGrid.ViewCount * 192u : 0;
         ulong capacityBytes = (GraphData.Stencil?.CapacityBytes ?? 0) + tileViewBytes;
@@ -59,8 +57,8 @@ public sealed partial class ClusterPipelineSystem
         BufferDesc counts = new((ulong)_viewGrid.CellCountPerView * frame.ViewCount * 4u, storage | BufferUsages.CopySource);
         BufferDesc triangleCount = new(20, storage | BufferUsages.CopySource);
         BufferDesc arguments = new(60, storage | BufferUsages.Indirect);
-        BufferDesc states = GraphData.BufferDescriptions[data.States].Description;
-        BufferDesc orderedStates = GraphData.BufferDescriptions[data.OrderedStates].Description;
+        BufferDesc states = edit.GetBufferDescription(data.States);
+        BufferDesc orderedStates = edit.GetBufferDescription(data.OrderedStates);
         BufferDesc[] descriptions = [triangles, counts, counts, counts, counts,
             new((ulong)_options.BlendReferenceCapacity * 4u, storage), triangleCount, arguments, states, orderedStates,
             new((ulong)_options.MaxCandidates * 12u, storage), new(16, storage),
@@ -75,14 +73,12 @@ public sealed partial class ClusterPipelineSystem
             fixedBytes, capacityBytes, allocationBytes, data.TriangleCapacity);
     }
 
-    private BlendDecalBuffers CaptureDecalBuffers()
+    private BlendDecalBuffers CaptureDecalBuffers(ref RenderGraphEdit edit)
     {
         MaterialDecalData data = GraphData.Decals!;
-        BufferDesc volumes = GraphData.BufferDescriptions[data.Volumes].Description;
-        BufferDesc properties = GraphData.BufferDescriptions[data.Properties].Description;
-        ulong rangeBytes = Math.Max(32ul, (ulong)data.Sources.Length * _outputDescription.ViewCount * 32u);
-        var sizes = (volumes.Size, properties.Size, rangeBytes);
-        if (_decalBufferSizes == sizes) return _decalMeasurementBuffers;
+        BufferDesc volumes = edit.GetBufferDescription(data.Volumes);
+        BufferDesc properties = edit.GetBufferDescription(data.Properties);
+        ulong rangeBytes = edit.GetBufferDescription(data.Ranges).Size;
         BufferUsages storage = BufferUsages.ShaderRead | BufferUsages.ShaderWrite;
         BufferDesc counts = new(Math.Max(4ul, (ulong)_viewGrid.CellCountPerView * _outputDescription.ViewCount * 4u), storage);
         BufferDesc work = new(16, storage | BufferUsages.CopySource);
@@ -97,12 +93,11 @@ public sealed partial class ClusterPipelineSystem
         }
         if (data.EmptyViews != default)
         {
-            BufferDesc emptyViews = GraphData.BufferDescriptions[data.EmptyViews].Description;
+            BufferDesc emptyViews = edit.GetBufferDescription(data.EmptyViews);
             fixedBytes += emptyViews.Size; capacityBytes += emptyViews.Size;
             allocationBytes += _backend.GetBufferMemoryRequirements(_device, emptyViews).Size;
         }
-        _decalBufferSizes = sizes;
-        return _decalMeasurementBuffers = new(_outputDescription.ViewCount,
+        return new(_outputDescription.ViewCount,
             fixedBytes, properties.Size, capacityBytes, allocationBytes);
     }
 }

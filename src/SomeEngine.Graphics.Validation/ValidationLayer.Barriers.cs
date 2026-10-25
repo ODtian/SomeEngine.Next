@@ -474,17 +474,20 @@ public sealed partial class ValidationLayer
             default:
                 throw new ArgumentOutOfRangeException();
         }
-        if (validationEvent.Range is not null)
-            RecordCommandDependencyCore(context, validationEvent.Range.Resource);
-        if (validationEvent.BeforeRanges is not null)
+        if (context.Bundle)
         {
-            foreach (ResourceBarrierRange range in validationEvent.BeforeRanges)
-                RecordCommandDependencyCore(context, range.Resource);
-        }
-        if (validationEvent.AfterRanges is not null)
-        {
-            foreach (ResourceBarrierRange range in validationEvent.AfterRanges)
-                RecordCommandDependencyCore(context, range.Resource);
+            if (validationEvent.Range is not null)
+                RecordCommandDependencyCore(context, validationEvent.Range.Resource);
+            if (validationEvent.BeforeRanges is not null)
+            {
+                foreach (ResourceBarrierRange range in validationEvent.BeforeRanges)
+                    RecordCommandDependencyCore(context, range.Resource);
+            }
+            if (validationEvent.AfterRanges is not null)
+            {
+                foreach (ResourceBarrierRange range in validationEvent.AfterRanges)
+                    RecordCommandDependencyCore(context, range.Resource);
+            }
         }
         context.ResourceEvents.Add(validationEvent);
     }

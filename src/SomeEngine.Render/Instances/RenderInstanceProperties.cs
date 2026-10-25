@@ -281,7 +281,6 @@ public sealed class RenderInstancePropertyDescriptor
         Encoding = declaration.Encoding;
         _contributors = new string[registration.Contributors.Count];
         registration.Contributors.CopyTo(_contributors);
-        Array.Sort(_contributors, StringComparer.Ordinal);
     }
 
     public int Ordinal { get; }

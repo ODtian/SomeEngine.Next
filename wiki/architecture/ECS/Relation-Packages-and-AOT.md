@@ -1,6 +1,6 @@
 # 关系包与 NativeAOT
 
-关系查询通过 `SomeEngine.ECS.Relations` 提供固定泛型执行体，空间来源由 `SomeEngine.Physics` 提供，Job 借用与资源声明由 `SomeEngine.ECS.Systems` 接入。`SomeEngine.ECS.SourceGen` 随使用方编译生成语义薄入口、Job 描述和程序集级类型登记。
+关系查询通过 `SomeEngine.ECS.Relations` 提供固定泛型执行体，空间来源由 `SomeEngine.Physics` 提供，Job 借用与资源声明由 `SomeEngine.ECS.Systems` 接入。`SomeEngine.ECS.SourceGenerators` 随使用方编译生成语义薄入口、Job 描述和程序集级类型登记。
 
 ## 包依赖与使用方
 
@@ -13,9 +13,9 @@
 | SomeEngine.ECS.Relations | ECS | 固定 1–8 元语义、绑定、筛选与积；二元IsSymmetric事实、具体类别标量读取与许可算法 |
 | SomeEngine.ECS.Systems | ECS、Job.Contracts、Job | typed/generated Job 访问和查询读取范围 |
 | SomeEngine.Physics | ECS.Relations、ECS.Systems | 空间树、维护、串行和并行输出 |
-| SomeEngine.ECS.SourceGen | — | analyzer DLL 与构建时生成入口 |
+| SomeEngine.ECS.SourceGenerators | — | analyzer DLL 与构建时生成入口 |
 
-`tools/SomeEngine.ECS.Relations.AotSmoke` 是业务使用方例子，直接 PackageReference ECS、Relations、Systems、Job、Physics 和 SourceGen，传递取得另外两个包。它定义自己的 `Number<int>`、八个参与位置、带 schema 的泛型边、Body/Hair 语义、键实现、bitmap 实现和结果输出。
+`tools/SomeEngine.ECS.Relations.AotSmoke` 是业务使用方例子，直接 PackageReference ECS、Relations、Systems、Job、Physics 和 SourceGenerators，传递取得另外两个包。它定义自己的 `Number<int>`、八个参与位置、带 schema 的泛型边、Body/Hair 语义、键实现、bitmap 实现和结果输出。
 
 `Build-Consumer.ps1` 通过公共队列依次构建、打包、恢复、JIT 运行、NativeAOT 发布和原生运行。包版本保存在使用方 csproj，feed/cache 位于仓库的 `artifacts/ecs-relations`，原生产物位于使用方 `bin/Release/net10.0/win-x64/native-publish`。再次刷新同一版本时，脚本先更新八个包，再替换该目录内对应版本的包缓存，随后恢复使用方。
 

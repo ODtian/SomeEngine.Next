@@ -197,7 +197,7 @@ internal static unsafe class VulkanFormats
             dynamicStates |= DynamicStates.PrimitiveTopology;
         if (extendedFeatures.ExtendedDynamicState2)
             dynamicStates |= DynamicStates.StripCut;
-        FormatFeatures r64Features = support[(int)RhiFormat.R64UInt].Features;
+        FormatFeatures r64Features = support[Array.IndexOf(formats, RhiFormat.R64UInt)].Features;
         const FormatFeatures requiredImageA64Features =
             FormatFeatures.ShaderLoad |
             FormatFeatures.Storage |

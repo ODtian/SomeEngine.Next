@@ -25,6 +25,13 @@ public interface IRenderInstanceProducer
     /// range. The slice already carries that range; producers never calculate a storage row.
     /// </summary>
     void Write(RenderInstanceWriteSlice destination, ReadOnlyQueryPacket packet);
+
+    /// <summary>Writes changed values, falling back to this producer's complete packet write.</summary>
+    void WriteChanged(RenderInstanceWriteSlice destination, ReadOnlyQueryPacket packet, uint lastSystemVersion)
+    {
+        if (GetChanges(packet, lastSystemVersion) != RenderInstanceChanges.None)
+            Write(destination, packet);
+    }
 }
 
 /// <summary>
@@ -89,6 +96,40 @@ public readonly struct RenderInstanceComponentProducer<T> : IRenderInstanceProdu
 
     public void Write(RenderInstanceWriteSlice destination, ReadOnlyQueryPacket packet) =>
         destination.Write(_property, packet.Read<T>());
+
+    public void WriteChanged(RenderInstanceWriteSlice destination, ReadOnlyQueryPacket packet, uint lastSystemVersion) =>
+        RenderInstanceColumnWrites.WriteChanged(destination, packet, _property, lastSystemVersion);
+}
+
+/// <summary>Shared changed-row writes for component-backed instance columns.</summary>
+internal static class RenderInstanceColumnWrites
+{
+    internal static void WriteChanged<T>(RenderInstanceWriteSlice destination, ReadOnlyQueryPacket packet,
+        ResolvedRenderInstanceProperty<T> property, uint lastSystemVersion,
+        bool useWholeColumnFastPath = false) where T : unmanaged
+    {
+        if (useWholeColumnFastPath && packet.AllRowsChangedSince<T>(lastSystemVersion))
+        {
+            destination.Write(property, packet.Read<T>());
+            return;
+        }
+        int start = 0;
+        while (NextChangedRows<T>(packet, lastSystemVersion, ref start, out int count))
+        {
+            destination.Slice(start, count).Write(property, packet.Read<T>().Slice(start, count));
+            start += count;
+        }
+    }
+
+    internal static bool NextChangedRows<T>(ReadOnlyQueryPacket packet, uint lastSystemVersion,
+        ref int start, out int count) where T : struct
+    {
+        while (start < packet.Count && !packet.Slice(start, 1).ChangedSince<T>(lastSystemVersion)) start++;
+        int end = start;
+        while (end < packet.Count && packet.Slice(end, 1).ChangedSince<T>(lastSystemVersion)) end++;
+        count = end - start;
+        return count != 0;
+    }
 }
 
 /// <summary>
@@ -146,6 +187,12 @@ public readonly struct RenderInstanceProducerBundle<TFirst, TSecond> : IRenderIn
     {
         _first.Write(destination.Restrict(_first.Properties), packet);
         _second.Write(destination.Restrict(_second.Properties), packet);
+    }
+
+    public void WriteChanged(RenderInstanceWriteSlice destination, ReadOnlyQueryPacket packet, uint lastSystemVersion)
+    {
+        _first.WriteChanged(destination.Restrict(_first.Properties), packet, lastSystemVersion);
+        _second.WriteChanged(destination.Restrict(_second.Properties), packet, lastSystemVersion);
     }
 
     private static void ValidateExactLayout(

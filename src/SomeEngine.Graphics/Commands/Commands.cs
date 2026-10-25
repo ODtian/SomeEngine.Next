@@ -58,7 +58,6 @@ internal abstract class RecordedCommandsLease
     private readonly object _gate = new();
     private ulong _sequence;
     private RecordedCommandsStatus _status = RecordedCommandsStatus.Discarded;
-    private bool _callerDisposed = true;
     private int _callerReleaseState = 2;
     private int _callerReleaseOwnerThreadId;
 
@@ -77,7 +76,7 @@ internal abstract class RecordedCommandsLease
         lock (_gate)
         {
             EnsureSequenceUnderGate(sequence);
-            return _callerDisposed ? RecordedCommandsStatus.Disposed : _status;
+            return _callerReleaseState != 0 ? RecordedCommandsStatus.Disposed : _status;
         }
     }
 
@@ -98,9 +97,7 @@ internal abstract class RecordedCommandsLease
             }
             _sequence = sequence;
             _status = RecordedCommandsStatus.Executable;
-            _callerDisposed = false;
             _callerReleaseState = 0;
-            _callerReleaseOwnerThreadId = 0;
         }
     }
 
@@ -109,7 +106,7 @@ internal abstract class RecordedCommandsLease
         lock (_gate)
         {
             EnsureSequenceUnderGate(sequence);
-            if (_callerDisposed || _status != RecordedCommandsStatus.Executable)
+            if (_callerReleaseState != 0 || _status != RecordedCommandsStatus.Executable)
                 return false;
             _status = RecordedCommandsStatus.Submitting;
             return true;
@@ -225,7 +222,7 @@ internal abstract class RecordedCommandsLease
         {
             if (_sequence != sequence)
                 return;
-            if (_callerDisposed)
+            if (_callerReleaseState != 0)
             {
                 if (_callerReleaseState == 1 &&
                     _callerReleaseOwnerThreadId == Environment.CurrentManagedThreadId)
@@ -236,7 +233,6 @@ internal abstract class RecordedCommandsLease
                     Monitor.Wait(_gate);
                 return;
             }
-            _callerDisposed = true;
             if (_status == RecordedCommandsStatus.Executable)
             {
                 _status = RecordedCommandsStatus.Discarded;
@@ -247,7 +243,6 @@ internal abstract class RecordedCommandsLease
             else
             {
                 _callerReleaseState = 2;
-                _callerReleaseOwnerThreadId = 0;
             }
         }
         if (!discard)
@@ -267,7 +262,6 @@ internal abstract class RecordedCommandsLease
                 if (_sequence == sequence)
                 {
                     _callerReleaseState = 2;
-                    _callerReleaseOwnerThreadId = 0;
                     Monitor.PulseAll(_gate);
                 }
             }
@@ -282,16 +276,14 @@ internal abstract class RecordedCommandsLease
             if (_status != RecordedCommandsStatus.Executable)
                 return;
             _status = RecordedCommandsStatus.Discarded;
-            _callerDisposed = true;
             _callerReleaseState = 2;
-            _callerReleaseOwnerThreadId = 0;
         }
     }
 
     private void NotifyDiscarded(ulong sequence)
     {
         if (Discarded is not { } discarded) return;
-        foreach (Action<RecordedCommandsLease, ulong> observer in discarded.GetInvocationList())
+        foreach (Action<RecordedCommandsLease, ulong> observer in Delegate.EnumerateInvocationList(discarded))
         {
             try { observer(this, sequence); }
             catch { }
@@ -334,7 +326,7 @@ public readonly struct RecordedCommands : IDisposable
 
     public Device Device => Lease.Device;
     public Queue Queue => Lease.Queue;
-    public RecordedCommandsStatus Status => Lease.GetStatus(Sequence);
+    public RecordedCommandsStatus Status => Lease.GetStatus(_sequence);
     public void Dispose()
     {
         if (_lease is not null)
@@ -437,7 +429,16 @@ public readonly record struct TextureBarrier(
 /// </remarks>
 public readonly record struct AliasingResource(
     Resource Resource,
-    TextureSubresourceRange? TextureRange = null);
+    TextureSubresourceRange? TextureRange = null)
+{
+    /// <summary>
+    /// Requests additional compute-scoped visibility for an outgoing buffer on enhanced-barrier
+    /// backends. Use only for compute UAV writes followed by compute SRV reads before aliasing.
+    /// Valid only on a Buffer in AliasingBarrier.Before; ordinary alias synchronization remains
+    /// in place, and legacy alias handling is unchanged.
+    /// </summary>
+    public bool RequireBufferReadVisibility { get; init; }
+}
 
 /// <remarks>
 /// <para><b>Thread safety:</b> Externally synchronized. This type has no Dispose operation.</para>

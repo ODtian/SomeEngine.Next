@@ -3,19 +3,28 @@ namespace SomeEngine.Render.Cluster;
 internal sealed class PageHeap
 {
     public const uint CapacityBytes = 64 * 1024 * 1024;
+    public const uint Alignment = 512;
     private readonly ClusterBufferAllocator _ranges;
 
     public PageHeap(uint capacityBytes = CapacityBytes)
     {
-        if (capacityBytes == 0 || (capacityBytes & 511) != 0)
+        if (capacityBytes == 0 || capacityBytes % Alignment != 0)
             throw new ArgumentOutOfRangeException(nameof(capacityBytes), "Page heap capacity must be positive and 512-byte aligned.");
-        _ranges = new(capacityBytes, 512);
+        _ranges = new(capacityBytes, Alignment);
     }
 
     public uint FreeBytes => checked((uint)_ranges.FreeBytes);
     public uint UsedBytes => Capacity - FreeBytes;
     public uint Capacity => checked((uint)_ranges.Capacity);
     public int FreeBlockCount => _ranges.FreeRangeCount;
+
+    public ClusterHeapSnapshot GetStatistics()
+    {
+        var statistics = _ranges.GetStatistics();
+        uint free = checked((uint)statistics.FreeBytes);
+        return new(Capacity, Capacity - free, free,
+            checked((uint)statistics.LargestFreeRange), statistics.FreeRangeCount);
+    }
 
     public void ReserveFrees(int count)
     {
@@ -43,7 +52,7 @@ internal sealed class PageHeap
     public static uint AllocationSize(uint size)
     {
         ArgumentOutOfRangeException.ThrowIfZero(size);
-        return checked((uint)(((ulong)size + 511) & ~511ul));
+        return checked((uint)(((ulong)size + Alignment - 1) / Alignment * Alignment));
     }
 
     public bool CanFit(uint size) => size != 0 && AllocationSize(size) <= Capacity;

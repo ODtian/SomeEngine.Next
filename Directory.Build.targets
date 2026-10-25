@@ -4,7 +4,7 @@
     <_FieldReference Include="@(ProjectReference->WithMetadataValue('Filename', 'SomeEngine.Animation'))" />
     <_FieldReference Include="@(ProjectReference->WithMetadataValue('Filename', 'SomeEngine.Views'))" />
     <_FieldReference Include="@(ProjectReference->WithMetadataValue('Filename', 'SomeEngine.Elements'))" />
-    <ProjectReference Include="$(SomeEngineRepositoryRoot)src/SomeEngine.ECS.SourceGen/SomeEngine.ECS.SourceGen.csproj"
+    <ProjectReference Include="$(SomeEngineRepositoryRoot)src/SomeEngine.ECS.SourceGenerators/SomeEngine.ECS.SourceGenerators.csproj"
                       Condition="'@(_FieldReference)' != '' and '$(MSBuildProjectName)' != 'SomeEngine.ECS'"
                       OutputItemType="Analyzer" ReferenceOutputAssembly="false" PrivateAssets="all" GlobalPropertiesToRemove="SomeEngineDevelopment;PublishAot" />
     <_ViewsReference Include="@(ProjectReference->WithMetadataValue('Filename', 'SomeEngine.Views'))" />

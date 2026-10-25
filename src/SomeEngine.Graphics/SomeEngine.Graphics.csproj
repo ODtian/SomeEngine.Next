@@ -10,6 +10,8 @@
   <ItemGroup>
     <PackageReference Include="SlangShaderSharp" Version="$(SlangShaderSharpPackageVersion)" />
     <ProjectReference Include="../SomeEngine.Diagnostics/SomeEngine.Diagnostics.csproj" />
+    <ProjectReference Include="../SomeEngine.Generators/SomeEngine.Generators.csproj"
+                      OutputItemType="Analyzer" ReferenceOutputAssembly="false" PrivateAssets="all" />
   </ItemGroup>
 
   <Target Name="GenerateSlangToolchainIdentity" BeforeTargets="CoreCompile"

@@ -46,23 +46,26 @@ namespace SomeEngine.TestRules
         private static SyntaxTree ReadSyntaxTree(string path, string source)
         {
             // Scan every conditional branch while preserving source positions.
-            var firstTree = CSharpSyntaxTree.ParseText(source, path: path).GetRoot();
-            var characters = source.ToCharArray();
-            foreach (var trivia in firstTree.DescendantTrivia(descendIntoTrivia: true))
+            var firstTree = CSharpSyntaxTree.ParseText(source, path: path);
+            char[]? characters = null;
+            foreach (var trivia in firstTree.GetRoot().DescendantTrivia(descendIntoTrivia: true))
             {
                 var directive = trivia.GetStructure();
                 if (directive is IfDirectiveTriviaSyntax || directive is ElifDirectiveTriviaSyntax ||
                     directive is ElseDirectiveTriviaSyntax || directive is EndIfDirectiveTriviaSyntax)
+                {
+                    characters ??= source.ToCharArray();
                     for (int index = trivia.Span.Start; index < trivia.Span.End; index++)
                         if (characters[index] != '\r' && characters[index] != '\n')
                             characters[index] = ' ';
+                }
             }
-            return CSharpSyntaxTree.ParseText(new string(characters), path: path);
+            return characters is null ? firstTree : CSharpSyntaxTree.ParseText(new string(characters), path: path);
         }
 
-        private static CSharpCompilation CreateCompilation(IEnumerable<SyntaxTree> trees) =>
+        private static CSharpCompilation CreateCompilation(IEnumerable<SyntaxTree> trees, MetadataReference? coreLibrary = null) =>
             CSharpCompilation.Create("TestRuleInput", trees,
-                new[] { MetadataReference.CreateFromFile(typeof(object).Assembly.Location) });
+                new[] { coreLibrary ?? MetadataReference.CreateFromFile(typeof(object).Assembly.Location) });
 
         private static void ReadTree(SyntaxNode root, SemanticModel model, string path, bool isTestCode, string testAssembly, List<TestRuleViolation> result, bool readAssemblyAttributes = true)
         {
@@ -109,6 +112,7 @@ namespace SomeEngine.TestRules
 
             if (isTestCode)
             {
+                Dictionary<SyntaxNode, HashSet<string>>? messageVariablesByScope = null;
                 foreach (var call in root.DescendantNodes().OfType<InvocationExpressionSyntax>())
                 {
                     if (call.Expression is MemberAccessExpressionSyntax access && access.Name.Identifier.ValueText == "Sleep")
@@ -124,22 +128,28 @@ namespace SomeEngine.TestRules
                     if (assertion == null || assertion == "Fail" || assertion.StartsWith("Throws", StringComparison.Ordinal))
                         continue;
                     var scope = call.Ancestors().FirstOrDefault(n => n is BaseMethodDeclarationSyntax || n is PropertyDeclarationSyntax) ?? root;
-                    var messageVariables = new HashSet<string>(StringComparer.Ordinal);
+                    messageVariablesByScope ??= new Dictionary<SyntaxNode, HashSet<string>>();
+                    bool knownScope = messageVariablesByScope.TryGetValue(scope, out var messageVariables);
+                    messageVariables ??= new HashSet<string>(StringComparer.Ordinal);
                     Func<SyntaxNode, bool> readsMessage = expression => expression.DescendantNodesAndSelf().Any(n =>
                         (n is MemberAccessExpressionSyntax member && member.Name.Identifier.ValueText == "Message" && IsExceptionMessage(member, model)) ||
                         (n is MemberBindingExpressionSyntax binding && binding.Name.Identifier.ValueText == "Message" && IsExceptionMessage(binding, model)) ||
                         (n is IdentifierNameSyntax variable && messageVariables.Contains(variable.Identifier.ValueText)));
-                    bool changed;
-                    do
+                    if (!knownScope)
                     {
-                        changed = false;
-                        foreach (var variable in scope.DescendantNodes().OfType<VariableDeclaratorSyntax>())
-                            if (variable.Initializer != null && readsMessage(variable.Initializer.Value))
-                                changed |= messageVariables.Add(variable.Identifier.ValueText);
-                        foreach (var assignment in scope.DescendantNodes().OfType<AssignmentExpressionSyntax>())
-                            if (assignment.Left is IdentifierNameSyntax variable && readsMessage(assignment.Right))
-                                changed |= messageVariables.Add(variable.Identifier.ValueText);
-                    } while (changed);
+                        bool changed;
+                        do
+                        {
+                            changed = false;
+                            foreach (var variable in scope.DescendantNodes().OfType<VariableDeclaratorSyntax>())
+                                if (variable.Initializer != null && readsMessage(variable.Initializer.Value))
+                                    changed |= messageVariables.Add(variable.Identifier.ValueText);
+                            foreach (var assignment in scope.DescendantNodes().OfType<AssignmentExpressionSyntax>())
+                                if (assignment.Left is IdentifierNameSyntax variable && readsMessage(assignment.Right))
+                                    changed |= messageVariables.Add(variable.Identifier.ValueText);
+                        } while (changed);
+                        messageVariablesByScope.Add(scope, messageVariables);
+                    }
                     var arguments = call.ArgumentList.Arguments.AsEnumerable();
                     if (assertion == "True" || assertion == "False")
                         arguments = arguments.Take(1);
@@ -224,6 +234,8 @@ namespace SomeEngine.TestRules
                 else if (source.Contains("InternalsVisibleTo", StringComparison.Ordinal))
                     result.AddRange(ReadBuildFile(path, source, testAssembly));
             }
+            // Reuse the runtime core library snapshot only within this scan.
+            MetadataReference? coreLibrary = null;
             foreach (var trees in sources.Values)
             {
                 bool hasFriends = trees.Any(tree => tree.GetRoot().DescendantNodes().Any(node =>
@@ -241,7 +253,8 @@ namespace SomeEngine.TestRules
                     .Where(condition => condition != null).ToArray();
                 var symbols = conditions.SelectMany(condition => condition!.DescendantNodesAndSelf().OfType<IdentifierNameSyntax>())
                     .Select(identifier => identifier.Identifier.ValueText).Distinct(StringComparer.Ordinal).ToArray();
-                var compilation = CreateCompilation(trees);
+                var compilation = CreateCompilation(trees,
+                    coreLibrary ??= MetadataReference.CreateFromFile(typeof(object).Assembly.Location));
                 foreach (var tree in inspected)
                 {
                     bool isTestCode = System.IO.Path.GetFullPath(System.IO.Path.Combine(root, tree.FilePath)).StartsWith(testRoot, StringComparison.OrdinalIgnoreCase);
@@ -253,7 +266,7 @@ namespace SomeEngine.TestRules
                 {
                     var options = CSharpParseOptions.Default.WithPreprocessorSymbols(definitions);
                     var branchTrees = originalTrees.Select(tree => CSharpSyntaxTree.ParseText(sourceTexts[tree.FilePath], options, tree.FilePath)).ToArray();
-                    var branchCompilation = CreateCompilation(branchTrees);
+                    var branchCompilation = CreateCompilation(branchTrees, coreLibrary);
                     foreach (var tree in branchTrees.Where(tree => tree.GetRoot().DescendantNodes().OfType<AttributeListSyntax>()
                         .Any(list => list.Target?.Identifier.ValueText == "assembly")))
                         ReadTree(tree.GetRoot(), branchCompilation.GetSemanticModel(tree), tree.FilePath, false, testAssembly, result);

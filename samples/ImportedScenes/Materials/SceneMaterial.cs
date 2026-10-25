@@ -23,6 +23,10 @@ public sealed partial class SceneMaterial : Material
     public partial Vector3 EmissiveFactor { get; set; }
     public partial float NormalScale { get; set; } = 1;
     public partial float OcclusionStrength { get; set; } = 1;
+    public partial bool UseOcclusionMap { get; set; } = true;
+    public partial bool UseEmissiveMap { get; set; } = true;
+    public partial bool DecodeAlbedoSrgb { get; set; } = true;
+    public partial bool DecodeEmissiveSrgb { get; set; } = true;
 }
 
 public sealed class SceneMaterialAsset : MaterialAsset

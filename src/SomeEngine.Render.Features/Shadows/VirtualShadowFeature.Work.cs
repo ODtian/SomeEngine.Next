@@ -12,7 +12,7 @@ namespace SomeEngine.Render.Features.Shadows;
 public sealed partial class VirtualShadowFeature
 {
     private LinkedComputePipeline? _workFeedbackPipeline;
-    private GraphBufferInput _workUniforms = null!;
+    private readonly GraphBufferSlice _workUniforms;
     private GraphBufferInput _previousWorkViewIndices = null!;
     private GraphBufferId _previousWorkCounts;
     private GraphBufferId _previousWorkPressure;
@@ -42,7 +42,6 @@ public sealed partial class VirtualShadowFeature
     private void InstallWorkFeedback(ref RenderGraphEdit edit, VirtualShadowMapShaders shaders,
         uint viewCapacity, GraphRegionId prepare, GraphRegionId feedback)
     {
-        _workUniforms = edit.CreateBufferInput(BufferUsages.Constant);
         if (!_shadowMap.Settings.WorkThrottlingEnabled) return;
         _workFeedbackPipeline = LinkedComputePipeline.Create(_backend, _device, shaders.WorkFeedbackShader,
             shaders.WorkFeedback, "Virtual shadow per-view work feedback");
@@ -81,11 +80,11 @@ public sealed partial class VirtualShadowFeature
         edit.OrderAfter(_frameCompletePass, _workCopyPass);
     }
 
-    private void StageWorkFeedback(ref RenderGraphFrame graph, RenderLightSet lights, scoped ReadOnlySpan<VirtualShadowView> views)
+    private void StageWorkFeedback(ref RenderGraphFrame graph, scoped Span<byte> uniformBytes, RenderLightSet lights, scoped ReadOnlySpan<VirtualShadowView> views)
     {
         if (_workFeedbackPipeline is null && _prefilterPipeline is null) return;
         _frameWorkViews = new ShadowWorkView[views.Length];
-        uint[] mapping = new uint[Math.Max(views.Length, 1)];
+        uint[]? mapping = _workFeedbackPipeline is not null ? new uint[Math.Max(views.Length, 1)] : null;
         for (int index = 0; index < views.Length; index++)
         {
             VirtualShadowView view = views[index];
@@ -100,9 +99,10 @@ public sealed partial class VirtualShadowFeature
                 view.LightKind == VirtualShadowLightKind.Directional ? view.ClipmapLevel : checked((int)view.FaceIndex),
                 (view.Flags & VirtualShadowViewFlags.FirstPersonShadow) != 0u);
             _frameWorkViews[index] = key;
-            mapping[index] = _committedWorkViews.TryGetValue(key, out uint previous) ? previous : uint.MaxValue;
+            if (mapping is not null)
+                mapping[index] = _committedWorkViews.TryGetValue(key, out uint previous) ? previous : uint.MaxValue;
         }
-        if (_workFeedbackPipeline is null) return;
+        if (mapping is null) return;
         graph.SetBufferInput(_previousWorkViewIndices, graph.Upload<uint>(mapping, BufferUsages.ShaderRead,
             "Virtual shadow previous work view indices"));
         var settings = _shadowMap.Settings;
@@ -117,7 +117,7 @@ public sealed partial class VirtualShadowFeature
             MaxLocalBias = settings.WorkMaxLocalLodBias,
             MaxGlobalBias = settings.DynamicResolutionMaxLodBias,
         };
-        _uniformData.Write(ref graph, _workUniforms, in uniforms);
+        WriteUniform(uniformBytes, _workUniforms, in uniforms);
         graph.SetPassEnabled(_workResetPass, !_workHistoryReady || _forceStateReset);
         graph.SetPassEnabled(_workUpdatePass, true);
         graph.SetPassEnabled(_workCopyPass, true);

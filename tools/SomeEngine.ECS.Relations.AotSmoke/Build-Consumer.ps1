@@ -15,7 +15,7 @@ $packageArea = Join-Path $repositoryRoot 'artifacts/ecs-relations'
 $packageFeed = Join-Path $packageArea 'feed'
 $packageCache = Join-Path $packageArea 'cache'
 $nativeOutput = Join-Path $PSScriptRoot 'bin/Release/net10.0/win-x64/native-publish'
-$packageNames = @('SomeEngine.Diagnostics', 'SomeEngine.Job.Contracts', 'SomeEngine.Job', 'SomeEngine.ECS.SourceGen',
+$packageNames = @('SomeEngine.Diagnostics', 'SomeEngine.Job.Contracts', 'SomeEngine.Job', 'SomeEngine.ECS.SourceGenerators',
     'SomeEngine.ECS', 'SomeEngine.ECS.Relations', 'SomeEngine.ECS.Systems', 'SomeEngine.Physics')
 $stages = [Collections.Generic.List[object]]::new()
 $stagePath = Join-Path $packageArea "package-stages-$SourceCommit.json"

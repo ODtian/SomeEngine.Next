@@ -139,6 +139,18 @@ public sealed class WarpAliasingBarrierTests
                     [new AliasingResource(buffer, legal)],
                     [new AliasingResource(texture, legal)])),
             validation);
+        Assert.Throws<ArgumentException>(() =>
+            backend.Barrier(
+                context,
+                new AliasingBarrier(
+                    [],
+                    [new AliasingResource(buffer) { RequireBufferReadVisibility = true }])));
+        Assert.Throws<ArgumentException>(() =>
+            backend.Barrier(
+                context,
+                new AliasingBarrier(
+                    [new AliasingResource(texture, legal) { RequireBufferReadVisibility = true }],
+                    [])));
         if (validation)
         {
             using Device foreignDevice = D3D12TestSupport.CreateWarpDevice(backend);

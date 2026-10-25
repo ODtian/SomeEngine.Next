@@ -206,11 +206,11 @@ internal sealed partial class FrameExecutor
 
     private QueueRelease[] ResourceReleases(int submission, Resource? resource)
     {
-        var result = new List<QueueRelease>();
+        List<QueueRelease>? result = null;
         foreach (int pass in _submissionPasses[submission])
             foreach (QueueRelease release in _releases[pass])
-                if (ReferenceEquals(release.Resource, resource)) result.Add(release);
-        return result.ToArray();
+                if (ReferenceEquals(release.Resource, resource)) (result ??= []).Add(release);
+        return result?.ToArray() ?? [];
     }
 
     private Queue ReleaseDestination(QueueType type)
@@ -259,6 +259,7 @@ internal sealed partial class FrameExecutor
                     break;
             }
             BuildResourceStateUpdates(key);
+            _stateUpdateResourcesChanged.Remove(key);
         }
         _stateConnectionChanges.Clear();
     }
@@ -456,7 +457,8 @@ internal sealed partial class FrameExecutor
             frameBuffer.EntryBoundaryStates = boundaryStates;
             if (frameBuffer.Ownership == RenderGraphResourceOwnership.CallerOwned && frameBuffer.Definition is not null)
                 frameBuffer.Definition.Boundaries = boundaries;
-            if (frameBuffer.Lifetime == RenderGraphResourceLifetime.PerFrame && frameBuffer.Resource is not null)
+            if (frameBuffer.Lifetime == RenderGraphResourceLifetime.PerFrame &&
+                frameBuffer.Ownership == RenderGraphResourceOwnership.GraphOwned && frameBuffer.Resource is not null)
                 _frame.Slot.TransientResources?.StoreCachedBufferStates(frameBuffer.AllocationIdentity, frameBuffer.Resource, boundaryStates);
         }
         // Completion values are collected independently on every frame. Caller-owned
@@ -510,15 +512,17 @@ internal sealed partial class FrameExecutor
             foreach (int index in step.Accesses)
             {
                 FrameResourceAccess access = _accesses[index];
+                ResourceContentState contents = access.ResultContents ?? access.Mode switch
+                {
+                    GraphAccessMode.Read or GraphAccessMode.ReadWrite => ResourceContentState.Defined,
+                    GraphAccessMode.Write when access.Coverage == WriteCoverage.Complete => ResourceContentState.Defined,
+                    _ => ResourceContentState.Undefined,
+                };
+                bool preserveContents = access.Mode == GraphAccessMode.Write &&
+                    access.Coverage == WriteCoverage.Partial && !access.ResultContents.HasValue;
                 foreach (BufferRange range in access.BufferRanges)
                 {
                     ReadOnlySpan<BufferStateValue> states = CollectionsMarshal.AsSpan(_bufferBoundaryScratch);
-                    ResourceContentState contents = access.ResultContents ?? access.Mode switch
-                    {
-                        GraphAccessMode.Read or GraphAccessMode.ReadWrite => ResourceContentState.Defined,
-                        GraphAccessMode.Write when access.Coverage == WriteCoverage.Complete => ResourceContentState.Defined,
-                        _ => ResourceContentState.Undefined,
-                    };
                     BufferContentScope contentScope = contents == ResourceContentState.Defined
                         ? access.ResultContents.HasValue
                             ? access.BufferContentScope
@@ -531,9 +535,7 @@ internal sealed partial class FrameExecutor
                             }
                         : BufferContentScope.FullRange;
                     endpoint = new BufferBoundaryState(range, sync, step.Access,
-                        contents, _passes[step.Pass].Queue, null, contentScope);
-                    bool preserveContents = access.Mode == GraphAccessMode.Write &&
-                        access.Coverage == WriteCoverage.Partial && !access.ResultContents.HasValue;
+                        contents, queue, null, contentScope);
                     if (preserveContents)
                     {
                         _bufferContentScratch.Clear();
@@ -581,16 +583,23 @@ internal sealed partial class FrameExecutor
             update.CompletionSources[item] = value.CompletionSource;
             if (value.CompletionSource >= 0) _priorCompletionItems.Add(item);
         }
-        update.Boundaries = new(values, BuildBufferCompletionItems(update.CompletionSources));
+        ref readonly FrameBuffer buffer = ref CollectionsMarshal.AsSpan(_buffers)[update.ResourceIndex];
+        update.Boundaries = new(values,
+            buffer.Lifetime == RenderGraphResourceLifetime.Persistent && buffer.Definition is not null
+                ? BuildBufferCompletionItems(update.CompletionSources) : null);
         update.BoundaryChanged = current.Length != update.Values.Length;
         for (int item = 0; !update.BoundaryChanged && item < current.Length; item++)
             update.BoundaryChanged = !BufferBoundaryMatches(current[item], update.Values[item]);
-        update.PriorCompletionItems = _priorCompletionItems.ToArray();
+        if (update.PriorCompletionItems.Length == _priorCompletionItems.Count)
+            _priorCompletionItems.CopyTo(update.PriorCompletionItems);
+        else
+            update.PriorCompletionItems = _priorCompletionItems.ToArray();
         update.Initialized = true;
     }
 
     private int[] BuildBufferCompletionItems(ReadOnlySpan<int> sources)
     {
+        if (sources.Length <= 1) return sources.IsEmpty ? [] : [0];
         _bufferCompletionSources.Clear();
         _bufferCompletionItems.Clear();
         for (int item = 0; item < sources.Length; item++)
@@ -634,7 +643,7 @@ internal sealed partial class FrameExecutor
             if (frameTexture.Ownership == RenderGraphResourceOwnership.CallerOwned && frameTexture.Definition is not null)
                 frameTexture.Definition.BoundaryStates = boundaryStates;
             if (frameTexture.Lifetime == RenderGraphResourceLifetime.PerFrame &&
-                frameTexture.Resource is not null)
+                frameTexture.Ownership == RenderGraphResourceOwnership.GraphOwned && frameTexture.Resource is not null)
             {
                 _frame.Slot.TransientResources?.StoreCachedTextureStates(
                     frameTexture.AllocationIdentity,
@@ -721,7 +730,10 @@ internal sealed partial class FrameExecutor
         update.BoundaryChanged = current.Length != update.Values.Length;
         for (int item = 0; !update.BoundaryChanged && item < current.Length; item++)
             update.BoundaryChanged = !TextureBoundaryMatches(current[item], update.Values[item]);
-        update.PriorCompletionItems = _priorCompletionItems.ToArray();
+        if (update.PriorCompletionItems.Length == _priorCompletionItems.Count)
+            _priorCompletionItems.CopyTo(update.PriorCompletionItems);
+        else
+            update.PriorCompletionItems = _priorCompletionItems.ToArray();
         update.Initialized = true;
     }
 
@@ -796,7 +808,9 @@ internal sealed partial class FrameExecutor
                     update.CompletionSources[item] = source;
                     update.Completions[item] = source < 0 ? null : current[source].ReadyAfter;
                 }
-                update.Boundaries = new(values, BuildBufferCompletionItems(update.CompletionSources));
+                update.Boundaries = new(values,
+                    buffer.Lifetime == RenderGraphResourceLifetime.Persistent && buffer.Definition is not null
+                        ? BuildBufferCompletionItems(update.CompletionSources) : null);
             }
             else if (key.Kind == GraphAccessTargetKind.Texture)
             {
@@ -1080,6 +1094,7 @@ internal sealed partial class FrameExecutor
             TextureStateValue existing = current[index];
             if (!Overlaps(existing.State.Range, update.State.Range)) continue;
             if (reader && !ResourceAccessRules.Writes(existing.State.Access) &&
+                existing.State.Layout == update.State.Layout &&
                 !ReferenceEquals(existing.State.Queue, update.State.Queue)) continue;
             current.RemoveAt(index);
             Subtract(existing, update.State.Range, current);

@@ -194,10 +194,12 @@ TemporalHistorySample LoadPreviousHistoryBilinear(float2 uv, float2 size, int2 m
 float2 LoadDilatedMotionByClosestDepth(int2 pixel, int2 maxPixel, out float closestDepth)
 {
     closestDepth = LoadCurrentDepthClamped(pixel, maxPixel);
-    float2 closestMotion = MotionVectors.Load(int4(clamp(pixel, int2(0, 0), maxPixel), 0, 0));
+    int2 closestPixel = pixel;
 
+    [unroll]
     for (int y = -1; y <= 1; y++)
     {
+        [unroll]
         for (int x = -1; x <= 1; x++)
         {
             int2 samplePixel = pixel + int2(x, y);
@@ -205,12 +207,12 @@ float2 LoadDilatedMotionByClosestDepth(int2 pixel, int2 maxPixel, out float clos
             if (sampleDepth < closestDepth)
             {
                 closestDepth = sampleDepth;
-                closestMotion = MotionVectors.Load(int4(clamp(samplePixel, int2(0, 0), maxPixel), 0, 0));
+                closestPixel = samplePixel;
             }
         }
     }
 
-    return closestMotion;
+    return MotionVectors.Load(int4(clamp(closestPixel, int2(0, 0), maxPixel), 0, 0));
 }
 
 float VelocityDisocclusionRejection(float2 previousMotion, float2 motion, float2 size)

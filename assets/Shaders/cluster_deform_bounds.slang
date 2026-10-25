@@ -32,9 +32,14 @@ bool ApplyClusterNodeBounds(inout ClusterHierarchySlice node, uint nodeIndex, ui
     if (range.y == 0u) return false;
     uint root = LoadClusterBvhRoot(InstanceData,
         LoadRenderInstanceMetadata(InstanceProperties, CLUSTER_BVH_ROOT_METADATA_WORD), instance);
-    ClusterModelBounds value = ReadClusterModelBounds(range.x + (nodeIndex - root) * 4u + childIndex, previous);
-    node.BoundsCenter = (value.minimum.xyz + value.maximum.xyz) * 0.5;
-    node.BoundsExtent = (value.maximum.xyz - value.minimum.xyz) * 0.5;
+    uint localNode = nodeIndex - root;
+    if (nodeIndex < root || localNode >= range.y || childIndex >= 4u) return false;
+    ClusterModelBounds value = ReadClusterModelBounds(range.x + localNode * 4u + childIndex, previous);
+    node.BoundsCenter = value.minimum.xyz * 0.5 + value.maximum.xyz * 0.5;
+    float3 extent = max(node.BoundsCenter - value.minimum.xyz, value.maximum.xyz - node.BoundsCenter);
+    // Converting endpoints to center/extent must not round a reconstructed endpoint inward.
+    bool3 grow = (node.BoundsCenter - extent > value.minimum.xyz) || (node.BoundsCenter + extent < value.maximum.xyz);
+    node.BoundsExtent = asfloat(asuint(extent) + uint3(grow.x ? 1u : 0u, grow.y ? 1u : 0u, grow.z ? 1u : 0u));
     node.LODBounds = value.lodSphere;
     node.MinLODError = asfloat((asuint(node.MinLODError) & 0x80000000u) | (asuint(value.minimum.w) & 0x7FFFFFFFu));
     node.MaxParentLODError = value.maximum.w;

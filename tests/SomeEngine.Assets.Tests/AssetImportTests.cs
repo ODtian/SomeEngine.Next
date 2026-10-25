@@ -6,6 +6,7 @@ using SomeEngine.Assets.Importing;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Assets.Importers;
 using SomeEngine.Serialization.Containers;
+using SomeEngine.Serialization.Packs;
 using SomeEngine.Resources;
 
 namespace SomeEngine.Assets.Tests;
@@ -82,6 +83,91 @@ public sealed class AssetImportTests
         using ShaderAsset recovered = await ShaderAsset.OpenAsync(files.Path("shader0.shader.asset"));
         Assert.Equal("source:0", recovered.Name);
         files.AssertNoTemporaryFiles();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PackedImportsReuseSourcesAndPreservePublishedAssetsWhenAnUpdateIsInterrupted(bool cancel)
+    {
+        using var files = new TestFiles();
+        const string packPath = "Library/imported.assetpack";
+        var importer = new SourceImporter { ShaderCount = 2, OutputPrefix = "first-" };
+        var project = new AssetProject(files.Root, [], importedAssetPackPath: packPath);
+        IReadOnlyList<Guid> ids = await project.ImportAsync(files.Source, importer);
+        Assert.Equal(2, ids.Count);
+        var first = await ReadSourceAsync(files.Source);
+        Assert.All(first, value => Assert.Equal("source:0", value.Name));
+        string otherSource = files.Path("other.input");
+        File.WriteAllText(otherSource, "other");
+        var otherImporter = new SourceImporter { OutputPrefix = "other-" };
+        await project.ImportAsync(otherSource, otherImporter);
+        var other = await ReadSourceAsync(otherSource);
+        Assert.Equal("other:0", Assert.Single(other).Name);
+        Assert.Equal(first, await ReadSourceAsync(files.Source));
+        Assert.Empty(Directory.GetFiles(files.Root, "*.asset", SearchOption.AllDirectories));
+
+        Assert.Equal(ids, await project.ImportAsync(files.Source, importer));
+        Assert.Equal(1, importer.Reads);
+        Assert.Equal(first, await ReadSourceAsync(files.Source));
+        File.WriteAllText(files.Source, "updated");
+        importer.ShaderCount = 1;
+        Assert.Equal(ids[0], Assert.Single(await project.ImportAsync(files.Source, importer)));
+        Assert.Equal(2, importer.Reads);
+        Assert.False(new AssetProject(files.Root, []).CreateStorage().TryFind(ids[1], out _));
+        await using (AssetPack pack = await AssetPack.OpenAsync(files.Path(packPath)))
+            Assert.False(pack.TryGetEntry(ids[1], out _));
+        var updated = await ReadSourceAsync(files.Source);
+        Assert.All(updated, value => Assert.Equal("updated:0", value.Name));
+        Assert.NotEqual(first[0].Version, updated[0].Version);
+        Assert.Equal(other, await ReadSourceAsync(otherSource));
+
+        Dictionary<string, byte[]> before = files.SavedFiles();
+        File.WriteAllText(files.Source, "interrupted");
+        using var cancellation = new CancellationTokenSource();
+        if (cancel)
+        {
+            importer.CancelWhileSaving = cancellation;
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+                project.ImportAsync(files.Source, importer, cancellation.Token).AsTask());
+        }
+        else
+        {
+            importer.FailSavingShader = 0;
+            await Assert.ThrowsAsync<InvalidDataException>(() => project.ImportAsync(files.Source, importer).AsTask());
+        }
+        files.AssertSavedFiles(before);
+        Assert.Equal(before.Keys.Order(), Directory.GetFiles(files.Root, "*", SearchOption.AllDirectories)
+            .Where(path => path != files.Source).Order());
+        Assert.Equal(updated, await ReadSourceAsync(files.Source));
+        Assert.Equal(other, await ReadSourceAsync(otherSource));
+        Assert.Empty(Directory.GetFiles(files.Root, "*.asset", SearchOption.AllDirectories));
+        files.AssertNoTemporaryFiles();
+
+        async Task<(Guid Id, Guid Version, string Hash, string Name)[]> ReadSourceAsync(string sourcePath)
+        {
+            IAssetStorage storage = new AssetProject(files.Root, []).CreateStorage();
+            await using var loader = new AssetLoader(storage);
+            var values = new List<(Guid Id, Guid Version, string Hash, string Name)>();
+            foreach (SourceOutput output in SourceMeta.Load(sourcePath).Outputs)
+            {
+                Assert.True(storage.TryFind(output.AssetGuid, out AssetEntry entry));
+                Assert.Equal(Path.GetFullPath(files.Path(packPath)), Path.GetFullPath(entry.PackPath, files.Root));
+                Assert.Equal(Path.GetFullPath(files.Path(packPath)), Path.GetFullPath(output.PackPath, files.Root));
+                await using var bytes = await storage.OpenAsync(entry);
+                byte[] payload = new byte[checked((int)bytes.Length)];
+                await bytes.ReadExactlyAsync(0, payload);
+                string hash = Convert.ToHexString(SHA256.HashData(payload));
+                Assert.Equal(output.ContentHash, hash);
+                Assert.Equal(output.Version, entry.Version);
+                Assert.Equal(entry.Version, await BinaryDocument.ReadVersionAsync(bytes));
+                using ShaderAsset shader = await ShaderAsset.OpenAsync(loader, new(entry.AssetGuid));
+                Assert.Equal(entry.AssetGuid, shader.Id);
+                Assert.Equal(entry.Version, shader.SourceVersion);
+                values.Add((shader.Id, entry.Version, hash, shader.Name));
+            }
+            return values.ToArray();
+        }
     }
 
     [Fact]
@@ -200,7 +286,7 @@ public sealed class AssetImportTests
         var project = new AssetProject(files.Root, []);
         var importer = new SourceImporter { ShaderCount = 2 };
         IReadOnlyList<Guid> ids = await project.ImportAsync(files.Source, importer);
-        LooseAssetStorage previous = project.CreateStorage();
+        IAssetStorage previous = project.CreateStorage();
         Assert.True(previous.TryFind(ids[0], out AssetEntry selected));
         await using var oldBytes = await previous.OpenAsync(selected);
         File.WriteAllText(files.Source, "new content");
@@ -385,6 +471,7 @@ public sealed class AssetImportTests
         public Guid Id => new("e2eaad2c-7ee5-4bf3-85a2-6314b61d8c9c");
         public int Reads { get; private set; }
         public int ShaderCount { get; set; } = 1;
+        public string OutputPrefix { get; set; } = "";
         public bool IncludeMesh { get; set; }
         public int FailSavingShader { get; set; } = -1;
         public CancellationTokenSource? CancelWhileSaving { get; set; }
@@ -394,7 +481,7 @@ public sealed class AssetImportTests
             AssetImportSettings<int>? overrides, CancellationToken cancellationToken)
         {
             string hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
-                $"{File.ReadAllText(sourcePath)}|{ShaderCount}|{IncludeMesh}|{overrides?.Value}")));
+                $"{File.ReadAllText(sourcePath)}|{ShaderCount}|{IncludeMesh}|{overrides?.Value}|{OutputPrefix}")));
             return ValueTask.FromResult<ImportInputs?>(new ImportInputs { InputHash = hash, ImporterVersion = 1, Dependencies = [] });
         }
         public async ValueTask ImportAsync(string source, ImportContext context, AssetImportSettings<int>? overrides, CancellationToken token)
@@ -424,13 +511,13 @@ public sealed class AssetImportTests
                     using var canceled = new CanceledImportSaveBlock(cancellation);
                     asset.SetBlock(canceled);
                 }
-                context.AddAsset(part, asset, key, $"shader{index}.shader.asset");
+                context.AddAsset(part, asset, key, $"{OutputPrefix}shader{index}.shader.asset");
                 await context.GetAssetAsync<ShaderPart, ShaderAsset>(part, token);
             }
             if (IncludeMesh)
             {
                 Guid id = context.GetAssetId("mesh/0");
-                context.AddAsset(source, new MeshAsset(id), "mesh/0", "mesh.mesh.asset");
+                context.AddAsset(source, new MeshAsset(id), "mesh/0", $"{OutputPrefix}mesh.mesh.asset");
                 await context.GetAssetAsync<string, MeshAsset>(source, token);
             }
         }

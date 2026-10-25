@@ -108,8 +108,8 @@ public sealed partial class ClusterPipelineSystem
         // Indexed textures live in the material scalar payload, not the direct command
         // binding key. Their contents can change without replacing the material property.
         foreach (Material material in _materialAssignments.Current.DistinctMaterials)
-            foreach (MaterialPropertyDefinition property in material.Properties)
-                if (material.GetTexture(property.Index) is { } texture && changed.Contains(texture))
+            for (uint property = 0; property < material.PropertyCount; property++)
+                if (material.GetTexture(property) is { } texture && changed.Contains(texture))
                 {
                     materials.Add(material.MaterialId);
                     break;
@@ -123,11 +123,20 @@ public sealed partial class ClusterPipelineSystem
     public bool CollectChangedCasters(ulong afterRevision, List<uint> rows,
         List<uint> streamingRows, out ulong revision)
     {
-        if (_resources.Residency.GetBinding().Publication is { } publication &&
+        if (_resources.Residency.CurrentChanges is { } publication &&
             publication.Sequence != _lastGeometryChangeSequence)
         {
-            var lodMeshes = _resources.LodChanges.Span.ToArray().Select(change => change.Mesh).ToHashSet();
-            RecordCasterChange(publication.Meshes.Bvh.ChangedMeshes.Where(mesh => !lodMeshes.Contains(mesh)).ToArray(), []);
+            Mesh[] changedMeshes = publication.Meshes.Bvh.ChangedMeshes;
+            ReadOnlySpan<ClusterLodChange> lodChanges = publication.Meshes.LodChanges;
+            if (changedMeshes.Length != 0 && !lodChanges.IsEmpty)
+            {
+                var lodMeshes = new HashSet<Mesh>();
+                foreach (ref readonly ClusterLodChange change in lodChanges)
+                    lodMeshes.Add(change.Mesh);
+                changedMeshes = changedMeshes.Where(mesh => !lodMeshes.Contains(mesh)).ToArray();
+            }
+            if (changedMeshes.Length != 0)
+                RecordCasterChange(changedMeshes, []);
             _lastGeometryChangeSequence = publication.Sequence;
         }
         float quality = _resources.Residency.StreamingQuality;
@@ -185,7 +194,18 @@ public sealed partial class ClusterPipelineSystem
         ReadOnlyMemory<ClusterLodChange> changes = _resources.LodChanges;
         if (!changes.IsEmpty)
         {
-            var inputs = new CasterLodBounds(_instances.Current!, changes.Span, lodBounds);
+            ReadOnlySpan<ClusterLodChange> lodChanges = changes.Span;
+            var firstChanges = new Dictionary<uint, int>(lodChanges.Length);
+            var nextChanges = new int[lodChanges.Length];
+            // Link each published root's changes in order without querying old mesh ownership.
+            for (int index = lodChanges.Length - 1; index >= 0; index--)
+            {
+                uint root = lodChanges[index].RootNode;
+                nextChanges[index] = firstChanges.GetValueOrDefault(root, -1);
+                firstChanges[root] = index;
+            }
+            var inputs = new CasterLodBounds(_instances.Current!, lodChanges,
+                firstChanges, nextChanges, lodBounds);
             _resources.World.ExecuteQuery(_sceneQuery, ref inputs,
                 static (scoped QueryCursor query, ref CasterLodBounds data) => data.Collect(query));
         }
@@ -223,22 +243,27 @@ public sealed partial class ClusterPipelineSystem
     }
 
     private ref struct CasterLodBounds(RenderInstanceBatches<RenderInstanceSingleGroup> batches,
-        ReadOnlySpan<ClusterLodChange> changes, List<Vector4> bounds)
+        ReadOnlySpan<ClusterLodChange> changes, Dictionary<uint, int> firstChanges,
+        ReadOnlySpan<int> nextChanges, List<Vector4> bounds)
     {
         private readonly ReadOnlySpan<ClusterLodChange> _changes = changes;
+        private readonly ReadOnlySpan<int> _nextChanges = nextChanges;
         private int _entityIndex;
         internal void Collect(scoped QueryCursor query)
         {
             foreach (QueryChunkView chunk in query.Chunks)
             {
                 ReadOnlySpan<RenderClusterGeometry> geometries = chunk.Read<RenderClusterGeometry>();
+                bool hasMeshes = chunk.TryRead<RenderMesh>(out ReadOnlySpan<RenderMesh> meshes);
                 ReadOnlySpan<RenderTransform> transforms = chunk.Read<RenderTransform>();
                 for (int row = 0; row < geometries.Length; row++, _entityIndex++)
                 {
                     RenderClusterGeometry geometry = geometries[row];
-                    foreach (ClusterLodChange change in _changes)
+                    if (!firstChanges.TryGetValue(geometry.Geometry.RootBvh, out int firstChange)) continue;
+                    for (int index = firstChange; index >= 0; index = _nextChanges[index])
                     {
-                        if (change.RootNode != geometry.Geometry.RootBvh) continue;
+                        ClusterLodChange change = _changes[index];
+                        if (hasMeshes && !ReferenceEquals(change.Mesh, meshes[row].Mesh)) continue;
                         RenderTransform transform = transforms[row];
                         Vector3 scale = transform.Stretch * transform.Scale;
                         Vector3 center = Vector3.Transform(new Vector3(change.Bounds.X, change.Bounds.Y, change.Bounds.Z) * scale,

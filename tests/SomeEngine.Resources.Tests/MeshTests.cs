@@ -56,6 +56,51 @@ public sealed class MeshTests
         Assert.Throws<InvalidOperationException>(() => mesh.AddPages([(0, restored)], previousRevision));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void DuplicatePageTablesStayIsolatedAcrossSupplyAndReplacement(bool changeDuplicate)
+    {
+        byte[] payload = Payload(out int offset);
+        var descriptions = MeshIntegrity.Inspect(payload, offset, Encoding);
+        Mesh original = Mesh.Create("partial", Encoding, descriptions, payload.AsMemory(offset));
+        Mesh duplicate = original.Duplicate();
+        Mesh changed = changeDuplicate ? duplicate : original;
+        Mesh untouched = changeDuplicate ? original : duplicate;
+        Mesh beforeSupply = changed.CaptureData();
+        Mesh untouchedBeforeSupply = untouched.CaptureData();
+
+        changed.AddPages([(0, payload.AsMemory(0, offset))], changed.Revision);
+        Assert.True(changed.TryGetPage(0, out var supplied));
+        Assert.Equal(payload[..offset], supplied.ToArray());
+        Assert.False(untouched.TryGetPage(0, out _));
+        Assert.False(beforeSupply.TryGetPage(0, out _));
+        Assert.False(untouchedBeforeSupply.TryGetPage(0, out _));
+
+        Mesh beforeReplacement = changed.CaptureData();
+        byte[] replacementPayload = (byte[])payload.Clone();
+        replacementPayload[offset - 4] ^= 0x40;
+        changed.Update(Mesh.Create("replacement", Encoding, replacementPayload, (ulong)offset));
+        byte[] current = new byte[offset];
+        changed.ReadPage(0, current);
+        Assert.Equal(replacementPayload[..offset], current);
+        Assert.True(beforeReplacement.TryGetPage(0, out var previous));
+        Assert.Equal(payload[..offset], previous.ToArray());
+        Assert.False(untouched.TryGetPage(0, out _));
+        Assert.False(beforeSupply.TryGetPage(0, out _));
+        Assert.False(untouchedBeforeSupply.TryGetPage(0, out _));
+
+        untouched.AddPages([(0, payload.AsMemory(0, offset))], untouched.Revision);
+        Assert.True(untouched.TryGetPage(0, out var separatelySupplied));
+        Assert.Equal(payload[..offset], separatelySupplied.ToArray());
+        changed.ReadPage(0, current);
+        Assert.Equal(replacementPayload[..offset], current);
+        beforeReplacement.ReadPage(0, current);
+        Assert.Equal(payload[..offset], current);
+        Assert.False(beforeSupply.TryGetPage(0, out _));
+        Assert.False(untouchedBeforeSupply.TryGetPage(0, out _));
+    }
+
     [Fact]
     public void CreationRejectsWrongVertexEncodingAndInvalidBvhDivision()
     {

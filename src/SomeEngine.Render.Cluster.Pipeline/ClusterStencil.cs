@@ -145,9 +145,9 @@ public sealed class ClusterStencil
         PassDefinition pass = edit.GetPass(id);
         pass.BindParameterBlock(pipeline.ParameterLayout);
         int target = _shader.RequireSlangTarget(_device.Capabilities.CompileTarget);
-        var resources = ClusterLinkedStageLayout.Create(pipeline.ParameterLayout,
+        var resources = ShaderParameterLayout.FromReflection(pipeline.ParameterLayout,
             (category, space, register) => _shader.IsSlangParameterLocationUsed(target, entry, category, space, register));
-        foreach (ClusterLinkedStageResource resource in resources.Resources)
+        foreach (ShaderParameterResource resource in resources.Resources)
         {
             if (!resource.IsUsed) { pass.Bind(GraphParameterResourceBinding.Null(resource.Type)); continue; }
             switch (resource.Name)

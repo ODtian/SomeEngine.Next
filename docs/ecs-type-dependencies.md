@@ -1,6 +1,8 @@
 # SomeEngine ECS 完整类型依赖与持久状态图索引
 
-本文件同时读取当前工作树的 Roslyn semantic source 和内存编译结果。边方向为 `source type → referenced type`；权威边集取两者并集，因此既保留会在编译时擦除的 enum/constant 等语义依赖，也保留源码没有显式写出但在签名或 IL 中出现的推断/隐式依赖。每个源/目标类型对只保留一次，同时保存 `signature`、`inheritance`、`creation`、`body-use`、`containment`、`value-state`、`state` 类明确关系。`value-state` 是内联值，没有独立释放生命周期；引用类型 `state` 只表示持久保存，所有权必须继续根据构造、逃逸、发布、替换与清理路径推导。rank 先压缩强连通分量，再按依赖叶子计算，仅用于依赖顺序和审计，不是人为架构层级。
+> 本页及配套 JSON/DOT/SVG 是原生成时间为 `2026-07-29T02:13:44.8943572+08:00` 的拓扑快照。本次仅将生成器身份、命名空间与路径映射到当前名称；未重新生成或核验当前工作树。节点、边、计数、rank、源码行号与审计结果保持原快照语义，不代表本次 rebase 后的完整性或通过结论。
+
+本快照生成时同时读取当时工作树的 Roslyn semantic source 和内存编译结果。边方向为 `source type → referenced type`；权威边集取两者并集，因此既保留会在编译时擦除的 enum/constant 等语义依赖，也保留源码没有显式写出但在签名或 IL 中出现的推断/隐式依赖。每个源/目标类型对只保留一次，同时保存 `signature`、`inheritance`、`creation`、`body-use`、`containment`、`value-state`、`state` 类明确关系。`value-state` 是内联值，没有独立释放生命周期；引用类型 `state` 只表示持久保存，所有权必须继续根据构造、逃逸、发布、替换与清理路径推导。rank 先压缩强连通分量，再按依赖叶子计算，仅用于依赖顺序和审计，不是人为架构层级。
 
 - 节点：524
 - 去重依赖对：2624
@@ -282,13 +284,13 @@
 | `SomeEngine.ECS.Serialization.WorldWritePlan` | `Build` | `serialization-boundary` | `src/SomeEngine.ECS.Serialization/AdmittedWorldWrite.cs:497` |
 | `SomeEngine.ECS.Serialization.WorldWritePlan` | `Build` | `serialization-boundary` | `src/SomeEngine.ECS.Serialization/AdmittedWorldWrite.cs:500` |
 | `SomeEngine.ECS.Serialization.WorldSerializer` | `SortManifest` | `serialization-boundary` | `src/SomeEngine.ECS.Serialization/WorldSerializer.ManifestValidation.cs:72` |
-| `SomeEngine.ECS.SourceGen.BundleGenerator` | `GenerateSource` | `source-generation` | `src/SomeEngine.ECS.SourceGen/BundleGenerator.cs:325` |
-| `SomeEngine.ECS.SourceGen.BundleGenerator` | `GenerateSource` | `source-generation` | `src/SomeEngine.ECS.SourceGen/BundleGenerator.cs:330` |
-| `SomeEngine.ECS.SourceGen.BundleGenerator` | `GenerateSource` | `source-generation` | `src/SomeEngine.ECS.SourceGen/BundleGenerator.cs:335` |
-| `SomeEngine.ECS.SourceGen.BundleGenerator` | `GenerateSource` | `source-generation` | `src/SomeEngine.ECS.SourceGen/BundleGenerator.cs:341` |
-| `SomeEngine.ECS.SourceGen.JobEntityGenerator` | `BuildModel` | `source-generation` | `src/SomeEngine.ECS.SourceGen/JobEntityGenerator.cs:142` |
-| `SomeEngine.ECS.SourceGen.JobEntityGenerator` | `Generate` | `source-generation` | `src/SomeEngine.ECS.SourceGen/JobEntityGenerator.cs:358` |
-| `SomeEngine.ECS.SourceGen.SerializationGenerator` | `AddEnumSchema` | `source-generation` | `src/SomeEngine.ECS.SourceGen/SerializationGenerator.cs:734` |
+| `SomeEngine.ECS.SourceGenerators.BundleGenerator` | `GenerateSource` | `source-generation` | `src/SomeEngine.ECS.SourceGenerators/BundleGenerator.cs:325` |
+| `SomeEngine.ECS.SourceGenerators.BundleGenerator` | `GenerateSource` | `source-generation` | `src/SomeEngine.ECS.SourceGenerators/BundleGenerator.cs:330` |
+| `SomeEngine.ECS.SourceGenerators.BundleGenerator` | `GenerateSource` | `source-generation` | `src/SomeEngine.ECS.SourceGenerators/BundleGenerator.cs:335` |
+| `SomeEngine.ECS.SourceGenerators.BundleGenerator` | `GenerateSource` | `source-generation` | `src/SomeEngine.ECS.SourceGenerators/BundleGenerator.cs:341` |
+| `SomeEngine.ECS.SourceGenerators.JobEntityGenerator` | `BuildModel` | `source-generation` | `src/SomeEngine.ECS.SourceGenerators/JobEntityGenerator.cs:142` |
+| `SomeEngine.ECS.SourceGenerators.JobEntityGenerator` | `Generate` | `source-generation` | `src/SomeEngine.ECS.SourceGenerators/JobEntityGenerator.cs:358` |
+| `SomeEngine.ECS.SourceGenerators.SerializationGenerator` | `AddEnumSchema` | `source-generation` | `src/SomeEngine.ECS.SourceGenerators/SerializationGenerator.cs:734` |
 | `SomeEngine.ECS.Systems.HierarchyPropagationAdapter<TDomain>` | `Schedule` | `async-transfer` | `src/SomeEngine.ECS.Systems/HierarchyPropagationAdapter.cs:323` |
 | `SomeEngine.ECS.Systems.HierarchyPropagationAdapter<TDomain>` | `Schedule` | `async-transfer` | `src/SomeEngine.ECS.Systems/HierarchyPropagationAdapter.cs:325` |
 | `SomeEngine.ECS.Systems.HierarchyPropagationAdapter<TDomain>` | `NormalizeRoots` | `async-transfer` | `src/SomeEngine.ECS.Systems/HierarchyPropagationAdapter.cs:477` |
@@ -347,7 +349,7 @@
 | --- | ---: | ---: | ---: |
 | `SomeEngine.ECS` | 318 | 0 | 485 |
 | `SomeEngine.ECS.Serialization` | 78 | 117 | 0 |
-| `SomeEngine.ECS.SourceGen` | 14 | 0 | 0 |
+| `SomeEngine.ECS.SourceGenerators` | 14 | 0 | 0 |
 | `SomeEngine.ECS.Systems` | 114 | 368 | 0 |
 
 ## Rank 统计
@@ -439,7 +441,7 @@
 | `SomeEngine.ECS.WorldStructureCloneMetrics` | `SomeEngine.ECS` | 3 | 0 | `src/SomeEngine.ECS/WorldStructureRoot.cs` |
 | `SomeEngine.ECS.Serialization.EntityIdentityMode` | `SomeEngine.ECS.Serialization` | 3 | 0 | `src/SomeEngine.ECS.Serialization/Options/SerializationOptions.cs` |
 | `SomeEngine.ECS.Serialization.ExternalReferenceKey` | `SomeEngine.ECS.Serialization` | 3 | 0 | `src/SomeEngine.ECS.Serialization/ExternalReferences/ExternalReferenceContracts.cs` |
-| `SomeEngine.ECS.SourceGen.JobEntityGenerator.ParameterKind` | `SomeEngine.ECS.SourceGen` | 3 | 0 | `src/SomeEngine.ECS.SourceGen/JobEntityGenerator.cs` |
+| `SomeEngine.ECS.SourceGenerators.JobEntityGenerator.ParameterKind` | `SomeEngine.ECS.SourceGenerators` | 3 | 0 | `src/SomeEngine.ECS.SourceGenerators/JobEntityGenerator.cs` |
 | `SomeEngine.ECS.Systems.GeneratedQueryMode` | `SomeEngine.ECS.Systems` | 3 | 0 | `src/SomeEngine.ECS.Systems/JobEntity.cs` |
 | `SomeEngine.ECS.Systems.HierarchyMaintenanceEvidence` | `SomeEngine.ECS.Systems` | 3 | 0 | `src/SomeEngine.ECS.Systems/HierarchyMaintenanceSystem.cs` |
 | `SomeEngine.ECS.Systems.HierarchyPropagationComponentCapability` | `SomeEngine.ECS.Systems` | 3 | 0 | `src/SomeEngine.ECS.Systems/HierarchyPropagationAdapter.cs` |
@@ -464,9 +466,9 @@
 | `SomeEngine.ECS.Serialization.DurableSaveStore.EnvelopeAuthenticationKind` | `SomeEngine.ECS.Serialization` | 2 | 0 | `src/SomeEngine.ECS.Serialization/DurableSaveStore.Envelope.cs` |
 | `SomeEngine.ECS.Serialization.DurableSaveStore.SlotInspection` | `SomeEngine.ECS.Serialization` | 2 | 0 | `src/SomeEngine.ECS.Serialization/DurableSaveStore.cs` |
 | `SomeEngine.ECS.Serialization.DurableSaveWriteStage` | `SomeEngine.ECS.Serialization` | 2 | 0 | `src/SomeEngine.ECS.Serialization/DurableSaveStore.cs` |
-| `SomeEngine.ECS.SourceGen.BundleGenerator.BundleMemberKind` | `SomeEngine.ECS.SourceGen` | 2 | 0 | `src/SomeEngine.ECS.SourceGen/BundleGenerator.cs` |
-| `SomeEngine.ECS.SourceGen.SerializationGenerator.FieldKind` | `SomeEngine.ECS.SourceGen` | 2 | 0 | `src/SomeEngine.ECS.SourceGen/SerializationGenerator.cs` |
-| `SomeEngine.ECS.SourceGen.SerializationGenerator.SerializableKind` | `SomeEngine.ECS.SourceGen` | 2 | 0 | `src/SomeEngine.ECS.SourceGen/SerializationGenerator.cs` |
+| `SomeEngine.ECS.SourceGenerators.BundleGenerator.BundleMemberKind` | `SomeEngine.ECS.SourceGenerators` | 2 | 0 | `src/SomeEngine.ECS.SourceGenerators/BundleGenerator.cs` |
+| `SomeEngine.ECS.SourceGenerators.SerializationGenerator.FieldKind` | `SomeEngine.ECS.SourceGenerators` | 2 | 0 | `src/SomeEngine.ECS.SourceGenerators/SerializationGenerator.cs` |
+| `SomeEngine.ECS.SourceGenerators.SerializationGenerator.SerializableKind` | `SomeEngine.ECS.SourceGenerators` | 2 | 0 | `src/SomeEngine.ECS.SourceGenerators/SerializationGenerator.cs` |
 | `SomeEngine.ECS.Systems.HierarchyPropagationScheduleOptions` | `SomeEngine.ECS.Systems` | 2 | 0 | `src/SomeEngine.ECS.Systems/HierarchyPropagationAdapter.cs` |
 | `SomeEngine.ECS.Systems.ISystem<TContext>` | `SomeEngine.ECS.Systems` | 2 | 0 | `src/SomeEngine.ECS.Systems/ISystem.cs` |
 | `SomeEngine.ECS.Systems.SystemNode<TContext>` | `SomeEngine.ECS.Systems` | 2 | 0 | `src/SomeEngine.ECS.Systems/SystemNode.cs` |
@@ -539,10 +541,10 @@
 | `SomeEngine.ECS.SharedComponentStore<T>` | `SomeEngine.ECS` | 2 | 2 | `src/SomeEngine.ECS/SharedComponentStore.cs` |
 | `SomeEngine.ECS.Sparse.ISparseSet` | `SomeEngine.ECS` | 2 | 1 | `src/SomeEngine.ECS/Sparse/SparseSet.cs` |
 | `SomeEngine.ECS.WorldStructuralMetricsState` | `SomeEngine.ECS` | 2 | 2 | `src/SomeEngine.ECS/WorldStructuralMetrics.cs` |
-| `SomeEngine.ECS.SourceGen.BundleGenerator.BundleMember` | `SomeEngine.ECS.SourceGen` | 2 | 1 | `src/SomeEngine.ECS.SourceGen/BundleGenerator.cs` |
-| `SomeEngine.ECS.SourceGen.JobEntityGenerator.ParameterModel` | `SomeEngine.ECS.SourceGen` | 2 | 1 | `src/SomeEngine.ECS.SourceGen/JobEntityGenerator.cs` |
-| `SomeEngine.ECS.SourceGen.SerializationGenerator.FieldModel` | `SomeEngine.ECS.SourceGen` | 2 | 2 | `src/SomeEngine.ECS.SourceGen/SerializationGenerator.cs` |
-| `SomeEngine.ECS.SourceGen.SerializationGenerator.SerializableModel` | `SomeEngine.ECS.SourceGen` | 2 | 2 | `src/SomeEngine.ECS.SourceGen/SerializationGenerator.cs` |
+| `SomeEngine.ECS.SourceGenerators.BundleGenerator.BundleMember` | `SomeEngine.ECS.SourceGenerators` | 2 | 1 | `src/SomeEngine.ECS.SourceGenerators/BundleGenerator.cs` |
+| `SomeEngine.ECS.SourceGenerators.JobEntityGenerator.ParameterModel` | `SomeEngine.ECS.SourceGenerators` | 2 | 1 | `src/SomeEngine.ECS.SourceGenerators/JobEntityGenerator.cs` |
+| `SomeEngine.ECS.SourceGenerators.SerializationGenerator.FieldModel` | `SomeEngine.ECS.SourceGenerators` | 2 | 2 | `src/SomeEngine.ECS.SourceGenerators/SerializationGenerator.cs` |
+| `SomeEngine.ECS.SourceGenerators.SerializationGenerator.SerializableModel` | `SomeEngine.ECS.SourceGenerators` | 2 | 2 | `src/SomeEngine.ECS.SourceGenerators/SerializationGenerator.cs` |
 | `SomeEngine.ECS.Systems.ISystemDriver<TContext>` | `SomeEngine.ECS.Systems` | 2 | 1 | `src/SomeEngine.ECS.Systems/ISystemDriver.cs` |
 | `SomeEngine.ECS.Systems.TopologyPacketContext` | `SomeEngine.ECS.Systems` | 2 | 1 | `src/SomeEngine.ECS.Systems/TopologyPacketFinalizer.cs` |
 | `SomeEngine.ECS.Systems.WorldJobAdmission.StorageFrame` | `SomeEngine.ECS.Systems` | 2 | 1 | `src/SomeEngine.ECS.Systems/WorldJobAdmission.cs` |
@@ -567,7 +569,7 @@
 | `SomeEngine.ECS.Serialization.DurableSaveStoreOptions` | `SomeEngine.ECS.Serialization` | 1 | 1 | `src/SomeEngine.ECS.Serialization/DurableSaveStore.cs` |
 | `SomeEngine.ECS.Serialization.RawCanonicalLayout` | `SomeEngine.ECS.Serialization` | 1 | 1 | `src/SomeEngine.ECS.Serialization/SerializationRegistry.cs` |
 | `SomeEngine.ECS.Serialization.SerializationReadOptions` | `SomeEngine.ECS.Serialization` | 1 | 2 | `src/SomeEngine.ECS.Serialization/Options/SerializationOptions.cs` |
-| `SomeEngine.ECS.SourceGen.JobEntityGenerator.ParameterAliasComparer` | `SomeEngine.ECS.SourceGen` | 1 | 1 | `src/SomeEngine.ECS.SourceGen/JobEntityGenerator.cs` |
+| `SomeEngine.ECS.SourceGenerators.JobEntityGenerator.ParameterAliasComparer` | `SomeEngine.ECS.SourceGenerators` | 1 | 1 | `src/SomeEngine.ECS.SourceGenerators/JobEntityGenerator.cs` |
 | `SomeEngine.ECS.Systems.GeneratedQueryAccessDescriptor.LogicalQueryAccess` | `SomeEngine.ECS.Systems` | 1 | 2 | `src/SomeEngine.ECS.Systems/JobEntity.cs` |
 | `SomeEngine.ECS.Systems.HierarchyPropagationAdapter<TDomain>.EntityIdentityComparer` | `SomeEngine.ECS.Systems` | 1 | 2 | `src/SomeEngine.ECS.Systems/HierarchyPropagationAdapter.cs` |
 | `SomeEngine.ECS.Systems.SystemNode<TSystem, TContext>` | `SomeEngine.ECS.Systems` | 1 | 2 | `src/SomeEngine.ECS.Systems/SystemNode.cs` |
@@ -607,14 +609,14 @@
 | `SomeEngine.ECS.Owners.RelationGraph.RelationEndpointTracker<T>.EndpointPreimage` | `SomeEngine.ECS` | 1 | 3 | `src/SomeEngine.ECS/Owners.RelationGraph.EndpointTracking.cs` |
 | `SomeEngine.ECS.Relations.RelationSchemaCache<T>` | `SomeEngine.ECS` | 1 | 3 | `src/SomeEngine.ECS/Relations/RelationSchema.cs` |
 | `SomeEngine.ECS.SharedStores` | `SomeEngine.ECS` | 1 | 3 | `src/SomeEngine.ECS/SharedComponentStore.cs` |
-| `SomeEngine.ECS.SourceGen.BundleGenerator.BundleModel` | `SomeEngine.ECS.SourceGen` | 1 | 1 | `src/SomeEngine.ECS.SourceGen/BundleGenerator.cs` |
-| `SomeEngine.ECS.SourceGen.JobEntityGenerator.JobModel` | `SomeEngine.ECS.SourceGen` | 1 | 1 | `src/SomeEngine.ECS.SourceGen/JobEntityGenerator.cs` |
+| `SomeEngine.ECS.SourceGenerators.BundleGenerator.BundleModel` | `SomeEngine.ECS.SourceGenerators` | 1 | 1 | `src/SomeEngine.ECS.SourceGenerators/BundleGenerator.cs` |
+| `SomeEngine.ECS.SourceGenerators.JobEntityGenerator.JobModel` | `SomeEngine.ECS.SourceGenerators` | 1 | 1 | `src/SomeEngine.ECS.SourceGenerators/JobEntityGenerator.cs` |
 | `SomeEngine.ECS.Systems.WorldJobAdmission.AdmissionFrame` | `SomeEngine.ECS.Systems` | 1 | 3 | `src/SomeEngine.ECS.Systems/WorldJobAdmission.cs` |
 | `SomeEngine.ECS.Systems.WorldJobAdmission.RequestedStorage` | `SomeEngine.ECS.Systems` | 1 | 2 | `src/SomeEngine.ECS.Systems/WorldJobAdmission.cs` |
 | `SomeEngine.ECS.Systems.WorldStorageJobResources.WorldResources` | `SomeEngine.ECS.Systems` | 1 | 1 | `src/SomeEngine.ECS.Systems/BufferJobAccess.cs` |
 | `SomeEngine.ECS.Components.IEnableableComponent` | `SomeEngine.ECS` | 0 | 3 | `src/SomeEngine.ECS/Components/IComponent.cs` |
 | `SomeEngine.ECS.Relations.RelationPairKey` | `SomeEngine.ECS` | 0 | 3 | `src/SomeEngine.ECS/Relations/RelationTypeState.Support.cs` |
-| `SomeEngine.ECS.SourceGen.SerializationGenerator` | `SomeEngine.ECS.SourceGen` | 0 | 4 | `src/SomeEngine.ECS.SourceGen/SerializationGenerator.cs` |
+| `SomeEngine.ECS.SourceGenerators.SerializationGenerator` | `SomeEngine.ECS.SourceGenerators` | 0 | 4 | `src/SomeEngine.ECS.SourceGenerators/SerializationGenerator.cs` |
 
 ### Rank 3
 
@@ -640,8 +642,8 @@
 | `SomeEngine.ECS.Systems.HierarchyPropagation` | `SomeEngine.ECS.Systems` | 1 | 2 | `src/SomeEngine.ECS.Systems/HierarchyPropagationAdapter.cs` |
 | `SomeEngine.ECS.Systems.TopologyFinalization` | `SomeEngine.ECS.Systems` | 1 | 2 | `src/SomeEngine.ECS.Systems/TopologyPacketFinalizer.cs` |
 | `SomeEngine.ECS.Systems.TopologyPacketFinalizer<TDomain>.TopologyCompletionAdapter` | `SomeEngine.ECS.Systems` | 1 | 2 | `src/SomeEngine.ECS.Systems/TopologyPacketFinalizer.cs` |
-| `SomeEngine.ECS.SourceGen.BundleGenerator` | `SomeEngine.ECS.SourceGen` | 0 | 3 | `src/SomeEngine.ECS.SourceGen/BundleGenerator.cs` |
-| `SomeEngine.ECS.SourceGen.JobEntityGenerator` | `SomeEngine.ECS.SourceGen` | 0 | 4 | `src/SomeEngine.ECS.SourceGen/JobEntityGenerator.cs` |
+| `SomeEngine.ECS.SourceGenerators.BundleGenerator` | `SomeEngine.ECS.SourceGenerators` | 0 | 3 | `src/SomeEngine.ECS.SourceGenerators/BundleGenerator.cs` |
+| `SomeEngine.ECS.SourceGenerators.JobEntityGenerator` | `SomeEngine.ECS.SourceGenerators` | 0 | 4 | `src/SomeEngine.ECS.SourceGenerators/JobEntityGenerator.cs` |
 
 ### Rank 4
 
@@ -992,7 +994,7 @@
 - SCC 202: `SomeEngine.ECS.Serialization.BufferSerializationRuntime<T>`, `SomeEngine.ECS.Serialization.BufferSerializationRuntime<T>.BufferApplyState`, `SomeEngine.ECS.Serialization.ComponentSerializationRuntime<T>`, `SomeEngine.ECS.Serialization.SerializationRegistry`, `SomeEngine.ECS.Serialization.SerializationTypeRuntime`, `SomeEngine.ECS.Serialization.SharedSerializationRuntime<T>`, `SomeEngine.ECS.Serialization.SparseSerializationPresence`, `SomeEngine.ECS.Serialization.SparseSerializationRuntime<T>`, `SomeEngine.ECS.Serialization.TagSerializationRuntime<T>`, `SomeEngine.ECS.Serialization.ValueSerializationRuntime<T>`
 - SCC 223: `SomeEngine.ECS.Serialization.PayloadFormat`, `SomeEngine.ECS.Serialization.SerializationEnvironment`, `SomeEngine.ECS.Serialization.TopologyCodec`, `SomeEngine.ECS.Serialization.WorldSerializer`, `SomeEngine.ECS.Serialization.WorldSerializer.WorldImporter`, `SomeEngine.ECS.Serialization.WorldSerializer.WorldRestorer`
 - SCC 224: `SomeEngine.ECS.Serialization.DurableSaveStore`, `SomeEngine.ECS.Serialization.DurableSaveStore.OperationLease`, `SomeEngine.ECS.Serialization.DurableSaveStore.SlotSet`
-- SCC 241: `SomeEngine.ECS.SourceGen.SerializationGenerator.FieldModel`, `SomeEngine.ECS.SourceGen.SerializationGenerator.SerializableModel`
+- SCC 241: `SomeEngine.ECS.SourceGenerators.SerializationGenerator.FieldModel`, `SomeEngine.ECS.SourceGenerators.SerializationGenerator.SerializableModel`
 - SCC 248: `SomeEngine.ECS.Systems.RelationshipJobAccess`, `SomeEngine.ECS.Systems.WorldJobAdmission`, `SomeEngine.ECS.Systems.WorldStorageJobResources`
 - SCC 260: `SomeEngine.ECS.Systems.HierarchyJobAccess<TDomain>`, `SomeEngine.ECS.Systems.HierarchyJobAccess<TDomain>.ParentChunkJobAdapter<TJob>`, `SomeEngine.ECS.Systems.HierarchyJobAccess<TDomain>.ParentReadChunkJobAdapter<TJob>`
 - SCC 283: `SomeEngine.ECS.Systems.HierarchyPropagationAdapter<TDomain>`, `SomeEngine.ECS.Systems.HierarchyPropagationAdapter<TDomain>.PropagationOwnerJob<TJob>`

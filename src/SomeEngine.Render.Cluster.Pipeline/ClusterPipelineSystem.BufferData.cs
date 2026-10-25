@@ -16,8 +16,7 @@ public sealed partial class ClusterPipelineSystem
         var description = new BufferDesc(checked((ulong)Math.Max(bytes.Length, 4)),
             usages | BufferUsages.CopyDestination, label);
         GraphBufferId buffer = edit.CreatePersistentBuffer(description);
-        GraphPassId upload = edit.AddBufferUploadPass(buffer);
-        GraphData.BufferDescriptions = GraphData.BufferDescriptions.Add(buffer, (description, upload));
+        _ = edit.AddBufferUploadPass(buffer);
         QueueBufferWrites(buffer, bytes, [new BufferRange(0, checked((ulong)bytes.Length))]);
         return buffer;
     }
@@ -28,14 +27,12 @@ public sealed partial class ClusterPipelineSystem
     private void UpdateBufferData(ref RenderGraphEdit edit, GraphBufferId buffer,
         ClusterBytes bytes, scoped ReadOnlySpan<BufferRange> changes)
     {
-        var data = GraphData.BufferDescriptions[buffer];
-        BufferDesc description = data.Description;
+        BufferDesc description = edit.GetBufferDescription(buffer);
         ulong size = checked((ulong)Math.Max(bytes.Length, 4));
         if (description.Size != size)
         {
             description = description with { Size = size };
             edit.SetBufferDescription(buffer, description);
-            GraphData.BufferDescriptions = GraphData.BufferDescriptions.SetItem(buffer, (description, data.UploadPass));
             GraphData.BufferWrites = GraphData.BufferWrites.Remove(buffer);
             QueueBufferWrites(buffer, bytes, [new BufferRange(0, checked((ulong)bytes.Length))]);
         }
@@ -70,12 +67,11 @@ public sealed partial class ClusterPipelineSystem
     private void RemoveBufferData(ref RenderGraphEdit edit, GraphBufferId buffer)
     {
         edit.Remove(buffer);
-        GraphData.BufferDescriptions = GraphData.BufferDescriptions.Remove(buffer);
         GraphData.BufferWrites = GraphData.BufferWrites.Remove(buffer);
     }
 
     private GraphBufferSlice CreateParameters(ref RenderGraphEdit edit,
-        scoped ReadOnlySpan<byte> bytes, string label)
+        scoped ReadOnlySpan<byte> bytes)
     {
         ShaderParameters parameters = AllocateParameters(ref edit, bytes);
         GraphBufferSlice input = new(GraphData.ShaderParameterBytes,

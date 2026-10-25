@@ -54,7 +54,8 @@ internal static class RuntimeApplication
                 if (script is null && application is not null) options = application.Options;
                 if (application is not null) application.ReloadRequested = false;
                 string contentRoot = Path.GetFullPath(script?.ContentDirectory ?? application?.ContentDirectory ?? FindContentRoot());
-                if (content is null || !StringComparer.OrdinalIgnoreCase.Equals(content.Directory, contentRoot) ||
+                IReadOnlyList<string> selectedPacks = (script?.Application ?? application)?.AssetPacks ?? [];
+                if (content is null || !content.Assets.MatchesSource(contentRoot, selectedPacks) ||
                     content.GraphicsBackend != options.GraphicsBackend || content.Assets.HasChanges)
                 {
                     content?.Assets.DisposeAsync().AsTask().GetAwaiter().GetResult();
@@ -63,7 +64,7 @@ internal static class RuntimeApplication
                         ? SlangCompileTarget.Spirv : SlangCompileTarget.Dxil;
                     IGlobalSession slang = Shader.CreateSlangGlobalSession();
                     SessionDesc shaderSettings = CreateShaderSessionDescription(slang, target);
-                    AssetContent assets = display.Wait(AssetContent.OpenAsync(contentRoot).AsTask());
+                    AssetContent assets = display.Wait(AssetContent.OpenAsync(contentRoot, selectedPacks, CancellationToken.None).AsTask());
                     content = new ApplicationContent(contentRoot, options.GraphicsBackend,
                         assets, slang, shaderSettings);
                 }
@@ -97,6 +98,8 @@ internal static class RuntimeApplication
         AssetManifest manifest = content.Manifest;
         IReadOnlyList<AssetEntry> runtimeRecords =
             manifest.List(ApplicationSettingsAsset.FileType);
+        if ((script?.Application ?? application)?.ApplicationAsset is { } applicationId)
+            runtimeRecords = runtimeRecords.Where(record => record.AssetGuid == applicationId.Value).ToArray();
         if (runtimeRecords.Count != 1)
         {
             throw new InvalidDataException(
@@ -171,7 +174,7 @@ internal static class RuntimeApplication
         {
             startup.RecordStage("ContentReadsStarted");
             using (EngineTrace.Begin(ApplicationTrace.DeviceCreation))
-                display.Initialize(options, useWarp, title, boot);
+                display.Initialize(options, useWarp, title, boot, (script?.Application ?? application)?.MeasureShadowInvalidation == true);
             startup.RecordStage("DeviceCreation");
             using (EngineTrace.Begin(ApplicationTrace.ContentWait))
                 display.Wait(contentReads);
@@ -273,11 +276,14 @@ internal static class RuntimeApplication
         private bool _windowVSync;
         private bool _meshShadersDisabled;
         private bool _validation;
+        private bool _calibratedTimestampsRequired;
 
-        internal void Initialize(RuntimeStartupOptions options, bool useWarp, string title, ApplicationSettingsBlock boot)
+        internal void Initialize(RuntimeStartupOptions options, bool useWarp, string title, ApplicationSettingsBlock boot,
+            bool measureShadowInvalidation = false)
         {
+            bool calibratedTimestampsRequired = options.MeasureBlending || measureShadowInvalidation;
             if (Window is not null && _meshShadersDisabled == options.DisableMeshShaders &&
-                _validation == options.DeviceValidation)
+                _validation == options.DeviceValidation && _calibratedTimestampsRequired == calibratedTimestampsRequired)
             {
                 if (_windowVSync != options.WindowVSync)
                     ReconfigureSwapchain(Backend, Swapchain, options, Window.ClientWidth, Window.ClientHeight,
@@ -288,6 +294,7 @@ internal static class RuntimeApplication
             _windowVSync = options.WindowVSync;
             _meshShadersDisabled = options.DisableMeshShaders;
             _validation = options.DeviceValidation;
+            _calibratedTimestampsRequired = calibratedTimestampsRequired;
             if (Window is not null)
             {
                 Swapchain.Dispose();
@@ -320,7 +327,7 @@ internal static class RuntimeApplication
                 adapterId,
                 queues,
                 requiredFeatures: DeviceFeatures.Presentation | DeviceFeatures.IndirectCommands |
-                    (options.MeasureBlending ? DeviceFeatures.CalibratedTimestamps : DeviceFeatures.None),
+                    (calibratedTimestampsRequired ? DeviceFeatures.CalibratedTimestamps : DeviceFeatures.None),
                 optionalFeatures: DeviceFeatures.CalibratedTimestamps |
                     (options.DisableMeshShaders ? DeviceFeatures.None : DeviceFeatures.MeshShaders),
                 label: "SomeEngine Runtime Device"));
@@ -456,7 +463,7 @@ internal static class RuntimeApplication
         {
             SwapchainAcquireStatus status = backend.Acquire(
                 swapchain,
-                new SwapchainAcquireOptions(TimeSpan.Zero, PreserveContents: false),
+                new SwapchainAcquireOptions(TimeSpan.FromMilliseconds(1), PreserveContents: false),
                 out SwapchainImage image);
             if (status == SwapchainAcquireStatus.Success)
                 return image;
@@ -588,7 +595,7 @@ internal static class RuntimeApplication
             : new CanvasRenderer(backend, device, renderGraph, renderWorld, surfaceMaterial, PresentationFormat, glyphMaterial);
         GraphRegionId sceneRegion, primaryGeometryRegion, primaryDepthAfterRegion, targetGeometryRegion;
         GraphRegionId targetGeometryAfterRegion, shadingRegion, temporalRegion, presentationRegion, uiRegion, feedbackRegion;
-        GraphRegionId frameOutputRegion, linearOutputRegion, colorEffectsRegion;
+        GraphRegionId frameOutputRegion, linearOutputRegion, colorEffectsRegion, additionalViewsRegion;
         using (RenderGraphEdit edit = renderGraph.BeginEdit())
         {
             _ = edit.AddRegion("Frame uploads");
@@ -598,6 +605,7 @@ internal static class RuntimeApplication
             targetGeometryRegion = edit.AddRegion("Target view geometry");
             targetGeometryAfterRegion = edit.AddRegion("After target view geometry");
             shadingRegion = edit.AddRegion("Shading");
+            additionalViewsRegion = edit.AddRegion("Additional views");
             linearOutputRegion = edit.AddFrameRegion("Linear frame output");
             GraphRegionId postProcessing = edit.AddRegion("Post processing");
             colorEffectsRegion = edit.AddRegion("Surface effects", postProcessing);
@@ -624,6 +632,8 @@ internal static class RuntimeApplication
         var stageResources = new GraphResourceGroup();
         stageResources.Add(lighting);
         stageResources.Add(skinning);
+        var viewResources = new GraphResourceGroup();
+        viewResources.Add(skinning);
         var lightSystem = new RenderLightSetSystem();
         _ = prepareSystems.Add(lightSystem);
         var streamingFeedback = new ClusterStreamingFeedbackChannel();
@@ -658,6 +668,8 @@ internal static class RuntimeApplication
             targetGeometryAfterRegion,
             feedbackRegion,
             renderDevice);
+        bool measureShadowInvalidation = (script?.Application ?? application)?.MeasureShadowInvalidation == true;
+        if (measureShadowInvalidation) virtualShadows.EnableInvalidationTiming();
         stageResources.Add(virtualShadows);
         var frameSystems = new RenderFrameSystems(renderWorld, instances);
         var geometry = new ApplicationGeometryContext(backend, device, renderDevice, cluster, renderGraph,
@@ -671,6 +683,15 @@ internal static class RuntimeApplication
         TemporalFeature? temporal = null;
         IApplicationColorFeature? colorFeature = null;
         GraphReadbackId presentationReadback = default;
+        var additionalViews = new ApplicationViews(renderGraph, additionalViewsRegion,
+            (settings, regions) => CreatePipeline(new ClusterPipelineOutputDescription(settings.Width, settings.Height, 1),
+                metrics: false, additionalView: settings, viewRegions: regions),
+            receiver =>
+            {
+                var systems = new RenderFrameSystems(renderWorld, instances);
+                _ = systems.Add(receiver);
+                return systems;
+            });
         Task<GameUpdateTiming>? nextGameUpdate = null;
         var input = new RuntimeInput(elementInput);
         int width = boot.Width;
@@ -680,10 +701,14 @@ internal static class RuntimeApplication
         int analyzedFrames = 0;
         int reusedAnalysisFrames = 0;
         ClusterShadingPath shadingPath = script?.ShadingPath ?? options.ShadingPath;
+        VirtualShadowFrameQuality? shadowQuality = null;
+        Action<VirtualShadowFrameQuality>? receiveShadowQuality = null;
 
         ClusterPipelineSystem CreatePipeline(
             in ClusterPipelineOutputDescription description,
-            bool metrics) => new(
+            bool metrics,
+            ApplicationViewSettings? additionalView = null,
+            ClusterGraphRegions? viewRegions = null) => new(
             backend,
             device,
             renderDevice,
@@ -693,25 +718,26 @@ internal static class RuntimeApplication
             materialAssignments,
             pipelineConfiguration,
             renderGraph,
-            new ClusterGraphRegions(primaryGeometryRegion, targetGeometryRegion, shadingRegion, feedbackRegion),
+            viewRegions ?? new ClusterGraphRegions(primaryGeometryRegion, targetGeometryRegion, shadingRegion, feedbackRegion),
             description,
             streamingFeedback,
-            stageResources,
+            additionalView is null ? stageResources : viewResources,
             new ClusterPipelineOptions
             {
                 ShadingPath = script?.ShadingPath ?? options.ShadingPath,
+                DebugMode = additionalView?.Mode ?? 0,
                 EnableAsyncCompute = options.AsyncCompute,
                 ForceHardwareRaster = forceHardwareRaster,
                 SoftwareRasterEdgeThreshold = script?.RasterEdgePixels ?? 32,
                 UseInstanceGroups = options.UseInstanceGroups,
-                EnableFrameMetricsReadback = metrics || application?.FrameRendered is not null,
+                EnableFrameMetricsReadback = metrics || (additionalView is null && application?.FrameRendered is not null),
                 LodThreshold = application?.LodThreshold ?? 0.25f,
-                MeasureBlending = options.MeasureBlending,
+                MeasureBlending = additionalView is null && options.MeasureBlending,
                 BlendIndex = options.BlendIndex,
                 BlendTriangleCapacity = script?.BlendTriangleCapacity ?? ClusterPipelineOptions.DefaultBlendTriangleCapacity,
                 BlendReferenceCapacity = script?.BlendReferenceCapacity ?? 1_048_576,
                 MaxCandidates = script?.ClusterWorkCapacity ?? 1_048_576,
-            }, viewGrid: blendGrid, deformBounds: skinBounds);
+            }, viewGrid: additionalView is null ? blendGrid : default, deformBounds: skinBounds);
 
         GameUpdateTiming UpdateInterface(int frameNumber, int canvasWidth, int canvasHeight, double deltaSeconds, long gameUpdateStarted)
         {
@@ -742,9 +768,9 @@ internal static class RuntimeApplication
                 GC.GetAllocatedBytesForCurrentThread() - allocated, gameMs);
         }
 
-        void CaptureRenderGraphDiagnostics(in RenderGraphDiagnosticsView diagnostics)
+        void CaptureRenderGraphStatistics(in RenderGraphStatistics statistics)
         {
-            latestGraphStatistics = diagnostics.Statistics;
+            latestGraphStatistics = statistics;
             hasGraphStatistics = true;
             analyzedFrames++;
             if (latestGraphStatistics.AnalysisReused) reusedAnalysisFrames++;
@@ -770,7 +796,7 @@ internal static class RuntimeApplication
         int frameIndex = 0;
         uint submittedFrames = 0;
         var sceneEdit = new SceneEdit(scene, window);
-        var applicationFrame = new ApplicationFrame(mainWorld, elementSystems, extraction, sceneEdit, input, cluster, startup, device.Adapter)
+        var applicationFrame = new ApplicationFrame(mainWorld, elementSystems, extraction, sceneEdit, input, cluster, startup, device.Adapter, measureShadowInvalidation)
             { Width = boot.Width, Height = boot.Height };
         int actionIndex = 0;
         try
@@ -820,6 +846,8 @@ internal static class RuntimeApplication
             bool debugUiOpen = !options.HideDebugUi && !options.VerifyFrameOutput;
             FrameOutputMetrics? verifiedOutput = null;
             uint maximumRecoveredClusters = 0;
+            RenderGraphStatisticsHandler? captureGraphStatistics =
+                options.VerifyFrameOutput ? CaptureRenderGraphStatistics : null;
             while (options.FrameLimit == 0 || frameIndex < options.FrameLimit)
             {
                 long frameStarted = Stopwatch.GetTimestamp();
@@ -950,6 +978,7 @@ internal static class RuntimeApplication
                     while (script is not null && actionIndex < script.Actions.Count && script.Actions[actionIndex].Frame == frameIndex)
                         script.Actions[actionIndex++].Execute(sceneEdit);
                     applicationFrame.Index = frameIndex;
+                    applicationFrame.ShadowInvalidationTimingRequested = false;
                     applicationFrame.Width = window.ClientWidth;
                     applicationFrame.Height = window.ClientHeight;
                     applicationFrame.DeltaSeconds = deltaSeconds;
@@ -979,9 +1008,10 @@ internal static class RuntimeApplication
                         scene.Update(sceneSeconds);
                     gameTiming = UpdateInterface(frameIndex, width, height, deltaSeconds, gameStarted);
                 }
+                Matrix4x4 unjitteredProjection = scene.Projection(width, height);
                 RuntimeViewFrame viewFrame = RuntimeViewFrame.Create(
                     scene.Camera.View,
-                    scene.Projection(width, height),
+                    unjitteredProjection,
                     width,
                     height,
                     submittedFrames,
@@ -992,7 +1022,7 @@ internal static class RuntimeApplication
                     playerId: scene.PlayerId,
                     firstPerson: scene.FirstPerson);
                 viewSystem.Stage(viewFrame.View);
-                if (application?.DebugUiEnabled != false) ui.DrawDebugWindow(
+                if (application?.DebugUiEnabled != false && debugUiOpen) ui.DrawDebugWindow(
                     ref debugUiOpen,
                     ref animateScene,
                     new RuntimeUiMetrics(
@@ -1005,6 +1035,8 @@ internal static class RuntimeApplication
                         scene.Camera.Position,
                         window.HasFocus,
                         options.TemporalAntialiasing), application?.DrawDebugUi);
+                application?.DrawOverlay?.Invoke();
+                IReadOnlyList<ApplicationView> selectedViews = application?.ViewsEnabled == true ? application.Views : [];
                 bool reportMilestones = frameIndex == 0;
                 if (reportMilestones)
                     Console.WriteLine("First frame: applying extracted scene.");
@@ -1020,7 +1052,11 @@ internal static class RuntimeApplication
                 if (captureLinear)
                 {
                     linearVerifier ??= new FrameOutputVerifier(backend, device, width, height, Format.R16G16B16A16Float);
-                    if (shadowSettings.Enabled) virtualShadows.EnableQualityCapture();
+                    if (shadowSettings.Enabled)
+                    {
+                        virtualShadows.EnableQualityCapture();
+                        receiveShadowQuality ??= value => shadowQuality = value;
+                    }
                 }
                 Prepare(
                     prepareSystems,
@@ -1049,7 +1085,16 @@ internal static class RuntimeApplication
                 virtualShadows.ReconcileLights(lightSystem.RequireCurrent());
                 ClusterPipelineOutputs clusterOutputs;
                 using (EngineTrace.Begin(ApplicationTrace.Reconcile))
+                {
+                    if (!additionalViews.Matches(selectedViews))
+                    {
+                        if (presentation is not null && additionalViews.ChangesOutputs(selectedViews))
+                            ui.InstallGraph(renderGraph, presentation.Target, uiRegion, additionalViews.RetainedImages(selectedViews));
+                        additionalViews.ReconcileSettings(selectedViews);
+                    }
                     clusterOutputs = pipeline.ReconcileGraph();
+                    additionalViews.ReconcileGraph(shadingPath);
+                }
                 double reconcileMs = Stopwatch.GetElapsedTime(reconcileStarted).TotalMilliseconds;
                 startup.RecordStage("ReconcileGraph");
                 bool connectPostProcessing = temporal is null;
@@ -1101,7 +1146,7 @@ internal static class RuntimeApplication
                     presentationReadback = pipeline.PageFaultReadback;
                 }
                 surfaces?.ReconcileGraph(presentation.Target, new WorldCanvasTarget(presentation.Target, clusterOutputs.Depth, viewEntity));
-                ui.InstallGraph(renderGraph, presentation.Target, uiRegion);
+                ui.InstallGraph(renderGraph, presentation.Target, uiRegion, additionalViews.Images);
                 if (reportMilestones)
                     Console.WriteLine("First frame: acquiring presentation image.");
                 SwapchainImage? image = sceneEdit.FrameCanceled
@@ -1112,7 +1157,7 @@ internal static class RuntimeApplication
                     Width = width, Height = height, CameraPosition = scene.Camera.Position,
                     WorldOrigin = renderWorld.WorldOrigin,
                     View = scene.Camera.View, Projection = viewFrame.View.Projection,
-                    UnjitteredProjection = scene.Projection(width, height), JitterPixels = viewFrame.JitterPixels,
+                    UnjitteredProjection = unjitteredProjection, JitterPixels = viewFrame.JitterPixels,
                     Options = options with { ShadingPath = shadingPath },
                     ShadowSettings = shadowSettings,
                     TemporalSettings = script?.TemporalSettings ?? TemporalResolveSettings.Default,
@@ -1120,7 +1165,10 @@ internal static class RuntimeApplication
                     ClusterWorkCapacity = script?.ClusterWorkCapacity ?? 1_048_576,
                     Adapter = device.Adapter.Name, DriverVersion = device.Adapter.DriverVersion,
                 }) : null;
-                VirtualShadowFrameQuality? shadowQuality = null;
+                // ExecuteFrame drains linear capture readbacks before the next frame reuses this callback.
+                shadowQuality = null;
+                if (image is not null && applicationFrame.ShadowInvalidationTimingRequested)
+                    virtualShadows.RequestInvalidationTiming(frameIndex);
                 long executeStarted = Stopwatch.GetTimestamp();
                 pipeline.SetMeasurementFrame(frameIndex);
                 startup.RecordStage("PostProcessing");
@@ -1141,6 +1189,10 @@ internal static class RuntimeApplication
                     temporal,
                     presentation,
                     ui,
+                    additionalViews,
+                    renderWorld.Read<RenderView>(viewEntity),
+                    unjitteredProjection,
+                    application?.PresentationBounds,
                     surfaces,
                     image,
                     width,
@@ -1153,8 +1205,8 @@ internal static class RuntimeApplication
                     frameOutputRegion,
                     captureLinear ? linearVerifier : null,
                     linearOutputRegion,
-                    captureLinear && shadowSettings.Enabled ? value => shadowQuality = value : null,
-                    options.VerifyFrameOutput ? CaptureRenderGraphDiagnostics : null,
+                    captureLinear && shadowSettings.Enabled ? receiveShadowQuality : null,
+                    captureGraphStatistics,
                     options.SynchronousFrames || application?.FrameRendered is not null,
                     options.TemporalAntialiasing,
                     viewFrame.JitterPixels,
@@ -1253,7 +1305,7 @@ internal static class RuntimeApplication
                 if (reportMilestones)
                     Console.WriteLine("First frame: presenting.");
                 PresentStatus present = backend.Present(
-                    backend.GetQueue(device, QueueType.Graphics),
+                    graphicsQueue,
                     image.Value);
                 double cpuMs = measurements is null ? 0
                     : Stopwatch.GetElapsedTime(Math.Min(frameStarted, gameStarted)).TotalMilliseconds;
@@ -1398,6 +1450,8 @@ internal static class RuntimeApplication
             renderGraph.CollectCompleted();
             application?.Shutdown?.Invoke(applicationFrame);
             geometry.FinishGame();
+            if (ui is not null && presentation is not null) ui.InstallGraph(renderGraph, presentation.Target, uiRegion);
+            additionalViews.Dispose();
             ui?.Dispose();
             presentation?.Dispose();
             temporal?.Dispose();
@@ -1433,21 +1487,25 @@ internal static class RuntimeApplication
                 Console.WriteLine("First frame: preparing streamed meshes.");
             // Mesh discovery reads only the newly published RenderWorld. Asset I/O may complete
             // asynchronously; no renderer path reaches back into the authoritative GameWorld.
-            ValueTask<ClusterMeshPrepareResult> meshPreparation =
-                cluster.PrepareMeshesAsync();
-            ClusterMeshPrepareResult meshPrepare =
-                meshPreparation.IsCompletedSuccessfully
-                    ? meshPreparation.Result
-                    : RuntimeWait.Task(
-                        meshPreparation.AsTask(),
-                        window,
-                        FrameTimeout);
-            if (meshPrepare.UnresolvedMeshes != 0)
+            using (EngineTrace.Begin(ApplicationTrace.PrepareMeshes))
             {
-                throw new InvalidOperationException(
-                    $"{meshPrepare.UnresolvedMeshes} scene mesh assets were unresolved during Cluster preparation.");
+                ValueTask<ClusterMeshPrepareResult> meshPreparation =
+                    cluster.PrepareMeshesAsync();
+                ClusterMeshPrepareResult meshPrepare =
+                    meshPreparation.IsCompletedSuccessfully
+                        ? meshPreparation.Result
+                        : RuntimeWait.Task(
+                            meshPreparation.AsTask(),
+                            window,
+                            FrameTimeout);
+                if (meshPrepare.UnresolvedMeshes != 0)
+                {
+                    throw new InvalidOperationException(
+                        $"{meshPrepare.UnresolvedMeshes} scene mesh assets were unresolved during Cluster preparation.");
+                }
             }
-            streamingFeedback.Pump();
+            using (EngineTrace.Begin(ApplicationTrace.StreamingFeedback))
+                streamingFeedback.Pump();
             if (reportMilestones)
                 Console.WriteLine("First frame: publishing prepare systems.");
             using (EngineTrace.Begin(ApplicationTrace.PrepareSystems))
@@ -1474,6 +1532,10 @@ internal static class RuntimeApplication
         TemporalFeature temporal,
         RuntimePresentationPipeline presentation,
         RuntimeUiRenderer ui,
+        ApplicationViews additionalViews,
+        in RenderView mainView,
+        in Matrix4x4 unjitteredProjection,
+        ScissorRect? presentationBounds,
         CanvasRenderer? surfaces,
         SwapchainImage? image,
         int width,
@@ -1487,7 +1549,7 @@ internal static class RuntimeApplication
         FrameOutputVerifier? linearVerifier,
         GraphRegionId linearOutputRegion,
         Action<VirtualShadowFrameQuality>? captureShadowQuality,
-        RenderGraphDiagnosticsHandler? graphDiagnostics,
+        RenderGraphStatisticsHandler? graphStatistics,
         bool synchronousFrames,
         bool temporalAntialiasing,
         Vector2 jitterPixels,
@@ -1517,17 +1579,22 @@ internal static class RuntimeApplication
                     nextGraphFrame,
                     new RenderGraphFrameOptions(
                         SubmissionMode: FrameSubmissionMode.RecordAhead,
-                        Diagnostics: graphDiagnostics,
-                        GpuTimes: measurements is null ? null : measurements.ReceiveGpu));
+                        GpuTimes: measurements is null ? null : measurements.ReceiveGpu)
+                    {
+                        Statistics = graphStatistics,
+                    });
                 graphFrameIdentity = graphFrame.FrameIdentity;
                 try
                 {
                     geometry.Observe(ref graphFrame);
                     if (reportMilestones)
                         Console.WriteLine("First frame: recording render systems.");
-                    if (image is { } acquired) presentation.Bind(ref graphFrame, acquired, graphicsQueue);
+                    if (image is { } acquired) presentation.Bind(ref graphFrame, acquired, graphicsQueue, presentationBounds);
                     using (EngineTrace.Begin(ApplicationTrace.RenderSystems))
+                    {
                         systems.Update(frame, graphFrame);
+                        additionalViews.Record(frame, graphFrame, mainView, unjitteredProjection);
+                    }
                     renderDevice.OrderTextureUploadsBefore(ref graphFrame, presentation.DrawPass);
                     var motion = new MotionFeatureOutput(
                         clusterOutputs.MotionVectors,
@@ -1569,7 +1636,7 @@ internal static class RuntimeApplication
                     if (outputVerifier is not null)
                     {
                         outputVerifier.ReadPixels();
-                        if (graphDiagnostics is not null) frameOutput = outputVerifier.Analyze();
+                        if (graphStatistics is not null) frameOutput = outputVerifier.Analyze();
                     }
                     linearVerifier?.ReadPixels();
                     if (synchronousFrames || readOutput) graph.CollectCompleted();

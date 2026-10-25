@@ -364,9 +364,9 @@ public sealed class ImportContext : IDisposable, IAsyncDisposable
     {
         try
         {
-            List<Exception> errors = [];
+            List<Exception>? errors = null;
             try { await _cancellation.CancelAsync().ConfigureAwait(false); }
-            catch (Exception error) { errors.Add(error); }
+            catch (Exception error) { (errors ??= []).Add(error); }
             try
             {
                 await Task.WhenAll(assets.SelectMany(value => value.Conversions.Append(value.Completion))
@@ -375,12 +375,12 @@ public sealed class ImportContext : IDisposable, IAsyncDisposable
             catch { /* Errors are also delivered to the corresponding asset or block request. */ }
             foreach (AssetResult asset in assets)
                 try { await asset.Content.DisposeAsync().ConfigureAwait(false); }
-                catch (Exception error) { errors.Add(error); }
+                catch (Exception error) { (errors ??= []).Add(error); }
             for (int index = resources.Length - 1; index >= 0; index--)
                 try { await resources[index].DisposeAsync().ConfigureAwait(false); }
-                catch (Exception error) { errors.Add(error); }
+                catch (Exception error) { (errors ??= []).Add(error); }
             _cancellation.Dispose();
-            if (errors.Count != 0) throw new AggregateException("Import cleanup failed.", errors);
+            if (errors is not null) throw new AggregateException("Import cleanup failed.", errors);
             completion.TrySetResult();
         }
         catch (Exception error) { completion.TrySetException(error); }

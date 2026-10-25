@@ -147,6 +147,46 @@ internal sealed partial class FrameExecutor
     }
 
     [Conditional("DEBUG")]
+    internal static void ValidateVertexBuffers(
+        RenderGraphFrameState frame,
+        int pass,
+        scoped ReadOnlySpan<VertexBufferBinding> bindings)
+    {
+        foreach (ref readonly VertexBufferBinding binding in bindings)
+            frame.Executor.ValidateBuffer(pass, binding.Buffer,
+                new BufferRange(binding.Offset, binding.Size), write: false);
+    }
+
+    [Conditional("DEBUG")]
+    internal static void ValidateStreamOutputBuffers(
+        RenderGraphFrameState frame,
+        int pass,
+        ReadOnlySpan<StreamOutputBufferBinding> bindings)
+    {
+        foreach (ref readonly StreamOutputBufferBinding binding in bindings)
+        {
+            frame.Executor.ValidateBuffer(pass, binding.Buffer,
+                new BufferRange(binding.Offset, binding.Size), write: true);
+            if (binding.FilledSizeBuffer is not null)
+                frame.Executor.ValidateBuffer(pass, binding.FilledSizeBuffer,
+                    new BufferRange(binding.FilledSizeOffset, sizeof(uint)), write: true);
+        }
+    }
+
+    [Conditional("DEBUG")]
+    internal static void ValidateTextureResolve(
+        RenderGraphFrameState frame,
+        int pass,
+        in TextureResolve resolve)
+    {
+        TextureAspects aspects = TextureFormatRules.Aspects(resolve.Format);
+        frame.Executor.ValidateTexture(pass, resolve.Source,
+            new TextureSubresourceRange(resolve.SourceMipLevel, 1, resolve.SourceArrayLayer, 1, aspects), write: false);
+        frame.Executor.ValidateTexture(pass, resolve.Destination,
+            new TextureSubresourceRange(resolve.DestinationMipLevel, 1, resolve.DestinationArrayLayer, 1, aspects), write: true);
+    }
+
+    [Conditional("DEBUG")]
     internal void ValidateBuffer(int pass, Buffer buffer, in BufferRange range, bool write)
     {
         int resource = FindBuffer(buffer);

@@ -34,7 +34,9 @@ public struct MeshPageHeader
 
     public const int Size = 48;
     public const int MaxPageSize = 131072;
+    public const int MaxClustersPerPage = 256;
     public const int RootPageSize = 32768;
+    public const int MaxRootClusters = 64;
     public const uint RootPage = 1;
 }
 

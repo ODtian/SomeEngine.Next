@@ -319,6 +319,37 @@ public sealed class DiskAssetBehaviorTests
     }
 
     [Fact]
+    public async Task UnrelatedCompletionEvictsAnOlderVersionBeforeTheNewerReadFails()
+    {
+        using var files = new TestFiles();
+        Guid id = Guid.NewGuid();
+        Guid otherId = Guid.NewGuid();
+        files.Save(id, 1, [1]);
+        using (DiskProbeAsset otherFile = CreateAsset(otherId, "other", 2, [2]))
+            files.Project.RegisterAsset(await otherFile.SaveAsync(System.IO.Path.Combine(files.Directory, "other.probe.asset")));
+        var storage = new FailingVersionStorage(files.Project.CreateStorage(), id);
+        await using var loader = new AssetLoader(storage);
+        await using DiskProbeAsset first = await DiskProbeAsset.OpenAsync(loader, new AssetId<DiskProbeAsset>(id));
+        Guid firstVersion = first.SourceVersion;
+
+        storage.SelectNewerVersion = true;
+        Task<DiskProbeAsset> newerRead = DiskProbeAsset.OpenAsync(loader, new AssetId<DiskProbeAsset>(id)).AsTask();
+        await storage.Started.Task.WaitAsync(TimeSpan.FromSeconds(15));
+        await using DiskProbeAsset unrelated = await DiskProbeAsset.OpenAsync(loader, new AssetId<DiskProbeAsset>(otherId));
+        Assert.Equal(3, storage.OpenCount);
+
+        storage.Continue.TrySetResult();
+        await Assert.ThrowsAsync<IOException>(() => newerRead.WaitAsync(TimeSpan.FromSeconds(15)));
+        storage.SelectNewerVersion = false;
+        await using DiskProbeAsset reopened = await DiskProbeAsset.OpenAsync(loader, new AssetId<DiskProbeAsset>(id));
+
+        Assert.Equal(4, storage.OpenCount);
+        Assert.Equal(firstVersion, reopened.SourceVersion);
+        Assert.Equal(1, (await first.GetBlockAsync<DiskProbeBlock>()).Number);
+        Assert.Equal(1, (await reopened.GetBlockAsync<DiskProbeBlock>()).Number);
+    }
+
+    [Fact]
     public async Task StorageWithoutVersionsDoesNotCreateAnUnchangingCacheEntry()
     {
         using var files = new TestFiles();
@@ -550,6 +581,36 @@ public sealed class DiskAssetBehaviorTests
             if (Interlocked.Exchange(ref _closed, 1) != 0) return;
             try { await source.DisposeAsync(); }
             finally { closed(); }
+        }
+    }
+
+    private sealed class FailingVersionStorage(IAssetStorage source, Guid changedId) : IAssetStorage
+    {
+        private readonly Guid _newerVersion = Guid.NewGuid();
+        private int _openCount;
+        internal TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal TaskCompletionSource Continue { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal bool SelectNewerVersion { get; set; }
+        internal int OpenCount => Volatile.Read(ref _openCount);
+
+        public bool TryFind(Guid id, out AssetEntry entry)
+        {
+            if (!source.TryFind(id, out entry)) return false;
+            if (id == changedId && SelectNewerVersion)
+                entry = entry with { Version = _newerVersion };
+            return true;
+        }
+
+        public async ValueTask<IRangeSource> OpenAsync(AssetEntry entry, CancellationToken cancellationToken = default)
+        {
+            Interlocked.Increment(ref _openCount);
+            if (entry.AssetGuid == changedId && entry.Version == _newerVersion)
+            {
+                Started.TrySetResult();
+                await Continue.Task.WaitAsync(cancellationToken);
+                throw new IOException("Injected newer-version read failure.");
+            }
+            return await source.OpenAsync(entry, cancellationToken);
         }
     }
 

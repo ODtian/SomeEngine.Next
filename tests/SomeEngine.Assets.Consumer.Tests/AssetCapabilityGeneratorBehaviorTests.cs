@@ -14,10 +14,12 @@ public sealed class AssetCapabilityGeneratorBehaviorTests
     [Fact]
     public void ImporterConstructorServicesProduceACompilerDiagnostic()
     {
-        var result = Compile(ExtensionSource.Replace("public Importer() { Number = 47; }",
-            "public Importer(Dependency dependency) { Number = dependency.Number; }", StringComparison.Ordinal));
-        Assert.Contains(result.Diagnostics, value => value.Id == "SEAC001"
-            && value.Severity == DiagnosticSeverity.Error);
+        string source = ExtensionSource.Replace("public Importer() { }",
+            "public Importer(Dependency dependency) { _ = dependency.Number; }", StringComparison.Ordinal)
+            + "\npublic sealed class Dependency { public int Number => 47; }";
+        var result = Compile(source);
+        Assert.Contains(result.Diagnostics, value => value.Id == "SEAC004"
+            && value.Severity == DiagnosticSeverity.Error && value.GetMessage().Contains("Extension.Importer", StringComparison.Ordinal));
     }
 
     private const string ExtensionSource = """
@@ -169,12 +171,516 @@ public sealed class AssetCapabilityGeneratorBehaviorTests
                     value => value.ImporterType == typeof(Extension.Importer)).ImplementationVersion;
             }
             """;
-        string original = (string)Execute(Emit(Compile(ExtensionSource + read)))!;
-        string changed = (string)Execute(Emit(Compile(ExtensionSource.Replace("=> 47", "=> 48", StringComparison.Ordinal) + read)))!;
-        string extra = (string)Execute(Emit(Compile(ExtensionSource + read + "\n[AssetCapabilities] public static partial class ExtraRegistration;")))!;
+        string original = (string)Execute(Emit(Compile(ExtensionSource + read, assemblyName: "VersionedExtension")))!;
+        string changed = (string)Execute(Emit(Compile(ExtensionSource.Replace("=> 47", "=> 48", StringComparison.Ordinal) + read, assemblyName: "VersionedExtension")))!;
+        string extra = (string)Execute(Emit(Compile(ExtensionSource + read + "\n[AssetCapabilities] public static partial class ExtraRegistration;", assemblyName: "VersionedExtension")))!;
         Assert.NotEmpty(original);
         Assert.NotEqual(original, changed);
         Assert.Equal(original, extra);
+    }
+
+    private const string VersionedBlockSource = """
+        using SomeEngine.Assets;
+        using SomeEngine.Serialization;
+        namespace BlockLibrary;
+        [AssetBlock("example.versioned-block"), BinarySerializable, BinaryFields(nameof(Value))]
+        public sealed partial class Data : AssetBlock
+        {
+            public partial int Value { get; set; }
+            public static int InitialValue => ValueBuilder.Read();
+        }
+        internal static class ValueBuilder { public static int Read() => 47; }
+        public static class ShaderCompiler { public static int Revision => 1; }
+        """;
+
+    private const string ExternalBlockImporterSource = """
+        using System.Threading;
+        using System.Threading.Tasks;
+        using SomeEngine.Assets;
+        using SomeEngine.Assets.Importing;
+        namespace Extension;
+        public sealed class Source;
+        public sealed record Settings(int Value);
+        [AssetImporter("bcc64662-e334-49b1-b559-55d89b06e351", typeof(BlockLibrary.Data))]
+        public sealed class Importer : IAssetImporter<Source, Settings>
+        {
+            public ValueTask ImportAsync(Source source, Settings settings, ImportContext context,
+                ImportOutput output, CancellationToken cancellationToken) => ValueTask.CompletedTask;
+        }
+        [AssetCapabilities] public static partial class LibraryAssets;
+        public static class Consumer
+        {
+            public static string Execute() => System.Linq.Enumerable.Single(LibraryAssets.ImporterCapabilities,
+                value => value.ImporterType == typeof(Importer)).ImplementationVersion;
+        }
+        """;
+
+    [Fact]
+    public void BuiltinPointerArithmeticDoesNotAcquireAnUnrelatedImplementationBody()
+    {
+        string source = VersionedBlockSource.Replace("public static int Read() => 47;", """
+            public static unsafe int Read()
+            {
+                byte* values = stackalloc byte[2];
+                values[0] = 47;
+                values[1] = 11;
+                byte* cursor = values + 1;
+                return *(cursor - 1);
+            }
+            """, StringComparison.Ordinal);
+        string version = ImporterVersionForBlocks(source);
+        Assert.Equal(version, ImporterVersionForBlocks(source.Replace("Revision => 1", "Revision => 2", StringComparison.Ordinal)));
+        Assert.NotEqual(version, ImporterVersionForBlocks(source.Replace("values[0] = 47", "values[0] = 48", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public void FunctionPointerInvocationEmitsItsExplicitConservativeImplementationContract()
+    {
+        const string source = """
+            public static unsafe class NativeCalls
+            {
+                public static int Invoke(delegate*<int, int> callback, int value) => callback(value);
+            }
+            """;
+        var result = Compile(source);
+        Emit(result);
+        AttributeData metadata = Assert.Single(result.Compilation.Assembly.GetAttributes().Where(value =>
+            value.AttributeClass?.ToDisplayString() == "System.Reflection.AssemblyMetadataAttribute"
+            && value.ConstructorArguments.Length == 2
+            && value.ConstructorArguments[0].Value as string == "SomeEngine.ImplementationInputs.v1:NativeCalls"));
+        string encoded = Assert.IsType<string>(metadata.ConstructorArguments[1].Value);
+        Assert.Equal("1", encoded.Split('\n')[1]);
+    }
+
+    [Fact]
+    public void NameofACompilerMemberDoesNotDependOnItsImplementation()
+    {
+        string source = VersionedBlockSource.Replace("public static int InitialValue", "public static string CompilerName => nameof(ShaderCompiler.Revision); public static int InitialValue", StringComparison.Ordinal);
+        Assert.Equal(ImporterVersionForBlocks(source),
+            ImporterVersionForBlocks(source.Replace("Revision => 1", "Revision => 2", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public void SizeofTracksNestedValueLayout()
+    {
+        string source = VersionedBlockSource.Replace("public static int Read() => 47", "public static unsafe int Read() => sizeof(Layout)", StringComparison.Ordinal)
+            + "\npublic struct Layout { public Nested Value; } public struct Nested { public int Value; }";
+        Assert.NotEqual(ImporterVersionForBlocks(source),
+            ImporterVersionForBlocks(source.Replace("struct Nested { public int Value; }", "struct Nested { public long Value; }", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public void WithExpressionsTrackTheSuppliedRecordsCopyImplementation()
+    {
+        string source = VersionedBlockSource.Replace("Read() => 47", "Read(Value value = null!) => (value with { }).Data", StringComparison.Ordinal)
+            + "\npublic record Value { public int Data { get; init; } public Value() { } protected Value(Value source) { Data = source.Data + 1; } }";
+        Assert.NotEqual(ImporterVersionForBlocks(source),
+            ImporterVersionForBlocks(source.Replace("source.Data + 1", "source.Data + 2", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public void ImplicitIndexingTracksLengthAndIndexerImplementations()
+    {
+        string source = VersionedBlockSource.Replace("Read() => 47", "Read(Buffer value = null!) => value[^1]", StringComparison.Ordinal)
+            + "\npublic sealed class Buffer { public int Length => 1; public int this[int index] => 47; }";
+        Assert.NotEqual(ImporterVersionForBlocks(source),
+            ImporterVersionForBlocks(source.Replace("this[int index] => 47", "this[int index] => 48", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public void CollectionExpressionsTrackTheirSelectedBuilderImplementation()
+    {
+        string source = VersionedBlockSource.Replace("Read() => 47;", "Read() { Values values = [1]; return values.Count; }", StringComparison.Ordinal) + """
+
+            [System.Runtime.CompilerServices.CollectionBuilder(typeof(ValuesBuilder), nameof(ValuesBuilder.Create))]
+            public readonly struct Values : System.Collections.Generic.IEnumerable<int>
+            {
+                private readonly int[] _items;
+                public Values(int[] items) => _items = items;
+                public int Count => _items.Length;
+                public System.Collections.Generic.IEnumerator<int> GetEnumerator() => ((System.Collections.Generic.IEnumerable<int>)_items).GetEnumerator();
+                System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+            }
+            public static class ValuesBuilder
+            {
+                public static Values Create(System.ReadOnlySpan<int> values) => new(new[] { 47 });
+            }
+            """;
+        Assert.NotEqual(ImporterVersionForBlocks(source),
+            ImporterVersionForBlocks(source.Replace("new[] { 47 }", "new[] { 48 }", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public void APhantomCodecTypeArgumentDoesNotDependOnItsRuntimeImplementation()
+    {
+        Assert.Equal(ImporterVersionForBlocks(TypedIdBlockSource),
+            ImporterVersionForBlocks(TypedIdBlockSource.Replace("Revision => 1", "Revision => 2", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public void AGeneratedFieldStillDependsOnItsHandwrittenCodecBody()
+    {
+        Assert.NotEqual(ImporterVersionForBlocks(TypedIdBlockSource),
+            ImporterVersionForBlocks(TypedIdBlockSource.Replace("writer.WriteGuid(value.Value)", "writer.WriteGuid(System.Guid.Empty)", StringComparison.Ordinal)));
+    }
+
+    [Theory]
+    [InlineData("SchemaFingerprint => 17", "SchemaFingerprint => 18")]
+    [InlineData("SchemaEpoch => 1", "SchemaEpoch => 2")]
+    [InlineData("example.typed-id:", "example.changed-typed-id:")]
+    [InlineData("=> BinaryCompatibility.ExactSchema", "=> (BinaryCompatibility)1")]
+    public void AGeneratedFieldDependsOnItsCompleteCodecDescriptor(string before, string after)
+    {
+        Assert.NotEqual(ImporterVersionForBlocks(TypedIdBlockSource),
+            ImporterVersionForBlocks(TypedIdBlockSource.Replace(before, after, StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public void ExplicitStaticCodecImplementationsRemainImplementationInputs()
+    {
+        string source = TypedIdBlockSource
+            .Replace("public static void Write(", "static void IBinarySerializable<TypedId<T>>.Write(", StringComparison.Ordinal)
+            .Replace("public static TypedId<T> Read(", "static TypedId<T> IBinarySerializable<TypedId<T>>.Read(", StringComparison.Ordinal);
+        Assert.NotEqual(ImporterVersionForBlocks(source),
+            ImporterVersionForBlocks(source.Replace("writer.WriteGuid(value.Value)", "writer.WriteGuid(System.Guid.Empty)", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public void PublicConstantsAndDefaultValuesRemainImplementationInputs()
+    {
+        string source = VersionedBlockSource.Replace("Read() => 47", "Read(int value = Defaults.Value) => value", StringComparison.Ordinal)
+            + "\npublic static class Defaults { public const int Value = 47; }";
+        Assert.NotEqual(ImporterVersionForBlocks(source),
+            ImporterVersionForBlocks(source.Replace("const int Value = 47", "const int Value = 48", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public void InlineValueStorageDependsOnNestedValueLayout()
+    {
+        string source = VersionedBlockSource.Replace("Read() => 47", "Read() => System.Runtime.CompilerServices.Unsafe.SizeOf<Layout>()", StringComparison.Ordinal)
+            + "\npublic struct Layout { public Nested Value; } public struct Nested { public int Value; }";
+        Assert.NotEqual(ImporterVersionForBlocks(source),
+            ImporterVersionForBlocks(source.Replace("struct Nested { public int Value; }", "struct Nested { public long Value; }", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public void AGenericCodecTracksTheConcreteCodecItInvokes()
+    {
+        string source = TypedIdBlockSource.Replace("TypedId<ShaderAsset> Value", "Forward<TypedId<ShaderAsset>> Value", StringComparison.Ordinal) + """
+
+            public readonly struct Forward<T> : IBinarySerializable<Forward<T>>, IBinaryCustomViewContract<Forward<T>>
+                where T : IBinarySerializable<T>, IBinaryCustomViewContract<T>
+            {
+                public Forward(T value) => Value = value;
+                public T Value { get; }
+                public static System.Guid TypeId => BinaryTypeId.FromLogicalName("example.forward:" + typeof(T).FullName);
+                public static ulong SchemaFingerprint => 71;
+                public static uint SchemaEpoch => 1;
+                public static BinaryCompatibility Compatibility => BinaryCompatibility.ExactSchema;
+                public static void Write(ref BinaryDataWriter writer, Forward<T> value) => T.Write(ref writer, value.Value);
+                public static Forward<T> Read(ref BinaryDataReader reader) => new(T.Read(ref reader));
+                public static void ValidateView(ref BinaryViewReader reader) => T.ValidateView(ref reader);
+            }
+            """;
+        string version = ImporterVersionForBlocks(source);
+        Assert.Equal(version, ImporterVersionForBlocks(source.Replace("Revision => 1", "Revision => 2", StringComparison.Ordinal)));
+        Assert.NotEqual(version, ImporterVersionForBlocks(source.Replace("writer.WriteGuid(value.Value)", "writer.WriteGuid(System.Guid.Empty)", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public void GeneratedEnumEncodingDependsOnItsDeclaredValues()
+    {
+        string source = VersionedBlockSource.Replace("partial int Value", "partial Mode Value", StringComparison.Ordinal)
+            + "\npublic enum Mode { First = 1, Second = 2 }";
+        Assert.NotEqual(ImporterVersionForBlocks(source),
+            ImporterVersionForBlocks(source.Replace("Second = 2", "Second = 3", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public void UserDefinedImplicitConversionBodiesAreImplementationInputs()
+    {
+        string source = VersionedBlockSource.Replace("Read() => 47", "Read() => default(Converted)", StringComparison.Ordinal)
+            + "\npublic struct Converted { public static implicit operator int(Converted value) => 47; }";
+        Assert.NotEqual(ImporterVersionForBlocks(source),
+            ImporterVersionForBlocks(source.Replace("operator int(Converted value) => 47", "operator int(Converted value) => 48", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public void UsingAnExternallySuppliedConcreteResourceTracksItsDisposalImplementation()
+    {
+        string source = VersionedBlockSource.Replace("Read() => 47;", "Read(Helper value = null!) { using (value) { return 47; } }", StringComparison.Ordinal)
+            + "\npublic sealed class Helper : System.IDisposable { public void Dispose() => System.GC.KeepAlive(1); }";
+        Assert.NotEqual(ImporterVersionForBlocks(source),
+            ImporterVersionForBlocks(source.Replace("KeepAlive(1)", "KeepAlive(2)", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public void AwaitUsingAnExternallySuppliedConcreteResourceTracksItsDisposalImplementation()
+    {
+        string source = VersionedBlockSource.Replace("Read() => 47;", "Read() => ReadCore(null!).GetAwaiter().GetResult(); public static async System.Threading.Tasks.ValueTask<int> ReadCore(Helper value) { await using (value) { return 47; } }", StringComparison.Ordinal)
+            + "\npublic sealed class Helper : System.IAsyncDisposable { public System.Threading.Tasks.ValueTask DisposeAsync() { System.GC.KeepAlive(1); return System.Threading.Tasks.ValueTask.CompletedTask; } }";
+        Assert.NotEqual(ImporterVersionForBlocks(source),
+            ImporterVersionForBlocks(source.Replace("KeepAlive(1)", "KeepAlive(2)", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public void DeclaredImplementationInputsExcludeOtherTypesInTheSameLibrary()
+    {
+        byte[] blocks = Emit(Compile(VersionedBlockSource, assemblyName: "BlockLibrary"));
+        const string algorithms = "namespace Algorithms; public static class Conversion { public static int Value => 1; } public static class ShaderCompiler { public static int Revision => 1; }";
+        byte[] original = Emit(Compile(algorithms, assemblyName: "Algorithms"));
+        byte[] unrelatedChange = Emit(Compile(algorithms.Replace("Revision => 1", "Revision => 2", StringComparison.Ordinal), assemblyName: "Algorithms"));
+        string importerSource = ExternalBlockImporterSource.Replace("typeof(BlockLibrary.Data))]",
+            "typeof(BlockLibrary.Data), VersionInputs = new[] { typeof(Algorithms.Conversion) })]", StringComparison.Ordinal);
+        byte[] first = Emit(Compile(importerSource, assemblyName: "ImporterLibrary",
+            dependencies: [MetadataReference.CreateFromImage(blocks), MetadataReference.CreateFromImage(original)]));
+        byte[] second = Emit(Compile(importerSource, assemblyName: "ImporterLibrary",
+            dependencies: [MetadataReference.CreateFromImage(blocks), MetadataReference.CreateFromImage(unrelatedChange)]));
+        Assert.Equal((string)Execute(first, blocks, original)!, (string)Execute(second, blocks, unrelatedChange)!);
+    }
+
+    [Fact]
+    public void MissingImplementationMetadataRetainsAnAssemblyFallbackForDeclaredInputs()
+    {
+        byte[] blocks = Emit(Compile(VersionedBlockSource, assemblyName: "BlockLibrary"));
+        const string algorithms = "[assembly: System.Reflection.AssemblyMetadata(\"SomeEngine.SourceBuild\", \"algorithms-1\")] namespace Algorithms { public static class Conversion { public static int Value => 1; } }";
+        byte[] original = Emit(Compile(algorithms, capabilities: false, assemblyName: "Algorithms"));
+        byte[] changed = Emit(Compile(algorithms.Replace("algorithms-1", "algorithms-2", StringComparison.Ordinal), capabilities: false, assemblyName: "Algorithms"));
+        string importerSource = ExternalBlockImporterSource.Replace("typeof(BlockLibrary.Data))]",
+            "typeof(BlockLibrary.Data), VersionInputs = new[] { typeof(Algorithms.Conversion) })]", StringComparison.Ordinal);
+        byte[] first = Emit(Compile(importerSource, assemblyName: "ImporterLibrary",
+            dependencies: [MetadataReference.CreateFromImage(blocks), MetadataReference.CreateFromImage(original)]));
+        byte[] second = Emit(Compile(importerSource, assemblyName: "ImporterLibrary",
+            dependencies: [MetadataReference.CreateFromImage(blocks), MetadataReference.CreateFromImage(changed)]));
+        Assert.NotEqual((string)Execute(first, blocks, original)!, (string)Execute(second, blocks, changed)!);
+    }
+
+    [Fact]
+    public void TruncatedImplementationMetadataFallsBackToTheAssemblyVersion()
+    {
+        string malformed = new string('0', 64) + "\n0\nN1:a1:b1:";
+        string attributes = "[assembly: System.Reflection.AssemblyMetadata(\"SomeEngine.SourceBuild\", \"block-version-1\")]\n"
+            + "[assembly: System.Reflection.AssemblyMetadata(\"SomeEngine.ImplementationInputs.v1:BlockLibrary.Data\", "
+            + Microsoft.CodeAnalysis.CSharp.SymbolDisplay.FormatLiteral(malformed, quote: true) + ")]\n";
+        string source = VersionedBlockSource.Replace("namespace BlockLibrary;", attributes + "namespace BlockLibrary;", StringComparison.Ordinal);
+        byte[] firstBlocks = Emit(Compile(source, capabilities: false, assemblyName: "BlockLibrary"));
+        byte[] secondBlocks = Emit(Compile(source.Replace("block-version-1", "block-version-2", StringComparison.Ordinal), capabilities: false, assemblyName: "BlockLibrary"));
+        byte[] first = Emit(Compile(ExternalBlockImporterSource, assemblyName: "ImporterLibrary", dependencies: [MetadataReference.CreateFromImage(firstBlocks)]));
+        byte[] second = Emit(Compile(ExternalBlockImporterSource, assemblyName: "ImporterLibrary", dependencies: [MetadataReference.CreateFromImage(secondBlocks)]));
+        Assert.NotEqual((string)Execute(first, firstBlocks)!, (string)Execute(second, secondBlocks)!);
+    }
+
+    [Fact]
+    public void ExternAliasedVersionsDoNotCollapseToTheSameImplementationInput()
+    {
+        const string algorithm = "namespace Algorithms; public static class Conversion { public static int Value => 1; }";
+        const string firstIdentity = "[assembly: System.Reflection.AssemblyVersion(\"1.0.0.0\")] ";
+        const string secondIdentity = "[assembly: System.Reflection.AssemblyVersion(\"2.0.0.0\")] ";
+        ImmutableArray<byte> publicKey = ImmutableArray.CreateRange(typeof(object).Assembly.GetName().GetPublicKey()!);
+        Assert.False(publicKey.IsDefaultOrEmpty);
+        byte[] firstAlgorithm = Emit(Compile(firstIdentity + algorithm, assemblyName: "Algorithms", publicKey: publicKey));
+        byte[] changedAlgorithm = Emit(Compile(firstIdentity + algorithm.Replace("Value => 1", "Value => 2", StringComparison.Ordinal), assemblyName: "Algorithms", publicKey: publicKey));
+        byte[] secondAlgorithm = Emit(Compile(secondIdentity + algorithm.Replace("Value => 1", "Value => 99", StringComparison.Ordinal), assemblyName: "Algorithms", publicKey: publicKey));
+        var firstReference = MetadataReference.CreateFromImage(firstAlgorithm).WithAliases(["First"]);
+        var changedReference = MetadataReference.CreateFromImage(changedAlgorithm).WithAliases(["First"]);
+        var secondReference = MetadataReference.CreateFromImage(secondAlgorithm).WithAliases(["Second"]);
+        string source = "extern alias First; extern alias Second;\n" + VersionedBlockSource.Replace("ValueBuilder.Read()", "First::Algorithms.Conversion.Value", StringComparison.Ordinal);
+        byte[] firstBlocks = Emit(Compile(source, assemblyName: "BlockLibrary", dependencies: [firstReference, secondReference]));
+        byte[] secondBlocks = Emit(Compile(source, assemblyName: "BlockLibrary", dependencies: [changedReference, secondReference]));
+        byte[] first = Emit(Compile(ExternalBlockImporterSource, assemblyName: "ImporterLibrary", dependencies: [MetadataReference.CreateFromImage(firstBlocks), firstReference, secondReference]));
+        byte[] second = Emit(Compile(ExternalBlockImporterSource, assemblyName: "ImporterLibrary", dependencies: [MetadataReference.CreateFromImage(secondBlocks), changedReference, secondReference]));
+        // Reading the generated public version does not execute the optional implementation.
+        Assert.NotEqual((string)Execute(first, firstBlocks)!, (string)Execute(second, secondBlocks)!);
+    }
+
+    [Fact]
+    public void MissingImplementationOnlyTransitiveReferencesHaveAnActionableDiagnostic()
+    {
+        byte[] algorithm = Emit(Compile("namespace Algorithms; public static class Conversion { public static int Value => 1; }", assemblyName: "Algorithms"));
+        byte[] blocks = Emit(Compile(VersionedBlockSource.Replace("ValueBuilder.Read()", "Algorithms.Conversion.Value", StringComparison.Ordinal),
+            assemblyName: "BlockLibrary", dependencies: [MetadataReference.CreateFromImage(algorithm)]));
+        byte[] importer = Emit(Compile(ExternalBlockImporterSource, assemblyName: "ImporterLibrary",
+            dependencies: [MetadataReference.CreateFromImage(blocks), MetadataReference.CreateFromImage(algorithm)]));
+        const string project = "using SomeEngine.Assets; [AssetCapabilities] public static partial class ProjectAssets;";
+        var result = Compile(project, assemblyName: "ProjectLibrary",
+            dependencies: [MetadataReference.CreateFromImage(blocks), MetadataReference.CreateFromImage(importer)]);
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Id == "SEAC005" && diagnostic.Severity == DiagnosticSeverity.Error);
+    }
+
+    private const string TypedIdBlockSource = """
+        using SomeEngine.Assets;
+        using SomeEngine.Serialization;
+        namespace BlockLibrary;
+        [AssetBlock("example.versioned-block"), BinarySerializable, BinaryFields(nameof(Value))]
+        public sealed partial class Data : AssetBlock { public partial TypedId<ShaderAsset> Value { get; set; } }
+        [BinarySerializable] public sealed partial class ShaderAsset { public static int Revision => 1; }
+        public readonly struct TypedId<T> : IBinarySerializable<TypedId<T>>, IBinaryCustomViewContract<TypedId<T>>
+        {
+            public TypedId(System.Guid value) => Value = value;
+            public System.Guid Value { get; }
+            public static System.Guid TypeId => BinaryTypeId.FromLogicalName("example.typed-id:" + typeof(T).FullName);
+            public static ulong SchemaFingerprint => 17;
+            public static uint SchemaEpoch => 1;
+            public static BinaryCompatibility Compatibility => BinaryCompatibility.ExactSchema;
+            public static void Write(ref BinaryDataWriter writer, TypedId<T> value) => writer.WriteGuid(value.Value);
+            public static TypedId<T> Read(ref BinaryDataReader reader) => new(reader.ReadGuid());
+            public static void ValidateView(ref BinaryViewReader reader) => reader.ReadGuid();
+        }
+        """;
+
+    private static string ImporterVersionForBlocks(string source)
+    {
+        byte[] blocks = Emit(Compile(source, assemblyName: "BlockLibrary"));
+        byte[] importer = Emit(Compile(ExternalBlockImporterSource, assemblyName: "ImporterLibrary",
+            dependencies: [MetadataReference.CreateFromImage(blocks)]));
+        return (string)Execute(importer, blocks)!;
+    }
+
+    [Fact]
+    public void UnrelatedShaderImplementationDoesNotChangeAProducedBlocksImporterVersion()
+    {
+        byte[] originalBlocks = Emit(Compile(VersionedBlockSource, assemblyName: "BlockLibrary"));
+        byte[] changedBlocks = Emit(Compile(VersionedBlockSource.Replace("Revision => 1", "Revision => 2", StringComparison.Ordinal),
+            assemblyName: "BlockLibrary"));
+        byte[] originalImporter = Emit(Compile(ExternalBlockImporterSource, assemblyName: "ImporterLibrary",
+            dependencies: [MetadataReference.CreateFromImage(originalBlocks)]));
+        byte[] changedImporter = Emit(Compile(ExternalBlockImporterSource, assemblyName: "ImporterLibrary",
+            dependencies: [MetadataReference.CreateFromImage(changedBlocks)]));
+        string original = (string)Execute(originalImporter, originalBlocks)!;
+        string changed = (string)Execute(changedImporter, changedBlocks)!;
+        Assert.NotEmpty(original);
+        Assert.Equal(original, changed);
+    }
+
+    [Fact]
+    public void AProducedBlocksHelperImplementationChangesItsImporterVersion()
+    {
+        byte[] originalBlocks = Emit(Compile(VersionedBlockSource, assemblyName: "BlockLibrary"));
+        byte[] changedBlocks = Emit(Compile(VersionedBlockSource.Replace("Read() => 47", "Read() => 48", StringComparison.Ordinal),
+            assemblyName: "BlockLibrary"));
+        byte[] originalImporter = Emit(Compile(ExternalBlockImporterSource, assemblyName: "ImporterLibrary",
+            dependencies: [MetadataReference.CreateFromImage(originalBlocks)]));
+        byte[] changedImporter = Emit(Compile(ExternalBlockImporterSource, assemblyName: "ImporterLibrary",
+            dependencies: [MetadataReference.CreateFromImage(changedBlocks)]));
+        Assert.NotEqual((string)Execute(originalImporter, originalBlocks)!, (string)Execute(changedImporter, changedBlocks)!);
+    }
+
+    [Fact]
+    public void AProducedBlocksEncodingFieldsChangeItsImporterVersion()
+    {
+        byte[] originalBlocks = Emit(Compile(VersionedBlockSource, assemblyName: "BlockLibrary"));
+        byte[] changedBlocks = Emit(Compile(VersionedBlockSource.Replace("partial int Value", "partial long Value", StringComparison.Ordinal),
+            assemblyName: "BlockLibrary"));
+        byte[] originalImporter = Emit(Compile(ExternalBlockImporterSource, assemblyName: "ImporterLibrary",
+            dependencies: [MetadataReference.CreateFromImage(originalBlocks)]));
+        byte[] changedImporter = Emit(Compile(ExternalBlockImporterSource, assemblyName: "ImporterLibrary",
+            dependencies: [MetadataReference.CreateFromImage(changedBlocks)]));
+        Assert.NotEqual((string)Execute(originalImporter, originalBlocks)!, (string)Execute(changedImporter, changedBlocks)!);
+    }
+
+    [Fact]
+    public void ShaderImplementationUsedByAProducedBlockStillChangesItsImporterVersion()
+    {
+        string source = VersionedBlockSource.Replace("ValueBuilder.Read()", "ShaderCompiler.Revision", StringComparison.Ordinal);
+        byte[] originalBlocks = Emit(Compile(source, assemblyName: "BlockLibrary"));
+        byte[] changedBlocks = Emit(Compile(source.Replace("Revision => 1", "Revision => 2", StringComparison.Ordinal),
+            assemblyName: "BlockLibrary"));
+        byte[] originalImporter = Emit(Compile(ExternalBlockImporterSource, assemblyName: "ImporterLibrary",
+            dependencies: [MetadataReference.CreateFromImage(originalBlocks)]));
+        byte[] changedImporter = Emit(Compile(ExternalBlockImporterSource, assemblyName: "ImporterLibrary",
+            dependencies: [MetadataReference.CreateFromImage(changedBlocks)]));
+        Assert.NotEqual((string)Execute(originalImporter, originalBlocks)!, (string)Execute(changedImporter, changedBlocks)!);
+    }
+
+    [Fact]
+    public void ReferencedImporterHasTheSameVersionAsItsLibraryRegistration()
+    {
+        byte[] blocks = Emit(Compile(VersionedBlockSource, assemblyName: "BlockLibrary"));
+        byte[] importer = Emit(Compile(ExternalBlockImporterSource, assemblyName: "ImporterLibrary",
+            dependencies: [MetadataReference.CreateFromImage(blocks)]));
+        const string source = """
+            using SomeEngine.Assets;
+            [AssetCapabilities] public static partial class ProjectAssets;
+            public static class Consumer
+            {
+                public static string Execute() => System.Linq.Enumerable.Single(ProjectAssets.ImporterCapabilities,
+                    value => value.ImporterType == typeof(Extension.Importer)).ImplementationVersion;
+            }
+            """;
+        byte[] project = Emit(Compile(source, assemblyName: "ProjectLibrary",
+            dependencies: [MetadataReference.CreateFromImage(blocks), MetadataReference.CreateFromImage(importer)]));
+        Assert.Equal((string)Execute(importer, blocks)!, (string)Execute(project, blocks, importer)!);
+    }
+
+    [Fact]
+    public void ReferencedImporterUsesUpdatedProducedBlocksWithoutBeingRecompiled()
+    {
+        byte[] originalBlocks = Emit(Compile(VersionedBlockSource, assemblyName: "BlockLibrary"));
+        byte[] changedBlocks = Emit(Compile(VersionedBlockSource.Replace("Read() => 47", "Read() => 48", StringComparison.Ordinal),
+            assemblyName: "BlockLibrary"));
+        byte[] importer = Emit(Compile(ExternalBlockImporterSource, assemblyName: "ImporterLibrary",
+            dependencies: [MetadataReference.CreateFromImage(originalBlocks)]));
+        const string source = """
+            using SomeEngine.Assets;
+            [AssetCapabilities] public static partial class ProjectAssets;
+            public static class Consumer
+            {
+                public static string Execute() => System.Linq.Enumerable.Single(ProjectAssets.ImporterCapabilities,
+                    value => value.ImporterType == typeof(Extension.Importer)).ImplementationVersion;
+            }
+            """;
+        byte[] originalProject = Emit(Compile(source, assemblyName: "ProjectLibrary",
+            dependencies: [MetadataReference.CreateFromImage(originalBlocks), MetadataReference.CreateFromImage(importer)]));
+        byte[] changedProject = Emit(Compile(source, assemblyName: "ProjectLibrary",
+            dependencies: [MetadataReference.CreateFromImage(changedBlocks), MetadataReference.CreateFromImage(importer)]));
+        Assert.NotEqual((string)Execute(originalProject, originalBlocks, importer)!,
+            (string)Execute(changedProject, changedBlocks, importer)!);
+    }
+
+    [Fact]
+    public void ExplicitVersionInputsTrackTheirImplementation()
+    {
+        byte[] blocks = Emit(Compile(VersionedBlockSource, assemblyName: "BlockLibrary"));
+        const string dependency = "namespace Algorithms; public static class Conversion { public static int Value => 1; }";
+        byte[] originalAlgorithms = Emit(Compile(dependency, assemblyName: "Algorithms"));
+        byte[] changedAlgorithms = Emit(Compile(dependency.Replace("Value => 1", "Value => 2", StringComparison.Ordinal),
+            assemblyName: "Algorithms"));
+        string source = ExternalBlockImporterSource.Replace("typeof(BlockLibrary.Data))]",
+            "typeof(BlockLibrary.Data), VersionInputs = new[] { typeof(Algorithms.Conversion) })]", StringComparison.Ordinal);
+        byte[] originalImporter = Emit(Compile(source, assemblyName: "ImporterLibrary",
+            dependencies: [MetadataReference.CreateFromImage(blocks), MetadataReference.CreateFromImage(originalAlgorithms)]));
+        byte[] changedImporter = Emit(Compile(source, assemblyName: "ImporterLibrary",
+            dependencies: [MetadataReference.CreateFromImage(blocks), MetadataReference.CreateFromImage(changedAlgorithms)]));
+        Assert.NotEqual((string)Execute(originalImporter, blocks, originalAlgorithms)!,
+            (string)Execute(changedImporter, blocks, changedAlgorithms)!);
+    }
+
+    [Fact]
+    public void ProducedBlocksWithoutTypeMetadataKeepTheirAssemblyVersionDependency()
+    {
+        string source = VersionedBlockSource.Replace("namespace BlockLibrary;",
+            "[assembly: System.Reflection.AssemblyMetadata(\"SomeEngine.SourceBuild\", \"block-version-1\")]\nnamespace BlockLibrary;",
+            StringComparison.Ordinal);
+        byte[] originalBlocks = Emit(Compile(source, capabilities: false, assemblyName: "BlockLibrary"));
+        byte[] changedBlocks = Emit(Compile(source.Replace("block-version-1", "block-version-2", StringComparison.Ordinal),
+            capabilities: false, assemblyName: "BlockLibrary"));
+        byte[] originalImporter = Emit(Compile(ExternalBlockImporterSource, assemblyName: "ImporterLibrary",
+            dependencies: [MetadataReference.CreateFromImage(originalBlocks)]));
+        byte[] changedImporter = Emit(Compile(ExternalBlockImporterSource, assemblyName: "ImporterLibrary",
+            dependencies: [MetadataReference.CreateFromImage(changedBlocks)]));
+        Assert.NotEqual((string)Execute(originalImporter, originalBlocks)!, (string)Execute(changedImporter, changedBlocks)!);
+    }
+
+    [Fact]
+    public void ImporterLibraryHelperChangesRemainConservativeVersionInputs()
+    {
+        byte[] blocks = Emit(Compile(VersionedBlockSource, assemblyName: "BlockLibrary"));
+        string source = ExternalBlockImporterSource + "\ninternal static class ImportHelper { public static int Value => 1; }";
+        byte[] originalImporter = Emit(Compile(source, assemblyName: "ImporterLibrary",
+            dependencies: [MetadataReference.CreateFromImage(blocks)]));
+        byte[] changedImporter = Emit(Compile(source.Replace("Value => 1", "Value => 2", StringComparison.Ordinal),
+            assemblyName: "ImporterLibrary", dependencies: [MetadataReference.CreateFromImage(blocks)]));
+        Assert.NotEqual((string)Execute(originalImporter, blocks)!, (string)Execute(changedImporter, blocks)!);
     }
 
     [Theory]
@@ -552,7 +1058,7 @@ public sealed class AssetCapabilityGeneratorBehaviorTests
     }
 
     private static (Compilation Compilation, ImmutableArray<Diagnostic> Diagnostics) Compile(string source,
-        bool generators = true, bool capabilities = true, params MetadataReference[] dependencies)
+        bool generators = true, bool capabilities = true, string? assemblyName = null, ImmutableArray<byte> publicKey = default, params MetadataReference[] dependencies)
     {
         var paths = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!).Split(Path.PathSeparator)
             .Concat([typeof(Asset).Assembly.Location, typeof(BinarySerializableAttribute).Assembly.Location,
@@ -560,14 +1066,17 @@ public sealed class AssetCapabilityGeneratorBehaviorTests
             .Distinct(StringComparer.OrdinalIgnoreCase);
         var references = paths.Select(path => MetadataReference.CreateFromFile(path)).Cast<MetadataReference>().Concat(dependencies);
         var parse = new CSharpParseOptions(LanguageVersion.Preview);
-        var compilation = CSharpCompilation.Create("AssetExtension" + Guid.NewGuid().ToString("N"),
+        var compilation = CSharpCompilation.Create(assemblyName ?? "AssetExtension" + Guid.NewGuid().ToString("N"),
             [CSharpSyntaxTree.ParseText(source, parse)], references,
-            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, nullableContextOptions: NullableContextOptions.Enable));
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, nullableContextOptions: NullableContextOptions.Enable)
+                .WithCryptoPublicKey(publicKey).WithPublicSign(!publicKey.IsDefaultOrEmpty).WithAllowUnsafe(true));
         if (!generators) return (compilation, []);
         var selected = new List<ISourceGenerator> { new BinaryContractGenerator().AsSourceGenerator(), new AssetBlockGenerator().AsSourceGenerator() };
         if (capabilities) selected.Add(new AssetCapabilitiesGenerator().AsSourceGenerator());
         GeneratorDriver driver = CSharpGeneratorDriver.Create(selected, parseOptions: parse);
-        driver.RunGeneratorsAndUpdateCompilation(compilation, out Compilation output, out ImmutableArray<Diagnostic> diagnostics);
+        driver = driver.RunGeneratorsAndUpdateCompilation(compilation, out Compilation output, out ImmutableArray<Diagnostic> diagnostics);
+        Assert.All(driver.GetRunResult().Results, result =>
+            Assert.True(result.Exception is null, result.Exception?.ToString()));
         return (output, diagnostics);
     }
 
@@ -595,7 +1104,9 @@ public sealed class AssetCapabilityGeneratorBehaviorTests
         GeneratorDriver driver = CSharpGeneratorDriver.Create(
             [new BinaryContractGenerator().AsSourceGenerator(), new AssetBlockGenerator().AsSourceGenerator(),
              new AssetCapabilitiesGenerator().AsSourceGenerator()], parseOptions: parse);
-        driver.RunGeneratorsAndUpdateCompilation(compilation, out Compilation output, out ImmutableArray<Diagnostic> diagnostics);
+        driver = driver.RunGeneratorsAndUpdateCompilation(compilation, out Compilation output, out ImmutableArray<Diagnostic> diagnostics);
+        Assert.All(driver.GetRunResult().Results, result =>
+            Assert.True(result.Exception is null, result.Exception?.ToString()));
         return (output, diagnostics);
     }
 

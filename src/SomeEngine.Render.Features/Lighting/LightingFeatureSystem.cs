@@ -27,7 +27,7 @@ public sealed class LightingFeatureSystem : ISystem<RenderFrameSystemContext>
         _lights = lights ?? throw new ArgumentNullException(nameof(lights));
         ArgumentOutOfRangeException.ThrowIfZero(viewCount);
         _views = new RenderView[checked((int)viewCount)];
-        _collector = new ViewCollector(_views.Length);
+        _collector = new ViewCollector(_views);
     }
 
     public void OnCreate(ref RenderFrameSystemContext context) =>
@@ -47,7 +47,6 @@ public sealed class LightingFeatureSystem : ISystem<RenderFrameSystemContext>
             throw new InvalidOperationException(
                 $"Lighting requires 1..{_views.Length} render views.");
         }
-        _collector.CopyTo(_views);
         RenderGraphFrame graph = context.Graph;
         _feature.Record(
             ref graph,
@@ -66,28 +65,26 @@ public sealed class LightingFeatureSystem : ISystem<RenderFrameSystemContext>
 
     private sealed class ViewCollector
     {
-        private readonly List<RenderView> _values;
+        private readonly RenderView[] _values;
 
-        internal ViewCollector(int capacity) => _values = new List<RenderView>(capacity);
+        internal ViewCollector(RenderView[] values) => _values = values;
 
-        internal int Count => _values.Count;
+        internal int Count { get; private set; }
 
         internal void Collect(QueryCursor cursor)
         {
             foreach (QueryRow row in cursor.Rows)
             {
-                if (_values.Count == _values.Capacity)
+                if (Count == _values.Length)
                 {
                     throw new InvalidOperationException(
-                        $"Lighting view capacity {_values.Capacity} was exceeded.");
+                        $"Lighting view capacity {_values.Length} was exceeded.");
                 }
-                _values.Add(row.Read<RenderView>());
+                _values[Count] = row.Read<RenderView>();
+                Count++;
             }
         }
 
-        internal void CopyTo(RenderView[] destination) =>
-            _values.CopyTo(destination);
-
-        internal void Clear() => _values.Clear();
+        internal void Clear() => Count = 0;
     }
 }

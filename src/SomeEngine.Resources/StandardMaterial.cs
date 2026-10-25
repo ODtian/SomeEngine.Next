@@ -13,6 +13,22 @@ public sealed partial class StandardMaterial : Material
 
     public partial Texture? ARMMap { get; set; }
 
+    public partial Texture? OcclusionMap { get; set; }
+
+    public partial Texture? EmissiveMap { get; set; }
+
+    public partial float NormalScale { get; set; } = 1;
+
+    public partial float OcclusionStrength { get; set; } = 1;
+
+    public partial bool UseOcclusionMap { get; set; }
+
+    public partial bool UseEmissiveMap { get; set; }
+
+    public partial bool DecodeAlbedoSrgb { get; set; }
+
+    public partial bool DecodeEmissiveSrgb { get; set; }
+
     public partial SamplerDesc MaterialSampler { get; set; } = new(
         FilterType.Linear, FilterType.Linear, FilterType.Linear,
         AddressType.Repeat, AddressType.Repeat, AddressType.Repeat);

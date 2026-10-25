@@ -34,7 +34,7 @@ public struct PackedCluster
     // 44: conservative object-space AABB
     public Vector3 BoundMax;
 
-    // 56: [LODErrorHalf:16][TriangleStart:16]
+    // 56: low 16 bits: LODErrorHalf; high 16 bits: triangle-valued TriangleStart.
     public uint PackedLodErrorTriangleStart;
 
     // 60: [VertexCount:8][TriangleCount:8][LODLevel:8][Reserved:8]

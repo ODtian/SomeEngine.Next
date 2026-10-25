@@ -195,8 +195,7 @@ internal sealed unsafe partial class VulkanBackend
 
     internal static byte[] NormalizeSpirvDescriptorBindings(
         ReadOnlySpan<byte> code,
-        ReadOnlySpan<VulkanSpirvBindingTarget> targets,
-        out VulkanSpirvBindingTarget[] activeTargets)
+        ReadOnlySpan<VulkanSpirvBindingTarget> targets)
     {
         if (code.Length < 5 * sizeof(uint) || (code.Length & 3) != 0)
             throw InvalidSpirv("SPIR-V is truncated or not word aligned.");
@@ -215,7 +214,6 @@ internal sealed unsafe partial class VulkanBackend
             words,
             bindings,
             targets);
-        activeTargets = CollectActiveSpirvTargets(bindings, mappedTargets);
         return AddSpirvAliasingDecorations(normalized, bindings, mappedTargets);
     }
 
@@ -271,42 +269,6 @@ internal sealed unsafe partial class VulkanBackend
         }
         words[insertion..].CopyTo(result.AsSpan(cursor));
         return MemoryMarshal.AsBytes(result.AsSpan()).ToArray();
-    }
-
-    private static VulkanSpirvBindingTarget[] CollectActiveSpirvTargets(
-        ReadOnlySpan<ResolvedSpirvBinding> bindings,
-        ReadOnlySpan<VulkanSpirvBindingTarget> mappedTargets)
-    {
-        var ordered = new List<(
-            VulkanSpirvBindingTarget Target,
-            uint PhysicalBinding,
-            uint SourceBinding,
-            uint SourceId)>(bindings.Length);
-        foreach (ref readonly ResolvedSpirvBinding binding in bindings)
-        {
-            int index = ordered.Count;
-            VulkanSpirvBindingTarget target = mappedTargets[index];
-            ordered.Add((
-                target,
-                target.Binding,
-                binding.LogicalBinding,
-                binding.Target));
-        }
-        ordered.Sort(static (left, right) =>
-        {
-            int set = left.Target.Set.CompareTo(right.Target.Set);
-            if (set != 0) return set;
-            int physical = left.PhysicalBinding.CompareTo(right.PhysicalBinding);
-            if (physical != 0) return physical;
-            int source = left.SourceBinding.CompareTo(right.SourceBinding);
-            return source != 0 ? source : left.SourceId.CompareTo(right.SourceId);
-        });
-        var result = new List<VulkanSpirvBindingTarget>();
-        var seen = new HashSet<VulkanSpirvBindingTarget>();
-        foreach (var binding in ordered)
-            if (seen.Add(binding.Target))
-                result.Add(binding.Target);
-        return result.ToArray();
     }
 
     private static ResolvedSpirvBinding[] ResolveSpirvBindings(

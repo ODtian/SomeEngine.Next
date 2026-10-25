@@ -1,7 +1,5 @@
 using SomeEngine.Resources;
-using System.Buffers.Binary;
 using System.Collections.Immutable;
-using SomeEngine.Assets.Schema;
 using SomeEngine.Render.Materials;
 using SomeEngine.Graphics;
 
@@ -25,23 +23,28 @@ internal sealed class ClusterMaterialScalars
         ClusterShadeStageSet stages, ClusterMaterialAssignmentSet assignments,
         Func<SomeEngine.Resources.Texture?, uint> textureIndex, IEnumerable<int>? textureChanges = null)
     {
+        if (assignments.ChangedOffsets.Count == 0 && assignments.ChangedMaterialIds.Count == 0 &&
+            (textureChanges is null ||
+                (textureChanges.TryGetNonEnumeratedCount(out int textureCount) && textureCount == 0)))
+            return this;
+
         var addresses = new HashSet<int>(assignments.ChangedOffsets);
         foreach (long material in assignments.ChangedMaterialIds)
             addresses.UnionWith(assignments.GetMaterialOffsets(material));
         if (textureChanges is not null) addresses.UnionWith(textureChanges);
-        if (addresses.Count == 0) return this;
+        if (addresses.Count == 0)
+            return this;
 
         var ranges = _ranges;
         var free = _free;
         var writes = new List<(int Offset, byte[] Bytes)>();
-        var offsetChanges = new List<BufferRange>();
         int byteCount = Bytes.Length;
-        var offsetWrites = new List<(int Offset, byte[] Bytes)>();
+        var offsetWrites = new List<(int Offset, uint Value)>();
         foreach (int address in addresses)
         {
             bool exists = assignments.TryGetEntry(address, out Material material, out _);
             // Complete every potentially failing encoding before publishing any new bytes.
-            byte[] value = exists ? stages.ScalarLayouts[address].Encode(material, textureIndex) : [];
+            byte[] value = !exists ? [] : stages.ScalarLayouts[address].Encode(material, textureIndex);
             bool allocated = ranges.TryGetValue(address, out var range);
             if (allocated && (!exists || range.Size != value.Length))
             {
@@ -75,22 +78,21 @@ internal sealed class ClusterMaterialScalars
             writes.Add((range.Offset, value));
         }
         ClusterBytes bytes = Bytes.WithChanges(byteCount, writes);
-        ClusterBytes offsets = Offsets.WithChanges(checked((int)assignments.SlotCapacity * sizeof(uint)), offsetWrites);
+        ClusterBytes offsets = Offsets.WithUInt32Changes(checked((int)assignments.SlotCapacity * sizeof(uint)), offsetWrites);
         return new ClusterMaterialScalars
         {
             _ranges = ranges, _free = free, Offsets = offsets, Bytes = bytes,
             ByteChanges = writes.Select(write => new BufferRange(checked((ulong)write.Offset),
                 checked((ulong)write.Bytes.Length))).ToArray(),
-            OffsetChanges = offsetChanges.ToArray(),
+            OffsetChanges = offsetWrites.Select(write => new BufferRange(checked((ulong)write.Offset),
+                sizeof(uint))).ToArray(),
         };
 
         void WriteOffset(int address, uint offset)
         {
-            byte[] value = new byte[sizeof(uint)];
-            BinaryPrimitives.WriteUInt32LittleEndian(value, offset);
             int byteOffset = checked(address * sizeof(uint));
-            offsetWrites.Add((byteOffset, value));
-            offsetChanges.Add(new BufferRange(checked((ulong)byteOffset), sizeof(uint)));
+            offsetWrites.Add((byteOffset, offset));
         }
     }
+
 }

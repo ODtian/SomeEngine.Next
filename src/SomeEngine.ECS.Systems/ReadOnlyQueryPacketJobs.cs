@@ -351,7 +351,7 @@ public ref struct ReadOnlyQueryPacketPlan
         _packets = null;
         if (packets is null)
             return;
-        packets.AsSpan().Clear();
+        packets.AsSpan(0, PacketCount).Clear();
         ArrayPool<ReadOnlyPacketRange>.Shared.Return(packets);
     }
 }
@@ -430,7 +430,7 @@ public static class ReadOnlyQueryPacketJobs
         {
             if (packets is not null)
             {
-                packets.AsSpan().Clear();
+                packets.AsSpan(0, packetCount).Clear();
                 ArrayPool<ReadOnlyPacketRange>.Shared.Return(packets);
             }
             throw;

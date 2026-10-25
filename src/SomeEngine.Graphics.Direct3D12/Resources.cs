@@ -78,11 +78,11 @@ nativeDevice.Native, visibleNodeMask,
                 "A Texture footprint base offset must be 512-byte aligned.");
         }
         NativeResourceDesc native = CreateTextureDescription(desc);
-        (uint creationNodeMask, uint visibleNodeMask) = nativeDevice.ResolveResourcePlacement(
+        _ = nativeDevice.ResolveResourcePlacement(
             desc.NodePlacement,
             nameof(desc));
         ValidateTextureRegion(
-            CreateTextureInfo(desc, 0, 0, creationNodeMask, visibleNodeMask),
+            desc,
             copy.MipLevel,
             copy.ArrayLayer,
             copy.Aspect,

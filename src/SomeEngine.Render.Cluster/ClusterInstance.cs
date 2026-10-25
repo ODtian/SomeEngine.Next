@@ -4,10 +4,9 @@ using SomeEngine.Render.Components;
 namespace SomeEngine.Render.Cluster;
 
 /// <summary>
-/// Cluster's declarations in the composable render-instance ABI. Cluster geometry and material
-/// binding are separate contributors: the Cluster geometry contributor writes only
-/// <see cref="GeometryLayout"/>,
-/// while a material system chooses whether <see cref="MaterialSlotLayout"/> is batch-shared or
+/// Cluster's declarations in the composable render-instance ABI. Render-owned transforms and
+/// Cluster's mesh-derived fields form <see cref="GeometryLayout"/> as separate contributors.
+/// A material system chooses whether <see cref="MaterialSlotLayout"/> is batch-shared or
 /// per-instance. <see cref="InstanceLayout"/> is only their exact shader-facing composition.
 /// </summary>
 public static class ClusterRenderFeature
@@ -48,17 +47,19 @@ public static class ClusterRenderFeature
         storageStride: 4,
         metadataWordCount: 1);
 
-    public static RenderInstancePropertyLayout GeometryLayout { get; } = BuildGeometryLayout();
+    internal static RenderInstancePropertyLayout MeshGeometryLayout { get; } = BuildMeshGeometryLayout();
+
+    public static RenderInstancePropertyLayout GeometryLayout { get; } =
+        RenderInstancePropertyLayout.Compose(RenderInstanceTransformProperties.Layout, MeshGeometryLayout);
 
     public static RenderInstancePropertyLayout MaterialSlotLayout { get; } = BuildMaterialSlotLayout();
 
     public static RenderInstancePropertyLayout InstanceLayout { get; } =
         RenderInstancePropertyLayout.Compose(GeometryLayout, MaterialSlotLayout);
 
-    private static RenderInstancePropertyLayout BuildGeometryLayout()
+    private static RenderInstancePropertyLayout BuildMeshGeometryLayout()
     {
         var builder = new RenderInstancePropertyLayoutBuilder();
-        RenderInstanceTransformProperties.Register(builder);
         _ = builder.Register<uint>(
             "SomeEngine.Render.Cluster",
             BvhRootKey,

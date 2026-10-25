@@ -23,7 +23,7 @@ public sealed partial class VirtualShadowFeature
     private GraphTextureId _prefilterPreviousMasks;
     private GraphBufferInput _prefilterPreviousViews = null!;
     private GraphBufferInput _prefilterProjections = null!;
-    private GraphBufferInput[] _prefilterUniforms = [];
+    private readonly GraphBufferSlice[] _prefilterUniforms;
     private GraphPassId[] _prefilterPasses = [];
     private GraphPassId _prefilterInitialize;
     private uint _prefilterHistoryLayer;
@@ -96,9 +96,7 @@ public sealed partial class VirtualShadowFeature
         _prefilterPreviousMasks = edit.CreatePersistentTexture(PrefilterReceiverHistoryDescription);
         _prefilterPreviousViews = edit.CreateBufferInput(BufferUsages.ShaderRead);
         _prefilterProjections = edit.CreateBufferInput(BufferUsages.ShaderRead);
-        _prefilterUniforms = new GraphBufferInput[9];
         _prefilterPasses = new GraphPassId[6];
-        _prefilterUniforms[6] = edit.CreateBufferInput(BufferUsages.Constant);
         _prefilterPages = edit.CreatePersistentBuffer(new BufferDesc(
             checked((ulong)settings.MaxPhysicalPages * sizeof(uint)), bufferUses, "Virtual shadow filtered pages"));
         _prefilterArguments = edit.CreatePersistentBuffer(new BufferDesc(96,
@@ -147,7 +145,6 @@ public sealed partial class VirtualShadowFeature
             "Gather virtual shadow merged borders", "Carry virtual shadow filtered page history"];
         for (int mode = 0; mode < _prefilterPasses.Length; mode++)
         {
-            _prefilterUniforms[mode] = edit.CreateBufferInput(BufferUsages.Constant);
             _prefilterPasses[mode] = AddIndirectPass(ref edit, labels[mode], _prefilterPipeline, _prefilterArguments,
                 checked((ulong)mode * 16u), finish);
             PassDefinition pass = edit.GetPass(_prefilterPasses[mode]);
@@ -155,8 +152,6 @@ public sealed partial class VirtualShadowFeature
                 BindPrefilterResource(ref edit, ref pass, resource, _prefilterUniforms[mode]);
             edit.OrderAfter(_prefilterPasses[mode], mode == 0 ? _rasterCompletePass : _prefilterPasses[mode - 1]);
         }
-        _prefilterUniforms[7] = edit.CreateBufferInput(BufferUsages.Constant);
-        _prefilterUniforms[8] = edit.CreateBufferInput(BufferUsages.Constant);
         _prefilterResetPass = AddComputePass(ref edit, "Reset virtual shadow filter work", _prefilterResetPipeline,
             new VirtualShadowDispatchPassData(default), finish);
         _prefilterSelectPass = AddComputePass(ref edit, "Select virtual shadow filter pages", _prefilterSelectPipeline,
@@ -177,7 +172,7 @@ public sealed partial class VirtualShadowFeature
     }
 
     private void BindPrefilterResource(ref RenderGraphEdit edit, ref PassDefinition pass, PrefilterResource resource,
-        GraphBufferInput uniforms)
+        GraphBufferSlice uniforms)
     {
         const PipelineSync sync = PipelineSync.ComputeShading;
         switch (resource)
@@ -211,7 +206,7 @@ public sealed partial class VirtualShadowFeature
         TextureUsages.Sampled | TextureUsages.Storage | TextureUsages.ColorAttachment | TextureUsages.CopyDestination,
         label: "Virtual shadow prefilter receiver histories");
 
-    private void StagePrefilter(ref RenderGraphFrame graph, scoped ReadOnlySpan<VirtualShadowView> views)
+    private void StagePrefilter(ref RenderGraphFrame graph, scoped Span<byte> uniformBytes, scoped ReadOnlySpan<VirtualShadowView> views)
     {
         if (_prefilterPipeline is null)
         {
@@ -241,7 +236,7 @@ public sealed partial class VirtualShadowFeature
             ViewCount = checked((uint)views.Length), PageTableEntryCount = ActivePageTableEntryCount,
             FrameIndex = _frameIndex, EntriesPerView = settings.PageTableEntriesPerView,
         };
-        _uniformData.Write(ref graph, _prefilterUniforms[6], in requests);
+        WriteUniform(uniformBytes, _prefilterUniforms[6], in requests);
         graph.SetPassDataIfChanged(_prefilterRequestPass, new VirtualShadowDispatchPassData(
             new DispatchArguments(DivideRoundUp(requests.PageTableEntryCount, 64u), 1, 1)));
         graph.SetPassEnabled(_prefilterRequestPass, views.Length != 0);
@@ -258,7 +253,7 @@ public sealed partial class VirtualShadowFeature
                 PreviousViewCount = _frameHasPreviousHistory ? checked((uint)_previousShadowViews.Length) : 0u,
                 HistoryWeight = Math.Clamp(settings.PrefilteredDistantHistoryWeight, 0f, 1f),
             };
-            _uniformData.Write(ref graph, _prefilterUniforms[mode], in data);
+            WriteUniform(uniformBytes, _prefilterUniforms[mode], in data);
             graph.SetPassEnabled(_prefilterPasses[mode], views.Length != 0);
         }
         for (int workMode = 6; workMode <= 7; workMode++)
@@ -271,7 +266,7 @@ public sealed partial class VirtualShadowFeature
                 PagesPerRow = settings.PhysicalPagesPerRow, Mode = checked((uint)workMode),
                 WriteLayer = _prefilterHistoryLayer ^ 1u,
             };
-            _uniformData.Write(ref graph, _prefilterUniforms[workMode + 1], in work);
+            WriteUniform(uniformBytes, _prefilterUniforms[workMode + 1], in work);
         }
         uint resetGroups = DivideRoundUp(_prefilterEntryCapacity, 64u);
         graph.SetPassDataIfChanged(_prefilterResetPass, new VirtualShadowDispatchPassData(

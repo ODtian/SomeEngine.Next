@@ -20,6 +20,7 @@ namespace SomeEngine.Render.Features.Skinning;
 public sealed class SkinBoundsFeature : IClusterBoundsSource, IDisposable,
     ISystem<RenderPrepareSystemContext>, ISystem<RenderFrameSystemContext>, IRenderGraphFrameExecutionObserver
 {
+    private const uint BoundsDispatchWidth = 65535;
     private const BufferUsages BoundsUsages = BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopyDestination;
     private readonly global::SomeEngine.RenderGraph.RenderGraph _graph;
     private readonly LinkedComputePipeline _pipeline;
@@ -199,11 +200,13 @@ public sealed class SkinBoundsFeature : IClusterBoundsSource, IDisposable,
             for (uint group = 0; group < geometry.Ranges.Length; group++)
             {
                 BoundsGroup ranges = geometry.Ranges[group];
-                work.Add(new((uint)index, boxStart + ranges.Cull.First, ranges.Cull.Count, group,
-                    boxStart + ranges.Lod.First, ranges.Lod.Count, ranges.MinError, ranges.MaxParentError));
+                // Disabled slices stay zero from DefinitionCopy.
+                if (ranges.Cull.Count == 0) continue;
+                work.Add(new((uint)index, checked(boxStart + ranges.Cull.First), ranges.Cull.Count, group,
+                    checked(boxStart + ranges.Lod.First), ranges.Lod.Count, ranges.MinError, ranges.MaxParentError));
             }
             _world.Replace(instance.Entity, new RenderDeformBounds(output, geometry.NodeCount));
-            output += (uint)geometry.Ranges.Length;
+            output = checked(output + (uint)geometry.Ranges.Length);
         }
         if (boxes.Count == 0) boxes.Add(default);
         int workCount = work.Count;
@@ -212,7 +215,7 @@ public sealed class SkinBoundsFeature : IClusterBoundsSource, IDisposable,
         stream.Write(MemoryMarshal.AsBytes(CollectionsMarshal.AsSpan(boxes)));
         _boxRange = new(0, (ulong)stream.Position);
         stream.Position = (stream.Position + 31) / 32 * 32;
-        _workRange = new((ulong)stream.Position, (ulong)(work.Count * 32));
+        _workRange = new((ulong)stream.Position, (ulong)work.Count * 32ul);
         stream.Write(MemoryMarshal.AsBytes(CollectionsMarshal.AsSpan(work)));
         _definitionBytes = stream.ToArray();
         using RenderGraphEdit edit = _graph.BeginEdit();
@@ -227,7 +230,10 @@ public sealed class SkinBoundsFeature : IClusterBoundsSource, IDisposable,
         edit.OrderAfter(_boundsPass, _uploadPass);
         edit.OrderAfter(CompletePass, _uploadPass);
         edit.Commit();
-        _dispatch = new((uint)((workCount + 63) / 64), 1, 1);
+        // TransformSkinBounds flattens Y using this same maximum X-group count.
+        uint dispatchGroups = Math.Max(1u, checked(((uint)workCount + 63u) / 64u));
+        _dispatch = new(Math.Min(dispatchGroups, BoundsDispatchWidth),
+            checked((dispatchGroups + BoundsDispatchWidth - 1u) / BoundsDispatchWidth), 1);
         _layoutChanged = false;
         _uploadRequired = true;
         Revision++;
@@ -268,7 +274,11 @@ public sealed class SkinBoundsFeature : IClusterBoundsSource, IDisposable,
 
     private static GeometryBounds BuildGeometry(Mesh mesh, ClusterSkinBounds data)
     {
+        if (mesh.Bvh.Length % ClusterBVHNode.SizeInBytes != 0)
+            throw new InvalidDataException("Skin bounds require complete packed hierarchy nodes.");
         ReadOnlySpan<ClusterBVHNode> nodes = MemoryMarshal.Cast<byte, ClusterBVHNode>(mesh.Bvh.Span);
+        // This is an output address space, not the packed node's structure-of-arrays byte layout.
+        int sliceCount = checked(nodes.Length * ClusterBVHNode.ChildCount);
         var sourceBoxes = new SkinJointBounds[data.ClusterCount][];
         var sourceLod = new SkinClusterLod[data.ClusterCount];
         float referencePositionError = 0;
@@ -290,17 +300,17 @@ public sealed class SkinBoundsFeature : IClusterBoundsSource, IDisposable,
         for (int index = 0; index < sourceLod.Length; index++)
             if (sourceLod[index].ParentGroup >= 0) lodGroups[sourceLod[index].ParentGroup].Boxes.Add(sourceBoxes[index]);
         var lodBoxes = lodGroups.ToDictionary(pair => pair.Key, pair => MergeBoxes(pair.Value.Boxes.SelectMany(boxes => boxes)));
-        int sliceCount = nodes.Length * ClusterBVHNode.ChildCount;
-        var groups = new SkinJointBounds[sliceCount + mesh.ClusterGeometryIndices.Length][];
+        var groups = new SkinJointBounds[checked(sliceCount + mesh.ClusterGeometryIndices.Length)][];
         var selection = new SkinJointBounds[groups.Length][];
         var minErrors = new float[groups.Length];
         var maxErrors = new float[groups.Length];
         var pageStarts = new uint[mesh.PageCount];
-        for (int page = 1; page < pageStarts.Length; page++) pageStarts[page] = pageStarts[page - 1] + mesh.PageDigests[page - 1].ClusterCount;
+        for (int page = 1; page < pageStarts.Length; page++)
+            pageStarts[page] = checked(pageStarts[page - 1] + mesh.PageDigests[page - 1].ClusterCount);
         for (int cluster = 0; cluster < mesh.ClusterGeometryIndices.Length; cluster++)
         {
             uint source = mesh.ClusterGeometryIndices[cluster];
-            int output = sliceCount + cluster;
+            int output = checked(sliceCount + cluster);
             groups[output] = sourceBoxes[source];
             SkinClusterLod lod = sourceLod[source];
             selection[output] = lod.Level == 0 ? groups[output] : lodBoxes[lod.Group];
@@ -310,12 +320,12 @@ public sealed class SkinBoundsFeature : IClusterBoundsSource, IDisposable,
         for (int index = nodes.Length - 1; index >= 0; index--)
             for (int child = 0; child < ClusterBVHNode.ChildCount; child++)
             {
-                int output = index * ClusterBVHNode.ChildCount + child;
+                int output = checked(index * ClusterBVHNode.ChildCount + child);
                 ClusterHierarchySlice slice = nodes[index].GetChild(child);
                 if (!slice.IsEnabled) { groups[output] = []; selection[output] = []; continue; }
                 uint first = slice.IsLeaf
-                    ? (uint)sliceCount + pageStarts[slice.ChildReference >> 8] + slice.FirstCluster
-                    : slice.ChildReference * ClusterBVHNode.ChildCount;
+                    ? checked((uint)sliceCount + pageStarts[slice.ChildReference >> 8] + slice.FirstCluster)
+                    : checked(slice.ChildReference * ClusterBVHNode.ChildCount);
                 uint count = slice.IsLeaf ? slice.ClusterCount : ClusterBVHNode.ChildCount;
                 groups[output] = MergeBoxes(groups.Skip((int)first).Take((int)count).SelectMany(boxes => boxes));
                 if (slice.IsLeaf)

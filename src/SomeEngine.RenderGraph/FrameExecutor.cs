@@ -81,8 +81,9 @@ internal sealed partial class FrameExecutor
         _changedOrderIdentities.UnionWith(changes.OrderPasses);
         foreach (GraphIdentity id in changes.Labels)
         {
-            if (!_passIndices.TryGetValue(id, out int index) || !_frame.StructureIndex.Structure.Passes.Contains(id)) continue;
-            GraphPass source = _frame.StructureIndex.Structure.Passes.Get(id);
+            if (!_passIndices.TryGetValue(id, out int index) ||
+                !_frame.StructureIndex.Structure.Passes.TryGetDenseIndex(id, out int sourceIndex)) continue;
+            GraphPass source = _frame.StructureIndex.Structure.Passes.Rows[sourceIndex];
             CollectionsMarshal.AsSpan(_passes)[index].Definition = source;
             CollectionsMarshal.AsSpan(_passes)[index].Label = source.Label;
         }
@@ -139,7 +140,6 @@ internal sealed partial class FrameExecutor
         Materialize();
         RefreshParameterBindings();
         ResolveSynchronization();
-        PublishDiagnostics();
         PrepareGpuTimes();
         return RecordAndSubmit(destination);
     }
@@ -185,7 +185,6 @@ internal sealed partial class FrameExecutor
                 FirstPass = -1,
                 LastPass = -1,
             });
-            _bufferIndices[identity] = i;
         }
         for (int i = 0; i < _frame.DynamicBuffers.Count; i++)
         {
@@ -227,7 +226,6 @@ internal sealed partial class FrameExecutor
                 FirstPass = -1,
                 LastPass = -1,
             });
-            _textureIndices[identity] = i;
         }
         for (int i = 0; i < _frame.DynamicTextures.Count; i++)
         {
@@ -250,7 +248,6 @@ internal sealed partial class FrameExecutor
                 EntryBoundaryStates = source.BoundaryStates,
                 Contents = _queryPools[i].Contents,
             };
-            _queryPoolIndices[identity] = i;
             ObserveQueryContents(i);
             ChangeAnalysisResource(GraphAccessTargetKind.QueryPool, i);
         }
@@ -266,11 +263,9 @@ internal sealed partial class FrameExecutor
                 Identity = identity,
                 Definition = source,
                 Resource = source.Resource,
-                Inventory = source.Inventory,
                 EntryBoundaryStates = source.BoundaryStates,
                 Contents = _shaderTables[i].Contents,
             };
-            _shaderTableIndices[identity] = i;
             ObserveShaderTableContents(i);
             ChangeAnalysisResource(GraphAccessTargetKind.RayTracingShaderTable, i);
         }
@@ -327,7 +322,6 @@ internal sealed partial class FrameExecutor
                 Label = source.Label,
                 View = bufferRangeOverridden ? null : source.PersistentView,
             });
-            _viewIndices[identity] = i;
         }
         for (int i = 0; i < _frame.DynamicViews.Count; i++)
         {
@@ -341,7 +335,7 @@ internal sealed partial class FrameExecutor
         foreach (int sourceRow in CollectChangedRows(structureIndex.Structure.Passes, _rowChanges.Passes))
         {
             GraphIdentity identity = structureIndex.PassIds[sourceRow];
-            GraphPass source = structureIndex.Structure.Passes.Get(identity);
+            GraphPass source = structureIndex.Structure.Passes.Rows[sourceRow];
             int i = _passIndices[identity];
             SetPassRow(i, new FramePass
             {
@@ -384,7 +378,7 @@ internal sealed partial class FrameExecutor
         foreach (int sourceRow in CollectChangedRows(structureIndex.Structure.Accesses, _rowChanges.Accesses))
         {
             GraphIdentity identity = structureIndex.AccessIds[sourceRow];
-            PassResourceAccess source = structureIndex.Structure.Accesses.Get(identity);
+            PassResourceAccess source = structureIndex.Structure.Accesses.Rows[sourceRow];
             int i = _accessIndices[identity];
             BufferRange bufferRange = source.BufferRange;
             TextureSubresourceRange textureRange = source.TextureRange;
@@ -427,7 +421,7 @@ internal sealed partial class FrameExecutor
                     textureRange = source.CurrentTextureRange.GetValueOrDefault();
                 }
             }
-            SetAccessRow(i, new FrameResourceAccess
+            SetAccessRow(i, ResolvePass(source.Pass), new FrameResourceAccess
             {
                 Identity = identity,
                 Pass = source.Pass,
@@ -452,7 +446,7 @@ internal sealed partial class FrameExecutor
         {
             FrameResourceAccess source = _frame.DynamicAccesses[i];
             int destination = _dynamicAccessRows[i];
-            SetAccessRow(destination, source);
+            SetAccessRow(destination, _dynamicAccessPositions[i].Pass, source);
         }
 
         EndRows();
@@ -611,7 +605,7 @@ internal sealed partial class FrameExecutor
             foreach (GraphIdentity identity in changes)
             {
                 if (indices.TryGetValue(identity, out int previous) && previous < source.Count) _rowIndexSet.Add(previous);
-                if (source.Contains(identity)) _rowIndexSet.Add(source.DenseIndex(identity));
+                if (source.TryGetDenseIndex(identity, out int current)) _rowIndexSet.Add(current);
                 else indices.Remove(identity);
             }
             _rowIndexScratch.AddRange(_rowIndexSet);
@@ -803,12 +797,12 @@ internal sealed partial class FrameExecutor
 
     private readonly Dictionary<(GraphAccessTargetKind Kind, int Index), List<int>> _resourceAccessLists = [];
 
-    private void SetAccessRow(int index, FrameResourceAccess access)
+    private void SetAccessRow(int index, int passIndex, FrameResourceAccess access)
     {
         _rebuiltRowCount++;
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(GraphTrace.RowsSetAccessRow);
         FrameResourceAccess previous = _accesses[index];
-        access.PassIndex = ResolvePass(access.Pass);
+        access.PassIndex = passIndex;
         DevelopmentCheck.Require(Enum.IsDefined(access.TargetKind), "The resource access target kind is invalid.");
         access.ResourceIndex = access.TargetKind switch
         {
@@ -927,6 +921,21 @@ internal sealed partial class FrameExecutor
 
     private void UpdateBufferRanges()
     {
+        if (_previousBufferRanges.Count == _frame.BufferRanges.Count)
+        {
+            using var previousEntries = _previousBufferRanges.GetEnumerator();
+            bool unchanged = true;
+            foreach ((GraphIdentity buffer, BufferRangeSet ranges) in _frame.BufferRanges)
+            {
+                previousEntries.MoveNext();
+                var previousEntry = previousEntries.Current;
+                if (previousEntry.Key == buffer && ReferenceEquals(previousEntry.Value, ranges)) continue;
+                unchanged = false;
+                break;
+            }
+            if (unchanged) return;
+        }
+
         foreach (GraphIdentity buffer in _previousBufferRanges.Keys)
             if (!_frame.BufferRanges.ContainsKey(buffer))
                 ChangeDescriptorReads(buffer);

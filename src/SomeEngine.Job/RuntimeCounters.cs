@@ -13,7 +13,7 @@ internal sealed class RuntimeCounters
     private long _readyLatencyMaxTicks;
 
     [ThreadStatic]
-    private static CounterShardRegistration? s_threadShard;
+    private static CounterShard? s_threadShard;
 
     internal RuntimeCounters(bool enabled)
     {
@@ -249,17 +249,17 @@ internal sealed class RuntimeCounters
         if (!_enabled)
             return null;
 
-        CounterShardRegistration? registration = s_threadShard;
-        if (registration is not null && ReferenceEquals(registration.Owner, this))
-            return registration.Shard;
+        CounterShard? shard = s_threadShard;
+        if (shard is not null && ReferenceEquals(shard.Owner, this))
+            return shard;
 
-        var shard = new CounterShard();
+        shard = new CounterShard(this);
         lock (_shardLock)
         {
             _shards.Add(shard);
         }
 
-        s_threadShard = new CounterShardRegistration(this, shard);
+        s_threadShard = shard;
         return shard;
     }
 
@@ -307,21 +307,15 @@ internal sealed class RuntimeCounters
         return (long)(ticks * (1_000_000_000d / Stopwatch.Frequency));
     }
 
-    private sealed class CounterShardRegistration
-    {
-        internal CounterShardRegistration(RuntimeCounters owner, CounterShard shard)
-        {
-            Owner = owner;
-            Shard = shard;
-        }
-
-        internal RuntimeCounters Owner { get; }
-
-        internal CounterShard Shard { get; }
-    }
-
     private sealed class CounterShard
     {
+        internal CounterShard(RuntimeCounters owner)
+        {
+            Owner = owner;
+        }
+
+        internal readonly RuntimeCounters Owner;
+
         internal long ScheduledJobs;
         internal long ExecutedWorkItems;
         internal long CompletedHandles;

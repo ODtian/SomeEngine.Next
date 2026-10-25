@@ -64,7 +64,8 @@ public sealed partial class AssetManifest
         string subAssetKey = "",
         IEnumerable<Guid>? dependencies = null,
         string definitionPath = "",
-        Guid version = default)
+        Guid version = default,
+        string packPath = "")
     {
         if ((guid == System.Guid.Empty))
         {
@@ -101,6 +102,7 @@ public sealed partial class AssetManifest
             Dependencies = NormalizeDependencies(dependencies),
             DefinitionPath = AssetIoHelpers.NormalizePath(definitionPath),
             Version = version,
+            PackPath = AssetIoHelpers.NormalizePath(packPath),
         };
         _assetGuidsByPath[normalizedPath] = guid;
         _assetsBySource = null;
@@ -187,7 +189,7 @@ public sealed partial class AssetManifest
         foreach ((SourceGuid id, string path) in _sources) copy.AddSource(id, path);
         foreach (AssetEntry entry in _assets.Values)
             copy.AddAsset(entry.AssetGuid, entry.Name, entry.Path, entry.AssetType, entry.SchemaFingerprint,
-                entry.SourceGuid, entry.SubAssetKey, entry.Dependencies, entry.DefinitionPath, entry.Version);
+                entry.SourceGuid, entry.SubAssetKey, entry.Dependencies, entry.DefinitionPath, entry.Version, entry.PackPath);
         return copy;
     }
 
@@ -244,7 +246,7 @@ public sealed partial class AssetManifest
                 ParseSchemaFingerprint(entry),
                 sourceGuid,
                 entry.SubAssetKey,
-                dependencies.TryGetValue(guid, out IReadOnlyList<Guid>? values) ? values : [], entry.DefinitionPath, entry.Version);
+                dependencies.TryGetValue(guid, out IReadOnlyList<Guid>? values) ? values : [], entry.DefinitionPath, entry.Version, entry.PackPath);
         }
 
         return manifest;
@@ -291,6 +293,7 @@ public sealed partial class AssetManifest
             AssetGuid = record.AssetGuid.ToString(),
             Name = record.Name,
             Path = record.Path,
+            PackPath = record.PackPath,
             AssetType = record.AssetType,
             SchemaFingerprint = record.SchemaFingerprint.ToString("X16", CultureInfo.InvariantCulture),
             SourceGuid = record.SourceGuid.IsEmpty ? string.Empty : record.SourceGuid.ToString(),
@@ -361,9 +364,9 @@ public sealed partial class AssetManifest
         }
 
         Dictionary<Guid, HashSet<Guid>> referencers = _assets.Keys.ToDictionary(static guid => guid, static _ => new HashSet<Guid>());
-        foreach ((Guid owner, IReadOnlyList<Guid> dependencies) in Dependencies)
+        foreach ((Guid owner, AssetEntry record) in _assets)
         {
-            foreach (Guid dependency in dependencies)
+            foreach (Guid dependency in record.Dependencies)
             {
                 if (!referencers.TryGetValue(dependency, out HashSet<Guid>? values))
                 {
@@ -411,6 +414,7 @@ public sealed partial class AssetManifest
         public string AssetGuid { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
         public string Path { get; set; } = string.Empty;
+        public string PackPath { get; set; } = string.Empty;
         public string AssetType { get; set; } = string.Empty;
         public string SchemaFingerprint { get; set; } = string.Empty;
         public string SourceGuid { get; set; } = string.Empty;

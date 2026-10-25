@@ -85,6 +85,14 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
     internal float StreamingQuality => _streamingQuality;
     internal ReadOnlyMemory<ClusterLodChange> LodChanges => _activePublication?.Meshes.LodChanges ?? [];
     internal uint GeometryPageCount => _meshes.GeometryPageCount;
+    internal ClusterResidencyPublication? CurrentChanges
+    {
+        get { ThrowIfNotActive(); return _activePublication; }
+    }
+    internal ulong GeometryRevision
+    {
+        get { ThrowIfNotActive(); return _meshes.ChangeRevision; }
+    }
     internal uint MaximumRasterBatchesPerCluster => _meshes.MaximumRasterBatchesPerCluster;
     internal int HierarchyLevels => _meshes.HierarchyLevels;
 
@@ -267,12 +275,19 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
     }
 
     /// <summary>Advances page-fault ingestion and page IO without publishing GPU-visible data.</summary>
+    private static readonly global::SomeEngine.Diagnostics.TraceSite StreamingRetireCompleted = new("streaming", nameof(StreamingRetireCompleted), detail: false);
+    private static readonly global::SomeEngine.Diagnostics.TraceSite StreamingUpdateQuality = new("streaming", nameof(StreamingUpdateQuality), detail: false);
+
     internal void PumpStreaming()
     {
         ThrowIfNotActive();
-        _meshes.RetireCompleted(_backend);
+        using (global::SomeEngine.Diagnostics.EngineTrace.Begin(StreamingRetireCompleted))
+            _meshes.RetireCompleted(_backend);
         if (_stream.Update() is ClusterStreamingDemand demand)
-            UpdateStreamingQuality(demand);
+        {
+            using (global::SomeEngine.Diagnostics.EngineTrace.Begin(StreamingUpdateQuality))
+                UpdateStreamingQuality(demand);
+        }
     }
 
     /// <summary>Freezes one publication for the next RenderGraph frame without waiting on the GPU.</summary>
@@ -316,8 +331,7 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
         ThrowIfNotActive();
         if (_meshes.TryGetPublishedRoot(mesh, out root))
             return true;
-        if (_activePublication is { } publication &&
-            publication.Meshes.Bvh.RootMeshes.Any(candidate => ReferenceEquals(candidate, mesh)))
+        if (_activePublication is { } publication && publication.Meshes.Bvh.ContainsRoot(mesh))
             return _meshes.TryGetRegisteredRoot(mesh, out root);
         root = 0;
         return false;
@@ -592,7 +606,7 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
         }
     }
 
-    private void ThrowIfNotActive()
+    internal void ThrowIfNotActive()
         => ObjectDisposedException.ThrowIf(Volatile.Read(ref _lifecycleState) != 0, this);
 
     private static TimeSpan Remaining(long started, TimeSpan timeout)

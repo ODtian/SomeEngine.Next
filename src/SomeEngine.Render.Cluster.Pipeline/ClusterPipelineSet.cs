@@ -2,6 +2,7 @@ using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Resources;
 using SomeEngine.Graphics;
+using SomeEngine.Render.Assets;
 using SlangShaderSharp;
 
 namespace SomeEngine.Render.Cluster.Pipeline;
@@ -17,10 +18,13 @@ internal sealed class ClusterPipelineSet : IDisposable
         .GetValues<ClusterShaderOperationRole>()
         .Count(static role => role != ClusterShaderOperationRole.None);
 
-    private readonly List<ClusterPipeline> _pipelines = [];
-    private readonly Dictionary<(bool TargetFilters, bool MultipleViews), ClusterComputePipeline> _traversals = [];
-    private readonly Func<bool, bool, ClusterComputePipeline> _createTraversal;
+    private readonly List<IDisposable> _pipelines = [];
+    private readonly Dictionary<(bool TargetFilters, bool MultipleViews), LinkedComputePipeline> _traversals = [];
+    private readonly Func<bool, bool, LinkedComputePipeline> _createTraversal;
     private bool _disposed;
+
+    internal ClusterShaders Shaders { get; }
+    internal ClusterVisibilityMode VisibilityMode { get; }
 
     internal ClusterPipelineSet(
         IGraphicsBackend backend,
@@ -31,6 +35,8 @@ internal sealed class ClusterPipelineSet : IDisposable
         ArgumentNullException.ThrowIfNull(backend);
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(configuration);
+        Shaders = configuration;
+        VisibilityMode = visibilityMode;
         _pipelines.EnsureCapacity(RequiredPipelineCount);
         try
         {
@@ -40,41 +46,32 @@ internal sealed class ClusterPipelineSet : IDisposable
             DefaultRasterVertexEncoding = geometry.VertexEncoding;
             DefaultRasterCullingEnabled = geometry.Bounds == ClusterConservativeBounds.Finite;
 
-            ClusterComputePipeline Compute(
+            LinkedComputePipeline Compute(
                 ClusterShaderOperationRole role,
                 string name,
                 string? entryPoint = null,
                 string[]? specializations = null) =>
-                CreateCompute(backend, device, operations, _pipelines, role, name, entryPoint, specializations);
+                CreateCompute(backend, device, operations, role, name, entryPoint, specializations);
 
-                ClusterRasterPipeline Raster(
+                LinkedRasterPipeline Raster(
                     ClusterShaderOperationRole role,
                     ReadOnlySpan<Format> colorFormats,
                     Format? depthStencilFormat = null,
                     RasterizerState rasterizerState = default,
                     DepthStencilState depthStencilState = default,
-                    ReadOnlySpan<BlendAttachmentState> blendAttachments = default,
-                    uint sampleCount = 1,
                     string? name = null,
-                    uint sampleMask = uint.MaxValue,
-                    bool alphaToCoverage = false,
                     string? vertexEntry = null,
                     string? pixelEntry = null) =>
                     CreateRaster(
                         backend,
                         device,
                         operations,
-                        _pipelines,
                         role,
                         colorFormats,
                         depthStencilFormat,
                         rasterizerState,
                         depthStencilState,
-                        blendAttachments,
-                        sampleCount,
                         name,
-                        sampleMask,
-                        alphaToCoverage,
                         vertexEntry,
                         pixelEntry);
 
@@ -156,7 +153,7 @@ internal sealed class ClusterPipelineSet : IDisposable
                         : default,
                     name: "Cluster hardware visibility raster",
                     vertexEntry: "VSVisBuffer",
-                    pixelEntry: DefaultHardwarePixelEntry(visibilityMode, ClusterRasterPipeline.SupportsMesh(backend, device)));
+                    pixelEntry: DefaultHardwarePixelEntry(visibilityMode, ClusterRasterPolicy.SupportsMesh(backend, device)));
                 WinnerResolve = visibilityMode == ClusterVisibilityMode.HardwareOnly
                     ? null
                     : Raster(
@@ -200,57 +197,56 @@ internal sealed class ClusterPipelineSet : IDisposable
         }
     }
 
-    internal ClusterComputePipeline GetTraversal(bool targetFilters, bool multipleViews)
+    internal LinkedComputePipeline GetTraversal(bool targetFilters, bool multipleViews)
     {
         var capabilities = (targetFilters, multipleViews);
-        if (!_traversals.TryGetValue(capabilities, out ClusterComputePipeline? pipeline))
+        if (!_traversals.TryGetValue(capabilities, out LinkedComputePipeline? pipeline))
         {
             pipeline = _createTraversal(targetFilters, multipleViews);
             _traversals.Add(capabilities, pipeline);
         }
         return pipeline;
     }
-    internal ClusterComputePipeline PageRequests { get; }
-    internal ClusterComputePipeline LeafFlagFixups { get; }
-    internal ClusterComputePipeline SceneBounds { get; }
-    internal ClusterComputePipeline TraversalInitialize { get; }
-    internal ClusterComputePipeline DeferredResume { get; }
+    internal LinkedComputePipeline PageRequests { get; }
+    internal LinkedComputePipeline LeafFlagFixups { get; }
+    internal LinkedComputePipeline SceneBounds { get; }
+    internal LinkedComputePipeline TraversalInitialize { get; }
+    internal LinkedComputePipeline DeferredResume { get; }
     internal string DefaultRasterVertexEncoding { get; }
     internal bool DefaultRasterCullingEnabled { get; }
-    internal ClusterComputePipeline DecalClear { get; }
-    internal ClusterComputePipeline DecalCount { get; }
-    internal ClusterComputePipeline DecalReserve { get; }
-    internal ClusterComputePipeline DecalScatter { get; }
-    internal ClusterComputePipeline DecalSort { get; }
-    internal ClusterComputePipeline CullReset { get; }
-    internal ClusterComputePipeline CullPhase1 { get; }
-    internal ClusterComputePipeline CullPhase2 { get; }
-    internal ClusterComputePipeline RasterBinReset { get; }
-    internal ClusterComputePipeline RasterBinCount { get; }
-    internal ClusterComputePipeline RasterBinReserve { get; }
-    internal ClusterComputePipeline RasterBinScatter { get; }
-    internal ClusterComputePipeline TessellationBinReset { get; }
-    internal ClusterComputePipeline TessellationBinCount { get; }
-    internal ClusterComputePipeline TessellationBinReserve { get; }
-    internal ClusterComputePipeline TessellationBinScatter { get; }
-    internal ClusterComputePipeline? SoftwareRaster { get; }
-    internal ClusterComputePipeline? WinnerClear { get; }
-    internal ClusterRasterPipeline HardwareRaster { get; }
-    internal ClusterRasterPipeline? WinnerResolve { get; }
-    internal ClusterComputePipeline HiZFirst { get; }
-    internal ClusterComputePipeline HiZDownsample { get; }
-    internal ClusterComputePipeline HiZDownsampleTwo { get; }
-    internal ClusterComputePipeline ShadeBinClearPrepare { get; }
-    internal ClusterComputePipeline ShadeBinCount { get; }
-    internal ClusterComputePipeline ShadeBinReserve { get; }
-    internal ClusterComputePipeline ShadeBinScatter { get; }
-    internal ClusterComputePipeline Resolve { get; }
+    internal LinkedComputePipeline DecalClear { get; }
+    internal LinkedComputePipeline DecalCount { get; }
+    internal LinkedComputePipeline DecalReserve { get; }
+    internal LinkedComputePipeline DecalScatter { get; }
+    internal LinkedComputePipeline DecalSort { get; }
+    internal LinkedComputePipeline CullReset { get; }
+    internal LinkedComputePipeline CullPhase1 { get; }
+    internal LinkedComputePipeline CullPhase2 { get; }
+    internal LinkedComputePipeline RasterBinReset { get; }
+    internal LinkedComputePipeline RasterBinCount { get; }
+    internal LinkedComputePipeline RasterBinReserve { get; }
+    internal LinkedComputePipeline RasterBinScatter { get; }
+    internal LinkedComputePipeline TessellationBinReset { get; }
+    internal LinkedComputePipeline TessellationBinCount { get; }
+    internal LinkedComputePipeline TessellationBinReserve { get; }
+    internal LinkedComputePipeline TessellationBinScatter { get; }
+    internal LinkedComputePipeline? SoftwareRaster { get; }
+    internal LinkedComputePipeline? WinnerClear { get; }
+    internal LinkedRasterPipeline HardwareRaster { get; }
+    internal LinkedRasterPipeline? WinnerResolve { get; }
+    internal LinkedComputePipeline HiZFirst { get; }
+    internal LinkedComputePipeline HiZDownsample { get; }
+    internal LinkedComputePipeline HiZDownsampleTwo { get; }
+    internal LinkedComputePipeline ShadeBinClearPrepare { get; }
+    internal LinkedComputePipeline ShadeBinCount { get; }
+    internal LinkedComputePipeline ShadeBinReserve { get; }
+    internal LinkedComputePipeline ShadeBinScatter { get; }
+    internal LinkedComputePipeline Resolve { get; }
 
-    private ClusterComputePipeline CreateCompute(
+    private LinkedComputePipeline CreateCompute(
         IGraphicsBackend backend,
         Device device,
         IReadOnlyDictionary<ClusterShaderOperationRole, ShaderOperation> operations,
-        List<ClusterPipeline> ownedPipelines,
         ClusterShaderOperationRole role,
         string name,
         string? entryPoint = null,
@@ -267,56 +263,34 @@ internal sealed class ClusterPipelineSet : IDisposable
                 selectedEntry, SlangStage.Compute));
         }
 
-        ownedPipelines.EnsureCapacity(checked(ownedPipelines.Count + 1));
-        ClusterComputePipeline? created = null;
-        try
-        {
-            created = entryPoint is null
-                ? ClusterComputePipeline.Create(
-                    backend,
-                    device,
-                    compute.Shader,
-                    compute.Entry,
-                    name)
-                : ClusterComputePipeline.Create(
-                    backend,
-                    device,
-                    compute.Shader,
-                    entryPoint,
-                    name);
-            ownedPipelines.Add(created);
-            ClusterComputePipeline result = created;
-            created = null;
-            return result;
-        }
-        catch (Exception primary)
-        {
-            List<Exception>? cleanupFailures = null;
-            if (created is not null)
-                TryDispose(created, ref cleanupFailures);
-            ThrowWithCleanupFailures(
-                primary,
-                cleanupFailures,
-                $"Cluster compute pipeline '{role}' construction failed.");
-            throw;
-        }
+        _pipelines.EnsureCapacity(checked(_pipelines.Count + 1));
+        LinkedComputePipeline created = entryPoint is null
+            ? LinkedComputePipeline.Create(
+                backend,
+                device,
+                compute.Shader,
+                compute.Entry,
+                name)
+            : LinkedComputePipeline.Create(
+                backend,
+                device,
+                compute.Shader,
+                entryPoint,
+                name);
+        _pipelines.Add(created);
+        return created;
     }
 
-    private ClusterRasterPipeline CreateRaster(
+    private LinkedRasterPipeline CreateRaster(
         IGraphicsBackend backend,
         Device device,
         IReadOnlyDictionary<ClusterShaderOperationRole, ShaderOperation> operations,
-        List<ClusterPipeline> ownedPipelines,
         ClusterShaderOperationRole role,
         ReadOnlySpan<Format> colorFormats,
         Format? depthStencilFormat,
         RasterizerState rasterizerState,
         DepthStencilState depthStencilState,
-        ReadOnlySpan<BlendAttachmentState> blendAttachments,
-        uint sampleCount,
         string? name,
-        uint sampleMask,
-        bool alphaToCoverage,
         string? vertexEntry = null,
         string? pixelEntry = null)
     {
@@ -325,69 +299,43 @@ internal sealed class ClusterPipelineSet : IDisposable
             GetEntry(operation, role, SlangStage.Vertex);
         (Shader Shader, EntryPointReflection Entry) pixel =
             GetEntry(operation, role, SlangStage.Fragment);
-        Shader vertexShader = vertex.Shader;
-        Shader pixelShader = pixel.Shader;
-        if (!ReferenceEquals(vertexShader, pixelShader))
-            throw new InvalidDataException($"Cluster shader operation '{role}' spans shader assets.");
-
-        ownedPipelines.EnsureCapacity(checked(ownedPipelines.Count + 1));
-        ClusterRasterPipeline? created = null;
-        try
+        _pipelines.EnsureCapacity(checked(_pipelines.Count + 1));
+        Shader shader = vertex.Shader;
+        bool usesMesh = role == ClusterShaderOperationRole.HardwareVisibilityRaster &&
+            ClusterRasterPolicy.SupportsMesh(backend, device);
+        string geometryEntry = vertexEntry ?? vertex.Entry.Name;
+        if (usesMesh)
+            geometryEntry = ClusterRasterPolicy.SupportsMeshlets(backend, device) &&
+                ClusterMaterialEntries.HasEntry(
+                    shader,
+                    device.Capabilities.CompileTarget,
+                    "MSVisBufferMeshlet",
+                    SlangStage.Mesh)
+                    ? "MSVisBufferMeshlet" : "MSVisBuffer";
+        if (role == ClusterShaderOperationRole.HardwareVisibilityRaster)
         {
-            Shader shader = vertex.Shader;
-            bool usesMesh = role == ClusterShaderOperationRole.HardwareVisibilityRaster &&
-                ClusterRasterPipeline.SupportsMesh(backend, device);
-            string geometryEntry = vertexEntry ?? vertex.Entry.Name;
-            if (usesMesh)
-                geometryEntry = ClusterRasterPipeline.SupportsMeshlets(backend, device) &&
-                    ClusterMaterialEntries.HasEntry(
-                        shader,
-                        device.Capabilities.CompileTarget,
-                        "MSVisBufferMeshlet",
-                        SlangStage.Mesh)
-                        ? "MSVisBufferMeshlet" : "MSVisBuffer";
-            if (role == ClusterShaderOperationRole.HardwareVisibilityRaster)
+            EntryPointReflection rasterPixel = shader.RequireSlangEntry(
+                shader.RequireSlangTarget(device.Capabilities.CompileTarget),
+                pixelEntry ?? pixel.Entry.Name, SlangStage.Fragment);
+            rasterizerState = rasterizerState with
             {
-                EntryPointReflection rasterPixel = shader.RequireSlangEntry(
-                    shader.RequireSlangTarget(device.Capabilities.CompileTarget),
-                    pixelEntry ?? pixel.Entry.Name, SlangStage.Fragment);
-                rasterizerState = rasterizerState with
-                {
-                    Cull = ClusterGeometryRequirements.UsesBothRasterFaces(rasterPixel) ? CullType.None : CullType.Back,
-                };
-            }
-            created = ClusterRasterPipeline.Create(
-                backend,
-                device,
-                shader,
-                geometryEntry,
-                pixelEntry ?? pixel.Entry.Name,
-                colorFormats,
-                depthStencilFormat,
-                rasterizerState,
-                depthStencilState,
-                blendAttachments,
-                sampleCount,
-                name,
-                sampleMask,
-                alphaToCoverage,
-                geometryStage: usesMesh ? SlangStage.Mesh : SlangStage.Vertex);
-            ownedPipelines.Add(created);
-            ClusterRasterPipeline result = created;
-            created = null;
-            return result;
+                Cull = ClusterGeometryRequirements.UsesBothRasterFaces(rasterPixel) ? CullType.None : CullType.Back,
+            };
         }
-        catch (Exception primary)
-        {
-            List<Exception>? cleanupFailures = null;
-            if (created is not null)
-                TryDispose(created, ref cleanupFailures);
-            ThrowWithCleanupFailures(
-                primary,
-                cleanupFailures,
-                $"Cluster raster pipeline '{role}' construction failed.");
-            throw;
-        }
+        LinkedRasterPipeline created = LinkedRasterPipeline.Create(
+            backend,
+            device,
+            shader,
+            usesMesh ? SlangStage.Mesh : SlangStage.Vertex,
+            geometryEntry,
+            pixelEntry ?? pixel.Entry.Name,
+            colorFormats,
+            depthStencilFormat,
+            rasterizerState,
+            depthStencilState,
+            label: name);
+        _pipelines.Add(created);
+        return created;
     }
 
     private static ShaderOperation GetOperation(
@@ -415,10 +363,8 @@ internal sealed class ClusterPipelineSet : IDisposable
             Shader shader = shaderReference.Shader;
             string entryPoint = shaderReference.Entry.Name;
             string subject = $"Cluster shader operation '{operation.Role}'";
-            string currentEncoding = ClusterGeometryRequirements.RequireVertexEncoding(
-                shader,
-                entryPoint,
-                subject);
+            string currentEncoding = shader.RequireSlangEntryStringAttribute(
+                0, entryPoint, "VertexEncoding", subject);
             if (vertexEncoding is not null &&
                 !string.Equals(vertexEncoding, currentEncoding, StringComparison.Ordinal))
             {
@@ -569,17 +515,6 @@ internal sealed class ClusterPipelineSet : IDisposable
         for (int index = _pipelines.Count - 1; index >= 0; index--)
             TryDispose(_pipelines[index], ref failures);
         _pipelines.Clear();
-    }
-
-    private static void ThrowWithCleanupFailures(
-        Exception primary,
-        List<Exception>? cleanupFailures,
-        string message)
-    {
-        if (cleanupFailures is null)
-            return;
-        cleanupFailures.Insert(0, primary);
-        throw new AggregateException(message, cleanupFailures);
     }
 
     private static void TryDispose(IDisposable value, ref List<Exception>? failures)

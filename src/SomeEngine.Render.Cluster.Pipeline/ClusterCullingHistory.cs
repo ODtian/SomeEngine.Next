@@ -131,13 +131,6 @@ internal sealed class ClusterCullingHistory
 
     private void ClearPending()
     {
-        Array.Clear(_pendingViews);
-        Array.Clear(_pendingProjections);
-        Array.Clear(_pendingViewEntities);
-        Array.Clear(_frameOrigins);
-        Array.Clear(_frameFirstPerson);
-        Array.Clear(_framePlayers);
-        Array.Clear(_usePreviousView);
         _pendingViewCount = 0;
         _pending = false;
     }

@@ -313,6 +313,115 @@ public sealed class ExternalFenceBridgeTests
     }
 
     [Fact]
+    public void ReleasingRepeatedReadsPreservesLaterReaderBeforeWriter()
+    {
+        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 0 });
+        var resource = JobSystem.CreateResource("repeated-read-release-order");
+        var firstReaderFence = new FakeExternalFence(_data.Events);
+        var releasedReadsFence = new FakeExternalFence(_data.Events);
+        var firstWriterFence = new FakeExternalFence(_data.Events);
+        var laterReaderFence = new FakeExternalFence(_data.Events);
+        var laterWriterFence = new FakeExternalFence(_data.Events);
+        var firstReader = JobSystem.CreateExternalFenceHandle(
+            firstReaderFence, JobResourceAccess.Read(resource));
+        JobResourceAccess[] repeatedReads =
+        [
+            JobResourceAccess.Read(resource),
+            JobResourceAccess.Read(resource),
+            JobResourceAccess.Read(resource),
+            JobResourceAccess.Read(resource),
+            JobResourceAccess.Read(resource)
+        ];
+        var releasedReads = JobSystem.CreateExternalFenceHandle(releasedReadsFence, repeatedReads);
+        var firstWriter = JobSystem.CreateExternalFenceHandle(
+            firstWriterFence, JobResourceAccess.Write(resource));
+        var laterReader = JobSystem.CreateExternalFenceHandle(
+            laterReaderFence, JobResourceAccess.Read(resource));
+
+        try
+        {
+            releasedReadsFence.Signal();
+            releasedReads.Complete();
+            releasedReads.Complete();
+
+            laterWriterFence.Signal();
+            var laterWriter = JobSystem.CreateExternalFenceHandle(
+                laterWriterFence, JobResourceAccess.Write(resource));
+            firstReaderFence.Signal();
+            firstWriterFence.Signal();
+            firstReader.Complete();
+            firstWriter.Complete();
+
+            Assert.False(laterWriter.IsCompleted);
+
+            laterReaderFence.Signal();
+            JobSystem.CombineDependencies([laterReader, laterWriter]).Complete();
+            Assert.True(laterWriter.IsCompleted);
+        }
+        finally
+        {
+            firstReaderFence.Signal();
+            releasedReadsFence.Signal();
+            firstWriterFence.Signal();
+            laterReaderFence.Signal();
+            laterWriterFence.Signal();
+        }
+
+        JobSystem.ReleaseResource(resource);
+    }
+
+    [Fact]
+    public void ReleasingRepeatedRangesKeepsLaterReadsWaitingOnlyForOverlap()
+    {
+        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 0 });
+        var resource = JobSystem.CreateResource("repeated-range-release-overlap");
+        var releasedRangesFence = new FakeExternalFence(_data.Events);
+        var writerFence = new FakeExternalFence(_data.Events);
+        var overlappingReadFence = new FakeExternalFence(_data.Events);
+        var disjointReadFence = new FakeExternalFence(_data.Events);
+        JobResourceAccess[] repeatedReads =
+        [
+            JobResourceAccess.Read(resource, start: 0, length: 1),
+            JobResourceAccess.Read(resource, start: 0, length: 1),
+            JobResourceAccess.Read(resource, start: 0, length: 1),
+            JobResourceAccess.Read(resource, start: 0, length: 1),
+            JobResourceAccess.Read(resource, start: 0, length: 1)
+        ];
+        var releasedRanges = JobSystem.CreateExternalFenceHandle(releasedRangesFence, repeatedReads);
+        var writer = JobSystem.CreateExternalFenceHandle(
+            writerFence, JobResourceAccess.Write(resource, start: 16, length: 4));
+
+        try
+        {
+            releasedRangesFence.Signal();
+            releasedRanges.Complete();
+
+            overlappingReadFence.Signal();
+            var overlappingRead = JobSystem.CreateExternalFenceHandle(
+                overlappingReadFence, JobResourceAccess.Read(resource, start: 17, length: 1));
+            disjointReadFence.Signal();
+            var disjointRead = JobSystem.CreateExternalFenceHandle(
+                disjointReadFence, JobResourceAccess.Read(resource, start: 20, length: 1));
+
+            Assert.False(overlappingRead.IsCompleted);
+            Assert.True(disjointRead.IsCompleted);
+
+            writerFence.Signal();
+            JobSystem.CombineDependencies([writer, overlappingRead, disjointRead]).Complete();
+            Assert.True(overlappingRead.IsCompleted);
+        }
+        finally
+        {
+            releasedRangesFence.Signal();
+            writerFence.Signal();
+            overlappingReadFence.Signal();
+            disjointReadFence.Signal();
+        }
+
+        JobSystem.ReleaseResource(resource);
+    }
+
+    [Fact]
     public void AlreadySignaledResourceFenceReleasesAccessBeforeFactoryReturns()
     {
         var resource = JobSystem.CreateResource("already-signaled-resource");

@@ -128,9 +128,10 @@ internal sealed unsafe partial class D3D12Backend
 
         internal void FinishCommandData()
         {
-            _repeatRestrictions = (!_collectingCommands ? 1 : 0) | (_transientObjects.Count != 0 ? 2 : 0) |
-                (_capturedBundles.Count != 0 ? 4 : 0) | (SwapchainUseCount != 0 ? 8 : 0) |
-                (_captures.SparseCount != 0 ? 16 : 0) | (_temporaryRtvUsed != 0 ? 32 : 0) | (_temporaryDsvUsed != 0 ? 64 : 0);
+            // Replaced descriptor heaps retire through _transientObjects, so such
+            // recordings cannot keep a cache entry after their transient references retire.
+            // Temporary RTV/DSV descriptors are rewritten on Begin; their CPU handles
+            // alone cannot establish that a cached recording still names the same views.
             bool reusable = _collectingCommands &&
                 _transientObjects.Count == 0 && _capturedBundles.Count == 0 &&
                 SwapchainUseCount == 0 && _captures.SparseCount == 0 &&

@@ -51,6 +51,15 @@ public readonly ref struct RenderGraphFrameResult
         completion = default;
         return false;
     }
+    /// <summary>Returns a completion only if the buffer's installed persistent upload pass was submitted in this frame.</summary>
+    public bool TryGetPersistentBufferUploadCompletion(GraphBufferId buffer, out QueueCompletion completion)
+    {
+        if (_frame is not null)
+            return _frame.TryGetPersistentBufferUploadCompletion(buffer, out completion);
+        completion = default;
+        return false;
+    }
+
     /// <summary>Returns a completion only when this readback was queued for completed-byte delivery.</summary>
     public bool TryGetReadbackCompletion(GraphReadbackId readback, out QueueCompletion completion)
     {

@@ -1,6 +1,7 @@
 namespace SomeEngine.RenderGraph;
 
 public delegate void RenderGraphDiagnosticsHandler(in RenderGraphDiagnosticsView diagnostics);
+public delegate void RenderGraphStatisticsHandler(in RenderGraphStatistics statistics);
 
 public readonly ref struct RenderGraphDiagnosticsView
 {

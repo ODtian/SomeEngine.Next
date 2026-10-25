@@ -16,8 +16,30 @@ internal sealed class FrameBufferTransfers : IDisposable
     internal BufferUpload[] TakeUploads()
     {
         IList<List<BufferUpload>> writes = _uploads.Values;
-        BufferUpload[] uploads = writes.SelectMany(values => values).ToArray();
-        Array.Sort(uploads, static (left, right) => left.Sequence.CompareTo(right.Sequence));
+        List<BufferUpload>? singleUploads = null;
+        bool multipleLists = false;
+        for (int index = 0; index < writes.Count; index++)
+        {
+            List<BufferUpload> values = writes[index];
+            if (values.Count == 0) continue;
+            if (singleUploads is not null)
+            {
+                multipleLists = true;
+                break;
+            }
+            singleUploads = values;
+        }
+        BufferUpload[] uploads;
+        if (multipleLists)
+        {
+            uploads = writes.SelectMany(values => values).ToArray();
+            Array.Sort(uploads, static (left, right) => left.Sequence.CompareTo(right.Sequence));
+        }
+        else
+        {
+            // Each thread appends freshly assigned sequences in increasing order.
+            uploads = singleUploads?.ToArray() ?? [];
+        }
         foreach (List<BufferUpload> values in writes) values.Clear();
         return uploads;
     }
@@ -48,11 +70,19 @@ internal sealed class FrameBufferTransfers : IDisposable
         return GetUploadSpan(upload);
     }
 
-    internal void AddUploads(IEnumerable<BufferUpload> uploads)
+    internal void AddUploads(IList<List<BufferUpload>> uploads)
     {
         List<BufferUpload> writes = _uploads.Value!;
         // A group joins frame order at Commit while retaining its own write order.
-        foreach (BufferUpload upload in uploads.OrderBy(upload => upload.Sequence))
+        if (uploads.Count == 1)
+        {
+            // Each producer appends freshly assigned sequences in increasing order.
+            foreach (BufferUpload upload in uploads[0])
+                writes.Add(upload with { Sequence = Interlocked.Increment(ref _uploadSequence) });
+            return;
+        }
+        foreach (BufferUpload upload in uploads.SelectMany(values => values)
+            .OrderBy(upload => upload.Sequence))
             writes.Add(upload with { Sequence = Interlocked.Increment(ref _uploadSequence) });
     }
 
@@ -83,12 +113,14 @@ internal sealed class FrameBufferTransfers : IDisposable
         ulong start;
         if (target is null || !target.TryReserve(size, out start))
         {
+            UploadPage? failedPage = target;
             lock (_uploadPageGate)
             {
                 target = null;
                 start = 0;
                 foreach (UploadPage page in _uploadPages)
                 {
+                    if (ReferenceEquals(page, failedPage)) continue;
                     if (!page.TryReserve(size, out start)) continue;
                     target = page;
                     break;
@@ -198,12 +230,18 @@ internal sealed class FrameBufferTransfers : IDisposable
         foreach (UploadPage page in _uploadPages)
         {
             ReadOnlySpan<BufferBoundaryState> states = result.GetBufferStates(page.Buffer);
-            if (!states.IsEmpty) page.BoundaryStates = states.ToArray();
+            if (states.IsEmpty) continue;
+            if (page.BoundaryStates.Length != states.Length)
+                page.BoundaryStates = new BufferBoundaryState[states.Length];
+            states.CopyTo(page.BoundaryStates);
         }
         foreach (ReadbackPage page in _readbackPages)
         {
             ReadOnlySpan<BufferBoundaryState> states = result.GetBufferStates(page.Buffer);
-            if (!states.IsEmpty) page.BoundaryStates = states.ToArray();
+            if (states.IsEmpty) continue;
+            if (page.BoundaryStates.Length != states.Length)
+                page.BoundaryStates = new BufferBoundaryState[states.Length];
+            states.CopyTo(page.BoundaryStates);
         }
     }
 

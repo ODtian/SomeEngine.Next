@@ -52,7 +52,6 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
     private readonly global::SomeEngine.RenderGraph.RenderGraph _graph;
     private readonly Shader _singlePointShader;
     private readonly GraphRegionId _singlePointRegion;
-    private readonly uint _entryCapacity;
     private readonly bool _supportsSinglePoint;
 
     private readonly LinkedComputePipeline _pipeline;
@@ -62,15 +61,8 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
     private readonly GraphPassId _buildPass;
     private readonly GraphPassId _compactPass;
     private readonly GraphPassId _cookieInitializePass;
-    private readonly GraphBufferId _grid;
-    private readonly GraphBufferId _lightIndices;
     private readonly GraphBufferId _lightLinks;
     private readonly GraphBufferId _allocationCounters;
-    private readonly GraphBufferId _allocationStatus;
-    private readonly GraphTextureId _cookieAtlas;
-    private readonly int _width;
-    private readonly int _height;
-    private readonly uint _viewCount;
     private readonly ClusteredLightGridSettings _settings;
     private readonly List<GpuLight> _gpuLights;
     private readonly ClusteredLightGridParameters[] _viewParameters;
@@ -103,22 +95,18 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(height);
         ArgumentOutOfRangeException.ThrowIfZero(viewCount);
-        _width = width;
-        _height = height;
-        _viewCount = viewCount;
         _settings = settings ?? new ClusteredLightGridSettings();
         _settings.Validate();
         _gpuLights = new List<GpuLight>(_settings.MaxLights);
-        _viewParameters = new ClusteredLightGridParameters[checked((int)_viewCount)];
+        _viewParameters = new ClusteredLightGridParameters[checked((int)viewCount)];
 
-        uint tileCountX = DivideRoundUp(checked((uint)_width), _settings.TileSize);
-        uint tileCountY = DivideRoundUp(checked((uint)_height), _settings.TileSize);
+        uint tileCountX = DivideRoundUp(checked((uint)width), _settings.TileSize);
+        uint tileCountY = DivideRoundUp(checked((uint)height), _settings.TileSize);
         uint cellsPerView = checked(tileCountX * tileCountY * _settings.DepthSliceCount);
-        ulong gridBytes = checked((ulong)cellsPerView * _viewCount * 2u * sizeof(uint));
-        uint lightEntryCapacity = checked(cellsPerView * _viewCount * _settings.MaxLightsPerCell);
+        ulong gridBytes = checked((ulong)cellsPerView * viewCount * 2u * sizeof(uint));
+        uint lightEntryCapacity = checked(cellsPerView * viewCount * _settings.MaxLightsPerCell);
         ulong indexBytes = (ulong)lightEntryCapacity * sizeof(uint);
 
-        _entryCapacity = lightEntryCapacity;
         _backend = backend;
         _device = device;
         _graph = graph;
@@ -146,11 +134,11 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
             {
                 _frameLights = edit.CreateBufferInput(BufferUsages.ShaderRead);
                 _frameViews = edit.CreateBufferInput(BufferUsages.ShaderRead);
-                _grid = edit.CreateBuffer(new BufferDesc(
+                GraphBufferId grid = edit.CreateBuffer(new BufferDesc(
                     gridBytes,
                     BufferUsages.ShaderRead | BufferUsages.ShaderWrite,
                     "Lighting clustered grid"));
-                _lightIndices = edit.CreateBuffer(new BufferDesc(
+                GraphBufferId lightIndices = edit.CreateBuffer(new BufferDesc(
                     indexBytes,
                     BufferUsages.ShaderRead | BufferUsages.ShaderWrite,
                     "Lighting clustered indices"));
@@ -160,10 +148,10 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
                 _allocationCounters = edit.CreateBuffer(new BufferDesc(
                     2u * sizeof(uint), BufferUsages.ShaderRead | BufferUsages.ShaderWrite,
                     "Lighting list allocation counters"));
-                _allocationStatus = edit.CreateBuffer(new BufferDesc(
+                GraphBufferId allocationStatus = edit.CreateBuffer(new BufferDesc(
                     sizeof(uint), BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopySource,
                     "Lighting list allocation status"));
-                _cookieAtlas = edit.CreatePersistentTexture(new TextureDesc(
+                GraphTextureId cookieAtlas = edit.CreatePersistentTexture(new TextureDesc(
                     TextureDimension.Texture2D,
                     1,
                     1,
@@ -175,10 +163,18 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
                     TextureUsages.Sampled | TextureUsages.CopyDestination |
                         TextureUsages.ColorAttachment,
                     label: "Lighting cookie atlas"));
+                Resources = new LightingFeatureResources(
+                    grid,
+                    lightIndices,
+                    allocationStatus,
+                    cookieAtlas,
+                    cellsPerView,
+                    _settings.MaxLightsPerCell,
+                    viewCount);
                 _cookieInitializePass = edit.AddCopyFramePass(
                     "Initialize lighting cookie atlas",
                     PassQueueSelection.AnyOfType(QueueType.Graphics),
-                    _cookieAtlas,
+                    Resources.CookieAtlas,
                     new PassOptions(Culling: PassCullingMode.NeverCull),
                     static (ref PassDefinition pass, ref GraphTextureId texture) =>
                         _ = pass.Write(
@@ -259,14 +255,14 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
                                     PipelineSync.ComputeShading);
                                 break;
                             case 2:
-                                _ = pass.Bind(edit.CreateBufferUav(_grid,
+                                _ = pass.Bind(edit.CreateBufferUav(Resources.Grid,
                                     structureStride: 2 * sizeof(uint), label: "Lighting grid output"),
                                     PipelineSync.ComputeShading,
                                     clear ? GraphAccessMode.Write : GraphAccessMode.ReadWrite,
                                     clear ? WriteCoverage.Complete : WriteCoverage.Partial);
                                 break;
                             case 3:
-                                _ = pass.Bind(edit.CreateBufferUav(_lightIndices,
+                                _ = pass.Bind(edit.CreateBufferUav(Resources.LightIndices,
                                     structureStride: sizeof(uint), label: "Lighting index output"),
                                     PipelineSync.ComputeShading, GraphAccessMode.Write,
                                     WriteCoverage.Partial, resultContents: ResourceContentState.Defined,
@@ -281,7 +277,7 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
                                 break;
                             case 5:
                             case 6:
-                                _ = pass.Bind(edit.CreateBufferUav(resource == 5 ? _allocationCounters : _allocationStatus,
+                                _ = pass.Bind(edit.CreateBufferUav(resource == 5 ? _allocationCounters : Resources.AllocationStatus,
                                     structureStride: sizeof(uint), label: "Lighting allocation state"),
                                     PipelineSync.ComputeShading, clear ? GraphAccessMode.Write : GraphAccessMode.ReadWrite,
                                     clear ? WriteCoverage.Complete : WriteCoverage.Partial);
@@ -290,7 +286,7 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
                     // Clearing every cell count establishes an empty valid index prefix even
                     // when the compiled clear entry has no index-list descriptor.
                     if (clear && !resources.Contains(3))
-                        pass.Write(_lightIndices, BufferRange.Whole, PipelineSync.ComputeShading,
+                        pass.Write(Resources.LightIndices, BufferRange.Whole, PipelineSync.ComputeShading,
                             ResourceAccess.UnorderedAccess, WriteCoverage.Partial,
                             resultContents: ResourceContentState.Defined,
                             contentScope: BufferContentScope.CountBoundedPrefix);
@@ -311,14 +307,6 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
             pipeline = null;
             clearPipeline = null;
             compactPipeline = null;
-            Resources = new LightingFeatureResources(
-                _grid,
-                _lightIndices,
-                _allocationStatus,
-                _cookieAtlas,
-                cellsPerView,
-                _settings.MaxLightsPerCell,
-                _viewCount);
         }
         catch
         {
@@ -375,7 +363,7 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
             _gpuLights.Add(default);
 
         Span<ClusteredLightGridParameters> parameters = _viewParameters;
-        parameters.Clear();
+        parameters[views.Length..].Clear();
         for (int index = 0; index < views.Length; index++)
         {
             parameters[index] = ClusteredLightGridParameters.Create(
@@ -409,12 +397,11 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
                 parameters[0].GroupsPerLight)));
         graph.SetPassData(_compactPass, new LightingBuildPassData(new DispatchArguments(
             DivideRoundUp(Resources.CellCountPerView, ThreadCount), checked((uint)views.Length), 1)));
-        bool useSinglePoint = _supportsSinglePoint && enabled && _viewCount == 1 && views.Length == 1 &&
+        bool useSinglePoint = _supportsSinglePoint && enabled && Resources.ViewCount == 1 && views.Length == 1 &&
             lights.Points.Count == 1 && lights.Spots.Count == 0 &&
             parameters[0].TileCountX != 0 && parameters[0].TileCountY != 0 && parameters[0].DepthSliceCount != 0 &&
             Resources.CellCountPerView % parameters[0].DepthSliceCount == 0 &&
-            (ulong)parameters[0].TileCountX * parameters[0].TileCountY == Resources.CellCountPerView / parameters[0].DepthSliceCount &&
-            _entryCapacity >= Resources.CellCountPerView;
+            (ulong)parameters[0].TileCountX * parameters[0].TileCountY == Resources.CellCountPerView / parameters[0].DepthSliceCount;
         if (useSinglePoint && _singlePointVersion == 0)
             InstallSinglePointPasses();
         bool singlePointVisible = _singlePointVersion != 0 && graph.StructureVersion >= _singlePointVersion;
@@ -493,7 +480,7 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
     {
         _ = pass.Bind(
             graph.CreateBufferSrv(
-                _grid,
+                Resources.Grid,
                 structureStride: 2 * sizeof(uint),
                 label: "Standard shade clustered grid"),
             sync);
@@ -503,7 +490,7 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
     {
         _ = pass.Bind(
             graph.CreateBufferSrv(
-                _lightIndices,
+                Resources.LightIndices,
                 structureStride: sizeof(uint),
                 label: "Standard shade light indices"),
             sync,
@@ -514,7 +501,7 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
     {
         _ = pass.Bind(
             graph.CreateTextureSrv(
-                _cookieAtlas,
+                Resources.CookieAtlas,
                 format: Format.R8G8B8A8UNorm,
                 dimension: SomeEngine.Graphics.TextureViewDimension.Texture2DArray,
                 label: "Standard shade lighting cookie atlas"),
@@ -525,26 +512,10 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
         ref RenderGraphEdit graph,
         ref PassDefinition pass, PipelineSync sync)
     {
-        _ = pass.Bind(
-            graph.CreateBufferSrv(
-                _frameViews,
-                structureStride: ClusteredLightGridParameters.SizeInBytes,
-                label: "Virtual shadow lighting views"),
-            sync);
+        BindLightingViews(ref graph, ref pass, sync);
         BindLights(ref graph, ref pass, sync);
-        _ = pass.Bind(
-            graph.CreateBufferSrv(
-                _grid,
-                structureStride: 2 * sizeof(uint),
-                label: "Virtual shadow clustered light grid"),
-            sync);
-        _ = pass.Bind(
-            graph.CreateBufferSrv(
-                _lightIndices,
-                structureStride: sizeof(uint),
-                label: "Virtual shadow clustered light indices"),
-            sync,
-            BufferContentScope.CountBoundedPrefix);
+        BindGrid(ref graph, ref pass, sync);
+        BindIndices(ref graph, ref pass, sync);
     }
 
     private void EncodeLights(RenderLightSet source)
@@ -685,15 +656,15 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
                     else pass.Bind(GraphParameterResourceBinding.ReadOnlyBufferDescriptor(lightView));
                     break;
                 case "ClusteredLightGrid":
-                    BindOutput(ref edit, ref pass, _grid, 8, !prepare, WriteCoverage.Complete, BufferContentScope.FullRange); break;
+                    BindOutput(ref edit, ref pass, Resources.Grid, 8, !prepare, WriteCoverage.Complete, BufferContentScope.FullRange); break;
                 case "LightIndexList":
-                    BindOutput(ref edit, ref pass, _lightIndices, 4, !prepare, WriteCoverage.Partial, BufferContentScope.CountBoundedPrefix); break;
+                    BindOutput(ref edit, ref pass, Resources.LightIndices, 4, !prepare, WriteCoverage.Partial, BufferContentScope.CountBoundedPrefix); break;
                 case "LightLinkList":
                     BindOutput(ref edit, ref pass, _lightLinks, 8, !prepare, WriteCoverage.Partial, BufferContentScope.CountBoundedPrefix); break;
                 case "LightAllocationCounters":
                     BindOutput(ref edit, ref pass, _allocationCounters, 4, prepare, WriteCoverage.Complete, BufferContentScope.FullRange); break;
                 case "LightAllocationStatus":
-                    BindOutput(ref edit, ref pass, _allocationStatus, 4, prepare, WriteCoverage.Complete, BufferContentScope.FullRange); break;
+                    BindOutput(ref edit, ref pass, Resources.AllocationStatus, 4, prepare, WriteCoverage.Complete, BufferContentScope.FullRange); break;
                 default: throw new InvalidDataException("Unknown direct grid binding " + input.Name);
             }
         }

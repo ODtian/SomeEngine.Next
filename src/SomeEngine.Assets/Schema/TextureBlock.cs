@@ -31,24 +31,22 @@ public sealed partial class TextureBlock : AssetBlock
     internal void ValidateDescription()
         => TextureTiles.Validate(GetDescription(), SampledDimension, SampledFormat, MipTiles.ToArray());
 
-    protected override void ValidateContent() => _ = ReadTiles();
+    protected override void ValidateContent() => _ = ReadTiles(out _);
 
-    private (TextureMipTile Tile, ulong ContentKey)[] ReadTiles()
+    private (TextureMipTile Tile, ulong ContentKey)[] ReadTiles(out TextureMipTile[] tiles)
     {
         var result = new (TextureMipTile Tile, ulong ContentKey)[MipTiles.Count];
-        var keys = new HashSet<ulong>();
         for (int index = 0; index < result.Length; index++)
         {
             TextureMipTile tile = MipTiles[index];
             ulong key = TextureTiles.ChunkKey(tile.MipLevel, tile.ArrayLayer, tile.Face, tile.DepthSlice, tile.TileX, tile.TileY);
-            if (!keys.Add(key)) throw new InvalidDataException("Texture tile keys collided or repeat the same coordinates.");
             ulong contentKey = Chunks.ContainsKey(tile.ChunkKey) ? tile.ChunkKey : Chunks.ContainsKey(key) ? key : tile.ChunkKey;
             ulong length = Chunks.ContainsKey(contentKey) ? checked((ulong)Chunks[contentKey].Length) : tile.DecodedLength;
             result[index] = (tile.ChunkKey == key && tile.DecodedLength == length
                 ? tile : tile with { ChunkKey = key, DecodedLength = length }, contentKey);
         }
         Array.Sort(result, static (left, right) => TextureTiles.Compare(left.Tile, right.Tile));
-        TextureTiles.Validate(GetDescription(), SampledDimension, SampledFormat, result.Select(static row => row.Tile).ToArray());
+        TextureTiles.Validate(GetDescription(), SampledDimension, SampledFormat, tiles = result.Select(static row => row.Tile).ToArray());
         return result;
     }
 
@@ -57,8 +55,7 @@ public sealed partial class TextureBlock : AssetBlock
     {
         using TextureBlock copy = Duplicate();
         cancellationToken.ThrowIfCancellationRequested();
-        var content = copy.ReadTiles();
-        TextureMipTile[] tiles = content.Select(static row => row.Tile).ToArray();
+        var content = copy.ReadTiles(out TextureMipTile[] tiles);
         _ = TextureTiles.Bootstrap(copy.GetDescription(), copy.SampledDimension, tiles);
         uint first = firstMip ?? copy.MipLevelCount - 1;
         if (first >= copy.MipLevelCount) throw new ArgumentOutOfRangeException(nameof(firstMip));
@@ -82,7 +79,7 @@ public sealed partial class TextureBlock : AssetBlock
     {
         ArgumentNullException.ThrowIfNull(texture);
         using TextureBlock copy = Duplicate();
-        var content = copy.ReadTiles();
+        var content = copy.ReadTiles(out _);
         if (mipLevel >= copy.MipLevelCount) throw new ArgumentOutOfRangeException(nameof(mipLevel));
         ulong revision = texture.Revision;
         if (texture.DataVersion != copy.DataVersion || texture.Width != copy.Width || texture.Height != copy.Height || texture.Depth != copy.Depth
@@ -112,10 +109,10 @@ public sealed partial class TextureBlock : AssetBlock
 
     public async ValueTask WriteAsync(AssetBlockWriter writer, CancellationToken cancellationToken = default)
     {
-        var content = ReadTiles();
+        var content = ReadTiles(out TextureMipTile[] tiles);
         // This block belongs to the isolated save branch. The local rows retain the old
         // content keys while the encoded metadata uses deterministic tile coordinates.
-        MipTiles = content.Select(static row => row.Tile).ToArray();
+        MipTiles = tiles;
         writer.WriteMetadata(BlockTypeId, this);
         using AssetBlockSource? source = RetainSource();
         for (int index = 0; index < content.Length; index++)

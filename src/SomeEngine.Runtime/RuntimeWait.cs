@@ -31,14 +31,14 @@ internal static class RuntimeWait
     private static void WaitForTask(Task task, NativeWindow window, TimeSpan timeout)
     {
         if (task.IsCompleted) return;
-        var elapsed = Stopwatch.StartNew();
+        long started = Stopwatch.GetTimestamp();
         WaitHandle completion = ((IAsyncResult)task).AsyncWaitHandle;
         while (!task.IsCompleted)
         {
             _ = window.PumpMessages();
             if (task.IsCompleted) break;
             TimeSpan remaining = timeout == Timeout.InfiniteTimeSpan
-                ? Timeout.InfiniteTimeSpan : timeout - elapsed.Elapsed;
+                ? Timeout.InfiniteTimeSpan : timeout - Stopwatch.GetElapsedTime(started);
             if (timeout != Timeout.InfiniteTimeSpan && remaining <= TimeSpan.Zero)
                 throw new TimeoutException("The runtime operation did not complete before its timeout.");
             window.WaitForEvents(completion, remaining);
@@ -54,11 +54,11 @@ internal static class RuntimeWait
         ArgumentNullException.ThrowIfNull(backend);
         ArgumentNullException.ThrowIfNull(window);
         ValidateTimeout(timeout);
-        var elapsed = Stopwatch.StartNew();
+        long started = Stopwatch.GetTimestamp();
         while (!backend.IsComplete(position))
         {
             Pump(window);
-            if (HasExpired(elapsed, timeout))
+            if (timeout != Timeout.InfiniteTimeSpan && Stopwatch.GetElapsedTime(started) >= timeout)
                 throw new TimeoutException("GPU work did not complete before the runtime timeout.");
         }
     }
@@ -68,9 +68,6 @@ internal static class RuntimeWait
         _ = window.PumpMessages();
         window.WaitForEvents(PollInterval);
     }
-
-    private static bool HasExpired(Stopwatch elapsed, TimeSpan timeout) =>
-        timeout != Timeout.InfiniteTimeSpan && elapsed.Elapsed >= timeout;
 
     private static void ValidateTimeout(TimeSpan timeout)
     {

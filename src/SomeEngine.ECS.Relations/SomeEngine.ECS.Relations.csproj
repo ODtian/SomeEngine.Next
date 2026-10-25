@@ -5,7 +5,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../SomeEngine.ECS/SomeEngine.ECS.csproj" />
-    <ProjectReference Include="../SomeEngine.ECS.SourceGen/SomeEngine.ECS.SourceGen.csproj"
+    <ProjectReference Include="../SomeEngine.ECS.SourceGenerators/SomeEngine.ECS.SourceGenerators.csproj"
                       OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     <CompilerVisibleProperty Include="SomeEngineGenerateRelationFamilies" />
   </ItemGroup>

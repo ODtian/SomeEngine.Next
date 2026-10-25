@@ -670,13 +670,16 @@ public sealed partial class ValidationLayer
         RecordCommandDependency(state, desc.Scratch);
         if (desc.Source is not null)
             RecordCommandDependency(state, desc.Source);
-        foreach (AccelerationStructureGeometry geometry in desc.Geometries)
+        if (state.Bundle)
         {
-            RecordCommandDependency(state, geometry.Primary.Buffer);
-            if (geometry.Secondary.Buffer is not null)
-                RecordCommandDependency(state, geometry.Secondary.Buffer);
-            if (geometry.Transform.Buffer is not null)
-                RecordCommandDependency(state, geometry.Transform.Buffer);
+            foreach (AccelerationStructureGeometry geometry in desc.Geometries)
+            {
+                RecordCommandDependency(state, geometry.Primary.Buffer);
+                if (geometry.Secondary.Buffer is not null)
+                    RecordCommandDependency(state, geometry.Secondary.Buffer);
+                if (geometry.Transform.Buffer is not null)
+                    RecordCommandDependency(state, geometry.Transform.Buffer);
+            }
         }
     }
 
@@ -827,10 +830,13 @@ public sealed partial class ValidationLayer
         }
         Backend.UpdateRayTracingShaderTable(context, table, update);
         RecordCommandDependency(state, table);
-        foreach (ref readonly ResourceBinding binding in update.Resources)
+        if (state.Bundle)
         {
-            if (binding.Value is GraphicsObject dependency)
-                RecordCommandDependency(state, dependency);
+            foreach (ref readonly ResourceBinding binding in update.Resources)
+            {
+                if (binding.Value is GraphicsObject dependency)
+                    RecordCommandDependency(state, dependency);
+            }
         }
     }
 
@@ -1306,8 +1312,11 @@ public sealed partial class ValidationLayer
         {
             lock (state)
             {
-                foreach (ref readonly WorkGraphGpuNodeInput input in desc.GpuNodeInputs)
-                    RecordCommandDependencyCore(state, input.Records.Buffer);
+                if (state.Bundle)
+                {
+                    foreach (ref readonly WorkGraphGpuNodeInput input in desc.GpuNodeInputs)
+                        RecordCommandDependencyCore(state, input.Records.Buffer);
+                }
             }
         }
     }

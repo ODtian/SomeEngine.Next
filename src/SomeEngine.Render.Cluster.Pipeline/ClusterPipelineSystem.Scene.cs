@@ -43,23 +43,20 @@ public sealed partial class ClusterPipelineSystem
         GraphData.InstanceWorldBounds = graph.CreatePersistentBuffer(new BufferDesc(
             (ulong)capacity * 64u, BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopyDestination,
             "Cluster current and previous instance bounds"));
-        var clear = new ClusterBufferClearParameters(GraphData.InstanceWorldBounds);
         GraphData.SceneInitialization = graph.AddRegion("Cluster instance bounds initialization", _regions.PrimaryGeometry);
         graph.AddCopyFramePass("Initialize Cluster instance bounds",
-            PassQueueSelection.AnyOfType(QueueType.Copy), clear, default,
-            static (ref PassDefinition pass, ref ClusterBufferClearParameters data) =>
-                _ = pass.Write(data.Buffer, BufferRange.Whole, PipelineSync.Copy,
-                    ResourceAccess.CopyDestination, WriteCoverage.Complete), ClusterBufferClearParameters.Record, region: GraphData.SceneInitialization);
+            PassQueueSelection.AnyOfType(QueueType.Copy), GraphData.InstanceWorldBounds, default,
+            DeclareBufferClear, RecordBufferClear, region: GraphData.SceneInitialization);
         GraphData.SceneBoundsRegion = graph.AddRegion("Cluster scene bounds", _regions.PrimaryGeometry);
         GraphPassId bounds = AddComputePass(ref graph, "Update Cluster spatial scene bounds", _pipelines!.SceneBounds,
-            new ClusterDispatchParameters(new DispatchArguments(1, 1, 1)), 0, ClusterDispatchParameters.Record, region: GraphData.SceneBoundsRegion);
-        GraphData.SceneBounds = new ClusterLayerDispatch(bounds, 1, 1);
+            new DispatchArguments(1, 1, 1), 0, RecordDispatch, region: GraphData.SceneBoundsRegion);
+        GraphData.SceneBounds = bounds;
         GraphData.SceneInstances = graph.CreateBufferInput(BufferUsages.ShaderRead);
         GraphData.SceneInstanceData = CreateBufferData(ref graph,
             ClusterBytes.Zero(_options.UseInstanceGroups ? checked((int)Math.Max(capacity, 1u) * sizeof(uint)) : sizeof(uint)),
             BufferUsages.ShaderRead, "Cluster spatial instance indices");
-        GraphData.SceneUniforms = CreateParameters(ref graph, new byte[32], "Cluster scene bounds parameters");
-        PassDefinition pass = graph.GetPass(GraphData.SceneBounds.Pass);
+        GraphData.SceneUniforms = CreateParameters(ref graph, new byte[32]);
+        PassDefinition pass = graph.GetPass(GraphData.SceneBounds);
         _ = pass.Bind(GraphData.SceneUniforms, PipelineSync.ComputeShading);
         pass.Bind(GraphParameterResourceBinding.ReadOnlyBufferDescriptor(
             graph.CreateBufferSrv(GraphData.Resources.Bvh, label: "Cluster scene BVH")));
@@ -114,8 +111,8 @@ public sealed partial class ClusterPipelineSystem
             UseInstanceGroups = _options.UseInstanceGroups ? 1u : 0u,
             PreviousWorldTranslation = hasPrevious ? _sceneOrigin.RelativeTo(worldOrigin) : Vector3.Zero,
         };
-        graph.SetPassData(GraphData.SceneBounds.Pass, new ClusterDispatchParameters(new DispatchArguments(
-            (checked((uint)batch.InstanceCount) + 63u) / 64u, 1, 1)));
+        graph.SetPassData(GraphData.SceneBounds, new DispatchArguments(
+            (checked((uint)batch.InstanceCount) + 63u) / 64u, 1, 1));
         bool hasGeometry = batch.InstanceCount != 0 && GraphData.Outputs.Geometry.HasBvhData;
         graph.SetRegionEnabled(GraphData.SceneBoundsRegion, changed && hasGeometry);
         SetGeometryPassesEnabled(ref graph, hasGeometry, hasGeometry && hasTargetViews);

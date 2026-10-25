@@ -42,16 +42,75 @@ public ref partial struct RenderGraphEdit
 
     public GraphBufferId RegisterExternalBuffer(
         Buffer buffer,
+        scoped ReadOnlySpan<BufferBoundaryState> boundaryStates) =>
+        RegisterExternalBuffer(buffer, boundaryStates, explicitRegistration: true);
+
+    /// <summary>
+    /// Acquires one buffer registration use before frame execution begins. A reserved next
+    /// frame is allowed. The token only preserves graph membership: it does not retain or
+    /// dispose the buffer or its views. Existing canonical rows, including GraphOwned rows,
+    /// keep their owner and remain after their final use ends. Caller-owned resources must
+    /// continue to satisfy their existing lifetime and synchronization obligations.
+    /// </summary>
+    public GraphBufferUse AcquireExternalBufferUse(
+        Buffer buffer,
         scoped ReadOnlySpan<BufferBoundaryState> boundaryStates)
+    {
+        Graph.EnsureResourceUseEdit(_token);
+        GraphBufferId id = RegisterExternalBuffer(buffer, boundaryStates, explicitRegistration: false);
+        GraphBuffer value = Staging.Buffers.GetMutable(id.Value);
+        var use = new GraphBufferUse(id);
+        GraphBufferUse[] uses = [.. value.ExternalUses, use];
+        Changes.TouchBuffer(id.Value, description: false);
+        value.ExternalUses = uses;
+        return use;
+    }
+
+    /// <summary>
+    /// Ends one registration use before frame execution begins. Only the final use of an
+    /// implicitly registered row removes it. No underlying RHI resource is disposed.
+    /// </summary>
+    public void ReleaseExternalBufferUse(GraphBufferUse use)
+    {
+        Graph.EnsureResourceUseEdit(_token);
+        ArgumentNullException.ThrowIfNull(use);
+        GraphIdentity id = use.Buffer.Value;
+        ValidateOwner(id);
+        if (!Structure.Buffers.TryGetDenseIndex(id, out int bufferIndex))
+            throw new InvalidOperationException("The buffer use is no longer present in this edit.");
+        GraphBuffer value = Structure.Buffers.Rows[bufferIndex];
+        int index = Array.IndexOf(value.ExternalUses, use);
+        if (index < 0)
+            throw new InvalidOperationException("The buffer use is no longer present in this edit.");
+        GraphBufferUse[] uses = new GraphBufferUse[value.ExternalUses.Length - 1];
+        value.ExternalUses.AsSpan(0, index).CopyTo(uses);
+        value.ExternalUses.AsSpan(index + 1).CopyTo(uses.AsSpan(index));
+        if (uses.Length == 0 && value.ExternalUseOnly)
+        {
+            Staging.Buffers.GetMutable(id).ExternalUses = uses;
+            Remove(use.Buffer);
+        }
+        else
+        {
+            Changes.TouchBuffer(id, description: false);
+            Staging.Buffers.GetMutable(id).ExternalUses = uses;
+        }
+    }
+
+    private GraphBufferId RegisterExternalBuffer(
+        Buffer buffer,
+        scoped ReadOnlySpan<BufferBoundaryState> boundaryStates,
+        bool explicitRegistration)
     {
         ArgumentNullException.ThrowIfNull(buffer);
         if (!ReferenceEquals(buffer.Device, Graph.Device))
             throw new ArgumentException("The Buffer belongs to another Device.", nameof(buffer));
         if (Graph.TryGetBufferId(buffer, out GraphBufferId registered) && Structure.Buffers.Contains(registered.Value))
-            return registered;
+            return ExistingExternalBuffer(registered.Value, explicitRegistration);
         foreach (GraphIdentity changed in Changes.Buffers)
-            if (Structure.Buffers.Contains(changed) && ReferenceEquals(Structure.Buffers.Get(changed).RegisteredResource, buffer))
-                return new GraphBufferId(changed);
+            if (Structure.Buffers.TryGetDenseIndex(changed, out int bufferIndex) &&
+                ReferenceEquals(Structure.Buffers.Rows[bufferIndex].RegisteredResource, buffer))
+                return ExistingExternalBuffer(changed, explicitRegistration);
         GraphIdentity identity = Staging.Buffers.Add(Graph.Identity, new GraphBuffer
         {
             Description = new BufferDesc(buffer.Info.Size, buffer.Info.Usages, buffer.Label,
@@ -60,9 +119,20 @@ public ref partial struct RenderGraphEdit
             Ownership = RenderGraphResourceOwnership.CallerOwned,
             Lifetime = RenderGraphResourceLifetime.Persistent,
             RegisteredResource = buffer,
+            ExternalUseOnly = !explicitRegistration,
             BoundaryStates = boundaryStates.ToArray(),
         });
         Changes.TouchBuffer(identity, membership: true);
+        return new GraphBufferId(identity);
+    }
+
+    private GraphBufferId ExistingExternalBuffer(GraphIdentity identity, bool explicitRegistration)
+    {
+        if (explicitRegistration && Structure.Buffers.Get(identity).ExternalUseOnly)
+        {
+            Changes.TouchBuffer(identity, description: false);
+            Staging.Buffers.GetMutable(identity).ExternalUseOnly = false;
+        }
         return new GraphBufferId(identity);
     }
 
@@ -80,16 +150,85 @@ public ref partial struct RenderGraphEdit
 
     public GraphTextureId RegisterExternalTexture(
         Texture texture,
-        scoped ReadOnlySpan<TextureBoundaryState> boundaryStates)
+        scoped ReadOnlySpan<TextureBoundaryState> boundaryStates) =>
+        RegisterExternalTexture(texture, boundaryStates, explicitRegistration: true);
+
+    /// <summary>
+    /// Acquires one use at a frame boundary. A successful return transfers keepalive ownership
+    /// to the edit; a rejected call leaves it with the caller. Incoming ReadyAfter completions
+    /// must already be complete. A reserved next frame is allowed, but execution must not have
+    /// begun. The graph releases the keepalive after abandonment or after the accepted use ends
+    /// and submitted work completes.
+    /// </summary>
+    public GraphTextureUse AcquireExternalTextureUse(
+        Texture texture,
+        scoped ReadOnlySpan<TextureBoundaryState> boundaryStates,
+        IDisposable keepalive)
+    {
+        RenderGraph graph = Graph;
+        graph.EnsureResourceUseEdit(_token);
+        ArgumentNullException.ThrowIfNull(texture);
+        ArgumentNullException.ThrowIfNull(keepalive);
+        if (!ReferenceEquals(texture.Device, graph.Device))
+            throw new ArgumentException("The Texture belongs to another Device.", nameof(texture));
+        ObjectDisposedException.ThrowIf(texture.IsDisposed, texture);
+        graph.EnsureTextureUseBoundaries(boundaryStates, allowSubmitted: false);
+        GraphTextureId id = RegisterExternalTexture(texture, boundaryStates, explicitRegistration: false);
+        GraphTexture registered = Structure.Textures.Get(id.Value);
+        if (!ReferenceEquals(registered.RegisteredResource, texture))
+            throw new InvalidOperationException("A texture use requires an external registration.");
+        graph.EnsureTextureUseBoundaries(registered.BoundaryStates, allowSubmitted: true);
+        GraphTexture value = Staging.Textures.GetMutable(id.Value);
+        var use = new GraphTextureUse(id, keepalive);
+        GraphTextureUse[] uses = [.. value.ExternalUses, use];
+        Changes.TouchTexture(id.Value, description: false);
+        graph.TrackTextureUse(use);
+        value.ExternalUses = uses;
+        return use;
+    }
+
+    /// <summary>
+    /// Ends one use before frame execution begins. Other uses and explicit registrations remain.
+    /// Any pending boundary completion must be covered by a submitted graph frame.
+    /// </summary>
+    public void ReleaseExternalTextureUse(GraphTextureUse use)
+    {
+        RenderGraph graph = Graph;
+        graph.EnsureResourceUseEdit(_token);
+        ArgumentNullException.ThrowIfNull(use);
+        GraphIdentity id = use.Texture.Value;
+        ValidateOwner(id);
+        if (!Structure.Textures.TryGetDenseIndex(id, out int textureIndex))
+            throw new InvalidOperationException("The texture use is no longer present in this edit.");
+        GraphTexture value = Structure.Textures.Rows[textureIndex];
+        int index = Array.IndexOf(value.ExternalUses, use);
+        if (index < 0)
+            throw new InvalidOperationException("The texture use is no longer present in this edit.");
+        graph.EnsureTextureUseBoundaries(value.BoundaryStates, allowSubmitted: true);
+        GraphTextureUse[] uses = new GraphTextureUse[value.ExternalUses.Length - 1];
+        value.ExternalUses.AsSpan(0, index).CopyTo(uses);
+        value.ExternalUses.AsSpan(index + 1).CopyTo(uses.AsSpan(index));
+        bool remove = uses.Length == 0 && value.ExternalUseOnly;
+        Changes.TouchTexture(id, membership: remove, description: remove);
+        graph.TrackTextureUse(use);
+        if (remove) _ = Staging.Textures.Remove(id);
+        else Staging.Textures.GetMutable(id).ExternalUses = uses;
+    }
+
+    private GraphTextureId RegisterExternalTexture(
+        Texture texture,
+        scoped ReadOnlySpan<TextureBoundaryState> boundaryStates,
+        bool explicitRegistration)
     {
         ArgumentNullException.ThrowIfNull(texture);
         if (!ReferenceEquals(texture.Device, Graph.Device))
             throw new ArgumentException("The Texture belongs to another Device.", nameof(texture));
         if (Graph.StructureIndex.ResourceIdentities.TryGetValue(texture, out GraphIdentity registered) && Structure.Textures.Contains(registered))
-            return new GraphTextureId(registered);
+            return ExistingExternalTexture(registered, explicitRegistration);
         foreach (GraphIdentity changed in Changes.Textures)
-            if (Structure.Textures.Contains(changed) && ReferenceEquals(Structure.Textures.Get(changed).RegisteredResource, texture))
-                return new GraphTextureId(changed);
+            if (Structure.Textures.TryGetDenseIndex(changed, out int textureIndex) &&
+                ReferenceEquals(Structure.Textures.Rows[textureIndex].RegisteredResource, texture))
+                return ExistingExternalTexture(changed, explicitRegistration);
         TextureInfo info = texture.Info;
         GraphIdentity identity = Staging.Textures.Add(Graph.Identity, new GraphTexture
         {
@@ -108,9 +247,20 @@ public ref partial struct RenderGraphEdit
             Ownership = RenderGraphResourceOwnership.CallerOwned,
             Lifetime = RenderGraphResourceLifetime.Persistent,
             RegisteredResource = texture,
+            ExternalUseOnly = !explicitRegistration,
             BoundaryStates = boundaryStates.ToArray(),
         });
         Changes.TouchTexture(identity, membership: true);
+        return new GraphTextureId(identity);
+    }
+
+    private GraphTextureId ExistingExternalTexture(GraphIdentity identity, bool explicitRegistration)
+    {
+        if (explicitRegistration && Structure.Textures.Get(identity).ExternalUseOnly)
+        {
+            Changes.TouchTexture(identity, description: false);
+            Staging.Textures.GetMutable(identity).ExternalUseOnly = false;
+        }
         return new GraphTextureId(identity);
     }
 
@@ -194,6 +344,8 @@ public ref partial struct RenderGraphEdit
     public void Remove(GraphBufferId buffer)
     {
         ValidateOwner(buffer.Value);
+        if (Structure.Buffers.Get(buffer.Value).ExternalUses.Length != 0)
+            throw new InvalidOperationException("Release all buffer uses before removing their registration.");
         GraphPassId upload = Structure.Buffers.Get(buffer.Value).BufferUploadPass;
         if (upload != default) Remove(upload);
         Changes.TouchBuffer(buffer.Value, membership: true);
@@ -203,6 +355,9 @@ public ref partial struct RenderGraphEdit
     public void Remove(GraphTextureId texture)
     {
         ValidateOwner(texture.Value);
+        if (Structure.Textures.TryGetDenseIndex(texture.Value, out int textureIndex) &&
+            Structure.Textures.Rows[textureIndex].ExternalUses.Length != 0)
+            throw new InvalidOperationException("Release every external texture use before removing its registration.");
         Changes.TouchTexture(texture.Value, membership: true);
         _ = Staging.Textures.Remove(texture.Value);
     }
@@ -248,8 +403,8 @@ public ref partial struct RenderGraphEdit
         }
         foreach (GraphIdentity access in removed.Accesses)
         {
-            if (!Structure.Accesses.Contains(access)) continue;
-            PassResourceAccess row = Structure.Accesses.Get(access);
+            if (!Structure.Accesses.TryGetDenseIndex(access, out int accessIndex)) continue;
+            PassResourceAccess row = Structure.Accesses.Rows[accessIndex];
             Changes.TouchAccess(access, row.Pass, row.Target, membership: true);
             _ = Staging.Accesses.Remove(access);
         }
@@ -284,6 +439,13 @@ public ref partial struct RenderGraphEdit
         ExplicitPassOrder order = new(predecessor.Value, pass.Value);
         if (Staging.Orders.Remove(order))
             Changes.TouchOrder(order.Predecessor, order.Consumer);
+    }
+
+    /// <summary>Returns the buffer description in this edit, including uncommitted changes.</summary>
+    public BufferDesc GetBufferDescription(GraphBufferId buffer)
+    {
+        ValidateOwner(buffer.Value);
+        return Structure.Buffers.Get(buffer.Value).Description;
     }
 
     public void SetBufferDescription(
@@ -563,19 +725,25 @@ public ref partial struct RenderGraphEdit
         new(AddTextureView(GraphViewKind.DepthStencil, texture, range, format, dimension,
             readOnlyDepth, readOnlyStencil, label));
 
+    /// <summary>
+    /// Whether this edit was accepted, including an unchanged commit. The result remains true
+    /// if a later notification fails, and remains observable after Dispose.
+    /// </summary>
+    public readonly bool IsAccepted => _committed;
+
     public void Commit()
     {
         RenderGraph graph = Graph;
-        graph.CommitEdit(_token);
-        _committed = true;
+        if (_committed) throw new InvalidOperationException("The edit has already been accepted.");
+        graph.CommitEdit(_token, out _committed);
         _graph = null;
     }
 
     public void Dispose()
     {
         if (_graph is null) return;
-        if (!_committed) _graph.AbandonEdit(_token);
-        _graph = null;
+        try { _graph.AbandonEdit(_token); }
+        finally { _graph = null; }
     }
 
     private GraphBufferId AddBuffer(
@@ -1180,13 +1348,40 @@ public ref partial struct RenderGraphEdit
     }
 
     /// <summary>Returns the parameter inputs read or bound by passes in this edit.</summary>
-    public GraphParameterInput[] GetParameterInputs() => Staging.Passes.Rows
+    public GraphParameterInput[] GetParameterInputs() => Structure.Passes.Rows
         .SelectMany(static pass => pass.ParameterBindings)
         .Where(static binding => binding.ParameterInput is not null)
         .Select(static binding => binding.ParameterInput!)
-        .Concat(Staging.Accesses.Rows.Where(static access => access.ParameterInput is not null)
+        .Concat(Structure.Accesses.Rows.Where(static access => access.ParameterInput is not null)
             .Select(static access => access.ParameterInput!))
         .Distinct().ToArray();
+
+    /// <summary>
+    /// Returns the parameter inputs used by declared resource accesses in this edit, including
+    /// disabled passes. Inputs that appear only in shader bindings are excluded.
+    /// </summary>
+    public IReadOnlySet<GraphParameterInput> GetAccessedParameterInputs()
+    {
+        GraphStructure structure = Structure;
+        HashSet<GraphIdentity> changedAccesses = Changes.Accesses;
+        var inputs = new HashSet<GraphParameterInput>();
+        foreach (GraphIdentity access in changedAccesses)
+            if (structure.Accesses.TryGetDenseIndex(access, out int accessIndex) &&
+                structure.Accesses.Rows[accessIndex].ParameterInput is { } input)
+                inputs.Add(input);
+
+        // The committed index still supplies every access that this edit did not change.
+        foreach ((GraphParameterInput input, GraphIdentity[] accesses) in Graph.StructureIndex.ParameterInputAccesses)
+        {
+            foreach (GraphIdentity access in accesses)
+            {
+                if (changedAccesses.Contains(access)) continue;
+                inputs.Add(input);
+                break;
+            }
+        }
+        return inputs;
+    }
 
     /// <summary>Replaces one input in both a pass's bindings and its resource accesses.</summary>
     public void ReplaceParameterInput(GraphPassId pass, GraphParameterInput previous, GraphParameterInput input)

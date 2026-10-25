@@ -17,6 +17,7 @@ public sealed class ShaderBuildMeasurements : IDisposable
     {
         ArgumentNullException.ThrowIfNull(output);
         _output = output;
+        path = string.IsNullOrEmpty(path) ? null : path;
         _path = path;
         _listener = new ActivityListener
         {
@@ -53,8 +54,9 @@ public sealed class ShaderBuildMeasurements : IDisposable
         {
             Measurement[] measurements;
             lock (_measurements) measurements = _measurements.ToArray();
-            File.WriteAllText(_path, JsonSerializer.Serialize(measurements,
-                new JsonSerializerOptions { WriteIndented = true }));
+            string json = JsonSerializer.Serialize(measurements, new JsonSerializerOptions { WriteIndented = true });
+            if (_path == "-") _output.WriteLine(json);
+            else File.WriteAllText(_path, json);
         }
     }
 

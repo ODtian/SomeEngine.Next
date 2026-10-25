@@ -16,13 +16,13 @@ public sealed class GltfSourceImporter : IAssetSourceImporter<ModelRoot, GltfImp
     public const uint ImporterVersion = 16;
     public static readonly Guid SourceImporterId = new("b0c10195-d8d1-46ab-81b8-f8c54db7d0aa");
     private readonly IServiceCollection _importers;
-    private readonly string _capabilitiesVersion;
+    private readonly string? _capabilitiesVersion;
     private readonly Guid? _sceneImporterId;
 
-    public GltfSourceImporter(IServiceCollection importers, string capabilitiesVersion,
+    public GltfSourceImporter(IServiceCollection importers, string? capabilitiesVersion = null,
         Guid? sceneImporterId = null)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(capabilitiesVersion);
+        if (capabilitiesVersion is not null) ArgumentException.ThrowIfNullOrWhiteSpace(capabilitiesVersion);
         _importers = importers;
         _capabilitiesVersion = capabilitiesVersion;
         _sceneImporterId = sceneImporterId;

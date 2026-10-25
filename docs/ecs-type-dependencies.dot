@@ -1,4 +1,5 @@
 digraph SomeEngineEcsTypes {
+  // Name-only projection of the 2026-07-29 topology snapshot; not regenerated or validated against the current worktree.
   graph [rankdir=LR, overlap=false, splines=true, concentrate=false, bgcolor="#111318", fontcolor="white"];
   node [shape=box, style="rounded,filled", fontname="Consolas", fontsize=9, fontcolor="white", color="#808080"];
   edge [color="#6d7480", penwidth=0.7, arrowsize=0.55];
@@ -80,20 +81,20 @@ digraph SomeEngineEcsTypes {
   n75 [label="WorldImporter\nr14", tooltip="SomeEngine.ECS.Serialization::SomeEngine.ECS.Serialization.WorldSerializer.WorldImporter", fillcolor="#F28E2B"];
   n76 [label="WorldRestorer\nr14", tooltip="SomeEngine.ECS.Serialization::SomeEngine.ECS.Serialization.WorldSerializer.WorldRestorer", fillcolor="#F28E2B"];
   n77 [label="WorldWritePlan\nr12", tooltip="SomeEngine.ECS.Serialization::SomeEngine.ECS.Serialization.WorldWritePlan", fillcolor="#F28E2B"];
-  n78 [label="BundleGenerator\nr3", tooltip="SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.BundleGenerator", fillcolor="#59A14F"];
-  n79 [label="BundleMember\nr1", tooltip="SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.BundleGenerator.BundleMember", fillcolor="#59A14F"];
-  n80 [label="BundleMemberKind\nr0", tooltip="SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.BundleGenerator.BundleMemberKind", fillcolor="#59A14F"];
-  n81 [label="BundleModel\nr2", tooltip="SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.BundleGenerator.BundleModel", fillcolor="#59A14F"];
-  n82 [label="JobEntityGenerator\nr3", tooltip="SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.JobEntityGenerator", fillcolor="#59A14F"];
-  n83 [label="JobModel\nr2", tooltip="SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.JobEntityGenerator.JobModel", fillcolor="#59A14F"];
-  n84 [label="ParameterAliasComparer\nr1", tooltip="SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.JobEntityGenerator.ParameterAliasComparer", fillcolor="#59A14F"];
-  n85 [label="ParameterKind\nr0", tooltip="SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.JobEntityGenerator.ParameterKind", fillcolor="#59A14F"];
-  n86 [label="ParameterModel\nr1", tooltip="SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.JobEntityGenerator.ParameterModel", fillcolor="#59A14F"];
-  n87 [label="SerializationGenerator\nr2", tooltip="SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.SerializationGenerator", fillcolor="#59A14F"];
-  n88 [label="FieldKind\nr0", tooltip="SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.SerializationGenerator.FieldKind", fillcolor="#59A14F"];
-  n89 [label="FieldModel\nr1", tooltip="SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.SerializationGenerator.FieldModel", fillcolor="#59A14F"];
-  n90 [label="SerializableKind\nr0", tooltip="SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.SerializationGenerator.SerializableKind", fillcolor="#59A14F"];
-  n91 [label="SerializableModel\nr1", tooltip="SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.SerializationGenerator.SerializableModel", fillcolor="#59A14F"];
+  n78 [label="BundleGenerator\nr3", tooltip="SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.BundleGenerator", fillcolor="#59A14F"];
+  n79 [label="BundleMember\nr1", tooltip="SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.BundleGenerator.BundleMember", fillcolor="#59A14F"];
+  n80 [label="BundleMemberKind\nr0", tooltip="SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.BundleGenerator.BundleMemberKind", fillcolor="#59A14F"];
+  n81 [label="BundleModel\nr2", tooltip="SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.BundleGenerator.BundleModel", fillcolor="#59A14F"];
+  n82 [label="JobEntityGenerator\nr3", tooltip="SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.JobEntityGenerator", fillcolor="#59A14F"];
+  n83 [label="JobModel\nr2", tooltip="SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.JobEntityGenerator.JobModel", fillcolor="#59A14F"];
+  n84 [label="ParameterAliasComparer\nr1", tooltip="SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.JobEntityGenerator.ParameterAliasComparer", fillcolor="#59A14F"];
+  n85 [label="ParameterKind\nr0", tooltip="SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.JobEntityGenerator.ParameterKind", fillcolor="#59A14F"];
+  n86 [label="ParameterModel\nr1", tooltip="SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.JobEntityGenerator.ParameterModel", fillcolor="#59A14F"];
+  n87 [label="SerializationGenerator\nr2", tooltip="SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.SerializationGenerator", fillcolor="#59A14F"];
+  n88 [label="FieldKind\nr0", tooltip="SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.SerializationGenerator.FieldKind", fillcolor="#59A14F"];
+  n89 [label="FieldModel\nr1", tooltip="SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.SerializationGenerator.FieldModel", fillcolor="#59A14F"];
+  n90 [label="SerializableKind\nr0", tooltip="SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.SerializationGenerator.SerializableKind", fillcolor="#59A14F"];
+  n91 [label="SerializableModel\nr1", tooltip="SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.SerializationGenerator.SerializableModel", fillcolor="#59A14F"];
   n92 [label="BufferJobAccess\nr11", tooltip="SomeEngine.ECS.Systems::SomeEngine.ECS.Systems.BufferJobAccess<T>", fillcolor="#E15759"];
   n93 [label="ComponentJobAccess\nr11", tooltip="SomeEngine.ECS.Systems::SomeEngine.ECS.Systems.ComponentJobAccess<T>", fillcolor="#E15759"];
   n94 [label="GeneratedQueryAccess\nr9", tooltip="SomeEngine.ECS.Systems::SomeEngine.ECS.Systems.GeneratedQueryAccess", fillcolor="#E15759"];

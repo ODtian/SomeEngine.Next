@@ -42,8 +42,12 @@ public sealed partial class RenderGraph
     {
         if (_editToken != 0) return;
         GraphBufferId[] buffers = uploads.Select(upload => upload.Destination).Distinct()
-            .Where(buffer => _structure.Buffers.Contains(buffer.Value) &&
-                _structure.Buffers.Get(buffer.Value).BufferUploadPass == default).ToArray();
+            .Where(buffer =>
+            {
+                GraphRows<GraphBuffer> rows = _structure.Buffers;
+                return rows.TryGetDenseIndex(buffer.Value, out int index) &&
+                    rows.Rows[index].BufferUploadPass == default;
+            }).ToArray();
         if (buffers.Length == 0) return;
         using RenderGraphEdit edit = BeginEdit();
         foreach (GraphBufferId buffer in buffers) edit.AddBufferUploadPass(buffer);
@@ -115,17 +119,18 @@ internal sealed partial class RenderGraphFrameState
             foreach (BufferUploadCopy copy in copies) ranges.Add(copy.Destination);
         Slot.GetBufferTransfers(Graph).AddUploadRanges(buffer, ranges);
         ranges.Sort(static (left, right) => left.Offset.CompareTo(right.Offset));
-        var combined = new List<BufferRange>();
-        foreach (BufferRange range in ranges)
+        Span<BufferRange> values = CollectionsMarshal.AsSpan(ranges);
+        int count = 0;
+        foreach (BufferRange range in values)
         {
-            if (combined.Count != 0 && combined[^1].Offset + combined[^1].Size >= range.Offset)
-                combined[^1] = combined[^1] with
+            if (count != 0 && values[count - 1].Offset + values[count - 1].Size >= range.Offset)
+                values[count - 1] = values[count - 1] with
                 {
-                    Size = Math.Max(combined[^1].Offset + combined[^1].Size, range.Offset + range.Size) - combined[^1].Offset,
+                    Size = Math.Max(values[count - 1].Offset + values[count - 1].Size, range.Offset + range.Size) - values[count - 1].Offset,
                 };
-            else combined.Add(range);
+            else values[count++] = range;
         }
-        return new BufferRangeSet(CollectionsMarshal.AsSpan(combined));
+        return new BufferRangeSet(values[..count]);
     }
 
     internal void CollectBufferUploads(FrameBufferTransfers.BufferUpload[] uploads)
@@ -148,6 +153,8 @@ internal sealed partial class RenderGraphFrameState
 
     private static BufferUploadCopy[] CombineBufferUploads(List<BufferUploadCopy> copies)
     {
+        if (copies.Count == 1) return [copies[0]];
+
         int[] order = Enumerable.Range(0, copies.Count).ToArray();
         Array.Sort(order, (left, right) => copies[left].Destination.Offset.CompareTo(copies[right].Destination.Offset));
         ulong end = 0;
@@ -155,14 +162,18 @@ internal sealed partial class RenderGraphFrameState
         foreach (int index in order)
         {
             BufferRange range = copies[index].Destination;
-            overlap |= range.Offset < end;
+            if (range.Offset < end)
+            {
+                overlap = true;
+                break;
+            }
             end = Math.Max(end, range.Offset + range.Size);
         }
-        List<BufferUploadCopy> ranges = overlap ? ResolveOverlappingUploads(copies) :
-            order.Select(index => copies[index]).ToList();
+        if (overlap) return ResolveOverlappingUploads(copies).ToArray();
         var combined = new List<BufferUploadCopy>();
-        foreach (BufferUploadCopy copy in ranges)
+        for (int rangeIndex = 0; rangeIndex < order.Length; rangeIndex++)
         {
+            BufferUploadCopy copy = copies[order[rangeIndex]];
             if (combined.Count != 0)
             {
                 BufferUploadCopy previous = combined[^1];
@@ -207,8 +218,22 @@ internal sealed partial class RenderGraphFrameState
             BufferUploadCopy copy = copies[active.Max];
             ulong length = boundaries[boundary].Offset - start;
             ulong source = copy.Source.Range.Offset + start - copy.Destination.Offset;
-            result.Add(new BufferUploadCopy(new GraphBufferSlice(copy.Source.Buffer, new BufferRange(source, length)),
-                new BufferRange(start, length)));
+            copy = new BufferUploadCopy(new GraphBufferSlice(copy.Source.Buffer, new BufferRange(source, length)),
+                new BufferRange(start, length));
+            if (result.Count != 0)
+            {
+                BufferUploadCopy previous = result[^1];
+                if (previous.Source.Buffer == copy.Source.Buffer &&
+                    previous.Source.Range.Offset + previous.Source.Range.Size == copy.Source.Range.Offset &&
+                    previous.Destination.Offset + previous.Destination.Size == copy.Destination.Offset)
+                {
+                    result[^1] = new BufferUploadCopy(new GraphBufferSlice(copy.Source.Buffer,
+                        previous.Source.Range with { Size = previous.Source.Range.Size + copy.Source.Range.Size }),
+                        previous.Destination with { Size = previous.Destination.Size + copy.Destination.Size });
+                    continue;
+                }
+            }
+            result.Add(copy);
         }
         return result;
     }

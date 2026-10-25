@@ -1,5 +1,6 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
+using SomeEngine.Diagnostics;
 using SomeEngine.Resources;
 using SomeEngine.Resources.Geometry;
 
@@ -16,14 +17,15 @@ internal sealed class ClusterPageFixups
     }
 
     internal sealed class Group(Mesh mesh, uint firstPage, uint firstNode, uint root,
-        MeshClusterGroup data, Vector4 bounds)
+        MeshClusterGroup data)
     {
         internal readonly Mesh Mesh = mesh;
         internal readonly uint FirstPage = firstPage, FirstNode = firstNode, Root = root;
         internal readonly MeshClusterGroup Data = data;
-        internal readonly Vector4 Bounds = bounds;
+        internal Vector4 Bounds;
         internal Part[] Parts = [];
         internal Part[] ParentParts = [];
+        internal uint[] ParentPages = [];
         internal bool Complete;
         internal PageDependency Dependency = null!;
     }
@@ -46,55 +48,144 @@ internal sealed class ClusterPageFixups
     private readonly List<PageDependency> _dependencies = [];
     private ulong[] _demandWords = [];
     private int[] _demandPositions = [];
+    private readonly Dictionary<Mesh, Group[]> _groupsByMesh = [];
     private readonly Dictionary<uint, List<Group>> _groupsByPage = [];
     private readonly Dictionary<uint, List<Group>> _groupsByParentPage = [];
     private readonly HashSet<Group> _changedGroups = [];
     private int _groupCount;
     internal sealed record Batch(ClusterLeafFlagFixup[] Flags, ClusterLodChange[] Changes, Dictionary<Group, bool> GroupStates);
 
-    internal Group[] ReserveRegistration(in ClusterBvhRegistration registration)
+    // The mesh gate owns this cache. Residency changes still pass through the
+    // caller's fresh ReferenceAndResolvePages; only dependency expansion is reused.
+    private static readonly bool s_reuseDemandClosure =
+        Environment.GetEnvironmentVariable("SOMEENGINE_REUSE_PAGE_DEMAND_CLOSURE") == "1";
+    private static readonly bool s_traceDemandClosure =
+        Environment.GetEnvironmentVariable("SOMEENGINE_TRACE_PAGE_DEMAND_CLOSURE") == "1";
+    private static readonly TraceSite DemandClosure = new("render", "Prepare.PageDemandClosure");
+    private static readonly TraceSite DemandClosureOriginal = new("render", "Prepare.PageDemandClosureOriginal");
+    private static readonly TraceSite DemandClosureReuse = new("render", "PageDemandClosure.Reuse");
+    private static readonly TraceSite DemandPriorityConsumer = new("render", "PageDemandClosure.PriorityConsumer");
+    private static readonly TraceSite DemandUnresolvedPages = new("render", "PageDemandClosure.UnresolvedPages");
+    private readonly bool _reuseDemandClosure;
+    private ulong _dependencyRevision;
+    internal ulong DependencyRevision => _dependencyRevision;
+    private ulong _cachedDependencyRevision;
+    private bool _cachedDemandValid;
+    private bool _cachedPrioritiesRequired;
+    private int _cachedPageCount;
+    private int[] _cachedDemandPositions = [];
+    private ClusterPageDemand[] _cachedDemands = [];
+    private int _cachedDemandCount;
+    private uint[] _cachedExpandedPriorities = [];
+    private ClusterPageDemand[] _cachedDependencyTail = [];
+    private int _cachedDependencyTailCount;
+
+    internal ClusterPageFixups() : this(s_reuseDemandClosure) { }
+    internal ClusterPageFixups(bool reuseDemandClosure) => _reuseDemandClosure = reuseDemandClosure;
+
+    internal readonly record struct Registration(Group[] Groups, PageDependency[] Dependencies);
+
+    internal Registration ReserveRegistration(in ClusterBvhRegistration registration)
     {
+        if (_groupsByMesh.ContainsKey(registration.Mesh))
+            throw new InvalidOperationException("Cluster fixups are already registered for this mesh.");
+        if (registration.Mesh.PageDigests.Length != registration.PageCount)
+            throw new InvalidDataException("Cluster page digests do not match registration metadata.");
+        _groupsByMesh.EnsureCapacity(checked(_groupsByMesh.Count + 1));
         if (registration.Mesh.ClusterGroups.IsEmpty)
             throw new InvalidDataException("Cluster geometry requires reduction-group fixups.");
-        ClusterBVHNode[] nodes = MemoryMarshal.Cast<byte, ClusterBVHNode>(registration.Mesh.Bvh.Span).ToArray();
+        ClusterBvhRegistration current = registration;
+        // Registration rewrites child addresses and page ranges, leaving these bounds and errors intact.
+        ReadOnlySpan<ClusterBVHNode> nodes = MemoryMarshal.Cast<byte, ClusterBVHNode>(registration.Nodes.Span);
         var groups = new List<Group>();
-        var partsByCluster = new Dictionary<(uint Page, uint Cluster), Part>();
+        var clusterOffsets = new int[checked(registration.PageCount + 1)];
+        for (int page = 0; page < registration.PageCount; page++)
+            clusterOffsets[page + 1] = checked(clusterOffsets[page] + (int)registration.Mesh.PageDigests[page].ClusterCount);
+        var partsByCluster = new Part?[clusterOffsets[^1]];
         foreach (MeshClusterGroup data in registration.Mesh.ClusterGroups)
         {
-            if (data.PageCount == 0 || data.FirstPage + data.PageCount > registration.PageCount || data.HierarchyParts.IsEmpty)
+            if (data.PageCount == 0 || data.FirstPage >= registration.PageCount ||
+                data.PageCount > (uint)registration.PageCount - data.FirstPage || data.HierarchyParts.IsEmpty)
                 throw new InvalidDataException("A reduction group exceeds its mesh pages or lacks hierarchy parts.");
-            MeshHierarchyPart first = data.HierarchyParts[0];
-            Vector4 bounds = nodes[(int)first.NodeIndex].GetChild((int)first.ChildIndex).LODBounds;
             var group = new Group(registration.Mesh, registration.FirstPage, registration.FirstNode,
-                registration.Root, data, bounds);
-            group.Parts = data.HierarchyParts.Select(part =>
+                registration.Root, data);
+            group.Parts = new Part[data.HierarchyParts.Length];
+            for (int index = 0; index < group.Parts.Length; index++)
             {
+                MeshHierarchyPart part = data.HierarchyParts[index];
+                ValidatePart(part, data);
                 ClusterHierarchySlice slice = nodes[(int)part.NodeIndex].GetChild((int)part.ChildIndex);
                 var result = new Part(part, slice.PackedErrors);
-                for (uint cluster = part.FirstCluster; cluster < part.FirstCluster + slice.ClusterCount; cluster++)
-                    partsByCluster.Add((part.PageIndex, cluster), result);
-                return result;
-            }).ToArray();
+                if (slice.ClusterCount != 0)
+                {
+                    if (part.PageIndex >= registration.PageCount)
+                        throw new InvalidDataException("A hierarchy part exceeds its geometry page.");
+                    int page = (int)part.PageIndex;
+                    uint count = (uint)(clusterOffsets[page + 1] - clusterOffsets[page]);
+                    if (part.FirstCluster > count || slice.ClusterCount > count - part.FirstCluster)
+                        throw new InvalidDataException("A hierarchy part exceeds its geometry page.");
+                    int firstCluster = checked(clusterOffsets[page] + (int)part.FirstCluster);
+                    int endCluster = checked(firstCluster + (int)slice.ClusterCount);
+                    for (int cluster = firstCluster; cluster < endCluster; cluster++)
+                    {
+                        if (partsByCluster[cluster] is not null)
+                            throw new ArgumentException("Hierarchy parts refer to the same geometry cluster.");
+                        partsByCluster[cluster] = result;
+                    }
+                }
+                group.Parts[index] = result;
+            }
             groups.Add(group);
         }
+        if (partsByCluster.Any(static part => part is null))
+            throw new InvalidDataException("Reduction-group metadata leaves geometry clusters uncovered.");
         foreach (Group group in groups)
         {
-            group.ParentParts = group.Data.Parents.Select(parent => partsByCluster[(parent.PageIndex, parent.ClusterIndex)]).Distinct().ToArray();
+            group.ParentParts = group.Data.Parents.Select(FindPart).Distinct().ToArray();
+            group.ParentPages = group.Data.Parents.Select(static parent => parent.PageIndex).Distinct().ToArray();
             foreach (Part part in group.ParentParts) part.ChildGroups.Add(group);
+            group.Bounds = ChangeBounds(group, nodes);
         }
         BuildPageDependencies(groups);
         int pageCount = checked((int)(registration.FirstPage + registration.PageCount));
         if (_dependenciesByPage.Length < pageCount)
             Array.Resize(ref _dependenciesByPage, pageCount);
         Reserve(_groupsByPage, groups, static group => Enumerable.Range((int)group.Data.FirstPage, (int)group.Data.PageCount).Select(static page => (uint)page));
-        Reserve(_groupsByParentPage, groups, static group => group.Data.Parents.Select(static parent => parent.PageIndex).Distinct());
+        Reserve(_groupsByParentPage, groups, static group => group.ParentPages);
         _changedGroups.EnsureCapacity(checked(_groupCount + groups.Count));
         int dependencyCapacity = checked(_dependencies.Count + groups.Count);
         _dependencies.EnsureCapacity(dependencyCapacity);
         int wordCount = (dependencyCapacity + 63) / 64;
         if (_demandWords.Length < wordCount)
             Array.Resize(ref _demandWords, Math.Max(wordCount, _demandWords.Length * 2));
-        return groups.ToArray();
+        return new Registration(groups.ToArray(), groups.Select(static group => group.Dependency)
+            .Distinct().OrderBy(static dependency => dependency.Order).ToArray());
+
+        void ValidatePart(MeshHierarchyPart part, MeshClusterGroup data)
+        {
+            if (part.NodeIndex >= current.NodeCount || part.ChildIndex >= ClusterBVHNode.ChildCount ||
+                part.PageIndex < data.FirstPage || part.PageIndex - data.FirstPage >= data.PageCount)
+                throw new InvalidDataException("A reduction-group part is outside its hierarchy or page range.");
+            int partIndex = checked((int)(part.NodeIndex * ClusterBVHNode.ChildCount + part.ChildIndex));
+            uint reference = current.LeafReferences[partIndex];
+            ClusterHierarchySlice slice = MemoryMarshal.Cast<byte, ClusterBVHNode>(current.Nodes.Span)
+                [(int)part.NodeIndex].GetChild((int)part.ChildIndex);
+            if (reference == uint.MaxValue || reference >> 8 != part.PageIndex ||
+                (reference & 255u) != part.FirstCluster || !slice.IsEnabled || !slice.IsLeaf ||
+                slice.FirstPage != checked(current.FirstPage + data.FirstPage) || slice.PageCount != data.PageCount)
+                throw new InvalidDataException("Reduction-group metadata does not match its hierarchy leaf.");
+        }
+
+        Part FindPart(MeshClusterReference parent)
+        {
+            if (parent.PageIndex >= clusterOffsets.Length - 1)
+                throw new KeyNotFoundException("A reduction group parent has no hierarchy part.");
+            int page = (int)parent.PageIndex;
+            if (parent.ClusterIndex >= clusterOffsets[page + 1] - clusterOffsets[page])
+                throw new KeyNotFoundException("A reduction group parent has no hierarchy part.");
+            return partsByCluster[clusterOffsets[page] + (int)parent.ClusterIndex]
+                ?? throw new KeyNotFoundException("A reduction group parent has no hierarchy part.");
+        }
 
         static void Reserve(Dictionary<uint, List<Group>> table, List<Group> groups, Func<Group, IEnumerable<uint>> pages)
         {
@@ -104,6 +195,28 @@ internal sealed class ClusterPageFixups
                 records.EnsureCapacity(checked(records.Count + entry.Count()));
             }
         }
+    }
+
+    private static Vector4 ChangeBounds(Group group, ReadOnlySpan<ClusterBVHNode> nodes)
+    {
+        Vector3 minimum = new(float.MaxValue), maximum = new(float.MinValue);
+        foreach (Part part in group.Parts.Concat(group.ParentParts))
+        {
+            ClusterHierarchySlice slice = nodes[(int)part.Data.NodeIndex].GetChild((int)part.Data.ChildIndex);
+            minimum = Vector3.Min(minimum, slice.BoundsCenter - slice.BoundsExtent);
+            maximum = Vector3.Max(maximum, slice.BoundsCenter + slice.BoundsExtent);
+        }
+        Vector3 center = new(
+            (float)(((double)minimum.X + maximum.X) * .5),
+            (float)(((double)minimum.Y + maximum.Y) * .5),
+            (float)(((double)minimum.Z + maximum.Z) * .5));
+        double x = Math.Max((double)center.X - minimum.X, (double)maximum.X - center.X);
+        double y = Math.Max((double)center.Y - minimum.Y, (double)maximum.Y - center.Y);
+        double z = Math.Max((double)center.Z - minimum.Z, (double)maximum.Z - center.Z);
+        double required = Math.Sqrt(x * x + y * y + z * z);
+        float radius = (float)required;
+        if (radius < required) radius = MathF.BitIncrement(radius);
+        return new(center, radius);
     }
 
     private static void BuildPageDependencies(List<Group> groups)
@@ -205,12 +318,15 @@ internal sealed class ClusterPageFixups
         return [.. parentSets.Keys];
     }
 
-    internal void Register(Group[] groups)
+    internal void Register(in Registration registration)
     {
+        Group[] groups = registration.Groups;
+        _groupsByMesh.Add(groups[0].Mesh, groups);
+        _cachedDemandValid = false;
+        _dependencyRevision++;
         // Mesh parent edges stay inside their registration. Appending each mesh in
         // child-before-parent order also gives the full epoch that same ordering.
-        foreach (PageDependency dependency in groups.Select(static group => group.Dependency)
-            .Distinct().OrderBy(static dependency => dependency.Order))
+        foreach (PageDependency dependency in registration.Dependencies)
         {
             dependency.Order = _dependencies.Count;
             _dependencies.Add(dependency);
@@ -224,9 +340,44 @@ internal sealed class ClusterPageFixups
                 _groupsByPage[page + group.FirstPage].Add(group);
                 _dependenciesByPage[page + group.FirstPage] = group.Dependency;
             }
-            foreach (uint page in data.Parents.Select(static parent => parent.PageIndex).Distinct())
+            foreach (uint page in group.ParentPages)
                 _groupsByParentPage[page + group.FirstPage].Add(group);
             _changedGroups.Add(group);
+        }
+    }
+
+    internal void RemoveMesh(Mesh mesh)
+    {
+        if (!_groupsByMesh.Remove(mesh, out Group[]? groups))
+            throw new InvalidOperationException("Cluster fixups are not registered for this mesh.");
+        var dependencies = new HashSet<PageDependency>();
+        foreach (Group group in groups)
+        {
+            dependencies.Add(group.Dependency);
+            _changedGroups.Remove(group);
+            for (uint page = group.Data.FirstPage; page < group.Data.FirstPage + group.Data.PageCount; page++)
+            {
+                uint globalPage = checked(page + group.FirstPage);
+                Remove(_groupsByPage, globalPage, group);
+                _dependenciesByPage[globalPage] = null;
+            }
+            foreach (uint page in group.ParentPages)
+                Remove(_groupsByParentPage, checked(page + group.FirstPage), group);
+        }
+        _dependencies.RemoveAll(dependencies.Contains);
+        for (int index = 0; index < _dependencies.Count; index++)
+            _dependencies[index].Order = index;
+        _groupCount -= groups.Length;
+        _cachedDemandValid = false;
+        _dependencyRevision++;
+        Array.Clear(_demandWords);
+        Array.Clear(_demandPositions);
+
+        static void Remove(Dictionary<uint, List<Group>> table, uint page, Group group)
+        {
+            List<Group> records = table[page];
+            records.Remove(group);
+            if (records.Count == 0) table.Remove(page);
         }
     }
 
@@ -283,6 +434,177 @@ internal sealed class ClusterPageFixups
     }
 
     internal bool TryExpandDependencies(
+        ReadOnlySpan<ClusterPageDemand> demands,
+        int pageCount,
+        List<ClusterPageDemand> expanded)
+    {
+        if (!s_traceDemandClosure || !EngineTrace.IsEnabled)
+            return _reuseDemandClosure
+                ? TryExpandDependenciesCached(demands, pageCount, expanded, out _)
+                : TryExpandDependenciesCore(demands, pageCount, expanded);
+
+        bool reused = false;
+        bool valid;
+        using (EngineTrace.Begin(DemandClosure))
+            valid = _reuseDemandClosure
+                ? TryExpandDependenciesCached(demands, pageCount, expanded, out reused)
+                : TryExpandDependenciesOriginal(demands, pageCount, expanded);
+        EngineTrace.Counter(DemandClosureReuse, valid ? (reused ? 1 : 0) : -1);
+        return valid;
+    }
+
+    private bool TryExpandDependenciesOriginal(
+        ReadOnlySpan<ClusterPageDemand> demands,
+        int pageCount,
+        List<ClusterPageDemand> expanded)
+    {
+        if (!s_traceDemandClosure || !EngineTrace.IsEnabled)
+            return TryExpandDependenciesCore(demands, pageCount, expanded);
+        using (EngineTrace.Begin(DemandClosureOriginal))
+            return TryExpandDependenciesCore(demands, pageCount, expanded);
+    }
+
+    internal bool TryExpandDependencyPages(
+        ReadOnlySpan<ClusterPageDemand> demands,
+        int pageCount,
+        List<ClusterPageDemand> expanded,
+        out bool reused)
+    {
+        if (!s_traceDemandClosure || !EngineTrace.IsEnabled)
+            return TryExpandDependenciesCached(demands, pageCount, expanded, out reused, prioritiesRequired: false);
+        bool valid;
+        using (EngineTrace.Begin(DemandClosure))
+            valid = TryExpandDependenciesCached(demands, pageCount, expanded, out reused, prioritiesRequired: false);
+        EngineTrace.Counter(DemandClosureReuse, valid ? (reused ? 1 : 0) : -1);
+        return valid;
+    }
+
+    internal void CompleteDeferredPriorities(
+        ReadOnlySpan<ClusterPageDemand> demands,
+        int pageCount,
+        List<ClusterPageDemand> expanded,
+        bool prioritiesResolved,
+        List<KeyValuePair<uint, uint>> unresolved)
+    {
+        // The caller has already applied the current page order to references and
+        // residency. Only pages which really need loading consume priority.
+        if (s_traceDemandClosure && EngineTrace.IsEnabled)
+        {
+            EngineTrace.Counter(DemandPriorityConsumer,
+                prioritiesResolved ? 0 : unresolved.Count == 0 ? 1 : 2);
+            EngineTrace.Counter(DemandUnresolvedPages, unresolved.Count);
+        }
+        if (prioritiesResolved || unresolved.Count == 0) return;
+        if (!TryExpandDependenciesOriginal(demands, pageCount, expanded))
+            throw new InvalidOperationException("A validated page demand became invalid inside its mesh epoch.");
+        int next = 0;
+        foreach (ClusterPageDemand demand in expanded)
+            if (next < unresolved.Count && unresolved[next].Key == demand.PageId)
+                unresolved[next++] = new(demand.PageId, demand.Priority);
+        if (next != unresolved.Count)
+            throw new InvalidOperationException("Deferred page priorities changed the dependency page order.");
+    }
+
+    private bool TryExpandDependenciesCached(
+        ReadOnlySpan<ClusterPageDemand> demands,
+        int pageCount,
+        List<ClusterPageDemand> expanded,
+        out bool reused,
+        bool prioritiesRequired = true)
+    {
+        reused = false;
+        // Compare exact membership (and max priority only for the older full-value
+        // cache). Keep this frame's first-occurrence order for the eager LRU.
+        // The topology-only result never publishes a previous frame's priority.
+        CollectionsMarshal.SetCount(expanded, pageCount);
+        Span<ClusterPageDemand> output = CollectionsMarshal.AsSpan(expanded);
+        if (_demandPositions.Length < pageCount)
+            Array.Resize(ref _demandPositions, pageCount);
+        int inputCount = 0;
+        try
+        {
+            foreach (ClusterPageDemand demand in demands)
+            {
+                if (demand.PageId >= (uint)pageCount) return false;
+                int position = _demandPositions[demand.PageId];
+                if (position == 0)
+                {
+                    output[inputCount++] = demand;
+                    _demandPositions[demand.PageId] = inputCount;
+                }
+                else if (prioritiesRequired && demand.Priority > output[position - 1].Priority)
+                    output[position - 1] = demand;
+            }
+
+            bool same = _cachedDemandValid && _cachedPrioritiesRequired == prioritiesRequired &&
+                _cachedPageCount == pageCount &&
+                _cachedDependencyRevision == _dependencyRevision && _cachedDemandCount == inputCount;
+            if (same)
+                foreach (ClusterPageDemand demand in output[..inputCount])
+                {
+                    int position = _cachedDemandPositions[demand.PageId];
+                    if (position == 0 || (prioritiesRequired && _cachedDemands[position - 1].Priority != demand.Priority))
+                    {
+                        same = false;
+                        break;
+                    }
+                }
+
+            if (same)
+            {
+                for (int index = 0; index < inputCount; index++)
+                {
+                    uint page = output[index].PageId;
+                    output[index] = new(page, prioritiesRequired ? _cachedExpandedPriorities[page] : 0);
+                }
+                _cachedDependencyTail.AsSpan(0, _cachedDependencyTailCount).CopyTo(output[inputCount..]);
+                reused = true;
+                return true;
+            }
+
+            // Own every cached value: neither caller input nor its reusable output
+            // list may be retained. Publish validity only after the original walk.
+            _cachedDemandValid = false;
+            if (_cachedDemandPositions.Length < pageCount)
+                Array.Resize(ref _cachedDemandPositions, pageCount);
+            if (prioritiesRequired && _cachedExpandedPriorities.Length < pageCount)
+                Array.Resize(ref _cachedExpandedPriorities, pageCount);
+            if (_cachedDemands.Length < inputCount)
+                Array.Resize(ref _cachedDemands, inputCount);
+            foreach (ClusterPageDemand previous in _cachedDemands.AsSpan(0, _cachedDemandCount))
+                _cachedDemandPositions[previous.PageId] = 0;
+            output[..inputCount].CopyTo(_cachedDemands);
+            _cachedDemandCount = inputCount;
+            for (int index = 0; index < inputCount; index++)
+                _cachedDemandPositions[_cachedDemands[index].PageId] = index + 1;
+        }
+        finally
+        {
+            foreach (ClusterPageDemand demand in output[..inputCount])
+                _demandPositions[demand.PageId] = 0;
+            CollectionsMarshal.SetCount(expanded, reused ? inputCount + _cachedDependencyTailCount : 0);
+        }
+
+        if (!TryExpandDependenciesOriginal(demands, pageCount, expanded)) return false;
+        output = CollectionsMarshal.AsSpan(expanded);
+        if (prioritiesRequired)
+            foreach (ClusterPageDemand demand in output)
+                _cachedExpandedPriorities[demand.PageId] = demand.Priority;
+        _cachedDependencyTailCount = output.Length - inputCount;
+        if (_cachedDependencyTail.Length < _cachedDependencyTailCount)
+            Array.Resize(ref _cachedDependencyTail, _cachedDependencyTailCount);
+        output[inputCount..].CopyTo(_cachedDependencyTail);
+        if (!prioritiesRequired)
+            for (int index = 0; index < _cachedDependencyTailCount; index++)
+                _cachedDependencyTail[index] = new(_cachedDependencyTail[index].PageId, 0);
+        _cachedPrioritiesRequired = prioritiesRequired;
+        _cachedDependencyRevision = _dependencyRevision;
+        _cachedPageCount = pageCount;
+        _cachedDemandValid = true;
+        return true;
+    }
+
+    private bool TryExpandDependenciesCore(
         ReadOnlySpan<ClusterPageDemand> demands,
         int pageCount,
         List<ClusterPageDemand> expanded)
@@ -396,8 +718,9 @@ internal sealed class ClusterPageFixups
         {
             bool complete = true;
             for (uint page = group.Data.FirstPage; page < group.Data.FirstPage + group.Data.PageCount; page++)
-                complete &= available(page + group.FirstPage);
-            foreach (MeshClusterReference parent in group.Data.Parents) complete &= available(parent.PageIndex + group.FirstPage);
+                complete = complete && available(page + group.FirstPage);
+            foreach (Part parent in group.ParentParts)
+                complete = complete && available(parent.Data.PageIndex + group.FirstPage);
             foreach (MeshHierarchyPart part in group.Data.HierarchyParts)
             {
                 uint page = part.PageIndex + group.FirstPage;
@@ -435,24 +758,11 @@ internal sealed class ClusterPageFixups
         _changedGroups.Clear();
     }
 
-    internal void RemoveMesh(uint firstPage, uint pageCount)
-    {
-        var groups = new HashSet<Group>();
-        for (uint page = firstPage; page < firstPage + pageCount; page++)
-        {
-            if (_groupsByPage.Remove(page, out List<Group>? children)) groups.UnionWith(children);
-            _groupsByParentPage.Remove(page);
-        }
-        HashSet<PageDependency> dependencies = groups.Select(static group => group.Dependency).ToHashSet();
-        foreach (Group group in groups) _changedGroups.Remove(group);
-        Array.Clear(_dependenciesByPage, (int)firstPage, (int)pageCount);
-        _dependencies.RemoveAll(dependencies.Contains);
-        for (int index = 0; index < _dependencies.Count; index++) _dependencies[index].Order = index;
-        _groupCount -= groups.Count;
-    }
-
     internal void Clear()
     {
+        _cachedDemandValid = false;
+        _dependencyRevision++;
+        _groupsByMesh.Clear();
         Array.Clear(_dependenciesByPage); _groupsByPage.Clear(); _groupsByParentPage.Clear(); _changedGroups.Clear(); _groupCount = 0;
         _dependencies.Clear();
         Array.Clear(_demandWords);

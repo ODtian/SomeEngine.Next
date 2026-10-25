@@ -119,6 +119,56 @@ public sealed class GraphEditBehaviorTests
     }
 
     [Fact]
+    public void FailedPassDeclarationLeavesEditUsableForLaterPasses()
+    {
+        using WarpGraphTestSupport support = WarpGraphTestSupport.Create();
+        using var graph = new RenderGraph(support.Backend, support.Device, [support.GraphicsQueue],
+            new RenderGraphDesc(MaximumFramesInFlight: 1));
+        var recorded = new List<int>();
+        using (RenderGraphEdit edit = graph.BeginEdit())
+        {
+            GraphBufferId values = edit.CreateTransientBuffer(new BufferDesc(64, BufferUsages.CopyDestination));
+            var declarationFailure = new InvalidOperationException("The pass declaration failed.");
+            InvalidOperationException? caught = null;
+            try
+            {
+                _ = edit.AddCopyFramePass("failed declaration", PassQueueSelection.Exact(support.GraphicsQueue),
+                    values, new PassOptions(Culling: PassCullingMode.NeverCull, Recording: PassRecordingMode.CallingThread),
+                    (ref PassDefinition pass, ref GraphBufferId buffer) =>
+                    {
+                        pass.Write(buffer, new BufferRange(0, 64), PipelineSync.Copy,
+                            ResourceAccess.CopyDestination, WriteCoverage.Complete);
+                        throw declarationFailure;
+                    },
+                    (ref CopyPassCommandScope _, in GraphBufferId _) => recorded.Add(0));
+            }
+            catch (InvalidOperationException failure)
+            {
+                caught = failure;
+            }
+            Assert.Same(declarationFailure, caught);
+
+            _ = edit.AddCopyFramePass("later declaration", PassQueueSelection.Exact(support.GraphicsQueue),
+                values, new PassOptions(Culling: PassCullingMode.NeverCull, Recording: PassRecordingMode.CallingThread),
+                static (ref PassDefinition pass, ref GraphBufferId buffer) =>
+                    pass.Write(buffer, new BufferRange(0, 64), PipelineSync.Copy,
+                        ResourceAccess.CopyDestination, WriteCoverage.Complete),
+                (ref CopyPassCommandScope commands, in GraphBufferId buffer) =>
+                {
+                    commands.ClearBuffer(commands.GetBuffer(buffer), new BufferRange(0, 64), 31);
+                    recorded.Add(1);
+                });
+            edit.Commit();
+        }
+
+        using RenderGraphFrame frame = graph.BeginFrame();
+        var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
+        int count = frame.Execute(completions);
+        support.Wait(completions.AsSpan(0, count));
+        Assert.Equal(new[] { 1 }, recorded);
+    }
+
+    [Fact]
     public void EditCommitIsAtomicAndInvalidatesRemovedIds()
     {
         using WarpGraphTestSupport support = WarpGraphTestSupport.Create();

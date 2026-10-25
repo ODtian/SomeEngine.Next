@@ -1,3 +1,4 @@
+using SomeEngine.Render.Assets;
 using System.Text;
 using System.Numerics;
 using System.Globalization;
@@ -9,7 +10,7 @@ namespace SomeEngine.Render.Cluster.Pipeline;
 public sealed partial class ClusterPipelineSystem
 {
     private readonly record struct TransparencyMember(Shader Shader, ClusterVisibilityDepth VisibilityDepth);
-    private sealed record TransparencyPipeline(Shader Shader, ClusterComputePipeline Pipeline);
+    private sealed record TransparencyPipeline(Shader Shader, LinkedComputePipeline Pipeline);
 
     private sealed class TransparencyShaders(TransparencyMember[] members, uint[] resourceCapacities,
         Dictionary<string, TransparencyPipeline> pipelines, SlangCompileTarget target)
@@ -67,12 +68,12 @@ public sealed partial class ClusterPipelineSystem
         {
             Shader shader = composition ?? (entry is "BuildTransparentGeometry" or "RequestTransparentPages" or "ResolveTransparentColor" or "ResolveProjectedTransparentColor"
                 ? source.RequireSpecialization(entry, arguments) : source);
-            pipelines.Add(entry, new(shader, ClusterComputePipeline.Create(_backend, _device, shader, entry, entry)));
+            pipelines.Add(entry, new(shader, LinkedComputePipeline.Create(_backend, _device, shader, entry, entry)));
         }
 
         bool UsesVirtualShadows(string entry)
         {
-            ClusterLinkedStageLayout layout = ClusterLinkedStageLayout.Create(pipelines[entry].Shader,
+            ShaderParameterLayout layout = pipelines[entry].Shader.GetSlangResourceLayout(
                 _device.Capabilities.CompileTarget, entry);
             return layout.Contains("VirtualShadowSampling") || layout.Contains("VirtualShadowPageTable");
         }
@@ -182,7 +183,7 @@ public sealed partial class ClusterPipelineSystem
             for (uint evaluator = 0; evaluator < parameter.TypeLayout.FieldCount; evaluator++)
             {
                 ClusterShadeInvocation[] materials = data.ResourceMaterials[evaluator];
-                var resources = ClusterLinkedStageLayout.Create(parameter.TypeLayout.GetFieldByIndex(evaluator));
+                var resources = ShaderParameterLayout.FromReflection(parameter.TypeLayout.GetFieldByIndex(evaluator));
                 foreach (var group in resources.Resources.ToArray().GroupBy(resource => (resource.Name, resource.Type)))
                     for (uint item = 0; item < data.Shaders.ResourceCapacities[evaluator]; item++)
                         foreach (var resource in group)

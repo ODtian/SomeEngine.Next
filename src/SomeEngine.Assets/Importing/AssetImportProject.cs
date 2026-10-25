@@ -1,6 +1,7 @@
 using SomeEngine.Assets.Importing;
 using SomeEngine.Serialization.Containers;
 using SomeEngine.Serialization.IO;
+using SomeEngine.Serialization.Packs;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -39,6 +40,7 @@ public sealed partial class AssetProject
             SourceMeta metadata = originalMetadata is null
                 ? new SourceMeta { SourceGuid = SourceGuid.New() }
                 : SourceMeta.Load(fullPath);
+            string? packPath = ImportedPackPath(metadata);
             ImportInputs? inputs = await importer.GetInputsAsync(_projectRoot, fullPath, metadata, cancellationToken).ConfigureAwait(false);
             if (inputs is not null) inputs = IncludeSettings(inputs, metadata, importer.Id);
             cancellationToken.ThrowIfCancellationRequested();
@@ -46,7 +48,7 @@ public sealed partial class AssetProject
                 : await RefreshReportedInputsAsync(metadata.Build.ReportedInputs, cancellationToken).ConfigureAwait(false);
             if (inputs is not null && previousInputs is not null
                 && metadata.InputHash == IncludeReportedInputs(inputs, previousInputs).InputHash && metadata.ImporterVersion == inputs.ImporterVersion
-                && metadata.Build.ImporterId == importer.Id && await IsCacheValidAsync(metadata, cancellationToken).ConfigureAwait(false))
+                && metadata.Build.ImporterId == importer.Id && await IsCacheValidAsync(metadata, packPath, cancellationToken).ConfigureAwait(false))
                 return metadata.Outputs.Select(static output => output.AssetGuid).ToArray();
 
             TSource source = await importer.ReadAsync(fullPath, cancellationToken).ConfigureAwait(false);
@@ -57,7 +59,10 @@ public sealed partial class AssetProject
             files = new AssetImportFiles();
             var entries = new List<AssetEntry>();
             var outputHashes = new Dictionary<Guid, string>();
-            foreach (ImportContext.AssetOutput output in context.Outputs)
+            Guid? previousPackGeneration = null;
+            if (packPath is not null)
+                previousPackGeneration = await StagePackedOutputsAsync(context, metadata, packPath, files, entries, outputHashes, cancellationToken).ConfigureAwait(false);
+            else foreach (ImportContext.AssetOutput output in context.Outputs)
             {
                 bool registered;
                 lock (_gate) registered = Manifest.TryGetAsset(output.Asset.Id, out AssetEntry previous)
@@ -80,6 +85,7 @@ public sealed partial class AssetProject
                         && PathsEqual(output.Path, FullPath(entry.Path)))).ToArray();
             foreach (AssetEntry old in removed)
             {
+                if (old.PackPath.Length != 0) continue;
                 string oldPath = RequireProjectPath(_projectRoot, old.Path);
                 if (entries.Any(entry => PathsEqual(entry.Path, oldPath))) continue;
                 await CheckOutputFileAsync(oldPath, old.AssetGuid, cancellationToken, allowCorrupt: true).ConfigureAwait(false);
@@ -107,11 +113,18 @@ public sealed partial class AssetProject
             metadata.Build.ReportedInputs = reported;
             metadata.Build.Outputs = entries.Select(entry => new SourceOutput
             {
-                AssetGuid = entry.AssetGuid, SubAssetKey = entry.SubAssetKey, AssetPath = entry.Path,
+                AssetGuid = entry.AssetGuid, SubAssetKey = entry.SubAssetKey, AssetPath = entry.Path, PackPath = entry.PackPath,
                 InputHash = metadata.InputHash, Dependencies = [],
                 Version = entry.Version, ContentHash = outputHashes[entry.AssetGuid],
                 AssetDependencies = entry.Dependencies,
             }).ToList();
+            Guid[] result = entries.Select(static entry => entry.AssetGuid).ToArray();
+            if (packPath is not null)
+            {
+                await context.DisposeAsync().ConfigureAwait(false);
+                await sourceDisposal.DisposeAsync().ConfigureAwait(false);
+                await CheckPackUnchangedAsync(packPath, previousPackGeneration, cancellationToken).ConfigureAwait(false);
+            }
             lock (_gate)
             {
                 CheckUnchanged(SourceMeta.GetMetaPath(fullPath), originalMetadata);
@@ -124,14 +137,15 @@ public sealed partial class AssetProject
                     if (Manifest.TryGetAsset(entry.AssetGuid, out AssetEntry previous) && previous.SourceGuid != metadata.SourceGuid)
                         throw new InvalidOperationException($"Asset {entry.AssetGuid} belongs to another source.");
                     next.AddAsset(entry.AssetGuid, entry.Name, ToManifestPath(entry.Path), entry.AssetType, entry.SchemaFingerprint,
-                        metadata.SourceGuid, entry.SubAssetKey, entry.Dependencies, version: entry.Version);
+                        metadata.SourceGuid, entry.SubAssetKey, entry.Dependencies, version: entry.Version,
+                        packPath: entry.PackPath.Length == 0 ? "" : ToManifestPath(entry.PackPath));
                 }
                 SourceMeta.AddFiles(files, fullPath, metadata);
                 next.AddFiles(files, _manifestDirectory);
                 files.Commit(cancellationToken);
                 Manifest = next;
             }
-            return entries.Select(static entry => entry.AssetGuid).ToArray();
+            return result;
         }
         catch (Exception error) { files?.RecordFailure(error); throw; }
         finally
@@ -172,23 +186,47 @@ public sealed partial class AssetProject
             Dependencies = dependencies.Values.OrderBy(static input => input.RelativePath, comparer).ToArray() };
     }
 
-    private async ValueTask<bool> IsCacheValidAsync(SourceMeta metadata, CancellationToken cancellationToken)
+    private async ValueTask<bool> IsCacheValidAsync(SourceMeta metadata, string? packPath, CancellationToken cancellationToken)
     {
+        var entries = new Dictionary<Guid, AssetEntry>();
         foreach (SourceOutput output in metadata.Outputs)
         {
+            if (packPath is null ? output.PackPath.Length != 0
+                : output.PackPath.Length == 0 || !PathsEqual(packPath, output.PackPath)) return false;
             lock (_gate)
+            {
                 if (output.Version == Guid.Empty || output.ContentHash.Length == 0
                     || !Manifest.TryGetAsset(output.AssetGuid, out AssetEntry entry)
                     || entry.SourceGuid != metadata.SourceGuid || entry.Version != output.Version
-                    || !PathsEqual(FullPath(entry.Path), output.AssetPath)) return false;
-            try
+                    || !PathsEqual(FullPath(entry.Path), output.AssetPath)
+                    || (output.PackPath.Length == 0 ? entry.PackPath.Length != 0
+                        : entry.PackPath.Length == 0 || !PathsEqual(FullPath(entry.PackPath), output.PackPath))) return false;
+                if (!entries.TryAdd(output.AssetGuid, entry)) return false;
+            }
+        }
+        try
+        {
+            if (packPath is not null)
+            {
+                await using AssetPack pack = await AssetPack.OpenAsync(packPath, cancellationToken: cancellationToken).ConfigureAwait(false);
+                foreach (SourceOutput output in metadata.Outputs)
+                {
+                    AssetEntry entry = entries[output.AssetGuid];
+                    if (!pack.TryGetEntry(output.AssetGuid, out AssetPackEntry? packed)
+                        || packed!.AssetType != entry.AssetType || packed.SchemaFingerprint != entry.SchemaFingerprint) return false;
+                    await using IRangeSource source = await pack.OpenAssetSourceAsync(output.AssetGuid, cancellationToken).ConfigureAwait(false);
+                    if (await HashSourceAsync(source, cancellationToken).ConfigureAwait(false) != output.ContentHash
+                        || await BinaryDocument.ReadVersionAsync(source, cancellationToken).ConfigureAwait(false) != output.Version) return false;
+                }
+            }
+            else foreach (SourceOutput output in metadata.Outputs)
             {
                 if (await HashFileAsync(output.AssetPath, cancellationToken).ConfigureAwait(false) != output.ContentHash) return false;
                 await using var source = FileRangeSource.Open(output.AssetPath);
                 if (await BinaryDocument.ReadVersionAsync(source, cancellationToken).ConfigureAwait(false) != output.Version) return false;
             }
-            catch (Exception error) when (error is IOException or InvalidDataException) { return false; }
         }
+        catch (Exception error) when (error is IOException or InvalidDataException or KeyNotFoundException) { return false; }
         return true;
     }
 
@@ -210,10 +248,12 @@ public sealed partial class AssetProject
 
     private sealed class SourceDisposal(object source) : IAsyncDisposable
     {
+        private object? _source = source;
         public async ValueTask DisposeAsync()
         {
-            if (source is IAsyncDisposable asyncDisposable) await asyncDisposable.DisposeAsync().ConfigureAwait(false);
-            else if (source is IDisposable disposable) disposable.Dispose();
+            object? value = Interlocked.Exchange(ref _source, null);
+            if (value is IAsyncDisposable asyncDisposable) await asyncDisposable.DisposeAsync().ConfigureAwait(false);
+            else if (value is IDisposable disposable) disposable.Dispose();
         }
     }
 

@@ -31,7 +31,7 @@
     <ProjectReference Include="..\..\src\SomeEngine.Generators\SomeEngine.Generators.csproj"
                       OutputItemType="Analyzer"
                       ReferenceOutputAssembly="false" />
-    <ProjectReference Include="..\..\src\SomeEngine.ECS.SourceGen\SomeEngine.ECS.SourceGen.csproj"
+    <ProjectReference Include="..\..\src\SomeEngine.ECS.SourceGenerators\SomeEngine.ECS.SourceGenerators.csproj"
                       OutputItemType="Analyzer"
                       ReferenceOutputAssembly="false" />
   </ItemGroup>

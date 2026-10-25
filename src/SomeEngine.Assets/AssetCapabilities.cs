@@ -35,7 +35,12 @@ public sealed class AssetImporterAttribute(string id, params Type[] producedBloc
     public IReadOnlyList<Type> ProducedBlocks { get; } = Array.AsReadOnly(producedBlocks);
     /// <summary>A public parameterless IAssetImporterSettings&lt;TSettings&gt; implementation for source configuration.</summary>
     public Type? SettingsProvider { get; init; }
-    /// <summary>Additional directly used implementation assemblies whose build versions affect this conversion.</summary>
+    /// <summary>Additional directly used implementation types whose generated source dependencies affect this conversion. Types without implementation metadata conservatively use their whole assembly build version.</summary>
+    /// <remarks>
+    /// Declare implementations selected through runtime interfaces or reflection when they are not otherwise declared outputs or inputs.
+    /// Referenced implementation metadata requires its dependencies to be compilation references; SEAC005 names a missing assembly.
+    /// Add a project or assembly reference to that dependency. Version generation never executes the target implementation.
+    /// </remarks>
     public Type[] VersionInputs { get; init; } = [];
 }
 

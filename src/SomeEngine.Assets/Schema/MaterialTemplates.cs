@@ -18,7 +18,7 @@ public static class MaterialTemplates
         var asset = new MaterialAsset(Standard.Value) { Name = "Standard" };
         MaterialBlock content = asset.GetBlock<MaterialBlock>();
         content.Shader = shader;
-        _ = new StandardMaterialParameters(content) { AlbedoMap = White, NormalMap = FlatNormal, ARMMap = White };
+        _ = new StandardMaterialParameters(content) { AlbedoMap = White, NormalMap = FlatNormal, ARMMap = White, OcclusionMap = White, EmissiveMap = White };
         return asset;
     }
 

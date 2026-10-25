@@ -4,36 +4,6 @@ using Buffer = SomeEngine.Graphics.Buffer;
 
 namespace SomeEngine.Render.Cluster.Pipeline;
 
-internal readonly record struct ClusterSoftwareRasterPassData(
-    IndirectCommandLayout IndirectLayout,
-    GraphBufferId IndirectArguments,
-    ulong IndirectOffset)
-{
-    internal static void Declare(
-        ref PassDefinition pass,
-        ref ClusterSoftwareRasterPassData data)
-    {
-        _ = pass.Read(
-            data.IndirectArguments,
-            new BufferRange(data.IndirectOffset, ClusterIndirectAbi.DispatchBytes),
-            PipelineSync.ExecuteIndirect,
-            ResourceAccess.IndirectArgument);
-    }
-
-    internal static void Record(
-        ref ComputePassCommandScope commands,
-        in ClusterSoftwareRasterPassData data)
-    {
-        Buffer arguments = commands.GetBuffer(data.IndirectArguments);
-        commands.ExecuteIndirect(
-            data.IndirectLayout,
-            new BufferRegion(
-                arguments,
-                new BufferRange(data.IndirectOffset, ClusterIndirectAbi.DispatchBytes)),
-            1);
-    }
-}
-
 internal readonly record struct ClusterHardwareRasterPassData(
     IndirectCommandLayout IndirectLayout,
     GraphBufferId IndirectArguments,
@@ -71,8 +41,7 @@ internal readonly record struct ClusterHardwareRasterPassData(
             data.IndirectLayout,
             new BufferRegion(
                 arguments,
-                new BufferRange(data.IndirectOffset + (data.UsesMesh ? 16u : 0u),
-                data.UsesMesh ? ClusterIndirectAbi.DispatchBytes : ClusterIndirectAbi.DrawBytes)),
+                new BufferRange(data.IndirectOffset, ClusterIndirectAbi.DrawBytes)),
             1);
     }
 }

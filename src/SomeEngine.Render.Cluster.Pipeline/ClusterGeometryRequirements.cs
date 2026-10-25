@@ -13,20 +13,11 @@ internal enum ClusterVisibilityDepth : byte { Opaque, Masked, Offset }
 
 internal static class ClusterGeometryRequirements
 {
-    internal const string VertexEncodingAttribute = "VertexEncoding";
-    internal const string ConservativeBoundsAttribute = "ConservativeBounds";
-
-    internal static string RequireVertexEncoding(
-        Shader shader,
-        string entryPoint,
-        string subject) =>
-        RequireSingleValue(shader, entryPoint, VertexEncodingAttribute, subject);
-
     internal static ClusterConservativeBounds RequireConservativeBounds(
         Shader shader,
         string entryPoint,
         string subject) =>
-        RequireSingleValue(shader, entryPoint, ConservativeBoundsAttribute, subject) switch
+        shader.RequireSlangEntryStringAttribute(0, entryPoint, "ConservativeBounds", subject) switch
         {
             "finite" => ClusterConservativeBounds.Finite,
             "unbounded" => ClusterConservativeBounds.Unbounded,
@@ -34,7 +25,7 @@ internal static class ClusterGeometryRequirements
                 $"{subject} entry '{entryPoint}' declares unsupported conservative bounds '{value}'."),
         };
 
-    internal static uint[]? ReadMaterialDepthInputs(Material material, Shader shader, int targetIndex,
+    internal static HashSet<uint>? ReadMaterialDepthInputs(Material material, Shader shader, int targetIndex,
         params string?[] entryNames)
     {
         foreach (string? name in entryNames)
@@ -70,21 +61,14 @@ internal static class ClusterGeometryRequirements
                 if (names.Length == 0) continue;
                 foreach (string propertyName in names.Split(',', StringSplitOptions.TrimEntries))
                 {
-                    bool found = false;
-                    foreach (MaterialPropertyDefinition property in material.Properties)
-                        if (property.Name == propertyName)
-                        {
-                            properties.Add(property.Index);
-                            found = true;
-                            break;
-                        }
                     // Expressions, misspellings and unavailable properties cannot grant reuse.
-                    if (!found) return null;
+                    if (material.FindPropertyIndex(propertyName) is not { } property) return null;
+                    properties.Add(property);
                 }
             }
             if (!declared) return null;
         }
-        return [.. properties];
+        return properties;
     }
 
     internal static ClusterVisibilityDepth RequireVisibilityDepth(Shader shader)
@@ -123,50 +107,4 @@ internal static class ClusterGeometryRequirements
         return false;
     }
 
-    private static string RequireSingleValue(
-        Shader shader,
-        string entryPoint,
-        string attributeName,
-        string subject)
-    {
-        if (!shader.TryGetSlangEntry(
-                0,
-                entryPoint,
-                out EntryPointReflection entry))
-        {
-            throw new InvalidDataException(
-                $"{subject} has no Slang entry point named '{entryPoint}'.");
-        }
-
-        FunctionReflection function = entry.Function;
-        string? result = null;
-        for (uint index = 0; index < function.AttributeCount; index++)
-        {
-            AttributeReflection attribute = function.GetAttribute(index);
-            if (attribute == AttributeReflection.Null ||
-                !string.Equals(attribute.Name, attributeName, StringComparison.Ordinal))
-            {
-                continue;
-            }
-            if (attribute.ArgumentCount != 1)
-            {
-                throw new InvalidDataException(
-                    $"{subject} entry '{entryPoint}' has an invalid '{attributeName}' declaration.");
-            }
-            string value = attribute.GetArgumentValueString(0);
-            if (string.IsNullOrWhiteSpace(value))
-            {
-                throw new InvalidDataException(
-                    $"{subject} entry '{entryPoint}' has an empty '{attributeName}' value.");
-            }
-            if (result is not null && !string.Equals(result, value, StringComparison.Ordinal))
-            {
-                throw new InvalidDataException(
-                    $"{subject} entry '{entryPoint}' has divergent '{attributeName}' declarations.");
-            }
-            result = value;
-        }
-        return result ?? throw new InvalidDataException(
-            $"{subject} entry '{entryPoint}' must declare '{attributeName}'.");
-    }
 }

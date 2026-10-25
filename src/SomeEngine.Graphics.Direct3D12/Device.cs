@@ -1232,6 +1232,7 @@ internal sealed unsafe partial class D3D12Backend
             if (Interlocked.Exchange(ref _released, 1) != 0)
                 return;
 
+            ReleaseCpuWaitEvent();
             ID3D12Fence* fence = Fence;
             Fence = null;
             if (fence is not null)

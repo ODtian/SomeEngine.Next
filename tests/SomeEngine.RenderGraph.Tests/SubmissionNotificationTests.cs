@@ -93,6 +93,85 @@ public sealed class SubmissionNotificationTests
         }
     }
 
+    [Theory]
+    [InlineData(FrameSubmissionMode.Pipelined)]
+    [InlineData(FrameSubmissionMode.RecordAhead)]
+    public void TextureRemainsUsableAfterRecordingFailsBeyondAnAcceptedSubmission(FrameSubmissionMode mode)
+    {
+        using WarpGraphTestSupport support = WarpGraphTestSupport.Create(enableValidation: true);
+        using var graph = new RenderGraph(support.Backend, support.Device,
+            [support.GraphicsQueue], new RenderGraphDesc(MaximumFramesInFlight: 1));
+        using Buffer output = support.Backend.CreateBuffer(support.Device,
+            new BufferDesc(256, BufferUsages.CopyDestination), MemoryType.Readback);
+        TextureSubresourceRange range = new(0, 1, 0, 1, TextureAspects.Color);
+        bool fail = true;
+        var options = new PassOptions(Culling: PassCullingMode.NeverCull,
+            Recording: PassRecordingMode.CallingThread);
+        using (RenderGraphEdit edit = graph.BeginEdit())
+        {
+            GraphTextureId texture = edit.CreatePersistentTexture(new TextureDesc(
+                TextureDimension.Texture2D, 1, 1, 1, 1, 1, 1, Format.R8G8B8A8UNorm,
+                TextureUsages.ColorAttachment | TextureUsages.CopySource));
+            GraphPassId clear = edit.AddCopyFramePass("accepted texture clear",
+                PassQueueSelection.Exact(support.GraphicsQueue), texture,
+                options with { SubmitAfter = true },
+                (ref PassDefinition access, ref GraphTextureId data) => access.Write(data, range,
+                    PipelineSync.RenderTarget, ResourceAccess.RenderTarget, TextureLayout.RenderTarget,
+                    WriteCoverage.Complete),
+                (ref CopyPassCommandScope commands, in GraphTextureId data) =>
+                    commands.ClearTexture(commands.GetTexture(data), range, new System.Numerics.Vector4(0, 1, 0, 1)));
+            GraphPassId later = edit.AddGeneralFramePass("interrupt later texture recording",
+                PassQueueSelection.Exact(support.GraphicsQueue), 0,
+                options with { EstimatedExecutionCost = 8 },
+                static (ref PassDefinition _, ref int _) => { },
+                (ref GeneralPassCommandScope _, in int _) => { if (fail) throw new InjectedRecordingFailure(); });
+            GraphBufferId destination = edit.RegisterExternalBuffer(output,
+                [new(BufferRange.Whole, output.InitialSync, output.InitialAccess, ResourceContentState.Undefined)]);
+            GraphPassId copy = edit.AddCopyFramePass("read recovered texture",
+                PassQueueSelection.Exact(support.GraphicsQueue), (Texture: texture, Buffer: destination), options,
+                (ref PassDefinition access, ref (GraphTextureId Texture, GraphBufferId Buffer) data) =>
+                {
+                    access.Read(data.Texture, range, PipelineSync.Copy, ResourceAccess.CopySource, TextureLayout.CopySource);
+                    access.Write(data.Buffer, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination,
+                        WriteCoverage.Partial);
+                },
+                static (ref CopyPassCommandScope commands, in (GraphTextureId Texture, GraphBufferId Buffer) data) =>
+                    commands.CopyTextureToBuffer(new BufferTextureCopy(commands.GetBuffer(data.Buffer), 0, 256, 1,
+                        commands.GetTexture(data.Texture), 0, 0, TextureAspects.Color, 0, 0, 0, 1, 1, 1)));
+            edit.OrderAfter(later, clear);
+            edit.OrderAfter(copy, later);
+            edit.Commit();
+        }
+        var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
+        bool accepted = false;
+        var observer = new Receiver(result =>
+        {
+            accepted |= !result.SubmittedCompletions.IsEmpty;
+            support.Wait(result.SubmittedCompletions);
+        });
+        using (RenderGraphFrame frame = graph.BeginFrame(new(SubmissionMode: mode)))
+        {
+            frame.ObserveExecution(observer);
+            bool rejected = false;
+            try { frame.Execute(completions); }
+            catch (InjectedRecordingFailure) { rejected = true; }
+            Assert.True(rejected);
+        }
+        Assert.True(accepted);
+        fail = false;
+        for (int iteration = 0; iteration < 2; iteration++)
+        {
+            using (RenderGraphFrame frame = graph.BeginFrame(new(SubmissionMode: mode)))
+                frame.Execute(completions);
+            support.Wait(completions);
+            using MappedBuffer mapping = support.Backend.Map(output, MapType.Read, BufferRange.Whole);
+            mapping.Invalidate(mapping.Range);
+            Assert.Equal(new byte[] { 0, 255, 0, 255 }, mapping.Bytes[..4].ToArray());
+        }
+    }
+
+    private sealed class InjectedRecordingFailure : Exception;
+
     private delegate void SubmissionReceived(RenderGraphFrameResult result);
     private sealed class Receiver(SubmissionReceived receive) : IRenderGraphFrameExecutionObserver
     {

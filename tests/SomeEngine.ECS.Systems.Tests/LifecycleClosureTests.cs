@@ -9,6 +9,29 @@ namespace SomeEngine.ECS.Systems.Tests;
 public sealed class LifecycleClosureTests : JobTest
 {
     [Fact]
+    public void ParallelCapacityRejectionAllowsGroupDisposal()
+    {
+        ConfigureJobs(new JobRuntimeConfig
+        {
+            WorkerCount = 0,
+            MaxQueuedWorkItems = 4,
+            ManagedPayloadPolicy = ManagedPayloadPolicy.Allow,
+        });
+        var context = new ParallelSubmissionContext(Jobs);
+        using var group = new SystemGroup<ParallelSubmissionContext>(
+            new ParallelSubmissionDriver(context));
+        group.Add(new RejectedParallelSystem());
+
+        Assert.Throws<InvalidOperationException>(group.Update);
+        Assert.All(context.Executions, count => Assert.Equal(0, count));
+
+        Assert.Null(Capture(group.Dispose));
+
+        Assert.True(context.Destroyed);
+        Assert.All(context.Executions, count => Assert.Equal(0, count));
+    }
+
+    [Fact]
     public async Task Dispose_WaitsRootAndDescendantScopeBeforeOnDestroy()
     {
         ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
@@ -818,6 +841,47 @@ public sealed class LifecycleClosureTests : JobTest
             CancellationToken.None,
             TaskCreationOptions.LongRunning,
             TaskScheduler.Default);
+
+    private sealed class ParallelSubmissionContext(Scheduler scheduler)
+    {
+        internal Scheduler Jobs { get; } = scheduler;
+        internal int[] Executions { get; } = new int[5];
+        internal bool Destroyed;
+    }
+
+    private sealed class ParallelSubmissionDriver(ParallelSubmissionContext context) :
+        ISystemDriver<ParallelSubmissionContext>
+    {
+        private uint _version;
+
+        public uint AcquireSystemVersion(ref SystemSlot slot) => ++_version;
+
+        public ParallelSubmissionContext CreateContext(ref SystemSlot slot) => context;
+    }
+
+    private readonly struct RejectedParallelSystem : ISystem<ParallelSubmissionContext>
+    {
+        public void OnUpdate(ref ParallelSubmissionContext context)
+        {
+            context.Jobs.ScheduleParallel(
+                new CountParallelSubmissionJob(context.Executions),
+                context.Executions.Length,
+                batchSize: 1);
+        }
+
+        public void OnDestroy(ref ParallelSubmissionContext context)
+        {
+            context.Destroyed = true;
+        }
+    }
+
+    private readonly struct CountParallelSubmissionJob(int[] executions) : IJobParallelFor
+    {
+        public void Execute(int index)
+        {
+            Interlocked.Increment(ref executions[index]);
+        }
+    }
 
     private sealed class LifetimeDriver : ISystemDriver<LifetimeContext>
     {

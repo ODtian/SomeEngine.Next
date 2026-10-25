@@ -10,17 +10,19 @@
 // These require a `ByteAddressBuffer PageHeap` to be declared in the calling shader.
 
 /// Load only Cluster-owned topology plus the opaque vertex-blob view.
-void LoadClusterInfo(ByteAddressBuffer pageHeap, uint pageOffset, uint clusterId,
+uint LoadClusterInfo(ByteAddressBuffer pageHeap, uint pageOffset, uint clusterId,
                      out uint vertexBlobAddress, out uint vertexBlobSize,
                      out uint tStart, out uint packedCounts)
 {
-    uint clustersOffset = pageHeap.Load(pageOffset + 16);
-    uint vertexBlobsOffset = pageHeap.Load(pageOffset + 20);
-    uint clusterOffset = pageOffset + clustersOffset + clusterId * PACKED_CLUSTER_STRIDE_BYTES;
-    vertexBlobAddress = pageOffset + vertexBlobsOffset + pageHeap.Load(clusterOffset + 0u);
-    vertexBlobSize = pageHeap.Load(clusterOffset + 4u);
-    tStart = (pageHeap.Load(clusterOffset + 56u) >> 16u) * 3u;
-    packedCounts = pageHeap.Load(clusterOffset + 60u);
+    uint2 pageOffsets = pageHeap.Load2(pageOffset + 16u);
+    uint clusterOffset = pageOffset + pageOffsets.x + clusterId * PACKED_CLUSTER_STRIDE_BYTES;
+    uint2 vertexBlob = pageHeap.Load2(clusterOffset);
+    uint2 packedTopology = pageHeap.Load2(clusterOffset + 56u);
+    vertexBlobAddress = pageOffset + pageOffsets.y + vertexBlob.x;
+    vertexBlobSize = vertexBlob.y;
+    tStart = (packedTopology.x >> 16u) * 3u;
+    packedCounts = packedTopology.y;
+    return clusterOffset;
 }
 
 uint GetClusterLocalMaterial(ByteAddressBuffer pageHeap, uint pageOffset, uint clusterId, uint triangle)
@@ -38,6 +40,18 @@ uint FetchVertexIndex(ByteAddressBuffer pageHeap, uint pageOffset, uint idxOffse
     uint shift = (indexByteAddr & 3) * 8;
     uint packedIndex = pageHeap.Load(alignedAddr);
     return (packedIndex >> shift) & 0xFF;
+}
+
+/// Read the three triangle bytes using only their first and last aligned words.
+uint3 FetchTriangleVertexIndices(ByteAddressBuffer pageHeap, uint pageOffset, uint idxOffset,
+                                 uint tStart, uint triIdx)
+{
+    uint byteAddress = pageOffset + idxOffset + tStart + triIdx * 3u;
+    uint first = pageHeap.Load(byteAddress & ~3u);
+    uint last = pageHeap.Load((byteAddress + 2u) & ~3u);
+    uint shift = (byteAddress & 3u) * 8u;
+    uint packed = (first >> shift) | (last << ((32u - shift) & 31u));
+    return uint3(packed & 0xFFu, (packed >> 8u) & 0xFFu, (packed >> 16u) & 0xFFu);
 }
 
 // ── Instance Data ──

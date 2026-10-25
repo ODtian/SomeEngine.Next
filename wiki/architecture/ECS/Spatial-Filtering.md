@@ -42,7 +42,7 @@
 | MutualSpatialPermission | 正反任一方向为 None | 正反两个方向均为 All | 其余情况 |
 | UnknownSpatialPermission | 由叶子判断 | 由叶子判断 | 保持 Unknown |
 
-SourceGen 为内置 OneWayPermission、MutualPermission 选择对应的具体组证明；其它许可保留 Unknown 组判断，叶子执行其具体静态 Matches。多位类别使用集合交集的存在语义。
+SourceGenerators 为内置 OneWayPermission、MutualPermission 选择对应的具体组证明；其它许可保留 Unknown 组判断，叶子执行其具体静态 Matches。多位类别使用集合交集的存在语义。
 
 ## 方向与遍历
 

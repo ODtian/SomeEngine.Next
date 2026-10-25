@@ -162,6 +162,8 @@ internal sealed class SparseClusterBvhStorage : IClusterBvhStorage
     public Memory<byte> GetRange(ulong offset, int length)
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        if (length > 0 && _blocks.TryGetValue(offset, out ClusterPageBytes? blockAtOffset) && length <= blockAtOffset.Length)
+            return blockAtOffset.Memory[..length];
         foreach ((ulong start, ClusterPageBytes bytes) in _blocks)
         {
             ulong end = checked(start + (uint)bytes.Length);

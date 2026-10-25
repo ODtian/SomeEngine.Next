@@ -1,3 +1,4 @@
+using SomeEngine.Render.Assets;
 using System.Collections.Immutable;
 using System.Numerics;
 using System.Runtime.InteropServices;
@@ -78,31 +79,29 @@ public sealed partial class ClusterPipelineSystem
             References = edit.CreatePersistentBuffer(new(_options.BlendReferenceCapacity * 4ul, storage, "Material decal references")),
             Ranges = edit.CreatePersistentBuffer(new(Math.Max(32ul, _outputDescription.ViewCount * 32ul), storage, "Material decal cell ranges")),
             Work = edit.CreatePersistentBuffer(new(16, storage | BufferUsages.CopySource, "Material decal work")),
-            Parameters = CreateParameters(ref edit, new byte[16], "Material decal parameters"),
+            Parameters = CreateParameters(ref edit, new byte[16]),
         };
         if (_viewGrid.Parameters is null)
             data.EmptyViews = CreateBufferData(ref edit, new byte[192], BufferUsages.ShaderRead, "Material decal empty views");
         GraphData.Decals = data;
         Span<uint> parameters = stackalloc uint[4] { 0, cells, _options.BlendReferenceCapacity, _options.BlendIndex == ClusterBlendIndex.FullScan ? 0u : 1u };
         UpdateParameters(ref edit, data.Parameters, MemoryMarshal.AsBytes(parameters));
-        ClusterComputePipeline[] pipelines = [_pipelines!.DecalClear, _pipelines.DecalCount, _pipelines.DecalReserve, _pipelines.DecalScatter, _pipelines.DecalSort];
+        LinkedComputePipeline[] pipelines = [_pipelines!.DecalClear, _pipelines.DecalCount, _pipelines.DecalReserve, _pipelines.DecalScatter, _pipelines.DecalSort];
         string[] entries = ["ClearMaterialDecalCells", "CountMaterialDecalCells", "ReserveMaterialDecalCells", "ScatterMaterialDecalCells", "SortMaterialDecalCells"];
         Shader shader = _configuration.Operations.Single(value => value.Role == ClusterShaderOperationRole.MaterialDecalCells).Shaders[0];
-        int target = shader.RequireSlangTarget(_device.Capabilities.CompileTarget);
         data.Builds = new GraphPassId[pipelines.Length];
         for (int index = 0; index < pipelines.Length; index++)
         {
-            ClusterComputePipeline pipeline = pipelines[index];
+            LinkedComputePipeline pipeline = pipelines[index];
             uint work = index is 1 or 3 ? 1 : cells;
             GraphPassId passId = AddComputePass(ref edit, entries[index], pipeline,
-                new ClusterDispatchParameters(new(Math.Max(1u, (work + 63u) / 64u), 1, 1)), 0,
-                ClusterDispatchParameters.Record, region: data.Geometry);
+                new DispatchArguments(Math.Max(1u, (work + 63u) / 64u), 1, 1), 0,
+                RecordDispatch, region: data.Geometry);
             data.Builds[index] = passId;
             if (index != 0) edit.OrderAfter(passId, data.Builds[index - 1]);
             PassDefinition pass = edit.GetPass(passId);
             pass.SetParameterBlock(pipeline.ParameterLayout);
-            var layout = ClusterLinkedStageLayout.Create(pipeline.ParameterLayout,
-                (category, space, register) => shader.IsSlangParameterLocationUsed(target, entries[index], category, space, register));
+            ShaderParameterLayout layout = shader.GetSlangResourceLayout(_device.Capabilities.CompileTarget, entries[index]);
             foreach (var resource in layout.Resources)
             {
                 if (BindInactiveStageResource(ref pass, resource)) continue;
@@ -144,6 +143,7 @@ public sealed partial class ClusterPipelineSystem
                 }
             }
         }
+        GraphData.DecalMeasurementBuffers = CaptureDecalBuffers(ref edit);
     }
 
     private bool UpdateMaterialDecals()
@@ -174,16 +174,16 @@ public sealed partial class ClusterPipelineSystem
                 var key = (shader, source.Material.GetType());
                 if (!_decalLayouts.TryGetValue(key, out var layout))
                 {
-                    var type = ClusterShadeStages.ResolveMaterialTypeLayout(shader,
-                        shader.RequireSlangTarget(_device.Capabilities.CompileTarget), "MaterialDecalScalars");
-                    layout = ScalarLayout.FromSlangByteAddress(type.Type.Name, type).Resolve(source.Material);
+                    var type = shader.GetSlangAttributedTypeLayout(
+                        shader.RequireSlangTarget(_device.Capabilities.CompileTarget), "MaterialDecalScalars", LayoutRules.DefaultStructuredBuffer);
+                    layout = ScalarLayout.FromSlangByteAddress(type).Resolve(source.Material);
                     _decalLayouts.Add(key, layout);
                 }
                 byte[] bytes = layout.Encode(source.Material, _renderDevice.GetTextureDescriptorIndex, _renderDevice.GetSamplerDescriptorIndex);
                 address = (uint)properties.Count;
                 offsets.Add(source.Material, address);
                 properties.AddRange(bytes);
-                reads.AddRange(layout.TextureProperties.Select(property => new IndexedTextureRead(source.Material, property, source.Material.GetTexture(property))));
+                reads.AddRange(layout.TextureProperties.Select(property => new IndexedTextureRead(source.Material, property)));
             }
             RenderTransform transform = source.Transform;
             Matrix4x4 decalToWorld = new TransformQvvs(transform.Position, transform.Rotation, transform.Scale) { Stretch = transform.Stretch }.ToMatrix();
@@ -202,8 +202,11 @@ public sealed partial class ClusterPipelineSystem
             Span<uint> parameters = stackalloc uint[4] { (uint)sources.Length, _viewGrid.CellCountPerView * _outputDescription.ViewCount,
                 _options.BlendReferenceCapacity, _options.BlendIndex == ClusterBlendIndex.FullScan ? 0u : 1u };
             UpdateParameters(ref edit, data.Parameters, MemoryMarshal.AsBytes(parameters));
+            GraphData.DecalMeasurementBuffers = CaptureDecalBuffers(ref edit);
+        }, () =>
+        {
+            data.Sources = sources; data.TextureReads = textureReads; data.Version++;
         });
-        data.Sources = sources; data.TextureReads = textureReads; data.Version++;
         return resourcesChanged;
     }
 
@@ -217,7 +220,7 @@ public sealed partial class ClusterPipelineSystem
         data.Completed = false;
         data.Views = views.ToArray(); data.CompletedVersion = data.Version;
         uint groups = Math.Max(1u, ((uint)data.Sources.Length * _outputDescription.ViewCount + 63u) / 64u);
-        var dispatch = new ClusterDispatchParameters(new(groups, 1, 1));
+        var dispatch = new DispatchArguments(groups, 1, 1);
         graph.SetPassData(data.Builds[1], dispatch); graph.SetPassData(data.Builds[3], dispatch);
     }
 

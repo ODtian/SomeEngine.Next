@@ -14,4 +14,5 @@ SEAC001 | SomeEngine.Assets | Error | Import capabilities must be accessible thr
 SEAC002 | SomeEngine.Assets | Error | Persistent capability identities must not conflict.
 SEAC003 | SomeEngine.Assets | Error | Capability registration requires a public static partial entry point.
 SEAC004 | SomeEngine.Assets | Error | Importers require parameterless constructors and read settings through the import context.
+SEAC005 | SomeEngine.Assets | Error | Implementation version inputs require their referenced implementation dependency assemblies.
 SEAU001 | SomeEngine.Assets | Error | Explicit use objects cannot retain or expose asset access types.

@@ -1,4 +1,6 @@
-﻿using Silk.NET.Direct3D12;
+﻿using System.Runtime.InteropServices;
+using Silk.NET.Core.Native;
+using Silk.NET.Direct3D12;
 using SomeEngine.Graphics.Direct3D12;
 using SomeEngine.Graphics.Validation;
 using Xunit;
@@ -558,5 +560,124 @@ public sealed class WarpExternalTests
             description,
             state);
         Assert.Equal((nint)validatedPointer, (nint)validation.GetNativeResource(imported));
+    }
+
+    [Fact]
+    public unsafe void External_timeline_native_fence_reports_destruction_after_final_release()
+    {
+        IGraphicsBackend raw = D3D12GraphicsBackend.Create();
+        using var backend = new ValidationLayer(
+            raw,
+            new ValidationOptions(NativeValidationDisabled: true));
+        using Device device = D3D12TestSupport.CreateWarpDevice(backend);
+        using ExternalTimeline timeline = backend.CreateExternalTimeline(device, initialValue: 0);
+        using NativeFenceDestruction destruction = new(backend.GetNativeTimeline(timeline));
+
+        timeline.Dispose();
+        Assert.False(destruction.IsDestroyed);
+        destruction.Dispose();
+        Assert.True(destruction.IsDestroyed);
+    }
+
+    [Fact]
+    public unsafe void Rejected_submission_releases_earlier_external_timeline_native_fence()
+    {
+        IGraphicsBackend raw = D3D12GraphicsBackend.Create();
+        using var backend = new ValidationLayer(
+            raw,
+            new ValidationOptions(NativeValidationDisabled: true));
+        using Device device = D3D12TestSupport.CreateWarpDevice(backend);
+        using ExternalTimeline first = backend.CreateExternalTimeline(device, initialValue: 0);
+        using ExternalTimeline second = backend.CreateExternalTimeline(device, initialValue: 0);
+        using NativeFenceDestruction destruction = new(backend.GetNativeTimeline(first));
+        Queue queue = backend.GetQueue(device, QueueType.Graphics);
+        second.Dispose();
+
+        Assert.Throws<ObjectDisposedException>(() => raw.Submit(
+            queue,
+            new QueueSubmitDesc(
+                [],
+                [new TimelinePoint(first, 0), new TimelinePoint(second, 0)],
+                [],
+                [],
+                [])));
+
+        first.Dispose();
+        destruction.Dispose();
+        Assert.True(destruction.IsDestroyed);
+    }
+
+    private sealed unsafe class NativeFenceDestruction : IDisposable
+    {
+        private ID3DDestructionNotifier* _notifier;
+        private int _destroyed;
+
+        public NativeFenceDestruction(ID3D12Fence* fence)
+        {
+            GCHandle userData = default;
+            try
+            {
+                Guid notifierId = ID3DDestructionNotifier.Guid;
+                ID3DDestructionNotifier* notifier = null;
+                int queryResult = fence->QueryInterface(&notifierId, (void**)&notifier);
+                _notifier = notifier;
+                Assert.True(queryResult >= 0);
+                Assert.NotEqual(0, (nint)notifier);
+
+                userData = GCHandle.Alloc(this);
+                using PfnDestructionCallback callback = new(&RecordDestruction);
+                uint callbackId = 0;
+                int registrationResult = notifier->RegisterDestructionCallback(
+                    callback,
+                    (void*)GCHandle.ToIntPtr(userData),
+                    &callbackId);
+                if (registrationResult >= 0)
+                {
+                    // The callback now owns this handle. A genuine native fence leak
+                    // retains this observer until the isolated testhost exits.
+                    userData = default;
+                }
+                Assert.True(registrationResult >= 0);
+            }
+            catch
+            {
+                try
+                {
+                    if (userData.IsAllocated)
+                        userData.Free();
+                }
+                finally
+                {
+                    Dispose();
+                }
+                throw;
+            }
+        }
+
+        public bool IsDestroyed => Volatile.Read(ref _destroyed) != 0;
+
+        public void Dispose()
+        {
+            ID3DDestructionNotifier* notifier = _notifier;
+            _notifier = null;
+            if (notifier != null)
+                _ = notifier->Release();
+        }
+
+        [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
+        private static void RecordDestruction(void* data)
+        {
+            try
+            {
+                GCHandle userData = GCHandle.FromIntPtr((nint)data);
+                var destruction = (NativeFenceDestruction)userData.Target!;
+                userData.Free();
+                Volatile.Write(ref destruction._destroyed, 1);
+            }
+            catch
+            {
+                // A native destruction callback must not propagate managed exceptions.
+            }
+        }
     }
 }

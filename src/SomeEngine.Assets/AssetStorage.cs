@@ -34,9 +34,11 @@ public readonly record struct AssetEntry
     public Guid AssetGuid { get; init; }
     public string Name { get; init; } = "";
     public string Path { get; init; } = "";
+    /// <summary>Optional project-relative container; Path remains the unique logical output path.</summary>
+    public string PackPath { get; init; } = "";
     public string AssetType { get; init; }
     public ulong SchemaFingerprint { get; init; }
-    /// <summary>Storage-selected version used to open and cache this entry; a pack uses its own generation.</summary>
+    /// <summary>Storage-selected version used to open and cache this entry; AssetPackStorage uses its own generation.</summary>
     public Guid Version { get; init; }
     public SourceGuid SourceGuid { get; init; }
     public string SubAssetKey { get; init; } = "";
@@ -223,4 +225,59 @@ public sealed class AssetPackStorage : IAssetStorage, IAsyncDisposable
 
     private void ThrowIfDisposed()
         => ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+}
+
+/// <summary>A catalog snapshot whose imported outputs may live inside a shared immutable pack.</summary>
+internal sealed class ProjectAssetStorage : IAssetStorage
+{
+    private readonly string _root;
+    private readonly Dictionary<Guid, AssetEntry> _entries;
+    private readonly LooseAssetStorage _loose;
+
+    internal ProjectAssetStorage(string root, AssetManifest manifest)
+    {
+        _root = root;
+        _entries = manifest.Assets.ToDictionary(static pair => pair.Key, static pair => pair.Value);
+        _loose = new LooseAssetStorage(root, manifest);
+    }
+
+    public bool TryFind(Guid assetGuid, out AssetEntry entry)
+    {
+        if (_entries.TryGetValue(assetGuid, out entry) && entry.PackPath.Length != 0) return true;
+        return _loose.TryFind(assetGuid, out entry);
+    }
+
+    public ValueTask<IRangeSource> OpenAsync(AssetEntry entry, CancellationToken cancellationToken = default)
+    {
+        if (!_entries.TryGetValue(entry.AssetGuid, out AssetEntry selected))
+            throw new KeyNotFoundException($"Asset {entry.AssetGuid} was not found in the project publication.");
+        if (selected.PackPath.Length == 0) return _loose.OpenAsync(entry, cancellationToken);
+        if (selected.Version != entry.Version || selected.AssetType != entry.AssetType
+            || selected.SchemaFingerprint != entry.SchemaFingerprint)
+            throw new InvalidDataException("The asset entry differs from the project publication.");
+        return OpenPackedAsync(_root, selected, cancellationToken);
+    }
+
+    internal static async ValueTask<IRangeSource> OpenPackedAsync(string root, AssetEntry entry,
+        CancellationToken cancellationToken)
+    {
+        string path = AssetProject.RequireProjectPath(root, entry.PackPath);
+        await using AssetPack pack = await AssetPack.OpenAsync(path, cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (!pack.TryGetEntry(entry.AssetGuid, out AssetPackEntry? packed)
+            || packed!.AssetType != entry.AssetType || packed.SchemaFingerprint != entry.SchemaFingerprint)
+            throw new InvalidDataException($"Asset {entry.AssetGuid} does not match its pack entry.");
+        IRangeSource source = await pack.OpenAssetSourceAsync(entry.AssetGuid, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            // Project receipts select the nested document, not the enclosing pack generation.
+            if (await BinaryDocument.ReadVersionAsync(source, cancellationToken).ConfigureAwait(false) != entry.Version)
+                throw new IOException("The selected packed asset version has been replaced. Open the new entry.");
+            return source;
+        }
+        catch
+        {
+            await source.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
+    }
 }

@@ -1247,7 +1247,8 @@ internal sealed partial class RenderGraphFrameState
     {
         try
         {
-            Slot.SaveBufferTransferStates(new RenderGraphFrameResult(frame));
+            if (frame is not null && !frame.SubmittedCompletions.IsEmpty)
+                Slot.SaveBufferTransferStates(new RenderGraphFrameResult(frame));
             NotifyExecutionObservers(frame);
         }
         finally
@@ -1538,7 +1539,7 @@ internal sealed partial class RenderGraphFrameState
     }
 
     [System.Diagnostics.Conditional("DEBUG")]
-    private void EnsureAuthoring()
+    internal void EnsureAuthoring()
     {
         EnsureLease(Identity);
         if (_sealed) throw new InvalidOperationException("The render graph frame is sealed.");
@@ -1563,8 +1564,8 @@ internal sealed partial class RenderGraphFrameState
         _dynamicOrders.Clear();
         foreach (var image in _swapchainImages)
         {
-            if (StructureIndex.Structure.Textures.Contains(image.Identity))
-                StructureIndex.Structure.Textures.Get(image.Identity).BoundResource = null;
+            if (StructureIndex.Structure.Textures.TryGetDenseIndex(image.Identity, out int textureIndex))
+                StructureIndex.Structure.Textures.Rows[textureIndex].BoundResource = null;
             Graph.PropertyChanged(image.Identity, GraphStoreKind.Textures);
         }
         _swapchainImages.Clear();
@@ -1601,21 +1602,37 @@ internal sealed partial class RenderGraphFrameState
     internal bool TryGetPassCompletion(GraphPassId pass, out QueueCompletion completion) =>
         _executor.TryGetPassCompletion(pass, out completion);
 
+    internal bool TryGetPersistentBufferUploadCompletion(GraphBufferId buffer, out QueueCompletion completion)
+    {
+        if (StructureIndex.Structure.Buffers.TryGetDenseIndex(buffer.Value, out int bufferIndex))
+        {
+            GraphPassId pass = StructureIndex.Structure.Buffers.Rows[bufferIndex].BufferUploadPass;
+            if (pass != default) return TryGetPassCompletion(pass, out completion);
+        }
+        completion = default;
+        return false;
+    }
+
     private void NotifyExecutionObservers(RenderGraphFrameState? frame)
     {
-        IRenderGraphFrameExecutionObserver[] observers = [.. _executionObservers];
-        _executionObservers.Clear();
         List<Exception>? errors = null;
-        foreach (IRenderGraphFrameExecutionObserver observer in observers)
+        try
         {
-            try
+            foreach (IRenderGraphFrameExecutionObserver observer in CollectionsMarshal.AsSpan(_executionObservers))
             {
-                observer.OnRenderGraphFrameFinished(new RenderGraphFrameResult(frame));
+                try
+                {
+                    observer.OnRenderGraphFrameFinished(new RenderGraphFrameResult(frame));
+                }
+                catch (Exception exception)
+                {
+                    (errors ??= []).Add(exception);
+                }
             }
-            catch (Exception exception)
-            {
-                (errors ??= []).Add(exception);
-            }
+        }
+        finally
+        {
+            _executionObservers.Clear();
         }
         if (errors is not null)
             throw new AggregateException("Render graph completion callbacks failed.", errors);
@@ -1715,6 +1732,20 @@ internal sealed partial class RenderGraphFrameState
         if (changed) ParameterInputChanged(input, bindingChanged);
     }
 
+    internal bool TryGetPersistentParameterInput(GraphParameterInput input, out ResourceBinding binding)
+    {
+        EnsureAuthoring();
+        DevelopmentCheck.Require(input is not null && input.Graph == Graph.Identity,
+            "The parameter input must belong to this graph.");
+        if (input.PersistentValue is { } value)
+        {
+            binding = value.Binding;
+            return true;
+        }
+        binding = default;
+        return false;
+    }
+
     internal void SetPersistentParameterInput(GraphParameterInput input, ResourceBinding binding)
     {
         ParameterInputValue next = CreateParameterInputValue(input, binding);
@@ -1741,7 +1772,7 @@ internal sealed partial class RenderGraphFrameState
             if (bindingChanged || value.IndexedParameterRead)
                 _executor.ChangeCommandData(value.Pass);
         }
-        _executor.ChangeParameterInput(input);
+        if (bindingChanged) _executor.ChangeParameterInput(input);
     }
 
     private ParameterInputValue CreateParameterInputValue(GraphParameterInput input, ResourceBinding binding)

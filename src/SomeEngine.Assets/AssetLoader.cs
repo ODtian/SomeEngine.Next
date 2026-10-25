@@ -182,12 +182,20 @@ public sealed partial class AssetLoader : IAsyncDisposable
     {
         if (_closed)
             return _cleanup;
+        if (_files.Count == 0)
+            return _cleanup;
+        var latestAccess = new Dictionary<Guid, long>(_files.Count);
+        foreach (var pair in _files)
+        {
+            if (!latestAccess.TryGetValue(pair.Key.Id, out long access) || pair.Value.LastAccess > access)
+                latestAccess[pair.Key.Id] = pair.Value.LastAccess;
+        }
         List<AssetFile>? removed = null;
         while (true)
         {
             var candidates = _files.Where(static pair => pair.Value.File is not null && pair.Value.Waiters == 0);
             var obsolete = candidates.Where(pair => pair.Key.Version == Guid.Empty ||
-                _files.Any(other => other.Key.Id == pair.Key.Id && other.Value.LastAccess > pair.Value.LastAccess));
+                latestAccess[pair.Key.Id] > pair.Value.LastAccess);
             var selected = obsolete.OrderBy(static pair => pair.Value.LastAccess).FirstOrDefault();
             if (selected.Value is null)
             {
@@ -199,6 +207,16 @@ public sealed partial class AssetLoader : IAsyncDisposable
                     break;
             }
             _files.Remove(selected.Key);
+            if (latestAccess[selected.Key.Id] == selected.Value.LastAccess)
+            {
+                latestAccess.Remove(selected.Key.Id);
+                foreach (var pair in _files)
+                {
+                    if (pair.Key.Id == selected.Key.Id &&
+                        (!latestAccess.TryGetValue(pair.Key.Id, out long access) || pair.Value.LastAccess > access))
+                        latestAccess[pair.Key.Id] = pair.Value.LastAccess;
+                }
+            }
             AssetFile file = selected.Value.File!;
             _cachedRootBytes -= selected.Value.RootByteLength;
             (removed ??= []).Add(file);

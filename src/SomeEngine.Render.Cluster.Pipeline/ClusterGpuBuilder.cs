@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using SomeEngine.Graphics;
+using SomeEngine.Render.Assets;
 using SomeEngine.Render.Systems;
 using SomeEngine.Render.Frame;
 using SomeEngine.RenderGraph;
@@ -27,8 +28,8 @@ public sealed class ClusterGpuBuilder : IDisposable
     public const uint MaximumTriangles = 124;
     private readonly ClusterRenderResources _resources;
     private readonly ClusterGpuVertexEncoder _encoder;
-    private readonly ClusterComputePipeline _pipeline;
-    private readonly ClusterLinkedStageLayout _bindings;
+    private readonly LinkedComputePipeline _pipeline;
+    private readonly ShaderParameterLayout _bindings;
     private readonly ulong _encoding;
     private readonly GraphBufferId _pages;
     private readonly GraphBufferId _bvh;
@@ -38,9 +39,9 @@ public sealed class ClusterGpuBuilder : IDisposable
     {
         _resources = resources;
         _encoder = encoder;
-        _pipeline = ClusterComputePipeline.Create(backend, device, encoder.Shader, encoder.EntryPoint,
+        _pipeline = LinkedComputePipeline.Create(backend, device, encoder.Shader, encoder.EntryPoint,
             "Build Cluster geometry");
-        _bindings = ClusterLinkedStageLayout.Create(_pipeline.ParameterLayout);
+        _bindings = _pipeline.GlobalResources;
         _encoding = VertexEncodingCompatibility.Hash(encoder.VertexEncoding);
         resources.Residency.InstallGeometryBuffers(graph);
         ClusterGeometryBuffers buffers = resources.GeometryBuffers;
@@ -61,7 +62,7 @@ public sealed class ClusterGpuBuilder : IDisposable
         uint groups = capacity.MaterialCount;
         uint pages = Math.Max(1u, Math.Min(capacity.TriangleCount,
             checked((capacity.TriangleCount + trianglesPerPage - 1u) / trianglesPerPage + groups - 1u)));
-        uint nodes = (pages + 3u) / 4u;
+        uint nodes = checked((pages + 3u) / 4u);
         int depth = 1;
         for (uint count = nodes; count > 1; depth++)
         {
@@ -99,7 +100,7 @@ public sealed class ClusterGpuBuilder : IDisposable
         GraphBufferUavId outputBvh = graph.CreateBufferUav(_bvh,
             new BufferRange(allocation.Bvh.Offset, allocation.Bvh.Length));
         var bindings = new List<GraphParameterResourceBinding>();
-        foreach (ClusterLinkedStageResource resource in _bindings.Resources)
+        foreach (ShaderParameterResource resource in _bindings.Resources)
             bindings.Add(resource.Name switch
             {
                 "ClusterBuildParameters" => GraphParameterResourceBinding.ConstantBuffer(parameters, PipelineSync.ComputeShading),
@@ -138,5 +139,5 @@ public sealed class ClusterGpuBuilder : IDisposable
     private readonly record struct BuildUniforms(uint PageOffset, uint PageBytes, uint PageStride, uint PageCount,
         uint BvhRoot, uint BvhNodeCount, uint EncodingLow, uint EncodingHigh, uint MaterialIndex,
         uint MaterialCount, uint HasTriangleMaterials);
-    private sealed record BuildPass(ClusterComputePipeline Pipeline, GraphParameterResourceBinding[] Bindings);
+    private sealed record BuildPass(LinkedComputePipeline Pipeline, GraphParameterResourceBinding[] Bindings);
 }

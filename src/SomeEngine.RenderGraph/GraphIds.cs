@@ -83,6 +83,17 @@ public readonly struct GraphBufferId : IEquatable<GraphBufferId>
     public static bool operator !=(GraphBufferId left, GraphBufferId right) => !left.Equals(right);
 }
 
+/// <summary>
+/// One graph registration use of a buffer. Release it through a graph edit. This token
+/// does not retain or dispose the underlying RHI buffer or any view. Existing canonical
+/// rows keep their original owner; only implicitly registered rows end with their last use.
+/// </summary>
+public sealed class GraphBufferUse
+{
+    internal GraphBufferUse(GraphBufferId buffer) => Buffer = buffer;
+    public GraphBufferId Buffer { get; }
+}
+
 public readonly struct GraphTextureId : IEquatable<GraphTextureId>
 {
     private readonly GraphIdentity _value;
@@ -93,6 +104,22 @@ public readonly struct GraphTextureId : IEquatable<GraphTextureId>
     public override int GetHashCode() => _value.GetHashCode();
     public static bool operator ==(GraphTextureId left, GraphTextureId right) => left.Equals(right);
     public static bool operator !=(GraphTextureId left, GraphTextureId right) => !left.Equals(right);
+}
+
+/// <summary>
+/// One retained use of an external texture registration. Release it through a graph edit;
+/// the registration identity can be shared by independent uses.
+/// </summary>
+public sealed class GraphTextureUse
+{
+    internal GraphTextureUse(GraphTextureId texture, IDisposable keepalive)
+    {
+        Texture = texture;
+        Keepalive = keepalive;
+    }
+
+    public GraphTextureId Texture { get; }
+    internal IDisposable? Keepalive { get; set; }
 }
 
 public readonly struct GraphQueryPoolId : IEquatable<GraphQueryPoolId>

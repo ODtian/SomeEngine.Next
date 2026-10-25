@@ -2,7 +2,7 @@ namespace SomeEngine.RenderGraph;
 
 internal sealed class GraphRows<T>
 {
-    private readonly record struct Entry(uint Generation, int DenseIndex, int NextFree, bool Retired = false);
+    private readonly record struct Entry(uint Generation, int DenseIndex, int NextFree);
     private readonly Func<T, T>? _clone;
     private readonly GraphIdentityDomain _domain;
     private GraphTable<Entry> _entries;
@@ -77,20 +77,28 @@ internal sealed class GraphRows<T>
         return identity;
     }
 
-    internal bool Contains(in GraphIdentity id)
+    internal bool Contains(in GraphIdentity id) => TryGetDenseIndex(id, out _);
+
+    internal bool TryGetDenseIndex(in GraphIdentity id, out int index)
     {
+        index = -1;
         if (!id.IsValid || id.Domain != _domain || (uint)id.Slot >= (uint)_entries.Count)
             return false;
         Entry entry = _entries[id.Slot];
-        return !entry.Retired && entry.DenseIndex >= 0 && entry.Generation == id.Generation &&
-            _identities[entry.DenseIndex].Owner == id.Owner;
+        if (entry.DenseIndex >= 0 && entry.Generation == id.Generation &&
+            _identities[entry.DenseIndex].Owner == id.Owner)
+        {
+            index = entry.DenseIndex;
+            return true;
+        }
+        return false;
     }
 
     internal int DenseIndex(in GraphIdentity id)
     {
-        if (!Contains(id))
+        if (!TryGetDenseIndex(id, out int index))
             throw new ArgumentException("The graph identity is invalid, stale, or belongs to another graph.", nameof(id));
-        return _entries[id.Slot].DenseIndex;
+        return index;
     }
 
     internal T Get(in GraphIdentity id) => _rows[DenseIndex(id)];
@@ -111,9 +119,8 @@ internal sealed class GraphRows<T>
 
     internal T Remove(in GraphIdentity id)
     {
-        if (!Contains(id))
+        if (!TryGetDenseIndex(id, out int dense))
             throw new ArgumentException("The graph identity is invalid or stale.", nameof(id));
-        int dense = DenseIndex(id);
         int last = Count - 1;
         T removed = _rows[dense];
         if (dense != last)
@@ -128,7 +135,7 @@ internal sealed class GraphRows<T>
         Entry entry = _entries[id.Slot];
         bool retired = entry.Generation == uint.MaxValue;
         _entries.Set(id.Slot, new Entry(
-            retired ? entry.Generation : entry.Generation + 1, -1, retired ? -1 : _firstFree, retired));
+            retired ? entry.Generation : entry.Generation + 1, -1, retired ? -1 : _firstFree));
         if (!retired) _firstFree = id.Slot;
         _writableRows.Remove(id.Slot);
         return removed;
@@ -152,8 +159,9 @@ internal sealed class GraphOrders : IEnumerable<ExplicitPassOrder>
 
     internal void Add(ExplicitPassOrder order)
     {
-        if (_edges.Contains(order)) return;
-        _edges = _edges.Add(order);
+        ImmutableHashSet<ExplicitPassOrder> edges = _edges.Add(order);
+        if (edges.Count == _edges.Count) return;
+        _edges = edges;
         _predecessors = _predecessors.SetItem(order.Consumer,
             _predecessors.GetValueOrDefault(order.Consumer, ImmutableHashSet<GraphIdentity>.Empty).Add(order.Predecessor));
         _successors = _successors.SetItem(order.Predecessor,
@@ -162,8 +170,9 @@ internal sealed class GraphOrders : IEnumerable<ExplicitPassOrder>
 
     internal bool Remove(ExplicitPassOrder order)
     {
-        if (!_edges.Contains(order)) return false;
-        _edges = _edges.Remove(order);
+        ImmutableHashSet<ExplicitPassOrder> edges = _edges.Remove(order);
+        if (edges.Count == _edges.Count) return false;
+        _edges = edges;
         ImmutableHashSet<GraphIdentity> predecessors = _predecessors[order.Consumer].Remove(order.Predecessor);
         ImmutableHashSet<GraphIdentity> successors = _successors[order.Predecessor].Remove(order.Consumer);
         _predecessors = predecessors.IsEmpty ? _predecessors.Remove(order.Consumer) : _predecessors.SetItem(order.Consumer, predecessors);
@@ -185,46 +194,51 @@ internal sealed class GraphOrders : IEnumerable<ExplicitPassOrder>
 }
 internal sealed partial class GraphStructure
 {
-    internal GraphRows<GraphBuffer> Buffers { get; private init; } =
-        new(GraphIdentityDomain.Buffer, static value => value.Clone());
-    internal GraphRows<GraphTexture> Textures { get; private init; } =
-        new(GraphIdentityDomain.Texture, static value => value.Clone());
-    internal GraphRows<GraphPersistentParameterBindings> PersistentBindings { get; private init; } =
-        new(GraphIdentityDomain.PersistentBindings, static value => value.Clone());
-    internal GraphRows<GraphQueryPool> QueryPools { get; private init; } =
-        new(GraphIdentityDomain.QueryPool, static value => value.Clone());
-    internal GraphRows<GraphRayTracingShaderTable> ShaderTables { get; private init; } =
-        new(GraphIdentityDomain.ShaderTable, static value => value.Clone());
-    internal GraphRows<GraphView> Views { get; private init; } =
-        new(GraphIdentityDomain.View, static value => value.Clone());
-    internal GraphRows<GraphPass> Passes { get; private init; } =
-        new(GraphIdentityDomain.Pass, static value => value.Clone());
-    internal GraphRows<PassResourceAccess> Accesses { get; private init; } =
-        new(GraphIdentityDomain.Access, static value => value.Clone());
-    internal GraphOrders Orders { get; private init; } = new();
-    internal GraphRows<GraphRegion> Regions { get; private init; } =
-        new(GraphIdentityDomain.Region, static value => value.Clone());
-    internal GraphRegion RootRegion { get; private init; } = new() { Label = "Root" };
+    internal GraphRows<GraphBuffer> Buffers { get; private init; }
+    internal GraphRows<GraphTexture> Textures { get; private init; }
+    internal GraphRows<GraphPersistentParameterBindings> PersistentBindings { get; private init; }
+    internal GraphRows<GraphQueryPool> QueryPools { get; private init; }
+    internal GraphRows<GraphRayTracingShaderTable> ShaderTables { get; private init; }
+    internal GraphRows<GraphView> Views { get; private init; }
+    internal GraphRows<GraphPass> Passes { get; private init; }
+    internal GraphRows<PassResourceAccess> Accesses { get; private init; }
+    internal GraphOrders Orders { get; private init; }
+    internal GraphRows<GraphRegion> Regions { get; private init; }
+    internal GraphRegion RootRegion { get; private init; }
     internal GraphRegionId BufferUploadRegion;
 
-    internal GraphStructure Fork()
+    internal GraphStructure()
     {
-        return new GraphStructure
-        {
-            Buffers = Buffers.Fork(),
-            Textures = Textures.Fork(),
-            PersistentBindings = PersistentBindings.Fork(),
-            QueryPools = QueryPools.Fork(),
-            ShaderTables = ShaderTables.Fork(),
-            Views = Views.Fork(),
-            Passes = Passes.Fork(),
-            Accesses = Accesses.Fork(),
-            Orders = Orders.Fork(),
-            Regions = Regions.Fork(),
-            RootRegion = RootRegion.Clone(),
-            BufferUploadRegion = BufferUploadRegion,
-        };
+        Buffers = new(GraphIdentityDomain.Buffer, static value => value.Clone());
+        Textures = new(GraphIdentityDomain.Texture, static value => value.Clone());
+        PersistentBindings = new(GraphIdentityDomain.PersistentBindings, static value => value.Clone());
+        QueryPools = new(GraphIdentityDomain.QueryPool, static value => value.Clone());
+        ShaderTables = new(GraphIdentityDomain.ShaderTable, static value => value.Clone());
+        Views = new(GraphIdentityDomain.View, static value => value.Clone());
+        Passes = new(GraphIdentityDomain.Pass, static value => value.Clone());
+        Accesses = new(GraphIdentityDomain.Access, static value => value.Clone());
+        Orders = new();
+        Regions = new(GraphIdentityDomain.Region, static value => value.Clone());
+        RootRegion = new() { Label = "Root" };
     }
+
+    private GraphStructure(GraphStructure source)
+    {
+        Buffers = source.Buffers.Fork();
+        Textures = source.Textures.Fork();
+        PersistentBindings = source.PersistentBindings.Fork();
+        QueryPools = source.QueryPools.Fork();
+        ShaderTables = source.ShaderTables.Fork();
+        Views = source.Views.Fork();
+        Passes = source.Passes.Fork();
+        Accesses = source.Accesses.Fork();
+        Orders = source.Orders.Fork();
+        Regions = source.Regions.Fork();
+        RootRegion = source.RootRegion.Clone();
+        BufferUploadRegion = source.BufferUploadRegion;
+    }
+
+    internal GraphStructure Fork() => new(this);
 
     internal int CountSharedBlocks(GraphStructure other)
     {
@@ -260,6 +274,8 @@ internal sealed class GraphBuffer
     internal MemoryRequirements Requirements;
     internal Buffer? PersistentResource;
     internal Buffer? RegisteredResource;
+    internal bool ExternalUseOnly;
+    internal GraphBufferUse[] ExternalUses = [];
     internal Buffer? BoundResource;
     internal BufferRange? CurrentViewRange;
     internal GraphPassId BufferUploadPass;
@@ -271,20 +287,12 @@ internal sealed class GraphBuffer
     }
     internal string? Label => Description.Label;
 
-    internal GraphBuffer Clone() => new()
+    internal GraphBuffer Clone()
     {
-        BufferUploadPass = BufferUploadPass,
-        Description = Description,
-        MemoryType = MemoryType,
-        Ownership = Ownership,
-        Lifetime = Lifetime,
-        Requirements = Requirements,
-        PersistentResource = PersistentResource,
-        RegisteredResource = RegisteredResource,
-        BoundResource = BoundResource,
-        CurrentViewRange = CurrentViewRange,
-        Boundaries = new((BufferBoundaryState[])BoundaryStates.Clone(), Boundaries.CompletionItems),
-    };
+        var buffer = (GraphBuffer)MemberwiseClone();
+        buffer.Boundaries = new((BufferBoundaryState[])BoundaryStates.Clone(), Boundaries.CompletionItems);
+        return buffer;
+    }
 }
 
 internal sealed class GraphTexture
@@ -308,6 +316,8 @@ internal sealed class GraphTexture
     internal MemoryRequirements Requirements;
     internal Texture? PersistentResource;
     internal Texture? RegisteredResource;
+    internal bool ExternalUseOnly;
+    internal GraphTextureUse[] ExternalUses = [];
     internal Texture? BoundResource;
     internal TextureBoundaryState[] BoundaryStates = [];
 
@@ -322,7 +332,7 @@ internal sealed class GraphTexture
         SampleCount = SampleCount,
         Format = Format,
         Usages = Usages,
-        PermittedViewFormats = (Format[])PermittedViewFormats.Clone(),
+        PermittedViewFormats = PermittedViewFormats,
         Label = Label,
         NodePlacement = NodePlacement,
         Ownership = Ownership,
@@ -330,6 +340,8 @@ internal sealed class GraphTexture
         Requirements = Requirements,
         PersistentResource = PersistentResource,
         RegisteredResource = RegisteredResource,
+        ExternalUseOnly = ExternalUseOnly,
+        ExternalUses = ExternalUses,
         BoundResource = BoundResource,
         BoundaryStates = (TextureBoundaryState[])BoundaryStates.Clone(),
     };
@@ -485,28 +497,18 @@ internal sealed class GraphPass
     internal GraphDepthStencilAttachment? DepthStencilAttachment;
     internal List<PassRenderingRegion> RenderingRegions = [];
 
-    internal GraphPass Clone() => new()
+    internal GraphPass Clone()
     {
-        Enabled = Enabled,
-        Label = Label,
-        Kind = Kind,
-        Queue = Queue,
-        Options = Options,
-        CallbackStorage = CallbackStorage,
-        Pipeline = Pipeline,
-        ParameterLayout = ParameterLayout,
-        ParameterOrdinaryData = (byte[])ParameterOrdinaryData.Clone(),
-        ParameterBindings = new List<GraphParameterResourceBinding>(ParameterBindings),
-        ViewReferences = new HashSet<GraphIdentity>(ViewReferences),
-        PersistentBindings = new List<GraphIdentity>(PersistentBindings),
-        DeclarationOrdinal = DeclarationOrdinal,
-        Region = Region,
-        Accesses = new List<GraphIdentity>(Accesses),
-        TimeMeasurements = new List<PassTimeMeasurement>(TimeMeasurements),
-        ColorAttachments = new List<GraphColorAttachment>(ColorAttachments),
-        DepthStencilAttachment = DepthStencilAttachment,
-        RenderingRegions = new List<PassRenderingRegion>(RenderingRegions),
-    };
+        var pass = (GraphPass)MemberwiseClone();
+        pass.ParameterBindings = new List<GraphParameterResourceBinding>(ParameterBindings);
+        pass.ViewReferences = new HashSet<GraphIdentity>(ViewReferences);
+        pass.PersistentBindings = new List<GraphIdentity>(PersistentBindings);
+        pass.Accesses = new List<GraphIdentity>(Accesses);
+        pass.TimeMeasurements = new List<PassTimeMeasurement>(TimeMeasurements);
+        pass.ColorAttachments = new List<GraphColorAttachment>(ColorAttachments);
+        pass.RenderingRegions = new List<PassRenderingRegion>(RenderingRegions);
+        return pass;
+    }
 }
 
 internal sealed class PassResourceAccess

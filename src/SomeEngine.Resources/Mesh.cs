@@ -41,7 +41,7 @@ public sealed class Mesh
                 Name = Name, Bounds = Bounds, VertexEncoding = VertexEncoding, PageDigests = PageDigests,
                 LowestDetailPageIndices = LowestDetailPageIndices, Regions = Regions, ClusterGroups = ClusterGroups, ClusterGeometryIndices = ClusterGeometryIndices, BvhSha256 = BvhSha256,
                 BvhOffset = BvhOffset, Revision = Revision, _bvh = _bvh,
-                _pages = (ReadOnlyMemory<byte>[])_pages.Clone(),
+                _pages = this._pages,
             };
     }
 

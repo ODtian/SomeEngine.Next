@@ -7,6 +7,8 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../Shared/HardwareRowsDiscoverer.cs" Link="HardwareRowsDiscoverer.cs" />
+    <Compile Include="../Shared/ImageArtifacts.cs" Link="ImageArtifacts.cs" />
+    <PackageReference Include="SkiaSharp" Version="3.119.4" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.12.0" />
     <PackageReference Include="xunit" Version="2.9.3" />

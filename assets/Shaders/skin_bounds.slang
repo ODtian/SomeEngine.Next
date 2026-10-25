@@ -56,10 +56,12 @@ void TransformSkinBounds(uint3 thread : SV_DispatchThreadID)
 {
     uint count, stride;
     SkinBoundsWork.GetDimensions(count, stride);
-    if (thread.x >= count) return;
-    SkinBoundsGroup work = SkinBoundsWork[thread.x];
+    // Matches SkinBoundsFeature.BoundsDispatchWidth; X is full-width whenever Y is used.
+    uint workIndex = thread.x + thread.y * (65535u * 64u);
+    if (workIndex >= count) return;
+    SkinBoundsGroup work = SkinBoundsWork[workIndex];
     uint4 control = SkinBoundsControls[work.instance];
-    if (control.w == 0u) return;
+    if (control.w == 0u || work.boxCount == 0u || work.lodBoxCount == 0u) return;
     float3 currentMin = 1e30.xxx, currentMax = -1e30.xxx;
     float3 previousMin = 1e30.xxx, previousMax = -1e30.xxx;
     for (uint index = 0u; index < work.boxCount; index++)
@@ -85,10 +87,11 @@ void TransformSkinBounds(uint3 thread : SV_DispatchThreadID)
     }
     ModelBounds current, previous;
     current.minimum = float4(currentMin, work.minError * currentStretch);
-    current.maximum = float4(currentMax, work.maxParentError * currentStretch);
+    // Preserve the terminal-parent infinity sentinel for a collapsed pose.
+    current.maximum = float4(currentMax, isinf(work.maxParentError) ? work.maxParentError : work.maxParentError * currentStretch);
     current.lodSphere = float4((currentLodMin + currentLodMax) * 0.5, length(currentLodMax - currentLodMin) * 0.5);
     previous.minimum = float4(previousMin, work.minError * previousStretch);
-    previous.maximum = float4(previousMax, work.maxParentError * previousStretch);
+    previous.maximum = float4(previousMax, isinf(work.maxParentError) ? work.maxParentError : work.maxParentError * previousStretch);
     previous.lodSphere = float4((previousLodMin + previousLodMax) * 0.5, length(previousLodMax - previousLodMin) * 0.5);
     SkinCurrentBounds[control.z + work.output] = current;
     SkinPreviousBounds[control.z + work.output] = previous;

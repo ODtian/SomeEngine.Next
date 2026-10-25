@@ -9,7 +9,7 @@ namespace SomeEngine.Render.Features.Shadows;
 public sealed partial class VirtualShadowFeature
 {
     private GraphBufferInput _residentPages = null!;
-    private GraphBufferInput _residentUniforms = null!;
+    private readonly GraphBufferSlice _residentUniforms;
     private GraphPassId _residentPropagationPass;
     private LinkedComputePipeline? _residentPipeline;
 
@@ -25,7 +25,6 @@ public sealed partial class VirtualShadowFeature
     private void InstallResidentPages(ref RenderGraphEdit edit, VirtualShadowMapShaders shaders, uint entryCapacity,
         GraphRegionId finish)
     {
-        _residentUniforms = edit.CreateBufferInput(BufferUsages.Constant);
         _residentPages = _framePageTable;
         _residentPipeline = LinkedComputePipeline.Create(_backend, _device, shaders.ResidentPagesShader,
             shaders.ResidentPages, "Virtual shadow resident ancestor propagation");
@@ -40,7 +39,7 @@ public sealed partial class VirtualShadowFeature
         edit.OrderAfter(_frameCompletePass, _residentPropagationPass);
     }
 
-    private void UpdateResidentPages(ref RenderGraphFrame graph, uint viewCount)
+    private void UpdateResidentPages(ref RenderGraphFrame graph, scoped Span<byte> uniformBytes, uint viewCount)
     {
         var data = new ResidentUniforms
         {
@@ -48,7 +47,7 @@ public sealed partial class VirtualShadowFeature
             EntriesPerView = _shadowMap.Settings.PageTableEntriesPerView,
             EntryCount = _shadowMap.PageTableEntryCount,
         };
-        _uniformData.Write(ref graph, _residentUniforms, in data);
+        WriteUniform(uniformBytes, _residentUniforms, in data);
         graph.SetPassDataIfChanged(_residentPropagationPass,
             new VirtualShadowDispatchPassData(new DispatchArguments(DivideRoundUp(data.EntryCount, 64u), 1, 1)));
         graph.SetPassEnabled(_residentPropagationPass, viewCount != 0u);

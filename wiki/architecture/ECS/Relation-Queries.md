@@ -80,12 +80,12 @@ public readonly struct MinimumScore(int minimum) : IRelation<Score>
 }
 ```
 
-独立使用方引用 `SomeEngine.ECS`、`SomeEngine.ECS.Relations`，并显式将 `SomeEngine.ECS.SourceGen` 作为 Analyzer 引入。仓库内对应公开使用方为 `tests/SomeEngine.ECS.Relations.Tests`。
+独立使用方引用 `SomeEngine.ECS`、`SomeEngine.ECS.Relations`，并显式将 `SomeEngine.ECS.SourceGenerators` 作为 Analyzer 引入。仓库内对应公开使用方为 `tests/SomeEngine.ECS.Relations.Tests`。
 
 ```xml
 <ProjectReference Include="../../src/SomeEngine.ECS/SomeEngine.ECS.csproj" />
 <ProjectReference Include="../../src/SomeEngine.ECS.Relations/SomeEngine.ECS.Relations.csproj" />
-<ProjectReference Include="../../src/SomeEngine.ECS.SourceGen/SomeEngine.ECS.SourceGen.csproj"
+<ProjectReference Include="../../src/SomeEngine.ECS.SourceGenerators/SomeEngine.ECS.SourceGenerators.csproj"
                   OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
 ```
 

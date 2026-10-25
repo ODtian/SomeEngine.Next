@@ -415,17 +415,7 @@ public sealed partial class Scheduler : IDisposable
                 _config.AutoBatchMaxTilesPerWorker)
             : batchSize;
 
-        JobSubmissionReservation submission = JobSubmissionTracker.Begin(this, accesses);
-
-        int batchCount = CalculateParallelBatchCount(length, resolvedBatchSize);
-        _workQueue.EnsureItemCapacity(batchCount);
-        int tokenCount = CalculateParallelTokenCount(batchCount);
-        bool hasResourceAccesses = accesses.Length != 0;
-        bool hasScheduleDependencies = dependency.Index != 0 || hasResourceAccesses;
-        bool deferResourceActivation =
-            hasResourceAccesses &&
-            dependency.Index != 0 &&
-            !_dependencies.IsSatisfied(dependency, waitForWorkOnly: false);
+        JobSubmissionReservation submission = default;
         JobHandle state = default;
         ResourceAccessRegistration registration = ResourceAccessRegistration.Empty;
         ResourceAccessReservation reservation = ResourceAccessReservation.Empty;
@@ -436,6 +426,17 @@ public sealed partial class Scheduler : IDisposable
         int preparedSlots = 0;
         try
         {
+            submission = JobSubmissionTracker.Begin(this, accesses);
+
+            int batchCount = CalculateParallelBatchCount(length, resolvedBatchSize);
+            _workQueue.EnsureItemCapacity(batchCount);
+            int tokenCount = CalculateParallelTokenCount(batchCount);
+            bool hasResourceAccesses = accesses.Length != 0;
+            bool hasScheduleDependencies = dependency.Index != 0 || hasResourceAccesses;
+            bool deferResourceActivation =
+                hasResourceAccesses &&
+                dependency.Index != 0 &&
+                !_dependencies.IsSatisfied(dependency, waitForWorkOnly: false);
             state = CreateState(
                 batchCount,
                 pendingDependencies: 0,

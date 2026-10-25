@@ -15,6 +15,26 @@ namespace DefaultGame.Content;
 
 public static class ImportedSceneBuild
 {
+    public static async Task RefreshShadersAsync(string applicationDirectory, string projectRoot, string engineRoot)
+    {
+        applicationDirectory = Path.GetFullPath(applicationDirectory);
+        projectRoot = Path.GetFullPath(projectRoot);
+        engineRoot = Path.GetFullPath(engineRoot);
+        if (!File.Exists(Path.Combine(projectRoot, "Library", "AssetManifest", AssetManifest.CatalogFileName))
+            || !File.Exists(Path.Combine(applicationDirectory, "Library", "AssetManifest", AssetManifest.CatalogFileName)))
+            throw new DirectoryNotFoundException("Shader refresh requires existing scene and application projects.");
+        var project = new AssetProject(projectRoot, [],
+            shaderIncludeDirectories: [Path.Combine(engineRoot, "assets/Shaders")]);
+        await CopySharedShadersAsync(project, applicationDirectory);
+        string directory = Path.Combine(project.RootPath, "assets/Shaders");
+        ImportedSceneImporter.WriteSurfaceShader(directory, engineRoot);
+        // Preserve the incoming refresh scope: existing scene definitions only, with no glTF reimport.
+        foreach (string source in Directory.EnumerateFiles(directory, "scene_*.shader"))
+            await project.BuildAsync(source);
+        await PublishScenePackAsync(project);
+        Console.WriteLine($"Refreshed scene shaders: {project.RootPath}");
+    }
+
     public static async Task BuildAsync(string applicationDirectory, string sourcePath, string projectRoot, string engineRoot)
     {
         applicationDirectory = Path.GetFullPath(applicationDirectory);
@@ -46,19 +66,11 @@ public static class ImportedSceneBuild
         ImportedSceneCapabilities.AddAssetCapabilities(services);
         services.AddSingleton(sceneImporter);
         services.AddSingleton<IClusterVertexEncoder, SceneVertexEncoder>();
-        var importer = new GltfSourceImporter(services, "imported-scenes-4;" + ImportedSceneCapabilities.BuildVersion,
+        var importer = new GltfSourceImporter(services, "imported-scenes-4",
             ImportedSceneImporter.ImporterId);
         var project = new AssetProject(projectRoot, [importer],
             shaderIncludeDirectories: [Path.Combine(engineRoot, "assets/Shaders")]);
-        AssetManifest applicationAssets = AssetManifest.Load(Path.Combine(applicationDirectory, "Library", "AssetManifest"));
-        foreach (AssetEntry entry in applicationAssets.Assets.Values)
-        {
-            if (!entry.Path.StartsWith("assets/Shaders/", StringComparison.OrdinalIgnoreCase)
-                && !entry.Path.StartsWith("assets/Pipelines/", StringComparison.OrdinalIgnoreCase)) continue;
-            string destination = Path.Combine(projectRoot, entry.Path);
-            CopyIfChanged(Path.Combine(applicationDirectory, entry.Path), destination);
-            project.RegisterAsset(entry);
-        }
+        await CopySharedShadersAsync(project, applicationDirectory);
         ModelRoot model = ModelRoot.Load(copiedSource);
         foreach (var material in model.LogicalMaterials)
             foreach (var channel in material.Channels)
@@ -88,6 +100,7 @@ public static class ImportedSceneBuild
             settings.GetBlock<ApplicationSettingsBlock>().Scene = new(sceneId);
             project.RegisterAsset(await settings.SaveAsync(settingsPath));
         }
+        await PublishScenePackAsync(project);
         int instances = Node.Flatten(model.DefaultScene).Count(static node => node.Mesh is not null);
         File.WriteAllText(Path.Combine(projectRoot, "scene-import.json"), JsonSerializer.Serialize(new
         {
@@ -97,6 +110,50 @@ public static class ImportedSceneBuild
             assets = metadata.Outputs.Count, importSeconds, cachedSeconds, unchangedReimport = true,
         }, new JsonSerializerOptions { WriteIndented = true }));
         Console.WriteLine($"Imported {name}: {instances} mesh instances, {metadata.Outputs.Count} assets in {importSeconds:F2}s. {projectRoot}");
+    }
+
+    private static async ValueTask PublishScenePackAsync(AssetProject project)
+    {
+        // Include shared shaders, pipelines and runtime settings as well as imported glTF outputs.
+        const string scenePack = "Library/scene.assetpack";
+        await project.BuildPackAsync(scenePack, project.Manifest.Assets.Keys);
+        AssetContent.WritePackPaths(project.RootPath, scenePack);
+    }
+
+    private static async ValueTask CopySharedShadersAsync(AssetProject project, string applicationDirectory)
+    {
+        AssetManifest applicationAssets = AssetManifest.Load(Path.Combine(applicationDirectory, "Library", "AssetManifest"));
+        foreach (AssetEntry entry in applicationAssets.Assets.Values)
+        {
+            if (!entry.Path.StartsWith("assets/Shaders/", StringComparison.OrdinalIgnoreCase)
+                && !entry.Path.StartsWith("assets/Pipelines/", StringComparison.OrdinalIgnoreCase)) continue;
+            if (project.Manifest.TryAssetPath(entry.Path, out AssetEntry existing) && existing.AssetGuid != entry.AssetGuid)
+                throw new InvalidDataException("The shared asset destination belongs to a different identity.");
+            if (entry.DefinitionPath.Length != 0 && project.Resolve(entry.DefinitionPath) is Guid defined && defined != entry.AssetGuid)
+                throw new InvalidDataException("The shared definition destination belongs to a different identity.");
+            // Extract selected bytes rather than overwriting an identically named scene pack.
+            byte[] content = await AssetCommands.ReadAssetBytesAsync(applicationDirectory, entry);
+            string destination = ProjectPath(project.RootPath, entry.Path);
+            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+            if (!File.Exists(destination) || !File.ReadAllBytes(destination).AsSpan().SequenceEqual(content))
+                await File.WriteAllBytesAsync(destination, content);
+            if (entry.DefinitionPath.Length != 0)
+            {
+                string definition = ProjectPath(applicationDirectory, entry.DefinitionPath);
+                if (File.Exists(definition)) CopyIfChanged(definition, ProjectPath(project.RootPath, entry.DefinitionPath));
+            }
+            project.RegisterAsset(entry with { PackPath = "" });
+        }
+    }
+
+    private static string ProjectPath(string root, string path)
+    {
+        string fullPath = Path.GetFullPath(path, root);
+        string relative = Path.GetRelativePath(root, fullPath);
+        if (Path.IsPathRooted(relative) || relative == ".." || relative == "."
+            || relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+            throw new InvalidDataException("Shared content paths must remain within their project root.");
+        return fullPath;
     }
 
     private static void CopyFiles(string source, string destination)

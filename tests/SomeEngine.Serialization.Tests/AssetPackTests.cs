@@ -37,6 +37,24 @@ public sealed class AssetPackTests
 
         Assert.Equal(2, basePack.Count);
         Assert.Equal(1, hotfixPack.Count);
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            basePack.ReadVerifiedAssetBytesAsync(baseOnlyAsset, cancellation.Token).AsTask());
+
+        byte[] retainedBytes = await basePack.ReadVerifiedAssetBytesAsync(baseOnlyAsset);
+        using MappedTestDocument rebuiltBytes = new AssetPackBuilder()
+            .AddAsset(sharedAsset, "mesh", hotSharedDocument, TestRoot.Fingerprint)
+            .AddAsset(baseOnlyAsset, "texture", retainedBytes, TestRoot.Fingerprint)
+            .BuildMapped();
+        await using AssetPack rebuilt = await AssetPack.OpenAsync(
+            new MemoryRangeSource(rebuiltBytes),
+            ownsSource: true);
+        Assert.Equal(2, rebuilt.Count);
+        Assert.True(await rebuilt.ContentEqualsAsync(
+            sharedAsset, "mesh", hotSharedDocument, TestRoot.Fingerprint));
+        Assert.True(await rebuilt.ContentEqualsAsync(
+            baseOnlyAsset, "texture", baseOnlyDocument, TestRoot.Fingerprint));
         await using BinaryDocument<TestRoot> sharedDocument =
             await OpenPackDataAsync<TestRoot>(hotfixPack, sharedAsset);
         await using BinaryDocument<TestRoot> baseDocument =
@@ -63,6 +81,7 @@ public sealed class AssetPackTests
             await OpenPackDataAsync<TestRoot>(pack, assetId);
         Assert.True(pack.TryGetEntry(assetId, out AssetPackEntry? entry));
         Assert.Equal(opened.Generation, entry!.DocumentVersion);
+        await pack.DisposeAsync();
         using ChunkLease chunk = await opened.AcquireChunkAsync(1001);
 
         Assert.Equal("range-source", opened.Root.Text);
@@ -120,6 +139,12 @@ public sealed class AssetPackTests
         await using AssetPack basePack = await AssetPack.OpenAsync(
             new MemoryRangeSource(corruptPack),
             ownsSource: true);
+        InvalidDataException contentError = await Assert.ThrowsAsync<InvalidDataException>(() =>
+            basePack.ReadVerifiedAssetBytesAsync(assetId).AsTask());
+        Assert.Equal(SerializationError.IntegrityMismatch, SerializationErrors.GetError(contentError));
+        Assert.False(await basePack.ContentEqualsAsync(
+            assetId, "mesh", document, TestRoot.Fingerprint));
+
         var patchBuilder = new AssetPackBuilder(basePack)
             .AddAsset(assetId, "mesh", document, TestRoot.Fingerprint);
 

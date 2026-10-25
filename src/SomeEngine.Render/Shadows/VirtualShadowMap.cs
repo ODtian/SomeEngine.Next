@@ -34,6 +34,7 @@ public sealed partial class VirtualShadowMap : IDisposable
     private BufferBoundaryState[] _pageTableEndpoint = [];
     private BufferBoundaryState[] _physicalPageOwnersEndpoint;
     private TextureBoundaryState[] _atlasEndpoint;
+    private static readonly Matrix4x4[] PointLightFaceViews = CreatePointLightFaceViews();
     private VirtualShadowView[] _views = [];
     private VirtualShadowView[] _committedViews = [];
     private Matrix4x4[] _preparedLightViews = [];
@@ -283,6 +284,8 @@ public sealed partial class VirtualShadowMap : IDisposable
         if (!_pending)
             throw new InvalidOperationException(
                 "Import the virtual-shadow resources before preparing frame views.");
+        _frameDistantLights.Clear();
+        _distantUpdates.Clear();
         int directionalLightCount = Settings.Enabled ? lights.Directional.Count : 0;
         int pointLightCount = Settings.Enabled ? lights.Points.Count : 0;
         int spotLightCount = Settings.Enabled ? lights.Spots.Count : 0;
@@ -358,6 +361,10 @@ public sealed partial class VirtualShadowMap : IDisposable
                     Settings.WorldUnitsPerCentimeter;
                 long referenceSnapX = checked((long)Math.Round(cameraRight / coarsestRadius));
                 long referenceSnapY = checked((long)Math.Round(cameraVertical / coarsestRadius));
+                Matrix4x4 lightView = Matrix4x4.CreateLookAt(
+                    Vector3.Zero,
+                    direction,
+                    up);
                 for (int clipmapLevel = 0; clipmapLevel < familyLevels; clipmapLevel++)
                 {
                     int absoluteClipmapLevel = checked(
@@ -383,10 +390,6 @@ public sealed partial class VirtualShadowMap : IDisposable
                     long referenceScale = 1L << (familyLevels - clipmapLevel - 1);
                     float depthRadius = levelRadius * Settings.DirectionalDepthRangeScale;
                     float cullingEndDistance = levelRadius * MathF.Pow(2f, -resolutionLodBias);
-                    Matrix4x4 lightView = Matrix4x4.CreateLookAt(
-                        Vector3.Zero,
-                        direction,
-                        up);
                     Matrix4x4 lightProjection = Matrix4x4.CreateOrthographic(
                         worldExtent,
                         worldExtent,
@@ -459,7 +462,7 @@ public sealed partial class VirtualShadowMap : IDisposable
         for (int lightIndex = 0; lightIndex < pointLightCount; lightIndex++)
         {
             RenderPointLight light = lights.Points[lightIndex];
-            ValidateLocalLight(light.Position, light.Range, $"point light {lightIndex}");
+            ValidateLocalLight(light.Position, light.Range, "point", lightIndex);
             Matrix4x4 projection = Matrix4x4.CreatePerspectiveFieldOfView(
                 MathF.PI * 0.5f,
                 1.0f,
@@ -467,11 +470,7 @@ public sealed partial class VirtualShadowMap : IDisposable
                 light.Range);
             for (uint faceIndex = 0; faceIndex < 6u; faceIndex++)
             {
-                GetPointLightFace(faceIndex, out Vector3 forward, out Vector3 up);
-                Matrix4x4 lightView = Matrix4x4.CreateLookAt(
-                    Vector3.Zero,
-                    forward,
-                    up);
+                Matrix4x4 lightView = PointLightFaceViews[faceIndex];
                 int viewIndex = checked(pointViewOffset + lightIndex * 6 + (int)faceIndex);
                 uint gpuLightIndex = checked((uint)(lights.Directional.Count + lightIndex));
                 _views[viewIndex] = CreateLocalView(
@@ -495,7 +494,7 @@ public sealed partial class VirtualShadowMap : IDisposable
         for (int lightIndex = 0; lightIndex < spotLightCount; lightIndex++)
         {
             RenderSpotLight light = lights.Spots[lightIndex];
-            ValidateLocalLight(light.Position, light.Range, $"spot light {lightIndex}");
+            ValidateLocalLight(light.Position, light.Range, "spot", lightIndex);
             Vector3 direction = NormalizeOrZero(light.Direction);
             if (direction == Vector3.Zero)
                 throw new ArgumentException($"Spot light {lightIndex} has a zero direction.", nameof(lights));
@@ -740,6 +739,12 @@ public sealed partial class VirtualShadowMap : IDisposable
         _pending = true;
     }
 
+    /// <summary>Returns the resources and boundary states for the active shadow frame.</summary>
+    /// <remarks>
+    /// The returned boundary-state memory is borrowed until this shadow map's next
+    /// <see cref="FinishFrame"/>, <see cref="Discard"/>, or <see cref="Dispose"/> call.
+    /// Copy the states before retaining them beyond that call.
+    /// </remarks>
     public VirtualShadowMapFrameResources AcquireFrameResources()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -801,12 +806,27 @@ public sealed partial class VirtualShadowMap : IDisposable
         if (_pageTable is { } table)
         {
             ReadOnlySpan<BufferBoundaryState> states = result.GetBufferStates(table);
-            if (!states.IsEmpty) _pageTableEndpoint = states.ToArray();
+            if (!states.IsEmpty)
+            {
+                if (_pageTableEndpoint.Length != states.Length)
+                    _pageTableEndpoint = new BufferBoundaryState[states.Length];
+                states.CopyTo(_pageTableEndpoint);
+            }
         }
         ReadOnlySpan<BufferBoundaryState> owners = result.GetBufferStates(_physicalPageOwners);
-        if (!owners.IsEmpty) _physicalPageOwnersEndpoint = owners.ToArray();
+        if (!owners.IsEmpty)
+        {
+            if (_physicalPageOwnersEndpoint.Length != owners.Length)
+                _physicalPageOwnersEndpoint = new BufferBoundaryState[owners.Length];
+            owners.CopyTo(_physicalPageOwnersEndpoint);
+        }
         ReadOnlySpan<TextureBoundaryState> atlas = result.GetTextureStates(_atlas);
-        if (!atlas.IsEmpty) _atlasEndpoint = atlas.ToArray();
+        if (!atlas.IsEmpty)
+        {
+            if (_atlasEndpoint.Length != atlas.Length)
+                _atlasEndpoint = new TextureBoundaryState[atlas.Length];
+            atlas.CopyTo(_atlasEndpoint);
+        }
         if (!contentComplete)
         {
             if (!result.SubmittedCompletions.IsEmpty)
@@ -858,6 +878,8 @@ public sealed partial class VirtualShadowMap : IDisposable
         _frameResourcesAcquired = false;
         _pageCache?.Discard();
         ObjectDisposedException.ThrowIf(_disposed, this);
+        _frameDistantLights.Clear();
+        _distantUpdates.Clear();
         _pendingCacheReset = false;
         _pendingViewCount = 0;
         _pendingInstanceCount = 0;
@@ -973,15 +995,26 @@ public sealed partial class VirtualShadowMap : IDisposable
         WorldUnitsPerCentimeter = Settings.WorldUnitsPerCentimeter,
     };
 
-    private void ValidateLocalLight(Vector3 position, float range, string label)
+    private void ValidateLocalLight(Vector3 position, float range, string lightKind, int lightIndex)
     {
         if (!float.IsFinite(position.X) || !float.IsFinite(position.Y) ||
             !float.IsFinite(position.Z) || !float.IsFinite(range) ||
             range <= Settings.LocalNearPlane)
         {
             throw new ArgumentException(
-                $"The {label} must have a finite position and a range greater than the local shadow near plane.");
+                $"The {lightKind} light {lightIndex} must have a finite position and a range greater than the local shadow near plane.");
         }
+    }
+
+    private static Matrix4x4[] CreatePointLightFaceViews()
+    {
+        var views = new Matrix4x4[6];
+        for (uint faceIndex = 0; faceIndex < 6u; faceIndex++)
+        {
+            GetPointLightFace(faceIndex, out Vector3 forward, out Vector3 up);
+            views[faceIndex] = Matrix4x4.CreateLookAt(Vector3.Zero, forward, up);
+        }
+        return views;
     }
 
     private static void GetPointLightFace(
@@ -1136,10 +1169,20 @@ public sealed partial class VirtualShadowMap : IDisposable
 }
 
 
+/// <param name="Resource">The shadow buffer.</param>
+/// <param name="BoundaryStates">
+/// For values returned by <see cref="VirtualShadowMap.AcquireFrameResources"/>,
+/// this memory follows that method's borrowing lifetime.
+/// </param>
 public readonly record struct VirtualShadowBufferResource(
     Buffer Resource,
     ReadOnlyMemory<BufferBoundaryState> BoundaryStates);
 
+/// <param name="Resource">The shadow texture.</param>
+/// <param name="BoundaryStates">
+/// For values returned by <see cref="VirtualShadowMap.AcquireFrameResources"/>,
+/// this memory follows that method's borrowing lifetime.
+/// </param>
 public readonly record struct VirtualShadowTextureResource(
     Texture Resource,
     ReadOnlyMemory<TextureBoundaryState> BoundaryStates);

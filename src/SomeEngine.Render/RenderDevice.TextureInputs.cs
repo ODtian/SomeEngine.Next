@@ -10,7 +10,44 @@ public sealed partial class RenderDevice
     public TextureSrv PrepareTextureSrv(ref RenderGraphFrame frame, GraphParameterInput input, EngineTexture texture) =>
         PrepareTextureForInputs(ref frame, [input], texture, out _).Srv!;
 
-    public readonly record struct TextureViews(RhiTexture Texture, TextureSrv? Srv, TextureUav? Uav);
+    public readonly record struct TextureViews(RhiTexture Texture, TextureSrv? Srv, TextureUav? Uav)
+    {
+        /// <summary>
+        /// Supplies these prepared views to a group of texture inputs. Persistent inputs must
+        /// refer to a registered backing. An unchanged persistent group preserves frame-local
+        /// overrides; forceRebind explicitly replaces them after connection membership changes.
+        /// </summary>
+        public void BindInputs(ref RenderGraphFrame frame, scoped ReadOnlySpan<GraphParameterInput> inputs,
+            bool persistent, bool forceRebind = false)
+        {
+            if (persistent && !forceRebind)
+            {
+                bool unchanged = true;
+                foreach (GraphParameterInput input in inputs)
+                {
+                    DeviceResource? view = input.Type == ResourceBindingType.TextureSrv ? Srv : Uav;
+                    if (!frame.TryGetPersistentParameterInput(input, out ResourceBinding binding) ||
+                        binding.Type != input.Type || !ReferenceEquals(binding.Value, view))
+                    {
+                        unchanged = false;
+                        break;
+                    }
+                }
+                if (unchanged) return;
+            }
+            foreach (GraphParameterInput input in inputs)
+            {
+                ResourceBinding binding = input.Type == ResourceBindingType.TextureSrv
+                    ? ResourceBinding.SampledTexture(Srv!) : ResourceBinding.StorageTexture(Uav!);
+                if (persistent) frame.SetPersistentParameterInput(input, binding);
+                else frame.SetParameterInput(input, binding);
+            }
+        }
+    }
+
+    public TextureViews PrepareTextureForInputs(ref RenderGraphFrame frame,
+        scoped ReadOnlySpan<GraphParameterInput> inputs, EngineTexture asset) =>
+        PrepareTextureForInputs(ref frame, inputs, asset, out _);
 
     public TextureViews PrepareTextureForInputs(ref RenderGraphFrame frame,
         scoped ReadOnlySpan<GraphParameterInput> inputs, EngineTexture asset, out bool hasFrameUploads)
@@ -18,7 +55,7 @@ public sealed partial class RenderDevice
         RhiTexture texture = PrepareTexture(ref frame, ReadOnlySpan<GraphPassId>.Empty, asset);
         TextureRealization realization = GetOrCreateTexture(asset);
         OrderTextureInputs(ref frame, realization, inputs);
-        hasFrameUploads = realization.UploadPasses.Count != 0;
+        hasFrameUploads = realization.HasUploadTransaction;
         TextureSrv? srv = null;
         TextureUav? uav = null;
         foreach (GraphParameterInput input in inputs)
@@ -29,12 +66,16 @@ public sealed partial class RenderDevice
     }
 
     public TextureSrv PrepareMissingTextureForInputs(ref RenderGraphFrame frame,
+        scoped ReadOnlySpan<GraphParameterInput> inputs) =>
+        PrepareMissingTextureForInputs(ref frame, inputs, out _);
+
+    public TextureSrv PrepareMissingTextureForInputs(ref RenderGraphFrame frame,
         scoped ReadOnlySpan<GraphParameterInput> inputs, out bool hasFrameUploads)
     {
         _ = PrepareMissingTexture(ref frame, ReadOnlySpan<GraphPassId>.Empty);
         TextureRealization texture = RequireMissingTexture();
         OrderTextureInputs(ref frame, texture, inputs);
-        hasFrameUploads = texture.UploadPasses.Count != 0;
+        hasFrameUploads = texture.HasUploadTransaction;
         TextureSrv view = MissingTextureSrv;
         UpdateSampledDescriptor(texture, view);
         return view;
@@ -43,10 +84,10 @@ public sealed partial class RenderDevice
     private static void OrderTextureInputs(ref RenderGraphFrame frame, TextureRealization texture,
         scoped ReadOnlySpan<GraphParameterInput> inputs)
     {
-        if (texture.UploadPasses.Count == 0) return;
+        if (texture.UploadPass == default) return;
         foreach (GraphParameterInput input in inputs)
         {
-            foreach (GraphPassId upload in texture.UploadPasses) frame.OrderAfter(input, upload);
+            frame.OrderAfter(input, texture.UploadPass);
             frame.OrderAfter(texture.FinalizationPass, input);
         }
     }

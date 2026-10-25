@@ -41,6 +41,57 @@ public sealed class FrameCompletionTests
         using RenderGraphFrame next = graph.BeginFrame();
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void CompletionFailurePreservesRegistrationOrderWithoutReplayingCallbacks(bool execute)
+    {
+        using WarpGraphTestSupport support = WarpGraphTestSupport.Create();
+        using var graph = new RenderGraph(support.Backend, support.Device, [support.GraphicsQueue]);
+        var calls = new List<int>();
+        var repeated = new CompletionCallback(() => calls.Add(1));
+        RenderGraphFrame frame = graph.BeginFrame();
+        frame.ObserveExecution(repeated);
+        frame.ObserveExecution(new CompletionCallback(() =>
+        {
+            calls.Add(2);
+            throw new InvalidOperationException("Completion callback failed");
+        }));
+        frame.ObserveExecution(repeated);
+        frame.ObserveExecution(new CompletionCallback(() => calls.Add(3)));
+        AggregateException? failure = null;
+        try
+        {
+            if (execute)
+                frame.Execute(new QueueCompletion[graph.MaximumQueueCompletionCount]);
+            else
+                frame.Dispose();
+        }
+        catch (AggregateException exception)
+        {
+            failure = exception;
+        }
+        finally
+        {
+            frame.Dispose();
+        }
+        Assert.NotNull(failure);
+        Assert.IsType<InvalidOperationException>(Assert.Single(failure.InnerExceptions));
+        Assert.Equal(new[] { 1, 2, 1, 3 }, calls);
+
+        using (RenderGraphFrame next = graph.BeginFrame())
+        {
+            next.ObserveExecution(new CompletionCallback(() => calls.Add(4)));
+            next.Execute(new QueueCompletion[graph.MaximumQueueCompletionCount]);
+        }
+        Assert.Equal(new[] { 1, 2, 1, 3, 4 }, calls);
+    }
+
+    private sealed class CompletionCallback(Action callback) : IRenderGraphFrameExecutionObserver
+    {
+        public void OnRenderGraphFrameFinished(RenderGraphFrameResult result) => callback();
+    }
+
     private sealed class CompletionReceiver(GraphPassId pass) : IRenderGraphFrameExecutionObserver
     {
         public bool Called { get; private set; }

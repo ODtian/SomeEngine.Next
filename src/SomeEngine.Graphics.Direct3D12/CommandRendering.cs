@@ -28,23 +28,17 @@ internal sealed unsafe partial class D3D12Backend
             for (int index = 0; index < desc.Colors.Length; index++)
             {
                 ref readonly ColorAttachmentDesc attachment = ref desc.Colors[index];
-                colors[index] = command.Capture(
-                    attachment.View,
-                    command.RenderingColorSource(index));
+                colors[index] = command.Capture(attachment.View);
                 if (attachment.ResolveView is ColorAttachmentView resolveView)
                 {
-                    _ = command.Capture(
-                        resolveView,
-                        command.RenderingColorResolveDestination(index)!);
+                    _ = command.Capture(resolveView);
                 }
             }
             CpuDescriptorHandle depthStencil = default;
             CpuDescriptorHandle* depthStencilPointer = null;
             if (desc.DepthStencil is DepthStencilAttachmentDesc preparedDepthAttachment)
             {
-                depthStencil = command.Capture(
-                    preparedDepthAttachment.View,
-                    command.RenderingDepthStencilResource!);
+                depthStencil = command.Capture(preparedDepthAttachment.View);
                 depthStencilPointer = &depthStencil;
             }
             float* clearValues = stackalloc float[4];
@@ -202,7 +196,7 @@ internal sealed unsafe partial class D3D12Backend
         command.PrepareSwapchainUses(1);
         try
         {
-            CpuDescriptorHandle color = command.Capture(attachment.View, source);
+            CpuDescriptorHandle color = command.Capture(attachment.View);
             D3D12CommandListFastCalls.SetRenderTargets(
                 command.List,
                 1,
@@ -493,7 +487,6 @@ internal sealed unsafe partial class D3D12Backend
 
     private sealed partial class D3D12CommandContext
     {
-        private const byte RenderingResolve = 1;
         private const byte RenderingDiscard = 2;
         private readonly D3D12TextureResource?[] _renderingColorSources =
             new D3D12TextureResource?[8];
@@ -580,9 +573,7 @@ internal sealed unsafe partial class D3D12Backend
             _renderingColorDestinationRanges[index] = destinationRange;
             _renderingColorFormats[index] = format;
             _renderingColorResolveModes[index] = resolveMode;
-            _renderingColorActions[index] = (byte)(
-                (destination is null ? 0 : RenderingResolve) |
-                (discard ? RenderingDiscard : 0));
+            _renderingColorActions[index] = discard ? RenderingDiscard : (byte)0;
         }
 
         internal void PrepareRenderingDepthStencil(
@@ -613,12 +604,8 @@ internal sealed unsafe partial class D3D12Backend
         {
             Array.Clear(_renderingColorSources, 0, _renderingColorCount);
             Array.Clear(_renderingColorDestinations, 0, _renderingColorCount);
-            Array.Clear(_renderingColorActions, 0, _renderingColorCount);
             _renderingColorCount = 0;
             _renderingDepthStencilResource = null;
-            _renderingDepthStencilRange = default;
-            _renderingDepthDiscard = false;
-            _renderingStencilDiscard = false;
             _renderingPrepared = false;
             _renderingOpen = false;
         }

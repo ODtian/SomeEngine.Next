@@ -63,6 +63,7 @@ public static class TextureTiles
             throw new InvalidDataException("Binary texture roots must declare mip/tile metadata.");
 
         bool hasMipZero = false;
+        var keys = new HashSet<ulong>();
         (uint Mip, uint Layer, uint Face, uint Depth, uint Y, uint X) previous = default;
         for (int index = 0; index < tiles.Count; index++)
         {
@@ -77,8 +78,6 @@ public static class TextureTiles
             if (index > 0)
             {
                 int order = previous.CompareTo(current);
-                if (order == 0)
-                    throw new InvalidDataException("Texture root contains duplicate mip/tile metadata.");
                 if (order > 0)
                     throw new InvalidDataException("Texture mip/tile metadata is not in canonical order.");
             }
@@ -97,6 +96,8 @@ public static class TextureTiles
                 tile.TileY);
             if (tile.ChunkKey != expectedKey)
                 throw new InvalidDataException("Binary texture mip/tile metadata has a non-canonical chunk key.");
+            if (!keys.Add(expectedKey))
+                throw new InvalidDataException("Texture tile keys collided or repeat the same coordinates.");
             hasMipZero |= tile.MipLevel == 0
                 && tile.ArrayLayer == 0
                 && tile.Face == 0

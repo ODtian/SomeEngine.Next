@@ -58,10 +58,7 @@ StructuredBuffer<ClusterViewUniforms> PolicyClusterViews;
 
 float3 LoadFloat3(ByteAddressBuffer buffer, uint offset)
 {
-    return asfloat(uint3(
-        buffer.Load(offset + 0),
-        buffer.Load(offset + 4),
-        buffer.Load(offset + 8)));
+    return asfloat(buffer.Load3(offset));
 }
 
 PackedCluster LoadCluster(uint pageOffset, uint clusterIndex)
@@ -77,7 +74,7 @@ PackedCluster LoadCluster(uint pageOffset, uint clusterIndex)
     c.ExtensionSize = PageHeap.Load(offset + 12);
 
     // LODCenter (16..27), LODRadius (28)
-    uint4 uLOD = PageHeap.Load<uint4>(offset + 16);
+    uint4 uLOD = PageHeap.Load4(offset + 16);
     c.LODCenter = asfloat(uLOD.xyz);
     c.LODRadius = asfloat(uLOD.w);
 

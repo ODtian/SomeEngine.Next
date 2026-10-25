@@ -524,7 +524,7 @@ internal sealed partial class FrameExecutor
             }
             if (_passOrderSearchStates[current] == PassOrderSearchState.Unvisited)
             {
-                _analyzedPasses.Add(current);
+                if (HasStatisticsReceiver) _analyzedPasses.Add(current);
                 _passOrderSearchStates[current] = PassOrderSearchState.Searching;
                 ref ulong[] words = ref _passOrderAncestors[current];
                 if (words is null || words.Length < _passOrderWordCount)
@@ -569,14 +569,15 @@ internal sealed partial class FrameExecutor
 
     // Each dependency analysis shares one explicit-order traversal across resources.
     // The returned ranks borrow the sort workspace until the next resource.
-    private IReadOnlyDictionary<int, int> OrderResourceUsers(IEnumerable<int> nodes)
+    private IReadOnlyDictionary<int, int> OrderResourceUsers(List<int> accesses)
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(ResourceOrderTrace);
         _resourceOrderNodes.Clear();
         _resourceOrderRanks.Clear();
         _resourceOrderReady.Clear();
-        foreach (int node in nodes)
+        foreach (int accessIndex in accesses)
         {
+            int node = _accesses[accessIndex].PassIndex;
             if (_resourceOrderRanks.TryAdd(node, _resourceOrderNodes.Count)) _resourceOrderNodes.Add(node);
         }
         int count = _resourceOrderNodes.Count;
@@ -665,7 +666,7 @@ internal sealed partial class FrameExecutor
         // A resource's version order includes actual ordering paths between its
         // users, not the incidental positions of unrelated prerequisites in the
         // global topological order. Ready users otherwise keep declaration order.
-        IReadOnlyDictionary<int, int> ranks = OrderResourceUsers(accesses.Select(index => _accesses[index].PassIndex));
+        IReadOnlyDictionary<int, int> ranks = OrderResourceUsers(accesses);
         accesses.Sort((left, right) =>
         {
             FrameResourceAccess a = _accesses[left], b = _accesses[right];
@@ -1078,6 +1079,15 @@ internal sealed partial class FrameExecutor
     private bool _analysisReady;
     private bool _reuseAnalysis;
 
+    private bool HasStatisticsReceiver
+    {
+        get
+        {
+            RenderGraphFrameOptions options = _frame.Options;
+            return options.Diagnostics is not null || options.Statistics is not null;
+        }
+    }
+
     private bool TryReuseAnalysis() => _analysisReady && !_analysisChanged;
 
     private void SaveAnalysis()
@@ -1242,7 +1252,8 @@ internal sealed partial class FrameExecutor
         _hasPassOrderCycle = false;
         foreach (int pass in _changedAnalysisPasses)
         {
-            if ((uint)pass < (uint)_passes.Count) _analyzedPasses.Add(pass);
+            if ((uint)pass < (uint)_passes.Count && HasStatisticsReceiver)
+                _analyzedPasses.Add(pass);
             _livenessSeeds.Add(pass);
             MarkPassResources(pass, _changedAnalysisResources);
         }
@@ -1343,6 +1354,7 @@ internal sealed partial class FrameExecutor
 
     private void CountAnalyzedResourcePasses((GraphAccessTargetKind Kind, int Index) resource)
     {
+        if (!HasStatisticsReceiver) return;
         if (_resourceAccessLists.TryGetValue(resource, out List<int>? accesses))
             foreach (int index in accesses)
                 _analyzedPasses.Add(_accesses[index].PassIndex);
@@ -1465,7 +1477,7 @@ internal sealed partial class FrameExecutor
 
         void Push(int pass)
         {
-            _analyzedPasses.Add(pass);
+            if (HasStatisticsReceiver) _analyzedPasses.Add(pass);
             _livenessVisited.Add(pass);
             _livenessPath.Add(pass);
             _livenessPathOffsets.Add(0);

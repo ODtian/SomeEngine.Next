@@ -81,8 +81,7 @@ public sealed class GltfExtensionBehaviorTests
         files.WriteSelections(new SourceImporterSettings(ImporterId<ExtensionGltfImporter>(),
             JsonSerializer.SerializeToElement(new ExtensionGltfSettings(29, "library source"), ExtensionGltfSettingsJson.Default.ExtensionGltfSettings)));
         AssetProject project = AssetProjects.Create(files.Directory,
-            importers: ConsumerAssetCapabilities.AddAssetCapabilities(new ServiceCollection()),
-            capabilitiesVersion: ConsumerAssetCapabilities.BuildVersion);
+            importers: ConsumerAssetCapabilities.AddAssetCapabilities(new ServiceCollection()));
         using var output = new StringWriter();
         Assert.Equal(0, await AssetCommands.RunAsync(project, ["import", files.Source], output));
         AssetEntry meshEntry = Assert.Single(project.List(MeshAsset.FileType));
@@ -100,8 +99,7 @@ public sealed class GltfExtensionBehaviorTests
         files.WriteSelections(new SourceImporterSettings(ImporterId<ExtensionGltfImporter>(),
             JsonSerializer.SerializeToElement(new ExtensionGltfSettings(29, "library source"), ExtensionGltfSettingsJson.Default.ExtensionGltfSettings)));
         AssetProject project = AssetProjects.Create(files.Directory,
-            importers: ConsumerAssetCapabilities.AddAssetCapabilities(new ServiceCollection()),
-            capabilitiesVersion: ConsumerAssetCapabilities.BuildVersion);
+            importers: ConsumerAssetCapabilities.AddAssetCapabilities(new ServiceCollection()));
         using var output = new StringWriter();
         await AssetCommands.RunAsync(project, ["import", files.Source], output);
         Guid version = Assert.Single(project.List(MeshAsset.FileType)).Version;
@@ -109,6 +107,43 @@ public sealed class GltfExtensionBehaviorTests
         await AssetCommands.RunAsync(project, ["import", files.Source], output);
 
         Assert.Equal(version, Assert.Single(project.List(MeshAsset.FileType)).Version);
+    }
+
+    [Fact]
+    public async Task DefaultEngineAndProjectRegistrationsUseTheSameSelectedInputVersions()
+    {
+        using var files = new GltfFiles();
+        SourceMeta metadata = SourceMeta.GetOrCreate(files.Source);
+        var engine = StandardGltfSceneImporter.CreateSourceImporter();
+        var project = StandardGltfSceneImporter.CreateSourceImporter(
+            ConsumerAssetCapabilities.AddAssetCapabilities(new ServiceCollection()));
+
+        ImportInputs? engineInputs = await engine.GetInputsAsync(files.Directory, files.Source, metadata,
+            null, CancellationToken.None);
+        ImportInputs? projectInputs = await project.GetInputsAsync(files.Directory, files.Source, metadata,
+            null, CancellationToken.None);
+
+        Assert.NotNull(engineInputs);
+        Assert.NotNull(projectInputs);
+        Assert.Equal(engineInputs.InputHash, projectInputs.InputHash);
+    }
+
+    [Fact]
+    public async Task ExplicitProjectConversionVersionRemainsAnImportInput()
+    {
+        using var files = new GltfFiles();
+        SourceMeta metadata = SourceMeta.GetOrCreate(files.Source);
+        var original = StandardGltfSceneImporter.CreateSourceImporter(capabilitiesVersion: "project-conversion-1");
+        var changed = StandardGltfSceneImporter.CreateSourceImporter(capabilitiesVersion: "project-conversion-2");
+
+        ImportInputs? originalInputs = await original.GetInputsAsync(files.Directory, files.Source, metadata,
+            null, CancellationToken.None);
+        ImportInputs? changedInputs = await changed.GetInputsAsync(files.Directory, files.Source, metadata,
+            null, CancellationToken.None);
+
+        Assert.NotNull(originalInputs);
+        Assert.NotNull(changedInputs);
+        Assert.NotEqual(originalInputs.InputHash, changedInputs.InputHash);
     }
 
     [Fact]
@@ -276,6 +311,137 @@ public sealed class GltfExtensionBehaviorTests
     private static Guid MeshId(AssetProject project, IReadOnlyList<Guid> ids)
         => Assert.Single(ids, id => project.Manifest.Assets[id].AssetType == MeshAsset.FileType);
 
+    [Fact]
+    public void StandardMaterialDefaultsPreserveLinearColorAndArmOcclusion()
+    {
+        using var block = new MaterialBlock();
+        var parameters = new StandardMaterialParameters(block);
+        Assert.Equal(1f, parameters.NormalScale);
+        Assert.Equal(1f, parameters.OcclusionStrength);
+        Assert.False(parameters.UseOcclusionMap);
+        Assert.False(parameters.UseEmissiveMap);
+        Assert.False(parameters.DecodeAlbedoSrgb);
+        Assert.False(parameters.DecodeEmissiveSrgb);
+    }
+
+    [Fact]
+    public async Task StandardGltfImportsIndependentPbrChannelsWithoutUsingAoAsMetallicRoughness()
+    {
+        using var files = new GltfFiles();
+        await files.WriteProjectShadersAsync();
+        files.AddTexturedMaterial();
+        JsonNode source = JsonNode.Parse(File.ReadAllText(files.Source))!;
+        source["extensionsUsed"] = JsonNode.Parse("""["KHR_materials_emissive_strength"]""");
+        source["textures"] = JsonNode.Parse("""
+            [
+            {"source":0,"name":"Albedo","extras":{"someengine_id":"albedo"}},
+            {"source":0,"name":"AO","extras":{"someengine_id":"ao"}},
+            {"source":0,"name":"Emission","extras":{"someengine_id":"emission"}},
+            {"source":0,"name":"Normal","extras":{"someengine_id":"normal"}}]
+            """);
+        source["materials"] = JsonNode.Parse("""
+            [{
+            "name":"Material","extras":{"someengine_id":"material-A"},
+            "pbrMetallicRoughness":{"baseColorTexture":{"index":0},"metallicFactor":0.8,"roughnessFactor":0.25},
+            "normalTexture":{"index":3,"scale":0.5},"occlusionTexture":{"index":1,"strength":0.3},
+            "emissiveTexture":{"index":2},"emissiveFactor":[0.1,0.2,0.3],
+            "extensions":{"KHR_materials_emissive_strength":{"emissiveStrength":4}}}]
+            """);
+        File.WriteAllText(files.Source, source.ToJsonString());
+        files.WriteSelections(new SourceImporterSettings(ImporterId<GltfMeshImporter>(),
+            JsonSerializer.SerializeToElement(new GltfMeshSettings(), GltfSettingsJson.Default.GltfMeshSettings)));
+        var project = new AssetProject(files.Directory, []);
+        await project.ImportAsync(files.Source, CreateImporter());
+        SourceMeta metadata = SourceMeta.Load(files.Source);
+        Guid Id(string key) => metadata.Outputs.Single(value => value.SubAssetKey == key).AssetGuid;
+        AssetEntry materialEntry = project.Manifest.Assets[Id("material:id:material-A")];
+        using MaterialAsset material = await MaterialAsset.OpenAsync(Path.Combine(files.Directory, materialEntry.Path));
+        await using var loader = new AssetLoader(project.CreateStorage());
+        using MaterialBlock resolved = await material.ResolveAsync(loader);
+        var values = new StandardMaterialParameters(resolved);
+        Assert.False(material.GetBlock<MaterialBlock>().HasOverride("ARMMap"));
+        Assert.Equal(MaterialTemplates.White, values.ARMMap);
+        Assert.Equal(Id("texture:id:ao"), values.OcclusionMap.Value);
+        Assert.Equal(Id("texture:id:emission"), values.EmissiveMap.Value);
+        Assert.Equal(Id("texture:id:normal"), values.NormalMap.Value);
+        Assert.Equal(0.5f, values.NormalScale);
+        Assert.Equal(0.3f, values.OcclusionStrength);
+        Assert.Equal(0.8f, values.MetallicFactor);
+        Assert.Equal(0.25f, values.Roughness);
+        Assert.Equal(new System.Numerics.Vector3(0.4f, 0.8f, 1.2f), values.EmissiveFactor);
+        Assert.True(values.UseOcclusionMap);
+        Assert.True(values.UseEmissiveMap);
+        Assert.True(values.DecodeAlbedoSrgb);
+        Assert.True(values.DecodeEmissiveSrgb);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task StandardGltfDecodesColorOnceForSelectedTextureProducers(bool srgbView)
+    {
+        using var files = new GltfFiles();
+        await files.WriteProjectShadersAsync();
+        files.AddTexturedMaterial();
+        JsonNode source = JsonNode.Parse(File.ReadAllText(files.Source))!;
+        source["materials"]![0]!["emissiveTexture"] = JsonNode.Parse("""{"index":0}""");
+        source["materials"]![0]!["emissiveFactor"] = JsonNode.Parse("""[1,1,1]""");
+        File.WriteAllText(files.Source, source.ToJsonString());
+        files.WriteSelections(
+            new SourceImporterSettings(ImporterId<GltfMeshImporter>(),
+                JsonSerializer.SerializeToElement(new GltfMeshSettings(), GltfSettingsJson.Default.GltfMeshSettings)),
+            new SourceImporterSettings(ImporterId<PaintGltfTextureImporter>(),
+                JsonSerializer.SerializeToElement(new PaintGltfTextureSettings(69, srgbView), ExtensionGltfSettingsJson.Default.PaintGltfTextureSettings)));
+        var project = new AssetProject(files.Directory, []);
+        await project.ImportAsync(files.Source, CreateImporter());
+        Guid materialId = SourceMeta.Load(files.Source).Outputs.Single(value => value.SubAssetKey == "material:id:material-A").AssetGuid;
+        using MaterialAsset material = await MaterialAsset.OpenAsync(Path.Combine(files.Directory, project.Manifest.Assets[materialId].Path));
+        var values = new StandardMaterialParameters(material.GetBlock<MaterialBlock>());
+        Assert.Equal(!srgbView, values.DecodeAlbedoSrgb);
+        Assert.Equal(!srgbView, values.DecodeEmissiveSrgb);
+        Assert.Equal(values.AlbedoMap, values.EmissiveMap);
+        Assert.Equal(MaterialTemplates.White, values.OcclusionMap);
+    }
+
+    [Fact]
+    public async Task StandardGltfWithMetallicRoughnessButNoAoDoesNotUseArmRed()
+    {
+        using var files = new GltfFiles();
+        await files.WriteProjectShadersAsync();
+        files.AddTexturedMaterial();
+        JsonNode source = JsonNode.Parse(File.ReadAllText(files.Source))!;
+        source["materials"]![0]!["pbrMetallicRoughness"]!["metallicRoughnessTexture"] = JsonNode.Parse("""{"index":0}""");
+        File.WriteAllText(files.Source, source.ToJsonString());
+        files.WriteSelections(new SourceImporterSettings(ImporterId<GltfMeshImporter>(),
+            JsonSerializer.SerializeToElement(new GltfMeshSettings(), GltfSettingsJson.Default.GltfMeshSettings)));
+        var project = new AssetProject(files.Directory, []);
+        await project.ImportAsync(files.Source, CreateImporter());
+        Guid materialId = SourceMeta.Load(files.Source).Outputs.Single(value => value.SubAssetKey == "material:id:material-A").AssetGuid;
+        using MaterialAsset material = await MaterialAsset.OpenAsync(Path.Combine(files.Directory, project.Manifest.Assets[materialId].Path));
+        var values = new StandardMaterialParameters(material.GetBlock<MaterialBlock>());
+        Assert.Equal(values.AlbedoMap, values.ARMMap);
+        Assert.Equal(MaterialTemplates.White, values.OcclusionMap);
+        Assert.True(values.UseOcclusionMap);
+    }
+
+    [Fact]
+    public void GenericMaskCutoffAccountsForBaseColorAlphaWithoutChangingVariantPolicy()
+    {
+        using var files = new GltfFiles();
+        files.AddTexturedMaterial();
+        JsonNode source = JsonNode.Parse(File.ReadAllText(files.Source))!;
+        source["materials"]![0]!["alphaMode"] = "MASK";
+        source["materials"]![0]!["alphaCutoff"] = 0.5;
+        source["materials"]![0]!["pbrMetallicRoughness"]!["baseColorFactor"] = JsonNode.Parse("""[1,1,1,0.25]""");
+        File.WriteAllText(files.Source, source.ToJsonString());
+        var material = SharpGLTF.Schema2.ModelRoot.Load(files.Source).LogicalMaterials[0];
+        Assert.Equal(2f, StandardGltfSceneImporter.GetAlphaMaskCutoff(material));
+        source["materials"]![0]!["alphaMode"] = "OPAQUE";
+        File.WriteAllText(files.Source, source.ToJsonString());
+        Assert.Equal(-1f, StandardGltfSceneImporter.GetAlphaMaskCutoff(
+            SharpGLTF.Schema2.ModelRoot.Load(files.Source).LogicalMaterials[0]));
+    }
+
     private static GltfSourceImporter CreateImporter() => StandardGltfSceneImporter.CreateSourceImporter(ConsumerAssetCapabilities.AddAssetCapabilities(new ServiceCollection()), "external-glTF-behavior-1");
 
     private sealed class GltfFiles : IDisposable
@@ -343,7 +509,7 @@ public sealed partial class ExtensionGltfBlock : AssetBlock
 
 public sealed record ExtensionGltfSettings(int Number, string Label, string? InputPath = null);
 public sealed record AlternativeGltfSettings(string Label, int Amount);
-public sealed record PaintGltfTextureSettings(byte Red);
+public sealed record PaintGltfTextureSettings(byte Red, bool SrgbView = false);
 [JsonSerializable(typeof(ExtensionGltfSettings)), JsonSerializable(typeof(AlternativeGltfSettings)), JsonSerializable(typeof(PaintGltfTextureSettings))]
 public sealed partial class ExtensionGltfSettingsJson : JsonSerializerContext;
 public sealed class ExtensionGltfSettingsProvider : IAssetImporterSettings<ExtensionGltfSettings>
@@ -450,7 +616,8 @@ public sealed class PaintGltfTextureImporter : IAssetImporter<SharpGLTF.Schema2.
         var block = new TextureBlock()
         {
             Dimension = SomeEngine.Graphics.TextureDimension.Texture2D, Width = 1, Height = 1, Depth = 1, MipLevelCount = 1, ArrayLayerCount = 1,
-            Format = SomeEngine.Graphics.Format.R8G8B8A8UNorm, SampledFormat = SomeEngine.Graphics.Format.R8G8B8A8UNorm,
+            Format = SomeEngine.Graphics.Format.R8G8B8A8UNorm,
+            SampledFormat = settings.SrgbView ? SomeEngine.Graphics.Format.R8G8B8A8UNormSrgb : SomeEngine.Graphics.Format.R8G8B8A8UNorm,
             SampledDimension = SomeEngine.Graphics.TextureViewDimension.Texture2D,
         };
         block.MipTiles.Add(new SomeEngine.Resources.TextureMipTile { MipLevel = 0, TileX = 0, TileY = 0, Width = 1, Height = 1, RowPitch = 4, SlicePitch = 4, ChunkKey = 1, DecodedLength = 4 });

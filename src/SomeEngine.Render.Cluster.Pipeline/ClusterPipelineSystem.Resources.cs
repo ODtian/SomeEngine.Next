@@ -5,6 +5,7 @@ using SomeEngine.Graphics;
 using SomeEngine.Render.Instances;
 using SomeEngine.Render.Lighting;
 using SomeEngine.RenderGraph;
+using SomeEngine.Render.Assets;
 using Buffer = SomeEngine.Graphics.Buffer;
 
 namespace SomeEngine.Render.Cluster.Pipeline;
@@ -60,8 +61,9 @@ public sealed partial class ClusterPipelineSystem
         int height = output.Height;
         uint viewCount = output.ViewCount;
         int pageFaultCapacity = _resources.PageFaultCapacity;
-        ClusterResidencyBinding residency = _resources.Residency.GetBinding();
-        var geometryBuffers = _resources.Residency.GeometryBuffers;
+        _resources.Residency.ThrowIfNotActive();
+        uint geometryPageCount = _resources.GeometryPageCount;
+        ClusterGeometryBuffers geometryBuffers = _resources.Residency.GeometryBuffers;
         RenderInstanceResources instanceResources = _resources.InstanceResources;
         ulong instanceMetadataStride = checked((ulong)instanceResources.BatchMetadataStrideBytes);
         int mipCount = ClusterCullingHistory.CalculateMipCount(width, height);
@@ -79,7 +81,7 @@ public sealed partial class ClusterPipelineSystem
             ShadeBinCount = shadeBinCount,
             SlotCapacity = assignments.SlotCapacity,
             PageFaultCapacity = pageFaultCapacity,
-            PagePriorityCapacity = _resources.GeometryPageCount,
+            PagePriorityCapacity = geometryPageCount,
             PageHeap = geometryBuffers.PageHeap,
             Bvh = geometryBuffers.Bvh,
             InstanceData = _instanceDataTransfer!.Data,
@@ -163,7 +165,7 @@ public sealed partial class ClusterPipelineSystem
         frame.PageFaults = frame.AddBuffer(
             ref graph,
             checked(3u * sizeof(uint) + (ulong)pageFaultCapacity * 24u +
-                (ulong)_resources.GeometryPageCount * sizeof(uint)),
+                (ulong)geometryPageCount * sizeof(uint)),
             BufferUsages.CopySource,
             "Cluster page faults");
         frame.Phase2CandidateArgs = frame.AddBuffer(
@@ -320,7 +322,7 @@ public sealed partial class ClusterPipelineSystem
                 (ulong)rasterBinCount * ClusterIndirectAbi.DispatchBytes),
             BufferUsages.Indirect,
             "Cluster tessellation hardware draw arguments");
-        if (_visibilityMode == ClusterVisibilityMode.HardwareOnly && !ClusterRasterPipeline.SupportsMesh(_backend, _device))
+        if (_visibilityMode == ClusterVisibilityMode.HardwareOnly && !ClusterRasterPolicy.SupportsMesh(_backend, _device))
             frame.TessellationPatternIndices = UploadStructs<ushort>(ref graph,
                 CreateTessellationPatternIndices(), BufferUsages.Index | BufferUsages.ShaderRead,
                 "Cluster tessellation pattern indices");
@@ -486,7 +488,7 @@ public sealed partial class ClusterPipelineSystem
             return;
         }
 
-        ClusterComputePipeline pipeline = _pipelines?.WinnerClear
+        LinkedComputePipeline pipeline = _pipelines?.WinnerClear
             ?? throw new InvalidOperationException("The selected A64 visibility mode has no clear pipeline.");
         GraphBufferSlice uniforms = UploadUniform(
             ref graph,
@@ -495,8 +497,7 @@ public sealed partial class ClusterPipelineSystem
                 Width = checked((uint)frame.Width),
                 Height = checked((uint)frame.Height),
                 ViewCount = frame.ViewCount,
-            },
-            "Cluster visibility winner clear uniforms");
+            });
         int bindingCount = 0;
         AddBinding(ref bindingCount, GraphParameterResourceBinding.ConstantBuffer(
             CreateConstantBufferView(graph, uniforms), PipelineSync.ComputeShading));
@@ -516,12 +517,12 @@ public sealed partial class ClusterPipelineSystem
                 ref graph,
                 "Clear Cluster visibility winner image",
                 pipeline,
-                new ClusterDispatchParameters(new DispatchArguments(
+                new DispatchArguments(
                     Groups(frame.Width, 8),
                     Groups(frame.Height, 8),
-                    frame.ViewCount)),
+                    frame.ViewCount),
                 bindingCount,
-                ClusterDispatchParameters.Record);
+                RecordDispatch);
             return;
         }
 
@@ -538,9 +539,9 @@ public sealed partial class ClusterPipelineSystem
             ref graph,
             "Clear Cluster visibility winner buffer",
             pipeline,
-            new ClusterDispatchParameters(new DispatchArguments(groupsX, groupsY, 1)),
+            new DispatchArguments(groupsX, groupsY, 1),
             bindingCount,
-            ClusterDispatchParameters.Record);
+            RecordDispatch);
     }
 
     private void GrowPageRequestPriorities(ref RenderGraphEdit graph)
@@ -715,20 +716,7 @@ public sealed partial class ClusterPipelineSystem
         {
             PageRetirement retirement = retirements[index];
             var range = new BufferRange(retirement.Offset, retirement.Size);
-            int count = _graph.GetRangeCompletionCount(pageHeap, range);
-            if (count == 0)
-            {
-                result[index] = [];
-                continue;
-            }
-            var completions = new QueueCompletion[count];
-            int copied = _graph.CopyRangeCompletions(
-                pageHeap,
-                range,
-                completions);
-            if (copied != count)
-                throw new InvalidOperationException("Cluster page retirement completions changed during capture.");
-            result[index] = completions;
+            result[index] = _graph.GetRangeCompletions(pageHeap, range);
         }
         return result;
     }
@@ -973,14 +961,13 @@ public sealed partial class ClusterPipelineSystem
 
     private GraphBufferSlice UploadUniform<T>(
         ref RenderGraphEdit graph,
-        T value,
-        string name)
+        T value)
         where T : unmanaged
     {
         int valueSize = Unsafe.SizeOf<T>();
         Span<byte> bytes = stackalloc byte[valueSize];
         MemoryMarshal.Write(bytes, in value);
-        GraphBufferSlice input = CreateParameters(ref graph, bytes, name);
+        GraphBufferSlice input = CreateParameters(ref graph, bytes);
         _rasterInputs?.Uniforms.Add(input);
         return input;
     }
@@ -1037,9 +1024,7 @@ public sealed partial class ClusterPipelineSystem
     private GraphBufferId UploadBytes(ref RenderGraphEdit graph, ClusterBytes bytes,
         BufferUsages usages, string label)
     {
-        GraphBufferId buffer = CreateBufferData(ref graph, bytes, usages, label);
-        _rasterInputs?.Buffers.Add(buffer);
-        return buffer;
+        return CreateBufferData(ref graph, bytes, usages, label);
     }
 
     private GraphBufferId UploadBytes(
@@ -1048,9 +1033,7 @@ public sealed partial class ClusterPipelineSystem
         BufferUsages usage,
         string name)
     {
-        GraphBufferId buffer = CreateBufferData(ref graph, bytes, usage, name);
-        _rasterInputs?.Buffers.Add(buffer);
-        return buffer;
+        return CreateBufferData(ref graph, bytes, usage, name);
     }
 
     private static FrameResources GetRasterFrameResources(in FrameResources frame, bool target)

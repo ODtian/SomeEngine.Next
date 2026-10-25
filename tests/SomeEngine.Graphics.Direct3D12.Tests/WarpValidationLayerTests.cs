@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using SlangShaderSharp;
 using Silk.NET.Direct3D12;
 using SomeEngine.Graphics.Direct3D12;
@@ -1471,6 +1472,95 @@ public sealed class WarpValidationLayerTests(D3D12TestCompiler shaderCompiler)
             messages.Count(static message =>
                 message.Area == "Bindings" &&
                 message.Type == ValidationMessageType.Error) >= 6);
+    }
+
+    [Fact]
+    public void Bundles_keep_their_draw_results_when_the_recording_context_is_reused()
+    {
+        const string source = """
+            uint4 values;
+            [shader("vertex")]
+            float4 vertexMain(uint id : SV_VertexID) : SV_Position
+            {
+                float2 position = float2((id << 1) & 2, id & 2) * 2.0 - 1.0;
+                return float4(position, 0.0, 1.0);
+            }
+            [shader("fragment")]
+            uint fragmentMain() : SV_Target
+            {
+                return values.x;
+            }
+            """;
+        D3D12TestShader shader = shaderCompiler.Compile(
+            "validated_bundle_context_reuse", source,
+            [new("vertexMain", SlangStage.Vertex), new("fragmentMain", SlangStage.Fragment)], "sm_6_2");
+        VariableLayoutReflection layout = shader.Reflection.GetGlobalParamsVarLayout()
+            ?? VariableLayoutReflection.Null;
+        var messages = new List<ValidationMessage>();
+        using var backend = CreateFastLayer(messages);
+        using Device device = D3D12TestSupport.CreateWarpDevice(backend);
+        using Pipeline pipeline = backend.CreateGraphicsPipeline(device,
+            new GraphicsPipelineDesc(shader.SlangCode, shader.Reflection,
+                shader.GetEntryPoint(0), shader.GetEntryCode(0),
+                shader.GetEntryPoint(1), shader.GetEntryCode(1), [], [],
+                PrimitiveTopology.TriangleList, StripCut.Disabled,
+                new RasterizerState(Cull: CullType.None), new MultisampleState(SampleCount: 1),
+                new DepthStencilState(),
+                new BlendState([new(Enabled: false, WriteMask: ColorWriteMasks.All)]),
+                new AttachmentFormatSignature([Format.R32UInt], null),
+                DynamicStates.Viewport | DynamicStates.Scissor));
+        using Texture target = backend.CreateTexture(device,
+            new TextureDesc(TextureDimension.Texture2D, 2, 1, 1, 1, 1, 1, Format.R32UInt,
+                TextureUsages.ColorAttachment | TextureUsages.CopySource));
+        TextureSubresourceRange range = new(0, 1, 0, 1, TextureAspects.Color);
+        using ColorAttachmentView view = backend.CreateColorAttachmentView(device,
+            new ColorAttachmentViewDesc(target, range, Format.R32UInt, TextureViewDimension.Texture2D));
+        using Buffer readback = backend.CreateBuffer(device,
+            new BufferDesc(256, BufferUsages.CopyDestination), MemoryType.Readback);
+        using CommandContext bundleContext = backend.CreateCommandContext(device,
+            new CommandContextDesc(QueueType.Graphics, 0, 1, Bundle: true));
+        using CommandContext context = backend.CreateCommandContext(device,
+            new CommandContextDesc(QueueType.Graphics, 0, 1));
+        uint[] firstValues = [17, 0, 0, 0];
+        uint[] secondValues = [31, 0, 0, 0];
+
+        backend.Begin(bundleContext);
+        backend.SetPipeline(bundleContext, pipeline);
+        backend.SetTransientParameterBindings(bundleContext,
+            new ParameterBlockBindings(layout, [], MemoryMarshal.AsBytes(firstValues.AsSpan())));
+        backend.Draw(bundleContext, new DrawArguments(3, 1, 0, 0));
+        using RecordedBundle first = backend.EndBundle(bundleContext);
+
+        backend.Begin(bundleContext);
+        backend.SetPipeline(bundleContext, pipeline);
+        backend.SetTransientParameterBindings(bundleContext,
+            new ParameterBlockBindings(layout, [], MemoryMarshal.AsBytes(secondValues.AsSpan())));
+        backend.Draw(bundleContext, new DrawArguments(3, 1, 0, 0));
+        using RecordedBundle second = backend.EndBundle(bundleContext);
+
+        backend.Begin(context);
+        backend.Barrier(context, new TextureBarrier(target, range, PipelineSync.None, PipelineSync.RenderTarget,
+            ResourceAccess.NoAccess, ResourceAccess.RenderTarget, TextureLayout.Undefined, TextureLayout.RenderTarget));
+        backend.SetViewports(context, [new Viewport(0, 0, 2, 1)]);
+        backend.BeginRendering(context, new RenderingDesc(
+            [new ColorAttachmentDesc(view, LoadType.Clear, StoreType.Store, default)], null, 2, 1));
+        backend.SetScissors(context, [new ScissorRect(0, 0, 1, 1)]);
+        backend.ExecuteBundle(context, second);
+        backend.SetScissors(context, [new ScissorRect(1, 0, 1, 1)]);
+        backend.ExecuteBundle(context, first);
+        backend.EndRendering(context);
+        backend.Barrier(context, new TextureBarrier(target, range, PipelineSync.RenderTarget, PipelineSync.Copy,
+            ResourceAccess.RenderTarget, ResourceAccess.CopySource, TextureLayout.RenderTarget, TextureLayout.CopySource));
+        backend.CopyTextureToBuffer(context, new BufferTextureCopy(readback, 0, 256, 1,
+            target, 0, 0, TextureAspects.Color, 0, 0, 0, 2, 1, 1));
+        using RecordedCommands commands = backend.End(context);
+        QueueCompletion completion = backend.Submit(backend.GetQueue(device, QueueType.Graphics),
+            new QueueSubmitDesc([], [], [commands], [], []));
+        Assert.Equal(WaitStatus.Completed, backend.WaitCpu(completion, TimeSpan.FromSeconds(10)));
+        using MappedBuffer mapped = backend.Map(readback, MapType.Read, new BufferRange(0, 8));
+        mapped.Invalidate(mapped.Range);
+        Assert.Equal([31u, 17u], MemoryMarshal.Cast<byte, uint>(mapped.Bytes).ToArray());
+        Assert.DoesNotContain(messages, static message => message.Type == ValidationMessageType.Error);
     }
 
     [Fact]

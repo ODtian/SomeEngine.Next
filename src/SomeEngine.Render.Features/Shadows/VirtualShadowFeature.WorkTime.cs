@@ -34,7 +34,7 @@ public sealed partial class VirtualShadowFeature
         _workTimeQueries = _backend.CreateQueryPool(_device, new QueryPoolDesc(QueryType.Timestamp, QueueType.Graphics, 2,
             Label: "Virtual shadow geometry time"));
         GraphQueryPoolId queries = edit.RegisterQueryPool(_workTimeQueries);
-        GraphBufferId results = edit.CreateBuffer(new BufferDesc(2u * sizeof(ulong), BufferUsages.CopyDestination | BufferUsages.CopySource,
+        GraphBufferId results = edit.CreateBuffer(new BufferDesc(2u * sizeof(ulong), BufferUsages.CopyDestination | BufferUsages.CopySource | BufferUsages.QueryResolve,
             "Virtual shadow geometry timestamps"));
         GraphPassId start = edit.AddGeneralFramePass("Start virtual shadow geometry timing", PassQueueSelection.AnyOfType(QueueType.Graphics),
             new WorkTimestamp(queries, 0), new PassOptions(Culling: PassCullingMode.NeverCull),
@@ -132,6 +132,156 @@ public sealed partial class VirtualShadowFeature
             ReadOnlySpan<ulong> timestamps = MemoryMarshal.Cast<byte, ulong>(bytes);
             frame.Milliseconds = (float)(1000.0 * (timestamps[1] - timestamps[0]) / feature._workTimeFrequency);
             feature.AcceptWorkTime(tag, frame);
+        }
+    }
+
+
+    // Optional four-frame diagnostic. Results never feed shadow quality or scheduling.
+    private readonly GraphRegionId _invalidationTimingRegion;
+    private QueryPool? _invalidationTimingQueries;
+    private GraphQueryPoolId _invalidationTimingQueryId;
+    private GraphPassId _invalidationTimingResolvePass;
+    private GraphReadbackId _invalidationTimingReadback;
+    private ulong _invalidationTimingFrequency;
+    private int? _requestedInvalidationTimingFrame;
+    private Dictionary<ulong, InvalidationTimingFrame>? _invalidationTimingFrames;
+
+    private sealed class InvalidationTimingFrame(int simulationFrame, uint changed, uint deferred, uint views)
+    {
+        internal readonly int SimulationFrame = simulationFrame;
+        internal readonly uint Changed = changed, Deferred = deferred, Views = views;
+        internal bool Complete;
+        internal ulong? Begin, End;
+    }
+
+    /// <summary>Enables explicit GPU timing of caster invalidation without changing shadow policy.</summary>
+    public void EnableInvalidationTiming()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_invalidationTimingQueries is not null) return;
+        ulong frequency = _backend.CalibrateTimestamps(_backend.GetQueue(_device, QueueType.Graphics)).QueueFrequency;
+        if (frequency == 0) throw new InvalidOperationException("The graphics timestamp frequency is zero.");
+        QueryPool queries = _backend.CreateQueryPool(_device,
+            new QueryPoolDesc(QueryType.Timestamp, QueueType.Graphics, 2, Label: "Caster invalidation diagnostic"));
+        try
+        {
+            if (queries.ResultInfo.ResultStride != sizeof(ulong))
+                throw new NotSupportedException("Caster timing requires one 64-bit value per timestamp.");
+            RenderGraphEdit edit = _renderGraph.BeginEdit();
+            try
+            {
+                GraphQueryPoolId id = edit.RegisterQueryPool(queries);
+                GraphBufferId values = edit.CreateBuffer(new BufferDesc(2u * sizeof(ulong),
+                    BufferUsages.QueryResolve | BufferUsages.CopyDestination | BufferUsages.CopySource,
+                    "Caster invalidation timestamp values"));
+                GraphPassId resolve = edit.AddGeneralFramePass("Resolve caster invalidation diagnostic",
+                    PassQueueSelection.AnyOfType(QueueType.Graphics), new WorkTimestampResults(id, values),
+                    new PassOptions(Culling: PassCullingMode.NeverCull),
+                    WorkTimestampResults.Declare, WorkTimestampResults.Record, region: _invalidationTimingRegion);
+                edit.OrderAfter(resolve, _invalidatePass);
+                edit.OrderAfter(_frameCompletePass, resolve);
+                GraphReadbackId readback = edit.AddReadback(values, BufferRange.Whole,
+                    new InvalidationTimingReceiver(this), "Read caster invalidation diagnostic", _invalidationTimingRegion);
+                edit.OrderAfter(readback, resolve);
+                edit.Commit();
+                _invalidationTimingQueryId = id;
+                _invalidationTimingResolvePass = resolve;
+                _invalidationTimingReadback = readback;
+                _invalidationTimingFrequency = frequency;
+                _invalidationTimingFrames = [];
+                _invalidationTimingQueries = queries;
+            }
+            finally { edit.Dispose(); }
+        }
+        catch { queries.Dispose(); throw; }
+    }
+
+    /// <summary>Requests one timestamp pair for the next ordinary staged frame.</summary>
+    public void RequestInvalidationTiming(int simulationFrame)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(simulationFrame);
+        if (_invalidationTimingQueries is null) throw new InvalidOperationException("Enable caster timing first.");
+        if (_requestedInvalidationTimingFrame is not null) throw new InvalidOperationException("Caster timing was already requested.");
+        _requestedInvalidationTimingFrame = simulationFrame;
+    }
+
+    private GraphPassId AddInvalidationPass(ref RenderGraphEdit edit, GraphRegionId region) =>
+        edit.AddComputeFramePass("Invalidate moved virtual shadow casters", PassQueueSelection.AnyOfType(QueueType.Graphics),
+            new InvalidationDispatch(default), new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
+            _shadowMap.CasterInvalidationPipeline.Pipeline, _shadowMap.CasterInvalidationPipeline.ParameterLayout, default,
+            InvalidationDispatch.Declare, InvalidationDispatch.Record, region: region);
+
+    private void StageInvalidationTiming(ref RenderGraphFrame graph)
+    {
+        if (_invalidationTimingQueries is null) return;
+        bool enabled = _requestedInvalidationTimingFrame is not null && _viewCount != 0;
+        graph.SetPassEnabled(_invalidationTimingResolvePass, enabled);
+        graph.SetReadbackEnabled(_invalidationTimingReadback, enabled);
+        if (enabled)
+        {
+            _invalidationTimingFrames!.Add(_frameIndex, new InvalidationTimingFrame(
+                _requestedInvalidationTimingFrame!.Value, checked((uint)_changedInstances.Count),
+                checked((uint)(_streamingChangedInstances.Count + _lodCasterBounds.Count / 2)), checked((uint)_viewCount)));
+            // Frame command-data updates do not rerun the initial resource declaration.
+            PassDefinition invalidation = graph.GetPass(_invalidatePass);
+            invalidation.Write(_invalidationTimingQueryId, new QueryRange(0, 2));
+            graph.SetPassDataIfChanged(_invalidatePass, new InvalidationDispatch(
+                new DispatchArguments(Math.Min(checked((uint)_changedInstances.Count), 65535u),
+                    DivideRoundUp(checked((uint)_changedInstances.Count), 65535u), 1u), _invalidationTimingQueryId));
+            graph.SetReadbackTag(_invalidationTimingReadback, _frameIndex);
+        }
+        _requestedInvalidationTimingFrame = null;
+    }
+
+    private void FinishInvalidationTiming(RenderGraphFrameResult result, bool complete)
+    {
+        if (_invalidationTimingFrames is null ||
+            !_invalidationTimingFrames.TryGetValue(_frameIndex, out InvalidationTimingFrame? frame)) return;
+        if (!complete || !result.TryGetPassCompletion(_invalidationTimingResolvePass, out _))
+        {
+            _invalidationTimingFrames.Remove(_frameIndex);
+            return;
+        }
+        frame.Complete = true;
+        ReportInvalidationTiming(_frameIndex, frame);
+    }
+
+    private void ReportInvalidationTiming(ulong tag, InvalidationTimingFrame frame)
+    {
+        if (!frame.Complete || frame.Begin is not { } begin || frame.End is not { } end) return;
+        _invalidationTimingFrames!.Remove(tag);
+        if (end < begin) throw new InvalidDataException("Graphics timestamps were not ordered within one queue.");
+        double milliseconds = 1000.0 * (end - begin) / _invalidationTimingFrequency;
+        Console.WriteLine(FormattableString.Invariant(
+            $"VSM_INVALIDATION_GPU {{\"SimulationFrame\":{frame.SimulationFrame},\"ShadowFrame\":{tag},\"ChangedInstances\":{frame.Changed},\"DeferredInstances\":{frame.Deferred},\"Views\":{frame.Views},\"Queue\":\"Graphics\",\"QueueFrequency\":{_invalidationTimingFrequency},\"BeginTicks\":{begin},\"EndTicks\":{end},\"Milliseconds\":{milliseconds:R}}}"));
+    }
+
+    private sealed class InvalidationTimingReceiver(VirtualShadowFeature feature) : IGraphReadbackReceiver
+    {
+        public void OnReadback(ReadOnlySpan<byte> bytes, ulong tag)
+        {
+            if (feature._invalidationTimingFrames is null ||
+                !feature._invalidationTimingFrames.TryGetValue(tag, out InvalidationTimingFrame? frame)) return;
+            if (bytes.Length != 2 * sizeof(ulong)) throw new InvalidDataException("Caster timestamp readback size changed.");
+            ReadOnlySpan<ulong> values = MemoryMarshal.Cast<byte, ulong>(bytes);
+            frame.Begin = values[0];
+            frame.End = values[1];
+            feature.ReportInvalidationTiming(tag, frame);
+        }
+    }
+
+    private readonly record struct InvalidationDispatch(DispatchArguments Dispatch, GraphQueryPoolId Queries = default)
+    {
+        internal static void Declare(ref PassDefinition pass, ref InvalidationDispatch data)
+        {
+            if (data.Queries != default) pass.Write(data.Queries, new QueryRange(0, 2));
+        }
+
+        internal static void Record(ref ComputePassCommandScope commands, in InvalidationDispatch data)
+        {
+            if (data.Queries != default) commands.WriteTimestamp(data.Queries, 0);
+            commands.Dispatch(data.Dispatch);
+            if (data.Queries != default) commands.WriteTimestamp(data.Queries, 1);
         }
     }
 

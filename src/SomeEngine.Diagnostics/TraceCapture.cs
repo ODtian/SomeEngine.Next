@@ -124,6 +124,7 @@ public sealed class TraceCapture : IDisposable
             }
             finally
             {
+                _threads.Clear();
                 _file.Dispose(); _available.Dispose();
                 while (_free.Reader.TryRead(out _)) { }
                 while (_ready.Reader.TryRead(out _)) { }

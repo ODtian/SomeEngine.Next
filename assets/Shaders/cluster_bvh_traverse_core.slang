@@ -305,9 +305,12 @@ void ProcessTraversalNode(ClusterTraversalNode parent, bool validParent, uint ch
         else if (state != 0u)
         {
             activeViews |= 1u << bit;
-            float error = ClusterSphereError(lodBounds.Center, lodBounds.Radius, abs(node.MinLODError) * lodBounds.ErrorScale, view);
-            streamingPriority = max(streamingPriority,
-                PackClusterStreamingPriority(error, view.LodThreshold, view.StreamingPriorityCategory));
+            if (ClusterSliceLeaf(node))
+            {
+                float error = ClusterSphereError(lodBounds.Center, lodBounds.Radius, abs(node.MinLODError) * lodBounds.ErrorScale, view);
+                streamingPriority = max(streamingPriority,
+                    PackClusterStreamingPriority(error, view.LodThreshold, view.StreamingPriorityCategory));
+            }
         }
     }
 

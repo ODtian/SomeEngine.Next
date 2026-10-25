@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using SomeEngine.Graphics;
 
 namespace SomeEngine.Render;
@@ -16,6 +17,7 @@ public sealed partial class RenderDevice : IDisposable
     private readonly object _completionGate = new();
     private readonly List<QueueCompletion> _submitted = [];
     private readonly List<RetiredResource> _retired = [];
+    private readonly Dictionary<SamplerDesc, (Sampler Resource, int References)> _samplers = [];
     private bool _disposed;
 
     public RenderDevice(
@@ -32,6 +34,66 @@ public sealed partial class RenderDevice : IDisposable
 
     public IGraphicsBackend Backend => _backend;
     public Device Device => _device;
+
+    /// <summary>Retains a sampler shared by equal descriptions on this device.</summary>
+    /// <remarks>
+    /// Dispose the returned reference after its last use has been submitted and tracked.
+    /// The Resource is borrowed; do not dispose it directly. The last reference removes
+    /// the cached sampler and retires it after the tracked submissions complete.
+    /// </remarks>
+    public SamplerReference RetainSampler(SamplerDesc description)
+    {
+        lock (_completionGate)
+        {
+            ThrowIfDisposed();
+            bool created = !_samplers.TryGetValue(description, out var value);
+            if (created) value = (_backend.CreateSampler(_device, description), 0);
+            try
+            {
+                var reference = new SamplerReference(value.Resource, () => ReleaseSampler(description));
+                _samplers[description] = (value.Resource, checked(value.References + 1));
+                return reference;
+            }
+            catch
+            {
+                if (created) value.Resource.Dispose();
+                throw;
+            }
+        }
+    }
+
+    private void ReleaseSampler(SamplerDesc description)
+    {
+        lock (_completionGate)
+        {
+            if (_disposed) return;
+            var value = _samplers[description];
+            if (value.References > 1)
+                _samplers[description] = (value.Resource, value.References - 1);
+            else if (_submitted.Count == 0)
+            {
+                _samplers.Remove(description);
+                value.Resource.Dispose();
+            }
+            else
+            {
+                _retired.Add(new RetiredResource(value.Resource, CaptureRetirementCompletions()));
+                _samplers.Remove(description);
+            }
+        }
+    }
+
+    public sealed class SamplerReference : IDisposable
+    {
+        private Action? _release;
+        internal SamplerReference(Sampler resource, Action release)
+        {
+            Resource = resource;
+            _release = release;
+        }
+        public Sampler Resource { get; }
+        public void Dispose() => Interlocked.Exchange(ref _release, null)?.Invoke();
+    }
 
     /// <summary>
     /// Publishes Queue completions for work using this RenderDevice. The maximum value per Queue
@@ -123,7 +185,7 @@ public sealed partial class RenderDevice : IDisposable
                 value.Dispose();
                 return;
             }
-            _retired.Add(new RetiredResource(value, [.. _submitted]));
+            _retired.Add(new RetiredResource(value, CaptureRetirementCompletions()));
         }
     }
 
@@ -134,7 +196,7 @@ public sealed partial class RenderDevice : IDisposable
         if (_disposed)
             return;
         WaitForTrackedSubmissions(_disposeTimeout);
-        _disposed = true;
+        lock (_completionGate) _disposed = true;
 
         List<Exception>? failures = null;
         try
@@ -148,6 +210,12 @@ public sealed partial class RenderDevice : IDisposable
         }
         lock (_completionGate)
         {
+            foreach (var sampler in _samplers.Values)
+            {
+                try { sampler.Resource.Dispose(); }
+                catch (Exception failure) { (failures ??= []).Add(failure); }
+            }
+            _samplers.Clear();
             foreach (RetiredResource retirement in _retired)
             {
                 try { retirement.Value.Dispose(); }
@@ -158,6 +226,17 @@ public sealed partial class RenderDevice : IDisposable
         }
         if (failures is not null)
             throw failures.Count == 1 ? failures[0] : new AggregateException(failures);
+    }
+
+    private QueueCompletion[] CaptureRetirementCompletions()
+    {
+        if (_retired.Count != 0)
+        {
+            QueueCompletion[] completions = _retired[^1].Completions;
+            if (completions.AsSpan().SequenceEqual(CollectionsMarshal.AsSpan(_submitted)))
+                return completions;
+        }
+        return [.. _submitted];
     }
 
     private void CollectCompletedLocked()

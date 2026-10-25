@@ -115,12 +115,14 @@ public static partial class SlangShaderImporter
             $"{ShaderAsset.SchemaHash:X16}:{ShaderSourceBlock.SchemaFingerprint:X16}:" +
             $"{ShaderBlock.SchemaFingerprint:X16}:{ShaderBlock.Version}"));
         hash.AppendData(Encoding.UTF8.GetBytes(GlobalSession.GetBuildTagString()));
-        foreach (string path in includeDirectories ?? [])
+        // The implicit source directory is already selected by the definition path.
+        // Preserve existing keys while ignoring redundant compiler search paths.
+        foreach (string path in ShaderSearchPaths(definitionPath, includeDirectories).Skip(1))
         {
             hash.AppendData([0]);
             hash.AppendData(Encoding.UTF8.GetBytes(SlangDeps.RelPath(
                 projectRoot,
-                Path.GetFullPath(Path.Combine(Path.GetDirectoryName(definitionPath)!, path)))));
+                path)));
         }
         return Convert.ToHexString(hash.GetHashAndReset());
     }

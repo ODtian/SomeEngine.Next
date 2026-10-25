@@ -249,6 +249,7 @@ internal sealed class MeshPages
             registration.RegistrationIndex != _registrations.Count ||
             registration.PageCount == 0 ||
             registration.PageCount != registration.Source.Pages.Count ||
+            registration.PageCount != registration.StreamingPageBytes.Length ||
             registration.LowestDetailPageIds.Length == 0 ||
             _registrationByMesh.ContainsKey(registration.Mesh))
         {
@@ -308,8 +309,11 @@ internal sealed class MeshPages
 
     internal uint ReferencePage(uint page)
     {
-        if (page >= _pages.Count) return 0;
-        CollectionsMarshal.AsSpan(_referencedPageBits)[(int)(page / 32)] |= 1u << (int)(page & 31);
+        if (page >= _pages.Count || IsRemoved(page)) return 0;
+        ref uint word = ref CollectionsMarshal.AsSpan(_referencedPageBits)[(int)(page / 32)];
+        uint bit = 1u << (int)(page & 31);
+        if ((word & bit) != 0) return 0;
+        word |= bit;
         return _pages[(int)page].StreamingBytes;
     }
 

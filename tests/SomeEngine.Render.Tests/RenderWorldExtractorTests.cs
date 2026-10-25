@@ -398,6 +398,79 @@ public sealed class RenderWorldExtractorTests(RenderTestDevice graphics) : IClas
         renderWorld.ReleaseQuery(query);
     }
 
+    [Theory]
+    [InlineData(1)]
+    [InlineData(64)]
+    [InlineData(128)]
+    public void Extract_TransformDeltaMarksOnlyChangedMirrorRows(int changedCount)
+    {
+        using World mainWorld = new();
+        using RenderWorld renderWorld = new();
+        using var extraction = new RenderExtractionSystems(renderWorld, new MeshRenderExtractor(), new LightRenderExtractor());
+        Mesh mesh = MeshAsset(1, 1);
+        Entity[] sources = Enumerable.Range(0, 128).Select(index =>
+            AddMeshSource(mainWorld, mesh, 0, new Vector3(index, 0, 0))).ToArray();
+        ExtractAndApply(extraction, mainWorld, renderWorld);
+        Entity renderOnly = renderWorld.CreateEntity();
+        var renderOnlyCurrent = new RenderTransform(new TransformQvvs(new Vector3(-1), Quaternion.Identity));
+        var renderOnlyPrevious = new RenderPreviousTransform(
+            new RenderTransform(new TransformQvvs(new Vector3(-2), Quaternion.Identity)));
+        renderWorld.Add(renderOnly, renderOnlyCurrent);
+        renderWorld.Add(renderOnly, renderOnlyPrevious);
+        QueryHandle query = renderWorld.Query(new QueryDefinitionBuilder()
+            .Read<RenderSource>().Read<RenderTransform>().Read<RenderPreviousTransform>());
+        static void ReadVersions(scoped QueryCursor cursor, ref Dictionary<Entity, (uint, uint)> versions)
+        {
+            foreach (QueryChunkView chunk in cursor.Chunks)
+            {
+                ReadOnlySpan<RenderSource> source = chunk.Read<RenderSource>();
+                ReadOnlySpan<uint> current = chunk.ReadWriteVersions<RenderTransform>();
+                ReadOnlySpan<uint> previous = chunk.ReadWriteVersions<RenderPreviousTransform>();
+                for (int row = 0; row < source.Length; row++)
+                    versions[source[row].Entity] = (current[row], previous[row]);
+            }
+        }
+        for (int step = 1; step <= 3; step++)
+        {
+            if (step == 3)
+                for (int index = 0; index < sources.Length; index += 2)
+                    renderWorld.Add(Mirror(renderWorld, sources[index]), new PipelinePreparedState(index));
+            Dictionary<Entity, (uint, uint)> before = [];
+            renderWorld.ExecuteQuery(query, ref before, ReadVersions);
+            for (int index = 0; index < changedCount; index++)
+                Move(mainWorld, sources[index], new Vector3(index, step, 0));
+            ExtractAndApply(extraction, mainWorld, renderWorld);
+            Dictionary<Entity, (uint, uint)> after = [];
+            renderWorld.ExecuteQuery(query, ref after, ReadVersions);
+            for (int index = 0; index < sources.Length; index++)
+            {
+                Entity source = sources[index];
+                if (index >= changedCount)
+                {
+                    Assert.Equal(before[source], after[source]);
+                    continue;
+                }
+                Assert.NotEqual(before[source].Item1, after[source].Item1);
+                if (step == 1) Assert.Equal(before[source].Item2, after[source].Item2);
+                else Assert.NotEqual(before[source].Item2, after[source].Item2);
+                Entity changed = Mirror(renderWorld, source);
+                Assert.Equal(new Vector3(index, step, 0), renderWorld.Read<RenderTransform>(changed).Position);
+                Assert.Equal(new Vector3(index, step - 1, 0),
+                    renderWorld.Read<RenderPreviousTransform>(changed).Value.Position);
+            }
+            Assert.Equal(renderOnlyCurrent, renderWorld.Read<RenderTransform>(renderOnly));
+            Assert.Equal(renderOnlyPrevious, renderWorld.Read<RenderPreviousTransform>(renderOnly));
+        }
+        ExtractAndApply(extraction, mainWorld, renderWorld);
+        foreach (Entity source in sources.AsSpan(0, changedCount))
+        {
+            Entity changed = Mirror(renderWorld, source);
+            Assert.Equal(renderWorld.Read<RenderTransform>(changed),
+                renderWorld.Read<RenderPreviousTransform>(changed).Value);
+        }
+        renderWorld.ReleaseQuery(query);
+    }
+
     [Fact]
     public void Extract_UsesInstalledSystemsAndUpdatesStableMirror()
     {
@@ -579,10 +652,11 @@ public sealed class RenderWorldExtractorTests(RenderTestDevice graphics) : IClas
         mainWorld.Replace(
             secondSource,
             new MeshInstance { Mesh = MeshAsset(32, 2), BoundsExpansion = 4 });
+        Material replacement = MaterialAsset(41, 2);
         SetSourceBindings(
             mainWorld,
             firstSource,
-            MaterialAsset(41, 2),
+            replacement,
             default!,
             count: 1);
 
@@ -605,6 +679,9 @@ public sealed class RenderWorldExtractorTests(RenderTestDevice graphics) : IClas
         Assert.Equal(new Vector3(2), renderWorld.Read<RenderTransform>(secondMirror).Position);
         AssertRenderBindings(renderWorld, firstMirror, oldMaterial, default!, count: 1);
         Assert.Equal(47, renderWorld.Read<PipelinePreparedState>(firstMirror).Value);
+
+        ExtractAndApply(extraction, mainWorld, renderWorld);
+        AssertRenderBindings(renderWorld, firstMirror, replacement, default!, count: 1);
     }
 
     [Fact]
@@ -830,6 +907,10 @@ public sealed class RenderWorldExtractorTests(RenderTestDevice graphics) : IClas
         Assert.False(renderWorld.HasBuffer<MeshMaterialBinding>(mirror));
         AssertRenderBindings(renderWorld, mirror, first, second, count: 2);
 
+        SetSourceBindings(mainWorld, source, first, first, count: 2);
+        ExtractAndApply(extraction, mainWorld, renderWorld);
+        AssertRenderBindings(renderWorld, mirror, first, first, count: 2);
+
         SetSourceBindings(mainWorld, source, replacement, default!, count: 1);
         ExtractAndApply(extraction, mainWorld, renderWorld);
 
@@ -839,6 +920,42 @@ public sealed class RenderWorldExtractorTests(RenderTestDevice graphics) : IClas
         mainWorld.RemoveBuffer<MeshMaterialBinding>(source);
         ExtractAndApply(extraction, mainWorld, renderWorld);
 
+        Assert.Equal(mirror, Mirror(renderWorld, source));
+        Assert.False(renderWorld.HasBuffer<RenderMaterialBinding>(mirror));
+    }
+
+    [Fact]
+    public void Extract_MeshAssetChangeDuringStructuralUpdatePreservesMaterialBindings()
+    {
+        using World mainWorld = new();
+        using RenderWorld renderWorld = new();
+        using var extraction = new RenderExtractionSystems(renderWorld, new MeshRenderExtractor());
+        Mesh mesh = MeshAsset(6, 1);
+        Entity source = AddMeshSource(mainWorld, mesh, boundsExpansion: 2, position: Vector3.Zero);
+        Material first = MaterialAsset(21, 1);
+        Material second = MaterialAsset(22, 1);
+        SetSourceBindings(mainWorld, source, first, second, count: 2);
+        ExtractAndApply(extraction, mainWorld, renderWorld);
+        Entity mirror = Mirror(renderWorld, source);
+        Mesh previousMesh = renderWorld.Read<RenderMesh>(mirror).Mesh;
+
+        mesh.Update(MeshAsset(6, 2));
+        Assert.NotSame(previousMesh, mesh.CaptureData());
+        // This source has no material buffer, so adding it never changes the first source's chunk.
+        Entity addedSource = AddMeshSource(
+            mainWorld, MeshAsset(7, 1), boundsExpansion: 0, position: Vector3.One);
+        extraction.Extract(mainWorld);
+        Assert.Same(previousMesh, renderWorld.Read<RenderMesh>(mirror).Mesh);
+        AssertRenderBindings(renderWorld, mirror, first, second, count: 2);
+
+        Assert.True(graphics.Apply(extraction, renderWorld));
+        Assert.Same(mesh.CaptureData(), renderWorld.Read<RenderMesh>(mirror).Mesh);
+        Assert.True(renderWorld.Has<RenderMesh>(Mirror(renderWorld, addedSource)));
+        Assert.True(renderWorld.HasBuffer<RenderMaterialBinding>(mirror));
+        AssertRenderBindings(renderWorld, mirror, first, second, count: 2);
+
+        mainWorld.RemoveBuffer<MeshMaterialBinding>(source);
+        ExtractAndApply(extraction, mainWorld, renderWorld);
         Assert.Equal(mirror, Mirror(renderWorld, source));
         Assert.False(renderWorld.HasBuffer<RenderMaterialBinding>(mirror));
     }

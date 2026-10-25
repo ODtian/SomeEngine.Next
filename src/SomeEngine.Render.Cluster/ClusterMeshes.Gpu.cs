@@ -32,15 +32,25 @@ internal sealed partial class ClusterMeshes
     {
         lock (_gate)
         {
+            // Installed hierarchy references store the byte offset in 512-byte units.
+            // The shared page heap supplies this alignment for both base and stride.
+            if (sizes.PageCount == 0 || sizes.BvhNodeCount == 0 || sizes.BvhLevels < 1 ||
+                sizes.PageStride == 0 || (sizes.PageStride & 511u) != 0)
+                throw new ArgumentException("GPU Cluster storage requires nonempty, 512-byte-aligned pages and hierarchy nodes.", nameof(sizes));
             uint pageBytes = sizes.PageBytes;
             if (!_heap.TryAlloc(pageBytes, out uint offset))
                 throw new InvalidOperationException("Cluster page-heap capacity is exhausted.");
+            if ((offset & 511u) != 0)
+            {
+                _heap.Free(offset, pageBytes);
+                throw new InvalidOperationException("The Cluster page heap returned an unencodable GPU page offset.");
+            }
             ClusterBvhAllocation bvh;
             try { bvh = _bvh.ReserveGpu(sizes.BvhNodeCount, sizes.BvhLevels); }
             catch { _heap.Free(offset, pageBytes); throw; }
             uint root = checked((uint)(bvh.Offset / ClusterBvh.NodeBytes));
             _gpuGeometry.Add(root, new(offset, sizes, bvh));
-            _residentPageRanges = BuildResidentPageRanges([], []);
+            _residentPageRanges = BuildResidentPageRanges([], [], forceRebuild: true);
             AdvanceRevision();
             return new(root, revision, vertexEncoding, bounds,
                 new(EpochId.Value, uint.MaxValue, sizes.PageCount, root, sizes.BvhNodeCount));
@@ -60,7 +70,7 @@ internal sealed partial class ClusterMeshes
             _gpuGeometry.Remove(geometry.RootBvh);
             _bvh.RemoveGpu(allocation.Bvh);
             _gpuRetirements.Add((allocation, completions));
-            _residentPageRanges = BuildResidentPageRanges([], []);
+            _residentPageRanges = BuildResidentPageRanges([], [], forceRebuild: true);
             AdvanceRevision();
         }
     }

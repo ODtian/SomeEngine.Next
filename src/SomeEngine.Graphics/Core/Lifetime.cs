@@ -16,11 +16,15 @@ internal struct DisposeGate
 
     internal bool TryEnter()
     {
-        if (Interlocked.CompareExchange(ref _state, Releasing, Alive) == Alive)
+        int state = Interlocked.CompareExchange(ref _state, Releasing, Alive);
+        if (state == Alive)
         {
             Volatile.Write(ref _ownerThreadId, Environment.CurrentManagedThreadId);
             return true;
         }
+
+        if (state == Released)
+            return false;
 
         if (Volatile.Read(ref _ownerThreadId) == Environment.CurrentManagedThreadId)
             return false;
@@ -32,7 +36,6 @@ internal struct DisposeGate
     internal void Exit()
     {
         Volatile.Write(ref _state, Released);
-        Volatile.Write(ref _ownerThreadId, 0);
     }
 
     private void Join()
@@ -109,7 +112,7 @@ public abstract class GraphicsObject : IDisposable
             try
             {
                 if (Disposed is { } disposed)
-                    foreach (Action<GraphicsObject> observer in disposed.GetInvocationList())
+                    foreach (Action<GraphicsObject> observer in Delegate.EnumerateInvocationList(disposed))
                     {
                         try { observer(this); }
                         catch { }

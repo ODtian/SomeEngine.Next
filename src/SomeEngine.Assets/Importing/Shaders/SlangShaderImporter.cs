@@ -47,13 +47,6 @@ public static partial class SlangShaderImporter
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sourcePath);
         ArgumentNullException.ThrowIfNull(targets);
-        string directory = Path.GetDirectoryName(Path.GetFullPath(sourcePath))!;
-        string[] searchPaths =
-            [
-                directory,
-                .. (includeDirectories ?? [])
-                    .Select(path => Path.GetFullPath(Path.Combine(directory, path))),
-            ];
         CompilerOptionEntry[] options =
         [
             new(CompilerOptionName.NoMangle, CompilerOptionValue.FromInt(0, 0)),
@@ -65,9 +58,17 @@ public static partial class SlangShaderImporter
         {
             Targets = targets,
             DefaultMatrixLayoutMode = SlangMatrixLayoutMode.RowMajor,
-            SearchPaths = searchPaths.Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
+            SearchPaths = ShaderSearchPaths(sourcePath, includeDirectories),
             CompilerOptionEntries = options,
         };
+    }
+
+    private static string[] ShaderSearchPaths(string sourcePath, IReadOnlyList<string>? includeDirectories)
+    {
+        string directory = Path.GetDirectoryName(Path.GetFullPath(sourcePath))!;
+        return new[] { directory }.Concat((includeDirectories ?? [])
+            .Select(path => Path.GetFullPath(Path.Combine(directory, path))))
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
     }
 
     private static ImportTrace CreateImportTrace(

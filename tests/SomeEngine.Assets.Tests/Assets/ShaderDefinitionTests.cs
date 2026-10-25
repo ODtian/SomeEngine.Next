@@ -17,6 +17,51 @@ public sealed class ShaderDefinitionTests : IDisposable
     public void Dispose() => Directory.Delete(_root, recursive: true);
 
     [Fact]
+    public async Task EquivalentIncludeDirectoriesReuseBuiltShaderAndKeepSearchOrder()
+    {
+        string first = Path.Combine(_root, "first");
+        string second = Path.Combine(_root, "second");
+        Directory.CreateDirectory(first);
+        Directory.CreateDirectory(second);
+        File.WriteAllText(Path.Combine(first, "color.inc"), "float4 color() { return 1; }");
+        File.WriteAllText(Path.Combine(second, "color.inc"), "float4 color() { return 0; }");
+        File.WriteAllText(Path.Combine(_project, "Draw.slang"),
+            "#include \"color.inc\"\n[shader(\"pixel\")] float4 Pixel() : SV_Target { return color(); }");
+        string path = Path.Combine(_project, "Draw.shader");
+        using var definition = new ShaderAsset { Name = "draw" };
+        definition.GetBlock<ShaderSourceBlock>().SourceNames = ["Draw.slang"];
+        await definition.SaveSourceAsync(path);
+        var project = new AssetProject(_project, [], sourceFormats: [new ShaderSourceFormat([first, second])]);
+        Guid id = await project.BuildAsync(path);
+        string output = Path.Combine(_project, Assert.Single(project.List()).Path);
+        string recordPath = SourceMeta.GetBuildPath(path);
+        using var record = System.Text.Json.JsonDocument.Parse(File.ReadAllBytes(recordPath));
+        string inputHash = record.RootElement.GetProperty("input_hash").GetString()!;
+        FileDependency[] inputs = record.RootElement.GetProperty("inputs").EnumerateArray()
+            .Select(input => new FileDependency
+            {
+                RelativePath = input.GetProperty("relative_path").GetString()!,
+                ContentHash = input.GetProperty("content_hash").GetString()!,
+            }).ToArray();
+        string[] redundant = [_project, first, Path.Combine(first, "."), second, first, _project];
+        ImportInputs equivalent = SlangShaderImporter.GetDefinitionInputs(definition, path, inputs,
+            redundant, _project)!;
+        Assert.Equal(inputHash, equivalent.InputHash);
+        Assert.NotEqual(inputHash, SlangShaderImporter.GetDefinitionInputs(definition, path, inputs,
+            [second, first], _project)!.InputHash);
+        Assert.Equal([_project, first, second],
+            SlangShaderImporter.CreateSessionDescription(path, [], redundant).SearchPaths!);
+
+        var timestamp = new DateTime(2001, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        File.SetLastWriteTimeUtc(output, timestamp);
+        File.SetLastWriteTimeUtc(recordPath, timestamp);
+        var reopened = new AssetProject(_project, [], sourceFormats: [new ShaderSourceFormat(redundant)]);
+        Assert.Equal(id, await reopened.BuildAsync(path));
+        Assert.Equal(timestamp, File.GetLastWriteTimeUtc(output));
+        Assert.Equal(timestamp, File.GetLastWriteTimeUtc(recordPath));
+        Assert.Equal(Assert.Single(project.List()).Version, Assert.Single(reopened.List()).Version);
+    }
+    [Fact]
     public async Task IndependentDefinitionUsesDeclaredEntriesWithoutCompanionMetadata()
     {
         string definitionPath = Path.Combine(_project, "Surface.shader");

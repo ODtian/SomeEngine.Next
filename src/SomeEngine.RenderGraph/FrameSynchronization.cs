@@ -11,6 +11,8 @@ internal sealed partial class FrameExecutor
     private List<QueueRelease>[] _releases = [];
     private List<AliasingResource>[] _aliasBeforeResources = [];
     private List<AliasingResource>[] _aliasAfterResources = [];
+    private readonly Dictionary<(GraphAccessTargetKind Kind, int Index), HashSet<(GraphAccessTargetKind Kind, int Index)>> _aliasScopeDependents = [];
+    private readonly List<(GraphAccessTargetKind Kind, int Index)> _aliasScopeChangeScratch = [];
     private List<int>[] _physicalPredecessors = [];
     private readonly List<PendingQueueRelease> _lateReleases = [];
     private readonly HashSet<Queue> _transferSources =
@@ -54,6 +56,110 @@ internal sealed partial class FrameExecutor
         }
     }
 
+    private bool RequiresComputeAliasReadVisibility(
+        Resource before, Resource after, int previousPass, int currentPass)
+    {
+        if (before is not Buffer || after is not Buffer || ReferenceEquals(before, after) ||
+            !_resourceRows.TryGetValue(before, out var beforeKey) || beforeKey.Kind != GraphAccessTargetKind.Buffer ||
+            !_resourceRows.TryGetValue(after, out var afterKey) || afterKey.Kind != GraphAccessTargetKind.Buffer ||
+            !ResourceExists(beforeKey) || !ResourceExists(afterKey))
+            return false;
+
+        // Track the dependency even while the scope predicate is false. A declaration can
+        // change without replacing either backing resource or its alias predecessor.
+        _collectSynchronization.AliasScopeSource = beforeKey;
+        if (previousPass < 0 || currentPass < 0) return false;
+        FrameBuffer source = _buffers[beforeKey.Index];
+        FrameBuffer destination = _buffers[afterKey.Index];
+        if (!ReferenceEquals(source.Resource, before) || !ReferenceEquals(destination.Resource, after) ||
+            source.LastPass != previousPass || destination.FirstPass != currentPass ||
+            source.Placement.Heap is null || !ReferenceEquals(source.Placement.Heap, destination.Placement.Heap))
+            return false;
+        ulong sourceOffset = source.Placement.Offset, destinationOffset = destination.Placement.Offset;
+        ulong sourceSize = source.Placement.Size, destinationSize = destination.Placement.Size;
+        if (sourceSize == 0 || destinationSize == 0 ||
+            (sourceOffset <= destinationOffset
+                ? destinationOffset - sourceOffset >= sourceSize
+                : sourceOffset - destinationOffset >= destinationSize))
+            return false;
+        var queue = _passes[previousPass].Queue;
+        if (queue is null || !ReferenceEquals(queue, _passes[currentPass].Queue) ||
+            _executionOrder.Position(previousPass) >= _executionOrder.Position(currentPass) ||
+            !_resourceAccessLists.TryGetValue(beforeKey, out List<int>? beforeAccesses) ||
+            !_resourceAccessLists.TryGetValue(afterKey, out List<int>? afterAccesses))
+            return false;
+
+        const ResourceAccess computeAccess = ResourceAccess.ShaderResource | ResourceAccess.UnorderedAccess;
+        bool sawUavWriter = false, sawFinalSrvRead = false, sawInitialUavWrite = false;
+        foreach (int index in beforeAccesses)
+        {
+            FrameResourceAccess access = _accesses[index];
+            if (!access.Connected || access.BufferDescriptorOnly) continue;
+            int pass = access.PassIndex;
+            if (pass < 0 || pass >= _passes.Count) return false;
+            if (!IsLive(pass)) continue;
+            if (access.TargetKind != GraphAccessTargetKind.Buffer || access.ResourceIndex != beforeKey.Index ||
+                access.Sync != PipelineSync.ComputeShading || access.Access == default ||
+                (access.Access & ~computeAccess) != default || !ReferenceEquals(_passes[pass].Queue, queue))
+                return false;
+            if (access.Mode is GraphAccessMode.Write or GraphAccessMode.ReadWrite)
+            {
+                if ((access.Access & ResourceAccess.UnorderedAccess) == default) return false;
+                sawUavWriter = true;
+            }
+            else if (access.Mode != GraphAccessMode.Read) return false;
+            if (pass == previousPass)
+            {
+                if (access.Mode != GraphAccessMode.Read || access.Access != ResourceAccess.ShaderResource)
+                    return false;
+                sawFinalSrvRead = true;
+            }
+        }
+        foreach (int index in afterAccesses)
+        {
+            FrameResourceAccess access = _accesses[index];
+            if (!access.Connected || access.BufferDescriptorOnly || access.PassIndex != currentPass) continue;
+            if (!IsLive(currentPass) || access.TargetKind != GraphAccessTargetKind.Buffer ||
+                access.ResourceIndex != afterKey.Index || access.Sync != PipelineSync.ComputeShading ||
+                access.Access != ResourceAccess.UnorderedAccess ||
+                access.Mode is not (GraphAccessMode.Write or GraphAccessMode.ReadWrite))
+                return false;
+            sawInitialUavWrite = true;
+        }
+        return sawUavWriter && sawFinalSrvRead && sawInitialUavWrite;
+    }
+
+    private void ExpandAliasScopeSynchronizationChanges()
+    {
+        _aliasScopeChangeScratch.Clear();
+        foreach (var key in _synchronizationChanges.Keys)
+            if (_aliasScopeDependents.TryGetValue(key, out var dependents))
+                _aliasScopeChangeScratch.AddRange(dependents);
+        // Expand once before enumeration. Rebuilding an alias decision does not itself
+        // change declarations, so propagation through the reverse index is not recursive.
+        foreach (var key in _aliasScopeChangeScratch) _synchronizationChanges[key] = false;
+        _aliasScopeChangeScratch.Clear();
+    }
+
+    private void UpdateAliasScopeSource(
+        (GraphAccessTargetKind Kind, int Index) owner,
+        (GraphAccessTargetKind Kind, int Index)? previous,
+        (GraphAccessTargetKind Kind, int Index)? next)
+    {
+        if (Nullable.Equals(previous, next)) return;
+        if (next is { } source)
+        {
+            if (!_aliasScopeDependents.TryGetValue(source, out var dependents))
+                _aliasScopeDependents.Add(source, dependents = []);
+            dependents.Add(owner);
+        }
+        if (previous is { } oldSource && _aliasScopeDependents.TryGetValue(oldSource, out var oldDependents))
+        {
+            oldDependents.Remove(owner);
+            if (oldDependents.Count == 0) _aliasScopeDependents.Remove(oldSource);
+        }
+    }
+
     private void ResolveAliasingBarrier((GraphAccessTargetKind Kind, int Index) key)
     {
         if (key.Kind == GraphAccessTargetKind.Buffer)
@@ -84,7 +190,11 @@ internal sealed partial class FrameExecutor
         int previousPass = FindAliasingPredecessorLastPass(
             before,
             currentPass);
-        AliasingResource beforeResource = new(before);
+        bool requireBufferReadVisibility = RequiresComputeAliasReadVisibility(before, after, previousPass, currentPass);
+        AliasingResource beforeResource = new(before)
+        {
+            RequireBufferReadVisibility = requireBufferReadVisibility,
+        };
         AliasingResource afterResource = new(after);
         if (previousPass >= 0)
         {
@@ -97,8 +207,9 @@ internal sealed partial class FrameExecutor
                 afterResource));
             return;
         }
-        Synchronization(currentPass).AliasBefore.Add(beforeResource);
-        Synchronization(currentPass).AliasAfter.Add(afterResource);
+        PassSynchronization synchronization = Synchronization(currentPass);
+        synchronization.AliasBefore.Add(beforeResource);
+        synchronization.AliasAfter.Add(afterResource);
     }
 
     private int FindAliasingPredecessorLastPass(
@@ -131,6 +242,7 @@ internal sealed partial class FrameExecutor
             return;
         }
         bool aliasActivated = resource.Placement.Aliases;
+        // Alias activation already established an all-commands barrier scope.
         BufferPhysicalState state = aliasActivated
             ? new BufferPhysicalState(
                 PipelineSync.All,
@@ -295,10 +407,9 @@ internal sealed partial class FrameExecutor
                 AddInitialCompletions(resource.EntryBoundaryStates, queue, pass);
             if (!seen && resource.Placement.Aliases)
             {
-                // The alias barrier leaves this buffer at NoAccess. Activate
-                // its first declared access with an explicit transition.
-                AddBufferTransition(-1, pass, buffer,
-                    pass == resource.FirstPass ? PipelineSync.All : PipelineSync.None, sync,
+                // Keep each queue's first declared alias access explicit. A None/NoAccess
+                // first-use transition can be elided by the enhanced-buffer backend.
+                AddBufferTransition(-1, pass, buffer, PipelineSync.All, sync,
                     ResourceAccess.NoAccess, access, false);
             }
 
@@ -679,8 +790,9 @@ internal sealed partial class FrameExecutor
                     Synchronization(placementPass).BeforeTextures.Add(pending.Texture);
                     break;
                 case PendingBarrierKind.Aliasing:
-                    Synchronization(placementPass).AliasBefore.Add(pending.AliasBefore);
-                    Synchronization(placementPass).AliasAfter.Add(pending.AliasAfter);
+                    PassSynchronization synchronization = Synchronization(placementPass);
+                    synchronization.AliasBefore.Add(pending.AliasBefore);
+                    synchronization.AliasAfter.Add(pending.AliasAfter);
                     break;
                 default:
                     DevelopmentCheck.Fail("Unknown barrier transition kind.");
@@ -1105,6 +1217,7 @@ internal sealed partial class FrameExecutor
         internal readonly List<PendingQueueRelease> LateReleases = [];
         internal readonly HashSet<int> WaitPasses = [];
         internal readonly Stack<PassSynchronization> Reusable = [];
+        internal (GraphAccessTargetKind Kind, int Index)? AliasScopeSource;
 
         internal void Clear()
         {
@@ -1114,14 +1227,19 @@ internal sealed partial class FrameExecutor
                 Reusable.Push(pass);
             }
             Passes.Clear(); LateReleases.Clear(); WaitPasses.Clear();
+            AliasScopeSource = null;
         }
     }
 
     private readonly Dictionary<(GraphAccessTargetKind Kind, int Index), ResourceSynchronization> _synchronizationByResource = [];
     private readonly Dictionary<int, HashSet<(GraphAccessTargetKind Kind, int Index)>> _synchronizationByPass = [];
-    private readonly Dictionary<int, HashSet<(GraphAccessTargetKind Kind, int Index)>> _initialWaitResources = [];
+    private readonly OrderedDictionary<int, HashSet<(GraphAccessTargetKind Kind, int Index)>> _initialWaitResources = [];
     private readonly Dictionary<(GraphAccessTargetKind Kind, int Index), bool> _synchronizationChanges = [];
     private readonly HashSet<int> _changedSynchronizationPasses = [];
+    private readonly HashSet<(GraphAccessTargetKind Kind, int Index)> _splitTextureResources = [];
+    private readonly HashSet<int> _splitTexturePassChanges = [];
+    private readonly List<(GraphAccessTargetKind Kind, int Index)> _completedSplitTextures = [];
+    private readonly HashSet<(GraphAccessTargetKind Kind, int Index)> _splitTextureChanges = [];
     private readonly HashSet<(GraphAccessTargetKind Kind, int Index)> _changedBoundaryResources = [];
     private readonly List<int> _previousPhysicalPredecessors = [];
     private ResourceSynchronization _collectSynchronization = null!;
@@ -1141,6 +1259,7 @@ internal sealed partial class FrameExecutor
     private void ResolveSynchronization()
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(GraphTrace.Synchronization);
+        ExpandAliasScopeSynchronizationChanges();
         EnsureCapacity(ref _beforeBufferBarriers, _passes.Count);
         EnsureCapacity(ref _afterBufferBarriers, _passes.Count);
         EnsureCapacity(ref _beforeTextureBarriers, _passes.Count);
@@ -1185,6 +1304,7 @@ internal sealed partial class FrameExecutor
             }
             // Derivation may reject a boundary. Do not detach the previous result until every
             // barrier and transfer for this resource has been constructed successfully.
+            UpdateAliasScopeSource(key, previous?.AliasScopeSource, exists ? value.AliasScopeSource : null);
             if (previous is not null)
             {
                 foreach (int pass in previous.Passes.Keys)
@@ -1192,15 +1312,43 @@ internal sealed partial class FrameExecutor
                     _changedSynchronizationPasses.Add(pass);
                     _synchronizationByPass[pass].Remove(key);
                 }
-                foreach (int pass in previous.WaitPasses) _initialWaitResources[pass].Remove(key);
+                foreach (int pass in previous.WaitPasses)
+                {
+                    if (value.WaitPasses.Contains(pass)) continue;
+
+                    int index = _initialWaitResources.IndexOf(pass);
+                    var resources = _initialWaitResources.GetAt(index).Value;
+                    resources.Remove(key);
+                    if (resources.Count != 0) continue;
+
+                    // Wait collection order does not determine submission order.
+                    int lastIndex = _initialWaitResources.Count - 1;
+                    var last = _initialWaitResources.GetAt(lastIndex);
+                    _initialWaitResources.RemoveAt(lastIndex);
+                    if (index != lastIndex)
+                        _initialWaitResources.SetAt(index, last.Key, last.Value);
+                }
                 foreach (PendingQueueRelease release in previous.LateReleases) _lateReleases.Remove(release);
             }
             if (!exists)
             {
                 _synchronizationByResource.Remove(key);
+                _splitTextureResources.Remove(key);
+                _splitTextureChanges.Remove(key);
                 continue;
             }
             _synchronizationByResource[key] = value;
+            if (key.Kind == GraphAccessTargetKind.Texture &&
+                value.Passes.Values.Any(pass => pass.AfterTextures.Any(barrier => barrier.Phase == BarrierPhase.Begin)))
+            {
+                _splitTextureResources.Add(key);
+                _splitTextureChanges.Add(key);
+            }
+            else
+            {
+                _splitTextureResources.Remove(key);
+                _splitTextureChanges.Remove(key);
+            }
             _synchronizationScratch = previous ?? new ResourceSynchronization();
             foreach (int pass in value.Passes.Keys)
             {
@@ -1211,6 +1359,7 @@ internal sealed partial class FrameExecutor
             }
             foreach (int pass in value.WaitPasses)
             {
+                if (previous?.WaitPasses.Contains(pass) == true) continue;
                 if (!_initialWaitResources.TryGetValue(pass, out var resources))
                     _initialWaitResources.Add(pass, resources = []);
                 resources.Add(key);
@@ -1237,12 +1386,73 @@ internal sealed partial class FrameExecutor
                 _aliasBeforeResources[pass].AddRange(value.AliasBefore); _aliasAfterResources[pass].AddRange(value.AliasAfter);
                 foreach (int predecessor in value.Predecessors) AddUnique(_physicalPredecessors[pass], predecessor);
             }
-            if (_previousPhysicalPredecessors.Count != _physicalPredecessors[pass].Count ||
-                _previousPhysicalPredecessors.Any(predecessor => !_physicalPredecessors[pass].Contains(predecessor)))
-                ChangeRecording(pass);
+            bool predecessorsChanged = _previousPhysicalPredecessors.Count != _physicalPredecessors[pass].Count;
+            if (!predecessorsChanged)
+                foreach (int predecessor in _previousPhysicalPredecessors)
+                {
+                    if (_physicalPredecessors[pass].Contains(predecessor)) continue;
+                    predecessorsChanged = true;
+                    break;
+                }
+            if (predecessorsChanged) ChangeRecording(pass);
         }
         _synchronizationChanges.Clear();
         _changedSynchronizationPasses.Clear();
+    }
+
+    private void KeepSplitTransitionsInSubmissions()
+    {
+        // Backing-resource rebinding and command data do not change split placement.
+        // BuildWaves reports actual submission membership changes separately.
+        bool submissionsChanged = !_reuseRecording && _changedSubmissions.Count != 0;
+        if (!submissionsChanged && _splitTextureChanges.Count == 0) return;
+        _splitTexturePassChanges.Clear();
+        _completedSplitTextures.Clear();
+        foreach (var key in submissionsChanged ? _splitTextureResources : _splitTextureChanges)
+        {
+            ResourceSynchronization resource = _synchronizationByResource[key];
+            int submission = -1;
+            bool crossesSubmission = false;
+            foreach ((int pass, PassSynchronization value) in resource.Passes)
+            {
+                if (!value.AfterTextures.Any(barrier => barrier.Phase == BarrierPhase.Begin) &&
+                    !value.BeforeTextures.Any(barrier => barrier.Phase == BarrierPhase.End)) continue;
+                int current = _submissionByPass[pass];
+                if (submission >= 0 && current != submission) { crossesSubmission = true; break; }
+                submission = current;
+            }
+            if (!crossesSubmission) continue;
+            _completedSplitTextures.Add(key);
+
+            // A submitted Begin cannot be rolled back when later recording fails. Keep both
+            // halves inside one accepted submission. Compacted ranges can combine producers,
+            // so use complete consumer transitions for this texture when its halves span groups.
+            foreach ((int pass, PassSynchronization value) in resource.Passes)
+            {
+                bool changed = value.AfterTextures.RemoveAll(barrier => barrier.Phase == BarrierPhase.Begin) != 0;
+                for (int index = 0; index < value.BeforeTextures.Count; index++)
+                    if (value.BeforeTextures[index].Phase == BarrierPhase.End)
+                    {
+                        value.BeforeTextures[index] = value.BeforeTextures[index] with { Phase = BarrierPhase.Complete };
+                        changed = true;
+                    }
+                if (changed) _splitTexturePassChanges.Add(pass);
+            }
+        }
+        foreach (var key in _completedSplitTextures) _splitTextureResources.Remove(key);
+        foreach (int pass in _splitTexturePassChanges)
+        {
+            InvalidateCommands(pass);
+            _beforeTextureBarriers[pass].Clear();
+            _afterTextureBarriers[pass].Clear();
+            foreach (var key in _synchronizationByPass[pass])
+            {
+                PassSynchronization value = _synchronizationByResource[key].Passes[pass];
+                _beforeTextureBarriers[pass].AddRange(value.BeforeTextures);
+                _afterTextureBarriers[pass].AddRange(value.AfterTextures);
+            }
+        }
+        _splitTextureChanges.Clear();
     }
 
     private void RefreshCompletionWaits(int waveCount)
@@ -1513,7 +1723,9 @@ internal sealed partial class FrameExecutor
                 T key = setRange(value, axis == 0
                     ? range with { FirstMipLevel = 0, MipLevelCount = 0 }
                     : range with { FirstArrayLayer = 0, ArrayLayerCount = 0 });
-                if (groups.TryGetValue(key, out int previousIndex))
+                ref int previousIndex = ref System.Runtime.InteropServices.CollectionsMarshal.GetValueRefOrAddDefault(
+                    groups, key, out bool hasPrevious);
+                if (hasPrevious)
                 {
                     TextureSubresourceRange previous = getRange(barriers[previousIndex])!.Value;
                     uint first = axis == 0 ? range.FirstMipLevel : range.FirstArrayLayer;
@@ -1532,7 +1744,7 @@ internal sealed partial class FrameExecutor
                         continue;
                     }
                 }
-                groups[key] = count;
+                previousIndex = count;
                 barriers[count++] = value;
             }
             if (count < barriers.Count)

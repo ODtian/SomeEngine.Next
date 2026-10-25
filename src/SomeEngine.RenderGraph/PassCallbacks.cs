@@ -71,6 +71,7 @@ internal sealed class RasterPassCallbackStorage<TStatic, TFrame> : PassCallbackS
     public void SetStaticData(in TStatic value) => _staticData = value;
 
     public void SetFrameData(in TFrame value) => _frameData = value;
+    public bool FrameValueEquals(in TFrame value) => EqualityComparer<TFrame>.Default.Equals(_frameData, value);
     internal override void Record(RenderGraphFrameState frame, int passIndex, CommandContext context)
     {
         var scope = new RasterPassCommandScope(frame, passIndex, context);

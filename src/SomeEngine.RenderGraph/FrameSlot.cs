@@ -81,10 +81,8 @@ internal sealed class FrameSlot : IDisposable
         return true;
     }
 
-    internal void Reset(IGraphicsBackend backend)
+    internal void ResetCompleted()
     {
-        if (!IsReady(backend))
-            throw new InvalidOperationException("The frame slot is still in flight.");
         _state?.CollectGpuTimes();
         for (int i = _objects.Count - 1; i >= 0; i--)
         {
@@ -101,23 +99,14 @@ internal sealed class FrameSlot : IDisposable
     internal void SetCompletions(ReadOnlySpan<QueueCompletion> completions)
     {
         _completions.Clear();
+        // The executor has already kept the greatest completion value for each queue.
         foreach (QueueCompletion completion in completions)
-        {
-            bool found = false;
-            for (int i = 0; i < _completions.Count; i++)
-            {
-                if (!ReferenceEquals(_completions[i].Queue, completion.Queue)) continue;
-                if (completion.Value > _completions[i].Value) _completions[i] = completion;
-                found = true;
-                break;
-            }
-            if (!found) _completions.Add(completion);
-        }
+            _completions.Add(completion);
     }
 
     internal void CollectCompleted(IGraphicsBackend backend)
     {
-        if (IsReady(backend) && _completions.Count != 0) Reset(backend);
+        if (IsReady(backend) && _completions.Count != 0) ResetCompleted();
     }
 
     public void Dispose()

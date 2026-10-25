@@ -93,7 +93,11 @@ public readonly record struct RenderGraphFrameOptions(
     FrameSubmissionMode SubmissionMode = FrameSubmissionMode.Pipelined,
     RenderGraphDebugOptions Debug = RenderGraphDebugOptions.None,
     RenderGraphDiagnosticsHandler? Diagnostics = null,
-    Action<RenderGraphGpuTimes>? GpuTimes = null);
+    Action<RenderGraphGpuTimes>? GpuTimes = null)
+{
+    /// <summary>Receives execution statistics without requesting diagnostic details.</summary>
+    public RenderGraphStatisticsHandler? Statistics { get; init; }
+}
 
 public readonly struct PassQueueSelection : IEquatable<PassQueueSelection>
 {

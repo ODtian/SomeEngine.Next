@@ -184,10 +184,11 @@ public sealed partial class ShaderBlock : AssetBlock
         var targetCode = new byte[]?[shader.SlangTargetCount];
         var entryCode = new byte[checked(shader.SlangTargetCount * entryCount)][];
         var usedParameters = new ImmutableHashSet<SlangDescriptorLocation>[entryCode.Length];
+        IReadOnlyCollection<ulong> contentKeys = copy.ContentKeys;
         for (int targetIndex = 0; targetIndex < shader.SlangTargetCount; targetIndex++)
         {
             ulong targetKey = TargetCodeKey(sessionDescription, targetIndex, arguments, entryPoint);
-            targetCode[targetIndex] = copy.ContentKeys.Contains(targetKey)
+            targetCode[targetIndex] = contentKeys.Contains(targetKey)
                 ? await AcquireCodeAsync(copy, targetKey, cancellationToken).ConfigureAwait(false)
                 : null;
             for (int entryIndex = 0; entryIndex < entryCount; entryIndex++)
@@ -201,9 +202,9 @@ public sealed partial class ShaderBlock : AssetBlock
                 }
                 ulong codeKey = EntryCodeKey(sessionDescription, targetIndex, entryIndex, arguments, entryPoint);
                 ulong usageKey = EntryUsageKey(sessionDescription, targetIndex, entryIndex, arguments, entryPoint);
-                if (!copy.ContentKeys.Contains(codeKey))
+                if (!contentKeys.Contains(codeKey))
                     throw new InvalidDataException($"Shader '{name}' is missing cooked code for its target and entry specialization.");
-                if (!copy.ContentKeys.Contains(usageKey))
+                if (!contentKeys.Contains(usageKey))
                     throw new InvalidDataException("Saved shader entry code requires its cooked resource usage metadata.");
                 entryCode[index] = await AcquireCodeAsync(copy, codeKey, cancellationToken).ConfigureAwait(false);
                 usedParameters[index] = ReadEntryUsage(await AcquireCodeAsync(copy, usageKey, cancellationToken).ConfigureAwait(false));

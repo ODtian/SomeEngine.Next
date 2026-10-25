@@ -24,6 +24,13 @@ public sealed class WarpCommandReuseTests(D3D12TestCompiler shaderCompiler)
         D3D12TestShader shader = shaderCompiler.Compile(
             "descriptor_content_reuse", source, [new("computeMain", SlangStage.Compute)], "sm_6_2");
         VariableLayoutReflection layout = shader.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null;
+        D3D12TestShader alternateShader = shaderCompiler.Compile(
+            "descriptor_content_reuse_alternate",
+            source.Replace("value + bias.value", "value + bias.value + 101u", StringComparison.Ordinal),
+            [new("computeMain", SlangStage.Compute)], "sm_6_2");
+        VariableLayoutReflection alternateLayout =
+            alternateShader.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null;
+        Assert.True(layout != alternateLayout);
         TypeLayoutReflection dataLayout = layout.TypeLayout.UnwrapArray();
         if (dataLayout.Kind is SlangTypeKind.ConstantBuffer or SlangTypeKind.ParameterBlock)
             dataLayout = dataLayout.ElementTypeLayout.UnwrapArray();
@@ -32,6 +39,9 @@ public sealed class WarpCommandReuseTests(D3D12TestCompiler shaderCompiler)
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using Pipeline pipeline = backend.CreateComputePipeline(device,
             new ComputePipelineDesc(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(0), shader.GetEntryCode(0)));
+        using Pipeline alternatePipeline = backend.CreateComputePipeline(device,
+            new ComputePipelineDesc(alternateShader.SlangCode, alternateShader.Reflection,
+                alternateShader.GetEntryPoint(0), alternateShader.GetEntryCode(0)));
         using Buffer constants = backend.CreateBuffer(device, new BufferDesc(512, BufferUsages.Constant), MemoryType.Upload);
         using (MappedBuffer mapping = backend.Map(constants, MapType.Write, BufferRange.Whole))
         {
@@ -45,7 +55,7 @@ public sealed class WarpCommandReuseTests(D3D12TestCompiler shaderCompiler)
         using BufferUav firstView = backend.CreateBufferUav(device, new(first, BufferRange.Whole, Format.R32UInt));
         BufferUav secondView = backend.CreateBufferUav(device, new(second, BufferRange.Whole, Format.R32UInt));
         using Buffer readback = backend.CreateBuffer(device,
-            new BufferDesc(4, BufferUsages.CopyDestination), MemoryType.Readback);
+            new BufferDesc(24, BufferUsages.CopyDestination), MemoryType.Readback);
         using CommandContext context = backend.CreateCommandContext(device, new(QueueType.Compute, 0, 1));
         Queue queue = backend.GetQueue(device, QueueType.Compute);
 
@@ -67,29 +77,76 @@ public sealed class WarpCommandReuseTests(D3D12TestCompiler shaderCompiler)
                 backend.SetPipeline(context, pipeline);
                 byte[] ordinary = new byte[ordinarySize];
                 MemoryMarshal.Write(ordinary, (uint)(frame * 10 + 1));
+                void CopyStage(ulong offset)
+                {
+                    ((IGraphicsBackend)backend).Barrier(context, new BufferBarrier(output, PipelineSync.ComputeShading, PipelineSync.Copy,
+                        ResourceAccess.UnorderedAccess, ResourceAccess.CopySource));
+                    backend.CopyBuffer(context, new(output, 0, readback, offset, 4));
+                    ((IGraphicsBackend)backend).Barrier(context, new BufferBarrier(output, PipelineSync.Copy, PipelineSync.ComputeShading,
+                        ResourceAccess.CopySource, ResourceAccess.UnorderedAccess));
+                }
+
                 backend.SetTransientParameterBindings(context, new(layout, resources, ordinary));
                 backend.Dispatch(context, new(1, 1, 1));
-                ((IGraphicsBackend)backend).Barrier(context, new BufferBarrier(output, PipelineSync.ComputeShading, PipelineSync.ComputeShading,
-                    ResourceAccess.UnorderedAccess, ResourceAccess.UnorderedAccess));
+                CopyStage(0);
+
+                // Prime immediately before each comparison so copy commands cannot mask cache coverage.
+                backend.SetTransientParameterBindings(context, new(layout, resources, ordinary));
+                // Identical binding must preserve the same resources and ordinary data.
+                backend.SetTransientParameterBindings(context, new(layout, resources, ordinary));
+                backend.Dispatch(context, new(1, 1, 1));
+                CopyStage(4);
+
+                // Same layout/resources, different ordinary bytes.
+                backend.SetTransientParameterBindings(context, new(layout, resources, ordinary));
                 MemoryMarshal.Write(ordinary, (uint)(frame * 10 + 2));
+                backend.SetTransientParameterBindings(context, new(layout, resources, ordinary));
+                backend.Dispatch(context, new(1, 1, 1));
+                CopyStage(8);
+
+                // Same layout/ordinary bytes, different constant-buffer view range.
+                backend.SetTransientParameterBindings(context, new(layout, resources, ordinary));
+                ResourceBinding[] changedResources = [resources[0],
+                    ResourceBinding.ConstantBuffer(constants, new(frame < 3 ? 256ul : 0ul, 256))];
+                backend.SetTransientParameterBindings(context, new(layout, changedResources, ordinary));
+                backend.Dispatch(context, new(1, 1, 1));
+                CopyStage(12);
+
+                // A distinct shader layout and pipeline must observe their own binding state.
+                backend.SetPipeline(context, alternatePipeline);
+                backend.SetTransientParameterBindings(context, new(alternateLayout, changedResources, ordinary));
+                backend.Dispatch(context, new(1, 1, 1));
+                CopyStage(16);
+
+                backend.SetPipeline(context, pipeline);
                 backend.SetTransientParameterBindings(context, new(layout, resources, ordinary));
                 backend.Dispatch(context, new(1, 1, 1));
                 ((IGraphicsBackend)backend).Barrier(context, new BufferBarrier(output, PipelineSync.ComputeShading, PipelineSync.Copy,
                     ResourceAccess.UnorderedAccess, ResourceAccess.CopySource));
-                backend.CopyBuffer(context, new(output, 0, readback, 0, 4));
+                backend.CopyBuffer(context, new(output, 0, readback, 20, 4));
                 using RecordedCommands commands = backend.End(context);
                 if (frame == 6) constants.Dispose();
                 QueueCompletion completion = backend.Submit(queue, new([], [], [commands], [], []));
                 Assert.Equal(WaitStatus.Completed, backend.WaitCpu(completion, TimeSpan.FromSeconds(10)));
-                using MappedBuffer mapped = backend.Map(readback, MapType.Read, new(0, 4));
-                mapped.Invalidate(new(0, 4));
-                Assert.Equal((uint)(frame * 10 + 2) + (frame < 3 ? 17u : 29u), MemoryMarshal.Read<uint>(mapped.Bytes));
+                using MappedBuffer mapped = backend.Map(readback, MapType.Read, new(0, 24));
+                mapped.Invalidate(new(0, 24));
+                uint biasValue = frame < 3 ? 17u : 29u;
+                uint changedBiasValue = frame < 3 ? 29u : 17u;
+                uint firstValue = (uint)(frame * 10 + 1);
+                uint changedValue = (uint)(frame * 10 + 2);
+                uint[] expected = [firstValue + biasValue, firstValue + biasValue,
+                    changedValue + biasValue, changedValue + changedBiasValue,
+                    changedValue + changedBiasValue + 101u, changedValue + biasValue];
+                for (int index = 0; index < expected.Length; index++)
+                    Assert.Equal(expected[index], MemoryMarshal.Read<uint>(mapped.Bytes[(index * 4)..]));
                 backend.CollectCompleted(device);
             }
         }
         finally
         {
             secondView.Dispose();
+            GC.KeepAlive(shader);
+            GC.KeepAlive(alternateShader);
         }
     }
 
@@ -169,6 +226,8 @@ public sealed class WarpCommandReuseTests(D3D12TestCompiler shaderCompiler)
     {
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
+        // This regression must exercise enhanced barrier batches.
+        Assert.True(device.Capabilities.SupportsConcurrentBufferReads);
         using CommandContext context = backend.CreateCommandContext(device, new(QueueType.Graphics, 0, 1));
         using Buffer upload = backend.CreateBuffer(device, new BufferDesc(4, BufferUsages.CopySource), MemoryType.Upload);
         using Buffer readback = backend.CreateBuffer(device, new BufferDesc((ulong)count * 4, BufferUsages.CopyDestination), MemoryType.Readback);

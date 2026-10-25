@@ -27,7 +27,15 @@ internal sealed class AssetPackIndex : IBinarySerializable<AssetPackIndex>
         Entries = new List<AssetPackEntry>(capacity);
     }
 
+    // Only builder-created indexes are written; decoded indexes use EntriesById.
+    private AssetPackIndex(Dictionary<Guid, AssetPackEntry> entriesById)
+    {
+        Entries = null!;
+        EntriesById = entriesById;
+    }
+
     public List<AssetPackEntry> Entries { get; }
+    internal IReadOnlyDictionary<Guid, AssetPackEntry>? EntriesById { get; }
 
     public static Guid TypeId => StableTypeId;
     public static ulong SchemaFingerprint => Fingerprint;
@@ -59,8 +67,7 @@ internal sealed class AssetPackIndex : IBinarySerializable<AssetPackIndex>
                 "asset pack catalog",
                 elementAllocationBytes: 256,
                 fixedAllocationBytes: 256);
-            var result = new AssetPackIndex(count);
-            var assetIds = new HashSet<Guid>(count);
+            var entriesById = new Dictionary<Guid, AssetPackEntry>(count);
             var chunkKeys = new HashSet<ulong>(count);
             for (int i = 0; i < count; i++)
             {
@@ -80,19 +87,18 @@ internal sealed class AssetPackIndex : IBinarySerializable<AssetPackIndex>
                     throw new InvalidDataException("Asset pack entry has the reserved chunk key zero.");
                 if (authenticationDigest.IsZero)
                     throw new InvalidDataException("Asset pack entry has no document authentication digest.");
-                if (!assetIds.Add(assetId))
-                    throw new InvalidDataException($"Asset pack catalog contains duplicate asset id {assetId}.");
-                if (!chunkKeys.Add(chunkKey))
-                    throw new InvalidDataException($"Asset pack catalog contains duplicate chunk key 0x{chunkKey:X16}.");
-
-                result.Entries.Add(new AssetPackEntry(assetId, assetType, chunkKey, schemaFingerprint)
+                var entry = new AssetPackEntry(assetId, assetType, chunkKey, schemaFingerprint)
                 {
                     DocumentVersion = documentVersion,
                     DocumentAuthenticationDigest = authenticationDigest,
-                });
+                };
+                if (!entriesById.TryAdd(assetId, entry))
+                    throw new InvalidDataException($"Asset pack catalog contains duplicate asset id {assetId}.");
+                if (!chunkKeys.Add(chunkKey))
+                    throw new InvalidDataException($"Asset pack catalog contains duplicate chunk key 0x{chunkKey:X16}.");
             }
 
-            return result;
+            return new AssetPackIndex(entriesById);
         }
         finally
         {
@@ -534,6 +540,7 @@ public sealed class AssetPackBuilder
         string temporary = Path.Combine(
             directory,
             $".{Path.GetFileName(fullPath)}.{Guid.NewGuid():N}.tmp");
+        bool publicationStarted = false;
         try
         {
             await using (var stream = new FileStream(
@@ -550,12 +557,14 @@ public sealed class AssetPackBuilder
             }
 
             cancellationToken.ThrowIfCancellationRequested();
+            publicationStarted = true;
             if (File.Exists(fullPath)) File.Replace(temporary, fullPath, null);
             else File.Move(temporary, fullPath);
         }
         catch
         {
-            if (File.Exists(temporary))
+            // A failed replacement can leave the completed temporary as the only copy.
+            if (!publicationStarted && File.Exists(temporary))
                 File.Delete(temporary);
             throw;
         }
@@ -643,7 +652,7 @@ public sealed class AssetPack : IAsyncDisposable
     {
         _document = document;
         _footer = footer;
-        _entries = document.Root.Entries.ToDictionary(static entry => entry.AssetId);
+        _entries = document.Root.EntriesById!;
     }
 
     public Guid Generation => _document.Generation;
@@ -806,6 +815,45 @@ public sealed class AssetPack : IAsyncDisposable
             && candidateHash.FixedTimeEquals(descriptor.ContentHash);
     }
 
+    /// <summary>
+    /// Reads an uncompressed nested asset into one independently owned array and
+    /// verifies its complete decoded content against the pack directory hash.
+    /// </summary>
+    public async ValueTask<byte[]> ReadVerifiedAssetBytesAsync(
+        Guid assetId,
+        CancellationToken cancellationToken = default)
+    {
+        if (!_entries.TryGetValue(assetId, out AssetPackEntry? entry))
+            throw new KeyNotFoundException($"Asset {assetId} was not found in pack generation {Generation}.");
+
+        BinaryChunkEntry descriptor = await _document.FindChunkAsync(entry.ChunkKey, cancellationToken)
+            .ConfigureAwait(false)
+            ?? throw new InvalidDataException($"Pack catalog chunk 0x{entry.ChunkKey:X16} is missing.");
+        if (descriptor.TypeFingerprint != entry.SchemaFingerprint)
+        {
+            throw SerializationErrors.CreateDataException(
+                SerializationError.SchemaMismatch,
+                $"Pack chunk fingerprint 0x{descriptor.TypeFingerprint:X16} does not match catalog " +
+                $"fingerprint 0x{entry.SchemaFingerprint:X16}.");
+        }
+        cancellationToken.ThrowIfCancellationRequested();
+        if (descriptor.Compression != ChunkCompression.None)
+        {
+            throw new InvalidOperationException(
+                $"Chunk 0x{descriptor.Key:X16} is compressed and cannot provide nested random access. " +
+                "Store nested binary documents uncompressed and compress their semantic chunks instead.");
+        }
+
+        byte[]? bytes = null;
+        Memory<byte>? result = await _document.TryReadChunkAsync(
+            entry.ChunkKey,
+            length => bytes = new byte[length],
+            cancellationToken).ConfigureAwait(false);
+        if (!result.HasValue || bytes is null)
+            throw new InvalidDataException($"Pack catalog chunk 0x{entry.ChunkKey:X16} is missing.");
+        return bytes;
+    }
+
     public async ValueTask<IRangeSource> OpenAssetSourceAsync(
         Guid assetId,
         CancellationToken cancellationToken = default)
@@ -825,8 +873,7 @@ public sealed class AssetPack : IAsyncDisposable
         BinaryDocument<AssetPackIndex> document = _document.Duplicate();
         try
         {
-            IRangeSource source = await document.OpenChunkRangeSourceAsync(entry.ChunkKey, cancellationToken)
-                .ConfigureAwait(false);
+            IRangeSource source = document.OpenChunkRangeSource(descriptor, cancellationToken);
             return new PackAssetRangeSource(entry, Generation, source, document);
         }
         catch

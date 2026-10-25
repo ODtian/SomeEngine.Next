@@ -145,7 +145,8 @@ internal sealed unsafe partial class D3D12Backend :
         ThrowIfDisposed();
         IDXGIFactory6* factory = EnsureFactory();
         GpuPreference preference = ToGpuPreference(options.Preference);
-        List<AdapterInfo> adapters = [];
+        List<AdapterInfo>? adapters = destination.IsEmpty ? null : [];
+        int adapterCount = 0;
 
         for (uint index = 0; ; index++)
         {
@@ -172,7 +173,13 @@ factory, index,
 
                 bool software = (native.Flags & AdapterFlag3.Software) != 0;
                 if ((!software || options.IncludeSoftware) && SupportsDirect3D12(adapter))
-                    adapters.Add(ToAdapterInfo(adapter, native));
+                {
+                    AdapterInfo info = ToAdapterInfo(adapter, native);
+                    if (adapters is null)
+                        adapterCount = checked(adapterCount + 1);
+                    else
+                        adapters.Add(info);
+                }
             }
             finally
             {
@@ -181,11 +188,12 @@ factory, index,
             }
         }
 
-        requiredCount = adapters.Count;
+        requiredCount = adapters?.Count ?? adapterCount;
         if (destination.Length < requiredCount)
             return false;
 
-        CollectionsMarshal.AsSpan(adapters).CopyTo(destination);
+        if (adapters is not null)
+            CollectionsMarshal.AsSpan(adapters).CopyTo(destination);
         return true;
     }
 

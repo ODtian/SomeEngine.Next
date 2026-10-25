@@ -161,6 +161,7 @@ internal sealed class FrameOutputVerifier : IDisposable
 
     internal FrameOutputMetrics Analyze()
     {
+        if (_format != Format.R8G8B8A8UNorm) throw new InvalidOperationException();
         byte minRed = byte.MaxValue;
         byte minGreen = byte.MaxValue;
         byte minBlue = byte.MaxValue;

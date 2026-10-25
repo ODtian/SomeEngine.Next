@@ -52,7 +52,7 @@ ProjectSpec[] specs =
     Product("SomeEngine.ECS"),
     Product("SomeEngine.ECS.Systems"),
     Product("SomeEngine.ECS.Serialization"),
-    Product("SomeEngine.ECS.SourceGen", includeInCompiledScan: false),
+    Product("SomeEngine.ECS.SourceGenerators", includeInCompiledScan: false),
 ];
 #else
 ProjectSpec[] specs =
@@ -1301,7 +1301,7 @@ string AssemblyLabel(string assembly) => assembly switch
     "SomeEngine.ECS" => "ECS",
     "SomeEngine.ECS.Systems" => "Systems",
     "SomeEngine.ECS.Serialization" => "Serialization",
-    "SomeEngine.ECS.SourceGen" => "SourceGen",
+    "SomeEngine.ECS.SourceGenerators" => "SourceGenerators",
     "SomeEngine.Generators" => "Generator",
     "SomeEngine.Graphics" => "RHI",
     "SomeEngine.Graphics.Direct3D12" => "D3D12",
@@ -1779,17 +1779,17 @@ static ReviewedMaterializationSite ReviewToArraySite(
         ("src/SomeEngine.ECS.Serialization/WorldSerializer.ManifestValidation.cs",
             "SomeEngine.ECS.Serialization.WorldSerializer", "SortManifest") =>
             ("serialization-boundary", 1),
-        ("src/SomeEngine.ECS.SourceGen/BundleGenerator.cs",
-            "SomeEngine.ECS.SourceGen.BundleGenerator", "GenerateSource") =>
+        ("src/SomeEngine.ECS.SourceGenerators/BundleGenerator.cs",
+            "SomeEngine.ECS.SourceGenerators.BundleGenerator", "GenerateSource") =>
             ("source-generation", 4),
-        ("src/SomeEngine.ECS.SourceGen/JobEntityGenerator.cs",
-            "SomeEngine.ECS.SourceGen.JobEntityGenerator", "BuildModel") =>
+        ("src/SomeEngine.ECS.SourceGenerators/JobEntityGenerator.cs",
+            "SomeEngine.ECS.SourceGenerators.JobEntityGenerator", "BuildModel") =>
             ("source-generation", 1),
-        ("src/SomeEngine.ECS.SourceGen/JobEntityGenerator.cs",
-            "SomeEngine.ECS.SourceGen.JobEntityGenerator", "Generate") =>
+        ("src/SomeEngine.ECS.SourceGenerators/JobEntityGenerator.cs",
+            "SomeEngine.ECS.SourceGenerators.JobEntityGenerator", "Generate") =>
             ("source-generation", 1),
-        ("src/SomeEngine.ECS.SourceGen/SerializationGenerator.cs",
-            "SomeEngine.ECS.SourceGen.SerializationGenerator", "AddEnumSchema") =>
+        ("src/SomeEngine.ECS.SourceGenerators/SerializationGenerator.cs",
+            "SomeEngine.ECS.SourceGenerators.SerializationGenerator", "AddEnumSchema") =>
             ("source-generation", 1),
         _ => throw new InvalidOperationException(
             $"Unreviewed ToArray site: {site.File}:{site.Line} " +

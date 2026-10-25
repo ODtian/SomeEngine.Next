@@ -198,10 +198,18 @@ public sealed class MaterialBindless : IDisposable, IRenderGraphFrameExecutionOb
         {
             ref readonly MaterialResourceBinding binding = ref state.Bindings[valueIndex];
             uint materialSlot = binding.MaterialSlot;
+            if (binding.Kind == MaterialResourceKind.Sampler)
+            {
+                UpdateSamplerSlot(
+                    ref frame,
+                    state,
+                    valueIndex,
+                    material.GetSampler(materialSlot));
+                continue;
+            }
             object? raw = binding.Kind switch
             {
                 MaterialResourceKind.TextureSrv or MaterialResourceKind.TextureUav => material.GetTexture(materialSlot),
-                MaterialResourceKind.Sampler => material.GetSampler(materialSlot),
                 _ => material.GetDeviceResource(materialSlot),
             };
             switch (binding.Kind)
@@ -223,11 +231,8 @@ public sealed class MaterialBindless : IDisposable, IRenderGraphFrameExecutionOb
                         sync);
                     UpdateTextureSlot(
                         ref frame,
-                        material,
                         state,
                         valueIndex,
-                        materialSlot,
-                        texture,
                         use);
                     break;
                 }
@@ -243,33 +248,15 @@ public sealed class MaterialBindless : IDisposable, IRenderGraphFrameExecutionOb
                         sync);
                     UpdateTextureSlot(
                         ref frame,
-                        material,
                         state,
                         valueIndex,
-                        materialSlot,
-                        texture,
                         use);
                     break;
                 }
-                case MaterialResourceKind.Sampler:
-                    if (raw is not SamplerDesc sampler)
-                    {
-                        throw new InvalidOperationException(
-                            $"Material slot {materialSlot} declares SamplerDesc but has no sampler value.");
-                    }
-                    UpdateSamplerSlot(
-                        ref frame,
-                        material,
-                        state,
-                        valueIndex,
-                        materialSlot,
-                        sampler);
-                    break;
                 case MaterialResourceKind.BufferSrv:
                     UpdateDeviceResourceSlot(
                         ref frame,
                         ref pass,
-                        material,
                         state,
                         valueIndex,
                         materialSlot,
@@ -280,7 +267,6 @@ public sealed class MaterialBindless : IDisposable, IRenderGraphFrameExecutionOb
                     UpdateDeviceResourceSlot(
                         ref frame,
                         ref pass,
-                        material,
                         state,
                         valueIndex,
                         materialSlot,
@@ -291,7 +277,6 @@ public sealed class MaterialBindless : IDisposable, IRenderGraphFrameExecutionOb
                     UpdateDeviceResourceSlot(
                         ref frame,
                         ref pass,
-                        material,
                         state,
                         valueIndex,
                         materialSlot,
@@ -302,7 +287,6 @@ public sealed class MaterialBindless : IDisposable, IRenderGraphFrameExecutionOb
                     UpdateDeviceResourceSlot(
                         ref frame,
                         ref pass,
-                        material,
                         state,
                         valueIndex,
                         materialSlot,
@@ -320,11 +304,8 @@ public sealed class MaterialBindless : IDisposable, IRenderGraphFrameExecutionOb
 
     private void UpdateTextureSlot(
         ref RenderGraphFrame frame,
-        Material material,
         MaterialState state,
         int valueIndex,
-        uint materialSlot,
-        EngineTexture? texture,
         in TextureUse use)
     {
         SlotState? current = state.Slots[valueIndex];
@@ -341,12 +322,8 @@ public sealed class MaterialBindless : IDisposable, IRenderGraphFrameExecutionOb
             allocation = existing;
         }
 
-        ulong slotRevision = material.GetPropertyRevision(materialSlot);
         if (current is null
-            || !ReferenceEquals(current.Texture, texture)
-            || current.TextureRevision != (texture?.Revision ?? 0)
             || !ReferenceEquals(current.TextureView, use.View)
-            || current.SlotRevision != slotRevision
             || current.Allocation != allocation)
         {
             _backend.WriteDescriptor(
@@ -359,9 +336,6 @@ public sealed class MaterialBindless : IDisposable, IRenderGraphFrameExecutionOb
             state.Slots[valueIndex] = new SlotState
             {
                 Allocation = allocation,
-                SlotRevision = slotRevision,
-                Texture = texture,
-                TextureRevision = texture?.Revision ?? 0,
                 TextureView = use.View,
             };
         }
@@ -369,17 +343,12 @@ public sealed class MaterialBindless : IDisposable, IRenderGraphFrameExecutionOb
 
     private void UpdateSamplerSlot(
         ref RenderGraphFrame frame,
-        Material material,
         MaterialState state,
         int valueIndex,
-        uint materialSlot,
         in SamplerDesc description)
     {
         SlotState? current = state.Slots[valueIndex];
-        ulong slotRevision = material.GetPropertyRevision(materialSlot);
-        if (current is not null
-            && current.SlotRevision == slotRevision
-            && current.SamplerDescription == description)
+        if (current?.Sampler is { } currentSampler && currentSampler.Resource.Description == description)
         {
             return;
         }
@@ -388,19 +357,23 @@ public sealed class MaterialBindless : IDisposable, IRenderGraphFrameExecutionOb
         DescriptorAllocation allocation = current?.Allocation is { } existing
             ? existing
             : AllocateDescriptor(shape);
-        Sampler sampler = _backend.CreateSampler(_device, description);
+        RenderDevice.SamplerReference? sampler = null;
         try
         {
+            sampler = _renderDevice.RetainSampler(description);
             _backend.WriteDescriptor(
                 allocation.Pool.Table,
                 allocation.Slot,
-                ResourceBinding.SampledWith(sampler));
+                ResourceBinding.SampledWith(sampler.Resource));
         }
         catch
         {
-            sampler.Dispose();
-            if (current?.Allocation is null)
-                allocation.Pool.Free(allocation.Slot);
+            try { sampler?.Dispose(); }
+            finally
+            {
+                if (current?.Allocation is null)
+                    allocation.Pool.Free(allocation.Slot);
+            }
             throw;
         }
 
@@ -412,16 +385,13 @@ public sealed class MaterialBindless : IDisposable, IRenderGraphFrameExecutionOb
         state.Slots[valueIndex] = new SlotState
         {
             Allocation = allocation,
-            SlotRevision = slotRevision,
             Sampler = sampler,
-            SamplerDescription = description,
         };
     }
 
     private void UpdateDeviceResourceSlot(
         ref RenderGraphFrame frame,
         ref PassDefinition pass,
-        Material material,
         MaterialState state,
         int valueIndex,
         uint materialSlot,
@@ -527,9 +497,7 @@ public sealed class MaterialBindless : IDisposable, IRenderGraphFrameExecutionOb
             allocation = existing;
         }
 
-        ulong slotRevision = material.GetPropertyRevision(materialSlot);
         if (current is not null &&
-            current.SlotRevision == slotRevision &&
             ReferenceEquals(current.ResourceView, resource) &&
             current.Allocation == allocation)
         {
@@ -543,7 +511,6 @@ public sealed class MaterialBindless : IDisposable, IRenderGraphFrameExecutionOb
         state.Slots[valueIndex] = new SlotState
         {
             Allocation = allocation,
-            SlotRevision = slotRevision,
             ResourceView = resource,
         };
     }
@@ -871,12 +838,8 @@ public sealed class MaterialBindless : IDisposable, IRenderGraphFrameExecutionOb
     private sealed class SlotState
     {
         internal DescriptorAllocation? Allocation { get; init; }
-        internal ulong SlotRevision { get; init; }
-        internal EngineTexture? Texture { get; init; }
-        internal ulong TextureRevision { get; init; }
         internal DeviceResource? TextureView { get; init; }
-        internal Sampler? Sampler { get; init; }
-        internal SamplerDesc SamplerDescription { get; init; }
+        internal RenderDevice.SamplerReference? Sampler { get; init; }
         internal DeviceResource? ResourceView { get; init; }
     }
 

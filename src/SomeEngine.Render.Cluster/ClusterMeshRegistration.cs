@@ -99,10 +99,10 @@ internal sealed partial class ClusterMeshes
                 }
                 if (pagesRegistered)
                 {
-                    uint[] lowestDetailPageIds = source?.LowestDetailPageIndices.Span
-                        .ToArray()
-                        .Select(localPage => checked(existingFirstPage + localPage))
-                        .ToArray() ?? [];
+                    ReadOnlySpan<uint> localPages = source is null ? [] : source.LowestDetailPageIndices.Span;
+                    uint[] lowestDetailPageIds = localPages.IsEmpty ? [] : new uint[localPages.Length];
+                    for (int index = 0; index < localPages.Length; index++)
+                        lowestDetailPageIds[index] = checked(existingFirstPage + localPages[index]);
                     return new ClusterMeshRegistrationResult(
                         new ClusterMeshRegistration(
                             mesh,
@@ -149,7 +149,7 @@ internal sealed partial class ClusterMeshes
                 // reservation completes before either canonical registry is mutated.
                 _pages.ReserveRegistration(pageRegistration);
                 _bvh.ReserveCommit(bvh);
-                ClusterPageFixups.Group[] groups = _fixups.ReserveRegistration(bvh);
+                ClusterPageFixups.Registration groups = _fixups.ReserveRegistration(bvh);
 
                 _pages.CommitRegistration(pageRegistration);
                 uint rootNode = _bvh.Commit(bvh);

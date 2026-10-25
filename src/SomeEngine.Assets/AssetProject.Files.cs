@@ -71,6 +71,7 @@ public sealed partial class AssetProject
             else if (MatchImporter(path) is not null)
                 result.Add(new(path, AssetFileKind.ImportedSource, null));
         }
+        await DiscoverPackedFilesAsync(directory, result, cancellationToken).ConfigureAwait(false);
         return result;
     }
 
@@ -118,7 +119,8 @@ public sealed partial class AssetProject
                 string definition = definitions.TryGetValue(entry.AssetGuid, out AssetDiscoveredFile? source)
                     ? ToManifestPath(source.Path) : "";
                 next.AddAsset(entry.AssetGuid, entry.Name, ToManifestPath(item.Path), entry.AssetType, entry.SchemaFingerprint,
-                    sourceGuid, key, references, definition, entry.Version);
+                    sourceGuid, key, references, definition, entry.Version,
+                    entry.PackPath.Length == 0 ? "" : ToManifestPath(entry.PackPath));
             }
             foreach ((Guid id, AssetDiscoveredFile definition) in definitions)
             {
@@ -165,6 +167,9 @@ public sealed partial class AssetProject
         {
             string source = RequireProjectPath(_projectRoot, sourcePath), destination = RequireProjectPath(_projectRoot, destinationPath);
             if (PathsEqual(source, destination)) return;
+            if (Manifest.Assets.Values.Any(entry => entry.PackPath.Length != 0
+                && (PathsEqual(FullPath(entry.PackPath), source) || PathsEqual(FullPath(entry.Path), source))))
+                throw new NotSupportedException("Move packed outputs through an explicit pack publication.");
             if (editors is null && !PathsEqual(Path.GetDirectoryName(source)!, Path.GetDirectoryName(destination)!))
                 throw new NotSupportedException("Moving a source or asset to another directory requires migrating its external references. Rename it within its directory or use an importer-aware project move.");
             RequireNewPath(destination);
@@ -211,7 +216,7 @@ public sealed partial class AssetProject
                 }
                 next.AddAsset(entry.AssetGuid, entry.Name, moveFile ? ToManifestPath(destination) : entry.Path, entry.AssetType,
                     entry.SchemaFingerprint, entry.SourceGuid, entry.SubAssetKey, entry.Dependencies,
-                    moveDefinition ? ToManifestPath(destination) : entry.DefinitionPath, entry.Version);
+                    moveDefinition ? ToManifestPath(destination) : entry.DefinitionPath, entry.Version, entry.PackPath);
             }
             next.AddFiles(files, _manifestDirectory);
             lock (_gate) { files.Commit(cancellationToken); Manifest = next; }
@@ -305,6 +310,9 @@ public sealed partial class AssetProject
             if (next.TrySourcePath(metadata.SourceGuid, out string registeredSource)
                 && !PathsEqual(FullPath(registeredSource), source))
                 throw new InvalidDataException($"Source identity {metadata.SourceGuid} belongs to '{registeredSource}'.");
+            if (metadata.Outputs.Any(static output => output.PackPath.Length != 0)
+                || next.AssetsBySource(metadata.SourceGuid).Any(id => next.Assets[id].PackPath.Length != 0))
+                throw new NotSupportedException("Remove packed outputs by reimporting their source into its pack.");
             var outputs = next.AssetsBySource(metadata.SourceGuid).Select(id => next.Assets[id])
                 .ToDictionary(static entry => entry.AssetGuid, entry => RequireProjectPath(_projectRoot, entry.Path));
             foreach (SourceOutput output in metadata.Outputs)
@@ -345,6 +353,8 @@ public sealed partial class AssetProject
             AssetManifest next;
             lock (_gate) next = Manifest.Copy();
             if (!next.TryGetAsset(assetId, out AssetEntry entry)) throw new KeyNotFoundException($"Asset {assetId} is not registered.");
+            if (entry.PackPath.Length != 0)
+                throw new NotSupportedException("Remove a packed output by reimporting its source into its pack.");
             RequireNoReferencers(next, [assetId], allowDanglingReferences);
             string path = RequireProjectPath(_projectRoot, entry.Path);
             await CheckOutputFileAsync(path, assetId, cancellationToken).ConfigureAwait(false);

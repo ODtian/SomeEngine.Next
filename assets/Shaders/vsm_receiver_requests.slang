@@ -252,6 +252,7 @@ void MarkVirtualShadowPages(float3 worldPosition, uint viewIndex, bool firstPers
         familyLevels = baseView.ClipmapLevelCount;
         PublishDirectionalShadowPosition(baseViewIndex, baseView, worldPosition, dynamicResolutionBias, firstPerson);
     }
+    if (PageDemand.PointLightCount == 0u && PageDemand.SpotLightCount == 0u) return;
     if (!firstPerson || PageDemand.FirstPersonPixelRequestBias >= 0.0)
         PublishLocalShadowPosition(worldPosition, viewIndex, dynamicResolutionBias);
 }

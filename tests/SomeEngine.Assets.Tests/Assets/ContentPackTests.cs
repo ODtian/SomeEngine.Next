@@ -1,5 +1,6 @@
 using SomeEngine.Assets.Schema;
 using SomeEngine.Graphics;
+using SomeEngine.Serialization.Packs;
 using TextureMipTile = SomeEngine.Resources.TextureMipTile;
 using TextureTiles = SomeEngine.Resources.TextureTiles;
 
@@ -35,20 +36,55 @@ public sealed class ContentPackTests
         var project = new AssetProject(files.Root, []);
         Guid surface = await files.SaveTextureAsync(project, "surface", 1);
         Guid shared = await files.SaveTextureAsync(project, "white", 7);
-        await project.BuildPackAsync("shared.assetpack", [surface, shared]);
+        Guid otherShared = await files.SaveTextureAsync(project, "other", 8);
+        await project.BuildPackAsync("shared.assetpack", [surface, shared, otherShared]);
         await files.SaveTextureAsync(project, "surface", 9, surface);
         await project.BuildPackAsync("scene.assetpack", [surface]);
         AssetContent.WritePackPaths(files.Root, "scene.assetpack", "shared.assetpack");
 
         await using AssetContent content = await AssetContent.OpenAsync(files.Root);
         using TextureAsset sceneTexture = await TextureAsset.OpenAsync(content.Loader, new(surface));
-        using TextureAsset sharedTexture = await TextureAsset.OpenAsync(content.Loader, new(shared));
+        Task<byte[]> sharedRead = ReadTextureAsync(shared);
+        Task<byte[]> otherRead = ReadTextureAsync(otherShared);
+        byte[][] sharedPixels = await Task.WhenAll(sharedRead, otherRead);
         TextureBlock scenePixels = await sceneTexture.GetBlockAsync<TextureBlock>();
-        TextureBlock sharedPixels = await sharedTexture.GetBlockAsync<TextureBlock>();
         Assert.Equal(new byte[] { 9 }, (await scenePixels.ReadBytesAsync(scenePixels.MipTiles[0].ChunkKey)).ToArray());
-        Assert.Equal(new byte[] { 7 }, (await sharedPixels.ReadBytesAsync(sharedPixels.MipTiles[0].ChunkKey)).ToArray());
-        Assert.Equal(2, content.Manifest.Assets.Count);
+        Assert.Equal(new byte[] { 7 }, sharedPixels[0]);
+        Assert.Equal(new byte[] { 8 }, sharedPixels[1]);
+        Assert.Equal(3, content.Manifest.Assets.Count);
         Assert.Equal(project.Manifest.Assets[shared].Version, content.Manifest.Assets[shared].Version);
+
+        async Task<byte[]> ReadTextureAsync(Guid id)
+        {
+            using TextureAsset texture = await TextureAsset.OpenAsync(content.Loader, new(id));
+            TextureBlock pixels = await texture.GetBlockAsync<TextureBlock>();
+            return (await pixels.ReadBytesAsync(pixels.MipTiles[0].ChunkKey)).ToArray();
+        }
+    }
+
+    [Fact]
+    public async Task CatalogPackedOutputsCanLoadAndRepackWithoutLooseFiles()
+    {
+        using var files = new ContentFiles();
+        var project = new AssetProject(files.Root, []);
+        Guid id = await files.SaveTextureAsync(project, "packed", 3, packPath: "imported.assetpack");
+        Assert.False(File.Exists(Path.Combine(files.Root, "packed.texture.asset")));
+        await using (AssetContent content = await AssetContent.OpenAsync(files.Root))
+        {
+            using TextureAsset texture = await TextureAsset.OpenAsync(content.Loader, new(id));
+            TextureBlock pixels = await texture.GetBlockAsync<TextureBlock>();
+            Assert.Equal(new byte[] { 3 }, (await pixels.ReadBytesAsync(pixels.MipTiles[0].ChunkKey)).ToArray());
+        }
+
+        Assert.True(await project.BuildPackAsync("published.assetpack", [id]));
+        Assert.False(await project.BuildPackAsync("published.assetpack", [id]));
+        AssetContent.WritePackPaths(files.Root, "published.assetpack");
+        await using AssetContent published = await AssetContent.OpenAsync(files.Root);
+        using TextureAsset result = await TextureAsset.OpenAsync(published.Loader, new(id));
+        TextureBlock resultPixels = await result.GetBlockAsync<TextureBlock>();
+        Assert.Equal(new byte[] { 3 }, (await resultPixels.ReadBytesAsync(resultPixels.MipTiles[0].ChunkKey)).ToArray());
+        Assert.Equal(project.Manifest.Assets[id].Version, published.Manifest.Assets[id].Version);
+        Assert.Empty(Directory.EnumerateFiles(files.Root, "*.asset", SearchOption.AllDirectories));
     }
 
     [Fact]
@@ -135,7 +171,7 @@ public sealed class ContentPackTests
     {
         internal string Root { get; } = Path.Combine(Path.GetTempPath(), $"SomeEngine-ContentPacks-{Guid.NewGuid():N}");
 
-        internal async Task<Guid> SaveTextureAsync(AssetProject project, string name, byte value, Guid id = default)
+        internal async Task<Guid> SaveTextureAsync(AssetProject project, string name, byte value, Guid id = default, string? packPath = null)
         {
             using var texture = new TextureAsset(id) { Name = name };
             var pixels = texture.GetBlock<TextureBlock>();
@@ -145,7 +181,17 @@ public sealed class ContentPackTests
             pixels.SampledDimension = TextureViewDimension.Texture2D;
             pixels.MipTiles = [new TextureMipTile { Width = 1, Height = 1, ChunkKey = TextureTiles.ChunkKey(0, 0, 0), DecodedLength = 1 }];
             pixels.SetBytes(pixels.MipTiles[0].ChunkKey, new byte[] { value });
-            return project.RegisterAsset(await texture.SaveAsync(Path.Combine(Root, name + ".texture.asset")));
+            if (packPath is null)
+                return project.RegisterAsset(await texture.SaveAsync(Path.Combine(Root, name + ".texture.asset")));
+            using var bytes = new MemoryStream();
+            AssetEntry entry = await texture.WriteAsync(bytes);
+            var builder = new AssetPackBuilder();
+            builder.AddAsset(entry.AssetGuid, entry.AssetType, bytes.ToArray(), entry.SchemaFingerprint);
+            await builder.PublishAsync(Path.Combine(Root, packPath));
+            project.Manifest.AddAsset(entry.AssetGuid, entry.Name, name + ".texture.asset", entry.AssetType,
+                entry.SchemaFingerprint, version: entry.Version, packPath: packPath);
+            project.Manifest.Save(Path.Combine(Root, "Library", "AssetManifest"));
+            return entry.AssetGuid;
         }
 
         public void Dispose()

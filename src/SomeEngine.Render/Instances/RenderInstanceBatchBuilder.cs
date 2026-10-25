@@ -30,8 +30,9 @@ public readonly struct RenderInstanceSingleGroup : IEquatable<RenderInstanceSing
 public interface IRenderInstanceBatchSource<TGroupKey>
     where TGroupKey : notnull
 {
-    RenderInstanceBatches<TGroupKey>? Current { get; }
     QueryDefinition EntityQuery { get; }
+
+    RenderInstanceBatches<TGroupKey>? Current { get; }
 }
 
 /// <summary>
@@ -161,6 +162,7 @@ public sealed class RenderInstanceBatches<TGroupKey>
     where TGroupKey : notnull
 {
     private readonly RenderInstanceBatchGroup<TGroupKey>[] _groups;
+    // Empty offsets denote the one-row-per-entity composition; the row is its dense entity index.
     private readonly int[] _entityOffsets;
     private readonly RenderInstanceBatchAddress<TGroupKey>[] _addresses;
 
@@ -189,6 +191,8 @@ public sealed class RenderInstanceBatches<TGroupKey>
     {
         if ((uint)denseEntityIndex >= (uint)EntityCount)
             throw new ArgumentOutOfRangeException(nameof(denseEntityIndex));
+        if (_entityOffsets.Length == 0)
+            return _addresses.AsSpan(denseEntityIndex, 1);
         int start = _entityOffsets[denseEntityIndex];
         return _addresses.AsSpan(
             start,
@@ -386,8 +390,9 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
             try
             {
                 result[0] = 0;
-                var job = new DetectChangesJob<TComposer>(_composer, result);
-                if (packets.RowCount <= InlinePacketRowLimit)
+                bool parallel = packets.RowCount > InlinePacketRowLimit;
+                var job = new DetectChangesJob<TComposer>(_composer, result, parallel);
+                if (!parallel)
                 {
                     _ = packets.ExecuteInline(in job);
                 }
@@ -422,12 +427,16 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
                     _ = packets.ExecuteInline(in job);
                 else
                 {
-                    JobResourceAccess[] accesses =
-                    [
-                        JobResourceAccess.Read(current.EntityOffsets),
-                        JobResourceAccess.Read(current.Addresses),
-                        JobResourceAccess.Write(mismatch, 0, 1),
-                    ];
+                    JobResourceAccess[] accesses = current.EntityOffsets.Length == 0
+                        ? [
+                            JobResourceAccess.Read(current.Addresses),
+                            JobResourceAccess.Write(mismatch, 0, 1),
+                        ]
+                        : [
+                            JobResourceAccess.Read(current.EntityOffsets),
+                            JobResourceAccess.Read(current.Addresses),
+                            JobResourceAccess.Write(mismatch, 0, 1),
+                        ];
                     _ = packets.ExecuteParallel(in job, accesses, _owner._jobOptions);
                 }
                 return mismatch[0] == 0;
@@ -458,7 +467,6 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
         TGroupKey[]? keys = null;
         StableGroupPlacement[]? placements = null;
         int[]? groupCounts = null;
-        int[]? groupStarts = null;
         int addressCount = 0;
         try
         {
@@ -522,12 +530,10 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
             placements = ArrayPool<StableGroupPlacement>.Shared.Rent(
                 Math.Max(1, addressCount));
             groupCounts = ArrayPool<int>.Shared.Rent(Math.Max(1, addressCount));
-            groupStarts = ArrayPool<int>.Shared.Rent(Math.Max(1, addressCount));
             int groupCount = _grouping.Group(
                 keys,
                 addressCount,
                 groupCounts,
-                groupStarts,
                 placements,
                 _jobOptions);
 
@@ -549,8 +555,6 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
         }
         finally
         {
-            if (groupStarts is not null)
-                ArrayPool<int>.Shared.Return(groupStarts);
             if (groupCounts is not null)
                 ArrayPool<int>.Shared.Return(groupCounts);
             if (placements is not null)
@@ -609,24 +613,21 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
             {
                 new(key, layout, published),
             };
-            var offsets = new int[entityCount + 1];
             var addresses = new RenderInstanceBatchAddress<TGroupKey>[entityCount];
             for (int entity = 0; entity < entityCount; entity++)
             {
-                offsets[entity] = entity;
                 addresses[entity] = new RenderInstanceBatchAddress<TGroupKey>(
                     key,
                     published,
                     entity,
                     0);
             }
-            offsets[entityCount] = entityCount;
 
             RenderInstanceBatches<TGroupKey>? previous = Current;
             Current = new RenderInstanceBatches<TGroupKey>(
                 entityCount,
                 groups,
-                offsets,
+                [],
                 addresses);
             published = null;
             if (previous is not null)
@@ -831,12 +832,16 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
                 _ = packets.ExecuteInline(in fillJob);
             else
             {
-                JobResourceAccess[] accesses =
-                [
-                    JobResourceAccess.Read(current.EntityOffsets),
-                    JobResourceAccess.Read(current.Addresses),
-                    JobResourceAccess.Read(destinations, 0, groupCount),
-                ];
+                JobResourceAccess[] accesses = current.EntityOffsets.Length == 0
+                    ? [
+                        JobResourceAccess.Read(current.Addresses),
+                        JobResourceAccess.Read(destinations, 0, groupCount),
+                    ]
+                    : [
+                        JobResourceAccess.Read(current.EntityOffsets),
+                        JobResourceAccess.Read(current.Addresses),
+                        JobResourceAccess.Read(destinations, 0, groupCount),
+                    ];
                 _ = packets.ExecuteParallel(in fillJob, accesses, _jobOptions);
             }
 
@@ -921,7 +926,8 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
 
     private readonly struct DetectChangesJob<TComposer>(
         TComposer composer,
-        int[] result) : IReadOnlyQueryPacketJob
+        int[] result,
+        bool parallel) : IReadOnlyQueryPacketJob
         where TComposer : struct, IRenderInstanceBatchComposer<TGroupKey>
     {
         public void Execute(
@@ -936,7 +942,10 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
                 throw new InvalidOperationException(
                     $"A render-instance composer returned unknown change flags '{changes}'.");
             }
-            _ = Interlocked.Or(ref result[0], (int)changes);
+            if (parallel)
+                _ = Interlocked.Or(ref result[0], (int)changes);
+            else
+                result[0] |= (int)changes;
         }
     }
 
@@ -1027,11 +1036,12 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
 
             TComposer local = composer;
             EqualityComparer<TGroupKey> comparer = EqualityComparer<TGroupKey>.Default;
+            bool dense = entityOffsets.Length == 0;
             for (int row = 0; row < packet.Count; row++)
             {
                 int entity = checked(context.OutputStart + row);
-                int start = entityOffsets[entity];
-                int count = entityOffsets[entity + 1] - start;
+                int start = dense ? entity : entityOffsets[entity];
+                int count = dense ? 1 : entityOffsets[entity + 1] - start;
                 if (local.CountGroups(packet, row) != count)
                 {
                     Volatile.Write(ref mismatch[0], 1);
@@ -1125,13 +1135,14 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
                 return;
             }
 
+            bool dense = entityOffsets.Length == 0;
             for (int row = 0; row < packet.Count; row++)
             {
                 if (!writeAll && local.GetChanges(packet.Slice(row, 1), context.LastSystemVersion) == RenderInstanceChanges.None)
                     continue;
                 int entity = checked(context.OutputStart + row);
-                int start = entityOffsets[entity];
-                int count = entityOffsets[entity + 1] - start;
+                int start = dense ? entity : entityOffsets[entity];
+                int count = dense ? 1 : entityOffsets[entity + 1] - start;
                 for (int group = 0; group < count; group++)
                 {
                     RenderInstanceBatchAddress<TGroupKey> address = addresses[start + group];

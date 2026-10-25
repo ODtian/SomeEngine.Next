@@ -68,7 +68,7 @@ public sealed partial class VirtualShadowFeature
     {
         ArgumentNullException.ThrowIfNull(receive);
         if (_qualityReadbacks is null) throw new InvalidOperationException("Enable quality capture before recording a frame.");
-        _qualityReadbacks.Requests.Add(_frameIndex, new QualityRequest(_viewCount, _frameBaseShadowBias, ReceiverCoverageRowPitch / 4u, receive));
+        _qualityReadbacks.Requests.Add(_frameIndex, new QualityRequest(_viewCount, (float[])_frameBaseShadowBias.Clone(), ReceiverCoverageRowPitch / 4u, receive));
         graph.SetPassDataIfChanged(_qualityReceiverCopyPass, new ReceiverCoverageCopy(_pageReceiverMasks,
             _qualityReceiverCoverage, ReceiverMaskWidth, ReceiverMaskHeight, ReceiverCoverageRowPitch));
         graph.SetPassEnabled(_qualityReceiverCopyPass, true);

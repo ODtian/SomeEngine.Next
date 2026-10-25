@@ -222,11 +222,11 @@ internal sealed class RenderTerrainGeometry : ISystem<RenderPrepareSystemContext
         if (!_pipelines.TryGetValue((shader, entry), out ComputeData? compute))
         {
             LinkedComputePipeline pipeline = LinkedComputePipeline.Create(_backend, _device, shader, entry, "Terrain geometry");
-            compute = new(pipeline, ClusterLinkedStageLayout.Create(pipeline.ParameterLayout));
+            compute = new(pipeline, pipeline.GlobalResources);
             _pipelines.Add((shader, entry), compute);
         }
         var resources = new List<GraphParameterResourceBinding>();
-        foreach (ClusterLinkedStageResource resource in compute.Layout.Resources) resources.Add(bindings[resource.Name]);
+        foreach (ShaderParameterResource resource in compute.Layout.Resources) resources.Add(bindings[resource.Name]);
         var value = new ComputePass(compute.Pipeline, resources.ToArray(), dispatch);
         return frame.AddComputePass(entry, PassQueueSelection.AnyCompatible(), value,
             new PassOptions(Culling: PassCullingMode.NeverCull),
@@ -322,6 +322,6 @@ internal sealed class RenderTerrainGeometry : ISystem<RenderPrepareSystemContext
     [StructLayout(LayoutKind.Sequential, Size = 48)]
     private readonly record struct SurfaceParameters(Vector3 Min, float CellSize, int CellCount,
         uint VertexCapacity, uint TriangleCapacity, float FinestCellSize, uint TransitionFaces);
-    private sealed record ComputeData(LinkedComputePipeline Pipeline, ClusterLinkedStageLayout Layout);
+    private sealed record ComputeData(LinkedComputePipeline Pipeline, ShaderParameterLayout Layout);
     private sealed record ComputePass(LinkedComputePipeline Pipeline, GraphParameterResourceBinding[] Bindings, DispatchArguments Dispatch);
 }

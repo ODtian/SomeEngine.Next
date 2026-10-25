@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Collections.Immutable;
 
 namespace SomeEngine.Render.Cluster.Pipeline;
@@ -41,19 +42,45 @@ internal sealed class ClusterBytes
             {
                 int pageIndex = offset / PageSize;
                 int pageOffset = offset % PageSize;
-                if (!changedPages.TryGetValue(pageIndex, out byte[]? page))
-                {
-                    page = new byte[Math.Min(PageSize, length - pageIndex * PageSize)];
-                    if (_pages.TryGetValue(pageIndex, out byte[]? previous))
-                        previous.AsSpan(0, Math.Min(previous.Length, page.Length)).CopyTo(page);
-                    changedPages.Add(pageIndex, page);
-                }
+                byte[] page = GetChangedPage(length, pageIndex, changedPages);
                 int count = Math.Min(source.Length, page.Length - pageOffset);
                 source[..count].CopyTo(page.AsSpan(pageOffset));
                 source = source[count..];
                 offset += count;
             }
         }
+        return WithChangedPages(length, changedPages);
+    }
+
+    internal ClusterBytes WithUInt32Changes(int length, IReadOnlyList<(int Offset, uint Value)> changes)
+    {
+        if (length == Length && changes.Count == 0) return this;
+        var changedPages = new Dictionary<int, byte[]>();
+        foreach ((int offset, uint value) in changes)
+        {
+            // Index-table offsets and lengths are uint-aligned; a value never crosses a page.
+            int pageIndex = offset / PageSize;
+            int pageOffset = offset % PageSize;
+            byte[] page = GetChangedPage(length, pageIndex, changedPages);
+            BinaryPrimitives.WriteUInt32LittleEndian(page.AsSpan(pageOffset, sizeof(uint)), value);
+        }
+        return WithChangedPages(length, changedPages);
+    }
+
+    private byte[] GetChangedPage(int length, int pageIndex, Dictionary<int, byte[]> changedPages)
+    {
+        if (!changedPages.TryGetValue(pageIndex, out byte[]? page))
+        {
+            page = new byte[Math.Min(PageSize, length - pageIndex * PageSize)];
+            if (_pages.TryGetValue(pageIndex, out byte[]? previous))
+                previous.AsSpan(0, Math.Min(previous.Length, page.Length)).CopyTo(page);
+            changedPages.Add(pageIndex, page);
+        }
+        return page;
+    }
+
+    private ClusterBytes WithChangedPages(int length, Dictionary<int, byte[]> changedPages)
+    {
         var pages = _pages;
         foreach ((int index, byte[] page) in changedPages) pages = pages.SetItem(index, page);
         for (int page = PageCount(length); page < PageCount(Length); page++)
@@ -69,9 +96,13 @@ internal sealed class ClusterBytes
             int pageOffset = sourceOffset % PageSize;
             int count = Math.Min(destination.Length, PageSize - pageOffset);
             Span<byte> part = destination[..count];
-            part.Clear();
             if (_pages.TryGetValue(pageIndex, out byte[]? page) && pageOffset < page.Length)
-                page.AsSpan(pageOffset, Math.Min(count, page.Length - pageOffset)).CopyTo(part);
+            {
+                int copied = Math.Min(count, page.Length - pageOffset);
+                page.AsSpan(pageOffset, copied).CopyTo(part);
+                part[copied..].Clear();
+            }
+            else part.Clear();
             destination = destination[count..];
             sourceOffset += count;
         }

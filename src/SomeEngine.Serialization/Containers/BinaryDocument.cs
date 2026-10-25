@@ -470,7 +470,7 @@ public partial class BinaryDocument : IAsyncDisposable
         }
 
         EnsureSourceGeneration();
-        VerifyHash(destination.Span, descriptor.ContentHash, $"decoded chunk 0x{descriptor.Key:X16}");
+        VerifyHash(destination.Span, descriptor.ContentHash, "decoded chunk", descriptor.Key);
         return destination;
     }
 
@@ -509,6 +509,15 @@ public partial class BinaryDocument : IAsyncDisposable
         if (!found.HasValue)
             throw new KeyNotFoundException($"Binary chunk 0x{key:X16} was not found.");
         return OpenChunkRangeSource(found.Value);
+    }
+
+    // The descriptor must come from this document or a duplicate sharing its source.
+    internal IRangeSource OpenChunkRangeSource(BinaryChunkEntry descriptor, CancellationToken cancellationToken)
+    {
+        _lifetime.ThrowIfDisposed(this);
+        cancellationToken.ThrowIfCancellationRequested();
+        EnsureSourceGeneration();
+        return OpenChunkRangeSource(descriptor);
     }
 
     private IRangeSource OpenChunkRangeSource(BinaryChunkEntry descriptor)
@@ -566,7 +575,7 @@ public partial class BinaryDocument : IAsyncDisposable
                     await DecodeBrotliIntoAsync(descriptor, decoded, cancellationToken).ConfigureAwait(false);
 
                 EnsureSourceGeneration();
-                VerifyHash(decoded.Span, descriptor.ContentHash, $"decoded chunk 0x{descriptor.Key:X16}");
+                VerifyHash(decoded.Span, descriptor.ContentHash, "decoded chunk", descriptor.Key);
                 RangeLease decodedLease = RangeLease.Own(decodedOwner, decoded.Length);
                 decodedOwner = null;
                 return new ChunkLease(descriptor, decodedLease, _lifetime);
@@ -584,7 +593,7 @@ public partial class BinaryDocument : IAsyncDisposable
         try
         {
             EnsureSourceGeneration();
-            VerifyHash(stored.Memory.Span, descriptor.ContentHash, $"chunk 0x{descriptor.Key:X16}");
+            VerifyHash(stored.Memory.Span, descriptor.ContentHash, "chunk", descriptor.Key);
             return new ChunkLease(descriptor, stored, _lifetime);
         }
         catch
@@ -1096,13 +1105,18 @@ public partial class BinaryDocument : IAsyncDisposable
     internal static void VerifyHash(
         ReadOnlySpan<byte> bytes,
         in Digest256 expected,
-        string description)
+        string description,
+        ulong? chunkKey = null)
     {
         Digest256 actual = Digest256.ComputeSha256(bytes);
         if (!actual.FixedTimeEquals(expected))
+        {
+            if (chunkKey is ulong key)
+                description = $"{description} 0x{key:X16}";
             throw SerializationErrors.CreateDataException(
                 SerializationError.IntegrityMismatch,
                 $"SHA-256 validation failed for {description}.");
+        }
     }
 }
 

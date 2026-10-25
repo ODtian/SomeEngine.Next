@@ -1,10 +1,7 @@
-using SomeEngine.Assets;
-using SomeEngine.Assets.Schema;
 using SomeEngine.Resources;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
 using SomeEngine.Render.Components;
-using SomeEngine.Render.Frame;
 using SomeEngine.Render.Systems;
 
 namespace SomeEngine.Render.Cluster;
@@ -31,7 +28,7 @@ internal sealed class ClusterMeshPrepareSystem : IDisposable
     internal ClusterMeshPrepareSystem(RenderWorld world, ClusterResidency residency)
     {
         _world = world ?? throw new ArgumentNullException(nameof(world));
-        _residency = residency;
+        _residency = residency ?? throw new ArgumentNullException(nameof(residency));
         _meshQuery = world.Query(new QueryDefinitionBuilder().Read<RenderMesh>());
         try { _tableChanges = world.ObserveEntityTables(); }
         catch { world.ReleaseQuery(_meshQuery); throw; }
@@ -128,6 +125,7 @@ internal sealed class ClusterMeshPrepareSystem : IDisposable
             foreach (RenderMesh mesh in missingMeshes)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                ArgumentNullException.ThrowIfNull(mesh.Mesh);
                 ClusterMeshRegistrationResult result =
                     await _residency.RegisterMeshAsync(mesh.Mesh, cancellationToken, mesh.PageSource).ConfigureAwait(false);
                 if (result.Added)

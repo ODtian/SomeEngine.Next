@@ -322,26 +322,61 @@ public sealed class WarpResourceTests
     }
 
     [Fact]
-    public void Wait_fractional_timeout_polls_and_a_failed_timeout_leaves_the_completion_usable()
+    public unsafe void Wait_fractional_timeout_polls_and_a_failed_timeout_leaves_the_completion_usable()
     {
-        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using var backend = new ValidationLayer(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
-        using CommandContext context = backend.CreateCommandContext(
-            device,
-            new CommandContextDesc(QueueType.Graphics, 0, 1));
-        backend.Begin(context);
-        using RecordedCommands recorded = backend.End(context);
-        QueueCompletion completion = backend.Submit(
-            backend.GetQueue(device, QueueType.Graphics),
-            new QueueSubmitDesc([], [], [recorded], [], []));
+        using ExternalTimeline gate = backend.CreateExternalTimeline(device, initialValue: 0);
+        using var ready = new Barrier(3);
+        Queue queue = backend.GetQueue(device, QueueType.Graphics);
+        var nativeGate = backend.GetNativeTimeline(gate);
+        TimeSpan timeout = TimeSpan.FromSeconds(10);
+        Task<WaitStatus>? firstWait = null;
+        Task<WaitStatus>? secondWait = null;
+        try
+        {
+            QueueCompletion first = backend.Submit(queue,
+                new QueueSubmitDesc([], [new TimelinePoint(gate, 1)], [], [], []));
+            QueueCompletion second = backend.Submit(queue,
+                new QueueSubmitDesc([], [new TimelinePoint(gate, 2)], [], [], []));
 
-        Assert.Throws<ArgumentOutOfRangeException>(() =>
-            backend.WaitCpu(completion, TimeSpan.FromTicks(-1)));
-        WaitStatus poll = backend.WaitCpu(completion, TimeSpan.FromTicks(1));
-        Assert.True(poll is WaitStatus.Completed or WaitStatus.Timeout);
-        Assert.Equal(
-            WaitStatus.Completed,
-            backend.WaitCpu(completion, TimeSpan.FromSeconds(10)));
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                backend.WaitCpu(first, TimeSpan.FromTicks(-1)));
+            // The timeline is still zero, so this must actually register and time out.
+            Assert.Equal(WaitStatus.Timeout, backend.WaitCpu(first, TimeSpan.FromTicks(1)));
+
+            firstWait = StartWait(first);
+            secondWait = StartWait(second);
+            Assert.True(ready.SignalAndWait(timeout));
+            Assert.True(nativeGate->Signal(1) >= 0);
+            Assert.True(firstWait.Wait(timeout));
+            Assert.Equal(WaitStatus.Completed, firstWait.Result);
+            Assert.False(backend.IsComplete(second));
+            Assert.False(secondWait.IsCompleted);
+            // A consumed/reused event, or an abandoned earlier registration, must
+            // never satisfy a different fence target while that target is gated.
+            Assert.Equal(WaitStatus.Timeout, backend.WaitCpu(second, TimeSpan.Zero));
+            Assert.True(nativeGate->Signal(2) >= 0);
+            Assert.True(secondWait.Wait(timeout));
+            Assert.Equal(WaitStatus.Completed, secondWait.Result);
+            Assert.Equal(WaitStatus.Completed, backend.WaitCpu(second, TimeSpan.Zero));
+        }
+        finally
+        {
+            // Release both GPU gates even if an assertion or a waiter fails, before
+            // device disposal can quiesce its queues. Workers have bounded waits.
+            int released = nativeGate->Signal(2);
+            Task[] waiters = secondWait is not null ? [firstWait!, secondWait] :
+                firstWait is not null ? [firstWait] : [];
+            Task.WhenAll(waiters).GetAwaiter().GetResult();
+            Assert.True(released >= 0);
+        }
+
+        Task<WaitStatus> StartWait(QueueCompletion completion) => Task.Factory.StartNew(() =>
+        {
+            Assert.True(ready.SignalAndWait(timeout));
+            return backend.WaitCpu(completion, timeout);
+        }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
     }
 
     private static void AssertSecondMapRejected(

@@ -49,11 +49,16 @@ void StoreClusterBuildBatch(inout uint4 words, uint batch, uint triangles)
 void StoreClusterBuildSlice(uint node, uint child, float3 lower, float3 upper, uint reference, uint pageRange, uint count)
 {
     uint address = node * 240u;
-    float3 center = (lower + upper) * 0.5;
-    float radius = length(upper - lower) * 0.5;
+    float3 center = lower * 0.5 + upper * 0.5;
+    float3 extent = max(center - lower, upper - center);
+    // Center/extent conversion must not shrink the stored-float reconstruction.
+    for (uint axis = 0u; axis < 3u; axis++)
+        if (center[axis] - extent[axis] > lower[axis] || center[axis] + extent[axis] < upper[axis])
+            extent[axis] = asfloat(asuint(extent[axis]) + 1u);
+    float radius = length(extent);
     ClusterBuildBvh.Store4(address + child * 16u, uint4(asuint(center), asuint(radius)));
     ClusterBuildBvh.Store4(address + 64u + child * 16u, uint4(asuint(center), 0x00007C00u));
-    ClusterBuildBvh.Store4(address + 128u + child * 16u, uint4(asuint((upper - lower) * 0.5), reference));
+    ClusterBuildBvh.Store4(address + 128u + child * 16u, uint4(asuint(extent), reference));
     ClusterBuildBvh.Store3(address + 192u + child * 12u, uint3(pageRange, count << 16u, 0u));
 }
 

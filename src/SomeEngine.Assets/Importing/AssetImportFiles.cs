@@ -6,6 +6,7 @@ internal sealed class AssetImportFiles : IDisposable
     private readonly List<FileChange> _changes = [];
     private readonly HashSet<string> _paths = new(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
     private bool _committed;
+    private FileChange? _finalFile;
     private Exception? _failure;
 
     public string CreateStagePath(string destination)
@@ -26,6 +27,15 @@ internal sealed class AssetImportFiles : IDisposable
     }
 
     public void AddDelete(string destination) => Add(new FileChange(Path.GetFullPath(destination), null));
+
+    // The immutable pack is the final publication. Its preceding generation is never backed up.
+    public void AddFinalFile(string destination, string stagedFile)
+    {
+        if (_committed || _finalFile is not null) throw new InvalidOperationException("A final publication is already selected.");
+        destination = Path.GetFullPath(destination);
+        if (!_paths.Add(destination)) throw new InvalidOperationException($"The import writes '{destination}' more than once.");
+        _finalFile = new FileChange(destination, stagedFile);
+    }
 
     private void Add(FileChange change)
     {
@@ -74,6 +84,12 @@ internal sealed class AssetImportFiles : IDisposable
                     change.Installed = true;
                 }
             }
+            if (_finalFile is not null)
+            {
+                if (File.Exists(_finalFile.Destination))
+                    File.Replace(_finalFile.StagedFile!, _finalFile.Destination, null);
+                else File.Move(_finalFile.StagedFile!, _finalFile.Destination);
+            }
             _committed = true;
         }
         catch (Exception error)
@@ -108,12 +124,24 @@ internal sealed class AssetImportFiles : IDisposable
 
     public void Dispose()
     {
+        if (_committed && _finalFile is not null)
+        {
+            // The final pack is irreversible. Cleanup cannot turn that committed publication into failure.
+            foreach (FileChange change in _changes)
+            {
+                RemoveCommitted(change.StagedFile);
+                if (!change.KeepBackup) RemoveCommitted(change.Backup);
+            }
+            RemoveCommitted(_finalFile.StagedFile);
+            return;
+        }
         List<Exception>? failures = null;
         foreach (FileChange change in _changes)
         {
             if (change.StagedFile is not null) Remove(change.StagedFile);
             if (!change.KeepBackup && change.Backup is not null) Remove(change.Backup);
         }
+        if (_finalFile?.StagedFile is string finalStage) Remove(finalStage);
         if (failures is null) return;
         var cleanup = new AggregateException("Some import temporary files could not be removed.", failures);
         if (_failure is not null) _failure.Data["ImportFileCleanup"] = cleanup;
@@ -124,6 +152,13 @@ internal sealed class AssetImportFiles : IDisposable
             try { if (File.Exists(path)) File.Delete(path); }
             catch (Exception error) { (failures ??= []).Add(error); }
         }
+    }
+
+    private static void RemoveCommitted(string? path)
+    {
+        if (path is null) return;
+        try { if (File.Exists(path)) File.Delete(path); }
+        catch (Exception) { }
     }
 
     public void RecordFailure(Exception error) => _failure = error;

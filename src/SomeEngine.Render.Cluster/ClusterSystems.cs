@@ -45,9 +45,9 @@ public sealed class ClusterResidencySystem : ISystem<RenderPrepareSystemContext>
 
 /// <summary>
 /// Installs Cluster's one unclassified all-GPU instance composition. The engine-wide instance
-/// storage owns allocation and transport; this system owns only a query, the generic physical
-/// composition root, and Cluster's geometry-field contribution. It keeps no second world or
-/// entity list and performs no CPU material/pass binning.
+/// storage owns allocation and transport; the generic composition system owns the query and
+/// batch lifecycle. This adapter supplies Cluster's residency invalidation and geometry-field
+/// contribution. It keeps no second world or entity list and performs no CPU material/pass binning.
 /// </summary>
 public sealed class ClusterInstanceSystem<TProducer> :
     ISystem<RenderPrepareSystemContext>,
@@ -57,13 +57,9 @@ public sealed class ClusterInstanceSystem<TProducer> :
     private static readonly SomeEngine.Diagnostics.TraceSite UpdateTrace =
         new("render", "Prepare.ClusterInstances");
     private readonly ClusterRenderResources _resources;
-    private readonly QueryDefinition _entities;
-    private readonly ClusterBatchComposer _composer;
     private readonly InstanceColumnChanges _columnChanges = new();
-    private readonly RenderInstanceBatchBuilder<RenderInstanceSingleGroup> _builder;
-    private QueryHandle _entityQuery;
+    private readonly RenderInstanceCompositionSystem<RenderInstanceSingleGroup, ClusterBatchComposer> _composition;
     private int _publishedMeshCount;
-    private bool _created;
 
     public ClusterInstanceSystem(
         ClusterRenderResources resources,
@@ -73,41 +69,48 @@ public sealed class ClusterInstanceSystem<TProducer> :
         int rowsPerPacket = 0)
     {
         _resources = resources ?? throw new ArgumentNullException(nameof(resources));
-        _entities = (entities ?? throw new ArgumentNullException(nameof(entities)))
+        entities = (entities ?? throw new ArgumentNullException(nameof(entities)))
             .WithOptionalRead<RenderDeformBounds>().WithOptionalRead<RenderMesh>().WithOptionalRead<RenderXray>();
         ArgumentNullException.ThrowIfNull(exactShaderLayout);
-        var combined = new RenderInstanceProducerBundle<
+        var geometryAndAdditional = new RenderInstanceProducerBundle<
             ClusterRenderResources.ClusterGeometryProducer,
-            TProducer>(
+            TProducer>(resources.CreateGeometryProducer(), additional);
+        var combined = new RenderInstanceProducerBundle<
+            RenderInstanceTransformProducer,
+            RenderInstanceProducerBundle<ClusterRenderResources.ClusterGeometryProducer, TProducer>>(
                 exactShaderLayout,
-                resources.CreateGeometryProducer(),
-                additional);
-        _composer = new ClusterBatchComposer(exactShaderLayout, combined, _columnChanges);
-        _builder = new RenderInstanceBatchBuilder<RenderInstanceSingleGroup>(
+                new RenderInstanceTransformProducer(),
+                geometryAndAdditional);
+        var composer = new ClusterBatchComposer(exactShaderLayout, combined, _columnChanges);
+        _composition = new RenderInstanceCompositionSystem<RenderInstanceSingleGroup, ClusterBatchComposer>(
+            entities,
+            in composer,
             groupingPartitions: 1,
             rowsPerPacket);
     }
 
-    public QueryDefinition EntityQuery => _entities;
+    public QueryDefinition EntityQuery => _composition.EntityQuery;
 
-    public RenderInstanceBatches<RenderInstanceSingleGroup>? Current => _builder.Current;
+    public QueryHandle EntityQueryHandle => _composition.EntityQueryHandle;
+
+    public RenderInstanceBatches<RenderInstanceSingleGroup>? Current => _composition.Current;
 
     public void OnCreate(ref RenderPrepareSystemContext context)
     {
         RequireWorld(context.World);
-        if (_created)
+        if (_composition.IsCreated)
             throw new InvalidOperationException("The Cluster instance system is already created.");
 
-        _entityQuery = context.World.Query(_entities);
-        _publishedMeshCount = _resources.PublishedMeshCount;
-        _created = true;
+        int publishedMeshCount = _resources.PublishedMeshCount;
+        _composition.OnCreate(ref context);
+        _publishedMeshCount = publishedMeshCount;
     }
 
     public void OnUpdate(ref RenderPrepareSystemContext context)
     {
         using var trace = SomeEngine.Diagnostics.EngineTrace.Begin(UpdateTrace);
         RequireWorld(context.World);
-        if (!_created)
+        if (!_composition.IsCreated)
             throw new InvalidOperationException("The Cluster instance system was not created.");
 
         int publishedMeshCount = _resources.PublishedMeshCount;
@@ -118,11 +121,7 @@ public sealed class ClusterInstanceSystem<TProducer> :
         try
         {
             _columnChanges.Reset(context.LastSystemVersion);
-            _ = _builder.Update(
-                context,
-                _entityQuery,
-                in _composer,
-                forcedChanges);
+            _composition.OnUpdate(ref context, forcedChanges);
             _publishedMeshCount = publishedMeshCount;
         }
         finally
@@ -133,37 +132,16 @@ public sealed class ClusterInstanceSystem<TProducer> :
 
     public void OnDestroy(ref RenderPrepareSystemContext context)
     {
-        if (!_created)
+        if (!_composition.IsCreated)
             return;
 
-        List<Exception>? failures = null;
         try
         {
-            _builder.Clear(context);
+            _composition.OnDestroy(ref context);
         }
-        catch (Exception failure)
+        finally
         {
-            failures = [failure];
-        }
-
-        try
-        {
-            context.World.ReleaseQuery(_entityQuery);
-        }
-        catch (Exception failure)
-        {
-            (failures ??= []).Add(failure);
-        }
-        _entityQuery = default;
-        _publishedMeshCount = 0;
-        _created = false;
-        if (failures is not null)
-        {
-            throw failures.Count == 1
-                ? failures[0]
-                : new AggregateException(
-                    "Cluster instance composition could not release every owned resource.",
-                    failures);
+            _publishedMeshCount = 0;
         }
     }
 
@@ -199,8 +177,8 @@ public sealed class ClusterInstanceSystem<TProducer> :
     private readonly struct ClusterBatchComposer(
         RenderInstancePropertyLayout layout,
         RenderInstanceProducerBundle<
-            ClusterRenderResources.ClusterGeometryProducer,
-            TProducer> producer,
+            RenderInstanceTransformProducer,
+            RenderInstanceProducerBundle<ClusterRenderResources.ClusterGeometryProducer, TProducer>> producer,
         InstanceColumnChanges columns) :
         IRenderInstanceBatchComposer<RenderInstanceSingleGroup>
     {
@@ -214,7 +192,10 @@ public sealed class ClusterInstanceSystem<TProducer> :
             if (!packet.AllRowsChangedSince<RenderTransform>(lastSystemVersion) ||
                 !packet.AllRowsChangedSince<RenderPreviousTransform>(lastSystemVersion))
                 columns.RecordPartialTransformChanges();
-            RenderInstanceChanges changes = GetChanges(packet, lastSystemVersion);
+            RenderInstanceChanges changes = producer.First.GetChanges(packet, lastSystemVersion)
+                | producer.Second.First.GetChanges(packet, lastSystemVersion);
+            RenderInstanceChanges additionalChanges = producer.Second.Second.GetChanges(packet, lastSystemVersion);
+            changes |= additionalChanges;
             if ((changes & RenderInstanceChanges.Structure) != 0)
                 columns.Add(InstanceColumnChanges.All);
             else if (changes != RenderInstanceChanges.None)
@@ -226,7 +207,7 @@ public sealed class ClusterInstanceSystem<TProducer> :
                     fields |= InstanceColumnChanges.Mesh;
                 if (ClusterRenderResources.ClusterGeometryProducer.XrayChanged(packet, lastSystemVersion))
                     fields |= InstanceColumnChanges.Xray;
-                if (producer.Second.GetChanges(packet, lastSystemVersion) != RenderInstanceChanges.None)
+                if (additionalChanges != RenderInstanceChanges.None)
                     fields |= InstanceColumnChanges.Additional;
                 columns.Add(fields);
             }
@@ -271,11 +252,12 @@ public sealed class ClusterInstanceSystem<TProducer> :
             int fields = columns.Fields;
             producer.First.Bind(destination.Restrict(producer.First.Properties),
                 (fields & InstanceColumnChanges.CurrentTransform) != 0,
-                (fields & InstanceColumnChanges.PreviousTransform) != 0,
+                (fields & InstanceColumnChanges.PreviousTransform) != 0);
+            producer.Second.First.Bind(destination.Restrict(producer.Second.First.Properties),
                 (fields & InstanceColumnChanges.Mesh) != 0,
                 (fields & InstanceColumnChanges.Xray) != 0);
             if ((fields & InstanceColumnChanges.Additional) != 0)
-                producer.Second.Bind(destination.Restrict(producer.Second.Properties));
+                producer.Second.Second.Bind(destination.Restrict(producer.Second.Second.Properties));
         }
 
         public void Write(
@@ -297,14 +279,16 @@ public sealed class ClusterInstanceSystem<TProducer> :
             int fields = columns.Fields;
             bool all = (fields & InstanceColumnChanges.InitialValues) != 0;
             uint lastVersion = columns.LastVersion;
-            producer.First.Write(destination.Restrict(producer.First.Properties), packet,
-                all || (fields & InstanceColumnChanges.CurrentTransform) != 0 && packet.ChangedSince<RenderTransform>(lastVersion),
-                all || (fields & InstanceColumnChanges.PreviousTransform) != 0 && packet.ChangedSince<RenderPreviousTransform>(lastVersion),
-                all || (fields & InstanceColumnChanges.Mesh) != 0 && ClusterRenderResources.ClusterGeometryProducer.MeshChanged(packet, lastVersion),
-                all || (fields & InstanceColumnChanges.Xray) != 0 && ClusterRenderResources.ClusterGeometryProducer.XrayChanged(packet, lastVersion));
-            if (all || (fields & InstanceColumnChanges.Additional) != 0 &&
-                producer.Second.GetChanges(packet, lastVersion) != RenderInstanceChanges.None)
-                producer.Second.Write(destination.Restrict(producer.Second.Properties), packet);
+            if (all)
+            {
+                producer.Write(destination, packet);
+                return;
+            }
+            producer.First.WriteChanged(destination.Restrict(producer.First.Properties), packet,
+                lastVersion, columns.AllTransformsChanged);
+            producer.Second.First.WriteChanged(destination.Restrict(producer.Second.First.Properties), packet, lastVersion);
+            if ((fields & InstanceColumnChanges.Additional) != 0)
+                producer.Second.Second.WriteChanged(destination.Restrict(producer.Second.Second.Properties), packet, lastVersion);
         }
     }
 }

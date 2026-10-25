@@ -39,20 +39,20 @@ internal struct ClusterDeferredResumeUniforms
     internal uint Pad2;
 }
 
-[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 16)]
-internal readonly record struct ClusterDispatchParameters(DispatchArguments Dispatch)
-{
-    internal static void Record(
-        ref ComputePassCommandScope commands,
-        in ClusterDispatchParameters parameters) =>
-        commands.Dispatch(parameters.Dispatch);
-}
-
 internal readonly record struct ClusterIndirectDispatchParameters(
     IndirectCommandLayout Layout,
     GraphBufferId Arguments,
     ulong Offset)
 {
+    internal static void Declare(
+        ref PassDefinition pass,
+        ref ClusterIndirectDispatchParameters data) =>
+        _ = pass.Read(
+            data.Arguments,
+            new BufferRange(data.Offset, ClusterIndirectAbi.DispatchBytes),
+            PipelineSync.ExecuteIndirect,
+            ResourceAccess.IndirectArgument);
+
     internal static void Record(
         ref ComputePassCommandScope commands,
         in ClusterIndirectDispatchParameters parameters)
@@ -102,28 +102,6 @@ internal readonly record struct ClusterLayerDispatch(
     GraphPassId Pass,
     uint GroupX,
     uint GroupY);
-
-internal readonly record struct ClusterBufferClearParameters(GraphBufferId Buffer)
-{
-    internal static void Record(
-        ref CopyPassCommandScope commands,
-        in ClusterBufferClearParameters data)
-    {
-        Buffer buffer = commands.GetBuffer(data.Buffer);
-        commands.ClearBuffer(buffer, new BufferRange(0, buffer.Info.Size));
-    }
-}
-
-internal readonly record struct ClusterTessellationResetParameters(GraphBufferId Counters)
-{
-    internal static void Record(
-        ref CopyPassCommandScope commands,
-        in ClusterTessellationResetParameters data)
-    {
-        Buffer counters = commands.GetBuffer(data.Counters);
-        commands.ClearBuffer(counters, new BufferRange(0, counters.Info.Size));
-    }
-}
 
 internal readonly record struct ClusterContinuationResetParameters(
     GraphBufferId CandidateCount,
@@ -358,36 +336,6 @@ internal readonly record struct ClusterFrameMetricsSourceResetParameters(
         commands.ClearBuffer(commands.GetBuffer(buffer), range);
 }
 
-internal readonly record struct ClusterColorClearParameters(
-    GraphTextureId Texture,
-    TextureSubresourceRange Range,
-    Vector4 Color)
-{
-    internal static void Record(
-        ref CopyPassCommandScope commands,
-        in ClusterColorClearParameters data) =>
-        commands.ClearTexture(
-            commands.GetTexture(data.Texture),
-            data.Range,
-            data.Color);
-}
-
-internal readonly record struct ClusterDepthClearParameters(
-    GraphTextureId Texture,
-    TextureSubresourceRange Range,
-    float Depth,
-    byte Stencil)
-{
-    internal static void Record(
-        ref CopyPassCommandScope commands,
-        in ClusterDepthClearParameters data) =>
-        commands.ClearDepthStencil(
-            commands.GetTexture(data.Texture),
-            data.Range,
-            data.Depth,
-            data.Stencil);
-}
-
 internal readonly record struct ClusterTargetClearParameters(
     GraphColorAttachmentViewId Visibility,
     GraphColorAttachmentViewId SceneColor,
@@ -486,30 +434,6 @@ internal readonly record struct ClusterPolicyTargetClearParameters(
     }
 }
 
-internal readonly record struct ClusterDepthAttachmentClearParameters(
-    GraphDepthStencilViewId View)
-{
-    internal static void Declare(
-        ref PassDefinition access,
-        ref ClusterDepthAttachmentClearParameters data) =>
-        access.DepthStencilAttachment(
-            data.View,
-            LoadType.Clear,
-            StoreType.Store,
-            WriteCoverage.Complete,
-            1,
-            LoadType.Discard,
-            StoreType.Discard,
-            WriteCoverage.Partial,
-            0);
-
-    internal static void Record(
-        ref RasterPassCommandScope commands,
-        in ClusterDepthAttachmentClearParameters data)
-    {
-    }
-}
-
 internal readonly record struct ClusterBufferCopyParameters(
     GraphBufferId Source,
     ulong SourceOffset,
@@ -532,13 +456,36 @@ internal readonly record struct ClusterBufferCopyParameters(
     }
 }
 
+internal readonly record struct ClusterCandidateMetricsReadbackParameters(
+    GraphBufferId CandidateCount,
+    GraphBufferId CandidateArgs,
+    GraphBufferId Phase2CandidateCount,
+    GraphBufferId Phase2CandidateArgs,
+    GraphBufferId Destination)
+{
+    internal static void Record(
+        ref CopyPassCommandScope commands,
+        in ClusterCandidateMetricsReadbackParameters parameters)
+    {
+        Buffer destination = commands.GetBuffer(parameters.Destination);
+        commands.CopyBuffer(new BufferCopy(
+            commands.GetBuffer(parameters.CandidateCount), 0,
+            destination, ClusterPipelineSystem.CandidateCountReadbackOffset, sizeof(uint)));
+        commands.CopyBuffer(new BufferCopy(
+            commands.GetBuffer(parameters.CandidateArgs), 0,
+            destination, ClusterPipelineSystem.CandidateArgsReadbackOffset, 12));
+        commands.CopyBuffer(new BufferCopy(
+            commands.GetBuffer(parameters.Phase2CandidateCount), 0,
+            destination, ClusterPipelineSystem.Phase2CandidateCountReadbackOffset, sizeof(uint)));
+        commands.CopyBuffer(new BufferCopy(
+            commands.GetBuffer(parameters.Phase2CandidateArgs), 0,
+            destination, ClusterPipelineSystem.Phase2CandidateArgsReadbackOffset, 12));
+    }
+}
+
 internal struct ClusterFrameMetricsReadbackParameters
 {
-    internal GraphBufferId CandidateCount;
-    internal GraphBufferId CandidateArgs;
     internal GraphBufferId DrawArgs;
-    internal GraphBufferId Phase2CandidateCount;
-    internal GraphBufferId Phase2CandidateArgs;
     internal GraphBufferId Phase2DrawArgs;
     internal GraphBufferId RasterReserve;
     internal GraphBufferId ShadeCount;
@@ -548,41 +495,42 @@ internal struct ClusterFrameMetricsReadbackParameters
     internal GraphBufferId PhaseTwoTessellationCounters;
     internal GraphBufferId WorkStatus;
     internal GraphTextureId Visibility;
-    internal uint VisibilityProbeX;
-    internal uint VisibilityProbeY;
     internal GraphBufferId Destination;
 
     internal static void Record(
         ref CopyPassCommandScope commands,
         in ClusterFrameMetricsReadbackParameters parameters)
     {
+        Buffer destination = commands.GetBuffer(parameters.Destination);
         Copy(ref commands, parameters.DrawArgs, 0,
-            parameters.Destination, ClusterPipelineSystem.DrawArgsReadbackOffset, 16);
+            destination, ClusterPipelineSystem.DrawArgsReadbackOffset, 16);
         Copy(ref commands, parameters.Phase2DrawArgs, 0,
-            parameters.Destination, ClusterPipelineSystem.Phase2DrawArgsReadbackOffset, 16);
+            destination, ClusterPipelineSystem.Phase2DrawArgsReadbackOffset, 16);
         Copy(ref commands, parameters.RasterReserve, 2 * sizeof(uint),
-            parameters.Destination, ClusterPipelineSystem.RasterReserveReadbackOffset,
+            destination, ClusterPipelineSystem.RasterReserveReadbackOffset,
             2 * sizeof(uint));
         Copy(ref commands, parameters.ShadeCount, 0,
-            parameters.Destination, ClusterPipelineSystem.ShadeBinCountReadbackOffset,
+            destination, ClusterPipelineSystem.ShadeBinCountReadbackOffset,
             sizeof(uint));
         Copy(ref commands, parameters.ShadeReserve, 0,
-            parameters.Destination, ClusterPipelineSystem.ShadeReserveReadbackOffset,
+            destination, ClusterPipelineSystem.ShadeReserveReadbackOffset,
             sizeof(uint));
         Copy(ref commands, parameters.SoftwareDebug, 0,
-            parameters.Destination, ClusterPipelineSystem.SoftwareDebugReadbackOffset,
+            destination, ClusterPipelineSystem.SoftwareDebugReadbackOffset,
             sizeof(uint));
         Copy(ref commands, parameters.PhaseOneTessellationCounters, 0,
-            parameters.Destination, ClusterPipelineSystem.PhaseOneTessellationCountersReadbackOffset,
+            destination, ClusterPipelineSystem.PhaseOneTessellationCountersReadbackOffset,
             8 * sizeof(uint));
         Copy(ref commands, parameters.PhaseTwoTessellationCounters, 0,
-            parameters.Destination, ClusterPipelineSystem.PhaseTwoTessellationCountersReadbackOffset,
+            destination, ClusterPipelineSystem.PhaseTwoTessellationCountersReadbackOffset,
             8 * sizeof(uint));
         Copy(ref commands, parameters.WorkStatus, 0,
-            parameters.Destination, ClusterPipelineSystem.WorkMetricsReadbackOffset,
+            destination, ClusterPipelineSystem.WorkMetricsReadbackOffset,
             ClusterPipelineSystem.WorkMetricsByteSize);
-        Buffer destination = commands.GetBuffer(parameters.Destination);
         Texture visibility = commands.GetTexture(parameters.Visibility);
+        uint probeX = visibility.Info.Width > ClusterPipelineSystem.VisibilityProbePixelCount
+            ? (visibility.Info.Width - ClusterPipelineSystem.VisibilityProbePixelCount) / 2u
+            : 0;
         commands.CopyTextureToBuffer(new BufferTextureCopy(
             destination,
             ClusterPipelineSystem.VisibilityProbeReadbackOffset,
@@ -592,38 +540,23 @@ internal struct ClusterFrameMetricsReadbackParameters
             0,
             0,
             TextureAspects.Color,
-            parameters.VisibilityProbeX,
-            parameters.VisibilityProbeY,
+            probeX,
+            visibility.Info.Height / 2u,
             0,
-            Math.Min(ClusterPipelineSystem.VisibilityProbePixelCount, visibility.Info.Width - parameters.VisibilityProbeX),
+            Math.Min(ClusterPipelineSystem.VisibilityProbePixelCount, visibility.Info.Width - probeX),
             1,
             1));
-    }
-
-    internal static void RecordCandidates(
-        ref CopyPassCommandScope commands,
-        in ClusterFrameMetricsReadbackParameters parameters)
-    {
-        Copy(ref commands, parameters.CandidateCount, 0,
-            parameters.Destination, ClusterPipelineSystem.CandidateCountReadbackOffset, sizeof(uint));
-        Copy(ref commands, parameters.CandidateArgs, 0,
-            parameters.Destination, ClusterPipelineSystem.CandidateArgsReadbackOffset, 12);
-        Copy(ref commands, parameters.Phase2CandidateCount, 0,
-            parameters.Destination, ClusterPipelineSystem.Phase2CandidateCountReadbackOffset, sizeof(uint));
-        Copy(ref commands, parameters.Phase2CandidateArgs, 0,
-            parameters.Destination, ClusterPipelineSystem.Phase2CandidateArgsReadbackOffset, 12);
     }
 
     private static void Copy(
         ref CopyPassCommandScope commands,
         GraphBufferId sourceId,
         ulong sourceOffset,
-        GraphBufferId destinationId,
+        Buffer destination,
         ulong destinationOffset,
         ulong byteCount)
     {
         Buffer source = commands.GetBuffer(sourceId);
-        Buffer destination = commands.GetBuffer(destinationId);
         commands.CopyBuffer(new BufferCopy(
             source,
             sourceOffset,

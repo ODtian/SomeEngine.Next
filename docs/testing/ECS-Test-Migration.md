@@ -26,7 +26,7 @@ ECS 与 ECS.Systems 的测试从公开 API 取得结果。两项目的友元授�
 | 上述两个项目分别使用 --no-build --no-restore --verbosity quiet，连续五轮 | 每轮 445 + 278 项通过；3,615 次检查通过 |
 | dotnet msbuild tests/SomeEngine.ECS.Tests/SomeEngine.ECS.Tests.csproj -t:CheckTestRules -v:quiet | 存量白名单 0 项、新违规 0 项 |
 | dotnet msbuild tests/SomeEngine.ECS.Systems.Tests/SomeEngine.ECS.Systems.Tests.csproj -t:CheckTestRules -v:quiet | 存量白名单 0 项、新违规 0 项 |
-| dotnet test tests/SomeEngine.ECS.SourceGen.Tests/SomeEngine.ECS.SourceGen.Tests.csproj --verbosity quiet | 39 项通过 |
+| dotnet test tests/SomeEngine.ECS.SourceGenerators.Tests/SomeEngine.ECS.SourceGenerators.Tests.csproj --verbosity quiet | 39 项通过 |
 | dotnet test tests/SomeEngine.ECS.Fuzz.Tests/SomeEngine.ECS.Fuzz.Tests.csproj --verbosity quiet | 17 项通过 |
 | dotnet test tests/SomeEngine.TestRules.Tests/SomeEngine.TestRules.Tests.csproj --verbosity quiet | 51 项通过 |
 

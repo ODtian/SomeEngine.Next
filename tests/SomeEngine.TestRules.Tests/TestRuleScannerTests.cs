@@ -114,8 +114,10 @@ public class TestRuleScannerTests
         Assert.Equal(3, violation.Line);
     }
 
-    [Fact]
-    public void ConditionalBranchesKeepTheirSourcePositionAndImports()
+    [Theory]
+    [InlineData("\n")]
+    [InlineData("\r\n")]
+    public void ConditionalBranchesKeepTheirSourcePositionAndImports(string newLine)
     {
         var source = """
             using Sleeper = System.Threading.Thread;
@@ -125,9 +127,78 @@ public class TestRuleScannerTests
                 {
             #if SPECIAL_BUILD
                     Sleeper.Sleep(1);
+            #elif OTHER_BUILD
+                    Sleeper.Sleep(2);
             #else
-                    Thread.Sleep(2);
+                    Thread.Sleep(3);
             #endif
+                }
+            }
+            """;
+        source = source.Replace("\r\n", "\n").Replace("\n", newLine);
+
+        var violations = TestRuleScanner.ReadCSharp("Tests.cs", source, true, "Example.Tests");
+
+        Assert.Collection(violations,
+            first => { Assert.Equal(7, first.Line); Assert.Equal("Example.Waits", first.Member); },
+            second => Assert.Equal(9, second.Line),
+            third => Assert.Equal(11, third.Line));
+    }
+
+    [Theory]
+    [InlineData("\n")]
+    [InlineData("\r\n")]
+    public void NonConditionalDirectivesKeepSourcePositionAndImports(string newLine)
+    {
+        var source = """
+            #nullable enable
+            #region Behavior
+            #pragma warning disable CS0168
+            using Sleeper = System.Threading.Thread;
+            class Example
+            {
+                void Waits()
+                {
+                    Sleeper.Sleep(1);
+                }
+            }
+            #endregion
+            """;
+        source = source.Replace("\r\n", "\n").Replace("\n", newLine);
+
+        var violation = Assert.Single(TestRuleScanner.ReadCSharp("Tests.cs", source, true, "Example.Tests"));
+
+        Assert.Equal("TEST003", violation.Rule);
+        Assert.Equal("Tests.cs", violation.Path);
+        Assert.Equal(9, violation.Line);
+        Assert.Equal(9, violation.Column);
+        Assert.Equal("Example.Waits", violation.Member);
+    }
+
+    [Fact]
+    public void RepeatedMessageAssertionsKeepScopeAndSourceIsolation()
+    {
+        var source = """
+            using System;
+            class Example
+            {
+                void RejectsInput(Exception error)
+                {
+                    string message = error.Message;
+                    string alias = message;
+                    string copy = "";
+                    copy = alias;
+                    Assert.Equal("fault", copy);
+                    Assert.Contains("fault", copy);
+                }
+                void AllowsData()
+                {
+                    string message = "ordinary";
+                    string alias = message;
+                    string copy = "";
+                    copy = alias;
+                    Assert.Equal("ordinary", copy);
+                    Assert.Contains("ordinary", copy);
                 }
             }
             """;
@@ -135,8 +206,25 @@ public class TestRuleScannerTests
         var violations = TestRuleScanner.ReadCSharp("Tests.cs", source, true, "Example.Tests");
 
         Assert.Collection(violations,
-            first => { Assert.Equal(7, first.Line); Assert.Equal("Example.Waits", first.Member); },
-            second => Assert.Equal(9, second.Line));
+            first =>
+            {
+                Assert.Equal("TEST002", first.Rule);
+                Assert.Equal("Tests.cs", first.Path);
+                Assert.Equal(10, first.Line);
+                Assert.Equal(9, first.Column);
+                Assert.Equal("Example.RejectsInput", first.Member);
+            },
+            second =>
+            {
+                Assert.Equal("TEST002", second.Rule);
+                Assert.Equal("Tests.cs", second.Path);
+                Assert.Equal(11, second.Line);
+                Assert.Equal(9, second.Column);
+                Assert.Equal("Example.RejectsInput", second.Member);
+            });
+
+        source = source.Replace("error.Message", "\"ordinary\"");
+        Assert.Empty(TestRuleScanner.ReadCSharp("Tests.cs", source, true, "Example.Tests"));
     }
 
     [Fact]

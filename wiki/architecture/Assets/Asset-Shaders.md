@@ -2,7 +2,7 @@
 
 `ShaderAsset` 是唯一 Shader 语义资产身份。材质、场景和管线配置保存 `AssetId<ShaderAsset>`；target、入口和特化不会产生新的资产类型。
 
-完整规则见 [Shader Block、驻留与 Slang 重构规范](../shader/Shader-Block-Residency-Refactor.md)。本页说明当前取得 API；具名修复及验证状态见 [2026-09-29 审查](../../../reviews/AssetSpecReview-2026-09-29.md)。
+完整规则见 [Shader Block、驻留与 Slang 重构规范](../shader/Shader-Block-Residency-Refactor.md)。本页说明当前取得 API；[2026-09-29 审查](../../../reviews/AssetSpecReview-2026-09-29.md) 是历史记录，不代表本次合并后的验证状态。
 
 ## Block 组成
 
@@ -75,6 +75,8 @@ Shader shader = await published.CreateAsync(slang, sessionDescription,
 
 共同字节码服务固定管线发布内容的玩家启动。业务添加、替换或重排入口后重新调用 `CompileAsync`，同一资产身份取得新的共同代码。仅 IR 的分发内容保留完整输入，玩家机器通过相同 `CreateAsync` 完成编译。
 
+需要禁止运行时源码编译的调用方使用 `ShaderAsset.CreateSavedAsync`：它要求完整的所选序列化输入和匹配的保存代码，缺失或过期时报告错误，不退回源码编译。显式特化参数必须同时给出入口名。普通 `CreateAsync` 仍保留按输入、设置及特化选择保存代码或 IR 编译的行为。
+
 `ShaderBlock` 保存由 Slang 生成的代码 chunk。chunk key 由实际 `SessionDesc`/`TargetDesc` 编译设置与入口序号得到；整 target 代码允许缺失，逐入口代码仍可独立取得。Block 不保存入口、阶段、资源、类型或布局的引擎副本。
 
 ## 两条取得行为
@@ -103,15 +105,13 @@ Shader shader = await published.CreateAsync(slang, sessionDescription,
 由 `SafeHandle` 在普通 COM wrapper finalizer 之后释放，保证整组回收时的父子顺序。
 直接访问 `SlangCode.Code` 或借用的 reflection 时，调用方持续持有对应的 `SlangShaderData`。
 
-`ApplicationShaderLifetimeTests.ApplicationsRenderTheSameSceneAcrossShaderCollection` 于 2026-10-16
-通过 D3D12、Vulkan 两后端检查：每项在同一进程先后启动两个 Application，各渲染 8 帧，
-关闭后执行完整 GC 与 finalizer 等待，两次线性图像在 0.001 容差内一致，测试进程正常完成。
+Shader 使用期验证需要在同一进程反复启动/关闭 Application，经过完整 GC 与 finalizer 等待后，检查后续入口、反射、代码与渲染结果仍可使用。历史 D3D12/Vulkan 运行不能代替本次合并后的执行；依赖项目编译和生成器探针不构成该 GPU 使用期验证。
 
 `Shader.GetSlangEntryMetadataAsync` 在驻留 Shader 内共用每个 target/入口的直接 Slang `IMetadata` 与取得任务。材质加载可以提前启动入口准备，渲染侧从同一个 Shader 取得结果；入口准备的后台并发由这一取得路径统一限制。
 
 Cluster 的提前准备与材质阶段解析共用入口选择。应用启动通过具体资产方法创建场景材质和管线 Shader，图形设备创建与内容加载并行；场景资源就绪后，渲染消费阶段对共用 Shader 调用 `ClusterPipelineSystem.PrepareMaterialShader`，按编译 target、可见性模式和设备能力选择着色、细分及光栅入口，启动入口资源分析。Release 的保存代码加载会话使用 Slang 的最少优化及基础代码优化级别完成反射与入口资源分析，必要的 lowering 与资源使用分析仍由 Slang 执行。保存代码 chunk 按调用方原始编译设置读取；源编译与导入使用构建设置。
 
-`ShaderBlock` 的保存代码直接读入最终数组，通过统一 AssetByteCache 预算缓存，后续创建复用缓存结果。ShaderSourceBlock 的 CompileAsync 复用 CreateAsync 的编译主体，返回直接 Shader、序列化 Slang 数据和编译器实际读到的字节摘要。Importer 保存这些结果，并由项目核对输入版本。进程级 Importer 编译服务持有全局 Slang 会话，共同 Block 入口按会话串行访问。
+`ShaderBlock` 的保存代码直接读入最终数组，通过统一 AssetByteCache 预算缓存，后续创建复用缓存结果。ShaderSourceBlock 的 CompileAsync 复用 CreateAsync 的编译主体，返回直接 Shader、序列化 Slang 数据和编译器实际读到的字节摘要。Importer 保存这些结果，并由项目核对输入版本。进程级 Importer 编译服务持有全局 Slang 会话，共同 Block 的前端操作按会话串行访问；全部布局完成后，完全专门化并链接的组件可按入口并行生成后端代码。仍有未绑定 generic 参数的组件保留串行路径。
 
 ## 引用与配置
 
@@ -122,6 +122,12 @@ Cluster 的提前准备与材质阶段解析共用入口选择。应用启动通
 ## 构建与失效
 
 `.shader` 是人类可编辑来源，`SourceNames` 与 `Inputs` 表达实际编译输入。构建 target 由工具选择。`SlangShaderImporter` 使用官方 Slang API 编译、保存模块 IR 和可用代码，并记录实际读取的依赖。
+
+Shader 资产编译的所有者是 `ShaderAsset.CompileAsync`；原生 `.shader` 的 `SlangShaderImporter` 编排位于 `src/SomeEngine.Assets/Importing/Shaders/`，glTF 导入位于 `SomeEngine.Assets.Importers`。导入版本由已声明实现输入及实际来源/设置共同决定，不能仅凭文件所属程序集断言某项修改必然隔离。`AssetImplementationVersions` 解析类型级实现输入与生成的 codec/block 实现；仅用于身份的类型引用不等于可执行依赖。无法证明的动态、反射、泛型或缺失实现元数据路径采取保守回退，缺失必要实现输入按生成器诊断处理。Shader-only 与 glTF 版本隔离仍须对实际生成结果和缓存行为验证。
+
+完全专门化组件的逐入口后端请求最多 4 路并行，各请求写入自己的结果位置，全部完成后形成驻留 Shader。使用范围遵循 [Slang 2026.17.1 的并发说明](https://github.com/shader-slang/slang/blob/v2026.17.1/docs/user-guide/08-compiling.md#multithreading)。默认编译继续保留整 target 代码；单个已绑定入口的 target 与入口共用同一个代码 blob。入口资源使用数据与原有特化选择不变。
+
+`SomeEngine.Shaders` ActivitySource 提供输入检查、编译、布局、逐入口及整 target 代码生成、保存阶段的计时。阶段事件本身不表示已经完成性能验收。
 
 这是破坏性 schema；旧反射字段和旧代码容器没有兼容 reader。编译器、来源、依赖、Block 编码或 target 设置变化时重新构建同一资产身份。
 
@@ -135,8 +141,10 @@ Cluster 的提前准备与材质阶段解析共用入口选择。应用启动通
 
 ## 编译测量与后端并行
 
-`ShaderAsset.CompileAsync` 是资产编译入口；`AssetProject.BuildAsync` 和 `SlangShaderImporter.CompileDefinition` 负责来源、依赖与保存编排，不替代该入口。
+`ShaderAsset.CompileAsync` 是资产编译入口，并统一持有本次来源跟踪及输入版本检查。原始源码或所选 typed-input Block 走同一资产级 owner；已加载的基础图供特化批次复用。保存包括基础代码、特化代码与入口资源使用数据，收集后端/保存期间读取的依赖，在最后检查来源未变化及取消状态后发布 Block。`AssetProject.BuildAsync` 和 `SlangShaderImporter.CompileDefinition` 只负责外围来源、依赖与保存编排，不另建编译主体。
 
 编译过程使用 `SomeEngine.Shaders` 活动源，记录 `Shader.Inputs`、`Shader.Compile`、`Shader.Save`、`Shader.Layout`、`Shader.TargetCode`、`Shader.EntryCode`。编译事件记录资产身份，保存事件记录实际输出路径。通用开发工具库的 `ShaderBuildMeasurements` 为导入/构建命令提供编译次数统计；设置 `SOMEENGINE_SHADER_MEASUREMENTS` 时写出阶段测量。样例专有内容命令只创建这一库作用域，不复制统计实现。
 
-所有 target 的 layout 先串行取得。完全特化且已链接的 component 才并行取得逐入口代码，最多四项；含未绑定 generic 的 component 保留串行路径。`generateLibraryCode=false` 仍仅省略整 target 代码，不省略已绑定入口代码。frontend 的会话串行约束和 `SlangShaderData` 生命周期保持不变。
+所有 target 的 layout 先串行取得。完全特化且已链接的 component 才并行取得逐入口代码，最多四项；含未绑定 generic 的 component 保留串行路径。批次结果按原请求顺序归位，失败或取消也等待已发出的后端工作收尾，资源使用信息在批次 join 后取得。`generateLibraryCode=false` 仍仅省略整 target 代码，不省略已绑定入口代码。frontend 的会话串行约束和 `SlangShaderData` 生命周期保持不变。
+
+上述并行与测量接口不构成性能提升或覆盖率结论；本次完整 shader、引擎及 GPU 验证仍须在最终冲突解决后的源码与重新生成内容上执行。

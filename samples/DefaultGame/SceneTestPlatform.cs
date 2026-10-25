@@ -1,4 +1,6 @@
 using ImGuiNET;
+using SomeEngine.Assets;
+using SomeEngine.Assets.Schema;
 using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -13,6 +15,10 @@ namespace DefaultGame;
 public sealed record TestScene(string Name, string ContentDirectory, bool Animate = false)
 {
     public SimulationFrameWindow? MeasurementFrames { get; init; }
+    /// <summary>Shared packs, highest priority first; relative paths use ContentDirectory.</summary>
+    public string[] AssetPacks { get; init; } = [];
+    /// <summary>Required when the selected packs contain more than one application.</summary>
+    public Guid? ApplicationAsset { get; init; }
 }
 
 /// <summary>The simulation frames selected before comparing scene runs.</summary>
@@ -53,18 +59,34 @@ public sealed partial class SceneTestPlatform
     public static TestScene[] ReadScenes(string path) =>
         JsonSerializer.Deserialize(File.ReadAllText(path), SceneJsonContext.Default.TestSceneArray)!;
 
+    public static TestScene[] ReadScenes(string path, string? selectedScene)
+    {
+        TestScene[] scenes = ReadScenes(path);
+        if (string.IsNullOrEmpty(selectedScene)) return scenes;
+        TestScene[] selected = scenes.Where(scene => string.Equals(scene.Name, selectedScene, StringComparison.Ordinal)).ToArray();
+        if (selected.Length == 0)
+            throw new ArgumentException("The selected scene was not found in the scene list.", nameof(selectedScene));
+        if (selected.Length != 1)
+            throw new InvalidDataException("The scene list contains more than one scene with the selected name.");
+        return selected;
+    }
+
     public SceneTestPlatform(IReadOnlyList<TestScene> scenes, RuntimeStartupOptions? options = null)
     {
         if (scenes.Count == 0) throw new ArgumentException("At least one test scene is required.", nameof(scenes));
         Scenes = scenes.ToArray();
         Application = new ApplicationScene(scenes[0].ContentDirectory)
         {
+            AssetPacks = scenes[0].AssetPacks,
+            ApplicationAsset = scenes[0].ApplicationAsset is { } selected ? new AssetId<ApplicationSettingsAsset>(selected) : null,
             Options = (options ?? RuntimeStartupOptions.Parse([])) with { WindowVSync = false, DynamicScene = scenes[0].Animate, AsyncCompute = true, SurfacePanel = true, WorldNameplates = true },
             InterfaceEnabled = true,
+            MeasureShadowInvalidation = Environment.GetEnvironmentVariable("SOMEENGINE_VSM_INVALIDATION_TIMING") == "1",
             Initialize = frame => InitializeScene?.Invoke(frame.Scene, Current),
             SceneStarted = BeginScene,
             UpdateFrame = UpdateFrame,
             DrawDebugUi = Draw,
+            DrawOverlay = DrawViewImages,
             FrameCompleted = FrameCompleted,
             BlendFrameCompleted = RecordBlendFrame,
             SceneCompleted = result => EndScene(result.Error?.Message),
@@ -126,8 +148,12 @@ public sealed partial class SceneTestPlatform
     private int _readyFrames;
     private TraceCapture? _trace;
     private bool _recordTrace;
+    private bool _interactiveViewsEnabled;
     private bool _measureAfterStartup;
     private string? _resultDirectory;
+    private string _resultFileName = "results.json";
+    private string _frameSamplesFileName = "frame-samples.json";
+    private bool _createNewResults;
     private RuntimeStartupOptions? _interactiveOptions;
     private int _interactiveScene;
     private int _renderWidth;
@@ -150,6 +176,8 @@ public sealed partial class SceneTestPlatform
     {
         UpdateScene?.Invoke(frame.Scene, Current, frame.Index);
         SetRenderingInfo(frame.Width, frame.Height, frame.Adapter.Name, frame.Adapter.DriverVersion);
+        if (Application.MeasureShadowInvalidation && IsMeasuring && frame.Index is >= 2048 and < 2052)
+            frame.RequestShadowInvalidationTiming();
         if (!IsMeasuring)
         {
             for (int index = 0; index < Math.Min(Scenes.Count, 3); index++)
@@ -210,21 +238,66 @@ public sealed partial class SceneTestPlatform
             _measureAfterStartup = true;
             return;
         }
+        ConfigureMeasurementOutput(recordTrace);
         _results.Clear();
         _frameWindows.Clear();
         _measurementError = null;
         _recordTrace = recordTrace;
         _interactiveOptions = Options;
         _interactiveScene = SelectedScene;
+        _interactiveViewsEnabled = Application.ViewsEnabled;
         Options = Options with { WindowVSync = false, FixedFrameSeconds = 1f / 60f };
-        _resultDirectory = Path.Combine(AppContext.BaseDirectory, "Performance", DateTime.Now.ToString("yyyyMMdd-HHmmss-fff"));
-        Directory.CreateDirectory(_resultDirectory);
         _sceneStarted = 0;
         _testStarted = Stopwatch.GetTimestamp();
         IsMeasuring = true;
         Application.MeasureInterface = true;
         Application.DebugUiEnabled = false;
+        Application.ViewsEnabled = false;
+        Application.PresentationBounds = null;
         SelectScene(0);
+    }
+
+    private void ConfigureMeasurementOutput(bool recordTrace)
+    {
+        string? directory = Environment.GetEnvironmentVariable("SOMEENGINE_MEASUREMENT_OUTPUT_DIRECTORY");
+        string? basename = Environment.GetEnvironmentVariable("SOMEENGINE_MEASUREMENT_OUTPUT_BASENAME");
+        if (string.IsNullOrEmpty(directory) && string.IsNullOrEmpty(basename))
+        {
+            _createNewResults = false;
+            _resultFileName = "results.json";
+            _frameSamplesFileName = "frame-samples.json";
+            _resultDirectory = Path.Combine(AppContext.BaseDirectory, "Performance", DateTime.Now.ToString("yyyyMMdd-HHmmss-fff"));
+            Directory.CreateDirectory(_resultDirectory);
+            return;
+        }
+        if (string.IsNullOrEmpty(directory) || string.IsNullOrEmpty(basename) || recordTrace ||
+            !Path.IsPathFullyQualified(directory) || basename.Length > 96 ||
+            basename.Any(static c => !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                (c >= '0' && c <= '9') || c == '-' || c == '_')))
+            throw new InvalidDataException("Flat measurement output requires an existing absolute directory, an ASCII basename, and tracing disabled.");
+        directory = Path.GetFullPath(directory);
+        if (!Directory.Exists(directory))
+            throw new DirectoryNotFoundException("Flat measurement output directory must already exist.");
+        string reportName = basename + "-results.json";
+        string samplesName = basename + "-frame-samples.json";
+        if (File.Exists(Path.Combine(directory, reportName)) || File.Exists(Path.Combine(directory, samplesName)))
+            throw new IOException("Flat measurement outputs already exist; choose an unused basename.");
+        _resultDirectory = directory;
+        _resultFileName = reportName;
+        _frameSamplesFileName = samplesName;
+        _createNewResults = true;
+    }
+
+    private void WriteMeasurementText(string path, string contents)
+    {
+        if (!_createNewResults)
+        {
+            File.WriteAllText(path, contents);
+            return;
+        }
+        using var stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.Read);
+        using var writer = new StreamWriter(stream, new System.Text.UTF8Encoding(false));
+        writer.Write(contents);
     }
 
     internal void RecordStartup(ApplicationStartupTimes times)
@@ -241,6 +314,8 @@ public sealed partial class SceneTestPlatform
         ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(index, Scenes.Count);
         SelectedScene = index;
         Application.ContentDirectory = Current.ContentDirectory;
+        Application.AssetPacks = Current.AssetPacks;
+        Application.ApplicationAsset = Current.ApplicationAsset is { } selected ? new AssetId<ApplicationSettingsAsset>(selected) : null;
         Options = Options with { DynamicScene = Current.Animate };
         Application.Reload();
     }
@@ -432,9 +507,9 @@ public sealed partial class SceneTestPlatform
             ["Sampling"] = "Default warmup and wall-clock samples, or the configured zero-based simulation-frame interval.",
             ["Scenes"] = JsonSerializer.SerializeToNode(_frameWindows, SceneJsonContext.Default.ListSceneFrameWindow),
         };
-        File.WriteAllText(Path.Combine(_resultDirectory!, "frame-samples.json"),
+        WriteMeasurementText(Path.Combine(_resultDirectory!, _frameSamplesFileName),
             frameSamples.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
-        LastReport = Path.Combine(_resultDirectory!, "results.json");
+        LastReport = Path.Combine(_resultDirectory!, _resultFileName);
         var report = new JsonObject
         {
             ["Complete"] = error is null && _results.Count == Scenes.Count && _results.All(result => result.Status == "Measured"),
@@ -457,6 +532,7 @@ public sealed partial class SceneTestPlatform
                 : "Presented frame elapsed time and CPU-side stage elapsed time",
             ["BlendTimingScopes"] = MeasureBlending ? BlendTimingScopes : null,
             ["TraceEnabled"] = _recordTrace,
+            ["FrameSamples"] = _frameSamplesFileName,
             ["Startup"] = JsonSerializer.SerializeToNode(Startup, SceneJsonContext.Default.ApplicationStartupTimes),
             ["TraceDetail"] = Options.TraceDetail,
             ["TraceAllocations"] = Options.TraceAllocations,
@@ -475,15 +551,74 @@ public sealed partial class SceneTestPlatform
                 ? new JsonObject(settings.Select(static pair => new KeyValuePair<string, JsonNode?>(pair.Key, JsonValue.Create(pair.Value)))) : null,
             ["Scenes"] = JsonSerializer.SerializeToNode(_results, SceneJsonContext.Default.ListSceneTiming),
         };
-        File.WriteAllText(LastReport, report.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+        WriteMeasurementText(LastReport, report.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
         Console.WriteLine($"Performance report: {LastReport}");
         IsMeasuring = false;
         Application.MeasureInterface = false;
         Application.DebugUiEnabled = true;
+        Application.ViewsEnabled = _interactiveViewsEnabled;
         Options = _interactiveOptions!;
         SelectedScene = _interactiveScene;
         Application.ContentDirectory = Current.ContentDirectory;
+        Application.AssetPacks = Current.AssetPacks;
+        Application.ApplicationAsset = Current.ApplicationAsset is { } selected ? new AssetId<ApplicationSettingsAsset>(selected) : null;
         _interactiveOptions = null;
+    }
+
+    public void ConfigureViews(string[] args) => ConfigureViews(Application, args);
+
+    public static void ConfigureViews(ApplicationScene application, string[] args)
+    {
+        ArgumentNullException.ThrowIfNull(application);
+        ArgumentNullException.ThrowIfNull(args);
+        var settings = new List<ApplicationViewSettings>();
+        for (int index = 0; index < args.Length; index++)
+        {
+            if (args[index].Equals("--no-debug-views", StringComparison.OrdinalIgnoreCase))
+            {
+                settings.Clear();
+                continue;
+            }
+            string? value = null;
+            if (args[index].StartsWith("--debug-view=", StringComparison.OrdinalIgnoreCase))
+                value = args[index]["--debug-view=".Length..];
+            else if (args[index].Equals("--debug-view", StringComparison.OrdinalIgnoreCase))
+                value = ++index < args.Length ? args[index] : throw new ArgumentException("--debug-view requires mode:widthxheight.", "--debug-view");
+            if (value is null) continue;
+            string[] parts = value.Split([':', 'x', 'X']);
+            if (parts.Length != 3 || !uint.TryParse(parts[0], out uint mode) ||
+                !int.TryParse(parts[1], out int width) || !int.TryParse(parts[2], out int height))
+                throw new ArgumentException("--debug-view requires mode:widthxheight, for example 9:320x180.", "--debug-view");
+            settings.Add(new ApplicationViewSettings(mode, width, height));
+        }
+        application.ClearViews();
+        foreach (ApplicationViewSettings view in settings) application.AddView(view);
+    }
+
+    private void DrawViewImages()
+    {
+        Application.PresentationBounds = null;
+        if (!Application.ViewsEnabled || Application.Views.Count == 0) return;
+        float sidebar = Math.Min(_renderWidth * 0.45f, Application.Views.Max(view => view.Settings.Width) + 24f);
+        float leftWidth = _renderWidth - sidebar;
+        float scale = Math.Min(leftWidth / _renderWidth, 1f);
+        Application.PresentationBounds = new(0, (_renderHeight - (int)(_renderHeight * scale)) / 2,
+            Math.Max(1, (int)(_renderWidth * scale)), Math.Max(1, (int)(_renderHeight * scale)));
+        ImGui.SetNextWindowPos(new System.Numerics.Vector2(leftWidth, 0), ImGuiCond.Always);
+        ImGui.SetNextWindowSize(new System.Numerics.Vector2(sidebar, _renderHeight), ImGuiCond.Always);
+        if (ImGui.Begin("Independent debug views", ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoResize |
+            ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoSavedSettings))
+        {
+            for (int index = 0; index < Application.Views.Count; index++)
+            {
+                ApplicationView view = Application.Views[index];
+                ApplicationViewSettings settings = view.Settings;
+                ImGui.Text($"View {index + 1}: mode {settings.Mode} ({settings.Width} x {settings.Height})");
+                float imageScale = Math.Min(1f, Math.Max(1f, ImGui.GetContentRegionAvail().X) / settings.Width);
+                ImGui.Image(view.ImageId, new System.Numerics.Vector2(settings.Width * imageScale, settings.Height * imageScale));
+            }
+        }
+        ImGui.End();
     }
 
     internal void Draw()
@@ -495,7 +630,7 @@ public sealed partial class SceneTestPlatform
             for (int index = 0; index < Scenes.Count; index++)
             {
                 TestScene scene = Scenes[index];
-                bool available = SomeEngine.Assets.AssetContent.Exists(scene.ContentDirectory);
+                bool available = AssetContent.Exists(scene.ContentDirectory, scene.AssetPacks);
                 ImGui.BeginDisabled(!available);
                 if (ImGui.Selectable(available ? scene.Name : scene.Name + " (build content first)", index == SelectedScene))
                     SelectScene(index);
@@ -518,6 +653,26 @@ public sealed partial class SceneTestPlatform
         foreach (SceneTiming result in _results)
             ImGui.TextUnformatted($"{result.Scene}: {result.MedianMs:F3} ms / P95 {result.P95Ms:F3} ms ({result.Status})");
         if (LastReport is not null) ImGui.TextWrapped(LastReport);
+        ImGui.SeparatorText("Additional views");
+        if (ImGui.Button("Add debug view")) Application.AddView(new ApplicationViewSettings(9));
+        ImGui.SameLine();
+        if (ImGui.Button("Close all debug views")) Application.ClearViews();
+        for (int index = 0; index < Application.Views.Count; index++)
+        {
+            ImGui.PushID(index);
+            ApplicationView view = Application.Views[index];
+            ApplicationViewSettings settings = view.Settings;
+            int mode = checked((int)settings.Mode) - 8;
+            int viewWidth = settings.Width, viewHeight = settings.Height;
+            bool changed = ImGui.Combo("Mode", ref mode, "Barycentrics\0Normal\0UV\0Deviation\0");
+            changed |= ImGui.InputInt("Width", ref viewWidth, 16, 64, ImGuiInputTextFlags.EnterReturnsTrue);
+            changed |= ImGui.InputInt("Height", ref viewHeight, 16, 64, ImGuiInputTextFlags.EnterReturnsTrue);
+            if (changed && viewWidth > 0 && viewHeight > 0)
+                view.Settings = new ApplicationViewSettings(checked((uint)mode + 8), viewWidth, viewHeight);
+            bool remove = ImGui.Button("Close view");
+            ImGui.PopID();
+            if (remove) { Application.RemoveView(view); break; }
+        }
         int geometryMemory = GeometryMemoryMegabytes;
         ImGui.SetNextItemWidth(200);
         if (ImGui.SliderInt("Geometry memory (MiB)", ref geometryMemory, 64, 512))

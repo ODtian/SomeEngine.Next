@@ -385,8 +385,9 @@ internal sealed partial class FrameExecutor
             int wave = 0;
             foreach (int dependency in _submissionDependencies[submission])
             {
-                if (_submissionWaves[dependency] < 0) { wave = -1; break; }
-                wave = Math.Max(wave, _submissionWaves[dependency] + 1);
+                int dependencyWave = _submissionWaves[dependency];
+                if (dependencyWave < 0) { wave = -1; break; }
+                wave = Math.Max(wave, dependencyWave + 1);
             }
             if (wave < 0 || wave == _submissionWaves[submission]) continue;
             RemoveSubmissionWave(submission);

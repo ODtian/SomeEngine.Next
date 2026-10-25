@@ -1,3 +1,4 @@
+using SomeEngine.Render.Assets;
 using SomeEngine.Graphics;
 using SomeEngine.Resources;
 using SlangShaderSharp;
@@ -22,7 +23,7 @@ internal static class ClusterDeformResourceNames
 }
 
 internal sealed record ClusterDeformStage(
-    ClusterComputePipeline Pipeline,
+    LinkedComputePipeline Pipeline,
     ClusterRasterStageResources<ClusterDeformResource> Resources);
 
 internal sealed record ClusterDeformation(ClusterDeformStage[] Stages)
@@ -36,8 +37,9 @@ internal sealed record ClusterDeformation(ClusterDeformStage[] Stages)
         if (ReferenceEquals(left, right)) return true;
         if (left is null || right is null) return false;
         for (int index = 0; index < Entries.Length; index++)
-            if (!left.Stages[index].Resources.MaterialBindings.AsSpan().SequenceEqual(
-                    right.Stages[index].Resources.MaterialBindings)) return false;
+            if (!ReferenceEquals(left.Stages[index].Pipeline, right.Stages[index].Pipeline) ||
+                !left.Stages[index].Resources.MaterialProperties.AsSpan().SequenceEqual(
+                    right.Stages[index].Resources.MaterialProperties)) return false;
         return true;
     }
 }
@@ -45,7 +47,7 @@ internal sealed record ClusterDeformation(ClusterDeformStage[] Stages)
 internal sealed partial class ClusterRasterStages
 {
     private ClusterDeformation? ResolveDeformation(
-        Material material, string vertexEncoding, List<ClusterCommandBindingKey> bindings)
+        Material material, string vertexEncoding, List<ClusterCommandBindingKey.BindingValue> bindings)
     {
         Shader shader = ClusterMaterialEntries.RequireShader(material);
         if (!ClusterMaterialEntries.HasEntry(shader, _device.Capabilities.CompileTarget,
@@ -55,11 +57,10 @@ internal sealed partial class ClusterRasterStages
         for (int index = 0; index < stages.Length; index++)
         {
             string entry = ClusterDeformation.Entries[index];
-            ClusterComputePipeline pipeline = ResolveSoftwarePipeline(material, shader, entry, vertexEncoding);
+            LinkedComputePipeline pipeline = ResolveComputePipeline(material, shader, entry, vertexEncoding);
             ClusterRasterStageResources<ClusterDeformResource> resources = ResolveRasterResources(
-                material, pipeline.ParameterLayout, shader, entry, null,
-                ClusterDeformResourceNames.Resolve, ClusterDeformResourceNames.Contains);
-            bindings.Add(ClusterCommandBindingKey.Create(material, resources.Resources, resources.MaterialBindings));
+                material, null, shader, entry, null, ClusterDeformResourceNames.Resolve);
+            ClusterCommandBindingKey.Append(material, resources.Resources, resources.MaterialProperties, bindings);
             stages[index] = new(pipeline, resources);
         }
         return new(stages);

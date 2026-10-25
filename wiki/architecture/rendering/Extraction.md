@@ -23,5 +23,15 @@ Extraction 把 GameWorld 的渲染相关变化转换成下一次 RenderWorld 更
 该回调与 chunk 收集共用 Game world 的一致读取窗口。
 `Apply` 与 `ApplyChanges` 使用收集值，RenderWorld 的常驻组件和缓冲在现有结构事务中更新。
 
+## 材质引用
+
+`MeshMaterialBinding.Material` 中已经加载的对象引用直接写入
+`RenderMaterialBinding.Material`，顺序与重复绑定保持原样。
+RenderWorld 不为这些对象建立材质登记实体或 ID 到对象的回查目录。
+
+Material 的字段和资源引用继续由原对象持有，并遵守既有资产更新边界；
+渲染消费者直接读取同一对象。提取交付的是实体的绑定关系，
+不生成另一份材质字段或资源值。
+
 ## Relations
 [[GameWorld-and-RenderWorld]] · [[Frame-CPU-Overlap]] · [[architecture/assets/Asset-Update-Boundary]]

@@ -78,6 +78,56 @@ public sealed class TextureTests
     }
 
     [Fact]
+    public async Task ObserverFailuresKeepCommittedPixelsAndAllowLaterUpdates()
+    {
+        using var texture = SinglePixel(3);
+        using var replacement = SinglePixel(9);
+        ulong revision = texture.Revision;
+        var firstError = new InvalidOperationException();
+        var secondError = new ArgumentException();
+        var observedRevisions = new List<ulong>();
+        Action<Texture> firstObserver = changed =>
+        {
+            observedRevisions.Add(changed.Revision);
+            throw firstError;
+        };
+        Action<Texture> secondObserver = changed =>
+        {
+            observedRevisions.Add(changed.Revision);
+            throw secondError;
+        };
+        texture.Changed += firstObserver;
+        texture.Changed += secondObserver;
+
+        AggregateException failure = await Assert.ThrowsAsync<AggregateException>(
+            () => texture.UpdateAsync(replacement).AsTask());
+
+        AggregateException observerErrors = Assert.IsType<AggregateException>(Assert.Single(failure.InnerExceptions));
+        Assert.Collection(observerErrors.InnerExceptions,
+            error => Assert.Same(firstError, error),
+            error => Assert.Same(secondError, error));
+        Assert.Equal(new[] { revision + 1, revision + 1 }, observedRevisions);
+        Assert.True(replacement.IsDisposed);
+        Assert.False(texture.IsDisposed);
+        Assert.False(texture.IsUpdating);
+        Assert.Equal(revision + 1, texture.Revision);
+        Assert.True(texture.TryGetTile(texture.MipTiles[0].ChunkKey, out ReadOnlyMemory<byte> committed));
+        Assert.Equal(new byte[] { 9, 9, 9, 9 }, committed.ToArray());
+
+        texture.Changed -= firstObserver;
+        texture.Changed -= secondObserver;
+        using var laterReplacement = SinglePixel(17);
+        await texture.UpdateAsync(laterReplacement);
+
+        Assert.True(laterReplacement.IsDisposed);
+        Assert.False(texture.IsUpdating);
+        Assert.Equal(revision + 2, texture.Revision);
+        Assert.True(texture.TryGetTile(texture.MipTiles[0].ChunkKey, out ReadOnlyMemory<byte> later));
+        Assert.Equal(new byte[] { 17, 17, 17, 17 }, later.ToArray());
+        Assert.Equal(new byte[] { 9, 9, 9, 9 }, committed.ToArray());
+    }
+
+    [Fact]
     public void InvalidCubeLayerCountsAndSampleCountsRemainRejected()
     {
         Assert.Throws<ArgumentException>(() => Texture.Create(new(TextureDimension.Texture2D,

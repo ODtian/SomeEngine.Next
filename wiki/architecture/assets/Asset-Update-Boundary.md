@@ -12,7 +12,7 @@
 
 ## 当前更新入口
 
-`MaterialAsset.UpdateAsync<TMaterial>(material, files, shaders, textures)` 完整解析资产内容，按强类型字典选择实际 Shader、Texture，再通过 MaterialGen 生成的 `IMaterial<TMaterial>.Update` 写入现有具体材料。生成代码直接复制全部具体字段，保留 MaterialId，并在字段就绪后将内容 Revision 推进一次。Reset 后重新创建的字段来自父模板与类字段初始化。
+`MaterialAsset.UpdateAsync<TMaterial>(material, files, shaders, textures)` 完整解析资产内容，按强类型字典选择实际 Shader、Texture，再通过 MaterialImplementationGenerator 生成的 `IMaterial<TMaterial>.Update` 写入现有具体材料。生成代码直接复制全部具体字段，保留 MaterialId，并在字段就绪后将内容 Revision 推进一次。Reset 后重新创建的字段来自父模板与类字段初始化。
 
 业务通过具体 `ShaderAsset.CreateAsync` 创建新的共同 Shader，并在下一次材质 `UpdateAsync<TMaterial>` 提供该实际引用。`TextureBlock.UpdateAsync` 从完整纹理内容创建替换 Texture，交给已有 Texture 的 `UpdateAsync`；完成结果仍是同一个业务 Texture。
 

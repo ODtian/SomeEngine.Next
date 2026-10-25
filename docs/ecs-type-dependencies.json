@@ -1,7 +1,7 @@
 {
   "schema": "someengine-ecs-type-dependencies-v1",
   "generatedAt": "2026-07-29T02:13:44.8943572+08:00",
-  "source": "current working tree semantic source plus in-memory compilation",
+  "source": "Historical topology snapshot from semantic source plus in-memory compilation; generator identities and paths projected to current names only. The original generatedAt, topology, counts, ranks, source line numbers and audit results are retained; this file was not regenerated or validated against the current worktree.",
   "edgeDefinition": "One source-type to referenced-project-type pair. The authoritative graph is the union of semantic source references and compiled signature/IL references, so it retains both compile-time-erased dependencies and inferred/implicit compiled dependencies.",
   "edgeCategories": {
     "signature": "A declaration metadata dependency: field, property, event, parameter, return type, generic constraint, or annotation.",
@@ -1971,8 +1971,8 @@
         ]
       },
       {
-        "source": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.BundleGenerator",
-        "target": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.BundleGenerator.BundleMember",
+        "source": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.BundleGenerator",
+        "target": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.BundleGenerator.BundleMember",
         "kinds": [
           "body-use",
           "creation",
@@ -1980,8 +1980,8 @@
         ]
       },
       {
-        "source": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.BundleGenerator",
-        "target": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.BundleGenerator.BundleMemberKind",
+        "source": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.BundleGenerator",
+        "target": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.BundleGenerator.BundleMemberKind",
         "kinds": [
           "body-use",
           "creation",
@@ -1989,8 +1989,8 @@
         ]
       },
       {
-        "source": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.BundleGenerator",
-        "target": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.BundleGenerator.BundleModel",
+        "source": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.BundleGenerator",
+        "target": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.BundleGenerator.BundleModel",
         "kinds": [
           "body-use",
           "creation",
@@ -1998,24 +1998,24 @@
         ]
       },
       {
-        "source": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.BundleGenerator.BundleMember",
-        "target": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.BundleGenerator.BundleMemberKind",
+        "source": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.BundleGenerator.BundleMember",
+        "target": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.BundleGenerator.BundleMemberKind",
         "kinds": [
           "signature",
           "value-state"
         ]
       },
       {
-        "source": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.BundleGenerator.BundleModel",
-        "target": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.BundleGenerator.BundleMember",
+        "source": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.BundleGenerator.BundleModel",
+        "target": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.BundleGenerator.BundleMember",
         "kinds": [
           "signature",
           "state"
         ]
       },
       {
-        "source": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.JobEntityGenerator",
-        "target": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.JobEntityGenerator.JobModel",
+        "source": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.JobEntityGenerator",
+        "target": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.JobEntityGenerator.JobModel",
         "kinds": [
           "body-use",
           "creation",
@@ -2023,23 +2023,23 @@
         ]
       },
       {
-        "source": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.JobEntityGenerator",
-        "target": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.JobEntityGenerator.ParameterAliasComparer",
+        "source": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.JobEntityGenerator",
+        "target": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.JobEntityGenerator.ParameterAliasComparer",
         "kinds": [
           "creation"
         ]
       },
       {
-        "source": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.JobEntityGenerator",
-        "target": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.JobEntityGenerator.ParameterKind",
+        "source": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.JobEntityGenerator",
+        "target": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.JobEntityGenerator.ParameterKind",
         "kinds": [
           "body-use",
           "creation"
         ]
       },
       {
-        "source": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.JobEntityGenerator",
-        "target": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.JobEntityGenerator.ParameterModel",
+        "source": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.JobEntityGenerator",
+        "target": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.JobEntityGenerator.ParameterModel",
         "kinds": [
           "body-use",
           "creation",
@@ -2047,24 +2047,24 @@
         ]
       },
       {
-        "source": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.JobEntityGenerator.JobModel",
-        "target": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.JobEntityGenerator.ParameterModel",
+        "source": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.JobEntityGenerator.JobModel",
+        "target": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.JobEntityGenerator.ParameterModel",
         "kinds": [
           "signature",
           "state"
         ]
       },
       {
-        "source": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.JobEntityGenerator.ParameterAliasComparer",
-        "target": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.JobEntityGenerator.ParameterKind",
+        "source": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.JobEntityGenerator.ParameterAliasComparer",
+        "target": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.JobEntityGenerator.ParameterKind",
         "kinds": [
           "inheritance",
           "signature"
         ]
       },
       {
-        "source": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.JobEntityGenerator.ParameterModel",
-        "target": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.JobEntityGenerator.ParameterKind",
+        "source": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.JobEntityGenerator.ParameterModel",
+        "target": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.JobEntityGenerator.ParameterKind",
         "kinds": [
           "body-use",
           "signature",
@@ -2072,8 +2072,8 @@
         ]
       },
       {
-        "source": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.SerializationGenerator",
-        "target": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.SerializationGenerator.FieldKind",
+        "source": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.SerializationGenerator",
+        "target": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.SerializationGenerator.FieldKind",
         "kinds": [
           "body-use",
           "creation",
@@ -2081,8 +2081,8 @@
         ]
       },
       {
-        "source": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.SerializationGenerator",
-        "target": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.SerializationGenerator.FieldModel",
+        "source": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.SerializationGenerator",
+        "target": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.SerializationGenerator.FieldModel",
         "kinds": [
           "body-use",
           "creation",
@@ -2090,16 +2090,16 @@
         ]
       },
       {
-        "source": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.SerializationGenerator",
-        "target": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.SerializationGenerator.SerializableKind",
+        "source": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.SerializationGenerator",
+        "target": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.SerializationGenerator.SerializableKind",
         "kinds": [
           "body-use",
           "signature"
         ]
       },
       {
-        "source": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.SerializationGenerator",
-        "target": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.SerializationGenerator.SerializableModel",
+        "source": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.SerializationGenerator",
+        "target": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.SerializationGenerator.SerializableModel",
         "kinds": [
           "body-use",
           "creation",
@@ -2107,8 +2107,8 @@
         ]
       },
       {
-        "source": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.SerializationGenerator.FieldModel",
-        "target": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.SerializationGenerator.FieldKind",
+        "source": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.SerializationGenerator.FieldModel",
+        "target": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.SerializationGenerator.FieldKind",
         "kinds": [
           "body-use",
           "signature",
@@ -2116,23 +2116,23 @@
         ]
       },
       {
-        "source": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.SerializationGenerator.FieldModel",
-        "target": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.SerializationGenerator.SerializableModel",
+        "source": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.SerializationGenerator.FieldModel",
+        "target": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.SerializationGenerator.SerializableModel",
         "kinds": [
           "signature",
           "state"
         ]
       },
       {
-        "source": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.SerializationGenerator.SerializableModel",
-        "target": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.SerializationGenerator.FieldModel",
+        "source": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.SerializationGenerator.SerializableModel",
+        "target": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.SerializationGenerator.FieldModel",
         "kinds": [
           "state"
         ]
       },
       {
-        "source": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.SerializationGenerator.SerializableModel",
-        "target": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.SerializationGenerator.SerializableKind",
+        "source": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.SerializationGenerator.SerializableModel",
+        "target": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.SerializationGenerator.SerializableKind",
         "kinds": [
           "value-state"
         ]
@@ -5584,9 +5584,9 @@
       ]
     },
     {
-      "Id": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.BundleGenerator.BundleMemberKind",
-      "Assembly": "SomeEngine.ECS.SourceGen",
-      "FullName": "SomeEngine.ECS.SourceGen.BundleGenerator.BundleMemberKind",
+      "Id": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.BundleGenerator.BundleMemberKind",
+      "Assembly": "SomeEngine.ECS.SourceGenerators",
+      "FullName": "SomeEngine.ECS.SourceGenerators.BundleGenerator.BundleMemberKind",
       "Name": "BundleMemberKind",
       "Kind": "Enum",
       "Accessibility": "Private",
@@ -5599,13 +5599,13 @@
       "DeclaredConstructorCount": 0,
       "retainedMembers": [],
       "files": [
-        "src/SomeEngine.ECS.SourceGen/BundleGenerator.cs"
+        "src/SomeEngine.ECS.SourceGenerators/BundleGenerator.cs"
       ]
     },
     {
-      "Id": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.JobEntityGenerator.ParameterKind",
-      "Assembly": "SomeEngine.ECS.SourceGen",
-      "FullName": "SomeEngine.ECS.SourceGen.JobEntityGenerator.ParameterKind",
+      "Id": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.JobEntityGenerator.ParameterKind",
+      "Assembly": "SomeEngine.ECS.SourceGenerators",
+      "FullName": "SomeEngine.ECS.SourceGenerators.JobEntityGenerator.ParameterKind",
       "Name": "ParameterKind",
       "Kind": "Enum",
       "Accessibility": "Private",
@@ -5618,13 +5618,13 @@
       "DeclaredConstructorCount": 0,
       "retainedMembers": [],
       "files": [
-        "src/SomeEngine.ECS.SourceGen/JobEntityGenerator.cs"
+        "src/SomeEngine.ECS.SourceGenerators/JobEntityGenerator.cs"
       ]
     },
     {
-      "Id": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.SerializationGenerator.FieldKind",
-      "Assembly": "SomeEngine.ECS.SourceGen",
-      "FullName": "SomeEngine.ECS.SourceGen.SerializationGenerator.FieldKind",
+      "Id": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.SerializationGenerator.FieldKind",
+      "Assembly": "SomeEngine.ECS.SourceGenerators",
+      "FullName": "SomeEngine.ECS.SourceGenerators.SerializationGenerator.FieldKind",
       "Name": "FieldKind",
       "Kind": "Enum",
       "Accessibility": "Private",
@@ -5637,13 +5637,13 @@
       "DeclaredConstructorCount": 0,
       "retainedMembers": [],
       "files": [
-        "src/SomeEngine.ECS.SourceGen/SerializationGenerator.cs"
+        "src/SomeEngine.ECS.SourceGenerators/SerializationGenerator.cs"
       ]
     },
     {
-      "Id": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.SerializationGenerator.SerializableKind",
-      "Assembly": "SomeEngine.ECS.SourceGen",
-      "FullName": "SomeEngine.ECS.SourceGen.SerializationGenerator.SerializableKind",
+      "Id": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.SerializationGenerator.SerializableKind",
+      "Assembly": "SomeEngine.ECS.SourceGenerators",
+      "FullName": "SomeEngine.ECS.SourceGenerators.SerializationGenerator.SerializableKind",
       "Name": "SerializableKind",
       "Kind": "Enum",
       "Accessibility": "Private",
@@ -5656,7 +5656,7 @@
       "DeclaredConstructorCount": 0,
       "retainedMembers": [],
       "files": [
-        "src/SomeEngine.ECS.SourceGen/SerializationGenerator.cs"
+        "src/SomeEngine.ECS.SourceGenerators/SerializationGenerator.cs"
       ]
     },
     {
@@ -8376,9 +8376,9 @@
       ]
     },
     {
-      "Id": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.BundleGenerator.BundleMember",
-      "Assembly": "SomeEngine.ECS.SourceGen",
-      "FullName": "SomeEngine.ECS.SourceGen.BundleGenerator.BundleMember",
+      "Id": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.BundleGenerator.BundleMember",
+      "Assembly": "SomeEngine.ECS.SourceGenerators",
+      "FullName": "SomeEngine.ECS.SourceGenerators.BundleGenerator.BundleMember",
       "Name": "BundleMember",
       "Kind": "Class",
       "Accessibility": "Private",
@@ -8407,7 +8407,7 @@
         {
           "Name": "Kind",
           "Kind": "auto-property",
-          "Type": "SomeEngine.ECS.SourceGen.BundleGenerator.BundleMemberKind",
+          "Type": "SomeEngine.ECS.SourceGenerators.BundleGenerator.BundleMemberKind",
           "Accessibility": "Public",
           "ReadOnly": true
         },
@@ -8420,13 +8420,13 @@
         }
       ],
       "files": [
-        "src/SomeEngine.ECS.SourceGen/BundleGenerator.cs"
+        "src/SomeEngine.ECS.SourceGenerators/BundleGenerator.cs"
       ]
     },
     {
-      "Id": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.JobEntityGenerator.ParameterAliasComparer",
-      "Assembly": "SomeEngine.ECS.SourceGen",
-      "FullName": "SomeEngine.ECS.SourceGen.JobEntityGenerator.ParameterAliasComparer",
+      "Id": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.JobEntityGenerator.ParameterAliasComparer",
+      "Assembly": "SomeEngine.ECS.SourceGenerators",
+      "FullName": "SomeEngine.ECS.SourceGenerators.JobEntityGenerator.ParameterAliasComparer",
       "Name": "ParameterAliasComparer",
       "Kind": "Class",
       "Accessibility": "Private",
@@ -8439,13 +8439,13 @@
       "DeclaredConstructorCount": 0,
       "retainedMembers": [],
       "files": [
-        "src/SomeEngine.ECS.SourceGen/JobEntityGenerator.cs"
+        "src/SomeEngine.ECS.SourceGenerators/JobEntityGenerator.cs"
       ]
     },
     {
-      "Id": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.JobEntityGenerator.ParameterModel",
-      "Assembly": "SomeEngine.ECS.SourceGen",
-      "FullName": "SomeEngine.ECS.SourceGen.JobEntityGenerator.ParameterModel",
+      "Id": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.JobEntityGenerator.ParameterModel",
+      "Assembly": "SomeEngine.ECS.SourceGenerators",
+      "FullName": "SomeEngine.ECS.SourceGenerators.JobEntityGenerator.ParameterModel",
       "Name": "ParameterModel",
       "Kind": "Class",
       "Accessibility": "Private",
@@ -8460,7 +8460,7 @@
         {
           "Name": "Kind",
           "Kind": "auto-property",
-          "Type": "SomeEngine.ECS.SourceGen.JobEntityGenerator.ParameterKind",
+          "Type": "SomeEngine.ECS.SourceGenerators.JobEntityGenerator.ParameterKind",
           "Accessibility": "Internal",
           "ReadOnly": true
         },
@@ -8480,13 +8480,13 @@
         }
       ],
       "files": [
-        "src/SomeEngine.ECS.SourceGen/JobEntityGenerator.cs"
+        "src/SomeEngine.ECS.SourceGenerators/JobEntityGenerator.cs"
       ]
     },
     {
-      "Id": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.SerializationGenerator.FieldModel",
-      "Assembly": "SomeEngine.ECS.SourceGen",
-      "FullName": "SomeEngine.ECS.SourceGen.SerializationGenerator.FieldModel",
+      "Id": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.SerializationGenerator.FieldModel",
+      "Assembly": "SomeEngine.ECS.SourceGenerators",
+      "FullName": "SomeEngine.ECS.SourceGenerators.SerializationGenerator.FieldModel",
       "Name": "FieldModel",
       "Kind": "Class",
       "Accessibility": "Private",
@@ -8501,14 +8501,14 @@
         {
           "Name": "Kind",
           "Kind": "auto-property",
-          "Type": "SomeEngine.ECS.SourceGen.SerializationGenerator.FieldKind",
+          "Type": "SomeEngine.ECS.SourceGenerators.SerializationGenerator.FieldKind",
           "Accessibility": "Public",
           "ReadOnly": true
         },
         {
           "Name": "Nested",
           "Kind": "auto-property",
-          "Type": "SomeEngine.ECS.SourceGen.SerializationGenerator.SerializableModel?",
+          "Type": "SomeEngine.ECS.SourceGenerators.SerializationGenerator.SerializableModel?",
           "Accessibility": "Public",
           "ReadOnly": true
         },
@@ -8528,13 +8528,13 @@
         }
       ],
       "files": [
-        "src/SomeEngine.ECS.SourceGen/SerializationGenerator.cs"
+        "src/SomeEngine.ECS.SourceGenerators/SerializationGenerator.cs"
       ]
     },
     {
-      "Id": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.SerializationGenerator.SerializableModel",
-      "Assembly": "SomeEngine.ECS.SourceGen",
-      "FullName": "SomeEngine.ECS.SourceGen.SerializationGenerator.SerializableModel",
+      "Id": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.SerializationGenerator.SerializableModel",
+      "Assembly": "SomeEngine.ECS.SourceGenerators",
+      "FullName": "SomeEngine.ECS.SourceGenerators.SerializationGenerator.SerializableModel",
       "Name": "SerializableModel",
       "Kind": "Class",
       "Accessibility": "Private",
@@ -8563,14 +8563,14 @@
         {
           "Name": "Fields",
           "Kind": "auto-property",
-          "Type": "System.Collections.Generic.List\u003CSomeEngine.ECS.SourceGen.SerializationGenerator.FieldModel\u003E",
+          "Type": "System.Collections.Generic.List\u003CSomeEngine.ECS.SourceGenerators.SerializationGenerator.FieldModel\u003E",
           "Accessibility": "Public",
           "ReadOnly": true
         },
         {
           "Name": "Kind",
           "Kind": "auto-property",
-          "Type": "SomeEngine.ECS.SourceGen.SerializationGenerator.SerializableKind",
+          "Type": "SomeEngine.ECS.SourceGenerators.SerializationGenerator.SerializableKind",
           "Accessibility": "Public",
           "ReadOnly": false
         },
@@ -8625,7 +8625,7 @@
         }
       ],
       "files": [
-        "src/SomeEngine.ECS.SourceGen/SerializationGenerator.cs"
+        "src/SomeEngine.ECS.SourceGenerators/SerializationGenerator.cs"
       ]
     },
     {
@@ -10034,9 +10034,9 @@
       ]
     },
     {
-      "Id": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.BundleGenerator.BundleModel",
-      "Assembly": "SomeEngine.ECS.SourceGen",
-      "FullName": "SomeEngine.ECS.SourceGen.BundleGenerator.BundleModel",
+      "Id": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.BundleGenerator.BundleModel",
+      "Assembly": "SomeEngine.ECS.SourceGenerators",
+      "FullName": "SomeEngine.ECS.SourceGenerators.BundleGenerator.BundleModel",
       "Name": "BundleModel",
       "Kind": "Class",
       "Accessibility": "Private",
@@ -10058,7 +10058,7 @@
         {
           "Name": "Members",
           "Kind": "auto-property",
-          "Type": "System.Collections.Generic.List\u003CSomeEngine.ECS.SourceGen.BundleGenerator.BundleMember\u003E",
+          "Type": "System.Collections.Generic.List\u003CSomeEngine.ECS.SourceGenerators.BundleGenerator.BundleMember\u003E",
           "Accessibility": "Public",
           "ReadOnly": true
         },
@@ -10071,13 +10071,13 @@
         }
       ],
       "files": [
-        "src/SomeEngine.ECS.SourceGen/BundleGenerator.cs"
+        "src/SomeEngine.ECS.SourceGenerators/BundleGenerator.cs"
       ]
     },
     {
-      "Id": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.JobEntityGenerator.JobModel",
-      "Assembly": "SomeEngine.ECS.SourceGen",
-      "FullName": "SomeEngine.ECS.SourceGen.JobEntityGenerator.JobModel",
+      "Id": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.JobEntityGenerator.JobModel",
+      "Assembly": "SomeEngine.ECS.SourceGenerators",
+      "FullName": "SomeEngine.ECS.SourceGenerators.JobEntityGenerator.JobModel",
       "Name": "JobModel",
       "Kind": "Class",
       "Accessibility": "Private",
@@ -10113,7 +10113,7 @@
         {
           "Name": "Parameters",
           "Kind": "auto-property",
-          "Type": "System.Collections.Generic.List\u003CSomeEngine.ECS.SourceGen.JobEntityGenerator.ParameterModel\u003E",
+          "Type": "System.Collections.Generic.List\u003CSomeEngine.ECS.SourceGenerators.JobEntityGenerator.ParameterModel\u003E",
           "Accessibility": "Internal",
           "ReadOnly": true
         },
@@ -10126,13 +10126,13 @@
         }
       ],
       "files": [
-        "src/SomeEngine.ECS.SourceGen/JobEntityGenerator.cs"
+        "src/SomeEngine.ECS.SourceGenerators/JobEntityGenerator.cs"
       ]
     },
     {
-      "Id": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.SerializationGenerator",
-      "Assembly": "SomeEngine.ECS.SourceGen",
-      "FullName": "SomeEngine.ECS.SourceGen.SerializationGenerator",
+      "Id": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.SerializationGenerator",
+      "Assembly": "SomeEngine.ECS.SourceGenerators",
+      "FullName": "SomeEngine.ECS.SourceGenerators.SerializationGenerator",
       "Name": "SerializationGenerator",
       "Kind": "Class",
       "Accessibility": "Public",
@@ -10145,7 +10145,7 @@
       "DeclaredConstructorCount": 0,
       "retainedMembers": [],
       "files": [
-        "src/SomeEngine.ECS.SourceGen/SerializationGenerator.cs"
+        "src/SomeEngine.ECS.SourceGenerators/SerializationGenerator.cs"
       ]
     },
     {
@@ -10977,9 +10977,9 @@
       ]
     },
     {
-      "Id": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.BundleGenerator",
-      "Assembly": "SomeEngine.ECS.SourceGen",
-      "FullName": "SomeEngine.ECS.SourceGen.BundleGenerator",
+      "Id": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.BundleGenerator",
+      "Assembly": "SomeEngine.ECS.SourceGenerators",
+      "FullName": "SomeEngine.ECS.SourceGenerators.BundleGenerator",
       "Name": "BundleGenerator",
       "Kind": "Class",
       "Accessibility": "Public",
@@ -10992,13 +10992,13 @@
       "DeclaredConstructorCount": 0,
       "retainedMembers": [],
       "files": [
-        "src/SomeEngine.ECS.SourceGen/BundleGenerator.cs"
+        "src/SomeEngine.ECS.SourceGenerators/BundleGenerator.cs"
       ]
     },
     {
-      "Id": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.JobEntityGenerator",
-      "Assembly": "SomeEngine.ECS.SourceGen",
-      "FullName": "SomeEngine.ECS.SourceGen.JobEntityGenerator",
+      "Id": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.JobEntityGenerator",
+      "Assembly": "SomeEngine.ECS.SourceGenerators",
+      "FullName": "SomeEngine.ECS.SourceGenerators.JobEntityGenerator",
       "Name": "JobEntityGenerator",
       "Kind": "Class",
       "Accessibility": "Public",
@@ -11011,7 +11011,7 @@
       "DeclaredConstructorCount": 0,
       "retainedMembers": [],
       "files": [
-        "src/SomeEngine.ECS.SourceGen/JobEntityGenerator.cs"
+        "src/SomeEngine.ECS.SourceGenerators/JobEntityGenerator.cs"
       ]
     },
     {
@@ -27369,64 +27369,64 @@
         "ReviewedGroupCount": 1
       },
       {
-        "ContainingTypeId": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.BundleGenerator",
-        "ContainingType": "SomeEngine.ECS.SourceGen.BundleGenerator",
+        "ContainingTypeId": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.BundleGenerator",
+        "ContainingType": "SomeEngine.ECS.SourceGenerators.BundleGenerator",
         "ContainingMember": "GenerateSource",
-        "File": "src/SomeEngine.ECS.SourceGen/BundleGenerator.cs",
+        "File": "src/SomeEngine.ECS.SourceGenerators/BundleGenerator.cs",
         "Line": 325,
         "Boundary": "source-generation",
         "ReviewedGroupCount": 4
       },
       {
-        "ContainingTypeId": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.BundleGenerator",
-        "ContainingType": "SomeEngine.ECS.SourceGen.BundleGenerator",
+        "ContainingTypeId": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.BundleGenerator",
+        "ContainingType": "SomeEngine.ECS.SourceGenerators.BundleGenerator",
         "ContainingMember": "GenerateSource",
-        "File": "src/SomeEngine.ECS.SourceGen/BundleGenerator.cs",
+        "File": "src/SomeEngine.ECS.SourceGenerators/BundleGenerator.cs",
         "Line": 330,
         "Boundary": "source-generation",
         "ReviewedGroupCount": 4
       },
       {
-        "ContainingTypeId": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.BundleGenerator",
-        "ContainingType": "SomeEngine.ECS.SourceGen.BundleGenerator",
+        "ContainingTypeId": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.BundleGenerator",
+        "ContainingType": "SomeEngine.ECS.SourceGenerators.BundleGenerator",
         "ContainingMember": "GenerateSource",
-        "File": "src/SomeEngine.ECS.SourceGen/BundleGenerator.cs",
+        "File": "src/SomeEngine.ECS.SourceGenerators/BundleGenerator.cs",
         "Line": 335,
         "Boundary": "source-generation",
         "ReviewedGroupCount": 4
       },
       {
-        "ContainingTypeId": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.BundleGenerator",
-        "ContainingType": "SomeEngine.ECS.SourceGen.BundleGenerator",
+        "ContainingTypeId": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.BundleGenerator",
+        "ContainingType": "SomeEngine.ECS.SourceGenerators.BundleGenerator",
         "ContainingMember": "GenerateSource",
-        "File": "src/SomeEngine.ECS.SourceGen/BundleGenerator.cs",
+        "File": "src/SomeEngine.ECS.SourceGenerators/BundleGenerator.cs",
         "Line": 341,
         "Boundary": "source-generation",
         "ReviewedGroupCount": 4
       },
       {
-        "ContainingTypeId": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.JobEntityGenerator",
-        "ContainingType": "SomeEngine.ECS.SourceGen.JobEntityGenerator",
+        "ContainingTypeId": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.JobEntityGenerator",
+        "ContainingType": "SomeEngine.ECS.SourceGenerators.JobEntityGenerator",
         "ContainingMember": "BuildModel",
-        "File": "src/SomeEngine.ECS.SourceGen/JobEntityGenerator.cs",
+        "File": "src/SomeEngine.ECS.SourceGenerators/JobEntityGenerator.cs",
         "Line": 142,
         "Boundary": "source-generation",
         "ReviewedGroupCount": 1
       },
       {
-        "ContainingTypeId": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.JobEntityGenerator",
-        "ContainingType": "SomeEngine.ECS.SourceGen.JobEntityGenerator",
+        "ContainingTypeId": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.JobEntityGenerator",
+        "ContainingType": "SomeEngine.ECS.SourceGenerators.JobEntityGenerator",
         "ContainingMember": "Generate",
-        "File": "src/SomeEngine.ECS.SourceGen/JobEntityGenerator.cs",
+        "File": "src/SomeEngine.ECS.SourceGenerators/JobEntityGenerator.cs",
         "Line": 358,
         "Boundary": "source-generation",
         "ReviewedGroupCount": 1
       },
       {
-        "ContainingTypeId": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.SerializationGenerator",
-        "ContainingType": "SomeEngine.ECS.SourceGen.SerializationGenerator",
+        "ContainingTypeId": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.SerializationGenerator",
+        "ContainingType": "SomeEngine.ECS.SourceGenerators.SerializationGenerator",
         "ContainingMember": "AddEnumSchema",
-        "File": "src/SomeEngine.ECS.SourceGen/SerializationGenerator.cs",
+        "File": "src/SomeEngine.ECS.SourceGenerators/SerializationGenerator.cs",
         "Line": 734,
         "Boundary": "source-generation",
         "ReviewedGroupCount": 1
@@ -31159,8 +31159,8 @@
       ]
     },
     {
-      "source": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.BundleGenerator",
-      "target": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.BundleGenerator.BundleMember",
+      "source": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.BundleGenerator",
+      "target": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.BundleGenerator.BundleMember",
       "kinds": [
         "body-use",
         "creation",
@@ -31168,8 +31168,8 @@
       ]
     },
     {
-      "source": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.BundleGenerator",
-      "target": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.BundleGenerator.BundleMemberKind",
+      "source": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.BundleGenerator",
+      "target": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.BundleGenerator.BundleMemberKind",
       "kinds": [
         "body-use",
         "creation",
@@ -31177,8 +31177,8 @@
       ]
     },
     {
-      "source": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.BundleGenerator",
-      "target": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.BundleGenerator.BundleModel",
+      "source": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.BundleGenerator",
+      "target": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.BundleGenerator.BundleModel",
       "kinds": [
         "body-use",
         "creation",
@@ -31186,24 +31186,24 @@
       ]
     },
     {
-      "source": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.BundleGenerator.BundleMember",
-      "target": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.BundleGenerator.BundleMemberKind",
+      "source": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.BundleGenerator.BundleMember",
+      "target": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.BundleGenerator.BundleMemberKind",
       "kinds": [
         "signature",
         "value-state"
       ]
     },
     {
-      "source": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.BundleGenerator.BundleModel",
-      "target": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.BundleGenerator.BundleMember",
+      "source": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.BundleGenerator.BundleModel",
+      "target": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.BundleGenerator.BundleMember",
       "kinds": [
         "signature",
         "state"
       ]
     },
     {
-      "source": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.JobEntityGenerator",
-      "target": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.JobEntityGenerator.JobModel",
+      "source": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.JobEntityGenerator",
+      "target": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.JobEntityGenerator.JobModel",
       "kinds": [
         "body-use",
         "creation",
@@ -31211,23 +31211,23 @@
       ]
     },
     {
-      "source": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.JobEntityGenerator",
-      "target": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.JobEntityGenerator.ParameterAliasComparer",
+      "source": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.JobEntityGenerator",
+      "target": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.JobEntityGenerator.ParameterAliasComparer",
       "kinds": [
         "creation"
       ]
     },
     {
-      "source": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.JobEntityGenerator",
-      "target": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.JobEntityGenerator.ParameterKind",
+      "source": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.JobEntityGenerator",
+      "target": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.JobEntityGenerator.ParameterKind",
       "kinds": [
         "body-use",
         "creation"
       ]
     },
     {
-      "source": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.JobEntityGenerator",
-      "target": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.JobEntityGenerator.ParameterModel",
+      "source": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.JobEntityGenerator",
+      "target": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.JobEntityGenerator.ParameterModel",
       "kinds": [
         "body-use",
         "creation",
@@ -31235,24 +31235,24 @@
       ]
     },
     {
-      "source": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.JobEntityGenerator.JobModel",
-      "target": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.JobEntityGenerator.ParameterModel",
+      "source": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.JobEntityGenerator.JobModel",
+      "target": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.JobEntityGenerator.ParameterModel",
       "kinds": [
         "signature",
         "state"
       ]
     },
     {
-      "source": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.JobEntityGenerator.ParameterAliasComparer",
-      "target": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.JobEntityGenerator.ParameterKind",
+      "source": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.JobEntityGenerator.ParameterAliasComparer",
+      "target": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.JobEntityGenerator.ParameterKind",
       "kinds": [
         "inheritance",
         "signature"
       ]
     },
     {
-      "source": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.JobEntityGenerator.ParameterModel",
-      "target": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.JobEntityGenerator.ParameterKind",
+      "source": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.JobEntityGenerator.ParameterModel",
+      "target": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.JobEntityGenerator.ParameterKind",
       "kinds": [
         "body-use",
         "signature",
@@ -31260,8 +31260,8 @@
       ]
     },
     {
-      "source": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.SerializationGenerator",
-      "target": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.SerializationGenerator.FieldKind",
+      "source": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.SerializationGenerator",
+      "target": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.SerializationGenerator.FieldKind",
       "kinds": [
         "body-use",
         "creation",
@@ -31269,8 +31269,8 @@
       ]
     },
     {
-      "source": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.SerializationGenerator",
-      "target": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.SerializationGenerator.FieldModel",
+      "source": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.SerializationGenerator",
+      "target": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.SerializationGenerator.FieldModel",
       "kinds": [
         "body-use",
         "creation",
@@ -31278,16 +31278,16 @@
       ]
     },
     {
-      "source": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.SerializationGenerator",
-      "target": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.SerializationGenerator.SerializableKind",
+      "source": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.SerializationGenerator",
+      "target": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.SerializationGenerator.SerializableKind",
       "kinds": [
         "body-use",
         "signature"
       ]
     },
     {
-      "source": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.SerializationGenerator",
-      "target": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.SerializationGenerator.SerializableModel",
+      "source": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.SerializationGenerator",
+      "target": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.SerializationGenerator.SerializableModel",
       "kinds": [
         "body-use",
         "creation",
@@ -31295,8 +31295,8 @@
       ]
     },
     {
-      "source": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.SerializationGenerator.FieldModel",
-      "target": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.SerializationGenerator.FieldKind",
+      "source": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.SerializationGenerator.FieldModel",
+      "target": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.SerializationGenerator.FieldKind",
       "kinds": [
         "body-use",
         "signature",
@@ -31304,23 +31304,23 @@
       ]
     },
     {
-      "source": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.SerializationGenerator.FieldModel",
-      "target": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.SerializationGenerator.SerializableModel",
+      "source": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.SerializationGenerator.FieldModel",
+      "target": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.SerializationGenerator.SerializableModel",
       "kinds": [
         "signature",
         "state"
       ]
     },
     {
-      "source": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.SerializationGenerator.SerializableModel",
-      "target": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.SerializationGenerator.FieldModel",
+      "source": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.SerializationGenerator.SerializableModel",
+      "target": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.SerializationGenerator.FieldModel",
       "kinds": [
         "state"
       ]
     },
     {
-      "source": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.SerializationGenerator.SerializableModel",
-      "target": "SomeEngine.ECS.SourceGen::SomeEngine.ECS.SourceGen.SerializationGenerator.SerializableKind",
+      "source": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.SerializationGenerator.SerializableModel",
+      "target": "SomeEngine.ECS.SourceGenerators::SomeEngine.ECS.SourceGenerators.SerializationGenerator.SerializableKind",
       "kinds": [
         "value-state"
       ]

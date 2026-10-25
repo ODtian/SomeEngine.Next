@@ -168,6 +168,7 @@ public sealed class WarpPipelineCacheTests(D3D12TestCompiler shaderCompiler)
             output,
             out cancelledRequired,
             cancellation.Token));
+        Assert.Equal(-1, cancelledRequired);
         Assert.All(output, value => Assert.Equal((byte)0xCD, value));
 
         byte[] expected = ReadCache(backend, cache);

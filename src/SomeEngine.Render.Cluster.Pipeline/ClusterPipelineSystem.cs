@@ -151,7 +151,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         ? GraphData.Outputs
         : throw new InvalidOperationException("The Cluster retained graph has not been installed.");
 
-    public ulong GeometryRevision => _resources.CaptureDiagnostics().Meshes.ChangeRevision;
+    public ulong GeometryRevision => _resources.GeometryRevision;
 
     private ulong _rasterRevision;
     public ulong RasterRevision => _rasterRevision;
@@ -359,6 +359,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             _shadeStages = null;
             _rasterStages?.Dispose();
             _rasterStages = null;
+
             _pipelines?.Dispose();
             _pipelines = null;
             _dispatchIndirectLayout?.Dispose();
@@ -385,6 +386,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             throw new InvalidOperationException("The Cluster graph has been uninstalled.");
         ClusterMaterialAssignmentSet sourceAssignments = _materialAssignments.Current;
         ClusterMaterialAssignmentSet assignments = sourceAssignments.ChangesSince(_consumedMaterialAssignments);
+        RefreshMaterialTextures();
         bool decalResourcesChanged = UpdateMaterialDecals();
         if (_graphInstalled && _resources.GeometryPageCount > GraphData.Resources.PagePriorityCapacity)
             EditGraph((ref RenderGraphEdit edit) => GrowPageRequestPriorities(ref edit));
@@ -402,15 +404,18 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         bool materialDepthChanged = assignmentsChanged || _rasterChangedMaterials.Count != 0;
         if (!assignmentsChanged && !materialResourcesChanged && !shadingChanged)
         {
-            RefreshMaterialTextures();
-            ClusterMaterialScalars updated = _materialScalars.Update(_installedShadeStages!, assignments,
-                _renderDevice.GetTextureDescriptorIndex, _textureScalarChanges);
-            if (!ReferenceEquals(updated, _materialScalars))
+            if (assignments.ChangedOffsets.Count != 0 || assignments.ChangedMaterialIds.Count != 0 ||
+                _textureScalarChanges.Count != 0)
             {
-                QueueBufferWrites(GraphData.ScalarBytes, updated.Bytes, updated.ByteChanges);
-                if (updated.OffsetChanges.Length != 0)
-                    QueueBufferWrites(GraphData.ScalarOffsets, updated.Offsets, updated.OffsetChanges);
-                _materialScalars = updated;
+                ClusterMaterialScalars updated = _materialScalars.Update(_installedShadeStages!, assignments,
+                    _renderDevice.GetTextureDescriptorIndex, _textureScalarChanges);
+                if (!ReferenceEquals(updated, _materialScalars))
+                {
+                    QueueBufferWrites(GraphData.ScalarBytes, updated.Bytes, updated.ByteChanges);
+                    if (updated.OffsetChanges.Length != 0)
+                        QueueBufferWrites(GraphData.ScalarOffsets, updated.Offsets, updated.OffsetChanges);
+                    _materialScalars = updated;
+                }
             }
             _textureScalarChanges.Clear();
             RecordMaterialCasterChanges(assignments);
@@ -418,6 +423,21 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             if (materialDepthChanged) _rasterRevision = checked(_rasterRevision + 1);
             return GraphData.Outputs;
         }
+        return ReconcileGraph(assignments, sourceAssignments, materialResourcesChanged);
+    }
+
+    private ClusterPipelineOutputs ReconcileGraph(
+        ClusterMaterialAssignmentSet assignments,
+        ClusterMaterialAssignmentSet sourceAssignments,
+        bool materialResourcesChanged)
+    {
+        bool assignmentsChanged = !_graphInstalled ||
+            _installedMaterialTopologyVersion != assignments.TopologyVersion;
+        bool shadingChanged = _installedShadeStages is null ||
+            _installedShadeStages.ShadingPath != _options.ShadingPath ||
+            _installedShadeStages.DebugMode != _options.DebugMode ||
+            _installedShadeStages.HasShadowRequests != (_shadowRequestRegion != default);
+        bool materialDepthChanged = assignmentsChanged || _rasterChangedMaterials.Count != 0;
         if (!_graphInstalled)
         {
             _instanceDataTransfer = _resources.InstanceResources.GetDataTransfer(_graph);
@@ -428,6 +448,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         ClusterMaterialScalars scalars = null!;
         bool cullingEnabled = false;
         bool rasterChanged = false;
+        ulong rasterRevision = _rasterRevision;
         EditGraph((ref RenderGraphEdit edit) =>
         {
             if (assignmentsChanged || materialResourcesChanged)
@@ -477,25 +498,25 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                 using (SomeEngine.Diagnostics.EngineTrace.Begin(GraphInstallTrace))
                     GraphData.RasterPhases = InstallGraph(ref edit, in _outputDescription, assignments, rasterStages, shadeStages);
             }
-            var materialResources = UpdateMaterialResources(ref edit, rasterStages, shadeStages);
-            GraphData.MaterialBuffers = materialResources.Buffers;
-            GraphData.MaterialTextures = materialResources.Textures;
             ReconcileTransparency(ref edit, assignments, shadeStages);
             ReconcileBlendMeasurements(ref edit);
+            UpdateMaterialResources(ref edit, rasterStages, shadeStages);
+            if (rasterChanged || materialDepthChanged) rasterRevision = checked(_rasterRevision + 1);
+        }, () =>
+        {
+            _materialScalars = scalars;
+            _textureScalarChanges.Clear();
+            _installedMaterialTopologyVersion = assignments.TopologyVersion;
+            _installedRasterStages = rasterStages;
+            _installedShadeStages = shadeStages;
+            _cullingEnabled = cullingEnabled;
+            _graphInstalled = true;
+            _rasterRevision = rasterRevision;
+            _rasterStages!.AcceptChanges();
+            _shadeStages!.AcceptChanges();
+            RecordMaterialCasterChanges(assignments);
+            AcceptMaterialChanges(assignments, sourceAssignments);
         });
-        _materialScalars = scalars;
-        _textureScalarChanges.Clear();
-        _installedMaterialTopologyVersion = assignments.TopologyVersion;
-        RecordMaterialCasterChanges(assignments);
-        AcceptMaterialChanges(assignments, sourceAssignments);
-        _installedRasterStages = rasterStages;
-        _installedShadeStages = shadeStages;
-        RefreshMaterialTextures();
-        _rasterStages!.AcceptChanges();
-        _shadeStages!.AcceptChanges();
-        _cullingEnabled = cullingEnabled;
-        _graphInstalled = true;
-        if (rasterChanged || materialDepthChanged) _rasterRevision = checked(_rasterRevision + 1);
         return GraphData.Outputs;
     }
 
@@ -678,7 +699,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             BindMaterialDecalFrame(ref graph, views[..primaryViewCount]);
             BindTransparencyFrame(ref graph, batch, views[..primaryViewCount], binding.Publication is not null);
             GraphData.BlendMeasurements?.Stage(ref graph, _measurementSimulationFrame,
-                GraphData.Transparency?.Reused ?? true, GraphData.Decals!.Reused, CaptureDecalBuffers());
+                GraphData.Transparency?.Reused ?? true, GraphData.Decals!.Reused, GraphData.DecalMeasurementBuffers);
             GraphData.Outputs.Geometry.SetFrameRanges(binding.ResidentPageRanges, binding.BvhRanges);
             _residentPageReads = GraphData.Outputs.Geometry.ResidentPageReads;
             _hasPendingFrame = true;
@@ -727,28 +748,28 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             uint workerGroups = Math.Max(1u, Math.Min(groupBudget, checked((uint)((work + 15u) / 16u))));
             foreach (GraphPassId phase in GraphData.Resources.Work.Phases)
                 if (phase != default)
-                    graph.SetPassData(phase, new ClusterDispatchParameters(new DispatchArguments(workerGroups, 1, 1)));
+                    graph.SetPassData(phase, new DispatchArguments(workerGroups, 1, 1));
             UpdateShadeInputs(ref graph, _installedShadeStages!);
             uint viewGroups = ClusterRenderContext.GetViewWorkGroupCount(checked((uint)primaryViewCount));
             graph.SetPassData(
-                GraphData.PrimarySeed.Pass,
-                new ClusterDispatchParameters(new DispatchArguments(
+                GraphData.PrimarySeed,
+                new DispatchArguments(
                     checked((checked((uint)binding.DispatchExtent) + 63u) / 64u),
                     Math.Min(viewGroups, 65535u),
-                    Math.Max(1u, (viewGroups + 65534u) / 65535u))));
+                    Math.Max(1u, (viewGroups + 65534u) / 65535u)));
             foreach (ClusterLayerDispatch dispatch in GraphData.LayerDispatches)
             {
                 graph.SetPassData(
                     dispatch.Pass,
-                    new ClusterDispatchParameters(new DispatchArguments(
+                    new DispatchArguments(
                         dispatch.GroupX,
                         dispatch.GroupY,
-                        checked((uint)primaryViewCount))));
+                        checked((uint)primaryViewCount)));
             }
-            foreach (ClusterLayerDispatch dispatch in GraphData.WinnerDispatches)
+            foreach (GraphPassId pass in GraphData.WinnerDispatches)
             {
                 graph.SetPassData(
-                    dispatch.Pass,
+                    pass,
                     new ClusterFullscreenParameters(
                         _outputDescription.Width,
                         _outputDescription.Height,
@@ -849,7 +870,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         ref RenderGraphEdit graph,
         ref PassDefinition pass,
         PipelineSync sync,
-        bool policyTarget = true)
+        bool policyTarget)
     {
         if (policyTarget)
         {
@@ -935,9 +956,9 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             bool geometryWritten = result.TryGetPassCompletion(GraphData.Outputs.Geometry.CompletePass, out _);
             _history!.FinishFrame(geometryWritten);
             foreach (GraphBufferId buffer in GraphData.BufferWrites.Keys)
-                if (result.TryGetPassCompletion(GraphData.BufferDescriptions[buffer].UploadPass, out _))
+                if (result.TryGetPersistentBufferUploadCompletion(buffer, out _))
                     GraphData.BufferWrites = GraphData.BufferWrites.Remove(buffer);
-            if (result.TryGetPassCompletion(GraphData.SceneBounds.Pass, out _))
+            if (result.TryGetPassCompletion(GraphData.SceneBounds, out _))
             {
                 _sceneBatch = CurrentInstances;
                 _sceneInstanceRevision = _sceneBatch?.ContentRevision ?? 0;
@@ -989,6 +1010,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         _transparencyShaders.Clear();
         Dispose(ref _rasterStages, ref failures);
         DisposeMaterialSamplers(ref failures);
+
         Dispose(ref _pipelines, ref failures);
         _history = null;
         Dispose(ref _dispatchIndirectLayout, ref failures);
@@ -996,7 +1018,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         Dispose(ref _drawIndexedIndirectLayout, ref failures);
         _metricFrameIndex = 0;
         _latestFrameMetrics = null;
-        AcceptMaterialTextures(_graphData.MaterialTextures.Clear(), shutdown: true);
+        AcceptMaterialTextures(_graphData.MaterialTextures.Clear());
         _missingTextureInputsToPrepare = false;
         _materialScalars = ClusterMaterialScalars.Empty;
         _casterChanges.Clear();
@@ -1037,11 +1059,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             [new(IndirectArgumentType.Draw)];
         try
         {
-            pipelines = new ClusterPipelineSet(
-                _backend,
-                _device,
-                _configuration,
-                _visibilityMode);
+            pipelines = new ClusterPipelineSet(_backend, _device, _configuration, _visibilityMode);
             dispatchIndirectLayout = _backend.CreateIndirectCommandLayout(
                 _device,
                 new IndirectCommandLayoutDesc(
@@ -1068,6 +1086,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             Dispose(ref drawIndexedIndirectLayout, ref cleanupFailures);
             Dispose(ref drawIndirectLayout, ref cleanupFailures);
             Dispose(ref dispatchIndirectLayout, ref cleanupFailures);
+
             Dispose(ref pipelines, ref cleanupFailures);
             if (cleanupFailures is not null)
             {

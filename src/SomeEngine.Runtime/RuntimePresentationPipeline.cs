@@ -16,6 +16,7 @@ internal sealed class RuntimePresentationPipeline : IDisposable
     private readonly GraphicsPipeline _pipeline;
     private readonly GraphTextureId _target;
     private readonly GraphPassId _drawPass;
+    private readonly RuntimePresentationPassData _passData;
     private bool _disposed;
 
     internal RuntimePresentationPipeline(
@@ -140,6 +141,7 @@ internal sealed class RuntimePresentationPipeline : IDisposable
                 edit.Commit();
                 _target = target;
                 _drawPass = pass;
+                _passData = data;
             }
             finally
             {
@@ -164,9 +166,17 @@ internal sealed class RuntimePresentationPipeline : IDisposable
         ref RenderGraphFrame frame,
         in SwapchainImage image,
         Queue presentQueue)
+        => Bind(ref frame, image, presentQueue, null);
+
+    internal void Bind(
+        ref RenderGraphFrame frame,
+        in SwapchainImage image,
+        Queue presentQueue,
+        ScissorRect? bounds)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         frame.BindExternalTexture(_target, image, presentQueue);
+        frame.SetPassData(_drawPass, _passData with { Bounds = bounds });
     }
 
     public void Dispose()
@@ -180,7 +190,8 @@ internal sealed class RuntimePresentationPipeline : IDisposable
     private readonly record struct RuntimePresentationPassData(
         GraphColorAttachmentViewId Output,
         int Width,
-        int Height)
+        int Height,
+        ScissorRect? Bounds = null)
     {
         internal static void Declare(
             ref PassDefinition access,
@@ -197,8 +208,9 @@ internal sealed class RuntimePresentationPipeline : IDisposable
             ref RasterPassCommandScope commands,
             in RuntimePresentationPassData data)
         {
-            commands.SetViewports([new Viewport(0, 0, data.Width, data.Height)]);
-            commands.SetScissors([new ScissorRect(0, 0, data.Width, data.Height)]);
+            ScissorRect bounds = data.Bounds ?? new ScissorRect(0, 0, data.Width, data.Height);
+            commands.SetViewports([new Viewport(bounds.X, bounds.Y, bounds.Width, bounds.Height)]);
+            commands.SetScissors([bounds]);
             commands.Draw(new DrawArguments(3, 1, 0, 0));
         }
     }

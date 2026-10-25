@@ -11,7 +11,7 @@
   <ItemGroup>
     <ProjectReference Include="../SomeEngine.Diagnostics/SomeEngine.Diagnostics.csproj" />
     <ProjectReference Include="../SomeEngine.Job.Contracts/SomeEngine.Job.Contracts.csproj" />
-    <ProjectReference Include="../SomeEngine.ECS.SourceGen/SomeEngine.ECS.SourceGen.csproj"
+    <ProjectReference Include="../SomeEngine.ECS.SourceGenerators/SomeEngine.ECS.SourceGenerators.csproj"
                       OutputItemType="Analyzer"
                       ReferenceOutputAssembly="false" />
   </ItemGroup>

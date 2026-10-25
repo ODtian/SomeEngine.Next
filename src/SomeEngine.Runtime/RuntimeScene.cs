@@ -116,7 +116,7 @@ internal sealed class RuntimeScene : IDisposable
                 new ParallelOptions { MaxDegreeOfParallelism = assets.MaxConcurrentReads },
                 async (index, cancellationToken) =>
                 {
-                    using MeshAsset file = await MeshAsset.OpenAsync(assets, meshIds[index], cancellationToken)
+                    await using MeshAsset file = await MeshAsset.OpenAsync(assets, meshIds[index], cancellationToken)
                         .ConfigureAwait(false);
                     MeshBlock geometry = await file.GetBlockAsync<MeshBlock>(cancellationToken).ConfigureAwait(false);
                     ClusterGeometryBlock? clusters = await file.TryGetBlockAsync<ClusterGeometryBlock>(cancellationToken).ConfigureAwait(false);
@@ -161,7 +161,7 @@ internal sealed class RuntimeScene : IDisposable
                 new ParallelOptions { MaxDegreeOfParallelism = assets.MaxConcurrentReads },
                 async (index, cancellationToken) =>
                 {
-                    using MaterialAsset file = await MaterialAsset.OpenAsync(assets, materialIds[index], cancellationToken)
+                    await using MaterialAsset file = await MaterialAsset.OpenAsync(assets, materialIds[index], cancellationToken)
                         .ConfigureAwait(false);
                     using MaterialBlock material = await file.ResolveAsync(assets, cancellationToken).ConfigureAwait(false);
                     var shaders = new Dictionary<AssetId<ShaderAsset>, Shader>();
@@ -304,13 +304,29 @@ internal sealed class RuntimeScene : IDisposable
         return frame with
         {
             NearPlane = _nearPlane, FarPlane = _farPlane, Lights = lights.ToArray(),
-            Meshes = GetMeshEntities().Select(entity =>
-            {
-                Mesh mesh = _world.Read<MeshInstance>(entity).Mesh;
-                Guid asset = _meshes.FirstOrDefault(value => ReferenceEquals(value.Mesh, mesh)).Asset;
-                return new SceneMeshTransform(asset, _world.Read<WorldTransform>(entity).Qvvs.ToMatrix());
-            }).ToArray(),
+            Meshes = CaptureMeshTransforms(GetMeshEntities()),
         };
+    }
+
+    private SceneMeshTransform[] CaptureMeshTransforms(Entity[] entities)
+    {
+        if (entities.Length == 0) return [];
+        var transforms = new SceneMeshTransform[entities.Length];
+        Mesh? previousMesh = null;
+        Guid previousAsset = default;
+        for (int index = 0; index < entities.Length; index++)
+        {
+            Entity entity = entities[index];
+            Mesh mesh = _world.Read<MeshInstance>(entity).Mesh;
+            Guid asset = index != 0 && ReferenceEquals(mesh, previousMesh)
+                ? previousAsset
+                : _meshes.FirstOrDefault(value => ReferenceEquals(value.Mesh, mesh)).Asset;
+            transforms[index] = new SceneMeshTransform(asset,
+                _world.Read<WorldTransform>(entity).Qvvs.ToMatrix());
+            previousMesh = mesh;
+            previousAsset = asset;
+        }
+        return transforms;
     }
 
     internal Mesh GetMesh(Entity entity) => _world.Read<MeshInstance>(entity).Mesh;

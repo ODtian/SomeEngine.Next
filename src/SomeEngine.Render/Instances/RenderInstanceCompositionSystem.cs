@@ -42,9 +42,13 @@ public sealed class RenderInstanceCompositionSystem<TGroupKey, TComposer> :
     /// </summary>
     public QueryDefinition EntityQuery { get; }
 
+    public QueryHandle EntityQueryHandle => _query;
+
     public RenderInstanceBatches<TGroupKey>? Current => _builder.Current;
 
     public bool Changed { get; private set; }
+
+    internal bool IsCreated => _created;
 
     public void OnCreate(ref RenderPrepareSystemContext context)
     {
@@ -54,11 +58,17 @@ public sealed class RenderInstanceCompositionSystem<TGroupKey, TComposer> :
         _created = true;
     }
 
-    public void OnUpdate(ref RenderPrepareSystemContext context)
+    public void OnUpdate(ref RenderPrepareSystemContext context) =>
+        OnUpdate(ref context, RenderInstanceChanges.None);
+
+    // A feature may invalidate values independently of ECS component versions.
+    internal void OnUpdate(
+        ref RenderPrepareSystemContext context,
+        RenderInstanceChanges forcedChanges)
     {
         if (!_created)
             throw new InvalidOperationException("The render-instance composition system was not created.");
-        Changed = _builder.Update(context, _query, in _composer);
+        Changed = _builder.Update(context, _query, in _composer, forcedChanges);
     }
 
     public void OnDestroy(ref RenderPrepareSystemContext context)

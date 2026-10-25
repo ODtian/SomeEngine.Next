@@ -5,6 +5,30 @@ public sealed class RuntimeSafetyTests
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(10);
 
     [Fact]
+    public void RejectedDependentDoesNotDiscardAcceptedParallelWork()
+    {
+        using var scheduler = new Scheduler(new JobRuntimeConfig
+        {
+            WorkerCount = 0,
+            MaxCompletionStates = 1
+        });
+        int[] values = [0, 0];
+        JobHandle accepted = scheduler.ScheduleParallel(new WriteParallelValue(values), 1, 1);
+
+        Assert.Throws<InvalidOperationException>(() =>
+            scheduler.Schedule(new WriteValue(values, 1, 23), accepted));
+        Assert.False(accepted.IsCompleted);
+        Assert.Equal(new[] { 0, 0 }, values);
+
+        accepted.Complete();
+        Assert.True(accepted.IsCompleted);
+        Assert.Equal(new[] { 17, 0 }, values);
+
+        scheduler.Schedule(new WriteValue(values, 1, 31)).Complete();
+        Assert.Equal(new[] { 17, 31 }, values);
+    }
+
+    [Fact]
     public void ConcurrentSchedulingFromMultipleThreadsIsSafe()
     {
         using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
@@ -203,6 +227,16 @@ public sealed class RuntimeSafetyTests
             return false;
         }
         catch (ObjectDisposedException) { return true; }
+    }
+
+    private readonly struct WriteParallelValue(int[] values) : IJobParallelFor
+    {
+        public void Execute(int index) => values[index] = 17;
+    }
+
+    private readonly struct WriteValue(int[] values, int index, int value) : IJob
+    {
+        public void Execute() => values[index] = value;
     }
 
     private readonly struct Increment(int[] counts, int index) : IJob

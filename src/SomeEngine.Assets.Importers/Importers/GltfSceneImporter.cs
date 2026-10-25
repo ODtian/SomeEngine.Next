@@ -29,6 +29,12 @@ public sealed class GltfSceneSettingsProvider : IAssetImporterSettings<GltfScene
 public sealed partial class GltfSceneSettingsJson : JsonSerializerContext;
 
 /// <summary>Provides glTF node and mesh assembly with extensible material creation.</summary>
+/// <remarks>
+/// AssetImporter declarations on scene implementations must include WorldBlock, MaterialBlock and MeshMaterialsBlock.
+/// The glTF source importer invokes material and mesh-material wrappers under the same selected conversion version.
+/// ProducedBlocks lists possible outputs; an individual source element may omit any of them.
+/// Declare additional externally selected implementation helpers through VersionInputs.
+/// </remarks>
 public abstract class GltfSceneImporter : IAssetImporter<Scene, GltfSceneSettings>
 {
     public virtual async ValueTask ImportMeshMaterialsAsync(GltfMesh source, ImportContext context,

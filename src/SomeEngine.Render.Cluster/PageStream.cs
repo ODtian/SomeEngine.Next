@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.ExceptionServices;
+using System.Runtime.InteropServices;
 using SomeEngine.Resources.Geometry;
 using SomeEngine.Serialization.Streaming;
 
@@ -29,6 +30,7 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
     private ulong _demandFrameIdentity;
     private readonly Dictionary<uint, ClusterPageRequest> _pendingRequests = new();
     private readonly Dictionary<uint, uint> _pagePriorities = [];
+    private readonly List<ClusterPageDemand> _expandedDemands = [];
     private readonly Dictionary<uint, uint> _queuedPages = new();
     private readonly List<KeyValuePair<uint, uint>> _loadCandidates = [];
     private readonly Dictionary<uint, (uint Size, uint Priority)> _loadingPages = new();
@@ -183,6 +185,19 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
         }
     }
 
+    private static readonly global::SomeEngine.Diagnostics.TraceSite StreamingDrainFaultInbox = new("streaming", nameof(StreamingDrainFaultInbox), detail: false);
+    private static readonly global::SomeEngine.Diagnostics.TraceSite StreamingDrainCompleted = new("streaming", nameof(StreamingDrainCompleted), detail: false);
+    private static readonly global::SomeEngine.Diagnostics.TraceSite StreamingQueueRequestedPages = new("streaming", nameof(StreamingQueueRequestedPages), detail: false);
+    private static readonly global::SomeEngine.Diagnostics.TraceSite StreamingStartQueuedLoads = new("streaming", nameof(StreamingStartQueuedLoads), detail: false);
+    private static readonly global::SomeEngine.Diagnostics.TraceSite StreamingFaultInboxRequests = new("streaming", nameof(StreamingFaultInboxRequests), detail: false);
+    private static readonly global::SomeEngine.Diagnostics.TraceSite StreamingFaultPendingLeaves = new("streaming", nameof(StreamingFaultPendingLeaves), detail: false);
+    private static readonly global::SomeEngine.Diagnostics.TraceSite StreamingDemandRecords = new("streaming", nameof(StreamingDemandRecords), detail: false);
+    private static readonly global::SomeEngine.Diagnostics.TraceSite StreamingDemandState = new("streaming", nameof(StreamingDemandState), detail: false);
+    private static readonly global::SomeEngine.Diagnostics.TraceSite StreamingDemandPath = new("streaming", nameof(StreamingDemandPath), detail: false);
+    private static readonly global::SomeEngine.Diagnostics.TraceSite StreamingDemandExpandedEntries = new("streaming", nameof(StreamingDemandExpandedEntries), detail: false);
+    private static readonly global::SomeEngine.Diagnostics.TraceSite StreamingFaultExpandedEntries = new("streaming", nameof(StreamingFaultExpandedEntries), detail: false);
+    private static readonly global::SomeEngine.Diagnostics.TraceSite StreamingResolvedLoadCandidates = new("streaming", nameof(StreamingResolvedLoadCandidates), detail: false);
+
     public ClusterStreamingDemand? Update()
     {
         ThrowIfNotActive();
@@ -192,10 +207,24 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
         try
         {
             ThrowIfNotActive();
-            bool? demandComplete = DrainFaultInbox(out ReadOnlyMemory<ClusterPageDemand> demands);
-            DrainCompleted(out uint stagedPages, out uint failedPages);
-            ClusterStreamingDemand? demand = QueueRequestedPages(demands.Span, demandComplete);
-            StartQueuedPageLoads();
+            bool? demandComplete;
+            ReadOnlyMemory<ClusterPageDemand> demands;
+            using (global::SomeEngine.Diagnostics.EngineTrace.Begin(StreamingDrainFaultInbox))
+                demandComplete = DrainFaultInbox(out demands);
+            global::SomeEngine.Diagnostics.EngineTrace.Counter(StreamingDemandRecords, demands.Length);
+            global::SomeEngine.Diagnostics.EngineTrace.Counter(StreamingDemandState, demandComplete.HasValue ? (demandComplete.Value ? 1L : 0L) : -1L);
+            if (!demandComplete.HasValue)
+                global::SomeEngine.Diagnostics.EngineTrace.Counter(StreamingDemandPath, 0);
+            uint stagedPages;
+            uint failedPages;
+            using (global::SomeEngine.Diagnostics.EngineTrace.Begin(StreamingDrainCompleted))
+                DrainCompleted(out stagedPages, out failedPages);
+            global::SomeEngine.Diagnostics.EngineTrace.Counter(StreamingFaultPendingLeaves, _pendingRequests.Count);
+            ClusterStreamingDemand? demand;
+            using (global::SomeEngine.Diagnostics.EngineTrace.Begin(StreamingQueueRequestedPages))
+                demand = QueueRequestedPages(demands.Span, demandComplete);
+            using (global::SomeEngine.Diagnostics.EngineTrace.Begin(StreamingStartQueuedLoads))
+                StartQueuedPageLoads();
             _stagedPageCount = stagedPages;
             _failedPageCount = failedPages;
             _totalLoadFailureCount = SaturatingAdd(_totalLoadFailureCount, failedPages);
@@ -217,9 +246,11 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
         _pagePriorities.Clear();
         bool? demandComplete = null;
         demands = default;
+        int drainedFaultWords;
 
         lock (_faultGate)
         {
+            drainedFaultWords = _pendingFaultWords;
             _pendingRequests.EnsureCapacity(
                 checked(_pendingRequests.Count + _pendingFaultWords));
             _reportedFaultCount = _pendingReportedFaults;
@@ -230,8 +261,12 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
             _pendingDroppedFaults = 0;
 
             foreach (ClusterPageRequest request in _faultInbox.AsSpan(0, _pendingFaultWords))
-                if (!_pendingRequests.TryGetValue(request.LeafNodeIndex, out var current) || request.Priority > current.Priority)
-                    _pendingRequests[request.LeafNodeIndex] = request;
+            {
+                ref ClusterPageRequest current = ref CollectionsMarshal.GetValueRefOrAddDefault(
+                    _pendingRequests, request.LeafNodeIndex, out bool exists);
+                if (!exists || request.Priority > current.Priority)
+                    current = request;
+            }
             _pendingFaultWords = 0;
             if (_hasDemand)
             {
@@ -244,6 +279,7 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
 
         if (_droppedFaultCount != 0)
             _totalDroppedFaultCount = SaturatingAdd(_totalDroppedFaultCount, _droppedFaultCount);
+        global::SomeEngine.Diagnostics.EngineTrace.Counter(StreamingFaultInboxRequests, drainedFaultWords);
         return demandComplete;
     }
 
@@ -255,14 +291,33 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
         ClusterStreamingDemand? demand = null;
         if (demandComplete.HasValue)
         {
-            foreach (ClusterPageDemand request in demands)
-                if (!_pagePriorities.TryGetValue(request.PageId, out uint priority) || request.Priority > priority)
-                    _pagePriorities[request.PageId] = request.Priority;
-            _resources.CollectPageDependencies(_pagePriorities);
-            demand = _resources.SetReferencedPages(_pagePriorities.Keys, demandComplete.Value);
-            _queuedPages.Clear();
-            QueueResolvedPages();
-            _pagePriorities.Clear();
+            if (_resources.TryCollectPageDependencies(demands, _expandedDemands,
+                out bool prioritiesResolved, out ulong dependencyRevision))
+            {
+                global::SomeEngine.Diagnostics.EngineTrace.Counter(StreamingDemandPath, 1);
+                global::SomeEngine.Diagnostics.EngineTrace.Counter(StreamingDemandExpandedEntries, _expandedDemands.Count);
+                _queuedPages.Clear();
+                demand = _resources.ReferenceAndResolvePages(demands, _expandedDemands,
+                    prioritiesResolved, dependencyRevision, demandComplete.Value, _loadCandidates);
+                global::SomeEngine.Diagnostics.EngineTrace.Counter(StreamingResolvedLoadCandidates, _loadCandidates.Count);
+                foreach ((uint page, uint priority) in _loadCandidates)
+                    QueuePageIfNeeded(page, priority);
+                _expandedDemands.Clear();
+            }
+            else
+            {
+                global::SomeEngine.Diagnostics.EngineTrace.Counter(StreamingDemandPath, 2);
+                // Unknown/custom page IDs retain the original dictionary representation.
+                foreach (ClusterPageDemand request in demands)
+                    if (!_pagePriorities.TryGetValue(request.PageId, out uint priority) || request.Priority > priority)
+                        _pagePriorities[request.PageId] = request.Priority;
+                _resources.CollectPageDependencies(_pagePriorities);
+                global::SomeEngine.Diagnostics.EngineTrace.Counter(StreamingDemandExpandedEntries, _pagePriorities.Count);
+                demand = _resources.SetReferencedPages(_pagePriorities.Keys, demandComplete.Value);
+                _queuedPages.Clear();
+                QueueResolvedPages();
+                _pagePriorities.Clear();
+            }
         }
 
         // Fault packets may be older than the latest view. They still contribute
@@ -286,6 +341,7 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
                 _pagePriorities[resolution.PageId] = request.Priority;
         }
         _resources.CollectPageDependencies(_pagePriorities);
+        global::SomeEngine.Diagnostics.EngineTrace.Counter(StreamingFaultExpandedEntries, _pagePriorities.Count);
         QueueResolvedPages();
         _pendingRequests.Clear();
         _pagePriorities.Clear();
@@ -295,6 +351,7 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
     private void QueueResolvedPages()
     {
         _resources.ResolvePages(_pagePriorities, _loadCandidates);
+        global::SomeEngine.Diagnostics.EngineTrace.Counter(StreamingResolvedLoadCandidates, _loadCandidates.Count);
         foreach ((uint page, uint priority) in _loadCandidates)
             QueuePageIfNeeded(page, priority);
     }

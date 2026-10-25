@@ -196,8 +196,9 @@ internal sealed partial class FrameExecutor
             PassQueueSelection selection = _passes[consumer].QueuePolicy;
             if (selection.AllowsAnyType)
             {
-                if (!RenderGraph.QueueSupports(_passes[consumer].Kind, queue.Type)) transfers++;
-                else if (_passes[consumer].Kind is GraphPassKind.Copy or GraphPassKind.Compute)
+                GraphPassKind kind = _passes[consumer].Kind;
+                if (!RenderGraph.QueueSupports(kind, queue.Type)) transfers++;
+                else if (kind is GraphPassKind.Copy or GraphPassKind.Compute)
                     AddConsumers(consumer);
             }
             else if (selection.IsExact ? !ReferenceEquals(selection.Queue, queue) : selection.Type != queue.Type)
@@ -369,10 +370,11 @@ internal sealed partial class FrameExecutor
             row.Queue = chosenQueue;
             _passes[chosenPass] = row;
             _componentSchedule.Add(chosenPass);
-            _queueTime[chosenQueue] = checked((int)chosenStart +
+            int chosenFinish = checked((int)chosenStart +
                 checked((int)Math.Max(row.Options.EstimatedExecutionCost, 1)));
+            _queueTime[chosenQueue] = chosenFinish;
 
-            _componentFinish[chosenPass] = _queueTime[chosenQueue];
+            _componentFinish[chosenPass] = chosenFinish;
 
             foreach (int successor in _successors[chosenPass])
             {
@@ -559,8 +561,8 @@ internal sealed partial class FrameExecutor
         foreach (ExplicitPassOrder order in _frame.DynamicOrders)
         {
             var edge = new PassEdge(ResolvePass(order.Predecessor), ResolvePass(order.Consumer));
-            _currentDynamicEdges.Add(edge);
-            if (!_dynamicValueEdges.Contains(edge)) _dynamicOrderChanges[edge] = true;
+            if (_currentDynamicEdges.Add(edge) && !_dynamicValueEdges.Contains(edge))
+                _dynamicOrderChanges[edge] = true;
         }
         foreach (PassEdge edge in _dynamicValueEdges)
             if (!_currentDynamicEdges.Contains(edge)) _dynamicOrderChanges[edge] = false;
@@ -618,8 +620,8 @@ internal sealed partial class FrameExecutor
             GraphStructureIndex structure = _frame.StructureIndex;
             foreach (GraphIdentity identity in _changedOrderIdentities)
             {
-                if (!TryResolvePass(identity, out int index) || !_orderEdgesByPass.ContainsKey(index)) continue;
-                foreach (PassEdge edge in _orderEdgesByPass[index].ToArray())
+                if (!TryResolvePass(identity, out int index) || !_orderEdgesByPass.TryGetValue(index, out var orderEdges)) continue;
+                foreach (PassEdge edge in orderEdges.ToArray())
                 {
                     if ((_orderEdgeSources[edge] & 1) == 0) continue;
                     bool exists = structure.ExplicitEdges.Contains(new GraphDependencyEdge(

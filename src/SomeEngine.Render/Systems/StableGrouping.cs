@@ -34,18 +34,15 @@ internal sealed class StableGrouping<TKey>
         TKey[] source,
         int sourceCount,
         int[] groupCounts,
-        int[] groupStarts,
         StableGroupPlacement[] placements,
         JobScheduleOptions options = default)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(groupCounts);
-        ArgumentNullException.ThrowIfNull(groupStarts);
         ArgumentNullException.ThrowIfNull(placements);
         if ((uint)sourceCount > (uint)source.Length)
             throw new ArgumentOutOfRangeException(nameof(sourceCount));
         if (groupCounts.Length < sourceCount
-            || groupStarts.Length < sourceCount
             || placements.Length < sourceCount)
         {
             throw new ArgumentException(
@@ -73,6 +70,10 @@ internal sealed class StableGrouping<TKey>
             fixedCount: 1,
             twoPerPartition: true,
             out int countAccessCount);
+        int[]? groupCountResult = null;
+        JobResourceAccess[]? mergeAccesses = null;
+        JobResourceAccess[]? scatterAccesses = null;
+        JobHandle work = default;
         try
         {
             countAccesses[0] = JobResourceAccess.Read(source, 0, sourceCount);
@@ -82,95 +83,93 @@ internal sealed class StableGrouping<TKey>
                 countAccesses[output++] = JobResourceAccess.Write(_partitions[index].Counts);
                 countAccesses[output++] = JobResourceAccess.Write(_partitions[index].Keys);
             }
-            JobHandle counted = JobSystem.ScheduleParallel(
+            work = JobSystem.ScheduleParallel(
                 in countJob,
                 activePartitions,
                 batchSize: 1,
                 countAccesses.AsSpan(0, countAccessCount),
                 options);
 
-            int[] groupCountResult = ArrayPool<int>.Shared.Rent(1);
+            groupCountResult = ArrayPool<int>.Shared.Rent(1);
+            var mergeJob = new MergePartitionsJob(
+                _partitions,
+                activePartitions,
+                _groupIndices,
+                _groupKeys,
+                groupCounts,
+                groupCountResult);
+            mergeAccesses = RentAccesses(
+                activePartitions,
+                fixedCount: 4,
+                twoPerPartition: true,
+                out int mergeAccessCount);
+            mergeAccesses[0] = JobResourceAccess.Write(_groupIndices);
+            mergeAccesses[1] = JobResourceAccess.Write(_groupKeys);
+            mergeAccesses[2] = JobResourceAccess.Write(groupCounts, 0, sourceCount);
+            mergeAccesses[3] = JobResourceAccess.Write(groupCountResult, 0, 1);
+            int mergeAccessIndex = 4;
+            for (int index = 0; index < activePartitions; index++)
+            {
+                mergeAccesses[mergeAccessIndex++] = JobResourceAccess.Write(_partitions[index].Counts);
+                mergeAccesses[mergeAccessIndex++] = JobResourceAccess.Read(_partitions[index].Keys);
+            }
+            work = JobSystem.Schedule(
+                in mergeJob,
+                mergeAccesses.AsSpan(0, mergeAccessCount),
+                options,
+                work);
+
+            var scatterJob = new ScatterPlacementsJob(
+                source,
+                _partitions,
+                _groupIndices,
+                placements);
+            scatterAccesses = RentAccesses(
+                activePartitions,
+                fixedCount: 3,
+                twoPerPartition: false,
+                out int scatterAccessCount);
+            scatterAccesses[0] = JobResourceAccess.Read(source, 0, sourceCount);
+            scatterAccesses[1] = JobResourceAccess.Read(_groupIndices);
+            scatterAccesses[2] = JobResourceAccess.Write(placements, 0, sourceCount);
+            for (int index = 0; index < activePartitions; index++)
+            {
+                scatterAccesses[3 + index] =
+                    JobResourceAccess.Write(_partitions[index].Counts);
+            }
+            work = JobSystem.ScheduleParallel(
+                in scatterJob,
+                activePartitions,
+                batchSize: 1,
+                scatterAccesses.AsSpan(0, scatterAccessCount),
+                options,
+                work);
+            work.Complete();
+            return groupCountResult[0];
+        }
+        catch (Exception failure)
+        {
+            // A later rent or schedule can fail after an earlier job was accepted.
+            // Finish that dependency chain before any payload can return to its pool.
             try
             {
-                var mergeJob = new MergePartitionsJob(
-                    _partitions,
-                    activePartitions,
-                    _groupIndices,
-                    _groupKeys,
-                    groupCounts,
-                    groupStarts,
-                    groupCountResult);
-                JobResourceAccess[] mergeAccesses = RentAccesses(
-                    activePartitions,
-                    fixedCount: 5,
-                    twoPerPartition: true,
-                    out int mergeAccessCount);
-                try
-                {
-                    mergeAccesses[0] = JobResourceAccess.Write(_groupIndices);
-                    mergeAccesses[1] = JobResourceAccess.Write(_groupKeys);
-                    mergeAccesses[2] = JobResourceAccess.Write(groupCounts, 0, sourceCount);
-                    mergeAccesses[3] = JobResourceAccess.Write(groupStarts, 0, sourceCount);
-                    mergeAccesses[4] = JobResourceAccess.Write(groupCountResult, 0, 1);
-                    int mergeAccessIndex = 5;
-                    for (int index = 0; index < activePartitions; index++)
-                    {
-                        mergeAccesses[mergeAccessIndex++] = JobResourceAccess.Write(_partitions[index].Counts);
-                        mergeAccesses[mergeAccessIndex++] = JobResourceAccess.Read(_partitions[index].Keys);
-                    }
-                    JobHandle merged = JobSystem.Schedule(
-                        in mergeJob,
-                        mergeAccesses.AsSpan(0, mergeAccessCount),
-                        options,
-                        counted);
-
-                    var scatterJob = new ScatterPlacementsJob(
-                        source,
-                        _partitions,
-                        _groupIndices,
-                        placements);
-                    JobResourceAccess[] scatterAccesses = RentAccesses(
-                        activePartitions,
-                        fixedCount: 3,
-                        twoPerPartition: false,
-                        out int scatterAccessCount);
-                    try
-                    {
-                        scatterAccesses[0] = JobResourceAccess.Read(source, 0, sourceCount);
-                        scatterAccesses[1] = JobResourceAccess.Read(_groupIndices);
-                        scatterAccesses[2] = JobResourceAccess.Write(placements, 0, sourceCount);
-                        for (int index = 0; index < activePartitions; index++)
-                        {
-                            scatterAccesses[3 + index] =
-                                JobResourceAccess.Write(_partitions[index].Counts);
-                        }
-                        JobSystem.ScheduleParallel(
-                            in scatterJob,
-                            activePartitions,
-                            batchSize: 1,
-                            scatterAccesses.AsSpan(0, scatterAccessCount),
-                            options,
-                            merged).Complete();
-                    }
-                    finally
-                    {
-                        ReturnAccesses(scatterAccesses);
-                    }
-                }
-                finally
-                {
-                    ReturnAccesses(mergeAccesses);
-                }
-
-                return groupCountResult[0];
+                work.Complete();
             }
-            finally
+            catch (Exception completionFailure)
             {
-                ArrayPool<int>.Shared.Return(groupCountResult);
+                if (!ReferenceEquals(failure, completionFailure))
+                    throw new AggregateException(failure, completionFailure);
             }
+            throw;
         }
         finally
         {
+            if (scatterAccesses is not null)
+                ReturnAccesses(scatterAccesses);
+            if (mergeAccesses is not null)
+                ReturnAccesses(mergeAccesses);
+            if (groupCountResult is not null)
+                ArrayPool<int>.Shared.Return(groupCountResult);
             ReturnAccesses(countAccesses);
         }
     }
@@ -187,7 +186,6 @@ internal sealed class StableGrouping<TKey>
 
     private static void ReturnAccesses(JobResourceAccess[] accesses)
     {
-        accesses.AsSpan().Clear();
         ArrayPool<JobResourceAccess>.Shared.Return(accesses);
     }
 
@@ -228,7 +226,6 @@ internal sealed class StableGrouping<TKey>
         Dictionary<TKey, int> groupIndices,
         List<TKey> groupKeys,
         int[] groupCounts,
-        int[] groupStarts,
         int[] groupCountResult) : IJob
     {
         public void Execute()
@@ -252,13 +249,6 @@ internal sealed class StableGrouping<TKey>
                         groupCounts[group] = checked(groupCounts[group] + count);
                     }
                 }
-            }
-
-            int start = 0;
-            for (int group = 0; group < groupKeys.Count; group++)
-            {
-                groupStarts[group] = start;
-                start = checked(start + groupCounts[group]);
             }
 
             int[] nextRows = ArrayPool<int>.Shared.Rent(groupKeys.Count);

@@ -60,9 +60,10 @@ internal sealed class TraceWriter
             Capture.RecordMisuse();
             return;
         }
-        long timestamp = Stopwatch.GetTimestamp();
-        long allocated = Capture.Options.Allocations ? GC.GetAllocatedBytesForCurrentThread() : 0;
-        ref readonly TraceNesting nesting = ref _nesting[--_depth];
+        ref readonly TraceNesting nesting = ref _nesting[_depth - 1];
+        long timestamp = nesting.Recorded ? Stopwatch.GetTimestamp() : 0;
+        long allocated = nesting.Recorded && Capture.Options.Allocations ? GC.GetAllocatedBytesForCurrentThread() : 0;
+        --_depth;
         _span = nesting.Span;
         Context = nesting.Context;
         if (nesting.Recorded) Write(new TraceEvent(timestamp, id, 0, 0, 0, allocated, 0, TraceEventKind.End));

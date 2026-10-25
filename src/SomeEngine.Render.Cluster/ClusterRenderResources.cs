@@ -474,6 +474,30 @@ public sealed partial class ClusterRenderResources : IDisposable
         }
     }
 
+    internal ulong GeometryRevision
+    {
+        get
+        {
+            EnterActiveOperation();
+            try
+            {
+                lock (_aggregateStateGate)
+                {
+                    if (_aggregateMutationActive)
+                    {
+                        throw new InvalidOperationException(
+                            "Cluster diagnostics cannot be captured during aggregate mutation.");
+                    }
+                    return _residency.GeometryRevision;
+                }
+            }
+            finally
+            {
+                ExitActiveOperation();
+            }
+        }
+    }
+
     public ClusterRenderDiagnostics CaptureDiagnostics()
     {
         EnterActiveOperation();
@@ -793,42 +817,29 @@ public sealed partial class ClusterRenderResources : IDisposable
 
     internal readonly struct ClusterGeometryProducer : IRenderInstanceProducer
     {
-        private readonly ResolvedRenderInstanceProperty<RenderTransform> _currentTransform;
-        private readonly ResolvedRenderInstanceProperty<RenderPreviousTransform> _previousTransform;
         private readonly ResolvedRenderInstanceProperty<uint> _bvhRoot;
         private readonly ResolvedRenderInstanceProperty<float> _boundsExpansion;
         private readonly ResolvedRenderInstanceProperty<RenderDeformBounds> _deformBounds;
-
         private readonly ResolvedRenderInstanceProperty<RenderXray> _xray;
         private readonly ResolvedRenderInstanceProperty<uint> _depthCacheClass;
         private readonly ResolvedRenderInstanceProperty<FirstPersonMeshData> _firstPerson;
 
         public ClusterGeometryProducer()
         {
-            RenderInstancePropertyLayout clusterProperties = ClusterRenderFeature.GeometryLayout;
-            _currentTransform = clusterProperties.Resolve<RenderTransform>(
-                RenderInstanceTransformProperties.CurrentTransformKey);
-            _previousTransform = clusterProperties.Resolve<RenderPreviousTransform>(
-                RenderInstanceTransformProperties.PreviousTransformKey);
-            _bvhRoot = clusterProperties.Resolve<uint>(ClusterRenderFeature.BvhRootKey);
-            _boundsExpansion = clusterProperties.Resolve<float>(ClusterRenderFeature.BoundsExpansionKey);
-            _deformBounds = clusterProperties.Resolve<RenderDeformBounds>(ClusterRenderFeature.DeformBoundsKey);
-            _xray = clusterProperties.Resolve<RenderXray>(ClusterRenderFeature.XrayKey);
-            _depthCacheClass = clusterProperties.Resolve<uint>(ClusterRenderFeature.DepthCacheClassKey);
-            _firstPerson = clusterProperties.Resolve<FirstPersonMeshData>(ClusterRenderFeature.FirstPersonKey);
+            RenderInstancePropertyLayout properties = ClusterRenderFeature.MeshGeometryLayout;
+            _bvhRoot = properties.Resolve<uint>(ClusterRenderFeature.BvhRootKey);
+            _boundsExpansion = properties.Resolve<float>(ClusterRenderFeature.BoundsExpansionKey);
+            _deformBounds = properties.Resolve<RenderDeformBounds>(ClusterRenderFeature.DeformBoundsKey);
+            _xray = properties.Resolve<RenderXray>(ClusterRenderFeature.XrayKey);
+            _depthCacheClass = properties.Resolve<uint>(ClusterRenderFeature.DepthCacheClassKey);
+            _firstPerson = properties.Resolve<FirstPersonMeshData>(ClusterRenderFeature.FirstPersonKey);
         }
 
-        public RenderInstancePropertyLayout Properties => ClusterRenderFeature.GeometryLayout;
+        public RenderInstancePropertyLayout Properties => ClusterRenderFeature.MeshGeometryLayout;
 
-        public RenderInstanceChanges GetChanges(
-            ReadOnlyQueryPacket packet,
-            uint lastSystemVersion) =>
-            packet.ChangedSince<RenderTransform>(lastSystemVersion)
-            || packet.ChangedSince<RenderPreviousTransform>(lastSystemVersion)
-            || MeshChanged(packet, lastSystemVersion)
-            || XrayChanged(packet, lastSystemVersion)
-                ? RenderInstanceChanges.Values
-                : RenderInstanceChanges.None;
+        public RenderInstanceChanges GetChanges(ReadOnlyQueryPacket packet, uint lastSystemVersion) =>
+            MeshChanged(packet, lastSystemVersion) || XrayChanged(packet, lastSystemVersion)
+                ? RenderInstanceChanges.Values : RenderInstanceChanges.None;
 
         internal static bool MeshChanged(ReadOnlyQueryPacket packet, uint lastSystemVersion) =>
             packet.ChangedSince<RenderClusterGeometry>(lastSystemVersion)
@@ -838,45 +849,67 @@ public sealed partial class ClusterRenderResources : IDisposable
         internal static bool XrayChanged(ReadOnlyQueryPacket packet, uint lastSystemVersion) =>
             packet.Has<RenderXray>() && packet.ChangedSince<RenderXray>(lastSystemVersion);
 
-        public void Bind(RenderInstanceWriteSlice destination)
-            => Bind(destination, true, true, true);
+        public void Bind(RenderInstanceWriteSlice destination) => Bind(destination, true, true);
 
-        internal void Bind(RenderInstanceWriteSlice destination, bool current, bool previous, bool mesh, bool xray = true)
+        internal void Bind(RenderInstanceWriteSlice destination, bool mesh, bool xray)
         {
-            if (current) destination.BindPerInstance(_currentTransform);
-            if (previous) destination.BindPerInstance(_previousTransform);
             if (xray) destination.BindPerInstance(_xray);
-            if (mesh)
-            {
-                destination.BindPerInstance(_depthCacheClass);
-                destination.BindPerInstance(_firstPerson);
-                destination.BindPerInstance(_bvhRoot);
-                destination.BindPerInstance(_boundsExpansion);
-                destination.BindPerInstance(_deformBounds);
-            }
+            if (!mesh) return;
+            destination.BindPerInstance(_depthCacheClass);
+            destination.BindPerInstance(_firstPerson);
+            destination.BindPerInstance(_bvhRoot);
+            destination.BindPerInstance(_boundsExpansion);
+            destination.BindPerInstance(_deformBounds);
         }
 
         public void Write(RenderInstanceWriteSlice destination, ReadOnlyQueryPacket packet)
-            => Write(destination, packet, true, true, true);
-
-        internal void Write(RenderInstanceWriteSlice destination, ReadOnlyQueryPacket packet,
-            bool current, bool previous, bool mesh, bool xray = true)
         {
-            if (current) destination.Write(_currentTransform, packet.Read<RenderTransform>());
-            if (previous) destination.Write(_previousTransform, packet.Read<RenderPreviousTransform>());
-            if (xray)
+            WriteMeshMetadata(destination, packet);
+            WriteGeometry(destination, packet);
+            if (packet.TryRead<RenderDeformBounds>(out var bounds)) destination.Write(_deformBounds, bounds);
+            else for (int row = 0; row < packet.Count; row++) destination.Write(_deformBounds, row, default(RenderDeformBounds));
+            if (packet.TryRead<RenderXray>(out var effects)) destination.Write(_xray, effects);
+            else for (int row = 0; row < packet.Count; row++) destination.Write(_xray, row, default(RenderXray));
+        }
+
+        public void WriteChanged(RenderInstanceWriteSlice destination, ReadOnlyQueryPacket packet, uint lastSystemVersion)
+        {
+            // Each derived property follows its actual source column, including geometry-only instances.
+            int start = 0;
+            while (RenderInstanceColumnWrites.NextChangedRows<RenderClusterGeometry>(
+                packet, lastSystemVersion, ref start, out int count))
             {
-                if (packet.TryRead<RenderXray>(out var effects)) destination.Write(_xray, effects);
-                else for (int row = 0; row < packet.Count; row++) destination.Write(_xray, row, default(RenderXray));
+                WriteGeometry(destination.Slice(start, count), packet.Slice(start, count));
+                start += count;
             }
-            if (!mesh) return;
+            if (packet.Has<RenderMesh>())
+            {
+                start = 0;
+                while (RenderInstanceColumnWrites.NextChangedRows<RenderMesh>(
+                    packet, lastSystemVersion, ref start, out int count))
+                {
+                    WriteMeshMetadata(destination.Slice(start, count), packet.Slice(start, count));
+                    start += count;
+                }
+            }
+            if (packet.Has<RenderDeformBounds>())
+                RenderInstanceColumnWrites.WriteChanged(destination, packet, _deformBounds, lastSystemVersion);
+            if (packet.Has<RenderXray>())
+                RenderInstanceColumnWrites.WriteChanged(destination, packet, _xray, lastSystemVersion);
+        }
+
+        private void WriteMeshMetadata(RenderInstanceWriteSlice destination, ReadOnlyQueryPacket packet)
+        {
             bool hasMesh = packet.TryRead<RenderMesh>(out var meshes);
             for (int row = 0; row < packet.Count; row++)
             {
                 destination.Write(_depthCacheClass, row, hasMesh ? (uint)meshes[row].DepthCacheClass : 0u);
                 destination.Write(_firstPerson, row, hasMesh ? meshes[row].FirstPerson : default);
             }
+        }
 
+        private void WriteGeometry(RenderInstanceWriteSlice destination, ReadOnlyQueryPacket packet)
+        {
             ReadOnlySpan<RenderClusterGeometry> geometries = packet.Read<RenderClusterGeometry>();
             uint[]? rentedRoots = null;
             float[]? rentedExpansions = null;
@@ -903,16 +936,11 @@ public sealed partial class ClusterRenderResources : IDisposable
                 }
                 destination.Write(_bvhRoot, roots);
                 destination.Write(_boundsExpansion, expansions);
-                if (packet.TryRead<RenderDeformBounds>(out var bounds)) destination.Write(_deformBounds, bounds);
-                else
-                    for (int row = 0; row < packet.Count; row++) destination.Write(_deformBounds, row, default(RenderDeformBounds));
             }
             finally
             {
-                if (rentedRoots is not null)
-                    ArrayPool<uint>.Shared.Return(rentedRoots);
-                if (rentedExpansions is not null)
-                    ArrayPool<float>.Shared.Return(rentedExpansions);
+                if (rentedRoots is not null) ArrayPool<uint>.Shared.Return(rentedRoots);
+                if (rentedExpansions is not null) ArrayPool<float>.Shared.Return(rentedExpansions);
             }
         }
     }

@@ -239,4 +239,108 @@ public sealed class MaterialFileTests
         asset.SetBlock(pixels);
         return new(project.RegisterAsset(await asset.SaveAsync(directory.File(name + ".texture.asset"))));
     }
+
+    [Fact]
+    public async Task ThreeLevelOverridesKeepNearestValuesForTheChosenMaterialType()
+    {
+        using var directory = new AssetTestDirectory();
+        var project = new AssetProject(directory.Path, []);
+        using var parent = new StandardMaterialAsset();
+        var tint = new Vector4(0.2f, 0.4f, 0.6f, 1f);
+        _ = new StandardMaterialParameters(parent.GetBlock<MaterialBlock>())
+        {
+            Roughness = 0.2f, BaseColorTint = tint,
+        };
+        project.RegisterAsset(await parent.SaveAsync(directory.File("parent.material.asset")));
+        using var middle = new MaterialAsset();
+        middle.GetBlock<MaterialBlock>().Parent = parent.Reference;
+        _ = new StandardMaterialParameters(middle.GetBlock<MaterialBlock>())
+        {
+            Roughness = 0.5f, MetallicFactor = 0.6f,
+        };
+        project.RegisterAsset(await middle.SaveAsync(directory.File("middle.material.asset")));
+        using var child = new MaterialAsset();
+        child.GetBlock<MaterialBlock>().Parent = middle.Reference;
+        _ = new StandardMaterialParameters(child.GetBlock<MaterialBlock>()) { Roughness = 0.8f };
+        await using var files = new AssetLoader(project.CreateStorage());
+        Dictionary<AssetId<ShaderAsset>, Shader> shaders = [];
+        Dictionary<AssetId<TextureAsset>, Texture> textures = [];
+
+        StandardMaterial material = await child.CreateAsync<StandardMaterial>(files, shaders, textures);
+
+        Assert.Equal(parent.Reference, await child.GetTemplateAsync(files));
+        Assert.Equal(0.8f, material.Roughness);
+        Assert.Equal(0.6f, material.MetallicFactor);
+        Assert.Equal(tint, material.BaseColorTint);
+    }
+
+    [Fact]
+    public async Task SiblingMaterialOverridesDoNotLeakAcrossRepeatedTypedCreation()
+    {
+        using var directory = new AssetTestDirectory();
+        var project = new AssetProject(directory.Path, []);
+        using var parent = new StandardMaterialAsset();
+        project.RegisterAsset(await parent.SaveAsync(directory.File("parent.material.asset")));
+        await using var files = new AssetLoader(project.CreateStorage());
+        Dictionary<AssetId<ShaderAsset>, Shader> shaders = [];
+        Dictionary<AssetId<TextureAsset>, Texture> textures = [];
+        StandardMaterial baseline = await parent.CreateAsync<StandardMaterial>(files, shaders, textures);
+        float defaultRoughness = baseline.Roughness;
+        float overrideRoughness = defaultRoughness + 0.25f;
+        using var firstChild = new MaterialAsset();
+        firstChild.GetBlock<MaterialBlock>().Parent = parent.Reference;
+        _ = new StandardMaterialParameters(firstChild.GetBlock<MaterialBlock>()) { Roughness = overrideRoughness };
+        using var secondChild = new MaterialAsset();
+        secondChild.GetBlock<MaterialBlock>().Parent = parent.Reference;
+
+        StandardMaterial first = await firstChild.CreateAsync<StandardMaterial>(files, shaders, textures);
+        StandardMaterial second = await secondChild.CreateAsync<StandardMaterial>(files, shaders, textures);
+        StandardMaterial repeated = await firstChild.CreateAsync<StandardMaterial>(files, shaders, textures);
+
+        Assert.Equal(overrideRoughness, first.Roughness);
+        Assert.Equal(defaultRoughness, second.Roughness);
+        Assert.Equal(overrideRoughness, repeated.Roughness);
+        Assert.NotEqual(first.MaterialId, second.MaterialId);
+        Assert.NotEqual(first.MaterialId, repeated.MaterialId);
+        first.Roughness = 0.1f;
+        Assert.Equal(defaultRoughness, second.Roughness);
+        Assert.Equal(overrideRoughness, repeated.Roughness);
+    }
+
+    [Fact]
+    public async Task RepeatedAndDistinctTextureIdsUseTheCallersSharedReferences()
+    {
+        using var directory = new AssetTestDirectory();
+        var project = new AssetProject(directory.Path, []);
+        AssetId<TextureAsset> firstId = await SaveColorAsync(project, directory, "first", [31, 31, 31, 255]);
+        AssetId<TextureAsset> secondId = await SaveColorAsync(project, directory, "second", [47, 47, 47, 255]);
+        await using var files = new AssetLoader(project.CreateStorage());
+        using TextureAsset firstSource = await TextureAsset.OpenAsync(files, firstId);
+        using TextureAsset secondSource = await TextureAsset.OpenAsync(files, secondId);
+        Texture first = await firstSource.GetBlock<TextureBlock>().CreateAsync(firstSource.Name);
+        Texture second = await secondSource.GetBlock<TextureBlock>().CreateAsync(secondSource.Name);
+        Dictionary<AssetId<ShaderAsset>, Shader> shaders = [];
+        Dictionary<AssetId<TextureAsset>, Texture> textures = new() { [firstId] = first, [secondId] = second };
+        using var asset = new StandardMaterialAsset();
+        _ = new StandardMaterialParameters(asset.GetBlock<MaterialBlock>())
+        {
+            AlbedoMap = firstId, NormalMap = firstId, ARMMap = secondId,
+        };
+
+        StandardMaterial material = await asset.CreateAsync<StandardMaterial>(files, shaders, textures);
+        StandardMaterial repeated = await asset.CreateAsync<StandardMaterial>(files, shaders, textures);
+
+        Assert.Same(first, material.AlbedoMap);
+        Assert.Same(first, material.NormalMap);
+        Assert.Same(second, material.ARMMap);
+        Assert.Same(first, repeated.AlbedoMap);
+        Assert.Same(second, repeated.ARMMap);
+        await firstSource.DisposeAsync();
+        await secondSource.DisposeAsync();
+        await files.DisposeAsync();
+        Assert.True(material.AlbedoMap!.TryGetTile(TextureTiles.ChunkKey(0, 0, 0), out var firstBytes));
+        Assert.Equal(new byte[] { 31, 31, 31, 255 }, firstBytes.ToArray());
+        Assert.True(material.ARMMap!.TryGetTile(TextureTiles.ChunkKey(0, 0, 0), out var secondBytes));
+        Assert.Equal(new byte[] { 47, 47, 47, 255 }, secondBytes.ToArray());
+    }
 }

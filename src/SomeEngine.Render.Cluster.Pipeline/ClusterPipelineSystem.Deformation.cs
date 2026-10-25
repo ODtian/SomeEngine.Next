@@ -31,9 +31,7 @@ public sealed partial class ClusterPipelineSystem
     {
         ClusterDeformation deformation = material.Deformation!;
         GraphBufferSlice uniforms = UploadUniform(ref graph,
-            new DeformUniforms(_options.MaxDeformCacheBytes, _options.MaxCandidates, material.BinIndex),
-            "Cluster user deformation parameters");
-        _rasterInputs?.Uniforms.Add(uniforms);
+            new DeformUniforms(_options.MaxDeformCacheBytes, _options.MaxCandidates, material.BinIndex));
         for (int index = 0; index < deformation.Stages.Length; index++)
         {
             ClusterDeformStage stage = deformation.Stages[index];
@@ -41,8 +39,8 @@ public sealed partial class ClusterPipelineSystem
             GraphPassId passId;
             if (index is 0 or 3)
                 passId = AddComputePass(ref graph, name, stage.Pipeline,
-                    new ClusterDispatchParameters(new DispatchArguments(1, 1, 1)), 0,
-                    ClusterDispatchParameters.Record, region: region);
+                    new DispatchArguments(1, 1, 1), 0,
+                    RecordDispatch, region: region);
             else
             {
                 var dispatch = new ClusterIndirectDispatchParameters(RequireDispatchIndirectLayout(),
@@ -62,11 +60,11 @@ public sealed partial class ClusterPipelineSystem
     private void BindDeformResources(ref RenderGraphEdit graph, ref PassDefinition pass,
         ClusterDeformStage stage, Material material, GraphBufferSlice uniforms, DeformDrawData draw, int operation)
     {
-        ReadOnlySpan<ClusterLinkedStageResource> resources = stage.Resources.Resources.Resources;
+        ReadOnlySpan<ShaderParameterResource> resources = stage.Resources.Resources.Resources;
         FrameResources frame = GraphData.Resources;
         for (int index = 0; index < resources.Length; index++)
         {
-            ref readonly ClusterLinkedStageResource resource = ref resources[index];
+            ref readonly ShaderParameterResource resource = ref resources[index];
             if (BindInactiveStageResource(ref pass, resource)) continue;
             GraphBufferId buffer = default;
             uint stride = 0;
@@ -111,9 +109,10 @@ public sealed partial class ClusterPipelineSystem
                 default:
                     if (stage.Resources.FeatureBinders[index] is { } feature)
                         feature(ref graph, ref pass, PipelineSync.ComputeShading);
-                    else
+                    else if (stage.Resources.MaterialProperties[index] is uint property)
                         BindStageMaterialResource(ref graph, ref pass, resource,
-                            stage.Resources.MaterialBindings[index], material, PipelineSync.ComputeShading);
+                            property, material, PipelineSync.ComputeShading);
+                    else throw new InvalidDataException($"Unknown linked deformation resource {resource.Name}.");
                     continue;
             }
             if (resource.Type == ResourceBindingType.BufferUav)
@@ -130,7 +129,7 @@ public sealed partial class ClusterPipelineSystem
     }
 
     private bool BindDeformRead(ref RenderGraphEdit graph, ref PassDefinition pass,
-        in ClusterLinkedStageResource resource, PipelineSync sync)
+        in ShaderParameterResource resource, PipelineSync sync)
     {
         if (!ClusterDeformResourceNames.IsRead(resource.Name)) return false;
         bool regions = resource.Name == "VertexDeformRegions";

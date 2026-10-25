@@ -293,6 +293,73 @@ public sealed class RepeatedFrameTests
             ExecuteSubmittedFrame(graph, support, completions);
     }
 
+    [Fact]
+    public void SplitRasterDataReusesCommandsUntilFrameDataOrThePassChanges()
+    {
+        using WarpGraphTestSupport support = WarpGraphTestSupport.Create();
+        using var graph = new RenderGraph(support.Backend, support.Device,
+            [support.GraphicsQueue], new RenderGraphDesc(MaximumFramesInFlight: 1));
+        var observed = new List<(int StaticValue, ulong FrameValue)>();
+        GraphColorAttachmentViewId view;
+        GraphPassId pass;
+        using (RenderGraphEdit edit = graph.BeginEdit())
+        {
+            GraphTextureId texture = edit.CreatePersistentTexture(new TextureDesc(TextureDimension.Texture2D,
+                16, 16, 1, 1, 1, 1, Format.R8G8B8A8UNorm, TextureUsages.ColorAttachment));
+            view = edit.CreateColorAttachmentView(texture, new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Color),
+                Format.R8G8B8A8UNorm, TextureViewDimension.Texture2D);
+            pass = AddRaster(edit, 7);
+            edit.Commit();
+        }
+        var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
+        Execute(3);
+        Execute(3);
+        int recordings = observed.Count;
+        Execute(3);
+        Assert.Equal(recordings, observed.Count);
+        Assert.Equal((7, 3ul), observed[^1]);
+
+        Execute(5);
+        Assert.True(observed.Count > recordings);
+        Assert.Equal((7, 5ul), observed[^1]);
+
+        using (RenderGraphEdit edit = graph.BeginEdit())
+        {
+            edit.Remove(pass);
+            pass = AddRaster(edit, 9);
+            edit.Commit();
+        }
+        Execute(5);
+        Assert.Equal((9, 5ul), observed[^1]);
+
+        GraphPassId AddRaster(RenderGraphEdit edit, int marker) =>
+            edit.AddRasterPass<(GraphColorAttachmentViewId Target, int Marker), ulong>(
+                "split raster data", PassQueueSelection.Exact(support.GraphicsQueue), (view, marker),
+                new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true,
+                    Recording: PassRecordingMode.CallingThread),
+                static (ref PassDefinition access, ref (GraphColorAttachmentViewId Target, int Marker) data) =>
+                    access.ColorAttachment(0, data.Target, LoadType.Clear, StoreType.Store,
+                        WriteCoverage.Complete, Vector4.One),
+                (ref RasterPassCommandScope commands, in (GraphColorAttachmentViewId Target, int Marker) data,
+                    in ulong width) =>
+                {
+                    observed.Add((data.Marker, width));
+                    commands.SetViewports([new Viewport(0, 0, 16, 16)]);
+                    commands.SetScissors([new ScissorRect(0, 0, checked((int)width), 16)]);
+                });
+
+        void Execute(ulong width)
+        {
+            completions.AsSpan().Clear();
+            using (RenderGraphFrame frame = graph.BeginFrame())
+            {
+                frame.SetPassDataIfChanged(pass, width);
+                Assert.Equal(1, frame.Execute(completions));
+            }
+            support.Wait(completions);
+        }
+    }
+
     private static void ExecuteEmpty(RenderGraph graph, QueueCompletion[] completions)
     {
         completions.AsSpan().Clear();

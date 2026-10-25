@@ -1,3 +1,4 @@
+using SomeEngine.Render.Assets;
 using System.Buffers.Binary;
 using System.Collections.Immutable;
 using System.Runtime.InteropServices;
@@ -117,9 +118,9 @@ public sealed partial class ClusterPipelineSystem
             SourceCounts = edit.CreatePersistentBuffer(new BufferDesc(16, storage, "Cluster transparency source counts")),
             ActiveSources = edit.CreatePersistentBuffer(new BufferDesc((ulong)_options.MaxCandidates * 4, storage, "Cluster transparency active sources")),
             ProjectedSources = edit.CreatePersistentBuffer(new BufferDesc((ulong)capacity * shaders.SourceBoundsStride, storage, "Cluster transparency source bounds")),
-            GeometryParameters = CreateParameters(ref edit, new byte[8], "Cluster transparency geometry parameters"),
-            Parameters = CreateParameters(ref edit, new byte[48], "Cluster transparency parameters"),
-            ShadeParameters = CreateParameters(ref edit, new byte[48], "Cluster transparency surface parameters"),
+            GeometryParameters = CreateParameters(ref edit, new byte[8]),
+            Parameters = CreateParameters(ref edit, new byte[48]),
+            ShadeParameters = CreateParameters(ref edit, new byte[48]),
         };
         GraphData.Transparency = data;
         UpdateTransparencyParameters(ref edit, data, assignments);
@@ -229,7 +230,7 @@ public sealed partial class ClusterPipelineSystem
     private GraphPassId AddTransparencyPass(ref RenderGraphEdit edit, TransparencyData data, TransparencyPipeline compiled,
         string entry, GraphRegionId region, DispatchArguments groups, bool indirect = false, uint argumentOffset = 0)
     {
-        ClusterComputePipeline pipeline = compiled.Pipeline;
+        LinkedComputePipeline pipeline = compiled.Pipeline;
         Shader shader = compiled.Shader;
         GraphPassId id;
         if (indirect)
@@ -241,8 +242,8 @@ public sealed partial class ClusterPipelineSystem
                     _ = pass.Read(value.Arguments, new BufferRange(value.Offset, 12), PipelineSync.ExecuteIndirect, ResourceAccess.IndirectArgument),
                 ClusterIndirectDispatchParameters.Record, region: region);
         }
-        else id = AddComputePass(ref edit, entry, pipeline, new ClusterDispatchParameters(groups), 0,
-            ClusterDispatchParameters.Record, region: region);
+        else id = AddComputePass(ref edit, entry, pipeline, groups, 0,
+            RecordDispatch, region: region);
         PassDefinition pass = edit.GetPass(id);
         int target = shader.RequireSlangTarget(_device.Capabilities.CompileTarget);
         ShaderReflection reflection = shader.GetSlangReflection(target);
@@ -257,21 +258,22 @@ public sealed partial class ClusterPipelineSystem
         {
             if (layout == VariableLayoutReflection.Null) return;
             access.BindParameterBlock(layout);
-            var resources = ClusterLinkedStageLayout.Create(layout, global
+            var resources = ShaderParameterLayout.FromReflection(layout, global
                 ? (category, space, register) => shader.IsSlangParameterLocationUsed(target, entry, category, space, register)
                 : null);
             int resourceIndex = 0;
-            foreach (ClusterLinkedStageResource resource in resources.Resources)
+            var propertyLayouts = new Dictionary<Material, uint?[]>();
+            foreach (ShaderParameterResource resource in resources.Resources)
             {
-                Material boundMaterial = materials is null ? data.Materials[0].Material : materials[resourceIndex++];
+                int index = resourceIndex++;
+                Material boundMaterial = materials is null ? data.Materials[0].Material : materials[index];
                 if (BindInactiveStageResource(ref access, resource)) continue;
                 if (BindDeformRead(ref graph, ref access, resource, PipelineSync.ComputeShading)) continue;
                 if (TryBindTransparencyResource(ref graph, ref access, data, resource, entry)) continue;
                 ClusterShadeCoreResource core = ClusterShadeCoreResources.Resolve(resource.Name, resource.Type);
                 if (core != ClusterShadeCoreResource.None)
                 {
-                    BindShadeCoreResource(ref graph, ref access, core, data.ShadeParameters,
-                        GraphData.ShadeScalars, GraphData.ShadeScalarOffsets);
+                    BindShadeCoreResource(ref graph, ref access, core, data.ShadeParameters);
                     continue;
                 }
                 if (_stageResourceProvider?.TryResolve(resource.Name, resource.Type, out GraphResourceBinder binder) == true)
@@ -279,8 +281,11 @@ public sealed partial class ClusterPipelineSystem
                     binder(ref graph, ref access, PipelineSync.ComputeShading);
                     continue;
                 }
-                uint property = checked((uint)boundMaterial.Properties.ToList().FindIndex(value => value.Name == resource.Name));
-                BindStageMaterialResource(ref graph, ref access, resource, new ClusterMaterialStageBinding(property, resource.Type, true),
+                if (!propertyLayouts.TryGetValue(boundMaterial, out uint?[]? properties))
+                    propertyLayouts.Add(boundMaterial, properties = boundMaterial.ResolveResourceProperties(resources.Resources));
+                uint property = properties[index] ?? throw new InvalidDataException(
+                    $"Transparent material {boundMaterial.Name} does not bind resource {resource.Name}.");
+                BindStageMaterialResource(ref graph, ref access, resource, property,
                     boundMaterial, PipelineSync.ComputeShading);
             }
         }
@@ -294,7 +299,7 @@ public sealed partial class ClusterPipelineSystem
     }
 
     private bool TryBindTransparencyResource(ref RenderGraphEdit graph, ref PassDefinition pass, TransparencyData data,
-        ClusterLinkedStageResource resource, string entry)
+        ShaderParameterResource resource, string entry)
     {
         FrameResources frame = GraphData.Resources;
         GraphBufferId buffer;
@@ -315,7 +320,7 @@ public sealed partial class ClusterPipelineSystem
             case "TransparencyInstances": buffer = frame.InstanceData; stride = 0; break;
             case "TransparencyProperties": pass.Bind(graph.CreateBufferCbv(frame.InstanceProperties, frame.InstancePropertiesRange), PipelineSync.ComputeShading); return true;
             case "TransparencyVisibleClusters": buffer = frame.VisibleClusters; stride = VisibleClusterStride; break;
-            case "TransparencyPageHeap": BindPageHeapDescriptor(ref graph, ref pass, "Cluster transparent geometry", PipelineSync.ComputeShading); return true;
+            case "TransparencyPageHeap": BindPageHeapDescriptor(ref graph, ref pass, "Cluster transparent geometry"); return true;
             case "TransparencyFirstDraw": buffer = frame.DrawArgs; stride = 0; break;
             case "TransparencySecondDraw": buffer = frame.Phase2DrawArgs; stride = 0; break;
             case "TransparencyMaterialStates": buffer = data.States; stride = 8; break;

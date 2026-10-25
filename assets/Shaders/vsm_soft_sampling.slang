@@ -89,7 +89,7 @@ float2 CalculateVirtualShadowSolarDiskOffset(float2 disk, float sourceArea, floa
 bool ReadVirtualShadowSoftDepth(StructuredBuffer<VirtualShadowMapParameters> views,
     StructuredBuffer<uint> pages, Texture2DArray<uint> atlas,
     uint firstView, uint requestedView, uint viewCount, uint mip, float3 position,
-    float2 sampleUV, float3 normal, VirtualShadowSoftPlane centerPlane,
+    float2 sampleUV, float3 normal, inout VirtualShadowSoftPlane plane,
     out VirtualShadowDepthSample sample, out bool blocked, out float separation, float rayStartDistance)
 {
     VirtualShadowMapParameters baseView = views[firstView];
@@ -119,7 +119,6 @@ bool ReadVirtualShadowSoftDepth(StructuredBuffer<VirtualShadowMapParameters> vie
     sample = ReadVirtualShadowProjectionDepth(views, pages, atlas, queryView, uv, mip);
     if (!sample.Valid) return false;
     VirtualShadowMapParameters source = views[sample.ViewIndex];
-    VirtualShadowSoftPlane plane = centerPlane;
     if (plane.ViewIndex != sample.ViewIndex)
         plane = BuildVirtualShadowSoftPlane(views, sample.ViewIndex, position, normal);
     float stored = sample.Depth;
@@ -156,8 +155,6 @@ VirtualShadowProjectionResult SampleVirtualShadowSoftView(StructuredBuffer<Virtu
     float centerSeparation;
     bool centerValid = ReadVirtualShadowSoftDepth(views, pages, atlas, firstView, requestedView, viewCount, mip,
         position, plane.UV, normal, plane, center, centerBlocked, centerSeparation, rayStartDistance);
-    if (centerValid && center.ViewIndex != plane.ViewIndex)
-        plane = BuildVirtualShadowSoftPlane(views, center.ViewIndex, position, normal);
     if (!centerValid) { center.ViewIndex = requestedView; center.MipLevel = mip; }
     result.ViewIndex = center.ViewIndex;
     result.MipLevel = center.MipLevel;
@@ -212,8 +209,9 @@ VirtualShadowProjectionResult SampleVirtualShadowSoftView(StructuredBuffer<Virtu
         VirtualShadowDepthSample sample;
         bool blocked;
         float separation;
+        VirtualShadowSoftPlane queryPlane = plane;
         if (!ReadVirtualShadowSoftDepth(views, pages, atlas, firstView, requestedView, viewCount, mip,
-                position, queryUV, normal, plane, sample, blocked, separation, rayStartDistance))
+                position, queryUV, normal, queryPlane, sample, blocked, separation, rayStartDistance))
             continue;
         validSearches++;
         // A directional emitter can reach this query only inside the cone at
@@ -241,8 +239,9 @@ VirtualShadowProjectionResult SampleVirtualShadowSoftView(StructuredBuffer<Virtu
         VirtualShadowDepthSample sample;
         bool blocked;
         float separation;
+        VirtualShadowSoftPlane queryPlane = plane;
         if (!ReadVirtualShadowSoftDepth(views, pages, atlas, firstView, requestedView, viewCount, mip,
-                position, queryUV, normal, plane, sample, blocked, separation, rayStartDistance))
+                position, queryUV, normal, queryPlane, sample, blocked, separation, rayStartDistance))
             continue;
         validFilters++;
         visible += blocked ? 0.0 : 1.0;

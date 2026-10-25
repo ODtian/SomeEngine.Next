@@ -288,13 +288,14 @@ internal sealed class WorkStream<TItem> : WorkStream
         if (items is null || items.Length < limit)
         {
             items = new TItem[Math.Max(limit, DrainQuantum)];
-            s_drainBuffer = items;
         }
 
-        int itemCount = TakeReadyBatch(items, limit, priorityIndex);
+        s_drainBuffer = null;
+        int itemCount = 0;
         int completedWorkItems = 0;
         try
         {
+            itemCount = TakeReadyBatch(items, limit, priorityIndex);
             for (int i = 0; i < itemCount; i++)
             {
                 WorkItemExecutionResult result = scheduler.ExecuteStreamItem(ref items[i]);
@@ -311,6 +312,7 @@ internal sealed class WorkStream<TItem> : WorkStream
             {
                 Array.Clear(items, 0, itemCount);
             }
+            s_drainBuffer = items;
         }
 
         return completedWorkItems;
@@ -583,7 +585,7 @@ internal sealed class ParallelJobGroup<T>
                 break;
 
             int start = batchIndex * _batchSize;
-            int end = Math.Min(start + _batchSize, _length);
+            int end = start + Math.Min(_batchSize, _length - start);
             processedItems += end - start;
             T batchJob = _job; // preserve the previous one-job-copy-per-batch semantics
             try

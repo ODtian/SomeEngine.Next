@@ -17,7 +17,7 @@ public sealed class BinaryDocumentWriter
     private readonly uint _schemaEpoch;
     private readonly BinaryWireTypeDescriptor _rootDescriptor;
     private readonly Dictionary<Guid, BinaryWireTypeDescriptor> _contracts = [];
-    private readonly List<ChunkData> _chunks = [];
+    private readonly Dictionary<ulong, ChunkData> _chunks = [];
 
     private BinaryDocumentWriter(
         IBinaryDocumentRoot root,
@@ -66,9 +66,9 @@ public sealed class BinaryDocumentWriter
         ArgumentNullException.ThrowIfNull(source);
         BinaryChunkEntry chunk = await source.FindChunkAsync(sourceKey ?? key, cancellationToken).ConfigureAwait(false)
             ?? throw new KeyNotFoundException($"Binary chunk 0x{key:X16} was not found.");
-        if (_chunks.Any(value => value.Key == key))
+        if (_chunks.ContainsKey(key))
             throw new InvalidOperationException($"Duplicate binary chunk key 0x{key:X16}.");
-        _chunks.Add(new ChunkData(key, chunk.TypeFingerprint, default, chunk.Compression,
+        _chunks.Add(key, new ChunkData(key, chunk.TypeFingerprint, default, chunk.Compression,
             chunk.Alignment, ordinal ?? chunk.Ordinal)
         {
             SourceEntry = chunk,
@@ -126,10 +126,10 @@ public sealed class BinaryDocumentWriter
             throw new ArgumentOutOfRangeException(nameof(compression));
         if (alignment <= 0 || alignment > 1024 * 1024 || (alignment & (alignment - 1)) != 0)
             throw new ArgumentOutOfRangeException(nameof(alignment), "Alignment must be a power of two up to 1 MiB.");
-        if (_chunks.Any(chunk => chunk.Key == key))
+        if (_chunks.ContainsKey(key))
             throw new InvalidOperationException($"Duplicate binary chunk key 0x{key:X16}.");
 
-        _chunks.Add(new ChunkData(
+        _chunks.Add(key, new ChunkData(
             key, typeFingerprint, decodedBytes, compression, alignment, ordinal));
         return this;
     }
@@ -207,7 +207,7 @@ public sealed class BinaryDocumentWriter
 
         long directoryOffset = BinaryDocumentFormat.Align(destination.Position, 16);
         WriteZeroes(destination, directoryOffset - destination.Position);
-        ChunkData[] ordered = _chunks.OrderBy(static chunk => chunk.Key).ToArray();
+        ChunkData[] ordered = _chunks.Values.OrderBy(static chunk => chunk.Key).ToArray();
         long directoryLength = checked((long)ordered.Length * BinaryDocumentFormat.DirectoryEntrySize);
         WriteZeroes(destination, directoryLength);
         WriteZeroes(destination, BinaryDocumentFormat.Align(destination.Position, 16) - destination.Position);

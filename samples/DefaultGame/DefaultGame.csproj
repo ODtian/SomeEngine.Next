@@ -1,6 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <Sdk Name="PublishWithSatoriGC" Version="10.0.13-satori.38062657141.1" />
   <PropertyGroup>
     <RootNamespace>DefaultGame</RootNamespace>
+    <DefineConstants Condition="'$(PublishAot)' != 'true'">$(DefineConstants);SOMEENGINE_MANAGED_DIAGNOSTICS</DefineConstants>
+    <ImportedSceneContentRoot Condition="'$(ImportedSceneContentRoot)' == ''">$(SomeEnginePath)/samples/ImportedScenes/Apps</ImportedSceneContentRoot>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="$(SomeEnginePath)/samples/ImportedScenes/Materials/ImportedScenes.Materials.csproj" GlobalPropertiesToRemove="SomeEngineDevelopment;PublishAot;PublishAotUsingRuntimePack;SelfContained;RuntimeIdentifier" />
@@ -11,8 +14,18 @@
   </ItemGroup>
   <Target Name="WriteTestScenes" AfterTargets="Build">
     <PropertyGroup>
-      <_TestSceneDirectory>$([System.String]::Copy('$(SomeEnginePath)/samples/ImportedScenes/Apps').Replace('\', '/'))</_TestSceneDirectory>
-      <_TestScenes>[{&quot;Name&quot;:&quot;1024 spheres&quot;,&quot;ContentDirectory&quot;:&quot;.&quot;,&quot;Animate&quot;:true,&quot;MeasurementFrames&quot;:{&quot;FirstFrame&quot;:2048,&quot;FrameCount&quot;:1024}},{&quot;Name&quot;:&quot;Sponza&quot;,&quot;ContentDirectory&quot;:&quot;$(_TestSceneDirectory)/Sponza&quot;,&quot;MeasurementFrames&quot;:{&quot;FirstFrame&quot;:2048,&quot;FrameCount&quot;:1024}},{&quot;Name&quot;:&quot;Amazon Bistro&quot;,&quot;ContentDirectory&quot;:&quot;$(_TestSceneDirectory)/Bistro&quot;,&quot;MeasurementFrames&quot;:{&quot;FirstFrame&quot;:2048,&quot;FrameCount&quot;:1024}}]</_TestScenes>
+      <_TestSceneDirectory>$([System.IO.Path]::GetFullPath('$(ImportedSceneContentRoot)').Replace('\', '/'))</_TestSceneDirectory>
+      <!-- Unset overrides leave runtime discovery to the main content root / packs.json contract. -->
+      <_DefaultPacks>[]</_DefaultPacks>
+      <_SponzaPacks>[]</_SponzaPacks>
+      <_BistroPacks>[]</_BistroPacks>
+      <_ApplicationAsset>null</_ApplicationAsset>
+      <_SharedPack Condition="'$(SharedAssetPack)' != ''">$([System.IO.Path]::GetFullPath('$(SharedAssetPack)').Replace('\', '/'))</_SharedPack>
+      <_DefaultPacks Condition="'$(SharedAssetPack)' != '' and Exists('$(_SharedPack)')">[&quot;$(_SharedPack)&quot;]</_DefaultPacks>
+      <_SponzaPacks Condition="'$(SharedAssetPack)' != '' and Exists('$(_SharedPack)') and Exists('$(_TestSceneDirectory)/Sponza/Library/scene.assetpack')">[&quot;$(_TestSceneDirectory)/Sponza/Library/scene.assetpack&quot;,&quot;$(_SharedPack)&quot;]</_SponzaPacks>
+      <_BistroPacks Condition="'$(SharedAssetPack)' != '' and Exists('$(_SharedPack)') and Exists('$(_TestSceneDirectory)/Bistro/Library/scene.assetpack')">[&quot;$(_TestSceneDirectory)/Bistro/Library/scene.assetpack&quot;,&quot;$(_SharedPack)&quot;]</_BistroPacks>
+      <_ApplicationAsset Condition="'$(ApplicationAssetId)' != ''">&quot;$(ApplicationAssetId)&quot;</_ApplicationAsset>
+      <_TestScenes>[{&quot;Name&quot;:&quot;1024 spheres&quot;,&quot;ContentDirectory&quot;:&quot;.&quot;,&quot;AssetPacks&quot;:$(_DefaultPacks),&quot;ApplicationAsset&quot;:$(_ApplicationAsset),&quot;Animate&quot;:true,&quot;MeasurementFrames&quot;:{&quot;FirstFrame&quot;:2048,&quot;FrameCount&quot;:1024}},{&quot;Name&quot;:&quot;Sponza&quot;,&quot;ContentDirectory&quot;:&quot;$(_TestSceneDirectory)/Sponza&quot;,&quot;AssetPacks&quot;:$(_SponzaPacks),&quot;ApplicationAsset&quot;:$(_ApplicationAsset),&quot;MeasurementFrames&quot;:{&quot;FirstFrame&quot;:2048,&quot;FrameCount&quot;:1024}},{&quot;Name&quot;:&quot;Amazon Bistro&quot;,&quot;ContentDirectory&quot;:&quot;$(_TestSceneDirectory)/Bistro&quot;,&quot;AssetPacks&quot;:$(_BistroPacks),&quot;ApplicationAsset&quot;:$(_ApplicationAsset),&quot;MeasurementFrames&quot;:{&quot;FirstFrame&quot;:2048,&quot;FrameCount&quot;:1024}}]</_TestScenes>
     </PropertyGroup>
     <WriteLinesToFile File="$(TargetDir)test-scenes.json" Lines="$(_TestScenes)" Overwrite="true" WriteOnlyWhenDifferent="true" />
   </Target>

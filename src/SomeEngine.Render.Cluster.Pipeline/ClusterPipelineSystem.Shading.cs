@@ -9,8 +9,7 @@ namespace SomeEngine.Render.Cluster.Pipeline;
 
 public sealed partial class ClusterPipelineSystem
 {
-    private readonly record struct IndexedTextureRead(SomeEngine.Resources.Material Material, uint Property,
-        SomeEngine.Resources.Texture? Texture);
+    private readonly record struct IndexedTextureRead(SomeEngine.Resources.Material Material, uint Property);
 
     private sealed record ShadeGroup(ClusterShadeInvocation Stage, ImmutableArray<IndexedTextureRead> TextureReads)
     {
@@ -26,24 +25,23 @@ public sealed partial class ClusterPipelineSystem
             ReferenceEquals(left.Stage.Material, right.Stage.Material) &&
             left.Stage.Pipeline == right.Stage.Pipeline &&
             left.Stage.CommandBindings.Equals(right.Stage.CommandBindings) &&
-            left.Stage.MaterialBindings.AsSpan().SequenceEqual(right.Stage.MaterialBindings) &&
+            left.Stage.MaterialProperties.AsSpan().SequenceEqual(right.Stage.MaterialProperties) &&
             left.TextureReads.AsSpan().SequenceEqual(right.TextureReads.AsSpan());
         public int GetHashCode(ShadeGroup value) => value.Stage.BinIndex.GetHashCode();
     }
 
     private GraphRegionMap<uint, ShadeGroup> UpdateShadeGroups(ref RenderGraphEdit graph, ClusterShadeStageSet stages)
     {
-        GraphData.ShadowRequestGroups = UpdateShadowRequestGroups(ref graph, stages);
-        return UpdateMaterialGroups(ref graph, stages, GraphData.ShadeGroups, requests: false);
+        var reads = CollectIndexedTextureReads(stages.BinIndices, stages, includeDecals: true);
+        bool? uniformsChanged = null;
+        GraphData.ShadowRequestGroups = UpdateMaterialGroups(ref graph, stages, GraphData.ShadowRequestGroups, reads, ref uniformsChanged, requests: true);
+        return UpdateMaterialGroups(ref graph, stages, GraphData.ShadeGroups, reads, ref uniformsChanged, requests: false);
     }
 
-    private GraphRegionMap<uint, ShadeGroup> UpdateShadowRequestGroups(ref RenderGraphEdit graph, ClusterShadeStageSet stages)
-        => UpdateMaterialGroups(ref graph, stages, GraphData.ShadowRequestGroups, requests: true);
-
     private GraphRegionMap<uint, ShadeGroup> UpdateMaterialGroups(ref RenderGraphEdit graph, ClusterShadeStageSet stages,
-        GraphRegionMap<uint, ShadeGroup> previousGroups, bool requests)
+        GraphRegionMap<uint, ShadeGroup> previousGroups, Dictionary<uint, ImmutableArray<IndexedTextureRead>> reads,
+        ref bool? uniformsChanged, bool requests)
     {
-        var reads = CollectIndexedTextureReads(stages.BinIndices, stages, includeDecals: true);
         var desired = stages.Invocations.Where(stage => !requests || stage.RequestShader is not null).ToDictionary(static stage => stage.BinIndex,
             stage => new ShadeGroup(requests ? stage.RequestShader! : stage,
                 reads.GetValueOrDefault(stage.BinIndex, [])));
@@ -59,17 +57,16 @@ public sealed partial class ClusterPipelineSystem
                 GraphPassId pass = edit.AddComputeFramePass($"Evaluate Cluster {(requests ? "shadow requests" : "color")} bin {bin}",
                     PassQueueSelection.AnyOfType(QueueType.Graphics), dispatch, new PassOptions(RepeatCommands: true),
                     value.Stage.Pipeline.Pipeline, VariableLayoutReflection.Null, default,
-                    static (ref PassDefinition access, ref ClusterIndirectDispatchParameters data) =>
-                        _ = access.Read(data.Arguments, new BufferRange(data.Offset, ClusterIndirectAbi.DispatchBytes),
-                            PipelineSync.ExecuteIndirect, ResourceAccess.IndirectArgument),
+                    ClusterIndirectDispatchParameters.Declare,
                     ClusterIndirectDispatchParameters.Record, region: region);
                 value.Pass = pass;
                 value.Uniforms = BindShadeResources(ref edit, pass, value.Stage, stages);
                 PassDefinition access = edit.GetPass(pass);
                 ReadIndexedMaterialTextures(ref edit, ref access, value.TextureReads, PipelineSync.ComputeShading);
             });
-        if (_installedShadeStages is { } previous &&
-            (previous.BinCount != stages.BinCount || previous.BinIndices.Length != stages.BinIndices.Length))
+        uniformsChanged ??= _installedShadeStages is { } previous &&
+            (previous.BinCount != stages.BinCount || previous.BinIndices.Length != stages.BinIndices.Length);
+        if (uniformsChanged.Value)
         {
             Span<ClusterShadeUniforms> value = stackalloc ClusterShadeUniforms[1];
             foreach (ShadeGroup group in groups.Values)
@@ -95,7 +92,7 @@ public sealed partial class ClusterPipelineSystem
             foreach (uint property in scalarLayout.TextureProperties)
             {
                 if (!reads.TryGetValue(bin, out var members)) reads.Add(bin, members = []);
-                members.Add(new(material, property, material.GetTexture(property)));
+                members.Add(new(material, property));
             }
         }
         if (includeDecals && GraphData.Decals is { } decals)
@@ -113,22 +110,27 @@ public sealed partial class ClusterPipelineSystem
     {
         foreach (IndexedTextureRead read in reads)
         {
-            MaterialInput input = GetMaterialInput(ref graph, read.Material, read.Property,
-                read.Material.Properties[checked((int)read.Property)].Name, ResourceBindingType.TextureSrv);
-            pass.Read(input.Input, sync);
+            GraphParameterInput input = GetMaterialInput(ref graph, read.Material, read.Property,
+                ResourceBindingType.TextureSrv);
+            pass.Read(input, sync);
         }
     }
 
-    private ClusterShadeUniforms ShadeUniforms(uint bin, ClusterShadeStageSet stages) => new()
+    private ClusterShadeUniforms ShadeUniforms(uint bin, ClusterShadeStageSet stages)
     {
-        ScreenWidth = checked((uint)GraphData.Resources.Width),
-        ScreenHeight = checked((uint)GraphData.Resources.Height),
-        ShadingBin = bin,
-        ShadeBinCount = stages.BinCount,
-        MaterialSlotCapacity = checked((uint)(stages.BinIndices.Length / sizeof(uint))),
-        ViewCount = GraphData.Resources.ViewCount,
-        VisibilityDepth = (uint)stages.GetBin(bin).VisibilityDepth,
-    };
+        var uniforms = new ClusterShadeUniforms
+        {
+            ScreenWidth = checked((uint)GraphData.Resources.Width),
+            ScreenHeight = checked((uint)GraphData.Resources.Height),
+            ShadingBin = bin,
+            ShadeBinCount = stages.BinCount,
+            MaterialSlotCapacity = checked((uint)(stages.BinIndices.Length / sizeof(uint))),
+            ViewCount = GraphData.Resources.ViewCount,
+        };
+        ClusterShadeInvocation stage = stages.GetBin(bin);
+        uniforms.VisibilityDepth = (uint)stage.VisibilityDepth;
+        return uniforms;
+    }
 
     private static uint CalculateShadeBinItemCapacity(in FrameResources frame)
     {

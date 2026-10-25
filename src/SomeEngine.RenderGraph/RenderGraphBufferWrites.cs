@@ -34,7 +34,8 @@ public sealed class RenderGraphBufferWrites : IDisposable
     {
         _next.EnsureOpen();
         DevelopmentCheck.Require(!_closed, "The buffer writes must be open when committed.");
-        _transfers.AddUploads(_writes.Values.SelectMany(writes => writes));
+        IList<List<FrameBufferTransfers.BufferUpload>> writes = _writes.Values;
+        _transfers.AddUploads(writes);
         Dispose();
     }
 

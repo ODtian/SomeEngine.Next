@@ -97,6 +97,20 @@ public sealed partial class Texture
         }
     }
 
+    internal bool TryGetTile(ImmutableList<TextureMipTile> tiles, int index, out ReadOnlyMemory<byte> pixels)
+    {
+        lock (_deviceGate)
+        {
+            if (!ReferenceEquals(MipTiles, tiles))
+            {
+                ulong key = tiles[index].ChunkKey;
+                index = MipTiles.FindIndex(tile => tile.ChunkKey == key);
+            }
+            pixels = index < 0 ? default : _pixels[index];
+            return !pixels.IsEmpty;
+        }
+    }
+
     public void AddPixels(IReadOnlyList<TexturePixels> pixels, ulong expectedRevision)
     {
         lock (_deviceGate)

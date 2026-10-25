@@ -59,6 +59,94 @@ public sealed class ClusterCompressionTests(D3D12TestCompiler shaderCompiler)
         };
     }
 
+    [Theory]
+    [InlineData("sm_6_0")]
+    [InlineData("sm_6_5")]
+    public void Receiver_mask_aggregation_preserves_mixed_addresses_and_divergent_active_lanes(string profile)
+    {
+        const int count = 256, iterations = 4, words = 3 + iterations;
+        const string source = """
+            #define VSM_WHOLE_PAGE_SAMPLING 1
+            #include "vsm_sampling.slang"
+            #include "vsm_page_request_common.slang"
+            RWByteAddressBuffer Results;
+            uint2 ReceiverTexel(uint lane)
+            {
+                uint index = lane % 8u;
+                return index == 1u || index == 6u ? uint2(1u, 3u) :
+                    index == 4u ? uint2(2u, 2u) : uint2(1u, 2u);
+            }
+            uint ReceiverMask(uint lane, uint iteration)
+            {
+                const uint masks[8] = { 1u, 0x10u, 4u, 0x8000u, 0x20u, 1u, 0x80u, 0x100u };
+                return masks[lane % 8u] << iteration;
+            }
+            [shader("compute")]
+            [numthreads(64, 1, 1)]
+            void TestReceiverMaskAggregation(uint3 id : SV_DispatchThreadID,
+                uint3 group : SV_GroupID, uint lane : SV_GroupIndex)
+            {
+                uint address = id.x * 28u;
+                Results.Store3(address, uint3(WaveGetLaneCount(), WaveGetLaneIndex(), WaveReadLaneFirst(id.x)));
+                bool active = group.x == 2u ? lane == 37u :
+                    lane % 8u != 3u && (group.x != 1u || lane < 8u);
+                uint trips = group.x == 3u ? 1u + lane % 4u : 1u;
+                for (uint iteration = 0u; iteration < 4u; iteration++)
+                {
+                    uint emitted = 0u;
+                    if (active && iteration < trips)
+                    {
+                        uint mask = ReceiverMask(lane, iteration);
+                        if (SelectVirtualShadowReceiverMaskWriter(ReceiverTexel(lane), mask))
+                            emitted = mask;
+                    }
+                    Results.Store(address + 12u + iteration * 4u, emitted);
+                }
+            }
+            """;
+        D3D12TestShader shader = shaderCompiler.CompileWithSearchPaths(
+            "receiver_mask_aggregation", source, [new("TestReceiverMaskAggregation", SlangStage.Compute)],
+            profile, ShaderDirectory());
+        uint[] result = Execute(shader, count, words, leadingBindings:
+            [ResourceBinding.Null(ResourceBindingType.BufferUav), ResourceBinding.Null(ResourceBindingType.BufferUav),
+             ResourceBinding.Null(ResourceBindingType.BufferUav), ResourceBinding.Null(ResourceBindingType.BufferUav),
+             ResourceBinding.Null(ResourceBindingType.TextureUav)]);
+        uint[] masks = [1, 0x10, 4, 0x8000, 0x20, 1, 0x80, 0x100];
+        var coverageByWave = new Dictionary<(uint Wave, int Address, int Iteration), (uint Expected, uint Actual)>();
+        for (int index = 0; index < count; index++)
+        {
+            ReadOnlySpan<uint> record = result.AsSpan(index * words, words);
+            Assert.InRange(record[0], 1u, 128u);
+            Assert.True(record[1] < record[0]);
+            for (int iteration = 0; iteration < iterations; iteration++)
+            {
+                bool active = Active(index, iteration);
+                uint emitted = record[3 + iteration];
+                if (!active) Assert.Equal(0u, emitted);
+                var key = (record[2], Key(index), iteration);
+                coverageByWave.TryGetValue(key, out var coverage);
+                coverageByWave[key] = (coverage.Expected | (active ? masks[index % 8] << iteration : 0u),
+                    coverage.Actual | emitted);
+            }
+        }
+        foreach (var coverage in coverageByWave.Values)
+            Assert.Equal(coverage.Expected, coverage.Actual);
+        for (int group = 0; group < 2; group++)
+        {
+            uint[] coverage = new uint[3];
+            for (int lane = 0; lane < 64; lane++)
+                coverage[Key(lane)] |= result[(group * 64 + lane) * words + 3];
+            Assert.Equal(new uint[] { 0x105, 0x90, 0x20 }, coverage);
+        }
+        static int Key(int index) => index % 8 is 1 or 6 ? 1 : index % 8 == 4 ? 2 : 0;
+        static bool Active(int index, int iteration)
+        {
+            int lane = index % 64, group = index / 64;
+            bool active = group == 2 ? lane == 37 : lane % 8 != 3 && (group != 1 || lane < 8);
+            return active && iteration < (group == 3 ? 1 + lane % 4 : 1);
+        }
+    }
+
     [Fact]
     public void Quadratic_error_bound_contains_the_triangle_and_converges_to_its_boundary_error()
     {

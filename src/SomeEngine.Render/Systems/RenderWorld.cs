@@ -37,19 +37,19 @@ public sealed class RenderWorld : World
     {
         get
         {
-            WorldOrigin origin = default;
-            int count = 0;
-            ExecuteQuery(_worldOriginQuery, query =>
-            {
-                foreach (QueryChunkView chunk in query.Chunks)
-                    foreach (RenderWorldOrigin value in chunk.Read<RenderWorldOrigin>())
-                    {
-                        SomeEngine.Core.Diagnostics.DevelopmentCheck.Require(++count == 1,
-                            "A render world has one shared coordinate origin.");
-                        origin = value.Value;
-                    }
-            });
-            return origin;
+            (WorldOrigin Origin, int Count) result = default;
+            ExecuteQuery(_worldOriginQuery, ref result,
+                static (QueryCursor query, ref (WorldOrigin Origin, int Count) state) =>
+                {
+                    foreach (QueryChunkView chunk in query.Chunks)
+                        foreach (RenderWorldOrigin value in chunk.Read<RenderWorldOrigin>())
+                        {
+                            SomeEngine.Core.Diagnostics.DevelopmentCheck.Require(++state.Count == 1,
+                                "A render world has one shared coordinate origin.");
+                            state.Origin = value.Value;
+                        }
+                });
+            return result.Origin;
         }
     }
 

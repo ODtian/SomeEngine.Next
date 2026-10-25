@@ -1,3 +1,5 @@
+using SomeEngine.Assets;
+using SomeEngine.Assets.Schema;
 using SomeEngine.ECS;
 using SomeEngine.Graphics;
 using SomeEngine.Render.Systems;
@@ -10,9 +12,15 @@ namespace SomeEngine.Runtime;
 public sealed class ApplicationScene(string contentDirectory)
 {
     private readonly List<IApplicationGeometryFeature> _geometryFeatures = [];
+    private readonly List<ApplicationView> _views = [];
+    private int _nextViewImageId = 2;
     internal IReadOnlyList<IApplicationGeometryFeature> GeometryFeatures => _geometryFeatures;
 
     public string ContentDirectory { get; set; } = contentDirectory;
+    /// <summary>Optional ordered shared packs; relative paths use ContentDirectory and the first matching asset wins.</summary>
+    public IReadOnlyList<string> AssetPacks { get; set; } = [];
+    /// <summary>Selects application settings when the content contains more than one application.</summary>
+    public AssetId<ApplicationSettingsAsset>? ApplicationAsset { get; set; }
     public RuntimeStartupOptions Options { get; set; } = RuntimeStartupOptions.Parse([]);
     public uint GeometryMemoryBytes { get; set; } = 256u * 1024 * 1024;
     public float LodThreshold { get; set; } = 0.25f;
@@ -20,12 +28,35 @@ public sealed class ApplicationScene(string contentDirectory)
     public string? StartupTraceOutput { get; set; }
     public bool DebugUiEnabled { get; set; } = true;
     public bool MeasureInterface { get; set; }
+    /// <summary>Enables explicit caster-invalidation GPU timestamp requests for this application.</summary>
+    public bool MeasureShadowInvalidation { get; init; }
     public Action<long>? SceneStarted { get; set; }
     public Action<ApplicationFrame>? Initialize { get; set; }
     public Action<ApplicationFrame>? Shutdown { get; set; }
     public bool InterfaceEnabled { get; set; }
     public Action<ApplicationFrame>? UpdateFrame { get; set; }
     public Action? DrawDebugUi { get; set; }
+    /// <summary>Draws application ImGui overlays after the optional debug panel.</summary>
+    public Action? DrawOverlay { get; set; }
+    /// <summary>Additional diagnostic outputs using the main scene camera and prepared rendering data.</summary>
+    public IReadOnlyList<ApplicationView> Views => _views;
+    public bool ViewsEnabled { get; set; } = true;
+    /// <summary>Optional destination rectangle for the main scene image; UI keeps the full window.</summary>
+    public ScissorRect? PresentationBounds { get; set; }
+
+    /// <summary>Registers a view before drawing its ImageId in the current ImGui frame.</summary>
+    public ApplicationView AddView(ApplicationViewSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        var view = new ApplicationView(checked(_nextViewImageId++), settings);
+        _views.Add(view);
+        return view;
+    }
+
+    /// <summary>Unregisters a view. Do not draw its ImageId again after removing it.</summary>
+    public bool RemoveView(ApplicationView view) => _views.Remove(view);
+
+    public void ClearViews() => _views.Clear();
     public Action<ApplicationFrame>? FrameCompleted { get; set; }
     /// <summary>Receives this frame's Cluster results after GPU completion. Supplying this callback enables synchronous frame diagnostics.</summary>
     public Action<ClusterFrameMetrics>? FrameRendered { get; set; }
@@ -49,10 +80,12 @@ public sealed class ApplicationFrame
     private readonly RuntimeInput _input;
     private readonly ClusterRenderResources _rendering;
     private readonly ApplicationStartupTiming _startup;
+    private readonly bool _measureShadowInvalidation;
 
     internal ApplicationFrame(World world, GameFrameSystems systems, RenderExtractionSystems extraction, SceneEdit scene, RuntimeInput input, ClusterRenderResources rendering,
-        ApplicationStartupTiming startup, AdapterInfo adapter)
-        => (World, Systems, Extraction, Scene, _input, _rendering, _startup, Adapter) = (world, systems, extraction, scene, input, rendering, startup, adapter);
+        ApplicationStartupTiming startup, AdapterInfo adapter, bool measureShadowInvalidation = false)
+        => (World, Systems, Extraction, Scene, _input, _rendering, _startup, Adapter, _measureShadowInvalidation)
+            = (world, systems, extraction, scene, input, rendering, startup, adapter, measureShadowInvalidation);
 
     public World World { get; }
     public GameFrameSystems Systems { get; }
@@ -65,6 +98,13 @@ public sealed class ApplicationFrame
     public int Width { get; internal set; }
     public int Height { get; internal set; }
     public ApplicationFrameTimes Timing { get; internal set; }
+    internal bool ShadowInvalidationTimingRequested { get; set; }
+    /// <summary>Requests diagnostics for this frame if it is submitted. Call during UpdateFrame.</summary>
+    public void RequestShadowInvalidationTiming()
+    {
+        if (!_measureShadowInvalidation) throw new InvalidOperationException("Shadow invalidation timing was not enabled for this application.");
+        ShadowInvalidationTimingRequested = true;
+    }
     public ApplicationStartupTimes? Startup => _startup.Result;
     public bool WasKeyPressed(int virtualKey) => _input.WasKeyPressed(virtualKey);
     public ClusterRenderDiagnostics GetRenderingDiagnostics() => _rendering.CaptureDiagnostics();

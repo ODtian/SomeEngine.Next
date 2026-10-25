@@ -43,21 +43,22 @@ public sealed partial class VirtualShadowFeature
         }
         else _frameCasterEntities = _casterEntities;
         if (_frameCasterCacheAges.Length != instanceCount) _frameCasterCacheAges = new byte[instanceCount];
-        int wordCount = Math.Max((instanceCount + 31) / 32, 1);
+        int wordCount = Math.Max((int)(((long)instanceCount + 31) / 32), 1);
         if (_frameCasterStaticBits.Length != wordCount) _frameCasterStaticBits = new uint[wordCount];
         else Array.Clear(_frameCasterStaticBits);
-        int changedIndex = 0;
-        int changedCount = _changedInstances.Count;
+        // Geometry owns entity extraction. The output bitset can still serve as temporary
+        // change membership until each row is classified, avoiding repeated list searches.
+        foreach (uint row in newInstances ? _rebuiltCasterChanges : _changedInstances)
+            _frameCasterStaticBits[row / 32] |= 1u << (int)(row & 31);
         _returnedStaticCasters.Clear();
         for (int row = 0; row < instanceCount; row++)
         {
-            bool changed = changedIndex < changedCount && _changedInstances[changedIndex] == row;
-            if (changed) changedIndex++;
+            int word = row / 32;
+            uint bit = 1u << (row & 31);
+            bool changed = (_frameCasterStaticBits[word] & bit) != 0;
             byte previousAge = 101;
             bool added = newInstances && !previousAges!.TryGetValue(_frameCasterEntities[row], out previousAge);
-            if (newInstances)
-                changed = _rebuiltCasterChanges.BinarySearch((uint)row) >= 0;
-            else previousAge = _casterCacheAges[row];
+            if (!newInstances) previousAge = _casterCacheAges[row];
             // Batch rows can move when unrelated entities are added or removed. Only
             // actual invalidation resets an existing entity's completed-frame age.
             byte age = added ? (byte)101 : changed || _invalidateAllCasters ? (byte)0 :
@@ -65,7 +66,8 @@ public sealed partial class VirtualShadowFeature
             _frameCasterCacheAges[row] = age;
             bool isStatic = classes[row] == DepthCacheClass.Static ||
                 classes[row] == DepthCacheClass.Auto && age > 100;
-            if (isStatic) _frameCasterStaticBits[row / 32] |= 1u << (row & 31);
+            if (isStatic) _frameCasterStaticBits[word] |= bit;
+            else _frameCasterStaticBits[word] &= ~bit;
             if (!newInstances && isStatic && (_casterStaticBits[row / 32] & (1u << (row & 31))) == 0u && !changed)
                 _returnedStaticCasters.Add((uint)row);
         }

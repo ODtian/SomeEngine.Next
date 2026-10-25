@@ -20,6 +20,7 @@ internal sealed class GraphEditChanges
 {
     internal readonly HashSet<GraphIdentity> Buffers = [];
     internal readonly HashSet<GraphIdentity> Textures = [];
+    internal HashSet<GraphIdentity>? ResourceDescriptions;
     internal readonly HashSet<GraphIdentity> PersistentBindings = [];
     internal readonly HashSet<GraphIdentity> QueryPools = [];
     internal readonly HashSet<GraphIdentity> ShaderTables = [];
@@ -49,19 +50,21 @@ internal sealed class GraphEditChanges
 
     internal int CopiedBlockCount => BitOperations.PopCount((uint)Stores);
 
-    internal void TouchBuffer(in GraphIdentity identity, bool membership = false)
+    internal void TouchBuffer(in GraphIdentity identity, bool membership = false, bool description = true)
     {
         Stores |= GraphStoreKind.Buffers;
         Buffers.Add(identity);
         AffectedResources.Add(identity);
+        if (description) (ResourceDescriptions ??= []).Add(identity);
         ResourceMembershipChanged |= membership;
     }
 
-    internal void TouchTexture(in GraphIdentity identity, bool membership = false)
+    internal void TouchTexture(in GraphIdentity identity, bool membership = false, bool description = true)
     {
         Stores |= GraphStoreKind.Textures;
         Textures.Add(identity);
         AffectedResources.Add(identity);
+        if (description) (ResourceDescriptions ??= []).Add(identity);
         ResourceMembershipChanged |= membership;
     }
 

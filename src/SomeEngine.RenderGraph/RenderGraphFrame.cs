@@ -31,6 +31,13 @@ public ref partial struct RenderGraphFrame
 
     internal RenderGraph Owner => State.Graph;
 
+    internal void EnsureOpen()
+    {
+        // Reading State must still validate the frame in release builds.
+        RenderGraphFrameState state = State;
+        state.EnsureAuthoring();
+    }
+
     /// <summary>
     /// Retires an object after every frame submitted before this frame began has completed.
     /// The current frame must not reference <paramref name="value"/>.
@@ -373,6 +380,13 @@ public ref partial struct RenderGraphFrame
 
     /// <summary>Supplies an existing RHI binding after importing its resources into this frame.</summary>
     public void SetParameterInput(GraphParameterInput input, ResourceBinding value) => State.SetParameterInput(input, value);
+
+    /// <summary>
+    /// Reads the last accepted persistent binding without changing a frame-local override.
+    /// This does not validate the referenced resource's liveness or current registration.
+    /// </summary>
+    public bool TryGetPersistentParameterInput(GraphParameterInput input, out ResourceBinding value) =>
+        State.TryGetPersistentParameterInput(input, out value);
 
     /// <summary>Updates a retained shader connection. Its registered resources and binding remain in use until changed.</summary>
     public void SetPersistentParameterInput(GraphParameterInput input, ResourceBinding value) => State.SetPersistentParameterInput(input, value);

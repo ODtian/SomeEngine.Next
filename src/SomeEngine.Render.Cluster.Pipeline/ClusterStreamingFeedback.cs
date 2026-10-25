@@ -105,9 +105,12 @@ public sealed class ClusterStreamingFeedbackConsumer
         _channel = channel ?? throw new ArgumentNullException(nameof(channel));
     }
 
+    private static readonly global::SomeEngine.Diagnostics.TraceSite StreamingConsumeFeedback = new("streaming", nameof(StreamingConsumeFeedback), detail: false);
+
     public void Pump()
     {
-        ConsumeFeedback();
+        using (global::SomeEngine.Diagnostics.EngineTrace.Begin(StreamingConsumeFeedback))
+            ConsumeFeedback();
         _resources.PumpStreaming();
     }
 

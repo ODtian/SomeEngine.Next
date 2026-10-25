@@ -242,19 +242,22 @@ internal sealed unsafe partial class D3D12Backend
                 bindings.Layout,
                 bindings.Resources,
                 bindings.OrdinaryData,
-                out bool sameTransientShape))
+                out bool sameTransientShape,
+                out bool sameTransientResources))
         {
             return;
         }
         if ((layout.ResourceTable is null && layout.SamplerTable is null) ||
-            command.TransientResourceBindingsEqual(bindings.Layout, bindings.Resources))
+            (sameTransientShape
+                ? sameTransientResources
+                : command.TransientResourceBindingsEqual(bindings.Layout, bindings.Resources)))
         {
             command.PrepareOrdinaryData(layout.OrdinaryRoot is { UsesRootConstants: false }
                     ? checked((ulong)bindings.OrdinaryData.Length)
                     : 0);
             command.PrepareBindingStorage(bindings.Resources.Length, bindings.OrdinaryData.Length);
             command.ApplyTransientOrdinaryData(layout, bindings.OrdinaryData);
-            command.RememberTransientBindings(bindings, sameTransientShape);
+            command.RememberTransientBindings(bindings, sameTransientShape, sameTransientResources);
             return;
         }
         SetTransientParameterBindingsSlow(command, layout, sameTransientShape, bindings);
@@ -857,8 +860,10 @@ internal sealed unsafe partial class D3D12Backend
             VariableLayoutReflection layout,
             ReadOnlySpan<ResourceBinding> resources,
             ReadOnlySpan<byte> ordinaryData,
-            out bool sameTransientShape)
+            out bool sameTransientShape,
+            out bool sameTransientResources)
         {
+            sameTransientResources = false;
             if (_hasTransientBindings)
             {
                 if (_transientBindingLayout != layout ||
@@ -871,6 +876,7 @@ internal sealed unsafe partial class D3D12Backend
                 sameTransientShape = true;
                 if (!resources.IsEmpty && !TransientResourcesEqualSlow(resources))
                     return false;
+                sameTransientResources = true;
                 return TransientOrdinaryDataEqual(ordinaryData);
             }
             sameTransientShape = false;
@@ -928,7 +934,8 @@ internal sealed unsafe partial class D3D12Backend
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void RememberTransientBindings(
             in ParameterBlockBindings bindings,
-            bool sameTransientShape)
+            bool sameTransientShape,
+            bool sameTransientResources = false)
         {
             if (!sameTransientShape &&
                 (_transientBindingResources.Length < bindings.Resources.Length ||
@@ -938,7 +945,7 @@ internal sealed unsafe partial class D3D12Backend
                     bindings.Resources.Length,
                     bindings.OrdinaryData.Length);
             }
-            if (!bindings.Resources.IsEmpty)
+            if (!sameTransientResources && !bindings.Resources.IsEmpty)
                 CopyTransientResourcesSlow(bindings.Resources);
             if (bindings.OrdinaryData.Length == 16)
             {

@@ -10,7 +10,7 @@ public sealed partial class ClusterPipelineSystem
     {
         GraphData.LeafFlagRegion = graph.AddRegion("Cluster streaming fixups", _regions.PrimaryGeometry);
         GraphData.LeafFlagPass = AddComputePass(ref graph, "Apply Cluster streaming leaf flags", _pipelines!.LeafFlagFixups,
-            new ClusterDispatchParameters(new DispatchArguments(0, 1, 1)), 0, ClusterDispatchParameters.Record,
+            new DispatchArguments(0, 1, 1), 0, RecordDispatch,
             region: GraphData.LeafFlagRegion);
         GraphData.LeafFlagParameters = graph.CreateBufferInput(BufferUsages.Constant);
         GraphData.LeafFlagData = graph.CreateBufferInput(BufferUsages.ShaderRead);
@@ -21,7 +21,7 @@ public sealed partial class ClusterPipelineSystem
         _ = pass.Bind(graph.CreateBufferSrv(GraphData.LeafFlagData, structureStride: 8), PipelineSync.ComputeShading);
         pass.Bind(GraphParameterResourceBinding.WritableBufferDescriptor(graph.CreateBufferUav(GraphData.Resources.PageHeap)));
         graph.OrderAfter(GraphData.LeafFlagPass, GraphData.PageUpload);
-        graph.OrderAfter(GraphData.SceneBounds.Pass, GraphData.LeafFlagPass);
+        graph.OrderAfter(GraphData.SceneBounds, GraphData.LeafFlagPass);
     }
 
     private void BindLeafFlagFixups(ref RenderGraphFrame graph, ClusterResidencyPublication? residencyUpdates)
@@ -40,11 +40,13 @@ public sealed partial class ClusterPipelineSystem
             "Cluster streaming fixup parameters"));
         graph.SetBufferInput(GraphData.LeafFlagData, graph.Upload(data,
             BufferUsages.ShaderRead, "Cluster streaming fixup records"));
-        graph.SetPassData(GraphData.LeafFlagPass, new ClusterDispatchParameters(new DispatchArguments(
-            (uint)((data.Length + 63) / 64), 1, 1)));
+        graph.SetPassData(GraphData.LeafFlagPass, new DispatchArguments(
+            (uint)((data.Length + 63) / 64), 1, 1));
         graph.SetRegionEnabled(GraphData.LeafFlagRegion, !data.IsEmpty);
         PassDefinition pass = graph.GetPass(GraphData.LeafFlagPass);
-        uint[] addresses = data.ToArray().Select(static fixup => fixup.ClusterByteAddress + 60u).ToArray();
+        uint[] addresses = new uint[data.Length];
+        for (int index = 0; index < data.Length; index++)
+            addresses[index] = data[index].ClusterByteAddress + 60u;
         Array.Sort(addresses);
         uint first = addresses[0], end = first + sizeof(uint);
         for (int index = 1; index <= addresses.Length; index++)

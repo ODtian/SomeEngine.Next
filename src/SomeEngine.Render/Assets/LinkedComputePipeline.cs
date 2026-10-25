@@ -10,16 +10,33 @@ namespace SomeEngine.Render.Assets;
 /// <summary>Owns one RHI pipeline created from a direct Slang compute entry point.</summary>
 public sealed class LinkedComputePipeline : IDisposable
 {
+    private readonly Shader _shader;
+    private ShaderParameterLayout? _globalResources;
     private bool _disposed;
 
     private LinkedComputePipeline(
+        Shader shader,
         ShaderReflection reflection,
         EntryPointReflection entryPoint,
         GraphicsPipeline pipeline)
     {
+        if (reflection == ShaderReflection.Null)
+            throw new ArgumentException("Slang reflection is null.", nameof(reflection));
+        _shader = shader;
         Reflection = reflection;
         EntryPoint = entryPoint;
-        Pipeline = pipeline;
+        Pipeline = pipeline ?? throw new ArgumentNullException(nameof(pipeline));
+    }
+
+    /// <summary>Gets the full global resource order, without entry filtering or block markers.</summary>
+    public ShaderParameterLayout GlobalResources
+    {
+        get
+        {
+            ShaderParameterLayout resources = _globalResources ??= ShaderParameterLayout.FromReflection(ParameterLayout);
+            GC.KeepAlive(_shader);
+            return resources;
+        }
     }
 
     public ShaderReflection Reflection { get; }
@@ -44,8 +61,7 @@ public sealed class LinkedComputePipeline : IDisposable
             device,
             shader,
             entry,
-            shader.GetSlangEntryBytes(targetIndex, entry),
-            shader.GetSlangEntryBlob(targetIndex, entry),
+            targetIndex,
             label);
     }
 
@@ -61,23 +77,43 @@ public sealed class LinkedComputePipeline : IDisposable
         ArgumentNullException.ThrowIfNull(shader);
         ArgumentException.ThrowIfNullOrWhiteSpace(entryPoint);
         ArgumentException.ThrowIfNullOrWhiteSpace(label);
+        int targetIndex = shader.RequireSlangTarget(device.Capabilities.CompileTarget);
+        EntryPointReflection entry = shader.RequireSlangEntry(
+            targetIndex,
+            entryPoint,
+            SlangStage.Compute);
+        return Create(
+            backend,
+            device,
+            shader,
+            entry,
+            targetIndex,
+            label);
+    }
+
+    private static LinkedComputePipeline Create(
+        IGraphicsBackend backend,
+        Device device,
+        Shader shader,
+        EntryPointReflection entry,
+        int targetIndex,
+        string label)
+    {
         GraphicsPipeline? pipeline = null;
         try
         {
-            int targetIndex = shader.RequireSlangTarget(device.Capabilities.CompileTarget);
             ShaderReflection reflection = shader.GetSlangReflection(targetIndex);
-            EntryPointReflection entry = shader.RequireSlangEntry(
-                targetIndex,
-                entryPoint,
-                SlangStage.Compute);
-            return Create(
-                backend,
+            int entryIndex = shader.GetSlangEntryIndex(targetIndex, entry);
+            pipeline = backend.CreateComputePipeline(
                 device,
-                shader,
-                entry,
-                shader.GetSlangEntryBytes(targetIndex, entry),
-                shader.GetSlangEntryBlob(targetIndex, entry),
-                label);
+                new ComputePipelineDesc(
+                    shader.SlangCode,
+                    reflection,
+                    entry,
+                    shader.GetSlangEntryBytes(targetIndex, entryIndex),
+                    label,
+                    CodeBlob: shader.GetSlangEntryBlob(targetIndex, entryIndex)));
+            return new LinkedComputePipeline(shader, reflection, entry, pipeline);
         }
         catch (Exception primary)
         {
@@ -90,38 +126,6 @@ public sealed class LinkedComputePipeline : IDisposable
                     $"Compute pipeline '{label}' construction failed and cleanup also reported failures.",
                     cleanupFailures);
             }
-            throw;
-        }
-    }
-
-    private static LinkedComputePipeline Create(
-        IGraphicsBackend backend,
-        Device device,
-        Shader shader,
-        EntryPointReflection entry,
-        System.Buffers.ReadOnlySequence<byte> code,
-        ISlangBlob? codeBlob,
-        string label)
-    {
-        GraphicsPipeline? pipeline = null;
-        try
-        {
-            int targetIndex = shader.RequireSlangTarget(device.Capabilities.CompileTarget);
-            ShaderReflection reflection = shader.GetSlangReflection(targetIndex);
-            pipeline = backend.CreateComputePipeline(
-                device,
-                new ComputePipelineDesc(
-                    shader.SlangCode,
-                    reflection,
-                    entry,
-                    code,
-                    label,
-                    CodeBlob: codeBlob));
-            return new LinkedComputePipeline(reflection, entry, pipeline);
-        }
-        catch
-        {
-            pipeline?.Dispose();
             throw;
         }
     }

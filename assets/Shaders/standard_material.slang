@@ -50,7 +50,18 @@ struct StandardScalars
     float MetallicFactor;
     float Roughness;
     float3 EmissiveFactor;
+    float NormalScale;
+    float OcclusionStrength;
+    bool UseOcclusionMap;
+    bool UseEmissiveMap;
+    bool DecodeAlbedoSrgb;
+    bool DecodeEmissiveSrgb;
 };
+
+float3 StandardSrgbToLinear(float3 color)
+{
+    return select(color <= 0.04045, color / 12.92, pow((color + 0.055) / 1.055, 2.4));
+}
 
 struct StandardPixelContext
 {
@@ -83,6 +94,8 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ITransparentS
     Texture2D AlbedoMap;
     Texture2D NormalMap;
     Texture2D ARMMap;
+    Texture2D OcclusionMap;
+    Texture2D EmissiveMap;
     SamplerState MaterialSampler;
 
     float4 evaluateColor(
@@ -107,6 +120,8 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ITransparentS
         float3 normalTS     = NormalMap.SampleGrad(MaterialSampler, ctx.uv0, uvDx, uvDy).rgb * 2.0 - 1.0;
         StandardScalars scalars = LoadMaterialScalars<StandardScalars>(input.MaterialIndex);
 
+        normalTS.xy *= scalars.NormalScale;
+
         // TBN matrix: transform normal from tangent space to world space
         float3 N_geom = normalize(ctx.worldNormal);
         float3 T = normalize(ctx.worldTangent.xyz - N_geom * dot(N_geom, ctx.worldTangent.xyz)); // Gram-Schmidt
@@ -126,7 +141,8 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ITransparentS
             input.InstanceID, cameraView, mappedNormal);
         N_geom = TransformFirstPersonWorldNormal(MaterialInstanceData, MaterialInstanceProperties,
             input.InstanceID, cameraView, N_geom);
-        float3 baseColor = albedoSample.rgb * scalars.BaseColorTint.rgb;
+        float3 albedo = scalars.DecodeAlbedoSrgb ? StandardSrgbToLinear(albedoSample.rgb) : albedoSample.rgb;
+        float3 baseColor = albedo * scalars.BaseColorTint.rgb;
         float roughness = saturate(armSample.g * scalars.Roughness);
         float metallic = saturate(armSample.b * scalars.MetallicFactor);
         roughness = max(roughness, 0.04);
@@ -161,7 +177,16 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ITransparentS
         float4 sourceClip = mul(float4(ClusterPositionForView(surface.Position, surfaceView), 1.0), surfaceView.ViewProj);
         receiver.DepthOffset = input.VisibilityDepth == 2u ? input.Depth - sourceClip.z / sourceClip.w : 0.0;
         float3 V = normalize(cameraView.CameraPos - ctx.surfacePosition);
-        float3 finalColor = baseColor * armSample.r * 0.03 + scalars.EmissiveFactor;
+        // Default materials retain the legacy ARM.r occlusion convention.
+        float ao = scalars.UseOcclusionMap ? OcclusionMap.SampleLevel(MaterialSampler, ctx.uv0, 0.0).r : armSample.r;
+        ao = lerp(1.0, ao, scalars.OcclusionStrength);
+        float3 emission = scalars.EmissiveFactor;
+        if (scalars.UseEmissiveMap)
+        {
+            float3 emissive = EmissiveMap.SampleLevel(MaterialSampler, ctx.uv0, 0.0).rgb;
+            emission *= scalars.DecodeEmissiveSrgb ? StandardSrgbToLinear(emissive) : emissive;
+        }
+        float3 finalColor = baseColor * ao * 0.03 + emission;
 
         if (dot(mappedNormal, V) <= 0.0)
         {
@@ -257,7 +282,12 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ITransparentS
         SurfaceEval surface, float3 bary, Triangle triangle)
     {
         if (debugMode == 8u) return float4(bary, 1.0);
-        if (debugMode == 9u) return float4(surface.Normal * .5 + .5, 1.0);
+        if (debugMode == 9u)
+        {
+            float3 normal = TransformFirstPersonWorldNormal(MaterialInstanceData, MaterialInstanceProperties,
+                input.InstanceID, MaterialViews[input.PixelCoord.z], surface.Normal);
+            return float4(normal * .5 + .5, 1.0);
+        }
         if (debugMode == 10u)
         {
             float checker = step(.5, frac(surface.TexCoord.x * 8.0)) !=

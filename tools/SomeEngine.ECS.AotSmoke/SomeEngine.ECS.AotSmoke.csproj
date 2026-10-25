@@ -49,7 +49,7 @@
                       GlobalPropertiesToRemove="PublishAot" />
     <ProjectReference Include="../../src/SomeEngine.Job/SomeEngine.Job.csproj"
                       GlobalPropertiesToRemove="PublishAot" />
-    <ProjectReference Include="../../src/SomeEngine.ECS.SourceGen/SomeEngine.ECS.SourceGen.csproj"
+    <ProjectReference Include="../../src/SomeEngine.ECS.SourceGenerators/SomeEngine.ECS.SourceGenerators.csproj"
                       OutputItemType="Analyzer"
                       ReferenceOutputAssembly="false"
                       GlobalPropertiesToRemove="PublishAot" />

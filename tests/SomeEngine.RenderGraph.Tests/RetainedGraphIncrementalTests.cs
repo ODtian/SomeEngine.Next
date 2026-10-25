@@ -88,10 +88,10 @@ public sealed class RetainedGraphIncrementalTests
         using (RenderGraphFrame frame = graph.BeginFrame())
             Assert.Equal(1, frame.Execute(submitted));
 
-        Assert.Equal(1, graph.GetRangeCompletionCount(buffer, new BufferRange(0, 16)));
-        Assert.Equal(0, graph.GetRangeCompletionCount(buffer, new BufferRange(32, 32)));
-        var copied = new QueueCompletion[graph.MaximumQueueCompletionCount];
-        Assert.Equal(1, graph.CopyRangeCompletions(buffer, new BufferRange(0, 32), copied));
+        Assert.Equal(1, graph.GetRangeCompletions(buffer, new BufferRange(0, 16)).Length);
+        Assert.Equal(0, graph.GetRangeCompletions(buffer, new BufferRange(32, 32)).Length);
+        var copied = graph.GetRangeCompletions(buffer, new BufferRange(0, 32));
+        Assert.Equal(1, copied.Length);
         Assert.Same(support.GraphicsQueue, copied[0].Queue);
         Assert.Equal(submitted[0].Value, copied[0].Value);
         support.Wait(submitted);

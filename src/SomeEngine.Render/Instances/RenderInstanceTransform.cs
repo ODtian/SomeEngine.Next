@@ -1,3 +1,4 @@
+using SomeEngine.ECS.Systems;
 using SomeEngine.Render.Components;
 
 namespace SomeEngine.Render.Instances;
@@ -55,4 +56,53 @@ public static class RenderInstanceTransformProperties
         RenderInstancePropertyLayout Layout,
         RenderInstanceProperty<RenderTransform> Current,
         RenderInstanceProperty<RenderPreviousTransform> Previous);
+}
+
+/// <summary>
+/// Writes RenderWorld's current and previous transform columns into the shared instance store.
+/// It owns no entities, storage, temporal history, or resource lifetime.
+/// </summary>
+public readonly struct RenderInstanceTransformProducer : IRenderInstanceProducer
+{
+    private static readonly ResolvedRenderInstanceProperty<RenderTransform> Current =
+        RenderInstanceTransformProperties.Layout.Resolve(RenderInstanceTransformProperties.CurrentTransform);
+    private static readonly ResolvedRenderInstanceProperty<RenderPreviousTransform> Previous =
+        RenderInstanceTransformProperties.Layout.Resolve(RenderInstanceTransformProperties.PreviousTransform);
+
+    public RenderInstancePropertyLayout Properties => RenderInstanceTransformProperties.Layout;
+
+    public RenderInstanceChanges GetChanges(ReadOnlyQueryPacket packet, uint lastSystemVersion) =>
+        packet.ChangedSince<RenderTransform>(lastSystemVersion)
+        || packet.ChangedSince<RenderPreviousTransform>(lastSystemVersion)
+            ? RenderInstanceChanges.Values
+            : RenderInstanceChanges.None;
+
+    public void Bind(RenderInstanceWriteSlice destination) => Bind(destination, true, true);
+
+    internal void Bind(RenderInstanceWriteSlice destination, bool current, bool previous)
+    {
+        if (current) destination.BindPerInstance(Current);
+        if (previous) destination.BindPerInstance(Previous);
+    }
+
+    public void Write(RenderInstanceWriteSlice destination, ReadOnlyQueryPacket packet)
+    {
+        destination.Write(Current, packet.Read<RenderTransform>());
+        destination.Write(Previous, packet.Read<RenderPreviousTransform>());
+    }
+
+    public void WriteChanged(RenderInstanceWriteSlice destination, ReadOnlyQueryPacket packet,
+        uint lastSystemVersion) => WriteChanged(destination, packet, lastSystemVersion, false);
+
+    internal void WriteChanged(RenderInstanceWriteSlice destination, ReadOnlyQueryPacket packet,
+        uint lastSystemVersion, bool allTransformsChanged)
+    {
+        if (allTransformsChanged)
+        {
+            Write(destination, packet);
+            return;
+        }
+        RenderInstanceColumnWrites.WriteChanged(destination, packet, Current, lastSystemVersion, useWholeColumnFastPath: true);
+        RenderInstanceColumnWrites.WriteChanged(destination, packet, Previous, lastSystemVersion, useWholeColumnFastPath: true);
+    }
 }

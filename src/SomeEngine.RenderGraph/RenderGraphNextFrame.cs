@@ -106,7 +106,9 @@ public sealed partial class RenderGraph
                 next = null!;
                 return false;
             }
-            storage.Reset(_backend);
+            if (!storage.IsReady(_backend))
+                throw new InvalidOperationException("The frame slot is still in flight.");
+            storage.ResetCompleted();
             _ = storage.GetBufferTransfers(this);
             _preferredFrameIndex = storage.Index;
             next = new RenderGraphNextFrame(this, storage, identity);

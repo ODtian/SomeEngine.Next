@@ -65,12 +65,7 @@ internal sealed partial class FrameExecutor
         {
             if (bufferIndex >= _buffers.Count) continue;
             FrameBuffer buffer = _buffers[bufferIndex];
-            if (buffer.LastPass < 0) continue;
-            if (buffer.Resource is not null)
-            {
-                _buffers[bufferIndex] = buffer;
-                continue;
-            }
+            if (buffer.LastPass < 0 || buffer.Resource is not null) continue;
             if (buffer.Ownership == RenderGraphResourceOwnership.CallerOwned)
                 throw new InvalidOperationException("An external Buffer was not bound.");
             if (buffer.Lifetime == RenderGraphResourceLifetime.Persistent)
@@ -246,21 +241,22 @@ internal sealed partial class FrameExecutor
         Array.Fill(begin, int.MaxValue);
         Array.Clear(end);
         bool used = false;
-        foreach (int accessIndex in CollectResourceAccesses(kind, resourceIndex, enabledOnly: false))
-        {
-            FrameResourceAccess access = _accesses[accessIndex];
-            if (!_live[access.PassIndex] || access.TargetKind != kind ||
-                access.ResourceIndex != resourceIndex)
-                continue;
-            used = true;
-            int[] start = _startFrontiers[access.PassIndex];
-            int[] finish = _endFrontiers[access.PassIndex];
-            for (int lane = 0; lane < _queueLaneCount; lane++)
+        if (_resourceAccessLists.TryGetValue((kind, resourceIndex), out List<int>? accesses))
+            foreach (int accessIndex in accesses)
             {
-                if (start[lane] < begin[lane]) begin[lane] = start[lane];
-                if (finish[lane] > end[lane]) end[lane] = finish[lane];
+                FrameResourceAccess access = _accesses[accessIndex];
+                if (!_live[access.PassIndex] || access.TargetKind != kind ||
+                    access.ResourceIndex != resourceIndex)
+                    continue;
+                used = true;
+                int[] start = _startFrontiers[access.PassIndex];
+                int[] finish = _endFrontiers[access.PassIndex];
+                for (int lane = 0; lane < _queueLaneCount; lane++)
+                {
+                    if (start[lane] < begin[lane]) begin[lane] = start[lane];
+                    if (finish[lane] > end[lane]) end[lane] = finish[lane];
+                }
             }
-        }
         if (!used) throw new InvalidOperationException("A transient resource has no live use.");
         for (int lane = 0; lane < begin.Length; lane++)
             if (begin[lane] == int.MaxValue) begin[lane] = 0;
@@ -299,25 +295,18 @@ internal sealed partial class FrameExecutor
         foreach (GraphIdentity identity in memory.ReconcileLifetimes())
         {
             if (!_allocationRows.TryGetValue(identity, out var key)) continue;
-            GraphIdentity resourceIdentity;
             if (key.Kind == GraphAccessTargetKind.Buffer)
             {
                 ref FrameBuffer row = ref CollectionsMarshal.AsSpan(_buffers)[key.Index];
                 row.Resource = null; row.Placement = default; row.EntryBoundaryStates = null;
-                resourceIdentity = row.Identity;
             }
             else
             {
                 ref FrameTexture row = ref CollectionsMarshal.AsSpan(_textures)[key.Index];
                 row.Resource = null; row.Placement = default; row.EntryBoundaryStates = null;
-                resourceIdentity = row.Identity;
             }
             MaterializationChanged(key, updateViewDescriptions: false);
             ChangeSynchronization(key);
-            if (_resourceViewRows.TryGetValue(key, out HashSet<int>? viewRows))
-                foreach (int index in viewRows) CollectionsMarshal.AsSpan(_views)[index].View = null;
-            foreach (GraphIdentity view in _frame.StructureIndex.ResourceViews.GetValueOrDefault(resourceIdentity, []))
-                if (_viewIndices.TryGetValue(view, out int index)) CollectionsMarshal.AsSpan(_views)[index].View = null;
             if (_resourceAccessLists.TryGetValue(key, out List<int>? accesses))
                 foreach (int index in accesses) InvalidateRasterRendering(_accesses[index].PassIndex);
         }

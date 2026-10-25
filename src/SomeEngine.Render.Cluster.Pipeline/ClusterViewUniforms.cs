@@ -142,7 +142,9 @@ internal struct ClusterViewUniforms
             TargetPolicy = 0u,
             TargetViewIndex = 0u,
             NearPlane = source.Projection.M43 / source.Projection.M33,
-            GeometryViewProj = view * (source.GeometryProjection ?? source.Projection),
+            GeometryViewProj = source.GeometryProjection is { } geometryProjection
+                ? view * geometryProjection
+                : viewProjection,
             WorldOriginHigh = originHigh,
             WorldOriginLow = originLow,
             PreviousWorldOriginHigh = originHigh,

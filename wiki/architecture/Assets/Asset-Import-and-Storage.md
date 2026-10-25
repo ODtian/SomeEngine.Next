@@ -72,10 +72,12 @@ Importer 的 `ProducedBlocks` 声明可产出的类型，一个来源元素可�
 
 `LooseAssetStorage`、`AssetPackStorage` 与外部 `IAssetStorage` 负责按已选条目打开字节范围，不决定 Block 业务或对象创建。Loader 合并字节读取，不缓存唯一 Asset 或业务对象。包版本与内部文档版本分别核对，不能混用。
 
+## 内容目录与包复用
+
+`AssetContent.OpenAsync` 读取内容目录的 `Library/AssetPacks/packs.json`，按列表顺序选择同一 AssetId 的第一份内容，并持有 Loader 与包存储。没有包列表时，使用 `AssetProject.CreateStorage` 读取目录；已登记的 `PackPath` 继续指向包内输出，不要求生成同名 loose 文件。关闭时先等待 Loader，再关闭其存储。
+
+`AssetProject.BuildPackAsync` 按选中资产的内部文档版本复用已有包；需要写入时，按来源 `PackPath` 分组打开包，核对选中内容并在发布前关闭读者。原有导入记录的路径、内容摘要与版本校验保留。
+
+包索引统一使用 schema 2，直接记录并比较内部文档版本。运行时仅接受当前格式，不提供旧索引读取或未知版本回退；已有旧格式包需先迁移到当前格式。包发布身份与内部文档版本分别使用，迁移保持嵌套资产的内容和版本。
+
 源码：[ImportContext](../../../src/SomeEngine.Assets/Importing/ImportContext.cs)、[导入项目](../../../src/SomeEngine.Assets/Importing/AssetImportProject.cs)、[提交与回退](../../../src/SomeEngine.Assets/Importing/AssetImportFiles.cs)、[glTF 库入口](../../../src/SomeEngine.Assets.Importers/Importers/GltfSourceImporter.cs)、[局部生产者](../../../src/SomeEngine.Assets.Importers/Importers/GltfContentImporters.cs)。
-
-## 内容包与运行时入口
-
-`AssetProject.BuildPackAsync` 把选定的已登记资产写入内容包；条目数量、资产身份与内部文档版本未变时复用现有包。`AssetContent.OpenAsync` 按 `Library/AssetPacks/packs.json` 的顺序选择条目，同一资产身份优先使用前面的包。没有包路径配置时，它通过项目的 `CreateStorage()` 使用目录资产。运行时与场景可用性检查支持这两个入口。
-
-内容包索引使用 ExactSchema epoch 2，记录每个条目的 `DocumentVersion`；它是内部文档的版本，与包自身的 `Generation` 分开使用。旧索引没有兼容 reader。关闭内容入口时先释放 Loader，再释放包存储。

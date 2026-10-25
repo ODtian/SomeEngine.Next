@@ -31,6 +31,9 @@ public static class MeshPayloadLayout
             throw new ArgumentException($"A {MeshPageHeader.Size}-byte page header is required.", nameof(headerBytes));
 
         MeshPageHeader header = MemoryMarshal.Read<MeshPageHeader>(headerBytes);
+        bool root = (header.Flags & MeshPageHeader.RootPage) != 0;
+        int maxClusters = root ? MeshPageHeader.MaxRootClusters : MeshPageHeader.MaxClustersPerPage;
+        int maxPageSize = root ? MeshPageHeader.RootPageSize : MeshPageHeader.MaxPageSize;
         ulong expectedVertexBlobsOffset = checked(
             (ulong)MeshPageHeader.Size + ((ulong)header.ClusterCount * PackedCluster.SizeInBytes));
         ulong expectedIndicesOffset = checked(
@@ -42,10 +45,10 @@ public static class MeshPayloadLayout
         ulong extensionOffset = header.ExtensionDataOffset;
         ulong pageSize = checked(extensionOffset + header.ExtensionDataSize);
 
-        if (header.ClusterCount == 0 || header.ClusterCount > ((header.Flags & MeshPageHeader.RootPage) != 0 ? 64u : 256u))
+        if (header.ClusterCount == 0 || header.ClusterCount > maxClusters)
         {
             throw new InvalidDataException(
-                $"Cluster page at byte {offset} must contain at least one cluster record.");
+                $"Cluster page at byte {offset} has {header.ClusterCount} records; valid pages contain 1..{maxClusters}.");
         }
         if (header.ClustersOffset != MeshPageHeader.Size ||
             header.VertexBlobsOffset != expectedVertexBlobsOffset ||
@@ -62,11 +65,11 @@ public static class MeshPayloadLayout
             throw new InvalidDataException(
                 $"Cluster page at byte {offset} has invalid opaque vertex metadata.");
         }
-        if (pageSize < MeshPageHeader.Size || pageSize > (ulong)((header.Flags & MeshPageHeader.RootPage) != 0 ? MeshPageHeader.RootPageSize : MeshPageHeader.MaxPageSize))
+        if (pageSize < MeshPageHeader.Size || pageSize > (ulong)maxPageSize)
         {
             throw new InvalidDataException(
                 $"Cluster page at byte {offset} declares invalid size {pageSize}; valid pages are " +
-                $"{MeshPageHeader.Size}..{MeshPageHeader.MaxPageSize} bytes.");
+                $"{MeshPageHeader.Size}..{maxPageSize} bytes.");
         }
         if (pageSize > checked((ulong)remaining))
         {

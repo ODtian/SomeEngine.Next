@@ -12,12 +12,14 @@ public static class ImportHash
         uint importerVersion,
         params string[] extraParts)
     {
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        FileDependency[] orderedDependencies = dependencies
+            .OrderBy(static dependency => dependency.RelativePath, StringComparer.Ordinal)
+            .ToArray();
         return new ImportInputs
         {
-            InputHash = ComputeInputHash(dependencies, importerVersion, extraParts),
-            Dependencies = dependencies
-                .OrderBy(static dependency => dependency.RelativePath, StringComparer.Ordinal)
-                .ToArray(),
+            InputHash = ComputeInputHash(hash, orderedDependencies, importerVersion, extraParts),
+            Dependencies = orderedDependencies,
             ImporterVersion = importerVersion,
         };
     }
@@ -43,7 +45,18 @@ public static class ImportHash
         params string[] extraParts)
     {
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        foreach (FileDependency dependency in dependencies.OrderBy(static x => x.RelativePath, StringComparer.Ordinal))
+        return ComputeInputHash(hash,
+            dependencies.OrderBy(static dependency => dependency.RelativePath, StringComparer.Ordinal),
+            importerVersion, extraParts);
+    }
+
+    private static string ComputeInputHash(
+        IncrementalHash hash,
+        IEnumerable<FileDependency> dependencies,
+        uint importerVersion,
+        string[] extraParts)
+    {
+        foreach (FileDependency dependency in dependencies)
         {
             AppendUtf8(hash, dependency.RelativePath);
             AppendUtf8(hash, ":");

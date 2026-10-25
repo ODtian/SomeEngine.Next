@@ -5,6 +5,6 @@
   <ItemGroup>
     <PackageReference Include="DotRecast.Recast" Version="2026.3.1" />
     <ProjectReference Include="../SomeEngine.ECS.Systems/SomeEngine.ECS.Systems.csproj" />
-    <ProjectReference Include="../SomeEngine.ECS.SourceGen/SomeEngine.ECS.SourceGen.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../SomeEngine.ECS.SourceGenerators/SomeEngine.ECS.SourceGenerators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
 </Project>

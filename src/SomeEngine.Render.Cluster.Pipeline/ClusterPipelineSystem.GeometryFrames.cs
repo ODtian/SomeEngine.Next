@@ -36,7 +36,7 @@ public sealed partial class ClusterPipelineSystem
             if (!first && changes is { Meshes.LeafFlagFixups.Length: > 0 })
             {
                 GraphPassId fixups = _first!.GraphData.LeafFlagPass;
-                frame.OrderAfter(pipeline.GraphData.SceneBounds.Pass, fixups);
+                frame.OrderAfter(pipeline.GraphData.SceneBounds, fixups);
                 // Bounds can be unchanged and disabled while streamed leaf flags still change.
                 foreach (GraphPassId traversal in pipeline.GraphData.Resources.Work.Phases)
                     if (traversal != default) frame.OrderAfter(traversal, fixups);

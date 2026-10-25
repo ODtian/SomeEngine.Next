@@ -7,8 +7,6 @@ internal sealed partial class FrameExecutor
 
     private readonly Dictionary<RegionPassPosition, int> _regionPassRows = [];
     private readonly Dictionary<PassAccessPosition, int> _frameAccessRows = [];
-    private readonly HashSet<RegionPassPosition> _currentRegionPasses = [];
-    private readonly HashSet<PassAccessPosition> _currentFrameAccesses = [];
     private readonly Stack<int> _freePassRows = new();
     private readonly Stack<int> _freeAccessRows = new();
     private readonly List<RegionPassPosition> _removedRegionPasses = [];
@@ -29,24 +27,23 @@ internal sealed partial class FrameExecutor
         }
 
         _regionPassCounts.Clear();
-        _currentRegionPasses.Clear();
         EnsureCapacity(ref _dynamicPassPositions, _frame.DynamicPasses.Count);
         for (int index = 0; index < _frame.DynamicPasses.Count; index++)
         {
             FramePass pass = _frame.DynamicPasses[index];
-            int ordinal = _regionPassCounts.GetValueOrDefault(pass.Region);
-            _regionPassCounts[pass.Region] = ordinal + 1;
+            ref int count = ref CollectionsMarshal.GetValueRefOrAddDefault(_regionPassCounts, pass.Region, out _);
+            int ordinal = count++;
             var position = new RegionPassPosition(pass.Region, ordinal);
             _dynamicPassPositions[index] = position;
-            _currentRegionPasses.Add(position);
         }
         _removedRegionPasses.Clear();
+        // Each region uses consecutive ordinals, so its count also defines membership.
         foreach (var pair in _regionPassRows)
-            if (!_currentRegionPasses.Contains(pair.Key)) _removedRegionPasses.Add(pair.Key);
+            if (pair.Key.Ordinal >= _regionPassCounts.GetValueOrDefault(pair.Key.Region))
+                _removedRegionPasses.Add(pair.Key);
         foreach (RegionPassPosition position in _removedRegionPasses)
         {
-            int row = _regionPassRows[position];
-            _regionPassRows.Remove(position);
+            _regionPassRows.Remove(position, out int row);
             RemovePassRow(row);
         }
 
@@ -94,25 +91,24 @@ internal sealed partial class FrameExecutor
             if (!structure.Accesses.Contains(identity) && _accessIndices.Remove(identity, out int row))
                 RemoveAccessRow(row);
 
-        _currentFrameAccesses.Clear();
         EnsureCapacity(ref _dynamicAccessPositions, _frame.DynamicAccesses.Count);
         _dynamicAccessCounts.Clear();
         for (int index = 0; index < _frame.DynamicAccesses.Count; index++)
         {
             int pass = ResolvePass(_frame.DynamicAccesses[index].Pass);
-            int ordinal = _dynamicAccessCounts.GetValueOrDefault(pass);
-            _dynamicAccessCounts[pass] = ordinal + 1;
+            ref int count = ref CollectionsMarshal.GetValueRefOrAddDefault(_dynamicAccessCounts, pass, out _);
+            int ordinal = count++;
             var position = new PassAccessPosition(pass, ordinal);
             _dynamicAccessPositions[index] = position;
-            _currentFrameAccesses.Add(position);
         }
         _removedFrameAccesses.Clear();
+        // Access ordinals are consecutive within each pass.
         foreach (var pair in _frameAccessRows)
-            if (!_currentFrameAccesses.Contains(pair.Key)) _removedFrameAccesses.Add(pair.Key);
+            if (pair.Key.Ordinal >= _dynamicAccessCounts.GetValueOrDefault(pair.Key.Pass))
+                _removedFrameAccesses.Add(pair.Key);
         foreach (PassAccessPosition position in _removedFrameAccesses)
         {
-            int row = _frameAccessRows[position];
-            _frameAccessRows.Remove(position);
+            _frameAccessRows.Remove(position, out int row);
             RemoveAccessRow(row);
         }
 
@@ -161,7 +157,7 @@ internal sealed partial class FrameExecutor
             for (int index = 0; index < source.Count; index++) _rowIndexScratch.Add(index);
         else
             foreach (GraphIdentity identity in changes)
-                if (source.Contains(identity)) _rowIndexScratch.Add(source.DenseIndex(identity));
+                if (source.TryGetDenseIndex(identity, out int current)) _rowIndexScratch.Add(current);
         return _rowIndexScratch;
     }
 }

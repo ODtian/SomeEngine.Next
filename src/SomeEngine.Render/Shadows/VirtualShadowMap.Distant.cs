@@ -32,8 +32,6 @@ public sealed partial class VirtualShadowMap
 
     private void SelectDistantUpdates(RenderLightSet lights, int viewCount, ref uint generation)
     {
-        _frameDistantLights.Clear();
-        _distantUpdates.Clear();
         var eligible = new List<VirtualShadowLocalLight>();
         for (int index = 0; index < viewCount; index++)
         {
@@ -57,7 +55,7 @@ public sealed partial class VirtualShadowMap
         }
         foreach (VirtualShadowLocalLight light in _distantSchedule.Select(eligible.ToArray(), Settings.MaximumDistantUpdatesPerFrame))
             _distantUpdates.Add(light);
-        foreach ((VirtualShadowLocalLight light, DistantLightHistory history) in _frameDistantLights.ToArray())
+        foreach ((VirtualShadowLocalLight light, DistantLightHistory history) in _frameDistantLights)
         {
             bool cached = eligible.Contains(light);
             bool update = _distantUpdates.Contains(light);
@@ -92,5 +90,6 @@ public sealed partial class VirtualShadowMap
         foreach ((VirtualShadowLocalLight light, DistantLightHistory history) in _frameDistantLights)
             _distantLights.Add(light, history);
         _frameDistantLights.Clear();
+        _distantUpdates.Clear();
     }
 }

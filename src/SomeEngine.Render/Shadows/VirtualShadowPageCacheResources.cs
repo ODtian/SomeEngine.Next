@@ -71,7 +71,11 @@ internal sealed class VirtualShadowPageCacheResources : IDisposable
     private static void Store(Buffer buffer, ref BufferBoundaryState[] states, RenderGraphFrameResult result)
     {
         ReadOnlySpan<BufferBoundaryState> current = result.GetBufferStates(buffer);
-        if (!current.IsEmpty) states = current.ToArray();
+        if (!current.IsEmpty)
+        {
+            if (states.Length != current.Length) states = new BufferBoundaryState[current.Length];
+            current.CopyTo(states);
+        }
     }
 
     internal void Discard()

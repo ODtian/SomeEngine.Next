@@ -183,7 +183,7 @@ internal static class BinaryDocumentFormat
                 "Binary type catalog checksum is invalid.");
 
         var result = new BinaryWireTypeDescriptor[count];
-        var typeIds = new HashSet<Guid>();
+        var typeIds = new HashSet<Guid>(count);
         for (int i = 0; i < count; i++)
         {
             ReadOnlySpan<byte> entry = bytes.Slice(4 + i * 32, 32);

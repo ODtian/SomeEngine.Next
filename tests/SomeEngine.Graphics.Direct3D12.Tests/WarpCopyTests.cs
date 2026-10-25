@@ -109,6 +109,232 @@ public sealed class WarpCopyTests
     }
 
     [Fact]
+    public void Copy_footprints_validate_permitted_view_formats_before_copy_regions()
+    {
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using Device device = D3D12TestSupport.CreateWarpDevice(backend);
+        BufferTextureCopy copy = new(
+            null!, 0, 0, 0, null!, 0, 0, TextureAspects.Color,
+            0, 0, 0, 8, 4, 1);
+        TextureCopyFootprint ordinary = backend.GetTextureCopyFootprint(
+            device,
+            new TextureDesc(
+                TextureDimension.Texture2D, 8, 4, 1, 1, 1, 1,
+                Format.R8G8B8A8UNorm, TextureUsages.CopyDestination),
+            copy);
+        TextureCopyFootprint permitted = backend.GetTextureCopyFootprint(
+            device,
+            new TextureDesc(
+                TextureDimension.Texture2D, 8, 4, 1, 1, 1, 1,
+                Format.R8G8B8A8UNorm, TextureUsages.CopyDestination,
+                [Format.R8G8B8A8UNormSrgb]),
+            copy);
+        Assert.Equal(ordinary, permitted);
+
+        BufferTextureCopy invalidMip = copy with { MipLevel = 1 };
+        Assert.Throws<ArgumentException>("desc", () => backend.GetTextureCopyFootprint(
+            device,
+            new TextureDesc(
+                TextureDimension.Texture2D, 8, 4, 1, 1, 1, 1,
+                Format.R8G8B8A8UNorm, TextureUsages.CopyDestination,
+                [Format.R32Float]),
+            invalidMip));
+        Assert.Throws<ArgumentException>("desc", () => backend.GetTextureCopyFootprint(
+            device,
+            new TextureDesc(
+                TextureDimension.Texture2D, 8, 4, 1, 1, 1, 1,
+                Format.R8G8B8A8UNorm, TextureUsages.CopyDestination,
+                [Format.R8G8B8A8UNormSrgb, Format.R8G8B8A8UNormSrgb]),
+            invalidMip));
+        Assert.Throws<ArgumentOutOfRangeException>("mip", () => backend.GetTextureCopyFootprint(
+            device,
+            new TextureDesc(
+                TextureDimension.Texture2D, 8, 4, 1, 1, 1, 1,
+                Format.R8G8B8A8UNorm, TextureUsages.CopyDestination,
+                [Format.R8G8B8A8UNormSrgb]),
+            invalidMip));
+    }
+
+    [Fact]
+    public void Color_attachments_preserve_sample_counts_when_recreated_in_interleaved_order()
+    {
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using Device device = D3D12TestSupport.CreateWarpDevice(backend);
+        FormatSupport support =
+            device.Capabilities.GetFormatSupport(Format.R8G8B8A8UNorm);
+        Assert.True(
+            (support.Features & FormatFeatures.MultisampleColorAttachment) != 0);
+        Assert.True(support.SupportsSampleCount(4));
+        TextureDesc singleSampleDescription = new(
+            TextureDimension.Texture2D, 4, 4, 1, 1, 2, 1,
+            Format.R8G8B8A8UNorm, TextureUsages.ColorAttachment);
+        TextureDesc multisampleDescription = new(
+            TextureDimension.Texture2D, 4, 4, 1, 1, 2, 4,
+            Format.R8G8B8A8UNorm, TextureUsages.ColorAttachment);
+
+        using (Texture singleSample = backend.CreateTexture(
+                   device, singleSampleDescription))
+        using (Texture multisampled = backend.CreateTexture(
+                   device, multisampleDescription))
+        {
+            Assert.Equal(1u, singleSample.Info.SampleCount);
+            Assert.Equal(4u, multisampled.Info.SampleCount);
+        }
+
+        using Texture nextSingleSample = backend.CreateTexture(
+            device, singleSampleDescription);
+        using Texture nextMultisampled = backend.CreateTexture(
+            device, multisampleDescription);
+        Assert.Equal(1u, nextSingleSample.Info.SampleCount);
+        Assert.Equal(4u, nextMultisampled.Info.SampleCount);
+    }
+
+    [Theory]
+    [InlineData(Format.B8G8R8A8UNorm, Format.R8G8B8A8UNorm)]
+    [InlineData(Format.R8G8B8A8UNorm, Format.B8G8R8A8UNorm)]
+    public void Resolving_incompatible_format_families_is_rejected(
+        Format destinationFormat,
+        Format resolveFormat)
+    {
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using Device device = D3D12TestSupport.CreateWarpDevice(backend);
+        FormatSupport support =
+            device.Capabilities.GetFormatSupport(Format.R8G8B8A8UNorm);
+        const FormatFeatures required =
+            FormatFeatures.MultisampleColorAttachment |
+            FormatFeatures.MultisampleResolve;
+        Assert.Equal(required, support.Features & required);
+        Assert.True(support.SupportsSampleCount(4));
+
+        using Texture source = backend.CreateTexture(
+            device,
+            new TextureDesc(
+                TextureDimension.Texture2D, 4, 4, 1, 1, 2, 4,
+                Format.R8G8B8A8UNorm,
+                TextureUsages.ColorAttachment | TextureUsages.CopySource));
+        using Texture destination = backend.CreateTexture(
+            device,
+            new TextureDesc(
+                TextureDimension.Texture2D, 8, 8, 1, 2, 3, 1,
+                destinationFormat, TextureUsages.CopyDestination));
+        using CommandContext context = backend.CreateCommandContext(
+            device,
+            new CommandContextDesc(QueueType.Graphics, 0, 1));
+
+        backend.Begin(context);
+        try
+        {
+            backend.Barrier(context, new TextureBarrier(
+                source, new TextureSubresourceRange(0, 1, 1, 1, TextureAspects.Color),
+                PipelineSync.None, PipelineSync.Resolve,
+                ResourceAccess.NoAccess, ResourceAccess.ResolveSource,
+                TextureLayout.Undefined, TextureLayout.ResolveSource));
+            backend.Barrier(context, new TextureBarrier(
+                destination, new TextureSubresourceRange(1, 1, 2, 1, TextureAspects.Color),
+                PipelineSync.None, PipelineSync.Resolve,
+                ResourceAccess.NoAccess, ResourceAccess.ResolveDestination,
+                TextureLayout.Undefined, TextureLayout.ResolveDestination));
+            Assert.Throws<ArgumentException>(() =>
+                backend.ResolveTexture(context, new TextureResolve(
+                    source, 0, 1, destination, 1, 2, resolveFormat)));
+        }
+        finally
+        {
+            backend.Discard(context);
+        }
+    }
+
+    [Fact]
+    public void Resolving_a_multisampled_array_layer_writes_the_selected_destination_mip_and_layer()
+    {
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using Device device = D3D12TestSupport.CreateWarpDevice(backend);
+        FormatSupport support =
+            device.Capabilities.GetFormatSupport(Format.R8G8B8A8UNorm);
+        const FormatFeatures required =
+            FormatFeatures.MultisampleColorAttachment |
+            FormatFeatures.MultisampleResolve;
+        Assert.Equal(required, support.Features & required);
+        Assert.True(support.SupportsSampleCount(4));
+
+        using Texture source = backend.CreateTexture(
+            device,
+            new TextureDesc(
+                TextureDimension.Texture2D, 4, 4, 1, 1, 2, 4,
+                Format.R8G8B8A8UNorm,
+                TextureUsages.ColorAttachment | TextureUsages.CopySource));
+        using Texture destination = backend.CreateTexture(
+            device,
+            new TextureDesc(
+                TextureDimension.Texture2D, 8, 8, 1, 2, 3, 1,
+                Format.R8G8B8A8UNorm,
+                TextureUsages.CopyDestination | TextureUsages.CopySource));
+        using Buffer readback = backend.CreateBuffer(
+            device,
+            new BufferDesc(1_024, BufferUsages.CopyDestination),
+            MemoryType.Readback);
+        using CommandContext context = backend.CreateCommandContext(
+            device,
+            new CommandContextDesc(QueueType.Graphics, 0, 1));
+        Queue queue = backend.GetQueue(device, QueueType.Graphics);
+        TextureSubresourceRange sourceRange =
+            new(0, 1, 1, 1, TextureAspects.Color);
+        TextureSubresourceRange destinationRange =
+            new(1, 1, 2, 1, TextureAspects.Color);
+
+        backend.Begin(context);
+        backend.Barrier(context, new TextureBarrier(
+            source, sourceRange,
+            PipelineSync.None, PipelineSync.RenderTarget,
+            ResourceAccess.NoAccess, ResourceAccess.RenderTarget,
+            TextureLayout.Undefined, TextureLayout.RenderTarget));
+        backend.ClearTexture(
+            context, source, sourceRange, new Vector4(1, 0, 0, 1));
+        backend.Barrier(context, new TextureBarrier(
+            source, sourceRange,
+            PipelineSync.RenderTarget, PipelineSync.Resolve,
+            ResourceAccess.RenderTarget, ResourceAccess.ResolveSource,
+            TextureLayout.RenderTarget, TextureLayout.ResolveSource));
+        backend.Barrier(context, new TextureBarrier(
+            destination, destinationRange,
+            PipelineSync.None, PipelineSync.Resolve,
+            ResourceAccess.NoAccess, ResourceAccess.ResolveDestination,
+            TextureLayout.Undefined, TextureLayout.ResolveDestination));
+        backend.ResolveTexture(context, new TextureResolve(
+            source, 0, 1, destination, 1, 2, Format.R8G8B8A8UNorm));
+        backend.Barrier(context, new TextureBarrier(
+            destination, destinationRange,
+            PipelineSync.Resolve, PipelineSync.Copy,
+            ResourceAccess.ResolveDestination, ResourceAccess.CopySource,
+            TextureLayout.ResolveDestination, TextureLayout.CopySource));
+        backend.CopyTextureToBuffer(context, new BufferTextureCopy(
+            readback, 0, 256, 4,
+            destination, 1, 2, TextureAspects.Color,
+            0, 0, 0, 4, 4, 1));
+
+        using RecordedCommands recorded = backend.End(context);
+        RecordedCommands[] commands = [recorded];
+        QueueCompletion completion = backend.Submit(
+            queue, new QueueSubmitDesc([], [], commands, [], []));
+        Assert.Equal(
+            WaitStatus.Completed,
+            backend.WaitCpu(completion, TimeSpan.FromSeconds(10)));
+        backend.CollectCompleted(device);
+
+        using MappedBuffer result =
+            backend.Map(readback, MapType.Read, BufferRange.Whole);
+        result.Invalidate(new BufferRange(0, 1_024));
+        for (int row = 0; row < 4; row++)
+        for (int column = 0; column < 4; column++)
+        {
+            Assert.Equal(
+                0xff0000ffu,
+                BitConverter.ToUInt32(
+                    result.Bytes.Slice(row * 256 + column * 4, 4)));
+        }
+    }
+
+    [Fact]
     public void Warp_roundtrips_rows_through_explicit_buffer_texture_footprints()
     {
         using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
@@ -365,6 +591,100 @@ public sealed class WarpCopyTests
                 TextureLayout.CopyDestination)));
 
         backend.Discard(context);
+    }
+
+    [Theory]
+    [InlineData(Format.R8G8B8A8UNorm)]
+    [InlineData(Format.D32Float)]
+    public void Clearing_an_array_subrange_preserves_other_mips_and_layers(Format format)
+    {
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using Device device = D3D12TestSupport.CreateWarpDevice(backend);
+        bool depth = format == Format.D32Float;
+        TextureAspects aspect = depth ? TextureAspects.Depth : TextureAspects.Color;
+        TextureUsages usage = depth
+            ? TextureUsages.DepthStencilAttachment
+            : TextureUsages.ColorAttachment;
+        PipelineSync clearSync = depth ? PipelineSync.DepthStencil : PipelineSync.RenderTarget;
+        ResourceAccess clearAccess = depth
+            ? ResourceAccess.DepthStencilWrite
+            : ResourceAccess.RenderTarget;
+        TextureLayout clearLayout = depth
+            ? TextureLayout.DepthStencilWrite
+            : TextureLayout.RenderTarget;
+        using Texture texture = backend.CreateTexture(
+            device,
+            new TextureDesc(
+                TextureDimension.Texture2D, 4, 4, 1, 3, 4, 1,
+                format, usage | TextureUsages.CopySource));
+        using Buffer readback = backend.CreateBuffer(
+            device,
+            new BufferDesc(12_288, BufferUsages.CopyDestination),
+            MemoryType.Readback);
+        using CommandContext context = backend.CreateCommandContext(
+            device,
+            new CommandContextDesc(QueueType.Graphics, 0, 1));
+        Queue queue = backend.GetQueue(device, QueueType.Graphics);
+        TextureSubresourceRange whole = new(0, 3, 0, 4, aspect);
+        TextureSubresourceRange selected = new(1, 2, 1, 2, aspect);
+
+        backend.Begin(context);
+        backend.Barrier(context, new TextureBarrier(
+            texture, whole,
+            PipelineSync.None, clearSync,
+            ResourceAccess.NoAccess, clearAccess,
+            TextureLayout.Undefined, clearLayout));
+        if (depth)
+            backend.ClearDepthStencil(context, texture, whole, 0.25f);
+        else
+            backend.ClearTexture(context, texture, whole, new Vector4(0, 0, 1, 1));
+        backend.Barrier(context, new TextureBarrier(
+            texture, selected,
+            clearSync, clearSync,
+            clearAccess, clearAccess,
+            clearLayout, clearLayout));
+        if (depth)
+            backend.ClearDepthStencil(context, texture, selected, 0.75f);
+        else
+            backend.ClearTexture(context, texture, selected, new Vector4(1, 0, 0, 1));
+        backend.Barrier(context, new TextureBarrier(
+            texture, whole,
+            clearSync, PipelineSync.Copy,
+            clearAccess, ResourceAccess.CopySource,
+            clearLayout, TextureLayout.CopySource));
+        for (uint layer = 0; layer < 4; layer++)
+        for (uint mip = 0; mip < 3; mip++)
+        {
+            uint size = 4u >> (int)mip;
+            backend.CopyTextureToBuffer(context, new BufferTextureCopy(
+                readback, (layer * 3 + mip) * 1_024UL, 256, size,
+                texture, mip, layer, aspect,
+                0, 0, 0, size, size, 1));
+        }
+        using RecordedCommands recorded = backend.End(context);
+        RecordedCommands[] commands = [recorded];
+        QueueCompletion completion = backend.Submit(
+            queue, new QueueSubmitDesc([], [], commands, [], []));
+        Assert.Equal(WaitStatus.Completed, backend.WaitCpu(completion, TimeSpan.FromSeconds(10)));
+        backend.CollectCompleted(device);
+
+        using MappedBuffer result = backend.Map(readback, MapType.Read, BufferRange.Whole);
+        result.Invalidate(new BufferRange(0, 12_288));
+        for (int layer = 0; layer < 4; layer++)
+        for (int mip = 0; mip < 3; mip++)
+        {
+            bool changed = mip >= 1 && layer >= 1 && layer <= 2;
+            uint expected = depth
+                ? BitConverter.SingleToUInt32Bits(changed ? 0.75f : 0.25f)
+                : changed ? 0xff0000ffu : 0xffff0000u;
+            int size = 4 >> mip;
+            for (int row = 0; row < size; row++)
+            for (int column = 0; column < size; column++)
+            {
+                int offset = (layer * 3 + mip) * 1_024 + row * 256 + column * 4;
+                Assert.Equal(expected, BitConverter.ToUInt32(result.Bytes.Slice(offset, 4)));
+            }
+        }
     }
 
     [Fact]

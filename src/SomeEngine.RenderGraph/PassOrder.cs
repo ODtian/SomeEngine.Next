@@ -32,7 +32,11 @@ internal sealed class PassOrder
     internal void SetOrder(IReadOnlyList<int> nodes)
     {
         long[] positions = nodes.Select(node => _positions[node]).Order().ToArray();
-        foreach (long position in positions) _ordered.Remove(position);
+        for (int index = 0; index < nodes.Count; index++)
+        {
+            long position = _positions[nodes[index]];
+            if (position != positions[index]) _ordered.Remove(position);
+        }
         for (int index = 0; index < nodes.Count; index++)
         {
             int node = nodes[index];
@@ -40,8 +44,8 @@ internal sealed class PassOrder
             {
                 _positions[node] = positions[index];
                 Changed.Add(node);
+                _ordered.Add(positions[index], node);
             }
-            _ordered.Add(positions[index], node);
         }
     }
 }

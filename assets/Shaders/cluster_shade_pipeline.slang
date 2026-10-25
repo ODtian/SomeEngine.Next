@@ -64,7 +64,7 @@ bool LoadTriangleInfo(DrawRequest req, uint triangleID, out TriangleInfo tri)
 
     uint tStart;
     uint packedCounts;
-    LoadClusterInfo(
+    uint clusterOffset = LoadClusterInfo(
         PageHeap,
         req.PageOffset,
         DrawRequestClusterID(req),
@@ -74,7 +74,7 @@ bool LoadTriangleInfo(DrawRequest req, uint triangleID, out TriangleInfo tri)
         packedCounts);
     tri.vertexCount = packedCounts & 0xFFu;
 
-    uint localMaterial = GetClusterLocalMaterial(PageHeap, req.PageOffset, DrawRequestClusterID(req), tri.triangleID);
+    uint localMaterial = LocalMaterial(PageHeap, clusterOffset, req.PageOffset, tri.triangleID);
     uint slotOffset = LoadClusterMaterialSlotOffset(
         InstanceData,
         LoadRenderInstanceMetadata(
@@ -90,9 +90,10 @@ bool LoadTriangleInfo(DrawRequest req, uint triangleID, out TriangleInfo tri)
 
     uint idxOffset = PageHeap.Load(req.PageOffset + 24u);
 
-    tri.vi0 = FetchVertexIndex(PageHeap, req.PageOffset, idxOffset, tStart, tri.triangleID, 0);
-    tri.vi1 = FetchVertexIndex(PageHeap, req.PageOffset, idxOffset, tStart, tri.triangleID, 1);
-    tri.vi2 = FetchVertexIndex(PageHeap, req.PageOffset, idxOffset, tStart, tri.triangleID, 2);
+    uint3 indices = FetchTriangleVertexIndices(PageHeap, req.PageOffset, idxOffset, tStart, tri.triangleID);
+    tri.vi0 = indices.x;
+    tri.vi1 = indices.y;
+    tri.vi2 = indices.z;
     return true;
 }
 
@@ -161,7 +162,8 @@ float3 TriangleBarycentricAt(PipelineTriangleProjection projection, float2 pixel
     float second = (offset.x * projection.SecondEdge.y - offset.y * projection.SecondEdge.x) * projection.InverseArea;
     float third = (projection.FirstEdge.x * offset.y - projection.FirstEdge.y * offset.x) * projection.InverseArea;
     float3 weighted = float3(1.0 - second - third, second, third) * projection.InverseW;
-    return weighted / dot(weighted, 1.0.xxx);
+    float sum = weighted.x + weighted.y + weighted.z;
+    return abs(sum) < 1e-8 ? 0.0.xxx : weighted / sum;
 }
 
 VertexEvalContext makeVertexEvalContext(

@@ -171,17 +171,17 @@ internal sealed class PersistentResourceAllocator : IDisposable
             // code. Disposal failures retain their objects and placements in the usual queue.
             var created = new HashSet<IDisposable>(createdObjects, ReferenceEqualityComparer.Instance);
             foreach (GraphIdentity id in changes.Views)
-                if (next.Views.Contains(id) && next.Views.Get(id).PersistentView is { } view && created.Contains(view))
+                if (next.Views.TryGetDenseIndex(id, out int viewIndex) && next.Views.Rows[viewIndex].PersistentView is { } view && created.Contains(view))
                     next.Views.GetMutable(id).PersistentView = null;
             foreach (GraphIdentity id in changes.Buffers)
-                if (next.Buffers.Contains(id) && next.Buffers.Get(id).PersistentResource is { } buffer && created.Contains(buffer))
+                if (next.Buffers.TryGetDenseIndex(id, out int bufferIndex) && next.Buffers.Rows[bufferIndex].PersistentResource is { } buffer && created.Contains(buffer))
                 {
                     GraphBuffer value = next.Buffers.GetMutable(id);
                     value.PersistentResource = null;
                     value.BoundaryStates = [];
                 }
             foreach (GraphIdentity id in changes.Textures)
-                if (next.Textures.Contains(id) && next.Textures.Get(id).PersistentResource is { } texture && created.Contains(texture))
+                if (next.Textures.TryGetDenseIndex(id, out int textureIndex) && next.Textures.Rows[textureIndex].PersistentResource is { } texture && created.Contains(texture))
                 {
                     GraphTexture value = next.Textures.GetMutable(id);
                     value.PersistentResource = null;
@@ -282,27 +282,27 @@ internal sealed class PersistentResourceAllocator : IDisposable
     {
         foreach (GraphIdentity id in changes.Views)
         {
-            if (!previous.Views.Contains(id)) continue;
-            GraphView view = previous.Views.Get(id);
+            if (!previous.Views.TryGetDenseIndex(id, out int previousIndex)) continue;
+            GraphView view = previous.Views.Rows[previousIndex];
             if (view.PersistentView is not null &&
-                (!next.Views.Contains(id) || !ReferenceEquals(view.PersistentView, next.Views.Get(id).PersistentView)))
+                (!next.Views.TryGetDenseIndex(id, out int nextIndex) || !ReferenceEquals(view.PersistentView, next.Views.Rows[nextIndex].PersistentView)))
                 Retire(view.PersistentView, CollectViewCompletions(previous, view));
         }
         foreach (GraphIdentity id in changes.Buffers)
         {
-            if (!previous.Buffers.Contains(id)) continue;
-            GraphBuffer buffer = previous.Buffers.Get(id);
+            if (!previous.Buffers.TryGetDenseIndex(id, out int previousIndex)) continue;
+            GraphBuffer buffer = previous.Buffers.Rows[previousIndex];
             if (buffer.PersistentResource is null ||
-                (next.Buffers.Contains(id) && ReferenceEquals(buffer.PersistentResource, next.Buffers.Get(id).PersistentResource)))
+                (next.Buffers.TryGetDenseIndex(id, out int nextIndex) && ReferenceEquals(buffer.PersistentResource, next.Buffers.Rows[nextIndex].PersistentResource)))
                 continue;
             Retire(buffer.PersistentResource, Collect(buffer.BoundaryStates));
         }
         foreach (GraphIdentity id in changes.Textures)
         {
-            if (!previous.Textures.Contains(id)) continue;
-            GraphTexture texture = previous.Textures.Get(id);
+            if (!previous.Textures.TryGetDenseIndex(id, out int previousIndex)) continue;
+            GraphTexture texture = previous.Textures.Rows[previousIndex];
             if (texture.PersistentResource is null ||
-                (next.Textures.Contains(id) && ReferenceEquals(texture.PersistentResource, next.Textures.Get(id).PersistentResource)))
+                (next.Textures.TryGetDenseIndex(id, out int nextIndex) && ReferenceEquals(texture.PersistentResource, next.Textures.Rows[nextIndex].PersistentResource)))
                 continue;
             Retire(texture.PersistentResource, Collect(texture.BoundaryStates));
         }
@@ -313,14 +313,14 @@ internal sealed class PersistentResourceAllocator : IDisposable
         GraphView view)
     {
         var result = new List<QueueCompletion>();
-        if (view.Buffer.IsValid && structure.Buffers.Contains(view.Buffer))
-            foreach (QueueCompletion completion in Collect(structure.Buffers.Get(view.Buffer).BoundaryStates))
+        if (view.Buffer.IsValid && structure.Buffers.TryGetDenseIndex(view.Buffer, out int bufferIndex))
+            foreach (QueueCompletion completion in Collect(structure.Buffers.Rows[bufferIndex].BoundaryStates))
                 AddCompletion(result, completion);
-        if (view.AdditionalBuffer.IsValid && structure.Buffers.Contains(view.AdditionalBuffer))
-            foreach (QueueCompletion completion in Collect(structure.Buffers.Get(view.AdditionalBuffer).BoundaryStates))
+        if (view.AdditionalBuffer.IsValid && structure.Buffers.TryGetDenseIndex(view.AdditionalBuffer, out int additionalBufferIndex))
+            foreach (QueueCompletion completion in Collect(structure.Buffers.Rows[additionalBufferIndex].BoundaryStates))
                 AddCompletion(result, completion);
-        if (view.Texture.IsValid && structure.Textures.Contains(view.Texture))
-            foreach (QueueCompletion completion in Collect(structure.Textures.Get(view.Texture).BoundaryStates))
+        if (view.Texture.IsValid && structure.Textures.TryGetDenseIndex(view.Texture, out int textureIndex))
+            foreach (QueueCompletion completion in Collect(structure.Textures.Rows[textureIndex].BoundaryStates))
                 AddCompletion(result, completion);
         return result.ToArray();
     }

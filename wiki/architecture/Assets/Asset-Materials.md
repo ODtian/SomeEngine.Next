@@ -2,7 +2,7 @@
 
 `MaterialAsset` 提供语义身份，`MaterialBlock` 保存父材质、Shader 引用以及明确的参数覆盖。材质资产家族共用 `AssetId<MaterialAsset>`。业务在 `CreateAsync<TMaterial>` 指定具体 C# 类型，并持有返回的实际对象。
 
-Standard、Unlit 的 C# 声明、配套资产类型与共享 Slang 实现由引擎提供。生成的强类型参数入口访问 MaterialBlock，例如 `StandardMaterialParameters`。项目的具体材质声明由 MaterialGen 生成 `IMaterial<TMaterial>.Create`；静态实现直接构造指定类型，使用类字段默认值并应用参数。
+Standard、Unlit 的 C# 声明、配套资产类型与共享 Slang 实现由引擎提供。生成的强类型参数入口访问 MaterialBlock，例如 `StandardMaterialParameters`。项目的具体材质声明由 MaterialImplementationGenerator 生成 `IMaterial<TMaterial>.Create`；静态实现直接构造指定类型，使用类字段默认值并应用参数。
 
 标准材质对象位于 Resources，资产类型与参数入口位于 Assets 的 Schema。`MaterialTemplates.SaveAsync(project, standardShader, unlitShader)` 保存实际白图、平法线图和两份材质模板。Standard 的 AlbedoMap 和 ARMMap 引用同一个白图，NormalMap 引用平法线图；Unlit 引用同一个白图。项目可通过 `CreateStandard`、`CreateUnlit` 取得模板内容并编辑。标量默认值由具体材料类的字段初始化表达。
 
@@ -57,14 +57,16 @@ MaterialBlock 保存 Shader 资产引用，Material 保存实际 Shader 对象�
 
 ## 更新与使用期
 
-`UpdateAsync<TMaterial>(material, files, shaders, textures)` 使用与创建相同的明确输入，按完整内容建立替换字段，再通过 MaterialGen 生成的 `IMaterial<TMaterial>.Update` 直接写入现有具体实例。更新保留 MaterialId，并在全部字段写入后将 Revision 推进一次。Reset 后的字段恢复父级与类字段默认值；实际 Shader、Texture 共用关系由本次输入的引用决定。
+`UpdateAsync<TMaterial>(material, files, shaders, textures)` 使用与创建相同的明确输入，按完整内容建立替换字段，再通过 MaterialImplementationGenerator 生成的 `IMaterial<TMaterial>.Update` 直接写入现有具体实例。更新保留 MaterialId，并在全部字段写入后将 Revision 推进一次。Reset 后的字段恢复父级与类字段默认值；实际 Shader、Texture 共用关系由本次输入的引用决定。
 
 Material 保存自己的参数、MaterialId、版本与实际 Shader、Texture 引用。业务通过普通引用维持这些对象的使用期，场景卸载、材质替换和依赖变化通过更新自身引用结束持有。AssetLoader 持有文件访问与读取状态，文件访问结束后，已创建材料和资源继续依靠实际对象引用使用。
 
+`Material.Revision` 是材料级变化版本；`GetPropertyRevision(index)` 保留各属性自己的变化计数，两者不是同一计数域，不能用属性计数与已消费的 Material.Revision 作大小比较。普通字段写入仅在值变化时推进对应计数；生成的批量更新沿既有 BeginUpdate/FinishUpdate 边界完成一次材料级提交。Shader 与 State 由引用/值比较参与材料级变化，不新增 ShaderRevision、Changed 事件或显式 Dispose 所有权。
+
+渲染提取保留共享 MaterialId 与实际 Material 引用，并发布独立的材料级 revision 快照。管线的资源绑定与声明深度依赖比较已接受的属性计数、Shader 引用和完整 State；材料值仍由具体对象保存。
+
 Shader 的显式更新通过具体 ShaderAsset 方法取得新的完整 Shader，再交给材质更新入口。Texture 的显式更新通过 TextureBlock.UpdateAsync 修改指定实际 Texture，维持已有消费引用。字段版本和材料 Revision 沿 Game world → Rendering world 的既有提取和资源完成机制传递，见 [更新边界](Asset-Update-Boundary.md)。
 
-2026-10-16 行为检查覆盖完整解析的独立结果、父级覆盖、显式纹理清除、实际资源引用、独立材质身份、更新身份与一次 Revision、父级及类默认值恢复，以及消费者程序集的自定义材料创建和更新。
+验证应覆盖完整解析的独立结果、父级覆盖、显式纹理清除、实际引用、独立 MaterialId、更新身份与一次材料级 Revision、父级及类默认值恢复，以及消费者程序集的自定义材料创建和更新。既有逐属性计数的公开断言保持原语义。依赖项目编译或生成器探针通过，不代表这些行为测试、NativeAOT、GPU 读回或整引擎验收已经完成；历史运行结果不能替代本次合并后的重新验证。
 
-2026-10-14 集成证据：SharedMaterialEntryTests 从同一个 StandardMaterial 经既有提取与公开 GPU 参数绑定，验证两个入口组在业务参数修改前后的实际读回结果，覆盖 IR 和 CLI 保存的共同代码。资产 NativeAOT 原生程序完成下游自定义材料的静态创建、更新、默认值恢复与共享 Shader 使用。
-
-实现：[MaterialAsset](../../../src/SomeEngine.Assets/Schema/MaterialAsset.cs)、[MaterialBlock](../../../src/SomeEngine.Assets/Schema/MaterialBlock.cs)、[标准材质](../../../src/SomeEngine.Resources/StandardMaterial.cs)、[材质生成器](../../../src/SomeEngine.Generators/MaterialGen.cs)。
+实现：[MaterialAsset](../../../src/SomeEngine.Assets/Schema/MaterialAsset.cs)、[MaterialBlock](../../../src/SomeEngine.Assets/Schema/MaterialBlock.cs)、[标准材质](../../../src/SomeEngine.Resources/StandardMaterial.cs)、[材质生成器](../../../src/SomeEngine.Generators/MaterialImplementationGenerator.cs)。

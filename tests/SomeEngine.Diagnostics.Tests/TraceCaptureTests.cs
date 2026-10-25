@@ -83,6 +83,114 @@ public sealed class TraceCaptureTests : IDisposable
         Assert.Equal(0, data.Misuse);
     }
 
+
+    [Fact]
+    public void AssociationDisposalOnAnotherThreadPreservesCallingThreadContext()
+    {
+        bool callingThreadContextPreserved = false;
+        using (EngineTrace.Start(_path, new TraceOptions { Allocations = true }))
+        using (EngineTrace.BeginFrame(9))
+        {
+            TraceContext frameContext = EngineTrace.Context;
+            var association = EngineTrace.Associate(default);
+            var thread = new Thread(() =>
+            {
+                using (EngineTrace.BeginFrame(17))
+                {
+                    TraceContext callingThreadContext = EngineTrace.Context;
+                    association.Dispose();
+                    callingThreadContextPreserved = EngineTrace.Context == callingThreadContext;
+                }
+            });
+            thread.Start(); thread.Join();
+            Assert.True(callingThreadContextPreserved);
+            Assert.Equal(default, EngineTrace.Context);
+            association.Dispose();
+            Assert.Equal(frameContext, EngineTrace.Context);
+        }
+        TraceData data = TraceFile.Read(_path);
+        Assert.Equal(1, data.Misuse);
+        Assert.Equal(4, data.Events.Length);
+        Assert.Equal(
+            data.Events.Where(e => e.Event.Kind == TraceEventKind.Frame).Select(e => e.Event.Id).Order(),
+            data.Events.Where(e => e.Event.Kind == TraceEventKind.End).Select(e => e.Event.Id).Order());
+    }
+
+    [Fact]
+    public void AssociationDisposalOutOfOrderPreservesNestedContext()
+    {
+        using (EngineTrace.Start(_path, new TraceOptions { Allocations = true }))
+        using (EngineTrace.BeginFrame(9))
+        {
+            TraceContext frameContext = EngineTrace.Context;
+            var association = EngineTrace.Associate(default);
+            using (EngineTrace.Begin(Work))
+            {
+                TraceContext nestedContext = EngineTrace.Context;
+                association.Dispose();
+                Assert.Equal(nestedContext, EngineTrace.Context);
+            }
+            Assert.Equal(default, EngineTrace.Context);
+            association.Dispose();
+            Assert.Equal(frameContext, EngineTrace.Context);
+        }
+        TraceData data = TraceFile.Read(_path);
+        Assert.Equal(1, data.Misuse);
+        Assert.Equal(4, data.Events.Length);
+        Assert.Equal(TraceEventKind.Frame, data.Events[0].Event.Kind);
+        Assert.Equal(TraceEventKind.Begin, data.Events[1].Event.Kind);
+        Assert.Equal(TraceEventKind.End, data.Events[2].Event.Kind);
+        Assert.Equal(data.Events[1].Event.Id, data.Events[2].Event.Id);
+        Assert.Equal(TraceEventKind.End, data.Events[3].Event.Kind);
+        Assert.Equal(data.Events[0].Event.Id, data.Events[3].Event.Id);
+    }
+
+    [Fact]
+    public void AssociationDisposalAfterCaptureStopsDoesNotChangeNewCaptureContext()
+    {
+        string secondPath = _path + ".next";
+        try
+        {
+            using TraceCapture firstCapture = EngineTrace.Start(_path, new TraceOptions { Allocations = true });
+            var firstFrame = EngineTrace.BeginFrame(9);
+            var association = EngineTrace.Associate(default);
+            var recordedScope = EngineTrace.Begin(Work);
+            firstCapture.Dispose();
+            Assert.Equal(default, EngineTrace.Context);
+            using (EngineTrace.Start(secondPath, new TraceOptions { Allocations = true }))
+            using (EngineTrace.BeginFrame(17))
+            {
+                TraceContext frameContext = EngineTrace.Context;
+                recordedScope.Dispose();
+                Assert.Equal(frameContext, EngineTrace.Context);
+                association.Dispose();
+                Assert.Equal(frameContext, EngineTrace.Context);
+                firstFrame.Dispose();
+                Assert.Equal(frameContext, EngineTrace.Context);
+                using (EngineTrace.Begin(Work)) { }
+                Assert.Equal(frameContext, EngineTrace.Context);
+            }
+            TraceData firstData = TraceFile.Read(_path);
+            Assert.Equal(2, firstData.Events.Length);
+            Assert.Equal(TraceEventKind.Frame, firstData.Events[0].Event.Kind);
+            Assert.Equal(TraceEventKind.Begin, firstData.Events[1].Event.Kind);
+            Assert.Equal(firstData.Events[0].Event.Id, firstData.Events[1].Event.Parent);
+            Assert.Equal(0, firstData.Misuse);
+            TraceData secondData = TraceFile.Read(secondPath);
+            Assert.Equal(0, secondData.Misuse);
+            Assert.Equal(4, secondData.Events.Length);
+            Assert.Equal(TraceEventKind.Frame, secondData.Events[0].Event.Kind);
+            Assert.Equal(TraceEventKind.Begin, secondData.Events[1].Event.Kind);
+            Assert.Equal(TraceEventKind.End, secondData.Events[2].Event.Kind);
+            Assert.Equal(secondData.Events[1].Event.Id, secondData.Events[2].Event.Id);
+            Assert.Equal(TraceEventKind.End, secondData.Events[3].Event.Kind);
+            Assert.Equal(secondData.Events[0].Event.Id, secondData.Events[3].Event.Id);
+            Assert.Equal(secondData.Events[0].Event.Id, secondData.Events[1].Event.Parent);
+            Assert.Equal(17, secondData.Events[1].Event.Frame);
+        }
+        finally { File.Delete(secondPath); }
+    }
+
     [Fact, Trait("Category", "Performance")]
     public void EnabledScopesDoNotAllocateInsideAnExistingBlock()
     {
@@ -95,6 +203,52 @@ public sealed class TraceCaptureTests : IDisposable
             bytes = GC.GetAllocatedBytesForCurrentThread() - before;
         }
         Assert.Equal(0, bytes);
+    }
+
+    [Fact]
+    public void RepeatedDisposalPreservesThreadNamesAndEvents()
+    {
+        var options = new TraceOptions { BufferMegabytes = 1 };
+        using TraceCapture capture = EngineTrace.Start(_path, options);
+        EngineTrace.NameThread("capture-thread");
+        EngineTrace.Counter(Work, 7);
+        int currentThread = Environment.CurrentManagedThreadId;
+        int workerThread = 0;
+        Exception? workerFailure = null;
+        var worker = new Thread(() =>
+        {
+            try
+            {
+                workerThread = Environment.CurrentManagedThreadId;
+                EngineTrace.NameThread("worker-thread");
+                EngineTrace.Counter(Work, 11);
+            }
+            catch (Exception error) { workerFailure = error; }
+        }) { IsBackground = true };
+        worker.Start();
+        Assert.True(worker.Join(TimeSpan.FromSeconds(10)));
+        Assert.Null(workerFailure);
+        capture.Dispose();
+
+        byte[] completed = File.ReadAllBytes(_path);
+        capture.Dispose();
+        EngineTrace.NameThread("after-stop");
+
+        Assert.False(EngineTrace.IsEnabled);
+        Assert.Equal(default, EngineTrace.Context);
+        Assert.Same(options, capture.Options);
+        Assert.Equal(2, capture.WrittenEvents);
+        Assert.Equal(completed, File.ReadAllBytes(_path));
+        TraceData data = TraceFile.Read(_path);
+        Assert.Equal(2, data.Threads.Length);
+        Assert.Equal("capture-thread", Assert.Single(data.Threads, t => t.Id == currentThread).Name);
+        Assert.Equal("worker-thread", Assert.Single(data.Threads, t => t.Id == workerThread).Name);
+        Assert.Equal(2, data.Events.Length);
+        Assert.Equal(7, Assert.Single(data.Events, e => e.Thread == currentThread).Event.Value);
+        Assert.Equal(11, Assert.Single(data.Events, e => e.Thread == workerThread).Event.Value);
+        Assert.All(data.Events, e => Assert.Equal(TraceEventKind.Counter, e.Event.Kind));
+        Assert.All(data.Threads, t => Assert.Equal(0, t.Dropped));
+        Assert.Equal(0, data.Misuse);
     }
 
     [Fact]

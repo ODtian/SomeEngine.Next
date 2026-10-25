@@ -345,23 +345,29 @@ internal sealed partial class ResourceManager
 
         internal void RemoveOwnerAccesses(JobHandle owner)
         {
-            bool removed = false;
-            for (int i = ActiveAccesses.Count - 1; i >= 0; i--)
+            int count = ActiveAccesses.Count;
+            int write = 0;
+            for (int read = 0; read < count; read++)
             {
-                JobHandle activeOwner = ActiveAccesses[i].Owner;
-                if (activeOwner.Index != owner.Index ||
-                    activeOwner.Version != owner.Version ||
-                    activeOwner.Generation != owner.Generation)
+                ActiveResourceAccess active = ActiveAccesses[read];
+                JobHandle activeOwner = active.Owner;
+                if (activeOwner.Index == owner.Index &&
+                    activeOwner.Version == owner.Version &&
+                    activeOwner.Generation == owner.Generation)
                 {
                     continue;
                 }
 
-                ActiveAccesses.RemoveAt(i);
-                removed = true;
+                if (write != read)
+                    ActiveAccesses[write] = active;
+                write++;
             }
 
-            if (removed)
-                RebuildFrontierFromActiveAccesses();
+            if (write == count)
+                return;
+
+            ActiveAccesses.RemoveRange(write, count - write);
+            RebuildFrontierFromActiveAccesses();
         }
 
         private void RebuildFrontierFromActiveAccesses()

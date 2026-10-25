@@ -178,8 +178,9 @@ public sealed class GltfImporterSetBehaviorTests
         return await MeshAsset.OpenAsync(Path.Combine(project.RootPath, project.Manifest.Assets[mesh].Path));
     }
 
-    private static GltfSourceImporter CreateImporter() => new(services =>
+    private static GltfSourceImporter CreateImporter()
     {
+        var services = new ServiceCollection();
         // This project's registry contains only test importers; all descriptions and settings binders come from the generator.
         services.AddScoped<SetSharedImporter>();
         services.AddScoped<SetFirstImporter>();
@@ -195,7 +196,8 @@ public sealed class GltfImporterSetBehaviorTests
         Guid[] sets = [new(SetGltfImporters.NeutralId), new(SetGltfImporters.FirstId), new(SetGltfImporters.SecondId), new(SetGltfImporters.ConflictId)];
         foreach (AssetImporterSetCapability set in SetProjectCapabilities.ImporterSetCapabilities.Where(value => sets.Contains(value.Id)))
             services.AddSingleton(set);
-    }, SetProjectCapabilities.BuildVersion);
+        return new GltfSourceImporter(services);
+    }
 
     private sealed class SetFiles : IDisposable
     {
@@ -331,7 +333,7 @@ public sealed class SetReplacementImporter : IAssetImporter<GltfMesh, SetGltfSet
     }
 }
 
-[AssetImporter("d41a09fd-a105-44c6-b5fa-8d6b14e61ea2", typeof(WorldBlock), SettingsProvider = typeof(GltfSceneSettingsProvider))]
+[AssetImporter("d41a09fd-a105-44c6-b5fa-8d6b14e61ea2", typeof(WorldBlock), typeof(MaterialBlock), typeof(MeshMaterialsBlock), SettingsProvider = typeof(GltfSceneSettingsProvider))]
 public sealed class SetSceneImporter : GltfSceneImporter
 {
     public static readonly Guid ShaderId = new("0c1d0f85-e510-48c4-ab9c-cdc1a3501c48");

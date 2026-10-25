@@ -58,6 +58,25 @@ void MarkVirtualShadowFullReceiverMask(VirtualShadowMapParameters view, uint mip
     PageReceiverMasks[address + uint2(0, 1)] = 0xffffffffu;
 }
 
+bool SelectVirtualShadowReceiverMaskWriter(uint2 texel, inout uint mask)
+{
+    uint4 matching = WaveMatchingLanes(texel.x) & WaveMatchingLanes(texel.y);
+    __target_switch
+    {
+    case _sm_6_5:
+        // Every participating lane contributes before the last lane publishes.
+        mask |= WaveMultiPrefixBitOr(mask, matching);
+        // Empty words stay -1; signed max selects the last of all 128 lanes.
+        int4 highLanes = (int4)(firstbithigh(matching) | uint4(0u, 32u, 64u, 96u));
+        uint lastLane = (uint)max(max(highLanes.x, highLanes.y), max(highLanes.z, highLanes.w));
+        return WaveGetLaneIndex() == lastLane;
+    case hlsl:
+    default:
+        matching &= WaveMatchingLanes(mask);
+        return WaveGetLaneIndex() == WaveMaskFirstLane(matching);
+    }
+}
+
 void MarkVirtualShadowReceiverRectangle(VirtualShadowMapParameters view, uint mipLevel,
     uint2 localPage, uint2 firstPixel, uint2 lastPixel)
 {
@@ -72,8 +91,7 @@ void MarkVirtualShadowReceiverRectangle(VirtualShadowMapParameters view, uint mi
         uint2 high = uint2(lastCell.x, min(lastCell.y, word * 4u + 3u) - word * 4u);
         uint mask = VirtualShadowReceiverWordRectangle(low, high);
         uint2 texel = address + uint2(0u, word);
-        uint4 matching = WaveMatchingLanes(texel.x) & WaveMatchingLanes(texel.y) & WaveMatchingLanes(mask);
-        if (WaveGetLaneIndex() != WaveMaskFirstLane(matching)) continue;
+        if (!SelectVirtualShadowReceiverMaskWriter(texel, mask)) continue;
         uint ignored;
         InterlockedOr(PageReceiverMasks[texel], mask, ignored);
     }

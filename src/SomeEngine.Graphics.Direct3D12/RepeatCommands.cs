@@ -48,7 +48,6 @@ internal sealed unsafe partial class D3D12Backend
         private readonly Dictionary<D3D12PersistentParameterBindings, D3D12PersistentParameterData> _repeatParameters = [];
         internal void TrackRepeatedParameters(D3D12PersistentParameterBindings source, D3D12PersistentParameterData data) =>
             _repeatParameters[source] = data;
-        private int _repeatRestrictions;
         internal bool TryCaptureRepeatedCommands()
         {
             CachedNativeCommands commands = _nativeRecording;

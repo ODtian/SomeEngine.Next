@@ -153,18 +153,31 @@ internal sealed unsafe partial class D3D12Backend
             throw new ArgumentException(
                 "AliasingBarrier requires at least one resource.",
                 nameof(barrier));
+        int bufferReadDependencyCount = 0;
         foreach (ref readonly AliasingResource resource in barrier.Before)
+        {
             RequireValidAliasingResource(resource);
+            if (resource.RequireBufferReadVisibility) bufferReadDependencyCount++;
+        }
         foreach (ref readonly AliasingResource resource in barrier.After)
+        {
             RequireValidAliasingResource(resource);
+            if (resource.RequireBufferReadVisibility)
+                throw new ArgumentException(
+                    "Buffer read visibility can only be requested on an outgoing alias.",
+                    nameof(barrier));
+        }
         int aliasCount = checked(barrier.Before.Length + barrier.After.Length);
-        command.PrepareCaptures(aliasCount, 0, aliasCount);
+        int captureCount = command.EnhancedBarriers ? checked(aliasCount + bufferReadDependencyCount) : aliasCount;
+        command.PrepareCaptures(captureCount, 0, captureCount);
         command.PrepareSwapchainUses(aliasCount);
 
         if (command.EnhancedBarriers)
         {
-            // Complete memory visibility at the resource switch; subsequent accesses
-            // may name a different resource over the same heap bytes.
+            // The outgoing compute-buffer visibility request is additive to the
+            // ordinary alias switch and its full memory visibility barrier.
+            if (bufferReadDependencyCount != 0)
+                EncodeBufferReadVisibility(command, barrier.Before);
             EncodeEnhancedAliasingBatches(command, barrier.Before, barrier.After);
             GlobalBarrier aliasMemory = new(BarrierSync.All, BarrierSync.All, BarrierAccess.Common, BarrierAccess.Common);
             BarrierGroup aliasGroup = new(BarrierType.Global, 1, pGlobalBarriers: &aliasMemory);
@@ -943,9 +956,34 @@ internal sealed unsafe partial class D3D12Backend
         BarrierAccess AccessAfter,
         bool Discard);
 
+    private void EncodeBufferReadVisibility(
+        D3D12CommandContext command, ReadOnlySpan<AliasingResource> resources)
+    {
+        ResolveBarrierSyncs(
+            PipelineSync.ComputeShading, PipelineSync.ComputeShading, BarrierPhase.Complete,
+            out BarrierSync syncBefore, out BarrierSync syncAfter);
+        foreach (ref readonly AliasingResource resource in resources)
+        {
+            if (!resource.RequireBufferReadVisibility) continue;
+            D3D12Buffer buffer = RequireBuffer((Buffer)resource.Resource);
+            command.Capture(buffer);
+            // This empirical enhanced-buffer safeguard remains additive to the alias handoff.
+            NativeBufferBarrier native = new(
+                syncBefore, syncAfter,
+                ToBarrierAccess(ResourceAccess.UnorderedAccess | ResourceAccess.ShaderResource),
+                ToBarrierAccess(ResourceAccess.ShaderResource), buffer.Native, 0, buffer.Info.Size);
+            BarrierGroup group = new(BarrierType.Buffer, 1, pBufferBarriers: &native);
+            D3D12CommandListFastCalls.Barrier(command.List, 1, &group);
+        }
+    }
+
     private void RequireValidAliasingResource(in AliasingResource resource)
     {
         ArgumentNullException.ThrowIfNull(resource.Resource);
+        if (resource.RequireBufferReadVisibility && resource.Resource is not Buffer)
+            throw new ArgumentException(
+                "Buffer read visibility requires an outgoing Buffer alias.",
+                nameof(resource));
         if (resource.Resource is Buffer buffer)
         {
             _ = RequireBuffer(buffer);

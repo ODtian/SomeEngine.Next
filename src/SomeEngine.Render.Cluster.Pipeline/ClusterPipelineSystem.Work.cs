@@ -11,12 +11,9 @@ public sealed partial class ClusterPipelineSystem
 
     private void RecordWorkStatus(ref RenderGraphEdit graph, in FrameResources frame)
     {
-        var clear = new ClusterBufferClearParameters(frame.WorkStatus);
-        graph.AddCopyFramePass("Reset Cluster work overflow status", PassQueueSelection.AnyCompatible(), clear,
+        graph.AddCopyFramePass("Reset Cluster work overflow status", PassQueueSelection.AnyCompatible(), frame.WorkStatus,
             new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
-            static (ref PassDefinition pass, ref ClusterBufferClearParameters data) =>
-                _ = pass.Write(data.Buffer, BufferRange.Whole, PipelineSync.Copy,
-                    ResourceAccess.CopyDestination, WriteCoverage.Complete),
-            ClusterBufferClearParameters.Record, region: _regions.PrimaryGeometry);
+            DeclareBufferClear,
+            RecordBufferClear, region: _regions.PrimaryGeometry);
     }
 }

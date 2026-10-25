@@ -96,7 +96,8 @@ public sealed class DocumentOutputTests
         try
         {
             using MappedTestDocument asset = BinaryDocumentWriter.Create(TestRoots.Canonical()).BuildMapped();
-            var writer = new AssetPackBuilder().AddAsset(Guid.NewGuid(), "test", asset, TestRoot.SchemaFingerprint);
+            Guid assetId = Guid.NewGuid();
+            var writer = new AssetPackBuilder().AddAsset(assetId, "test", asset, TestRoot.SchemaFingerprint);
             await writer.PublishAsync(path);
             byte[] previous = await File.ReadAllBytesAsync(path);
             using var cancellation = new CancellationTokenSource();
@@ -111,6 +112,23 @@ public sealed class DocumentOutputTests
             await using var oldPack = await AssetPack.OpenAsync(FileRangeSource.Open(path), ownsSource: true);
             await writer.PublishAsync(path);
             Assert.Equal(1, oldPack.Count);
+
+            string blockedPath = Path.Combine(directory, "blocked.pack");
+            Directory.CreateDirectory(blockedPath);
+            try
+            {
+                Exception error = await Assert.ThrowsAnyAsync<Exception>(() => writer.PublishAsync(blockedPath).AsTask());
+                Assert.True(error is IOException or UnauthorizedAccessException, error.ToString());
+                Assert.True(Directory.Exists(blockedPath));
+                string temporary = Assert.Single(Directory.EnumerateFiles(directory, ".blocked.pack.*.tmp"));
+                await using AssetPack completed = await AssetPack.OpenAsync(temporary);
+                Assert.Equal(1, completed.Count);
+                Assert.True(await completed.ContentEqualsAsync(assetId, "test", asset, TestRoot.SchemaFingerprint));
+            }
+            finally
+            {
+                Directory.Delete(blockedPath);
+            }
         }
         finally
         {

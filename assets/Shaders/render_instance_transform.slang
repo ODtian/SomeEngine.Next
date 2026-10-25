@@ -21,11 +21,17 @@ RenderInstanceTransform LoadRenderTransform(
     uint metadata,
     uint instanceSlot)
 {
-    return RenderInstanceLoad<RenderInstanceTransform>(
-        data,
-        metadata,
-        instanceSlot,
-        RENDER_INSTANCE_TRANSFORM_STRIDE);
+    uint address = ResolveRenderInstanceLinearAddress(metadata, instanceSlot, RENDER_INSTANCE_TRANSFORM_STRIDE);
+    // The render-owned encoding occupies three complete 16-byte groups, including padding.
+    float4 positionScale = asfloat(data.Load4(address + 16u));
+    float4 stretchPadding = asfloat(data.Load4(address + 32u));
+    RenderInstanceTransform transform;
+    transform.Rotation = asfloat(data.Load4(address));
+    transform.Position = positionScale.xyz;
+    transform.Scale = positionScale.w;
+    transform.Stretch = stretchPadding.xyz;
+    transform.Padding = stretchPadding.w;
+    return transform;
 }
 
 float3 TransformInstanceLocalPosition(float3 position, RenderInstanceTransform transform)

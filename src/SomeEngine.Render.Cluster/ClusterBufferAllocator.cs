@@ -11,6 +11,7 @@ internal sealed class ClusterBufferAllocator
 
     internal ClusterBufferAllocator(ulong capacity, uint alignment)
     {
+        ArgumentOutOfRangeException.ThrowIfZero(alignment);
         Capacity = capacity;
         _alignment = alignment;
         _free.Add(new(0, capacity));
@@ -38,7 +39,18 @@ internal sealed class ClusterBufferAllocator
         }
     }
 
-    internal ulong AllocationSize(ulong size) => checked((size + _alignment - 1) / _alignment * _alignment);
+    internal (ulong FreeBytes, ulong LargestFreeRange, int FreeRangeCount) GetStatistics()
+    {
+        ulong free = 0, largest = 0;
+        foreach (FreeRange range in _free)
+        {
+            free = checked(free + range.Size);
+            largest = Math.Max(largest, range.Size);
+        }
+        return (free, largest, _free.Count);
+    }
+
+    internal ulong AllocationSize(ulong size) => checked(((size + _alignment - 1) / _alignment) * _alignment);
     internal void ReserveFrees(int count) => _free.EnsureCapacity(checked(_free.Count + count));
 
     internal bool TryAllocate(ulong size, out ulong offset)

@@ -90,6 +90,7 @@ public static partial class ClusterBuilder
         {
             VertexEncoding = mesh.VertexEncoding,
             LowestDetailPageIndices = mesh.LowestDetailPageIndices.ToArray(),
+            ClusterGroups = mesh.ClusterGroups.ToArray(),
         };
         byte[] payload = new byte[checked((int)mesh.BvhOffset + mesh.BvhByteLength)];
         for (int page = 0; page < mesh.PageCount; page++)
