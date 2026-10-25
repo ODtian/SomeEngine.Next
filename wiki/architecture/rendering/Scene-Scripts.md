@@ -25,6 +25,8 @@
 
 图像通过现有 presentation 目标的 GPU 回读交付。回调位于 GPU 完成之后，返回该帧号、尺寸和从上到下紧密排列的 RGBA8 像素。每张 `SceneImage` 持有独立的托管数组，可以在应用退出后继续读取。同帧的多个回调收到同一张图像。
 
+`SceneImage.SaveBmp(path)` 将这些完整像素保存为从上到下的 32 位 BMP。保存调用持有本次 BGRA 输出，各行通过共享 Job 执行器同步转换到独立范围，全部完成后由原保存入口顺序写入文件头和图像字节。实现位于 `src/SomeEngine.Runtime/SceneImage.Bitmap.cs`。
+
 ```csharp
 SceneImage? captured = null;
 var script = new SceneScript(contentDirectory, 5,
