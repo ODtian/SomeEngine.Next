@@ -37,6 +37,40 @@ Created
 [JobHandleAwaitTests](../../../tests/SomeEngine.Job.Tests/JobHandleAwaitTests.cs)。
 
 
+## 同步范围执行
+
+`Scheduler.ExecuteParallel(in job, length, batchSize, accesses, options)` 消费具体的
+`IJobParallelFor` 工作，`Execute(index)` 读取调用方持有的范围或数据。省略 `accesses` 的重载
+接受相同的工作、长度、批大小和 `JobScheduleOptions`。显式批大小沿用每批一份工作值副本；
+`AutomaticBatchSize` 使用现有类型化批大小选择器。
+
+调用线程保留首批并继续动态领取，其余参与者进入 Scheduler 的共享就绪队列。同步批次持有
+领取位置、首个失败和参与者完成数；队列完成本次 drainer 的清理后才登记参与者退出。
+调用方等全部参与者退出，再归还类型化批次并取得结果；范围执行失败同样在这个完成点抛出。
+批次由发起线程的类型化空闲链复用。
+
+根调用的输入和输出由调用方保持到同步返回。声明访问时，已有同步资源入口先取得访问，
+所有参与者使用该访问 scope；本体退出后释放访问，并完成该 scope 的子工作。根调用省略访问时，
+同步批次直接持有参与者完成数。回调另外发起的异步工作沿 `Schedule` 的返回句柄和资源声明
+保持其数据使用期，调用方按该完成句柄回收异步工作使用的数据。
+
+嵌套调用复用当前 Scheduler 和 scope，并核对传入访问受当前权限覆盖。每位参与者都进入
+并行回调上下文，数据接口继续区分单工作项写入能力。嵌套范围内发起的异步子工作挂到已有
+scope，由该 scope 的完成句柄保持和交付；同步调用返回覆盖本次范围参与者退出。
+
+ECS 的 `ReadOnlyQueryPacketJobs.ExecutePrepared` 将其借用的范围数组交给该同步入口，
+外围查询保持 ECS 列的借用期，输出数组的外部访问交给同步资源入口。同步返回后，查询方
+读取完整结果并归还范围数组。
+
+本节属于已实现的公共接口与使用方法。源码入口：
+[同步范围](../../../src/SomeEngine.Job/Scheduler.SynchronousParallel.cs)、
+[共享队列](../../../src/SomeEngine.Job/WorkQueue.cs)、
+[只读查询分区](../../../src/SomeEngine.ECS.Systems/ReadOnlyQueryPacketJobs.cs)。
+公共行为检查：[同步结果和完成点](../../../tests/SomeEngine.Job.Tests/SynchronousParallelTests.cs)、
+[只读查询结果](../../../tests/SomeEngine.ECS.Systems.Tests/ReadOnlyQueryPacketJobTests.cs)。
+完整调用与预热后分配的执行入口见
+[Job benchmark](../../../tools/SomeEngine.Job.Benchmarks/README.md)。
+
 ## Related concepts
 
 完成分派在状态锁内从依赖记录取得独立的回调数组，后续分派持有该数组直到全部回调完成。工作完成、作用域完成和外部完成回调使用相同的数据持有边界；记录归还与复用只维护记录自身的数据。公共回归同时验证故障向所有依赖方传播，以及观察故障后其他任务继续完成。

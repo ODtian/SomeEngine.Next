@@ -7,6 +7,8 @@ namespace SomeEngine.Job;
 
 internal interface IWorkQueue : IDisposable
 {
+    void EnqueueSynchronous(QueuedWork stream, int participants, JobScheduleOptions options);
+
     void EnsureItemCapacity(int workItemCount);
 
     void Enqueue(WorkBatch work);
@@ -131,6 +133,12 @@ internal sealed class WorkQueue : IWorkQueue
         }
     }
 
+    public void EnqueueSynchronous(QueuedWork stream, int participants, JobScheduleOptions options)
+    {
+        ReserveQueuedCapacity(participants);
+        PublishDrainers(stream, participants, JobPriorityOrder.PriorityIndex(options.Priority), CurrentWorkerIndex);
+    }
+
     public void EnsureItemCapacity(int workItemCount)
     {
         if (workItemCount > _maxQueuedWorkItems)
@@ -222,7 +230,7 @@ internal sealed class WorkQueue : IWorkQueue
 
     private bool TryExecuteOne(bool wait, bool waitIndefinitely, long wakeVersion, bool waitForState = false)
     {
-        WorkStream stream;
+        QueuedWork stream;
         long publishedAt;
         bool stole = false;
         int priorityIndex = JobPriorityOrder.PriorityIndex(JobPriority.Normal);
@@ -269,6 +277,7 @@ internal sealed class WorkQueue : IWorkQueue
         finally
         {
             FinishDrain(stream, claimed, hasMoreWork, priorityIndex);
+            stream.DrainExited();
         }
 
         if (stole)
@@ -379,7 +388,7 @@ internal sealed class WorkQueue : IWorkQueue
     }
 
     private void FinishDrain(
-        WorkStream stream,
+        QueuedWork stream,
         int claimed,
         bool hasMoreWork,
         int priorityIndex)
@@ -463,7 +472,7 @@ internal sealed class WorkQueue : IWorkQueue
     }
 
     private void PublishDrainers(
-        WorkStream stream,
+        QueuedWork stream,
         int drainerCount,
         int priorityIndex,
         int workerIndex)
@@ -558,7 +567,7 @@ internal sealed class WorkQueue : IWorkQueue
 
     private bool TryDequeueForWorker(
         int workerIndex,
-        out WorkStream stream,
+        out QueuedWork stream,
         out long publishedAt,
         out bool stole,
         out int priorityIndex)
@@ -723,13 +732,13 @@ internal sealed class WorkQueue : IWorkQueue
 
     private readonly struct ReadyTicket
     {
-        internal ReadyTicket(WorkStream stream, long publishedAt)
+        internal ReadyTicket(QueuedWork stream, long publishedAt)
         {
             Stream = stream;
             PublishedAt = publishedAt;
         }
 
-        internal WorkStream Stream { get; }
+        internal QueuedWork Stream { get; }
 
         internal long PublishedAt { get; }
     }
