@@ -73,7 +73,9 @@ public readonly struct CollisionCandidates<TComponent, TBoundsReader> : ICollisi
 
     internal bool BuildsFromQuery => _buildFromQuery;
 
-    internal CollisionBounds ReadBounds(QueryRow row) => _boundsReader.Read(in row.ReadRef<TComponent>());
+    internal CollisionBounds ReadBounds(QueryRow row) => ReadBounds(in row.ReadRef<TComponent>());
+
+    internal CollisionBounds ReadBounds(in TComponent component) => _boundsReader.Read(in component);
 
     internal CollisionCandidates<TComponent, TBoundsReader> WithTree() =>
         new(World, _bodies, Tree, _boundsReader);
