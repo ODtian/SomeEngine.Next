@@ -15,7 +15,7 @@ public struct XpbdLength : IComponent
     public float Multiplier;
 }
 
-public readonly struct XpbdLengthProjection : IXpbdConstraint<XpbdLength>, IXpbdConstraintForces<XpbdLength>
+public readonly partial struct XpbdLengthProjection : IXpbdConstraint<XpbdLength>, IXpbdConstraintForces<XpbdLength>
 {
     public static int GetBodyCount(in XpbdLength constraint, scoped QueryRow row, in PhysicsStepContext context) => 2;
     public static Entity GetBody(in XpbdLength constraint, scoped QueryRow row, int index, in PhysicsStepContext context)
