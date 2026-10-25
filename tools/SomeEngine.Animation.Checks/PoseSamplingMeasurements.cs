@@ -4,6 +4,7 @@ using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using SomeEngine.Animation.Pose;
+using SomeEngine.Job;
 
 namespace SomeEngine.Animation.Checks;
 
@@ -14,6 +15,7 @@ internal static class PoseSamplingMeasurements
 
     internal static void Run()
     {
+        JobSystem.Initialize(new() { WorkerCount = 4, EnableCounters = false });
         var parents = new short[BoneCount];
         var reference = new BoneTransform[BoneCount];
         var channels = ImmutableArray.CreateBuilder<RawClipChannel>(BoneCount);
@@ -34,10 +36,11 @@ internal static class PoseSamplingMeasurements
             ClipSampler.Create<ReferenceClipData, ReferenceClipSampler>(new()));
 
         string tieredCompilation = Environment.GetEnvironmentVariable("DOTNET_TieredCompilation") ?? "default";
-        Console.WriteLine($"framework={RuntimeInformation.FrameworkDescription}; architecture={RuntimeInformation.ProcessArchitecture}; nativeAot={!RuntimeFeature.IsDynamicCodeSupported}; tieredCompilation={tieredCompilation}; warmup=64; samples=96");
+        Console.WriteLine($"framework={RuntimeInformation.FrameworkDescription}; architecture={RuntimeInformation.ProcessArchitecture}; nativeAot={!RuntimeFeature.IsDynamicCodeSupported}; tieredCompilation={tieredCompilation}; warmup=64; samples=96; jobWorkers=4; allocation=process-total-after-completion");
         Console.WriteLine("codec,poses,bones,selected,space,path,median_ns_per_pose,p95_ns_per_pose,allocated_bytes_per_batch");
         Measure("reference", referenceClip);
         Measure("raw", raw);
+        JobSystem.Shutdown();
     }
 
     private static void Measure(string codec, AnimationClip clip)
@@ -65,6 +68,8 @@ internal static class PoseSamplingMeasurements
             for (int sample = 0; sample < SampleCount; sample++)
                 single.SampleModel(times.AsSpan(sample, 1), model.AsSpan(sample * selected, selected));
         });
+        Record(codec, selected, "local", "scheduled-complete", () => batch.ScheduleLocal(times, local).Complete());
+        Record(codec, selected, "model", "scheduled-complete", () => batch.ScheduleModel(times, model).Complete());
         GC.KeepAlive(local);
         GC.KeepAlive(model);
     }
@@ -73,14 +78,14 @@ internal static class PoseSamplingMeasurements
     {
         for (int warmup = 0; warmup < 64; warmup++) sample();
         var times = new double[96];
-        long before = GC.GetAllocatedBytesForCurrentThread();
+        long before = GC.GetTotalAllocatedBytes(true);
         for (int iteration = 0; iteration < times.Length; iteration++)
         {
             long start = Stopwatch.GetTimestamp();
             sample();
             times[iteration] = Stopwatch.GetElapsedTime(start).TotalNanoseconds / SampleCount;
         }
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+        long allocated = GC.GetTotalAllocatedBytes(true) - before;
         Array.Sort(times);
         Console.WriteLine(FormattableString.Invariant(
             $"{codec},{SampleCount},{BoneCount},{selected},{space},{path},{times[48]:F3},{times[91]:F3},{allocated / 96d:F3}"));
