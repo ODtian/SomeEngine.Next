@@ -14,7 +14,7 @@ namespace SomeEngine.Render.Systems;
 /// collect from one coherent main-world read and publish through one RenderWorld structural
 /// transaction, so adding a feature never turns extraction into one global switch statement.
 /// </summary>
-public sealed class RenderExtractionSystems : IDisposable
+public sealed partial class RenderExtractionSystems : IDisposable
 {
     private static readonly SomeEngine.Diagnostics.TraceSite ExtractionTrace = new("ecs", "RenderExtraction");
     private readonly RenderWorld _renderWorld;
@@ -212,8 +212,7 @@ public sealed class RenderExtractionSystems : IDisposable
                     systems._candidateFullReconciliation = systems._mainWorld is null ||
                         systems._candidateSourceChanges.Count != 0;
                     systems._context.BeginSourceChanges(systems._candidateSourceChanges.Entities);
-                    if (systems._candidateFullReconciliation) systems.Collect(query);
-                    else systems.CollectDelta(query);
+                    systems.CollectRanges(query);
                     foreach (IRenderExtractionSystem system in systems._systems)
                         if (system.CompleteSourceCollection(state.Source, systems._candidateFullReconciliation))
                             systems._changedSystems.Add(system);
@@ -395,6 +394,7 @@ public sealed class RenderExtractionSystems : IDisposable
             if (_extractionActive)
                 throw new InvalidOperationException("Render extraction is still active.");
             _context.CancelTransformChanges();
+            foreach (RangeCollection collection in _rangeCollections) collection.Dispose();
             foreach (IRenderExtractionSystem system in _systems) system.Dispose();
             _context.Dispose();
             _sourceChanges?.Dispose();

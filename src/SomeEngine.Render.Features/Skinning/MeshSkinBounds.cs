@@ -1,6 +1,7 @@
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
+using SomeEngine.ECS.Systems;
 using SomeEngine.Render.Cluster;
 using SomeEngine.Render.Systems;
 using SomeEngine.Resources.Geometry;
@@ -13,7 +14,7 @@ public readonly record struct MeshSkinBounds(ClusterSkinBounds Data) : IComponen
 internal readonly record struct RenderSkinBounds(ClusterSkinBounds Data) : IComponent;
 
 /// <summary>Copies ready influence data through normal Game-to-Rendering extraction.</summary>
-public sealed class SkinBoundsRenderExtractor : IRenderExtractionSystem
+public sealed partial class SkinBoundsRenderExtractor : IRenderExtractionSystem
 {
     private readonly List<(Entity Source, ClusterSkinBounds Data)> _values = [];
     private readonly HashSet<Entity> _sources = [];
@@ -27,7 +28,9 @@ public sealed class SkinBoundsRenderExtractor : IRenderExtractionSystem
 
     public void Reset() { _values.Clear(); _sources.Clear(); }
 
-    public void Collect(QueryChunkView chunk)
+    public void Collect(QueryChunkView chunk) => Collect(ReadOnlyQueryPacketJobs.Borrow(chunk));
+
+    private void Collect(ReadOnlyQueryPacket chunk)
     {
         if (!chunk.TryRead<MeshSkinBounds>(out var values)) return;
         for (int row = 0; row < values.Length; row++)
@@ -37,12 +40,15 @@ public sealed class SkinBoundsRenderExtractor : IRenderExtractionSystem
         }
     }
 
-    public bool CollectChanges(QueryChunkView chunk, RenderExtractionContext context)
+    public bool CollectChanges(QueryChunkView chunk, RenderExtractionContext context) =>
+        CollectChanges(ReadOnlyQueryPacketJobs.Borrow(chunk), chunk.LastSystemVersion);
+
+    private bool CollectChanges(ReadOnlyQueryPacket chunk, uint lastSystemVersion)
     {
-        if (!chunk.TryRead<MeshSkinBounds>(out var values) || !chunk.HasChangedSinceLastSystemVersion<MeshSkinBounds>()) return false;
+        if (!chunk.TryRead<MeshSkinBounds>(out var values) || !chunk.ChangedSince<MeshSkinBounds>(lastSystemVersion)) return false;
         int before = _values.Count;
         for (int row = 0; row < values.Length; row++)
-            if (chunk.RowChangedSinceLastSystemVersion<MeshSkinBounds>(row)) _values.Add((chunk.Entities[row], values[row].Data));
+            if (chunk.RowChangedSince<MeshSkinBounds>(row, lastSystemVersion)) _values.Add((chunk.Entities[row], values[row].Data));
         return _values.Count != before;
     }
 

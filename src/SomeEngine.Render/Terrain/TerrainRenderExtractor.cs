@@ -1,6 +1,7 @@
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
+using SomeEngine.ECS.Systems;
 using SomeEngine.Render.Components;
 using SomeEngine.Render.Systems;
 using SomeEngine.Resources;
@@ -8,7 +9,7 @@ using SomeEngine.Resources;
 namespace SomeEngine.Render.Terrain;
 
 /// <summary>Captures immutable terrain requests from terrain references in the game world.</summary>
-public sealed class TerrainRenderExtractor : IRenderExtractionSystem
+public sealed partial class TerrainRenderExtractor : IRenderExtractionSystem
 {
     private readonly Dictionary<Entity, Resources.Terrain> _sources = [];
     private readonly Dictionary<Entity, TerrainDataRequest[]> _previous = [];
@@ -27,22 +28,18 @@ public sealed class TerrainRenderExtractor : IRenderExtractionSystem
         _updates.Clear();
     }
 
-    public void Collect(QueryChunkView chunk)
-    {
-        if (!chunk.TryRead<TerrainSource>(out var terrains)) return;
-        for (int index = 0; index < terrains.Length; index++)
-        {
-            Entity entity = chunk.Entities[index];
-            _sources[entity] = terrains[index].Terrain;
-            _collected.Add(entity);
-        }
-    }
+    private readonly TerrainSources _inputs = new();
 
-    public bool CollectChanges(QueryChunkView chunk, RenderExtractionContext context)
+    public void Collect(QueryChunkView chunk) => CollectInputs(chunk, true);
+
+    public bool CollectChanges(QueryChunkView chunk, RenderExtractionContext context) => CollectInputs(chunk, false);
+
+    private bool CollectInputs(QueryChunkView chunk, bool fullCollection)
     {
-        if (!chunk.Has<TerrainSource>() || !chunk.HasChangedSinceLastSystemVersion<TerrainSource>()) return false;
-        Collect(chunk);
-        return true;
+        _inputs.Collect(ReadOnlyQueryPacketJobs.Borrow(chunk), chunk.LastSystemVersion, fullCollection);
+        bool changed = MergeInputs(_inputs);
+        _inputs.Reset();
+        return changed;
     }
 
     public bool CompleteCollection(RenderExtractionContext context, bool fullCollection)

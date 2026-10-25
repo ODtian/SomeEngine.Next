@@ -2,6 +2,7 @@ using SomeEngine.Core.ECS.Components;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
+using SomeEngine.ECS.Systems;
 using SomeEngine.Render.Components;
 using SomeEngine.Render.Systems;
 using SomeEngine.Resources;
@@ -11,9 +12,10 @@ namespace SomeEngine.Terrains;
 internal readonly record struct RenderTerrainChunk(object Scene, int GeometryId, ulong Revision) : IComponent;
 internal readonly record struct RenderTerrainSelection(object Scene, int[] GeometryIds) : IComponent;
 
-internal sealed class TerrainGeometryExtractor(object scene) : IRenderExtractionSystem
+internal sealed partial class TerrainGeometryExtractor(object scene) : IRenderExtractionSystem
 {
     private readonly List<ChunkData> _chunks = [];
+    private readonly SourceTransformChanges _transformChanges = new();
     private (Entity Entity, TerrainGpuSelection Value)? _selection;
 
     public void DeclareReads(RenderExtractionQuery query)
@@ -31,10 +33,13 @@ internal sealed class TerrainGeometryExtractor(object scene) : IRenderExtraction
     public void Reset()
     {
         _chunks.Clear();
+        _transformChanges.Clear();
         _selection = null;
     }
 
-    public void Collect(QueryChunkView chunk)
+    public void Collect(QueryChunkView chunk) => Collect(ReadOnlyQueryPacketJobs.Borrow(chunk));
+
+    private void Collect(ReadOnlyQueryPacket chunk)
     {
         if (chunk.TryRead<TerrainGpuSelection>(out var selections))
             for (int row = 0; row < selections.Length; row++)
@@ -54,16 +59,23 @@ internal sealed class TerrainGeometryExtractor(object scene) : IRenderExtraction
 
     public bool CollectChanges(QueryChunkView chunk, RenderExtractionContext context)
     {
-        if (chunk.Has<TerrainGpuSelection>() && chunk.HasChangedSinceLastSystemVersion<TerrainGpuSelection>())
+        bool changed = CollectChanges(ReadOnlyQueryPacketJobs.Borrow(chunk), chunk.LastSystemVersion);
+        _transformChanges.Merge(context);
+        return changed;
+    }
+
+    private bool CollectChanges(ReadOnlyQueryPacket chunk, uint lastSystemVersion)
+    {
+        if (chunk.Has<TerrainGpuSelection>() && chunk.ChangedSince<TerrainGpuSelection>(lastSystemVersion))
         {
             Collect(chunk);
             return true;
         }
         if (!chunk.Has<TerrainGpuSource>()) return false;
-        if (chunk.HasChangedSinceLastSystemVersion<WorldTransform>()) context.CollectTransformChanges(chunk);
-        if (!chunk.HasChangedSinceLastSystemVersion<TerrainChunk>()
-            && !chunk.HasChangedSinceLastSystemVersion<WorldTransform>()
-            && !chunk.HasBufferChangedSinceLastSystemVersion<MeshMaterialBinding>()) return false;
+        if (chunk.ChangedSince<WorldTransform>(lastSystemVersion)) _transformChanges.Collect(chunk, lastSystemVersion);
+        if (!chunk.ChangedSince<TerrainChunk>(lastSystemVersion)
+            && !chunk.ChangedSince<WorldTransform>(lastSystemVersion)
+            && !chunk.BufferChangedSince<MeshMaterialBinding>(lastSystemVersion)) return false;
         Collect(chunk);
         return true;
     }
