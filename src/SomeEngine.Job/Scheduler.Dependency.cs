@@ -188,7 +188,8 @@ public sealed partial class Scheduler
         JobHandle state,
         JobHandle explicitDependency,
         ResourceAccessReservation reservation,
-        WorkBatch work)
+        WorkBatch work,
+        bool ignoreDependencyFault = false)
     {
         if (!_dependencies.AddPending(state))
         {
@@ -203,14 +204,15 @@ public sealed partial class Scheduler
                     this,
                     state,
                     work,
-                    reservation),
+                    reservation,
+                    ignoreDependencyFault),
                 out ExceptionDispatchInfo? immediateFault))
         {
             CompleteDeferredResourceAdmission(
                 state,
                 work,
                 reservation,
-                immediateFault);
+                ignoreDependencyFault ? null : immediateFault);
         }
     }
 
@@ -486,14 +488,16 @@ public sealed partial class Scheduler
             Scheduler scheduler,
             JobHandle target,
             WorkBatch work,
-            ResourceAccessReservation reservation)
+            ResourceAccessReservation reservation,
+            bool ignoreDependencyFault)
         {
             return new DependencyContinuation(
                 scheduler,
                 ContinuationKind.ResourceAdmission,
                 target,
                 work,
-                reservation);
+                reservation,
+                ignoreDependencyFault);
         }
 
         internal static DependencyContinuation CreateExternal(
@@ -528,7 +532,7 @@ public sealed partial class Scheduler
                     _target,
                     _work,
                     _reservation,
-                    fault);
+                    _ignoreDependencyFault ? null : fault);
             }
             else
             {
