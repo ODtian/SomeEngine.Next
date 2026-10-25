@@ -6,6 +6,7 @@ namespace SomeEngine.Physics;
 /// <summary>Reads current geometry and the participating simulation endpoints from an active query.</summary>
 public interface ICollisionGeometryReader<TGeometry> where TGeometry : struct
 {
+    static virtual bool HasGeometry(scoped QueryRow row) => true;
     QueryDefinition AddReads(QueryDefinition definition);
     TGeometry ReadGeometry(scoped QueryRow row, scoped QueryCursor access, out BodyPose pose);
     int GetBodyCount(scoped QueryRow row, scoped QueryCursor access);
@@ -14,6 +15,8 @@ public interface ICollisionGeometryReader<TGeometry> where TGeometry : struct
 
 public readonly struct ComponentGeometry<TGeometry> : ICollisionGeometryReader<TGeometry> where TGeometry : struct
 {
+    public static bool HasGeometry(scoped QueryRow row) => row.Has<TGeometry>();
+
     public QueryDefinition AddReads(QueryDefinition definition) =>
         definition.WithOptionalRead<TGeometry>().WithOptionalRead<BodyPose>();
 
