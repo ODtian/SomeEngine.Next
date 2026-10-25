@@ -2,6 +2,7 @@ using System.Numerics;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Systems;
+using SomeEngine.Job;
 
 namespace SomeEngine.Animation.Pose.Tests;
 
@@ -136,7 +137,8 @@ public sealed class SkeletonInheritanceBehaviorTests
     [Fact]
     public void ParentAnimationRecomputesHeldChildResultsOnTheCommonCalculationClock()
     {
-        using var world = new World();
+        using var scheduler = new Scheduler(new() { WorkerCount = 2 });
+        using var world = WorldJobs.CreateWorld(scheduler: scheduler);
         var body = new Skeleton([-1, 0], [At(1, 0, 0), At(0, 2, 0)], [10, 20]);
         var clothing = new Skeleton(body, [-1], [At(0, 0, 3)], [30], inheritedParents: [1]);
         var poses = new PoseStorage();

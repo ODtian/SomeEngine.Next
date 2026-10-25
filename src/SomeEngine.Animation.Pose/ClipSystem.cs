@@ -59,7 +59,7 @@ public struct ClipSystem : ISystem<ImmediateSystemContext>
                     {
                         var bones = new short[clip.Skeleton.BoneCount];
                         for (int bone = 0; bone < bones.Length; bone++) bones[bone] = (short)bone;
-                        group = new(clip, bones);
+                        group = new(PoseAnimation.GetScheduler(frame.World), clip, bones);
                         group.Begin();
                         frame.Groups.Add(clip, group);
                     }

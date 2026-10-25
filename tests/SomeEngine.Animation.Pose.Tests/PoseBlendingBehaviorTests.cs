@@ -2,6 +2,7 @@ using System.Numerics;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Systems;
+using SomeEngine.Job;
 
 namespace SomeEngine.Animation.Pose.Tests;
 
@@ -10,7 +11,8 @@ public sealed class PoseBlendingBehaviorTests
     [Fact]
     public void GraphWeightsBlendTranslationRotationAndScaleBeforeModelComposition()
     {
-        using var world = new World();
+        using var scheduler = new Scheduler(new() { WorkerCount = 2 });
+        using var world = WorldJobs.CreateWorld(scheduler: scheduler);
         Skeleton skeleton = CreateSkeleton();
         var storage = new PoseStorage();
         using SkeletonInstance instance = storage.CreateInstance(skeleton);
@@ -72,7 +74,8 @@ public sealed class PoseBlendingBehaviorTests
     [Fact]
     public void SharedOneDimensionalSpaceKeepsEachInstancesCoordinateAndCyclePhase()
     {
-        using var world = new World();
+        using var scheduler = new Scheduler(new() { WorkerCount = 2 });
+        using var world = WorldJobs.CreateWorld(scheduler: scheduler);
         Skeleton skeleton = CreateSkeleton();
         var storage = new PoseStorage();
         using SkeletonInstance first = storage.CreateInstance(skeleton);
