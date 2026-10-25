@@ -9,12 +9,6 @@ public sealed partial class GlyphAtlas
     private const int FileSignature = 0x46445347; // GSDF
     private const int FileVersion = 1;
 
-    /// <summary>Prebakes the font's shaped glyph numbers through the same entry point as dynamic queries.</summary>
-    public void Bake(Font font, ReadOnlySpan<uint> glyphIndices)
-    {
-        foreach (uint glyph in glyphIndices) Get(font, glyph);
-    }
-
     /// <summary>Writes baked pixels, glyph positions, and font asset hashes. The caller keeps the stream open.</summary>
     public void Save(Stream destination)
     {
