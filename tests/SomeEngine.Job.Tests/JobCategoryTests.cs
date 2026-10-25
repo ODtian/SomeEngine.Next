@@ -44,6 +44,22 @@ public sealed class JobCategoryTests
     }
 
     [Fact]
+    public void ConcurrentNestedSynchronousRangesReuseTheirCategoryBudget()
+    {
+        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        JobCategory category = scheduler.CreateCategory(new JobCategoryConfig
+        {
+            MaxInFlight = 1, MaxExecuting = 2,
+        });
+        var options = new JobScheduleOptions { Category = category };
+        using var entered = new Barrier(2);
+        int[][] values = [new int[4], new int[4]];
+        scheduler.ExecuteParallel(new RunConcurrentNested(scheduler, options, entered, values), 2, options: options);
+        Assert.Equal([1, 1, 1, 1], values[0]);
+        Assert.Equal([1, 1, 1, 1], values[1]);
+    }
+
+    [Fact]
     public async Task QueuedCategoryWorkKeepsItsSubmittingScope()
     {
         using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
@@ -354,6 +370,16 @@ public sealed class JobCategoryTests
         : IJobParallelFor
     {
         public void Execute(int index) => Scheduler.ExecuteParallel(new AddRange(Values), Values.Length, options: Options);
+    }
+
+    private readonly record struct RunConcurrentNested(
+        Scheduler Scheduler, JobScheduleOptions Options, Barrier Entered, int[][] Values) : IJobParallelFor
+    {
+        public void Execute(int index)
+        {
+            Entered.SignalAndWait();
+            Scheduler.ExecuteParallel(new AddRange(Values[index]), Values[index].Length, options: Options);
+        }
     }
 
     private readonly record struct QueueChild(Scheduler Scheduler, JobScheduleOptions Options, int[] Values) : IJob
