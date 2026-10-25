@@ -111,6 +111,10 @@ internal static class CollisionManifolds
             float farthest = -1;
             for (int index = 0; index < candidates.Length; index++)
             {
+                bool selectedEarlier = false;
+                for (int previous = 0; previous < point; previous++)
+                    selectedEarlier |= selected[previous] == index;
+                if (selectedEarlier) continue;
                 float score = float.PositiveInfinity;
                 for (int previous = 0; previous < point; previous++)
                     score = MathF.Min(score, Vector3.DistanceSquared(candidates[index].FirstPoint,
