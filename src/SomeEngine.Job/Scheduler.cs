@@ -22,6 +22,10 @@ public sealed partial class Scheduler : IDisposable
     private int _managedPayloadPolicy;
     private static long s_nextGeneration;
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Type, WorkStream> _streams = new();
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<Type, object> _parallelBatchCosts = new();
+
+    private ParallelBatchSizer<T> GetParallelBatchSizer<T>() where T : struct, IJobParallelFor =>
+        (ParallelBatchSizer<T>)_parallelBatchCosts.GetOrAdd(typeof(T), static _ => new ParallelBatchSizer<T>());
 
     [ThreadStatic]
     private static Scheduler? s_executing;
@@ -432,8 +436,9 @@ public sealed partial class Scheduler : IDisposable
         options = ResolveCategoryOptions(options);
 
         bool automaticBatch = batchSize == JobScheduleOptions.AutomaticBatchSize;
+        ParallelBatchSizer<T>? batchSizer = automaticBatch ? GetParallelBatchSizer<T>() : null;
         int resolvedBatchSize = automaticBatch
-            ? ParallelBatchSizer<T>.Resolve(
+            ? batchSizer!.Resolve(
                 length,
                 _config.WorkerCount,
                 _config.AutoBatchTargetMicroseconds,
@@ -487,7 +492,7 @@ public sealed partial class Scheduler : IDisposable
                 resolvedBatchSize,
                 batchCount,
                 tokenCount,
-                automaticBatch,
+                batchSizer,
                 hasScheduleDependencies,
                 deferResourceActivation,
                 ref work,
@@ -549,7 +554,7 @@ public sealed partial class Scheduler : IDisposable
         int batchSize,
         int batchCount,
         int tokenCount,
-        bool automaticBatch,
+        ParallelBatchSizer<T>? batchSizer,
         bool hasScheduleDependencies,
         bool deferResourceActivation,
         ref WorkBatch work,
@@ -565,7 +570,7 @@ public sealed partial class Scheduler : IDisposable
             length,
             batchSize,
             batchCount,
-            measureCost: automaticBatch);
+            batchSizer);
         ScheduledParallelTokenSource<T> source = new(group, state);
         if (!hasScheduleDependencies)
         {

@@ -5,13 +5,14 @@ using SomeEngine.Core.ECS.Components;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
+using SomeEngine.ECS.Systems;
 using SomeEngine.Render.Components;
 using SomeEngine.Render.Materials;
 
 namespace SomeEngine.Render.Systems;
 
 /// <summary>Extracts mesh, transform, and material-binding semantics.</summary>
-public sealed class MeshRenderExtractor : IRenderExtractionSystem
+public sealed partial class MeshRenderExtractor : IRenderExtractionSystem
 {
     private readonly List<MeshSnapshot> _snapshots = [];
     private readonly List<Material> _materials = [];
@@ -39,6 +40,12 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
         _meshSources.Clear();
         _removedMaterialSources.Clear();
         _collectedMeshSources.Clear();
+        _transformChanges.Clear();
+        if (_source is not null)
+        {
+            _sourceMaterials.Clear();
+            _sourceMeshes.Clear();
+        }
     }
 
     public bool CompleteSourceCollection(World sourceWorld, bool fullCollection)
@@ -85,7 +92,9 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
     private float GetBoundsExpansion(Entity source, float meshExpansion)
     {
         float expansion = 0;
-        if (_sourceMaterials.TryGetValue(source, out Material[]? materials))
+        if (!_sourceMaterials.TryGetValue(source, out Material[]? materials) && _source is not null)
+            _source._sourceMaterials.TryGetValue(source, out materials);
+        if (materials is not null)
             foreach (Material material in materials) expansion = Math.Max(expansion, material.BoundsExpansion);
         return meshExpansion + expansion;
     }
@@ -126,7 +135,9 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
         _sourceMeshes.Clear();
     }
 
-    public void Collect(QueryChunkView chunk)
+    public void Collect(QueryChunkView chunk) => Collect(ReadOnlyQueryPacketJobs.Borrow(chunk));
+
+    private void Collect(ReadOnlyQueryPacket chunk)
     {
         if (!chunk.TryRead<WorldTransform>(out ReadOnlySpan<WorldTransform> transforms))
             return;
@@ -170,20 +181,27 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
 
     public bool CollectChanges(QueryChunkView chunk, RenderExtractionContext context)
     {
+        bool changed = CollectChanges(ReadOnlyQueryPacketJobs.Borrow(chunk), chunk.LastSystemVersion);
+        _transformChanges.Merge(context);
+        return changed;
+    }
+
+    private bool CollectChanges(ReadOnlyQueryPacket chunk, uint lastSystemVersion)
+    {
         if (!chunk.Has<WorldTransform>())
             return false;
 
         if (!chunk.TryRead<MeshInstance>(out ReadOnlySpan<MeshInstance> meshes))
             return false;
 
-        if (chunk.HasChangedSinceLastSystemVersion<WorldTransform>())
-            context.CollectTransformChanges(chunk);
+        if (chunk.ChangedSince<WorldTransform>(lastSystemVersion))
+            _transformChanges.Collect(chunk, lastSystemVersion);
 
-        bool meshChunkChanged = chunk.HasChangedSinceLastSystemVersion<MeshInstance>();
+        bool meshChunkChanged = chunk.ChangedSince<MeshInstance>(lastSystemVersion);
         bool hasMaterialBuffer = chunk.HasBuffer<MeshMaterialBinding>();
         bool materialChunkChanged =
             hasMaterialBuffer &&
-            chunk.HasBufferChangedSinceLastSystemVersion<MeshMaterialBinding>();
+            chunk.BufferChangedSince<MeshMaterialBinding>(lastSystemVersion);
         if (!meshChunkChanged && !materialChunkChanged)
             return false;
 
@@ -193,10 +211,10 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
         {
             bool meshChanged =
                 meshChunkChanged &&
-                chunk.RowChangedSinceLastSystemVersion<MeshInstance>(row);
+                chunk.RowChangedSince<MeshInstance>(row, lastSystemVersion);
             bool materialsChanged =
                 materialChunkChanged &&
-                chunk.RowBufferChangedSinceLastSystemVersion<MeshMaterialBinding>(row);
+                chunk.RowBufferChangedSince<MeshMaterialBinding>(row, lastSystemVersion);
             if (meshChanged || materialsChanged)
             {
                 int materialOffset = _materials.Count;

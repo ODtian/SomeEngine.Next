@@ -3,12 +3,13 @@ using SomeEngine.Assets.Schema;
 using SomeEngine.Core.ECS.Components;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
+using SomeEngine.ECS.Systems;
 using SomeEngine.Render.Components;
 
 namespace SomeEngine.Render.Systems;
 
 /// <summary>Extracts all light variants and their optional cookie semantics.</summary>
-public sealed class LightRenderExtractor : IRenderExtractionSystem
+public sealed partial class LightRenderExtractor : IRenderExtractionSystem
 {
     private readonly List<DirectionalSnapshot> _directional = [];
     private readonly List<PointSnapshot> _points = [];
@@ -43,7 +44,9 @@ public sealed class LightRenderExtractor : IRenderExtractionSystem
         _cookieSources.Clear();
     }
 
-    public void Collect(QueryChunkView chunk)
+    public void Collect(QueryChunkView chunk) => Collect(ReadOnlyQueryPacketJobs.Borrow(chunk));
+
+    private void Collect(ReadOnlyQueryPacket chunk)
     {
         ReadOnlySpan<Entity> entities = chunk.Entities;
         bool hasDirectional = chunk.TryRead<DirectionalLight>(
@@ -95,7 +98,10 @@ public sealed class LightRenderExtractor : IRenderExtractionSystem
         }
     }
 
-    public bool CollectChanges(QueryChunkView chunk, RenderExtractionContext context)
+    public bool CollectChanges(QueryChunkView chunk, RenderExtractionContext context) =>
+        CollectChanges(ReadOnlyQueryPacketJobs.Borrow(chunk), chunk.LastSystemVersion);
+
+    private bool CollectChanges(ReadOnlyQueryPacket chunk, uint lastSystemVersion)
     {
         bool hasDirectional = chunk.TryRead<DirectionalLight>(
             out ReadOnlySpan<DirectionalLight> directional);
@@ -104,16 +110,16 @@ public sealed class LightRenderExtractor : IRenderExtractionSystem
         bool hasCookies = chunk.TryRead<LightCookie>(out ReadOnlySpan<LightCookie> cookies);
         bool directionalChunkChanged =
             hasDirectional &&
-            chunk.HasChangedSinceLastSystemVersion<DirectionalLight>();
+            chunk.ChangedSince<DirectionalLight>(lastSystemVersion);
         bool pointChunkChanged =
             hasPoints &&
-            chunk.HasChangedSinceLastSystemVersion<PointLight>();
+            chunk.ChangedSince<PointLight>(lastSystemVersion);
         bool spotChunkChanged =
             hasSpots &&
-            chunk.HasChangedSinceLastSystemVersion<SpotLight>();
+            chunk.ChangedSince<SpotLight>(lastSystemVersion);
         bool cookieChunkChanged =
             hasCookies &&
-            chunk.HasChangedSinceLastSystemVersion<LightCookie>();
+            chunk.ChangedSince<LightCookie>(lastSystemVersion);
         if (!directionalChunkChanged &&
             !pointChunkChanged &&
             !spotChunkChanged &&
@@ -129,16 +135,16 @@ public sealed class LightRenderExtractor : IRenderExtractionSystem
             Entity source = entities[row];
             bool directionalChanged =
                 directionalChunkChanged &&
-                chunk.RowChangedSinceLastSystemVersion<DirectionalLight>(row);
+                chunk.RowChangedSince<DirectionalLight>(row, lastSystemVersion);
             bool pointChanged =
                 pointChunkChanged &&
-                chunk.RowChangedSinceLastSystemVersion<PointLight>(row);
+                chunk.RowChangedSince<PointLight>(row, lastSystemVersion);
             bool spotChanged =
                 spotChunkChanged &&
-                chunk.RowChangedSinceLastSystemVersion<SpotLight>(row);
+                chunk.RowChangedSince<SpotLight>(row, lastSystemVersion);
             bool cookieChanged =
                 cookieChunkChanged &&
-                chunk.RowChangedSinceLastSystemVersion<LightCookie>(row);
+                chunk.RowChangedSince<LightCookie>(row, lastSystemVersion);
 
             if (directionalChanged)
             {

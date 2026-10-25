@@ -127,6 +127,17 @@ public static partial class JobSystem
         return Current.Schedule(job, accesses, options, dependency);
     }
 
+    /// <summary>Executes ranges on the current scheduler and caller, returning after every participant exits.</summary>
+    public static void ExecuteParallel<T>(in T job, int length, int batchSize = 1,
+        JobScheduleOptions options = default) where T : struct, IJobParallelFor =>
+        Current.ExecuteParallel(job, length, batchSize, options);
+
+    /// <summary>Holds the declared accesses through synchronous range execution on the current scheduler.</summary>
+    public static void ExecuteParallel<T>(in T job, int length, int batchSize,
+        ReadOnlySpan<JobResourceAccess> accesses, JobScheduleOptions options = default)
+        where T : struct, IJobParallelFor =>
+        Current.ExecuteParallel(job, length, batchSize, accesses, options);
+
     public static JobHandle ScheduleParallel<T>(
         in T job,
         int length,

@@ -4,6 +4,7 @@ using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hierarchy;
 using SomeEngine.ECS.Queries;
+using SomeEngine.ECS.Systems;
 using SomeEngine.Layout;
 using SomeEngine.Render.Systems;
 using SomeEngine.Typography;
@@ -14,10 +15,9 @@ using System.Numerics;
 namespace SomeEngine.Elements.Render;
 
 /// <summary>Extracts shaped glyphs and atlas pixels through the shared render update boundary.</summary>
-public sealed class GlyphRenderExtractor(Entity atlasSource) : IRenderExtractionSystem
+public sealed partial class GlyphRenderExtractor(Entity atlasSource) : IRenderExtractionSystem
 {
-    private readonly HashSet<Entity> _changedTreeNodes = [];
-    private readonly HashSet<Entity> _changedTextNodes = [];
+    private readonly GlyphChanges _changes = new();
     private readonly HashSet<Entity> _canvasEntities = [];
     private readonly Dictionary<Entity, List<GlyphInstance>> _canvasGlyphs = [];
     private readonly Dictionary<Entity, Dictionary<Entity, List<GlyphInstance>>> _textGlyphs = [];
@@ -48,8 +48,7 @@ public sealed class GlyphRenderExtractor(Entity atlasSource) : IRenderExtraction
 
     public void Reset()
     {
-        _changedTreeNodes.Clear();
-        _changedTextNodes.Clear();
+        _changes.Reset();
         _canvasGlyphs.Clear();
         _textGlyphs.Clear();
         _atlasChanged = false;
@@ -58,45 +57,14 @@ public sealed class GlyphRenderExtractor(Entity atlasSource) : IRenderExtraction
 
     public void Collect(QueryChunkView chunk)
     {
-        if (chunk.Has<Canvas>())
-            foreach (Entity canvas in chunk.Entities) _canvasEntities.Add(canvas);
-        if (chunk.Has<Canvas>() || chunk.Has<ShapedText>() || chunk.Has<LayoutRect>() ||
-            chunk.Has<Parent<ElementTree>>() || chunk.Has<Children<ElementTree>>())
-            foreach (Entity entity in chunk.Entities) _changedTreeNodes.Add(entity);
+        _changes.Collect(ReadOnlyQueryPacketJobs.Borrow(chunk), chunk.LastSystemVersion, fullCollection: true);
+        _canvasEntities.UnionWith(_changes.Canvases);
     }
 
     public bool CollectChanges(QueryChunkView chunk, RenderExtractionContext context)
     {
-        if (chunk.Has<Canvas>())
-            foreach (Entity canvas in chunk.Entities) _canvasEntities.Add(canvas);
-        bool text = chunk.Has<ShapedText>() && chunk.Has<LayoutRect>();
-        bool shapeChanged = text && chunk.HasChangedSinceLastSystemVersion<ShapedText>();
-        bool rectChanged = text && chunk.HasChangedSinceLastSystemVersion<LayoutRect>();
-        bool boxChanged = text && chunk.Has<Box>() && chunk.HasChangedSinceLastSystemVersion<Box>();
-        bool transformChanged = text && chunk.Has<ElementTransform>() &&
-            chunk.HasChangedSinceLastSystemVersion<ElementTransform>();
-        bool offsetChanged = text && chunk.Has<PresentationOffset>() &&
-            chunk.HasChangedSinceLastSystemVersion<PresentationOffset>();
-        bool viewportChanged = chunk.Has<ScrollOffset>() && chunk.Has<LayoutRect>() &&
-            chunk.HasChangedSinceLastSystemVersion<LayoutRect>();
-        bool canvasChanged = chunk.Has<Canvas>() && chunk.HasChangedSinceLastSystemVersion<Canvas>();
-        bool parentChanged = chunk.Has<Parent<ElementTree>>() && chunk.HasChangedSinceLastSystemVersion<Parent<ElementTree>>();
-        bool childrenChanged = chunk.Has<Children<ElementTree>>() && chunk.HasChangedSinceLastSystemVersion<Children<ElementTree>>();
-        for (int row = 0; row < chunk.Count; row++)
-        {
-            Entity node = chunk.Entities[row];
-            if ((canvasChanged && chunk.RowChangedSinceLastSystemVersion<Canvas>(row)) ||
-                (viewportChanged && chunk.RowChangedSinceLastSystemVersion<LayoutRect>(row)) ||
-                (parentChanged && chunk.RowChangedSinceLastSystemVersion<Parent<ElementTree>>(row)) ||
-                (childrenChanged && chunk.RowChangedSinceLastSystemVersion<Children<ElementTree>>(row)))
-                _changedTreeNodes.Add(node);
-            if ((shapeChanged && chunk.RowChangedSinceLastSystemVersion<ShapedText>(row)) ||
-                (rectChanged && chunk.RowChangedSinceLastSystemVersion<LayoutRect>(row)) ||
-                (boxChanged && chunk.RowChangedSinceLastSystemVersion<Box>(row)) ||
-                (transformChanged && chunk.RowChangedSinceLastSystemVersion<ElementTransform>(row)) ||
-                (offsetChanged && chunk.RowChangedSinceLastSystemVersion<PresentationOffset>(row)))
-                _changedTextNodes.Add(node);
-        }
+        _changes.Collect(ReadOnlyQueryPacketJobs.Borrow(chunk), chunk.LastSystemVersion, fullCollection: false);
+        _canvasEntities.UnionWith(_changes.Canvases);
         return false;
     }
 
@@ -109,14 +77,14 @@ public sealed class GlyphRenderExtractor(Entity atlasSource) : IRenderExtraction
         bool atlasReplaced = !ReferenceEquals(_atlas, atlas);
         _atlas = atlas;
         _canvasEntities.RemoveWhere(canvas => !sourceWorld.IsAlive(canvas) || !sourceWorld.Has<Canvas>(canvas));
-        if (atlasReplaced) _changedTreeNodes.UnionWith(_canvasEntities);
-        foreach (Entity node in _changedTreeNodes)
+        if (atlasReplaced) _changes.TreeNodes.UnionWith(_canvasEntities);
+        foreach (Entity node in _changes.TreeNodes)
         {
             Entity canvas = CanvasTree.FindCanvas(sourceWorld, node);
             if (canvas != Entity.Null && !_canvasGlyphs.ContainsKey(canvas))
                 _canvasGlyphs.Add(canvas, CollectCanvas(sourceWorld, canvas));
         }
-        foreach (Entity node in _changedTextNodes)
+        foreach (Entity node in _changes.TextNodes)
         {
             Entity canvas = CanvasTree.FindCanvas(sourceWorld, node);
             if (canvas == Entity.Null || _canvasGlyphs.ContainsKey(canvas)) continue;
