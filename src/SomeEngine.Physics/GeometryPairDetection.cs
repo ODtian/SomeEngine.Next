@@ -4,6 +4,14 @@ namespace SomeEngine.Physics;
 
 public static class CollisionGeometry<TFirst, TSecond> where TFirst : struct where TSecond : struct
 {
+    public static GeometryPairPrediction<TFirst, TSecond, TFirstMotion, TSecondMotion, TKernel, TOutput>
+        Predict<TFirstMotion, TSecondMotion, TKernel, TOutput>(TFirstMotion firstMotion, TSecondMotion secondMotion,
+            TKernel kernel, TOutput output, float contactDistance)
+        where TFirstMotion : struct, ICollisionGeometryMotion<TFirst>
+        where TSecondMotion : struct, ICollisionGeometryMotion<TSecond>
+        where TKernel : struct, ICollisionNarrowPhase<TFirst, TSecond>
+        where TOutput : struct, ICollisionContactOutput => new(firstMotion, secondMotion, kernel, output, contactDistance);
+
     public static ReverseCollision<TFirst, TSecond, TKernel> Reverse<TKernel>(TKernel kernel)
         where TKernel : struct, ICollisionNarrowPhase<TFirst, TSecond> => new(kernel);
 
