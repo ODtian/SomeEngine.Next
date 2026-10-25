@@ -58,6 +58,7 @@ public struct GeometryPairDetection<TFirst, TSecond, TFirstReader, TSecondReader
                 PointIndex = index,
                 FirstLocalPoint = GeometrySpace.ToLocal(in firstPose, point.FirstPoint),
                 SecondLocalPoint = GeometrySpace.ToLocal(in secondPose, point.SecondPoint),
+                WorldPoint = (point.FirstPoint + point.SecondPoint) * 0.5f,
                 Normal = point.Normal,
                 Separation = point.Separation,
                 FirstBodyCount = firstBodies.Length,

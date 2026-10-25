@@ -27,10 +27,10 @@ public readonly struct XpbdJointMotorProjection : IXpbdConstraint<JointConstrain
             JointMotorRow motorRow = JointMotorMath.GetRow(in constraint, row, bodies, in context, dof);
             ref readonly BodyPose pose = ref bodies.ReadPose(endpoints.Target);
             float alpha = 1 / (motorRow.Stiffness * duration * duration);
-            float weight = XpbdBodyMath.GetWeight(in mass, in pose,
+            float weight = BodyConstraintMath.GetWeight(in mass, in pose,
                 motorRow.Derivative.TargetLinear, motorRow.Derivative.TargetAngular);
             if (react && motor.Space == JointMotorSpace.Source)
-                weight += XpbdBodyMath.GetWeight(in sourceMass, in bodies.ReadPose(endpoints.Source),
+                weight += BodyConstraintMath.GetWeight(in sourceMass, in bodies.ReadPose(endpoints.Source),
                     motorRow.Derivative.SourceLinear, motorRow.Derivative.SourceAngular);
             float multiplier = dof < 3 ? state.LinearMultiplier[axis] : state.AngularMultiplier[axis];
             float change = (-motorRow.Error - alpha * multiplier) / (weight + alpha);
@@ -39,10 +39,10 @@ public readonly struct XpbdJointMotorProjection : IXpbdConstraint<JointConstrain
             change = next - multiplier;
             if (dof < 3) state.LinearMultiplier[axis] = next;
             else state.AngularMultiplier[axis] = next;
-            XpbdBodyMath.ApplyCorrection(bodies, endpoints.Target, in mass,
+            BodyConstraintMath.ApplyCorrection(bodies, endpoints.Target, in mass,
                 motorRow.Derivative.TargetLinear, motorRow.Derivative.TargetAngular, change);
             if (react)
-                XpbdBodyMath.ApplyCorrection(bodies, endpoints.Source, in sourceMass,
+                BodyConstraintMath.ApplyCorrection(bodies, endpoints.Source, in sourceMass,
                     motorRow.Derivative.SourceLinear, motorRow.Derivative.SourceAngular, change);
         }
     }

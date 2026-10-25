@@ -10,8 +10,8 @@ namespace SomeEngine.Physics;
 /// <summary>Static numerical adaptation of a concrete entity constraint and its declared components.</summary>
 public interface IAvbdConstraint<TConstraint> where TConstraint : struct, IComponent
 {
-    static abstract int GetBodyCount(in TConstraint constraint, scoped QueryRow row);
-    static abstract Entity GetBody(in TConstraint constraint, scoped QueryRow row, int index);
+    static abstract int GetBodyCount(in TConstraint constraint, scoped QueryRow row, in PhysicsStepContext context);
+    static abstract Entity GetBody(in TConstraint constraint, scoped QueryRow row, int index, in PhysicsStepContext context);
     static abstract void Initialize(in TConstraint constraint, scoped QueryRow row, scoped PhysicsBodies bodies,
         in PhysicsStepContext context, float retention);
     static abstract void AccumulateBodyEquation(in TConstraint constraint, scoped QueryRow row, Entity body,
@@ -79,8 +79,8 @@ public readonly struct AvbdConstraints<TConstraint, TMath> : IAvbdConstraints
             {
                 ref readonly TConstraint constraint = ref row.ReadRef<TConstraint>();
                 TMath.Initialize(in constraint, row, _bodies, in _context, retention);
-                for (int index = 0; index < TMath.GetBodyCount(in constraint, row); index++)
-                    byBody.Add(TMath.GetBody(in constraint, row, index), row.Entity);
+                for (int index = 0; index < TMath.GetBodyCount(in constraint, row, in _context); index++)
+                    byBody.Add(TMath.GetBody(in constraint, row, index, in _context), row.Entity);
             }
         }
     }
@@ -188,7 +188,7 @@ internal sealed class AvbdBodyConstraints
             entities = _unused.TryPop(out List<Entity>? reused) ? reused : [];
             _byBody.Add(body, entities);
         }
-        entities.Add(constraint);
+        if (entities.Count == 0 || entities[^1] != constraint) entities.Add(constraint);
     }
 
     internal ReadOnlySpan<Entity> Read(Entity body) =>
