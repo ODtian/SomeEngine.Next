@@ -18,6 +18,7 @@
     <ProjectReference Include="../../src/SomeEngine.Graphics.Validation/SomeEngine.Graphics.Validation.csproj" />
     <ProjectReference Include="../../src/SomeEngine.Graphics.Direct3D12.Validation/SomeEngine.Graphics.Direct3D12.Validation.csproj" />
     <ProjectReference Include="../../src/SomeEngine.Assets/SomeEngine.Assets.csproj" />
+    <ProjectReference Include="../../src/SomeEngine.Physics/SomeEngine.Physics.csproj" />
     <ProjectReference Include="../../src/SomeEngine.Assets.Importers/SomeEngine.Assets.Importers.csproj" />
     <ProjectReference Include="../../src/SomeEngine.RenderGraph/SomeEngine.RenderGraph.csproj" />
     <ProjectReference Include="../../src/SomeEngine.Generators/SomeEngine.Generators.csproj"

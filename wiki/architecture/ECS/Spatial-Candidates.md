@@ -97,3 +97,5 @@ public struct PairList(List<(Entity, Entity)> pairs) : IRelationOutput<(Entity, 
 真实三角形的最近命中、球形扫掠与支撑变换读取见 [场景表面查询](Scene-Surface-Queries.md)。
 
 候选分区到静态检测类型的 count、prefix、write 及用户检测入口见 [碰撞类型分桶](Collision-Pair-Bins.md)。
+
+均匀网格与分层网格的配置、单元维护、跨层枚举和关系入口见 [碰撞网格](Collision-Grids.md)。
