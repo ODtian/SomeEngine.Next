@@ -223,6 +223,37 @@ public sealed class SystemGroup<TContext> : IDisposable
     /// Completes work submitted by previous updates, including child tasks. Systems remain
     /// enabled and may run again. Use this at a data-visibility boundary, not after each system.
     /// </summary>
+    public async ValueTask CompleteAsync()
+    {
+        ThrowIfLifecycleCallbackReentry();
+        ThrowIfJobCallbackTeardown("completed");
+        lock (_gate)
+        {
+            WaitForLifecycleControlUnderGate();
+            ThrowIfDisposed();
+            Volatile.Write(ref _lifecycleControlState, LifecycleControlPending);
+        }
+
+        List<Exception>? failures = null;
+        try
+        {
+            // Callback submission has ended and lifecycle control keeps this set of
+            // systems unchanged while their existing roots reach scope completion.
+            foreach (SystemSlot slot in _slots)
+            {
+                if (!slot.Enabled) continue;
+                Exception[] errors = await slot.RequireJobLifetime().WaitCurrentRootsAsync().ConfigureAwait(false);
+                if (errors.Length != 0) (failures ??= []).AddRange(errors);
+            }
+        }
+        finally
+        {
+            CompleteLifecycleControl();
+        }
+        if (failures is not null) ThrowIfTeardownFailed(failures, "System work failed.");
+    }
+
+    /// <summary>Waits current system roots and their descendants at a data visibility boundary.</summary>
     public void Complete()
     {
         ThrowIfLifecycleCallbackReentry();
