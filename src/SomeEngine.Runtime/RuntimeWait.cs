@@ -31,14 +31,19 @@ internal static class RuntimeWait
     private static void WaitForTask(Task task, NativeWindow window, TimeSpan timeout)
     {
         if (task.IsCompleted) return;
-        var elapsed = Stopwatch.StartNew();
+        long started = Stopwatch.GetTimestamp();
+        TimeSpan spinDuration = TimeSpan.FromTicks(timeout == Timeout.InfiniteTimeSpan
+            ? TimeSpan.TicksPerMillisecond : Math.Min(timeout.Ticks, TimeSpan.TicksPerMillisecond));
+        while (!task.IsCompleted && Stopwatch.GetElapsedTime(started) < spinDuration)
+            Thread.SpinWait(64);
+        if (task.IsCompleted) return;
         WaitHandle completion = ((IAsyncResult)task).AsyncWaitHandle;
         while (!task.IsCompleted)
         {
             _ = window.PumpMessages();
             if (task.IsCompleted) break;
             TimeSpan remaining = timeout == Timeout.InfiniteTimeSpan
-                ? Timeout.InfiniteTimeSpan : timeout - elapsed.Elapsed;
+                ? Timeout.InfiniteTimeSpan : timeout - Stopwatch.GetElapsedTime(started);
             if (timeout != Timeout.InfiniteTimeSpan && remaining <= TimeSpan.Zero)
                 throw new TimeoutException("The runtime operation did not complete before its timeout.");
             window.WaitForEvents(completion, remaining);
