@@ -466,12 +466,33 @@ public partial class BinaryDocument : IAsyncDisposable
         }
         else
         {
-            await DecodeBrotliIntoAsync(descriptor, destination, cancellationToken).ConfigureAwait(false);
+            BinaryChunkInput input = await ReadChunkInputAsync(descriptor, cancellationToken).ConfigureAwait(false);
+            input.DecodeInto(destination.Span, cancellationToken);
         }
 
         EnsureSourceGeneration();
-        VerifyHash(destination.Span, descriptor.ContentHash, $"decoded chunk 0x{descriptor.Key:X16}");
+        if (descriptor.Compression == ChunkCompression.None)
+            VerifyHash(destination.Span, descriptor.ContentHash, $"decoded chunk 0x{descriptor.Key:X16}");
         return destination;
+    }
+
+    /// <summary>Reads one chunk's encoded bytes for independent CPU decoding after the source read completes.</summary>
+    public async ValueTask<BinaryChunkInput> ReadChunkInputAsync(BinaryChunkRef chunk,
+        CancellationToken cancellationToken = default)
+    {
+        BinaryChunkEntry descriptor = await FindRequiredChunkAsync(chunk, cancellationToken).ConfigureAwait(false);
+        return await ReadChunkInputAsync(descriptor, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async ValueTask<BinaryChunkInput> ReadChunkInputAsync(BinaryChunkEntry descriptor,
+        CancellationToken cancellationToken)
+    {
+        _lifetime.ThrowIfDisposed(this);
+        EnsureSourceGeneration();
+        byte[] bytes = GC.AllocateUninitializedArray<byte>(checked((int)descriptor.StoredLength));
+        await _source.ReadExactlyAsync(descriptor.Offset, bytes, cancellationToken).ConfigureAwait(false);
+        EnsureSourceGeneration();
+        return new(descriptor, bytes);
     }
 
     /// <summary>Explicitly copies one chunk into independent writable memory, including from a resident source.</summary>
@@ -563,10 +584,14 @@ public partial class BinaryDocument : IAsyncDisposable
                 if (descriptor.Compression == ChunkCompression.None)
                     await _source.ReadExactlyAsync(descriptor.Offset, decoded, cancellationToken).ConfigureAwait(false);
                 else
-                    await DecodeBrotliIntoAsync(descriptor, decoded, cancellationToken).ConfigureAwait(false);
+                {
+                    BinaryChunkInput input = await ReadChunkInputAsync(descriptor, cancellationToken).ConfigureAwait(false);
+                    input.DecodeInto(decoded.Span, cancellationToken);
+                }
 
                 EnsureSourceGeneration();
-                VerifyHash(decoded.Span, descriptor.ContentHash, $"decoded chunk 0x{descriptor.Key:X16}");
+                if (descriptor.Compression == ChunkCompression.None)
+                    VerifyHash(decoded.Span, descriptor.ContentHash, $"decoded chunk 0x{descriptor.Key:X16}");
                 RangeLease decodedLease = RangeLease.Own(decodedOwner, decoded.Length);
                 decodedOwner = null;
                 return new ChunkLease(descriptor, decodedLease, _lifetime);
@@ -591,46 +616,6 @@ public partial class BinaryDocument : IAsyncDisposable
         {
             stored.Dispose();
             throw;
-        }
-    }
-
-    private async ValueTask DecodeBrotliIntoAsync(
-        BinaryChunkEntry descriptor,
-        Memory<byte> destination,
-        CancellationToken cancellationToken)
-    {
-        await using var stored = new RangeSourceReadStream(
-            _source,
-            descriptor.Offset,
-            descriptor.StoredLength);
-        using var decoder = new BrotliStream(stored, CompressionMode.Decompress, leaveOpen: true);
-        try
-        {
-            int written = 0;
-            while (written < destination.Length)
-            {
-                int read = await decoder.ReadAsync(destination[written..], cancellationToken).ConfigureAwait(false);
-                if (read == 0)
-                {
-                    throw new InvalidDataException(
-                        $"Chunk 0x{descriptor.Key:X16} Brotli payload ended before its declared decoded length " +
-                        $"{descriptor.DecodedLength}.");
-                }
-                written = checked(written + read);
-            }
-
-            byte[] overflowProbe = new byte[1];
-            if (await decoder.ReadAsync(overflowProbe, cancellationToken).ConfigureAwait(false) != 0)
-            {
-                throw new InvalidDataException(
-                    $"Chunk 0x{descriptor.Key:X16} Brotli payload expands beyond its declared length.");
-            }
-        }
-        catch (InvalidOperationException exception)
-        {
-            throw new InvalidDataException(
-                $"Chunk 0x{descriptor.Key:X16} contains invalid Brotli data.",
-                exception);
         }
     }
 

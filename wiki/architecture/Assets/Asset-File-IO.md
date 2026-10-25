@@ -36,7 +36,9 @@
 
 文件 chunk 与业务单元的关系由具体 Block 描述。Texture tile 使用独立 chunk；Cluster 两份 Block 的持久读取以各自的元数据边界校验，渲染页在取得 Block 后由几何和不透明属性字节组合。需要独立读取的业务单元必须有可独立取得、解码和校验的存储边界。
 
-`AssetFile.ReadBytesAsync` 直接将文档数据读入最终实际长度数组。它不保留结果缓存；同一内容定义的复用由 Block 的数据节点提供，见 [共享规则](Asset-Sharing-and-Writes.md)。范围读取继续使用 `IRangeSource`，不强迫为读一页几何取得整个 payload。
+`AssetFile.ReadBytesAsync` 在首次等待前捕获当前 Scheduler，并保持文件访问到整个读取完成。未压缩 chunk 直接读入最终实际长度数组；Brotli chunk 先取得独立编码输入，再通过该执行器的共享资产解码类别提交低优先级 Job，直接解码到最终数组。Job 完成结果包含长度与内容校验，完成后才向调用方交付数组。该方法的输出复用和共同等待由 [资产字节缓存](Asset-Byte-Cache.md) 持有。范围读取继续使用 `IRangeSource`，按具体业务范围取得数据。
+
+`BinaryDocument.ReadChunkInputAsync(BinaryChunkRef, token)` 根据来源中的 chunk 描述读取实际编码长度，并在读取前后核对来源代际。返回的 `BinaryChunkInput` 保存这份编码字节及描述；`DecodeInto(Span<byte>, token)` 直接填入调用方最终存储，核对解码长度与内容。输入可以在文档关闭后继续解码，计算过程只读取这份输入。资产调用方决定 Job 调度及输入使用期，序列化层提供读取与纯计算能力。直接文档读取的 `CopyChunkAsync` 和压缩 `AcquireChunkAsync` 共用此解码算法；不可变未压缩来源上的 `AcquireChunkAsync` 保持原借用分支。公共入口与验证见 `BinaryDocumentOwnershipTests.EncodedChunkCanDecodeAfterItsDocumentCloses` 和 `AssetDataSharingTests` 的压缩像素检查。
 
 文件及映射的借用视图只在来源约定的操作范围内使用，不能作为普通使用对象的字节。WorldBlock 使用既有 ECS 编码器和普通 MemoryStream，取得完整编码数据后恢复独立 World。
 

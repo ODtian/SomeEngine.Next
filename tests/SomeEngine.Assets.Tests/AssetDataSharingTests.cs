@@ -17,6 +17,88 @@ public sealed class AssetDataSharingTests : IDisposable
     public void Dispose() => Directory.Delete(_directory, recursive: true);
 
     [Fact]
+    public async Task CompressedPixelsRemainSharedWhenOneWaiterCancelsAndTheAssetCloses()
+    {
+        AssetEntry entry = await SaveCompressedTextureAsync("compressed", 9);
+        var storage = await CreateStorageAsync(entry);
+        await using var loader = new AssetLoader(storage);
+        using TextureAsset asset = await TextureAsset.OpenAsync(loader, new(entry.AssetGuid));
+        TextureBlock block = asset.GetBlock<TextureBlock>();
+        storage.Source.Hold = true;
+        using var cancellation = new CancellationTokenSource();
+        Task<Texture> first = block.CreateAsync(cancellationToken: cancellation.Token).AsTask();
+        await storage.Source.Started.Task;
+        Task<Texture> second = block.CreateAsync().AsTask();
+        try
+        {
+            cancellation.Cancel();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => first);
+            await asset.DisposeAsync();
+        }
+        finally { storage.Source.Continue.TrySetResult(); }
+        Texture texture = await second;
+        Assert.True(texture.TryGetTile(texture.MipTiles[0].ChunkKey, out ReadOnlyMemory<byte> bytes));
+        Assert.Equal(new byte[] { 9, 9, 9, 9 }, bytes.ToArray());
+    }
+
+    [Fact]
+    public async Task InvalidCompressedPixelsCompleteBothSharedWaitersWithTheDecodeFailure()
+    {
+        AssetEntry entry = await SaveCompressedTextureAsync("invalid-compressed", 3);
+        long offset;
+        await using (BinaryDocument document = await BinaryDocument.OpenAsync(FileRangeSource.Open(entry.Path),
+            TextureAsset.WireType, ownsSource: true))
+        {
+            using TextureAsset asset = await TextureAsset.OpenAsync(entry.Path);
+            TextureBlock block = asset.GetBlock<TextureBlock>();
+            ulong key = asset.BlockDescriptions.Single().GetStorageKey(block.MipTiles[0].ChunkKey);
+            offset = (await document.FindChunkAsync(key))!.Value.Offset;
+        }
+        using (FileStream file = File.Open(entry.Path, FileMode.Open, FileAccess.Write))
+        {
+            file.Position = offset;
+            file.WriteByte(0xff);
+        }
+        var storage = await CreateStorageAsync(entry);
+        await using var loader = new AssetLoader(storage);
+        using TextureAsset failed = await TextureAsset.OpenAsync(loader, new(entry.AssetGuid));
+        TextureBlock pixels = failed.GetBlock<TextureBlock>();
+        storage.Source.Hold = true;
+        Task<Texture> first = pixels.CreateAsync().AsTask();
+        await storage.Source.Started.Task;
+        Task<Texture> second = pixels.CreateAsync().AsTask();
+        storage.Source.Continue.TrySetResult();
+        await Assert.ThrowsAsync<InvalidDataException>(() => first);
+        await Assert.ThrowsAsync<InvalidDataException>(() => second);
+    }
+
+    private async Task<AssetEntry> SaveCompressedTextureAsync(string name, byte value)
+    {
+        AssetEntry entry = await SaveTextureAsync(name, value);
+        using TextureAsset asset = await TextureAsset.OpenAsync(entry.Path);
+        TextureBlock block = asset.GetBlock<TextureBlock>();
+        ulong pixelKey = asset.BlockDescriptions.Single().GetStorageKey(block.MipTiles[0].ChunkKey);
+        await using BinaryDocument document = await BinaryDocument.OpenAsync(FileRangeSource.Open(entry.Path),
+            TextureAsset.WireType, ownsSource: true);
+        var header = new AssetHeader();
+        document.ReadRootInto(header);
+        BinaryDocumentWriter writer = BinaryDocumentWriter.Create(header);
+        foreach (BinaryWireTypeDescriptor type in document.TypeCatalog) writer.AddContract(type);
+        await foreach (BinaryChunkEntry chunk in document.EnumerateChunksAsync())
+        {
+            if (chunk.Key == pixelKey)
+                writer.AddChunk(chunk.Key, await document.CopyChunkAsync(new(chunk.Key, chunk.DecodedLength)),
+                    chunk.TypeFingerprint, ChunkCompression.Brotli, chunk.Alignment, chunk.Ordinal);
+            else
+                await writer.AddChunkAsync(chunk.Key, document);
+        }
+        string path = Path.Combine(_directory, name + "-brotli.texture.asset");
+        await using FileStream destination = File.Create(path);
+        await writer.WriteAsync(destination, generation: entry.Version);
+        return entry with { Path = path };
+    }
+
+    [Fact]
     public async Task RepeatedCreationsAndBlockBranchesShareTheFinalArray()
     {
         AssetEntry entry = await SaveTextureAsync("shared", 7);

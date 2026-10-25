@@ -64,7 +64,7 @@ internal sealed class PhysicsPoseSamples
     private readonly Matrix4x4[] _animationModels, _physicsModels, _inherited;
     private readonly BonePose[] _parents;
 
-    internal PhysicsPoseSamples(PhysicsPoseMap map, BoneMask mask, SkeletonInstance skeleton)
+    internal PhysicsPoseSamples(Scheduler scheduler, PhysicsPoseMap map, BoneMask mask, SkeletonInstance skeleton)
     {
         Map = map;
         Mask = mask;
@@ -78,10 +78,10 @@ internal sealed class PhysicsPoseSamples
         for (int bone = 0; bone < Source.Length; bone++)
             if (map.Skeleton.InheritedParents[bone] >= 0)
                 _parents[bone] = skeleton.ModelPose.GetBone(map.Skeleton.InheritedParents[bone]);
-        Accesses = [JobResourceAccess.Read(Source), JobResourceAccess.Read(BodyTransforms), JobResourceAccess.Write(Output),
-            JobResourceAccess.Write(_animationModels), JobResourceAccess.Write(_physicsModels), JobResourceAccess.Read(_inherited),
-            JobResourceAccess.Read(JobSystem.Default.GetResourceToken(map)),
-            JobResourceAccess.Read(JobSystem.Default.GetResourceToken(mask))];
+        Accesses = [JobResourceAccess.Read(scheduler, Source), JobResourceAccess.Read(scheduler, BodyTransforms), JobResourceAccess.Write(scheduler, Output),
+            JobResourceAccess.Write(scheduler, _animationModels), JobResourceAccess.Write(scheduler, _physicsModels), JobResourceAccess.Read(scheduler, _inherited),
+            JobResourceAccess.Read(scheduler.GetResourceToken(map)),
+            JobResourceAccess.Read(scheduler.GetResourceToken(mask))];
     }
 
     internal void ReadParents()
@@ -136,7 +136,7 @@ public readonly struct PhysicsPoseLeaf : IAnimationLeaf<PhysicsPoseParameters>
             Source = PoseAnimation.Resolve(world, target, parameters.Source),
             Output = PoseAnimation.Resolve(world, target, parameters.Output),
             ActorTransform = Matrix4x4.Identity,
-            Samples = new(parameters.Map, parameters.Mask, world.Read<PoseTarget>(target).Skeleton),
+            Samples = new(PoseAnimation.GetScheduler(world), parameters.Map, parameters.Mask, world.Read<PoseTarget>(target).Skeleton),
         };
         short[] bones = parameters.Map.Bodies.ToArray().Select(static body => (short)body.Bone).ToArray();
         instance.Node = PoseAnimation.RegisterNode(world, animation, instance.Output, [instance.Source], in placement, bones);

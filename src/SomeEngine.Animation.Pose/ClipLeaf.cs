@@ -53,7 +53,7 @@ public readonly struct ClipLeaf : IAnimationLeaf<ClipParameters>
             Output = PoseAnimation.Resolve(world, target, definitions.Parameters[index].Output),
             Samples = new BoneTransform[definitions.Parameters[index].Clip.Skeleton.BoneCount],
         };
-        instance.SampleAccess = JobResourceAccess.Write(instance.Samples);
+        instance.SampleAccess = JobResourceAccess.Write(PoseAnimation.GetScheduler(world), instance.Samples);
         world.ExecuteBufferWrite<ClipInstance, ClipInstance>(animation, ref instance, static (instances, ref instance) =>
         {
             if (instances.Count > 0 && instances.Read(0).Placement.Starts != instance.Placement.Starts) instances.Clear();
