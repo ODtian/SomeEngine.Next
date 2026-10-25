@@ -85,7 +85,7 @@ public struct PbikSystem : ISystem<PoseNodeContext>
         body.Targets.CopyTo(body.Samples.Targets, 0);
         body.Samples.ReadParents();
         body.Sampled = true;
-        jobs.Add(JobSystem.Schedule(new SolveBody(body.Samples), body.Samples.Accesses));
+        jobs.Add(PoseAnimation.GetScheduler(world).Schedule(new SolveBody(body.Samples), body.Samples.Accesses));
     }
 
     public void OnDestroy(ref PoseNodeContext context) => context.Frame.World.ReleaseQuery(_bodies);

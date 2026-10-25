@@ -40,7 +40,7 @@ public readonly struct EwbikLeaf : IAnimationLeaf<EwbikParameters>
             Source = PoseAnimation.Resolve(world, target, parameters.Source),
             Output = PoseAnimation.Resolve(world, target, parameters.Output),
             Targets = new EwbikTarget[parameters.Rig.Effectors.Length],
-            Samples = new(parameters.Rig, skeleton), Settings = parameters.Rig.Settings,
+            Samples = new(PoseAnimation.GetScheduler(world), parameters.Rig, skeleton), Settings = parameters.Rig.Settings,
             PreferenceWeights = new float[parameters.Rig.Constraints.Length],
         };
         for (int constraint = 0; constraint < instance.PreferenceWeights.Length; constraint++)

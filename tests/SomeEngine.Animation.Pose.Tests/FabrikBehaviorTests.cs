@@ -2,6 +2,7 @@ using System.Numerics;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Systems;
+using SomeEngine.Job;
 
 namespace SomeEngine.Animation.Pose.Tests;
 
@@ -10,7 +11,8 @@ public sealed class FabrikBehaviorTests
     [Fact]
     public void SharedFabrikGraphReachesEachTargetWhileKeepingBoneLengthsAndTheSelectedJointLimit()
     {
-        using var world = new World();
+        using var scheduler = new Scheduler(new() { WorkerCount = 2 });
+        using var world = WorldJobs.CreateWorld(scheduler: scheduler);
         var skeleton = new Skeleton([-1, 0, 1, 2, 3, 0],
         [
             new() { Translation = new(3, 4, 0), Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, MathF.PI / 2), Scale = Vector3.One },
