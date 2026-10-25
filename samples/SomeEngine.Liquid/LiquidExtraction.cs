@@ -3,6 +3,7 @@ using System.Diagnostics;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
+using SomeEngine.ECS.Systems;
 using SomeEngine.Render.Systems;
 
 namespace SomeEngine.Liquid;
@@ -64,11 +65,15 @@ public sealed class LiquidFrame
     }
 }
 
-public sealed class LiquidExtraction : IRenderExtractionSystem
+public sealed class LiquidExtraction : IRenderExtractionRangeSystem
 {
-    private LiquidFrame _collected = new(), _displayed = new();
-    private Entity _source;
-    private bool _hasLiquid;
+    private readonly Dictionary<Entity, LiquidFrames> _frames = [];
+    private readonly List<LiquidChange> _changes = [];
+    private readonly List<Entity> _removed = [];
+    private readonly LiquidCollector _direct;
+
+    public LiquidExtraction() => _direct = new(this);
+
     public Entity RenderEntity { get; private set; }
     public double CopyMilliseconds { get; private set; }
     public bool CanApplyChangesDirect => true;
@@ -78,34 +83,120 @@ public sealed class LiquidExtraction : IRenderExtractionSystem
         query.ReadOptional<LiquidBody>();
         query.Write<LiquidRenderData>();
     }
-    public void Reset() => _hasLiquid = false;
+    public void Reset()
+    {
+        _changes.Clear();
+        _removed.Clear();
+        _direct.Reset();
+        CopyMilliseconds = 0;
+    }
+
     public void Collect(QueryChunkView chunk)
     {
-        if (!chunk.TryRead<LiquidBody>(out ReadOnlySpan<LiquidBody> liquids)) return;
-        _source = chunk.Entities[0];
-        long started = Stopwatch.GetTimestamp();
-        _collected.CopyFrom(liquids[0].Flow, liquids[0].View);
-        CopyMilliseconds = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
-        _hasLiquid = true;
+        _direct.Collect(ReadOnlyQueryPacketJobs.Borrow(chunk), 0, true);
+        MergeValues(_direct);
+        _direct.Reset();
     }
+
     public bool CollectChanges(QueryChunkView chunk, RenderExtractionContext context)
     {
         if (!chunk.TryRead<LiquidBody>(out _) || !chunk.HasChangedSinceLastSystemVersion<LiquidBody>()) return false;
-        Collect(chunk);
-        return true;
+        _direct.Collect(ReadOnlyQueryPacketJobs.Borrow(chunk), 0, true);
+        bool changed = MergeValues(_direct);
+        _direct.Reset();
+        return changed;
     }
+
+    public IRenderExtractionCollector CreateRangeCollector() => new LiquidCollector(this);
+
+    public bool MergeRangeCollector(IRenderExtractionCollector collector, RenderExtractionContext context) =>
+        MergeValues((LiquidCollector)collector);
+
+    private bool MergeValues(LiquidCollector values)
+    {
+        foreach (LiquidChange change in values.Changes)
+        {
+            _frames[change.Source] = change.Frames;
+            _changes.Add(change);
+        }
+        CopyMilliseconds += values.CopyMilliseconds;
+        return values.Changes.Count != 0;
+    }
+
+    public bool CompleteSourceCollection(World sourceWorld, bool fullCollection)
+    {
+        if (fullCollection)
+        {
+            foreach (Entity source in _frames.Keys)
+                if (!sourceWorld.IsAlive(source) || !sourceWorld.Has<LiquidBody>(source)) _removed.Add(source);
+            foreach (Entity source in _removed) _frames.Remove(source);
+        }
+        return _removed.Count != 0;
+    }
+
     public void Apply(RenderExtractionContext context)
     {
-        if (!_hasLiquid) return;
-        RenderEntity = context.RetainMirror(_source);
-        context.Upsert(RenderEntity, new LiquidRenderData(_collected));
-        (_displayed, _collected) = (_collected, _displayed);
+        foreach (LiquidChange change in _changes)
+        {
+            Entity entity = context.RetainMirror(change.Source);
+            context.Upsert(entity, new LiquidRenderData(change.Frames.Collected));
+            change.Frames.Exchange();
+        }
+        foreach (RenderMirror mirror in context.Mirrors)
+            if (!_frames.ContainsKey(mirror.Source)) context.RemoveIfExists<LiquidRenderData>(mirror.RenderEntity);
+        RenderEntity = _frames.Count == 0 ? Entity.Null : context.RequireMirror(_frames.Keys.First());
     }
+
     public void ApplyChanges(RenderExtractionContext context)
     {
-        context.UpdateExisting(RenderEntity, new LiquidRenderData(_collected));
-        (_displayed, _collected) = (_collected, _displayed);
+        foreach (LiquidChange change in _changes)
+        {
+            context.UpdateExisting(context.RequireMirror(change.Source), new LiquidRenderData(change.Frames.Collected));
+            change.Frames.Exchange();
+        }
     }
+
     public void ValidateChanges(RenderExtractionContext context) { }
-    public void Dispose() { }
+    public void Dispose()
+    {
+        Reset();
+        _frames.Clear();
+    }
+
+    private sealed class LiquidFrames
+    {
+        internal LiquidFrame Collected = new(), Displayed = new();
+        internal void Exchange() => (Displayed, Collected) = (Collected, Displayed);
+    }
+
+    private readonly record struct LiquidChange(Entity Source, LiquidFrames Frames);
+
+    private sealed class LiquidCollector(LiquidExtraction extraction) : IRenderExtractionCollector
+    {
+        internal readonly List<LiquidChange> Changes = [];
+        internal double CopyMilliseconds;
+
+        public void Collect(ReadOnlyQueryPacket packet, uint lastSystemVersion, bool fullCollection)
+        {
+            if (!packet.TryRead<LiquidBody>(out ReadOnlySpan<LiquidBody> liquids)) return;
+            long started = Stopwatch.GetTimestamp();
+            for (int row = 0; row < packet.Count; row++)
+            {
+                if (!fullCollection && !packet.RowChangedSince<LiquidBody>(row, lastSystemVersion)) continue;
+                Entity source = packet.Entities[row];
+                LiquidFrames frames = extraction._frames.TryGetValue(source, out LiquidFrames? current) ? current : new();
+                frames.Collected.CopyFrom(liquids[row].Flow, liquids[row].View);
+                Changes.Add(new(source, frames));
+            }
+            CopyMilliseconds += Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+        }
+
+        public void Reset()
+        {
+            Changes.Clear();
+            CopyMilliseconds = 0;
+        }
+
+        public void Dispose() => Reset();
+    }
 }
