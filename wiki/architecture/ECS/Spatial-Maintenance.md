@@ -8,14 +8,14 @@
 
 每次维护在作业实际执行时读取 `EntityTableChanges.Read()`，然后进入覆盖全部读取的 Access 回调和原参与集合回调：
 
-1. 按批次身份核对当前成员及几何组件。当前成员写入已有叶子或插入新叶子；离开集合及销毁的身份移出树。
+1. 按批次身份核对当前成员及几何组件，去重后按首次出现顺序记录变化。维护对象复制本次有效几何值到复用数组，在查询读取作用域内通过共享 Scheduler 的同步范围工作读取 Bounds，每项写入自己的结果。
 2. 用 `ChangedChunks(batch)` 合并成员变化和读取列的变更范围。`QueryChunkView.ReadRowChanges<T>()` 在 chunk 内绑定组件写入版本跨度与上次成功基线；`QueryRowChanges.HasChanged(row)` 读取原列中的行版本。几何先绑定一次，具体 `TFilter.ReadChanges<TGeometry,TExecution>` 在同一回调内提供闭合的摘要变化读取器。组合条件以具体类型组合读取器，几何与摘要读取同一种组件时共享几何变化事实。维护遍历原 `RowIndices` 并合并几何和摘要变化。
-3. 从受影响叶子或移除后的最低分支开始更新父链。每个节点先合并空间数据，再由具体 `TFilter.RefitSummary` 更新位摘要、键摘要。`SpatialAnd` 与 `SpatialExcept` 直接转发到保留的具体条件。
+3. Bounds 全部完成后，树持有者按记录顺序写入、插入和移除成员，并合并各次变化的祖先集合。维护对象按脏子节点数形成自底向上的层，同层范围工作分别合并空间数据；每层完成后，原查询回调由具体 `TFilter.RefitSummary` 更新位摘要、键摘要，再推进父层。`SpatialAnd` 与 `SpatialExcept` 直接转发到保留的具体条件。
 4. 回调成功后 Accept 该批次，并把读取范围的 CurrentSystemVersion 保存为下一次 LastSystemVersion。
 
 首个观察批次包含当前存活身份，因此首次维护同时填充具体摘要。后续查询的 Enumerate、Count、Any 读取已更新数组。原始组件由 World 持有，树持有拓扑，每个具体摘要持有自己的派生数组，维护对象持有观察窗口。
 
-实体创建、销毁、表迁移以及enable mask的实际变化都在原写入口进入同一 `EntityTableChanges` 身份批次。启用状态变化由 `Chunk.WriteEnabled` 返回已改变事实，组件写入口据此记录实体；组件值的行写版本继续表达原有值写入。维护按当前成员条件核对这些身份，因此Enabled和Disabled条件中的成员进入、离开沿同一 `Reconcile` 更新叶子。EntityStore持有批次及其版本，观察、记录、读取和接受共用同步；结构事务复制自己的观察事实，提交和回滚沿原数据根进行。
+实体创建、销毁、表迁移以及enable mask的实际变化都在原写入口进入同一 `EntityTableChanges` 身份批次。启用状态变化由 `Chunk.WriteEnabled` 返回已改变事实，组件写入口据此记录实体；组件值的行写版本继续表达原有值写入。维护按当前成员条件核对这些身份，因此Enabled和Disabled条件中的成员进入、离开沿同一变化记录与应用阶段更新叶子。EntityStore持有批次及其版本，观察、记录、读取和接受共用同步；结构事务复制自己的观察事实，提交和回滚沿原数据根进行。
 
 `QueryRowChanges`、组合变化读取器和执行回调都是短生命周期借用值，版本数组继续由原 chunk 持有。组件存在性、读取权限和 chunk 版本在绑定处取得，逐行检查使用原行编号与 `VersionClock.IsNewer`。`ISpatialChangeExecution.Execute<TChanges>` 保留具体读取器类型，读取作用域覆盖组合条件和维护行循环。
 
