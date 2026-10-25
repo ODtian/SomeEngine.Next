@@ -24,6 +24,8 @@ Rendering world 的网格组件保存 source joint 到区段实体及区段内�
 边界；创建、移除及重绑沿原有结构事务发布，组件 hook 仍由共同提取调度选择事务路径。
 
 渲染准备从已声明的 chunk 列读取区段和网格绑定，再按同一成员列写出 `RenderPoseSection`。
+网格绑定的成员版本由现有查询持有；实际成员变化时协调集合，普通帧按
+`RenderMeshSkin` 的 chunk 版本更新已有绑定。
 `PrepareEvaluations` 在这个阶段确定当前输入、模型版本和采样身份；帧资源更新直接使用
 同一区段持有的结果来生成 GPU 控制上传。
 
