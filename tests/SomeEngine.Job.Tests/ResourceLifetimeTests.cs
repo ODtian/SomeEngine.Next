@@ -4,6 +4,53 @@ namespace SomeEngine.Job.Tests;
 
 public sealed class ResourceLifetimeTests
 {
+    [Fact]
+    public void ParallelCompletionReleasesItsCallbackData()
+    {
+        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 1 });
+        using var entered = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        int[] result = new int[16];
+        JobHandle blocker = scheduler.Schedule(new HoldWorker(entered, release));
+        try
+        {
+            Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
+            (JobHandle work, WeakReference data) = ScheduleParallelData(scheduler, result);
+            work.Complete();
+            Collect();
+            Assert.False(data.IsAlive);
+            Assert.All(result, value => Assert.Equal(1, value));
+        }
+        finally
+        {
+            release.Set();
+            blocker.Complete();
+        }
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static (JobHandle, WeakReference) ScheduleParallelData(Scheduler scheduler, int[] result)
+    {
+        var data = new ParallelData(result);
+        return (scheduler.ScheduleParallel(new WriteParallelData(data), result.Length, 1), new(data));
+    }
+
+    private sealed record ParallelData(int[] Result);
+
+    private readonly record struct WriteParallelData(ParallelData Data) : IJobParallelFor
+    {
+        public void Execute(int index) => Data.Result[index]++;
+    }
+
+    private readonly record struct HoldWorker(ManualResetEventSlim Entered, ManualResetEventSlim Release) : IJob
+    {
+        public void Execute()
+        {
+            Entered.Set();
+            Release.Wait();
+        }
+    }
+
     [Theory]
     [InlineData(JobSafetyMode.Checked)]
     [InlineData(JobSafetyMode.Fast)]
