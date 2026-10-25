@@ -25,6 +25,24 @@ copy 所在帧在提交前取消时，选骨请求的 `Completion` 转为取消�
 
 `Presentation` 保留视觉局部姿势的两端计算时钟、来源身份及呈现权重，`SourceSamples` 保留逐骨骼两端实际来源样本时间。`SampledBones` 给出范围内已解析的 GPU 来源采样骨骼。插值规则、LOD 与混合 CPU 当前结果的时间职责见 [GPU Pose Frequency](GPU-Pose-Frequency.md)。
 
+## 接入 Job 完成链
+
+调用方使用自己的既有 Scheduler，将 `request.Completion` 直接交给 `Scheduler.CreateExternalFenceHandle(Task)`。该句柄在实际 GPU copy 的结果交付或取消后进入同一终态；依赖 Job 在这个完成点之后观察请求结果，输出继续声明实际数组或 Memory 访问。请求 Task 持有唯一的 GPU 结果，Job 桥保持对同一 Task 的接续。
+
+帧外读回消费者持有自己的 Job 根，GPU 请求继续经过当帧提取与提交。系统组在提取前完成本轮游戏写入；Game 叶节点在后续更新沿原 Task 读取反馈并推进阶段。下面的消费桥由系统组外的调用方创建与等待。帧与系统完成入口见 [GameFrameSystems](../../../src/SomeEngine.Runtime/GameFrameSystems.cs) 和 [SystemGroup](../../../src/SomeEngine.ECS.Systems/SystemGroup.cs)。
+
+以下是公共 API 的组合用法例子；`consumer` 是调用方实现的具体 `IJob`，持有请求和自己的输出数组 `output`。
+
+```csharp
+JobHandle copied = scheduler.CreateExternalFenceHandle(request.Completion);
+JobHandle consumed = scheduler.Schedule(consumer,
+    JobResourceAccess.Write(scheduler, output), copied);
+await consumed.WaitAsync();
+```
+
+接续 Job 读取已经完成的 `request.Completion`。需要在成功与取消后统一归还输出或记录终态的消费者可用 `ScheduleFinally` 声明同一实际输出访问；此时在建立桥时捕获 `copied.GetAwaiter()`，具体接续 Job 先调用其 `GetResult()` 交付源结果，再读取成功值；调用方在 Scheduler 关闭前启动并保存消费句柄的 `WaitAsync`，后续观察同一等待结果。共同错误和取消规则见 [Job Completion](../ECS/Job-Completion.md)。Game 侧的反馈写回仍在原共同更新阶段调用 `SubmitFeedback`。
+
+Rendering world 持有读回缓冲至对应 QueueCompletion；完成后映射缓冲，将结果复制为独立只读数组并交付请求，再结束映射并归还缓冲。Job 消费者持有这份独立结果，后续姿势与图形资源释放继续沿原使用期完成。公共行为入口为 [GpuPoseFeedbackTests](../../../tests/SomeEngine.Runtime.Tests/GpuPoseFeedbackTests.cs) 中的重启与取消应用检查，以及 [CriticalBoneRenderingTests](../../../tests/SomeEngine.Runtime.Tests/CriticalBoneRenderingTests.cs) 的 CPU/GPU 连续姿势检查。共同桥源码为 [Scheduler.Fence](../../../src/SomeEngine.Job/Scheduler.Fence.cs)。
 ## 在共同图中消费反馈
 
 具体叶节点照常通过 `IAnimationLeaf<TParameters>` 安装自己的逐实例请求与算法历史，系统使用 `AnimationGraph.ReadTime` 取得当前叶的实际启动标记。`GpuPoseTarget.Starts` 保留这一实际标记：顶层叶采用 Timeline 身份，嵌套叶采用对应 GraphMotion 身份。`AnimationStarts` 保存安装时 `AnimationLeafPlacement.Starts`，区分整图的各次播放。嵌套 motion 在新图播放时可以从局部 Starts 1 开始，两层标记共同识别该执行。内置 GPU 叶在安装时写入 `AnimationStarts`；自定义生产叶采用相同字段。
