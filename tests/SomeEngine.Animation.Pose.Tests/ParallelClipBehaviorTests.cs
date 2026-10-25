@@ -9,6 +9,47 @@ namespace SomeEngine.Animation.Pose.Tests;
 public sealed class ParallelClipBehaviorTests
 {
     [Fact]
+    public async Task ScheduledModelSamplesFollowParentWritesAfterAttachmentAndDetachment()
+    {
+        var body = new Skeleton([-1], [Bone(Vector3.Zero)], [1]);
+        var clothing = new Skeleton(body, [-1], [Bone(Vector3.UnitY)], [2], inheritedParents: [0]);
+        var ornament = new Skeleton(clothing, [-1], [Bone(Vector3.UnitZ)], [3], inheritedParents: [0]);
+        var clip = new AnimationClip(ornament, 1, ClipSampler.Create<RawClipData, RawClipSampler>(new(1, [])));
+        var storage = new PoseStorage();
+        using SkeletonInstance original = storage.CreateInstance(body), replacement = storage.CreateInstance(body);
+        using SkeletonInstance garment = storage.CreateInstance(clothing, original);
+        var batch = new ClipSampleBatch([new(clip, parentPose: garment.ModelPose)]);
+        float[] times = [0];
+        var output = new Matrix4x4[1];
+        batch.ScheduleModel(times, output).Complete();
+        garment.Attach(replacement, 1);
+
+        for (int binding = 1; binding <= 2; binding++)
+        {
+            if (binding == 2) garment.Detach(2);
+            SkeletonInstance parent = garment.ParentInstance!;
+            var written = new ParentWriteFence();
+            JobHandle producer = JobSystem.CreateExternalFenceHandle(written,
+                JobResourceAccess.Write(JobSystem.Default.GetResourceToken(parent)));
+            JobHandle sampled = batch.ScheduleModel(times, output);
+            JobHandle write = JobSystem.Schedule(new WriteParent(parent, binding * 10, written));
+            try
+            {
+                await sampled.WaitAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(10));
+                await write.WaitAsync();
+                Assert.Equal(new Vector3(binding * 10, 0, 1), output[0].Translation);
+            }
+            finally
+            {
+                written.Signal();
+                write.Complete();
+                producer.Complete();
+                sampled.Complete();
+            }
+        }
+    }
+
+    [Fact]
     public void QueuedSamplesAndIndependentGraphClocksMatchSequentialPublicSampling()
     {
         // Sixty-four three-bone characters are example geometry for the general batched sampling/playback API.
@@ -100,6 +141,25 @@ public sealed class ParallelClipBehaviorTests
         public void Execute()
         {
             for (int index = 0; index < Values.Length; index++) Values[index] = (index % 8 + 1) * .125f * Frame;
+        }
+    }
+
+    private sealed class ParentWriteFence : IJobExternalFence
+    {
+        private readonly TaskCompletionSource _completion = new();
+        public bool IsSignaled => _completion.Task.IsCompleted;
+        public void Signal() => _completion.TrySetResult();
+        public void OnSignaled(Action<object?> continuation, object? state) =>
+            _completion.Task.ContinueWith(_ => continuation(state), CancellationToken.None,
+                TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+    }
+
+    private readonly record struct WriteParent(SkeletonInstance Parent, float Position, ParentWriteFence Written) : IJob
+    {
+        public void Execute()
+        {
+            Parent.Update([Bone(new(Position, 0, 0))], Position);
+            Written.Signal();
         }
     }
 

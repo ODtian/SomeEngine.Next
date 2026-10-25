@@ -47,6 +47,8 @@ lambda += deltaLambda
 
 最终 G 经 `StorePoseHistory` 成为下一输入的 previous。公开读回保留实际输入身份、计算时刻及共同来源采样时刻。`GpuXpbdParameters.Duration` 使用共同叶时钟，默认持续运行。
 
+`Stop` 和有限时长结束后，提取的 `Playing` 状态让次级链保留点位置、速度及最后呈现的骨骼与后代 G。继续呈现时，current/previous 沿普通姿势历史交接。重新播放通过既有启动标记初始化该次播放的链状态。
+
 ```text
 当前 actor 变换 / 来源与父姿势输入
   → GpuPoseTarget / 共同 CompositionInputs

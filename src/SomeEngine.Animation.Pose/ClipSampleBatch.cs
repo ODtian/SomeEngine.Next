@@ -10,7 +10,7 @@ public sealed class ClipSampleBatch
     private readonly PoseRange[] _outputs;
     private readonly ClipGroup[] _groups;
     private readonly SampleTile[] _tiles;
-    private readonly SkeletonInstance[] _parents;
+    private readonly ParentBinding[] _parents;
     private JobResourceAccess[]? _accesses;
 
     public int Count => _selections.Length;
@@ -45,20 +45,16 @@ public sealed class ClipSampleBatch
             _groups[group] = new(clips[group], requests[group].ToArray(), _selections);
         var tiles = new List<SampleTile>();
         var parents = new HashSet<SkeletonInstance>();
+        foreach (ClipSampleSelection selection in _selections)
+            if (selection.ParentPose is { } parent)
+                parents.Add(parent.GetSection(parent.SectionCount - 1).Instance);
         foreach (ClipGroup group in _groups)
         {
             for (int row = 0; row < group.Requests.Length; row += samplesPerJob)
                 tiles.Add(new(group, row, Math.Min(samplesPerJob, group.Requests.Length - row)));
-            for (int row = 0; row < group.Requests.Length; row++)
-            {
-                if (_selections[group.Requests[row]].ParentPose is null) continue;
-                foreach (short bone in group.ModelBones)
-                    if (group.Clip.Skeleton.InheritedParents[bone] >= 0)
-                        parents.Add(group.InheritedParents[row * group.Clip.Skeleton.BoneCount + bone].Instance);
-            }
         }
         _tiles = tiles.ToArray();
-        _parents = parents.ToArray();
+        _parents = parents.Select(parent => new ParentBinding(parent, 0)).ToArray();
     }
 
     /// <summary>The selection's section in the caller's output span.</summary>
@@ -88,14 +84,31 @@ public sealed class ClipSampleBatch
 
     private ReadOnlySpan<JobResourceAccess> GetAccesses()
     {
-        if (_accesses is null)
+        bool changed = _accesses is null;
+        for (int index = 0; index < _parents.Length; index++)
         {
-            var accesses = new JobResourceAccess[1 + _groups.Length + _parents.Length];
+            ref ParentBinding parent = ref _parents[index];
+            changed |= parent.Version != parent.Instance.BindingVersion;
+            parent.Version = parent.Instance.BindingVersion;
+        }
+        if (changed)
+        {
+            var parents = new HashSet<SkeletonInstance>();
+            foreach (ClipGroup group in _groups)
+                for (int row = 0; row < group.Requests.Length; row++)
+                {
+                    if (_selections[group.Requests[row]].ParentPose is null) continue;
+                    foreach (short bone in group.ModelBones)
+                        if (group.Clip.Skeleton.InheritedParents[bone] >= 0)
+                            parents.Add(group.InheritedParents[row * group.Clip.Skeleton.BoneCount + bone].Instance);
+                }
+            var accesses = new JobResourceAccess[1 + _groups.Length + parents.Count];
             accesses[0] = JobResourceAccess.Write(JobSystem.Default.GetResourceToken(this));
             for (int group = 0; group < _groups.Length; group++)
                 accesses[1 + group] = JobResourceAccess.Read(JobSystem.Default.GetResourceToken(_groups[group].Clip));
-            for (int parent = 0; parent < _parents.Length; parent++)
-                accesses[1 + _groups.Length + parent] = JobResourceAccess.Read(JobSystem.Default.GetResourceToken(_parents[parent]));
+            int next = 1 + _groups.Length;
+            foreach (SkeletonInstance parent in parents)
+                accesses[next++] = JobResourceAccess.Read(JobSystem.Default.GetResourceToken(parent));
             _accesses = accesses;
         }
         return _accesses;
@@ -153,6 +166,7 @@ public sealed class ClipSampleBatch
         }
     }
 
+    private record struct ParentBinding(SkeletonInstance Instance, ulong Version);
     private readonly record struct SampleTile(ClipGroup Group, int First, int Count);
     private readonly record struct LocalSamples(ClipSampleBatch Batch, ReadOnlyMemory<float> Times,
         Memory<BoneTransform> Destination) : IJobParallelFor

@@ -311,7 +311,7 @@ void LoadPoseHistory(uint3 thread : SV_DispatchThreadID)
     uint section = GpuPoseSections[thread.x];
     float4x4 current = GpuPoseHistoryCurrent[thread.x];
     GpuPoseModels[thread.x] = current;
-    GpuPosePrevious[thread.x] = section != 0xffffffffu && (GpuPoseControls[section].flags & 1u) != 0
+    GpuPosePrevious[thread.x] = section != 0xffffffffu && (GpuPoseControls[section].flags & 1025u) != 0
         ? current : GpuPoseHistoryPrevious[thread.x];
 }
 
@@ -930,7 +930,8 @@ void StorePoseHistory(uint3 thread : SV_DispatchThreadID)
     uint section = GpuPoseSections[thread.x];
     if (section == 0xffffffffu) return;
     uint flags = GpuPoseControls[section].flags;
-    if ((flags & 1u) == 0) return;
+    // Both an evaluated pose and a held XPBD pose advance the presented-frame history.
+    if ((flags & 1025u) == 0) return;
     if ((flags & 2u) != 0) GpuPosePrevious[thread.x] = GpuPoseModels[thread.x];
     GpuPoseHistoryPrevious[thread.x] = GpuPosePrevious[thread.x];
     GpuPoseHistoryCurrent[thread.x] = GpuPoseModels[thread.x];
