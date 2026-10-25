@@ -83,7 +83,7 @@ public struct PoseLayerSystem : ISystem<PoseNodeContext>
         Copy(world, in layer.Base, layer.Samples.Base);
         Copy(world, in layer.Source, layer.Samples.Source);
         layer.Sampled = true;
-        jobs.Add(JobSystem.Schedule(new LayerBones(layer.Samples, operation.Mode, operation.Weight * source.Weight),
+        jobs.Add(PoseAnimation.GetScheduler(world).Schedule(new LayerBones(layer.Samples, operation.Mode, operation.Weight * source.Weight),
             layer.Samples.Accesses));
     }
 

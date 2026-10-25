@@ -18,7 +18,7 @@ internal sealed class EwbikSamples
     private readonly BonePose[] _parents;
     private readonly EwbikRotationFitting _fitting = new();
 
-    internal EwbikSamples(EwbikRig rig, SkeletonInstance skeleton)
+    internal EwbikSamples(Scheduler scheduler, EwbikRig rig, SkeletonInstance skeleton)
     {
         _rig = rig;
         Transforms = new BoneTransform[rig.Skeleton.BoneCount];
@@ -34,9 +34,9 @@ internal sealed class EwbikSamples
                 _parents[bone] = skeleton.ModelPose.GetBone(rig.Skeleton.InheritedParents[bone]);
         Accesses =
         [
-            JobResourceAccess.Read(JobSystem.Default.GetResourceToken(rig)),
-            JobResourceAccess.Read(JobSystem.Default.GetResourceToken(rig.Skeleton)),
-            JobResourceAccess.Write(JobSystem.Default.GetResourceToken(this)),
+            JobResourceAccess.Read(scheduler.GetResourceToken(rig)),
+            JobResourceAccess.Read(scheduler.GetResourceToken(rig.Skeleton)),
+            JobResourceAccess.Write(scheduler.GetResourceToken(this)),
         ];
     }
 

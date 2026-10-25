@@ -8,6 +8,7 @@ internal sealed class ClipSamplingRows
 {
     private const int TileSize = 32;
     private readonly AnimationClip _clip;
+    private readonly Scheduler _scheduler;
     private readonly short[] _bones;
     private readonly List<SampleRow> _rows = [];
     private readonly List<JobResourceAccess> _accesses = [];
@@ -16,12 +17,13 @@ internal sealed class ClipSamplingRows
     private BoneTransform[] _local = [];
     internal int Count => _rows.Count;
 
-    internal ClipSamplingRows(AnimationClip clip, ReadOnlySpan<short> bones)
+    internal ClipSamplingRows(Scheduler scheduler, AnimationClip clip, ReadOnlySpan<short> bones)
     {
         _clip = clip;
+        _scheduler = scheduler;
         _bones = bones.ToArray();
-        _clipAccess = JobResourceAccess.Read(JobSystem.Default.GetResourceToken(clip));
-        _dataAccess = JobResourceAccess.Write(JobSystem.Default.GetResourceToken(this));
+        _clipAccess = JobResourceAccess.Read(scheduler.GetResourceToken(clip));
+        _dataAccess = JobResourceAccess.Write(scheduler.GetResourceToken(this));
     }
 
     internal void Begin()
@@ -49,7 +51,7 @@ internal sealed class ClipSamplingRows
     internal void AddFull(float time, BoneTransform[] destination, JobResourceAccess access) =>
         Add(time, destination, _bones, access);
 
-    internal JobHandle Schedule() => JobSystem.ScheduleParallel(new DecodeRows(this),
+    internal JobHandle Schedule() => _scheduler.ScheduleParallel(new DecodeRows(this),
         (_rows.Count + TileSize - 1) / TileSize, 1, CollectionsMarshal.AsSpan(_accesses));
 
     private readonly record struct SampleRow(BoneTransform[] Destination, short[] Bones);
