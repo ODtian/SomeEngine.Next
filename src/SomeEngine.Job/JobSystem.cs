@@ -385,5 +385,7 @@ public static partial class JobSystem
         return Current.AcquireSynchronousAccess(accesses);
     }
 
-    internal static Scheduler Current => Scheduler.Executing ?? Default;
+    /// <summary>The executing job's scheduler, or the default scheduler for a direct caller.</summary>
+    /// <remarks>Capture this value before awaiting to retain the initiating scheduler for later work.</remarks>
+    public static Scheduler Current => Scheduler.Executing ?? Default;
 }
