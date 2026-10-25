@@ -21,6 +21,7 @@ public struct CollisionContact : IComponent
     public float Separation;
     /// <summary>Number of first-side entries when both sides are stored consecutively in a ContactBody buffer.</summary>
     public int FirstBodyCount;
+    public ContactPrediction Prediction;
 }
 
 /// <summary>An actual simulated endpoint, its body-local contact anchor and interpolation weight.</summary>
