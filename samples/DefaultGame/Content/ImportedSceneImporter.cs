@@ -1,6 +1,7 @@
 using SomeEngine.Geometry.Cluster;
 using System.Globalization;
 using System.Numerics;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using SomeEngine.Assets.Schema;
 using ImportedScenes;
@@ -45,6 +46,19 @@ public sealed class ImportedSceneImporter : GltfSceneImporter
         using var asset = new MaterialAsset();
         var content = asset.GetBlock<MaterialBlock>();
         content.Parent = template.Reference;
+        WriteMaterial(source, content, textures);
+        string shaderPath = Path.Combine(context.ProjectRoot, "assets/Shaders", ShaderName(Cutoff(source)) + ".shader");
+        await context.ReportInputAsync(shaderPath, cancellationToken);
+        using ShaderAsset shader = await ShaderAsset.OpenSourceAsync(shaderPath, cancellationToken);
+        content.Shader = shader.Reference;
+        MaterialBlock block = content.Duplicate();
+        try { output.SetBlock(block); }
+        catch { block.Dispose(); throw; }
+    }
+
+    private static void WriteMaterial(GltfMaterial source, MaterialBlock content,
+        IReadOnlyDictionary<GltfTexture, AssetId<TextureAsset>> textures)
+    {
         var values = new StandardMaterialParameters(content);
         var color = source.FindChannel("BaseColor");
         var surface = source.FindChannel("MetallicRoughness");
@@ -70,16 +84,30 @@ public sealed class ImportedSceneImporter : GltfSceneImporter
         content.SetParameter(new("OcclusionMap", MaterialParameterKind.Texture) { Texture = occlusionId });
         content.SetParameter(new("NormalScale", MaterialParameterKind.Float) { Float = source.FindChannel("Normal")?.GetFactor("NormalScale") ?? 1 });
         content.SetParameter(new("OcclusionStrength", MaterialParameterKind.Float) { Float = occlusion?.GetFactor("OcclusionStrength") ?? 1 });
-        string shaderPath = Path.Combine(context.ProjectRoot, "assets/Shaders", ShaderName(Cutoff(source)) + ".shader");
-        await context.ReportInputAsync(shaderPath, cancellationToken);
-        using ShaderAsset shader = await ShaderAsset.OpenSourceAsync(shaderPath, cancellationToken);
-        content.Shader = shader.Reference;
-        MaterialBlock block = content.Duplicate();
-        try { output.SetBlock(block); }
-        catch { block.Dispose(); throw; }
     }
 
-    public async Task BuildAsync(AssetProject project, ModelRoot model, string engine)
+    internal async Task UpdateMaterialsAsync(AssetProject project, ModelRoot model, AssetManifest imported)
+    {
+        var entries = imported.Assets.Values.ToDictionary(entry => entry.SubAssetKey);
+        var textures = model.LogicalTextures.ToDictionary(texture => texture,
+            texture => new AssetId<TextureAsset>(entries[$"texture:index:{texture.LogicalIndex}"].AssetGuid));
+        foreach (GltfMaterial source in model.LogicalMaterials)
+        {
+            AssetEntry entry = entries[$"material:index:{source.LogicalIndex}"];
+            using var asset = new MaterialAsset(entry.AssetGuid) { Name = entry.Name };
+            MaterialBlock content = asset.GetBlock<MaterialBlock>();
+            content.Parent = SampleSceneMaterials.ImportedTemplate;
+            WriteMaterial(source, content, textures);
+            using ShaderAsset shader = await ShaderAsset.OpenSourceAsync(Path.Combine(project.RootPath,
+                "assets/Shaders", ShaderName(Cutoff(source)) + ".shader"));
+            content.Shader = shader.Reference;
+            string destination = Path.Combine(project.RootPath, entry.Path);
+            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+            project.RegisterAsset(await asset.SaveAsync(destination));
+        }
+    }
+
+    public async Task BuildAsync(AssetProject project, ModelRoot model, string engine, bool packedVertices = false)
     {
         string directory = Path.Combine(project.RootPath, "assets", "Shaders");
         string defaults = Path.Combine(engine, "samples", "DefaultGame", "assets", "Shaders");
@@ -101,24 +129,18 @@ public sealed class ImportedSceneImporter : GltfSceneImporter
             "        float3 finalColor = baseColor * ao * 0.03 + emission;");
         surface = "float3 SceneSrgbToLinear(float3 color) { return select(color <= 0.04045, color / 12.92, pow((color + 0.055) / 1.055, 2.4)); }\n" + surface;
         WriteIfChanged(Path.Combine(directory, "scene_material.slang"), surface);
+        WriteIfChanged(Path.Combine(directory, "cluster_transparency.slang"),
+            File.ReadAllText(Path.Combine(engine, "assets/Shaders/cluster_transparency.slang")));
         var shaderIds = new List<Guid>();
         foreach (float cutoff in model.LogicalMaterials.Where(static material => !material.Unlit).Select(Cutoff).Distinct())
         {
             string shaderName = ShaderName(cutoff);
-            string shader = File.ReadAllText(Path.Combine(defaults, "standard.slang"))
-                .Replace("\"standard_material.slang\"", "\"scene_material.slang\"");
-            if (cutoff >= 0)
-                shader = Replace(shader, "typedef OpaqueVisibilityEvaluate<VertexEvaluate.Vertex> VisibilityEvaluate;",
-                    MaskShader.Replace("ALPHA_CUTOFF", cutoff.ToString("R", CultureInfo.InvariantCulture)) + "\ntypedef SceneMask VisibilityEvaluate;");
+            string shader = CreateSurfaceShader(defaults, shaderName, cutoff, twoSided: false, packedVertices);
             WriteIfChanged(Path.Combine(directory, shaderName + ".slang"), shader);
             WriteSurfaceEntries(directory, shaderName);
             string definitionPath = Path.Combine(directory, shaderName + ".shader");
-            var definition = JsonNode.Parse(File.ReadAllText(Path.Combine(defaults, "standard.shader")))!;
-            Guid shaderId = File.Exists(definitionPath)
-                ? Guid.Parse(JsonNode.Parse(File.ReadAllText(definitionPath))!["Fields"]!["Id"]!.GetValue<string>()) : Guid.NewGuid();
-            definition["Fields"]!["Id"] = shaderId.ToString();
-            definition["Fields"]!["Name"] = shaderName;
-            definition["Blocks"]![0]!["Fields"]!["SourceNames"] = new JsonArray(shaderName + ".slang");
+            JsonNode definition = CreateSurfaceDefinition(definitionPath, defaults, shaderName, cutoff);
+            Guid shaderId = Guid.Parse(definition["Fields"]!["Id"]!.GetValue<string>());
             WriteIfChanged(definitionPath, definition.ToJsonString());
             await project.BuildAsync(definitionPath);
             shaderIds.Add(shaderId);
@@ -140,13 +162,17 @@ public sealed class ImportedSceneImporter : GltfSceneImporter
         {
             string shaderName = Path.GetFileNameWithoutExtension(definitionPath);
             string sourcePath = Path.Combine(directory, shaderName + ".slang");
+            bool packedVertices = File.ReadAllText(sourcePath).Contains("#include \"scene_scv1_vertex.slang\"", StringComparison.Ordinal);
             string suffix = shaderName["scene_".Length..];
             bool twoSided = suffix.EndsWith("_both", StringComparison.Ordinal);
             string surface = twoSided ? suffix[..^"_both".Length] : suffix;
             float cutoff = surface == "opaque" ? -1 : BitConverter.Int32BitsToSingle(
                 int.Parse(surface["mask_".Length..], NumberStyles.HexNumber, CultureInfo.InvariantCulture));
             string source = CreateSurfaceShader(Path.Combine(engineRoot, "templates/DefaultProject/assets/Shaders"),
-                shaderName, cutoff, twoSided);
+                shaderName, cutoff, twoSided, packedVertices);
+            if (packedVertices)
+                WriteIfChanged(Path.Combine(directory, "scene_scv1_vertex.slang"),
+                    File.ReadAllText(Path.Combine(engineRoot, "samples/DefaultGame/assets/Shaders/scene_scv1_vertex.slang")));
             WriteIfChanged(sourcePath, source);
             WriteSurfaceEntries(directory, shaderName);
             JsonNode definition = CreateSurfaceDefinition(definitionPath,
@@ -163,13 +189,8 @@ public sealed class ImportedSceneImporter : GltfSceneImporter
         definition["Fields"]!["Id"] = id.ToString();
         definition["Fields"]!["Name"] = name;
         definition["Blocks"]![0]!["Fields"]!["SourceNames"] = new JsonArray("cluster_transparency.slang", name + ".slang", name + "_transparency.slang");
-        // Both import and refresh derive the saved depth variants from the same material declaration.
-        foreach (JsonNode? value in (JsonArray)definition["Blocks"]![0]!["Fields"]!["Specializations"]!)
-            if (value!["EntryPoint"]!.GetValue<string>() is "ClusterSurfaceDataDepth" or "ClusterSurfaceDataMode" or
-                "ClusterShadowReceiver" or "ClusterForwardShade" or "BuildTransparentGeometry" or
-                "RequestTransparentShadows" or "RequestProjectedTransparentShadows" or
-                "ResolveTransparentColor" or "ResolveProjectedTransparentColor")
-                ((JsonArray)value["Arguments"]!)[0] = cutoff >= 0 ? "1" : "0";
+        definition["Blocks"]![0]!["Fields"]!["Specializations"] =
+            JsonSerializer.SerializeToNode(SampleContent.CreateMaterialSpecializations(cutoff >= 0 ? 1 : 0));
         return definition;
     }
 
@@ -178,11 +199,15 @@ public sealed class ImportedSceneImporter : GltfSceneImporter
             "import \"" + name + "\";\n#define TRANSPARENCY_MATERIAL_TYPE SceneTransparencyMaterial_" + name +
             "\n#include \"cluster_transparency_entries.slang\"\n");
 
-    private static string CreateSurfaceShader(string defaults, string shaderName, float cutoff, bool twoSided)
+    private static string CreateSurfaceShader(string defaults, string shaderName, float cutoff, bool twoSided, bool packedVertices)
     {
         string source = File.ReadAllText(Path.Combine(defaults, "standard.slang"))
             .Replace("\"standard_material.slang\"", "\"scene_material.slang\"")
             .Replace("StandardTransparencyMaterial", "SceneTransparencyMaterial_" + shaderName);
+        if (packedVertices)
+            source = "#define CLUSTER_VERTEX_ENCODING \"someengine.vertex.standard.cluster.v1\"\n" +
+                "#include \"scene_scv1_vertex.slang\"\n" +
+                source.Replace("typedef StaticVertexEval VertexEvaluate;", "typedef SceneScv1VertexEval VertexEvaluate;");
         if (twoSided) source = "#define CLUSTER_RASTER_TWO_SIDED 1\n" + source;
         if (cutoff >= 0)
             source = Replace(source, "typedef OpaqueVisibilityEvaluate<VertexEvaluate.Vertex> VisibilityEvaluate;",
@@ -220,6 +245,8 @@ public sealed class ImportedSceneImporter : GltfSceneImporter
 
     private const string MaskShader = """
 struct SceneMaskVarying { float2 UV : TEXCOORD0; };
+[VisibilityDepth("masked")]
+[MaterialDepthInputs("AlbedoMap")]
 struct SceneMask : IVisibilityEvaluate<StandardVertex>
 {
     typealias Varying = SceneMaskVarying;

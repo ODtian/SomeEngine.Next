@@ -10,6 +10,27 @@ internal static partial class CheckAnimation
 {
     public static int Main(string[] args)
     {
+        if (args.Contains("--pose-consumer-prepare"))
+        {
+            PoseExample.PoseConsumerContent.PrepareAsync(args[1], args[2], args[3], args.Contains("--reuse-shader"))
+                .GetAwaiter().GetResult();
+            return 0;
+        }
+        if (args.Contains("--pose-consumer"))
+        {
+            PoseExample.PoseConsumerApplication.RunAsync(args[1], args[2]).GetAwaiter().GetResult();
+            return 0;
+        }
+        if (args.Contains("--pose-consumer-cpu"))
+        {
+            PoseExample.PoseConsumerChecks.RunAsync(args[1]).GetAwaiter().GetResult();
+            return 0;
+        }
+        if (args.Contains("--cpu-pose-benchmark"))
+        {
+            CpuPoseMeasurements.Run();
+            return 0;
+        }
         if (args.Contains("--pose-sampling-benchmark"))
         {
             PoseSamplingMeasurements.Run();
@@ -62,6 +83,7 @@ internal static partial class CheckAnimation
             return 0;
         }
         global::SomeEngine.ECS.Tests.FieldAccessChecks.VerifyAll();
+        QueryMembersChecks.Check();
         global::SomeEngine.Tools.EcsAotSmoke.ComponentBytesSmoke.Check();
         global::SomeEngine.Tools.EcsAotSmoke.TypedFieldSmoke.Check();
         CheckGeneratedFieldPlayback();
@@ -74,7 +96,8 @@ internal static partial class CheckAnimation
         CheckFunction();
         CheckClocksAndCompletion();
         GraphConsumerChecks.Check();
-        Console.WriteLine("ANIMATION_CHECKS_PASSED typed-fields bytes generated-fields managed-functions typed-animate state-reference typed-batch managed-history spring custom-value function clocks completion typed-graph");
+        GpuStateChecks.Check();
+        Console.WriteLine("ANIMATION_CHECKS_PASSED typed-fields query-members bytes generated-fields managed-functions typed-animate state-reference typed-batch managed-history spring custom-value function clocks completion typed-graph");
         return 0;
     }
 

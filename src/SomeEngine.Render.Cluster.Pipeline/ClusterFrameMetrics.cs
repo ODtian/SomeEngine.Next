@@ -22,6 +22,13 @@ public readonly record struct ClusterFrameMetrics(
     uint SoftwareRasterDebugRecords,
     uint VisibilityProbePixels)
 {
+    public ulong FrameIdentity { get; init; }
+    /// <summary>Vertex items in selected primary-view clusters, including cluster and instance repetitions.</summary>
+    public ulong SelectedVertices { get; init; }
+    /// <summary>Triangle items selected across both primary-view occlusion phases.</summary>
+    public ulong SelectedTriangles { get; init; }
+    /// <summary>Bytes reserved by the user deformation regions, including alignment.</summary>
+    public uint DeformCacheBytes { get; init; }
     public ulong ResidencyEpoch { get; init; }
     public ClusterWorkMetrics Work { get; init; }
 }

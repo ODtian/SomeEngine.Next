@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Silk.NET.Direct3D12;
+using NativeQueryType = Silk.NET.Direct3D12.QueryType;
 
 namespace SomeEngine.Graphics.Direct3D12;
 
@@ -25,10 +26,19 @@ internal sealed unsafe partial class NativeCommandData
     {
         if (typeof(T) == typeof(NativeCommandType) &&
             Unsafe.As<T, NativeCommandType>(ref value) is NativeCommandType.BeginQuery or
-                NativeCommandType.EndQuery or NativeCommandType.ResolveQueryData)
+                NativeCommandType.ResolveQueryData)
             CanRepeat = false;
         Span<byte> destination = Append(sizeof(T));
         MemoryMarshal.Write(destination, in value);
+    }
+
+    internal void WriteEndQuery(nint heap, NativeQueryType type, uint index)
+    {
+        CanRepeat &= type == NativeQueryType.Timestamp;
+        Write(NativeCommandType.EndQuery);
+        Write(heap);
+        Write(type);
+        Write(index);
     }
 
     internal void WriteArray(void* values, int byteCount)

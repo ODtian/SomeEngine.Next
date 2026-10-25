@@ -303,25 +303,47 @@ public sealed partial class SkinningRenderingTests
             string engine = AppContext.BaseDirectory;
             while (!File.Exists(Path.Combine(engine, "SomeEngine.slnx"))) engine = Path.GetDirectoryName(engine)!;
             string directory = Path.Combine(Path.GetTempPath(), $"SomeEngine-Skin-{Guid.NewGuid():N}");
-            string source = Path.Combine(engine, "samples/DefaultGame");
-            foreach (string file in Directory.EnumerateFiles(Path.Combine(source, "assets"), "*", SearchOption.AllDirectories))
-            {
-                string output = Path.Combine(directory, Path.GetRelativePath(source, file));
-                Directory.CreateDirectory(Path.GetDirectoryName(output)!);
-                File.Copy(file, output);
-            }
-            string shader = await File.ReadAllTextAsync(Path.Combine(directory, "assets/Shaders/standard.slang"));
+            string sample = Path.Combine(engine, "samples/DefaultGame");
+            string products = Path.Combine(AppContext.BaseDirectory, "SkinContent");
+            bool hasProducts = Directory.Exists(products);
+            CopyContent(hasProducts ? products : sample, directory);
+            string shader = await File.ReadAllTextAsync(Path.Combine(sample, "assets/Shaders/standard.slang"));
             var project = new AssetProject(directory, [], shaderIncludeDirectories: [Path.Combine(engine, "assets/Shaders")]);
             var result = new SkinContent(project, shader);
             try
             {
                 await File.WriteAllTextAsync(result.ShaderPath, result.SkinShader(FloatReader, "someengine.tests.skin.float.v1"));
-                await SampleContent.BuildAsync(directory, engine);
+                string definitionPath = result.ShaderPath.Replace(".slang", ".shader");
+                using (ShaderAsset definition = await ShaderAsset.OpenSourceAsync(definitionPath))
+                {
+                    ShaderSourceBlock inputs = await definition.GetBlockAsync<ShaderSourceBlock>();
+                    inputs.Specializations = SampleContent.CreateMaterialSpecializations(0);
+                    await definition.SaveSourceAsync(definitionPath);
+                }
+                if (!hasProducts) await SampleContent.BuildAsync(directory, engine);
                 var prepared = new AssetProject(directory, [], shaderIncludeDirectories: [Path.Combine(engine, "assets/Shaders")]);
                 await prepared.BuildAsync(result.ShaderPath.Replace(".slang", ".shader"));
+                await prepared.BuildAsync(Path.Combine(directory, "assets/Shaders/vsm_mark_pages.shader"));
+                await prepared.BuildAsync(Path.Combine(directory, "assets/Shaders/generated/EngineSources/vsm_mark_depth_pages.shader"));
+                CopyContent(directory, products);
                 return new SkinContent(prepared, shader);
             }
             catch { result.Dispose(); throw; }
+        }
+
+        private static void CopyContent(string source, string destination)
+        {
+            foreach (string folder in new[] { "assets", "Library/AssetManifest" })
+            {
+                string input = Path.Combine(source, folder);
+                if (!Directory.Exists(input)) continue;
+                foreach (string file in Directory.EnumerateFiles(input, "*", SearchOption.AllDirectories))
+                {
+                    string output = Path.Combine(destination, Path.GetRelativePath(source, file));
+                    Directory.CreateDirectory(Path.GetDirectoryName(output)!);
+                    File.Copy(file, output, overwrite: true);
+                }
+            }
         }
 
         public async Task SetShaderAsync(string reader, string encoding)
@@ -499,7 +521,7 @@ public sealed partial class SkinningRenderingTests
         };
         """;
     private const string SkinEvaluator = """
-        #include "skin_pose.slang"
+        #include "skin_joint_transforms.slang"
         struct PanelSkin : IVertexEvaluate
         {
             typedef StandardVertex Vertex;
@@ -511,8 +533,8 @@ public sealed partial class SkinningRenderingTests
                 uint2 binding = LoadSkinBinding(ctx.instanceID);
                 bool previous = ctx.IsPreviousFrame != 0u || footer.y != 0u;
                 float3 position = EvalObjectPosition(ctx);
-                float3 local = mul(float4(position, 1), LoadSkinTransform(binding, joints.x, previous)).xyz * weights.x
-                    + mul(float4(position, 1), LoadSkinTransform(binding, joints.y, previous)).xyz * weights.y;
+                float3 local = mul(float4(position, 1), LoadSkinJointTransform(binding, joints.x, previous)).xyz * weights.x
+                    + mul(float4(position, 1), LoadSkinJointTransform(binding, joints.y, previous)).xyz * weights.y;
                 StaticVertexEval source;
                 Vertex result = source.evaluate(ctx);
                 result.position = TransformInstanceLocalPosition(local, ctx.transform);

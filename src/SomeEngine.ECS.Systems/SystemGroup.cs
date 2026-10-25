@@ -1,5 +1,6 @@
 namespace SomeEngine.ECS.Systems;
 
+using SomeEngine.Diagnostics;
 using SomeEngine.Job;
 
 /// <summary>
@@ -274,6 +275,8 @@ public sealed class SystemGroup<TContext> : IDisposable
                 if (!slot.Enabled)
                     continue;
 
+                SystemNode<TContext> node = _nodes[i];
+                using var trace = EngineTrace.Begin(node.UpdateTrace);
                 using JobSubmissionScope submissions = slot.RequireJobLifetime().EnterSubmissionScope();
                 EnterLifecycleCallback();
                 try
@@ -292,12 +295,11 @@ public sealed class SystemGroup<TContext> : IDisposable
                     _driver.BeforeUpdate(ref slot, ref context);
                     if (!slot.Created)
                     {
-                        _nodes[i].OnCreate(ref context);
+                        node.OnCreate(ref context);
                         slot.Created = true;
                         lock (_gate)
                             _slots[i] = slot;
                     }
-                    SystemNode<TContext> node = _nodes[i];
                     node.Update(node, ref context);
                     _driver.AfterUpdate(ref slot, ref context);
                     slot.LastSystemVersion = slot.CurrentSystemVersion;

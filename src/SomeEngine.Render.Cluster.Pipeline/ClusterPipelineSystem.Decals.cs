@@ -218,7 +218,7 @@ public sealed partial class ClusterPipelineSystem
         data.Views = views.ToArray(); data.CompletedVersion = data.Version;
         uint groups = Math.Max(1u, ((uint)data.Sources.Length * _outputDescription.ViewCount + 63u) / 64u);
         var dispatch = new ClusterDispatchParameters(new(groups, 1, 1));
-        graph.SetPassData(data.Builds[1], dispatch); graph.SetPassData(data.Builds[3], dispatch);
+        graph.SetPassDataIfChanged(data.Builds[1], dispatch); graph.SetPassDataIfChanged(data.Builds[3], dispatch);
     }
 
     private void CompleteMaterialDecalFrame(RenderGraphFrameResult result)

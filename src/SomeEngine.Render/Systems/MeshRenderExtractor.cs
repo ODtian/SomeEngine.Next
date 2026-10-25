@@ -17,8 +17,8 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
     private readonly List<Material> _materials = [];
     private readonly HashSet<Entity> _meshSources = [];
     private readonly Dictionary<Entity, Material[]> _sourceMaterials = [];
-    private readonly HashSet<Entity> _collectedMaterialSources = [];
-    private readonly Dictionary<Entity, MeshInstance> _sourceMeshes = [];
+    private readonly List<Entity> _removedMaterialSources = [];
+    private readonly Dictionary<Entity, SourceMesh> _sourceMeshes = [];
     private readonly HashSet<Entity> _collectedMeshSources = [];
 
     public bool CanApplyChangesDirect =>
@@ -37,15 +37,35 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
         _snapshots.Clear();
         _materials.Clear();
         _meshSources.Clear();
-        _collectedMaterialSources.Clear();
+        _removedMaterialSources.Clear();
         _collectedMeshSources.Clear();
+    }
+
+    public bool CompleteSourceCollection(World sourceWorld, bool fullCollection)
+    {
+        if (fullCollection)
+        {
+            foreach (Entity source in _sourceMaterials.Keys)
+                if (!sourceWorld.IsAlive(source) || !sourceWorld.Has<WorldTransform>(source)
+                    || !sourceWorld.Has<MeshInstance>(source) || !sourceWorld.HasBuffer<MeshMaterialBinding>(source))
+                    _removedMaterialSources.Add(source);
+            foreach (Entity source in _removedMaterialSources) UntrackMaterials(source);
+        }
+        return false;
+    }
+
+    public void CollectResources(scoped QueryCursor source, RenderExtractionResources resources)
+    {
+        foreach (Material[] materials in _sourceMaterials.Values)
+            foreach (Material material in materials) resources.Add(material);
     }
 
     private Mesh TrackMesh(Entity source, in MeshInstance instance)
     {
-        _sourceMeshes[source] = instance;
+        Mesh data = instance.Mesh.CaptureData();
+        _sourceMeshes[source] = new(instance, data.Revision, GetBoundsExpansion(source, instance.BoundsExpansion));
         _collectedMeshSources.Add(source);
-        return instance.Mesh.CaptureData();
+        return data;
     }
 
     private void UntrackMesh(Entity source)
@@ -58,7 +78,6 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
         var materials = new Material[bindings.Length];
         for (int index = 0; index < bindings.Length; index++) materials[index] = bindings[index].Material;
         _sourceMaterials[source] = materials;
-        _collectedMaterialSources.Add(source);
     }
 
     private void UntrackMaterials(Entity source) => _sourceMaterials.Remove(source);
@@ -77,23 +96,23 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
         {
             foreach (Entity source in context.ChangedSources)
             {
-                if (!_collectedMaterialSources.Contains(source)) UntrackMaterials(source);
                 if (!_collectedMeshSources.Contains(source)) UntrackMesh(source);
             }
         }
 
         bool changed = false;
-        foreach ((Entity source, MeshInstance instance) in _sourceMeshes)
+        foreach ((Entity source, SourceMesh mesh) in _sourceMeshes)
         {
             if (_collectedMeshSources.Contains(source)) continue;
-            Entity entity = context.RequireMirror(source);
-            RenderMesh current = context.World.Read<RenderMesh>(entity);
+            MeshInstance instance = mesh.Instance;
             float expansion = GetBoundsExpansion(source, instance.BoundsExpansion);
-            if (current.Mesh.Revision == instance.Mesh.Revision && current.BoundsExpansion == expansion) continue;
+            if (mesh.Revision == instance.Mesh.Revision && mesh.BoundsExpansion == expansion) continue;
             Mesh data = instance.Mesh.CaptureData();
             _snapshots.Add(new MeshSnapshot(source, default, data, expansion,
                 false, 0, 0, MeshChanged: true, MaterialsChanged: false, instance.PageSource,
                 instance.DepthCacheClass, instance.FirstPerson));
+            mesh.Revision = data.Revision;
+            mesh.BoundsExpansion = expansion;
             _meshSources.Add(source);
             changed = true;
         }
@@ -325,6 +344,13 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
         SomeEngine.Assets.Pipeline.MeshPayloadSource? PageSource,
         DepthCacheClass DepthCacheClass,
         FirstPersonMeshData FirstPerson);
+
+    private sealed class SourceMesh(MeshInstance instance, ulong revision, float boundsExpansion)
+    {
+        internal readonly MeshInstance Instance = instance;
+        internal ulong Revision = revision;
+        internal float BoundsExpansion = boundsExpansion;
+    }
 
     private readonly record struct MaterialSlice(
         List<Material> Values,
