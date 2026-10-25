@@ -45,6 +45,10 @@ pairs.DetectPairsWithQuery(bins, bin,
 
 `Collision.Query<TGeometry>(world, members, tree, settings)` 创建具体几何查询，其中 `CollisionQuerySettings` 显式提供扫描容差及迭代数。`Raycast`、`SweepSphere` 和 `TryGetTransform` 接入现有 `ICollisionQueries` 消费者；命中结果携带实体、世界接触点、表面朝外法向、沿运动方向的距离、当前变换与特征。`GeometryVersion` 可由调用方提供表面修订值。
 
+引用数组等数据使用 `Collision.QueryWithResources<TGeometry,TResources>`，其中 `TResources` 是现有 `IJobComponentResources<TGeometry>` 描述器。查询冷路径登记 `QueryReadResources`，在 `World.ExecuteReadQuery` 的成员读取范围内等待原引用资源、复核绑定版本并消费当前几何。通用 reader 查询也可显式传入同一个资源读取持有者；资源规则见 [Query Reads](../ECS/Query-Reads.md)。
+
 `Distance` 使用项目提供的具体窄阶段，返回最小带符号间距及双方见证点。`Overlap` 使用相同距离计算输出相交实体。`Sweep` 接收具体 `ICollisionSweep<TQuery,TGeometry>`；`ConvexShapeSweep` 复用所选距离内核沿分离平面推进平移查询。几何类型也可通过自己的静态 `CastSphere` 提供扫描计算。
 
 批量射线和球扫描共享一次组件读取作用域，每个输入分别遍历持久树。三角面查询的 `CollisionHit.Feature` 表达命中三角形编号，具体几何查询的同一字段表达对应几何特征。物理完成点及查询调用顺序由已有 Job 依赖与调用方消费位置连接。
+
+已登记查询的 Job 可在借用范围中调用 `CollisionPairQueries.DetectBinWithQuery(access,bins,bin,detection,resources)`。它与关系终端使用同一个具体检测内核；资源持有者通过现有 pair 跨度直接投影实际实体，收集相应组件的数组访问。父 Job 先声明这些引用资源和 `bins.ReadAccess`，实际数学在同次有效范围内执行。
