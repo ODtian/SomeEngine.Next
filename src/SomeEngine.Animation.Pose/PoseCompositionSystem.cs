@@ -9,10 +9,14 @@ public struct PoseCompositionSystem : ISystem<ImmediateSystemContext>
 {
     private QueryHandle _targets;
     private double _time;
+    private SkeletonLevels _models;
 
-    public void OnCreate(ref ImmediateSystemContext context) =>
+    public void OnCreate(ref ImmediateSystemContext context)
+    {
+        _models = new();
         _targets = context.World.Query(context.World.QueryDefinition().ReadWrite<PoseTarget>()
             .ReadBuffer<LocalPose>().ReadBuffer<PoseResult>());
+    }
 
     public void OnUpdate(ref ImmediateSystemContext context)
     {
@@ -45,17 +49,24 @@ public struct PoseCompositionSystem : ISystem<ImmediateSystemContext>
 
     internal void ComposeModels(World world, double time)
     {
-        world.ExecuteQuery(_targets, ref time, static (scoped QueryCursor rows, ref double time) =>
-        {
-            foreach (QueryRow row in rows.Rows)
+        var frame = (World: world, Time: time, Models: _models);
+        world.ExecuteQuery(_targets, ref frame,
+            static (scoped QueryCursor rows, ref (World World, double Time, SkeletonLevels Models) frame) =>
             {
-                SkeletonInstance skeleton = row.Read<PoseTarget>().Skeleton;
-                if (skeleton.CpuWrittenBones.Length == 0) skeleton.Compose(time);
-            }
-        });
+                foreach (QueryRow row in rows.Rows)
+                {
+                    SkeletonInstance skeleton = row.Read<PoseTarget>().Skeleton;
+                    if (skeleton.CpuWrittenBones.Length == 0) frame.Models.Add(skeleton);
+                }
+                frame.Models.Compose(PoseAnimation.GetScheduler(frame.World), frame.Time);
+            });
     }
 
-    public void OnDestroy(ref ImmediateSystemContext context) => context.World.ReleaseQuery(_targets);
+    public void OnDestroy(ref ImmediateSystemContext context)
+    {
+        context.World.ReleaseQuery(_targets);
+        _models.Clear();
+    }
 }
 
 public static partial class PoseAnimation

@@ -47,7 +47,7 @@ internal sealed class FabrikSamples
     private readonly Vector3[] _positions, _directions;
     private readonly float[] _lengths;
 
-    internal FabrikSamples(FabrikChain chain, SkeletonInstance skeleton)
+    internal FabrikSamples(Scheduler scheduler, FabrikChain chain, SkeletonInstance skeleton)
     {
         _chain = chain;
         Transforms = new BoneTransform[chain.Skeleton.BoneCount];
@@ -64,9 +64,9 @@ internal sealed class FabrikSamples
                 _parents[bone] = skeleton.ModelPose.GetBone(chain.Skeleton.InheritedParents[bone]);
         Accesses =
         [
-            JobResourceAccess.Read(JobSystem.Default.GetResourceToken(chain)),
-            JobResourceAccess.Read(JobSystem.Default.GetResourceToken(chain.Skeleton)),
-            JobResourceAccess.Write(JobSystem.Default.GetResourceToken(this)),
+            JobResourceAccess.Read(scheduler.GetResourceToken(chain)),
+            JobResourceAccess.Read(scheduler.GetResourceToken(chain.Skeleton)),
+            JobResourceAccess.Write(scheduler.GetResourceToken(this)),
         ];
     }
 

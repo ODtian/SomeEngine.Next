@@ -87,7 +87,7 @@ public struct EwbikSystem : ISystem<PoseNodeContext>
         body.Samples.Settings = body.Settings;
         body.Samples.ReadParents();
         body.Sampled = true;
-        jobs.Add(JobSystem.Schedule(new SolveBody(body.Samples), body.Samples.Accesses));
+        jobs.Add(PoseAnimation.GetScheduler(world).Schedule(new SolveBody(body.Samples), body.Samples.Accesses));
     }
 
     public void OnDestroy(ref PoseNodeContext context) => context.Frame.World.ReleaseQuery(_bodies);

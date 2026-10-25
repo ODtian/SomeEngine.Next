@@ -62,7 +62,7 @@ public struct PhysicsPoseSystem : ISystem<PoseNodeContext>
                 .CopyTo(copy.Values));
         instance.Samples.ReadParents();
         instance.Sampled = true;
-        jobs.Add(JobSystem.Schedule(new BlendBodies(instance.Samples, instance.ActorTransform, physicsWeight), instance.Samples.Accesses));
+        jobs.Add(PoseAnimation.GetScheduler(world).Schedule(new BlendBodies(instance.Samples, instance.ActorTransform, physicsWeight), instance.Samples.Accesses));
     }
 
     private static void Publish(World world, Entity animation, ref PhysicsPoseInstance instance)
