@@ -30,6 +30,7 @@ public struct ComposeSystem<T, TOps>(TrackFields fields = TrackFields.Properties
     public unsafe void OnUpdate(ref ImmediateSystemContext context)
     {
         World world = context.World;
+        if (!world.HasQueryMembers(_targets)) return;
         var composition = (World: world, WeightChannels: _fields == TrackFields.LayerWeights, Writes: _writes, Count: 0);
         world.ExecuteQuery(_targets, context.LastSystemVersion, ref composition, &ComposeDynamic);
         world.ExecuteQuery(_sources, context.LastSystemVersion, ref composition, &ComposeFixed);

@@ -17,6 +17,18 @@ Rendering world 的网格组件保存 source joint 到区段实体及区段内�
 并在 GPU 插值片段、传播层级 G。GPU 历史按每个区段的新输入推进；首次出现的区段以当前矩阵
 初始化上一份矩阵，重复渲染同一输入保持原有矩阵对。
 
+提取直接从同一 `QueryChunkView` 读取 `MeshSkin` 与 `GpuPoseTarget` 列，来源成员在完整
+结构协调时核对。网格的 joint 映射与 distinct 依赖区段一起保存在绑定持有者中，普通帧按
+依赖区段标记模型来源。目标持有者保存已发布的区段映射，实际重绑时更新 Rendering 组件。
+已有区段的逐帧值更新通过 `IRenderExtractionSystem.CanApplyChangesDirect` 进入共同值更新
+边界；创建、移除及重绑沿原有结构事务发布，组件 hook 仍由共同提取调度选择事务路径。
+
+渲染准备从已声明的 chunk 列读取区段和网格绑定，再按同一成员列写出 `RenderPoseSection`。
+网格绑定的成员版本由现有查询持有；实际成员变化时协调集合，普通帧按
+`RenderMeshSkin` 的 chunk 版本更新已有绑定。
+`PrepareEvaluations` 在这个阶段确定当前输入、模型版本和采样身份；帧资源更新直接使用
+同一区段持有的结果来生成 GPU 控制上传。
+
 渲染准备阶段生成每个网格的 `RenderSkinBinding`，其中两个 uint 分别是 joint 映射起点
 和逆绑定矩阵起点。`SkinInstanceProducer` 将它写入普通实例属性存储，与 Cluster 的
 空间、几何及材质属性组合。静态网格使用零值。
@@ -24,6 +36,11 @@ Rendering world 的网格组件保存 source joint 到区段实体及区段内�
 `SkinningFeature` 在装配变化时将 joint 索引和逆绑定矩阵上传到持久资源。每帧输出当前 G
 和上一份 G，持久图通过四个 `GraphBufferInput` 绑定它们。用户 shader 的读取依赖于
 `CompletePass`，资源使用期由帧资源与 GPU 完成状态共同管理。
+
+当前/上一份模型与局部采样历史、播放状态、blend 状态和 XPBD 点状态由同一个
+`PoseHistoryBuffers` 保存五个持久缓冲。定义复制持有迁移前后两组，上传 pass 提交成功后
+将新组接受为历史，并把旧组加入退休集合；后续图编辑沿同一资源枚举移除旧组。
+各区段的样本身份、时间和输入仍在 store pass 提交成功后接受。
 
 ## 应用接入
 
@@ -57,13 +74,24 @@ await Application.RunAsync(args, application);
 
 ## 用户顶点 shader
 
-`skin_pose.slang` 提供四个 buffer 和三个读取函数：
+`skin_binding.slang` 提供共同的实例绑定读取；`skin_pose.slang` 引入该绑定并提供模型骨骼、
+joint 映射与逆绑定矩阵。选择预计算仿射乘积的材质引入 `skin_joint_transforms.slang`。
+这些头文件提供以下读取函数：
 
 | 接口 | 输入 | 结果 |
 | --- | --- | --- |
 | `LoadSkinBinding` | Cluster instance ID | joint 与逆绑定矩阵的起点 |
 | `LoadSkinModelTransform` | binding、source joint、previous 标志 | 选定帧的模型空间 G |
 | `LoadSkinTransform` | binding、source joint、previous 标志 | `InverseBind[joint] * G` |
+| `LoadSkinJointTransform` | binding、source joint、previous 标志 | 变形边界阶段已计算的 `InverseBind[joint] * G` 仿射矩阵 |
+
+`LoadSkinJointTransform` 适用于参与 `SkinBoundsFeature` 的蒙皮实例；这些实例具有
+`RenderSkinBounds`。该 feature 通过 `IGraphResourceProvider` 暴露现有 `SkinJointTransforms`
+字节资源，读取依赖同一关节计算 pass。`binding.x + sourceJoint` 选择每个绑定的 112 字节行，
+当前与上一份 XYZ 仿射列分别位于行内偏移 0 与 48。布局与计算持有关系见
+[Deformed Bounds](Deformed-Bounds.md)。Runtime 已将该 provider 加入共同材质资源组；
+自行组合的渲染应用可按同一方式注册。材质选择这一读取函数来复用已有乘积，
+`LoadSkinModelTransform` 与 `LoadSkinTransform` 继续提供直接读取 G 和求乘积的接口。
 
 引擎的行向量约定对应 `mul(float4(position, 1), skinTransform)`。用户材质读取自己编码的
 joint 与权重，选择影响数，并计算位置、法线和切线。上一帧求值使用
@@ -83,8 +111,8 @@ inline 材质直接把该类型作为 `VertexEvaluate` 与 `RasterVertexEvaluate
 并引入 `cluster_deform.slang`。完整接口见 [Deform Cache](../cluster/Deform-Cache.md)。
 
 缓存写入为每个可见 cluster 分别构造当前与上一帧 `VertexEvalContext`，携带各自的
-实例 ID、世界变换和 `IsPreviousFrame`。用户求值继续读取同一套 G、joint 映射与
-逆绑定矩阵；材质绑定通过既有 feature resource binder 提供给变形计算入口。
+实例 ID、世界变换和 `IsPreviousFrame`。用户求值选择相同模型历史对应的 G、joint 映射与
+逆绑定矩阵，或读取已计算的 joint 仿射乘积；材质绑定通过既有 feature resource binder 提供给变形计算入口。
 光栅、着色和运动向量随后消费保存的两份结果。
 
 [`SkinCacheRenderingTests`](../../../tests/SomeEngine.Runtime.Tests/SkinCacheRenderingTests.cs)

@@ -1,6 +1,7 @@
 using SomeEngine.ECS;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
+using SomeEngine.Job;
 
 namespace SomeEngine.Animation.Pose;
 
@@ -32,12 +33,20 @@ public struct PoseBlendInstance : IBufferElement
     internal double Time, Phase;
 }
 
-internal sealed class PoseBlendSamples(int bones, int inputs)
+internal sealed class PoseBlendSamples
 {
-    internal readonly int Stride = bones + 1;
-    internal readonly BoneTransform[] Inputs = new BoneTransform[(bones + 1) * inputs];
-    internal readonly BoneTransform[] Output = new BoneTransform[bones + 1];
-    internal readonly float[] Weights = new float[inputs];
+    internal readonly int Stride;
+    internal readonly BoneTransform[] Inputs, Output;
+    internal readonly float[] Weights;
+    internal readonly JobResourceAccess[] Accesses;
+    internal PoseBlendSamples(int bones, int inputs)
+    {
+        Stride = bones + 1;
+        Inputs = new BoneTransform[Stride * inputs];
+        Output = new BoneTransform[Stride];
+        Weights = new float[inputs];
+        Accesses = [JobResourceAccess.Read(Inputs), JobResourceAccess.Read(Weights), JobResourceAccess.Write(Output)];
+    }
 }
 
 public readonly struct PoseBlendLeaf : IAnimationLeaf<PoseBlendParameters>

@@ -1,4 +1,4 @@
-param([switch]$Trace, [string]$ApplicationPath)
+param([switch]$Trace, [string]$ApplicationPath, [string[]]$ApplicationArguments = @())
 $ErrorActionPreference = 'Stop'
 $application = if ($ApplicationPath) { [IO.Path]::GetFullPath($ApplicationPath) }
     else { [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../samples/DefaultGame/bin/game/Release/net10.0/DefaultGame.exe')) }
@@ -15,6 +15,7 @@ public static class SceneTestKeys {
 $started = [DateTime]::UtcNow
 $timer = [Diagnostics.Stopwatch]::StartNew()
 $start = [Diagnostics.ProcessStartInfo]::new($application)
+$start.ArgumentList.Add('--regression')
 $start.UseShellExecute = $false
 $start.CreateNoWindow = $true
 $start.RedirectStandardOutput = $true

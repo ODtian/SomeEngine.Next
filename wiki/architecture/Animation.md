@@ -15,3 +15,4 @@
 
 ## 使用者
 - [[architecture/someui/Animation|SomeUI Animation]]：`.Animate` 与 FLIP
+- [[architecture/animation/Crowd-Example|Crowd Example]]：统一场景平台中的 1000 个独立 GPU 角色

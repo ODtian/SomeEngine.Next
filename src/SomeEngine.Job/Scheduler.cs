@@ -273,6 +273,7 @@ public sealed partial class Scheduler : IDisposable
             }
             throw;
         }
+        finally { submission.Release(); }
     }
 
     private JobPayloadLane BeginSchedule<T>(JobScheduleOptions options)
@@ -512,6 +513,7 @@ public sealed partial class Scheduler : IDisposable
             }
             throw;
         }
+        finally { submission.Release(); }
     }
 
     private JobPayloadLane BeginParallelSchedule<T>(JobScheduleOptions options, int batchSize)

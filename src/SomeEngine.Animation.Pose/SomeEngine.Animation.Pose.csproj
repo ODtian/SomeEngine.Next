@@ -19,6 +19,8 @@
              CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="../../external/rtm/LICENSE" Link="licenses/RTM-LICENSE.txt"
              CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../external/ewbik/LICENSE" Link="licenses/EWBIK-LICENSE.txt"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
   <Target Name="BuildAclNative" BeforeTargets="PrepareForBuild;GetCopyToOutputDirectoryItems"
           Inputs="@(AclNativeSource)" Outputs="$(MSBuildProjectDirectory)/obj/native/Release/SomeEngineAcl.dll">

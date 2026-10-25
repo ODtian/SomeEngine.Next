@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using SomeEngine.ECS.Entities;
+using SomeEngine.ECS.Queries;
 
 namespace SomeEngine.ECS;
 
@@ -13,6 +14,10 @@ public readonly ref struct ComponentWriteBatch<TComponent> where TComponent : st
         (_world, _sparse, CurrentSystemVersion) = (world, sparse, version);
 
     public uint CurrentSystemVersion { get; }
+
+    /// <summary>Borrows a declared query column using this batch's shared write version.</summary>
+    public ComponentWriteColumn<TComponent> ReadWriteColumn(QueryChunkView chunk) =>
+        chunk.ReadWriteColumn<TComponent>(_world, CurrentSystemVersion);
 
     /// <summary>Resolves the current row and advances its component version before returning its root.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

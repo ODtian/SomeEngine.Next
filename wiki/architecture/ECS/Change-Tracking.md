@@ -25,6 +25,19 @@
 
 `QueryRow.Read<T>()` 返回组件值；`Write<T>()` 和 `ReadWrite<T>()` 返回组件引用。查询对象及回调边界从当前 `QueryCursor`、`QueryRow` 和 `QueryChunkView` API 读取。
 
+`QueryCursor.ReadWriteRows<TComponent,TBuffer>()` 沿同一成员行枚举，在 chunk 边界绑定声明为读写的组件列和 buffer 列。
+`MoveNext(out row,out component,out buffer)` 交付原查询行、`ComponentWriteReference<TComponent>` 与 `DynamicBuffer<TBuffer>`。
+取得组件写引用沿原 `WriteRef` 发布该访问行的当前执行版本，并保持关系、层级与索引维护；buffer 写入沿现有动态缓冲规则发布版本。
+组件引用、buffer 和枚举器的使用期为当前查询回调，成员与版本筛选由原查询持有。
+源码：[列绑定枚举](../../../src/SomeEngine.ECS/Queries/ComponentBufferRowEnumerator.cs)、[查询入口](../../../src/SomeEngine.ECS/Queries/QueryCursor.cs)。
+
+`QueryChunkView.ReadWriteColumn<T>()` 与 `ReadBufferColumn<T>()` 在当前 chunk 绑定访问权限和列。
+调用方沿原 `RowIndices` 取得选中行，再索引 `ComponentWriteColumn<T>` 与 `BufferReadColumn<T>`；索引组件写列时沿同一 `WriteRef` 发布该行版本，索引只读 buffer 列时取得现有 `BufferView<T>`。
+列视图的有效期为当前查询回调。源码：[chunk 列入口](../../../src/SomeEngine.ECS/Queries/QueryChunkView.Columns.cs)。
+
+`WriteBufferColumn<T>()` 在相同边界绑定 buffer 写列及当前查询版本，各行返回原 `DynamicBuffer<T>`，实际写入沿其既有版本路径发布。
+`ReadEnabledColumn<T>()` 绑定组件读取权限及 enable-mask 索引，`ComponentEnabledColumn[row]` 读取该行的当前启用位。
+
 `ExecuteQuery` 的 managed 函数指针重载提供相同的无状态、`ref TState` 和显式系统基线形式，复用查询权限、当前版本和关系提交边界。一次查询回调分发一次，具体数据循环由回调保存类型。
 
 ## 组件类型写版本
@@ -34,6 +47,11 @@
 ## 查询成员观察版本
 
 公开 `World.MembershipVersion(QueryHandle)` 提供查询成员观察版本，供列表拉取依赖。匹配、顺序、启用过滤与结构事务的语义见 [[architecture/someui/Dependencies|Dependencies]] 的 Query membership；公开行为由 `QueryMembershipTests` 验证。
+
+`World.HasQueryMembers(query)` 在当前匹配表中检查实体和启用成员，供消费者选择本次查询工作。
+它借用拓扑及成员条件所需的只读存储，直接读取现有匹配表和行掩码。
+版本过滤项在成员检查中贡献组件要求，实际时间窗口由后续 `ExecuteQuery` 应用。
+源码入口为 `World.Queries.cs` 和 `Queries/QueryState.cs`。
 
 ## Job 与拓扑写入版本
 

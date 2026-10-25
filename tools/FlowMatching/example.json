@@ -1,0 +1,25 @@
+{
+  "description": "Example procedural three-bone motion dataset for reproducible conditional flow training",
+  "dataSeed": 31415,
+  "trainingSeed": 2718,
+  "sequences": 64,
+  "frames": 64,
+  "frameTime": 0.1,
+  "threads": 4,
+  "batchSize": 256,
+  "decoderIterations": 1800,
+  "flowIterations": 4500,
+  "learningRate": 0.002,
+  "previousNoise": 0.02,
+  "integrationSteps": 8,
+  "flowWidths": [19, 96, 96, 6],
+  "decoderWidths": [6, 64, 64, 32],
+  "initialLatent": [0, 1, 0, 0, 0, 0],
+  "parents": [-1, 0, 1],
+  "positions": [[0, 0, 0], [0, 0, 0], [0, 1, 0]],
+  "names": ["Simulation", "Hips", "Tip"],
+  "controls": [
+    {"name": "velocity", "kind": "vector3", "count": 1},
+    {"name": "target", "kind": "vector3", "count": 1}
+  ]
+}

@@ -94,4 +94,6 @@ PoseAnimation.AddSystems(systems,
 
 图内输入输出决定 Layer、Blend 与 Warp 的处理层级，具体系统在对应层完成各实例的批次。
 
-片段采样 Job 显式声明就绪片段的读取和工作区数组的写入，完成句柄在结果复制进 ECS buffer 前收敛。每个目标实体持有自身的结果 buffer；调用方持有并释放 `SkeletonInstance`。
+`ClipSystem` 先从当前查询行取得共同叶节点时间，按 ready `AnimationClip` 收集活动实例。每个共享片段使用保留的时间行与局部姿势工作区，具体采样 Job 按 32 行解码；全部采样句柄完成后，各实例分别处理事件、根运动、姿势版本和阶段结束。`PoseBlendSystem` 在每个结果依赖层收集已就绪的实例，以具体 Job 批次计算加权骨骼，再写入普通结果。各目标继续持有自己的结果、时间与历史。
+
+片段采样 Job 显式声明就绪片段的读取和工作区、实例数组的写入；混合 Job 声明实际输入、权重和输出数组范围。完成句柄在结果复制进 ECS buffer 前收敛。调用方持有并释放 `SkeletonInstance`。源码入口为 [ClipSystem](../../../src/SomeEngine.Animation.Pose/ClipSystem.cs)、[ClipSamplingRows](../../../src/SomeEngine.Animation.Pose/ClipSamplingRows.cs) 和 [PoseBlendSystem](../../../src/SomeEngine.Animation.Pose/PoseBlendSystem.cs)。

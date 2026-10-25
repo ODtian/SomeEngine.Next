@@ -15,6 +15,51 @@ namespace DefaultGame.Content;
 
 public static class ImportedSceneBuild
 {
+    public static async Task ReuseAsync(string applicationDirectory, string importedDirectory, string projectRoot, string engineRoot)
+    {
+        applicationDirectory = Path.GetFullPath(applicationDirectory);
+        importedDirectory = Path.GetFullPath(importedDirectory);
+        projectRoot = Path.GetFullPath(projectRoot);
+        engineRoot = Path.GetFullPath(engineRoot);
+        var timer = Stopwatch.StartNew();
+        foreach (string directory in new[] { "assets", "Library/AssetManifest" })
+            foreach (string file in Directory.EnumerateFiles(Path.Combine(applicationDirectory, directory), "*", SearchOption.AllDirectories))
+            {
+                string destination = Path.Combine(projectRoot, Path.GetRelativePath(applicationDirectory, file));
+                Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+                File.Copy(file, destination, overwrite: true);
+            }
+        AssetManifest imported = AssetManifest.Load(Path.Combine(importedDirectory, "Library/AssetManifest"));
+        var project = new AssetProject(projectRoot, [], shaderIncludeDirectories: [Path.Combine(engineRoot, "assets/Shaders")]);
+        foreach (AssetEntry entry in imported.Assets.Values.Where(entry => entry.AssetType != ApplicationSettingsAsset.FileType
+            && entry.AssetType != MaterialAsset.FileType))
+        {
+            string destination = Path.Combine(projectRoot, entry.Path);
+            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+            if (!File.Exists(destination)) File.Copy(Path.Combine(importedDirectory, entry.Path), destination);
+            project.RegisterAsset(entry);
+        }
+        string metadata = Path.Combine(importedDirectory, "scene-import.json");
+        var description = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(metadata))!;
+        string source = description["source"]!.GetValue<string>();
+        ModelRoot model = ModelRoot.Load(source);
+        var importer = new ImportedSceneImporter();
+        await importer.BuildAsync(project, model, engineRoot, packedVertices: true);
+        await importer.UpdateMaterialsAsync(project, model, imported);
+        AssetEntry scene = imported.Assets.Values.Single(entry => entry.AssetType == WorldAsset.FileType);
+        string settingsPath = Path.Combine(projectRoot, "assets/Runtime/default.runtime.asset");
+        using (ApplicationSettingsAsset settings = await ApplicationSettingsAsset.OpenAsync(settingsPath))
+        {
+            settings.GetBlock<ApplicationSettingsBlock>().Scene = new(scene.AssetGuid);
+            project.RegisterAsset(await settings.SaveAsync(settingsPath));
+        }
+        description["ImportedDirectory"] = importedDirectory;
+        description["ReusedMeshAssets"] = imported.Assets.Values.Count(entry => entry.AssetType == MeshAsset.FileType);
+        description["PreparationSeconds"] = timer.Elapsed.TotalSeconds;
+        File.WriteAllText(Path.Combine(projectRoot, "scene-import.json"), description.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+        Console.WriteLine($"Reused {description["ReusedMeshAssets"]} meshes from {importedDirectory} in {timer.Elapsed.TotalSeconds:F3}s.");
+    }
+
     public static async Task BuildAsync(string applicationDirectory, string sourcePath, string projectRoot, string engineRoot)
     {
         applicationDirectory = Path.GetFullPath(applicationDirectory);
