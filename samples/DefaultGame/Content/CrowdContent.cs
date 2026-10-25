@@ -219,7 +219,7 @@ public static class CrowdContent
     }
 
     private const string SkinEvaluator = """
-        #include "skin_pose.slang"
+        #include "skin_joint_transforms.slang"
         struct CrowdSkin : IVertexEvaluate
         {
             typedef StandardVertex Vertex;
@@ -247,7 +247,7 @@ public static class CrowdContent
                 precise float3 localNormal = 0;
                 [unroll] for (uint influence = 0; influence < 4u; influence++)
                 {
-                    precise float4x4 transform = LoadSkinTransform(binding, joints[influence], ctx.IsPreviousFrame != 0u);
+                    precise float4x4 transform = LoadSkinJointTransform(binding, joints[influence], ctx.IsPreviousFrame != 0u);
                     precise float3 transformedPosition = mul(float4(position, 1), transform).xyz;
                     precise float3 transformedNormal = mul(float4(normal, 0), transform).xyz;
                     localPosition += transformedPosition * weights[influence];

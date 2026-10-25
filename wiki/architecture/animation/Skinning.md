@@ -69,13 +69,24 @@ await Application.RunAsync(args, application);
 
 ## 用户顶点 shader
 
-`skin_pose.slang` 提供四个 buffer 和三个读取函数：
+`skin_binding.slang` 提供共同的实例绑定读取；`skin_pose.slang` 引入该绑定并提供模型骨骼、
+joint 映射与逆绑定矩阵。选择预计算仿射乘积的材质引入 `skin_joint_transforms.slang`。
+这些头文件提供以下读取函数：
 
 | 接口 | 输入 | 结果 |
 | --- | --- | --- |
 | `LoadSkinBinding` | Cluster instance ID | joint 与逆绑定矩阵的起点 |
 | `LoadSkinModelTransform` | binding、source joint、previous 标志 | 选定帧的模型空间 G |
 | `LoadSkinTransform` | binding、source joint、previous 标志 | `InverseBind[joint] * G` |
+| `LoadSkinJointTransform` | binding、source joint、previous 标志 | 变形边界阶段已计算的 `InverseBind[joint] * G` 仿射矩阵 |
+
+`LoadSkinJointTransform` 适用于参与 `SkinBoundsFeature` 的蒙皮实例；这些实例具有
+`RenderSkinBounds`。该 feature 通过 `IGraphResourceProvider` 暴露现有 `SkinJointTransforms`
+字节资源，读取依赖同一关节计算 pass。`binding.x + sourceJoint` 选择每个绑定的 112 字节行，
+当前与上一份 XYZ 仿射列分别位于行内偏移 0 与 48。布局与计算持有关系见
+[Deformed Bounds](Deformed-Bounds.md)。Runtime 已将该 provider 加入共同材质资源组；
+自行组合的渲染应用可按同一方式注册。材质选择这一读取函数来复用已有乘积，
+`LoadSkinModelTransform` 与 `LoadSkinTransform` 继续提供直接读取 G 和求乘积的接口。
 
 引擎的行向量约定对应 `mul(float4(position, 1), skinTransform)`。用户材质读取自己编码的
 joint 与权重，选择影响数，并计算位置、法线和切线。上一帧求值使用
@@ -95,8 +106,8 @@ inline 材质直接把该类型作为 `VertexEvaluate` 与 `RasterVertexEvaluate
 并引入 `cluster_deform.slang`。完整接口见 [Deform Cache](../cluster/Deform-Cache.md)。
 
 缓存写入为每个可见 cluster 分别构造当前与上一帧 `VertexEvalContext`，携带各自的
-实例 ID、世界变换和 `IsPreviousFrame`。用户求值继续读取同一套 G、joint 映射与
-逆绑定矩阵；材质绑定通过既有 feature resource binder 提供给变形计算入口。
+实例 ID、世界变换和 `IsPreviousFrame`。用户求值选择相同模型历史对应的 G、joint 映射与
+逆绑定矩阵，或读取已计算的 joint 仿射乘积；材质绑定通过既有 feature resource binder 提供给变形计算入口。
 光栅、着色和运动向量随后消费保存的两份结果。
 
 [`SkinCacheRenderingTests`](../../../tests/SomeEngine.Runtime.Tests/SkinCacheRenderingTests.cs)

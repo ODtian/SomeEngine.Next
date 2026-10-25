@@ -626,6 +626,7 @@ internal static class RuntimeApplication
         var stageResources = new GraphResourceGroup();
         stageResources.Add(lighting);
         stageResources.Add(skinning);
+        stageResources.Add(skinBounds);
         var lightSystem = new RenderLightSetSystem();
         _ = prepareSystems.Add(lightSystem);
         var streamingFeedback = new ClusterStreamingFeedbackChannel();

@@ -22,7 +22,9 @@ API 的程序生成示例夹具。24 段人体表面各连接四根骨骼，共 
 能力生成 Cluster 几何、LOD 和关节影响盒。每段固定的影响元组随几何简化保留。
 示例材质把四个 16 位 joint 和四个 8 位权重附加在标准表面属性后，使用自己的
 `someengine.example.crowd.lbs4.v1` 编码标识。两条路径共用同一个 `CrowdSkin.evaluate`，
-它通过 `LoadSkinTransform` 读取当前或上一帧模型骨骼，并求值位置和法线。
+它选择 `LoadSkinJointTransform` 读取变形边界阶段已计算的当前或上一帧 `IB * G`，
+再按自己的四权重求值位置和法线。该可选公共读取适用于参与 `SkinBoundsFeature` 的
+蒙皮绑定，接口与适用条件见 [Skinning](Skinning.md)。
 LBS 的矩阵、位置和法线中间值使用 `precise`，统一 inline 与缓存求值阶段的浮点运算顺序。
 示例的 `.shader` 源码组合同时声明自己的顶点编码和 `CrowdSkin` 求值器，并预编译
 `ClusterShadeMode`、`ClusterShadowReceiver` 和 `ClusterForwardShade` 的实际材质变体。
