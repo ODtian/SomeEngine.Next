@@ -9,6 +9,9 @@ joint coordinates, rotation derivatives, angular inertia and gyroscopic
 prediction from Newton.
 The mathematical migration follows the project's research NewtonRigid.cpp.
 
+JointMotorMath.cs, AvbdJointMotorMath.cs and XpbdJointMotorProjection.cs reuse
+these common joint Jacobians and material coefficients for timed PD drives.
+
 The C# implementation stores body equations and constraint multipliers in ECS
 components, binds concrete constraint types through borrowed query rows and
 uses the existing Job scheduler for its execution and completion.
