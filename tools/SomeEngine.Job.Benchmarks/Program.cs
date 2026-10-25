@@ -13,6 +13,7 @@ int spinCount = ReadNonNegativeArgument(args, "--spin", 128);
 int busySpinCount = ReadNonNegativeArgument(args, "--busy-spin", Math.Max(spinCount, 2_048));
 bool automatic = args.Contains("--auto", StringComparer.OrdinalIgnoreCase);
 bool counters = args.Contains("--counters", StringComparer.OrdinalIgnoreCase);
+bool synchronous = args.Contains("--synchronous", StringComparer.OrdinalIgnoreCase);
 
 JobSystem.Initialize(new JobRuntimeConfig
 {
@@ -28,6 +29,20 @@ try
         $"SomeEngine.Job benchmark | workers={workerCount} | samples={samples} | " +
         $"length={parallelLength} | batch={(automatic ? "auto" : "explicit")} | " +
         $"spin={spinCount}/{busySpinCount} | counters={counters}");
+
+    if (synchronous)
+    {
+        int calls = ReadIntArgument(args, "--calls", 128);
+        int[] values = new int[parallelLength];
+        var job = new LightParallelJob(values);
+        int size = automatic ? JobScheduleOptions.AutomaticBatchSize
+            : Math.Max(1, parallelLength / Math.Max(1, workerCount * 4));
+        RunCalls("schedule-and-complete", warmups, samples, calls,
+            () => JobSystem.Default.ScheduleParallel(job, values.Length, size).Complete());
+        RunCalls("execute-parallel", warmups, samples, calls,
+            () => JobSystem.Default.ExecuteParallel(job, values.Length, size));
+        return;
+    }
 
     Run(
         "single-job x10k",
@@ -137,6 +152,32 @@ static double Percentile(double[] sorted, double percentile)
 {
     int index = (int)Math.Ceiling(percentile * sorted.Length) - 1;
     return sorted[Math.Clamp(index, 0, sorted.Length - 1)];
+}
+
+static void RunCalls(string name, int warmups, int samples, int calls, Action action)
+{
+    for (int warmup = 0; warmup < warmups; warmup++)
+        for (int call = 0; call < calls; call++)
+            action();
+
+    var microseconds = new double[samples];
+    var allocatedBytes = new double[samples];
+    GC.Collect();
+    GC.WaitForPendingFinalizers();
+    GC.Collect();
+    for (int sample = 0; sample < samples; sample++)
+    {
+        long before = GC.GetTotalAllocatedBytes(precise: true);
+        long started = Stopwatch.GetTimestamp();
+        for (int call = 0; call < calls; call++)
+            action();
+        microseconds[sample] = Stopwatch.GetElapsedTime(started).TotalMicroseconds / calls;
+        allocatedBytes[sample] = (GC.GetTotalAllocatedBytes(precise: true) - before) / (double)calls;
+    }
+    Array.Sort(microseconds);
+    Array.Sort(allocatedBytes);
+    Console.WriteLine($"{name,-24} calls={calls} p50={Percentile(microseconds, 0.50):F3} us/call " +
+        $"p95={Percentile(microseconds, 0.95):F3} us/call allocated-p50={Percentile(allocatedBytes, 0.50):F2} B/call");
 }
 
 readonly struct EmptyJob : IJob

@@ -94,7 +94,7 @@ public sealed partial class Scheduler
                 $"The current job did not declare a covering {Describe(required)} access.");
         }
 
-        if (requireSingleWorkItem && mayExecuteConcurrently)
+        if (requireSingleWorkItem && (mayExecuteConcurrently || s_synchronousParallelDepth != 0))
         {
             throw CreateCurrentAccessException(required, ConcurrentCapabilityMessage);
         }
