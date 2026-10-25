@@ -108,26 +108,56 @@ public sealed class ComponentFieldGenerator : IIncrementalGenerator
                 parent = "part" + index;
             }
             source.Append("            ").Append(parent).Append('.').Append(Escape(field.Members.Last().Name)).AppendLine(" = value;");
-            for (int index = field.Members.Length - 2; index >= 0; index--)
-                if (MemberType(field.Members[index]).IsValueType)
-                    source.Append("            ").Append(index == 0 ? "component" : "part" + (index - 1)).Append('.').Append(Escape(field.Members[index].Name))
-                        .Append(" = part").Append(index).AppendLine(";");
+            for (int index = field.Members.Length - 2; index >= 0 && MemberType(field.Members[index]).IsValueType; index--)
+                source.Append("            ").Append(index == 0 ? "component" : "part" + (index - 1)).Append('.').Append(Escape(field.Members[index].Name))
+                    .Append(" = part").Append(index).AppendLine(";");
             source.AppendLine("        }\n    }");
         }
         source.AppendLine("}");
         if (compilation.GetTypeByMetadataName("SomeEngine.Animation.Channel`1") is not null)
         {
+            bool resourceAccess = compilation.GetTypeByMetadataName("SomeEngine.ECS.Systems.IJobComponentResources`1") is not null;
             source.Append(visibility).Append(" static class ").Append(prefix).AppendLine("Channels\n{");
             foreach (Field field in fields)
             {
                 string access = field.Access is null ? prefix + "FieldAccess." + Escape(field.Name) : TypeName(field.Access);
                 source.Append("    public static readonly global::SomeEngine.Animation.Channel<").Append(TypeName(field.Type)).Append("> ")
                     .Append(Escape(field.Name)).Append(" = global::SomeEngine.Animation.Channel<").Append(TypeName(field.Type)).Append(">.Of<")
-                    .Append(rootName).Append(", ").Append(access).Append(">((ushort)").Append(prefix).Append("Fields.").Append(Escape(field.Name))
+                    .Append(rootName).Append(", ").Append(access);
+                if (resourceAccess && field.Access is null)
+                    source.Append(", FieldResources.").Append(Escape(field.Name));
+                else if (resourceAccess && field.Access!.AllInterfaces.Any(type =>
+                    type.OriginalDefinition.ToDisplayString() == "SomeEngine.ECS.Systems.IJobComponentResources<TComponent>"))
+                    source.Append(", ").Append(access);
+                source.Append(">((ushort)").Append(prefix).Append("Fields.").Append(Escape(field.Name))
                     .Append(", throughReference: ").Append(field.Access is not null || field.Members.Take(field.Members.Length - 1).Any(member => MemberType(member).IsReferenceType) ? "true" : "false");
                 if (HasOffset(field))
                     source.Append(", offset: ").Append(access).Append(".Offset");
                 source.AppendLine(");");
+            }
+            if (resourceAccess)
+            {
+                source.AppendLine("    private static class FieldResources\n    {");
+                foreach (Field field in fields.Where(field => field.Access is null))
+                {
+                    source.Append("        internal readonly struct ").Append(Escape(field.Name))
+                        .Append(" : global::SomeEngine.ECS.Systems.IJobComponentResources<").Append(rootName).AppendLine(">\n        {");
+                    source.Append("            public static void Collect(in ").Append(rootName)
+                        .AppendLine(" component, ref global::SomeEngine.ECS.Systems.JobResourceAccessBuilder resources)\n            {");
+                    int lastReference = -1;
+                    for (int index = 0; index < field.Members.Length - 1; index++)
+                        if (MemberType(field.Members[index]).IsReferenceType) lastReference = index;
+                    for (int index = 0; index <= lastReference; index++)
+                    {
+                        source.Append("                var part").Append(index).Append(" = ")
+                            .Append(index == 0 ? "component" : "part" + (index - 1)).Append('.').Append(Escape(field.Members[index].Name)).AppendLine(";");
+                        if (MemberType(field.Members[index]).IsReferenceType)
+                            source.Append("                resources.").Append(index == lastReference ? "Write" : "Read")
+                                .Append("(part").Append(index).AppendLine(");");
+                    }
+                    source.AppendLine("            }\n        }");
+                }
+                source.AppendLine("    }");
             }
             source.AppendLine("}");
             if (compilation.GetTypeByMetadataName("SomeEngine.Views.Scope") is not null)
