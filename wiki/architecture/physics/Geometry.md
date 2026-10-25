@@ -10,6 +10,8 @@
 
 模拟实体采样点驱动的胶囊、连续边及面域通过具体 reader 接入同一路径，当前状态、跨实体访问和多端权重职责见 [动态几何](Dynamic-Geometry.md)。
 
+具体有符号距离场及共享网格通过相同的几何、类型检测和查询入口使用，数据、采样精度与支持组合见 [有符号距离场](Signed-Distance-Fields.md)。
+
 `ICollisionGeometry<TGeometry>` 提供范围、点的带符号距离、支持特征面和球扫描。`ICollisionConvex<TGeometry>` 提供具体类型的核心支持点与球形外扩半径。球的核心是点，胶囊的核心是线段；盒和圆柱的核心包含完整实体形状。具体类型通过静态调用解释自己的几何数据。
 
 `UpdateGeometryBounds<TGeometry>` 在共同物理步中从原几何和 `BodyPose` 列计算派生 `CollisionBounds`。预测、范围更新、碰撞树维护及检测通过已有 Job 完成依赖连接。独立查询在同一个 World 读取作用域中消费当前组件，树及范围由调用方沿这一顺序维护。
