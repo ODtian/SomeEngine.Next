@@ -122,6 +122,9 @@ Job 完成路径记录。清理可以通过正常调度创建子工作，返回�
 接受相同的工作、长度、批大小和 `JobScheduleOptions`。显式批大小沿用每批一份工作值副本；
 `AutomaticBatchSize` 使用现有类型化批大小选择器。
 
+`JobSystem.ExecuteParallel` 提供对应的普通入口与资源集合入口，参数与显式 Scheduler 入口一致。
+它沿既有便利调度入口解析当前 Job 的 Scheduler，协调调用使用默认 Scheduler。
+
 调用线程保留首批并继续动态领取，其余参与者进入 Scheduler 的共享就绪队列。同步批次持有
 领取位置、首个失败和参与者完成数；队列完成本次 drainer 的清理后才登记参与者退出。
 调用方等全部参与者退出，再归还类型化批次并取得结果；范围执行失败同样在这个完成点抛出。
@@ -142,6 +145,7 @@ ECS 的 `ReadOnlyQueryPacketJobs.ExecutePrepared` 将其借用的范围数组交
 
 本节属于已实现的公共接口与使用方法。源码入口：
 [同步范围](../../../src/SomeEngine.Job/Scheduler.SynchronousParallel.cs)、
+[便利入口](../../../src/SomeEngine.Job/JobSystem.cs)、
 [共享队列](../../../src/SomeEngine.Job/WorkQueue.cs)、
 [只读查询分区](../../../src/SomeEngine.ECS.Systems/ReadOnlyQueryPacketJobs.cs)。
 公共行为检查：[同步结果和完成点](../../../tests/SomeEngine.Job.Tests/SynchronousParallelTests.cs)、
