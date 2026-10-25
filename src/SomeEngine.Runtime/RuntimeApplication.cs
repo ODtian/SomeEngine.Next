@@ -107,7 +107,7 @@ internal static class RuntimeApplication
         using ApplicationSettingsAsset settings = display.Wait(ApplicationSettingsAsset.OpenAsync(assets,
             new AssetId<ApplicationSettingsAsset>(runtimeRecords[0].AssetGuid)).AsTask());
         ApplicationSettingsBlock boot = display.Wait(settings.GetBlockAsync<ApplicationSettingsBlock>().AsTask());
-        string title = application?.WindowTitle ?? settings.Name;
+        string title = settings.Name;
         Task<WorldAsset> sceneTask = WorldAsset.OpenAsync(assets, boot.Scene).AsTask();
         Task<ClusterShaders> pipelineTask = CreateClusterShadersAsync().AsTask();
         Task<VirtualShadowMapShaders> virtualShadowTask = CreateShadowShadersAsync().AsTask();
@@ -273,12 +273,11 @@ internal static class RuntimeApplication
         private bool _windowVSync;
         private bool _meshShadersDisabled;
         private bool _validation;
-        private DeviceFeatures _requiredFeatures;
 
         internal void Initialize(RuntimeStartupOptions options, bool useWarp, string title, ApplicationSettingsBlock boot)
         {
             if (Window is not null && _meshShadersDisabled == options.DisableMeshShaders &&
-                _validation == options.DeviceValidation && _requiredFeatures == options.RequiredDeviceFeatures)
+                _validation == options.DeviceValidation)
             {
                 if (_windowVSync != options.WindowVSync)
                     ReconfigureSwapchain(Backend, Swapchain, options, Window.ClientWidth, Window.ClientHeight,
@@ -289,7 +288,6 @@ internal static class RuntimeApplication
             _windowVSync = options.WindowVSync;
             _meshShadersDisabled = options.DisableMeshShaders;
             _validation = options.DeviceValidation;
-            _requiredFeatures = options.RequiredDeviceFeatures;
             if (Window is not null)
             {
                 Swapchain.Dispose();
@@ -321,7 +319,7 @@ internal static class RuntimeApplication
             Device = Backend.CreateDevice(new DeviceDesc(
                 adapterId,
                 queues,
-                requiredFeatures: DeviceFeatures.Presentation | DeviceFeatures.IndirectCommands | options.RequiredDeviceFeatures |
+                requiredFeatures: DeviceFeatures.Presentation | DeviceFeatures.IndirectCommands |
                     (options.MeasureBlending ? DeviceFeatures.CalibratedTimestamps : DeviceFeatures.None),
                 optionalFeatures: DeviceFeatures.CalibratedTimestamps |
                     (options.DisableMeshShaders ? DeviceFeatures.None : DeviceFeatures.MeshShaders),
