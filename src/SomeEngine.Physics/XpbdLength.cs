@@ -17,12 +17,13 @@ public struct XpbdLength : IComponent
 
 public readonly struct XpbdLengthProjection : IXpbdConstraint<XpbdLength>
 {
-    public static void Initialize(in XpbdLength constraint, scoped QueryRow row) =>
+    public static void Initialize(in XpbdLength constraint, scoped QueryRow row, in PhysicsStepContext context) =>
         row.ReadWrite<XpbdLength>().Multiplier = 0;
 
     public static void Project(in XpbdLength constraint, scoped QueryRow row,
-        scoped PhysicsBodies bodies, float duration)
+        scoped PhysicsBodies bodies, in PhysicsStepContext context)
     {
+        float duration = (float)context.Duration;
         Vector3 difference = bodies.ReadPose(constraint.Second).Position - bodies.ReadPose(constraint.First).Position;
         float distance = difference.Length();
         Vector3 gradient = difference / distance;

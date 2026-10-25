@@ -33,24 +33,24 @@ public readonly struct SolveXpbd<TConstraints> : IPhysicsStage where TConstraint
 
     public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) =>
         WorldJobs.GetScheduler(context.World).Schedule(
-            new SolveConstraints(context.World, _bodies, _constraints, _iterations, (float)context.Duration),
+            new SolveConstraints(context, _bodies, _constraints, _iterations),
             _accesses, dependency);
 
-    private readonly struct SolveConstraints(World world, QueryHandle bodies, TConstraints constraints,
-        int iterations, float duration) : IJob, IQueryExecution
+    private readonly struct SolveConstraints(PhysicsStepContext context, QueryHandle bodies, TConstraints constraints,
+        int iterations) : IJob, IQueryExecution
     {
         public void Execute()
         {
             var execution = this;
-            world.ExecuteQuery(bodies, ref execution);
+            context.World.ExecuteQuery(bodies, ref execution);
         }
 
         public void Execute(scoped QueryCursor query)
         {
             var bodies = new PhysicsBodies(query);
-            constraints.Initialize(world);
+            constraints.Initialize(in context);
             for (int iteration = 0; iteration < iterations; iteration++)
-                constraints.Project(world, bodies, duration);
+                constraints.Project(in context, bodies);
         }
     }
 }
