@@ -1,5 +1,7 @@
 # 有符号距离场
 
+相同采样、特征与共同接触语义的设备实现见[设备有符号距离场](Device-Signed-Distance-Fields.md)。
+
 本页记录当前场数据、采样数学、接触与公共查询用法。对应源码为
 [SdfGeometry](../../../src/SomeEngine.Physics/SdfGeometry.cs)、
 [TrilinearSdfGrid](../../../src/SomeEngine.Physics/TrilinearSdfGrid.cs)、

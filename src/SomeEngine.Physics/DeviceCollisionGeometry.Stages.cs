@@ -1,5 +1,6 @@
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
+using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Relations;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Job;
@@ -34,10 +35,10 @@ public readonly struct WriteDeviceGeometryInputs<TGeometry, TReader> : IPhysicsS
 
     public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency)
     {
-        dependency = _reader.Prepare(in context, _rowsPerPacket, dependency);
+        dependency = _reader.Prepare(in context, QueryDefinition.Empty, _rowsPerPacket, dependency);
         return new WriteDeviceGeometryInputsJob<TGeometry, TReader>(_grid, _participants, _reader, _geometryType)
             .ScheduleParallel(context.World, _participants.GetReadAccesses(),
-                new JobEntityScheduleOptions(rowsPerPacket: _rowsPerPacket, filter: context.Bodies), dependency);
+                new JobEntityScheduleOptions(rowsPerPacket: _rowsPerPacket), dependency);
     }
 }
 

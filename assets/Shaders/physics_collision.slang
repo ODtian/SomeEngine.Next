@@ -102,6 +102,21 @@ interface IDeviceConvex
     float radius(DeviceGeometryInput geometry);
     uint face(DeviceGeometryInput geometry, float3 direction, uint output);
 };
+struct DeviceGeometryPointDistance { float3 point; float3 normal; float distance; int feature; };
+interface IDevicePointGeometry : IDeviceConvex
+{
+    DeviceGeometryPointDistance distanceToPoint(DeviceGeometryInput geometry, float3 point);
+};
+
+DeviceGeometryPointDistance deviceLocalPointDistance(DeviceGeometryInput geometry,
+    float3 point, float3 normal, float distance, int feature)
+{
+    DeviceGeometryPointDistance result;
+    result.point = geometry.position + rotateDeviceDirection(geometry.rotation, point);
+    result.normal = rotateDeviceDirection(geometry.rotation, normal);
+    result.distance = distance; result.feature = feature;
+    return result;
+}
 interface IDeviceCollisionNarrowPhase
 {
     DeviceGeometryDistance distance(uint work, DeviceGeometryInput first, DeviceGeometryInput second);
@@ -109,8 +124,18 @@ interface IDeviceCollisionNarrowPhase
         DeviceGeometryDistance distance, out DeviceGeometryDistance points[4]);
 };
 
-struct DeviceSphere : IDeviceConvex
+struct DeviceSphere : IDevicePointGeometry
 {
+    DeviceGeometryPointDistance distanceToPoint(DeviceGeometryInput geometry, float3 point)
+    {
+        float3 offset = point - geometry.position;
+        float size = length(offset);
+        DeviceGeometryPointDistance result;
+        result.normal = size > 0 ? offset / size : float3(1,0,0);
+        result.point = geometry.position + result.normal * geometry.convexRadius;
+        result.distance = size - geometry.convexRadius; result.feature = 0;
+        return result;
+    }
     DeviceFeaturePoint support(DeviceGeometryInput geometry, float3 direction)
     {
         DeviceFeaturePoint result;
@@ -129,8 +154,30 @@ struct DeviceSphere : IDeviceConvex
     }
 };
 
-struct DeviceBox : IDeviceConvex
+struct DeviceBox : IDevicePointGeometry
 {
+    DeviceGeometryPointDistance distanceToPoint(DeviceGeometryInput geometry, float3 point)
+    {
+        float3 local = rotateDeviceDirection(float4(-geometry.rotation.xyz,geometry.rotation.w), point-geometry.position);
+        float3 outside = abs(local) - geometry.halfExtents;
+        float3 closest = clamp(local,-geometry.halfExtents,geometry.halfExtents);
+        float3 delta = local - closest;
+        float size = length(delta);
+        float3 normal;
+        int axis;
+        if (size > 0)
+        {
+            normal = delta / size; float3 absolute = abs(normal);
+            axis = absolute.x >= absolute.y && absolute.x >= absolute.z ? 0 : absolute.y >= absolute.z ? 1 : 2;
+        }
+        else
+        {
+            axis = outside.x >= outside.y && outside.x >= outside.z ? 0 : outside.y >= outside.z ? 1 : 2;
+            normal = 0; normal[axis] = local[axis] >= 0 ? 1 : -1;
+            closest[axis] = normal[axis] * geometry.halfExtents[axis]; size = outside[axis];
+        }
+        return deviceLocalPointDistance(geometry,closest,normal,size,axis*2+(local[axis]>=0?1:0));
+    }
     DeviceFeaturePoint support(DeviceGeometryInput geometry, float3 direction)
     {
         float3 local = rotateDeviceDirection(float4(-geometry.rotation.xyz, geometry.rotation.w), direction);
@@ -167,8 +214,17 @@ struct DeviceBox : IDeviceConvex
     }
 };
 
-struct DeviceCapsule : IDeviceConvex
+struct DeviceCapsule : IDevicePointGeometry
 {
+    DeviceGeometryPointDistance distanceToPoint(DeviceGeometryInput geometry, float3 point)
+    {
+        float3 local = rotateDeviceDirection(float4(-geometry.rotation.xyz,geometry.rotation.w), point-geometry.position);
+        float height = clamp(local.y,-geometry.halfHeight,geometry.halfHeight);
+        float3 center = float3(0,height,0), offset = local-center;
+        float size = length(offset); float3 normal = size > 0 ? offset/size : float3(1,0,0);
+        int feature = height <= -geometry.halfHeight ? 0 : height >= geometry.halfHeight ? 1 : 2;
+        return deviceLocalPointDistance(geometry,center+normal*geometry.convexRadius,normal,size-geometry.convexRadius,feature);
+    }
     DeviceFeaturePoint support(DeviceGeometryInput geometry, float3 direction)
     {
         float3 axis = rotateDeviceDirection(geometry.rotation, float3(0, 1, 0));
@@ -200,8 +256,26 @@ struct DeviceCapsule : IDeviceConvex
     }
 };
 
-struct DeviceCylinder : IDeviceConvex
+struct DeviceCylinder : IDevicePointGeometry
 {
+    DeviceGeometryPointDistance distanceToPoint(DeviceGeometryInput geometry, float3 point)
+    {
+        float3 local = rotateDeviceDirection(float4(-geometry.rotation.xyz,geometry.rotation.w), point-geometry.position);
+        float size = length(local.xz); float3 radial = size > 0 ? float3(local.x,0,local.z)/size : float3(1,0,0);
+        float radialDistance = size-geometry.radius, capDistance = abs(local.y)-geometry.halfHeight;
+        float sign = local.y >= 0 ? 1 : -1;
+        float3 closest, normal; float distance; int feature;
+        if (radialDistance > 0 && capDistance > 0)
+        {
+            closest = radial*geometry.radius+float3(0,sign*geometry.halfHeight,0);
+            float3 delta = local-closest; distance = length(delta); normal = delta/distance; feature = sign>0?3:4;
+        }
+        else if (radialDistance >= capDistance)
+        { closest = radial*geometry.radius+float3(0,local.y,0); normal=radial; distance=radialDistance; feature=0; }
+        else
+        { closest = float3(local.x,sign*geometry.halfHeight,local.z); normal=float3(0,sign,0); distance=capDistance; feature=sign>0?1:2; }
+        return deviceLocalPointDistance(geometry,closest,normal,distance,feature);
+    }
     DeviceFeaturePoint support(DeviceGeometryInput geometry, float3 direction)
     {
         float3 local = rotateDeviceDirection(float4(-geometry.rotation.xyz, geometry.rotation.w), direction);
