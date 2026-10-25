@@ -2,6 +2,7 @@ using System.Numerics;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Systems;
+using SomeEngine.Job;
 
 namespace SomeEngine.Animation.Pose.Tests;
 
@@ -22,7 +23,8 @@ public sealed class InertialPoseBehaviorTests
         var actionC = new MovingAction(new(3, -2, -1), Quaternion.CreateFromAxisAngle(Vector3.UnitZ, -.8f), new(.7f, 1.2f, .9f),
             new(new(.3f, -.8f, .6f), new(0, .7f, .2f), new(.06f, -.02f, .01f)));
         AnimationClip clipA = Clip(skeleton, actionA), clipB = Clip(skeleton, actionB), clipC = Clip(skeleton, actionC);
-        using var world = new World();
+        using var scheduler = new Scheduler(new() { WorkerCount = 2 });
+        using var world = WorldJobs.CreateWorld(scheduler: scheduler);
         var storage = new PoseStorage();
         using SkeletonInstance first = storage.CreateInstance(skeleton), second = storage.CreateInstance(skeleton);
         Entity firstTarget = PoseAnimation.CreateTarget(world, first, resultCount: 3, output: new(2));

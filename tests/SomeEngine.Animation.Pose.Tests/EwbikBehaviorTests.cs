@@ -2,6 +2,7 @@ using System.Numerics;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Systems;
+using SomeEngine.Job;
 
 namespace SomeEngine.Animation.Pose.Tests;
 
@@ -24,7 +25,8 @@ public sealed class EwbikBehaviorTests
         var clip = new AnimationClip(skeleton, 1, ClipSampler.Create<RawClipData, RawClipSampler>(raw));
         var rig = new EwbikRig(skeleton, 0, [new(4), new(8), new(2), new(4)],
             bones: [new(0, DampingScale: 0)], settings: new(Damping: .35f, Iterations: 192, PositionTolerance: .002f, OrientationTolerance: .002f));
-        using var world = new World();
+        using var scheduler = new Scheduler(new() { WorkerCount = 2 });
+        using var world = WorldJobs.CreateWorld(scheduler: scheduler);
         var storage = new PoseStorage();
         using SkeletonInstance fast = storage.CreateInstance(skeleton), slow = storage.CreateInstance(skeleton);
         Entity fastTarget = PoseAnimation.CreateTarget(world, fast, 3, new(2));

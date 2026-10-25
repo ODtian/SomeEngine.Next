@@ -134,7 +134,7 @@ internal sealed class CpuBoneDemands(World world)
                 if (sampling.Count > 0) _jobs.Add(sampling.Schedule());
             foreach (JobHandle job in _jobs) job.Complete();
             if (_ready.Count > 0)
-                JobSystem.ScheduleParallel(new PublishRows(_ready), _ready.Count, 32, CollectionsMarshal.AsSpan(_accesses)).Complete();
+                PoseAnimation.GetScheduler(world).ScheduleParallel(new PublishRows(_ready), _ready.Count, 32, CollectionsMarshal.AsSpan(_accesses)).Complete();
             first = last;
         }
     }
@@ -231,7 +231,7 @@ internal sealed class CpuBoneDemands(World world)
             for (SkeletonInstance? ancestor = skeleton.ParentInstance; ancestor is not null; ancestor = ancestor.ParentInstance)
                 if (modelSources.TryGetValue(ancestor, out PoseResultReference modelSource)
                     && nodes.TryGetValue(modelSource, out PoseNode? producer)) dependencies.Add(producer);
-            var work = new Work(source.Entity, skeleton, bones.ToArray(), clip, demand?.Source, demand, source.Input.Clip, node, dependencies.ToArray());
+            var work = new Work(PoseAnimation.GetScheduler(world), source.Entity, skeleton, bones.ToArray(), clip, demand?.Source, demand, source.Input.Clip, node, dependencies.ToArray());
             skeleton.CpuWrittenBones = work.Bones;
             _work.Add(work);
         }
@@ -254,7 +254,7 @@ internal sealed class CpuBoneDemands(World world)
                 foreach (short bone in work.Bones) required[bone] = true;
             var bones = new List<short>();
             for (int bone = 0; bone < required.Length; bone++) if (required[bone]) bones.Add((short)bone);
-            var sampling = new ClipSamplingRows(group.Key.Clip, CollectionsMarshal.AsSpan(bones));
+            var sampling = new ClipSamplingRows(PoseAnimation.GetScheduler(world), group.Key.Clip, CollectionsMarshal.AsSpan(bones));
             foreach (Work work in group.Value) work.Sampling = sampling;
             _sampling.Add(sampling);
         }
@@ -288,7 +288,7 @@ internal sealed class CpuBoneDemands(World world)
         internal uint Starts;
         internal bool HasResult;
         internal FrameInput Frame;
-        internal Work(Entity target, SkeletonInstance skeleton, short[] bones, AnimationClip? clip, PoseResultReference? source,
+        internal Work(Scheduler scheduler, Entity target, SkeletonInstance skeleton, short[] bones, AnimationClip? clip, PoseResultReference? source,
             CpuBoneDemand? demand, QuantizedClipData? gpuClip, PoseNode? node, PoseNode[] dependencies)
         {
             Target = target; Skeleton = skeleton; Bones = bones; Source = source;
@@ -298,15 +298,15 @@ internal sealed class CpuBoneDemands(World world)
             Samples = new BoneTransform[bones.Length];
             Clip = clip;
             Duration = clip?.Duration ?? 0;
-            SampleAccess = JobResourceAccess.Write(Samples);
+            SampleAccess = JobResourceAccess.Write(scheduler, Samples);
             var accesses = new List<JobResourceAccess>
             {
-                JobResourceAccess.Write(JobSystem.Default.GetResourceToken(skeleton)),
-                JobResourceAccess.Write(JobSystem.Default.GetResourceToken(this)),
+                JobResourceAccess.Write(scheduler.GetResourceToken(skeleton)),
+                JobResourceAccess.Write(scheduler.GetResourceToken(this)),
                 SampleAccess,
             };
             foreach (SkeletonInstance parent in skeleton.Sections)
-                if (!ReferenceEquals(parent, skeleton)) accesses.Add(JobResourceAccess.Read(JobSystem.Default.GetResourceToken(parent)));
+                if (!ReferenceEquals(parent, skeleton)) accesses.Add(JobResourceAccess.Read(scheduler.GetResourceToken(parent)));
             Accesses = accesses.ToArray();
         }
     }

@@ -82,6 +82,11 @@ public sealed class SkeletonInstance : IDisposable
     internal void Compose(double time)
     {
         ParentInstance?.Compose(time);
+        ComposeOwn(time);
+    }
+
+    internal void ComposeOwn(double time)
+    {
         if (_localChanged || CpuWrittenBones.Length == 0 && _parentVersion != (ParentInstance?.Version ?? 0)) Evaluate(time);
     }
 

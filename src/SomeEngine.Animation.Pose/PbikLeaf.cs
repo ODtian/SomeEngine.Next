@@ -37,7 +37,7 @@ public readonly struct PbikLeaf : IAnimationLeaf<PbikParameters>
             Source = PoseAnimation.Resolve(world, target, parameters.Source),
             Output = PoseAnimation.Resolve(world, target, parameters.Output),
             Targets = new PbikTarget[parameters.Rig.Effectors.Length],
-            Samples = new(parameters.Rig, skeleton),
+            Samples = new(PoseAnimation.GetScheduler(world), parameters.Rig, skeleton),
         };
         for (int effector = 0; effector < instance.Targets.Length; effector++)
             instance.Targets[effector] = new(skeleton.ModelPose.GetBone(

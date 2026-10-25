@@ -54,7 +54,7 @@ public struct BlendSpaceSystem : ISystem<ImmediateSystemContext>
                         frequency += (double)instance.Samples.Weights[sample] / space.Samples[sample].Clip.Duration;
                     instance.Samples.Phase += time.Time.Delta * frequency;
                     instance.Time = time.Time.Time;
-                    frame.Jobs.Add(JobSystem.Schedule(new SampleSpace(space, instance.Samples), instance.Samples.Accesses));
+                    frame.Jobs.Add(PoseAnimation.GetScheduler(frame.World).Schedule(new SampleSpace(space, instance.Samples), instance.Samples.Accesses));
                 }
             }
         });

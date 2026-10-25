@@ -11,6 +11,25 @@ namespace SomeEngine.Serialization.Tests;
 
 public sealed class BinaryDocumentOwnershipTests
 {
+    [Fact]
+    public async Task EncodedChunkCanDecodeAfterItsDocumentCloses()
+    {
+        byte[] payload = new byte[32768];
+        new Random(17).NextBytes(payload);
+        BinaryChunkInput input;
+        using (MappedTestDocument bytes = BinaryDocumentWriter.Create(TestRoots.Canonical())
+            .AddChunk(41, payload, compression: ChunkCompression.Brotli).BuildMapped())
+        {
+            await using BinaryDocument<TestRoot> document = await BinaryDocument<TestRoot>.OpenAsync(
+                bytes.DetachToFileRangeSource(), ownsSource: true);
+            input = await document.ReadChunkInputAsync(new BinaryChunkRef(41, payload.Length));
+        }
+        byte[] decoded = new byte[payload.Length];
+        input.DecodeInto(decoded);
+        Assert.Equal(ChunkCompression.Brotli, input.Descriptor.Compression);
+        Assert.Equal(payload, decoded);
+    }
+
 
 
     [Fact]
