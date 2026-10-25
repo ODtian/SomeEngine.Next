@@ -35,6 +35,21 @@
 它们的 `Parallel` 属性同样默认 true。字形图集的首次位置按源顺序取得，实例合并按原树序完成。
 视图构建继续由 `ViewRebuildSystem` 在系统线程按层级深度执行。
 
+## 视图失效与深度计算
+
+现行实现见 [ViewRebuildSystem.Checks.cs](../../../src/SomeEngine.Views/ViewRebuildSystem.Checks.cs)、
+[DependencyChanges.cs](../../../src/SomeEngine.Views/DependencyChanges.cs) 和
+[ObjectDependencies.cs](../../../src/SomeEngine.Views/ObjectDependencies.cs)。
+重建阶段先在协调线程刷新响应式对象依赖，再集中刷新组件类型的变化记录，并固定
+本轮各视图及其计算的读取版本、当前版本和来源变化。每个重建系统持有可复用的版本
+输入和视图结果数组；Job 按视图范围比较这些输入，各范围写入对应的失效结果。
+
+变化视图的父链从当前 `ElementTree` 读取并合并为本轮父级索引，深度 Job 沿固定父链
+计算各视图深度。两个批次完成后，协调阶段形成原有候选列表，再按父先子后的顺序
+执行 Build。每个候选和同节点计算执行前的复核、创建顺序、异步恢复与同帧收敛继续
+由原重建阶段推进。绑定 `WorldJobs` 的 World 使用其所选 Scheduler，普通 World 使用
+共同 Job 执行器的同步范围入口。
+
 测量与内容接口见 [Layout](Layout.md#子树-job-测量69)，排版数据期限见 [Text](Text.md)，
 实例与图集语义见 [Render Path](Render-Path.md)。
 
