@@ -390,14 +390,14 @@ public static partial class WorldSerializer
 
 public static partial class WorldSerializer
 {
-    private static void WriteWorldEntities(
+    private static void WriteWorldRows(
         BinaryWriter writer,
         AdmittedWorldWrite admitted,
         WorldWritePlan capturePlan,
-        IReadOnlyDictionary<Guid, int> manifestIndex, ISet<ExternalReferenceKey>? references)
+        IReadOnlyDictionary<Guid, int> manifestIndex, ISet<ExternalReferenceKey>? references,
+        int firstIndex, int indexLimit)
     {
-        writer.Write(admitted.LiveEntityCount);
-        for (int i = 0; i < admitted.SlotCount; i++)
+        for (int i = firstIndex; i < indexLimit; i++)
         {
             EntitySlotSnapshot slot = admitted.GetSlot(i);
             if (!slot.IsAlive)
