@@ -7,7 +7,9 @@ namespace SomeEngine.Physics;
 public readonly record struct CollisionDistanceHit(Entity Entity, CollisionDistance Distance,
     Matrix4x4 Transform, ulong SurfaceVersion);
 
-public sealed partial class CollisionGeometryQueries<TGeometry> where TGeometry : struct, ICollisionGeometry<TGeometry>
+public partial class CollisionGeometryQueries<TGeometry, TReader>
+    where TGeometry : struct, ICollisionGeometry<TGeometry>
+    where TReader : struct, ICollisionGeometryReader<TGeometry>
 {
     public int Overlap<TQuery, TKernel>(in TQuery geometry, in BodyPose pose, TKernel kernel, Span<Entity> matches)
         where TQuery : struct, ICollisionGeometry<TQuery>
@@ -15,7 +17,7 @@ public sealed partial class CollisionGeometryQueries<TGeometry> where TGeometry 
     {
         var work = new FindOverlaps<TQuery, TKernel>(geometry, pose, kernel, matches);
         var execution = new ReadGeometry<FindOverlaps<TQuery, TKernel>>(Tree, work);
-        _world.ExecuteQuery(_query, ref execution);
+        ExecuteQueries(ref execution);
         return execution.Work.Count;
     }
 
@@ -26,7 +28,7 @@ public sealed partial class CollisionGeometryQueries<TGeometry> where TGeometry 
     {
         var work = new MeasureDistance<TQuery, TKernel>(geometry, pose, kernel);
         var execution = new ReadGeometry<MeasureDistance<TQuery, TKernel>>(Tree, work);
-        _world.ExecuteQuery(_query, ref execution);
+        ExecuteQueries(ref execution);
         hit = execution.Work.Hit;
         return execution.Work.Found;
     }
