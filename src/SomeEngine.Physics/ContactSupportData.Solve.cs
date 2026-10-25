@@ -7,7 +7,7 @@ namespace SomeEngine.Physics;
 
 internal sealed partial class ContactSupportData
 {
-    internal void Correct(scoped QueryCursor workBodies, scoped QueryCursor contacts, Entity body, scoped PhysicsBodies bodies, in PhysicsStepContext context,
+    internal void Correct(scoped PhysicsQueryRows workBodies, scoped PhysicsQueryRows contacts, Entity body, scoped PhysicsBodies bodies, in PhysicsStepContext context,
         in AvbdBodyEquation factor, ref Vector3 translation, ref Vector3 rotation)
     {
         if (!workBodies.TryGetRow(body, out QueryRow bodyRow)) return;
@@ -149,7 +149,7 @@ internal sealed partial class ContactSupportData
     private static double Response(in LongRangeSupportEquation height, in LongRangeSupportEquation force) =>
         Vector3.Dot(height.LinearGradient, force.TranslationResponse) + Vector3.Dot(height.AngularGradient, force.RotationResponse);
 
-    internal void Update(scoped QueryCursor workBodies, scoped QueryCursor contacts, scoped PhysicsBodies bodies, in PhysicsStepContext context)
+    internal void Update(scoped PhysicsQueryRows workBodies, scoped PhysicsQueryRows contacts, scoped PhysicsBodies bodies, in PhysicsStepContext context)
     {
         if (UpdateMotion(workBodies, bodies)) Build(workBodies, contacts, bodies, in context);
         foreach (QueryRow row in contacts.Rows)
