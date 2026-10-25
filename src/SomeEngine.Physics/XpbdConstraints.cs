@@ -7,17 +7,17 @@ namespace SomeEngine.Physics;
 /// <summary>Projects one concrete constraint while its data and participating bodies remain borrowed.</summary>
 public interface IXpbdConstraint<TConstraint> where TConstraint : struct, IComponent
 {
-    static abstract void Initialize(in TConstraint constraint, scoped QueryRow row);
+    static abstract void Initialize(in TConstraint constraint, scoped QueryRow row, in PhysicsStepContext context);
     static abstract void Project(in TConstraint constraint, scoped QueryRow row,
-        scoped PhysicsBodies bodies, float duration);
+        scoped PhysicsBodies bodies, in PhysicsStepContext context);
 }
 
 /// <summary>Concrete constraint sets participating in every iteration of one XPBD solve.</summary>
 public interface IXpbdConstraints
 {
     void AddAccesses(World world, List<JobResourceAccess> accesses);
-    void Initialize(World world);
-    void Project(World world, scoped PhysicsBodies bodies, float duration);
+    void Initialize(in PhysicsStepContext context);
+    void Project(in PhysicsStepContext context, scoped PhysicsBodies bodies);
 }
 
 public readonly struct XpbdConstraints<TConstraint, TProjection>(QueryHandle constraints) : IXpbdConstraints
@@ -27,35 +27,38 @@ public readonly struct XpbdConstraints<TConstraint, TProjection>(QueryHandle con
     public void AddAccesses(World world, List<JobResourceAccess> accesses) =>
         PhysicsQueryAccess.AddAccesses(world, constraints, accesses);
 
-    public void Initialize(World world)
+    public void Initialize(in PhysicsStepContext context)
     {
-        var execution = new InitializeConstraints();
-        world.ExecuteQuery(constraints, ref execution);
+        var execution = new InitializeConstraints(context);
+        context.World.ExecuteQuery(constraints, ref execution);
     }
 
-    public void Project(World world, scoped PhysicsBodies bodies, float duration)
+    public void Project(in PhysicsStepContext context, scoped PhysicsBodies bodies)
     {
-        var execution = new ProjectConstraints(bodies, duration);
-        world.ExecuteQuery(constraints, ref execution);
+        var execution = new ProjectConstraints(bodies, context);
+        context.World.ExecuteQuery(constraints, ref execution);
     }
 
-    private readonly struct InitializeConstraints : IQueryExecution
+    private readonly struct InitializeConstraints(PhysicsStepContext context) : IQueryExecution
     {
+        private readonly PhysicsStepContext _context = context;
+
         public void Execute(scoped QueryCursor query)
         {
             foreach (QueryRow row in query.Rows)
-                TProjection.Initialize(in row.ReadRef<TConstraint>(), row);
+                TProjection.Initialize(in row.ReadRef<TConstraint>(), row, in _context);
         }
     }
 
-    private readonly ref struct ProjectConstraints(PhysicsBodies bodies, float duration) : IQueryExecution
+    private readonly ref struct ProjectConstraints(PhysicsBodies bodies, PhysicsStepContext context) : IQueryExecution
     {
         private readonly PhysicsBodies _bodies = bodies;
+        private readonly PhysicsStepContext _context = context;
 
         public void Execute(scoped QueryCursor query)
         {
             foreach (QueryRow row in query.Rows)
-                TProjection.Project(in row.ReadRef<TConstraint>(), row, _bodies, duration);
+                TProjection.Project(in row.ReadRef<TConstraint>(), row, _bodies, in _context);
         }
     }
 }
@@ -70,16 +73,16 @@ public readonly struct XpbdConstraintGroups<TFirst, TSecond>(TFirst first, TSeco
         second.AddAccesses(world, accesses);
     }
 
-    public void Initialize(World world)
+    public void Initialize(in PhysicsStepContext context)
     {
-        first.Initialize(world);
-        second.Initialize(world);
+        first.Initialize(in context);
+        second.Initialize(in context);
     }
 
-    public void Project(World world, scoped PhysicsBodies bodies, float duration)
+    public void Project(in PhysicsStepContext context, scoped PhysicsBodies bodies)
     {
-        first.Project(world, bodies, duration);
-        second.Project(world, bodies, duration);
+        first.Project(in context, bodies);
+        second.Project(in context, bodies);
     }
 }
 
