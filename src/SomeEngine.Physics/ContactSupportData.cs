@@ -26,7 +26,7 @@ internal sealed partial class ContactSupportData
         _horizontalY = Vector3.Cross(settings.UpDirection, _horizontalX);
     }
 
-    internal void Initialize(scoped QueryCursor workBodies, scoped QueryCursor contacts, scoped PhysicsBodies bodies, in PhysicsStepContext context)
+    internal void Initialize(scoped PhysicsQueryRows workBodies, scoped PhysicsQueryRows contacts, scoped PhysicsBodies bodies, in PhysicsStepContext context)
     {
         foreach (QueryRow row in workBodies.Rows) row.ReadWrite<LongRangeBodySupport>().Moving = false;
         foreach (QueryRow row in contacts.Rows)
@@ -38,7 +38,7 @@ internal sealed partial class ContactSupportData
         Build(workBodies, contacts, bodies, in context);
     }
 
-    private bool UpdateMotion(scoped QueryCursor workBodies, scoped PhysicsBodies bodies)
+    private bool UpdateMotion(scoped PhysicsQueryRows workBodies, scoped PhysicsBodies bodies)
     {
         bool changed = false;
         foreach (QueryRow row in workBodies.Rows)
@@ -63,7 +63,7 @@ internal sealed partial class ContactSupportData
         return travel.LengthSquared() > _settings.MotionTolerance * _settings.MotionTolerance || rotation > _settings.AngularMotionTolerance;
     }
 
-    private void Build(scoped QueryCursor workBodies, scoped QueryCursor contacts, scoped PhysicsBodies bodies, in PhysicsStepContext context)
+    private void Build(scoped PhysicsQueryRows workBodies, scoped PhysicsQueryRows contacts, scoped PhysicsBodies bodies, in PhysicsStepContext context)
     {
         foreach (ContactSupportPolygon polygon in _polygons.Values) { polygon.Clear(); _unusedPolygons.Push(polygon); }
         _polygons.Clear();
@@ -84,7 +84,7 @@ internal sealed partial class ContactSupportData
             ref readonly ContactPoint point = ref row.ReadRef<ContactPoint>();
             ref readonly ContactMaterial material = ref row.ReadRef<ContactMaterial>();
             ReadOnlySpan<ContactBodyLink> links = row.ReadBuffer<ContactBodyLink>().AsSpan();
-            if (!float.IsPositiveInfinity(material.NormalStiffness) || !TryRigidBodies(in point, links, in context, out Entity first, out Entity second)) continue;
+            if (!float.IsPositiveInfinity(material.NormalStiffness) || !TryRigidBodies(in point, links, bodies, in context, out Entity first, out Entity second)) continue;
             float vertical = Vector3.Dot(point.Normal, _settings.UpDirection);
             float squared = vertical * vertical;
             if (vertical == 0 || 1 - squared > material.StaticFriction * material.StaticFriction * squared) continue;
@@ -184,14 +184,14 @@ internal sealed partial class ContactSupportData
     private Vector2 Project(Vector3 point) => new(Vector3.Dot(point, _horizontalX), Vector3.Dot(point, _horizontalY));
 
     private static bool TryRigidBodies(in ContactPoint point, ReadOnlySpan<ContactBodyLink> links,
-        in PhysicsStepContext context, out Entity first, out Entity second)
+        scoped PhysicsBodies bodies, in PhysicsStepContext context, out Entity first, out Entity second)
     {
-        first = ContactBodyMath.GetBody(in links[0], in context);
-        second = ContactBodyMath.GetBody(in links[point.FirstBodyCount], in context);
+        first = ContactBodyMath.GetBody(in links[0], bodies, in context);
+        second = ContactBodyMath.GetBody(in links[point.FirstBodyCount], bodies, in context);
         for (int index = 1; index < point.FirstBodyCount; index++)
-            if (ContactBodyMath.GetBody(in links[index], in context) != first) return false;
+            if (ContactBodyMath.GetBody(in links[index], bodies, in context) != first) return false;
         for (int index = point.FirstBodyCount + 1; index < links.Length; index++)
-            if (ContactBodyMath.GetBody(in links[index], in context) != second) return false;
+            if (ContactBodyMath.GetBody(in links[index], bodies, in context) != second) return false;
         return first != second;
     }
 
@@ -203,7 +203,7 @@ internal sealed partial class ContactSupportData
         for (int index = first; index < last; index++)
         {
             ref readonly ContactBodyLink link = ref links[index];
-            Entity body = ContactBodyMath.GetBody(in link, in context);
+            Entity body = ContactBodyMath.GetBody(in link, bodies, in context);
             ref readonly BodyMass mass = ref bodies.ReadMass(body);
             Vector3 position;
             if (start)

@@ -24,6 +24,8 @@
 
 `LongRangeJointBound.FirstEnd` 和 `OtherEnd` 用 `JointEnd.Source/Target` 表示原关节的框架角色；`OtherJoint` 指向远端关节。两处 Body 和局部锚均在有效查询中从原关节及受保护端点取得。派生图按当前查询成员、关节定义、端点及相关质量组件的写入版本刷新。关节框架和拓扑变化进入下一次初始化，原 Buffer 容量继续复用。
 
+关节图从对应 `QueryRow.WriteVersion<T>()` 读取原行版本。数值内核使用共同 `PhysicsQueryRows` 借用原行，其入口可包装普通查询或已准入的实体范围；接触作用端优先从共同 Body 读取视图中的原参与边取得。状态、反力和本地方程继续写入同一组件及 Buffer。
+
 每个子步从共同起点计算上下界初始误差，按 `MultiplierRetention` 保留自己的力乘子。数值度量为 `PenaltyScale / (h² · pointResponse)`，其中 pointResponse 使用双方逆质量、质心杠杆和完整世界逆惯量。`InitialErrorFraction` 选择本子步保留的初始界误差。
 
 上界和下界各用非负乘子，净力为上界减下界；等长界使用一个有符号力。活动界的力、Jacobian 与正几何曲率进入当前六维 Body 方程，全部 Body 更新后进行辅助界 dual 更新。原关节和长程界分别保存各自乘子，单位为 N；距离及初始误差为 m，数值度量为 N/m。
