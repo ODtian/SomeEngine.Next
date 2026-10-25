@@ -10,6 +10,10 @@ Heading 表示的专用区域图、TileSource、ASA 局部查询与相同兴趣/
 
 `NavigationStreaming(scene, scheduler)` 保持区域对应的来源。`AddSource(region, source)` 取得自己的来源引用，`Interests` 接受普通 `NavigationInterest`。应用更新兴趣的实际 `Position`、`Radius`、可选 `Direction`、`LookAheadDistance` 和当前 `Path`。附近范围、前方位置、路线前方入口和 `Path.RequiredTiles` 共同产生详细需求。`ResidentTileBudget` 按块数限制目录驻留，当前需求按实际距离排序，已有数据以最近使用顺序保留。
 
+三个流送入口在本轮 `Update` 固定兴趣值、完成路径与当前目录/场引用。`NavigationStreamingRanges` 以目录连续范围计算附近需求，各范围持有独立列表；路线前探按兴趣独立计算。同步汇合按原兴趣、目录和路线顺序写回需求集合，保持同距离候选的预算次序。
+
+需求、驻留块与在途读取组成同一份候选集合，距离范围 Job 声明实际目录数组读取并计算本轮排序输入。目录、路径和场数组由原完成对象及 Job 访问保持到同步返回。范围计算完成后，原流送对象集中选择预算、登记读取、消费已完成结果、维护驻留与提交 `Applied`；等待中的读取继续沿自己的完成链交付。
+
 `SetSource(region, source)` 安装该区域后续读取使用的来源引用。动态构建完成后，可取得 `NavigationRegionSources.CreateTileSource()` 并传入此入口；完整流程见[动态导航](Navigation-Dynamic.md)。已经提交的读取继续持有自己的实际来源。
 
 `Update` 提交所需读取，并接入当次已经完成的结果。`Reads` 公开各块的后台完成句柄。`Applied` 只覆盖本次已经取得数据的短接入 Job；运动调度把该句柄作为就绪依赖。接入 Job 在 Scene 写访问内取得当前目录，并声明该值的实际数组，按目录块内容版本匹配完成数据。接入一次交换完整 `NavigationSceneContent`，推进绑定 `Version` 和 `ResidenceVersion`，内容重建使用独立的 `ContentVersion`。预算移除目录引用后，已提交 Job 与路径分段继续持有实际数组。
