@@ -1,6 +1,7 @@
 using SomeEngine.Geometry.Cluster;
 using System.Globalization;
 using System.Numerics;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using SomeEngine.Assets.Schema;
 using ImportedScenes;
@@ -188,22 +189,9 @@ public sealed class ImportedSceneImporter : GltfSceneImporter
         definition["Fields"]!["Id"] = id.ToString();
         definition["Fields"]!["Name"] = name;
         definition["Blocks"]![0]!["Fields"]!["SourceNames"] = new JsonArray("cluster_transparency.slang", name + ".slang", name + "_transparency.slang");
-        var specializations = new JsonArray();
-        definition["Blocks"]![0]!["Fields"]!["Specializations"] = specializations;
-        string depth = cutoff >= 0 ? "1" : "0";
-        foreach (string mode in new[] { "0", "8" })
-        {
-            Add("ClusterShadeMode", mode);
-            Add("ClusterShadowReceiver", depth, mode);
-            foreach (string export in new[] { "false", "true" }) Add("ClusterForwardShade", depth, mode, export);
-        }
+        definition["Blocks"]![0]!["Fields"]!["Specializations"] =
+            JsonSerializer.SerializeToNode(SampleContent.CreateMaterialSpecializations(cutoff >= 0 ? 1 : 0));
         return definition;
-
-        void Add(string entry, params string[] arguments) => specializations.Add(new JsonObject
-        {
-            ["EntryPoint"] = entry,
-            ["Arguments"] = new JsonArray(arguments.Select(argument => (JsonNode?)JsonValue.Create(argument)).ToArray()),
-        });
     }
 
     private static void WriteSurfaceEntries(string directory, string name) =>

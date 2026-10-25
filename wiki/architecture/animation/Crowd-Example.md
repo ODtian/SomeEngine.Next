@@ -28,6 +28,8 @@ API 的程序生成示例夹具。24 段人体表面各连接四根骨骼，共 
 LBS 的矩阵、位置和法线中间值使用 `precise`，统一 inline 与缓存求值阶段的浮点运算顺序。
 示例的 `.shader` 源码组合同时声明自己的顶点编码和 `CrowdSkin` 求值器，并预编译
 `ClusterShadeMode`、`ClusterShadowReceiver` 和 `ClusterForwardShade` 的实际材质变体。
+共同内容入口 `SampleContent.CreateMaterialSpecializations(depth)` 生成这份强类型集合；
+角色、SkinContent 夹具与导入场景使用同一集合，导入材质按 cutoff 选择 depth 参数。
 缓存实现选择每个选中顶点 48 字节，分别保存当前及上一帧的世界位置和法线，按 16 字节对齐。
 示例应用通过 `ApplicationScene.DeformCacheBytes` 为两条路径都选择 256 MiB 容量。
 
