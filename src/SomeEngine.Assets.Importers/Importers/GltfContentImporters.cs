@@ -5,6 +5,7 @@ using SomeEngine.Assets.Importing;
 using SomeEngine.Assets.Pipeline;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Resources;
+using SomeEngine.Job;
 using GltfTexture = SharpGLTF.Schema2.Texture;
 
 namespace SomeEngine.Assets.Importers;
@@ -12,14 +13,20 @@ namespace SomeEngine.Assets.Importers;
 [AssetImporter("451b3ab1-e318-4ed8-aebf-9b9e11219120", typeof(TextureBlock), SettingsProvider = typeof(GltfTextureSettingsProvider))]
 public sealed class GltfTextureImporter : IAssetImporter<GltfTexture, GltfTextureSettings>
 {
-    public ValueTask ImportAsync(GltfTexture source, GltfTextureSettings settings, ImportContext context,
+    public async ValueTask ImportAsync(GltfTexture source, GltfTextureSettings settings, ImportContext context,
         ImportOutput output, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         Image image = source.PrimaryImage ?? throw new InvalidDataException("The glTF texture has no image.");
         byte[] sourceBytes = !string.IsNullOrWhiteSpace(image.Content.SourcePath)
-            ? File.ReadAllBytes(image.Content.SourcePath) : image.Content.Content.ToArray();
-        ImageResult pixels = ImageResult.FromMemory(sourceBytes, ColorComponents.RedGreenBlueAlpha);
+            ? await File.ReadAllBytesAsync(image.Content.SourcePath, cancellationToken).ConfigureAwait(false)
+            : image.Content.Content.ToArray();
+        var decoded = new ImageData();
+        JobHandle decode = await context.Scheduler.ScheduleAsync(new DecodeImage(sourceBytes, decoded, cancellationToken),
+            new JobScheduleOptions(JobPriority.Low) { Category = context.DecodingCategory },
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+        await decode;
+        ImageResult pixels = decoded.Pixels!;
         uint width = checked((uint)pixels.Width), height = checked((uint)pixels.Height);
         var texture = new TextureBlock()
         {
@@ -37,6 +44,20 @@ public sealed class GltfTextureImporter : IAssetImporter<GltfTexture, GltfTextur
             output.SetBlock(texture);
         }
         catch { texture.Dispose(); throw; }
-        return ValueTask.CompletedTask;
+    }
+
+    private sealed class ImageData
+    {
+        internal ImageResult? Pixels;
+    }
+
+    private readonly struct DecodeImage(byte[] bytes, ImageData result, CancellationToken cancellationToken) : IJob
+    {
+        public void Execute()
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            result.Pixels = ImageResult.FromMemory(bytes, ColorComponents.RedGreenBlueAlpha);
+            cancellationToken.ThrowIfCancellationRequested();
+        }
     }
 }
