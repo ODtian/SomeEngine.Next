@@ -32,4 +32,6 @@ BVH 的 `ICollisionPartitionEnumerable` 使用 `CollisionNodePair`，由自身 `
 
 `query.DetectPairs(bins, bin, detection)` 以具体 `TDetection : ICollisionPairDetection` 执行一个类型范围。检测的 `AddReads` 声明几何读取；`Execute(pair,first,second)` 收到实体/几何身份及当前原组件行。项目通过具体检测类型提供接触计算与输出持有者。
 
+`query.DetectPairsWithQuery` 以具体 `ICollisionPairQueryDetection` 取得独立的完整访问视图，使几何读取器能够沿实体引用读取参与集合之外的模拟节点。共同几何、接触输出和独立查询见[实体几何](../physics/Geometry.md)。
+
 外层 Job 将批次的 `FillAccess` 加入分桶工作访问，将 `ReadAccess` 加入检测或其他消费工作访问，并用现有 `JobHandle` 串联生产与消费。count 和 write 的内部范围按实际计数与输出区间声明；组件查询作用域覆盖对应同步计算。`Dispose` 在所属工作完成后释放批次的资源身份。
