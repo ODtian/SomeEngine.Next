@@ -1,6 +1,5 @@
 using System.Numerics;
 using SomeEngine.ECS;
-using SomeEngine.Graphics;
 using SomeEngine.Render.Components;
 using SomeEngine.Render.Lighting;
 using SomeEngine.Render.Systems;
@@ -20,10 +19,9 @@ public sealed class RenderLightSetTests(RenderTestDevice graphics) : IClassFixtu
         var cookie = new RenderLightCookie(null!, 0.7f, Vector4.One, Matrix4x4.Identity);
         world.Add(two, cookie);
         var lights = new RenderLightSetSystem();
-        using var systems = new RenderFrameSystems(world);
+        using var extraction = new RenderExtractionSystems(world);
+        using var systems = new RenderPrepareSystems(world, extraction);
         systems.Add(lights);
-        using var graph = new RenderGraph.RenderGraph(graphics.Backend, graphics.Device,
-            [graphics.Backend.GetQueue(graphics.Device, QueueType.Graphics)]);
 
         Update();
         RenderLightSet values = lights.RequireCurrent();
@@ -62,12 +60,17 @@ public sealed class RenderLightSetTests(RenderTestDevice graphics) : IClassFixtu
         revision = values.Revision;
         Update();
         Assert.Equal(revision, values.Revision);
+        Update(shutdown: true);
 
-        void Update()
+        void Update(bool shutdown = false)
         {
-            Assert.True(graphics.Coordinator.TryBeginFrame(out var frame));
-            using (frame)
-            using (var commands = graph.BeginFrame()) systems.Update(frame, commands);
+            Assert.True(graphics.Coordinator.TryBeginPrepare(out var scope));
+            using (scope)
+            {
+                if (shutdown) systems.Shutdown(scope);
+                else systems.Update(scope);
+                scope.Commit();
+            }
         }
     }
 

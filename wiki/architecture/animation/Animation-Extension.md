@@ -54,7 +54,11 @@ AnimationSystems.Add(schedule, path);
 
 `AnimationSystems.AddDefaults(SystemGroup<ImmediateSystemContext> schedule, Entity time = default)` 通过 `Add` 登记 float、Vector2/3/4、Quaternion、Color、Thickness、Rect、Matrix3x2 的 Linear Tween、Spring、Keyframes、FunctionTween 组合，并在绑定时解析已有 Curve 输入。其他具体缓动与用户组合通过 `Add(schedule, spec)` 登记。
 
-共同动画管线在首次创建时按阶段展开到一个 ECS 系统组：`TimelineSystem(time)`、`GraphSystem`、float 层权重求值与合成、字段求值与合成、`GraphEndSystem`、`TimelineEndSystem`。具体系统各自保留版本基线与查询。首次更新前追加的组合进入相应阶段，重复组合共用一个入口。调用方也可按自己的值类型与行为直接组合公开系统：
+共同动画管线在首次创建时按原顺序展开到五个连续 ECS 系统组：Timeline 与 Graph、层权重求值、层权重合成、字段求值、字段输出与合成及收尾。各阶段追加系统保持原位置；`AnimationSystems.Describe` 按原节点顺序扁平描述。具体系统各自保留版本基线与查询。首次更新前追加的组合进入相应阶段，重复组合共用一个入口。
+
+`AnimationPipeline` 按值类型持有一个 `Read<Timeline> + ReadBuffer<Track<T>>` 的成员查询，涵盖当前启用与停用行。每个消费组在更新前读取实际成员，通过原 `SystemGroup.Enable/Disable` 调整 Track、TypedTrack 和 GraphOutput 节点；各组保存自己的节点索引与启用状态，状态变化时更新节点。Graph 或前置追加阶段当帧安装的 Track 因而在消费前进入查询。Compose 继续按 Contribution 目标执行。销毁时先完成全部组，再按原顺序释放系统与成员查询。源码：[AnimationPipeline](../../../src/SomeEngine.Animation/AnimationPipeline.cs)。
+
+调用方也可按自己的值类型与行为直接组合公开系统：
 
 用户系统可以通过 `AnimationSystems.Add(schedule, system, AnimationPhase.Properties)` 加入共同字段求值阶段；`Timeline`、`Graph`、`LayerWeights`、`LayerComposition`、`CompositionInputs`、`Composition`、`Completion` 也提供明确接入位置。`CompositionInputs` 位于属性最终合成之后、具体 Composition 系统之前，用于将当前参数与时钟形成组合输入；GPU 姿势系统在该阶段读取当前 `GraphParameters`，后续 CPU 依赖节点与同步骨骼消费同次输入。阶段展开时采用低频系统装配，热更新沿 ECS 的 managed 函数指针系统入口执行。
 
@@ -77,6 +81,9 @@ schedule.Add(new TimelineEndSystem());
 `tests/SomeEngine.Animation.Tests/PropertyAnimationTests.cs` 在测试工程中声明 `Meter` 和 `MeterOps`，经相同公开入口验证 tween、重定目标、衰减位移与弹簧。`AnimationLayersTests.cs` 继续验证自定义值类型的多来源合成与外部求值系统的贡献入口。
 
 ## Verification
+
+姿势扩展示例位于 [`tools/SomeEngine.Animation.Checks/PoseExample`](../../../tools/SomeEngine.Animation.Checks/PoseExample/README.md)。消费者自己的 `IAssetImporter`、`AnimationClipBlock`、`IClipSampler`、`IAnimationLeaf` 和 `IAnimationCondition` 通过生成的资产能力登记、共同图时钟与普通姿势结果连接。示例共享父骨架、播放实例与公开预测，再以 `MeshSkin` 进入公共 Application 的 Cluster 呈现；该目录保留 NativeAOT 发布和公共资源重建入口。
+
 `MotionTests` 从消费者程序集验证缓动、值运算、包含托管引用的参数与状态、生命周期、Spring 速度、共享关键帧、逐元素时间和专用批量。`tools/SomeEngine.Animation.Checks` 复用同一消费者源码，提供 Release / NativeAOT 行为与 `--benchmark` 规模成本入口。
 
 2026-10-16 的 Release 定向检查通过 27 项，覆盖 Motion、Timeline、ValueOps 与完整类型化图公开行为；行为规则检查为 0 项违规。队列 `01c002753d7a438b89c8ff24354c7e7e` 退出码 0，原始日志与结果保存在 [[evidence/Animation/2026-10-16/Typed-Execution|类型化执行证据]]。

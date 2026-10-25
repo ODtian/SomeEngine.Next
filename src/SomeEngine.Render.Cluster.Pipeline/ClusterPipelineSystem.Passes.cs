@@ -124,6 +124,7 @@ public sealed partial class ClusterPipelineSystem
             Phase2CandidateArgs = frame.Phase2CandidateArgs,
             Phase2DrawArgs = frame.Phase2DrawArgs,
             RasterReserve = frame.RasterReserveCounters,
+            DeformAllocation = frame.DeformAllocation,
             ShadeCount = frame.ShadeBinCounts,
             ShadeReserve = frame.ShadeReserveCounters,
             SoftwareDebug = frame.SoftwareDebug,
@@ -163,6 +164,7 @@ public sealed partial class ClusterPipelineSystem
                 Read(ref access, data.DrawArgs, 0, 16);
                 Read(ref access, data.Phase2DrawArgs, 0, 16);
                 Read(ref access, data.RasterReserve, 2 * sizeof(uint), 2 * sizeof(uint));
+                Read(ref access, data.DeformAllocation, 0, sizeof(uint));
                 Read(ref access, data.ShadeCount, 0, sizeof(uint));
                 Read(ref access, data.ShadeReserve, 0, sizeof(uint));
                 Read(ref access, data.SoftwareDebug, 0, sizeof(uint));
@@ -170,6 +172,8 @@ public sealed partial class ClusterPipelineSystem
                 Read(ref access, data.PhaseTwoTessellationCounters, 0, 8 * sizeof(uint));
                 Read(ref access, data.WorkStatus, 0, WorkMetricsByteSize);
                 access.Write(data.Destination, new BufferRange(WorkMetricsReadbackOffset, WorkMetricsByteSize),
+                    PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete);
+                access.Write(data.Destination, new BufferRange(DeformAllocationReadbackOffset, sizeof(uint)),
                     PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete);
                 _ = access.Read(
                     data.Visibility,

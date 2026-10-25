@@ -63,6 +63,8 @@ world.ExecuteQuery(query, ref radius, &WriteRadius);
 
 跨任意实体的同组件批次使用 `World.ExecuteComponentWrite<TComponent, TState>(ref state, function)`。managed 函数指针接收 `ComponentWriteBatch<TComponent>` 和调用方的 `ref TState`；状态支持 `allows ref struct`。入口一次取得组件存储的写权限和共享版本，批内 `Write(entity)` 解析当前 table/sparse 根并返回 `ref TComponent`，具体访问实现随后直接调用。此能力适合按同一组件与字段归并后的动画最终写回。根引用的有效范围为当前批次回调。
 
+批次的 `ReadWriteColumn(chunk)` 可借用同一 World 查询中声明为读写的 table 组件列。调用方沿 `chunk.RowIndices` 索引返回的 `ComponentWriteColumn<TComponent>`；各访问行沿共同 `WriteRef` 发布批次共享版本，并维护关系、层级和索引。列的有效范围为查询与批次共同覆盖的回调。源码：[组件批次](../../../src/SomeEngine.ECS/ComponentWriteBatch.cs)、[查询列](../../../src/SomeEngine.ECS/Queries/QueryChunkView.Columns.cs)。
+
 ## 版本与存储
 
 字段写入沿现有 table/sparse 写权限处理。单实体字段写入取得新 World 写版本；查询字段写入使用查询的 `CurrentSystemVersion`。整列写视图为该列全部行记录本次查询版本，单行写入记录对应行版本。

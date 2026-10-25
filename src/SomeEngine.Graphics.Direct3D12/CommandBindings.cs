@@ -1596,8 +1596,8 @@ internal sealed unsafe partial class D3D12Backend
             _descriptorArenaVersion = checked(_descriptorArenaVersion + 1);
             _descriptorArenaReady = false;
             _descriptorHeapsBound = false;
-            _resourceArenaContainsGeneration = false;
-            _samplerArenaContainsGeneration = false;
+            // Retain the published-table prefixes observed by these heaps. The first
+            // local binding reserves them again from the current descriptor generation.
         }
 
         internal void PrepareDescriptorTables(ReadOnlySpan<DefaultRootTable> tables)

@@ -78,6 +78,7 @@ public sealed partial class Scheduler
             if (state.Index != 0)
                 CancelUnscheduledState(state);
             submission.Rollback();
+            submission.Release();
             throw;
         }
     }

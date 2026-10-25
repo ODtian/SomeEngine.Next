@@ -44,6 +44,7 @@ public struct TypedTrackSystem<T, TOps, TParameters, TState, TEvaluator>(TrackFi
 
     public unsafe void OnUpdate(ref ImmediateSystemContext context)
     {
+        if (!context.World.HasQueryMembers(_tracks) && !context.World.HasQueryMembers(_finishedTracks)) return;
         var evaluation = (World: context.World, Weights: _fields == TrackFields.LayerWeights, Writes: _writes, Count: 0,
             Captures: _captures, CaptureCount: 0, CaptureOnly: false, Enabled: true);
         context.World.ExecuteQuery(_tracks, context.LastSystemVersion, ref evaluation, &Evaluate);

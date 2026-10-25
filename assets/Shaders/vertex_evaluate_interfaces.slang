@@ -7,6 +7,8 @@
 struct VertexEvalContext
 {
     ByteAddressBuffer pageHeap;
+    // The page record's original encoding bytes, before selecting the split views.
+    uint vertexDataAddress;
     uint vertexBlobAddress;
     uint vertexBlobSize;
     uint attributeBlobAddress;
@@ -20,6 +22,7 @@ struct VertexEvalContext
 
 void LoadVertexData(inout VertexEvalContext context, uint descriptorAddress)
 {
+    context.vertexDataAddress = descriptorAddress;
     uint4 data = context.pageHeap.Load4(descriptorAddress);
     context.vertexBlobAddress = descriptorAddress + data.x;
     context.vertexBlobSize = data.y;
