@@ -18,12 +18,13 @@ public struct XpbdBend : IComponent
 
 public readonly struct XpbdBendProjection : IXpbdConstraint<XpbdBend>
 {
-    public static void Initialize(in XpbdBend constraint, scoped QueryRow row) =>
+    public static void Initialize(in XpbdBend constraint, scoped QueryRow row, in PhysicsStepContext context) =>
         row.ReadWrite<XpbdBend>().Multiplier = 0;
 
     public static void Project(in XpbdBend constraint, scoped QueryRow row,
-        scoped PhysicsBodies bodies, float duration)
+        scoped PhysicsBodies bodies, in PhysicsStepContext context)
     {
+        float duration = (float)context.Duration;
         Vector3 firstEdge = bodies.ReadPose(constraint.Middle).Position - bodies.ReadPose(constraint.First).Position;
         Vector3 secondEdge = bodies.ReadPose(constraint.Last).Position - bodies.ReadPose(constraint.Middle).Position;
         float firstLength = firstEdge.Length();
