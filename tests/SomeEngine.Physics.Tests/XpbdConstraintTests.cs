@@ -144,8 +144,18 @@ public struct HeightMultiplier : IComponent
     public float Value;
 }
 
-public readonly struct HeightProjection : IXpbdConstraint<HeightTarget>
+public readonly struct HeightProjection : IXpbdConstraint<HeightTarget>, IXpbdConstraintForces<HeightTarget>
 {
+    public static int GetBodyCount(in HeightTarget constraint, scoped QueryRow row, in PhysicsStepContext context) => 1;
+    public static Entity GetBody(in HeightTarget constraint, scoped QueryRow row, int index, in PhysicsStepContext context) => constraint.Body;
+    public static void GetBodyForce(in HeightTarget constraint, scoped QueryRow row, Entity body,
+        scoped PhysicsBodies bodies, in PhysicsStepContext context, out Vector3 force, out Vector3 torque)
+    {
+        float duration = (float)context.Duration;
+        force = Vector3.UnitY * (row.ReadRef<HeightMultiplier>().Value / (duration * duration));
+        torque = Vector3.Zero;
+    }
+
     public static void Initialize(in HeightTarget constraint, scoped QueryRow row, in PhysicsStepContext context) =>
         row.ReadWrite<HeightMultiplier>().Value = 0;
 

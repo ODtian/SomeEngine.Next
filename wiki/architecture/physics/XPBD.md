@@ -31,7 +31,11 @@ PhysicsStepResult result = physics.Schedule(number, startTime, duration);
 result.Complete();
 ```
 
-每轮按集合组合顺序依次投影全部约束，然后推进下一轮。求解通过所属 World 的 Scheduler 提交一个作业，模拟实体组件在外层查询中持续借用，各约束在自己的查询回调内读取参数并更新乘子，完成依赖覆盖全部投影。
+每轮按集合组合顺序依次投影全部约束，然后推进下一轮。原求解入口通过所属 World 的 Scheduler 提交一个作业，模拟实体组件在外层查询中持续借用，各约束在自己的查询回调内读取参数并更新乘子，完成依赖覆盖全部投影。
+
+`Initialize()` 与 `Iterate(iterations)` 可分别接入同一子步的显式阶段。
+初始化、继续迭代、当前乘子作用量交接及实际 Body 自由度的公共用法由
+[求解阶段](Solver-Steps.md)维护。共同点接触的 XPBD 物理参数、数值状态与恢复入口见[接触](Contacts.md)。
 
 用户适配器以具体 struct 实现 `IXpbdConstraint<TConstraint>` 的静态 `Initialize` 和 `Project`。两者接收主组件的只读引用、原 `QueryRow` 与共同的 `PhysicsStepContext`；`Project` 还接收 `PhysicsBodies`，从 `context.Duration` 取得子步时长，并可读取该子步的起止时刻。适配器可从原行读取同实体的其他已声明组件，并写入自己的数值状态组件。用户集合沿同一个 `XpbdConstraints<TConstraint,TProjection>` 入口与内置集合组合。
 
