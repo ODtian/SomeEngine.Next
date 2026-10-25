@@ -97,6 +97,25 @@ public class TransformSystemTests
     }
 
     [Fact]
+    public void WorldTransformOnlyOrganization_PassesNearestTransformAncestorToDescendants()
+    {
+        Entity root = CreateTransformEntity(new Vector3(10, 0, 0));
+        Entity organization = _world.World.CreateEntity();
+        _world.World.Add(organization, new WorldTransform
+        {
+            Qvvs = new TransformQvvs(new Vector3(100, 0, 0), Quaternion.Identity),
+        });
+        Entity child = CreateTransformEntity(new Vector3(2, 0, 0));
+        Hierarchy.SetParent(_world.World, organization, root);
+        Hierarchy.SetParent(_world.World, child, organization);
+
+        RunSystems();
+
+        Assert.Equal(new Vector3(12, 0, 0), _world.World.Read<WorldTransform>(child).Qvvs.Position);
+        Assert.Equal(new Vector3(100, 0, 0), _world.World.Read<WorldTransform>(organization).Qvvs.Position);
+    }
+
+    [Fact]
     public void OrganizationEntity_ReparentUpdatesDescendantAfterSteadyFrame()
     {
         Entity rootA = CreateTransformEntity(new Vector3(10, 0, 0));
