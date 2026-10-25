@@ -25,7 +25,11 @@ owner 进入 ready-admission queue 后按 ready enqueue sequence获得公平服�
 
 access normalizer 构造 piecewise mode map，而不是无条件让 whole 吞掉 ranges：whole Write 可覆盖所有 ranges；whole Read 只覆盖 range Reads；whole Read + subrange Write 必须保留为 default Read 加 Write overrides，或显式保守提升到 whole Write。任意重叠段取最强 mode，相邻同 mode 段合并。
 
-semantic graph 仍要做 cycle detection。child 直接或间接依赖当前/ancestor scope 必须拒绝，`CombineDependencies` 不能丢失 prerequisite graph。任何 job/Execute body 内的 `Complete` 和嵌套 `Execute` 都默认拒绝；需要嵌套 helper 时复用 ambient owner，并验证请求只是现有权限的子集。
+`Schedule`、`ScheduleParallel` 和 `ScheduleFinally` 在登记完整依赖时沿子工作到父工作、前置工作到接续工作的完成关系检查环。`CombineDependencies` 的每个有效输入也保留在这份完成关系中。子工作直接或间接等待当前工作或祖先时，提交抛出 `InvalidOperationException`；子工作之间可通过显式依赖排列计算顺序。
+
+协调线程调用 `JobHandle.Complete` 时参与帮助执行，并等到本体、子工作和作用域资源释放全部完成。Job 回调用显式依赖和 `ScheduleFinally` 接续后续工作，已完成句柄的 `Complete` 用于读取终态和传播失败；回调对未完成句柄调用 `Complete` 会抛出 `InvalidOperationException`。嵌套同步数据访问复用当前工作的访问集合，由数据接口核对所需范围和读写权限。
+
+以上为已实现的调度和公共调用规则，源码入口为 [完整依赖登记](../../../src/SomeEngine.Job/Scheduler.DependencyStore.cs)、[完成等待](../../../src/SomeEngine.Job/Scheduler.Completion.cs) 与 [World 数据访问](../../../src/SomeEngine.ECS.Systems/WorldJobs.cs)，公共行为检查为 [回调依赖](../../../tests/SomeEngine.Job.Tests/CallbackDependencyTests.cs)、[资源完成顺序](../../../tests/SomeEngine.Job.Tests/ResourceSafetyTests.cs) 与 [组件访问](../../../tests/SomeEngine.ECS.Systems.Tests/ComponentJobAccessTests.cs)。
 
 pin 使用强 container anchor、distinct ResourceState references 和 generation。`ReleaseResource` 在所有 safety modes 都不得释放或复用 active/pinned resource；Fast 只能减少诊断，不能把 pending access 变成 use-after-free。
 
