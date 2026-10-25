@@ -18,18 +18,20 @@ public sealed class QueueSubmissionTests
     public void SubmissionMergingPreservesQueueDependenciesAndReadback(
         FrameSubmissionMode mode, bool crossesBack)
     {
-        using WarpGraphTestSupport support = WarpGraphTestSupport.Create(enableValidation: true);
+        using WarpGraphTestSupport support = WarpGraphTestSupport.Create(enableValidation: true,
+            requiredFeatures: DeviceFeatures.CalibratedTimestamps);
         using var graph = new RenderGraph(support.Backend, support.Device,
             [support.GraphicsQueue, support.ComputeQueue, support.CopyQueue],
             new RenderGraphDesc(MaximumFramesInFlight: 1));
         Queue[] queues = [support.GraphicsQueue, support.ComputeQueue, support.CopyQueue, support.GraphicsQueue];
         var outputs = new List<Buffer>();
+        var passes = new GraphPassId[4];
+        var times = new List<RenderGraphGpuTimes>();
         string path = Path.Combine(Path.GetTempPath(), $"graph-merging-{Guid.NewGuid():N}.setrace");
         try
         {
             using (RenderGraphEdit edit = graph.BeginEdit())
             {
-                var passes = new GraphPassId[4];
                 for (int index = 0; index < 4; index++)
                 {
                     Buffer output = support.Backend.CreateBuffer(support.Device,
@@ -45,17 +47,30 @@ public sealed class QueueSubmissionTests
             }
             var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
             var options = new RenderGraphFrameOptions(mode,
-                RenderGraphDebugOptions.DeclarationOrderScheduling | RenderGraphDebugOptions.DisableParallelRecording);
+                RenderGraphDebugOptions.DeclarationOrderScheduling | RenderGraphDebugOptions.DisableParallelRecording,
+                GpuTimes: times.Add);
             using (EngineTrace.Start(path, new TraceOptions { Detail = true, BufferMegabytes = 4 }))
             {
                 for (int frameIndex = 1; frameIndex <= 2; frameIndex++)
                 {
                     using var trace = EngineTrace.BeginFrame(frameIndex);
                     using RenderGraphFrame frame = graph.BeginFrame(options);
+                    ulong frameIdentity = frame.FrameIdentity;
                     int count = frame.Execute(completions);
                     support.Wait(completions.AsSpan(0, count));
+                    graph.CollectCompleted();
+                    Assert.Equal(frameIndex, times.Count);
+                    RenderGraphGpuTimes timing = times[^1];
+                    Assert.Equal(frameIdentity, timing.FrameIdentity);
+                    Assert.True(timing.ElapsedMs > 0);
+                    Assert.Equal(4, timing.Passes.Count);
                     for (int index = 0; index < outputs.Count; index++)
                     {
+                        GpuPassTime passTime = Assert.Single(timing.Passes, value => value.Pass == passes[index]);
+                        Assert.Equal(queues[index].Type, passTime.QueueType);
+                        Assert.Equal(queues[index].Index, passTime.QueueIndex);
+                        Assert.True(passTime.StartMs >= 0 && passTime.EndMs >= passTime.StartMs &&
+                            passTime.EndMs <= timing.ElapsedMs && passTime.CommandsMs >= 0);
                         using MappedBuffer mapped = support.Backend.Map(outputs[index], MapType.Read, new(0, 64));
                         mapped.Invalidate(new(0, 64));
                         foreach (uint value in MemoryMarshal.Cast<byte, uint>(mapped.Bytes))
