@@ -86,9 +86,11 @@ Crowd 使用固定帧窗口完成两条路径，普通三场景入口使用 45 �
 已有导入场景可通过开发组合的 `reuse-scene <application root> <imported root> <output root>`
 建立当前运行入口。这个示例入口保留已有 Mesh、World、Texture 身份与字节，以来源 glTF
 材质参数和当前 `MaterialBlock` 写出材质，再使用主项目的共同 Shader 与管线。
-既有 SCV1 页由项目内 `scene_scv1_vertex.slang` 固定解码，配套材质的光栅、阴影和着色入口
-都声明 `someengine.vertex.standard.cluster.v1`。编码块原始地址的公共入口见
-[Opaque Vertex Data](../cluster/Opaque-Vertex-Data.md)。内容准备耗时与完整三场景反馈耗时分别记录。
+场景准备器沿当前标准材质模板生成 `StaticVertexEval` 专用化，与 `SceneVertexEncoder`
+委托的 `StandardClusterVertexEncoder` 编码保持一致。实现见
+[ImportedSceneImporter](../../../samples/DefaultGame/Content/ImportedSceneImporter.cs)。
+编码块原始地址的公共入口见 [Opaque Vertex Data](../cluster/Opaque-Vertex-Data.md)。
+内容准备耗时与完整三场景反馈耗时分别记录。
 
 ## 完成后的数据
 
