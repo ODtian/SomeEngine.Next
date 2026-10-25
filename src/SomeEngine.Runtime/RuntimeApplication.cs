@@ -452,6 +452,7 @@ internal static class RuntimeApplication
         Swapchain swapchain,
         NativeWindow window)
     {
+        using var trace = EngineTrace.Begin(ApplicationTrace.ImageAcquire);
         long started = Environment.TickCount64;
         while (true)
         {
@@ -839,50 +840,60 @@ internal static class RuntimeApplication
                     startup.FinishTrace();
                 }
                 using var frameTrace = EngineTrace.BeginFrame(++traceFrameIndex);
-                bool instanceAdmitted = instances.TryAdmitFrameResources(
-                    out _,
-                    out QueueCompletion[] instanceRetirementFences);
-                bool uiAdmitted = ui.TryAdmitFrameResources(
-                    out _,
-                    out QueueCompletion[] uiRetirementFences);
-                long admissionWaitStarted = Environment.TickCount64;
-                while (!instanceAdmitted || !uiAdmitted)
+                RenderGraphNextFrame nextGraphFrame;
+                using (EngineTrace.Begin(ApplicationTrace.FrameResources))
                 {
-                    TimeSpan remaining = FrameTimeout -
-                        TimeSpan.FromMilliseconds(
-                            Environment.TickCount64 - admissionWaitStarted);
-                    if (remaining <= TimeSpan.Zero)
+                    bool instanceAdmitted = instances.TryAdmitFrameResources(
+                        out _,
+                        out QueueCompletion[] instanceRetirementFences);
+                    bool uiAdmitted = ui.TryAdmitFrameResources(
+                        out _,
+                        out QueueCompletion[] uiRetirementFences);
+                    long admissionWaitStarted = Environment.TickCount64;
+                    while (!instanceAdmitted || !uiAdmitted)
                     {
-                        throw new TimeoutException(
-                            "Frame-resource admission did not become available before the runtime timeout.");
-                    }
-                    TimeSpan waitSlice = remaining > TimeSpan.FromMilliseconds(2)
-                        ? TimeSpan.FromMilliseconds(2)
-                        : remaining;
+                        TimeSpan remaining = FrameTimeout -
+                            TimeSpan.FromMilliseconds(
+                                Environment.TickCount64 - admissionWaitStarted);
+                        if (remaining <= TimeSpan.Zero)
+                        {
+                            throw new TimeoutException(
+                                "Frame-resource admission did not become available before the runtime timeout.");
+                        }
+                        TimeSpan waitSlice = remaining > TimeSpan.FromMilliseconds(2)
+                            ? TimeSpan.FromMilliseconds(2)
+                            : remaining;
 
-                    QueueCompletion[] retirementFences = !instanceAdmitted
-                        ? instanceRetirementFences
-                        : uiRetirementFences;
-                    _ = WaitForAll(backend, retirementFences, waitSlice);
+                        QueueCompletion[] retirementFences = !instanceAdmitted
+                            ? instanceRetirementFences
+                            : uiRetirementFences;
+                        using (EngineTrace.Begin(!instanceAdmitted
+                                   ? ApplicationTrace.InstanceRetirement
+                                   : ApplicationTrace.UiRetirement))
+                            _ = WaitForAll(backend, retirementFences, waitSlice);
 
-                    _ = window.PumpMessages();
-                    if (!instanceAdmitted)
-                    {
-                        instanceAdmitted = instances.TryAdmitFrameResources(
-                            out _,
-                            out instanceRetirementFences);
+                        _ = window.PumpMessages();
+                        if (!instanceAdmitted)
+                        {
+                            instanceAdmitted = instances.TryAdmitFrameResources(
+                                out _,
+                                out instanceRetirementFences);
+                        }
+                        if (!uiAdmitted)
+                        {
+                            uiAdmitted = ui.TryAdmitFrameResources(
+                                out _,
+                                out uiRetirementFences);
+                        }
                     }
-                    if (!uiAdmitted)
+                    backend.CollectCompleted(device);
+                    coordinator.AdmitFrameResources();
+                    using (EngineTrace.Begin(ApplicationTrace.GraphFrameResources))
                     {
-                        uiAdmitted = ui.TryAdmitFrameResources(
-                            out _,
-                            out uiRetirementFences);
+                        if (!renderGraph.TryOpenNextFrame(out nextGraphFrame, FrameTimeout))
+                            throw new TimeoutException("RenderGraph frame resources did not become available before the runtime timeout.");
                     }
                 }
-                backend.CollectCompleted(device);
-                coordinator.AdmitFrameResources();
-                if (!renderGraph.TryOpenNextFrame(out RenderGraphNextFrame nextGraphFrame, FrameTimeout))
-                    throw new TimeoutException("RenderGraph frame resources did not become available before the runtime timeout.");
                 using var graphFrameResources = nextGraphFrame;
                 // Shared asset content can change only after the Game World extraction reader exits.
                 if (nextGameUpdate is not null)
@@ -891,15 +902,18 @@ internal static class RuntimeApplication
                     gameStarted = nextGameStarted;
                     nextGameUpdate = null;
                 }
-                input.BeginFrame();
-                if (!window.PumpMessages())
-                    break;
-                while (window.TryReadEvent(out NativeWindowEvent windowEvent))
+                using (EngineTrace.Begin(ApplicationTrace.WindowInput))
                 {
-                    input.Process(windowEvent);
-                    ui.ProcessEvent(windowEvent, input);
+                    input.BeginFrame();
+                    if (!window.PumpMessages())
+                        break;
+                    while (window.TryReadEvent(out NativeWindowEvent windowEvent))
+                    {
+                        input.Process(windowEvent);
+                        ui.ProcessEvent(windowEvent, input);
+                    }
+                    elementSystems.UpdateInput();
                 }
-                elementSystems.UpdateInput();
                 if (input.WasKeyPressed(RuntimeInput.KeyEscape))
                 {
                     window.RequestClose();
@@ -1229,9 +1243,11 @@ internal static class RuntimeApplication
 
                 if (reportMilestones)
                     Console.WriteLine("First frame: presenting.");
-                PresentStatus present = backend.Present(
-                    backend.GetQueue(device, QueueType.Graphics),
-                    image.Value);
+                PresentStatus present;
+                using (EngineTrace.Begin(ApplicationTrace.Present))
+                    present = backend.Present(
+                        backend.GetQueue(device, QueueType.Graphics),
+                        image.Value);
                 double cpuMs = measurements is null ? 0
                     : Stopwatch.GetElapsedTime(Math.Min(frameStarted, gameStarted)).TotalMilliseconds;
                 if (sceneGeometryReady && startup.Result is null)

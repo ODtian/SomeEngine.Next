@@ -21,4 +21,11 @@ internal static class ApplicationTrace
     internal static readonly TraceSite GpuCompletion = new("wait", "GpuFrameCompletion");
     internal static readonly TraceSite TaskCompletion = new("wait", "TaskCompletion");
     internal static readonly TraceSite GameUpdate = new("app", "GameUpdate");
+    internal static readonly TraceSite FrameResources = new("app", "FrameResources");
+    internal static readonly TraceSite InstanceRetirement = new("wait", "InstanceRetirement");
+    internal static readonly TraceSite UiRetirement = new("wait", "UiRetirement");
+    internal static readonly TraceSite GraphFrameResources = new("app", "GraphFrameResources");
+    internal static readonly TraceSite WindowInput = new("app", "WindowInput");
+    internal static readonly TraceSite Present = new("app", "Present");
+    internal static readonly TraceSite ImageAcquire = new("app", "ImageAcquire");
 }
