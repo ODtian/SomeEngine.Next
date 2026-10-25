@@ -116,7 +116,8 @@ public sealed partial class DeviceReferencedGeometryTests(D3D12TestCompiler shad
             .Then(grid.Build(pairs, DevicePairRules.None, DeviceInputTransfer.Resident, DevicePairReadback.None))
             .Then(detection.Detect()).Then(detection.WriteContacts(new Capture(captured), new[] { output }));
 
-        PhysicsSimulation.Create(world, QueryDefinition.Empty, stages, 1).Schedule(4, 1, .25).Complete();
+        PhysicsSimulation.Create(world, world.QueryDefinition().All<DeviceBodyBinding>().Build(), stages, 1)
+            .Schedule(4, 1, .25).Complete();
 
         Captured contact = Assert.Single(captured);
         Assert.Equal(capsule, contact.Contact.First);
