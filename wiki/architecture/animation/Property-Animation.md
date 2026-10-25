@@ -63,7 +63,9 @@ bool throughReference = channel.ThroughReference;
 `World.HasQueryMembers` 检查各自的活动、完成或目标查询，再为实际成员建立求值及写回访问范围。
 成员资格由当前 ECS 匹配表及启用状态提供；后续安装的轨道和目标进入相同查询路径。
 
-单来源采用直接写回批次；固定多来源及分层值由 [[architecture/animation/Animation-Layers|Animation Layers]] 合成。`FieldWrite<T>` 保存最终字段值，系统在对应阶段查询完成后汇总相同 Channel。`Channel.WriteBatch` 经一次 `World.ExecuteComponentWrite` 取得具体根组件批次，再以具体 IFieldAccess 循环写入。写入沿 [[architecture/ECS/Component-Fields|Component Fields]] 推进根组件版本，table 与 sparse 根共享调用形状。
+单来源采用直接写回批次；固定多来源及分层值由 [[architecture/animation/Animation-Layers|Animation Layers]] 合成。`FieldWrite<T>` 保存最终字段值，系统在对应阶段查询完成后汇总相同 Channel。`Channel.WriteBatch` 经一次 `World.ExecuteComponentWrite` 取得具体根组件批次，再以具体 IFieldAccess 写入。生成字段采用 `Channel<T>.Of<TComponent,TAccess,TResources>`：资源描述器实现 `IJobComponentResources<TComponent>`，通过 `JobResourceAccessBuilder` 声明路径中的实际对象及内存范围，外层引用采用读访问，最终写入对象采用写访问。手写字段可通过该入口提供自己的描述器。
+
+`ComponentWriteJobs.ExecuteParallel` 在这次组件回调内持有原根存储和统一版本，按重复目标、实际对象别名及重叠写范围合组；组内保持输入顺序，独立组并行写入并在回调返回前完成。取得引用访问后重新读取当前绑定，引用变化时按当前资源重新取得访问。原两泛型手写字段入口继续按输入顺序执行具体访问器。源码：[ComponentWriteJobs](../../../src/SomeEngine.ECS.Systems/ComponentWriteJobs.cs)、[Channel](../../../src/SomeEngine.Animation/Channel.cs)。写入沿 [[architecture/ECS/Component-Fields|Component Fields]] 推进根组件版本，table 与 sparse 根共享调用形状。
 
 ## 验收
 
