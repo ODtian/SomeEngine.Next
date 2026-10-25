@@ -17,7 +17,7 @@ public struct ContactPoint : IComponent
     public Vector3 WorldPoint;
     public Vector3 Normal;
     public float Separation;
-    /// <summary>The weighted second-minus-first body-anchor vector at the geometry refresh.</summary>
+    /// <summary>The weighted second-minus-first body-anchor vector at the geometry sample time.</summary>
     public Vector3 BodyAnchorDelta;
     public int FirstBodyCount;
     public bool WarmStart;
