@@ -1255,6 +1255,17 @@ internal sealed partial class FrameExecutor
         }
     }
 
+    private readonly struct ResourceHazardsJob(FrameExecutor executor) : IJobParallelFor
+    {
+        public void Execute(int index)
+        {
+            ResourceAnalysis analysis = executor._resourceAnalysis[index];
+            analysis.Dependencies.Hazards.Clear();
+            if (executor.ResourceExists(analysis.Resource))
+                executor.ResolveResourceHazards(analysis, analysis.Resource);
+        }
+    }
+
     private readonly Dictionary<(GraphAccessTargetKind Kind, int Index), ResourceDependencies> _resourceDependencies = [];
     private readonly Dictionary<PassEdge, int> _valueEdgeCounts = [];
     private readonly Dictionary<PassEdge, int> _executionEdgeCounts = [];
@@ -1339,13 +1350,13 @@ internal sealed partial class FrameExecutor
 
         UpdateLiveness();
         int hazardCount = PrepareResourceAnalysis(_changedHazardResources, liveOnly: true);
+        if (hazardCount != 0)
+            JobSystem.Current.ExecuteParallel(new ResourceHazardsJob(this), hazardCount);
         for (int index = 0; index < hazardCount; index++)
         {
             ResourceAnalysis analysis = _resourceAnalysis[index];
             var resource = analysis.Resource;
-            if (!_resourceDependencies.TryGetValue(resource, out ResourceDependencies? previous)) continue;
-            analysis.Dependencies.Hazards.Clear();
-            if (ResourceExists(resource)) ResolveResourceHazards(analysis, resource);
+            ResourceDependencies previous = _resourceDependencies[resource];
             foreach (PassEdge edge in previous.Hazards)
                 if (!analysis.Dependencies.Hazards.Contains(edge)) ChangeExecutionEdge(edge, -1);
             foreach (PassEdge edge in analysis.Dependencies.Hazards)

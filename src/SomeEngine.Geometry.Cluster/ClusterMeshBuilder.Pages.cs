@@ -166,9 +166,9 @@ public static partial class ClusterMeshBuilder
 
     private static long WriteBvh(Stream stream, List<ClusterInfo> clusterInfos)
     {
-        List<ClusterBVHNode> bvhNodes = BuildBvh(clusterInfos);
+        ClusterBVHNode[] bvhNodes = BuildBvh(clusterInfos);
         long bvhOffset = stream.Position;
-        Span<ClusterBVHNode> bvhSpan = CollectionsMarshal.AsSpan(bvhNodes);
+        Span<ClusterBVHNode> bvhSpan = bvhNodes.AsSpan();
         ReadOnlySpan<byte> bvhBytes = MemoryMarshal.Cast<ClusterBVHNode, byte>(bvhSpan);
         stream.Write(bvhBytes);
         return bvhOffset;

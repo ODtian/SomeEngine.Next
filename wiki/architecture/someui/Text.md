@@ -80,10 +80,18 @@ atlas.ClearDirtyRegions();
   为止，页对象与已有位置随图集保留。字体可以由不同图集和排版缓冲共用，单个字体
   的 FreeType 栅格化与像素复制在同一次互斥访问内完成。
 
+批量首次生成见 [GlyphAtlas.Baking.cs](../../../src/SomeEngine.Typography/GlyphAtlas.Baking.cs)
+与 [Font.cs](../../../src/SomeEngine.Typography/Font.cs)。`Bake` 固定输入并按首次出现顺序
+去重，共享 Job 执行器按范围计算位图和 SDF。每个范围为使用的字体持有独立 FreeType
+library 与 face，face 使用期间保留字体资产字节；范围完成后释放这些原生状态。
+图集在全部位图完成后按输入顺序安装，页分配、位置、字典和新增区域由图集统一更新。
+已取得的字形继续复用原位置与像素。
+
 内容构建可从排版结果或字体字集取得字形编号，使用同一个图集入口预烘焙：
 
 ```csharp
 atlas.Bake(font, glyphIndices);
+atlas.Bake(shape.Glyphs);
 atlas.Save(contentStream);
 // 加载阶段提供来自同一组字体资产字节的字体对象。
 GlyphAtlas loaded = GlyphAtlas.Load(contentStream, [font]);
