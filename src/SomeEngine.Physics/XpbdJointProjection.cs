@@ -1,5 +1,3 @@
-using System.Numerics;
-using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Relations;
 
@@ -33,30 +31,15 @@ public readonly struct XpbdJointProjection : IXpbdConstraint<JointConstraint>
             // The XPBD displacement multiplier has the opposite sign to the ALM constraint force.
             if (!JointMath.TryGetError(limit, derivative.Coordinate, -multiplier, out float error, out JointLimitSide side)) continue;
             float alpha = 1 / (stiffness * duration * duration);
-            float weight = GetWeight(in sourceMass, in source, derivative.SourceLinear, derivative.SourceAngular)
-                + GetWeight(in targetMass, in target, derivative.TargetLinear, derivative.TargetAngular);
+            float weight = XpbdBodyMath.GetWeight(in sourceMass, in source, derivative.SourceLinear, derivative.SourceAngular)
+                + XpbdBodyMath.GetWeight(in targetMass, in target, derivative.TargetLinear, derivative.TargetAngular);
             float change = (-error - alpha * multiplier) / (weight + alpha);
             float next = -JointMath.ProjectForce(side, -(multiplier + change));
             change = next - multiplier;
             if (dof < 3) state.LinearMultiplier[axis] = next;
             else state.AngularMultiplier[axis] = next;
-            ApplyCorrection(bodies, endpoints.Source, in sourceMass, derivative.SourceLinear, derivative.SourceAngular, change);
-            ApplyCorrection(bodies, endpoints.Target, in targetMass, derivative.TargetLinear, derivative.TargetAngular, change);
+            XpbdBodyMath.ApplyCorrection(bodies, endpoints.Source, in sourceMass, derivative.SourceLinear, derivative.SourceAngular, change);
+            XpbdBodyMath.ApplyCorrection(bodies, endpoints.Target, in targetMass, derivative.TargetLinear, derivative.TargetAngular, change);
         }
-    }
-
-    private static float GetWeight(in BodyMass mass, in BodyPose pose, Vector3 linear, Vector3 angular) =>
-        mass.Motion == BodyMotion.Dynamic ? mass.InverseMass * linear.LengthSquared()
-            + Vector3.Dot(angular, mass.ApplyInverseInertia(pose.Rotation, angular)) : 0;
-
-    private static void ApplyCorrection(scoped PhysicsBodies bodies, Entity body, in BodyMass mass,
-        Vector3 linear, Vector3 angular, float change)
-    {
-        if (mass.Motion != BodyMotion.Dynamic) return;
-        ref BodyPose pose = ref bodies.WritePose(body);
-        Vector3 center = pose.GetCenterOfMass(in mass) + linear * (mass.InverseMass * change);
-        Vector3 rotation = mass.ApplyInverseInertia(pose.Rotation, angular) * change;
-        pose.Rotation = BodyRotation.ApplyChange(pose.Rotation, rotation);
-        pose.SetCenterOfMass(center, in mass);
     }
 }
