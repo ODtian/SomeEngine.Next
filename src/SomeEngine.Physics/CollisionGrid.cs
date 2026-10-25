@@ -71,7 +71,7 @@ public sealed partial class CollisionGrid<TSettings>(TSettings settings)
 
     internal bool Enumerate<TPairing, TOutput>(GridPairRange partition, scoped RelationQueryViews queries,
         ref TOutput output)
-        where TPairing : struct, IGridPairing
+        where TPairing : struct, ICollisionPairing
         where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
     {
         foreach (Entity entity in CollectionsMarshal.AsSpan(_entities).Slice(partition.Start, partition.Count))
