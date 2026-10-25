@@ -1,5 +1,6 @@
 using SomeEngine.ECS;
 using SomeEngine.ECS.Queries;
+using SomeEngine.ECS.Systems;
 using SomeEngine.Job;
 
 namespace SomeEngine.Physics;
@@ -10,6 +11,8 @@ public interface IXpbdConstraint<TConstraint> where TConstraint : struct, ICompo
     static abstract void Initialize(in TConstraint constraint, scoped QueryRow row, in PhysicsStepContext context);
     static abstract void Project(in TConstraint constraint, scoped QueryRow row,
         scoped PhysicsBodies bodies, in PhysicsStepContext context);
+    /// <summary>Projects an independent entity prefix and returns its length; remaining entries use Project.</summary>
+    static virtual int ProjectRange(scoped EntityQuery rows, scoped PhysicsBodies bodies, in PhysicsStepContext context) => 0;
 }
 
 /// <summary>Concrete constraint sets participating in every iteration of one XPBD solve.</summary>
