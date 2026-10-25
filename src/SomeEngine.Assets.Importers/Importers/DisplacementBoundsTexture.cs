@@ -2,6 +2,7 @@ using System.Numerics;
 using System.Runtime.InteropServices;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Resources;
+using SomeEngine.Job;
 using TextureAsset = SomeEngine.Assets.Schema.TextureAsset;
 
 namespace SomeEngine.Assets.Importers;
@@ -29,18 +30,7 @@ public static class DisplacementBoundsTexture
             throw new ArgumentException("Displacement sample count must exactly match width * height.", nameof(samples));
 
         var current = new Vector2[sampleCount];
-        float sourceMinimum = float.PositiveInfinity;
-        float sourceMaximum = float.NegativeInfinity;
-        for (int index = 0; index < samples.Length; index++)
-        {
-            float value = samples[index];
-            if (!float.IsFinite(value))
-                throw new ArgumentOutOfRangeException(nameof(samples), "Displacement samples must be finite.");
-            current[index] = new Vector2(value, value);
-            sourceMinimum = MathF.Min(sourceMinimum, value);
-            sourceMaximum = MathF.Max(sourceMaximum, value);
-        }
-        sourceRange = new Vector2(sourceMinimum, sourceMaximum);
+        sourceRange = ReadSampleRanges(samples, current);
 
         using var pixels = new TextureBlock
         {
@@ -63,31 +53,8 @@ public static class DisplacementBoundsTexture
             uint nextWidth = Math.Max(1u, currentWidth >> 1);
             uint nextHeight = Math.Max(1u, currentHeight >> 1);
             var next = new Vector2[checked((int)((ulong)nextWidth * nextHeight))];
-            for (uint y = 0; y < nextHeight; y++)
-            {
-                uint sourceY0 = checked((uint)((ulong)y * currentHeight / nextHeight));
-                uint sourceY1 = checked((uint)(((ulong)(y + 1u) * currentHeight + nextHeight - 1u) / nextHeight));
-                sourceY1 = Math.Min(sourceY1, currentHeight);
-                for (uint x = 0; x < nextWidth; x++)
-                {
-                    uint sourceX0 = checked((uint)((ulong)x * currentWidth / nextWidth));
-                    uint sourceX1 = checked((uint)(((ulong)(x + 1u) * currentWidth + nextWidth - 1u) / nextWidth));
-                    sourceX1 = Math.Min(sourceX1, currentWidth);
-
-                    float minimum = float.PositiveInfinity;
-                    float maximum = float.NegativeInfinity;
-                    for (uint sourceY = sourceY0; sourceY < sourceY1; sourceY++)
-                    {
-                        for (uint sourceX = sourceX0; sourceX < sourceX1; sourceX++)
-                        {
-                            Vector2 range = current[checked((int)((ulong)sourceY * currentWidth + sourceX))];
-                            minimum = MathF.Min(minimum, range.X);
-                            maximum = MathF.Max(maximum, range.Y);
-                        }
-                    }
-                    next[checked((int)((ulong)y * nextWidth + x))] = new Vector2(minimum, maximum);
-                }
-            }
+            JobSystem.ExecuteParallel(new BuildMipRows(current, currentWidth, currentHeight,
+                next, nextWidth, nextHeight), (int)nextHeight);
 
             current = next;
             currentWidth = nextWidth;
@@ -100,6 +67,72 @@ public static class DisplacementBoundsTexture
         var asset = new TextureAsset(assetGuid) { Name = name };
         try { asset.SetBlock(pixels); return asset; }
         catch { asset.Dispose(); throw; }
+    }
+
+    private const int SampleBatchSize = 4096;
+
+    private static unsafe Vector2 ReadSampleRanges(ReadOnlySpan<float> samples, Vector2[] values)
+    {
+        Vector2[] ranges = new Vector2[(samples.Length - 1) / SampleBatchSize + 1];
+        fixed (float* source = samples)
+            JobSystem.ExecuteParallel(new ReduceSamples(source, samples.Length, values, ranges), ranges.Length);
+        float minimum = float.PositiveInfinity;
+        float maximum = float.NegativeInfinity;
+        foreach (Vector2 range in ranges)
+        {
+            minimum = MathF.Min(minimum, range.X);
+            maximum = MathF.Max(maximum, range.Y);
+        }
+        return new(minimum, maximum);
+    }
+
+    private readonly unsafe struct ReduceSamples(float* samples, int count, Vector2[] values, Vector2[] ranges) : IJobParallelFor
+    {
+        public void Execute(int index)
+        {
+            int start = index * SampleBatchSize;
+            int end = Math.Min(count, start + SampleBatchSize);
+            float minimum = float.PositiveInfinity;
+            float maximum = float.NegativeInfinity;
+            for (int sample = start; sample < end; sample++)
+            {
+                float value = samples[sample];
+                if (!float.IsFinite(value))
+                    throw new ArgumentOutOfRangeException(nameof(samples), "Displacement samples must be finite.");
+                values[sample] = new Vector2(value, value);
+                minimum = MathF.Min(minimum, value);
+                maximum = MathF.Max(maximum, value);
+            }
+            ranges[index] = new(minimum, maximum);
+        }
+    }
+
+    private readonly record struct BuildMipRows(Vector2[] SourceRanges, uint SourceWidth, uint SourceHeight,
+        Vector2[] OutputRanges, uint Width, uint Height) : IJobParallelFor
+    {
+        public void Execute(int row)
+        {
+            uint y = (uint)row;
+            uint sourceY0 = checked((uint)((ulong)y * SourceHeight / Height));
+            uint sourceY1 = checked((uint)(((ulong)(y + 1u) * SourceHeight + Height - 1u) / Height));
+            sourceY1 = Math.Min(sourceY1, SourceHeight);
+            for (uint x = 0; x < Width; x++)
+            {
+                uint sourceX0 = checked((uint)((ulong)x * SourceWidth / Width));
+                uint sourceX1 = checked((uint)(((ulong)(x + 1u) * SourceWidth + Width - 1u) / Width));
+                sourceX1 = Math.Min(sourceX1, SourceWidth);
+                float minimum = float.PositiveInfinity;
+                float maximum = float.NegativeInfinity;
+                for (uint sourceY = sourceY0; sourceY < sourceY1; sourceY++)
+                for (uint sourceX = sourceX0; sourceX < sourceX1; sourceX++)
+                {
+                    Vector2 range = SourceRanges[checked((int)((ulong)sourceY * SourceWidth + sourceX))];
+                    minimum = MathF.Min(minimum, range.X);
+                    maximum = MathF.Max(maximum, range.Y);
+                }
+                OutputRanges[checked((int)((ulong)y * Width + x))] = new Vector2(minimum, maximum);
+            }
+        }
     }
 
     private static TextureMipTile CreateTile(
