@@ -2,6 +2,7 @@ using System.Buffers;
 using System.Collections.Immutable;
 using SlangShaderSharp;
 using SomeEngine.Graphics;
+using SomeEngine.Job;
 
 namespace SomeEngine.Resources;
 
@@ -67,6 +68,12 @@ public unsafe partial class Shader
         ReadOnlySpan<TargetDesc> targets,
         bool generateCode = true,
         bool generateLibraryCode = true)
+        => CreateFromSlang(name, global, session, sourceUnits, entries, linkedCode, targets,
+            generateCode, generateLibraryCode, JobSystem.Current);
+
+    internal static Shader CreateFromSlang(string name, IGlobalSession global, ISession session,
+        IReadOnlyList<IModule> sourceUnits, IReadOnlyList<IEntryPoint> entries, IComponentType linkedCode,
+        ReadOnlySpan<TargetDesc> targets, bool generateCode, bool generateLibraryCode, Scheduler scheduler)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         ArgumentNullException.ThrowIfNull(global);
@@ -82,8 +89,6 @@ public unsafe partial class Shader
         ImmutableArray<bool> unboundEntries = entries.Select(entry =>
             unbound && entry.GetSpecializationParamCount() != 0).ToImmutableArray();
         var reflections = ImmutableArray.CreateBuilder<ShaderReflection>(targets.Length);
-        var targetBlobs = ImmutableArray.CreateBuilder<ISlangBlob?>(targets.Length);
-        var entryBlobs = ImmutableArray.CreateBuilder<ISlangBlob?>();
         int entryCount = -1;
         for (int targetIndex = 0; targetIndex < targets.Length; targetIndex++)
         {
@@ -106,19 +111,15 @@ public unsafe partial class Shader
                 throw new InvalidDataException("Slang reflection differs from the supplied entry points.");
 
             reflections.Add(reflection);
-            targetBlobs.Add(generateCode && generateLibraryCode && !unbound
-                ? GetTargetBlob(linkedCode, targetIndex)
-                : null);
-
-            for (int entryIndex = 0; entryIndex < reflectedEntryCount; entryIndex++)
-            {
-                entryBlobs.Add(generateCode && !unboundEntries[entryIndex]
-                    ? GetEntryBlob(linkedCode, targetIndex, entryIndex)
-                    : null);
-            }
         }
 
         int codeCount = checked(targets.Length * entryCount);
+        var targetBlobs = new ISlangBlob?[targets.Length];
+        var entryBlobs = new ISlangBlob?[codeCount];
+        if (generateCode)
+            scheduler.ExecuteParallel(new GenerateCode(slangCode, entryCount, unbound,
+                generateLibraryCode, unboundEntries, targetBlobs, entryBlobs),
+                targets.Length + codeCount, options: new() { Category = ShaderCodeJobs.GetCategory(scheduler) });
         return new Shader(
             name,
             slangCode,
@@ -126,14 +127,33 @@ public unsafe partial class Shader
             entries.ToImmutableArray(),
             targets.ToArray().ToImmutableArray(),
             reflections.ToImmutable(),
-            targetBlobs.ToImmutable(),
-            entryBlobs.ToImmutable(),
+            targetBlobs.ToImmutableArray(),
+            entryBlobs.ToImmutableArray(),
             Enumerable.Repeat<byte[]?>(null, targets.Length).ToImmutableArray(),
             Enumerable.Repeat(Array.Empty<byte>(), codeCount).ToImmutableArray(),
             entryCount,
-            generateCode ? ReadSlangUsedParameters(linkedCode, targets.Length, entryCount, unboundEntries) :
+            generateCode ? ReadSlangUsedParameters(slangCode, targets.Length, entryCount, unboundEntries, scheduler) :
                 Enumerable.Repeat(ImmutableHashSet<SlangDescriptorLocation>.Empty, codeCount).ToImmutableArray(),
             unboundEntries);
+    }
+
+    private readonly record struct GenerateCode(SlangShaderData SlangData, int EntryCount, bool Unbound,
+        bool GenerateLibraryCode, ImmutableArray<bool> UnboundEntries, ISlangBlob?[] Targets,
+        ISlangBlob?[] Entries) : IJobParallelFor
+    {
+        public void Execute(int index)
+        {
+            if (index < Targets.Length)
+            {
+                if (GenerateLibraryCode && !Unbound)
+                    Targets[index] = GetTargetBlob(SlangData.Code, index);
+                return;
+            }
+            int codeIndex = index - Targets.Length;
+            int entryIndex = codeIndex % EntryCount;
+            if (!UnboundEntries[entryIndex])
+                Entries[codeIndex] = GetEntryBlob(SlangData.Code, codeIndex / EntryCount, entryIndex);
+        }
     }
 
     public bool HasSlangData => true;
@@ -247,7 +267,7 @@ public unsafe partial class Shader
     {
         ArgumentNullException.ThrowIfNull(targetCode);
         ArgumentNullException.ThrowIfNull(entryCode);
-        usedParameters ??= ReadSlangUsedParameters(_slangCode, _slangTargets.Length, _slangEntryCount, _slangUnboundEntries);
+        usedParameters ??= ReadSlangUsedParameters(SlangCode, _slangTargets.Length, _slangEntryCount, _slangUnboundEntries);
         if (targetCode.Count != _slangTargets.Length ||
             entryCode.Count != checked(_slangTargets.Length * _slangEntryCount) || usedParameters.Count != entryCode.Count)
         {
