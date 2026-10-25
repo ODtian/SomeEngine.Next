@@ -131,7 +131,7 @@ public sealed partial class DeviceCollisionGrid : IDisposable
         return buffer;
     }
 
-    private static ResourceBinding[] OrderBindings(VariableLayoutReflection root,
+    internal static ResourceBinding[] OrderBindings(VariableLayoutReflection root,
         Dictionary<string, ResourceBinding[]> bindings)
     {
         TypeLayoutReflection layout = root.TypeLayout.UnwrapArray();

@@ -60,6 +60,10 @@ var motors = new AvbdConstraints<JointConstraint, AvbdJointMotorMath>(motorQuery
 
 `motors` 可以与普通关节的 `AvbdConstraints<JointConstraint,AvbdJointMath>` 经 `AvbdConstraintGroups.Combine` 组合。XPBD 使用 `XpbdConstraints<JointConstraint,XpbdJointMotorProjection>` 和自身的 `XpbdMotorState`；两者沿同一 `PredictBodies → 约束求解 → UpdateBodyVelocities` 及完成依赖执行。
 
+XPBD motor 的当前受限乘子也可经 `XpbdForces<JointConstraint,XpbdJointMotorProjection>`
+进入 AVBD 世界力与力矩组装，具体反馈端继续沿原 `JointMotor.Response` 选择。
+交错迭代、初始化职责及共同预测的调用方法见[求解阶段](Solver-Steps.md)。
+
 参与实体查询包含双方端点，声明 `BodyPose` 的写入、`BodyMass` 与 `BodyStepState` 的读取；AVBD 同时声明 `AvbdBodyEquation` 的写入。查询按所属 World 的生命周期持有，关联物理步完成后释放。
 
 用户 motor 通过既有 `IAvbdConstraint<T>`、`IXpbdConstraint<T>` 或对应集合接口实现静态数值适配。原 `QueryRow` 可以读取同实体的动画输入，并写入独立的数值状态与 `JointMotorTarget`。动画侧的 [PosePredictionBatch](../../../src/SomeEngine.Animation.Pose/PosePrediction.cs)按显式时刻采样既有选定路径，输出模型骨骼及 `PosePredictionSample.Time`；骨骼到刚体的局部映射沿 [PhysicsPoseMap](../../../src/SomeEngine.Animation.Pose/PhysicsPose.cs) 表达。对应适配按 `context.EndTime` 取得目标、变换到所选空间并保留采样时间，再经本页同一 motor 数值入口驱动实体。
