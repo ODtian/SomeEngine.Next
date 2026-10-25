@@ -21,6 +21,14 @@ struct SurfaceReceiver
     float DepthOffset;
 };
 
+struct SurfaceShadowReceiver
+{
+    float3 Position;
+    float3 GeometricNormal;
+    uint Flags;
+    float Depth;
+};
+
 void WriteSurfaceReceiverLayer(RWStructuredBuffer<SurfaceReceiver> receivers, uint3 pixel,
     uint2 screenSize, uint viewCount, uint layer, SurfaceReceiver receiver)
 {
