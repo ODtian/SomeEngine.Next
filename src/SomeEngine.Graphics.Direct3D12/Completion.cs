@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Silk.NET.Core.Native;
 
@@ -17,8 +18,25 @@ internal sealed unsafe partial class D3D12Backend
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiWaitAndCollect);
         int milliseconds = Timeouts.ToMilliseconds(timeout, nameof(timeout));
         D3D12Queue queue = RequireQueue(completion.Queue, nameof(completion));
+        long started = Stopwatch.GetTimestamp();
         if (queue.IsComplete(completion.Value))
             return WaitStatus.Completed;
+        if (milliseconds == 0)
+            return WaitStatus.Timeout;
+
+        using var waitTrace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.CpuFenceWait);
+        // Poll for up to 1 ms within the same timeout budget as the event wait.
+        long deadline = milliseconds == Timeout.Infinite ? long.MaxValue
+            : checked(started + (long)Math.Ceiling(milliseconds * (double)Stopwatch.Frequency / 1000d));
+        long spinDeadline = Math.Min(deadline, started + Stopwatch.Frequency / 1000);
+        while (Stopwatch.GetTimestamp() < spinDeadline)
+        {
+            Thread.SpinWait(64);
+            if (queue.IsComplete(completion.Value))
+                return WaitStatus.Completed;
+        }
+        if (Stopwatch.GetTimestamp() >= deadline)
+            return WaitStatus.Timeout;
 
         nint waitEvent;
         using (global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.CreateWaitEvent))
@@ -38,11 +56,12 @@ internal sealed unsafe partial class D3D12Backend
                 NativeOperationType.Ordinary,
                 "ID3D12Fence::SetEventOnCompletion");
 
-            uint result;
-            using (global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.CpuFenceWait))
-                result = SilkMarshal.WaitWindowsObjects(
-                    waitEvent,
-                    milliseconds == Timeout.Infinite ? uint.MaxValue : checked((uint)milliseconds));
+            if (milliseconds != Timeout.Infinite)
+                milliseconds = (int)Math.Max(0, Math.Ceiling(
+                    (deadline - Stopwatch.GetTimestamp()) * 1000d / Stopwatch.Frequency));
+            uint result = SilkMarshal.WaitWindowsObjects(
+                waitEvent,
+                milliseconds == Timeout.Infinite ? uint.MaxValue : checked((uint)milliseconds));
             return result switch
             {
                 0 => queue.IsComplete(completion.Value)
