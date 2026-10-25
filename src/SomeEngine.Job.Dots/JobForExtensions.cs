@@ -40,6 +40,47 @@ public static class JobForExtensions
         return JobSystem.ScheduleParallel(new JobForParallelAdapter<T>(job), length, batchSize, accesses, dependency);
     }
 
+    public static JobHandle Schedule<T>(
+        this T job,
+        Scheduler scheduler,
+        int length,
+        int batchSize,
+        JobHandle dependency = default)
+        where T : struct, IJobFor
+    {
+        JobTraits.RequireSynchronousCallback<T, IJobFor>(
+            JobForExecuteTraits<T>.IsAsyncStateMachine);
+        return scheduler.ScheduleParallel(new JobForParallelAdapter<T>(job), length, batchSize, dependency);
+    }
+
+    public static JobHandle Schedule<T>(
+        this T job,
+        Scheduler scheduler,
+        int length,
+        int batchSize,
+        JobResourceAccess access,
+        JobHandle dependency = default)
+        where T : struct, IJobFor
+    {
+        JobTraits.RequireSynchronousCallback<T, IJobFor>(
+            JobForExecuteTraits<T>.IsAsyncStateMachine);
+        return scheduler.ScheduleParallel(new JobForParallelAdapter<T>(job), length, batchSize, access, dependency);
+    }
+
+    public static JobHandle Schedule<T>(
+        this T job,
+        Scheduler scheduler,
+        int length,
+        int batchSize,
+        ReadOnlySpan<JobResourceAccess> accesses,
+        JobHandle dependency = default)
+        where T : struct, IJobFor
+    {
+        JobTraits.RequireSynchronousCallback<T, IJobFor>(
+            JobForExecuteTraits<T>.IsAsyncStateMachine);
+        return scheduler.ScheduleParallel(new JobForParallelAdapter<T>(job), length, batchSize, accesses, dependency);
+    }
+
     private static class JobForExecuteTraits<T>
         where T : struct, IJobFor
     {

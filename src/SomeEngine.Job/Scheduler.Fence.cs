@@ -60,9 +60,17 @@ public sealed partial class Scheduler
             return;
         }
 
-        if (!TryAddExternalContinuation(handle, observer))
+        _completion.TryBeginWait(handle, out CompletionLease observation);
+        try
         {
-            observer.InvokeAndSuppressObserverExceptions();
+            if (!TryAddExternalContinuation(handle, observer))
+            {
+                observer.InvokeAndSuppressObserverExceptions();
+            }
+        }
+        finally
+        {
+            _completion.EndWait(observation);
         }
     }
 

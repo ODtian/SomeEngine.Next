@@ -17,6 +17,7 @@ internal sealed partial class ResourceManager
     private ContainerResourceBinding CreateContainerResourceBinding(object container)
     {
         ResourceState state = CreateState(ResourceKind.Token, container.GetType().FullName);
+        state.ContainerReference = new WeakReference(container);
         return new ContainerResourceBinding(this, new JobResourceToken(state.Id, state.Version, _generation));
     }
 
