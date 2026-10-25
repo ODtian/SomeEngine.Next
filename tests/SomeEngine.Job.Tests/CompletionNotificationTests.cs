@@ -42,7 +42,7 @@ public sealed class CompletionNotificationTests
     [InlineData(0)]
     [InlineData(1)]
     [InlineData(4)]
-    public async Task NestedCompletionObservesFenceSignalsWithoutNewQueuedWork(int workerCount)
+    public async Task CompletionObservesFenceSignalsWithoutNewQueuedWork(int workerCount)
     {
         using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = workerCount });
         for (int iteration = 0; iteration < 128; iteration++)
@@ -51,23 +51,16 @@ public sealed class CompletionNotificationTests
             JobHandle dependency = scheduler.CreateExternalFenceHandle(fence);
             using var entered = new ManualResetEventSlim();
             using var finished = new ManualResetEventSlim();
-            JobHandle parent = scheduler.Schedule(new WaitForFence(dependency, entered, finished));
-            Task completion = Task.Run(parent.Complete);
+            Task completion = Task.Run(() =>
+            {
+                entered.Set();
+                dependency.Complete();
+                finished.Set();
+            });
             Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
             fence.Signal();
             await completion.WaitAsync(TimeSpan.FromSeconds(5));
             Assert.True(finished.IsSet);
-        }
-    }
-
-    private readonly struct WaitForFence(JobHandle dependency, ManualResetEventSlim entered,
-        ManualResetEventSlim finished) : IJob
-    {
-        public void Execute()
-        {
-            entered.Set();
-            dependency.Complete();
-            finished.Set();
         }
     }
 

@@ -135,8 +135,12 @@ internal sealed class ResourceAccessRegistrationData
 
     internal void Clear()
     {
-        Accesses.Clear();
-        Dependencies.Clear();
+        AccessBuilder<ResourceManager.ActiveResourceAccess> accesses = Accesses;
+        AccessBuilder<ResourceDependency> dependencies = Dependencies;
+        Accesses = default;
+        Dependencies = default;
+        accesses.Clear();
+        dependencies.Clear();
         _coverage?.Clear();
         HasCoverageIndex = false;
     }

@@ -289,11 +289,6 @@ public sealed partial class Scheduler
                 fault = state.Fault;
                 if (markObserved && fault is not null)
                 {
-                    if (state.FaultObserved)
-                    {
-                        fault = null;
-                        return true;
-                    }
                     state.FaultObserved = true;
                     state.ReportFailure();
                 }

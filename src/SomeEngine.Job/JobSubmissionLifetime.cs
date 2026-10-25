@@ -257,6 +257,8 @@ internal sealed class JobLifetime : IJobSubmissionObserver
 
         for (int i = 0; i < rootCount; i++)
         {
+            if (roots[i].IsCompleted && !JobSystem.NeedsLifetimeTracking(roots[i]))
+                continue;
             try
             {
                 roots[i].Complete();

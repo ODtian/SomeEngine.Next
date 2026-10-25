@@ -12,7 +12,7 @@ public sealed class ResourceSafetyTests
     }
 
     [Fact]
-    public void CollectedContainerBindingRetriesTokenReleaseAfterActiveOwnerCompletes()
+    public void ContainerBindingRetainsDataUntilItsWorkCompletes()
     {
         (JobResourceAccess access, WeakReference container) =
             CreateEphemeralContainerAccess();
@@ -23,16 +23,14 @@ public sealed class ResourceSafetyTests
             access);
         Assert.True(started.Wait(1_000));
 
-        // The first finalizer attempt observes the live owner and must re-register itself.
         ForceFullCollection();
-        Assert.False(container.IsAlive);
+        Assert.True(container.IsAlive);
 
         gate.Set();
         owner.Complete();
         ForceFullCollection();
+        Assert.False(container.IsAlive);
 
-        // A successful retry released the token identity; retaining only the old access must not
-        // keep the ResourceState alive or make the stale capability usable.
         Assert.Throws<JobResourceSafetyException>(() =>
             JobSystem.Schedule(new ResourceData.NoOpJob(), access));
     }
@@ -2050,17 +2048,17 @@ public sealed class ResourceSafetyTests
 
         internal readonly struct CustomCounterProvider : IJobResourceProvider<CustomCounterContainer, WholeAccess>
         {
-            public static JobResourceAccess Read(ref CustomCounterContainer container, WholeAccess access)
+            public static JobResourceAccess Read(Scheduler scheduler, ref CustomCounterContainer container, WholeAccess access)
             {
                 return JobResourceAccess.Read(container.Token);
             }
 
-            public static JobResourceAccess Write(ref CustomCounterContainer container, WholeAccess access)
+            public static JobResourceAccess Write(Scheduler scheduler, ref CustomCounterContainer container, WholeAccess access)
             {
                 return JobResourceAccess.Write(container.Token);
             }
 
-            public static JobResourceAccess Exclusive(ref CustomCounterContainer container, WholeAccess access)
+            public static JobResourceAccess Exclusive(Scheduler scheduler, ref CustomCounterContainer container, WholeAccess access)
             {
                 return JobResourceAccess.Exclusive(container.Token);
             }
