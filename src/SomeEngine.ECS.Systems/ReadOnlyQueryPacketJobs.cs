@@ -455,8 +455,8 @@ public static class ReadOnlyQueryPacketJobs
         // surrounding query already keeps their ECS columns alive; only external data need
         // resource declarations. Do not register this private array in a global resource table.
         var adapter = new PacketJob<TJob>(packets, lastSystemVersion, job);
-        WorldStorageJobResources.RequireJobs(world).Scheduler.ScheduleParallel(
-            adapter, packetCount, batchSize: 1, externalAccesses, options).Complete();
+        WorldStorageJobResources.RequireJobs(world).Scheduler.ExecuteParallel(
+            adapter, packetCount, batchSize: 1, externalAccesses, options);
         return outputCount;
     }
 

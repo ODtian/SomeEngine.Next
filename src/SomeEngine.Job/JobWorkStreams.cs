@@ -5,13 +5,9 @@ using System.Runtime.ExceptionServices;
 
 namespace SomeEngine.Job;
 
-internal abstract class WorkStream
+internal abstract class QueuedWork
 {
-    internal abstract int MakeReady(int slot, int maxDrainers, int priorityIndex);
-
-    internal abstract int MakeReady(ReadOnlySpan<int> slots, int count, int maxDrainers, int priorityIndex);
-
-    internal abstract void Cancel(int slot);
+    internal virtual void DrainExited() { }
 
     internal abstract int DrainAndFinish(
         Scheduler scheduler,
@@ -20,6 +16,15 @@ internal abstract class WorkStream
         int maxDrainers,
         out int retiredItems,
         out bool hasMoreWork);
+}
+
+internal abstract class WorkStream : QueuedWork
+{
+    internal abstract int MakeReady(int slot, int maxDrainers, int priorityIndex);
+
+    internal abstract int MakeReady(ReadOnlySpan<int> slots, int count, int maxDrainers, int priorityIndex);
+
+    internal abstract void Cancel(int slot);
 }
 
 internal readonly struct WorkItemExecutionResult
