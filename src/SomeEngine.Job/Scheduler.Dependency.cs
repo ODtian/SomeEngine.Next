@@ -416,6 +416,8 @@ public sealed partial class Scheduler
         private readonly ContinuationKind _kind;
         private readonly bool _ignoreDependencyFault;
 
+        internal JobHandle Target => _target;
+
         private DependencyContinuation(
             Scheduler scheduler,
             ContinuationKind kind,
