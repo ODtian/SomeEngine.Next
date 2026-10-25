@@ -10,6 +10,10 @@ namespace SomeEngine.Physics;
 
 public readonly struct AvbdContactMath : IAvbdConstraint<ContactPoint>
 {
+    public static int GetReadEntityCount(in ContactPoint point, scoped QueryRow row, in PhysicsStepContext context) =>
+        row.ReadBuffer<ContactBodyLink>().Count;
+    public static Entity GetReadEntity(in ContactPoint point, scoped QueryRow row, int index, in PhysicsStepContext context) =>
+        row.ReadBuffer<ContactBodyLink>().AsSpan()[index].Participant.Entity;
     public static int GetBodyCount(in ContactPoint point, scoped QueryRow row, in PhysicsStepContext context) =>
         row.ReadBuffer<ContactBodyLink>().Count;
 
