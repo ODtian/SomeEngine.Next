@@ -13,7 +13,14 @@ public sealed class SceneContentFixture : IAsyncLifetime
         while (directory is not null && !File.Exists(Path.Combine(directory, "SomeEngine.slnx")))
             directory = Path.GetDirectoryName(directory);
         if (directory is null) throw new DirectoryNotFoundException("The engine source directory is required to generate scene content.");
-        try { await SomeEngine.SceneContent.SceneContent.GenerateSpheresAsync(DirectoryPath, directory); }
+        try
+        {
+            string? cooked = Environment.GetEnvironmentVariable("SOMEENGINE_TEST_COOKED_CONTENT");
+            if (cooked is null)
+                await SomeEngine.SceneContent.SceneContent.GenerateSpheresAsync(DirectoryPath, directory);
+            else
+                await SomeEngine.SceneContent.SceneContent.GenerateSpheresFromCookedAsync(DirectoryPath, cooked);
+        }
         catch { await DisposeAsync(); throw; }
     }
 
