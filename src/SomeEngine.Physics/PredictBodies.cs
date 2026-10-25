@@ -39,6 +39,27 @@ internal readonly partial struct PredictBodyJob(float duration, Vector3 accelera
 
 internal static class BodyRotation
 {
+    // Newton v1.7.0 joint rotation derivatives; copyright (c) 2025 The Newton Developers.
+    // Source and license: ThirdParty/Newton/NOTICE and the repository LICENSE.
+    internal static Vector3 GetRotationVector(Quaternion rotation)
+    {
+        if (rotation.W < 0) rotation = -rotation;
+        var vector = new Vector3(rotation.X, rotation.Y, rotation.Z);
+        float magnitude = vector.Length();
+        return magnitude == 0 ? Vector3.Zero : vector * (2 * MathF.Atan2(magnitude, rotation.W) / magnitude);
+    }
+
+    internal static Vector3 GetConstraintJacobian(Quaternion sourceFrame, Quaternion relative,
+        Vector3 error, Vector3 direction)
+    {
+        Vector3 right = direction - Vector3.Cross(error, direction) * 0.5f
+            + Vector3.Cross(error, Vector3.Cross(error, direction)) * (1f / 12);
+        return Vector3.Transform(Vector3.Transform(right, relative), sourceFrame);
+    }
+
+    internal static Quaternion ApplyChange(Quaternion rotation, Vector3 change) =>
+        Quaternion.Normalize(rotation + (new Quaternion(change, 0) * rotation) * 0.5f);
+
     internal static Quaternion Integrate(Quaternion rotation, Vector3 angularVelocity, float duration)
     {
         float speed = angularVelocity.Length();
