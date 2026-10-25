@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Numerics;
 using SomeEngine.Core.Diagnostics;
 using SomeEngine.ECS;
@@ -54,6 +55,10 @@ internal sealed class CpuBoneDemands(World world)
     private static readonly ConditionalWeakTable<World, CpuBoneDemands> Worlds = new();
     private readonly Dictionary<SkeletonInstance, Source> _sources = [];
     private readonly List<Work> _work = [];
+    private readonly List<Work> _ready = [];
+    private readonly List<ClipSamplingRows> _sampling = [];
+    private readonly List<JobHandle> _jobs = [];
+    private readonly List<JobResourceAccess> _accesses = [];
     private (SkeletonInstance Skeleton, ulong Version)[] _bindings = [];
     internal bool Changed;
     internal static CpuBoneDemands For(World world) => Worlds.GetValue(world, static world => new(world));
@@ -73,58 +78,72 @@ internal sealed class CpuBoneDemands(World world)
     internal void Complete(double time, int level = int.MaxValue)
     {
         EnsureBound();
-        foreach (Work work in _work)
+        int first = 0;
+        while (first < _work.Count)
         {
-            if (work.Node is not null && work.Node.Level > level) continue;
-            bool ready = true;
-            foreach (PoseNode parent in work.Dependencies) ready &= parent.Level <= level;
-            if (!ready) continue;
-            GpuPoseTarget input = world.Read<GpuPoseTarget>(work.Target);
-            double sampleTime;
-            ulong sourceVersion;
-            uint starts;
-            if (work.Source is { } result)
+            int last = first + 1, depth = _work[first].Skeleton.Sections.Length;
+            while (last < _work.Count && _work[last].Skeleton.Sections.Length == depth) last++;
+            _ready.Clear(); _accesses.Clear(); _jobs.Clear();
+            foreach (ClipSamplingRows sampling in _sampling) sampling.Begin();
+            for (int workIndex = first; workIndex < last; workIndex++)
             {
-                PoseResult source = PoseAnimation.ReadResult(world, in result);
-                sourceVersion = source.Version;
-                sampleTime = source.Time;
-                starts = source.Starts;
+                Work work = _work[workIndex];
+                if (work.Node is not null && work.Node.Level > level) continue;
+                bool ready = true;
+                foreach (PoseNode parent in work.Dependencies) ready &= parent.Level <= level;
+                if (!ready) continue;
+                GpuPoseTarget input = world.Read<GpuPoseTarget>(work.Target);
+                double sampleTime;
+                ulong sourceVersion;
+                uint starts;
+                if (work.Source is { } result)
+                {
+                    PoseResult source = PoseAnimation.ReadResult(world, in result);
+                    sourceVersion = source.Version;
+                    sampleTime = source.Time;
+                    starts = source.Starts;
+                }
+                else
+                {
+                    sourceVersion = input.InputNumber;
+                    sampleTime = input.StateMachine is not null || input.Blend is not null ? input.PlaybackTime : input.SampleTime;
+                    sampleTime = Math.Clamp(sampleTime, 0, work.Duration);
+                    starts = input.Starts;
+                }
+                work.Skeleton.ParentInstance?.Compose(time);
+                ulong parentVersion = work.Skeleton.ParentInstance?.ModelPose.Version ?? 0;
+                if (work.HasResult && work.SourceVersion == sourceVersion && work.Starts == starts
+                    && work.ParentVersion == parentVersion) continue;
+                work.Frame = new(time, sampleTime, sourceVersion, parentVersion, starts,
+                    work.Source is null && input.ExtractRootMotion, input.RootCorrection);
+                if (work.Source is { } reference)
+                {
+                    var copy = (Range: reference.Range, work.Bones, work.Samples);
+                    world.ExecuteBufferRead<LocalPose, (PoseRange Range, short[] Bones, BoneTransform[] Samples)>(reference.Entity,
+                        ref copy, static (poses, ref copy) =>
+                        {
+                            ReadOnlySpan<BoneTransform> local = LocalPose.Transforms(poses.AsSpan().Slice(copy.Range.Start, copy.Range.Count));
+                            for (int index = 0; index < copy.Bones.Length; index++) copy.Samples[index] = local[copy.Bones[index]];
+                        });
+                }
+                else work.Sampling!.Add((float)sampleTime, work.Samples, work.Bones, work.SampleAccess);
+                _ready.Add(work);
+                _accesses.AddRange(work.Accesses);
             }
-            else
-            {
-                sourceVersion = input.InputNumber;
-                sampleTime = input.StateMachine is not null || input.Blend is not null ? input.PlaybackTime : input.SampleTime;
-                sampleTime = Math.Clamp(sampleTime, 0, work.Duration);
-                starts = input.Starts;
-            }
-            work.Skeleton.ParentInstance?.Compose(time);
-            ulong parentVersion = work.Skeleton.ParentInstance?.ModelPose.Version ?? 0;
-            if (work.HasResult && work.SourceVersion == sourceVersion && work.Starts == starts
-                && work.ParentVersion == parentVersion) continue;
-            work.Times[0] = (float)sampleTime;
-            JobHandle job;
-            if (work.Source is { } reference)
-            {
-                var copy = (Range: reference.Range, work.Bones, work.Samples);
-                world.ExecuteBufferRead<LocalPose, (PoseRange Range, short[] Bones, BoneTransform[] Samples)>(reference.Entity,
-                    ref copy, static (poses, ref copy) =>
-                    {
-                        ReadOnlySpan<BoneTransform> local = LocalPose.Transforms(poses.AsSpan().Slice(copy.Range.Start, copy.Range.Count));
-                        for (int index = 0; index < copy.Bones.Length; index++) copy.Samples[index] = local[copy.Bones[index]];
-                    });
-                job = JobSystem.Schedule(new ComposeBones(work, time, sampleTime), work.Accesses);
-            }
-            else job = JobSystem.Schedule(new SampleBones(work, time, sampleTime, input.ExtractRootMotion, input.RootCorrection), work.Accesses);
-            job.Complete();
-            work.SourceVersion = sourceVersion; work.Starts = starts;
-            work.ParentVersion = parentVersion; work.HasResult = true;
+            foreach (ClipSamplingRows sampling in _sampling)
+                if (sampling.Count > 0) _jobs.Add(sampling.Schedule());
+            foreach (JobHandle job in _jobs) job.Complete();
+            if (_ready.Count > 0)
+                JobSystem.ScheduleParallel(new PublishRows(_ready), _ready.Count, 32, CollectionsMarshal.AsSpan(_accesses)).Complete();
+            first = last;
         }
     }
 
     private void Bind()
     {
         foreach (Work work in _work) work.Skeleton.CpuWrittenBones = [];
-        _work.Clear(); _sources.Clear();
+        _work.Clear(); _sources.Clear(); _sampling.Clear();
+        _ready.Clear(); _jobs.Clear(); _accesses.Clear();
         QueryHandle targets = world.Query(new QueryDefinitionBuilder().Read<GpuPoseTarget>());
         CpuBoneDemands demands = this;
         world.ExecuteQuery(targets, ref demands, static (scoped QueryCursor rows, ref CpuBoneDemands demands) =>
@@ -161,6 +180,7 @@ internal sealed class CpuBoneDemands(World world)
         } while (expanded);
         foreach (Source source in _sources.Values) Add(source);
         _work.Sort(static (a, b) => a.Skeleton.Sections.Length.CompareTo(b.Skeleton.Sections.Length));
+        BindSampling();
         Changed = false;
         PoseAnimation.RefreshModelDependencies(world);
 
@@ -217,6 +237,29 @@ internal sealed class CpuBoneDemands(World world)
         }
     }
 
+    private void BindSampling()
+    {
+        var groups = new Dictionary<(AnimationClip Clip, int Depth), List<Work>>();
+        foreach (Work work in _work)
+        {
+            if (work.Clip is not { } clip) continue;
+            var key = (clip, work.Skeleton.Sections.Length);
+            if (!groups.TryGetValue(key, out List<Work>? rows)) groups.Add(key, rows = []);
+            rows.Add(work);
+        }
+        foreach (var group in groups)
+        {
+            var required = new bool[group.Key.Clip.Skeleton.BoneCount];
+            foreach (Work work in group.Value)
+                foreach (short bone in work.Bones) required[bone] = true;
+            var bones = new List<short>();
+            for (int bone = 0; bone < required.Length; bone++) if (required[bone]) bones.Add((short)bone);
+            var sampling = new ClipSamplingRows(group.Key.Clip, CollectionsMarshal.AsSpan(bones));
+            foreach (Work work in group.Value) work.Sampling = sampling;
+            _sampling.Add(sampling);
+        }
+    }
+
     private sealed class Source(Entity entity, GpuPoseTarget input)
     {
         internal readonly Entity Entity = entity;
@@ -235,14 +278,16 @@ internal sealed class CpuBoneDemands(World world)
         internal readonly QuantizedClipData? GpuClip;
         internal readonly PoseNode? Node;
         internal readonly PoseNode[] Dependencies;
-        internal readonly ClipSampleBatch? Clip;
+        internal readonly AnimationClip? Clip;
+        internal ClipSamplingRows? Sampling;
         internal readonly float Duration;
         internal readonly BoneTransform[] Samples;
-        internal readonly float[] Times = new float[1];
+        internal readonly JobResourceAccess SampleAccess;
         internal readonly JobResourceAccess[] Accesses;
         internal ulong SourceVersion, ParentVersion;
         internal uint Starts;
         internal bool HasResult;
+        internal FrameInput Frame;
         internal Work(Entity target, SkeletonInstance skeleton, short[] bones, AnimationClip? clip, PoseResultReference? source,
             CpuBoneDemand? demand, QuantizedClipData? gpuClip, PoseNode? node, PoseNode[] dependencies)
         {
@@ -251,39 +296,42 @@ internal sealed class CpuBoneDemands(World world)
             Dependencies = dependencies;
             BindingVersion = skeleton.BindingVersion;
             Samples = new BoneTransform[bones.Length];
-            if (clip is not null) { Clip = new([new(clip, bones)]); Duration = clip.Duration; }
+            Clip = clip;
+            Duration = clip?.Duration ?? 0;
+            SampleAccess = JobResourceAccess.Write(Samples);
             var accesses = new List<JobResourceAccess>
             {
                 JobResourceAccess.Write(JobSystem.Default.GetResourceToken(skeleton)),
                 JobResourceAccess.Write(JobSystem.Default.GetResourceToken(this)),
+                SampleAccess,
             };
-            if (clip is not null) accesses.Add(JobResourceAccess.Read(JobSystem.Default.GetResourceToken(clip)));
             foreach (SkeletonInstance parent in skeleton.Sections)
                 if (!ReferenceEquals(parent, skeleton)) accesses.Add(JobResourceAccess.Read(JobSystem.Default.GetResourceToken(parent)));
             Accesses = accesses.ToArray();
         }
     }
-    private readonly record struct SampleBones(Work Work, double Time, double SampleTime, bool ExtractRoot, BoneTransform Correction) : IJob
+    private readonly record struct FrameInput(double Time, double SampleTime, ulong SourceVersion,
+        ulong ParentVersion, uint Starts, bool ExtractRoot, BoneTransform Correction);
+    private readonly record struct PublishRows(List<Work> Rows) : IJobParallelFor
     {
-        public void Execute()
+        public void Execute(int index)
         {
-            Work.Clip!.SampleLocal(Work.Times, Work.Samples);
-            if (ExtractRoot)
+            Work work = Rows[index];
+            FrameInput frame = work.Frame;
+            if (frame.ExtractRoot)
             {
-                Matrix4x4 correction = Correction.ToMatrix();
-                for (int bone = 0; bone < Work.Bones.Length; bone++)
-                    if (Work.Skeleton.Skeleton.Parents[Work.Bones[bone]] < 0)
+                Matrix4x4 correction = frame.Correction.ToMatrix();
+                for (int bone = 0; bone < work.Bones.Length; bone++)
+                    if (work.Skeleton.Skeleton.Parents[work.Bones[bone]] < 0)
                     {
-                        ref BoneTransform local = ref Work.Samples[bone];
+                        ref BoneTransform local = ref work.Samples[bone];
                         local.Translation = Vector3.Transform(local.Translation, correction);
-                        local.Rotation = Quaternion.Concatenate(local.Rotation, Correction.Rotation);
+                        local.Rotation = Quaternion.Concatenate(local.Rotation, frame.Correction.Rotation);
                     }
             }
-            Work.Skeleton.WriteBones(Work.Bones, Work.Samples, Time, SampleTime);
+            work.Skeleton.WriteBones(work.Bones, work.Samples, frame.Time, frame.SampleTime);
+            work.SourceVersion = frame.SourceVersion; work.Starts = frame.Starts;
+            work.ParentVersion = frame.ParentVersion; work.HasResult = true;
         }
-    }
-    private readonly record struct ComposeBones(Work Work, double Time, double SampleTime) : IJob
-    {
-        public void Execute() => Work.Skeleton.WriteBones(Work.Bones, Work.Samples, Time, SampleTime);
     }
 }

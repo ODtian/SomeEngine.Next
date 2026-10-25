@@ -1,16 +1,11 @@
 #ifndef SOMEENGINE_SKIN_POSE_INCLUDED
 #define SOMEENGINE_SKIN_POSE_INCLUDED
+#include "skin_binding.slang"
 
 StructuredBuffer<float4x4> SkinCurrentBones;
 StructuredBuffer<float4x4> SkinPreviousBones;
 StructuredBuffer<uint> SkinJointIndices;
 StructuredBuffer<float4x4> SkinInverseBind;
-
-uint2 LoadSkinBinding(uint instanceID)
-{
-    return RenderInstanceLoad<uint2>(InstanceData,
-        LoadRenderInstanceMetadata(InstanceProperties, SKIN_BINDING_METADATA_WORD), instanceID, 8u);
-}
 
 float4x4 LoadSkinModelTransform(uint2 binding, uint joint, bool previous)
 {

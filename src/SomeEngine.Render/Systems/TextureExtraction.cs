@@ -29,10 +29,6 @@ internal static class TextureExtraction
         var resources = new RenderExtractionResources();
         foreach (QueryChunkView chunk in query.Chunks)
         {
-            if (chunk.HasBuffer<MeshMaterialBinding>())
-                for (int row = 0; row < chunk.Entities.Length; row++)
-                    foreach (MeshMaterialBinding binding in chunk.ReadBuffer<MeshMaterialBinding>(row).AsSpan())
-                        resources.Add(binding.Material);
             if (chunk.TryRead<LightCookie>(out ReadOnlySpan<LightCookie> cookies))
                 foreach (LightCookie cookie in cookies)
                     if (cookie.Texture is { } texture) resources.Add(texture);

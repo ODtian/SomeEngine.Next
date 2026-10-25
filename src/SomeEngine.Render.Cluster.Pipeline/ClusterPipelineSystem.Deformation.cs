@@ -116,11 +116,12 @@ public sealed partial class ClusterPipelineSystem
                             stage.Resources.MaterialBindings[index], material, PipelineSync.ComputeShading);
                     continue;
             }
+            bool fullRange = resource.Name is "DeformArguments" or "DeformAllocation";
             if (resource.Type == ResourceBindingType.BufferUav)
                 pass.Bind(GraphParameterResourceBinding.WritableBuffer(
                     graph.CreateBufferUav(buffer, structureStride: stride), PipelineSync.ComputeShading,
-                    mode, resource.Name == "DeformArguments" ? WriteCoverage.Complete : WriteCoverage.Partial,
-                    ResourceContentState.Defined, resource.Name == "DeformArguments"
+                    mode, fullRange ? WriteCoverage.Complete : WriteCoverage.Partial,
+                    ResourceContentState.Defined, fullRange
                         ? BufferContentScope.FullRange : BufferContentScope.CountBoundedRanges));
             else
                 pass.Bind(GraphParameterResourceBinding.ReadOnlyBuffer(

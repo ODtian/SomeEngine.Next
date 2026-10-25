@@ -2,6 +2,8 @@
 
 此独立程序集通过公开 API 执行动画、ECS 与视图行为，并提供纯算法和完整字段路径测量。消费者自己的值运算、缓动、Spring、带托管历史的算法和批次算法定义在 `ConsumerMotions.cs`。
 
+姿势的独立 NativeAOT 消费者见 [PoseExample](PoseExample/README.md)：用户 Importer、codec、Leaf 和条件经过普通图、继承骨架与预测采样，最终通过公共 Application 和 Cluster 呈现。该目录包含示例动作、shader 定义、顶点布局和资源重建步骤。
+
 默认执行字段、字节、生成通道、managed 查询与系统入口、强类型 `.Animate`、引用 `State.Value`、算法生命周期、时钟、阶段与事件检查。ECS 与 Views 的行为源文件由测试工程和本消费者共同编译。
 
 ## 执行
@@ -36,6 +38,19 @@ $nativeChecks = Join-Path $PWD 'tools/SomeEngine.Animation.Checks/bin/Release/ne
 预先排入发布依赖时，`Run-NativeChecks.ps1` 接收 `-PublishResultPath` 和 `-NativeDirectory`，先读取发布任务的 `result.json`，成功后打印本机映像字节并执行默认公开消费者，通过后顺序执行 `--view-switch-allocations`。该最小诊断在 128 帧预热后，记录预声明 Linear / CubicOut / 便利 Spec 交替选择的合计 1,000 次完整帧，分别列出 State 提交、Views 构建、Animation、声明及目标提交的当前线程分配，以及构建和计算次数。`--view-switch-benchmark` 保留单行完整帧分配入口。发布与检查按同一 FIFO 的顺序执行。
 
 ## 测量范围
+
+`--cpu-pose-benchmark` 通过公开姿势 API 测量 1,000 个 96 骨角色，固定 4 个 Job 工作线程、128 帧预热与 64 帧采样。示例夹具使用二叉骨骼层级和连续平移、旋转曲线；这些数据是通用采样与播放 API 的测量例子。
+
+原始曲线和 ACL 使用相同来源数据。每种编码分别测量 5 骨子集与完整 96 骨、单时刻与 4 时刻的顺序批次、并行批次和完整 World 图更新。完整图通过普通 GPU Clip 叶节点产生时钟，再由显式 `CpuBoneDemand` 使用同一 ready CPU 编码完成所选骨骼。另列已选序列/混合路径的公开预测批次，以及两个 Clip 叶节点经 Blend 进入最终骨架的完整普通 CPU 图。
+
+逐行输出每批中位数、P95、P99、最大值和进程托管分配，分配包含 Job 工作线程。World、共享定义、数组、委托和输出格式化位于采样窗口外；每次更新完成全部相关 Job 后才读取总分配。全部行输出完成后检查各工作量稳态分配之和。
+
+```powershell
+$env:DOTNET_PROCESSOR_COUNT = '32'
+$env:DOTNET_TieredCompilation = '0'
+& ./tools/Invoke-Benchmark.ps1 dotnet build tools/SomeEngine.Animation.Checks/SomeEngine.Animation.Checks.csproj -c Release '-m:1' '-nodeReuse:false' '--property:UseSharedCompilation=false'
+& ./tools/Invoke-Benchmark.ps1 dotnet tools/SomeEngine.Animation.Checks/bin/Release/net10.0/SomeEngine.Animation.Checks.dll --cpu-pose-benchmark
+```
 
 `BatchMeasurements` 使用 64 次预热、96 次采样，比较相同参数、状态和逐项时间的直接 C# 循环与公共批次入口。每条结果包含中位数、P95/P99、每批分配、实例大小、首次数组分配和数组保留字节。
 
