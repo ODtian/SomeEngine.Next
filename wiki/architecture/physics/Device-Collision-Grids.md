@@ -11,7 +11,7 @@
 原几何与位姿的具体转换也可通过 `BeginInputs`、`WriteGeometryInputs`、`Build` 接入相同网格。
 设备几何绑定、窄阶段、无序类型路由及共同接触消费由 [设备检测](Device-Collision-Detection.md) 维护。
 
-`grid.Candidates<TComponent,TReader>(pairs, reader, rowsPerPacket, rules, transfer, readback)` 返回一个具体 `IPhysicsStage`，由现有 `PhysicsSimulation` 和 `Then` 组织。`pairs` 接受项目已经选择的 `world.Within(members)`、`world.Between(first,second)` 或 `world.Product(first,second)`。输入写入阶段按本次物理步的 `Bodies` 选中原组件，并在原参与查询回调中调用 `Contains` 判断 First、Second 角色，保留原查询的行筛选。实体身份和角色由这一阶段写入设备输入，配对模式由所选关系来源转成内部设备参数。
+`grid.Candidates<TComponent,TReader>(pairs, reader, rowsPerPacket, rules, transfer, readback)` 返回一个具体 `IPhysicsStage`，由现有 `PhysicsSimulation` 和 `Then` 组织。`pairs` 接受项目已经选择的 `world.Within(members)`、`world.Between(first,second)` 或 `world.Product(first,second)`。输入写入阶段读取所需原组件和网格绑定，并在原参与查询回调中调用 `Contains` 判断 First、Second 角色，保留原查询的行筛选。实体身份和角色由这一阶段写入设备输入，配对模式由所选关系来源转成内部设备参数。共同物理步的 `Bodies` 选择实际模拟节点，几何参与由这些原 pair 查询选择。
 
 集合内与集合间输出互不相同实体的无序对，交叠集合按相同无序语义去重。位置积保留 First、Second 位置及自身配对。这组语义与 [CPU 网格](../ECS/Collision-Grids.md) 使用的原关系来源一致。
 

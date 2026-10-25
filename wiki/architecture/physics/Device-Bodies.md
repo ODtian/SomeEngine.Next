@@ -34,12 +34,20 @@
 在有效组件访问范围中读取原参数与 Body 绑定，生成形状参数、端点索引及局部采样锚。
 跨实体端点查询覆盖所需 Body 绑定列，模拟节点可处于几何参与集合之外。
 
+物理步的 Bodies 选择实际模拟节点。几何输入按自身组件和设备绑定执行，
+原 pair 查询生成参与角色；几何 Prepare 显式接收自己的筛选条件。
+因此独立几何实体与模拟节点分别保持各自的数据范围。
+
 `DeviceComponentSource<TGeometry,TReader>` 复用原具体形状 reader；
-`DeviceDynamicCapsuleSource`、`DeviceDynamicFaceSource` 分别保留两个、三个原端点。
+`DeviceDynamicCapsuleSource`、`DeviceDynamicEdgeSource` 保留两个原端点，`DeviceDynamicFaceSource` 保留三个原端点。
 几何输入的 pose 和 `DeviceGeometryPoints` 是当前设备状态的派生结果。
 `UpdateDeviceGeometry` 使用项目给定的 Slang `IDeviceGeometryUpdate`，
 从当前主体状态求值端点，更新派生形状和原网格候选输入中的范围。
 胶囊范围由两端包围并外扩半径，面域范围由三端包围并外扩半径。
+
+刚体球、盒、胶囊、圆柱及凸包分别使用具体范围更新类型读取当前设备姿态。
+平面源保留项目给出的世界候选区域，`DevicePlaneUpdate` 同时更新实际平面框架。
+SDF 参数、采样与组合由[设备有符号距离场](Device-Signed-Distance-Fields.md)维护。
 
 所有 reference writer 完成后，第一项范围更新选择 Upload，
 将整批参数、引用与候选身份上传一次；其余具体范围更新选择 Resident。

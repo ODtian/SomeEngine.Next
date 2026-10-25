@@ -5,7 +5,7 @@ using Buffer = SomeEngine.Graphics.Buffer;
 
 namespace SomeEngine.Physics;
 
-/// <summary>Resident geometry poses and parameters, with reusable transfer storage.</summary>
+/// <summary>Device geometry frames and parameters derived from the selected body representation.</summary>
 public sealed partial class DeviceCollisionGeometry : IDisposable
 {
     public const int InputStride = 112;
