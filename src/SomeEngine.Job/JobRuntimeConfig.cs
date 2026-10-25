@@ -36,10 +36,10 @@ public sealed class JobRuntimeConfig
     /// <summary>Spin budget restored after a worker executes work; it decays back to the minimum.</summary>
     public int BusyWorkerSpinCount { get; init; } = 2_048;
 
-    /// <summary>Target callback time used by per-job automatic parallel batch sizing.</summary>
+    /// <summary>Target callback time used by each scheduler's type and work-size batch costs.</summary>
     public int AutoBatchTargetMicroseconds { get; init; } = 100;
 
-    /// <summary>Maximum automatic tile density; the scheduler always keeps at least four tiles per worker.</summary>
+    /// <summary>Maximum automatic tile density; cold work uses up to four tiles per worker within this limit.</summary>
     public int AutoBatchMaxTilesPerWorker { get; init; } = 16;
 
     public static JobRuntimeConfig Default => new();

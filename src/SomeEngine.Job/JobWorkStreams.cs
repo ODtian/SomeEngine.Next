@@ -536,7 +536,7 @@ internal sealed class ParallelJobGroup<T>
     private int _batchCount;
     private int _nextBatch;
     private int _references;
-    private bool _measureCost;
+    private ParallelBatchSizer<T>? _batchSizer;
 
     private ParallelJobGroup()
     {
@@ -547,7 +547,7 @@ internal sealed class ParallelJobGroup<T>
         int length,
         int batchSize,
         int batchCount,
-        bool measureCost)
+        ParallelBatchSizer<T>? batchSizer)
     {
         ParallelJobGroup<T> group;
         lock (PoolGate) group = Pool.Count > 0 ? Pool.Pop() : new();
@@ -558,7 +558,7 @@ internal sealed class ParallelJobGroup<T>
         group._batchCount = batchCount;
         group._nextBatch = 0;
         group._references = 1; // scheduling owner; prepared tokens add their own references
-        group._measureCost = measureCost;
+        group._batchSizer = batchSizer;
         return group;
     }
 
@@ -577,7 +577,7 @@ internal sealed class ParallelJobGroup<T>
         _batchSize = 0;
         _batchCount = 0;
         _nextBatch = 0;
-        _measureCost = false;
+        _batchSizer = null;
         lock (PoolGate) Pool.Push(this);
     }
 
@@ -587,7 +587,7 @@ internal sealed class ParallelJobGroup<T>
         int faulted = 0;
         int processedItems = 0;
         ExceptionDispatchInfo? firstFault = null;
-        long startedAt = _measureCost ? Stopwatch.GetTimestamp() : 0;
+        long startedAt = _batchSizer is not null ? Stopwatch.GetTimestamp() : 0;
 
         while (completed < ClaimQuantum)
         {
@@ -613,9 +613,10 @@ internal sealed class ParallelJobGroup<T>
             completed++;
         }
 
-        if (_measureCost && completed > 0)
+        if (_batchSizer is not null && completed > 0)
         {
-            ParallelBatchSizer<T>.Record(
+            _batchSizer.Record(
+                _length,
                 Stopwatch.GetTimestamp() - startedAt,
                 processedItems);
         }
