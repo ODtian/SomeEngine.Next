@@ -5,6 +5,31 @@ namespace SomeEngine.Typography.Tests;
 
 public sealed class GlyphAtlasTests
 {
+    [Fact]
+    public void BakingMixedFontGlyphsPreservesSourceOrderAndPixels()
+    {
+        using Font latin = LoadFont("Latin.ttf");
+        using Font cjk = LoadFont("Cjk.otf");
+        using var shape = new ShapeBuffer();
+        Shaper.Shape("AgjVpQ世界中文 AgjVpQ", new TextStyleData(latin, 20, new[] { cjk }), 0, shape);
+        Glyph[] glyphs = shape.Shape.Glyphs.ToArray();
+        var ordered = new GlyphAtlas(80, 80, 32, 4);
+        GlyphLocation[] expected = glyphs.Select(glyph => ordered.Get(glyph.Font, glyph.Index)).ToArray();
+        var baked = new GlyphAtlas(80, 80, 32, 4);
+
+        baked.Bake(glyphs);
+
+        Assert.Equal(expected, glyphs.Select(glyph => baked.Get(glyph.Font, glyph.Index)));
+        Assert.Equal(ordered.DirtyRegions.ToArray(), baked.DirtyRegions.ToArray());
+        Assert.Equal(ordered.Pages.Length, baked.Pages.Length);
+        for (int page = 0; page < ordered.Pages.Length; page++)
+        {
+            Assert.Equal(ordered.Pages[page].Width, baked.Pages[page].Width);
+            Assert.Equal(ordered.Pages[page].Height, baked.Pages[page].Height);
+            Assert.Equal(ordered.Pages[page].Pixels.ToArray(), baked.Pages[page].Pixels.ToArray());
+        }
+    }
+
     [Theory]
     [InlineData(2, 1024, 48, 8)]
     [InlineData(-1, 1024, 48, 8)]
