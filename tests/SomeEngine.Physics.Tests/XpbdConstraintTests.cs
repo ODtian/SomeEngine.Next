@@ -2,6 +2,7 @@ using System.Numerics;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
+using SomeEngine.ECS.Relations;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Job;
 
@@ -16,9 +17,9 @@ public sealed class XpbdConstraintTests
         using var world = WorldJobs.CreateWorld(scheduler: scheduler);
         Entity first = CreateBody(world, Vector3.Zero, 1);
         Entity second = CreateBody(world, new Vector3(3, 0, 0), 3);
-        world.CreateEntity(new XpbdLength { First = first, Second = second, RestLength = 1 });
+        world.CreateRelation(first, second, new XpbdLength { RestLength = 1 });
         QueryHandle bodies = world.Query(new QueryDefinitionBuilder().ReadWrite<BodyPose>().Read<BodyMass>().Read<BodyStepState>());
-        QueryHandle lengths = world.Query(new QueryDefinitionBuilder().ReadWrite<XpbdLength>());
+        QueryHandle lengths = world.Query(new QueryDefinitionBuilder().ReadWrite<XpbdLength>().Read<UndirectedRelationEndpoints<XpbdLength>>());
         var constraints = new XpbdConstraints<XpbdLength, XpbdLengthProjection>(lengths);
         var stages = new PredictBodies(Vector3.Zero, rowsPerPacket: 64)
             .Then(SolveXpbd.Create(world, bodies, constraints, iterations: 1))
@@ -68,11 +69,11 @@ public sealed class XpbdConstraintTests
         using var world = WorldJobs.CreateWorld(scheduler: scheduler);
         Entity attachment = CreateBody(world, Vector3.Zero, 0);
         Entity point = CreateBody(world, new Vector3(3, 2, 0), 1);
-        world.CreateEntity(new XpbdLength { First = attachment, Second = point, RestLength = MathF.Sqrt(2) });
+        world.CreateRelation(attachment, point, new XpbdLength { RestLength = MathF.Sqrt(2) });
         Entity target = world.CreateEntity(new HeightTarget { Body = point, Height = 1 });
         world.Add(target, new HeightMultiplier());
         QueryHandle bodies = world.Query(new QueryDefinitionBuilder().ReadWrite<BodyPose>().Read<BodyMass>().Read<BodyStepState>());
-        QueryHandle lengths = world.Query(new QueryDefinitionBuilder().ReadWrite<XpbdLength>());
+        QueryHandle lengths = world.Query(new QueryDefinitionBuilder().ReadWrite<XpbdLength>().Read<UndirectedRelationEndpoints<XpbdLength>>());
         QueryHandle heights = world.Query(new QueryDefinitionBuilder().Read<HeightTarget>().ReadWrite<HeightMultiplier>());
         var constraints = new XpbdConstraints<XpbdLength, XpbdLengthProjection>(lengths)
             .And(new XpbdConstraints<HeightTarget, HeightProjection>(heights));
@@ -97,12 +98,12 @@ public sealed class XpbdConstraintTests
         using var world = WorldJobs.CreateWorld(scheduler: scheduler);
         Entity attachment = CreateBody(world, Vector3.Zero, 0);
         Entity point = CreateBody(world, new Vector3(2, 0, 0), 1);
-        world.CreateEntity(new XpbdLength
+        world.CreateRelation(attachment, point, new XpbdLength
         {
-            First = attachment, Second = point, RestLength = 1, Compliance = 1,
+            RestLength = 1, Compliance = 1,
         });
         QueryHandle bodies = world.Query(new QueryDefinitionBuilder().ReadWrite<BodyPose>().Read<BodyMass>().Read<BodyStepState>());
-        QueryHandle lengths = world.Query(new QueryDefinitionBuilder().ReadWrite<XpbdLength>());
+        QueryHandle lengths = world.Query(new QueryDefinitionBuilder().ReadWrite<XpbdLength>().Read<UndirectedRelationEndpoints<XpbdLength>>());
         var constraints = new XpbdConstraints<XpbdLength, XpbdLengthProjection>(lengths);
         var stages = new PredictBodies(Vector3.Zero, rowsPerPacket: 64)
             .Then(SolveXpbd.Create(world, bodies, constraints, iterations: 4))
