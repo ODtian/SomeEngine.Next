@@ -117,6 +117,10 @@ public sealed partial class Scheduler
             return;
         }
 
+        if (JobExecutionContext.IsActive && !_completion.IsCompleted(handle))
+            throw new InvalidOperationException(
+                "A Job callback continues through dependencies; explicit waiting belongs to its coordinating thread.");
+
         if (!_completion.TryBeginWait(handle, out CompletionLease lease))
         {
             return;

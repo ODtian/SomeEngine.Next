@@ -6,6 +6,10 @@ public sealed partial class Scheduler
 {
     private sealed partial class CompletionStore
     {
+        private readonly Lock _dependencyLock = new();
+        private readonly List<JobHandle> _completionHandles = [];
+        private readonly HashSet<(int Index, int Version)> _visitedCompletionKeys = [];
+
         public bool IsSatisfied(JobHandle handle, bool waitForWorkOnly)
         {
             return waitForWorkOnly
@@ -201,21 +205,69 @@ public sealed partial class Scheduler
                 return false;
             }
 
-            lock (state.Sync)
+            lock (_dependencyLock)
             {
-                if (!state.InUse || state.Version != dependency.Version)
+                RejectCompletionCycle(dependency, continuation.Target);
+                lock (state.Sync)
                 {
-                    return false;
-                }
+                    if (!state.InUse || state.Version != dependency.Version)
+                    {
+                        return false;
+                    }
 
-                if (state.Completed)
+                    if (state.Completed)
+                    {
+                        immediateFault = state.Fault;
+                        return false;
+                    }
+
+                    state.Continuations.Add(continuation);
+                    return true;
+                }
+            }
+        }
+
+        private void RejectCompletionCycle(JobHandle dependency, JobHandle target)
+        {
+            JobHandle parent = GetParent(target);
+            if (parent.Index == 0)
+                return;
+
+            try
+            {
+                _completionHandles.Add(parent);
+                for (int index = 0; index < _completionHandles.Count; index++)
                 {
-                    immediateFault = state.Fault;
-                    return false;
-                }
+                    JobHandle current = _completionHandles[index];
+                    if (!_visitedCompletionKeys.Add((current.Index, current.Version)))
+                        continue;
 
-                state.Continuations.Add(continuation);
-                return true;
+                    if (current.Index == dependency.Index && current.Version == dependency.Version)
+                        throw new InvalidOperationException(
+                            "The dependency waits for the current Job or one of its ancestors.");
+
+                    CompletionState? state = GetState(current);
+                    if (state is null)
+                        continue;
+
+                    lock (state.Sync)
+                    {
+                        if (!state.InUse || state.Version != current.Version || state.Completed)
+                            continue;
+
+                        // Completion flows from children to their parent and from prerequisites
+                        // to their continuations. Resource conflicts use the separate work list.
+                        if (state.Parent.Index != 0)
+                            _completionHandles.Add(state.Parent.ToHandle());
+                        foreach (DependencyContinuation continuation in state.Continuations)
+                            _completionHandles.Add(continuation.Target);
+                    }
+                }
+            }
+            finally
+            {
+                _completionHandles.Clear();
+                _visitedCompletionKeys.Clear();
             }
         }
 
