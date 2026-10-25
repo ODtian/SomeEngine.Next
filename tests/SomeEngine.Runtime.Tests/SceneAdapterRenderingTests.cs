@@ -61,4 +61,21 @@ public sealed class SceneAdapterRenderingTests(SceneContentFixture content)
         Assert.Equal(3, image!.Frame);
         Assert.Equal(64 * 64 * 4, image.Pixels.Length);
     }
+
+    [Fact]
+    [Trait("Category", "Hardware")]
+    public async Task VulkanFrameLoopPresentsItsCapturedFrame()
+    {
+        SceneImage? image = null;
+        var script = new SceneScript(content.DirectoryPath, 4,
+            [new(3, edit => edit.CaptureImage(value => image = value))]);
+        var result = await Application.RunAsync(
+            ["--hardware-adapter", "--graphics-backend", "vulkan", "--no-taa", "--no-vsm"], script);
+        Assert.True(result.Succeeded, result.Error?.ToString());
+        Assert.Equal(4, result.CompletedFrames);
+        Assert.NotNull(result.Startup);
+        Assert.InRange(result.Startup.FirstSceneFrame, 0, 3);
+        Assert.Equal(3, image!.Frame);
+        SceneImages.AssertColorRegion(image, 37, 29, 6, 6, 186, 0, 0);
+    }
 }
