@@ -115,6 +115,9 @@ public static partial class PropertyAnimation
                 }
             });
         bool direct = !world.HasBuffer<Contribution<T>>(target);
+        if (!world.HasBuffer<PropertyChannelRange<T>>(target))
+            world.AddBuffer<PropertyChannelRange<T>>(target);
+        world.ExecuteBufferWrite<PropertyChannelRange<T>>(target, static ranges => ranges.Clear());
         for (int index = 0; index < selection.Count; index++)
         {
             PropertySource<T> source = ReadSource<T>(world, target, index);
@@ -125,6 +128,18 @@ public static partial class PropertyAnimation
             var item = (Index: index, Source: source);
             world.ExecuteBufferWrite<PropertySource<T>, (int Index, PropertySource<T> Source)>(target, ref item,
                 static (sources, ref item) => sources[item.Index] = item.Source);
+            var channelRange = new PropertyChannelRange<T>
+            {
+                Channel = source.Channel, FirstSource = index, SourceCount = 1,
+            };
+            world.ExecuteBufferWrite<PropertyChannelRange<T>, PropertyChannelRange<T>>(target, ref channelRange,
+                static (ranges, ref range) =>
+                {
+                    if (ranges.Count > 0 && ranges.Read(ranges.Count - 1).Channel == range.Channel)
+                        ranges[ranges.Count - 1].SourceCount++;
+                    else
+                        ranges.Add(range);
+                });
             var trackIndex = (Track: source.Track, Source: index);
             world.ExecuteBufferWrite<Track<T>, (int Track, int Source)>(source.Animation, ref trackIndex,
                 static (tracks, ref trackIndex) => tracks[trackIndex.Track].SourceIndex = trackIndex.Source);
