@@ -204,6 +204,12 @@ public static partial class JobSystem
 {
     internal static bool IsExecutingJob => JobExecutionContext.IsActive;
 
+    public static JobHandle CreateExternalFenceHandle(ValueTask task, ReadOnlySpan<JobResourceAccess> accesses = default) =>
+        Current.CreateExternalFenceHandle(task, accesses);
+
+    public static JobHandle CreateExternalFenceHandle(Task task, ReadOnlySpan<JobResourceAccess> accesses = default) =>
+        Current.CreateExternalFenceHandle(task, accesses);
+
     public static JobHandle CreateExternalFenceHandle(IJobExternalFence fence)
     {
         return Current.CreateExternalFenceHandle(fence, ReadOnlySpan<JobResourceAccess>.Empty);
