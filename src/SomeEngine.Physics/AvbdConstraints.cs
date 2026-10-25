@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Numerics;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
@@ -25,6 +26,8 @@ public interface IAvbdConstraints
     void AddAccesses(World world, List<JobResourceAccess> accesses);
     void Initialize(in PhysicsStepContext context, scoped PhysicsBodies bodies, float retention);
     void AccumulateBodyEquation(in PhysicsStepContext context, Entity body, scoped PhysicsBodies bodies, float initialErrorFraction, ref AvbdBodyEquation equation);
+    void AdjustBodyChange(in PhysicsStepContext context, Entity body, scoped PhysicsBodies bodies,
+        in AvbdBodyEquation equation, ref Vector3 translation, ref Vector3 rotation) { }
     void UpdateDuals(in PhysicsStepContext context, scoped PhysicsBodies bodies, float initialErrorFraction);
 }
 
@@ -66,6 +69,9 @@ public readonly struct AvbdConstraints<TConstraint, TMath> : IAvbdConstraints
         var execution = new UpdateConstraintDuals(bodies, context, initialErrorFraction);
         context.World.ExecuteQuery(_constraints, ref execution);
     }
+
+    public void AdjustBodyChange(in PhysicsStepContext context, Entity body, scoped PhysicsBodies bodies,
+        in AvbdBodyEquation equation, ref Vector3 translation, ref Vector3 rotation) { }
 
     private readonly ref struct InitializeConstraints(PhysicsBodies bodies, PhysicsStepContext context,
         float retention, AvbdBodyConstraints byBody) : IQueryExecution
@@ -156,6 +162,13 @@ public readonly struct AvbdConstraintGroups<TFirst, TSecond>(TFirst first, TSeco
     {
         first.UpdateDuals(in context, bodies, initialErrorFraction);
         second.UpdateDuals(in context, bodies, initialErrorFraction);
+    }
+
+    public void AdjustBodyChange(in PhysicsStepContext context, Entity body, scoped PhysicsBodies bodies,
+        in AvbdBodyEquation equation, ref Vector3 translation, ref Vector3 rotation)
+    {
+        first.AdjustBodyChange(in context, body, bodies, in equation, ref translation, ref rotation);
+        second.AdjustBodyChange(in context, body, bodies, in equation, ref translation, ref rotation);
     }
 }
 
