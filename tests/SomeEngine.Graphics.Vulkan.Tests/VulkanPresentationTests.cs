@@ -5,14 +5,16 @@ using Xunit;
 public sealed class VulkanPresentationTests
 {
     [WindowsFact]
-    public void RequestingPresentationIsRejected()
+    public void RequestingPresentationProvidesSwapchainCapability()
     {
         using IGraphicsBackend backend = VulkanGraphicsBackend.Create();
         DeviceQueueDesc[] queues = [new DeviceQueueDesc(QueueType.Graphics)];
-        Assert.Throws<NotSupportedException>(() => backend.CreateDevice(new DeviceDesc(
+        using Device device = backend.CreateDevice(new DeviceDesc(
             default,
             queues,
-            requiredFeatures: DeviceFeatures.Presentation)));
+            requiredFeatures: DeviceFeatures.Presentation));
+        Assert.True(backend.TryGetCapability(device, out Presentation? presentation));
+        Assert.Same(device, presentation!.Device);
     }
 }
 
