@@ -24,6 +24,8 @@
 
 体素编辑提交产生 [VoxelFieldChange](../../../src/SomeEngine.Resources/Terrain/VoxelFieldChange.cs)，按三维写入范围和采样邻域选择空间块。表面提取在对应三维单元中生成零等值面；提交和提取继续使用相同的三个游戏系统。
 
+编辑影响先按表面与属性声明筛选字段，再从 Terrain、LOD、XZ 列目录定位候选几何，体素变化同时限制 Y 范围。目录保存原共享几何的块坐标与过渡面变体，几何对象和编号继续由 Scene 持有。候选计算固定本笔变化版本、当前表面、块版本和已提交构建覆盖关系，以同步范围独立写影响结果；汇合后由 Scene 统一加入脏几何集合。比较沿用插值扩张、笔刷读取边界和各 LOD 的采样距离，执行器优先复用已绑定 World 的 Scheduler。接缝选择与重建版本继续随原构建批次一起提交。
+
 CPU 路径的块实体使用 `WorldTransform`、`MeshInstance` 和 `MeshMaterialBinding`，由现有 [Mesh 提取](../rendering/Extraction.md) 进入 Rendering world。每个 Scene 通过自己持有的块实体索引应用几何与版本；`GetChunks` 返回该 Scene 当前提交的块版本，同一 World 中的多个 Scene 分别维护各自的局部编号。`WaitForBuildsAsync` 等待当前已提交的构建任务；接着运行的提交系统应用结果。
 
 ## 表面与属性
