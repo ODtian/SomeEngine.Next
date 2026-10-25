@@ -516,7 +516,6 @@ internal static class RuntimeApplication
         bool measure = application?.MeasureInterface == true || measurements is not null;
         GameUpdateTiming gameTiming = default;
         double simulationSeconds = 0;
-        long gameStarted = 0, nextGameStarted = 0;
         bool synchronousGame = options.SynchronousFrames || script is not null || application?.UpdateFrame is not null;
 
         RuntimeViewFrame initialView = RuntimeViewFrame.Create(
@@ -746,7 +745,7 @@ internal static class RuntimeApplication
             started = measure ? Stopwatch.GetTimestamp() : 0;
             using (EngineTrace.Begin(ApplicationTrace.Extraction)) extraction.Extract(mainWorld);
             gameTiming = new(views, measure ? Stopwatch.GetElapsedTime(started).TotalMilliseconds : 0,
-                measure ? GC.GetAllocatedBytesForCurrentThread() - allocated : 0, gameMs, simulationSeconds);
+                measure ? GC.GetAllocatedBytesForCurrentThread() - allocated : 0, gameMs, simulationSeconds, gameUpdateStarted);
         }
 
         void RunInterface(int frameNumber, int canvasWidth, int canvasHeight, double deltaSeconds, long gameUpdateStarted)
@@ -837,7 +836,7 @@ internal static class RuntimeApplication
             if (synchronousGame) elementSystems.UpdateViews(0);
             else
             {
-                gameStarted = Stopwatch.GetTimestamp();
+                long gameStarted = Stopwatch.GetTimestamp();
                 if (options.ScenePlayback is not null)
                     scene.Play(0, options.ScenePlayback is "materials" or "camera", animateMaterial,
                         orbitCamera: options.ScenePlayback == "camera");
@@ -937,10 +936,7 @@ internal static class RuntimeApplication
                 using var graphFrameResources = nextGraphFrame;
                 // Shared asset content can change only after the Game World extraction reader exits.
                 if (nextGameUpdate is not null)
-                {
                     AdvanceGameUpdate(wait: true);
-                    gameStarted = nextGameStarted;
-                }
                 using (EngineTrace.Begin(ApplicationTrace.WindowInput))
                 {
                     input.BeginFrame();
@@ -1002,7 +998,7 @@ internal static class RuntimeApplication
                     ? frameIndex * options.FixedFrameSeconds
                     : (float)Stopwatch.GetElapsedTime(runtimeStarted).TotalSeconds;
                 previousFrameTimestamp = currentFrameTimestamp;
-                if (synchronousGame) gameStarted = Stopwatch.GetTimestamp();
+                long gameStarted = synchronousGame ? Stopwatch.GetTimestamp() : 0;
                 sceneEdit.Begin();
                 try
                 {
@@ -1288,7 +1284,7 @@ internal static class RuntimeApplication
                         backend.GetQueue(device, QueueType.Graphics),
                         image.Value);
                 double cpuMs = measurements is null ? 0
-                    : Stopwatch.GetElapsedTime(Math.Min(frameStarted, gameStarted)).TotalMilliseconds;
+                    : Stopwatch.GetElapsedTime(Math.Min(frameStarted, gameTiming.StartedAt)).TotalMilliseconds;
                 if (sceneGeometryReady && startup.Result is null)
                 {
                     startup.RecordPresent(window, present, frameIndex);
@@ -1322,7 +1318,7 @@ internal static class RuntimeApplication
                         runtimeStarted,
                         Stopwatch.GetTimestamp()).TotalSeconds;
                     nextGameTrace = EngineTrace.Context with { Frame = traceFrameIndex + 1 };
-                    nextGameStarted = Stopwatch.GetTimestamp();
+                    long nextGameStarted = Stopwatch.GetTimestamp();
                     using (EngineTrace.Associate(nextGameTrace))
                     {
                         if (options.ScenePlayback is not null)
@@ -1465,7 +1461,7 @@ internal static class RuntimeApplication
     }
 
     private readonly record struct GameUpdateTiming(ViewTiming Views, double ExtractionMs, long ExtractionAllocatedBytes,
-        double GameMs = 0, double SimulationSeconds = 0);
+        double GameMs, double SimulationSeconds, long StartedAt);
 
     private static void Prepare(
         RenderPrepareSystems systems,
