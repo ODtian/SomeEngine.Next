@@ -12,34 +12,6 @@ namespace SomeEngine.Physics.Tests;
 public sealed class CollisionMaintenanceTests
 {
     [Fact]
-    public void MaintenanceJoinsIndependentBoundsReadsBeforePublishingCollisionPairs()
-    {
-        using var jobs = new Scheduler(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked });
-        using var world = WorldJobs.CreateWorld(scheduler: jobs);
-        using var reads = new CountdownEvent(2);
-        Entity first = world.CreateEntity(Box(0));
-        Entity second = world.CreateEntity(Box(0.2f));
-        QueryHandle members = world.Query(world.QueryDefinition().All<CollisionBounds>());
-        try
-        {
-            var contacts = Collision.Candidates<CollisionBounds, CooperatingBoundsReader>(
-                world, members, new CollisionTree(), new(reads));
-            using var maintenance = contacts.CreateMaintenance(jobs);
-
-            maintenance.Schedule().Complete();
-
-            var pairs = new List<(Entity, Entity)>();
-            var output = new PairList(pairs);
-            contacts.Enumerate(ref output);
-            Assert.Equal([(first, second)], pairs);
-        }
-        finally
-        {
-            world.ReleaseQuery(members);
-        }
-    }
-
-    [Fact]
     public void PositionCategoryAndCharacterWritesRefreshThePersistentContactQuery()
     {
         using var jobs = new Scheduler(new JobRuntimeConfig { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
@@ -392,16 +364,6 @@ public sealed class CollisionMaintenanceTests
 
     private static CollisionBounds Box(float x) =>
         new(new Vector3(x, 0, 0), new Vector3(x + 1, 1, 1));
-
-    private readonly struct CooperatingBoundsReader(CountdownEvent reads) : ICollisionBoundsReader<CollisionBounds>
-    {
-        public CollisionBounds Read(in CollisionBounds component)
-        {
-            reads.Signal();
-            if (!reads.Wait(TimeSpan.FromSeconds(10))) throw new TimeoutException();
-            return component;
-        }
-    }
 
     private static (Entity, Entity)[] Ordered(IEnumerable<(Entity, Entity)> pairs) =>
         pairs.OrderBy(pair => pair.Item1.Index).ThenBy(pair => pair.Item1.Generation)

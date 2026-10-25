@@ -4,8 +4,6 @@
   <Project Path="src/SomeEngine.Geometry.Cluster/SomeEngine.Geometry.Cluster.csproj" />
   <Project Path="templates/DefaultProject/Game.csproj" />
   <Project Path="samples/DefaultGame/DefaultGame.csproj" />
-  <Project Path="samples/SomeEngine.Liquid/SomeEngine.Liquid.csproj" />
-  <Project Path="tests/SomeEngine.Liquid.Tests/SomeEngine.Liquid.Tests.csproj" />
   <Project Path="samples/DefaultGame/SceneContent/DefaultGame.SceneContent.csproj" />
   <Project Path="src\SomeEngine.Diagnostics\SomeEngine.Diagnostics.csproj" />
   <Project Path="tools\SomeEngine.Trace\SomeEngine.Trace.csproj" />

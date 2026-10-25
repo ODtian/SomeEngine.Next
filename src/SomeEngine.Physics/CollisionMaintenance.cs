@@ -46,7 +46,7 @@ public readonly struct SpatialAll : ISpatialFilter<GroupMatch>
 }
 
 /// <summary>Maintains one collision tree and its concrete filter summaries from World changes.</summary>
-public sealed partial class CollisionMaintenance<TGeometry, TBoundsReader, TFilter, TGroupResults> : IDisposable
+public sealed class CollisionMaintenance<TGeometry, TBoundsReader, TFilter, TGroupResults> : IDisposable
     where TGeometry : struct
     where TBoundsReader : struct, ICollisionBoundsReader<TGeometry>
     where TFilter : struct, ISpatialFilter<TGroupResults>
@@ -118,6 +118,36 @@ public sealed partial class CollisionMaintenance<TGeometry, TBoundsReader, TFilt
         LastSystemVersion = execution.CurrentSystemVersion;
     }
 
+    private void Reconcile(Entity entity, scoped QueryCursor members, scoped QueryCursor access)
+    {
+        CollisionTree tree = Tree;
+        if (members.TryGetRow(entity, out _) && access.TryGetRow(entity, out var row) && row.Has<TGeometry>())
+        {
+            CollisionBounds bounds = Query.Enumerable.Source.ReadBounds(row);
+            if (tree.TryGetLeaf(entity, out int leaf))
+                tree.SetBounds(leaf, in bounds);
+            else
+                leaf = tree.Insert(entity, in bounds);
+            Refit(leaf, access);
+        }
+        else if (tree.TryGetLeaf(entity, out _))
+        {
+            Refit(tree.Remove(entity), access);
+        }
+    }
+
+    private void Refit(int node, scoped QueryCursor access)
+    {
+        CollisionTree tree = Tree;
+        TFilter filter = Query.Enumerable.Filter;
+        while (node >= 0)
+        {
+            tree.Refit(node);
+            filter.RefitSummary(node, access);
+            node = tree.Nodes[node].Parent;
+        }
+    }
+
     public void Dispose()
     {
         _tableChanges.Dispose();
@@ -151,24 +181,15 @@ public sealed partial class CollisionMaintenance<TGeometry, TBoundsReader, TFilt
 
         public void Execute(scoped QueryCursor members)
         {
-            maintenance.BeginChanges();
-            try
+            TFilter filter = maintenance.Query.Enumerable.Filter;
+            foreach (Entity entity in changes.Entities)
+                maintenance.Reconcile(entity, members, _access);
+            foreach (QueryChunkView chunk in members.ChangedChunks(changes))
             {
-                TFilter filter = maintenance.Query.Enumerable.Filter;
-                foreach (Entity entity in changes.Entities)
-                    maintenance.RecordChange(entity, members, _access);
-                foreach (QueryChunkView chunk in members.ChangedChunks(changes))
-                {
-                    if (!chunk.Has<TGeometry>())
-                        continue;
-                    var execution = new UpdateChangedRows(maintenance, members, _access, chunk, chunk.ReadRowChanges<TGeometry>());
-                    filter.ReadChanges<TGeometry, UpdateChangedRows>(chunk, execution);
-                }
-                maintenance.ApplyChanges(_access);
-            }
-            finally
-            {
-                maintenance._geometry.Clear();
+                if (!chunk.Has<TGeometry>())
+                    continue;
+                var execution = new UpdateChangedRows(maintenance, members, _access, chunk, chunk.ReadRowChanges<TGeometry>());
+                filter.ReadChanges<TGeometry, UpdateChangedRows>(chunk, execution);
             }
         }
     }
@@ -197,7 +218,7 @@ public sealed partial class CollisionMaintenance<TGeometry, TBoundsReader, TFilt
         {
             foreach (int row in _chunk.RowIndices)
                 if (_geometry.HasChanged(row) || changes.HasChanged(row))
-                    _maintenance.RecordChange(_chunk.GetEntity(row), _members, _access);
+                    _maintenance.Reconcile(_chunk.GetEntity(row), _members, _access);
         }
     }
 }
