@@ -4,6 +4,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../SomeEngine.ECS/SomeEngine.ECS.csproj" />
+    <ProjectReference Include="../SomeEngine.Job/SomeEngine.Job.csproj" />
     <ProjectReference Include="../SomeEngine.Serialization/SomeEngine.Serialization.csproj" />
   </ItemGroup>
 </Project>
