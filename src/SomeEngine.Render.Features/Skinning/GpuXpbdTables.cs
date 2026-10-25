@@ -12,7 +12,6 @@ public sealed partial class SkinningFeature
     private readonly LinkedComputePipeline _xpbdPipeline;
     private readonly GraphBufferInput _xpbdFramesInput, _xpbdPointsInput, _xpbdWorkInput;
     private readonly List<XpbdFrame> _xpbdFrames = [];
-    private GraphBufferId _xpbdPoints, _readyXpbdPoints;
     private int _xpbdPointCount = 1;
 
     private static uint WriteXpbdChain(BinaryWriter writer, Section section, GpuXpbdChain chain,

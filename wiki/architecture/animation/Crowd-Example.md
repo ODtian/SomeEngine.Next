@@ -28,6 +28,8 @@ API 的程序生成示例夹具。24 段人体表面各连接四根骨骼，共 
 LBS 的矩阵、位置和法线中间值使用 `precise`，统一 inline 与缓存求值阶段的浮点运算顺序。
 示例的 `.shader` 源码组合同时声明自己的顶点编码和 `CrowdSkin` 求值器，并预编译
 `ClusterShadeMode`、`ClusterShadowReceiver` 和 `ClusterForwardShade` 的实际材质变体。
+共同内容入口 `SampleContent.CreateMaterialSpecializations(depth)` 生成这份强类型集合；
+角色、SkinContent 夹具与导入场景使用同一集合，导入材质按 cutoff 选择 depth 参数。
 缓存实现选择每个选中顶点 48 字节，分别保存当前及上一帧的世界位置和法线，按 16 字节对齐。
 示例应用通过 `ApplicationScene.DeformCacheBytes` 为两条路径都选择 256 MiB 容量。
 
@@ -47,7 +49,8 @@ $env:DOTNET_PROCESSOR_COUNT = '4'
 
 修改示例材质后，开发组合的 `sample-crowd-materials` 命令更新两条材质及主项目已经构建的共同 Shader 资产，继续使用现有角色网格。
 
-`DefaultGame --crowd-inline` 是选定的 1000 人场景入口，使用 inline 材质路径。
+`DefaultGame --crowd-cache` 是选定的 1000 人场景入口，使用缓存材质路径。
+`DefaultGame --crowd-inline` 单独选择 inline 材质路径。
 `DefaultGame --crowd` 显示两个角色场景，供同一配置下的双路径比较；
 普通启动的选择器同时包含三个已有场景和两个角色场景。
 `--regression` 选择 `1024 spheres`、`Sponza`、`Amazon Bistro`，供 `tools/Measure-Scenes.ps1` 使用。
@@ -62,7 +65,7 @@ $env:DOTNET_ReadyToRun = '0'
 & $queue --session crowd samples/DefaultGame/bin/game/Release/net10.0/DefaultGame.exe --crowd --measure --hardware-adapter --hidden-window --no-vsync --no-debug-ui --no-taa --no-vsm --async-compute --fixed-step 0.016666667
 ```
 
-将同一命令的 `--crowd` 选择为 `--crowd-inline`，可单独运行所选 inline 场景；
+将同一命令的 `--crowd` 选择为 `--crowd-cache`，可单独运行所选缓存场景；
 其余渲染参数、固定模拟窗口和完整 CPU/GPU 采集方式相同。
 
 角色场景的启动内容固定为 1920×1080，相机位于 `(0,30,-35)`，观察 `(0,.8,20)`，

@@ -101,14 +101,7 @@ public static class CrowdContent
         using (ShaderAsset definition = await ShaderAsset.OpenSourceAsync(definitionPath))
         {
             ShaderSourceBlock inputs = await definition.GetBlockAsync<ShaderSourceBlock>();
-            inputs.Specializations.Clear();
-            foreach (string mode in new[] { "0", "8" })
-            {
-                inputs.Specializations.Add(new() { EntryPoint = "ClusterShadeMode", Arguments = [mode] });
-                inputs.Specializations.Add(new() { EntryPoint = "ClusterShadowReceiver", Arguments = ["0", mode] });
-                foreach (string export in new[] { "false", "true" })
-                    inputs.Specializations.Add(new() { EntryPoint = "ClusterForwardShade", Arguments = ["0", mode, export] });
-            }
+            inputs.Specializations = SampleContent.CreateMaterialSpecializations(0);
             await definition.SaveSourceAsync(definitionPath);
         }
         await project.BuildAsync(definitionPath);

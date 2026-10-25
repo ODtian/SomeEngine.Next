@@ -37,6 +37,11 @@ Rendering world 的网格组件保存 source joint 到区段实体及区段内�
 和上一份 G，持久图通过四个 `GraphBufferInput` 绑定它们。用户 shader 的读取依赖于
 `CompletePass`，资源使用期由帧资源与 GPU 完成状态共同管理。
 
+当前/上一份模型与局部采样历史、播放状态、blend 状态和 XPBD 点状态由同一个
+`PoseHistoryBuffers` 保存五个持久缓冲。定义复制持有迁移前后两组，上传 pass 提交成功后
+将新组接受为历史，并把旧组加入退休集合；后续图编辑沿同一资源枚举移除旧组。
+各区段的样本身份、时间和输入仍在 store pass 提交成功后接受。
+
 ## 应用接入
 
 `ApplicationScene.Initialize` 在网格资产加载完成后提供 Game world、`GameFrameSystems`

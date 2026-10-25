@@ -26,9 +26,8 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
     private readonly GraphBufferInput _goalsInput, _offsetsInput, _rootsInput, _movementsInput;
     private readonly GraphBufferInput _historyCurrentInput, _historyPreviousInput, _jointIndices, _inverseBind, _definitionUpload, _cpuUpload;
     private readonly GraphBufferId _definitions;
-    private GraphBufferId _historyCurrent, _historyPrevious, _readyCurrent, _readyPrevious;
-    private GraphBufferId _playback, _readyPlayback, _blendStates, _readyBlendStates;
-    private readonly List<GraphBufferId> _retiredHistories = [];
+    private PoseHistoryBuffers _history, _readyHistory;
+    private readonly List<PoseHistoryBuffers> _retiredHistories = [];
     private readonly Dictionary<Entity, Section> _sections = [];
     private readonly Dictionary<Entity, MeshInput> _meshes = [];
     private readonly List<Entity> _removed = [];
@@ -376,23 +375,25 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
         using RenderGraphEdit edit = _graph.BeginEdit();
         foreach (GraphPassId pass in _posePasses) edit.Remove(pass);
         _posePasses.Clear(); _samplePasses.Clear();
-        foreach (GraphBufferId buffer in _retiredHistories) edit.Remove(buffer);
+        foreach (PoseHistoryBuffers history in _retiredHistories)
+            foreach (GraphBufferId buffer in history) edit.Remove(buffer);
         _retiredHistories.Clear();
         edit.SetBufferDescription(_definitions, new BufferDesc((ulong)_definitionBytes.Length,
             BufferUsages.ShaderRead | BufferUsages.CopyDestination, Label: "Pose definitions"));
         var migrations = new List<HistoryCopy>();
         if (_membershipChanged)
         {
-            if (_historyCurrent != default && _historyCurrent != _readyCurrent)
-            { edit.Remove(_historyCurrent); edit.Remove(_historyPrevious); edit.Remove(_playback); edit.Remove(_blendStates); edit.Remove(_xpbdPoints); }
-            _historyCurrent = edit.CreatePersistentBuffer(new BufferDesc((ulong)_boneCount * 128, PoseUsages, Label: "Current pose and local sample history"));
-            _historyPrevious = edit.CreatePersistentBuffer(new BufferDesc((ulong)_boneCount * 128, PoseUsages, Label: "Previous pose and local sample history"));
-            _playback = edit.CreatePersistentBuffer(new BufferDesc((ulong)Math.Max(1, _sectionOrder.Length) * 64,
-                PoseUsages, Label: "GPU pose playback"));
-            _blendStates = edit.CreatePersistentBuffer(new BufferDesc((ulong)_blendStateCount * 32,
-                PoseUsages, Label: "GPU blend phases and selections"));
-            _xpbdPoints = edit.CreatePersistentBuffer(new BufferDesc((ulong)_xpbdPointCount * 32,
-                PoseUsages, Label: "GPU secondary positions and velocities"));
+            if (_history.Current != default && _history.Current != _readyHistory.Current)
+                foreach (GraphBufferId buffer in _history) edit.Remove(buffer);
+            _history = new(
+                edit.CreatePersistentBuffer(new BufferDesc((ulong)_boneCount * 128, PoseUsages, Label: "Current pose and local sample history")),
+                edit.CreatePersistentBuffer(new BufferDesc((ulong)_boneCount * 128, PoseUsages, Label: "Previous pose and local sample history")),
+                edit.CreatePersistentBuffer(new BufferDesc((ulong)Math.Max(1, _sectionOrder.Length) * 64,
+                    PoseUsages, Label: "GPU pose playback")),
+                edit.CreatePersistentBuffer(new BufferDesc((ulong)_blendStateCount * 32,
+                    PoseUsages, Label: "GPU blend phases and selections")),
+                edit.CreatePersistentBuffer(new BufferDesc((ulong)_xpbdPointCount * 32,
+                    PoseUsages, Label: "GPU secondary positions and velocities")));
             foreach (Section section in _sectionOrder)
                 if (section.HasResult) migrations.Add(new(section.StoredRange, section.Range, section.StoredIndex, section.Index,
                     section.StoredBlendStart, section.BlendStart,
@@ -401,8 +402,7 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
             _migrationRequired = true;
         }
         var upload = new DefinitionCopy(_definitionUpload, _definitions, _definitionBytes.Length,
-            _migrationRequired, _readyCurrent, _readyPrevious, _readyPlayback, _readyBlendStates, _readyXpbdPoints,
-            _historyCurrent, _historyPrevious, _playback, _blendStates, _xpbdPoints, [.. migrations]);
+            _migrationRequired, _readyHistory, _history, [.. migrations]);
         _uploadPass = edit.AddCopyFramePass("Upload pose definitions", PassQueueSelection.AnyOfType(QueueType.Graphics), upload,
             new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true), DefinitionCopy.Declare, DefinitionCopy.Record);
         _posePasses.Add(_uploadPass);
@@ -540,11 +540,11 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
         if (_xpbdFrames.Count == 0) _xpbdFrames.Add(default);
         frame.SetBufferInput(_currentBones, new(frame.CreateBuffer(new BufferDesc((ulong)_boneCount * 64, PoseUsages, Label: "Current model bones")), BufferRange.Whole));
         frame.SetBufferInput(_previousBones, new(frame.CreateBuffer(new BufferDesc((ulong)_boneCount * 64, PoseUsages, Label: "Previous model bones")), BufferRange.Whole));
-        frame.SetBufferInput(_historyCurrentInput, new(_historyCurrent, BufferRange.Whole));
-        frame.SetBufferInput(_historyPreviousInput, new(_historyPrevious, BufferRange.Whole));
-        frame.SetBufferInput(_playbackInput, new(_playback, BufferRange.Whole));
-        frame.SetBufferInput(_blendStatesInput, new(_blendStates, BufferRange.Whole));
-        frame.SetBufferInput(_xpbdPointsInput, new(_xpbdPoints, BufferRange.Whole));
+        frame.SetBufferInput(_historyCurrentInput, new(_history.Current, BufferRange.Whole));
+        frame.SetBufferInput(_historyPreviousInput, new(_history.Previous, BufferRange.Whole));
+        frame.SetBufferInput(_playbackInput, new(_history.Playback, BufferRange.Whole));
+        frame.SetBufferInput(_blendStatesInput, new(_history.BlendStates, BufferRange.Whole));
+        frame.SetBufferInput(_xpbdPointsInput, new(_history.XpbdPoints, BufferRange.Whole));
         frame.SetBufferInput(_xpbdWorkInput, new(frame.CreateBuffer(new BufferDesc((ulong)_xpbdPointCount * 96,
             BufferUsages.ShaderWrite, Label: "GPU secondary constraint workspace")), BufferRange.Whole));
         frame.SetBufferInput(_xpbdFramesInput, frame.Upload<XpbdFrame>(CollectionsMarshal.AsSpan(_xpbdFrames), BufferUsages.ShaderRead));
@@ -587,13 +587,8 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
             _uploadRequired = false;
             if (_migrationRequired)
             {
-                if (_readyCurrent != default)
-                { _retiredHistories.Add(_readyCurrent); _retiredHistories.Add(_readyPrevious); _retiredHistories.Add(_readyPlayback);
-                  _retiredHistories.Add(_readyBlendStates); _retiredHistories.Add(_readyXpbdPoints); }
-                _readyCurrent = _historyCurrent; _readyPrevious = _historyPrevious;
-                _readyPlayback = _playback;
-                _readyBlendStates = _blendStates;
-                _readyXpbdPoints = _xpbdPoints;
+                if (_readyHistory.Current != default) _retiredHistories.Add(_readyHistory);
+                _readyHistory = _history;
                 foreach (Section section in _sectionOrder)
                 {
                     section.StoredRange = section.Range; section.StoredIndex = section.Index;
@@ -647,12 +642,13 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
         edit.Remove(_uploadPass);
         _posePasses.Remove(_uploadPass);
         var upload = new DefinitionCopy(_definitionUpload, _definitions, _definitionBytes.Length,
-            false, default, default, default, default, default, _historyCurrent, _historyPrevious, _playback, _blendStates, _xpbdPoints, []);
+            false, default, _history, []);
         _uploadPass = edit.AddCopyFramePass("Upload pose definitions", PassQueueSelection.AnyOfType(QueueType.Graphics), upload,
             new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true), DefinitionCopy.Declare, DefinitionCopy.Record);
         _posePasses.Add(_uploadPass);
         edit.OrderAfter(_advancePass, _uploadPass);
-        foreach (GraphBufferId buffer in _retiredHistories) edit.Remove(buffer);
+        foreach (PoseHistoryBuffers history in _retiredHistories)
+            foreach (GraphBufferId buffer in history) edit.Remove(buffer);
         _retiredHistories.Clear();
         edit.Commit();
     }
@@ -774,59 +770,70 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
         }
     }
 
+    private readonly record struct PoseHistoryBuffers(GraphBufferId Current, GraphBufferId Previous,
+        GraphBufferId Playback, GraphBufferId BlendStates, GraphBufferId XpbdPoints)
+    {
+        public Enumerator GetEnumerator() => new(this);
+
+        public struct Enumerator(PoseHistoryBuffers buffers)
+        {
+            private int _index = -1;
+            public bool MoveNext() => ++_index < 5;
+            public GraphBufferId Current => _index switch
+            {
+                0 => buffers.Current,
+                1 => buffers.Previous,
+                2 => buffers.Playback,
+                3 => buffers.BlendStates,
+                _ => buffers.XpbdPoints,
+            };
+        }
+    }
+
     private readonly record struct DefinitionCopy(GraphBufferInput Upload, GraphBufferId Definitions, int Bytes,
-        bool Migrate, GraphBufferId BeforeCurrent, GraphBufferId BeforePrevious, GraphBufferId BeforePlayback, GraphBufferId BeforeBlendStates, GraphBufferId BeforeXpbd,
-        GraphBufferId Current, GraphBufferId Previous, GraphBufferId Playback, GraphBufferId BlendStates, GraphBufferId Xpbd, HistoryCopy[] Regions)
+        bool Migrate, PoseHistoryBuffers Before, PoseHistoryBuffers After, HistoryCopy[] Regions)
     {
         internal static void Declare(ref PassDefinition pass, ref DefinitionCopy data)
         {
             pass.Read(data.Upload, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopySource);
             pass.Write(data.Definitions, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete);
             if (!data.Migrate) return;
-            pass.Write(data.Current, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete);
-            pass.Write(data.Previous, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete);
-            pass.Write(data.Playback, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete);
-            pass.Write(data.BlendStates, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete);
-            pass.Write(data.Xpbd, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete);
-            if (data.BeforeCurrent == default) return;
-            pass.Read(data.BeforeCurrent, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopySource);
-            pass.Read(data.BeforePrevious, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopySource);
-            pass.Read(data.BeforePlayback, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopySource);
-            pass.Read(data.BeforeBlendStates, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopySource);
-            pass.Read(data.BeforeXpbd, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopySource);
+            foreach (GraphBufferId buffer in data.After)
+                pass.Write(buffer, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete);
+            if (data.Before.Current == default) return;
+            foreach (GraphBufferId buffer in data.Before)
+                pass.Read(buffer, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopySource);
         }
         internal static void Record(ref CopyPassCommandScope commands, in DefinitionCopy data)
         {
             BufferRegion upload = commands.GetBufferRegion(data.Upload);
             commands.CopyBuffer(new(upload.Buffer, upload.Range.Offset, commands.GetBuffer(data.Definitions), 0, (ulong)data.Bytes));
             if (!data.Migrate) return;
-            SomeEngine.Graphics.Buffer current = commands.GetBuffer(data.Current), previous = commands.GetBuffer(data.Previous);
-            commands.ClearBuffer(current, BufferRange.Whole, 0); commands.ClearBuffer(previous, BufferRange.Whole, 0);
-            SomeEngine.Graphics.Buffer playback = commands.GetBuffer(data.Playback);
-            commands.ClearBuffer(playback, BufferRange.Whole, 0);
-            SomeEngine.Graphics.Buffer blendStates = commands.GetBuffer(data.BlendStates);
-            commands.ClearBuffer(blendStates, BufferRange.Whole, 0);
-            SomeEngine.Graphics.Buffer xpbd = commands.GetBuffer(data.Xpbd);
-            commands.ClearBuffer(xpbd, BufferRange.Whole, 0);
+            foreach (GraphBufferId buffer in data.After)
+                commands.ClearBuffer(commands.GetBuffer(buffer), BufferRange.Whole, 0);
+            SomeEngine.Graphics.Buffer current = commands.GetBuffer(data.After.Current), previous = commands.GetBuffer(data.After.Previous);
+            SomeEngine.Graphics.Buffer playback = commands.GetBuffer(data.After.Playback);
+            SomeEngine.Graphics.Buffer blendStates = commands.GetBuffer(data.After.BlendStates);
+            SomeEngine.Graphics.Buffer xpbd = commands.GetBuffer(data.After.XpbdPoints);
             foreach (HistoryCopy region in data.Regions)
             {
-                commands.CopyBuffer(new(commands.GetBuffer(data.BeforeCurrent), (ulong)region.Source.Start * 64,
+                commands.CopyBuffer(new(commands.GetBuffer(data.Before.Current), (ulong)region.Source.Start * 64,
                     current, (ulong)region.Destination.Start * 64, (ulong)region.Source.Count * 64));
-                commands.CopyBuffer(new(commands.GetBuffer(data.BeforePrevious), (ulong)region.Source.Start * 64,
+                commands.CopyBuffer(new(commands.GetBuffer(data.Before.Previous), (ulong)region.Source.Start * 64,
                     previous, (ulong)region.Destination.Start * 64, (ulong)region.Source.Count * 64));
-                ulong sourceLocals = commands.GetBuffer(data.BeforeCurrent).Info.Size / 128 + (ulong)region.Source.Start;
+                ulong sourceLocals = commands.GetBuffer(data.Before.Current).Info.Size / 128 + (ulong)region.Source.Start;
                 ulong destinationLocals = current.Info.Size / 128 + (ulong)region.Destination.Start;
-                commands.CopyBuffer(new(commands.GetBuffer(data.BeforeCurrent), sourceLocals * 64,
+                commands.CopyBuffer(new(commands.GetBuffer(data.Before.Current), sourceLocals * 64,
                     current, destinationLocals * 64, (ulong)region.Source.Count * 64));
-                commands.CopyBuffer(new(commands.GetBuffer(data.BeforePrevious), sourceLocals * 64,
+                commands.CopyBuffer(new(commands.GetBuffer(data.Before.Previous), sourceLocals * 64,
                     previous, destinationLocals * 64, (ulong)region.Source.Count * 64));
-                commands.CopyBuffer(new(commands.GetBuffer(data.BeforePlayback), (ulong)region.SourceIndex * 64,
+                commands.CopyBuffer(new(commands.GetBuffer(data.Before.Playback), (ulong)region.SourceIndex * 64,
                     playback, (ulong)region.DestinationIndex * 64, 64));
                 if (region.BlendCount > 0)
-                    commands.CopyBuffer(new(commands.GetBuffer(data.BeforeBlendStates), (ulong)region.SourceBlendStart * 32,
+                    commands.CopyBuffer(new(commands.GetBuffer(data.Before.BlendStates), (ulong)region.SourceBlendStart * 32,
                         blendStates, (ulong)region.DestinationBlendStart * 32, (ulong)region.BlendCount * 32));
                 if (region.XpbdCount > 0)
-                    commands.CopyBuffer(new(commands.GetBuffer(data.BeforeXpbd), (ulong)region.SourceXpbdStart * 32,
+                    commands.CopyBuffer(new(commands.GetBuffer(data.Before.XpbdPoints), (ulong)region.SourceXpbdStart * 32,
                         xpbd, (ulong)region.DestinationXpbdStart * 32, (ulong)region.XpbdCount * 32));
             }
         }
