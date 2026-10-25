@@ -84,3 +84,5 @@ PhysicsSimulation.Create(world, bodyFilter, stages, substeps: 1)
 刷新依次连接匹配与点结构回放、参与边及新点组件结构回放、最终锚引用写入；返回依赖覆盖这些工作及命令缓冲释放。后续求解、速度和恢复继续消费该依赖。各模拟实体始终由原组件保存真实状态，派生容量和跨实体索引由对应阶段复用。
 
 用户响应以具体 `IAvbdConstraint<T>` 接入相同集合；`GetBodyCount`、`GetBody` 和各数值阶段均接收完整 `PhysicsStepContext`，可以沿同一受保护参与关系读取作用端，并通过原 `QueryRow` 更新自己的状态。
+
+显式选用[长程约束](Long-Range-Constraints.md)时，`AvbdSupportedContactMath` 将接触自己的 LRC 世界辅助力加入总压力与摩擦投影，原 AVBD 乘子和辅助反力分别保存在各自组件。共同 `ContactResponse` 继续向恢复和后续消费者交付实际总力。
