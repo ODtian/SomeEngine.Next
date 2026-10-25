@@ -32,6 +32,13 @@ public struct PropertySource<T> : IBufferElement where T : unmanaged
 }
 
 [BufferCapacity(1)]
+internal struct PropertyChannelRange<T> : IBufferElement where T : unmanaged
+{
+    internal Channel<T> Channel;
+    internal int FirstSource, SourceCount;
+}
+
+[BufferCapacity(1)]
 internal struct MotionDeclaration<T> : IBufferElement where T : unmanaged
 {
     internal Channel<T> Channel;
