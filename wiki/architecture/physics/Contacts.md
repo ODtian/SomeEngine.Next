@@ -79,7 +79,16 @@ PhysicsSimulation.Create(world, bodyFilter, stages, substeps: 1)
 
 `bodies` 声明位姿写入、质量/共同步/速度读取及 `AvbdBodyEquation` 写入。`contacts` 声明点、材料、`ContactBodyLink` 读取，参与边受保护端点的可选读取及 `AvbdContactState`、`ContactResponse` 写入。`velocityBodies` 声明位姿与质量读取及速度写入。查询及检测输入资源沿现有 `QueryJobAccess` 进入调度器。
 
-`DetectContactPoints` 在创建时通过 [RelationQueryReads](../ECS/Relation-Queries.md) 登记成员和完整访问查询；执行时在同一借用范围完成 count、prefix、write 和所选各 bin 的具体检测。`ContactNarrowPhases.Combine` 组合多个具体窄阶段，每个窄阶段可以提供自身的 `QueryReadResources` 描述。`detectionInputs` 声明这些具体外部数据及候选源资源。
+`DetectContactPoints` 在创建时通过 [RelationQueryReads](../ECS/Relation-Queries.md) 登记成员和完整访问查询。
+普通组件路径在同一借用范围完成 count、prefix、write 和所选各 bin 的具体检测。
+`ContactNarrowPhases.Combine` 组合多个具体窄阶段，每个窄阶段可以提供自身的
+`QueryReadResources` 描述；`IContactNarrowPhases.Detect` 同时接收当前
+`PhysicsStepContext` 与有效组件视图，具体几何窄阶段沿原距离内核执行。
+资源路径先在一组借用范围中填充全部 bins，随后由
+`ScheduleEntities` 直接投影本轮 pair 的实体，在输入完成后绑定各实体当前引用的数据；
+取得资源并复核绑定后，沿同一预登记读取对象重开有效视图，每个所选 bin 执行一轮检测。
+引用资源的等待、复核和完成链见 [Query Reads](../ECS/Query-Reads.md)。
+`detectionInputs` 声明候选源与具体内核使用的其他外部数据。
 
 刷新依次连接匹配与点结构回放、参与边及新点组件结构回放、最终锚引用写入；返回依赖覆盖这些工作及命令缓冲释放。后续求解、速度和恢复继续消费该依赖。各模拟实体始终由原组件保存真实状态，派生容量和跨实体索引由对应阶段复用。
 
