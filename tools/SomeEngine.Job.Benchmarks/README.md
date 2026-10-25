@@ -33,3 +33,11 @@ High priority and 256 square-root iterations; background uses 8/2/1, Low priorit
 execution for both categories. Timing and process-wide allocation include asynchronous
 quota waits, resource declarations, submission and combined completion. Run through the
 same exclusive queue command above, adding `--categories` after `--`.
+
+`--storage --workers 8 --length 65536 --calls 128` measures the complete empty-job and
+explicit parallel submission paths, followed by ready and dependency-waiting resource
+sets of 1, 4, 16 and 64 array ranges. Every row includes submission, callback execution,
+completion and record return. Waiting rows include a source job whose public start signal
+holds the dependent submission before its gate opens; the same reusable signals and work
+are used for each row. All array results are checked after the measured calls. The reported
+allocation includes every participating thread. Use the exclusive queue for both build and run.

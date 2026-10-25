@@ -273,7 +273,11 @@ public sealed partial class Scheduler : IDisposable
             }
             throw;
         }
-        finally { submission.Release(); }
+        finally
+        {
+            _resources.ReleaseReservationReference(reservation);
+            submission.Release();
+        }
     }
 
     private JobPayloadLane BeginSchedule<T>(JobScheduleOptions options)
@@ -463,7 +467,7 @@ public sealed partial class Scheduler : IDisposable
             ownsCategoryRequest = StartCategoryRequest(options.Category);
             submission = JobSubmissionTracker.Begin(this, accesses);
             state = CreateState(
-                batchCount,
+                batchCount + tokenCount,
                 pendingDependencies: 0,
                 scheduleDependenciesSealed: !hasScheduleDependencies);
             if (deferResourceActivation)
@@ -513,7 +517,11 @@ public sealed partial class Scheduler : IDisposable
             }
             throw;
         }
-        finally { submission.Release(); }
+        finally
+        {
+            _resources.ReleaseReservationReference(reservation);
+            submission.Release();
+        }
     }
 
     private JobPayloadLane BeginParallelSchedule<T>(JobScheduleOptions options, int batchSize)

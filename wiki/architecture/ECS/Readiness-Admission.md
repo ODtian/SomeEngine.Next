@@ -62,3 +62,11 @@ Dots 的 `IJob`、`IJobParallelFor`、`IJobFor` 和 `IJobChunk` 扩展均提供�
 
 Checked 与 Fast 采用相同的有效使用期：`ReleaseResource` 和 `ReleaseResourceToken` 在访问预留或活动访问仍存在时抛出 `JobResourceSafetyException`，工作完成后可归还资源身份。仅保留值类型的 `JobResourceAccess` 描述符时，容器仍按实际使用记录的有效期回收。
 
+
+就绪前资源记录由 ResourceManager 的空闲记录池复用；记录保留可容纳声明集合的数组，
+完成消费时清空实际容器引用。提交路径与已登记的依赖接续分别持有记录引用，最后一方
+结束后将记录归还空闲池。因此内联完成与异步接续使用相同的有效期，已有取消路径继续
+依据该记录的消费状态处理资源计数。实际访问仍由完整声明的一次原子登记转入冲突前沿。
+对应实现为 [资源保留](../../../src/SomeEngine.Job/ResourceManager.Reservations.cs) 和
+[依赖接续](../../../src/SomeEngine.Job/Scheduler.Dependency.cs)；完整调用成本入口见
+[Job benchmark](../../../tools/SomeEngine.Job.Benchmarks/README.md)。

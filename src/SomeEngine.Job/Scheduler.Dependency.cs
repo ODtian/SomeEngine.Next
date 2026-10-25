@@ -197,7 +197,12 @@ public sealed partial class Scheduler
                 "Deferred resource admission could not retain its scheduled state.");
         }
 
-        if (!_dependencies.AddContinuation(
+        ResourceManager.AddReservationReference(reservation);
+        bool registered;
+        ExceptionDispatchInfo? immediateFault;
+        try
+        {
+            registered = _dependencies.AddContinuation(
                 explicitDependency,
                 waitForWorkOnly: false,
                 DependencyContinuation.CreateResourceAdmission(
@@ -206,7 +211,14 @@ public sealed partial class Scheduler
                     work,
                     reservation,
                     ignoreDependencyFault),
-                out ExceptionDispatchInfo? immediateFault))
+                out immediateFault);
+        }
+        catch
+        {
+            _resources.ReleaseReservationReference(reservation);
+            throw;
+        }
+        if (!registered)
         {
             CompleteDeferredResourceAdmission(
                 state,
@@ -222,43 +234,47 @@ public sealed partial class Scheduler
         ResourceAccessReservation reservation,
         ExceptionDispatchInfo? explicitDependencyFault)
     {
-        ExceptionDispatchInfo? admissionFault = explicitDependencyFault;
-        if (admissionFault is null)
+        try
         {
-            try
+            ExceptionDispatchInfo? admissionFault = explicitDependencyFault;
+            if (admissionFault is null)
             {
-                ResourceAccessRegistration registration =
-                    _resources.ActivateReservation(state, reservation);
-                if (!SetResourceAccesses(state, registration))
+                try
                 {
-                    work.ReleaseJobs();
-                    return;
-                }
+                    ResourceAccessRegistration registration =
+                        _resources.ActivateReservation(state, reservation);
+                    if (!SetResourceAccesses(state, registration))
+                    {
+                        work.ReleaseJobs();
+                        return;
+                    }
 
-                for (int i = 0; i < registration.DependencyCount; i++)
+                    for (int i = 0; i < registration.DependencyCount; i++)
+                    {
+                        ResourceDependency dependency = registration.GetDependency(i);
+                        RegisterScheduleDependency(
+                            state,
+                            dependency.Handle,
+                            work,
+                            dependency.WaitForWorkOnly,
+                            ignoreDependencyFault: dependency.WaitForWorkOnly);
+                    }
+                }
+                catch (Exception exception)
                 {
-                    ResourceDependency dependency = registration.GetDependency(i);
-                    RegisterScheduleDependency(
-                        state,
-                        dependency.Handle,
-                        work,
-                        dependency.WaitForWorkOnly,
-                        ignoreDependencyFault: dependency.WaitForWorkOnly);
+                    admissionFault = ExceptionDispatchInfo.Capture(exception);
                 }
             }
-            catch (Exception exception)
-            {
-                admissionFault = ExceptionDispatchInfo.Capture(exception);
-            }
+
+            CancelReservation(reservation);
+
+            // The explicit full dependency remains counted until resource activation has published
+            // every work-only hazard. Sealing before releasing that final count prevents a transient
+            // enqueue between the two dependency classes.
+            SealScheduleDependencies(state);
+            ReleaseScheduleDependency(state, work, admissionFault);
         }
-
-        CancelReservation(reservation);
-
-        // The explicit full dependency remains counted until resource activation has published
-        // every work-only hazard. Sealing before releasing that final count prevents a transient
-        // enqueue between the two dependency classes.
-        SealScheduleDependencies(state);
-        ReleaseScheduleDependency(state, work, admissionFault);
+        finally { _resources.ReleaseReservationReference(reservation); }
     }
 
     private bool RegisterScheduleDependency(
