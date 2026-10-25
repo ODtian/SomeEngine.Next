@@ -31,12 +31,21 @@ public sealed partial class GlyphAtlas
 
     public GlyphLocation Get(Font font, uint glyph)
     {
+        RequireGlyph(font, glyph);
+        if (glyphs.TryGetValue((font, glyph), out GlyphLocation location)) return location;
+        return AddGlyph(font, glyph, font.Data.RenderGlyph(glyph, FontSize, DistanceSpread));
+    }
+
+    private static void RequireGlyph(Font font, uint glyph)
+    {
         DevelopmentCheck.Require(font is not null, "A glyph needs a font.");
         DevelopmentCheck.Require(!font.Data.IsClosed, "The font must be alive while using its atlas.");
         DevelopmentCheck.Require(glyph < HarfBuzz.GetGlyphCount(font.Data.Face), "The glyph must belong to the font.");
-        if (glyphs.TryGetValue((font, glyph), out GlyphLocation location)) return location;
+    }
 
-        GlyphBitmap bitmap = font.Data.RenderGlyph(glyph, FontSize, DistanceSpread);
+    private GlyphLocation AddGlyph(Font font, uint glyph, in GlyphBitmap bitmap)
+    {
+        GlyphLocation location;
         if (bitmap.Width == 0 || bitmap.Height == 0)
         {
             location = new GlyphLocation(new AtlasDirtyRegion(-1, 0, 0, 0, 0), Vector2.Zero, Vector2.Zero, Vector2.Zero);

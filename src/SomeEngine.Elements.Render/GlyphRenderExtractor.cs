@@ -11,6 +11,7 @@ using SomeEngine.Typography;
 using SomeEngine.Views;
 using SomeEngine.Job;
 using System.Numerics;
+using System.Runtime.InteropServices;
 
 namespace SomeEngine.Elements.Render;
 
@@ -26,6 +27,7 @@ public sealed partial class GlyphRenderExtractor(Entity atlasSource) : IRenderEx
     private Entity _atlasMirror;
     private bool _atlasChanged;
     private readonly List<TextDrawing> _drawings = [];
+    private readonly List<Glyph> _glyphs = [];
 
     /// <summary>Computes detached glyph instances with chunk jobs.</summary>
     public bool Parallel { get; set; } = true;
@@ -53,6 +55,7 @@ public sealed partial class GlyphRenderExtractor(Entity atlasSource) : IRenderEx
         _textGlyphs.Clear();
         _atlasChanged = false;
         _drawings.Clear();
+        _glyphs.Clear();
     }
 
     public void Collect(QueryChunkView chunk)
@@ -91,6 +94,9 @@ public sealed partial class GlyphRenderExtractor(Entity atlasSource) : IRenderEx
             CanvasNode entry = new CanvasTree(sourceWorld, canvas).ReadNode(node);
             ReadGlyphs(sourceWorld, canvas, node, entry.Clip, entry.DrawOrder);
         }
+        _atlas.Bake(CollectionsMarshal.AsSpan(_glyphs));
+        foreach (TextDrawing drawing in _drawings) drawing.ResolveGlyphLocations(_atlas);
+        _glyphs.Clear();
         ChunkJobs.Run(new GlyphJob(_drawings), _drawings.Count, Parallel);
         foreach (TextDrawing drawing in _drawings)
             if (_canvasGlyphs.TryGetValue(drawing.Canvas, out List<GlyphInstance>? glyphs))
@@ -157,9 +163,7 @@ public sealed partial class GlyphRenderExtractor(Entity atlasSource) : IRenderEx
         float scale = text.Style.Size / _atlas!.FontSize;
         ReadOnlySpan<Glyph> glyphs = text.Shape.Glyphs;
         var locations = new GlyphLocation[glyphs.Length];
-        // First use determines atlas placement, so resolve in source order before the jobs run.
-        for (int index = 0; index < glyphs.Length; index++)
-            locations[index] = _atlas.Get(glyphs[index].Font, glyphs[index].Index);
+        foreach (ref readonly Glyph glyph in glyphs) _glyphs.Add(glyph);
         _drawings.Add(new TextDrawing(canvas, node, text.Shape, locations, rectangle, padding, scale,
             text.Style.Color, clip, order,
             world.Has<ElementTransform>(node) ? world.Read<ElementTransform>(node) : ElementTransform.Identity,
@@ -173,6 +177,13 @@ public sealed partial class GlyphRenderExtractor(Entity atlasSource) : IRenderEx
         internal readonly Entity Canvas = canvas;
         internal readonly Entity Node = node;
         internal readonly List<GlyphInstance> Values = new(locations.Length);
+
+        internal void ResolveGlyphLocations(GlyphAtlas atlas)
+        {
+            ReadOnlySpan<Glyph> glyphs = shape.Glyphs;
+            for (int index = 0; index < glyphs.Length; index++)
+                locations[index] = atlas.Get(glyphs[index].Font, glyphs[index].Index);
+        }
 
         internal void CreateGlyphs()
         {
