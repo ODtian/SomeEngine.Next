@@ -2,6 +2,8 @@ using System.Numerics;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Geometry.Cluster;
 using SomeEngine.Resources;
+using SomeEngine.Job;
+using System.Collections.Immutable;
 
 namespace SomeEngine.Assets.Importers;
 
@@ -65,16 +67,48 @@ public static partial class ClusterBuilder
     private static ClusterVertexAttributesBlock EncodeAttributes(Vector3[] positions, List<RawAttribute> attributes,
         ClusterGeometryBlock geometry, IClusterVertexEncoder encoder)
     {
-        var result = new ClusterVertexAttributesBlock { VertexIdentity = geometry.VertexIdentity, Encoding = encoder.Compatibility };
+        const int clustersPerBatch = 16;
+        string encoding = encoder.Compatibility;
         RawAttribute[] streams = attributes.Where(static attribute => attribute.Name != "_MATERIAL_INDEX").ToArray();
-        foreach (ClusterGeometry cluster in geometry.Clusters)
+        ClusterGeometry[] clusters = geometry.Clusters.ToArray();
+        ClusterVertexSource[] sources = geometry.Vertices.ToArray();
+        var results = new ClusterVertexAttributes[clusters.Length];
+        int batchCount = (clusters.Length + clustersPerBatch - 1) / clustersPerBatch;
+        var encoders = new IClusterVertexEncoder?[batchCount];
+        for (int batch = 0; batch < batchCount; batch++)
+            encoders[batch] = encoder.CreateBatchEncoder();
+        JobSystem.ExecuteParallel(new EncodeAttributeBatches(positions, streams, clusters, sources,
+            encoder, encoders, new object(), results, clustersPerBatch), batchCount, 1);
+        return new ClusterVertexAttributesBlock
         {
-            uint[] vertices = cluster.Vertices.Select(vertex => geometry.Vertices[(int)vertex].SourceVertex).ToArray();
-            EncodedClusterVertices encoded = encoder.Encode(positions, streams, vertices);
-            result.Clusters.Add(new() { Data = [.. encoded.Blob.Span], Attributes =
-                [new() { Name = "Encoded", ComponentCount = 1, Data = [.. encoded.Blob.Span] }] });
+            VertexIdentity = geometry.VertexIdentity, Encoding = encoding, Clusters = results,
+        };
+    }
+
+    private readonly record struct EncodeAttributeBatches(Vector3[] Positions, RawAttribute[] Streams,
+        ClusterGeometry[] Clusters, ClusterVertexSource[] Sources, IClusterVertexEncoder SharedEncoder,
+        IClusterVertexEncoder?[] Encoders, object Gate, ClusterVertexAttributes[] Results, int ClustersPerBatch) : IJobParallelFor
+    {
+        public void Execute(int batch)
+        {
+            ClusterVertexSource[] sources = Sources;
+            int end = Math.Min((batch + 1) * ClustersPerBatch, Clusters.Length);
+            for (int index = batch * ClustersPerBatch; index < end; index++)
+            {
+                uint[] vertices = Clusters[index].Vertices.Select(vertex => sources[(int)vertex].SourceVertex).ToArray();
+                if (Encoders[batch] is { } encoder)
+                    Results[index] = Encode(encoder, vertices);
+                else
+                    lock (Gate) Results[index] = Encode(SharedEncoder, vertices);
+            }
         }
-        return result;
+
+        private ClusterVertexAttributes Encode(IClusterVertexEncoder encoder, uint[] vertices)
+        {
+            EncodedClusterVertices encoded = encoder.Encode(Positions, Streams, vertices);
+            ImmutableArray<byte> bytes = [.. encoded.Blob.Span];
+            return new() { Data = bytes, Attributes = [new() { Name = "Encoded", ComponentCount = 1, Data = bytes }] };
+        }
     }
 
     /// <summary>Stores completed Cluster geometry with its neutral bounds, regions and material references.</summary>

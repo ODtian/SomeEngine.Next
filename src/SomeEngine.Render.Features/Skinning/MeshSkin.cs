@@ -3,6 +3,7 @@ using SomeEngine.Animation.Pose;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
+using SomeEngine.ECS.Systems;
 using SomeEngine.Render.Systems;
 
 namespace SomeEngine.Render.Features.Skinning;
@@ -37,7 +38,7 @@ internal record struct RenderBoneSectionData(Skeleton Skeleton, RenderBoneParent
 }
 
 /// <summary>Copies pose controls and completed CPU sections through the shared extraction window.</summary>
-public sealed class SkinRenderExtractor : IRenderExtractionSystem
+public sealed partial class SkinRenderExtractor : IRenderExtractionSystem
 {
     private readonly HashSet<Entity> _meshSources = [];
     private readonly HashSet<Entity> _targetSources = [];
@@ -66,35 +67,21 @@ public sealed class SkinRenderExtractor : IRenderExtractionSystem
 
     public void Reset() => _input++;
 
-    public void Collect(QueryChunkView chunk)
-    {
-        ReadOnlySpan<Entity> entities = chunk.Entities;
-        if (chunk.TryRead<MeshSkin>(out ReadOnlySpan<MeshSkin> meshes))
-            for (int index = 0; index < entities.Length; index++)
-            {
-                Entity entity = entities[index];
-                _meshSources.Add(entity);
-                if (!_meshes.TryGetValue(entity, out SourceMesh? mesh)) _meshes.Add(entity, mesh = new());
-                Bind(mesh, meshes[index].Joints);
-            }
-        if (chunk.TryRead<GpuPoseTarget>(out ReadOnlySpan<GpuPoseTarget> targets))
-            for (int index = 0; index < entities.Length; index++)
-            {
-                Entity entity = entities[index];
-                _targetSources.Add(entity);
-                if (!_targets.TryGetValue(entity, out SourceTarget? target)) _targets.Add(entity, target = new());
-                target.Data = targets[index];
-            }
-    }
+    private readonly SkinInputs _inputs = new();
+
+    public void Collect(QueryChunkView chunk) => CollectInputs(chunk, true);
 
     public bool CollectChanges(QueryChunkView chunk, RenderExtractionContext context)
     {
-        ReadOnlySpan<Entity> entities = chunk.Entities;
-        if (chunk.TryRead<MeshSkin>(out ReadOnlySpan<MeshSkin> meshes) && chunk.HasChangedSinceLastSystemVersion<MeshSkin>())
-            for (int index = 0; index < entities.Length; index++) Bind(_meshes[entities[index]], meshes[index].Joints);
-        if (chunk.TryRead<GpuPoseTarget>(out ReadOnlySpan<GpuPoseTarget> targets) && chunk.HasChangedSinceLastSystemVersion<GpuPoseTarget>())
-            for (int index = 0; index < entities.Length; index++) _targets[entities[index]].Data = targets[index];
+        CollectInputs(chunk, false);
         return false;
+    }
+
+    private void CollectInputs(QueryChunkView chunk, bool fullCollection)
+    {
+        _inputs.Collect(ReadOnlyQueryPacketJobs.Borrow(chunk), chunk.LastSystemVersion, fullCollection);
+        MergeInputs(_inputs);
+        _inputs.Reset();
     }
 
     public bool CompleteSourceCollection(World world, bool fullCollection)
