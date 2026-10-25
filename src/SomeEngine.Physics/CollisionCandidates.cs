@@ -2,6 +2,7 @@ using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Relations;
+using SomeEngine.ECS.Systems;
 
 namespace SomeEngine.Physics;
 
@@ -73,15 +74,16 @@ public readonly struct CollisionCandidates<TComponent, TBoundsReader> : ICollisi
 
     internal bool BuildsFromQuery => _buildFromQuery;
 
-    internal CollisionBounds ReadBounds(QueryRow row) => ReadBounds(in row.ReadRef<TComponent>());
-
     internal CollisionBounds ReadBounds(in TComponent component) => _boundsReader.Read(in component);
 
     internal CollisionCandidates<TComponent, TBoundsReader> WithTree() =>
         new(World, _bodies, Tree, _boundsReader);
 
-    internal void BuildTree(scoped RelationQueryViews queries) =>
-        Tree.Rebuild<TComponent, TBoundsReader>(queries.First, queries.Access, _boundsReader);
+    internal void BuildTree(scoped RelationQueryViews queries)
+    {
+        WorldJobs.TryGetScheduler(World, out var scheduler);
+        Tree.Rebuild<TComponent, TBoundsReader>(queries.First, queries.Access, _boundsReader, scheduler);
+    }
 
     public int QueryCount => 1;
 
@@ -106,7 +108,7 @@ public readonly struct CollisionCandidates<TComponent, TBoundsReader> : ICollisi
         where TOutput : struct, IQueryRelationOutput<(Entity, Entity)>, allows ref struct
     {
         if (_buildFromQuery)
-            Tree.Rebuild<TComponent, TBoundsReader>(queries.First, queries.Access, _boundsReader);
+            BuildTree(queries);
         if (Tree.Root < 0)
             return true;
 
