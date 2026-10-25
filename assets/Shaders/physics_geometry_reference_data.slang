@@ -7,7 +7,7 @@ struct DeviceGeometryReference
     uint bodyCount; uint firstBody; uint secondBody; uint thirdBody;
     float3 firstLocalPoint; uint kind;
     float3 secondLocalPoint; uint gridIndex;
-    float3 thirdLocalPoint; uint padding;
+    float3 thirdLocalPoint; uint fieldIndex;
 };
 RWStructuredBuffer<DeviceGeometryReference> DeviceGeometryReferences;
 RWStructuredBuffer<float3> DeviceGeometryPoints;
