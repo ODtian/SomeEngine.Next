@@ -34,4 +34,3 @@ result.Complete();
 每轮按集合组合顺序依次投影全部约束，然后推进下一轮。求解通过所属 World 的 Scheduler 提交一个作业，模拟实体组件在外层查询中持续借用，各约束在自己的查询回调内读取参数并更新乘子，完成依赖覆盖全部投影。
 
 用户适配器以具体 struct 实现 `IXpbdConstraint<TConstraint>` 的静态 `Initialize` 和 `Project`。两者接收主组件的只读引用及原 `QueryRow`；`Project` 还接收 `PhysicsBodies` 和子步时长。适配器可从原行读取同实体的其他已声明组件，并写入自己的数值状态组件。用户集合沿同一个 `XpbdConstraints<TConstraint,TProjection>` 入口与内置集合组合。
-
