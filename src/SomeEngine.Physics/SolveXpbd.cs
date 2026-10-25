@@ -61,14 +61,14 @@ public readonly struct SolveXpbd<TConstraints> : IPhysicsStage where TConstraint
     {
         public void Execute(scoped QueryCursor query)
         {
-            constraints.Initialize(in context);
+            XpbdIterationLoop.Initialize(in context, constraints);
             new ProjectConstraints(context, constraints, iterations).Execute(query);
         }
     }
 
     private readonly struct InitializeConstraints(PhysicsStepContext context, TConstraints constraints) : IQueryExecution
     {
-        public void Execute(scoped QueryCursor query) => constraints.Initialize(in context);
+        public void Execute(scoped QueryCursor query) => XpbdIterationLoop.Initialize(in context, constraints);
     }
 
     private readonly struct ProjectConstraints(PhysicsStepContext context, TConstraints constraints, int iterations) : IQueryExecution
@@ -76,7 +76,7 @@ public readonly struct SolveXpbd<TConstraints> : IPhysicsStage where TConstraint
         public void Execute(scoped QueryCursor query)
         {
             var bodies = new PhysicsBodies(query);
-            for (int iteration = 0; iteration < iterations; iteration++) constraints.Project(in context, bodies);
+            XpbdIterationLoop.Iterate(in context, bodies, constraints, iterations);
         }
     }
 }

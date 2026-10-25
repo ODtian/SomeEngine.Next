@@ -9,10 +9,8 @@ using SomeEngine.Job;
 namespace SomeEngine.Physics;
 
 /// <summary>Static numerical adaptation of a concrete entity constraint and its declared components.</summary>
-public interface IAvbdConstraint<TConstraint> where TConstraint : struct, IComponent
+public interface IAvbdConstraint<TConstraint> : IPhysicsConstraintBodies<TConstraint> where TConstraint : struct, IComponent
 {
-    static abstract int GetBodyCount(in TConstraint constraint, scoped QueryRow row, in PhysicsStepContext context);
-    static abstract Entity GetBody(in TConstraint constraint, scoped QueryRow row, int index, in PhysicsStepContext context);
     static abstract void Initialize(in TConstraint constraint, scoped QueryRow row, scoped PhysicsBodies bodies,
         in PhysicsStepContext context, float retention);
     static abstract void AccumulateBodyEquation(in TConstraint constraint, scoped QueryRow row, Entity body,
