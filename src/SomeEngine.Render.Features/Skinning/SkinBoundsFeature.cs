@@ -17,7 +17,7 @@ using SomeEngine.Resources.Geometry;
 namespace SomeEngine.Render.Features.Skinning;
 
 /// <summary>Produces per-instance LBS bounds from shared influence boxes and model-space bones.</summary>
-public sealed class SkinBoundsFeature : IClusterBoundsSource, IDisposable,
+public sealed class SkinBoundsFeature : IClusterBoundsSource, IGraphResourceProvider, IDisposable,
     ISystem<RenderPrepareSystemContext>, ISystem<RenderFrameSystemContext>, IRenderGraphFrameExecutionObserver
 {
     private const BufferUsages BoundsUsages = BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopyDestination;
@@ -432,6 +432,17 @@ public sealed class SkinBoundsFeature : IClusterBoundsSource, IDisposable,
     }
 
     public void OnDestroy(ref RenderPrepareSystemContext context) => context.World.ReleaseQuery(_query);
+    public bool TryResolve(string name, ResourceBindingType type, out GraphResourceBinder binder)
+    {
+        binder = name == "SkinJointTransforms" && type == ResourceBindingType.BufferSrv
+            ? BindJointTransforms : null!;
+        return binder is not null;
+    }
+    private void BindJointTransforms(ref RenderGraphEdit graph, ref PassDefinition pass, PipelineSync sync)
+    {
+        pass.Bind(graph.CreateBufferSrv(_jointTransforms), sync);
+        graph.OrderAfter(pass.Id, _jointPass);
+    }
     public void Dispose() { _pipeline.Dispose(); _jointPipeline.Dispose(); }
 
     private enum Resource { Controls, Work, Boxes, Uses, Current, Previous, CurrentBones, PreviousBones, Joints, InverseBind, Transforms }

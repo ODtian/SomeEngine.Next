@@ -64,6 +64,9 @@ Cluster 的读取只依赖共同包围体和节点对应关系。LBS 的权重�
 骨骼完成点先于关节变换预计算。`TransformSkinJoints` 为变化实例的每个绑定关节计算
 当前／上一 `InverseBind * G` 和线性伸长上界，保存在 `SkinBoundsFeature` 的持久缓冲中。
 每个关节保存两组 XYZ 仿射列及伸长值，共 112 字节；盒子变换直接消费这些列。
+`SkinBoundsFeature` 同时作为 `IGraphResourceProvider` 将同一资源以 `SkinJointTransforms`
+提供给选择它的用户材质，按该实例绑定的 joint 起点索引，读取依赖原关节计算 pass。
+材质可通过 [Skinning](Skinning.md) 的 `LoadSkinJointTransform` 读取已计算的仿射乘积。
 `BuildGeometry` 为同一影响盒数组分配一个范围编号，剔除项与 LOD 项保存各自的范围编号。
 共享定义同时记录每个范围用于哪些输出项的剔除盒及 LOD 球。
 `TransformSkinBounds` 为变化实例的每个范围计算一次当前／上一盒子并集和伸长上界，
