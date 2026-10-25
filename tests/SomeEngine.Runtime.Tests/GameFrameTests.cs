@@ -1,5 +1,6 @@
 using System.Numerics;
 using SomeEngine.Animation;
+using SomeEngine.Core.ECS.Systems;
 using SomeEngine.Core.Math;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
@@ -24,17 +25,18 @@ public sealed partial class GameFrameTests
 
         Assert.Equal(new[]
         {
-            FrameStage.PlatformInput, FrameStage.InterfaceInput, FrameStage.GameInputAndSimulation,
+            FrameStage.PlatformInput, FrameStage.InterfaceInput, FrameStage.GameInputAndSimulation, FrameStage.GameTransforms,
             FrameStage.ViewRebuild, FrameStage.InterfaceUpdate, FrameStage.Animation,
             FrameStage.TextMeasurement, FrameStage.Layout, FrameStage.Flip, FrameStage.Extraction,
         }, stages.Select(stage => stage.Stage));
         Assert.Equal(new[] { typeof(HitTestSystem), typeof(FocusNavigationSystem) }, stages[1].SystemTypes);
-        Assert.Equal(new[] { typeof(ViewRebuildSystem) }, stages[3].SystemTypes);
-        Assert.Equal(typeof(TimelineSystem), stages[5].SystemTypes[0]);
-        Assert.Equal(typeof(TimelineEndSystem), stages[5].SystemTypes[^1]);
-        Assert.Equal(new[] { typeof(TextShapingSystem) }, stages[6].SystemTypes);
-        Assert.Equal(new[] { typeof(LayoutSystem) }, stages[7].SystemTypes);
-        Assert.Equal(new[] { typeof(FlipSystem) }, stages[8].SystemTypes);
+        Assert.Equal(new[] { typeof(TransformSystem) }, stages[3].SystemTypes);
+        Assert.Equal(new[] { typeof(ViewRebuildSystem) }, stages[4].SystemTypes);
+        Assert.Equal(typeof(TimelineSystem), stages[6].SystemTypes[0]);
+        Assert.Equal(typeof(TimelineEndSystem), stages[6].SystemTypes[^1]);
+        Assert.Equal(new[] { typeof(TextShapingSystem) }, stages[7].SystemTypes);
+        Assert.Equal(new[] { typeof(LayoutSystem) }, stages[8].SystemTypes);
+        Assert.Equal(new[] { typeof(FlipSystem) }, stages[9].SystemTypes);
     }
 
     [Fact]
@@ -56,8 +58,8 @@ public sealed partial class GameFrameTests
         frames.UpdateViews(0.5);
 
         Assert.Equal(new Rect(50, 0, 30, 40), world.Read<MeasuredRectangle>(result).Value);
-        Assert.Equal(new[] { typeof(ResizeElement) }, frames.Describe()[4].SystemTypes);
-        Assert.Equal(new[] { typeof(FlipSystem), typeof(ReadRectangle) }, frames.Describe()[8].SystemTypes);
+        Assert.Equal(new[] { typeof(ResizeElement) }, frames.Describe()[5].SystemTypes);
+        Assert.Equal(new[] { typeof(FlipSystem), typeof(ReadRectangle) }, frames.Describe()[9].SystemTypes);
     }
 
     [Theory]
