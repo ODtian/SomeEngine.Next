@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Runtime.CompilerServices;
 using SlangShaderSharp;
 using SomeEngine.Resources;
+using SomeEngine.Job;
 using SomeEngine.Serialization;
 using SomeEngine.Serialization.Containers;
 using SomeEngine.Serialization.IO;
@@ -17,16 +18,21 @@ public sealed partial class ShaderSourceBlock
     /// Acquires the selected source files, compiles them with Slang, and returns a resident shader.
     /// The returned shader no longer depends on this block or the source files.
     /// </summary>
-    public async ValueTask<Shader> CreateAsync(
+    public ValueTask<Shader> CreateAsync(
         IGlobalSession slang,
         SessionDesc sessionDescription,
         string name,
         ReadOnlyMemory<SpecializationArg> specializations = default,
         CancellationToken cancellationToken = default)
+        => CreateAsync(slang, sessionDescription, name, specializations, cancellationToken, JobSystem.Current);
+
+    internal async ValueTask<Shader> CreateAsync(IGlobalSession slang, SessionDesc sessionDescription,
+        string name, ReadOnlyMemory<SpecializationArg> specializations, CancellationToken cancellationToken,
+        Scheduler scheduler)
     {
         using ShaderSourceBlock copy = Duplicate();
         ShaderCompilation compiled = await copy.CreateCoreAsync(slang, sessionDescription, name, specializations,
-            generateCode: true, saveSources: false, cancellationToken).ConfigureAwait(false);
+            generateCode: true, saveSources: false, cancellationToken, scheduler: scheduler).ConfigureAwait(false);
         if (!specializations.IsEmpty || compiled.Specializations.Count == 0) return compiled.Shader;
 
         var variants = new List<(string EntryPoint, string[] Arguments, Shader Shader)>(compiled.Specializations.Count);
@@ -34,7 +40,7 @@ public sealed partial class ShaderSourceBlock
         {
             Shader variant = (await copy.CreateCoreAsync(slang, sessionDescription, name,
                 specialization.ToSlangArguments(), generateCode: true, saveSources: false,
-                cancellationToken, specialization.EntryPoint).ConfigureAwait(false)).Shader;
+                cancellationToken, specialization.EntryPoint, scheduler).ConfigureAwait(false)).Shader;
             variants.Add((specialization.EntryPoint, specialization.Arguments.ToArray(), variant));
         }
         return compiled.Shader.WithSpecializations(variants);
@@ -44,6 +50,11 @@ public sealed partial class ShaderSourceBlock
     public ValueTask<ShaderCompilation> CompileAsync(IGlobalSession slang, SessionDesc sessionDescription,
         string name, CancellationToken cancellationToken = default)
         => CompileAsync(slang, sessionDescription, name, default, cancellationToken);
+
+    internal ValueTask<ShaderCompilation> CompileAsync(IGlobalSession slang, SessionDesc sessionDescription,
+        string name, CancellationToken cancellationToken, Scheduler scheduler)
+        => CreateCoreAsync(slang, sessionDescription, name, default, generateCode: true,
+            saveSources: true, cancellationToken, scheduler: scheduler);
 
     public ValueTask<ShaderCompilation> CompileAsync(IGlobalSession slang, SessionDesc sessionDescription,
         string name, ReadOnlyMemory<SpecializationArg> specializations, CancellationToken cancellationToken = default)
@@ -101,25 +112,29 @@ public sealed partial class ShaderSourceBlock
 
     internal async ValueTask<Shader> CreateSelectedAsync(IReadOnlyList<ShaderInputSource> inputs,
         IGlobalSession slang, SessionDesc description, string name, ReadOnlyMemory<SpecializationArg> arguments,
-        bool generateCode, CancellationToken cancellationToken)
+        bool generateCode, CancellationToken cancellationToken, Scheduler? scheduler = null)
     {
+        scheduler ??= JobSystem.Current;
         using ShaderSourceBlock source = FromInputs(inputs);
         return (await source.CreateCoreAsync(slang, description, name, arguments, generateCode,
-            saveSources: false, cancellationToken).ConfigureAwait(false)).Shader;
+            saveSources: false, cancellationToken, scheduler: scheduler).ConfigureAwait(false)).Shader;
     }
 
     internal async ValueTask<ShaderCompilation> CompileSelectedAsync(IReadOnlyList<ShaderInputSource> inputs,
-        IGlobalSession slang, SessionDesc description, string name, CancellationToken cancellationToken)
+        IGlobalSession slang, SessionDesc description, string name, CancellationToken cancellationToken,
+        Scheduler? scheduler = null)
     {
+        scheduler ??= JobSystem.Current;
         using ShaderSourceBlock source = FromInputs(inputs);
         return await source.CreateCoreAsync(slang, description, name, default, generateCode: true,
-            saveSources: false, cancellationToken).ConfigureAwait(false);
+            saveSources: false, cancellationToken, scheduler: scheduler).ConfigureAwait(false);
     }
 
     internal ValueTask<ShaderCompilation> CompileSelectedEntryAsync(IGlobalSession slang, SessionDesc description,
-        string name, string entryPoint, ReadOnlyMemory<SpecializationArg> arguments, CancellationToken cancellationToken) =>
+        string name, string entryPoint, ReadOnlyMemory<SpecializationArg> arguments, CancellationToken cancellationToken,
+        Scheduler? scheduler = null) =>
         CreateCoreAsync(slang, description, name, arguments, generateCode: true, saveSources: false,
-            cancellationToken, entryPoint);
+            cancellationToken, entryPoint, scheduler);
 
     internal ShaderSourceBlock FromInputs(IReadOnlyList<ShaderInputSource> inputs)
     {
@@ -137,8 +152,10 @@ public sealed partial class ShaderSourceBlock
         bool generateCode,
         bool saveSources,
         CancellationToken cancellationToken,
-        string? entryPoint = null)
+        string? entryPoint = null,
+        Scheduler? scheduler = null)
     {
+        scheduler ??= JobSystem.Current;
         ArgumentNullException.ThrowIfNull(slang);
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         if (sessionDescription.Targets is not { Length: > 0 } targets)
@@ -270,7 +287,7 @@ public sealed partial class ShaderSourceBlock
                 entries,
                 linkedCode,
                 targets,
-                generateCode);
+                generateCode, generateLibraryCode: true, scheduler);
             return new(shader, serializedSources, sourceFiles.Finish())
             {
                 Specializations = generateCode && entryPoint is null ? copy.ReadSpecializations(shader) : [],
