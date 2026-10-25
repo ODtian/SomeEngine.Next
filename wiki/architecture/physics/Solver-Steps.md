@@ -77,6 +77,15 @@ return dependency;
 `XpbdConstraints` 和 `XpbdForces` 入口参与投影与作用量交接。原行提供已声明的其他数据和状态，
 具体集合持有查询及派生实体索引；实际 Body 状态由 `PhysicsBodies` 在有效查询范围中访问。
 
+[IPhysicsConstraintBodies](../../../src/SomeEngine.Physics/PhysicsConstraintBodies.cs) 独立描述
+实际受作用端、额外只读 Body 和其他引用实体。AVBD 约束与 XPBD 力适配复用该参与信息，
+投影可独立提供参与信息。motor 的受作用端沿反馈选择，额外动态参考端继续作为读取依赖。
+
+`PhysicsBodies` 也接受 `EntityQuery` 的 Body 读视图、Body 写视图及引用实体读视图；
+`GetRow`、`ReadPose` 等继续访问原组件，`TryReadReference<T>` 从已声明的实际引用实体取得原行。
+接触参与边的端点读取沿这一作用域进行。原 `QueryCursor` 构造继续服务完整查询范围。
+受限实体视图和实际存储范围的规则见 [Entity Query Jobs](../ECS/Entity-Query-Jobs.md)。
+
 ## 动态节点与转动参与
 
 `BodyMass.InverseInertia` 的上侧三阶张量全零时，动态 Body 使用三维平移局部方程。

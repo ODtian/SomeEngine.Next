@@ -15,6 +15,10 @@ public struct XpbdContactState : IComponent
 /// <summary>Projects the shared contact gap through its combined body Jacobians.</summary>
 public readonly struct XpbdContactProjection : IXpbdConstraint<ContactPoint>, IXpbdConstraintForces<ContactPoint>
 {
+    public static int GetReadEntityCount(in ContactPoint point, scoped QueryRow row, in PhysicsStepContext context) =>
+        row.ReadBuffer<ContactBodyLink>().Count;
+    public static Entity GetReadEntity(in ContactPoint point, scoped QueryRow row, int index, in PhysicsStepContext context) =>
+        row.ReadBuffer<ContactBodyLink>().AsSpan()[index].Participant.Entity;
     public static int GetBodyCount(in ContactPoint point, scoped QueryRow row, in PhysicsStepContext context) =>
         row.ReadBuffer<ContactBodyLink>().Count;
 
@@ -85,8 +89,8 @@ public readonly struct XpbdContactProjection : IXpbdConstraint<ContactPoint>, IX
         float weight = 0;
         for (int index = 0; index < links.Length; index++)
         {
-            if (!ContactBodyMath.IsFirstOccurrence(links, index, in context)) continue;
-            Entity body = ContactBodyMath.GetBody(in links[index], in context);
+            if (!ContactBodyMath.IsFirstOccurrence(links, index, bodies, in context)) continue;
+            Entity body = ContactBodyMath.GetBody(in links[index], bodies, in context);
             ContactBodyMath.GetJacobian(in point, links, body, bodies, in context, direction, out Vector3 linear, out Vector3 angular);
             weight += BodyConstraintMath.GetWeight(in bodies.ReadMass(body), in bodies.ReadPose(body), linear, angular);
         }
@@ -98,8 +102,8 @@ public readonly struct XpbdContactProjection : IXpbdConstraint<ContactPoint>, IX
     {
         for (int index = 0; index < links.Length; index++)
         {
-            if (!ContactBodyMath.IsFirstOccurrence(links, index, in context)) continue;
-            Entity body = ContactBodyMath.GetBody(in links[index], in context);
+            if (!ContactBodyMath.IsFirstOccurrence(links, index, bodies, in context)) continue;
+            Entity body = ContactBodyMath.GetBody(in links[index], bodies, in context);
             ContactBodyMath.GetJacobian(in point, links, body, bodies, in context, direction, out Vector3 linear, out Vector3 angular);
             BodyConstraintMath.ApplyCorrection(bodies, body, in bodies.ReadMass(body), linear, angular, change);
         }
