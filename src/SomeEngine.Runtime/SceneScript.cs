@@ -58,45 +58,7 @@ public sealed class SceneScript
 public sealed record SceneAction(int Frame, Action<SceneEdit> Execute);
 
 /// <summary>Packed, top-down RGBA8 pixels retained independently of the graphics device.</summary>
-public sealed record SceneImage(int Frame, int Width, int Height, ReadOnlyMemory<byte> Pixels)
-{
-    /// <summary>Saves the packed pixels as a top-down 32-bit bitmap.</summary>
-    public void SaveBmp(string path)
-    {
-        using var writer = new BinaryWriter(new FileStream(path, FileMode.CreateNew, FileAccess.Write));
-        int rowBytes = checked(Width * 4);
-        int imageBytes = checked(rowBytes * Height);
-        writer.Write((ushort)0x4D42);
-        writer.Write(checked(54 + imageBytes));
-        writer.Write(0);
-        writer.Write(54);
-        writer.Write(40);
-        writer.Write(Width);
-        writer.Write(-Height);
-        writer.Write((ushort)1);
-        writer.Write((ushort)32);
-        writer.Write(0);
-        writer.Write(imageBytes);
-        writer.Write(0);
-        writer.Write(0);
-        writer.Write(0);
-        writer.Write(0);
-        byte[] row = new byte[rowBytes];
-        ReadOnlySpan<byte> pixels = Pixels.Span;
-        for (int y = 0; y < Height; y++)
-        {
-            int offset = y * rowBytes;
-            for (int x = 0; x < rowBytes; x += 4)
-            {
-                row[x] = pixels[offset + x + 2];
-                row[x + 1] = pixels[offset + x + 1];
-                row[x + 2] = pixels[offset + x];
-                row[x + 3] = pixels[offset + x + 3];
-            }
-            writer.Write(row);
-        }
-    }
-}
+public sealed partial record SceneImage(int Frame, int Width, int Height, ReadOnlyMemory<byte> Pixels);
 
 /// <summary>Scene operations available during a frame action.</summary>
 public sealed class SceneEdit
