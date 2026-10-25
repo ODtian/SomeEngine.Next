@@ -84,8 +84,7 @@ public sealed class NavigationStreaming(NavigationScene scene, Scheduler? schedu
         completed.RemoveAll(tile => !keep.Contains(tile.Id));
         foreach (NavigationSceneTileId tile in removed) _lastUsed.Remove(tile);
         if (completed.Count == 0 && removed.Length == 0) return;
-        Applied = _scheduler.Schedule(new ScheduleApplyTiles(scene, completed.ToArray(), removed, _scheduler),
-            JobResourceAccess.Write(_scheduler.GetResourceToken(scene)));
+        Applied = _scheduler.Schedule(new ScheduleApplyTiles(scene, completed.ToArray(), removed, _scheduler));
     }
 
     private readonly struct CollectRoutes(NavigationInterestData[] interests, List<NavigationSceneTileId>[] output) : IJobParallelFor
@@ -144,51 +143,106 @@ public sealed class NavigationStreaming(NavigationScene scene, Scheduler? schedu
         }
     }
 
+    private sealed class TileConversions(NavigationScene scene, NavigationSceneTile[] loaded, NavigationSceneTileId[] removed)
+    {
+        internal NavigationScene Scene { get; } = scene;
+        internal NavigationSceneTile[] Loaded { get; } = loaded;
+        internal NavigationSceneTileId[] Removed { get; } = removed;
+        internal NavigationSceneTile?[] Converted { get; } = new NavigationSceneTile?[loaded.Length];
+        internal NavigationSceneContent Content = null!;
+        internal bool ContentChanged;
+    }
+
     private readonly struct ScheduleApplyTiles(NavigationScene scene, NavigationSceneTile[] loaded,
         NavigationSceneTileId[] removed, Scheduler scheduler) : IJob
     {
         public void Execute()
         {
-            NavigationSceneContent current = scene.Content;
+            var data = new TileConversions(scene, loaded, removed);
+            JobResourceToken sceneResource = scheduler.GetResourceToken(scene);
+            JobHandle converted = scheduler.Schedule(new ReadTileInputs(data, scheduler), JobResourceAccess.Read(sceneResource));
+            JobHandle installed = scheduler.Schedule(new InstallTiles(data, scheduler), JobResourceAccess.Write(sceneResource), converted);
+            _ = scheduler.Schedule(new RetryTiles(data, scheduler), installed);
+        }
+    }
+
+    private readonly struct ReadTileInputs(TileConversions data, Scheduler scheduler) : IJob
+    {
+        public void Execute()
+        {
+            NavigationSceneContent current = data.Content = data.Scene.Content;
             var accesses = new List<JobResourceAccess>
             {
-                JobResourceAccess.Write(scheduler.GetResourceToken(scene)),
+                NavigationJobAccess.Read(scheduler, current.Regions),
+            };
+            foreach (NavigationSceneRegion region in current.Regions.Span)
+                accesses.Add(NavigationJobAccess.Read(scheduler, region.Graph.Tiles));
+            foreach (NavigationSceneTile tile in data.Loaded) tile.Mesh.AddReadAccesses(scheduler, accesses);
+            _ = scheduler.ScheduleParallel(new ConvertTiles(data), data.Loaded.Length,
+                JobScheduleOptions.AutomaticBatchSize, accesses.ToArray());
+        }
+    }
+
+    private readonly struct ConvertTiles(TileConversions data) : IJobParallelFor
+    {
+        public void Execute(int index)
+        {
+            NavigationSceneTile tile = data.Loaded[index];
+            NavigationSceneRegion region = data.Content.GetRegion(tile.Region);
+            foreach (NavigationRegionTile description in region.Graph.Tiles.Span)
+                if (description.Tile == tile.Tile && description.ContentVersion == tile.Mesh.ContentVersion)
+                {
+                    data.Converted[index] = tile with { Mesh = tile.Mesh.Transform(region.Transform) };
+                    return;
+                }
+        }
+    }
+
+    private readonly struct InstallTiles(TileConversions data, Scheduler scheduler) : IJob
+    {
+        public void Execute()
+        {
+            NavigationSceneContent current = data.Content;
+            if (!ReferenceEquals(data.Scene.Content, current))
+            {
+                data.ContentChanged = true;
+                return;
+            }
+            var accesses = new List<JobResourceAccess>
+            {
                 NavigationJobAccess.Read(scheduler, current.Regions), NavigationJobAccess.Read(scheduler, current.Connections),
                 NavigationJobAccess.Read(scheduler, current.Tiles),
             };
             foreach (NavigationSceneRegion region in current.Regions.Span)
                 accesses.Add(NavigationJobAccess.Read(scheduler, region.Graph.Tiles));
-            foreach (NavigationSceneTile tile in loaded) tile.Mesh.AddReadAccesses(scheduler, accesses);
-            scheduler.Schedule(new ApplyTiles(scene, current, loaded, removed, scheduler), accesses.ToArray());
+            _ = scheduler.Schedule(new ApplyConvertedTiles(data), accesses.ToArray());
         }
     }
 
-    private readonly struct ApplyTiles(NavigationScene scene, NavigationSceneContent current,
-        NavigationSceneTile[] loaded, NavigationSceneTileId[] removed, Scheduler scheduler) : IJob
+    private readonly struct ApplyConvertedTiles(TileConversions data) : IJob
     {
         public void Execute()
         {
-            if (!ReferenceEquals(scene.Content, current))
-            {
-                scheduler.Schedule(new ScheduleApplyTiles(scene, loaded, removed, scheduler),
-                    JobResourceAccess.Write(scheduler.GetResourceToken(scene)));
-                return;
-            }
+            NavigationSceneContent current = data.Content;
             var tiles = current.Tiles.ToArray().ToDictionary(tile => tile.Id);
             bool changed = false;
-            foreach (NavigationSceneTileId tile in removed) changed |= tiles.Remove(tile);
-            foreach (NavigationSceneTile tile in loaded)
+            foreach (NavigationSceneTileId tile in data.Removed) changed |= tiles.Remove(tile);
+            foreach (NavigationSceneTile? tile in data.Converted)
             {
-                NavigationSceneRegion region = current.GetRegion(tile.Region);
-                foreach (NavigationRegionTile description in region.Graph.Tiles.Span)
-                    if (description.Tile == tile.Tile && description.ContentVersion == tile.Mesh.ContentVersion)
-                    {
-                        tiles[tile.Id] = tile with { Mesh = tile.Mesh.Transform(region.Transform) };
-                        changed = true;
-                        break;
-                    }
+                if (tile is null) continue;
+                tiles[tile.Id] = tile;
+                changed = true;
             }
-            if (changed) scene.ApplyCompleted(new(current.Regions, current.Connections, tiles.Values.ToArray()), residenceOnly: true);
+            if (changed) data.Scene.ApplyCompleted(new(current.Regions, current.Connections, tiles.Values.ToArray()), residenceOnly: true);
+        }
+    }
+
+    private readonly struct RetryTiles(TileConversions data, Scheduler scheduler) : IJob
+    {
+        public void Execute()
+        {
+            if (data.ContentChanged)
+                _ = scheduler.Schedule(new ScheduleApplyTiles(data.Scene, data.Loaded, data.Removed, scheduler));
         }
     }
 }
