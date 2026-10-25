@@ -14,10 +14,13 @@ public sealed partial class Scheduler
         if (length == 0)
             return;
         JobPayloadLane lane = BeginParallelSchedule<T>(options, batchSize: 1);
+        options = ResolveCategoryOptions(options);
         JobHandle state = GetCurrentScope();
         _workQueue.EnsureItemCapacity(length);
         int tokenCount = CalculateParallelTokenCount(length);
-        WorkStream<ScheduledParallelToken<T>> stream = GetWorkStream<ScheduledParallelToken<T>>();
+        if (options.Category is { } category)
+            tokenCount = Math.Min(tokenCount, category.Config.MaxExecuting);
+        WorkStream<ScheduledParallelToken<T>> stream = GetWorkStream<ScheduledParallelToken<T>>(options.Category);
         ParallelJobGroup<T> group = ParallelJobGroup<T>.Rent(job, length, 1, length, measureCost: false);
         int[] workIndices = ArrayPool<int>.Shared.Rent(tokenCount);
         WorkBatch work = default;

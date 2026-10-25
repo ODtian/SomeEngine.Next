@@ -8,6 +8,9 @@ namespace SomeEngine.Job;
 internal interface IWorkQueue : IDisposable
 {
     void EnqueueSynchronous(QueuedWork stream, int participants, JobScheduleOptions options);
+    void RegisterCategory(JobCategory category);
+
+    void CategoryExecutionFinished();
 
     void EnsureItemCapacity(int workItemCount);
 
@@ -45,7 +48,7 @@ internal interface IWorkQueue : IDisposable
     void Pulse();
 }
 
-internal sealed class WorkQueue : IWorkQueue
+internal sealed partial class WorkQueue : IWorkQueue
 {
     private const int NoWorkerThread = -1;
     private const int LocalDequeCapacity = 4_096;
@@ -155,7 +158,7 @@ internal sealed class WorkQueue : IWorkQueue
             int workerIndex = CurrentWorkerIndex;
             bool useLocalQueue = workerIndex != NoWorkerThread && workerIndex < _workers.Length;
             int priorityIndex = work.PriorityIndex;
-            int drainerCount = work.MakeReady(MaxStreamDrainers, priorityIndex);
+            int drainerCount = work.MakeReady(StreamDrainerLimit(work.Stream), priorityIndex);
             PublishDrainers(work.Stream, drainerCount, priorityIndex, workerIndex);
             _counters.Queued(work.Count, useLocalQueue);
             _counters.QueueHighWater(Volatile.Read(ref _queuedWorkItemCount));
@@ -178,7 +181,7 @@ internal sealed class WorkQueue : IWorkQueue
             int workerIndex = CurrentWorkerIndex;
             bool useLocalQueue = workerIndex != NoWorkerThread && workerIndex < _workers.Length;
             int priorityIndex = JobPriorityOrder.PriorityIndex(priority);
-            int drainerCount = stream.PrepareReady(item, MaxStreamDrainers, priorityIndex);
+            int drainerCount = stream.PrepareReady(item, StreamDrainerLimit(stream), priorityIndex);
             PublishDrainers(stream, drainerCount, priorityIndex, workerIndex);
             _counters.Queued(1, useLocalQueue);
             _counters.QueueHighWater(Volatile.Read(ref _queuedWorkItemCount));
@@ -208,7 +211,7 @@ internal sealed class WorkQueue : IWorkQueue
             int workerIndex = CurrentWorkerIndex;
             bool useLocalQueue = workerIndex != NoWorkerThread && workerIndex < _workers.Length;
             int priorityIndex = JobPriorityOrder.PriorityIndex(priority);
-            int drainerCount = stream.PrepareManyReady(count, ref source, MaxStreamDrainers, priorityIndex);
+            int drainerCount = stream.PrepareManyReady(count, ref source, StreamDrainerLimit(stream), priorityIndex);
             PublishDrainers(stream, drainerCount, priorityIndex, workerIndex);
             _counters.Queued(logicalWorkItemCount, useLocalQueue);
             _counters.QueueHighWater(Volatile.Read(ref _queuedWorkItemCount));
@@ -264,20 +267,24 @@ internal sealed class WorkQueue : IWorkQueue
         }
         int claimed = 0;
         bool hasMoreWork = false;
+        JobCategory? category = stream.Category;
+        JobCategory? previousCategory = _scheduler.SetCurrentCategory(category);
         try
         {
             claimed = stream.DrainAndFinish(
                 _scheduler,
                 maxItems: DrainBatchItemLimit,
                 priorityIndex,
-                maxDrainers: MaxStreamDrainers,
+                maxDrainers: StreamDrainerLimit(stream),
                 out _,
                 out hasMoreWork);
         }
         finally
         {
+            _scheduler.SetCurrentCategory(previousCategory);
             FinishDrain(stream, claimed, hasMoreWork, priorityIndex);
             stream.DrainExited();
+            category?.CompleteExecution();
         }
 
         if (stole)
@@ -488,6 +495,14 @@ internal sealed class WorkQueue : IWorkQueue
             _counters.Enabled && ((++s_latencySampleCounter & 15) == 1)
                 ? Stopwatch.GetTimestamp()
                 : 0);
+        if (stream.Category is { } category)
+        {
+            ConcurrentQueue<ReadyTicket> queue = _categoryQueues[category].Priorities[priorityIndex];
+            for (int i = 0; i < drainerCount; i++)
+                queue.Enqueue(ticket);
+            WakeWorkers(drainerCount);
+            return;
+        }
         for (int i = 0; i < drainerCount; i++)
         {
             if ((!useLocalQueue || !_localQueues[workerIndex, priorityIndex].TryPush(ticket)) &&
@@ -506,7 +521,7 @@ internal sealed class WorkQueue : IWorkQueue
         int spinCount = workerThread ? Math.Max(_baseSpinCount, s_spinBudget) : 0;
         for (int i = 0; i < spinCount; i++)
         {
-            if (Volatile.Read(ref _readyTicketCount) > 0)
+            if (HasExecutableTickets())
                 return true;
             Thread.SpinWait(4);
         }
@@ -520,7 +535,7 @@ internal sealed class WorkQueue : IWorkQueue
         object waitLock = workerThread ? _workerWaitLock : _stateLock;
         lock (waitLock)
         {
-            if (Volatile.Read(ref _readyTicketCount) > 0 ||
+            if (HasExecutableTickets() ||
                 Volatile.Read(ref _latencyClaimedSequence) != Volatile.Read(ref _latencyRequestedSequence))
                 return true;
             if (IsDisposed) return false;
@@ -529,7 +544,7 @@ internal sealed class WorkQueue : IWorkQueue
             try
             {
                 if (Volatile.Read(ref _wakeEpoch) != observedEpoch ||
-                    Volatile.Read(ref _readyTicketCount) > 0 ||
+                    HasExecutableTickets() ||
                     Volatile.Read(ref _latencyClaimedSequence) != Volatile.Read(ref _latencyRequestedSequence))
                     return true;
                 if (workerThread) _counters.WorkerParked();
@@ -566,6 +581,18 @@ internal sealed class WorkQueue : IWorkQueue
     private bool IsDisposed => Volatile.Read(ref _disposeState) != 0;
 
     private bool TryDequeueForWorker(
+        int workerIndex,
+        out QueuedWork stream,
+        out long publishedAt,
+        out bool stole,
+        out int priorityIndex)
+    {
+        return Volatile.Read(ref _categoryCount) == 0
+            ? TryDequeueDefault(workerIndex, out stream, out publishedAt, out stole, out priorityIndex)
+            : TryDequeueByCategory(workerIndex, out stream, out publishedAt, out stole, out priorityIndex);
+    }
+
+    private bool TryDequeueDefault(
         int workerIndex,
         out QueuedWork stream,
         out long publishedAt,
@@ -729,6 +756,9 @@ internal sealed class WorkQueue : IWorkQueue
             : NoWorkerThread;
 
     private int MaxStreamDrainers => Math.Max(1, _workers.Length + 1);
+
+    private int StreamDrainerLimit(QueuedWork stream) => stream.Category is { } category
+        ? Math.Min(MaxStreamDrainers, category.Config.MaxExecuting) : MaxStreamDrainers;
 
     private readonly struct ReadyTicket
     {

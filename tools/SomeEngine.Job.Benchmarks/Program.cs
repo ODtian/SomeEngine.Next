@@ -15,6 +15,7 @@ bool automatic = args.Contains("--auto", StringComparer.OrdinalIgnoreCase);
 bool counters = args.Contains("--counters", StringComparer.OrdinalIgnoreCase);
 bool synchronous = args.Contains("--synchronous", StringComparer.OrdinalIgnoreCase);
 bool dependencies = args.Contains("--dependencies", StringComparer.OrdinalIgnoreCase);
+bool categories = args.Contains("--categories", StringComparer.OrdinalIgnoreCase);
 
 JobSystem.Initialize(new JobRuntimeConfig
 {
@@ -39,6 +40,13 @@ try
             RunDependencies(JobSystem.Default, count, copies: 1, warmups, samples);
             RunDependencies(JobSystem.Default, count, copies: 2, warmups, samples);
         }
+        return;
+    }
+
+    if (categories)
+    {
+        CategoryBenchmarks.Run(JobSystem.Default, workerCount, warmups, samples,
+            ReadIntArgument(args, "--calls", 16));
         return;
     }
 
