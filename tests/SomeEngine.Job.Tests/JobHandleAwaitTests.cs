@@ -75,7 +75,7 @@ public sealed class JobHandleAwaitTests
         finally
         {
             release.Set();
-            handle.Complete();
+            Assert.Same(error, Assert.Throws<ApplicationException>(handle.Complete));
         }
     }
 
@@ -92,6 +92,46 @@ public sealed class JobHandleAwaitTests
         int thread = 0;
         awaiter.OnCompleted(() => thread = Environment.CurrentManagedThreadId);
         Assert.Equal(Environment.CurrentManagedThreadId, thread);
+    }
+
+    [Fact]
+    public async Task RegisteredWaitersKeepTheirFailureAfterCompletionRecordsAreReused()
+    {
+        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0, MaxCompletionStates = 1 });
+        using var release = new ManualResetEventSlim(true);
+        var failure = new ApplicationException();
+        JobHandle handle = scheduler.Schedule(new ThrowErrorJob(failure, release));
+        JobHandleAwaiter first = handle.GetAwaiter();
+        JobHandleAwaiter second = handle.GetAwaiter();
+        int notifications = 0;
+        first.OnCompleted(() => notifications++);
+        second.OnCompleted(() => notifications++);
+        ValueTask shared = handle.WaitAsync();
+
+        Assert.Same(failure, Assert.Throws<ApplicationException>(handle.Complete));
+        scheduler.Schedule(new WriteNumberJob(new NumberData(), 42)).Complete();
+
+        Assert.Equal(2, notifications);
+        Assert.Same(failure, Assert.Throws<ApplicationException>(first.GetResult));
+        Assert.Same(failure, Assert.Throws<ApplicationException>(second.GetResult));
+        Assert.Same(failure, await Assert.ThrowsAsync<ApplicationException>(async () => await shared));
+        Assert.Same(failure, await Assert.ThrowsAsync<ApplicationException>(async () => await shared));
+    }
+
+    [Fact]
+    public async Task CompletedFailureCanBeSharedAsAnAsynchronousResult()
+    {
+        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0, MaxCompletionStates = 1 });
+        using var release = new ManualResetEventSlim(true);
+        var failure = new ApplicationException();
+        JobHandle handle = scheduler.Schedule(new ThrowErrorJob(failure, release));
+        Assert.Same(failure, Assert.Throws<ApplicationException>(handle.Complete));
+
+        ValueTask shared = handle.WaitAsync();
+        scheduler.Schedule(new WriteNumberJob(new NumberData(), 42)).Complete();
+
+        Assert.Same(failure, await Assert.ThrowsAsync<ApplicationException>(async () => await shared));
+        Assert.Same(failure, await Assert.ThrowsAsync<ApplicationException>(async () => await shared));
     }
 
     private static async Task<int> ReadAfterJob(JobHandle handle, NumberData number)
