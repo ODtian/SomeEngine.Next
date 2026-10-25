@@ -2,6 +2,7 @@ using System.Numerics;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Systems;
+using SomeEngine.Job;
 
 namespace SomeEngine.Animation.Pose.Tests;
 
@@ -25,7 +26,8 @@ public sealed class PhysicsPoseBehaviorTests
             new(0, Matrix4x4.CreateRotationZ(MathF.PI / 2) * Matrix4x4.CreateTranslation(1, 0, 0)),
         ]);
         var clip = new AnimationClip(skeleton, 4, ClipSampler.Create<Skeleton, MovingSampler>(skeleton));
-        using var world = new World();
+        using var scheduler = new Scheduler(new() { WorkerCount = 2 });
+        using var world = WorldJobs.CreateWorld(scheduler: scheduler);
         var storage = new PoseStorage();
         using SkeletonInstance instance = storage.CreateInstance(skeleton);
         Entity target = PoseAnimation.CreateTarget(world, instance, resultCount: 3, output: new(2));

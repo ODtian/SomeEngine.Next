@@ -2,6 +2,7 @@ using System.Numerics;
 using SomeEngine.Assets.Schema;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Systems;
+using SomeEngine.Job;
 
 namespace SomeEngine.Animation.Pose.Tests;
 
@@ -28,7 +29,8 @@ public sealed class PoseLayerBehaviorTests
         }
         finally { File.Delete(path); }
 
-        using var world = new World();
+        using var scheduler = new Scheduler(new() { WorkerCount = 2 });
+        using var world = WorldJobs.CreateWorld(scheduler: scheduler);
         var skeleton = new Skeleton([-1, 0, 1],
             [Transform(Vector3.Zero, Quaternion.Identity, 1),
              Transform(Vector3.UnitY, new(0, 0, 0.70710677f, 0.70710677f), 2),
