@@ -209,7 +209,10 @@ public sealed class TypedPropertyAnimationTests
         }
 
         Assert.Equal(count, world.EntityCount);
-        Assert.Equal(0, changes.Read().Count);
+        Assert.Equal(target, Assert.Single(changes.Read().Entities));
+        Assert.True(world.Has<Timeline>(target));
+        Assert.True(world.HasBuffer<MotionInstance<float, FloatOps, TweenParameters, TweenState, Tween<float, FloatOps, Linear>>>(target));
+        Assert.True(world.HasBuffer<MotionInstance<float, FloatOps, SpringParameters, SpringState<float>, Spring<float, FloatOps>>>(target));
     }
 
     [Fact]
