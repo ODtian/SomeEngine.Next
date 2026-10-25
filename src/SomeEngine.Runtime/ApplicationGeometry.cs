@@ -114,6 +114,8 @@ public sealed class ApplicationGeometryContext
         _gameSystems.Update(ref context);
     }
 
+    internal ValueTask CompleteGameAsync() => _gameSystems.CompleteAsync();
+
     internal void Observe(ref RenderGraphFrame graph)
     {
         foreach (IRenderGraphFrameExecutionObserver observer in _observers) graph.ObserveExecution(observer);

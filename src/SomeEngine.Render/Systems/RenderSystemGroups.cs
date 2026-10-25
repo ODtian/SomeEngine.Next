@@ -267,7 +267,15 @@ public sealed class RenderPrepareSystems : IDisposable
         }
     }
 
-    public void Update(RenderPrepareScope scope)
+    public void Update(RenderPrepareScope scope) => Update(scope, WaitForWork);
+
+    private static void WaitForWork(ValueTask work)
+    {
+        if (work.IsCompletedSuccessfully) work.GetAwaiter().GetResult();
+        else work.AsTask().GetAwaiter().GetResult();
+    }
+
+    internal void Update(RenderPrepareScope scope, Action<ValueTask> wait)
     {
         ArgumentNullException.ThrowIfNull(scope);
         ObjectDisposedException.ThrowIf(_shutdown, this);
@@ -276,6 +284,7 @@ public sealed class RenderPrepareSystems : IDisposable
         {
             _extraction.ApplyPendingCandidate();
             _systems.Update();
+            wait(_systems.CompleteAsync());
         }
         finally
         {
@@ -397,7 +406,15 @@ public sealed class RenderFrameSystems : IDisposable
     /// <summary>Creates enabled frame systems before retained graph installation.</summary>
     public void Initialize() => _systems.Initialize();
 
-    public void Update(RenderFrame frame, RenderGraphFrame graph)
+    public void Update(RenderFrame frame, RenderGraphFrame graph) => Update(frame, graph, WaitForWork);
+
+    private static void WaitForWork(ValueTask work)
+    {
+        if (work.IsCompletedSuccessfully) work.GetAwaiter().GetResult();
+        else work.AsTask().GetAwaiter().GetResult();
+    }
+
+    internal void Update(RenderFrame frame, RenderGraphFrame graph, Action<ValueTask> wait)
     {
         ArgumentNullException.ThrowIfNull(frame);
         _driver.Enter(frame);
@@ -405,6 +422,7 @@ public sealed class RenderFrameSystems : IDisposable
         {
             RenderFrameSystemContext context = _driver.CreateRecordingContext(graph);
             _systems.Update(ref context);
+            wait(_systems.CompleteAsync());
         }
         finally
         {
