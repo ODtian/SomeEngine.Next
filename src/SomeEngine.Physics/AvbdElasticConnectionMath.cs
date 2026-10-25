@@ -62,9 +62,7 @@ public readonly struct AvbdElasticConnectionMath : IAvbdConstraint<ElasticConnec
         for (int axis = 0; axis < 3; axis++)
         {
             Vector3 direction = axis == 0 ? Vector3.UnitX : axis == 1 ? Vector3.UnitY : Vector3.UnitZ;
-            Vector3 right = direction - Vector3.Cross(angularError, direction) * 0.5f
-                + Vector3.Cross(angularError, Vector3.Cross(angularError, direction)) * (1f / 12);
-            Vector3 jacobian = Vector3.Transform(Vector3.Transform(right, alignment), first.Rotation) * -sign;
+            Vector3 jacobian = BodyRotation.GetConstraintJacobian(first.Rotation, alignment, angularError, direction) * -sign;
             equation.AddRow(Vector3.Zero, jacobian, angularForce[axis], angular.EffectiveStiffness);
         }
     }
@@ -89,5 +87,5 @@ public readonly struct AvbdElasticConnectionMath : IAvbdConstraint<ElasticConnec
         - second.Position - Vector3.Transform(constraint.SecondAnchor, second.Rotation);
 
     private static Vector3 RotationError(Quaternion first, Quaternion second, Quaternion rest) =>
-        AvbdRotation.GetRotationVector(Quaternion.Conjugate(first) * second * Quaternion.Conjugate(rest));
+        BodyRotation.GetRotationVector(Quaternion.Conjugate(first) * second * Quaternion.Conjugate(rest));
 }
