@@ -522,6 +522,7 @@ internal interface IValueCodec<T>
     where T : struct
 {
     ComponentCodecKind Kind { get; }
+    bool SupportsParallelWrite => false;
     void Write(ref DataWriter writer, in T value);
     T Read(ref DataReader reader);
 }
@@ -558,6 +559,7 @@ internal sealed class RawValueCodec<T> : IValueCodec<T>
     public static readonly RawValueCodec<T> Instance = new();
 
     public ComponentCodecKind Kind => ComponentCodecKind.Raw;
+    public bool SupportsParallelWrite => true;
 
     public void Write(ref DataWriter writer, in T value)
     {
@@ -580,6 +582,7 @@ internal sealed class RawCanonicalValueCodec<T> : IValueCodec<T>
     public static readonly RawCanonicalValueCodec<T> Instance = new();
 
     public ComponentCodecKind Kind => ComponentCodecKind.RawCanonical;
+    public bool SupportsParallelWrite => true;
 
     public void Write(ref DataWriter writer, in T value)
     {
@@ -604,6 +607,7 @@ internal sealed class CustomValueCodec<T, TCodec> : IValueCodec<T>
     internal CustomValueCodec(TCodec codec = default) => _codec = codec;
 
     public ComponentCodecKind Kind => ComponentCodecKind.Custom;
+    public bool SupportsParallelWrite => _codec.SupportsParallelWrite;
 
     public void Write(ref DataWriter writer, in T value)
     {
@@ -628,6 +632,7 @@ internal sealed class CanonicalValueCodec<T, TCodec> : IValueCodec<T>
     internal CanonicalValueCodec(TCodec codec = default) => _codec = codec;
 
     public ComponentCodecKind Kind => ComponentCodecKind.Canonical;
+    public bool SupportsParallelWrite => _codec.SupportsParallelWrite;
 
     public void Write(ref DataWriter writer, in T value)
     {
@@ -664,6 +669,7 @@ internal abstract class SerializationTypeRuntime
 
     public SerializationTypeEntry Entry { get; }
     public Type ValueType { get; }
+    public virtual bool SupportsParallelWrite => false;
 
     public abstract bool IsPresent(AdmittedWorldWrite admitted, Entity entity);
     internal virtual void CollectSparsePresence(
@@ -726,6 +732,7 @@ internal abstract class ValueSerializationRuntime<T> : SerializationTypeRuntime
     }
 
     protected void WriteValue(ref DataWriter writer, in T value) => Codec.Write(ref writer, in value);
+    public override bool SupportsParallelWrite => Codec.SupportsParallelWrite;
 
     internal void WriteStandalone(ref DataWriter writer, in T value) =>
         Codec.Write(ref writer, in value);
@@ -1026,6 +1033,8 @@ internal sealed class ComponentSerializationRuntime<T> : ValueSerializationRunti
 internal sealed class TagSerializationRuntime<T> : SerializationTypeRuntime
     where T : struct, ITag
 {
+    public override bool SupportsParallelWrite => true;
+
     public TagSerializationRuntime(
         SerializationTypeKey typeKey,
         SerializationSchemaSource schemaSource = SerializationSchemaSource.Explicit)
