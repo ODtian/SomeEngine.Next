@@ -3,6 +3,7 @@ using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
+using SomeEngine.Job;
 
 namespace SomeEngine.Animation;
 
@@ -19,11 +20,13 @@ public struct TypedTrackSystem<T, TOps, TParameters, TState, TEvaluator>(TrackFi
     private QueryHandle _finishedTracks;
     private FieldWrite<T>[] _writes = null!;
     private GraphCapture<T>[] _captures = null!;
+    private MotionRanges _ranges = null!;
 
     public void OnCreate(ref ImmediateSystemContext context)
     {
         _writes = ArrayPool<FieldWrite<T>>.Shared.Rent(64);
         _captures = ArrayPool<GraphCapture<T>>.Shared.Rent(64);
+        _ranges = new();
         _tracks = CreateQuery(context.World, enabled: true);
         _finishedTracks = CreateQuery(context.World, enabled: false);
     }
@@ -46,7 +49,7 @@ public struct TypedTrackSystem<T, TOps, TParameters, TState, TEvaluator>(TrackFi
     {
         if (!context.World.HasQueryMembers(_tracks) && !context.World.HasQueryMembers(_finishedTracks)) return;
         var evaluation = (World: context.World, Weights: _fields == TrackFields.LayerWeights, Writes: _writes, Count: 0,
-            Captures: _captures, CaptureCount: 0, CaptureOnly: false, Enabled: true);
+            Captures: _captures, CaptureCount: 0, CaptureOnly: false, Enabled: true, Ranges: _ranges);
         context.World.ExecuteQuery(_tracks, context.LastSystemVersion, ref evaluation, &Evaluate);
         evaluation.Enabled = false;
         context.World.ExecuteQuery(_finishedTracks, context.LastSystemVersion, ref evaluation, &Evaluate);
@@ -71,12 +74,14 @@ public struct TypedTrackSystem<T, TOps, TParameters, TState, TEvaluator>(TrackFi
     }
 
     private static void Evaluate(QueryCursor rows, ref (World World, bool Weights, FieldWrite<T>[] Writes, int Count,
-        GraphCapture<T>[] Captures, int CaptureCount, bool CaptureOnly, bool Enabled) evaluation)
+        GraphCapture<T>[] Captures, int CaptureCount, bool CaptureOnly, bool Enabled, MotionRanges Ranges) evaluation)
     {
         World world = evaluation.World;
         bool enabled = evaluation.Enabled;
         int type = MotionStorage<T, TOps, TParameters, TState, TEvaluator>.Type;
         int writeCount = evaluation.Count;
+        MotionRanges ranges = evaluation.Ranges;
+        ranges.Count = 0;
         foreach (QueryChunkView chunk in rows.Chunks)
         {
             bool hasStages = chunk.HasBuffer<TimelineStage>();
@@ -238,37 +243,128 @@ public struct TypedTrackSystem<T, TOps, TParameters, TState, TEvaluator>(TrackFi
                 }
                 if (!evaluate)
                     continue;
-                var batch = new MotionBatch<T, TParameters, TState>(data, parameters);
-                TEvaluator.EvaluateBatch<TEvaluator>(ref batch);
-                for (int index = firstSelected; index < writableTracks.Length; index++)
+                MotionRange range = ranges.Add(row.Entity, data.Length);
+                data.CopyTo(range.Data);
+                range.Parameters = row.Has<GraphMotionParameters<T, TOps, TParameters, TState, TEvaluator>>()
+                    ? row.Read<GraphMotionParameters<T, TOps, TParameters, TState, TEvaluator>>().Values : null;
+            }
+        }
+        if (ranges.Count == 0)
+        {
+            evaluation.Count = writeCount;
+            return;
+        }
+        try
+        {
+            var work = new EvaluateRanges(ranges);
+            if (WorldJobs.TryGetScheduler(world, out Scheduler? scheduler))
+                scheduler.ExecuteParallel(work, ranges.Count);
+            else
+                for (int index = 0; index < ranges.Count; index++)
+                    work.Execute(index);
+            int rangeIndex = 0;
+            foreach (QueryChunkView chunk in rows.Chunks)
+            {
+                bool hasStages = chunk.HasBuffer<TimelineStage>();
+                bool hasMotions = chunk.HasBuffer<GraphMotion>();
+                bool inlineDirect = chunk.HasBuffer<PropertySource<T>>() && !chunk.Has<AnimationLayers>() &&
+                    !chunk.HasBuffer<Contribution<T>>();
+                foreach (QueryRow row in chunk.Rows)
                 {
-                    ref Track<T> track = ref writableTracks[index];
-                    if (!Selected(in track, type, evaluation.Weights) || !data[track.MotionIndex].Active)
+                    if (rangeIndex == ranges.Count || ranges.Items[rangeIndex].Animation != row.Entity)
                         continue;
-                    ref MotionData<T, TParameters, TState> motion = ref data[track.MotionIndex];
-                    track.Current = motion.Sample.Value;
-                    track.Sampled = true;
-                    track.Finished = motion.Sample.Finished;
-                    float scale = track.TimeScale == 0 ? 1 : track.TimeScale;
-                    track.SampleTime = motion.Time.Time / scale + track.Start + track.TimeOffset;
-                    motion.Active = false;
-                    if (!track.FromGraph && !(track.Stage < lastStage && TrackSystem<T, TOps>.HasLaterTrack(tracks, index, row.Entity,
-                        track.Target == Entity.Null ? row.Entity : track.Target, in track, lastStage, timeline.Time)))
+                    MotionRange range = ranges.Items[rangeIndex++];
+                    DynamicBuffer<MotionInstance<T, TOps, TParameters, TState, TEvaluator>> instances =
+                        row.Buffer<MotionInstance<T, TOps, TParameters, TState, TEvaluator>>();
+                    Span<MotionData<T, TParameters, TState>> data = MotionStorage<T, TOps, TParameters, TState, TEvaluator>.Data(instances);
+                    range.Data.AsSpan(0, range.Count).CopyTo(data);
+                    DynamicBuffer<Track<T>> tracks = row.Buffer<Track<T>>();
+                    Span<Track<T>> writableTracks = tracks.AsSpan();
+                    DynamicBuffer<PropertySource<T>> sources = inlineDirect ? row.Buffer<PropertySource<T>>() : default;
+                    ref Timeline timeline = ref row.ReadWrite<Timeline>();
+                    ReadOnlySpan<TimelineStage> stages = hasStages ? row.ReadBuffer<TimelineStage>().AsSpan() : default;
+                    DynamicBuffer<GraphMotion> motions = hasMotions ? row.Buffer<GraphMotion>() : default;
+                    int lastStage = GraphTimes.LastStage(stages, timeline.Stage, timeline.Time, timeline.Paused);
+                    for (int index = 0; index < writableTracks.Length; index++)
                     {
-                        Submit(world, row.Entity, index, in track, sources, inlineDirect, ref evaluation.Writes, ref writeCount);
-                    }
-                    if (!track.Finished)
-                    {
-                        if (track.GraphMotion != 0)
-                            motions[track.GraphMotion - 1].Running = true;
-                        else if (track.Stage == lastStage &&
-                            (track.Stage >= stages.Length || stages[track.Stage].End != StageEnd.Duration || timeline.Time < stages[track.Stage].Duration))
-                            timeline.Submit(true);
+                        ref Track<T> track = ref writableTracks[index];
+                        if (!Selected(in track, type, evaluation.Weights) || !data[track.MotionIndex].Active)
+                            continue;
+                        ref MotionData<T, TParameters, TState> motion = ref data[track.MotionIndex];
+                        track.Current = motion.Sample.Value;
+                        track.Sampled = true;
+                        track.Finished = motion.Sample.Finished;
+                        float scale = track.TimeScale == 0 ? 1 : track.TimeScale;
+                        track.SampleTime = motion.Time.Time / scale + track.Start + track.TimeOffset;
+                        motion.Active = false;
+                        if (!track.FromGraph && !(track.Stage < lastStage && TrackSystem<T, TOps>.HasLaterTrack(tracks, index, row.Entity,
+                            track.Target == Entity.Null ? row.Entity : track.Target, in track, lastStage, timeline.Time)))
+                        {
+                            Submit(world, row.Entity, index, in track, sources, inlineDirect, ref evaluation.Writes, ref writeCount);
+                        }
+                        if (!track.Finished)
+                        {
+                            if (track.GraphMotion != 0)
+                                motions[track.GraphMotion - 1].Running = true;
+                            else if (track.Stage == lastStage &&
+                                (track.Stage >= stages.Length || stages[track.Stage].End != StageEnd.Duration || timeline.Time < stages[track.Stage].Duration))
+                                timeline.Submit(true);
+                        }
                     }
                 }
             }
         }
+        finally
+        {
+            for (int index = 0; index < ranges.Count; index++)
+                ranges.Items[index].Clear();
+            ranges.Count = 0;
+        }
         evaluation.Count = writeCount;
+    }
+
+    private sealed class MotionRange
+    {
+        internal Entity Animation;
+        internal MotionData<T, TParameters, TState>[] Data = [];
+        internal TParameters[]? Parameters;
+        internal int Count;
+
+        internal void Clear()
+        {
+            Data.AsSpan(0, Count).Clear();
+            Parameters = null;
+            Animation = default;
+            Count = 0;
+        }
+    }
+
+    private sealed class MotionRanges
+    {
+        internal readonly List<MotionRange> Items = [];
+        internal int Count;
+
+        internal MotionRange Add(Entity animation, int count)
+        {
+            if (Count == Items.Count)
+                Items.Add(new());
+            MotionRange range = Items[Count++];
+            if (range.Data.Length < count)
+                range.Data = new MotionData<T, TParameters, TState>[count];
+            range.Animation = animation;
+            range.Count = count;
+            return range;
+        }
+    }
+
+    private readonly struct EvaluateRanges(MotionRanges ranges) : IJobParallelFor
+    {
+        public void Execute(int index)
+        {
+            MotionRange range = ranges.Items[index];
+            var batch = new MotionBatch<T, TParameters, TState>(range.Data.AsSpan(0, range.Count), range.Parameters);
+            TEvaluator.EvaluateBatch<TEvaluator>(ref batch);
+        }
     }
 
     private static bool Selected(in Track<T> track, int type, bool weights) =>
