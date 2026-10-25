@@ -24,7 +24,7 @@ public sealed class GameWorld : IDisposable
     public SystemGroup<ImmediateSystemContext> Systems { get; }
     public GameWorld(WorldExecution? execution = null)
     {
-        World = new World(execution: execution);
+        World = new World(execution: execution ?? new WorldJobs(JobSystem.Default));
         Systems = new SystemGroup<ImmediateSystemContext>(
             new ImmediateSystemDriver(World));
         _transforms = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(World));
