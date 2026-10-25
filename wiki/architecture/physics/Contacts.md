@@ -18,6 +18,8 @@ gap = Separation + dot(Normal, currentWeightedAnchorDelta - BodyAnchorDelta)
 
 几何表面偏移由 `Separation` 保存；模拟节点的采样锚及插值权重保持各 reader 的含义。`FirstBodyCount` 划分连续作用端中的双方，Normal 从第一方指向第二方。
 
+[预测式碰撞](Predictive-Collision.md)的 `ContactPrediction` 将几何与加权锚基准关联到共同子步起点，`SampleTime` 保存该采样时刻；响应反力与冲量继续使用 `ContactResponse` 的作用区间。
+
 ## 显式范围与跨步匹配
 
 `ContactPoints.Create(world, poses, points, detected, combine, components, settings)` 接收项目的只读位姿查询、只读接触维护查询、派生检测输出、具体材料合成器、具体新点组件写入器及刷新设置。维护查询的成员筛选由项目显式选择；管理器沿原筛选补充所需读取，在创建时取得自己的查询引用，并在 `Dispose` 中释放。

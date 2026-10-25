@@ -23,6 +23,13 @@ LRC auxiliary force in the total Coulomb projection, following the research
 contactEquation extra-force handoff. LRC graph and support sources are listed
 in ../LongRange/NOTICE.
 
+CollisionGeometryMotion.cs and GeometryPairPrediction.cs adapt the research
+Islands.cpp readCollisionExtent/findCollisionPairs and Bridge.cpp
+readBodyTravel/readPredictedContacts motion-envelope and local-contact math.
+The C# stages consume the common ECS substep start and predicted states,
+project starting separation planes through weighted local body anchors,
+and preserve their sample time separately from the contact response interval.
+
 The C# implementation stores body equations and constraint multipliers in ECS
 components, binds concrete constraint types through borrowed query rows and
 uses the existing Job scheduler for its execution and completion.
