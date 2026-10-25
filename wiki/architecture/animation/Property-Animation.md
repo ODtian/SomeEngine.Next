@@ -59,6 +59,10 @@ bool throughReference = channel.ThroughReference;
 
 `AnimationSystems.Add(schedule,spec)` 进入共同阶段，时间线与图推进后先求值和合成层权重，再处理普通字段，最后统一收尾。查询执行入口使用 managed 函数指针，批内保留具体算法与值运算类型。
 
+`TypedTrackSystem`、`TrackSystem`、`GraphOutputSystem` 和 `ComposeSystem` 先经
+`World.HasQueryMembers` 检查各自的活动、完成或目标查询，再为实际成员建立求值及写回访问范围。
+成员资格由当前 ECS 匹配表及启用状态提供；后续安装的轨道和目标进入相同查询路径。
+
 单来源采用直接写回批次；固定多来源及分层值由 [[architecture/animation/Animation-Layers|Animation Layers]] 合成。`FieldWrite<T>` 保存最终字段值，系统在对应阶段查询完成后汇总相同 Channel。`Channel.WriteBatch` 经一次 `World.ExecuteComponentWrite` 取得具体根组件批次，再以具体 IFieldAccess 循环写入。写入沿 [[architecture/ECS/Component-Fields|Component Fields]] 推进根组件版本，table 与 sparse 根共享调用形状。
 
 ## 验收

@@ -1,14 +1,18 @@
 namespace SomeEngine.ECS.Systems;
 
+using SomeEngine.Diagnostics;
+
 internal abstract unsafe class SystemNode<TContext>
     where TContext : allows ref struct
 {
-    protected SystemNode(delegate* managed<SystemNode<TContext>, ref TContext, void> update)
+    protected SystemNode(delegate* managed<SystemNode<TContext>, ref TContext, void> update, TraceSite updateTrace)
     {
         Update = update;
+        UpdateTrace = updateTrace;
     }
 
     public readonly delegate* managed<SystemNode<TContext>, ref TContext, void> Update;
+    public readonly TraceSite UpdateTrace;
 
     public abstract Type SystemType { get; }
 
@@ -21,9 +25,10 @@ internal sealed unsafe class SystemNode<TSystem, TContext> : SystemNode<TContext
     where TSystem : ISystem<TContext>
     where TContext : allows ref struct
 {
+    private static readonly TraceSite Trace = new("system", typeof(TSystem).ToString(), detail: true);
     private TSystem _system;
 
-    public SystemNode(TSystem system) : base(SystemFunctions<TSystem, TContext>.Update)
+    public SystemNode(TSystem system) : base(SystemFunctions<TSystem, TContext>.Update, Trace)
     {
         _system = system;
     }

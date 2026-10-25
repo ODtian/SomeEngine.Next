@@ -528,7 +528,7 @@ public sealed partial class SkinningRenderingTests
         };
         """;
     private const string SkinEvaluator = """
-        #include "skin_pose.slang"
+        #include "skin_joint_transforms.slang"
         struct PanelSkin : IVertexEvaluate
         {
             typedef StandardVertex Vertex;
@@ -540,8 +540,8 @@ public sealed partial class SkinningRenderingTests
                 uint2 binding = LoadSkinBinding(ctx.instanceID);
                 bool previous = ctx.IsPreviousFrame != 0u || footer.y != 0u;
                 float3 position = EvalObjectPosition(ctx);
-                float3 local = mul(float4(position, 1), LoadSkinTransform(binding, joints.x, previous)).xyz * weights.x
-                    + mul(float4(position, 1), LoadSkinTransform(binding, joints.y, previous)).xyz * weights.y;
+                float3 local = mul(float4(position, 1), LoadSkinJointTransform(binding, joints.x, previous)).xyz * weights.x
+                    + mul(float4(position, 1), LoadSkinJointTransform(binding, joints.y, previous)).xyz * weights.y;
                 StaticVertexEval source;
                 Vertex result = source.evaluate(ctx);
                 result.position = TransformInstanceLocalPosition(local, ctx.transform);

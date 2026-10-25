@@ -12,6 +12,12 @@
 - 缓冲不足或嵌套/标识容量不足会留下明确的丢失数量，不把不完整数据作为完整成本结果。
 - 关闭采集时停止接收新事件、交出各线程剩余块，再完成文件。游戏工作不由采集器调度或延后。
 
+`SystemGroup<TContext>` 的每个具体系统类型由 `SystemNode<TSystem, TContext>` 静态登记一个
+detail 站点，分类为 `system`，名称取 `typeof(TSystem).ToString()`，包含闭合泛型参数。
+节点更新区间覆盖现有 Job 提交范围、driver、首次创建及更新回调和版本写回；
+detail 采集沿这些嵌套区间计算 total/self，用于区分具体系统及其执行框架的线程经过时间。
+源码入口为 `src/SomeEngine.ECS.Systems/SystemNode.cs` 和 `SystemGroup.cs`。
+
 ## 归账
 
 执行父区间与因果来源分别记录。主线程在等待中帮助执行别的帧产生的 Job 时，其实际调用嵌套仍用于独占耗时计算，工作归属仍指向原始帧。跨线程工作不会被误当作同线程子调用扣除。

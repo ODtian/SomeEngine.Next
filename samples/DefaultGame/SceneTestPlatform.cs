@@ -492,7 +492,7 @@ public sealed partial class SceneTestPlatform
                 ?? Environment.GetEnvironmentVariable("COMPlus_TieredCompilation"),
             ["ProcessorCount"] = Environment.GetEnvironmentVariable("DOTNET_PROCESSOR_COUNT"),
             ["ReadyToRun"] = Environment.GetEnvironmentVariable("DOTNET_ReadyToRun"),
-            ["Instrumentation"] = "Four timestamps per executed pass; measured commands recorded each frame; resolves after application work",
+            ["Instrumentation"] = "Four timestamps per executed pass; command reuse tracks queue, pool and query range; resolves after application work",
             ["Error"] = error,
             ["ExpectedScenes"] = new JsonArray(Scenes.Select(scene => (JsonNode?)JsonValue.Create(scene.Name)).ToArray()),
             ["ElapsedSeconds"] = Stopwatch.GetElapsedTime(_testStarted).TotalSeconds,
