@@ -366,6 +366,7 @@ public sealed class SerializationGenerator : IIncrementalGenerator
     {
         builder.AppendLine($"internal struct {GetCodecName(model)} : global::SomeEngine.ECS.Serialization.ICanonicalComponentCodec<{model.TypeName}>");
         builder.AppendLine("{");
+        builder.AppendLine("    public bool SupportsParallelWrite => true;");
         builder.AppendLine($"    public void Write(ref global::SomeEngine.ECS.Serialization.DataWriter writer, in {model.TypeName} value)");
         builder.AppendLine("    {");
         foreach (var field in model.Fields)

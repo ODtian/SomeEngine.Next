@@ -14,6 +14,7 @@ public sealed class ApplicationScene(string contentDirectory)
     internal IReadOnlyList<IApplicationGeometryFeature> GeometryFeatures => _geometryFeatures;
 
     public string ContentDirectory { get; set; } = contentDirectory;
+    public string? WindowTitle { get; set; }
     public RuntimeStartupOptions Options { get; set; } = RuntimeStartupOptions.Parse([]);
     public uint GeometryMemoryBytes { get; set; } = 256u * 1024 * 1024;
     public uint DeformCacheBytes { get; set; } = 64u * 1024 * 1024;
