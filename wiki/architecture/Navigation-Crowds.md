@@ -23,6 +23,8 @@
 
 `NavigationCostSystem.Schedule(baseCosts, crowdBuild, policy, ...)` 等待统计完成，使用本次实际 Field 数组构建新 Costs。每帧传入原始基础 Costs，使区域与动作成本保持同一个起点。省略 policy 参数时使用 `baseCosts.Policy.Crowd`，其后使用默认拥堵配置。`ScheduleApply(costBuild, flows, ...)` 将同一份完成 Costs 安装给所列 Flow。每个 Flow 的求解器随后继续自己的保留状态和目标约束，传播实际变化。
 
+反馈成本按源单元分区，每个 Job 写自己的单元位置及该单元的连续出边区间，读取同一份已完成的基础 Costs 与 Crowd Field。同步范围汇合后构建状态交付完整的新 Costs；Scalar 与 Directional 继续使用上述采样与成本公式。
+
 ## 运动完成后的调用链
 
 以下是调用顺序的例子；基础 Costs、两个 Flow、具体求解器和实际运动消费者由业务持有：

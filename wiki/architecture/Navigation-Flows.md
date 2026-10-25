@@ -16,6 +16,8 @@ Grid 同时实现 `INavigationSpace<NavigationGrid>`，提供静态资源描述�
 
 `NavigationCostSystem.Schedule` 在 Job 中生成 `NavigationCosts`。单元成本等于基础成本乘以策略区域倍率；正向边使用出发单元成本乘以边基础成本，再加动作成本。策略决定可进入的单元及动作，规格与策略的能力集合决定可用的有向边。多个场直接共享同一个 Costs 对象。
 
+基础成本的 `Fill` 算法由公开异步构建与内部 `Create`、`Regrid` 共用：先以同步范围 Job 写各单元成本，汇合后按源单元的 `EdgeStart/EdgeCount` 连续区间并行写正向边。`JobSystem.ExecuteParallel` 沿当前执行关系使用调用方 Scheduler，并在返回前完成各范围；原构建状态和调用者继续持有 Grid、Policy 与结果数组，完整 Costs 在两阶段结束后交付。
+
 详细块取得、移除与部分驻留场的目标更新均保留当前 Costs 作为共享成本来源，并按块内容版本、真实单元与有向边映射到合成网格。已安装的通道编辑和人群派生成本随相同内容继续使用；新取得的单元与边按策略派生成本。移除后重取的相同内容重新接回来源中的成本。`Costs.Version` 表达这份成本输入，驻留和目标变化分别由 `Grid.ResidenceVersion` 与 `GoalVersion` 表达。
 
 ## 积分与安装
