@@ -43,7 +43,7 @@ public readonly struct ContactLongRangeConstraints(QueryHandle supportBodies, Qu
     }
     private interface ISupportExecution
     {
-        void Execute(scoped QueryCursor workBodies, scoped QueryCursor contacts);
+        void Execute(scoped PhysicsQueryRows workBodies, scoped PhysicsQueryRows contacts);
     }
     private ref struct ReadBodies<TWork>(World world, QueryHandle contacts, TWork work) : IQueryExecution
         where TWork : struct, ISupportExecution, allows ref struct
@@ -51,28 +51,28 @@ public readonly struct ContactLongRangeConstraints(QueryHandle supportBodies, Qu
         private TWork _work = work;
         public void Execute(scoped QueryCursor workBodies)
         {
-            var read = new ReadContacts<TWork>(workBodies, _work);
+            var read = new ReadContacts<TWork>(new PhysicsQueryRows(workBodies), _work);
             world.ExecuteQuery(contacts, ref read);
         }
     }
-    private ref struct ReadContacts<TWork>(QueryCursor workBodies, TWork work) : IQueryExecution
+    private ref struct ReadContacts<TWork>(PhysicsQueryRows workBodies, TWork work) : IQueryExecution
         where TWork : struct, ISupportExecution, allows ref struct
     {
-        private readonly QueryCursor _workBodies = workBodies;
+        private readonly PhysicsQueryRows _workBodies = workBodies;
         private TWork _work = work;
-        public void Execute(scoped QueryCursor contacts) => _work.Execute(_workBodies, contacts);
+        public void Execute(scoped QueryCursor contacts) => _work.Execute(_workBodies, new PhysicsQueryRows(contacts));
     }
     private readonly ref struct InitializeSupports(ContactSupportData data, PhysicsBodies bodies, PhysicsStepContext context) : ISupportExecution
     {
         private readonly PhysicsBodies _bodies = bodies;
         private readonly PhysicsStepContext _context = context;
-        public void Execute(scoped QueryCursor workBodies, scoped QueryCursor contacts) => data.Initialize(workBodies, contacts, _bodies, in _context);
+        public void Execute(scoped PhysicsQueryRows workBodies, scoped PhysicsQueryRows contacts) => data.Initialize(workBodies, contacts, _bodies, in _context);
     }
     private readonly ref struct UpdateSupports(ContactSupportData data, PhysicsBodies bodies, PhysicsStepContext context) : ISupportExecution
     {
         private readonly PhysicsBodies _bodies = bodies;
         private readonly PhysicsStepContext _context = context;
-        public void Execute(scoped QueryCursor workBodies, scoped QueryCursor contacts) => data.Update(workBodies, contacts, _bodies, in _context);
+        public void Execute(scoped PhysicsQueryRows workBodies, scoped PhysicsQueryRows contacts) => data.Update(workBodies, contacts, _bodies, in _context);
     }
     private ref struct CorrectSupport(ContactSupportData data, Entity body, PhysicsBodies bodies, PhysicsStepContext context,
         in AvbdBodyEquation equation, ref Vector3 translation, ref Vector3 rotation) : ISupportExecution
@@ -82,7 +82,7 @@ public readonly struct ContactLongRangeConstraints(QueryHandle supportBodies, Qu
         private readonly ref readonly AvbdBodyEquation _equation = ref equation;
         private ref Vector3 _translation = ref translation;
         private ref Vector3 _rotation = ref rotation;
-        public void Execute(scoped QueryCursor workBodies, scoped QueryCursor contacts) => data.Correct(workBodies, contacts, body, _bodies, in _context,
+        public void Execute(scoped PhysicsQueryRows workBodies, scoped PhysicsQueryRows contacts) => data.Correct(workBodies, contacts, body, _bodies, in _context,
             in _equation, ref _translation, ref _rotation);
     }
 }

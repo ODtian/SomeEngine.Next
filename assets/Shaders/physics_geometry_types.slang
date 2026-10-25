@@ -18,9 +18,7 @@ struct DeviceGeometryInput
     float3 planeNormal;
     float planeOffset;
     uint geometryType;
-    uint padding0;
-    uint padding1;
-    uint padding2;
+    float3 boundsCenter;
 };
 
 float3 rotateDeviceDirection(float4 rotation, float3 direction)

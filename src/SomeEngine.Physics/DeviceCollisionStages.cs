@@ -29,7 +29,7 @@ public readonly struct WriteDeviceCollisionInputs<TComponent, TReader> : IPhysic
         var resources = new JobResourceAccessBuilder(scheduler!, accesses);
         resources.Write(_grid.Upload, 0, (long)_grid.Capacity.Bodies * DeviceCollisionGrid.InputStride);
         JobHandle begun = scheduler!.Schedule(new BeginDeviceInputWrite(_grid), CollectionsMarshal.AsSpan(accesses), dependency);
-        var options = new JobEntityScheduleOptions(rowsPerPacket: _rowsPerPacket, filter: context.Bodies);
+        var options = new JobEntityScheduleOptions(rowsPerPacket: _rowsPerPacket);
         return new WriteDeviceCollisionInputsJob<TComponent, TReader>(_grid, _participants, _reader)
             .ScheduleParallel(context.World, _participants.GetReadAccesses(), options, begun);
     }

@@ -22,7 +22,7 @@ internal sealed class JointLongRangeGraph
     private readonly Dictionary<Entity, (float Distance, float Largest)> _distances = [];
     private readonly PriorityQueue<Entity, float> _queue = new();
 
-    internal void Refresh(scoped QueryCursor joints, scoped PhysicsBodies bodies, in PhysicsStepContext context, int levels)
+    internal void Refresh(scoped PhysicsQueryRows joints, scoped PhysicsBodies bodies, in PhysicsStepContext context, int levels)
     {
         _nodes.Clear();
         _currentVersions.Clear();
@@ -30,9 +30,9 @@ internal sealed class JointLongRangeGraph
         foreach (QueryRow row in joints.Rows)
         {
             ref readonly var endpoints = ref row.ReadRef<DirectedRelationEndpoints<JointConstraint>>();
-            var version = new JointGraphVersion(context.World.WriteVersion<JointConstraint>(row.Entity),
-                context.World.WriteVersion<DirectedRelationEndpoints<JointConstraint>>(row.Entity),
-                context.World.WriteVersion<BodyMass>(endpoints.Source), context.World.WriteVersion<BodyMass>(endpoints.Target));
+            var version = new JointGraphVersion(row.WriteVersion<JointConstraint>(),
+                row.WriteVersion<DirectedRelationEndpoints<JointConstraint>>(),
+                bodies.GetRow(endpoints.Source).WriteVersion<BodyMass>(), bodies.GetRow(endpoints.Target).WriteVersion<BodyMass>());
             changed |= !_versions.TryGetValue(row.Entity, out JointGraphVersion previous) || previous != version;
             _nodes.Add(row.Entity);
             _currentVersions.Add(version);
@@ -81,7 +81,7 @@ internal sealed class JointLongRangeGraph
         _ranges.Clear();
     }
 
-    private void BuildSegments(scoped QueryCursor joints, scoped PhysicsBodies bodies)
+    private void BuildSegments(scoped PhysicsQueryRows joints, scoped PhysicsBodies bodies)
     {
         foreach (List<JointGraphAnchor> anchors in _bodyAnchors.Values) { anchors.Clear(); _unusedAnchors.Push(anchors); }
         _bodyAnchors.Clear();
@@ -128,7 +128,7 @@ internal sealed class JointLongRangeGraph
         adjacent.Add(segment);
     }
 
-    private void BuildAttachments(scoped QueryCursor joints, scoped PhysicsBodies bodies)
+    private void BuildAttachments(scoped PhysicsQueryRows joints, scoped PhysicsBodies bodies)
     {
         foreach (Entity root in _nodes)
         {
@@ -158,7 +158,7 @@ internal sealed class JointLongRangeGraph
         }
     }
 
-    private void AddRange(scoped QueryCursor joints, scoped PhysicsBodies bodies,
+    private void AddRange(scoped PhysicsQueryRows joints, scoped PhysicsBodies bodies,
         JointGraphAnchor first, JointGraphAnchor last, float minimum, float maximum)
     {
         Entity firstBody = ReadBody(joints, first), lastBody = ReadBody(joints, last);
@@ -173,14 +173,14 @@ internal sealed class JointLongRangeGraph
         _ranges[key] = new(first, last, minimum, maximum);
     }
 
-    internal static Entity ReadBody(scoped QueryCursor joints, JointGraphAnchor anchor)
+    internal static Entity ReadBody(scoped PhysicsQueryRows joints, JointGraphAnchor anchor)
     {
         joints.TryGetRow(anchor.Joint, out QueryRow row);
         ref readonly var endpoints = ref row.ReadRef<DirectedRelationEndpoints<JointConstraint>>();
         return anchor.End == JointEnd.Source ? endpoints.Source : endpoints.Target;
     }
 
-    private static bool IsRigidNode(scoped QueryCursor joints, Entity entity)
+    private static bool IsRigidNode(scoped PhysicsQueryRows joints, Entity entity)
     {
         joints.TryGetRow(entity, out QueryRow row);
         ref readonly JointConstraint joint = ref row.ReadRef<JointConstraint>();
@@ -189,7 +189,7 @@ internal sealed class JointLongRangeGraph
             && float.IsPositiveInfinity(joint.LinearStiffness.Y) && float.IsPositiveInfinity(joint.LinearStiffness.Z);
     }
 
-    internal static Vector3 ReadLocal(scoped QueryCursor joints, JointGraphAnchor anchor)
+    internal static Vector3 ReadLocal(scoped PhysicsQueryRows joints, JointGraphAnchor anchor)
     {
         joints.TryGetRow(anchor.Joint, out QueryRow row);
         ref readonly JointConstraint joint = ref row.ReadRef<JointConstraint>();
