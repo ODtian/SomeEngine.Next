@@ -2,6 +2,7 @@
 #include <vector>
 #include <unordered_map>
 #include <cstring>
+#include <new>
 #include "solver.h"
 #include "scenes.h"
 #include "ResearchStep.h"
@@ -11,6 +12,13 @@
 #define EXPORT extern "C" __declspec(dllexport)
 
 thread_local ResearchStep* researchStep = nullptr;
+
+#ifdef AVBD_PROFILE
+StepMeasurements& researchMeasurements()
+{
+    return researchStep->measurements ? *researchStep->measurements : researchStep->experiment->measurements;
+}
+#endif
 
 static void readBodies(Experiment* experiment, BodyData* output);
 
@@ -91,6 +99,11 @@ int readPredictedContacts(Rigid* bodyA, Rigid* bodyB, Manifold::Contact* contact
     int count = Manifold::collide(bodyA, bodyB, contacts, basis);
 #endif
     if (count || researchStep->experiment->newton.compliant || researchStep->contactQueryDistance > 0) return count;
+    // Geometry borrows shape/solver data and predicts only these local poses.
+    // Placement copies keep the scene's force-list lifetime with the scene.
+    alignas(Rigid) unsigned char firstStorage[sizeof(Rigid)], secondStorage[sizeof(Rigid)];
+    bodyA = new(firstStorage) Rigid(*bodyA);
+    bodyB = new(secondStorage) Rigid(*bodyB);
     float dt = bodyA->solver->dt;
 #ifdef DEMO_2D
     float3 positionA = bodyA->position, positionB = bodyB->position;
@@ -120,6 +133,32 @@ int readPredictedContacts(Rigid* bodyA, Rigid* bodyB, Manifold::Contact* contact
     bodyA->positionAng = rotationA; bodyB->positionAng = rotationB;
 #endif
     return count;
+}
+
+#ifdef DEMO_2D
+int researchReadContacts(Manifold* manifold, Manifold::Contact* contacts, bool predict)
+#else
+int researchReadContacts(Manifold* manifold, Manifold::Contact* contacts, float3x3& basis, bool predict)
+#endif
+{
+    auto& count = static_cast<ContactManifold*>(manifold)->detectedCount;
+    if (count < 0)
+    {
+#ifdef DEMO_2D
+        return predict ? readPredictedContacts(manifold->bodyA, manifold->bodyB, contacts)
+            : Manifold::collide(manifold->bodyA, manifold->bodyB, contacts);
+#else
+        return predict ? readPredictedContacts(manifold->bodyA, manifold->bodyB, contacts, basis)
+            : Manifold::collide(manifold->bodyA, manifold->bodyB, contacts, basis);
+#endif
+    }
+    std::copy(manifold->contacts, manifold->contacts + count, contacts);
+#ifndef DEMO_2D
+    basis = manifold->basis;
+#endif
+    int result = count;
+    count = -1;
+    return result;
 }
 
 EXPORT Experiment* demo_create(int scene, int iterations)
@@ -595,7 +634,8 @@ EXPORT void demo_add_velocity(Experiment* experiment, int index, float x, float 
 #endif
 }
 
-EXPORT void demo_step(Experiment* experiment, void (*correct)(void*), void* context, int iteration)
+EXPORT void demo_step(Experiment* experiment, void (*correct)(void*), void* context, int iteration,
+    void (*runRanges)(void*, int, void (*)(void*, int), void*), void* jobContext, int workerCount)
 {
     initializeIslands(experiment);
     experiment->islands.bodyUpdates = 0;
@@ -611,6 +651,9 @@ EXPORT void demo_step(Experiment* experiment, void (*correct)(void*), void* cont
         return;
     }
     ResearchStep step{experiment, correct, context, iteration};
+    step.runRanges = runRanges;
+    step.jobContext = jobContext;
+    step.workerCount = workerCount;
     step.configuredIterations = experiment->solver.iterations;
     step.bodies = experiment->bodies.data();
     step.bodyCount = (int)experiment->bodies.size();

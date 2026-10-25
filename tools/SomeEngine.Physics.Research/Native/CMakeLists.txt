@@ -53,7 +53,7 @@ foreach(dimension IN ITEMS 2d 3d)
         string(REPLACE "faceB.x > 0.0f || faceB.y > 0.0f" "faceB.x > contactDistance || faceB.y > contactDistance" collide "${collide}")
         string(REPLACE "if (separation <= 0)" "if (separation <= contactDistance)" collide "${collide}")
         string(REPLACE " + float2{ COLLISION_MARGIN, 0 }" "" manifold "${manifold}")
-        string(REPLACE "collide(bodyA, bodyB, contacts)" "readPredictedContacts(bodyA, bodyB, contacts)" manifold "${manifold}")
+        string(REPLACE "collide(bodyA, bodyB, contacts)" "researchReadContacts(this, contacts)" manifold "${manifold}")
         string(REPLACE "contacts[i].C0 = basis * (bodyA->position.xy() + rAW - bodyB->position.xy() - rBW);"
             "contacts[i].C0 = basis * (bodyA->position.xy() + rAW - bodyB->position.xy() - rBW);\n        researchInitializeContact(this, i);" manifold "${manifold}")
         string(REPLACE "        C[i * 2 + 0] = contacts[i].C0.x * (1 - alpha) + dot(contacts[i].JAn, dpA) + dot(contacts[i].JBn, dpB);\n        C[i * 2 + 1] = contacts[i].C0.y * (1 - alpha) + dot(contacts[i].JAt, dpA) + dot(contacts[i].JBt, dpB);"
@@ -130,7 +130,7 @@ int researchClipContactFace(Manifold* manifold, Manifold::Contact* contacts, flo
         string(REPLACE "if (separation > 0.0f)" "if (separation > researchContactDistance())" collide "${collide}")
         string(REPLACE "if (distance > PLANE_EPSILON)" "if (distance > researchContactDistance())" collide "${collide}")
         string(REPLACE " + float3{COLLISION_MARGIN, 0, 0}" "" manifold "${manifold}")
-        string(REPLACE "collide(bodyA, bodyB, newContacts, basis)" "readPredictedContacts(bodyA, bodyB, newContacts, basis)" manifold "${manifold}")
+        string(REPLACE "collide(bodyA, bodyB, newContacts, basis)" "researchReadContacts(this, newContacts, basis)" manifold "${manifold}")
         string(REPLACE "contacts[i].C0 = basis * (xA - xB);"
             "contacts[i].C0 = basis * (xA - xB);\n        researchInitializeContact(this, i);" manifold "${manifold}")
         string(REPLACE "float3 C = contacts[i].C0 * (1 - alpha) + jALin * dqALin + jBLin * dqBLin + jAAng * dqAAng + jBAng * dqBAng;"
@@ -195,14 +195,14 @@ void researchAddJointContact(Manifold* manifold, Rigid* body, float alpha, float
     string(SUBSTRING "${manifold}" ${constraintStart} -1 manifoldSuffix)
     string(REPLACE "bool Manifold::initialize()" "template<bool predictContacts>\nstatic bool initializeContactPoints(Manifold* manifold)" contactInitialization "${contactInitialization}")
     string(REPLACE "{\n    // Compute friction" "{\n    using Contact = Manifold::Contact;\n    Rigid* bodyA = manifold->bodyA;\n    Rigid* bodyB = manifold->bodyB;\n    auto& contacts = manifold->contacts;\n#ifdef DEMO_2D\n    auto& penalty = manifold->penalty;\n    auto& lambda = manifold->lambda;\n#else\n    auto& basis = manifold->basis;\n    Solver* solver = manifold->solver;\n#endif\n    int& numContacts = manifold->numContacts;\n    float& friction = manifold->friction;\n    // Compute friction" contactInitialization "${contactInitialization}")
-    string(REPLACE "numContacts = readPredictedContacts(bodyA, bodyB, contacts);" "if constexpr (predictContacts) numContacts = readPredictedContacts(bodyA, bodyB, contacts);\n    else numContacts = Manifold::collide(bodyA, bodyB, contacts);" contactInitialization "${contactInitialization}")
+    string(REPLACE "numContacts = researchReadContacts(this, contacts);" "numContacts = researchReadContacts(manifold, contacts, predictContacts);" contactInitialization "${contactInitialization}")
     if(dimension STREQUAL "2d")
         string(REPLACE "    for (int i = 0; i < numContacts; i++)\n    {\n        // Compute the contact basis"
             "    float initialSeparation = 0;\n    if constexpr (predictContacts)\n        if (!researchStep->experiment->researchExtensions) initialSeparation = readBoxSeparation(bodyA, bodyB, bodyA->position, bodyB->position);\n\n    for (int i = 0; i < numContacts; i++)\n    {\n        // Compute the contact basis" contactInitialization "${contactInitialization}")
         string(REPLACE "contacts[i].C0 = basis * (bodyA->position.xy() + rAW - bodyB->position.xy() - rBW);"
             "contacts[i].C0 = basis * (bodyA->position.xy() - bodyB->position.xy() + rAW - rBW);\n        if constexpr (predictContacts) contacts[i].C0.x = min(0.0f, max(contacts[i].C0.x, initialSeparation));" contactInitialization "${contactInitialization}")
     endif()
-    string(REPLACE "int newNumContacts = readPredictedContacts(bodyA, bodyB, newContacts, basis);" "int newNumContacts;\n    if constexpr (predictContacts) newNumContacts = readPredictedContacts(bodyA, bodyB, newContacts, basis);\n    else newNumContacts = Manifold::collide(bodyA, bodyB, newContacts, basis);" contactInitialization "${contactInitialization}")
+    string(REPLACE "int newNumContacts = researchReadContacts(this, newContacts, basis);" "int newNumContacts = researchReadContacts(manifold, newContacts, basis, predictContacts);" contactInitialization "${contactInitialization}")
     string(REPLACE "researchInitializeContact(this, i)" "researchInitializeContact(manifold, i)" contactInitialization "${contactInitialization}")
     set(contactEntries [=[
 bool Manifold::initialize()

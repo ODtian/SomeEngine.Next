@@ -28,10 +28,12 @@ struct StepTimer
     ~StepTimer() { finish(); }
 };
 
-#define RESEARCH_TIME(name, phase) StepTimer name(researchStep->experiment->measurements, StepPhase::phase)
+StepMeasurements& researchMeasurements();
+
+#define RESEARCH_TIME(name, phase) StepTimer name(researchMeasurements(), StepPhase::phase)
 #define RESEARCH_TIME_END(name) name.finish()
-#define RESEARCH_COUNT(name, value) (researchStep->experiment->measurements.counts[(int)SceneCount::name] += (value))
-#define RESEARCH_MAX(name, value) (researchStep->experiment->measurements.counts[(int)SceneCount::name] = std::max(researchStep->experiment->measurements.counts[(int)SceneCount::name], (double)(value)))
+#define RESEARCH_COUNT(name, value) (researchMeasurements().counts[(int)SceneCount::name] += (value))
+#define RESEARCH_MAX(name, value) (researchMeasurements().counts[(int)SceneCount::name] = std::max(researchMeasurements().counts[(int)SceneCount::name], (double)(value)))
 #else
 #define RESEARCH_TIME(name, phase)
 #define RESEARCH_TIME_END(name)

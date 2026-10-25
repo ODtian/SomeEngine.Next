@@ -1,6 +1,7 @@
 #pragma once
 #include <vector>
 #include "solver.h"
+#include "StepMeasurements.h"
 
 struct Experiment;
 inline constexpr float constraintAccuracy = 0.001f;
@@ -29,6 +30,12 @@ struct ResearchStep
     int bodyCount = 0;
     bool stabilizationForcesSaved = false;
     float contactQueryDistance = 0;
+    void (*runRanges)(void*, int, void (*)(void*, int), void*) = nullptr;
+    void* jobContext = nullptr;
+    int workerCount = 0;
+#ifdef AVBD_PROFILE
+    StepMeasurements* measurements = nullptr;
+#endif
 };
 
 extern thread_local ResearchStep* researchStep;
@@ -140,6 +147,7 @@ bool researchForceSolves(Force* force);
 bool researchInitializeCurrentContacts(Manifold* manifold);
 #ifdef DEMO_2D
 int readPredictedContacts(Rigid* bodyA, Rigid* bodyB, Manifold::Contact* contacts);
+int researchReadContacts(Manifold* manifold, Manifold::Contact* contacts, bool predict = true);
 float readBoxSeparation(Rigid* first, Rigid* second, float3 firstPose, float3 secondPose);
 inline float2 researchRotateContactPoint(float angle, float2 point)
 {
@@ -172,6 +180,7 @@ inline float3 researchRotationDifference(quat a, quat b)
 }
 
 int readPredictedContacts(Rigid* bodyA, Rigid* bodyB, Manifold::Contact* contacts, float3x3& basis);
+int researchReadContacts(Manifold* manifold, Manifold::Contact* contacts, float3x3& basis, bool predict = true);
 int researchClipContactFace(Manifold* manifold, Manifold::Contact* contacts, float3x3& basis);
 #endif
 

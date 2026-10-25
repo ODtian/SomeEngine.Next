@@ -1,5 +1,6 @@
 #include "BridgeState.h"
 #include "ResearchStep.h"
+#include "ResearchRanges.h"
 
 // World-wide SI criteria, shared by every solver and scene.
 static constexpr float sleepSpeed = 0.03f;
@@ -59,9 +60,10 @@ static void findCollisionPairs()
     int count = (int)experiment->bodies.size();
     sweep.resize(count); pairs.clear();
     experiment->collisionExtents.resize(count);
-    float3 minimum{INFINITY, INFINITY, INFINITY}, maximum{-INFINITY, -INFINITY, -INFINITY};
-    for (int i = 0; i < count; ++i)
+    researchParallelRanges(count, [&](int first, int last)
     {
+      for (int i = first; i < last; ++i)
+      {
         Rigid* body = experiment->bodies[i];
 #ifdef DEMO_2D
         float3 center{body->position.x, body->position.y, 0};
@@ -70,10 +72,15 @@ static void findCollisionPairs()
 #endif
         sweep[i] = {i, center, body->radius + readBodyTravel(body)};
         readCollisionExtent(experiment, sweep[i]);
+      }
+    });
+    float3 minimum{INFINITY, INFINITY, INFINITY}, maximum{-INFINITY, -INFINITY, -INFINITY};
+    for (const auto& bounds : sweep)
+    {
         for (int axis = 0; axis < 3; ++axis)
         {
-            minimum[axis] = min(minimum[axis], center[axis]);
-            maximum[axis] = max(maximum[axis], center[axis]);
+            minimum[axis] = min(minimum[axis], bounds.center[axis]);
+            maximum[axis] = max(maximum[axis], bounds.center[axis]);
         }
     }
     float3 spread = maximum - minimum;
@@ -81,7 +88,14 @@ static void findCollisionPairs()
     if (spread.z > spread[axis]) axis = 2;
     std::sort(sweep.begin(), sweep.end(), [axis](const auto& a, const auto& b)
     { return a.center[axis] - a.extent[axis] < b.center[axis] - b.extent[axis]; });
-    for (int i = 0; i < count; ++i)
+    auto& ranges = experiment->collisionRanges;
+    ranges.resize(count);
+    researchParallelRanges(count, [&](int first, int last)
+    {
+      for (int i = first; i < last; ++i)
+      {
+        auto& candidates = ranges[i];
+        candidates.clear();
         for (int j = i + 1; j < count && sweep[j].center[axis] - sweep[j].extent[axis] <= sweep[i].center[axis] + sweep[i].extent[axis]; ++j)
         {
             RESEARCH_COUNT(SweepVisits, 1);
@@ -95,44 +109,76 @@ static void findCollisionPairs()
             if (researchContactExists(experiment->bodies[a], experiment->bodies[b])) continue;
             float3 extent = readCollisionExtent(experiment, sweep[i]) + readCollisionExtent(experiment, sweep[j]);
             if (fabsf(distance.x) > extent.x || fabsf(distance.y) > extent.y || fabsf(distance.z) > extent.z) continue;
-            pairs.push_back({std::max(a, b), std::min(a, b)});
+            candidates.push_back({std::max(a, b), std::min(a, b)});
             RESEARCH_COUNT(CandidatePairs, 1);
         }
+      }
+    });
+    for (const auto& candidates : ranges) pairs.insert(pairs.end(), candidates.begin(), candidates.end());
     // Preserve the original solver's pair order after spatial pruning.
     std::sort(pairs.begin(), pairs.end(), std::greater<std::pair<int, int>>());
 }
 
-static ContactManifold* createContact(Experiment* experiment, int a, int b)
+static void collectContactGeometry(bool refresh)
+{
+    Experiment* experiment = researchStep->experiment;
+    auto& geometry = experiment->collisionGeometry;
+    geometry.resize(experiment->collisionPairs.size());
+#ifndef DEMO_2D
+    // Refresh the scene's joint membership before parallel readers use it.
+    if (!experiment->bodies.empty()) researchStructuralBody(experiment->bodies[0]);
+#endif
+    researchParallelRanges((int)geometry.size(), [&](int first, int last)
+    {
+      RESEARCH_TIME(phaseTime, ContactGeometry);
+      for (int index = first; index < last; ++index)
+      {
+        auto [a, b] = experiment->collisionPairs[index];
+        Rigid* bodyA = experiment->bodies[a];
+        Rigid* bodyB = experiment->bodies[b];
+        auto& data = geometry[index];
+        RESEARCH_COUNT(NarrowQueries, 1);
+#ifdef DEMO_2D
+        researchStep->contactQueryDistance = experiment->newton.compliant || !experiment->researchExtensions ? 2 * newtonShapeGap : 0;
+        data.count = refresh ? Manifold::collide(bodyA, bodyB, data.contacts)
+            : readPredictedContacts(bodyA, bodyB, data.contacts);
+#else
+        bool hardContacts = !experiment->newton.compliant && !experiment->researchExtensions;
+        bool structural = researchStructuralBody(bodyA) || researchStructuralBody(bodyB);
+        researchStep->contactQueryDistance = hardContacts ? (structural ? .02f : 2 * newtonShapeGap)
+            : experiment->newton.compliant ? 2 * newtonShapeGap : 0;
+        data.count = hardContacts || refresh ? Manifold::collide(bodyA, bodyB, data.contacts, data.basis)
+            : readPredictedContacts(bodyA, bodyB, data.contacts, data.basis);
+#endif
+        researchStep->contactQueryDistance = 0;
+      }
+    });
+}
+
+static ContactManifold* createContact(Experiment* experiment, int index)
 {
     RESEARCH_TIME(phaseTime, ContactGeometry);
-    Rigid* first = experiment->bodies[a];
-    Rigid* second = experiment->bodies[b];
+    auto [a, b] = experiment->collisionPairs[index];
+    const auto& geometry = experiment->collisionGeometry[index];
 #ifndef DEMO_2D
     if (!experiment->newton.compliant && !experiment->researchExtensions)
-    {
-        Manifold::Contact contacts[8]{};
-        float3x3 basis;
-        bool structural = researchStructuralBody(first) || researchStructuralBody(second);
-        researchStep->contactQueryDistance = structural ? .02f : 2 * newtonShapeGap;
-        RESEARCH_COUNT(NarrowQueries, 1);
-        int count = Manifold::collide(first, second, contacts, basis);
-        researchStep->contactQueryDistance = 0;
-        if (count == 0) return nullptr;
-        auto* manifold = new ContactManifold(&experiment->solver, first, second, a, b);
-        std::copy(contacts, contacts + count, manifold->contacts);
-        manifold->basis = basis;
-        manifold->detectedCount = count;
-        return manifold;
-    }
+        if (geometry.count == 0) return nullptr;
 #endif
-    return new ContactManifold(&experiment->solver, first, second, a, b);
+    auto* manifold = new ContactManifold(&experiment->solver, experiment->bodies[a], experiment->bodies[b], a, b);
+    std::copy(geometry.contacts, geometry.contacts + geometry.count, manifold->contacts);
+#ifndef DEMO_2D
+    manifold->basis = geometry.basis;
+#endif
+    manifold->detectedCount = geometry.count;
+    return manifold;
 }
 
 void researchDetectCollisions()
 {
     findCollisionPairs();
+    collectContactGeometry(false);
     Experiment* experiment = researchStep->experiment;
-    for (auto [a, b] : experiment->collisionPairs) createContact(experiment, a, b);
+    for (int index = 0; index < (int)experiment->collisionPairs.size(); ++index) createContact(experiment, index);
 }
 
 // A coupled correction can close a surface gap beyond the original free-motion
@@ -140,11 +186,12 @@ void researchDetectCollisions()
 bool researchAddContacts()
 {
     findCollisionPairs();
+    collectContactGeometry(true);
     Experiment* experiment = researchStep->experiment;
     bool added = false;
-    for (auto [a, b] : experiment->collisionPairs)
+    for (int index = 0; index < (int)experiment->collisionPairs.size(); ++index)
     {
-        auto* manifold = createContact(experiment, a, b);
+        auto* manifold = createContact(experiment, index);
         if (!manifold) continue;
         bool newtonContacts = experiment->newton.compliant;
 #ifndef DEMO_2D

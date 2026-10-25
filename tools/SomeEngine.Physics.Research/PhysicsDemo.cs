@@ -36,7 +36,7 @@ internal sealed record PhysicsInput(double StepSeconds, double[] Gravity, InputB
     PhysicsMaterialModel MaterialModel = PhysicsMaterialModel.RigidConstraints);
 
 /// <summary>Runs the official rigid-body scenes with a selected solver extension.</summary>
-public sealed unsafe class PhysicsDemo : IDisposable
+public sealed unsafe partial class PhysicsDemo : IDisposable
 {
     public const int DefaultRigidIterations = 8;
     private readonly DemoLibrary library;
@@ -131,10 +131,12 @@ public sealed unsafe class PhysicsDemo : IDisposable
         }
         if (solver is PhysicsSolver.CoupledConstraints or PhysicsSolver.ContactRecovery)
             contactRecovery = new ContactSeparation(library, demo);
+        _jobCallback = GCHandle.Alloc(this);
     }
 
     public void Step()
     {
+        _stepJobs = SomeEngine.Job.JobSystem.Current;
         for (; nextEvent < events.Length && events[nextEvent].Frame == frame; ++nextEvent)
         {
             PhysicsEvent input = events[nextEvent];
@@ -154,7 +156,8 @@ public sealed unsafe class PhysicsDemo : IDisposable
         frameIterations = frameStabilizationIterations = frameTreeIterations = frameBodyUpdates = frameContactSolves = frameCollisionPasses = 0;
         for (int substep = 0; substep < substeps; substep++)
         {
-            library.Step(demo, correct, callback.IsAllocated ? GCHandle.ToIntPtr(callback) : 0, correctionIteration);
+            library.Step(demo, correct, callback.IsAllocated ? GCHandle.ToIntPtr(callback) : 0, correctionIteration,
+                &RunRanges, GCHandle.ToIntPtr(_jobCallback), _stepJobs.WorkerCount);
             frameIterations += library.ReadIterations(demo);
             frameStabilizationIterations += library.ReadStabilizationIterations(demo);
             frameTreeIterations += library.ReadTreeIterations(demo);
@@ -338,6 +341,7 @@ public sealed unsafe class PhysicsDemo : IDisposable
 
     public void Dispose()
     {
+        _jobCallback.Free();
         if (callback.IsAllocated) callback.Free();
         coupled?.Dispose(); contactRecovery?.Dispose();
         library.Destroy(demo); library.Dispose();

@@ -78,10 +78,10 @@ struct ContactManifold : Manifold
     std::array<float3, 8> reactions{}, frames{};
     std::array<NewtonContactMatch, 8> matches{};
     bool supported = false;
+    int detectedCount = -1;
 #ifdef DEMO_2D
     float penetration = 0;
 #else
-    int detectedCount = -1;
     bool geometryValid = false;
     float3 geometryCenterA{}, geometryCenterB{};
     quat geometryRotationA{}, geometryRotationB{};
@@ -415,6 +415,16 @@ struct Experiment
     };
     std::vector<CollisionSweep> collisionSweep;
     std::vector<std::pair<int, int>> collisionPairs;
+    std::vector<std::vector<std::pair<int, int>>> collisionRanges;
+    struct CollisionGeometry
+    {
+        Manifold::Contact contacts[8]{};
+#ifndef DEMO_2D
+        float3x3 basis;
+#endif
+        int count = 0;
+    };
+    std::vector<CollisionGeometry> collisionGeometry;
     std::vector<BodyPose> collisionPoses;
 
     int index(Rigid* body) const { return body ? indices.at(body) : -1; }

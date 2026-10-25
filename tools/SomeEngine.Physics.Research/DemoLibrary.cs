@@ -93,7 +93,8 @@ internal sealed unsafe class DemoLibrary : IDisposable
     public readonly delegate* unmanaged[Cdecl]<nint, int, void> SetResearchExtensions;
     public readonly delegate* unmanaged[Cdecl]<nint, int, void> SetCompliantMaterials;
     public readonly delegate* unmanaged[Cdecl]<nint, int, float, float, float, void> AddVelocity;
-    public readonly delegate* unmanaged[Cdecl]<nint, delegate* unmanaged[Cdecl]<nint, void>, nint, int, void> Step;
+    public readonly delegate* unmanaged[Cdecl]<nint, delegate* unmanaged[Cdecl]<nint, void>, nint, int,
+        delegate* unmanaged[Cdecl]<nint, int, nint, nint, void>, nint, int, void> Step;
     public readonly delegate* unmanaged[Cdecl]<nint, BodyFrame*, void> ReadFrame;
     public readonly delegate* unmanaged[Cdecl]<nint, BodyData*, ConstraintData**, float, int> Read;
     public readonly delegate* unmanaged[Cdecl]<nint, BodyData*, ConstraintData**, int> ReadContacts;
@@ -155,7 +156,8 @@ internal sealed unsafe class DemoLibrary : IDisposable
         SetResearchExtensions = (delegate* unmanaged[Cdecl]<nint, int, void>)NativeLibrary.GetExport(library, "demo_research_extensions");
         SetCompliantMaterials = (delegate* unmanaged[Cdecl]<nint, int, void>)NativeLibrary.GetExport(library, "demo_compliant_materials");
         AddVelocity = (delegate* unmanaged[Cdecl]<nint, int, float, float, float, void>)NativeLibrary.GetExport(library, "demo_add_velocity");
-        Step = (delegate* unmanaged[Cdecl]<nint, delegate* unmanaged[Cdecl]<nint, void>, nint, int, void>)NativeLibrary.GetExport(library, "demo_step");
+        Step = (delegate* unmanaged[Cdecl]<nint, delegate* unmanaged[Cdecl]<nint, void>, nint, int,
+            delegate* unmanaged[Cdecl]<nint, int, nint, nint, void>, nint, int, void>)NativeLibrary.GetExport(library, "demo_step");
         ReadFrame = (delegate* unmanaged[Cdecl]<nint, BodyFrame*, void>)NativeLibrary.GetExport(library, "demo_frame");
         Read = (delegate* unmanaged[Cdecl]<nint, BodyData*, ConstraintData**, float, int>)NativeLibrary.GetExport(library, "demo_read");
         ReadContacts = (delegate* unmanaged[Cdecl]<nint, BodyData*, ConstraintData**, int>)NativeLibrary.GetExport(library, "demo_contacts");

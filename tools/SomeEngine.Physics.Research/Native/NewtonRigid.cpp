@@ -708,9 +708,15 @@ bool initializeNewtonContact(Manifold* manifold, bool refresh)
     if (!researchNewtonContact(manifold)) researchStep->contactQueryDistance = .02f;
 #endif
 #ifdef DEMO_2D
-    RESEARCH_COUNT(NarrowQueries, 1);
-    manifold->numContacts = refresh ? Manifold::collide(manifold->bodyA, manifold->bodyB, manifold->contacts)
-        : readPredictedContacts(manifold->bodyA, manifold->bodyB, manifold->contacts);
+    auto& detected = static_cast<ContactManifold*>(manifold)->detectedCount;
+    if (detected >= 0)
+        manifold->numContacts = researchReadContacts(manifold, manifold->contacts);
+    else
+    {
+        RESEARCH_COUNT(NarrowQueries, 1);
+        manifold->numContacts = refresh ? Manifold::collide(manifold->bodyA, manifold->bodyB, manifold->contacts)
+            : readPredictedContacts(manifold->bodyA, manifold->bodyB, manifold->contacts);
+    }
 #else
     auto& detected = static_cast<ContactManifold*>(manifold)->detectedCount;
     if (detected >= 0)
