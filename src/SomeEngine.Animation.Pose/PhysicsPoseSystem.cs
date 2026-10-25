@@ -1,4 +1,3 @@
-using System.Numerics;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
@@ -7,7 +6,7 @@ using SomeEngine.Job;
 
 namespace SomeEngine.Animation.Pose;
 
-/// <summary>Converts completed physics poses and publishes masked local results before ordinary composition.</summary>
+/// <summary>Blends mapped physics bone models and publishes masked local results before ordinary composition.</summary>
 public struct PhysicsPoseSystem : ISystem<PoseNodeContext>
 {
     private QueryHandle _instances;
@@ -62,7 +61,8 @@ public struct PhysicsPoseSystem : ISystem<PoseNodeContext>
                 .CopyTo(copy.Values));
         instance.Samples.ReadParents();
         instance.Sampled = true;
-        jobs.Add(JobSystem.Schedule(new BlendBodies(instance.Samples, instance.ActorTransform, physicsWeight), instance.Samples.Accesses));
+        jobs.Add(PoseAnimation.GetScheduler(world).Schedule(new BlendBodies(instance.Samples, physicsWeight),
+            instance.Samples.Accesses, instance.Step?.Completion ?? default));
     }
 
     private static void Publish(World world, Entity animation, ref PhysicsPoseInstance instance)
@@ -94,8 +94,8 @@ public struct PhysicsPoseSystem : ISystem<PoseNodeContext>
 
     private readonly record struct PhysicsPoseFrame(World World, int Level, List<JobHandle> Jobs);
 
-    private readonly record struct BlendBodies(PhysicsPoseSamples Samples, Matrix4x4 Actor, float Weight) : IJob
+    private readonly record struct BlendBodies(PhysicsPoseSamples Samples, float Weight) : IJob
     {
-        public void Execute() => Samples.Blend(Actor, Weight);
+        public void Execute() => Samples.Blend(Weight);
     }
 }

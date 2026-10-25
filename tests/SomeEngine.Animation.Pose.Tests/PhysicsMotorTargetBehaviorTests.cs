@@ -43,18 +43,45 @@ public sealed class PhysicsMotorTargetBehaviorTests
             .Read<BodyStepState>().ReadWrite<AvbdBodyEquation>());
         QueryHandle motors = world.Query(new QueryDefinitionBuilder().Read<JointConstraint>()
             .Read<DirectedRelationEndpoints<JointConstraint>>().Read<JointMotor>().ReadWrite<JointMotorTarget>().ReadWrite<AvbdMotorState>());
+        var storage = new PoseStorage();
+        using SkeletonInstance output = storage.CreateInstance(skeleton);
+        Entity poseTarget = PoseAnimation.CreateTarget(world, output, resultCount: 2, output: new(1));
+        using var builder = new AnimationBuilder(world);
+        using (builder.Parallel())
+        {
+            builder.Leaf<ClipParameters, ClipLeaf>(poseTarget, new(clip, new(0), Loop: true));
+            builder.BlendPhysicsPose(poseTarget, new(new(0), new(1), mapping, new BoneMask([1])));
+        }
+        Entity animation = builder.Play();
+        QueryHandle poses = world.Query(new QueryDefinitionBuilder().Read<BodyPose>());
+        var binding = (Body: target, Actor: actor, Query: poses, Read: default(ReadPhysicsPose));
+        world.ExecuteBufferWrite<PhysicsPoseInstance, (Entity Body, Matrix4x4 Actor, QueryHandle Query, ReadPhysicsPose Read)>(
+            animation, ref binding, static (inputs, ref binding) =>
+            {
+                inputs[0].ActorTransform = binding.Actor;
+                binding.Read = inputs[0].BindBodies(binding.Query, [binding.Body]);
+            });
+        using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
+        PoseAnimation.AddSystems(systems, nodes: static nodes => nodes.Add(new PhysicsPoseSystem()));
         var stages = new PredictBodies(Vector3.Zero, 64)
             .Then(SolveAvbd.Create(world, bodies, new AnimatedAvbdMotor(motors, targets), 32, 0, 0))
             .Then(new UpdateBodyVelocities(64));
-        var physics = PhysicsSimulation.Create(world, QueryDefinition.Empty, stages, substeps: 2);
+        using var physics = PhysicsSimulation.Create(world, QueryDefinition.Empty, stages, substeps: 2)
+            .CreateFrame(binding.Read, stepDuration: .2, maximumDelay: 0, firstStepNumber: 0, startTime: 0);
 
-        physics.Schedule(0, 0, 0.2).Complete();
+        physics.AdvanceTime(.2);
+        physics.CompleteForRead();
+        var frame = new ImmediateSystemContext(world, 0, 0, .2);
+        systems.Update(ref frame);
 
         Assert.InRange(Vector3.Distance(new Vector3(9, 0.1666667f, 0), world.Read<BodyPose>(target).Position), 0, 1e-5f);
         Assert.InRange(Vector3.Distance(Vector3.UnitY, world.Read<BodyVelocity>(target).Linear), 0, 1e-4f);
         JointMotorTarget sampled = world.Read<JointMotorTarget>(joint.Entity);
         Assert.Equal(0.2, sampled.Time, 10);
         Assert.InRange(Vector3.Distance(new Vector3(9, 0.2f, 0), sampled.Frame.Position), 0, 1e-5f);
+        Assert.InRange(Vector3.Distance(new Vector3(.1666667f, 0, 0), output.ModelPose.Transforms[0].Translation), 0, 1e-5f);
+        Assert.Equal(.2, output.ModelPose.SampleTime, 6);
+        world.ReleaseQuery(poses);
         world.ReleaseQuery(motors);
         world.ReleaseQuery(bodies);
     }
