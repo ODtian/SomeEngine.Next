@@ -85,3 +85,6 @@ $nativeInstructions = Join-Path $PWD 'tools/SomeEngine.Animation.Checks/Read-Nat
 ```
 
 `Read-NativeInstructions.ps1` 按符号采集任务记录的映像地址和方法长度，输出最终 PE 中的代表批次、字段写入、系统回调与 Timeline 启用读取指令。两个诊断任务沿共同 FIFO 顺序执行，使用同一次发布的映像与符号。
+
+
+`--pose-sampling-benchmark` 以同一组 1,000 个 96 骨片段选择，比较局部与模型空间的逐次、同步批次和 `ScheduleLocal` / `ScheduleModel` 加 `Complete` 完整调用。选择中的五根骨骼和二叉层级是通用批采样 API 的测量例子。固定 4 个工作线程、64 次预热、96 次采样，输出每个姿势的中位数与 p95 耗时，以及完成后进程全部线程的每批托管分配。
