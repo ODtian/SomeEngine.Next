@@ -107,7 +107,8 @@ public sealed partial class Scheduler : IDisposable
         }
     }
 
-    internal int WorkerCount => _config.WorkerCount;
+    /// <summary>The number of worker threads configured for this scheduler.</summary>
+    public int WorkerCount => _config.WorkerCount;
 
     public JobRuntimeStats GetStats()
     {
