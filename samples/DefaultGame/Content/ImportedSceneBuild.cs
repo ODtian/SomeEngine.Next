@@ -44,7 +44,7 @@ public static class ImportedSceneBuild
         string source = description["source"]!.GetValue<string>();
         ModelRoot model = ModelRoot.Load(source);
         var importer = new ImportedSceneImporter();
-        await importer.BuildAsync(project, model, engineRoot, packedVertices: true);
+        await importer.BuildAsync(project, model, engineRoot);
         await importer.UpdateMaterialsAsync(project, model, imported);
         AssetEntry scene = imported.Assets.Values.Single(entry => entry.AssetType == WorldAsset.FileType);
         string settingsPath = Path.Combine(projectRoot, "assets/Runtime/default.runtime.asset");
