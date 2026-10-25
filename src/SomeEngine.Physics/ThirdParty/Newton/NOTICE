@@ -12,6 +12,12 @@ The mathematical migration follows the project's research NewtonRigid.cpp.
 JointMotorMath.cs, AvbdJointMotorMath.cs and XpbdJointMotorProjection.cs reuse
 these common joint Jacobians and material coefficients for timed PD drives.
 
+AvbdContactMath.cs adapts contactEquation and addContact from the research
+NewtonRigid.cpp (Newton rigid VBD compliant contact, unilateral normal force,
+disk friction curvature and approach damping). Contact multipliers are world
+forces stored on persistent ECS contact entities; material combination and
+normal restitution impulses use explicit C# stages and project parameters.
+
 The C# implementation stores body equations and constraint multipliers in ECS
 components, binds concrete constraint types through borrowed query rows and
 uses the existing Job scheduler for its execution and completion.

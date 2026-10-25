@@ -6,10 +6,10 @@ namespace SomeEngine.Physics;
 
 public readonly struct AvbdJointMotorMath : IAvbdConstraint<JointConstraint>
 {
-    public static int GetBodyCount(in JointConstraint constraint, scoped QueryRow row) =>
+    public static int GetBodyCount(in JointConstraint constraint, scoped QueryRow row, in PhysicsStepContext context) =>
         row.ReadRef<JointMotor>().Response == JointMotorResponse.Both ? 2 : 1;
 
-    public static Entity GetBody(in JointConstraint constraint, scoped QueryRow row, int index)
+    public static Entity GetBody(in JointConstraint constraint, scoped QueryRow row, int index, in PhysicsStepContext context)
     {
         ref readonly var endpoints = ref row.ReadRef<DirectedRelationEndpoints<JointConstraint>>();
         return row.ReadRef<JointMotor>().Response == JointMotorResponse.Both && index == 0 ? endpoints.Source : endpoints.Target;

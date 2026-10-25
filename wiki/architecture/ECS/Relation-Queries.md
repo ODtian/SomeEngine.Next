@@ -10,6 +10,10 @@
 
 `QueryDefinition.WithAccessFrom` 将两份定义的存储访问归一化为可选访问并集，其中包含变更、启用等过滤条件所需的读取。`Where`、`Except` 通过 `WithOptionalRead<T>` 将签名读取补入这一并集。外层查询持有完整访问范围，内层嵌套各参与集合的成员查询，执行沿用 `World.ExecuteQuery<TExecution>` 的资源访问、版本与查询进入/结束流程。
 
+`QueryDefinition.WithAccess(inputs)` 保留接收方原有成员筛选，并补充 inputs 的可选访问。两种组合均从原查询 term 形成访问描述，Buffer 的 header 与 inline 列沿同一声明保留。
+
+反复执行的作业在初始化时调用 `relation.ReadQueries(additionalReads)`，以 `RelationQueryReads` 持有登记的成员及完整访问查询。`Access` 提供完整访问句柄供调度器声明资源；`Execute(ref execution)` 在一个嵌套有效范围内向具体 `IRelationQueryExecution` 交付 `RelationQueryViews`，也提供系统版本基线重载。原多查询终端复用此桥；原单成员只读路径保持直接执行。读取持有者在工作完成后 `Dispose`，按取得顺序的逆序释放登记引用。源码见 [RelationQueryReads](../../../src/SomeEngine.ECS.Relations/RelationQueryReads.cs)。
+
 静态 `ReadsFromSingleQuery` 为 true 的来源声明所有输出参与实体都属于唯一输入集合。该集合只有只读访问时，终端在原成员定义上累积完整语义读取，用一次 `ExecuteQuery` 同时提供成员与组件视图。Within、键桶 Within 和空间单集合来源采用此路径。多集合、写入集合、普通实体持有的多元事实及原生边来源按各自读取范围执行。`WithOptionalRead` 在现有访问已经包含读取时复用当前定义。
 
 累积读取后的定义与原定义为同一引用时，单输入只读终端直接借用原成员句柄进入 `World.ExecuteQuery`；原持有者继续管理该句柄。实际派生的读取定义形成自身临时查询，并在 finally 中释放。两条分支均沿原版本参数执行并更新同一活动输出终端；World 继续管理读取准入及迭代作用域。
