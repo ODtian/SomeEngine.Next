@@ -16,8 +16,10 @@
 跨帧资源的队列释放也带有完整区间。记录覆盖持久 pass、当帧上传与其它即时 pass。
 
 每个帧槽按实际 Queue 保存并复用 timestamp pool、readback buffer 和采样存储。
-pool 的 QueueType 与写入和 resolve 所在队列一致。应用命令全部提交后，执行器在各自
-队列上追加 resolve；同队列 FIFO 维持查询与读回顺序。resolve 完成点进入正常帧槽完成集合。
+pool 的 QueueType 与写入和 resolve 所在队列一致。执行器沿已解析的 wave 提交顺序，
+为每条实际队列保存最后一次应用提交，并在其命令数组尾追加独立短 context 记录的 resolve。
+只有跨帧资源释放工作的队列，将 resolve 追加到该次释放提交。查询写入与 resolve 按同队列
+命令顺序执行，共用该次提交的完成点；正常资源状态接受、跨队列等待和帧槽完成集合沿用该完成点。
 帧槽在完成后回收时交付结果，图正常释放时交付剩余已完成结果。
 
 `GpuPassTime.CommandsMs` 表示 pass 命令的 GPU 时间。
@@ -32,8 +34,14 @@ Cluster 通过 `DeformationTimeGroup` 标记容量重置与区域分配，
 `DeformationEvaluationTimeGroup` 标记用户当前/上一顶点求值和缓存写入，
 `RasterTimeGroup` 标记软件与硬件光栅工作。
 
-采集期间 pass 逐帧录制，查询池与读回资源继续按帧槽复用。timestamp 命令、resolve
-提交与完成后结果分配是采集的固定开销；比较配置应保持相同采集方式。
+采集期间持久 pass 按已有资源、参数与屏障条件复用命令，并同时比较该 pass 实际的
+Queue、timestamp Pool 对象与查询起点。池增长或查询绑定改变时，受影响的录制批次重新记录。
+查询 reset 与四个 timestamp 随命令一起重放，查询池与读回资源继续按帧槽复用。
+resolve 的短命令每帧重新记录，应用的长批命令沿原重放条件复用。
+timestamp 命令、resolve 录制与完成后结果分配是采集的固定开销；比较配置保持相同采集方式。
+
+图提交、完成后多队列时间和回读的公开行为见
+[`QueueSubmissionTests`](../../../tests/SomeEngine.RenderGraph.Tests/QueueSubmissionTests.cs)。
 
 ## 应用入口
 
@@ -43,6 +51,8 @@ Game world 更新、异步 compute 与多帧调度。`Gpu` 是上述 GPU 结果�
 
 `CpuMs` 从帧入口与该帧异步 Game update 的调度起点中较早者计到 `Present` 返回，
 因此包含该帧游戏回调、动画、提取、资源等待、渲染准备与提交。
+应用等待短 Game 任务时，`RuntimeWait` 先在同一超时预算内主动检查至多 1 ms，
+随后按原完成事件与窗口消息等待；该段等待完整计入 `CpuMs` 与 `TaskCompletion` trace。
 `GameMs`、`AnimationMs`、`ExtractionMs`、`PrepareMs`、`ReconcileMs`、`ExecuteMs` 描述各 CPU 阶段；
 `ExecuteMs` 包含图分析、命令录制和提交。CPU、GPU 与 `Geometry` 结果通过 `FrameIdentity` 配对，
 在 GPU 完成后交付给应用。`RenderGraphFrameResult.FrameIdentity` 将执行观察与同一帧关联。

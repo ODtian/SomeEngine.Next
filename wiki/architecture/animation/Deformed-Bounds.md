@@ -36,11 +36,20 @@ world.Add(meshEntity, new MeshSkin(skeletonInstance, skinBinding));
 
 `SkinBoundsFeature` 在装配时解析每个节点和 draw cluster 对应的影响盒，按共享几何复用定义。
 实例保存自己的骨骼绑定、输入标记和输出范围。定义变化上传工作表；姿势输入变化更新对应实例的值。
+静态定义读取按查询成员版本和几何、绑定、影响盒组件的 chunk 版本推进，
+普通帧从已有实例更新动态姿势输入。
+边界更新直接读取同一 `SkinningFeature` section 已持有的启动编号、输入编号、姿势版本和 GPU 标志，
+各网格继续在自己的 `MeshBounds.Inputs` 中比较前后输入。
 当前和上一姿势分别读取 `SkinningFeature` 提供的两份 G。实际提交后接受输入标记，重复输入保留结果。
 
-当前几何变化同时写入 `RenderDeformBounds` 的 ECS 版本，范围值保持原有对应关系。
-CPU 几何按模型姿势版本观察，GPU 几何按输入编号观察；逐帧历史更新继续推进边界输入版本。
-普通实例装配据此记录变化行，阴影 feature 复用既有变化行和当前／上一世界包围体使缓存页失效。
+`RenderDeformBounds` 在范围位置变化时发布；其 `First/NodeCount` 对应 GPU 输出位置。
+CPU 几何按模型姿势版本观察，GPU 几何按输入编号观察；逐帧历史更新推进边界内容版本。
+`SkinBoundsFeature` 在同一实例持有最近内容版本，`HasChangedSince` 提供相对调用方已接受版本的判断。
+场景 refit 观察来源的 `Revision`；阴影通过 `CollectDeformedCasters` 将内容变化映射为当前实例行，
+复用原有当前／上一世界包围体使缓存页失效，并在成功提交后接受来源版本。
+逐帧姿势更新沿边界内容版本传播，实例属性继续持有其范围位置。
+`ClusterInstanceSystem` 将整包 `RenderDeformBounds` 行版本都已变化的情况交给现有整包写入入口，
+局部变化继续按原有行版本选择对应范围。
 
 ## Cluster 共同结果
 
@@ -52,7 +61,24 @@ CPU 几何按模型姿势版本观察，GPU 几何按输入编号观察；逐帧
 `ClusterRenderFeature.GeometryLayout` 持有这一实例属性，普通实例存储负责传输。
 Cluster 的读取只依赖共同包围体和节点对应关系。LBS 的权重、关节和盒子变换由具体 feature 持有。
 
-骨骼完成点先于边界计算，边界完成点先于场景边界、根节点筛选、层级遍历和叶级剔除。
+骨骼完成点先于关节变换预计算。`TransformSkinJoints` 为变化实例的每个绑定关节计算
+当前／上一 `InverseBind * G` 和线性伸长上界，保存在 `SkinBoundsFeature` 的持久缓冲中。
+每个关节保存两组 XYZ 仿射列及伸长值，共 112 字节；盒子变换直接消费这些列。
+`SkinBoundsFeature` 同时作为 `IGraphResourceProvider` 将同一资源以 `SkinJointTransforms`
+提供给选择它的用户材质，按该实例绑定的 joint 起点索引，读取依赖原关节计算 pass。
+材质可通过 [Skinning](Skinning.md) 的 `LoadSkinJointTransform` 读取已计算的仿射乘积。
+`BuildGeometry` 为同一影响盒数组分配一个范围编号，剔除项与 LOD 项保存各自的范围编号。
+共享定义同时记录每个范围用于哪些输出项的剔除盒及 LOD 球。
+`TransformSkinBounds` 为变化实例的每个范围计算一次当前／上一盒子并集和伸长上界，
+四个相邻 lane 分担盒子循环、归并结果，并分担这个范围的输出项。
+布局重建时在同一实例内按影响盒数量排列范围工作，使同一 wave 内的范围具有相近循环长度，
+同时继续相邻读取该实例的关节矩阵。静态盒保存预计算中心、半尺寸和关节编号，每项 32 字节。
+剔除范围写最小／最大 XYZ；LOD 范围写选择球和各输出项的误差乘伸长上界。
+两种用途写入原有 48 字节结果的独立字，不同范围各自保持一个写入者。
+同一范围同时提供剔除与 LOD 时，合并写入最小值与误差。
+内部 BVH 节点继续在局部空间合并影响盒，再进行逐范围的仿射变换。
+多个 cluster、BVH leaf 和剔除／LOD 项共同引用同一范围时，共享这次姿势求值。
+边界完成点先于场景边界、根节点筛选、层级遍历和叶级剔除。
 场景 pass 按边界版本更新实例及空间组范围，既有边界消费者继续读取同一场景输出。
 上一姿势的层级和 cluster 盒子配合上一实例变换用于历史深度判断。
 

@@ -1,4 +1,5 @@
 using SomeEngine.RenderGraph;
+using SomeEngine.ECS.Entities;
 
 namespace SomeEngine.Render.Cluster.Pipeline;
 
@@ -11,4 +12,6 @@ public interface IClusterBoundsSource
     GraphBufferInput PreviousBounds { get; }
     GraphPassId CompletePass { get; }
     ulong Revision { get; }
+    /// <summary>Reports current instance contents changed after the caller's accepted source revision.</summary>
+    bool HasChangedSince(Entity entity, ulong revision);
 }

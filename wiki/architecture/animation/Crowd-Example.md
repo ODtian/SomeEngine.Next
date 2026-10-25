@@ -22,7 +22,9 @@ API 的程序生成示例夹具。24 段人体表面各连接四根骨骼，共 
 能力生成 Cluster 几何、LOD 和关节影响盒。每段固定的影响元组随几何简化保留。
 示例材质把四个 16 位 joint 和四个 8 位权重附加在标准表面属性后，使用自己的
 `someengine.example.crowd.lbs4.v1` 编码标识。两条路径共用同一个 `CrowdSkin.evaluate`，
-它通过 `LoadSkinTransform` 读取当前或上一帧模型骨骼，并求值位置和法线。
+它选择 `LoadSkinJointTransform` 读取变形边界阶段已计算的当前或上一帧 `IB * G`，
+再按自己的四权重求值位置和法线。该可选公共读取适用于参与 `SkinBoundsFeature` 的
+蒙皮绑定，接口与适用条件见 [Skinning](Skinning.md)。
 LBS 的矩阵、位置和法线中间值使用 `precise`，统一 inline 与缓存求值阶段的浮点运算顺序。
 示例的 `.shader` 源码组合同时声明自己的顶点编码和 `CrowdSkin` 求值器，并预编译
 `ClusterShadeMode`、`ClusterShadowReceiver` 和 `ClusterForwardShade` 的实际材质变体。
@@ -43,9 +45,11 @@ $env:DOTNET_PROCESSOR_COUNT = '4'
 & $queue --cpu --session crowd dotnet build samples/DefaultGame/DefaultGame.csproj -c Release -p:PublishAot=false -p:RuntimeIdentifier= --disable-build-servers /m:1 /nodeReuse:false /p:UseSharedCompilation=false
 ```
 
-修改示例材质后，开发组合的 `sample-crowd-materials` 命令仅重建两条材质，继续使用现有角色网格和共同管线。
+修改示例材质后，开发组合的 `sample-crowd-materials` 命令更新两条材质及主项目已经构建的共同 Shader 资产，继续使用现有角色网格。
 
-`DefaultGame --crowd` 显示两个角色场景；普通启动的选择器同时包含三个已有场景和两个角色场景。
+`DefaultGame --crowd-inline` 是选定的 1000 人场景入口，使用 inline 材质路径。
+`DefaultGame --crowd` 显示两个角色场景，供同一配置下的双路径比较；
+普通启动的选择器同时包含三个已有场景和两个角色场景。
 `--regression` 选择 `1024 spheres`、`Sponza`、`Amazon Bistro`，供 `tools/Measure-Scenes.ps1` 使用。
 `--measure` 在启动时测量所选集合并结束应用。
 
@@ -58,14 +62,30 @@ $env:DOTNET_ReadyToRun = '0'
 & $queue --session crowd samples/DefaultGame/bin/game/Release/net10.0/DefaultGame.exe --crowd --measure --hardware-adapter --hidden-window --no-vsync --no-debug-ui --no-taa --no-vsm --async-compute --fixed-step 0.016666667
 ```
 
+将同一命令的 `--crowd` 选择为 `--crowd-inline`，可单独运行所选 inline 场景；
+其余渲染参数、固定模拟窗口和完整 CPU/GPU 采集方式相同。
+
 角色场景的启动内容固定为 1920×1080，相机位于 `(0,30,-35)`，观察 `(0,.8,20)`，
 垂直视角为 `.8` 弧度，近远面为 `40/90`，覆盖角色区域并保持关节相接表面的深度精度；
 几何 LOD threshold 为 `1`。每条路径使用同一网格、变换、材质参数、
 四段动作和控制规则。`--crowd` 在同一模拟进度比较两条路径：预热 64 帧，采集第 64–191 帧，
 共 128 帧。`TestScene.MeasurementFrames` 接受可选的 `SimulationFrameWindow`；固定窗口
 按帧数结束，并要求窗口内素材已经就绪。三个既有场景在 `test-scenes.json` 中配置
-第 2048–3071 帧；平台也支持预热后按墙钟采集的场景。`MaximumMeasurementSeconds` 配置集合预算，
+第 128–255 帧；平台也支持预热后按墙钟采集的场景。`MaximumMeasurementSeconds` 配置集合预算，
 Crowd 使用固定帧窗口完成两条路径，普通三场景入口使用 45 秒预算。
+
+`tools/Measure-Scenes.ps1 -ApplicationPath <game exe> -ApplicationArguments <arguments>`
+沿相同选择器完成三个既有场景的反馈，`ApplicationArguments` 将分辨率、渲染开关与 backend
+交给原有应用参数解析。`test-scenes.json` 的 `ContentDirectory` 可直接选择已有导入目录。
+目录含 `scene-import.json` 时，主程序在启动时读取其来源与资产数量，通过既有
+`TestScene.DescribeWorkload` 保存到场景说明，并附上实际内容目录。
+
+已有导入场景可通过开发组合的 `reuse-scene <application root> <imported root> <output root>`
+建立当前运行入口。这个示例入口保留已有 Mesh、World、Texture 身份与字节，以来源 glTF
+材质参数和当前 `MaterialBlock` 写出材质，再使用主项目的共同 Shader 与管线。
+既有 SCV1 页由项目内 `scene_scv1_vertex.slang` 固定解码，配套材质的光栅、阴影和着色入口
+都声明 `someengine.vertex.standard.cluster.v1`。编码块原始地址的公共入口见
+[Opaque Vertex Data](../cluster/Opaque-Vertex-Data.md)。内容准备耗时与完整三场景反馈耗时分别记录。
 
 ## 完成后的数据
 

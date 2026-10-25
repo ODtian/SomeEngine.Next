@@ -1,4 +1,4 @@
-param([switch]$Trace, [string]$ApplicationPath)
+param([switch]$Trace, [string]$ApplicationPath, [string[]]$ApplicationArguments = @())
 $ErrorActionPreference = 'Stop'
 $application = if ($ApplicationPath) { [IO.Path]::GetFullPath($ApplicationPath) }
     else { [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../samples/DefaultGame/bin/game/Release/net10.0/DefaultGame.exe')) }

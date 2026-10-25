@@ -23,3 +23,7 @@ clipmap 按二次幂分级。默认偏移为零时，可覆盖目标位置的选
 页原点沿实际光视图的 X/Y UV 方向滚动。相机跨过对齐边界时，固定世界几何的细页地址保持不变。
 clipmap 每次滚动四分之一页表；无法按整个 mip 页对齐的较粗 mip，在投影变化时重新绘制。
 请求范围也覆盖材质的法线偏移和过滤半径，包括相邻页和相邻接收单元，避免采样落在未绘制区域。
+
+`VirtualShadowReceiverProjection` 的 GPU 参数占 96 字节；28 字节的 `CameraDepthOfField`
+后保留 4 字节填充，使 `CameraPosition` 和 `CotanHalfFieldOfView` 分别位于字节 80、92。
+该包装结构与 `vsm_receiver_projection.slang` 共用字段顺序，请求与材质采样读取同一份参数。

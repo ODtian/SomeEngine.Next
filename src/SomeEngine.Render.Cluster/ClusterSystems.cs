@@ -238,7 +238,10 @@ public sealed class ClusterInstanceSystem<TProducer> :
             uint lastSystemVersion) =>
             columns.AllTransformsChanged || packet.AllRowsChangedSince<RenderTransform>(lastSystemVersion)
             || packet.AllRowsChangedSince<RenderPreviousTransform>(lastSystemVersion)
-            || packet.AllRowsChangedSince<RenderClusterGeometry>(lastSystemVersion);
+            || packet.AllRowsChangedSince<RenderClusterGeometry>(lastSystemVersion)
+            || packet.Has<RenderMesh>() && packet.AllRowsChangedSince<RenderMesh>(lastSystemVersion)
+            || packet.Has<RenderDeformBounds>() && packet.AllRowsChangedSince<RenderDeformBounds>(lastSystemVersion)
+            || packet.Has<RenderXray>() && packet.AllRowsChangedSince<RenderXray>(lastSystemVersion);
 
         public int CountGroups(ReadOnlyQueryPacket packet, int entityRow) => 1;
 

@@ -733,15 +733,15 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             ulong hierarchyNodes = 0;
             foreach (BufferRange range in binding.BvhRanges) hierarchyNodes += range.Size / ClusterBvh.NodeBytes;
             ulong work = Math.Min(_options.MaxCandidates, Math.Max(hierarchyNodes, checked((ulong)binding.DispatchExtent)));
-            uint groupBudget = Math.Max(1u, Math.Max(_device.Capabilities.ShaderLaneCount,
-                _device.Capabilities.Limits.MaximumComputeThreadsPerGroup) / 64u);
-            uint workerGroups = Math.Max(1u, Math.Min(groupBudget, checked((uint)((work + 15u) / 16u))));
+            // Persistent workers share the device queue; the per-group thread limit
+            // does not describe how many groups can execute across the device.
+            uint workerGroups = Math.Max(1u, Math.Min(256u, checked((uint)((work + 3u) / 4u))));
             foreach (GraphPassId phase in GraphData.Resources.Work.Phases)
                 if (phase != default)
-                    graph.SetPassData(phase, new ClusterDispatchParameters(new DispatchArguments(workerGroups, 1, 1)));
+                    graph.SetPassDataIfChanged(phase, new ClusterDispatchParameters(new DispatchArguments(workerGroups, 1, 1)));
             UpdateShadeInputs(ref graph, _installedShadeStages!);
             uint viewGroups = ClusterRenderContext.GetViewWorkGroupCount(checked((uint)primaryViewCount));
-            graph.SetPassData(
+            graph.SetPassDataIfChanged(
                 GraphData.PrimarySeed.Pass,
                 new ClusterDispatchParameters(new DispatchArguments(
                     checked((checked((uint)binding.DispatchExtent) + 63u) / 64u),
@@ -749,7 +749,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                     Math.Max(1u, (viewGroups + 65534u) / 65535u))));
             foreach (ClusterLayerDispatch dispatch in GraphData.LayerDispatches)
             {
-                graph.SetPassData(
+                graph.SetPassDataIfChanged(
                     dispatch.Pass,
                     new ClusterDispatchParameters(new DispatchArguments(
                         dispatch.GroupX,
@@ -758,7 +758,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             }
             foreach (ClusterLayerDispatch dispatch in GraphData.WinnerDispatches)
             {
-                graph.SetPassData(
+                graph.SetPassDataIfChanged(
                     dispatch.Pass,
                     new ClusterFullscreenParameters(
                         _outputDescription.Width,

@@ -30,7 +30,7 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
     private GraphBufferId _playback, _readyPlayback, _blendStates, _readyBlendStates;
     private readonly List<GraphBufferId> _retiredHistories = [];
     private readonly Dictionary<Entity, Section> _sections = [];
-    private readonly Dictionary<Entity, RenderMeshSkin> _meshes = [];
+    private readonly Dictionary<Entity, MeshInput> _meshes = [];
     private readonly List<Entity> _removed = [];
     private readonly List<Control> _controls = [];
     private readonly List<float> _controlValues = [];
@@ -48,6 +48,7 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
     private byte[] _definitionBytes = [];
     private BufferRange _sectionBytes, _jointBytes, _inverseBytes;
     private QueryHandle _sectionQuery, _meshQuery;
+    private uint _meshMembersVersion;
     private GraphPassId _uploadPass, _advancePass, _loadPass, _cpuPass, _storePass;
     private ulong _collection;
     private int _boneCount = 1;
@@ -57,6 +58,14 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
     public GraphBufferInput CurrentBones => _currentBones;
     public GraphBufferInput PreviousBones => _previousBones;
     public GraphPassId CompletePass { get; }
+
+    internal readonly record struct PoseInput(uint Starts, ulong Number, ulong GeometryNumber, bool IsGpu);
+
+    internal PoseInput ReadPoseInput(Entity entity)
+    {
+        Section section = _sections[entity];
+        return new(section.Data.Starts, section.Data.InputNumber, section.FrameVersion, section.Data.IsGpu);
+    }
 
     public SkinningFeature(IGraphicsBackend backend, Device device, global::SomeEngine.RenderGraph.RenderGraph graph)
     {
@@ -114,57 +123,85 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
         SkinningFeature feature = this;
         context.World.ExecuteQuery(_sectionQuery, ref feature, static (QueryCursor rows, ref SkinningFeature feature) =>
         {
-            foreach (QueryRow row in rows.Rows)
+            foreach (QueryChunkView chunk in rows.Chunks)
             {
-                RenderBoneSectionData data = row.Read<RenderBoneSectionData>();
-                if (!feature._sections.TryGetValue(row.Entity, out Section? section))
+                ReadOnlySpan<Entity> entities = chunk.Entities;
+                ReadOnlySpan<RenderBoneSectionData> values = chunk.Read<RenderBoneSectionData>();
+                for (int index = 0; index < entities.Length; index++)
                 {
-                    feature._sections.Add(row.Entity, section = new(row.Entity));
-                    feature._membershipChanged = feature._definitionsChanged = true;
+                    Entity entity = entities[index];
+                    ref readonly RenderBoneSectionData data = ref values[index];
+                    if (!feature._sections.TryGetValue(entity, out Section? section))
+                    {
+                        feature._sections.Add(entity, section = new(entity));
+                        feature._membershipChanged = feature._definitionsChanged = true;
+                    }
+                    if (!ReferenceEquals(section.Data.Parents, data.Parents) || !ReferenceEquals(section.Data.Clip, data.Clip)
+                        || !ReferenceEquals(section.Data.StateMachine, data.StateMachine)
+                        || !ReferenceEquals(section.Data.Blend, data.Blend) || !ReferenceEquals(section.Data.Rig, data.Rig)
+                        || !ReferenceEquals(section.Data.Evaluation, data.Evaluation)
+                        || !section.Data.CpuBones.Equals(data.CpuBones))
+                        feature._definitionsChanged = true;
+                    if (!ReferenceEquals(section.Data.Blend, data.Blend) || !ReferenceEquals(section.Data.Rig, data.Rig)) feature._membershipChanged = true;
+                    section.Data = data;
+                    section.Collection = feature._collection;
                 }
-                if (!ReferenceEquals(section.Data.Parents, data.Parents) || !ReferenceEquals(section.Data.Clip, data.Clip)
-                    || !ReferenceEquals(section.Data.StateMachine, data.StateMachine)
-                    || !ReferenceEquals(section.Data.Blend, data.Blend) || !ReferenceEquals(section.Data.Rig, data.Rig)
-                    || !ReferenceEquals(section.Data.Evaluation, data.Evaluation)
-                    || !section.Data.CpuBones.Equals(data.CpuBones))
-                    feature._definitionsChanged = true;
-                if (!ReferenceEquals(section.Data.Blend, data.Blend) || !ReferenceEquals(section.Data.Rig, data.Rig)) feature._membershipChanged = true;
-                section.Data = data;
-                section.Collection = feature._collection;
             }
         });
         _removed.Clear();
         foreach ((Entity entity, Section section) in _sections)
             if (section.Collection != _collection) _removed.Add(entity);
         foreach (Entity entity in _removed) { _sections.Remove(entity); _membershipChanged = _definitionsChanged = true; }
-        context.World.ExecuteQuery(_meshQuery, ref feature, static (QueryCursor rows, ref SkinningFeature feature) =>
+        uint meshMembers = context.World.MembershipVersion(_meshQuery);
+        var meshChanges = new MeshChanges(this, meshMembers != _meshMembersVersion);
+        context.World.ExecuteQuery(_meshQuery, context.LastSystemVersion, ref meshChanges, static (QueryCursor rows, ref MeshChanges changes) =>
         {
-            foreach (QueryRow row in rows.Rows)
+            SkinningFeature feature = changes.Feature;
+            foreach (QueryChunkView chunk in rows.Chunks)
             {
-                RenderMeshSkin data = row.Read<RenderMeshSkin>();
-                if (!feature._meshes.TryGetValue(row.Entity, out RenderMeshSkin before) || before != data)
+                if (!changes.MembersChanged && !chunk.HasChangedSinceLastSystemVersion<RenderMeshSkin>()) continue;
+                ReadOnlySpan<Entity> entities = chunk.Entities;
+                ReadOnlySpan<RenderMeshSkin> values = chunk.Read<RenderMeshSkin>();
+                for (int index = 0; index < entities.Length; index++)
                 {
-                    feature._meshes[row.Entity] = data;
-                    feature._definitionsChanged = true;
+                    Entity entity = entities[index];
+                    RenderMeshSkin data = values[index];
+                    if (!feature._meshes.TryGetValue(entity, out MeshInput? mesh))
+                    {
+                        feature._meshes.Add(entity, mesh = new());
+                        feature._definitionsChanged = true;
+                    }
+                    if (mesh.Data != data) feature._definitionsChanged = true;
+                    mesh.Data = data;
+                    mesh.Collection = feature._collection;
                 }
             }
         });
-        _removed.Clear();
-        foreach (Entity entity in _meshes.Keys)
-            if (!context.World.IsAlive(entity) || !context.World.Has<RenderMeshSkin>(entity)) _removed.Add(entity);
-        foreach (Entity entity in _removed) { _meshes.Remove(entity); _definitionsChanged = true; }
+        if (meshChanges.MembersChanged)
+        {
+            _removed.Clear();
+            foreach ((Entity entity, MeshInput mesh) in _meshes)
+                if (mesh.Collection != _collection) _removed.Add(entity);
+            foreach (Entity entity in _removed) { _meshes.Remove(entity); _definitionsChanged = true; }
+        }
+        _meshMembersVersion = meshMembers;
 
         if (_definitionsChanged) Rebuild(context.World);
         else RetireHistories();
         PrepareEvaluations();
         context.World.ExecuteQuery(_sectionQuery, ref feature, static (QueryCursor rows, ref SkinningFeature feature) =>
         {
-            foreach (QueryRow row in rows.Rows)
+            foreach (QueryChunkView chunk in rows.Chunks)
             {
-                Section section = feature._sections[row.Entity];
-                RenderBoneSectionData data = section.Data;
-                row.Write<RenderPoseSection>() = new(section.Range, data.Starts, data.InputNumber, section.FrameTime,
-                    data.StateMachine is null && data.Blend is null ? data.SampleTime : data.PlaybackTime, section.Index, section.FrameVersion);
+                ReadOnlySpan<Entity> entities = chunk.Entities;
+                Span<RenderPoseSection> values = chunk.Write<RenderPoseSection>();
+                for (int index = 0; index < entities.Length; index++)
+                {
+                    Section section = feature._sections[entities[index]];
+                    ref readonly RenderBoneSectionData data = ref section.Data;
+                    values[index] = new(section.Range, data.Starts, data.InputNumber, section.FrameTime,
+                        data.StateMachine is null && data.Blend is null ? data.SampleTime : data.PlaybackTime, section.Index, section.FrameVersion);
+                }
             }
         });
         RequestReadbacks();
@@ -172,12 +209,11 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
 
     private void ReadFrameInputs()
     {
-        PrepareEvaluations();
         _controls.Clear(); _controlValues.Clear(); _cpuValues.Clear(); _cpuCopies.Clear();
         _goalValues.Clear(); _modelOffsets.Clear(); _rootCorrections.Clear(); _movements.Clear(); _xpbdFrames.Clear();
         foreach (Section section in _sectionOrder)
         {
-            RenderBoneSectionData data = section.Data;
+            ref readonly RenderBoneSectionData data = ref section.Data;
             uint flags = (section.Evaluate ? 1u : 0u) | (!section.HasResult ? 2u : 0u) | (data.IsGpu ? 4u : 0u)
                 | (data.StateMachine is not null ? 8u : 0u) | (data.Playing ? 16u : 0u)
                 | (section.AcceptedInput.AnimationStarts != data.Identity.AnimationStarts
@@ -227,7 +263,7 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
         {
             if (section.EvaluationVisited) return;
             section.EvaluationVisited = true;
-            RenderBoneSectionData data = section.Data;
+            ref readonly RenderBoneSectionData data = ref section.Data;
             section.FrameInput = new(data.InputNumber, data.Starts, data.Identity.AnimationStarts, data.Clip, data.StateMachine, data.Blend, data.Rig);
             section.AdvanceSource = !section.HasResult || section.AcceptedInput != section.FrameInput;
             if (section.XpbdCount != 0)
@@ -314,8 +350,9 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
         Align(writer, 64);
         var bindOffsets = new Dictionary<SkinBinding, uint>();
         ulong inverseStart = (ulong)bytes.Position;
-        foreach (RenderMeshSkin mesh in _meshes.Values)
+        foreach (MeshInput input in _meshes.Values)
         {
+            RenderMeshSkin mesh = input.Data;
             if (bindOffsets.ContainsKey(mesh.Binding)) continue;
             bindOffsets.Add(mesh.Binding, (uint)(((ulong)bytes.Position - inverseStart) / 64));
             writer.Write(MemoryMarshal.AsBytes(mesh.Binding.InverseBindMatrices));
@@ -324,8 +361,9 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
         _inverseBytes = new(inverseStart, (ulong)bytes.Position - inverseStart);
         Align(writer, 4);
         ulong jointsStart = (ulong)bytes.Position;
-        foreach ((Entity entity, RenderMeshSkin mesh) in _meshes)
+        foreach ((Entity entity, MeshInput input) in _meshes)
         {
+            RenderMeshSkin mesh = input.Data;
             uint jointOffset = (uint)(((ulong)bytes.Position - jointsStart) / 4);
             foreach (RenderSkinJoint joint in mesh.Joints) writer.Write((uint)(_sections[joint.Section].Range.Start + joint.Bone));
             world.Replace(entity, new RenderSkinBinding(jointOffset, bindOffsets[mesh.Binding]));
@@ -673,6 +711,13 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
     private readonly record struct CpuCopy(int Source, int Destination, int Count);
     private readonly record struct HistoryCopy(PoseRange Source, PoseRange Destination, int SourceIndex, int DestinationIndex,
         int SourceBlendStart, int DestinationBlendStart, int BlendCount, int SourceXpbdStart, int DestinationXpbdStart, int XpbdCount);
+    private sealed class MeshInput
+    {
+        internal RenderMeshSkin Data;
+        internal ulong Collection;
+    }
+    private readonly record struct MeshChanges(SkinningFeature Feature, bool MembersChanged);
+
     private sealed class Section(Entity entity)
     {
         internal readonly Entity Entity = entity;
