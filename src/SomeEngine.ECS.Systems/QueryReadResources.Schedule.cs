@@ -89,7 +89,7 @@ public sealed partial class QueryReadResources
             JobSystem.Schedule(new ExecuteReadResources<TJob, TEntities>(this, componentAccesses), accesses);
         }
 
-        internal void Execute(scoped QueryCursor view, JobResourceAccess[] componentAccesses)
+        internal bool ResourcesMatch(scoped QueryCursor view, JobResourceAccess[] componentAccesses)
         {
             bool current = workspace.VersionsMatch(view, entities);
             if (current)
@@ -97,6 +97,11 @@ public sealed partial class QueryReadResources
                 workspace.Collect(Scheduler, view, entities);
                 current = ComponentResourceGroups.AccessesMatch(componentAccesses, CollectionsMarshal.AsSpan(workspace.Accesses));
             }
+            return current;
+        }
+
+        internal void Execute(bool current)
+        {
             if (current) job.Execute();
             else JobSystem.Schedule(new CollectReadResources<TJob, TEntities>(this), reads);
         }
@@ -122,18 +127,21 @@ public sealed partial class QueryReadResources
         }
     }
 
-    private readonly struct ExecuteReadResources<TJob, TEntities>(ReadRequest<TJob, TEntities> request,
+    private struct ExecuteReadResources<TJob, TEntities>(ReadRequest<TJob, TEntities> request,
         JobResourceAccess[] componentAccesses) : IJob
         where TJob : struct, IJob
         where TEntities : IQueryReadEntities
     {
+        private bool _current;
+
         public void Execute()
         {
             var work = this;
             request.World.ExecuteReadQuery(request.Query, ref work,
                 static (scoped QueryCursor query, ref ExecuteReadResources<TJob, TEntities> state) => state.Read(query));
+            request.Execute(work._current);
         }
 
-        private void Read(scoped QueryCursor query) => request.Execute(query, componentAccesses);
+        private void Read(scoped QueryCursor query) => _current = request.ResourcesMatch(query, componentAccesses);
     }
 }
