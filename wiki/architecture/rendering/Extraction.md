@@ -18,6 +18,27 @@ Extraction 把 GameWorld 的渲染相关变化转换成下一次 RenderWorld 更
 在同一读取窗口中移除对应绑定。各帧继续从当前材质读取内容版本及纹理引用，
 纹理自己的内容／分配版本沿原资源集合发布。
 
+## 只读范围收集与汇合
+
+`IRenderExtractionRangeSystem` 是 `IRenderExtractionSystem` 的可选扩展。
+`CreateRangeCollector()` 为每个查询范围提供独立的 `IRenderExtractionCollector`，
+其 `Collect(ReadOnlyQueryPacket, uint lastSystemVersion, bool fullCollection)` 读取 ECS 原始列，
+保存本轮输出；同步范围工作完成后，协调线程按原查询与系统顺序调用
+`MergeRangeCollector`，合并实体、材质、灯光、变换及 UI 变化集合。
+现有自定义 `IRenderExtractionSystem` 的 `Collect` / `CollectChanges` 在同一读取窗口中由协调线程调用。
+
+内置提取器的旧 chunk 入口通过 `ReadOnlyQueryPacketJobs.Borrow(QueryChunkView)`
+进入相同收集算法。查询回调保持来源列有效，`ReadOnlyQueryPacketPlan.ExecuteParallel`
+在返回前完成全部范围工作；汇合与 `CompleteSourceCollection` 继续处于外层
+`World.ExecuteReadSnapshot` 的读取期内。绑定 `WorldJobs` 的来源使用对应 Scheduler，
+普通 World 来源使用共同 Job Scheduler。
+
+范围输出由各收集器保持到汇合结束，随后 Reset 供后续提取复用。
+来源 mesh / material 缓存、Skin 骨架 section 与目标映射、Terrain 请求缓存由原提取器持有；
+镜像、资源引用与合并后的变换集合由原 `RenderExtractionContext` 持有。
+`CollectResources`、`CompleteCollection` 与 RenderWorld 的 Apply 边界接续这些已汇合值。
+实现入口为 `src/SomeEngine.Render/Systems/RenderExtractionRanges.cs`。
+
 ## 同一读取窗口内的补充收集
 
 `IRenderExtractionSystem.CompleteSourceCollection(World sourceWorld, bool fullCollection)`
