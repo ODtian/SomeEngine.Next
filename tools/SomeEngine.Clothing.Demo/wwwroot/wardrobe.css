@@ -1,0 +1,11 @@
+.garment-labels{top:auto;bottom:66px;left:0;right:0;pointer-events:none}
+.garment-labels>div{position:absolute;transform:translateX(-50%);text-align:center;white-space:nowrap}
+.garment-labels .number{display:none}
+.garment-labels strong{font-size:21px;letter-spacing:.1em}
+.garment-labels[data-garment=briefs]>div:nth-child(2),.garment-labels[data-garment=tights]>div:first-child{display:none}
+.garment-picker{position:absolute;top:72px;left:18px;background:#121a23b8}
+.garment-picker button{padding:7px 13px;font-size:12px}
+.color-legend{bottom:112px}
+@media(min-width:761px){main{height:calc(100vh - 164px);min-height:590px;max-height:900px}}
+.shell-view .clothing-controls { display: none !important; }
+.shell-view .garment-labels { display: none; }

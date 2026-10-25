@@ -53,4 +53,6 @@ Single-parent definitions, standalone creation, attachment and resolved skin bin
 
 ## Relations
 
+独立衣物样例的 DQS/LBS 人体数据和接触表面见 [衣物样例的人体更新](Clothing-Sample.md)。
+
 [[architecture/animation/Skeleton-Assets|Skeleton Assets]] · [[architecture/animation/Pose-Animation|Pose Animation]] · #97

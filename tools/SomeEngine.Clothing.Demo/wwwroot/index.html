@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Shell · 轮廓拓扑与蒙皮</title>
+  <link rel="stylesheet" href="demo.css">
+  <link rel="stylesheet" href="wardrobe.css?v=4">
+  <script type="importmap">{"imports":{"three":"./vendor/three.module.min.js"}}</script>
+</head>
+<body class="shell-view">
+  <header class="page-header">
+    <div><div class="eyebrow">SHELL TRANSPORT SURFACE</div><h1>Shell · 轮廓与蒙皮</h1><p>1 mm 贴合 · 等进度截面 · 连续运动路径</p></div>
+    <div class="connection"><span id="connection-dot"></span><span id="connection">连接模拟器</span></div>
+  </header>
+  <main>
+    <section class="stage" aria-label="Shell 轮廓三维交互演示">
+      <div class="stage-toolbar">
+        <div class="segmented clothing-controls" aria-label="着色方式">
+          <button data-color="fabric" aria-pressed="true">衣物</button>
+          <button data-color="weight" aria-pressed="false">模拟权重</button>
+          <button data-color="stretch" aria-pressed="false">拉伸</button>
+        </div>
+        <button id="pause" class="quiet">暂停</button>
+        <button id="reset" class="quiet">重新穿好</button>
+      </div>
+      <div id="viewport" role="img" aria-label="可旋转观察的身体、Shell 轮廓、四边面经纬线与蒙皮变形"></div>
+      <div id="garment-labels" class="garment-labels" data-garment="tights">
+        <div><span class="number">01</span><strong>内裤</strong><span id="brief-stats">初始化</span></div>
+        <div><span class="number">02</span><strong>裤袜</strong><span id="tights-stats">初始化</span></div>
+      </div>
+      <div class="view-tools">
+        <div><button data-view="front">正面</button><button data-view="back">背面</button><button data-view="crotch">裆部近景</button><button data-view="feet">脚部近景</button><button data-view="feet-side">脚部侧面</button></div>
+        <span>拖动旋转 · 滚轮缩放</span>
+      </div>
+      <div id="color-legend" class="color-legend" hidden><span id="legend-left">蒙皮跟随</span><i></i><span id="legend-right">完全模拟</span></div>
+      <div class="garment-picker segmented clothing-controls"><button data-garment="briefs" aria-pressed="false">内裤</button><button data-garment="tights" aria-pressed="true">裤袜</button><button data-garment="both" aria-pressed="false">并排</button></div>
+    </section>
+
+    <aside class="controls">
+      <section class="clothing-controls">
+        <div class="section-title"><h2>穿脱进度</h2><label class="small-check"><input id="synchronize" type="checkbox" checked>同步</label></div>
+        <label class="slider-label" for="brief-progress">内裤 <output id="brief-value">0%</output></label>
+        <input id="brief-progress" type="range" min="0" max="100" value="0" step="1">
+        <label class="slider-label" for="tights-progress">裤袜 <output id="tights-value">0%</output></label>
+        <input id="tights-progress" type="range" min="0" max="100" value="0" step="1">
+        <div class="action-row"><button id="undress" class="primary">沿轨迹脱下</button><button id="dress">沿轨迹穿上</button></div>
+        <p class="hint">进度平滑追随滑条。越过轨迹末端的顶点继续物理运动。</p>
+      </section>
+      <section>
+        <div class="section-title"><h2>身体运动</h2><label class="small-check"><input id="running" type="checkbox">跑步</label></div>
+        <label class="slider-label" for="stride">步幅 <output id="stride-value">65%</output></label>
+        <input id="stride" type="range" min="10" max="100" value="65">
+        <label class="slider-label" for="spread">双腿张开 <output id="spread-value">4°</output></label>
+        <input id="spread" type="range" min="0" max="24" value="4">
+        <label class="slider-label clothing-controls" for="wind">侧向风力 <output id="wind-value">0.0</output></label>
+        <input id="wind" class="clothing-controls" type="range" min="0" max="5" value="0" step="0.1">
+      </section>
+      <section class="display-options">
+        <h2>观察与计算</h2>
+        <label><input id="shell-only" type="checkbox" checked>Shell · 衣物运输曲面</label>
+        <label><input id="show-shell-wire" type="checkbox" checked>金色运动路径 / 深色进度等值环</label>
+        <label class="slider-label" for="shell-progress">进度截面 <output id="shell-progress-value">84%</output></label>
+        <input id="shell-progress" type="range" min="0" max="100" value="84" step="0.1">
+        <label class="clothing-controls"><input id="show-track" type="checkbox">轨迹网格</label>
+        <label class="clothing-controls"><input id="show-wire" type="checkbox">衣物网格</label>
+        <label><input id="see-through" type="checkbox">半透明人体</label>
+        <div class="select-row"><label for="skinning">蒙皮</label><select id="skinning"><option value="dq">双四元数 DQS</option><option value="linear">线性 LBS</option></select></div>
+        <div class="select-row clothing-controls"><label for="quality">物理预算</label><select id="quality"><option value="fast">实时</option><option value="fine">收敛对照</option></select></div>
+      </section>
+      <section class="timings clothing-controls">
+        <h2>两件衣物合计 <span>CPU / 模拟帧</span></h2>
+        <div><span>轨迹更新与采样</span><strong id="skin-time">—</strong></div>
+        <div><span>衣物物理</span><strong id="cloth-time">—</strong></div>
+        <div><span>脚部修正与统计</span><strong id="surface-time">—</strong></div>
+        <p class="hint">最近 60 帧中位数 · 计时覆盖各自计算步骤</p>
+      </section>
+    </aside>
+  </main>
+  <footer class="clothing-controls">
+    <div class="atlas-description"><span class="eyebrow">TRAJECTORY DATA</span><h2>预制轨迹</h2><p>沿连续环网格采样。<br>衣物权重结合成对蒙皮更新。</p></div>
+    <div class="atlas"><canvas id="atlas-0" width="32" height="64" aria-label="左腰至左脚轨迹的预制模拟权重"></canvas><span>左腰 → 左脚</span></div>
+    <div class="atlas"><canvas id="atlas-1" width="32" height="64" aria-label="右腰至右脚轨迹的预制模拟权重"></canvas><span>右腰 → 右脚</span></div>
+    <div class="data-flow"><span>衣物绑定 ＋ 穿脱进度</span><b>→</b><span>采样轨迹</span><b>→</b><span>蒙皮目标 ＋ 模拟权重</span><b>→</b><span>衣物顶点</span></div>
+  </footer>
+  <script type="module" src="demo.js?v=9"></script>
+</body>
+</html>

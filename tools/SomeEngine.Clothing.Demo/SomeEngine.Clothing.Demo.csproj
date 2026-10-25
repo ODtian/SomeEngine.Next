@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>SomeEngine.Clothing.Demo</RootNamespace>
+    <Optimize>true</Optimize>
+    <TieredCompilation>false</TieredCompilation>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/SomeEngine.Job/SomeEngine.Job.csproj" />
+    <Content Update="wwwroot/**/*" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets/**/*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>
