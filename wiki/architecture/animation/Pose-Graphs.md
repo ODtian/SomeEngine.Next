@@ -97,3 +97,5 @@ PoseAnimation.AddSystems(systems,
 `ClipSystem` 先从当前查询行取得共同叶节点时间，按 ready `AnimationClip` 收集活动实例。每个共享片段使用保留的时间行与局部姿势工作区，具体采样 Job 按 32 行解码；全部采样句柄完成后，各实例分别处理事件、根运动、姿势版本和阶段结束。`PoseBlendSystem` 在每个结果依赖层收集已就绪的实例，以具体 Job 批次计算加权骨骼，再写入普通结果。各目标继续持有自己的结果、时间与历史。
 
 片段采样 Job 显式声明就绪片段的读取和工作区、实例数组的写入；混合 Job 声明实际输入、权重和输出数组范围。完成句柄在结果复制进 ECS buffer 前收敛。调用方持有并释放 `SkeletonInstance`。源码入口为 [ClipSystem](../../../src/SomeEngine.Animation.Pose/ClipSystem.cs)、[ClipSamplingRows](../../../src/SomeEngine.Animation.Pose/ClipSamplingRows.cs) 和 [PoseBlendSystem](../../../src/SomeEngine.Animation.Pose/PoseBlendSystem.cs)。
+
+共同系统由 `ImmediateSystemContext` 的原协调入口更新。带 `WorldJobs` 的世界使用其选定 Scheduler，同步世界沿 `JobSystem.Current` 选择执行器。安装或低频绑定时，具体样本工作区用同一 Scheduler 建立数组、片段、模型与求解参数的访问描述；执行阶段在该 Scheduler 调度并在原结果交接点完成。片段、混合、层、IK、惯性、物理姿势及 Flow 的具体工作继续保留原类型和数值算法。源码中的共同选择入口为 [PoseAnimation.GetScheduler](../../../src/SomeEngine.Animation.Pose/PoseResults.cs)。
