@@ -1,7 +1,9 @@
 using System.Numerics;
 using SomeEngine.Core.Diagnostics;
 using SomeEngine.Core.Math;
+using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
+using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 
 namespace SomeEngine.Animation;
@@ -11,7 +13,8 @@ internal sealed unsafe class AnimationPipeline : ISystem<ImmediateSystemContext>
 {
     private readonly List<Algorithm> _algorithms = new();
     private readonly List<AdditionalSystem> _additionalSystems = new();
-    private SystemGroup<ImmediateSystemContext>? _systems;
+    private readonly List<TrackMembers> _tracks = new();
+    private List<PhaseSystems>? _systems;
     private Entity _time;
     private bool _defaults;
 
@@ -46,15 +49,18 @@ internal sealed unsafe class AnimationPipeline : ISystem<ImmediateSystemContext>
 
     public void OnCreate(ref ImmediateSystemContext context)
     {
-        var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(context.World));
-        _systems = systems;
-        Build(new SystemCollection(systems));
+        _systems = new();
+        Build(new SystemCollection(context.World, _systems, _tracks));
     }
 
     internal Type[] Describe()
     {
         if (_systems is not null)
-            return _systems.DescribeSystems();
+        {
+            var result = new List<Type>();
+            foreach (PhaseSystems phase in _systems) result.AddRange(phase.Systems.DescribeSystems());
+            return result.ToArray();
+        }
         var types = new TypeCollection();
         Build(types);
         return types.Types.ToArray();
@@ -62,19 +68,23 @@ internal sealed unsafe class AnimationPipeline : ISystem<ImmediateSystemContext>
 
     private void Build(ISystemCollection systems)
     {
+        systems.BeginPhase();
         systems.Add(new TimelineSystem(_time));
         AddAdditionalSystems(systems, AnimationPhase.Timeline);
         systems.Add(new GraphSystem());
         AddAdditionalSystems(systems, AnimationPhase.Graph);
+        systems.BeginPhase();
         if (_defaults)
-            systems.Add(new TrackSystem<float, FloatOps>(TrackFields.LayerWeights, evaluateTyped: false));
+            systems.AddTracks<float, TrackSystem<float, FloatOps>>(new(TrackFields.LayerWeights, evaluateTyped: false));
         foreach (Algorithm algorithm in _algorithms)
             algorithm.Evaluate(systems, TrackFields.LayerWeights);
         AddAdditionalSystems(systems, AnimationPhase.LayerWeights);
-        systems.Add(new GraphOutputSystem<float, FloatOps>(TrackFields.LayerWeights));
+        systems.BeginPhase();
+        systems.AddTracks<float, GraphOutputSystem<float, FloatOps>>(new(TrackFields.LayerWeights));
         systems.Add(new ComposeSystem<float, FloatOps>(TrackFields.LayerWeights));
         AddAdditionalSystems(systems, AnimationPhase.LayerComposition);
 
+        systems.BeginPhase();
         var compositions = new HashSet<Type>();
         if (_defaults)
         {
@@ -92,17 +102,18 @@ internal sealed unsafe class AnimationPipeline : ISystem<ImmediateSystemContext>
             algorithm.Evaluate(systems, TrackFields.Properties);
         AddAdditionalSystems(systems, AnimationPhase.Properties);
 
+        systems.BeginPhase();
         if (_defaults)
         {
-            systems.Add(new GraphOutputSystem<float, FloatOps>());
-            systems.Add(new GraphOutputSystem<Vector2, Vector2Ops>());
-            systems.Add(new GraphOutputSystem<Vector3, Vector3Ops>());
-            systems.Add(new GraphOutputSystem<Vector4, Vector4Ops>());
-            systems.Add(new GraphOutputSystem<Quaternion, QuaternionOps>());
-            systems.Add(new GraphOutputSystem<Color, ColorOps>());
-            systems.Add(new GraphOutputSystem<Thickness, ThicknessOps>());
-            systems.Add(new GraphOutputSystem<Rect, RectOps>());
-            systems.Add(new GraphOutputSystem<Matrix3x2, Matrix3x2Ops>());
+            systems.AddTracks<float, GraphOutputSystem<float, FloatOps>>(new());
+            systems.AddTracks<Vector2, GraphOutputSystem<Vector2, Vector2Ops>>(new());
+            systems.AddTracks<Vector3, GraphOutputSystem<Vector3, Vector3Ops>>(new());
+            systems.AddTracks<Vector4, GraphOutputSystem<Vector4, Vector4Ops>>(new());
+            systems.AddTracks<Quaternion, GraphOutputSystem<Quaternion, QuaternionOps>>(new());
+            systems.AddTracks<Color, GraphOutputSystem<Color, ColorOps>>(new());
+            systems.AddTracks<Thickness, GraphOutputSystem<Thickness, ThicknessOps>>(new());
+            systems.AddTracks<Rect, GraphOutputSystem<Rect, RectOps>>(new());
+            systems.AddTracks<Matrix3x2, GraphOutputSystem<Matrix3x2, Matrix3x2Ops>>(new());
             systems.Add(new ComposeSystem<float, FloatOps>());
             systems.Add(new ComposeSystem<Vector2, Vector2Ops>());
             systems.Add(new ComposeSystem<Vector3, Vector3Ops>());
@@ -123,9 +134,18 @@ internal sealed unsafe class AnimationPipeline : ISystem<ImmediateSystemContext>
         systems.Add(new TimelineEndSystem());
     }
 
-    public void OnUpdate(ref ImmediateSystemContext context) => _systems!.Update(ref context);
+    public void OnUpdate(ref ImmediateSystemContext context)
+    {
+        foreach (PhaseSystems phase in _systems!) phase.Update(ref context);
+    }
 
-    public void OnDestroy(ref ImmediateSystemContext context) => _systems?.Dispose();
+    public void OnDestroy(ref ImmediateSystemContext context)
+    {
+        List<PhaseSystems> systems = _systems!;
+        foreach (PhaseSystems phase in systems) phase.Systems.Complete();
+        foreach (PhaseSystems phase in systems) phase.Systems.Dispose();
+        foreach (TrackMembers tracks in _tracks) context.World.ReleaseQuery(tracks.Query);
+    }
 
     private void AddAdditionalSystems(ISystemCollection systems, AnimationPhase phase)
     {
@@ -138,7 +158,7 @@ internal sealed unsafe class AnimationPipeline : ISystem<ImmediateSystemContext>
         where T : unmanaged
         where TOps : struct, IValueOps<T>
     {
-        systems.Add(new TrackSystem<T, TOps>(TrackFields.Properties, evaluateTyped: false));
+        systems.AddTracks<T, TrackSystem<T, TOps>>(new(TrackFields.Properties, evaluateTyped: false));
         compositions.Add(typeof(ValueOps<T, TOps>));
     }
 
@@ -152,14 +172,14 @@ internal sealed unsafe class AnimationPipeline : ISystem<ImmediateSystemContext>
     {
         if (fields == TrackFields.LayerWeights && typeof(T) != typeof(float))
             return;
-        systems.Add(new TypedTrackSystem<T, TOps, TParameters, TState, TEvaluator>(fields));
+        systems.AddTracks<T, TypedTrackSystem<T, TOps, TParameters, TState, TEvaluator>>(new(fields));
     }
 
     private static void AddComposition<T, TOps>(ISystemCollection systems, TrackFields fields)
         where T : unmanaged
         where TOps : struct, IValueOps<T>
     {
-        systems.Add(new GraphOutputSystem<T, TOps>(fields));
+        systems.AddTracks<T, GraphOutputSystem<T, TOps>>(new(fields));
         systems.Add(new ComposeSystem<T, TOps>(fields));
     }
 
@@ -187,18 +207,86 @@ internal sealed unsafe class AnimationPipeline : ISystem<ImmediateSystemContext>
 
     private interface ISystemCollection
     {
+        void BeginPhase();
         void Add<TSystem>(TSystem system) where TSystem : ISystem<ImmediateSystemContext>;
+        void AddTracks<T, TSystem>(TSystem system) where T : unmanaged where TSystem : ISystem<ImmediateSystemContext>;
     }
 
-    private sealed class SystemCollection(SystemGroup<ImmediateSystemContext> systems) : ISystemCollection
+    private sealed class SystemCollection(World world, List<PhaseSystems> systems, List<TrackMembers> tracks) : ISystemCollection
     {
-        public void Add<TSystem>(TSystem system) where TSystem : ISystem<ImmediateSystemContext> => systems.Add(system);
+        private PhaseSystems _phase = null!;
+
+        public void BeginPhase()
+        {
+            _phase = new(world);
+            systems.Add(_phase);
+        }
+
+        public void Add<TSystem>(TSystem system) where TSystem : ISystem<ImmediateSystemContext> => _phase.Systems.Add(system);
+
+        public void AddTracks<T, TSystem>(TSystem system) where T : unmanaged where TSystem : ISystem<ImmediateSystemContext>
+        {
+            TrackMembers? members = null;
+            foreach (TrackMembers candidate in tracks)
+                if (candidate.ValueType == typeof(T)) { members = candidate; break; }
+            if (members is null)
+            {
+                QueryHandle query = world.Query(world.QueryDefinition().Read<Timeline>().ReadBuffer<Track<T>>());
+                members = new(typeof(T), query);
+                tracks.Add(members);
+            }
+            _phase.Add(members, _phase.Systems.Add(system));
+        }
     }
 
     private sealed class TypeCollection : ISystemCollection
     {
         internal readonly List<Type> Types = new();
+        public void BeginPhase() { }
         public void Add<TSystem>(TSystem system) where TSystem : ISystem<ImmediateSystemContext> => Types.Add(typeof(TSystem));
+        public void AddTracks<T, TSystem>(TSystem system) where T : unmanaged where TSystem : ISystem<ImmediateSystemContext> => Add(system);
+    }
+
+    private sealed class TrackMembers(Type valueType, QueryHandle query)
+    {
+        internal readonly Type ValueType = valueType;
+        internal readonly QueryHandle Query = query;
+    }
+
+    private sealed class TrackNodes(TrackMembers members)
+    {
+        internal readonly TrackMembers Members = members;
+        internal readonly List<int> Indices = new();
+        internal bool Enabled = true;
+    }
+
+    private sealed class PhaseSystems(World world)
+    {
+        internal readonly SystemGroup<ImmediateSystemContext> Systems = new(new ImmediateSystemDriver(world));
+        private readonly List<TrackNodes> _tracks = new();
+
+        internal void Add(TrackMembers members, int index)
+        {
+            foreach (TrackNodes nodes in _tracks)
+                if (ReferenceEquals(nodes.Members, members)) { nodes.Indices.Add(index); return; }
+            var added = new TrackNodes(members);
+            added.Indices.Add(index);
+            _tracks.Add(added);
+        }
+
+        internal void Update(ref ImmediateSystemContext context)
+        {
+            foreach (TrackNodes nodes in _tracks)
+            {
+                bool enabled = context.World.HasQueryMembers(nodes.Members.Query);
+                if (enabled == nodes.Enabled) continue;
+                foreach (int index in nodes.Indices)
+                    if (enabled) Systems.Enable(index);
+                    else Systems.Disable(index);
+                nodes.Enabled = enabled;
+            }
+            Systems.Update(ref context);
+        }
     }
 
 }

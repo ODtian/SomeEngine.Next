@@ -15,13 +15,14 @@ internal static class GraphConsumerChecks
     internal static void Check()
     {
         CheckSequence();
+        CheckPhaseCreation();
         CheckSharedInstances();
         CheckInstanceParameters();
         CheckRetarget();
         CheckCustomCondition();
         CheckPublicLeaf();
         CheckOutputRemoval();
-        Console.WriteLine("GRAPH_CONSUMERS_PASSED typed-sequence shared-definition instance-state custom-condition public-leaf");
+        Console.WriteLine("GRAPH_CONSUMERS_PASSED typed-sequence phase-create shared-definition instance-state custom-condition public-leaf");
     }
 
     private static void CheckSequence()
@@ -43,6 +44,49 @@ internal static class GraphConsumerChecks
         builder.Play();
         Tick(systems, world, 0.75);
         Require(world.Read<GraphValue>(target).Value == 12.5f, "Typed sequential leaves sample their compiled intervals.");
+    }
+
+    private static void CheckPhaseCreation()
+    {
+        using var world = new World();
+        Entity target = world.CreateEntity(new GraphValue());
+        using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
+        var creator = new PhaseGraph(target);
+        AnimationSystems.AddDefaults(systems);
+        AnimationSystems.Add(systems, creator, AnimationPhase.Graph);
+        Type[] described = AnimationSystems.Describe(systems);
+        Tick(systems, world, .25);
+        creator.Create = true;
+        Tick(systems, world, .25);
+        Require(world.Read<GraphValue>(target).Value == 10,
+            "A property graph created in the Graph phase must reach its instant target in the same update.");
+        Require(described.SequenceEqual(AnimationSystems.Describe(systems)),
+            "Concrete phase systems retain their described order before and after creation.");
+
+        using var continuous = new AnimationBuilder(world);
+        continuous.To(target, Value, 1034, Spec.Tween<float, FloatOps, Linear>(1024));
+        continuous.Play();
+        for (int frame = 0; frame < 64; frame++) Tick(systems, world, .25);
+        long before = GC.GetTotalAllocatedBytes(true);
+        for (int frame = 0; frame < 64; frame++) Tick(systems, world, .25);
+        long bytes = GC.GetTotalAllocatedBytes(true) - before;
+        Require(bytes == 0 && world.Read<GraphValue>(target).Value == 42,
+            "The active property pipeline must advance its declared graph with zero steady process allocation.");
+        Console.WriteLine($"PROPERTY_PIPELINE_ALLOCATIONS samples=64 bytes={bytes}");
+    }
+
+    private sealed class PhaseGraph(Entity target) : ISystem<ImmediateSystemContext>
+    {
+        internal bool Create;
+
+        public void OnUpdate(ref ImmediateSystemContext context)
+        {
+            if (!Create) return;
+            Create = false;
+            using var builder = new AnimationBuilder(context.World);
+            builder.To(target, Value, 10, Spec.Tween<float, FloatOps, Linear>(0));
+            builder.Play();
+        }
     }
 
     private static void CheckSharedInstances()
