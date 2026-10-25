@@ -83,8 +83,10 @@ internal struct GpuStateSystem : ISystem<ImmediateSystemContext>
             var timelines = chunk.ReadWriteColumn<Timeline>();
             var states = chunk.WriteBufferColumn<GpuStateInstance>();
             var times = AnimationGraph.ReadTimeColumn(chunk);
+            var inlineTargets = chunk.Has<GpuPoseTarget>() ? targets.ReadWriteColumn(chunk) : default;
             foreach (int row in chunk.RowIndices)
             {
+                Entity animation = chunk.GetEntity(row);
                 ref Timeline timeline = ref timelines[row];
                 foreach (ref GpuStateInstance instance in states[row].AsSpan())
                 {
@@ -93,7 +95,8 @@ internal struct GpuStateSystem : ISystem<ImmediateSystemContext>
                     if (!time.Active || instance.Finished) continue;
                     GpuStateParameters parameters = instance.Definition.Parameters[instance.Index];
                     float elapsed = Math.Min(time.Time.Time, parameters.Duration);
-                    ref GpuPoseTarget output = ref targets.Write(instance.Target);
+                    ref GpuPoseTarget output = ref (instance.Target == animation
+                        ? ref inlineTargets[row] : ref targets.Write(instance.Target));
                     output.Clip = null;
                     output.StateMachine = parameters.Machine;
                     output.Blend = null;

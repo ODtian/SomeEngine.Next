@@ -19,6 +19,7 @@
 `GpuStateSystem` 在共同时间查询内借用一次 `ComponentWriteBatch<GpuPoseTarget>`，按每个叶
 实例的目标身份直接写入当前组件根。整批共享 ECS 写版本；叶时间、结束反馈和控制数组继续由
 同一查询行及 `GpuStateInstance` 提供，目标组件随后通过普通渲染提取窗口交付。
+目标与当前动画行实体相同时，系统借用批次的 `ReadWriteColumn(chunk)` 按原行索引写入；其他目标通过批次的 `Write(entity)` 解析。两条路径使用同一个批次版本与组件写入维护。源码：[GPU 状态叶系统](../../../src/SomeEngine.Animation.Pose/GpuStateLeaf.cs)。
 该查询通过 `ReadWriteColumn<Timeline>()`、`WriteBufferColumn<GpuStateInstance>()` 与共同 `ReadTimeColumn(chunk)` 在块边界绑定列，各选中行的叶实例共同借用一次 Timeline，供共同时钟读取与完成反馈使用。
 
 共享定义变化时装入片段与紧凑状态表；逐帧变化更新控制值和输入时钟。持久推进 pass 先更新各实例状态，再由既有采样 pass 混合来源与目标的局部 TRS 并进行 FK。平移、缩放使用线性混合，旋转使用最短路径球面插值。区段重新排列时，GPU copy 同时迁移模型历史与播放行。
