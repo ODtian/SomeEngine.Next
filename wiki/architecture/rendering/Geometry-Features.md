@@ -17,6 +17,8 @@
 
 Mesh 准备将 `ClusterGeometry` 写入渲染实体的 `RenderClusterGeometry`。它包含根 BVH、版本、顶点编码、包围范围和驻留分配关联。Cluster 材质分配与实例生产消费该结果。原生页面与 BVH 由 Cluster 驻留系统持有，几何结果描述这组资源中的范围。
 
+`ClusterRenderResources.PrepareMeshesAsync` 收集本批缺失的 Mesh，并在首次等待前持有各自的页面来源，同时捕获 `JobSystem.Default` 作为整批工作的 Scheduler。驻留系统集中分配 BVH 范围和页面编号；每个 Mesh 的 BVH 复制、节点转换及页面映射通过 `Scheduler.ExecuteParallel` 独立计算，结果保存在本批数据中。全部计算结束后，驻留系统集中安装注册与完整几何。最终清理 Job 通过同一批数据的资源访问归还输入和剩余分配，并交付原始失败或取消结果；调用方可在后续准备中重新消费这些 Mesh。实现入口为 [ClusterMeshRegistration](../../../src/SomeEngine.Render.Cluster/ClusterMeshRegistration.cs)，公共结果检查位于 [MeshPreparationTests](../../../tests/SomeEngine.Render.Cluster.Tests/MeshPreparationTests.cs)。
+
 `RenderExtractionContext.SetMaterials(entity, materials)` 同时设置镜像实体的 `RenderMaterialBinding` 和 Rendering world 的共享材质引用。替换绑定、调用 `RemoveMaterials` 或删除镜像时，在同一 ECS 事务内释放原引用；最后一个实体解绑后移除对应材质索引。材质准备、实例字段与 Cluster 着色沿用同一条数据流。
 
 替换后的完整几何就绪并写入 Rendering world 后，最后一个引用结束的 Mesh 进入驻留回收。驻留系统按已接受提交的完成点归还页面和 BVH 空间，并在源读取结束后释放对应页面来源。页面编号继续递增，BVH 地址范围按完成情况复用；RenderGraph 声明当前有效的 BVH 范围。实现入口为 [ClusterMeshPreparation](../../../src/SomeEngine.Render.Cluster/ClusterMeshPreparation.cs)、[ClusterMeshes](../../../src/SomeEngine.Render.Cluster/ClusterMeshes.cs) 和 [ClusterBvh](../../../src/SomeEngine.Render.Cluster/ClusterBvh.cs)。应用可通过 `GeometryMemoryBytes` 与 `GeometryBvhMemoryBytes` 设置对应设备缓冲的容量。

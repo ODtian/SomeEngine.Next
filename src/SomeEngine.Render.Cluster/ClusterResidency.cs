@@ -210,13 +210,12 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
 
     internal bool IsDisposed => Volatile.Read(ref _lifecycleState) == 2;
 
-    internal ValueTask<ClusterMeshRegistrationResult> RegisterMeshAsync(
-        Mesh mesh,
-        CancellationToken cancellationToken = default,
-        SomeEngine.Assets.Pipeline.MeshPayloadSource? pageSource = null)
+    internal ValueTask<ClusterMeshRegistrationResult[]> RegisterMeshesAsync(
+        SomeEngine.Render.Components.RenderMesh[] meshes,
+        CancellationToken cancellationToken = default)
     {
         ThrowIfNotActive();
-        return _meshes.RegisterMeshAsync(mesh, cancellationToken, pageSource);
+        return _meshes.RegisterMeshesAsync(meshes, cancellationToken);
     }
 
     internal async ValueTask LoadOpeningPagesAsync(
