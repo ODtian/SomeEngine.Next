@@ -12,6 +12,7 @@ public sealed class ClipSampleBatch
     private readonly SampleTile[] _tiles;
     private readonly ParentBinding[] _parents;
     private JobResourceAccess[]? _accesses;
+    private Scheduler? _scheduler;
 
     public int Count => _selections.Length;
     public int OutputCount { get; }
@@ -63,28 +64,30 @@ public sealed class ClipSampleBatch
     /// <summary>Schedules local sampling into caller-owned memory and returns its completion handle.</summary>
     public JobHandle ScheduleLocal(ReadOnlyMemory<float> times, Memory<BoneTransform> destination, JobHandle dependency = default)
     {
-        ReadOnlySpan<JobResourceAccess> resources = GetAccesses();
+        Scheduler scheduler = JobSystem.Current;
+        ReadOnlySpan<JobResourceAccess> resources = GetAccesses(scheduler);
         Span<JobResourceAccess> accesses = stackalloc JobResourceAccess[resources.Length + 2];
         resources.CopyTo(accesses);
-        accesses[^2] = JobResourceAccess.Read(times);
-        accesses[^1] = JobResourceAccess.Write(destination);
-        return JobSystem.ScheduleParallel(new LocalSamples(this, times, destination), _tiles.Length, 1, accesses, dependency);
+        accesses[^2] = JobResourceAccess.Read(scheduler, times);
+        accesses[^1] = JobResourceAccess.Write(scheduler, destination);
+        return scheduler.ScheduleParallel(new LocalSamples(this, times, destination), _tiles.Length, 1, accesses, dependency);
     }
 
     /// <summary>Schedules model sampling into caller-owned memory and returns its completion handle.</summary>
     public JobHandle ScheduleModel(ReadOnlyMemory<float> times, Memory<Matrix4x4> destination, JobHandle dependency = default)
     {
-        ReadOnlySpan<JobResourceAccess> resources = GetAccesses();
+        Scheduler scheduler = JobSystem.Current;
+        ReadOnlySpan<JobResourceAccess> resources = GetAccesses(scheduler);
         Span<JobResourceAccess> accesses = stackalloc JobResourceAccess[resources.Length + 2];
         resources.CopyTo(accesses);
-        accesses[^2] = JobResourceAccess.Read(times);
-        accesses[^1] = JobResourceAccess.Write(destination);
-        return JobSystem.ScheduleParallel(new ModelSamples(this, times, destination), _tiles.Length, 1, accesses, dependency);
+        accesses[^2] = JobResourceAccess.Read(scheduler, times);
+        accesses[^1] = JobResourceAccess.Write(scheduler, destination);
+        return scheduler.ScheduleParallel(new ModelSamples(this, times, destination), _tiles.Length, 1, accesses, dependency);
     }
 
-    private ReadOnlySpan<JobResourceAccess> GetAccesses()
+    private ReadOnlySpan<JobResourceAccess> GetAccesses(Scheduler scheduler)
     {
-        bool changed = _accesses is null;
+        bool changed = !ReferenceEquals(_scheduler, scheduler);
         for (int index = 0; index < _parents.Length; index++)
         {
             ref ParentBinding parent = ref _parents[index];
@@ -103,13 +106,14 @@ public sealed class ClipSampleBatch
                             parents.Add(group.InheritedParents[row * group.Clip.Skeleton.BoneCount + bone].Instance);
                 }
             var accesses = new JobResourceAccess[1 + _groups.Length + parents.Count];
-            accesses[0] = JobResourceAccess.Write(JobSystem.Default.GetResourceToken(this));
+            accesses[0] = JobResourceAccess.Write(scheduler.GetResourceToken(this));
             for (int group = 0; group < _groups.Length; group++)
-                accesses[1 + group] = JobResourceAccess.Read(JobSystem.Default.GetResourceToken(_groups[group].Clip));
+                accesses[1 + group] = JobResourceAccess.Read(scheduler.GetResourceToken(_groups[group].Clip));
             int next = 1 + _groups.Length;
             foreach (SkeletonInstance parent in parents)
-                accesses[next++] = JobResourceAccess.Read(JobSystem.Default.GetResourceToken(parent));
+                accesses[next++] = JobResourceAccess.Read(scheduler.GetResourceToken(parent));
             _accesses = accesses;
+            _scheduler = scheduler;
         }
         return _accesses;
     }
