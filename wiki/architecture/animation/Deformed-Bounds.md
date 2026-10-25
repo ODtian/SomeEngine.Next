@@ -36,6 +36,8 @@ world.Add(meshEntity, new MeshSkin(skeletonInstance, skinBinding));
 
 `SkinBoundsFeature` 在装配时解析每个节点和 draw cluster 对应的影响盒，按共享几何复用定义。
 实例保存自己的骨骼绑定、输入标记和输出范围。定义变化上传工作表；姿势输入变化更新对应实例的值。
+静态定义读取按查询成员版本和几何、绑定、影响盒组件的 chunk 版本推进，
+普通帧从已有实例更新动态姿势输入。
 边界更新直接读取同一 `SkinningFeature` section 已持有的启动编号、输入编号、姿势版本和 GPU 标志，
 各网格继续在自己的 `MeshBounds.Inputs` 中比较前后输入。
 当前和上一姿势分别读取 `SkinningFeature` 提供的两份 G。实际提交后接受输入标记，重复输入保留结果。

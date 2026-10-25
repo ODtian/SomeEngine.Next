@@ -48,6 +48,7 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
     private byte[] _definitionBytes = [];
     private BufferRange _sectionBytes, _jointBytes, _inverseBytes;
     private QueryHandle _sectionQuery, _meshQuery;
+    private uint _meshMembersVersion;
     private GraphPassId _uploadPass, _advancePass, _loadPass, _cpuPass, _storePass;
     private ulong _collection;
     private int _boneCount = 1;
@@ -151,10 +152,14 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
         foreach ((Entity entity, Section section) in _sections)
             if (section.Collection != _collection) _removed.Add(entity);
         foreach (Entity entity in _removed) { _sections.Remove(entity); _membershipChanged = _definitionsChanged = true; }
-        context.World.ExecuteQuery(_meshQuery, ref feature, static (QueryCursor rows, ref SkinningFeature feature) =>
+        uint meshMembers = context.World.MembershipVersion(_meshQuery);
+        var meshChanges = new MeshChanges(this, meshMembers != _meshMembersVersion);
+        context.World.ExecuteQuery(_meshQuery, context.LastSystemVersion, ref meshChanges, static (QueryCursor rows, ref MeshChanges changes) =>
         {
+            SkinningFeature feature = changes.Feature;
             foreach (QueryChunkView chunk in rows.Chunks)
             {
+                if (!changes.MembersChanged && !chunk.HasChangedSinceLastSystemVersion<RenderMeshSkin>()) continue;
                 ReadOnlySpan<Entity> entities = chunk.Entities;
                 ReadOnlySpan<RenderMeshSkin> values = chunk.Read<RenderMeshSkin>();
                 for (int index = 0; index < entities.Length; index++)
@@ -172,10 +177,14 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
                 }
             }
         });
-        _removed.Clear();
-        foreach ((Entity entity, MeshInput mesh) in _meshes)
-            if (mesh.Collection != _collection) _removed.Add(entity);
-        foreach (Entity entity in _removed) { _meshes.Remove(entity); _definitionsChanged = true; }
+        if (meshChanges.MembersChanged)
+        {
+            _removed.Clear();
+            foreach ((Entity entity, MeshInput mesh) in _meshes)
+                if (mesh.Collection != _collection) _removed.Add(entity);
+            foreach (Entity entity in _removed) { _meshes.Remove(entity); _definitionsChanged = true; }
+        }
+        _meshMembersVersion = meshMembers;
 
         if (_definitionsChanged) Rebuild(context.World);
         else RetireHistories();
@@ -707,6 +716,7 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
         internal RenderMeshSkin Data;
         internal ulong Collection;
     }
+    private readonly record struct MeshChanges(SkinningFeature Feature, bool MembersChanged);
 
     private sealed class Section(Entity entity)
     {

@@ -34,6 +34,7 @@ public sealed class SkinBoundsFeature : IClusterBoundsSource, IDisposable,
     private MeshBounds[] _order = [];
     private RenderWorld _world = null!;
     private QueryHandle _query;
+    private uint _membersVersion;
     private GraphPassId _uploadPass;
     private byte[] _definitionBytes = [];
     private BufferRange _boxRange, _workRange, _usesRange;
@@ -141,11 +142,17 @@ public sealed class SkinBoundsFeature : IClusterBoundsSource, IDisposable,
     public void OnUpdate(ref RenderPrepareSystemContext context)
     {
         _collection++;
-        SkinBoundsFeature feature = this;
-        _world.ExecuteQuery(_query, ref feature, static (QueryCursor rows, ref SkinBoundsFeature feature) =>
+        uint members = _world.MembershipVersion(_query);
+        var changes = new BoundsChanges(this, members != _membersVersion);
+        _world.ExecuteQuery(_query, context.LastSystemVersion, ref changes, static (QueryCursor rows, ref BoundsChanges changes) =>
         {
+            SkinBoundsFeature feature = changes.Feature;
             foreach (QueryChunkView chunk in rows.Chunks)
             {
+                if (!changes.MembersChanged && !chunk.HasChangedSinceLastSystemVersion<RenderMesh>()
+                    && !chunk.HasChangedSinceLastSystemVersion<RenderMeshSkin>()
+                    && !chunk.HasChangedSinceLastSystemVersion<RenderSkinBinding>()
+                    && !chunk.HasChangedSinceLastSystemVersion<RenderSkinBounds>()) continue;
                 ReadOnlySpan<Entity> entities = chunk.Entities;
                 ReadOnlySpan<RenderMesh> meshes = chunk.Read<RenderMesh>();
                 ReadOnlySpan<RenderMeshSkin> skins = chunk.Read<RenderMeshSkin>();
@@ -155,15 +162,21 @@ public sealed class SkinBoundsFeature : IClusterBoundsSource, IDisposable,
                     feature.ReadInstance(entities[index], meshes[index].Mesh, bindings[index], skins[index].Joints, bounds[index].Data);
             }
         });
-        _removed.Clear();
-        foreach ((Entity entity, MeshBounds instance) in _instances)
-            if (instance.Collection != _collection) _removed.Add(entity);
-        foreach (Entity entity in _removed)
+        if (changes.MembersChanged)
         {
-            _instances.Remove(entity);
-            if (_world.IsAlive(entity) && _world.Has<RenderDeformBounds>(entity)) _world.Replace(entity, new RenderDeformBounds());
-            _layoutChanged = true;
+            _removed.Clear();
+            foreach ((Entity entity, MeshBounds instance) in _instances)
+                if (instance.Collection != _collection) _removed.Add(entity);
+            foreach (Entity entity in _removed)
+            {
+                _instances.Remove(entity);
+                if (_world.IsAlive(entity) && _world.Has<RenderDeformBounds>(entity)) _world.Replace(entity, new RenderDeformBounds());
+                _layoutChanged = true;
+            }
         }
+        _membersVersion = members;
+        foreach (MeshBounds instance in _instances.Values)
+            if (instance.Collection != _collection) ReadInputs(instance);
         if (_layoutChanged) Rebuild();
     }
 
@@ -191,6 +204,11 @@ public sealed class SkinBoundsFeature : IClusterBoundsSource, IDisposable,
             instance.Inputs = new SkinningFeature.PoseInput[instance.Sections.Length];
             changed = _layoutChanged = true;
         }
+        ReadInputs(instance, changed);
+    }
+
+    private void ReadInputs(MeshBounds instance, bool changed = false)
+    {
         for (int index = 0; index < instance.Sections.Length; index++)
         {
             SkinningFeature.PoseInput input = _skinning.ReadPoseInput(instance.Sections[index]);
@@ -418,6 +436,7 @@ public sealed class SkinBoundsFeature : IClusterBoundsSource, IDisposable,
 
     private enum Resource { Controls, Work, Boxes, Uses, Current, Previous, CurrentBones, PreviousBones, Joints, InverseBind, Transforms }
     private readonly record struct GeometryKey(ReadOnlyMemory<byte> Bvh, ImmutableArray<uint> Clusters, ClusterSkinBounds Data);
+    private readonly record struct BoundsChanges(SkinBoundsFeature Feature, bool MembersChanged);
     private readonly record struct InfluenceRange(uint First, uint Count, uint FirstUse, uint UseCount);
     private readonly record struct BoundsGroup(uint Cull, uint Lod, float Error);
     private sealed record GeometryBounds(uint NodeCount, uint OutputCount, InfluenceRange[] Ranges, RangeUse[] Uses, Box[] Boxes);
