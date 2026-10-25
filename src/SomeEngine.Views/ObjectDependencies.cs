@@ -51,6 +51,22 @@ internal sealed class ObjectDependencyList
 
     internal bool HasChanges(ObjectDependency read, ulong frame)
     {
+        Refresh(read, frame);
+        return ReadVersion(read, frame).HasChanges;
+    }
+
+    internal void Refresh(ulong frame)
+    {
+        for (int index = 0; index < _count; index++) Refresh(_reads[index], frame);
+    }
+
+    internal void CopyVersions(List<DependencyVersion> versions, ulong frame)
+    {
+        for (int index = 0; index < _count; index++) versions.Add(ReadVersion(_reads[index], frame));
+    }
+
+    private static void Refresh(ObjectDependency read, ulong frame)
+    {
         try
         {
             read.Cell.Refresh(frame);
@@ -59,9 +75,13 @@ internal sealed class ObjectDependencyList
         {
             // The consuming calculation reports the failure when it reads the Memo.
         }
+    }
+
+    private DependencyVersion ReadVersion(ObjectDependency read, ulong frame)
+    {
         uint version = Volatile.Read(ref read.Cell.Version);
-        return ((version & 1) != 0 && _readFrame != frame) || version != read.Version ||
-            !ReferenceEquals(read.Error, read.Cell.ReadError);
+        return new(read.Version, version, ((version & 1) != 0 && _readFrame != frame) ||
+            !ReferenceEquals(read.Error, read.Cell.ReadError));
     }
 
     // ECS retains this object for the component's lifetime, including component moves.
