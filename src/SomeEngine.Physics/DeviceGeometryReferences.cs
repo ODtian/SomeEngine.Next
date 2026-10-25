@@ -18,30 +18,33 @@ public struct DeviceGeometryReference
     public Vector3 SecondLocalPoint;
     public uint GridIndex;
     public Vector3 ThirdLocalPoint;
+    public uint FieldIndex;
 }
 
 /// <summary>Converts original geometry parameters and body references; current poses are read on the device.</summary>
 public interface IDeviceGeometrySource<TComponent> : IJobComponentResources<TComponent> where TComponent : struct, IComponent
 {
+    QueryDefinition AddReads(QueryDefinition definition) => definition.WithOptionalRead<DeviceBodyBinding>();
+    void AddReadResources(QueryReadResources resources) => resources.Add<DeviceBodyBinding, DeviceBodyReferenceResources>();
     DeviceGeometryInput Read(in TComponent component, scoped QueryRow row, scoped QueryCursor access,
         DeviceCollisionGeometry destination, out DeviceGeometryReference reference);
-    JobHandle Prepare(in PhysicsStepContext context, int rowsPerPacket, JobHandle dependency) => dependency;
+    JobHandle Prepare(in PhysicsStepContext context, QueryDefinition geometries, int rowsPerPacket, JobHandle dependency) => dependency;
 }
 
-public readonly struct DeviceComponentSource<TGeometry, TReader> : IDeviceGeometrySource<TGeometry>
+public readonly struct DeviceComponentSource<TGeometry, TReader>(TReader reader) : IDeviceGeometrySource<TGeometry>
     where TGeometry : struct, IComponent, ICollisionGeometry<TGeometry>
     where TReader : struct, IDeviceGeometryReader<TGeometry>
 {
     public static void Collect(in TGeometry component, ref JobResourceAccessBuilder resources) => TReader.Collect(in component, ref resources);
     public static long GetVersion(in TGeometry component) => TReader.GetVersion(in component);
-    public JobHandle Prepare(in PhysicsStepContext context, int rowsPerPacket, JobHandle dependency) =>
-        default(TReader).Prepare(in context, rowsPerPacket, dependency);
+    public JobHandle Prepare(in PhysicsStepContext context, QueryDefinition geometries, int rowsPerPacket, JobHandle dependency) =>
+        reader.Prepare(in context, geometries, rowsPerPacket, dependency);
     public DeviceGeometryInput Read(in TGeometry component, scoped QueryRow row, scoped QueryCursor access,
         DeviceCollisionGeometry destination, out DeviceGeometryReference reference)
     {
         reference = new() { BodyCount = 1, FirstBody = (uint)row.Read<DeviceBodyBinding>().Index };
         var origin = new BodyPose { Rotation = Quaternion.Identity };
-        return default(TReader).Read(in component, in origin, destination);
+        return reader.Read(in component, in origin, destination);
     }
 }
 
@@ -72,6 +75,17 @@ public readonly struct DeviceDynamicFaceSource : IDeviceGeometrySource<DynamicFa
     }
 }
 
+public readonly struct DeviceDynamicEdgeSource : IDeviceGeometrySource<DynamicEdge>
+{
+    public static void Collect(in DynamicEdge component, ref JobResourceAccessBuilder resources) { }
+    public DeviceGeometryInput Read(in DynamicEdge component, scoped QueryRow row, scoped QueryCursor access,
+        DeviceCollisionGeometry destination, out DeviceGeometryReference reference)
+    {
+        reference = DeviceGeometrySources.Segment(component.First, component.Second, access);
+        return new();
+    }
+}
+
 internal static class DeviceGeometrySources
 {
     internal static uint BodyIndex(in GeometryEndpoint endpoint, scoped QueryCursor access)
@@ -99,10 +113,10 @@ public readonly struct WriteDeviceGeometryReferences<TComponent, TSource> : IPhy
         TSource source, uint geometryType, int rowsPerPacket)
     {
         _grid = grid; _participants = participants; _source = source; _geometryType = geometryType; _rowsPerPacket = rowsPerPacket;
-        QueryDefinition reads = QueryDefinition.Empty.WithOptionalRead<DeviceBodyBinding>();
+        QueryDefinition reads = source.AddReads(QueryDefinition.Empty);
         _access = participants.World.Query(reads);
         var descriptions = new QueryReadResources();
-        descriptions.Add<DeviceBodyBinding, DeviceBodyReferenceResources>();
+        source.AddReadResources(descriptions);
         var accesses = new List<JobResourceAccess>(participants.GetReadAccesses());
         var extra = new JobResourceAccess[QueryJobAccess.Count(reads)];
         QueryJobAccess.CopyAccesses(participants.World, reads, extra, descriptions);
@@ -112,10 +126,9 @@ public readonly struct WriteDeviceGeometryReferences<TComponent, TSource> : IPhy
 
     public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency)
     {
-        dependency = _source.Prepare(in context, _rowsPerPacket, dependency);
+        dependency = _source.Prepare(in context, QueryDefinition.Empty, _rowsPerPacket, dependency);
         return new WriteDeviceGeometryReferenceJob<TComponent, TSource>(_grid, _participants, _access, _source, _geometryType)
-            .ScheduleParallel(context.World, _accesses, new JobEntityScheduleOptions(rowsPerPacket: _rowsPerPacket,
-                filter: context.Bodies), dependency);
+            .ScheduleParallel(context.World, _accesses, new JobEntityScheduleOptions(rowsPerPacket: _rowsPerPacket), dependency);
     }
     public void Dispose() => _participants.World.ReleaseQuery(_access);
 }

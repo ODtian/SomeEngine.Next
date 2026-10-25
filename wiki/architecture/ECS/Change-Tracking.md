@@ -65,6 +65,8 @@ topology packet 将 Parent 修改写入暂存数据。后续 `ParentFinalizerJob
 
 `World.WriteVersion<T>(entity)` 读取该实体上表格组件最近一次写入的版本；`World.SparseWriteVersion<T>(entity)` 为 sparse 组件提供相同的观察入口。调用方保存 `uint` 版本，再用 `!=` 判断变化，支持版本回绕。
 
+有效查询行上的 `QueryRow.WriteVersion<T>()` 沿已声明可读列直接取得该行写版本。它与组件 ref 使用同一借用范围，可供按实体范围调度的工作维护版本索引；读取继续由原行权限覆盖。
+
 表格组件的读版本入口复用 chunk 中随行保存的写版本。sparse 组件在自己的 dense 存储中保存每行写版本，随数据扩容、交换移除及结构事务分离一起维护。两种存储的版本查询都采用对应组件的只读访问权限。
 
 直接 `Add`、`Replace`、bundle 值写入以及 `AddSparse`、`ReplaceSparse` 取得新 World 写版本。实体复制为一次复制取得新版本，表格与 sparse 目标行共同使用该版本。命令回放经这些值写入入口记录版本；成功提交使值与版本一起可见，失败回放保留原值与原版本。`World.CurrentTick` 记录已分配的写版本，一次批量回放可以随多次值写入推进。
