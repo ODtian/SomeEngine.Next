@@ -145,11 +145,11 @@ public struct HeightMultiplier : IComponent
 
 public readonly struct HeightProjection : IXpbdConstraint<HeightTarget>
 {
-    public static void Initialize(in HeightTarget constraint, scoped QueryRow row) =>
+    public static void Initialize(in HeightTarget constraint, scoped QueryRow row, in PhysicsStepContext context) =>
         row.ReadWrite<HeightMultiplier>().Value = 0;
 
     public static void Project(in HeightTarget constraint, scoped QueryRow row,
-        scoped PhysicsBodies bodies, float duration)
+        scoped PhysicsBodies bodies, in PhysicsStepContext context)
     {
         ref BodyPose pose = ref bodies.WritePose(constraint.Body);
         float inverseMass = bodies.ReadMass(constraint.Body).InverseMass;
