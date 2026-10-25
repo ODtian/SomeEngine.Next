@@ -6,7 +6,7 @@
 
 `NavigationSource(Geometry, Version)` 表示支持导航构建的几何实体。`NavigationObstacle(Geometry, Participation, Version)` 表示障碍实体，默认 `Obstruction` 将有向闭合三角形几何转为实心占用；`SupportAndObstruction` 同时保留顶面的可行走法线。两个组件的 enable 状态控制参与。几何通过普通 `NavigationGeometry` 持有固定数组；替换几何、输入版本或实际变换都会进入变化判断。
 
-`INavigationTransformReader<TTransform>.Read` 从应用的实际变换组件返回世界矩阵。`NavigationSourceSystem<TTransform,TReader>.Schedule(transformReady)` 等待该变换生产者后，使用生成式 ECS Job 读取来源与障碍。各分片收集当前几何引用、矩阵、版本和世界范围；后续合并 Job 将当前实体集合与上次集合比较。加入的来源贡献新范围，移除的来源贡献旧范围，移动或替换贡献两者并集。范围按完整轮廓旋转半径与栅格边界采样距离扩张，再映射到原区域坐标中的 Tile。
+`INavigationTransformReader<TTransform>.Read` 从应用的实际变换组件返回世界矩阵。`NavigationSourceSystem<TTransform,TReader>.Schedule(transformReady)` 等待该变换生产者后，使用生成式 ECS Job 读取来源与障碍。各分片收集当前几何引用、矩阵、版本和世界范围；后续合并 Job 固定当前实体集合与上次集合，并以同步范围分区比较来源内容和范围。各分区持有自己的受影响块集合；汇合后由原来源系统更新上一轮目录，按实体与来源类别排序，统一安装输入并推进版本。区域独占访问与原合并 Job 保持这些记录和设置有效直到同步比较返回。加入的来源贡献新范围，移除的来源贡献旧范围，移动或替换贡献两者并集。范围按完整轮廓旋转半径与栅格边界采样距离扩张，再映射到原区域坐标中的 Tile。
 
 `NavigationRegionSources` 持有一个世界坐标区域的 Scene、区域 ID、范围、规格、策略、构建设置和命名端点。`SetProfile`、`SetPolicy`、`SetBuildSettings` 与 `SetPorts` 形成新的设置引用，下一次来源收集标记整个区域。规格和策略仍与该区域图的使用者保持同一变体。
 
