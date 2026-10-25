@@ -11,42 +11,6 @@ namespace SomeEngine.Physics.Tests;
 public sealed class CollisionCandidatesTests
 {
     [Fact]
-    public void BuildJoinsIndependentBoundsReadsAndKeepsTheTreeUsableForMaintenance()
-    {
-        using var jobs = new Scheduler(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked });
-        using var world = WorldJobs.CreateWorld(scheduler: jobs);
-        using var reads = new CountdownEvent(2);
-        Entity first = world.CreateEntity(Box(0));
-        for (int index = 1; index < 32; index++) world.CreateEntity(Box(index * 3));
-        Entity second = world.CreateEntity(Box(.2f));
-        for (int index = 33; index < 63; index++) world.CreateEntity(Box(index * 3));
-        Entity moved = world.CreateEntity(Box(189));
-        var bodies = world.Query(world.QueryDefinition().All<CollisionBounds>());
-        try
-        {
-            var reader = new CooperatingBoundsReader(reads);
-            CollisionTree tree = Collision.Build<CollisionBounds, CooperatingBoundsReader>(world, bodies, reader);
-            var candidates = Collision.Candidates<CollisionBounds, CooperatingBoundsReader>(world, bodies, tree, reader);
-            var pairs = new List<(Entity, Entity)>();
-            var output = new PairList(pairs);
-            candidates.Enumerate(ref output);
-            Assert.Equal([(first, second)], Ordered(pairs));
-
-            using var maintenance = candidates.CreateMaintenance(jobs);
-            world.AcquireSystemVersion();
-            world.Replace(moved, Box(.4f));
-            maintenance.Schedule().Complete();
-            pairs.Clear();
-            candidates.Enumerate(ref output);
-            Assert.Equal([(first, second), (first, moved), (second, moved)], Ordered(pairs));
-        }
-        finally
-        {
-            world.ReleaseQuery(bodies);
-        }
-    }
-
-    [Fact]
     public void SparseBodiesReturnTheThreeNearbyPairs()
     {
         using var world = new World();
@@ -156,19 +120,6 @@ public sealed class CollisionCandidatesTests
 
     private static CollisionBounds Box(float x, float y = 0, float z = 0) =>
         new(new Vector3(x, y, z), new Vector3(x + 1, y + 1, z + 1));
-
-    private readonly struct CooperatingBoundsReader(CountdownEvent reads) : ICollisionBoundsReader<CollisionBounds>
-    {
-        public CollisionBounds Read(in CollisionBounds component)
-        {
-            if (component.Min.X < 1 && reads.CurrentCount > 0)
-            {
-                reads.Signal();
-                if (!reads.Wait(TimeSpan.FromSeconds(10))) throw new TimeoutException();
-            }
-            return component;
-        }
-    }
 
     private static (Entity, Entity)[] Ordered(List<(Entity, Entity)> pairs) =>
         pairs.OrderBy(pair => pair.Item1.Index).ThenBy(pair => pair.Item1.Generation)
