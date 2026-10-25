@@ -204,10 +204,23 @@ public static class NavigationRegionBuilder
         public void Execute()
         {
             NavigationRegionTile tile = state.Tiles[tileIndex];
+            var edges = new NavigationRegionEdge[tile.EntranceCount][];
+            JobSystem.ExecuteParallel(new SearchFromEntrance(state, tileIndex, edges), tile.EntranceCount,
+                batchSize: 1);
+            state.LocalEdges[tileIndex] = edges.SelectMany(values => values).ToArray();
+        }
+    }
+
+    private readonly struct SearchFromEntrance(NavigationRegionBuildState state, int tileIndex,
+        NavigationRegionEdge[][] output) : IJobParallelFor
+    {
+        public void Execute(int index)
+        {
+            NavigationRegionTile tile = state.Tiles[tileIndex];
             NavigationMesh mesh = state.TileMeshes[tileIndex].Mesh;
             var edges = new List<NavigationRegionEdge>();
+            int from = tile.EntranceStart + index;
             int end = tile.EntranceStart + tile.EntranceCount;
-            for (int from = tile.EntranceStart; from < end; from++)
             for (int to = tile.EntranceStart; to < end; to++)
             {
                 if (from == to) continue;
@@ -220,7 +233,7 @@ public static class NavigationRegionBuilder
                 if (step.Path is { } path)
                     edges.Add(new(from, to, path.Cost));
             }
-            state.LocalEdges[tileIndex] = edges.ToArray();
+            output[index] = edges.ToArray();
         }
     }
 
