@@ -261,8 +261,8 @@ internal struct UserElasticState : IComponent
 
 internal readonly struct UserElasticTargetMath : IAvbdConstraint<UserElasticTarget>
 {
-    public static int GetBodyCount(in UserElasticTarget constraint, scoped QueryRow row) => 1;
-    public static Entity GetBody(in UserElasticTarget constraint, scoped QueryRow row, int index) => constraint.Body;
+    public static int GetBodyCount(in UserElasticTarget constraint, scoped QueryRow row, in PhysicsStepContext context) => 1;
+    public static Entity GetBody(in UserElasticTarget constraint, scoped QueryRow row, int index, in PhysicsStepContext context) => constraint.Body;
 
     public static void Initialize(in UserElasticTarget constraint, scoped QueryRow row, scoped PhysicsBodies bodies,
         in PhysicsStepContext context, float retention) =>

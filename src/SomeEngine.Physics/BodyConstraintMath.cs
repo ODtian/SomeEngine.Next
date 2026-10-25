@@ -3,7 +3,7 @@ using SomeEngine.ECS.Entities;
 
 namespace SomeEngine.Physics;
 
-internal static class XpbdBodyMath
+internal static class BodyConstraintMath
 {
     internal static float GetWeight(in BodyMass mass, in BodyPose pose, Vector3 linear, Vector3 angular) =>
         mass.Motion == BodyMotion.Dynamic ? mass.InverseMass * linear.LengthSquared()

@@ -15,6 +15,8 @@ public struct CollisionContact : IComponent
     public int PointIndex;
     public Vector3 FirstLocalPoint;
     public Vector3 SecondLocalPoint;
+    /// <summary>The midpoint of the two world-space geometric witnesses.</summary>
+    public Vector3 WorldPoint;
     public Vector3 Normal;
     public float Separation;
     /// <summary>Number of first-side entries when both sides are stored consecutively in a ContactBody buffer.</summary>

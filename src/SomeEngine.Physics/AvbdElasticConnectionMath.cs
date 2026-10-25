@@ -11,8 +11,8 @@ namespace SomeEngine.Physics;
 
 public readonly struct AvbdElasticConnectionMath : IAvbdConstraint<ElasticConnection>
 {
-    public static int GetBodyCount(in ElasticConnection constraint, scoped QueryRow row) => 2;
-    public static Entity GetBody(in ElasticConnection constraint, scoped QueryRow row, int index)
+    public static int GetBodyCount(in ElasticConnection constraint, scoped QueryRow row, in PhysicsStepContext context) => 2;
+    public static Entity GetBody(in ElasticConnection constraint, scoped QueryRow row, int index, in PhysicsStepContext context)
     {
         ref readonly var endpoints = ref row.ReadRef<UndirectedRelationEndpoints<ElasticConnection>>();
         return index == 0 ? endpoints.EndpointA : endpoints.EndpointB;

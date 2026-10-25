@@ -68,6 +68,7 @@ public sealed class PrimitiveCollisionTests
         Assert.Equal(second, captured.Contact.Second);
         Near(-.5f, captured.Contact.Separation);
         Near(Vector3.UnitX, captured.Contact.Normal);
+        Near(new Vector3(.75f, 0, 0), captured.Contact.WorldPoint);
         Assert.Equal(new ContactBody(first, Vector3.UnitX, 1), Assert.Single(captured.First));
         Assert.Equal(new ContactBody(second, -Vector3.UnitX, 1), Assert.Single(captured.Second));
         world.ReleaseQuery(bodies);

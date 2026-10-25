@@ -31,15 +31,15 @@ public readonly struct XpbdJointProjection : IXpbdConstraint<JointConstraint>
             // The XPBD displacement multiplier has the opposite sign to the ALM constraint force.
             if (!JointMath.TryGetError(limit, derivative.Coordinate, -multiplier, out float error, out JointLimitSide side)) continue;
             float alpha = 1 / (stiffness * duration * duration);
-            float weight = XpbdBodyMath.GetWeight(in sourceMass, in source, derivative.SourceLinear, derivative.SourceAngular)
-                + XpbdBodyMath.GetWeight(in targetMass, in target, derivative.TargetLinear, derivative.TargetAngular);
+            float weight = BodyConstraintMath.GetWeight(in sourceMass, in source, derivative.SourceLinear, derivative.SourceAngular)
+                + BodyConstraintMath.GetWeight(in targetMass, in target, derivative.TargetLinear, derivative.TargetAngular);
             float change = (-error - alpha * multiplier) / (weight + alpha);
             float next = -JointMath.ProjectForce(side, -(multiplier + change));
             change = next - multiplier;
             if (dof < 3) state.LinearMultiplier[axis] = next;
             else state.AngularMultiplier[axis] = next;
-            XpbdBodyMath.ApplyCorrection(bodies, endpoints.Source, in sourceMass, derivative.SourceLinear, derivative.SourceAngular, change);
-            XpbdBodyMath.ApplyCorrection(bodies, endpoints.Target, in targetMass, derivative.TargetLinear, derivative.TargetAngular, change);
+            BodyConstraintMath.ApplyCorrection(bodies, endpoints.Source, in sourceMass, derivative.SourceLinear, derivative.SourceAngular, change);
+            BodyConstraintMath.ApplyCorrection(bodies, endpoints.Target, in targetMass, derivative.TargetLinear, derivative.TargetAngular, change);
         }
     }
 }
