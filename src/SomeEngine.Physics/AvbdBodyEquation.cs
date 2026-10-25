@@ -8,16 +8,21 @@ using SomeEngine.ECS;
 
 namespace SomeEngine.Physics;
 
-/// <summary>A body's coupled translation/rotation equation and reusable six-dimensional LDL factors.</summary>
+/// <summary>A body's active translation/rotation equation and reusable LDL factors.</summary>
 public struct AvbdBodyEquation : IComponent
 {
     private SymmetricMatrix6 _matrix;
     private SymmetricMatrix6 _factor;
     private Matrix4x4 _bodyInertia;
+    private int _dimensions;
     public Vector3 LinearGradient;
     public Vector3 AngularGradient;
 
-    internal void Initialize(in BodyMass mass) => _bodyInertia = BodyInertia.InvertTensor(mass.InverseInertia);
+    internal void Initialize(in BodyMass mass)
+    {
+        _dimensions = BodyInertia.HasRotation(in mass.InverseInertia) ? 6 : 3;
+        _bodyInertia = _dimensions == 6 ? BodyInertia.InvertTensor(mass.InverseInertia) : default;
+    }
 
     internal void Reset(in BodyPose pose, in BodyMass mass, in BodyStepState state, float duration)
     {
@@ -25,12 +30,17 @@ public struct AvbdBodyEquation : IComponent
         float inverseStepSquared = 1 / (duration * duration);
         float linearWeight = inverseStepSquared / mass.InverseMass;
         LinearGradient = (pose.GetCenterOfMass(in mass) - state.PredictedCenterOfMass) * linearWeight;
-        Vector3 rotationError = BodyRotation.GetRotationVector(Quaternion.Conjugate(pose.Rotation) * state.PredictedRotation);
-        AngularGradient = -Vector3.Transform(Vector3.TransformNormal(rotationError, _bodyInertia), pose.Rotation)
-            * inverseStepSquared;
+        AngularGradient = Vector3.Zero;
+        if (_dimensions == 6)
+        {
+            Vector3 rotationError = BodyRotation.GetRotationVector(Quaternion.Conjugate(pose.Rotation) * state.PredictedRotation);
+            AngularGradient = -Vector3.Transform(Vector3.TransformNormal(rotationError, _bodyInertia), pose.Rotation)
+                * inverseStepSquared;
+        }
         for (int axis = 0; axis < 3; axis++)
         {
             _matrix[GetIndex(axis, axis)] = linearWeight;
+            if (_dimensions == 3) continue;
             Vector3 direction = axis == 0 ? Vector3.UnitX : axis == 1 ? Vector3.UnitY : Vector3.UnitZ;
             Vector3 column = BodyInertia.Apply(pose.Rotation, _bodyInertia, direction) * inverseStepSquared;
             for (int row = axis; row < 3; row++)
@@ -41,6 +51,7 @@ public struct AvbdBodyEquation : IComponent
     /// <summary>Adds one force row and its coupled translational/angular curvature.</summary>
     public void AddRow(Vector3 linearJacobian, Vector3 angularJacobian, float force, float stiffness)
     {
+        if (_dimensions == 3) angularJacobian = Vector3.Zero;
         LinearGradient += linearJacobian * force;
         AngularGradient += angularJacobian * force;
         Span<double> jacobian = stackalloc double[6]
@@ -48,14 +59,14 @@ public struct AvbdBodyEquation : IComponent
             linearJacobian.X, linearJacobian.Y, linearJacobian.Z,
             angularJacobian.X, angularJacobian.Y, angularJacobian.Z,
         };
-        for (int row = 0; row < 6; row++)
+        for (int row = 0; row < _dimensions; row++)
             for (int column = 0; column <= row; column++)
                 _matrix[GetIndex(row, column)] += jacobian[row] * jacobian[column] * stiffness;
     }
 
     internal void Factorize()
     {
-        for (int row = 0; row < 6; row++)
+        for (int row = 0; row < _dimensions; row++)
         {
             for (int column = 0; column < row; column++)
             {
@@ -78,15 +89,15 @@ public struct AvbdBodyEquation : IComponent
     public readonly void SolveResponse(Vector3 force, Vector3 torque, out Vector3 translation, out Vector3 rotation)
     {
         Span<double> response = stackalloc double[6] { force.X, force.Y, force.Z, torque.X, torque.Y, torque.Z };
-        for (int row = 0; row < 6; row++)
+        for (int row = 0; row < _dimensions; row++)
             for (int column = 0; column < row; column++)
                 response[row] -= _factor[GetIndex(row, column)] * response[column];
-        for (int row = 0; row < 6; row++) response[row] /= _factor[GetIndex(row, row)];
-        for (int row = 5; row >= 0; row--)
-            for (int column = row + 1; column < 6; column++)
+        for (int row = 0; row < _dimensions; row++) response[row] /= _factor[GetIndex(row, row)];
+        for (int row = _dimensions - 1; row >= 0; row--)
+            for (int column = row + 1; column < _dimensions; column++)
                 response[row] -= _factor[GetIndex(column, row)] * response[column];
         translation = new((float)response[0], (float)response[1], (float)response[2]);
-        rotation = new((float)response[3], (float)response[4], (float)response[5]);
+        rotation = _dimensions == 6 ? new((float)response[3], (float)response[4], (float)response[5]) : Vector3.Zero;
     }
 
     private static int GetIndex(int row, int column) => row * (row + 1) / 2 + column;
@@ -100,6 +111,8 @@ public struct AvbdBodyEquation : IComponent
 
 internal static class BodyInertia
 {
+    internal static bool HasRotation(in Matrix4x4 inverse) => inverse.M11 != 0 || inverse.M22 != 0 || inverse.M33 != 0;
+
     internal static Matrix4x4 InvertTensor(Matrix4x4 inverse)
     {
         inverse.M14 = inverse.M24 = inverse.M34 = inverse.M41 = inverse.M42 = inverse.M43 = 0;
