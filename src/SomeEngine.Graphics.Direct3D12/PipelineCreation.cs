@@ -1,6 +1,7 @@
 using System.Buffers;
 using System.Diagnostics;
 using SlangShaderSharp;
+using SomeEngine.Job;
 
 namespace SomeEngine.Graphics.Direct3D12;
 
@@ -163,6 +164,9 @@ internal sealed unsafe partial class D3D12Backend
         }
 
         internal PipelineCreationRequest? QueueNext { get; set; }
+        internal LinkedListNode<PipelineCreationRequest>? QueueNode { get; set; }
+        internal Scheduler Scheduler { get; set; } = null!;
+        internal bool Dispatched { get; set; }
         internal long EnqueuedTimestamp { get; set; }
         internal D3D12Device Device { get; }
         internal PipelineType Type { get; }
@@ -828,10 +832,10 @@ internal sealed unsafe partial class D3D12Backend
         }
     }
 
-    private sealed class D3D12PipelineCompiler : IDisposable
+    private sealed partial class D3D12PipelineCompiler : IDisposable
     {
         private const int MaximumQueuedRequests = 256;
-        private const int MaximumWorkerCount = 4;
+        private const int MaximumConcurrentRequests = 4;
 
         [ThreadStatic]
         private static D3D12PipelineCompiler? t_current;
@@ -840,8 +844,9 @@ internal sealed unsafe partial class D3D12Backend
         private static D3D12PipelineCache? t_currentCache;
 
         private readonly object _gate = new();
-        private readonly Queue<PipelineCreationRequest> _pending = new(MaximumQueuedRequests);
-        private readonly Thread[] _workers;
+        private readonly LinkedList<PipelineCreationRequest> _pending = new();
+        private readonly int _maximumDispatched;
+        private int _dispatched;
         private Exception? _terminalException;
         private bool _stopping;
         private int _queueDepth;
@@ -865,35 +870,15 @@ internal sealed unsafe partial class D3D12Backend
 
         internal D3D12PipelineCompiler(D3D12Device device)
         {
-            int workerCount = Math.Clamp(
+            _maximumDispatched = Math.Clamp(
                 (Environment.ProcessorCount + 3) / 4,
                 1,
-                MaximumWorkerCount);
-            _workers = new Thread[workerCount];
-            int started = 0;
-            try
-            {
-                for (; started < workerCount; started++)
-                {
-                    var worker = new Thread(WorkerMain)
-                    {
-                        IsBackground = true,
-                        Name = $"SomeEngine D3D12 Pipeline {started}",
-                    };
-                    _workers[started] = worker;
-                    worker.Start();
-                }
-            }
-            catch
-            {
-                StopAccepting(new ObjectDisposedException(nameof(D3D12PipelineCompiler)));
-                JoinWorkers(started);
-                throw;
-            }
+                MaximumConcurrentRequests);
         }
 
         internal Task<Pipeline> Enqueue(PipelineCreationRequest request)
         {
+            request.Scheduler = JobSystem.Current;
             lock (_gate)
             {
                 if (_stopping)
@@ -905,14 +890,14 @@ internal sealed unsafe partial class D3D12Backend
                 }
 
                 request.EnqueuedTimestamp = Stopwatch.GetTimestamp();
-                _pending.Enqueue(request);
+                request.QueueNode = _pending.AddLast(request);
                 Interlocked.Increment(ref _accepted);
                 IncrementTypeCount(request.Type);
                 int depth = ++_queueDepth;
                 UpdateMaximum(ref _peakQueueDepth, depth);
-                Monitor.Pulse(_gate);
-                return request.Task;
             }
+            StartRequests();
+            return request.Task;
         }
 
         internal D3D12PipelineCreationInfo GetInfo() => new(
@@ -956,38 +941,36 @@ internal sealed unsafe partial class D3D12Backend
             StopAccepting(new ObjectDisposedException(
                 nameof(Device),
                 "The Device was disposed before queued Pipeline creation began."));
-            JoinWorkers(_workers.Length);
+            lock (_gate)
+            {
+                int current = ReferenceEquals(t_current, this) ? 1 : 0;
+                while (_running > current)
+                    Monitor.Wait(_gate);
+            }
         }
 
-        private void WorkerMain()
-        {
-            while (TryTake(out PipelineCreationRequest? request))
-                Execute(request!);
-        }
-
-        private bool TryTake(out PipelineCreationRequest? request)
+        private bool TryTake(PipelineCreationRequest request)
         {
             lock (_gate)
             {
-                while (!_stopping && _pending.Count == 0)
-                    Monitor.Wait(_gate);
-                if (_pending.Count == 0)
-                {
-                    request = null;
+                if (request.QueueNode is not { } node)
                     return false;
-                }
-                request = _pending.Dequeue();
+                _pending.Remove(node);
+                request.QueueNode = null;
                 _queueDepth--;
+                _running++;
                 return true;
             }
         }
 
         private void Execute(PipelineCreationRequest request)
         {
+            if (!TryTake(request)) return;
             long started = Stopwatch.GetTimestamp();
             TimeSpan queueWait = Stopwatch.GetElapsedTime(request.EnqueuedTimestamp, started);
             RecordQueueWait(queueWait.Ticks);
-            Interlocked.Increment(ref _running);
+            D3D12PipelineCompiler? previous = t_current;
+            D3D12PipelineCache? previousCache = t_currentCache;
             t_current = this;
             t_currentCache = request.Cache;
             try
@@ -1005,12 +988,16 @@ internal sealed unsafe partial class D3D12Backend
             }
             finally
             {
-                t_currentCache = null;
-                t_current = null;
+                t_currentCache = previousCache;
+                t_current = previous;
                 long creationTicks = Stopwatch.GetElapsedTime(started).Ticks;
                 Interlocked.Add(ref _totalCreationTicks, creationTicks);
                 UpdateMaximum(ref _maximumCreationTicks, creationTicks);
-                Interlocked.Decrement(ref _running);
+                lock (_gate)
+                {
+                    _running--;
+                    Monitor.PulseAll(_gate);
+                }
             }
         }
 
@@ -1024,7 +1011,6 @@ internal sealed unsafe partial class D3D12Backend
                 _stopping = true;
                 _terminalException = exception;
                 pending = DetachPendingUnderGate();
-                Monitor.PulseAll(_gate);
             }
             FailDetached(pending, exception);
         }
@@ -1033,8 +1019,11 @@ internal sealed unsafe partial class D3D12Backend
         {
             PipelineCreationRequest? head = null;
             PipelineCreationRequest? tail = null;
-            while (_pending.TryDequeue(out PipelineCreationRequest? request))
+            while (_pending.First is { } node)
             {
+                PipelineCreationRequest request = node.Value;
+                _pending.RemoveFirst();
+                request.QueueNode = null;
                 request.QueueNext = null;
                 if (tail is null)
                     head = request;
@@ -1106,16 +1095,6 @@ internal sealed unsafe partial class D3D12Backend
                 exception),
             _ => new ObjectDisposedException(nameof(D3D12PipelineCompiler)),
         };
-
-        private void JoinWorkers(int count)
-        {
-            for (int index = 0; index < count; index++)
-            {
-                Thread? worker = _workers[index];
-                if (worker is not null && !ReferenceEquals(worker, Thread.CurrentThread))
-                    worker.Join();
-            }
-        }
 
         private static void UpdateMaximum(ref int location, int value)
         {
