@@ -148,7 +148,8 @@ public class TimelineTests
         world.Enable<Timeline>(entity);
         systems.Update();
         Assert.Equal(2u, world.Read<Timeline>(entity).Completions);
-        Assert.Equal(0, tables.Read().Count);
+        Assert.Equal(entity, Assert.Single(tables.Read().Entities));
+        Assert.True(world.Has<Timeline>(entity));
     }
 
     [Fact]
