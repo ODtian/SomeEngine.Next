@@ -31,26 +31,66 @@ public readonly struct SolveXpbd<TConstraints> : IPhysicsStage where TConstraint
         _accesses = accesses.ToArray();
     }
 
-    public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) =>
-        WorldJobs.GetScheduler(context.World).Schedule(
-            new SolveConstraints(context, _bodies, _constraints, _iterations),
-            _accesses, dependency);
+    public InitializeXpbd<TConstraints> Initialize() => new(this);
+    public IterateXpbd<TConstraints> Iterate(int iterations) => new(this, iterations);
 
-    private readonly struct SolveConstraints(PhysicsStepContext context, QueryHandle bodies, TConstraints constraints,
-        int iterations) : IJob, IQueryExecution
+    public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) =>
+        ScheduleQuery(in context, new SolveConstraints(context, _constraints, _iterations), dependency);
+
+    internal JobHandle ScheduleInitialization(in PhysicsStepContext context, JobHandle dependency) =>
+        ScheduleQuery(in context, new InitializeConstraints(context, _constraints), dependency);
+
+    internal JobHandle ScheduleIterations(in PhysicsStepContext context, int iterations, JobHandle dependency) =>
+        ScheduleQuery(in context, new ProjectConstraints(context, _constraints, iterations), dependency);
+
+    private JobHandle ScheduleQuery<TExecution>(in PhysicsStepContext context, TExecution execution, JobHandle dependency)
+        where TExecution : struct, IQueryExecution => WorldJobs.GetScheduler(context.World).Schedule(
+            new ReadBodies<TExecution>(context.World, _bodies, execution), _accesses, dependency);
+
+    private readonly struct ReadBodies<TExecution>(World world, QueryHandle bodies, TExecution execution) : IJob
+        where TExecution : struct, IQueryExecution
     {
         public void Execute()
         {
-            var execution = this;
-            context.World.ExecuteQuery(bodies, ref execution);
+            var work = execution;
+            world.ExecuteQuery(bodies, ref work);
         }
+    }
 
+    private readonly struct SolveConstraints(PhysicsStepContext context, TConstraints constraints, int iterations) : IQueryExecution
+    {
+        public void Execute(scoped QueryCursor query)
+        {
+            constraints.Initialize(in context);
+            new ProjectConstraints(context, constraints, iterations).Execute(query);
+        }
+    }
+
+    private readonly struct InitializeConstraints(PhysicsStepContext context, TConstraints constraints) : IQueryExecution
+    {
+        public void Execute(scoped QueryCursor query) => constraints.Initialize(in context);
+    }
+
+    private readonly struct ProjectConstraints(PhysicsStepContext context, TConstraints constraints, int iterations) : IQueryExecution
+    {
         public void Execute(scoped QueryCursor query)
         {
             var bodies = new PhysicsBodies(query);
-            constraints.Initialize(in context);
-            for (int iteration = 0; iteration < iterations; iteration++)
-                constraints.Project(in context, bodies);
+            for (int iteration = 0; iteration < iterations; iteration++) constraints.Project(in context, bodies);
         }
     }
+}
+
+/// <summary>Starts the selected XPBD multipliers once for the substep.</summary>
+public readonly struct InitializeXpbd<TConstraints>(SolveXpbd<TConstraints> solve) : IPhysicsStage
+    where TConstraints : struct, IXpbdConstraints
+{
+    public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) => solve.ScheduleInitialization(in context, dependency);
+}
+
+/// <summary>Resumes projection with the component multipliers already established for this substep.</summary>
+public readonly struct IterateXpbd<TConstraints>(SolveXpbd<TConstraints> solve, int iterations) : IPhysicsStage
+    where TConstraints : struct, IXpbdConstraints
+{
+    public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) => solve.ScheduleIterations(in context, iterations, dependency);
 }

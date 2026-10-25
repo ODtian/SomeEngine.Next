@@ -1,11 +1,47 @@
+using System.Numerics;
+using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Relations;
 
 namespace SomeEngine.Physics;
 
 /// <summary>Projects the common joint coordinates using per-axis XPBD multipliers.</summary>
-public readonly struct XpbdJointProjection : IXpbdConstraint<JointConstraint>
+public readonly struct XpbdJointProjection : IXpbdConstraint<JointConstraint>, IXpbdConstraintForces<JointConstraint>
 {
+    public static int GetBodyCount(in JointConstraint constraint, scoped QueryRow row, in PhysicsStepContext context) => 2;
+
+    public static Entity GetBody(in JointConstraint constraint, scoped QueryRow row, int index, in PhysicsStepContext context)
+    {
+        ref readonly var endpoints = ref row.ReadRef<DirectedRelationEndpoints<JointConstraint>>();
+        return index == 0 ? endpoints.Source : endpoints.Target;
+    }
+
+    public static void GetBodyForce(in JointConstraint constraint, scoped QueryRow row, Entity body,
+        scoped PhysicsBodies bodies, in PhysicsStepContext context, out Vector3 force, out Vector3 torque)
+    {
+        ref readonly var endpoints = ref row.ReadRef<DirectedRelationEndpoints<JointConstraint>>();
+        ref readonly XpbdJointState state = ref row.ReadRef<XpbdJointState>();
+        float duration = (float)context.Duration;
+        force = torque = Vector3.Zero;
+        for (int dof = 0; dof < 6; dof++)
+        {
+            float multiplier = (dof < 3 ? state.LinearMultiplier[dof] : state.AngularMultiplier[dof - 3]) / (duration * duration);
+            if (multiplier == 0) continue;
+            JointEquationRow derivative = JointMath.GetRow(in constraint, in bodies.ReadPose(endpoints.Source),
+                in bodies.ReadMass(endpoints.Source), in bodies.ReadPose(endpoints.Target), in bodies.ReadMass(endpoints.Target), dof);
+            if (body == endpoints.Source)
+            {
+                force += derivative.SourceLinear * multiplier;
+                torque += derivative.SourceAngular * multiplier;
+            }
+            if (body == endpoints.Target)
+            {
+                force += derivative.TargetLinear * multiplier;
+                torque += derivative.TargetAngular * multiplier;
+            }
+        }
+    }
+
     public static void Initialize(in JointConstraint constraint, scoped QueryRow row, in PhysicsStepContext context) =>
         row.ReadWrite<XpbdJointState>() = default;
 

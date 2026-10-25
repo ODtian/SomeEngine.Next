@@ -19,7 +19,7 @@ public static class SolveAvbd
             bodyIterations, multiplierRetention, initialErrorFraction);
 }
 
-/// <summary>Coupled six-dimensional body descent followed by all selected constraints' ALM dual updates.</summary>
+/// <summary>Body descent in its active translation/rotation coordinates followed by selected ALM dual updates.</summary>
 public readonly struct SolveAvbd<TConstraints> : IPhysicsStage where TConstraints : struct, IAvbdConstraints
 {
     private readonly QueryHandle _bodies;
@@ -49,19 +49,45 @@ public readonly struct SolveAvbd<TConstraints> : IPhysicsStage where TConstraint
         _accesses = accesses.ToArray();
     }
 
-    public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) =>
-        WorldJobs.GetScheduler(context.World).Schedule(new SolveConstraints(context, _bodies,
-            _constraints, _iterations, _bodyIterations, _retention, _initialErrorFraction), _accesses, dependency);
+    public InitializeAvbd<TConstraints> Initialize() => new(this);
+    public IterateAvbd<TConstraints> Iterate(int iterations) => new(this, iterations);
 
-    private readonly struct SolveConstraints(PhysicsStepContext context, QueryHandle bodyQuery, TConstraints constraints,
-        int iterations, int bodyIterations, float retention, float initialErrorFraction) : IJob, IQueryExecution
+    public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) =>
+        ScheduleQuery(in context, new SolveConstraints(context, _constraints, _iterations, _bodyIterations,
+            _retention, _initialErrorFraction), dependency);
+
+    internal JobHandle ScheduleInitialization(in PhysicsStepContext context, JobHandle dependency) =>
+        ScheduleQuery(in context, new InitializeConstraints(context, _constraints, _retention), dependency);
+
+    internal JobHandle ScheduleIterations(in PhysicsStepContext context, int iterations, JobHandle dependency) =>
+        ScheduleQuery(in context, new IterateConstraints(context, _constraints, iterations, _bodyIterations, _initialErrorFraction), dependency);
+
+    private JobHandle ScheduleQuery<TExecution>(in PhysicsStepContext context, TExecution execution, JobHandle dependency)
+        where TExecution : struct, IQueryExecution => WorldJobs.GetScheduler(context.World).Schedule(
+            new ReadBodies<TExecution>(context.World, _bodies, execution), _accesses, dependency);
+
+    private readonly struct ReadBodies<TExecution>(World world, QueryHandle bodies, TExecution execution) : IJob
+        where TExecution : struct, IQueryExecution
     {
         public void Execute()
         {
-            var execution = this;
-            context.World.ExecuteQuery(bodyQuery, ref execution);
+            var work = execution;
+            world.ExecuteQuery(bodies, ref work);
         }
+    }
 
+    private readonly struct SolveConstraints(PhysicsStepContext context, TConstraints constraints,
+        int iterations, int bodyIterations, float retention, float initialErrorFraction) : IQueryExecution
+    {
+        public void Execute(scoped QueryCursor query)
+        {
+            new InitializeConstraints(context, constraints, retention).Execute(query);
+            new IterateConstraints(context, constraints, iterations, bodyIterations, initialErrorFraction).Execute(query);
+        }
+    }
+
+    private readonly struct InitializeConstraints(PhysicsStepContext context, TConstraints constraints, float retention) : IQueryExecution
+    {
         public void Execute(scoped QueryCursor query)
         {
             var bodies = new PhysicsBodies(query);
@@ -72,6 +98,15 @@ public readonly struct SolveAvbd<TConstraints> : IPhysicsStage where TConstraint
                     row.ReadWrite<AvbdBodyEquation>().Initialize(in mass);
             }
             constraints.Initialize(in context, bodies, retention);
+        }
+    }
+
+    private readonly struct IterateConstraints(PhysicsStepContext context, TConstraints constraints,
+        int iterations, int bodyIterations, float initialErrorFraction) : IQueryExecution
+    {
+        public void Execute(scoped QueryCursor query)
+        {
+            var bodies = new PhysicsBodies(query);
             for (int iteration = 0; iteration < iterations; iteration++)
             {
                 foreach (QueryRow row in query.Rows)
@@ -98,4 +133,18 @@ public readonly struct SolveAvbd<TConstraints> : IPhysicsStage where TConstraint
             }
         }
     }
+}
+
+/// <summary>Initializes body equations, constraint histories and body indices once for the substep.</summary>
+public readonly struct InitializeAvbd<TConstraints>(SolveAvbd<TConstraints> solve) : IPhysicsStage
+    where TConstraints : struct, IAvbdConstraints
+{
+    public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) => solve.ScheduleInitialization(in context, dependency);
+}
+
+/// <summary>Resumes Newton and dual iterations using the existing component state and body indices.</summary>
+public readonly struct IterateAvbd<TConstraints>(SolveAvbd<TConstraints> solve, int iterations) : IPhysicsStage
+    where TConstraints : struct, IAvbdConstraints
+{
+    public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) => solve.ScheduleIterations(in context, iterations, dependency);
 }

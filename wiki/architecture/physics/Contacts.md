@@ -42,15 +42,43 @@ gap = Separation + dot(Normal, currentWeightedAnchorDelta - BodyAnchorDelta)
 | NormalMultiplier / TangentMultiplier | 法向与世界切向力乘子，N | AvbdContactState |
 | FrictionRegularizationSpeed | 滑动方向曲率的速度正则参数，m/s | AvbdContactState |
 
-法向材料使用共同 `AvbdMaterialTerms`，将材料 K 与独立的 ALM ρ 组合为有限刚度系数，并把法向乘子投影到小于等于零的压缩范围。切向试力位于静摩擦圆盘内时使用静止分支，超过静摩擦界限时投影到动摩擦圆盘；界限以切向向量模长与法向压缩力计算。装配使用法向、滑动方向及其切平面正交方向的力与曲率，进入同一 Body 六维块。接近阻尼沿子步起点间距与当前间距计算，加入法向力和法向曲率。
+法向材料使用共同 `AvbdMaterialTerms`，将材料 K 与独立的 ALM ρ 组合为有限刚度系数，并把法向乘子投影到小于等于零的压缩范围。切向试力位于静摩擦圆盘内时使用静止分支，超过静摩擦界限时投影到动摩擦圆盘；界限以切向向量模长与法向压缩力计算。装配使用法向、滑动方向及其切平面正交方向的力与曲率，进入同一 Body 的有效局部块。接近阻尼沿子步起点间距与当前间距计算，加入法向力和法向曲率。
 
 这些 ALM、单边法向、圆盘摩擦和接近阻尼数学从研究分支 `codex/job331-380` 的 `NewtonRigid.cpp` 中 `contactEquation` 与 `addContact` 迁移，来源与 Apache 许可由 [Newton NOTICE](../../../src/SomeEngine.Physics/ThirdParty/Newton/NOTICE) 维护。矩阵分解、当前位姿及速度继续复用共同 AVBD 与物理状态。
+
+## XPBD 接触响应
+
+[XpbdContactProjection](../../../src/SomeEngine.Physics/XpbdContactProjection.cs) 沿同一个
+`XpbdConstraints<ContactPoint,XpbdContactProjection>` 入口消费点、材料及原生参与关系。
+`XpbdContactComponents` 为新持久点记录 `XpbdContactState`；其中 `NormalMultiplier`
+为非负法向位移乘子，`TangentMultiplier` 为世界切向位移乘子，单位均为 N·s²。
+初始化开始本子步乘子，继续投影在同一组件中累积。
+
+法向投影沿共同间距公式及当前合并 Jacobian 计算响应权重 `w`。令
+`a = NormalStiffness * h²`，接近且压缩时 `b = NormalDamping * h`，其余情况 `b = 0`，
+乘子更新为：
+
+```text
+delta = -(a * gap + b * (gap - startGap) + lambda) / (1 + (a + b) * w)
+nextLambda = max(0, lambda + delta)
+```
+
+`startGap` 从共同 `BodyStepState` 的起点和当前点采样基准取得。
+投影按实际逆质量及世界逆惯量修正每个动态 Body；同一 Body 的全部锚先合并再计算权重和修正。
+
+摩擦以当前加权锚相对共同起点的切向位移求试乘子。试向量位于
+`StaticFriction * NormalMultiplier` 圆盘内时使用静止响应，超出时投影到
+`DynamicFriction * NormalMultiplier` 圆盘。每次投影把法向和切向乘子除以 h²，
+写入共同 `ContactResponse.ForceOnSecond`。运动、材料力、多端分配及实际恢复入口见
+[XpbdContactTests](../../../tests/SomeEngine.Physics.Tests/XpbdContactTests.cs)。
+
+XPBD 与 AVBD 的范围分工、初始化和同子步继续迭代由[求解阶段](Solver-Steps.md)维护。
 
 ## 物理力、恢复与阶段组合
 
 `ContactResponse` 保存本子步的共同物理量：`InitialNormalVelocity` 为双方相对法向接近速度，负值表示接近；`ForceOnSecond` 为作用于第二侧的世界力 N，正压力沿 Normal；`RestitutionImpulse` 为第二侧已施加的正法向冲量 N·s；`StartTime` 与 `EndTime` 标明该作用区间。算法自身的乘子、数值度量和迭代初值分别由算法状态组件持有。
 
-`InitializeContactResponses` 在预测及刷新后读取实际作用端的速度，建立共同恢复输入并清零本子步的作用结果。AVBD 的 dual 更新向 `ForceOnSecond` 写出当前法向、切向及接近阻尼力。共同 `UpdateBodyVelocities` 从本子步位姿重建速度，随后 `ApplyContactRestitution` 根据材料恢复系数、初始接近速度及当前正压力施加法向冲量。冲量按合并 Jacobian、逆质量与完整逆惯量分配给动态端，运动学端提供其实际子步速度。恢复阶段的迭代数由项目显式提供。
+`InitializeContactResponses` 在预测及刷新后读取实际作用端的速度，建立共同恢复输入并清零本子步的作用结果。AVBD 的 dual 更新与 XPBD 的投影分别向 `ForceOnSecond` 写出当前法向、切向及接近阻尼力。共同 `UpdateBodyVelocities` 从本子步位姿重建速度，随后 `ApplyContactRestitution` 根据材料恢复系数、初始接近速度及当前正压力施加法向冲量。冲量按合并 Jacobian、逆质量与完整逆惯量分配给动态端，运动学端提供其实际子步速度。恢复阶段的迭代数由项目显式提供。
 
 以下是阶段组合的使用例子；`world`、查询、候选来源、类型 bins 和具体检测由项目创建：
 
