@@ -27,6 +27,7 @@ internal sealed partial class FrameExecutor
     private readonly List<QueueCompletion> _submittedCompletions = [];
     private List<int>[] _waves = [];
     private int[][] _recordingSubmissions = [];
+    private readonly Dictionary<Queue, int> _lastQueueSubmissions = new(ReferenceEqualityComparer.Instance);
     private RecordingBatch[][] _callingRecordingUnits = [];
     private RecordingBatch[][] _workerRecordingUnits = [];
     private RecordingBatch[][] _submissionRecordingUnits = [];
@@ -155,7 +156,7 @@ internal sealed partial class FrameExecutor
                 }
             }
 
-            ResolveGpuTimes(destination);
+            if (_measureGpu) _gpuTimes!.SetReceiver(_frame.Options.GpuTimes!);
             _recordingChanged = false;
             int count = 0;
             for (int queueSlot = 0; queueSlot < _submittedQueues.Length; queueSlot++)
@@ -398,8 +399,11 @@ internal sealed partial class FrameExecutor
         _changedRecordingWaves.Clear();
         var allCalling = new List<RecordingBatch>();
         var allWorkers = new List<RecordingBatch>();
+        _lastQueueSubmissions.Clear();
         for (int wave = 0; wave < waveCount; wave++)
         {
+            foreach (int submission in _recordingSubmissions[wave])
+                _lastQueueSubmissions[_submissionQueues[submission]!] = submission;
             allCalling.AddRange(_callingRecordingUnits[wave]);
             if (_recordingParallel[wave]) allWorkers.AddRange(_workerRecordingUnits[wave]);
             else allCalling.AddRange(_workerRecordingUnits[wave]);
@@ -932,8 +936,11 @@ internal sealed partial class FrameExecutor
                 }
                 throw;
             }
-            if (_submitCommands.Length == 0) Array.Resize(ref _submitCommands, 1);
+            bool resolveTimes = _measureGpu && !_lastQueueSubmissions.ContainsKey(queue);
+            int commandCount = resolveTimes ? 2 : 1;
+            if (_submitCommands.Length < commandCount) Array.Resize(ref _submitCommands, commandCount);
             _submitCommands[0] = commands;
+            RecordedCommands timeCommands = default;
             try
             {
                 PrepareLateReleaseState(queue, releases);
@@ -945,8 +952,9 @@ internal sealed partial class FrameExecutor
                     else if (key.Kind == GraphAccessTargetKind.Texture)
                         foreach (TextureBoundaryState state in TextureEntryStates(_textures[key.Index])) AddWait(state.ReadyAfter);
                 }
+                if (resolveTimes) _submitCommands[1] = timeCommands = _gpuTimes!.RecordResolve(queue);
                 QueueCompletion completion = _frame.Backend.Submit(queue,
-                    new QueueSubmitDesc(CollectionsMarshal.AsSpan(_submitWaits), [], _submitCommands.AsSpan(0, 1), [], []));
+                    new QueueSubmitDesc(CollectionsMarshal.AsSpan(_submitWaits), [], _submitCommands.AsSpan(0, commandCount), [], []));
                 AddCompletion(_submittedCompletions, completion);
                 CommitLateReleaseState(completion);
                 int queueIndex = QueueSlot(queue);
@@ -971,7 +979,8 @@ internal sealed partial class FrameExecutor
             }
             finally
             {
-                _submitCommands[0] = default;
+                Array.Clear(_submitCommands, 0, commandCount);
+                timeCommands.Dispose();
                 commands.Dispose();
             }
             void AddWait(QueueCompletion? completion)
@@ -994,8 +1003,10 @@ internal sealed partial class FrameExecutor
         Queue queue = _submissionQueues[submission]!;
         RecordingBatch[] batches = _submissionRecordingUnits[submission];
         List<QueueCompletion> waits = _submissionWaits[submission];
-        if (_submitCommands.Length < batches.Length)
-            Array.Resize(ref _submitCommands, batches.Length);
+        bool resolveTimes = _measureGpu && _lastQueueSubmissions[queue] == submission;
+        int commandCount = batches.Length + (resolveTimes ? 1 : 0);
+        if (_submitCommands.Length < commandCount)
+            Array.Resize(ref _submitCommands, commandCount);
         for (int item = 0; item < batches.Length; item++)
             _submitCommands[item] = batches[item].Commands!.Value;
         foreach (int dependency in _submissionDependencies[submission])
@@ -1008,14 +1019,17 @@ internal sealed partial class FrameExecutor
 
         PrepareSubmissionState(submission);
         ResolveSwapchainImages(submission, queue);
+        RecordedCommands timeCommands = default;
         try
         {
+            // The queue's final application lists precede its per-frame timestamp resolve.
+            if (resolveTimes) _submitCommands[batches.Length] = timeCommands = _gpuTimes!.RecordResolve(queue);
             QueueCompletion completion = _frame.Backend.Submit(
                 queue,
                 new QueueSubmitDesc(
                     CollectionsMarshal.AsSpan(waits),
                     [],
-                    _submitCommands.AsSpan(0, batches.Length),
+                    _submitCommands.AsSpan(0, commandCount),
                     CollectionsMarshal.AsSpan(_submitImages),
                     []));
             int queueSlot = QueueSlot(queue);
@@ -1029,8 +1043,8 @@ internal sealed partial class FrameExecutor
         }
         finally
         {
-            for (int item = 0; item < batches.Length; item++)
-                _submitCommands[item] = default;
+            Array.Clear(_submitCommands, 0, commandCount);
+            timeCommands.Dispose();
             foreach (RecordingBatch batch in batches) batch.DisposeCommands();
         }
     }

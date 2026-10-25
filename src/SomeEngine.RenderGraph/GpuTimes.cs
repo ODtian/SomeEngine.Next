@@ -39,26 +39,21 @@ internal sealed class FrameGpuTimes(RenderGraph graph) : IDisposable
             if (queue.Count > 0) queue.Prepare();
     }
 
-    internal void Resolve(Action<QueueCompletion> submitted, Action<RenderGraphGpuTimes> receive)
+    internal RecordedCommands RecordResolve(Queue queue)
     {
-        foreach (QueueTimeQueries queue in _queues.Values)
-        {
-            if (queue.Count == 0) continue;
-            using CommandContextPool.CommandContextLease lease =
-                graph.CommandContexts.Acquire(queue.Queue, false, "GPU time readback");
-            CommandContext context = lease.Context;
-            graph.Backend.Begin(context);
-            graph.Backend.ResolveQueries(context, queue.Pool!, 0, queue.Count,
-                queue.Readback!, new(0, queue.Count * queue.Pool!.ResultInfo.ResultStride));
-            using RecordedCommands commands = graph.Backend.End(context);
-            RecordedCommands[] batch = [commands];
-            // The same queue's FIFO orders every application timestamp before its resolve.
-            submitted(graph.Backend.Submit(queue.Queue, new QueueSubmitDesc([], [], batch, [], [])));
-        }
-        _receive = receive;
+        QueueTimeQueries queries = _queues[queue];
+        using CommandContextPool.CommandContextLease lease =
+            graph.CommandContexts.Acquire(queue, false, "GPU time readback");
+        CommandContext context = lease.Context;
+        graph.Backend.Begin(context);
+        graph.Backend.ResolveQueries(context, queries.Pool!, 0, queries.Count,
+            queries.Readback!, new(0, queries.Count * queries.Pool!.ResultInfo.ResultStride));
+        return graph.Backend.End(context);
     }
 
-    // Called by the frame slot after every accepted submission, including resolves, completes.
+    internal void SetReceiver(Action<RenderGraphGpuTimes> receive) => _receive = receive;
+
+    // Called by the frame slot after every accepted submission, including appended resolves, completes.
     internal void Collect()
     {
         Action<RenderGraphGpuTimes>? receive = _receive;
@@ -196,20 +191,6 @@ internal sealed partial class FrameExecutor
     {
         if (offset == 0) _frame.Backend.ResetQueries(context, queries.Queue.Pool!, queries.First, 4);
         _frame.Backend.WriteTimestamp(context, queries.Queue.Pool!, queries.First + offset);
-    }
-
-    private void ResolveGpuTimes(Span<QueueCompletion> destination)
-    {
-        if (!_measureGpu) return;
-        // Spans stay in the caller; capture accepted resolves in the existing completion list.
-        _gpuTimes!.Resolve(completion => AddCompletion(_submittedCompletions, completion), _frame.Options.GpuTimes!);
-        foreach (QueueCompletion completion in _submittedCompletions)
-        {
-            int index = QueueSlot(completion.Queue);
-            if (index < 0) continue;
-            destination[index] = completion;
-            _submittedQueues[index] = true;
-        }
     }
 
     internal void CollectGpuTimes() => _gpuTimes?.Collect();
