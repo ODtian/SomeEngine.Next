@@ -16,7 +16,9 @@ Heading 表示的专用区域图、TileSource、ASA 局部查询与相同兴趣/
 
 `SetSource(region, source)` 安装该区域后续读取使用的来源引用。动态构建完成后，可取得 `NavigationRegionSources.CreateTileSource()` 并传入此入口；完整流程见[动态导航](Navigation-Dynamic.md)。已经提交的读取继续持有自己的实际来源。
 
-`Update` 提交所需读取，并接入当次已经完成的结果。`Reads` 公开各块的后台完成句柄。`Applied` 只覆盖本次已经取得数据的短接入 Job；运动调度把该句柄作为就绪依赖。接入 Job 在 Scene 写访问内取得当前目录，并声明该值的实际数组，按目录块内容版本匹配完成数据。接入一次交换完整 `NavigationSceneContent`，推进绑定 `Version` 和 `ResidenceVersion`，内容重建使用独立的 `ContentVersion`。预算移除目录引用后，已提交 Job 与路径分段继续持有实际数组。
+`Update` 提交所需读取，并接入当次已经完成的结果。`Reads` 公开各块的后台完成句柄。`Applied` 只覆盖本次已经取得数据的转换与接入；运动调度把该句柄作为就绪依赖。Mesh 接入的控制根先提交 Scene 读访问，固定内容引用并声明目录与已读取 Mesh 的实际数组。各块按固定的区域变换与内容版本独立转换，输出保存在本轮转换数组。
+
+场景写入工作依赖转换范围的完整完成，再核对当前内容引用并消费转换结果，一次交换完整 `NavigationSceneContent`。内容变化时，由控制根下另一段子工作重新固定输入与转换，`Applied` 覆盖全部重试。写入阶段推进绑定 `Version` 和 `ResidenceVersion`，内容重建使用独立的 `ContentVersion`。预算移除目录引用后，已提交 Job 与路径分段继续持有实际数组。
 
 普通网格、朝向网格和 Grid 流送都在消费完成结果前移除对应在途项。读取或解码失败经 `Update` 交给调用方，下一次仍有需求时重新取得；`NavigationTileRead.Complete` 保留该次失败结果。释放 Streaming 时完成所有在途读取与接入工作，再释放持有的来源，最后传播完成错误。同步启动读取失败也释放本次保留的来源。
 
