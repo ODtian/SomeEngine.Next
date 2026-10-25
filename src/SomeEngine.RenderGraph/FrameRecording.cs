@@ -491,7 +491,7 @@ internal sealed partial class FrameExecutor
                         // The resolved binding list comes from the user's shader.
                         // Ordinary data may also need a constant-buffer descriptor.
                         if (block.Data is { Length: > 0 }) resourceDescriptors++;
-                        for (int binding = 0; binding < block.Count; binding++)
+                        for (int binding = 0; binding < block.Connections.Count; binding++)
                         {
                             if (block.Resources[binding].Type == ResourceBindingType.Sampler) samplerDescriptors++;
                             else resourceDescriptors++;
@@ -1322,12 +1322,12 @@ internal sealed partial class FrameExecutor
     private readonly List<PassParameters> _passParameters = [];
     private HashSet<ParameterBlock> _parameterBindingChanges = [];
     private HashSet<ParameterBlock> _inactiveBindingChanges = [];
+    private ParameterBlockChanges[] _parameterBlockChanges = [];
 
     private sealed class PassParameters
     {
         internal Pipeline? Pipeline;
         internal readonly List<ParameterBlock> Blocks = [];
-        internal readonly List<ParameterConnection> Connections = [];
     }
 
     private sealed class ParameterBlock
@@ -1339,7 +1339,7 @@ internal sealed partial class FrameExecutor
         internal readonly List<ParameterBindingData> BindingData = [];
         internal byte[]? Data;
         internal ResourceBinding[] Resources = [];
-        internal int Count;
+        internal readonly List<ParameterConnection> Connections = [];
     }
 
     private sealed class ParameterBindingData
@@ -1351,9 +1351,7 @@ internal sealed partial class FrameExecutor
 
     private sealed class ParameterConnection
     {
-        internal int Pass;
         internal ParameterBlock Block = null!;
-        internal int Position;
         internal GraphParameterResourceBinding Source;
         internal int View = -1;
         internal int Primary = -1;
@@ -1361,15 +1359,30 @@ internal sealed partial class FrameExecutor
         internal GraphAccessTargetKind Kind;
     }
 
+    private sealed class ParameterBlockChanges
+    {
+        internal ParameterBlock? Block;
+        internal bool BindingsChanged;
+        internal bool CommandsChanged;
+        internal bool RetryBindings;
+        internal readonly List<PersistentParameterBindings> RetiredBindings = [];
+    }
+
+    private readonly struct UpdateParameterBlocksJob(FrameExecutor executor) : IJobParallelFor
+    {
+        public void Execute(int index) => executor.UpdateParameterBlock(executor._parameterBlockChanges[index]);
+    }
+
     private void ConnectParameterBindings()
     {
         while (_passParameters.Count < _passes.Count) _passParameters.Add(new());
         for (int index = _passes.Count; index < _passParameters.Count; index++)
         {
-            foreach (ParameterConnection connection in _passParameters[index].Connections)
-                DisconnectParameter(connection);
             foreach (ParameterBlock block in _passParameters[index].Blocks)
+            {
+                foreach (ParameterConnection connection in block.Connections) DisconnectParameter(connection);
                 ReleaseParameterBlock(block);
+            }
         }
         if (_passParameters.Count > _passes.Count)
             _passParameters.RemoveRange(_passes.Count, _passParameters.Count - _passes.Count);
@@ -1384,7 +1397,8 @@ internal sealed partial class FrameExecutor
                 foreach (ParameterBlock value in parameters.Blocks) ReleaseParameterBlock(value);
                 parameters.Pipeline = row.Pipeline;
             }
-            foreach (ParameterConnection connection in parameters.Connections) DisconnectParameter(connection);
+            foreach (ParameterBlock value in parameters.Blocks)
+                foreach (ParameterConnection connection in value.Connections) DisconnectParameter(connection);
             int blockIndex = 0;
             int connectionIndex = 0;
             ParameterBlock block = GetParameterBlock(parameters, pass, blockIndex++, row.ParameterLayout, row.ParameterOrdinaryData);
@@ -1394,8 +1408,12 @@ internal sealed partial class FrameExecutor
                 {
                     if (source.BeginsParameterBlock)
                     {
-                        if (block.Count != 0 || block.Data is { Length: > 0 })
+                        if (connectionIndex != 0 || block.Data is { Length: > 0 })
+                        {
+                            TrimParameterConnections(block, connectionIndex);
                             block = GetParameterBlock(parameters, pass, blockIndex++, source.ParameterLayout, source.OrdinaryData);
+                            connectionIndex = 0;
+                        }
                         else
                         {
                             block.Layout = source.ParameterLayout;
@@ -1403,14 +1421,12 @@ internal sealed partial class FrameExecutor
                         }
                         continue;
                     }
-                    if (connectionIndex == parameters.Connections.Count) parameters.Connections.Add(new());
-                    ParameterConnection connection = parameters.Connections[connectionIndex++];
-                    connection.Pass = pass;
+                    if (connectionIndex == block.Connections.Count) block.Connections.Add(new());
+                    ParameterConnection connection = block.Connections[connectionIndex++];
                     connection.Block = block;
-                    connection.Position = block.Count++;
                     connection.Source = source;
                     connection.View = connection.Primary = connection.Secondary = -1;
-                    EnsureCapacity(ref block.Resources, block.Count);
+                    EnsureCapacity(ref block.Resources, connectionIndex);
                     if (source.ParameterInput is not null)
                         AddParameterConnection(_parameterInputConnections, source.ParameterInput, connection);
                     else if (!source.IsNull && source.Type != ResourceBindingType.Sampler)
@@ -1444,8 +1460,7 @@ internal sealed partial class FrameExecutor
                     _parameterValueChanges.Add(connection);
                 }
             }
-            if (parameters.Connections.Count > connectionIndex)
-                parameters.Connections.RemoveRange(connectionIndex, parameters.Connections.Count - connectionIndex);
+            TrimParameterConnections(block, connectionIndex);
             if (parameters.Blocks.Count > blockIndex)
             {
                 for (int index = blockIndex; index < parameters.Blocks.Count; index++)
@@ -1453,7 +1468,7 @@ internal sealed partial class FrameExecutor
                 parameters.Blocks.RemoveRange(blockIndex, parameters.Blocks.Count - blockIndex);
             }
             foreach (ParameterBlock value in parameters.Blocks)
-                value.Resources.AsSpan(value.Count).Clear();
+                value.Resources.AsSpan(value.Connections.Count).Clear();
         }
         _parameterPassChanges.Clear();
     }
@@ -1465,9 +1480,14 @@ internal sealed partial class FrameExecutor
         block.Pass = pass;
         block.Layout = layout;
         block.Data = data;
-        block.Count = 0;
         _parameterBindingChanges.Add(block);
         return block;
+    }
+
+    private static void TrimParameterConnections(ParameterBlock block, int count)
+    {
+        if (block.Connections.Count > count)
+            block.Connections.RemoveRange(count, block.Connections.Count - count);
     }
 
     private void ReleaseParameterBlock(ParameterBlock block)
@@ -1525,7 +1545,7 @@ internal sealed partial class FrameExecutor
     private void ReconnectViewParameters(int view)
     {
         if (_viewParameterConnections.TryGetValue(view, out HashSet<ParameterConnection>? connections))
-            foreach (ParameterConnection connection in connections) _parameterPassChanges.Add(connection.Pass);
+            foreach (ParameterConnection connection in connections) _parameterPassChanges.Add(connection.Block.Pass);
     }
 
     private void ReconnectResourceParameters((GraphAccessTargetKind Kind, int Index) resource)
@@ -1537,7 +1557,7 @@ internal sealed partial class FrameExecutor
                 if (_accesses[access].Identity.Owner == _frame.Graph.Identity)
                     _rowChanges.Accesses.Add(_accesses[access].Identity);
         if (_resourceParameterConnections.TryGetValue(resource, out HashSet<ParameterConnection>? connections))
-            foreach (ParameterConnection connection in connections) _parameterPassChanges.Add(connection.Pass);
+            foreach (ParameterConnection connection in connections) _parameterPassChanges.Add(connection.Block.Pass);
     }
 
     private void ChangeResourceParameters((GraphAccessTargetKind Kind, int Index) resource)
@@ -1552,84 +1572,124 @@ internal sealed partial class FrameExecutor
         RefreshBufferInputParameters();
         RefreshParameterInputs();
         _inactiveParameterChanges.Clear();
+        _inactiveBindingChanges.Clear();
+        _inactiveBindingChanges.UnionWith(_parameterBindingChanges);
         foreach (ParameterConnection connection in _parameterValueChanges)
         {
-            if (!_live[connection.Pass])
-            {
-                _inactiveParameterChanges.Add(connection);
-                continue;
-            }
-            ResourceBinding value = ResolveParameterValue(connection);
-            if (connection.Block.Resources[connection.Position] != value)
-            {
-                InvalidateCommands(connection.Pass);
-                connection.Block.Resources[connection.Position] = value;
-                _parameterBindingChanges.Add(connection.Block);
-            }
+            if (_live[connection.Block.Pass]) _inactiveBindingChanges.Add(connection.Block);
+            else _inactiveParameterChanges.Add(connection);
         }
-        // Disabled passes can become live without changing their resource declarations.
-        (_parameterValueChanges, _inactiveParameterChanges) = (_inactiveParameterChanges, _parameterValueChanges);
-        _inactiveBindingChanges.Clear();
-        foreach (ParameterBlock block in _parameterBindingChanges)
+        int count = 0;
+        foreach (ParameterBlock block in _inactiveBindingChanges)
         {
-            if (!_live[block.Pass])
-            {
-                _inactiveBindingChanges.Add(block);
-                continue;
-            }
-            Pipeline? pipeline = _passParameters[block.Pass].Pipeline;
-            if (pipeline is null || block.Count == 0)
-            {
-                ReleaseParameterBindingData(block);
-                continue;
-            }
-            if (block.CachedLayout != block.Layout)
-            {
-                ReleaseParameterBindingData(block);
-                block.CachedLayout = block.Layout;
-            }
-            var bindings = new ParameterBlockBindings(block.Layout, block.Resources.AsSpan(0, block.Count), block.Data ?? []);
-            ParameterBindingData? matched = null;
-            for (int index = block.BindingData.Count - 1; index >= 0; index--)
-            {
-                ParameterBindingData data = block.BindingData[index];
-                if (!bindings.Resources.SequenceEqual(data.Resources) || !bindings.OrdinaryData.SequenceEqual(data.Data)) continue;
-                matched = data;
-                block.BindingData.RemoveAt(index);
-                break;
-            }
-            if (matched is not null)
-            {
-                if (matched.Bindings is null)
-                {
-                    matched.Bindings = _frame.Backend.CreatePersistentParameterBindings(_frame.Graph.Device, pipeline, bindings);
-                }
-                block.Bindings = matched.Bindings;
-                block.BindingData.Add(matched);
-                continue;
-            }
-            // Frame resources and temporal histories can rotate at different rates.
-            // Retain a bounded set of observed bindings, and materialize only reused values.
-            ParameterBindingData next;
-            if (block.BindingData.Count < _frame.Graph.FrameSlotCount + 1) next = new();
-            else
-            {
-                next = block.BindingData[0];
-                block.BindingData.RemoveAt(0);
-                next.Bindings?.Dispose();
-                next.Bindings = null;
-            }
-            PrepareArray(ref next.Resources, bindings.Resources.Length);
-            PrepareArray(ref next.Data, bindings.OrdinaryData.Length);
-            bindings.Resources.CopyTo(next.Resources);
-            bindings.OrdinaryData.CopyTo(next.Data);
-            block.BindingData.Add(next);
-            block.Bindings = null;
-            _inactiveBindingChanges.Add(block);
+            if (!_live[block.Pass]) continue;
+            EnsureCapacity(ref _parameterBlockChanges, count + 1);
+            ParameterBlockChanges changes = _parameterBlockChanges[count] ??= new();
+            changes.Block = block;
+            changes.BindingsChanged = _parameterBindingChanges.Contains(block);
+            changes.CommandsChanged = false;
+            changes.RetryBindings = false;
+            count++;
         }
-        (_parameterBindingChanges, _inactiveBindingChanges) = (_inactiveBindingChanges, _parameterBindingChanges);
+        bool completed = false;
+        try
+        {
+            if (count != 0) JobSystem.Current.ExecuteParallel(new UpdateParameterBlocksJob(this), count);
+            completed = true;
+        }
+        finally
+        {
+            _inactiveBindingChanges.Clear();
+            foreach (ParameterBlock block in _parameterBindingChanges)
+                if (!_live[block.Pass]) _inactiveBindingChanges.Add(block);
+            for (int index = 0; index < count; index++)
+            {
+                ParameterBlockChanges changes = _parameterBlockChanges[index];
+                ParameterBlock block = changes.Block!;
+                if (changes.CommandsChanged) InvalidateCommands(block.Pass);
+                if (!completed || changes.RetryBindings) _inactiveBindingChanges.Add(block);
+                foreach (PersistentParameterBindings bindings in changes.RetiredBindings) bindings.Dispose();
+                changes.RetiredBindings.Clear();
+                changes.Block = null;
+            }
+            (_parameterBindingChanges, _inactiveBindingChanges) = (_inactiveBindingChanges, _parameterBindingChanges);
+        }
+        // Disabled passes retain their changes until they become live.
+        (_parameterValueChanges, _inactiveParameterChanges) = (_inactiveParameterChanges, _parameterValueChanges);
     }
 
+    private void UpdateParameterBlock(ParameterBlockChanges changes)
+    {
+        ParameterBlock block = changes.Block!;
+        for (int index = 0; index < block.Connections.Count; index++)
+        {
+            ParameterConnection connection = block.Connections[index];
+            if (!_parameterValueChanges.Contains(connection)) continue;
+            ResourceBinding value = ResolveParameterValue(connection);
+            if (block.Resources[index] == value) continue;
+            changes.CommandsChanged = true;
+            changes.BindingsChanged = true;
+            block.Resources[index] = value;
+        }
+        if (!changes.BindingsChanged) return;
+        Pipeline? pipeline = _passParameters[block.Pass].Pipeline;
+        if (pipeline is null || block.Connections.Count == 0)
+        {
+            RetireParameterBindingData(block, changes);
+            return;
+        }
+        if (block.CachedLayout != block.Layout)
+        {
+            RetireParameterBindingData(block, changes);
+            block.CachedLayout = block.Layout;
+        }
+        var bindings = new ParameterBlockBindings(block.Layout, block.Resources.AsSpan(0, block.Connections.Count), block.Data ?? []);
+        ParameterBindingData? matched = null;
+        for (int index = block.BindingData.Count - 1; index >= 0; index--)
+        {
+            ParameterBindingData data = block.BindingData[index];
+            if (!bindings.Resources.SequenceEqual(data.Resources) || !bindings.OrdinaryData.SequenceEqual(data.Data)) continue;
+            matched = data;
+            block.BindingData.RemoveAt(index);
+            break;
+        }
+        if (matched is not null)
+        {
+            if (matched.Bindings is null)
+            {
+                matched.Bindings = _frame.Backend.CreatePersistentParameterBindings(_frame.Graph.Device, pipeline, bindings);
+            }
+            block.Bindings = matched.Bindings;
+            block.BindingData.Add(matched);
+            return;
+        }
+        // Frame resources and temporal histories can rotate at different rates.
+        // Retain a bounded set of observed bindings, and materialize only reused values.
+        ParameterBindingData next;
+        if (block.BindingData.Count < _frame.Graph.FrameSlotCount + 1) next = new();
+        else
+        {
+            next = block.BindingData[0];
+            block.BindingData.RemoveAt(0);
+            if (next.Bindings is { } retired) changes.RetiredBindings.Add(retired);
+            next.Bindings = null;
+        }
+        PrepareArray(ref next.Resources, bindings.Resources.Length);
+        PrepareArray(ref next.Data, bindings.OrdinaryData.Length);
+        bindings.Resources.CopyTo(next.Resources);
+        bindings.OrdinaryData.CopyTo(next.Data);
+        block.BindingData.Add(next);
+        block.Bindings = null;
+        changes.RetryBindings = true;
+    }
+
+    private static void RetireParameterBindingData(ParameterBlock block, ParameterBlockChanges changes)
+    {
+        foreach (ParameterBindingData data in block.BindingData)
+            if (data.Bindings is { } bindings) changes.RetiredBindings.Add(bindings);
+        block.BindingData.Clear();
+        block.Bindings = null;
+    }
     private ResourceBinding ResolveParameterValue(ParameterConnection connection)
     {
         GraphParameterResourceBinding source = connection.Source;
@@ -1687,11 +1747,11 @@ internal sealed partial class FrameExecutor
     {
         foreach (ParameterBlock block in _passParameters[pass].Blocks)
         {
-            if (block.Count == 0 && block.Data is not { Length: > 0 }) continue;
+            if (block.Connections.Count == 0 && block.Data is not { Length: > 0 }) continue;
             if (block.Bindings is null)
             {
                 _frame.Backend.SetTransientParameterBindings(context,
-                    new ParameterBlockBindings(block.Layout, block.Resources.AsSpan(0, block.Count), block.Data ?? []));
+                    new ParameterBlockBindings(block.Layout, block.Resources.AsSpan(0, block.Connections.Count), block.Data ?? []));
                 continue;
             }
             _frame.Backend.SetPersistentParameterBindings(context, block.Bindings!);
