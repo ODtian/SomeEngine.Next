@@ -1201,6 +1201,8 @@ internal sealed unsafe partial class VulkanBackend
             QueuePlan queuePlan)
         {
             DeviceFeatures supported = DeviceFeatures.IndirectCommands;
+            if (extensions.Contains(SwapchainExtension))
+                supported |= DeviceFeatures.Presentation;
             if (features.SparseBinding &&
                 features.SparseResidencyBuffer &&
                 queuePlan.SupportsSparseGraphicsQueue0)
