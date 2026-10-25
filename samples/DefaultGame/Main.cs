@@ -83,10 +83,11 @@ public static class SampleApplication
             return await Application.RunAsync(args, application: scene);
         }
 #endif
-        bool crowdOnly = args.Contains("--crowd", StringComparer.Ordinal);
+        bool inlineCrowdOnly = args.Contains("--crowd-inline", StringComparer.Ordinal);
+        bool crowdOnly = inlineCrowdOnly || args.Contains("--crowd", StringComparer.Ordinal);
         bool regressionOnly = args.Contains("--regression", StringComparer.Ordinal);
         bool measure = args.Contains("--measure", StringComparer.Ordinal);
-        args = args.Where(argument => argument is not ("--crowd" or "--regression" or "--measure")).ToArray();
+        args = args.Where(argument => argument is not ("--crowd" or "--crowd-inline" or "--regression" or "--measure")).ToArray();
         RuntimeStartupOptions startupOptions = RuntimeStartupOptions.Parse(args);
         startupOptions = startupOptions with
         {
@@ -107,7 +108,8 @@ public static class SampleApplication
                 crowd.CreateScene("1000 characters / inline", Path.Combine(AppContext.BaseDirectory, "CrowdInline")),
                 crowd.CreateScene("1000 characters / cache", Path.Combine(AppContext.BaseDirectory, "CrowdCache")),
             ];
-            if (crowdOnly) scenes = characters.ToList();
+            if (inlineCrowdOnly) scenes = [characters[0]];
+            else if (crowdOnly) scenes = characters.ToList();
             else scenes.AddRange(characters);
         }
         var platform = new SceneTestPlatform(scenes.Select(scene =>
