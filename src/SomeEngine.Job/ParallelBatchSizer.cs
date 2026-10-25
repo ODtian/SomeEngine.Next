@@ -1,20 +1,21 @@
 using System.Diagnostics;
+using System.Numerics;
 
 namespace SomeEngine.Job;
 
 /// <summary>
-/// Per-job-type automatic batch sizing. Explicit batch sizes never enter this path. A cold job
-/// starts with four tiles per worker; warmed jobs target a bounded amount of callback time per
-/// batch while retaining at least one tile per worker and at most the configured tile density.
+/// Scheduler-local automatic costs by job type and power-of-two work size. Cold work uses up to
+/// four tiles per worker within the configured density; learned work targets callback time while
+/// keeping that density as its lower bound and the configured density as its upper bound.
 /// </summary>
-internal static class ParallelBatchSizer<T>
+internal sealed class ParallelBatchSizer<T>
     where T : struct, IJobParallelFor
 {
     private const long SampleScale = 1_000_000;
     private const int ColdTilesPerWorker = 4;
-    private static long s_ewmaTicksPerItemScaled;
+    private readonly long[] _scaledTicksPerItemBySize = new long[32];
 
-    internal static int Resolve(
+    internal int Resolve(
         int length,
         int workerCount,
         int targetMicroseconds,
@@ -28,16 +29,14 @@ internal static class ParallelBatchSizer<T>
         // Keep at least the cold-start tile density. Collapsing to one tile per worker lets an OS
         // preemption pin the final tile and produces frame-sized p99 spikes even when the average
         // cost estimate is accurate.
-        int minimumTiles = Math.Max(
-            1,
-            Math.Min(length, workers * ColdTilesPerWorker));
+        int minimumTiles = Math.Min(maxTiles, Math.Max(1,
+            Math.Min(length, workers * ColdTilesPerWorker)));
         int maxBatchSize = DivideRoundUp(length, minimumTiles);
 
-        long cost = Volatile.Read(ref s_ewmaTicksPerItemScaled);
+        long cost = Volatile.Read(ref _scaledTicksPerItemBySize[BitOperations.Log2((uint)length)]);
         if (cost <= 0)
         {
-            int coldTiles = Math.Max(1, Math.Min(length, workers * ColdTilesPerWorker));
-            return DivideRoundUp(length, coldTiles);
+            return maxBatchSize;
         }
 
         long targetTicks = Math.Max(
@@ -49,7 +48,7 @@ internal static class ParallelBatchSizer<T>
         return (int)Math.Clamp(candidate, minBatchSize, maxBatchSize);
     }
 
-    internal static void Record(long elapsedTicks, int itemCount)
+    internal void Record(int length, long elapsedTicks, int itemCount)
     {
         if (elapsedTicks <= 0 || itemCount <= 0)
             return;
@@ -57,14 +56,15 @@ internal static class ParallelBatchSizer<T>
         long sample = elapsedTicks > long.MaxValue / SampleScale
             ? long.MaxValue
             : Math.Max(1, elapsedTicks * SampleScale / itemCount);
+        ref long estimate = ref _scaledTicksPerItemBySize[BitOperations.Log2((uint)length)];
         while (true)
         {
-            long current = Volatile.Read(ref s_ewmaTicksPerItemScaled);
+            long current = Volatile.Read(ref estimate);
             long updated = current <= 0
                 ? sample
                 : current + ((sample - current) / 4);
             if (Interlocked.CompareExchange(
-                    ref s_ewmaTicksPerItemScaled,
+                    ref estimate,
                     updated,
                     current) == current)
             {

@@ -41,3 +41,12 @@ completion and record return. Waiting rows include a source job whose public sta
 holds the dependent submission before its gate opens; the same reusable signals and work
 are used for each row. All array results are checked after the measured calls. The reported
 allocation includes every participating thread. Use the exclusive queue for both build and run.
+
+`--sizing --workers 8 --target-us 1 --calls 128` compares lengths 32, 4,096 and 65,536.
+For each length, light array increments and variable integer work use the same inputs across
+`ScheduleParallel(...).Complete()` and `ExecuteParallel(...)`, each with explicit and automatic
+batch sizes. Explicit size is `max(1, length / (workers * 4))`; `--target-us` selects the existing
+`AutoBatchTargetMicroseconds` setting (default 100). Repeat the same command with `--counters`
+for the statistics comparison. Each row reports the same complete-call p50/p95 and process-wide
+allocation boundary. Public results are checked after each length, and the run ends with the
+configured public statistics.
