@@ -1,6 +1,9 @@
+using System.Buffers;
 using System.Runtime.CompilerServices;
 using SomeEngine.Core.Diagnostics;
 using SomeEngine.ECS;
+using SomeEngine.ECS.Entities;
+using SomeEngine.ECS.Systems;
 
 namespace SomeEngine.Animation;
 
@@ -44,6 +47,16 @@ public readonly unsafe struct Channel<T> : IEquatable<Channel<T>> where T : unma
         new(ComponentId<TComponent>.Value, field,
             &ReadField<TComponent, TAccess>, &WriteField<TComponent, TAccess>,
             &ReadComponent<TComponent, TAccess>, &WriteComponent<TComponent, TAccess>, &WriteFields<TComponent, TAccess>, throughReference, offset);
+
+    /// <summary>Connects a field to its actual referenced data so independent targets can write in parallel.</summary>
+    public static Channel<T> Of<TComponent, TAccess, TResources>(ushort field, bool throughReference = true, ushort offset = ushort.MaxValue)
+        where TComponent : struct, IComponent
+        where TAccess : struct, IFieldAccess<TComponent, T>
+        where TResources : struct, IJobComponentResources<TComponent> =>
+        new(ComponentId<TComponent>.Value, field,
+            &ReadField<TComponent, TAccess>, &WriteField<TComponent, TAccess>,
+            &ReadComponent<TComponent, TAccess>, &WriteComponent<TComponent, TAccess>,
+            &WriteResourceFields<TComponent, TAccess, TResources>, throughReference, offset);
 
     public bool ThroughReference => _access != 0 && FieldDescriptions<T>.Items[_access - 1].ThroughReference;
 
@@ -101,6 +114,55 @@ public readonly unsafe struct Channel<T> : IEquatable<Channel<T>> where T : unma
     {
         var fields = new FieldBatch(channel, writes);
         world.ExecuteComponentWrite<TComponent, FieldBatch>(ref fields, &WriteRoots<TComponent, TAccess>);
+    }
+
+    private static void WriteResourceFields<TComponent, TAccess, TResources>(World world, Channel<T> channel,
+        ReadOnlySpan<FieldWrite<T>> writes)
+        where TComponent : struct, IComponent
+        where TAccess : struct, IFieldAccess<TComponent, T>
+        where TResources : struct, IJobComponentResources<TComponent>
+    {
+        var fields = new FieldBatch(channel, writes);
+        world.ExecuteComponentWrite<TComponent, FieldBatch>(ref fields, &WriteResourceRoots<TComponent, TAccess, TResources>);
+    }
+
+    private static void WriteResourceRoots<TComponent, TAccess, TResources>(ComponentWriteBatch<TComponent> roots,
+        ref FieldBatch fields)
+        where TComponent : struct, IComponent
+        where TAccess : struct, IFieldAccess<TComponent, T>
+        where TResources : struct, IJobComponentResources<TComponent>
+    {
+        int count = 0;
+        foreach (ref readonly FieldWrite<T> write in fields.Writes)
+            if (write.Channel == fields.Channel) count++;
+        if (count == 0) return;
+        Entity[] targets = ArrayPool<Entity>.Shared.Rent(count);
+        FieldWrite<T>[] values = ArrayPool<FieldWrite<T>>.Shared.Rent(count);
+        try
+        {
+            int index = 0;
+            foreach (ref readonly FieldWrite<T> write in fields.Writes)
+            {
+                if (write.Channel != fields.Channel) continue;
+                targets[index] = write.Target;
+                values[index++] = write;
+            }
+            var work = new ResourceFieldWrite<TComponent, TAccess>(values);
+            ComponentWriteJobs.ExecuteParallel<TComponent, ResourceFieldWrite<TComponent, TAccess>, TResources>(
+                roots, targets.AsSpan(0, count), work);
+        }
+        finally
+        {
+            ArrayPool<Entity>.Shared.Return(targets);
+            ArrayPool<FieldWrite<T>>.Shared.Return(values);
+        }
+    }
+
+    private readonly struct ResourceFieldWrite<TComponent, TAccess>(FieldWrite<T>[] values) : IComponentWriteJob<TComponent>
+        where TComponent : struct, IComponent
+        where TAccess : struct, IFieldAccess<TComponent, T>
+    {
+        public void Execute(int index, ref TComponent component) => TAccess.Write(ref component, in values[index].Value);
     }
 
     private readonly ref struct FieldBatch(Channel<T> channel, ReadOnlySpan<FieldWrite<T>> writes)
