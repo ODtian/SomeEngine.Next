@@ -1,5 +1,7 @@
 # 实体采样驱动的连续几何
 
+当前设备 Body 表示、端点更新及多端输出见[设备主体](Device-Bodies.md)，场组合见[设备有符号距离场](Device-Signed-Distance-Fields.md)。
+
 本页维护动态几何的数据、读取、范围和接触输出职责。源码入口为 [动态胶囊与采样端](../../../src/SomeEngine.Physics/DynamicCapsule.cs)、[动态边](../../../src/SomeEngine.Physics/DynamicEdge.cs)、[动态面](../../../src/SomeEngine.Physics/DynamicFace.cs)、[三角面数学](../../../src/SomeEngine.Physics/TriangleGeometry.cs) 和 [范围更新](../../../src/SomeEngine.Physics/UpdateGeometryReaderBounds.cs)。公开行为入口为 [DynamicGeometryTests](../../../tests/SomeEngine.Physics.Tests/DynamicGeometryTests.cs)。共同类型检测与接触数据见 [Geometry](Geometry.md)。
 
 ## 实体与采样点
