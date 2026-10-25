@@ -2,6 +2,7 @@ using SomeEngine.ECS;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
+using SomeEngine.ECS.Systems;
 using SomeEngine.Core.ECS.Components;
 using SomeEngine.Render.Components;
 using SomeEngine.Resources;
@@ -24,6 +25,7 @@ public sealed partial class RenderExtractionSystems : IDisposable
     private readonly RenderExtractionContext _context;
     private readonly object _gate = new();
     private QueryDefinition? _sourceQuery;
+    private QueryReadResources _sourceResources = null!;
     private QueryHandle _sourceQueryHandle;
     private World? _mainWorld;
     private World? _candidateMainWorld;
@@ -192,6 +194,7 @@ public sealed partial class RenderExtractionSystems : IDisposable
             _systems[index].DeclareReads(query);
         _writtenComponents = query.WrittenComponents.ToArray();
         DestinationAccess = query.BuildDestinationAccess();
+        _sourceResources = query.Resources;
         return query.Build();
     }
 
@@ -204,29 +207,14 @@ public sealed partial class RenderExtractionSystems : IDisposable
         try
         {
             var state = (Systems: this, Source: mainWorld);
-            mainWorld.ExecuteReadSnapshot(_sourceQueryHandle, _lastSystemVersion, ref state,
+            mainWorld.ExecuteReadQuery(_sourceQueryHandle, _lastSystemVersion, ref state,
                 static (scoped QueryCursor query, ref (RenderExtractionSystems Systems, World Source) state) =>
                 {
-                    RenderExtractionSystems systems = state.Systems;
-                    systems._candidateSourceChanges = systems._sourceChanges!.Read();
-                    systems._candidateFullReconciliation = systems._mainWorld is null ||
-                        systems._candidateSourceChanges.Count != 0;
-                    systems._context.BeginSourceChanges(systems._candidateSourceChanges.Entities);
-                    systems.CollectRanges(query);
-                    foreach (IRenderExtractionSystem system in systems._systems)
-                        if (system.CompleteSourceCollection(state.Source, systems._candidateFullReconciliation))
-                            systems._changedSystems.Add(system);
-                    var resources = TextureExtraction.Collect(query);
-                    foreach (IRenderExtractionSystem system in systems._systems) system.CollectResources(query, resources);
-                    systems._textureVersions = resources.Textures;
-                    systems._materialReferences = resources.Materials;
-                    systems._context.MaterialReferences = systems._materialReferences;
-                    systems._materialsChanged = systems._materialReferences.Values.Any(value =>
-                        systems._renderWorld.TryReadMaterial(value.Material.MaterialId, out _) &&
-                        systems._renderWorld.ReadMaterialRevision(value.Material.MaterialId) != value.Revision);
-                    var before = systems._renderWorld.TextureVersions;
-                    systems._texturesChanged = before.Count != systems._textureVersions.Count ||
-                        systems._textureVersions.Any(pair => !before.TryGetValue(pair.Key, out var version) || version != pair.Value);
+                    state.Systems._sourceResources.Execute(query, ref state,
+                        static (scoped QueryCursor query, ref (RenderExtractionSystems Systems, World Source) state) =>
+                        {
+                            state.Systems.CollectSource(query, state.Source);
+                        });
                 });
             foreach (IRenderExtractionSystem system in _systems)
                 if (system.CompleteCollection(_context, _candidateFullReconciliation))
@@ -237,6 +225,28 @@ public sealed partial class RenderExtractionSystems : IDisposable
             _context.CancelTransformChanges();
             throw;
         }
+    }
+
+    private void CollectSource(scoped QueryCursor query, World source)
+    {
+        _candidateSourceChanges = _sourceChanges!.Read();
+        _candidateFullReconciliation = _mainWorld is null || _candidateSourceChanges.Count != 0;
+        _context.BeginSourceChanges(_candidateSourceChanges.Entities);
+        CollectRanges(query);
+        foreach (IRenderExtractionSystem system in _systems)
+            if (system.CompleteSourceCollection(source, _candidateFullReconciliation))
+                _changedSystems.Add(system);
+        var resources = TextureExtraction.Collect(query);
+        foreach (IRenderExtractionSystem system in _systems) system.CollectResources(query, resources);
+        _textureVersions = resources.Textures;
+        _materialReferences = resources.Materials;
+        _context.MaterialReferences = _materialReferences;
+        _materialsChanged = _materialReferences.Values.Any(value =>
+            _renderWorld.TryReadMaterial(value.Material.MaterialId, out _) &&
+            _renderWorld.ReadMaterialRevision(value.Material.MaterialId) != value.Revision);
+        var before = _renderWorld.TextureVersions;
+        _texturesChanged = before.Count != _textureVersions.Count ||
+            _textureVersions.Any(pair => !before.TryGetValue(pair.Key, out var version) || version != pair.Value);
     }
 
     /// <summary>
@@ -419,6 +429,7 @@ public sealed partial class RenderExtractionSystems : IDisposable
 public sealed class RenderExtractionQuery
 {
     private readonly QueryDefinitionBuilder _builder = new();
+    internal QueryReadResources Resources { get; } = new();
     internal HashSet<int> WrittenComponents { get; } = [];
     private readonly QueryDefinitionBuilder _destination = new QueryDefinitionBuilder().Optional<RenderSource>(QueryAccess.Read);
 
@@ -436,6 +447,14 @@ public sealed class RenderExtractionQuery
 
     public void ReadOptional<T>() where T : struct
         => _builder.Optional<T>(QueryAccess.Read);
+
+    public void ReadOptional<T, TResources>()
+        where T : struct, IComponent
+        where TResources : struct, IJobComponentResources<T>
+    {
+        ReadOptional<T>();
+        Resources.Add<T, TResources>();
+    }
 
     public void ReadOptionalBuffer<T>() where T : struct, IBufferElement
         => _builder.OptionalBuffer<T>(QueryAccess.Read);
