@@ -94,22 +94,66 @@ internal sealed unsafe class FontData : SafeHandle
         {
             lock (glyphBitmapLock)
             {
-                int error = FreeType.RenderGlyph(library, freeTypeFace, glyph, (uint)fontSize, spread, out FreeTypeBitmap bitmap);
-                if (error != 0)
-                    throw new InvalidOperationException($"FreeType glyph rasterization failed: {error}.");
-
-                byte[] pixels = new byte[checked(bitmap.Width * bitmap.Height)];
-                for (int row = 0; row < bitmap.Height; row++)
-                {
-                    byte* source = bitmap.Pixels + row * bitmap.Pitch;
-                    new ReadOnlySpan<byte>(source, bitmap.Width).CopyTo(pixels.AsSpan(row * bitmap.Width, bitmap.Width));
-                }
-                return new GlyphBitmap(bitmap.Width, bitmap.Height, new Vector2(bitmap.Left, -bitmap.Top), pixels);
+                return RenderGlyph(library, freeTypeFace, glyph, fontSize, spread);
             }
         }
         finally
         {
             if (retained) DangerousRelease();
+        }
+    }
+
+    private static GlyphBitmap RenderGlyph(nint library, nint face, uint glyph, int fontSize, int spread)
+    {
+        int error = FreeType.RenderGlyph(library, face, glyph, (uint)fontSize, spread, out FreeTypeBitmap bitmap);
+        if (error != 0)
+            throw new InvalidOperationException($"FreeType glyph rasterization failed: {error}.");
+        byte[] pixels = new byte[checked(bitmap.Width * bitmap.Height)];
+        for (int row = 0; row < bitmap.Height; row++)
+        {
+            byte* source = bitmap.Pixels + row * bitmap.Pitch;
+            new ReadOnlySpan<byte>(source, bitmap.Width).CopyTo(pixels.AsSpan(row * bitmap.Width, bitmap.Width));
+        }
+        return new GlyphBitmap(bitmap.Width, bitmap.Height, new Vector2(bitmap.Left, -bitmap.Top), pixels);
+    }
+
+    internal GlyphRasterizer CreateGlyphRasterizer() => new(this);
+
+    internal sealed class GlyphRasterizer : IDisposable
+    {
+        private readonly FontData data;
+        private bool retained;
+        private nint library;
+        private nint face;
+
+        internal GlyphRasterizer(FontData data)
+        {
+            this.data = data;
+            data.DangerousAddRef(ref retained);
+            try
+            {
+                int error = FreeType.CreateLibrary(out library);
+                if (error != 0)
+                    throw new InvalidOperationException($"FreeType initialization failed: {error}.");
+                error = FreeType.CreateFace(library, data.bytes, new CLong(data.byteLength), new CLong(0), out face);
+                if (error != 0)
+                    throw new InvalidDataException($"FreeType font loading failed: {error}.");
+            }
+            catch
+            {
+                Dispose();
+                throw;
+            }
+        }
+
+        internal GlyphBitmap RenderGlyph(uint glyph, int fontSize, int spread) =>
+            FontData.RenderGlyph(library, face, glyph, fontSize, spread);
+
+        public void Dispose()
+        {
+            if (face != 0) FreeType.DestroyFace(face);
+            if (library != 0) FreeType.DestroyLibrary(library);
+            if (retained) data.DangerousRelease();
         }
     }
 

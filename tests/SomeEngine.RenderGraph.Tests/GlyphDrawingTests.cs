@@ -35,8 +35,8 @@ public sealed class GlyphDrawingTests
     {
         using var graph = new RenderGraph(backend, device, [backend.GetQueue(device, QueueType.Graphics)]);
         using var world = new RenderWorld();
-        using SurfaceMaterial surface = SurfaceMaterial.Create(device.Capabilities.CompileTarget);
-        using GlyphsMaterial glyphs = GlyphsMaterial.Create(device.Capabilities.CompileTarget);
+        SurfaceMaterial surface = SurfaceMaterial.Create(device.Capabilities.CompileTarget);
+        GlyphsMaterial glyphs = GlyphsMaterial.Create(device.Capabilities.CompileTarget);
         using CommandContext commands = backend.CreateCommandContext(device, new CommandContextDesc(QueueType.Graphics, 0, 1));
         var allocation = new SamplerFailureBackend(backend);
         backend.Begin(commands);
@@ -106,11 +106,12 @@ public sealed class GlyphDrawingTests
     {
         using Font font = Font.Load(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fonts", "Latin.ttf")));
         var atlas = new GlyphAtlas(regionsAndTree ? 96 : 128, regionsAndTree ? 64 : 128);
+        atlas.Bake(font, [34u]);
         GlyphLocation glyph = atlas.Get(font, 34);
         using var graph = new RenderGraph(backend, device, [backend.GetQueue(device, QueueType.Graphics)]);
         using var world = new RenderWorld();
-        using SurfaceMaterial surface = SurfaceMaterial.Create(device.Capabilities.CompileTarget);
-        using GlyphsMaterial glyphs = GlyphsMaterial.Create(device.Capabilities.CompileTarget);
+        SurfaceMaterial surface = SurfaceMaterial.Create(device.Capabilities.CompileTarget);
+        GlyphsMaterial glyphs = GlyphsMaterial.Create(device.Capabilities.CompileTarget);
         using var renderer = new CanvasRenderer(backend, device, graph, world, surface, Format.R8G8B8A8UNorm, glyphs);
         Entity atlasEntity = world.CreateEntity(new RenderGlyphAtlas(
             new[] { new GlyphPagePixels(atlas.Pages[0].Width, atlas.Pages[0].Height, atlas.Pages[0].Pixels.ToArray()) },
@@ -204,6 +205,7 @@ public sealed class GlyphDrawingTests
         if (!regionsAndTree) return;
         world.AcquireSystemTick();
         atlas.ClearDirtyRegions();
+        atlas.Bake(font, [55u, 35u]);
         GlyphLocation second = atlas.Get(font, 55);
         GlyphLocation third = atlas.Get(font, 35);
         Assert.Equal(0, second.Region.PageIndex);
