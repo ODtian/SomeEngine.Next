@@ -19,7 +19,7 @@ public sealed class ConvexHullTests
         Entity entity = AddGeometry(world, geometry, pose);
         QueryHandle members = world.Query(new QueryDefinitionBuilder().All<ConvexHullGeometry>());
         CollisionTree tree = Collision.Build(world, members);
-        using var queries = Collision.Query<ConvexHullGeometry>(world, members, tree, new(1e-5f, 64));
+        using var queries = Collision.QueryWithResources<ConvexHullGeometry, ConvexHullResources>(world, members, tree, new(1e-5f, 64));
 
         Assert.True(queries.Raycast(new(new Vector3(3, .5f, .5f), -Vector3.UnitX, 4), out CollisionHit hit));
 
