@@ -21,7 +21,7 @@ public sealed partial class Scheduler
         if (options.Category is { } category)
             tokenCount = Math.Min(tokenCount, category.Config.MaxExecuting);
         WorkStream<ScheduledParallelToken<T>> stream = GetWorkStream<ScheduledParallelToken<T>>(options.Category);
-        ParallelJobGroup<T> group = ParallelJobGroup<T>.Rent(job, length, 1, length, measureCost: false);
+        ParallelJobGroup<T> group = ParallelJobGroup<T>.Rent(job, length, 1, length, batchSizer: null);
         int[] workIndices = ArrayPool<int>.Shared.Rent(tokenCount);
         WorkBatch work = default;
         int storedWorkItems = 0;

@@ -12,5 +12,13 @@
 ## Current direction
 借鉴 retained UI 的 key identity、dirty propagation 与局部 reconcile，但不采用每帧重新生成树再做全量 diff 的方式。
 
+## 值依赖更新
+
+现行实现见 [FrameAnalysis.cs](../../../src/SomeEngine.RenderGraph/FrameAnalysis.cs)。显式修改先确定本轮脏资源和访问列表，并在协调阶段计算这些访问所需的 pass 顺序祖先。
+
+每个脏资源使用独立、可复用的排序、区间和读写遍历工作区。共同 Job 执行器并行计算资源的值依赖边与活跃根；所有范围完成后，协调阶段归并各资源结果，集中更新依赖计数并继续既有活跃性传播。
+
+正常帧沿 `TryReuseAnalysis` 复用已有结果；局部修改继续由资源和 pass 的变化集合确定重算范围。
+
 ## Relations
 [[Incremental-Hazards]] · [[Incremental-Scheduling]] · [[Transient-Placement]]

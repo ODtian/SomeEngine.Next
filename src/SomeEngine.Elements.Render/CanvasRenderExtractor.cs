@@ -6,6 +6,7 @@ using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hierarchy;
 using SomeEngine.ECS.Queries;
+using SomeEngine.ECS.Systems;
 using SomeEngine.Layout;
 using SomeEngine.Render.Systems;
 using SomeEngine.Views;
@@ -14,16 +15,13 @@ using SomeEngine.Job;
 namespace SomeEngine.Elements.Render;
 
 /// <summary>Collects each canvas and its ordered drawing data through the shared extraction stage.</summary>
-public class CanvasRenderExtractor : IRenderExtractionSystem
+public partial class CanvasRenderExtractor : IRenderExtractionSystem
 {
-    private readonly HashSet<Entity> _changedTreeNodes = [];
-    private readonly HashSet<Entity> _changedSurfaceNodes = [];
+    private readonly CanvasChanges _changes = new();
     private readonly Dictionary<Entity, CanvasInstances> _canvasInstances = [];
     private readonly Dictionary<Entity, Dictionary<Entity, SurfaceValue>> _surfaceValuesByCanvas = [];
-    private readonly HashSet<Entity> _changedImageNodes = [];
     private readonly Dictionary<Entity, Dictionary<Entity, ImageInstance>> _imageValuesByCanvas = [];
     private readonly Dictionary<Entity, Entity> _worldTargets = [];
-    private readonly HashSet<Entity> _changedTargets = [];
     private readonly Dictionary<Entity, RenderCanvas> _canvasChanges = [];
     private readonly List<DrawingData> _drawings = [];
 
@@ -49,102 +47,48 @@ public class CanvasRenderExtractor : IRenderExtractionSystem
 
     public void Reset()
     {
-        _changedTreeNodes.Clear();
-        _changedSurfaceNodes.Clear();
         _canvasInstances.Clear();
         _surfaceValuesByCanvas.Clear();
-        _changedImageNodes.Clear();
+        _changes.Reset();
         _imageValuesByCanvas.Clear();
-        _changedTargets.Clear();
         _canvasChanges.Clear();
         _drawings.Clear();
     }
 
     public void Collect(QueryChunkView chunk)
     {
-        if (chunk.Has<Canvas>() || chunk.Has<Surface>() || chunk.Has<LayoutRect>() ||
-            chunk.Has<Parent<ElementTree>>() || chunk.Has<Children<ElementTree>>())
-            foreach (Entity entity in chunk.Entities) _changedTreeNodes.Add(entity);
+        _changes.Collect(ReadOnlyQueryPacketJobs.Borrow(chunk), chunk.LastSystemVersion, fullCollection: true);
     }
 
     public bool CollectChanges(QueryChunkView chunk, RenderExtractionContext context)
     {
-        bool surfaceChanged = chunk.Has<Surface>() && chunk.Has<LayoutRect>() &&
-            chunk.HasChangedSinceLastSystemVersion<Surface>();
-        bool rectangleChanged = chunk.Has<Surface>() && chunk.Has<LayoutRect>() &&
-            chunk.HasChangedSinceLastSystemVersion<LayoutRect>();
-        bool viewportChanged = chunk.Has<ScrollOffset>() && chunk.Has<LayoutRect>() &&
-            chunk.HasChangedSinceLastSystemVersion<LayoutRect>();
-        bool canvasChanged = chunk.Has<Canvas>() && chunk.HasChangedSinceLastSystemVersion<Canvas>();
-        bool parentChanged = chunk.Has<Parent<ElementTree>>() &&
-            chunk.HasChangedSinceLastSystemVersion<Parent<ElementTree>>();
-        bool childrenChanged = chunk.Has<Children<ElementTree>>() &&
-            chunk.HasChangedSinceLastSystemVersion<Children<ElementTree>>();
-        bool transformChanged = chunk.Has<WorldTransform>() &&
-            chunk.HasChangedSinceLastSystemVersion<WorldTransform>();
-        bool imageChanged = chunk.Has<Image>() && chunk.Has<LayoutRect>() &&
-            (chunk.HasChangedSinceLastSystemVersion<Image>() ||
-             chunk.HasChangedSinceLastSystemVersion<LayoutRect>() ||
-             (chunk.Has<ImageTexture>() && chunk.HasChangedSinceLastSystemVersion<ImageTexture>()) ||
-             (chunk.Has<Box>() && chunk.HasChangedSinceLastSystemVersion<Box>()));
-        bool presentationChanged = chunk.Has<LayoutRect>() &&
-            ((chunk.Has<ElementTransform>() && chunk.HasChangedSinceLastSystemVersion<ElementTransform>()) ||
-             (chunk.Has<PresentationOffset>() && chunk.HasChangedSinceLastSystemVersion<PresentationOffset>()));
-        if (!surfaceChanged && !rectangleChanged && !viewportChanged && !canvasChanged &&
-            !parentChanged && !childrenChanged && !imageChanged && !transformChanged && !presentationChanged)
-            return false;
-
-        for (int row = 0; row < chunk.Count; row++)
-        {
-            Entity entity = chunk.Entities[row];
-            bool presentation = presentationChanged &&
-                ((chunk.Has<ElementTransform>() && chunk.RowChangedSinceLastSystemVersion<ElementTransform>(row)) ||
-                 (chunk.Has<PresentationOffset>() && chunk.RowChangedSinceLastSystemVersion<PresentationOffset>(row)));
-            if (transformChanged && chunk.RowChangedSinceLastSystemVersion<WorldTransform>(row))
-                _changedTargets.Add(entity);
-            if ((canvasChanged && chunk.RowChangedSinceLastSystemVersion<Canvas>(row)) ||
-                (viewportChanged && chunk.RowChangedSinceLastSystemVersion<LayoutRect>(row)) ||
-                (parentChanged && chunk.RowChangedSinceLastSystemVersion<Parent<ElementTree>>(row)) ||
-                (childrenChanged && chunk.RowChangedSinceLastSystemVersion<Children<ElementTree>>(row)))
-                _changedTreeNodes.Add(entity);
-            if ((surfaceChanged && chunk.RowChangedSinceLastSystemVersion<Surface>(row)) ||
-                (rectangleChanged && chunk.RowChangedSinceLastSystemVersion<LayoutRect>(row)) ||
-                (presentation && chunk.Has<Surface>()))
-                _changedSurfaceNodes.Add(entity);
-            if ((imageChanged && (chunk.RowChangedSinceLastSystemVersion<Image>(row) ||
-                chunk.RowChangedSinceLastSystemVersion<LayoutRect>(row) ||
-                (chunk.Has<ImageTexture>() && chunk.RowChangedSinceLastSystemVersion<ImageTexture>(row)) ||
-                (chunk.Has<Box>() && chunk.RowChangedSinceLastSystemVersion<Box>(row)))) ||
-                (presentation && chunk.Has<Image>()))
-                _changedImageNodes.Add(entity);
-        }
-        // Source collection resolves the canvas and supplies the detached drawing values.
+        _changes.Collect(ReadOnlyQueryPacketJobs.Borrow(chunk), chunk.LastSystemVersion, fullCollection: false);
         return false;
     }
 
     public bool CompleteSourceCollection(World sourceWorld, bool fullCollection)
     {
         if (fullCollection) _worldTargets.Clear();
-        foreach (Entity node in _changedTreeNodes)
+        foreach (Entity node in _changes.TreeNodes)
         {
             Entity canvas = CanvasTree.FindCanvas(sourceWorld, node);
             if (canvas != Entity.Null && !_canvasInstances.ContainsKey(canvas))
                 _canvasInstances.Add(canvas, CollectCanvas(sourceWorld, canvas));
         }
-        foreach (Entity node in _changedSurfaceNodes)
+        foreach (Entity node in _changes.SurfaceNodes)
         {
             Entity canvas = CanvasTree.FindCanvas(sourceWorld, node);
             if (canvas == Entity.Null || _canvasInstances.ContainsKey(canvas)) continue;
             _drawings.Add(new(canvas, node) { Surface = ReadSurface(sourceWorld, node), HasSurface = true });
         }
-        foreach (Entity node in _changedImageNodes)
+        foreach (Entity node in _changes.ImageNodes)
         {
             Entity canvas = CanvasTree.FindCanvas(sourceWorld, node);
             if (canvas == Entity.Null || _canvasInstances.ContainsKey(canvas)) continue;
             _drawings.Add(new(canvas, node) { Image = ReadImage(sourceWorld, node), HasImage = true });
         }
         foreach ((Entity canvas, Entity target) in _worldTargets)
-            if (_changedTargets.Contains(target) && !_canvasInstances.ContainsKey(canvas))
+            if (_changes.Targets.Contains(target) && !_canvasInstances.ContainsKey(canvas))
                 _canvasChanges.Add(canvas, ReadCanvas(sourceWorld, canvas));
         ChunkJobs.Run(new DrawingJob(_drawings), _drawings.Count, Parallel);
         foreach (DrawingData drawing in _drawings)
