@@ -3,6 +3,7 @@ using SomeEngine.Serialization.Containers;
 using SomeEngine.Serialization.IO;
 using System.Security.Cryptography;
 using System.Text;
+using SomeEngine.Job;
 
 namespace SomeEngine.Assets;
 
@@ -29,6 +30,7 @@ public sealed partial class AssetProject
         IAssetSourceImporter<TSource> importer, CancellationToken cancellationToken = default) where TSource : class
     {
         ArgumentNullException.ThrowIfNull(importer);
+        Scheduler scheduler = JobSystem.Current;
         await _importGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         AssetImportFiles? files = null;
         try
@@ -51,7 +53,7 @@ public sealed partial class AssetProject
 
             TSource source = await importer.ReadAsync(fullPath, cancellationToken).ConfigureAwait(false);
             await using var sourceDisposal = new SourceDisposal(source);
-            await using var context = new ImportContext(_projectRoot, fullPath, metadata, cancellationToken);
+            await using var context = new ImportContext(_projectRoot, fullPath, metadata, cancellationToken, scheduler);
             await importer.ImportAsync(source, context, cancellationToken).ConfigureAwait(false);
 
             files = new AssetImportFiles();
