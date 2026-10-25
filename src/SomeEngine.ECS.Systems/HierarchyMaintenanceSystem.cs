@@ -25,15 +25,30 @@ public static class HierarchyMaintenanceSystem<TDomain>
         ArgumentNullException.ThrowIfNull(world);
 
         var evidence = new HierarchyMaintenanceEvidence();
-        var job = new MaintenanceJob(world, evidence);
-        // Validation failure restores canonical Parent preimages, so the exceptional path is a
-        // real Parent writer even though successful maintenance only reads Parent.
-        JobHandle handle = WorldStorageJobSchedule.ScheduleTopologyWrite(
+        var job = new CheckMaintenanceJob(world, evidence);
+        JobHandle handle = WorldStorageJobSchedule.ScheduleTopologyRead(
             world,
-            HierarchyJobAccess<TDomain>.ParentWrite(world),
+            HierarchyJobAccess<TDomain>.ParentRead(world),
             in job,
             dependency);
         return new HierarchyMaintenanceDependency<TDomain>(world, handle, evidence);
+    }
+
+    private readonly struct CheckMaintenanceJob(World world, HierarchyMaintenanceEvidence evidence) : IJob
+    {
+        public void Execute()
+        {
+            if (world.ActiveStructureRoot.Hierarchy.TryDomain<TDomain>(out var store) && store.IsInverseFresh)
+            {
+                evidence.Publish(store.InverseRevision);
+                return;
+            }
+
+            var job = new MaintenanceJob(world, evidence);
+            // Reconciliation changes Children storage; validation failure restores Parent values.
+            // The attached write job keeps both operations inside the returned completion.
+            WorldStorageJobSchedule.ScheduleTopologyWrite(world, HierarchyJobAccess<TDomain>.ParentWrite(world), in job);
+        }
     }
 
     private readonly struct MaintenanceJob : IJob

@@ -218,7 +218,8 @@ public struct BuildError : ISparseComponent
 
 应用先转接窗口事件，再调用 `UpdateInput()` 执行 `HitTestSystem` 与
 `FocusNavigationSystem`；游戏输入随后读取同一 World 的 `InputCapture`。
-模拟之后调用 `UpdateViews(deltaSeconds)`，依次执行重建、用户界面系统、
+模拟之后调用 `UpdateViews(deltaSeconds)`，在游戏系统完成及命令回放后消费所选物理结果，
+通过 `GameTransforms` 传播实体变换，然后依次执行重建、用户界面系统、
 `AnimationSystems.AddDefaults` 注册的动画、`TextShapingSystem`、`LayoutSystem`
 和布局后的 FLIP 系统。文本系统同时作为布局测量的 `ILayoutDataUpdate`，
 在布局给出内容宽度时完成对应排版。最后沿既有 `RenderExtractionSystems.Extract`

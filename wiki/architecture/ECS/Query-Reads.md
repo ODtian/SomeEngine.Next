@@ -14,6 +14,12 @@
 
 在有效查询回调内，`resources.Execute(query, ref state, callback)` 按当前有效行调用描述器的 `Collect` 与 `GetVersion`，取得所指对象及数组范围的同步资源访问，再复核绑定版本。绑定版本变化时重新收集。访问覆盖整个消费回调，并在返回时归还；内部数值工作可继续复用现有同步范围入口。
 
+`ExecuteEntities(query, entities, ref state, callback)` 使用调用方给出的实际参与实体范围，
+按原查询的成员、行过滤和组件读取规则取得这些实体引用的数据。完整查询持有列访问，
+参与实体范围决定本次引用资源；两种入口共用资源等待、绑定复核和回调归还流程。
+该入口同时接受实现 `IQueryReadEntities.Count/GetEntity` 的具体泛型投影，并支持 `ref struct`。
+碰撞 pair 等只读连续数据可直接投影参与实体，Span 重载沿同一投影流程执行。
+
 描述器按原组件读取实际引用，版本列表和访问列表由所属 `QueryReadResources` 复用。持有者串行使用同一个读取描述，实际工作、等待及归还由现有 Job 资源机制承担。`GetVersion` 的含义沿用组件资源描述器的绑定变化规则，见 [资源访问与就绪](Readiness-Admission.md)。
 
 ## 渲染提取
