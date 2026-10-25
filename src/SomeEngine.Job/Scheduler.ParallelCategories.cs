@@ -33,8 +33,9 @@ public sealed partial class Scheduler
             return new(ScheduleParallel(job, length, batchSize, accesses, options, dependency));
 
         bool automaticBatch = batchSize == JobScheduleOptions.AutomaticBatchSize;
+        ParallelBatchSizer<T>? batchSizer = automaticBatch ? GetParallelBatchSizer<T>() : null;
         int resolvedSize = automaticBatch
-            ? ParallelBatchSizer<T>.Resolve(length, _config.WorkerCount,
+            ? batchSizer!.Resolve(length, _config.WorkerCount,
                 _config.AutoBatchTargetMicroseconds, _config.AutoBatchMaxTilesPerWorker)
             : batchSize;
         int batchCount = CalculateParallelBatchCount(length, resolvedSize);
@@ -55,7 +56,7 @@ public sealed partial class Scheduler
             AttachToCurrentScope(state);
             submission.Bind(state);
             stream = GetWorkStream<ScheduledParallelToken<T>>(category);
-            group = ParallelJobGroup<T>.Rent(job, length, resolvedSize, batchCount, automaticBatch);
+            group = ParallelJobGroup<T>.Rent(job, length, resolvedSize, batchCount, batchSizer);
             var source = new ScheduledParallelTokenSource<T>(group, state);
             workIndices = ArrayPool<int>.Shared.Rent(tokenCount);
             prepared = stream.PrepareMany(workIndices.AsSpan(0, tokenCount), ref source);
