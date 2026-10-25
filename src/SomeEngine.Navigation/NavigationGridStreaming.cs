@@ -69,14 +69,56 @@ public sealed class NavigationGridStreaming : IDisposable
         Applied.Complete();
         NavigationGrid grid = _flow.Input.Costs.Grid;
         NavigationGridRegionGraph graph = grid.RegionGraph!;
-        var demands = new HashSet<NavigationTileCoordinate>();
-        foreach (NavigationInterest interest in Interests)
+        NavigationInterestData[] interests = NavigationStreamingRanges.CaptureInterests(Interests);
+        var nearby = NavigationStreamingRanges.CollectTiles(_scheduler, [graph.Tiles], interests);
+        var routes = new List<NavigationTileCoordinate>[interests.Length];
+        NavigationFlowField? field = _flow.Field;
+        var routeReads = new List<JobResourceAccess>();
+        if (field is not null)
         {
-            foreach (NavigationRegionTile tile in graph.Tiles.Span)
-                if (Distance(interest.Position, tile.Bounds) <= interest.Radius ||
-                    Distance(interest.Position + interest.Direction * interest.LookAheadDistance, tile.Bounds) <= interest.Radius)
-                    demands.Add(tile.Tile);
-            if (_flow.Field is not { } field) continue;
+            field.Input.Costs.Grid.AddReadAccesses(_scheduler, routeReads);
+            routeReads.Add(NavigationJobAccess.Read(_scheduler, field.SuccessorEdges));
+        }
+        _scheduler.ExecuteParallel(new CollectRoutes(field, interests, routes), interests.Length,
+            JobScheduleOptions.AutomaticBatchSize, routeReads.ToArray());
+        var demands = new HashSet<NavigationTileCoordinate>();
+        for (int item = 0; item < interests.Length; item++)
+        {
+            foreach (NavigationInterestTileRange range in nearby)
+                foreach (NavigationTileCoordinate tile in range.TilesByInterest[item]) demands.Add(tile);
+            foreach (NavigationTileCoordinate tile in routes[item]) demands.Add(tile);
+        }
+        NavigationTileCoordinate[] candidates = demands.Concat(grid.Tiles.ToArray().Select(tile => tile.Tile))
+            .Concat(_reads.Keys).Distinct().ToArray();
+        var distances = NavigationStreamingRanges.CalculateDistances(_scheduler, candidates, interests, new GridTileBounds(graph.Tiles));
+        HashSet<NavigationTileCoordinate> selected = demands.OrderBy(tile => distances[tile]).Take(ResidentTileBudget).ToHashSet();
+        HashSet<NavigationTileCoordinate> resident = grid.Tiles.ToArray().Select(tile => tile.Tile).ToHashSet();
+        foreach (NavigationTileCoordinate tile in selected)
+            if (!resident.Contains(tile) && !_reads.ContainsKey(tile)) _reads.Add(tile, _source.ScheduleRead(tile, _scheduler));
+        var loaded = new List<NavigationGridTile>();
+        foreach (var pair in _reads.ToArray())
+            if (pair.Value.Completion.IsCompleted)
+            {
+                _reads.Remove(pair.Key);
+                loaded.Add(new(pair.Key, pair.Value.Complete()));
+            }
+        HashSet<NavigationTileCoordinate> keep = resident.Concat(loaded.Select(tile => tile.Tile)).Distinct()
+            .OrderByDescending(selected.Contains).ThenBy(tile => distances[tile]).Take(ResidentTileBudget).ToHashSet();
+        NavigationTileCoordinate[] removed = resident.Where(tile => !keep.Contains(tile)).ToArray();
+        loaded.RemoveAll(tile => !keep.Contains(tile.Tile));
+        if (loaded.Count == 0 && removed.Length == 0) return;
+        Applied = _scheduler.Schedule(new ScheduleApply(_flow, loaded.ToArray(), removed, _scheduler),
+            JobResourceAccess.Write(_scheduler.GetResourceToken(_flow)));
+    }
+
+    private readonly struct CollectRoutes(NavigationFlowField? field, NavigationInterestData[] interests,
+        List<NavigationTileCoordinate>[] output) : IJobParallelFor
+    {
+        public void Execute(int item)
+        {
+            List<NavigationTileCoordinate> demands = output[item] = [];
+            if (field is null) return;
+            NavigationInterestData interest = interests[item];
             NavigationGrid current = field.Input.Costs.Grid;
             int cell = current.FindCell(interest.Position);
             float ahead = 0;
@@ -91,35 +133,14 @@ public sealed class NavigationGridStreaming : IDisposable
                 cell = next;
             }
         }
-        float Near(NavigationTileCoordinate coordinate)
-        {
-            NavigationBounds bounds = graph.Tiles.Span.Find(coordinate).Bounds;
-            float distance = float.PositiveInfinity;
-            foreach (NavigationInterest interest in Interests) distance = MathF.Min(distance, Distance(interest.Position, bounds));
-            return distance;
-        }
-        HashSet<NavigationTileCoordinate> selected = demands.OrderBy(Near).Take(ResidentTileBudget).ToHashSet();
-        HashSet<NavigationTileCoordinate> resident = grid.Tiles.ToArray().Select(tile => tile.Tile).ToHashSet();
-        foreach (NavigationTileCoordinate tile in selected)
-            if (!resident.Contains(tile) && !_reads.ContainsKey(tile)) _reads.Add(tile, _source.ScheduleRead(tile, _scheduler));
-        var loaded = new List<NavigationGridTile>();
-        foreach (var pair in _reads.ToArray())
-            if (pair.Value.Completion.IsCompleted)
-            {
-                _reads.Remove(pair.Key);
-                loaded.Add(new(pair.Key, pair.Value.Complete()));
-            }
-        HashSet<NavigationTileCoordinate> keep = resident.Concat(loaded.Select(tile => tile.Tile)).Distinct()
-            .OrderByDescending(selected.Contains).ThenBy(Near).Take(ResidentTileBudget).ToHashSet();
-        NavigationTileCoordinate[] removed = resident.Where(tile => !keep.Contains(tile)).ToArray();
-        loaded.RemoveAll(tile => !keep.Contains(tile.Tile));
-        if (loaded.Count == 0 && removed.Length == 0) return;
-        Applied = _scheduler.Schedule(new ScheduleApply(_flow, loaded.ToArray(), removed, _scheduler),
-            JobResourceAccess.Write(_scheduler.GetResourceToken(_flow)));
     }
 
-    private static float Distance(Vector3 position, NavigationBounds bounds) => Vector3.Distance(position,
-        Vector3.Clamp(position, bounds.Minimum, bounds.Maximum));
+    private readonly struct GridTileBounds(ReadOnlyMemory<NavigationRegionTile> directory) : INavigationTileBounds<NavigationTileCoordinate>
+    {
+        public NavigationBounds GetBounds(NavigationTileCoordinate tile) => directory.Span.Find(tile).Bounds;
+        public void AddReadAccesses(Scheduler scheduler, List<JobResourceAccess> accesses) =>
+            accesses.Add(NavigationJobAccess.Read(scheduler, directory));
+    }
 
     public void Dispose()
     {
