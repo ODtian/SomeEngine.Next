@@ -11,28 +11,39 @@ int workerCount = ReadNonNegativeArgument(
 int parallelLength = ReadIntArgument(args, "--length", 1_000_000);
 int spinCount = ReadNonNegativeArgument(args, "--spin", 128);
 int busySpinCount = ReadNonNegativeArgument(args, "--busy-spin", Math.Max(spinCount, 2_048));
+int targetMicroseconds = ReadIntArgument(args, "--target-us", 100);
 bool automatic = args.Contains("--auto", StringComparer.OrdinalIgnoreCase);
 bool counters = args.Contains("--counters", StringComparer.OrdinalIgnoreCase);
 bool synchronous = args.Contains("--synchronous", StringComparer.OrdinalIgnoreCase);
 bool dependencies = args.Contains("--dependencies", StringComparer.OrdinalIgnoreCase);
 bool categories = args.Contains("--categories", StringComparer.OrdinalIgnoreCase);
 bool storage = args.Contains("--storage", StringComparer.OrdinalIgnoreCase);
+bool sizing = args.Contains("--sizing", StringComparer.OrdinalIgnoreCase);
 
 JobSystem.Initialize(new JobRuntimeConfig
 {
     WorkerCount = workerCount,
     EnableCounters = counters,
     WorkerSpinCount = spinCount,
-    BusyWorkerSpinCount = busySpinCount
+    BusyWorkerSpinCount = busySpinCount,
+    AutoBatchTargetMicroseconds = targetMicroseconds
 });
 
 try
 {
     Console.WriteLine(
         $"SomeEngine.Job benchmark | workers={workerCount} | samples={samples} | warmups={warmups} | " +
-        (dependencies ? "predecessors=1,16,256,4096,16384 | input-copies=1,2 | "
+        (sizing ? $"lengths=32,4096,65536 | target={targetMicroseconds}us | "
+            : dependencies ? "predecessors=1,16,256,4096,16384 | input-copies=1,2 | "
             : $"length={parallelLength} | batch={(automatic ? "auto" : "explicit")} | ") +
         $"spin={spinCount}/{busySpinCount} | counters={counters}");
+
+    if (sizing)
+    {
+        RunSizing(JobSystem.Default, workerCount, warmups, samples,
+            ReadIntArgument(args, "--calls", 128));
+        return;
+    }
 
     if (storage)
     {
@@ -206,6 +217,40 @@ static void RunCalls(string name, int warmups, int samples, int calls, Action ac
     Array.Sort(allocatedBytes);
     Console.WriteLine($"{name,-24} calls={calls} p50={Percentile(microseconds, 0.50):F3} us/call " +
         $"p95={Percentile(microseconds, 0.95):F3} us/call allocated-p50={Percentile(allocatedBytes, 0.50):F2} B/call");
+}
+
+static void RunSizing(Scheduler scheduler, int workers, int warmups, int samples, int calls)
+{
+    foreach (int length in new[] { 32, 4_096, 65_536 })
+    {
+        int[] lightValues = new int[length];
+        long[] variableValues = new long[length];
+        var light = new LightParallelJob(lightValues);
+        var variable = new VariableParallelJob(variableValues);
+        int explicitSize = Math.Max(1, length / Math.Max(1, workers * 4));
+        RunCalls($"light schedule explicit n={length}", warmups, samples, calls,
+            () => scheduler.ScheduleParallel(light, length, explicitSize).Complete());
+        RunCalls($"light schedule auto n={length}", warmups, samples, calls,
+            () => scheduler.ScheduleParallel(light, length, JobScheduleOptions.AutomaticBatchSize).Complete());
+        RunCalls($"light execute explicit n={length}", warmups, samples, calls,
+            () => scheduler.ExecuteParallel(light, length, explicitSize));
+        RunCalls($"light execute auto n={length}", warmups, samples, calls,
+            () => scheduler.ExecuteParallel(light, length, JobScheduleOptions.AutomaticBatchSize));
+        RunCalls($"variable schedule explicit n={length}", warmups, samples, calls,
+            () => scheduler.ScheduleParallel(variable, length, explicitSize).Complete());
+        RunCalls($"variable schedule auto n={length}", warmups, samples, calls,
+            () => scheduler.ScheduleParallel(variable, length, JobScheduleOptions.AutomaticBatchSize).Complete());
+        RunCalls($"variable execute explicit n={length}", warmups, samples, calls,
+            () => scheduler.ExecuteParallel(variable, length, explicitSize));
+        RunCalls($"variable execute auto n={length}", warmups, samples, calls,
+            () => scheduler.ExecuteParallel(variable, length, JobScheduleOptions.AutomaticBatchSize));
+        int expected = (warmups + samples) * calls * 4;
+        if (lightValues.Any(value => value != expected) || variableValues[0] != 1_015_568_748L)
+            throw new InvalidOperationException("The sizing workloads must complete their public results.");
+    }
+    JobRuntimeStats stats = scheduler.GetStats();
+    Console.WriteLine($"statistics scheduled={stats.ScheduledJobs} executed={stats.ExecutedWorkItems} " +
+        $"ready-tickets={stats.ReadyTicketsExecuted} ready-latency-average={stats.ReadyLatencyAverageNanoseconds}ns");
 }
 
 static void RunStorage(Scheduler scheduler, int length, int workers, int warmups, int samples, int calls)
