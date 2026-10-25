@@ -2,6 +2,8 @@ using SomeEngine.Geometry.Cluster;
 using System.Collections.Generic;
 using System.IO;
 using System.Numerics;
+using System.Runtime.InteropServices;
+using SomeEngine.Resources.Geometry;
 using SomeEngine.Assets.Importers;
 using SomeEngine.Assets.Schema;
 using ValueType = SomeEngine.Resources.Geometry.ValueType;
@@ -10,6 +12,51 @@ namespace SomeEngine.Assets.Tests.Assets;
 
 public sealed class ClusterBuilderTests
 {
+    [Fact]
+    public async Task AssetBvhBoundsCoverDistributedGeometry()
+    {
+        const int triangleCount = 4096;
+        Vector3[] positions = new Vector3[triangleCount * 3];
+        uint[] indices = new uint[positions.Length];
+        for (int triangle = 0; triangle < triangleCount; triangle++)
+        {
+            int vertex = triangle * 3;
+            Vector3 origin = new((triangle % 32) * 4, (triangle / 32) * 4, 0);
+            positions[vertex] = origin;
+            positions[vertex + 1] = origin + Vector3.UnitX;
+            positions[vertex + 2] = origin + Vector3.UnitY;
+        }
+        for (int vertex = 0; vertex < positions.Length; vertex++) indices[vertex] = (uint)vertex;
+        using var asset = ClusterBuilder.ProcessRaw(positions, [], indices,
+            ClusterBuilderTestMaterials.Slots(), "distributed triangles");
+        ClusterGeometryBlock geometry = asset.GetBlock<ClusterGeometryBlock>();
+        using var source = await geometry.OpenPayloadSourceAsync(asset.GetBlock<ClusterVertexAttributesBlock>());
+        ReadOnlyMemory<byte> bytes = await source.ReadBvhAsync();
+        ClusterBVHNode[] nodes = MemoryMarshal.Cast<byte, ClusterBVHNode>(bytes.Span).ToArray();
+        ClusterBVHNode root = nodes[^1];
+        Assert.Equal(0u, root.NodeType);
+        foreach (Vector3 position in positions)
+        {
+            Assert.InRange(position.X, root.BoundMin.X, root.BoundMax.X);
+            Assert.InRange(position.Y, root.BoundMin.Y, root.BoundMax.Y);
+            Assert.InRange(position.Z, root.BoundMin.Z, root.BoundMax.Z);
+        }
+        foreach (ClusterBVHNode parent in nodes)
+        {
+            if (parent.NodeType == 1) continue;
+            for (int child = 0; child < parent.ChildCount; child++)
+            {
+                ClusterBVHNode node = nodes[(int)parent.ChildPointer + child];
+                Assert.InRange(node.BoundMin.X, parent.BoundMin.X, parent.BoundMax.X);
+                Assert.InRange(node.BoundMin.Y, parent.BoundMin.Y, parent.BoundMax.Y);
+                Assert.InRange(node.BoundMin.Z, parent.BoundMin.Z, parent.BoundMax.Z);
+                Assert.InRange(node.BoundMax.X, parent.BoundMin.X, parent.BoundMax.X);
+                Assert.InRange(node.BoundMax.Y, parent.BoundMin.Y, parent.BoundMax.Y);
+                Assert.InRange(node.BoundMax.Z, parent.BoundMin.Z, parent.BoundMax.Z);
+            }
+        }
+    }
+
     [Fact]
     public void RawMeshSeparatesQuantizedPositionsAndAllShadingAttributes()
     {
