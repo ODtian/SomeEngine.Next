@@ -78,27 +78,35 @@ public static partial class NavigationCostSystem
         public void Execute()
         {
             NavigationGrid grid = baseCosts.Grid;
-            for (int cell = 0; cell < grid.Cells.Length; cell++)
-            {
-                NavigationGridCell from = grid.Cells.Span[cell];
-                float scalar = policy.Sampling == NavigationCrowdCostSampling.Scalar ? ScalarMultiplier(grid, crowd, policy, cell) : 1;
-                state.Cells[cell] = baseCosts.CellCosts.Span[cell] * scalar;
-                for (int edge = from.EdgeStart; edge < from.EdgeStart + from.EdgeCount; edge++)
-                {
-                    if (policy.Sampling == NavigationCrowdCostSampling.Scalar)
-                    {
-                        state.Edges[edge] = baseCosts.EdgeCosts.Span[edge] * scalar;
-                        continue;
-                    }
-                    Vector3 destination = grid.Cells.Span[grid.Edges.Span[edge].ToCell].Position;
-                    NavigationCrowdCell sample = crowd.Sample(destination);
-                    Vector3 direction = destination - from.Position;
-                    if (direction.LengthSquared() > 0) direction = Vector3.Normalize(direction);
-                    float multiplier = policy.Multiplier(sample.Density, Vector3.Dot(sample.AverageVelocity, direction));
-                    state.Edges[edge] = baseCosts.EdgeCosts.Span[edge] * multiplier;
-                }
-            }
+            JobSystem.ExecuteParallel(new FillCrowdCosts(state, baseCosts, crowd, policy), grid.Cells.Length,
+                batchSize: JobScheduleOptions.AutomaticBatchSize);
             state.Costs = new(grid, baseCosts.Policy, state.Cells, state.Edges, state.Version);
+        }
+    }
+
+    private readonly struct FillCrowdCosts(NavigationCostBuildState state, NavigationCosts baseCosts,
+        NavigationCrowdField crowd, NavigationCrowdPolicy policy) : IJobParallelFor
+    {
+        public void Execute(int cell)
+        {
+            NavigationGrid grid = baseCosts.Grid;
+            NavigationGridCell from = grid.Cells.Span[cell];
+            float scalar = policy.Sampling == NavigationCrowdCostSampling.Scalar ? ScalarMultiplier(grid, crowd, policy, cell) : 1;
+            state.Cells[cell] = baseCosts.CellCosts.Span[cell] * scalar;
+            for (int edge = from.EdgeStart; edge < from.EdgeStart + from.EdgeCount; edge++)
+            {
+                if (policy.Sampling == NavigationCrowdCostSampling.Scalar)
+                {
+                    state.Edges[edge] = baseCosts.EdgeCosts.Span[edge] * scalar;
+                    continue;
+                }
+                Vector3 destination = grid.Cells.Span[grid.Edges.Span[edge].ToCell].Position;
+                NavigationCrowdCell sample = crowd.Sample(destination);
+                Vector3 direction = destination - from.Position;
+                if (direction.LengthSquared() > 0) direction = Vector3.Normalize(direction);
+                float multiplier = policy.Multiplier(sample.Density, Vector3.Dot(sample.AverageVelocity, direction));
+                state.Edges[edge] = baseCosts.EdgeCosts.Span[edge] * multiplier;
+            }
         }
     }
 
