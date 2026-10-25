@@ -24,7 +24,7 @@ public readonly record struct RenderPoseSection(PoseRange Range, uint Starts, ul
 internal readonly record struct RenderBoneParent(Entity Section, int Bone);
 internal readonly record struct RenderSkinJoint(Entity Section, int Bone);
 internal readonly record struct RenderMeshSkin(SkinBinding Binding, RenderSkinJoint[] Joints) : IComponent;
-internal readonly record struct RenderBoneSectionData(Skeleton Skeleton, RenderBoneParent[] Parents,
+internal record struct RenderBoneSectionData(Skeleton Skeleton, RenderBoneParent[] Parents,
     Matrix4x4[] Current, ulong Version, ulong BindingVersion, QuantizedClipData? Clip,
     uint Starts, ulong InputNumber, double CalculationTime, float SampleTime,
     GpuPoseStateMachine? StateMachine, GpuPoseBlend? Blend, float[] Controls, float PlaybackTime, bool Playing,
@@ -33,7 +33,7 @@ internal readonly record struct RenderBoneSectionData(Skeleton Skeleton, RenderB
     ReadOnlyMemory<GpuPoseReadbackRequest> Readbacks, GpuPoseEvaluation? Evaluation,
     bool ExtractRootMotion, BoneTransform RootCorrection) : IComponent
 {
-    internal bool IsGpu => Clip is not null || StateMachine is not null || Blend is not null;
+    internal readonly bool IsGpu => Clip is not null || StateMachine is not null || Blend is not null;
 }
 
 /// <summary>Copies pose controls and completed CPU sections through the shared extraction window.</summary>
@@ -379,8 +379,10 @@ public sealed class SkinRenderExtractor : IRenderExtractionSystem
                 (ControlValues, ControlCapture) = (ControlCapture, ControlValues);
             if (data.Rig is not null) (GoalValues, GoalCapture) = (GoalCapture, GoalValues);
             bool hasCpu = !data.IsGpu || data.CpuBones.Length != 0;
-            data = data with { Current = hasCpu ? Current : [], Calculations = hasCpu ? CalculationValues : [],
-                Controls = ControlValues, Goals = GoalValues };
+            data.Current = hasCpu ? Current : [];
+            data.Calculations = hasCpu ? CalculationValues : [];
+            data.Controls = ControlValues;
+            data.Goals = GoalValues;
         }
     }
 }
