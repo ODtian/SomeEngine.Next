@@ -92,16 +92,24 @@ void updateDeviceAvbdBody<T : IDeviceAvbdConstraints>(uint index,T constraints)
     if(equationIndex==0xffffffff) return;
     DeviceBodyState body=DeviceBodyStates[bodyIndex];
     DeviceAvbdEquation equation=DeviceAvbdBodyEquations[equationIndex];
+    uint first=ConstraintGraphBodyOffsets[bodyIndex],end=ConstraintGraphBodyOffsets[bodyIndex+1];
+    uint constraintRows=end-first;
     for(uint local=0;local<AvbdStep.bodyIterations;local++)
     {
-        deviceAvbdReset(equation,body,AvbdStep.duration);
-        for(uint entry=ConstraintGraphBodyOffsets[bodyIndex];entry<ConstraintGraphBodyOffsets[bodyIndex+1];entry++)
+        if(deviceAvbdCanReuseInertia(equation,body,AvbdStep.duration,constraintRows))
+            deviceAvbdUpdateGradients(equation,body,AvbdStep.duration);
+        else
         {
-            uint row=ConstraintGraphAdjacency[entry];
-            if(constraints.active(row)&&deviceGraphRowWrites(ConstraintGraphRows[row],bodyIndex))
-                constraints.accumulate(row,bodyIndex,AvbdStep,equation);
+            deviceAvbdReset(equation,body,AvbdStep.duration);
+            for(uint entry=first;entry<end;entry++)
+            {
+                uint row=ConstraintGraphAdjacency[entry];
+                if(constraints.active(row)&&deviceGraphRowWrites(ConstraintGraphRows[row],bodyIndex))
+                    constraints.accumulate(row,bodyIndex,AvbdStep,equation);
+            }
+            deviceAvbdFactorize(equation);
+            equation.constraintRows=constraintRows; equation.duration=AvbdStep.duration;
         }
-        deviceAvbdFactorize(equation);
         float3 translation,rotation;
         deviceAvbdResponse(equation,-equation.linearGradient,-equation.angularGradient,translation,rotation);
         constraints.adjust(bodyIndex,AvbdStep,equation,translation,rotation);
