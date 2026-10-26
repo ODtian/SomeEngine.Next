@@ -86,20 +86,22 @@ public static partial class PhysicsScenes
         parameters.AddBindings(bindings); anchors.AddBindings(bindings); histories.AddBindings(bindings); responses.AddBindings(bindings);
         var joints = new DeviceSceneJoints(backend, device, world, created.Joints);
         joints.AddBindings(bindings);
+        var ranges = new DeviceSceneDistanceRanges(backend, device, world, created.DistanceRanges);
+        ranges.AddBindings(bindings);
         JobResourceAccess[] reads = [.. parameters.GetReadAccesses(scheduler), anchors.GetReadAccess(scheduler),
-            .. joints.Data.GetReadAccesses(scheduler)];
+            .. joints.Data.GetReadAccesses(scheduler), .. ranges.Data.GetReadAccesses(scheduler)];
         var graph = new DeviceConstraintGraph(backend, device, bodies, dynamics, graphKernels,
-            new(contactCapacity + joints.Data.Capacity, 2), bindings, reads,
-            threads, new IDeviceConstraintSelection[] { selected, joints.Selection });
+            new(contactCapacity + joints.Data.Capacity + ranges.Data.Capacity, 2), bindings, reads,
+            threads, new IDeviceConstraintSelection[] { selected, joints.Selection, ranges.Selection });
         JobResourceAccess[] constraintAccesses = [.. reads, histories.GetWriteAccess(scheduler), responses.GetWriteAccess(scheduler),
-            joints.States.GetWriteAccess(scheduler)];
+            joints.States.GetWriteAccess(scheduler), ranges.States.GetWriteAccess(scheduler)];
         var solve = new DeviceAvbdSolver(backend, device, bodies, equations, graph, avbdKernels,
             new(settings.Iterations, settings.BodyIterations, settings.MultiplierRetention, 0), bindings, constraintAccesses, threads,
-            new IDeviceConstraintSelection[] { selectedStates, selectedResponses, joints.StateSelection });
+            new IDeviceConstraintSelection[] { selectedStates, selectedResponses, joints.StateSelection, ranges.StateSelection });
         var response = new DeviceContactActions(backend, device, bodies, graph, responses, responseKernels, bindings, reads,
             threads, new IDeviceConstraintSelection[] { selectedResponses });
         var results = new DeviceBodyResults(backend, device, bodies, world, observed, readbackBodyIndices.Length);
-        var stages = sceneInputs.Then(bodyInputs.Upload()).Then(joints.Upload()).Then(timedInputs.WriteInputs()).Then(timedInputs.Apply())
+        var stages = sceneInputs.Then(bodyInputs.Upload()).Then(joints.Upload()).Then(ranges.Upload()).Then(timedInputs.WriteInputs()).Then(timedInputs.Apply())
             .Then(timedInputs.ApplyKinematicTargets()).Then(dynamics.ApplyGyroscopicTorque()).Then(dynamics.Predict(Vector(data.Gravity)))
             .Then(grid.BeginInputs()).Then(shapeInputs).Then(updateGeometry.Update())
             .Then(grid.Build(pairs, DevicePairRules.None, DeviceInputTransfer.Resident, DevicePairReadback.None))
@@ -117,7 +119,7 @@ public static partial class PhysicsScenes
             data.StepSeconds, frame, frame.CompleteForRead, [members, shapes, poses, points, states, observed],
             [bodies, equations, grid, geometry, bodyInputs, timedInputs, sceneInputs, dynamics, shapeInputs, updateGeometry,
                 detection, detected, parameters, anchors, histories, responses, matching, currentGeometry, refresh,
-                contactInputs, stateInputs, selected, selectedStates, selectedResponses, joints, graph, solve, response, results]);
+                contactInputs, stateInputs, selected, selectedStates, selectedResponses, joints, ranges, graph, solve, response, results]);
     }
 }
 
