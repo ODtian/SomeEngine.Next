@@ -8,6 +8,10 @@ namespace SomeEngine.Physics;
 /// <summary>Projects the common joint coordinates using per-axis XPBD multipliers.</summary>
 public readonly struct XpbdJointProjection : IXpbdConstraint<JointConstraint>, IXpbdConstraintForces<JointConstraint>
 {
+    public static PhysicsConstraintError GetActivityError(in JointConstraint constraint, scoped QueryRow row,
+        scoped PhysicsBodies bodies, in PhysicsStepContext context) =>
+        AvbdJointMath.GetActivityError(in constraint, row, bodies, in context);
+
     public static int GetBodyCount(in JointConstraint constraint, scoped QueryRow row, in PhysicsStepContext context) => 2;
 
     public static Entity GetBody(in JointConstraint constraint, scoped QueryRow row, int index, in PhysicsStepContext context)

@@ -40,6 +40,7 @@ internal sealed partial class PhysicsGraphData : IDisposable
     private readonly Dictionary<Entity, bool> _bodyUses = [];
     private readonly HashSet<Entity> _references = [];
     private readonly HashSet<Entity> _dirtyBodies = [], _affectedBodies = [];
+    private readonly HashSet<Entity> _activityChanges = [];
     private readonly HashSet<ConstraintInput> _dirtyConstraints = [], _affectedConstraints = [];
     private readonly HashSet<Island> _dirtyIslands = [];
     private readonly HashSet<PhysicsGraphBatch> _dirtyBatches = [];
@@ -218,6 +219,8 @@ internal sealed partial class PhysicsGraphData : IDisposable
     public void Dispose() => _scheduler.ReleaseResourceToken(_resource);
     private bool IsActive(Island island) => island.DynamicBodies.Count == 0 || island.DynamicBodies.Any(body => _bodies[body].Awake);
     internal IReadOnlyList<Island> ActivityIslands => _islands;
+    internal bool HasActivityChange(Entity body) => _activityChanges.Contains(body);
+    internal void ClearActivityChanges() => _activityChanges.Clear();
     internal sealed class BodyInput
     {
         internal BodyMotion Motion;

@@ -9,8 +9,39 @@ using SomeEngine.ECS.Queries;
 
 namespace SomeEngine.Physics;
 
-public readonly struct AvbdElasticConnectionMath : IAvbdConstraint<ElasticConnection>
+public readonly struct AvbdElasticConnectionMath : IAvbdConstraint<ElasticConnection>, IPhysicsConstraintForces<ElasticConnection>
 {
+    public static void GetBodyForce(in ElasticConnection constraint, scoped QueryRow row, Entity body,
+        scoped PhysicsBodies bodies, in PhysicsStepContext context, out Vector3 force, out Vector3 torque)
+    {
+        ref readonly var endpoints = ref row.ReadRef<UndirectedRelationEndpoints<ElasticConnection>>();
+        ref readonly AvbdElasticState state = ref row.ReadRef<AvbdElasticState>();
+        ref readonly BodyPose first = ref bodies.ReadPose(endpoints.EndpointA);
+        ref readonly BodyPose second = ref bodies.ReadPose(endpoints.EndpointB);
+        float sign = body == endpoints.EndpointA ? 1 : -1;
+        Vector3 local = body == endpoints.EndpointA ? constraint.FirstAnchor : constraint.SecondAnchor;
+        ref readonly BodyPose pose = ref bodies.ReadPose(body);
+        force = -sign * state.LinearMultiplier;
+        torque = Vector3.Cross(Vector3.Transform(local - bodies.ReadMass(body).CenterOfMass, pose.Rotation), force);
+        Vector3 error = RotationError(first.Rotation, second.Rotation, constraint.RestRotation);
+        Quaternion alignment = Quaternion.Conjugate(first.Rotation) * second.Rotation * Quaternion.Conjugate(constraint.RestRotation);
+        for (int axis = 0; axis < 3; axis++)
+        {
+            Vector3 direction = axis == 0 ? Vector3.UnitX : axis == 1 ? Vector3.UnitY : Vector3.UnitZ;
+            torque += BodyRotation.GetConstraintJacobian(first.Rotation, alignment, error, direction) * (sign * state.AngularMultiplier[axis]);
+        }
+    }
+
+    public static PhysicsConstraintError GetActivityError(in ElasticConnection constraint, scoped QueryRow row,
+        scoped PhysicsBodies bodies, in PhysicsStepContext context)
+    {
+        ref readonly var endpoints = ref row.ReadRef<UndirectedRelationEndpoints<ElasticConnection>>();
+        ref readonly BodyPose first = ref bodies.ReadPose(endpoints.EndpointA);
+        ref readonly BodyPose second = ref bodies.ReadPose(endpoints.EndpointB);
+        return new(constraint.LinearStiffness > 0 ? LinearError(in constraint, in first, in second).Length() : 0,
+            constraint.AngularStiffness > 0 ? RotationError(first.Rotation, second.Rotation, constraint.RestRotation).Length() : 0);
+    }
+
     public static int GetBodyCount(in ElasticConnection constraint, scoped QueryRow row, in PhysicsStepContext context) => 2;
     public static Entity GetBody(in ElasticConnection constraint, scoped QueryRow row, int index, in PhysicsStepContext context)
     {

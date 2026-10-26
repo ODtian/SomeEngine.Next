@@ -17,6 +17,13 @@ public struct XpbdLength : IComponent
 
 public readonly partial struct XpbdLengthProjection : IXpbdConstraint<XpbdLength>, IXpbdConstraintForces<XpbdLength>
 {
+    public static PhysicsConstraintError GetActivityError(in XpbdLength constraint, scoped QueryRow row,
+        scoped PhysicsBodies bodies, in PhysicsStepContext context)
+    {
+        ref readonly var endpoints = ref row.ReadRef<UndirectedRelationEndpoints<XpbdLength>>();
+        float distance = Vector3.Distance(bodies.ReadPose(endpoints.EndpointA).Position, bodies.ReadPose(endpoints.EndpointB).Position);
+        return new(MathF.Abs(distance - constraint.RestLength), 0);
+    }
     public static int GetBodyCount(in XpbdLength constraint, scoped QueryRow row, in PhysicsStepContext context) => 2;
     public static Entity GetBody(in XpbdLength constraint, scoped QueryRow row, int index, in PhysicsStepContext context)
     {

@@ -26,7 +26,7 @@ AVBD 为选定动态 Body 执行自身局部方程。
 其余岛与批次继续复用。小岛共批的成员变化会调整相应批次。
 
 用户 XPBD 投影同时实现 `IXpbdConstraint<T>` 与参与信息即可进入图执行。
-力导出由独立的 `IXpbdConstraintForces<T>` 提供；
+力导出由独立的 `IXpbdConstraintForces<T>` 提供，它继承共同的 `IPhysicsConstraintForces<T>`；
 `XpbdForces<T,TProjection>` 同时支持原 AVBD 集合与图 AVBD 集合，
 从当前乘子和 Jacobian 向同一 Body 方程提供世界力与力矩。
 具体作用量和初始化职责见 [求解阶段](Solver-Steps.md)。

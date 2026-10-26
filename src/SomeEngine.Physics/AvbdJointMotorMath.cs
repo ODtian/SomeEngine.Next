@@ -1,11 +1,32 @@
+using System.Numerics;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Relations;
 
 namespace SomeEngine.Physics;
 
-public readonly struct AvbdJointMotorMath : IAvbdConstraint<JointConstraint>
+public readonly struct AvbdJointMotorMath : IAvbdConstraint<JointConstraint>, IPhysicsConstraintForces<JointConstraint>
 {
+    public static void GetBodyForce(in JointConstraint constraint, scoped QueryRow row, Entity body,
+        scoped PhysicsBodies bodies, in PhysicsStepContext context, out Vector3 force, out Vector3 torque)
+    {
+        ref readonly var endpoints = ref row.ReadRef<DirectedRelationEndpoints<JointConstraint>>();
+        ref readonly AvbdMotorState state = ref row.ReadRef<AvbdMotorState>();
+        bool react = row.ReadRef<JointMotor>().Response == JointMotorResponse.Both;
+        force = torque = Vector3.Zero;
+        for (int dof = 0; dof < 6; dof++)
+        {
+            float multiplier = dof < 3 ? state.LinearMultiplier[dof] : state.AngularMultiplier[dof - 3];
+            if (multiplier == 0) continue;
+            JointEquationRow derivative = JointMotorMath.GetRow(in constraint, row, bodies, in context, dof).Derivative;
+            if (body == endpoints.Target) { force -= derivative.TargetLinear * multiplier; torque -= derivative.TargetAngular * multiplier; }
+            if (react && body == endpoints.Source) { force -= derivative.SourceLinear * multiplier; torque -= derivative.SourceAngular * multiplier; }
+        }
+    }
+
+    public static PhysicsConstraintError GetActivityError(in JointConstraint constraint, scoped QueryRow row,
+        scoped PhysicsBodies bodies, in PhysicsStepContext context) => JointMotorMath.GetActivityError(in constraint, row, bodies, in context);
+
     public static int GetReadBodyCount(in JointConstraint constraint, scoped QueryRow row, in PhysicsStepContext context) =>
         row.ReadRef<JointMotor>().Response == JointMotorResponse.Both ? 0 : 1;
     public static Entity GetReadBody(in JointConstraint constraint, scoped QueryRow row, int index, in PhysicsStepContext context) =>

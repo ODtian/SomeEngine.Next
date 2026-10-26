@@ -9,8 +9,33 @@ using SomeEngine.ECS.Relations;
 
 namespace SomeEngine.Physics;
 
-public readonly struct AvbdJointMath : IAvbdConstraint<JointConstraint>
+public readonly struct AvbdJointMath : IAvbdConstraint<JointConstraint>, IPhysicsConstraintForces<JointConstraint>
 {
+    public static void GetBodyForce(in JointConstraint constraint, scoped QueryRow row, Entity body,
+        scoped PhysicsBodies bodies, in PhysicsStepContext context, out Vector3 force, out Vector3 torque)
+    {
+        ref readonly var endpoints = ref row.ReadRef<DirectedRelationEndpoints<JointConstraint>>();
+        ref readonly AvbdJointState state = ref row.ReadRef<AvbdJointState>();
+        force = torque = Vector3.Zero;
+        for (int dof = 0; dof < 6; dof++)
+        {
+            if (JointMath.GetLimit(in constraint, dof).Motion == JointAxisMotion.Free ||
+                (dof < 3 ? constraint.LinearStiffness[dof] : constraint.AngularStiffness[dof - 3]) == 0) continue;
+            float multiplier = dof < 3 ? state.LinearMultiplier[dof] : state.AngularMultiplier[dof - 3];
+            JointEquationRow derivative = JointMath.GetRow(in constraint, in bodies.ReadPose(endpoints.Source), in bodies.ReadMass(endpoints.Source),
+                in bodies.ReadPose(endpoints.Target), in bodies.ReadMass(endpoints.Target), dof);
+            if (body == endpoints.Source) { force -= derivative.SourceLinear * multiplier; torque -= derivative.SourceAngular * multiplier; }
+            if (body == endpoints.Target) { force -= derivative.TargetLinear * multiplier; torque -= derivative.TargetAngular * multiplier; }
+        }
+    }
+
+    public static PhysicsConstraintError GetActivityError(in JointConstraint constraint, scoped QueryRow row,
+        scoped PhysicsBodies bodies, in PhysicsStepContext context)
+    {
+        ref readonly var endpoints = ref row.ReadRef<DirectedRelationEndpoints<JointConstraint>>();
+        return JointMath.GetActivityError(in constraint, in bodies.ReadPose(endpoints.Source), in bodies.ReadPose(endpoints.Target));
+    }
+
     public static int GetBodyCount(in JointConstraint constraint, scoped QueryRow row, in PhysicsStepContext context) => 2;
     public static Entity GetBody(in JointConstraint constraint, scoped QueryRow row, int index, in PhysicsStepContext context)
     {

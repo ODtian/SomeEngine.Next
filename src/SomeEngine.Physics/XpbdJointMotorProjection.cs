@@ -7,6 +7,9 @@ namespace SomeEngine.Physics;
 
 public readonly struct XpbdJointMotorProjection : IXpbdConstraint<JointConstraint>, IXpbdConstraintForces<JointConstraint>
 {
+    public static PhysicsConstraintError GetActivityError(in JointConstraint constraint, scoped QueryRow row,
+        scoped PhysicsBodies bodies, in PhysicsStepContext context) => JointMotorMath.GetActivityError(in constraint, row, bodies, in context);
+
     public static int GetReadBodyCount(in JointConstraint constraint, scoped QueryRow row, in PhysicsStepContext context) =>
         row.ReadRef<JointMotor>().Response == JointMotorResponse.Both ? 0 : 1;
     public static Entity GetReadBody(in JointConstraint constraint, scoped QueryRow row, int index, in PhysicsStepContext context) =>

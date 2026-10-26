@@ -14,6 +14,9 @@ public readonly struct ContactLongRangeGraphConstraints(QueryHandle supportBodie
     private readonly ContactSupportData _data = new(settings);
     public int QueryCount => 2;
     public QueryHandle GetQuery(int index) => index == 0 ? supportBodies : contacts;
+    public void ReadActivityErrors(in PhysicsStepContext context, scoped EntityQueryViews queries, int offset,
+        scoped PhysicsBodies bodies, ref PhysicsActivityErrors errors) =>
+        _data.ReadActivityErrors(new(queries.Get(offset)), new(queries.Get(offset + 1), queries.Get(2)), bodies, in context, ref errors);
 
     public void AddResources(World world, List<JobResourceAccess> accesses, PhysicsGraphPhase phase)
     {

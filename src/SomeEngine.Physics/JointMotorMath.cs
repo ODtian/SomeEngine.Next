@@ -9,6 +9,21 @@ internal readonly record struct JointMotorRow(JointEquationRow Derivative, float
 
 internal static class JointMotorMath
 {
+    internal static PhysicsConstraintError GetActivityError(in JointConstraint constraint, scoped QueryRow row,
+        scoped PhysicsBodies bodies, in PhysicsStepContext context)
+    {
+        ref readonly JointMotor motor = ref row.ReadRef<JointMotor>();
+        Vector3 linear = default, angular = default;
+        for (int axis = 0; axis < 3; axis++)
+        {
+            if ((motor.LinearStiffness[axis] > 0 || motor.LinearDamping[axis] > 0) && motor.MaximumForce[axis] > 0)
+                linear[axis] = GetRow(in constraint, row, bodies, in context, axis).Error;
+            if ((motor.AngularStiffness[axis] > 0 || motor.AngularDamping[axis] > 0) && motor.MaximumTorque[axis] > 0)
+                angular[axis] = GetRow(in constraint, row, bodies, in context, axis + 3).Error;
+        }
+        return new(linear.Length(), angular.Length());
+    }
+
     internal static JointMotorRow GetRow(in JointConstraint constraint, scoped QueryRow row,
         scoped PhysicsBodies bodies, in PhysicsStepContext context, int dof)
     {
