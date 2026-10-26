@@ -95,7 +95,7 @@ public sealed partial class NavigationSaveTests
         {
             var lattice = new NavigationSystems<NavigationVehicleSpace, StateLatticeSearch, StateLatticeSearchState, SaveMotion, SaveMotionReader>(world);
             var hybrid = new NavigationSystems<NavigationVehicleSpace, HybridAStarSearch, HybridAStarSearchState, SaveMotion, SaveMotionReader>(world);
-            var neighbors = new NavigationNeighborSystem<SaveMotion, SaveMotionReader>(world, scheduler);
+            using var neighbors = new NavigationNeighborSystem<SaveMotion, SaveMotionReader>(world, scheduler);
             var mppi = new NavigationAvoidanceSystem<NavigationVehicleSpace, NavigationVehicleMppiModel, SaveMotion, SaveMotionReader>(world, neighbors);
             var prediction = new NavigationPredictionSystem<NavigationVelocityPrediction, SaveMotion, SaveMotionReader>(world);
             return time =>

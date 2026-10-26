@@ -14,7 +14,7 @@ public sealed class AccelerationVelocityAvoidanceTests
         using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 3, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using World world = WorldJobs.CreateWorld(scheduler: scheduler);
         var paths = new NavigationSystems<NavigationMesh, PolygonNavigationSearch, PolygonSearchState, TestMotion, TestMotionReader>(world);
-        var neighbors = new NavigationNeighborSystem<TestMotion, TestMotionReader>(world, scheduler);
+        using var neighbors = new NavigationNeighborSystem<TestMotion, TestMotionReader>(world, scheduler);
         var avoidance = new NavigationAvoidanceSystem<AccelerationVelocityAvoidance, TestMotion, TestMotionReader>(world, neighbors);
         NavigationMesh mesh = Corridor();
         Entity first = Add(new(1, 0, 2.8f), new(1.2f, 0, 0), new(11, 0, 2.8f), 0.8f, 0.6f);
@@ -72,7 +72,7 @@ public sealed class AccelerationVelocityAvoidanceTests
         world.Add(entity, new NavigationGuidance(new(1, 0, -1), 0, 1, true));
         world.Add(entity, default(NavigationSteering));
         NavigationComponents.AddAvoidance(world, entity, new(0.3f, BoundaryTimeHorizon: 4, Spacing: 0.05f, ResponseTime: 0.8f));
-        var neighbors = new NavigationNeighborSystem<TestMotion, TestMotionReader>(world, scheduler);
+        using var neighbors = new NavigationNeighborSystem<TestMotion, TestMotionReader>(world, scheduler);
         var avoidance = new NavigationAvoidanceSystem<AccelerationVelocityAvoidance, TestMotion, TestMotionReader>(world, neighbors);
 
         for (int step = 0; step < 120; step++)

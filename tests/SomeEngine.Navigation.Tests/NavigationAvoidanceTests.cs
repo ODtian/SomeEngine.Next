@@ -23,7 +23,7 @@ public sealed class NavigationAvoidanceTests
         new NavigationFlowSystem<ReverseDijkstraFlow, ReverseDijkstraFlowState>(flow, scheduler).Schedule().Complete();
         var paths = new NavigationSystems<NavigationMesh, PolygonNavigationSearch, PolygonSearchState, TestMotion, TestMotionReader>(world);
         var flows = new NavigationSystems<TestMotion, TestMotionReader>(world);
-        var neighbors = new NavigationNeighborSystem<TestMotion, TestMotionReader>(world, scheduler);
+        using var neighbors = new NavigationNeighborSystem<TestMotion, TestMotionReader>(world, scheduler);
         var avoidance = new NavigationAvoidanceSystem<OrcaAvoidance, TestMotion, TestMotionReader>(world, neighbors);
         Entity path = world.CreateEntity(new TestMotion { Position = new(0.5f, 0, 1.4f) });
         paths.AddAgent(path, mesh, profile, policy, new(new Vector3(9.5f, 0, 1.4f), 0.15f), 1.5f);
@@ -81,7 +81,7 @@ public sealed class NavigationAvoidanceTests
         world.Add(entity, new NavigationGuidance(new(1, 0, -1), 0, 1, true));
         world.Add(entity, default(NavigationSteering));
         NavigationComponents.AddAvoidance(world, entity, new(0.3f, Spacing: 0.05f));
-        var neighbors = new NavigationNeighborSystem<TestMotion, TestMotionReader>(world, scheduler);
+        using var neighbors = new NavigationNeighborSystem<TestMotion, TestMotionReader>(world, scheduler);
         var avoidance = new NavigationAvoidanceSystem<OrcaAvoidance, TestMotion, TestMotionReader>(world, neighbors);
 
         for (int step = 0; step < 160; step++)
@@ -107,7 +107,7 @@ public sealed class NavigationAvoidanceTests
         Add(new(1, 2, 0), 0, 1);
         Add(new(4, 0, 0), 0, 1);
         Add(new(1, 0, 0), 0, 2);
-        var neighbors = new NavigationNeighborSystem<LayeredMotion, LayeredMotionReader>(world, scheduler);
+        using var neighbors = new NavigationNeighborSystem<LayeredMotion, LayeredMotionReader>(world, scheduler);
 
         neighbors.Schedule().Complete();
 

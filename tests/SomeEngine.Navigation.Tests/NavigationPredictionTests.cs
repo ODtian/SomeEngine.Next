@@ -19,7 +19,7 @@ public sealed class NavigationPredictionTests
         var mesh = new NavigationMesh([new(-10, 0, -10), new(10, 0, -10), new(10, 0, 10), new(-10, 0, 10)],
             [0, 1, 2, 3], [new(0, 4, 0, 0)], []);
         var paths = new NavigationSystems<NavigationMesh, PolygonNavigationSearch, PolygonSearchState, TestMotion, TestMotionReader>(world);
-        var neighbors = new NavigationNeighborSystem<TestMotion, TestMotionReader>(world, scheduler);
+        using var neighbors = new NavigationNeighborSystem<TestMotion, TestMotionReader>(world, scheduler);
         var avoidance = new NavigationAvoidanceSystem<AccelerationVelocityAvoidance, TestMotion, TestMotionReader>(world, neighbors);
         var prediction = new NavigationPredictionSystem<NavigationVelocityPrediction, TestMotion, TestMotionReader>(world);
         Entity entity = world.CreateEntity(new TestMotion());

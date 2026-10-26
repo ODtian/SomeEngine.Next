@@ -21,7 +21,7 @@ public sealed class NavigationMppiBindingTests
         world.Add(actor, default(NavigationSteering));
         NavigationComponents.AddMppi<RebindingSpace, RebindingModel>(world, actor, space,
             new() { CandidateCount = 2, HorizonSteps = 1, NoiseStandardDeviation = Vector2.Zero }, new(0.1f));
-        var neighbors = new NavigationNeighborSystem<TestMotion, TestMotionReader>(world, scheduler);
+        using var neighbors = new NavigationNeighborSystem<TestMotion, TestMotionReader>(world, scheduler);
         var mppi = new NavigationAvoidanceSystem<RebindingSpace, RebindingModel, TestMotion, TestMotionReader>(world, neighbors);
 
         mppi.Schedule(0, default, neighbors.Schedule()).Complete();
