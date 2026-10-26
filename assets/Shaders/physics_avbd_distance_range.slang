@@ -51,6 +51,7 @@ struct DeviceDistanceRangeAvbdConstraints : IDeviceAvbdConstraints
             state.initialError,context.initialErrorFraction,deviceDistanceRangeGeometry(row,false).distance,force,curvature,multiplier);
         state.multiplier=multiplier; DeviceAvbdDistanceRangeStates[row]=state;
     }
+    override bool adjustsBody() { return false; }
     void adjust(uint body,DeviceAvbdStep context,DeviceAvbdEquation equation,inout float3 translation,inout float3 rotation) { }
 };
 #endif

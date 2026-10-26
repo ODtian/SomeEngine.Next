@@ -20,6 +20,7 @@ struct DeviceSupportedContactAvbdConstraints : IDeviceAvbdConstraints
     void accumulate(uint row,uint body,DeviceAvbdStep context,inout DeviceAvbdEquation equation)
     { deviceAccumulateAvbdContact(row,body,context,deviceContactSupportForce(row),equation); }
     void updateDuals(uint row,DeviceAvbdStep context) { deviceUpdateAvbdContact(row,context,deviceContactSupportForce(row)); }
+    override bool adjustsBody() { return ordinary.adjustsBody(); }
     void adjust(uint body,DeviceAvbdStep context,DeviceAvbdEquation equation,inout float3 translation,inout float3 rotation) { }
 };
 struct DeviceContactSupportAvbdConstraints : IDeviceAvbdConstraints
@@ -35,6 +36,7 @@ struct DeviceContactSupportAvbdConstraints : IDeviceAvbdConstraints
     void initialize(uint row,DeviceAvbdStep context) { DeviceSupportBodyStates[row]=(DeviceBodySupportState)0; }
     void accumulate(uint row,uint body,DeviceAvbdStep context,inout DeviceAvbdEquation equation) { }
     void updateDuals(uint row,DeviceAvbdStep context) { }
+    override bool adjustsBody() { return true; }
     void adjust(uint body,DeviceAvbdStep context,DeviceAvbdEquation equation,inout float3 translation,inout float3 rotation)
     { correctDeviceContactSupport(body,context,equation,translation,rotation); }
 };
