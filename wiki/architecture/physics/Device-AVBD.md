@@ -29,6 +29,11 @@
 
 `DeviceAvbdSolver.Initialize()` 初始化子步历史和 Body 方程索引，
 `Iterate(n)` 在当前子步继续 primal/dual 迭代；`Solve()` 组合这两项职责。
+`DeviceAvbdKernels.ClearBodyIndices` 选择独立的逐 Body 索引清理内核，
+其具体入口调用 `clearDeviceAvbdBodyIndices`；随后的初始化内核调用
+`initializeDeviceAvbdRows`，逐方程行沿原 Entity metadata 建立 Body 到方程的映射。
+清理与映射之间的 UAV barrier 保持同一索引 buffer 的读写顺序。
+原 `initializeDeviceAvbd` 入口继续提供合并初始化。
 `DeviceAvbdKernels.InitializeGroups` 和 `UpdateGroups` 是可选的具体组阶段，
 分别位于逐行初始化之后和每轮逐行对偶更新之后；阶段之间使用同一提交内的 UAV barrier。
 项目提供具体 Slang `IDeviceAvbdConstraints` 内核与实际绑定，
@@ -64,12 +69,30 @@ Body 候选沿共同预测阶段的 `DeviceBodyIndices` 读取，动态状态沿
 `DeviceConstraintSelection` 从原查询保存当前实体索引和代次；每个具体组同时核对
 参数 metadata 与当前选择，算法组进一步核对原数值状态资源的选择。
 
-图的行参与写入采用具体线程组；当前图构造入口按设备顺序生成并查集、邻接和贪心颜色。
+图的行参与写入采用具体线程组；两内核 `DeviceGraphKernels(writeRows, build)`
+入口按设备顺序生成并查集、邻接和贪心颜色。
 Body 颜色按当前约束连接，约束颜色按具体组与实际动态写端生成。
 不同颜色之间使用 UAV barrier，同色 Body 在 SIMT dispatch 中执行局部数值块。
 构图的控制计数通过 16 字节完成读回供颜色派发使用。
 该等待、原查询与设备输入访问、后续数值提交处在同一个获准的 Job 范围，
 最终 GPU 完成继续沿共同 `DevicePhysicsJobs` 和 RHI queue fence。
+
+### 并行图构建
+
+`DeviceGraphKernels(writeRows, parallelKernels)` 选择具体 `DeviceGraphParallelKernels`。
+[并行阶段](../../../assets/Shaders/physics_constraint_graph_parallel.slang) 在同一个图资源中
+初始化当前动态参与，按行进行原子连接与度计数，再压缩主体根。
+邻接前缀采用 256 线程分块扫描，块偏移由小量顺序工作生成，逐主体应用偏移后按行写入原邻接。
+
+主体与具体约束行各自先提案最小可用颜色，再以固定整数优先次序消解同色冲突。
+提案缓冲在本轮消解期间保持只读；已接受颜色供下一轮提案使用。
+行冲突继续考虑同一具体组和实际读写角色，同一主体上的共同只读依赖保持其相容性。
+完成的颜色按组计数、前缀和打包到原 `BodyRanges/BodyOrder`、`RowRanges/RowOrder`。
+数值阶段继续使用原缓冲与具体约束数学。
+
+[DeviceConstraintGraph.Parallel](../../../src/SomeEngine.Physics/DeviceConstraintGraph.Parallel.cs)
+按阶段屏障组织构建；每批颜色轮次在同一输入读取 Job 中取得控制计数和完成进度。
+新增容量保存块总量、提案、组偏移与完成计数，主体和约束状态继续由其原表示持有。
 
 ## 关节长程界
 

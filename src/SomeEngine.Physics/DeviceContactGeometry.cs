@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using SlangShaderSharp;
 using SomeEngine.ECS.Systems;
+using SomeEngine.ECS.Entities;
 using SomeEngine.Graphics;
 using SomeEngine.Job;
 using Buffer = SomeEngine.Graphics.Buffer;
@@ -58,6 +59,7 @@ public sealed class DeviceContactGeometry : IDisposable, IDevicePhysicsSubmissio
     IGraphicsBackend IDevicePhysicsSubmission.Backend => _backend;
     Device IDevicePhysicsSubmission.Device => _device;
     public UpdateDeviceContactGeometry Update() => new(this);
+    public DeviceContactGeometryMatches Results => new(_matches);
     internal JobHandle Schedule(Scheduler scheduler, JobHandle dependency)
     {
         var accesses = new List<JobResourceAccess>(_parameters.GetReadAccesses(scheduler));
@@ -102,6 +104,13 @@ public sealed class DeviceContactGeometry : IDisposable, IDevicePhysicsSubmissio
         _commands.Dispose(); _pipeline.Dispose(); _rowsView.Dispose(); _contactsView.Dispose(); _bodyCountsView.Dispose(); _pointCountsView.Dispose(); _bodiesView.Dispose();
         _settingsView.Dispose(); _rows.Dispose(); _settings.Dispose();
     }
+}
+public readonly struct DeviceContactGeometryMatches(DeviceContactMatches matches) : IContactPointMatches
+{
+    public bool RetainsGeometry => true;
+    public void AddAccesses(List<JobResourceAccess> accesses) => accesses.Add(matches.WriteAccess);
+    public bool TryGetMatch(int input, out Entity point, out float distanceSquared) => matches.Read(input, out point, out distanceSquared);
+    public void RecordPoint(int input, Entity point) => matches.Record(input, point);
 }
 public readonly struct UpdateDeviceContactGeometry(DeviceContactGeometry geometry) : IPhysicsStage
 {

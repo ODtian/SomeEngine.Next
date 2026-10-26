@@ -85,19 +85,29 @@ public sealed class DeviceContactBodies : IDisposable, IDevicePhysicsSubmission
         }
         return offset;
     }
-    internal JobHandle Schedule(Scheduler scheduler, JobHandle dependency) => DevicePhysicsJobs.Schedule(scheduler, this,
-        [JobResourceAccess.Read(scheduler.GetResourceToken(_upload), 0, (long)_upload.Info.Size),
+    internal JobResourceAccess[] GetInputAccesses(Scheduler scheduler, bool writeInputs = false) =>
+        [writeInputs ? JobResourceAccess.Write(scheduler.GetResourceToken(_upload), 0, (long)_upload.Info.Size)
+                : JobResourceAccess.Read(scheduler.GetResourceToken(_upload), 0, (long)_upload.Info.Size),
             JobResourceAccess.Write(scheduler.GetResourceToken(Values), 0, (long)Values.Info.Size),
-            JobResourceAccess.Write(scheduler.GetResourceToken(_commands))], dependency);
-    QueueCompletion IDevicePhysicsSubmission.Submit()
+            JobResourceAccess.Write(scheduler.GetResourceToken(_commands))];
+    internal JobHandle Schedule(Scheduler scheduler, JobHandle dependency) => DevicePhysicsJobs.Schedule(scheduler, this,
+        GetInputAccesses(scheduler), dependency);
+    QueueCompletion IDevicePhysicsSubmission.Submit() => SubmitInputRanges([new(0, Values.Info.Size)]);
+    internal QueueCompletion SubmitInputRanges(ReadOnlySpan<BufferRange> ranges)
     {
-        _mapping.Flush(_mapping.Range);
+        foreach (BufferRange range in ranges) _mapping.Flush(range);
         _backend.Begin(_commands, new(0, 0, 8));
-        _backend.Barrier(_commands, new BufferBarrier(Values, _initialized ? PipelineSync.ComputeShading : Values.InitialSync,
-            PipelineSync.Copy, _initialized ? ResourceAccess.UnorderedAccess : Values.InitialAccess, ResourceAccess.CopyDestination));
-        _backend.CopyBuffer(_commands, new(_upload, 0, Values, 0, Values.Info.Size));
-        _backend.Barrier(_commands, new BufferBarrier(Values, PipelineSync.Copy, PipelineSync.ComputeShading,
-            ResourceAccess.CopyDestination, ResourceAccess.UnorderedAccess));
+        if (!ranges.IsEmpty)
+        {
+            _backend.Barrier(_commands, new BufferBarrier(Values, _initialized ? PipelineSync.ComputeShading : Values.InitialSync,
+                PipelineSync.Copy, _initialized ? ResourceAccess.UnorderedAccess : Values.InitialAccess, ResourceAccess.CopyDestination));
+            foreach (BufferRange range in ranges) _backend.CopyBuffer(_commands, new(_upload, range.Offset, Values, range.Offset, range.Size));
+            _backend.Barrier(_commands, new BufferBarrier(Values, PipelineSync.Copy, PipelineSync.ComputeShading,
+                ResourceAccess.CopyDestination, ResourceAccess.UnorderedAccess));
+        }
+        else if (!_initialized)
+            _backend.Barrier(_commands, new BufferBarrier(Values, Values.InitialSync, PipelineSync.ComputeShading,
+                Values.InitialAccess, ResourceAccess.UnorderedAccess));
         using RecordedCommands recorded = _backend.End(_commands);
         _initialized = true;
         return _backend.Submit(_backend.GetQueue(_device, QueueType.Compute), new([], [], [recorded], [], []));

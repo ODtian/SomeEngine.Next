@@ -58,3 +58,5 @@
 [`ApplicationPhysicsTests`](../../../tests/SomeEngine.Runtime.Tests/ApplicationPhysicsTests.cs)。
 实际声明的查询与引用数据读取见 [[architecture/ECS/Query-Reads|Query reads]]，
 提取交接见 [[architecture/rendering/Extraction|Extraction]]。
+
+原场景创建数据、实体引用与同一帧消费者的使用方法见[公共物理场景](Physics-Scenes.md)。

@@ -56,6 +56,17 @@ gap = Separation + dot(Normal, currentWeightedAnchorDelta - BodyAnchorDelta)
 实际流形点数限定工作范围，参数映射只保存行索引。
 这样连续设备步可沿驻留位姿更新几何及接触，在最终主体消费者处完成读回。
 
+`points.Refresh(currentGeometry.Results)` 选择具体 `DeviceContactGeometryMatches`：匹配点保留设备几何，
+原命令路径负责实际创建、结束和作用端重定向，新点仍初始化原组件与参与边。
+材料合成值变化时更新原材料；作用端身份变化时更新原引用 Buffer。
+
+[DeviceContactInputs](../../../src/SomeEngine.Physics/DeviceContactInputs.cs) 保存原 Entity、参数行索引、
+点/材料/端点行版本及 `ContactBodyLink` 的 Header、Inline 版本。
+`Upload()` 让新身份、绑定移动及实际点编辑传入对应数据，材料编辑只传入材料字段范围，
+端 Buffer 编辑使用原锚上传缓冲；结束身份清除原 metadata 的相应行。
+当前设备几何、锚和算法历史继续在各自原 buffer 上更新。
+原全量 `UploadInputs()` 与这一路径共用参数资源的上传缓冲、命令上下文和状态转换。
+
 ## 材料与数值状态
 
 | 数据 | 含义与单位 | 持有者 |

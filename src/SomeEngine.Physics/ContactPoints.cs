@@ -18,6 +18,7 @@ public interface IContactPointMatches
     void AddAccesses(List<JobResourceAccess> accesses);
     bool TryGetMatch(int input, out Entity point, out float distanceSquared);
     void RecordPoint(int input, Entity point) { }
+    bool RetainsGeometry => false;
 }
 
 public readonly struct SearchContactPoints : IContactPointMatches
@@ -101,7 +102,7 @@ public sealed class ContactPoints<TCombine, TComponents> : IDisposable
         matches.AddAccesses(componentAccesses);
         components.ScheduleParallel(new AddComponents<TMatches>(this, matches, context), 1, CollectionsMarshal.AsSpan(componentAccesses), pointChanges);
         JobHandle componentChanges = components.SchedulePlayback();
-        JobHandle values = _scheduler.Schedule(new WriteValues(this), _valueAccesses, componentChanges);
+        JobHandle values = _scheduler.Schedule(new WriteValues<TMatches>(this, matches), _valueAccesses, componentChanges);
         return _scheduler.ScheduleFinally(new ReleaseCommands(points, components), JobScheduleOptions.Default, values);
     }
 
@@ -188,15 +189,17 @@ public sealed class ContactPoints<TCombine, TComponents> : IDisposable
         where TMatches : struct, IContactPointMatches
     {
         _references.Clear();
-        var anchors = new ReadAnchors(this);
+        var anchors = new ReadAnchors<TMatches>(this, matches);
         _world.ExecuteQuery(_poses, ref anchors);
         foreach (ref PointMatch match in CollectionsMarshal.AsSpan(_matches))
         {
             bool created = match.Point == Entity.Null;
+            match.CreatedThisStep = created;
             if (created) match.Point = match.Created.Resolve().Entity;
             matches.RecordPoint(match.Input, match.Point);
             ref readonly CollisionContact input = ref _detected.Read(match.Input).Contact;
             ReadOnlySpan<ContactBody> bodies = _detected.Bodies(match.Input);
+            match.ParticipantsChanged = created;
             ContactMaterial first = _world.Read<ContactMaterial>(input.First);
             ContactMaterial second = _world.Read<ContactMaterial>(input.Second);
             match.Material = _combine.Combine(in first, in second);
@@ -221,13 +224,17 @@ public sealed class ContactPoints<TCombine, TComponents> : IDisposable
             }
             match.LinkStart = _references.Count;
             match.LinkCount = bodies.Length;
+            match.ParticipantsChanged |= _oldParticipants.Count != bodies.Length;
             for (int index = 0; index < bodies.Length; index++)
             {
                 if (index < _oldParticipants.Count)
                 {
                     RelationEdge<ContactParticipant> existing = _oldParticipants[index];
                     if (_world.GetDirectedRelationEndpoints(existing).Target != bodies[index].Body)
+                    {
                         commands.Relations<ContactParticipant>().Retarget(existing, match.Point, bodies[index].Body);
+                        match.ParticipantsChanged = true;
+                    }
                     _references.Add(new(existing, default));
                 }
                 else
@@ -242,12 +249,14 @@ public sealed class ContactPoints<TCombine, TComponents> : IDisposable
         }
     }
 
-    private readonly struct ReadAnchors(ContactPoints<TCombine, TComponents> points) : IQueryExecution
+    private readonly struct ReadAnchors<TMatches>(ContactPoints<TCombine, TComponents> points, TMatches matches) : IQueryExecution
+        where TMatches : struct, IContactPointMatches
     {
         public void Execute(scoped QueryCursor query)
         {
             foreach (ref PointMatch match in CollectionsMarshal.AsSpan(points._matches))
             {
+                if (matches.RetainsGeometry && match.Point != Entity.Null) continue;
                 ref readonly ContactDetectionRange range = ref points._detected.Read(match.Input);
                 ReadOnlySpan<ContactBody> bodies = points._detected.Bodies(match.Input);
                 Vector3 delta = default;
@@ -274,20 +283,32 @@ public sealed class ContactPoints<TCombine, TComponents> : IDisposable
         }
     }
 
-    private void Write()
+    private void Write<TMatches>(TMatches matches) where TMatches : struct, IContactPointMatches
     {
         foreach (ref readonly PointMatch match in CollectionsMarshal.AsSpan(_matches))
         {
             ref readonly CollisionContact input = ref _detected.Read(match.Input).Contact;
-            ContactPoint point = ToPoint(in input);
-            point.BodyAnchorDelta = match.BodyAnchorDelta;
-            _world.Replace(match.Point, point);
-            _world.Replace(match.Point, match.Material);
-            var copy = new WriteLinks(this, match.Input, match.LinkStart, match.LinkCount);
-            _world.ExecuteBufferWrite<ContactBodyLink, WriteLinks>(match.Point, ref copy,
-                static (links, ref copy) => copy.Write(links));
+            if (!matches.RetainsGeometry || match.CreatedThisStep)
+            {
+                ContactPoint point = ToPoint(in input);
+                point.BodyAnchorDelta = match.BodyAnchorDelta;
+                _world.Replace(match.Point, point);
+            }
+            ContactMaterial current = _world.Read<ContactMaterial>(match.Point);
+            if (!SameMaterial(in current, in match.Material)) _world.Replace(match.Point, match.Material);
+            if (!matches.RetainsGeometry || match.ParticipantsChanged)
+            {
+                var copy = new WriteLinks(this, match.Input, match.LinkStart, match.LinkCount);
+                _world.ExecuteBufferWrite<ContactBodyLink, WriteLinks>(match.Point, ref copy,
+                    static (links, ref copy) => copy.Write(links));
+            }
         }
     }
+
+    private static bool SameMaterial(in ContactMaterial first, in ContactMaterial second) =>
+        first.NormalStiffness == second.NormalStiffness && first.NormalDamping == second.NormalDamping
+        && first.StaticFriction == second.StaticFriction && first.DynamicFriction == second.DynamicFriction
+        && first.Restitution == second.Restitution && first.RestitutionThreshold == second.RestitutionThreshold;
 
     private readonly record struct WriteLinks(ContactPoints<TCombine, TComponents> Points, int Input, int Start, int Count)
     {
@@ -324,9 +345,10 @@ public sealed class ContactPoints<TCombine, TComponents> : IDisposable
         private readonly PhysicsStepContext _context = context;
         public void Execute(int producerIndex, ref JobCommandWriter commands) => points.Add(matches, ref commands, in _context);
     }
-    private readonly struct WriteValues(ContactPoints<TCombine, TComponents> points) : IJob
+    private readonly struct WriteValues<TMatches>(ContactPoints<TCombine, TComponents> points, TMatches matches) : IJob
+        where TMatches : struct, IContactPointMatches
     {
-        public void Execute() => points.Write();
+        public void Execute() => points.Write(matches);
     }
     private readonly struct ReleaseCommands(JobCommandBuffer points, JobCommandBuffer components) : IJob
     {
@@ -338,6 +360,7 @@ public sealed class ContactPoints<TCombine, TComponents> : IDisposable
         internal DeferredRelationEdge<ContactPoint> Created;
         internal int Input, LinkStart, LinkCount;
         internal float DistanceSquared;
+        internal bool CreatedThisStep, ParticipantsChanged;
         internal Vector3 BodyAnchorDelta;
         internal ContactMaterial Material;
     }

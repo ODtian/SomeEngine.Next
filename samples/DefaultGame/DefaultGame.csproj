@@ -3,6 +3,8 @@
     <RootNamespace>DefaultGame</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="$(SomeEnginePath)/src/SomeEngine.ECS/SomeEngine.ECS.csproj" GlobalPropertiesToRemove="SomeEngineDevelopment;PublishAot;PublishAotUsingRuntimePack;SelfContained;RuntimeIdentifier" />
+    <ProjectReference Include="$(SomeEnginePath)/src/SomeEngine.Physics/SomeEngine.Physics.csproj" GlobalPropertiesToRemove="SomeEngineDevelopment;PublishAot;PublishAotUsingRuntimePack;SelfContained;RuntimeIdentifier" />
     <ProjectReference Include="$(SomeEnginePath)/samples/ImportedScenes/Materials/ImportedScenes.Materials.csproj" GlobalPropertiesToRemove="SomeEngineDevelopment;PublishAot;PublishAotUsingRuntimePack;SelfContained;RuntimeIdentifier" />
     <ProjectReference Include="SceneContent/DefaultGame.SceneContent.csproj" GlobalPropertiesToRemove="SomeEngineDevelopment;PublishAot;PublishAotUsingRuntimePack;SelfContained;RuntimeIdentifier" Condition="'$(SomeEngineDevelopment)' == 'true'" />
     <Compile Remove="SceneContent/**/*.cs" />
