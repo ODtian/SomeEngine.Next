@@ -96,13 +96,14 @@ public sealed class GpuPoseDefinitions(BinaryWriter writer)
         return offset;
     }
 
-    public uint WriteReference(Skeleton skeleton)
+    public uint WriteReference(Skeleton skeleton) => WriteReference(skeleton, default);
+    public uint WriteReference(Skeleton skeleton, ReadOnlySpan<bool> selected)
     {
         Align(16); uint offset = (uint)writer.BaseStream.Position;
         for (int bone = 0; bone < skeleton.BoneCount; bone++)
         {
             WriteLocal(in skeleton.ReferencePose[bone]);
-            writer.Write(skeleton.Parents[bone] < 0 ? 3u : 1u);
+            writer.Write((selected.IsEmpty || selected[bone] ? 1u : 0u) | (skeleton.Parents[bone] < 0 ? 2u : 0u));
             writer.Write(0u); writer.Write(0u); writer.Write(0u);
         }
         return offset;

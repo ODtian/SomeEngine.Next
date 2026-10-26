@@ -11,37 +11,7 @@ public sealed partial class SkinningFeature
         foreach (Section section in _sectionOrder)
         {
             section.SelectedBones = new bool[section.Range.Count];
-            GpuPoseEvaluation? evaluation = section.Data.Evaluation;
-            if (evaluation is null || evaluation.AllBones) Array.Fill(section.SelectedBones, true);
-            else foreach (short bone in evaluation.Bones) section.SelectedBones[bone] = true;
-            foreach (short bone in section.Data.CpuBones.Span) section.SelectedBones[bone] = true;
-            if (section.Data.Rig is { } rig)
-            {
-                if (rig.TranslationBone >= 0) section.SelectedBones[rig.TranslationBone] = true;
-                foreach (GpuPoseSource operation in rig.Steps)
-                    if (operation is GpuTwoBonePose limb)
-                    {
-                        section.SelectedBones[limb.Chain.Root] = true;
-                        section.SelectedBones[limb.Chain.Middle] = true;
-                        section.SelectedBones[limb.Chain.Tip] = true;
-                    }
-                    else if (operation is GpuXpbdPose xpbd)
-                    {
-                        foreach (GpuXpbdBone bone in xpbd.Chain.Bones) section.SelectedBones[bone.Bone] = true;
-                    }
-                    else if (operation is GpuStridePose stride)
-                    {
-                        section.SelectedBones[stride.Rig.PelvisBone] = true;
-                        foreach (GpuStrideLeg leg in stride.Rig.Legs)
-                        {
-                            section.SelectedBones[leg.Chain.Root] = true;
-                            section.SelectedBones[leg.Chain.Middle] = true;
-                            section.SelectedBones[leg.Chain.Tip] = true;
-                        }
-                        foreach (GpuStrideSpine bone in stride.Rig.Spine) section.SelectedBones[bone.Bone] = true;
-                    }
-                    else foreach (GpuAimBone bone in ((GpuAimPose)operation).Chain.Bones) section.SelectedBones[bone.Bone] = true;
-            }
+            GpuPoseEvaluation.SelectBones(section.SelectedBones, section.Data.Evaluation, section.Data.CpuBones.Span, section.Data.Rig);
         }
         foreach (Section section in _sectionOrder)
             for (int bone = 0; bone < section.Range.Count; bone++)
@@ -51,16 +21,9 @@ public sealed partial class SkinningFeature
             Section section = _sectionOrder[index];
             if (!section.SelectedBones.AsSpan().SequenceEqual(before[index])) section.HasSamples = false;
             var sampled = new List<short>();
-            Align(writer, 16);
-            section.ReferenceOffset = (uint)writer.BaseStream.Position;
+            section.ReferenceOffset = new GpuPoseDefinitions(writer).WriteReference(section.Data.Skeleton, section.SelectedBones);
             for (int bone = 0; bone < section.Range.Count; bone++)
             {
-                BoneTransform local = section.Data.Skeleton.ReferencePose[bone];
-                writer.Write(local.Translation.X); writer.Write(local.Translation.Y); writer.Write(local.Translation.Z); writer.Write(0u);
-                writer.Write(local.Rotation.X); writer.Write(local.Rotation.Y); writer.Write(local.Rotation.Z); writer.Write(local.Rotation.W);
-                writer.Write(local.Scale.X); writer.Write(local.Scale.Y); writer.Write(local.Scale.Z); writer.Write(0u);
-                writer.Write((section.SelectedBones[bone] ? 1u : 0u) | (section.Data.Skeleton.Parents[bone] < 0 ? 2u : 0u));
-                writer.Write(0u); writer.Write(0u); writer.Write(0u);
                 if (section.Data.IsGpu && section.SelectedBones[bone] && section.Data.CpuBones.Span.BinarySearch((short)bone) < 0) sampled.Add((short)bone);
             }
             section.SampledBones = sampled.ToArray();
@@ -94,8 +57,7 @@ public sealed partial class SkinningFeature
             || section.AdvanceSource && data.CalculationTime >= section.SampleTime + interval);
         double current = section.SampleSource ? data.CalculationTime : section.SampleTime;
         double previous = section.SampleSource ? section.ResetSamples ? current : section.SampleTime : section.PreviousSampleTime;
-        float amount = interval == 0 || current == previous ? 1 : (float)Math.Clamp((time - interval - previous) / (current - previous), 0, 1);
-        section.Presentation = new(previous, current, previous + (current - previous) * amount, amount)
+        section.Presentation = GpuPosePresentation.FromSampleTimes(previous, current, time, interval) with
         {
             PreviousInput = section.SampleSource ? section.ResetSamples ? data.Identity : section.SampleIdentity : section.PreviousSampleIdentity,
             CurrentInput = section.SampleSource ? data.Identity : section.SampleIdentity,

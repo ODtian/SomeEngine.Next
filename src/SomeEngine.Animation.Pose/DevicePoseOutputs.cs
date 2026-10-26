@@ -91,8 +91,10 @@ internal struct GpuPoseSourceState : IComponent
     internal GpuPoseTarget Input;
     internal ulong BindingVersion;
     internal ReadOnlyMemory<short> CpuBones;
+    internal GpuPoseEvaluation? Evaluation;
+    internal GpuPosePresentation Presentation;
     internal double PhysicsTime;
-    internal bool HasInput;
+    internal bool HasInput, HasSamples;
 }
 
 public sealed partial class DevicePoseSources
