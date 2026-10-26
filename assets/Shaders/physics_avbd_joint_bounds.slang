@@ -5,50 +5,19 @@
 #include "physics_avbd.slang"
 #include "physics_joint_bound_bodies.slang"
 #include "physics_constraint_math.slang"
+#include "physics_avbd_distance_math.slang"
+#include "physics_joint_bound_geometry.slang"
 struct DeviceJointBoundState
 {
     float2 multiplier; float penalty; uint padding0;
     float2 initialError; uint2 padding1;
 };
 RWStructuredBuffer<DeviceJointBoundState> DeviceJointBoundStates;
-struct DeviceJointBoundGeometry
-{
-    uint firstBody; uint lastBody;
-    float3 firstOffset; float3 lastOffset;
-    float3 delta; float distance;
-};
-DeviceJointBoundGeometry deviceJointBoundGeometry(uint row,bool start)
-{
-    DeviceJointBoundConstraint bound=DeviceJointBoundValues[row];
-    DeviceJointConstraint first=DeviceJoints[DeviceJointBoundSets[deviceJointBoundSetIndex(row)].jointRow];
-    DeviceJointConstraint last=DeviceJoints[bound.otherJointRow];
-    DeviceJointBoundGeometry geometry;
-    geometry.firstBody=bound.firstEnd==0?first.sourceBody:first.targetBody;
-    geometry.lastBody=bound.otherEnd==0?last.sourceBody:last.targetBody;
-    float3 firstLocal=bound.firstEnd==0?first.sourcePosition:first.targetPosition;
-    float3 lastLocal=bound.otherEnd==0?last.sourcePosition:last.targetPosition;
-    DeviceBodyState firstBody=DeviceBodyStates[geometry.firstBody],lastBody=DeviceBodyStates[geometry.lastBody];
-    if(start) { firstBody=deviceBodyStart(firstBody); lastBody=deviceBodyStart(lastBody); }
-    geometry.firstOffset=bodyRotate(firstBody.rotation,firstLocal-firstBody.centerOfMass);
-    geometry.lastOffset=bodyRotate(lastBody.rotation,lastLocal-lastBody.centerOfMass);
-    geometry.delta=bodyCenterOfMass(lastBody)+geometry.lastOffset-bodyCenterOfMass(firstBody)-geometry.firstOffset;
-    geometry.distance=length(geometry.delta);
-    return geometry;
-}
 void deviceEvaluateJointBound(DeviceJointBoundConstraint bound,DeviceJointBoundState state,float distance,
     out float force,out float penalty,out float2 multiplier)
 {
-    if(bound.minimum==bound.maximum)
-    {
-        force=state.multiplier.x+state.penalty*(distance-bound.maximum
-            -JointLongRangeSettings.initialErrorFraction*(state.initialError.x-state.initialError.y));
-        penalty=state.penalty; multiplier=float2(force,0); return;
-    }
-    float maximum=bound.maximum+JointLongRangeSettings.initialErrorFraction*state.initialError.x;
-    float minimum=bound.minimum-JointLongRangeSettings.initialErrorFraction*state.initialError.y;
-    float upper=max(0,state.multiplier.x+state.penalty*(distance-maximum));
-    float lower=max(0,state.multiplier.y+state.penalty*(minimum-distance));
-    force=upper-lower; penalty=state.penalty*((upper>0?1:0)+(lower>0?1:0)); multiplier=float2(upper,lower);
+    deviceEvaluateDistanceRange(bound.minimum,bound.maximum,asfloat(0x7f800000u),state.penalty,
+        state.multiplier,state.initialError,JointLongRangeSettings.initialErrorFraction,distance,force,penalty,multiplier);
 }
 struct DeviceJointBoundAvbdConstraints : IDeviceAvbdConstraints
 {
@@ -82,23 +51,9 @@ struct DeviceJointBoundAvbdConstraints : IDeviceAvbdConstraints
         DeviceJointBoundGeometry geometry=deviceJointBoundGeometry(row,false);
         float force,penalty; float2 multiplier;
         deviceEvaluateJointBound(DeviceJointBoundValues[row],DeviceJointBoundStates[row],geometry.distance,force,penalty,multiplier);
-        if(penalty==0) return;
-        float3 direction=geometry.distance>0?geometry.delta/geometry.distance:float3(0);
         float side=bodyIndex==geometry.lastBody?1:-1;
         float3 offset=bodyIndex==geometry.lastBody?geometry.lastOffset:geometry.firstOffset;
-        float3 linear=direction*side,angular=cross(offset,linear);
-        deviceAvbdAddRow(equation,linear,angular,force,penalty);
-        if(force==0||geometry.distance==0) return;
-        float magnitude=abs(force),radiusSquared=dot(offset,offset),radial=dot(offset,direction);
-        for(uint axis=0;axis<3;axis++)
-        {
-            float3 unit=axis==0?float3(1,0,0):axis==1?float3(0,1,0):float3(0,0,1);
-            float linearCurvature=magnitude/geometry.distance*max(0,1-direction[axis]*direction[axis]);
-            float angularCurvature=max(0,(radiusSquared-offset[axis]*offset[axis]-angular[axis]*angular[axis])/geometry.distance);
-            float3 column=offset*direction[axis]-unit*radial;
-            deviceAvbdAddRow(equation,unit,float3(0),0,linearCurvature);
-            deviceAvbdAddRow(equation,float3(0),unit,0,magnitude*(angularCurvature+length(column)));
-        }
+        deviceAccumulateDistanceRange(geometry.delta,geometry.distance,offset,side,force,penalty,equation);
     }
     void updateDuals(uint row,DeviceAvbdStep context)
     {
