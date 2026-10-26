@@ -2,7 +2,7 @@
 
 公开 `IGraphicsBackend.CreateGraphicsPipelineAsync`、`CreateComputePipelineAsync` 及高级管线创建入口返回原有 `Task<Pipeline>`。调用时物化描述数据，保留 Slang 数据、代码与 PipelineCache 使用引用，并捕获调用处的 `JobSystem.Current`。
 
-设备的 256 容量 Channel 继续持有待派发请求，容量等待使用原 `WriteAsync` 行为。设备按处理器数量保留一到四个派发额度；已派发且等待共同执行的请求保留在设备节点链。各 Scheduler 的 `Vulkan pipeline` 类别使用 256 在途额度、至多四个且受 worker 数量限制的执行额度，服务份额为 1。`ScheduleAsync` 获准后由具体 `IJob` 执行原生创建，完整 Job 结束后归还设备派发额度。
+设备的 256 容量 Channel 继续持有待派发请求，容量等待使用原 `WriteAsync` 行为。设备按处理器数量保留一到四个派发额度；已派发且等待共同执行的请求保留在设备节点链。各 Scheduler 的 `Vulkan pipeline` 类别使用 256 在途额度、至多四个且受 worker 数量限制的执行额度，服务份额为 1。`ScheduleAsync` 获准后由具体 `IJob` 执行原生创建，`JobHandle.CompleteAsync` 交付完整 Job 结果后归还设备派发额度；零 worker 的协调调用通过该完成入口执行工作。
 
 原请求持有唯一 Pipeline Task。实际执行先移除等待节点并登记 running，创建管线、归还输入和缓存使用引用、交付原 Task，然后恢复此前的线程缓存上下文并归还 running。原缓存 Gate 继续保护 Vulkan 对缓存的访问。
 

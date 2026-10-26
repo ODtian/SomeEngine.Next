@@ -700,6 +700,26 @@ public sealed class WarpCapabilityTests(D3D12TestCompiler shaderCompiler)
         Assert.Equal(2, retainedInfo.CacheLookupMissCount);
     }
 
+    [Fact]
+    public async Task AsyncPipelineCreationCompletesWithZeroWorkers()
+    {
+        D3D12TestShader shader = shaderCompiler.Compile("zero_worker_pipeline", """
+            [shader("compute")][numthreads(1,1,1)] void computeMain() { }
+            """, [new("computeMain", SlangStage.Compute)]);
+        using IGraphicsBackend backend = CreateValidatedBackend();
+        using Device device = D3D12TestSupport.CreateWarpDevice(backend);
+        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 0 });
+        try
+        {
+            using Pipeline pipeline = await backend.CreateComputePipelineAsync(device,
+                new ComputePipelineDesc(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(0), shader.GetEntryCode(0)))
+                .WaitAsync(TimeSpan.FromSeconds(10));
+
+            Assert.Equal(PipelineType.Compute, pipeline.Type);
+        }
+        finally { JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 2 }); }
+    }
+
     private readonly record struct CreateComputePipeline(IGraphicsBackend Backend, Device Device,
         ComputePipelineDesc Description, PipelineCache Cache, Task<Pipeline>[] Result) : IJob
     {

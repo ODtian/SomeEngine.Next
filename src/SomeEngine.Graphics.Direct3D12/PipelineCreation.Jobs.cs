@@ -47,7 +47,7 @@ internal sealed partial class D3D12Backend
                 Scheduler scheduler = request.Scheduler;
                 JobHandle completed = await scheduler.ScheduleAsync(new CreatePipeline(this, request),
                     new() { Category = GetCategory(scheduler) }).ConfigureAwait(false);
-                await completed.WaitAsync().ConfigureAwait(false);
+                await completed.CompleteAsync().ConfigureAwait(false);
             }
             catch (Exception exception)
             {
