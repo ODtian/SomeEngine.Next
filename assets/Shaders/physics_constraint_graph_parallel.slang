@@ -28,6 +28,7 @@ void InitializeDeviceGraph(uint3 id:SV_DispatchThreadID)
     {
         DeviceSelectedBodies selection;
         ConstraintGraphParents[index]=selection.contains(index)&&DeviceBodyStates[index].motion==2?index:0xffffffff;
+        ConstraintGraphActiveBodies[index]=ConstraintGraphParents[index]!=0xffffffff&&DEVICE_GRAPH_BODY_ACTIVE(index)?1:0;
         ConstraintGraphBodyColors[index]=0xffffffff; ConstraintGraphBodyOffsets[index]=0;
         ConstraintGraphScratch[index]=0; ConstraintGraphIslands[index]=0xffffffff; ConstraintGraphBodyRanges[index]=uint2(0);
     }
@@ -76,7 +77,7 @@ void CompressDeviceGraph(uint3 id:SV_DispatchThreadID)
     if(body>=ConstraintGraphParameters.bodies||ConstraintGraphParents[body]==0xffffffff) return;
     uint root=deviceGraphRoot(body);
     ConstraintGraphParents[body]=root; ConstraintGraphIslands[body]=root;
-    InterlockedAdd(ConstraintGraphCounts[0],1);
+    if(ConstraintGraphActiveBodies[body]!=0) InterlockedAdd(ConstraintGraphCounts[0],1);
     if(root==body) InterlockedAdd(ConstraintGraphCounts[3],1);
 }
 [shader("compute")][numthreads(256,1,1)]
@@ -134,7 +135,7 @@ void ProposeDeviceBodyColors(uint3 id:SV_DispatchThreadID)
     uint body=id.x;
     if(body>=ConstraintGraphParameters.bodies) return;
     uint color=0xffffffff;
-    if(ConstraintGraphParents[body]!=0xffffffff&&ConstraintGraphBodyColors[body]==0xffffffff)
+    if(ConstraintGraphActiveBodies[body]!=0&&ConstraintGraphBodyColors[body]==0xffffffff)
     { color=0; while(deviceGraphBodyColorUsed(body,color)) color++; }
     ConstraintGraphScratch[body]=color;
 }
@@ -164,7 +165,7 @@ void ProposeDeviceRowColors(uint3 id:SV_DispatchThreadID)
     uint row=id.x;
     if(row>=ConstraintGraphParameters.rows) return;
     uint color=0xffffffff;
-    if(ConstraintGraphRows[row].w!=0&&ConstraintGraphRowColors[row]==0xffffffff)
+    if(deviceGraphRowActive(ConstraintGraphRows[row])&&ConstraintGraphRowColors[row]==0xffffffff)
     { color=0; while(deviceGraphRowColorUsed(row,color)) color++; }
     ConstraintGraphRowProposals[row]=color;
 }
@@ -195,9 +196,9 @@ void ResolveDeviceRowColors(uint3 id:SV_DispatchThreadID)
 void CountDeviceGraphColors(uint3 id:SV_DispatchThreadID)
 {
     uint index=id.x;
-    if(index<ConstraintGraphParameters.bodies&&ConstraintGraphParents[index]!=0xffffffff)
+    if(index<ConstraintGraphParameters.bodies&&ConstraintGraphActiveBodies[index]!=0)
         InterlockedAdd(ConstraintGraphBodyRanges[ConstraintGraphBodyColors[index]].y,1);
-    if(index<ConstraintGraphParameters.rows&&ConstraintGraphRows[index].w!=0)
+    if(index<ConstraintGraphParameters.rows&&deviceGraphRowActive(ConstraintGraphRows[index]))
         InterlockedMax(ConstraintGraphGroupColors[ConstraintGraphRows[index].z],ConstraintGraphRowColors[index]+1);
 }
 [shader("compute")][numthreads(1,1,1)]
@@ -212,7 +213,7 @@ void OffsetDeviceGraphGroups(uint3 id:SV_DispatchThreadID)
 void CountDeviceGraphRows(uint3 id:SV_DispatchThreadID)
 {
     uint row=id.x;
-    if(row>=ConstraintGraphParameters.rows||ConstraintGraphRows[row].w==0) return;
+    if(row>=ConstraintGraphParameters.rows||!deviceGraphRowActive(ConstraintGraphRows[row])) return;
     uint stage=ConstraintGraphGroupOffsets[ConstraintGraphRows[row].z]+ConstraintGraphRowColors[row];
     InterlockedAdd(ConstraintGraphRowRanges[stage].y,1);
 }
@@ -235,13 +236,13 @@ void OffsetDeviceGraphRanges(uint3 id:SV_DispatchThreadID)
 void WriteDeviceGraphWork(uint3 id:SV_DispatchThreadID)
 {
     uint index=id.x;
-    if(index<ConstraintGraphParameters.bodies&&ConstraintGraphParents[index]!=0xffffffff)
+    if(index<ConstraintGraphParameters.bodies&&ConstraintGraphActiveBodies[index]!=0)
     {
         uint color=ConstraintGraphBodyColors[index],position;
         InterlockedAdd(ConstraintGraphScratch[color],1,position);
         ConstraintGraphBodyOrder[ConstraintGraphBodyRanges[color].x+position]=index;
     }
-    if(index<ConstraintGraphParameters.rows&&ConstraintGraphRows[index].w!=0)
+    if(index<ConstraintGraphParameters.rows&&deviceGraphRowActive(ConstraintGraphRows[index]))
     {
         uint stage=ConstraintGraphGroupOffsets[ConstraintGraphRows[index].z]+ConstraintGraphRowColors[index],position;
         InterlockedAdd(ConstraintGraphRowProposals[stage],1,position);
