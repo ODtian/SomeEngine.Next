@@ -385,9 +385,11 @@ public static partial class JobEntityRuntime
                 return;
             }
             uint writeVersion = request.Descriptor.HasWorldWrites ? request.World.AcquireSystemVersion() : 0;
-            request.Scheduler.ScheduleParallelInCurrentScope(
+            int batchSize = request.Options.RowsPerPacket == 0
+                ? JobScheduleOptions.AutomaticBatchSize : request.Options.RowsPerPacket;
+            request.Scheduler.ExecuteParallel(
                 new ExecuteResourceGroups<TJob, TAdapter>(request, data, writeVersion),
-                data.Groups.Length, request.Options.JobOptions);
+                data.Groups.Length, batchSize, request.Options.JobOptions);
         }
     }
 
