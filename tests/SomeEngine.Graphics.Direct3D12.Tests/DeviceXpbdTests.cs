@@ -74,7 +74,7 @@ public sealed partial class DeviceXpbdTests(D3D12TestCompiler shaderCompiler)
         using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
         using var results = new DeviceBodyResults(backend, device, bodies);
         using var project = new DeviceXpbdProjection<DeviceBendConstraint, float>(backend, device, world, constraints,
-            bodies, bends, multipliers, CompileBend(), 64);
+            bodies, dynamics, bends, multipliers, CompileBend(), 64);
         var stages = bends.BeginInputs().Then(write).Then(bends.UploadInputs())
             .Then(bodies.WriteInputs(64)).Then(bodies.UploadInputs()).Then(dynamics.Predict(Vector3.Zero))
             .Then(project.Initialize()).Then(project.Iterate(1)).Then(dynamics.UpdateVelocities()).Then(results.Readback(64));
@@ -121,7 +121,7 @@ public sealed partial class DeviceXpbdTests(D3D12TestCompiler shaderCompiler)
         }
         using BufferSrv scaleView = backend.CreateBufferSrv(device, new(scale, new(0, 4), StructureStride: 4));
         using var project = new DeviceXpbdProjection<DeviceLengthConstraint, float>(backend, device, world, constraints,
-            bodies, lengths, multipliers, CompileProjectLength(), 64,
+            bodies, dynamics, lengths, multipliers, CompileProjectLength(), 64,
             new Dictionary<string, ResourceBinding[]> { ["ProjectRestScales"] = [ResourceBinding.ReadOnlyBuffer(scaleView)] },
             new[] { JobResourceAccess.Read(jobs.GetResourceToken(scale), 0, 4) });
         var stages = lengths.BeginInputs().Then(write).Then(lengths.UploadInputs())
@@ -192,7 +192,7 @@ public sealed partial class DeviceXpbdTests(D3D12TestCompiler shaderCompiler)
         using var write = lengths.WriteInputs<XpbdLength, DeviceLengthSource>(world, constraints, new(), 64);
         using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
         using var results = new DeviceBodyResults(backend, device, bodies);
-        using var project = new DeviceXpbdProjection<DeviceLengthConstraint, float>(backend, device, world, constraints, bodies, lengths, multipliers,
+        using var project = new DeviceXpbdProjection<DeviceLengthConstraint, float>(backend, device, world, constraints, bodies, dynamics, lengths, multipliers,
             CompileLength(), threadsPerGroup: 64);
         var stages = lengths.BeginInputs().Then(write).Then(lengths.UploadInputs())
             .Then(bodies.WriteInputs(64)).Then(bodies.UploadInputs()).Then(dynamics.Predict(Vector3.Zero))
@@ -259,6 +259,7 @@ public sealed partial class DeviceXpbdTests(D3D12TestCompiler shaderCompiler)
     {
         D3D12TestShader shader = shaderCompiler.CompileWithSearchPaths("xpbd_length", """
             #include "physics_xpbd_length.slang"
+            #include "physics_xpbd.slang"
             [shader("compute")][numthreads(64,1,1)]
             void Initialize(uint3 id : SV_DispatchThreadID) { initializeDeviceXpbd<DeviceXpbdLength>(id.x); }
             [shader("compute")][numthreads(64,1,1)]
@@ -273,6 +274,7 @@ public sealed partial class DeviceXpbdTests(D3D12TestCompiler shaderCompiler)
     {
         D3D12TestShader shader = shaderCompiler.CompileWithSearchPaths("xpbd_bend", """
             #include "physics_xpbd_bend.slang"
+            #include "physics_xpbd.slang"
             [shader("compute")][numthreads(64,1,1)]
             void Initialize(uint3 id : SV_DispatchThreadID) { initializeDeviceXpbd<DeviceXpbdBend>(id.x); }
             [shader("compute")][numthreads(64,1,1)]
@@ -297,6 +299,7 @@ public sealed partial class DeviceXpbdTests(D3D12TestCompiler shaderCompiler)
     {
         D3D12TestShader shader = shaderCompiler.CompileWithSearchPaths("project_xpbd", """
             #include "physics_xpbd_length.slang"
+            #include "physics_xpbd.slang"
             StructuredBuffer<float> ProjectRestScales;
             struct ProjectLength : IDeviceXpbdProjection
             {
