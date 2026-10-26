@@ -107,6 +107,8 @@ public static partial class PhysicsScenes
         var response = new DeviceContactActions(backend, device, bodies, graph, responses, responseKernels, bindings, reads,
             threads, new IDeviceConstraintSelection[] { selectedResponses });
         var results = new DeviceBodyResults(backend, device, bodies, world, observed, readbackBodyIndices.Length);
+        var contactPenetration = new DeviceSceneContactPenetration(backend, device, bodies, parameters, selected, graph,
+            shaders.ContactPenetration(), bindings, reads);
         PhysicsSceneTimings? timings = settings.Timings;
         var stages = sceneInputs.Measure(timings, "Scene inputs")
             .Then(bodyInputs.Upload().Measure(timings, "Body inputs"))
@@ -132,6 +134,7 @@ public static partial class PhysicsScenes
             .Then(response.ApplyRestitution(1).Measure(timings, "Restitution"));
         var simulation = PhysicsSimulation.Create(world, filter, stages, data.Substeps);
         var consumer = results.Readback(threads).Measure(timings, "Body readback")
+            .Then(contactPenetration.Readback().Measure(timings, "Completed contact gap"))
             .Then(new CopyObservedSceneTransforms(selectedFilter).Measure(timings, "Body transforms"));
         var frame = simulation.CreateFrame(consumer, data.StepSeconds, 0, 0, 0);
         var initialize = new PhysicsStepContext(world, filter, 0, 0, 1, 0, data.StepSeconds);
@@ -140,7 +143,8 @@ public static partial class PhysicsScenes
             data.StepSeconds, frame, frame.CompleteForRead, [members, shapes, poses, points, states, observed],
             [bodies, equations, grid, geometry, bodyInputs, timedInputs, sceneInputs, dynamics, shapeInputs, updateGeometry,
                 detection, detected, parameters, anchors, histories, responses, matching, currentGeometry, refresh,
-                contactInputs, stateInputs, selected, selectedStates, selectedResponses, joints, ranges, graph, solve, response, results]);
+                contactInputs, stateInputs, selected, selectedStates, selectedResponses, joints, ranges, graph, solve, response, results, contactPenetration],
+            () => contactPenetration.Value);
     }
 }
 
