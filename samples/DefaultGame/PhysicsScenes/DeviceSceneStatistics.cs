@@ -95,15 +95,15 @@ internal sealed class DeviceSceneStatistics : IDisposable, IDevicePhysicsSubmiss
         }
         _backend.SetPipeline(_commands, _pipelines[0]);
         _backend.SetTransientParameterBindings(_commands, new(_layouts[0], _bindings[0], []));
-        _backend.Dispatch(_commands, new((uint)(_bodies.Capacity + 63) / 64, 1, 1));
+        _backend.Dispatch(_commands, DevicePhysicsDispatch.CreateGroups((_bodies.Capacity + 63) / 64));
         _backend.Barrier(_commands, new MemoryBarrier(PipelineSync.ComputeShading, PipelineSync.ComputeShading,
             ResourceAccess.UnorderedAccess, ResourceAccess.UnorderedAccess));
         _backend.SetPipeline(_commands, _pipelines[1]);
         _backend.SetTransientParameterBindings(_commands, new(_layouts[1], _bindings[1], []));
-        _backend.Dispatch(_commands, new((uint)(_bodies.Capacity + 63) / 64, 1, 1));
+        _backend.Dispatch(_commands, DevicePhysicsDispatch.CreateGroups((_bodies.Capacity + 63) / 64));
         _backend.SetPipeline(_commands, _pipelines[2]);
         _backend.SetTransientParameterBindings(_commands, new(_layouts[2], _bindings[2], []));
-        _backend.Dispatch(_commands, new((uint)(_contacts.Capacity + 63) / 64, 1, 1));
+        _backend.Dispatch(_commands, DevicePhysicsDispatch.CreateGroups((_contacts.Capacity + 63) / 64));
         _backend.Barrier(_commands, new BufferBarrier(_values, PipelineSync.ComputeShading, PipelineSync.Copy,
             ResourceAccess.UnorderedAccess, ResourceAccess.CopySource));
         _backend.CopyBuffer(_commands, new(_values, 0, _readback, 0, 16));
