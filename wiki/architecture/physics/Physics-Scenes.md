@@ -31,6 +31,8 @@ CPU 场景通过 `solve.Activity` 共享原求解图，`BodyActivity` 单处保�
 
 `PhysicsSceneSettings.JointBounds` 给出所选自动长程界的层数、罚参数缩放、乘子保留和初始误差比例。正层数为场景原关节附加 `LongRangeJointBound` Buffer，并沿原 `JointLongRangeGraphConstraints` 进入同一图求解与活动误差；零层数保持空工作查询。原关节实体、受保护端点和框架继续提供唯一的拓扑事实。
 
+`PhysicsSceneSettings.ContactSupports` 选择接触长程支撑及其向上方向、接触资格和数值参数。所选动态 Body 保存 `LongRangeBodySupport`、载荷与当前支撑方程，原持久接触实体保存 `LongRangeContactSupport` 和载荷引用。`AvbdSupportedContactMath` 与 `ContactLongRangeGraphConstraints` 复用同一次 Body 分解、原几何间距和当前反力；普通接触继续使用自己的具体约束集合。支撑工作同时参与原活动误差判断。
+
 带具体 `IPhysicsEventConsumer` 的 `CreateCpu` 重载把接触和活动结果交给原帧消费窗口。`ScenePhysicsEventStream` 标记完成步事件实体；`ConsumePhysicsEvents` 将截至当前完成步的全部历史交给调用方，再通过原命令链确认这些实体。调用方传入 `eventAccesses` 声明消费者资料；原四参数和场景数据入口委托同一创建与事件链。
 
 `PhysicsSceneSettings` 显式保存外层迭代、每体局部迭代和整步预算声明。原步长及子步数来自创建数据。输入的 `Frame` 表示物理步编号；连接移除与位置变化在该步的第一子步、共同预测之前沿原命令链回放。速度增量按 `mass * deltaVelocity` 转成世界冲量，由 `ApplyBodyInputs` 在对应时间区间应用。
