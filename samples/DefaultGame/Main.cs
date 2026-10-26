@@ -1,6 +1,9 @@
 using SomeEngine.Resources;
 using SomeEngine.Runtime;
 using SomeEngine.Diagnostics;
+using SomeEngine.Graphics;
+using SomeEngine.Graphics.Direct3D12;
+using SomeEngine.Graphics.Vulkan;
 using System.Text.Json.Nodes;
 #if SOMEENGINE_DEVELOPMENT
 using DefaultGame.Content;
@@ -15,13 +18,15 @@ public static class SampleApplication
 {
     public static async Task<int> Main(string[] args)
     {
+        bool devicePhysics = args.Contains("--physics-device=gpu", StringComparer.Ordinal);
         string? physicsCheck = args.FirstOrDefault(argument => argument == "--physics-check"
             || argument.StartsWith("--physics-check=", StringComparison.Ordinal));
         if (physicsCheck is not null)
         {
             string? physicsTrace = args.FirstOrDefault(argument => argument.StartsWith("--physics-trace=", StringComparison.Ordinal));
             using TraceCapture? capture = physicsTrace is null ? null : EngineTrace.Start(physicsTrace["--physics-trace=".Length..]);
-            return MeasurePhysicsScenes.Run(Console.Out, physicsCheck == "--physics-check" ? null : physicsCheck["--physics-check=".Length..]);
+            string? id = physicsCheck == "--physics-check" ? null : physicsCheck["--physics-check=".Length..];
+            return devicePhysics ? MeasureDevicePhysicsScenes(args, id) : MeasurePhysicsScenes.Run(Console.Out, id);
         }
 #if SOMEENGINE_DEVELOPMENT
         if (args is ["sample-crowd-materials"])
@@ -103,6 +108,7 @@ public static class SampleApplication
         bool regressionOnly = args.Contains("--regression", StringComparer.Ordinal);
         bool measure = args.Contains("--measure", StringComparer.Ordinal);
         args = args.Where(argument => argument != physicsSelection && argument != physicsContent
+            && !argument.StartsWith("--physics-device=", StringComparison.Ordinal)
             && argument is not ("--crowd" or "--crowd-inline" or "--crowd-cache" or "--regression" or "--measure")).ToArray();
         RuntimeStartupOptions startupOptions = RuntimeStartupOptions.Parse(args);
         startupOptions = startupOptions with
@@ -130,11 +136,15 @@ public static class SampleApplication
             else if (crowdOnly) scenes = characters.ToList();
             else scenes.AddRange(characters);
         }
+        PhysicsSceneExample[] physicsExamples = [];
         if (!regressionOnly && !crowdOnly)
         {
-            TestScene[] physics = PhysicsScenes.All
+            IEnumerable<PhysicsSceneDescription> descriptions = physicsSelection is null or "--physics"
+                ? PhysicsScenes.All : PhysicsScenes.All.Concat(PhysicsScaleScenes.All);
+            physicsExamples = descriptions
                 .Where(description => physicsSelection is null or "--physics" || description.Id == physicsSelection["--physics=".Length..])
-                .Select(description => PhysicsSceneExample.CreateCpu(description).CreateScene(physicsContentDirectory, clusterAssets!.Standard)).ToArray();
+                .Select(description => devicePhysics ? PhysicsSceneExample.CreateDevice(description) : PhysicsSceneExample.CreateCpu(description)).ToArray();
+            TestScene[] physics = physicsExamples.Select(example => example.CreateScene(physicsContentDirectory, clusterAssets!.Standard)).ToArray();
             if (physicsOnly) scenes = physics.ToList();
             else scenes.AddRange(physics);
         }
@@ -165,6 +175,8 @@ public static class SampleApplication
                 ["Candidates"] = startupOptions.BlendIndex.ToString(),
             },
         };
+        if (devicePhysics)
+            foreach (PhysicsSceneExample example in physicsExamples) platform.Application.InstallGeometry(example);
         if (measure) platform.StartMeasurements();
         return await Application.RunAsync<SampleSceneMaterials>(args, static (material, seconds) =>
         {
@@ -176,5 +188,19 @@ public static class SampleApplication
                 default: return false;
             }
         }, platform.Application);
+    }
+
+    private static int MeasureDevicePhysicsScenes(string[] args, string? id)
+    {
+        RuntimeGraphicsBackend selected = RuntimeStartupOptions.Parse(args).GraphicsBackend;
+        using IGraphicsBackend backend = selected == RuntimeGraphicsBackend.Direct3D12
+            ? D3D12GraphicsBackend.Create()
+            : VulkanGraphicsBackend.Create(new VulkanBackendOptions(EnableValidation: false, EnableDebugMessages: false));
+        backend.TryEnumerateAdapters(new(AdapterPreference.HighPerformance, IncludeSoftware: false), [], out int count);
+        var adapters = new AdapterInfo[count];
+        backend.TryEnumerateAdapters(new(AdapterPreference.HighPerformance, IncludeSoftware: false), adapters, out _);
+        using Device device = backend.CreateDevice(new(adapters.First(adapter => adapter.HardwareAccelerated).Id,
+            [new(QueueType.Compute)], label: "Scene physics measurement"));
+        return MeasurePhysicsScenes.RunDevice(Console.Out, backend, device, id);
     }
 }
