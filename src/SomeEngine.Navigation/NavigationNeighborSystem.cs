@@ -170,13 +170,13 @@ public sealed class NavigationNeighbors(float cellSize = 2)
         _spatialPartitions[Partition(cell)].Heads.GetValueOrDefault(cell, -1);
 }
 
-public sealed class NavigationNeighborSystem<TMotion, TReader>
+public sealed class NavigationNeighborSystem<TMotion, TReader> : IDisposable
     where TMotion : unmanaged, IComponent
     where TReader : struct, INavigationMotionReader<TMotion>
 {
     private readonly World _world;
     private readonly QueryDefinition _actors;
-    private readonly QueryHandle _actorQuery;
+    private QueryHandle _actorQuery;
     private readonly JobResourceAccess[] _collectionAccesses;
     private JobHandle _completion;
     public NavigationNeighborSystem(World world, Scheduler scheduler, float cellSize = 2)
@@ -199,6 +199,17 @@ public sealed class NavigationNeighborSystem<TMotion, TReader>
         _completion = Scheduler.Schedule(new CollectNeighbors(this), _collectionAccesses,
             Scheduler.CombineDependencies([_completion, motionReady, predictionReady]));
         return _completion;
+    }
+
+    public void Dispose()
+    {
+        if (!_actorQuery.IsValid) return;
+        try { _completion.Complete(); }
+        finally
+        {
+            _world.ReleaseQuery(_actorQuery);
+            _actorQuery = default;
+        }
     }
 
     private readonly struct CollectNeighbors(NavigationNeighborSystem<TMotion, TReader> system) : IJob
