@@ -17,6 +17,7 @@ public interface IContactPointMatches
 {
     void AddAccesses(List<JobResourceAccess> accesses);
     bool TryGetMatch(int input, out Entity point, out float distanceSquared);
+    void RecordPoint(int input, Entity point) { }
 }
 
 public readonly struct SearchContactPoints : IContactPointMatches
@@ -96,7 +97,9 @@ public sealed class ContactPoints<TCombine, TComponents> : IDisposable
         matches.AddAccesses(accesses);
         points.ScheduleParallel(new MatchPoints<TMatches>(this, matches), 1, CollectionsMarshal.AsSpan(accesses), dependency);
         JobHandle pointChanges = points.SchedulePlayback();
-        components.ScheduleParallel(new AddComponents(this, context), 1, _componentAccesses, pointChanges);
+        var componentAccesses = new List<JobResourceAccess>(_componentAccesses);
+        matches.AddAccesses(componentAccesses);
+        components.ScheduleParallel(new AddComponents<TMatches>(this, matches, context), 1, CollectionsMarshal.AsSpan(componentAccesses), pointChanges);
         JobHandle componentChanges = components.SchedulePlayback();
         JobHandle values = _scheduler.Schedule(new WriteValues(this), _valueAccesses, componentChanges);
         return _scheduler.ScheduleFinally(new ReleaseCommands(points, components), JobScheduleOptions.Default, values);
@@ -181,7 +184,8 @@ public sealed class ContactPoints<TCombine, TComponents> : IDisposable
         }
     }
 
-    private void Add(ref JobCommandWriter commands, in PhysicsStepContext context)
+    private void Add<TMatches>(TMatches matches, ref JobCommandWriter commands, in PhysicsStepContext context)
+        where TMatches : struct, IContactPointMatches
     {
         _references.Clear();
         var anchors = new ReadAnchors(this);
@@ -190,6 +194,7 @@ public sealed class ContactPoints<TCombine, TComponents> : IDisposable
         {
             bool created = match.Point == Entity.Null;
             if (created) match.Point = match.Created.Resolve().Entity;
+            matches.RecordPoint(match.Input, match.Point);
             ref readonly CollisionContact input = ref _detected.Read(match.Input).Contact;
             ReadOnlySpan<ContactBody> bodies = _detected.Bodies(match.Input);
             ContactMaterial first = _world.Read<ContactMaterial>(input.First);
@@ -313,10 +318,11 @@ public sealed class ContactPoints<TCombine, TComponents> : IDisposable
     {
         public void Execute(int producerIndex, ref JobCommandWriter commands) => points.Match(matches, ref commands);
     }
-    private readonly struct AddComponents(ContactPoints<TCombine, TComponents> points, PhysicsStepContext context) : IJobParallelCommandProducer
+    private readonly struct AddComponents<TMatches>(ContactPoints<TCombine, TComponents> points, TMatches matches, PhysicsStepContext context) : IJobParallelCommandProducer
+        where TMatches : struct, IContactPointMatches
     {
         private readonly PhysicsStepContext _context = context;
-        public void Execute(int producerIndex, ref JobCommandWriter commands) => points.Add(ref commands, in _context);
+        public void Execute(int producerIndex, ref JobCommandWriter commands) => points.Add(matches, ref commands, in _context);
     }
     private readonly struct WriteValues(ContactPoints<TCombine, TComponents> points) : IJob
     {
