@@ -24,20 +24,26 @@ float3 bodyInverseInertia(DeviceBodyState body, float3 value)
     return bodyRotate(body.rotation, local.x * body.inverseInertiaX +
         local.y * body.inverseInertiaY + local.z * body.inverseInertiaZ);
 }
-bool bodyHasRotation(DeviceBodyState body)
+uint bodyRotationMask(DeviceBodyState body)
 {
-    return body.inverseInertiaX.x != 0 || body.inverseInertiaY.y != 0 || body.inverseInertiaZ.z != 0;
+    return (body.inverseInertiaX.x != 0 ? 1u : 0u) |
+        (body.inverseInertiaY.y != 0 ? 2u : 0u) |
+        (body.inverseInertiaZ.z != 0 ? 4u : 0u);
 }
+bool bodyHasRotation(DeviceBodyState body) { return bodyRotationMask(body) != 0; }
 float3 bodyLocalInverseInertia(DeviceBodyState body, float3 value)
 {
     return value.x * body.inverseInertiaX + value.y * body.inverseInertiaY + value.z * body.inverseInertiaZ;
 }
 float3 bodyLocalInertia(DeviceBodyState body, float3 value)
 {
-    float3 first = cross(body.inverseInertiaY, body.inverseInertiaZ);
-    float3 second = cross(body.inverseInertiaZ, body.inverseInertiaX);
-    float3 third = cross(body.inverseInertiaX, body.inverseInertiaY);
-    return float3(dot(value, first), dot(value, second), dot(value, third)) / dot(body.inverseInertiaX, first);
+    uint mask = bodyRotationMask(body);
+    float3 x = (mask & 1) != 0 ? body.inverseInertiaX : float3(1, 0, 0);
+    float3 y = (mask & 2) != 0 ? body.inverseInertiaY : float3(0, 1, 0);
+    float3 z = (mask & 4) != 0 ? body.inverseInertiaZ : float3(0, 0, 1);
+    float3 first = cross(y, z), second = cross(z, x), third = cross(x, y);
+    float3 inertia = float3(dot(value, first), dot(value, second), dot(value, third)) / dot(x, first);
+    return float3((mask & 1) != 0 ? inertia.x : 0, (mask & 2) != 0 ? inertia.y : 0, (mask & 4) != 0 ? inertia.z : 0);
 }
 float4 bodyIntegrateRotation(float4 rotation, float3 velocity, float duration)
 {
