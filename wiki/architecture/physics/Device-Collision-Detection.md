@@ -45,6 +45,7 @@ Hull reader 的准备阶段在依赖就绪后读取原顶点、面及面索引�
 [Hull 扩展](../../../assets/Shaders/physics_collision_hull.slang) 从共享设备顶点和面索引读取 support 及支持面。
 有界形状通过 `DeviceConvexCollision<TFirst,TSecond>` 执行 GJK、EPA 和支持面裁剪，
 平面组合通过 `DeviceConvexPlaneCollision<TGeometry>`，两端交换通过 `DeviceReverseCollision<TKernel>`。
+CPU 与设备 simplex 共用的数学职责见[距离、穿透与流形](Geometry.md#距离穿透与流形)。
 
 无序类型 bin 同时包含两种参与顺序时，项目用 `DeviceTypePairCollision<TKernel>` 指定
 内核的 `firstType`。包装按本轮类型交换数值输入，并还原见证点、特征与法向；
