@@ -46,10 +46,10 @@ public sealed partial class DevicePoseSources : IDisposable
     private readonly List<int> _workCounts = [];
     private BufferSrv? _controlView;
     private ResourceBinding[] _advanceBindings = [];
-    private readonly Pipeline[] _pipelines;
+    private readonly List<Pipeline> _pipelines;
     private readonly int _translateKernel;
     private readonly int _twoBoneKernel, _aimKernel, _strideKernel, _xpbdKernel;
-    private readonly VariableLayoutReflection[] _layouts;
+    private readonly List<VariableLayoutReflection> _layouts;
     private readonly CommandContext _commands;
     private readonly Matrix4x4[] _models;
     private int _boneCount;
@@ -100,8 +100,8 @@ public sealed partial class DevicePoseSources : IDisposable
         if (kernels.Stride is { } stride) descriptions.Add(stride);
         _xpbdKernel = kernels.Xpbd.HasValue ? descriptions.Count : -1;
         if (kernels.Xpbd is { } xpbd) descriptions.Add(xpbd);
-        _pipelines = descriptions.Select(kernel => Keep(backend.CreateComputePipeline(device, kernel))).ToArray();
-        _layouts = descriptions.Select(kernel => kernel.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null).ToArray();
+        _pipelines = descriptions.Select(kernel => Keep(backend.CreateComputePipeline(device, kernel))).ToList();
+        _layouts = descriptions.Select(kernel => kernel.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null).ToList();
         CreateOutputs(capacity);
     }
 
@@ -167,7 +167,7 @@ public sealed partial class DevicePoseSources : IDisposable
         }
         return [.. accesses];
     }
-    private QueueCompletion Submit(bool copy)
+    private QueueCompletion Submit(bool copy, int targetKernel = -1, int mapKernel = -1)
     {
         _backend.Begin(_commands, new(0, 0, 8));
         if (copy)
@@ -178,16 +178,30 @@ public sealed partial class DevicePoseSources : IDisposable
             _backend.Barrier(_commands, new BufferBarrier(Models, PipelineSync.Copy, PipelineSync.ComputeShading,
                 ResourceAccess.CopySource, ResourceAccess.UnorderedAccess));
         }
+        else if (mapKernel >= 0)
+        {
+            foreach (RigOperation operation in _rigOperations)
+                if (operation.Kernel == _xpbdKernel) DispatchBodyOperation(mapKernel, operation);
+                else if (operation.AfterPhysics) Dispatch(operation.Kernel, operation.Bindings, operation.Count);
+        }
         else if (_order.Count > 0)
         {
             _physics?.RecordFirstUse(_commands);
             CopyCpuModels();
             Dispatch(0, _advanceBindings, _order.Count);
             for (int level = 0; level < _sampleBindings.Count; level++) Dispatch(1, _sampleBindings[level], _workCounts[level]);
-            foreach (RigOperation operation in _rigOperations) Dispatch(operation.Kernel, operation.Bindings, operation.Count);
+            foreach (RigOperation operation in _rigOperations)
+                if (targetKernel < 0) Dispatch(operation.Kernel, operation.Bindings, operation.Count);
+                else if (operation.Kernel == _xpbdKernel) DispatchBodyOperation(targetKernel, operation);
+                else if (!operation.AfterPhysics) Dispatch(operation.Kernel, operation.Bindings, operation.Count);
         }
         using RecordedCommands recorded = _backend.End(_commands);
         return _backend.Submit(_backend.GetQueue(_device, QueueType.Compute), new([], [], [recorded], [], []));
+    }
+    private void DispatchBodyOperation(int kernel, RigOperation operation)
+    {
+        _bindings["GpuPoseWork"] = [ResourceBinding.ReadOnlyBuffer(operation.Work)];
+        Dispatch(kernel, OrderBindings(_layouts[kernel], _bindings), operation.Count);
     }
     private void Dispatch(int pipeline, ResourceBinding[] bindings, int count)
     {
