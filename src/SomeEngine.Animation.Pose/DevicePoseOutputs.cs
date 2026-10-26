@@ -12,7 +12,10 @@ namespace SomeEngine.Animation.Pose;
 /// <summary>The completed Game pose and its source input, copied for the existing rendering consumer.</summary>
 public readonly record struct DevicePoseOutput(Buffer Buffer, BufferRange Models, BufferRange CurrentSamples,
     BufferRange PreviousSamples, BufferRange Playback, GpuPoseTarget Input, ulong BindingVersion,
-    long Number, double Time) : IComponent;
+    long Number, double Time) : IComponent
+{
+    internal DevicePoseSources? Sources { get; init; }
+}
 
 /// <summary>Keeps the selected GPU bytes readable until their actual consumer has finished copying them.</summary>
 public sealed class DevicePoseOutputRead : IDisposable
@@ -27,6 +30,7 @@ public sealed class DevicePoseOutputRead : IDisposable
     internal DevicePoseOutputRead(Scheduler scheduler, in DevicePoseOutput output)
     {
         _scheduler = scheduler; Output = output;
+        output.Sources?.RetainOutputRead(_copied.Task);
         scheduler.CreateExternalFenceHandle(_copied.Task, GetReadAccesses(scheduler, in output));
     }
 
@@ -87,10 +91,11 @@ internal struct GpuPoseSourceState : IComponent
 {
     internal DevicePoseSources? Sources;
     internal PoseRange Range;
-    internal int PlaybackIndex;
+    internal int PlaybackIndex, BlendStateStart, BlendLocalStart;
     internal GpuPoseTarget Input;
     internal ulong BindingVersion;
     internal ReadOnlyMemory<short> CpuBones;
+    internal ReadOnlyMemory<bool> SelectedBones;
     internal GpuPoseEvaluation? Evaluation;
     internal GpuPosePresentation Presentation;
     internal double PhysicsTime;
@@ -104,6 +109,28 @@ public sealed partial class DevicePoseSources
     private readonly bool[] _outputInitialized = new bool[2];
     private int _outputIndex;
     private ulong _outputLocalCurrent, _outputLocalPrevious, _outputPlayback;
+    private readonly List<Task> _outputReads = [];
+
+    internal void RetainOutputRead(Task completed)
+    {
+        lock (_outputReads)
+        {
+            _outputReads.RemoveAll(read => read.IsCompleted);
+            _outputReads.Add(completed);
+        }
+    }
+
+    private void ReleaseOutputBuffers()
+    {
+        Buffer[] buffers = _outputs;
+        foreach (Buffer buffer in buffers) _objects.Remove(buffer);
+        Task[] reads;
+        lock (_outputReads) reads = _outputReads.ToArray();
+        Task.WhenAll(reads).ContinueWith(static (_, state) =>
+        {
+            foreach (Buffer buffer in (Buffer[])state!) buffer.Dispose();
+        }, buffers, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+    }
 
     public CopyDevicePoseOutput CopyOutput() => new(this);
 
@@ -203,7 +230,7 @@ public sealed partial class DevicePoseSources
                 var result = new DevicePoseOutput(sources._outputs[output], new(start, bytes),
                     new(sources._outputLocalCurrent + start, bytes), new(sources._outputLocalPrevious + start, bytes),
                     new(sources._outputPlayback + (ulong)source.Index * 64, 64), source.Input, source.Binding,
-                    number, source.CommonBodies ? time : source.Input.CalculationTime);
+                    number, source.CommonBodies ? time : source.Input.CalculationTime) { Sources = sources };
                 commands.Replace(source.Entity, in result);
             }
         }
