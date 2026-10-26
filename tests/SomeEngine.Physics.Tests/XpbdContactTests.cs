@@ -188,7 +188,7 @@ public sealed class XpbdContactTests
         world.Add(point, new AvbdContactState { NormalPenalty = 10000 });
         world.CreateRelation(first, middle, new XpbdLength { RestLength = 1, Compliance = .001f });
         world.CreateRelation(middle, last, new XpbdLength { RestLength = 1, Compliance = .001f });
-        world.CreateEntity(new XpbdBend { First = first, Middle = middle, Last = last, MinimumCosine = .5f, Compliance = .001f });
+        ConstraintBodies.Create(world, new XpbdBend { MinimumCosine = .5f, Compliance = .001f }, [first, middle, last]);
         Entity height = world.CreateEntity(new HeightTarget { Body = middle, Height = .1f });
         world.Add(height, new HeightMultiplier());
         QueryHandle bodies = world.Query(new QueryDefinitionBuilder().ReadWrite<BodyPose>().Read<BodyMass>()
@@ -197,7 +197,7 @@ public sealed class XpbdContactTests
             .ReadBuffer<ContactBodyLink>().Optional<DirectedRelationEndpoints<ContactParticipant>>(QueryAccess.Read)
             .ReadWrite<AvbdContactState>().ReadWrite<ContactResponse>());
         QueryHandle lengths = world.Query(new QueryDefinitionBuilder().ReadWrite<XpbdLength>().Read<UndirectedRelationEndpoints<XpbdLength>>());
-        QueryHandle bends = world.Query(new QueryDefinitionBuilder().ReadWrite<XpbdBend>());
+        QueryHandle bends = world.Query(ConstraintBodies.AddReads(new QueryDefinitionBuilder().ReadWrite<XpbdBend>().Build()));
         QueryHandle heights = world.Query(new QueryDefinitionBuilder().Read<HeightTarget>().ReadWrite<HeightMultiplier>());
         var internalForces = AvbdConstraintGroups.Combine(
             AvbdConstraintGroups.Combine(new XpbdForces<XpbdLength, XpbdLengthProjection>(lengths), new XpbdForces<XpbdBend, XpbdBendProjection>(bends)),
