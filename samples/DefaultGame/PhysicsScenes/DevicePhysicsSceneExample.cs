@@ -30,6 +30,7 @@ public sealed partial class PhysicsSceneExample : IApplicationGeometryFeature
             ContactDistance = .02f,
             ContactNormalPenalty = 100,
             ContactTangentPenalty = 100,
+            JointBounds = new JointLongRangeSettings(description.Scene < 400 ? 6 : 0, 32, .99f, .99f),
             ContactSupports = new ContactSupportSettings(description.Dimension == 2 ? Vector3.UnitY : Vector3.UnitZ,
                 1e-5f, 1e-4f, 1e-4f, 1e-4f, .99f, .99f, 1e-6f),
             Timings = timings,
@@ -45,6 +46,8 @@ public sealed partial class PhysicsSceneExample : IApplicationGeometryFeature
     private PhysicsSceneSimulation CreateDeviceSimulation(World world, PhysicsSceneDescription description,
         PhysicsSceneData data, PhysicsSceneSettings settings)
     {
+        if (settings.JointBounds.Levels > 0 && settings.JointBoundsPerJoint == 0)
+            settings = settings with { JointBoundsPerJoint = Math.Max(1, data.Joints.Length - 1) };
         int bodyCount = data.Bodies.Length;
         var gridSettings = new DeviceGridSettings(1, 16);
         var capacity = new DeviceGridCapacity(bodyCount, bodyCount * 8, bodyCount * 16 + 1, bodyCount * 32, 1);
@@ -63,6 +66,7 @@ public sealed partial class PhysicsSceneExample : IApplicationGeometryFeature
         solver["ContactPenaltyMaximum"] = 1e9f;
         solver["ContactPenaltyIncreasePerMeter"] = 100000;
         solver["ContactPressureLengthScale"] = .0005f;
+        solver["JointBoundsPerJoint"] = settings.JointBoundsPerJoint;
         _workload["Grid"] = new JsonObject
         {
             ["CellSize"] = gridSettings.CellSize, ["Levels"] = gridSettings.LevelCount,

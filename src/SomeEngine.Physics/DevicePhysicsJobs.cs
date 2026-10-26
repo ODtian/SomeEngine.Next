@@ -1,5 +1,6 @@
 using SomeEngine.Graphics;
 using SomeEngine.Job;
+using SomeEngine.Diagnostics;
 
 namespace SomeEngine.Physics;
 
@@ -21,6 +22,7 @@ public static class DevicePhysicsJobs
     {
         public void Execute()
         {
+            using var trace = EngineTrace.Begin(DeviceSubmissionTrace<T>.Submit);
             QueueCompletion completion = work.Submit();
             JobHandle ready = scheduler.CreateExternalFenceHandle(new DeviceQueueFence(scheduler, work.Backend, completion), accesses);
             scheduler.ScheduleFinally(new Collect<T>(work), default, ready);
@@ -31,4 +33,9 @@ public static class DevicePhysicsJobs
     {
         public void Execute() => work.Backend.CollectCompleted(work.Device);
     }
+}
+
+internal static class DeviceSubmissionTrace<T>
+{
+    internal static readonly TraceSite Submit = new("physics", $"Device.Submit/{typeof(T)}");
 }
