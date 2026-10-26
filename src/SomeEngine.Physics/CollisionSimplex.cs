@@ -26,73 +26,77 @@ internal static class CollisionSimplex
 
     internal static Vector3 Closest(ReadOnlySpan<ConvexSupportPoint> points, Vector3 target, out Vector4 weights)
     {
-        float nearest = float.PositiveInfinity;
-        Vector3 closest = default;
-        weights = default;
-        Span<int> indices = stackalloc int[4];
-        for (int mask = 1; mask < 1 << points.Length; mask++)
+        Vector3 a = points[0].Difference - target;
+        if (points.Length == 1) { weights = new(1, 0, 0, 0); return a; }
+        Vector3 b = points[1].Difference - target;
+        if (points.Length == 2)
         {
-            int count = 0;
-            for (int index = 0; index < points.Length; index++)
-                if ((mask & (1 << index)) != 0) indices[count++] = index;
-            Vector3 a = points[indices[0]].Difference - target;
-            Vector4 candidate = default;
-            candidate[indices[0]] = 1;
-            if (count > 1)
-            {
-                Vector3 first = points[indices[1]].Difference - target - a;
-                if (count == 2)
-                {
-                    float denominator = first.LengthSquared();
-                    if (denominator == 0) continue;
-                    float parameter = -Vector3.Dot(a, first) / denominator;
-                    candidate[indices[0]] = 1 - parameter;
-                    candidate[indices[1]] = parameter;
-                }
-                else
-                {
-                    Vector3 second = points[indices[2]].Difference - target - a;
-                    if (count == 3)
-                    {
-                        float firstSquared = first.LengthSquared(), secondSquared = second.LengthSquared();
-                        float edgeDot = Vector3.Dot(first, second);
-                        float denominator = firstSquared * secondSquared - edgeDot * edgeDot;
-                        if (denominator <= 0) continue;
-                        float firstProjection = Vector3.Dot(a, first), secondProjection = Vector3.Dot(a, second);
-                        float u = (edgeDot * secondProjection - secondSquared * firstProjection) / denominator;
-                        float v = (edgeDot * firstProjection - firstSquared * secondProjection) / denominator;
-                        candidate[indices[0]] = 1 - u - v;
-                        candidate[indices[1]] = u;
-                        candidate[indices[2]] = v;
-                    }
-                    else
-                    {
-                        Vector3 third = points[indices[3]].Difference - target - a;
-                        float determinant = Vector3.Dot(first, Vector3.Cross(second, third));
-                        if (determinant == 0) continue;
-                        Vector3 right = -a;
-                        float u = Vector3.Dot(right, Vector3.Cross(second, third)) / determinant;
-                        float v = Vector3.Dot(first, Vector3.Cross(right, third)) / determinant;
-                        float w = Vector3.Dot(first, Vector3.Cross(second, right)) / determinant;
-                        candidate[indices[0]] = 1 - u - v - w;
-                        candidate[indices[1]] = u;
-                        candidate[indices[2]] = v;
-                        candidate[indices[3]] = w;
-                    }
-                }
-            }
-            bool inside = true;
-            Vector3 point = default;
-            for (int index = 0; index < points.Length; index++)
-            {
-                if (candidate[index] < 0) inside = false;
-                point += (points[index].Difference - target) * candidate[index];
-            }
-            if (!inside || point.LengthSquared() >= nearest) continue;
-            closest = point;
-            nearest = point.LengthSquared();
-            weights = candidate;
+            Vector3 point = ClosestSegment(a, b, out Vector2 edgeWeights);
+            weights = new(edgeWeights.X, edgeWeights.Y, 0, 0);
+            return point;
         }
+        Vector3 c = points[2].Difference - target;
+        if (points.Length == 3)
+        {
+            Vector3 point = ClosestTriangle(a, b, c, out Vector3 faceWeights);
+            weights = new(faceWeights, 0);
+            return point;
+        }
+        Vector3 d = points[3].Difference - target;
+        Vector3 first = b - a, second = c - a, third = d - a;
+        float determinant = Vector3.Dot(first, Vector3.Cross(second, third));
+        if (determinant != 0)
+        {
+            float u = Vector3.Dot(-a, Vector3.Cross(second, third)) / determinant;
+            float v = Vector3.Dot(first, Vector3.Cross(-a, third)) / determinant;
+            float w = Vector3.Dot(first, Vector3.Cross(second, -a)) / determinant;
+            Vector4 candidate = new(1 - u - v - w, u, v, w);
+            if (candidate.X >= 0 && candidate.Y >= 0 && candidate.Z >= 0 && candidate.W >= 0)
+            { weights = candidate; return Vector3.Zero; }
+        }
+        Vector3 closest = ClosestTriangle(a, b, c, out Vector3 selected);
+        weights = new(selected, 0);
+        Vector3 other = ClosestTriangle(a, b, d, out selected);
+        if (other.LengthSquared() < closest.LengthSquared())
+        { closest = other; weights = new(selected.X, selected.Y, 0, selected.Z); }
+        other = ClosestTriangle(a, c, d, out selected);
+        if (other.LengthSquared() < closest.LengthSquared())
+        { closest = other; weights = new(selected.X, 0, selected.Y, selected.Z); }
+        other = ClosestTriangle(b, c, d, out selected);
+        if (other.LengthSquared() < closest.LengthSquared())
+        { closest = other; weights = new(0, selected.X, selected.Y, selected.Z); }
+        return closest;
+    }
+
+    private static Vector3 ClosestSegment(Vector3 a, Vector3 b, out Vector2 weights)
+    {
+        Vector3 edge = b - a;
+        float squared = edge.LengthSquared();
+        float parameter = squared > 0 ? Math.Clamp(-Vector3.Dot(a, edge) / squared, 0, 1) : 0;
+        weights = new(1 - parameter, parameter);
+        return a + edge * parameter;
+    }
+
+    private static Vector3 ClosestTriangle(Vector3 a, Vector3 b, Vector3 c, out Vector3 weights)
+    {
+        Vector3 ab = b - a, ac = c - a, normal = Vector3.Cross(ab, ac);
+        float squared = normal.LengthSquared();
+        if (squared > 0)
+        {
+            float second = Vector3.Dot(Vector3.Cross(-a, ac), normal) / squared;
+            float third = Vector3.Dot(Vector3.Cross(ab, -a), normal) / squared;
+            weights = new(1 - second - third, second, third);
+            if (weights.X >= 0 && weights.Y >= 0 && weights.Z >= 0)
+                return normal * (Vector3.Dot(a, normal) / squared);
+        }
+        Vector3 closest = ClosestSegment(a, b, out Vector2 edgeWeights);
+        weights = new(edgeWeights.X, edgeWeights.Y, 0);
+        Vector3 other = ClosestSegment(a, c, out edgeWeights);
+        if (other.LengthSquared() < closest.LengthSquared())
+        { closest = other; weights = new(edgeWeights.X, 0, edgeWeights.Y); }
+        other = ClosestSegment(b, c, out edgeWeights);
+        if (other.LengthSquared() < closest.LengthSquared())
+        { closest = other; weights = new(0, edgeWeights.X, edgeWeights.Y); }
         return closest;
     }
 
