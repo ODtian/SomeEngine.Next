@@ -29,6 +29,8 @@
 
 `DeviceAvbdSolver.Initialize()` 初始化子步历史和 Body 方程索引，
 `Iterate(n)` 在当前子步继续 primal/dual 迭代；`Solve()` 组合这两项职责。
+`DeviceAvbdKernels.InitializeGroups` 和 `UpdateGroups` 是可选的具体组阶段，
+分别位于逐行初始化之后和每轮逐行对偶更新之后；阶段之间使用同一提交内的 UAV barrier。
 项目提供具体 Slang `IDeviceAvbdConstraints` 内核与实际绑定，
 `DeviceAvbdConstraintGroups<TFirst,TSecond>` 将多种具体约束组装进同一 Body 局部方程。
 `adjust` 位于局部响应求出之后、位姿提交之前。
@@ -95,7 +97,7 @@ header 与 side 输入共享原 source 读取和输出访问，随后沿同一�
 
 [DeviceContactSource](../../../src/SomeEngine.Physics/DeviceContactData.cs) 在同一次原行读取中
 解析 `ContactPoint`、`ContactMaterial`、`ContactBodyLink` 及受保护的 `ContactParticipant` 端点。
-80 字节 header 保存双方端数、法向、间距、几何采样锚差、材料和预测采样时刻。
+96 字节 header 保存双方端数、法向、间距、几何采样锚差、世界见证中点、材料和预测采样时刻。
 `DeviceContactBodies` 保存原 32 字节 `DeviceContactBody`：实际 Entity、局部锚、插值权重
 及共同 Body 状态索引。项目显式给出接触数和每点端数容量。
 source 的 side upload 写入通过 `WriteInputs(...,extraAccesses)` 声明，header 与 side
@@ -123,3 +125,30 @@ Slang `DeviceContactResponseGroups` 保持同一图组顺序，
 [DeviceContactResults](../../../src/SomeEngine.Physics/DeviceContactResults.cs) 将完成的世界力、
 冲量、初始速度及时间读回原 `ContactResponse`，并核对原实体索引和代次。
 Body 位置与速度沿共同 `DeviceBodyResults` 返回原实体。
+
+## 接触长程支撑
+
+[DeviceContactSupports](../../../src/SomeEngine.Physics/DeviceContactSupports.cs) 在原具有
+`LongRangeBodySupport` 的实体通过 `DeviceSupportBodyBinding` 选择主体支撑表示；
+`DeviceAvbdState<DeviceContactSupportState>` 在原具有 `LongRangeContactSupport` 的接触选择支撑历史。
+主体和接触数值缓存、足迹参与索引、加载权重与局部响应方程由该资源持有。
+主体仍使用同一份 `DeviceBodies`，接触几何和材料仍使用共同 contact header/side。
+支撑主体同时核对原查询中的绑定、实际实体代次与共同预测阶段的 O(1) 主体成员标记。
+`InitializeBuffers()` 将派生工作 buffer 转入共同 UAV 访问状态，接在支撑历史上传之后、首次支撑求解之前。
+
+[支撑分类与加载路径](../../../assets/Shaders/physics_contact_support_build.slang) 沿原静止判定、
+无限法向刚度、摩擦锥、间距和滑移条件选择支撑。
+世界见证点投影到垂直于 UpDirection 的平面，最多三个有效足迹点的非负仿射权重表达支撑位置。
+这些三点组合覆盖足迹凸包；逐高度顺序将支撑面位移传递到上层接触和质心高度界。
+派生足迹容量由项目显式给出。
+
+[局部支撑响应](../../../assets/Shaders/physics_contact_support_solve.slang) 位于 Body 局部分解响应之后，
+先尝试质心高度，再在高度和两个水平力矩方向内求至多三个活动支撑力。
+修正继续使用当前三维/六维局部方程的响应，同时更新原支撑表示中的反力。
+对偶更新后的组阶段按上层至下层顺序交接加载力，投影回原静摩擦圆盘并更新共同 `ContactResponse`。
+运动变化触发足迹重建；退出支撑的辅助力交回普通接触乘子。
+
+`DeviceSupportedContactAvbdConstraints` 将当前辅助世界力交给原接触法向与摩擦数学，
+`DeviceContactSupportAvbdConstraints` 提供支撑 Body 的同一图参与和响应修正。
+原 AVBD 接触乘子保存在自身 buffer，支撑贡献保存在自身对应表示。
+该具体组合的组初始化与组更新入口分别调用 `initializeDeviceContactSupports` 和 `updateDeviceContactSupports`。

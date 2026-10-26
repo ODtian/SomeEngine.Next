@@ -10,7 +10,7 @@ using Buffer = SomeEngine.Graphics.Buffer;
 
 namespace SomeEngine.Physics;
 
-[StructLayout(LayoutKind.Explicit, Size = 80)]
+[StructLayout(LayoutKind.Explicit, Size = 96)]
 public struct DeviceContactConstraint
 {
     [FieldOffset(0)] public uint BodyCount;
@@ -28,6 +28,7 @@ public struct DeviceContactConstraint
     [FieldOffset(64)] public float RestitutionThreshold;
     [FieldOffset(68)] public uint Predicted;
     [FieldOffset(72)] public double SampleTime;
+    [FieldOffset(80)] public Vector3 WorldPoint;
 }
 
 /// <summary>Weighted anchor occurrences shared by contact solvers; the capacity is supplied by the project.</summary>
@@ -122,6 +123,7 @@ public readonly struct DeviceContactSource(DeviceContactBodies bodies) : IDevice
             StaticFriction = material.StaticFriction, DynamicFriction = material.DynamicFriction,
             Restitution = material.Restitution, RestitutionThreshold = material.RestitutionThreshold,
             Predicted = component.Prediction.Enabled ? 1u : 0u, SampleTime = component.Prediction.SampleTime,
+            WorldPoint = component.WorldPoint,
         };
     }
 }
