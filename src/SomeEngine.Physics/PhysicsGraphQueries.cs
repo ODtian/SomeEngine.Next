@@ -86,6 +86,24 @@ internal sealed class PhysicsGraphQueries : IDisposable
     internal void ReadBodies(PhysicsGraphData graph) => _world.ExecuteReadQuery(Queries[0], ref graph,
         static (scoped QueryCursor rows, ref PhysicsGraphData data) => data.ReadBodies(rows));
 
+    internal void ReadGraph<TInputs>(PhysicsGraphData graph, TInputs inputs, in PhysicsStepContext context)
+        where TInputs : struct, IPhysicsGraphInputs
+    {
+        var read = new ReadGraphInputs<TInputs>(this, graph, inputs, context);
+        _world.ExecuteReadQuery(Queries[2], ref read,
+            static (scoped QueryCursor rows, ref ReadGraphInputs<TInputs> state) => state.Execute(rows));
+    }
+
+    private readonly struct ReadGraphInputs<TInputs>(PhysicsGraphQueries queries, PhysicsGraphData graph,
+        TInputs inputs, PhysicsStepContext context) where TInputs : struct, IPhysicsGraphInputs
+    {
+        public void Execute(scoped QueryCursor rows)
+        {
+            var builder = new PhysicsConstraintGraphBuilder(graph, new PhysicsBodies(rows));
+            inputs.ReadGraph(in context, queries.Reads, 0, ref builder);
+        }
+    }
+
     internal ReadOnlySpan<Entity> GlobalEntities(int query, PhysicsGraphData graph) => query switch
     {
         0 => CollectionsMarshal.AsSpan(_members[0]),

@@ -15,7 +15,7 @@ internal static class AvbdConstraintRows<TConstraint, TMath>
             ref readonly TConstraint constraint = ref row.ReadRef<TConstraint>();
             TMath.Initialize(in constraint, row, bodies, in context, retention);
             for (int index = 0; index < TMath.GetBodyCount(in constraint, row, in context); index++)
-                byBody.Add(TMath.GetBody(in constraint, row, index, in context), row.Entity);
+                byBody.Add(PhysicsConstraintBodies.GetBody<TConstraint, TMath>(in constraint, row, index, bodies, in context), row.Entity);
         }
     }
     internal static void Accumulate(scoped PhysicsQueryRows rows, Entity body, scoped PhysicsBodies bodies,

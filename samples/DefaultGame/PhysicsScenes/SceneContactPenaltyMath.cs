@@ -17,6 +17,8 @@ internal readonly struct SceneContactPenaltyMath<TMath> : IAvbdConstraint<Contac
         TMath.GetBodyCount(in point, row, in context);
     public static Entity GetBody(in ContactPoint point, scoped QueryRow row, int index, in PhysicsStepContext context) =>
         TMath.GetBody(in point, row, index, in context);
+    public static bool TryGetBody(in ContactPoint point, scoped QueryRow row, int index, scoped PhysicsBodies bodies,
+        in PhysicsStepContext context, out Entity body) => TMath.TryGetBody(in point, row, index, bodies, in context, out body);
     public static int GetReadEntityCount(in ContactPoint point, scoped QueryRow row, in PhysicsStepContext context) =>
         TMath.GetReadEntityCount(in point, row, in context);
     public static Entity GetReadEntity(in ContactPoint point, scoped QueryRow row, int index, in PhysicsStepContext context) =>

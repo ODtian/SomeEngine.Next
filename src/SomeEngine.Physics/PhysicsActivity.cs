@@ -86,8 +86,7 @@ internal sealed class PhysicsActivityData<TInputs> : IDisposable where TInputs :
         {
             if (data._queries.ReadMembers()) return false;
             data._graph.Begin(); data._queries.ReadBodies(data._graph);
-            var builder = new PhysicsConstraintGraphBuilder(data._graph);
-            data._inputs.ReadGraph(in context, data._queries.Reads, 0, ref builder);
+            data._queries.ReadGraph(data._graph, data._inputs, in context);
             if (data._graph.Finish()) return false;
             EntityQueryViews global = group.Get(0);
             var bodies = new PhysicsBodies(global.Get(0), global.Get(1), global.Get(2));

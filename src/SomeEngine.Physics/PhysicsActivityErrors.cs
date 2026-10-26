@@ -24,7 +24,7 @@ public readonly ref struct PhysicsActivityErrors
         PhysicsConstraintError error = TParticipants.GetActivityError(in constraint, row, bodies, in context);
         if (!Exceeds(in error)) return;
         for (int index = 0; index < TParticipants.GetBodyCount(in constraint, row, in context); index++)
-            _bodies.Add(TParticipants.GetBody(in constraint, row, index, in context));
+            _bodies.Add(PhysicsConstraintBodies.GetBody<TConstraint, TParticipants>(in constraint, row, index, bodies, in context));
         for (int index = 0; index < TParticipants.GetReadBodyCount(in constraint, row, in context); index++)
             _bodies.Add(TParticipants.GetReadBody(in constraint, row, index, in context));
     }

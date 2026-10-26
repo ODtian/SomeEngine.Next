@@ -17,6 +17,8 @@ public readonly struct AvbdSupportedContactMath : IAvbdConstraint<ContactPoint>
         AvbdContactMath.GetBodyCount(in point, row, in context);
     public static Entity GetBody(in ContactPoint point, scoped QueryRow row, int index, in PhysicsStepContext context) =>
         AvbdContactMath.GetBody(in point, row, index, in context);
+    public static bool TryGetBody(in ContactPoint point, scoped QueryRow row, int index, scoped PhysicsBodies bodies,
+        in PhysicsStepContext context, out Entity body) => AvbdContactMath.TryGetBody(in point, row, index, bodies, in context, out body);
     public static void Initialize(in ContactPoint point, scoped QueryRow row, scoped PhysicsBodies bodies,
         in PhysicsStepContext context, float retention) => AvbdContactMath.Initialize(in point, row, bodies, in context, retention);
     public static void AccumulateBodyEquation(in ContactPoint point, scoped QueryRow row, Entity body,
