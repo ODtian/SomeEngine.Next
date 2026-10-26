@@ -104,6 +104,8 @@ public sealed class DeviceAvbdBodyEquations : IDisposable, IDevicePhysicsSubmiss
         public System.Numerics.Vector3 InertiaX, InertiaY, InertiaZ, LinearGradient, AngularGradient;
         public uint Dimensions;
         public System.Numerics.Quaternion RotationFrame;
+        public uint ConstraintRows;
+        public float Duration;
     }
     public void Dispose()
     {
