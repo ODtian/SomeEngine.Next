@@ -1,5 +1,6 @@
 #ifndef PHYSICS_BODY_ACTIVITY
 #define PHYSICS_BODY_ACTIVITY
+#include "physics_dispatch.slang"
 #include "physics_body_activity_types.slang"
 #include "physics_constraint_graph.slang"
 #include "physics_body_input_changes.slang"
@@ -40,7 +41,7 @@ struct DeviceNoConstraintActivity : IDeviceConstraintActivity
 [shader("compute")][numthreads(64,1,1)]
 void ApplyDeviceActivityInputs(uint3 id:SV_DispatchThreadID)
 {
-    uint index=id.x;
+    uint index=devicePhysicsThreadIndex(id,64);
     if(index>=ActivityStep.bodies) return;
     DeviceBodyActivityInput input=DeviceBodyActivityInputs[index];
     DeviceBodyActivityState activity;
@@ -65,15 +66,14 @@ void ApplyDeviceActivityInputs(uint3 id:SV_DispatchThreadID)
 [shader("compute")][numthreads(64,1,1)]
 void ClearDeviceActivitySignals(uint3 id:SV_DispatchThreadID)
 {
+    uint index=devicePhysicsThreadIndex(id,64);
     if(ActivityStep.phase==0)
     {
-        uint rows,stride,participants;
+        uint rows,stride;
         DeviceActivityPreviousRows.GetDimensions(rows,stride);
-        DeviceActivityPreviousParticipants.GetDimensions(participants,stride);
-        if(id.x<rows) DeviceActivityPreviousRows[id.x]=(DeviceActivityRow)0;
-        if(id.x<participants) DeviceActivityPreviousParticipants[id.x]=uint4(0);
+        if(index<rows) DeviceActivityPreviousRows[index]=(DeviceActivityRow)0;
     }
-    else if(id.x<ActivityStep.bodies) DeviceActivityIslandSignals[id.x]=0;
+    else if(index<ActivityStep.bodies) DeviceActivityIslandSignals[index]=0;
 }
 bool deviceActivityBodyChanged(uint body)
 {
@@ -82,7 +82,7 @@ bool deviceActivityBodyChanged(uint body)
 [shader("compute")][numthreads(64,1,1)]
 void CollectDeviceActivityBodies(uint3 id:SV_DispatchThreadID)
 {
-    uint index=id.x;
+    uint index=devicePhysicsThreadIndex(id,64);
     if(index>=ActivityStep.bodies||ConstraintGraphParents[index]==0xffffffff) return;
     uint root=ConstraintGraphParents[index];
     DeviceBodyState body=DeviceBodyStates[index];
@@ -162,7 +162,7 @@ void readDeviceActivityRows<T : IDeviceConstraintActivity>(uint index,T rows)
 [shader("compute")][numthreads(64,1,1)]
 void WakeDeviceBodies(uint3 id:SV_DispatchThreadID)
 {
-    uint index=id.x;
+    uint index=devicePhysicsThreadIndex(id,64);
     if(index>=ActivityStep.bodies||ConstraintGraphParents[index]==0xffffffff) return;
     uint signals=DeviceActivityIslandSignals[ConstraintGraphParents[index]];
     if((signals&1)==0) return;
@@ -182,7 +182,7 @@ void WakeDeviceBodies(uint3 id:SV_DispatchThreadID)
 [shader("compute")][numthreads(64,1,1)]
 void AdvanceDeviceBodyQuietTime(uint3 id:SV_DispatchThreadID)
 {
-    uint index=id.x;
+    uint index=devicePhysicsThreadIndex(id,64);
     if(index>=ActivityStep.bodies||ConstraintGraphParents[index]==0xffffffff) return;
     DeviceBodyActivityState activity=DeviceBodyActivities[index];
     if((activity.flags&2)==0||(activity.flags&4)!=0) return;
@@ -194,7 +194,7 @@ void AdvanceDeviceBodyQuietTime(uint3 id:SV_DispatchThreadID)
 [shader("compute")][numthreads(64,1,1)]
 void FinishDeviceBodyActivity(uint3 id:SV_DispatchThreadID)
 {
-    uint index=id.x;
+    uint index=devicePhysicsThreadIndex(id,64);
     if(index>=ActivityStep.bodies||ConstraintGraphParents[index]==0xffffffff||
         (DeviceActivityIslandSignals[ConstraintGraphParents[index]]&6)!=0) return;
     DeviceBodyActivityState activity=DeviceBodyActivities[index];
