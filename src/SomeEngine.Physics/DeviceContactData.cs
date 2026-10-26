@@ -1,6 +1,7 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
 using SomeEngine.ECS;
+using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Relations;
 using SomeEngine.ECS.Systems;
@@ -10,7 +11,7 @@ using Buffer = SomeEngine.Graphics.Buffer;
 
 namespace SomeEngine.Physics;
 
-[StructLayout(LayoutKind.Explicit, Size = 96)]
+[StructLayout(LayoutKind.Explicit, Size = 128)]
 public struct DeviceContactConstraint
 {
     [FieldOffset(0)] public uint BodyCount;
@@ -29,6 +30,11 @@ public struct DeviceContactConstraint
     [FieldOffset(68)] public uint Predicted;
     [FieldOffset(72)] public double SampleTime;
     [FieldOffset(80)] public Vector3 WorldPoint;
+    [FieldOffset(96)] public Entity FirstGeometry;
+    [FieldOffset(104)] public Entity SecondGeometry;
+    [FieldOffset(112)] public int FirstFeature;
+    [FieldOffset(116)] public int SecondFeature;
+    [FieldOffset(120)] public int PointIndex;
 }
 
 /// <summary>Weighted anchor occurrences shared by contact solvers; the capacity is supplied by the project.</summary>
@@ -109,12 +115,14 @@ public readonly struct DeviceContactSource(DeviceContactBodies bodies) : IDevice
     public static void Collect(in ContactPoint component, ref JobResourceAccessBuilder resources) { }
     public QueryDefinition AddReads(QueryDefinition definition) => definition.WithOptionalRead<DeviceBodyBinding>()
         .WithOptionalRead<DeviceConstraintBinding<DeviceContactConstraint>>().WithAccess(new QueryDefinitionBuilder()
-            .Read<ContactMaterial>().ReadBuffer<ContactBodyLink>().Optional<DirectedRelationEndpoints<ContactParticipant>>(QueryAccess.Read).Build());
+            .Read<ContactMaterial>().Read<UndirectedRelationEndpoints<ContactPoint>>().ReadBuffer<ContactBodyLink>()
+            .Optional<DirectedRelationEndpoints<ContactParticipant>>(QueryAccess.Read).Build());
     public DeviceContactConstraint Read(in ContactPoint component, scoped QueryRow row, scoped QueryCursor access)
     {
         ReadOnlySpan<ContactBodyLink> links = row.ReadBuffer<ContactBodyLink>().AsSpan();
         int offset = bodies.Write(row.Read<DeviceConstraintBinding<DeviceContactConstraint>>().Index, links, access);
         ref readonly ContactMaterial material = ref row.ReadRef<ContactMaterial>();
+        ref readonly var ends = ref row.ReadRef<UndirectedRelationEndpoints<ContactPoint>>();
         return new()
         {
             BodyCount = (uint)links.Length, FirstBodyCount = (uint)component.FirstBodyCount, BodyOffset = (uint)offset,
@@ -124,6 +132,8 @@ public readonly struct DeviceContactSource(DeviceContactBodies bodies) : IDevice
             Restitution = material.Restitution, RestitutionThreshold = material.RestitutionThreshold,
             Predicted = component.Prediction.Enabled ? 1u : 0u, SampleTime = component.Prediction.SampleTime,
             WorldPoint = component.WorldPoint,
+            FirstGeometry = ends.EndpointA, SecondGeometry = ends.EndpointB,
+            FirstFeature = component.FirstFeature, SecondFeature = component.SecondFeature, PointIndex = component.PointIndex,
         };
     }
 }

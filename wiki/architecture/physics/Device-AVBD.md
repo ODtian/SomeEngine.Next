@@ -97,7 +97,7 @@ header 与 side 输入共享原 source 读取和输出访问，随后沿同一�
 
 [DeviceContactSource](../../../src/SomeEngine.Physics/DeviceContactData.cs) 在同一次原行读取中
 解析 `ContactPoint`、`ContactMaterial`、`ContactBodyLink` 及受保护的 `ContactParticipant` 端点。
-96 字节 header 保存双方端数、法向、间距、几何采样锚差、世界见证中点、材料和预测采样时刻。
+128 字节 header 保存双方端数、法向、间距、几何采样锚差、世界见证中点、材料、预测采样时刻及双方几何身份和特征。
 `DeviceContactBodies` 保存原 32 字节 `DeviceContactBody`：实际 Entity、局部锚、插值权重
 及共同 Body 状态索引。项目显式给出接触数和每点端数容量。
 source 的 side upload 写入通过 `WriteInputs(...,extraAccesses)` 声明，header 与 side
