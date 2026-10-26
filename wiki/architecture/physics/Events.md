@@ -75,6 +75,20 @@ Buffer 先于 Header 记录，结构完成依赖覆盖创建、回放与命令�
 `QueryReadResources` 可为用户适配持有当前组件中的引用资源，读取范围仍由原具体描述器提供。
 用户约束沿同一参数、参与、力读取和断裂阶段入口接入。
 
+[DeviceConstraintForceSamples<TData>](../../../src/SomeEngine.Physics/DeviceConstraintForceSamples.cs)
+沿具体 `IDeviceConstraintForces` 读取当前设备表示的世界力与质心力矩。
+同一 Body 的写端先按实际索引合并；具体力函数汇总该 Body 的全部端点贡献。
+`DeviceJointAvbdForces` 从原 Joint 对偶和当前共同 Jacobian 取得这些量，数值历史继续驻留。
+`Readback()` 在真实 RHI fence 后映射本次观测，记录原约束实体代次和实际受力 Body 身份。
+
+原约束上的 `DeviceConstraintForceBinding<TData>` 选择观测资源，
+`DeviceConstraintForces<TConstraint,TData>` 按原参数行和实体代次实现共同力接口。
+调用方在 `QueryReadResources` 注册 `DeviceConstraintForceResources<TData>`，
+并将 `samples.GetReadAccesses(scheduler)` 交给 `BreakConstraints` 的附加读取范围构造。
+父作业持有本次观测数组的实际读范围，具体描述器在原行作用域复核同一引用。
+组合次序为 `samples.Readback()`、原 `BreakConstraints`、`events.Emit()`；
+阈值、逐 Body 判断、普通销毁命令和完成步事件继续由原阶段持有。
+
 以下是阶段组合的使用例子，具体查询、参数和消费者由项目提供：
 
 ```csharp
