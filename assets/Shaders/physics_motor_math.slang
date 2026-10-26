@@ -2,17 +2,12 @@
 #define PHYSICS_MOTOR_MATH
 #include "physics_joint_math.slang"
 #include "physics_motor_data.slang"
+#include "physics_constraint_math.slang"
 struct DeviceMotorRow
 {
     DeviceJointRow derivative;
     float error; float initialError; float stiffness; float maximum;
 };
-DeviceBodyState deviceBodyStart(DeviceBodyState body)
-{
-    body.rotation = body.startRotation;
-    bodySetCenterOfMass(body, body.startCenterOfMass);
-    return body;
-}
 DeviceMotorRow deviceMotorRow(DeviceMotorConstraint motor, DeviceBodyState source, DeviceBodyState target,
     float duration, double endTime, uint dof)
 {
