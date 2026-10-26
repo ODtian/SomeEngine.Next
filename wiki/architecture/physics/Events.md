@@ -46,6 +46,23 @@ Buffer 先于 Header 记录，结构完成依赖覆盖创建、回放与命令�
 观察阶段再记录本流 cleanup 组件移除；实体收尾继续沿原 ECS cleanup 职责进行。
 筛选离开通过同流的派生成员索引和历史结果发出 End，容量持续复用。
 
+`ContactEvents<TScope,TSource>` 用具体 `IContactEventSource` 提供当前
+`ContactEventSample`，沿同一观察状态和 cleanup 流程交付结果。
+来源通过 `AddBodyReads`、`AddReads` 与 `AddReadResources` 声明原查询中的实际读取，
+`AddAccesses` 声明来源持有的其他资源；`TryRead` 在有效行和 Body 借用内返回双方几何、
+世界点、法向、间距和力。常规入口选择 `BodyContactEventSource`。
+源码见 [ContactEventSources](../../../src/SomeEngine.Physics/ContactEventSources.cs)。
+
+[DeviceContactSamples](../../../src/SomeEngine.Physics/DeviceContactSamples.cs) 从项目选择的
+接触参数、当前设备主体与加权锚取得完成步观测。
+`Readback()` 先执行具体采样内核，再沿真实 RHI fence 读取观测数组；
+`DeviceContactEventSource` 按原参数绑定和点的实体代次读取该观测。
+主体结果可以在选定的结果消费者中读取，事件流继续经过原 `PhysicsEventBuffer` 和 Frame。
+[共同采样数学](../../../assets/Shaders/physics_contact_samples.slang) 使用当前加权见证点的中点、
+共同接触间距和原参数中的几何身份。`DeviceTriggerEventForces` 返回零力，
+`DeviceResponseEventForces` 在 [响应采样头](../../../assets/Shaders/physics_contact_response_samples.slang)
+读取所选 `DeviceContactResponseState`；用户具体 `IDeviceContactEventForces` 使用同一采样入口。
+
 ## 力阈值与具体适配
 
 `ConstraintBreakSettings` 保存在约束实体，指定每个实际参与 Body 的最大力与最大力矩。
