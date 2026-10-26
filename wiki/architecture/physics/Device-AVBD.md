@@ -47,6 +47,13 @@ Target 反馈的源 Body 参与当前框架读取，目标 Body 参与力装配�
 局部 Body 装配沿图的实际写端筛选，图连接和颜色仍覆盖动态读取依赖。
 世界目标的反作用力使用原导数，源端曲率保持其世界目标语义。
 
+项目自己的 `IDeviceConstraintSource` 可在实际原行读取附加组件；
+自己的 `IDeviceAvbdConstraints` 可绑定额外设备资源，使用共同 `DeviceAvbdStep`、
+`deviceAvbdMaterial` 与 `deviceAvbdAddRow` 装配能量。
+[用户能量行为](../../../tests/SomeEngine.Graphics.Direct3D12.Tests/DeviceAvbdUserTests.cs)
+将项目目标能量与内置连接放在同一个具体组合中，
+两个对偶历史分别驻留，并在同一个 Body 方程中同时贡献梯度与曲率。
+
 ## 实际设备参与图
 
 [DeviceConstraintGraph](../../../src/SomeEngine.Physics/DeviceConstraintGraph.cs) 使用
