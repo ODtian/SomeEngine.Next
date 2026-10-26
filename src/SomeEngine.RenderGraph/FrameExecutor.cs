@@ -377,6 +377,12 @@ internal sealed partial class FrameExecutor
             GraphIdentity identity = structureIndex.AccessIds[sourceRow];
             PassResourceAccess source = structureIndex.Structure.Accesses.Get(identity);
             int i = _accessIndices[identity];
+            if (!_passes[ResolvePass(source.Pass)].Enabled)
+            {
+                DetachAccess(i);
+                _accesses[i] = default;
+                continue;
+            }
             BufferRange bufferRange = source.BufferRange;
             TextureSubresourceRange textureRange = source.TextureRange;
             GraphIdentity target = source.Target;

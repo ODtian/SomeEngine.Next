@@ -3,16 +3,16 @@ using SomeEngine.Job;
 
 namespace SomeEngine.Physics;
 
-internal interface IDevicePhysicsSubmission
+public interface IDevicePhysicsSubmission
 {
     IGraphicsBackend Backend { get; }
     Device Device { get; }
     QueueCompletion Submit();
 }
 
-internal static class DevicePhysicsJobs
+public static class DevicePhysicsJobs
 {
-    internal static JobHandle Schedule<T>(Scheduler scheduler, T work, JobResourceAccess[] accesses,
+    public static JobHandle Schedule<T>(Scheduler scheduler, T work, JobResourceAccess[] accesses,
         JobHandle dependency) where T : IDevicePhysicsSubmission =>
         scheduler.Schedule(new Submit<T>(scheduler, work, accesses), accesses, dependency);
 
