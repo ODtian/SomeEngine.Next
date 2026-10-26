@@ -8,6 +8,38 @@ namespace SomeEngine.ECS.Systems.Tests;
 public sealed class EntityQueryJobsTests
 {
     [Fact]
+    public void AddedAccessWritesTheOriginalFilteredComponentAndBuffer()
+    {
+        using var world = new World();
+        Entity selected = world.CreateEntity(new PointValue(7));
+        world.AddTag<Chosen>(selected);
+        world.AddBuffer<PathValue>(selected);
+        world.ExecuteBufferWrite<PathValue>(selected, static values => values.Add(new(5)));
+        Entity other = world.CreateEntity(new PointValue(19));
+        world.AddBuffer<PathValue>(other);
+        world.ExecuteBufferWrite<PathValue>(other, static values => values.Add(new(23)));
+        QueryDefinition members = new QueryDefinitionBuilder().All<Chosen>().Read<PointValue>().ReadBuffer<PathValue>().Build();
+        QueryDefinition writes = new QueryDefinitionBuilder().ReadWrite<PointValue>().WriteBuffer<PathValue>().Build();
+        QueryHandle query = world.Query(members.WithAccess(writes));
+
+        world.ExecuteQuery(query, static rows =>
+        {
+            foreach (QueryRow row in rows.Rows)
+            {
+                var values = row.Buffer<PathValue>();
+                row.ReadWrite<PointValue>() = new(row.Read<PointValue>().Value + values[0].Value);
+                values[0] = new(values[0].Value + 1);
+            }
+        });
+
+        Assert.Equal(12, world.Read<PointValue>(selected).Value);
+        world.ExecuteBufferRead<PathValue>(selected, static values => Assert.Equal(6, values[0].Value));
+        Assert.Equal(19, world.Read<PointValue>(other).Value);
+        world.ExecuteBufferRead<PathValue>(other, static values => Assert.Equal(23, values[0].Value));
+        world.ReleaseQuery(query);
+    }
+
+    [Fact]
     public void DerivedReadQueryKeepsTheOriginalMembersAndBufferValues()
     {
         using var world = new World();
