@@ -20,6 +20,15 @@
 项目在 CPU 输入需要交付设备时显式选用这些阶段，后续阶段读取 Resident 状态。
 `GetReadAccess`、`GetWriteAccess` 为项目自己的设备工作提供原 buffer 的实际访问描述。
 
+[DeviceBodyInputs](../../../src/SomeEngine.Physics/DeviceBodyInputs.cs) 在装配时绑定原 World、
+参与查询和同一 DeviceBodies。`Upload()` 从有效 QueryRow 读取原 Pose、Mass、Velocity 与
+StepState 的写版本；新实体按绑定初始化整行，既有实体只复制发生 CPU 修改的组件字段。
+例如，只修改 Velocity 的输入保留设备当前 Pose，修改 Mass 的输入保留当前运动与步历史。
+这是连续驻留步的一种公开输入用法；上述整批输入阶段继续服务显式初始化。
+
+来源版本与已同步字段由 DeviceBodies 单处保存，查询和传输范围由输入持有者复用。
+实际数据继续位于原 208B States，上传复用原 staging 和命令资源。
+
 `DeviceBodyState` 与 `physics_bodies.slang` 对应，大小为 208 字节。
 当前原点/旋转位于 0/16，线速度/逆质量位于 32/44，角速度位于 48；
 局部质心位于 64，完整逆惯量的三行位于 80/96/112；
@@ -40,8 +49,10 @@
 
 [DeviceBodyResults](../../../src/SomeEngine.Physics/DeviceBodyResults.cs) 在项目选择 CPU 消费时创建。
 `Readback(rowsPerPacket)` 提交原状态 buffer 的复制，沿外部 fence 等待真实设备完成，
-随后生成式 Job 根据原 `DeviceBodyBinding` 将位姿、速度及 `BodyStepState` 写回相应实体。
+随后按原 `DeviceBodyBinding` 捕获消费实体，经 EntityQueryJobs 的实际行范围写入位姿、速度及 `BodyStepState`。
 回写按设备结果中的 Entity 编号与代次匹配实际实体，旧步结果保持其来源身份。
+写入与自身来源版本确认处于同一行写访问期。较早完成结果在设备后续步运行后消费时，
+下次输入将这次 CPU 镜像写入识别为已同步来源，继续保留设备当前状态；外部 CPU 修改仍按新版本上传。
 阶段返回的 JobHandle 覆盖提交、读回、组件写入与设备完成收集。
 后续变换和动画继续读取同一实体组件。公开行为见 `DeviceXpbdTests`。
 
