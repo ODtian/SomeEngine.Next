@@ -30,6 +30,8 @@
 
 上界和下界各用非负乘子，净力为上界减下界；等长界使用一个有符号力。活动界的力、Jacobian 与正几何曲率进入当前六维 Body 方程，全部 Body 更新后进行辅助界 dual 更新。原关节和长程界分别保存各自乘子，单位为 N；距离及初始误差为 m，数值度量为 N/m。
 
+径向力、局部锚与正曲率装配由共同 `DistanceRangeMath` 持有，项目显式创建的[距离区间](Distance-Ranges.md)通过同一数学接入原 Body 方程。
+
 ## 接触支撑范围与构造
 
 `ContactLongRangeConstraints(supportBodies, contacts, settings)` 接收两个显式工作查询。`supportBodies` 只选择项目附加 LRC 工作组件和 Buffer 的模拟实体；共同 AVBD Body 查询继续包含该步实际参与的刚体或节点。支撑阶段在有效回调中同时借用工作查询与原接触查询，沿外层 `PhysicsBodies` 读取真实状态。固定地面和运动学参考端使用其共同状态提供支撑输入。
