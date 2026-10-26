@@ -4,23 +4,11 @@
 #define PHYSICS_CONTACT_SUPPORT_BUILD
 #include "physics_avbd_contact.slang"
 #include "physics_contact_support_data.slang"
+#include "physics_contact_support_geometry.slang"
 bool deviceSupportContactSelected(uint row)
 {
     DeviceContactAvbdConstraints contact;
     return contact.active(row)&&deviceConstraintSelected(DeviceContactsMetadata[row],DeviceContactSupportSelection[row]);
-}
-float3 deviceSupportSidePoint(DeviceContactConstraint point,bool second,bool start)
-{
-    float3 result=float3(0);
-    uint first=second?point.firstBodyCount:0,last=second?point.bodyCount:point.firstBodyCount;
-    for(uint end=first;end<last;end++)
-    {
-        DeviceContactBody link=DeviceContactBodyLinks[point.bodyOffset+end];
-        DeviceBodyState body=DeviceBodyStates[link.stateIndex];
-        if(start) body=deviceBodyStart(body);
-        result+=(body.position+bodyRotate(body.rotation,link.localPoint))*link.weight;
-    }
-    return result;
 }
 bool deviceSupportHasMotion(uint bodyIndex)
 {
