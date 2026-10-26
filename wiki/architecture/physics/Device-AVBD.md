@@ -53,7 +53,10 @@ Jacobian、惯性块与响应共同投影到该子空间。
 在子步结束时刻计算目标位置、旋转和速度，将阻尼 `D/h` 合入平衡点与等效刚度。
 物理力/力矩按原上限投影，对偶力继续保存在对应历史行。
 
-共同 `physics_joint_bodies.slang` 和 `physics_motor_bodies.slang` 持有原参与角色。
+共同 `physics_joint_participants.slang` 和 `physics_motor_bodies.slang` 持有原参与角色。
+`physics_constraint_bodies.slang` 提供具体参与接口和分组，
+`physics_avbd_joint_state.slang` 持有关节对偶表示；这些纯数据入口可供独立完成结果读取使用。
+原 `physics_joint_bodies.slang` 继续聚合关节参与与图入口。
 Target 反馈的源 Body 参与当前框架读取，目标 Body 参与力装配；Both 反馈的两端共同受力。
 局部 Body 装配沿图的实际写端筛选，图连接和颜色仍覆盖动态读取依赖。
 世界目标的反作用力使用原导数，源端曲率保持其世界目标语义。
