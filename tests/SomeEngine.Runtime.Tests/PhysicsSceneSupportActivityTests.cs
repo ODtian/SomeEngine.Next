@@ -12,7 +12,7 @@ namespace SomeEngine.Runtime.Tests;
 public sealed class PhysicsSceneSupportActivityTests
 {
     [Fact]
-    public void TheOriginalSpatialPyramidKeepsItsSolvedContactForcesWhileSleeping()
+    public void TheOriginalSpatialPyramidKeepsItsSleepingContactForcesWhileAnotherBodyFalls()
     {
         using var scheduler = new Scheduler(new() { WorkerCount = 2 });
         using World world = WorldJobs.CreateWorld(scheduler: scheduler);
@@ -20,19 +20,24 @@ public sealed class PhysicsSceneSupportActivityTests
         using var scene = PhysicsSceneExample.CreateCpu(description).CreateSimulation(world);
         QueryHandle points = world.Query(new QueryDefinitionBuilder().Read<ContactPoint>().Read<ContactResponse>());
         var forces = new Dictionary<Entity, Vector3>();
+        Entity falling = world.CloneEntity(scene.Bodies.Span[1]);
+        world.Replace(falling, new BodyPose { Position = new(100, 0, 100), Rotation = Quaternion.Identity });
         for (int frame = 0; frame < 31; frame++)
         {
             scene.Frame.AdvanceTime(scene.StepSeconds * (frame == 0 ? 1.5 : 1));
             scene.CompleteForRead();
             if (frame == 29)
+            {
                 world.ExecuteReadQuery(points, rows =>
                 {
                     foreach (QueryRow row in rows.Rows)
                         forces.Add(row.Entity, row.ReadRef<ContactResponse>().ForceOnSecond);
                 });
+            }
         }
 
         Assert.Contains(forces.Values, force => force.LengthSquared() > 1);
+        Assert.True(world.Read<BodyPose>(falling).Position.Z < 100);
         world.ExecuteReadQuery(points, rows =>
         {
             foreach (QueryRow row in rows.Rows)

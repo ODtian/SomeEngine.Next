@@ -26,6 +26,8 @@
 
 `InitializeContactResponses` 持有包含可选 `BodyActivity` 的只读主体查询，并在 `Dispose` 时释放。接触的动态参与者全部睡眠时，当前 `ContactResponse` 保留已解出的世界力，时间区间推进到当前子步。AVBD 图的实际主体工作范围为空时，求解阶段直接完成，原乘子、方程和支撑状态继续保留。
 
+AVBD 的全局数值主体范围读取原图的 `Writes`，各约束查询沿原岛的活动批次筛选实体，初始化与对偶更新使用这些相同范围。元数据与活动阶段继续读取完整连通关系。原静置空间金字塔与另一个持续下落主体共存时，睡眠接触的支撑力沿原实体保留。
+
 `Activity(settings, events)` 可接入 [完成步事件](Events.md)，将每次 Sleep/Wake 转换连同原子步、时刻写入该步输出。
 
 活动数学参考项目研究分支 `codex/job331-380` 的 `Native/Islands.cpp` 中 `wakeBody`、`researchBuildIslands` 和 `finishIslandStep`：动态连通传播、速度与尺度角速度、位移及安静时间使用同样的物理量。原分支和本 C# 实现使用仓库 Apache 2.0 LICENSE。
