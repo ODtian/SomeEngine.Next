@@ -230,7 +230,7 @@ public sealed partial class DevicePoseSources
                 var result = new DevicePoseOutput(sources._outputs[output], new(start, bytes),
                     new(sources._outputLocalCurrent + start, bytes), new(sources._outputLocalPrevious + start, bytes),
                     new(sources._outputPlayback + (ulong)source.Index * 64, 64), source.Input, source.Binding,
-                    number, source.CommonBodies ? time : source.Input.CalculationTime) { Sources = sources };
+                    number, source.CommonBodies ? time : source.CalculationTime) { Sources = sources };
                 commands.Replace(source.Entity, in result);
             }
         }
