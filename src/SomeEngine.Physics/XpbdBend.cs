@@ -8,9 +8,6 @@ namespace SomeEngine.Physics;
 /// <summary>A minimum cosine between consecutive edges and its unilateral XPBD multiplier.</summary>
 public struct XpbdBend : IComponent
 {
-    public Entity First;
-    public Entity Middle;
-    public Entity Last;
     public float MinimumCosine;
     public float Compliance;
     public float Multiplier;
@@ -20,16 +17,20 @@ public readonly struct XpbdBendProjection : IXpbdConstraint<XpbdBend>, IXpbdCons
 {
     public static int GetBodyCount(in XpbdBend constraint, scoped QueryRow row, in PhysicsStepContext context) => 3;
     public static Entity GetBody(in XpbdBend constraint, scoped QueryRow row, int index, in PhysicsStepContext context) =>
-        index == 0 ? constraint.First : index == 1 ? constraint.Middle : constraint.Last;
+        ConstraintBodies.GetBody(in row.ReadBuffer<ConstraintBodyLink>().AsSpan()[index], in context);
+    public static int GetReadEntityCount(in XpbdBend constraint, scoped QueryRow row, in PhysicsStepContext context) => 3;
+    public static Entity GetReadEntity(in XpbdBend constraint, scoped QueryRow row, int index, in PhysicsStepContext context) =>
+        row.ReadBuffer<ConstraintBodyLink>().AsSpan()[index].Participant.Entity;
 
     public static void GetBodyForce(in XpbdBend constraint, scoped QueryRow row, Entity body,
         scoped PhysicsBodies bodies, in PhysicsStepContext context, out Vector3 force, out Vector3 torque)
     {
-        GetGradients(in constraint, bodies, out Vector3 first, out Vector3 middle, out Vector3 last);
+        ReadBodies(row, bodies, in context, out Entity firstBody, out Entity middleBody, out Entity lastBody);
+        GetGradients(firstBody, middleBody, lastBody, bodies, out Vector3 first, out Vector3 middle, out Vector3 last);
         Vector3 gradient = default;
-        if (body == constraint.First) gradient += first;
-        if (body == constraint.Middle) gradient += middle;
-        if (body == constraint.Last) gradient += last;
+        if (body == firstBody) gradient += first;
+        if (body == middleBody) gradient += middle;
+        if (body == lastBody) gradient += last;
         float duration = (float)context.Duration;
         force = gradient * (constraint.Multiplier / (duration * duration));
         torque = Vector3.Zero;
@@ -42,12 +43,13 @@ public readonly struct XpbdBendProjection : IXpbdConstraint<XpbdBend>, IXpbdCons
         scoped PhysicsBodies bodies, in PhysicsStepContext context)
     {
         float duration = (float)context.Duration;
-        float residual = GetGradients(in constraint, bodies, out Vector3 firstGradient,
+        ReadBodies(row, bodies, in context, out Entity firstBody, out Entity middleBody, out Entity lastBody);
+        float residual = GetGradients(firstBody, middleBody, lastBody, bodies, out Vector3 firstGradient,
             out Vector3 middleGradient, out Vector3 lastGradient) - constraint.MinimumCosine;
         if (residual >= 0 && constraint.Multiplier == 0) return;
-        ref readonly BodyMass firstMass = ref bodies.ReadMass(constraint.First);
-        ref readonly BodyMass middleMass = ref bodies.ReadMass(constraint.Middle);
-        ref readonly BodyMass lastMass = ref bodies.ReadMass(constraint.Last);
+        ref readonly BodyMass firstMass = ref bodies.ReadMass(firstBody);
+        ref readonly BodyMass middleMass = ref bodies.ReadMass(middleBody);
+        ref readonly BodyMass lastMass = ref bodies.ReadMass(lastBody);
         float firstWeight = firstMass.Motion == BodyMotion.Dynamic ? firstMass.InverseMass : 0;
         float middleWeight = middleMass.Motion == BodyMotion.Dynamic ? middleMass.InverseMass : 0;
         float lastWeight = lastMass.Motion == BodyMotion.Dynamic ? lastMass.InverseMass : 0;
@@ -57,16 +59,25 @@ public readonly struct XpbdBendProjection : IXpbdConstraint<XpbdBend>, IXpbdCons
                 lastWeight * lastGradient.LengthSquared() + alpha);
         change = MathF.Max(0, constraint.Multiplier + change) - constraint.Multiplier;
         row.ReadWrite<XpbdBend>().Multiplier += change;
-        if (firstWeight > 0) bodies.WritePose(constraint.First).Position += firstWeight * firstGradient * change;
-        if (middleWeight > 0) bodies.WritePose(constraint.Middle).Position += middleWeight * middleGradient * change;
-        if (lastWeight > 0) bodies.WritePose(constraint.Last).Position += lastWeight * lastGradient * change;
+        if (firstWeight > 0) bodies.WritePose(firstBody).Position += firstWeight * firstGradient * change;
+        if (middleWeight > 0) bodies.WritePose(middleBody).Position += middleWeight * middleGradient * change;
+        if (lastWeight > 0) bodies.WritePose(lastBody).Position += lastWeight * lastGradient * change;
     }
 
-    private static float GetGradients(in XpbdBend constraint, scoped PhysicsBodies bodies,
+    private static void ReadBodies(scoped QueryRow row, scoped PhysicsBodies bodies, in PhysicsStepContext context,
+        out Entity first, out Entity middle, out Entity last)
+    {
+        ReadOnlySpan<ConstraintBodyLink> links = row.ReadBuffer<ConstraintBodyLink>().AsSpan();
+        first = ConstraintBodies.GetBody(in links[0], bodies, in context);
+        middle = ConstraintBodies.GetBody(in links[1], bodies, in context);
+        last = ConstraintBodies.GetBody(in links[2], bodies, in context);
+    }
+
+    private static float GetGradients(Entity firstBody, Entity middleBody, Entity lastBody, scoped PhysicsBodies bodies,
         out Vector3 first, out Vector3 middle, out Vector3 last)
     {
-        Vector3 firstEdge = bodies.ReadPose(constraint.Middle).Position - bodies.ReadPose(constraint.First).Position;
-        Vector3 secondEdge = bodies.ReadPose(constraint.Last).Position - bodies.ReadPose(constraint.Middle).Position;
+        Vector3 firstEdge = bodies.ReadPose(middleBody).Position - bodies.ReadPose(firstBody).Position;
+        Vector3 secondEdge = bodies.ReadPose(lastBody).Position - bodies.ReadPose(middleBody).Position;
         float firstLength = firstEdge.Length();
         float secondLength = secondEdge.Length();
         Vector3 firstDirection = firstEdge / firstLength;
