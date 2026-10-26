@@ -40,13 +40,13 @@ internal sealed partial class PhysicsGraphData
         }
     }
 
-    internal void Add<TConstraint, TBodies>(int query, scoped QueryRow row, in PhysicsStepContext context)
+    internal void Add<TConstraint, TBodies>(int query, scoped QueryRow row, scoped PhysicsBodies bodies, in PhysicsStepContext context)
         where TConstraint : struct, SomeEngine.ECS.IComponent where TBodies : struct, IPhysicsConstraintBodies<TConstraint>
     {
         _bodyUses.Clear(); _references.Clear();
         ref readonly TConstraint constraint = ref row.ReadRef<TConstraint>();
         for (int index = 0; index < TBodies.GetBodyCount(in constraint, row, in context); index++)
-            _bodyUses[TBodies.GetBody(in constraint, row, index, in context)] = true;
+            _bodyUses[PhysicsConstraintBodies.GetBody<TConstraint, TBodies>(in constraint, row, index, bodies, in context)] = true;
         for (int index = 0; index < TBodies.GetReadBodyCount(in constraint, row, in context); index++)
             _bodyUses.TryAdd(TBodies.GetReadBody(in constraint, row, index, in context), false);
         for (int index = 0; index < TBodies.GetReadEntityCount(in constraint, row, in context); index++)

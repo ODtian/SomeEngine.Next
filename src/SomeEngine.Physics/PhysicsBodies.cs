@@ -43,8 +43,7 @@ public readonly ref struct PhysicsBodies
     public bool TryReadReference<T>(Entity entity, out ComponentReference<T> component) where T : struct
     {
         if (_entityQueries) return _references.TryReadRef(entity, out component);
-        component = default;
-        return false;
+        return _bodies.TryReadRef(entity, out component);
     }
 
     public ref readonly BodyPose ReadPose(Entity entity) => ref GetRow(entity).ReadRef<BodyPose>();
