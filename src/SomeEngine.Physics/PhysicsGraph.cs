@@ -43,6 +43,7 @@ internal sealed partial class PhysicsGraphData : IDisposable
     private readonly HashSet<Entity> _activityChanges = [];
     private readonly HashSet<ConstraintInput> _dirtyConstraints = [], _affectedConstraints = [];
     private readonly HashSet<Island> _dirtyIslands = [];
+    private readonly HashSet<Island> _changedReferences = [];
     private readonly HashSet<PhysicsGraphBatch> _dirtyBatches = [];
     private readonly Dictionary<Entity, int> _dynamic = [];
     private readonly Dictionary<int, Island> _newRoots = [];
@@ -190,13 +191,12 @@ internal sealed partial class PhysicsGraphData : IDisposable
     private void CollectWork()
     {
         ScalarBatches.Clear(); ProjectionGroups.Clear(); BodyGroups.Clear(); Writes.Clear(); References.Clear();
-        var writes = new HashSet<Entity>(); var references = new HashSet<Entity>();
+        var writes = new HashSet<Entity>();
         foreach (PhysicsGraphBatch batch in Batches)
             if (!IsColored(batch.Islands[0])) ScalarBatches.Add(batch);
         var projections = new SortedDictionary<(int Query, int Color), List<PhysicsGraphBatch>>();
         foreach (Island island in _islands)
         {
-            references.UnionWith(island.References);
             if (!IsActive(island)) continue;
             writes.UnionWith(island.Writes);
             foreach (ProjectionColor color in island.ProjectionColors)
@@ -213,7 +213,14 @@ internal sealed partial class PhysicsGraphData : IDisposable
         }
         ProjectionGroups.AddRange(projections.Values);
         Writes.AddRange(writes.OrderBy(body => _bodies[body].Order));
-        References.AddRange(references);
+        CollectReferences();
+    }
+
+    private void CollectReferences()
+    {
+        _references.Clear();
+        foreach (Island island in _islands) _references.UnionWith(island.References);
+        References.Clear(); References.AddRange(_references);
     }
 
     public void Dispose() => _scheduler.ReleaseResourceToken(_resource);
@@ -298,5 +305,13 @@ internal sealed class PhysicsGraphBatch(int queryCount)
     {
         _entities[0].Sort((a, b) => bodies[a].Order.CompareTo(bodies[b].Order));
         _entities[1].Sort((a, b) => bodies[a].Order.CompareTo(bodies[b].Order));
+    }
+
+    internal void RefreshReferences(Dictionary<PhysicsConstraintIdentity, PhysicsGraphData.ConstraintInput> constraints)
+    {
+        _entities[2].Clear(); _unique[2].Clear();
+        for (int query = 3; query < _entities.Length; query++)
+            foreach (Entity entity in _entities[query])
+                Add(2, constraints[new(query - 3, entity)].References);
     }
 }
