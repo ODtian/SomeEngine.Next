@@ -37,7 +37,7 @@ public struct DeviceBodyState
     [FieldOffset(200)] public double Time;
 }
 
-public sealed class DeviceBodies : IDisposable, IDevicePhysicsSubmission
+public sealed partial class DeviceBodies : IDisposable, IDevicePhysicsSubmission
 {
     public const int StateStride = 208;
     private readonly IGraphicsBackend _backend;
@@ -50,6 +50,7 @@ public sealed class DeviceBodies : IDisposable, IDevicePhysicsSubmission
     public DeviceBodies(IGraphicsBackend backend, Device device, int capacity)
     {
         _backend = backend; _device = device; Capacity = capacity;
+        _cpuVersions = new BodyInputVersions[capacity];
         States = backend.CreateBuffer(device, new((ulong)capacity * StateStride,
             BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopySource | BufferUsages.CopyDestination,
             "Device body states"), MemoryType.DeviceLocal);
@@ -86,16 +87,25 @@ public sealed class DeviceBodies : IDisposable, IDevicePhysicsSubmission
 
     QueueCompletion IDevicePhysicsSubmission.Submit()
     {
-        _mapping.Flush(_mapping.Range);
+        ReadOnlySpan<BufferRange> ranges = [new(0, States.Info.Size)];
+        return SubmitInputRanges(ranges);
+    }
+    internal QueueCompletion SubmitInputRanges(ReadOnlySpan<BufferRange> ranges)
+    {
+        foreach (BufferRange range in ranges) _mapping.Flush(range);
         _backend.Begin(_commands, new(0, 0, 8));
-        _backend.Barrier(_commands, new BufferBarrier(States,
-            _initialized ? PipelineSync.ComputeShading : States.InitialSync, PipelineSync.Copy,
-            _initialized ? ResourceAccess.UnorderedAccess : States.InitialAccess, ResourceAccess.CopyDestination));
-        _backend.CopyBuffer(_commands, new(_upload, 0, States, 0, States.Info.Size));
-        _backend.Barrier(_commands, new BufferBarrier(States, PipelineSync.Copy, PipelineSync.ComputeShading,
-            ResourceAccess.CopyDestination, ResourceAccess.UnorderedAccess));
+        if (!ranges.IsEmpty)
+        {
+            _backend.Barrier(_commands, new BufferBarrier(States,
+                _initialized ? PipelineSync.ComputeShading : States.InitialSync, PipelineSync.Copy,
+                _initialized ? ResourceAccess.UnorderedAccess : States.InitialAccess, ResourceAccess.CopyDestination));
+            foreach (BufferRange range in ranges)
+                _backend.CopyBuffer(_commands, new(_upload, range.Offset, States, range.Offset, range.Size));
+            _backend.Barrier(_commands, new BufferBarrier(States, PipelineSync.Copy, PipelineSync.ComputeShading,
+                ResourceAccess.CopyDestination, ResourceAccess.UnorderedAccess));
+        }
         using RecordedCommands recorded = _backend.End(_commands);
-        _initialized = true;
+        _initialized |= !ranges.IsEmpty;
         return _backend.Submit(_backend.GetQueue(_device, QueueType.Compute), new([], [], [recorded], [], []));
     }
 
@@ -136,18 +146,7 @@ internal readonly partial struct WriteDeviceBodyInputJob(DeviceBodies destinatio
         in BodyPose pose, in BodyMass mass, in BodyVelocity velocity, in BodyStepState step)
     {
         if (!ReferenceEquals(binding.Bodies, destination)) return;
-        var state = new DeviceBodyState
-        {
-            Position = pose.Position, Rotation = pose.Rotation, Motion = (uint)mass.Motion,
-            LinearVelocity = velocity.Linear, AngularVelocity = velocity.Angular, InverseMass = mass.InverseMass,
-            CenterOfMass = mass.CenterOfMass, EntityIndex = (uint)entity.Index, EntityGeneration = (uint)entity.Generation,
-            InverseInertiaX = new(mass.InverseInertia.M11, mass.InverseInertia.M12, mass.InverseInertia.M13),
-            InverseInertiaY = new(mass.InverseInertia.M21, mass.InverseInertia.M22, mass.InverseInertia.M23),
-            InverseInertiaZ = new(mass.InverseInertia.M31, mass.InverseInertia.M32, mass.InverseInertia.M33),
-            StartCenterOfMass = step.StartCenterOfMass, StartRotation = step.StartRotation,
-            PredictedCenterOfMass = step.PredictedCenterOfMass, PredictedRotation = step.PredictedRotation,
-            Number = step.Number, Substep = step.Substep, Time = step.Time,
-        };
+        DeviceBodyState state = DeviceBodies.ReadInput(entity, in pose, in mass, in velocity, in step);
         destination.WriteInput(binding.Index, in state);
     }
 }
