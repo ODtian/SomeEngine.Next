@@ -74,11 +74,17 @@ internal sealed partial class PhysicsGraphData
         }
         constraint.Order = _orders[query]++;
         constraint.Read = _read;
-        bool same = constraint.Bodies.Count == _bodyUses.Count && constraint.References.SetEquals(_references);
+        bool same = constraint.Bodies.Count == _bodyUses.Count;
         if (same)
             foreach (var use in constraint.Bodies)
                 if (!_bodyUses.TryGetValue(use.Key, out bool writes) || writes != use.Value) { same = false; break; }
-        if (same) return;
+        if (same)
+        {
+            if (constraint.References.SetEquals(_references)) return;
+            constraint.References.Clear(); constraint.References.UnionWith(_references);
+            if (constraint.Island is not null) _changedReferences.Add(constraint.Island);
+            return;
+        }
         Dirty(constraint.Island);
         foreach (Entity body in constraint.Bodies.Keys)
         {
@@ -125,12 +131,30 @@ internal sealed partial class PhysicsGraphData
         }
         foreach (Island island in _islands)
             if (OrderChanged(island)) _dirtyIslands.Add(island);
-        if (_dirtyBodies.Count == 0 && _dirtyConstraints.Count == 0 && _dirtyIslands.Count == 0) return false;
-        RepairIslands();
-        RepairBatches();
-        CollectWork();
+        bool topologyChanged = _dirtyBodies.Count != 0 || _dirtyConstraints.Count != 0 || _dirtyIslands.Count != 0;
+        if (!topologyChanged && _changedReferences.Count == 0) return false;
+        if (topologyChanged) { RepairIslands(); RepairBatches(); }
+        RefreshReferences();
+        if (topologyChanged) CollectWork(); else CollectReferences();
         _dirtyBodies.Clear(); _dirtyConstraints.Clear(); _dirtyIslands.Clear(); _dirtyBatches.Clear();
+        _changedReferences.Clear();
         return true;
+    }
+
+    private void RefreshReferences()
+    {
+        foreach (Island island in _islands)
+        {
+            if (!_changedReferences.Contains(island)) continue;
+            island.References.Clear();
+            foreach (ConstraintInput constraint in island.Records) island.References.UnionWith(constraint.References);
+            foreach (ProjectionColor color in island.ProjectionColors)
+                foreach (PhysicsGraphBatch batch in color.Batches) batch.RefreshReferences(_constraints);
+            foreach (List<PhysicsGraphBatch> color in island.BodyColors)
+                foreach (PhysicsGraphBatch batch in color) batch.RefreshReferences(_constraints);
+        }
+        foreach (PhysicsGraphBatch batch in Batches)
+            if (batch.Islands.Any(_changedReferences.Contains)) batch.RefreshReferences(_constraints);
     }
 
     private bool OrderChanged(Island island)
