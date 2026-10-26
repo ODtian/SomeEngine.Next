@@ -135,6 +135,11 @@ GPU 先读取已提交的 current/previous 历史，再更新各区段的播放�
 首次结果以 current 初始化 previous。重复消费相同来源及模型依赖保留同一对矩阵；保持的子来源按新的父 G 继续计算并推进模型历史。
 历史推进由 RG 中实际提交的写入确认，区段重排通过 GPU copy 保留已有历史。
 
+已选 `DevicePoseSources` 继续持有该实体的 Game 来源表示，自动链系统捕获自身选择的目标。
+设备 Body 完成时刻也参与上述模型求值；保持同一来源输入时，后续完成步仍推进显示版本及 current/previous。
+来源播放时钟继续由 GPU 播放行交付，见
+[保持输入的完成骨骼消费者](../../../tests/SomeEngine.Runtime.Tests/GpuCompletedBodyRenderingTests.cs)。
+
 `RenderGpuPoseTarget.Section` 定位提取后的区段实体；该实体的 `RenderPoseSection` 给出
 G 范围、GPU 播放行及 `InputTime` 控制时钟。图消费者使用 `SkinningFeature.CurrentBones`、`PreviousBones`
 和 `CompletePass` 读取已完成的输出。
