@@ -11,7 +11,7 @@
 
 `DeviceConstraintBinding<TData>` 放在原约束实体上，保存共同参数资源及其中的行索引。
 `DeviceConstraintData<TData>` 保存原物理参数的所选设备表示；每行 metadata 保留实际
-Entity 索引、代次和本次查询参与标记。`BeginInputs()` 开始本次成员写入，
+Entity 索引、代次和上传时的查询参与标记。`BeginInputs()` 开始本次成员写入，
 `WriteInputs<TComponent,TSource>(world,rows,source,rowsPerPacket)` 沿原查询筛选读取原组件，
 由具体 `IDeviceConstraintSource<TComponent,TData>` 解析参数与跨实体引用。
 `UploadInputs()` 将本次参数和成员 metadata 提交设备。
@@ -25,7 +25,8 @@ source 的 `AddReads`、`AddReadResources` 与静态组件资源描述器声明�
 参数绑定中的行索引同时定位数值历史。
 `DeviceConstraintState<TState>` 单处保存设备乘子，参数上传与投影分别声明自己的 buffer。
 投影从原查询中的参数和历史绑定选择本次实际行，GPU 直接更新该行历史和共同
-`DeviceBodies.States`。索引列表保存派生执行位置。
+`DeviceBodies.States`。独立投影的索引列表同时保存本次选中实体的索引与代次，
+内核将其与同一参数 buffer 的 metadata 匹配后执行；参数刷新沿原 writer 与上传阶段完成。
 
 ## 具体内核与阶段
 
@@ -97,6 +98,27 @@ Body 选择由共同 `IDeviceBodySelection` 解释。独立投影采用 Dynamics
 `DeviceGraphBodies` 的 selected-dynamic 索引。长度、弯曲、Joint 和 Motor 的同源投影
 分别以该具体选择类型实例化，分母权重与实际校正都沿选定写范围；其他动态端提供读取。
 `DeviceXpbdStateRows<TState>` 从原实体的实际历史绑定选择参与范围。
+
+`DeviceLengthBodies`、[DeviceBendBodies](../../../assets/Shaders/physics_bend_graph.slang)、
+共同 `DeviceJointBodies`、`DeviceMotorBodies` 和 `DeviceContactBodies` 提供各自的实际端点与写角色。
+项目将这些具体类型以 `DeviceConstraintBodyGroups` 组成构图入口，再用相同顺序的
+`DeviceXpbdConstraintGroups` 组成数值入口。Motor 从原 Joint 行读取框架，Target/Both 反馈
+决定 source 的读写角色；参与身份继续由原实体绑定和本步选择匹配。
+
+例如，下列具体组合是公共设备适配的一种用法：
+
+```slang
+typedef DeviceXpbdConstraintRows<DeviceLengthBodies,
+    DeviceXpbdLengthProjection<DeviceGraphBodies>> LengthRows;
+typedef DeviceXpbdConstraintRows<DeviceBendBodies,
+    DeviceXpbdBendProjection<DeviceGraphBodies>> BendRows;
+typedef DeviceXpbdConstraintGroups<LengthRows, BendRows> ProjectionRows;
+```
+
+用户的 `IDeviceXpbdProjection` 可以替换上述任一具体投影，并保持同一角色、颜色和完成链。
+构图入口使用自身的常量 buffer 参数，数值入口使用 `XpbdGraphStep` 的普通数据布局；
+项目分别编译两组入口，使各自反射布局与提交的数据对应。
+完整组装见 [DeviceXpbdMixedGraphTests](../../../tests/SomeEngine.Graphics.Direct3D12.Tests/DeviceXpbdMixedGraphTests.cs)。
 
 ## 共同点接触
 
