@@ -54,6 +54,12 @@ internal static class BodyPrediction
 
 internal static class BodyRotation
 {
+    internal static Vector3 TransformVector(Vector3 value, Quaternion rotation)
+    {
+        Vector4 transformed = Vector4.Transform(new Vector4(value, 0), rotation);
+        return new(transformed.X, transformed.Y, transformed.Z);
+    }
+
     // Newton v1.7.0 joint rotation derivatives; copyright (c) 2025 The Newton Developers.
     // Source and license: ThirdParty/Newton/NOTICE and the repository LICENSE.
     internal static Vector3 GetRotationVector(Quaternion rotation)
@@ -85,6 +91,7 @@ internal static class BodyRotation
 
     internal static Vector3 Velocity(Quaternion start, Quaternion end, float duration)
     {
+        if (start == end) return Vector3.Zero;
         Quaternion change = Quaternion.Normalize(end * Quaternion.Conjugate(start));
         if (change.W < 0) change = -change;
         var vector = new Vector3(change.X, change.Y, change.Z);

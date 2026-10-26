@@ -336,6 +336,10 @@ public sealed class PhysicsActivityTests
         using var scheduler = new Scheduler(new() { WorkerCount = 2 });
         using var world = WorldJobs.CreateWorld(scheduler: scheduler);
         Entity body = CreateBody(world, new Vector3(0, 10, 0));
+        Quaternion rotation = Quaternion.Normalize(new Quaternion(.1f, .2f, .3f, .9f));
+        BodyPose pose = world.Read<BodyPose>(body);
+        pose.Rotation = rotation;
+        world.Replace(body, pose);
         world.Add(body, new BodyActivity { Sleeping = true, Radius = 1 });
         uint poseVersion = world.WriteVersion<BodyPose>(body);
         QueryHandle bodies = world.Query(new QueryDefinitionBuilder().ReadWrite<BodyPose>().Read<BodyMass>()
@@ -350,7 +354,9 @@ public sealed class PhysicsActivityTests
         PhysicsSimulation.Create(world, QueryDefinition.Empty, stages, 2).Schedule(7, 1, .2).Complete();
 
         Assert.Equal(new Vector3(0, 10, 0), world.Read<BodyPose>(body).Position);
+        Assert.Equal(rotation, world.Read<BodyPose>(body).Rotation);
         Assert.Equal(Vector3.Zero, world.Read<BodyVelocity>(body).Linear);
+        Assert.Equal(Vector3.Zero, world.Read<BodyVelocity>(body).Angular);
         Assert.Equal(poseVersion, world.WriteVersion<BodyPose>(body));
         BodyStepState step = world.Read<BodyStepState>(body);
         Assert.Equal(7, step.Number);
