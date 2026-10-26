@@ -5,7 +5,7 @@ using SomeEngine.Resources;
 
 namespace DefaultGame;
 
-internal sealed class PhysicsSceneShaders
+internal sealed partial class PhysicsSceneShaders
 {
     private readonly IGlobalSession _global;
     private readonly SlangCompileTarget _target;
@@ -14,7 +14,7 @@ internal sealed class PhysicsSceneShaders
     internal PhysicsSceneShaders(SlangCompileTarget target, string directory)
     {
         _target = target; _directory = directory;
-        Check(Slang.CreateGlobalSession(Slang.ApiVersion, out _global));
+        _global = Shader.CreateSlangGlobalSession();
     }
 
     internal DeviceGridKernels Grid()
