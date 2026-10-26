@@ -1,4 +1,5 @@
 using SomeEngine.ECS.Entities;
+using SomeEngine.Diagnostics;
 using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Relations;
 using SomeEngine.ECS.Systems;
@@ -65,37 +66,47 @@ public sealed class CollisionPairBins<TPartition> : IDisposable where TPartition
         where TEnumerable : struct, ICollisionPartitionEnumerable<TPartition>
         where TClassifier : struct, ICollisionPairClassifier
     {
-        source.Prepare(queries);
-        int partitionCount = source.CreatePartitions(_partitions);
-        Array.Clear(_counts, 0, partitionCount * BinCount);
-        for (int partition = 0; partition < partitionCount; partition++)
-            _countAccesses[partition] = JobResourceAccess.Write(_resource, partition * BinCount, BinCount);
+        int partitionCount;
+        using (EngineTrace.Begin(CollisionTraceSites.Partitions))
+        {
+            source.Prepare(queries);
+            partitionCount = source.CreatePartitions(_partitions);
+            Array.Clear(_counts, 0, partitionCount * BinCount);
+            for (int partition = 0; partition < partitionCount; partition++)
+                _countAccesses[partition] = JobResourceAccess.Write(_resource, partition * BinCount, BinCount);
+        }
         var count = new CountPairs<TEnumerable, TClassifier>(source, classifier, this);
-        Execute(queries, source.QueryCount, count, partitionCount, _countAccesses.AsSpan(0, partitionCount), parallel);
+        using (EngineTrace.Begin(CollisionTraceSites.Count))
+            Execute(queries, source.QueryCount, count, partitionCount, _countAccesses.AsSpan(0, partitionCount), parallel);
 
         int position = 0;
         int writeAccessCount = 0;
-        for (int bin = 0; bin < BinCount; bin++)
+        using (EngineTrace.Begin(CollisionTraceSites.Prefix))
         {
-            _binOffsets[bin] = position;
-            for (int partition = 0; partition < partitionCount; partition++)
+            for (int bin = 0; bin < BinCount; bin++)
             {
-                int index = partition * BinCount + bin;
-                _writePositions[index] = position;
-                int length = _counts[index];
-                if (length != 0)
-                    _writeAccesses[writeAccessCount++] = JobResourceAccess.Write(_resource,
-                        _counts.Length + position, length);
-                position += length;
+                _binOffsets[bin] = position;
+                for (int partition = 0; partition < partitionCount; partition++)
+                {
+                    int index = partition * BinCount + bin;
+                    _writePositions[index] = position;
+                    int length = _counts[index];
+                    if (length != 0)
+                        _writeAccesses[writeAccessCount++] = JobResourceAccess.Write(_resource,
+                            _counts.Length + position, length);
+                    position += length;
+                }
             }
+            _binOffsets[BinCount] = position;
+            Count = position;
+            if (_pairs.Length < Count)
+                Array.Resize(ref _pairs, Math.Max(Count, _pairs.Length * 2));
         }
-        _binOffsets[BinCount] = position;
-        Count = position;
-        if (_pairs.Length < Count)
-            Array.Resize(ref _pairs, Math.Max(Count, _pairs.Length * 2));
+        EngineTrace.Counter(CollisionTraceSites.CandidateCount, Count);
 
         var write = new WritePairs<TEnumerable, TClassifier>(source, classifier, this);
-        Execute(queries, source.QueryCount, write, partitionCount, _writeAccesses.AsSpan(0, writeAccessCount), parallel);
+        using (EngineTrace.Begin(CollisionTraceSites.Write))
+            Execute(queries, source.QueryCount, write, partitionCount, _writeAccesses.AsSpan(0, writeAccessCount), parallel);
     }
 
     private static void Execute<TJob>(scoped RelationQueryViews queries, int queryCount, in TJob job, int count,
