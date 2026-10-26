@@ -1,6 +1,7 @@
 #ifndef PHYSICS_BODY_MATH
 #define PHYSICS_BODY_MATH
 #include "physics_bodies.slang"
+interface IDeviceBodySelection { bool contains(uint body); };
 
 float4 bodyRotationMultiply(float4 first, float4 second)
 {
