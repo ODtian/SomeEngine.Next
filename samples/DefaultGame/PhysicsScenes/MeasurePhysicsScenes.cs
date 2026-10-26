@@ -6,6 +6,7 @@ using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Diagnostics;
+using SomeEngine.Graphics;
 using SomeEngine.Job;
 using SomeEngine.Physics;
 
@@ -14,17 +15,22 @@ namespace DefaultGame;
 /// <summary>Runs the same scene factory and completed frame as the interactive platform, for every original input step.</summary>
 public static class MeasurePhysicsScenes
 {
-    public static int Run(TextWriter output, string? id = null)
+    public static int Run(TextWriter output, string? id = null) => Run(output, id, null, null);
+
+    public static int RunDevice(TextWriter output, IGraphicsBackend backend, Device device, string? id = null) =>
+        Run(output, id, backend, device);
+
+    private static int Run(TextWriter output, string? id, IGraphicsBackend? backend, Device? device)
     {
         PhysicsSceneDescription[] descriptions = id is null ? PhysicsScenes.All.ToArray()
-            : [PhysicsScenes.All.Single(description => description.Id == id)];
+            : [PhysicsScenes.All.Concat(PhysicsScaleScenes.All).Single(description => description.Id == id)];
         int failures = 0;
         long measuredFrame = 0;
         using var process = Process.GetCurrentProcess();
         using var scheduler = new Scheduler(new() { WorkerCount = Environment.ProcessorCount });
         output.WriteLine(new JsonObject
         {
-            ["Device"] = "CPU", ["Workers"] = Environment.ProcessorCount, ["Framework"] = System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription,
+            ["Device"] = backend is null ? "CPU" : "GPU", ["Workers"] = Environment.ProcessorCount, ["Framework"] = System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription,
             ["Architecture"] = System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture.ToString(),
             ["Processor"] = Environment.GetEnvironmentVariable("PROCESSOR_IDENTIFIER"),
             ["DynamicCodeCompiled"] = System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeCompiled,
@@ -46,7 +52,8 @@ public static class MeasurePhysicsScenes
         {
             using World world = WorldJobs.CreateWorld(scheduler: scheduler);
             PhysicsSceneTimings? timings = EngineTrace.IsEnabled ? new PhysicsSceneTimings() : null;
-            PhysicsSceneExample example = PhysicsSceneExample.CreateCpu(description, timings);
+            PhysicsSceneExample example = backend is null ? PhysicsSceneExample.CreateCpu(description, timings)
+                : PhysicsSceneExample.CreateDevice(description, backend, device!, timings);
             using PhysicsSceneSimulation scene = example.CreateSimulation(world);
             using var observation = new ReadScenePhysicsResults(world, scene);
             var steps = new double[example.StepCount];
