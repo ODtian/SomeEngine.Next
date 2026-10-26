@@ -295,8 +295,15 @@ internal sealed class QueryState
             if (!_archetype.TryColumn(term.ComponentId, out int accessColumn))
                 return false;
 
-            (_accessColumns ??= new List<QueryColumnAccess>()).Add(
-                new QueryColumnAccess(term.ComponentId, accessColumn, term.Access));
+            _accessColumns ??= new List<QueryColumnAccess>();
+            for (int index = 0; index < _accessColumns.Count; index++)
+                if (_accessColumns[index].ComponentId == term.ComponentId)
+                {
+                    QueryColumnAccess previous = _accessColumns[index];
+                    _accessColumns[index] = new(term.ComponentId, accessColumn, QueryAccessExtensions.Merge(previous.Access, term.Access));
+                    return true;
+                }
+            _accessColumns.Add(new(term.ComponentId, accessColumn, term.Access));
             return true;
         }
     }
