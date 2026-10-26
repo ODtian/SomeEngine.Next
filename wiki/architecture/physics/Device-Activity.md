@@ -56,6 +56,7 @@
 `DeviceContactBodies` 提供。
 `DeviceJointActivity` 复用共同坐标和限位误差；自由坐标的残差为零。
 `DeviceMotorActivity` 复用当前子步时刻的目标与阻尼平衡点，按实际启用轴返回米、弧度误差。
+`DeviceElasticActivity` 复用原局部锚、静止旋转和当前主体坐标，按实际启用的线性、角向刚度返回残差。
 `DeviceConstraintActivityGroups<TFirst,TSecond>` 沿原参与分组组合实体身份与残差，
 行偏移、读写角色和具体组编号继续复用 `DeviceConstraintBodyGroups`。
 
