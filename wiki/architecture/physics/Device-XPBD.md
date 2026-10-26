@@ -138,6 +138,9 @@ typedef DeviceXpbdConstraintGroups<LengthRows, BendRows> ProjectionRows;
 `DeviceXpbdLengthForces` 沿同一长度参数、当前梯度和原设备乘子取得 `lambda / h²` 世界力，
 通过 `IDeviceAvbdConstraints` 加入 AVBD 主体方程；XPBD 继续负责投影与乘子更新。
 长度梯度和距离由 `physics_xpbd_length_math.slang` 单处计算。
+`DeviceXpbdBendForces` 同样读取原弯曲乘子，沿与投影共用的 `deviceBendGradients` 将三个端点的
+当前世界力加入 AVBD 方程。[接触与弯曲完整步检查](../../../tests/SomeEngine.Graphics.Direct3D12.Tests/DeviceComplementaryBendTests.cs)
+以独立的惯性、接触和弯曲柔度平衡方程验证同一步位置、速度、反力及完成时钟。
 项目可在一次 `Predict` 后初始化两类求解器，交替调用各自的 `Iterate`，最后统一 `UpdateVelocities`。
 [公开互补与骨骼检查](../../../tests/SomeEngine.Graphics.Direct3D12.Tests/DeviceComplementaryPoseTests.cs)
 将同一 Body 的完成位置、速度、接触力、编号与时刻交给原 `PhysicsPose` 消费。
