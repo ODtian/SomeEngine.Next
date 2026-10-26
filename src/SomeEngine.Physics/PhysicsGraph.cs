@@ -102,6 +102,7 @@ internal sealed partial class PhysicsGraphData : IDisposable
         PhysicsGraphBatch? small = null;
         foreach (Island island in _islands)
         {
+            if (!IsActive(island)) continue;
             if (island.Batch is not null) continue;
             bool isSmall = !IsColored(island) && island.DynamicBodies.Count <= _settings.SmallIslandBodyLimit;
             if (!isSmall || small is null || small.DynamicCount + island.DynamicBodies.Count > _settings.BodiesPerBatch)
@@ -194,7 +195,9 @@ internal sealed partial class PhysicsGraphData : IDisposable
         var projections = new SortedDictionary<(int Query, int Color), List<PhysicsGraphBatch>>();
         foreach (Island island in _islands)
         {
-            writes.UnionWith(island.Writes); references.UnionWith(island.References);
+            references.UnionWith(island.References);
+            if (!IsActive(island)) continue;
+            writes.UnionWith(island.Writes);
             foreach (ProjectionColor color in island.ProjectionColors)
             {
                 var key = (color.Query, color.Color);
@@ -213,9 +216,12 @@ internal sealed partial class PhysicsGraphData : IDisposable
     }
 
     public void Dispose() => _scheduler.ReleaseResourceToken(_resource);
+    private bool IsActive(Island island) => island.DynamicBodies.Count == 0 || island.DynamicBodies.Any(body => _bodies[body].Awake);
+    internal IReadOnlyList<Island> ActivityIslands => _islands;
     internal sealed class BodyInput
     {
         internal BodyMotion Motion;
+        internal bool Awake = true;
         internal long Read;
         internal int Order;
         internal Island? Island;
