@@ -41,6 +41,7 @@
 [DeviceBodyResults](../../../src/SomeEngine.Physics/DeviceBodyResults.cs) 在项目选择 CPU 消费时创建。
 `Readback(rowsPerPacket)` 提交原状态 buffer 的复制，沿外部 fence 等待真实设备完成，
 随后生成式 Job 根据原 `DeviceBodyBinding` 将位姿、速度及 `BodyStepState` 写回相应实体。
+回写按设备结果中的 Entity 编号与代次匹配实际实体，旧步结果保持其来源身份。
 阶段返回的 JobHandle 覆盖提交、读回、组件写入与设备完成收集。
 后续变换和动画继续读取同一实体组件。公开行为见 `DeviceXpbdTests`。
 
