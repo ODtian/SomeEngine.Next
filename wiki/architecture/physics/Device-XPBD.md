@@ -44,3 +44,9 @@ source 的 `AddReads`、`AddReadResources` 与静态组件资源描述器声明�
 [DeviceXpbdLength](../../../assets/Shaders/physics_xpbd_length.slang) 使用原
 `Compliance / h²`、逆质量和累积乘子公式，只修正动态端的位置。
 共同预测、速度与原组件消费由[设备主体](Device-Bodies.md)维护。
+
+`DeviceBendSource` 从原 `ConstraintBodyLink` 顺序读取三个受保护参与端，
+通过 `ConstraintBodies.GetBody(link,access)` 解析实际 Body，再转换为本轮执行索引。
+32 字节参数保存三个索引、最小方向余弦和柔度；端点身份继续由原参与关系持有。
+[DeviceXpbdBend](../../../assets/Shaders/physics_xpbd_bend.slang) 复用原三端方向余弦梯度，
+将累积乘子投影到大于等于零的范围，按各动态端的逆质量修正原位姿。
