@@ -93,10 +93,6 @@ public sealed partial class PhysicsSceneExample(PhysicsSceneDescription descript
                 ["MultiplierRetention"] = settings.MultiplierRetention, ["InitialErrorFraction"] = 0,
                 ["ContactNormalPenalty"] = settings.ContactNormalPenalty, ["ContactTangentPenalty"] = settings.ContactTangentPenalty,
                 ["FrictionRegularizationSpeed"] = settings.FrictionRegularizationSpeed,
-                ["ContactPenaltyConditioning"] = "Inverse squared step and contact Jacobian mobility",
-                ["ContactPenaltyMinimum"] = SceneContactPenalty.Minimum, ["ContactPenaltyMaximum"] = SceneContactPenalty.Maximum,
-                ["ContactPenaltyIncreasePerMeter"] = SceneContactPenalty.IncreasePerMeter,
-                ["ContactPressureLengthScale"] = SceneContactPenalty.PressureLengthScale,
                 ["JointPenalty"] = 1e6f, ["DistanceRangePenalty"] = 1e6f,
                 ["MatchDistance"] = .02f, ["MinimumNormalDot"] = .99f, ["WarmStart"] = true,
             },
@@ -142,6 +138,12 @@ public sealed partial class PhysicsSceneExample(PhysicsSceneDescription descript
             }).ToArray()),
         };
         if (_devicePhysics) return CreateDeviceSimulation(world, description, data, settings);
+        JsonObject contactMetric = _workload["Solver"]!.AsObject();
+        contactMetric["ContactPenaltyConditioning"] = "Inverse squared step and contact Jacobian mobility";
+        contactMetric["ContactPenaltyMinimum"] = SceneContactPenalty.Minimum;
+        contactMetric["ContactPenaltyMaximum"] = SceneContactPenalty.Maximum;
+        contactMetric["ContactPenaltyIncreasePerMeter"] = SceneContactPenalty.IncreasePerMeter;
+        contactMetric["ContactPressureLengthScale"] = SceneContactPenalty.PressureLengthScale;
         var events = new CountScenePhysicsEvents(_events);
         JobResourceAccess[] eventAccesses = [JobResourceAccess.Write(WorldJobs.GetScheduler(world).GetResourceToken(_events))];
         return description.Dimension == 2
