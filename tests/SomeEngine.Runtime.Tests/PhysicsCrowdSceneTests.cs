@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Diagnostics;
 using DefaultGame;
 using SomeEngine.Animation.Pose;
 using SomeEngine.ECS;
@@ -10,12 +11,13 @@ using SomeEngine.Graphics;
 using SomeEngine.Graphics.Direct3D12;
 using SomeEngine.Job;
 using SomeEngine.Physics;
+using Xunit.Abstractions;
 
 namespace SomeEngine.Runtime.Tests;
 
 [Trait("Category", "Hardware")]
 [Trait("Category", "Performance")]
-public sealed class PhysicsCrowdSceneTests
+public sealed class PhysicsCrowdSceneTests(ITestOutputHelper output)
 {
     [Fact]
     public void TwoThousandCharactersAndTheirBoneClothCompleteTheSharedPhysicalFrame()
@@ -33,8 +35,11 @@ public sealed class PhysicsCrowdSceneTests
         var tip = scene.CharacterBodies[^1].Span[^1];
         Vector3 initial = world.Read<BodyPose>(tip).Position;
 
+        long started = Stopwatch.GetTimestamp();
         scene.AdvanceTime(scene.StepSeconds);
         PhysicsStepResult completed = scene.CompleteForRead();
+        output.WriteLine($"Characters=2000; Step=0; WholeStepMilliseconds={Stopwatch.GetElapsedTime(started).TotalMilliseconds:R}; ManagedBytes={GC.GetTotalMemory(false)}; Adapter={device.Adapter.Name}; DedicatedVideoMemoryBytes={device.Adapter.DedicatedVideoMemory}");
+        ReportBodies(world, completed.Number);
 
         Assert.Equal(2000, scene.CharacterTargets.Count);
         Assert.Equal(2000, scene.ClothTargets.Count);
@@ -48,9 +53,42 @@ public sealed class PhysicsCrowdSceneTests
         Assert.Equal(completed.EndTime, world.Read<BodyStepState>(tip).Time, 12);
         Assert.True(world.Read<BodyPose>(tip).Position.Z > initial.Z + .001f);
         Assert.True(world.Read<BodyVelocity>(tip).Linear.Z > .1f);
-        using DevicePoseOutputRead output = GpuPoseAnimation.ReadDeviceOutput(world, scene.CharacterTargets[^1]);
-        Assert.Equal(completed.Number, output.Output.Number);
-        Assert.Equal(completed.EndTime, output.Output.Time, 12);
+        using (DevicePoseOutputRead pose = GpuPoseAnimation.ReadDeviceOutput(world, scene.CharacterTargets[^1]))
+        {
+            Assert.Equal(completed.Number, pose.Output.Number);
+            Assert.Equal(completed.EndTime, pose.Output.Time, 12);
+        }
+        for (int number = 1; number < 3; number++)
+        {
+            started = Stopwatch.GetTimestamp();
+            scene.AdvanceTime(scene.StepSeconds);
+            completed = scene.CompleteForRead();
+            output.WriteLine($"Characters=2000; Step={number}; WholeStepMilliseconds={Stopwatch.GetElapsedTime(started).TotalMilliseconds:R}; ManagedBytes={GC.GetTotalMemory(false)}");
+            ReportBodies(world, completed.Number);
+            Assert.Equal(number, completed.Number);
+            Assert.Equal((number + 1d) / 60, completed.EndTime, 12);
+            Assert.Equal(completed.Number, world.Read<BodyStepState>(tip).Number);
+        }
+    }
+
+    private void ReportBodies(World world, long number)
+    {
+        QueryHandle bodies = world.Query(new QueryDefinitionBuilder().Read<DeviceBodyBinding>().Read<BodyPose>().Read<BodyVelocity>());
+        var largest = (Position: 0f, Speed: 0f, Body: -1);
+        world.ExecuteReadQuery(bodies, ref largest, static (scoped QueryCursor rows, ref (float Position, float Speed, int Body) largest) =>
+        {
+            foreach (QueryRow row in rows.Rows)
+            {
+                float position = row.Read<BodyPose>().Position.Length(), speed = row.Read<BodyVelocity>().Linear.Length();
+                Assert.True(float.IsFinite(position + speed));
+                largest.Position = MathF.Max(largest.Position, position);
+                if (speed > largest.Speed) { largest.Speed = speed; largest.Body = row.Read<DeviceBodyBinding>().Index; }
+            }
+        });
+        world.ReleaseQuery(bodies);
+        output.WriteLine($"Step={number}; MaximumBodyDistance={largest.Position:R}; MaximumBodySpeed={largest.Speed:R}; FastestBodyIndex={largest.Body}");
+        Assert.InRange(largest.Position, 0, 100);
+        Assert.InRange(largest.Speed, 0, 100);
     }
 
     [Fact]
