@@ -140,15 +140,34 @@ internal sealed partial class PhysicsSceneShaders
             entries[13], entries[14], entries[15], entries[16], entries[17]));
     }
 
-    internal DeviceAvbdKernels Avbd(bool contactSupports, bool jointBounds)
+    internal DeviceAvbdKernels Avbd(bool contactSupports, bool jointBounds, int bodyCount)
     {
         ComputePipelineDesc[] entries = Compile("scene_contact_avbd", SceneDefines(contactSupports, jointBounds) + """
+            #include "physics_dispatch.slang"
             #include "physics_avbd_contact.slang"
             #include "physics_avbd_joint.slang"
             #include "physics_avbd_distance_range.slang"
             #include "physics_awake_avbd.slang"
             #if SCENE_CONTACT_SUPPORTS
             #include "physics_avbd_contact_support.slang"
+            struct SceneContactSupportConstraints : IDeviceAvbdConstraints
+            {
+                DeviceContactSupportAvbdConstraints inner;
+                uint count() { return inner.count(); }
+                bool active(uint row) { return inner.active(row); }
+                uint bodyCount(uint row) { return inner.bodyCount(row); }
+                uint body(uint row,uint end) { return inner.body(row,end); }
+                bool writes(uint row,uint end) { return inner.writes(row,end); }
+                uint groupCount() { return inner.groupCount(); }
+                uint group(uint row) { return inner.group(row); }
+                void initialize(uint row,DeviceAvbdStep context) { }
+                void accumulate(uint row,uint bodyIndex,DeviceAvbdStep context,inout DeviceAvbdEquation equation)
+                { inner.accumulate(row,bodyIndex,context,equation); }
+                void updateDuals(uint row,DeviceAvbdStep context) { inner.updateDuals(row,context); }
+                void adjust(uint bodyIndex,DeviceAvbdStep context,DeviceAvbdEquation equation,
+                    inout float3 translation,inout float3 rotation)
+                { inner.adjust(bodyIndex,context,equation,translation,rotation); }
+            };
             #endif
             struct SceneContactAvbdConstraints : IDeviceAvbdConstraints
             {
@@ -209,7 +228,7 @@ internal sealed partial class PhysicsSceneShaders
             typedef SceneOrdinaryConstraints SceneAvbdConstraints;
             #endif
             #if SCENE_CONTACT_SUPPORTS
-            typedef DeviceAvbdConstraintGroups<SceneAvbdConstraints,DeviceContactSupportAvbdConstraints> SceneSolveRows;
+            typedef DeviceAvbdConstraintGroups<SceneAvbdConstraints,SceneContactSupportConstraints> SceneSolveRows;
             #else
             typedef SceneAvbdConstraints SceneSolveRows;
             #endif
@@ -238,9 +257,22 @@ internal sealed partial class PhysicsSceneShaders
                 DeviceAwakeBodies bodies; updateDeviceContactSupports(AvbdStep,bodies);
                 #endif
             }
-            """, "ClearBodyIndices", "Initialize", "UpdateBody", "UpdateDuals", "InitializeSupports", "UpdateSupports");
+            [shader("compute")][numthreads(64,1,1)]
+            void ClearSupportBodies(uint3 id:SV_DispatchThreadID)
+            {
+                #if SCENE_CONTACT_SUPPORTS
+                uint bodyIndex=devicePhysicsThreadIndex(id,64);
+                DeviceSupportBodies rows;
+                if(bodyIndex<rows.count()&&rows.active(bodyIndex)&&deviceBodyActivityAwake(bodyIndex))
+                    DeviceSupportBodyStates[bodyIndex]=(DeviceBodySupportState)0;
+                #endif
+            }
+            """, "ClearBodyIndices", "Initialize", "UpdateBody", "UpdateDuals", "InitializeSupports", "UpdateSupports", "ClearSupportBodies");
+        DeviceAvbdGroupDispatch[] initialization = contactSupports
+            ? [new(entries[6], DevicePhysicsDispatch.CreateGroups((bodyCount + 63) / 64)), new(entries[4], new(1, 1, 1))] : [];
         return new(entries[1], entries[2], entries[3],
-            contactSupports ? entries[4] : null, contactSupports ? entries[5] : null, entries[0]);
+            UpdateGroups: contactSupports ? entries[5] : null, ClearBodyIndices: entries[0])
+        { GroupInitializationDispatches = initialization };
     }
 
     internal DeviceContactKernels Responses()

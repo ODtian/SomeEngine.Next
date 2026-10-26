@@ -42,6 +42,11 @@ Jacobian、惯性块与响应共同投影到该子空间。
 原 `initializeDeviceAvbd` 入口继续提供合并初始化。
 `DeviceAvbdKernels.InitializeGroups` 和 `UpdateGroups` 是可选的具体组阶段，
 分别位于逐行初始化之后和每轮逐行对偶更新之后；阶段之间使用同一提交内的 UAV barrier。
+`GroupInitializationDispatches` 和 `GroupUpdateDispatches` 在对应阶段接续具体的
+`DeviceAvbdGroupDispatch` 序列。每项给出 `ComputePipelineDesc` 与 RHI `DispatchArguments`，
+求解器沿同一 `DeviceAvbdStep`、原资源绑定和提交记录派发，并在相邻派发之间维护 UAV barrier。
+项目可用 `DevicePhysicsDispatch.CreateGroups` 组织线性主体工作，再接续读取该结果的组内计算；
+当前场景的支撑初始化先并行清理所选活动主体，再沿原支撑状态建立承重路径。
 项目提供具体 Slang `IDeviceAvbdConstraints` 内核与实际绑定，
 `DeviceAvbdConstraintGroups<TFirst,TSecond>` 将多种具体约束组装进同一 Body 局部方程。
 `adjust` 位于局部响应求出之后、位姿提交之前。
