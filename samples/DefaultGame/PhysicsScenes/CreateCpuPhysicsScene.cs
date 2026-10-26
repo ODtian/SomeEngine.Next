@@ -20,7 +20,20 @@ public static partial class PhysicsScenes
 
     internal static PhysicsSceneSimulation CreateCpu<TCollision>(World world, PhysicsSceneDescription description,
         PhysicsSceneData data, TCollision collision, PhysicsSceneSettings settings)
+        where TCollision : struct, ICollisionNarrowPhase<BoxGeometry, BoxGeometry> =>
+        CreateCpu(world, description, data, collision, settings, new AcknowledgeSceneEvents(), default);
+
+    public static PhysicsSceneSimulation CreateCpu<TCollision, TEvents>(World world, PhysicsSceneDescription description,
+        TCollision collision, PhysicsSceneSettings settings, TEvents events, ReadOnlySpan<JobResourceAccess> eventAccesses = default)
         where TCollision : struct, ICollisionNarrowPhase<BoxGeometry, BoxGeometry>
+        where TEvents : struct, IPhysicsEventConsumer =>
+        CreateCpu(world, description, Create(description), collision, settings, events, eventAccesses);
+
+    private static PhysicsSceneSimulation CreateCpu<TCollision, TEvents>(World world, PhysicsSceneDescription description,
+        PhysicsSceneData data, TCollision collision, PhysicsSceneSettings settings, TEvents events,
+        ReadOnlySpan<JobResourceAccess> eventAccesses)
+        where TCollision : struct, ICollisionNarrowPhase<BoxGeometry, BoxGeometry>
+        where TEvents : struct, IPhysicsEventConsumer
     {
         PhysicsSceneEntities created = CreateEntities(world, data);
         Entity[] entities = created.Bodies, jointEntities = created.Joints, rangeEntities = created.DistanceRanges;
@@ -40,6 +53,9 @@ public static partial class PhysicsScenes
             .Read<DirectedRelationEndpoints<JointConstraint>>().ReadWrite<AvbdJointState>());
         QueryHandle ranges = world.Query(new QueryDefinitionBuilder().Read<DistanceRange>()
             .Read<UndirectedRelationEndpoints<DistanceRange>>().ReadWrite<AvbdDistanceRangeState>());
+        QueryHandle eventQuery = world.Query(new QueryDefinitionBuilder().All<ScenePhysicsEventStream>()
+            .Read<PhysicsStepEvents>().ReadBuffer<PhysicsEvent>());
+        var eventBuffer = new PhysicsEventBuffer(scheduler, entities.Length);
         var candidates = Collision.Candidates<CollisionBounds, CollisionBoundsReader>(world, shapes, new CollisionTree(), default);
         var maintenance = candidates.CreateMaintenance(scheduler);
         var bins = new CollisionPairBins<CollisionNodePair>(scheduler, entities.Length, 2);
@@ -48,7 +64,8 @@ public static partial class PhysicsScenes
             new ComponentGeometryMotion<BoxGeometry>(), collision, new ContactPointOutput(detected), 0);
         var detection = DetectContactPoints.Create(world, maintenance.Query, bins, new SceneBoxPairs(world),
             StepContactNarrowPhase.Create(0, narrow), detected, [maintenance.ReadAccess]);
-        var points = ContactPoints.Create(world, poses, scope, detected, new SceneContactMaterials(), new SceneContactComponents(),
+        var points = ContactPoints.Create(world, poses, scope, detected, new SceneContactMaterials(),
+            new ContactEventComponents<ScenePhysicsEventStream, SceneContactComponents>(new SceneContactComponents()),
             new ContactRefreshSettings(.02f, .99f, true));
         var constraints = AvbdGraphConstraints.Combine(
             AvbdGraphConstraints.Combine(new AvbdGraphConstraints<ContactPoint, AvbdContactMath>(contacts),
@@ -57,14 +74,20 @@ public static partial class PhysicsScenes
         var solve = SolveAvbdGraph.Create(world, bodies, constraints,
             new PhysicsGraphSettings(PhysicsGraphOrder.Islands, 16, 16, 64, 4, false), settings.Iterations, .8f, 0,
             bodyIterations: settings.BodyIterations);
-        var stages = inputs.Then(new ApplyBodyInputs(64)).Then(new ApplyGyroscopicTorque(64)).Then(new PredictBodies(Vector(data.Gravity), 64))
+        var activity = solve.Activity(settings.Activity, eventBuffer);
+        var prediction = new PredictActiveBodies(world, bodies, Vector(data.Gravity), 64);
+        var contactEvents = new ContactEvents<ScenePhysicsEventStream>(world, bodies, scope, eventBuffer, .001f);
+        var consumption = new ConsumePhysicsEvents<TEvents>(world, eventQuery, events, eventAccesses);
+        var stages = inputs.Then(new ApplyBodyInputs(64)).Then(activity.WakeConnected()).Then(new ApplyGyroscopicTorque(64)).Then(prediction)
             .Then(new UpdatePredictedBounds<BoxGeometry>(0, 64)).Then(new RefitSceneBounds(maintenance))
-            .Then(detection).Then(points.Refresh()).Then(new InitializeContactResponses(world, bodies, contacts))
-            .Then(solve).Then(new UpdateBodyVelocities(64));
+            .Then(detection).Then(points.Refresh()).Then(activity.WakeConnected()).Then(prediction.Resume())
+            .Then(new InitializeContactResponses(world, bodies, contacts)).Then(solve).Then(new UpdateBodyVelocities(64))
+            .Then(contactEvents).Then(activity.Finish()).Then(eventBuffer.Emit(new SceneEventComponents()));
         var simulation = PhysicsSimulation.Create(world, filter, stages, data.Substeps);
-        var frame = simulation.CreateFrame(new CopySceneBodyTransforms(), data.StepSeconds, 0, 0, 0);
+        var frame = simulation.CreateFrame(new CopySceneBodyTransforms().Then(consumption), data.StepSeconds, 0, 0, 0);
         return new PhysicsSceneSimulation(world, description, settings, entities, jointEntities, rangeEntities, data.StepSeconds, frame, frame.CompleteForRead,
-            [shapes, poses, bodies, scope, contacts, joints, ranges], [inputs, maintenance, bins, detected, detection, points, solve]);
+            [shapes, poses, bodies, scope, contacts, joints, ranges, eventQuery],
+            [inputs, maintenance, bins, detected, detection, points, solve, activity, prediction, eventBuffer, contactEvents, consumption]);
     }
 
     internal static PhysicsSceneEntities CreateEntities(World world, PhysicsSceneData data)
@@ -84,6 +107,7 @@ public static partial class PhysicsScenes
             });
             world.Add(entity, new BodyVelocity { Linear = Vector(input.Velocity), Angular = Vector(input.AngularVelocity) });
             world.Add(entity, new BodyStepState());
+            world.Add(entity, new BodyActivity { Radius = Vector(input.Size).Length() * .5f });
             world.Add(entity, new BoxGeometry(Vector(input.Size) * .5f)); world.Add(entity, new CollisionBounds());
             world.Add(entity, new ContactMaterial { NormalStiffness = (float)(data.Materials?.ContactStiffness ?? double.PositiveInfinity),
                 NormalDamping = (float)(data.Materials?.ContactDamping ?? 0),
