@@ -11,6 +11,7 @@ public static class PhysicsScaleScenes
         new("bricks-510000", "510,000 连续砖结构", 3, 401, "连续结构", "第 120 步撞击", "承重、撞击、坍塌与整步成本"),
         new("pyramids-88200", "88,200 体金字塔阵列", 3, 402, "独立结构", "第 120 步逐结构撞击", "岛合并、坍塌与整步成本"),
         new("pyramids-176400", "176,400 体金字塔阵列", 3, 403, "独立结构", "第 120 步逐结构撞击", "岛合并、坍塌与整步成本"),
+        new("joint-grid-100000", "100,000 节点关节网", 3, 404, "大型连接网络", "第 120 步面外冲量", "大连通网络、自接触与整步成本"),
     ]);
 
     public static PhysicsSceneSimulation CreateCpu<TCollision>(World world, PhysicsSceneDescription description,
@@ -24,8 +25,44 @@ public static class PhysicsScaleScenes
         401 => CreateBricks(51),
         402 => CreatePyramids(20, 21),
         403 => CreatePyramids(28, 30),
+        404 => CreateJointGrid(),
         _ => throw new ArgumentOutOfRangeException(nameof(description)),
     };
+
+    private static PhysicsSceneData CreateJointGrid()
+    {
+        const int columns = 400, rows = 250;
+        const double spacing = 1.2;
+        var bodies = new SceneBodyData[columns * rows + 1];
+        bodies[0] = Box(0, 0, -.5, 500, 10, 1, 0);
+        for (int row = 0; row < rows; row++)
+            for (int column = 0; column < columns; column++)
+                bodies[1 + row * columns + column] = Box((column - 199.5) * spacing, 0,
+                    300 - row * spacing, .3, .3, .3, row == 0 ? 0 : 1);
+        int connectionCount = rows * (columns - 1) + (rows - 1) * columns + (rows - 1) * (columns - 1);
+        var joints = new SceneJointData[connectionCount];
+        var exclusions = new SceneCollisionPair[connectionCount];
+        int index = 0;
+        for (int row = 0; row < rows; row++)
+            for (int column = 0; column < columns; column++)
+            {
+                int body = 1 + row * columns + column;
+                if (column > 0) Connect(body - 1, body, [.6, 0, 0], [-.6, 0, 0]);
+                if (row > 0) Connect(body - columns, body, [0, 0, -.6], [0, 0, .6]);
+                if (row > 0 && column > 0) Connect(body - columns - 1, body, [.6, 0, -.6], [-.6, 0, .6]);
+            }
+        return new PhysicsSceneData(1.0 / 60, [0, 0, -10], bodies, joints,
+            [new(120, 1 + (rows - 1) * columns + columns / 2, [0, 12, 0])], exclusions,
+            Materials: new(double.PositiveInfinity, double.PositiveInfinity, double.PositiveInfinity),
+            ContactDetectionInterval: 1, ContactHistoryEnabled: true);
+
+        void Connect(int first, int second, double[] firstAnchor, double[] secondAnchor)
+        {
+            joints[index] = new(first, second, firstAnchor, secondAnchor, false, index);
+            exclusions[index] = new(first, second);
+            index++;
+        }
+    }
 
     private static PhysicsSceneData CreateBricks(int layers)
     {
