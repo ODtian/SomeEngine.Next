@@ -163,6 +163,7 @@ public sealed class CompletedPhysicsEventsTests
         Assert.InRange(received[0].Event.Force.Y, 7.98f, 8.02f);
         Assert.InRange(world.Read<BodyPose>(body).Position.Y, .8749f, .8751f);
         Assert.False(world.Has<ContactEventState<CollisionEvents>>(point));
+        Assert.False(world.IsAlive(point));
         world.ReleaseQuery(events); world.ReleaseQuery(contacts); world.ReleaseQuery(bodies);
     }
 
