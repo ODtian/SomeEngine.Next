@@ -121,11 +121,11 @@ public sealed partial class DevicePoseSources
     internal JobHandle ScheduleOutput(in PhysicsStepContext context, JobHandle dependency)
     {
         Scheduler scheduler = WorldJobs.GetScheduler(_world);
-        return scheduler.Schedule(new CaptureOutput(this, context.Number),
+        return scheduler.Schedule(new CaptureOutput(this, context.Number, context.EndTime),
             [JobResourceAccess.Write(scheduler.GetResourceToken(this))], dependency);
     }
 
-    private readonly struct CaptureOutput(DevicePoseSources sources, long number) : IJob
+    private readonly struct CaptureOutput(DevicePoseSources sources, long number, double time) : IJob
     {
         public void Execute()
         {
@@ -140,7 +140,7 @@ public sealed partial class DevicePoseSources
                 JobResourceAccess.Write(scheduler.GetResourceToken(sources._outputCommands)),
                 JobResourceAccess.Write(scheduler.GetResourceToken(output), 0, (long)output.Info.Size)];
             JobHandle copied = DevicePhysicsJobs.Schedule(scheduler, new OutputCopy(sources, index), accesses, default);
-            scheduler.Schedule(new WriteOutputs(sources, index, number),
+            scheduler.Schedule(new WriteOutputs(sources, index, number, time),
                 [JobResourceAccess.Write(scheduler.GetResourceToken(sources))], copied);
         }
     }
@@ -179,19 +179,19 @@ public sealed partial class DevicePoseSources
         public QueueCompletion Submit() => sources.SubmitOutput(index);
     }
 
-    private readonly struct WriteOutputs(DevicePoseSources sources, int output, long number) : IJob
+    private readonly struct WriteOutputs(DevicePoseSources sources, int output, long number, double time) : IJob
     {
         public void Execute()
         {
             Scheduler scheduler = WorldJobs.GetScheduler(sources._world);
             var commands = new JobCommandBuffer(sources._world, 1);
-            commands.Schedule(0, new ApplyOutputs(sources, output, number), [JobResourceAccess.Read(scheduler.GetResourceToken(sources))]);
+            commands.Schedule(0, new ApplyOutputs(sources, output, number, time), [JobResourceAccess.Read(scheduler.GetResourceToken(sources))]);
             JobHandle applied = commands.SchedulePlayback();
             scheduler.ScheduleFinally(new ReleasePoseCommands(commands), default, applied);
             sources._outputIndex = 1 - output;
         }
     }
-    private readonly struct ApplyOutputs(DevicePoseSources sources, int output, long number) : IJobCommandProducer
+    private readonly struct ApplyOutputs(DevicePoseSources sources, int output, long number, double time) : IJobCommandProducer
     {
         public void Execute(ref JobCommandWriter commands)
         {
@@ -201,7 +201,7 @@ public sealed partial class DevicePoseSources
                 var result = new DevicePoseOutput(sources._outputs[output], new(start, bytes),
                     new(sources._outputLocalCurrent + start, bytes), new(sources._outputLocalPrevious + start, bytes),
                     new(sources._outputPlayback + (ulong)source.Index * 64, 64), source.Input, source.Binding,
-                    number, source.Input.CalculationTime);
+                    number, source.CommonBodies ? time : source.Input.CalculationTime);
                 commands.Replace(source.Entity, in result);
             }
         }

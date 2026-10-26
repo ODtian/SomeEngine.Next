@@ -12,11 +12,14 @@ public static class DevicePoseShaders
     private static readonly object s_gate = new();
     private static IGlobalSession? s_global;
 
-    public static DevicePoseKernels Get(SlangCompileTarget target)
+    public static DevicePoseKernels Get(SlangCompileTarget target) => GetShader(target).Kernels;
+    public static DevicePoseBodyKernels GetBodies(SlangCompileTarget target) => GetShader(target).Bodies;
+
+    private static PoseShader GetShader(SlangCompileTarget target)
     {
         lock (s_gate)
         {
-            if (s_shaders.TryGetValue(target, out PoseShader ready)) return ready.Kernels;
+            if (s_shaders.TryGetValue(target, out PoseShader ready)) return ready;
             if (s_global is null)
             { Check(Slang.CreateGlobalSession(Slang.ApiVersion, out IGlobalSession global)); s_global = global; }
             var output = new TargetDesc
@@ -34,7 +37,8 @@ public static class DevicePoseShaders
             IModule? unit = session.LoadModuleFromSource("game_pose", "gpu_pose_physics.slang",
                 Slang.CreateBlob(ReadSource("gpu_pose_physics.slang")), out ISlangBlob? diagnostics);
             if (unit is null) throw new InvalidDataException(diagnostics?.AsString);
-            string[] names = ["AdvancePoseStates", "SamplePoseLevel", "TranslatePose", "SolveTwoBone", "SolveAim", "WarpStride", "SimulateDevicePoseChain"];
+            string[] names = ["AdvancePoseStates", "SamplePoseLevel", "TranslatePose", "SolveTwoBone", "SolveAim", "WarpStride", "SimulateDevicePoseChain",
+                "WriteDevicePoseBodyTargets", "MapDevicePoseBodyBones"];
             var entries = new IEntryPoint[names.Length];
             var components = new IComponentType[names.Length + 1];
             components[0] = unit;
@@ -53,8 +57,9 @@ public static class DevicePoseShaders
                     CodeBlob: shader.GetSlangEntryBlob(0, entry));
             }
             var kernels = new DevicePoseKernels(Entry(0), Entry(1), Entry(2), Entry(3), Entry(4), Entry(5), Entry(6));
-            s_shaders.Add(target, new(shader, kernels));
-            return kernels;
+            var compiled = new PoseShader(shader, kernels, new(Entry(7), Entry(8)));
+            s_shaders.Add(target, compiled);
+            return compiled;
         }
     }
 
@@ -71,5 +76,5 @@ public static class DevicePoseShaders
 
     private static void Check(SlangResult result, ISlangBlob? diagnostics = null)
     { if (result.Failed) throw new InvalidDataException($"Game pose shader compilation failed: {result}. {diagnostics?.AsString}"); }
-    private readonly record struct PoseShader(Shader Shader, DevicePoseKernels Kernels);
+    private readonly record struct PoseShader(Shader Shader, DevicePoseKernels Kernels, DevicePoseBodyKernels Bodies);
 }
