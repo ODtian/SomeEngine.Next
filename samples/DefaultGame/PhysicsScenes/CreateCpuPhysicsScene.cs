@@ -81,7 +81,12 @@ public static partial class PhysicsScenes
         var detection = DetectContactPoints.Create(world, maintenance.Query, bins, new SceneBoxPairs(world),
             StepContactNarrowPhase.Create(0, narrow), detected, [maintenance.ReadAccess]);
         var points = ContactPoints.Create(world, poses, scope, detected, new SceneContactMaterials(),
-            new ContactEventComponents<ScenePhysicsEventStream, SceneContactComponents>(new SceneContactComponents(settings.ContactSupports.HasValue)),
+            new ContactEventComponents<ScenePhysicsEventStream, SceneContactComponents>(
+                new SceneContactComponents(settings.ContactSupports.HasValue, new AvbdContactState
+                {
+                    NormalPenalty = settings.ContactNormalPenalty, TangentPenalty = settings.ContactTangentPenalty,
+                    FrictionRegularizationSpeed = settings.FrictionRegularizationSpeed,
+                })),
             new ContactRefreshSettings(.02f, .99f, true));
         var contactConstraints = AvbdGraphConstraints.Combine(new AvbdGraphConstraints<ContactPoint, AvbdContactMath>(ordinaryContacts),
             new AvbdGraphConstraints<ContactPoint, AvbdSupportedContactMath>(supportedContacts));
@@ -252,14 +257,14 @@ internal readonly struct SceneContactMaterials : IContactMaterialCombine
     }
 }
 
-internal readonly struct SceneContactComponents(bool supports = false) : IContactPointComponents
+internal readonly struct SceneContactComponents(bool supports, AvbdContactState parameters) : IContactPointComponents
 {
     public void AddReads(World world, List<JobResourceAccess> accesses) { }
     public void Add(ref JobCommandWriter commands, Entity point, in ContactPoint geometry,
         ReadOnlySpan<ContactBody> first, ReadOnlySpan<ContactBody> second, in PhysicsStepContext context)
     {
         commands.Add(point, new ScenePhysicsContact());
-        commands.Add(point, new AvbdContactState { NormalPenalty = 1e6f, TangentPenalty = 1e6f, MultiplierNormal = geometry.Normal });
+        new AvbdContactComponents(parameters).Add(ref commands, point, in geometry, first, second, in context);
         if (supports)
         {
             commands.Add(point, new LongRangeContactSupport());
