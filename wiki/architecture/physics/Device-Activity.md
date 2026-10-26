@@ -40,6 +40,8 @@
 `DeviceNoConstraintBodies` 提供自由主体场景的零约束具体组。
 活动行内核通过 `IDeviceConstraintActivity.error` 返回米、弧度两种残差，
 `readDeviceActivityRows` 将当前误差及参考输入变化归约到原参与岛。
+`DeviceLengthActivity` 沿共同 Length 参数和当前主体位置返回距离残差，
+参与角色与参数选择委托原 `DeviceLengthBodies`。
 
 `WakeConnected()` 在当前完整图上读取运动、当前输入及具体行误差，唤醒同岛主体。
 `Finish()` 按速度、质心位移、由半径换算的角运动及当前误差共同判断安静，
