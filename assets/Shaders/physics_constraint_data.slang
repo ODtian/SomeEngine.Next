@@ -2,7 +2,7 @@
 #define PHYSICS_CONSTRAINT_DATA
 struct DeviceConstraintMetadata
 {
-    uint entityIndex; uint entityGeneration; uint active; uint padding;
+    uint entityIndex; uint entityGeneration; uint active; uint inputVersion;
 };
 struct DeviceLengthConstraint
 {

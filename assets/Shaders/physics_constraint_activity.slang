@@ -12,6 +12,11 @@ struct DeviceConstraintActivityGroups<TFirst : IDeviceConstraintActivity,TSecond
     bool writes(uint row,uint end) { return participants.writes(row,end); }
     uint groupCount() { return participants.groupCount(); }
     uint group(uint row) { return participants.group(row); }
+    override uint2 sourceVersions(uint row)
+    {
+        uint firstCount=participants.first.count();
+        return row<firstCount?participants.first.sourceVersions(row):participants.second.sourceVersions(row-firstCount);
+    }
     uint2 entity(uint row)
     {
         uint firstCount=participants.first.count();
