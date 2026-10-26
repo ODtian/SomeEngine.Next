@@ -6,6 +6,9 @@ namespace SomeEngine.Physics;
 /// <summary>The standard contact rows with the selected LRC auxiliary force in their friction projection.</summary>
 public readonly struct AvbdSupportedContactMath : IAvbdConstraint<ContactPoint>
 {
+    public static PhysicsConstraintError GetActivityError(in ContactPoint point, scoped QueryRow row,
+        scoped PhysicsBodies bodies, in PhysicsStepContext context) => ContactBodyMath.GetActivityError(in point, row, bodies, in context);
+
     public static int GetReadEntityCount(in ContactPoint point, scoped QueryRow row, in PhysicsStepContext context) =>
         AvbdContactMath.GetReadEntityCount(in point, row, in context);
     public static Entity GetReadEntity(in ContactPoint point, scoped QueryRow row, int index, in PhysicsStepContext context) =>

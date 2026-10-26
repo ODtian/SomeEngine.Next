@@ -8,11 +8,7 @@ using SomeEngine.Job;
 namespace SomeEngine.Physics;
 
 /// <summary>Current world force and torque from the concrete XPBD multiplier and Jacobian.</summary>
-public interface IXpbdConstraintForces<TConstraint> : IPhysicsConstraintBodies<TConstraint> where TConstraint : struct, IComponent
-{
-    static abstract void GetBodyForce(in TConstraint constraint, scoped QueryRow row, Entity body,
-        scoped PhysicsBodies bodies, in PhysicsStepContext context, out Vector3 force, out Vector3 torque);
-}
+public interface IXpbdConstraintForces<TConstraint> : IPhysicsConstraintForces<TConstraint> where TConstraint : struct, IComponent;
 
 /// <summary>Includes current XPBD forces in AVBD while XPBD retains projection and multiplier updates.</summary>
 public readonly struct XpbdForces<TConstraint, TProjection> : IAvbdConstraints, IAvbdGraphConstraints
@@ -52,6 +48,9 @@ public readonly struct XpbdForces<TConstraint, TProjection> : IAvbdConstraints, 
 
     public int QueryCount => 1;
     public QueryHandle GetQuery(int index) => _constraints;
+    public void ReadActivityErrors(in PhysicsStepContext context, scoped EntityQueryViews queries, int offset,
+        scoped PhysicsBodies bodies, ref PhysicsActivityErrors errors) =>
+        PhysicsActivityRows<TConstraint, TProjection>.Read(new(queries.Get(offset), queries.Get(2)), bodies, in context, ref errors);
     public void AddResources(World world, List<JobResourceAccess> accesses, PhysicsGraphPhase phase)
     {
         JobResourceToken token = WorldJobs.GetScheduler(world).GetResourceToken(_byBody);

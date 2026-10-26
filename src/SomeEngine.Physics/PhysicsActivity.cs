@@ -12,7 +12,7 @@ public readonly struct PhysicsActivity<TInputs> : IDisposable where TInputs : st
 {
     private readonly PhysicsActivityData<TInputs> _data;
     internal PhysicsActivity(PhysicsGraphData graph, PhysicsGraphQueries queries, TInputs inputs,
-        BodyActivitySettings settings, QueryReadResources? resources) => _data = new(graph, queries, inputs, settings, resources);
+        BodyActivitySettings settings, QueryReadResources? resources, PhysicsEventBuffer? events) => _data = new(graph, queries, inputs, settings, resources, events);
     public PhysicsActivityStage<TInputs> WakeConnected() => new(this, false);
     public PhysicsActivityStage<TInputs> Finish() => new(this, true);
     internal JobHandle Schedule(in PhysicsStepContext context, bool finish, JobHandle dependency) => _data.Schedule(in context, finish, dependency);
@@ -34,18 +34,20 @@ internal sealed class PhysicsActivityData<TInputs> : IDisposable where TInputs :
     private readonly TInputs _inputs;
     private readonly BodyActivitySettings _settings;
     private readonly QueryReadResources? _resources;
+    private readonly PhysicsEventBuffer? _events;
     private readonly QueryHandle _bodies;
     private readonly JobResourceAccess[] _accesses;
     private readonly Dictionary<Entity, (uint Pose, uint Mass)> _versions = [];
     private readonly List<Entity> _removed = [];
+    private readonly HashSet<Entity> _notQuiet = [];
 
     internal PhysicsActivityData(PhysicsGraphData graph, PhysicsGraphQueries queries, TInputs inputs,
-        BodyActivitySettings settings, QueryReadResources? resources)
+        BodyActivitySettings settings, QueryReadResources? resources, PhysicsEventBuffer? events)
     {
-        _graph = graph; _queries = queries; _inputs = inputs; _settings = settings; _resources = resources;
+        _graph = graph; _queries = queries; _inputs = inputs; _settings = settings; _resources = resources; _events = events;
         World world = queries.World;
         QueryDefinition access = new QueryDefinitionBuilder().Read<BodyPose>().Read<BodyMass>().Read<BodyStepState>()
-            .ReadWrite<BodyVelocity>().Optional<BodyActivity>(QueryAccess.ReadWrite).Build();
+            .ReadWrite<BodyVelocity>().Optional<BodyActivity>(QueryAccess.ReadWrite).OptionalBuffer<BodyWake>(QueryAccess.Read).Build();
         QueryDefinition definition = world.GetQueryDefinition(queries.Queries[0]).AsReadOnly().WithAccess(access);
         _bodies = world.Query(definition);
         var accesses = new List<JobResourceAccess> { graph.WriteAccess };
@@ -54,6 +56,7 @@ internal sealed class PhysicsActivityData<TInputs> : IDisposable where TInputs :
         QueryJobAccess.CopyAccesses(world, definition.AsReadOnly(), bodyReads);
         accesses.AddRange(bodyReads);
         inputs.AddResources(world, accesses, PhysicsGraphPhase.Metadata);
+        if (events is not null) accesses.Add(events.WriteAccess);
         _accesses = accesses.ToArray();
     }
 
@@ -86,51 +89,69 @@ internal sealed class PhysicsActivityData<TInputs> : IDisposable where TInputs :
             var builder = new PhysicsConstraintGraphBuilder(data._graph);
             data._inputs.ReadGraph(in context, data._queries.Reads, 0, ref builder);
             if (data._graph.Finish()) return false;
-            EntityQuery rows = group.Get(0).Get(data._queries.Queries.Length);
+            EntityQueryViews global = group.Get(0);
+            var bodies = new PhysicsBodies(global.Get(0), global.Get(1), global.Get(2));
+            data._notQuiet.Clear();
+            var errors = new PhysicsActivityErrors(data._settings, data._notQuiet);
+            data._inputs.ReadActivityErrors(in context, global, 3, bodies, ref errors);
+            EntityQuery rows = global.Get(data._queries.Queries.Length);
+            data.Wake(rows, in context);
             if (finish) data.Finish(rows, in context);
-            else data.Wake(rows);
             return true;
         }
     }
 
-    private void Wake(scoped EntityQuery rows)
+    private void Wake(scoped EntityQuery rows, in PhysicsStepContext context)
     {
         PruneVersions(rows);
         foreach (PhysicsGraphData.Island island in _graph.ActivityIslands)
         {
-            bool awake = false;
+            bool awake = false, changed = false;
             foreach (Entity body in island.DynamicBodies)
             {
                 rows.TryGetRow(body, out QueryRow row);
-                awake |= BodyActivities.IsAwake(row) || row.ReadRef<BodyVelocity>().Linear != Vector3.Zero || row.ReadRef<BodyVelocity>().Angular != Vector3.Zero;
+                changed |= _graph.HasActivityChange(body);
+                awake |= _notQuiet.Contains(body) || BodyActivities.IsAwake(row) || row.ReadRef<BodyVelocity>().Linear != Vector3.Zero || row.ReadRef<BodyVelocity>().Angular != Vector3.Zero;
                 if (_versions.TryGetValue(body, out var previous))
                     awake |= previous != (row.WriteVersion<BodyPose>(), row.WriteVersion<BodyMass>());
             }
             foreach (Entity body in island.Reads)
             {
                 rows.TryGetRow(body, out QueryRow row);
+                if (row.HasBuffer<BodyWake>())
+                    foreach (BodyWake request in row.ReadBuffer<BodyWake>().AsSpan())
+                        changed |= request.Time >= context.StartTime && request.Time < context.EndTime;
                 if (row.ReadRef<BodyMass>().Motion == BodyMotion.Dynamic) continue;
                 ref readonly BodyVelocity velocity = ref row.ReadRef<BodyVelocity>();
                 awake |= velocity.Linear != Vector3.Zero || velocity.Angular != Vector3.Zero;
                 if (_versions.TryGetValue(body, out var previous))
                     awake |= previous != (row.WriteVersion<BodyPose>(), row.WriteVersion<BodyMass>());
             }
-            if (!awake) continue;
+            if (!awake && !changed) continue;
             foreach (Entity body in island.DynamicBodies)
             {
                 rows.TryGetRow(body, out QueryRow row);
-                if (!row.Has<BodyActivity>() || !row.ReadRef<BodyActivity>().Sleeping) continue;
+                if (!row.Has<BodyActivity>()) continue;
+                if (!changed && !row.ReadRef<BodyActivity>().Sleeping) continue;
                 ref BodyActivity activity = ref row.ReadWrite<BodyActivity>();
+                if (activity.Sleeping)
+                {
+                    ref readonly BodyStepState step = ref row.ReadRef<BodyStepState>();
+                    double time = step.Number == context.Number && step.Substep == context.Substep && step.Time == context.EndTime
+                        ? context.EndTime : context.StartTime;
+                    _events?.Add(new PhysicsEvent { Kind = PhysicsEventKind.Wake, Subject = body, Substep = context.Substep, Time = time });
+                }
                 activity.Sleeping = false; activity.QuietSeconds = 0;
             }
         }
+        _graph.ClearActivityChanges();
     }
 
     private void Finish(scoped EntityQuery rows, in PhysicsStepContext context)
     {
         foreach (PhysicsGraphData.Island island in _graph.ActivityIslands)
         {
-            bool ready = true, awake = false;
+            bool ready = !island.DynamicBodies.Any(_notQuiet.Contains), awake = false;
             foreach (Entity body in island.DynamicBodies)
             {
                 rows.TryGetRow(body, out QueryRow row);
@@ -161,7 +182,10 @@ internal sealed class PhysicsActivityData<TInputs> : IDisposable where TInputs :
                 foreach (Entity body in island.DynamicBodies)
                 {
                     rows.TryGetRow(body, out QueryRow row);
-                    row.ReadWrite<BodyActivity>().Sleeping = true;
+                    ref BodyActivity activity = ref row.ReadWrite<BodyActivity>();
+                    if (!activity.Sleeping) _events?.Add(new PhysicsEvent { Kind = PhysicsEventKind.Sleep, Subject = body,
+                        Substep = context.Substep, Time = context.EndTime });
+                    activity.Sleeping = true;
                     row.ReadWrite<BodyVelocity>() = default;
                 }
         }
