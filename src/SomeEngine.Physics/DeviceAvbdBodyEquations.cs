@@ -103,6 +103,7 @@ public sealed class DeviceAvbdBodyEquations : IDisposable, IDevicePhysicsSubmiss
         public Matrix Values, Factors;
         public System.Numerics.Vector3 InertiaX, InertiaY, InertiaZ, LinearGradient, AngularGradient;
         public uint Dimensions;
+        public System.Numerics.Quaternion RotationFrame;
     }
     public void Dispose()
     {
