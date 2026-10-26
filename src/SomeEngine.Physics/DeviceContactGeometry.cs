@@ -88,7 +88,8 @@ public sealed class DeviceContactGeometry : IDisposable, IDevicePhysicsSubmissio
         {
             Span<uint> values = MemoryMarshal.Cast<byte, uint>(mapping.Bytes);
             values[0] = (uint)_detection.Count; values[1] = (uint)_anchors.BodiesPerContact;
-            mapping.Flush(new(0, 8));
+            values[2] = (uint)_detection.Capacity.BodiesPerContact;
+            mapping.Flush(new(0, 12));
         }
         _backend.Begin(_commands, new(0, 0, 8));
         _backend.SetPipeline(_commands, _pipeline);

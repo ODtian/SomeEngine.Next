@@ -146,13 +146,14 @@ public sealed partial class DeviceCollisionDetection : IDisposable
 
     [StructLayout(LayoutKind.Sequential)]
     private readonly record struct DetectionParameters(uint Bin, uint PairCapacity, float Tolerance,
-        uint DistanceIterations, uint PenetrationIterations, uint FaceCapacity, float ContactDistance, uint WorkItems);
+        uint DistanceIterations, uint PenetrationIterations, uint FaceCapacity, float ContactDistance, uint WorkItems,
+        uint BodiesPerContact);
 
     private QueueCompletion Submit()
     {
         var parameters = new DetectionParameters((uint)_bin, (uint)Capacity.Pairs, _settings.Tolerance,
             (uint)_settings.DistanceIterations, (uint)_settings.PenetrationIterations,
-            (uint)Capacity.FaceVertices, _contactDistance, (uint)Capacity.WorkItems);
+            (uint)Capacity.FaceVertices, _contactDistance, (uint)Capacity.WorkItems, (uint)Capacity.BodiesPerContact);
         using (MappedBuffer mapping = _backend.Map(_parameters, MapType.Write, BufferRange.Whole))
         {
             MemoryMarshal.Write(mapping.Bytes, in parameters);

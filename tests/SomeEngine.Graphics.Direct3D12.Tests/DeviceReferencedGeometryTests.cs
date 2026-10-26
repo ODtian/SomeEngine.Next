@@ -53,7 +53,8 @@ public sealed partial class DeviceReferencedGeometryTests(D3D12TestCompiler shad
         using var sphereUpdate = new UpdateDeviceGeometry(backend, device, grid, geometry,
             CompileUpdate("DeviceSphereUpdate"), 1, DeviceInputTransfer.Resident);
         using var detection = new DeviceCollisionDetection(backend, device, grid, geometry,
-            CompileDetection("DeviceConvexCollision<DeviceTriangle, DeviceSphere>"), 1, new(4, 4, 1),
+            CompileDetection("DeviceConvexCollision<DeviceTriangle, DeviceSphere>"), 1,
+            new DeviceDetectionCapacity(4, 4, 1) { BodiesPerContact = 4 },
             new(1e-5f, 32, 64), 0, DeviceInputTransfer.Resident, DeviceCollisionReadback.Contacts);
         var captured = new List<Captured>();
         var stages = bodies.WriteInputs(64).Then(bodies.UploadInputs()).Then(move)
@@ -107,7 +108,8 @@ public sealed partial class DeviceReferencedGeometryTests(D3D12TestCompiler shad
         using var sphereUpdate = new UpdateDeviceGeometry(backend, device, grid, geometry,
             CompileUpdate("DeviceSphereUpdate"), 1, DeviceInputTransfer.Resident);
         using var detection = new DeviceCollisionDetection(backend, device, grid, geometry,
-            CompileDetection("DeviceConvexCollision<DeviceCapsule, DeviceSphere>"), 1, new(4, 4, 1),
+            CompileDetection("DeviceConvexCollision<DeviceCapsule, DeviceSphere>"), 1,
+            new DeviceDetectionCapacity(4, 4, 1) { BodiesPerContact = 3 },
             new(1e-5f, 32, 64), 0, DeviceInputTransfer.Resident, DeviceCollisionReadback.Contacts | DeviceCollisionReadback.Distances);
         var captured = new List<Captured>();
         JobResourceAccess output = JobResourceAccess.Write(jobs.GetResourceToken(captured));

@@ -127,7 +127,8 @@ public sealed partial class DeviceAvbdTests
             .Read<DeviceConstraintBinding<DeviceContactConstraint>>().Read<DeviceAvbdState<DeviceAvbdContactState>>());
         var pairs = world.Within(spheres);
         using var detection = new DeviceCollisionDetection(backend, device, grid, geometry, CompileHistoryReferencedDetection(), 0,
-            new(4, 4, 1), new(1e-5f, 32, 64), 0, DeviceInputTransfer.Resident, DeviceCollisionReadback.Contacts);
+            new DeviceDetectionCapacity(4, 4, 1) { BodiesPerContact = 2 }, new(1e-5f, 32, 64), 0,
+            DeviceInputTransfer.Resident, DeviceCollisionReadback.Contacts);
         using var detected = new ContactPointBuffer(jobs, 4, 8);
         using var parameters = new DeviceConstraintData<DeviceContactConstraint>(backend, device, 4, "DeviceContacts");
         using var anchors = new DeviceContactBodies(backend, device, 4, 2);
