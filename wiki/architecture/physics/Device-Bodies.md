@@ -29,6 +29,17 @@ StepState 的写版本；新实体按绑定初始化整行，既有实体只复�
 来源版本与已同步字段由 DeviceBodies 单处保存，查询和传输范围由输入持有者复用。
 实际数据继续位于原 208B States，上传复用原 staging 和命令资源。
 
+[DeviceBodyInputBuffers](../../../src/SomeEngine.Physics/DeviceBodyInputBuffers.cs) 从同一参与查询读取
+原 `BodyForce`、`BodyImpulse`、`BodyVelocityTarget` 与 `BodyKinematicTarget` 时间缓冲。
+`WriteInputs()` 将当前子步的力积分、所属时段的冲量、最新速度目标和轨迹采样值形成派生设备输入，
+保留原 Entity 编号与代次。`Apply()` 在预测前读取当前驻留质量、惯量、姿态和速度施加这些输入；
+`ApplyKinematicTargets()` 在预测后写入运动学轨迹及共同预测值，速度仍由共同速度阶段重建。
+力按时段交集积分，冲量和速度目标在包含其时刻的子步生效，轨迹在结束后保持最终位姿。
+
+输入资源按主体批次容量复用。`AddBindings` 提供 `DeviceBodyInputs` 与 `BodyInputParameters`，
+`GetReadAccesses` 提供原 Job 的读取描述，具体活动阶段可沿同一派生输入判断唤醒。
+设备应用阶段按实际输入主体声明 States 写区间，提交与设备完成继续沿原外部 fence 链。
+
 `DeviceBodyState` 与 `physics_bodies.slang` 对应，大小为 208 字节。
 当前原点/旋转位于 0/16，线速度/逆质量位于 32/44，角速度位于 48；
 局部质心位于 64，完整逆惯量的三行位于 80/96/112；
