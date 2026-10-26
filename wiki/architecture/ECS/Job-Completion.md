@@ -29,6 +29,11 @@ Created
 `GetAwaiter()` 同样取得本次等待的完成结果；通知就绪后，即使消费者延后执行 `GetResult()`，
 仍取得这次等待保存的终态。底层完成记录在通知交付后继续按上述规则复用。
 
+`JobHandle.CompleteAsync()` 交付工作及其子工作的完成结果。所属 Scheduler 配置零 worker 且调用处为协调线程时，
+它通过已有 `Complete()` 在调用线程执行工作并完成等待；有 worker 的执行器及 Job 回调通过 `WaitAsync()`
+接续完成通知。公开异步消费者在内部持有 CPU 工作句柄时使用这一入口，将计算完成后再交付自己的结果。
+资产解码、按需 Shader 元数据与两个图形后端的异步管线创建均沿此完成点返回；类别额度、资源使用期及错误传播仍由原调度链持有。
+
 源码入口：[JobHandle](../../../src/SomeEngine.Job/JobHandle.cs)、
 [异步等待](../../../src/SomeEngine.Job/JobHandleAwaitExtensions.cs)、
 [完成记录](../../../src/SomeEngine.Job/Scheduler.CompletionStore.cs) 与

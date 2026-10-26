@@ -15,7 +15,8 @@ requests, using the existing processor-count budget. Acceptance captures `JobSys
 dispatched request uses that Scheduler's `D3D12 pipeline` category through `ScheduleAsync`. The category
 allows 256 in-flight Jobs, at most four executing workers within the Scheduler's worker count, and a
 service share of one. The Device keeps requests in its queue until the concrete Job starts, including
-requests waiting for the shared category. Its dispatched budget returns after the complete Job finishes.
+requests waiting for the shared category. `JobHandle.CompleteAsync` delivers the complete Job result,
+using the coordinating caller to execute a zero-worker Scheduler. Its dispatched budget returns after completion.
 
 Request packets own all span data, Slang global/session/program references and cache use. The concrete
 Job performs the original native creation, releases captured inputs, and delivers the original

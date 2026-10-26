@@ -22,6 +22,16 @@ public readonly struct JobHandle
         Scheduler?.Complete(this);
     }
 
+    /// <summary>Completes the work and its descendants, with caller execution on a zero-worker coordinating thread.</summary>
+    /// <remarks>Job callbacks and schedulers with workers continue through asynchronous completion notifications.</remarks>
+    public async ValueTask CompleteAsync()
+    {
+        if (Scheduler is { WorkerCount: 0 } && !JobExecutionContext.IsActive)
+            Complete();
+        else
+            await WaitAsync().ConfigureAwait(false);
+    }
+
     /// <summary>Cancels this wait while the shared work and its resource use continue to completion.</summary>
     public ValueTask WaitAsync(CancellationToken cancellationToken) => cancellationToken.CanBeCanceled
         ? new ValueTask(WaitAsync().AsTask().WaitAsync(cancellationToken))

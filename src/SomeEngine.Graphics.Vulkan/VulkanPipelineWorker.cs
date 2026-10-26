@@ -183,7 +183,7 @@ internal sealed partial class VulkanBackend
                 Scheduler scheduler = request.Scheduler;
                 JobHandle completed = await scheduler.ScheduleAsync(new CreatePipeline(this, request),
                     new() { Category = GetCategory(scheduler) }).ConfigureAwait(false);
-                await completed.WaitAsync().ConfigureAwait(false);
+                await completed.CompleteAsync().ConfigureAwait(false);
             }
             catch (Exception exception)
             {
