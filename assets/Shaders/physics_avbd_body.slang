@@ -88,6 +88,20 @@ void deviceAvbdAddRow(inout DeviceAvbdEquation equation,float3 linear,float3 ang
 }
 void deviceAvbdFactorize(inout DeviceAvbdEquation equation)
 {
+    bool diagonal=true;
+    for(uint row=1;row<equation.dimensions;row++)
+        for(uint column=0;column<row;column++)
+            diagonal=diagonal&&equation.values[deviceAvbdMatrixIndex(row,column)]==0;
+    if(diagonal)
+    {
+        // A diagonal block already supplies D; the triangular coefficients of L are zero.
+        for(uint row=0;row<equation.dimensions;row++)
+        {
+            for(uint column=0;column<row;column++) equation.factors[deviceAvbdMatrixIndex(row,column)]=0;
+            equation.factors[deviceAvbdMatrixIndex(row,row)]=equation.values[deviceAvbdMatrixIndex(row,row)];
+        }
+        return;
+    }
     for (uint row=0;row<equation.dimensions;row++)
     {
         for (uint column=0;column<row;column++)
@@ -109,6 +123,11 @@ void deviceAvbdFactorize(inout DeviceAvbdEquation equation)
 }
 void deviceAvbdResponse(DeviceAvbdEquation equation,float3 force,float3 torque,out float3 translation,out float3 rotation)
 {
+    if(!any(force!=float3(0))&&!any(torque!=float3(0)))
+    {
+        translation=rotation=float3(0);
+        return;
+    }
     float response[6]={force.x,force.y,force.z,0,0,0};
     for(uint axis=0;axis<equation.dimensions-3;axis++) response[axis+3]=dot(torque,deviceAvbdRotationAxis(equation,axis));
     for(uint row=0;row<equation.dimensions;row++)
