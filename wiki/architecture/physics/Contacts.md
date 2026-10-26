@@ -30,6 +30,24 @@ gap = Separation + dot(Normal, currentWeightedAnchorDelta - BodyAnchorDelta)
 
 `WarmStart` 由刷新设置写入点。AVBD 初始化将旧法向与切向乘子还原为世界力，投影到当前法向和切平面，乘以求解器显式给出的保留系数，再约束到静摩擦圆盘。新点参数、匹配阈值、热启动开关、保留系数及每步刷新时机均由项目提供。
 
+## 设备匹配与原实体回放
+
+[DeviceContactMatches](../../../src/SomeEngine.Physics/DeviceContactMatches.cs) 读取当前
+`DeviceCollisionDetection` 的接触和点数，以及原 `DeviceConstraintData<DeviceContactConstraint>`。
+共同参数保存原几何 Entity、特征和见证点；当前原查询的点 Binding 与 Entity 代次选择有效旧行。
+[设备匹配内核](../../../assets/Shaders/physics_contact_matching.slang) 先按双方几何身份建立散列表，
+再由每个 pair 的线程处理其流形点，在配置的距离和法向条件内优先匹配相同特征，并为每个旧点保留一个当前点。
+输出只保存对应点 Entity、原参数行索引和匹配距离，数值历史继续位于各算法选定的状态 buffer。
+
+`matching.Components(components)` 在原新点组件写入阶段添加同一份参数 Binding，并复用匹配集合释放出的索引。
+`matching.Match()` 的完成句柄覆盖实际设备计算、fence 和派生对应关系读回。
+`points.Refresh(matching.Results)` 通过具体 `IContactPointMatches` 消费这些结果，沿原成员范围核对点身份，
+继续使用同一套点创建、参与边重定向、结束及组件写入命令。
+原 `points.Refresh()` 使用具体 `SearchContactPoints` 搜索路径。
+
+设备检测、对应关系交接、原拓扑回放和后续参数上传均属于该物理步的执行链。
+连续步行为入口见 [DeviceContactHistoryTests](../../../tests/SomeEngine.Graphics.Direct3D12.Tests/DeviceContactHistoryTests.cs)。
+
 ## 材料与数值状态
 
 | 数据 | 含义与单位 | 持有者 |
