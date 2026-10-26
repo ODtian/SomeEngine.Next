@@ -6,7 +6,8 @@ using SomeEngine.Job;
 
 namespace SomeEngine.Physics;
 
-public readonly record struct DeviceAvbdKernels(ComputePipelineDesc Initialize, ComputePipelineDesc UpdateBody, ComputePipelineDesc UpdateDuals);
+public readonly record struct DeviceAvbdKernels(ComputePipelineDesc Initialize, ComputePipelineDesc UpdateBody, ComputePipelineDesc UpdateDuals,
+    ComputePipelineDesc? InitializeGroups = null, ComputePipelineDesc? UpdateGroups = null);
 public readonly record struct DeviceAvbdSettings(int Iterations, int BodyIterations, float MultiplierRetention, float InitialErrorFraction);
 
 /// <summary>Concrete compliant ALM kernels using current component representations and the shared device graph.</summary>
@@ -25,6 +26,7 @@ public sealed class DeviceAvbdSolver : IDisposable
     private readonly CommandContext _commands;
     private readonly JobResourceAccess[] _extraAccesses;
     private readonly IDeviceConstraintSelection[] _selections;
+    private readonly int _initializeGroups, _updateGroups;
     private bool _initialized;
 
     public DeviceAvbdSolver(IGraphicsBackend backend, Device device, DeviceBodies bodies, DeviceAvbdBodyEquations equations,
@@ -35,7 +37,11 @@ public sealed class DeviceAvbdSolver : IDisposable
         _backend=backend; _device=device; _bodies=bodies; _equations=equations; _graph=graph; _settings=settings;
         _threadsPerGroup=threadsPerGroup; _extraAccesses=inputAccesses.ToArray(); _selections=selections.ToArray();
         _commands=backend.CreateCommandContext(device,new(QueueType.Compute,0,1,Label:"Device compliant ALM"));
-        ComputePipelineDesc[] descriptions=[kernels.Initialize,kernels.UpdateBody,kernels.UpdateDuals];
+        var descriptions=new List<ComputePipelineDesc>{kernels.Initialize,kernels.UpdateBody,kernels.UpdateDuals};
+        _initializeGroups=kernels.InitializeGroups.HasValue?descriptions.Count:-1;
+        if(kernels.InitializeGroups is { } initialize) descriptions.Add(initialize);
+        _updateGroups=kernels.UpdateGroups.HasValue?descriptions.Count:-1;
+        if(kernels.UpdateGroups is { } update) descriptions.Add(update);
         _pipelines=descriptions.Select(kernel=>backend.CreateComputePipeline(device,kernel)).ToArray();
         _layouts=descriptions.Select(kernel=>kernel.Reflection.GetGlobalParamsVarLayout()??VariableLayoutReflection.Null).ToArray();
         var bindings=new Dictionary<string,ResourceBinding[]>();
@@ -83,6 +89,12 @@ public sealed class DeviceAvbdSolver : IDisposable
             Bind(0,in step);
             _backend.Dispatch(_commands,new((uint)((Math.Max(_bodies.Capacity,_graph.ConstraintCapacity)+_threadsPerGroup-1)/_threadsPerGroup),1,1));
             Barrier();
+            if(_initializeGroups>=0)
+            {
+                Bind(_initializeGroups,in step);
+                _backend.Dispatch(_commands,new(1,1,1));
+                Barrier();
+            }
         }
         else
             for(int iteration=0;iteration<iterations;iteration++)
@@ -96,6 +108,12 @@ public sealed class DeviceAvbdSolver : IDisposable
                 step.Color=0; Bind(2,in step);
                 _backend.Dispatch(_commands,new((uint)((_graph.ConstraintCapacity+_threadsPerGroup-1)/_threadsPerGroup),1,1));
                 Barrier();
+                if(_updateGroups>=0)
+                {
+                    Bind(_updateGroups,in step);
+                    _backend.Dispatch(_commands,new(1,1,1));
+                    Barrier();
+                }
             }
         using RecordedCommands recorded=_backend.End(_commands);
         QueueCompletion completion=_backend.Submit(_backend.GetQueue(_device,QueueType.Compute),new([],[],[recorded],[],[]));
