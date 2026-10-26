@@ -55,17 +55,48 @@ public readonly struct AvbdContactMath : IAvbdConstraint<ContactPoint>
 
     internal static void AccumulateBodyEquation(in ContactPoint point, scoped QueryRow row, Entity body,
         scoped PhysicsBodies bodies, in PhysicsStepContext context, float initialErrorFraction,
-        Vector3 extraForceOnSecond, ref AvbdBodyEquation equation)
+        Vector3 extraForceOnSecond, ref AvbdBodyEquation equation) =>
+        AccumulateBodyEquation(in point, row, body, bodies, in context, initialErrorFraction, extraForceOnSecond,
+            normalUpperBound: false, angularCurvature: false, ref equation);
+
+    internal static void AccumulatePotentialBodyEquation(in ContactPoint point, scoped QueryRow row, Entity body,
+        scoped PhysicsBodies bodies, in PhysicsStepContext context, float initialErrorFraction,
+        Vector3 extraForceOnSecond, bool supported, ref AvbdBodyEquation equation) =>
+        AccumulateBodyEquation(in point, row, body, bodies, in context, initialErrorFraction, extraForceOnSecond, !supported, true, ref equation);
+
+    private static void AccumulateBodyEquation(in ContactPoint point, scoped QueryRow row, Entity body,
+        scoped PhysicsBodies bodies, in PhysicsStepContext context, float initialErrorFraction,
+        Vector3 extraForceOnSecond, bool normalUpperBound, bool angularCurvature, ref AvbdBodyEquation equation)
     {
         ReadOnlySpan<ContactBodyLink> links = row.ReadBuffer<ContactBodyLink>().AsSpan();
         AvbdContactEquation contact = Evaluate(in point, row, bodies, in context, initialErrorFraction, extraForceOnSecond);
         ContactBodyMath.GetJacobian(in point, links, body, bodies, in context, point.Normal, out Vector3 linear, out Vector3 angular);
-        equation.AddRow(linear, angular, contact.NormalForce, contact.NormalStiffness);
+        float normalStiffness = contact.NormalStiffness;
+        if (normalUpperBound && normalStiffness == 0)
+            normalStiffness = new AvbdMaterialTerms(row.ReadRef<ContactMaterial>().NormalStiffness,
+                row.ReadRef<AvbdContactState>().NormalPenalty).EffectiveStiffness;
+        equation.AddRow(linear, angular, contact.NormalForce, normalStiffness);
         Vector3 across = Vector3.Cross(point.Normal, contact.TangentDirection);
         ContactBodyMath.GetJacobian(in point, links, body, bodies, in context, contact.TangentDirection, out linear, out angular);
         equation.AddRow(linear, angular, Vector3.Dot(contact.TangentForce, contact.TangentDirection), contact.AlongStiffness);
         ContactBodyMath.GetJacobian(in point, links, body, bodies, in context, across, out linear, out angular);
         equation.AddRow(linear, angular, Vector3.Dot(contact.TangentForce, across), contact.AcrossStiffness);
+        if (angularCurvature)
+        {
+            ref readonly BodyPose pose = ref bodies.ReadPose(body);
+            Vector3 center = pose.GetCenterOfMass(in bodies.ReadMass(body));
+            float force = (point.Normal * contact.NormalForce + contact.TangentForce - extraForceOnSecond).Length();
+            float curvature = 0;
+            foreach (ref readonly ContactBodyLink link in links)
+            {
+                if (ContactBodyMath.GetBody(in link, bodies, in context) != body) continue;
+                Vector3 arm = pose.Position + Vector3.Transform(link.LocalPoint, pose.Rotation) - center;
+                curvature += MathF.Abs(link.Weight) * arm.Length() * force;
+            }
+            equation.AddRow(Vector3.Zero, Vector3.UnitX, 0, curvature);
+            equation.AddRow(Vector3.Zero, Vector3.UnitY, 0, curvature);
+            equation.AddRow(Vector3.Zero, Vector3.UnitZ, 0, curvature);
+        }
     }
 
     public static void UpdateDuals(in ContactPoint point, scoped QueryRow row, scoped PhysicsBodies bodies,
