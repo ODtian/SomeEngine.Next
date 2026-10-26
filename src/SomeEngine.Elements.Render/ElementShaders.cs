@@ -1,4 +1,5 @@
 using SlangShaderSharp;
+using SomeEngine.Graphics;
 using SomeEngine.Resources;
 
 namespace SomeEngine.Elements.Render;
@@ -51,11 +52,16 @@ internal static class ElementShaders
         IModule? shaderSource = session.LoadModuleFromSource(name, $"{name}.slang",
             Slang.CreateBlob(reader.ReadToEnd()), out ISlangBlob? diagnostics);
         if (shaderSource is null) throw new InvalidDataException(DiagnosticText(diagnostics));
+        SlangShaderData.RetainSession(session, shaderSource);
         Require(shaderSource.FindEntryPointByName("vertexMain", out IEntryPoint vertex), null);
+        SlangShaderData.RetainSession(session, vertex);
         Require(shaderSource.FindEntryPointByName("pixelMain", out IEntryPoint pixel), null);
+        SlangShaderData.RetainSession(session, pixel);
         Require(session.CreateCompositeComponentType([shaderSource, vertex, pixel],
             out IComponentType combined, out diagnostics), diagnostics);
+        SlangShaderData.RetainSession(session, combined);
         Require(combined.Link(out IComponentType linked, out diagnostics), diagnostics);
+        SlangShaderData.RetainSession(session, linked);
         return Shader.CreateFromSlang(name, s_global, session, [shaderSource], [vertex, pixel], linked, [targetDescription]);
     }
 

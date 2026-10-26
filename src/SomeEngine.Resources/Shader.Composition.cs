@@ -1,5 +1,6 @@
 using System.Text;
 using SlangShaderSharp;
+using SomeEngine.Graphics;
 
 namespace SomeEngine.Resources;
 
@@ -68,6 +69,7 @@ public partial class Shader
             Slang.CreateBlob(Encoding.UTF8.GetBytes(source)), out ISlangBlob? diagnostics);
         if (sourceUnit is null)
             throw new InvalidDataException($"Slang could not load source '{sourceName}': {DiagnosticText(diagnostics)}");
+        SlangShaderData.RetainSession(session, sourceUnit);
         sourceUnits.Add(sourceUnit);
 
         var entries = new List<IEntryPoint>();
@@ -76,6 +78,7 @@ public partial class Shader
             SlangResult entryResult = sourceUnit.GetDefinedEntryPoint(index, out IEntryPoint entry);
             if (entryResult.Failed || entry is null)
                 throw new InvalidDataException($"Slang could not return a declared entry point from '{sourceName}'.");
+            SlangShaderData.RetainSession(session, entry);
             entries.Add(entry);
         }
 
@@ -83,9 +86,11 @@ public partial class Shader
             out IComponentType combinedCode, out diagnostics);
         if (combineResult.Failed || combinedCode is null)
             throw new InvalidDataException("Slang composition failed: " + DiagnosticText(diagnostics));
+        SlangShaderData.RetainSession(session, combinedCode);
         SlangResult linkResult = combinedCode.Link(out IComponentType linkedCode, out diagnostics);
         if (linkResult.Failed || linkedCode is null)
             throw new InvalidDataException("Slang link failed: " + DiagnosticText(diagnostics));
+        SlangShaderData.RetainSession(session, linkedCode);
 
         return CreateFromSlang(name, _slangGlobal, session, sourceUnits, entries, linkedCode, targets,
             generateLibraryCode: false);
@@ -102,6 +107,7 @@ public partial class Shader
                 IModule? loaded = session.LoadModuleFromIRBlob(unitName, unit.GetFilePath(), serialized, out ISlangBlob? loadDiagnostics);
                 if (loaded is null)
                     throw new InvalidDataException($"Slang could not load source '{unitName}': {DiagnosticText(loadDiagnostics)}");
+                SlangShaderData.RetainSession(session, loaded);
                 sourceUnits.Add(loaded);
             }
         }

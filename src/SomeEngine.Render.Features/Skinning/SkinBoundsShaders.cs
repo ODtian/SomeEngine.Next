@@ -1,4 +1,5 @@
 using SlangShaderSharp;
+using SomeEngine.Graphics;
 using SomeEngine.Resources;
 
 namespace SomeEngine.Render.Features.Skinning;
@@ -31,9 +32,13 @@ internal static class SkinBoundsShaders
             using var reader = new StreamReader(source);
             IModule? module = session.LoadModuleFromSource("skin_bounds", "skin_bounds.slang", Slang.CreateBlob(reader.ReadToEnd()), out ISlangBlob? diagnostics);
             if (module is null) throw new InvalidDataException(diagnostics?.AsString);
+            SlangShaderData.RetainSession(session, module);
             Require(module.FindEntryPointByName("TransformSkinBounds", out IEntryPoint entry), null);
+            SlangShaderData.RetainSession(session, entry);
             Require(session.CreateCompositeComponentType([module, entry], out IComponentType combined, out diagnostics), diagnostics);
+            SlangShaderData.RetainSession(session, combined);
             Require(combined.Link(out IComponentType linked, out diagnostics), diagnostics);
+            SlangShaderData.RetainSession(session, linked);
             shader = Shader.CreateFromSlang("Skin bounds", s_global, session, [module], [entry], linked, [output]);
             s_shaders.Add(target, shader);
             return shader;

@@ -213,10 +213,17 @@ public sealed class ClusterStencil
              new(CompilerOptionName.DebugInformation, CompilerOptionValue.FromInt(0))] }, out ISession session);
         IModule unit = session.LoadModuleFromSource("cluster_stencil_transfer", "cluster_stencil_transfer.slang",
             Slang.CreateBlob(TransferSource), out ISlangBlob? diagnostics) ?? throw new InvalidDataException(diagnostics?.AsString);
+        SlangShaderData.RetainSession(session, unit);
         var entries = new IEntryPoint[3];
-        for (int index = 0; index < entries.Length; index++) unit.GetDefinedEntryPoint(index, out entries[index]);
+        for (int index = 0; index < entries.Length; index++)
+        {
+            unit.GetDefinedEntryPoint(index, out entries[index]);
+            SlangShaderData.RetainSession(session, entries[index]);
+        }
         session.CreateCompositeComponentType([unit, .. entries], out IComponentType combined, out diagnostics);
+        SlangShaderData.RetainSession(session, combined);
         if (!combined.Link(out IComponentType linked, out diagnostics).Succeeded) throw new InvalidDataException(diagnostics?.AsString);
+        SlangShaderData.RetainSession(session, linked);
         return Shader.CreateFromSlang("Cluster stencil transfer", global, session, [unit], entries, linked, [target], generateLibraryCode: false);
     }
 

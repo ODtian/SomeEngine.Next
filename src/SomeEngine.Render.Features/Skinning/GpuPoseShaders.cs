@@ -1,4 +1,5 @@
 using SlangShaderSharp;
+using SomeEngine.Graphics;
 using SomeEngine.Resources;
 
 namespace SomeEngine.Render.Features.Skinning;
@@ -31,15 +32,25 @@ internal static class GpuPoseShaders
             using var reader = new StreamReader(source);
             IModule? module = session.LoadModuleFromSource("gpu_pose", "gpu_pose.slang", Slang.CreateBlob(reader.ReadToEnd()), out ISlangBlob? diagnostics);
             if (module is null) throw new InvalidDataException(diagnostics?.AsString);
+            SlangShaderData.RetainSession(session, module);
             Require(module.FindEntryPointByName("AdvancePoseStates", out IEntryPoint advance), null);
+            SlangShaderData.RetainSession(session, advance);
             Require(module.FindEntryPointByName("LoadPoseHistory", out IEntryPoint load), null);
+            SlangShaderData.RetainSession(session, load);
             Require(module.FindEntryPointByName("SamplePoseLevel", out IEntryPoint sample), null);
+            SlangShaderData.RetainSession(session, sample);
             Require(module.FindEntryPointByName("StorePoseHistory", out IEntryPoint store), null);
+            SlangShaderData.RetainSession(session, store);
             Require(module.FindEntryPointByName("TranslatePose", out IEntryPoint translate), null);
+            SlangShaderData.RetainSession(session, translate);
             Require(module.FindEntryPointByName("SolveTwoBone", out IEntryPoint twoBone), null);
+            SlangShaderData.RetainSession(session, twoBone);
             Require(module.FindEntryPointByName("SolveAim", out IEntryPoint aim), null);
+            SlangShaderData.RetainSession(session, aim);
             Require(session.CreateCompositeComponentType([module, advance, load, sample, store, translate, twoBone, aim], out IComponentType combined, out diagnostics), diagnostics);
+            SlangShaderData.RetainSession(session, combined);
             Require(combined.Link(out IComponentType linked, out diagnostics), diagnostics);
+            SlangShaderData.RetainSession(session, linked);
             shader = Shader.CreateFromSlang("GPU poses", s_global, session, [module], [advance, load, sample, store, translate, twoBone, aim], linked, [output]);
             s_shaders.Add(target, shader);
             return shader;
