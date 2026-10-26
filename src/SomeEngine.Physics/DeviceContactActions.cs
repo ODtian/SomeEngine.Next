@@ -44,7 +44,10 @@ public sealed class DeviceContactActions : IDisposable
     }
     public InitializeDeviceContactResponses Initialize() => new(this);
     public ApplyDeviceContactRestitution ApplyRestitution(int iterations) => new(this, iterations);
+    public ApplyDeviceContactRestitution ApplyRestitution(int iterations, bool buildGraph) => new(this, iterations, buildGraph);
     internal JobHandle Schedule(in PhysicsStepContext context, bool initialize, int iterations, JobHandle dependency)
+        => Schedule(in context, initialize, iterations, true, dependency);
+    internal JobHandle Schedule(in PhysicsStepContext context, bool initialize, int iterations, bool buildGraph, JobHandle dependency)
     {
         Scheduler scheduler = WorldJobs.GetScheduler(context.World);
         var accesses = new List<JobResourceAccess> { _bodies.GetWriteAccess(scheduler), _responses.GetWriteAccess(scheduler) };
@@ -52,13 +55,13 @@ public sealed class DeviceContactActions : IDisposable
         accesses.AddRange(_inputAccesses);
         accesses.Add(JobResourceAccess.Write(scheduler.GetResourceToken(_commands)));
         foreach (IDeviceConstraintSelection selection in _selections) selection.AddAccesses(scheduler, accesses);
-        return DevicePhysicsJobs.Schedule(scheduler, new ResponseSubmission(this, context, initialize, iterations), accesses.ToArray(), dependency);
+        return DevicePhysicsJobs.Schedule(scheduler, new ResponseSubmission(this, context, initialize, iterations, buildGraph), accesses.ToArray(), dependency);
     }
-    private QueueCompletion Record(in PhysicsStepContext context, bool initialize, int iterations)
+    private QueueCompletion Record(in PhysicsStepContext context, bool initialize, int iterations, bool buildGraph)
     {
         _graph.CaptureSelections();
         foreach (IDeviceConstraintSelection selection in _selections) selection.Capture();
-        if (!initialize) _graph.BuildAndWait();
+        if (!initialize && buildGraph) _graph.BuildAndWait();
         var step = new ResponseStep((float)context.Duration, 0, 0, context.StartTime, context.EndTime);
         _backend.Begin(_commands, new(0, 0, 16));
         if (!_initialized)
@@ -102,11 +105,11 @@ public sealed class DeviceContactActions : IDisposable
         public double StartTime = start, EndTime = end;
     }
     private readonly struct ResponseSubmission(DeviceContactActions actions, PhysicsStepContext context, bool initialize,
-        int iterations) : IDevicePhysicsSubmission
+        int iterations, bool buildGraph) : IDevicePhysicsSubmission
     {
         public IGraphicsBackend Backend => actions._backend;
         public Device Device => actions._device;
-        public QueueCompletion Submit() => actions.Record(in context, initialize, iterations);
+        public QueueCompletion Submit() => actions.Record(in context, initialize, iterations, buildGraph);
     }
     public void Dispose() { foreach (Pipeline pipeline in _pipelines) pipeline.Dispose(); _commands.Dispose(); }
 }
@@ -116,5 +119,7 @@ public readonly struct InitializeDeviceContactResponses(DeviceContactActions act
 }
 public readonly struct ApplyDeviceContactRestitution(DeviceContactActions actions, int iterations) : IPhysicsStage
 {
-    public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) => actions.Schedule(in context, false, iterations, dependency);
+    private readonly bool _buildGraph = true;
+    internal ApplyDeviceContactRestitution(DeviceContactActions actions, int iterations, bool buildGraph) : this(actions, iterations) => _buildGraph = buildGraph;
+    public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) => actions.Schedule(in context, false, iterations, _buildGraph, dependency);
 }
