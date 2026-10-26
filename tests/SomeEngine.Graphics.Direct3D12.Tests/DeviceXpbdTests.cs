@@ -17,6 +17,40 @@ namespace SomeEngine.Graphics.Direct3D12.Tests;
 public sealed class DeviceXpbdTests(D3D12TestCompiler shaderCompiler)
 {
     [Fact]
+    public void AReplacementBodyKeepsItsOwnStateWhenThePriorDeviceResultIsConsumed()
+    {
+        using var backend = D3D12GraphicsBackend.Create();
+        using Device device = CreateDevice(backend);
+        using var jobs = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using World world = WorldJobs.CreateWorld(scheduler: jobs);
+        using var bodies = new DeviceBodies(backend, device, 1);
+        Entity first = AddBody(world, bodies, 0, Vector3.Zero, BodyMotion.Dynamic);
+        world.Replace(first, new BodyVelocity { Linear = Vector3.UnitX });
+        QueryHandle members = world.Query(world.QueryDefinition().Read<DeviceBodyBinding>());
+        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
+        using var results = new DeviceBodyResults(backend, device, bodies);
+        var compute = bodies.WriteInputs(64).Then(bodies.UploadInputs()).Then(dynamics.Predict(Vector3.Zero))
+            .Then(dynamics.UpdateVelocities());
+        QueryDefinition selected = world.QueryDefinition().All<DeviceBodyBinding>().Build();
+        PhysicsStepResult prior = PhysicsSimulation.Create(world, selected, compute, 1).Schedule(7, 0, .2);
+        prior.Complete();
+        world.DestroyEntity(first);
+        Entity replacement = AddBody(world, bodies, 0, new(100, 0, 0), BodyMotion.Dynamic);
+        world.Replace(replacement, new BodyVelocity { Linear = new(7, 0, 0) });
+        world.Replace(replacement, new BodyStepState { Number = 29, Time = 4 });
+
+        PhysicsSimulation.Create(world, selected, results.Readback(64), 1).Schedule(7, 0, .2, prior.Completion).Complete();
+
+        Assert.Equal(first.Index, replacement.Index);
+        Assert.NotEqual(first.Generation, replacement.Generation);
+        Near(new(100, 0, 0), world.Read<BodyPose>(replacement).Position);
+        Near(new(7, 0, 0), world.Read<BodyVelocity>(replacement).Linear);
+        Assert.Equal(29, world.Read<BodyStepState>(replacement).Number);
+        Assert.Equal(4, world.Read<BodyStepState>(replacement).Time);
+        world.ReleaseQuery(members);
+    }
+
+    [Fact]
     public void DeviceBendReadsProtectedParticipationEdgesAndCorrectsTheThreeOriginalBodies()
     {
         using var backend = D3D12GraphicsBackend.Create();
