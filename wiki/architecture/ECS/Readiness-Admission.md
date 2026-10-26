@@ -23,7 +23,12 @@ owner 进入 ready-admission queue 后按 ready enqueue sequence获得公平服�
 
 固定 access set 的多资源 admission 在一个线性化事务中完成；动态 ECS query 使用下节定义的 prepare/seal 等价协议。frontier 使用 whole-access frontier 加 augmented interval index，range 查询目标复杂度为 `O(log N + K)`。
 
-access normalizer 构造 piecewise mode map，而不是无条件让 whole 吞掉 ranges：whole Write 可覆盖所有 ranges；whole Read 只覆盖 range Reads；whole Read + subrange Write 必须保留为 default Read 加 Write overrides，或显式保守提升到 whole Write。任意重叠段取最强 mode，相邻同 mode 段合并。
+一次登记的访问先解析当前资源身份，再按同一 ResourceState 和访问模式合并相邻或重叠区间，
+随后进入上述依赖查询与冲突前沿。区间之间的空隙保持独立；整资源访问覆盖同一模式的区间。
+Read、Write 和 Exclusive 各自保留原覆盖范围，因此 whole Read 与 subrange Write 继续分别登记。
+生成式 Job 的逐行引用、版本和冲突组仍由原 ECS 执行数据持有。
+对应实现为[登记范围合并](../../../src/SomeEngine.Job/ResourceManager.AccessRanges.cs)与
+[活动访问登记](../../../src/SomeEngine.Job/ResourceManager.Access.cs)。
 
 `Schedule`、`ScheduleParallel` 和 `ScheduleFinally` 在登记完整依赖时沿子工作到父工作、前置工作到接续工作的完成关系检查环。`CombineDependencies` 的每个有效输入也保留在这份完成关系中。子工作直接或间接等待当前工作或祖先时，提交抛出 `InvalidOperationException`；子工作之间可通过显式依赖排列计算顺序。
 

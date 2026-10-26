@@ -17,6 +17,9 @@ public readonly partial struct JobResourceAccess
     internal readonly long RangeStart;
     internal readonly long RangeLength;
 
+    internal JobResourceAccess WithRange(long start, long length) =>
+        new(Kind, Id, Version, Generation, Mode, true, start, length);
+
     internal bool Covers(JobResourceAccess required)
     {
         if (!CoversIdentityAndMode(required))
