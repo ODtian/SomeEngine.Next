@@ -19,13 +19,10 @@ public interface IAvbdConstraint<TConstraint> : IPhysicsConstraintBodies<TConstr
         in PhysicsStepContext context, float initialErrorFraction);
 }
 
-public interface IAvbdConstraints
+public interface IAvbdConstraints : IAvbdBodyConstraints
 {
     void AddAccesses(World world, List<JobResourceAccess> accesses);
     void Initialize(in PhysicsStepContext context, scoped PhysicsBodies bodies, float retention);
-    void AccumulateBodyEquation(in PhysicsStepContext context, Entity body, scoped PhysicsBodies bodies, float initialErrorFraction, ref AvbdBodyEquation equation);
-    void AdjustBodyChange(in PhysicsStepContext context, Entity body, scoped PhysicsBodies bodies,
-        in AvbdBodyEquation equation, ref Vector3 translation, ref Vector3 rotation) { }
     void UpdateDuals(in PhysicsStepContext context, scoped PhysicsBodies bodies, float initialErrorFraction);
 }
 
@@ -78,15 +75,7 @@ public readonly struct AvbdConstraints<TConstraint, TMath> : IAvbdConstraints
         private readonly PhysicsStepContext _context = context;
 
         public void Execute(scoped QueryCursor query)
-        {
-            foreach (QueryRow row in query.Rows)
-            {
-                ref readonly TConstraint constraint = ref row.ReadRef<TConstraint>();
-                TMath.Initialize(in constraint, row, _bodies, in _context, retention);
-                for (int index = 0; index < TMath.GetBodyCount(in constraint, row, in _context); index++)
-                    byBody.Add(TMath.GetBody(in constraint, row, index, in _context), row.Entity);
-            }
-        }
+            => AvbdConstraintRows<TConstraint, TMath>.Initialize(new(query), _bodies, in _context, retention, byBody);
     }
 
     private ref struct AddBodyEquations : IQueryExecution
@@ -110,13 +99,8 @@ public readonly struct AvbdConstraints<TConstraint, TMath> : IAvbdConstraints
         }
 
         public void Execute(scoped QueryCursor query)
-        {
-            foreach (Entity entity in _constraints)
-            {
-                query.TryGetRow(entity, out QueryRow row);
-                TMath.AccumulateBodyEquation(in row.ReadRef<TConstraint>(), row, _body, _bodies, in _context, _initialErrorFraction, ref _equation);
-            }
-        }
+            => AvbdConstraintRows<TConstraint, TMath>.Accumulate(new(query), _body, _bodies, in _context,
+                _initialErrorFraction, _constraints, ref _equation);
     }
 
     private readonly ref struct UpdateConstraintDuals(PhysicsBodies bodies, PhysicsStepContext context,
@@ -126,10 +110,7 @@ public readonly struct AvbdConstraints<TConstraint, TMath> : IAvbdConstraints
         private readonly PhysicsStepContext _context = context;
 
         public void Execute(scoped QueryCursor query)
-        {
-            foreach (QueryRow row in query.Rows)
-                TMath.UpdateDuals(in row.ReadRef<TConstraint>(), row, _bodies, in _context, initialErrorFraction);
-        }
+            => AvbdConstraintRows<TConstraint, TMath>.UpdateDuals(new(query), _bodies, in _context, initialErrorFraction);
     }
 }
 
