@@ -29,6 +29,12 @@ StepState 的写版本；新实体按绑定初始化整行，既有实体只复�
 来源版本与已同步字段由 DeviceBodies 单处保存，查询和传输范围由输入持有者复用。
 实际数据继续位于原 208B States，上传复用原 staging 和命令资源。
 
+[CPU 输入变更](../../../src/SomeEngine.Physics/DeviceBodies.InputChanges.cs) 由同一 DeviceBodies 按需保存。
+活动消费者绑定后，`DeviceBodyInputs` 在原组件写版本判定处生成实体身份、组件位及本轮步号、子步号，
+沿原主体传输命令复制实际变更行。Pose、Mass、Velocity 对应位为 1、2、4，StepState 为 8。
+`physics_body_input_changes.slang` 的 `deviceBodyCpuInputChanged` 按当前主体身份和调用方的本轮时刻读取前面三类修改；
+旧步标记随步号、子步号失效，原结果回写继续使用上述同步确认。
+
 [DeviceBodyInputBuffers](../../../src/SomeEngine.Physics/DeviceBodyInputBuffers.cs) 从同一参与查询读取
 原 `BodyForce`、`BodyImpulse`、`BodyVelocityTarget` 与 `BodyKinematicTarget` 时间缓冲。
 `WriteInputs()` 将当前子步的力积分、所属时段的冲量、最新速度目标和轨迹采样值形成派生设备输入，

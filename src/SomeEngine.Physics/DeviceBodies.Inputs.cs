@@ -67,7 +67,7 @@ public sealed partial class DeviceBodies
     internal JobResourceAccess[] GetInputTransferAccesses(Scheduler scheduler) =>
         [GetWriteAccess(scheduler), JobResourceAccess.Write(scheduler, _cpuVersions),
             JobResourceAccess.Write(scheduler.GetResourceToken(_upload), 0, (long)_upload.Info.Size),
-            JobResourceAccess.Write(scheduler.GetResourceToken(_commands))];
+            JobResourceAccess.Write(scheduler.GetResourceToken(_commands)), .. GetCpuInputTransferAccesses(scheduler, true)];
     internal IGraphicsBackend Backend => _backend;
     internal Device Device => _device;
 }
