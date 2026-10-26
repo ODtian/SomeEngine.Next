@@ -3,6 +3,7 @@
     <RootNamespace>DefaultGame</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <Content Include="$(SomeEnginePath)/assets/Shaders/physics*.slang" Link="PhysicsShaders/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <ProjectReference Include="$(SomeEnginePath)/src/SomeEngine.ECS/SomeEngine.ECS.csproj" GlobalPropertiesToRemove="SomeEngineDevelopment;PublishAot;PublishAotUsingRuntimePack;SelfContained;RuntimeIdentifier" />
     <ProjectReference Include="$(SomeEnginePath)/src/SomeEngine.Physics/SomeEngine.Physics.csproj" GlobalPropertiesToRemove="SomeEngineDevelopment;PublishAot;PublishAotUsingRuntimePack;SelfContained;RuntimeIdentifier" />
     <ProjectReference Include="$(SomeEnginePath)/samples/ImportedScenes/Materials/ImportedScenes.Materials.csproj" GlobalPropertiesToRemove="SomeEngineDevelopment;PublishAot;PublishAotUsingRuntimePack;SelfContained;RuntimeIdentifier" />
