@@ -68,7 +68,7 @@ public readonly struct SolveAvbdGraph<TConstraints> : IPhysicsStage, IDisposable
         public int Count => 1;
         public int QueryCount => solve._queries.Queries.Length;
         public QueryHandle GetQuery(int workIndex, int queryIndex) => solve._queries.Queries[queryIndex];
-        public ReadOnlySpan<Entity> GetEntities(int workIndex, int queryIndex) => solve._queries.GlobalEntities(queryIndex, solve._graph);
+        public ReadOnlySpan<Entity> GetEntities(int workIndex, int queryIndex) => solve._queries.SolverEntities(queryIndex, solve._graph);
     }
     private readonly struct BodyWork(SolveAvbdGraph<TConstraints> solve) : IEntityQueryWork
     {
