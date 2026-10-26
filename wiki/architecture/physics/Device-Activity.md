@@ -84,6 +84,10 @@
 保留共同起点并完成一次实际预测。Dynamics 的附加访问使用活动资源的
 `GetWriteAccesses`，图的输入使用 `GetReadAccesses`。
 
+同一头文件的 `UpdateDeviceActiveBodyVelocities` 入口只为活动主体重建速度。
+休眠主体保持 `Finish()` 已写入的零线速度和零角速度，持续静止时沿原活动表示保持休眠。
+项目将该入口作为同一 `DeviceBodyKernels` 的速度内核，继续调用原 `dynamics.UpdateVelocities()` 阶段。
+
 [DeviceAwakeAvbdConstraints](../../../assets/Shaders/physics_awake_avbd.slang) 保留原组的成员、
 参与端和读写角色，在有活动受力主体时初始化该行历史；Body 与 dual 迭代继续沿原图打包范围。
 `initializeDeviceAvbd` 和 `initializeDeviceAvbdRows` 的第三个具体 `IDeviceBodySelection`

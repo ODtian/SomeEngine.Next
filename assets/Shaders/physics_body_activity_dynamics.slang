@@ -3,6 +3,13 @@
 #include "physics_body_dynamics.slang"
 #include "physics_body_activity_types.slang"
 [shader("compute")][numthreads(64,1,1)]
+void UpdateDeviceActiveBodyVelocities(uint3 id:SV_DispatchThreadID)
+{
+    if(id.x>=BodyStep.count) return;
+    uint index=DeviceBodyIndices[id.x];
+    if(deviceBodyActivityAwake(index)) updateDeviceBodyVelocity(index);
+}
+[shader("compute")][numthreads(64,1,1)]
 void PredictDeviceActiveBodies(uint3 id:SV_DispatchThreadID)
 {
     if(id.x>=BodyStep.count) return;
