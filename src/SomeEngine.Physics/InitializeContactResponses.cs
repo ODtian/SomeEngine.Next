@@ -6,23 +6,27 @@ using SomeEngine.Job;
 namespace SomeEngine.Physics;
 
 /// <summary>Samples contact approach velocities and starts the common force/impulse interval.</summary>
-public readonly struct InitializeContactResponses : IPhysicsStage
+public readonly struct InitializeContactResponses : IPhysicsStage, IDisposable
 {
+    private readonly World _world;
     private readonly QueryHandle _bodies, _contacts;
     private readonly JobResourceAccess[] _accesses;
 
     public InitializeContactResponses(World world, QueryHandle bodies, QueryHandle contacts)
     {
-        _bodies = bodies;
+        _world = world;
+        _bodies = world.Query(world.GetQueryDefinition(bodies).AsReadOnly().WithOptionalRead<BodyActivity>());
         _contacts = contacts;
         var accesses = new List<JobResourceAccess>();
-        PhysicsQueryAccess.AddAccesses(world, bodies, accesses);
+        PhysicsQueryAccess.AddAccesses(world, _bodies, accesses);
         PhysicsQueryAccess.AddAccesses(world, contacts, accesses);
         _accesses = accesses.ToArray();
     }
 
     public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) =>
         WorldJobs.GetScheduler(context.World).Schedule(new InitializeJob(context, _bodies, _contacts), _accesses, dependency);
+
+    public void Dispose() => _world.ReleaseQuery(_bodies);
 
     private readonly struct InitializeJob(PhysicsStepContext context, QueryHandle bodies, QueryHandle contacts) : IJob, IQueryExecution
     {
@@ -49,13 +53,21 @@ public readonly struct InitializeContactResponses : IPhysicsStage
             foreach (QueryRow row in query.Rows)
             {
                 ref readonly ContactPoint point = ref row.ReadRef<ContactPoint>();
-                float speed = ContactBodyMath.GetSpeed(in point, row.ReadBuffer<ContactBodyLink>().AsSpan(), _bodies, in _context, true);
-                row.ReadWrite<ContactResponse>() = new ContactResponse
+                ReadOnlySpan<ContactBodyLink> links = row.ReadBuffer<ContactBodyLink>().AsSpan();
+                bool anyDynamic = false, anyAwake = false;
+                foreach (ref readonly ContactBodyLink link in links)
                 {
-                    InitialNormalVelocity = speed,
-                    StartTime = _context.StartTime,
-                    EndTime = _context.EndTime,
-                };
+                    QueryRow body = _bodies.GetRow(ContactBodyMath.GetBody(in link, _bodies, in _context));
+                    if (body.ReadRef<BodyMass>().Motion != BodyMotion.Dynamic) continue;
+                    anyDynamic = true;
+                    anyAwake |= BodyActivities.IsAwake(body);
+                }
+                ContactResponse response = default;
+                if (anyDynamic && !anyAwake) response.ForceOnSecond = row.ReadRef<ContactResponse>().ForceOnSecond;
+                else response.InitialNormalVelocity = ContactBodyMath.GetSpeed(in point, links, _bodies, in _context, true);
+                response.StartTime = _context.StartTime;
+                response.EndTime = _context.EndTime;
+                row.ReadWrite<ContactResponse>() = response;
             }
         }
     }
