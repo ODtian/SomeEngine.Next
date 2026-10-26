@@ -164,8 +164,8 @@ public sealed class PhysicsCrowdScene : IGameFramePhysics
             .Then(sources.Evaluate()).Then(sources.CopyOutput()).Then(results.Readback(64)).Schedule(in initial, default).Complete();
         var stages = controls.Then(upload).Then(poses.WriteTargets()).Then(inputs.WriteInputs()).Then(inputs.Apply())
             .Then(dynamics.Predict(new(0, -9.81f, 0))).Then(contacts.Detect()).Then(response.Initialize())
-            .Then(avbd.Initialize()).Then(xpbd.Initialize())
-            .Then(new SolveCrowdConstraints(avbd.Iterate(1), xpbd.Iterate(1), 8)).Then(dynamics.UpdateVelocities())
+            .Then(graph.Build()).Then(avbd.Initialize()).Then(xpbd.Initialize(buildGraph: false))
+            .Then(new SolveCrowdConstraints(avbd.Iterate(1, buildGraph: false), xpbd.Iterate(1, buildGraph: false), 8)).Then(dynamics.UpdateVelocities())
             .Then(response.ApplyRestitution(1)).Then(poses.MapBones()).Then(sources.CopyOutput());
         var consumer = results.Readback(64);
         var frame = PhysicsSimulation.Create(world, initial.Bodies, stages, 1).CreateFrame(consumer, StepSeconds, 0, 0, 0);
