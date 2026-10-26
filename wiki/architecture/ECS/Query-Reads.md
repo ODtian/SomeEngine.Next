@@ -8,6 +8,11 @@
 
 直接回调中的 World 修改受只读约束。该约束关联进入回调时的 Job 执行深度；协作等待所推进的独立 Job 使用其自身资源权限。原查询视图和组件引用在所属回调中取得与使用。
 
+已借用的 `QueryRow.WriteVersion<T>()` 读取原组件行的当前写版本。
+`row.ReadBuffer<T>().WriteVersions` 从同一 [BufferView](../../../src/SomeEngine.ECS/BufferView.cs)
+返回 Header、Inline 两列各自的行写版本；Buffer 内容变化继续由原写入路径标记。
+版本数据只在原借用内读取，输入持有者可保存它们用于判断后续原源数据的变化。
+
 ## 引用数据
 
 查询持有者在冷路径创建 `QueryReadResources`，用 `Add<TComponent,TResources>()` 注册已有 `IJobComponentResources<TComponent>` 具体描述器。查询定义同时声明相应组件读取。
