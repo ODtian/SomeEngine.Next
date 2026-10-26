@@ -55,6 +55,12 @@ public sealed partial class DevicePoseSources
         public void Execute()
         {
             sources._entityCount = 0;
+            if (sources._selectedEntities is { } selected)
+            {
+                selected.Span.CopyTo(sources._entities);
+                sources._entityCount = selected.Length;
+                return;
+            }
             DevicePoseSources current = sources;
             sources._world.ExecuteReadQuery(sources._targets, ref current, static (scoped QueryCursor rows, ref DevicePoseSources sources) =>
             {

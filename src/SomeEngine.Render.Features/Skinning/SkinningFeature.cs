@@ -278,10 +278,11 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
             section.AdvanceSource = !section.HasResult || section.AcceptedInput != section.FrameInput;
             bool changed = section.AdvanceSource || data.IsGpu && !section.HasSamples || section.AcceptedBinding != data.BindingVersion
                 || data.DeviceOutput is not null && section.AcceptedActorFrame != data.ModelToWorld
+                || data.DeviceOutput is { } completed && section.AcceptedDeviceTime != completed.Output.Time
                 || !ReferenceEquals(section.AcceptedEvaluation, data.Evaluation) || section.AcceptedExtractRoot != data.ExtractRootMotion
                 || !section.AcceptedCpuBones.Equals(data.CpuBones)
                 || (!data.IsGpu || data.CpuBones.Length != 0) && section.CpuVersion != data.Version;
-            double time = data.CalculationTime;
+            double time = data.DeviceOutput?.Output.Time ?? data.CalculationTime;
             foreach (short bone in data.CpuBones.Span) time = Math.Max(time, data.Calculations[bone].Time);
             for (int index = 0; index < section.Dependencies.Length; index++)
             {
@@ -627,6 +628,7 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
                 section.StoredBlendStart = section.BlendStart;
                 section.StoredBlend = section.Data.Blend;
                 section.AcceptedActorFrame = section.Data.ModelToWorld;
+                section.AcceptedDeviceTime = section.Data.DeviceOutput?.Output.Time ?? 0;
             }
         AcceptReadbacks(result);
         FinishDeviceReads(result);
@@ -729,6 +731,7 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
         internal int SolverEnd, GoalStart;
         internal bool HasSecondaryChain;
         internal Matrix4x4 AcceptedActorFrame;
+        internal double AcceptedDeviceTime;
         internal bool HoldDevicePose => HasSecondaryChain && HasResult && !Data.Playing && AcceptedInput.Starts == Data.Starts
             && AcceptedInput.AnimationStarts == Data.Identity.AnimationStarts && ReferenceEquals(AcceptedInput.Rig, Data.Rig)
             && AcceptedBinding == Data.BindingVersion;
