@@ -14,8 +14,81 @@ namespace SomeEngine.Graphics.Direct3D12.Tests;
 
 [Collection("Direct3D12 shader compilation")]
 [Trait("Category", "Hardware")]
-public sealed class DeviceXpbdTests(D3D12TestCompiler shaderCompiler)
+public sealed partial class DeviceXpbdTests(D3D12TestCompiler shaderCompiler)
 {
+    [Fact]
+    public void AReplacementBodyKeepsItsOwnStateWhenThePriorDeviceResultIsConsumed()
+    {
+        using var backend = D3D12GraphicsBackend.Create();
+        using Device device = CreateDevice(backend);
+        using var jobs = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using World world = WorldJobs.CreateWorld(scheduler: jobs);
+        using var bodies = new DeviceBodies(backend, device, 1);
+        Entity first = AddBody(world, bodies, 0, Vector3.Zero, BodyMotion.Dynamic);
+        world.Replace(first, new BodyVelocity { Linear = Vector3.UnitX });
+        QueryHandle members = world.Query(world.QueryDefinition().Read<DeviceBodyBinding>());
+        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
+        using var results = new DeviceBodyResults(backend, device, bodies);
+        var compute = bodies.WriteInputs(64).Then(bodies.UploadInputs()).Then(dynamics.Predict(Vector3.Zero))
+            .Then(dynamics.UpdateVelocities());
+        QueryDefinition selected = world.QueryDefinition().All<DeviceBodyBinding>().Build();
+        PhysicsStepResult prior = PhysicsSimulation.Create(world, selected, compute, 1).Schedule(7, 0, .2);
+        prior.Complete();
+        world.DestroyEntity(first);
+        Entity replacement = AddBody(world, bodies, 0, new(100, 0, 0), BodyMotion.Dynamic);
+        world.Replace(replacement, new BodyVelocity { Linear = new(7, 0, 0) });
+        world.Replace(replacement, new BodyStepState { Number = 29, Time = 4 });
+
+        PhysicsSimulation.Create(world, selected, results.Readback(64), 1).Schedule(7, 0, .2, prior.Completion).Complete();
+
+        Assert.Equal(first.Index, replacement.Index);
+        Assert.NotEqual(first.Generation, replacement.Generation);
+        Near(new(100, 0, 0), world.Read<BodyPose>(replacement).Position);
+        Near(new(7, 0, 0), world.Read<BodyVelocity>(replacement).Linear);
+        Assert.Equal(29, world.Read<BodyStepState>(replacement).Number);
+        Assert.Equal(4, world.Read<BodyStepState>(replacement).Time);
+        world.ReleaseQuery(members);
+    }
+
+    [Fact]
+    public void DeviceBendReadsProtectedParticipationEdgesAndCorrectsTheThreeOriginalBodies()
+    {
+        using var backend = D3D12GraphicsBackend.Create();
+        using Device device = CreateDevice(backend);
+        using var jobs = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using World world = WorldJobs.CreateWorld(scheduler: jobs);
+        using var bodies = new DeviceBodies(backend, device, 3);
+        using var bends = new DeviceConstraintData<DeviceBendConstraint>(backend, device, 2, "DeviceBends");
+        using var multipliers = new DeviceConstraintState<float>(backend, device, 2, "DeviceBendMultipliers");
+        Entity first = AddBody(world, bodies, 0, Vector3.Zero, BodyMotion.Dynamic);
+        Entity middle = AddBody(world, bodies, 1, Vector3.UnitX, BodyMotion.Dynamic);
+        Entity last = AddBody(world, bodies, 2, new(1, 1, 0), BodyMotion.Dynamic);
+        Entity bend = ConstraintBodies.Create(world, new XpbdBend { MinimumCosine = .5f }, [first, middle, last]);
+        world.Add(bend, new DeviceConstraintBinding<DeviceBendConstraint>(bends, 1));
+        world.Add(bend, new DeviceXpbdState<float>(multipliers));
+        QueryHandle members = world.Query(world.QueryDefinition().Read<DeviceBodyBinding>());
+        QueryHandle constraints = world.Query(world.QueryDefinition().Read<XpbdBend>().ReadBuffer<ConstraintBodyLink>()
+            .Optional<DirectedRelationEndpoints<ConstraintParticipant>>(QueryAccess.Read)
+            .Read<DeviceConstraintBinding<DeviceBendConstraint>>().All<DeviceXpbdState<float>>());
+        using var write = bends.WriteInputs<XpbdBend, DeviceBendSource>(world, constraints, new(), 64);
+        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
+        using var results = new DeviceBodyResults(backend, device, bodies);
+        using var project = new DeviceXpbdProjection<DeviceBendConstraint, float>(backend, device, world, constraints,
+            bodies, bends, multipliers, CompileBend(), 64);
+        var stages = bends.BeginInputs().Then(write).Then(bends.UploadInputs())
+            .Then(bodies.WriteInputs(64)).Then(bodies.UploadInputs()).Then(dynamics.Predict(Vector3.Zero))
+            .Then(project.Initialize()).Then(project.Iterate(1)).Then(dynamics.UpdateVelocities()).Then(results.Readback(64));
+
+        PhysicsSimulation.Create(world, world.QueryDefinition().All<DeviceBodyBinding>().Build(), stages, 1).Schedule(0, 0, .1).Complete();
+
+        Near(new(0, -.125f, 0), world.Read<BodyPose>(first).Position);
+        Near(new(.875f, .125f, 0), world.Read<BodyPose>(middle).Position);
+        Near(new(1.125f, 1, 0), world.Read<BodyPose>(last).Position);
+        Near(new(1.25f, 0, 0), world.Read<BodyVelocity>(last).Linear);
+        world.ReleaseQuery(constraints);
+        world.ReleaseQuery(members);
+    }
+
     [Fact]
     public void ProjectConstraintReadersAndKernelsUseTheSameCompletedDeviceStep()
     {
@@ -190,6 +263,20 @@ public sealed class DeviceXpbdTests(D3D12TestCompiler shaderCompiler)
             void Initialize(uint3 id : SV_DispatchThreadID) { initializeDeviceXpbd<DeviceXpbdLength>(id.x); }
             [shader("compute")][numthreads(64,1,1)]
             void Project(uint3 id : SV_DispatchThreadID) { projectDeviceXpbd<DeviceXpbdLength>(id.x); }
+            """, [new("Initialize", SlangStage.Compute), new("Project", SlangStage.Compute)], "sm_6_0", ShaderDirectory());
+        ComputePipelineDesc Entry(int index) => new(shader.SlangCode, shader.Reflection,
+            shader.GetEntryPoint(index), shader.GetEntryCode(index));
+        return new(Entry(0), Entry(1));
+    }
+
+    private DeviceXpbdKernels CompileBend()
+    {
+        D3D12TestShader shader = shaderCompiler.CompileWithSearchPaths("xpbd_bend", """
+            #include "physics_xpbd_bend.slang"
+            [shader("compute")][numthreads(64,1,1)]
+            void Initialize(uint3 id : SV_DispatchThreadID) { initializeDeviceXpbd<DeviceXpbdBend>(id.x); }
+            [shader("compute")][numthreads(64,1,1)]
+            void Project(uint3 id : SV_DispatchThreadID) { projectDeviceXpbd<DeviceXpbdBend>(id.x); }
             """, [new("Initialize", SlangStage.Compute), new("Project", SlangStage.Compute)], "sm_6_0", ShaderDirectory());
         ComputePipelineDesc Entry(int index) => new(shader.SlangCode, shader.Reflection,
             shader.GetEntryPoint(index), shader.GetEntryCode(index));

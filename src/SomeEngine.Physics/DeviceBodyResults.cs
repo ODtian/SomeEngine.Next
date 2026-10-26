@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Graphics;
 using SomeEngine.Job;
@@ -86,11 +87,12 @@ public readonly struct ReadDeviceBodyResults(DeviceBodyResults results, int rows
 
 internal readonly partial struct ApplyDeviceBodyResultJob(DeviceBodyResults results) : IJobEntity
 {
-    public void Execute([JobResources<DeviceBodyReferenceResources>] in DeviceBodyBinding binding,
+    public void Execute(Entity entity, [JobResources<DeviceBodyReferenceResources>] in DeviceBodyBinding binding,
         ref BodyPose pose, ref BodyVelocity velocity, ref BodyStepState step)
     {
         if (!ReferenceEquals(binding.Bodies, results.Bodies)) return;
         ref readonly DeviceBodyState state = ref results.States[binding.Index];
+        if (state.EntityIndex != (uint)entity.Index || state.EntityGeneration != (uint)entity.Generation) return;
         pose.Position = state.Position; pose.Rotation = state.Rotation;
         velocity.Linear = state.LinearVelocity; velocity.Angular = state.AngularVelocity;
         step.StartCenterOfMass = state.StartCenterOfMass; step.StartRotation = state.StartRotation;
