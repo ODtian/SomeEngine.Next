@@ -56,3 +56,23 @@ source 的 `AddReads`、`AddReadResources` 与静态组件资源描述器声明�
 32 字节参数保存三个索引、最小方向余弦和柔度；端点身份继续由原参与关系持有。
 [DeviceXpbdBend](../../../assets/Shaders/physics_xpbd_bend.slang) 复用原三端方向余弦梯度，
 将累积乘子投影到大于等于零的范围，按各动态端的逆质量修正原位姿。
+
+## 关节与 motor
+
+[DeviceJointSource](../../../src/SomeEngine.Physics/DeviceJointData.cs) 从原关节实体读取双方
+局部框架、六轴运动/限位、物理刚度和受保护端点，转换为 208 字节 `DeviceJointConstraint`。
+`DeviceMotorSource` 从同一实体读取驱动、目标和目标时刻，192 字节 `DeviceMotorConstraint`
+通过 `JointRow` 引用这份框架与端点参数。两者沿共同 carrier 和 source writer 上传。
+
+[DeviceXpbdJoint](../../../assets/Shaders/physics_xpbd_joint.slang) 逐轴使用共同关节坐标与
+Jacobian，采用 `1 / (K h²)` 和累积位移乘子；限位乘子按共同单边方向投影。
+修正通过共同 Body 数学作用于质心与完整逆惯量。
+[DeviceXpbdMotor](../../../assets/Shaders/physics_xpbd_motor.slang) 使用同一六轴数学，
+按子步结束时刻采样目标位置/旋转和速度，将原阻尼按 `D / h` 合入等效刚度与平衡点。
+物理力/力矩上限转换为乘子上限 `Maximum * h²`。
+Source/World 空间和 Target/Both 反馈由原 motor 参数选择。
+
+`DeviceXpbdState<XpbdJointState>` 与 `DeviceXpbdState<XpbdMotorState>` 选择各自的六轴乘子，
+参数上传保持同一份物理数据。初始化与继续迭代沿共同阶段，完成结果继续回到原 Body。
+`DeviceXpbdJointTests` 对应的公开方法位于 `DeviceXpbdTests` 的同名分部文件中，
+覆盖有限刚度、双向物理上限与世界空间定时阻尼驱动的实际设备运动。
