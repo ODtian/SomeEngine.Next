@@ -12,6 +12,8 @@ struct DeviceLengthActivity : IDeviceConstraintActivity
     bool writes(uint row,uint end) { return participants.writes(row,end); }
     uint groupCount() { return participants.groupCount(); }
     uint group(uint row) { return participants.group(row); }
+    uint2 entity(uint row)
+    { return uint2(DeviceLengthsMetadata[row].entityIndex,DeviceLengthsMetadata[row].entityGeneration); }
     float2 error(uint row,DeviceActivityStep context)
     {
         DeviceLengthConstraint constraint=DeviceLengths[row];

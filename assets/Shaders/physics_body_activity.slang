@@ -11,8 +11,13 @@ struct DeviceActivityStep
 };
 uniform DeviceActivityStep ActivityStep;
 RWStructuredBuffer<uint> DeviceActivityIslandSignals;
+// Constraint Entity/generation, participant count and current membership.
+RWStructuredBuffer<uint4> DeviceActivityPreviousRows;
+// Body index, write role and actual Body Entity/generation.
+RWStructuredBuffer<uint4> DeviceActivityPreviousParticipants;
 interface IDeviceConstraintActivity : IDeviceConstraintBodies
 {
+    uint2 entity(uint row);
     float2 error(uint row,DeviceActivityStep context);
 };
 struct DeviceNoConstraintActivity : IDeviceConstraintActivity
@@ -24,6 +29,7 @@ struct DeviceNoConstraintActivity : IDeviceConstraintActivity
     bool writes(uint row,uint end) { return false; }
     uint groupCount() { return 0; }
     uint group(uint row) { return 0; }
+    uint2 entity(uint row) { return uint2(0); }
     float2 error(uint row,DeviceActivityStep context) { return float2(0); }
 };
 [shader("compute")][numthreads(64,1,1)]
@@ -53,7 +59,17 @@ void ApplyDeviceActivityInputs(uint3 id:SV_DispatchThreadID)
 }
 [shader("compute")][numthreads(64,1,1)]
 void ClearDeviceActivitySignals(uint3 id:SV_DispatchThreadID)
-{ if(id.x<ActivityStep.bodies) DeviceActivityIslandSignals[id.x]=0; }
+{
+    if(ActivityStep.phase==0)
+    {
+        uint rows,stride,participants;
+        DeviceActivityPreviousRows.GetDimensions(rows,stride);
+        DeviceActivityPreviousParticipants.GetDimensions(participants,stride);
+        if(id.x<rows) DeviceActivityPreviousRows[id.x]=uint4(0);
+        if(id.x<participants) DeviceActivityPreviousParticipants[id.x]=uint4(0);
+    }
+    else if(id.x<ActivityStep.bodies) DeviceActivityIslandSignals[id.x]=0;
+}
 bool deviceActivityBodyChanged(uint body)
 {
     return (DeviceBodyActivities[body].flags&128)!=0||deviceBodyCpuInputChanged(body,ActivityStep.number,ActivityStep.substep);
@@ -81,9 +97,41 @@ void CollectDeviceActivityBodies(uint3 id:SV_DispatchThreadID)
     if(speed>ActivityStep.speedThreshold||movement>ActivityStep.speedThreshold*ActivityStep.duration)
         InterlockedOr(DeviceActivityIslandSignals[root],2);
 }
+void deviceActivityWakeParticipant(uint4 participant)
+{
+    DeviceBodyState body=DeviceBodyStates[participant.x];
+    uint root=ConstraintGraphParents[participant.x];
+    if(root!=0xffffffff&&body.entityIndex==participant.z&&body.entityGeneration==participant.w)
+        InterlockedOr(DeviceActivityIslandSignals[root],9);
+}
+uint4 deviceActivityParticipant<T : IDeviceConstraintActivity>(T rows,uint index,uint end)
+{
+    uint body=rows.body(index,end);
+    DeviceBodyState state=DeviceBodyStates[body];
+    return uint4(body,rows.writes(index,end)?1:0,state.entityIndex,state.entityGeneration);
+}
 void readDeviceActivityRows<T : IDeviceConstraintActivity>(uint index,T rows)
 {
-    if(index>=rows.count()||!rows.active(index)) return;
+    if(index>=ActivityStep.rows) return;
+    bool active=index<rows.count()&&rows.active(index);
+    uint count=active?rows.bodyCount(index):0;
+    if(ActivityStep.phase==1)
+    {
+        uint2 entity=active?rows.entity(index):uint2(0);
+        uint4 current=uint4(entity,count,active?1:0),previous=DeviceActivityPreviousRows[index];
+        uint start=index*ConstraintGraphParameters.bodiesPerRow;
+        bool changed=any(current!=previous);
+        for(uint end=0;end<min(previous.z,count);end++)
+            changed=changed||any(DeviceActivityPreviousParticipants[start+end]!=deviceActivityParticipant(rows,index,end));
+        if(changed)
+        {
+            for(uint end=0;end<previous.z;end++) deviceActivityWakeParticipant(DeviceActivityPreviousParticipants[start+end]);
+            for(uint end=0;end<count;end++) deviceActivityWakeParticipant(deviceActivityParticipant(rows,index,end));
+        }
+        for(uint end=0;end<count;end++) DeviceActivityPreviousParticipants[start+end]=deviceActivityParticipant(rows,index,end);
+        DeviceActivityPreviousRows[index]=current;
+    }
+    if(!active) return;
     float2 error=rows.error(index,ActivityStep);
     bool exceeds=error.x>ActivityStep.linearErrorThreshold||error.y>ActivityStep.angularErrorThreshold;
     bool changed=false;

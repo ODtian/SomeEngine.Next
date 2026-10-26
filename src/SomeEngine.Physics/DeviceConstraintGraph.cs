@@ -95,6 +95,7 @@ public sealed partial class DeviceConstraintGraph : IDisposable
     public int BodyCount => (int)_counts[0];
     public int IslandCount => (int)_counts[3];
     public int ConstraintCapacity => _capacity.Constraints;
+    internal int BodiesPerConstraint => _capacity.BodiesPerConstraint;
     public BuildDeviceConstraintGraph Build() => new(this);
     public void AddBindings(Dictionary<string, ResourceBinding[]> bindings)
     {
