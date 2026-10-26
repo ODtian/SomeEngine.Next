@@ -68,7 +68,8 @@ void updateDeviceAvbdBody<T : IDeviceAvbdConstraints>(uint index,T constraints)
         for(uint entry=ConstraintGraphBodyOffsets[bodyIndex];entry<ConstraintGraphBodyOffsets[bodyIndex+1];entry++)
         {
             uint row=ConstraintGraphAdjacency[entry];
-            if(constraints.active(row)) constraints.accumulate(row,bodyIndex,AvbdStep,equation);
+            if(constraints.active(row)&&deviceGraphRowWrites(ConstraintGraphRows[row],bodyIndex))
+                constraints.accumulate(row,bodyIndex,AvbdStep,equation);
         }
         deviceAvbdFactorize(equation);
         float3 translation,rotation;

@@ -1,32 +1,29 @@
 #ifndef PHYSICS_XPBD
 #define PHYSICS_XPBD
-#include "physics_body_math.slang"
-struct DeviceXpbdStep
-{
-    uint capacity; float duration; uint2 number;
-    uint2 startTime; uint2 endTime;
-    uint substep; uint substeps;
-};
+#include "physics_xpbd_types.slang"
+#include "physics_constraint_data.slang"
 ConstantBuffer<DeviceXpbdStep> XpbdStep;
-StructuredBuffer<uint> DeviceXpbdRows;
-interface IDeviceXpbdProjection
+StructuredBuffer<uint4> DeviceXpbdRows;
+RWStructuredBuffer<DeviceConstraintMetadata> DeviceXpbdMetadata;
+bool deviceXpbdSelected(uint4 selected)
 {
-    bool active(uint row);
-    void initialize(uint row, DeviceXpbdStep context);
-    void project(uint row, DeviceXpbdStep context);
-};
+    DeviceConstraintMetadata metadata = DeviceXpbdMetadata[selected.x];
+    return metadata.active != 0 && metadata.entityIndex == selected.y && metadata.entityGeneration == selected.z;
+}
 void initializeDeviceXpbd<T : IDeviceXpbdProjection>(uint index)
 {
     if (index >= XpbdStep.capacity) return;
-    uint row = DeviceXpbdRows[index];
+    uint4 selected = DeviceXpbdRows[index];
+    uint row = selected.x;
     T kernel;
-    if (kernel.active(row)) kernel.initialize(row, XpbdStep);
+    if (deviceXpbdSelected(selected) && kernel.active(row)) kernel.initialize(row, XpbdStep);
 }
 void projectDeviceXpbd<T : IDeviceXpbdProjection>(uint index)
 {
     if (index >= XpbdStep.capacity) return;
-    uint row = DeviceXpbdRows[index];
+    uint4 selected = DeviceXpbdRows[index];
+    uint row = selected.x;
     T kernel;
-    if (kernel.active(row)) kernel.project(row, XpbdStep);
+    if (deviceXpbdSelected(selected) && kernel.active(row)) kernel.project(row, XpbdStep);
 }
 #endif
