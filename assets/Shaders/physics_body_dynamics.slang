@@ -1,12 +1,5 @@
 #include "physics_body_math.slang"
-struct DeviceBodyStep
-{
-    uint count; float duration; uint substep; uint padding0;
-    float3 acceleration; uint padding1;
-    uint2 number; uint2 time;
-};
-ConstantBuffer<DeviceBodyStep> BodyStep;
-StructuredBuffer<uint> DeviceBodyIndices;
+#include "physics_body_selection.slang"
 
 [shader("compute")][numthreads(64, 1, 1)]
 void PredictDeviceBodies(uint3 id : SV_DispatchThreadID)

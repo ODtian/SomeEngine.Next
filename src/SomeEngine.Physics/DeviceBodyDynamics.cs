@@ -61,6 +61,15 @@ public sealed class DeviceBodyDynamics : IDisposable
     public PredictDeviceBodies Predict(Vector3 acceleration) => new(this, acceleration);
     public UpdateDeviceBodyVelocities UpdateVelocities() => new(this);
 
+    internal void AddSelectionBindings(Dictionary<string, ResourceBinding[]> bindings)
+    {
+        bindings.Add("BodyStep", [ResourceBinding.ConstantBuffer(_parametersView)]);
+        bindings.Add("DeviceBodyIndices", [ResourceBinding.ReadOnlyBuffer(_indicesView)]);
+    }
+    internal JobResourceAccess[] GetSelectionReadAccesses(Scheduler scheduler) =>
+        [JobResourceAccess.Read(scheduler.GetResourceToken(_parameters), 0, 256),
+            JobResourceAccess.Read(scheduler.GetResourceToken(_indices), 0, (long)_indices.Info.Size)];
+
     internal JobHandle Schedule(in PhysicsStepContext context, Vector3 acceleration, int kernel, JobHandle dependency)
     {
         Scheduler scheduler = WorldJobs.GetScheduler(context.World);
