@@ -7,6 +7,20 @@ namespace SomeEngine.ECS.Systems;
 
 public sealed partial class QueryReadResources
 {
+    internal void AddEntityQueryResources(World world, EntityQueryData[] queries, List<JobResourceAccess> accesses)
+    {
+        ReadWorkspace workspace = TakeReadWorkspace();
+        try
+        {
+            foreach (EntityQueryData query in queries)
+            {
+                workspace.Collect(WorldJobs.GetScheduler(world), new QueryCursor(in query.Data), new QueryEntities(query));
+                accesses.AddRange(workspace.Accesses);
+            }
+        }
+        finally { ReturnReadWorkspace(workspace); }
+    }
+
     internal JobHandle ScheduleEntityQueries<TJob, TRebind>(World world, EntityQueryData[] queries,
         in TJob job, in TRebind rebind, ReadOnlySpan<JobResourceAccess> accesses, long topology, long structure)
         where TJob : struct, IJob where TRebind : struct, IJob
