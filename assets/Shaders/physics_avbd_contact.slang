@@ -64,19 +64,52 @@ DeviceAvbdContactEquation deviceEvaluateAvbdContact(uint row,DeviceAvbdStep cont
     result.tangentForce=tangent; result.tangentDirection=direction; result.alongStiffness=along; result.acrossStiffness=across;
     return result;
 }
-void deviceAccumulateAvbdContact(uint row,uint bodyIndex,DeviceAvbdStep context,float3 extraForce,inout DeviceAvbdEquation equation)
+// Positive contact-potential curvature follows Giles AVBD through
+// tools/SomeEngine.Physics.Research/Native/AvbdContact.cpp on codex/job331-380.
+// Copyright (c) 2026 Chris Giles. Permission to use, copy, modify, distribute and sell
+// this software and its documentation for any purpose is hereby granted without fee,
+// provided that the above copyright notice appear in all copies. The software is provided
+// "as is" without express or implied warranty; the author makes no representations about
+// its suitability for any purpose.
+void deviceAccumulateAvbdContactEquation(uint row,uint bodyIndex,DeviceAvbdStep context,float3 extraForce,
+    bool normalUpperBound,bool angularCurvature,inout DeviceAvbdEquation equation)
 {
     DeviceContactConstraint point=DeviceContacts[row];
     DeviceAvbdContactEquation contact=deviceEvaluateAvbdContact(row,context,extraForce);
     float3 linear,angular;
     deviceContactJacobian(point,bodyIndex,point.normal,linear,angular);
-    deviceAvbdAddRow(equation,linear,angular,contact.normalForce,contact.normalStiffness);
+    float normalStiffness=contact.normalStiffness;
+    if(normalUpperBound&&normalStiffness==0)
+        normalStiffness=deviceAvbdMaterial(point.normalStiffness,DeviceAvbdContactStates[row].normalPenalty).y;
+    deviceAvbdAddRow(equation,linear,angular,contact.normalForce,normalStiffness);
     float3 across=cross(point.normal,contact.tangentDirection);
     deviceContactJacobian(point,bodyIndex,contact.tangentDirection,linear,angular);
     deviceAvbdAddRow(equation,linear,angular,dot(contact.tangentForce,contact.tangentDirection),contact.alongStiffness);
     deviceContactJacobian(point,bodyIndex,across,linear,angular);
     deviceAvbdAddRow(equation,linear,angular,dot(contact.tangentForce,across),contact.acrossStiffness);
+    if(angularCurvature)
+    {
+        DeviceBodyState body=DeviceBodyStates[bodyIndex];
+        float3 center=bodyCenterOfMass(body);
+        float force=length(point.normal*contact.normalForce+contact.tangentForce-extraForce);
+        float curvature=0;
+        for(uint end=0;end<point.bodyCount;end++)
+        {
+            DeviceContactBody link=DeviceContactBodyLinks[point.bodyOffset+end];
+            if(link.stateIndex!=bodyIndex) continue;
+            float3 arm=body.position+bodyRotate(body.rotation,link.localPoint)-center;
+            curvature+=abs(link.weight)*length(arm)*force;
+        }
+        deviceAvbdAddRow(equation,float3(0),float3(1,0,0),0,curvature);
+        deviceAvbdAddRow(equation,float3(0),float3(0,1,0),0,curvature);
+        deviceAvbdAddRow(equation,float3(0),float3(0,0,1),0,curvature);
+    }
 }
+void deviceAccumulateAvbdContact(uint row,uint bodyIndex,DeviceAvbdStep context,float3 extraForce,inout DeviceAvbdEquation equation)
+{ deviceAccumulateAvbdContactEquation(row,bodyIndex,context,extraForce,false,false,equation); }
+void deviceAccumulateAvbdContactPotential(uint row,uint bodyIndex,DeviceAvbdStep context,float3 extraForce,
+    bool supported,inout DeviceAvbdEquation equation)
+{ deviceAccumulateAvbdContactEquation(row,bodyIndex,context,extraForce,!supported,true,equation); }
 void deviceUpdateAvbdContact(uint row,DeviceAvbdStep context,float3 extraForce)
 {
     DeviceContactConstraint point=DeviceContacts[row];
@@ -127,5 +160,23 @@ struct DeviceContactAvbdConstraints : IDeviceAvbdConstraints
     void updateDuals(uint row,DeviceAvbdStep context)
     { deviceUpdateAvbdContact(row,context,float3(0)); }
     void adjust(uint body,DeviceAvbdStep context,DeviceAvbdEquation equation,inout float3 translation,inout float3 rotation) { }
+};
+
+struct DeviceContactPotentialAvbdConstraints : IDeviceAvbdConstraints
+{
+    DeviceContactAvbdConstraints inner;
+    uint count() { return inner.count(); }
+    bool active(uint row) { return inner.active(row); }
+    uint bodyCount(uint row) { return inner.bodyCount(row); }
+    uint body(uint row,uint end) { return inner.body(row,end); }
+    bool writes(uint row,uint end) { return inner.writes(row,end); }
+    uint groupCount() { return inner.groupCount(); }
+    uint group(uint row) { return inner.group(row); }
+    void initialize(uint row,DeviceAvbdStep context) { inner.initialize(row,context); }
+    void accumulate(uint row,uint bodyIndex,DeviceAvbdStep context,inout DeviceAvbdEquation equation)
+    { deviceAccumulateAvbdContactPotential(row,bodyIndex,context,float3(0),false,equation); }
+    void updateDuals(uint row,DeviceAvbdStep context) { inner.updateDuals(row,context); }
+    void adjust(uint body,DeviceAvbdStep context,DeviceAvbdEquation equation,inout float3 translation,inout float3 rotation)
+    { inner.adjust(body,context,equation,translation,rotation); }
 };
 #endif

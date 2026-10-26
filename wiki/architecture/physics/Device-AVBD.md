@@ -44,6 +44,12 @@ Jacobian、惯性块与响应共同投影到该子空间。
 `DeviceAvbdConstraintGroups<TFirst,TSecond>` 将多种具体约束组装进同一 Body 局部方程。
 `adjust` 位于局部响应求出之后、位姿提交之前。
 
+`DeviceContactPotentialAvbdConstraints` 选择接触势能的正曲率上界。
+它沿原接触评估、Jacobian 和 `DeviceAvbdContactStates` 装配方程，普通法向采用材料对应的
+有效罚曲率，角向三轴叠加各加权锚的 `|weight| * |arm| * |force|`。
+`deviceAccumulateAvbdContactPotential` 同时接受所选长程支撑的辅助力与支撑资格，
+沿同一方程与原对偶更新接续。项目的具体约束类型继续选择每步和每轮的罚参数更新。
+
 `DeviceAvbdJointState` 保存六轴力乘子、数值罚参数与子步初始误差，
 对应原 `AvbdJointState`；`DeviceAvbdMotorState` 对应原 `AvbdMotorState`。
 两者由同一显式组件输入阶段选择和更新历史资源。

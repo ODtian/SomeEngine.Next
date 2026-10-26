@@ -37,7 +37,7 @@ CPU 场景通过 `solve.Activity` 共享原求解图，`BodyActivity` 单处保�
 
 `PhysicsSceneSettings` 显式保存外层迭代、每体局部迭代、乘子保留比例、图组织、接触距离和整步预算声明。CPU 与 GPU 读取同一乘子保留字段，工作量描述同时列出该值。原步长及子步数来自创建数据。输入的 `Frame` 表示物理步编号；连接移除与位置变化在该步的第一子步、共同预测之前沿原命令链回放。速度增量按 `mass * deltaVelocity` 转成世界冲量，由 `ApplyBodyInputs` 在对应时间区间应用。
 
-`ContactNormalPenalty` 和 `ContactTangentPenalty` 分别选择新接触的法向、切向 ALM 罚度量，`FrictionRegularizationSpeed` 选择滑移曲率的正则化速度。CPU 工厂将这些值交给原 `AvbdContactComponents`，在持久接触实体创建时写入 `AvbdContactState`；后续共同求解在该实体上继续更新乘子和反力。接触材料刚度由同一实体的 `ContactMaterial` 给出。
+`ContactNormalPenalty` 和 `ContactTangentPenalty` 分别选择新接触的法向、切向 ALM 罚度量，`FrictionRegularizationSpeed` 选择滑移曲率的正则化速度。CPU 与 GPU 工厂都将这些值交给原 `AvbdContactComponents`，在持久接触实体创建时写入 `AvbdContactState`；后续共同求解在该实体的所选表示中继续更新乘子和反力。接触材料刚度由同一实体的 `ContactMaterial` 给出。
 
 CPU 场景选用项目的 `SceneContactPenaltyMath<TMath>`，由现有 `IAvbdConstraint<ContactPoint>` 组合普通或长程支撑接触。每步根据步长平方、当前接触雅可比和参与体的逆质量/世界逆惯量计算初始度量，并保留原点的罚参数历史；每轮先完成原接触双变量更新，再按穿透和压力长度尺度更新同一 `AvbdContactState` 中的罚参数。项目显式选择最小值 1、最大值 1e9、每米增长量 100000 和 0.0005 m 压力长度尺度，工作量描述列出这些选择。
 
@@ -60,12 +60,18 @@ DefaultGame 的 `--physics` 选择完整物理目录，`--physics=<id>` 选择�
 | AVBD 外层迭代 | 8 | 16 |
 | AVBD 每体迭代 | 1 | 2 |
 | 关节长程界层数 | 6 | 0 |
-| 接触约束 | 普通接触与长程支撑 | 普通接触 |
+| 接触约束 | 普通接触与长程支撑 | 普通接触与长程支撑 |
 | 接触距离 | 0.02 m | 0.02 m |
 | 乘子保留比例 | 0.8 | 0.8 |
 | 整步预算 | 1000/60 ms | 1000/60 ms |
 
 GPU 示例按 Body 数量派生网格单元、桶、pair 和接触容量，工作量描述记录这些容量、所选设备名称、驱动与专用显存。接触、原关节和原显式距离边共同进入设备约束图；参数与数值历史沿原实体的设备表示保存，完成后读取所选 Body 并更新原 `LocalTransform`。
+
+GPU 示例选择 `DeviceContactPotentialAvbdConstraints` 的正法向和角向势能曲率，并沿项目的 `SceneContactAvbdConstraints` 按时间步、Jacobian mobility、当前法向压力和残差更新 ALM 罚度量。初始法向与切向值均为 100，正则化速度为 0.01 m/s；实际参数、上下界和压力长度尺度一并写入工作量描述。
+
+`PhysicsSceneSettings.ContactSupports` 选择原 `DeviceContactSupports`：动态主体通过 `DeviceSupportBodyBinding` 参与支撑，同一接触实体通过 `DeviceAvbdState<DeviceContactSupportState>` 选择支撑历史。输入上传后初始化支撑工作缓冲，原约束图加入支撑主体行，AVBD 在各轮更新承重路径与反力，活动阶段读取同一支撑高度误差。示例按场景维度选择 Y 或 Z 向上，并沿 CPU 示例的容差、乘子保持率和初始误差比例装配。
+
+关节受力沿 `DeviceConstraintForceSamples<DeviceJointConstraint>` 读取当前原状态，通过原 `BreakConstraints` 检查同一实体的 `ConstraintBreakSettings`，使用原命令链移除过载关节。公开 `CreateDevice<TEvents>` 重载把这些完成步事件交给具体消费者；下一个子步沿原成员及参数维护释放该约束。
 
 设备场景在同一帧消费阶段从当前接触几何、主体活动和图 Parents 归约全局结果，仅传回 16 字节的最大穿透、活动主体数、接触点数和最大连通主体数。`PhysicsSceneSimulation.DeviceAwakeBodies`、`DeviceContactPoints`、`DeviceLargestIslandBodies` 交付这些完成步结果；岛大小工作缓冲按原主体容量复用。
 
