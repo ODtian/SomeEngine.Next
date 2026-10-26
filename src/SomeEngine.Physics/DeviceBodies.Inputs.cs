@@ -1,5 +1,6 @@
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
+using SomeEngine.ECS.Systems;
 using SomeEngine.Graphics;
 using SomeEngine.Job;
 
@@ -24,7 +25,8 @@ public sealed partial class DeviceBodies
             BodyInputComponents.Pose | BodyInputComponents.Velocity | BodyInputComponents.Step
                 | (same ? previous.Known & BodyInputComponents.Mass : 0));
     }
-    internal JobResourceAccess GetCpuVersionsAccess(Scheduler scheduler) => JobResourceAccess.Write(scheduler, _cpuVersions);
+    internal void CollectCpuResult(int index, ref JobResourceAccessBuilder resources) =>
+        resources.Write(_cpuVersions.AsMemory(index, 1));
     internal static BodyInputVersions ReadVersions(scoped QueryRow row) => new(row.Entity,
         row.WriteVersion<BodyPose>(), row.WriteVersion<BodyMass>(), row.WriteVersion<BodyVelocity>(),
         row.WriteVersion<BodyStepState>(), BodyInputComponents.All);

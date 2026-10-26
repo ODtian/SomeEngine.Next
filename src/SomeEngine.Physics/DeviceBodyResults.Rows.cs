@@ -23,7 +23,7 @@ public sealed partial class DeviceBodyResults
             Members = world.Query(definition);
             Writes = world.Query(definition.WithAccess(new QueryDefinitionBuilder()
                 .ReadWrite<BodyPose>().ReadWrite<BodyVelocity>().ReadWrite<BodyStepState>().Build()));
-            Resources.Add<DeviceBodyBinding, DeviceBodyReferenceResources>();
+            Resources.Add<DeviceBodyBinding, BodyResultResources>();
             Accesses = new JobResourceAccess[QueryJobAccess.Count(definition)];
             QueryJobAccess.CopyAccesses(world, definition, Accesses, Resources);
         }
@@ -41,12 +41,17 @@ public sealed partial class DeviceBodyResults
             int packetSize = rowsPerPacket == 0 ? Math.Max(1, rows.Count) : rowsPerPacket;
             var work = new ResultWork(rows, packetSize, rows.Count);
             JobResourceAccess[] accesses = [JobResourceAccess.Read(scheduler, results.States),
-                JobResourceAccess.Read(scheduler.GetResourceToken(rows)), results.Bodies.GetCpuVersionsAccess(scheduler)];
+                JobResourceAccess.Read(scheduler.GetResourceToken(rows))];
             JobResourceAccess[] reads = results._selection is { } selection
                 ? [.. accesses, JobResourceAccess.Read(scheduler.GetResourceToken(selection))] : accesses;
             JobHandle applied = EntityQueryJobs.Schedule(rows.World, in work, new ApplyResults(results), reads, rows.Resources);
             scheduler.ScheduleFinally(new Collect(results), default, applied);
         }
+    }
+    private readonly struct BodyResultResources : IJobComponentResources<DeviceBodyBinding>
+    {
+        public static void Collect(in DeviceBodyBinding binding, ref JobResourceAccessBuilder resources) =>
+            binding.Bodies.CollectCpuResult(binding.Index, ref resources);
     }
     private readonly record struct CaptureRows(DeviceBodyResults Results, ResultRows Rows)
     {
