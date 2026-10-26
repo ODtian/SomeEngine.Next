@@ -84,7 +84,8 @@ public sealed partial class DevicePoseSources
                 { current._sources.Add(entity, source = new(entity)); rebuild = true; }
                 if (source.Index != current._order.Count || !ReferenceEquals(input.Skeleton, source.Input.Skeleton)
                     || !ReferenceEquals(input.Clip, source.Input.Clip) || !ReferenceEquals(input.StateMachine, source.Input.StateMachine)
-                    || !ReferenceEquals(input.Blend, source.Input.Blend) || source.AcceptedBinding != input.Skeleton.BindingVersion) rebuild = true;
+                    || !ReferenceEquals(input.Blend, source.Input.Blend) || !ReferenceEquals(input.Rig, source.Input.Rig)
+                    || source.AcceptedBinding != input.Skeleton.BindingVersion) rebuild = true;
                 source.Input = input; source.Binding = input.Skeleton.BindingVersion;
                 source.Index = current._order.Count; current._order.Add(source);
             }
@@ -112,8 +113,11 @@ public sealed partial class DevicePoseSources
             }
             var root = new RootCorrection(new(input.RootCorrection.Translation, input.ExtractRootMotion ? 1 : 0), input.RootCorrection.Rotation);
             MemoryMarshal.Write(_roots.Mapping.Bytes.Slice(row.Index * 32, 32), in root);
+            var offset = new Vector4(input.ModelOffset, 0);
+            MemoryMarshal.Write(_offsets.Mapping.Bytes.Slice(row.Index * 16, 16), in offset);
         }
         if (_order.Count > 0) { _controls.Mapping.Flush(new(0, (ulong)_order.Count * 64)); _roots.Mapping.Flush(new(0, (ulong)_order.Count * 32)); }
+        if (_order.Count > 0) _offsets.Mapping.Flush(new(0, (ulong)_order.Count * 16));
         if (inputs > 0) _inputs.Mapping.Flush(new(0, (ulong)inputs * 4));
     }
     private void Rebuild()
@@ -134,16 +138,16 @@ public sealed partial class DevicePoseSources
             row.Reference = definitions.WriteReference(input.Skeleton.Skeleton); row.Reset = true;
         }
         _boneCount = bones;
-        bytes.GetBuffer().AsSpan(0, (int)bytes.Length).CopyTo(_definitions.Mapping.Bytes);
-        _definitions.Mapping.Flush(new(0, (ulong)bytes.Length));
         _controlView?.Dispose();
         foreach (BufferSrv view in _workViews) view.Dispose();
-        _workViews.Clear(); _sampleBindings.Clear(); _workCounts.Clear();
+        _workViews.Clear(); _sampleBindings.Clear(); _translationBindings.Clear(); _workCounts.Clear();
         if (_order.Count == 0) return;
         _controlView = _backend.CreateBufferSrv(_device, new(_controls.Buffer, new(0, (ulong)_order.Count * 64), StructureStride: 64));
         _bindings["GpuPoseControls"] = [ResourceBinding.ReadOnlyBuffer(_controlView)];
         _advanceBindings = OrderBindings(_layouts[0], _bindings);
         var levels = new List<List<BoneWork>>();
+        var children = new List<int>[_boneCount];
+        for (int bone = 0; bone < children.Length; bone++) children[bone] = [];
         var sections = _order.ToDictionary(row => row.Input.Skeleton);
         foreach (SourceRow row in _order) row.Depths = new int[row.Range.Count];
         foreach (SourceRow row in _order)
@@ -159,6 +163,7 @@ public sealed partial class DevicePoseSources
                 }
                 int depth = parent < 0 ? 0 : parentRow.Depths[parent] + 1;
                 row.Depths[bone] = depth;
+                if (parent >= 0) children[parentRow.Range.Start + parent].Add(row.Range.Start + bone);
                 while (levels.Count <= depth) levels.Add([]);
                 levels[depth].Add(new((uint)row.Index, (uint)bone,
                     parent < 0 ? uint.MaxValue : (uint)(parentRow.Range.Start + parent), (uint)(row.Range.Start + bone)));
@@ -172,6 +177,27 @@ public sealed partial class DevicePoseSources
             _workViews.Add(view); _bindings["GpuPoseWork"] = [ResourceBinding.ReadOnlyBuffer(view)];
             _sampleBindings.Add(OrderBindings(_layouts[1], _bindings)); _workCounts.Add(level.Count); offset += work.Length;
         }
+        foreach (SourceRow row in _order.Where(row => row.Input.Rig?.TranslationBone >= 0)
+                     .OrderBy(row => row.Depths[row.Input.Rig!.TranslationBone]))
+        {
+            while (writer.BaseStream.Position % 4 != 0) writer.Write((byte)0);
+            uint first = (uint)writer.BaseStream.Position, count = 0;
+            var visit = new Stack<int>(); visit.Push(row.Range.Start + row.Input.Rig!.TranslationBone);
+            while (visit.TryPop(out int bone))
+            {
+                writer.Write((uint)bone); count++;
+                foreach (int child in children[bone]) visit.Push(child);
+            }
+            uint definition = (uint)writer.BaseStream.Position;
+            writer.Write(first); writer.Write(count);
+            var operation = new BoneWork((uint)row.Index, definition, 0, 0);
+            MemoryMarshal.Write(_work.Mapping.Bytes.Slice(offset, 16), in operation);
+            BufferSrv view = _backend.CreateBufferSrv(_device, new(_work.Buffer, new((ulong)offset, 16), StructureStride: 16));
+            _workViews.Add(view); _bindings["GpuPoseWork"] = [ResourceBinding.ReadOnlyBuffer(view)];
+            _translationBindings.Add(OrderBindings(_layouts[_translateKernel], _bindings)); offset += 16;
+        }
+        bytes.GetBuffer().AsSpan(0, (int)bytes.Length).CopyTo(_definitions.Mapping.Bytes);
+        _definitions.Mapping.Flush(new(0, (ulong)bytes.Length));
         if (offset > 0) _work.Mapping.Flush(new(0, (ulong)offset));
     }
     [StructLayout(LayoutKind.Sequential)]

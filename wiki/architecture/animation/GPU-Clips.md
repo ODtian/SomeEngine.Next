@@ -77,6 +77,10 @@ Skinning 提供共同编码，[gpu_pose_sampling](../../../assets/Shaders/gpu_po
 单处维护来源状态推进和采样数学。播放及混合状态驻留在该来源批次内，原输入的开始标记与
 输入编号决定相位推进。
 
+项目提供 `DevicePoseKernels.Translate` 后，来源求值接续原 rig 的 `TranslationBone` 与
+当次 `ModelOffset`，沿派生后代索引平移对应模型矩阵。Game 来源与 Skinning 共用
+[gpu_pose_translation](../../../assets/Shaders/gpu_pose_translation.slang) 的同一具体内核。
+
 `Readback()` 是项目选择的 CPU 来源消费阶段；设备 copy、外部 fence 和矩阵交付处于
 返回的物理 Job 链。完成后按原目标 Entity 调用 `ReadModels`，后续作业通过
 `GetResultReadAccesses` 声明读取。设备消费者通过 `Models`、`GetModelRange` 和
