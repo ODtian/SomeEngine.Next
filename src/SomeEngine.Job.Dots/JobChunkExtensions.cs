@@ -60,6 +60,64 @@ public static class JobChunkExtensions
             dependency);
     }
 
+    public static JobHandle Schedule<TJob, TSource>(
+        this TJob job,
+        Scheduler scheduler,
+        in TSource source,
+        int batchSize = 1,
+        JobHandle dependency = default)
+        where TJob : struct, IJobChunk
+        where TSource : IJobChunkSource
+    {
+        JobTraits.RequireSynchronousCallback<TJob, IJobChunk>(
+            JobChunkExecuteTraits<TJob>.IsAsyncStateMachine);
+        return scheduler.ScheduleParallel(
+            new ChunkJobParallelAdapter<TJob, TSource>(job, source),
+            GetChunkCount(source),
+            batchSize,
+            dependency);
+    }
+
+    public static JobHandle Schedule<TJob, TSource>(
+        this TJob job,
+        Scheduler scheduler,
+        in TSource source,
+        int batchSize,
+        JobResourceAccess access,
+        JobHandle dependency = default)
+        where TJob : struct, IJobChunk
+        where TSource : IJobChunkSource
+    {
+        JobTraits.RequireSynchronousCallback<TJob, IJobChunk>(
+            JobChunkExecuteTraits<TJob>.IsAsyncStateMachine);
+        return scheduler.ScheduleParallel(
+            new ChunkJobParallelAdapter<TJob, TSource>(job, source),
+            GetChunkCount(source),
+            batchSize,
+            access,
+            dependency);
+    }
+
+    public static JobHandle Schedule<TJob, TSource>(
+        this TJob job,
+        Scheduler scheduler,
+        in TSource source,
+        int batchSize,
+        ReadOnlySpan<JobResourceAccess> accesses,
+        JobHandle dependency = default)
+        where TJob : struct, IJobChunk
+        where TSource : IJobChunkSource
+    {
+        JobTraits.RequireSynchronousCallback<TJob, IJobChunk>(
+            JobChunkExecuteTraits<TJob>.IsAsyncStateMachine);
+        return scheduler.ScheduleParallel(
+            new ChunkJobParallelAdapter<TJob, TSource>(job, source),
+            GetChunkCount(source),
+            batchSize,
+            accesses,
+            dependency);
+    }
+
     private static int GetChunkCount<TSource>(in TSource source)
         where TSource : IJobChunkSource
     {

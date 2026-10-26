@@ -127,6 +127,17 @@ public static partial class JobSystem
         return Current.Schedule(job, accesses, options, dependency);
     }
 
+    /// <summary>Executes ranges on the current scheduler and caller, returning after every participant exits.</summary>
+    public static void ExecuteParallel<T>(in T job, int length, int batchSize = 1,
+        JobScheduleOptions options = default) where T : struct, IJobParallelFor =>
+        Current.ExecuteParallel(job, length, batchSize, options);
+
+    /// <summary>Holds the declared accesses through synchronous range execution on the current scheduler.</summary>
+    public static void ExecuteParallel<T>(in T job, int length, int batchSize,
+        ReadOnlySpan<JobResourceAccess> accesses, JobScheduleOptions options = default)
+        where T : struct, IJobParallelFor =>
+        Current.ExecuteParallel(job, length, batchSize, accesses, options);
+
     public static JobHandle ScheduleParallel<T>(
         in T job,
         int length,
@@ -203,6 +214,12 @@ public static partial class JobSystem
 public static partial class JobSystem
 {
     internal static bool IsExecutingJob => JobExecutionContext.IsActive;
+
+    public static JobHandle CreateExternalFenceHandle(ValueTask task, ReadOnlySpan<JobResourceAccess> accesses = default) =>
+        Current.CreateExternalFenceHandle(task, accesses);
+
+    public static JobHandle CreateExternalFenceHandle(Task task, ReadOnlySpan<JobResourceAccess> accesses = default) =>
+        Current.CreateExternalFenceHandle(task, accesses);
 
     public static JobHandle CreateExternalFenceHandle(IJobExternalFence fence)
     {
@@ -332,9 +349,8 @@ public static partial class JobSystem
     }
 
     /// <summary>
-    /// Schedules an internal cleanup job after <paramref name="dependency"/> reaches a terminal
-    /// state, even when that dependency faulted. The cleanup job is responsible for observing and
-    /// propagating the dependency fault after it has restored its owner's invariants.
+    /// Schedules cleanup after <paramref name="dependency"/> reaches success, failure, or cancellation.
+    /// The cleanup job observes its retained completion result after restoring its data.
     /// </summary>
     public static JobHandle ScheduleFinally<T>(
         in T job,
@@ -343,6 +359,17 @@ public static partial class JobSystem
         where T : struct, IJob
     {
         return Current.ScheduleFinally(job, options, dependency);
+    }
+
+    /// <summary>Schedules terminal cleanup with its actual resource accesses.</summary>
+    public static JobHandle ScheduleFinally<T>(
+        in T job,
+        ReadOnlySpan<JobResourceAccess> accesses,
+        JobScheduleOptions options,
+        JobHandle dependency)
+        where T : struct, IJob
+    {
+        return Current.ScheduleFinally(job, accesses, options, dependency);
     }
 
     internal static SynchronousResourceOwner AcquireSynchronousAccess(
@@ -358,5 +385,7 @@ public static partial class JobSystem
         return Current.AcquireSynchronousAccess(accesses);
     }
 
-    private static Scheduler Current => Scheduler.Executing ?? Default;
+    /// <summary>The executing job's scheduler, or the default scheduler for a direct caller.</summary>
+    /// <remarks>Capture this value before awaiting to retain the initiating scheduler for later work.</remarks>
+    public static Scheduler Current => Scheduler.Executing ?? Default;
 }

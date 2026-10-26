@@ -39,16 +39,26 @@ public sealed class GpuHeightTerrainExample : IDisposable
     public static async Task<GpuHeightTerrainExample> CreateAsync(Scheduler scheduler, string contentDirectory)
     {
         string shaders = Path.Combine(contentDirectory, "assets", "Shaders");
-        async Task<Shader> Load(string source, string directory)
+        async Task<Shader> Load(string source, string directory, ShaderSpecialization[]? specializations = null)
         {
             var description = SlangShaderImporter.CreateSessionDescription(Path.Combine(directory, source),
                 SlangShaderImporter.CreateDefaultTargets(SlangShaderImporter.GlobalSession), [ProjectPaths.EngineShaders, shaders]);
             using var block = new ShaderSourceBlock { SourceNames = [source] };
+            if (specializations is not null)
+            {
+                description.PreprocessorMacros =
+                [
+                    .. description.PreprocessorMacros ?? [],
+                    new() { Name = "CLUSTER_SURFACE_MODES", Value = "1" },
+                    new() { Name = "CLUSTER_FORWARD_SHADING", Value = "1" },
+                ];
+                foreach (ShaderSpecialization specialization in specializations) block.Specializations.Add(specialization);
+            }
             return await block.CreateAsync(SlangShaderImporter.GlobalSession, description, source);
         }
         return new(scheduler, await Load("terrain_height_surface.slang", ProjectPaths.EngineShaders),
             await Load("gpu_terrain_attributes.slang", shaders), await Load("gpu_terrain_build.slang", shaders),
-            await Load("gpu_terrain_material.slang", shaders), await Load("terrain_height_delta.slang", ProjectPaths.EngineShaders));
+            await Load("gpu_terrain_material.slang", shaders, Content.SampleContent.CreateMaterialSpecializations(0)), await Load("terrain_height_delta.slang", ProjectPaths.EngineShaders));
     }
 #endif
 

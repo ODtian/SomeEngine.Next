@@ -3,12 +3,67 @@ using SlangShaderSharp;
 using SomeEngine.Assets.Importers;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Resources;
+using SomeEngine.Job;
 using System.Runtime.InteropServices.Marshalling;
 
 namespace SomeEngine.Assets.Tests.Assets;
 
 public sealed class DirectSlangShaderTests
 {
+    [Fact]
+    public async Task EntryMetadataCompletesWithZeroWorkers()
+    {
+        using var files = new AssetTestDirectory();
+        await File.WriteAllTextAsync(files.File("metadata.slang"), """
+            RWStructuredBuffer<uint> values;
+            [shader("compute")][numthreads(1,1,1)] void Compute() { values[0] = 7; }
+            """);
+        using var block = new ShaderSourceBlock { SourceNames = ["metadata.slang"] };
+        ShaderCompilation compiled = await block.CompileAsync(SlangShaderImporter.GlobalSession,
+            new SessionDesc { Targets = CreateTargets(), SearchPaths = [files.Path] }, "metadata");
+        Shader shader = compiled.Shader;
+        var location = Assert.Single(shader.GetSlangUsedParameters(0, 0));
+        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 0 });
+        try
+        {
+            IMetadata metadata = await shader.GetSlangEntryMetadataAsync(0, 0).WaitAsync(TimeSpan.FromSeconds(10));
+
+            Assert.False(metadata.IsParameterLocationUsed(location.Category, checked((nuint)location.Space),
+                checked((nuint)location.Register), out bool used).Failed);
+            Assert.True(used);
+        }
+        finally { JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 2 }); }
+    }
+
+    [Fact]
+    public async Task ShaderCodeGenerationUsesCallingSchedulerAndKeepsEntryOrder()
+    {
+        using var files = new AssetTestDirectory();
+        await File.WriteAllTextAsync(files.File("entries.slang"), """
+            RWStructuredBuffer<uint> values;
+            [shader("compute")][numthreads(1,1,1)] void First() { values[0] = 7; }
+            [shader("compute")][numthreads(1,1,1)] void Second() { values[1] = 19; }
+            """);
+        using var block = new ShaderSourceBlock { SourceNames = ["entries.slang"] };
+        using var scheduler = new Scheduler(new() { WorkerCount = 2 });
+        var result = new Task<ShaderCompilation>[1];
+        await scheduler.Schedule(new CompileShader(block,
+            new SessionDesc { Targets = CreateTargets(), SearchPaths = [files.Path] }, result)).WaitAsync();
+        Shader shader = (await result[0]).Shader;
+        Assert.Equal("First", shader.GetSlangReflection(0).GetEntryPointByIndex(0).Name);
+        Assert.Equal("Second", shader.GetSlangReflection(0).GetEntryPointByIndex(1).Name);
+        Assert.NotEmpty(shader.GetSlangEntryBlob(0, 0)!.Buffer.ToArray());
+        Assert.NotEmpty(shader.GetSlangEntryBlob(0, 1)!.Buffer.ToArray());
+        Assert.True(scheduler.GetStats().ScheduledJobs > 1);
+    }
+
+    private readonly record struct CompileShader(ShaderSourceBlock SourceBlock, SessionDesc Description,
+        Task<ShaderCompilation>[] Result) : IJob
+    {
+        public void Execute() => Result[0] = SourceBlock.CompileAsync(
+            SlangShaderImporter.GlobalSession, Description, "entries").AsTask();
+    }
+
     [Fact]
     public async Task SourceHashesDescribeTheBytesSuppliedByTheCompilerFileSystem()
     {
@@ -280,17 +335,28 @@ public sealed class DirectSlangShaderTests
         Assert.False(highCode.AsSpan().SequenceEqual(lowCode));
 
         using var savedCode = new ShaderBlock();
+        block.Specializations =
+        [
+            new() { EntryPoint = "Compute", Arguments = ["HighQuality"] },
+            new() { EntryPoint = "Compute", Arguments = ["LowQuality"] },
+        ];
+        savedCode.SetEntryCode(sessionDescription, 0, 0, highCode, ["HighQuality"], "Compute");
+        savedCode.SetEntryUsage(sessionDescription, 0, 0, high.GetSlangUsedParameters(0, 0), ["HighQuality"], "Compute");
+        savedCode.SetEntryCode(sessionDescription, 0, 0, lowCode, ["LowQuality"], "Compute");
+        savedCode.SetEntryUsage(sessionDescription, 0, 0, low.GetSlangUsedParameters(0, 0), ["LowQuality"], "Compute");
         Shader savedBlockHigh = await savedCode.CreateAsync(
             block,
             slang,
             sessionDescription,
             "saved-high",
+            "Compute",
             new[] { SpecializationArg.FromExpression("HighQuality") });
         Shader savedBlockLow = await savedCode.CreateAsync(
             block,
             slang,
             sessionDescription,
             "saved-low",
+            "Compute",
             new[] { SpecializationArg.FromExpression("LowQuality") });
         Assert.True(savedBlockHigh.TryGetSlangEntry(
             0,

@@ -1201,6 +1201,8 @@ internal sealed unsafe partial class VulkanBackend
             QueuePlan queuePlan)
         {
             DeviceFeatures supported = DeviceFeatures.IndirectCommands;
+            if (extensions.Contains(SwapchainExtension))
+                supported |= DeviceFeatures.Presentation;
             if (features.SparseBinding &&
                 features.SparseResidencyBuffer &&
                 queuePlan.SupportsSparseGraphicsQueue0)
@@ -1506,7 +1508,8 @@ internal sealed unsafe partial class VulkanBackend
         {
             QueueType.Graphics => (flags & QueueFlags.GraphicsBit) != 0,
             QueueType.Compute => (flags & QueueFlags.ComputeBit) != 0,
-            QueueType.Copy => (flags & QueueFlags.TransferBit) != 0,
+            QueueType.Copy => (flags & QueueFlags.TransferBit) != 0 &&
+                (flags & (QueueFlags.GraphicsBit | QueueFlags.ComputeBit)) != 0,
             _ => false,
         };
 
@@ -1514,9 +1517,7 @@ internal sealed unsafe partial class VulkanBackend
         {
             QueueType.Graphics => 100,
             QueueType.Compute => (flags & QueueFlags.GraphicsBit) == 0 ? 200 : 100,
-            QueueType.Copy => (flags & (QueueFlags.GraphicsBit | QueueFlags.ComputeBit)) == 0
-                ? 300
-                : (flags & QueueFlags.GraphicsBit) == 0 ? 200 : 100,
+            QueueType.Copy => (flags & QueueFlags.GraphicsBit) == 0 ? 200 : 100,
             _ => 0,
         };
     }

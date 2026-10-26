@@ -30,6 +30,8 @@ SG 不生成完整导入流程，不决定遍历方式、材质策略、跨扩�
 
 ## Context 的执行与依赖规则
 
+`AssetProject.ImportAsync` 在首次等待前捕获 `JobSystem.Current`，传给本次 `ImportContext`；直接创建 Context 时也可显式传入 Scheduler，默认捕获创建时的当前执行器。`ImportContext.Scheduler` 保持这份执行器绑定，供异步来源读取后的 CPU 工作继续使用。`DecodingCategory` 按执行器共享同一个资产解码类别，最多保持 256 个在途请求，同时执行数为 worker 数量的一半（至少 1），服务份额为 1；图像解码以低优先级提交。类别由 Assets 内部 `AssetDecodeJobs` 按需创建，多个导入 Context 共享这份配额。
+
 一次导入拥有一个 `ImportContext`。调用记录区分 Importer 实例、来源对象、目标资产及设置。同一调用的遍历请求和依赖请求共享执行结果，不重复构建。
 
 需要依赖时，Importer 通过 Context 调用对应的已配置 Importer，并读取它的强类型结果。Context 检查依赖环和设置不一致；不要求事先规定一个固定顺序。取消一个等待者不会把其他等待者共享的任务取消；关闭 Context 会取消并等待真实执行结束，然后清理结果。

@@ -104,6 +104,24 @@ public sealed partial class Scheduler
         return _completion.IsCompleted(handle);
     }
 
+    internal bool TryGetCompletionResult(JobHandle handle, out ExceptionDispatchInfo? fault)
+    {
+        return _completion.TryGetCompletedFault(handle, markObserved: true, out fault);
+    }
+
+    internal JobCompletionResult? ObserveCompletion(JobHandle handle, out ExceptionDispatchInfo? fault)
+    {
+        _completion.TryBeginWait(handle, out CompletionLease observation);
+        try
+        {
+            return TryGetCompletionResult(handle, out fault) ? null : new JobCompletionResult(handle);
+        }
+        finally
+        {
+            _completion.EndWait(observation);
+        }
+    }
+
     internal bool NeedsLifetimeTracking(JobHandle handle)
     {
         return _completion.NeedsLifetimeTracking(handle);
@@ -116,6 +134,10 @@ public sealed partial class Scheduler
         {
             return;
         }
+
+        if (JobExecutionContext.IsActive && !_completion.IsCompleted(handle))
+            throw new InvalidOperationException(
+                "A Job callback continues through dependencies; explicit waiting belongs to its coordinating thread.");
 
         if (!_completion.TryBeginWait(handle, out CompletionLease lease))
         {

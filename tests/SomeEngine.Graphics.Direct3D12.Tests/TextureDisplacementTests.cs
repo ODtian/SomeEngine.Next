@@ -1,4 +1,7 @@
 using System.Runtime.InteropServices;
+using System.Numerics;
+using SomeEngine.Assets.Importers;
+using SomeEngine.Assets.Schema;
 using SlangShaderSharp;
 using Xunit;
 using Buffer = SomeEngine.Graphics.Buffer;
@@ -168,6 +171,166 @@ public sealed class TextureDisplacementTests(D3D12TestCompiler shaderCompiler)
         for (int test = 0; test < caseCount; test++)
             Assert.True(values[(test * depthCount + depthCount - 1) * 8 + 3] < values[test * depthCount * 8 + 3] * 0.15f,
                 $"Case {test} did not converge after six subdivisions.");
+    }
+
+    [Fact]
+    public async Task BoundsTextureDisplacementDrawsTheSamePixelsAsSourceVertices()
+    {
+        const int size = 64, pitch = size * 4;
+        float[] samples = Enumerable.Range(0, 64).Select(index => ((index % 8 * 5 + index / 8 * 3) % 11) / 10f).ToArray();
+        using TextureAsset boundsAsset = DisplacementBoundsTexture.Create(Guid.NewGuid(), "draw bounds", 8, 8, samples, out _);
+        SomeEngine.Resources.Texture boundsPixels = await boundsAsset.GetBlock<TextureBlock>().CreateAsync(firstMip: 0);
+        List<int> indices = [];
+        for (int y = 0; y < 7; y++)
+        for (int x = 0; x < 7; x++)
+        {
+            int a = y * 8 + x, b = a + 1, c = a + 8, d = c + 1;
+            indices.AddRange([a, c, b, b, c, d]);
+        }
+        Vector4[] sourceVertices = indices.Select(index =>
+        {
+            float u = (index % 8 + .5f) / 8, v = (index / 8 + .5f) / 8;
+            return new Vector4(u * 1.5f - .75f, v * 1.5f - .75f, u, v);
+        }).ToArray();
+        Vector3[] referenceVertices = indices.Select((index, vertex) =>
+            new Vector3(sourceVertices[vertex].X, sourceVertices[vertex].Y + samples[index] * .25f, .5f)).ToArray();
+        const string source = """
+            #include "texture_displacement.slang"
+            StructuredBuffer<float4> SourceVertices;
+            StructuredBuffer<float3> ReferenceVertices;
+            Texture2D<float> HeightMap;
+            Texture2D<float2> HeightBounds;
+            SamplerState HeightSampler;
+            struct VertexOutput { float4 position : SV_Position; nointerpolation uint valid : TEXCOORD0; };
+            [shader("vertex")]
+            VertexOutput DisplacedVertex(uint vertex : SV_VertexID)
+            {
+                uint first = vertex / 3u * 3u;
+                float4 a = SourceVertices[first], b = SourceVertices[first + 1u], c = SourceVertices[first + 2u];
+                Triangle t = {};
+                t.Position0 = float3(a.xy, .5); t.Position1 = float3(b.xy, .5); t.Position2 = float3(c.xy, .5);
+                t.Normal0 = t.Normal1 = t.Normal2 = float3(0,1,0);
+                t.TexCoord0 = a.zw; t.TexCoord1 = b.zw; t.TexCoord2 = c.zw;
+                TextureDisplacement surface = MakeTextureDisplacement(HeightMap, HeightBounds, HeightSampler, float2(0,1), .25, 0);
+                float3 bary = vertex % 3u == 0u ? float3(1,0,0) : vertex % 3u == 1u ? float3(0,1,0) : float3(0,0,1);
+                float3 position = surface.position(t, bary), lo, hi;
+                surface.patchBounds(t, float3(1,0,0), float3(0,1,0), float3(0,0,1), lo, hi);
+                VertexOutput output;
+                output.position = float4(position,1);
+                output.valid = all(position >= lo - 1e-5) && all(position <= hi + 1e-5) ? 1u : 0u;
+                return output;
+            }
+            [shader("vertex")]
+            VertexOutput ReferenceVertex(uint vertex : SV_VertexID)
+            {
+                VertexOutput output;
+                output.position = float4(ReferenceVertices[vertex],1);
+                output.valid = 1u;
+                return output;
+            }
+            [shader("fragment")]
+            float4 Shade(VertexOutput input) : SV_Target0 { return input.valid != 0u ? float4(0,1,0,1) : float4(1,0,0,1); }
+            """;
+        D3D12TestShader shader = shaderCompiler.CompileWithSearchPaths("displacement_draw", source,
+            [new("DisplacedVertex", SlangStage.Vertex), new("ReferenceVertex", SlangStage.Vertex), new("Shade", SlangStage.Fragment)],
+            "sm_6_0", ShaderDirectory());
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using Device device = D3D12TestSupport.CreateWarpDevice(backend);
+        using Buffer sourceBuffer = backend.CreateBuffer(device, new((ulong)sourceVertices.Length * 16, BufferUsages.ShaderRead), MemoryType.Upload);
+        using Buffer referenceBuffer = backend.CreateBuffer(device, new((ulong)referenceVertices.Length * 12, BufferUsages.ShaderRead), MemoryType.Upload);
+        using (MappedBuffer map = backend.Map(sourceBuffer, MapType.Write, BufferRange.Whole))
+        { MemoryMarshal.AsBytes(sourceVertices.AsSpan()).CopyTo(map.Bytes); map.Flush(map.Range); }
+        using (MappedBuffer map = backend.Map(referenceBuffer, MapType.Write, BufferRange.Whole))
+        { MemoryMarshal.AsBytes(referenceVertices.AsSpan()).CopyTo(map.Bytes); map.Flush(map.Range); }
+        using BufferSrv sourceView = backend.CreateBufferSrv(device, new(sourceBuffer, BufferRange.Whole, StructureStride: 16));
+        using BufferSrv referenceView = backend.CreateBufferSrv(device, new(referenceBuffer, BufferRange.Whole, StructureStride: 12));
+        using Buffer upload = backend.CreateBuffer(device, new(6144, BufferUsages.CopySource), MemoryType.Upload);
+        using (MappedBuffer map = backend.Map(upload, MapType.Write, BufferRange.Whole))
+        {
+            map.Bytes.Clear();
+            for (int y = 0; y < 8; y++)
+                MemoryMarshal.AsBytes(samples.AsSpan(y * 8, 8)).CopyTo(map.Bytes.Slice(y * 256));
+            ulong offset = 2048;
+            foreach (var tile in boundsPixels.MipTiles)
+            {
+                Assert.True(boundsPixels.TryGetTile(tile.ChunkKey, out ReadOnlyMemory<byte> mipBytes));
+                for (uint y = 0; y < tile.Height; y++)
+                    mipBytes.Span.Slice((int)(y * tile.RowPitch), (int)tile.Width * 8).CopyTo(map.Bytes.Slice((int)(offset + y * 256u)));
+                offset += tile.Height * 256u;
+            }
+            map.Flush(map.Range);
+        }
+        using Texture heights = backend.CreateTexture(device, new(TextureDimension.Texture2D, 8, 8, 1, 1, 1, 1,
+            Format.R32Float, TextureUsages.Sampled | TextureUsages.CopyDestination));
+        using Texture bounds = backend.CreateTexture(device, new(TextureDimension.Texture2D, 8, 8, 1, boundsPixels.MipLevelCount, 1, 1,
+            Format.R32G32Float, TextureUsages.Sampled | TextureUsages.CopyDestination));
+        TextureSubresourceRange heightRange = new(0, 1, 0, 1, TextureAspects.Color);
+        TextureSubresourceRange boundsRange = new(0, boundsPixels.MipLevelCount, 0, 1, TextureAspects.Color);
+        using TextureSrv heightView = backend.CreateTextureSrv(device, new(heights, heightRange, Format.R32Float, TextureViewDimension.Texture2D));
+        using TextureSrv boundsView = backend.CreateTextureSrv(device, new(bounds, boundsRange, Format.R32G32Float, TextureViewDimension.Texture2D));
+        using Sampler sampler = backend.CreateSampler(device, new(FilterType.Linear, FilterType.Linear, FilterType.Linear,
+            AddressType.Repeat, AddressType.Repeat, AddressType.Repeat));
+        using Texture actual = backend.CreateTexture(device, new(TextureDimension.Texture2D, size, size, 1, 1, 1, 1,
+            Format.R8G8B8A8UNorm, TextureUsages.ColorAttachment | TextureUsages.CopySource));
+        using Texture expected = backend.CreateTexture(device, new(TextureDimension.Texture2D, size, size, 1, 1, 1, 1,
+            Format.R8G8B8A8UNorm, TextureUsages.ColorAttachment | TextureUsages.CopySource));
+        using ColorAttachmentView actualView = backend.CreateColorAttachmentView(device, new(actual, heightRange, Format.R8G8B8A8UNorm, TextureViewDimension.Texture2D));
+        using ColorAttachmentView expectedView = backend.CreateColorAttachmentView(device, new(expected, heightRange, Format.R8G8B8A8UNorm, TextureViewDimension.Texture2D));
+        using Buffer actualPixels = backend.CreateBuffer(device, new(pitch * size, BufferUsages.CopyDestination), MemoryType.Readback);
+        using Buffer expectedPixels = backend.CreateBuffer(device, new(pitch * size, BufferUsages.CopyDestination), MemoryType.Readback);
+        Pipeline CreateDrawingPipeline(int entry) => backend.CreateGraphicsPipeline(device, new(shader.SlangCode, shader.Reflection,
+            shader.GetEntryPoint(entry), shader.GetEntryCode(entry), shader.GetEntryPoint(2), shader.GetEntryCode(2), [], [], PrimitiveTopology.TriangleList,
+            StripCut.Disabled, new RasterizerState(Cull: CullType.None), new MultisampleState(SampleCount: 1),
+            new DepthStencilState(), new BlendState([new(Enabled: false, WriteMask: ColorWriteMasks.All)]), new AttachmentFormatSignature([Format.R8G8B8A8UNorm], null)));
+        using Pipeline displaced = CreateDrawingPipeline(0);
+        using Pipeline reference = CreateDrawingPipeline(1);
+        using CommandContext context = backend.CreateCommandContext(device, new(QueueType.Graphics, 0, 1));
+        backend.Begin(context, new CommandRecordingDesc(64, 8, 64));
+        (Texture Texture, TextureSubresourceRange Range)[] inputs = [(heights, heightRange), (bounds, boundsRange)];
+        foreach (var item in inputs)
+            backend.Barrier(context, new TextureBarrier(item.Texture, item.Range, PipelineSync.None, PipelineSync.Copy,
+                ResourceAccess.NoAccess, ResourceAccess.CopyDestination, TextureLayout.Undefined, TextureLayout.CopyDestination));
+        backend.CopyBufferToTexture(context, new(upload, 0, 256, 8, heights, 0, 0, TextureAspects.Color, 0, 0, 0, 8, 8, 1));
+        ulong mipOffset = 2048;
+        foreach (var tile in boundsPixels.MipTiles)
+        {
+            backend.CopyBufferToTexture(context, new(upload, mipOffset, 256, tile.Height, bounds, tile.MipLevel, 0,
+                TextureAspects.Color, 0, 0, 0, tile.Width, tile.Height, 1));
+            mipOffset += tile.Height * 256u;
+        }
+        foreach (var item in inputs)
+            backend.Barrier(context, new TextureBarrier(item.Texture, item.Range, PipelineSync.Copy, PipelineSync.VertexShading,
+                ResourceAccess.CopyDestination, ResourceAccess.ShaderResource, TextureLayout.CopyDestination, TextureLayout.ShaderResource));
+        (Texture Target, ColorAttachmentView View, Pipeline Pipeline, Buffer Pixels)[] outputs =
+            [(actual, actualView, displaced, actualPixels), (expected, expectedView, reference, expectedPixels)];
+        foreach (var output in outputs)
+        {
+            backend.Barrier(context, new TextureBarrier(output.Target, heightRange, PipelineSync.None, PipelineSync.RenderTarget,
+                ResourceAccess.NoAccess, ResourceAccess.RenderTarget, TextureLayout.Undefined, TextureLayout.RenderTarget));
+            backend.SetPipeline(context, output.Pipeline);
+            backend.SetViewports(context, [new(0, 0, size, size)]);
+            backend.SetScissors(context, [new(0, 0, size, size)]);
+            backend.SetTransientParameterBindings(context, new(shader.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null,
+                [ResourceBinding.ReadOnlyBuffer(sourceView), ResourceBinding.ReadOnlyBuffer(referenceView),
+                 ResourceBinding.SampledTexture(heightView), ResourceBinding.SampledTexture(boundsView), ResourceBinding.SampledWith(sampler)], []));
+            backend.BeginRendering(context, new([new(output.View, LoadType.Clear, StoreType.Store, Vector4.Zero)], null, size, size));
+            backend.Draw(context, new((uint)sourceVertices.Length, 1, 0, 0));
+            backend.EndRendering(context);
+            backend.Barrier(context, new TextureBarrier(output.Target, heightRange, PipelineSync.RenderTarget, PipelineSync.Copy,
+                ResourceAccess.RenderTarget, ResourceAccess.CopySource, TextureLayout.RenderTarget, TextureLayout.CopySource));
+            backend.CopyTextureToBuffer(context, new(output.Pixels, 0, pitch, size, output.Target, 0, 0, TextureAspects.Color, 0, 0, 0, size, size, 1));
+        }
+        using RecordedCommands commands = backend.End(context);
+        QueueCompletion completion = backend.Submit(backend.GetQueue(device, QueueType.Graphics), new([], [], [commands], [], []));
+        Assert.Equal(WaitStatus.Completed, backend.WaitCpu(completion, TimeSpan.FromSeconds(30)));
+        using MappedBuffer actualMap = backend.Map(actualPixels, MapType.Read, BufferRange.Whole);
+        using MappedBuffer expectedMap = backend.Map(expectedPixels, MapType.Read, BufferRange.Whole);
+        actualMap.Invalidate(actualMap.Range);
+        expectedMap.Invalidate(expectedMap.Range);
+        Assert.Equal(expectedMap.Bytes.ToArray(), actualMap.Bytes.ToArray());
+        int covered = 0;
+        for (int pixel = 0; pixel < size * size; pixel++) if (actualMap.Bytes[pixel * 4 + 1] == 255) covered++;
+        Assert.True(covered > 100);
     }
 
     private static string ShaderDirectory()

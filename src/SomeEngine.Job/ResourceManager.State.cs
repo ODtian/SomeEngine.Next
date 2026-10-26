@@ -91,8 +91,7 @@ internal sealed partial class ResourceManager
         }
 
         if (!fromScope &&
-            (state.ActiveAccesses.Count != 0 || state.PendingReservations != 0) &&
-            _safetyMode != JobSafetyMode.Fast)
+            (state.ActiveAccesses.Count != 0 || state.PendingReservations != 0))
         {
             throw CreateException(
                 $"Cannot release {kind.ToString().ToLowerInvariant()} '{Describe(state)}' while it is in use.",
@@ -253,6 +252,7 @@ internal sealed partial class ResourceManager
         internal bool HasLastUnrangedWriter;
         internal ResourceKind Kind;
         internal string? Name;
+        internal WeakReference? ContainerReference;
 
         internal ResourceState(int id)
         {
@@ -266,6 +266,7 @@ internal sealed partial class ResourceManager
             InUse = true;
             Kind = kind;
             Name = name;
+            ContainerReference = null;
             ActiveAccesses.Clear();
             PendingReservations = 0;
             ClearFrontier();
@@ -276,6 +277,7 @@ internal sealed partial class ResourceManager
             ReleasedVersion = Version;
             Version++;
             InUse = false;
+            ContainerReference = null;
             ActiveAccesses.Clear();
             PendingReservations = 0;
             ClearFrontier();
@@ -404,12 +406,14 @@ internal sealed partial class ResourceManager
         internal readonly JobHandle Owner;
         internal readonly JobResourceAccess Access;
         internal readonly ResourceState State;
+        internal readonly object? Container;
 
         internal ActiveResourceAccess(JobHandle owner, JobResourceAccess access, ResourceState state)
         {
             Owner = owner;
             Access = access;
             State = state;
+            Container = state.ContainerReference?.Target;
         }
 
         public bool Equals(ActiveResourceAccess other)

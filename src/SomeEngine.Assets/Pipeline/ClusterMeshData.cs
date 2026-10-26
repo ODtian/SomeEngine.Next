@@ -3,6 +3,7 @@ using System.Numerics;
 using System.Runtime.InteropServices;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Resources;
+using SomeEngine.Job;
 using SomeEngine.Resources.Geometry;
 
 namespace SomeEngine.Assets.Pipeline;
@@ -44,6 +45,7 @@ internal sealed class ClusterMeshData
         List<ClusterInfo> infos = [];
         List<uint> sourceClusters = [];
         List<ReadOnlyMemory<byte>> pages = [];
+        List<ClusterPageData> pageData = [];
         List<PackedCluster> clusters = [];
         List<ReadOnlyMemory<byte>> positions = [], attributeBytes = [];
         List<uint[]> materialNumbers = [];
@@ -148,8 +150,9 @@ internal sealed class ClusterMeshData
             }
         }
         Flush();
-        List<ClusterBVHNode> nodes = BuildBvh(infos);
-        byte[] bvh = MemoryMarshal.AsBytes(CollectionsMarshal.AsSpan(nodes)).ToArray();
+        JobSystem.ExecuteParallel(new FillPages(pageData, VertexEncodingCompatibility.Hash(encoding)), pageData.Count, 1);
+        ClusterBVHNode[] nodes = BuildBvh(infos);
+        byte[] bvh = MemoryMarshal.AsBytes(nodes.AsSpan()).ToArray();
         List<MeshPayloadPageDigest> descriptions = [];
         ulong offset = 0;
         foreach (ReadOnlyMemory<byte> page in pages)
@@ -179,40 +182,9 @@ internal sealed class ClusterMeshData
             int indexStart = positionStart + positionSize, attributeStart = indexStart + indices.Count;
             int attributePadding = ((attributeStart + 3) & ~3) - attributeStart;
             byte[] page = new byte[attributeStart + attributePadding + attributeSize];
-            MeshPageHeader header = new()
-            {
-                ClusterCount = (uint)clusters.Count,
-                FirstCluster = (uint)(infos.Count - clusters.Count),
-                TotalVertexCount = (uint)clusters.Sum(cluster => (int)(cluster.PackedCounts & 255)),
-                TotalTriangleCount = (uint)(indices.Count / 3),
-                VertexBlobBytes = (uint)positionSize,
-                ClustersOffset = MeshPageHeader.Size,
-                VertexBlobsOffset = (uint)positionStart,
-                IndicesOffset = (uint)indexStart,
-                ExtensionDataOffset = (uint)attributeStart,
-                ExtensionDataSize = (uint)(attributePadding + attributeSize),
-                VertexEncodingHash = VertexEncodingCompatibility.Hash(encoding)
-            };
-            MemoryMarshal.Write(page, in header);
-            int positionOffset = positionStart, attributeOffset = attributeStart + attributePadding;
-            for (int cluster = 0; cluster < clusters.Count; cluster++)
-            {
-                PackedCluster packed = clusters[cluster];
-                packed.VertexBlobOffset = (uint)(positionOffset - positionStart);
-                packed.MaterialTableOffset = (uint)(positionOffset + 16 + AlignedSize(positions[cluster].Length));
-                MemoryMarshal.Write(page.AsSpan(MeshPageHeader.Size + cluster * PackedCluster.SizeInBytes), in packed);
-                BinaryPrimitives.WriteUInt32LittleEndian(page.AsSpan(positionOffset), 16);
-                BinaryPrimitives.WriteUInt32LittleEndian(page.AsSpan(positionOffset + 4), (uint)positions[cluster].Length);
-                BinaryPrimitives.WriteUInt32LittleEndian(page.AsSpan(positionOffset + 8), (uint)(attributeOffset - positionOffset));
-                BinaryPrimitives.WriteUInt32LittleEndian(page.AsSpan(positionOffset + 12), (uint)attributeBytes[cluster].Length);
-                positions[cluster].Span.CopyTo(page.AsSpan(positionOffset + 16));
-                for (int material = 0; material < 3; material++)
-                    BinaryPrimitives.WriteUInt32LittleEndian(page.AsSpan((int)packed.MaterialTableOffset + material * 4), materialNumbers[cluster][material]);
-                attributeBytes[cluster].Span.CopyTo(page.AsSpan(attributeOffset));
-                positionOffset += 28 + AlignedSize(positions[cluster].Length);
-                attributeOffset += AlignedSize(attributeBytes[cluster].Length);
-            }
-            CollectionsMarshal.AsSpan(indices).CopyTo(page.AsSpan(indexStart));
+            pageData.Add(new ClusterPageData(page, clusters.ToArray(), positions.ToArray(), attributeBytes.ToArray(),
+                materialNumbers.ToArray(), indices.ToArray(), checked((uint)(infos.Count - clusters.Count)),
+                positionSize, positionStart, indexStart, attributeStart));
             pages.Add(page);
             clusters.Clear();
             positions.Clear();
@@ -220,6 +192,53 @@ internal sealed class ClusterMeshData
             materialNumbers.Clear();
             indices.Clear();
             size = MeshPageHeader.Size;
+        }
+    }
+
+    private sealed record ClusterPageData(byte[] Bytes, PackedCluster[] Clusters,
+        ReadOnlyMemory<byte>[] Positions, ReadOnlyMemory<byte>[] Attributes, uint[][] Materials, byte[] Indices,
+        uint FirstCluster, int PositionSize, int PositionStart, int IndexStart, int ExtensionStart);
+
+    private readonly record struct FillPages(List<ClusterPageData> Pages, ulong VertexEncodingHash) : IJobParallelFor
+    {
+        public void Execute(int index)
+        {
+            ClusterPageData data = Pages[index];
+            Span<byte> page = data.Bytes;
+            MeshPageHeader header = new()
+            {
+                ClusterCount = (uint)data.Clusters.Length,
+                FirstCluster = data.FirstCluster,
+                TotalVertexCount = (uint)data.Clusters.Sum(cluster => (int)(cluster.PackedCounts & 255)),
+                TotalTriangleCount = (uint)(data.Indices.Length / 3),
+                VertexBlobBytes = (uint)data.PositionSize,
+                ClustersOffset = MeshPageHeader.Size,
+                VertexBlobsOffset = (uint)data.PositionStart,
+                IndicesOffset = (uint)data.IndexStart,
+                ExtensionDataOffset = (uint)data.ExtensionStart,
+                ExtensionDataSize = (uint)(page.Length - data.ExtensionStart),
+                VertexEncodingHash = VertexEncodingHash,
+            };
+            MemoryMarshal.Write(page, in header);
+            int positionOffset = data.PositionStart, attributeOffset = AlignedSize(data.ExtensionStart);
+            for (int cluster = 0; cluster < data.Clusters.Length; cluster++)
+            {
+                PackedCluster packed = data.Clusters[cluster];
+                packed.VertexBlobOffset = (uint)(positionOffset - data.PositionStart);
+                packed.MaterialTableOffset = (uint)(positionOffset + 16 + AlignedSize(data.Positions[cluster].Length));
+                MemoryMarshal.Write(page[(MeshPageHeader.Size + cluster * PackedCluster.SizeInBytes)..], in packed);
+                BinaryPrimitives.WriteUInt32LittleEndian(page[positionOffset..], 16);
+                BinaryPrimitives.WriteUInt32LittleEndian(page[(positionOffset + 4)..], (uint)data.Positions[cluster].Length);
+                BinaryPrimitives.WriteUInt32LittleEndian(page[(positionOffset + 8)..], (uint)(attributeOffset - positionOffset));
+                BinaryPrimitives.WriteUInt32LittleEndian(page[(positionOffset + 12)..], (uint)data.Attributes[cluster].Length);
+                data.Positions[cluster].Span.CopyTo(page[(positionOffset + 16)..]);
+                for (int material = 0; material < 3; material++)
+                    BinaryPrimitives.WriteUInt32LittleEndian(page[((int)packed.MaterialTableOffset + material * 4)..], data.Materials[cluster][material]);
+                data.Attributes[cluster].Span.CopyTo(page[attributeOffset..]);
+                positionOffset += 28 + AlignedSize(data.Positions[cluster].Length);
+                attributeOffset += AlignedSize(data.Attributes[cluster].Length);
+            }
+            data.Indices.CopyTo(page[data.IndexStart..]);
         }
     }
     private static int AlignedSize(int length) => checked((length + 3) & ~3);
@@ -232,34 +251,57 @@ internal sealed class ClusterMeshData
         if (shift + count > 32) words[word + 1] |= value >> (32 - shift);
     }
 
-    private static List<ClusterBVHNode> BuildBvh(List<ClusterInfo> clusters)
+    private readonly record struct BvhLeafRange(int Start, int Count);
+
+    private static ClusterBVHNode[] BuildBvh(List<ClusterInfo> clusters)
     {
-        var nodes = new List<ClusterBVHNode>();
-        if (clusters.Count == 0)
+        List<BvhLeafRange> leaves = [];
+        for (int start = 0; start < clusters.Count;)
         {
-            return nodes;
+            int count = CountLeafClusters(clusters, start);
+            leaves.Add(new(start, count));
+            start += count;
         }
 
-        List<int> currentLevelIndices = CreateBvhLeafNodes(clusters, nodes);
-        AddBvhInternalLevels(nodes, currentLevelIndices);
+        int nodeCount = leaves.Count;
+        for (int count = leaves.Count; count > 1;)
+        {
+            count = (count + 15) / 16;
+            nodeCount += count;
+        }
+        ClusterBVHNode[] nodes = new ClusterBVHNode[nodeCount];
+        JobSystem.ExecuteParallel(new BuildBvhLeaves(clusters, leaves, nodes), leaves.Count);
+        int levelStart = 0;
+        for (int count = leaves.Count; count > 1;)
+        {
+            int parentStart = levelStart + count;
+            int parentCount = (count + 15) / 16;
+            JobSystem.ExecuteParallel(new BuildBvhParents(nodes, levelStart, count, parentStart), parentCount);
+            levelStart = parentStart;
+            count = parentCount;
+        }
         return nodes;
     }
 
-    private static List<int> CreateBvhLeafNodes(
-        List<ClusterInfo> clusters,
-        List<ClusterBVHNode> nodes)
+    private readonly struct BuildBvhLeaves(
+        List<ClusterInfo> clusters, List<BvhLeafRange> leaves, ClusterBVHNode[] nodes) : IJobParallelFor
     {
-        var currentLevelIndices = new List<int>();
-        int clusterIndex = 0;
-        while (clusterIndex < clusters.Count)
+        public void Execute(int index)
         {
-            int count = CountLeafClusters(clusters, clusterIndex);
-            nodes.Add(CreateBvhLeafNode(clusters, clusterIndex, count));
-            currentLevelIndices.Add(nodes.Count - 1);
-            clusterIndex += count;
+            BvhLeafRange range = leaves[index];
+            nodes[index] = CreateBvhLeafNode(clusters, range.Start, range.Count);
         }
+    }
 
-        return currentLevelIndices;
+    private readonly struct BuildBvhParents(
+        ClusterBVHNode[] nodes, int childStart, int childCount, int parentStart) : IJobParallelFor
+    {
+        public void Execute(int index)
+        {
+            int offset = index * 16;
+            nodes[parentStart + index] = CreateBvhInternalNode(
+                nodes, childStart + offset, Math.Min(16, childCount - offset));
+        }
     }
 
     private static int CountLeafClusters(List<ClusterInfo> clusters, int start)
@@ -317,34 +359,15 @@ internal sealed class ClusterMeshData
         return new BvhBounds(min, max, Vector3.Zero, 0, 0);
     }
 
-    private static void AddBvhInternalLevels(
-        List<ClusterBVHNode> nodes,
-        List<int> currentLevelIndices)
-    {
-        while (currentLevelIndices.Count > 1)
-        {
-            var nextLevelIndices = new List<int>();
-            for (int start = 0; start < currentLevelIndices.Count; start += 16)
-            {
-                int count = Math.Min(16, currentLevelIndices.Count - start);
-                nodes.Add(CreateBvhInternalNode(nodes, currentLevelIndices, start, count));
-                nextLevelIndices.Add(nodes.Count - 1);
-            }
-
-            currentLevelIndices = nextLevelIndices;
-        }
-    }
-
     private static ClusterBVHNode CreateBvhInternalNode(
-        List<ClusterBVHNode> nodes,
-        List<int> currentLevelIndices,
+        ClusterBVHNode[] nodes,
         int start,
         int count)
     {
-        BvhBounds bounds = ComputeInternalBounds(nodes, currentLevelIndices, start, count);
+        BvhBounds bounds = ComputeInternalBounds(nodes, start, count);
         return new ClusterBVHNode
         {
-            ChildPointer = (uint)currentLevelIndices[start],
+            ChildPointer = (uint)start,
             ChildCount = (uint)count,
             NodeType = 0,
             BoundMin = new Vector4(bounds.Min, 0),
@@ -355,8 +378,7 @@ internal sealed class ClusterMeshData
     }
 
     private static BvhBounds ComputeInternalBounds(
-        List<ClusterBVHNode> nodes,
-        List<int> currentLevelIndices,
+        ClusterBVHNode[] nodes,
         int start,
         int count)
     {
@@ -366,7 +388,7 @@ internal sealed class ClusterMeshData
         Vector3 centerSum = Vector3.Zero;
         for (int offset = 0; offset < count; offset++)
         {
-            ClusterBVHNode child = nodes[currentLevelIndices[start + offset]];
+            ClusterBVHNode child = nodes[start + offset];
             min = Vector3.Min(min, ToVector3(child.BoundMin));
             max = Vector3.Max(max, ToVector3(child.BoundMax));
             maxError = Math.Max(maxError, child.LODError);
@@ -374,13 +396,12 @@ internal sealed class ClusterMeshData
         }
 
         Vector3 center = centerSum / count;
-        float radius = ComputeInternalLodRadius(nodes, currentLevelIndices, start, count, center);
+        float radius = ComputeInternalLodRadius(nodes, start, count, center);
         return new BvhBounds(min, max, center, radius, maxError);
     }
 
     private static float ComputeInternalLodRadius(
-        List<ClusterBVHNode> nodes,
-        List<int> currentLevelIndices,
+        ClusterBVHNode[] nodes,
         int start,
         int count,
         Vector3 center)
@@ -388,7 +409,7 @@ internal sealed class ClusterMeshData
         float radius = 0;
         for (int offset = 0; offset < count; offset++)
         {
-            ClusterBVHNode child = nodes[currentLevelIndices[start + offset]];
+            ClusterBVHNode child = nodes[start + offset];
             float distance = Vector3.Distance(center, ToVector3(child.LODSphere)) + child.LODSphere.W;
             radius = Math.Max(radius, distance);
         }

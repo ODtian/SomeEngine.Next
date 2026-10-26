@@ -4,6 +4,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using MeshOptimizer;
 using SomeEngine.Resources;
+using SomeEngine.Job;
 using SomeEngine.Resources.Geometry;
 
 namespace SomeEngine.Geometry.Cluster;
@@ -124,11 +125,15 @@ public static partial class ClusterMeshBuilder
         float Radius,
         float Error);
 
-    private sealed class LodWorkspace
+    private sealed class LodGroupData
     {
-        public List<int> GroupOffsets { get; } = [];
         public List<uint> MergedIndices { get; } = [];
         public List<uint> SimplifiedIndices { get; } = [];
+        public List<ClusterMeshlet> Clusters { get; } = [];
+        public List<uint> Indices { get; } = [];
+        public ClusterLodBounds Bounds;
+        public float Error;
+        public bool Reduced;
     }
 
     // Morton Code Helpers
@@ -149,34 +154,57 @@ public static partial class ClusterMeshBuilder
         return ExpandBits((uint)p.X) * 4 + ExpandBits((uint)p.Y) * 2 + ExpandBits((uint)p.Z);
     }
 
-    private static List<ClusterBVHNode> BuildBvh(List<ClusterInfo> clusters)
+    private readonly record struct BvhLeafRange(int Start, int Count);
+
+    private static ClusterBVHNode[] BuildBvh(List<ClusterInfo> clusters)
     {
-        var nodes = new List<ClusterBVHNode>();
-        if (clusters.Count == 0)
+        List<BvhLeafRange> leaves = [];
+        for (int start = 0; start < clusters.Count;)
         {
-            return nodes;
+            int count = CountLeafClusters(clusters, start);
+            leaves.Add(new(start, count));
+            start += count;
         }
 
-        List<int> currentLevelIndices = CreateBvhLeafNodes(clusters, nodes);
-        AddBvhInternalLevels(nodes, currentLevelIndices);
+        int nodeCount = leaves.Count;
+        for (int count = leaves.Count; count > 1;)
+        {
+            count = (count + 15) / 16;
+            nodeCount += count;
+        }
+        ClusterBVHNode[] nodes = new ClusterBVHNode[nodeCount];
+        JobSystem.ExecuteParallel(new BuildBvhLeaves(clusters, leaves, nodes), leaves.Count);
+        int levelStart = 0;
+        for (int count = leaves.Count; count > 1;)
+        {
+            int parentStart = levelStart + count;
+            int parentCount = (count + 15) / 16;
+            JobSystem.ExecuteParallel(new BuildBvhParents(nodes, levelStart, count, parentStart), parentCount);
+            levelStart = parentStart;
+            count = parentCount;
+        }
         return nodes;
     }
 
-    private static List<int> CreateBvhLeafNodes(
-        List<ClusterInfo> clusters,
-        List<ClusterBVHNode> nodes)
+    private readonly struct BuildBvhLeaves(
+        List<ClusterInfo> clusters, List<BvhLeafRange> leaves, ClusterBVHNode[] nodes) : IJobParallelFor
     {
-        var currentLevelIndices = new List<int>();
-        int clusterIndex = 0;
-        while (clusterIndex < clusters.Count)
+        public void Execute(int index)
         {
-            int count = CountLeafClusters(clusters, clusterIndex);
-            nodes.Add(CreateBvhLeafNode(clusters, clusterIndex, count));
-            currentLevelIndices.Add(nodes.Count - 1);
-            clusterIndex += count;
+            BvhLeafRange range = leaves[index];
+            nodes[index] = CreateBvhLeafNode(clusters, range.Start, range.Count);
         }
+    }
 
-        return currentLevelIndices;
+    private readonly struct BuildBvhParents(
+        ClusterBVHNode[] nodes, int childStart, int childCount, int parentStart) : IJobParallelFor
+    {
+        public void Execute(int index)
+        {
+            int offset = index * 16;
+            nodes[parentStart + index] = CreateBvhInternalNode(
+                nodes, childStart + offset, Math.Min(16, childCount - offset));
+        }
     }
 
     private static int CountLeafClusters(List<ClusterInfo> clusters, int start)
@@ -234,34 +262,15 @@ public static partial class ClusterMeshBuilder
         return new BvhBounds(min, max, Vector3.Zero, 0, 0);
     }
 
-    private static void AddBvhInternalLevels(
-        List<ClusterBVHNode> nodes,
-        List<int> currentLevelIndices)
-    {
-        while (currentLevelIndices.Count > 1)
-        {
-            var nextLevelIndices = new List<int>();
-            for (int start = 0; start < currentLevelIndices.Count; start += 16)
-            {
-                int count = Math.Min(16, currentLevelIndices.Count - start);
-                nodes.Add(CreateBvhInternalNode(nodes, currentLevelIndices, start, count));
-                nextLevelIndices.Add(nodes.Count - 1);
-            }
-
-            currentLevelIndices = nextLevelIndices;
-        }
-    }
-
     private static ClusterBVHNode CreateBvhInternalNode(
-        List<ClusterBVHNode> nodes,
-        List<int> currentLevelIndices,
+        ClusterBVHNode[] nodes,
         int start,
         int count)
     {
-        BvhBounds bounds = ComputeInternalBounds(nodes, currentLevelIndices, start, count);
+        BvhBounds bounds = ComputeInternalBounds(nodes, start, count);
         return new ClusterBVHNode
         {
-            ChildPointer = (uint)currentLevelIndices[start],
+            ChildPointer = (uint)start,
             ChildCount = (uint)count,
             NodeType = 0,
             BoundMin = new Vector4(bounds.Min, 0),
@@ -272,8 +281,7 @@ public static partial class ClusterMeshBuilder
     }
 
     private static BvhBounds ComputeInternalBounds(
-        List<ClusterBVHNode> nodes,
-        List<int> currentLevelIndices,
+        ClusterBVHNode[] nodes,
         int start,
         int count)
     {
@@ -283,7 +291,7 @@ public static partial class ClusterMeshBuilder
         Vector3 centerSum = Vector3.Zero;
         for (int offset = 0; offset < count; offset++)
         {
-            ClusterBVHNode child = nodes[currentLevelIndices[start + offset]];
+            ClusterBVHNode child = nodes[start + offset];
             min = Vector3.Min(min, ToVector3(child.BoundMin));
             max = Vector3.Max(max, ToVector3(child.BoundMax));
             maxError = Math.Max(maxError, child.LODError);
@@ -291,13 +299,12 @@ public static partial class ClusterMeshBuilder
         }
 
         Vector3 center = centerSum / count;
-        float radius = ComputeInternalLodRadius(nodes, currentLevelIndices, start, count, center);
+        float radius = ComputeInternalLodRadius(nodes, start, count, center);
         return new BvhBounds(min, max, center, radius, maxError);
     }
 
     private static float ComputeInternalLodRadius(
-        List<ClusterBVHNode> nodes,
-        List<int> currentLevelIndices,
+        ClusterBVHNode[] nodes,
         int start,
         int count,
         Vector3 center)
@@ -305,7 +312,7 @@ public static partial class ClusterMeshBuilder
         float radius = 0;
         for (int offset = 0; offset < count; offset++)
         {
-            ClusterBVHNode child = nodes[currentLevelIndices[start + offset]];
+            ClusterBVHNode child = nodes[start + offset];
             float distance = Vector3.Distance(center, ToVector3(child.LODSphere)) + child.LODSphere.W;
             radius = Math.Max(radius, distance);
         }
@@ -334,6 +341,7 @@ public static partial class ClusterMeshBuilder
         try
         {
             if (!vertexLocks.IsEmpty) vertexLocks.CopyTo(locks);
+            else locks.AsSpan(0, positions.Length).Clear();
             GeneratePositionRemap(positions, remap.AsSpan(0, positions.Length));
             Clusterize(
                 config,
@@ -417,7 +425,7 @@ public static partial class ClusterMeshBuilder
         int nextGroupId, bool sourceLocks)
     {
         List<int> pending = CreateLeafClusterIndices(clusters.Count);
-        var workspace = new LodWorkspace();
+        List<int> groupOffsets = [];
         int depth = 0;
         while (pending.Count > 1)
         {
@@ -430,7 +438,7 @@ public static partial class ClusterMeshBuilder
                 locks,
                 remap,
                 pending,
-                workspace,
+                groupOffsets,
                 ref nextGroupId,
                 depth++, sourceLocks);
         }
@@ -449,7 +457,7 @@ public static partial class ClusterMeshBuilder
         return levelClusters;
     }
 
-    private static List<int> ReduceClusterLodDepth(
+    private static unsafe List<int> ReduceClusterLodDepth(
         ClusterLodConfig config,
         ReadOnlySpan<Vector3> positions,
         float[] materialIndicesArray,
@@ -458,29 +466,45 @@ public static partial class ClusterMeshBuilder
         Span<byte> locks,
         ReadOnlySpan<uint> remap,
         List<int> pending,
-        LodWorkspace workspace,
+        List<int> groupOffsets,
         ref int nextGroupId,
         int depth, bool sourceLocks)
     {
-        Partition(config, positions, clusters, globalIndices, pending, remap, workspace.GroupOffsets);
-        LockBoundary(locks, clusters, globalIndices, pending, workspace.GroupOffsets, remap, sourceLocks);
-        var nextPending = new List<int>();
-        Span<int> pendingSpan = CollectionsMarshal.AsSpan(pending);
-        for (int groupIndex = 0; groupIndex < workspace.GroupOffsets.Count - 1; groupIndex++)
+        Partition(config, positions, clusters, globalIndices, pending, remap, groupOffsets);
+        LockBoundary(locks, clusters, globalIndices, pending, groupOffsets, remap, sourceLocks);
+        LodGroupData[] groups = new LodGroupData[groupOffsets.Count - 1];
+        for (int index = 0; index < groups.Length; index++) groups[index] = new();
+        // ExecuteParallel returns after all users of these borrowed spans have exited.
+        fixed (Vector3* positionData = positions)
+        fixed (byte* lockData = locks)
         {
-            Span<int> group = GetClusterGroup(pendingSpan, workspace.GroupOffsets, groupIndex);
-            ReduceClusterGroup(
-                config,
-                positions,
-                materialIndicesArray,
-                clusters,
-                globalIndices,
-                locks,
-                group,
-                workspace,
-                nextPending,
-                ref nextGroupId,
-                depth);
+            JobSystem.ExecuteParallel(new ReduceLodGroups(config, positionData, positions.Length,
+                materialIndicesArray, clusters, globalIndices, lockData, locks.Length,
+                pending, groupOffsets, groups, depth), groups.Length);
+        }
+        List<int> nextPending = [];
+        Span<int> pendingSpan = CollectionsMarshal.AsSpan(pending);
+        for (int groupIndex = 0; groupIndex < groups.Length; groupIndex++)
+        {
+            Span<int> group = GetClusterGroup(pendingSpan, groupOffsets, groupIndex);
+            LodGroupData data = groups[groupIndex];
+            if (!data.Reduced)
+            {
+                MarkUnmergedGroup(clusters, group);
+                continue;
+            }
+            int groupId = nextGroupId++;
+            AssignGroupParent(clusters, group, data.Bounds, data.Error, groupId);
+            int indexOffset = globalIndices.Count;
+            globalIndices.AddRange(data.Indices);
+            foreach (ClusterMeshlet parent in data.Clusters)
+            {
+                ClusterMeshlet cluster = parent;
+                cluster.IndicesOffset += indexOffset;
+                cluster.GroupId = groupId;
+                nextPending.Add(clusters.Count);
+                clusters.Add(cluster);
+            }
         }
 
         return nextPending;
@@ -496,44 +520,31 @@ public static partial class ClusterMeshBuilder
         return levelClusters.Slice(start, count);
     }
 
-    private static void ReduceClusterGroup(
-        ClusterLodConfig config,
-        ReadOnlySpan<Vector3> positions,
-        float[] materialIndicesArray,
-        List<ClusterMeshlet> clusters,
-        List<uint> globalIndices,
-        Span<byte> locks,
-        Span<int> group,
-        LodWorkspace workspace,
-        List<int> nextLevelClusters,
-        ref int nextGroupId,
-        int depth)
+    private readonly unsafe struct ReduceLodGroups(
+        ClusterLodConfig config, Vector3* positions, int vertexCount,
+        float[] materialIndices, List<ClusterMeshlet> clusters, List<uint> indices,
+        byte* locks, int lockCount, List<int> levelClusters, List<int> groupOffsets,
+        LodGroupData[] groups, int depth) : IJobParallelFor
     {
-        MergeGroupIndices(globalIndices, clusters, group, workspace.MergedIndices);
-        int targetSize = (int)((workspace.MergedIndices.Count / 3) * config.SimplifyRatio) * 3;
-        ClusterLodBounds groupBounds = BoundsMerge(clusters, group);
-        Simplify(config, positions, CollectionsMarshal.AsSpan(workspace.MergedIndices), locks, targetSize, out float error, workspace.SimplifiedIndices);
-        if (workspace.SimplifiedIndices.Count > workspace.MergedIndices.Count * config.SimplifyThreshold)
+        public void Execute(int index)
         {
-            MarkUnmergedGroup(clusters, group);
-            return;
-        }
+            Span<int> group = GetClusterGroup(CollectionsMarshal.AsSpan(levelClusters), groupOffsets, index);
+            LodGroupData data = groups[index];
+            MergeGroupIndices(indices, clusters, group, data.MergedIndices);
+            int targetSize = (int)((data.MergedIndices.Count / 3) * config.SimplifyRatio) * 3;
+            ClusterLodBounds bounds = BoundsMerge(clusters, group);
+            ReadOnlySpan<Vector3> vertices = new(positions, vertexCount);
+            Simplify(config, vertices, CollectionsMarshal.AsSpan(data.MergedIndices),
+                new ReadOnlySpan<byte>(locks, lockCount), targetSize, out float error, data.SimplifiedIndices);
+            if (data.SimplifiedIndices.Count > data.MergedIndices.Count * config.SimplifyThreshold)
+                return;
 
-        float groupError = groupBounds.Error + error;
-        int groupId = nextGroupId++;
-        AssignGroupParent(clusters, group, groupBounds, groupError, groupId);
-        BuildParentClusters(
-            config,
-            positions,
-            materialIndicesArray,
-            clusters,
-            globalIndices,
-            workspace.SimplifiedIndices,
-            groupBounds,
-            groupError,
-            groupId,
-            depth,
-            nextLevelClusters);
+            data.Reduced = true;
+            data.Bounds = bounds;
+            data.Error = bounds.Error + error;
+            BuildParentClusters(config, vertices, materialIndices, data.Clusters, data.Indices,
+                data.SimplifiedIndices, bounds, data.Error, depth);
+        }
     }
 
     private static void MergeGroupIndices(
@@ -592,9 +603,7 @@ public static partial class ClusterMeshBuilder
         List<uint> simplifiedIndices,
         ClusterLodBounds bounds,
         float error,
-        int groupId,
-        int depth,
-        List<int> nextLevelClusters)
+        int depth)
     {
         int start = clusters.Count;
         Clusterize(
@@ -612,9 +621,7 @@ public static partial class ClusterMeshBuilder
                 globalIndices,
                 bounds,
                 error,
-                groupId,
                 depth + 1);
-            nextLevelClusters.Add(index);
         }
     }
 
@@ -624,7 +631,6 @@ public static partial class ClusterMeshBuilder
         List<uint> globalIndices,
         ClusterLodBounds bounds,
         float error,
-        int groupId,
         int level)
     {
         ReadOnlySpan<uint> clusterIndices = CollectionsMarshal
@@ -635,7 +641,6 @@ public static partial class ClusterMeshBuilder
         cluster.Center = selfBounds.Center;
         cluster.Radius = selfBounds.Radius;
         cluster.Error = error;
-        cluster.GroupId = groupId;
         cluster.LodCenter = bounds.Center;
         cluster.LodRadius = bounds.Radius;
         cluster.SelfLodCenter = bounds.Center;

@@ -39,15 +39,15 @@ internal sealed class InertialPoseSamples
     internal readonly InertialBoneOffset[] Offsets;
     internal readonly JobResourceAccess[] Accesses;
 
-    internal InertialPoseSamples(int bones)
+    internal InertialPoseSamples(Scheduler scheduler, int bones)
     {
         Source = new BoneTransform[bones];
         Output = new BoneTransform[bones];
         SourceVelocities = new BoneVelocity[bones];
         Velocities = new BoneVelocity[bones];
         Offsets = new InertialBoneOffset[bones];
-        Accesses = [JobResourceAccess.Read(Source), JobResourceAccess.Read(SourceVelocities),
-            JobResourceAccess.Write(Output), JobResourceAccess.Write(Velocities), JobResourceAccess.Write(Offsets)];
+        Accesses = [JobResourceAccess.Read(scheduler, Source), JobResourceAccess.Read(scheduler, SourceVelocities),
+            JobResourceAccess.Write(scheduler, Output), JobResourceAccess.Write(scheduler, Velocities), JobResourceAccess.Write(scheduler, Offsets)];
     }
 }
 
@@ -73,7 +73,7 @@ public readonly struct InertialPoseLeaf : IAnimationLeaf<InertialPoseParameters>
             Source = PoseAnimation.Resolve(world, target, parameters.Source),
             Output = PoseAnimation.Resolve(world, target, parameters.Output),
         };
-        instance.Samples = new(instance.Output.Range.Count);
+        instance.Samples = new(PoseAnimation.GetScheduler(world), instance.Output.Range.Count);
         instance.Node = PoseAnimation.RegisterNode(world, animation, instance.Output, [instance.Source], in placement);
         world.ExecuteBufferWrite<InertialPoseInstance, InertialPoseInstance>(animation, ref instance,
             static (instances, ref instance) => instances.Add(instance));

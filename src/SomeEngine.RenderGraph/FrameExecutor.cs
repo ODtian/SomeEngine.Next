@@ -22,15 +22,6 @@ internal sealed partial class FrameExecutor
     private readonly Dictionary<GraphIdentity, int> _accessIndices = [];
     private readonly List<int> _resourceAccessScratch = [];
     private readonly Stack<int> _livenessStack = new();
-    private readonly List<int> _shaderReaderScratch = [];
-    private ulong[] _bufferCoordinateScratch = [];
-    private uint[] _queryCoordinateScratch = [];
-    private int[] _writerScratch = [];
-    private ResourceContentState[] _contentsScratch = [];
-    private BufferContentScope[] _bufferContentScopeScratch = [];
-    private List<int>[] _readerScratch = [];
-    private List<int>[] _sharedWriterScratch = [];
-    private TextureLayout?[] _layoutScratch = [];
     private int[] _criticalRanks = [];
     private int[] _scheduleIndegrees = [];
     private int[] _criticalTopological = [];

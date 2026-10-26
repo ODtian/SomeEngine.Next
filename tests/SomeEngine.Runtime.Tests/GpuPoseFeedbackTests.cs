@@ -1,4 +1,5 @@
 using System.Numerics;
+using Channels = System.Threading.Channels;
 using SomeEngine.Animation;
 using SomeEngine.Animation.Pose;
 using SomeEngine.ECS;
@@ -6,6 +7,7 @@ using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
+using SomeEngine.Job;
 using SomeEngine.Render.Features.Skinning;
 
 namespace SomeEngine.Runtime.Tests;
@@ -23,6 +25,7 @@ public sealed partial class SkinningRenderingTests
         var storage = new PoseStorage();
         using SkeletonInstance body = storage.CreateInstance(definition);
         var trace = new FeedbackTrace();
+        Task observedRequests = trace.ObserveRequestsAsync(2);
         Entity target = default, animation = default;
         CompiledGraph graph = default;
         var application = new ApplicationScene(content.Project.RootPath)
@@ -64,6 +67,7 @@ public sealed partial class SkinningRenderingTests
             await SceneImages.RunAsync("d3d12", new SceneScript(application, 8, []), "--fixed-step", "0.25", "--no-taa", "--no-vsm");
         }
         finally { graph.Dispose(); }
+        await observedRequests.WaitAsync(TimeSpan.FromSeconds(10));
         Assert.Equal(2, trace.Requests.Count);
         Assert.Equal(1, trace.StaleResults);
         Assert.Equal(1, trace.AcceptedResults);
@@ -80,6 +84,9 @@ public sealed partial class SkinningRenderingTests
         {
             Assert.True(request.Completion.IsCompletedSuccessfully);
             GpuPoseReadback result = await request.Completion;
+            ReadbackConsumer consumer = trace.Consumers[trace.Requests.IndexOf(request)];
+            await consumer.Completion.WaitAsync(TimeSpan.FromSeconds(10));
+            Assert.Same(result, consumer.Values[0]);
             Assert.Equal(request.Identity, result.Identity);
             Assert.Same(body, result.Identity.Instance);
             Assert.Equal(target, result.Identity.Target);
@@ -112,6 +119,7 @@ public sealed partial class SkinningRenderingTests
         var storage = new PoseStorage();
         using SkeletonInstance body = storage.CreateInstance(definition);
         var trace = new FeedbackTrace();
+        Task observedRequests = trace.ObserveRequestsAsync(2);
         Entity target = default;
         GpuPoseReadback? followingSubmission = null;
         var application = new ApplicationScene(content.Project.RootPath)
@@ -138,11 +146,16 @@ public sealed partial class SkinningRenderingTests
         };
         await SceneImages.RunAsync("d3d12", new SceneScript(application, 3, []), "--fixed-step", "0.25", "--no-taa", "--no-vsm");
 
+        await observedRequests.WaitAsync(TimeSpan.FromSeconds(10));
         Assert.Equal(2, trace.Requests.Count);
         GpuPoseReadbackRequest canceled = trace.Requests[0], next = trace.Requests[1];
         Assert.True(canceled.Completion.IsCanceled);
         Assert.True(next.Completion.IsCompletedSuccessfully);
         GpuPoseReadback result = await next.Completion;
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => trace.Consumers[0].Completion.WaitAsync(TimeSpan.FromSeconds(10)));
+        Assert.Null(trace.Consumers[0].Values[0]);
+        await trace.Consumers[1].Completion.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Same(result, trace.Consumers[1].Values[0]);
         Assert.Equal(next.Identity, result.Identity);
         Assert.Equal(canceled.Identity.Starts, result.Identity.Starts);
         Assert.Equal(canceled.Identity.AnimationStarts, result.Identity.AnimationStarts);
@@ -172,8 +185,40 @@ public sealed partial class SkinningRenderingTests
     {
         internal Entity Animation;
         internal readonly List<GpuPoseReadbackRequest> Requests = [];
+        internal readonly List<ReadbackConsumer> Consumers = [];
         internal readonly List<(ushort Stage, float Time, uint Completions)> Stages = [];
         internal int StaleResults, AcceptedResults;
+        internal readonly Channels.Channel<ReadbackNotice> Created = Channels.Channel.CreateUnbounded<ReadbackNotice>(
+            new Channels.UnboundedChannelOptions { SingleWriter = true, SingleReader = true, AllowSynchronousContinuations = false });
+
+        internal async Task ObserveRequestsAsync(int count)
+        {
+            for (int index = 0; index < count; index++)
+            {
+                ReadbackNotice notice = await Created.Reader.ReadAsync().ConfigureAwait(false);
+                try
+                {
+                    JobHandle copied = notice.Scheduler.CreateExternalFenceHandle(notice.Request.Completion);
+                    var values = new GpuPoseReadback?[1];
+                    JobHandle consumed = notice.Scheduler.ScheduleFinally(new ReadCompletedPose(copied.GetAwaiter(), notice.Request, values),
+                        [JobResourceAccess.Write(notice.Scheduler, values)], JobScheduleOptions.Default, copied);
+                    Consumers.Add(new(consumed.WaitAsync().AsTask(), values));
+                }
+                finally { notice.Bridged.Set(); }
+            }
+        }
+    }
+    private readonly record struct ReadbackNotice(Scheduler Scheduler, GpuPoseReadbackRequest Request, ManualResetEventSlim Bridged);
+
+    private readonly record struct ReadbackConsumer(Task Completion, GpuPoseReadback?[] Values);
+
+    private readonly record struct ReadCompletedPose(JobHandleAwaiter Result, GpuPoseReadbackRequest Request, GpuPoseReadback?[] Values) : IJob
+    {
+        public void Execute()
+        {
+            Result.GetResult();
+            Values[0] = Request.Completion.Result;
+        }
     }
     private readonly record struct FeedbackParameters(QuantizedClipData Clip, FeedbackTrace Trace, float MinimumX = .1f);
     [BufferCapacity(1)]
@@ -231,6 +276,11 @@ public sealed partial class SkinningRenderingTests
                         }
                         node.Request = GpuPoseAnimation.RequestReadback(world, node.Target, new PoseRange(1, 2));
                         trace.Requests.Add(node.Request);
+                        Scheduler scheduler = WorldJobs.TryGetScheduler(world, out Scheduler? selected) ? selected : JobSystem.Current;
+                        using var bridged = new ManualResetEventSlim();
+                        trace.Created.Writer.TryWrite(new(scheduler, node.Request, bridged));
+                        if (!bridged.Wait(TimeSpan.FromSeconds(10)))
+                            throw new TimeoutException("The external consumer did not bind the GPU request.");
                     }
                     bool finished = node.Request.Completion.IsCompletedSuccessfully
                         && node.Request.Completion.Result.Current.Span[1].M41 >= node.Parameters.MinimumX;

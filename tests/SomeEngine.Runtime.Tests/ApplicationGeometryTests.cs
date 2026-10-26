@@ -18,12 +18,14 @@ public sealed class ApplicationGeometryTests(SceneContentFixture content)
     public async Task RepeatedMeshReplacementReusesTheGeometryBudget()
     {
         using MeshAsset asset = await MeshAsset.OpenAsync(Path.Combine(content.DirectoryPath, "assets/Meshes/sphere-0.mesh.asset"));
-        ClusterMeshBlock clusters = await asset.GetBlockAsync<ClusterMeshBlock>();
+        ClusterGeometryBlock geometry = await asset.GetBlockAsync<ClusterGeometryBlock>();
+        ClusterVertexAttributesBlock attributes = await asset.GetBlockAsync<ClusterVertexAttributesBlock>();
+        using var source = await geometry.OpenPayloadSourceAsync(attributes);
         SceneImage? before = null, after = null;
         Mesh? mesh = null;
         var scene = new ApplicationScene(content.DirectoryPath)
         {
-            GeometryBvhMemoryBytes = clusters.BvhLength * 3,
+            GeometryBvhMemoryBytes = checked((ulong)source.BvhLength * 3),
             Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "20"]),
             UpdateFrame = frame =>

@@ -76,6 +76,17 @@ public sealed class GameFrameSystems : IDisposable
 
     private ViewTiming UpdateViewsCore(double deltaSeconds, bool measure)
     {
+        ViewTiming result = default;
+        foreach (ValueTask completion in UpdateViewsSteps(deltaSeconds, measure, value => result = value))
+        {
+            if (completion.IsCompletedSuccessfully) completion.GetAwaiter().GetResult();
+            else completion.AsTask().GetAwaiter().GetResult();
+        }
+        return result;
+    }
+
+    internal IEnumerable<ValueTask> UpdateViewsSteps(double deltaSeconds, bool measure, Action<ViewTiming> completed)
+    {
         long allocated = measure ? GC.GetAllocatedBytesForCurrentThread() : 0;
         long started = measure ? Stopwatch.GetTimestamp() : 0;
         double rebuildMs = 0, textMs = 0, layoutMs = 0, animationMs = 0;
@@ -83,27 +94,29 @@ public sealed class GameFrameSystems : IDisposable
         foreach (var stage in _stages)
         {
             if (stage.Stage < FrameStage.GameInputAndSimulation || stage.Systems is null) continue;
-            if (measure && stage.Stage == FrameStage.ViewRebuild)
-                rebuildMs = Measure(stage.Systems, RebuildTrace, ref context);
-            else if (measure && stage.Stage == FrameStage.Animation)
-                animationMs = Measure(stage.Systems, AnimationTrace, ref context);
-            else if (measure && stage.Stage == FrameStage.TextMeasurement)
-                textMs = Measure(stage.Systems, TextTrace, ref context);
-            else if (measure && stage.Stage == FrameStage.Layout)
-                layoutMs = Measure(stage.Systems, LayoutTrace, ref context);
-            else
-                stage.Systems.Update(ref context);
+            long stageStarted = measure ? Stopwatch.GetTimestamp() : 0;
+            TraceSite? site = stage.Stage switch
+            {
+                FrameStage.ViewRebuild => RebuildTrace,
+                FrameStage.Animation => AnimationTrace,
+                FrameStage.TextMeasurement => TextTrace,
+                FrameStage.Layout => LayoutTrace,
+                _ => null,
+            };
+            using (site is null ? default : EngineTrace.Begin(site)) stage.Systems.Update(ref context);
+            yield return stage.Systems.CompleteAsync();
+            if (!measure) continue;
+            double elapsed = Stopwatch.GetElapsedTime(stageStarted).TotalMilliseconds;
+            switch (stage.Stage)
+            {
+                case FrameStage.ViewRebuild: rebuildMs = elapsed; break;
+                case FrameStage.Animation: animationMs = elapsed; break;
+                case FrameStage.TextMeasurement: textMs = elapsed; break;
+                case FrameStage.Layout: layoutMs = elapsed; break;
+            }
         }
-        return measure ? new ViewTiming(_rebuild.BuildCount, _rebuild.ComputationCount, rebuildMs, textMs, layoutMs,
-            Stopwatch.GetElapsedTime(started).TotalMilliseconds, GC.GetAllocatedBytesForCurrentThread() - allocated, animationMs) : default;
-    }
-
-    private static double Measure(SystemGroup<ImmediateSystemContext> systems, TraceSite site, ref ImmediateSystemContext context)
-    {
-        long started = Stopwatch.GetTimestamp();
-        using var trace = EngineTrace.Begin(site);
-        systems.Update(ref context);
-        return Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+        completed(measure ? new ViewTiming(_rebuild.BuildCount, _rebuild.ComputationCount, rebuildMs, textMs, layoutMs,
+            Stopwatch.GetElapsedTime(started).TotalMilliseconds, GC.GetAllocatedBytesForCurrentThread() - allocated, animationMs) : default);
     }
 
     public int AddInterfaceSystem<TSystem>(TSystem system) where TSystem : ISystem<ImmediateSystemContext> =>

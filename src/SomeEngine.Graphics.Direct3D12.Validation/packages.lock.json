@@ -70,7 +70,8 @@
           "Microsoft.Direct3D.D3D12": "[1.619.5, )",
           "Silk.NET.DXGI": "[2.23.0, )",
           "Silk.NET.Direct3D12": "[2.23.0, )",
-          "SomeEngine.Graphics": "[1.0.0, )"
+          "SomeEngine.Graphics": "[1.0.0, )",
+          "SomeEngine.Job": "[1.0.0, )"
         }
       },
       "someengine.graphics.validation": {
@@ -79,6 +80,16 @@
           "SlangShaderSharp": "[2026.17.1, )",
           "SomeEngine.Graphics": "[1.0.0, )"
         }
+      },
+      "someengine.job": {
+        "type": "Project",
+        "dependencies": {
+          "SomeEngine.Diagnostics": "[1.0.0, )",
+          "SomeEngine.Job.Contracts": "[1.0.0, )"
+        }
+      },
+      "someengine.job.contracts": {
+        "type": "Project"
       }
     }
   }

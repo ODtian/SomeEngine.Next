@@ -247,6 +247,41 @@ internal sealed class JobLifetime : IJobSubmissionObserver
         }
     }
 
+    internal async ValueTask<Exception[]> WaitCurrentRootsAsync()
+    {
+        JobHandle[]? roots = null;
+        int rootCount;
+        lock (_gate)
+        {
+            while (_pendingSubmissions != 0) Monitor.Wait(_gate);
+            RetireObservedRootsUnderGate();
+            rootCount = _roots.Count;
+            if (rootCount != 0)
+            {
+                roots = ArrayPool<JobHandle>.Shared.Rent(rootCount);
+                for (int index = 0; index < rootCount; index++) roots[index] = _roots[index];
+            }
+        }
+
+        List<Exception>? exceptions = null;
+        try
+        {
+            for (int index = 0; index < rootCount; index++)
+            {
+                JobHandle root = roots![index];
+                if (root.IsCompleted && !JobSystem.NeedsLifetimeTracking(root)) continue;
+                try { await root.WaitAsync().ConfigureAwait(false); }
+                catch (Exception error) { (exceptions ??= []).Add(error); }
+            }
+            return exceptions?.ToArray() ?? [];
+        }
+        finally
+        {
+            ReturnRoots(roots, rootCount);
+            lock (_gate) RetireObservedRootsUnderGate();
+        }
+    }
+
     private static void CompleteRoots(
         JobHandle[]? roots,
         int rootCount,
@@ -257,6 +292,8 @@ internal sealed class JobLifetime : IJobSubmissionObserver
 
         for (int i = 0; i < rootCount; i++)
         {
+            if (roots[i].IsCompleted && !JobSystem.NeedsLifetimeTracking(roots[i]))
+                continue;
             try
             {
                 roots[i].Complete();

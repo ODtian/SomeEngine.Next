@@ -9,6 +9,35 @@ namespace SomeEngine.ECS.Systems.Tests;
 public sealed class LifecycleClosureTests : JobTest
 {
     [Fact]
+    public async Task CompleteAsyncWaitsForRootAndDescendantAndKeepsTheGroupOpen()
+    {
+        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var state = new LifetimeState(Jobs);
+        using var group = new SystemGroup<LifetimeContext>(new LifetimeDriver(state));
+        group.Add(new SpawnDescendantSystem());
+        group.Update();
+        try
+        {
+            Assert.True(state.RootStarted.Wait(TimeSpan.FromSeconds(5)));
+            ValueTask completion = group.CompleteAsync();
+            Assert.False(completion.IsCompleted);
+            state.AllowDescendant.Set();
+            Assert.True(state.DescendantStarted.Wait(TimeSpan.FromSeconds(5)));
+            Assert.False(completion.IsCompleted);
+            state.ReleaseDescendant.Set();
+            await completion;
+            Assert.False(state.Destroyed.IsSet);
+            group.Update();
+            await group.CompleteAsync();
+        }
+        finally
+        {
+            state.AllowDescendant.Set();
+            state.ReleaseDescendant.Set();
+        }
+    }
+
+    [Fact]
     public async Task Dispose_WaitsRootAndDescendantScopeBeforeOnDestroy()
     {
         ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
@@ -582,7 +611,7 @@ public sealed class LifecycleClosureTests : JobTest
         using var state = new LifetimeState(Jobs);
         var world = CreateJobWorld();
         world.CreateEntity(new LifetimeComponent());
-        Jobs.Schedule(
+        _ = Jobs.Schedule(
             new BlockingRootJob(state),
             ComponentJobAccess<LifetimeComponent>.Read(world));
         Assert.True(state.RootStarted.Wait(TimeSpan.FromSeconds(5)));

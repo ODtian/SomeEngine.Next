@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Resources;
 using SomeEngine.Graphics;
+using SomeEngine.Job;
 using SomeEngine.Render.Assets;
 using SomeEngine.Render;
 using SomeEngine.Render.Components;
@@ -72,7 +73,7 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
     private readonly int _height;
     private readonly uint _viewCount;
     private readonly ClusteredLightGridSettings _settings;
-    private readonly List<GpuLight> _gpuLights;
+    private readonly GpuLight[] _gpuLights;
     private readonly ClusteredLightGridParameters[] _viewParameters;
     private readonly GraphBufferInput _frameLights;
     private readonly GraphBufferInput _frameViews;
@@ -108,7 +109,7 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
         _viewCount = viewCount;
         _settings = settings ?? new ClusteredLightGridSettings();
         _settings.Validate();
-        _gpuLights = new List<GpuLight>(_settings.MaxLights);
+        _gpuLights = new GpuLight[_settings.MaxLights];
         _viewParameters = new ClusteredLightGridParameters[checked((int)_viewCount)];
 
         uint tileCountX = DivideRoundUp(checked((uint)_width), _settings.TileSize);
@@ -348,7 +349,14 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
         ref RenderGraphFrame graph,
         RenderLightSet lights,
         ReadOnlySpan<RenderView> views,
-        bool enabled = true)
+        bool enabled = true) => Record(ref graph, lights, views, enabled, null);
+
+    internal void Record(
+        ref RenderGraphFrame graph,
+        RenderLightSet lights,
+        ReadOnlySpan<RenderView> views,
+        bool enabled,
+        Scheduler? scheduler)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(lights);
@@ -366,13 +374,11 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
             throw new InvalidOperationException(
                 $"Lighting received {sourceLightCount} lights, exceeding its fixed capacity {_settings.MaxLights}.");
         }
-        EncodeLights(lights);
+        EncodeLights(lights, sourceLightCount, scheduler);
         uint directionalCount = enabled ? checked((uint)lights.Directional.Count) : 0u;
         uint nonDirectionalCount = enabled
             ? checked((uint)(lights.Points.Count + lights.Spots.Count))
             : 0u;
-        if (_gpuLights.Count == 0)
-            _gpuLights.Add(default);
 
         Span<ClusteredLightGridParameters> parameters = _viewParameters;
         parameters.Clear();
@@ -387,7 +393,7 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
         }
 
         graph.SetBufferInput(_frameLights, graph.Upload(
-            CollectionsMarshal.AsSpan(_gpuLights),
+            _gpuLights.AsSpan(0, Math.Max(sourceLightCount, 1)),
             BufferUsages.ShaderRead,
             "Lighting frame lights"));
         graph.SetBufferInput(_frameViews, graph.Upload(
@@ -547,58 +553,73 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
             BufferContentScope.CountBoundedPrefix);
     }
 
-    private void EncodeLights(RenderLightSet source)
+    private void EncodeLights(RenderLightSet source, int count, Scheduler? scheduler)
     {
-        _gpuLights.Clear();
-        for (int index = 0; index < source.Directional.Count; index++)
+        if (count == 0)
         {
-            RenderDirectionalLight light = source.Directional[index];
-            _gpuLights.Add(new GpuLight
-            {
-                Direction = NormalizeOrZero(light.Direction),
-                Color = light.Color,
-                Intensity = light.Intensity,
-                LayerMask = light.LayerMask,
-                CookieIndex = -1,
-                CookieStrength = 1.0f,
-                WorldToLightCookie = Matrix4x4.Identity,
-                CookieScaleOffset = Vector4.One,
-            });
+            _gpuLights[0] = default;
+            return;
         }
-        for (int index = 0; index < source.Points.Count; index++)
+        int pointStart = source.Directional.Count;
+        var job = new EncodeLightsJob(source, _gpuLights, pointStart, pointStart + source.Points.Count);
+        if (scheduler is not null) scheduler.ExecuteParallel(job, count, batchSize: JobScheduleOptions.AutomaticBatchSize);
+        else JobSystem.ExecuteParallel(job, count, batchSize: JobScheduleOptions.AutomaticBatchSize);
+    }
+
+    private readonly struct EncodeLightsJob(RenderLightSet source, GpuLight[] destination, int pointStart, int spotStart) : IJobParallelFor
+    {
+        public void Execute(int index)
         {
-            RenderPointLight light = source.Points[index];
-            _gpuLights.Add(new GpuLight
+            if (index < pointStart)
             {
-                Position = light.Position,
-                Range = light.Range,
-                Color = light.Color,
-                Intensity = light.Intensity,
-                LayerMask = light.LayerMask,
-                CookieIndex = -1,
-                CookieStrength = 1.0f,
-                WorldToLightCookie = Matrix4x4.Identity,
-                CookieScaleOffset = Vector4.One,
-            });
-        }
-        for (int index = 0; index < source.Spots.Count; index++)
-        {
-            RenderSpotLight light = source.Spots[index];
-            _gpuLights.Add(new GpuLight
+                RenderDirectionalLight light = source.Directional[index];
+                destination[index] = new GpuLight
+                {
+                    Direction = NormalizeOrZero(light.Direction),
+                    Color = light.Color,
+                    Intensity = light.Intensity,
+                    LayerMask = light.LayerMask,
+                    CookieIndex = -1,
+                    CookieStrength = 1.0f,
+                    WorldToLightCookie = Matrix4x4.Identity,
+                    CookieScaleOffset = Vector4.One,
+                };
+            }
+            else if (index < spotStart)
             {
-                Position = light.Position,
-                Range = light.Range,
-                Direction = NormalizeOrZero(light.Direction),
-                InnerConeCos = light.InnerConeCos,
-                OuterConeCos = light.OuterConeCos,
-                Color = light.Color,
-                Intensity = light.Intensity,
-                LayerMask = light.LayerMask,
-                CookieIndex = -1,
-                CookieStrength = 1.0f,
-                WorldToLightCookie = Matrix4x4.Identity,
-                CookieScaleOffset = Vector4.One,
-            });
+                RenderPointLight light = source.Points[index - pointStart];
+                destination[index] = new GpuLight
+                {
+                    Position = light.Position,
+                    Range = light.Range,
+                    Color = light.Color,
+                    Intensity = light.Intensity,
+                    LayerMask = light.LayerMask,
+                    CookieIndex = -1,
+                    CookieStrength = 1.0f,
+                    WorldToLightCookie = Matrix4x4.Identity,
+                    CookieScaleOffset = Vector4.One,
+                };
+            }
+            else
+            {
+                RenderSpotLight light = source.Spots[index - spotStart];
+                destination[index] = new GpuLight
+                {
+                    Position = light.Position,
+                    Range = light.Range,
+                    Direction = NormalizeOrZero(light.Direction),
+                    InnerConeCos = light.InnerConeCos,
+                    OuterConeCos = light.OuterConeCos,
+                    Color = light.Color,
+                    Intensity = light.Intensity,
+                    LayerMask = light.LayerMask,
+                    CookieIndex = -1,
+                    CookieStrength = 1.0f,
+                    WorldToLightCookie = Matrix4x4.Identity,
+                    CookieScaleOffset = Vector4.One,
+                };
+            }
         }
     }
 
@@ -617,7 +638,7 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
         _pipeline.Dispose();
         _clearPipeline.Dispose();
         _compactPipeline.Dispose();
-        _gpuLights.Clear();
+        Array.Clear(_gpuLights);
         Array.Clear(_viewParameters);
         _disposed = true;
     }

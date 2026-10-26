@@ -107,7 +107,13 @@ Shader shader = await published.CreateAsync(slang, sessionDescription,
 通过 D3D12、Vulkan 两后端检查：每项在同一进程先后启动两个 Application，各渲染 8 帧，
 关闭后执行完整 GC 与 finalizer 等待，两次线性图像在 0.001 容差内一致，测试进程正常完成。
 
-`Shader.GetSlangEntryMetadataAsync` 在驻留 Shader 内共用每个 target/入口的直接 Slang `IMetadata` 与取得任务。材质加载可以提前启动入口准备，渲染侧从同一个 Shader 取得结果；入口准备的后台并发由这一取得路径统一限制。
+`Shader.GetSlangEntryMetadataAsync` 在驻留 Shader 内共用每个 target/入口的直接 Slang `IMetadata` 与取得任务。材质加载可以提前启动入口准备，渲染侧从同一个 Shader 取得结果；元数据取得与代码生成使用所属 Scheduler 的同一 Shader 工作类别。
+
+源码处理、序列化、布局与链接在同一全局会话的串行区间内完成。ShaderAsset 与 ShaderSourceBlock 在第一次等待前捕获 `JobSystem.Current`，内部将同一 Scheduler 传到驻留 Shader 的代码生成。公开 `Shader.CreateFromSlang` 同步入口直接选择调用处的 Scheduler。
+
+链接后的 target、入口代码与入口元数据请求复用每个 Scheduler 的 `shader code` 类别：在途批次数量为 256，执行额度为 worker 数量与 4 的较小值，零 worker 时调用线程使用一个执行额度，服务份额为 1。同步代码与资源使用元数据批次由 `ExecuteParallel` 运行，各请求写入独立结果位置；全部参与者退出后按原 target/入口顺序形成驻留 Shader。按需入口元数据通过 `ScheduleAsync` 等待同一类别额度，再通过 `JobHandle.CompleteAsync` 完成工作，原共享 Task 交付结果。实际工作保留 `SlangShaderData` 或 Shader 引用，失败沿原完成入口交付。
+
+使用范围遵循 [Slang 2026.17.1 的并发说明](https://github.com/shader-slang/slang/blob/v2026.17.1/docs/user-guide/08-compiling.md#multithreading)；编译选项与入口顺序继续由原始会话和反射定义。实现入口为 [Shader 代码生成](../../../src/SomeEngine.Resources/Shader.Slang.cs)、[类别预算](../../../src/SomeEngine.Resources/ShaderCodeJobs.cs) 与[入口元数据](../../../src/SomeEngine.Resources/Shader.EntryMetadata.cs)。公开构建、保存加载与管线消费分别由 `DirectSlangShaderTests`、`ShaderBytecodeTests` 和 `SharedMaterialEntryTests` 覆盖。
 
 Cluster 的提前准备与材质阶段解析共用入口选择。应用启动通过具体资产方法创建场景材质和管线 Shader，图形设备创建与内容加载并行；场景资源就绪后，渲染消费阶段对共用 Shader 调用 `ClusterPipelineSystem.PrepareMaterialShader`，按编译 target、可见性模式和设备能力选择着色、细分及光栅入口，启动入口资源分析。Release 的保存代码加载会话使用 Slang 的最少优化及基础代码优化级别完成反射与入口资源分析，必要的 lowering 与资源使用分析仍由 Slang 执行。保存代码 chunk 按调用方原始编译设置读取；源编译与导入使用构建设置。
 

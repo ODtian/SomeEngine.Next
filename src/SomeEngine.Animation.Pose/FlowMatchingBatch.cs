@@ -15,7 +15,7 @@ internal sealed class FlowMatchingBatch
     private readonly int _stride;
     private float[] _first, _second;
 
-    internal FlowMatchingBatch(FlowMatchingModel model, FlowMatchingState[] states)
+    internal FlowMatchingBatch(Scheduler scheduler, FlowMatchingModel model, FlowMatchingState[] states)
     {
         Model = model;
         States = states;
@@ -23,8 +23,8 @@ internal sealed class FlowMatchingBatch
         _stride = Math.Max(model.Data.Flow.Widths.Max(), model.Data.Decoder.Widths.Max());
         _first = new float[states.Length * _stride];
         _second = new float[states.Length * _stride];
-        Accesses = [JobResourceAccess.Read(JobSystem.Default.GetResourceToken(model)),
-            JobResourceAccess.Write(JobSystem.Default.GetResourceToken(this))];
+        Accesses = [JobResourceAccess.Read(scheduler.GetResourceToken(model)),
+            JobResourceAccess.Write(scheduler.GetResourceToken(this))];
     }
 
     internal bool HasSamples => States.Any(state => state.Active && state.Sample);
@@ -111,11 +111,11 @@ internal sealed class FlowMatchingGroups
     internal static FlowMatchingGroups For(World world) => Worlds.GetValue(world, static _ => new());
     internal void Add(Entity animation, FlowMatchingState state) { _instances.Add((animation, state)); _changed = true; }
     internal void Remove(Entity animation) { _instances.RemoveAll(instance => instance.Animation == animation); _changed = true; }
-    internal void Bind()
+    internal void Bind(Scheduler scheduler)
     {
         if (!_changed) return;
         Batches = _instances.GroupBy(instance => instance.State.Model)
-            .Select(group => new FlowMatchingBatch(group.Key, group.Select(instance => instance.State).ToArray())).ToArray();
+            .Select(group => new FlowMatchingBatch(scheduler, group.Key, group.Select(instance => instance.State).ToArray())).ToArray();
         _changed = false;
     }
 }

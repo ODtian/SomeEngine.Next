@@ -2,6 +2,8 @@ using System.Runtime.InteropServices;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
+using SomeEngine.ECS.Systems;
+using SomeEngine.Job;
 
 namespace SomeEngine.Animation.Pose;
 
@@ -47,6 +49,9 @@ public struct PoseTarget : IComponent
 
 public static partial class PoseAnimation
 {
+    internal static Scheduler GetScheduler(World world) =>
+        WorldJobs.TryGetScheduler(world, out Scheduler? scheduler) ? scheduler : JobSystem.Current;
+
     /// <summary>Creates an instance data entity with one continuous bone section per graph result.</summary>
     public static Entity CreateTarget(World world, SkeletonInstance skeleton, int resultCount = 1,
         PoseResultId output = default)
