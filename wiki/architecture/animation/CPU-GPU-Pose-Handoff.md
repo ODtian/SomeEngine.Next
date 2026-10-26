@@ -46,6 +46,11 @@ GPU 剩余骨骼与 CPU 同步骨骼共享既有模型 G 范围。普通提取�
 
 GPU 将来源输入推进与模型求值分开。输入编号推进状态机、Blend Space 相位一次；模型求值同时依赖已安装父区段的显示版本。子来源保持时，新的父 G 仍会触发子 FK、最终历史及姿势包围盒更新。新 previous 对应上一份实际求值的 current。
 
+Game 的次级链求值合并实际父区段和 CPU 关键骨的完成时间，沿这个时间推进原 Body 与骨骼映射。
+`DevicePoseOutput.Time` 和 `BodyStepState.Time` 交付该完成时刻，原 `Input` 继续携带来源身份和采样时钟。
+[父完成时钟检查](../../../tests/SomeEngine.Runtime.Tests/GpuPoseParentClockRenderingTests.cs)
+使用一个具体输入：子来源保持在 0.1 s，CPU 父区段推进至 0.2 s；同一 Body、完成骨骼和显示历史沿原读取与提取入口交付。
+
 | 公共 GPU 结果字段 | 含义 |
 | --- | --- |
 | `InputNumber`、`Starts` | 实际 GPU 来源输入及开始身份 |

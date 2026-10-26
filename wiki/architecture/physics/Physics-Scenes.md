@@ -41,6 +41,8 @@ CPU 场景通过 `solve.Activity` 共享原求解图，`BodyActivity` 单处保�
 
 CPU 场景选用项目的 `SceneContactPenaltyMath<TMath>`，由现有 `IAvbdConstraint<ContactPoint>` 组合普通或长程支撑接触。每步根据步长平方、当前接触雅可比和参与体的逆质量/世界逆惯量计算初始度量，并保留原点的罚参数历史；每轮先完成原接触双变量更新，再按穿透和压力长度尺度更新同一 `AvbdContactState` 中的罚参数。项目显式选择最小值 1、最大值 1e9、每米增长量 100000 和 0.0005 m 压力长度尺度，工作量描述列出这些选择。
 
+内层具体类型为 `AvbdContactPotentialMath` 和 `AvbdSupportedContactPotentialMath`：共同使用原接触的法向、切向力和乘子更新，普通接触保留正的法向曲率上界，角向方程加入接触合力大小乘力臂长度的正曲率。所选长程支撑的附加反力继续参与摩擦投影与角向曲率。原 2D 与 3D 掉落金字塔沿公共完成帧连续检查 180 步机械能，空间金字塔同时验证原层高对应的落稳能量与线速度，行为入口见 [PhysicsScenePyramidTests](../../../tests/SomeEngine.Runtime.Tests/PhysicsScenePyramidTests.cs)；工作量描述同时记录两个具体方程类型。
+
 `PhysicsSceneSimulation.Frame` 引用原 `PhysicsFrame`。帧消费者从实体 `BodyPose` 更新同一实体的 `LocalTransform`，保留其几何缩放；`CompleteForRead()` 直接完成该帧与消费者的原 Job 链，并交回完成步编号和时刻。下一步继续依赖同一消费完成。完成边界见[物理帧](Physics-Frames.md)。
 
 `PhysicsSceneSimulation` 同时实现 `IGameFramePhysics`，将时间推进、完成消费、后续提交和完成句柄委托给上述同一帧。`GameFrameSystems.Physics` 持有整个场景对象，沿既有帧生命周期先完成物理及消费者，再释放场景查询和派生资源。

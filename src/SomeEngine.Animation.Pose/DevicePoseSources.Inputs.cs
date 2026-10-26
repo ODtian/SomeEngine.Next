@@ -76,6 +76,7 @@ public sealed partial class DevicePoseSources
     {
         public void Execute()
         {
+            sources.ReleaseStateCopies();
             Scheduler scheduler = WorldJobs.GetScheduler(sources._world);
             var commands = new JobCommandBuffer(sources._world, 1);
             commands.Schedule(0, new ApplyInputs(sources), [JobResourceAccess.Write(scheduler.GetResourceToken(sources))]);
@@ -91,13 +92,15 @@ public sealed partial class DevicePoseSources
             {
                 GpuPoseSourceState state = source.State;
                 state.Sources = sources; state.Range = source.Range; state.PlaybackIndex = source.Index;
+                state.BlendStateStart = source.BlendStateStart; state.BlendLocalStart = source.BlendLocalStart;
                 state.Input = source.Input; state.BindingVersion = source.Binding;
                 state.CpuBones = source.Input.Skeleton.CpuBones;
+                state.SelectedBones = source.SelectedBones;
                 state.Evaluation = source.Input.Evaluation;
                 state.Presentation = source.Presentation;
                 state.HasSamples |= source.Sample;
                 source.SelectionChanged = false;
-                if (source.HasPhysics) state.PhysicsTime = source.Input.CalculationTime;
+                if (source.HasPhysics) state.PhysicsTime = source.CalculationTime;
                 state.HasInput = true; source.Reset = false;
                 commands.Replace(source.Entity, in state);
             }
@@ -119,16 +122,19 @@ public sealed partial class DevicePoseSources
                 { current._sources.Add(entity, source = new(entity)); rebuild = true; }
                 source.State = row.Read<GpuPoseSourceState>();
                 evaluationChanged |= !ReferenceEquals(source.State.Evaluation, input.Evaluation);
-                if (source.Index != current._order.Count || !ReferenceEquals(input.Skeleton, source.State.Input.Skeleton)
+                bool changed = !source.State.HasInput || !ReferenceEquals(input.Skeleton, source.State.Input.Skeleton)
                     || !ReferenceEquals(input.Clip, source.State.Input.Clip) || !ReferenceEquals(input.StateMachine, source.State.Input.StateMachine)
                     || !ReferenceEquals(input.Blend, source.State.Input.Blend) || !ReferenceEquals(input.Rig, source.State.Input.Rig)
                     || source.State.BindingVersion != input.Skeleton.BindingVersion
-                    || !source.State.CpuBones.Equals(input.Skeleton.CpuBones)) rebuild = true;
+                    || !source.State.CpuBones.Equals(input.Skeleton.CpuBones);
+                source.Reset |= changed || source.State.Input.Starts != input.Starts || source.State.Input.AnimationStarts != input.AnimationStarts;
+                if (source.Index != current._order.Count || changed) rebuild = true;
                 source.Input = input; source.Binding = input.Skeleton.BindingVersion;
                 source.Index = current._order.Count; current._order.Add(source);
             }
         });
-        if (rebuild || evaluationChanged) Rebuild(rebuild);
+        foreach (Entity removed in _sources.Keys.Except(_order.Select(row => row.Entity)).ToArray()) _sources.Remove(removed);
+        if (rebuild || evaluationChanged) Rebuild();
         int inputs = 0;
         foreach (SourceRow row in _order)
         {
@@ -136,8 +142,10 @@ public sealed partial class DevicePoseSources
             bool reset = row.Reset || !row.State.HasInput || row.State.Input.Starts != input.Starts
                 || row.State.Input.AnimationStarts != input.AnimationStarts;
             bool advance = reset || row.State.Input.InputNumber != input.InputNumber;
+            row.CalculationTime = commonBodies ? context.EndTime : ReadCalculationTime(row);
+            bool dependencies = row.CalculationTime > row.State.PhysicsTime;
             row.CommonBodies = commonBodies;
-            row.Evaluate = !row.HasPhysics || (advance || commonBodies) && (input.Playing || reset);
+            row.Evaluate = !row.HasPhysics || (advance || dependencies || commonBodies) && (input.Playing || reset);
             bool resetSamples = reset || row.SelectionChanged || !row.State.HasSamples
                 || !ReferenceEquals(row.State.Evaluation, input.Evaluation);
             float interval = input.Evaluation?.Interval ?? 0;
@@ -145,8 +153,7 @@ public sealed partial class DevicePoseSources
             double current = row.Sample ? input.CalculationTime : row.State.Presentation.CurrentTime;
             double previous = row.Sample ? resetSamples ? current : row.State.Presentation.CurrentTime : row.State.Presentation.PreviousTime;
             var identity = new GpuPoseIdentity(row.Entity, input.Skeleton, input.Starts, input.InputNumber, input.AnimationStarts);
-            double presentationTime = commonBodies ? context.EndTime : input.CalculationTime;
-            row.Presentation = row.Evaluate ? GpuPosePresentation.FromSampleTimes(previous, current, presentationTime, interval) with
+            row.Presentation = row.Evaluate ? GpuPosePresentation.FromSampleTimes(previous, current, row.CalculationTime, interval) with
             {
                 PreviousInput = row.Sample ? resetSamples ? identity : row.State.Presentation.CurrentInput : row.State.Presentation.PreviousInput,
                 CurrentInput = row.Sample ? identity : row.State.Presentation.CurrentInput,
@@ -171,10 +178,10 @@ public sealed partial class DevicePoseSources
             if (row.HasPhysics)
             {
                 Matrix4x4.Invert(input.ModelToWorld, out Matrix4x4 inverse);
-                float delta = commonBodies ? (float)context.Duration : reset ? 0 : (float)(input.CalculationTime - row.State.PhysicsTime);
-                float targetDuration = (float)Math.Max(context.Duration, input.CalculationTime - context.StartTime);
+                float delta = commonBodies ? (float)context.Duration : reset ? 0 : (float)(row.CalculationTime - row.State.PhysicsTime);
+                float targetDuration = (float)Math.Max(context.Duration, row.CalculationTime - context.StartTime);
                 var frame = new PhysicsFrame(input.ModelToWorld, inverse, delta, reset ? 1u : 0u,
-                    (uint)context.Substep, targetDuration, context.Number, commonBodies ? context.EndTime : input.CalculationTime);
+                    (uint)context.Substep, targetDuration, context.Number, row.CalculationTime);
                 MemoryMarshal.Write(_physicsFrames!.Mapping.Bytes.Slice(row.Index * 160, 160), in frame);
             }
         }
@@ -203,7 +210,7 @@ public sealed partial class DevicePoseSources
         if (goalCount > 0) _goals.Mapping.Flush(new(0, (ulong)goalCount * 48));
         CaptureCpuModels();
     }
-    private void Rebuild(bool reset)
+    private void Rebuild()
     {
         using var bytes = new MemoryStream();
         using var writer = new BinaryWriter(bytes);
@@ -218,13 +225,12 @@ public sealed partial class DevicePoseSources
             row.Clip = input.Clip is { } clip ? definitions.WriteClip(clip) : uint.MaxValue;
             row.Machine = input.StateMachine is { } machine ? definitions.WriteMachine(machine) : uint.MaxValue;
             row.Blend = input.Blend is { } blend ? definitions.WriteBlend(blend) : uint.MaxValue;
-            row.Reset |= reset;
             row.GoalStart = goals; goals += input.Rig?.GoalCount ?? 0;
             row.HasPhysics = false;
             if (input.Rig is { } rig) foreach (GpuPoseSource step in rig.Steps) row.HasPhysics |= step is GpuXpbdPose;
         }
         AddCpuSections(ref bones);
-        bool[][] before = _order.Select(row => row.SelectedBones).ToArray();
+        ReadOnlyMemory<bool>[] before = _order.Select(row => row.SelectedBones.Length > 0 ? row.SelectedBones.AsMemory() : row.State.SelectedBones).ToArray();
         foreach (SourceRow row in _order)
         {
             row.SelectedBones = new bool[row.Range.Count];
@@ -236,10 +242,11 @@ public sealed partial class DevicePoseSources
         for (int index = 0; index < _order.Count; index++)
         {
             SourceRow row = _order[index];
-            row.SelectionChanged |= !row.SelectedBones.AsSpan().SequenceEqual(before[index]);
+            row.SelectionChanged |= !row.SelectedBones.AsSpan().SequenceEqual(before[index].Span);
             row.Reference = definitions.WriteReference(row.Input.Skeleton.Skeleton, row.SelectedBones);
         }
         _boneCount = bones;
+        CreateStateCopies();
         _controlView?.Dispose();
         foreach (BufferSrv view in _workViews) view.Dispose();
         _workViews.Clear(); _sampleBindings.Clear(); _rigOperations.Clear(); _workCounts.Clear();
@@ -323,6 +330,7 @@ public sealed partial class DevicePoseSources
         internal ulong Binding;
         internal bool Reset, HasPhysics, Evaluate, CommonBodies, Sample, SelectionChanged;
         internal GpuPosePresentation Presentation;
+        internal double CalculationTime;
         internal bool[] SelectedBones = [];
         internal int[] Depths = [];
     }
