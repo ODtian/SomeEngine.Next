@@ -100,7 +100,7 @@ public sealed partial class DevicePoseSources
                 state.Presentation = source.Presentation;
                 state.HasSamples |= source.Sample;
                 source.SelectionChanged = false;
-                if (source.HasPhysics) state.PhysicsTime = source.Input.CalculationTime;
+                if (source.HasPhysics) state.PhysicsTime = source.CalculationTime;
                 state.HasInput = true; source.Reset = false;
                 commands.Replace(source.Entity, in state);
             }
@@ -142,8 +142,10 @@ public sealed partial class DevicePoseSources
             bool reset = row.Reset || !row.State.HasInput || row.State.Input.Starts != input.Starts
                 || row.State.Input.AnimationStarts != input.AnimationStarts;
             bool advance = reset || row.State.Input.InputNumber != input.InputNumber;
+            row.CalculationTime = commonBodies ? context.EndTime : ReadCalculationTime(row);
+            bool dependencies = row.CalculationTime > row.State.PhysicsTime;
             row.CommonBodies = commonBodies;
-            row.Evaluate = !row.HasPhysics || (advance || commonBodies) && (input.Playing || reset);
+            row.Evaluate = !row.HasPhysics || (advance || dependencies || commonBodies) && (input.Playing || reset);
             bool resetSamples = reset || row.SelectionChanged || !row.State.HasSamples
                 || !ReferenceEquals(row.State.Evaluation, input.Evaluation);
             float interval = input.Evaluation?.Interval ?? 0;
@@ -151,8 +153,7 @@ public sealed partial class DevicePoseSources
             double current = row.Sample ? input.CalculationTime : row.State.Presentation.CurrentTime;
             double previous = row.Sample ? resetSamples ? current : row.State.Presentation.CurrentTime : row.State.Presentation.PreviousTime;
             var identity = new GpuPoseIdentity(row.Entity, input.Skeleton, input.Starts, input.InputNumber, input.AnimationStarts);
-            double presentationTime = commonBodies ? context.EndTime : input.CalculationTime;
-            row.Presentation = row.Evaluate ? GpuPosePresentation.FromSampleTimes(previous, current, presentationTime, interval) with
+            row.Presentation = row.Evaluate ? GpuPosePresentation.FromSampleTimes(previous, current, row.CalculationTime, interval) with
             {
                 PreviousInput = row.Sample ? resetSamples ? identity : row.State.Presentation.CurrentInput : row.State.Presentation.PreviousInput,
                 CurrentInput = row.Sample ? identity : row.State.Presentation.CurrentInput,
@@ -177,10 +178,10 @@ public sealed partial class DevicePoseSources
             if (row.HasPhysics)
             {
                 Matrix4x4.Invert(input.ModelToWorld, out Matrix4x4 inverse);
-                float delta = commonBodies ? (float)context.Duration : reset ? 0 : (float)(input.CalculationTime - row.State.PhysicsTime);
-                float targetDuration = (float)Math.Max(context.Duration, input.CalculationTime - context.StartTime);
+                float delta = commonBodies ? (float)context.Duration : reset ? 0 : (float)(row.CalculationTime - row.State.PhysicsTime);
+                float targetDuration = (float)Math.Max(context.Duration, row.CalculationTime - context.StartTime);
                 var frame = new PhysicsFrame(input.ModelToWorld, inverse, delta, reset ? 1u : 0u,
-                    (uint)context.Substep, targetDuration, context.Number, commonBodies ? context.EndTime : input.CalculationTime);
+                    (uint)context.Substep, targetDuration, context.Number, row.CalculationTime);
                 MemoryMarshal.Write(_physicsFrames!.Mapping.Bytes.Slice(row.Index * 160, 160), in frame);
             }
         }
@@ -329,6 +330,7 @@ public sealed partial class DevicePoseSources
         internal ulong Binding;
         internal bool Reset, HasPhysics, Evaluate, CommonBodies, Sample, SelectionChanged;
         internal GpuPosePresentation Presentation;
+        internal double CalculationTime;
         internal bool[] SelectedBones = [];
         internal int[] Depths = [];
     }
