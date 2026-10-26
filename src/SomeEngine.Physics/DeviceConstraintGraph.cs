@@ -8,10 +8,14 @@ using Buffer = SomeEngine.Graphics.Buffer;
 namespace SomeEngine.Physics;
 
 public readonly record struct DeviceGraphCapacity(int Constraints, int BodiesPerConstraint);
-public readonly record struct DeviceGraphKernels(ComputePipelineDesc WriteRows, ComputePipelineDesc Build);
+public readonly record struct DeviceGraphKernels(ComputePipelineDesc WriteRows, ComputePipelineDesc Build)
+{
+    public DeviceGraphParallelKernels? Parallel { get; init; }
+    public DeviceGraphKernels(ComputePipelineDesc writeRows, DeviceGraphParallelKernels parallel) : this(writeRows, default(ComputePipelineDesc)) => Parallel = parallel;
+}
 
 /// <summary>Resident entity participation, connectivity, colors and adjacency shared by concrete device solvers.</summary>
-public sealed class DeviceConstraintGraph : IDisposable
+public sealed partial class DeviceConstraintGraph : IDisposable
 {
     private readonly IGraphicsBackend _backend;
     private readonly Device _device;
@@ -32,6 +36,9 @@ public sealed class DeviceConstraintGraph : IDisposable
     private readonly IDeviceConstraintSelection[] _selections;
     private readonly uint[] _counts = new uint[4];
     private readonly Buffer _countBuffer;
+    private readonly DeviceGraphParallelKernels? _parallel;
+    private readonly Buffer? _buildProgress;
+    private readonly uint[] _colorProgress = new uint[4];
     private bool _initialized;
 
     public DeviceConstraintGraph(IGraphicsBackend backend, Device device, DeviceBodies bodies, DeviceBodyDynamics dynamics,
@@ -41,6 +48,7 @@ public sealed class DeviceConstraintGraph : IDisposable
     {
         _backend = backend; _device = device; _bodies = bodies; _dynamics = dynamics; _capacity = capacity;
         _threadsPerGroup = threadsPerGroup; _extraAccesses = inputAccesses.ToArray(); _selections = selections.ToArray();
+        _parallel = kernels.Parallel;
         AddBuffer("ConstraintGraphRows", capacity.Constraints, 16);
         AddBuffer("ConstraintGraphParticipants", capacity.Constraints * capacity.BodiesPerConstraint, 8);
         AddBuffer("ConstraintGraphParents", bodies.Capacity, 4);
@@ -55,9 +63,19 @@ public sealed class DeviceConstraintGraph : IDisposable
         AddBuffer("ConstraintGraphScratch", bodies.Capacity, 4);
         AddBuffer("ConstraintGraphIslands", bodies.Capacity, 4);
         _countBuffer = AddBuffer("ConstraintGraphCounts", 4, 4);
+        if (_parallel.HasValue)
+        {
+            int blocks = (bodies.Capacity + 255) / 256;
+            AddBuffer("ConstraintGraphBlockTotals", blocks, 4);
+            AddBuffer("ConstraintGraphBlockOffsets", blocks, 4);
+            AddBuffer("ConstraintGraphRowProposals", capacity.Constraints, 4);
+            AddBuffer("ConstraintGraphGroupColors", capacity.Constraints, 4);
+            AddBuffer("ConstraintGraphGroupOffsets", capacity.Constraints + 1, 4);
+            _buildProgress = AddBuffer("ConstraintGraphBuildProgress", 4, 4);
+        }
         _parameters = backend.CreateBuffer(device, new(256, BufferUsages.Constant, "Constraint graph dimensions"), MemoryType.Upload);
         _parametersView = backend.CreateBufferCbv(device, new(_parameters, new(0, 256)));
-        _readback = backend.CreateBuffer(device, new(16, BufferUsages.CopyDestination, "Constraint graph work counts"), MemoryType.Readback);
+        _readback = backend.CreateBuffer(device, new(_parallel.HasValue ? 32UL : 16UL, BufferUsages.CopyDestination, "Constraint graph work counts"), MemoryType.Readback);
         _commands = backend.CreateCommandContext(device, new(QueueType.Compute, 0, 1, Label: "Device constraint graph"));
         _graphBindings.Add("ConstraintGraphParameters", [ResourceBinding.ConstantBuffer(_parametersView)]);
         _graphBindings.Add("DeviceBodyStates", [ResourceBinding.WritableBuffer(bodies.View)]);
@@ -65,7 +83,7 @@ public sealed class DeviceConstraintGraph : IDisposable
         var bindings = new Dictionary<string, ResourceBinding[]>(_graphBindings);
         foreach (var input in inputs) bindings.Add(input.Key, input.Value);
         foreach (IDeviceConstraintSelection selection in _selections) selection.AddBindings(bindings);
-        ComputePipelineDesc[] descriptions = [kernels.WriteRows, kernels.Build];
+        ComputePipelineDesc[] descriptions = _parallel is { } parallel ? parallel.Descriptions(kernels.WriteRows) : [kernels.WriteRows, kernels.Build];
         _pipelines = descriptions.Select(kernel => backend.CreateComputePipeline(device, kernel)).ToArray();
         _layouts = descriptions.Select(kernel => kernel.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null).ToArray();
         _bindings = _layouts.Select(layout => DeviceCollisionGrid.OrderBindings(layout, bindings)).ToArray();
@@ -89,9 +107,10 @@ public sealed class DeviceConstraintGraph : IDisposable
         accesses.AddRange(_extraAccesses);
         foreach (Buffer buffer in _buffers) accesses.Add(JobResourceAccess.Write(scheduler.GetResourceToken(buffer), 0, (long)buffer.Info.Size));
         accesses.Add(JobResourceAccess.Write(scheduler.GetResourceToken(_parameters), 0, 256));
-        accesses.Add(JobResourceAccess.Write(scheduler.GetResourceToken(_readback), 0, 16));
+        accesses.Add(JobResourceAccess.Write(scheduler.GetResourceToken(_readback), 0, (long)_readback.Info.Size));
         accesses.Add(JobResourceAccess.Write(scheduler.GetResourceToken(_commands)));
         accesses.Add(JobResourceAccess.Write(scheduler, _counts));
+        if (_parallel.HasValue) accesses.Add(JobResourceAccess.Write(scheduler, _colorProgress));
         foreach (IDeviceConstraintSelection selection in _selections) selection.AddAccesses(scheduler, accesses);
     }
     internal JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency)
@@ -109,6 +128,7 @@ public sealed class DeviceConstraintGraph : IDisposable
             values[0] = (uint)_bodies.Capacity; values[1] = (uint)_capacity.Constraints; values[2] = (uint)_capacity.BodiesPerConstraint; values[3] = 0;
             mapping.Flush(new(0, 16));
         }
+        if (_parallel.HasValue) { BuildParallelAndWait(); return; }
         _backend.Begin(_commands, new(0, 0, 16));
         if (!_initialized)
             foreach (Buffer buffer in _buffers)
