@@ -69,6 +69,7 @@ struct DeviceElasticAvbdConstraints : IDeviceAvbdConstraints
             deviceElasticAngularError(constraint,first.rotation,second.rotation)-state.initialAngularError*context.initialErrorFraction,state.angularMultiplier);
         DeviceAvbdElasticStates[row]=state;
     }
+    override bool adjustsBody() { return false; }
     void adjust(uint body,DeviceAvbdStep context,DeviceAvbdEquation equation,inout float3 translation,inout float3 rotation) { }
 };
 #endif

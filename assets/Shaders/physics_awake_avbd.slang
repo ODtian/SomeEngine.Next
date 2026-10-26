@@ -18,6 +18,7 @@ struct DeviceAwakeAvbdConstraints<T : IDeviceAvbdConstraints> : IDeviceAvbdConst
     void accumulate(uint row,uint body,DeviceAvbdStep context,inout DeviceAvbdEquation equation)
     { inner.accumulate(row,body,context,equation); }
     void updateDuals(uint row,DeviceAvbdStep context) { inner.updateDuals(row,context); }
+    override bool adjustsBody() { return inner.adjustsBody(); }
     void adjust(uint body,DeviceAvbdStep context,DeviceAvbdEquation equation,inout float3 translation,inout float3 rotation)
     { inner.adjust(body,context,equation,translation,rotation); }
 };
