@@ -9,6 +9,16 @@ interface IDeviceConstraintBodies
     uint bodyCount(uint row); uint body(uint row, uint end); bool writes(uint row, uint end);
     uint groupCount(); uint group(uint row);
 };
+struct DeviceNoConstraintBodies : IDeviceConstraintBodies
+{
+    uint count() { return 0; }
+    bool active(uint row) { return false; }
+    uint bodyCount(uint row) { return 0; }
+    uint body(uint row,uint end) { return 0; }
+    bool writes(uint row,uint end) { return false; }
+    uint groupCount() { return 0; }
+    uint group(uint row) { return 0; }
+};
 struct DeviceConstraintBodyGroups<TFirst : IDeviceConstraintBodies, TSecond : IDeviceConstraintBodies> : IDeviceConstraintBodies
 {
     TFirst first; TSecond second;
@@ -27,6 +37,7 @@ RWStructuredBuffer<uint4> ConstraintGraphRows;
 // Participant = body index, write role. Static/unselected bodies remain read inputs.
 RWStructuredBuffer<uint2> ConstraintGraphParticipants;
 globallycoherent RWStructuredBuffer<uint> ConstraintGraphParents;
+RWStructuredBuffer<uint> ConstraintGraphActiveBodies;
 RWStructuredBuffer<uint> ConstraintGraphBodyColors;
 RWStructuredBuffer<uint> ConstraintGraphRowColors;
 RWStructuredBuffer<uint> ConstraintGraphBodyOrder;
@@ -40,8 +51,21 @@ RWStructuredBuffer<uint> ConstraintGraphScratch;
 RWStructuredBuffer<uint> ConstraintGraphIslands;
 struct DeviceGraphBodies : IDeviceBodySelection
 {
-    bool contains(uint body) { return ConstraintGraphParents[body]!=0xffffffff; }
+    bool contains(uint body) { return ConstraintGraphActiveBodies[body]!=0; }
 };
+bool deviceGraphRowActive(uint4 row)
+{
+    if(row.w==0) return false;
+    for(uint end=0;end<row.y;end++)
+    {
+        uint2 participant=ConstraintGraphParticipants[row.x+end];
+        if(participant.y!=0&&ConstraintGraphActiveBodies[participant.x]!=0) return true;
+    }
+    return false;
+}
+#ifndef DEVICE_GRAPH_BODY_ACTIVE
+#define DEVICE_GRAPH_BODY_ACTIVE(body) true
+#endif
 void writeDeviceConstraintGraphRows<T : IDeviceConstraintBodies>(uint row, T source)
 {
     if (row >= ConstraintGraphParameters.rows) return;
@@ -112,13 +136,18 @@ void buildDeviceConstraintGraph()
     for (uint body = 0; body < bodies; body++)
     {
         ConstraintGraphParents[body] = 0xffffffff; ConstraintGraphBodyColors[body] = 0xffffffff;
+        ConstraintGraphActiveBodies[body] = 0;
         ConstraintGraphBodyOffsets[body] = 0; ConstraintGraphScratch[body] = 0;
         ConstraintGraphIslands[body] = 0xffffffff;
     }
     for (uint index = 0; index < BodyStep.count; index++)
     {
         uint body = DeviceBodyIndices[index];
-        if (DeviceBodyStates[body].motion == 2) ConstraintGraphParents[body] = body;
+        if (DeviceBodyStates[body].motion == 2)
+        {
+            ConstraintGraphParents[body] = body;
+            ConstraintGraphActiveBodies[body] = DEVICE_GRAPH_BODY_ACTIVE(body)?1:0;
+        }
     }
     uint groupCount = 0;
     for (uint index = 0; index < rows; index++)
@@ -151,7 +180,7 @@ void buildDeviceConstraintGraph()
             uint root = deviceGraphRoot(body);
             ConstraintGraphIslands[body] = root; ConstraintGraphParents[body] = root;
             if (root == body) islandCount++;
-            activeBodies++;
+            if(ConstraintGraphActiveBodies[body]!=0) activeBodies++;
         }
     }
     ConstraintGraphBodyOffsets[bodies] = adjacencyCount;
@@ -170,7 +199,7 @@ void buildDeviceConstraintGraph()
     for (uint index = 0; index < BodyStep.count; index++)
     {
         uint body = DeviceBodyIndices[index];
-        if (ConstraintGraphParents[body] == 0xffffffff) continue;
+        if (ConstraintGraphActiveBodies[body] == 0) continue;
         uint color = 0; while (deviceGraphBodyColorUsed(body,color)) color++;
         ConstraintGraphBodyColors[body] = color; bodyColors = max(bodyColors,color+1);
     }
@@ -193,7 +222,7 @@ void buildDeviceConstraintGraph()
         for (uint index = 0; index < rows; index++)
         {
             uint4 row = ConstraintGraphRows[index];
-            if (row.w == 0 || row.z != group) continue;
+            if (!deviceGraphRowActive(row) || row.z != group) continue;
             uint color = 0; while (deviceGraphRowColorUsed(index,color)) color++;
             ConstraintGraphRowColors[index] = color; colors = max(colors,color+1);
         }
@@ -201,7 +230,7 @@ void buildDeviceConstraintGraph()
         {
             uint first = rowPosition;
             for (uint index = 0; index < rows; index++)
-                if (ConstraintGraphRows[index].w != 0 && ConstraintGraphRows[index].z == group && ConstraintGraphRowColors[index] == color)
+                if (deviceGraphRowActive(ConstraintGraphRows[index]) && ConstraintGraphRows[index].z == group && ConstraintGraphRowColors[index] == color)
                     ConstraintGraphRowOrder[rowPosition++] = index;
             ConstraintGraphRowRanges[stages++] = uint2(first,rowPosition-first);
         }
