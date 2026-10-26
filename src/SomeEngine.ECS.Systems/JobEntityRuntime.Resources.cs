@@ -1,5 +1,6 @@
 using SomeEngine.ECS.Archetypes;
 using SomeEngine.ECS.Queries;
+using SomeEngine.Diagnostics;
 using SomeEngine.Job;
 
 namespace SomeEngine.ECS.Systems;
@@ -105,6 +106,7 @@ public static partial class JobEntityRuntime
     {
         public void Execute()
         {
+            using var trace = EngineTrace.Begin(ComponentResourceTrace<TJob>.Collect);
             ComponentResourceQueryCache cache = request.Descriptor.ResourceCache(request.World);
             ComponentResourceQueryData? previous = Volatile.Read(ref cache.Data);
             if (previous is not null &&
@@ -172,6 +174,7 @@ public static partial class JobEntityRuntime
     {
         public void Execute(int index)
         {
+            using var trace = EngineTrace.Begin(ComponentResourceTrace<TJob>.ReadPacket);
             ComponentResourceQueryData data = discovery.Data;
             QueryPacket packet = data.Packets.Packets[index];
             World world = discovery.Request.World;
@@ -227,6 +230,7 @@ public static partial class JobEntityRuntime
     {
         public void Execute()
         {
+            using var trace = EngineTrace.Begin(ComponentResourceTrace<TJob>.Combine);
             ComponentResourceQueryData data = discovery.Data;
             ComponentResourceRequest<TJob, TAdapter> request = discovery.Request;
             data.Rows = data.PacketRows.SelectMany(static rows => rows).ToArray();
@@ -286,6 +290,7 @@ public static partial class JobEntityRuntime
     {
         public void Execute(int index)
         {
+            using var trace = EngineTrace.Begin(ComponentResourceTrace<TJob>.Group);
             try
             {
                 grouping.Groups.JoinRanges(grouping.Buckets[index]);
@@ -371,7 +376,10 @@ public static partial class JobEntityRuntime
     {
         public void Execute()
         {
-            if (!ResourceInputsMatch(data))
+            bool matches;
+            using (EngineTrace.Begin(ComponentResourceTrace<TJob>.CheckInputs))
+                matches = ResourceInputsMatch(data);
+            if (!matches)
             {
                 request.Retry();
                 return;
@@ -387,6 +395,7 @@ public static partial class JobEntityRuntime
             uint writeVersion = request.Descriptor.HasWorldWrites ? request.World.AcquireSystemVersion() : 0;
             int batchSize = request.Options.RowsPerPacket == 0
                 ? JobScheduleOptions.AutomaticBatchSize : request.Options.RowsPerPacket;
+            using var trace = EngineTrace.Begin(ComponentResourceTrace<TJob>.Execute);
             request.Scheduler.ExecuteParallel(
                 new ExecuteResourceGroups<TJob, TAdapter>(request, data, writeVersion),
                 data.Groups.Length, batchSize, request.Options.JobOptions);
@@ -421,4 +430,14 @@ public static partial class JobEntityRuntime
             }
         }
     }
+}
+
+internal static class ComponentResourceTrace<TJob>
+{
+    internal static readonly TraceSite Collect = new("ecs", $"Resources.Collect/{typeof(TJob)}");
+    internal static readonly TraceSite ReadPacket = new("ecs", $"Resources.ReadPacket/{typeof(TJob)}");
+    internal static readonly TraceSite Combine = new("ecs", $"Resources.Combine/{typeof(TJob)}");
+    internal static readonly TraceSite Group = new("ecs", $"Resources.Group/{typeof(TJob)}");
+    internal static readonly TraceSite CheckInputs = new("ecs", $"Resources.CheckInputs/{typeof(TJob)}");
+    internal static readonly TraceSite Execute = new("ecs", $"Resources.Execute/{typeof(TJob)}");
 }
