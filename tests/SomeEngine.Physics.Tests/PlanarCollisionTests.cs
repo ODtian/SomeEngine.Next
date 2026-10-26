@@ -11,6 +11,27 @@ namespace SomeEngine.Physics.Tests;
 public sealed class PlanarCollisionTests
 {
     [Fact]
+    public void SeparatedParallelFacesProvideBothPlanarContactPoints()
+    {
+        var floor = new BoxGeometry(new(5, .5f, .01f));
+        var body = new BoxGeometry(new(1, 1, .01f));
+        var floorPose = new BodyPose { Position = new(0, -.5f, 0), Rotation = Quaternion.Identity };
+        var bodyPose = new BodyPose { Position = new(0, 1.02f, 0), Rotation = Quaternion.Identity };
+        Span<CollisionDistance> points = stackalloc CollisionDistance[2];
+
+        int count = new PlanarBoxCollision(1e-5f).GetManifold(in floor, in floorPose, in body, in bodyPose, .03f, points);
+
+        Assert.Equal(2, count);
+        Assert.Equal(-1, MathF.Min(points[0].FirstPoint.X, points[1].FirstPoint.X));
+        Assert.Equal(1, MathF.Max(points[0].FirstPoint.X, points[1].FirstPoint.X));
+        foreach (CollisionDistance point in points[..count])
+        {
+            Assert.Equal(Vector3.UnitY, point.Normal);
+            Assert.InRange(point.Separation, .01999f, .02001f);
+        }
+    }
+
+    [Fact]
     public void TwoInPlaneContactPointsSupportTheThinBoxThroughTheCommonPhysicsStep()
     {
         using var scheduler = new Scheduler(new() { WorkerCount = 2 });

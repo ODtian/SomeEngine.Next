@@ -31,14 +31,12 @@ public readonly struct PlanarBoxCollision(float tolerance) : ICollisionNarrowPha
         ProjectedBox left = Project(in first, in firstPose), right = Project(in second, in secondPose);
         BoxAxis axis = FindAxis(in left, in right);
         if (axis.Separation > contactDistance) return 0;
-        if (axis.Separation > 0)
-        {
-            CollisionDistance closest = FindClosest(in left, in right);
-            if (closest.Separation > contactDistance) return 0;
-            points[0] = closest;
-            return 1;
-        }
-        return ClipFaces(in left, in right, in axis, contactDistance, points);
+        int count = ClipFaces(in left, in right, in axis, contactDistance, points);
+        if (count > 0 || axis.Separation <= 0) return count;
+        CollisionDistance closest = FindClosest(in left, in right);
+        if (closest.Separation > contactDistance) return 0;
+        points[0] = closest;
+        return 1;
     }
 
     private static ProjectedBox Project(in BoxGeometry geometry, in BodyPose pose)
