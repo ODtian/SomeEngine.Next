@@ -29,7 +29,7 @@ public static partial class PhysicsScenes
         where TEvents : struct, IPhysicsEventConsumer =>
         CreateCpu(world, description, Create(description), collision, settings, events, eventAccesses);
 
-    private static PhysicsSceneSimulation CreateCpu<TCollision, TEvents>(World world, PhysicsSceneDescription description,
+    internal static PhysicsSceneSimulation CreateCpu<TCollision, TEvents>(World world, PhysicsSceneDescription description,
         PhysicsSceneData data, TCollision collision, PhysicsSceneSettings settings, TEvents events,
         ReadOnlySpan<JobResourceAccess> eventAccesses)
         where TCollision : struct, ICollisionNarrowPhase<BoxGeometry, BoxGeometry>
@@ -95,20 +95,36 @@ public static partial class PhysicsScenes
             description.Dimension == 2 ? Vector3.UnitY : Vector3.UnitZ, 1e-5f, 1e-4f, 1e-4f, 1e-4f, .99f, .99f, 1e-6f);
         var constraints = AvbdGraphConstraints.Combine(jointConstraints, new ContactLongRangeGraphConstraints(supportBodies, supportedContacts, supports));
         var solve = SolveAvbdGraph.Create(world, bodies, constraints,
-            new PhysicsGraphSettings(PhysicsGraphOrder.Islands, 16, 16, 64, 4, false), settings.Iterations, settings.MultiplierRetention, 0,
+            settings.Graph, settings.Iterations, settings.MultiplierRetention, 0,
             bodyIterations: settings.BodyIterations);
         var activity = solve.Activity(settings.Activity, eventBuffer);
         var breakJoints = new BreakConstraints<JointConstraint, AvbdJointMath>(world, bodies, breakableJoints, eventBuffer);
         var prediction = new PredictActiveBodies(world, bodies, Vector(data.Gravity), 64);
         var contactEvents = new ContactEvents<ScenePhysicsEventStream>(world, bodies, scope, eventBuffer, .001f);
         var consumption = new ConsumePhysicsEvents<TEvents>(world, eventQuery, events, eventAccesses);
-        var stages = inputs.Then(new ApplyBodyInputs(64)).Then(activity.WakeConnected()).Then(new ApplyGyroscopicTorque(64)).Then(prediction)
-            .Then(new UpdatePredictedBounds<BoxGeometry>(settings.ContactDistance, 64)).Then(new RefitSceneBounds(maintenance))
-            .Then(detection).Then(points.Refresh()).Then(activity.WakeConnected()).Then(prediction.Resume())
-            .Then(new InitializeContactResponses(world, bodies, contacts)).Then(solve).Then(breakJoints).Then(new UpdateBodyVelocities(64))
-            .Then(contactEvents).Then(activity.Finish()).Then(eventBuffer.Emit(new SceneEventComponents()));
+        PhysicsSceneTimings? timings = settings.Timings;
+        var stages = inputs.Measure(timings, "Scene inputs")
+            .Then(new ApplyBodyInputs(64).Measure(timings, "Body inputs"))
+            .Then(activity.WakeConnected().Measure(timings, "Input wake"))
+            .Then(new ApplyGyroscopicTorque(64).Measure(timings, "Gyroscopic torque"))
+            .Then(prediction.Measure(timings, "Active prediction"))
+            .Then(new UpdatePredictedBounds<BoxGeometry>(settings.ContactDistance, 64).Measure(timings, "Dynamic bounds"))
+            .Then(new RefitSceneBounds(maintenance).Measure(timings, "Spatial maintenance"))
+            .Then(detection.Measure(timings, "Pairs, type bins and narrow phase"))
+            .Then(points.Refresh().Measure(timings, "Persistent contacts"))
+            .Then(activity.WakeConnected().Measure(timings, "Contact wake"))
+            .Then(prediction.Resume().Measure(timings, "Resumed prediction"))
+            .Then(new InitializeContactResponses(world, bodies, contacts).Measure(timings, "Contact response inputs"))
+            .Then(solve.Measure(timings, "Constraint graph and AVBD"))
+            .Then(breakJoints.Measure(timings, "Joint breaks"))
+            .Then(new UpdateBodyVelocities(64).Measure(timings, "Body velocities"))
+            .Then(contactEvents.Measure(timings, "Contact events"))
+            .Then(activity.Finish().Measure(timings, "Activity results"))
+            .Then(eventBuffer.Emit(new SceneEventComponents()).Measure(timings, "Completed events"));
         var simulation = PhysicsSimulation.Create(world, filter, stages, data.Substeps);
-        var frame = simulation.CreateFrame(new CopySceneBodyTransforms().Then(consumption), data.StepSeconds, 0, 0, 0);
+        var consumer = new CopySceneBodyTransforms().Measure(timings, "Body transforms")
+            .Then(consumption.Measure(timings, "Event consumption"));
+        var frame = simulation.CreateFrame(consumer, data.StepSeconds, 0, 0, 0);
         return new PhysicsSceneSimulation(world, description, settings, entities, jointEntities, rangeEntities, data.StepSeconds, frame, frame.CompleteForRead,
             [shapes, poses, bodies, scope, contacts, ordinaryContacts, supportedContacts, supportBodies, joints, breakableJoints, ranges, jointBounds, eventQuery],
             [inputs, maintenance, bins, detected, detection, points, solve, activity, breakJoints, prediction, eventBuffer, contactEvents, consumption]);
