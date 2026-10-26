@@ -43,7 +43,8 @@ Buffer 先于 Header 记录，结构完成依赖覆盖创建、回放与命令�
 `ContactEventComponents<TScope,TComponents>` 可包装原点组件写入器，在持久点创建时完成这一步。
 观察状态保存 Touching 与上一条历史事件，采用原 `ICleanupComponent` 生命周期。
 几何或点销毁后，原受保护关系及数值组件按 ECS 职责释放，cleanup 保留最后结果直到 End 入队；
-观察阶段再记录本流 cleanup 组件移除；实体收尾继续沿原 ECS cleanup 职责进行。
+观察阶段在同一命令链记录本流 cleanup 组件与点上参与边的
+`Removed<Outgoing<ContactParticipant>>` 事实确认；实体收尾继续沿原 ECS cleanup 职责进行。
 筛选离开通过同流的派生成员索引和历史结果发出 End，容量持续复用。
 
 `ContactEvents<TScope,TSource>` 用具体 `IContactEventSource` 提供当前
