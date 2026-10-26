@@ -8,6 +8,4 @@ struct DeviceLengthConstraint
 {
     uint firstBody; uint secondBody; float restLength; float compliance;
 };
-RWStructuredBuffer<DeviceLengthConstraint> DeviceLengths;
-RWStructuredBuffer<DeviceConstraintMetadata> DeviceLengthsMetadata;
 #endif

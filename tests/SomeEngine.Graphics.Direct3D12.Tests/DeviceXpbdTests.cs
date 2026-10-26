@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Runtime.InteropServices;
 using SlangShaderSharp;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
@@ -15,6 +16,53 @@ namespace SomeEngine.Graphics.Direct3D12.Tests;
 [Trait("Category", "Hardware")]
 public sealed class DeviceXpbdTests(D3D12TestCompiler shaderCompiler)
 {
+    [Fact]
+    public void ProjectConstraintReadersAndKernelsUseTheSameCompletedDeviceStep()
+    {
+        using var backend = D3D12GraphicsBackend.Create();
+        using Device device = CreateDevice(backend);
+        using var jobs = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using World world = WorldJobs.CreateWorld(scheduler: jobs);
+        using var bodies = new DeviceBodies(backend, device, 2);
+        using var lengths = new DeviceConstraintData<DeviceLengthConstraint>(backend, device, 4, "DeviceLengths");
+        using var multipliers = new DeviceConstraintState<float>(backend, device, 4, "DeviceLengthMultipliers");
+        Entity first = AddBody(world, bodies, 0, Vector3.Zero, BodyMotion.Static);
+        Entity second = AddBody(world, bodies, 1, new(2, 0, 0), BodyMotion.Dynamic);
+        RelationEdge<XpbdLength> edge = world.CreateRelation(first, second, new XpbdLength { RestLength = 1, Compliance = .01f });
+        world.Add(edge.Entity, new DeviceConstraintBinding<DeviceLengthConstraint>(lengths, 3));
+        world.Add(edge.Entity, new DeviceXpbdState<float>(multipliers));
+        world.Add(edge.Entity, new ProjectLengthScale(1.5f));
+        QueryHandle members = world.Query(world.QueryDefinition().Read<DeviceBodyBinding>());
+        QueryHandle constraints = world.Query(world.QueryDefinition().Read<XpbdLength>().Read<ProjectLengthScale>()
+            .Read<UndirectedRelationEndpoints<XpbdLength>>().Read<DeviceConstraintBinding<DeviceLengthConstraint>>()
+            .All<DeviceXpbdState<float>>());
+        using var write = lengths.WriteInputs<XpbdLength, ProjectLengthSource>(world, constraints, new(), 64);
+        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
+        using var results = new DeviceBodyResults(backend, device, bodies);
+        using SomeEngine.Graphics.Buffer scale = backend.CreateBuffer(device, new(4, BufferUsages.ShaderRead), MemoryType.Upload);
+        using (MappedBuffer mapping = backend.Map(scale, MapType.Write, BufferRange.Whole))
+        {
+            float value = .5f;
+            MemoryMarshal.Write(mapping.Bytes, in value);
+            mapping.Flush(mapping.Range);
+        }
+        using BufferSrv scaleView = backend.CreateBufferSrv(device, new(scale, new(0, 4), StructureStride: 4));
+        using var project = new DeviceXpbdProjection<DeviceLengthConstraint, float>(backend, device, world, constraints,
+            bodies, lengths, multipliers, CompileProjectLength(), 64,
+            new Dictionary<string, ResourceBinding[]> { ["ProjectRestScales"] = [ResourceBinding.ReadOnlyBuffer(scaleView)] },
+            new[] { JobResourceAccess.Read(jobs.GetResourceToken(scale), 0, 4) });
+        var stages = lengths.BeginInputs().Then(write).Then(lengths.UploadInputs())
+            .Then(bodies.WriteInputs(64)).Then(bodies.UploadInputs()).Then(dynamics.Predict(Vector3.Zero))
+            .Then(project.Initialize()).Then(project.Iterate(2)).Then(dynamics.UpdateVelocities()).Then(results.Readback(64));
+
+        PhysicsSimulation.Create(world, world.QueryDefinition().All<DeviceBodyBinding>().Build(), stages, 1).Schedule(0, 0, .1).Complete();
+
+        Near(new(1.375f, 0, 0), world.Read<BodyPose>(second).Position);
+        Near(new(-6.25f, 0, 0), world.Read<BodyVelocity>(second).Linear);
+        world.ReleaseQuery(constraints);
+        world.ReleaseQuery(members);
+    }
+
     [Fact]
     public void DeviceGyroscopicTorqueMatchesTheFullInertiaBodyMotion()
     {
@@ -156,6 +204,55 @@ public sealed class DeviceXpbdTests(D3D12TestCompiler shaderCompiler)
         ComputePipelineDesc Entry(int index) => new(shader.SlangCode, shader.Reflection,
             shader.GetEntryPoint(index), shader.GetEntryCode(index));
         return new(Entry(0), Entry(1), Entry(2));
+    }
+
+    private DeviceXpbdKernels CompileProjectLength()
+    {
+        D3D12TestShader shader = shaderCompiler.CompileWithSearchPaths("project_xpbd", """
+            #include "physics_xpbd_length.slang"
+            StructuredBuffer<float> ProjectRestScales;
+            struct ProjectLength : IDeviceXpbdProjection
+            {
+                bool active(uint row) { return DeviceLengthsMetadata[row].active != 0; }
+                void initialize(uint row, DeviceXpbdStep context) { DeviceLengthMultipliers[row] = 0; }
+                void project(uint row, DeviceXpbdStep context)
+                {
+                    DeviceLengthConstraint data = DeviceLengths[row];
+                    DeviceBodyState first = DeviceBodyStates[data.firstBody], second = DeviceBodyStates[data.secondBody];
+                    float3 delta = second.position - first.position;
+                    float distance = length(delta);
+                    float firstWeight = first.motion == 2 ? first.inverseMass : 0;
+                    float secondWeight = second.motion == 2 ? second.inverseMass : 0;
+                    float alpha = data.compliance / (context.duration * context.duration);
+                    float multiplier = DeviceLengthMultipliers[row];
+                    float change = (-(distance - data.restLength * ProjectRestScales[0]) - alpha * multiplier) /
+                        (firstWeight + secondWeight + alpha);
+                    DeviceLengthMultipliers[row] = multiplier + change;
+                    if (firstWeight > 0) first.position -= firstWeight * delta / distance * change;
+                    if (secondWeight > 0) second.position += secondWeight * delta / distance * change;
+                    DeviceBodyStates[data.firstBody] = first; DeviceBodyStates[data.secondBody] = second;
+                }
+            };
+            [shader("compute")][numthreads(64,1,1)]
+            void Initialize(uint3 id : SV_DispatchThreadID) { initializeDeviceXpbd<ProjectLength>(id.x); }
+            [shader("compute")][numthreads(64,1,1)]
+            void Project(uint3 id : SV_DispatchThreadID) { projectDeviceXpbd<ProjectLength>(id.x); }
+            """, [new("Initialize", SlangStage.Compute), new("Project", SlangStage.Compute)], "sm_6_0", ShaderDirectory());
+        ComputePipelineDesc Entry(int index) => new(shader.SlangCode, shader.Reflection,
+            shader.GetEntryPoint(index), shader.GetEntryCode(index));
+        return new(Entry(0), Entry(1));
+    }
+
+    private readonly record struct ProjectLengthScale(float Value) : IComponent;
+    private readonly struct ProjectLengthSource : IDeviceConstraintSource<XpbdLength, DeviceLengthConstraint>
+    {
+        public static void Collect(in XpbdLength component, ref JobResourceAccessBuilder resources) { }
+        public DeviceLengthConstraint Read(in XpbdLength component, scoped QueryRow row, scoped QueryCursor access)
+        {
+            DeviceLengthConstraint data = new DeviceLengthSource().Read(in component, row, access);
+            data.RestLength *= row.Read<ProjectLengthScale>().Value;
+            return data;
+        }
     }
 
     private static Entity AddBody(World world, DeviceBodies bodies, int index, Vector3 position, BodyMotion motion)
