@@ -30,6 +30,7 @@ public sealed class DeviceXpbdProjection<TData, TState> : IDisposable where TDat
     private readonly Buffer _parameters;
     private readonly Buffer _indices;
     private readonly BufferSrv _indicesView;
+    private readonly BufferUav _metadataView;
     private readonly BufferCbv _parametersView;
     private readonly CommandContext _commands;
     private readonly int _threadsPerGroup;
@@ -55,9 +56,10 @@ public sealed class DeviceXpbdProjection<TData, TState> : IDisposable where TDat
         _extraAccesses = extraAccesses.ToArray();
         _parameters = backend.CreateBuffer(device, new(256, BufferUsages.Constant, "Device XPBD step"), MemoryType.Upload);
         _parametersView = backend.CreateBufferCbv(device, new(_parameters, new(0, 256)));
-        _indices = backend.CreateBuffer(device, new((ulong)data.Capacity * 4, BufferUsages.ShaderRead,
+        _indices = backend.CreateBuffer(device, new((ulong)data.Capacity * 16, BufferUsages.ShaderRead,
             "XPBD selected constraint indices"), MemoryType.Upload);
-        _indicesView = backend.CreateBufferSrv(device, new(_indices, new(0, _indices.Info.Size), StructureStride: 4));
+        _indicesView = backend.CreateBufferSrv(device, new(_indices, new(0, _indices.Info.Size), StructureStride: 16));
+        _metadataView = backend.CreateBufferUav(device, new(data.Metadata, new(0, data.Metadata.Info.Size), StructureStride: 16));
         _commands = backend.CreateCommandContext(device, new(QueueType.Compute, 0, 1, Label: "Device XPBD projection"));
         ComputePipelineDesc[] descriptions = [kernels.Initialize, kernels.Project];
         _pipelines = descriptions.Select(kernel => backend.CreateComputePipeline(device, kernel)).ToArray();
@@ -66,6 +68,7 @@ public sealed class DeviceXpbdProjection<TData, TState> : IDisposable where TDat
         {
             ["XpbdStep"] = [ResourceBinding.ConstantBuffer(_parametersView)],
             ["DeviceXpbdRows"] = [ResourceBinding.ReadOnlyBuffer(_indicesView)],
+            ["DeviceXpbdMetadata"] = [ResourceBinding.WritableBuffer(_metadataView)],
             ["DeviceBodyStates"] = [ResourceBinding.WritableBuffer(bodies.View)],
         };
         data.AddBindings(bindings); state.AddBindings(bindings);
@@ -96,7 +99,7 @@ public sealed class DeviceXpbdProjection<TData, TState> : IDisposable where TDat
             _world.ExecuteReadQuery(_rows, ref selected,
                 static (scoped QueryCursor rows, ref SelectedRows selection) => selection.Read(rows));
             count = selected.Count;
-            mapping.Flush(new(0, (ulong)count * 4));
+            mapping.Flush(new(0, (ulong)count * 16));
         }
         var step = new XpbdStep((uint)count, (float)context.Duration, context.Number,
             context.StartTime, context.EndTime, (uint)context.Substep, (uint)context.Substeps);
@@ -124,6 +127,8 @@ public sealed class DeviceXpbdProjection<TData, TState> : IDisposable where TDat
     [StructLayout(LayoutKind.Sequential)]
     private readonly record struct XpbdStep(uint Capacity, float Duration, long Number, double StartTime,
         double EndTime, uint Substep, uint Substeps);
+    [StructLayout(LayoutKind.Sequential, Size = 16)]
+    private readonly record struct SelectedRow(uint Index, uint EntityIndex, uint EntityGeneration);
     private struct SelectedRows(DeviceConstraintData<TData> data, DeviceConstraintState<TState> state, MappedBuffer mapping)
     {
         internal int Count;
@@ -133,7 +138,8 @@ public sealed class DeviceXpbdProjection<TData, TState> : IDisposable where TDat
             {
                 DeviceConstraintBinding<TData> binding = row.Read<DeviceConstraintBinding<TData>>();
                 if (ReferenceEquals(binding.Data, data) && ReferenceEquals(row.Read<DeviceXpbdState<TState>>().States, state))
-                    MemoryMarshal.Cast<byte, uint>(mapping.Bytes)[Count++] = (uint)binding.Index;
+                    MemoryMarshal.Cast<byte, SelectedRow>(mapping.Bytes)[Count++] =
+                        new((uint)binding.Index, (uint)row.Entity.Index, (uint)row.Entity.Generation);
             }
         }
     }
@@ -148,7 +154,7 @@ public sealed class DeviceXpbdProjection<TData, TState> : IDisposable where TDat
     {
         _world.ReleaseQuery(_rows);
         foreach (Pipeline pipeline in _pipelines) pipeline.Dispose();
-        _commands.Dispose(); _parametersView.Dispose(); _parameters.Dispose(); _indicesView.Dispose(); _indices.Dispose();
+        _commands.Dispose(); _parametersView.Dispose(); _parameters.Dispose(); _indicesView.Dispose(); _indices.Dispose(); _metadataView.Dispose();
     }
 }
 public readonly struct InitializeDeviceXpbd<TData, TState>(DeviceXpbdProjection<TData, TState> project) : IPhysicsStage
