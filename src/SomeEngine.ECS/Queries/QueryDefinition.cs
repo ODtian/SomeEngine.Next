@@ -75,6 +75,18 @@ public sealed class QueryDefinition
         return CreateNormalized(terms);
     }
 
+    /// <summary>Preserves membership and row filters while leaving value access to the consuming job.</summary>
+    public QueryDefinition AsFilter()
+    {
+        var terms = new QueryTerm[_terms.Length];
+        for (int index = 0; index < terms.Length; index++)
+        {
+            QueryTerm term = _terms[index];
+            terms[index] = new(term.ComponentId, term.Kind, QueryAccess.None, term.Filters);
+        }
+        return CreateNormalized(terms);
+    }
+
     /// <summary>Reports whether All or the sole Any term requires this component for every member.</summary>
     public bool Requires<T>() where T : struct
     {
