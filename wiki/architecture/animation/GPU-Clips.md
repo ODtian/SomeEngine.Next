@@ -62,6 +62,28 @@ frame.World.Add(frame.Scene.MeshEntities[0], new MeshSkin(instance, binding));
 source joint 映射在安装或 `SkeletonInstance.BindingVersion` 改变时解析。
 GPU 目标提取 ready 片段和控制；CPU 目标按模型姿势版本复制自身 G。
 
+## Game 来源的设备求值
+
+[DevicePoseSources](../../../src/SomeEngine.Animation.Pose/DevicePoseSources.cs) 以原 Game world 的
+`GpuPoseTarget` 查询为来源，项目提供 `DevicePoseKernels` 与批次的目标、骨骼、混合状态、
+局部混合值、控制值和定义字节容量。`Evaluate()` 在输入依赖之后捕获实际成员，按原
+`GpuPoseTargetResources` 读取骨架引用与 Controls；随后运行具体 `AdvancePoseStates`、
+`SamplePoseLevel` 内核，按骨骼依赖层写出 `Models`。
+原查询列、骨架与控制引用的读取作用域在捕获完成后结束，设备阶段读取自身已经捕获的资源。
+
+来源使用同一量化片段、状态机、BlendSpace 和遮罩层定义。
+[GpuPoseDefinitions](../../../src/SomeEngine.Animation.Pose/GpuPoseDefinitions.cs) 为 Game 求值与
+Skinning 提供共同编码，[gpu_pose_sampling](../../../assets/Shaders/gpu_pose_sampling.slang)
+单处维护来源状态推进和采样数学。播放及混合状态驻留在该来源批次内，原输入的开始标记与
+输入编号决定相位推进。
+
+`Readback()` 是项目选择的 CPU 来源消费阶段；设备 copy、外部 fence 和矩阵交付处于
+返回的物理 Job 链。完成后按原目标 Entity 调用 `ReadModels`，后续作业通过
+`GetResultReadAccesses` 声明读取。设备消费者通过 `Models`、`GetModelRange` 和
+`GetModelReadAccess` 读取同一来源结果。
+来源结果可在共同物理步中转入原 Body，再由原 PhysicsPose 消费完成状态；
+骨骼输出继续沿 Game world 到 Rendering world 的既有提取通路。
+
 ## GPU 求值与历史
 
 `SkinningFeature` 汇总所有活动区段，为每段分配连续 G 范围。量化片段、层级工作表、

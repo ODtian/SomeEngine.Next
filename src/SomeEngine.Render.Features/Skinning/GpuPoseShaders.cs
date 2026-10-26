@@ -33,7 +33,10 @@ internal static class GpuPoseShaders
             }, out ISession session), null);
             using Stream source = typeof(GpuPoseShaders).Assembly.GetManifestResourceStream("SomeEngine.Render.Features.Shaders.gpu_pose.slang")!;
             using var reader = new StreamReader(source);
-            IModule? module = session.LoadModuleFromSource("gpu_pose", "gpu_pose.slang", Slang.CreateBlob(reader.ReadToEnd()), out ISlangBlob? diagnostics);
+            using Stream sampling = typeof(GpuPoseShaders).Assembly.GetManifestResourceStream("SomeEngine.Render.Features.Shaders.gpu_pose_sampling.slang")!;
+            using var samplingReader = new StreamReader(sampling);
+            string code = reader.ReadToEnd().Replace("#include \"gpu_pose_sampling.slang\"", samplingReader.ReadToEnd());
+            IModule? module = session.LoadModuleFromSource("gpu_pose", "gpu_pose.slang", Slang.CreateBlob(code), out ISlangBlob? diagnostics);
             if (module is null) throw new InvalidDataException(diagnostics?.AsString);
             Require(module.FindEntryPointByName("AdvancePoseStates", out IEntryPoint advance), null);
             Require(module.FindEntryPointByName("LoadPoseHistory", out IEntryPoint load), null);
