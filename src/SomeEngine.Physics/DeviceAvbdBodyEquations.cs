@@ -114,7 +114,7 @@ public sealed class DeviceAvbdBodyEquations : IDisposable, IDevicePhysicsSubmiss
 internal readonly partial struct WriteDeviceAvbdEquationInputs(DeviceAvbdBodyEquations destination) : IJobEntity
 {
     public void Execute(Entity entity, [JobResources<DeviceBodyReferenceResources>] in DeviceBodyBinding body,
-        [JobResources<DeviceAvbdBodyEquations.EquationUploadResources>] in DeviceAvbdEquationBinding binding, in AvbdBodyEquation equation)
+        [JobResources<DeviceAvbdBodyEquations.EquationUploadResources>] in DeviceAvbdEquationBinding binding)
     {
         if (ReferenceEquals(binding.Equations, destination) && ReferenceEquals(body.Bodies, destination.Bodies))
             destination.Write(binding.Index, body.Index, entity);
