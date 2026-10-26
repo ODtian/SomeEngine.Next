@@ -29,6 +29,7 @@ public sealed partial class DevicePoseSources : IDisposable
     private readonly QueryReadResources _resources = new();
     private readonly JobResourceAccess[] _queryAccesses;
     private readonly Entity[] _entities;
+    private ReadOnlyMemory<Entity>? _selectedEntities;
     private int _entityCount;
     private readonly Dictionary<Entity, SourceRow> _sources = [];
     private readonly List<SourceRow> _order = [];
@@ -106,6 +107,7 @@ public sealed partial class DevicePoseSources : IDisposable
     }
 
     public Buffer Models { get; }
+    internal void SelectTargets(ReadOnlyMemory<Entity> entities) => _selectedEntities = entities;
     public EvaluateDevicePoseSources Evaluate() => new(this);
     public ReadDevicePoseSources Readback() => new(this);
     public PoseRange GetModelRange(Entity target) => _sources[target].Range;
