@@ -37,6 +37,8 @@ CPU 场景通过 `solve.Activity` 共享原求解图，`BodyActivity` 单处保�
 
 `PhysicsSceneSettings` 显式保存外层迭代、每体局部迭代、乘子保留比例、图组织、接触距离和整步预算声明。CPU 与 GPU 读取同一乘子保留字段，工作量描述同时列出该值。原步长及子步数来自创建数据。输入的 `Frame` 表示物理步编号；连接移除与位置变化在该步的第一子步、共同预测之前沿原命令链回放。速度增量按 `mass * deltaVelocity` 转成世界冲量，由 `ApplyBodyInputs` 在对应时间区间应用。
 
+`ContactNormalPenalty` 和 `ContactTangentPenalty` 分别选择新接触的法向、切向 ALM 罚度量，`FrictionRegularizationSpeed` 选择滑移曲率的正则化速度。CPU 工厂将这些值交给原 `AvbdContactComponents`，在持久接触实体创建时写入 `AvbdContactState`；后续共同求解在该实体上继续更新乘子和反力。接触材料刚度由同一实体的 `ContactMaterial` 给出。
+
 `PhysicsSceneSimulation.Frame` 引用原 `PhysicsFrame`。帧消费者从实体 `BodyPose` 更新同一实体的 `LocalTransform`，保留其几何缩放；`CompleteForRead()` 直接完成该帧与消费者的原 Job 链，并交回完成步编号和时刻。下一步继续依赖同一消费完成。完成边界见[物理帧](Physics-Frames.md)。
 
 `PhysicsSceneSimulation` 同时实现 `IGameFramePhysics`，将时间推进、完成消费、后续提交和完成句柄委托给上述同一帧。`GameFrameSystems.Physics` 持有整个场景对象，沿既有帧生命周期先完成物理及消费者，再释放场景查询和派生资源。
