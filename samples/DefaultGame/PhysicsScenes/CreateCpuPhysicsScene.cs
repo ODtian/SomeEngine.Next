@@ -88,8 +88,9 @@ public static partial class PhysicsScenes
                     FrictionRegularizationSpeed = settings.FrictionRegularizationSpeed,
                 })),
             new ContactRefreshSettings(.02f, .99f, true));
-        var contactConstraints = AvbdGraphConstraints.Combine(new AvbdGraphConstraints<ContactPoint, AvbdContactMath>(ordinaryContacts),
-            new AvbdGraphConstraints<ContactPoint, AvbdSupportedContactMath>(supportedContacts));
+        var contactConstraints = AvbdGraphConstraints.Combine(
+            new AvbdGraphConstraints<ContactPoint, SceneContactPenaltyMath<AvbdContactMath>>(ordinaryContacts),
+            new AvbdGraphConstraints<ContactPoint, SceneContactPenaltyMath<AvbdSupportedContactMath>>(supportedContacts));
         var ordinaryConstraints = AvbdGraphConstraints.Combine(
             AvbdGraphConstraints.Combine(contactConstraints,
                 new AvbdGraphConstraints<JointConstraint, AvbdJointMath>(joints)),

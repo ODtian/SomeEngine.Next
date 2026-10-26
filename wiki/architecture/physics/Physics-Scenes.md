@@ -39,6 +39,8 @@ CPU 场景通过 `solve.Activity` 共享原求解图，`BodyActivity` 单处保�
 
 `ContactNormalPenalty` 和 `ContactTangentPenalty` 分别选择新接触的法向、切向 ALM 罚度量，`FrictionRegularizationSpeed` 选择滑移曲率的正则化速度。CPU 工厂将这些值交给原 `AvbdContactComponents`，在持久接触实体创建时写入 `AvbdContactState`；后续共同求解在该实体上继续更新乘子和反力。接触材料刚度由同一实体的 `ContactMaterial` 给出。
 
+CPU 场景选用项目的 `SceneContactPenaltyMath<TMath>`，由现有 `IAvbdConstraint<ContactPoint>` 组合普通或长程支撑接触。每步根据步长平方、当前接触雅可比和参与体的逆质量/世界逆惯量计算初始度量，并保留原点的罚参数历史；每轮先完成原接触双变量更新，再按穿透和压力长度尺度更新同一 `AvbdContactState` 中的罚参数。项目显式选择最小值 1、最大值 1e9、每米增长量 100000 和 0.0005 m 压力长度尺度，工作量描述列出这些选择。
+
 `PhysicsSceneSimulation.Frame` 引用原 `PhysicsFrame`。帧消费者从实体 `BodyPose` 更新同一实体的 `LocalTransform`，保留其几何缩放；`CompleteForRead()` 直接完成该帧与消费者的原 Job 链，并交回完成步编号和时刻。下一步继续依赖同一消费完成。完成边界见[物理帧](Physics-Frames.md)。
 
 `PhysicsSceneSimulation` 同时实现 `IGameFramePhysics`，将时间推进、完成消费、后续提交和完成句柄委托给上述同一帧。`GameFrameSystems.Physics` 持有整个场景对象，沿既有帧生命周期先完成物理及消费者，再释放场景查询和派生资源。
