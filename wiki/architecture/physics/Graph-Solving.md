@@ -14,6 +14,8 @@
 描述三类实际实体引用：`GetBody` 给出受作用 Body，`GetReadBody` 给出额外只读 Body，
 `GetReadEntity` 给出其他组件引用，例如接触参与边、其他关节或接触历史。
 `JointMotorResponse.Target` 的 Source 继续进入只读 Body 集合；Source 空间的驱动沿当前参考位姿取值。
+具体类型可实现 `TryGetBody(..., PhysicsBodies, ..., out Entity)`，从本阶段已借用的引用范围读取参与边。
+图元数据、AVBD 的 Body 索引和活动误差共同使用此入口；原 `GetBody` 实现沿默认回退继续接入。
 
 动态 Body 的读写依赖形成连通分量。共享静态或运动学 Body 提供只读输入；
 每个独立动态 Body 也保留为单节点岛。原查询决定参与实体和组件访问，
@@ -76,6 +78,8 @@ AVBD 的 `AdjustBodyChange` 继续位于求响应之后、提交位姿之前。
 物理颜色和资源相容性共同决定可同时执行的工作。
 `QueryReadResources.Add<T,TResources>()` 注册的描述器同样用于元数据读取和数值阶段，
 引用在依赖完成后收集，并在执行前复核绑定。
+图元数据沿已有只读引用查询借用一次，再读取各具体约束的参与信息；
+接触参与边继续使用原关系组件，引用的访问声明来自原约束查询。
 
 ## 公共调用
 

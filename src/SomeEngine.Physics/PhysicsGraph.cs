@@ -15,12 +15,13 @@ public readonly record struct PhysicsConstraintBody(Entity Body, bool Writes);
 public readonly ref struct PhysicsConstraintGraphBuilder
 {
     private readonly PhysicsGraphData _data;
-    internal PhysicsConstraintGraphBuilder(PhysicsGraphData data) => _data = data;
+    private readonly PhysicsBodies _bodies;
+    internal PhysicsConstraintGraphBuilder(PhysicsGraphData data, PhysicsBodies bodies) { _data = data; _bodies = bodies; }
     public void Add(int query, Entity constraint, ReadOnlySpan<PhysicsConstraintBody> bodies, ReadOnlySpan<Entity> references) =>
         _data.Add(query, constraint, bodies, references);
     public void Add<TConstraint, TBodies>(int query, scoped QueryRow row, in PhysicsStepContext context)
         where TConstraint : struct, SomeEngine.ECS.IComponent where TBodies : struct, IPhysicsConstraintBodies<TConstraint> =>
-        _data.Add<TConstraint, TBodies>(query, row, in context);
+        _data.Add<TConstraint, TBodies>(query, row, _bodies, in context);
 }
 
 internal readonly record struct PhysicsConstraintIdentity(int Query, Entity Entity);
