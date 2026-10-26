@@ -102,10 +102,11 @@ public sealed partial class DeviceXpbdTests
 
     private DevicePoseKernels CompileDevicePoseSources()
     {
-        D3D12TestShader shader = shaderCompiler.CompileWithSearchPaths("game_pose_source", "#include \"gpu_pose_translation.slang\"",
-            [new("AdvancePoseStates", SlangStage.Compute), new("SamplePoseLevel", SlangStage.Compute), new("TranslatePose", SlangStage.Compute)], "sm_6_0", ShaderDirectory());
+        D3D12TestShader shader = shaderCompiler.CompileWithSearchPaths("game_pose_source", "#include \"gpu_pose_rig.slang\"",
+            [new("AdvancePoseStates", SlangStage.Compute), new("SamplePoseLevel", SlangStage.Compute), new("TranslatePose", SlangStage.Compute),
+             new("SolveTwoBone", SlangStage.Compute), new("SolveAim", SlangStage.Compute), new("WarpStride", SlangStage.Compute)], "sm_6_0", ShaderDirectory());
         ComputePipelineDesc Entry(int index) => new(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(index), shader.GetEntryCode(index));
-        return new(Entry(0), Entry(1), Entry(2));
+        return new(Entry(0), Entry(1), Entry(2), Entry(3), Entry(4), Entry(5));
     }
     private readonly struct FixedDevicePoseSampler : IClipSampler<BoneTransform[]>
     {
