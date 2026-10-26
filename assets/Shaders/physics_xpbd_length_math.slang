@@ -4,6 +4,13 @@
 #include "physics_body_math.slang"
 #include "physics_length_data.slang"
 RWStructuredBuffer<float> DeviceLengthMultipliers;
+float deviceLengthGradient(float3 first,float3 second,out float3 gradient)
+{
+    float3 difference=second-first;
+    float distance=length(difference);
+    gradient=difference/distance;
+    return distance;
+}
 struct DeviceXpbdLengthProjection<TSelection : IDeviceBodySelection> : IDeviceXpbdProjection
 {
     bool active(uint row) { return DeviceLengthsMetadata[row].active != 0; }
@@ -14,9 +21,8 @@ struct DeviceXpbdLengthProjection<TSelection : IDeviceBodySelection> : IDeviceXp
         TSelection selection;
         DeviceBodyState first = DeviceBodyStates[constraint.firstBody];
         DeviceBodyState second = DeviceBodyStates[constraint.secondBody];
-        float3 difference = second.position - first.position;
-        float distance = length(difference);
-        float3 gradient = difference / distance;
+        float3 gradient;
+        float distance = deviceLengthGradient(first.position, second.position, gradient);
         float firstWeight = first.motion == 2 && selection.contains(constraint.firstBody) ? first.inverseMass : 0;
         float secondWeight = second.motion == 2 && selection.contains(constraint.secondBody) ? second.inverseMass : 0;
         float alpha = constraint.compliance / (context.duration * context.duration);
