@@ -136,6 +136,26 @@ internal sealed class PhysicsSceneShaders
         return new(entries[0], entries[1]);
     }
 
+    internal (ComputePipelineDesc Clear, ComputePipelineDesc Read) ContactPenetration()
+    {
+        ComputePipelineDesc[] entries = Compile("scene_contact_penetration", """
+            #include "physics_contact_geometry_math.slang"
+            RWStructuredBuffer<uint> SceneContactPenetration;
+            [shader("compute")][numthreads(1,1,1)]
+            void Clear(uint3 id : SV_DispatchThreadID) { SceneContactPenetration[0]=0; }
+            [shader("compute")][numthreads(64,1,1)]
+            void Read(uint3 id : SV_DispatchThreadID)
+            {
+                uint count,stride; DeviceContacts.GetDimensions(count,stride);
+                if(id.x>=count||!deviceContactSelected(id.x)) return;
+                DeviceContactConstraint point=DeviceContacts[id.x];
+                float separation=point.separation+dot(point.normal,deviceContactDelta(point,false)-point.bodyAnchorDelta);
+                if(separation<0) InterlockedMax(SceneContactPenetration[0],asuint(-separation));
+            }
+            """, "Clear", "Read");
+        return (entries[0], entries[1]);
+    }
+
     private ComputePipelineDesc[] Compile(string name, string source, params string[] entryNames)
     {
         var target = new TargetDesc

@@ -159,6 +159,7 @@ internal sealed class ReadScenePhysicsResults : IDisposable
             {
                 if (!row.TryReadRef<ContactPoint>(out var geometry)) continue;
                 _contactsNow++;
+                if (_scene.ContactPenetration is not null) continue;
                 ref readonly ContactPoint point = ref geometry.Value;
                 ReadOnlySpan<ContactBodyLink> links = row.ReadBuffer<ContactBodyLink>().AsSpan();
                 Vector3 delta = default;
@@ -175,6 +176,8 @@ internal sealed class ReadScenePhysicsResults : IDisposable
                 _penetration = MathF.Max(_penetration, -point.Separation - Vector3.Dot(point.Normal, delta - point.BodyAnchorDelta));
             }
         });
+        if (_scene.ContactPenetration is { } readPenetration)
+            _penetration = MathF.Max(_penetration, readPenetration());
         foreach (Entity entity in _scene.Joints.Span)
         {
             if (!_world.IsAlive(entity)) continue;

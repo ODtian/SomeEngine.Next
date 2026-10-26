@@ -30,10 +30,11 @@ public sealed class PhysicsSceneSimulation : IGameFramePhysics
 
     internal PhysicsSceneSimulation(World world, PhysicsSceneDescription description, PhysicsSceneSettings settings,
         Entity[] bodies, Entity[] joints, Entity[] distanceRanges, double stepSeconds, IGameFramePhysics frame, Func<PhysicsStepResult> completeForRead,
-        QueryHandle[] queries, IDisposable[] resources)
+        QueryHandle[] queries, IDisposable[] resources, Func<float>? contactPenetration = null)
     {
         _world = world; Description = description; Settings = settings; Bodies = bodies; Joints = joints; DistanceRanges = distanceRanges; StepSeconds = stepSeconds;
         Frame = frame; _completeForRead = completeForRead; _queries = queries; _resources = resources;
+        ContactPenetration = contactPenetration;
     }
 
     public PhysicsSceneDescription Description { get; }
@@ -42,6 +43,7 @@ public sealed class PhysicsSceneSimulation : IGameFramePhysics
     public ReadOnlyMemory<Entity> Joints { get; }
     public ReadOnlyMemory<Entity> DistanceRanges { get; }
     public double StepSeconds { get; }
+    internal Func<float>? ContactPenetration { get; }
     public IGameFramePhysics Frame { get; }
     public JobHandle Completion => Frame.Completion;
     public void AdvanceTime(double deltaTime) => Frame.AdvanceTime(deltaTime);
