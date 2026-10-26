@@ -124,6 +124,7 @@ public sealed class PhysicsCrowdScene : IGameFramePhysics
         var inputs = Keep(new DeviceBodyInputBuffers(backend, device, world, members, physics.Bodies, shaders.BodyInputs(), 64));
         var joints = Keep(new DeviceSceneJoints(backend, device, world, drivers));
         var motors = Keep(new DeviceCrowdMotors(backend, device, world, drivers));
+        var contacts = Keep(new DeviceCrowdContacts(backend, device, world, physics.Bodies, characterBodies, cloth, floor, shaders));
         var sources = Keep(new DevicePoseSources(backend, device, world, targets,
             DevicePoseShaders.Get(device.Capabilities.CompileTarget),
             new(count * 2, count * 112, count * 2, count * 112, 1, 0, 1, count * 5), physics));
@@ -137,28 +138,35 @@ public sealed class PhysicsCrowdScene : IGameFramePhysics
         physics.Lengths.AddBindings(bindings); physics.Bends.AddBindings(bindings);
         physics.LengthMultipliers.AddBindings(bindings); physics.BendMultipliers.AddBindings(bindings);
         joints.AddBindings(bindings); motors.AddBindings(bindings);
+        contacts.AddBindings(bindings);
         Scheduler scheduler = WorldJobs.GetScheduler(world);
         JobResourceAccess[] reads = [.. physics.Lengths.GetReadAccesses(scheduler), .. physics.Bends.GetReadAccesses(scheduler),
-            .. joints.Data.GetReadAccesses(scheduler), .. motors.Data.GetReadAccesses(scheduler)];
+            .. joints.Data.GetReadAccesses(scheduler), .. motors.Data.GetReadAccesses(scheduler), .. contacts.GetReadAccesses(scheduler)];
         var graph = Keep(new DeviceConstraintGraph(backend, device, physics.Bodies, dynamics, shaders.CrowdGraph(),
-            new(count * (lengthsPerCharacter + bendsPerCharacter + 1), 3), bindings, reads, 64,
-            new IDeviceConstraintSelection[] { lengths, bends, motors.Selection }));
+            new(count * (lengthsPerCharacter + bendsPerCharacter + 1) + contacts.Parameters.Capacity, 5), bindings, reads, 64,
+            new IDeviceConstraintSelection[] { lengths, bends, motors.Selection, contacts.Selection }));
         JobResourceAccess[] solverReads = [.. reads, physics.LengthMultipliers.GetReadAccess(scheduler),
-            physics.BendMultipliers.GetReadAccess(scheduler), motors.States.GetWriteAccess(scheduler)];
+            physics.BendMultipliers.GetReadAccess(scheduler), motors.States.GetWriteAccess(scheduler),
+            contacts.Histories.GetWriteAccess(scheduler), contacts.Responses.GetWriteAccess(scheduler)];
         var avbd = Keep(new DeviceAvbdSolver(backend, device, physics.Bodies, equations, graph, shaders.CrowdAvbd(),
-            new(1, 1, .8f, 0), bindings, solverReads, 64, new IDeviceConstraintSelection[] { motors.StateSelection }));
+            new(1, 1, .8f, 0), bindings, solverReads, 64,
+            new IDeviceConstraintSelection[] { motors.StateSelection, contacts.StateSelection, contacts.ResponseSelection }));
         var xpbd = Keep(new DeviceXpbdSolver(backend, device, physics.Bodies, graph, shaders.CrowdXpbd(), new(1, 64),
             bindings, reads, new[] { physics.LengthMultipliers.States, physics.BendMultipliers.States }, 64));
         var results = Keep(new DeviceBodyResults(backend, device, physics.Bodies));
+        var response = Keep(new DeviceContactActions(backend, device, physics.Bodies, graph, contacts.Responses,
+            shaders.CrowdResponses(), bindings, reads, 64, new IDeviceConstraintSelection[] { contacts.ResponseSelection }));
         var controls = Keep(new AdvanceCrowdTargets(world));
         var upload = bodyInputs.Upload().Then(physics.Lengths.BeginInputs()).Then(writeLengths).Then(physics.Lengths.UploadInputs())
             .Then(physics.Bends.BeginInputs()).Then(writeBends).Then(physics.Bends.UploadInputs()).Then(joints.Upload()).Then(motors.Upload());
         var initial = new PhysicsStepContext(world, new QueryDefinitionBuilder().All<CrowdPhysicsBody>().Build(), -1, 0, 1, 0, 0);
-        upload.Then(sources.Evaluate()).Then(sources.CopyOutput()).Then(results.Readback(64)).Schedule(in initial, default).Complete();
+        contacts.Parameters.BeginInputs().Then(contacts.Parameters.UploadInputs()).Then(upload)
+            .Then(sources.Evaluate()).Then(sources.CopyOutput()).Then(results.Readback(64)).Schedule(in initial, default).Complete();
         var stages = controls.Then(upload).Then(poses.WriteTargets()).Then(inputs.WriteInputs()).Then(inputs.Apply())
-            .Then(dynamics.Predict(new(0, -9.81f, 0))).Then(avbd.Initialize()).Then(xpbd.Initialize())
+            .Then(dynamics.Predict(new(0, -9.81f, 0))).Then(contacts.Detect()).Then(response.Initialize())
+            .Then(avbd.Initialize()).Then(xpbd.Initialize())
             .Then(new SolveCrowdConstraints(avbd.Iterate(1), xpbd.Iterate(1), 8)).Then(dynamics.UpdateVelocities())
-            .Then(poses.MapBones()).Then(sources.CopyOutput());
+            .Then(response.ApplyRestitution(1)).Then(poses.MapBones()).Then(sources.CopyOutput());
         var consumer = results.Readback(64);
         var frame = PhysicsSimulation.Create(world, initial.Bodies, stages, 1).CreateFrame(consumer, StepSeconds, 0, 0, 0);
         _frame = frame; _complete = frame.CompleteForRead;
