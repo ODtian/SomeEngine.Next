@@ -3,6 +3,7 @@ using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Relations;
 using SomeEngine.ECS.Systems;
+using SomeEngine.Diagnostics;
 
 namespace SomeEngine.Physics;
 
@@ -34,6 +35,8 @@ public static partial class CollisionPairQueries
         where TPartition : struct
         where TDetection : struct, ICollisionPairQueryDetection
     {
+        using var trace = EngineTrace.Begin(CollisionTraceSites.NarrowPhase);
+        EngineTrace.Counter(CollisionTraceSites.DetectionCount, bins.ReadBin(bin).Length);
         var work = new BinDetectionWork<TPartition, TDetection>(bins, bin, detection);
         if (resources is null) work.Execute(access);
         else resources.ExecuteEntities(access, new BinEntities(bins.ReadBin(bin)), ref work,
