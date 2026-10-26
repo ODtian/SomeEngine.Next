@@ -61,6 +61,10 @@ Jacobian、惯性块与响应共同投影到该子空间。
 原默认入口继续在自身求解链构建图。AVBD/XPBD 交替时各阶段共享当前主体、数值历史与图。
 主体、约束及并行图派发复用 `DevicePhysicsDispatch.CreateGroups` 的 X/Y 范围；
 项目 Shader 以 `devicePhysicsThreadIndex` 或 `devicePhysicsGroupIndex` 读取对应线性索引。
+固定主体与方程绑定的项目可在首次 `Initialize(DeviceInputTransfer.Upload)` 或 `Solve(Upload)`
+交付原映射后，选择对应的 `Resident` 重载复用同一设备映射。
+数值方程仍逐步初始化，现行状态及当前步长继续进入原 kernel；原默认入口继续上传当前绑定。
+`DeviceContactActions.ApplyRestitution(iterations, buildGraph: false)` 可沿同次图完成结果接续速度响应。
 
 `DeviceContactPotentialAvbdConstraints` 选择接触势能的正曲率上界。
 它沿原接触评估、Jacobian 和 `DeviceAvbdContactStates` 装配方程，普通法向采用材料对应的
