@@ -12,8 +12,11 @@ using Buffer = SomeEngine.Graphics.Buffer;
 
 namespace SomeEngine.Animation.Pose;
 
-public readonly record struct DevicePoseKernels(ComputePipelineDesc Advance, ComputePipelineDesc Sample, ComputePipelineDesc? Translate = null);
-public readonly record struct DevicePoseCapacity(int Targets, int Bones, int BlendStates, int BlendLocals, int Controls, int DefinitionBytes);
+public readonly record struct DevicePoseKernels(ComputePipelineDesc Advance, ComputePipelineDesc Sample,
+    ComputePipelineDesc? Translate = null, ComputePipelineDesc? TwoBone = null,
+    ComputePipelineDesc? Aim = null, ComputePipelineDesc? Stride = null);
+public readonly record struct DevicePoseCapacity(int Targets, int Bones, int BlendStates, int BlendLocals,
+    int Controls, int DefinitionBytes, int Goals = 1, int Operations = 1);
 
 /// <summary>Game-world source inputs and their device model transforms, before entity physics and rendering extraction.</summary>
 public sealed partial class DevicePoseSources : IDisposable
@@ -31,17 +34,18 @@ public sealed partial class DevicePoseSources : IDisposable
     private readonly List<IDisposable> _objects = [];
     private readonly List<UploadBuffer> _uploads = [];
     private readonly List<Buffer> _states = [];
-    private readonly UploadBuffer _controls, _inputs, _definitions, _roots, _offsets, _work;
+    private readonly UploadBuffer _controls, _inputs, _definitions, _roots, _offsets, _work, _goals, _movements;
     private readonly Buffer _historyCurrent, _historyPrevious, _readback;
     private readonly Dictionary<string, ResourceBinding[]> _bindings = [];
     private readonly List<BufferSrv> _workViews = [];
     private readonly List<ResourceBinding[]> _sampleBindings = [];
-    private readonly List<ResourceBinding[]> _translationBindings = [];
+    private readonly List<RigOperation> _rigOperations = [];
     private readonly List<int> _workCounts = [];
     private BufferSrv? _controlView;
     private ResourceBinding[] _advanceBindings = [];
     private readonly Pipeline[] _pipelines;
     private readonly int _translateKernel;
+    private readonly int _twoBoneKernel, _aimKernel, _strideKernel;
     private readonly VariableLayoutReflection[] _layouts;
     private readonly CommandContext _commands;
     private readonly Matrix4x4[] _models;
@@ -53,7 +57,7 @@ public sealed partial class DevicePoseSources : IDisposable
         _backend = backend; _device = device; _world = world;
         _entities = new Entity[capacity.Targets]; _models = new Matrix4x4[capacity.Bones];
         QueryDefinition definition = world.GetQueryDefinition(targets).AsFilter()
-            .WithAccess(new QueryDefinitionBuilder().Read<GpuPoseTarget>().Build());
+            .WithAccess(new QueryDefinitionBuilder().Read<GpuPoseTarget>().OptionalBuffer<GpuPoseGoal>(QueryAccess.Read).Build());
         _targets = world.Query(definition);
         _resources.Add<GpuPoseTarget, GpuPoseTargetResources>();
         _queryAccesses = new JobResourceAccess[QueryJobAccess.Count(definition)];
@@ -63,7 +67,9 @@ public sealed partial class DevicePoseSources : IDisposable
         _definitions = CreateUpload(capacity.DefinitionBytes, 0, "GpuPoseClips");
         _roots = CreateUpload(capacity.Targets * 32, 32, "GpuPoseRoots");
         _offsets = CreateUpload(capacity.Targets * 16, 16, "GpuPoseOffsets");
-        _work = CreateUpload((capacity.Bones + capacity.Targets) * 16, 16, "GpuPoseWork");
+        _work = CreateUpload((capacity.Bones + capacity.Operations) * 16, 16, "GpuPoseWork");
+        _goals = CreateUpload(capacity.Goals * 48, 48, "GpuPoseGoals");
+        _movements = CreateUpload(capacity.Targets * 48, 48, "GpuPoseMovements");
         CreateState(capacity.Targets * 64, 64, "GpuPosePlaybackStates");
         CreateState(capacity.BlendStates * 32, 32, "GpuBlendStates");
         CreateState(capacity.BlendLocals * 48, 48, "GpuBlendLocals");
@@ -75,6 +81,12 @@ public sealed partial class DevicePoseSources : IDisposable
         var descriptions = new List<ComputePipelineDesc> { kernels.Advance, kernels.Sample };
         _translateKernel = kernels.Translate.HasValue ? descriptions.Count : -1;
         if (kernels.Translate is { } translate) descriptions.Add(translate);
+        _twoBoneKernel = kernels.TwoBone.HasValue ? descriptions.Count : -1;
+        if (kernels.TwoBone is { } twoBone) descriptions.Add(twoBone);
+        _aimKernel = kernels.Aim.HasValue ? descriptions.Count : -1;
+        if (kernels.Aim is { } aim) descriptions.Add(aim);
+        _strideKernel = kernels.Stride.HasValue ? descriptions.Count : -1;
+        if (kernels.Stride is { } stride) descriptions.Add(stride);
         _pipelines = descriptions.Select(kernel => Keep(backend.CreateComputePipeline(device, kernel))).ToArray();
         _layouts = descriptions.Select(kernel => kernel.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null).ToArray();
     }
@@ -140,7 +152,7 @@ public sealed partial class DevicePoseSources : IDisposable
         {
             Dispatch(0, _advanceBindings, _order.Count);
             for (int level = 0; level < _sampleBindings.Count; level++) Dispatch(1, _sampleBindings[level], _workCounts[level]);
-            foreach (ResourceBinding[] bindings in _translationBindings) Dispatch(_translateKernel, bindings, 1);
+            foreach (RigOperation operation in _rigOperations) Dispatch(operation.Kernel, operation.Bindings, operation.Count);
         }
         using RecordedCommands recorded = _backend.End(_commands);
         return _backend.Submit(_backend.GetQueue(_device, QueueType.Compute), new([], [], [recorded], [], []));

@@ -37,8 +37,11 @@ internal static class GpuPoseShaders
             using var samplingReader = new StreamReader(sampling);
             using Stream translation = typeof(GpuPoseShaders).Assembly.GetManifestResourceStream("SomeEngine.Render.Features.Shaders.gpu_pose_translation.slang")!;
             using var translationReader = new StreamReader(translation);
-            string code = reader.ReadToEnd().Replace("#include \"gpu_pose_sampling.slang\"", samplingReader.ReadToEnd())
-                .Replace("#include \"gpu_pose_translation.slang\"", translationReader.ReadToEnd().Replace("#include \"gpu_pose_sampling.slang\"", ""));
+            using Stream rig = typeof(GpuPoseShaders).Assembly.GetManifestResourceStream("SomeEngine.Render.Features.Shaders.gpu_pose_rig.slang")!;
+            using var rigReader = new StreamReader(rig);
+            string code = reader.ReadToEnd().Replace("#include \"gpu_pose_rig.slang\"", rigReader.ReadToEnd())
+                .Replace("#include \"gpu_pose_translation.slang\"", translationReader.ReadToEnd())
+                .Replace("#include \"gpu_pose_sampling.slang\"", samplingReader.ReadToEnd());
             IModule? module = session.LoadModuleFromSource("gpu_pose", "gpu_pose.slang", Slang.CreateBlob(code), out ISlangBlob? diagnostics);
             if (module is null) throw new InvalidDataException(diagnostics?.AsString);
             Require(module.FindEntryPointByName("AdvancePoseStates", out IEntryPoint advance), null);

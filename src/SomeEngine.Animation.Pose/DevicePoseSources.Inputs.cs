@@ -119,13 +119,32 @@ public sealed partial class DevicePoseSources
         if (_order.Count > 0) { _controls.Mapping.Flush(new(0, (ulong)_order.Count * 64)); _roots.Mapping.Flush(new(0, (ulong)_order.Count * 32)); }
         if (_order.Count > 0) _offsets.Mapping.Flush(new(0, (ulong)_order.Count * 16));
         if (inputs > 0) _inputs.Mapping.Flush(new(0, (ulong)inputs * 4));
+        foreach (SourceRow row in _order)
+        {
+            GpuPoseMovement movement = row.Input.Movement;
+            var value = new Movement(new(movement.Velocity, movement.Weight), new(movement.AnimationVelocity, 0), new(movement.FacingDirection, 0));
+            MemoryMarshal.Write(_movements.Mapping.Bytes.Slice(row.Index * 48, 48), in value);
+        }
+        if (_order.Count > 0) _movements.Mapping.Flush(new(0, (ulong)_order.Count * 48));
+        _world.ExecuteReadQuery(_targets, ref sources, static (scoped QueryCursor rows, ref DevicePoseSources current) =>
+        {
+            foreach (SourceRow source in current._order)
+            {
+                if (source.Input.Rig?.GoalCount is not > 0) continue;
+                rows.TryGetRow(source.Entity, out QueryRow row);
+                ReadOnlySpan<GpuPoseGoal> goals = row.ReadBuffer<GpuPoseGoal>().AsSpan();
+                MemoryMarshal.AsBytes(goals).CopyTo(current._goals.Mapping.Bytes[(source.GoalStart * 48)..]);
+            }
+        });
+        int goalCount = _order.Sum(row => row.Input.Rig?.GoalCount ?? 0);
+        if (goalCount > 0) _goals.Mapping.Flush(new(0, (ulong)goalCount * 48));
     }
     private void Rebuild()
     {
         using var bytes = new MemoryStream();
         using var writer = new BinaryWriter(bytes);
         var definitions = new GpuPoseDefinitions(writer);
-        int bones = 0, states = 0, locals = 0;
+        int bones = 0, states = 0, locals = 0, goals = 0;
         foreach (SourceRow row in _order)
         {
             GpuPoseTarget input = row.Input;
@@ -136,11 +155,12 @@ public sealed partial class DevicePoseSources
             row.Machine = input.StateMachine is { } machine ? definitions.WriteMachine(machine) : uint.MaxValue;
             row.Blend = input.Blend is { } blend ? definitions.WriteBlend(blend) : uint.MaxValue;
             row.Reference = definitions.WriteReference(input.Skeleton.Skeleton); row.Reset = true;
+            row.GoalStart = goals; goals += input.Rig?.GoalCount ?? 0;
         }
         _boneCount = bones;
         _controlView?.Dispose();
         foreach (BufferSrv view in _workViews) view.Dispose();
-        _workViews.Clear(); _sampleBindings.Clear(); _translationBindings.Clear(); _workCounts.Clear();
+        _workViews.Clear(); _sampleBindings.Clear(); _rigOperations.Clear(); _workCounts.Clear();
         if (_order.Count == 0) return;
         _controlView = _backend.CreateBufferSrv(_device, new(_controls.Buffer, new(0, (ulong)_order.Count * 64), StructureStride: 64));
         _bindings["GpuPoseControls"] = [ResourceBinding.ReadOnlyBuffer(_controlView)];
@@ -149,20 +169,13 @@ public sealed partial class DevicePoseSources
         var children = new List<int>[_boneCount];
         for (int bone = 0; bone < children.Length; bone++) children[bone] = [];
         var sections = _order.ToDictionary(row => row.Input.Skeleton);
-        foreach (SourceRow row in _order) row.Depths = new int[row.Range.Count];
+        foreach (SourceRow row in _order)
+        { row.Depths = new int[row.Range.Count]; Array.Fill(row.Depths, -1); }
         foreach (SourceRow row in _order)
             for (int bone = 0; bone < row.Range.Count; bone++)
             {
-                int parent = row.Input.Skeleton.Skeleton.Parents[bone];
-                SourceRow parentRow = row;
-                int inherited = row.Input.Skeleton.Skeleton.InheritedParents[bone];
-                if (parent < 0 && inherited >= 0)
-                {
-                    BoneSource source = row.Input.Skeleton.BoneSources[inherited];
-                    parentRow = sections[source.Instance]; parent = source.Bone;
-                }
-                int depth = parent < 0 ? 0 : parentRow.Depths[parent] + 1;
-                row.Depths[bone] = depth;
+                (SourceRow parentRow, int parent) = Parent(row, bone);
+                int depth = Depth(row, bone);
                 if (parent >= 0) children[parentRow.Range.Start + parent].Add(row.Range.Start + bone);
                 while (levels.Count <= depth) levels.Add([]);
                 levels[depth].Add(new((uint)row.Index, (uint)bone,
@@ -177,39 +190,38 @@ public sealed partial class DevicePoseSources
             _workViews.Add(view); _bindings["GpuPoseWork"] = [ResourceBinding.ReadOnlyBuffer(view)];
             _sampleBindings.Add(OrderBindings(_layouts[1], _bindings)); _workCounts.Add(level.Count); offset += work.Length;
         }
-        foreach (SourceRow row in _order.Where(row => row.Input.Rig?.TranslationBone >= 0)
-                     .OrderBy(row => row.Depths[row.Input.Rig!.TranslationBone]))
-        {
-            while (writer.BaseStream.Position % 4 != 0) writer.Write((byte)0);
-            uint first = (uint)writer.BaseStream.Position, count = 0;
-            var visit = new Stack<int>(); visit.Push(row.Range.Start + row.Input.Rig!.TranslationBone);
-            while (visit.TryPop(out int bone))
-            {
-                writer.Write((uint)bone); count++;
-                foreach (int child in children[bone]) visit.Push(child);
-            }
-            uint definition = (uint)writer.BaseStream.Position;
-            writer.Write(first); writer.Write(count);
-            var operation = new BoneWork((uint)row.Index, definition, 0, 0);
-            MemoryMarshal.Write(_work.Mapping.Bytes.Slice(offset, 16), in operation);
-            BufferSrv view = _backend.CreateBufferSrv(_device, new(_work.Buffer, new((ulong)offset, 16), StructureStride: 16));
-            _workViews.Add(view); _bindings["GpuPoseWork"] = [ResourceBinding.ReadOnlyBuffer(view)];
-            _translationBindings.Add(OrderBindings(_layouts[_translateKernel], _bindings)); offset += 16;
-        }
+        WriteRigOperations(writer, children, ref offset);
         bytes.GetBuffer().AsSpan(0, (int)bytes.Length).CopyTo(_definitions.Mapping.Bytes);
         _definitions.Mapping.Flush(new(0, (ulong)bytes.Length));
         if (offset > 0) _work.Mapping.Flush(new(0, (ulong)offset));
+
+        (SourceRow Section, int Bone) Parent(SourceRow row, int bone)
+        {
+            Skeleton skeleton = row.Input.Skeleton.Skeleton;
+            int parent = skeleton.Parents[bone], inherited = skeleton.InheritedParents[bone];
+            if (parent >= 0 || inherited < 0) return (row, parent);
+            BoneSource source = row.Input.Skeleton.BoneSources[inherited];
+            return (sections[source.Instance], source.Bone);
+        }
+        int Depth(SourceRow row, int bone)
+        {
+            if (row.Depths[bone] >= 0) return row.Depths[bone];
+            (SourceRow parentRow, int parent) = Parent(row, bone);
+            return row.Depths[bone] = parent < 0 ? 0 : Depth(parentRow, parent) + 1;
+        }
     }
     [StructLayout(LayoutKind.Sequential)]
     private readonly record struct Control(uint ClipOffset, float SampleTime, uint Flags, uint Starts, ulong InputNumber,
         double CalculationTime, uint MachineOffset, uint InputOffset, float PlaybackTime, uint BlendStart,
         uint ReferenceOffset, float PresentationAmount, uint Padding0, uint Padding1);
     private readonly record struct RootCorrection(Vector4 Translation, Quaternion Rotation);
+    private readonly record struct Movement(Vector4 Velocity, Vector4 AnimationVelocity, Vector4 FacingDirection);
     private readonly record struct BoneWork(uint Section, uint Bone, uint Parent, uint Output);
+    private readonly record struct RigOperation(int Kernel, ResourceBinding[] Bindings, int Count);
     private sealed class SourceRow(Entity entity)
     {
         internal readonly Entity Entity = entity;
-        internal int Index, BlendStateStart, BlendLocalStart;
+        internal int Index, BlendStateStart, BlendLocalStart, GoalStart;
         internal uint Clip, Machine, Blend, Reference;
         internal PoseRange Range;
         internal GpuPoseTarget Input, Accepted;
