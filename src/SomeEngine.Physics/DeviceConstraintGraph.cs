@@ -52,6 +52,7 @@ public sealed partial class DeviceConstraintGraph : IDisposable
         AddBuffer("ConstraintGraphRows", capacity.Constraints, 16);
         AddBuffer("ConstraintGraphParticipants", capacity.Constraints * capacity.BodiesPerConstraint, 8);
         AddBuffer("ConstraintGraphParents", bodies.Capacity, 4);
+        AddBuffer("ConstraintGraphActiveBodies", bodies.Capacity, 4);
         AddBuffer("ConstraintGraphBodyColors", bodies.Capacity, 4);
         AddBuffer("ConstraintGraphRowColors", capacity.Constraints, 4);
         AddBuffer("ConstraintGraphBodyOrder", bodies.Capacity, 4);
