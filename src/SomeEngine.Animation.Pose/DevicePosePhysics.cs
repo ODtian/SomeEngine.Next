@@ -27,6 +27,7 @@ public sealed partial class DevicePosePhysics : IDisposable
 {
     private readonly World _world;
     private readonly IGraphicsBackend _backend;
+    private readonly Device _device;
     private readonly QueryHandle _members, _lengthRows, _bendRows, _chainRows;
     private readonly DeviceBodyInputs _inputs;
     private readonly WriteDeviceConstraintInputs<XpbdLength, DeviceLengthConstraint, DeviceLengthSource> _writeLengths;
@@ -41,14 +42,15 @@ public sealed partial class DevicePosePhysics : IDisposable
 
     public DevicePosePhysics(IGraphicsBackend backend, Device device, World world, DevicePosePhysicsCapacity capacity)
     {
-        _world = world; _backend = backend;
+        _world = world; _backend = backend; _device = device;
         Bodies = new(backend, device, capacity.Bodies);
         Lengths = new(backend, device, capacity.Lengths, "DeviceLengths");
         Bends = new(backend, device, capacity.Bends, "DeviceBends");
         LengthMultipliers = new(backend, device, capacity.Lengths, "DeviceLengthMultipliers");
         BendMultipliers = new(backend, device, capacity.Bends, "DeviceBendMultipliers");
         _sourceModels = backend.CreateBuffer(device, new((ulong)capacity.Bodies * 64,
-            BufferUsages.ShaderRead | BufferUsages.ShaderWrite, "Pose source bone frames"), MemoryType.DeviceLocal);
+            BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopySource | BufferUsages.CopyDestination,
+            "Pose source bone frames"), MemoryType.DeviceLocal);
         _sourceView = backend.CreateBufferUav(device, new(_sourceModels, new(0, _sourceModels.Info.Size), StructureStride: 64));
         _bodyView = backend.CreateBufferUav(device, new(Bodies.States, new(0, Bodies.States.Info.Size), StructureStride: DeviceBodies.StateStride));
         _members = world.Query(new QueryDefinitionBuilder().All<GpuPoseBody>().Read<DeviceBodyBinding>());
@@ -79,6 +81,9 @@ public sealed partial class DevicePosePhysics : IDisposable
     public DeviceConstraintState<float> LengthMultipliers { get; }
     public DeviceConstraintState<float> BendMultipliers { get; }
     public UploadDevicePosePhysics Upload() => new(this);
+    internal bool HasRig(Entity target, GpuPoseRig rig) =>
+        _chains.TryGetValue((target, FirstChain(rig)), out Entity chain)
+        && ReferenceEquals(_world.Read<GpuPoseChain>(chain).Rig, rig);
 
     /// <summary>Creates the actual entities for each secondary-chain step in this target's current rig.</summary>
     public void Bind(Entity target)
@@ -227,6 +232,7 @@ public sealed partial class DevicePosePhysics : IDisposable
         _inputs.Dispose(); _writeLengths.Dispose(); _writeBends.Dispose();
         _world.ReleaseQuery(_chainRows); _world.ReleaseQuery(_bendRows); _world.ReleaseQuery(_lengthRows); _world.ReleaseQuery(_members);
         _bodyView.Dispose(); _sourceView.Dispose(); _sourceModels.Dispose();
+        _copyCommands?.Dispose();
         BendMultipliers.Dispose(); LengthMultipliers.Dispose(); Bends.Dispose(); Lengths.Dispose(); Bodies.Dispose();
     }
 }
