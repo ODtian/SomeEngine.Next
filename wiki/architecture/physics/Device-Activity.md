@@ -50,6 +50,8 @@
 `readDeviceActivityRows` 将当前误差及参考输入变化归约到原参与岛。
 `DeviceLengthActivity` 沿共同 Length 参数和当前主体位置返回距离残差，
 参与角色与参数选择委托原 `DeviceLengthBodies`。
+`DeviceContactActivity` 沿同一当前加权锚返回法向穿透残差，参与角色继续由
+`DeviceContactBodies` 提供。
 
 `WakeConnected()` 在当前完整图上读取运动、当前输入及具体行误差，唤醒同岛主体。
 具体行通过 `IDeviceConstraintActivity.entity` 提供原约束实体身份。
@@ -62,6 +64,14 @@
 `predictDeviceBody`。休眠主体仍取得当前子步的起点与时刻；新唤醒主体的 Resume
 保留共同起点并完成一次实际预测。Dynamics 的附加访问使用活动资源的
 `GetWriteAccesses`，图的输入使用 `GetReadAccesses`。
+
+[DeviceAwakeAvbdConstraints](../../../assets/Shaders/physics_awake_avbd.slang) 保留原组的成员、
+参与端和读写角色，在有活动受力主体时初始化该行历史；Body 与 dual 迭代继续沿原图打包范围。
+`initializeDeviceAvbd` 和 `initializeDeviceAvbdRows` 的第三个具体 `IDeviceBodySelection`
+参数选择本次初始化的 Body 方程。传入 `DeviceAwakeBodies` 时，睡眠方程保留其原分解缓存；
+原两参入口选择全部已绑定方程。
+[DeviceAwakeContactResponseActions](../../../assets/Shaders/physics_awake_contact_actions.slang)
+同样按活动受力主体初始化响应，休眠期间保持原支撑力。
 
 ## 完成结果
 
