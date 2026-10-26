@@ -157,6 +157,7 @@ public sealed class PhysicsCrowdScene : IGameFramePhysics
         var response = Keep(new DeviceContactActions(backend, device, physics.Bodies, graph, contacts.Responses,
             shaders.CrowdResponses(), bindings, reads, 64, new IDeviceConstraintSelection[] { contacts.ResponseSelection }));
         var controls = Keep(new AdvanceCrowdTargets(world));
+        var equationInputs = new CrowdEquationInputs(avbd);
         var upload = bodyInputs.Upload().Then(physics.Lengths.BeginInputs()).Then(writeLengths).Then(physics.Lengths.UploadInputs())
             .Then(physics.Bends.BeginInputs()).Then(writeBends).Then(physics.Bends.UploadInputs()).Then(joints.Upload()).Then(motors.Upload());
         var initial = new PhysicsStepContext(world, new QueryDefinitionBuilder().All<CrowdPhysicsBody>().Build(), -1, 0, 1, 0, 0);
@@ -164,9 +165,9 @@ public sealed class PhysicsCrowdScene : IGameFramePhysics
             .Then(sources.Evaluate()).Then(sources.CopyOutput()).Then(results.Readback(64)).Schedule(in initial, default).Complete();
         var stages = controls.Then(upload).Then(poses.WriteTargets()).Then(inputs.WriteInputs()).Then(inputs.Apply())
             .Then(dynamics.Predict(new(0, -9.81f, 0))).Then(contacts.Detect()).Then(response.Initialize())
-            .Then(graph.Build()).Then(avbd.Initialize()).Then(xpbd.Initialize(buildGraph: false))
+            .Then(graph.Build()).Then(new InitializeCrowdEquations(equationInputs)).Then(xpbd.Initialize(buildGraph: false))
             .Then(new SolveCrowdConstraints(avbd.Iterate(1, buildGraph: false), xpbd.Iterate(1, buildGraph: false), 8)).Then(dynamics.UpdateVelocities())
-            .Then(response.ApplyRestitution(1)).Then(poses.MapBones()).Then(sources.CopyOutput());
+            .Then(response.ApplyRestitution(1, buildGraph: false)).Then(poses.MapBones()).Then(sources.CopyOutput());
         var consumer = results.Readback(64);
         var frame = PhysicsSimulation.Create(world, initial.Bodies, stages, 1).CreateFrame(consumer, StepSeconds, 0, 0, 0);
         _frame = frame; _complete = frame.CompleteForRead;
@@ -217,6 +218,21 @@ public sealed class PhysicsCrowdScene : IGameFramePhysics
 internal readonly struct CrowdPhysicsBody : IComponent;
 internal readonly record struct CrowdPose(float Phase) : IComponent;
 internal readonly record struct CrowdMotorTarget(Vector3 Position) : IComponent;
+
+internal sealed class CrowdEquationInputs(DeviceAvbdSolver solver)
+{
+    private bool _uploaded;
+    internal JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency)
+    {
+        DeviceInputTransfer transfer = _uploaded ? DeviceInputTransfer.Resident : DeviceInputTransfer.Upload;
+        _uploaded = true;
+        return solver.Initialize(transfer).Schedule(in context, dependency);
+    }
+}
+internal readonly struct InitializeCrowdEquations(CrowdEquationInputs inputs) : IPhysicsStage
+{
+    public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) => inputs.Schedule(in context, dependency);
+}
 
 internal readonly struct SolveCrowdConstraints(IterateDeviceAvbd avbd, IterateDeviceXpbdGraph xpbd, int iterations) : IPhysicsStage
 {

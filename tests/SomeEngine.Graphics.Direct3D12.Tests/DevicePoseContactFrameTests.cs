@@ -137,8 +137,9 @@ public sealed partial class DeviceAvbdTests
             .Then(detection.WriteContacts(new ContactPointOutput(detected), new[] { detected.WriteAccess }))
             .Then(matching.Match()).Then(refresh.Refresh(currentGeometry.Results)).Then(contactInputs.Upload()).Then(stateInputs.Upload())
             .Then(currentGeometry.Update()).Then(activity.WakeConnected()).Then(dynamics.Resume(new(0, -6, 0)))
-            .Then(graph.Build()).Then(response.Initialize()).Then(avbd.Initialize()).Then(xpbd.Initialize())
+            .Then(graph.Build()).Then(response.Initialize()).Then(new InitializeMappedPoseEquations(avbd)).Then(xpbd.Initialize())
             .Then(new AlternateContactAndLength(avbd.Iterate(1, buildGraph: false), xpbd.Iterate(1), 64)).Then(dynamics.UpdateVelocities())
+            .Then(response.ApplyRestitution(1, buildGraph: false))
             .Then(activity.Finish()).Then(activity.Readback(output)).Then(samples.Readback()).Then(contactEvents).Then(output.Emit())
             .Then(poseStages.MapBones()).Then(sources.CopyOutput());
         var consumer = results.Readback(64).Then(contactResults.Readback(64)).Then(sources.Readback()).Then(eventConsumer);
@@ -182,6 +183,13 @@ public sealed partial class DeviceAvbdTests
         public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) =>
             WorldJobs.GetScheduler(context.World).Schedule(this, [contacts.WriteAccess], dependency);
         public void Execute() => contacts.Clear();
+    }
+
+    private readonly struct InitializeMappedPoseEquations(DeviceAvbdSolver solver) : IPhysicsStage
+    {
+        public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) =>
+            solver.Initialize(context.Number == 7 ? DeviceInputTransfer.Upload : DeviceInputTransfer.Resident)
+                .Schedule(in context, dependency);
     }
 
     private ComputePipelineDesc CompilePoseGeometryUpdate(string type)
