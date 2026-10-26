@@ -28,6 +28,10 @@ XPBD 继续更新原 Length/Bend 乘子并投影节点。完成一次速度重�
 每个 `DeviceBodyBinding` 通过组件资源描述器登记自身 CPU 版本数组中的一个元素，
 各个结果包依其实际主体范围调度；位姿、速度、完成时钟与输入确认继续位于原组件和资源。
 
+时段输入沿 `DeviceBodyInputBuffers` 的原查询块读取。
+包含 `BodyForce`、`BodyImpulse`、`BodyVelocityTarget` 或 `BodyKinematicTarget` 的块进入原逐行合并，
+各行继续按当前成员和同一时间窗选择实际作用量与运动目标。
+
 Length 与 Bend 的投影共用 `physics_xpbd_projection_math.slang` 中的乘子增量，
 其来源为 [XPBD 论文式 18](https://mmacklin.com/xpbd.pdf)。AVBD 沿当前位置、原乘子、
 柔度、实际作用端 mobility 和步长计算试算力 `(λ + Δλ) / h²`，同时加入
