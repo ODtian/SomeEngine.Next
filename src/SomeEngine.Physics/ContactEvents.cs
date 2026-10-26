@@ -33,9 +33,20 @@ public readonly struct ContactEventComponents<TScope, TComponents>(TComponents c
 /// <summary>Observes selected solved points and their cleanup history in the current step's completion chain.</summary>
 public readonly struct ContactEvents<TScope> : IPhysicsStage, IDisposable where TScope : struct
 {
-    private readonly ContactEventData<TScope> _data;
+    private readonly ContactEvents<TScope, BodyContactEventSource> _events;
     public ContactEvents(World world, QueryHandle bodies, QueryHandle points, PhysicsEventBuffer events, float touchDistance) =>
-        _data = new(world, bodies, points, events, touchDistance);
+        _events = new(world, bodies, points, events, touchDistance, default);
+    public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) => _events.Schedule(in context, dependency);
+    public void Dispose() => _events.Dispose();
+}
+
+/// <summary>Observes one concrete source through the shared point history and cleanup lifecycle.</summary>
+public readonly struct ContactEvents<TScope, TSource> : IPhysicsStage, IDisposable
+    where TScope : struct where TSource : struct, IContactEventSource
+{
+    private readonly ContactEventData<TScope, TSource> _data;
+    public ContactEvents(World world, QueryHandle bodies, QueryHandle points, PhysicsEventBuffer events, float touchDistance, TSource source) =>
+        _data = new(world, bodies, points, events, touchDistance, source);
     public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency)
     {
         var commands = new JobCommandBuffer(context.World, 1);
@@ -43,35 +54,42 @@ public readonly struct ContactEvents<TScope> : IPhysicsStage, IDisposable where 
         JobHandle playback = commands.SchedulePlayback();
         return WorldJobs.GetScheduler(context.World).ScheduleFinally(new ReleasePhysicsEventCommands(commands), JobScheduleOptions.Default, playback);
     }
-    private readonly struct Observe(ContactEventData<TScope> data, PhysicsStepContext context) : IJobCommandProducer
+    private readonly struct Observe(ContactEventData<TScope, TSource> data, PhysicsStepContext context) : IJobCommandProducer
     {
         public void Execute(ref JobCommandWriter commands) => data.Execute(in context, ref commands);
     }
     public void Dispose() => _data.Dispose();
 }
 
-internal sealed class ContactEventData<TScope> : IDisposable where TScope : struct
+internal sealed class ContactEventData<TScope, TSource> : IDisposable
+    where TScope : struct where TSource : struct, IContactEventSource
 {
     private readonly World _world;
     private readonly QueryHandle _bodies, _points, _history;
     private readonly PhysicsEventBuffer _events;
     private readonly float _touchDistance;
     private readonly JobResourceToken _resource;
+    private readonly TSource _source;
+    private readonly QueryReadResources _bodyResources, _pointResources;
     private HashSet<Entity> _members = [], _current = [];
     internal readonly JobResourceAccess[] Accesses;
 
-    internal ContactEventData(World world, QueryHandle bodies, QueryHandle points, PhysicsEventBuffer events, float touchDistance)
+    internal ContactEventData(World world, QueryHandle bodies, QueryHandle points, PhysicsEventBuffer events, float touchDistance, TSource source)
     {
-        _world = world; _events = events; _touchDistance = touchDistance;
+        _world = world; _events = events; _touchDistance = touchDistance; _source = source;
+        _bodyResources = new(); _pointResources = new();
+        source.AddReadResources(_bodyResources); source.AddReadResources(_pointResources);
         _resource = WorldJobs.GetScheduler(world).CreateResourceToken("Contact event membership");
-        _bodies = world.Query(world.GetQueryDefinition(bodies).AsReadOnly().WithAccess(new QueryDefinitionBuilder().Read<BodyPose>().Build()));
-        QueryDefinition reads = new QueryDefinitionBuilder().Read<ContactPoint>().Read<UndirectedRelationEndpoints<ContactPoint>>()
-            .ReadBuffer<ContactBodyLink>().ReadWrite<ContactEventState<TScope>>().Optional<TriggerContact>(QueryAccess.Read)
-            .Optional<ContactResponse>(QueryAccess.Read).Optional<DirectedRelationEndpoints<ContactParticipant>>(QueryAccess.Read).Build();
-        _points = world.Query(world.GetQueryDefinition(points).AsReadOnly().WithAccess(reads));
+        _bodies = world.Query(source.AddBodyReads(world.GetQueryDefinition(bodies).AsFilter()).AsReadOnly());
+        QueryDefinition reads = new QueryDefinitionBuilder().All<ContactPoint>().ReadWrite<ContactEventState<TScope>>()
+            .Optional<TriggerContact>(QueryAccess.Read).Build();
+        _points = world.Query(source.AddReads(world.GetQueryDefinition(points).AsFilter()).AsReadOnly().WithAccess(reads));
         _history = world.Query(new QueryDefinitionBuilder().ReadWrite<ContactEventState<TScope>>());
         var accesses = new List<JobResourceAccess> { events.WriteAccess, JobResourceAccess.Write(_resource) };
-        foreach (QueryHandle query in new[] { _bodies, _points, _history }) PhysicsQueryAccess.AddAccesses(world, query, accesses);
+        PhysicsQueryAccess.AddAccesses(world, _bodies, accesses, _bodyResources);
+        PhysicsQueryAccess.AddAccesses(world, _points, accesses, _pointResources);
+        PhysicsQueryAccess.AddAccesses(world, _history, accesses);
+        source.AddAccesses(WorldJobs.GetScheduler(world), accesses);
         Accesses = accesses.ToArray();
     }
 
@@ -85,49 +103,57 @@ internal sealed class ContactEventData<TScope> : IDisposable where TScope : stru
         (_members, _current) = (_current, _members);
     }
 
-    private readonly struct ReadBodies(ContactEventData<TScope> data, PhysicsStepContext context) : IQueryExecution
+    private readonly struct ReadBodies(ContactEventData<TScope, TSource> data, PhysicsStepContext context) : IQueryExecution
     {
         public void Execute(scoped QueryCursor query)
+        {
+            var read = this;
+            data._bodyResources.Execute(query, ref read,
+                static (scoped QueryCursor rows, ref ReadBodies state) => state.Read(rows));
+        }
+        private void Read(scoped QueryCursor query)
         {
             var read = new ReadPoints(data, context, new PhysicsBodies(query));
             data._world.ExecuteQuery(data._points, ref read);
         }
     }
-    private readonly ref struct ReadPoints(ContactEventData<TScope> data, PhysicsStepContext context, PhysicsBodies bodies) : IQueryExecution
+    private readonly ref struct ReadPoints(ContactEventData<TScope, TSource> data, PhysicsStepContext context, PhysicsBodies bodies) : IQueryExecution
     {
         private readonly PhysicsBodies _bodies = bodies;
         public void Execute(scoped QueryCursor query)
         {
+            var read = this;
+            data._pointResources.Execute(query, ref read,
+                static (scoped QueryCursor rows, ref ReadPoints state) => state.Read(rows));
+        }
+        private void Read(scoped QueryCursor query)
+        {
             foreach (QueryRow row in query.Rows)
             {
                 if (!row.Has<ContactEventState<TScope>>()) continue;
+                if (!data._source.TryRead(row, _bodies, in context, out ContactEventSample sample)) continue;
                 data._current.Add(row.Entity);
-                ref readonly ContactPoint point = ref row.ReadRef<ContactPoint>();
-                ref readonly var endpoints = ref row.ReadRef<UndirectedRelationEndpoints<ContactPoint>>();
-                Vector3 delta = ContactBodyMath.GetDelta(in point, row.ReadBuffer<ContactBodyLink>().AsSpan(), _bodies, in context, false);
-                float separation = point.Separation + Vector3.Dot(point.Normal, delta - point.BodyAnchorDelta);
-                bool touching = separation <= data._touchDistance;
+                bool touching = sample.Separation <= data._touchDistance;
                 PhysicsEventKind kind = row.Has<TriggerContact>() ? PhysicsEventKind.Trigger : PhysicsEventKind.Contact;
                 ref ContactEventState<TScope> state = ref row.ReadWrite<ContactEventState<TScope>>();
                 if (state.Touching && (!touching || state.LastEvent.Kind != kind))
                 {
-                    state.LastEvent.Separation = separation; state.LastEvent.Point = point.WorldPoint; state.LastEvent.Normal = point.Normal;
+                    state.LastEvent.Separation = sample.Separation; state.LastEvent.Point = sample.WorldPoint; state.LastEvent.Normal = sample.Normal;
                     data.End(ref state, in context);
                 }
                 if (touching)
                 {
-                    Vector3 force = row.TryReadRef<ContactResponse>(out var response) ? response.Value.ForceOnSecond : default;
                     state.LastEvent = new PhysicsEvent { Kind = kind, Phase = state.Touching ? PhysicsEventPhase.Stay : PhysicsEventPhase.Begin,
-                        Subject = row.Entity, First = endpoints.EndpointA, Second = endpoints.EndpointB,
-                        Substep = context.Substep, Time = context.EndTime, Point = point.WorldPoint, Normal = point.Normal,
-                        Separation = separation, Force = force };
+                        Subject = row.Entity, First = sample.First, Second = sample.Second,
+                        Substep = context.Substep, Time = context.EndTime, Point = sample.WorldPoint, Normal = sample.Normal,
+                        Separation = sample.Separation, Force = sample.Force };
                     data._events.Add(in state.LastEvent);
                 }
                 state.Touching = touching;
             }
         }
     }
-    private ref struct ReadHistory(ContactEventData<TScope> data, PhysicsStepContext context, JobCommandWriter commands) : IQueryExecution
+    private ref struct ReadHistory(ContactEventData<TScope, TSource> data, PhysicsStepContext context, JobCommandWriter commands) : IQueryExecution
     {
         private JobCommandWriter _commands = commands;
         public void Execute(scoped QueryCursor query)
