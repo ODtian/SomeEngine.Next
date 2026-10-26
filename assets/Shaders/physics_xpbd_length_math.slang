@@ -1,6 +1,7 @@
 #ifndef PHYSICS_XPBD_LENGTH_MATH
 #define PHYSICS_XPBD_LENGTH_MATH
 #include "physics_xpbd_types.slang"
+#include "physics_xpbd_projection_math.slang"
 #include "physics_body_math.slang"
 #include "physics_length_data.slang"
 RWStructuredBuffer<float> DeviceLengthMultipliers;
@@ -25,10 +26,10 @@ struct DeviceXpbdLengthProjection<TSelection : IDeviceBodySelection> : IDeviceXp
         float distance = deviceLengthGradient(first.position, second.position, gradient);
         float firstWeight = first.motion == 2 && selection.contains(constraint.firstBody) ? first.inverseMass : 0;
         float secondWeight = second.motion == 2 && selection.contains(constraint.secondBody) ? second.inverseMass : 0;
-        float alpha = constraint.compliance / (context.duration * context.duration);
         float multiplier = DeviceLengthMultipliers[row];
-        float change = (-(distance - constraint.restLength) - alpha * multiplier) /
-            (firstWeight + secondWeight + alpha);
+        float forceStiffness;
+        float change = deviceXpbdMultiplierChange(distance - constraint.restLength,multiplier,
+            firstWeight + secondWeight,constraint.compliance,context.duration,forceStiffness);
         DeviceLengthMultipliers[row] = multiplier + change;
         if (firstWeight > 0)
         {

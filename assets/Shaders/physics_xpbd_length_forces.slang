@@ -4,7 +4,7 @@
 #include "physics_length_graph.slang"
 #include "physics_xpbd_length_math.slang"
 
-// XPBD initializes and updates the original multiplier; AVBD consumes its current world force.
+// XPBD updates the original multiplier; AVBD reads the same projection's trial force and response.
 struct DeviceXpbdLengthForces : IDeviceAvbdConstraints
 {
     DeviceLengthBodies participants;
@@ -19,11 +19,17 @@ struct DeviceXpbdLengthForces : IDeviceAvbdConstraints
     void accumulate(uint row,uint bodyIndex,DeviceAvbdStep context,inout DeviceAvbdEquation equation)
     {
         DeviceLengthConstraint constraint=DeviceLengths[row];
+        DeviceBodyState first=DeviceBodyStates[constraint.firstBody],second=DeviceBodyStates[constraint.secondBody];
         float3 gradient;
-        deviceLengthGradient(DeviceBodyStates[constraint.firstBody].position,DeviceBodyStates[constraint.secondBody].position,gradient);
-        float3 onSecond=gradient*(DeviceLengthMultipliers[row]/(context.duration*context.duration));
-        if(bodyIndex==constraint.firstBody) equation.linearGradient+=onSecond;
-        if(bodyIndex==constraint.secondBody) equation.linearGradient-=onSecond;
+        float distance=deviceLengthGradient(first.position,second.position,gradient);
+        DeviceGraphBodies selection;
+        float firstWeight=first.motion==2&&selection.contains(constraint.firstBody)?first.inverseMass:0;
+        float secondWeight=second.motion==2&&selection.contains(constraint.secondBody)?second.inverseMass:0;
+        float multiplier=DeviceLengthMultipliers[row],stiffness;
+        multiplier+=deviceXpbdMultiplierChange(distance-constraint.restLength,multiplier,firstWeight+secondWeight,
+            constraint.compliance,context.duration,stiffness);
+        float3 derivative=bodyIndex==constraint.firstBody?-gradient:gradient;
+        deviceAvbdAddRow(equation,derivative,float3(0),-multiplier/(context.duration*context.duration),stiffness);
     }
     void updateDuals(uint row,DeviceAvbdStep context) { }
     void adjust(uint body,DeviceAvbdStep context,DeviceAvbdEquation equation,inout float3 translation,inout float3 rotation) { }
