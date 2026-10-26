@@ -99,5 +99,5 @@ void updateDeviceAvbdBody<T : IDeviceAvbdConstraints>(uint index,T constraints)
     DeviceAvbdBodyEquations[equationIndex]=equation;
 }
 void updateDeviceAvbdDuals<T : IDeviceAvbdConstraints>(uint row,T constraints)
-{ if(row<constraints.count()&&constraints.active(row)) constraints.updateDuals(row,AvbdStep); }
+{ if(row<constraints.count()&&constraints.active(row)&&deviceGraphRowActive(ConstraintGraphRows[row])) constraints.updateDuals(row,AvbdStep); }
 #endif

@@ -1,5 +1,7 @@
 # Body 活动与共同子步
 
+设备表示、活动图范围和完成接口见[设备主体活动](Device-Activity.md)。
+
 本页记录当前活动组件、共同预测与实际图工作范围。源码入口为 [BodyActivity](../../../src/SomeEngine.Physics/BodyActivity.cs)、[PredictActiveBodies](../../../src/SomeEngine.Physics/PredictActiveBodies.cs)、[PhysicsActivity](../../../src/SomeEngine.Physics/PhysicsActivity.cs) 和[图变化维护](../../../src/SomeEngine.Physics/PhysicsGraph.Changes.cs)。公开入口见 [PhysicsActivityTests](../../../tests/SomeEngine.Physics.Tests/PhysicsActivityTests.cs)。
 
 `BodyActivity` 在 Body 实体上保存 `Sleeping`、`QuietSeconds` 和角运动的长度尺度 `Radius`。同一组件的内部 `MotionPredicted` 标记本子步实际运动预测是否完成。真实位姿、速度、质量和共同子步输入继续由原 Body 组件持有。
