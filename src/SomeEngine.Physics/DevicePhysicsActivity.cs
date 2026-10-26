@@ -39,11 +39,11 @@ public sealed class DevicePhysicsActivity : IDisposable
         _signals = backend.CreateBuffer(device, new((ulong)activities.Bodies.Capacity * 4,
             BufferUsages.ShaderRead | BufferUsages.ShaderWrite, "Activity island signals"), MemoryType.DeviceLocal);
         _signalsView = backend.CreateBufferUav(device, new(_signals, new(0, _signals.Info.Size), StructureStride: 4));
-        _previousRows = backend.CreateBuffer(device, new((ulong)graph.ConstraintCapacity * 16,
+        _previousRows = backend.CreateBuffer(device, new((ulong)graph.ConstraintCapacity * 20,
             BufferUsages.ShaderRead | BufferUsages.ShaderWrite, "Activity constraint identities"), MemoryType.DeviceLocal);
         _previousParticipants = backend.CreateBuffer(device, new((ulong)graph.ConstraintCapacity * (ulong)graph.BodiesPerConstraint * 16,
             BufferUsages.ShaderRead | BufferUsages.ShaderWrite, "Activity previous participants"), MemoryType.DeviceLocal);
-        _previousRowsView = backend.CreateBufferUav(device, new(_previousRows, new(0, _previousRows.Info.Size), StructureStride: 16));
+        _previousRowsView = backend.CreateBufferUav(device, new(_previousRows, new(0, _previousRows.Info.Size), StructureStride: 20));
         _previousParticipantsView = backend.CreateBufferUav(device, new(_previousParticipants, new(0, _previousParticipants.Info.Size), StructureStride: 16));
         _readback = backend.CreateBuffer(device, new(activities.States.Info.Size, BufferUsages.CopyDestination,
             "Completed body activity"), MemoryType.Readback);

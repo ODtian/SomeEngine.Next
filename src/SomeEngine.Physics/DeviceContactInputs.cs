@@ -84,6 +84,9 @@ public sealed class DeviceContactInputs : IDisposable, IDevicePhysicsSubmission
         if (existed && previous.Index != index) _retiredIndices.Add(previous.Index);
         bool geometry = created || previous.Point != version.Point || previous.Endpoints != version.Endpoints;
         bool anchors = created || previous.Links != version.Links;
+        bool materialChanged = created || previous.Material != version.Material;
+        bool changed = geometry || anchors || materialChanged;
+        version = version with { InputVersion = changed ? previous.InputVersion + 1 : previous.InputVersion };
         if (geometry || anchors)
         {
             ref readonly ContactPoint point = ref row.ReadRef<ContactPoint>();
@@ -94,12 +97,16 @@ public sealed class DeviceContactInputs : IDisposable, IDevicePhysicsSubmission
             if (anchors)
                 _anchorRanges.Add(new((ulong)(index * _anchors.BodiesPerContact) * 32, (ulong)row.ReadBuffer<ContactBodyLink>().Count * 32));
         }
-        if (!geometry && (created || previous.Material != version.Material))
+        if (!geometry && materialChanged)
         {
             ref readonly ContactMaterial material = ref row.ReadRef<ContactMaterial>();
             _data.WriteInputField(index, 44, in material); _dataRanges.Add(new((ulong)index * 128 + 44, 24));
         }
-        if (created) _metadataRanges.Add(new((ulong)index * 16, 16));
+        if (changed)
+        {
+            _data.WriteInputMetadata(index, entity, version.InputVersion);
+            _metadataRanges.Add(new((ulong)index * 16, 16));
+        }
         _versions[entity] = version;
     }
     private readonly struct ReadAccess(DeviceContactInputs inputs) : IQueryExecution
@@ -131,7 +138,8 @@ public sealed class DeviceContactInputs : IDisposable, IDevicePhysicsSubmission
         }
         if (count < ranges.Count) ranges.RemoveRange(count, ranges.Count - count);
     }
-    private readonly record struct ContactSourceVersions(int Index, uint Point, uint Material, (uint Header, uint Inline) Links, uint Endpoints);
+    private readonly record struct ContactSourceVersions(int Index, uint Point, uint Material,
+        (uint Header, uint Inline) Links, uint Endpoints, uint InputVersion = 0);
     public void Dispose() { _world.ReleaseQuery(_rows); _world.ReleaseQuery(_access); }
 }
 public readonly struct UploadEditedDeviceContacts(DeviceContactInputs inputs) : IPhysicsStage
