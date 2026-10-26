@@ -175,45 +175,51 @@ public sealed class DeviceBodyInputBuffers : IDisposable
     {
         internal void Execute(scoped QueryCursor rows)
         {
-            foreach (QueryRow row in rows.Rows)
+            foreach (QueryChunkView chunk in rows.Chunks)
             {
-                var binding = row.Read<DeviceBodyBinding>();
-                if (!ReferenceEquals(binding.Bodies, Inputs._bodies)) continue;
-                var input = new DeviceBodyInput { BodyIndex = (uint)binding.Index,
-                    EntityIndex = (uint)row.Entity.Index, EntityGeneration = (uint)row.Entity.Generation };
-                if (row.HasBuffer<BodyForce>())
-                    foreach (ref readonly BodyForce force in row.ReadBuffer<BodyForce>().AsSpan())
-                    {
-                        float duration = (float)Math.Max(0, Math.Min(End, force.EndTime) - Math.Max(Start, force.StartTime));
-                        input.LinearImpulse += force.Force * duration; input.AngularImpulse += force.Torque * duration;
-                    }
-                if (row.HasBuffer<BodyImpulse>())
-                    foreach (ref readonly BodyImpulse impulse in row.ReadBuffer<BodyImpulse>().AsSpan())
-                        if (impulse.Time >= Start && impulse.Time < End)
-                        { input.LinearImpulse += impulse.Linear; input.AngularImpulse += impulse.Angular; }
-                if (input.LinearImpulse != Vector3.Zero || input.AngularImpulse != Vector3.Zero) input.Kinds |= DeviceBodyInputKinds.Momentum;
-                double latest = Start;
-                if (row.HasBuffer<BodyVelocityTarget>())
-                    foreach (ref readonly BodyVelocityTarget target in row.ReadBuffer<BodyVelocityTarget>().AsSpan())
-                        if (target.Time >= latest && target.Time < End)
-                        {
-                            input.TargetLinearVelocity = target.Linear; input.TargetAngularVelocity = target.Angular;
-                            input.Kinds |= DeviceBodyInputKinds.Velocity; latest = target.Time;
-                        }
-                latest = double.NegativeInfinity;
-                if (row.HasBuffer<BodyKinematicTarget>())
-                    foreach (ref readonly BodyKinematicTarget target in row.ReadBuffer<BodyKinematicTarget>().AsSpan())
-                        if (target.StartTime <= End && target.StartTime >= latest)
-                        {
-                            float amount = (float)Math.Clamp((End - target.StartTime) / (target.EndTime - target.StartTime), 0, 1);
-                            input.TargetPosition = Vector3.Lerp(target.StartPose.Position, target.EndPose.Position, amount);
-                            input.TargetRotation = Quaternion.Slerp(target.StartPose.Rotation, target.EndPose.Rotation, amount);
-                            input.Kinds |= DeviceBodyInputKinds.Kinematic; latest = target.StartTime;
-                        }
-                if (input.Kinds == 0) continue;
-                MemoryMarshal.Cast<byte, DeviceBodyInput>(Inputs._inputMapping.Bytes)[Inputs._count] = input;
-                Inputs._indices[Inputs._count++] = binding.Index;
+                if (!chunk.HasBuffer<BodyForce>() && !chunk.HasBuffer<BodyImpulse>()
+                    && !chunk.HasBuffer<BodyVelocityTarget>() && !chunk.HasBuffer<BodyKinematicTarget>()) continue;
+                foreach (QueryRow row in chunk.Rows) ReadInput(row);
             }
+        }
+        private void ReadInput(scoped QueryRow row)
+        {
+            var binding = row.Read<DeviceBodyBinding>();
+            if (!ReferenceEquals(binding.Bodies, Inputs._bodies)) return;
+            var input = new DeviceBodyInput { BodyIndex = (uint)binding.Index,
+                EntityIndex = (uint)row.Entity.Index, EntityGeneration = (uint)row.Entity.Generation };
+            if (row.HasBuffer<BodyForce>())
+                foreach (ref readonly BodyForce force in row.ReadBuffer<BodyForce>().AsSpan())
+                {
+                    float duration = (float)Math.Max(0, Math.Min(End, force.EndTime) - Math.Max(Start, force.StartTime));
+                    input.LinearImpulse += force.Force * duration; input.AngularImpulse += force.Torque * duration;
+                }
+            if (row.HasBuffer<BodyImpulse>())
+                foreach (ref readonly BodyImpulse impulse in row.ReadBuffer<BodyImpulse>().AsSpan())
+                    if (impulse.Time >= Start && impulse.Time < End)
+                    { input.LinearImpulse += impulse.Linear; input.AngularImpulse += impulse.Angular; }
+            if (input.LinearImpulse != Vector3.Zero || input.AngularImpulse != Vector3.Zero) input.Kinds |= DeviceBodyInputKinds.Momentum;
+            double latest = Start;
+            if (row.HasBuffer<BodyVelocityTarget>())
+                foreach (ref readonly BodyVelocityTarget target in row.ReadBuffer<BodyVelocityTarget>().AsSpan())
+                    if (target.Time >= latest && target.Time < End)
+                    {
+                        input.TargetLinearVelocity = target.Linear; input.TargetAngularVelocity = target.Angular;
+                        input.Kinds |= DeviceBodyInputKinds.Velocity; latest = target.Time;
+                    }
+            latest = double.NegativeInfinity;
+            if (row.HasBuffer<BodyKinematicTarget>())
+                foreach (ref readonly BodyKinematicTarget target in row.ReadBuffer<BodyKinematicTarget>().AsSpan())
+                    if (target.StartTime <= End && target.StartTime >= latest)
+                    {
+                        float amount = (float)Math.Clamp((End - target.StartTime) / (target.EndTime - target.StartTime), 0, 1);
+                        input.TargetPosition = Vector3.Lerp(target.StartPose.Position, target.EndPose.Position, amount);
+                        input.TargetRotation = Quaternion.Slerp(target.StartPose.Rotation, target.EndPose.Rotation, amount);
+                        input.Kinds |= DeviceBodyInputKinds.Kinematic; latest = target.StartTime;
+                    }
+            if (input.Kinds == 0) return;
+            MemoryMarshal.Cast<byte, DeviceBodyInput>(Inputs._inputMapping.Bytes)[Inputs._count] = input;
+            Inputs._indices[Inputs._count++] = binding.Index;
         }
     }
 }
