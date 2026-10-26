@@ -81,6 +81,13 @@ Skinning 提供共同编码，[gpu_pose_sampling](../../../assets/Shaders/gpu_po
 当次 `ModelOffset`，沿派生后代索引平移对应模型矩阵。Game 来源与 Skinning 共用
 [gpu_pose_translation](../../../assets/Shaders/gpu_pose_translation.slang) 的同一具体内核。
 
+`TwoBone`、`Aim`、`Stride` 选择对应的模型操作内核；来源从原 `GpuPoseGoal` Buffer 和
+`GpuPoseTarget.Movement` 捕获本次输入，`DevicePoseCapacity.Goals`、`Operations` 声明目标及
+操作容量。父区段的完整 rig 先于子区段，单区段按原 `GpuPoseRig.Steps` 次序执行。
+[GpuRigDefinitions](../../../src/SomeEngine.Animation.Pose/GpuRigDefinitions.cs) 与
+[gpu_pose_rig](../../../assets/Shaders/gpu_pose_rig.slang) 分别为两条求值路径提供同一份具体
+定义和 TwoBone、Aim、Stride 数学；后代范围从当前骨骼对应关系派生。
+
 `Readback()` 是项目选择的 CPU 来源消费阶段；设备 copy、外部 fence 和矩阵交付处于
 返回的物理 Job 链。完成后按原目标 Entity 调用 `ReadModels`，后续作业通过
 `GetResultReadAccesses` 声明读取。设备消费者通过 `Models`、`GetModelRange` 和
