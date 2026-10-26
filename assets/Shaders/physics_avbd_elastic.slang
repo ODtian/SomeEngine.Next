@@ -5,19 +5,8 @@
 #include "physics_avbd.slang"
 #include "physics_elastic_data.slang"
 #include "physics_constraint_math.slang"
-struct DeviceAvbdElasticState
-{
-    float3 linearMultiplier; float linearPenalty;
-    float3 angularMultiplier; float angularPenalty;
-    float3 initialLinearError; uint padding0;
-    float3 initialAngularError; uint padding1;
-};
-RWStructuredBuffer<DeviceAvbdElasticState> DeviceAvbdElasticStates;
-StructuredBuffer<uint2> DeviceElasticAvbdSelection;
-float3 deviceElasticLinearError(DeviceElasticConstraint constraint,DeviceBodyState first,DeviceBodyState second)
-{ return first.position+bodyRotate(first.rotation,constraint.firstAnchor)-second.position-bodyRotate(second.rotation,constraint.secondAnchor); }
-float3 deviceElasticAngularError(DeviceElasticConstraint constraint,float4 first,float4 second)
-{ return bodyRotationVector(bodyRotationMultiply(bodyRotationMultiply(bodyRotationConjugate(first),second),bodyRotationConjugate(constraint.restRotation))); }
+#include "physics_elastic_math.slang"
+#include "physics_avbd_elastic_state.slang"
 struct DeviceElasticAvbdConstraints : IDeviceAvbdConstraints
 {
     DeviceElasticBodies participants;
