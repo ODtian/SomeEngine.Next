@@ -33,6 +33,27 @@
 `DeviceAvbdConstraintGroups<TFirst,TSecond>` 将多种具体约束组装进同一 Body 局部方程。
 `adjust` 位于局部响应求出之后、位姿提交之前。
 
+`DeviceAvbdJointState` 保存六轴力乘子、数值罚参数与子步初始误差，
+对应原 `AvbdJointState`；`DeviceAvbdMotorState` 对应原 `AvbdMotorState`。
+两者由同一显式组件输入阶段选择和更新历史资源。
+[关节 ALM](../../../assets/Shaders/physics_avbd_joint.slang) 沿共同关节行处理
+锁定、自由和单边限位，再将 `K/rho` 对应力与曲率叠加到 Body 方程。
+[motor ALM](../../../assets/Shaders/physics_avbd_motor.slang) 沿同一关节参数行读取框架与端点，
+在子步结束时刻计算目标位置、旋转和速度，将阻尼 `D/h` 合入平衡点与等效刚度。
+物理力/力矩按原上限投影，对偶力继续保存在对应历史行。
+
+共同 `physics_joint_bodies.slang` 和 `physics_motor_bodies.slang` 持有原参与角色。
+Target 反馈的源 Body 参与当前框架读取，目标 Body 参与力装配；Both 反馈的两端共同受力。
+局部 Body 装配沿图的实际写端筛选，图连接和颜色仍覆盖动态读取依赖。
+世界目标的反作用力使用原导数，源端曲率保持其世界目标语义。
+
+项目自己的 `IDeviceConstraintSource` 可在实际原行读取附加组件；
+自己的 `IDeviceAvbdConstraints` 可绑定额外设备资源，使用共同 `DeviceAvbdStep`、
+`deviceAvbdMaterial` 与 `deviceAvbdAddRow` 装配能量。
+[用户能量行为](../../../tests/SomeEngine.Graphics.Direct3D12.Tests/DeviceAvbdUserTests.cs)
+将项目目标能量与内置连接放在同一个具体组合中，
+两个对偶历史分别驻留，并在同一个 Body 方程中同时贡献梯度与曲率。
+
 ## 实际设备参与图
 
 [DeviceConstraintGraph](../../../src/SomeEngine.Physics/DeviceConstraintGraph.cs) 使用
@@ -47,6 +68,28 @@ Body 颜色按当前约束连接，约束颜色按具体组与实际动态写端
 构图的控制计数通过 16 字节完成读回供颜色派发使用。
 该等待、原查询与设备输入访问、后续数值提交处在同一个获准的 Job 范围，
 最终 GPU 完成继续沿共同 `DevicePhysicsJobs` 和 RHI queue fence。
+
+## 关节长程界
+
+[DeviceJointBounds](../../../src/SomeEngine.Physics/DeviceJointBounds.cs) 对应原关节上的
+`LongRangeJointBound` 元素。`BuildInputs()` 复用原 `JointLongRangeGraph.Refresh`，
+按原关节、受保护端点和 Body 质量版本维护刚体段、根路径和逐级距离界。
+原拓扑推导继续持有原 Buffer，设备 source 在同一次有效原行读取中解析
+`OtherJoint`、端角色和共同 `DeviceJointConstraint` 参数行。
+
+16 字节 `DeviceJointBoundSet` 保存原关节参数行、界跨度和数量；
+32 字节界数据保存另一关节行、双方端角色、另一关节实际 Entity、最小/最大半径。
+局部锚和 Body 索引继续从共同关节参数读取。
+`DeviceJointBoundsBinding` 在原关节选择这份表示，项目显式给出每关节的界容量。
+header 与 side 输入共享原 source 读取和输出访问，随后沿同一完成链上传。
+
+32 字节 `DeviceJointBoundState` 对应原界元素的乘子、罚参数与初始误差。
+原拓扑实际重建时由原 Buffer 初始化这份数值历史，常规参数刷新保持设备历史。
+[设备长程数学](../../../assets/Shaders/physics_avbd_joint_bounds.slang) 在子步初始化时
+沿当前锚点和实际所选主体的移动率计算 `rho = PenaltyScale / (h² mobility)`。
+每轮将区间上下界的单边力、径向与角曲率组装到共同局部方程，再更新当前对偶力。
+长程参与端同时进入同一个 Body 图、邻接和颜色；该叶与普通关节及其他具体约束组合。
+刚性界的推导范围沿原无限线性刚度和锁定坐标判定。
 
 ## 多端接触参数与公共作用量
 

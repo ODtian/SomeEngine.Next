@@ -11,7 +11,7 @@
 
 `DeviceConstraintBinding<TData>` 放在原约束实体上，保存共同参数资源及其中的行索引。
 `DeviceConstraintData<TData>` 保存原物理参数的所选设备表示；每行 metadata 保留实际
-Entity 索引、代次和本次查询参与标记。`BeginInputs()` 开始本次成员写入，
+Entity 索引、代次和上传时的查询参与标记。`BeginInputs()` 开始本次成员写入，
 `WriteInputs<TComponent,TSource>(world,rows,source,rowsPerPacket)` 沿原查询筛选读取原组件，
 由具体 `IDeviceConstraintSource<TComponent,TData>` 解析参数与跨实体引用。
 `UploadInputs()` 将本次参数和成员 metadata 提交设备。
@@ -25,7 +25,8 @@ source 的 `AddReads`、`AddReadResources` 与静态组件资源描述器声明�
 参数绑定中的行索引同时定位数值历史。
 `DeviceConstraintState<TState>` 单处保存设备乘子，参数上传与投影分别声明自己的 buffer。
 投影从原查询中的参数和历史绑定选择本次实际行，GPU 直接更新该行历史和共同
-`DeviceBodies.States`。索引列表保存派生执行位置。
+`DeviceBodies.States`。独立投影的索引列表同时保存本次选中实体的索引与代次，
+内核将其与同一参数 buffer 的 metadata 匹配后执行；参数刷新沿原 writer 与上传阶段完成。
 
 ## 具体内核与阶段
 
@@ -36,6 +37,7 @@ source 的 `AddReads`、`AddReadResources` 与静态组件资源描述器声明�
 提供的额外资源；两者的结果继续沿同一个物理步完成链返回原实体。
 `Initialize()` 初始化所选行的子步历史，`Iterate(n)` 在相同子步内累计乘子。
 同轮可同时写入的行由调用者提供的独立约束范围决定。
+该入口同时接收 `DeviceBodyDynamics`，通过其原选择成员标记限定可写 Body。
 每轮之间沿 RHI UAV barrier 保证前轮写入对后轮可见；提交和完成沿共同设备 Job/fence 链。
 
 [DeviceLengthSource](../../../src/SomeEngine.Physics/DeviceChainConstraints.cs) 从原
@@ -76,3 +78,57 @@ Source/World 空间和 Target/Both 反馈由原 motor 参数选择。
 参数上传保持同一份物理数据。初始化与继续迭代沿共同阶段，完成结果继续回到原 Body。
 `DeviceXpbdJointTests` 对应的公开方法位于 `DeviceXpbdTests` 的同名分部文件中，
 覆盖有限刚度、双向物理上限与世界空间定时阻尼驱动的实际设备运动。
+
+## 图与 SIMT 行块
+
+[DeviceXpbdSolver](../../../src/SomeEngine.Physics/DeviceXpbdSolver.cs) 接收同一
+`DeviceConstraintGraph`、项目编译的具体入口、输入资源与原乘子 buffers。
+`DeviceXpbdSettings` 显式选择迭代数和 `RowsPerBlock`，线程组大小与实际 shader 对齐。
+初始化、继续迭代和完整求解分别由 `Initialize()`、`Iterate(n)` 与 `Solve()` 提供。
+
+[physics_xpbd_graph](../../../assets/Shaders/physics_xpbd_graph.slang) 用
+`DeviceXpbdConstraintRows<TBodies,TProjection>` 连接具体参与角色与原投影，
+`DeviceXpbdConstraintGroups<TFirst,TSecond>` 保持类型组顺序。
+每轮按图的类型组、颜色顺序派发，`RowOrder` 和 `RowRanges` 决定每个实际行块；
+独立岛的同色行合在同一范围，块间和块内的独立行沿实际 SIMT 工作项执行。
+颜色之间使用 UAV barrier，原主体状态与乘子在设备原位更新。
+
+Body 选择由共同 `IDeviceBodySelection` 解释。独立投影采用 Dynamics 同一次捕获的
+`DeviceSelectedBodies` 成员标记，查询按原 Body index 直接寻址；图投影采用
+`DeviceGraphBodies` 的 selected-dynamic 索引。长度、弯曲、Joint 和 Motor 的同源投影
+分别以该具体选择类型实例化，分母权重与实际校正都沿选定写范围；其他动态端提供读取。
+`DeviceXpbdStateRows<TState>` 从原实体的实际历史绑定选择参与范围。
+
+`DeviceLengthBodies`、[DeviceBendBodies](../../../assets/Shaders/physics_bend_graph.slang)、
+共同 `DeviceJointBodies`、`DeviceMotorBodies` 和 `DeviceContactBodies` 提供各自的实际端点与写角色。
+项目将这些具体类型以 `DeviceConstraintBodyGroups` 组成构图入口，再用相同顺序的
+`DeviceXpbdConstraintGroups` 组成数值入口。Motor 从原 Joint 行读取框架，Target/Both 反馈
+决定 source 的读写角色；参与身份继续由原实体绑定和本步选择匹配。
+
+例如，下列具体组合是公共设备适配的一种用法：
+
+```slang
+typedef DeviceXpbdConstraintRows<DeviceLengthBodies,
+    DeviceXpbdLengthProjection<DeviceGraphBodies>> LengthRows;
+typedef DeviceXpbdConstraintRows<DeviceBendBodies,
+    DeviceXpbdBendProjection<DeviceGraphBodies>> BendRows;
+typedef DeviceXpbdConstraintGroups<LengthRows, BendRows> ProjectionRows;
+```
+
+用户的 `IDeviceXpbdProjection` 可以替换上述任一具体投影，并保持同一角色、颜色和完成链。
+构图入口使用自身的常量 buffer 参数，数值入口使用 `XpbdGraphStep` 的普通数据布局；
+项目分别编译两组入口，使各自反射布局与提交的数据对应。
+完整组装见 [DeviceXpbdMixedGraphTests](../../../tests/SomeEngine.Graphics.Direct3D12.Tests/DeviceXpbdMixedGraphTests.cs)。
+
+## 共同点接触
+
+[DeviceXpbdContactProjection](../../../assets/Shaders/physics_xpbd_contact.slang) 读取共同
+`DeviceContactConstraint` 和 `DeviceContactBody` 加权端，调用共同 delta、合并 Jacobian、
+所选 Body 权重与校正。法向使用原有限刚度、接近阻尼和单边累积乘子；切向乘子
+投影到原静、动摩擦范围。同一 Body 的多个局部锚先形成合并 Jacobian。
+
+`DeviceXpbdState<XpbdContactState>` 选择该接触的设备位移乘子。
+共同 `DeviceContactActions.Initialize()` 在位置求解前记录接近速度与时间区间，
+投影将当前乘子作用量写入同一 `DeviceContactResponses`；速度重建后可调用
+`ApplyRestitution(n)`，再由 `DeviceContactResults` 回到原 `ContactResponse`。
+上述 stage 的句柄保持设备、必要读回、组件消费及资源归还的完整依赖。
