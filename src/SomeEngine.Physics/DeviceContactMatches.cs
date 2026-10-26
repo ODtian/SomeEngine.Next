@@ -35,6 +35,7 @@ public sealed class DeviceContactMatches : IDisposable, IDevicePhysicsSubmission
     private readonly JobResourceToken _resource;
     private readonly MatchedContact[] _values;
     private readonly bool[] _used;
+    private readonly Dictionary<Entity, uint> _pointIndices = [];
     private int _nextIndex;
     private bool _initialized;
 
@@ -80,19 +81,36 @@ public sealed class DeviceContactMatches : IDisposable, IDevicePhysicsSubmission
     public DeviceContactMatchResults Results => new(this);
     public DeviceMatchedContactComponents<TComponents> Components<TComponents>(TComponents components)
         where TComponents : struct, IContactPointComponents => new(this, components);
+    public DeviceContactGeometry CreateGeometryUpdate(DeviceBodies bodies, DeviceContactBodies anchors, ComputePipelineDesc kernel) =>
+        new(_backend, _device, this, _parameters, _detection, bodies, anchors, kernel);
     internal JobResourceAccess ReadAccess => JobResourceAccess.Read(_resource);
     internal JobResourceAccess WriteAccess => JobResourceAccess.Write(_resource);
     IGraphicsBackend IDevicePhysicsSubmission.Backend => _backend;
     Device IDevicePhysicsSubmission.Device => _device;
 
-    internal DeviceConstraintBinding<DeviceContactConstraint> Allocate()
+    internal DeviceConstraintBinding<DeviceContactConstraint> Allocate(Entity point)
     {
         while (_used[_nextIndex]) _nextIndex++;
         int index = _nextIndex++; _used[index] = true;
+        _pointIndices[point] = (uint)index;
         return new(_parameters, index);
     }
     internal bool Read(int input, out Entity point, out float distanceSquared)
     { point = _values[input].Point; distanceSquared = _values[input].DistanceSquared; return true; }
+    internal void Record(int input, Entity point)
+    {
+        MatchedContact value = _values[input];
+        if (value.Point != Entity.Null && value.Point != point)
+        { _used[value.ParameterIndex] = false; _pointIndices.Remove(value.Point); }
+        _values[input] = new(point, value.ParameterIndex, value.DistanceSquared);
+    }
+    internal void WriteParameterIndices(Span<uint> indices)
+    {
+        int input = 0;
+        for (int pair = 0; pair < _detection.Count; pair++)
+            for (int point = 0; point < _detection.ReadContacts(pair).Length; point++)
+                indices[pair * 4 + point] = _pointIndices[_values[input++].Point];
+    }
 
     internal JobHandle Schedule(JobHandle dependency)
     {
@@ -144,7 +162,7 @@ public sealed class DeviceContactMatches : IDisposable, IDevicePhysicsSubmission
     {
         public void Execute()
         {
-            Array.Clear(matches._used); matches._nextIndex = 0;
+            Array.Clear(matches._used); matches._pointIndices.Clear(); matches._nextIndex = 0;
             using MappedBuffer mapping = matches._backend.Map(matches._readback, MapType.Read, BufferRange.Whole);
             mapping.Invalidate(mapping.Range);
             ReadOnlySpan<MatchedContact> values = MemoryMarshal.Cast<byte, MatchedContact>(mapping.Bytes);
@@ -154,13 +172,18 @@ public sealed class DeviceContactMatches : IDisposable, IDevicePhysicsSubmission
                 {
                     MatchedContact value = values[pair * 4 + point];
                     matches._values[output++] = value;
-                    if (value.Point != Entity.Null) matches._used[value.ParameterIndex] = true;
+                    if (value.Point != Entity.Null)
+                    { matches._used[value.ParameterIndex] = true; matches._pointIndices[value.Point] = value.ParameterIndex; }
                 }
         }
     }
     [StructLayout(LayoutKind.Sequential, Size = 16)]
     private readonly struct MatchedContact
-    { public readonly Entity Point; public readonly uint ParameterIndex; public readonly float DistanceSquared; }
+    {
+        public readonly Entity Point; public readonly uint ParameterIndex; public readonly float DistanceSquared;
+        public MatchedContact(Entity point, uint parameterIndex, float distanceSquared) =>
+            (Point, ParameterIndex, DistanceSquared) = (point, parameterIndex, distanceSquared);
+    }
     [StructLayout(LayoutKind.Sequential)]
     private readonly record struct MatchSettings(uint Points, uint Pairs, uint Buckets, float SquaredDistance, float NormalDot);
     public void Dispose()
@@ -177,8 +200,9 @@ public readonly struct MatchDeviceContacts(DeviceContactMatches matches) : IPhys
 }
 public readonly struct DeviceContactMatchResults(DeviceContactMatches matches) : IContactPointMatches
 {
-    public void AddAccesses(List<JobResourceAccess> accesses) => accesses.Add(matches.ReadAccess);
+    public void AddAccesses(List<JobResourceAccess> accesses) => accesses.Add(matches.WriteAccess);
     public bool TryGetMatch(int input, out Entity point, out float distanceSquared) => matches.Read(input, out point, out distanceSquared);
+    public void RecordPoint(int input, Entity point) => matches.Record(input, point);
 }
 public readonly struct DeviceMatchedContactComponents<TComponents>(DeviceContactMatches matches, TComponents components) : IContactPointComponents
     where TComponents : struct, IContactPointComponents
@@ -189,6 +213,6 @@ public readonly struct DeviceMatchedContactComponents<TComponents>(DeviceContact
         ReadOnlySpan<ContactBody> first, ReadOnlySpan<ContactBody> second, in PhysicsStepContext context)
     {
         components.Add(ref commands, point, in geometry, first, second, in context);
-        commands.Add(point, matches.Allocate());
+        commands.Add(point, matches.Allocate(point));
     }
 }
