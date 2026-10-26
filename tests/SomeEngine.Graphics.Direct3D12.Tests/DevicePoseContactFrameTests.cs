@@ -137,8 +137,8 @@ public sealed partial class DeviceAvbdTests
             .Then(detection.WriteContacts(new ContactPointOutput(detected), new[] { detected.WriteAccess }))
             .Then(matching.Match()).Then(refresh.Refresh(currentGeometry.Results)).Then(contactInputs.Upload()).Then(stateInputs.Upload())
             .Then(currentGeometry.Update()).Then(activity.WakeConnected()).Then(dynamics.Resume(new(0, -6, 0)))
-            .Then(response.Initialize()).Then(avbd.Initialize()).Then(xpbd.Initialize())
-            .Then(new AlternateContactAndLength(avbd.Iterate(1), xpbd.Iterate(1), 64)).Then(dynamics.UpdateVelocities())
+            .Then(graph.Build()).Then(response.Initialize()).Then(avbd.Initialize()).Then(xpbd.Initialize())
+            .Then(new AlternateContactAndLength(avbd.Iterate(1, buildGraph: false), xpbd.Iterate(1), 64)).Then(dynamics.UpdateVelocities())
             .Then(activity.Finish()).Then(activity.Readback(output)).Then(samples.Readback()).Then(contactEvents).Then(output.Emit())
             .Then(poseStages.MapBones()).Then(sources.CopyOutput());
         var consumer = results.Readback(64).Then(contactResults.Readback(64)).Then(sources.Readback()).Then(eventConsumer);

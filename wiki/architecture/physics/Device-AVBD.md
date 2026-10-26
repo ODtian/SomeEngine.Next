@@ -55,6 +55,13 @@ Jacobian、惯性块与响应共同投影到该子空间。
 `DeviceAvbdConstraintGroups<TFirst,TSecond>` 将多种具体约束组装进同一 Body 局部方程。
 `adjust` 位于局部响应求出之后、位姿提交之前。
 
+项目完成当前点、参数和成员输入后，可先调度同一 `DeviceConstraintGraph.Build()`，
+再选择 `Iterate(iterations, buildGraph: false)` 复用该次图结果。
+`DeviceXpbdSolver.Initialize(buildGraph: false)` 与同名迭代重载使用同一完成依赖；
+原默认入口继续在自身求解链构建图。AVBD/XPBD 交替时各阶段共享当前主体、数值历史与图。
+主体、约束及并行图派发复用 `DevicePhysicsDispatch.CreateGroups` 的 X/Y 范围；
+项目 Shader 以 `devicePhysicsThreadIndex` 或 `devicePhysicsGroupIndex` 读取对应线性索引。
+
 `DeviceContactPotentialAvbdConstraints` 选择接触势能的正曲率上界。
 它沿原接触评估、Jacobian 和 `DeviceAvbdContactStates` 装配方程，普通法向采用材料对应的
 有效罚曲率，角向三轴叠加各加权锚的 `|weight| * |arm| * |force|`。
