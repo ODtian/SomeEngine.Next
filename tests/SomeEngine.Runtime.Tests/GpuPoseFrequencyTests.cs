@@ -29,6 +29,11 @@ public sealed partial class SkinningRenderingTests
         QuantizedClipData parentData = QuantizedClipData.Encode(GpuPoseExamples.Clip(parentDefinition, 0), 4);
         QuantizedClipData childData = QuantizedClipData.Encode(GpuPoseExamples.Clip(childDefinition, 1), 4);
         using SkeletonInstance parent = storage.CreateInstance(parentDefinition), child = storage.CreateInstance(childDefinition, parent);
+        var secondaryDefinition = new Skeleton([-1, 0], [identity, At(Vector3.UnitX)], [10, 11]);
+        using SkeletonInstance secondary = storage.CreateInstance(secondaryDefinition);
+        var secondaryClip = QuantizedClipData.Encode(new AnimationClip(secondaryDefinition, 1,
+            ClipSampler.Create<RawClipData, RawClipSampler>(new(1, []))), 4);
+        var secondarySource = new GpuPoseBlend(secondaryDefinition, new GpuBlendClip(secondaryClip, Loop: true));
         Entity target = default, animation = default, parentTarget = default, childTarget = default;
         var signals = new FrequencySignals(body);
         var reads = new List<GpuPoseReadback>();
@@ -43,6 +48,7 @@ public sealed partial class SkinningRenderingTests
                 target = GpuPoseAnimation.CreateTarget(frame.World, body);
                 parentTarget = GpuPoseAnimation.CreateTarget(frame.World, parent);
                 childTarget = GpuPoseAnimation.CreateTarget(frame.World, child);
+                Entity secondaryTarget = GpuPoseAnimation.CreateTarget(frame.World, secondary);
                 signals.Target = target;
                 using var builder = new AnimationBuilder(frame.World);
                 using (builder.Parallel())
@@ -50,6 +56,8 @@ public sealed partial class SkinningRenderingTests
                     builder.Leaf<GpuClipParameters, GpuClipLeaf>(target, new(data, Loop: true, RootMotion: RootMotionMode.Extract));
                     builder.Leaf<GpuClipParameters, GpuClipLeaf>(parentTarget, new(parentData));
                     builder.Leaf<GpuClipParameters, GpuClipLeaf>(childTarget, new(childData));
+                    builder.Leaf<GpuXpbdParameters, GpuXpbdLeaf>(secondaryTarget, new(new GpuXpbdPose(secondarySource,
+                        new(secondaryDefinition, [new(0), new(1)], Vector3.Zero))));
                 }
                 animation = builder.Play();
                 signals.Animation = animation;
