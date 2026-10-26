@@ -3,6 +3,7 @@ using SlangShaderSharp;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Graphics;
 using SomeEngine.Job;
+using SomeEngine.Diagnostics;
 using Buffer = SomeEngine.Graphics.Buffer;
 
 namespace SomeEngine.Physics;
@@ -17,6 +18,7 @@ public readonly record struct DeviceGraphKernels(ComputePipelineDesc WriteRows, 
 /// <summary>Resident entity participation, connectivity, colors and adjacency shared by concrete device solvers.</summary>
 public sealed partial class DeviceConstraintGraph : IDisposable
 {
+    private static readonly TraceSite BuildTrace = new("physics", "ConstraintGraph.Build");
     private readonly IGraphicsBackend _backend;
     private readonly Device _device;
     private readonly DeviceBodies _bodies;
@@ -123,6 +125,7 @@ public sealed partial class DeviceConstraintGraph : IDisposable
     }
     internal void BuildAndWait()
     {
+        using var trace = EngineTrace.Begin(BuildTrace);
         CaptureSelections();
         using (MappedBuffer mapping = _backend.Map(_parameters, MapType.Write, BufferRange.Whole))
         {
