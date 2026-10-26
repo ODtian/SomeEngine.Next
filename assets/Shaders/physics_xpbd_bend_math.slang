@@ -1,6 +1,7 @@
 #ifndef PHYSICS_XPBD_BEND_MATH
 #define PHYSICS_XPBD_BEND_MATH
 #include "physics_xpbd_types.slang"
+#include "physics_xpbd_projection_math.slang"
 #include "physics_body_math.slang"
 #include "physics_bend_data.slang"
 RWStructuredBuffer<float> DeviceBendMultipliers;
@@ -35,10 +36,10 @@ struct DeviceXpbdBendProjection<TSelection : IDeviceBodySelection> : IDeviceXpbd
         float firstWeight = first.motion == 2 && selection.contains(constraint.firstBody) ? first.inverseMass : 0;
         float middleWeight = middle.motion == 2 && selection.contains(constraint.middleBody) ? middle.inverseMass : 0;
         float lastWeight = last.motion == 2 && selection.contains(constraint.lastBody) ? last.inverseMass : 0;
-        float alpha = constraint.compliance / (context.duration * context.duration);
-        float change = (-residual - alpha * multiplier) /
-            (firstWeight * dot(firstGradient, firstGradient) + middleWeight * dot(middleGradient, middleGradient) +
-                lastWeight * dot(lastGradient, lastGradient) + alpha);
+        float forceStiffness;
+        float change = deviceXpbdMultiplierChange(residual,multiplier,
+            firstWeight * dot(firstGradient, firstGradient) + middleWeight * dot(middleGradient, middleGradient) +
+                lastWeight * dot(lastGradient, lastGradient),constraint.compliance,context.duration,forceStiffness);
         change = max(0, multiplier + change) - multiplier;
         DeviceBendMultipliers[row] = multiplier + change;
         if (firstWeight > 0)
