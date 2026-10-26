@@ -1,16 +1,7 @@
 #ifndef PHYSICS_CONTACT_DATA
 #define PHYSICS_CONTACT_DATA
 #include "physics_constraint_graph.slang"
-#include "physics_contact_body.slang"
-struct DeviceContactConstraint
-{
-    uint bodyCount; uint firstBodyCount; uint bodyOffset; uint warmStart;
-    float3 normal; float separation;
-    float3 bodyAnchorDelta; float normalStiffness;
-    float normalDamping; float staticFriction; float dynamicFriction; float restitution;
-    float restitutionThreshold; uint predicted; uint2 sampleTime;
-    float3 worldPoint; uint padding;
-};
+#include "physics_contact_types.slang"
 RWStructuredBuffer<DeviceContactConstraint> DeviceContacts;
 RWStructuredBuffer<DeviceConstraintMetadata> DeviceContactsMetadata;
 RWStructuredBuffer<DeviceContactBody> DeviceContactBodyLinks;

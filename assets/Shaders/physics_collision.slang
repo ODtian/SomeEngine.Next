@@ -2,6 +2,7 @@
 #define PHYSICS_COLLISION
 
 #include "physics_geometry_types.slang"
+#include "physics_collision_contact.slang"
 
 struct DeviceCollisionPair
 {
@@ -46,28 +47,6 @@ struct DeviceCollisionDistance
     uint2 first;
     uint2 second;
     DeviceGeometryDistance distance;
-};
-struct DeviceContactPrediction
-{
-    uint enabled;
-    uint padding;
-    uint2 sampleTime;
-};
-struct DeviceCollisionContact
-{
-    uint2 first;
-    uint2 second;
-    int firstFeature;
-    int secondFeature;
-    int pointIndex;
-    float3 firstLocalPoint;
-    float3 secondLocalPoint;
-    float3 worldPoint;
-    float3 normal;
-    float separation;
-    int firstBodyCount;
-    uint predictionAlignment;
-    DeviceContactPrediction prediction;
 };
 struct DeviceDetectionParameters
 {

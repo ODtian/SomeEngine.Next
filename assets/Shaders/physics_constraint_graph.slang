@@ -2,7 +2,7 @@
 #define PHYSICS_CONSTRAINT_GRAPH
 #include "physics_body_math.slang"
 #include "physics_body_selection.slang"
-#include "physics_constraint_data.slang"
+#include "physics_constraint_selection.slang"
 interface IDeviceConstraintBodies
 {
     uint count(); bool active(uint row);
@@ -42,9 +42,6 @@ struct DeviceGraphBodies : IDeviceBodySelection
 {
     bool contains(uint body) { return ConstraintGraphParents[body]!=0xffffffff; }
 };
-bool deviceConstraintSelected(DeviceConstraintMetadata metadata, uint2 selected)
-{ return metadata.active != 0 && metadata.entityIndex == selected.x && metadata.entityGeneration == selected.y; }
-
 void writeDeviceConstraintGraphRows<T : IDeviceConstraintBodies>(uint row, T source)
 {
     if (row >= ConstraintGraphParameters.rows) return;
