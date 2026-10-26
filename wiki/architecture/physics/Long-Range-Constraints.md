@@ -1,6 +1,6 @@
 # 实体长程约束与接触支撑
 
-本页维护当前 LRC 数据、数学和公共用法。源码入口为[关节界](../../../src/SomeEngine.Physics/JointLongRangeConstraints.cs)、[关节图](../../../src/SomeEngine.Physics/JointLongRangeGraph.cs)、[接触支撑](../../../src/SomeEngine.Physics/ContactLongRangeConstraints.cs)、[支撑图](../../../src/SomeEngine.Physics/ContactSupportData.cs)与[局部支撑求解](../../../src/SomeEngine.Physics/ContactSupportData.Solve.cs)。公开行为入口为 [LongRangeConstraintTests](../../../tests/SomeEngine.Physics.Tests/LongRangeConstraintTests.cs)。数学迁移来源及许可见 [LongRange NOTICE](../../../src/SomeEngine.Physics/ThirdParty/LongRange/NOTICE)。
+本页维护当前 LRC 数据、数学和公共用法。源码入口为[关节界](../../../src/SomeEngine.Physics/JointLongRangeConstraints.cs)、[关节图](../../../src/SomeEngine.Physics/JointLongRangeGraph.cs)、[接触支撑](../../../src/SomeEngine.Physics/ContactLongRangeConstraints.cs)、[支撑图](../../../src/SomeEngine.Physics/ContactSupportData.cs)与[局部支撑求解](../../../src/SomeEngine.Physics/ContactSupportData.Solve.cs)。公开行为入口为 [LongRangeConstraintTests](../../../tests/SomeEngine.Physics.Tests/LongRangeConstraintTests.cs) 与 [LongRangeGraphTests](../../../tests/SomeEngine.Physics.Tests/LongRangeGraphTests.cs)。数学迁移来源及许可见 [LongRange NOTICE](../../../src/SomeEngine.Physics/ThirdParty/LongRange/NOTICE)。
 
 ## 显式选择与数据职责
 
@@ -53,6 +53,21 @@
 进入滑动或转动的 Body 触发当前支撑图更新。释放的辅助力投影到原接触的法向及切向乘子，沿相同库仑界限接续标准响应。持久接触的热启动开关和 `MultiplierRetention` 控制跨步辅助力保留。
 
 ## 组合用法与工作量
+
+图求解使用 [JointLongRangeGraphConstraints](../../../src/SomeEngine.Physics/JointLongRangeGraphConstraints.cs) 与 [ContactLongRangeGraphConstraints](../../../src/SomeEngine.Physics/ContactLongRangeGraphConstraints.cs)。它们实现相同的 `IAvbdGraphConstraints`，沿原查询、设置和数值数据对象借用原行。关节界全局初始化后，以每条 `LongRangeJointBound` 的两处原关节角色参与 Body 连通关系，`OtherJoint` 作为只读实体引用。支撑工作实体以自身 Body 参与，接触继续通过原 `ContactBodyLink` 与受保护参与边取得实际作用端，载荷 Buffer 中的接触实体进入只读引用集合。
+
+`SolveAvbdGraph` 首次写入前读取成员和参与引用，并完成对应范围绑定；初始化生成长程界及支撑载荷图。每轮读取当前生成数据，再同步执行岛或颜色 Body 范围，最后全局更新原乘子和反力。逐体支撑修正在当前分解与位姿提交之间运行。关节索引、支撑多边形和载荷次序由原 LRC 数据对象持有；Body 范围同步借用原组件与 Buffer，额外引用通过共同只读视图取得。实际范围、引用资源相容分组和 Join 见 [Entity Query Jobs](../ECS/Entity-Query-Jobs.md)。
+
+以下是已实现图接口的用法例子，原关节、工作查询和图设置由项目提供：
+
+```csharp
+var graphConstraints = AvbdGraphConstraints.Combine(
+    new AvbdGraphConstraints<JointConstraint, AvbdJointMath>(joints),
+    new JointLongRangeGraphConstraints(rangeJoints, jointSettings));
+using var graphSolve = SolveAvbdGraph.Create(world, bodies, graphConstraints,
+    graphSettings, iterations: 8, multiplierRetention: 1,
+    initialErrorFraction: 0, bodyIterations: 1);
+```
 
 以下是组合用法的例子；实体、查询、材料和接触创建由项目提供：
 
