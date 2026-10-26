@@ -40,3 +40,5 @@ result.Complete();
 用户适配器以具体 struct 实现 `IXpbdConstraint<TConstraint>` 的静态 `Initialize` 和 `Project`。两者接收主组件的只读引用、原 `QueryRow` 与共同的 `PhysicsStepContext`；`Project` 还接收 `PhysicsBodies`，从 `context.Duration` 取得子步时长，并可读取该子步的起止时刻。适配器可从原行读取同实体的其他已声明组件，并写入自己的数值状态组件。用户集合沿同一个 `XpbdConstraints<TConstraint,TProjection>` 入口与内置集合组合。
 
 [双框架关节](Joints.md)沿同一集合入口使用共同的关节物理参数，并在独立的 `XpbdJointState` 中保存乘子。
+
+[实体约束图求解](Graph-Solving.md)提供同一具体投影的独立岛、共批和颜色范围执行入口。
