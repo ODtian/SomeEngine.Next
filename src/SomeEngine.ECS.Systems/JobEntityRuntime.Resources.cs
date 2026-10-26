@@ -24,7 +24,7 @@ internal sealed class ComponentResourceQueryData(
     internal JobResourceAccess[] CaptureAccesses { get; } = captureAccesses;
     internal ComponentResourceRow[][] PacketRows { get; } = new ComponentResourceRow[packets.Packets.Length][];
     internal ComponentResourceRow[] Rows = [];
-    internal int[][] Groups = [];
+    internal ComponentResourceRows Groups = ComponentResourceRows.Empty;
     internal JobResourceAccess[] Accesses = [];
     internal ComponentResourceColumn[] Columns = [];
     internal long[] EnabledWrites = [];
@@ -398,7 +398,7 @@ public static partial class JobEntityRuntime
             using var trace = EngineTrace.Begin(ComponentResourceTrace<TJob>.Execute);
             request.Scheduler.ExecuteParallel(
                 new ExecuteResourceGroups<TJob, TAdapter>(request, data, writeVersion),
-                data.Groups.Length, batchSize, request.Options.JobOptions);
+                data.Groups.Count, batchSize, request.Options.JobOptions);
         }
     }
 
