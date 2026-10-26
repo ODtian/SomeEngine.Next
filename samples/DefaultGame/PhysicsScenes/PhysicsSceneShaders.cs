@@ -158,6 +158,7 @@ internal sealed partial class PhysicsSceneShaders
                 uint bodyCount(uint row) { return inner.bodyCount(row); }
                 uint body(uint row,uint end) { return inner.body(row,end); }
                 bool writes(uint row,uint end) { return inner.writes(row,end); }
+                override bool adjustsBody() { return inner.adjustsBody(); }
                 uint groupCount() { return inner.groupCount(); }
                 uint group(uint row) { return inner.group(row); }
                 void initialize(uint row,DeviceAvbdStep context) { }
@@ -177,6 +178,7 @@ internal sealed partial class PhysicsSceneShaders
                 uint bodyCount(uint row) { return inner.bodyCount(row); }
                 uint body(uint row,uint end) { return inner.body(row,end); }
                 bool writes(uint row,uint end) { return inner.writes(row,end); }
+                override bool adjustsBody() { return inner.adjustsBody(); }
                 uint groupCount() { return inner.groupCount(); }
                 uint group(uint row) { return inner.group(row); }
                 void initialize(uint row,DeviceAvbdStep context)
