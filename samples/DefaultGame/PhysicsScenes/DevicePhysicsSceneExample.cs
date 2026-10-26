@@ -2,6 +2,8 @@ using System.Text.Json.Nodes;
 using SomeEngine.ECS;
 using SomeEngine.Graphics;
 using SomeEngine.Physics;
+using SomeEngine.ECS.Systems;
+using SomeEngine.Job;
 using SomeEngine.Runtime;
 
 namespace DefaultGame;
@@ -57,6 +59,7 @@ public sealed partial class PhysicsSceneExample : IApplicationGeometryFeature
         };
         return PhysicsScenes.CreateDevice(world, description, data, _backend!, _device!, settings, gridSettings,
             capacity, contacts, settings.ContactDistance, Enumerable.Range(0, bodyCount).ToArray(),
-            Path.Combine(AppContext.BaseDirectory, "PhysicsShaders"));
+            Path.Combine(AppContext.BaseDirectory, "PhysicsShaders"), new CountScenePhysicsEvents(_events),
+            [JobResourceAccess.Write(WorldJobs.GetScheduler(world).GetResourceToken(_events))]);
     }
 }

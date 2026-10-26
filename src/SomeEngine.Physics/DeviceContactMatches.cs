@@ -148,7 +148,9 @@ public sealed class DeviceContactMatches : IDisposable, IDevicePhysicsSubmission
         {
             _backend.SetPipeline(_commands, _pipelines[kernel]);
             _backend.SetTransientParameterBindings(_commands, new(_layouts[kernel], _bindings[kernel], []));
-            if (counts[kernel] != 0) _backend.Dispatch(_commands, new((counts[kernel] + (uint)_threadsPerGroup - 1) / (uint)_threadsPerGroup, 1, 1));
+            if (counts[kernel] != 0)
+                _backend.Dispatch(_commands, DevicePhysicsDispatch.CreateGroups(
+                    (int)((counts[kernel] + (uint)_threadsPerGroup - 1) / (uint)_threadsPerGroup)));
             _backend.Barrier(_commands, new MemoryBarrier(PipelineSync.ComputeShading, PipelineSync.ComputeShading,
                 ResourceAccess.UnorderedAccess, ResourceAccess.UnorderedAccess));
         }

@@ -27,9 +27,9 @@ internal sealed class PhysicsSceneShaders
 
     internal DeviceBodyKernels Bodies()
     {
-        ComputePipelineDesc[] entries = Compile("scene_bodies", "#include \"physics_body_dynamics.slang\"",
-            "PredictDeviceBodies", "UpdateDeviceBodyVelocities", "ApplyDeviceGyroscopicTorque");
-        return new(entries[0], entries[1], entries[2]);
+        ComputePipelineDesc[] entries = Compile("scene_bodies", "#include \"physics_body_activity_dynamics.slang\"",
+            "PredictDeviceActiveBodies", "UpdateDeviceActiveBodyVelocities", "ApplyDeviceGyroscopicTorque", "ResumeDeviceActiveBodies");
+        return new(entries[0], entries[1], entries[2], Resume: entries[3]);
     }
 
     internal DeviceBodyInputKernels BodyInputs()
@@ -77,6 +77,8 @@ internal sealed class PhysicsSceneShaders
     internal DeviceGraphKernels Graph()
     {
         ComputePipelineDesc[] entries = Compile("scene_contact_graph", """
+            #include "physics_body_activity_types.slang"
+            #define DEVICE_GRAPH_BODY_ACTIVE(body) deviceBodyActivityAwake(body)
             #include "physics_contact_data.slang"
             #include "physics_joint_bodies.slang"
             #include "physics_distance_range_bodies.slang"
@@ -104,6 +106,7 @@ internal sealed class PhysicsSceneShaders
             #include "physics_avbd_contact.slang"
             #include "physics_avbd_joint.slang"
             #include "physics_avbd_distance_range.slang"
+            #include "physics_awake_avbd.slang"
             typedef DeviceAvbdConstraintGroups<
                 DeviceAvbdConstraintGroups<DeviceContactAvbdConstraints,DeviceJointAvbdConstraints>,
                 DeviceDistanceRangeAvbdConstraints> SceneAvbdConstraints;
@@ -111,13 +114,13 @@ internal sealed class PhysicsSceneShaders
             void ClearBodyIndices(uint3 id : SV_DispatchThreadID) { clearDeviceAvbdBodyIndices(id.x); }
             [shader("compute")][numthreads(64,1,1)]
             void Initialize(uint3 id : SV_DispatchThreadID)
-            { SceneAvbdConstraints rows; initializeDeviceAvbdRows(id.x,rows); }
+            { DeviceAwakeAvbdConstraints<SceneAvbdConstraints> rows; DeviceAwakeBodies bodies; initializeDeviceAvbdRows(id.x,rows,bodies); }
             [shader("compute")][numthreads(64,1,1)]
             void UpdateBody(uint3 id : SV_DispatchThreadID)
-            { SceneAvbdConstraints rows; updateDeviceAvbdBody(id.x,rows); }
+            { DeviceAwakeAvbdConstraints<SceneAvbdConstraints> rows; updateDeviceAvbdBody(id.x,rows); }
             [shader("compute")][numthreads(64,1,1)]
             void UpdateDuals(uint3 id : SV_DispatchThreadID)
-            { SceneAvbdConstraints rows; updateDeviceAvbdDuals(id.x,rows); }
+            { DeviceAwakeAvbdConstraints<SceneAvbdConstraints> rows; updateDeviceAvbdDuals(id.x,rows); }
             """, "ClearBodyIndices", "Initialize", "UpdateBody", "UpdateDuals");
         return new(entries[1], entries[2], entries[3], ClearBodyIndices: entries[0]);
     }
@@ -125,35 +128,74 @@ internal sealed class PhysicsSceneShaders
     internal DeviceContactKernels Responses()
     {
         ComputePipelineDesc[] entries = Compile("scene_contact_responses", """
-            #include "physics_contact_actions.slang"
+            #include "physics_awake_contact_actions.slang"
             [shader("compute")][numthreads(64,1,1)]
             void Initialize(uint3 id : SV_DispatchThreadID)
-            { DeviceContactResponseActions<DeviceGraphBodies> rows; initializeDeviceContactResponses(id.x,rows); }
+            { DeviceAwakeContactResponseActions<DeviceGraphBodies> rows; initializeDeviceContactResponses(id.x,rows); }
             [shader("compute")][numthreads(64,1,1)]
             void Restore(uint3 id : SV_DispatchThreadID)
-            { DeviceContactResponseActions<DeviceGraphBodies> rows; applyDeviceContactRestitution(id.x,rows); }
+            { DeviceAwakeContactResponseActions<DeviceGraphBodies> rows; applyDeviceContactRestitution(id.x,rows); }
             """, "Initialize", "Restore");
         return new(entries[0], entries[1]);
     }
 
-    internal (ComputePipelineDesc Clear, ComputePipelineDesc Read) ContactPenetration()
+    internal DeviceActivityKernels Activity()
     {
-        ComputePipelineDesc[] entries = Compile("scene_contact_penetration", """
-            #include "physics_contact_geometry_math.slang"
-            RWStructuredBuffer<uint> SceneContactPenetration;
-            [shader("compute")][numthreads(1,1,1)]
-            void Clear(uint3 id : SV_DispatchThreadID) { SceneContactPenetration[0]=0; }
+        ComputePipelineDesc[] entries = Compile("scene_activity", """
+            #include "physics_contact_activity.slang"
+            #include "physics_joint_activity.slang"
+            #include "physics_distance_range_activity.slang"
+            #include "physics_constraint_activity.slang"
+            #include "physics_body_input_activity.slang"
+            typedef DeviceConstraintActivityGroups<
+                DeviceConstraintActivityGroups<DeviceContactActivity,DeviceJointActivity>,
+                DeviceDistanceRangeActivity> SceneActivityRows;
             [shader("compute")][numthreads(64,1,1)]
-            void Read(uint3 id : SV_DispatchThreadID)
+            void ReadRows(uint3 id : SV_DispatchThreadID)
+            { SceneActivityRows rows; readDeviceActivityRows(devicePhysicsThreadIndex(id,64),rows); }
+            """, "ApplyDeviceActivityInputs", "ClearDeviceActivitySignals", "CollectDeviceActivityBodies", "ReadRows",
+            "WakeDeviceBodies", "AdvanceDeviceBodyQuietTime", "FinishDeviceBodyActivity", "ReadDeviceBodyInputActivity");
+        return new(entries[0], entries[1], entries[2], entries[3], entries[4], entries[5], entries[6], ReadBodyInputs: entries[7]);
+    }
+
+    internal (ComputePipelineDesc Clear, ComputePipelineDesc Bodies, ComputePipelineDesc Contacts) Statistics()
+    {
+        ComputePipelineDesc[] entries = Compile("scene_statistics", """
+            #include "physics_body_activity_types.slang"
+            #include "physics_constraint_graph.slang"
+            #include "physics_contact_geometry_math.slang"
+            RWStructuredBuffer<uint> SceneStatistics;
+            RWStructuredBuffer<uint> SceneIslandSizes;
+            [shader("compute")][numthreads(64,1,1)]
+            void Clear(uint3 id : SV_DispatchThreadID)
+            {
+                uint count,stride; SceneIslandSizes.GetDimensions(count,stride);
+                if(id.x<count) SceneIslandSizes[id.x]=0;
+                if(id.x<4) SceneStatistics[id.x]=0;
+            }
+            [shader("compute")][numthreads(64,1,1)]
+            void Bodies(uint3 id : SV_DispatchThreadID)
+            {
+                uint count,stride; DeviceBodyStates.GetDimensions(count,stride);
+                if(id.x>=count) return;
+                uint root=ConstraintGraphParents[id.x];
+                if(root==0xffffffff) return;
+                if(deviceBodyActivityAwake(id.x)) InterlockedAdd(SceneStatistics[1],1);
+                uint previous; InterlockedAdd(SceneIslandSizes[root],1,previous);
+                InterlockedMax(SceneStatistics[3],previous+1);
+            }
+            [shader("compute")][numthreads(64,1,1)]
+            void Contacts(uint3 id : SV_DispatchThreadID)
             {
                 uint count,stride; DeviceContacts.GetDimensions(count,stride);
                 if(id.x>=count||!deviceContactSelected(id.x)) return;
+                InterlockedAdd(SceneStatistics[2],1);
                 DeviceContactConstraint point=DeviceContacts[id.x];
                 float separation=point.separation+dot(point.normal,deviceContactDelta(point,false)-point.bodyAnchorDelta);
-                if(separation<0) InterlockedMax(SceneContactPenetration[0],asuint(-separation));
+                if(separation<0) InterlockedMax(SceneStatistics[0],asuint(-separation));
             }
-            """, "Clear", "Read");
-        return (entries[0], entries[1]);
+            """, "Clear", "Bodies", "Contacts");
+        return (entries[0], entries[1], entries[2]);
     }
 
     private ComputePipelineDesc[] Compile(string name, string source, params string[] entryNames)

@@ -67,6 +67,10 @@ DefaultGame 的 `--physics` 选择完整物理目录，`--physics=<id>` 选择�
 
 GPU 示例按 Body 数量派生网格单元、桶、pair 和接触容量，工作量描述记录这些容量、所选设备名称、驱动与专用显存。接触、原关节和原显式距离边共同进入设备约束图；参数与数值历史沿原实体的设备表示保存，完成后读取所选 Body 并更新原 `LocalTransform`。
 
+设备场景在同一帧消费阶段从当前接触几何、主体活动和图 Parents 归约全局结果，仅传回 16 字节的最大穿透、活动主体数、接触点数和最大连通主体数。`PhysicsSceneSimulation.DeviceAwakeBodies`、`DeviceContactPoints`、`DeviceLargestIslandBodies` 交付这些完成步结果；岛大小工作缓冲按原主体容量复用。
+
+`ReadbackBodies` 列出本次实际读取位姿和速度的原主体引用。测量中的 `BodyMotionScope` 与 `ConstraintErrorScope` 声明位姿、动量、速度和两端约束误差的覆盖范围；全局接触、活动及连通统计继续来自上述设备归约。`LastBodyPosition` 与速度对应所选读取列表的最后一个主体，`LastBodyEntityIndex` 标明其实体索引。
+
 `--physics-content=<目录>` 将 DefaultGame 现有已构建内容目录交给原 `TestScene.ContentDirectory`，共享其材质模板、灯光和渲染配置。示例显式接收项目的 `StandardMaterial` 模板，为静态与动态 Body 选择不同颜色及少量自发光，共用同一盒体几何。
 
 `TestScene.WorldNameplates` 在首次创建和场景切换时选定该内容的名牌配置。物理示例以原 Body 取代加载内容的网格实体，选择关闭原小球名牌；返回原内容时恢复启动配置。

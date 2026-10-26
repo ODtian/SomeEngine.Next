@@ -1,5 +1,6 @@
 #ifndef PHYSICS_BODY_INPUT_ACTIVITY
 #define PHYSICS_BODY_INPUT_ACTIVITY
+#include "physics_dispatch.slang"
 #include "physics_body_activity_types.slang"
 #include "physics_body_input_data.slang"
 #include "physics_body_input_math.slang"
@@ -7,8 +8,9 @@
 [shader("compute")][numthreads(64,1,1)]
 void ReadDeviceBodyInputActivity(uint3 id : SV_DispatchThreadID)
 {
-    if (id.x >= BodyInputParameters.count) return;
-    DeviceBodyInput input = DeviceBodyInputs[id.x];
+    uint index=devicePhysicsThreadIndex(id,64);
+    if (index >= BodyInputParameters.count) return;
+    DeviceBodyInput input = DeviceBodyInputs[index];
     DeviceBodyState body = DeviceBodyStates[input.bodyIndex];
     if (!deviceBodyInputMatches(body, input)) return;
     DeviceBodyState next = body;

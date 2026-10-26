@@ -1,3 +1,4 @@
+#include "physics_dispatch.slang"
 #include "physics_collision_contact.slang"
 #include "physics_contact_types.slang"
 #include "physics_constraint_selection.slang"
@@ -22,11 +23,14 @@ uint deviceContactPairBucket(uint2 first,uint2 second)
 }
 [shader("compute")][numthreads(64,1,1)]
 void ClearDeviceContactMatches(uint3 id:SV_DispatchThreadID)
-{ if(id.x<ContactMatchSettings.buckets) ContactMatchHeads[id.x]=0xffffffff; }
+{
+    uint bucket=devicePhysicsThreadIndex(id,64);
+    if(bucket<ContactMatchSettings.buckets) ContactMatchHeads[bucket]=0xffffffff;
+}
 [shader("compute")][numthreads(64,1,1)]
 void IndexDeviceContactMatches(uint3 id:SV_DispatchThreadID)
 {
-    uint row=id.x;
+    uint row=devicePhysicsThreadIndex(id,64);
     if(row>=ContactMatchSettings.points||!deviceConstraintSelected(DeviceContactsMetadata[row],DeviceContactMatchingSelection[row])) return;
     DeviceContactConstraint point=DeviceContacts[row];
     uint previous;
@@ -36,7 +40,7 @@ void IndexDeviceContactMatches(uint3 id:SV_DispatchThreadID)
 [shader("compute")][numthreads(64,1,1)]
 void MatchDeviceContacts(uint3 id:SV_DispatchThreadID)
 {
-    uint pair=id.x;
+    uint pair=devicePhysicsThreadIndex(id,64);
     if(pair>=ContactMatchSettings.pairs) return;
     uint used[4]={0xffffffff,0xffffffff,0xffffffff,0xffffffff};
     uint count=DeviceMatchInputCounts[pair];
