@@ -22,85 +22,10 @@ public static partial class PhysicsScenes
         PhysicsSceneData data, TCollision collision, PhysicsSceneSettings settings)
         where TCollision : struct, ICollisionNarrowPhase<BoxGeometry, BoxGeometry>
     {
-        var entities = new Entity[data.Bodies.Length];
-        for (int index = 0; index < entities.Length; index++)
-        {
-            SceneBodyData input = data.Bodies[index];
-            Entity entity = entities[index] = world.CreateEntity(new ScenePhysicsBody());
-            var pose = new BodyPose { Position = Vector(input.Position), Rotation = Rotation(input.Rotation) };
-            world.Add(entity, pose);
-            world.Add(entity, new BodyMass
-            {
-                Motion = input.Mass == 0 ? BodyMotion.Static : BodyMotion.Dynamic,
-                InverseMass = Inverse(input.Mass),
-                InverseInertia = new Matrix4x4 { M11 = Inverse(input.Inertia[0]), M22 = Inverse(input.Inertia[1]), M33 = Inverse(input.Inertia[2]) },
-            });
-            world.Add(entity, new BodyVelocity { Linear = Vector(input.Velocity), Angular = Vector(input.AngularVelocity) });
-            world.Add(entity, new BodyStepState()); world.Add(entity, new AvbdBodyEquation());
-            world.Add(entity, new BoxGeometry(Vector(input.Size) * .5f)); world.Add(entity, new CollisionBounds());
-            world.Add(entity, new ContactMaterial { NormalStiffness = (float)(data.Materials?.ContactStiffness ?? double.PositiveInfinity),
-                NormalDamping = (float)(data.Materials?.ContactDamping ?? 0),
-                StaticFriction = (float)input.Friction, DynamicFriction = (float)input.Friction });
-            world.Add(entity, new LocalTransform { Value = new TransformQvvs(pose.Position, pose.Rotation) { Stretch = Vector(input.Size) } });
-        }
-
-        var jointEntities = new Entity[data.Joints.Length];
-        for (int index = 0; index < jointEntities.Length; index++)
-        {
-            SceneJointData input = data.Joints[index];
-            var source = new JointFrame(Vector(input.PointA), Quaternion.Identity);
-            var target = new JointFrame(Vector(input.PointB), Quaternion.Identity);
-            float linear = (float)(data.Materials?.JointLinearStiffness ?? double.PositiveInfinity);
-            float angular = (float)(data.Materials?.JointAngularStiffness ?? double.PositiveInfinity);
-            JointConstraint joint = input.AngularFixed ? JointConstraints.CreateFixed(source, target, linear, angular)
-                : JointConstraints.CreateBall(source, target, linear);
-            Entity entity = jointEntities[index] = world.CreateRelation(entities[input.BodyA], entities[input.BodyB], joint).Entity;
-            world.Add(entity, new ScenePhysicsJoint());
-            world.Add(entity, new AvbdJointState { LinearPenalty = new Vector3(1e6f), AngularPenalty = new Vector3(1e6f) });
-        }
-        foreach (SceneCollisionPair pair in data.CollisionExclusions)
-            world.CreateRelation(entities[pair.BodyA], entities[pair.BodyB], new SceneCollisionExclusion());
-        var rangeEntities = new Entity[data.DistanceRanges?.Length ?? 0];
-        for (int index = 0; index < rangeEntities.Length; index++)
-        {
-            SceneDistanceRange input = data.DistanceRanges![index];
-            Entity entity = rangeEntities[index] = world.CreateRelation(entities[input.BodyA], entities[input.BodyB], new DistanceRange
-            {
-                FirstAnchor = Vector(input.PointA), SecondAnchor = Vector(input.PointB),
-                Minimum = (float)input.Minimum, Maximum = (float)input.Maximum, Stiffness = float.PositiveInfinity,
-            }).Entity;
-            world.Add(entity, new AvbdDistanceRangeState { Penalty = 1e6f });
-        }
-        var inputChanges = new List<SceneInputChange>();
-        foreach (SceneInputEvent change in data.Events.OrderBy(change => change.Frame))
-        {
-            if (change.RemovedJoint is int joint)
-                inputChanges.Add(new(change.Frame, jointEntities[joint], SceneInputChangeKind.RemoveJoint));
-            if (change.Body is int body && change.Position is { } position)
-                inputChanges.Add(new(change.Frame, entities[body], SceneInputChangeKind.MoveBody, Vector(position)));
-        }
-        if (inputChanges.Count > 0)
-        {
-            Entity changes = world.CreateEntity(new SceneInputIndex());
-            world.AddBuffer<SceneInputChange>(changes);
-            world.ExecuteBufferWrite<SceneInputChange>(changes, buffer =>
-            {
-                foreach (SceneInputChange change in inputChanges) buffer.Add(change);
-            });
-        }
-        var inputs = new ApplySceneInputChanges(world, inputChanges.Count > 0);
-        foreach (var bodyEvents in data.Events.Where(change => change.Body.HasValue && change.Velocity is not null).GroupBy(change => change.Body!.Value))
-        {
-            Entity body = entities[bodyEvents.Key];
-            float mass = (float)data.Bodies[bodyEvents.Key].Mass;
-            world.AddBuffer<BodyImpulse>(body);
-            world.ExecuteBufferWrite<BodyImpulse>(body, impulses =>
-            {
-                foreach (SceneInputEvent change in bodyEvents)
-                    impulses.Add(new BodyImpulse { Linear = Vector(change.Velocity!) * mass, Time = change.Frame * data.StepSeconds });
-            });
-        }
-
+        PhysicsSceneEntities created = CreateEntities(world, data);
+        Entity[] entities = created.Bodies, jointEntities = created.Joints, rangeEntities = created.DistanceRanges;
+        foreach (Entity entity in entities) world.Add(entity, new AvbdBodyEquation());
+        var inputs = new ApplySceneInputChanges(world, created.HasInputChanges);
         Scheduler scheduler = WorldJobs.GetScheduler(world);
         QueryDefinition filter = new QueryDefinitionBuilder().All<ScenePhysicsBody>().Build();
         QueryHandle shapes = world.Query(filter.WithAccess(new QueryDefinitionBuilder().Read<CollisionBounds>().Build()));
@@ -140,6 +65,91 @@ public static partial class PhysicsScenes
         var frame = simulation.CreateFrame(new CopySceneBodyTransforms(), data.StepSeconds, 0, 0, 0);
         return new PhysicsSceneSimulation(world, description, settings, entities, jointEntities, rangeEntities, data.StepSeconds, frame, frame.CompleteForRead,
             [shapes, poses, bodies, scope, contacts, joints, ranges], [inputs, maintenance, bins, detected, detection, points, solve]);
+    }
+
+    internal static PhysicsSceneEntities CreateEntities(World world, PhysicsSceneData data)
+    {
+        var entities = new Entity[data.Bodies.Length];
+        for (int index = 0; index < entities.Length; index++)
+        {
+            SceneBodyData input = data.Bodies[index];
+            Entity entity = entities[index] = world.CreateEntity(new ScenePhysicsBody());
+            var pose = new BodyPose { Position = Vector(input.Position), Rotation = Rotation(input.Rotation) };
+            world.Add(entity, pose);
+            world.Add(entity, new BodyMass
+            {
+                Motion = input.Mass == 0 ? BodyMotion.Static : BodyMotion.Dynamic,
+                InverseMass = Inverse(input.Mass),
+                InverseInertia = new Matrix4x4 { M11 = Inverse(input.Inertia[0]), M22 = Inverse(input.Inertia[1]), M33 = Inverse(input.Inertia[2]) },
+            });
+            world.Add(entity, new BodyVelocity { Linear = Vector(input.Velocity), Angular = Vector(input.AngularVelocity) });
+            world.Add(entity, new BodyStepState());
+            world.Add(entity, new BoxGeometry(Vector(input.Size) * .5f)); world.Add(entity, new CollisionBounds());
+            world.Add(entity, new ContactMaterial { NormalStiffness = (float)(data.Materials?.ContactStiffness ?? double.PositiveInfinity),
+                NormalDamping = (float)(data.Materials?.ContactDamping ?? 0),
+                StaticFriction = (float)input.Friction, DynamicFriction = (float)input.Friction });
+            world.Add(entity, new LocalTransform { Value = new TransformQvvs(pose.Position, pose.Rotation) { Stretch = Vector(input.Size) } });
+        }
+
+        var jointEntities = new Entity[data.Joints.Length];
+        for (int index = 0; index < jointEntities.Length; index++)
+        {
+            SceneJointData input = data.Joints[index];
+            var source = new JointFrame(Vector(input.PointA), Quaternion.Identity);
+            Quaternion sourceRotation = world.Read<BodyPose>(entities[input.BodyA]).Rotation;
+            Quaternion targetRotation = world.Read<BodyPose>(entities[input.BodyB]).Rotation;
+            var target = new JointFrame(Vector(input.PointB), Quaternion.Normalize(Quaternion.Conjugate(targetRotation) * sourceRotation));
+            float linear = (float)(data.Materials?.JointLinearStiffness ?? double.PositiveInfinity);
+            float angular = (float)(data.Materials?.JointAngularStiffness ?? double.PositiveInfinity);
+            JointConstraint joint = input.AngularFixed ? JointConstraints.CreateFixed(source, target, linear, angular)
+                : JointConstraints.CreateBall(source, target, linear);
+            Entity entity = jointEntities[index] = world.CreateRelation(entities[input.BodyA], entities[input.BodyB], joint).Entity;
+            world.Add(entity, new ScenePhysicsJoint());
+            world.Add(entity, new AvbdJointState { LinearPenalty = new Vector3(1e6f), AngularPenalty = new Vector3(1e6f) });
+        }
+        foreach (SceneCollisionPair pair in data.CollisionExclusions)
+            world.CreateRelation(entities[pair.BodyA], entities[pair.BodyB], new SceneCollisionExclusion());
+        var rangeEntities = new Entity[data.DistanceRanges?.Length ?? 0];
+        for (int index = 0; index < rangeEntities.Length; index++)
+        {
+            SceneDistanceRange input = data.DistanceRanges![index];
+            Entity entity = rangeEntities[index] = world.CreateRelation(entities[input.BodyA], entities[input.BodyB], new DistanceRange
+            {
+                FirstAnchor = Vector(input.PointA), SecondAnchor = Vector(input.PointB),
+                Minimum = (float)input.Minimum, Maximum = (float)input.Maximum, Stiffness = float.PositiveInfinity,
+            }).Entity;
+            world.Add(entity, new AvbdDistanceRangeState { Penalty = 1e6f });
+        }
+        var inputChanges = new List<SceneInputChange>();
+        foreach (SceneInputEvent change in data.Events.OrderBy(change => change.Frame))
+        {
+            if (change.RemovedJoint is int joint)
+                inputChanges.Add(new(change.Frame, jointEntities[joint], SceneInputChangeKind.RemoveJoint));
+            if (change.Body is int body && change.Position is { } position)
+                inputChanges.Add(new(change.Frame, entities[body], SceneInputChangeKind.MoveBody, Vector(position)));
+        }
+        if (inputChanges.Count > 0)
+        {
+            Entity changes = world.CreateEntity(new SceneInputIndex());
+            world.AddBuffer<SceneInputChange>(changes);
+            world.ExecuteBufferWrite<SceneInputChange>(changes, buffer =>
+            {
+                foreach (SceneInputChange change in inputChanges) buffer.Add(change);
+            });
+        }
+        foreach (var bodyEvents in data.Events.Where(change => change.Body.HasValue && change.Velocity is not null).GroupBy(change => change.Body!.Value))
+        {
+            Entity body = entities[bodyEvents.Key];
+            float mass = (float)data.Bodies[bodyEvents.Key].Mass;
+            world.AddBuffer<BodyImpulse>(body);
+            world.ExecuteBufferWrite<BodyImpulse>(body, impulses =>
+            {
+                foreach (SceneInputEvent change in bodyEvents)
+                    impulses.Add(new BodyImpulse { Linear = Vector(change.Velocity!) * mass, Time = change.Frame * data.StepSeconds });
+            });
+        }
+
+        return new(entities, jointEntities, rangeEntities, inputChanges.Count > 0);
     }
 
     private static Vector3 Vector(double[] value) => new((float)value[0], (float)value[1], (float)value[2]);
