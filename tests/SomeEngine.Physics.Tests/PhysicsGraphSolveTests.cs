@@ -45,7 +45,7 @@ public sealed class PhysicsGraphSolveTests
             new AvbdGraphConstraints<JointConstraint, AvbdJointMotorMath>(avbdMotors)), settings, 32, 0, 0);
         var stages = new PredictBodies(Vector3.Zero, 16).Then(lengthSolve).Then(solve).Then(new UpdateBodyVelocities(16));
         PhysicsSimulation.Create(world, QueryDefinition.Empty, stages, 1).Schedule(0, 0, 1).Complete();
-    
+
 
 
         Assert.InRange(Vector3.Distance(Vector3.UnitX, world.Read<BodyPose>(source).Position), 0, 1e-5f);
@@ -91,7 +91,7 @@ public sealed class PhysicsGraphSolveTests
             new XpbdGraphConstraints<JointConstraint, XpbdJointMotorProjection>(xpbdMotors), settings, 1);
         var stages = new PredictBodies(Vector3.Zero, 16).Then(lengthSolve).Then(solve).Then(new UpdateBodyVelocities(16));
         PhysicsSimulation.Create(world, QueryDefinition.Empty, stages, 1).Schedule(0, 0, 1).Complete();
-    
+
 
 
         Assert.InRange(Vector3.Distance(Vector3.UnitX, world.Read<BodyPose>(source).Position), 0, 1e-5f);

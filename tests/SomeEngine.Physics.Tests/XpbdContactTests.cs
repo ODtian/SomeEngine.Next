@@ -211,7 +211,7 @@ public sealed class XpbdContactTests
             .Then(graphAvbd.Initialize()).Then(graphXpbd.Initialize())
             .Then(Alternate(graphAvbd.Iterate(1), graphXpbd.Iterate(1), 64)).Then(new UpdateBodyVelocities(64));
         PhysicsSimulation.Create(world, QueryDefinition.Empty, stages, 1).Schedule(0, 0, 1).Complete();
-    
+
 
 
         Vector3 a = world.Read<BodyPose>(first).Position;
@@ -269,7 +269,7 @@ public sealed class XpbdContactTests
             .Then(avbd.Initialize()).Then(xpbd.Initialize()).Then(Alternate(avbd.Iterate(1), xpbd.Iterate(1), 64))
             .Then(new UpdateBodyVelocities(64));
         PhysicsSimulation.Create(world, QueryDefinition.Empty, stages, 1).Schedule(0, 0, 1).Complete();
-    
+
 
 
         Vector3 a = world.Read<BodyPose>(first).Position;
