@@ -74,9 +74,9 @@ public sealed class DeviceConstraintData<TData> : IDisposable, IDevicePhysicsSub
     public BeginDeviceConstraintInputs<TData> BeginInputs() => new(this);
     public UploadDeviceConstraintInputs<TData> UploadInputs() => new(this);
     public WriteDeviceConstraintInputs<TComponent, TData, TSource> WriteInputs<TComponent, TSource>(
-        World world, QueryHandle rows, TSource source, int rowsPerPacket)
+        World world, QueryHandle rows, TSource source, int rowsPerPacket, ReadOnlySpan<JobResourceAccess> extraAccesses = default)
         where TComponent : struct, IComponent where TSource : struct, IDeviceConstraintSource<TComponent, TData> =>
-        new(world, rows, this, source, rowsPerPacket);
+        new(world, rows, this, source, rowsPerPacket, extraAccesses);
 
     internal void BeginWrite() => _metadataMapping.Bytes.Clear();
     internal void WriteInput(int index, Entity entity, in TData data)

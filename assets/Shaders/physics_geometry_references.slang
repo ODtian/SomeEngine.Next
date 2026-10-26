@@ -4,14 +4,7 @@
 #include "physics_bodies.slang"
 
 #include "physics_geometry_reference_data.slang"
-struct DeviceContactBody
-{
-    uint2 entity;
-    float3 localPoint;
-    float weight;
-    uint stateIndex;
-    uint padding;
-};
+#include "physics_contact_body.slang"
 RWStructuredBuffer<DeviceContactBody> CollisionContactBodies;
 RWStructuredBuffer<uint> CollisionContactBodyCounts;
 
