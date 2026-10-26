@@ -22,7 +22,7 @@ public readonly struct WriteDeviceConstraintInputs<TComponent, TData, TSource> :
         _world = world; _data = data; _source = source; _rowsPerPacket = rowsPerPacket;
         QueryDefinition inputs = world.GetQueryDefinition(rows).AsReadOnly();
         _filter = inputs.AsFilter();
-        QueryDefinition definition = source.AddReads(QueryDefinition.Empty.WithAccessFrom(inputs));
+        QueryDefinition definition = source.AddReads(QueryDefinition.Empty.WithAccessFrom(inputs).WithOptionalRead<TComponent>());
         _access = world.Query(definition);
         var resources = new QueryReadResources();
         source.AddReadResources(resources);
@@ -50,15 +50,17 @@ internal readonly partial struct WriteDeviceConstraintInputJob<TComponent, TData
         if (!ReferenceEquals(binding.Data, destination)) return;
         var read = new ReadSource(entity, component, source);
         world.ExecuteQuery(access, ref read);
-        destination.WriteInput(binding.Index, entity, in read.Data);
+        destination.WriteInput(binding.Index, entity, in read.Data, read.Version);
     }
     private struct ReadSource(Entity entity, TComponent component, TSource source) : IQueryExecution
     {
         internal TData Data;
+        internal uint Version;
         public void Execute(scoped QueryCursor rows)
         {
             rows.TryGetRow(entity, out QueryRow row);
             Data = source.Read(in component, row, rows);
+            Version = row.WriteVersion<TComponent>();
         }
     }
 }

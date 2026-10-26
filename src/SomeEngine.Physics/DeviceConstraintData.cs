@@ -16,7 +16,7 @@ public readonly record struct DeviceConstraintBinding<TData>(DeviceConstraintDat
 [StructLayout(LayoutKind.Sequential, Size = 16)]
 public struct DeviceConstraintMetadata
 {
-    public uint EntityIndex, EntityGeneration, Active;
+    public uint EntityIndex, EntityGeneration, Active, InputVersion;
 }
 
 /// <summary>Reads original parameters and entity references into a concrete device constraint representation.</summary>
@@ -79,10 +79,15 @@ public sealed class DeviceConstraintData<TData> : IDisposable, IDevicePhysicsSub
         new(world, rows, this, source, rowsPerPacket, extraAccesses);
 
     internal void BeginWrite() => _metadataMapping.Bytes.Clear();
-    internal void WriteInput(int index, Entity entity, in TData data)
+    internal void WriteInput(int index, Entity entity, in TData data, uint inputVersion = 0)
     {
         MemoryMarshal.Write(_mapping.Bytes.Slice(index * Stride, Stride), in data);
-        var metadata = new DeviceConstraintMetadata { EntityIndex = (uint)entity.Index, EntityGeneration = (uint)entity.Generation, Active = 1 };
+        WriteInputMetadata(index, entity, inputVersion);
+    }
+    internal void WriteInputMetadata(int index, Entity entity, uint inputVersion)
+    {
+        var metadata = new DeviceConstraintMetadata
+        { EntityIndex = (uint)entity.Index, EntityGeneration = (uint)entity.Generation, Active = 1, InputVersion = inputVersion };
         MemoryMarshal.Write(_metadataMapping.Bytes.Slice(index * 16, 16), in metadata);
     }
     internal void WriteInputField<TField>(int index, int offset, in TField value) where TField : unmanaged =>
