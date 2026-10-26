@@ -23,6 +23,21 @@ float3 bodyInverseInertia(DeviceBodyState body, float3 value)
     return bodyRotate(body.rotation, local.x * body.inverseInertiaX +
         local.y * body.inverseInertiaY + local.z * body.inverseInertiaZ);
 }
+bool bodyHasRotation(DeviceBodyState body)
+{
+    return body.inverseInertiaX.x != 0 || body.inverseInertiaY.y != 0 || body.inverseInertiaZ.z != 0;
+}
+float3 bodyLocalInverseInertia(DeviceBodyState body, float3 value)
+{
+    return value.x * body.inverseInertiaX + value.y * body.inverseInertiaY + value.z * body.inverseInertiaZ;
+}
+float3 bodyLocalInertia(DeviceBodyState body, float3 value)
+{
+    float3 first = cross(body.inverseInertiaY, body.inverseInertiaZ);
+    float3 second = cross(body.inverseInertiaZ, body.inverseInertiaX);
+    float3 third = cross(body.inverseInertiaX, body.inverseInertiaY);
+    return float3(dot(value, first), dot(value, second), dot(value, third)) / dot(body.inverseInertiaX, first);
+}
 float4 bodyIntegrateRotation(float4 rotation, float3 velocity, float duration)
 {
     float speed = length(velocity);
