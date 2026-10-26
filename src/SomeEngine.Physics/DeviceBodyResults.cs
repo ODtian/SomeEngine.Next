@@ -19,12 +19,19 @@ public sealed partial class DeviceBodyResults : IDisposable
     internal readonly DeviceBodies Bodies;
     internal readonly DeviceBodyState[] States;
     private readonly Dictionary<(World World, QueryDefinition Members), ResultRows> _rows = [];
+    private readonly SelectedResultRanges? _selection;
 
     public DeviceBodyResults(IGraphicsBackend backend, Device device, DeviceBodies bodies)
+        : this(backend, device, bodies, bodies.Capacity) { }
+
+    public DeviceBodyResults(IGraphicsBackend backend, Device device, DeviceBodies bodies, World world, QueryHandle members, int capacity)
+        : this(backend, device, bodies, capacity) => _selection = new(this, world, members);
+
+    private DeviceBodyResults(IGraphicsBackend backend, Device device, DeviceBodies bodies, int capacity)
     {
         _backend = backend; _device = device; Bodies = bodies;
-        States = new DeviceBodyState[bodies.Capacity];
-        _readback = backend.CreateBuffer(device, new(bodies.States.Info.Size, BufferUsages.CopyDestination,
+        States = new DeviceBodyState[capacity];
+        _readback = backend.CreateBuffer(device, new((ulong)capacity * DeviceBodies.StateStride, BufferUsages.CopyDestination,
             "Completed body state readback"), MemoryType.Readback);
         _commands = backend.CreateCommandContext(device, new(QueueType.Compute, 0, 1, Label: "Device body readback"));
     }
@@ -33,8 +40,10 @@ public sealed partial class DeviceBodyResults : IDisposable
     internal JobHandle Schedule(in PhysicsStepContext context, int rowsPerPacket, JobHandle dependency)
     {
         Scheduler scheduler = WorldJobs.GetScheduler(context.World);
-        if (!_rows.TryGetValue((context.World, context.Bodies), out ResultRows? rows))
-            _rows.Add((context.World, context.Bodies), rows = new(context.World, context.Bodies, Bodies.Capacity));
+        QueryDefinition members = _selection?.Definition ?? context.Bodies;
+        if (!_rows.TryGetValue((context.World, members), out ResultRows? rows))
+            _rows.Add((context.World, members), rows = new(context.World, members, States.Length));
+        if (_selection is { } selection) return selection.Schedule(rows, rowsPerPacket, dependency);
         JobResourceAccess[] accesses = [Bodies.GetReadAccess(scheduler),
             JobResourceAccess.Write(scheduler.GetResourceToken(_readback), 0, (long)_readback.Info.Size),
             JobResourceAccess.Write(scheduler.GetResourceToken(_commands))];
@@ -68,13 +77,14 @@ public sealed partial class DeviceBodyResults : IDisposable
             scheduler.Schedule(new CaptureResults(results, rows, scheduler, rowsPerPacket), capture, mapped);
         }
     }
-    private readonly struct Map(DeviceBodyResults results) : IJob
+    private readonly struct Map(DeviceBodyResults results, int count = -1) : IJob
     {
         public void Execute()
         {
             using MappedBuffer mapping = results._backend.Map(results._readback, MapType.Read, BufferRange.Whole);
-            mapping.Invalidate(mapping.Range);
-            MemoryMarshal.Cast<byte, DeviceBodyState>(mapping.Bytes).CopyTo(results.States);
+            int length = count < 0 ? results.States.Length : count;
+            if (length != 0) mapping.Invalidate(new(0, (ulong)length * DeviceBodies.StateStride));
+            MemoryMarshal.Cast<byte, DeviceBodyState>(mapping.Bytes)[..length].CopyTo(results.States);
         }
     }
     private readonly struct Collect(DeviceBodyResults results) : IJob
@@ -84,6 +94,7 @@ public sealed partial class DeviceBodyResults : IDisposable
     public void Dispose()
     {
         foreach (ResultRows rows in _rows.Values) rows.Dispose();
+        _selection?.Dispose();
         _commands.Dispose(); _readback.Dispose();
     }
 }

@@ -42,7 +42,9 @@ public sealed partial class DeviceBodyResults
             var work = new ResultWork(rows, packetSize, rows.Count);
             JobResourceAccess[] accesses = [JobResourceAccess.Read(scheduler, results.States),
                 JobResourceAccess.Read(scheduler.GetResourceToken(rows)), results.Bodies.GetCpuVersionsAccess(scheduler)];
-            JobHandle applied = EntityQueryJobs.Schedule(rows.World, in work, new ApplyResults(results), accesses, rows.Resources);
+            JobResourceAccess[] reads = results._selection is { } selection
+                ? [.. accesses, JobResourceAccess.Read(scheduler.GetResourceToken(selection))] : accesses;
+            JobHandle applied = EntityQueryJobs.Schedule(rows.World, in work, new ApplyResults(results), reads, rows.Resources);
             scheduler.ScheduleFinally(new Collect(results), default, applied);
         }
     }
@@ -53,7 +55,8 @@ public sealed partial class DeviceBodyResults
             foreach (QueryRow row in query.Rows)
             {
                 if (!row.TryRead<DeviceBodyBinding>(out var binding) || !ReferenceEquals(binding.Bodies, Results.Bodies)) continue;
-                ref readonly DeviceBodyState state = ref Results.States[binding.Index];
+                if (!Results.TryGetResultIndex(binding.Index, row.Entity, out int ordinal)) continue;
+                ref readonly DeviceBodyState state = ref Results.States[ordinal];
                 if (state.EntityIndex == (uint)row.Entity.Index && state.EntityGeneration == (uint)row.Entity.Generation)
                     Rows.Entities[Rows.Count++] = row.Entity;
             }
@@ -78,7 +81,8 @@ public sealed partial class DeviceBodyResults
             {
                 var binding = row.Read<DeviceBodyBinding>();
                 if (!ReferenceEquals(binding.Bodies, results.Bodies)) continue;
-                ref readonly DeviceBodyState state = ref results.States[binding.Index];
+                if (!results.TryGetResultIndex(binding.Index, row.Entity, out int ordinal)) continue;
+                ref readonly DeviceBodyState state = ref results.States[ordinal];
                 if (state.EntityIndex != (uint)row.Entity.Index || state.EntityGeneration != (uint)row.Entity.Generation) continue;
                 ref BodyPose pose = ref row.ReadWrite<BodyPose>();
                 ref BodyVelocity velocity = ref row.ReadWrite<BodyVelocity>();
