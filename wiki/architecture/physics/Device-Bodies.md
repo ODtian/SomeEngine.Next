@@ -59,6 +59,8 @@ StepState 的写版本；新实体按绑定初始化整行，既有实体只复�
 生成本轮主体索引，再在设备原位写入起点、预测值及所属物理时刻；动态体接受加速度，
 动态体与运动学体按速度积分，静态体保持位姿。旋转与平移围绕原局部质心计算。
 `UpdateVelocities()` 从同一子步起点与完成位姿重建线、角速度。
+`UpdateSelection()` 在 CPU 阶段读取原参与查询，更新同一主体索引、直接查找的成员标记与
+本轮参数，供预测前的活动或图阶段使用。各数值提交继续沿同一捕获函数读取当前成员。
 项目提供第三个具体 `GyroscopicTorque` 内核后，`ApplyGyroscopicTorque()` 在预测前
 沿原完整体坐标惯量施加陀螺力矩；纯平移主体继续使用其三维自由度。
 数学由 [physics_body_math](../../../assets/Shaders/physics_body_math.slang) 与
