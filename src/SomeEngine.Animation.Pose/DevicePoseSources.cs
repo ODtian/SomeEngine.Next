@@ -35,7 +35,8 @@ public sealed partial class DevicePoseSources : IDisposable
     private readonly List<IDisposable> _objects = [];
     private readonly List<UploadBuffer> _uploads = [];
     private readonly List<Buffer> _states = [];
-    private readonly UploadBuffer _controls, _inputs, _definitions, _roots, _offsets, _work, _goals, _movements;
+    private readonly UploadBuffer _controls, _inputs, _roots, _offsets, _work, _goals, _movements;
+    private UploadBuffer? _definitions;
     private readonly UploadBuffer? _physicsFrames;
     private readonly Buffer _playback, _historyCurrent, _historyPrevious, _readback;
     private readonly Dictionary<string, ResourceBinding[]> _bindings = [];
@@ -68,9 +69,10 @@ public sealed partial class DevicePoseSources : IDisposable
         QueryJobAccess.CopyAccesses(world, definition, _queryAccesses, _resources);
         _controls = CreateUpload(capacity.Targets * 64, 64, "GpuPoseControls");
         _inputs = CreateUpload(capacity.Controls * 4, 4, "GpuPoseInputs");
-        _definitions = CreateUpload(capacity.DefinitionBytes, 0, "GpuPoseClips");
+        if (capacity.DefinitionBytes > 0) _definitions = CreateUpload(capacity.DefinitionBytes, 0, "GpuPoseClips");
         _roots = CreateUpload(capacity.Targets * 32, 32, "GpuPoseRoots");
         _offsets = CreateUpload(capacity.Targets * 16, 16, "GpuPoseOffsets");
+        _cpuModels = CreateUpload(capacity.Bones * 64, 64, "GpuPoseCpuModels");
         _work = CreateUpload((capacity.Bones + capacity.Operations) * 16, 16, "GpuPoseWork");
         _goals = CreateUpload(capacity.Goals * 48, 48, "GpuPoseGoals");
         _movements = CreateUpload(capacity.Targets * 48, 48, "GpuPoseMovements");
@@ -117,16 +119,31 @@ public sealed partial class DevicePoseSources : IDisposable
     private T Keep<T>(T value) where T : IDisposable { _objects.Add(value); return value; }
     private UploadBuffer CreateUpload(int bytes, uint stride, string name)
     {
-        Buffer buffer = Keep(_backend.CreateBuffer(_device, new((ulong)bytes, BufferUsages.ShaderRead, name), MemoryType.Upload));
+        Buffer buffer = Keep(_backend.CreateBuffer(_device, new((ulong)bytes, BufferUsages.ShaderRead | BufferUsages.CopySource, name), MemoryType.Upload));
         BufferSrv view = Keep(_backend.CreateBufferSrv(_device, new(buffer, new(0, buffer.Info.Size), StructureStride: stride)));
-        var upload = new UploadBuffer(buffer, _backend.Map(buffer, MapType.Write, BufferRange.Whole));
+        var upload = new UploadBuffer(buffer, view, _backend.Map(buffer, MapType.Write, BufferRange.Whole));
         _uploads.Add(upload); _bindings.Add(name, [ResourceBinding.ReadOnlyBuffer(view)]);
         return upload;
+    }
+    private void WriteDefinitions(ReadOnlySpan<byte> bytes)
+    {
+        if (_definitions is null || _definitions.Buffer.Info.Size < (ulong)bytes.Length)
+        {
+            if (_definitions is { } previous)
+            {
+                _uploads.Remove(previous); _objects.Remove(previous.View); _objects.Remove(previous.Buffer);
+                previous.Mapping.Dispose(); previous.View.Dispose(); previous.Buffer.Dispose();
+                _bindings.Remove("GpuPoseClips");
+            }
+            _definitions = CreateUpload(bytes.Length, 0, "GpuPoseClips");
+        }
+        bytes.CopyTo(_definitions.Mapping.Bytes);
+        _definitions.Mapping.Flush(new(0, (ulong)bytes.Length));
     }
     private Buffer CreateState(int bytes, uint stride, string name)
     {
         Buffer buffer = Keep(_backend.CreateBuffer(_device, new((ulong)bytes,
-            BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopySource, name), MemoryType.DeviceLocal));
+            BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopySource | BufferUsages.CopyDestination, name), MemoryType.DeviceLocal));
         BufferUav view = Keep(_backend.CreateBufferUav(_device, new(buffer, new(0, buffer.Info.Size), StructureStride: stride)));
         _states.Add(buffer); _bindings.Add(name, [ResourceBinding.WritableBuffer(view)]);
         return buffer;
@@ -164,6 +181,7 @@ public sealed partial class DevicePoseSources : IDisposable
         else if (_order.Count > 0)
         {
             _physics?.RecordFirstUse(_commands);
+            CopyCpuModels();
             Dispatch(0, _advanceBindings, _order.Count);
             for (int level = 0; level < _sampleBindings.Count; level++) Dispatch(1, _sampleBindings[level], _workCounts[level]);
             foreach (RigOperation operation in _rigOperations) Dispatch(operation.Kernel, operation.Bindings, operation.Count);
@@ -228,7 +246,7 @@ public sealed partial class DevicePoseSources : IDisposable
         foreach (UploadBuffer upload in _uploads) upload.Mapping.Dispose();
         for (int index = _objects.Count - 1; index >= 0; index--) _objects[index].Dispose();
     }
-    private sealed record UploadBuffer(Buffer Buffer, MappedBuffer Mapping);
+    private sealed record UploadBuffer(Buffer Buffer, BufferSrv View, MappedBuffer Mapping);
 }
 
 public readonly struct EvaluateDevicePoseSources(DevicePoseSources sources) : IPhysicsStage

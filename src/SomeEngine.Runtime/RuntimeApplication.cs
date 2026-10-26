@@ -4,6 +4,7 @@ using SlangShaderSharp;
 using SomeEngine.Diagnostics;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Animation.Pose;
 using SomeEngine.Resources;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Systems;
@@ -844,6 +845,7 @@ internal static class RuntimeApplication
                         orbitCamera: options.ScenePlayback == "camera");
                 RunInterface(0, boot.Width, boot.Height, 0, gameStarted);
             }
+            _ = elementSystems.Animation.Add(new DevicePoseSystem(backend, device));
 
             outputVerifier = options.VerifyFrameOutput || (options.FrameOutputPath is not null && options.CaptureFrame is null)
                 ? new FrameOutputVerifier(backend, device, width, height, PresentationFormat)

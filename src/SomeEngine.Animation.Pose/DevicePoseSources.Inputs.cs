@@ -34,8 +34,16 @@ public sealed partial class DevicePoseSources
         if (_physics is not null) writes.AddRange(_physics.CaptureAccesses);
         JobHandle captured = _resources.ScheduleEntities(_world, _targets, new SourceEntities(this),
             new CaptureInputs(this, context), writes.ToArray(), members);
-        JobHandle complete = DevicePhysicsJobs.Schedule(scheduler, new Submission(this, false), GetDeviceAccesses(scheduler, false), captured);
-        return scheduler.Schedule(new AcceptInputs(this), [JobResourceAccess.Write(scheduler.GetResourceToken(this))], complete);
+        return scheduler.Schedule(new SubmitSources(this), [JobResourceAccess.Write(scheduler.GetResourceToken(this))], captured);
+    }
+    private readonly struct SubmitSources(DevicePoseSources sources) : IJob
+    {
+        public void Execute()
+        {
+            Scheduler scheduler = WorldJobs.GetScheduler(sources._world);
+            JobHandle complete = DevicePhysicsJobs.Schedule(scheduler, new Submission(sources, false), sources.GetDeviceAccesses(scheduler, false), default);
+            scheduler.Schedule(new AcceptInputs(sources), [JobResourceAccess.Write(scheduler.GetResourceToken(sources))], complete);
+        }
     }
     private readonly struct SourceEntities(DevicePoseSources sources) : IQueryReadEntities
     {
@@ -76,8 +84,10 @@ public sealed partial class DevicePoseSources
             foreach (SourceRow source in sources._order)
             {
                 GpuPoseSourceState state = source.State;
+                state.Sources = sources; state.Range = source.Range; state.PlaybackIndex = source.Index;
                 state.Input = source.Input; state.BindingVersion = source.Binding;
-                if (source.Evaluate && source.HasPhysics) state.PhysicsTime = source.Input.CalculationTime;
+                state.CpuBones = source.Input.Skeleton.CpuBones;
+                if (source.HasPhysics) state.PhysicsTime = source.Input.CalculationTime;
                 state.HasInput = true; source.Reset = false;
                 commands.Replace(source.Entity, in state);
             }
@@ -101,7 +111,8 @@ public sealed partial class DevicePoseSources
                 if (source.Index != current._order.Count || !ReferenceEquals(input.Skeleton, source.State.Input.Skeleton)
                     || !ReferenceEquals(input.Clip, source.State.Input.Clip) || !ReferenceEquals(input.StateMachine, source.State.Input.StateMachine)
                     || !ReferenceEquals(input.Blend, source.State.Input.Blend) || !ReferenceEquals(input.Rig, source.State.Input.Rig)
-                    || source.State.BindingVersion != input.Skeleton.BindingVersion) rebuild = true;
+                    || source.State.BindingVersion != input.Skeleton.BindingVersion
+                    || !source.State.CpuBones.Equals(input.Skeleton.CpuBones)) rebuild = true;
                 source.Input = input; source.Binding = input.Skeleton.BindingVersion;
                 source.Index = current._order.Count; current._order.Add(source);
             }
@@ -164,6 +175,7 @@ public sealed partial class DevicePoseSources
         });
         int goalCount = _order.Sum(row => row.Input.Rig?.GoalCount ?? 0);
         if (goalCount > 0) _goals.Mapping.Flush(new(0, (ulong)goalCount * 48));
+        CaptureCpuModels();
     }
     private void Rebuild()
     {
@@ -185,6 +197,7 @@ public sealed partial class DevicePoseSources
             row.HasPhysics = false;
             if (input.Rig is { } rig) foreach (GpuPoseSource step in rig.Steps) row.HasPhysics |= step is GpuXpbdPose;
         }
+        AddCpuSections(ref bones);
         _boneCount = bones;
         _controlView?.Dispose();
         foreach (BufferSrv view in _workViews) view.Dispose();
@@ -192,22 +205,22 @@ public sealed partial class DevicePoseSources
         if (_order.Count == 0) return;
         _controlView = _backend.CreateBufferSrv(_device, new(_controls.Buffer, new(0, (ulong)_order.Count * 64), StructureStride: 64));
         _bindings["GpuPoseControls"] = [ResourceBinding.ReadOnlyBuffer(_controlView)];
-        _advanceBindings = OrderBindings(_layouts[0], _bindings);
         var levels = new List<List<BoneWork>>();
         var children = new List<int>[_boneCount];
         for (int bone = 0; bone < children.Length; bone++) children[bone] = [];
-        var sections = _order.ToDictionary(row => row.Input.Skeleton);
+
         foreach (SourceRow row in _order)
         { row.Depths = new int[row.Range.Count]; Array.Fill(row.Depths, -1); }
         foreach (SourceRow row in _order)
             for (int bone = 0; bone < row.Range.Count; bone++)
             {
-                (SourceRow parentRow, int parent) = Parent(row, bone);
+                (SourceRow? parentRow, int parent, int parentIndex) = Parent(row, bone);
+                if (parentIndex >= 0) children[parentIndex].Add(row.Range.Start + bone);
+                if (CpuWritten(row, bone)) continue;
                 int depth = Depth(row, bone);
-                if (parent >= 0) children[parentRow.Range.Start + parent].Add(row.Range.Start + bone);
                 while (levels.Count <= depth) levels.Add([]);
                 levels[depth].Add(new((uint)row.Index, (uint)bone,
-                    parent < 0 ? uint.MaxValue : (uint)(parentRow.Range.Start + parent), (uint)(row.Range.Start + bone)));
+                    parentIndex < 0 ? uint.MaxValue : (uint)parentIndex, (uint)(row.Range.Start + bone)));
             }
         int offset = 0;
         foreach (List<BoneWork> level in levels)
@@ -216,26 +229,29 @@ public sealed partial class DevicePoseSources
             work.CopyTo(_work.Mapping.Bytes[offset..]);
             BufferSrv view = _backend.CreateBufferSrv(_device, new(_work.Buffer, new((ulong)offset, (ulong)work.Length), StructureStride: 16));
             _workViews.Add(view); _bindings["GpuPoseWork"] = [ResourceBinding.ReadOnlyBuffer(view)];
-            _sampleBindings.Add(OrderBindings(_layouts[1], _bindings)); _workCounts.Add(level.Count); offset += work.Length;
+            _workCounts.Add(level.Count); offset += work.Length;
         }
         WriteRigOperations(writer, children, ref offset);
-        bytes.GetBuffer().AsSpan(0, (int)bytes.Length).CopyTo(_definitions.Mapping.Bytes);
-        _definitions.Mapping.Flush(new(0, (ulong)bytes.Length));
+        WriteDefinitions(bytes.GetBuffer().AsSpan(0, (int)bytes.Length));
+        _advanceBindings = OrderBindings(_layouts[0], _bindings);
+        for (int level = 0; level < _workCounts.Count; level++)
+        {
+            _bindings["GpuPoseWork"] = [ResourceBinding.ReadOnlyBuffer(_workViews[level])];
+            _sampleBindings.Add(OrderBindings(_layouts[1], _bindings));
+        }
+        for (int index = 0; index < _rigOperations.Count; index++)
+        {
+            RigOperation operation = _rigOperations[index];
+            _bindings["GpuPoseWork"] = [ResourceBinding.ReadOnlyBuffer(operation.Work)];
+            _rigOperations[index] = operation with { Bindings = OrderBindings(_layouts[operation.Kernel], _bindings) };
+        }
         if (offset > 0) _work.Mapping.Flush(new(0, (ulong)offset));
 
-        (SourceRow Section, int Bone) Parent(SourceRow row, int bone)
-        {
-            Skeleton skeleton = row.Input.Skeleton.Skeleton;
-            int parent = skeleton.Parents[bone], inherited = skeleton.InheritedParents[bone];
-            if (parent >= 0 || inherited < 0) return (row, parent);
-            BoneSource source = row.Input.Skeleton.BoneSources[inherited];
-            return (sections[source.Instance], source.Bone);
-        }
         int Depth(SourceRow row, int bone)
         {
             if (row.Depths[bone] >= 0) return row.Depths[bone];
-            (SourceRow parentRow, int parent) = Parent(row, bone);
-            return row.Depths[bone] = parent < 0 ? 0 : Depth(parentRow, parent) + 1;
+            (SourceRow? parentRow, int parent, int _) = Parent(row, bone);
+            return row.Depths[bone] = parentRow is null || CpuWritten(parentRow, parent) ? 0 : Depth(parentRow, parent) + 1;
         }
     }
     [StructLayout(LayoutKind.Sequential)]
@@ -247,7 +263,7 @@ public sealed partial class DevicePoseSources
     private readonly record struct PhysicsFrame(Matrix4x4 ModelToWorld, Matrix4x4 WorldToModel, float Duration, uint Reset,
         uint Substep, uint Padding, long Number, double Time);
     private readonly record struct BoneWork(uint Section, uint Bone, uint Parent, uint Output);
-    private readonly record struct RigOperation(int Kernel, ResourceBinding[] Bindings, int Count);
+    private readonly record struct RigOperation(int Kernel, BufferSrv Work, ResourceBinding[] Bindings, int Count);
     private sealed class SourceRow(Entity entity)
     {
         internal readonly Entity Entity = entity;
