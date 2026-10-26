@@ -13,6 +13,67 @@ namespace SomeEngine.Graphics.Direct3D12.Tests;
 public sealed partial class DeviceXpbdTests
 {
     [Fact]
+    public void DeviceJointFramesLimitsAndFullInertiaMatchTheCoupledBodyResponse()
+    {
+        using var backend = D3D12GraphicsBackend.Create();
+        using Device device = CreateDevice(backend);
+        using var jobs = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using World world = WorldJobs.CreateWorld(scheduler: jobs);
+        using World reference = WorldJobs.CreateWorld(scheduler: jobs);
+        using var bodies = new DeviceBodies(backend, device, 2);
+        using var joints = new DeviceConstraintData<DeviceJointConstraint>(backend, device, 1, "DeviceJoints");
+        using var multipliers = new DeviceConstraintState<XpbdJointState>(backend, device, 1, "DeviceJointMultipliers");
+        Entity source = AddBody(world, bodies, 0, Vector3.Zero, BodyMotion.Static);
+        Entity target = AddBody(world, bodies, 1, new(.7f, -.3f, .4f), BodyMotion.Dynamic);
+        var sourcePose = new BodyPose { Rotation = Quaternion.CreateFromYawPitchRoll(-.2f, .1f, .3f) };
+        var targetPose = new BodyPose { Position = new(.7f, -.3f, .4f), Rotation = Quaternion.CreateFromYawPitchRoll(.4f, -.2f, .3f) };
+        var mass = new BodyMass { Motion = BodyMotion.Dynamic, InverseMass = .7f, CenterOfMass = new(.1f, .2f, -.1f),
+            InverseInertia = new(1, .1f, 0, 0, .1f, .7f, .05f, 0, 0, .05f, .4f, 0, 0, 0, 0, 1) };
+        var velocity = new BodyVelocity { Linear = new(.2f, -.3f, .1f), Angular = new(-.1f, .3f, .2f) };
+        world.Replace(source, sourcePose); world.Replace(target, targetPose); world.Replace(target, mass); world.Replace(target, velocity);
+        Entity first = reference.CreateEntity(sourcePose);
+        reference.Add(first, new BodyMass { Motion = BodyMotion.Static }); reference.Add(first, new BodyVelocity()); reference.Add(first, new BodyStepState());
+        Entity second = reference.CreateEntity(targetPose);
+        reference.Add(second, mass); reference.Add(second, velocity); reference.Add(second, new BodyStepState());
+        JointConstraint definition = JointConstraints.CreateHinge(
+            new(new(.2f, .1f, 0), Quaternion.CreateFromAxisAngle(Vector3.UnitZ, .3f)),
+            new(new(-.1f, 0, .2f), Quaternion.CreateFromAxisAngle(Vector3.UnitY, -.2f)), 200, 100);
+        definition.LinearX = new(JointAxisMotion.Limited, -.2f, .3f);
+        definition.AngularY = new(JointAxisMotion.Limited, -.1f, .15f);
+        RelationEdge<JointConstraint> joint = world.CreateRelation(source, target, definition);
+        RelationEdge<JointConstraint> expectedJoint = reference.CreateRelation(first, second, definition);
+        world.Add(joint.Entity, new DeviceConstraintBinding<DeviceJointConstraint>(joints, 0));
+        world.Add(joint.Entity, new DeviceXpbdState<XpbdJointState>(multipliers));
+        reference.Add(expectedJoint.Entity, new XpbdJointState());
+        var referenceBodies = reference.Query(reference.QueryDefinition().ReadWrite<BodyPose>().Read<BodyMass>().Read<BodyStepState>());
+        var referenceRows = reference.Query(reference.QueryDefinition().Read<JointConstraint>()
+            .Read<DirectedRelationEndpoints<JointConstraint>>().ReadWrite<XpbdJointState>());
+        var scalar = new PredictBodies(Vector3.Zero, 64).Then(SolveXpbd.Create(reference, referenceBodies,
+            new XpbdConstraints<JointConstraint, XpbdJointProjection>(referenceRows), 8)).Then(new UpdateBodyVelocities(64));
+        var members = world.Query(world.QueryDefinition().Read<DeviceBodyBinding>());
+        var rows = world.Query(world.QueryDefinition().Read<JointConstraint>().Read<DirectedRelationEndpoints<JointConstraint>>()
+            .Read<DeviceConstraintBinding<DeviceJointConstraint>>().All<DeviceXpbdState<XpbdJointState>>());
+        using var write = joints.WriteInputs<JointConstraint, DeviceJointSource>(world, rows, new(), 64);
+        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
+        using var results = new DeviceBodyResults(backend, device, bodies);
+        using var project = new DeviceXpbdProjection<DeviceJointConstraint, XpbdJointState>(backend, device, world,
+            rows, bodies, joints, multipliers, CompileXpbdJoint(), 64);
+        var deviceStages = joints.BeginInputs().Then(write).Then(joints.UploadInputs())
+            .Then(bodies.WriteInputs(64)).Then(bodies.UploadInputs()).Then(dynamics.Predict(Vector3.Zero))
+            .Then(project.Initialize()).Then(project.Iterate(8)).Then(dynamics.UpdateVelocities()).Then(results.Readback(64));
+
+        PhysicsSimulation.Create(reference, SomeEngine.ECS.Queries.QueryDefinition.Empty, scalar, 1).Schedule(0, 0, .05).Complete();
+        PhysicsSimulation.Create(world, world.QueryDefinition().All<DeviceBodyBinding>().Build(), deviceStages, 1).Schedule(0, 0, .05).Complete();
+
+        Assert.InRange(Vector3.Distance(reference.Read<BodyPose>(second).Position, world.Read<BodyPose>(target).Position), 0, 1e-4f);
+        Assert.InRange(MathF.Abs(Quaternion.Dot(reference.Read<BodyPose>(second).Rotation, world.Read<BodyPose>(target).Rotation)), .999999f, 1.000001f);
+        Assert.InRange(Vector3.Distance(reference.Read<BodyVelocity>(second).Linear, world.Read<BodyVelocity>(target).Linear), 0, 1e-4f);
+        Assert.InRange(Vector3.Distance(reference.Read<BodyVelocity>(second).Angular, world.Read<BodyVelocity>(target).Angular), 0, 1e-4f);
+        world.ReleaseQuery(rows); world.ReleaseQuery(members);
+        reference.ReleaseQuery(referenceRows); reference.ReleaseQuery(referenceBodies);
+    }
+
+    [Fact]
     public void DeviceMotorLimitsBothBodyReactionsByThePhysicalMaximumForce()
     {
         using var backend = D3D12GraphicsBackend.Create();
