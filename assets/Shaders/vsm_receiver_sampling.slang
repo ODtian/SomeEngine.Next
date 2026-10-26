@@ -92,15 +92,28 @@ float SampleVirtualShadowDirectionalReceiver(uint3 pixel, uint light, GPULight s
     if ((receiver.Flags & SURFACE_RECEIVER_SUBSURFACE) == 0u) shadowPosition += normal * receiver.NormalBiasLength;
     float rayStartDistance = CalculateVirtualShadowScreenRayStart(pixel, receiver, shadowPosition, -source.Direction,
         screenSize, view, depthImage);
+    bool firstPerson = (receiver.Flags & SURFACE_RECEIVER_FIRST_PERSON) != 0u;
+    uint firstPersonView = VirtualShadowSampling.FirstPersonViewOffset < VirtualShadowSampling.ViewCount
+        ? VirtualShadowSampling.FirstPersonViewOffset + light * VirtualShadowViews[VirtualShadowSampling.FirstPersonViewOffset].ClipmapLevelCount
+        : 0xffffffffu;
+    if (VirtualShadowSampling.DirectionalRays.RayCount != 0u)
+    {
+        VirtualShadowPrefilterResult distant = SampleDirectionalVirtualShadowPrefiltered(
+            VirtualShadowViews, VirtualShadowPageTable, VirtualShadowPrefilteredAtlas, firstView, levels, shadowPosition);
+        if (distant.Valid && distant.Visibility <= 0.0001) return distant.Visibility;
+        VirtualShadowProjectionResult traced = TraceVirtualShadowDirectional(VirtualShadowViews,
+            VirtualShadowPageTable, VirtualShadowAtlas, firstView, levels, shadowPosition, normal,
+            0.0, receiver.ResolutionBias, VirtualShadowSampling.DirectionalRays, pixel.xy,
+            VirtualShadowSampling.FrameIndex, length(receiver.Position - view.CameraPos), rayStartDistance,
+            firstPerson, firstPersonView);
+        return distant.Valid ? distant.Visibility * traced.Visibility : traced.Visibility;
+    }
     VirtualShadowProjectionResult result = SampleVirtualShadowDirectionalFilteredSoft(VirtualShadowViews, VirtualShadowPageTable,
         VirtualShadowAtlas, VirtualShadowPrefilteredAtlas, firstView, levels, shadowPosition, normal,
         receiver.ResolutionBias,
         VirtualShadowSampling.BlockerSampleCount, VirtualShadowSampling.FilterSampleCount,
         VirtualShadowSampling.MaxFilterRadiusTexels, pixel.xy, VirtualShadowSampling.FrameIndex,
-        (receiver.Flags & SURFACE_RECEIVER_FIRST_PERSON) != 0u,
-        VirtualShadowSampling.FirstPersonViewOffset < VirtualShadowSampling.ViewCount
-            ? VirtualShadowSampling.FirstPersonViewOffset + light * VirtualShadowViews[VirtualShadowSampling.FirstPersonViewOffset].ClipmapLevelCount
-            : 0xffffffffu, rayStartDistance);
+        firstPerson, firstPersonView, rayStartDistance);
     return result.Visibility;
 }
 #endif
@@ -142,6 +155,10 @@ float SampleVirtualShadowLocalReceiver(uint3 pixel, uint light, GPULight source,
     if ((receiver.Flags & SURFACE_RECEIVER_SUBSURFACE) == 0u) shadowPosition += normal * receiver.NormalBiasLength;
     float rayStartDistance = CalculateVirtualShadowScreenRayStart(pixel, receiver, shadowPosition, normalize(towardLight),
         screenSize, cameraView, depthImage);
+    if (VirtualShadowSampling.LocalRays.RayCount != 0u)
+        return TraceVirtualShadowLocal(VirtualShadowViews, VirtualShadowPageTable, VirtualShadowAtlas,
+            firstView, shadowPosition, normal, receiver.NominalPixelRadius, VirtualShadowDynamicResolutionBias[0],
+            VirtualShadowSampling.LocalRays, pixel.xy, VirtualShadowSampling.FrameIndex, rayStartDistance).Visibility;
     return SampleVirtualShadowLocalSoft(VirtualShadowViews, VirtualShadowPageTable, VirtualShadowAtlas,
         firstView, shadowPosition, normal, receiver.NominalPixelRadius,
         VirtualShadowDynamicResolutionBias[0], VirtualShadowSampling.BlockerSampleCount,

@@ -110,6 +110,57 @@ public sealed class ShadowImageTests(RenderingContentFixture content)
         SceneImages.AssertEqual(complete!, masked!, 2);
     }
 
+    [SceneTheory]
+    [InlineData("d3d12")]
+    [InlineData("vulkan")]
+    public async Task DirectionalRayCountChangesSoftShadowSampling(string backend)
+    {
+        SceneLinearImage? single = null, multiple = null;
+        VirtualShadowMapSettings settings = CreateShadowSettings() with
+        {
+            AdaptiveRayCount = 0, DirectionalFirstClipmapLevel = 6,
+        };
+        var light = new DirectionalLight(Vector3.Normalize(new(1, -.5f, 1)), Vector3.One, 3,
+            ShadowSettings: new(SourceAngleDegrees: 12));
+        await SceneImages.RunAsync(backend, new SceneScript(content.Shadows, 24,
+        [
+            new(0, edit => edit.SetDirectionalLight(edit.PointLights.Single(), light)),
+            new(23, edit => edit.CaptureLinearImage(image => single = image)),
+        ]) { ShadowSettings = settings with { DirectionalRayCount = 1 }, RasterEdgePixels = 32 },
+            "--no-taa", "--vsm", "--hardware-raster");
+        await SceneImages.RunAsync(backend, new SceneScript(content.Shadows, 24,
+        [
+            new(0, edit => edit.SetDirectionalLight(edit.PointLights.Single(), light)),
+            new(23, edit => edit.CaptureLinearImage(image => multiple = image)),
+        ]) { ShadowSettings = settings with { DirectionalRayCount = 8 }, RasterEdgePixels = 32 },
+            "--no-taa", "--vsm", "--hardware-raster");
+        SceneImages.AssertLinearNotEqual(single!, multiple!);
+    }
+
+    [SceneTheory]
+    [InlineData("d3d12")]
+    [InlineData("vulkan")]
+    public async Task LocalRayCountChangesSoftShadowSampling(string backend)
+    {
+        SceneLinearImage? single = null, multiple = null;
+        VirtualShadowMapSettings settings = CreateShadowSettings() with { AdaptiveRayCount = 0 };
+        var light = new PointLight(new(-4, 2, 3), 20, Vector3.One, 30,
+            ShadowSettings: new(SourceRadius: .75f));
+        await SceneImages.RunAsync(backend, new SceneScript(content.Shadows, 24,
+        [
+            new(0, edit => edit.SetPointLight(edit.PointLights.Single(), light)),
+            new(23, edit => edit.CaptureLinearImage(image => single = image)),
+        ]) { ShadowSettings = settings with { LocalRayCount = 1 }, RasterEdgePixels = 32 },
+            "--no-taa", "--vsm", "--hardware-raster");
+        await SceneImages.RunAsync(backend, new SceneScript(content.Shadows, 24,
+        [
+            new(0, edit => edit.SetPointLight(edit.PointLights.Single(), light)),
+            new(23, edit => edit.CaptureLinearImage(image => multiple = image)),
+        ]) { ShadowSettings = settings with { LocalRayCount = 8 }, RasterEdgePixels = 32 },
+            "--no-taa", "--vsm", "--hardware-raster");
+        SceneImages.AssertLinearNotEqual(single!, multiple!);
+    }
+
     private static VirtualShadowMapSettings CreateShadowSettings() => new()
     {
         VirtualResolution = 4096, AtlasSize = 2048, MaxShadowLights = 1,

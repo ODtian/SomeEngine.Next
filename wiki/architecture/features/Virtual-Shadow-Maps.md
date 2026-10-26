@@ -34,6 +34,8 @@ mask 使用两个垂直排列的 `R32UInt` texel，各保存 `8×4` 位覆盖，
 
 材质使用当次求得的位置、法线和深度偏移直接执行 VSM 采样。方向光和局部光沿 soft shadow、第一人称与屏幕射线起点处理；局部 `SurfaceReceiver` 保存本次函数采样参数。
 
+默认材质采样使用 PCSS。`DirectionalRayCount` 或 `LocalRayCount` 为正数时，对应光源使用已有的 SMRT 射线追踪，并读取每条射线采样数、自适应射线数量、斜率外推及抖动设置。两条采样路径共用当前页表、第一人称处理与屏幕射线起点；方向光继续合并远处预过滤，局部光继续量化和抖动最终可见度。应用参数 `--vsm-ray-count 0` 同时将过滤半径设为零，选择硬阴影比较。
+
 页原点沿光视图的 X/Y UV 方向滚动。相机跨过对齐边界时，固定世界几何的细页地址保持连续。clipmap 每次滚动四分之一页表；较粗 mip 按投影变化重新绘制。目标页的驻留状态决定当前可采样的精度，并沿既有页回退路径取得结果。
 
 参见 [[architecture/rendering/Multi-View]] · [[architecture/cluster/Cluster-Scope]]。
