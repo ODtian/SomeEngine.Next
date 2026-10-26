@@ -1,0 +1,163 @@
+using System.Runtime.InteropServices;
+using SlangShaderSharp;
+using SomeEngine.ECS.Systems;
+using SomeEngine.Graphics;
+using SomeEngine.Job;
+using Buffer = SomeEngine.Graphics.Buffer;
+
+namespace SomeEngine.Physics;
+
+public readonly record struct DeviceGraphCapacity(int Constraints, int BodiesPerConstraint);
+public readonly record struct DeviceGraphKernels(ComputePipelineDesc WriteRows, ComputePipelineDesc Build);
+
+/// <summary>Resident entity participation, connectivity, colors and adjacency shared by concrete device solvers.</summary>
+public sealed class DeviceConstraintGraph : IDisposable
+{
+    private readonly IGraphicsBackend _backend;
+    private readonly Device _device;
+    private readonly DeviceBodies _bodies;
+    private readonly DeviceBodyDynamics _dynamics;
+    private readonly DeviceGraphCapacity _capacity;
+    private readonly int _threadsPerGroup;
+    private readonly Buffer _parameters, _readback;
+    private readonly BufferCbv _parametersView;
+    private readonly CommandContext _commands;
+    private readonly Pipeline[] _pipelines;
+    private readonly VariableLayoutReflection[] _layouts;
+    private readonly ResourceBinding[][] _bindings;
+    private readonly Dictionary<string, ResourceBinding[]> _graphBindings = [];
+    private readonly List<Buffer> _buffers = [];
+    private readonly List<BufferUav> _views = [];
+    private readonly JobResourceAccess[] _extraAccesses;
+    private readonly IDeviceConstraintSelection[] _selections;
+    private readonly uint[] _counts = new uint[4];
+    private readonly Buffer _countBuffer;
+    private bool _initialized;
+
+    public DeviceConstraintGraph(IGraphicsBackend backend, Device device, DeviceBodies bodies, DeviceBodyDynamics dynamics,
+        DeviceGraphKernels kernels, DeviceGraphCapacity capacity, IReadOnlyDictionary<string, ResourceBinding[]> inputs,
+        ReadOnlyMemory<JobResourceAccess> inputAccesses, int threadsPerGroup,
+        ReadOnlyMemory<IDeviceConstraintSelection> selections = default)
+    {
+        _backend = backend; _device = device; _bodies = bodies; _dynamics = dynamics; _capacity = capacity;
+        _threadsPerGroup = threadsPerGroup; _extraAccesses = inputAccesses.ToArray(); _selections = selections.ToArray();
+        AddBuffer("ConstraintGraphRows", capacity.Constraints, 16);
+        AddBuffer("ConstraintGraphParticipants", capacity.Constraints * capacity.BodiesPerConstraint, 8);
+        AddBuffer("ConstraintGraphParents", bodies.Capacity, 4);
+        AddBuffer("ConstraintGraphBodyColors", bodies.Capacity, 4);
+        AddBuffer("ConstraintGraphRowColors", capacity.Constraints, 4);
+        AddBuffer("ConstraintGraphBodyOrder", bodies.Capacity, 4);
+        AddBuffer("ConstraintGraphRowOrder", capacity.Constraints, 4);
+        AddBuffer("ConstraintGraphBodyRanges", bodies.Capacity, 8);
+        AddBuffer("ConstraintGraphRowRanges", capacity.Constraints, 8);
+        AddBuffer("ConstraintGraphBodyOffsets", bodies.Capacity + 1, 4);
+        AddBuffer("ConstraintGraphAdjacency", capacity.Constraints * capacity.BodiesPerConstraint, 4);
+        AddBuffer("ConstraintGraphScratch", bodies.Capacity, 4);
+        AddBuffer("ConstraintGraphIslands", bodies.Capacity, 4);
+        _countBuffer = AddBuffer("ConstraintGraphCounts", 4, 4);
+        _parameters = backend.CreateBuffer(device, new(256, BufferUsages.Constant, "Constraint graph dimensions"), MemoryType.Upload);
+        _parametersView = backend.CreateBufferCbv(device, new(_parameters, new(0, 256)));
+        _readback = backend.CreateBuffer(device, new(16, BufferUsages.CopyDestination, "Constraint graph work counts"), MemoryType.Readback);
+        _commands = backend.CreateCommandContext(device, new(QueueType.Compute, 0, 1, Label: "Device constraint graph"));
+        _graphBindings.Add("ConstraintGraphParameters", [ResourceBinding.ConstantBuffer(_parametersView)]);
+        _graphBindings.Add("DeviceBodyStates", [ResourceBinding.WritableBuffer(bodies.View)]);
+        dynamics.AddSelectionBindings(_graphBindings);
+        var bindings = new Dictionary<string, ResourceBinding[]>(_graphBindings);
+        foreach (var input in inputs) bindings.Add(input.Key, input.Value);
+        foreach (IDeviceConstraintSelection selection in _selections) selection.AddBindings(bindings);
+        ComputePipelineDesc[] descriptions = [kernels.WriteRows, kernels.Build];
+        _pipelines = descriptions.Select(kernel => backend.CreateComputePipeline(device, kernel)).ToArray();
+        _layouts = descriptions.Select(kernel => kernel.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null).ToArray();
+        _bindings = _layouts.Select(layout => DeviceCollisionGrid.OrderBindings(layout, bindings)).ToArray();
+    }
+
+    public int BodyColorCount => (int)_counts[1];
+    public int ConstraintStageCount => (int)_counts[2];
+    public int BodyCount => (int)_counts[0];
+    public int IslandCount => (int)_counts[3];
+    public int ConstraintCapacity => _capacity.Constraints;
+    public BuildDeviceConstraintGraph Build() => new(this);
+    public void AddBindings(Dictionary<string, ResourceBinding[]> bindings)
+    {
+        foreach (var binding in _graphBindings) bindings.Add(binding.Key, binding.Value);
+        foreach (IDeviceConstraintSelection selection in _selections) selection.AddBindings(bindings);
+    }
+    public void AddBuildAccesses(Scheduler scheduler, List<JobResourceAccess> accesses)
+    {
+        accesses.Add(_bodies.GetReadAccess(scheduler));
+        accesses.AddRange(_dynamics.GetSelectionReadAccesses(scheduler));
+        accesses.AddRange(_extraAccesses);
+        foreach (Buffer buffer in _buffers) accesses.Add(JobResourceAccess.Write(scheduler.GetResourceToken(buffer), 0, (long)buffer.Info.Size));
+        accesses.Add(JobResourceAccess.Write(scheduler.GetResourceToken(_parameters), 0, 256));
+        accesses.Add(JobResourceAccess.Write(scheduler.GetResourceToken(_readback), 0, 16));
+        accesses.Add(JobResourceAccess.Write(scheduler.GetResourceToken(_commands)));
+        accesses.Add(JobResourceAccess.Write(scheduler, _counts));
+        foreach (IDeviceConstraintSelection selection in _selections) selection.AddAccesses(scheduler, accesses);
+    }
+    internal JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency)
+    {
+        Scheduler scheduler = WorldJobs.GetScheduler(context.World);
+        var accesses = new List<JobResourceAccess>(); AddBuildAccesses(scheduler, accesses);
+        return scheduler.Schedule(new BuildGraph(this), accesses.ToArray(), dependency);
+    }
+    internal void BuildAndWait()
+    {
+        CaptureSelections();
+        using (MappedBuffer mapping = _backend.Map(_parameters, MapType.Write, BufferRange.Whole))
+        {
+            Span<uint> values = MemoryMarshal.Cast<byte, uint>(mapping.Bytes);
+            values[0] = (uint)_bodies.Capacity; values[1] = (uint)_capacity.Constraints; values[2] = (uint)_capacity.BodiesPerConstraint; values[3] = 0;
+            mapping.Flush(new(0, 16));
+        }
+        _backend.Begin(_commands, new(0, 0, 16));
+        if (!_initialized)
+            foreach (Buffer buffer in _buffers)
+                _backend.Barrier(_commands, new BufferBarrier(buffer, buffer.InitialSync, PipelineSync.ComputeShading,
+                    buffer.InitialAccess, ResourceAccess.UnorderedAccess));
+        _backend.SetPipeline(_commands, _pipelines[0]);
+        _backend.SetTransientParameterBindings(_commands, new(_layouts[0], _bindings[0], []));
+        _backend.Dispatch(_commands, new((uint)((_capacity.Constraints + _threadsPerGroup - 1) / _threadsPerGroup), 1, 1));
+        _backend.Barrier(_commands, new MemoryBarrier(PipelineSync.ComputeShading, PipelineSync.ComputeShading,
+            ResourceAccess.UnorderedAccess, ResourceAccess.UnorderedAccess));
+        _backend.SetPipeline(_commands, _pipelines[1]);
+        _backend.SetTransientParameterBindings(_commands, new(_layouts[1], _bindings[1], []));
+        _backend.Dispatch(_commands, new(1, 1, 1));
+        _backend.Barrier(_commands, new BufferBarrier(_countBuffer, PipelineSync.ComputeShading, PipelineSync.Copy,
+            ResourceAccess.UnorderedAccess, ResourceAccess.CopySource));
+        _backend.CopyBuffer(_commands, new(_countBuffer, 0, _readback, 0, 16));
+        _backend.Barrier(_commands, new BufferBarrier(_countBuffer, PipelineSync.Copy, PipelineSync.ComputeShading,
+            ResourceAccess.CopySource, ResourceAccess.UnorderedAccess));
+        using RecordedCommands recorded = _backend.End(_commands);
+        QueueCompletion completed = _backend.Submit(_backend.GetQueue(_device, QueueType.Compute), new([], [], [recorded], [], []));
+        _initialized = true;
+        if (_backend.WaitCpu(in completed, TimeSpan.FromSeconds(60)) != WaitStatus.Completed) throw new TimeoutException();
+        using (MappedBuffer mapping = _backend.Map(_readback, MapType.Read, BufferRange.Whole))
+        {
+            mapping.Invalidate(mapping.Range);
+            MemoryMarshal.Cast<byte, uint>(mapping.Bytes).CopyTo(_counts);
+        }
+        _backend.CollectCompleted(_device);
+    }
+    internal void CaptureSelections()
+    { foreach (IDeviceConstraintSelection selection in _selections) selection.Capture(); }
+    private Buffer AddBuffer(string name, int count, uint stride)
+    {
+        Buffer buffer = _backend.CreateBuffer(_device, new((ulong)count * stride,
+            BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopySource, name), MemoryType.DeviceLocal);
+        BufferUav view = _backend.CreateBufferUav(_device, new(buffer, new(0, buffer.Info.Size), StructureStride: stride));
+        _buffers.Add(buffer); _views.Add(view); _graphBindings.Add(name, [ResourceBinding.WritableBuffer(view)]);
+        return buffer;
+    }
+    private readonly struct BuildGraph(DeviceConstraintGraph graph) : IJob { public void Execute() => graph.BuildAndWait(); }
+    public void Dispose()
+    {
+        foreach (Pipeline pipeline in _pipelines) pipeline.Dispose();
+        _commands.Dispose(); _parametersView.Dispose(); _parameters.Dispose(); _readback.Dispose();
+        foreach (BufferUav view in _views) view.Dispose();
+        foreach (Buffer buffer in _buffers) buffer.Dispose();
+    }
+}
+public readonly struct BuildDeviceConstraintGraph(DeviceConstraintGraph graph) : IPhysicsStage
+{
+    public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) => graph.Schedule(in context, dependency);
+}
