@@ -24,7 +24,7 @@
 
 ## 起点分离平面与预测接近
 
-`CollisionGeometry<TFirst, TSecond>.Predict(firstMotion, secondMotion, kernel, output, contactDistance)` 接收双方具体运动读取器、原 `ICollisionNarrowPhase` 内核、共同接触输出和显式距离。它在起点几何上取得分离平面；起点距离进入接触范围时沿原内核生成流形，起点仍有间距时使用最近见证点。
+`CollisionGeometry<TFirst, TSecond>.Predict(firstMotion, secondMotion, kernel, output, contactDistance)` 接收双方具体运动读取器、原 `ICollisionNarrowPhase` 内核、共同接触输出和显式距离。它在起点几何上取得分离平面，并从双方 `ReadMotionBounds` 的法向投影计算本步可能的闭合量。起点流形的候选距离为 `max(contactDistance, nearest.Separation) + firstTravel + secondTravel`，由同一具体内核生成完整候选流形。起点仍有间距且候选流形为空时，最近见证点继续提供分离平面。
 
 两侧采样锚分别在共同起点与共同预测状态求值。其预测间距为：
 
@@ -32,7 +32,7 @@
 predictedGap = startSeparation + dot(startNormal, predictedAnchorDelta - startAnchorDelta)
 ```
 
-起点或预测间距进入项目的 `contactDistance` 时，检测交付该起点接触。高速物体即使在预测终点已穿过薄障碍，起点平面仍为所选响应提供步内接近约束。旋转、偏心质心和多端采样的位移沿原局部锚与共同状态参与此投影。该模型使用一组起点分离平面描述本子步的预测接近。
+每个流形点分别计算上述预测间距；起点或预测间距进入项目原 `contactDistance` 时，检测交付该起点接触。法向闭合量扩大几何候选范围，逐点筛选继续使用原接触距离和实际锚位移。分离中的整面接近可由完整面点共同承担响应；高速物体即使在预测终点已穿过薄障碍，起点平面仍为所选响应提供步内接近约束。旋转、偏心质心和多端采样的位移沿原局部锚与共同状态参与此投影。该模型使用一组起点分离平面描述本子步的预测接近。
 
 输出保持双方几何实体、特征、点序号、几何局部见证点、世界见证中点、法向、起点间距及实际 Body 采样跨度。`ContactPrediction.Enabled` 标明起点采样，`SampleTime` 等于 `context.StartTime`。持久点刷新据此从相同起点状态计算 `BodyAnchorDelta`；响应继续使用[共同接触间距公式](Contacts.md#接触身份与作用端)读取当前锚，得到本轮残差。普通几何检测沿当前姿态采样路径交付其原接触。
 
