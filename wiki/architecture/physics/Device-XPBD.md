@@ -45,6 +45,12 @@ source 的 `AddReads`、`AddReadResources` 与静态组件资源描述器声明�
 `Compliance / h²`、逆质量和累积乘子公式，只修正动态端的位置。
 共同预测、速度与原组件消费由[设备主体](Device-Bodies.md)维护。
 
+`DeviceXpbdTests.CompletedDeviceLengthsAndBendsProduceTheMappedSkeletonBones` 通过同一
+公开设备步组装 Length 与 Bend 的独立约束范围，读回原 `BodyPose` 后接已有
+`PhysicsPoseInstance.BindBodies` 和 `ReadPhysicsPose`。
+`PhysicsPoseSystem` 继续将这些完成结果写入原 `SkeletonInstance` 的局部与模型骨骼姿势；
+骨骼掩码、局部框架和后续提取沿原[物理姿势映射](../Animation.md)消费。
+
 `DeviceBendSource` 从原 `ConstraintBodyLink` 顺序读取三个受保护参与端，
 通过 `ConstraintBodies.GetBody(link,access)` 解析实际 Body，再转换为本轮执行索引。
 32 字节参数保存三个索引、最小方向余弦和柔度；端点身份继续由原参与关系持有。
