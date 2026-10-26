@@ -85,6 +85,8 @@ return dependency;
 `GetRow`、`ReadPose` 等继续访问原组件，`TryReadReference<T>` 从已声明的实际引用实体取得原行。
 接触参与边的端点读取沿这一作用域进行。原 `QueryCursor` 构造继续服务完整查询范围。
 受限实体视图和实际存储范围的规则见 [Entity Query Jobs](../ECS/Entity-Query-Jobs.md)。
+`SolveXpbdGraph` 与 `SolveAvbdGraph` 沿同一初始化、迭代和作用量职责，
+将原组件行交给独立岛、共批与颜色范围；具体顺序和资源范围见[实体约束图求解](Graph-Solving.md)。
 
 ## 动态节点与转动参与
 
