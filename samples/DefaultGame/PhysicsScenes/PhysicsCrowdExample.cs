@@ -11,9 +11,9 @@ public sealed class PhysicsCrowdExample
     private readonly IGraphicsBackend _backend;
     private readonly Device _device;
 
-    private PhysicsCrowdExample(int characters, IGraphicsBackend backend, Device device)
+    private PhysicsCrowdExample(int characters, IGraphicsBackend backend, Device device, PhysicsSceneTimings? timings)
     {
-        CharacterCount = characters; _backend = backend; _device = device;
+        CharacterCount = characters; _backend = backend; _device = device; Timings = timings;
         Character = new();
         var source = new GpuPoseBlend(Character.Skeleton, new GpuBlendClip(Character.Clips[1], Loop: true));
         CharacterRig = new(new GpuXpbdPose(source, new(Character.Skeleton,
@@ -51,7 +51,10 @@ public sealed class PhysicsCrowdExample
     public Skeleton ClothSkeleton { get; }
     internal GpuPoseRig CharacterRig { get; }
     internal GpuPoseRig ClothRig { get; }
+    internal PhysicsSceneTimings? Timings { get; }
     public static PhysicsCrowdExample CreateDevice(int characters, IGraphicsBackend backend, Device device) =>
-        new(characters, backend, device);
+        new(characters, backend, device, null);
+    public static PhysicsCrowdExample CreateDevice(int characters, IGraphicsBackend backend, Device device, PhysicsSceneTimings timings) =>
+        new(characters, backend, device, timings);
     public PhysicsCrowdScene CreateSimulation(World world) => new(this, _backend, _device, world);
 }

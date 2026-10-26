@@ -163,12 +163,21 @@ public sealed class PhysicsCrowdScene : IGameFramePhysics
         var initial = new PhysicsStepContext(world, new QueryDefinitionBuilder().All<CrowdPhysicsBody>().Build(), -1, 0, 1, 0, 0);
         contacts.Parameters.BeginInputs().Then(contacts.Parameters.UploadInputs()).Then(upload)
             .Then(sources.Evaluate()).Then(sources.CopyOutput()).Then(results.Readback(64)).Schedule(in initial, default).Complete();
-        var stages = controls.Then(upload).Then(poses.WriteTargets()).Then(inputs.WriteInputs()).Then(inputs.Apply())
-            .Then(dynamics.Predict(new(0, -9.81f, 0))).Then(contacts.Detect()).Then(response.Initialize())
-            .Then(graph.Build()).Then(new InitializeCrowdEquations(equationInputs)).Then(xpbd.Initialize(buildGraph: false))
-            .Then(new SolveCrowdConstraints(avbd.Iterate(1, buildGraph: false), xpbd.Iterate(1, buildGraph: false), 8)).Then(dynamics.UpdateVelocities())
-            .Then(response.ApplyRestitution(1, buildGraph: false)).Then(poses.MapBones()).Then(sources.CopyOutput());
-        var consumer = results.Readback(64);
+        PhysicsSceneTimings? timings = example.Timings;
+        var stages = controls.Measure(timings, "Scene inputs").Then(upload.Measure(timings, "Body and constraint inputs"))
+            .Then(poses.WriteTargets().Measure(timings, "Pose sources and targets"))
+            .Then(inputs.WriteInputs().Then(inputs.Apply()).Measure(timings, "Timed body inputs"))
+            .Then(dynamics.Predict(new(0, -9.81f, 0)).Measure(timings, "Body prediction"))
+            .Then(contacts.Detect().Measure(timings, "Geometry and persistent contacts"))
+            .Then(response.Initialize().Measure(timings, "Contact response inputs"))
+            .Then(graph.Build().Measure(timings, "Constraint graph"))
+            .Then(new InitializeCrowdEquations(equationInputs).Measure(timings, "Body equations"))
+            .Then(xpbd.Initialize(buildGraph: false).Measure(timings, "XPBD history"))
+            .Then(new SolveCrowdConstraints(avbd.Iterate(1, buildGraph: false), xpbd.Iterate(1, buildGraph: false), 8, timings)
+                .Measure(timings, "AVBD and XPBD"))
+            .Then(dynamics.UpdateVelocities().Then(response.ApplyRestitution(1, buildGraph: false)).Measure(timings, "Velocities and restitution"))
+            .Then(poses.MapBones().Then(sources.CopyOutput()).Measure(timings, "Bone output"));
+        var consumer = results.Readback(64).Measure(timings, "Body results");
         var frame = PhysicsSimulation.Create(world, initial.Bodies, stages, 1).CreateFrame(consumer, StepSeconds, 0, 0, 0);
         _frame = frame; _complete = frame.CompleteForRead;
 
@@ -234,12 +243,16 @@ internal readonly struct InitializeCrowdEquations(CrowdEquationInputs inputs) : 
     public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) => inputs.Schedule(in context, dependency);
 }
 
-internal readonly struct SolveCrowdConstraints(IterateDeviceAvbd avbd, IterateDeviceXpbdGraph xpbd, int iterations) : IPhysicsStage
+internal readonly struct SolveCrowdConstraints(IterateDeviceAvbd avbd, IterateDeviceXpbdGraph xpbd, int iterations,
+    PhysicsSceneTimings? timings) : IPhysicsStage
 {
     public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency)
     {
         for (int iteration = 0; iteration < iterations; iteration++)
-        { dependency = avbd.Schedule(in context, dependency); dependency = xpbd.Schedule(in context, dependency); }
+        {
+            dependency = avbd.Measure(timings, "AVBD iteration").Schedule(in context, dependency);
+            dependency = xpbd.Measure(timings, "XPBD iteration").Schedule(in context, dependency);
+        }
         return dependency;
     }
 }

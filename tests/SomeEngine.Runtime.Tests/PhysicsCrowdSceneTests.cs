@@ -30,8 +30,11 @@ public sealed class PhysicsCrowdSceneTests(ITestOutputHelper output)
             [new(QueueType.Compute)]));
         using var scheduler = new Scheduler(new() { WorkerCount = Environment.ProcessorCount });
         using World world = WorldJobs.CreateWorld(scheduler: scheduler);
-        var example = PhysicsCrowdExample.CreateDevice(2000, backend, device);
+        long setup = Stopwatch.GetTimestamp();
+        var timings = new PhysicsSceneTimings();
+        var example = PhysicsCrowdExample.CreateDevice(2000, backend, device, timings);
         using var scene = example.CreateSimulation(world);
+        output.WriteLine($"Characters=2000; SetupMilliseconds={Stopwatch.GetElapsedTime(setup).TotalMilliseconds:R}; StageTimings=true");
         var tip = scene.CharacterBodies[^1].Span[^1];
         Vector3 initial = world.Read<BodyPose>(tip).Position;
 
@@ -69,6 +72,7 @@ public sealed class PhysicsCrowdSceneTests(ITestOutputHelper output)
             Assert.Equal((number + 1d) / 60, completed.EndTime, 12);
             Assert.Equal(completed.Number, world.Read<BodyStepState>(tip).Number);
         }
+        output.WriteLine(timings.Describe().ToJsonString());
     }
 
     private void ReportBodies(World world, long number)
