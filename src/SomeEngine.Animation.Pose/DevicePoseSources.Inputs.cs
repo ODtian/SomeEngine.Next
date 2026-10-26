@@ -23,7 +23,7 @@ public readonly struct GpuPoseTargetResources : IJobComponentResources<GpuPoseTa
 
 public sealed partial class DevicePoseSources
 {
-    internal JobHandle ScheduleEvaluate(in PhysicsStepContext context, JobHandle dependency)
+    internal JobHandle ScheduleEvaluate(in PhysicsStepContext context, JobHandle dependency, int targetKernel = -1)
     {
         Scheduler scheduler = WorldJobs.GetScheduler(_world);
         JobHandle members = scheduler.Schedule(new CaptureEntities(this),
@@ -33,15 +33,15 @@ public sealed partial class DevicePoseSources
             writes.Add(JobResourceAccess.Write(scheduler.GetResourceToken(upload.Buffer), 0, (long)upload.Buffer.Info.Size));
         if (_physics is not null) writes.AddRange(_physics.CaptureAccesses);
         JobHandle captured = _resources.ScheduleEntities(_world, _targets, new SourceEntities(this),
-            new CaptureInputs(this, context), writes.ToArray(), members);
-        return scheduler.Schedule(new SubmitSources(this), [JobResourceAccess.Write(scheduler.GetResourceToken(this))], captured);
+            new CaptureInputs(this, context, targetKernel >= 0), writes.ToArray(), members);
+        return scheduler.Schedule(new SubmitSources(this, targetKernel), [JobResourceAccess.Write(scheduler.GetResourceToken(this))], captured);
     }
-    private readonly struct SubmitSources(DevicePoseSources sources) : IJob
+    private readonly struct SubmitSources(DevicePoseSources sources, int targetKernel) : IJob
     {
         public void Execute()
         {
             Scheduler scheduler = WorldJobs.GetScheduler(sources._world);
-            JobHandle complete = DevicePhysicsJobs.Schedule(scheduler, new Submission(sources, false), sources.GetDeviceAccesses(scheduler, false), default);
+            JobHandle complete = DevicePhysicsJobs.Schedule(scheduler, new BodySubmission(sources, targetKernel, -1), sources.GetDeviceAccesses(scheduler, false), default);
             scheduler.Schedule(new AcceptInputs(sources), [JobResourceAccess.Write(scheduler.GetResourceToken(sources))], complete);
         }
     }
@@ -62,9 +62,9 @@ public sealed partial class DevicePoseSources
             });
         }
     }
-    private readonly struct CaptureInputs(DevicePoseSources sources, PhysicsStepContext context) : IJob
+    private readonly struct CaptureInputs(DevicePoseSources sources, PhysicsStepContext context, bool commonBodies) : IJob
     {
-        public void Execute() => sources.Capture(in context);
+        public void Execute() => sources.Capture(in context, commonBodies);
     }
     private readonly struct AcceptInputs(DevicePoseSources sources) : IJob
     {
@@ -93,7 +93,7 @@ public sealed partial class DevicePoseSources
             }
         }
     }
-    private void Capture(in PhysicsStepContext context)
+    private void Capture(in PhysicsStepContext context, bool commonBodies)
     {
         bool rebuild = _order.Count != _entityCount;
         _order.Clear();
@@ -125,7 +125,8 @@ public sealed partial class DevicePoseSources
             bool reset = row.Reset || !row.State.HasInput || row.State.Input.Starts != input.Starts
                 || row.State.Input.AnimationStarts != input.AnimationStarts;
             bool advance = reset || row.State.Input.InputNumber != input.InputNumber;
-            row.Evaluate = !row.HasPhysics || advance && (input.Playing || reset);
+            row.CommonBodies = commonBodies;
+            row.Evaluate = !row.HasPhysics || (advance || commonBodies) && (input.Playing || reset);
             uint flags = (row.Evaluate ? 1u : 0u) | 4u | (reset ? 2u | 32u | 512u : 0u) | (input.Playing ? 16u : 0u)
                 | (input.StateMachine is not null ? 8u : 0u) | (input.Blend is not null ? 64u : 0u)
                 | (advance ? 128u | 256u : 0u);
@@ -146,9 +147,10 @@ public sealed partial class DevicePoseSources
             if (row.HasPhysics)
             {
                 Matrix4x4.Invert(input.ModelToWorld, out Matrix4x4 inverse);
-                float delta = reset ? 0 : (float)(input.CalculationTime - row.State.PhysicsTime);
+                float delta = commonBodies ? (float)context.Duration : reset ? 0 : (float)(input.CalculationTime - row.State.PhysicsTime);
+                float targetDuration = (float)Math.Max(context.Duration, input.CalculationTime - context.StartTime);
                 var frame = new PhysicsFrame(input.ModelToWorld, inverse, delta, reset ? 1u : 0u,
-                    (uint)context.Substep, 0, context.Number, input.CalculationTime);
+                    (uint)context.Substep, targetDuration, context.Number, commonBodies ? context.EndTime : input.CalculationTime);
                 MemoryMarshal.Write(_physicsFrames!.Mapping.Bytes.Slice(row.Index * 160, 160), in frame);
             }
         }
@@ -261,9 +263,9 @@ public sealed partial class DevicePoseSources
     private readonly record struct RootCorrection(Vector4 Translation, Quaternion Rotation);
     private readonly record struct Movement(Vector4 Velocity, Vector4 AnimationVelocity, Vector4 FacingDirection);
     private readonly record struct PhysicsFrame(Matrix4x4 ModelToWorld, Matrix4x4 WorldToModel, float Duration, uint Reset,
-        uint Substep, uint Padding, long Number, double Time);
+        uint Substep, float TargetDuration, long Number, double Time);
     private readonly record struct BoneWork(uint Section, uint Bone, uint Parent, uint Output);
-    private readonly record struct RigOperation(int Kernel, BufferSrv Work, ResourceBinding[] Bindings, int Count);
+    private readonly record struct RigOperation(int Kernel, BufferSrv Work, ResourceBinding[] Bindings, int Count, bool AfterPhysics);
     private sealed class SourceRow(Entity entity)
     {
         internal readonly Entity Entity = entity;
@@ -273,7 +275,7 @@ public sealed partial class DevicePoseSources
         internal GpuPoseTarget Input;
         internal GpuPoseSourceState State;
         internal ulong Binding;
-        internal bool Reset, HasPhysics, Evaluate;
+        internal bool Reset, HasPhysics, Evaluate, CommonBodies;
         internal int[] Depths = [];
     }
 }

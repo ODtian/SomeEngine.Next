@@ -208,6 +208,8 @@ public sealed partial class DevicePosePhysics : IDisposable
             JobResourceAccess.Read(scheduler.GetResourceToken(Lengths.Metadata), 0, (long)Lengths.Metadata.Info.Size),
             .. Bends.GetReadAccesses(scheduler), LengthMultipliers.GetWriteAccess(scheduler), BendMultipliers.GetWriteAccess(scheduler),
             JobResourceAccess.Write(scheduler.GetResourceToken(_sourceModels), 0, (long)_sourceModels.Info.Size)];
+    internal JobResourceAccess[] GetBoneMappingAccesses(Scheduler scheduler) =>
+        [Bodies.GetReadAccess(scheduler), JobResourceAccess.Read(scheduler.GetResourceToken(_sourceModels), 0, (long)_sourceModels.Info.Size)];
 
     internal JobHandle ScheduleUpload(in PhysicsStepContext context, JobHandle dependency)
     {

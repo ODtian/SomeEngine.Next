@@ -141,3 +141,14 @@ typedef DeviceXpbdConstraintGroups<LengthRows, BendRows> ProjectionRows;
 项目可在一次 `Predict` 后初始化两类求解器，交替调用各自的 `Iterate`，最后统一 `UpdateVelocities`。
 [公开互补与骨骼检查](../../../tests/SomeEngine.Graphics.Direct3D12.Tests/DeviceComplementaryPoseTests.cs)
 将同一 Body 的完成位置、速度、接触力、编号与时刻交给原 `PhysicsPose` 消费。
+
+`DevicePoseSources.CreateBodyStages(DevicePoseShaders.GetBodies(target))` 提供同源动画链的两个阶段。
+`WriteTargets()` 捕获来源 FK、世界段长和运动学目标，并按当前子步施加指数阻尼。
+项目随后用同一 `DevicePosePhysics.Bodies`、`Lengths`、`Bends` 和乘子组成共同预测及具体求解器，
+在统一速度重建后调用 `MapBones()`，将完成位置映射回骨骼并继续原 rig 中随后的操作。
+原动画求值入口复用相同的目标捕获和骨骼映射数学，保留自身链定义中的等分步长和迭代数。
+
+来源输入时钟与物理完成时钟分别随 `DevicePoseOutput.Input` 和 `Number/Time` 交付。
+[共同步与后续 Aim 检查](../../../tests/SomeEngine.Graphics.Direct3D12.Tests/DevicePoseBodyStageTests.cs)
+使用保持的来源输入完成两个物理步，在同一 Body 上交替接触 AVBD 与长度 XPBD，
+并通过 Body、完成骨骼、Aim 后代及两组时钟观察该完整组合。
