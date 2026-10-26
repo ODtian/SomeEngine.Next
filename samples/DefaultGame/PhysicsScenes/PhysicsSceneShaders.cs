@@ -79,9 +79,13 @@ internal sealed class PhysicsSceneShaders
         ComputePipelineDesc[] entries = Compile("scene_contact_graph", """
             #include "physics_contact_data.slang"
             #include "physics_joint_bodies.slang"
+            #include "physics_distance_range_bodies.slang"
+            typedef DeviceConstraintBodyGroups<
+                DeviceConstraintBodyGroups<DeviceContactBodies,DeviceJointBodies>,
+                DeviceDistanceRangeBodies> SceneConstraintBodies;
             [shader("compute")][numthreads(64,1,1)]
             void WriteRows(uint3 id : SV_DispatchThreadID)
-            { DeviceConstraintBodyGroups<DeviceContactBodies,DeviceJointBodies> rows; writeDeviceConstraintGraphRows(id.x,rows); }
+            { SceneConstraintBodies rows; writeDeviceConstraintGraphRows(id.x,rows); }
             #include "physics_constraint_graph_parallel.slang"
             """, "WriteRows", "InitializeDeviceGraph", "ConnectDeviceGraph", "CompressDeviceGraph",
             "ScanDeviceGraphDegrees", "OffsetDeviceGraphBlocks", "AddDeviceGraphDegreeOffsets",
@@ -99,17 +103,21 @@ internal sealed class PhysicsSceneShaders
         ComputePipelineDesc[] entries = Compile("scene_contact_avbd", """
             #include "physics_avbd_contact.slang"
             #include "physics_avbd_joint.slang"
+            #include "physics_avbd_distance_range.slang"
+            typedef DeviceAvbdConstraintGroups<
+                DeviceAvbdConstraintGroups<DeviceContactAvbdConstraints,DeviceJointAvbdConstraints>,
+                DeviceDistanceRangeAvbdConstraints> SceneAvbdConstraints;
             [shader("compute")][numthreads(64,1,1)]
             void ClearBodyIndices(uint3 id : SV_DispatchThreadID) { clearDeviceAvbdBodyIndices(id.x); }
             [shader("compute")][numthreads(64,1,1)]
             void Initialize(uint3 id : SV_DispatchThreadID)
-            { DeviceAvbdConstraintGroups<DeviceContactAvbdConstraints,DeviceJointAvbdConstraints> rows; initializeDeviceAvbdRows(id.x,rows); }
+            { SceneAvbdConstraints rows; initializeDeviceAvbdRows(id.x,rows); }
             [shader("compute")][numthreads(64,1,1)]
             void UpdateBody(uint3 id : SV_DispatchThreadID)
-            { DeviceAvbdConstraintGroups<DeviceContactAvbdConstraints,DeviceJointAvbdConstraints> rows; updateDeviceAvbdBody(id.x,rows); }
+            { SceneAvbdConstraints rows; updateDeviceAvbdBody(id.x,rows); }
             [shader("compute")][numthreads(64,1,1)]
             void UpdateDuals(uint3 id : SV_DispatchThreadID)
-            { DeviceAvbdConstraintGroups<DeviceContactAvbdConstraints,DeviceJointAvbdConstraints> rows; updateDeviceAvbdDuals(id.x,rows); }
+            { SceneAvbdConstraints rows; updateDeviceAvbdDuals(id.x,rows); }
             """, "ClearBodyIndices", "Initialize", "UpdateBody", "UpdateDuals");
         return new(entries[1], entries[2], entries[3], ClearBodyIndices: entries[0]);
     }
