@@ -18,12 +18,27 @@ internal readonly partial struct PredictBodyJob(float duration, Vector3 accelera
 {
     public void Execute(ref BodyPose pose, ref BodyVelocity velocity, in BodyMass mass, ref BodyStepState state)
     {
+        BodyPrediction.Begin(in pose, in mass, ref state, number, substep, endTime);
+        BodyPrediction.Move(ref pose, ref velocity, in mass, ref state, acceleration, duration);
+    }
+}
+
+internal static class BodyPrediction
+{
+    internal static void Begin(in BodyPose pose, in BodyMass mass, ref BodyStepState state, long number, int substep, double endTime)
+    {
         state.StartCenterOfMass = pose.GetCenterOfMass(in mass);
         state.StartRotation = pose.Rotation;
         state.Number = number;
         state.Substep = substep;
         state.Time = endTime;
+        state.PredictedCenterOfMass = state.StartCenterOfMass;
+        state.PredictedRotation = state.StartRotation;
+    }
 
+    internal static void Move(ref BodyPose pose, ref BodyVelocity velocity, in BodyMass mass, ref BodyStepState state,
+        Vector3 acceleration, float duration)
+    {
         if (mass.Motion == BodyMotion.Dynamic)
             velocity.Linear += acceleration * duration;
         if (mass.Motion != BodyMotion.Static)
