@@ -32,6 +32,10 @@ public ref struct BufferView<T>
         get => Header.Count;
     }
 
+    /// <summary>The two original column write versions for this borrowed buffer row.</summary>
+    public readonly (uint Header, uint Inline) WriteVersions =>
+        (_chunk.WriteVersionRows(_headerColumn)[_row], _chunk.WriteVersionRows(_inlineColumn)[_row]);
+
     public int Capacity
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

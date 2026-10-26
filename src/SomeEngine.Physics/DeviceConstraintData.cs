@@ -85,6 +85,9 @@ public sealed class DeviceConstraintData<TData> : IDisposable, IDevicePhysicsSub
         var metadata = new DeviceConstraintMetadata { EntityIndex = (uint)entity.Index, EntityGeneration = (uint)entity.Generation, Active = 1 };
         MemoryMarshal.Write(_metadataMapping.Bytes.Slice(index * 16, 16), in metadata);
     }
+    internal void WriteInputField<TField>(int index, int offset, in TField value) where TField : unmanaged =>
+        MemoryMarshal.Write(_mapping.Bytes.Slice(index * Stride + offset, Unsafe.SizeOf<TField>()), in value);
+    internal void ClearInputMetadata(int index) => _metadataMapping.Bytes.Slice(index * 16, 16).Clear();
     internal void CollectUploadWrite(int index, ref JobResourceAccessBuilder resources)
     {
         resources.Write(_upload, (long)index * Stride, Stride);
@@ -94,28 +97,44 @@ public sealed class DeviceConstraintData<TData> : IDisposable, IDevicePhysicsSub
         JobResourceAccess.Write(scheduler.GetResourceToken(_metadataUpload), 0, (long)_metadataUpload.Info.Size), dependency);
     internal JobHandle ScheduleUpload(Scheduler scheduler, JobHandle dependency)
     {
-        JobResourceAccess[] accesses = [JobResourceAccess.Write(scheduler.GetResourceToken(Data), 0, (long)Data.Info.Size),
-            JobResourceAccess.Write(scheduler.GetResourceToken(Metadata), 0, (long)Metadata.Info.Size),
-            JobResourceAccess.Read(scheduler.GetResourceToken(_upload), 0, (long)_upload.Info.Size),
-            JobResourceAccess.Read(scheduler.GetResourceToken(_metadataUpload), 0, (long)_metadataUpload.Info.Size),
-            JobResourceAccess.Write(scheduler.GetResourceToken(_commands))];
-        return DevicePhysicsJobs.Schedule(scheduler, this, accesses, dependency);
+        return DevicePhysicsJobs.Schedule(scheduler, this, GetInputAccesses(scheduler), dependency);
     }
+    internal JobResourceAccess[] GetInputAccesses(Scheduler scheduler, bool writeInputs = false) =>
+        [JobResourceAccess.Write(scheduler.GetResourceToken(Data), 0, (long)Data.Info.Size),
+            JobResourceAccess.Write(scheduler.GetResourceToken(Metadata), 0, (long)Metadata.Info.Size),
+            writeInputs ? JobResourceAccess.Write(scheduler.GetResourceToken(_upload), 0, (long)_upload.Info.Size)
+                : JobResourceAccess.Read(scheduler.GetResourceToken(_upload), 0, (long)_upload.Info.Size),
+            writeInputs ? JobResourceAccess.Write(scheduler.GetResourceToken(_metadataUpload), 0, (long)_metadataUpload.Info.Size)
+                : JobResourceAccess.Read(scheduler.GetResourceToken(_metadataUpload), 0, (long)_metadataUpload.Info.Size),
+            JobResourceAccess.Write(scheduler.GetResourceToken(_commands))];
 
-    QueueCompletion IDevicePhysicsSubmission.Submit()
+    QueueCompletion IDevicePhysicsSubmission.Submit() =>
+        SubmitInputRanges([new(0, Data.Info.Size)], [new(0, Metadata.Info.Size)]);
+
+    internal QueueCompletion SubmitInputRanges(ReadOnlySpan<BufferRange> dataRanges, ReadOnlySpan<BufferRange> metadataRanges)
     {
-        _mapping.Flush(_mapping.Range); _metadataMapping.Flush(_metadataMapping.Range);
+        if (!_initialized) metadataRanges = new BufferRange[] { new(0, Metadata.Info.Size) };
+        foreach (BufferRange range in dataRanges) _mapping.Flush(range);
+        foreach (BufferRange range in metadataRanges) _metadataMapping.Flush(range);
         _backend.Begin(_commands, new(0, 0, 8));
-        Copy(_upload, Data); Copy(_metadataUpload, Metadata);
+        Copy(_upload, Data, dataRanges); Copy(_metadataUpload, Metadata, metadataRanges);
         using RecordedCommands recorded = _backend.End(_commands);
         _initialized = true;
         return _backend.Submit(_backend.GetQueue(_device, QueueType.Compute), new([], [], [recorded], [], []));
     }
-    private void Copy(Buffer upload, Buffer destination)
+    private void Copy(Buffer upload, Buffer destination, ReadOnlySpan<BufferRange> ranges)
     {
+        if (ranges.IsEmpty)
+        {
+            if (!_initialized)
+                _backend.Barrier(_commands, new BufferBarrier(destination, destination.InitialSync, PipelineSync.ComputeShading,
+                    destination.InitialAccess, ResourceAccess.UnorderedAccess));
+            return;
+        }
         _backend.Barrier(_commands, new BufferBarrier(destination, _initialized ? PipelineSync.ComputeShading : destination.InitialSync,
             PipelineSync.Copy, _initialized ? ResourceAccess.UnorderedAccess : destination.InitialAccess, ResourceAccess.CopyDestination));
-        _backend.CopyBuffer(_commands, new(upload, 0, destination, 0, destination.Info.Size));
+        foreach (BufferRange range in ranges)
+            _backend.CopyBuffer(_commands, new(upload, range.Offset, destination, range.Offset, range.Size));
         _backend.Barrier(_commands, new BufferBarrier(destination, PipelineSync.Copy, PipelineSync.ComputeShading,
             ResourceAccess.CopyDestination, ResourceAccess.UnorderedAccess));
     }
