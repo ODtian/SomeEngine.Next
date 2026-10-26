@@ -58,6 +58,7 @@ struct DeviceDetectionParameters
     uint faceCapacity;
     float contactDistance;
     uint workItems;
+    uint bodiesPerContact;
 };
 
 ConstantBuffer<DeviceDetectionParameters> DetectionParameters;
