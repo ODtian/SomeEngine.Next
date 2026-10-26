@@ -70,6 +70,8 @@ DefaultGame 的 `--physics` 选择完整物理目录，`--physics=<id>` 选择�
 
 GPU 示例按 Body 数量派生网格单元、桶、pair 和接触容量，工作量描述记录这些容量、所选设备名称、驱动与专用显存。接触、原关节和原显式距离边共同进入设备约束图；参数与数值历史沿原实体的设备表示保存，完成后读取所选 Body 并更新原 `LocalTransform`。
 
+`PhysicsSceneSettings.GeometryInputsFixed` 声明形状参数和主体引用在仿真期间固定。场景首次步通过原 `WriteGeometryReferences` 与 `UpdateDeviceGeometry(..., Upload)` 上传这些输入，后续步使用同一几何和网格的 `UpdateDeviceGeometry(..., Resident)`，沿当前设备位姿重算几何与候选范围。首次上传计入第一步耗时；主体的位姿输入、冲量和运动目标继续沿原主体输入入口生效。GPU 盒体目录选择该配置，并在工作量描述中记录该值。
+
 设备候选规则沿共享 `DeviceBodies` 读取运动类别。`DeviceScenePairExclusions` 从原关系端点派生排序后的主体索引对，并沿原查询的成员版本刷新；设备规则组合既有 `DeviceCollisionRules` 和该索引查询。场景先建立共享主体及约束图，再通过原 `graph.AddBindings` 将同一主体表示交给网格。
 
 GPU 示例选择 `DeviceContactPotentialAvbdConstraints` 的正法向和角向势能曲率，并沿项目的 `SceneContactAvbdConstraints` 按时间步、Jacobian mobility、当前法向压力和残差更新 ALM 罚度量。初始法向与切向值均为 100，正则化速度为 0.01 m/s；实际参数、上下界和压力长度尺度一并写入工作量描述。
