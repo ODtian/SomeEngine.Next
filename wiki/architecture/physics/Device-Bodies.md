@@ -29,6 +29,12 @@ StepState 的写版本；新实体按绑定初始化整行，既有实体只复�
 来源版本与已同步字段由 DeviceBodies 单处保存，查询和传输范围由输入持有者复用。
 实际数据继续位于原 208B States，上传复用原 staging 和命令资源。
 
+[CPU 输入变更](../../../src/SomeEngine.Physics/DeviceBodies.InputChanges.cs) 由同一 DeviceBodies 按需保存。
+活动消费者绑定后，`DeviceBodyInputs` 在原组件写版本判定处生成实体身份、组件位及本轮步号、子步号，
+沿原主体传输命令复制实际变更行。Pose、Mass、Velocity 对应位为 1、2、4，StepState 为 8。
+`physics_body_input_changes.slang` 的 `deviceBodyCpuInputChanged` 按当前主体身份和调用方的本轮时刻读取前面三类修改；
+旧步标记随步号、子步号失效，原结果回写继续使用上述同步确认。
+
 [DeviceBodyInputBuffers](../../../src/SomeEngine.Physics/DeviceBodyInputBuffers.cs) 从同一参与查询读取
 原 `BodyForce`、`BodyImpulse`、`BodyVelocityTarget` 与 `BodyKinematicTarget` 时间缓冲。
 `WriteInputs()` 将当前子步的力积分、所属时段的冲量、最新速度目标和轨迹采样值形成派生设备输入，
@@ -53,6 +59,8 @@ StepState 的写版本；新实体按绑定初始化整行，既有实体只复�
 生成本轮主体索引，再在设备原位写入起点、预测值及所属物理时刻；动态体接受加速度，
 动态体与运动学体按速度积分，静态体保持位姿。旋转与平移围绕原局部质心计算。
 `UpdateVelocities()` 从同一子步起点与完成位姿重建线、角速度。
+`UpdateSelection()` 在 CPU 阶段读取原参与查询，更新同一主体索引、直接查找的成员标记与
+本轮参数，供预测前的活动或图阶段使用。各数值提交继续沿同一捕获函数读取当前成员。
 项目提供第三个具体 `GyroscopicTorque` 内核后，`ApplyGyroscopicTorque()` 在预测前
 沿原完整体坐标惯量施加陀螺力矩；纯平移主体继续使用其三维自由度。
 数学由 [physics_body_math](../../../assets/Shaders/physics_body_math.slang) 与

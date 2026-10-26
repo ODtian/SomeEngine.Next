@@ -1,0 +1,148 @@
+#ifndef PHYSICS_BODY_ACTIVITY
+#define PHYSICS_BODY_ACTIVITY
+#include "physics_body_activity_types.slang"
+#include "physics_constraint_graph.slang"
+#include "physics_body_input_changes.slang"
+struct DeviceActivityStep
+{
+    uint bodies; uint rows; float duration; float speedThreshold;
+    float quietDuration; float linearErrorThreshold; float angularErrorThreshold; uint phase;
+    uint substep; uint padding; uint2 number; uint2 startTime; uint2 endTime;
+};
+uniform DeviceActivityStep ActivityStep;
+RWStructuredBuffer<uint> DeviceActivityIslandSignals;
+interface IDeviceConstraintActivity : IDeviceConstraintBodies
+{
+    float2 error(uint row,DeviceActivityStep context);
+};
+struct DeviceNoConstraintActivity : IDeviceConstraintActivity
+{
+    uint count() { return 0; }
+    bool active(uint row) { return false; }
+    uint bodyCount(uint row) { return 0; }
+    uint body(uint row,uint end) { return 0; }
+    bool writes(uint row,uint end) { return false; }
+    uint groupCount() { return 0; }
+    uint group(uint row) { return 0; }
+    float2 error(uint row,DeviceActivityStep context) { return float2(0); }
+};
+[shader("compute")][numthreads(64,1,1)]
+void ApplyDeviceActivityInputs(uint3 id:SV_DispatchThreadID)
+{
+    uint index=id.x;
+    if(index>=ActivityStep.bodies) return;
+    DeviceBodyActivityInput input=DeviceBodyActivityInputs[index];
+    DeviceBodyActivityState activity;
+    if((input.flags&1)==0)
+    {
+        activity.entityIndex=activity.entityGeneration=activity.flags=0;
+        activity.quietSeconds=activity.radius=0; activity.substep=int(ActivityStep.substep); activity.number=ActivityStep.number;
+        DeviceBodyActivities[index]=activity; return;
+    }
+    if((input.flags&4)!=0)
+    {
+        activity.entityIndex=input.entityIndex; activity.entityGeneration=input.entityGeneration;
+        activity.flags=(input.flags&3)|((input.sleeping!=0&&(input.flags&2)!=0)?4:0);
+        activity.quietSeconds=input.quietSeconds; activity.radius=input.radius;
+    }
+    else activity=DeviceBodyActivities[index];
+    activity.flags&=~(8u|16u|32u|64u|128u);
+    if((input.flags&8)!=0) activity.flags|=128;
+    activity.number=ActivityStep.number; activity.substep=int(ActivityStep.substep);
+    DeviceBodyActivities[index]=activity;
+}
+[shader("compute")][numthreads(64,1,1)]
+void ClearDeviceActivitySignals(uint3 id:SV_DispatchThreadID)
+{ if(id.x<ActivityStep.bodies) DeviceActivityIslandSignals[id.x]=0; }
+bool deviceActivityBodyChanged(uint body)
+{
+    return (DeviceBodyActivities[body].flags&128)!=0||deviceBodyCpuInputChanged(body,ActivityStep.number,ActivityStep.substep);
+}
+[shader("compute")][numthreads(64,1,1)]
+void CollectDeviceActivityBodies(uint3 id:SV_DispatchThreadID)
+{
+    uint index=id.x;
+    if(index>=ActivityStep.bodies||ConstraintGraphParents[index]==0xffffffff) return;
+    uint root=ConstraintGraphParents[index];
+    DeviceBodyState body=DeviceBodyStates[index];
+    DeviceBodyActivityState activity=DeviceBodyActivities[index];
+    if(ActivityStep.phase==1)
+    {
+        if(deviceBodyActivityAwake(index)||any(body.linearVelocity!=float3(0))||any(body.angularVelocity!=float3(0)))
+            InterlockedOr(DeviceActivityIslandSignals[root],1);
+        if(deviceActivityBodyChanged(index)) InterlockedOr(DeviceActivityIslandSignals[root],9);
+        return;
+    }
+    if((activity.flags&2)==0) { InterlockedOr(DeviceActivityIslandSignals[root],2); return; }
+    if((activity.flags&4)!=0) return;
+    float speed=length(body.linearVelocity)+length(body.angularVelocity)*activity.radius;
+    float movement=length(bodyCenterOfMass(body)-body.startCenterOfMass)+
+        length(bodyRotationVelocity(body.startRotation,body.rotation,1))*activity.radius;
+    if(speed>ActivityStep.speedThreshold||movement>ActivityStep.speedThreshold*ActivityStep.duration)
+        InterlockedOr(DeviceActivityIslandSignals[root],2);
+}
+void readDeviceActivityRows<T : IDeviceConstraintActivity>(uint index,T rows)
+{
+    if(index>=rows.count()||!rows.active(index)) return;
+    float2 error=rows.error(index,ActivityStep);
+    bool exceeds=error.x>ActivityStep.linearErrorThreshold||error.y>ActivityStep.angularErrorThreshold;
+    bool changed=false;
+    for(uint end=0;end<rows.bodyCount(index);end++)
+    {
+        uint body=rows.body(index,end);
+        changed=changed||deviceActivityBodyChanged(body);
+        if(ConstraintGraphParents[body]==0xffffffff)
+            changed=changed||any(DeviceBodyStates[body].linearVelocity!=float3(0))||any(DeviceBodyStates[body].angularVelocity!=float3(0));
+    }
+    if(!exceeds&&!changed) return;
+    for(uint end=0;end<rows.bodyCount(index);end++)
+    {
+        uint body=rows.body(index,end),root=ConstraintGraphParents[body];
+        if(root!=0xffffffff) InterlockedOr(DeviceActivityIslandSignals[root],(exceeds?3u:0u)|(changed?9u:0u));
+    }
+}
+[shader("compute")][numthreads(64,1,1)]
+void WakeDeviceBodies(uint3 id:SV_DispatchThreadID)
+{
+    uint index=id.x;
+    if(index>=ActivityStep.bodies||ConstraintGraphParents[index]==0xffffffff) return;
+    uint signals=DeviceActivityIslandSignals[ConstraintGraphParents[index]];
+    if((signals&1)==0) return;
+    DeviceBodyActivityState activity=DeviceBodyActivities[index];
+    if((activity.flags&2)==0) return;
+    if((activity.flags&4)!=0)
+    {
+        DeviceBodyState body=DeviceBodyStates[index];
+        activity.flags|=16;
+        if(all(body.number==ActivityStep.number)&&body.substep==int(ActivityStep.substep)&&all(body.time==ActivityStep.endTime)) activity.flags|=64;
+        activity.quietSeconds=0;
+    }
+    if((signals&8)!=0) activity.quietSeconds=0;
+    activity.flags&=~4u; DeviceBodyActivities[index]=activity;
+    ConstraintGraphActiveBodies[index]=1;
+}
+[shader("compute")][numthreads(64,1,1)]
+void AdvanceDeviceBodyQuietTime(uint3 id:SV_DispatchThreadID)
+{
+    uint index=id.x;
+    if(index>=ActivityStep.bodies||ConstraintGraphParents[index]==0xffffffff) return;
+    DeviceBodyActivityState activity=DeviceBodyActivities[index];
+    if((activity.flags&2)==0||(activity.flags&4)!=0) return;
+    uint root=ConstraintGraphParents[index];
+    activity.quietSeconds=(DeviceActivityIslandSignals[root]&2)==0?activity.quietSeconds+ActivityStep.duration:0;
+    if(activity.quietSeconds<ActivityStep.quietDuration) InterlockedOr(DeviceActivityIslandSignals[root],4);
+    DeviceBodyActivities[index]=activity;
+}
+[shader("compute")][numthreads(64,1,1)]
+void FinishDeviceBodyActivity(uint3 id:SV_DispatchThreadID)
+{
+    uint index=id.x;
+    if(index>=ActivityStep.bodies||ConstraintGraphParents[index]==0xffffffff||
+        (DeviceActivityIslandSignals[ConstraintGraphParents[index]]&6)!=0) return;
+    DeviceBodyActivityState activity=DeviceBodyActivities[index];
+    if((activity.flags&2)==0||(activity.flags&4)!=0) return;
+    activity.flags|=4|32; DeviceBodyActivities[index]=activity;
+    DeviceBodyState body=DeviceBodyStates[index]; body.linearVelocity=body.angularVelocity=float3(0);
+    DeviceBodyStates[index]=body; ConstraintGraphActiveBodies[index]=0;
+}
+#endif
