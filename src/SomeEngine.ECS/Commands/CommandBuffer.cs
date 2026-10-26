@@ -899,6 +899,25 @@ public sealed partial class CommandBuffer : IDisposable
     internal static JobProducerPlaybackBatch BeginJobProducerPlaybackBatch(World world) =>
         new(world);
 
+    internal void CollectJobProducerStorageWrites(HashSet<WorldJobStorageAccess> writes)
+    {
+        foreach (CommandHeader command in _commands)
+        {
+            switch (command.Type)
+            {
+                case CommandType.ReplaceComponent:
+                    writes.Add(new(WorldStorageKind.Table, command.ComponentId, WorldStorageAccess.Write));
+                    break;
+                case CommandType.ReplaceSparse:
+                    writes.Add(new(WorldStorageKind.Sparse, command.ComponentId, WorldStorageAccess.Write));
+                    break;
+                case CommandType.ReplaceBuffer:
+                    writes.Add(new(WorldStorageKind.Buffer, command.ComponentId, WorldStorageAccess.Write));
+                    break;
+            }
+        }
+    }
+
     /// <summary>
     /// Replays one producer-private segment into an already-active structural candidate. The
     /// caller owns the single topology admission and publication transaction for the complete

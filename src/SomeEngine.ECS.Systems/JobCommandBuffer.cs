@@ -179,6 +179,17 @@ public sealed class JobCommandBuffer : IDisposable
         in TProducer producer,
         JobScheduleOptions options,
         JobHandle dependency = default)
+        where TProducer : struct, IJobCommandProducer =>
+        Schedule(producerKey, in producer, ReadOnlySpan<JobResourceAccess>.Empty, options, dependency);
+
+    /// <summary>Records one serial command segment while holding its declared component and external resources.</summary>
+    public JobHandle Schedule<TProducer>(int producerKey, in TProducer producer,
+        ReadOnlySpan<JobResourceAccess> accesses, JobHandle dependency = default)
+        where TProducer : struct, IJobCommandProducer =>
+        Schedule(producerKey, in producer, accesses, JobScheduleOptions.Default, dependency);
+
+    public JobHandle Schedule<TProducer>(int producerKey, in TProducer producer,
+        ReadOnlySpan<JobResourceAccess> accesses, JobScheduleOptions options, JobHandle dependency = default)
         where TProducer : struct, IJobCommandProducer
     {
         using JobSubmissionScope submissions = WorldStorageJobResources.RequireJobs(_world).BeginSubmission();
@@ -199,7 +210,7 @@ public sealed class JobCommandBuffer : IDisposable
             try
             {
                 var adapter = new SerialProducerAdapter<TProducer>(this, producerKey, in producer);
-                JobHandle handle = WorldStorageJobResources.RequireJobs(_world).Scheduler.Schedule(adapter, options, dependency);
+                JobHandle handle = WorldStorageJobResources.RequireJobs(_world).Scheduler.Schedule(adapter, accesses, options, dependency);
                 segment.Handle = handle;
                 return handle;
             }
@@ -360,10 +371,9 @@ public sealed class JobCommandBuffer : IDisposable
             try
             {
                 JobHandle dependency = CombineProducerHandles();
-                JobResourceAccess topology = RelationshipJobAccess.TopologyWrite(_world);
                 publication = WorldStorageJobResources.RequireJobs(_world).Scheduler.Schedule(
-                    new PublicationAdapter(this),
-                    topology,
+                    new SchedulePublication(this, options),
+                    RelationshipJobAccess.TopologyWrite(_world),
                     options,
                     dependency);
             }
@@ -752,6 +762,26 @@ public sealed class JobCommandBuffer : IDisposable
         }
 
         public void Execute(int index) => _owner.ExecuteParallel(index, ref _producer);
+    }
+
+    private readonly struct SchedulePublication(JobCommandBuffer commands, JobScheduleOptions options) : IJob
+    {
+        public void Execute()
+        {
+            var writes = new HashSet<WorldJobStorageAccess>();
+            foreach (ProducerSegment segment in commands._segments) segment.Buffer.CollectJobProducerStorageWrites(writes);
+            if (writes.Count == 0)
+            {
+                commands.PublishCompletedProducers();
+                return;
+            }
+            var accesses = new JobResourceAccess[writes.Count + 1];
+            accesses[0] = RelationshipJobAccess.TopologyWrite(commands._world);
+            int index = 1;
+            foreach (WorldJobStorageAccess write in writes)
+                accesses[index++] = WorldStorageJobResources.Write(commands._world, new(write.Kind, write.ComponentId));
+            WorldStorageJobResources.RequireJobs(commands._world).Scheduler.Schedule(new PublicationAdapter(commands), accesses, options);
+        }
     }
 
     private readonly struct PublicationAdapter : IJob
