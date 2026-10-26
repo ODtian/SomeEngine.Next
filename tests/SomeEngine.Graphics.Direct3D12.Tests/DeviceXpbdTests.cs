@@ -17,6 +17,50 @@ namespace SomeEngine.Graphics.Direct3D12.Tests;
 public sealed partial class DeviceXpbdTests(D3D12TestCompiler shaderCompiler)
 {
     [Fact]
+    public void AReplacementConstraintUsesItsOwnUploadedParametersForTheSelectedDeviceRow()
+    {
+        using var backend = D3D12GraphicsBackend.Create();
+        using Device device = CreateDevice(backend);
+        using var jobs = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using World world = WorldJobs.CreateWorld(scheduler: jobs);
+        using var bodies = new DeviceBodies(backend, device, 2);
+        using var lengths = new DeviceConstraintData<DeviceLengthConstraint>(backend, device, 1, "DeviceLengths");
+        using var multipliers = new DeviceConstraintState<float>(backend, device, 1, "DeviceLengthMultipliers");
+        Entity first = AddBody(world, bodies, 0, Vector3.Zero, BodyMotion.Static);
+        Entity second = AddBody(world, bodies, 1, new(2, 0, 0), BodyMotion.Dynamic);
+        Entity prior = world.CreateRelation(first, second, new XpbdLength { RestLength = 1, Compliance = .01f }).Entity;
+        world.Add(prior, new DeviceConstraintBinding<DeviceLengthConstraint>(lengths, 0));
+        world.Add(prior, new DeviceXpbdState<float>(multipliers));
+        QueryHandle members = world.Query(world.QueryDefinition().Read<DeviceBodyBinding>());
+        QueryHandle rows = world.Query(world.QueryDefinition().Read<XpbdLength>().Read<UndirectedRelationEndpoints<XpbdLength>>()
+            .Read<DeviceConstraintBinding<DeviceLengthConstraint>>().All<DeviceXpbdState<float>>());
+        using var write = lengths.WriteInputs<XpbdLength, DeviceLengthSource>(world, rows, new(), 64);
+        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
+        using var results = new DeviceBodyResults(backend, device, bodies);
+        using var project = new DeviceXpbdProjection<DeviceLengthConstraint, float>(backend, device, world, rows,
+            bodies, dynamics, lengths, multipliers, CompileLength(), 64);
+        var upload = lengths.BeginInputs().Then(write).Then(lengths.UploadInputs());
+        PhysicsSimulation.Create(world, QueryDefinition.Empty, upload, 1).Schedule(0, 0, .1).Complete();
+        world.DestroyEntity(prior);
+        Entity replacement = world.CreateRelation(first, second, new XpbdLength { RestLength = 3, Compliance = .01f }).Entity;
+        world.Add(replacement, new DeviceConstraintBinding<DeviceLengthConstraint>(lengths, 0));
+        world.Add(replacement, new DeviceXpbdState<float>(multipliers));
+        var solve = bodies.WriteInputs(64).Then(bodies.UploadInputs()).Then(dynamics.Predict(Vector3.Zero))
+            .Then(project.Initialize()).Then(project.Iterate(2)).Then(dynamics.UpdateVelocities()).Then(results.Readback(64));
+
+        PhysicsSimulation.Create(world, QueryDefinition.Empty, solve, 1).Schedule(1, .1, .1).Complete();
+
+        Near(new(2, 0, 0), world.Read<BodyPose>(second).Position);
+        Near(Vector3.Zero, world.Read<BodyVelocity>(second).Linear);
+
+        PhysicsSimulation.Create(world, QueryDefinition.Empty, upload.Then(solve), 1).Schedule(2, .2, .1).Complete();
+
+        Near(new(2.5f, 0, 0), world.Read<BodyPose>(second).Position);
+        Near(new(5, 0, 0), world.Read<BodyVelocity>(second).Linear);
+        world.ReleaseQuery(rows); world.ReleaseQuery(members);
+    }
+
+    [Fact]
     public void AReplacementBodyKeepsItsOwnStateWhenThePriorDeviceResultIsConsumed()
     {
         using var backend = D3D12GraphicsBackend.Create();
