@@ -38,6 +38,8 @@ public static partial class PhysicsScenes
         PhysicsSceneEntities created = CreateEntities(world, data);
         Entity[] entities = created.Bodies, jointEntities = created.Joints, rangeEntities = created.DistanceRanges;
         foreach (Entity entity in entities) world.Add(entity, new AvbdBodyEquation());
+        if (settings.JointBounds.Levels > 0)
+            foreach (Entity entity in jointEntities) world.AddBuffer<LongRangeJointBound>(entity);
         var inputs = new ApplySceneInputChanges(world, created.HasInputChanges);
         Scheduler scheduler = WorldJobs.GetScheduler(world);
         QueryDefinition filter = new QueryDefinitionBuilder().All<ScenePhysicsBody>().Build();
@@ -53,6 +55,8 @@ public static partial class PhysicsScenes
             .Read<DirectedRelationEndpoints<JointConstraint>>().ReadWrite<AvbdJointState>());
         QueryHandle ranges = world.Query(new QueryDefinitionBuilder().Read<DistanceRange>()
             .Read<UndirectedRelationEndpoints<DistanceRange>>().ReadWrite<AvbdDistanceRangeState>());
+        QueryHandle jointBounds = world.Query(new QueryDefinitionBuilder().All<ScenePhysicsJoint>().Read<JointConstraint>()
+            .Read<DirectedRelationEndpoints<JointConstraint>>().WriteBuffer<LongRangeJointBound>());
         QueryHandle eventQuery = world.Query(new QueryDefinitionBuilder().All<ScenePhysicsEventStream>()
             .Read<PhysicsStepEvents>().ReadBuffer<PhysicsEvent>());
         var eventBuffer = new PhysicsEventBuffer(scheduler, entities.Length);
@@ -67,10 +71,12 @@ public static partial class PhysicsScenes
         var points = ContactPoints.Create(world, poses, scope, detected, new SceneContactMaterials(),
             new ContactEventComponents<ScenePhysicsEventStream, SceneContactComponents>(new SceneContactComponents()),
             new ContactRefreshSettings(.02f, .99f, true));
-        var constraints = AvbdGraphConstraints.Combine(
+        var ordinaryConstraints = AvbdGraphConstraints.Combine(
             AvbdGraphConstraints.Combine(new AvbdGraphConstraints<ContactPoint, AvbdContactMath>(contacts),
                 new AvbdGraphConstraints<JointConstraint, AvbdJointMath>(joints)),
             new AvbdGraphConstraints<DistanceRange, AvbdDistanceRangeMath>(ranges));
+        var constraints = AvbdGraphConstraints.Combine(ordinaryConstraints,
+            new JointLongRangeGraphConstraints(jointBounds, settings.JointBounds));
         var solve = SolveAvbdGraph.Create(world, bodies, constraints,
             new PhysicsGraphSettings(PhysicsGraphOrder.Islands, 16, 16, 64, 4, false), settings.Iterations, .8f, 0,
             bodyIterations: settings.BodyIterations);
@@ -86,7 +92,7 @@ public static partial class PhysicsScenes
         var simulation = PhysicsSimulation.Create(world, filter, stages, data.Substeps);
         var frame = simulation.CreateFrame(new CopySceneBodyTransforms().Then(consumption), data.StepSeconds, 0, 0, 0);
         return new PhysicsSceneSimulation(world, description, settings, entities, jointEntities, rangeEntities, data.StepSeconds, frame, frame.CompleteForRead,
-            [shapes, poses, bodies, scope, contacts, joints, ranges, eventQuery],
+            [shapes, poses, bodies, scope, contacts, joints, ranges, jointBounds, eventQuery],
             [inputs, maintenance, bins, detected, detection, points, solve, activity, prediction, eventBuffer, contactEvents, consumption]);
     }
 

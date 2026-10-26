@@ -13,6 +13,33 @@ namespace SomeEngine.Runtime.Tests;
 public sealed class PhysicsSceneTests
 {
     [Fact]
+    public void TheOriginalHangingChainUsesItsSelectedLongRangeBoundsInTheFirstRound()
+    {
+        using var scheduler = new Scheduler(new() { WorkerCount = 2 });
+        using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using World reference = WorldJobs.CreateWorld(scheduler: scheduler);
+        PhysicsSceneDescription description = PhysicsScenes.All.Single(scene => scene.Id == "2d-chain");
+        using var ordinary = PhysicsScenes.CreateCpu(reference, description, new PlanarBoxCollision(1e-5f),
+            new PhysicsSceneSettings(Iterations: 1, BodyIterations: 1, StepBudgetMilliseconds: 1000d / 60));
+        using var bounded = PhysicsScenes.CreateCpu(world, description, new PlanarBoxCollision(1e-5f),
+            new PhysicsSceneSettings(Iterations: 1, BodyIterations: 1, StepBudgetMilliseconds: 1000d / 60)
+            {
+                JointBounds = new JointLongRangeSettings(6, 32, .99f, .99f),
+            });
+        var last = bounded.Bodies.Span[^1];
+        float start = world.Read<BodyPose>(last).Position.Y;
+
+        ordinary.Frame.AdvanceTime(ordinary.StepSeconds);
+        ordinary.CompleteForRead();
+        bounded.Frame.AdvanceTime(bounded.StepSeconds);
+        bounded.CompleteForRead();
+
+        float ordinaryTravel = MathF.Abs(reference.Read<BodyPose>(ordinary.Bodies.Span[^1]).Position.Y - start);
+        float boundedTravel = MathF.Abs(world.Read<BodyPose>(last).Position.Y - start);
+        Assert.InRange(boundedTravel, 0, ordinaryTravel * .5f);
+    }
+
+    [Fact]
     public void TheRestingSceneSleepsAndItsTimedHopReachesTheCompletedEventConsumer()
     {
         using var scheduler = new Scheduler(new() { WorkerCount = 2 });
