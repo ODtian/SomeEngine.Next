@@ -106,6 +106,8 @@ public static partial class GpuPoseAnimation
     public static Entity CreateTarget(World world, SkeletonInstance skeleton)
     {
         Entity target = world.CreateEntity(new GpuPoseTarget { Skeleton = skeleton, ModelToWorld = Matrix4x4.Identity });
+        world.Add(target, new GpuPoseSourceState());
+        world.Add(target, new DevicePoseOutput());
         CpuBoneDemands.For(world).Changed = true;
         return target;
     }

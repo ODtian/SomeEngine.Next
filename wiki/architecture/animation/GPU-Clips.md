@@ -103,6 +103,14 @@ Skinning 提供共同编码，[gpu_pose_sampling](../../../assets/Shaders/gpu_po
 随后用完成 Body 位置形成 source-frame swing 和后代骨骼输出。
 具体入口与独立数值观察见 [DevicePoseChainTests](../../../tests/SomeEngine.Graphics.Direct3D12.Tests/DevicePoseChainTests.cs)。
 
+`DevicePoseSources.CopyOutput()` 把完成模型、局部样本和播放行复制到轮换的两个消费缓冲，
+GPU copy 完成后经原命令回放写入目标的 `DevicePoseOutput` 完成编号和时刻。
+来源接受的输入与物理时钟保存在该目标实体；来源输入列可以继续接受下一次更新。
+`GpuPoseAnimation.ReadDeviceOutput(world, target)` 在读取完成组件时保留所选 GPU 范围，
+消费者使用 `DevicePoseOutputRead.CompleteAfter` 连接真实复制完成点，或在结束采集时释放读取。
+公开 [Graphics 消费检查](../../../tests/SomeEngine.Graphics.Direct3D12.Tests/DevicePoseOutputTests.cs)
+覆盖旧姿势读取期间继续 Body 结果消费与来源输入更新，以及复制结束后的输出接续。
+
 ## GPU 求值与历史
 
 `SkinningFeature` 汇总所有活动区段，为每段分配连续 G 范围。量化片段、层级工作表、
