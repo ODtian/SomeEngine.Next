@@ -132,3 +132,12 @@ typedef DeviceXpbdConstraintGroups<LengthRows, BendRows> ProjectionRows;
 投影将当前乘子作用量写入同一 `DeviceContactResponses`；速度重建后可调用
 `ApplyRestitution(n)`，再由 `DeviceContactResults` 回到原 `ContactResponse`。
 上述 stage 的句柄保持设备、必要读回、组件消费及资源归还的完整依赖。
+
+## 与 AVBD 接触共同求解
+
+`DeviceXpbdLengthForces` 沿同一长度参数、当前梯度和原设备乘子取得 `lambda / h²` 世界力，
+通过 `IDeviceAvbdConstraints` 加入 AVBD 主体方程；XPBD 继续负责投影与乘子更新。
+长度梯度和距离由 `physics_xpbd_length_math.slang` 单处计算。
+项目可在一次 `Predict` 后初始化两类求解器，交替调用各自的 `Iterate`，最后统一 `UpdateVelocities`。
+[公开互补与骨骼检查](../../../tests/SomeEngine.Graphics.Direct3D12.Tests/DeviceComplementaryPoseTests.cs)
+将同一 Body 的完成位置、速度、接触力、编号与时刻交给原 `PhysicsPose` 消费。

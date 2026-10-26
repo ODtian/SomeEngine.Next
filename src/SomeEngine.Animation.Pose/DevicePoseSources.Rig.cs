@@ -25,6 +25,7 @@ public sealed partial class DevicePoseSources
                 switch (step)
                 {
                     case GpuTwoBonePose limb:
+                        if (CpuWritten(row, limb.Chain.Root) && CpuWritten(row, limb.Chain.Middle) && CpuWritten(row, limb.Chain.Tip)) { level++; break; }
                         Add(level++, row, _twoBoneKernel, definitions.WriteTwoBone(limb.Chain), (uint)(row.GoalStart + limb.Goal));
                         break;
                     case GpuAimPose aim:
@@ -45,7 +46,7 @@ public sealed partial class DevicePoseSources
             work.CopyTo(_work.Mapping.Bytes[offset..]);
             BufferSrv view = _backend.CreateBufferSrv(_device, new(_work.Buffer, new((ulong)offset, (ulong)work.Length), StructureStride: 16));
             _workViews.Add(view); _bindings["GpuPoseWork"] = [ResourceBinding.ReadOnlyBuffer(view)];
-            _rigOperations.Add(new(group.Key.Kernel, OrderBindings(_layouts[group.Key.Kernel], _bindings), group.Value.Count));
+            _rigOperations.Add(new(group.Key.Kernel, view, [], group.Value.Count));
             offset += work.Length;
         }
         workOffset = offset;
@@ -67,6 +68,7 @@ public sealed partial class DevicePoseSources
             var visit = new Stack<int>(); visit.Push(root);
             while (visit.TryPop(out int bone))
             {
+                if (_cpuWritten.Contains(bone)) continue;
                 writer.Write((uint)bone); count++;
                 foreach (int child in children[bone]) visit.Push(child);
             }
