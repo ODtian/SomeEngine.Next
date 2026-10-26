@@ -75,6 +75,7 @@ public sealed class DeviceBodyDynamics : IDisposable
     public UpdateDeviceBodyVelocities UpdateVelocities() => new(this);
     public ApplyDeviceGyroscopicTorque ApplyGyroscopicTorque() => new(this);
     public ResumeDeviceBodies Resume(Vector3 acceleration) => new(this, acceleration);
+    public UpdateDeviceBodySelection UpdateSelection() => new(this);
     internal JobHandle ScheduleResume(in PhysicsStepContext context, Vector3 acceleration, JobHandle dependency) =>
         Schedule(in context, acceleration, _resumeKernel, dependency);
     internal JobHandle ScheduleGyroscopicTorque(in PhysicsStepContext context, JobHandle dependency) =>
@@ -91,18 +92,28 @@ public sealed class DeviceBodyDynamics : IDisposable
             JobResourceAccess.Read(scheduler.GetResourceToken(_membership), 0, (long)_membership.Info.Size),
             JobResourceAccess.Read(scheduler.GetResourceToken(_indices), 0, (long)_indices.Info.Size)];
 
+    private JobResourceAccess[] GetSelectionWriteAccesses(Scheduler scheduler) =>
+        [JobResourceAccess.Write(scheduler.GetResourceToken(_parameters), 0, 256),
+            JobResourceAccess.Write(scheduler.GetResourceToken(_membership), 0, (long)_membership.Info.Size),
+            JobResourceAccess.Write(scheduler.GetResourceToken(_indices), 0, (long)_indices.Info.Size)];
+
+    internal JobHandle ScheduleSelection(in PhysicsStepContext context, JobHandle dependency)
+    {
+        Scheduler scheduler = WorldJobs.GetScheduler(context.World);
+        return scheduler.Schedule(new ReadSelection(this, context),
+            [.. _queryAccesses, .. GetSelectionWriteAccesses(scheduler)], dependency);
+    }
+
     internal JobHandle Schedule(in PhysicsStepContext context, Vector3 acceleration, int kernel, JobHandle dependency)
     {
         Scheduler scheduler = WorldJobs.GetScheduler(context.World);
         JobResourceAccess[] accesses = [.. _queryAccesses, .. _extraAccesses, _bodies.GetWriteAccess(scheduler),
-            JobResourceAccess.Write(scheduler.GetResourceToken(_indices), 0, (long)_indices.Info.Size),
-            JobResourceAccess.Write(scheduler.GetResourceToken(_membership), 0, (long)_membership.Info.Size),
-            JobResourceAccess.Write(scheduler.GetResourceToken(_parameters), 0, 256),
+            .. GetSelectionWriteAccesses(scheduler),
             JobResourceAccess.Write(scheduler.GetResourceToken(_commands))];
         return DevicePhysicsJobs.Schedule(scheduler, new Dynamics(this, context, acceleration, kernel), accesses, dependency);
     }
 
-    private QueueCompletion Submit(in PhysicsStepContext context, Vector3 acceleration, int kernel)
+    private int CaptureSelection(in PhysicsStepContext context, Vector3 acceleration)
     {
         int count = 0;
         using (MappedBuffer mapping = _backend.Map(_indices, MapType.Write, BufferRange.Whole))
@@ -123,6 +134,11 @@ public sealed class DeviceBodyDynamics : IDisposable
             MemoryMarshal.Write(mapping.Bytes, in parameters);
             mapping.Flush(new(0, (ulong)Marshal.SizeOf<BodyStep>()));
         }
+        return count;
+    }
+    private QueueCompletion Submit(in PhysicsStepContext context, Vector3 acceleration, int kernel)
+    {
+        int count = CaptureSelection(in context, acceleration);
         _backend.Begin(_commands, new(0, 0, 8));
         _backend.SetPipeline(_commands, _pipelines[kernel]);
         _backend.SetTransientParameterBindings(_commands, new(_layouts[kernel], _bindings[kernel], []));
@@ -170,6 +186,10 @@ public sealed class DeviceBodyDynamics : IDisposable
         public Device Device => dynamics._device;
         public QueueCompletion Submit() => dynamics.Submit(in context, acceleration, kernel);
     }
+    private readonly struct ReadSelection(DeviceBodyDynamics dynamics, PhysicsStepContext context) : IJob
+    {
+        public void Execute() => dynamics.CaptureSelection(in context, Vector3.Zero);
+    }
 
     public void Dispose()
     {
@@ -183,6 +203,10 @@ public sealed class DeviceBodyDynamics : IDisposable
 public readonly struct PredictDeviceBodies(DeviceBodyDynamics dynamics, Vector3 acceleration) : IPhysicsStage
 {
     public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) => dynamics.Schedule(in context, acceleration, 0, dependency);
+}
+public readonly struct UpdateDeviceBodySelection(DeviceBodyDynamics dynamics) : IPhysicsStage
+{
+    public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) => dynamics.ScheduleSelection(in context, dependency);
 }
 public readonly struct UpdateDeviceBodyVelocities(DeviceBodyDynamics dynamics) : IPhysicsStage
 {
