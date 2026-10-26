@@ -19,6 +19,10 @@ public readonly struct BreakConstraints<TConstraint, TForces> : IPhysicsStage, I
     private readonly QueryReadResources? _resources;
     private readonly JobResourceAccess[] _accesses;
     public BreakConstraints(World world, QueryHandle bodies, QueryHandle constraints, PhysicsEventBuffer events, QueryReadResources? resources = null)
+        : this(world, bodies, constraints, events, resources, default) { }
+
+    public BreakConstraints(World world, QueryHandle bodies, QueryHandle constraints, PhysicsEventBuffer events,
+        QueryReadResources? resources, ReadOnlySpan<JobResourceAccess> extraAccesses)
     {
         _world = world; _events = events; _resources = resources;
         _bodies = world.Query(world.GetQueryDefinition(bodies).AsReadOnly().WithAccess(new QueryDefinitionBuilder()
@@ -26,6 +30,7 @@ public readonly struct BreakConstraints<TConstraint, TForces> : IPhysicsStage, I
         _constraints = world.Query(world.GetQueryDefinition(constraints).AsReadOnly().WithOptionalRead<ConstraintBreakSettings>());
         var accesses = new List<JobResourceAccess> { events.WriteAccess };
         PhysicsQueryAccess.AddAccesses(world, _bodies, accesses, resources); PhysicsQueryAccess.AddAccesses(world, _constraints, accesses, resources);
+        foreach (JobResourceAccess access in extraAccesses) accesses.Add(access);
         _accesses = accesses.ToArray();
     }
     public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency)
