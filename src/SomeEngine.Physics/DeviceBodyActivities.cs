@@ -35,7 +35,10 @@ public sealed class DeviceBodyActivities : IDisposable
     private readonly BufferUav _statesView;
     private readonly BufferSrv _inputsView;
     private readonly CpuVersion[] _versions;
+    private readonly QueryHandle _wakeRows, _activityMembers;
+    private readonly List<int> _transientInputs = [];
     private MappedBuffer _inputMapping;
+    private uint _membershipVersion, _activityMembershipVersion, _lastSystemVersion;
 
     public DeviceBodyActivities(IGraphicsBackend backend, Device device, World world, QueryHandle members, DeviceBodies bodies)
     {
@@ -49,11 +52,15 @@ public sealed class DeviceBodyActivities : IDisposable
         _statesView = backend.CreateBufferUav(device, new(States, new(0, States.Info.Size), StructureStride: 32));
         _inputsView = backend.CreateBufferSrv(device, new(Inputs, new(0, Inputs.Info.Size), StructureStride: 32));
         _inputMapping = backend.Map(Inputs, MapType.Write, BufferRange.Whole);
+        _inputMapping.Bytes.Clear();
         QueryDefinition definition = world.GetQueryDefinition(members).AsFilter().WithAccess(new QueryDefinitionBuilder()
             .Read<DeviceBodyBinding>().Optional<DeviceBodyActivityBinding>(QueryAccess.Read)
             .Optional<BodyActivity>(QueryAccess.Read).OptionalBuffer<BodyWake>(QueryAccess.Read).Build());
         SourceRows = world.Query(definition);
         ResultRows = world.Query(definition.WithAccess(new QueryDefinitionBuilder().ReadWrite<BodyActivity>().Build()));
+        _wakeRows = world.Query(new QueryDefinitionBuilder().Read<DeviceBodyBinding>().ReadBuffer<BodyWake>());
+        _activityMembers = world.Query(new QueryDefinitionBuilder().All<DeviceBodyBinding>()
+            .All<DeviceBodyActivityBinding>().All<BodyActivity>());
         var resources = new QueryReadResources();
         resources.Add<DeviceBodyBinding, DeviceBodyReferenceResources>();
         resources.Add<DeviceBodyActivityBinding, DeviceActivityReferenceResources>();
@@ -81,11 +88,31 @@ public sealed class DeviceBodyActivities : IDisposable
 
     internal void CaptureInputs(in PhysicsStepContext context)
     {
-        _inputMapping.Bytes.Clear();
-        var read = new ReadSources(this, context.StartTime, context.EndTime);
-        World.ExecuteReadQuery(SourceRows, ref read,
-            static (scoped QueryCursor rows, ref ReadSources read) => read.Execute(rows));
+        uint membership = World.MembershipVersion(SourceRows);
+        uint activityMembership = World.MembershipVersion(_activityMembers);
+        bool readAll = membership != _membershipVersion || activityMembership != _activityMembershipVersion;
+        if (readAll) _inputMapping.Bytes.Clear();
+        else
+        {
+            Span<ActivityInput> inputs = MemoryMarshal.Cast<byte, ActivityInput>(_inputMapping.Bytes);
+            foreach (int index in _transientInputs) inputs[index].Flags &= 3;
+        }
+        _transientInputs.Clear();
+        var source = new ReadSources(this, readAll);
+        var read = (Source: source, Version: 0u);
+        World.ExecuteReadQuery(SourceRows, _lastSystemVersion, ref read,
+            static (scoped QueryCursor rows, ref (ReadSources Source, uint Version) read) =>
+            {
+                read.Source.Execute(rows);
+                read.Version = rows.CurrentSystemVersion;
+            });
+        var wakes = new ReadWakes(this, context.StartTime, context.EndTime);
+        World.ExecuteReadQuery(_wakeRows, ref wakes,
+            static (scoped QueryCursor rows, ref ReadWakes wakes) => wakes.Execute(rows));
         _inputMapping.Flush(_inputMapping.Range);
+        _membershipVersion = membership;
+        _activityMembershipVersion = activityMembership;
+        _lastSystemVersion = read.Version;
     }
 
     private readonly record struct CpuVersion(Entity Entity, uint Activity);
@@ -95,32 +122,69 @@ public sealed class DeviceBodyActivities : IDisposable
         public uint EntityIndex, EntityGeneration, Flags, Sleeping;
         public float QuietSeconds, Radius;
     }
-    private readonly record struct ReadSources(DeviceBodyActivities Activities, double Start, double End)
+    private readonly record struct ReadSources(DeviceBodyActivities Activities, bool ReadAll)
     {
         internal void Execute(scoped QueryCursor rows)
         {
-            var members = rows.ReadRows<DeviceBodyBinding, BodyActivity>();
-            while (members.MoveNext(out QueryRow row, out var body, out var activity))
+            if (ReadAll)
             {
-                ref readonly DeviceBodyBinding binding = ref body.Value;
-                if (!ReferenceEquals(binding.Bodies, Activities.Bodies)) continue;
-                bool hasActivity = activity.HasValue && row.TryRead<DeviceBodyActivityBinding>(out var activityBinding)
-                    && ReferenceEquals(activityBinding.Activities, Activities);
-                uint version = hasActivity ? row.WriteVersion<BodyActivity>() : 0;
-                var current = new CpuVersion(row.Entity, version);
-                var input = new ActivityInput { EntityIndex = (uint)row.Entity.Index,
-                    EntityGeneration = (uint)row.Entity.Generation, Flags = hasActivity ? 3u : 1u };
-                if (current != Activities._versions[binding.Index]) input.Flags |= 4;
-                if (hasActivity)
+                var members = rows.ReadRows<DeviceBodyBinding, BodyActivity>();
+                while (members.MoveNext(out QueryRow row, out var body, out var activity))
+                    Read(row, in body.Value, activity);
+            }
+            else
+                foreach (QueryChunkView chunk in rows.Chunks)
                 {
-                    input.Sleeping = activity.Value.Sleeping ? 1u : 0u;
-                    input.QuietSeconds = activity.Value.QuietSeconds; input.Radius = activity.Value.Radius;
+                    if (!chunk.HasChangedSinceLastSystemVersion<DeviceBodyBinding>() &&
+                        (!chunk.Has<DeviceBodyActivityBinding>() || !chunk.HasChangedSinceLastSystemVersion<DeviceBodyActivityBinding>()) &&
+                        (!chunk.Has<BodyActivity>() || !chunk.HasChangedSinceLastSystemVersion<BodyActivity>())) continue;
+                    foreach (QueryRow row in chunk.Rows)
+                    {
+                        DeviceBodyBinding body = row.Read<DeviceBodyBinding>();
+                        row.TryReadRef<BodyActivity>(out var activity);
+                        Read(row, in body, activity);
+                    }
                 }
-                if (row.HasBuffer<BodyWake>())
-                    foreach (BodyWake wake in row.ReadBuffer<BodyWake>().AsSpan())
-                        if (wake.Time >= Start && wake.Time < End) { input.Flags |= 8; break; }
-                MemoryMarshal.Write(Activities._inputMapping.Bytes.Slice(binding.Index * 32, 32), in input);
-                Activities._versions[binding.Index] = current;
+        }
+        private void Read(scoped QueryRow row, in DeviceBodyBinding binding, scoped ComponentReference<BodyActivity> activity)
+        {
+            if (!ReferenceEquals(binding.Bodies, Activities.Bodies)) return;
+            bool hasActivity = activity.HasValue && row.TryRead<DeviceBodyActivityBinding>(out var activityBinding)
+                && ReferenceEquals(activityBinding.Activities, Activities);
+            uint version = hasActivity ? row.WriteVersion<BodyActivity>() : 0;
+            var current = new CpuVersion(row.Entity, version);
+            if (!ReadAll && current == Activities._versions[binding.Index]) return;
+            var input = new ActivityInput { EntityIndex = (uint)row.Entity.Index,
+                EntityGeneration = (uint)row.Entity.Generation, Flags = hasActivity ? 3u : 1u };
+            if (current != Activities._versions[binding.Index]) input.Flags |= 4;
+            if (hasActivity)
+            {
+                input.Sleeping = activity.Value.Sleeping ? 1u : 0u;
+                input.QuietSeconds = activity.Value.QuietSeconds; input.Radius = activity.Value.Radius;
+            }
+            MemoryMarshal.Write(Activities._inputMapping.Bytes.Slice(binding.Index * 32, 32), in input);
+            if ((input.Flags & 4) != 0) Activities._transientInputs.Add(binding.Index);
+            Activities._versions[binding.Index] = current;
+        }
+    }
+    private readonly record struct ReadWakes(DeviceBodyActivities Activities, double Start, double End)
+    {
+        internal void Execute(scoped QueryCursor rows)
+        {
+            foreach (QueryRow row in rows.Rows)
+            {
+                DeviceBodyBinding body = row.Read<DeviceBodyBinding>();
+                if (!ReferenceEquals(body.Bodies, Activities.Bodies)) continue;
+                ref ActivityInput input = ref MemoryMarshal.Cast<byte, ActivityInput>(Activities._inputMapping.Bytes)[body.Index];
+                if ((input.Flags & 1) == 0 || input.EntityIndex != (uint)row.Entity.Index
+                    || input.EntityGeneration != (uint)row.Entity.Generation) continue;
+                foreach (BodyWake wake in row.ReadBuffer<BodyWake>().AsSpan())
+                    if (wake.Time >= Start && wake.Time < End)
+                    {
+                        input.Flags |= 8;
+                        Activities._transientInputs.Add(body.Index);
+                        break;
+                    }
             }
         }
     }
@@ -163,7 +227,8 @@ public sealed class DeviceBodyActivities : IDisposable
     }
     public void Dispose()
     {
-        World.ReleaseQuery(SourceRows); World.ReleaseQuery(ResultRows);
+        World.ReleaseQuery(SourceRows); World.ReleaseQuery(ResultRows); World.ReleaseQuery(_wakeRows);
+        World.ReleaseQuery(_activityMembers);
         _inputMapping.Dispose(); _inputsView.Dispose(); _statesView.Dispose(); States.Dispose(); Inputs.Dispose();
     }
 }
