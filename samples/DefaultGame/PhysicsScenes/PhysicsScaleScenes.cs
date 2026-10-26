@@ -3,7 +3,7 @@ using SomeEngine.Physics;
 
 namespace DefaultGame;
 
-public static class PhysicsScaleScenes
+public static partial class PhysicsScaleScenes
 {
     public static IReadOnlyList<PhysicsSceneDescription> All { get; } = Array.AsReadOnly<PhysicsSceneDescription>(
     [
@@ -14,6 +14,7 @@ public static class PhysicsScaleScenes
         new("joint-grid-100000", "100,000 节点关节网", 3, 404, "大型连接网络", "第 120 步面外冲量", "大连通网络、自接触与整步成本"),
         new("breakable-100000", "100,000 砖可破坏结构", 3, 405, "可破坏连续结构", "第 120 步撞击", "局部断裂、连锁坍塌与岛重组"),
         new("breakable-500000", "500,000 砖可破坏结构", 3, 406, "可破坏连续结构", "第 120 步撞击", "局部断裂、连锁坍塌与岛重组"),
+        new("million-activity", "1,000,000 体堆积与唤醒", 3, 407, "活动", "第 180 步局部冲量，第 360 步移动共享地板", "落体、堆积、休眠与局部及全局唤醒"),
     ]);
 
     public static PhysicsSceneSimulation CreateCpu<TCollision>(World world, PhysicsSceneDescription description,
@@ -30,6 +31,7 @@ public static class PhysicsScaleScenes
         404 => CreateJointGrid(),
         405 => CreateBreakableBricks(10),
         406 => CreateBreakableBricks(50),
+        407 => CreateMillionActivity(),
         _ => throw new ArgumentOutOfRangeException(nameof(description)),
     };
 
