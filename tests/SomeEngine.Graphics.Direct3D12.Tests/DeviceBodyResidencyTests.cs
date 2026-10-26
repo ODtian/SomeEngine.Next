@@ -1,4 +1,5 @@
 using System.Numerics;
+using SlangShaderSharp;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
@@ -11,6 +12,49 @@ namespace SomeEngine.Graphics.Direct3D12.Tests;
 
 public sealed partial class DeviceXpbdTests
 {
+    [Fact]
+    public void SuspendedDeviceBodiesResumeFromTheSameSubstepOrigin()
+    {
+        using var backend = D3D12GraphicsBackend.Create();
+        using Device device = CreateDevice(backend);
+        using var jobs = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using World world = WorldJobs.CreateWorld(scheduler: jobs);
+        using var bodies = new DeviceBodies(backend, device, 1);
+        Entity body = AddBody(world, bodies, 0, Vector3.UnitX, BodyMotion.Dynamic);
+        world.Replace(body, new BodyVelocity { Linear = new(2, 0, 0) });
+        QueryHandle members = world.Query(world.QueryDefinition().Read<DeviceBodyBinding>());
+        D3D12TestShader shader = shaderCompiler.CompileWithSearchPaths("body_suspend_resume", """
+            #include "physics_body_dynamics.slang"
+            [shader("compute")][numthreads(64,1,1)]
+            void Suspend(uint3 id : SV_DispatchThreadID)
+            { if(id.x < BodyStep.count) predictDeviceBody(DeviceBodyIndices[id.x], false, false); }
+            [shader("compute")][numthreads(64,1,1)]
+            void Resume(uint3 id : SV_DispatchThreadID)
+            { if(id.x < BodyStep.count) predictDeviceBody(DeviceBodyIndices[id.x], true, true); }
+            """, [new("Suspend", SlangStage.Compute), new("UpdateDeviceBodyVelocities", SlangStage.Compute),
+                new("Resume", SlangStage.Compute)], "sm_6_0", ShaderDirectory());
+        ComputePipelineDesc Entry(int index) => new(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(index), shader.GetEntryCode(index));
+        using var inputs = new DeviceBodyInputs(world, members, bodies);
+        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies,
+            new(Entry(0), Entry(1), Resume: Entry(2)), 64);
+        using var results = new DeviceBodyResults(backend, device, bodies);
+        var suspend = inputs.Upload().Then(dynamics.Predict(new(0, -10, 0))).Then(results.Readback(64));
+
+        PhysicsSimulation.Create(world, QueryDefinition.Empty, suspend, 1).Schedule(4, 2, .1).Complete();
+
+        Near(Vector3.UnitX, world.Read<BodyPose>(body).Position);
+        Assert.Equal(2.1, world.Read<BodyStepState>(body).Time);
+
+        var resume = dynamics.Resume(new(0, -10, 0)).Then(dynamics.UpdateVelocities()).Then(results.Readback(64));
+        PhysicsSimulation.Create(world, QueryDefinition.Empty, resume, 1).Schedule(4, 2, .1).Complete();
+
+        Near(new(1.2f, -.1f, 0), world.Read<BodyPose>(body).Position);
+        Near(new(2, -1, 0), world.Read<BodyVelocity>(body).Linear);
+        Near(Vector3.UnitX, world.Read<BodyStepState>(body).StartCenterOfMass);
+        Assert.Equal(4, world.Read<BodyStepState>(body).Number);
+        world.ReleaseQuery(members);
+    }
+
     [Fact]
     public void ConsumingAnEarlierCompletedBodyKeepsTheLaterDeviceStepResident()
     {

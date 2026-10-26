@@ -11,7 +11,7 @@ using Buffer = SomeEngine.Graphics.Buffer;
 namespace SomeEngine.Physics;
 
 public readonly record struct DeviceBodyKernels(ComputePipelineDesc Predict, ComputePipelineDesc UpdateVelocities,
-    ComputePipelineDesc? GyroscopicTorque = null);
+    ComputePipelineDesc? GyroscopicTorque = null, ComputePipelineDesc? Resume = null);
 
 /// <summary>Integrates and reconstructs the selected entities in their existing device body buffer.</summary>
 public sealed class DeviceBodyDynamics : IDisposable
@@ -31,11 +31,15 @@ public sealed class DeviceBodyDynamics : IDisposable
     private readonly VariableLayoutReflection[] _layouts;
     private readonly ResourceBinding[][] _bindings;
     private readonly JobResourceAccess[] _queryAccesses;
+    private readonly JobResourceAccess[] _extraAccesses;
+    private readonly int _gyroKernel, _resumeKernel;
 
     public DeviceBodyDynamics(IGraphicsBackend backend, Device device, World world, QueryHandle members,
-        DeviceBodies bodies, DeviceBodyKernels kernels, int threadsPerGroup)
+        DeviceBodies bodies, DeviceBodyKernels kernels, int threadsPerGroup,
+        IReadOnlyDictionary<string, ResourceBinding[]>? extraBindings = null, ReadOnlyMemory<JobResourceAccess> extraAccesses = default)
     {
         _backend = backend; _device = device; _world = world; _bodies = bodies; _threadsPerGroup = threadsPerGroup;
+        _extraAccesses = extraAccesses.ToArray();
         QueryDefinition definition = world.GetQueryDefinition(members).AsReadOnly();
         _members = world.Query(definition);
         var resources = new QueryReadResources();
@@ -51,8 +55,10 @@ public sealed class DeviceBodyDynamics : IDisposable
         _membershipView = backend.CreateBufferSrv(device, new(_membership, new(0, _membership.Info.Size), StructureStride: 4));
         _parametersView = backend.CreateBufferCbv(device, new(_parameters, new(0, 256)));
         _commands = backend.CreateCommandContext(device, new(QueueType.Compute, 0, 1, Label: "Device body dynamics"));
-        ComputePipelineDesc[] descriptions = kernels.GyroscopicTorque is { } gyro
-            ? [kernels.Predict, kernels.UpdateVelocities, gyro] : [kernels.Predict, kernels.UpdateVelocities];
+        var descriptions = new List<ComputePipelineDesc> { kernels.Predict, kernels.UpdateVelocities };
+        _gyroKernel = _resumeKernel = -1;
+        if (kernels.GyroscopicTorque is { } gyro) { _gyroKernel = descriptions.Count; descriptions.Add(gyro); }
+        if (kernels.Resume is { } resume) { _resumeKernel = descriptions.Count; descriptions.Add(resume); }
         _pipelines = descriptions.Select(kernel => backend.CreateComputePipeline(device, kernel)).ToArray();
         _layouts = descriptions.Select(kernel => kernel.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null).ToArray();
         var bindings = new Dictionary<string, ResourceBinding[]>
@@ -60,12 +66,19 @@ public sealed class DeviceBodyDynamics : IDisposable
             ["DeviceBodyStates"] = [ResourceBinding.WritableBuffer(bodies.View)],
         };
         AddSelectionBindings(bindings);
+        if (extraBindings is not null)
+            foreach (var binding in extraBindings) bindings.Add(binding.Key, binding.Value);
         _bindings = _layouts.Select(layout => DeviceCollisionGrid.OrderBindings(layout, bindings)).ToArray();
     }
 
     public PredictDeviceBodies Predict(Vector3 acceleration) => new(this, acceleration);
     public UpdateDeviceBodyVelocities UpdateVelocities() => new(this);
     public ApplyDeviceGyroscopicTorque ApplyGyroscopicTorque() => new(this);
+    public ResumeDeviceBodies Resume(Vector3 acceleration) => new(this, acceleration);
+    internal JobHandle ScheduleResume(in PhysicsStepContext context, Vector3 acceleration, JobHandle dependency) =>
+        Schedule(in context, acceleration, _resumeKernel, dependency);
+    internal JobHandle ScheduleGyroscopicTorque(in PhysicsStepContext context, JobHandle dependency) =>
+        Schedule(in context, Vector3.Zero, _gyroKernel, dependency);
 
     internal void AddSelectionBindings(Dictionary<string, ResourceBinding[]> bindings)
     {
@@ -81,7 +94,7 @@ public sealed class DeviceBodyDynamics : IDisposable
     internal JobHandle Schedule(in PhysicsStepContext context, Vector3 acceleration, int kernel, JobHandle dependency)
     {
         Scheduler scheduler = WorldJobs.GetScheduler(context.World);
-        JobResourceAccess[] accesses = [.. _queryAccesses, _bodies.GetWriteAccess(scheduler),
+        JobResourceAccess[] accesses = [.. _queryAccesses, .. _extraAccesses, _bodies.GetWriteAccess(scheduler),
             JobResourceAccess.Write(scheduler.GetResourceToken(_indices), 0, (long)_indices.Info.Size),
             JobResourceAccess.Write(scheduler.GetResourceToken(_membership), 0, (long)_membership.Info.Size),
             JobResourceAccess.Write(scheduler.GetResourceToken(_parameters), 0, 256),
@@ -177,5 +190,9 @@ public readonly struct UpdateDeviceBodyVelocities(DeviceBodyDynamics dynamics) :
 }
 public readonly struct ApplyDeviceGyroscopicTorque(DeviceBodyDynamics dynamics) : IPhysicsStage
 {
-    public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) => dynamics.Schedule(in context, Vector3.Zero, 2, dependency);
+    public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) => dynamics.ScheduleGyroscopicTorque(in context, dependency);
+}
+public readonly struct ResumeDeviceBodies(DeviceBodyDynamics dynamics, Vector3 acceleration) : IPhysicsStage
+{
+    public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) => dynamics.ScheduleResume(in context, acceleration, dependency);
 }

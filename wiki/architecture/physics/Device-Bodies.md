@@ -47,6 +47,12 @@ StepState 的写版本；新实体按绑定初始化整行，既有实体只复�
 数学由 [physics_body_math](../../../assets/Shaders/physics_body_math.slang) 与
 [physics_body_dynamics](../../../assets/Shaders/physics_body_dynamics.slang) 单处维护。
 
+具体活动内核调用同一 `predictDeviceBody(index,advance,resume)` 与
+`updateDeviceBodyVelocity(index)`。`advance=false` 刷新共同起点、预测初值及步时刻；
+`resume=true` 保留该子步起点，让活动阶段选定的新唤醒体完成一次运动预测。
+项目以 `DeviceBodyKernels.Resume` 提供具体入口，`Dynamics.Resume(acceleration)` 接同一提交与完成链。
+构造器的额外资源绑定与访问描述为该具体内核声明自己的活动数据。
+
 [DeviceBodyResults](../../../src/SomeEngine.Physics/DeviceBodyResults.cs) 在项目选择 CPU 消费时创建。
 `Readback(rowsPerPacket)` 提交原状态 buffer 的复制，沿外部 fence 等待真实设备完成，
 随后按原 `DeviceBodyBinding` 捕获消费实体，经 EntityQueryJobs 的实际行范围写入位姿、速度及 `BodyStepState`。
