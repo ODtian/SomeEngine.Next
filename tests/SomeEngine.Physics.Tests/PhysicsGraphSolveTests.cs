@@ -10,6 +10,63 @@ namespace SomeEngine.Physics.Tests;
 
 public sealed class PhysicsGraphSolveTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void TheTargetOnlyMotorReadsTheDynamicSourceAfterItsLengthProjection(bool avbd)
+    {
+        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var world = WorldJobs.CreateWorld(scheduler: scheduler);
+        Entity fixedBody = CreateBody(world, Vector3.Zero, 0);
+        Entity source = CreateBody(world, new Vector3(2, 0, 0), 1);
+        Entity target = CreateBody(world, new Vector3(3, 0, 0), 1);
+        foreach (Entity body in new[] { fixedBody, source, target }) world.Add(body, new AvbdBodyEquation());
+        world.CreateRelation(fixedBody, source, new XpbdLength { RestLength = 1 });
+        var motor = world.CreateRelation(source, target, new JointConstraint
+        { SourceFrame = JointFrame.Identity, TargetFrame = JointFrame.Identity });
+        world.Add(motor.Entity, new JointMotor
+        {
+            Space = JointMotorSpace.Source, Response = JointMotorResponse.Target,
+            LinearStiffness = new(100, 0, 0), MaximumForce = new(100),
+        });
+        world.Add(motor.Entity, new JointMotorTarget { Frame = new(Vector3.UnitX, Quaternion.Identity) });
+        world.Add(motor.Entity, new XpbdMotorState());
+        world.Add(motor.Entity, new AvbdMotorState { LinearPenalty = new(1000) });
+        QueryHandle bodies = world.Query(new QueryDefinitionBuilder().ReadWrite<BodyPose>().Read<BodyMass>()
+            .Read<BodyStepState>().ReadWrite<AvbdBodyEquation>());
+        QueryHandle lengths = world.Query(new QueryDefinitionBuilder().ReadWrite<XpbdLength>().Read<UndirectedRelationEndpoints<XpbdLength>>());
+        QueryHandle xpbdMotors = world.Query(new QueryDefinitionBuilder().Read<JointConstraint>().Read<JointMotor>().Read<JointMotorTarget>()
+            .Read<DirectedRelationEndpoints<JointConstraint>>().ReadWrite<XpbdMotorState>());
+        QueryHandle avbdMotors = world.Query(new QueryDefinitionBuilder().Read<JointConstraint>().Read<JointMotor>().Read<JointMotorTarget>()
+            .Read<DirectedRelationEndpoints<JointConstraint>>().ReadWrite<AvbdMotorState>());
+        var settings = new PhysicsGraphSettings(PhysicsGraphOrder.Colors, 0, 4, 1, 1, false);
+        using var lengthSolve = SolveXpbdGraph.Create(world, bodies,
+            new XpbdGraphConstraints<XpbdLength, XpbdLengthProjection>(lengths), settings, 1);
+        if (avbd)
+        {
+            using var solve = SolveAvbdGraph.Create(world, bodies, AvbdGraphConstraints.Combine(
+                new XpbdForces<XpbdLength, XpbdLengthProjection>(lengths),
+                new AvbdGraphConstraints<JointConstraint, AvbdJointMotorMath>(avbdMotors)), settings, 32, 0, 0);
+            var stages = new PredictBodies(Vector3.Zero, 16).Then(lengthSolve).Then(solve).Then(new UpdateBodyVelocities(16));
+            PhysicsSimulation.Create(world, QueryDefinition.Empty, stages, 1).Schedule(0, 0, 1).Complete();
+        }
+        else
+        {
+            using var solve = SolveXpbdGraph.Create(world, bodies,
+                new XpbdGraphConstraints<JointConstraint, XpbdJointMotorProjection>(xpbdMotors), settings, 1);
+            var stages = new PredictBodies(Vector3.Zero, 16).Then(lengthSolve).Then(solve).Then(new UpdateBodyVelocities(16));
+            PhysicsSimulation.Create(world, QueryDefinition.Empty, stages, 1).Schedule(0, 0, 1).Complete();
+        }
+
+        Assert.InRange(Vector3.Distance(Vector3.UnitX, world.Read<BodyPose>(source).Position), 0, 1e-5f);
+        Assert.InRange(Vector3.Distance(new Vector3(2.009901f, 0, 0), world.Read<BodyPose>(target).Position), 0, 1e-5f);
+        Assert.InRange(Vector3.Distance(new Vector3(-.990099f, 0, 0), world.Read<BodyVelocity>(target).Linear), 0, 1e-5f);
+        world.ReleaseQuery(avbdMotors);
+        world.ReleaseQuery(xpbdMotors);
+        world.ReleaseQuery(lengths);
+        world.ReleaseQuery(bodies);
+    }
+
     [Fact]
     public void GraphParticipantsFollowTheReferencedArrayAfterItsProducerCompletes()
     {
