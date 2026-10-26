@@ -108,6 +108,7 @@ public static partial class PhysicsScenes
         var prediction = new PredictActiveBodies(world, bodies, Vector(data.Gravity), 64);
         var contactEvents = new ContactEvents<ScenePhysicsEventStream>(world, bodies, scope, eventBuffer, .001f);
         var consumption = new ConsumePhysicsEvents<TEvents>(world, eventQuery, events, eventAccesses);
+        var responses = new InitializeContactResponses(world, bodies, contacts);
         PhysicsSceneTimings? timings = settings.Timings;
         var stages = inputs.Measure(timings, "Scene inputs")
             .Then(new ApplyBodyInputs(64).Measure(timings, "Body inputs"))
@@ -120,7 +121,7 @@ public static partial class PhysicsScenes
             .Then(points.Refresh().Measure(timings, "Persistent contacts"))
             .Then(activity.WakeConnected().Measure(timings, "Contact wake"))
             .Then(prediction.Resume().Measure(timings, "Resumed prediction"))
-            .Then(new InitializeContactResponses(world, bodies, contacts).Measure(timings, "Contact response inputs"))
+            .Then(responses.Measure(timings, "Contact response inputs"))
             .Then(solve.Measure(timings, "Constraint graph and AVBD"))
             .Then(breakJoints.Measure(timings, "Joint breaks"))
             .Then(new UpdateBodyVelocities(64).Measure(timings, "Body velocities"))
@@ -133,7 +134,7 @@ public static partial class PhysicsScenes
         var frame = simulation.CreateFrame(consumer, data.StepSeconds, 0, 0, 0);
         return new PhysicsSceneSimulation(world, description, settings, entities, jointEntities, rangeEntities, data.StepSeconds, frame, frame.CompleteForRead,
             [shapes, poses, bodies, scope, contacts, ordinaryContacts, supportedContacts, supportBodies, joints, breakableJoints, ranges, jointBounds, eventQuery],
-            [inputs, maintenance, bins, detected, detection, points, solve, activity, breakJoints, prediction, eventBuffer, contactEvents, consumption]);
+            [inputs, maintenance, bins, detected, detection, points, solve, activity, breakJoints, prediction, eventBuffer, contactEvents, consumption, responses]);
     }
 
     internal static PhysicsSceneEntities CreateEntities(World world, PhysicsSceneData data)
