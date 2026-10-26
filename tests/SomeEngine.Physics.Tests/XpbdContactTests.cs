@@ -169,10 +169,69 @@ public sealed class XpbdContactTests
         world.ReleaseQuery(bodies);
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void BuiltInAndUserForcesFollowTheChangingNodeDirectionsDuringContactRecovery(bool graph)
+    [Fact]
+    public void GraphContactRecoveryUsesCurrentLengthBendAndUserForces()
+    {
+        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var world = WorldJobs.CreateWorld(scheduler: scheduler);
+        Entity floor = CreateBody(world, new BodyPose { Rotation = Quaternion.Identity }, new BodyMass { Motion = BodyMotion.Static });
+        Entity first = CreateBody(world, new BodyPose { Rotation = Quaternion.Identity }, new BodyMass { Motion = BodyMotion.Dynamic, InverseMass = 1 });
+        Entity middle = CreateBody(world, new BodyPose { Position = Vector3.UnitX, Rotation = Quaternion.Identity },
+            new BodyMass { Motion = BodyMotion.Dynamic, InverseMass = 1 });
+        Entity last = CreateBody(world, new BodyPose { Position = new Vector3(1, 1, 0), Rotation = Quaternion.Identity },
+            new BodyMass { Motion = BodyMotion.Dynamic, InverseMass = 1 });
+        foreach (Entity body in new[] { floor, first, middle, last }) world.Add(body, new AvbdBodyEquation());
+        Entity point = CreateContact(world, floor, first, new ContactPoint { Normal = Vector3.UnitY },
+            new ContactMaterial { NormalStiffness = 10000 }, [new(floor, Vector3.Zero, 1)], [new(first, Vector3.Zero, 1)]);
+        world.Add(point, new AvbdContactState { NormalPenalty = 10000 });
+        world.CreateRelation(first, middle, new XpbdLength { RestLength = 1, Compliance = .001f });
+        world.CreateRelation(middle, last, new XpbdLength { RestLength = 1, Compliance = .001f });
+        world.CreateEntity(new XpbdBend { First = first, Middle = middle, Last = last, MinimumCosine = .5f, Compliance = .001f });
+        Entity height = world.CreateEntity(new HeightTarget { Body = middle, Height = .1f });
+        world.Add(height, new HeightMultiplier());
+        QueryHandle bodies = world.Query(new QueryDefinitionBuilder().ReadWrite<BodyPose>().Read<BodyMass>()
+            .Read<BodyStepState>().Read<BodyVelocity>().ReadWrite<AvbdBodyEquation>());
+        QueryHandle contacts = world.Query(new QueryDefinitionBuilder().Read<ContactPoint>().Read<ContactMaterial>()
+            .ReadBuffer<ContactBodyLink>().Optional<DirectedRelationEndpoints<ContactParticipant>>(QueryAccess.Read)
+            .ReadWrite<AvbdContactState>().ReadWrite<ContactResponse>());
+        QueryHandle lengths = world.Query(new QueryDefinitionBuilder().ReadWrite<XpbdLength>().Read<UndirectedRelationEndpoints<XpbdLength>>());
+        QueryHandle bends = world.Query(new QueryDefinitionBuilder().ReadWrite<XpbdBend>());
+        QueryHandle heights = world.Query(new QueryDefinitionBuilder().Read<HeightTarget>().ReadWrite<HeightMultiplier>());
+        var settings = new PhysicsGraphSettings(PhysicsGraphOrder.Colors, 0, 8, 1, 2, false);
+        var forces = AvbdGraphConstraints.Combine(AvbdGraphConstraints.Combine(
+            new XpbdForces<XpbdLength, XpbdLengthProjection>(lengths), new XpbdForces<XpbdBend, XpbdBendProjection>(bends)),
+            new XpbdForces<HeightTarget, HeightProjection>(heights));
+        using var graphAvbd = SolveAvbdGraph.Create(world, bodies,
+            AvbdGraphConstraints.Combine(new AvbdGraphConstraints<ContactPoint, AvbdContactMath>(contacts), forces), settings, 1, 0, 0);
+        using var graphXpbd = SolveXpbdGraph.Create(world, bodies, XpbdGraphConstraints.Combine(
+            XpbdGraphConstraints.Combine(new XpbdGraphConstraints<XpbdLength, XpbdLengthProjection>(lengths),
+                new XpbdGraphConstraints<XpbdBend, XpbdBendProjection>(bends)),
+            new XpbdGraphConstraints<HeightTarget, HeightProjection>(heights)), settings, 1);
+        var stages = new PredictBodies(Vector3.Zero, 64).Then(new InitializeContactResponses(world, bodies, contacts))
+            .Then(graphAvbd.Initialize()).Then(graphXpbd.Initialize())
+            .Then(Alternate(graphAvbd.Iterate(1), graphXpbd.Iterate(1), 64)).Then(new UpdateBodyVelocities(64));
+        PhysicsSimulation.Create(world, QueryDefinition.Empty, stages, 1).Schedule(0, 0, 1).Complete();
+    
+
+
+        Vector3 a = world.Read<BodyPose>(first).Position;
+        Vector3 b = world.Read<BodyPose>(middle).Position;
+        Vector3 c = world.Read<BodyPose>(last).Position;
+        Assert.InRange(a.Y, -.001f, .001f);
+        Assert.InRange(Vector3.Distance(a, b), .999f, 1.001f);
+        Assert.InRange(Vector3.Distance(b, c), .999f, 1.001f);
+        Assert.InRange(Vector3.Dot(Vector3.Normalize(b - a), Vector3.Normalize(c - b)), .495f, .505f);
+        Assert.InRange(b.Y, .09999f, .10001f);
+        Assert.True(world.Read<ContactResponse>(point).ForceOnSecond.Y > .01f);
+        world.ReleaseQuery(heights);
+        world.ReleaseQuery(bends);
+        world.ReleaseQuery(lengths);
+        world.ReleaseQuery(contacts);
+        world.ReleaseQuery(bodies);
+    }
+
+    [Fact]
+    public void BuiltInAndUserForcesFollowTheChangingNodeDirectionsDuringContactRecovery()
     {
         using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
         using var world = WorldJobs.CreateWorld(scheduler: scheduler);
@@ -206,30 +265,12 @@ public sealed class XpbdContactTests
             AvbdConstraintGroups.Combine(new AvbdConstraints<ContactPoint, AvbdContactMath>(contacts), internalForces), 1, 0, 0);
         var xpbd = SolveXpbd.Create(world, bodies, new XpbdConstraints<XpbdLength, XpbdLengthProjection>(lengths)
             .And(new XpbdConstraints<XpbdBend, XpbdBendProjection>(bends)).And(new XpbdConstraints<HeightTarget, HeightProjection>(heights)), 1);
-        if (graph)
-        {
-            var settings = new PhysicsGraphSettings(PhysicsGraphOrder.Colors, 0, 8, 1, 2, false);
-            var forces = AvbdGraphConstraints.Combine(AvbdGraphConstraints.Combine(
-                new XpbdForces<XpbdLength, XpbdLengthProjection>(lengths), new XpbdForces<XpbdBend, XpbdBendProjection>(bends)),
-                new XpbdForces<HeightTarget, HeightProjection>(heights));
-            using var graphAvbd = SolveAvbdGraph.Create(world, bodies,
-                AvbdGraphConstraints.Combine(new AvbdGraphConstraints<ContactPoint, AvbdContactMath>(contacts), forces), settings, 1, 0, 0);
-            using var graphXpbd = SolveXpbdGraph.Create(world, bodies, XpbdGraphConstraints.Combine(
-                XpbdGraphConstraints.Combine(new XpbdGraphConstraints<XpbdLength, XpbdLengthProjection>(lengths),
-                    new XpbdGraphConstraints<XpbdBend, XpbdBendProjection>(bends)),
-                new XpbdGraphConstraints<HeightTarget, HeightProjection>(heights)), settings, 1);
-            var stages = new PredictBodies(Vector3.Zero, 64).Then(new InitializeContactResponses(world, bodies, contacts))
-                .Then(graphAvbd.Initialize()).Then(graphXpbd.Initialize())
-                .Then(Alternate(graphAvbd.Iterate(1), graphXpbd.Iterate(1), 64)).Then(new UpdateBodyVelocities(64));
-            PhysicsSimulation.Create(world, QueryDefinition.Empty, stages, 1).Schedule(0, 0, 1).Complete();
-        }
-        else
-        {
-            var stages = new PredictBodies(Vector3.Zero, 64).Then(new InitializeContactResponses(world, bodies, contacts))
-                .Then(avbd.Initialize()).Then(xpbd.Initialize()).Then(Alternate(avbd.Iterate(1), xpbd.Iterate(1), 64))
-                .Then(new UpdateBodyVelocities(64));
-            PhysicsSimulation.Create(world, QueryDefinition.Empty, stages, 1).Schedule(0, 0, 1).Complete();
-        }
+        var stages = new PredictBodies(Vector3.Zero, 64).Then(new InitializeContactResponses(world, bodies, contacts))
+            .Then(avbd.Initialize()).Then(xpbd.Initialize()).Then(Alternate(avbd.Iterate(1), xpbd.Iterate(1), 64))
+            .Then(new UpdateBodyVelocities(64));
+        PhysicsSimulation.Create(world, QueryDefinition.Empty, stages, 1).Schedule(0, 0, 1).Complete();
+    
+
 
         Vector3 a = world.Read<BodyPose>(first).Position;
         Vector3 b = world.Read<BodyPose>(middle).Position;
