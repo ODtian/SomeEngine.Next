@@ -110,25 +110,7 @@ public readonly struct SolveAvbd<TConstraints> : IPhysicsStage where TConstraint
             for (int iteration = 0; iteration < iterations; iteration++)
             {
                 foreach (QueryRow row in query.Rows)
-                {
-                    ref readonly BodyMass mass = ref row.ReadRef<BodyMass>();
-                    if (mass.Motion != BodyMotion.Dynamic) continue;
-                    ref BodyPose pose = ref row.ReadWrite<BodyPose>();
-                    ref readonly BodyStepState state = ref row.ReadRef<BodyStepState>();
-                    ref AvbdBodyEquation equation = ref row.ReadWrite<AvbdBodyEquation>();
-                    for (int local = 0; local < bodyIterations; local++)
-                    {
-                        equation.Reset(in pose, in mass, in state, (float)context.Duration);
-                        constraints.AccumulateBodyEquation(in context, row.Entity, bodies, initialErrorFraction, ref equation);
-                        equation.Factorize();
-                        equation.SolveResponse(-equation.LinearGradient, -equation.AngularGradient,
-                            out var translation, out var rotation);
-                        constraints.AdjustBodyChange(in context, row.Entity, bodies, in equation, ref translation, ref rotation);
-                        var center = pose.GetCenterOfMass(in mass) + translation;
-                        pose.Rotation = BodyRotation.ApplyChange(pose.Rotation, rotation);
-                        pose.SetCenterOfMass(center, in mass);
-                    }
-                }
+                    AvbdBodyIteration.Update(row, bodies, in context, constraints, bodyIterations, initialErrorFraction);
                 constraints.UpdateDuals(in context, bodies, initialErrorFraction);
             }
         }

@@ -16,95 +16,106 @@ public static class SolveXpbdGraph
 /// <summary>Projects original constraint components in independent entity batches.</summary>
 public readonly struct SolveXpbdGraph<TConstraints> : IPhysicsStage, IDisposable where TConstraints : struct, IXpbdGraphConstraints
 {
-    private readonly World _world;
     private readonly TConstraints _constraints;
     private readonly PhysicsGraphData _graph;
-    private readonly QueryHandle[] _queries;
-    private readonly QueryHandle[] _reads;
+    private readonly PhysicsGraphQueries _queries;
     private readonly QueryReadResources? _resources;
-    private readonly JobResourceAccess[] _metadataAccesses;
+    private readonly JobResourceAccess[] _accesses;
     private readonly int _iterations;
+    private readonly PhysicsGraphSettings _settings;
 
     public SolveXpbdGraph(World world, QueryHandle bodies, TConstraints constraints, PhysicsGraphSettings settings,
         int iterations, QueryReadResources? resources = null)
     {
-        _world = world;
         _constraints = constraints;
         _iterations = iterations;
+        _settings = settings;
         _resources = resources;
         _graph = new(WorldJobs.GetScheduler(world), constraints.QueryCount, settings);
-        _queries = new QueryHandle[constraints.QueryCount + 3];
-        _reads = new QueryHandle[constraints.QueryCount];
-        QueryDefinition bodyDefinition = world.GetQueryDefinition(bodies);
-        _queries[0] = world.Query(bodyDefinition.AsReadOnly());
-        _queries[1] = world.Query(bodyDefinition);
-        QueryDefinition references = QueryDefinition.Empty.WithAccessFrom(bodyDefinition.AsReadOnly());
-        var accesses = new List<JobResourceAccess> { _graph.WriteAccess };
-        PhysicsQueryAccess.AddAccesses(world, _queries[0], accesses, resources);
-        for (int index = 0; index < constraints.QueryCount; index++)
-        {
-            QueryDefinition definition = world.GetQueryDefinition(constraints.GetQuery(index));
-            _queries[index + 3] = world.Query(definition);
-            _reads[index] = world.Query(definition.AsReadOnly());
-            references = references.WithAccessFrom(definition.AsReadOnly());
-            PhysicsQueryAccess.AddAccesses(world, _reads[index], accesses, resources);
-        }
-        _queries[2] = world.Query(references);
-        _metadataAccesses = accesses.ToArray();
+        var handles = new QueryHandle[constraints.QueryCount];
+        for (int index = 0; index < handles.Length; index++) handles[index] = constraints.GetQuery(index);
+        _queries = new(world, bodies, handles, resources);
+        _accesses = [_graph.WriteAccess, .. _queries.MetadataAccesses];
     }
 
-    public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency)
-    {
-        Scheduler scheduler = WorldJobs.GetScheduler(context.World);
-        JobHandle graph = scheduler.Schedule(new ReadGraph(this, context), _metadataAccesses, dependency);
-        return EntityQueryJobs.Schedule(context.World, new Work(this), new Project(this, context),
-            [_graph.ReadAccess], _resources, graph);
-    }
+    public InitializeXpbdGraph<TConstraints> Initialize() => new(this);
+    public IterateXpbdGraph<TConstraints> Iterate(int iterations) => new(this, iterations);
+    public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) => Schedule(in context, true, _iterations, dependency);
+    internal JobHandle Schedule(in PhysicsStepContext context, bool initialize, int iterations, JobHandle dependency) =>
+        WorldJobs.GetScheduler(context.World).Schedule(new CaptureMembers(this, context, initialize, iterations), _accesses, dependency);
 
-    private readonly struct ReadGraph(SolveXpbdGraph<TConstraints> solve, PhysicsStepContext context) : IJob
+    private readonly struct CaptureMembers(SolveXpbdGraph<TConstraints> solve, PhysicsStepContext context, bool initialize, int iterations) : IJob
     {
         public void Execute()
         {
-            solve._graph.Begin();
-            PhysicsGraphData bodies = solve._graph;
-            context.World.ExecuteReadQuery(solve._queries[0], ref bodies,
-                static (scoped QueryCursor rows, ref PhysicsGraphData data) => data.ReadBodies(rows));
-            var builder = new PhysicsConstraintGraphBuilder(solve._graph);
-            solve._constraints.ReadGraph(in context, solve._reads, 0, ref builder);
-            solve._graph.Finish();
+            solve._queries.ReadMembers();
+            EntityQueryJobs.ScheduleGroup(context.World, new Work(solve), new Solve(solve, context, initialize, iterations),
+                solve._accesses, solve._resources);
         }
     }
 
     private readonly struct Work(SolveXpbdGraph<TConstraints> solve) : IEntityQueryWork
     {
-        public int Count => solve._graph.Batches.Count;
-        public int QueryCount => solve._queries.Length;
-        public QueryHandle GetQuery(int workIndex, int queryIndex) => solve._queries[queryIndex];
-        public ReadOnlySpan<Entity> GetEntities(int workIndex, int queryIndex) => solve._graph.Batches[workIndex].Entities(queryIndex);
+        public int Count => solve._graph.ProjectionWorkCount + 1;
+        public int QueryCount => solve._queries.Queries.Length;
+        public QueryHandle GetQuery(int workIndex, int queryIndex) => solve._queries.Queries[queryIndex];
+        public ReadOnlySpan<Entity> GetEntities(int workIndex, int queryIndex) => workIndex == 0
+            ? solve._queries.GlobalEntities(queryIndex, solve._graph)
+            : solve._graph.ProjectionWork(workIndex - 1).Entities(queryIndex);
     }
 
-    private readonly struct Project(SolveXpbdGraph<TConstraints> solve, PhysicsStepContext context) : IEntityQueryJob
+    private readonly struct Solve(SolveXpbdGraph<TConstraints> solve, PhysicsStepContext context, bool initialize, int iterations) : IEntityQueryGroupJob
+    {
+        public bool Execute(scoped EntityQueryGroup group)
+        {
+            if (solve._queries.ReadMembers()) return false;
+            solve._graph.Begin();
+            solve._queries.ReadBodies(solve._graph);
+            var builder = new PhysicsConstraintGraphBuilder(solve._graph);
+            solve._constraints.ReadGraph(in context, solve._queries.Reads, 0, ref builder);
+            if (solve._graph.Finish()) return false;
+            if (initialize) solve._constraints.Initialize(in context, group.Get(0), 3);
+            group.ExecuteParallel(new Project(solve, context, iterations, false), 1, solve._graph.ScalarBatches.Count);
+            for (int iteration = 0; iteration < iterations; iteration++)
+            {
+                int start = solve._graph.ScalarBatches.Count + 1;
+                foreach (List<PhysicsGraphBatch> color in solve._graph.ProjectionGroups)
+                {
+                    group.ExecuteParallel(new Project(solve, context, 1, solve._settings.UseSimd), start, color.Count);
+                    start += color.Count;
+                }
+            }
+            return true;
+        }
+    }
+
+    private readonly struct Project(SolveXpbdGraph<TConstraints> solve, PhysicsStepContext context, int iterations, bool useSimd) : IEntityQueryJob
     {
         public void Execute(int index, scoped EntityQueryViews queries)
         {
             var bodies = new PhysicsBodies(queries.Get(0), queries.Get(1), queries.Get(2));
-            var constraints = new Iterations(solve._constraints, queries);
-            XpbdIterationLoop.Initialize(in context, constraints);
-            XpbdIterationLoop.Iterate(in context, bodies, constraints, solve._iterations);
+            XpbdIterationLoop.Iterate(in context, bodies, new Iterations(solve._constraints, queries, useSimd), iterations);
         }
     }
 
-    private readonly ref struct Iterations(TConstraints constraints, EntityQueryViews queries) : IXpbdConstraintIterations
+    private readonly ref struct Iterations(TConstraints constraints, EntityQueryViews queries, bool useSimd) : IXpbdConstraintIterations
     {
         private readonly EntityQueryViews _queries = queries;
         public void Initialize(in PhysicsStepContext context) => constraints.Initialize(in context, _queries, 3);
-        public void Project(in PhysicsStepContext context, scoped PhysicsBodies bodies) => constraints.Project(in context, _queries, 3, bodies, false);
+        public void Project(in PhysicsStepContext context, scoped PhysicsBodies bodies) => constraints.Project(in context, _queries, 3, bodies, useSimd);
     }
 
-    public void Dispose()
-    {
-        foreach (QueryHandle query in _reads) _world.ReleaseQuery(query);
-        foreach (QueryHandle query in _queries) _world.ReleaseQuery(query);
-        _graph.Dispose();
-    }
+    public void Dispose() { _queries.Dispose(); _graph.Dispose(); }
+}
+
+public readonly struct InitializeXpbdGraph<TConstraints>(SolveXpbdGraph<TConstraints> solve) : IPhysicsStage
+    where TConstraints : struct, IXpbdGraphConstraints
+{
+    public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) => solve.Schedule(in context, true, 0, dependency);
+}
+
+public readonly struct IterateXpbdGraph<TConstraints>(SolveXpbdGraph<TConstraints> solve, int iterations) : IPhysicsStage
+    where TConstraints : struct, IXpbdGraphConstraints
+{
+    public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) => solve.Schedule(in context, false, iterations, dependency);
 }
