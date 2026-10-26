@@ -16,6 +16,9 @@
 将新实体和显式活动修改传入对应状态。其原版本缓存只保存实体及活动组件版本，
 实际结果应用时在同一个资源确认自身写入。`BodyWake.Time` 按原
 `[StartTime, EndTime)` 选取请求。
+输入读取和完成应用通过 `QueryCursor.ReadRows<DeviceBodyBinding,BodyActivity>`
+在原查询的 chunk 边界借用组件列。完成值实际变化时才取得原 `BodyActivity` 写引用，
+并在同一资源确认该行版本；事件继续沿当前实体的完成结果生成。
 
 原主体的显式位姿、质量和速度编辑沿 `DeviceBodyInputs` 的同一次变化判定形成
 24 字节派生标记，记录原实体代次、组件位、步号和子步号。

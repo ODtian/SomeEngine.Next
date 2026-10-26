@@ -99,12 +99,13 @@ public sealed class DeviceBodyActivities : IDisposable
     {
         internal void Execute(scoped QueryCursor rows)
         {
-            foreach (QueryRow row in rows.Rows)
+            var members = rows.ReadRows<DeviceBodyBinding, BodyActivity>();
+            while (members.MoveNext(out QueryRow row, out var body, out var activity))
             {
-                var binding = row.Read<DeviceBodyBinding>();
+                ref readonly DeviceBodyBinding binding = ref body.Value;
                 if (!ReferenceEquals(binding.Bodies, Activities.Bodies)) continue;
-                bool hasActivity = row.TryRead<DeviceBodyActivityBinding>(out var activityBinding)
-                    && ReferenceEquals(activityBinding.Activities, Activities) && row.Has<BodyActivity>();
+                bool hasActivity = activity.HasValue && row.TryRead<DeviceBodyActivityBinding>(out var activityBinding)
+                    && ReferenceEquals(activityBinding.Activities, Activities);
                 uint version = hasActivity ? row.WriteVersion<BodyActivity>() : 0;
                 var current = new CpuVersion(row.Entity, version);
                 var input = new ActivityInput { EntityIndex = (uint)row.Entity.Index,
@@ -112,9 +113,8 @@ public sealed class DeviceBodyActivities : IDisposable
                 if (current != Activities._versions[binding.Index]) input.Flags |= 4;
                 if (hasActivity)
                 {
-                    ref readonly BodyActivity activity = ref row.ReadRef<BodyActivity>();
-                    input.Sleeping = activity.Sleeping ? 1u : 0u;
-                    input.QuietSeconds = activity.QuietSeconds; input.Radius = activity.Radius;
+                    input.Sleeping = activity.Value.Sleeping ? 1u : 0u;
+                    input.QuietSeconds = activity.Value.QuietSeconds; input.Radius = activity.Value.Radius;
                 }
                 if (row.HasBuffer<BodyWake>())
                     foreach (BodyWake wake in row.ReadBuffer<BodyWake>().AsSpan())
@@ -134,19 +134,23 @@ public sealed class DeviceBodyActivities : IDisposable
     {
         public void Execute(scoped QueryCursor rows)
         {
-            foreach (QueryRow row in rows.Rows)
+            var members = rows.ReadRows<DeviceBodyBinding, BodyActivity>();
+            while (members.MoveNext(out QueryRow row, out var bodyReference, out var current))
             {
-                var body = row.Read<DeviceBodyBinding>();
+                ref readonly DeviceBodyBinding body = ref bodyReference.Value;
                 if (!ReferenceEquals(body.Bodies, activities.Bodies) || !row.TryRead<DeviceBodyActivityBinding>(out var binding)
                     || !ReferenceEquals(binding.Activities, activities)) continue;
                 ref readonly DeviceBodyActivityState result = ref activities.Results[body.Index];
                 if (result.EntityIndex != (uint)row.Entity.Index || result.EntityGeneration != (uint)row.Entity.Generation) continue;
                 CpuVersion version = activities._versions[body.Index];
-                if (version.Entity == row.Entity && version.Activity == row.WriteVersion<BodyActivity>())
+                bool sleeping = (result.Flags & 4) != 0, motionPredicted = (result.Flags & 8) != 0;
+                bool changed = current.Value.Sleeping != sleeping || current.Value.QuietSeconds != result.QuietSeconds
+                    || current.Value.Radius != result.Radius || current.Value.MotionPredicted != motionPredicted;
+                if (changed && version.Entity == row.Entity && version.Activity == row.WriteVersion<BodyActivity>())
                 {
                     ref BodyActivity activity = ref row.ReadWrite<BodyActivity>();
-                    activity.Sleeping = (result.Flags & 4) != 0; activity.QuietSeconds = result.QuietSeconds;
-                    activity.Radius = result.Radius; activity.MotionPredicted = (result.Flags & 8) != 0;
+                    activity.Sleeping = sleeping; activity.QuietSeconds = result.QuietSeconds;
+                    activity.Radius = result.Radius; activity.MotionPredicted = motionPredicted;
                     activities._versions[body.Index] = new(row.Entity, row.WriteVersion<BodyActivity>());
                 }
                 if ((result.Flags & 16) != 0) events.Add(new PhysicsEvent { Kind = PhysicsEventKind.Wake,
