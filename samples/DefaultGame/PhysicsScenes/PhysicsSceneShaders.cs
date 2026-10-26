@@ -5,7 +5,7 @@ using SomeEngine.Resources;
 
 namespace DefaultGame;
 
-internal sealed class PhysicsSceneShaders
+internal sealed partial class PhysicsSceneShaders
 {
     private readonly IGlobalSession _global;
     private readonly SlangCompileTarget _target;
@@ -14,12 +14,40 @@ internal sealed class PhysicsSceneShaders
     internal PhysicsSceneShaders(SlangCompileTarget target, string directory)
     {
         _target = target; _directory = directory;
-        Check(Slang.CreateGlobalSession(Slang.ApiVersion, out _global));
+        _global = Shader.CreateSlangGlobalSession();
     }
 
     internal DeviceGridKernels Grid()
     {
-        ComputePipelineDesc[] entries = Compile("scene_grid", "#include \"physics_grid.slang\"",
+        ComputePipelineDesc[] entries = Compile("scene_grid", """
+            #include "physics_grid_common.slang"
+            #include "physics_bodies.slang"
+            StructuredBuffer<uint2> SceneExcludedBodyPairs;
+            struct SceneAllowedPairs : IDevicePairRule
+            {
+                bool matches(uint firstIndex,uint secondIndex,DeviceCollisionInput first,DeviceCollisionInput second)
+                {
+                    if(DeviceBodyStates[firstIndex].motion==0&&DeviceBodyStates[secondIndex].motion==0) return false;
+                    uint2 pair=uint2(min(firstIndex,secondIndex),max(firstIndex,secondIndex));
+                    uint begin=0,end=SceneExcludedBodyPairs[0].x;
+                    while(begin<end)
+                    {
+                        uint middle=begin+(end-begin)/2;
+                        uint2 excluded=SceneExcludedBodyPairs[middle+1];
+                        if(all(pair==excluded)) return false;
+                        bool before=excluded.x<pair.x||(excluded.x==pair.x&&excluded.y<pair.y);
+                        if(before) begin=middle+1; else end=middle;
+                    }
+                    return true;
+                }
+            };
+            [shader("compute")][numthreads(256,1,1)]
+            void CountDevicePairs(uint3 id:SV_DispatchThreadID)
+            { DevicePairAnd<DeviceCollisionRules,SceneAllowedPairs> rules; DeviceShapePairs types; countDevicePairs(id.x,rules,types); }
+            [shader("compute")][numthreads(256,1,1)]
+            void WriteDevicePairs(uint3 id:SV_DispatchThreadID)
+            { DevicePairAnd<DeviceCollisionRules,SceneAllowedPairs> rules; DeviceShapePairs types; writeDevicePairs(id.x,rules,types); }
+            """,
             "ClearDeviceGrid", "BuildDeviceGrid", "CountDevicePairs", "ScanDevicePairCounts",
             "OffsetDevicePairBlocks", "OffsetDevicePairBins", "WriteDevicePairs");
         return new(entries[0], entries[1], entries[2], entries[3], entries[4], entries[5], entries[6]);
@@ -74,9 +102,9 @@ internal sealed class PhysicsSceneShaders
     internal ComputePipelineDesc ContactGeometry() => Compile("scene_contact_geometry",
         "#include \"physics_contact_geometry.slang\"", "UpdateDeviceContactGeometry")[0];
 
-    internal DeviceGraphKernels Graph(bool contactSupports)
+    internal DeviceGraphKernels Graph(bool contactSupports, bool jointBounds)
     {
-        ComputePipelineDesc[] entries = Compile("scene_contact_graph", SupportDefine(contactSupports) + """
+        ComputePipelineDesc[] entries = Compile("scene_contact_graph", SceneDefines(contactSupports, jointBounds) + """
             #include "physics_body_activity_types.slang"
             #define DEVICE_GRAPH_BODY_ACTIVE(body) deviceBodyActivityAwake(body)
             #include "physics_contact_data.slang"
@@ -84,7 +112,13 @@ internal sealed class PhysicsSceneShaders
             #include "physics_distance_range_bodies.slang"
             typedef DeviceConstraintBodyGroups<
                 DeviceConstraintBodyGroups<DeviceContactBodies,DeviceJointBodies>,
-                DeviceDistanceRangeBodies> SceneConstraintBodies;
+                DeviceDistanceRangeBodies> SceneOrdinaryBodies;
+            #if SCENE_JOINT_BOUNDS
+            #include "physics_joint_bound_bodies.slang"
+            typedef DeviceConstraintBodyGroups<SceneOrdinaryBodies,DeviceJointBoundBodies> SceneConstraintBodies;
+            #else
+            typedef SceneOrdinaryBodies SceneConstraintBodies;
+            #endif
             #if SCENE_CONTACT_SUPPORTS
             #include "physics_contact_support_bodies.slang"
             typedef DeviceConstraintBodyGroups<SceneConstraintBodies,DeviceSupportBodies> SceneGraphRows;
@@ -106,15 +140,34 @@ internal sealed class PhysicsSceneShaders
             entries[13], entries[14], entries[15], entries[16], entries[17]));
     }
 
-    internal DeviceAvbdKernels Avbd(bool contactSupports)
+    internal DeviceAvbdKernels Avbd(bool contactSupports, bool jointBounds, int bodyCount)
     {
-        ComputePipelineDesc[] entries = Compile("scene_contact_avbd", SupportDefine(contactSupports) + """
+        ComputePipelineDesc[] entries = Compile("scene_contact_avbd", SceneDefines(contactSupports, jointBounds) + """
+            #include "physics_dispatch.slang"
             #include "physics_avbd_contact.slang"
             #include "physics_avbd_joint.slang"
             #include "physics_avbd_distance_range.slang"
             #include "physics_awake_avbd.slang"
             #if SCENE_CONTACT_SUPPORTS
             #include "physics_avbd_contact_support.slang"
+            struct SceneContactSupportConstraints : IDeviceAvbdConstraints
+            {
+                DeviceContactSupportAvbdConstraints inner;
+                uint count() { return inner.count(); }
+                bool active(uint row) { return inner.active(row); }
+                uint bodyCount(uint row) { return inner.bodyCount(row); }
+                uint body(uint row,uint end) { return inner.body(row,end); }
+                bool writes(uint row,uint end) { return inner.writes(row,end); }
+                uint groupCount() { return inner.groupCount(); }
+                uint group(uint row) { return inner.group(row); }
+                void initialize(uint row,DeviceAvbdStep context) { }
+                void accumulate(uint row,uint bodyIndex,DeviceAvbdStep context,inout DeviceAvbdEquation equation)
+                { inner.accumulate(row,bodyIndex,context,equation); }
+                void updateDuals(uint row,DeviceAvbdStep context) { inner.updateDuals(row,context); }
+                void adjust(uint bodyIndex,DeviceAvbdStep context,DeviceAvbdEquation equation,
+                    inout float3 translation,inout float3 rotation)
+                { inner.adjust(bodyIndex,context,equation,translation,rotation); }
+            };
             #endif
             struct SceneContactAvbdConstraints : IDeviceAvbdConstraints
             {
@@ -167,9 +220,15 @@ internal sealed class PhysicsSceneShaders
             };
             typedef DeviceAvbdConstraintGroups<
                 DeviceAvbdConstraintGroups<SceneContactAvbdConstraints,DeviceJointAvbdConstraints>,
-                DeviceDistanceRangeAvbdConstraints> SceneAvbdConstraints;
+                DeviceDistanceRangeAvbdConstraints> SceneOrdinaryConstraints;
+            #if SCENE_JOINT_BOUNDS
+            #include "physics_avbd_joint_bounds.slang"
+            typedef DeviceAvbdConstraintGroups<SceneOrdinaryConstraints,DeviceJointBoundAvbdConstraints> SceneAvbdConstraints;
+            #else
+            typedef SceneOrdinaryConstraints SceneAvbdConstraints;
+            #endif
             #if SCENE_CONTACT_SUPPORTS
-            typedef DeviceAvbdConstraintGroups<SceneAvbdConstraints,DeviceContactSupportAvbdConstraints> SceneSolveRows;
+            typedef DeviceAvbdConstraintGroups<SceneAvbdConstraints,SceneContactSupportConstraints> SceneSolveRows;
             #else
             typedef SceneAvbdConstraints SceneSolveRows;
             #endif
@@ -198,9 +257,22 @@ internal sealed class PhysicsSceneShaders
                 DeviceAwakeBodies bodies; updateDeviceContactSupports(AvbdStep,bodies);
                 #endif
             }
-            """, "ClearBodyIndices", "Initialize", "UpdateBody", "UpdateDuals", "InitializeSupports", "UpdateSupports");
+            [shader("compute")][numthreads(64,1,1)]
+            void ClearSupportBodies(uint3 id:SV_DispatchThreadID)
+            {
+                #if SCENE_CONTACT_SUPPORTS
+                uint bodyIndex=devicePhysicsThreadIndex(id,64);
+                DeviceSupportBodies rows;
+                if(bodyIndex<rows.count()&&rows.active(bodyIndex)&&deviceBodyActivityAwake(bodyIndex))
+                    DeviceSupportBodyStates[bodyIndex]=(DeviceBodySupportState)0;
+                #endif
+            }
+            """, "ClearBodyIndices", "Initialize", "UpdateBody", "UpdateDuals", "InitializeSupports", "UpdateSupports", "ClearSupportBodies");
+        DeviceAvbdGroupDispatch[] initialization = contactSupports
+            ? [new(entries[6], DevicePhysicsDispatch.CreateGroups((bodyCount + 63) / 64)), new(entries[4], new(1, 1, 1))] : [];
         return new(entries[1], entries[2], entries[3],
-            contactSupports ? entries[4] : null, contactSupports ? entries[5] : null, entries[0]);
+            UpdateGroups: contactSupports ? entries[5] : null, ClearBodyIndices: entries[0])
+        { GroupInitializationDispatches = initialization };
     }
 
     internal DeviceContactKernels Responses()
@@ -217,9 +289,9 @@ internal sealed class PhysicsSceneShaders
         return new(entries[0], entries[1]);
     }
 
-    internal DeviceActivityKernels Activity(bool contactSupports)
+    internal DeviceActivityKernels Activity(bool contactSupports, bool jointBounds)
     {
-        ComputePipelineDesc[] entries = Compile("scene_activity", SupportDefine(contactSupports) + """
+        ComputePipelineDesc[] entries = Compile("scene_activity", SceneDefines(contactSupports, jointBounds) + """
             #include "physics_contact_activity.slang"
             #include "physics_joint_activity.slang"
             #include "physics_distance_range_activity.slang"
@@ -233,7 +305,13 @@ internal sealed class PhysicsSceneShaders
             #endif
             typedef DeviceConstraintActivityGroups<
                 DeviceConstraintActivityGroups<SceneContactActivity,DeviceJointActivity>,
-                DeviceDistanceRangeActivity> SceneActivityRows;
+                DeviceDistanceRangeActivity> SceneOrdinaryActivityRows;
+            #if SCENE_JOINT_BOUNDS
+            #include "physics_joint_bound_activity.slang"
+            typedef DeviceConstraintActivityGroups<SceneOrdinaryActivityRows,DeviceJointBoundActivity> SceneActivityRows;
+            #else
+            typedef SceneOrdinaryActivityRows SceneActivityRows;
+            #endif
             [shader("compute")][numthreads(64,1,1)]
             void ReadRows(uint3 id : SV_DispatchThreadID)
             { SceneActivityRows rows; readDeviceActivityRows(devicePhysicsThreadIndex(id,64),rows); }
@@ -242,7 +320,9 @@ internal sealed class PhysicsSceneShaders
         return new(entries[0], entries[1], entries[2], entries[3], entries[4], entries[5], entries[6], ReadBodyInputs: entries[7]);
     }
 
-    private static string SupportDefine(bool enabled) => "#define SCENE_CONTACT_SUPPORTS " + (enabled ? "1\n" : "0\n");
+    private static string SceneDefines(bool contactSupports, bool jointBounds) =>
+        "#define SCENE_CONTACT_SUPPORTS " + (contactSupports ? "1\n" : "0\n") +
+        "#define SCENE_JOINT_BOUNDS " + (jointBounds ? "1\n" : "0\n");
 
     internal ComputePipelineDesc JointForces() => Compile("scene_joint_forces", """
         #include "physics_avbd_joint_forces.slang"
@@ -250,6 +330,13 @@ internal sealed class PhysicsSceneShaders
         void ReadForces(uint3 id:SV_DispatchThreadID)
         { DeviceJointAvbdForces rows; readDeviceConstraintForces(id.x,rows); }
         """, "ReadForces")[0];
+
+    internal ComputePipelineDesc ContactSamples() => Compile("scene_contact_samples", """
+        #include "physics_contact_response_samples.slang"
+        [shader("compute")][numthreads(64,1,1)]
+        void ReadSamples(uint3 id:SV_DispatchThreadID)
+        { DeviceResponseEventForces forces; readDeviceContactSamples(id.x,forces); }
+        """, "ReadSamples")[0];
 
     internal (ComputePipelineDesc Clear, ComputePipelineDesc Bodies, ComputePipelineDesc Contacts) Statistics()
     {

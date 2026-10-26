@@ -24,6 +24,12 @@
 完整三角轴采用世界 XYZ 角向基底，部分活动体轴随当前 Body 旋转；
 Jacobian、惯性块与响应共同投影到该子空间。
 局部数值缓存保存分解所用的角向基底，LRC 调整沿同一分解求响应。
+同一份 256 字节局部方程同时保存当前邻接行数和分解步长。
+当主体当前与上次均无约束邻接，且步长、旋转和惯性线性权重保持相同时，
+局部迭代复用已有惯性矩阵及 LDL 分解，并从当前位姿与原预测结果重新计算梯度。
+约束邻接参与的主体继续逐轮装配和分解，所有主体的响应、`adjust` 与位姿提交保持相同次序。
+对角方程直接以原对角构成 LDL 的 D，L 的严格下三角为零。
+零力和零力矩的响应直接返回零向量；当前分解继续供后续 `adjust` 中的支撑响应使用。
 旋转惯性采用原张量，锚点 Jacobian 以质心为力臂原点。
 源码见 [设备局部数学](../../../assets/Shaders/physics_avbd_body.slang)。
 
@@ -40,9 +46,21 @@ Jacobian、惯性块与响应共同投影到该子空间。
 原 `initializeDeviceAvbd` 入口继续提供合并初始化。
 `DeviceAvbdKernels.InitializeGroups` 和 `UpdateGroups` 是可选的具体组阶段，
 分别位于逐行初始化之后和每轮逐行对偶更新之后；阶段之间使用同一提交内的 UAV barrier。
+`GroupInitializationDispatches` 和 `GroupUpdateDispatches` 在对应阶段接续具体的
+`DeviceAvbdGroupDispatch` 序列。每项给出 `ComputePipelineDesc` 与 RHI `DispatchArguments`，
+求解器沿同一 `DeviceAvbdStep`、原资源绑定和提交记录派发，并在相邻派发之间维护 UAV barrier。
+项目可用 `DevicePhysicsDispatch.CreateGroups` 组织线性主体工作，再接续读取该结果的组内计算；
+当前场景的支撑初始化先并行清理所选活动主体，再沿原支撑状态建立承重路径。
 项目提供具体 Slang `IDeviceAvbdConstraints` 内核与实际绑定，
 `DeviceAvbdConstraintGroups<TFirst,TSecond>` 将多种具体约束组装进同一 Body 局部方程。
 `adjust` 位于局部响应求出之后、位姿提交之前。
+
+项目完成当前点、参数和成员输入后，可先调度同一 `DeviceConstraintGraph.Build()`，
+再选择 `Iterate(iterations, buildGraph: false)` 复用该次图结果。
+`DeviceXpbdSolver.Initialize(buildGraph: false)` 与同名迭代重载使用同一完成依赖；
+原默认入口继续在自身求解链构建图。AVBD/XPBD 交替时各阶段共享当前主体、数值历史与图。
+主体、约束及并行图派发复用 `DevicePhysicsDispatch.CreateGroups` 的 X/Y 范围；
+项目 Shader 以 `devicePhysicsThreadIndex` 或 `devicePhysicsGroupIndex` 读取对应线性索引。
 
 `DeviceContactPotentialAvbdConstraints` 选择接触势能的正曲率上界。
 它沿原接触评估、Jacobian 和 `DeviceAvbdContactStates` 装配方程，普通法向采用材料对应的

@@ -5,6 +5,13 @@ namespace SomeEngine.ECS.Systems;
 internal readonly record struct ComponentResourceIdentity(ResourceKind Kind, int Id, int Version, long Generation);
 internal readonly record struct ComponentResourceRange(int Row, long Start, long End, bool Writes);
 
+internal readonly struct ComponentResourceRows(int[] rows, int[] offsets)
+{
+    internal static ComponentResourceRows Empty { get; } = new([], [0]);
+    internal int Count => offsets.Length - 1;
+    internal ReadOnlySpan<int> this[int group] => rows.AsSpan(offsets[group], offsets[group + 1] - offsets[group]);
+}
+
 internal sealed class ComponentResourceGroups(int rowCount)
 {
     private readonly int[] _parents = Enumerable.Range(0, rowCount).ToArray();
@@ -37,6 +44,7 @@ internal sealed class ComponentResourceGroups(int rowCount)
 
     internal void JoinRanges(List<ComponentResourceRange> ranges)
     {
+        if (!ranges.Exists(static range => range.Writes)) return;
         ranges.Sort(static (left, right) => left.Start.CompareTo(right.Start));
         var ends = new PriorityQueue<int, long>();
         HashSet<int> reads = [], writes = [];
@@ -69,16 +77,30 @@ internal sealed class ComponentResourceGroups(int rowCount)
         }
     }
 
-    internal int[][] Build()
+    internal ComponentResourceRows Build()
     {
-        var groups = new Dictionary<int, List<int>>();
+        var counts = new int[_parents.Length];
+        int groupCount = 0;
         for (int row = 0; row < _parents.Length; row++)
         {
             int root = Root(row);
-            if (!groups.TryGetValue(root, out List<int>? group)) groups.Add(root, group = []);
-            group.Add(row);
+            _parents[row] = root;
+            if (counts[root]++ == 0) groupCount++;
         }
-        return groups.Values.Select(static group => group.ToArray()).ToArray();
+        var offsets = new int[groupCount + 1];
+        int group = 0, start = 0;
+        for (int root = 0; root < counts.Length; root++)
+        {
+            int count = counts[root];
+            if (count == 0) continue;
+            offsets[group++] = start;
+            counts[root] = start;
+            start += count;
+        }
+        offsets[groupCount] = _parents.Length;
+        var rows = new int[_parents.Length];
+        for (int row = 0; row < rows.Length; row++) rows[counts[_parents[row]]++] = row;
+        return new(rows, offsets);
     }
 
     private int Root(int row)

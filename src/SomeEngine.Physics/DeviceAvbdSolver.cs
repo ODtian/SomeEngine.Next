@@ -8,7 +8,12 @@ namespace SomeEngine.Physics;
 
 public readonly record struct DeviceAvbdKernels(ComputePipelineDesc Initialize, ComputePipelineDesc UpdateBody, ComputePipelineDesc UpdateDuals,
     ComputePipelineDesc? InitializeGroups = null, ComputePipelineDesc? UpdateGroups = null,
-    ComputePipelineDesc? ClearBodyIndices = null);
+    ComputePipelineDesc? ClearBodyIndices = null)
+{
+    public ReadOnlyMemory<DeviceAvbdGroupDispatch> GroupInitializationDispatches { get; init; }
+    public ReadOnlyMemory<DeviceAvbdGroupDispatch> GroupUpdateDispatches { get; init; }
+}
+public readonly record struct DeviceAvbdGroupDispatch(ComputePipelineDesc Kernel, DispatchArguments Groups);
 public readonly record struct DeviceAvbdSettings(int Iterations, int BodyIterations, float MultiplierRetention, float InitialErrorFraction);
 
 /// <summary>Concrete compliant ALM kernels using current component representations and the shared device graph.</summary>
@@ -27,7 +32,8 @@ public sealed class DeviceAvbdSolver : IDisposable
     private readonly CommandContext _commands;
     private readonly JobResourceAccess[] _extraAccesses;
     private readonly IDeviceConstraintSelection[] _selections;
-    private readonly int _initializeGroups, _updateGroups, _clearBodyIndices;
+    private readonly (int Pipeline, DispatchArguments Groups)[] _groupInitialization, _groupUpdates;
+    private readonly int _clearBodyIndices;
     private bool _initialized;
 
     public DeviceAvbdSolver(IGraphicsBackend backend, Device device, DeviceBodies bodies, DeviceAvbdBodyEquations equations,
@@ -39,10 +45,8 @@ public sealed class DeviceAvbdSolver : IDisposable
         _threadsPerGroup=threadsPerGroup; _extraAccesses=inputAccesses.ToArray(); _selections=selections.ToArray();
         _commands=backend.CreateCommandContext(device,new(QueueType.Compute,0,1,Label:"Device compliant ALM"));
         var descriptions=new List<ComputePipelineDesc>{kernels.Initialize,kernels.UpdateBody,kernels.UpdateDuals};
-        _initializeGroups=kernels.InitializeGroups.HasValue?descriptions.Count:-1;
-        if(kernels.InitializeGroups is { } initialize) descriptions.Add(initialize);
-        _updateGroups=kernels.UpdateGroups.HasValue?descriptions.Count:-1;
-        if(kernels.UpdateGroups is { } update) descriptions.Add(update);
+        _groupInitialization=AddGroupDispatches(descriptions,kernels.InitializeGroups,kernels.GroupInitializationDispatches.Span);
+        _groupUpdates=AddGroupDispatches(descriptions,kernels.UpdateGroups,kernels.GroupUpdateDispatches.Span);
         _clearBodyIndices=kernels.ClearBodyIndices.HasValue?descriptions.Count:-1;
         if(kernels.ClearBodyIndices is { } clear) descriptions.Add(clear);
         _pipelines=descriptions.Select(kernel=>backend.CreateComputePipeline(device,kernel)).ToArray();
@@ -56,7 +60,10 @@ public sealed class DeviceAvbdSolver : IDisposable
     public SolveDeviceAvbd Solve()=>new(this);
     public InitializeDeviceAvbd Initialize()=>new(this);
     public IterateDeviceAvbd Iterate(int iterations)=>new(this,iterations);
+    public IterateDeviceAvbd Iterate(int iterations,bool buildGraph)=>new(this,iterations,buildGraph);
     internal JobHandle Schedule(in PhysicsStepContext context,bool initialize,int iterations,JobHandle dependency)
+        =>Schedule(in context,initialize,iterations,true,dependency);
+    internal JobHandle Schedule(in PhysicsStepContext context,bool initialize,int iterations,bool buildGraph,JobHandle dependency)
     {
         if(initialize) dependency=_equations.Upload(in context,_threadsPerGroup,dependency);
         Scheduler scheduler=WorldJobs.GetScheduler(context.World);
@@ -65,18 +72,18 @@ public sealed class DeviceAvbdSolver : IDisposable
         accesses.AddRange(_extraAccesses);
         accesses.Add(JobResourceAccess.Write(scheduler.GetResourceToken(_commands)));
         foreach(IDeviceConstraintSelection selection in _selections) selection.AddAccesses(scheduler,accesses);
-        return DevicePhysicsJobs.Schedule(scheduler,new SolverSubmission(this,context,initialize,iterations),accesses.ToArray(),dependency);
+        return DevicePhysicsJobs.Schedule(scheduler,new SolverSubmission(this,context,initialize,iterations,buildGraph),accesses.ToArray(),dependency);
     }
     internal JobHandle ScheduleSolve(in PhysicsStepContext context,JobHandle dependency)
     {
         JobHandle initialized=Schedule(in context,true,0,dependency);
         return Schedule(in context,false,_settings.Iterations,initialized);
     }
-    private QueueCompletion Record(in PhysicsStepContext context,bool initialize,int iterations)
+    private QueueCompletion Record(in PhysicsStepContext context,bool initialize,int iterations,bool buildGraph)
     {
         _graph.CaptureSelections();
         foreach(IDeviceConstraintSelection selection in _selections) selection.Capture();
-        if(!initialize) _graph.BuildAndWait();
+        if(!initialize&&buildGraph) _graph.BuildAndWait();
         var step=new DeviceStep((float)context.Duration,_settings.MultiplierRetention,_settings.InitialErrorFraction,
             (uint)_settings.BodyIterations,0,(uint)context.Substep,context.Number,context.StartTime,context.EndTime);
         _backend.Begin(_commands,new(0,0,32));
@@ -92,18 +99,13 @@ public sealed class DeviceAvbdSolver : IDisposable
             if(_clearBodyIndices>=0)
             {
                 Bind(_clearBodyIndices,in step);
-                _backend.Dispatch(_commands,new((uint)((_bodies.Capacity+_threadsPerGroup-1)/_threadsPerGroup),1,1));
+                _backend.Dispatch(_commands,DevicePhysicsDispatch.CreateGroups((_bodies.Capacity+_threadsPerGroup-1)/_threadsPerGroup));
                 Barrier();
             }
             Bind(0,in step);
-            _backend.Dispatch(_commands,new((uint)((Math.Max(_bodies.Capacity,_graph.ConstraintCapacity)+_threadsPerGroup-1)/_threadsPerGroup),1,1));
+            _backend.Dispatch(_commands,DevicePhysicsDispatch.CreateGroups((Math.Max(_bodies.Capacity,_graph.ConstraintCapacity)+_threadsPerGroup-1)/_threadsPerGroup));
             Barrier();
-            if(_initializeGroups>=0)
-            {
-                Bind(_initializeGroups,in step);
-                _backend.Dispatch(_commands,new(1,1,1));
-                Barrier();
-            }
+            DispatchGroups(_groupInitialization,in step);
         }
         else
             for(int iteration=0;iteration<iterations;iteration++)
@@ -111,23 +113,44 @@ public sealed class DeviceAvbdSolver : IDisposable
                 for(int color=0;color<_graph.BodyColorCount;color++)
                 {
                     step.Color=(uint)color; Bind(1,in step);
-                    _backend.Dispatch(_commands,new((uint)((_bodies.Capacity+_threadsPerGroup-1)/_threadsPerGroup),1,1));
+                    _backend.Dispatch(_commands,DevicePhysicsDispatch.CreateGroups((_bodies.Capacity+_threadsPerGroup-1)/_threadsPerGroup));
                     Barrier();
                 }
                 step.Color=0; Bind(2,in step);
-                _backend.Dispatch(_commands,new((uint)((_graph.ConstraintCapacity+_threadsPerGroup-1)/_threadsPerGroup),1,1));
+                _backend.Dispatch(_commands,DevicePhysicsDispatch.CreateGroups((_graph.ConstraintCapacity+_threadsPerGroup-1)/_threadsPerGroup));
                 Barrier();
-                if(_updateGroups>=0)
-                {
-                    Bind(_updateGroups,in step);
-                    _backend.Dispatch(_commands,new(1,1,1));
-                    Barrier();
-                }
+                DispatchGroups(_groupUpdates,in step);
             }
         using RecordedCommands recorded=_backend.End(_commands);
         QueueCompletion completion=_backend.Submit(_backend.GetQueue(_device,QueueType.Compute),new([],[],[recorded],[],[]));
         _initialized=true;
         return completion;
+    }
+    private static (int Pipeline, DispatchArguments Groups)[] AddGroupDispatches(List<ComputePipelineDesc> kernels,
+        ComputePipelineDesc? single, ReadOnlySpan<DeviceAvbdGroupDispatch> dispatches)
+    {
+        var selected=new (int Pipeline, DispatchArguments Groups)[dispatches.Length+(single.HasValue?1:0)];
+        int index=0;
+        if(single is { } kernel)
+        {
+            selected[index++]=(kernels.Count,new(1,1,1));
+            kernels.Add(kernel);
+        }
+        foreach(DeviceAvbdGroupDispatch dispatch in dispatches)
+        {
+            selected[index++]=(kernels.Count,dispatch.Groups);
+            kernels.Add(dispatch.Kernel);
+        }
+        return selected;
+    }
+    private void DispatchGroups(ReadOnlySpan<(int Pipeline, DispatchArguments Groups)> dispatches,in DeviceStep step)
+    {
+        foreach(var dispatch in dispatches)
+        {
+            Bind(dispatch.Pipeline,in step);
+            _backend.Dispatch(_commands,in dispatch.Groups);
+            Barrier();
+        }
     }
     private void Bind(int kernel,in DeviceStep step)
     {
@@ -146,11 +169,11 @@ public sealed class DeviceAvbdSolver : IDisposable
         public long Number=number;
         public double StartTime=start,EndTime=end;
     }
-    private readonly struct SolverSubmission(DeviceAvbdSolver solver,PhysicsStepContext context,bool initialize,int iterations) : IDevicePhysicsSubmission
+    private readonly struct SolverSubmission(DeviceAvbdSolver solver,PhysicsStepContext context,bool initialize,int iterations,bool buildGraph) : IDevicePhysicsSubmission
     {
         public IGraphicsBackend Backend=>solver._backend;
         public Device Device=>solver._device;
-        public QueueCompletion Submit()=>solver.Record(in context,initialize,iterations);
+        public QueueCompletion Submit()=>solver.Record(in context,initialize,iterations,buildGraph);
     }
     public void Dispose() { foreach(Pipeline pipeline in _pipelines) pipeline.Dispose(); _commands.Dispose(); }
 }
@@ -159,4 +182,8 @@ public readonly struct SolveDeviceAvbd(DeviceAvbdSolver solver) : IPhysicsStage
 public readonly struct InitializeDeviceAvbd(DeviceAvbdSolver solver) : IPhysicsStage
 { public JobHandle Schedule(in PhysicsStepContext context,JobHandle dependency)=>solver.Schedule(in context,true,0,dependency); }
 public readonly struct IterateDeviceAvbd(DeviceAvbdSolver solver,int iterations) : IPhysicsStage
-{ public JobHandle Schedule(in PhysicsStepContext context,JobHandle dependency)=>solver.Schedule(in context,false,iterations,dependency); }
+{
+    private readonly bool _buildGraph=true;
+    internal IterateDeviceAvbd(DeviceAvbdSolver solver,int iterations,bool buildGraph):this(solver,iterations)=>_buildGraph=buildGraph;
+    public JobHandle Schedule(in PhysicsStepContext context,JobHandle dependency)=>solver.Schedule(in context,false,iterations,_buildGraph,dependency);
+}

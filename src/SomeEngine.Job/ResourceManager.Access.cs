@@ -7,6 +7,7 @@ internal sealed partial class ResourceManager
         ReadOnlySpan<JobResourceAccess> accesses,
         Type jobType)
     {
+        using var trace = SomeEngine.Diagnostics.EngineTrace.Begin(JobTrace.RegisterResources);
         if (accesses.Length == 0)
         {
             return ResourceAccessRegistration.Empty;
