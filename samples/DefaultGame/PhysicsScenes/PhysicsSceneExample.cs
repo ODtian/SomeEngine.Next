@@ -29,6 +29,8 @@ public sealed class PhysicsSceneExample(PhysicsSceneDescription description, Phy
             ContactSupports = new ContactSupportSettings(description.Dimension == 2 ? Vector3.UnitY : Vector3.UnitZ,
                 1e-5f, 1e-4f, 1e-4f, 1e-4f, .99f, .99f, 1e-6f),
             ContactDistance = .02f,
+            ContactNormalPenalty = 100,
+            ContactTangentPenalty = 100,
             Graph = new PhysicsGraphSettings(PhysicsGraphOrder.Islands, 16, 16, 64, 4, false),
             Timings = timings,
         });
@@ -89,7 +91,12 @@ public sealed class PhysicsSceneExample(PhysicsSceneDescription description, Phy
             ["Solver"] = new JsonObject
             {
                 ["MultiplierRetention"] = settings.MultiplierRetention, ["InitialErrorFraction"] = 0,
-                ["ContactNormalPenalty"] = 1e6f, ["ContactTangentPenalty"] = 1e6f,
+                ["ContactNormalPenalty"] = settings.ContactNormalPenalty, ["ContactTangentPenalty"] = settings.ContactTangentPenalty,
+                ["FrictionRegularizationSpeed"] = settings.FrictionRegularizationSpeed,
+                ["ContactPenaltyConditioning"] = "Inverse squared step and contact Jacobian mobility",
+                ["ContactPenaltyMinimum"] = SceneContactPenalty.Minimum, ["ContactPenaltyMaximum"] = SceneContactPenalty.Maximum,
+                ["ContactPenaltyIncreasePerMeter"] = SceneContactPenalty.IncreasePerMeter,
+                ["ContactPressureLengthScale"] = SceneContactPenalty.PressureLengthScale,
                 ["JointPenalty"] = 1e6f, ["DistanceRangePenalty"] = 1e6f,
                 ["MatchDistance"] = .02f, ["MinimumNormalDot"] = .99f, ["WarmStart"] = true,
             },
