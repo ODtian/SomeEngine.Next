@@ -48,29 +48,42 @@ void deviceAvbdWriteEquationIndex(uint row)
     if(body.entityIndex==metadata.y&&body.entityGeneration==metadata.z&&body.motion==2)
         DeviceAvbdEquationIndices[metadata.x]=row;
 }
-void initializeDeviceAvbdRows<T : IDeviceAvbdConstraints>(uint index,T constraints)
+struct DeviceAllEquationBodies : IDeviceBodySelection
+{
+    bool contains(uint body) { return true; }
+};
+void initializeDeviceAvbdEquation<TSelection : IDeviceBodySelection>(uint row,TSelection bodies)
+{
+    uint4 metadata=DeviceAvbdEquationMetadata[row];
+    if(metadata.w!=0&&bodies.contains(metadata.x)) deviceAvbdInitializeEquation(row);
+}
+void initializeDeviceAvbdRows<T : IDeviceAvbdConstraints,TSelection : IDeviceBodySelection>(uint index,T constraints,TSelection bodies)
 {
     uint equations,stride; DeviceAvbdEquationMetadata.GetDimensions(equations,stride);
     if(index<equations)
     {
         deviceAvbdWriteEquationIndex(index);
-        deviceAvbdInitializeEquation(index);
+        initializeDeviceAvbdEquation(index,bodies);
     }
     if(index<constraints.count()&&constraints.active(index)) constraints.initialize(index,AvbdStep);
 }
-void initializeDeviceAvbd<T : IDeviceAvbdConstraints>(uint index,T constraints)
+void initializeDeviceAvbdRows<T : IDeviceAvbdConstraints>(uint index,T constraints)
+{ DeviceAllEquationBodies bodies; initializeDeviceAvbdRows(index,constraints,bodies); }
+void initializeDeviceAvbd<T : IDeviceAvbdConstraints,TSelection : IDeviceBodySelection>(uint index,T constraints,TSelection bodies)
 {
     uint equations,stride; DeviceAvbdEquationMetadata.GetDimensions(equations,stride);
     if(index==0)
     {
-        uint bodies; DeviceAvbdEquationIndices.GetDimensions(bodies,stride);
-        for(uint body=0;body<bodies;body++) clearDeviceAvbdBodyIndices(body);
+        uint bodyCount; DeviceAvbdEquationIndices.GetDimensions(bodyCount,stride);
+        for(uint body=0;body<bodyCount;body++) clearDeviceAvbdBodyIndices(body);
         for(uint row=0;row<equations;row++)
             deviceAvbdWriteEquationIndex(row);
     }
-    if(index<equations) deviceAvbdInitializeEquation(index);
+    if(index<equations) initializeDeviceAvbdEquation(index,bodies);
     if(index<constraints.count()&&constraints.active(index)) constraints.initialize(index,AvbdStep);
 }
+void initializeDeviceAvbd<T : IDeviceAvbdConstraints>(uint index,T constraints)
+{ DeviceAllEquationBodies bodies; initializeDeviceAvbd(index,constraints,bodies); }
 void updateDeviceAvbdBody<T : IDeviceAvbdConstraints>(uint index,T constraints)
 {
     uint2 range=ConstraintGraphBodyRanges[AvbdStep.color];
