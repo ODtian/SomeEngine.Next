@@ -61,7 +61,8 @@ public sealed partial class NavigationSaveTests
             NavigationComponents.AddPrediction<NavigationVelocityPrediction>(world, mppiActor, 0.7f, 0.1f);
             NavigationComponents.AddMppi<NavigationVehicleSpace, NavigationVehicleMppiModel>(world, mppiActor, space,
                 new() { CandidateCount = 16, HorizonSteps = 8, TimeStep = 0.1f, NoiseStandardDeviation = new(0.1f, 0.05f), Seed = 41 }, new(0.25f));
-            Action<float> move = Driver(world, model);
+            using var neighbors = new NavigationNeighborSystem<SaveMotion, SaveMotionReader>(world, scheduler);
+            Action<float> move = Driver(world, model, neighbors);
             for (int step = 0; step < 5; step++) move(step * 0.1f);
             saved = world.Read<SaveMotion>(mppiActor);
             NavigationSave.Write(stream, world, registry, resources);
@@ -79,7 +80,8 @@ public sealed partial class NavigationSaveTests
         Assert.True(NavigationComponents.HasPath<NavigationVehicleSpace, StateLatticeSearchState>(loaded, latticeActor));
         Assert.True(NavigationComponents.HasPath<NavigationVehicleSpace, HybridAStarSearchState>(loaded, mppiActor));
         Assert.True(loaded.Has<NavigationMppi<NavigationVehicleSpace, NavigationVehicleMppiModel>>(mppiActor));
-        Action<float> continued = Driver(loaded, restoredSpace.Motions.Model);
+        using var loadedNeighbors = new NavigationNeighborSystem<SaveMotion, SaveMotionReader>(loaded, scheduler);
+        Action<float> continued = Driver(loaded, restoredSpace.Motions.Model, loadedNeighbors);
         continued(0.5f);
         NavigationTrajectoryPoint[] trajectory = [];
         loaded.ExecuteBufferRead<NavigationTrajectoryPoint>(mppiActor, buffer => trajectory = buffer.AsSpan().ToArray());
@@ -91,11 +93,11 @@ public sealed partial class NavigationSaveTests
         Assert.InRange(loaded.Read<NavigationProgress>(mppiActor).Distance, 0, 0.2f);
         Assert.True(loaded.Read<SaveMotion>(mppiActor).Position.X > saved.Position.X + 1.5f);
 
-        Action<float> Driver(World world, NavigationVehicleModel vehicleModel)
+        Action<float> Driver(World world, NavigationVehicleModel vehicleModel,
+            NavigationNeighborSystem<SaveMotion, SaveMotionReader> neighbors)
         {
             var lattice = new NavigationSystems<NavigationVehicleSpace, StateLatticeSearch, StateLatticeSearchState, SaveMotion, SaveMotionReader>(world);
             var hybrid = new NavigationSystems<NavigationVehicleSpace, HybridAStarSearch, HybridAStarSearchState, SaveMotion, SaveMotionReader>(world);
-            using var neighbors = new NavigationNeighborSystem<SaveMotion, SaveMotionReader>(world, scheduler);
             var mppi = new NavigationAvoidanceSystem<NavigationVehicleSpace, NavigationVehicleMppiModel, SaveMotion, SaveMotionReader>(world, neighbors);
             var prediction = new NavigationPredictionSystem<NavigationVelocityPrediction, SaveMotion, SaveMotionReader>(world);
             return time =>
