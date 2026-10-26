@@ -16,6 +16,8 @@ struct DeviceMotorActivity : IDeviceConstraintActivity
     uint group(uint row) { return participants.group(row); }
     uint2 entity(uint row)
     { return uint2(DeviceMotorsMetadata[row].entityIndex,DeviceMotorsMetadata[row].entityGeneration); }
+    override uint2 sourceVersions(uint row)
+    { return uint2(DeviceMotorsMetadata[row].inputVersion,DeviceJointsMetadata[DeviceMotors[row].jointRow].inputVersion); }
     float2 error(uint row,DeviceActivityStep context)
     {
         DeviceMotorConstraint motor=DeviceMotors[row];
