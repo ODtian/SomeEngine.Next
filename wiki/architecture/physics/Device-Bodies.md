@@ -63,6 +63,8 @@ StepState 的写版本；新实体按绑定初始化整行，既有实体只复�
 本轮参数，供预测前的活动或图阶段使用。各数值提交继续沿同一捕获函数读取当前成员。
 项目提供第三个具体 `GyroscopicTorque` 内核后，`ApplyGyroscopicTorque()` 在预测前
 沿原完整体坐标惯量施加陀螺力矩；纯平移主体继续使用其三维自由度。
+`bodyRotationMask` 沿原逆惯量的非零体轴确定活动角轴；恢复体惯量时为零轴补单位，
+反解后清回零。单角轴主体与完整三轴主体共用此惯量及陀螺入口。
 数学由 [physics_body_math](../../../assets/Shaders/physics_body_math.slang) 与
 [physics_body_dynamics](../../../assets/Shaders/physics_body_dynamics.slang) 单处维护。
 
