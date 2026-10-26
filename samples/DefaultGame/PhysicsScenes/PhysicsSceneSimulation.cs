@@ -8,6 +8,8 @@ namespace DefaultGame;
 
 public readonly record struct PhysicsSceneSettings(int Iterations, int BodyIterations, double StepBudgetMilliseconds);
 
+internal readonly record struct PhysicsSceneEntities(Entity[] Bodies, Entity[] Joints, Entity[] DistanceRanges, bool HasInputChanges);
+
 /// <summary>Scene references and its original frame completion; body and constraint values reside in the World.</summary>
 public sealed class PhysicsSceneSimulation : IDisposable
 {

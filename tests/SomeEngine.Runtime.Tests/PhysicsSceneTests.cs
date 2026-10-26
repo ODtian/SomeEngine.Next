@@ -12,6 +12,24 @@ namespace SomeEngine.Runtime.Tests;
 public sealed class PhysicsSceneTests
 {
     [Fact]
+    public void TheCounterweightKeepsTheOriginalRelativeRotationOfItsLockedConnection()
+    {
+        using var scheduler = new Scheduler(new() { WorkerCount = 2 });
+        using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+        PhysicsSceneDescription description = PhysicsScenes.All.Single(scene => scene.Id == "counterweighted-joint");
+        using var scene = PhysicsScenes.CreateCpu(world, description, new ConvexCollision<BoxGeometry, BoxGeometry>(new(1e-5f, 32, 64)),
+            new PhysicsSceneSettings(Iterations: 32, BodyIterations: 3, StepBudgetMilliseconds: 1000d / 60));
+        var ends = world.Read<DirectedRelationEndpoints<JointConstraint>>(scene.Joints.Span[1]);
+        Quaternion initial = Quaternion.Conjugate(world.Read<BodyPose>(ends.Source).Rotation) * world.Read<BodyPose>(ends.Target).Rotation;
+
+        scene.Frame.AdvanceTime(scene.StepSeconds);
+        scene.CompleteForRead();
+
+        Quaternion relative = Quaternion.Conjugate(world.Read<BodyPose>(ends.Source).Rotation) * world.Read<BodyPose>(ends.Target).Rotation;
+        Assert.InRange(MathF.Abs(Quaternion.Dot(initial, relative)), .99999f, 1.000001f);
+    }
+
+    [Fact]
     public void TheOriginalMovingFloorWritesItsTimedPoseBeforePredictionAndFrameConsumption()
     {
         using var scheduler = new Scheduler(new() { WorkerCount = 2 });
