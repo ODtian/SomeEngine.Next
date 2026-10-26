@@ -37,7 +37,7 @@ public sealed partial class DevicePoseSources : IDisposable
     private readonly List<Buffer> _states = [];
     private readonly UploadBuffer _controls, _inputs, _definitions, _roots, _offsets, _work, _goals, _movements;
     private readonly UploadBuffer? _physicsFrames;
-    private readonly Buffer _historyCurrent, _historyPrevious, _readback;
+    private readonly Buffer _playback, _historyCurrent, _historyPrevious, _readback;
     private readonly Dictionary<string, ResourceBinding[]> _bindings = [];
     private readonly List<BufferSrv> _workViews = [];
     private readonly List<ResourceBinding[]> _sampleBindings = [];
@@ -59,9 +59,11 @@ public sealed partial class DevicePoseSources : IDisposable
         _backend = backend; _device = device; _world = world; _physics = physics;
         _entities = new Entity[capacity.Targets]; _models = new Matrix4x4[capacity.Bones];
         QueryDefinition definition = world.GetQueryDefinition(targets).AsFilter()
-            .WithAccess(new QueryDefinitionBuilder().Read<GpuPoseTarget>().OptionalBuffer<GpuPoseGoal>(QueryAccess.Read).Build());
+            .WithAccess(new QueryDefinitionBuilder().Read<GpuPoseTarget>().Read<GpuPoseSourceState>()
+                .OptionalBuffer<GpuPoseGoal>(QueryAccess.Read).Build());
         _targets = world.Query(definition);
         _resources.Add<GpuPoseTarget, GpuPoseTargetResources>();
+        _resources.Add<GpuPoseSourceState, GpuPoseSourceStateResources>();
         _queryAccesses = new JobResourceAccess[QueryJobAccess.Count(definition)];
         QueryJobAccess.CopyAccesses(world, definition, _queryAccesses, _resources);
         _controls = CreateUpload(capacity.Targets * 64, 64, "GpuPoseControls");
@@ -77,7 +79,7 @@ public sealed partial class DevicePoseSources : IDisposable
             _physicsFrames = CreateUpload(capacity.Targets * 160, 160, "GpuPosePhysicsFrames");
             physics.AddBindings(_bindings);
         }
-        CreateState(capacity.Targets * 64, 64, "GpuPosePlaybackStates");
+        _playback = CreateState(capacity.Targets * 64, 64, "GpuPosePlaybackStates");
         CreateState(capacity.BlendStates * 32, 32, "GpuBlendStates");
         CreateState(capacity.BlendLocals * 48, 48, "GpuBlendLocals");
         Models = CreateState(capacity.Bones * 64, 64, "GpuPoseModels");
@@ -98,6 +100,7 @@ public sealed partial class DevicePoseSources : IDisposable
         if (kernels.Xpbd is { } xpbd) descriptions.Add(xpbd);
         _pipelines = descriptions.Select(kernel => Keep(backend.CreateComputePipeline(device, kernel))).ToArray();
         _layouts = descriptions.Select(kernel => kernel.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null).ToArray();
+        CreateOutputs(capacity);
     }
 
     public Buffer Models { get; }
