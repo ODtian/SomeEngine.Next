@@ -141,7 +141,7 @@ public sealed partial class DeviceConstraintGraph : IDisposable
                     buffer.InitialAccess, ResourceAccess.UnorderedAccess));
         _backend.SetPipeline(_commands, _pipelines[0]);
         _backend.SetTransientParameterBindings(_commands, new(_layouts[0], _bindings[0], []));
-        _backend.Dispatch(_commands, new((uint)((_capacity.Constraints + _threadsPerGroup - 1) / _threadsPerGroup), 1, 1));
+        _backend.Dispatch(_commands, DevicePhysicsDispatch.CreateGroups((_capacity.Constraints + _threadsPerGroup - 1) / _threadsPerGroup));
         _backend.Barrier(_commands, new MemoryBarrier(PipelineSync.ComputeShading, PipelineSync.ComputeShading,
             ResourceAccess.UnorderedAccess, ResourceAccess.UnorderedAccess));
         _backend.SetPipeline(_commands, _pipelines[1]);

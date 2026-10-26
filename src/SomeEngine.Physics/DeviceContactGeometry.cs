@@ -93,7 +93,7 @@ public sealed class DeviceContactGeometry : IDisposable, IDevicePhysicsSubmissio
         _backend.Begin(_commands, new(0, 0, 8));
         _backend.SetPipeline(_commands, _pipeline);
         _backend.SetTransientParameterBindings(_commands, new(_layout, _bindings, []));
-        if (_detection.Count != 0) _backend.Dispatch(_commands, new((uint)(_detection.Count * 4 + 63) / 64, 1, 1));
+        if (_detection.Count != 0) _backend.Dispatch(_commands, DevicePhysicsDispatch.CreateGroups((_detection.Count * 4 + 63) / 64));
         _backend.Barrier(_commands, new MemoryBarrier(PipelineSync.ComputeShading, PipelineSync.ComputeShading,
             ResourceAccess.UnorderedAccess, ResourceAccess.UnorderedAccess));
         using RecordedCommands recorded = _backend.End(_commands);

@@ -60,7 +60,10 @@ public sealed class DeviceAvbdSolver : IDisposable
     public SolveDeviceAvbd Solve()=>new(this);
     public InitializeDeviceAvbd Initialize()=>new(this);
     public IterateDeviceAvbd Iterate(int iterations)=>new(this,iterations);
+    public IterateDeviceAvbd Iterate(int iterations,bool buildGraph)=>new(this,iterations,buildGraph);
     internal JobHandle Schedule(in PhysicsStepContext context,bool initialize,int iterations,JobHandle dependency)
+        =>Schedule(in context,initialize,iterations,true,dependency);
+    internal JobHandle Schedule(in PhysicsStepContext context,bool initialize,int iterations,bool buildGraph,JobHandle dependency)
     {
         if(initialize) dependency=_equations.Upload(in context,_threadsPerGroup,dependency);
         Scheduler scheduler=WorldJobs.GetScheduler(context.World);
@@ -69,18 +72,18 @@ public sealed class DeviceAvbdSolver : IDisposable
         accesses.AddRange(_extraAccesses);
         accesses.Add(JobResourceAccess.Write(scheduler.GetResourceToken(_commands)));
         foreach(IDeviceConstraintSelection selection in _selections) selection.AddAccesses(scheduler,accesses);
-        return DevicePhysicsJobs.Schedule(scheduler,new SolverSubmission(this,context,initialize,iterations),accesses.ToArray(),dependency);
+        return DevicePhysicsJobs.Schedule(scheduler,new SolverSubmission(this,context,initialize,iterations,buildGraph),accesses.ToArray(),dependency);
     }
     internal JobHandle ScheduleSolve(in PhysicsStepContext context,JobHandle dependency)
     {
         JobHandle initialized=Schedule(in context,true,0,dependency);
         return Schedule(in context,false,_settings.Iterations,initialized);
     }
-    private QueueCompletion Record(in PhysicsStepContext context,bool initialize,int iterations)
+    private QueueCompletion Record(in PhysicsStepContext context,bool initialize,int iterations,bool buildGraph)
     {
         _graph.CaptureSelections();
         foreach(IDeviceConstraintSelection selection in _selections) selection.Capture();
-        if(!initialize) _graph.BuildAndWait();
+        if(!initialize&&buildGraph) _graph.BuildAndWait();
         var step=new DeviceStep((float)context.Duration,_settings.MultiplierRetention,_settings.InitialErrorFraction,
             (uint)_settings.BodyIterations,0,(uint)context.Substep,context.Number,context.StartTime,context.EndTime);
         _backend.Begin(_commands,new(0,0,32));
@@ -96,11 +99,11 @@ public sealed class DeviceAvbdSolver : IDisposable
             if(_clearBodyIndices>=0)
             {
                 Bind(_clearBodyIndices,in step);
-                _backend.Dispatch(_commands,new((uint)((_bodies.Capacity+_threadsPerGroup-1)/_threadsPerGroup),1,1));
+                _backend.Dispatch(_commands,DevicePhysicsDispatch.CreateGroups((_bodies.Capacity+_threadsPerGroup-1)/_threadsPerGroup));
                 Barrier();
             }
             Bind(0,in step);
-            _backend.Dispatch(_commands,new((uint)((Math.Max(_bodies.Capacity,_graph.ConstraintCapacity)+_threadsPerGroup-1)/_threadsPerGroup),1,1));
+            _backend.Dispatch(_commands,DevicePhysicsDispatch.CreateGroups((Math.Max(_bodies.Capacity,_graph.ConstraintCapacity)+_threadsPerGroup-1)/_threadsPerGroup));
             Barrier();
             DispatchGroups(_groupInitialization,in step);
         }
@@ -110,11 +113,11 @@ public sealed class DeviceAvbdSolver : IDisposable
                 for(int color=0;color<_graph.BodyColorCount;color++)
                 {
                     step.Color=(uint)color; Bind(1,in step);
-                    _backend.Dispatch(_commands,new((uint)((_bodies.Capacity+_threadsPerGroup-1)/_threadsPerGroup),1,1));
+                    _backend.Dispatch(_commands,DevicePhysicsDispatch.CreateGroups((_bodies.Capacity+_threadsPerGroup-1)/_threadsPerGroup));
                     Barrier();
                 }
                 step.Color=0; Bind(2,in step);
-                _backend.Dispatch(_commands,new((uint)((_graph.ConstraintCapacity+_threadsPerGroup-1)/_threadsPerGroup),1,1));
+                _backend.Dispatch(_commands,DevicePhysicsDispatch.CreateGroups((_graph.ConstraintCapacity+_threadsPerGroup-1)/_threadsPerGroup));
                 Barrier();
                 DispatchGroups(_groupUpdates,in step);
             }
@@ -166,11 +169,11 @@ public sealed class DeviceAvbdSolver : IDisposable
         public long Number=number;
         public double StartTime=start,EndTime=end;
     }
-    private readonly struct SolverSubmission(DeviceAvbdSolver solver,PhysicsStepContext context,bool initialize,int iterations) : IDevicePhysicsSubmission
+    private readonly struct SolverSubmission(DeviceAvbdSolver solver,PhysicsStepContext context,bool initialize,int iterations,bool buildGraph) : IDevicePhysicsSubmission
     {
         public IGraphicsBackend Backend=>solver._backend;
         public Device Device=>solver._device;
-        public QueueCompletion Submit()=>solver.Record(in context,initialize,iterations);
+        public QueueCompletion Submit()=>solver.Record(in context,initialize,iterations,buildGraph);
     }
     public void Dispose() { foreach(Pipeline pipeline in _pipelines) pipeline.Dispose(); _commands.Dispose(); }
 }
@@ -179,4 +182,8 @@ public readonly struct SolveDeviceAvbd(DeviceAvbdSolver solver) : IPhysicsStage
 public readonly struct InitializeDeviceAvbd(DeviceAvbdSolver solver) : IPhysicsStage
 { public JobHandle Schedule(in PhysicsStepContext context,JobHandle dependency)=>solver.Schedule(in context,true,0,dependency); }
 public readonly struct IterateDeviceAvbd(DeviceAvbdSolver solver,int iterations) : IPhysicsStage
-{ public JobHandle Schedule(in PhysicsStepContext context,JobHandle dependency)=>solver.Schedule(in context,false,iterations,dependency); }
+{
+    private readonly bool _buildGraph=true;
+    internal IterateDeviceAvbd(DeviceAvbdSolver solver,int iterations,bool buildGraph):this(solver,iterations)=>_buildGraph=buildGraph;
+    public JobHandle Schedule(in PhysicsStepContext context,JobHandle dependency)=>solver.Schedule(in context,false,iterations,_buildGraph,dependency);
+}

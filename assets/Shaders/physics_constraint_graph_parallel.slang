@@ -1,6 +1,7 @@
 #ifndef PHYSICS_CONSTRAINT_GRAPH_PARALLEL
 #define PHYSICS_CONSTRAINT_GRAPH_PARALLEL
 #include "physics_constraint_graph.slang"
+#include "physics_dispatch.slang"
 RWStructuredBuffer<uint> ConstraintGraphBlockTotals;
 RWStructuredBuffer<uint> ConstraintGraphBlockOffsets;
 RWStructuredBuffer<uint> ConstraintGraphRowProposals;
@@ -23,7 +24,7 @@ bool deviceGraphPrecedes(uint first,uint second)
 [shader("compute")][numthreads(64,1,1)]
 void InitializeDeviceGraph(uint3 id:SV_DispatchThreadID)
 {
-    uint index=id.x;
+    uint index=devicePhysicsThreadIndex(id,64);
     if(index<ConstraintGraphParameters.bodies)
     {
         DeviceSelectedBodies selection;
@@ -55,7 +56,7 @@ void deviceGraphJoin(uint first,uint second)
 [shader("compute")][numthreads(64,1,1)]
 void ConnectDeviceGraph(uint3 id:SV_DispatchThreadID)
 {
-    uint index=id.x;
+    uint index=devicePhysicsThreadIndex(id,64);
     if(index>=ConstraintGraphParameters.rows) return;
     uint4 row=ConstraintGraphRows[index];
     if(row.w==0) return;
@@ -73,7 +74,7 @@ void ConnectDeviceGraph(uint3 id:SV_DispatchThreadID)
 [shader("compute")][numthreads(64,1,1)]
 void CompressDeviceGraph(uint3 id:SV_DispatchThreadID)
 {
-    uint body=id.x;
+    uint body=devicePhysicsThreadIndex(id,64);
     if(body>=ConstraintGraphParameters.bodies||ConstraintGraphParents[body]==0xffffffff) return;
     uint root=deviceGraphRoot(body);
     ConstraintGraphParents[body]=root; ConstraintGraphIslands[body]=root;
@@ -83,7 +84,8 @@ void CompressDeviceGraph(uint3 id:SV_DispatchThreadID)
 [shader("compute")][numthreads(256,1,1)]
 void ScanDeviceGraphDegrees(uint3 id:SV_DispatchThreadID,uint3 group:SV_GroupID,uint3 lane:SV_GroupThreadID)
 {
-    uint value=id.x<ConstraintGraphParameters.bodies?ConstraintGraphBodyOffsets[id.x]:0;
+    uint index=devicePhysicsThreadIndex(id,256);
+    uint value=index<ConstraintGraphParameters.bodies?ConstraintGraphBodyOffsets[index]:0;
     GraphDegreeScan[lane.x]=value;
     GroupMemoryBarrierWithGroupSync();
     for(uint offset=1;offset<256;offset*=2)
@@ -91,8 +93,8 @@ void ScanDeviceGraphDegrees(uint3 id:SV_DispatchThreadID,uint3 group:SV_GroupID,
         uint left=lane.x>=offset?GraphDegreeScan[lane.x-offset]:0;
         GroupMemoryBarrierWithGroupSync(); GraphDegreeScan[lane.x]+=left; GroupMemoryBarrierWithGroupSync();
     }
-    if(id.x<ConstraintGraphParameters.bodies) ConstraintGraphBodyOffsets[id.x]=GraphDegreeScan[lane.x]-value;
-    if(lane.x==255) ConstraintGraphBlockTotals[group.x]=GraphDegreeScan[255];
+    if(index<ConstraintGraphParameters.bodies) ConstraintGraphBodyOffsets[index]=GraphDegreeScan[lane.x]-value;
+    if(lane.x==255) ConstraintGraphBlockTotals[devicePhysicsGroupIndex(group)]=GraphDegreeScan[255];
 }
 [shader("compute")][numthreads(1,1,1)]
 void OffsetDeviceGraphBlocks(uint3 id:SV_DispatchThreadID)
@@ -105,13 +107,13 @@ void OffsetDeviceGraphBlocks(uint3 id:SV_DispatchThreadID)
 [shader("compute")][numthreads(64,1,1)]
 void AddDeviceGraphDegreeOffsets(uint3 id:SV_DispatchThreadID)
 {
-    uint body=id.x;
+    uint body=devicePhysicsThreadIndex(id,64);
     if(body<ConstraintGraphParameters.bodies) ConstraintGraphBodyOffsets[body]+=ConstraintGraphBlockOffsets[body/256];
 }
 [shader("compute")][numthreads(64,1,1)]
 void WriteDeviceGraphAdjacency(uint3 id:SV_DispatchThreadID)
 {
-    uint rowIndex=id.x;
+    uint rowIndex=devicePhysicsThreadIndex(id,64);
     if(rowIndex>=ConstraintGraphParameters.rows) return;
     uint4 row=ConstraintGraphRows[rowIndex];
     if(row.w==0) return;
@@ -132,7 +134,7 @@ void ResetDeviceGraphColorProgress(uint3 id:SV_DispatchThreadID)
 [shader("compute")][numthreads(64,1,1)]
 void ProposeDeviceBodyColors(uint3 id:SV_DispatchThreadID)
 {
-    uint body=id.x;
+    uint body=devicePhysicsThreadIndex(id,64);
     if(body>=ConstraintGraphParameters.bodies) return;
     uint color=0xffffffff;
     if(ConstraintGraphActiveBodies[body]!=0&&ConstraintGraphBodyColors[body]==0xffffffff)
@@ -142,7 +144,7 @@ void ProposeDeviceBodyColors(uint3 id:SV_DispatchThreadID)
 [shader("compute")][numthreads(64,1,1)]
 void ResolveDeviceBodyColors(uint3 id:SV_DispatchThreadID)
 {
-    uint body=id.x;
+    uint body=devicePhysicsThreadIndex(id,64);
     if(body>=ConstraintGraphParameters.bodies) return;
     uint color=ConstraintGraphScratch[body];
     if(color==0xffffffff) return;
@@ -162,7 +164,7 @@ void ResolveDeviceBodyColors(uint3 id:SV_DispatchThreadID)
 [shader("compute")][numthreads(64,1,1)]
 void ProposeDeviceRowColors(uint3 id:SV_DispatchThreadID)
 {
-    uint row=id.x;
+    uint row=devicePhysicsThreadIndex(id,64);
     if(row>=ConstraintGraphParameters.rows) return;
     uint color=0xffffffff;
     if(deviceGraphRowActive(ConstraintGraphRows[row])&&ConstraintGraphRowColors[row]==0xffffffff)
@@ -172,7 +174,7 @@ void ProposeDeviceRowColors(uint3 id:SV_DispatchThreadID)
 [shader("compute")][numthreads(64,1,1)]
 void ResolveDeviceRowColors(uint3 id:SV_DispatchThreadID)
 {
-    uint rowIndex=id.x;
+    uint rowIndex=devicePhysicsThreadIndex(id,64);
     if(rowIndex>=ConstraintGraphParameters.rows) return;
     uint color=ConstraintGraphRowProposals[rowIndex];
     if(color==0xffffffff) return;
@@ -195,7 +197,7 @@ void ResolveDeviceRowColors(uint3 id:SV_DispatchThreadID)
 [shader("compute")][numthreads(64,1,1)]
 void CountDeviceGraphColors(uint3 id:SV_DispatchThreadID)
 {
-    uint index=id.x;
+    uint index=devicePhysicsThreadIndex(id,64);
     if(index<ConstraintGraphParameters.bodies&&ConstraintGraphActiveBodies[index]!=0)
         InterlockedAdd(ConstraintGraphBodyRanges[ConstraintGraphBodyColors[index]].y,1);
     if(index<ConstraintGraphParameters.rows&&deviceGraphRowActive(ConstraintGraphRows[index]))
@@ -212,7 +214,7 @@ void OffsetDeviceGraphGroups(uint3 id:SV_DispatchThreadID)
 [shader("compute")][numthreads(64,1,1)]
 void CountDeviceGraphRows(uint3 id:SV_DispatchThreadID)
 {
-    uint row=id.x;
+    uint row=devicePhysicsThreadIndex(id,64);
     if(row>=ConstraintGraphParameters.rows||!deviceGraphRowActive(ConstraintGraphRows[row])) return;
     uint stage=ConstraintGraphGroupOffsets[ConstraintGraphRows[row].z]+ConstraintGraphRowColors[row];
     InterlockedAdd(ConstraintGraphRowRanges[stage].y,1);
@@ -235,7 +237,7 @@ void OffsetDeviceGraphRanges(uint3 id:SV_DispatchThreadID)
 [shader("compute")][numthreads(64,1,1)]
 void WriteDeviceGraphWork(uint3 id:SV_DispatchThreadID)
 {
-    uint index=id.x;
+    uint index=devicePhysicsThreadIndex(id,64);
     if(index<ConstraintGraphParameters.bodies&&ConstraintGraphActiveBodies[index]!=0)
     {
         uint color=ConstraintGraphBodyColors[index],position;
