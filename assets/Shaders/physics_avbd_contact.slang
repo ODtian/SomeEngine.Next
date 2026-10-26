@@ -64,6 +64,30 @@ DeviceAvbdContactEquation deviceEvaluateAvbdContact(uint row,DeviceAvbdStep cont
     result.tangentForce=tangent; result.tangentDirection=direction; result.alongStiffness=along; result.acrossStiffness=across;
     return result;
 }
+void deviceAccumulateAvbdContact(uint row,uint bodyIndex,DeviceAvbdStep context,float3 extraForce,inout DeviceAvbdEquation equation)
+{
+    DeviceContactConstraint point=DeviceContacts[row];
+    DeviceAvbdContactEquation contact=deviceEvaluateAvbdContact(row,context,extraForce);
+    float3 linear,angular;
+    deviceContactJacobian(point,bodyIndex,point.normal,linear,angular);
+    deviceAvbdAddRow(equation,linear,angular,contact.normalForce,contact.normalStiffness);
+    float3 across=cross(point.normal,contact.tangentDirection);
+    deviceContactJacobian(point,bodyIndex,contact.tangentDirection,linear,angular);
+    deviceAvbdAddRow(equation,linear,angular,dot(contact.tangentForce,contact.tangentDirection),contact.alongStiffness);
+    deviceContactJacobian(point,bodyIndex,across,linear,angular);
+    deviceAvbdAddRow(equation,linear,angular,dot(contact.tangentForce,across),contact.acrossStiffness);
+}
+void deviceUpdateAvbdContact(uint row,DeviceAvbdStep context,float3 extraForce)
+{
+    DeviceContactConstraint point=DeviceContacts[row];
+    DeviceAvbdContactEquation contact=deviceEvaluateAvbdContact(row,context,extraForce);
+    DeviceAvbdContactState state=DeviceAvbdContactStates[row];
+    state.normalMultiplier=contact.normalDual; state.tangentMultiplier=contact.tangentForce;
+    DeviceAvbdContactStates[row]=state;
+    DeviceContactResponseState response=DeviceContactResponses[row];
+    response.forceOnSecond=-(point.normal*contact.normalForce+contact.tangentForce)+extraForce;
+    DeviceContactResponses[row]=response;
+}
 struct DeviceContactAvbdConstraints : IDeviceAvbdConstraints
 {
     DeviceContactBodies participants;
@@ -99,29 +123,9 @@ struct DeviceContactAvbdConstraints : IDeviceAvbdConstraints
         DeviceAvbdContactStates[row]=state;
     }
     void accumulate(uint row,uint bodyIndex,DeviceAvbdStep context,inout DeviceAvbdEquation equation)
-    {
-        DeviceContactConstraint point=DeviceContacts[row];
-        DeviceAvbdContactEquation contact=deviceEvaluateAvbdContact(row,context,float3(0));
-        float3 linear,angular;
-        deviceContactJacobian(point,bodyIndex,point.normal,linear,angular);
-        deviceAvbdAddRow(equation,linear,angular,contact.normalForce,contact.normalStiffness);
-        float3 across=cross(point.normal,contact.tangentDirection);
-        deviceContactJacobian(point,bodyIndex,contact.tangentDirection,linear,angular);
-        deviceAvbdAddRow(equation,linear,angular,dot(contact.tangentForce,contact.tangentDirection),contact.alongStiffness);
-        deviceContactJacobian(point,bodyIndex,across,linear,angular);
-        deviceAvbdAddRow(equation,linear,angular,dot(contact.tangentForce,across),contact.acrossStiffness);
-    }
+    { deviceAccumulateAvbdContact(row,bodyIndex,context,float3(0),equation); }
     void updateDuals(uint row,DeviceAvbdStep context)
-    {
-        DeviceContactConstraint point=DeviceContacts[row];
-        DeviceAvbdContactEquation contact=deviceEvaluateAvbdContact(row,context,float3(0));
-        DeviceAvbdContactState state=DeviceAvbdContactStates[row];
-        state.normalMultiplier=contact.normalDual; state.tangentMultiplier=contact.tangentForce;
-        DeviceAvbdContactStates[row]=state;
-        DeviceContactResponseState response=DeviceContactResponses[row];
-        response.forceOnSecond=-(point.normal*contact.normalForce+contact.tangentForce);
-        DeviceContactResponses[row]=response;
-    }
+    { deviceUpdateAvbdContact(row,context,float3(0)); }
     void adjust(uint body,DeviceAvbdStep context,DeviceAvbdEquation equation,inout float3 translation,inout float3 rotation) { }
 };
 #endif
