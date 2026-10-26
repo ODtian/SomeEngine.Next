@@ -40,12 +40,10 @@ public sealed partial class SkinningFeature
             if (section.Data.Rig is not GpuPoseRig rig) continue;
             int level = End(section) - rig.Steps.Length - (rig.TranslationBone >= 0 ? 1 : 0);
             int xpbdState = section.XpbdStart;
+            var definitions = new GpuRigDefinitions(writer, section.Range.Start, section.GoalStart, Descendants);
             if (rig.TranslationBone >= 0)
             {
-                (uint offset, uint count) = Descendants(section.Range.Start + rig.TranslationBone);
-                uint definition = (uint)writer.BaseStream.Position;
-                writer.Write(offset); writer.Write(count);
-                Add(level++, Kernel.Translate, new((uint)section.Index, definition, 0));
+                Add(level++, Kernel.Translate, new((uint)section.Index, definitions.WriteTranslation(rig.TranslationBone), 0));
             }
             foreach (GpuPoseSource source in rig.Steps)
             {
@@ -54,7 +52,7 @@ public sealed partial class SkinningFeature
                     int root = section.Range.Start + limb.Chain.Root, middle = section.Range.Start + limb.Chain.Middle,
                         tip = section.Range.Start + limb.Chain.Tip;
                     if (cpuBones[root] && cpuBones[middle] && cpuBones[tip]) { level++; continue; }
-                    uint definition = Limb(section, limb.Chain);
+                    uint definition = definitions.WriteTwoBone(limb.Chain);
                     Add(level++, Kernel.TwoBone, new((uint)section.Index, definition, (uint)(section.GoalStart + limb.Goal)));
                 }
                 else if (source is GpuXpbdPose xpbd)
@@ -68,53 +66,12 @@ public sealed partial class SkinningFeature
                 }
                 else if (source is GpuStridePose stride)
                 {
-                    GpuStrideRig definition = stride.Rig;
-                    var limbs = new uint[definition.Legs.Length];
-                    for (int foot = 0; foot < limbs.Length; foot++) limbs[foot] = Limb(section, definition.Legs[foot].Chain);
-                    var pelvis = Descendants(section.Range.Start + definition.PelvisBone);
-                    var spine = new (uint Offset, uint Count)[definition.Spine.Length];
-                    for (int joint = 0; joint < spine.Length; joint++)
-                        spine[joint] = Descendants(section.Range.Start + definition.Spine[joint].Bone);
-                    Align(writer, 16);
-                    uint legRows = (uint)writer.BaseStream.Position;
-                    for (int foot = 0; foot < limbs.Length; foot++)
-                    {
-                        writer.Write(limbs[foot]); writer.Write((uint)(section.GoalStart + definition.Legs[foot].Goal));
-                        writer.Write(0u); writer.Write(0u);
-                    }
-                    uint spineRows = (uint)writer.BaseStream.Position;
-                    for (int joint = 0; joint < spine.Length; joint++)
-                    {
-                        writer.Write((uint)(section.Range.Start + definition.Spine[joint].Bone));
-                        writer.Write(spine[joint].Offset); writer.Write(spine[joint].Count); writer.Write(definition.Spine[joint].Weight);
-                    }
-                    uint address = (uint)writer.BaseStream.Position;
-                    writer.Write((uint)(section.Range.Start + definition.PelvisBone));
-                    writer.Write(pelvis.Offset); writer.Write(pelvis.Count); writer.Write((uint)limbs.Length);
-                    writer.Write(legRows); writer.Write(spineRows); writer.Write((uint)spine.Length); writer.Write(0u);
-                    writer.Write(definition.Up.X); writer.Write(definition.Up.Y); writer.Write(definition.Up.Z); writer.Write(definition.MinimumScale);
-                    writer.Write(definition.MaximumScale); writer.Write(definition.MaximumAngle); writer.Write(definition.MaximumPelvisAdjustment); writer.Write(0u);
-                    writer.Write(definition.FacingAxis.X); writer.Write(definition.FacingAxis.Y); writer.Write(definition.FacingAxis.Z); writer.Write(0u);
-                    Add(level++, Kernel.Stride, new((uint)section.Index, address, 0));
+                    Add(level++, Kernel.Stride, new((uint)section.Index, definitions.WriteStride(stride.Rig), 0));
                 }
                 else
                 {
                     var aim = (GpuAimPose)source;
-                    var ranges = new (uint Offset, uint Count)[aim.Chain.Bones.Length];
-                    for (int joint = 0; joint < ranges.Length; joint++)
-                        ranges[joint] = Descendants(section.Range.Start + aim.Chain.Bones[joint].Bone);
-                    Align(writer, 16);
-                    uint definition = (uint)writer.BaseStream.Position;
-                    writer.Write(definition + 16u); writer.Write((uint)ranges.Length); writer.Write(0u); writer.Write(0u);
-                    for (int joint = 0; joint < ranges.Length; joint++)
-                    {
-                        GpuAimBone bone = aim.Chain.Bones[joint];
-                        writer.Write((uint)(section.Range.Start + bone.Bone));
-                        writer.Write(ranges[joint].Offset); writer.Write(ranges[joint].Count); writer.Write(0u);
-                        writer.Write(bone.Axis.X); writer.Write(bone.Axis.Y); writer.Write(bone.Axis.Z); writer.Write(bone.Weight);
-                        writer.Write(bone.MaximumAngle); writer.Write(0u); writer.Write(0u); writer.Write(0u);
-                    }
-                    Add(level++, Kernel.Aim, new((uint)section.Index, definition, (uint)(section.GoalStart + aim.Goal)));
+                    Add(level++, Kernel.Aim, new((uint)section.Index, definitions.WriteAim(aim.Chain), (uint)(section.GoalStart + aim.Goal)));
                 }
             }
         }
@@ -127,19 +84,6 @@ public sealed partial class SkinningFeature
             _solverDispatches.Add(new(entry.Key.Kernel, new(start, (ulong)entry.Value.Count * 16), entry.Value.Count));
         }
 
-        uint Limb(Section section, GpuTwoBoneChain chain)
-        {
-            int root = section.Range.Start + chain.Root, middle = section.Range.Start + chain.Middle,
-                tip = section.Range.Start + chain.Tip;
-            var rootRange = Descendants(root); var middleRange = Descendants(middle); var tipRange = Descendants(tip);
-            Align(writer, 16);
-            uint address = (uint)writer.BaseStream.Position;
-            writer.Write((uint)root); writer.Write((uint)middle); writer.Write((uint)tip); writer.Write(0u);
-            writer.Write(MathF.Cos(chain.MinimumBend)); writer.Write(MathF.Cos(chain.MaximumBend)); writer.Write(0u); writer.Write(0u);
-            writer.Write(rootRange.Offset); writer.Write(rootRange.Count); writer.Write(middleRange.Offset); writer.Write(middleRange.Count);
-            writer.Write(tipRange.Offset); writer.Write(tipRange.Count); writer.Write(0u); writer.Write(0u);
-            return address;
-        }
         int End(Section section)
         {
             if (section.SolverEnd >= 0) return section.SolverEnd;
