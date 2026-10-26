@@ -1,3 +1,5 @@
+#ifndef PHYSICS_BODY_DYNAMICS
+#define PHYSICS_BODY_DYNAMICS
 #include "physics_body_math.slang"
 #include "physics_body_selection.slang"
 
@@ -17,36 +19,44 @@ void ApplyDeviceGyroscopicTorque(uint3 id : SV_DispatchThreadID)
     DeviceBodyStates[index] = body;
 }
 
-[shader("compute")][numthreads(64, 1, 1)]
-void PredictDeviceBodies(uint3 id : SV_DispatchThreadID)
+void predictDeviceBody(uint index, bool advance, bool resume)
 {
-    if (id.x >= BodyStep.count) return;
-    uint index = DeviceBodyIndices[id.x];
     DeviceBodyState body = DeviceBodyStates[index];
-    body.startCenterOfMass = bodyCenterOfMass(body);
-    body.startRotation = body.rotation;
+    if (!resume)
+    {
+        body.startCenterOfMass = bodyCenterOfMass(body);
+        body.startRotation = body.rotation;
+    }
     body.number = BodyStep.number;
     body.substep = int(BodyStep.substep);
     body.time = BodyStep.time;
-    if (body.motion == 2) body.linearVelocity += BodyStep.acceleration * BodyStep.duration;
-    if (body.motion != 0)
+    if (advance)
     {
-        body.rotation = bodyIntegrateRotation(body.rotation, body.angularVelocity, BodyStep.duration);
-        bodySetCenterOfMass(body, body.startCenterOfMass + body.linearVelocity * BodyStep.duration);
+        if (body.motion == 2) body.linearVelocity += BodyStep.acceleration * BodyStep.duration;
+        if (body.motion != 0)
+        {
+            body.rotation = bodyIntegrateRotation(body.rotation, body.angularVelocity, BodyStep.duration);
+            bodySetCenterOfMass(body, body.startCenterOfMass + body.linearVelocity * BodyStep.duration);
+        }
     }
     body.predictedCenterOfMass = bodyCenterOfMass(body);
     body.predictedRotation = body.rotation;
     DeviceBodyStates[index] = body;
 }
 
-[shader("compute")][numthreads(64, 1, 1)]
-void UpdateDeviceBodyVelocities(uint3 id : SV_DispatchThreadID)
+void updateDeviceBodyVelocity(uint index)
 {
-    if (id.x >= BodyStep.count) return;
-    uint index = DeviceBodyIndices[id.x];
     DeviceBodyState body = DeviceBodyStates[index];
     if (body.motion == 0) return;
     body.linearVelocity = (bodyCenterOfMass(body) - body.startCenterOfMass) / BodyStep.duration;
     body.angularVelocity = bodyRotationVelocity(body.startRotation, body.rotation, BodyStep.duration);
     DeviceBodyStates[index] = body;
 }
+
+[shader("compute")][numthreads(64, 1, 1)]
+void PredictDeviceBodies(uint3 id : SV_DispatchThreadID)
+{ if (id.x < BodyStep.count) predictDeviceBody(DeviceBodyIndices[id.x], true, false); }
+[shader("compute")][numthreads(64, 1, 1)]
+void UpdateDeviceBodyVelocities(uint3 id : SV_DispatchThreadID)
+{ if (id.x < BodyStep.count) updateDeviceBodyVelocity(DeviceBodyIndices[id.x]); }
+#endif
