@@ -3,7 +3,7 @@ namespace SomeEngine.Job.Tests;
 public sealed class AutomaticBatchTests
 {
     [Fact]
-    public void EachSchedulerStartsWithItsOwnBatchCost()
+    public void AutomaticBatchesCompleteEachElementOnIndependentSchedulers()
     {
         using var first = new Scheduler(new JobRuntimeConfig
         {
@@ -21,11 +21,13 @@ public sealed class AutomaticBatchTests
         second.ScheduleParallel(new CountBatch(secondData, 0), 64,
             JobScheduleOptions.AutomaticBatchSize).Complete();
 
-        Assert.Equal(5, secondData.Calls[4]);
+        Assert.All(firstData.Calls, value => Assert.Equal(1, value));
+        Assert.All(secondData.Calls, value => Assert.Equal(1, value));
+        Assert.Equal(Enumerable.Range(1, 64).Select(value => (double)value), secondData.Values);
     }
 
     [Fact]
-    public void DifferentWorkSizesKeepTheirOwnBatchCost()
+    public void AutomaticBatchesCompleteEachElementAtDifferentWorkSizes()
     {
         using var scheduler = new Scheduler(new JobRuntimeConfig
         {
@@ -39,11 +41,13 @@ public sealed class AutomaticBatchTests
         scheduler.ScheduleParallel(new CountBatch(small, 0), 16,
             JobScheduleOptions.AutomaticBatchSize).Complete();
 
-        Assert.Equal(2, small.Calls[1]);
+        Assert.All(large.Calls, value => Assert.Equal(1, value));
+        Assert.All(small.Calls, value => Assert.Equal(1, value));
+        Assert.Equal(Enumerable.Range(1, 16).Select(value => (double)value), small.Values);
     }
 
     [Fact]
-    public void SynchronousRangesTeachTheirSchedulerBatchCost()
+    public void SynchronousAndScheduledAutomaticBatchesCompleteEachElement()
     {
         using var scheduler = new Scheduler(new JobRuntimeConfig
         {
@@ -57,7 +61,9 @@ public sealed class AutomaticBatchTests
         scheduler.ScheduleParallel(new CountBatch(light, 0), 64,
             JobScheduleOptions.AutomaticBatchSize).Complete();
 
-        Assert.Equal(1, light.Calls[4]);
+        Assert.All(heavy.Calls, value => Assert.Equal(1, value));
+        Assert.All(light.Calls, value => Assert.Equal(1, value));
+        Assert.Equal(Enumerable.Range(1, 64).Select(value => (double)value), light.Values);
     }
 
     [Theory]
@@ -115,17 +121,15 @@ public sealed class AutomaticBatchTests
         internal double[] Values { get; } = new double[length];
     }
 
-    private struct CountBatch(BatchData data, int iterations) : IJobParallelFor
+    private readonly struct CountBatch(BatchData data, int iterations) : IJobParallelFor
     {
-        private int _calls;
-
         public void Execute(int index)
         {
             double value = index + 1;
             for (int iteration = 0; iteration < iterations; iteration++)
                 value = Math.Sqrt(value + 3);
             data.Values[index] = value;
-            data.Calls[index] = ++_calls;
+            Interlocked.Increment(ref data.Calls[index]);
         }
     }
 }
