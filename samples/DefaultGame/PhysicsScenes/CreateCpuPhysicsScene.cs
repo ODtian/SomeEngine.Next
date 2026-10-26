@@ -89,8 +89,8 @@ public static partial class PhysicsScenes
                 })),
             new ContactRefreshSettings(.02f, .99f, true));
         var contactConstraints = AvbdGraphConstraints.Combine(
-            new AvbdGraphConstraints<ContactPoint, SceneContactPenaltyMath<AvbdContactMath>>(ordinaryContacts),
-            new AvbdGraphConstraints<ContactPoint, SceneContactPenaltyMath<AvbdSupportedContactMath>>(supportedContacts));
+            new AvbdGraphConstraints<ContactPoint, SceneContactPenaltyMath<AvbdContactPotentialMath>>(ordinaryContacts),
+            new AvbdGraphConstraints<ContactPoint, SceneContactPenaltyMath<AvbdSupportedContactPotentialMath>>(supportedContacts));
         var ordinaryConstraints = AvbdGraphConstraints.Combine(
             AvbdGraphConstraints.Combine(contactConstraints,
                 new AvbdGraphConstraints<JointConstraint, AvbdJointMath>(joints)),
