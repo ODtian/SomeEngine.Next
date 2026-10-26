@@ -12,6 +12,7 @@ internal sealed class PhysicsGraphQueries : IDisposable
 {
     private readonly World _world;
     private List<Entity>[] _members, _next;
+    private readonly List<Entity>[] _solverConstraints;
     private List<Entity> _dynamic = [], _nextDynamic = [];
     private readonly bool _bodyUpdates;
     internal readonly QueryHandle[] Queries, Reads;
@@ -27,6 +28,7 @@ internal sealed class PhysicsGraphQueries : IDisposable
         Reads = new QueryHandle[constraints.Length];
         _members = CreateMembers(constraints.Length + 1);
         _next = CreateMembers(constraints.Length + 1);
+        _solverConstraints = CreateMembers(constraints.Length);
         QueryDefinition bodyDefinition = world.GetQueryDefinition(bodies).WithOptionalRead<BodyActivity>();
         Queries[0] = world.Query(bodyDefinition.AsReadOnly());
         Queries[1] = world.Query(bodyDefinition);
@@ -91,6 +93,17 @@ internal sealed class PhysicsGraphQueries : IDisposable
         2 => CollectionsMarshal.AsSpan(graph.References),
         _ => CollectionsMarshal.AsSpan(_members[query - 2]),
     };
+
+    internal ReadOnlySpan<Entity> SolverEntities(int query, PhysicsGraphData graph)
+    {
+        if (query == 1) return CollectionsMarshal.AsSpan(graph.Writes);
+        if (query < 3) return GlobalEntities(query, graph);
+        List<Entity> selected = _solverConstraints[query - 3];
+        selected.Clear();
+        foreach (Entity entity in _members[query - 2])
+            if (graph.IsConstraintActive(query - 3, entity)) selected.Add(entity);
+        return CollectionsMarshal.AsSpan(selected);
+    }
 
     public void Dispose()
     {

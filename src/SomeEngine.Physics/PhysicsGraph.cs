@@ -225,6 +225,8 @@ internal sealed partial class PhysicsGraphData : IDisposable
 
     public void Dispose() => _scheduler.ReleaseResourceToken(_resource);
     private bool IsActive(Island island) => island.DynamicBodies.Count == 0 || island.DynamicBodies.Any(body => _bodies[body].Awake);
+    internal bool IsConstraintActive(int query, Entity entity) =>
+        _constraints.TryGetValue(new(query, entity), out ConstraintInput? constraint) && constraint.Island?.Batch is not null;
     internal IReadOnlyList<Island> ActivityIslands => _islands;
     internal bool HasActivityChange(Entity body) => _activityChanges.Contains(body);
     internal void ClearActivityChanges() => _activityChanges.Clear();
