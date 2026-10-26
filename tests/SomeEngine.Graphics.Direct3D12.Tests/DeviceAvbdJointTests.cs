@@ -61,7 +61,7 @@ public sealed partial class DeviceAvbdTests
     }
 
     [Fact]
-    public void DeviceMotorCapsItsPhysicalForceAndAppliesTheReactionToTheSource()
+    public void DeviceMotorCapsItsForceAndAppliesTheReactionToTheSource()
     {
         using var backend = D3D12GraphicsBackend.Create();
         using Device device = CreateDevice(backend);
