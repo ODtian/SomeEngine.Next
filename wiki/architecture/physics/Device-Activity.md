@@ -50,6 +50,8 @@
 `readDeviceActivityRows` 将当前误差及参考输入变化归约到原参与岛。
 `DeviceLengthActivity` 沿共同 Length 参数和当前主体位置返回距离残差，
 参与角色与参数选择委托原 `DeviceLengthBodies`。
+`DeviceBendActivity` 沿原三端边方向取得余弦，将最低余弦的界外分量转换为弧度误差；
+参与角色继续复用 `DeviceBendBodies`。
 `DeviceContactActivity` 沿同一当前加权锚返回法向穿透残差，参与角色继续由
 `DeviceContactBodies` 提供。
 `DeviceJointActivity` 复用共同坐标和限位误差；自由坐标的残差为零。
