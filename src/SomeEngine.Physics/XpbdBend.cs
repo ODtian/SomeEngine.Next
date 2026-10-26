@@ -15,6 +15,14 @@ public struct XpbdBend : IComponent
 
 public readonly struct XpbdBendProjection : IXpbdConstraint<XpbdBend>, IXpbdConstraintForces<XpbdBend>
 {
+    public static PhysicsConstraintError GetActivityError(in XpbdBend constraint, scoped QueryRow row,
+        scoped PhysicsBodies bodies, in PhysicsStepContext context)
+    {
+        ReadBodies(row, bodies, in context, out Entity first, out Entity middle, out Entity last);
+        float cosine = GetGradients(first, middle, last, bodies, out _, out _, out _);
+        return new(0, MathF.Max(0, MathF.Acos(Math.Clamp(cosine, -1, 1)) - MathF.Acos(constraint.MinimumCosine)));
+    }
+
     public static int GetBodyCount(in XpbdBend constraint, scoped QueryRow row, in PhysicsStepContext context) => 3;
     public static Entity GetBody(in XpbdBend constraint, scoped QueryRow row, int index, in PhysicsStepContext context) =>
         ConstraintBodies.GetBody(in row.ReadBuffer<ConstraintBodyLink>().AsSpan()[index], in context);

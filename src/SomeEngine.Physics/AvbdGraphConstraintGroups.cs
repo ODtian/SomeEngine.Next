@@ -13,6 +13,9 @@ public readonly struct AvbdGraphConstraints<TConstraint, TMath>(QueryHandle cons
     private readonly AvbdBodyConstraints _byBody = new();
     public int QueryCount => 1;
     public QueryHandle GetQuery(int index) => constraints;
+    public void ReadActivityErrors(in PhysicsStepContext context, scoped EntityQueryViews queries, int offset,
+        scoped PhysicsBodies bodies, ref PhysicsActivityErrors errors) =>
+        PhysicsActivityRows<TConstraint, TMath>.Read(new(queries.Get(offset), queries.Get(2)), bodies, in context, ref errors);
     public void AddResources(World world, List<JobResourceAccess> accesses, PhysicsGraphPhase phase)
     {
         JobResourceToken token = WorldJobs.GetScheduler(world).GetResourceToken(_byBody);
@@ -52,6 +55,12 @@ public readonly struct AvbdGraphConstraintGroups<TFirst, TSecond>(TFirst first, 
 {
     public int QueryCount => first.QueryCount + second.QueryCount;
     public QueryHandle GetQuery(int index) => index < first.QueryCount ? first.GetQuery(index) : second.GetQuery(index - first.QueryCount);
+    public void ReadActivityErrors(in PhysicsStepContext context, scoped EntityQueryViews queries, int offset,
+        scoped PhysicsBodies bodies, ref PhysicsActivityErrors errors)
+    {
+        first.ReadActivityErrors(in context, queries, offset, bodies, ref errors);
+        second.ReadActivityErrors(in context, queries, offset + first.QueryCount, bodies, ref errors);
+    }
     public void AddResources(World world, List<JobResourceAccess> accesses, PhysicsGraphPhase phase)
     { first.AddResources(world, accesses, phase); second.AddResources(world, accesses, phase); }
     public void ReadGraph(in PhysicsStepContext context, ReadOnlySpan<QueryHandle> queries, int offset,

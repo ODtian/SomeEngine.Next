@@ -18,6 +18,17 @@ internal readonly record struct JointEquationRow(float Coordinate, Vector3 Sourc
 
 internal static class JointMath
 {
+    internal static PhysicsConstraintError GetActivityError(in JointConstraint constraint, in BodyPose source, in BodyPose target)
+    {
+        GetCoordinates(in constraint, in source, in target, out Vector3 linear, out Vector3 angular);
+        for (int axis = 0; axis < 3; axis++)
+        {
+            linear[axis] = GetInitialError(GetLimit(in constraint, axis), linear[axis]);
+            angular[axis] = GetInitialError(GetLimit(in constraint, axis + 3), angular[axis]);
+        }
+        return new(linear.Length(), angular.Length());
+    }
+
     internal static void GetCoordinates(in JointConstraint constraint, in BodyPose source, in BodyPose target,
         out Vector3 linear, out Vector3 angular)
     {

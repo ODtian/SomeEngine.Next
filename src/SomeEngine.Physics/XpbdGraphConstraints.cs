@@ -1,6 +1,7 @@
 using SomeEngine.ECS;
 using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
+using SomeEngine.Job;
 
 namespace SomeEngine.Physics;
 
@@ -18,6 +19,9 @@ public readonly struct XpbdGraphConstraints<TConstraint, TProjection>(QueryHandl
 {
     public int QueryCount => 1;
     public QueryHandle GetQuery(int index) => constraints;
+    public void ReadActivityErrors(in PhysicsStepContext context, scoped EntityQueryViews queries, int queryOffset,
+        scoped PhysicsBodies bodies, ref PhysicsActivityErrors errors) =>
+        PhysicsActivityRows<TConstraint, TProjection>.Read(new(queries.Get(queryOffset), queries.Get(2)), bodies, in context, ref errors);
 
     public void ReadGraph(in PhysicsStepContext context, ReadOnlySpan<QueryHandle> queries, int queryOffset,
         ref PhysicsConstraintGraphBuilder graph)
@@ -57,6 +61,14 @@ public readonly struct XpbdGraphConstraintGroups<TFirst, TSecond>(TFirst first, 
 {
     public int QueryCount => first.QueryCount + second.QueryCount;
     public QueryHandle GetQuery(int index) => index < first.QueryCount ? first.GetQuery(index) : second.GetQuery(index - first.QueryCount);
+    public void AddResources(World world, List<JobResourceAccess> accesses, PhysicsGraphPhase phase)
+    { first.AddResources(world, accesses, phase); second.AddResources(world, accesses, phase); }
+    public void ReadActivityErrors(in PhysicsStepContext context, scoped EntityQueryViews queries, int offset,
+        scoped PhysicsBodies bodies, ref PhysicsActivityErrors errors)
+    {
+        first.ReadActivityErrors(in context, queries, offset, bodies, ref errors);
+        second.ReadActivityErrors(in context, queries, offset + first.QueryCount, bodies, ref errors);
+    }
     public void ReadGraph(in PhysicsStepContext context, ReadOnlySpan<QueryHandle> queries, int offset,
         ref PhysicsConstraintGraphBuilder graph)
     {

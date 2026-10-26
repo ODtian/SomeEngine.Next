@@ -10,6 +10,165 @@ namespace SomeEngine.Physics.Tests;
 
 public sealed class PhysicsActivityTests
 {
+    private struct SelectedConnection : IComponent;
+
+    [Fact]
+    public void AFilterCommandSplitsTheSleepingIslandBeforeTheSelectedStepMovesItsBody()
+    {
+        using var scheduler = new Scheduler(new() { WorkerCount = 2 });
+        using var world = WorldJobs.CreateWorld(scheduler: scheduler);
+        Entity first = CreateBody(world, Vector3.UnitX), second = CreateBody(world, Vector3.UnitX * 2), other = CreateBody(world, Vector3.UnitX * 10);
+        foreach (Entity body in new[] { first, second, other }) world.Add(body, new BodyActivity { Radius = 1 });
+        Entity connection = world.CreateRelation(first, second, new XpbdLength { RestLength = 1 }).Entity;
+        world.Add(connection, new SelectedConnection());
+        QueryHandle bodies = world.Query(new QueryDefinitionBuilder().ReadWrite<BodyPose>().Read<BodyMass>().Read<BodyVelocity>().Read<BodyStepState>());
+        QueryHandle lengths = world.Query(new QueryDefinitionBuilder().All<SelectedConnection>().ReadWrite<XpbdLength>()
+            .Read<UndirectedRelationEndpoints<XpbdLength>>());
+        using var solve = SolveXpbdGraph.Create(world, bodies, new XpbdGraphConstraints<XpbdLength, XpbdLengthProjection>(lengths),
+            new PhysicsGraphSettings(PhysicsGraphOrder.Islands, 1, 1, 16, 16, false), 4);
+        using var activity = solve.Activity(new BodyActivitySettings(.05f, .25f, .01f, .01f));
+        using var prediction = new PredictActiveBodies(world, bodies, Vector3.Zero);
+        var physics = PhysicsSimulation.Create(world, QueryDefinition.Empty,
+            activity.WakeConnected().Then(prediction).Then(solve).Then(new UpdateBodyVelocities(64)).Then(activity.Finish()), 1);
+        physics.Schedule(0, 0, .125).Complete(); physics.Schedule(1, .125, .125).Complete();
+        Assert.True(world.Read<BodyActivity>(second).Sleeping);
+        using var commands = new JobCommandBuffer(world, 1);
+        commands.Schedule(0, new RemoveConnectionSelection(connection, first));
+
+        physics.Schedule(2, .25, .125, commands.SchedulePlayback()).Complete();
+
+        Assert.Equal(.125f, world.Read<BodyPose>(first).Position.Y);
+        Assert.Equal(0, world.Read<BodyPose>(second).Position.Y);
+        Assert.False(world.Read<BodyActivity>(second).Sleeping);
+        Assert.True(world.Read<BodyActivity>(other).Sleeping);
+        world.ReleaseQuery(lengths); world.ReleaseQuery(bodies);
+    }
+
+    private readonly struct RemoveConnectionSelection(Entity connection, Entity body) : IJobCommandProducer
+    {
+        public void Execute(ref JobCommandWriter commands)
+        {
+            commands.Remove<SelectedConnection>(connection);
+            commands.Replace(body, new BodyVelocity { Linear = Vector3.UnitY });
+        }
+    }
+
+    [Fact]
+    public void ATimeSelectedWakeOnTheSharedAnchorWakesBothSleepingIslands()
+    {
+        using var scheduler = new Scheduler(new() { WorkerCount = 2 });
+        using var world = WorldJobs.CreateWorld(scheduler: scheduler);
+        Entity anchor = CreateBody(world, Vector3.Zero);
+        world.Replace(anchor, new BodyMass { Motion = BodyMotion.Static });
+        world.AddBuffer<BodyWake>(anchor);
+        Entity first = CreateBody(world, Vector3.UnitX), second = CreateBody(world, -Vector3.UnitX);
+        world.Add(first, new BodyActivity { Radius = 1 }); world.Add(second, new BodyActivity { Radius = 1 });
+        world.CreateRelation(anchor, first, new XpbdLength { RestLength = 1 });
+        world.CreateRelation(anchor, second, new XpbdLength { RestLength = 1 });
+        QueryHandle bodies = world.Query(new QueryDefinitionBuilder().ReadWrite<BodyPose>().Read<BodyMass>().Read<BodyVelocity>().Read<BodyStepState>());
+        QueryHandle lengths = world.Query(new QueryDefinitionBuilder().ReadWrite<XpbdLength>().Read<UndirectedRelationEndpoints<XpbdLength>>());
+        using var solve = SolveXpbdGraph.Create(world, bodies, new XpbdGraphConstraints<XpbdLength, XpbdLengthProjection>(lengths),
+            new PhysicsGraphSettings(PhysicsGraphOrder.Islands, 1, 1, 16, 16, false), 4);
+        using var activity = solve.Activity(new BodyActivitySettings(.05f, .25f, .01f, .01f));
+        using var prediction = new PredictActiveBodies(world, bodies, Vector3.Zero);
+        var physics = PhysicsSimulation.Create(world, QueryDefinition.Empty,
+            activity.WakeConnected().Then(prediction).Then(solve).Then(new UpdateBodyVelocities(64)).Then(activity.Finish()), 1);
+        physics.Schedule(0, 0, .125).Complete(); physics.Schedule(1, .125, .125).Complete();
+        Assert.True(world.Read<BodyActivity>(first).Sleeping); Assert.True(world.Read<BodyActivity>(second).Sleeping);
+        world.ExecuteBufferWrite<BodyWake>(anchor, static requests => requests.Add(new BodyWake(.375)));
+        physics.Schedule(2, .25, .125).Complete();
+        Assert.True(world.Read<BodyActivity>(first).Sleeping); Assert.True(world.Read<BodyActivity>(second).Sleeping);
+
+        physics.Schedule(3, .375, .125).Complete();
+
+        Assert.False(world.Read<BodyActivity>(first).Sleeping); Assert.False(world.Read<BodyActivity>(second).Sleeping);
+        world.ReleaseQuery(lengths); world.ReleaseQuery(bodies);
+    }
+
+    [Fact]
+    public void ANewSelectedConstraintWakesOnlyItsConnectedSleepingIsland()
+    {
+        using var scheduler = new Scheduler(new() { WorkerCount = 2 });
+        using var world = WorldJobs.CreateWorld(scheduler: scheduler);
+        Entity anchor = CreateBody(world, Vector3.Zero);
+        world.Replace(anchor, new BodyMass { Motion = BodyMotion.Static });
+        Entity first = CreateBody(world, Vector3.UnitX);
+        Entity other = CreateBody(world, Vector3.UnitX * 10);
+        world.Add(first, new BodyActivity { Radius = 1 }); world.Add(other, new BodyActivity { Radius = 1 });
+        QueryHandle bodies = world.Query(new QueryDefinitionBuilder().ReadWrite<BodyPose>().Read<BodyMass>().Read<BodyVelocity>().Read<BodyStepState>());
+        QueryHandle lengths = world.Query(new QueryDefinitionBuilder().ReadWrite<XpbdLength>().Read<UndirectedRelationEndpoints<XpbdLength>>());
+        using var solve = SolveXpbdGraph.Create(world, bodies, new XpbdGraphConstraints<XpbdLength, XpbdLengthProjection>(lengths),
+            new PhysicsGraphSettings(PhysicsGraphOrder.Islands, 1, 1, 16, 16, false), 4);
+        using var activity = solve.Activity(new BodyActivitySettings(.05f, .2f, .01f, .01f));
+        using var prediction = new PredictActiveBodies(world, bodies, Vector3.Zero);
+        var physics = PhysicsSimulation.Create(world, QueryDefinition.Empty,
+            activity.WakeConnected().Then(prediction).Then(solve).Then(new UpdateBodyVelocities(64)).Then(activity.Finish()), 1);
+        physics.Schedule(0, 0, .1).Complete(); physics.Schedule(1, .1, .1).Complete();
+        Assert.True(world.Read<BodyActivity>(first).Sleeping); Assert.True(world.Read<BodyActivity>(other).Sleeping);
+        world.CreateRelation(anchor, first, new XpbdLength { RestLength = 1 });
+
+        physics.Schedule(2, .2, .1).Complete();
+
+        Assert.False(world.Read<BodyActivity>(first).Sleeping);
+        Assert.True(world.Read<BodyActivity>(other).Sleeping);
+        world.ReleaseQuery(lengths); world.ReleaseQuery(bodies);
+    }
+
+    [Fact]
+    public void ARemainingJointAngleKeepsTheMotionlessIslandAwake()
+    {
+        using var scheduler = new Scheduler(new() { WorkerCount = 2 });
+        using var world = WorldJobs.CreateWorld(scheduler: scheduler);
+        Entity source = CreateBody(world, Vector3.Zero);
+        world.Replace(source, new BodyMass { Motion = BodyMotion.Static });
+        Entity target = CreateBody(world, Vector3.Zero);
+        world.Replace(target, new BodyPose { Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, MathF.PI / 2) });
+        world.Add(target, new BodyActivity { Radius = 1 });
+        Entity joint = world.CreateRelation(source, target, JointConstraints.CreateFixed(JointFrame.Identity, JointFrame.Identity,
+            float.PositiveInfinity, float.PositiveInfinity)).Entity;
+        world.Add(joint, new AvbdJointState { LinearPenalty = new(1e6f), AngularPenalty = new(1e6f) });
+        QueryHandle bodies = world.Query(new QueryDefinitionBuilder().ReadWrite<BodyPose>().Read<BodyMass>().Read<BodyVelocity>()
+            .Read<BodyStepState>().ReadWrite<AvbdBodyEquation>());
+        QueryHandle joints = world.Query(new QueryDefinitionBuilder().Read<JointConstraint>()
+            .Read<DirectedRelationEndpoints<JointConstraint>>().ReadWrite<AvbdJointState>());
+        using var solve = SolveAvbdGraph.Create(world, bodies, new AvbdGraphConstraints<JointConstraint, AvbdJointMath>(joints),
+            new PhysicsGraphSettings(PhysicsGraphOrder.Islands, 1, 1, 16, 16, false), 0, 0, 0);
+        using var activity = solve.Activity(new BodyActivitySettings(.05f, .1f, .01f, .01f));
+        using var prediction = new PredictActiveBodies(world, bodies, Vector3.Zero);
+        var stages = activity.WakeConnected().Then(prediction).Then(solve).Then(new UpdateBodyVelocities(64)).Then(activity.Finish());
+
+        PhysicsSimulation.Create(world, QueryDefinition.Empty, stages, 1).Schedule(0, 0, .1).Complete();
+
+        Assert.False(world.Read<BodyActivity>(target).Sleeping);
+        Assert.InRange(Quaternion.Dot(world.Read<BodyPose>(target).Rotation, Quaternion.CreateFromAxisAngle(Vector3.UnitZ, MathF.PI / 2)), .99999f, 1.00001f);
+        world.ReleaseQuery(joints); world.ReleaseQuery(bodies);
+    }
+
+    [Fact]
+    public void ARemainingLengthErrorKeepsTheMotionlessIslandAwake()
+    {
+        using var scheduler = new Scheduler(new() { WorkerCount = 2 });
+        using var world = WorldJobs.CreateWorld(scheduler: scheduler);
+        Entity anchor = CreateBody(world, Vector3.Zero);
+        world.Replace(anchor, new BodyMass { Motion = BodyMotion.Static });
+        Entity body = CreateBody(world, Vector3.UnitX * 3);
+        world.Add(body, new BodyActivity { Radius = 1 });
+        world.CreateRelation(anchor, body, new XpbdLength { RestLength = 1 });
+        QueryHandle bodies = world.Query(new QueryDefinitionBuilder().ReadWrite<BodyPose>().Read<BodyMass>().Read<BodyVelocity>().Read<BodyStepState>());
+        QueryHandle lengths = world.Query(new QueryDefinitionBuilder().ReadWrite<XpbdLength>().Read<UndirectedRelationEndpoints<XpbdLength>>());
+        using var solve = SolveXpbdGraph.Create(world, bodies, new XpbdGraphConstraints<XpbdLength, XpbdLengthProjection>(lengths),
+            new PhysicsGraphSettings(PhysicsGraphOrder.Islands, 1, 1, 16, 16, false), 0);
+        using var activity = solve.Activity(new BodyActivitySettings(.05f, .1f, .01f, .01f));
+        using var prediction = new PredictActiveBodies(world, bodies, Vector3.Zero);
+        var stages = activity.WakeConnected().Then(prediction).Then(solve).Then(new UpdateBodyVelocities(64)).Then(activity.Finish());
+
+        PhysicsSimulation.Create(world, QueryDefinition.Empty, stages, 1).Schedule(0, 0, .1).Complete();
+
+        Assert.False(world.Read<BodyActivity>(body).Sleeping);
+        Assert.Equal(Vector3.UnitX * 3, world.Read<BodyPose>(body).Position);
+        world.ReleaseQuery(lengths); world.ReleaseQuery(bodies);
+    }
+
     [Fact]
     public void ActivePredictionFinishesWhileAnotherJobReadsTheSleepingPose()
     {
