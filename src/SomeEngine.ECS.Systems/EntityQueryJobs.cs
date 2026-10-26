@@ -6,7 +6,7 @@ using SomeEngine.Job;
 
 namespace SomeEngine.ECS.Systems;
 
-public static class EntityQueryJobs
+public static partial class EntityQueryJobs
 {
     private static readonly ConditionalWeakTable<World, Workspaces> s_workspaces = new();
 
@@ -39,6 +39,10 @@ public static class EntityQueryJobs
     private sealed class Workspace
     {
         internal readonly List<Batch> Batches = [];
+        internal readonly List<JobResourceAccess> GroupAccesses = [];
+        internal EntityQueryData[][] GroupQueries = [];
+        internal EntityQueryData[] AllQueries = [];
+        internal readonly GroupRanges ParallelRanges = new();
         private readonly Lock _versionGate = new();
         private bool _hasVersion;
         private uint _version;
@@ -61,6 +65,35 @@ public static class EntityQueryJobs
             batch.Accesses.Clear();
             return batch;
         }
+    }
+
+    private static Batch CaptureQueries<TWork>(World world, in TWork work, int index, Workspace workspace, int batchIndex,
+        QueryReadResources? resources) where TWork : struct, IEntityQueryWork
+    {
+        Batch batch = workspace.Get(batchIndex, work.QueryCount);
+        batch.Topology = world.PublishedTopologyRevision;
+        batch.Structure = world.PublishedStructureEpoch;
+        for (int query = 0; query < work.QueryCount; query++)
+        {
+            EntityQueryData data = batch.Queries[query];
+            data.Set(world, work.GetQuery(index, query), work.GetEntities(index, query));
+            batch.AddRanges(world, data, resources);
+        }
+        return batch;
+    }
+
+    private static uint SetVersion(World world, Workspace workspace, ReadOnlySpan<EntityQueryData> queries)
+    {
+        bool writes = false;
+        foreach (EntityQueryData query in queries) writes |= query.Definition.CanWrite;
+        uint version = writes ? workspace.Version(world) : 0;
+        SetVersion(world, version, queries);
+        return version;
+    }
+
+    private static void SetVersion(World world, uint version, ReadOnlySpan<EntityQueryData> queries)
+    {
+        foreach (EntityQueryData query in queries) query.Data = new(world, query.Data.State, 0, version);
     }
 
     private sealed class Batch
@@ -129,16 +162,8 @@ public static class EntityQueryJobs
 
         internal void Capture(int index)
         {
-            Batch batch = workspace.Get(index, work.QueryCount);
-            batch.Topology = world.PublishedTopologyRevision;
-            batch.Structure = world.PublishedStructureEpoch;
+            Batch batch = CaptureQueries(world, in work, index, workspace, index, resources);
             batch.Accesses.AddRange(CaptureAccesses);
-            for (int query = 0; query < work.QueryCount; query++)
-            {
-                EntityQueryData data = batch.Queries[query];
-                data.Set(world, work.GetQuery(index, query), work.GetEntities(index, query));
-                batch.AddRanges(world, data, resources);
-            }
             var run = new RunBatch<TWork, TJob>(this, index);
             if (resources is null)
                 JobSystem.Schedule(run, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(batch.Accesses));
@@ -155,9 +180,7 @@ public static class EntityQueryJobs
                 JobSystem.Schedule(new CaptureBatch<TWork, TJob>(this, index), CaptureAccesses);
                 return;
             }
-            uint version = batch.Queries.Any(static query => query.Definition.CanWrite) ? workspace.Version(world) : 0;
-            foreach (EntityQueryData query in batch.Queries)
-                query.Data = new(world, query.Data.State, 0, version);
+            SetVersion(world, workspace, batch.Queries);
             var iteration = world.ActiveStructureRoot.Iteration;
             iteration.BeginQueryBorrow();
             try
