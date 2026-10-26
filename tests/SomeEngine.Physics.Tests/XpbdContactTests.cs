@@ -169,8 +169,10 @@ public sealed class XpbdContactTests
         world.ReleaseQuery(bodies);
     }
 
-    [Fact]
-    public void BuiltInAndUserForcesFollowTheChangingNodeDirectionsDuringContactRecovery()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void BuiltInAndUserForcesFollowTheChangingNodeDirectionsDuringContactRecovery(bool graph)
     {
         using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
         using var world = WorldJobs.CreateWorld(scheduler: scheduler);
@@ -204,11 +206,30 @@ public sealed class XpbdContactTests
             AvbdConstraintGroups.Combine(new AvbdConstraints<ContactPoint, AvbdContactMath>(contacts), internalForces), 1, 0, 0);
         var xpbd = SolveXpbd.Create(world, bodies, new XpbdConstraints<XpbdLength, XpbdLengthProjection>(lengths)
             .And(new XpbdConstraints<XpbdBend, XpbdBendProjection>(bends)).And(new XpbdConstraints<HeightTarget, HeightProjection>(heights)), 1);
-        var stages = new PredictBodies(Vector3.Zero, 64).Then(new InitializeContactResponses(world, bodies, contacts))
-            .Then(avbd.Initialize()).Then(xpbd.Initialize()).Then(Alternate(avbd.Iterate(1), xpbd.Iterate(1), 64))
-            .Then(new UpdateBodyVelocities(64));
-
-        PhysicsSimulation.Create(world, QueryDefinition.Empty, stages, 1).Schedule(0, 0, 1).Complete();
+        if (graph)
+        {
+            var settings = new PhysicsGraphSettings(PhysicsGraphOrder.Colors, 0, 8, 1, 2, false);
+            var forces = AvbdGraphConstraints.Combine(AvbdGraphConstraints.Combine(
+                new XpbdForces<XpbdLength, XpbdLengthProjection>(lengths), new XpbdForces<XpbdBend, XpbdBendProjection>(bends)),
+                new XpbdForces<HeightTarget, HeightProjection>(heights));
+            using var graphAvbd = SolveAvbdGraph.Create(world, bodies,
+                AvbdGraphConstraints.Combine(new AvbdGraphConstraints<ContactPoint, AvbdContactMath>(contacts), forces), settings, 1, 0, 0);
+            using var graphXpbd = SolveXpbdGraph.Create(world, bodies, XpbdGraphConstraints.Combine(
+                XpbdGraphConstraints.Combine(new XpbdGraphConstraints<XpbdLength, XpbdLengthProjection>(lengths),
+                    new XpbdGraphConstraints<XpbdBend, XpbdBendProjection>(bends)),
+                new XpbdGraphConstraints<HeightTarget, HeightProjection>(heights)), settings, 1);
+            var stages = new PredictBodies(Vector3.Zero, 64).Then(new InitializeContactResponses(world, bodies, contacts))
+                .Then(graphAvbd.Initialize()).Then(graphXpbd.Initialize())
+                .Then(Alternate(graphAvbd.Iterate(1), graphXpbd.Iterate(1), 64)).Then(new UpdateBodyVelocities(64));
+            PhysicsSimulation.Create(world, QueryDefinition.Empty, stages, 1).Schedule(0, 0, 1).Complete();
+        }
+        else
+        {
+            var stages = new PredictBodies(Vector3.Zero, 64).Then(new InitializeContactResponses(world, bodies, contacts))
+                .Then(avbd.Initialize()).Then(xpbd.Initialize()).Then(Alternate(avbd.Iterate(1), xpbd.Iterate(1), 64))
+                .Then(new UpdateBodyVelocities(64));
+            PhysicsSimulation.Create(world, QueryDefinition.Empty, stages, 1).Schedule(0, 0, 1).Complete();
+        }
 
         Vector3 a = world.Read<BodyPose>(first).Position;
         Vector3 b = world.Read<BodyPose>(middle).Position;
