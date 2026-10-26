@@ -82,6 +82,11 @@ public readonly struct SolveAvbdGraph<TConstraints> : IPhysicsStage, IDisposable
         public bool Execute(scoped EntityQueryGroup group)
         {
             if (solve._queries.ReadMembers()) return false;
+            solve._graph.Begin();
+            solve._queries.ReadBodies(solve._graph);
+            var initialGraph = new PhysicsConstraintGraphBuilder(solve._graph);
+            solve._constraints.ReadGraph(in context, solve._queries.Reads, 0, ref initialGraph);
+            if (solve._graph.Finish()) return false;
             EntityQueryViews global = group.Get(0);
             var bodies = new PhysicsBodies(global.Get(0), global.Get(1), global.Get(2));
             if (initialize)
