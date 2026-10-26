@@ -165,7 +165,8 @@ Body 位置与速度沿共同 `DeviceBodyResults` 返回原实体。
 主体和接触数值缓存、足迹参与索引、加载权重与局部响应方程由该资源持有。
 主体仍使用同一份 `DeviceBodies`，接触几何和材料仍使用共同 contact header/side。
 支撑主体同时核对原查询中的绑定、实际实体代次与共同预测阶段的 O(1) 主体成员标记。
-`InitializeBuffers()` 将派生工作 buffer 转入共同 UAV 访问状态，接在支撑历史上传之后、首次支撑求解之前。
+`InitializeBuffers()` 将派生工作 buffer 转入共同 UAV 访问状态，并在首次调用时清零主体支撑缓存。
+它接在支撑历史上传之后、首次支撑活动读取或求解之前。
 
 [支撑分类与加载路径](../../../assets/Shaders/physics_contact_support_build.slang) 沿原静止判定、
 无限法向刚度、摩擦锥、间距和滑移条件选择支撑。
@@ -183,3 +184,5 @@ Body 位置与速度沿共同 `DeviceBodyResults` 返回原实体。
 `DeviceContactSupportAvbdConstraints` 提供支撑 Body 的同一图参与和响应修正。
 原 AVBD 接触乘子保存在自身 buffer，支撑贡献保存在自身对应表示。
 该具体组合的组初始化与组更新入口分别调用 `initializeDeviceContactSupports` 和 `updateDeviceContactSupports`。
+这两个入口接受具体 `IDeviceBodySelection`：传入 `DeviceAwakeBodies` 时，足迹重建、载荷交接和辅助力保留
+仅更新活动参与分量，休眠接触沿原数值表示保留其支撑力。原单参数入口选择全部已绑定主体。

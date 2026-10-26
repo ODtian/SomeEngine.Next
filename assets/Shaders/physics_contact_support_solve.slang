@@ -123,17 +123,17 @@ void correctDeviceContactSupport(uint body,DeviceAvbdStep context,DeviceAvbdEqua
     }
     DeviceSupportBodyStates[body]=center;
 }
-void updateDeviceContactSupports(DeviceAvbdStep context)
+void updateDeviceContactSupports<T : IDeviceBodySelection>(DeviceAvbdStep context,T bodies)
 {
-    if(deviceSupportUpdateMotion()) buildDeviceContactSupports(context);
+    if(deviceSupportUpdateMotion(bodies)) buildDeviceContactSupports(context,bodies);
     for(uint row=0;row<ContactSupportSettings.contacts;row++)
     {
-        if(!deviceSupportContactSelected(row)) continue;
+        if(!deviceSupportContactRuns(row,bodies)) continue;
         DeviceContactSupportState state=DeviceSupportContactStates[row]; state.load=state.reaction; DeviceSupportContactStates[row]=state;
     }
     for(uint body=0;body<ContactSupportSettings.bodies;body++)
     {
-        if(!deviceSupportBodySelected(body)) continue;
+        if(!deviceSupportBodySelected(body)||!bodies.contains(body)) continue;
         DeviceBodySupportState state=DeviceSupportBodyStates[body]; if(state.enabled==0) continue;
         for(uint index=0;index<state.loadCount;index++)
         {
@@ -145,6 +145,7 @@ void updateDeviceContactSupports(DeviceAvbdStep context)
     for(uint index=DeviceSupportOrder[0];index>0;index--)
     {
         uint row=DeviceSupportOrder[index];
+        if(!deviceSupportContactRuns(row,bodies)) continue;
         DeviceContactSupportState state=DeviceSupportContactStates[row];
         DeviceContactResponseState response=DeviceContactResponses[row];
         DeviceContactConstraint point=DeviceContacts[row];
@@ -163,4 +164,6 @@ void updateDeviceContactSupports(DeviceAvbdStep context)
         }
     }
 }
+void updateDeviceContactSupports(DeviceAvbdStep context)
+{ DeviceAllEquationBodies bodies; updateDeviceContactSupports(context,bodies); }
 #endif
