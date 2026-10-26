@@ -50,9 +50,9 @@ public sealed partial class DeviceXpbdTests
         using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
         using var results = new DeviceBodyResults(backend, device, bodies);
         using var projectLengths = new DeviceXpbdProjection<DeviceLengthConstraint, float>(backend, device, world,
-            lengthRows, bodies, lengths, lengthMultipliers, CompileLength(), 64);
+            lengthRows, bodies, dynamics, lengths, lengthMultipliers, CompileLength(), 64);
         using var projectBends = new DeviceXpbdProjection<DeviceBendConstraint, float>(backend, device, world,
-            bendRows, bodies, bends, bendMultipliers, CompileBend(), 64);
+            bendRows, bodies, dynamics, bends, bendMultipliers, CompileBend(), 64);
 
         BoneTransform Bone(Vector3 position) => new() { Translation = position, Rotation = Quaternion.Identity, Scale = Vector3.One };
         var skeleton = new Skeleton([-1, -1], [Bone(new(2, 0, 0)), Bone(Vector3.UnitX)], [1, 2]);

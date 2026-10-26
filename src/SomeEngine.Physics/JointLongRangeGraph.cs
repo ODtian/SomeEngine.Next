@@ -22,7 +22,7 @@ internal sealed class JointLongRangeGraph
     private readonly Dictionary<Entity, (float Distance, float Largest)> _distances = [];
     private readonly PriorityQueue<Entity, float> _queue = new();
 
-    internal void Refresh(scoped PhysicsQueryRows joints, scoped PhysicsBodies bodies, in PhysicsStepContext context, int levels)
+    internal bool Refresh(scoped PhysicsQueryRows joints, scoped PhysicsBodies bodies, in PhysicsStepContext context, int levels)
     {
         _nodes.Clear();
         _currentVersions.Clear();
@@ -38,7 +38,7 @@ internal sealed class JointLongRangeGraph
             _currentVersions.Add(version);
         }
         changed |= _nodes.Count != _versions.Count;
-        if (!changed) return;
+        if (!changed) return false;
         _versions.Clear();
         for (int index = 0; index < _nodes.Count; index++) _versions.Add(_nodes[index], _currentVersions[index]);
         BuildSegments(joints, bodies);
@@ -79,6 +79,7 @@ internal sealed class JointLongRangeGraph
             });
         }
         _ranges.Clear();
+        return true;
     }
 
     private void BuildSegments(scoped PhysicsQueryRows joints, scoped PhysicsBodies bodies)
