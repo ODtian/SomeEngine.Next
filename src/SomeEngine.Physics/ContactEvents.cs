@@ -1,5 +1,6 @@
 using System.Numerics;
 using SomeEngine.ECS;
+using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Relations;
@@ -165,7 +166,12 @@ internal sealed class ContactEventData<TScope, TSource> : IDisposable
                 if (!destroyed && !data._members.Contains(row.Entity)) continue;
                 ref ContactEventState<TScope> state = ref row.ReadWrite<ContactEventState<TScope>>();
                 if (state.Touching) data.End(ref state, in context);
-                if (destroyed) _commands.Remove<ContactEventState<TScope>>(row.Entity);
+                if (destroyed)
+                {
+                    _commands.Remove<ContactEventState<TScope>>(row.Entity);
+                    if (row.Has<Removed<Outgoing<ContactParticipant>>>())
+                        _commands.Remove<Removed<Outgoing<ContactParticipant>>>(row.Entity);
+                }
             }
         }
     }
