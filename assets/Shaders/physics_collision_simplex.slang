@@ -26,42 +26,30 @@ float3 closestDeviceTriangle(float3 a, float3 b, float3 c, out float3 weights)
 {
     float3 ab = b - a;
     float3 ac = c - a;
-    float3 ap = -a;
-    float d1 = dot(ab, ap);
-    float d2 = dot(ac, ap);
-    if (d1 <= 0 && d2 <= 0) { weights = float3(1, 0, 0); return a; }
-    float3 bp = -b;
-    float d3 = dot(ab, bp);
-    float d4 = dot(ac, bp);
-    if (d3 >= 0 && d4 <= d3) { weights = float3(0, 1, 0); return b; }
-    float vc = d1 * d4 - d3 * d2;
-    if (vc <= 0 && d1 >= 0 && d3 <= 0)
+    float3 normal = cross(ab, ac);
+    float squared = dot(normal, normal);
+    if (squared > 0)
     {
-        float v = d1 / (d1 - d3);
-        weights = float3(1 - v, v, 0);
-        return a + ab * v;
+        float second = dot(cross(-a, ac), normal) / squared;
+        float third = dot(cross(ab, -a), normal) / squared;
+        weights = float3(1 - second - third, second, third);
+        // Face projection keeps the closest vector in the normal direction at small separations.
+        if (all(weights >= 0)) return normal * (dot(a, normal) / squared);
     }
-    float3 cp = -c;
-    float d5 = dot(ab, cp);
-    float d6 = dot(ac, cp);
-    if (d6 >= 0 && d5 <= d6) { weights = float3(0, 0, 1); return c; }
-    float vb = d5 * d2 - d1 * d6;
-    if (vb <= 0 && d2 >= 0 && d6 <= 0)
+    float2 edgeWeights;
+    float3 closest = closestDeviceSegment(a, b, edgeWeights);
+    weights = float3(edgeWeights, 0);
+    float3 candidate = closestDeviceSegment(a, c, edgeWeights);
+    if (dot(candidate, candidate) < dot(closest, closest))
     {
-        float v = d2 / (d2 - d6);
-        weights = float3(1 - v, 0, v);
-        return a + ac * v;
+        closest = candidate; weights = float3(edgeWeights.x, 0, edgeWeights.y);
     }
-    float va = d3 * d6 - d5 * d4;
-    if (va <= 0 && d4 - d3 >= 0 && d5 - d6 >= 0)
+    candidate = closestDeviceSegment(b, c, edgeWeights);
+    if (dot(candidate, candidate) < dot(closest, closest))
     {
-        float v = (d4 - d3) / (d4 - d3 + d5 - d6);
-        weights = float3(0, 1 - v, v);
-        return b + (c - b) * v;
+        closest = candidate; weights = float3(0, edgeWeights);
     }
-    float inverse = 1 / (va + vb + vc);
-    weights = float3(1 - (vb + vc) * inverse, vb * inverse, vc * inverse);
-    return a + ab * weights.y + ac * weights.z;
+    return closest;
 }
 
 float3 closestDeviceSimplex(DeviceSupportPoint points[4], int count, float3 target, out float4 weights)
