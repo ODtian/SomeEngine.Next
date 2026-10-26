@@ -99,7 +99,8 @@ internal sealed class ReadScenePhysicsResults : IDisposable
     private readonly World _world;
     private readonly PhysicsSceneSimulation _scene;
     private readonly QueryHandle _bodies, _contacts;
-    private int _entitiesNow, _entityPeak, _contactsNow, _contactPeak, _awakeNow, _awakePeak, _liveJoints;
+    private readonly HashSet<Entity>? _readbackBodies;
+    private int _entitiesNow, _entityPeak, _contactsNow, _contactPeak, _awakeNow, _awakePeak, _liveJoints, _islandPeak;
     private float _jointGap, _angularGap, _rangeGap, _penetration, _speed, _finalSpeed, _quaternionError, _dynamicMass;
     private float _angularSpeed, _finalAngularSpeed;
     private Vector3 _centerOfMass, _linearMomentum, _minimumBodyCenter, _maximumBodyCenter;
@@ -107,8 +108,11 @@ internal sealed class ReadScenePhysicsResults : IDisposable
     public ReadScenePhysicsResults(World world, PhysicsSceneSimulation scene)
     {
         _world = world; _scene = scene;
-        _bodies = world.Query(new QueryDefinitionBuilder().All<ScenePhysicsBody>().Read<BodyPose>().Read<BodyMass>()
-            .Read<BodyVelocity>().Read<BodyActivity>());
+        var bodyResults = new QueryDefinitionBuilder().All<ScenePhysicsBody>().Read<BodyPose>().Read<BodyMass>()
+            .Read<BodyVelocity>().Read<BodyActivity>();
+        if (scene.DeviceStatistics is not null) bodyResults.All<SceneReadbackBody>();
+        _bodies = world.Query(bodyResults);
+        if (scene.ReadbackBodies.Length < scene.Bodies.Length) _readbackBodies = scene.ReadbackBodies.ToArray().ToHashSet();
         _contacts = world.Query(new QueryDefinitionBuilder().Any<ScenePhysicsContact>().Any<ScenePhysicsBody>().Any<ContactParticipant>()
             .Optional<ContactPoint>(QueryAccess.Read).Optional<BodyPose>(QueryAccess.Read)
             .Optional<SomeEngine.ECS.Relations.DirectedRelationEndpoints<ContactParticipant>>(QueryAccess.Read)
@@ -153,13 +157,12 @@ internal sealed class ReadScenePhysicsResults : IDisposable
             }
         });
         _centerOfMass /= _dynamicMass;
-        _world.ExecuteQuery(_contacts, rows =>
+        if (_scene.DeviceStatistics is null) _world.ExecuteQuery(_contacts, rows =>
         {
             foreach (QueryRow row in rows.Rows)
             {
                 if (!row.TryReadRef<ContactPoint>(out var geometry)) continue;
                 _contactsNow++;
-                if (_scene.ContactPenetration is not null) continue;
                 ref readonly ContactPoint point = ref geometry.Value;
                 ReadOnlySpan<ContactBodyLink> links = row.ReadBuffer<ContactBodyLink>().AsSpan();
                 Vector3 delta = default;
@@ -176,13 +179,19 @@ internal sealed class ReadScenePhysicsResults : IDisposable
                 _penetration = MathF.Max(_penetration, -point.Separation - Vector3.Dot(point.Normal, delta - point.BodyAnchorDelta));
             }
         });
-        if (_scene.ContactPenetration is { } readPenetration)
-            _penetration = MathF.Max(_penetration, readPenetration());
+        if (_scene.DeviceStatistics is { } statistics)
+        {
+            _penetration = MathF.Max(_penetration, statistics.MaximumPenetration);
+            _awakeNow = statistics.AwakeBodies;
+            _contactsNow = statistics.ContactPoints;
+            _islandPeak = Math.Max(_islandPeak, statistics.LargestIslandBodies);
+        }
         foreach (Entity entity in _scene.Joints.Span)
         {
             if (!_world.IsAlive(entity)) continue;
             _liveJoints++;
             var ends = _world.GetDirectedRelationEndpoints(new SomeEngine.ECS.Relations.RelationEdge<JointConstraint>(entity));
+            if (_readbackBodies is not null && (!_readbackBodies.Contains(ends.Source) || !_readbackBodies.Contains(ends.Target))) continue;
             JointConstraint joint = _world.Read<JointConstraint>(entity);
             BodyPose first = _world.Read<BodyPose>(ends.Source), second = _world.Read<BodyPose>(ends.Target);
             _jointGap = MathF.Max(_jointGap, Vector3.Distance(first.Position + Vector3.Transform(joint.SourceFrame.Position, first.Rotation),
@@ -195,6 +204,7 @@ internal sealed class ReadScenePhysicsResults : IDisposable
         foreach (Entity entity in _scene.DistanceRanges.Span)
         {
             var ends = _world.GetUndirectedRelationEndpoints(new SomeEngine.ECS.Relations.RelationEdge<DistanceRange>(entity));
+            if (_readbackBodies is not null && (!_readbackBodies.Contains(ends.EndpointA) || !_readbackBodies.Contains(ends.EndpointB))) continue;
             DistanceRange range = _world.Read<DistanceRange>(entity);
             BodyPose first = _world.Read<BodyPose>(ends.EndpointA), second = _world.Read<BodyPose>(ends.EndpointB);
             float distance = Vector3.Distance(first.Position + Vector3.Transform(range.FirstAnchor, first.Rotation),
@@ -207,13 +217,20 @@ internal sealed class ReadScenePhysicsResults : IDisposable
 
     public JsonObject Describe()
     {
-        Vector3 last = _world.Read<BodyPose>(_scene.Bodies.Span[^1]).Position;
-        Vector3 velocity = _world.Read<BodyVelocity>(_scene.Bodies.Span[^1]).Linear;
-        Vector3 angularVelocity = _world.Read<BodyVelocity>(_scene.Bodies.Span[^1]).Angular;
+        Entity lastBody = _scene.ReadbackBodies.Span[^1];
+        Vector3 last = _world.Read<BodyPose>(lastBody).Position;
+        Vector3 velocity = _world.Read<BodyVelocity>(lastBody).Linear;
+        Vector3 angularVelocity = _world.Read<BodyVelocity>(lastBody).Angular;
         return new JsonObject
         {
             ["Entities"] = _entitiesNow, ["PeakEntities"] = _entityPeak,
             ["BodyCount"] = _scene.Bodies.Length, ["LiveJoints"] = _liveJoints, ["DistanceRanges"] = _scene.DistanceRanges.Length,
+            ["ReadbackBodyCount"] = _scene.ReadbackBodies.Length,
+            ["BodyMotionScope"] = _readbackBodies is null ? "Every scene body" : "Selected readback bodies",
+            ["ConstraintErrorScope"] = _readbackBodies is null ? "Every scene constraint" : "Constraints between selected readback bodies",
+            ["LargestConnectedBodyCount"] = _scene.DeviceLargestIslandBodies,
+            ["PeakConnectedBodyCount"] = _scene.DeviceStatistics is null ? null : _islandPeak,
+            ["LastBodyEntityIndex"] = lastBody.Index,
             ["ContactPoints"] = _contactsNow, ["PeakContactPoints"] = _contactPeak, ["AwakeBodies"] = _awakeNow, ["PeakAwakeBodies"] = _awakePeak,
             ["MaximumJointAnchorGapMeters"] = _jointGap, ["MaximumDistanceViolationMeters"] = _rangeGap,
             ["MaximumAngularLockErrorRadians"] = _angularGap, ["MaximumQuaternionSquaredNormError"] = _quaternionError,
