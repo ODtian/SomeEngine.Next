@@ -38,6 +38,10 @@ RWStructuredBuffer<uint> ConstraintGraphAdjacency;
 RWStructuredBuffer<uint> ConstraintGraphCounts;
 RWStructuredBuffer<uint> ConstraintGraphScratch;
 RWStructuredBuffer<uint> ConstraintGraphIslands;
+struct DeviceGraphBodies : IDeviceBodySelection
+{
+    bool contains(uint body) { return ConstraintGraphParents[body]!=0xffffffff; }
+};
 bool deviceConstraintSelected(DeviceConstraintMetadata metadata, uint2 selected)
 { return metadata.active != 0 && metadata.entityIndex == selected.x && metadata.entityGeneration == selected.y; }
 
