@@ -29,6 +29,8 @@ public sealed partial class PhysicsSceneExample(PhysicsSceneDescription descript
             ContactSupports = new ContactSupportSettings(description.Dimension == 2 ? Vector3.UnitY : Vector3.UnitZ,
                 1e-5f, 1e-4f, 1e-4f, 1e-4f, .99f, .99f, 1e-6f),
             ContactDistance = .02f,
+            ContactNormalPenalty = 100,
+            ContactTangentPenalty = 100,
             Graph = new PhysicsGraphSettings(PhysicsGraphOrder.Islands, 16, 16, 64, 4, false),
             Timings = timings,
         });
@@ -89,7 +91,8 @@ public sealed partial class PhysicsSceneExample(PhysicsSceneDescription descript
             ["Solver"] = new JsonObject
             {
                 ["MultiplierRetention"] = settings.MultiplierRetention, ["InitialErrorFraction"] = 0,
-                ["ContactNormalPenalty"] = 1e6f, ["ContactTangentPenalty"] = 1e6f,
+                ["ContactNormalPenalty"] = settings.ContactNormalPenalty, ["ContactTangentPenalty"] = settings.ContactTangentPenalty,
+                ["FrictionRegularizationSpeed"] = settings.FrictionRegularizationSpeed,
                 ["JointPenalty"] = 1e6f, ["DistanceRangePenalty"] = 1e6f,
                 ["MatchDistance"] = .02f, ["MinimumNormalDot"] = .99f, ["WarmStart"] = true,
             },
@@ -135,6 +138,12 @@ public sealed partial class PhysicsSceneExample(PhysicsSceneDescription descript
             }).ToArray()),
         };
         if (_devicePhysics) return CreateDeviceSimulation(world, description, data, settings);
+        JsonObject contactMetric = _workload["Solver"]!.AsObject();
+        contactMetric["ContactPenaltyConditioning"] = "Inverse squared step and contact Jacobian mobility";
+        contactMetric["ContactPenaltyMinimum"] = SceneContactPenalty.Minimum;
+        contactMetric["ContactPenaltyMaximum"] = SceneContactPenalty.Maximum;
+        contactMetric["ContactPenaltyIncreasePerMeter"] = SceneContactPenalty.IncreasePerMeter;
+        contactMetric["ContactPressureLengthScale"] = SceneContactPenalty.PressureLengthScale;
         var events = new CountScenePhysicsEvents(_events);
         JobResourceAccess[] eventAccesses = [JobResourceAccess.Write(WorldJobs.GetScheduler(world).GetResourceToken(_events))];
         return description.Dimension == 2
