@@ -24,6 +24,8 @@
 
 角速度的陀螺项坐标变换使用 `Vector4.Transform` 的 `w=0` 方向输入，保持零角速度；相同起止四元数的速度重建直接得到零角速度。原静置空间金字塔沿 [场景活动行为](../../../tests/SomeEngine.Runtime.Tests/PhysicsSceneSupportActivityTests.cs) 验证进入睡眠后各完成步持续保持睡眠。
 
+`InitializeContactResponses` 持有包含可选 `BodyActivity` 的只读主体查询，并在 `Dispose` 时释放。接触的动态参与者全部睡眠时，当前 `ContactResponse` 保留已解出的世界力，时间区间推进到当前子步。AVBD 图的实际主体工作范围为空时，求解阶段直接完成，原乘子、方程和支撑状态继续保留。
+
 `Activity(settings, events)` 可接入 [完成步事件](Events.md)，将每次 Sleep/Wake 转换连同原子步、时刻写入该步输出。
 
 活动数学参考项目研究分支 `codex/job331-380` 的 `Native/Islands.cpp` 中 `wakeBody`、`researchBuildIslands` 和 `finishIslandStep`：动态连通传播、速度与尺度角速度、位移及安静时间使用同样的物理量。原分支和本 C# 实现使用仓库 Apache 2.0 LICENSE。
