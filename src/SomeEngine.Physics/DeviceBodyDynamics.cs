@@ -22,8 +22,9 @@ public sealed class DeviceBodyDynamics : IDisposable
     private readonly QueryHandle _members;
     private readonly DeviceBodies _bodies;
     private readonly int _threadsPerGroup;
-    private readonly Buffer _indices, _parameters;
+    private readonly Buffer _indices, _membership, _parameters;
     private readonly BufferSrv _indicesView;
+    private readonly BufferSrv _membershipView;
     private readonly BufferCbv _parametersView;
     private readonly CommandContext _commands;
     private readonly Pipeline[] _pipelines;
@@ -44,7 +45,10 @@ public sealed class DeviceBodyDynamics : IDisposable
         _indices = backend.CreateBuffer(device, new((ulong)bodies.Capacity * 4, BufferUsages.ShaderRead,
             "Selected device body indices"), MemoryType.Upload);
         _parameters = backend.CreateBuffer(device, new(256, BufferUsages.Constant, "Device body step"), MemoryType.Upload);
+        _membership = backend.CreateBuffer(device, new((ulong)bodies.Capacity * 4, BufferUsages.ShaderRead,
+            "Selected body membership"), MemoryType.Upload);
         _indicesView = backend.CreateBufferSrv(device, new(_indices, new(0, _indices.Info.Size), StructureStride: 4));
+        _membershipView = backend.CreateBufferSrv(device, new(_membership, new(0, _membership.Info.Size), StructureStride: 4));
         _parametersView = backend.CreateBufferCbv(device, new(_parameters, new(0, 256)));
         _commands = backend.CreateCommandContext(device, new(QueueType.Compute, 0, 1, Label: "Device body dynamics"));
         ComputePipelineDesc[] descriptions = kernels.GyroscopicTorque is { } gyro
@@ -53,10 +57,9 @@ public sealed class DeviceBodyDynamics : IDisposable
         _layouts = descriptions.Select(kernel => kernel.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null).ToArray();
         var bindings = new Dictionary<string, ResourceBinding[]>
         {
-            ["BodyStep"] = [ResourceBinding.ConstantBuffer(_parametersView)],
-            ["DeviceBodyIndices"] = [ResourceBinding.ReadOnlyBuffer(_indicesView)],
             ["DeviceBodyStates"] = [ResourceBinding.WritableBuffer(bodies.View)],
         };
+        AddSelectionBindings(bindings);
         _bindings = _layouts.Select(layout => DeviceCollisionGrid.OrderBindings(layout, bindings)).ToArray();
     }
 
@@ -68,9 +71,11 @@ public sealed class DeviceBodyDynamics : IDisposable
     {
         bindings.Add("BodyStep", [ResourceBinding.ConstantBuffer(_parametersView)]);
         bindings.Add("DeviceBodyIndices", [ResourceBinding.ReadOnlyBuffer(_indicesView)]);
+        bindings.Add("DeviceBodyMembership", [ResourceBinding.ReadOnlyBuffer(_membershipView)]);
     }
     internal JobResourceAccess[] GetSelectionReadAccesses(Scheduler scheduler) =>
         [JobResourceAccess.Read(scheduler.GetResourceToken(_parameters), 0, 256),
+            JobResourceAccess.Read(scheduler.GetResourceToken(_membership), 0, (long)_membership.Info.Size),
             JobResourceAccess.Read(scheduler.GetResourceToken(_indices), 0, (long)_indices.Info.Size)];
 
     internal JobHandle Schedule(in PhysicsStepContext context, Vector3 acceleration, int kernel, JobHandle dependency)
@@ -78,6 +83,7 @@ public sealed class DeviceBodyDynamics : IDisposable
         Scheduler scheduler = WorldJobs.GetScheduler(context.World);
         JobResourceAccess[] accesses = [.. _queryAccesses, _bodies.GetWriteAccess(scheduler),
             JobResourceAccess.Write(scheduler.GetResourceToken(_indices), 0, (long)_indices.Info.Size),
+            JobResourceAccess.Write(scheduler.GetResourceToken(_membership), 0, (long)_membership.Info.Size),
             JobResourceAccess.Write(scheduler.GetResourceToken(_parameters), 0, 256),
             JobResourceAccess.Write(scheduler.GetResourceToken(_commands))];
         return DevicePhysicsJobs.Schedule(scheduler, new Dynamics(this, context, acceleration, kernel), accesses, dependency);
@@ -87,12 +93,15 @@ public sealed class DeviceBodyDynamics : IDisposable
     {
         int count = 0;
         using (MappedBuffer mapping = _backend.Map(_indices, MapType.Write, BufferRange.Whole))
+        using (MappedBuffer membership = _backend.Map(_membership, MapType.Write, BufferRange.Whole))
         {
-            var selection = new Selection(_bodies, mapping);
+            membership.Bytes.Clear();
+            var selection = new Selection(_bodies, mapping, membership);
             _world.ExecuteReadQuery(_members, ref selection,
                 static (scoped QueryCursor rows, ref Selection selected) => selected.Read(rows));
             count = selection.Count;
             mapping.Flush(new(0, (ulong)count * 4));
+            membership.Flush(membership.Range);
         }
         var parameters = new BodyStep((uint)count, (float)context.Duration, (uint)context.Substep,
             acceleration, context.Number, context.EndTime);
@@ -111,7 +120,7 @@ public sealed class DeviceBodyDynamics : IDisposable
         return _backend.Submit(_backend.GetQueue(_device, QueueType.Compute), new([], [], [recorded], [], []));
     }
 
-    private struct Selection(DeviceBodies bodies, MappedBuffer mapping)
+    private struct Selection(DeviceBodies bodies, MappedBuffer mapping, MappedBuffer membership)
     {
         internal int Count;
         internal void Read(scoped QueryCursor rows)
@@ -120,7 +129,10 @@ public sealed class DeviceBodyDynamics : IDisposable
             {
                 DeviceBodyBinding binding = row.Read<DeviceBodyBinding>();
                 if (ReferenceEquals(binding.Bodies, bodies))
+                {
                     MemoryMarshal.Cast<byte, uint>(mapping.Bytes)[Count++] = (uint)binding.Index;
+                    MemoryMarshal.Cast<byte, uint>(membership.Bytes)[binding.Index] = 1;
+                }
             }
         }
     }
@@ -150,7 +162,8 @@ public sealed class DeviceBodyDynamics : IDisposable
     {
         _world.ReleaseQuery(_members);
         foreach (Pipeline pipeline in _pipelines) pipeline.Dispose();
-        _commands.Dispose(); _parametersView.Dispose(); _indicesView.Dispose(); _parameters.Dispose(); _indices.Dispose();
+        _commands.Dispose(); _parametersView.Dispose(); _indicesView.Dispose(); _membershipView.Dispose();
+        _parameters.Dispose(); _indices.Dispose(); _membership.Dispose();
     }
 }
 
