@@ -62,6 +62,7 @@ struct DeviceJointBoundAvbdConstraints : IDeviceAvbdConstraints
         deviceEvaluateJointBound(DeviceJointBoundValues[row],state,deviceJointBoundGeometry(row,false).distance,force,penalty,multiplier);
         state.multiplier=multiplier; DeviceJointBoundStates[row]=state;
     }
+    override bool adjustsBody() { return false; }
     void adjust(uint body,DeviceAvbdStep context,DeviceAvbdEquation equation,inout float3 translation,inout float3 rotation) { }
 };
 #endif

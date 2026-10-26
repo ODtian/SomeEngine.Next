@@ -14,6 +14,7 @@ interface IDeviceAvbdConstraints : IDeviceConstraintBodies
     void initialize(uint row,DeviceAvbdStep context);
     void accumulate(uint row,uint body,DeviceAvbdStep context,inout DeviceAvbdEquation equation);
     void updateDuals(uint row,DeviceAvbdStep context);
+    bool adjustsBody() { return true; }
     void adjust(uint body,DeviceAvbdStep context,DeviceAvbdEquation equation,inout float3 translation,inout float3 rotation);
 };
 struct DeviceAvbdConstraintGroups<TFirst : IDeviceAvbdConstraints,TSecond : IDeviceAvbdConstraints> : IDeviceAvbdConstraints
@@ -32,6 +33,7 @@ struct DeviceAvbdConstraintGroups<TFirst : IDeviceAvbdConstraints,TSecond : IDev
     { if(row<first.count()) first.accumulate(row,body,context,equation); else second.accumulate(row-first.count(),body,context,equation); }
     void updateDuals(uint row,DeviceAvbdStep context)
     { if(row<first.count()) first.updateDuals(row,context); else second.updateDuals(row-first.count(),context); }
+    override bool adjustsBody() { return first.adjustsBody()||second.adjustsBody(); }
     void adjust(uint body,DeviceAvbdStep context,DeviceAvbdEquation equation,inout float3 translation,inout float3 rotation)
     { first.adjust(body,context,equation,translation,rotation); second.adjust(body,context,equation,translation,rotation); }
 };
@@ -91,9 +93,11 @@ void updateDeviceAvbdBody<T : IDeviceAvbdConstraints>(uint index,T constraints)
     uint bodyIndex=ConstraintGraphBodyOrder[range.x+index], equationIndex=DeviceAvbdEquationIndices[bodyIndex];
     if(equationIndex==0xffffffff) return;
     DeviceBodyState body=DeviceBodyStates[bodyIndex];
-    DeviceAvbdEquation equation=DeviceAvbdBodyEquations[equationIndex];
     uint first=ConstraintGraphBodyOffsets[bodyIndex],end=ConstraintGraphBodyOffsets[bodyIndex+1];
     uint constraintRows=end-first;
+    if(constraintRows==0&&!constraints.adjustsBody()&&
+        all(bodyCenterOfMass(body)==body.predictedCenterOfMass)&&all(body.rotation==body.predictedRotation)) return;
+    DeviceAvbdEquation equation=DeviceAvbdBodyEquations[equationIndex];
     for(uint local=0;local<AvbdStep.bodyIterations;local++)
     {
         if(deviceAvbdCanReuseInertia(equation,body,AvbdStep.duration,constraintRows))

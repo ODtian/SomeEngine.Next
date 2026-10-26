@@ -159,6 +159,7 @@ struct DeviceContactAvbdConstraints : IDeviceAvbdConstraints
     { deviceAccumulateAvbdContact(row,bodyIndex,context,float3(0),equation); }
     void updateDuals(uint row,DeviceAvbdStep context)
     { deviceUpdateAvbdContact(row,context,float3(0)); }
+    override bool adjustsBody() { return false; }
     void adjust(uint body,DeviceAvbdStep context,DeviceAvbdEquation equation,inout float3 translation,inout float3 rotation) { }
 };
 
@@ -176,6 +177,7 @@ struct DeviceContactPotentialAvbdConstraints : IDeviceAvbdConstraints
     void accumulate(uint row,uint bodyIndex,DeviceAvbdStep context,inout DeviceAvbdEquation equation)
     { deviceAccumulateAvbdContactPotential(row,bodyIndex,context,float3(0),false,equation); }
     void updateDuals(uint row,DeviceAvbdStep context) { inner.updateDuals(row,context); }
+    override bool adjustsBody() { return inner.adjustsBody(); }
     void adjust(uint body,DeviceAvbdStep context,DeviceAvbdEquation equation,inout float3 translation,inout float3 rotation)
     { inner.adjust(body,context,equation,translation,rotation); }
 };

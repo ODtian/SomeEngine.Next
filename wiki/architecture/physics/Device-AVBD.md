@@ -27,7 +27,13 @@ Jacobian、惯性块与响应共同投影到该子空间。
 同一份 256 字节局部方程同时保存当前邻接行数和分解步长。
 当主体当前与上次均无约束邻接，且步长、旋转和惯性线性权重保持相同时，
 局部迭代复用已有惯性矩阵及 LDL 分解，并从当前位姿与原预测结果重新计算梯度。
-约束邻接参与的主体继续逐轮装配和分解，所有主体的响应、`adjust` 与位姿提交保持相同次序。
+约束邻接参与的主体继续逐轮装配和分解，响应、`adjust` 与位姿提交保持相同次序。
+`IDeviceAvbdConstraints.adjustsBody()` 表达具体类型的 Body 修正能力，默认返回 `true`。
+内置空修正叶返回 `false`，具体组取双方能力的或，活动包装沿原类型转发。
+当前主体无约束邻接、位姿与原预测结果完全相等且具体组返回 `false` 时，
+局部迭代直接保留预测结果；此时惯性梯度和约束贡献均为零。
+支撑叶和用户默认能力继续进入原局部方程及修正入口。
+用户用法见[独立 Body 修正行为](../../../tests/SomeEngine.Graphics.Direct3D12.Tests/DeviceAvbdBodyAdjustmentTests.cs)。
 对角方程直接以原对角构成 LDL 的 D，L 的严格下三角为零。
 零力和零力矩的响应直接返回零向量；当前分解继续供后续 `adjust` 中的支撑响应使用。
 旋转惯性采用原张量，锚点 Jacobian 以质心为力臂原点。
@@ -39,6 +45,7 @@ Jacobian、惯性块与响应共同投影到该子空间。
 
 `DeviceAvbdSolver.Initialize()` 初始化子步历史和 Body 方程索引，
 `Iterate(n)` 在当前子步继续 primal/dual 迭代；`Solve()` 组合这两项职责。
+`Graph.ConstraintStageCount` 为零时，迭代跳过行对偶派发；组更新保持逐轮执行。
 `DeviceAvbdKernels.ClearBodyIndices` 选择独立的逐 Body 索引清理内核，
 其具体入口调用 `clearDeviceAvbdBodyIndices`；随后的初始化内核调用
 `initializeDeviceAvbdRows`，逐方程行沿原 Entity metadata 建立 Body 到方程的映射。
