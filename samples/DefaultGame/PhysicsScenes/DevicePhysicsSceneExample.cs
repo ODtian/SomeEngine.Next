@@ -29,6 +29,7 @@ public sealed partial class PhysicsSceneExample : IApplicationGeometryFeature
         {
             ContactDistance = .02f,
             GeometryInputsFixed = true,
+            EquationBindingsFixed = true,
             ContactNormalPenalty = 100,
             ContactTangentPenalty = 100,
             JointBounds = new JointLongRangeSettings(description.Scene < 400 ? 6 : 0, 32, .99f, .99f),
@@ -60,6 +61,7 @@ public sealed partial class PhysicsSceneExample : IApplicationGeometryFeature
         _workload["BroadPhase"] = "Hierarchical grid";
         _workload["NarrowPhase"] = "DeviceConvexCollision<DeviceBox, DeviceBox>";
         _workload["GeometryInputsFixed"] = settings.GeometryInputsFixed;
+        _workload["EquationBindingsFixed"] = settings.EquationBindingsFixed;
         _workload["Graph"] = new JsonObject { ["Order"] = "Device islands and colors" };
         JsonObject solver = (JsonObject)_workload["Solver"]!;
         solver["ContactConstraint"] = "DeviceContactPotentialAvbdConstraints";
