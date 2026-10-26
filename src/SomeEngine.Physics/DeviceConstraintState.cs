@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using SomeEngine.ECS;
+using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Graphics;
 using SomeEngine.Job;
@@ -13,6 +14,15 @@ public readonly record struct DeviceXpbdState<TState>(DeviceConstraintState<TSta
 public readonly struct DeviceXpbdStateResources<TState> : IJobComponentResources<DeviceXpbdState<TState>> where TState : unmanaged
 {
     public static void Collect(in DeviceXpbdState<TState> component, ref JobResourceAccessBuilder resources) { }
+}
+
+public readonly struct DeviceXpbdStateRows<TState>(DeviceConstraintState<TState> states) : IDeviceConstraintRowSelection where TState : unmanaged
+{
+    public QueryDefinition AddReads(QueryDefinition definition) =>
+        definition.WithOptionalRead<DeviceXpbdState<TState>>();
+    public void AddReadResources(QueryReadResources resources) => resources.Add<DeviceXpbdState<TState>, DeviceXpbdStateResources<TState>>();
+    public bool Matches(scoped QueryRow row) =>
+        row.TryRead<DeviceXpbdState<TState>>(out var binding) && ReferenceEquals(binding.States, states);
 }
 
 /// <summary>Per-constraint numerical history in the selected device representation.</summary>

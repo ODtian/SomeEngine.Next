@@ -1,0 +1,136 @@
+using System.Runtime.InteropServices;
+using SlangShaderSharp;
+using SomeEngine.ECS.Systems;
+using SomeEngine.Graphics;
+using SomeEngine.Job;
+using Buffer = SomeEngine.Graphics.Buffer;
+
+namespace SomeEngine.Physics;
+
+public readonly record struct DeviceXpbdSettings(int Iterations, int RowsPerBlock);
+
+/// <summary>Projects current typed rows in the shared device graph's query/color order.</summary>
+public sealed class DeviceXpbdSolver : IDisposable
+{
+    private readonly IGraphicsBackend _backend;
+    private readonly Device _device;
+    private readonly DeviceBodies _bodies;
+    private readonly DeviceConstraintGraph _graph;
+    private readonly DeviceXpbdSettings _settings;
+    private readonly int _threadsPerGroup;
+    private readonly Buffer[] _histories;
+    private readonly Pipeline[] _pipelines;
+    private readonly VariableLayoutReflection[] _layouts;
+    private readonly ResourceBinding[][] _bindings;
+    private readonly CommandContext _commands;
+    private readonly JobResourceAccess[] _extraAccesses;
+    private readonly IDeviceConstraintSelection[] _selections;
+    private bool _initialized;
+
+    public DeviceXpbdSolver(IGraphicsBackend backend, Device device, DeviceBodies bodies, DeviceConstraintGraph graph,
+        DeviceXpbdKernels kernels, DeviceXpbdSettings settings, IReadOnlyDictionary<string, ResourceBinding[]> inputs,
+        ReadOnlyMemory<JobResourceAccess> inputAccesses, ReadOnlyMemory<Buffer> histories, int threadsPerGroup,
+        ReadOnlyMemory<IDeviceConstraintSelection> selections = default)
+    {
+        _backend = backend; _device = device; _bodies = bodies; _graph = graph; _settings = settings;
+        _threadsPerGroup = threadsPerGroup; _extraAccesses = inputAccesses.ToArray(); _histories = histories.ToArray();
+        _selections = selections.ToArray();
+        _commands = backend.CreateCommandContext(device, new(QueueType.Compute, 0, 1, Label: "Device graph XPBD"));
+        ComputePipelineDesc[] descriptions = [kernels.Initialize, kernels.Project];
+        _pipelines = descriptions.Select(kernel => backend.CreateComputePipeline(device, kernel)).ToArray();
+        _layouts = descriptions.Select(kernel => kernel.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null).ToArray();
+        var bindings = new Dictionary<string, ResourceBinding[]>();
+        graph.AddBindings(bindings);
+        foreach (var input in inputs) bindings.Add(input.Key, input.Value);
+        foreach (IDeviceConstraintSelection selection in _selections) selection.AddBindings(bindings);
+        _bindings = _layouts.Select(layout => DeviceCollisionGrid.OrderBindings(layout, bindings)).ToArray();
+    }
+
+    public SolveDeviceXpbd Solve() => new(this);
+    public InitializeDeviceXpbdGraph Initialize() => new(this);
+    public IterateDeviceXpbdGraph Iterate(int iterations) => new(this, iterations);
+    internal JobHandle Schedule(in PhysicsStepContext context, bool initialize, int iterations, JobHandle dependency)
+    {
+        Scheduler scheduler = WorldJobs.GetScheduler(context.World);
+        var accesses = new List<JobResourceAccess> { _bodies.GetWriteAccess(scheduler) };
+        _graph.AddBuildAccesses(scheduler, accesses);
+        accesses.AddRange(_extraAccesses);
+        foreach (IDeviceConstraintSelection selection in _selections) selection.AddAccesses(scheduler, accesses);
+        foreach (Buffer history in _histories)
+            accesses.Add(JobResourceAccess.Write(scheduler.GetResourceToken(history), 0, (long)history.Info.Size));
+        accesses.Add(JobResourceAccess.Write(scheduler.GetResourceToken(_commands)));
+        return DevicePhysicsJobs.Schedule(scheduler, new Submission(this, context, initialize, iterations), accesses.ToArray(), dependency);
+    }
+    internal JobHandle ScheduleSolve(in PhysicsStepContext context, JobHandle dependency) =>
+        Schedule(in context, true, _settings.Iterations, dependency);
+
+    private QueueCompletion Record(in PhysicsStepContext context, bool initialize, int iterations)
+    {
+        foreach (IDeviceConstraintSelection selection in _selections) selection.Capture();
+        _graph.BuildAndWait();
+        var step = new DeviceStep((uint)_graph.ConstraintCapacity, (float)context.Duration, context.Number,
+            context.StartTime, context.EndTime, (uint)context.Substep, (uint)context.Substeps,
+            0, (uint)_settings.RowsPerBlock, (uint)_threadsPerGroup);
+        _backend.Begin(_commands, new(0, 0, 32));
+        if (!_initialized)
+            foreach (Buffer history in _histories)
+                _backend.Barrier(_commands, new BufferBarrier(history, history.InitialSync, PipelineSync.ComputeShading,
+                    history.InitialAccess, ResourceAccess.UnorderedAccess));
+        uint blocks = (uint)((_graph.ConstraintCapacity + _settings.RowsPerBlock - 1) / _settings.RowsPerBlock);
+        if (initialize)
+        {
+            Bind(0, in step);
+            _backend.Dispatch(_commands, new(blocks, 1, 1));
+            Barrier();
+        }
+        for (int iteration = 0; iteration < iterations; iteration++)
+            for (int stage = 0; stage < _graph.ConstraintStageCount; stage++)
+            {
+                step.Stage = (uint)stage;
+                Bind(1, in step);
+                _backend.Dispatch(_commands, new(blocks, 1, 1));
+                Barrier();
+            }
+        using RecordedCommands recorded = _backend.End(_commands);
+        _initialized = true;
+        return _backend.Submit(_backend.GetQueue(_device, QueueType.Compute), new([], [], [recorded], [], []));
+    }
+    private void Bind(int kernel, in DeviceStep step)
+    {
+        _backend.SetPipeline(_commands, _pipelines[kernel]);
+        _backend.SetTransientParameterBindings(_commands, new(_layouts[kernel], _bindings[kernel],
+            MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in step, 1))));
+    }
+    private void Barrier() => _backend.Barrier(_commands, new MemoryBarrier(PipelineSync.ComputeShading, PipelineSync.ComputeShading,
+        ResourceAccess.UnorderedAccess, ResourceAccess.UnorderedAccess));
+    [StructLayout(LayoutKind.Sequential)]
+    private struct DeviceStep(uint capacity, float duration, long number, double startTime, double endTime,
+        uint substep, uint substeps, uint stage, uint rowsPerBlock, uint threadsPerGroup)
+    {
+        public uint Capacity = capacity;
+        public float Duration = duration;
+        public long Number = number;
+        public double StartTime = startTime, EndTime = endTime;
+        public uint Substep = substep, Substeps = substeps, Stage = stage, RowsPerBlock = rowsPerBlock, ThreadsPerGroup = threadsPerGroup;
+        public uint Padding;
+    }
+    private readonly struct Submission(DeviceXpbdSolver solve, PhysicsStepContext context, bool initialize, int iterations) : IDevicePhysicsSubmission
+    {
+        public IGraphicsBackend Backend => solve._backend;
+        public Device Device => solve._device;
+        public QueueCompletion Submit() => solve.Record(in context, initialize, iterations);
+    }
+    public void Dispose() { foreach (Pipeline pipeline in _pipelines) pipeline.Dispose(); _commands.Dispose(); }
+}
+public readonly struct SolveDeviceXpbd(DeviceXpbdSolver solve) : IPhysicsStage
+{
+    public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) => solve.ScheduleSolve(in context, dependency);
+}
+public readonly struct InitializeDeviceXpbdGraph(DeviceXpbdSolver solve) : IPhysicsStage
+{
+    public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) => solve.Schedule(in context, true, 0, dependency);
+}
+public readonly struct IterateDeviceXpbdGraph(DeviceXpbdSolver solve, int iterations) : IPhysicsStage
+{
+    public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) => solve.Schedule(in context, false, iterations, dependency);
+}
