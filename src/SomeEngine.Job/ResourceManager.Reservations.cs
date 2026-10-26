@@ -6,6 +6,7 @@ internal sealed partial class ResourceManager
         ReadOnlySpan<JobResourceAccess> accesses,
         Type jobType)
     {
+        using var trace = SomeEngine.Diagnostics.EngineTrace.Begin(JobTrace.ReserveResources);
         if (accesses.Length == 0)
             return ResourceAccessReservation.Empty;
 
@@ -64,6 +65,7 @@ internal sealed partial class ResourceManager
         JobHandle owner,
         ResourceAccessReservation reservation)
     {
+        using var trace = SomeEngine.Diagnostics.EngineTrace.Begin(JobTrace.ActivateResources);
         ResourceAccessReservationData? data = reservation.Data;
         if (data is null)
             return ResourceAccessRegistration.Empty;

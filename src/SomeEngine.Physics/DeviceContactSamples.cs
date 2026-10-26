@@ -81,7 +81,7 @@ public sealed class DeviceContactSamples : IDisposable, IDevicePhysicsSubmission
                 _samples.InitialAccess, ResourceAccess.UnorderedAccess));
         _backend.SetPipeline(_commands, _pipeline);
         _backend.SetTransientParameterBindings(_commands, new(_layout, _bindings, []));
-        _backend.Dispatch(_commands, new((uint)((Parameters.Capacity + _threadsPerGroup - 1) / _threadsPerGroup), 1, 1));
+        _backend.Dispatch(_commands, DevicePhysicsDispatch.CreateGroups((Parameters.Capacity + _threadsPerGroup - 1) / _threadsPerGroup));
         _backend.Barrier(_commands, new BufferBarrier(_samples, PipelineSync.ComputeShading, PipelineSync.Copy,
             ResourceAccess.UnorderedAccess, ResourceAccess.CopySource));
         _backend.CopyBuffer(_commands, new(_samples, 0, _readback, 0, _samples.Info.Size));

@@ -3,6 +3,7 @@ using SlangShaderSharp;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Graphics;
 using SomeEngine.Job;
+using SomeEngine.Diagnostics;
 using Buffer = SomeEngine.Graphics.Buffer;
 
 namespace SomeEngine.Physics;
@@ -17,6 +18,7 @@ public readonly record struct DeviceGraphKernels(ComputePipelineDesc WriteRows, 
 /// <summary>Resident entity participation, connectivity, colors and adjacency shared by concrete device solvers.</summary>
 public sealed partial class DeviceConstraintGraph : IDisposable
 {
+    private static readonly TraceSite BuildTrace = new("physics", "ConstraintGraph.Build");
     private readonly IGraphicsBackend _backend;
     private readonly Device _device;
     private readonly DeviceBodies _bodies;
@@ -123,6 +125,7 @@ public sealed partial class DeviceConstraintGraph : IDisposable
     }
     internal void BuildAndWait()
     {
+        using var trace = EngineTrace.Begin(BuildTrace);
         CaptureSelections();
         using (MappedBuffer mapping = _backend.Map(_parameters, MapType.Write, BufferRange.Whole))
         {
@@ -138,7 +141,7 @@ public sealed partial class DeviceConstraintGraph : IDisposable
                     buffer.InitialAccess, ResourceAccess.UnorderedAccess));
         _backend.SetPipeline(_commands, _pipelines[0]);
         _backend.SetTransientParameterBindings(_commands, new(_layouts[0], _bindings[0], []));
-        _backend.Dispatch(_commands, new((uint)((_capacity.Constraints + _threadsPerGroup - 1) / _threadsPerGroup), 1, 1));
+        _backend.Dispatch(_commands, DevicePhysicsDispatch.CreateGroups((_capacity.Constraints + _threadsPerGroup - 1) / _threadsPerGroup));
         _backend.Barrier(_commands, new MemoryBarrier(PipelineSync.ComputeShading, PipelineSync.ComputeShading,
             ResourceAccess.UnorderedAccess, ResourceAccess.UnorderedAccess));
         _backend.SetPipeline(_commands, _pipelines[1]);
