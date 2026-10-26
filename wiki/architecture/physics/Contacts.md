@@ -48,6 +48,14 @@ gap = Separation + dot(Normal, currentWeightedAnchorDelta - BodyAnchorDelta)
 设备检测、对应关系交接、原拓扑回放和后续参数上传均属于该物理步的执行链。
 连续步行为入口见 [DeviceContactHistoryTests](../../../tests/SomeEngine.Graphics.Direct3D12.Tests/DeviceContactHistoryTests.cs)。
 
+对于引用共同 `DeviceBodies` 的检测器，`matching.CreateGeometryUpdate(bodies, anchors, kernel)`
+创建 [DeviceContactGeometry](../../../src/SomeEngine.Physics/DeviceContactGeometry.cs)。
+原关系回放记录当前输出点到实际参数行的对应关系；`Update()` 在参数与端输入上传之后、求解采样之前，
+直接将本次检测的几何、多端局部锚及权重写入同一份参数与端 buffer。
+加权锚基准沿当前设备 Body 位姿计算；预测接触沿共同子步起点计算。
+实际流形点数限定工作范围，参数映射只保存行索引。
+这样连续设备步可沿驻留位姿更新几何及接触，在最终主体消费者处完成读回。
+
 ## 材料与数值状态
 
 | 数据 | 含义与单位 | 持有者 |
