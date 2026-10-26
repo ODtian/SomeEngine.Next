@@ -16,12 +16,16 @@
 将新实体、绑定移动和显式组件修改的行上传到所选历史。
 其容量缓存保存实体、行位置和版本；逐轮乘子与罚参数保存在设备历史中。
 
-`DeviceAvbdEquationBinding` 放在具有原 `AvbdBodyEquation` 的 Body 上，
+`DeviceAvbdEquationBinding` 放在原模拟 Body 上，
 选择 `DeviceAvbdBodyEquations` 的数值行。
 每轮从共同 `DeviceBodies.States` 的原预测结果组装惯性梯度与 Hessian，
 叠加约束当前世界 Jacobian 和力，再以 LDL 求响应。
-全零逆惯量使用三维平移方程；具有完整逆惯量的刚体使用六维质心平移和旋转方程。
-旋转惯性采用完整张量，锚点 Jacobian 以质心为力臂原点。
+全零逆惯量使用三维平移方程；有效维数为 `3 + popcount(bodyRotationMask)`。
+完整三角轴采用世界 XYZ 角向基底，部分活动体轴随当前 Body 旋转；
+Jacobian、惯性块与响应共同投影到该子空间。
+局部数值缓存保存分解所用的角向基底，LRC 调整沿同一分解求响应。
+旋转惯性采用原张量，锚点 Jacobian 以质心为力臂原点。
+源码见 [设备局部数学](../../../assets/Shaders/physics_avbd_body.slang)。
 
 `AvbdMaterialTerms` 对应的设备函数 `deviceAvbdMaterial(K,rho)` 分开处理材料刚度
 与数值罚参数。`physics_avbd_elastic.slang` 从原 `ElasticConnection` 的同一物理参数
