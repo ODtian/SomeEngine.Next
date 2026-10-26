@@ -19,19 +19,21 @@ internal sealed partial class PhysicsGraphData
         foreach (QueryRow row in query.Rows)
         {
             BodyMotion motion = row.ReadRef<BodyMass>().Motion;
+            bool awake = BodyActivities.IsAwake(row);
             if (!_bodies.TryGetValue(row.Entity, out BodyInput? body))
             {
                 body = new();
                 _bodies.Add(row.Entity, body);
                 _dirtyBodies.Add(row.Entity);
             }
-            if (body.Motion != motion)
+            if (body.Motion != motion || body.Awake != awake)
             {
                 Dirty(body.Island);
                 foreach (ConstraintInput constraint in body.Constraints) Dirty(constraint.Island);
                 _dirtyBodies.Add(row.Entity);
             }
             body.Motion = motion;
+            body.Awake = awake;
             body.Order = _bodyOrder++;
             body.Read = _read;
         }

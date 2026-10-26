@@ -31,6 +31,8 @@ AVBD 为选定动态 Body 执行自身局部方程。
 从当前乘子和 Jacobian 向同一 Body 方程提供世界力与力矩。
 具体作用量和初始化职责见 [求解阶段](Solver-Steps.md)。
 
+图求解器的 `Activity(settings)` 直接复用其原图和查询，按原 `BodyActivity` 维护实际 awake 工作范围；共同时间、预测及接触后唤醒的调用方法见 [Body 活动](Body-Activity.md)。
+
 ## 岛、共批与颜色
 
 `PhysicsGraphSettings` 显式选择顺序及批次大小：

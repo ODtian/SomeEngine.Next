@@ -5,12 +5,8 @@ using SomeEngine.ECS.Systems;
 namespace SomeEngine.Physics;
 
 /// <summary>Concrete projection sets sharing their original row kernels with the entity graph.</summary>
-public interface IXpbdGraphConstraints
+public interface IXpbdGraphConstraints : IPhysicsGraphInputs
 {
-    int QueryCount { get; }
-    QueryHandle GetQuery(int index);
-    void ReadGraph(in PhysicsStepContext context, ReadOnlySpan<QueryHandle> queries, int queryOffset,
-        ref PhysicsConstraintGraphBuilder graph);
     void Initialize(in PhysicsStepContext context, scoped EntityQueryViews queries, int queryOffset);
     void Project(in PhysicsStepContext context, scoped EntityQueryViews queries, int queryOffset,
         scoped PhysicsBodies bodies, bool useSimd);
