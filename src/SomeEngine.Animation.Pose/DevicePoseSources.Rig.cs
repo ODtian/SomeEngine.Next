@@ -10,7 +10,7 @@ public sealed partial class DevicePoseSources
         var sections = _order.ToDictionary(row => row.Input.Skeleton);
         var ranges = new Dictionary<int, (uint Offset, uint Count)>();
         var ends = new Dictionary<SourceRow, int>();
-        var levels = new SortedDictionary<(int Level, int Kernel), List<BoneWork>>();
+        var levels = new SortedDictionary<(int Level, int Kernel, bool AfterPhysics), List<BoneWork>>();
         _rigOperations.Clear();
         int offset = workOffset;
         foreach (SourceRow row in _order.OrderBy(End))
@@ -46,7 +46,7 @@ public sealed partial class DevicePoseSources
             work.CopyTo(_work.Mapping.Bytes[offset..]);
             BufferSrv view = _backend.CreateBufferSrv(_device, new(_work.Buffer, new((ulong)offset, (ulong)work.Length), StructureStride: 16));
             _workViews.Add(view); _bindings["GpuPoseWork"] = [ResourceBinding.ReadOnlyBuffer(view)];
-            _rigOperations.Add(new(group.Key.Kernel, view, [], group.Value.Count));
+            _rigOperations.Add(new(group.Key.Kernel, view, [], group.Value.Count, group.Key.AfterPhysics));
             offset += work.Length;
         }
         workOffset = offset;
@@ -77,7 +77,17 @@ public sealed partial class DevicePoseSources
         }
         void Add(int level, SourceRow row, int kernel, uint definition, uint goal)
         {
-            if (!levels.TryGetValue((level, kernel), out var work)) levels.Add((level, kernel), work = []);
+            bool afterPhysics = false;
+            for (SkeletonInstance? section = row.Input.Skeleton; section is not null; section = section.ParentInstance)
+                if (sections.TryGetValue(section, out SourceRow? source) && source.Input.Rig is { } rig)
+                {
+                    int start = End(source) - rig.Steps.Length - (rig.TranslationBone >= 0 ? 1 : 0);
+                    for (int step = 0; step < rig.Steps.Length; step++)
+                        if (rig.Steps[step] is GpuXpbdPose && start + (rig.TranslationBone >= 0 ? 1 : 0) + step < level)
+                            afterPhysics = true;
+                }
+            var key = (level, kernel, afterPhysics);
+            if (!levels.TryGetValue(key, out var work)) levels.Add(key, work = []);
             work.Add(new((uint)row.Index, definition, goal, 0));
         }
     }
