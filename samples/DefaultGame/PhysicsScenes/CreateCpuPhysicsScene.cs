@@ -40,6 +40,14 @@ public static partial class PhysicsScenes
         foreach (Entity entity in entities) world.Add(entity, new AvbdBodyEquation());
         if (settings.JointBounds.Levels > 0)
             foreach (Entity entity in jointEntities) world.AddBuffer<LongRangeJointBound>(entity);
+        if (settings.ContactSupports.HasValue)
+            foreach (Entity entity in entities)
+            {
+                if (world.Read<BodyMass>(entity).Motion != BodyMotion.Dynamic) continue;
+                world.Add(entity, new LongRangeBodySupport());
+                world.AddBuffer<LongRangeSupportLoad>(entity);
+                world.AddBuffer<LongRangeSupportEquation>(entity);
+            }
         var inputs = new ApplySceneInputChanges(world, created.HasInputChanges);
         Scheduler scheduler = WorldJobs.GetScheduler(world);
         QueryDefinition filter = new QueryDefinitionBuilder().All<ScenePhysicsBody>().Build();
@@ -48,9 +56,11 @@ public static partial class PhysicsScenes
         QueryHandle bodies = world.Query(filter.WithAccess(new QueryDefinitionBuilder().ReadWrite<BodyPose>().Read<BodyMass>()
             .Read<BodyStepState>().Read<BodyVelocity>().ReadWrite<AvbdBodyEquation>().Build()));
         QueryHandle scope = world.Query(new QueryDefinitionBuilder().All<ScenePhysicsContact>().Read<ContactPoint>());
-        QueryHandle contacts = world.Query(new QueryDefinitionBuilder().All<ScenePhysicsContact>().Read<ContactPoint>().Read<ContactMaterial>()
-            .ReadBuffer<ContactBodyLink>().Optional<DirectedRelationEndpoints<ContactParticipant>>(QueryAccess.Read)
-            .ReadWrite<AvbdContactState>().ReadWrite<ContactResponse>());
+        QueryHandle contacts = world.Query(ContactQuery());
+        QueryHandle ordinaryContacts = world.Query(ContactQuery().None<LongRangeContactSupport>());
+        QueryHandle supportedContacts = world.Query(ContactQuery().ReadWrite<LongRangeContactSupport>().WriteBuffer<LongRangeSupportLoad>());
+        QueryHandle supportBodies = world.Query(new QueryDefinitionBuilder().All<ScenePhysicsBody>().Read<BodyMass>()
+            .ReadWrite<LongRangeBodySupport>().WriteBuffer<LongRangeSupportLoad>().WriteBuffer<LongRangeSupportEquation>());
         QueryHandle joints = world.Query(new QueryDefinitionBuilder().All<ScenePhysicsJoint>().Read<JointConstraint>()
             .Read<DirectedRelationEndpoints<JointConstraint>>().ReadWrite<AvbdJointState>());
         QueryHandle ranges = world.Query(new QueryDefinitionBuilder().Read<DistanceRange>()
@@ -69,14 +79,19 @@ public static partial class PhysicsScenes
         var detection = DetectContactPoints.Create(world, maintenance.Query, bins, new SceneBoxPairs(world),
             StepContactNarrowPhase.Create(0, narrow), detected, [maintenance.ReadAccess]);
         var points = ContactPoints.Create(world, poses, scope, detected, new SceneContactMaterials(),
-            new ContactEventComponents<ScenePhysicsEventStream, SceneContactComponents>(new SceneContactComponents()),
+            new ContactEventComponents<ScenePhysicsEventStream, SceneContactComponents>(new SceneContactComponents(settings.ContactSupports.HasValue)),
             new ContactRefreshSettings(.02f, .99f, true));
+        var contactConstraints = AvbdGraphConstraints.Combine(new AvbdGraphConstraints<ContactPoint, AvbdContactMath>(ordinaryContacts),
+            new AvbdGraphConstraints<ContactPoint, AvbdSupportedContactMath>(supportedContacts));
         var ordinaryConstraints = AvbdGraphConstraints.Combine(
-            AvbdGraphConstraints.Combine(new AvbdGraphConstraints<ContactPoint, AvbdContactMath>(contacts),
+            AvbdGraphConstraints.Combine(contactConstraints,
                 new AvbdGraphConstraints<JointConstraint, AvbdJointMath>(joints)),
             new AvbdGraphConstraints<DistanceRange, AvbdDistanceRangeMath>(ranges));
-        var constraints = AvbdGraphConstraints.Combine(ordinaryConstraints,
+        var jointConstraints = AvbdGraphConstraints.Combine(ordinaryConstraints,
             new JointLongRangeGraphConstraints(jointBounds, settings.JointBounds));
+        ContactSupportSettings supports = settings.ContactSupports ?? new ContactSupportSettings(
+            description.Dimension == 2 ? Vector3.UnitY : Vector3.UnitZ, 1e-5f, 1e-4f, 1e-4f, 1e-4f, .99f, .99f, 1e-6f);
+        var constraints = AvbdGraphConstraints.Combine(jointConstraints, new ContactLongRangeGraphConstraints(supportBodies, supportedContacts, supports));
         var solve = SolveAvbdGraph.Create(world, bodies, constraints,
             new PhysicsGraphSettings(PhysicsGraphOrder.Islands, 16, 16, 64, 4, false), settings.Iterations, .8f, 0,
             bodyIterations: settings.BodyIterations);
@@ -92,7 +107,7 @@ public static partial class PhysicsScenes
         var simulation = PhysicsSimulation.Create(world, filter, stages, data.Substeps);
         var frame = simulation.CreateFrame(new CopySceneBodyTransforms().Then(consumption), data.StepSeconds, 0, 0, 0);
         return new PhysicsSceneSimulation(world, description, settings, entities, jointEntities, rangeEntities, data.StepSeconds, frame, frame.CompleteForRead,
-            [shapes, poses, bodies, scope, contacts, joints, ranges, jointBounds, eventQuery],
+            [shapes, poses, bodies, scope, contacts, ordinaryContacts, supportedContacts, supportBodies, joints, ranges, jointBounds, eventQuery],
             [inputs, maintenance, bins, detected, detection, points, solve, activity, prediction, eventBuffer, contactEvents, consumption]);
     }
 
@@ -183,6 +198,9 @@ public static partial class PhysicsScenes
     }
 
     private static Vector3 Vector(double[] value) => new((float)value[0], (float)value[1], (float)value[2]);
+    private static QueryDefinitionBuilder ContactQuery() => new QueryDefinitionBuilder().All<ScenePhysicsContact>()
+        .Read<ContactPoint>().Read<ContactMaterial>().ReadBuffer<ContactBodyLink>()
+        .Optional<DirectedRelationEndpoints<ContactParticipant>>(QueryAccess.Read).ReadWrite<AvbdContactState>().ReadWrite<ContactResponse>();
     private static Quaternion Rotation(double[] value) => new((float)value[0], (float)value[1], (float)value[2], (float)value[3]);
     private static float Inverse(double value) => value == 0 ? 0 : (float)(1 / value);
 }
@@ -214,7 +232,7 @@ internal readonly struct SceneContactMaterials : IContactMaterialCombine
     }
 }
 
-internal readonly struct SceneContactComponents : IContactPointComponents
+internal readonly struct SceneContactComponents(bool supports = false) : IContactPointComponents
 {
     public void AddReads(World world, List<JobResourceAccess> accesses) { }
     public void Add(ref JobCommandWriter commands, Entity point, in ContactPoint geometry,
@@ -222,6 +240,11 @@ internal readonly struct SceneContactComponents : IContactPointComponents
     {
         commands.Add(point, new ScenePhysicsContact());
         commands.Add(point, new AvbdContactState { NormalPenalty = 1e6f, TangentPenalty = 1e6f, MultiplierNormal = geometry.Normal });
+        if (supports)
+        {
+            commands.Add(point, new LongRangeContactSupport());
+            commands.AddBuffer<LongRangeSupportLoad>(point);
+        }
     }
 }
 
