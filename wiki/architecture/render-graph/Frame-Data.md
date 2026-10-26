@@ -15,6 +15,12 @@ Frame data 是在既有图结构中变化的值和绑定。
 ## Invariants
 更新这些数据不得改变 graph identity，也不得触发结构重建。
 
+持久 pass 的启用状态沿原 pass 变更进入访问协调。禁用时释放该 pass 当前连接的资源访问；
+再次启用时，从其原访问声明重新解析本帧输入，再接续依赖与录制。
+因此一次上传结束后，后续帧可以禁用该上传 pass，继续消费持久目标中的已有值。
+实现入口为 [FrameExecutor.BuildRows](../../../src/SomeEngine.RenderGraph/FrameExecutor.cs)，
+公开使用行为见 [DisabledInputPassTests](../../../tests/SomeEngine.Graphics.Direct3D12.Tests/DisabledInputPassTests.cs)。
+
 ## 命令参数
 
 [`RenderGraphFrame.SetPassDataIfChanged`](../../../src/SomeEngine.RenderGraph/RenderGraphFrame.cs)

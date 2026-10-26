@@ -31,8 +31,10 @@ public sealed partial class DevicePoseSources
         var writes = new List<JobResourceAccess> { JobResourceAccess.Write(scheduler.GetResourceToken(this)) };
         foreach (UploadBuffer upload in _uploads)
             writes.Add(JobResourceAccess.Write(scheduler.GetResourceToken(upload.Buffer), 0, (long)upload.Buffer.Info.Size));
-        return _resources.ScheduleEntities(_world, _targets, new SourceEntities(this),
-            new CaptureInputs(this, scheduler), writes.ToArray(), members);
+        JobHandle captured = _resources.ScheduleEntities(_world, _targets, new SourceEntities(this),
+            new CaptureInputs(this), writes.ToArray(), members);
+        JobHandle complete = DevicePhysicsJobs.Schedule(scheduler, new Submission(this, false), GetDeviceAccesses(scheduler, false), captured);
+        return scheduler.Schedule(new AcceptInputs(this), [JobResourceAccess.Write(scheduler.GetResourceToken(this))], complete);
     }
     private readonly struct SourceEntities(DevicePoseSources sources) : IQueryReadEntities
     {
@@ -51,14 +53,9 @@ public sealed partial class DevicePoseSources
             });
         }
     }
-    private readonly struct CaptureInputs(DevicePoseSources sources, Scheduler scheduler) : IJob
+    private readonly struct CaptureInputs(DevicePoseSources sources) : IJob
     {
-        public void Execute()
-        {
-            sources.Capture();
-            JobHandle complete = DevicePhysicsJobs.Schedule(scheduler, new Submission(sources, false), sources.GetDeviceAccesses(scheduler, false), default);
-            scheduler.Schedule(new AcceptInputs(sources), [JobResourceAccess.Write(scheduler.GetResourceToken(sources))], complete);
-        }
+        public void Execute() => sources.Capture();
     }
     private readonly struct AcceptInputs(DevicePoseSources sources) : IJob
     {
@@ -66,7 +63,7 @@ public sealed partial class DevicePoseSources
         {
             foreach (SourceRow row in sources._order)
             {
-                row.Accepted = row.Input; row.AcceptedBinding = row.Input.Skeleton.BindingVersion;
+                row.Accepted = row.Input; row.AcceptedBinding = row.Binding;
                 row.HasInput = true; row.Reset = false;
             }
         }
@@ -88,7 +85,8 @@ public sealed partial class DevicePoseSources
                 if (source.Index != current._order.Count || !ReferenceEquals(input.Skeleton, source.Input.Skeleton)
                     || !ReferenceEquals(input.Clip, source.Input.Clip) || !ReferenceEquals(input.StateMachine, source.Input.StateMachine)
                     || !ReferenceEquals(input.Blend, source.Input.Blend) || source.AcceptedBinding != input.Skeleton.BindingVersion) rebuild = true;
-                source.Input = input; source.Index = current._order.Count; current._order.Add(source);
+                source.Input = input; source.Binding = input.Skeleton.BindingVersion;
+                source.Index = current._order.Count; current._order.Add(source);
             }
         });
         if (rebuild) Rebuild();
@@ -189,7 +187,7 @@ public sealed partial class DevicePoseSources
         internal uint Clip, Machine, Blend, Reference;
         internal PoseRange Range;
         internal GpuPoseTarget Input, Accepted;
-        internal ulong AcceptedBinding;
+        internal ulong Binding, AcceptedBinding;
         internal bool HasInput, Reset;
         internal int[] Depths = [];
     }
