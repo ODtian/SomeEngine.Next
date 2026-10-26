@@ -163,3 +163,11 @@ typedef DeviceXpbdConstraintGroups<LengthRows, BendRows> ProjectionRows;
 旧显示输出在实际 Graphics 读取完成后释放。
 [新增与重绑检查](../../../tests/SomeEngine.Runtime.Tests/GpuPoseMembershipRenderingTests.cs)
 沿原 Application、Body 读取与骨骼显示入口，在六帧中观察持续角色的实体身份、独立重力轨迹及显示历史。
+
+[完整动态接触与消费检查](../../../tests/SomeEngine.Graphics.Direct3D12.Tests/DevicePoseContactFrameTests.cs)
+提供一份公开阶段装配示例：`DynamicCapsule` 引用上述实际 Body，设备几何更新、网格与类型 bin、
+检测和接触维护接到同一图中的 AVBD 接触与 XPBD 长度约束，末尾统一速度、活动、事件和骨骼映射。
+该检查的具体输入为 1 kg 节点、6 m/s² 重力和胶囊／地面接触，独立支持力预期为 6 N。
+来源保持 `InputNumber=1`、来源时间 0，完成步交付编号 7、8 和时间 0.1、0.2 s。
+原 `ReadDeviceOutput` 保留较早输出的读取范围；真实设备复制通过 `CompleteAfter` 释放该读取，
+`PhysicsFrame` 的弱消费与 `CompleteForRead` 强消费继续沿同一 Job 完成链交接 Body、事件和骨骼结果。
