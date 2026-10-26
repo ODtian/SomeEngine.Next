@@ -21,6 +21,14 @@
 24 字节派生标记，记录原实体代次、组件位、步号和子步号。
 活动内核读取当前子步的标记，主体结果消费沿原 source 同步确认自身写入。
 
+`DeviceActivityKernels.ReadBodyInputs` 选择可选的当前时段输入读取入口。
+[ReadDeviceBodyInputActivity](../../../assets/Shaders/physics_body_input_activity.slang)
+逐条读取原 `DeviceBodyInputBuffers` 的 112 字节记录，核对当前主体身份，
+用共同输入数学判断冲量、速度目标或运动学目标的实际变化，再标记原活动状态的唤醒请求。
+它位于 `UploadInputs()` 的常规活动输入之后，沿同一阶段屏障完成；
+项目将输入批次的 `AddBindings` 和 `GetReadAccesses` 传给活动阶段。
+运动学目标在 Predict 后应用，预测前的当前输入标记使所引用的休眠岛在当步唤醒。
+
 ## 图、预测与数值范围
 
 设备图的 Parents、Islands 和邻接继续保存完整的所选动态连接。

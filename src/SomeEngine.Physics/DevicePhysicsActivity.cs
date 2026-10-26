@@ -9,7 +9,7 @@ namespace SomeEngine.Physics;
 
 public readonly record struct DeviceActivityKernels(ComputePipelineDesc ApplyInputs, ComputePipelineDesc ClearSignals,
     ComputePipelineDesc CollectBodies, ComputePipelineDesc ReadRows, ComputePipelineDesc WakeBodies,
-    ComputePipelineDesc AdvanceQuiet, ComputePipelineDesc FinishBodies);
+    ComputePipelineDesc AdvanceQuiet, ComputePipelineDesc FinishBodies, ComputePipelineDesc? ReadBodyInputs = null);
 
 /// <summary>Wake, quiet-time and completed activity results over the solver's original full device graph.</summary>
 public sealed class DevicePhysicsActivity : IDisposable
@@ -20,6 +20,7 @@ public sealed class DevicePhysicsActivity : IDisposable
     private readonly DeviceConstraintGraph _graph;
     private readonly BodyActivitySettings _settings;
     private readonly int _threadsPerGroup;
+    private readonly int _readBodyInputs;
     private readonly Pipeline[] _pipelines;
     private readonly VariableLayoutReflection[] _layouts;
     private readonly ResourceBinding[][] _bindings;
@@ -47,8 +48,10 @@ public sealed class DevicePhysicsActivity : IDisposable
         _readback = backend.CreateBuffer(device, new(activities.States.Info.Size, BufferUsages.CopyDestination,
             "Completed body activity"), MemoryType.Readback);
         _commands = backend.CreateCommandContext(device, new(QueueType.Compute, 0, 1, Label: "Device body activity"));
-        ComputePipelineDesc[] descriptions = [kernels.ApplyInputs, kernels.ClearSignals, kernels.CollectBodies, kernels.ReadRows,
-            kernels.WakeBodies, kernels.AdvanceQuiet, kernels.FinishBodies];
+        var descriptions = new List<ComputePipelineDesc> { kernels.ApplyInputs, kernels.ClearSignals, kernels.CollectBodies, kernels.ReadRows,
+            kernels.WakeBodies, kernels.AdvanceQuiet, kernels.FinishBodies };
+        _readBodyInputs = kernels.ReadBodyInputs.HasValue ? descriptions.Count : -1;
+        if (kernels.ReadBodyInputs is { } readBodyInputs) descriptions.Add(readBodyInputs);
         _pipelines = descriptions.Select(kernel => backend.CreateComputePipeline(device, kernel)).ToArray();
         _layouts = descriptions.Select(kernel => kernel.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null).ToArray();
         var bindings = new Dictionary<string, ResourceBinding[]>(); graph.AddBindings(bindings);
@@ -100,7 +103,11 @@ public sealed class DevicePhysicsActivity : IDisposable
             Dispatch(1, (count + _threadsPerGroup - 1) / _threadsPerGroup, in initialize);
         }
         int bodies = (_activities.Bodies.Capacity + _threadsPerGroup - 1) / _threadsPerGroup;
-        if (phase == 0) Dispatch(0, bodies, in step);
+        if (phase == 0)
+        {
+            Dispatch(0, bodies, in step);
+            if (_readBodyInputs >= 0) Dispatch(_readBodyInputs, bodies, in step);
+        }
         else
         {
             Dispatch(1, bodies, in step);
