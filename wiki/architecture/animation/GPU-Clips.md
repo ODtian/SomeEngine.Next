@@ -69,6 +69,7 @@ GPU 目标提取 ready 片段和控制；CPU 目标按模型姿势版本复制�
 局部混合值、控制值和定义字节容量。`Evaluate()` 在输入依赖之后捕获实际成员，按原
 `GpuPoseTargetResources` 读取骨架引用与 Controls；随后运行具体 `AdvancePoseStates`、
 `SamplePoseLevel` 内核，按骨骼依赖层写出 `Models`。
+原查询列、骨架与控制引用的读取作用域在捕获完成后结束，设备阶段读取自身已经捕获的资源。
 
 来源使用同一量化片段、状态机、BlendSpace 和遮罩层定义。
 [GpuPoseDefinitions](../../../src/SomeEngine.Animation.Pose/GpuPoseDefinitions.cs) 为 Game 求值与
