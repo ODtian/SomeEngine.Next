@@ -48,7 +48,7 @@ public sealed class DeviceContactSupports : IDisposable, IDeviceConstraintSelect
     private readonly World _world;
     private readonly QueryHandle _bodyRows;
     private readonly DeviceBodies _bodies;
-    private readonly Buffer _bodySelection, _parameters;
+    private readonly Buffer _bodySelection, _parameters, _bodyStates;
     private readonly BufferSrv _bodySelectionView;
     private readonly BufferCbv _parametersView;
     private readonly CommandContext _commands;
@@ -73,7 +73,7 @@ public sealed class DeviceContactSupports : IDisposable, IDeviceConstraintSelect
         _bodySelection = backend.CreateBuffer(device, new((ulong)bodies.Capacity * 16, BufferUsages.ShaderRead, "Selected support body identities"), MemoryType.Upload);
         _bodySelectionView = backend.CreateBufferSrv(device, new(_bodySelection, new(0, _bodySelection.Info.Size), StructureStride: 16));
         ContactStates = new(backend, device, contacts.Capacity, "DeviceSupportContactStates");
-        AddBuffer("DeviceSupportBodyStates", bodies.Capacity, 32);
+        _bodyStates = AddBuffer("DeviceSupportBodyStates", bodies.Capacity, 32, BufferUsages.CopyDestination);
         AddBuffer("DeviceSupportBodyContacts", bodies.Capacity * contactsPerBody, 4);
         AddBuffer("DeviceSupportBodyLoads", bodies.Capacity * 3, 8);
         AddBuffer("DeviceSupportContactLoads", contacts.Capacity * 3, 8);
@@ -135,11 +135,13 @@ public sealed class DeviceContactSupports : IDisposable, IDeviceConstraintSelect
     public JobResourceAccess[] GetWriteAccesses(Scheduler scheduler) =>
         _buffers.Select(buffer => JobResourceAccess.Write(scheduler.GetResourceToken(buffer), 0, (long)buffer.Info.Size))
             .Append(ContactStates.GetWriteAccess(scheduler)).Append(JobResourceAccess.Read(scheduler.GetResourceToken(_parameters), 0, 256)).ToArray();
-    private void AddBuffer(string name, int count, uint stride)
+    private Buffer AddBuffer(string name, int count, uint stride, BufferUsages extraUsages = default)
     {
-        Buffer buffer = _backend.CreateBuffer(_device, new((ulong)count * stride, BufferUsages.ShaderRead | BufferUsages.ShaderWrite, name), MemoryType.DeviceLocal);
+        Buffer buffer = _backend.CreateBuffer(_device, new((ulong)count * stride,
+            BufferUsages.ShaderRead | BufferUsages.ShaderWrite | extraUsages, name), MemoryType.DeviceLocal);
         BufferUav view = _backend.CreateBufferUav(_device, new(buffer, new(0, buffer.Info.Size), StructureStride: stride));
         _buffers.Add(buffer); _views.Add(view); _bindings.Add(name, [ResourceBinding.WritableBuffer(view)]);
+        return buffer;
     }
     internal JobHandle ScheduleInitialize(Scheduler scheduler, JobHandle dependency)
     {
@@ -152,8 +154,18 @@ public sealed class DeviceContactSupports : IDisposable, IDeviceConstraintSelect
         _backend.Begin(_commands, new(0, 0, 16));
         if (!_initialized)
             foreach (Buffer buffer in _buffers)
-                _backend.Barrier(_commands, new BufferBarrier(buffer, buffer.InitialSync, PipelineSync.ComputeShading,
+            {
+                if (ReferenceEquals(buffer, _bodyStates))
+                {
+                    _backend.Barrier(_commands, new BufferBarrier(buffer, buffer.InitialSync, PipelineSync.Copy,
+                        buffer.InitialAccess, ResourceAccess.CopyDestination));
+                    _backend.ClearBuffer(_commands, buffer, new(0, buffer.Info.Size));
+                    _backend.Barrier(_commands, new BufferBarrier(buffer, PipelineSync.Copy, PipelineSync.ComputeShading,
+                        ResourceAccess.CopyDestination, ResourceAccess.UnorderedAccess));
+                }
+                else _backend.Barrier(_commands, new BufferBarrier(buffer, buffer.InitialSync, PipelineSync.ComputeShading,
                     buffer.InitialAccess, ResourceAccess.UnorderedAccess));
+            }
         using RecordedCommands recorded = _backend.End(_commands);
         _initialized = true;
         return _backend.Submit(_backend.GetQueue(_device, QueueType.Compute), new([], [], [recorded], [], []));
