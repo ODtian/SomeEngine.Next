@@ -59,6 +59,7 @@ public sealed partial class DevicePoseSources
                     state.InitialAccess, ResourceAccess.UnorderedAccess));
             _statesInitialized = true;
         }
+        CopyStateRanges();
         if (_cpuCopies.Count == 0) return;
         _backend.Barrier(_commands, new BufferBarrier(Models, PipelineSync.ComputeShading, PipelineSync.Copy,
             ResourceAccess.UnorderedAccess, ResourceAccess.CopyDestination));

@@ -155,3 +155,11 @@ typedef DeviceXpbdConstraintGroups<LengthRows, BendRows> ProjectionRows;
 [共同步与后续 Aim 检查](../../../tests/SomeEngine.Graphics.Direct3D12.Tests/DevicePoseBodyStageTests.cs)
 使用保持的来源输入完成两个物理步，在同一 Body 上交替接触 AVBD 与长度 XPBD，
 并通过 Body、完成骨骼、Aim 后代及两组时钟观察该完整组合。
+
+自动 `DevicePoseSystem` 在新增角色、移出角色及替换 rig 时重新计算实际容量。
+持续角色保留原 Body 和约束实体；扩容通过 `DeviceBodies.CopyFrom` 延续设备状态及已接受的组件版本，
+沿同一完成链复制原 Length/Bend 乘子，再更新实体上的设备绑定。
+来源按角色范围迁移模型、局部当前/前帧样本、播放状态和 Blend 状态，重绑范围使用自身的重置输入。
+旧显示输出在实际 Graphics 读取完成后释放。
+[新增与重绑检查](../../../tests/SomeEngine.Runtime.Tests/GpuPoseMembershipRenderingTests.cs)
+沿原 Application、Body 读取与骨骼显示入口，在六帧中观察持续角色的实体身份、独立重力轨迹及显示历史。
