@@ -111,6 +111,17 @@ GPU copy 完成后经原命令回放写入目标的 `DevicePoseOutput` 完成编
 公开 [Graphics 消费检查](../../../tests/SomeEngine.Graphics.Direct3D12.Tests/DevicePoseOutputTests.cs)
 覆盖旧姿势读取期间继续 Body 结果消费与来源输入更新，以及复制结束后的输出接续。
 
+Runtime 在原 Animation 组中安装 `DevicePoseSystem`，原 `GpuXpbdLeaf` 由此创建和驱动上述
+实体 Body、Length、Bend，再经 `SkinRenderExtractor` 把完成的 `DevicePoseOutput` 交给原骨骼消费者。
+提取已经读到完成组件时，使用 `ReadDeviceOutput(world, in output)` 在同一只读范围登记选定 GPU 读取；
+Graphics copy 的实际完成点释放这次读取。Rendering 继续维护显示的 current/previous 历史。
+
+来源 FK 直接采用 `SkeletonInstance` 已完成的 CPU 父区段和显式 CPU 骨骼；后代 rig 操作在 CPU 骨骼处结束。
+原父模型与 actor 变换一起形成世界约束长度，Body 的世界位置与速度继续作为数值状态。
+公开 [原叶装配检查](../../../tests/SomeEngine.Runtime.Tests/GpuPoseBodyRenderingTests.cs) 与
+[父模型缩放检查](../../../tests/SomeEngine.Runtime.Tests/GpuPoseParentBodyRenderingTests.cs)
+同时通过原实体结果及 `ReadGpuPose` 观察；原 actor、重复输入、Stop、重播、矩阵历史、图像与影子夹具继续使用同一链路。
+
 ## GPU 求值与历史
 
 `SkinningFeature` 汇总所有活动区段，为每段分配连续 G 范围。量化片段、层级工作表、

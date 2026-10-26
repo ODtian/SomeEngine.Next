@@ -13,15 +13,12 @@ public sealed partial class SkinningFeature
         var cpuBones = new bool[_boneCount];
         for (int bone = 0; bone < children.Length; bone++) children[bone] = [];
         int goals = 0;
-        int xpbdPoints = 0;
         foreach (Section section in _sectionOrder)
         {
-            section.XpbdStart = xpbdPoints;
-            section.XpbdCount = 0;
+            section.HasSecondaryChain = false;
             if (section.Data.Rig is { } installed)
                 foreach (GpuPoseSource step in installed.Steps)
-                    if (step is GpuXpbdPose xpbd) section.XpbdCount += xpbd.Chain.Bones.Length;
-            xpbdPoints += section.XpbdCount;
+                    if (step is GpuXpbdPose) section.HasSecondaryChain = true;
             foreach (short bone in section.Data.CpuBones.Span) cpuBones[section.Range.Start + bone] = true;
             section.SolverEnd = -1; section.GoalStart = goals;
             goals += section.Data.Rig?.GoalCount ?? 0;
@@ -32,14 +29,12 @@ public sealed partial class SkinningFeature
                     children[_sections[parent.Section].Range.Start + parent.Bone].Add(section.Range.Start + bone);
             }
         }
-        _xpbdPointCount = Math.Max(1, xpbdPoints);
         var descendants = new Dictionary<int, (uint Offset, uint Count)>();
         var levels = new SortedDictionary<(int Level, Kernel Kernel), List<SolverWork>>();
         foreach (Section section in _sectionOrder)
         {
-            if (section.Data.Rig is not GpuPoseRig rig) continue;
+            if (section.Data.DeviceOutput is not null || section.Data.Rig is not GpuPoseRig rig) continue;
             int level = End(section) - rig.Steps.Length - (rig.TranslationBone >= 0 ? 1 : 0);
-            int xpbdState = section.XpbdStart;
             var definitions = new GpuRigDefinitions(writer, section.Range.Start, section.GoalStart, Descendants);
             if (rig.TranslationBone >= 0)
             {
@@ -55,15 +50,7 @@ public sealed partial class SkinningFeature
                     uint definition = definitions.WriteTwoBone(limb.Chain);
                     Add(level++, Kernel.TwoBone, new((uint)section.Index, definition, (uint)(section.GoalStart + limb.Goal)));
                 }
-                else if (source is GpuXpbdPose xpbd)
-                {
-                    var ranges = new (uint Offset, uint Count)[xpbd.Chain.Bones.Length];
-                    for (int point = 0; point < ranges.Length; point++)
-                        ranges[point] = Descendants(section.Range.Start + xpbd.Chain.Bones[point].Bone);
-                    uint definition = WriteXpbdChain(writer, section, xpbd.Chain, ranges, xpbdState);
-                    xpbdState += ranges.Length;
-                    Add(level++, Kernel.Xpbd, new((uint)section.Index, definition, 0));
-                }
+                else if (source is GpuXpbdPose) level++;
                 else if (source is GpuStridePose stride)
                 {
                     Add(level++, Kernel.Stride, new((uint)section.Index, definitions.WriteStride(stride.Rig), 0));
