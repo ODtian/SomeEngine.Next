@@ -17,7 +17,7 @@ GameWorld 下一轮 CPU 工作可以与已经交付给渲染侧的上一轮 CPU/
 
 实际计算仍由系统声明的 WorldJobs / Job 入口提交。roots 由各 `JobLifetime` 持有，
 `CompleteAsync` 使用原 root 观察与归还路径聚集失败；等待结束后系统组继续接受更新。
-`RuntimeWait.Job` 把尚待完成的 ValueTask 交给既有外部 fence 入口，等待期间处理窗口消息。
+`RuntimeWait.WaitForCompletion` 把尚待完成的 ValueTask 交给既有外部 fence 入口，等待期间处理窗口消息。
 
 游戏阶段完成后执行提取；提取范围计算与汇合结束后才交付 Rendering world 更新。
 Render prepare 与 frame 系统在各自能力范围有效期间等待其实际 roots，随后释放写入范围、
