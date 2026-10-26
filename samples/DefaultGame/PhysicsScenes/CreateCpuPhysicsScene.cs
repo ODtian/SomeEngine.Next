@@ -151,6 +151,7 @@ public static partial class PhysicsScenes
             Entity entity = jointEntities[index] = world.CreateRelation(entities[input.BodyA], entities[input.BodyB], joint).Entity;
             world.Add(entity, new ScenePhysicsJoint());
             world.Add(entity, new AvbdJointState { LinearPenalty = new Vector3(1e6f), AngularPenalty = new Vector3(1e6f) });
+            if (input.BreakLimits is { } limits) world.Add(entity, limits);
         }
         foreach (SceneCollisionPair pair in data.CollisionExclusions)
             world.CreateRelation(entities[pair.BodyA], entities[pair.BodyB], new SceneCollisionExclusion());
