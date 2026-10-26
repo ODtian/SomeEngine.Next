@@ -19,6 +19,11 @@ XPBD 继续更新原 Length/Bend 乘子并投影节点。完成一次速度重�
 `MapBones` 和 `CopyOutput` 沿原 Game 姿势输出交付 Number、Time 与骨骼矩阵。
 场景通过原 `IGameFramePhysics` 推进及消费完成步。
 
+`CreateDevice(characters, backend, device, timings)` 接受原 `PhysicsSceneTimings`。
+来源采样、参数输入、碰撞维护、约束图、方程初始化、每轮 AVBD/XPBD、
+速度、骨骼输出和主体完成读回使用原 `Measure` 阶段；`timings.Describe()`
+交付这些阶段的提交与依赖到完成耗时。原三参数入口沿同一装配推进。
+
 Length 与 Bend 的投影共用 `physics_xpbd_projection_math.slang` 中的乘子增量，
 其来源为 [XPBD 论文式 18](https://mmacklin.com/xpbd.pdf)。AVBD 沿当前位置、原乘子、
 柔度、实际作用端 mobility 和步长计算试算力 `(λ + Δλ) / h²`，同时加入
