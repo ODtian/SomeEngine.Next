@@ -13,6 +13,20 @@ public sealed partial class DevicePoseSources
     private UploadBuffer _cpuModels = null!;
     private bool _statesInitialized;
 
+    private double ReadCalculationTime(SourceRow source)
+    {
+        double time = source.Input.CalculationTime;
+        foreach (SkeletonInstance section in source.Input.Skeleton.Sections)
+            if (_gpuSections.TryGetValue(section, out SourceRow? parent))
+            {
+                time = Math.Max(time, parent.Input.CalculationTime);
+                foreach (short bone in section.CpuBones.Span)
+                    time = Math.Max(time, section.Calculations[bone].Time);
+            }
+            else time = Math.Max(time, section.Time);
+        return time;
+    }
+
     private void AddCpuSections(ref int bones)
     {
         _cpuSections.Clear(); _gpuSections.Clear(); _cpuWritten.Clear();
@@ -59,6 +73,7 @@ public sealed partial class DevicePoseSources
                     state.InitialAccess, ResourceAccess.UnorderedAccess));
             _statesInitialized = true;
         }
+        CopyStateRanges();
         if (_cpuCopies.Count == 0) return;
         _backend.Barrier(_commands, new BufferBarrier(Models, PipelineSync.ComputeShading, PipelineSync.Copy,
             ResourceAccess.UnorderedAccess, ResourceAccess.CopyDestination));

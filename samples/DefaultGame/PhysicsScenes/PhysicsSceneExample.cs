@@ -139,6 +139,8 @@ public sealed partial class PhysicsSceneExample(PhysicsSceneDescription descript
         };
         if (_devicePhysics) return CreateDeviceSimulation(world, description, data, settings);
         JsonObject contactMetric = _workload["Solver"]!.AsObject();
+        contactMetric["ContactEquation"] = nameof(AvbdContactPotentialMath);
+        contactMetric["SupportedContactEquation"] = nameof(AvbdSupportedContactPotentialMath);
         contactMetric["ContactPenaltyConditioning"] = "Inverse squared step and contact Jacobian mobility";
         contactMetric["ContactPenaltyMinimum"] = SceneContactPenalty.Minimum;
         contactMetric["ContactPenaltyMaximum"] = SceneContactPenalty.Maximum;
