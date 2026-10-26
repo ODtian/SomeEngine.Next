@@ -14,7 +14,7 @@ namespace SomeEngine.Animation.Pose;
 
 public readonly record struct DevicePoseKernels(ComputePipelineDesc Advance, ComputePipelineDesc Sample,
     ComputePipelineDesc? Translate = null, ComputePipelineDesc? TwoBone = null,
-    ComputePipelineDesc? Aim = null, ComputePipelineDesc? Stride = null);
+    ComputePipelineDesc? Aim = null, ComputePipelineDesc? Stride = null, ComputePipelineDesc? Xpbd = null);
 public readonly record struct DevicePoseCapacity(int Targets, int Bones, int BlendStates, int BlendLocals,
     int Controls, int DefinitionBytes, int Goals = 1, int Operations = 1);
 
@@ -24,6 +24,7 @@ public sealed partial class DevicePoseSources : IDisposable
     private readonly IGraphicsBackend _backend;
     private readonly Device _device;
     private readonly World _world;
+    private readonly DevicePosePhysics? _physics;
     private readonly QueryHandle _targets;
     private readonly QueryReadResources _resources = new();
     private readonly JobResourceAccess[] _queryAccesses;
@@ -35,6 +36,7 @@ public sealed partial class DevicePoseSources : IDisposable
     private readonly List<UploadBuffer> _uploads = [];
     private readonly List<Buffer> _states = [];
     private readonly UploadBuffer _controls, _inputs, _definitions, _roots, _offsets, _work, _goals, _movements;
+    private readonly UploadBuffer? _physicsFrames;
     private readonly Buffer _historyCurrent, _historyPrevious, _readback;
     private readonly Dictionary<string, ResourceBinding[]> _bindings = [];
     private readonly List<BufferSrv> _workViews = [];
@@ -45,16 +47,16 @@ public sealed partial class DevicePoseSources : IDisposable
     private ResourceBinding[] _advanceBindings = [];
     private readonly Pipeline[] _pipelines;
     private readonly int _translateKernel;
-    private readonly int _twoBoneKernel, _aimKernel, _strideKernel;
+    private readonly int _twoBoneKernel, _aimKernel, _strideKernel, _xpbdKernel;
     private readonly VariableLayoutReflection[] _layouts;
     private readonly CommandContext _commands;
     private readonly Matrix4x4[] _models;
     private int _boneCount;
 
     public DevicePoseSources(IGraphicsBackend backend, Device device, World world, QueryHandle targets,
-        DevicePoseKernels kernels, DevicePoseCapacity capacity)
+        DevicePoseKernels kernels, DevicePoseCapacity capacity, DevicePosePhysics? physics = null)
     {
-        _backend = backend; _device = device; _world = world;
+        _backend = backend; _device = device; _world = world; _physics = physics;
         _entities = new Entity[capacity.Targets]; _models = new Matrix4x4[capacity.Bones];
         QueryDefinition definition = world.GetQueryDefinition(targets).AsFilter()
             .WithAccess(new QueryDefinitionBuilder().Read<GpuPoseTarget>().OptionalBuffer<GpuPoseGoal>(QueryAccess.Read).Build());
@@ -70,6 +72,11 @@ public sealed partial class DevicePoseSources : IDisposable
         _work = CreateUpload((capacity.Bones + capacity.Operations) * 16, 16, "GpuPoseWork");
         _goals = CreateUpload(capacity.Goals * 48, 48, "GpuPoseGoals");
         _movements = CreateUpload(capacity.Targets * 48, 48, "GpuPoseMovements");
+        if (physics is not null)
+        {
+            _physicsFrames = CreateUpload(capacity.Targets * 160, 160, "GpuPosePhysicsFrames");
+            physics.AddBindings(_bindings);
+        }
         CreateState(capacity.Targets * 64, 64, "GpuPosePlaybackStates");
         CreateState(capacity.BlendStates * 32, 32, "GpuBlendStates");
         CreateState(capacity.BlendLocals * 48, 48, "GpuBlendLocals");
@@ -87,6 +94,8 @@ public sealed partial class DevicePoseSources : IDisposable
         if (kernels.Aim is { } aim) descriptions.Add(aim);
         _strideKernel = kernels.Stride.HasValue ? descriptions.Count : -1;
         if (kernels.Stride is { } stride) descriptions.Add(stride);
+        _xpbdKernel = kernels.Xpbd.HasValue ? descriptions.Count : -1;
+        if (kernels.Xpbd is { } xpbd) descriptions.Add(xpbd);
         _pipelines = descriptions.Select(kernel => Keep(backend.CreateComputePipeline(device, kernel))).ToArray();
         _layouts = descriptions.Select(kernel => kernel.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null).ToArray();
     }
@@ -134,6 +143,7 @@ public sealed partial class DevicePoseSources : IDisposable
                 accesses.Add(JobResourceAccess.Read(scheduler.GetResourceToken(upload.Buffer), 0, (long)upload.Buffer.Info.Size));
             foreach (Buffer state in _states)
                 accesses.Add(JobResourceAccess.Write(scheduler.GetResourceToken(state), 0, (long)state.Info.Size));
+            if (_physics is not null) accesses.AddRange(_physics.GetDeviceAccesses(scheduler));
         }
         return [.. accesses];
     }
@@ -150,6 +160,7 @@ public sealed partial class DevicePoseSources : IDisposable
         }
         else if (_order.Count > 0)
         {
+            _physics?.RecordFirstUse(_commands);
             Dispatch(0, _advanceBindings, _order.Count);
             for (int level = 0; level < _sampleBindings.Count; level++) Dispatch(1, _sampleBindings[level], _workCounts[level]);
             foreach (RigOperation operation in _rigOperations) Dispatch(operation.Kernel, operation.Bindings, operation.Count);
@@ -219,7 +230,7 @@ public sealed partial class DevicePoseSources : IDisposable
 
 public readonly struct EvaluateDevicePoseSources(DevicePoseSources sources) : IPhysicsStage
 {
-    public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) => sources.ScheduleEvaluate(dependency);
+    public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) => sources.ScheduleEvaluate(in context, dependency);
 }
 public readonly struct ReadDevicePoseSources(DevicePoseSources sources) : IPhysicsStage
 {
