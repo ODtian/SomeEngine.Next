@@ -35,21 +35,38 @@ struct DeviceAvbdConstraintGroups<TFirst : IDeviceAvbdConstraints,TSecond : IDev
     void adjust(uint body,DeviceAvbdStep context,DeviceAvbdEquation equation,inout float3 translation,inout float3 rotation)
     { first.adjust(body,context,equation,translation,rotation); second.adjust(body,context,equation,translation,rotation); }
 };
+void clearDeviceAvbdBodyIndices(uint body)
+{
+    uint bodies,stride; DeviceAvbdEquationIndices.GetDimensions(bodies,stride);
+    if(body<bodies) DeviceAvbdEquationIndices[body]=0xffffffff;
+}
+void deviceAvbdWriteEquationIndex(uint row)
+{
+    uint4 metadata=DeviceAvbdEquationMetadata[row];
+    if(metadata.w==0) return;
+    DeviceBodyState body=DeviceBodyStates[metadata.x];
+    if(body.entityIndex==metadata.y&&body.entityGeneration==metadata.z&&body.motion==2)
+        DeviceAvbdEquationIndices[metadata.x]=row;
+}
+void initializeDeviceAvbdRows<T : IDeviceAvbdConstraints>(uint index,T constraints)
+{
+    uint equations,stride; DeviceAvbdEquationMetadata.GetDimensions(equations,stride);
+    if(index<equations)
+    {
+        deviceAvbdWriteEquationIndex(index);
+        deviceAvbdInitializeEquation(index);
+    }
+    if(index<constraints.count()&&constraints.active(index)) constraints.initialize(index,AvbdStep);
+}
 void initializeDeviceAvbd<T : IDeviceAvbdConstraints>(uint index,T constraints)
 {
     uint equations,stride; DeviceAvbdEquationMetadata.GetDimensions(equations,stride);
     if(index==0)
     {
         uint bodies; DeviceAvbdEquationIndices.GetDimensions(bodies,stride);
-        for(uint body=0;body<bodies;body++) DeviceAvbdEquationIndices[body]=0xffffffff;
+        for(uint body=0;body<bodies;body++) clearDeviceAvbdBodyIndices(body);
         for(uint row=0;row<equations;row++)
-        {
-            uint4 metadata=DeviceAvbdEquationMetadata[row];
-            if(metadata.w==0) continue;
-            DeviceBodyState body=DeviceBodyStates[metadata.x];
-            if(body.entityIndex==metadata.y&&body.entityGeneration==metadata.z&&body.motion==2)
-                DeviceAvbdEquationIndices[metadata.x]=row;
-        }
+            deviceAvbdWriteEquationIndex(row);
     }
     if(index<equations) deviceAvbdInitializeEquation(index);
     if(index<constraints.count()&&constraints.active(index)) constraints.initialize(index,AvbdStep);

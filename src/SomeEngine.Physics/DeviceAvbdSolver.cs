@@ -7,7 +7,8 @@ using SomeEngine.Job;
 namespace SomeEngine.Physics;
 
 public readonly record struct DeviceAvbdKernels(ComputePipelineDesc Initialize, ComputePipelineDesc UpdateBody, ComputePipelineDesc UpdateDuals,
-    ComputePipelineDesc? InitializeGroups = null, ComputePipelineDesc? UpdateGroups = null);
+    ComputePipelineDesc? InitializeGroups = null, ComputePipelineDesc? UpdateGroups = null,
+    ComputePipelineDesc? ClearBodyIndices = null);
 public readonly record struct DeviceAvbdSettings(int Iterations, int BodyIterations, float MultiplierRetention, float InitialErrorFraction);
 
 /// <summary>Concrete compliant ALM kernels using current component representations and the shared device graph.</summary>
@@ -26,7 +27,7 @@ public sealed class DeviceAvbdSolver : IDisposable
     private readonly CommandContext _commands;
     private readonly JobResourceAccess[] _extraAccesses;
     private readonly IDeviceConstraintSelection[] _selections;
-    private readonly int _initializeGroups, _updateGroups;
+    private readonly int _initializeGroups, _updateGroups, _clearBodyIndices;
     private bool _initialized;
 
     public DeviceAvbdSolver(IGraphicsBackend backend, Device device, DeviceBodies bodies, DeviceAvbdBodyEquations equations,
@@ -42,6 +43,8 @@ public sealed class DeviceAvbdSolver : IDisposable
         if(kernels.InitializeGroups is { } initialize) descriptions.Add(initialize);
         _updateGroups=kernels.UpdateGroups.HasValue?descriptions.Count:-1;
         if(kernels.UpdateGroups is { } update) descriptions.Add(update);
+        _clearBodyIndices=kernels.ClearBodyIndices.HasValue?descriptions.Count:-1;
+        if(kernels.ClearBodyIndices is { } clear) descriptions.Add(clear);
         _pipelines=descriptions.Select(kernel=>backend.CreateComputePipeline(device,kernel)).ToArray();
         _layouts=descriptions.Select(kernel=>kernel.Reflection.GetGlobalParamsVarLayout()??VariableLayoutReflection.Null).ToArray();
         var bindings=new Dictionary<string,ResourceBinding[]>();
@@ -86,6 +89,12 @@ public sealed class DeviceAvbdSolver : IDisposable
         }
         if(initialize)
         {
+            if(_clearBodyIndices>=0)
+            {
+                Bind(_clearBodyIndices,in step);
+                _backend.Dispatch(_commands,new((uint)((_bodies.Capacity+_threadsPerGroup-1)/_threadsPerGroup),1,1));
+                Barrier();
+            }
             Bind(0,in step);
             _backend.Dispatch(_commands,new((uint)((Math.Max(_bodies.Capacity,_graph.ConstraintCapacity)+_threadsPerGroup-1)/_threadsPerGroup),1,1));
             Barrier();
