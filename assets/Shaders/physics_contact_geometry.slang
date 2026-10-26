@@ -4,6 +4,7 @@
 struct DeviceContactGeometrySettings { uint pairs; uint bodiesPerContact; };
 ConstantBuffer<DeviceContactGeometrySettings> ContactGeometrySettings;
 StructuredBuffer<uint> DeviceContactGeometryRows;
+#include "physics_dispatch.slang"
 StructuredBuffer<DeviceCollisionContact> DeviceMatchInputContacts;
 StructuredBuffer<uint> DeviceMatchInputCounts;
 StructuredBuffer<uint> DeviceMatchInputBodyCounts;
@@ -13,7 +14,7 @@ RWStructuredBuffer<DeviceContactBody> DeviceContactBodyLinks;
 [shader("compute")][numthreads(64,1,1)]
 void UpdateDeviceContactGeometry(uint3 id:SV_DispatchThreadID)
 {
-    uint input=id.x;
+    uint input=devicePhysicsThreadIndex(id,64);
     if(input>=ContactGeometrySettings.pairs*4) return;
     if(input%4>=DeviceMatchInputCounts[input/4]) return;
     uint row=DeviceContactGeometryRows[input];

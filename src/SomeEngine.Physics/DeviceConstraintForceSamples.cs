@@ -105,7 +105,7 @@ public sealed class DeviceConstraintForceSamples<TData> : IDisposable where TDat
         _backend.SetPipeline(_commands, _pipeline);
         _backend.SetTransientParameterBindings(_commands, new(_layout, _bindings,
             MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in step, 1))));
-        _backend.Dispatch(_commands, new((uint)((Parameters.Capacity + _threadsPerGroup - 1) / _threadsPerGroup), 1, 1));
+        _backend.Dispatch(_commands, DevicePhysicsDispatch.CreateGroups((Parameters.Capacity + _threadsPerGroup - 1) / _threadsPerGroup));
         Copy(_rows, _rowReadback); Copy(_forces, _forceReadback);
         using RecordedCommands recorded = _backend.End(_commands);
         _initialized = true;

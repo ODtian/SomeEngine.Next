@@ -1,6 +1,7 @@
 #ifndef PHYSICS_XPBD_GRAPH
 #define PHYSICS_XPBD_GRAPH
 #include "physics_constraint_graph.slang"
+#include "physics_dispatch.slang"
 #include "physics_xpbd_types.slang"
 interface IDeviceXpbdConstraints : IDeviceConstraintBodies
 {

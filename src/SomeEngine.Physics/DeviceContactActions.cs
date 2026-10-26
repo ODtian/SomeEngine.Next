@@ -89,7 +89,7 @@ public sealed class DeviceContactActions : IDisposable
     }
     private void Dispatch()
     {
-        _backend.Dispatch(_commands, new((uint)((_graph.ConstraintCapacity + _threadsPerGroup - 1) / _threadsPerGroup), 1, 1));
+        _backend.Dispatch(_commands, DevicePhysicsDispatch.CreateGroups((_graph.ConstraintCapacity + _threadsPerGroup - 1) / _threadsPerGroup));
         _backend.Barrier(_commands, new MemoryBarrier(PipelineSync.ComputeShading, PipelineSync.ComputeShading,
             ResourceAccess.UnorderedAccess, ResourceAccess.UnorderedAccess));
     }

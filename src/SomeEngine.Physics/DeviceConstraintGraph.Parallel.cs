@@ -77,7 +77,7 @@ public sealed partial class DeviceConstraintGraph
     {
         _backend.SetPipeline(_commands, _pipelines[kernel]);
         _backend.SetTransientParameterBindings(_commands, new(_layouts[kernel], _bindings[kernel], []));
-        if (groups != 0) _backend.Dispatch(_commands, new((uint)groups, 1, 1));
+        if (groups != 0) _backend.Dispatch(_commands, DevicePhysicsDispatch.CreateGroups(groups));
         _backend.Barrier(_commands, new MemoryBarrier(PipelineSync.ComputeShading, PipelineSync.ComputeShading,
             ResourceAccess.UnorderedAccess, ResourceAccess.UnorderedAccess));
     }
