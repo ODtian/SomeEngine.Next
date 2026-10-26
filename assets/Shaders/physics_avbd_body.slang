@@ -10,6 +10,7 @@ struct DeviceAvbdEquation
     float3 linearGradient; float3 angularGradient; uint dimensions;
     // Pose of the angular basis used by the cached factorization.
     float4 rotationFrame;
+    uint constraintRows; float duration;
 };
 RWStructuredBuffer<DeviceAvbdEquation> DeviceAvbdBodyEquations;
 // Metadata = body index, actual Entity index/generation, active.
@@ -43,6 +44,7 @@ void deviceAvbdInitializeEquation(uint row)
     DeviceAvbdEquation equation;
     equation.dimensions = 3 + countbits(bodyRotationMask(body));
     equation.rotationFrame = body.rotation;
+    equation.constraintRows = 0; equation.duration = 0;
     equation.inertiaX = equation.inertiaY = equation.inertiaZ = float3(0);
     if (equation.dimensions > 3)
     {
@@ -54,10 +56,8 @@ void deviceAvbdInitializeEquation(uint row)
     for (uint index=0;index<21;index++) equation.values[index]=equation.factors[index]=0;
     DeviceAvbdBodyEquations[row] = equation;
 }
-void deviceAvbdReset(inout DeviceAvbdEquation equation,DeviceBodyState body,float duration)
+void deviceAvbdUpdateGradients(inout DeviceAvbdEquation equation,DeviceBodyState body,float duration)
 {
-    for (uint index=0;index<21;index++) equation.values[index]=0;
-    equation.rotationFrame=body.rotation;
     float inverseSquaredStep = 1 / (duration*duration), linearWeight = inverseSquaredStep / body.inverseMass;
     equation.linearGradient = (bodyCenterOfMass(body)-body.predictedCenterOfMass)*linearWeight;
     equation.angularGradient = float3(0);
@@ -66,6 +66,19 @@ void deviceAvbdReset(inout DeviceAvbdEquation equation,DeviceBodyState body,floa
         float3 error = bodyRotationVector(bodyRotationMultiply(bodyRotationConjugate(body.rotation),body.predictedRotation));
         equation.angularGradient = -bodyRotate(body.rotation,deviceAvbdInertia(equation,error))*inverseSquaredStep;
     }
+}
+bool deviceAvbdCanReuseInertia(DeviceAvbdEquation equation,DeviceBodyState body,float duration,uint constraintRows)
+{
+    return constraintRows==0&&equation.constraintRows==0&&equation.duration==duration&&
+        all(equation.rotationFrame==body.rotation)&&equation.factors[0]!=0&&
+        equation.values[0]==1/(duration*duration)/body.inverseMass;
+}
+void deviceAvbdReset(inout DeviceAvbdEquation equation,DeviceBodyState body,float duration)
+{
+    for (uint index=0;index<21;index++) equation.values[index]=0;
+    equation.rotationFrame=body.rotation;
+    deviceAvbdUpdateGradients(equation,body,duration);
+    float inverseSquaredStep=1/(duration*duration),linearWeight=inverseSquaredStep/body.inverseMass;
     for (uint axis=0;axis<3;axis++)
         equation.values[deviceAvbdMatrixIndex(axis,axis)] = linearWeight;
     for (uint axis=0;axis<equation.dimensions-3;axis++)
