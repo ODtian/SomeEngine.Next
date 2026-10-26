@@ -58,14 +58,19 @@ public sealed class DeviceAvbdSolver : IDisposable
         _bindings=_layouts.Select(layout=>DeviceCollisionGrid.OrderBindings(layout,bindings)).ToArray();
     }
     public SolveDeviceAvbd Solve()=>new(this);
+    public SolveDeviceAvbd Solve(DeviceInputTransfer equationInputs)=>new(this,equationInputs);
     public InitializeDeviceAvbd Initialize()=>new(this);
+    public InitializeDeviceAvbd Initialize(DeviceInputTransfer equationInputs)=>new(this,equationInputs);
     public IterateDeviceAvbd Iterate(int iterations)=>new(this,iterations);
     public IterateDeviceAvbd Iterate(int iterations,bool buildGraph)=>new(this,iterations,buildGraph);
     internal JobHandle Schedule(in PhysicsStepContext context,bool initialize,int iterations,JobHandle dependency)
         =>Schedule(in context,initialize,iterations,true,dependency);
     internal JobHandle Schedule(in PhysicsStepContext context,bool initialize,int iterations,bool buildGraph,JobHandle dependency)
+        =>Schedule(in context,initialize,iterations,buildGraph,DeviceInputTransfer.Upload,dependency);
+    internal JobHandle Schedule(in PhysicsStepContext context,bool initialize,int iterations,bool buildGraph,
+        DeviceInputTransfer equationInputs,JobHandle dependency)
     {
-        if(initialize) dependency=_equations.Upload(in context,_threadsPerGroup,dependency);
+        if(initialize&&equationInputs==DeviceInputTransfer.Upload) dependency=_equations.Upload(in context,_threadsPerGroup,dependency);
         Scheduler scheduler=WorldJobs.GetScheduler(context.World);
         var accesses=new List<JobResourceAccess>{_bodies.GetWriteAccess(scheduler)};
         _equations.AddAccesses(scheduler,accesses); _graph.AddBuildAccesses(scheduler,accesses);
@@ -75,8 +80,10 @@ public sealed class DeviceAvbdSolver : IDisposable
         return DevicePhysicsJobs.Schedule(scheduler,new SolverSubmission(this,context,initialize,iterations,buildGraph),accesses.ToArray(),dependency);
     }
     internal JobHandle ScheduleSolve(in PhysicsStepContext context,JobHandle dependency)
+        =>ScheduleSolve(in context,DeviceInputTransfer.Upload,dependency);
+    internal JobHandle ScheduleSolve(in PhysicsStepContext context,DeviceInputTransfer equationInputs,JobHandle dependency)
     {
-        JobHandle initialized=Schedule(in context,true,0,dependency);
+        JobHandle initialized=Schedule(in context,true,0,true,equationInputs,dependency);
         return Schedule(in context,false,_settings.Iterations,initialized);
     }
     private QueueCompletion Record(in PhysicsStepContext context,bool initialize,int iterations,bool buildGraph)
@@ -178,9 +185,17 @@ public sealed class DeviceAvbdSolver : IDisposable
     public void Dispose() { foreach(Pipeline pipeline in _pipelines) pipeline.Dispose(); _commands.Dispose(); }
 }
 public readonly struct SolveDeviceAvbd(DeviceAvbdSolver solver) : IPhysicsStage
-{ public JobHandle Schedule(in PhysicsStepContext context,JobHandle dependency)=>solver.ScheduleSolve(in context,dependency); }
+{
+    private readonly DeviceInputTransfer _equationInputs=DeviceInputTransfer.Upload;
+    internal SolveDeviceAvbd(DeviceAvbdSolver solver,DeviceInputTransfer equationInputs):this(solver)=>_equationInputs=equationInputs;
+    public JobHandle Schedule(in PhysicsStepContext context,JobHandle dependency)=>solver.ScheduleSolve(in context,_equationInputs,dependency);
+}
 public readonly struct InitializeDeviceAvbd(DeviceAvbdSolver solver) : IPhysicsStage
-{ public JobHandle Schedule(in PhysicsStepContext context,JobHandle dependency)=>solver.Schedule(in context,true,0,dependency); }
+{
+    private readonly DeviceInputTransfer _equationInputs=DeviceInputTransfer.Upload;
+    internal InitializeDeviceAvbd(DeviceAvbdSolver solver,DeviceInputTransfer equationInputs):this(solver)=>_equationInputs=equationInputs;
+    public JobHandle Schedule(in PhysicsStepContext context,JobHandle dependency)=>solver.Schedule(in context,true,0,true,_equationInputs,dependency);
+}
 public readonly struct IterateDeviceAvbd(DeviceAvbdSolver solver,int iterations) : IPhysicsStage
 {
     private readonly bool _buildGraph=true;
