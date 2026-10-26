@@ -33,14 +33,17 @@ public static partial class PhysicsScenes
         DeviceGridCapacity gridCapacity, int contactCapacity, float contactDistance,
         ReadOnlySpan<int> readbackBodyIndices, string shaderDirectory) =>
         CreateDevice(world, description, data, backend, device, settings, gridSettings, gridCapacity, contactCapacity,
-            contactDistance, readbackBodyIndices, shaderDirectory, new AcknowledgeSceneEvents(), default);
+            contactDistance, readbackBodyIndices, shaderDirectory, new AcknowledgeSceneEvents(), default, false);
 
     internal static PhysicsSceneSimulation CreateDevice<TEvents>(World world, PhysicsSceneDescription description, PhysicsSceneData data,
         IGraphicsBackend backend, Device device, PhysicsSceneSettings settings, DeviceGridSettings gridSettings,
         DeviceGridCapacity gridCapacity, int contactCapacity, float contactDistance,
-        ReadOnlySpan<int> readbackBodyIndices, string shaderDirectory, TEvents events, ReadOnlySpan<JobResourceAccess> eventAccesses)
+        ReadOnlySpan<int> readbackBodyIndices, string shaderDirectory, TEvents events, ReadOnlySpan<JobResourceAccess> eventAccesses,
+        bool contactEvents = true)
         where TEvents : struct, IPhysicsEventConsumer
     {
+        if (settings.JointBounds.Levels > 0 && settings.JointBoundsPerJoint == 0)
+            settings = settings with { JointBoundsPerJoint = Math.Max(1, data.Joints.Length - 1) };
         var shaders = new PhysicsSceneShaders(device.Capabilities.CompileTarget, shaderDirectory);
         DeviceGridKernels gridKernels = shaders.Grid();
         DeviceBodyKernels bodyKernels = shaders.Bodies();
@@ -48,8 +51,9 @@ public static partial class PhysicsScenes
         ComputePipelineDesc geometryKernel = shaders.Geometry(contactDistance), detectionKernel = shaders.Detection();
         DeviceContactMatchKernels matchKernels = shaders.Matching();
         ComputePipelineDesc contactGeometryKernel = shaders.ContactGeometry();
-        DeviceGraphKernels graphKernels = shaders.Graph(settings.ContactSupports.HasValue);
-        DeviceAvbdKernels avbdKernels = shaders.Avbd(settings.ContactSupports.HasValue);
+        bool useJointBounds = settings.JointBounds.Levels > 0 && data.Joints.Length > 0;
+        DeviceGraphKernels graphKernels = shaders.Graph(settings.ContactSupports.HasValue, useJointBounds);
+        DeviceAvbdKernels avbdKernels = shaders.Avbd(settings.ContactSupports.HasValue, useJointBounds);
         DeviceContactKernels responseKernels = shaders.Responses();
 
         PhysicsSceneEntities created = CreateEntities(world, data);
@@ -57,14 +61,12 @@ public static partial class PhysicsScenes
         const int threads = 64;
         var bodies = new DeviceBodies(backend, device, created.Bodies.Length);
         var equations = new DeviceAvbdBodyEquations(backend, device, bodies);
-        var grid = new DeviceCollisionGrid(backend, device, gridKernels, gridSettings, gridCapacity);
         var geometry = new DeviceCollisionGeometry(backend, device, new(created.Bodies.Length, 0, 0, 0), bodies);
         for (int index = 0; index < created.Bodies.Length; index++)
         {
             Entity entity = created.Bodies[index];
             world.Add(entity, new DeviceBodyBinding(bodies, index));
             world.Add(entity, new DeviceAvbdEquationBinding(equations, index));
-            world.Add(entity, new DeviceCollisionBody(grid, index));
             world.Add(entity, new DeviceGeometryBinding(geometry, index));
         }
         var readbackBodies = new Entity[readbackBodyIndices.Length];
@@ -94,11 +96,6 @@ public static partial class PhysicsScenes
         activities.AddBindings(bindings);
         var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, bodyKernels, threads,
             bindings, activities.GetWriteAccesses(scheduler));
-        var shapeInputs = grid.WriteGeometryReferences<BoxGeometry, DeviceComponentSource<BoxGeometry, DeviceBoxReader>>(pairs, default, 0, threads);
-        var updateGeometry = new UpdateDeviceGeometry(backend, device, grid, geometry, geometryKernel, 0, DeviceInputTransfer.Upload);
-        var detection = new DeviceCollisionDetection(backend, device, grid, geometry, detectionKernel, 0,
-            new(gridCapacity.Pairs, 4, Math.Min(gridCapacity.Pairs, 4096)), new(1e-5f, 32, 64), contactDistance,
-            DeviceInputTransfer.Resident, DeviceCollisionReadback.Contacts);
         var detected = new ContactPointBuffer(scheduler, contactCapacity, contactCapacity * 2);
         var parameters = new DeviceConstraintData<DeviceContactConstraint>(backend, device, contactCapacity, "DeviceContacts");
         var anchors = new DeviceContactBodies(backend, device, contactCapacity, 2);
@@ -106,11 +103,6 @@ public static partial class PhysicsScenes
         var responses = new DeviceConstraintState<DeviceContactResponseState>(backend, device, contactCapacity, "DeviceContactResponses");
         var supports = new DeviceSceneContactSupports(backend, device, world, created.Bodies, bodies, parameters,
             settings.ContactSupports);
-        var matching = new DeviceContactMatches(backend, device, world, points, parameters, detection, matchKernels,
-            new(.02f, .99f, true), contactCapacity * 2 + 1, threads);
-        var currentGeometry = matching.CreateGeometryUpdate(bodies, anchors, contactGeometryKernel);
-        var refresh = ContactPoints.Create(world, poses, points, detected, new SceneContactMaterials(),
-            matching.Components(new SceneDeviceContactComponents(histories, responses, supports, settings)), new(.02f, .99f, true));
         var contactInputs = new DeviceContactInputs(world, points, parameters, anchors);
         var stateInputs = new DeviceAvbdStateInputs<AvbdContactState, DeviceContactConstraint, DeviceAvbdContactState, DeviceAvbdContactStateSource>(
             backend, device, world, states, parameters, histories, default);
@@ -123,17 +115,42 @@ public static partial class PhysicsScenes
         supports.AddBindings(bindings);
         var joints = new DeviceSceneJoints(backend, device, world, created.Joints);
         joints.AddBindings(bindings);
+        var jointBounds = new DeviceSceneJointBounds(backend, device, world, members, created.Joints,
+            joints.Data, settings.JointBounds, settings.JointBoundsPerJoint);
+        jointBounds.AddBindings(bindings);
         var ranges = new DeviceSceneDistanceRanges(backend, device, world, created.DistanceRanges);
         ranges.AddBindings(bindings);
         JobResourceAccess[] reads = [.. parameters.GetReadAccesses(scheduler), anchors.GetReadAccess(scheduler),
             .. joints.Data.GetReadAccesses(scheduler), .. ranges.Data.GetReadAccesses(scheduler),
-            .. supports.GetReadAccesses(scheduler), .. activities.GetReadAccesses(scheduler)];
+            .. supports.GetReadAccesses(scheduler), .. jointBounds.GetReadAccesses(scheduler),
+            .. activities.GetReadAccesses(scheduler)];
         var graph = new DeviceConstraintGraph(backend, device, bodies, dynamics, graphKernels,
-            new(contactCapacity + joints.Data.Capacity + ranges.Data.Capacity +
+            new(contactCapacity + joints.Data.Capacity + ranges.Data.Capacity + jointBounds.Capacity +
                 (settings.ContactSupports.HasValue ? bodies.Capacity : 0), 2), bindings, reads,
-            threads, new IDeviceConstraintSelection[] { selected, joints.Selection, ranges.Selection }.Concat(supports.Selections).ToArray());
+            threads, new IDeviceConstraintSelection[] { selected, joints.Selection, ranges.Selection }
+                .Concat(jointBounds.Selections).Concat(supports.Selections).ToArray());
+        var pairExclusions = new DeviceScenePairExclusions(backend, device, world, created.Bodies,
+            data.CollisionExclusions.Length);
+        var gridBindings = new Dictionary<string, ResourceBinding[]>();
+        graph.AddBindings(gridBindings);
+        pairExclusions.AddBindings(gridBindings);
+        var grid = new DeviceCollisionGrid(backend, device, gridKernels, gridSettings, gridCapacity, gridBindings,
+            new JobResourceAccess[] { bodies.GetReadAccess(scheduler), pairExclusions.ReadAccess(scheduler) });
+        for (int index = 0; index < created.Bodies.Length; index++)
+            world.Add(created.Bodies[index], new DeviceCollisionBody(grid, index));
+        var shapeInputs = grid.WriteGeometryReferences<BoxGeometry, DeviceComponentSource<BoxGeometry, DeviceBoxReader>>(pairs, default, 0, threads);
+        var updateGeometry = new UpdateDeviceGeometry(backend, device, grid, geometry, geometryKernel, 0, DeviceInputTransfer.Upload);
+        var detection = new DeviceCollisionDetection(backend, device, grid, geometry, detectionKernel, 0,
+            new(gridCapacity.Pairs, 4, Math.Min(gridCapacity.Pairs, 4096)), new(1e-5f, 32, 64), contactDistance,
+            DeviceInputTransfer.Resident, DeviceCollisionReadback.Contacts);
+        var matching = new DeviceContactMatches(backend, device, world, points, parameters, detection, matchKernels,
+            new(.02f, .99f, true), contactCapacity * 2 + 1, threads);
+        var currentGeometry = matching.CreateGeometryUpdate(bodies, anchors, contactGeometryKernel);
+        var refresh = ContactPoints.Create(world, poses, points, detected, new SceneContactMaterials(),
+            matching.Components(new SceneDeviceContactComponents(histories, responses, supports, settings, contactEvents)), new(.02f, .99f, true));
         JobResourceAccess[] constraintAccesses = [.. reads, histories.GetWriteAccess(scheduler), responses.GetWriteAccess(scheduler),
-            joints.States.GetWriteAccess(scheduler), ranges.States.GetWriteAccess(scheduler), .. supports.GetWriteAccesses(scheduler)];
+            joints.States.GetWriteAccess(scheduler), ranges.States.GetWriteAccess(scheduler),
+            .. supports.GetWriteAccesses(scheduler), .. jointBounds.GetWriteAccesses(scheduler)];
         var solve = new DeviceAvbdSolver(backend, device, bodies, equations, graph, avbdKernels,
             new(settings.Iterations, settings.BodyIterations, settings.MultiplierRetention, 0), bindings, constraintAccesses, threads,
             new IDeviceConstraintSelection[] { selectedStates, selectedResponses, joints.StateSelection, ranges.StateSelection });
@@ -141,11 +158,14 @@ public static partial class PhysicsScenes
             threads, new IDeviceConstraintSelection[] { selectedResponses });
         var activityBindings = new Dictionary<string, ResourceBinding[]>(bindings);
         timedInputs.AddBindings(activityBindings);
-        var activity = new DevicePhysicsActivity(backend, device, activities, graph, shaders.Activity(settings.ContactSupports.HasValue), settings.Activity,
+        var activity = new DevicePhysicsActivity(backend, device, activities, graph,
+            shaders.Activity(settings.ContactSupports.HasValue, useJointBounds), settings.Activity,
             activityBindings, reads.Concat(timedInputs.GetReadAccesses(scheduler)).ToArray(), threads);
         var completedEvents = new PhysicsEventBuffer(scheduler, created.Bodies.Length);
         var breakJoints = new DeviceSceneJointBreaks(backend, device, world, bodies, members, created.Joints,
             joints, shaders.JointForces(), bindings, completedEvents, threads);
+        var contacts = new DeviceSceneContactEvents(backend, device, world, bodies, members, points, parameters, responses,
+            shaders, bindings, reads, new IDeviceConstraintSelection[] { selected, selectedResponses }, completedEvents, contactEvents, threads);
         var eventConsumption = new ConsumePhysicsEvents<TEvents>(world, eventRows, events, eventAccesses);
         var results = new DeviceBodyResults(backend, device, bodies, world, observed, readbackBodyIndices.Length);
         var statistics = new DeviceSceneStatistics(backend, device, bodies, parameters, selected, graph,
@@ -153,7 +173,10 @@ public static partial class PhysicsScenes
         PhysicsSceneTimings? timings = settings.Timings;
         var stages = sceneInputs.Measure(timings, "Scene inputs")
             .Then(bodyInputs.Upload().Measure(timings, "Body inputs"))
+            .Then(pairExclusions.Upload().Measure(timings, "Pair exclusions"))
+            .Then(jointBounds.Build().Measure(timings, "Joint bound topology"))
             .Then(joints.Upload().Measure(timings, "Joint inputs"))
+            .Then(jointBounds.Upload().Measure(timings, "Joint bound inputs"))
             .Then(ranges.Upload().Measure(timings, "Distance inputs"))
             .Then(timedInputs.WriteInputs().Measure(timings, "Timed body inputs"))
             .Then(timedInputs.Apply().Measure(timings, "Body impulses"))
@@ -179,6 +202,7 @@ public static partial class PhysicsScenes
             .Then(dynamics.UpdateVelocities().Measure(timings, "Body velocities"))
             .Then(response.ApplyRestitution(1).Measure(timings, "Restitution"))
             .Then(activity.Finish().Then(activity.Readback(completedEvents)).Measure(timings, "Completed activity"))
+            .Then(contacts.Observe().Measure(timings, "Completed contact events"))
             .Then(completedEvents.Emit(new SceneEventComponents()).Measure(timings, "Completed events"));
         var simulation = PhysicsSimulation.Create(world, filter, stages, data.Substeps);
         var consumer = results.Readback(threads).Measure(timings, "Body readback")
@@ -193,7 +217,8 @@ public static partial class PhysicsScenes
             [bodies, equations, grid, geometry, bodyInputs, timedInputs, sceneInputs, dynamics, shapeInputs, updateGeometry,
                 detection, detected, parameters, anchors, histories, responses, matching, currentGeometry, refresh,
                 contactInputs, stateInputs, selected, selectedStates, selectedResponses, joints, ranges, graph, solve, response,
-                results, statistics, activities, activity, completedEvents, eventConsumption, breakJoints, supports],
+                results, statistics, activities, activity, completedEvents, eventConsumption, breakJoints, supports,
+                pairExclusions, contacts, jointBounds],
             statistics, readbackBodies);
     }
 }
@@ -218,7 +243,7 @@ internal readonly struct CopyObservedSceneTransforms(QueryDefinition selected) :
 
 internal readonly struct SceneDeviceContactComponents(DeviceConstraintState<DeviceAvbdContactState> histories,
     DeviceConstraintState<DeviceContactResponseState> responses, DeviceSceneContactSupports supports,
-    PhysicsSceneSettings settings) : IContactPointComponents
+    PhysicsSceneSettings settings, bool events) : IContactPointComponents
 {
     public void AddReads(World world, List<JobResourceAccess> accesses) { }
     public void Add(ref JobCommandWriter commands, Entity point, in ContactPoint geometry,
@@ -233,5 +258,6 @@ internal readonly struct SceneDeviceContactComponents(DeviceConstraintState<Devi
         commands.Add(point, new DeviceAvbdState<DeviceAvbdContactState>(histories));
         commands.Add(point, new DeviceContactResponseBinding(responses));
         supports.AddContact(ref commands, point);
+        if (events) commands.Add(point, new ContactEventState<ScenePhysicsEventStream>());
     }
 }
