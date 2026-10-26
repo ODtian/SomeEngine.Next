@@ -30,11 +30,11 @@ public sealed class MillionPhysicsActivityTests(ITestOutputHelper output)
         long setup = Stopwatch.GetTimestamp();
         using PhysicsSceneSimulation scene = PhysicsScenes.CreateDevice(world, description, backend, device,
             new PhysicsSceneSettings(Iterations: 16, BodyIterations: 2, StepBudgetMilliseconds: 1000d / 60)
-            { Timings = timings, GeometryInputsFixed = true }, new(1, 16),
+            { Timings = timings, GeometryInputsFixed = true, EquationBindingsFixed = true }, new(1, 16),
             new(Bodies: 1_000_001, Cells: 8_000_008, Buckets: 16_000_017, Pairs: 1_000_000, Bins: 1),
             contactCapacity: 4_000_000, contactDistance: .02f, readbackBodyIndices: [1, 500_001, 1_000_000],
             shaderDirectory: Path.Combine(AppContext.BaseDirectory, "PhysicsShaders"));
-        output.WriteLine($"SetupMilliseconds={Stopwatch.GetElapsedTime(setup).TotalMilliseconds:R}; Adapter={device.Adapter.Name}");
+        output.WriteLine($"SetupMilliseconds={Stopwatch.GetElapsedTime(setup).TotalMilliseconds:R}; Adapter={device.Adapter.Name}; DedicatedVideoMemoryBytes={device.Adapter.DedicatedVideoMemory}");
 
         TimeSpan pause = GC.GetTotalPauseDuration();
         int collections = GC.CollectionCount(2);

@@ -20,6 +20,7 @@ public readonly record struct PhysicsSceneSettings(int Iterations, int BodyItera
     public PhysicsGraphSettings Graph { get; init; } = new(PhysicsGraphOrder.Islands, 16, 16, 64, 4, false);
     public float ContactDistance { get; init; }
     public bool GeometryInputsFixed { get; init; }
+    public bool EquationBindingsFixed { get; init; }
     public PhysicsSceneTimings? Timings { get; init; }
 }
 
