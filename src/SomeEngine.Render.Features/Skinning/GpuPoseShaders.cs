@@ -1,6 +1,7 @@
 using SlangShaderSharp;
 using SomeEngine.Graphics;
 using SomeEngine.Resources;
+using SomeEngine.Animation.Pose;
 
 namespace SomeEngine.Render.Features.Skinning;
 
@@ -30,11 +31,11 @@ internal static class GpuPoseShaders
             }, out ISession session), null);
             using Stream source = typeof(GpuPoseShaders).Assembly.GetManifestResourceStream("SomeEngine.Render.Features.Shaders.gpu_pose.slang")!;
             using var reader = new StreamReader(source);
-            using Stream sampling = typeof(GpuPoseShaders).Assembly.GetManifestResourceStream("SomeEngine.Render.Features.Shaders.gpu_pose_sampling.slang")!;
+            using Stream sampling = typeof(GpuPoseTarget).Assembly.GetManifestResourceStream("SomeEngine.Animation.Pose.Shaders.gpu_pose_sampling.slang")!;
             using var samplingReader = new StreamReader(sampling);
-            using Stream translation = typeof(GpuPoseShaders).Assembly.GetManifestResourceStream("SomeEngine.Render.Features.Shaders.gpu_pose_translation.slang")!;
+            using Stream translation = typeof(GpuPoseTarget).Assembly.GetManifestResourceStream("SomeEngine.Animation.Pose.Shaders.gpu_pose_translation.slang")!;
             using var translationReader = new StreamReader(translation);
-            using Stream rig = typeof(GpuPoseShaders).Assembly.GetManifestResourceStream("SomeEngine.Render.Features.Shaders.gpu_pose_rig.slang")!;
+            using Stream rig = typeof(GpuPoseTarget).Assembly.GetManifestResourceStream("SomeEngine.Animation.Pose.Shaders.gpu_pose_rig.slang")!;
             using var rigReader = new StreamReader(rig);
             string code = reader.ReadToEnd().Replace("#include \"gpu_pose_rig.slang\"", rigReader.ReadToEnd())
                 .Replace("#include \"gpu_pose_translation.slang\"", translationReader.ReadToEnd())
@@ -58,13 +59,13 @@ internal static class GpuPoseShaders
             SlangShaderData.RetainSession(session, aim);
             Require(module.FindEntryPointByName("WarpStride", out IEntryPoint stride), null);
             SlangShaderData.RetainSession(session, stride);
-            Require(module.FindEntryPointByName("SimulateXpbdChain", out IEntryPoint xpbd), null);
-            SlangShaderData.RetainSession(session, xpbd);
-            Require(session.CreateCompositeComponentType([module, advance, load, sample, store, translate, twoBone, aim, stride, xpbd], out IComponentType combined, out diagnostics), diagnostics);
+            Require(module.FindEntryPointByName("ReframeDevicePose", out IEntryPoint reframe), null);
+            SlangShaderData.RetainSession(session, reframe);
+            Require(session.CreateCompositeComponentType([module, advance, load, sample, store, translate, twoBone, aim, stride, reframe], out IComponentType combined, out diagnostics), diagnostics);
             SlangShaderData.RetainSession(session, combined);
             Require(combined.Link(out IComponentType linked, out diagnostics), diagnostics);
             SlangShaderData.RetainSession(session, linked);
-            shader = Shader.CreateFromSlang("GPU poses", s_global, session, [module], [advance, load, sample, store, translate, twoBone, aim, stride, xpbd], linked, [output]);
+            shader = Shader.CreateFromSlang("GPU poses", s_global, session, [module], [advance, load, sample, store, translate, twoBone, aim, stride, reframe], linked, [output]);
             s_shaders.Add(target, shader);
             return shader;
         }

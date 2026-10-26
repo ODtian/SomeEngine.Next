@@ -21,6 +21,8 @@ public sealed class DevicePoseOutputRead : IDisposable
     private readonly TaskCompletionSource _copied = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private bool _submitted;
     public DevicePoseOutput Output { get; }
+    /// <summary>Remains true until this selected read is copied or released by its consumer.</summary>
+    public bool CopyRequired => !_submitted && !_copied.Task.IsCompleted;
 
     internal DevicePoseOutputRead(Scheduler scheduler, in DevicePoseOutput output)
     {
@@ -56,6 +58,10 @@ public sealed class DevicePoseOutputRead : IDisposable
 
 public static partial class GpuPoseAnimation
 {
+    /// <summary>Retains the selected bytes while the caller reads the corresponding result component.</summary>
+    public static DevicePoseOutputRead ReadDeviceOutput(World world, in DevicePoseOutput output) =>
+        new(WorldJobs.GetScheduler(world), in output);
+
     /// <summary>Captures the selected result and retains its device read within the component read scope.</summary>
     public static DevicePoseOutputRead ReadDeviceOutput(World world, Entity target)
     {
@@ -64,7 +70,7 @@ public static partial class GpuPoseAnimation
         world.ExecuteReadQuery(query, ref capture, (scoped QueryCursor rows, ref OutputRead capture) =>
         {
             rows.TryGetRow(capture.Target, out QueryRow row);
-            capture.Read = new DevicePoseOutputRead(WorldJobs.GetScheduler(world), row.Read<DevicePoseOutput>());
+            capture.Read = ReadDeviceOutput(world, row.Read<DevicePoseOutput>());
         });
         world.ReleaseQuery(query);
         return capture.Read!;
@@ -79,8 +85,12 @@ public static partial class GpuPoseAnimation
 /// <summary>The accepted input clock for this target's selected device source representation.</summary>
 internal struct GpuPoseSourceState : IComponent
 {
+    internal DevicePoseSources? Sources;
+    internal PoseRange Range;
+    internal int PlaybackIndex;
     internal GpuPoseTarget Input;
     internal ulong BindingVersion;
+    internal ReadOnlyMemory<short> CpuBones;
     internal double PhysicsTime;
     internal bool HasInput;
 }
@@ -209,7 +219,12 @@ public readonly struct CopyDevicePoseOutput(DevicePoseSources sources) : IPhysic
 
 public readonly struct DevicePoseOutputResources : IJobComponentResources<DevicePoseOutput>
 {
-    public static void Collect(in DevicePoseOutput component, ref JobResourceAccessBuilder resources) { }
+    public static long GetVersion(in DevicePoseOutput component) => unchecked((long)(component.Input.Skeleton?.BindingVersion ?? 0));
+    public static void Collect(in DevicePoseOutput component, ref JobResourceAccessBuilder resources)
+    {
+        for (SkeletonInstance? section = component.Input.Skeleton; section is not null; section = section.ParentInstance)
+            resources.Read(section);
+    }
 }
 internal readonly struct GpuPoseSourceStateResources : IJobComponentResources<GpuPoseSourceState>
 {
