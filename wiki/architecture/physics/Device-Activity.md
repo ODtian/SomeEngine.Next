@@ -52,6 +52,10 @@
 参与角色与参数选择委托原 `DeviceLengthBodies`。
 `DeviceContactActivity` 沿同一当前加权锚返回法向穿透残差，参与角色继续由
 `DeviceContactBodies` 提供。
+`DeviceJointActivity` 复用共同坐标和限位误差；自由坐标的残差为零。
+`DeviceMotorActivity` 复用当前子步时刻的目标与阻尼平衡点，按实际启用轴返回米、弧度误差。
+`DeviceConstraintActivityGroups<TFirst,TSecond>` 沿原参与分组组合实体身份与残差，
+行偏移、读写角色和具体组编号继续复用 `DeviceConstraintBodyGroups`。
 
 `WakeConnected()` 在当前完整图上读取运动、当前输入及具体行误差，唤醒同岛主体。
 具体行通过 `IDeviceConstraintActivity.entity` 提供原约束实体身份。
