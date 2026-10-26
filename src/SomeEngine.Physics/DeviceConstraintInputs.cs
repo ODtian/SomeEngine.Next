@@ -16,7 +16,8 @@ public readonly struct WriteDeviceConstraintInputs<TComponent, TData, TSource> :
     private readonly QueryHandle _access;
     private readonly JobResourceAccess[] _accesses;
     private readonly int _rowsPerPacket;
-    internal WriteDeviceConstraintInputs(World world, QueryHandle rows, DeviceConstraintData<TData> data, TSource source, int rowsPerPacket)
+    internal WriteDeviceConstraintInputs(World world, QueryHandle rows, DeviceConstraintData<TData> data, TSource source,
+        int rowsPerPacket, ReadOnlySpan<JobResourceAccess> extraAccesses)
     {
         _world = world; _data = data; _source = source; _rowsPerPacket = rowsPerPacket;
         QueryDefinition inputs = world.GetQueryDefinition(rows).AsReadOnly();
@@ -27,8 +28,10 @@ public readonly struct WriteDeviceConstraintInputs<TComponent, TData, TSource> :
         source.AddReadResources(resources);
         resources.Add<TComponent, TSource>();
         resources.Add<DeviceConstraintBinding<TData>, DeviceConstraintReferenceResources<TData>>();
-        _accesses = new JobResourceAccess[QueryJobAccess.Count(definition)];
-        QueryJobAccess.CopyAccesses(world, definition, _accesses, resources);
+        int queryAccesses = QueryJobAccess.Count(definition);
+        _accesses = new JobResourceAccess[queryAccesses + extraAccesses.Length];
+        QueryJobAccess.CopyAccesses(world, definition, _accesses.AsSpan(0, queryAccesses), resources);
+        extraAccesses.CopyTo(_accesses.AsSpan(queryAccesses));
     }
     public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) =>
         new WriteDeviceConstraintInputJob<TComponent, TData, TSource, DeviceConstraintUploadResources<TData>>(_world, _access, _data, _source)
