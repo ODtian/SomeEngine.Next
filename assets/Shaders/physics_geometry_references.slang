@@ -111,8 +111,9 @@ void detectDeviceReferencedCollision<TKernel : IDeviceCollisionNarrowPhase>(uint
             DeviceCollisionContact contact = CollisionContacts[contactIndex];
             float3 firstPoint = first.position + rotateDeviceDirection(first.rotation, contact.firstLocalPoint);
             float3 secondPoint = second.position + rotateDeviceDirection(second.rotation, contact.secondLocalPoint);
-            uint firstCount = writeDeviceGeometryBodies(pair.firstGeometry, firstPoint, contactIndex * 6);
-            uint secondCount = writeDeviceGeometryBodies(pair.secondGeometry, secondPoint, contactIndex * 6 + firstCount);
+            uint firstCount = writeDeviceGeometryBodies(pair.firstGeometry, firstPoint, contactIndex * DetectionParameters.bodiesPerContact);
+            uint secondCount = writeDeviceGeometryBodies(pair.secondGeometry, secondPoint,
+                contactIndex * DetectionParameters.bodiesPerContact + firstCount);
             contact.firstBodyCount = int(firstCount);
             CollisionContacts[contactIndex] = contact;
             CollisionContactBodyCounts[contactIndex] = firstCount + secondCount;

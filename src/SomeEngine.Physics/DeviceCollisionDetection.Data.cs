@@ -4,7 +4,10 @@ using SomeEngine.Job;
 
 namespace SomeEngine.Physics;
 
-public readonly record struct DeviceDetectionCapacity(int Pairs, int FaceVertices, int WorkItems);
+public readonly record struct DeviceDetectionCapacity(int Pairs, int FaceVertices, int WorkItems)
+{
+    public int BodiesPerContact { get; init; } = 6;
+}
 
 [Flags]
 public enum DeviceCollisionReadback { None = 0, Distances = 1, Contacts = 2 }

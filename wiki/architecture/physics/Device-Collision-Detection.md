@@ -68,6 +68,10 @@ detectDeviceCollision(id.x, kernel);
 和并行设备工作项数量。每个工作项按 `work + k × WorkItems` 处理当前 bin 中的 pair，
 复用自己的 EPA 与裁剪工作区；每个 pair 只在自身结果位置写出。
 数值 scratch 按 `WorkItems` 分配，持久结果按 `Pairs` 分配。
+`BodiesPerContact` 由项目按具体组合设置，默认 6；例如刚体 Box/Box 选择 2，
+两节点 Capsule/Sphere 选择 3，三节点 Face/Sphere 选择 4。
+同一值决定检测端设备缓冲、所选 CPU 读回数组及写入跨度；
+`DeviceContactGeometry` 同时读取检测端跨度和持久锚的跨度，向原接触行更新几何。
 
 `Distances` 保存双方实体和共同 `CollisionDistance`；见证点为世界坐标，法向从第一方指向第二方，
 间距为正表示分离、为负表示穿透。

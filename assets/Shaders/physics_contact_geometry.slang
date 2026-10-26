@@ -1,7 +1,7 @@
 #include "physics_contact_types.slang"
 #include "physics_collision_contact.slang"
 #include "physics_constraint_math.slang"
-struct DeviceContactGeometrySettings { uint pairs; uint bodiesPerContact; };
+struct DeviceContactGeometrySettings { uint pairs; uint bodiesPerContact; uint inputBodiesPerContact; };
 ConstantBuffer<DeviceContactGeometrySettings> ContactGeometrySettings;
 StructuredBuffer<uint> DeviceContactGeometryRows;
 #include "physics_dispatch.slang"
@@ -31,7 +31,7 @@ void UpdateDeviceContactGeometry(uint3 id:SV_DispatchThreadID)
     float3 delta=float3(0);
     for(uint end=0;end<count;end++)
     {
-        DeviceContactBody link=DeviceMatchInputBodies[input*6+end];
+        DeviceContactBody link=DeviceMatchInputBodies[input*ContactGeometrySettings.inputBodiesPerContact+end];
         DeviceContactBodyLinks[point.bodyOffset+end]=link;
         DeviceBodyState body=DeviceBodyStates[link.stateIndex];
         if(point.predicted!=0) body=deviceBodyStart(body);
