@@ -1,6 +1,6 @@
 # 按实体集合执行查询工作
 
-本页记录已实现的实体范围调度与借用接口。源码入口为 [EntityQueryJobs](../../../src/SomeEngine.ECS.Systems/EntityQueryJobs.cs)、[受限查询视图](../../../src/SomeEngine.ECS.Systems/EntityQueryViews.cs)、[引用资源绑定](../../../src/SomeEngine.ECS.Systems/QueryReadResources.EntityQueries.cs)和 [QueryDefinition](../../../src/SomeEngine.ECS/Queries/QueryDefinition.cs)。公共行为入口为 [EntityQueryJobsTests](../../../tests/SomeEngine.ECS.Systems.Tests/EntityQueryJobsTests.cs)。
+本页记录已实现的实体范围调度与借用接口。源码入口为 [EntityQueryJobs](../../../src/SomeEngine.ECS.Systems/EntityQueryJobs.cs)、[受限查询视图](../../../src/SomeEngine.ECS.Systems/EntityQueryViews.cs)、[整组执行](../../../src/SomeEngine.ECS.Systems/EntityQueryJobs.Group.cs)、[引用资源绑定](../../../src/SomeEngine.ECS.Systems/QueryReadResources.EntityQueries.cs)和 [QueryDefinition](../../../src/SomeEngine.ECS/Queries/QueryDefinition.cs)。公共行为入口为 [EntityQueryJobsTests](../../../tests/SomeEngine.ECS.Systems.Tests/EntityQueryJobsTests.cs) 与 [EntityQueryGroupTests](../../../tests/SomeEngine.ECS.Systems.Tests/EntityQueryGroupTests.cs)。
 
 ## 数据与访问声明
 
@@ -51,6 +51,18 @@ completed.Complete();
 ```
 
 工作数据与其实体跨度保持有效至返回句柄完成。调用方在完成后修改派生集合、释放查询或结束相关实体输入的使用期。
+
+## 同一范围内的多阶段执行
+
+`EntityQueryJobs.ScheduleGroup` 接收与 `Schedule` 相同的工作、额外资源、引用描述器和依赖参数，将全部 work 的实际组件范围与引用资源合并为一次数值工作的访问集合。`IEntityQueryGroupJob.Execute(scoped EntityQueryGroup group)` 在这次访问持续有效时执行。`group.Count` 给出捕获的 work 数量，`group.Get(index)` 借用该 work 的原查询视图。
+
+调用方在第一次数值写入前复核成员与参与关系。返回 `false` 时，桥结束当前借用，按更新后的具体 work 重新捕获行位置、查询范围及引用资源；返回 `true` 表示该组同步工作已经完成。需要扫描原查询成员时，调用方通过额外 `accesses` 声明相应元数据读取，使新成员检测和数值写入处于同一次访问范围。
+
+`group.ExecuteParallel(in job, start, count)` 同步执行已捕获的连续 work；回调收到原 work 索引及对应受限视图。每次调用返回前完成全部参与工作，因此后续阶段可以直接读取前一阶段更新的组件。
+
+初始化后生成的岛或颜色范围，通过 `group.ExecuteParallel(in work, in job, start, count)` 取得其当前实体行。该入口沿原捕获逻辑解析实际地址，使用现有资源覆盖检查确认组件及对象范围由当前访问集合持有，并共享本次调度的写入版本。项目的全局 work 提供生成这些派生范围所需的原实体与引用资源；数值 work 保存实际参与实体的引用。
+
+两种同步入口都按各 work 的实际组件与引用资源范围调用共同 `ComponentResourceGroups`。实际重叠且含写入的 work 在组内依次执行，相容组通过原 Scheduler 同步范围并行推进；共享只读输入保留并行语义。资源分组与调用方的岛、颜色及数值次序各自承担对应职责。所有同步参与者 Join 后，外层数值工作才释放组件、拓扑和对象访问。查询数据、范围及相容性分组容量沿同一工作区池复用。
 
 ## 调度、重绑定与完成
 
