@@ -57,7 +57,7 @@ public sealed partial class DeviceXpbdTests
         using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
         using var results = new DeviceBodyResults(backend, device, bodies);
         using var project = new DeviceXpbdProjection<DeviceJointConstraint, XpbdJointState>(backend, device, world,
-            rows, bodies, joints, multipliers, CompileXpbdJoint(), 64);
+            rows, bodies, dynamics, joints, multipliers, CompileXpbdJoint(), 64);
         var deviceStages = joints.BeginInputs().Then(write).Then(joints.UploadInputs())
             .Then(bodies.WriteInputs(64)).Then(bodies.UploadInputs()).Then(dynamics.Predict(Vector3.Zero))
             .Then(project.Initialize()).Then(project.Iterate(8)).Then(dynamics.UpdateVelocities()).Then(results.Readback(64));
@@ -106,7 +106,7 @@ public sealed partial class DeviceXpbdTests
         var bindings = new Dictionary<string, ResourceBinding[]>();
         joints.AddBindings(bindings);
         using var project = new DeviceXpbdProjection<DeviceMotorConstraint, XpbdMotorState>(backend, device, world,
-            motorRows, bodies, motors, multipliers, CompileXpbdMotor(), 64, bindings, joints.GetReadAccesses(jobs));
+            motorRows, bodies, dynamics, motors, multipliers, CompileXpbdMotor(), 64, bindings, joints.GetReadAccesses(jobs));
         var stages = joints.BeginInputs().Then(writeJoints).Then(joints.UploadInputs())
             .Then(motors.BeginInputs()).Then(writeMotors).Then(motors.UploadInputs())
             .Then(bodies.WriteInputs(64)).Then(bodies.UploadInputs()).Then(dynamics.Predict(Vector3.Zero))
@@ -158,7 +158,7 @@ public sealed partial class DeviceXpbdTests
         var bindings = new Dictionary<string, ResourceBinding[]>();
         joints.AddBindings(bindings);
         using var project = new DeviceXpbdProjection<DeviceMotorConstraint, XpbdMotorState>(backend, device, world,
-            motorRows, bodies, motors, multipliers, CompileXpbdMotor(), 64, bindings, joints.GetReadAccesses(jobs));
+            motorRows, bodies, dynamics, motors, multipliers, CompileXpbdMotor(), 64, bindings, joints.GetReadAccesses(jobs));
         var stages = joints.BeginInputs().Then(writeJoints).Then(joints.UploadInputs())
             .Then(motors.BeginInputs()).Then(writeMotors).Then(motors.UploadInputs())
             .Then(bodies.WriteInputs(64)).Then(bodies.UploadInputs()).Then(dynamics.Predict(Vector3.Zero))
@@ -199,7 +199,7 @@ public sealed partial class DeviceXpbdTests
         using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
         using var results = new DeviceBodyResults(backend, device, bodies);
         using var project = new DeviceXpbdProjection<DeviceJointConstraint, XpbdJointState>(backend, device, world,
-            rows, bodies, joints, multipliers, CompileXpbdJoint(), 64);
+            rows, bodies, dynamics, joints, multipliers, CompileXpbdJoint(), 64);
         var stages = joints.BeginInputs().Then(write).Then(joints.UploadInputs())
             .Then(bodies.WriteInputs(64)).Then(bodies.UploadInputs()).Then(dynamics.Predict(Vector3.Zero))
             .Then(project.Initialize()).Then(project.Iterate(8)).Then(dynamics.UpdateVelocities()).Then(results.Readback(64));
@@ -217,6 +217,7 @@ public sealed partial class DeviceXpbdTests
     {
         D3D12TestShader shader = shaderCompiler.CompileWithSearchPaths("xpbd_joint", """
             #include "physics_xpbd_joint.slang"
+            #include "physics_xpbd.slang"
             [shader("compute")][numthreads(64,1,1)]
             void Initialize(uint3 id : SV_DispatchThreadID) { initializeDeviceXpbd<DeviceXpbdJoint>(id.x); }
             [shader("compute")][numthreads(64,1,1)]
@@ -231,6 +232,7 @@ public sealed partial class DeviceXpbdTests
     {
         D3D12TestShader shader = shaderCompiler.CompileWithSearchPaths("xpbd_motor", """
             #include "physics_xpbd_motor.slang"
+            #include "physics_xpbd.slang"
             [shader("compute")][numthreads(64,1,1)]
             void Initialize(uint3 id : SV_DispatchThreadID) { initializeDeviceXpbd<DeviceXpbdMotor>(id.x); }
             [shader("compute")][numthreads(64,1,1)]
