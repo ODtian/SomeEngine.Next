@@ -62,8 +62,7 @@ internal static class RuntimeApplication
                     AssetManifest manifest = AssetManifest.Load(Path.Combine(contentRoot, "Library", "AssetManifest"));
                     SlangCompileTarget target = options.GraphicsBackend == RuntimeGraphicsBackend.Vulkan
                         ? SlangCompileTarget.Spirv : SlangCompileTarget.Dxil;
-                    SlangResult result = Slang.CreateGlobalSession(Slang.ApiVersion, out IGlobalSession slang);
-                    if (result.Failed) throw new InvalidOperationException($"Slang global session creation failed with {result}.");
+                    IGlobalSession slang = Shader.CreateSlangGlobalSession();
                     var files = new AssetLoader(new LooseAssetStorage(contentRoot, manifest));
                     content = new ApplicationContent(contentRoot, options.GraphicsBackend, catalogWriteTime,
                         files, manifest, slang, CreateShaderSessionDescription(slang, target));

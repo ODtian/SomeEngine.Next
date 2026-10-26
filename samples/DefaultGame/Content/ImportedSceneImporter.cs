@@ -105,20 +105,12 @@ public sealed class ImportedSceneImporter : GltfSceneImporter
         foreach (float cutoff in model.LogicalMaterials.Where(static material => !material.Unlit).Select(Cutoff).Distinct())
         {
             string shaderName = ShaderName(cutoff);
-            string shader = File.ReadAllText(Path.Combine(defaults, "standard.slang"))
-                .Replace("\"standard_material.slang\"", "\"scene_material.slang\"");
-            if (cutoff >= 0)
-                shader = Replace(shader, "typedef OpaqueVisibilityEvaluate<VertexEvaluate.Vertex> VisibilityEvaluate;",
-                    MaskShader.Replace("ALPHA_CUTOFF", cutoff.ToString("R", CultureInfo.InvariantCulture)) + "\ntypedef SceneMask VisibilityEvaluate;");
-            WriteIfChanged(Path.Combine(directory, shaderName + ".slang"), shader);
+            WriteIfChanged(Path.Combine(directory, shaderName + ".slang"),
+                CreateSurfaceShader(defaults, shaderName, cutoff, false));
             WriteSurfaceEntries(directory, shaderName);
             string definitionPath = Path.Combine(directory, shaderName + ".shader");
-            var definition = JsonNode.Parse(File.ReadAllText(Path.Combine(defaults, "standard.shader")))!;
-            Guid shaderId = File.Exists(definitionPath)
-                ? Guid.Parse(JsonNode.Parse(File.ReadAllText(definitionPath))!["Fields"]!["Id"]!.GetValue<string>()) : Guid.NewGuid();
-            definition["Fields"]!["Id"] = shaderId.ToString();
-            definition["Fields"]!["Name"] = shaderName;
-            definition["Blocks"]![0]!["Fields"]!["SourceNames"] = new JsonArray(shaderName + ".slang");
+            JsonNode definition = CreateSurfaceDefinition(definitionPath, defaults, shaderName, cutoff);
+            Guid shaderId = Guid.Parse(definition["Fields"]!["Id"]!.GetValue<string>());
             WriteIfChanged(definitionPath, definition.ToJsonString());
             await project.BuildAsync(definitionPath);
             shaderIds.Add(shaderId);
@@ -145,12 +137,12 @@ public sealed class ImportedSceneImporter : GltfSceneImporter
             string surface = twoSided ? suffix[..^"_both".Length] : suffix;
             float cutoff = surface == "opaque" ? -1 : BitConverter.Int32BitsToSingle(
                 int.Parse(surface["mask_".Length..], NumberStyles.HexNumber, CultureInfo.InvariantCulture));
-            string source = CreateSurfaceShader(Path.Combine(engineRoot, "templates/DefaultProject/assets/Shaders"),
+            string source = CreateSurfaceShader(Path.Combine(engineRoot, "samples/DefaultGame/assets/Shaders"),
                 shaderName, cutoff, twoSided);
             WriteIfChanged(sourcePath, source);
             WriteSurfaceEntries(directory, shaderName);
             JsonNode definition = CreateSurfaceDefinition(definitionPath,
-                Path.Combine(engineRoot, "templates/DefaultProject/assets/Shaders"), shaderName, cutoff);
+                Path.Combine(engineRoot, "samples/DefaultGame/assets/Shaders"), shaderName, cutoff);
             WriteIfChanged(definitionPath, definition.ToJsonString());
         }
     }
@@ -163,12 +155,18 @@ public sealed class ImportedSceneImporter : GltfSceneImporter
         definition["Fields"]!["Id"] = id.ToString();
         definition["Fields"]!["Name"] = name;
         definition["Blocks"]![0]!["Fields"]!["SourceNames"] = new JsonArray("cluster_transparency.slang", name + ".slang", name + "_transparency.slang");
-        // Both import and refresh derive the saved depth variants from the same material declaration.
-        foreach (JsonNode? value in (JsonArray)definition["Blocks"]![0]!["Fields"]!["Specializations"]!)
-            if (value!["EntryPoint"]!.GetValue<string>() is "ClusterShadowRequests" or "ClusterForwardShade" or "BuildTransparentGeometry" or
-                "RequestTransparentPages" or
-                "ResolveTransparentColor" or "ResolveProjectedTransparentColor")
-                ((JsonArray)value["Arguments"]!)[0] = cutoff >= 0 ? "1" : "0";
+        var specializations = new JsonArray();
+        string depth = cutoff >= 0 ? "1" : "0";
+        foreach (string mode in new[] { "0", "8" })
+        {
+            specializations.Add(new JsonObject { ["EntryPoint"] = "ClusterShadeMode", ["Arguments"] = new JsonArray(mode) });
+            specializations.Add(new JsonObject { ["EntryPoint"] = "ClusterShadowRequests", ["Arguments"] = new JsonArray(depth, mode) });
+            specializations.Add(new JsonObject { ["EntryPoint"] = "ClusterForwardShade", ["Arguments"] = new JsonArray(depth, mode) });
+        }
+        foreach (string entry in new[] { "BuildTransparentGeometry", "RequestTransparentPages", "ResolveTransparentColor", "ResolveProjectedTransparentColor" })
+            foreach (string tessellated in new[] { "false", "true" })
+                specializations.Add(new JsonObject { ["EntryPoint"] = entry, ["Arguments"] = new JsonArray(depth, tessellated) });
+        definition["Blocks"]![0]!["Fields"]!["Specializations"] = specializations;
         return definition;
     }
 

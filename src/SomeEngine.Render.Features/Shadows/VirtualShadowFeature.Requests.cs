@@ -12,7 +12,8 @@ public sealed partial class VirtualShadowFeature
     private void ConfigureShadowRequests(ref RenderGraphEdit edit, GraphRegionId parent)
     {
         ShadowPageRequests = edit.AddRegion("Virtual shadow caller page requests", parent);
-        _geometry.ConfigureShadowRequests(edit, ShadowPageRequests);
+        if (_shadowMap.Settings.Enabled)
+            _geometry.ConfigureShadowRequests(edit, ShadowPageRequests);
     }
 
     private void BindReceiverPageDemand(ref RenderGraphEdit graph, ref PassDefinition pass, PipelineSync sync)
