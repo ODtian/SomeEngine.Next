@@ -17,9 +17,9 @@ struct ShadeUniforms
     uint ShadeBinCount;
     uint MaterialSlotCapacity;
     uint ViewCount;
-    uint SurfaceDataStride;
+    uint Padding;
     uint VisibilityDepth;
-    uint3 SurfacePadding;
+    uint3 Padding1;
 };
 
 ConstantBuffer<ShadeUniforms> Uniforms;
@@ -51,6 +51,8 @@ struct TriangleInfo
     uint vertexCount;
     uint viewIndex;
     uint materialSlot;
+    uint visibility;
+    uint sourceLane;
 };
 
 bool LoadTriangleInfo(DrawRequest req, uint triangleID, out TriangleInfo tri)
@@ -94,21 +96,54 @@ bool LoadTriangleInfo(DrawRequest req, uint triangleID, out TriangleInfo tri)
     return true;
 }
 
+bool LoadTriangleInfo(uint visibility, uint viewIndex, out TriangleInfo tri)
+{
+    uint visible = DecodeVisBufferVisibleClusterIndex(visibility);
+    DrawRequest request = VisibleClusterRequest(VisibleClusters[visible]);
+    bool loaded = LoadTriangleInfo(request, DecodeVisBufferTriangleID(visibility), tri);
+    tri.visibleClusterIndex = visible;
+    return loaded && DrawRequestViewIndex(request) == viewIndex;
+}
+
+TriangleInfo ReadTriangleInfoLane(TriangleInfo value, uint lane)
+{
+    value.visibleClusterIndex = WaveReadLaneAt(value.visibleClusterIndex, lane);
+    value.triangleID = WaveReadLaneAt(value.triangleID, lane);
+    value.instanceID = WaveReadLaneAt(value.instanceID, lane);
+    value.vi0 = WaveReadLaneAt(value.vi0, lane);
+    value.vi1 = WaveReadLaneAt(value.vi1, lane);
+    value.vi2 = WaveReadLaneAt(value.vi2, lane);
+    value.vertexBlobAddress = WaveReadLaneAt(value.vertexBlobAddress, lane);
+    value.vertexBlobSize = WaveReadLaneAt(value.vertexBlobSize, lane);
+    value.vertexCount = WaveReadLaneAt(value.vertexCount, lane);
+    value.viewIndex = WaveReadLaneAt(value.viewIndex, lane);
+    value.materialSlot = WaveReadLaneAt(value.materialSlot, lane);
+    return value;
+}
+
 bool decodeTriangle(uint3 pixelCoord, out TriangleInfo tri)
 {
     tri = {};
-    if (pixelCoord.x >= Uniforms.ScreenWidth || pixelCoord.y >= Uniforms.ScreenHeight)
-        return false;
+    if (pixelCoord.x >= Uniforms.ScreenWidth || pixelCoord.y >= Uniforms.ScreenHeight) return false;
     uint visibility = VisBuffer[pixelCoord];
-    if (IsVisBufferEmpty(visibility))
-        return false;
-    uint visible = DecodeVisBufferVisibleClusterIndex(visibility);
-    DrawRequest request = VisibleClusterRequest(VisibleClusters[visible]);
-    if (DrawRequestViewIndex(request) != pixelCoord.z)
-        return false;
-    bool loaded = LoadTriangleInfo(request, DecodeVisBufferTriangleID(visibility), tri);
-    tri.visibleClusterIndex = visible;
-    return loaded;
+    if (IsVisBufferEmpty(visibility)) return false;
+    uint leader = WaveMaskFirstLane(WaveMatchingLanes(visibility) & WaveMatchingLanes(pixelCoord.z));
+    uint valid = 0u;
+    if (WaveGetLaneIndex() == leader) valid = LoadTriangleInfo(visibility, pixelCoord.z, tri) ? 1u : 0u;
+    valid = WaveReadLaneAt(valid, leader);
+    tri = ReadTriangleInfoLane(tri, leader);
+    tri.visibility = visibility;
+    tri.sourceLane = leader;
+    return valid != 0u;
+}
+
+uint GetTriangleWaveLeader(TriangleInfo tri, uint previousFrame)
+{
+    uint4 frameLanes = WaveMatchingLanes(previousFrame);
+    if ((frameLanes[tri.sourceLane >> 5u] & (1u << (tri.sourceLane & 31u))) != 0u)
+        return tri.sourceLane;
+    // Surface reconstruction can end individual lanes before motion evaluation.
+    return WaveMaskFirstLane(WaveMatchingLanes(tri.visibility) & WaveMatchingLanes(tri.viewIndex) & frameLanes);
 }
 
 struct PipelineTriangleProjection
@@ -155,19 +190,16 @@ TDomain.TriangleData evaluateTriangleWithTransform<TVE, TDomain>(
     where TVE : IVertexEvaluate
     where TDomain : IDomainEvaluate<TVE.Vertex>
 {
-    TVE.Vertex v0 = EvaluateVertexWave(
-        evaluator,
-        makeVertexEvalContext(tri, transform, isPreviousFrame, tri.vi0),
-        tri.visibleClusterIndex);
-    TVE.Vertex v1 = EvaluateVertexWave(
-        evaluator,
-        makeVertexEvalContext(tri, transform, isPreviousFrame, tri.vi1),
-        tri.visibleClusterIndex);
-    TVE.Vertex v2 = EvaluateVertexWave(
-        evaluator,
-        makeVertexEvalContext(tri, transform, isPreviousFrame, tri.vi2),
-        tri.visibleClusterIndex);
-    return domain.makeTriangle(v0, v1, v2, tri.materialSlot);
+    uint leader = GetTriangleWaveLeader(tri, isPreviousFrame);
+    TDomain.TriangleData triangle;
+    if (WaveGetLaneIndex() == leader)
+    {
+        TVE.Vertex v0 = evaluator.evaluate(makeVertexEvalContext(tri, transform, isPreviousFrame, tri.vi0));
+        TVE.Vertex v1 = evaluator.evaluate(makeVertexEvalContext(tri, transform, isPreviousFrame, tri.vi1));
+        TVE.Vertex v2 = evaluator.evaluate(makeVertexEvalContext(tri, transform, isPreviousFrame, tri.vi2));
+        triangle = domain.makeTriangle(v0, v1, v2, tri.materialSlot);
+    }
+    return domain.readLane(triangle, leader);
 }
 
 TDomain.TriangleData evaluateTriangle<TVE, TDomain>(
@@ -183,6 +215,34 @@ TDomain.TriangleData evaluateTriangle<TVE, TDomain>(
         tri,
         GetCurrentInstanceTransform(tri.instanceID),
         0u);
+}
+
+PipelineTriangleProjection ProjectTriangleWave<TVertex, TDomain>(
+    uniform TDomain domain,
+    ClusterViewUniforms view,
+    TDomain.TriangleData triangle,
+    TriangleInfo info)
+    where TDomain : IDomainEvaluate<TVertex>
+{
+    uint leader = GetTriangleWaveLeader(info, 0u);
+    PipelineTriangleProjection projection;
+    if (WaveGetLaneIndex() == leader)
+    {
+        ScreenProjection first = ProjectToScreenProjection(ClusterPositionForView(domain.cornerPosition(triangle, 0u), view), view.ViewProj, Uniforms.ScreenWidth, Uniforms.ScreenHeight);
+        ScreenProjection second = ProjectToScreenProjection(ClusterPositionForView(domain.cornerPosition(triangle, 1u), view), view.ViewProj, Uniforms.ScreenWidth, Uniforms.ScreenHeight);
+        ScreenProjection third = ProjectToScreenProjection(ClusterPositionForView(domain.cornerPosition(triangle, 2u), view), view.ViewProj, Uniforms.ScreenWidth, Uniforms.ScreenHeight);
+        projection.Origin = first.Pixel;
+        projection.FirstEdge = second.Pixel - first.Pixel;
+        projection.SecondEdge = third.Pixel - first.Pixel;
+        projection.InverseArea = 1.0 / (projection.FirstEdge.x * projection.SecondEdge.y - projection.FirstEdge.y * projection.SecondEdge.x);
+        projection.InverseW = float3(first.InvW, second.InvW, third.InvW);
+    }
+    projection.Origin = WaveReadLaneAt(projection.Origin, leader);
+    projection.FirstEdge = WaveReadLaneAt(projection.FirstEdge, leader);
+    projection.SecondEdge = WaveReadLaneAt(projection.SecondEdge, leader);
+    projection.InverseArea = WaveReadLaneAt(projection.InverseArea, leader);
+    projection.InverseW = WaveReadLaneAt(projection.InverseW, leader);
+    return projection;
 }
 
 float3 computeTriangleBarycentricAt<TVertex, TDomain>(
@@ -216,19 +276,18 @@ SurfaceBarycentrics ResolveBarycentricsAtDepth<TVertex, TDomain>(
     uint3 pixelCoord,
     ClusterViewUniforms view,
     TDomain.TriangleData triangle,
+    TriangleInfo info,
     float depth,
     out float3 positionFromDepth)
     where TDomain : IDomainEvaluate<TVertex>
 {
     float2 pixelCenter = float2(pixelCoord.xy) + 0.5;
-    float3 seed = computeTriangleBarycentricAt<TVertex, TDomain>(
-        domain, pixelCenter, view, triangle);
-    float3 seedX = computeTriangleBarycentricAt<TVertex, TDomain>(
-        domain, pixelCenter + float2(1.0, 0.0), view, triangle);
-    float3 seedY = computeTriangleBarycentricAt<TVertex, TDomain>(
-        domain, pixelCenter + float2(0.0, 1.0), view, triangle);
-
+    PipelineTriangleProjection projection = ProjectTriangleWave<TVertex, TDomain>(domain, view, triangle, info);
+    float3 seed = TriangleBarycentricAt(projection, pixelCenter);
+    float3 seedX = TriangleBarycentricAt(projection, pixelCenter + float2(1.0, 0.0));
+    float3 seedY = TriangleBarycentricAt(projection, pixelCenter + float2(0.0, 1.0));
     positionFromDepth = ReconstructWorldPositionAt(pixelCenter, depth, view);
+
     SurfaceReconstructionInput input;
     input.PixelCenter = pixelCenter;
     input.TargetPosition = positionFromDepth;
@@ -240,20 +299,19 @@ SurfaceBarycentrics ResolveBarycentricsAtDepth<TVertex, TDomain>(
     input.ParentValue = seed;
     input.ParentDx = seedX - seed;
     input.ParentDy = seedY - seed;
+    input.WorldTranslation = view.WorldTranslation;
     input.ViewProjection = view.ViewProj;
     input.ScreenSize = uint2(Uniforms.ScreenWidth, Uniforms.ScreenHeight);
-    input.WorldTranslation = view.WorldTranslation;
     return domain.reconstruct(triangle, input);
 }
 
 SurfaceBarycentrics ResolveBarycentrics<TVertex, TDomain>(
     uniform TDomain domain, uint3 pixelCoord, ClusterViewUniforms view,
-    TDomain.TriangleData triangle)
+    TDomain.TriangleData triangle, TriangleInfo info, out float depth, out float3 positionFromDepth)
     where TDomain : IDomainEvaluate<TVertex>
 {
-    float3 positionFromDepth;
-    return ResolveBarycentricsAtDepth<TVertex, TDomain>(
-        domain, pixelCoord, view, triangle, DepthBuffer.Load(int4(pixelCoord, 0)), positionFromDepth);
+    depth = DepthBuffer.Load(int4(pixelCoord, 0));
+    return ResolveBarycentricsAtDepth<TVertex, TDomain>(domain, pixelCoord, view, triangle, info, depth, positionFromDepth);
 }
 
 float2 ClusterMotionClipToUv(float4 clip)
@@ -332,7 +390,7 @@ bool TryEvaluateSurfacePixel<TVE, TDomain>(
     float depth = DepthBuffer.Load(int4(coord, 0));
     float3 positionFromDepth;
     SurfaceBarycentrics coordinates = ResolveBarycentricsAtDepth<TVE.Vertex, TDomain>(
-        domain, coord, view, triangle, depth, positionFromDepth);
+        domain, coord, view, triangle, tri, depth, positionFromDepth);
     if (coordinates.Valid == 0u) return false;
     bary = coordinates.Value;
     evaluated = domain.eval(triangle, bary);
@@ -350,26 +408,6 @@ bool TryEvaluateSurfacePixel<TVE, TDomain>(
     input.VisibilityDepth = visibilityDepth;
     input.PositionFromDepth = positionFromDepth;
     return true;
-}
-
-RWStructuredBuffer<SurfaceReceiver> SurfaceReceiverOutput;
-
-void WriteMaterialReceiver(SurfaceShadowReceiver source, TriangleInfo tri, SurfacePixelInput input)
-{
-    ClusterViewUniforms view = Views[tri.viewIndex];
-    SurfaceReceiver receiver = (SurfaceReceiver)0;
-    receiver.Position = TransformFirstPersonWorldPosition(InstanceData, InstanceProperties, tri.instanceID,
-        view, source.Position);
-    receiver.GeometricNormal = TransformFirstPersonWorldNormal(InstanceData, InstanceProperties, tri.instanceID,
-        view, source.GeometricNormal);
-    receiver.ShadingNormal = receiver.GeometricNormal;
-    receiver.Flags = source.Flags | SURFACE_RECEIVER_PRESENT;
-    receiver.Depth = source.Depth;
-    if ((LoadInstanceFirstPerson(InstanceData, InstanceProperties, tri.instanceID).x & 3u) == 1u)
-        receiver.Flags |= SURFACE_RECEIVER_FIRST_PERSON;
-    uint3 coord = input.PixelCoord;
-    uint index = (coord.z * Uniforms.ScreenHeight + coord.y) * Uniforms.ScreenWidth + coord.x;
-    SurfaceReceiverOutput[index] = receiver;
 }
 
 void CSShadeCore<TVE, TDomain, TSurface>(
@@ -404,7 +442,7 @@ void CSShade<TVE, TDomain, TSurface>(
     CSShadeCore<TVE, TDomain, TSurface>(vertexEval, domain, surface, tid, debugMode);
 }
 
-void CSEvaluateShadowReceiver<TVE, TDomain, TSurface>(
+void CSRequestShadowPages<TVE, TDomain, TSurface>(
     uniform TVE vertexEval, uniform TDomain domain, uniform TSurface surface, uint3 tid, uint visibilityDepth)
     where TVE : IVertexEvaluate
     where TDomain : IDomainEvaluate<TVE.Vertex>
@@ -418,12 +456,12 @@ void CSEvaluateShadowReceiver<TVE, TDomain, TSurface>(
     SurfacePixelInput input;
     if (!TryEvaluateSurfacePixel<TVE, TDomain>(vertexEval, domain, tid, visibilityDepth,
         tri, view, triangle, bary, evaluated, input)) return;
-    WriteMaterialReceiver(surface.evaluateShadowReceiver(input, evaluated, bary, triangle), tri, input);
+    surface.markShadowPages(input, evaluated, bary, triangle);
 }
 
 void CSForwardShade<TVE, TDomain, TSurface>(
     uniform TVE vertexEval, uniform TDomain domain, uniform TSurface surface, uint3 tid,
-    uint visibilityDepth, uint debugMode, bool exportSurfaceReceivers)
+    uint visibilityDepth, uint debugMode)
     where TVE : IVertexEvaluate
     where TDomain : IDomainEvaluate<TVE.Vertex>
     where TSurface : ISurfaceEvaluate<TDomain.Surface, TDomain.TriangleData>
@@ -437,8 +475,6 @@ void CSForwardShade<TVE, TDomain, TSurface>(
     SurfacePixelInput input;
     if (!TryEvaluateSurfacePixel<TVE, TDomain>(vertexEval, domain, tid, visibilityDepth,
         tri, view, triangle, bary, evaluated, input)) return;
-    if (exportSurfaceReceivers)
-        WriteMaterialReceiver(surface.evaluateShadowReceiver(input, evaluated, bary, triangle), tri, input);
     WriteClusterMotion<TVE, TDomain>(vertexEval, domain, tri, view, triangle, bary, input.PixelCoord);
     if (debugMode != 0u)
         surface.evaluateDebug(debugMode, input, evaluated, bary, triangle, OutputColor);

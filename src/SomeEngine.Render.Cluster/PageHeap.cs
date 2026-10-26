@@ -7,9 +7,9 @@ internal sealed class PageHeap
 
     public PageHeap(uint capacityBytes = CapacityBytes)
     {
-        if (capacityBytes == 0 || (capacityBytes & 15) != 0)
-            throw new ArgumentOutOfRangeException(nameof(capacityBytes), "Page heap capacity must be positive and 16-byte aligned.");
-        _ranges = new(capacityBytes, 16);
+        if (capacityBytes == 0 || (capacityBytes & 511) != 0)
+            throw new ArgumentOutOfRangeException(nameof(capacityBytes), "Page heap capacity must be positive and 512-byte aligned.");
+        _ranges = new(capacityBytes, 512);
     }
 
     public uint FreeBytes => checked((uint)_ranges.FreeBytes);
@@ -43,7 +43,7 @@ internal sealed class PageHeap
     public static uint AllocationSize(uint size)
     {
         ArgumentOutOfRangeException.ThrowIfZero(size);
-        return checked((uint)(((ulong)size + 15) & ~15ul));
+        return checked((uint)(((ulong)size + 511) & ~511ul));
     }
 
     public bool CanFit(uint size) => size != 0 && AllocationSize(size) <= Capacity;

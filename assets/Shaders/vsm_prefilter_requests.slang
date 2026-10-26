@@ -17,14 +17,14 @@ StructuredBuffer<VirtualShadowMapParameters> ShadowViews;
 void PropagateVirtualShadowFilterRequests(uint3 thread : SV_DispatchThreadID)
 {
     uint index = thread.x;
-    if (index >= FilterRequests.PageTableEntryCount || RequestedShadowPages[index] != FilterRequests.FrameIndex) return;
+    if (index >= FilterRequests.PageTableEntryCount || RequestedPageFlags[index] == 0u) return;
     uint viewIndex = VirtualShadowViewFromPageTableIndex(ShadowViews, FilterRequests.ViewCount, index);
     VirtualShadowMapParameters view = ShadowViews[viewIndex];
     if ((view.Flags & VSM_VIEW_PREFILTERED_DISTANT) == 0u) return;
     uint mip;
     uint2 page;
     if (!VirtualShadowDecodePageTableIndex(view, index, mip, page) || mip != 0u) return;
-    uint4 mask = (view.Flags & VSM_VIEW_USE_RECEIVER_MASK) != 0u ? LoadVirtualShadowReceiverMask(PageReceiverMasks, view, mip, page) : 0xffffu.xxxx;
+    uint2 mask = (view.Flags & VSM_VIEW_USE_RECEIVER_MASK) != 0u ? LoadVirtualShadowReceiverMask(PageReceiverMasks, view, mip, page) : 0xffffffffu.xx;
     int quarterCells = int(VirtualShadowPagesPerRow(view) * 2u);
     int2 sourceCorner = int2(view.ClipmapCornerRelativeOffsetX, view.ClipmapCornerRelativeOffsetY);
     uint remaining = view.ClipmapLevelCount - uint(view.ClipmapLevel - view.FirstClipmapLevel);

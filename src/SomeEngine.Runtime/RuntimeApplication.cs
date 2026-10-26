@@ -629,7 +629,10 @@ internal static class RuntimeApplication
         _ = prepareSystems.Add(lightSystem);
         var streamingFeedback = new ClusterStreamingFeedbackChannel();
         var streamingConsumer = new ClusterStreamingFeedbackConsumer(cluster, streamingFeedback);
-        var shadowSettings = (script?.ShadowSettings ?? new VirtualShadowMapSettings()) with { Enabled = options.VirtualShadows };
+        var shadowSettings = (script?.ShadowSettings ?? new VirtualShadowMapSettings
+        {
+            DynamicResolutionEnabled = true,
+        }) with { Enabled = options.VirtualShadows };
         if (options.ShadowRayCount is { } rayCount)
             shadowSettings = shadowSettings with
             {
@@ -700,10 +703,10 @@ internal static class RuntimeApplication
                 ShadingPath = script?.ShadingPath ?? options.ShadingPath,
                 EnableAsyncCompute = options.AsyncCompute,
                 ForceHardwareRaster = forceHardwareRaster,
-                SoftwareRasterEdgeThreshold = script?.RasterEdgePixels ?? 4,
+                SoftwareRasterEdgeThreshold = script?.RasterEdgePixels ?? 32,
                 UseInstanceGroups = options.UseInstanceGroups,
                 EnableFrameMetricsReadback = metrics || application?.FrameRendered is not null,
-                LodThreshold = application?.LodThreshold ?? 1,
+                LodThreshold = application?.LodThreshold ?? 0.25f,
                 MeasureBlending = options.MeasureBlending,
                 BlendIndex = options.BlendIndex,
                 BlendTriangleCapacity = script?.BlendTriangleCapacity ?? ClusterPipelineOptions.DefaultBlendTriangleCapacity,
@@ -1044,6 +1047,7 @@ internal static class RuntimeApplication
                 long reconcileStarted = Stopwatch.GetTimestamp();
                 if (sceneEdit.ShadingPath is { } selectedShadingPath) shadingPath = selectedShadingPath;
                 pipeline.SetShadingPath(shadingPath);
+                virtualShadows.ReconcileLights(lightSystem.RequireCurrent());
                 ClusterPipelineOutputs clusterOutputs;
                 using (EngineTrace.Begin(ApplicationTrace.Reconcile))
                     clusterOutputs = pipeline.ReconcileGraph();
@@ -1113,7 +1117,7 @@ internal static class RuntimeApplication
                     Options = options with { ShadingPath = shadingPath },
                     ShadowSettings = shadowSettings,
                     TemporalSettings = script?.TemporalSettings ?? TemporalResolveSettings.Default,
-                    RasterEdgePixels = script?.RasterEdgePixels ?? 4,
+                    RasterEdgePixels = script?.RasterEdgePixels ?? 32,
                     ClusterWorkCapacity = script?.ClusterWorkCapacity ?? 1_048_576,
                     Adapter = device.Adapter.Name, DriverVersion = device.Adapter.DriverVersion,
                 }) : null;

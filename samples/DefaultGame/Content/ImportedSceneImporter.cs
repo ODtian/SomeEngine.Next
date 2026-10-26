@@ -165,9 +165,8 @@ public sealed class ImportedSceneImporter : GltfSceneImporter
         definition["Blocks"]![0]!["Fields"]!["SourceNames"] = new JsonArray("cluster_transparency.slang", name + ".slang", name + "_transparency.slang");
         // Both import and refresh derive the saved depth variants from the same material declaration.
         foreach (JsonNode? value in (JsonArray)definition["Blocks"]![0]!["Fields"]!["Specializations"]!)
-            if (value!["EntryPoint"]!.GetValue<string>() is "ClusterSurfaceDataDepth" or "ClusterSurfaceDataMode" or
-                "ClusterShadowReceiver" or "ClusterForwardShade" or "BuildTransparentGeometry" or
-                "RequestTransparentShadows" or "RequestProjectedTransparentShadows" or
+            if (value!["EntryPoint"]!.GetValue<string>() is "ClusterShadowRequests" or "ClusterForwardShade" or "BuildTransparentGeometry" or
+                "RequestTransparentPages" or
                 "ResolveTransparentColor" or "ResolveProjectedTransparentColor")
                 ((JsonArray)value["Arguments"]!)[0] = cutoff >= 0 ? "1" : "0";
         return definition;
@@ -220,6 +219,7 @@ public sealed class ImportedSceneImporter : GltfSceneImporter
 
     private const string MaskShader = """
 struct SceneMaskVarying { float2 UV : TEXCOORD0; };
+[VisibilityDepth("masked")]
 struct SceneMask : IVisibilityEvaluate<StandardVertex>
 {
     typealias Varying = SceneMaskVarying;

@@ -24,6 +24,8 @@ struct TRANSPARENCY_EVALUATOR(TRANSPARENCY_MATERIAL_TYPE)
         TriangleInfo info;
         LoadTriangleInfo(TransparencySourceRequest(source), TransparencySourceTriangle(source), info);
         info.visibleClusterIndex = source >> 7u;
+        info.visibility = source;
+        info.sourceLane = WaveMaskFirstLane(WaveMatchingLanes(source) & WaveMatchingLanes(viewIndex));
         return info;
     }
 
@@ -190,7 +192,7 @@ struct TRANSPARENCY_EVALUATOR(TRANSPARENCY_MATERIAL_TYPE)
         if (result.Visible == 0u) return false;
         float3 position;
         SurfaceBarycentrics coordinates = ResolveBarycentricsAtDepth<VertexEvaluate.Vertex, DomainEvaluate>(
-            Domain, coord, view, triangle, result.Depth, position);
+            Domain, coord, view, triangle, info, result.Depth, position);
         return coordinates.Valid != 0u;
     }
 
@@ -201,7 +203,7 @@ struct TRANSPARENCY_EVALUATOR(TRANSPARENCY_MATERIAL_TYPE)
         ClusterViewUniforms view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, info.instanceID, Views[coord.z]);
         triangle = evaluateTriangle<VertexEvaluate, DomainEvaluate>(Vertex, Domain, info);
         float3 position;
-        SurfaceBarycentrics coordinates = ResolveBarycentricsAtDepth<VertexEvaluate.Vertex, DomainEvaluate>(Domain, coord, view, triangle, depth, position);
+        SurfaceBarycentrics coordinates = ResolveBarycentricsAtDepth<VertexEvaluate.Vertex, DomainEvaluate>(Domain, coord, view, triangle, info, depth, position);
         bary = coordinates.Value;
         evaluated = Domain.eval(triangle, bary);
         pixel.PixelCoord = coord;
@@ -229,8 +231,7 @@ struct TRANSPARENCY_EVALUATOR(TRANSPARENCY_MATERIAL_TYPE)
         return Surface.evaluateTransparency(Uniforms.DebugMode, pixel, evaluated, bary, triangle);
     }
 
-    void receiver<let visibilityDepth : uint>(uint source, uint primitive, uint3 coord, float depth,
-        out float3 position, out float3 normal, out uint flags)
+    void markShadowPages<let visibilityDepth : uint>(uint source, uint primitive, uint3 coord, float depth)
     {
         TriangleInfo info;
         DomainEvaluate.TriangleData triangle;
@@ -238,16 +239,9 @@ struct TRANSPARENCY_EVALUATOR(TRANSPARENCY_MATERIAL_TYPE)
         DomainEvaluate.Surface evaluated;
         SurfacePixelInput pixel;
         reconstruct(source, coord, depth, visibilityDepth, info, triangle, bary, evaluated, pixel);
-        SurfaceShadowReceiver receiver = Surface.evaluateShadowReceiver(pixel, evaluated, bary, triangle);
-        ClusterViewUniforms view = Views[coord.z];
-        position = TransformFirstPersonWorldPosition(InstanceData, InstanceProperties, info.instanceID,
-            view, receiver.Position);
-        normal = TransformFirstPersonWorldNormal(InstanceData, InstanceProperties, info.instanceID,
-            view, receiver.GeometricNormal);
-        flags = receiver.Flags;
-        if ((LoadInstanceFirstPerson(InstanceData, InstanceProperties, info.instanceID).x & 3u) == 1u)
-            flags |= SURFACE_RECEIVER_FIRST_PERSON;
+        Surface.markShadowPages(pixel, evaluated, bary, triangle);
     }
+
 };
 #endif
 
@@ -266,9 +260,8 @@ struct TRANSPARENCY_MATERIAL_TYPE
     { return Material.cover(source, domain, tessellated, pixel, depth, resultDepth); }
     float4 shade<let visibilityDepth : uint>(uint source, uint primitive, uint3 pixel, float depth)
     { return Material.shade<visibilityDepth>(source, primitive, pixel, depth); }
-    void receiver<let visibilityDepth : uint>(uint source, uint primitive, uint3 pixel, float depth,
-        out float3 position, out float3 normal, out uint flags)
-    { Material.receiver<visibilityDepth>(source, primitive, pixel, depth, position, normal, flags); }
+    void markShadowPages<let visibilityDepth : uint>(uint source, uint primitive, uint3 pixel, float depth)
+    { Material.markShadowPages<visibilityDepth>(source, primitive, pixel, depth); }
 };
 #undef TRANSPARENCY_MATERIAL_TYPE
 #endif

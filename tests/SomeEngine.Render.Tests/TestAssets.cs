@@ -61,21 +61,23 @@ internal sealed class TestAssets
     {
         const string encoding = "render-tests.opaque";
         int vertices = MeshPageHeader.Size + PackedCluster.SizeInBytes;
-        int bvhOffset = vertices + 1 + 3;
+        int bvhOffset = vertices + 4 + 3;
         byte[] bytes = new byte[bvhOffset + Unsafe.SizeOf<ClusterBVHNode>()];
         var header = new MeshPageHeader
         {
-            ClusterCount = 1, TotalVertexCount = 1, TotalTriangleCount = 1, VertexBlobBytes = 1,
+            ClusterCount = 1, TotalVertexCount = 1, TotalTriangleCount = 1, VertexBlobBytes = 4,
             ClustersOffset = MeshPageHeader.Size, VertexBlobsOffset = (uint)vertices,
-            IndicesOffset = (uint)(vertices + 1), ExtensionDataOffset = (uint)bvhOffset,
+            IndicesOffset = (uint)(vertices + 4), ExtensionDataOffset = (uint)bvhOffset,
             VertexEncodingHash = VertexEncodingCompatibility.Hash(encoding),
         };
         MemoryMarshal.Write(bytes, in header);
         var cluster = new PackedCluster { VertexBlobSize = 1, PackedCounts = 1 | (1u << 8),
             ExtensionOffset = uint.MaxValue, MaterialTableOffset = uint.MaxValue };
         MemoryMarshal.Write(bytes.AsSpan(MeshPageHeader.Size), in cluster);
-        var bvh = new ClusterBVHNode { NodeType = 1 };
-        bvh.SetLeafData(0, 1);
+        var bvh = new ClusterBVHNode();
+        var child = new ClusterHierarchySlice { PageRangeKey = 1, GroupPartData = 1u << 16 };
+        child.SetErrors(0, float.MaxValue);
+        bvh.SetChild(0, child);
         MemoryMarshal.Write(bytes.AsSpan(bvhOffset), in bvh);
         return SomeEngine.Resources.Mesh.Create(name, encoding, bytes.AsMemory(), (ulong)bvhOffset);
     }

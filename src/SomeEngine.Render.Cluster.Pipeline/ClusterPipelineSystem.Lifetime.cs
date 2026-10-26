@@ -30,7 +30,8 @@ public sealed partial class ClusterPipelineSystem
             RemoveTransparency(ref transparencyEdit, transparency);
             GraphData.Transparency = null;
         }
-        if (_surfaceReceiverRegion != default) edit.Remove(_surfaceReceiverRegion);
+        if (_shadowRequestRegion != default) edit.Remove(_shadowRequestRegion);
+        if (_transparencyRequestRegion != default) edit.Remove(_transparencyRequestRegion);
         if (GraphData.Stencil is { } stencil)
         {
             RenderGraphEdit stencilEdit = edit;
@@ -104,13 +105,6 @@ public sealed partial class ClusterPipelineSystem
                 frame.ShadeReserveCounters,
                 frame.PixelCoordinates,
                 frame.VisibilityWinnerBuffer,
-                frame.SurfaceCounts,
-                frame.SurfaceScatterCounts,
-                frame.SurfaceDataOffsets,
-                frame.SurfaceDataSizes,
-                frame.MaterialSurfaces,
-                frame.SurfaceReceivers,
-                frame.AdditionalSurfaceReceivers,
                 GraphData.ShaderParameterBytes, GraphData.SceneChunks, GraphData.InstanceWorldBounds,
                 frame.Work.Nodes, frame.Work.Clusters, frame.Work.NodeReady, frame.Work.ClusterReady, frame.Work.Arguments,
             ];

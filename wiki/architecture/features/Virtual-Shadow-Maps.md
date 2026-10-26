@@ -1,25 +1,39 @@
 # Virtual Shadow Maps
 
-VSM 是独立 rendering feature，拥有自己的 page table、atlas/cache、marking、allocation 与 shadow policy。
+本页维护现行渲染架构与 Shader API。实现入口为 [VirtualShadowFeature](../../../src/SomeEngine.Render.Features/Shadows/VirtualShadowFeature.cs)、[页标记函数](../../../assets/Shaders/vsm_receiver_requests.slang)、[覆盖位读取](../../../assets/Shaders/vsm_receiver_mask_bits.slang)与[材质阴影采样](../../../assets/Shaders/vsm_forward_sampling.slang)。
 
-VSM 构造普通 unified render views，并通过 geometry pipeline 能力使用 Cluster；Cluster 不知道这些 views 表示 shadow。VSM counters 和策略不进入 Cluster core ABI。
+VSM feature 持有页表、atlas/cache、请求、页分配与阴影策略。它构造普通 render views，并通过几何管线执行阴影视图；Cluster 按统一视图完成几何与光栅阶段。
+
+## 页标记
+
+调用方在自己的管线中计算需要阴影的位置，并在合适的处理阶段调用：
+
+```slang
+void MarkVirtualShadowPages(float3 worldPosition, uint viewIndex, bool firstPerson = false);
+```
+
+`worldPosition` 使用当前渲染坐标系；`viewIndex` 指明对应的相机视图。调用方负责从几何、深度或自己的计算取得该位置，并完成第一人称位置变换。VSM 函数立即标记页请求和页内覆盖位，再将首次请求的页编号加入工作列表。
+
+Cluster 的标准材质通过 `markShadowPages` 接口在已分箱的表面求值阶段调用该函数。透明管线沿实际三角形投影、像素覆盖及命中求值调用同一接口；请求阶段每帧执行。调用链见 [Cluster 页请求](../../../src/SomeEngine.Render.Cluster.Pipeline/ClusterPipelineSystem.ShadowRequests.cs)、[标准材质](../../../assets/Shaders/standard_material.slang)与[透明请求](../../../assets/Shaders/cluster_transparency.slang)。
+
+页标记根据提供的位置、视图投影参数和动态精度偏移选择方向光 clipmap 级别或局部光 mip。请求范围覆盖过滤半径与法线偏移，并处理相邻页、覆盖单元和点光源相邻面。
+
+## 每页基础请求数据
+
+| 内容 | 每虚拟页大小 | 表达内容 |
+| --- | --- | --- |
+| 页请求标志 | 4 B | 页的请求状态 |
+| receiver mask | 8 B | `uint2` 表达页内 `8×8` 覆盖 |
+| 合计 | 12 B | 基础请求数据 |
+
+mask 使用两个垂直排列的 `R32UInt` texel，各保存 `8×4` 位覆盖，供现有 32 位图像原子操作写入。覆盖读取、层次归约、光栅裁剪、预过滤与质量读取共用该表示。
+
+帧内顺序为：请求计数复位、视图更新及调用方标记、预过滤请求传播、页池与分配、阴影光栅和预过滤、已消费 mask 与页请求标志清理。
+
+## 采样与缓存
+
+材质使用当次求得的位置、法线和深度偏移直接执行 VSM 采样。方向光和局部光沿 soft shadow、第一人称与屏幕射线起点处理；局部 `SurfaceReceiver` 保存本次函数采样参数。
+
+页原点沿光视图的 X/Y UV 方向滚动。相机跨过对齐边界时，固定世界几何的细页地址保持连续。clipmap 每次滚动四分之一页表；较粗 mip 按投影变化重新绘制。目标页的驻留状态决定当前可采样的精度，并沿既有页回退路径取得结果。
 
 参见 [[architecture/rendering/Multi-View]] · [[architecture/cluster/Cluster-Scope]]。
-
-方向光的 clipmap 与局部光的 mip 都根据屏幕像素投影到光空间后的覆盖范围选择。
-两个屏幕像素偏移形成光空间中的像素投影，选择级别使用其最小主轴宽度。
-该宽度由投影矩阵的较大奇异值与行列式计算，覆盖拉伸、斜切及视图旋转后的短轴精度。
-请求页与材质采样使用同一选择函数；材质调用 `SampleDirectionalVirtualShadowMap` 时，
-在世界坐标位置后传入接收面上 X/Y 相邻屏幕像素的世界坐标。
-页请求与标准材质共用 `ReconstructVirtualShadowReceiverPixel`，从当前深度图
-重建接收面相邻像素的世界坐标。每个轴采用深度差较小的前景邻居，在断层处
-保持局部接收面；视口边缘沿该接收面延伸相邻坐标。
-`DirectionalResolutionLodBias` 只表示用户指定的精度偏移，不再混入相机投影倍率。
-
-clipmap 按二次幂分级。默认偏移为零时，可覆盖目标位置的选中级别使像素投影的最短主轴
-覆盖 1–2 个阴影 texel；较长主轴按投影比例覆盖更多 texel。虚拟分辨率的级别范围限定最大精度。
-页池容量不足或者目标页还没有驻留时仍可能采样较粗的页，不能把回退画面视为目标分辨率。
-
-页原点沿实际光视图的 X/Y UV 方向滚动。相机跨过对齐边界时，固定世界几何的细页地址保持不变。
-clipmap 每次滚动四分之一页表；无法按整个 mip 页对齐的较粗 mip，在投影变化时重新绘制。
-请求范围也覆盖材质的法线偏移和过滤半径，包括相邻页和相邻接收单元，避免采样落在未绘制区域。

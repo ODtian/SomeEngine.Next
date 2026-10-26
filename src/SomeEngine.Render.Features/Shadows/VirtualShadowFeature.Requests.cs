@@ -6,19 +6,19 @@ namespace SomeEngine.Render.Features.Shadows;
 
 public sealed partial class VirtualShadowFeature
 {
-    /// <summary>Receives Cluster passes that request shadow pages for each transparent material hit.</summary>
-    public GraphRegionId TransparencyReceiverRequests { get; private set; }
+    /// <summary>Contains caller position evaluation and direct shadow page requests.</summary>
+    public GraphRegionId ShadowPageRequests { get; private set; }
 
-    private void ConfigureTransparencyRequests(ref RenderGraphEdit edit, GraphRegionId parent)
+    private void ConfigureShadowRequests(ref RenderGraphEdit edit, GraphRegionId parent)
     {
-        TransparencyReceiverRequests = edit.AddRegion("Virtual shadow transparency receiver requests", parent);
-        _geometry.ConfigureTransparencyRequests(edit, TransparencyReceiverRequests);
+        ShadowPageRequests = edit.AddRegion("Virtual shadow caller page requests", parent);
+        _geometry.ConfigureShadowRequests(edit, ShadowPageRequests);
     }
 
     private void BindReceiverPageDemand(ref RenderGraphEdit graph, ref PassDefinition pass, PipelineSync sync)
     {
         _ = pass.Bind(_demandUniforms, sync);
-        graph.OrderAfter(pass.Id, _initializePass);
+        graph.OrderAfter(pass.Id, _requestResetPass);
         if (_prefilterRequestPass != default) graph.OrderAfter(_prefilterRequestPass, pass.Id);
         graph.OrderAfter(_poolPreparePass, pass.Id);
     }
@@ -29,11 +29,6 @@ public sealed partial class VirtualShadowFeature
             label: "Virtual shadow demand views"), sync);
         if (_workUpdatePass != default) graph.OrderAfter(pass.Id, _workUpdatePass);
     }
-
-    private void BindRequestedShadowPages(ref RenderGraphEdit graph, ref PassDefinition pass, PipelineSync sync) =>
-        _ = pass.Bind(graph.CreateBufferUav(_requestedPages, structureStride: sizeof(uint),
-            label: "Virtual shadow request epochs"), sync,
-            GraphAccessMode.ReadWrite, WriteCoverage.Partial);
 
     private void BindRequestedPageFlags(ref RenderGraphEdit graph, ref PassDefinition pass, PipelineSync sync) =>
         _ = pass.Bind(graph.CreateBufferUav(_requestedPageFlags, structureStride: sizeof(uint),

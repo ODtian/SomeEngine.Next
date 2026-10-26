@@ -104,18 +104,18 @@ void DecodeRasterWorkRange(
         uint workRangeCount = RasterWorkMaterialRangeCount(workIndex);
         if (firstRange >= rangeCount || firstRange + workRangeCount > rangeCount)
             return;
-        uint first = ClusterMaterialRange(pageHeap, materials, triangleCount, firstRange);
-        uint last = ClusterMaterialRange(pageHeap, materials, triangleCount, firstRange + workRangeCount - 1u);
-        triangleStart = first & 0xFFu;
-        triangleEnd = (last & 0xFFu) + ((last >> 8u) & 0xFFu);
+        uint2 first = ClusterMaterialRange(pageHeap, materials, triangleCount, firstRange);
+        uint2 last = ClusterMaterialRange(pageHeap, materials, triangleCount, firstRange + workRangeCount - 1u);
+        triangleStart = first.x & 0xFFu;
+        triangleEnd = (last.x & 0xFFu) + ((last.x >> 8u) & 0xFFu);
         return;
     }
 
     uint flatBatchIndex = 0u;
     for (uint rangeIndex = 0u; rangeIndex < rangeCount; rangeIndex++)
     {
-        uint range = ClusterMaterialRange(pageHeap, materials, triangleCount, rangeIndex);
-        uint rangeEnd = (range & 0xFFu) + ((range >> 8u) & 0xFFu);
+        uint2 range = ClusterMaterialRange(pageHeap, materials, triangleCount, rangeIndex);
+        uint rangeEnd = (range.x & 0xFFu) + ((range.x >> 8u) & 0xFFu);
         uint batchCount = ClusterMaterialBatchBits(pageHeap, materials, rangeIndex * 4u, 4u);
         for (uint rangeBatchIndex = 0u; rangeBatchIndex < batchCount; rangeBatchIndex++)
         {
@@ -148,7 +148,8 @@ void ReadClusterBinData(
     uint packedCounts = pageHeap.Load(clusterOffset + 60u);
     vertexCount = packedCounts & 0xFFu;
     triangleCount = (packedCounts >> 8u) & 0xFFu;
-    packedMaterials = LoadClusterMaterials(pageHeap, entry.PageOffset, clusterOffset);
+    uint packed = pageHeap.Load(clusterOffset + 68u);
+    packedMaterials = uint3(packed & 255u, (packed >> 8u) & 255u, (packed >> 16u) & 255u);
     packedRanges = pageHeap.Load(clusterOffset + 72u);
     vertReuseBatchWords = LoadVertReuseBatchWords(pageHeap, clusterOffset);
 }

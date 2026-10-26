@@ -12,10 +12,8 @@ TVE.Vertex EvaluateVertexWave<TVE : IVertexEvaluate>(
     uint visibleClusterIndex)
 {
     context.visibleClusterIndex = visibleClusterIndex;
-    if (!WaveActiveAllEqual(visibleClusterIndex))
-        return evaluator.evaluate(context);
-
-    uint4 matching = WaveMatchingLanes(context.localVertexIndex);
+    uint4 matching = WaveMatchingLanes(visibleClusterIndex) &
+        WaveMatchingLanes(context.localVertexIndex) & WaveMatchingLanes(context.IsPreviousFrame);
     uint leader = WaveMaskFirstLane(matching);
     uint lane = WaveGetLaneIndex();
 

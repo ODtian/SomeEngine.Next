@@ -10,9 +10,6 @@ struct MaterialScalarsAttribute
 {
 };
 
-[__AttributeUsage(_AttributeTargets.Function)]
-struct PrimaryDepthReceiverAttribute {};
-
 [__AttributeUsage(_AttributeTargets.Var)]
 struct InstancePropertyAttribute
 {
@@ -54,20 +51,12 @@ interface ISurfaceEvaluate<TSurface, TTriangle>
         RWTexture2DArray<float4> outputColor);
 };
 
-struct SurfaceShadowReceiver
-{
-    float3 Position;
-    float3 GeometricNormal;
-    uint Flags;
-    float Depth;
-};
-
 interface ITransparentSurfaceEvaluate<TSurface, TTriangle>
 {
     float4 evaluateTransparency(uint debugMode, SurfacePixelInput input,
         TSurface surface, float3 bary, TTriangle triangle);
 
-    SurfaceShadowReceiver evaluateShadowReceiver(SurfacePixelInput input,
+    void markShadowPages(SurfacePixelInput input,
         TSurface surface, float3 bary, TTriangle triangle);
 };
 

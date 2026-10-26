@@ -31,7 +31,7 @@ public sealed partial class ClusterPipelineSystem
         if (transparent is not null) colors = [.. colors, .. transparent.ColorPasses];
         var passes = new BlendMeasurementPasses(
             transparent?.Builds ?? [], transparent?.RequestPasses ?? [], colors, _regions.Feedback, decals.Builds,
-            GraphData.ReceiverGroups.Values.OrderBy(group => group.Stage.BinIndex).Select(group => group.Pass).ToArray(),
+            GraphData.ShadowRequestGroups.Values.OrderBy(group => group.Stage.BinIndex).Select(group => group.Pass).ToArray(),
             GraphData.ShadeGroups.Values.OrderBy(group => group.Stage.BinIndex).Select(group => group.Pass).ToArray());
         if (GraphData.BlendMeasurements is { } previous && !previous.HasPasses(passes)) RemoveBlendMeasurements(ref edit);
         GraphData.BlendMeasurements ??= new(_backend, _device, _graph, ref edit,

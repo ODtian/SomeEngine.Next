@@ -13,7 +13,7 @@ public readonly record struct TerrainGpuBuild(ulong Revision, JobHandle Completi
 
 /// <summary>The user's attribute kernel, fixed field inputs and optional triangle-material kernel.</summary>
 public sealed record TerrainGpuAttributes(Shader Shader, string EntryPoint, uint VertexBytes,
-    int ReadBorder = 0, byte MaterialIndex = 0)
+    int ReadBorder = 0, uint MaterialIndex = 0)
 {
     public TerrainFieldInputs Fields { get; init; }
     public string? MaterialEntryPoint { get; init; }

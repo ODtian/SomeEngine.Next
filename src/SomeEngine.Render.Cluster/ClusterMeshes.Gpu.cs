@@ -17,6 +17,17 @@ internal sealed partial class ClusterMeshes
     private readonly Dictionary<uint, ClusterGpuAllocation> _gpuGeometry = [];
     private readonly List<(ClusterGpuAllocation Allocation, QueueCompletion[] Completions)> _gpuRetirements = [];
 
+    private uint StreamingPageHeapCapacity
+    {
+        get
+        {
+            uint geometryBytes = 0;
+            foreach (ClusterGpuAllocation allocation in _gpuGeometry.Values) geometryBytes += allocation.Sizes.PageBytes;
+            foreach (var retirement in _gpuRetirements) geometryBytes += retirement.Allocation.Sizes.PageBytes;
+            return _heap.Capacity - geometryBytes;
+        }
+    }
+
     internal ClusterGeometry ReserveGpu(ClusterGpuBufferSizes sizes, string vertexEncoding, ulong revision, Bounds? bounds)
     {
         lock (_gate)

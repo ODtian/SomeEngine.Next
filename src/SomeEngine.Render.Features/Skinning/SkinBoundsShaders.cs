@@ -14,11 +14,7 @@ internal static class SkinBoundsShaders
         lock (s_gate)
         {
             if (s_shaders.TryGetValue(target, out Shader? shader)) return shader;
-            if (s_global is null)
-            {
-                Require(Slang.CreateGlobalSession(Slang.ApiVersion, out IGlobalSession global), null);
-                s_global = global;
-            }
+            s_global ??= Shader.CreateSlangGlobalSession();
             var output = new TargetDesc
             {
                 Format = target,

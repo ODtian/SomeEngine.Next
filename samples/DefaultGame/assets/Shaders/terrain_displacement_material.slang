@@ -66,6 +66,17 @@ struct GroundDisplacement : IDomainEvaluate<GroundVertex>
     typedef GroundTriangle TriangleData;
     typedef GroundSurface Surface;
 
+    TriangleData readLane(TriangleData triangle, uint lane)
+    {
+        GroundVertexEvaluate vertex;
+        TriangleData result;
+        result.First = vertex.readLane(triangle.First, lane);
+        result.Second = vertex.readLane(triangle.Second, lane);
+        result.Third = vertex.readLane(triangle.Third, lane);
+        result.MaterialIndex = WaveReadLaneAt(triangle.MaterialIndex, lane);
+        return result;
+    }
+
     TriangleData makeTriangle(GroundVertex first, GroundVertex second, GroundVertex third, uint materialIndex)
     {
         TriangleData result;

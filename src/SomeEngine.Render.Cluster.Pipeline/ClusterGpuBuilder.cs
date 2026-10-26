@@ -13,7 +13,7 @@ public readonly record struct ClusterGpuMeshInput(
     GraphBufferSlice Positions, GraphBufferSlice Attributes, GraphBufferSlice Indices, GraphBufferSlice Counts,
     GraphBufferSlice TriangleMaterials = default);
 
-/// <summary>Maximum source counts and the material-index range (1 to 256) used to reserve device storage.</summary>
+/// <summary>Maximum source counts and the number of distinct triangle materials used to reserve device storage.</summary>
 public readonly record struct ClusterGpuMeshCapacity(uint VertexCount, uint TriangleCount, uint MaterialCount = 1);
 
 /// <summary>The compute entry calls BuildCluster with the user's IClusterVertexEncode implementation.</summary>
@@ -61,15 +61,15 @@ public sealed class ClusterGpuBuilder : IDisposable
         uint groups = capacity.MaterialCount;
         uint pages = Math.Max(1u, Math.Min(capacity.TriangleCount,
             checked((capacity.TriangleCount + trianglesPerPage - 1u) / trianglesPerPage + groups - 1u)));
-        uint nodes = pages;
+        uint nodes = (pages + 3u) / 4u;
         int depth = 1;
-        for (uint count = pages; count > 1; depth++)
+        for (uint count = nodes; count > 1; depth++)
         {
-            count = checked((count + 15u) / 16u);
+            count = checked((count + 3u) / 4u);
             nodes = checked(nodes + count);
         }
-        uint stride = PageHeap.AllocationSize(checked(160u + _encoder.MaximumVertexBlobBytes + MaximumTriangles * 3u + 3u));
-        var sizes = new ClusterGpuBufferSizes(stride, pages, nodes, Math.Max(1, depth - 1), groups);
+        uint stride = PageHeap.AllocationSize(checked(184u + _encoder.MaximumVertexBlobBytes + MaximumTriangles * 3u + 3u));
+        var sizes = new ClusterGpuBufferSizes(stride, pages, nodes, depth, groups);
         return _resources.ReserveGpu(context, sizes, _encoder.VertexEncoding, revision, bounds);
     }
 
@@ -79,7 +79,7 @@ public sealed class ClusterGpuBuilder : IDisposable
 
     /// <summary>Records encoding and BVH writes, returning the pass whose completion makes the result ready.</summary>
     public GraphPassId Record(ref RenderFrameSystemContext context, ClusterGeometry geometry,
-        in ClusterGpuMeshInput input, byte materialIndex = 0)
+        in ClusterGpuMeshInput input, uint materialIndex = 0)
     {
         using RenderFrameUseLease use = _resources.UseGpu(context.ActiveFrame);
         RenderGraphFrame graph = context.Graph;

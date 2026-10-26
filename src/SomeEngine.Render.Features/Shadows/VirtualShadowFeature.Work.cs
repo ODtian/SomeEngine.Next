@@ -71,9 +71,7 @@ public sealed partial class VirtualShadowFeature
         _ = pass.Bind(edit.CreateBufferUav(_frameWorkPressure, structureStride: sizeof(float)),
             PipelineSync.ComputeShading, GraphAccessMode.Write, WriteCoverage.Complete);
         edit.OrderAfter(_workUpdatePass, _workResetPass);
-        edit.OrderAfter(_markPass, _workUpdatePass);
         edit.OrderAfter(_coarseMarkPass, _workUpdatePass);
-        foreach (GraphPassId request in _froxelMarkPasses) edit.OrderAfter(request, _workUpdatePass);
         var copy = new WorkCopyData(_policyRasterWorkCount, _previousWorkCounts, _frameWorkPressure, _previousWorkPressure);
         _workCopyPass = edit.AddCopyFramePass("Carry completed virtual shadow work", PassQueueSelection.AnyOfType(QueueType.Graphics),
             copy, new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),

@@ -344,23 +344,13 @@ public static class SampleContent
         const string outputPath = "assets/Pipelines/default_virtual_shadow.virtualshadow.asset";
         using var settings = new VirtualShadowMapShadersBlock
             {
-                ProjectDirectionalLights = ShaderReference(ResolveRequired(project, "assets/Shaders/generated/EngineSources/vsm_project_lights.shader"), "ProjectVirtualShadowDirectionalLights"),
-                ProjectLocalLights = ShaderReference(ResolveRequired(project, "assets/Shaders/generated/EngineSources/vsm_project_local_lights.shader"), "ProjectVirtualShadowLocalLights"),
                 BlueNoise = new AssetId<TextureAsset>(SampleAssetIds.ShadowBlueNoise),
-                FroxelBuild = ShaderReference(ResolveRequired(project, "assets/Shaders/vsm_froxel_build.shader"), "BuildVirtualShadowFroxels"),
-                FroxelArguments = ShaderReference(ResolveRequired(project, "assets/Shaders/vsm_froxel_build.shader"), "FinishVirtualShadowFroxelArguments"),
-                FroxelMark = ShaderReference(ResolveRequired(project, "assets/Shaders/vsm_froxel_mark.shader"), "MarkVirtualShadowFroxelPages"),
-                FroxelPixel = ShaderReference(ResolveRequired(project, "assets/Shaders/vsm_froxel_mark.shader"), "MarkVirtualShadowFroxelPixelReceivers"),
                 ResetReceiverMasks = ShaderReference(
                     ResolveRequired(project, "assets/Shaders/vsm_receiver_mask_reset.shader"),
                     "ResetVirtualShadowReceiverMasks"),
                 ResetFrame = ShaderReference(
                     ResolveRequired(project, "assets/Shaders/vsm_frame_reset.shader"),
                     "ResetVirtualShadowFrame"),
-                MarkDepthPages = ShaderReference(ResolveRequired(project, "assets/Shaders/generated/EngineSources/vsm_mark_depth_pages.shader"), "MarkVirtualShadowDepthPages"),
-                MarkPages = ShaderReference(
-                    ResolveRequired(project, "assets/Shaders/vsm_mark_pages.shader"),
-                    "MarkVirtualShadowPages"),
                 MarkCoarsePages = ShaderReference(
                     ResolveRequired(project, "assets/Shaders/vsm_mark_coarse_pages.shader"),
                     "MarkVirtualShadowCoarsePages"),

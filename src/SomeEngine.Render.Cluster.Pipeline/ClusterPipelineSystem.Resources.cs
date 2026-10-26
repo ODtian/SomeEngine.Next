@@ -335,12 +335,6 @@ public sealed partial class ClusterPipelineSystem
             BufferUsages.CopySource,
             "Cluster software raster debug output");
 
-        frame.SurfaceCounts = frame.AddBuffer(ref graph, (ulong)shadeBinCount * sizeof(uint), BufferUsages.None, "Cluster surface counts");
-        frame.SurfaceScatterCounts = frame.AddBuffer(ref graph, (ulong)shadeBinCount * sizeof(uint), BufferUsages.None, "Cluster surface scatter counts");
-        frame.SurfaceDataOffsets = frame.AddBuffer(ref graph, (ulong)shadeBinCount * sizeof(uint), BufferUsages.None, "Cluster surface data offsets");
-        frame.SurfaceDataSizes = CreateBufferData(ref graph,
-            MemoryMarshal.AsBytes(GetSurfaceDataSizes(shadeStages).AsSpan()),
-            BufferUsages.ShaderRead, "Cluster material surface sizes");
         frame.ShadeBinCounts = frame.AddBuffer(
                 ref graph,
                 checked((ulong)shadeBinCount * 2ul * sizeof(uint)),
@@ -363,12 +357,12 @@ public sealed partial class ClusterPipelineSystem
                 "Cluster shade scatter counts");
             frame.ShadeReserveCounters = frame.AddBuffer(
                 ref graph,
-                2u * sizeof(uint),
+                sizeof(uint),
                 BufferUsages.CopySource,
                 "Cluster shade reserve counter");
         frame.PixelCoordinates = frame.AddBuffer(
                 ref graph,
-                checked((ulong)width * (ulong)height * viewCount * 3ul * sizeof(uint)),
+                checked((ulong)width * (ulong)height * viewCount * 2ul * sizeof(uint)),
                 BufferUsages.None,
                 "Cluster shade tiles and quads");
 
@@ -455,17 +449,6 @@ public sealed partial class ClusterPipelineSystem
                         label: "Cluster policy hardware depth scratch"));
                 }
             }
-        frame.SurfaceDataStride = shadeStages.SurfaceDataStride;
-        frame.MaterialSurfaces = graph.CreateBuffer(new BufferDesc(Math.Max(sizeof(uint), checked((ulong)width * (ulong)height * viewCount * frame.SurfaceDataStride)),
-            BufferUsages.ShaderRead | BufferUsages.ShaderWrite, "Cluster material surfaces"));
-        frame.SurfaceReceivers = graph.CreateBuffer(new BufferDesc(checked((ulong)width * (ulong)height * viewCount * SurfaceReceiver.SizeInBytes),
-            BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopyDestination |
-            (_options.ExportSurfaceReceivers ? BufferUsages.CopySource : BufferUsages.None), "Cluster surface receivers"));
-        frame.AdditionalReceiverLayerCount = shadeStages.HasAdditionalReceivers ? 3u : 0u;
-        frame.AdditionalSurfaceReceivers = graph.CreateBuffer(new BufferDesc(
-            Math.Max((ulong)SurfaceReceiver.SizeInBytes, checked((ulong)width * (ulong)height * viewCount * SurfaceReceiver.SizeInBytes * frame.AdditionalReceiverLayerCount)),
-            BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopyDestination |
-            (_options.ExportSurfaceReceivers ? BufferUsages.CopySource : BufferUsages.None), "Cluster additional surface receivers"));
         frame.SceneColor = graph.CreateTexture(new TextureDesc(
                 TextureDimension.Texture2D,
                 checked((uint)width),
@@ -489,16 +472,6 @@ public sealed partial class ClusterPipelineSystem
                 TextureUsages.Sampled | TextureUsages.Storage | TextureUsages.CopySource,
                 label: "Cluster motion vectors"));
         RecordBufferInitialization(ref graph, in frame);
-        GraphData.EmptyReceivers = graph.AddRegion("Cluster empty surface receivers", _regions.PrimaryGeometry);
-        foreach (GraphBufferId buffer in new[] { frame.SurfaceReceivers, frame.AdditionalSurfaceReceivers })
-        {
-            graph.AddCopyFramePass("Clear empty Cluster surface receivers", PassQueueSelection.AnyOfType(QueueType.Graphics),
-                new ClusterBufferClearParameters(buffer), new PassOptions(RepeatCommands: true),
-                static (ref PassDefinition pass, ref ClusterBufferClearParameters data) =>
-                    pass.Write(data.Buffer, BufferRange.Whole, PipelineSync.Copy,
-                        ResourceAccess.CopyDestination, WriteCoverage.Complete),
-                ClusterBufferClearParameters.Record, region: GraphData.EmptyReceivers);
-        }
         RecordTargetInitialization(ref graph, in frame);
         RecordVisibilityWinnerClear(ref graph, in frame);
         return frame;
@@ -610,28 +583,6 @@ public sealed partial class ClusterPipelineSystem
         }
         uint tessellationBinCount = checked(rasterBinCount * 8u);
         uint shadeBinCount = shadeStages.BinCount;
-        byte[] surfaceSizes = MemoryMarshal.AsBytes(GetSurfaceDataSizes(shadeStages).AsSpan()).ToArray();
-        UpdateBufferData(ref graph, frame.SurfaceDataSizes, ClusterBytes.FromBytes(surfaceSizes),
-            [new BufferRange(0, checked((ulong)surfaceSizes.Length))]);
-
-        uint surfaceStride = shadeStages.SurfaceDataStride;
-        if (surfaceStride != frame.SurfaceDataStride)
-        {
-            frame.SurfaceDataStride = surfaceStride;
-            SetStageBuffer(ref graph, frame.MaterialSurfaces,
-                Math.Max(sizeof(uint), checked((ulong)frame.Width * (ulong)frame.Height * frame.ViewCount * surfaceStride)),
-                BufferUsages.None, "Cluster material surfaces");
-        }
-        uint additionalLayers = shadeStages.HasAdditionalReceivers ? 3u : 0u;
-        if (additionalLayers != frame.AdditionalReceiverLayerCount)
-        {
-            frame.AdditionalReceiverLayerCount = additionalLayers;
-            SetStageBuffer(ref graph, frame.AdditionalSurfaceReceivers,
-                Math.Max((ulong)SurfaceReceiver.SizeInBytes, checked((ulong)frame.Width * (ulong)frame.Height * frame.ViewCount * SurfaceReceiver.SizeInBytes * additionalLayers)),
-                _options.ExportSurfaceReceivers ? BufferUsages.CopySource : BufferUsages.None, "Cluster additional surface receivers");
-            GraphData.Outputs = GraphData.Outputs with { AdditionalReceiverLayerCount = additionalLayers };
-        }
-
         bool rasterCapacityChanged = frame.RasterBinCount != rasterBinCount;
         bool shadeCapacityChanged = frame.ShadeBinCount != shadeBinCount;
         frame.RasterBinCount = rasterBinCount;
@@ -678,9 +629,6 @@ public sealed partial class ClusterPipelineSystem
         }
         if (shadeCapacityChanged)
         {
-            SetStageBuffer(ref graph, frame.SurfaceCounts, (ulong)shadeBinCount * sizeof(uint), BufferUsages.None, "Cluster surface counts");
-            SetStageBuffer(ref graph, frame.SurfaceScatterCounts, (ulong)shadeBinCount * sizeof(uint), BufferUsages.None, "Cluster surface scatter counts");
-            SetStageBuffer(ref graph, frame.SurfaceDataOffsets, (ulong)shadeBinCount * sizeof(uint), BufferUsages.None, "Cluster surface data offsets");
             SetStageBuffer(ref graph, frame.ShadeBinCounts,
                 checked((ulong)shadeBinCount * 2ul * sizeof(uint)),
                 _options.EnableFrameMetricsReadback ? BufferUsages.CopySource : BufferUsages.None, "Cluster shade bin counts");
@@ -753,6 +701,8 @@ public sealed partial class ClusterPipelineSystem
         graph.SetBufferRanges(GraphData.Resources.PageHeap, _residentPageReads);
 
         graph.SetBufferRanges(GraphData.Resources.Bvh, GraphData.Outputs.Geometry.BvhReadRanges);
+        foreach (GraphPassId build in _resources.GeometryBuilds(graph.FrameIdentity))
+            foreach (GraphPassId pass in GraphData.Passes) graph.OrderAfter(pass, build);
     }
 
     private QueueCompletion[][] CaptureRetirementCompletions(
@@ -1213,15 +1163,6 @@ public sealed partial class ClusterPipelineSystem
         internal GraphTextureId PolicyVisibilityScratch;
         internal GraphTextureId PolicyDepthScratch;
         internal GraphTextureId SceneColor;
-        internal GraphBufferId SurfaceCounts;
-        internal GraphBufferId SurfaceScatterCounts;
-        internal GraphBufferId SurfaceDataOffsets;
-        internal GraphBufferId SurfaceDataSizes;
-        internal GraphBufferId MaterialSurfaces;
-        internal uint SurfaceDataStride;
-        internal GraphBufferId SurfaceReceivers;
-        internal GraphBufferId AdditionalSurfaceReceivers;
-        internal uint AdditionalReceiverLayerCount;
         internal GraphTextureId MotionVectors;
         internal GraphBufferId AddBuffer(
             ref RenderGraphEdit graph,

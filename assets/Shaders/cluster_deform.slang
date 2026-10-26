@@ -49,7 +49,7 @@ bool DeformMatches(DrawRequest request)
 {
     uint clusterAddress = request.PageOffset + PageHeap.Load(request.PageOffset + 16u) +
         DrawRequestClusterID(request) * PACKED_CLUSTER_STRIDE_BYTES;
-    uint material = LoadClusterMaterials(PageHeap, request.PageOffset, clusterAddress).x;
+    uint material = LocalMaterial(PageHeap, clusterAddress, request.PageOffset, 0u);
     uint first = LoadClusterMaterialSlotOffset(InstanceData,
         LoadRenderInstanceMetadata(InstanceProperties, CLUSTER_MATERIAL_SLOT_OFFSET_METADATA_WORD),
         request.InstanceID);

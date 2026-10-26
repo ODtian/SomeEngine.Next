@@ -38,7 +38,7 @@ internal sealed class ClusterBufferAllocator
         }
     }
 
-    internal ulong AllocationSize(ulong size) => checked(size + _alignment - 1) & ~((ulong)_alignment - 1);
+    internal ulong AllocationSize(ulong size) => checked((size + _alignment - 1) / _alignment * _alignment);
     internal void ReserveFrees(int count) => _free.EnsureCapacity(checked(_free.Count + count));
 
     internal bool TryAllocate(ulong size, out ulong offset)
@@ -60,7 +60,7 @@ internal sealed class ClusterBufferAllocator
     [Conditional("DEBUG")]
     internal void ValidateFree(ulong offset, ulong size)
     {
-        DevelopmentCheck.Require((offset & (_alignment - 1)) == 0, "The released Cluster range must be aligned.");
+        DevelopmentCheck.Require(offset % _alignment == 0, "The released Cluster range must be aligned.");
         DevelopmentCheck.Require(size != 0, "The released Cluster range must contain bytes.");
         ulong end = checked(offset + AllocationSize(size));
         DevelopmentCheck.Require(end <= Capacity, "The released Cluster range must fit its buffer.");

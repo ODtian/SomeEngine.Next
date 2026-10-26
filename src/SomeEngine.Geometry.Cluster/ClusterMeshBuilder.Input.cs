@@ -13,7 +13,7 @@ public enum ClusterBuildStrategy
 }
 
 /// <summary>A contiguous triangle range and the material region used by its triangles.</summary>
-public readonly record struct ClusterMaterialGroup(int IndexStart, int IndexCount, byte MaterialIndex);
+public readonly record struct ClusterMaterialGroup(int IndexStart, int IndexCount, uint MaterialIndex);
 
 public static partial class ClusterMeshBuilder
 {
@@ -29,13 +29,11 @@ public static partial class ClusterMeshBuilder
     {
         var groupedPositions = new List<Vector3>();
         var groupedAttributes = new List<TAttributes>();
-        var groupedMaterialIndices = new List<float>();
+        var groupedMaterialIndices = new List<uint>();
         var groupedIndices = new List<uint>(indices.Length);
-        var vertices = new Dictionary<(uint Vertex, byte Material), uint>();
-        int materialCount = 0;
+        var vertices = new Dictionary<(uint Vertex, uint Material), uint>();
         foreach (ClusterMaterialGroup group in materialGroups)
         {
-            materialCount = Math.Max(materialCount, group.MaterialIndex + 1);
             foreach (uint sourceVertex in indices.AsSpan(group.IndexStart, group.IndexCount))
             {
                 var key = (sourceVertex, group.MaterialIndex);
@@ -53,7 +51,7 @@ public static partial class ClusterMeshBuilder
 
         return BuildCore(groupedPositions.ToArray(),
             new TypedVertexData<TAttributes>(groupedAttributes.ToArray(), vertexEncoder),
-            groupedIndices.ToArray(), groupedMaterialIndices.ToArray(), materialCount, name, strategy);
+            groupedIndices.ToArray(), groupedMaterialIndices.ToArray(), name, strategy);
     }
 
     /// <summary>Builds geometry from named float attributes supplied by source-format integrations.</summary>
@@ -68,8 +66,14 @@ public static partial class ClusterMeshBuilder
                 throw new ArgumentException("Attribute data must cover every input vertex.", nameof(attributes));
         }
         return BuildCore(positions, new RawVertexData(vertexAttributes, vertexEncoder), indices,
-            materialIndices?.Data ?? new float[positions.Length], materialCount, name, strategy);
+            materialIndices?.Data.Select(static value => checked((uint)value)).ToArray() ?? new uint[positions.Length], name, strategy, materialCount);
     }
+
+    /// <summary>Builds named attributes with full-width per-vertex material indices.</summary>
+    public static Mesh Build(Vector3[] positions, IReadOnlyList<RawAttribute> attributes, uint[] indices,
+        uint[] materialIndices, IClusterVertexEncoder vertexEncoder, ClusterBuildStrategy strategy, string name)
+        => BuildCore(positions, new RawVertexData(attributes.Where(static attribute => attribute.Name != "_MATERIAL_INDEX").ToArray(),
+            vertexEncoder), indices, materialIndices, name, strategy);
 
     private static T[] RemapValues<T>(T[] source, ReadOnlySpan<uint> remap, int vertexCount)
     {
@@ -84,6 +88,7 @@ public static partial class ClusterMeshBuilder
     private abstract class VertexData
     {
         public abstract string Compatibility { get; }
+        public virtual IReadOnlyList<RawAttribute> RawAttributes => [];
         public abstract VertexStream[] Streams { get; }
         public abstract VertexData Remap(ReadOnlySpan<uint> remap, int vertexCount);
         public abstract EncodedClusterVertices Encode(ReadOnlySpan<Vector3> positions, ReadOnlySpan<uint> vertices);
@@ -102,6 +107,7 @@ public static partial class ClusterMeshBuilder
 
     private sealed class RawVertexData(IReadOnlyList<RawAttribute> attributes, IClusterVertexEncoder encoder) : VertexData
     {
+        public override IReadOnlyList<RawAttribute> RawAttributes => attributes;
         public override string Compatibility => encoder.Compatibility;
         public override VertexStream[] Streams => attributes
             .Select(static attribute => new VertexStream(attribute.Data, attribute.Dimension * sizeof(float))).ToArray();

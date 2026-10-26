@@ -17,13 +17,11 @@ uint2 ClusterTargetReceiverMaskOrigin(ClusterRasterTargetView target)
     return uint2(target.ReceiverMaskOrigin >> 16u, target.ReceiverMaskOrigin & 0xffffu);
 }
 
-uint4 LoadClusterTargetReceiverMask(ClusterRasterTargetView target, uint2 localPage)
+uint2 LoadClusterTargetReceiverMask(ClusterRasterTargetView target, uint2 localPage)
 {
-    uint2 address = ClusterTargetReceiverMaskOrigin(target) + localPage * 2u;
-    return uint4(RasterTargetReceiverMasks.Load(int3(address, 0)),
-        RasterTargetReceiverMasks.Load(int3(address + uint2(1, 0), 0)),
-        RasterTargetReceiverMasks.Load(int3(address + uint2(0, 1), 0)),
-        RasterTargetReceiverMasks.Load(int3(address + 1u.xx, 0)));
+    uint2 address = ClusterTargetReceiverMaskOrigin(target) + localPage * uint2(1u, 2u);
+    return uint2(RasterTargetReceiverMasks.Load(int3(address, 0)),
+        RasterTargetReceiverMasks.Load(int3(address + uint2(0, 1), 0)));
 }
 
 uint ClusterTargetDirtyPageWord(uint index, uint depthCacheClass)

@@ -14,9 +14,8 @@ struct SingleTransparencyMaterials<let visibilityDepth : uint, let tessellated :
     { return Material0.cover(source, domain, tessellated, pixel, depth, resultDepth); }
     float4 shade(uint bin, uint source, uint primitive, uint3 pixel, float depth)
     { return Material0.shade<visibilityDepth>(source, primitive, pixel, depth); }
-    void receiver(uint bin, uint source, uint primitive, uint3 pixel, float depth,
-        out float3 position, out float3 normal, out uint flags)
-    { Material0.receiver<visibilityDepth>(source, primitive, pixel, depth, position, normal, flags); }
+    void markShadowPages(uint bin, uint source, uint primitive, uint3 pixel, float depth)
+    { Material0.markShadowPages<visibilityDepth>(source, primitive, pixel, depth); }
 };
 
 [shader("compute")] [numthreads(64,1,1)]
@@ -39,15 +38,10 @@ void ReserveTransparentCells(uint3 thread : SV_DispatchThreadID) { ReserveTransp
 [shader("compute")] [numthreads(64,1,1)]
 void ScatterTransparentCells(uint3 thread : SV_DispatchThreadID) { ScatterTransparency(thread); }
 
-[shader("compute")] [numthreads(16,16,1)]
-void RequestTransparentShadows<let visibilityDepth : uint, let tessellated : bool>(
-    uniform SingleTransparencyMaterials<visibilityDepth, tessellated> materials, uint3 pixel : SV_DispatchThreadID)
-{ RequestTransparencyShadows<SingleTransparencyMaterials<visibilityDepth, tessellated>, false>(materials, pixel); }
-
-[shader("compute")] [numthreads(16,16,1)]
-void RequestProjectedTransparentShadows<let visibilityDepth : uint, let tessellated : bool>(
-    uniform SingleTransparencyMaterials<visibilityDepth, tessellated> materials, uint3 pixel : SV_DispatchThreadID)
-{ RequestTransparencyShadows<SingleTransparencyMaterials<visibilityDepth, tessellated>, true>(materials, pixel); }
+[shader("compute")] [numthreads(64,1,1)]
+void RequestTransparentPages<let visibilityDepth : uint, let tessellated : bool>(
+    uniform SingleTransparencyMaterials<visibilityDepth, tessellated> materials, uint3 thread : SV_DispatchThreadID)
+{ RequestTransparencyPages(materials, thread); }
 
 [shader("compute")] [numthreads(16,16,1)]
 void ResolveTransparentColor<let visibilityDepth : uint, let tessellated : bool>(

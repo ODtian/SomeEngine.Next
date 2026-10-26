@@ -18,9 +18,23 @@ public struct MeshPageHeader
     public uint ExtensionDataOffset; // 28
     public ulong VertexEncodingHash; // 32
     public uint ExtensionDataSize;   // 40
-    public uint FirstCluster;        // 44 — first draw-cluster index in this mesh
+    private uint _flagsAndFirstCluster; // 44: root flag followed by the mesh draw-cluster start
+
+    public uint Flags
+    {
+        readonly get => _flagsAndFirstCluster & RootPage;
+        set => _flagsAndFirstCluster = (_flagsAndFirstCluster & ~RootPage) | (value & RootPage);
+    }
+
+    public uint FirstCluster
+    {
+        readonly get => _flagsAndFirstCluster >> 1;
+        set => _flagsAndFirstCluster = (value << 1) | (_flagsAndFirstCluster & RootPage);
+    }
 
     public const int Size = 48;
     public const int MaxPageSize = 131072;
+    public const int RootPageSize = 32768;
+    public const uint RootPage = 1;
 }
 

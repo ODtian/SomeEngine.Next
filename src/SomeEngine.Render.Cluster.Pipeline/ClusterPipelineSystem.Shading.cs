@@ -9,14 +9,6 @@ namespace SomeEngine.Render.Cluster.Pipeline;
 
 public sealed partial class ClusterPipelineSystem
 {
-    private static uint[] GetSurfaceDataSizes(ClusterShadeStageSet stages)
-    {
-        uint[] sizes = new uint[Math.Max(1u, stages.BinCount)];
-        foreach (ClusterShadeInvocation stage in stages.Invocations)
-            sizes[stage.BinIndex] = stage.SurfaceDataSize;
-        return sizes;
-    }
-
     private readonly record struct IndexedTextureRead(SomeEngine.Resources.Material Material, uint Property,
         SomeEngine.Resources.Texture? Texture);
 
@@ -41,19 +33,19 @@ public sealed partial class ClusterPipelineSystem
 
     private GraphRegionMap<uint, ShadeGroup> UpdateShadeGroups(ref RenderGraphEdit graph, ClusterShadeStageSet stages)
     {
-        GraphData.ReceiverGroups = UpdateReceiverGroups(ref graph, stages);
-        return UpdateMaterialGroups(ref graph, stages, GraphData.ShadeGroups, receivers: false);
+        GraphData.ShadowRequestGroups = UpdateShadowRequestGroups(ref graph, stages);
+        return UpdateMaterialGroups(ref graph, stages, GraphData.ShadeGroups, requests: false);
     }
 
-    private GraphRegionMap<uint, ShadeGroup> UpdateReceiverGroups(ref RenderGraphEdit graph, ClusterShadeStageSet stages)
-        => UpdateMaterialGroups(ref graph, stages, GraphData.ReceiverGroups, receivers: true);
+    private GraphRegionMap<uint, ShadeGroup> UpdateShadowRequestGroups(ref RenderGraphEdit graph, ClusterShadeStageSet stages)
+        => UpdateMaterialGroups(ref graph, stages, GraphData.ShadowRequestGroups, requests: true);
 
     private GraphRegionMap<uint, ShadeGroup> UpdateMaterialGroups(ref RenderGraphEdit graph, ClusterShadeStageSet stages,
-        GraphRegionMap<uint, ShadeGroup> previousGroups, bool receivers)
+        GraphRegionMap<uint, ShadeGroup> previousGroups, bool requests)
     {
         var reads = CollectIndexedTextureReads(stages.BinIndices, stages, includeDecals: true);
-        var desired = stages.Invocations.Where(stage => !receivers || stage.SurfaceShader is not null).ToDictionary(static stage => stage.BinIndex,
-            stage => new ShadeGroup(receivers ? stage.SurfaceShader! : stage,
+        var desired = stages.Invocations.Where(stage => !requests || stage.RequestShader is not null).ToDictionary(static stage => stage.BinIndex,
+            stage => new ShadeGroup(requests ? stage.RequestShader! : stage,
                 reads.GetValueOrDefault(stage.BinIndex, [])));
         foreach (ShadeGroup group in previousGroups.Values)
             if (!desired.TryGetValue(group.Stage.BinIndex, out ShadeGroup? next) ||
@@ -64,7 +56,7 @@ public sealed partial class ClusterPipelineSystem
             {
                 var dispatch = new ClusterIndirectDispatchParameters(RequireDispatchIndirectLayout(),
                     GraphData.Resources.ShadeIndirectArgs, checked((ulong)bin * ClusterIndirectAbi.DispatchBytes));
-                GraphPassId pass = edit.AddComputeFramePass($"Evaluate Cluster {(receivers ? "receivers" : "color")} bin {bin}",
+                GraphPassId pass = edit.AddComputeFramePass($"Evaluate Cluster {(requests ? "shadow requests" : "color")} bin {bin}",
                     PassQueueSelection.AnyOfType(QueueType.Graphics), dispatch, new PassOptions(RepeatCommands: true),
                     value.Stage.Pipeline.Pipeline, VariableLayoutReflection.Null, default,
                     static (ref PassDefinition access, ref ClusterIndirectDispatchParameters data) =>
@@ -72,13 +64,12 @@ public sealed partial class ClusterPipelineSystem
                             PipelineSync.ExecuteIndirect, ResourceAccess.IndirectArgument),
                     ClusterIndirectDispatchParameters.Record, region: region);
                 value.Pass = pass;
-                value.Uniforms = BindShadeResources(ref edit, pass, value.Stage, stages, receivers);
+                value.Uniforms = BindShadeResources(ref edit, pass, value.Stage, stages);
                 PassDefinition access = edit.GetPass(pass);
                 ReadIndexedMaterialTextures(ref edit, ref access, value.TextureReads, PipelineSync.ComputeShading);
             });
         if (_installedShadeStages is { } previous &&
-            (previous.BinCount != stages.BinCount || previous.BinIndices.Length != stages.BinIndices.Length ||
-                previous.SurfaceDataStride != stages.SurfaceDataStride))
+            (previous.BinCount != stages.BinCount || previous.BinIndices.Length != stages.BinIndices.Length))
         {
             Span<ClusterShadeUniforms> value = stackalloc ClusterShadeUniforms[1];
             foreach (ShadeGroup group in groups.Values)
@@ -136,7 +127,6 @@ public sealed partial class ClusterPipelineSystem
         ShadeBinCount = stages.BinCount,
         MaterialSlotCapacity = checked((uint)(stages.BinIndices.Length / sizeof(uint))),
         ViewCount = GraphData.Resources.ViewCount,
-        SurfaceDataStride = stages.GetBin(bin).SurfaceDataSize,
         VisibilityDepth = (uint)stages.GetBin(bin).VisibilityDepth,
     };
 
@@ -154,14 +144,6 @@ public sealed partial class ClusterPipelineSystem
 
     private void UpdateShadeBinning(ref RenderGraphEdit graph, ClusterShadeStageSet stages)
     {
-        if (_installedShadeStages is { } previous && previous.WritesReceivers != stages.WritesReceivers)
-        {
-            GraphPassId previousPass = GraphData.ShadeCountPass;
-            graph.Remove(previousPass);
-            GraphData.LayerDispatches.RemoveAll(dispatch => dispatch.Pass == previousPass);
-            GraphData.ShadeCountPass = RecordShadeCount(ref graph, GraphData.Resources,
-                GraphData.ShadeBinUniforms, stages.WritesReceivers);
-        }
         Span<ClusterShadeBinUniforms> value = stackalloc ClusterShadeBinUniforms[1];
         value[0] = new ClusterShadeBinUniforms
         {
@@ -170,9 +152,7 @@ public sealed partial class ClusterPipelineSystem
             ShadeBinCount = GraphData.Resources.ShadeBinCount,
             SlotCapacity = GraphData.Resources.SlotCapacity,
             BinItemCapacity = CalculateShadeBinItemCapacity(GraphData.Resources),
-            AdditionalReceiverLayerCount = GraphData.Resources.AdditionalReceiverLayerCount,
             ViewCount = GraphData.Resources.ViewCount,
-            SurfaceDataStride = GraphData.Resources.SurfaceDataStride,
         };
         UpdateParameters(ref graph, GraphData.ShadeBinUniforms, MemoryMarshal.AsBytes(value));
     }

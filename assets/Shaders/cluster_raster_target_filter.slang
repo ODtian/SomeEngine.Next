@@ -77,8 +77,8 @@ bool ClusterTargetReceiverAccepts(
         return true;
 
     uint tableIndex = ClusterRasterTargetTableIndex(target, localPage);
-    uint4 receiverMask = LoadClusterTargetReceiverMask(target, localPage);
-    if (all(receiverMask == 0u.xxxx))
+    uint2 receiverMask = LoadClusterTargetReceiverMask(target, localPage);
+    if (all(receiverMask == 0u.xx))
         return false;
 
     uint2 pageOrigin = localPage * target.PageSize;
@@ -127,26 +127,24 @@ bool ClusterTargetReceiverHierarchyAccepts(ClusterRasterTargetView target, uint2
 {
     if (target.ReceiverMaskEnabled == 0u) return true;
     uint cellShift = firstbithigh(target.PageSize) - 3u;
-    uint2 firstTexel = firstPixel >> (cellShift + 2u);
-    uint2 lastTexel = lastPixel >> (cellShift + 2u);
+    uint2 firstTexel = firstPixel >> uint2(cellShift + 3u, cellShift + 2u);
+    uint2 lastTexel = lastPixel >> uint2(cellShift + 3u, cellShift + 2u);
     uint maximumExtent = max(lastTexel.x - firstTexel.x + 1u, lastTexel.y - firstTexel.y + 1u);
     uint mip = maximumExtent > 2u ? uint(firstbithigh(maximumExtent - 1u)) : 0u;
     mip = min(mip, 7u);
     uint2 origin = ClusterTargetReceiverMaskOrigin(target);
-    uint2 firstCell = ((origin << 2u) + (firstPixel >> cellShift)) >> mip;
-    uint2 lastCell = ((origin << 2u) + (lastPixel >> cellShift)) >> mip;
-    firstTexel = firstCell >> 2u;
-    lastTexel = lastCell >> 2u;
+    uint2 firstCell = ((origin * uint2(8u, 4u)) + (firstPixel >> cellShift)) >> mip;
+    uint2 lastCell = ((origin * uint2(8u, 4u)) + (lastPixel >> cellShift)) >> mip;
+    firstTexel = firstCell >> uint2(3u, 2u);
+    lastTexel = lastCell >> uint2(3u, 2u);
     for (uint y = firstTexel.y; y <= lastTexel.y; y++)
     for (uint x = firstTexel.x; x <= lastTexel.x; x++)
     {
         uint2 texel = uint2(x, y);
-        uint2 low = max(firstCell, texel * 4u) - texel * 4u;
-        uint2 high = min(lastCell, texel * 4u + 3u) - texel * 4u;
-        uint columns = (0xfu << low.x) & (0xfu >> (3u - high.x));
-        uint rows = (0xffffu << (low.y * 4u)) & (0xffffu >> ((3u - high.y) * 4u));
+        uint2 low = max(firstCell, texel * uint2(8u, 4u)) - texel * uint2(8u, 4u);
+        uint2 high = min(lastCell, texel * uint2(8u, 4u) + uint2(7u, 3u)) - texel * uint2(8u, 4u);
         uint mask = RasterTargetReceiverMasks.Load(int3(texel, mip));
-        if ((mask & (columns * 0x1111u) & rows) != 0u) return true;
+        if ((mask & VirtualShadowReceiverWordRectangle(low, high)) != 0u) return true;
     }
     return false;
 }

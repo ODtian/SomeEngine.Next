@@ -12,13 +12,6 @@ RWByteAddressBuffer IndirectArgs;
 RWStructuredBuffer<uint> ScatterCounts;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<uint> ReserveCounters;
-StructuredBuffer<uint> SurfaceCounts;
-StructuredBuffer<uint> SurfaceDataSizes;
-[ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
-RWStructuredBuffer<uint> SurfaceDataOffsets;
-[ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
-RWStructuredBuffer<uint> SurfaceScatterCounts;
-
 static const uint BLOCK_SIZE = 128u;
 
 [shader("compute")]
@@ -40,13 +33,6 @@ void ReserveShadeBins(uint3 threadId : SV_DispatchThreadID)
         ? bin * Uniforms.BinItemCapacity : offset;
     BinOffsets[bin * 2u + 1u] = Uniforms.BinItemCapacity != 0u
         ? (bin + 1u) * Uniforms.BinItemCapacity - quads : offset + tiles;
-    uint surfaceBytes = SurfaceCounts[bin] * SurfaceDataSizes[bin];
-    uint waveSurfaceBytes = WaveActiveSum(surfaceBytes);
-    uint surfaceBase = 0u;
-    if (WaveIsFirstLane() && waveSurfaceBytes != 0u)
-        InterlockedAdd(ReserveCounters[1], waveSurfaceBytes, surfaceBase);
-    SurfaceDataOffsets[bin] = WaveReadLaneFirst(surfaceBase) + WavePrefixSum(surfaceBytes);
-    SurfaceScatterCounts[bin] = 0u;
     ScatterCounts[bin * 2u] = 0u;
     ScatterCounts[bin * 2u + 1u] = 0u;
     WriteDispatch(IndirectArgs, bin, tiles + (quads + 15u) / 16u);

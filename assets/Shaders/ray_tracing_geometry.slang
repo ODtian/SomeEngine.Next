@@ -38,7 +38,7 @@ void LoadRayTracingClusterInfo(
     uint clusterOffset = pageOffset + clustersOffset + clusterId * PACKED_CLUSTER_STRIDE_BYTES;
     vertexBlobAddress = pageOffset + vertexBlobsOffset + pageHeap.Load(clusterOffset + 0u);
     vertexBlobSize = pageHeap.Load(clusterOffset + 4u);
-    triangleStart = pageHeap.Load(clusterOffset + 56u) >> 16u;
+    triangleStart = (pageHeap.Load(clusterOffset + 56u) >> 16u) * 3u;
     packedCounts = pageHeap.Load(clusterOffset + 60u);
 }
 

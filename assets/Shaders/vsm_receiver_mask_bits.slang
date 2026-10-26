@@ -1,34 +1,39 @@
 #ifndef VSM_RECEIVER_MASK_BITS_SLANG
 #define VSM_RECEIVER_MASK_BITS_SLANG
 
-bool VirtualShadowReceiverMaskCell(uint4 mask, uint2 cell)
+bool VirtualShadowReceiverMaskCell(uint2 mask, uint2 cell)
 {
-    uint word = (cell.y >> 2u) * 2u + (cell.x >> 2u);
-    uint bit = (cell.y & 3u) * 4u + (cell.x & 3u);
-    return (mask[word] & (1u << bit)) != 0u;
+    return (mask[cell.y >> 2u] & (1u << ((cell.y & 3u) * 8u + cell.x))) != 0u;
 }
 
-bool VirtualShadowReceiverMaskRectangle(uint4 masks, uint2 firstCell, uint2 lastCell)
+uint VirtualShadowReceiverWordRectangle(uint2 firstCell, uint2 lastCell)
 {
-    for (uint y = firstCell.y >> 2u; y <= lastCell.y >> 2u; y++)
-    for (uint x = firstCell.x >> 2u; x <= lastCell.x >> 2u; x++)
+    uint columns = (0xffu << firstCell.x) & (0xffu >> (7u - lastCell.x));
+    uint rows = (0xffffffffu << (firstCell.y * 8u)) & (0xffffffffu >> ((3u - lastCell.y) * 8u));
+    return columns * 0x01010101u & rows;
+}
+
+bool VirtualShadowReceiverMaskRectangle(uint2 masks, uint2 firstCell, uint2 lastCell)
+{
+    for (uint word = firstCell.y >> 2u; word <= lastCell.y >> 2u; word++)
     {
-        uint2 low = max(firstCell, uint2(x, y) * 4u) - uint2(x, y) * 4u;
-        uint2 high = min(lastCell, uint2(x, y) * 4u + 3u) - uint2(x, y) * 4u;
-        uint columns = (0xfu << low.x) & (0xfu >> (3u - high.x));
-        uint rows = (0xffffu << (low.y * 4u)) & (0xffffu >> ((3u - high.y) * 4u));
-        if ((masks[y * 2u + x] & (columns * 0x1111u) & rows) != 0u) return true;
+        uint2 low = uint2(firstCell.x, max(firstCell.y, word * 4u) - word * 4u);
+        uint2 high = uint2(lastCell.x, min(lastCell.y, word * 4u + 3u) - word * 4u);
+        if ((masks[word] & VirtualShadowReceiverWordRectangle(low, high)) != 0u) return true;
     }
     return false;
 }
 
+// Each R32 texel represents eight columns and four rows. Reduce adjacent 2x2 cells.
 uint ShrinkVirtualShadowReceiverMask(uint mask)
 {
-    uint vertical = (mask | (mask >> 4u)) & 0x0505u;
-    vertical |= (mask | (mask >> 4u)) >> 1u & 0x0505u;
-    return (vertical & 1u) | ((vertical >> 1u) & 2u) |
-        ((vertical >> 4u) & 0x10u) | ((vertical >> 5u) & 0x20u);
+    uint rows = (mask | (mask >> 8u)) & 0x00ff00ffu;
+    uint pairs = (rows | (rows >> 1u)) & 0x00550055u;
+    uint first = (pairs & 1u) | ((pairs >> 1u) & 2u) |
+        ((pairs >> 2u) & 4u) | ((pairs >> 3u) & 8u);
+    uint second = ((pairs >> 12u) & 0x10u) | ((pairs >> 13u) & 0x20u) |
+        ((pairs >> 14u) & 0x40u) | ((pairs >> 15u) & 0x80u);
+    return first | second;
 }
-
 
 #endif

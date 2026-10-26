@@ -39,9 +39,8 @@ public static class SampleMaterials
         foreach (string mode in new[] { "0", "8" })
         {
             inputs.Specializations.Add(new() { EntryPoint = "ClusterShadeMode", Arguments = [mode] });
-            inputs.Specializations.Add(new() { EntryPoint = "ClusterShadowReceiver", Arguments = ["0", mode] });
-            foreach (string export in new[] { "false", "true" })
-                inputs.Specializations.Add(new() { EntryPoint = "ClusterForwardShade", Arguments = ["0", mode, export] });
+            inputs.Specializations.Add(new() { EntryPoint = "ClusterShadowRequests", Arguments = ["0", mode] });
+            inputs.Specializations.Add(new() { EntryPoint = "ClusterForwardShade", Arguments = ["0", mode] });
         }
         IGlobalSession slang = SlangShaderImporter.GlobalSession;
         SessionDesc settings = SlangShaderImporter.CreateSessionDescription(path, SlangShaderImporter.CreateDefaultTargets(slang));

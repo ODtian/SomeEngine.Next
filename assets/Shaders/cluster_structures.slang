@@ -17,10 +17,10 @@ struct PackedCluster
     float3 BoundMax;                    // 44 — conservative object-space AABB max
     uint PackedLodErrorTriangleStart;   // 56 — LODErrorHalf:16 | TriangleStart:16
     uint PackedCounts;                  // 60 — [VertexCount:8][TriangleCount:8][LODLevel:8][Flags:8]
-    uint PackedGroup;                   // 64 — GroupId(i16):16 | Reserved:16
+    uint PackedMaximumEdgeLength;                   // 64 — Reserved:16 | MaximumEdgeLengthHalf:16
     uint PackedMaterials;               // 68 — [mat0:8][mat1:8][mat2:8][Reserved:8]
-    uint PackedRanges;                  // 72 — [range0End:8][range1End:8][Reserved:16]
-    uint MaterialTableOffset;           // 76 — page-relative uint32 material IDs, or 0xFFFFFFFF
+    uint PackedRanges;                  // 72 — [range0End:8][range1End:8][extendedRangeCount:16]
+    uint MaterialTableOffset;           // 76 — page-relative extended ranges, or 0xFFFFFFFF
     uint VertReuseBatchWord0;           // 80
     uint VertReuseBatchWord1;           // 84
     uint VertReuseBatchWord2;           // 88
@@ -43,9 +43,14 @@ float DecodeClusterLODError(PackedCluster c)
     return f16tof32(lodErrBits);
 }
 
+float DecodeClusterMaximumEdgeLength(PackedCluster cluster)
+{
+    return f16tof32(cluster.PackedMaximumEdgeLength >> 16u);
+}
+
 uint DecodeTriangleStart(PackedCluster c)
 {
-    return c.PackedLodErrorTriangleStart >> 16;
+    return (c.PackedLodErrorTriangleStart >> 16) * 3u;
 }
 
 uint4 VertReuseBatchWords(PackedCluster cluster)
@@ -94,61 +99,65 @@ uint MaterialRangeEnd(uint packedRanges, uint triangleCount, uint rangeIndex)
     return triangleCount;
 }
 
-uint3 LoadClusterMaterials(ByteAddressBuffer heap, uint pageAddress, uint clusterAddress)
-{
-    uint table = heap.Load(clusterAddress + 76u);
-    if (table != 0xFFFFFFFFu)
-        return heap.Load3(pageAddress + table);
-    uint packed = heap.Load(clusterAddress + 68u);
-    return uint3(packed & 255u, (packed >> 8u) & 255u, (packed >> 16u) & 255u);
-}
-
-uint LocalMaterial(uint3 materials, uint ranges, uint triangle)
-{
-    uint firstEnd = ranges & 255u;
-    uint secondEnd = (ranges >> 8u) & 255u;
-    return triangle < firstEnd ? materials.x : triangle < secondEnd ? materials.y : materials.z;
-}
-
 struct ClusterMaterialRanges
 {
-    uint3 Materials;
+    uint Materials;
     uint Ranges;
+    uint TableAddress;
     uint4 BatchWords;
 };
 
 uint ClusterMaterialRangeCount(ClusterMaterialRanges data, uint triangleCount)
 {
-    return MaterialRangeCount(data.Ranges, triangleCount);
+    return data.TableAddress == 0xFFFFFFFFu ? MaterialRangeCount(data.Ranges, triangleCount) : data.Ranges >> 16u;
 }
 
-uint ClusterMaterialRange(ByteAddressBuffer heap, ClusterMaterialRanges data, uint triangleCount, uint index)
+uint2 ClusterMaterialRange(ByteAddressBuffer heap, ClusterMaterialRanges data, uint triangleCount, uint index)
 {
+    if (data.TableAddress != 0xFFFFFFFFu) return heap.Load2(data.TableAddress + index * 8u);
     uint start = index == 0u ? 0u : MaterialRangeEnd(data.Ranges, triangleCount, index - 1u);
     uint end = MaterialRangeEnd(data.Ranges, triangleCount, index);
-    return start | ((end - start) << 8u);
+    return uint2(start | ((end - start) << 8u), (data.Materials >> (index * 8u)) & 255u);
 }
 
 uint ClusterMaterialBatchBits(ByteAddressBuffer heap, ClusterMaterialRanges data, uint bit, uint count)
 {
-    return ReadVertReuseBits(data.BatchWords, bit, count);
+    if (data.TableAddress == 0xFFFFFFFFu) return ReadVertReuseBits(data.BatchWords, bit, count);
+    uint address = data.BatchWords.x + (bit >> 5u) * 4u;
+    uint shift = bit & 31u;
+    uint value = heap.Load(address) >> shift;
+    if (shift + count > 32u) value |= heap.Load(address + 4u) << (32u - shift);
+    return value & ((1u << count) - 1u);
 }
 
 ClusterMaterialRanges LoadClusterMaterialRanges(ByteAddressBuffer heap, uint clusterAddress, uint pageAddress)
 {
     ClusterMaterialRanges data;
-    data.Materials = LoadClusterMaterials(heap, pageAddress, clusterAddress);
+    data.Materials = heap.Load(clusterAddress + 68u);
     data.Ranges = heap.Load(clusterAddress + 72u);
+    data.TableAddress = heap.Load(clusterAddress + 76u);
     data.BatchWords = heap.Load4(clusterAddress + 80u);
+    if (data.TableAddress != 0xFFFFFFFFu)
+    {
+        data.TableAddress += pageAddress;
+        data.BatchWords.x += pageAddress;
+    }
     return data;
 }
 
 uint LocalMaterial(ByteAddressBuffer heap, uint clusterAddress, uint pageAddress, uint triangle)
 {
-    return LocalMaterial(LoadClusterMaterials(heap, pageAddress, clusterAddress),
-        heap.Load(clusterAddress + 72u), triangle);
+    ClusterMaterialRanges data = LoadClusterMaterialRanges(heap, clusterAddress, pageAddress);
+    if (data.TableAddress == 0xFFFFFFFFu) return LocalMaterial(data.Materials, data.Ranges, triangle);
+    uint triangleCount = (heap.Load(clusterAddress + 60u) >> 8u) & 0xFFu;
+    uint count = ClusterMaterialRangeCount(data, triangleCount);
+    for (uint index = 0u; index < count; index++)
+    {
+        uint2 range = ClusterMaterialRange(heap, data, triangleCount, index);
+        if (triangle < (range.x & 0xFFu) + ((range.x >> 8u) & 0xFFu)) return range.y;
+    }
+    return 0u;
 }
-
 uint DecodeTriangleCount(PackedCluster c)
 {
     return (c.PackedCounts >> 8) & 0xFF;
@@ -461,30 +470,35 @@ uint ClusterTraversalViewIndex(ClusterTraversalNode node)
     return node.ViewIndex;
 }
 
-// Deferred work retains the 64-byte node index. The direct bit means that
-// resuming work tests this node before expanding its children.
+// Deferred work uses the page-alignment bits as tags. A 240B byte-addressed
+// hierarchy fits 25-bit node indices; two upper bits retain the selected slice.
 static const uint CLUSTER_DEFERRED_NODE_BIT = 2u;
-static const uint CLUSTER_TRAVERSAL_DIRECT_BIT = 0x80000000u;
-static const uint CLUSTER_TRAVERSAL_NODE_MASK = 0x0FFFFFFFu;
+static const uint CLUSTER_TRAVERSAL_SLICE_BIT = 0x80000000u;
+static const uint CLUSTER_TRAVERSAL_NODE_MASK = 0x01FFFFFFu;
 
 uint ClusterTraversalNodeIndex(ClusterTraversalNode node)
 {
     return node.NodeIndex & CLUSTER_TRAVERSAL_NODE_MASK;
 }
-bool ClusterTraversalIsDirect(ClusterTraversalNode node)
+uint ClusterTraversalSliceIndex(ClusterTraversalNode node)
 {
-    return (node.NodeIndex & CLUSTER_TRAVERSAL_DIRECT_BIT) != 0u;
+    return (node.NodeIndex >> 29u) & 3u;
 }
-uint ClusterTraversalDirect(uint nodeIndex)
+bool ClusterTraversalHasSlice(ClusterTraversalNode node)
 {
-    return nodeIndex | CLUSTER_TRAVERSAL_DIRECT_BIT;
+    return (node.NodeIndex & CLUSTER_TRAVERSAL_SLICE_BIT) != 0u;
+}
+uint ClusterTraversalSlice(uint nodeIndex, uint childIndex)
+{
+    return nodeIndex | (childIndex << 29u) | CLUSTER_TRAVERSAL_SLICE_BIT;
 }
 
 DrawRequest MakeDeferredTraversalNode(ClusterTraversalNode node)
 {
     DrawRequest result;
-    result.PageOffset = (ClusterTraversalNodeIndex(node) << 4u) | CLUSTER_DEFERRED_NODE_BIT |
-        (ClusterTraversalIsDirect(node) ? 8u : 0u);
+    result.PageOffset = (ClusterTraversalNodeIndex(node) << 4u) |
+        (ClusterTraversalSliceIndex(node) << 29u) | CLUSTER_DEFERRED_NODE_BIT |
+        (ClusterTraversalHasSlice(node) ? 8u : 0u);
     result.InstanceID = node.InstanceID;
     result.ClusterAndView = node.ViewIndex;
     return result;
@@ -495,7 +509,8 @@ bool IsDeferredTraversalNode(DrawRequest work)
 }
 ClusterTraversalNode DecodeDeferredTraversalNode(DrawRequest work)
 {
-    uint nodeIndex = work.PageOffset >> 4u;
+    uint nodeIndex = (work.PageOffset >> 4u) & CLUSTER_TRAVERSAL_NODE_MASK;
+    nodeIndex |= work.PageOffset & 0x60000000u;
     nodeIndex |= (work.PageOffset & 8u) << 28u;
     return MakeClusterTraversalNode(nodeIndex, work.InstanceID, work.ClusterAndView, 1u);
 }

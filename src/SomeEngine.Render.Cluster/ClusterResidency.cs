@@ -368,18 +368,13 @@ internal sealed class ClusterResidency : IDisposable, IAsyncDisposable
             _overBudgetFrames = _underBudgetFrames = 0;
             return;
         }
-        float load = demand.Capacity == 0 ? 0 : (float)((double)demand.Bytes / demand.Capacity);
+        float load = demand.Capacity == 0 ? (demand.Bytes == 0 ? 0 : float.PositiveInfinity)
+            : (float)((double)demand.Bytes / demand.Capacity);
         _overBudgetFrames = load > .85f ? Math.Min(_overBudgetFrames + 1, 2u) : 0;
         _underBudgetFrames = load < .70f ? Math.Min(_underBudgetFrames + 1, 30u) : 0;
         if (_overBudgetFrames >= 2) _streamingQuality *= .97f;
         else if (_underBudgetFrames >= 30) _streamingQuality *= 1.01f;
         _streamingQuality = Math.Clamp(_streamingQuality, .3f, 1.0f);
-    }
-
-    internal void ReportLeafUsage(ReadOnlySpan<uint> leafNodeIndices)
-    {
-        ThrowIfNotActive();
-        _meshes.ReportLeafUsage(leafNodeIndices);
     }
 
     internal void CaptureDiagnostics(

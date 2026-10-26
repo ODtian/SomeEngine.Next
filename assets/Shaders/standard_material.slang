@@ -6,12 +6,22 @@
 #include "coating_material.slang"
 #include "render_lighting.slang"
 #include "brdf.slang"
-#include "vsm_material.slang"
+#include "vsm_forward_sampling.slang"
+#include "cluster_instance_properties.slang"
+#include "vsm_receiver_requests.slang"
 
+StructuredBuffer<ClusterViewUniforms> MaterialViews;
+Texture2DArray<float> MaterialDepth;
+ByteAddressBuffer MaterialInstanceData;
+ConstantBuffer<RenderInstancePropertyMetadata> MaterialInstanceProperties;
+
+#ifndef RENDER_LIGHTING_INPUTS_DECLARED
+#define RENDER_LIGHTING_INPUTS_DECLARED
 StructuredBuffer<ClusteredLightGridParameters> LightingViews;
 StructuredBuffer<GPULight> LightBuffer;
 StructuredBuffer<uint2> ClusteredLightGrid;
 StructuredBuffer<uint> LightIndexList;
+#endif
 Texture2DArray<float4> LightingCookieAtlas;
 
 float EvaluateLightingCookie(GPULight light, float3 worldPosition)
@@ -103,13 +113,26 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ITransparentS
         float3 B = cross(N_geom, T) * ctx.worldTangent.w; // handedness
         float3 mappedNormal = normalize(T * normalTS.x + B * normalTS.y + N_geom * normalTS.z);
 
+        ClusterViewUniforms cameraView = MaterialViews[input.PixelCoord.z];
+        float3 positionDx = TransformFirstPersonWorldPosition(MaterialInstanceData, MaterialInstanceProperties,
+            input.InstanceID, cameraView, ctx.surfacePosition + input.PositionDx);
+        float3 positionDy = TransformFirstPersonWorldPosition(MaterialInstanceData, MaterialInstanceProperties,
+            input.InstanceID, cameraView, ctx.surfacePosition + input.PositionDy);
+        ctx.surfacePosition = TransformFirstPersonWorldPosition(MaterialInstanceData, MaterialInstanceProperties,
+            input.InstanceID, cameraView, ctx.surfacePosition);
+        positionDx -= ctx.surfacePosition;
+        positionDy -= ctx.surfacePosition;
+        mappedNormal = TransformFirstPersonWorldNormal(MaterialInstanceData, MaterialInstanceProperties,
+            input.InstanceID, cameraView, mappedNormal);
+        N_geom = TransformFirstPersonWorldNormal(MaterialInstanceData, MaterialInstanceProperties,
+            input.InstanceID, cameraView, N_geom);
         float3 baseColor = albedoSample.rgb * scalars.BaseColorTint.rgb;
         float roughness = saturate(armSample.g * scalars.Roughness);
         float metallic = saturate(armSample.b * scalars.MetallicFactor);
         roughness = max(roughness, 0.04);
         MaterialDecalIterator decals = BeginMaterialDecals(input.PixelCoord, ctx.surfacePosition);
         MaterialDecalInput decal;
-        while (NextMaterialDecal(decals, ctx.surfacePosition, input.PositionDx, input.PositionDy, decal))
+        while (NextMaterialDecal(decals, ctx.surfacePosition, positionDx, positionDy, decal))
         {
             CoatingLayer layer = EvaluateCoating(decal);
             float alpha = saturate(layer.BaseColor.a);
@@ -121,14 +144,23 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ITransparentS
         ClusteredLightGridParameters lighting = LightingViews[ctx.pixelCoord.z];
         float3 viewPosition = mul(float4(ctx.surfacePosition, 1.0), lighting.View).xyz;
         float viewDepth = max(-viewPosition.z, lighting.ZParams.x);
-        float3 receiverPositionDx = ctx.surfacePosition + input.PositionDx;
-        float3 receiverPositionDy = ctx.surfacePosition + input.PositionDy;
-        float nominalPixelRadius = CalculateVirtualShadowNominalWorldPixelRadius(
-            VirtualShadowSampling.ReceiverProjection, ctx.surfacePosition);
-        float normalBias = VirtualShadowSampling.ViewCount == 0u ? 0.0 :
-            CalculateVirtualShadowNormalBiasLength(VirtualShadowSampling.ReceiverProjection,
-                ctx.surfacePosition, VirtualShadowSampling.NormalBias, VirtualShadowViews[0].WorldUnitsPerCentimeter);
-        float3 V = normalize(input.CameraPosition - ctx.surfacePosition);
+        SurfaceReceiver receiver = (SurfaceReceiver)0;
+        receiver.Position = ctx.surfacePosition;
+        receiver.ShadingNormal = mappedNormal;
+        float3 geometricNormal = SafeNormalize(cross(triangle.Position1 - triangle.Position0,
+            triangle.Position2 - triangle.Position0), surface.Normal);
+        if (dot(geometricNormal, surface.Normal) < 0.0) geometricNormal = -geometricNormal;
+        receiver.GeometricNormal = TransformFirstPersonWorldNormal(MaterialInstanceData, MaterialInstanceProperties,
+            input.InstanceID, cameraView, geometricNormal);
+        receiver.Flags = SURFACE_RECEIVER_PRESENT | SURFACE_RECEIVER_LIGHTING;
+        if ((LoadInstanceFirstPerson(MaterialInstanceData, MaterialInstanceProperties, input.InstanceID).x & 3u) == 1u)
+            receiver.Flags |= SURFACE_RECEIVER_FIRST_PERSON;
+        receiver.Depth = input.Depth;
+        ClusterViewUniforms surfaceView = ApplyFirstPersonViewTransform(MaterialInstanceData, MaterialInstanceProperties,
+            input.InstanceID, cameraView);
+        float4 sourceClip = mul(float4(ClusterPositionForView(surface.Position, surfaceView), 1.0), surfaceView.ViewProj);
+        receiver.DepthOffset = input.VisibilityDepth == 2u ? input.Depth - sourceClip.z / sourceClip.w : 0.0;
+        float3 V = normalize(cameraView.CameraPos - ctx.surfacePosition);
         float3 finalColor = baseColor * armSample.r * 0.03 + scalars.EmissiveFactor;
 
         if (dot(mappedNormal, V) <= 0.0)
@@ -141,34 +173,8 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ITransparentS
             GPULight light = LightBuffer[lightIndex];
             if (dot(mappedNormal, -light.Direction) <= 0.0)
                 continue;
-            float3 shadowPosition = ctx.surfacePosition +
-                mappedNormal * normalBias;
-            float shadow = 1.0;
-            if (lightIndex < VirtualShadowSampling.DirectionalLightCount &&
-                VirtualShadowSampling.DirectionalClipmapLevels != 0u)
-            {
-                uint firstShadowView =
-                    lightIndex * VirtualShadowSampling.DirectionalClipmapLevels;
-                if (firstShadowView < VirtualShadowSampling.ViewCount)
-                {
-                    shadow = SampleDirectionalVirtualShadowMap(
-                        VirtualShadowViews,
-                        VirtualShadowPageTable,
-                        VirtualShadowAtlas,
-                        firstShadowView,
-                        min(
-                            VirtualShadowSampling.DirectionalClipmapLevels,
-                            VirtualShadowSampling.ViewCount - firstShadowView),
-                        VirtualShadowDynamicResolutionBias[0],
-                        shadowPosition,
-                        receiverPositionDx + mappedNormal * normalBias,
-                        receiverPositionDy + mappedNormal * normalBias,
-                        VirtualShadowSampling.BlockerSampleCount,
-                        VirtualShadowSampling.FilterSampleCount,
-                        VirtualShadowSampling.BlockerSearchRadiusTexels,
-                        VirtualShadowSampling.MaxFilterRadiusTexels);
-                }
-            }
+            float shadow = EvaluateVirtualShadowForwardVisibility(input.PixelCoord, lightIndex, light, receiver,
+                uint3(cameraView.ScreenWidth, cameraView.ScreenHeight, 1u), cameraView, MaterialDepth);
             finalColor += EvaluateDirectionalLight(
                 baseColor,
                 metallic,
@@ -200,60 +206,8 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ITransparentS
             if (spotLight && EvaluateSpotCone(toLight * rsqrt(max(distanceSq, MIN_DISTANCE_SQ)),
                     light.Direction, light.InnerConeCos, light.OuterConeCos) <= 0.0)
                 continue;
-            float3 shadowPosition = ctx.surfacePosition +
-                mappedNormal * normalBias;
-            float shadow = 1.0;
-            if (lightIndex >= VirtualShadowSampling.PointLightBufferOffset &&
-                lightIndex < VirtualShadowSampling.PointLightBufferOffset +
-                    VirtualShadowSampling.PointLightCount)
-            {
-                uint pointLightIndex = lightIndex -
-                    VirtualShadowSampling.PointLightBufferOffset;
-                uint firstShadowView = VirtualShadowSampling.PointViewOffset +
-                    pointLightIndex * 6u;
-                if (firstShadowView + 5u < VirtualShadowSampling.ViewCount)
-                {
-                    shadow = SamplePointVirtualShadowMap(
-                        VirtualShadowViews,
-                        VirtualShadowPageTable,
-                        VirtualShadowAtlas,
-                        firstShadowView,
-                        VirtualShadowDynamicResolutionBias[0],
-                        nominalPixelRadius,
-                        shadowPosition,
-                        receiverPositionDx + mappedNormal * normalBias,
-                        receiverPositionDy + mappedNormal * normalBias,
-                        VirtualShadowSampling.BlockerSampleCount,
-                        VirtualShadowSampling.FilterSampleCount,
-                        VirtualShadowSampling.BlockerSearchRadiusTexels,
-                        VirtualShadowSampling.MaxFilterRadiusTexels);
-                }
-            }
-            else if (lightIndex >= VirtualShadowSampling.SpotLightBufferOffset &&
-                lightIndex < VirtualShadowSampling.SpotLightBufferOffset +
-                    VirtualShadowSampling.SpotLightCount)
-            {
-                uint spotLightIndex = lightIndex -
-                    VirtualShadowSampling.SpotLightBufferOffset;
-                uint shadowView = VirtualShadowSampling.SpotViewOffset + spotLightIndex;
-                if (shadowView < VirtualShadowSampling.ViewCount)
-                {
-                    shadow = SampleSpotVirtualShadowMap(
-                        VirtualShadowViews,
-                        VirtualShadowPageTable,
-                        VirtualShadowAtlas,
-                        shadowView,
-                        VirtualShadowDynamicResolutionBias[0],
-                        nominalPixelRadius,
-                        shadowPosition,
-                        receiverPositionDx + mappedNormal * normalBias,
-                        receiverPositionDy + mappedNormal * normalBias,
-                        VirtualShadowSampling.BlockerSampleCount,
-                        VirtualShadowSampling.FilterSampleCount,
-                        VirtualShadowSampling.BlockerSearchRadiusTexels,
-                        VirtualShadowSampling.MaxFilterRadiusTexels);
-                }
-            }
+            float shadow = EvaluateVirtualShadowForwardVisibility(input.PixelCoord, lightIndex, light, receiver,
+                uint3(cameraView.ScreenWidth, cameraView.ScreenHeight, 1u), cameraView, MaterialDepth);
             float3 radiance = light.Color * (light.Intensity * shadow);
             if (spotLight)
             {
@@ -329,19 +283,15 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ITransparentS
             evaluateDebugColor(debugMode, input, surface, bary, triangle);
     }
 
-    SurfaceShadowReceiver evaluateShadowReceiver(SurfacePixelInput input,
-        SurfaceEval surface, float3 bary, Triangle triangle)
+    void markShadowPages(SurfacePixelInput input, SurfaceEval surface, float3 bary, Triangle triangle)
     {
-        SurfaceShadowReceiver receiver;
-        receiver.Position = input.VisibilityDepth == 2u ? input.PositionFromDepth : surface.Position;
-        receiver.GeometricNormal = SafeNormalize(cross(triangle.Position1 - triangle.Position0,
-            triangle.Position2 - triangle.Position0), surface.Normal);
-        if (dot(receiver.GeometricNormal, surface.Normal) < 0.0)
-            receiver.GeometricNormal = -receiver.GeometricNormal;
-        receiver.Flags = SURFACE_RECEIVER_PRESENT | SURFACE_RECEIVER_LIGHTING;
-        receiver.Depth = input.Depth;
-        return receiver;
+        float3 position = input.VisibilityDepth == 2u ? input.PositionFromDepth : surface.Position;
+        position = TransformFirstPersonWorldPosition(MaterialInstanceData, MaterialInstanceProperties, input.InstanceID,
+            MaterialViews[input.PixelCoord.z], position);
+        bool firstPerson = (LoadInstanceFirstPerson(MaterialInstanceData, MaterialInstanceProperties, input.InstanceID).x & 3u) == 1u;
+        MarkVirtualShadowPages(position, input.PixelCoord.z, firstPerson);
     }
+
 };
 
 #endif

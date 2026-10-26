@@ -128,13 +128,13 @@ public sealed class VirtualShadowViewTests(RenderTestDevice graphics) : IClassFi
         return new VirtualShadowMapShaders
         {
             ResetFrameShader = shader, ResetReceiverMasksShader = shader,
-            MarkPagesShader = shader, MarkCoarsePagesShader = shader,
+            MarkCoarsePagesShader = shader,
             AllocatePagesShader = shader, ClearPagesShader = shader,
             InitializeStateShader = shader, InvalidateCastersShader = shader,
             BuildPagePoolShader = shader, CompactViewsShader = shader,
             InitializePageHiZShader = shader, ReducePageHiZShader = shader,
             DynamicResolutionShader = shader,
-            ResetFrame = entry, ResetReceiverMasks = entry, MarkPages = entry, MarkCoarsePages = entry,
+            ResetFrame = entry, ResetReceiverMasks = entry, MarkCoarsePages = entry,
             AllocatePages = entry, ClearPages = entry, InitializeState = entry, InvalidateCasters = entry,
             BuildPagePool = entry, CompactViews = entry, InitializePageHiZ = entry,
             ReducePageHiZ = entry, DynamicResolution = entry,

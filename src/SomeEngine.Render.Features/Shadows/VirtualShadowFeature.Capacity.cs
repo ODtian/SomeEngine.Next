@@ -11,7 +11,6 @@ public sealed partial class VirtualShadowFeature
     public void ReconcileLights(RenderLightSet lights)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        ReconcileReceiverDemand();
         var settings = _shadowMap.Settings;
         uint lightCount = checked((uint)(lights.Directional.Count + lights.Points.Count + lights.Spots.Count));
         uint sourceViews = checked(lightCount * settings.MaximumViewsPerLight);
@@ -22,7 +21,6 @@ public sealed partial class VirtualShadowFeature
         RenderGraphEdit edit = _renderGraph.BeginEdit();
         try
         {
-            GrowLightBuffer(ref edit, _requestedPages, (ulong)tableEntries * sizeof(uint), "Virtual shadow request epochs");
             GrowLightBuffer(ref edit, _requestedPageFlags, (ulong)tableEntries * sizeof(uint), "Virtual shadow request flags");
             GrowLightBuffer(ref edit, _requestedPageIndices, (ulong)tableEntries * sizeof(uint), "Virtual shadow requested page indices");
             _sourceViewCapacity = sourceViews;
@@ -49,7 +47,7 @@ public sealed partial class VirtualShadowFeature
         }
         finally { edit.Dispose(); }
         _sourceViewCapacity = sourceViews;
-        _requestEpochEntryCapacity = tableEntries;
+        _requestFlagEntryCapacity = tableEntries;
         _forceStateReset = true;
     }
 

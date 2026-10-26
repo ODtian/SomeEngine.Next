@@ -1,37 +1,79 @@
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 namespace SomeEngine.Resources.Geometry;
 
-[StructLayout(LayoutKind.Sequential, Pack = 16)]
+/// <summary>Four hierarchy children in the UE 5.8 packed hierarchy layout.</summary>
+[StructLayout(LayoutKind.Sequential, Pack = 4)]
 public struct ClusterBVHNode
 {
-    // Leaf w values contain reduction group + 1 and parent group + 1 in
-    // cooked data. Cluster registration replaces them with draw flags and
-    // the geometry page index; XYZ always contains the mesh bounds.
-    public Vector4 BoundMin;
-    public Vector4 BoundMax;
-    public Vector4 LODSphere;
-    public float LODError;
-    public uint ChildPointer;
-    public uint ChildCount;
-    public uint NodeType; // 0 = Internal, 1 = Leaf
+    public const int SizeInBytes = 240;
+    public const int ChildCount = 4;
+    public ClusterNodeVectors LODBounds;
+    public ClusterNodeVectors CentersAndErrors;
+    public ClusterNodeVectors ExtentsAndReferences;
+    public ClusterNodeWords PageRangesAndParts;
 
-    // Helper for encoding leaf data node counts
-    public void SetLeafData(uint clusterStart, uint clusterCount)
+    public readonly ClusterHierarchySlice GetChild(int child)
     {
-        if (clusterStart > 0xFFF)
-            throw new ArgumentOutOfRangeException(nameof(clusterStart), clusterStart, "A BVH leaf cluster start must fit in 12 bits.");
-        if (clusterCount is 0 or > 0xFFFFF)
-            throw new ArgumentOutOfRangeException(nameof(clusterCount), clusterCount, "A BVH leaf cluster count must be in the 20-bit range 1..1048575.");
-
-        ChildCount = (clusterCount << 12) | clusterStart;
+        Vector4 center = CentersAndErrors[child];
+        Vector4 extent = ExtentsAndReferences[child];
+        ClusterHierarchyWords words = PageRangesAndParts[child];
+        return new ClusterHierarchySlice
+        {
+            LODBounds = LODBounds[child],
+            BoundsCenter = new(center.X, center.Y, center.Z),
+            PackedErrors = BitConverter.SingleToUInt32Bits(center.W),
+            BoundsExtent = new(extent.X, extent.Y, extent.Z),
+            ChildReference = BitConverter.SingleToUInt32Bits(extent.W),
+            PageRangeKey = words.PageRangeKey,
+            GroupPartData = words.GroupPartData,
+            BoneData = words.BoneData,
+        };
     }
 
-    public readonly void GetLeafData(out uint clusterStart, out uint clusterCount)
+    public void SetChild(int child, in ClusterHierarchySlice value)
     {
-        clusterStart = ChildCount & 0xFFF;
-        clusterCount = ChildCount >> 12;
+        LODBounds[child] = value.LODBounds;
+        CentersAndErrors[child] = new(value.BoundsCenter, BitConverter.UInt32BitsToSingle(value.PackedErrors));
+        ExtentsAndReferences[child] = new(value.BoundsExtent, BitConverter.UInt32BitsToSingle(value.ChildReference));
+        PageRangesAndParts[child] = new(value.PageRangeKey, value.GroupPartData, value.BoneData);
     }
 }
 
+[InlineArray(4)]
+public struct ClusterNodeVectors { private Vector4 _element; }
+[InlineArray(4)]
+public struct ClusterNodeWords { private ClusterHierarchyWords _element; }
+[StructLayout(LayoutKind.Sequential, Pack = 4)]
+public readonly record struct ClusterHierarchyWords(uint PageRangeKey, uint GroupPartData, uint BoneData);
+
+public struct ClusterHierarchySlice
+{
+    public Vector4 LODBounds;
+    public Vector3 BoundsCenter;
+    public uint PackedErrors;
+    public Vector3 BoundsExtent;
+    public uint ChildReference;
+    public uint PageRangeKey;
+    public uint GroupPartData;
+    public uint BoneData;
+
+    public readonly bool IsEnabled => PageRangeKey != 0 || ClusterCount != 0;
+    public readonly bool IsLeaf => PageRangeKey != uint.MaxValue;
+    public readonly uint FirstPage => (PageRangeKey >> 5) & 0x1FFFFFFu;
+    public readonly uint PageCount => PageRangeKey & 31u;
+    public readonly uint FirstCluster => ChildReference & 255u;
+    public readonly uint ClusterCount => GroupPartData >> 16;
+    public readonly float MinLODError => (float)BitConverter.UInt16BitsToHalf((ushort)(PackedErrors >> 16));
+    public readonly float MaxParentLODError => (float)BitConverter.UInt16BitsToHalf((ushort)PackedErrors);
+
+    public void SetErrors(float minimum, float maximum)
+    {
+        Half min = (Half)minimum;
+        if ((float)min > minimum) min = Half.BitDecrement(min);
+        Half max = (Half)maximum;
+        PackedErrors = ((uint)BitConverter.HalfToUInt16Bits(min) << 16) | BitConverter.HalfToUInt16Bits(max);
+    }
+}

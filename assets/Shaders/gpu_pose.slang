@@ -49,8 +49,8 @@ StructuredBuffer<GpuRootCorrection> GpuPoseRoots;
 struct GpuBlendState
 {
     float phase;
-    uint3 samples;
-    float3 weights;
+    uint samples[3];
+    float weights[3];
     float padding;
 };
 
@@ -73,8 +73,12 @@ void ProjectBlendEdge(float2 coordinate, uint points, uint a, uint b,
     if (distance < nearest)
     {
         nearest = distance;
-        selection.samples = uint3(a, b, a);
-        selection.weights = float3(1.0 - amount, amount, 0.0);
+        selection.samples[0] = a;
+        selection.samples[1] = b;
+        selection.samples[2] = a;
+        selection.weights[0] = 1.0 - amount;
+        selection.weights[1] = amount;
+        selection.weights[2] = 0.0;
     }
 }
 
@@ -94,8 +98,12 @@ GpuBlendState SelectBlendSpace(uint space, float2 coordinate)
         }
         uint4 span = GpuPoseClips.Load4(ranges.z + interval * 16u);
         float amount = saturate((coordinate.x - asfloat(span.z)) * asfloat(span.w));
-        selection.samples = uint3(span.x, span.y, span.x);
-        selection.weights = float3(1.0 - amount, amount, 0.0);
+        selection.samples[0] = span.x;
+        selection.samples[1] = span.y;
+        selection.samples[2] = span.x;
+        selection.weights[0] = 1.0 - amount;
+        selection.weights[1] = amount;
+        selection.weights[2] = 0.0;
         return selection;
     }
     for (uint triangle = 0u; triangle < triangles.y; triangle++)
@@ -110,8 +118,12 @@ GpuBlendState SelectBlendSpace(uint space, float2 coordinate)
         float wc = dot(relative, float2(-b.y, b.x)) * inverse;
         float wa = 1.0 - wb - wc;
         if (wa < 0.0 || wb < 0.0 || wc < 0.0) continue;
-        selection.samples = indices;
-        selection.weights = float3(wa, wb, wc);
+        selection.samples[0] = indices.x;
+        selection.samples[1] = indices.y;
+        selection.samples[2] = indices.z;
+        selection.weights[0] = wa;
+        selection.weights[1] = wb;
+        selection.weights[2] = wc;
         return selection;
     }
     float nearest = 3.402823466e+38;
@@ -378,7 +390,10 @@ float4 MultiplyRotation(float4 a, float4 b)
 PoseTrs SampleBlendSpace(uint space, GpuBlendState selection, uint bone)
 {
     uint points = GpuPoseClips.Load(space);
-    selection.weights /= selection.weights.x + selection.weights.y + selection.weights.z;
+    float weightSum = selection.weights[0] + selection.weights[1] + selection.weights[2];
+    selection.weights[0] /= weightSum;
+    selection.weights[1] /= weightSum;
+    selection.weights[2] /= weightSum;
     uint first = 0xffffffffu;
     for (uint sample = 0u; sample < 3u; sample++)
         if (selection.weights[sample] > 0.0) first = min(first, selection.samples[sample]);
