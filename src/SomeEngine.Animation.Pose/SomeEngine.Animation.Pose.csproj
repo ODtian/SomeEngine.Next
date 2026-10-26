@@ -12,6 +12,10 @@
     <ProjectReference Include="../SomeEngine.Generators/SomeEngine.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
   <ItemGroup>
+    <EmbeddedResource Include="../../assets/Shaders/gpu_pose_sampling.slang;../../assets/Shaders/gpu_pose_translation.slang;../../assets/Shaders/gpu_pose_rig.slang;../../assets/Shaders/gpu_pose_physics.slang;../../assets/Shaders/physics_body_prediction.slang;../../assets/Shaders/physics_body_step.slang;../../assets/Shaders/physics_body_math.slang;../../assets/Shaders/physics_bodies.slang;../../assets/Shaders/physics_xpbd_types.slang;../../assets/Shaders/physics_xpbd_length_math.slang;../../assets/Shaders/physics_xpbd_bend_math.slang;../../assets/Shaders/physics_length_data.slang;../../assets/Shaders/physics_bend_data.slang;../../assets/Shaders/physics_constraint_data.slang"
+                      LogicalName="SomeEngine.Animation.Pose.Shaders.%(Filename)%(Extension)" />
+  </ItemGroup>
+  <ItemGroup>
     <AclNativeSource Include="Native/**/*;../../external/acl/includes/**/*;../../external/rtm/includes/**/*" />
     <Content Include="$(MSBuildProjectDirectory)/obj/native/Release/SomeEngineAcl.dll"
              Link="SomeEngineAcl.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
