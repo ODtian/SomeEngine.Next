@@ -62,6 +62,11 @@ StepState 的写版本；新实体按绑定初始化整行，既有实体只复�
 阶段返回的 JobHandle 覆盖提交、读回、组件写入与设备完成收集。
 后续变换和动画继续读取同一实体组件。公开行为见 `DeviceXpbdTests`。
 
+消费者可用 `DeviceBodyResults(backend,device,bodies,world,members,capacity)` 绑定自己的原成员查询与
+最大结果条数。读取阶段在输入依赖完成后取得当前 Entity 与设备索引，按索引合并相邻范围，
+仅为这些区间声明 States 读取并复制到紧凑读回区。CPU 数组与读回资源按消费者容量分配。
+原查询筛选及 Entity 代次继续限定组件写入，其余主体保留在设备中。
+
 ## 引用与派生范围
 
 `DeviceCollisionGeometry(..., bodies)` 为几何批次绑定上述主体资源。

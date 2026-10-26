@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Collections.Concurrent;
 using SlangShaderSharp;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
@@ -12,6 +13,48 @@ namespace SomeEngine.Graphics.Direct3D12.Tests;
 
 public sealed partial class DeviceXpbdTests
 {
+    [Fact]
+    public async Task SelectedDeviceBodyResultsCopyOnlyTheRequestedBodyRange()
+    {
+        using var backend = D3D12GraphicsBackend.Create();
+        using Device device = CreateDevice(backend);
+        using var jobs = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using World world = WorldJobs.CreateWorld(scheduler: jobs);
+        using var bodies = new DeviceBodies(backend, device, 8);
+        Entity selected = AddBody(world, bodies, 3, Vector3.UnitX, BodyMotion.Dynamic);
+        Entity other = AddBody(world, bodies, 7, new(10, 0, 0), BodyMotion.Dynamic);
+        world.Add(selected, new CpuBodyResult());
+        world.Replace(selected, new BodyVelocity { Linear = Vector3.UnitX });
+        world.Replace(other, new BodyVelocity { Linear = new(2, 0, 0) });
+        QueryHandle members = world.Query(world.QueryDefinition().Read<DeviceBodyBinding>());
+        QueryHandle requested = world.Query(world.QueryDefinition().Read<DeviceBodyBinding>().All<CpuBodyResult>());
+        using var inputs = new DeviceBodyInputs(world, members, bodies);
+        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
+        using var results = new DeviceBodyResults(backend, device, bodies, world, requested, capacity: 1);
+        var motion = inputs.Upload().Then(dynamics.Predict(Vector3.Zero)).Then(dynamics.UpdateVelocities());
+        PhysicsSimulation.Create(world, QueryDefinition.Empty, motion, 1).Schedule(0, 0, .1).Complete();
+        var unselectedReady = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        JobHandle held = jobs.CreateExternalFenceHandle(unselectedReady.Task,
+            [JobResourceAccess.Write(jobs.GetResourceToken(bodies.States), 7 * DeviceBodies.StateStride, DeviceBodies.StateStride)]);
+        var events = new ConcurrentQueue<string>();
+        PhysicsStepResult result = PhysicsSimulation.Create(world, QueryDefinition.Empty, results.Readback(64), 1).Schedule(0, 0, .1);
+        async Task FinishSelected()
+        {
+            await result.Completion.WaitAsync();
+            events.Enqueue("selected-consumed");
+            unselectedReady.SetResult();
+            events.Enqueue("other-released");
+        }
+        try { await FinishSelected().WaitAsync(TimeSpan.FromSeconds(20)); }
+        finally { unselectedReady.TrySetResult(); }
+        result.Complete(); held.Complete();
+
+        Near(new(1.1f, 0, 0), world.Read<BodyPose>(selected).Position);
+        Near(new(10, 0, 0), world.Read<BodyPose>(other).Position);
+        Assert.Equal(["selected-consumed", "other-released"], events.ToArray());
+        world.ReleaseQuery(requested); world.ReleaseQuery(members);
+    }
+
     [Fact]
     public void SuspendedDeviceBodiesResumeFromTheSameSubstepOrigin()
     {
@@ -132,4 +175,6 @@ public sealed partial class DeviceXpbdTests
         Assert.Equal(.2, world.Read<BodyStepState>(resident).Time);
         world.ReleaseQuery(members);
     }
+
+    private readonly struct CpuBodyResult : IComponent;
 }
