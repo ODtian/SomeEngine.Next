@@ -22,6 +22,11 @@
 
 四种有界形状的两两组合由 `ConvexCollision<TFirst,TSecond>` 提供核心 GJK 距离、EPA 穿透及球形外扩。`ConvexCollisionSettings` 显式给出距离容差、距离迭代数和穿透迭代数。`SphereCollision<TGeometry>` 复用目标形状的点距离，`CapsuleCollision` 直接计算线段距离；它们是项目可选择的具体特化。每种有界形状与平面的组合由 `ConvexPlaneCollision<TGeometry>` 计算。`ReverseCollision` 交换参与方、接触点、特征和法向。
 
+[CollisionSimplex](../../../src/SomeEngine.Physics/CollisionSimplex.cs) 和
+[设备 simplex](../../../assets/Shaders/physics_collision_simplex.slang) 使用相同的线段、三角形及四面体最近点数学。
+三角形内部通过叉积重心坐标判定，最近向量直接沿面法向投影；外部区域比较三条线段。
+四面体先检查体重心坐标，再从各面选取最近点。保留的支持点与权重共同产生原见证点和特征。
+
 `PlanarBoxCollision(tolerance)` 是项目可显式选择的 XY 盒体核，读取原 `BoxGeometry` 的 XY 半宽和绕 Z 的位姿。四个面轴确定平面穿透方向，入射边裁剪生成至多两个接触点；分离时从顶点与线段求平面最近见证。原 Z 半宽继续用于选定的三维范围和显示，接触法向、见证及间距由这一平面解释产生。它沿同一 `ICollisionNarrowPhase<BoxGeometry,BoxGeometry>`、pair/bin 检测、持久点和标准响应入口执行。源码见 [PlanarBoxCollision](../../../src/SomeEngine.Physics/PlanarBoxCollision.cs)，实际支撑行为见 [PlanarCollisionTests](../../../tests/SomeEngine.Physics.Tests/PlanarCollisionTests.cs)；四轴及入射边数学的 Box2D-Lite MIT 说明保留在 [许可证](../../../src/SomeEngine.Physics/ThirdParty/Box2DLite/LICENSE)。
 
 `ICollisionNarrowPhase<TFirst,TSecond>` 提供 `Distance`、`GetManifold` 与所需接触容量。`CollisionDistance` 保存双方世界接触点、双方特征、第一方指向第二方的单位法向及带符号间距；正间距表示分离，负间距表示穿透。
