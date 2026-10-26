@@ -1,5 +1,5 @@
 #include "physics_xpbd.slang"
-#include "physics_constraint_data.slang"
+#include "physics_length_data.slang"
 RWStructuredBuffer<float> DeviceLengthMultipliers;
 struct DeviceXpbdLength : IDeviceXpbdProjection
 {
