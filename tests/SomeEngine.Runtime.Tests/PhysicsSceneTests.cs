@@ -13,6 +13,28 @@ namespace SomeEngine.Runtime.Tests;
 public sealed class PhysicsSceneTests
 {
     [Fact]
+    public void TheOriginalRestingPyramidUsesItsSelectedContactSupportsToHoldTheTopLayer()
+    {
+        using var scheduler = new Scheduler(new() { WorkerCount = 2 });
+        using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+        PhysicsSceneDescription description = PhysicsScenes.All.Single(scene => scene.Id == "2d-resting-pyramid");
+        using var scene = PhysicsScenes.CreateCpu(world, description, new PlanarBoxCollision(1e-5f),
+            new PhysicsSceneSettings(Iterations: 1, BodyIterations: 1, StepBudgetMilliseconds: 1000d / 60)
+            {
+                ContactSupports = new ContactSupportSettings(Vector3.UnitY, 1e-5f, 1e-4f, 1e-4f, 1e-4f, .99f, .99f, 1e-6f),
+            });
+        var highest = scene.Bodies.Span[^1];
+        float height = world.Read<BodyPose>(highest).Position.Y;
+
+        scene.Frame.AdvanceTime(scene.StepSeconds);
+        scene.CompleteForRead();
+
+        Assert.InRange(MathF.Abs(world.Read<BodyPose>(highest).Position.Y - height), 0, 1e-4f);
+        Assert.InRange(world.Read<BodyVelocity>(highest).Angular.Length(), 0, 1e-4f);
+        Assert.Equal(0, world.Read<LocalTransform>(highest).Value.Position.Z);
+    }
+
+    [Fact]
     public void TheOriginalHangingChainUsesItsSelectedLongRangeBoundsInTheFirstRound()
     {
         using var scheduler = new Scheduler(new() { WorkerCount = 2 });
