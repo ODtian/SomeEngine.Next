@@ -2,6 +2,7 @@ using SomeEngine.Core.ECS;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
+using SomeEngine.Job;
 using SomeEngine.Physics;
 
 namespace DefaultGame;
@@ -12,13 +13,15 @@ public readonly record struct PhysicsSceneSettings(int Iterations, int BodyItera
     public JointLongRangeSettings JointBounds { get; init; } = new(0, 32, .99f, .99f);
     public ContactSupportSettings? ContactSupports { get; init; }
     public float MultiplierRetention { get; init; } = .8f;
+    public PhysicsGraphSettings Graph { get; init; } = new(PhysicsGraphOrder.Islands, 16, 16, 64, 4, false);
     public float ContactDistance { get; init; }
+    public PhysicsSceneTimings? Timings { get; init; }
 }
 
 internal readonly record struct PhysicsSceneEntities(Entity[] Bodies, Entity[] Joints, Entity[] DistanceRanges, bool HasInputChanges);
 
 /// <summary>Scene references and its original frame completion; body and constraint values reside in the World.</summary>
-public sealed class PhysicsSceneSimulation : IDisposable
+public sealed class PhysicsSceneSimulation : IGameFramePhysics
 {
     private readonly World _world;
     private readonly QueryHandle[] _queries;
@@ -40,6 +43,10 @@ public sealed class PhysicsSceneSimulation : IDisposable
     public ReadOnlyMemory<Entity> DistanceRanges { get; }
     public double StepSeconds { get; }
     public IGameFramePhysics Frame { get; }
+    public JobHandle Completion => Frame.Completion;
+    public void AdvanceTime(double deltaTime) => Frame.AdvanceTime(deltaTime);
+    public JobHandle ConsumeCompleted() => Frame.ConsumeCompleted();
+    public void SubmitDueSteps() => Frame.SubmitDueSteps();
     public PhysicsStepResult CompleteForRead() => _completeForRead();
 
     public void Dispose()
