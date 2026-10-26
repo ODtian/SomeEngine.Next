@@ -95,6 +95,14 @@ Skinning 提供共同编码，[gpu_pose_sampling](../../../assets/Shaders/gpu_po
 来源结果可在共同物理步中转入原 Body，再由原 PhysicsPose 消费完成状态；
 骨骼输出继续沿 Game world 到 Rendering world 的既有提取通路。
 
+`DevicePosePhysics.Bind(target)` 为原 `GpuXpbdPose` 步骤创建实际 Body 实体、
+`XpbdLength` 关系与 `XpbdBend` 参与实体，`GetBodies(target, rigStep)` 返回链的原 Body。
+项目显式选择该对象的 `Bodies`、`Lengths`、`Bends` 和 multiplier 表示，
+在来源阶段之前调度 `Upload()`；来源阶段读取同一参数，世界位置与速度保存在所选 Body 表示。
+当前源父 G 与 actor 变换给出世界 rest length，链按原等分子步、指数阻尼及 Length→Bend 顺序求解，
+随后用完成 Body 位置形成 source-frame swing 和后代骨骼输出。
+具体入口与独立数值观察见 [DevicePoseChainTests](../../../tests/SomeEngine.Graphics.Direct3D12.Tests/DevicePoseChainTests.cs)。
+
 ## GPU 求值与历史
 
 `SkinningFeature` 汇总所有活动区段，为每段分配连续 G 范围。量化片段、层级工作表、

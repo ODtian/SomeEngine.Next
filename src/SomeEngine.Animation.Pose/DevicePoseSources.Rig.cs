@@ -19,7 +19,9 @@ public sealed partial class DevicePoseSources
             var definitions = new GpuRigDefinitions(writer, row.Range.Start, row.GoalStart, Descendants);
             int level = End(row) - rig.Steps.Length - (rig.TranslationBone >= 0 ? 1 : 0);
             if (rig.TranslationBone >= 0) Add(level++, row, _translateKernel, definitions.WriteTranslation(rig.TranslationBone), 0);
-            foreach (GpuPoseSource step in rig.Steps)
+            for (int stepIndex = 0; stepIndex < rig.Steps.Length; stepIndex++)
+            {
+                GpuPoseSource step = rig.Steps[stepIndex];
                 switch (step)
                 {
                     case GpuTwoBonePose limb:
@@ -31,7 +33,11 @@ public sealed partial class DevicePoseSources
                     case GpuStridePose stride:
                         Add(level++, row, _strideKernel, definitions.WriteStride(stride.Rig), 0);
                         break;
+                    case GpuXpbdPose:
+                        Add(level++, row, _xpbdKernel, _physics!.WriteDefinition(writer, row.Entity, stepIndex, row.Range.Start, Descendants), 0);
+                        break;
                 }
+            }
         }
         foreach (var group in levels)
         {
