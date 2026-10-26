@@ -28,6 +28,7 @@ internal sealed partial class PhysicsGraphData
             }
             if (body.Motion != motion || body.Awake != awake)
             {
+                if (body.Read != 0 && body.Motion != motion) _activityChanges.Add(row.Entity);
                 Dirty(body.Island);
                 foreach (ConstraintInput constraint in body.Constraints) Dirty(constraint.Island);
                 _dirtyBodies.Add(row.Entity);
@@ -79,12 +80,17 @@ internal sealed partial class PhysicsGraphData
                 if (!_bodyUses.TryGetValue(use.Key, out bool writes) || writes != use.Value) { same = false; break; }
         if (same) return;
         Dirty(constraint.Island);
-        foreach (Entity body in constraint.Bodies.Keys) _bodies[body].Constraints.Remove(constraint);
+        foreach (Entity body in constraint.Bodies.Keys)
+        {
+            if (_bodies[body].Motion == BodyMotion.Dynamic) _activityChanges.Add(body);
+            _bodies[body].Constraints.Remove(constraint);
+        }
         constraint.Bodies.Clear();
         foreach (var use in _bodyUses)
         {
             constraint.Bodies.Add(use.Key, use.Value);
             BodyInput body = _bodies[use.Key];
+            if (body.Motion == BodyMotion.Dynamic) _activityChanges.Add(use.Key);
             Dirty(body.Island);
             body.Constraints.Add(constraint);
         }
@@ -100,7 +106,11 @@ internal sealed partial class PhysicsGraphData
         {
             ConstraintInput constraint = _constraints[key];
             Dirty(constraint.Island);
-            foreach (Entity body in constraint.Bodies.Keys) _bodies[body].Constraints.Remove(constraint);
+            foreach (Entity body in constraint.Bodies.Keys)
+            {
+                if (_bodies[body].Motion == BodyMotion.Dynamic) _activityChanges.Add(body);
+                _bodies[body].Constraints.Remove(constraint);
+            }
             _constraints.Remove(key);
         }
         _removedBodies.Clear();
@@ -111,6 +121,7 @@ internal sealed partial class PhysicsGraphData
             Dirty(body.Island);
             foreach (ConstraintInput constraint in body.Constraints) Dirty(constraint.Island);
             _bodies.Remove(entity);
+            _activityChanges.Remove(entity);
         }
         foreach (Island island in _islands)
             if (OrderChanged(island)) _dirtyIslands.Add(island);

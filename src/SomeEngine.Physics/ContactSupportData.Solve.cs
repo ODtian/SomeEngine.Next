@@ -7,6 +7,31 @@ namespace SomeEngine.Physics;
 
 internal sealed partial class ContactSupportData
 {
+    internal void ReadActivityErrors(scoped PhysicsQueryRows workBodies, scoped PhysicsQueryRows contacts,
+        scoped PhysicsBodies bodies, in PhysicsStepContext context, ref PhysicsActivityErrors errors)
+    {
+        foreach (QueryRow row in workBodies.Rows)
+        {
+            ref readonly LongRangeBodySupport support = ref row.ReadRef<LongRangeBodySupport>();
+            if (!support.Enabled) continue;
+            float height = Vector3.Dot(bodies.ReadPose(row.Entity).GetCenterOfMass(in bodies.ReadMass(row.Entity)), _settings.UpDirection);
+            errors.Add(row.Entity, new PhysicsConstraintError(MathF.Max(0, support.MinimumHeight - height), 0));
+        }
+        foreach (QueryRow row in contacts.Rows)
+        {
+            ref readonly ContactPoint point = ref row.ReadRef<ContactPoint>();
+            ref readonly LongRangeContactSupport support = ref row.ReadRef<LongRangeContactSupport>();
+            ReadOnlySpan<ContactBodyLink> links = row.ReadBuffer<ContactBodyLink>().AsSpan();
+            PhysicsConstraintError error = ContactBodyMath.GetActivityError(in point, row, bodies, in context);
+            if (support.Enabled)
+            {
+                float height = Vector3.Dot(SidePoint(in point, links, support.UpperIsSecond, bodies, in context, false), _settings.UpDirection);
+                error = error with { Linear = MathF.Max(error.Linear, support.MinimumHeight - height) };
+            }
+            foreach (ref readonly ContactBodyLink link in links) errors.Add(ContactBodyMath.GetBody(in link, bodies, in context), in error);
+        }
+    }
+
     internal void Correct(scoped PhysicsQueryRows workBodies, scoped PhysicsQueryRows contacts, Entity body, scoped PhysicsBodies bodies, in PhysicsStepContext context,
         in AvbdBodyEquation factor, ref Vector3 translation, ref Vector3 rotation)
     {

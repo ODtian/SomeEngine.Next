@@ -15,6 +15,9 @@ public struct XpbdContactState : IComponent
 /// <summary>Projects the shared contact gap through its combined body Jacobians.</summary>
 public readonly struct XpbdContactProjection : IXpbdConstraint<ContactPoint>, IXpbdConstraintForces<ContactPoint>
 {
+    public static PhysicsConstraintError GetActivityError(in ContactPoint point, scoped QueryRow row,
+        scoped PhysicsBodies bodies, in PhysicsStepContext context) => ContactBodyMath.GetActivityError(in point, row, bodies, in context);
+
     public static int GetReadEntityCount(in ContactPoint point, scoped QueryRow row, in PhysicsStepContext context) =>
         row.ReadBuffer<ContactBodyLink>().Count;
     public static Entity GetReadEntity(in ContactPoint point, scoped QueryRow row, int index, in PhysicsStepContext context) =>

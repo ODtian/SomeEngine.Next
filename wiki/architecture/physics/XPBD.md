@@ -10,6 +10,8 @@
 
 `XpbdBend` 保存方向夹角的最小余弦、柔度与单边乘子。其三个 Body 由受保护的 `ConstraintParticipant` 有向边持有，Source 为约束实体、Target 为实际 Body；`ConstraintBodyLink` Buffer 按 First/Middle/Last 顺序保存原边引用。通用 [ConstraintBodies](../../../src/SomeEngine.Physics/ConstraintBodies.cs) 同样可为用户约束建立任意数量的参与端。`ConstraintBodies.Create(world, constraint, bodies)` 创建原参数、参与边及 Buffer；`AddReads` 为原查询补充链接与端点读取。数值和设备输入通过 `GetBody` 从有效 `PhysicsBodies` 或完整 `QueryCursor` 读取原 Target，设备仅保存所需的派生执行索引。改接使用原参与边，约束实体销毁沿 ECS 关系生命周期释放其参与边。公开行为见 [ConstraintParticipantTests](../../../tests/SomeEngine.Physics.Tests/ConstraintParticipantTests.cs)。
 
+`MaintainConstraintBodies(world, constraints)` 为显式选择的约束检查原参与边。参与 Body 销毁或参与边结束后，维护阶段通过 `JobCommandBuffer` 删除对应约束，再由原关系生命周期释放其余参与边；返回完成链覆盖命令回放。项目将它放在下一次图读取和求解之前，用户任意端约束与 Bend 共用该入口。
+
 每次 XPBD 求解开始时重置所选约束的乘子；同一子步的各轮投影累积这份状态。
 
 长度投影使用 `alpha = Compliance / h²`，由长度误差与已有乘子计算本轮乘子增量，按两端的逆质量修正位置。弯曲投影由方向余弦误差计算三端梯度，将乘子投影到大于等于零的范围，再按各端逆质量修正位置。静态与运动学端点提供位置输入，动态端点接受位置修正。两种数学分别来自动画次级链的长度和弯曲投影。

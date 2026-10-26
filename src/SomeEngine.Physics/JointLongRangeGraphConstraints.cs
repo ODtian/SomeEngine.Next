@@ -14,6 +14,9 @@ public readonly struct JointLongRangeGraphConstraints(QueryHandle joints, JointL
     private readonly JointLongRangeData _data = new(settings);
     public int QueryCount => 1;
     public QueryHandle GetQuery(int index) => joints;
+    public void ReadActivityErrors(in PhysicsStepContext context, scoped EntityQueryViews queries, int offset,
+        scoped PhysicsBodies bodies, ref PhysicsActivityErrors errors) =>
+        _data.ReadActivityErrors(new(queries.Get(offset), queries.Get(2)), bodies, ref errors);
 
     public void AddResources(World world, List<JobResourceAccess> accesses, PhysicsGraphPhase phase)
     {

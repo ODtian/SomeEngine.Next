@@ -151,6 +151,17 @@ internal sealed class JointLongRangeData(JointLongRangeSettings settings)
         }
     }
 
+    internal void ReadActivityErrors(scoped PhysicsQueryRows joints, scoped PhysicsBodies bodies, ref PhysicsActivityErrors errors)
+    {
+        foreach (QueryRow row in joints.Rows)
+            foreach (ref readonly LongRangeJointBound bound in row.ReadBuffer<LongRangeJointBound>().AsSpan())
+            {
+                JointBoundGeometry geometry = GetGeometry(joints, row.Entity, in bound, bodies, false);
+                var error = new PhysicsConstraintError(MathF.Max(0, MathF.Max(bound.Minimum - geometry.Distance, geometry.Distance - bound.Maximum)), 0);
+                errors.Add(geometry.FirstBody, in error); errors.Add(geometry.LastBody, in error);
+            }
+    }
+
     private void Evaluate(in LongRangeJointBound bound, in JointBoundGeometry geometry,
         out float force, out float penalty, out Vector2 multiplier)
     {

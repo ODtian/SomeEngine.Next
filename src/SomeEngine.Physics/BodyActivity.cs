@@ -1,4 +1,5 @@
 using SomeEngine.ECS;
+using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Queries;
 
 namespace SomeEngine.Physics;
@@ -14,6 +15,9 @@ public struct BodyActivity : IComponent
 
 public readonly record struct BodyActivitySettings(float SpeedThreshold, float QuietDuration,
     float LinearErrorThreshold, float AngularErrorThreshold);
+
+/// <summary>A wake request applied in the substep containing Time; shared reference bodies wake every connected island.</summary>
+public readonly record struct BodyWake(double Time) : IBufferElement;
 
 internal static class BodyActivities
 {

@@ -1,10 +1,18 @@
 using System.Numerics;
 using SomeEngine.ECS.Entities;
+using SomeEngine.ECS.Queries;
 
 namespace SomeEngine.Physics;
 
 internal static class ContactBodyMath
 {
+    internal static PhysicsConstraintError GetActivityError(in ContactPoint point, scoped QueryRow row,
+        scoped PhysicsBodies bodies, in PhysicsStepContext context)
+    {
+        Vector3 delta = GetDelta(in point, row.ReadBuffer<ContactBodyLink>().AsSpan(), bodies, in context, false);
+        return new(MathF.Max(0, -point.Separation - Vector3.Dot(point.Normal, delta - point.BodyAnchorDelta)), 0);
+    }
+
     internal static Entity GetBody(in ContactBodyLink link, in PhysicsStepContext context) =>
         context.World.GetDirectedRelationEndpoints(link.Participant).Target;
 
