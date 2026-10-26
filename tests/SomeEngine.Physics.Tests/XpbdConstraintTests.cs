@@ -44,9 +44,9 @@ public sealed class XpbdConstraintTests
         Entity first = CreateBody(world, Vector3.Zero, 1);
         Entity middle = CreateBody(world, Vector3.UnitX, 1);
         Entity last = CreateBody(world, new Vector3(1, 1, 0), 1);
-        world.CreateEntity(new XpbdBend { First = first, Middle = middle, Last = last, MinimumCosine = .5f });
+        ConstraintBodies.Create(world, new XpbdBend { MinimumCosine = .5f }, [first, middle, last]);
         QueryHandle bodies = world.Query(new QueryDefinitionBuilder().ReadWrite<BodyPose>().Read<BodyMass>().Read<BodyStepState>());
-        QueryHandle bends = world.Query(new QueryDefinitionBuilder().ReadWrite<XpbdBend>());
+        QueryHandle bends = world.Query(ConstraintBodies.AddReads(new QueryDefinitionBuilder().ReadWrite<XpbdBend>().Build()));
         var constraints = new XpbdConstraints<XpbdBend, XpbdBendProjection>(bends);
         var stages = new PredictBodies(Vector3.Zero, rowsPerPacket: 64)
             .Then(SolveXpbd.Create(world, bodies, constraints, iterations: 1))
