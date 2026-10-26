@@ -19,6 +19,8 @@ public readonly struct AvbdContactPotentialMath : IAvbdConstraint<ContactPoint>
         AvbdContactMath.GetBodyCount(in point, row, in context);
     public static Entity GetBody(in ContactPoint point, scoped QueryRow row, int index, in PhysicsStepContext context) =>
         AvbdContactMath.GetBody(in point, row, index, in context);
+    public static bool TryGetBody(in ContactPoint point, scoped QueryRow row, int index, scoped PhysicsBodies bodies,
+        in PhysicsStepContext context, out Entity body) => AvbdContactMath.TryGetBody(in point, row, index, bodies, in context, out body);
     public static int GetReadEntityCount(in ContactPoint point, scoped QueryRow row, in PhysicsStepContext context) =>
         AvbdContactMath.GetReadEntityCount(in point, row, in context);
     public static Entity GetReadEntity(in ContactPoint point, scoped QueryRow row, int index, in PhysicsStepContext context) =>
@@ -42,6 +44,8 @@ public readonly struct AvbdSupportedContactPotentialMath : IAvbdConstraint<Conta
         AvbdContactPotentialMath.GetBodyCount(in point, row, in context);
     public static Entity GetBody(in ContactPoint point, scoped QueryRow row, int index, in PhysicsStepContext context) =>
         AvbdContactPotentialMath.GetBody(in point, row, index, in context);
+    public static bool TryGetBody(in ContactPoint point, scoped QueryRow row, int index, scoped PhysicsBodies bodies,
+        in PhysicsStepContext context, out Entity body) => AvbdContactPotentialMath.TryGetBody(in point, row, index, bodies, in context, out body);
     public static int GetReadEntityCount(in ContactPoint point, scoped QueryRow row, in PhysicsStepContext context) =>
         AvbdContactPotentialMath.GetReadEntityCount(in point, row, in context);
     public static Entity GetReadEntity(in ContactPoint point, scoped QueryRow row, int index, in PhysicsStepContext context) =>

@@ -23,6 +23,13 @@ public readonly struct AvbdContactMath : IAvbdConstraint<ContactPoint>
     public static Entity GetBody(in ContactPoint point, scoped QueryRow row, int index, in PhysicsStepContext context) =>
         ContactBodyMath.GetBody(in row.ReadBuffer<ContactBodyLink>().AsSpan()[index], in context);
 
+    public static bool TryGetBody(in ContactPoint point, scoped QueryRow row, int index, scoped PhysicsBodies bodies,
+        in PhysicsStepContext context, out Entity body)
+    {
+        body = ContactBodyMath.GetBody(in row.ReadBuffer<ContactBodyLink>().AsSpan()[index], bodies, in context);
+        return true;
+    }
+
     public static void Initialize(in ContactPoint point, scoped QueryRow row, scoped PhysicsBodies bodies,
         in PhysicsStepContext context, float retention)
     {
