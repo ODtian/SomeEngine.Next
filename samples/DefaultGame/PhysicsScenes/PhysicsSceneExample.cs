@@ -13,8 +13,8 @@ using SomeEngine.Runtime;
 
 namespace DefaultGame;
 
-/// <summary>Original scene inputs, the selected CPU physics and ordinary mesh extraction in the shared scene platform.</summary>
-public sealed class PhysicsSceneExample(PhysicsSceneDescription description, PhysicsSceneSettings settings)
+/// <summary>Original scene inputs, the selected physics and ordinary mesh extraction in the shared scene platform.</summary>
+public sealed partial class PhysicsSceneExample(PhysicsSceneDescription description, PhysicsSceneSettings settings)
 {
     private JsonObject _workload = new();
     private readonly ScenePhysicsEventCounts _events = new();
@@ -134,6 +134,7 @@ public sealed class PhysicsSceneExample(PhysicsSceneDescription description, Phy
                     : new JsonArray(change.Position.Select(value => (JsonNode?)JsonValue.Create(value)).ToArray()),
             }).ToArray()),
         };
+        if (_devicePhysics) return CreateDeviceSimulation(world, description, data, settings);
         var events = new CountScenePhysicsEvents(_events);
         JobResourceAccess[] eventAccesses = [JobResourceAccess.Write(WorldJobs.GetScheduler(world).GetResourceToken(_events))];
         return description.Dimension == 2

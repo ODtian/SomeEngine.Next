@@ -15,6 +15,13 @@ public static partial class PhysicsScenes
     public static PhysicsSceneSimulation CreateDevice(World world, PhysicsSceneDescription description,
         IGraphicsBackend backend, Device device, PhysicsSceneSettings settings, DeviceGridSettings gridSettings,
         DeviceGridCapacity gridCapacity, int contactCapacity, float contactDistance,
+        ReadOnlySpan<int> readbackBodyIndices, string shaderDirectory) =>
+        CreateDevice(world, description, Create(description), backend, device, settings, gridSettings, gridCapacity,
+            contactCapacity, contactDistance, readbackBodyIndices, shaderDirectory);
+
+    internal static PhysicsSceneSimulation CreateDevice(World world, PhysicsSceneDescription description, PhysicsSceneData data,
+        IGraphicsBackend backend, Device device, PhysicsSceneSettings settings, DeviceGridSettings gridSettings,
+        DeviceGridCapacity gridCapacity, int contactCapacity, float contactDistance,
         ReadOnlySpan<int> readbackBodyIndices, string shaderDirectory)
     {
         var shaders = new PhysicsSceneShaders(device.Capabilities.CompileTarget, shaderDirectory);
@@ -28,7 +35,6 @@ public static partial class PhysicsScenes
         DeviceAvbdKernels avbdKernels = shaders.Avbd();
         DeviceContactKernels responseKernels = shaders.Responses();
 
-        PhysicsSceneData data = Create(description);
         PhysicsSceneEntities created = CreateEntities(world, data);
         Scheduler scheduler = WorldJobs.GetScheduler(world);
         const int threads = 64;
@@ -101,17 +107,32 @@ public static partial class PhysicsScenes
         var response = new DeviceContactActions(backend, device, bodies, graph, responses, responseKernels, bindings, reads,
             threads, new IDeviceConstraintSelection[] { selectedResponses });
         var results = new DeviceBodyResults(backend, device, bodies, world, observed, readbackBodyIndices.Length);
-        var stages = sceneInputs.Then(bodyInputs.Upload()).Then(joints.Upload()).Then(ranges.Upload()).Then(timedInputs.WriteInputs()).Then(timedInputs.Apply())
-            .Then(timedInputs.ApplyKinematicTargets()).Then(dynamics.ApplyGyroscopicTorque()).Then(dynamics.Predict(Vector(data.Gravity)))
-            .Then(grid.BeginInputs()).Then(shapeInputs).Then(updateGeometry.Update())
-            .Then(grid.Build(pairs, DevicePairRules.None, DeviceInputTransfer.Resident, DevicePairReadback.None))
-            .Then(new ClearDeviceSceneContacts(detected)).Then(detection.Detect())
-            .Then(detection.WriteContacts(new ContactPointOutput(detected), new[] { detected.WriteAccess }))
-            .Then(matching.Match()).Then(refresh.Refresh(currentGeometry.Results)).Then(contactInputs.Upload())
-            .Then(stateInputs.Upload()).Then(currentGeometry.Update()).Then(response.Initialize()).Then(solve.Solve())
-            .Then(dynamics.UpdateVelocities()).Then(response.ApplyRestitution(1));
+        PhysicsSceneTimings? timings = settings.Timings;
+        var stages = sceneInputs.Measure(timings, "Scene inputs")
+            .Then(bodyInputs.Upload().Measure(timings, "Body inputs"))
+            .Then(joints.Upload().Measure(timings, "Joint inputs"))
+            .Then(ranges.Upload().Measure(timings, "Distance inputs"))
+            .Then(timedInputs.WriteInputs().Measure(timings, "Timed body inputs"))
+            .Then(timedInputs.Apply().Measure(timings, "Body impulses"))
+            .Then(timedInputs.ApplyKinematicTargets().Measure(timings, "Kinematic targets"))
+            .Then(dynamics.ApplyGyroscopicTorque().Measure(timings, "Gyroscopic torque"))
+            .Then(dynamics.Predict(Vector(data.Gravity)).Measure(timings, "Body prediction"))
+            .Then(grid.BeginInputs().Then(shapeInputs).Measure(timings, "Geometry references"))
+            .Then(updateGeometry.Update().Measure(timings, "Dynamic geometry and bounds"))
+            .Then(grid.Build(pairs, DevicePairRules.None, DeviceInputTransfer.Resident, DevicePairReadback.None)
+                .Measure(timings, "Grid, pairs and type bins"))
+            .Then(new ClearDeviceSceneContacts(detected).Then(detection.Detect()).Measure(timings, "Narrow phase"))
+            .Then(detection.WriteContacts(new ContactPointOutput(detected), new[] { detected.WriteAccess })
+                .Measure(timings, "Contact geometry readback"))
+            .Then(matching.Match().Then(refresh.Refresh(currentGeometry.Results)).Measure(timings, "Persistent contacts"))
+            .Then(contactInputs.Upload().Then(stateInputs.Upload()).Measure(timings, "Contact inputs and history"))
+            .Then(currentGeometry.Update().Then(response.Initialize()).Measure(timings, "Contact response inputs"))
+            .Then(solve.Solve().Measure(timings, "Constraint graph and AVBD"))
+            .Then(dynamics.UpdateVelocities().Measure(timings, "Body velocities"))
+            .Then(response.ApplyRestitution(1).Measure(timings, "Restitution"));
         var simulation = PhysicsSimulation.Create(world, filter, stages, data.Substeps);
-        var consumer = results.Readback(threads).Then(new CopyObservedSceneTransforms(selectedFilter));
+        var consumer = results.Readback(threads).Measure(timings, "Body readback")
+            .Then(new CopyObservedSceneTransforms(selectedFilter).Measure(timings, "Body transforms"));
         var frame = simulation.CreateFrame(consumer, data.StepSeconds, 0, 0, 0);
         var initialize = new PhysicsStepContext(world, filter, 0, 0, 1, 0, data.StepSeconds);
         parameters.BeginInputs().Then(parameters.UploadInputs()).Schedule(in initialize, default).Complete();

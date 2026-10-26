@@ -43,15 +43,33 @@ CPU 场景通过 `solve.Activity` 共享原求解图，`BodyActivity` 单处保�
 
 ## 统一场景平台与测量
 
-[PhysicsSceneExample](../../../samples/DefaultGame/PhysicsScenes/PhysicsSceneExample.cs) 将原目录接入 `TestScene.Initialize` 与 `DescribeWorkload`。创建沿同一 `CreateCpu`，原 Body 实体附加 `WorldTransform`、盒体 `MeshInstance` 与项目材质 Buffer；项目明确选择 `StandardClusterVertexEncoder`。`LocalTransform` 经原 `TransformSystem`、`MeshRenderExtractor` 进入 Rendering world，场景相机根据原动态 Body 的范围定位。
+[PhysicsSceneExample](../../../samples/DefaultGame/PhysicsScenes/PhysicsSceneExample.cs) 将原目录接入 `TestScene.Initialize` 与 `DescribeWorkload`。`CreateCpu` 与 [CreateDevice](../../../samples/DefaultGame/PhysicsScenes/DevicePhysicsSceneExample.cs) 分别选定对应工厂，沿内部数据重载消费同一份创建输入。原 Body 实体附加 `WorldTransform`、盒体 `MeshInstance` 与项目材质 Buffer；项目明确选择 `StandardClusterVertexEncoder`。`LocalTransform` 经原 `TransformSystem`、`MeshRenderExtractor` 进入 Rendering world，场景相机根据原动态 Body 的范围定位。
 
 DefaultGame 的 `--physics` 选择完整物理目录，`--physics=<id>` 选择一个原场景。CPU 示例明确选择 AVBD、BVH refit、二维 `PlanarBoxCollision` 或三维 `ConvexCollision`、8 轮外迭代、每体 1 轮、6 层关节长程界、接触长程支撑、0.02 m 接触距离和每步 1000/60 ms 预算。工作量描述包含实际实体与约束规模、原步长、子步、图组织、原事件以及完成事件统计；每种事件分别列出首末物理步和事件时刻。
+
+`--physics-device=gpu` 选择设备示例，指定 ID 同时查询 `PhysicsScaleScenes.All`。交互运行通过原 `IApplicationGeometryFeature.Install` 获取应用的 Backend 与 Device；创建、完成步、变换及网格提取继续采用上述共同路径。调用方也可向 `PhysicsSceneExample.CreateDevice(description, backend, device)` 直接提供具体设备。
+
+| 配置 | CPU 示例 | GPU 示例 |
+| --- | --- | --- |
+| 空间候选 | BVH refit | 分层网格，基础单元 1 m、16 层 |
+| 检测 | 二维 `PlanarBoxCollision`；三维 `ConvexCollision<BoxGeometry, BoxGeometry>` | `DeviceConvexCollision<DeviceBox, DeviceBox>` |
+| AVBD 外层迭代 | 8 | 16 |
+| AVBD 每体迭代 | 1 | 2 |
+| 关节长程界层数 | 6 | 0 |
+| 接触约束 | 普通接触与长程支撑 | 普通接触 |
+| 接触距离 | 0.02 m | 0.02 m |
+| 乘子保留比例 | 0.8 | 0.8 |
+| 整步预算 | 1000/60 ms | 1000/60 ms |
+
+GPU 示例按 Body 数量派生网格单元、桶、pair 和接触容量，工作量描述记录这些容量、所选设备名称、驱动与专用显存。接触、原关节和原显式距离边共同进入设备约束图；参数与数值历史沿原实体的设备表示保存，完成后读取所选 Body 并更新原 `LocalTransform`。
 
 `--physics-content=<目录>` 将 DefaultGame 现有已构建内容目录交给原 `TestScene.ContentDirectory`，共享其材质模板、灯光和渲染配置。示例显式接收项目的 `StandardMaterial` 模板，为静态与动态 Body 选择不同颜色及少量自发光，共用同一盒体几何。
 
 `TestScene.WorldNameplates` 在首次创建和场景切换时选定该内容的名牌配置。物理示例以原 Body 取代加载内容的网格实体，选择关闭原小球名牌；返回原内容时恢复启动配置。
 
 [MeasurePhysicsScenes](../../../samples/DefaultGame/PhysicsScenes/MeasurePhysicsScenes.cs) 通过 `--physics-check` 运行全部原目录，`--physics-check=<id>` 运行单个场景。物理窗口为至少 180 步，并覆盖最后一次原输入及其后 120 步运动。每次同步完成一个原物理步；采样时钟保留半步的提交余量，报告的结果编号与时刻继续采用原物理区间。
+
+附加 `--physics-device=gpu` 通过 `RunDevice` 在所选 RHI 后端的计算设备上执行同一个测量循环。`--physics-check=bricks-110000 --physics-device=gpu` 是连续砖结构的入口例子；公共队列同时覆盖其构建、启动与测量。每个结果继续携带该次实际设置与预算比较。
 
 渲染帧统计使用既有第 128 帧起的就绪窗口，窗口长度随上述完整场景时长声明；物理整步统计从原步骤 0 开始。统一渲染三场景仍由 `--regression` 选择其原目录与测量时限。
 
