@@ -75,7 +75,7 @@ public static partial class PhysicsScenes
         var bins = new CollisionPairBins<CollisionNodePair>(scheduler, entities.Length, 2);
         var detected = new ContactPointBuffer(scheduler, collision.ContactCapacity, entities.Length * 4);
         var narrow = CollisionGeometry<BoxGeometry, BoxGeometry>.Predict(new ComponentGeometryMotion<BoxGeometry>(),
-            new ComponentGeometryMotion<BoxGeometry>(), collision, new ContactPointOutput(detected), 0);
+            new ComponentGeometryMotion<BoxGeometry>(), collision, new ContactPointOutput(detected), settings.ContactDistance);
         var detection = DetectContactPoints.Create(world, maintenance.Query, bins, new SceneBoxPairs(world),
             StepContactNarrowPhase.Create(0, narrow), detected, [maintenance.ReadAccess]);
         var points = ContactPoints.Create(world, poses, scope, detected, new SceneContactMaterials(),
@@ -100,7 +100,7 @@ public static partial class PhysicsScenes
         var contactEvents = new ContactEvents<ScenePhysicsEventStream>(world, bodies, scope, eventBuffer, .001f);
         var consumption = new ConsumePhysicsEvents<TEvents>(world, eventQuery, events, eventAccesses);
         var stages = inputs.Then(new ApplyBodyInputs(64)).Then(activity.WakeConnected()).Then(new ApplyGyroscopicTorque(64)).Then(prediction)
-            .Then(new UpdatePredictedBounds<BoxGeometry>(0, 64)).Then(new RefitSceneBounds(maintenance))
+            .Then(new UpdatePredictedBounds<BoxGeometry>(settings.ContactDistance, 64)).Then(new RefitSceneBounds(maintenance))
             .Then(detection).Then(points.Refresh()).Then(activity.WakeConnected()).Then(prediction.Resume())
             .Then(new InitializeContactResponses(world, bodies, contacts)).Then(solve).Then(new UpdateBodyVelocities(64))
             .Then(contactEvents).Then(activity.Finish()).Then(eventBuffer.Emit(new SceneEventComponents()));
@@ -151,6 +151,7 @@ public static partial class PhysicsScenes
             Entity entity = jointEntities[index] = world.CreateRelation(entities[input.BodyA], entities[input.BodyB], joint).Entity;
             world.Add(entity, new ScenePhysicsJoint());
             world.Add(entity, new AvbdJointState { LinearPenalty = new Vector3(1e6f), AngularPenalty = new Vector3(1e6f) });
+            if (input.BreakLimits is { } limits) world.Add(entity, limits);
         }
         foreach (SceneCollisionPair pair in data.CollisionExclusions)
             world.CreateRelation(entities[pair.BodyA], entities[pair.BodyB], new SceneCollisionExclusion());
