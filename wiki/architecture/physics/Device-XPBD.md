@@ -32,6 +32,8 @@ source 的 `AddReads`、`AddReadResources` 与静态组件资源描述器声明�
 `DeviceXpbdProjection<TData,TState>` 接收项目编译的初始化/投影入口、线程组大小及
 额外资源绑定和访问。Slang 的 `IDeviceXpbdProjection` 提供 `active`、`initialize` 与
 `project`，内置与用户具体内核使用同一调用入口。
+项目具体 source 可以从已声明的原行读取自己的参数，Slang 具体投影可同时读取项目
+提供的额外资源；两者的结果继续沿同一个物理步完成链返回原实体。
 `Initialize()` 初始化所选行的子步历史，`Iterate(n)` 在相同子步内累计乘子。
 同轮可同时写入的行由调用者提供的独立约束范围决定。
 每轮之间沿 RHI UAV barrier 保证前轮写入对后轮可见；提交和完成沿共同设备 Job/fence 链。
