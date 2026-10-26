@@ -33,6 +33,20 @@
 `DeviceAvbdConstraintGroups<TFirst,TSecond>` 将多种具体约束组装进同一 Body 局部方程。
 `adjust` 位于局部响应求出之后、位姿提交之前。
 
+`DeviceAvbdJointState` 保存六轴力乘子、数值罚参数与子步初始误差，
+对应原 `AvbdJointState`；`DeviceAvbdMotorState` 对应原 `AvbdMotorState`。
+两者由同一显式组件输入阶段选择和更新历史资源。
+[关节 ALM](../../../assets/Shaders/physics_avbd_joint.slang) 沿共同关节行处理
+锁定、自由和单边限位，再将 `K/rho` 对应力与曲率叠加到 Body 方程。
+[motor ALM](../../../assets/Shaders/physics_avbd_motor.slang) 沿同一关节参数行读取框架与端点，
+在子步结束时刻计算目标位置、旋转和速度，将阻尼 `D/h` 合入平衡点与等效刚度。
+物理力/力矩按原上限投影，对偶力继续保存在对应历史行。
+
+共同 `physics_joint_bodies.slang` 和 `physics_motor_bodies.slang` 持有原参与角色。
+Target 反馈的源 Body 参与当前框架读取，目标 Body 参与力装配；Both 反馈的两端共同受力。
+局部 Body 装配沿图的实际写端筛选，图连接和颜色仍覆盖动态读取依赖。
+世界目标的反作用力使用原导数，源端曲率保持其世界目标语义。
+
 ## 实际设备参与图
 
 [DeviceConstraintGraph](../../../src/SomeEngine.Physics/DeviceConstraintGraph.cs) 使用

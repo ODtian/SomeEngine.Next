@@ -13,7 +13,7 @@ namespace SomeEngine.Graphics.Direct3D12.Tests;
 
 [Collection("Direct3D12 shader compilation")]
 [Trait("Category", "Hardware")]
-public sealed class DeviceAvbdTests(D3D12TestCompiler shaderCompiler)
+public sealed partial class DeviceAvbdTests(D3D12TestCompiler shaderCompiler)
 {
     [Theory]
     [InlineData(100, 900, 1.5f)]
