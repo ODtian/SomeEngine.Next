@@ -16,6 +16,40 @@ namespace SomeEngine.Graphics.Direct3D12.Tests;
 public sealed class DeviceXpbdTests(D3D12TestCompiler shaderCompiler)
 {
     [Fact]
+    public void DeviceGyroscopicTorqueMatchesTheFullInertiaBodyMotion()
+    {
+        using var backend = D3D12GraphicsBackend.Create();
+        using Device device = CreateDevice(backend);
+        using var jobs = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using World world = WorldJobs.CreateWorld(scheduler: jobs);
+        using World reference = WorldJobs.CreateWorld(scheduler: jobs);
+        using var bodies = new DeviceBodies(backend, device, 1);
+        Entity body = AddBody(world, bodies, 0, Vector3.Zero, BodyMotion.Dynamic);
+        Entity expected = reference.CreateEntity(new BodyPose { Rotation = Quaternion.Identity });
+        var mass = new BodyMass { Motion = BodyMotion.Dynamic, InverseMass = 1,
+            CenterOfMass = new(.25f, -.1f, .2f),
+            InverseInertia = new(1, .2f, 0, 0, .2f, .5f, .1f, 0, 0, .1f, .25f, 0, 0, 0, 0, 1) };
+        var velocity = new BodyVelocity { Angular = new(1, 2, 3) };
+        world.Replace(body, mass); world.Replace(body, velocity);
+        reference.Add(expected, mass); reference.Add(expected, velocity); reference.Add(expected, new BodyStepState());
+        QueryHandle members = world.Query(world.QueryDefinition().Read<DeviceBodyBinding>());
+        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileBodyGyroscope(), 64);
+        using var results = new DeviceBodyResults(backend, device, bodies);
+        var gpu = bodies.WriteInputs(64).Then(bodies.UploadInputs()).Then(dynamics.ApplyGyroscopicTorque())
+            .Then(dynamics.Predict(Vector3.Zero)).Then(dynamics.UpdateVelocities()).Then(results.Readback(64));
+        var cpu = new ApplyGyroscopicTorque(64).Then(new PredictBodies(Vector3.Zero, 64)).Then(new UpdateBodyVelocities(64));
+
+        PhysicsSimulation.Create(reference, QueryDefinition.Empty, cpu, 1).Schedule(0, 0, .1).Complete();
+        PhysicsSimulation.Create(world, world.QueryDefinition().All<DeviceBodyBinding>().Build(), gpu, 1).Schedule(0, 0, .1).Complete();
+
+        Near(reference.Read<BodyPose>(expected).Position, world.Read<BodyPose>(body).Position);
+        Near(reference.Read<BodyVelocity>(expected).Angular, world.Read<BodyVelocity>(body).Angular);
+        Assert.InRange(MathF.Abs(Quaternion.Dot(reference.Read<BodyPose>(expected).Rotation,
+            world.Read<BodyPose>(body).Rotation)), .999999f, 1.000001f);
+        world.ReleaseQuery(members);
+    }
+
+    [Fact]
     public void DeviceLengthUsesTheOriginalRelationComplianceAndAccumulatesItsSubstepMultiplier()
     {
         using var backend = D3D12GraphicsBackend.Create();
@@ -112,6 +146,16 @@ public sealed class DeviceXpbdTests(D3D12TestCompiler shaderCompiler)
         ComputePipelineDesc Entry(int index) => new(shader.SlangCode, shader.Reflection,
             shader.GetEntryPoint(index), shader.GetEntryCode(index));
         return new(Entry(0), Entry(1));
+    }
+
+    private DeviceBodyKernels CompileBodyGyroscope()
+    {
+        D3D12TestShader shader = shaderCompiler.CompileWithSearchPaths("body_gyroscope", "#include \"physics_body_dynamics.slang\"",
+            [new("PredictDeviceBodies", SlangStage.Compute), new("UpdateDeviceBodyVelocities", SlangStage.Compute),
+                new("ApplyDeviceGyroscopicTorque", SlangStage.Compute)], "sm_6_0", ShaderDirectory());
+        ComputePipelineDesc Entry(int index) => new(shader.SlangCode, shader.Reflection,
+            shader.GetEntryPoint(index), shader.GetEntryCode(index));
+        return new(Entry(0), Entry(1), Entry(2));
     }
 
     private static Entity AddBody(World world, DeviceBodies bodies, int index, Vector3 position, BodyMotion motion)
