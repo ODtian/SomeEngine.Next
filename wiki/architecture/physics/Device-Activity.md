@@ -59,6 +59,8 @@
 `DeviceElasticActivity` 复用原局部锚、静止旋转和当前主体坐标，按实际启用的线性、角向刚度返回残差。
 `DeviceSupportBodyActivity` 和 `DeviceSupportedContactActivity` 沿同一支撑高度界、
 当前质心和加权锚返回高度误差，普通接触残差与原参与角色继续复用。
+`DeviceJointBoundActivity` 复用原 LongRangeJointBound 两端锚与距离上下界，
+`DeviceDistanceRangeActivity` 复用原 DistanceRange 的两局部锚与径向范围；两者都返回以米计的界外距离。
 `DeviceConstraintActivityGroups<TFirst,TSecond>` 沿原参与分组组合实体身份与残差，
 行偏移、读写角色和具体组编号继续复用 `DeviceConstraintBodyGroups`。
 
@@ -69,6 +71,8 @@
 `DeviceContactInputs` 沿已有点、材料、端点与 Buffer Header/Inline 的精确版本记录输入修改。
 保留设备几何的刷新继续通过 `RetainsGeometry` 跳过 Native 几何与锚维护写，
 相同材料沿原比较保持其版本，驻留更新继续由同一设备数据持有。
+完整的检测、匹配、刷新、活动与完成步消费组合见
+[连续刷新接触行为](../../../tests/SomeEngine.Graphics.Direct3D12.Tests/DeviceRefreshedContactActivityTests.cs)。
 活动阶段用每行 20 字节保存实体代次、参与数和输入版本，
 参与端身份、角色继续沿原派生索引保存。输入修改、连接新增、移出和改接时
 标记旧端、当前端所在的连接岛。初始化沿已有 ClearSignals 阶段完成，容量随原图批次复用。
