@@ -27,6 +27,10 @@
 
 工厂组合原定时输入、陀螺预测、共同预测、预测范围、空间维护、分桶、具体检测、持久点刷新、响应初始化、图求解和速度重建。接触、关节和显式距离区间通过具体约束集合进入同一 AVBD 图求解。
 
+CPU 场景通过 `solve.Activity` 共享原求解图，`BodyActivity` 单处保存休眠和安静时间。输入后的唤醒、检测后的连通唤醒及 `PredictActiveBodies.Resume()` 继续同一子步，完成后按显式 `PhysicsSceneSettings.Activity` 阈值判断休眠。相关工作范围与误差见[Body 活动](Body-Activity.md)。
+
+带具体 `IPhysicsEventConsumer` 的 `CreateCpu` 重载把接触和活动结果交给原帧消费窗口。`ScenePhysicsEventStream` 标记完成步事件实体；`ConsumePhysicsEvents` 将截至当前完成步的全部历史交给调用方，再通过原命令链确认这些实体。调用方传入 `eventAccesses` 声明消费者资料；原四参数和场景数据入口委托同一创建与事件链。
+
 `PhysicsSceneSettings` 显式保存外层迭代、每体局部迭代和整步预算声明。原步长及子步数来自创建数据。输入的 `Frame` 表示物理步编号；连接移除与位置变化在该步的第一子步、共同预测之前沿原命令链回放。速度增量按 `mass * deltaVelocity` 转成世界冲量，由 `ApplyBodyInputs` 在对应时间区间应用。
 
 `PhysicsSceneSimulation.Frame` 引用原 `PhysicsFrame`。帧消费者从实体 `BodyPose` 更新同一实体的 `LocalTransform`，保留其几何缩放；`CompleteForRead()` 直接完成该帧与消费者的原 Job 链，并交回完成步编号和时刻。下一步继续依赖同一消费完成。完成边界见[物理帧](Physics-Frames.md)。
