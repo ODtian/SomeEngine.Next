@@ -29,6 +29,11 @@
 
 `DeviceAvbdSolver.Initialize()` 初始化子步历史和 Body 方程索引，
 `Iterate(n)` 在当前子步继续 primal/dual 迭代；`Solve()` 组合这两项职责。
+`DeviceAvbdKernels.ClearBodyIndices` 选择独立的逐 Body 索引清理内核，
+其具体入口调用 `clearDeviceAvbdBodyIndices`；随后的初始化内核调用
+`initializeDeviceAvbdRows`，逐方程行沿原 Entity metadata 建立 Body 到方程的映射。
+清理与映射之间的 UAV barrier 保持同一索引 buffer 的读写顺序。
+原 `initializeDeviceAvbd` 入口继续提供合并初始化。
 `DeviceAvbdKernels.InitializeGroups` 和 `UpdateGroups` 是可选的具体组阶段，
 分别位于逐行初始化之后和每轮逐行对偶更新之后；阶段之间使用同一提交内的 UAV barrier。
 项目提供具体 Slang `IDeviceAvbdConstraints` 内核与实际绑定，
