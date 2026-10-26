@@ -27,6 +27,7 @@ public sealed class PhysicsDeviceContactSceneTests
         using PhysicsSceneSimulation scene = PhysicsScenes.CreateDevice(world, description, backend, device,
             new PhysicsSceneSettings(16, 2, 1000d / 60)
             {
+                GeometryInputsFixed = true,
                 ContactNormalPenalty = 100, ContactTangentPenalty = 100,
                 ContactSupports = new(Vector3.UnitZ, 1e-5f, 1e-4f, 1e-4f, 1e-4f, .99f, .99f, 1e-6f),
             }, new(1, 16), new(2, 16, 33, 64, 1), 64, .02f, [0, 1],

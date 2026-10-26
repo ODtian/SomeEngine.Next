@@ -138,8 +138,8 @@ public static partial class PhysicsScenes
             new JobResourceAccess[] { bodies.GetReadAccess(scheduler), pairExclusions.ReadAccess(scheduler) });
         for (int index = 0; index < created.Bodies.Length; index++)
             world.Add(created.Bodies[index], new DeviceCollisionBody(grid, index));
-        var shapeInputs = grid.WriteGeometryReferences<BoxGeometry, DeviceComponentSource<BoxGeometry, DeviceBoxReader>>(pairs, default, 0, threads);
-        var updateGeometry = new UpdateDeviceGeometry(backend, device, grid, geometry, geometryKernel, 0, DeviceInputTransfer.Upload);
+        var geometryInputs = new DeviceSceneGeometryInputs(backend, device, grid, geometry, geometryKernel, pairs,
+            settings.GeometryInputsFixed, settings.Timings, threads);
         var detection = new DeviceCollisionDetection(backend, device, grid, geometry, detectionKernel, 0,
             new(gridCapacity.Pairs, 4, Math.Min(gridCapacity.Pairs, 4096)), new(1e-5f, 32, 64), contactDistance,
             DeviceInputTransfer.Resident, DeviceCollisionReadback.Contacts);
@@ -185,8 +185,7 @@ public static partial class PhysicsScenes
             .Then(dynamics.ApplyGyroscopicTorque().Measure(timings, "Gyroscopic torque"))
             .Then(dynamics.Predict(Vector(data.Gravity)).Measure(timings, "Body prediction"))
             .Then(timedInputs.ApplyKinematicTargets().Measure(timings, "Kinematic targets"))
-            .Then(grid.BeginInputs().Then(shapeInputs).Measure(timings, "Geometry references"))
-            .Then(updateGeometry.Update().Measure(timings, "Dynamic geometry and bounds"))
+            .Then(geometryInputs.Update())
             .Then(grid.Build(pairs, DevicePairRules.None, DeviceInputTransfer.Resident, DevicePairReadback.None)
                 .Measure(timings, "Grid, pairs and type bins"))
             .Then(new ClearDeviceSceneContacts(detected).Then(detection.Detect()).Measure(timings, "Narrow phase"))
@@ -214,7 +213,7 @@ public static partial class PhysicsScenes
         parameters.BeginInputs().Then(parameters.UploadInputs()).Schedule(in initialize, default).Complete();
         return new PhysicsSceneSimulation(world, description, settings, created.Bodies, created.Joints, created.DistanceRanges,
             data.StepSeconds, frame, frame.CompleteForRead, [members, shapes, poses, points, states, observed, eventRows],
-            [bodies, equations, grid, geometry, bodyInputs, timedInputs, sceneInputs, dynamics, shapeInputs, updateGeometry,
+            [bodies, equations, grid, geometry, bodyInputs, timedInputs, sceneInputs, dynamics, geometryInputs,
                 detection, detected, parameters, anchors, histories, responses, matching, currentGeometry, refresh,
                 contactInputs, stateInputs, selected, selectedStates, selectedResponses, joints, ranges, graph, solve, response,
                 results, statistics, activities, activity, completedEvents, eventConsumption, breakJoints, supports,
