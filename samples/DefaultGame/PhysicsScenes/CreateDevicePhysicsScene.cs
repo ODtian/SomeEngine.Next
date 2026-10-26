@@ -53,7 +53,7 @@ public static partial class PhysicsScenes
         ComputePipelineDesc contactGeometryKernel = shaders.ContactGeometry();
         bool useJointBounds = settings.JointBounds.Levels > 0 && data.Joints.Length > 0;
         DeviceGraphKernels graphKernels = shaders.Graph(settings.ContactSupports.HasValue, useJointBounds);
-        DeviceAvbdKernels avbdKernels = shaders.Avbd(settings.ContactSupports.HasValue, useJointBounds);
+        DeviceAvbdKernels avbdKernels = shaders.Avbd(settings.ContactSupports.HasValue, useJointBounds, data.Bodies.Length);
         DeviceContactKernels responseKernels = shaders.Responses();
 
         PhysicsSceneEntities created = CreateEntities(world, data);
