@@ -3,6 +3,11 @@
     <RootNamespace>DefaultGame</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <!-- NativeAOT 10.0.13 throws in CycleInfoHashtable.CreateValueFromKey for SomeEngine.Physics.
+         Compiler source: dotnet/dotnet/4099f83977f4d29604a9aeb971fb0a7bc1d5f699,
+         src/runtime/src/coreclr/tools/Common/Compiler/GenericCycleDetection/ModuleCycleInfo.cs.
+         The compiler's negative depth setting skips that analysis. -->
+    <IlcArg Include="--maxgenericcycle:-1" Condition="'$(PublishAot)' == 'true'" />
     <Content Include="$(SomeEnginePath)/assets/Shaders/physics*.slang" Link="PhysicsShaders/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <ProjectReference Include="$(SomeEnginePath)/src/SomeEngine.ECS/SomeEngine.ECS.csproj" GlobalPropertiesToRemove="SomeEngineDevelopment;PublishAot;PublishAotUsingRuntimePack;SelfContained;RuntimeIdentifier" />
     <ProjectReference Include="$(SomeEnginePath)/src/SomeEngine.Physics/SomeEngine.Physics.csproj" GlobalPropertiesToRemove="SomeEngineDevelopment;PublishAot;PublishAotUsingRuntimePack;SelfContained;RuntimeIdentifier" />
