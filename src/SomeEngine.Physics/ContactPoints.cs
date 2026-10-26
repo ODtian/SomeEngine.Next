@@ -41,7 +41,7 @@ public sealed class ContactPoints<TCombine, TComponents> : IDisposable
     where TCombine : struct, IContactMaterialCombine where TComponents : struct, IContactPointComponents
 {
     private readonly World _world;
-    private readonly QueryHandle _poses, _points;
+    private readonly QueryHandle _poses, _points, _sourceAccess, _values;
     private readonly ContactPointBuffer _detected;
     private readonly TCombine _combine;
     private readonly TComponents _components;
@@ -71,11 +71,15 @@ public sealed class ContactPoints<TCombine, TComponents> : IDisposable
         QueryDefinition reads = new QueryDefinitionBuilder().Read<ContactPoint>().Read<UndirectedRelationEndpoints<ContactPoint>>()
             .ReadBuffer<ContactBodyLink>().Optional<DirectedRelationEndpoints<ContactParticipant>>(QueryAccess.Read).Build();
         _points = world.Query(world.GetQueryDefinition(points).WithAccess(reads));
+        _sourceAccess = world.Query(new QueryDefinitionBuilder().Optional<ContactMaterial>(QueryAccess.Read)
+            .Optional<DirectedRelationEndpoints<ContactParticipant>>(QueryAccess.Read));
+        _values = world.Query(world.GetQueryDefinition(points).AsFilter().WithAccess(new QueryDefinitionBuilder()
+            .ReadWrite<ContactPoint>().ReadWrite<ContactMaterial>().WriteBuffer<ContactBodyLink>().Build()));
         var accesses = new List<JobResourceAccess> { detected.ReadAccess, JobResourceAccess.Exclusive(_resource) };
         PhysicsQueryAccess.AddAccesses(world, _points, accesses);
         _matchAccesses = accesses.ToArray();
         PhysicsQueryAccess.AddAccesses(world, poses, accesses);
-        accesses.Add(ComponentJobAccess<ContactMaterial>.Read(world));
+        PhysicsQueryAccess.AddAccesses(world, _sourceAccess, accesses);
         components.AddReads(world, accesses);
         _componentAccesses = accesses.ToArray();
         _valueAccesses = [RelationshipJobAccess.TopologyRead(world), ComponentJobAccess<ContactPoint>.Write(world),
@@ -191,6 +195,35 @@ public sealed class ContactPoints<TCombine, TComponents> : IDisposable
         _references.Clear();
         var anchors = new ReadAnchors<TMatches>(this, matches);
         _world.ExecuteQuery(_poses, ref anchors);
+        var read = new ReadComponentPoints<TMatches>(this, matches, context, commands);
+        _world.ExecuteQuery(_points, ref read);
+    }
+
+    private readonly ref struct ReadComponentPoints<TMatches>(ContactPoints<TCombine, TComponents> points,
+        TMatches matches, PhysicsStepContext context, JobCommandWriter commands) : IQueryExecution
+        where TMatches : struct, IContactPointMatches
+    {
+        private readonly JobCommandWriter _commands = commands;
+        public void Execute(scoped QueryCursor rows)
+        {
+            var read = new ReadComponentSources<TMatches>(points, matches, context, _commands, rows);
+            points._world.ExecuteQuery(points._sourceAccess, ref read);
+        }
+    }
+
+    private ref struct ReadComponentSources<TMatches>(ContactPoints<TCombine, TComponents> points,
+        TMatches matches, PhysicsStepContext context, JobCommandWriter commands, QueryCursor pointRows) : IQueryExecution
+        where TMatches : struct, IContactPointMatches
+    {
+        private JobCommandWriter _commands = commands;
+        private readonly QueryCursor _pointRows = pointRows;
+        public void Execute(scoped QueryCursor sources) =>
+            points.AddPointComponents(matches, ref _commands, in context, _pointRows, sources);
+    }
+
+    private void AddPointComponents<TMatches>(TMatches matches, ref JobCommandWriter commands, in PhysicsStepContext context,
+        scoped QueryCursor pointRows, scoped QueryCursor sources) where TMatches : struct, IContactPointMatches
+    {
         foreach (ref PointMatch match in CollectionsMarshal.AsSpan(_matches))
         {
             bool created = match.Point == Entity.Null;
@@ -200,8 +233,10 @@ public sealed class ContactPoints<TCombine, TComponents> : IDisposable
             ref readonly CollisionContact input = ref _detected.Read(match.Input).Contact;
             ReadOnlySpan<ContactBody> bodies = _detected.Bodies(match.Input);
             match.ParticipantsChanged = created;
-            ContactMaterial first = _world.Read<ContactMaterial>(input.First);
-            ContactMaterial second = _world.Read<ContactMaterial>(input.Second);
+            sources.TryGetRow(input.First, out QueryRow firstRow);
+            sources.TryGetRow(input.Second, out QueryRow secondRow);
+            ContactMaterial first = firstRow.Read<ContactMaterial>();
+            ContactMaterial second = secondRow.Read<ContactMaterial>();
             match.Material = _combine.Combine(in first, in second);
             if (created)
             {
@@ -215,12 +250,9 @@ public sealed class ContactPoints<TCombine, TComponents> : IDisposable
             _oldParticipants.Clear();
             if (!created)
             {
-                var old = _oldParticipants;
-                _world.ExecuteBufferRead<ContactBodyLink, List<RelationEdge<ContactParticipant>>>(match.Point, ref old,
-                    static (links, ref old) =>
-                    {
-                        foreach (ref readonly ContactBodyLink link in links.AsSpan()) old.Add(link.Participant);
-                    });
+                pointRows.TryGetRow(match.Point, out QueryRow previous);
+                foreach (ref readonly ContactBodyLink link in previous.ReadBuffer<ContactBodyLink>().AsSpan())
+                    _oldParticipants.Add(link.Participant);
             }
             match.LinkStart = _references.Count;
             match.LinkCount = bodies.Length;
@@ -230,7 +262,8 @@ public sealed class ContactPoints<TCombine, TComponents> : IDisposable
                 if (index < _oldParticipants.Count)
                 {
                     RelationEdge<ContactParticipant> existing = _oldParticipants[index];
-                    if (_world.GetDirectedRelationEndpoints(existing).Target != bodies[index].Body)
+                    sources.TryGetRow(existing.Entity, out QueryRow participant);
+                    if (participant.Read<DirectedRelationEndpoints<ContactParticipant>>().Target != bodies[index].Body)
                     {
                         commands.Relations<ContactParticipant>().Retarget(existing, match.Point, bodies[index].Body);
                         match.ParticipantsChanged = true;
@@ -285,22 +318,34 @@ public sealed class ContactPoints<TCombine, TComponents> : IDisposable
 
     private void Write<TMatches>(TMatches matches) where TMatches : struct, IContactPointMatches
     {
+        var write = new WritePointRows<TMatches>(this, matches);
+        _world.ExecuteQuery(_values, ref write);
+    }
+
+    private readonly struct WritePointRows<TMatches>(ContactPoints<TCombine, TComponents> points,
+        TMatches matches) : IQueryExecution where TMatches : struct, IContactPointMatches
+    {
+        public void Execute(scoped QueryCursor rows) => points.Write(matches, rows);
+    }
+
+    private void Write<TMatches>(TMatches matches, scoped QueryCursor rows) where TMatches : struct, IContactPointMatches
+    {
         foreach (ref readonly PointMatch match in CollectionsMarshal.AsSpan(_matches))
         {
+            rows.TryGetRow(match.Point, out QueryRow row);
             ref readonly CollisionContact input = ref _detected.Read(match.Input).Contact;
             if (!matches.RetainsGeometry || match.CreatedThisStep)
             {
                 ContactPoint point = ToPoint(in input);
                 point.BodyAnchorDelta = match.BodyAnchorDelta;
-                _world.Replace(match.Point, point);
+                row.ReadWrite<ContactPoint>() = point;
             }
-            ContactMaterial current = _world.Read<ContactMaterial>(match.Point);
-            if (!SameMaterial(in current, in match.Material)) _world.Replace(match.Point, match.Material);
+            ContactMaterial current = row.Read<ContactMaterial>();
+            if (!SameMaterial(in current, in match.Material)) row.ReadWrite<ContactMaterial>() = match.Material;
             if (!matches.RetainsGeometry || match.ParticipantsChanged)
             {
                 var copy = new WriteLinks(this, match.Input, match.LinkStart, match.LinkCount);
-                _world.ExecuteBufferWrite<ContactBodyLink, WriteLinks>(match.Point, ref copy,
-                    static (links, ref copy) => copy.Write(links));
+                copy.Write(row.Buffer<ContactBodyLink>());
             }
         }
     }
@@ -369,6 +414,8 @@ public sealed class ContactPoints<TCombine, TComponents> : IDisposable
     public void Dispose()
     {
         _world.ReleaseQuery(_points);
+        _world.ReleaseQuery(_sourceAccess);
+        _world.ReleaseQuery(_values);
         _scheduler.ReleaseResourceToken(_resource);
     }
 }

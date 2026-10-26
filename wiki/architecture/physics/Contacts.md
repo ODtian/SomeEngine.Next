@@ -24,6 +24,8 @@ gap = Separation + dot(Normal, currentWeightedAnchorDelta - BodyAnchorDelta)
 
 `ContactPoints.Create(world, poses, points, detected, combine, components, settings)` 接收项目的只读位姿查询、只读接触维护查询、派生检测输出、具体材料合成器、具体新点组件写入器及刷新设置。维护查询的成员筛选由项目显式选择；管理器沿原筛选补充所需读取，在创建时取得自己的查询引用，并在 `Dispose` 中释放。
 
+刷新时，组件阶段在一个接触查询范围和一个来源访问范围内借用原点、`ContactBodyLink`、几何材料及参与边端点；值阶段在同一筛选的可写查询范围内更新原组件和 Buffer。各点沿 `QueryCursor.TryGetRow` 直接定位原行。材料差异、几何保留和参与端变化继续决定实际写入，点和参与关系的创建、改接与销毁沿原命令完成链执行。
+
 `IContactPointComponents.Add` 在第二段结构命令中为新点记录算法状态和成员筛选组件。多个接触组可以使用各自的 tag、组件条件和查询进行独立刷新。`AvbdContactComponents` 为新点添加项目给定的 `AvbdContactState` 数值参数，用户写入器通过相同入口添加本组组件。`IContactMaterialCombine` 从双方几何实体的 `ContactMaterial` 组合点材料；`AverageContactMaterials` 对六个材料字段逐项取算术平均。
 
 刷新按几何身份对建立可复用索引，在 `MatchDistance` 的世界距离与 `MinimumNormalDot` 的法向条件内选择最近旧点，并为每个旧点保留一个匹配。匹配点复用实体、参与边和算法历史，原位更新点数据与局部锚；实际作用端变化经原生关系重定向。所选范围内未匹配的点释放，其参与边沿原生关系生命周期回收。Body 销毁后，其参与边结束；接续刷新结束对应旧点，再为后续有效检测建立接触。
