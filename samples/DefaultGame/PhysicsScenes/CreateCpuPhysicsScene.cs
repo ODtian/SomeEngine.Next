@@ -93,7 +93,7 @@ public static partial class PhysicsScenes
             description.Dimension == 2 ? Vector3.UnitY : Vector3.UnitZ, 1e-5f, 1e-4f, 1e-4f, 1e-4f, .99f, .99f, 1e-6f);
         var constraints = AvbdGraphConstraints.Combine(jointConstraints, new ContactLongRangeGraphConstraints(supportBodies, supportedContacts, supports));
         var solve = SolveAvbdGraph.Create(world, bodies, constraints,
-            new PhysicsGraphSettings(PhysicsGraphOrder.Islands, 16, 16, 64, 4, false), settings.Iterations, .8f, 0,
+            new PhysicsGraphSettings(PhysicsGraphOrder.Islands, 16, 16, 64, 4, false), settings.Iterations, settings.MultiplierRetention, 0,
             bodyIterations: settings.BodyIterations);
         var activity = solve.Activity(settings.Activity, eventBuffer);
         var prediction = new PredictActiveBodies(world, bodies, Vector(data.Gravity), 64);
