@@ -123,9 +123,13 @@ public sealed class DeviceAvbdSolver : IDisposable
                     _backend.Dispatch(_commands,DevicePhysicsDispatch.CreateGroups((_bodies.Capacity+_threadsPerGroup-1)/_threadsPerGroup));
                     Barrier();
                 }
-                step.Color=0; Bind(2,in step);
-                _backend.Dispatch(_commands,DevicePhysicsDispatch.CreateGroups((_graph.ConstraintCapacity+_threadsPerGroup-1)/_threadsPerGroup));
-                Barrier();
+                step.Color=0;
+                if(_graph.ConstraintStageCount>0)
+                {
+                    Bind(2,in step);
+                    _backend.Dispatch(_commands,DevicePhysicsDispatch.CreateGroups((_graph.ConstraintCapacity+_threadsPerGroup-1)/_threadsPerGroup));
+                    Barrier();
+                }
                 DispatchGroups(_groupUpdates,in step);
             }
         using RecordedCommands recorded=_backend.End(_commands);
