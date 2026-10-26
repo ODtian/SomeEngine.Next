@@ -154,6 +154,7 @@ public static partial class PhysicsScenes
         var solve = new DeviceAvbdSolver(backend, device, bodies, equations, graph, avbdKernels,
             new(settings.Iterations, settings.BodyIterations, settings.MultiplierRetention, 0), bindings, constraintAccesses, threads,
             new IDeviceConstraintSelection[] { selectedStates, selectedResponses, joints.StateSelection, ranges.StateSelection });
+        var equationInputs = new DeviceSceneEquationInputs(solve, settings.EquationBindingsFixed);
         var response = new DeviceContactActions(backend, device, bodies, graph, responses, responseKernels, bindings, reads,
             threads, new IDeviceConstraintSelection[] { selectedResponses });
         var activityBindings = new Dictionary<string, ResourceBinding[]>(bindings);
@@ -196,10 +197,10 @@ public static partial class PhysicsScenes
             .Then(supports.Upload().Measure(timings, "Contact support inputs"))
             .Then(currentGeometry.Update().Then(activity.WakeConnected()).Measure(timings, "Contact wake"))
             .Then(dynamics.Resume(Vector(data.Gravity)).Then(response.Initialize()).Measure(timings, "Resumed prediction and response inputs"))
-            .Then(solve.Solve().Measure(timings, "Constraint graph and AVBD"))
+            .Then(equationInputs.Solve().Measure(timings, "Constraint graph and AVBD"))
             .Then(breakJoints.BreakOverloaded().Measure(timings, "Joint forces and breaks"))
             .Then(dynamics.UpdateVelocities().Measure(timings, "Body velocities"))
-            .Then(response.ApplyRestitution(1).Measure(timings, "Restitution"))
+            .Then(response.ApplyRestitution(1, buildGraph: false).Measure(timings, "Restitution"))
             .Then(activity.Finish().Then(activity.Readback(completedEvents)).Measure(timings, "Completed activity"))
             .Then(contacts.Observe().Measure(timings, "Completed contact events"))
             .Then(completedEvents.Emit(new SceneEventComponents()).Measure(timings, "Completed events"));
