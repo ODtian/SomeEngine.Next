@@ -19,7 +19,7 @@ public sealed class DevicePoseSystem(IGraphicsBackend backend, Device device) : 
     private JobHandle _completion;
 
     public void OnCreate(ref ImmediateSystemContext context) =>
-        _targets = context.World.Query(new QueryDefinitionBuilder().Read<GpuPoseTarget>());
+        _targets = context.World.Query(new QueryDefinitionBuilder().Read<GpuPoseTarget>().Read<GpuPoseSourceState>());
 
     public void OnUpdate(ref ImmediateSystemContext context)
     {
@@ -27,7 +27,9 @@ public sealed class DevicePoseSystem(IGraphicsBackend backend, Device device) : 
         DevicePoseSystem system = this;
         context.World.ExecuteReadQuery(_targets, ref system, static (scoped QueryCursor rows, ref DevicePoseSystem system) =>
         {
-            foreach (QueryRow row in rows.Rows) system._inputs.Add((row.Entity, row.Read<GpuPoseTarget>()));
+            foreach (QueryRow row in rows.Rows)
+                if (row.Read<GpuPoseSourceState>().Sources is not { } selected || ReferenceEquals(selected, system._sources))
+                    system._inputs.Add((row.Entity, row.Read<GpuPoseTarget>()));
         });
         if (_sources is null)
         {
@@ -67,6 +69,7 @@ public sealed class DevicePoseSystem(IGraphicsBackend backend, Device device) : 
             if (HasChain(source.Input.Rig)) _physics!.Bind(source.Entity);
             else _physics!.Remove(source.Entity);
         _members = current;
+        _sources.SelectTargets(current);
         if (_inputs.Count == 0) return;
         double time = _inputs.Max(source => source.Input.CalculationTime);
         long number = unchecked((long)_inputs.Max(source => source.Input.InputNumber));
