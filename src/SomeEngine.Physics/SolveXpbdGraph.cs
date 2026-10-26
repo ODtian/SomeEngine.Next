@@ -40,6 +40,7 @@ public readonly struct SolveXpbdGraph<TConstraints> : IPhysicsStage, IDisposable
 
     public InitializeXpbdGraph<TConstraints> Initialize() => new(this);
     public IterateXpbdGraph<TConstraints> Iterate(int iterations) => new(this, iterations);
+    public PhysicsActivity<TConstraints> Activity(BodyActivitySettings settings) => new(_graph, _queries, _constraints, settings, _resources);
     public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) => Schedule(in context, true, _iterations, dependency);
     internal JobHandle Schedule(in PhysicsStepContext context, bool initialize, int iterations, JobHandle dependency) =>
         WorldJobs.GetScheduler(context.World).Schedule(new CaptureMembers(this, context, initialize, iterations), _accesses, dependency);

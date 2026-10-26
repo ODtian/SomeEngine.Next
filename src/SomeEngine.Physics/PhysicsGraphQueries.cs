@@ -16,6 +16,7 @@ internal sealed class PhysicsGraphQueries : IDisposable
     private readonly bool _bodyUpdates;
     internal readonly QueryHandle[] Queries, Reads;
     internal readonly JobResourceAccess[] MetadataAccesses;
+    internal World World => _world;
 
     internal PhysicsGraphQueries(World world, QueryHandle bodies, ReadOnlySpan<QueryHandle> constraints, QueryReadResources? resources,
         bool bodyUpdates = false)
@@ -26,7 +27,7 @@ internal sealed class PhysicsGraphQueries : IDisposable
         Reads = new QueryHandle[constraints.Length];
         _members = CreateMembers(constraints.Length + 1);
         _next = CreateMembers(constraints.Length + 1);
-        QueryDefinition bodyDefinition = world.GetQueryDefinition(bodies);
+        QueryDefinition bodyDefinition = world.GetQueryDefinition(bodies).WithOptionalRead<BodyActivity>();
         Queries[0] = world.Query(bodyDefinition.AsReadOnly());
         Queries[1] = world.Query(bodyDefinition);
         QueryDefinition references = QueryDefinition.Empty.WithAccessFrom(bodyDefinition.AsReadOnly());

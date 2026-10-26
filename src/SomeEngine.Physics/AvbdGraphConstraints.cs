@@ -8,13 +8,8 @@ using SomeEngine.Job;
 namespace SomeEngine.Physics;
 
 /// <summary>Concrete AVBD sets borrowing current rows for global preparation/duals and partitioned body updates.</summary>
-public interface IAvbdGraphConstraints
+public interface IAvbdGraphConstraints : IPhysicsGraphInputs
 {
-    int QueryCount { get; }
-    QueryHandle GetQuery(int index);
-    void AddResources(World world, List<JobResourceAccess> accesses, PhysicsGraphPhase phase) { }
-    void ReadGraph(in PhysicsStepContext context, ReadOnlySpan<QueryHandle> queries, int queryOffset,
-        ref PhysicsConstraintGraphBuilder graph);
     void Initialize(in PhysicsStepContext context, scoped EntityQueryViews queries, int queryOffset,
         scoped PhysicsBodies bodies, float retention);
     void AccumulateBodyEquation(in PhysicsStepContext context, scoped EntityQueryViews queries, int queryOffset,
