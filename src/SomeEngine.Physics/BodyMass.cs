@@ -16,6 +16,7 @@ public struct BodyMass : IComponent
     public float InverseMass;
 
     /// <summary>The full body-space inverse inertia tensor about the center of mass, in the upper 3×3.</summary>
+    /// <remarks>Zero body-axis rows select locked angular axes; remaining axes retain their full tensor coupling.</remarks>
     public Matrix4x4 InverseInertia;
 
     /// <summary>The center of mass relative to the body's local origin.</summary>
