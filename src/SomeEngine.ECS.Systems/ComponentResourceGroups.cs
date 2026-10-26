@@ -8,6 +8,8 @@ internal readonly record struct ComponentResourceRange(int Row, long Start, long
 internal sealed class ComponentResourceGroups(int rowCount)
 {
     private readonly int[] _parents = Enumerable.Range(0, rowCount).ToArray();
+    private readonly PriorityQueue<int, long> _ends = new();
+    private readonly HashSet<int> _reads = [], _writes = [];
 
     internal static bool AccessesMatch(ReadOnlySpan<JobResourceAccess> left, ReadOnlySpan<JobResourceAccess> right)
     {
@@ -38,22 +40,20 @@ internal sealed class ComponentResourceGroups(int rowCount)
     internal void JoinRanges(List<ComponentResourceRange> ranges)
     {
         ranges.Sort(static (left, right) => left.Start.CompareTo(right.Start));
-        int first = 0;
-        while (first < ranges.Count)
+        _ends.Clear(); _reads.Clear(); _writes.Clear();
+        for (int index = 0; index < ranges.Count; index++)
         {
-            long end = ranges[first].End;
-            bool writes = ranges[first].Writes;
-            int next = first + 1;
-            while (next < ranges.Count && ranges[next].Start < end)
+            ComponentResourceRange current = ranges[index];
+            while (_ends.TryPeek(out int ended, out long end) && end <= current.Start)
             {
-                end = Math.Max(end, ranges[next].End);
-                writes |= ranges[next].Writes;
-                next++;
+                _ends.Dequeue();
+                (ranges[ended].Writes ? _writes : _reads).Remove(ended);
             }
-            if (writes)
-                for (int index = first + 1; index < next; index++)
-                    Join(ranges[first].Row, ranges[index].Row);
-            first = next;
+            foreach (int previous in _writes) Join(current.Row, ranges[previous].Row);
+            if (current.Writes)
+                foreach (int previous in _reads) Join(current.Row, ranges[previous].Row);
+            (current.Writes ? _writes : _reads).Add(index);
+            _ends.Enqueue(index, current.End);
         }
     }
 
