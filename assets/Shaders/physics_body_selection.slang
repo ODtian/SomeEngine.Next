@@ -9,13 +9,12 @@ struct DeviceBodyStep
 };
 ConstantBuffer<DeviceBodyStep> BodyStep;
 StructuredBuffer<uint> DeviceBodyIndices;
+StructuredBuffer<uint> DeviceBodyMembership;
 struct DeviceSelectedBodies : IDeviceBodySelection
 {
     bool contains(uint body)
     {
-        for (uint index = 0; index < BodyStep.count; index++)
-            if (DeviceBodyIndices[index] == body) return true;
-        return false;
+        return DeviceBodyMembership[body] != 0;
     }
 };
 #endif
