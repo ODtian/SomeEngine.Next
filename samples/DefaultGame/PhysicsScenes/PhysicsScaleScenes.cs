@@ -12,6 +12,8 @@ public static class PhysicsScaleScenes
         new("pyramids-88200", "88,200 体金字塔阵列", 3, 402, "独立结构", "第 120 步逐结构撞击", "岛合并、坍塌与整步成本"),
         new("pyramids-176400", "176,400 体金字塔阵列", 3, 403, "独立结构", "第 120 步逐结构撞击", "岛合并、坍塌与整步成本"),
         new("joint-grid-100000", "100,000 节点关节网", 3, 404, "大型连接网络", "第 120 步面外冲量", "大连通网络、自接触与整步成本"),
+        new("breakable-100000", "100,000 砖可破坏结构", 3, 405, "可破坏连续结构", "第 120 步撞击", "局部断裂、连锁坍塌与岛重组"),
+        new("breakable-500000", "500,000 砖可破坏结构", 3, 406, "可破坏连续结构", "第 120 步撞击", "局部断裂、连锁坍塌与岛重组"),
     ]);
 
     public static PhysicsSceneSimulation CreateCpu<TCollision>(World world, PhysicsSceneDescription description,
@@ -26,8 +28,41 @@ public static class PhysicsScaleScenes
         402 => CreatePyramids(20, 21),
         403 => CreatePyramids(28, 30),
         404 => CreateJointGrid(),
+        405 => CreateBreakableBricks(10),
+        406 => CreateBreakableBricks(50),
         _ => throw new ArgumentOutOfRangeException(nameof(description)),
     };
+
+    private static PhysicsSceneData CreateBreakableBricks(int layers)
+    {
+        const int columns = 100, rows = 100, bodiesPerLayer = columns * rows;
+        PhysicsSceneData data = CreateBricks(layers);
+        var joints = new SceneJointData[(rows * (columns - 1) + columns * (rows - 1) + bodiesPerLayer) * layers];
+        int index = 0;
+        for (int layer = 0; layer < layers; layer++)
+            for (int row = 0; row < rows; row++)
+                for (int column = 0; column < columns; column++)
+                {
+                    int body = 1 + layer * bodiesPerLayer + row * columns + column;
+                    if (column > 0) Connect(body - 1, body);
+                    if (row > 0) Connect(body - columns, body);
+                    Connect(layer > 0 ? body - bodiesPerLayer : 0, body);
+                }
+        return data with { Joints = joints };
+
+        void Connect(int first, int second)
+        {
+            double[] firstPosition = data.Bodies[first].Position, secondPosition = data.Bodies[second].Position;
+            double[] point = first == 0 ? [secondPosition[0], secondPosition[1], 0]
+                : [(firstPosition[0] + secondPosition[0]) * .5, (firstPosition[1] + secondPosition[1]) * .5,
+                    (firstPosition[2] + secondPosition[2]) * .5];
+            joints[index] = new(first, second,
+                [point[0] - firstPosition[0], point[1] - firstPosition[1], point[2] - firstPosition[2]],
+                [point[0] - secondPosition[0], point[1] - secondPosition[1], point[2] - secondPosition[2]],
+                true, index, new ConstraintBreakSettings(1000, 200));
+            index++;
+        }
+    }
 
     private static PhysicsSceneData CreateJointGrid()
     {
