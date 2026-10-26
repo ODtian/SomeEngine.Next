@@ -26,7 +26,7 @@ ConstantBuffer<DeviceConstraintGraphParameters> ConstraintGraphParameters;
 RWStructuredBuffer<uint4> ConstraintGraphRows;
 // Participant = body index, write role. Static/unselected bodies remain read inputs.
 RWStructuredBuffer<uint2> ConstraintGraphParticipants;
-RWStructuredBuffer<uint> ConstraintGraphParents;
+globallycoherent RWStructuredBuffer<uint> ConstraintGraphParents;
 RWStructuredBuffer<uint> ConstraintGraphBodyColors;
 RWStructuredBuffer<uint> ConstraintGraphRowColors;
 RWStructuredBuffer<uint> ConstraintGraphBodyOrder;
