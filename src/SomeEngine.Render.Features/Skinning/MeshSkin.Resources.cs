@@ -28,14 +28,8 @@ public sealed partial class SkinRenderExtractor
 
     private readonly struct GpuPoseTargetReads : IJobComponentResources<GpuPoseTarget>
     {
-        public static long GetVersion(in GpuPoseTarget component) => unchecked((long)component.Skeleton.BindingVersion);
-        public static void Collect(in GpuPoseTarget component, ref JobResourceAccessBuilder resources)
-        {
-            ReadSkeleton(component.Skeleton, ref resources);
-            if (component.Controls is { } controls)
-                resources.Read(controls.AsMemory());
-            if (!component.Readbacks.IsEmpty)
-                resources.Read(component.Readbacks);
-        }
+        public static long GetVersion(in GpuPoseTarget component) => GpuPoseTargetResources.GetVersion(in component);
+        public static void Collect(in GpuPoseTarget component, ref JobResourceAccessBuilder resources) =>
+            GpuPoseTargetResources.Collect(in component, ref resources);
     }
 }
