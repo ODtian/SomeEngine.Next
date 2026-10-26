@@ -23,7 +23,7 @@ public sealed partial class DeviceXpbdTests
         using var jobs = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
         using World world = WorldJobs.CreateWorld(scheduler: jobs);
         BoneTransform Bone(float x) => new() { Translation = new(x, 0, 0), Rotation = Quaternion.Identity, Scale = Vector3.One };
-        var skeleton = new Skeleton([-1, -1], [Bone(0), Bone(2)], [1, 2]);
+        var skeleton = new Skeleton([-1, 0], [Bone(0), Bone(2)], [1, 2]);
         using SkeletonInstance sourceInstance = new PoseStorage().CreateInstance(skeleton);
         using SkeletonInstance outputInstance = new PoseStorage().CreateInstance(skeleton);
         var basis = QuantizedClipData.Encode(new AnimationClip(skeleton, 1,
@@ -34,7 +34,8 @@ public sealed partial class DeviceXpbdTests
             new BoneMask([0, 1]), WeightParameter: 0));
         Entity source = GpuPoseAnimation.CreateTarget(world, sourceInstance);
         GpuPoseTarget sourceInput = world.Read<GpuPoseTarget>(source);
-        sourceInput.Blend = blend; sourceInput.Controls = [.5f]; sourceInput.Playing = true;
+        sourceInput.Blend = blend; sourceInput.Rig = new(blend, translationBone: 0);
+        sourceInput.ModelOffset = new(1, 2, 0); sourceInput.Controls = [.5f]; sourceInput.Playing = true;
         sourceInput.InputNumber = 1; sourceInput.CalculationTime = .1; sourceInput.PlaybackTime = .1f;
         world.Replace(source, sourceInput);
         QueryHandle sources = world.Query(world.QueryDefinition().Read<GpuPoseTarget>());
@@ -87,19 +88,24 @@ public sealed partial class DeviceXpbdTests
         var frame = new ImmediateSystemContext(world, 0, 0, .1);
         systems.Update(ref frame);
 
-        Near(new(3, 0, 0), sampled.ReadModels(source)[1].Translation);
-        Near(new(1, 0, 0), world.Read<BodyPose>(moving).Position);
-        Near(new(1, 0, 0), outputInstance.ModelPose.Transforms[1].Translation);
+        var expectedBase = new BoneTransform[2]; var expectedOverlay = new BoneTransform[2];
+        basis.CreateClip(skeleton).SampleLocal(.1f, expectedBase);
+        overlay.CreateClip(skeleton).SampleLocal(.1f, expectedOverlay);
+        Matrix4x4 expectedSource = BoneTransformOps.Lerp(in expectedBase[1], in expectedOverlay[1], .5f).ToMatrix() * expectedBase[0].ToMatrix();
+        Vector3 sourcePosition = expectedSource.Translation + sourceInput.ModelOffset;
+        Near(sourcePosition, sampled.ReadModels(source)[1].Translation);
+        Near(Vector3.Normalize(sourcePosition), world.Read<BodyPose>(moving).Position);
+        Near(Vector3.Normalize(sourcePosition), outputInstance.ModelPose.Transforms[1].Translation);
         Assert.Equal(.1, world.Read<BodyStepState>(moving).Time, 8);
         world.ReleaseQuery(poseReads); world.ReleaseQuery(poses); world.ReleaseQuery(rows); world.ReleaseQuery(members); world.ReleaseQuery(sources);
     }
 
     private DevicePoseKernels CompileDevicePoseSources()
     {
-        D3D12TestShader shader = shaderCompiler.CompileWithSearchPaths("game_pose_source", "#include \"gpu_pose_sampling.slang\"",
-            [new("AdvancePoseStates", SlangStage.Compute), new("SamplePoseLevel", SlangStage.Compute)], "sm_6_0", ShaderDirectory());
+        D3D12TestShader shader = shaderCompiler.CompileWithSearchPaths("game_pose_source", "#include \"gpu_pose_translation.slang\"",
+            [new("AdvancePoseStates", SlangStage.Compute), new("SamplePoseLevel", SlangStage.Compute), new("TranslatePose", SlangStage.Compute)], "sm_6_0", ShaderDirectory());
         ComputePipelineDesc Entry(int index) => new(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(index), shader.GetEntryCode(index));
-        return new(Entry(0), Entry(1));
+        return new(Entry(0), Entry(1), Entry(2));
     }
     private readonly struct FixedDevicePoseSampler : IClipSampler<BoneTransform[]>
     {

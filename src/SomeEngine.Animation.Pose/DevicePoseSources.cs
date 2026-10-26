@@ -12,7 +12,7 @@ using Buffer = SomeEngine.Graphics.Buffer;
 
 namespace SomeEngine.Animation.Pose;
 
-public readonly record struct DevicePoseKernels(ComputePipelineDesc Advance, ComputePipelineDesc Sample);
+public readonly record struct DevicePoseKernels(ComputePipelineDesc Advance, ComputePipelineDesc Sample, ComputePipelineDesc? Translate = null);
 public readonly record struct DevicePoseCapacity(int Targets, int Bones, int BlendStates, int BlendLocals, int Controls, int DefinitionBytes);
 
 /// <summary>Game-world source inputs and their device model transforms, before entity physics and rendering extraction.</summary>
@@ -31,15 +31,17 @@ public sealed partial class DevicePoseSources : IDisposable
     private readonly List<IDisposable> _objects = [];
     private readonly List<UploadBuffer> _uploads = [];
     private readonly List<Buffer> _states = [];
-    private readonly UploadBuffer _controls, _inputs, _definitions, _roots, _work;
+    private readonly UploadBuffer _controls, _inputs, _definitions, _roots, _offsets, _work;
     private readonly Buffer _historyCurrent, _historyPrevious, _readback;
     private readonly Dictionary<string, ResourceBinding[]> _bindings = [];
     private readonly List<BufferSrv> _workViews = [];
     private readonly List<ResourceBinding[]> _sampleBindings = [];
+    private readonly List<ResourceBinding[]> _translationBindings = [];
     private readonly List<int> _workCounts = [];
     private BufferSrv? _controlView;
     private ResourceBinding[] _advanceBindings = [];
     private readonly Pipeline[] _pipelines;
+    private readonly int _translateKernel;
     private readonly VariableLayoutReflection[] _layouts;
     private readonly CommandContext _commands;
     private readonly Matrix4x4[] _models;
@@ -60,7 +62,8 @@ public sealed partial class DevicePoseSources : IDisposable
         _inputs = CreateUpload(capacity.Controls * 4, 4, "GpuPoseInputs");
         _definitions = CreateUpload(capacity.DefinitionBytes, 0, "GpuPoseClips");
         _roots = CreateUpload(capacity.Targets * 32, 32, "GpuPoseRoots");
-        _work = CreateUpload(capacity.Bones * 16, 16, "GpuPoseWork");
+        _offsets = CreateUpload(capacity.Targets * 16, 16, "GpuPoseOffsets");
+        _work = CreateUpload((capacity.Bones + capacity.Targets) * 16, 16, "GpuPoseWork");
         CreateState(capacity.Targets * 64, 64, "GpuPosePlaybackStates");
         CreateState(capacity.BlendStates * 32, 32, "GpuBlendStates");
         CreateState(capacity.BlendLocals * 48, 48, "GpuBlendLocals");
@@ -69,7 +72,9 @@ public sealed partial class DevicePoseSources : IDisposable
         _historyPrevious = CreateState(capacity.Bones * 128, 64, "GpuPoseHistoryPrevious");
         _readback = Keep(backend.CreateBuffer(device, new((ulong)capacity.Bones * 64, BufferUsages.CopyDestination), MemoryType.Readback));
         _commands = Keep(backend.CreateCommandContext(device, new(QueueType.Compute, 0, 1, Label: "Game pose sources")));
-        ComputePipelineDesc[] descriptions = [kernels.Advance, kernels.Sample];
+        var descriptions = new List<ComputePipelineDesc> { kernels.Advance, kernels.Sample };
+        _translateKernel = kernels.Translate.HasValue ? descriptions.Count : -1;
+        if (kernels.Translate is { } translate) descriptions.Add(translate);
         _pipelines = descriptions.Select(kernel => Keep(backend.CreateComputePipeline(device, kernel))).ToArray();
         _layouts = descriptions.Select(kernel => kernel.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null).ToArray();
     }
@@ -135,6 +140,7 @@ public sealed partial class DevicePoseSources : IDisposable
         {
             Dispatch(0, _advanceBindings, _order.Count);
             for (int level = 0; level < _sampleBindings.Count; level++) Dispatch(1, _sampleBindings[level], _workCounts[level]);
+            foreach (ResourceBinding[] bindings in _translationBindings) Dispatch(_translateKernel, bindings, 1);
         }
         using RecordedCommands recorded = _backend.End(_commands);
         return _backend.Submit(_backend.GetQueue(_device, QueueType.Compute), new([], [], [recorded], [], []));
