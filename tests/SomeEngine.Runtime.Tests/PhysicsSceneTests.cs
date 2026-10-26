@@ -2,6 +2,7 @@ using System.Numerics;
 using DefaultGame;
 using SomeEngine.Core.ECS.Components;
 using SomeEngine.ECS;
+using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Relations;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Job;
@@ -11,6 +12,46 @@ namespace SomeEngine.Runtime.Tests;
 
 public sealed class PhysicsSceneTests
 {
+    [Fact]
+    public void TheRestingSceneSleepsAndItsTimedHopReachesTheCompletedEventConsumer()
+    {
+        using var scheduler = new Scheduler(new() { WorkerCount = 2 });
+        using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+        var observed = new List<(long Number, PhysicsEvent Value)>();
+        PhysicsSceneDescription description = PhysicsScenes.All.Single(scene => scene.Id == "recontact-hops");
+        using var scene = PhysicsScenes.CreateCpu(world, description, new ConvexCollision<BoxGeometry, BoxGeometry>(new(1e-5f, 32, 64)),
+            new PhysicsSceneSettings(Iterations: 16, BodyIterations: 3, StepBudgetMilliseconds: 1000d / 60)
+            {
+                Activity = new BodyActivitySettings(.1f, .05f, .001f, .001f),
+            }, new RecordCompletedSceneEvents(observed), [JobResourceAccess.Write(scheduler.GetResourceToken(observed))]);
+        var body = scene.Bodies.Span[1];
+
+        scene.Frame.AdvanceTime(61.5 * scene.StepSeconds);
+        PhysicsStepResult result = scene.CompleteForRead();
+
+        Assert.Equal(60, result.Number);
+        int sleep = observed.FindIndex(item => item.Value.Kind == PhysicsEventKind.Sleep && item.Value.Subject == body);
+        int wake = observed.FindIndex(item => item.Value.Kind == PhysicsEventKind.Wake && item.Value.Subject == body);
+        Assert.True(sleep >= 0);
+        Assert.True(wake > sleep);
+        Assert.Equal(60, observed[wake].Number);
+        Assert.Equal(1, observed[wake].Value.Time);
+        Assert.Contains(observed, item => item.Number == 60 && item.Value.Kind == PhysicsEventKind.Contact && item.Value.Phase == PhysicsEventPhase.End);
+        Assert.False(world.Read<BodyActivity>(body).Sleeping);
+        Assert.True(world.Read<LocalTransform>(body).Value.Position.Z > .52f);
+        QueryHandle events = world.Query(new QueryDefinitionBuilder().All<ScenePhysicsEventStream>());
+        Assert.False(world.HasQueryMembers(events));
+        world.ReleaseQuery(events);
+    }
+
+    private readonly struct RecordCompletedSceneEvents(List<(long Number, PhysicsEvent Value)> output) : IPhysicsEventConsumer
+    {
+        public void Consume(scoped in PhysicsStepEvents step, scoped ReadOnlySpan<PhysicsEvent> events, ref JobCommandWriter commands)
+        {
+            foreach (PhysicsEvent value in events) output.Add((step.Number, value));
+        }
+    }
+
     [Fact]
     public void TheCounterweightKeepsTheOriginalRelativeRotationOfItsLockedConnection()
     {

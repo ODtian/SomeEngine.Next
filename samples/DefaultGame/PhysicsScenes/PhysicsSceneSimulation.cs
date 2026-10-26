@@ -6,7 +6,10 @@ using SomeEngine.Physics;
 
 namespace DefaultGame;
 
-public readonly record struct PhysicsSceneSettings(int Iterations, int BodyIterations, double StepBudgetMilliseconds);
+public readonly record struct PhysicsSceneSettings(int Iterations, int BodyIterations, double StepBudgetMilliseconds)
+{
+    public BodyActivitySettings Activity { get; init; } = new(.05f, .5f, .001f, .001f);
+}
 
 internal readonly record struct PhysicsSceneEntities(Entity[] Bodies, Entity[] Joints, Entity[] DistanceRanges, bool HasInputChanges);
 
