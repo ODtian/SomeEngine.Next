@@ -95,6 +95,22 @@ Skinning 提供共同编码，[gpu_pose_sampling](../../../assets/Shaders/gpu_po
 来源结果可在共同物理步中转入原 Body，再由原 PhysicsPose 消费完成状态；
 骨骼输出继续沿 Game world 到 Rendering world 的既有提取通路。
 
+`DevicePosePhysics.Bind(target)` 为原 `GpuXpbdPose` 步骤创建实际 Body 实体、
+`XpbdLength` 关系与 `XpbdBend` 参与实体，`GetBodies(target, rigStep)` 返回链的原 Body。
+项目显式选择该对象的 `Bodies`、`Lengths`、`Bends` 和 multiplier 表示，
+在来源阶段之前调度 `Upload()`；来源阶段读取同一参数，世界位置与速度保存在所选 Body 表示。
+当前源父 G 与 actor 变换给出世界 rest length，链按原等分子步、指数阻尼及 Length→Bend 顺序求解，
+随后用完成 Body 位置形成 source-frame swing 和后代骨骼输出。
+具体入口与独立数值观察见 [DevicePoseChainTests](../../../tests/SomeEngine.Graphics.Direct3D12.Tests/DevicePoseChainTests.cs)。
+
+`DevicePoseSources.CopyOutput()` 把完成模型、局部样本和播放行复制到轮换的两个消费缓冲，
+GPU copy 完成后经原命令回放写入目标的 `DevicePoseOutput` 完成编号和时刻。
+来源接受的输入与物理时钟保存在该目标实体；来源输入列可以继续接受下一次更新。
+`GpuPoseAnimation.ReadDeviceOutput(world, target)` 在读取完成组件时保留所选 GPU 范围，
+消费者使用 `DevicePoseOutputRead.CompleteAfter` 连接真实复制完成点，或在结束采集时释放读取。
+公开 [Graphics 消费检查](../../../tests/SomeEngine.Graphics.Direct3D12.Tests/DevicePoseOutputTests.cs)
+覆盖旧姿势读取期间继续 Body 结果消费与来源输入更新，以及复制结束后的输出接续。
+
 ## GPU 求值与历史
 
 `SkinningFeature` 汇总所有活动区段，为每段分配连续 G 范围。量化片段、层级工作表、

@@ -16,6 +16,7 @@ public static partial class PhysicsScenes
 {
     internal static PhysicsSceneData Create(PhysicsSceneDescription description)
     {
+        if (description.Scene >= 400) return PhysicsScaleScenes.Create(description);
         PhysicsSceneData input = description.Scene >= 200 ? Create((PhysicsScene)description.Scene)
             : CreateOriginal(description.Dimension, description.Scene);
         if (description.DisturbanceFrame >= 0)

@@ -21,7 +21,7 @@ public static class PhysicsScaleScenes
         where TCollision : struct, ICollisionNarrowPhase<BoxGeometry, BoxGeometry> =>
         PhysicsScenes.CreateCpu(world, description, Create(description), collision, settings);
 
-    private static PhysicsSceneData Create(PhysicsSceneDescription description) => description.Scene switch
+    internal static PhysicsSceneData Create(PhysicsSceneDescription description) => description.Scene switch
     {
         400 => CreateBricks(11),
         401 => CreateBricks(51),

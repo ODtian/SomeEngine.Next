@@ -14,6 +14,7 @@ namespace DefaultGame;
 public sealed record TestScene(string Name, string ContentDirectory, bool Animate = false)
 {
     public SimulationFrameWindow? MeasurementFrames { get; init; }
+    public bool? WorldNameplates { get; init; }
     [JsonIgnore] public Action<ApplicationFrame>? Initialize { get; init; }
     [JsonIgnore] public Action<ApplicationFrame>? UpdateFrame { get; init; }
     [JsonIgnore] public Action<ApplicationFrameTiming>? FrameMeasured { get; init; }
@@ -63,10 +64,13 @@ public sealed partial class SceneTestPlatform
     {
         if (scenes.Count == 0) throw new ArgumentException("At least one test scene is required.", nameof(scenes));
         Scenes = scenes.ToArray();
+        RuntimeStartupOptions startup = options ?? RuntimeStartupOptions.Parse([])
+            with { AsyncCompute = true, SurfacePanel = true, WorldNameplates = true };
+        _defaultWorldNameplates = startup.WorldNameplates;
         Application = new ApplicationScene(scenes[0].ContentDirectory)
         {
-            Options = (options ?? RuntimeStartupOptions.Parse([]) with { AsyncCompute = true, SurfacePanel = true, WorldNameplates = true })
-                with { WindowVSync = false, DynamicScene = scenes[0].Animate },
+            Options = startup with { WindowVSync = false, DynamicScene = scenes[0].Animate,
+                WorldNameplates = scenes[0].WorldNameplates ?? _defaultWorldNameplates },
             InterfaceEnabled = true,
             DeformCacheBytes = scenes[0].DeformCacheBytes,
             Initialize = frame =>
@@ -86,6 +90,7 @@ public sealed partial class SceneTestPlatform
     }
 
     public IReadOnlyList<TestScene> Scenes { get; }
+    private readonly bool _defaultWorldNameplates;
     public int SelectedScene { get; private set; }
     public ApplicationScene Application { get; }
     public Action<SceneEdit, TestScene>? InitializeScene { get; init; }
@@ -270,7 +275,8 @@ public sealed partial class SceneTestPlatform
         Application.DeformCacheBytes = Current.DeformCacheBytes;
         Application.FrameMeasured = IsMeasuring ? RecordCompletedFrame : Current.FrameMeasured;
         Application.UpdateFrame = SceneUpdate;
-        Options = Options with { DynamicScene = Current.Animate };
+        Options = Options with { DynamicScene = Current.Animate,
+            WorldNameplates = Current.WorldNameplates ?? _defaultWorldNameplates };
         Application.Reload();
     }
 

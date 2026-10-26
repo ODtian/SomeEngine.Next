@@ -1,6 +1,6 @@
 #ifndef PHYSICS_BODY_DYNAMICS
 #define PHYSICS_BODY_DYNAMICS
-#include "physics_body_math.slang"
+#include "physics_body_prediction.slang"
 #include "physics_body_selection.slang"
 
 // Newton v1.7.0 body-space gyroscopic torque; copyright (c) 2025 The Newton Developers.
@@ -21,36 +21,12 @@ void ApplyDeviceGyroscopicTorque(uint3 id : SV_DispatchThreadID)
 
 void predictDeviceBody(uint index, bool advance, bool resume)
 {
-    DeviceBodyState body = DeviceBodyStates[index];
-    if (!resume)
-    {
-        body.startCenterOfMass = bodyCenterOfMass(body);
-        body.startRotation = body.rotation;
-    }
-    body.number = BodyStep.number;
-    body.substep = int(BodyStep.substep);
-    body.time = BodyStep.time;
-    if (advance)
-    {
-        if (body.motion == 2) body.linearVelocity += BodyStep.acceleration * BodyStep.duration;
-        if (body.motion != 0)
-        {
-            body.rotation = bodyIntegrateRotation(body.rotation, body.angularVelocity, BodyStep.duration);
-            bodySetCenterOfMass(body, body.startCenterOfMass + body.linearVelocity * BodyStep.duration);
-        }
-    }
-    body.predictedCenterOfMass = bodyCenterOfMass(body);
-    body.predictedRotation = body.rotation;
-    DeviceBodyStates[index] = body;
+    DeviceBodyStates[index] = predictDeviceBodyState(DeviceBodyStates[index], BodyStep, advance, resume);
 }
 
 void updateDeviceBodyVelocity(uint index)
 {
-    DeviceBodyState body = DeviceBodyStates[index];
-    if (body.motion == 0) return;
-    body.linearVelocity = (bodyCenterOfMass(body) - body.startCenterOfMass) / BodyStep.duration;
-    body.angularVelocity = bodyRotationVelocity(body.startRotation, body.rotation, BodyStep.duration);
-    DeviceBodyStates[index] = body;
+    DeviceBodyStates[index] = updateDeviceBodyVelocityState(DeviceBodyStates[index], BodyStep.duration);
 }
 
 [shader("compute")][numthreads(64, 1, 1)]

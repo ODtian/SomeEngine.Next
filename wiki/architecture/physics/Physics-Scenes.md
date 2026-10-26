@@ -35,9 +35,31 @@ CPU 场景通过 `solve.Activity` 共享原求解图，`BodyActivity` 单处保�
 
 带具体 `IPhysicsEventConsumer` 的 `CreateCpu` 重载把接触和活动结果交给原帧消费窗口。`ScenePhysicsEventStream` 标记完成步事件实体；`ConsumePhysicsEvents` 将截至当前完成步的全部历史交给调用方，再通过原命令链确认这些实体。调用方传入 `eventAccesses` 声明消费者资料；原四参数和场景数据入口委托同一创建与事件链。
 
-`PhysicsSceneSettings` 显式保存外层迭代、每体局部迭代和整步预算声明。原步长及子步数来自创建数据。输入的 `Frame` 表示物理步编号；连接移除与位置变化在该步的第一子步、共同预测之前沿原命令链回放。速度增量按 `mass * deltaVelocity` 转成世界冲量，由 `ApplyBodyInputs` 在对应时间区间应用。
+`PhysicsSceneSettings` 显式保存外层迭代、每体局部迭代、乘子保留比例、图组织、接触距离和整步预算声明。CPU 与 GPU 读取同一乘子保留字段，工作量描述同时列出该值。原步长及子步数来自创建数据。输入的 `Frame` 表示物理步编号；连接移除与位置变化在该步的第一子步、共同预测之前沿原命令链回放。速度增量按 `mass * deltaVelocity` 转成世界冲量，由 `ApplyBodyInputs` 在对应时间区间应用。
 
 `PhysicsSceneSimulation.Frame` 引用原 `PhysicsFrame`。帧消费者从实体 `BodyPose` 更新同一实体的 `LocalTransform`，保留其几何缩放；`CompleteForRead()` 直接完成该帧与消费者的原 Job 链，并交回完成步编号和时刻。下一步继续依赖同一消费完成。完成边界见[物理帧](Physics-Frames.md)。
+
+`PhysicsSceneSimulation` 同时实现 `IGameFramePhysics`，将时间推进、完成消费、后续提交和完成句柄委托给上述同一帧。`GameFrameSystems.Physics` 持有整个场景对象，沿既有帧生命周期先完成物理及消费者，再释放场景查询和派生资源。
+
+## 统一场景平台与测量
+
+[PhysicsSceneExample](../../../samples/DefaultGame/PhysicsScenes/PhysicsSceneExample.cs) 将原目录接入 `TestScene.Initialize` 与 `DescribeWorkload`。创建沿同一 `CreateCpu`，原 Body 实体附加 `WorldTransform`、盒体 `MeshInstance` 与项目材质 Buffer；项目明确选择 `StandardClusterVertexEncoder`。`LocalTransform` 经原 `TransformSystem`、`MeshRenderExtractor` 进入 Rendering world，场景相机根据原动态 Body 的范围定位。
+
+DefaultGame 的 `--physics` 选择完整物理目录，`--physics=<id>` 选择一个原场景。CPU 示例明确选择 AVBD、BVH refit、二维 `PlanarBoxCollision` 或三维 `ConvexCollision`、8 轮外迭代、每体 1 轮、6 层关节长程界、接触长程支撑、0.02 m 接触距离和每步 1000/60 ms 预算。工作量描述包含实际实体与约束规模、原步长、子步、图组织、原事件以及完成事件统计；每种事件分别列出首末物理步和事件时刻。
+
+`--physics-content=<目录>` 将 DefaultGame 现有已构建内容目录交给原 `TestScene.ContentDirectory`，共享其材质模板、灯光和渲染配置。示例显式接收项目的 `StandardMaterial` 模板，为静态与动态 Body 选择不同颜色及少量自发光，共用同一盒体几何。
+
+`TestScene.WorldNameplates` 在首次创建和场景切换时选定该内容的名牌配置。物理示例以原 Body 取代加载内容的网格实体，选择关闭原小球名牌；返回原内容时恢复启动配置。
+
+[MeasurePhysicsScenes](../../../samples/DefaultGame/PhysicsScenes/MeasurePhysicsScenes.cs) 通过 `--physics-check` 运行全部原目录，`--physics-check=<id>` 运行单个场景。物理窗口为至少 180 步，并覆盖最后一次原输入及其后 120 步运动。每次同步完成一个原物理步；采样时钟保留半步的提交余量，报告的结果编号与时刻继续采用原物理区间。
+
+渲染帧统计使用既有第 128 帧起的就绪窗口，窗口长度随上述完整场景时长声明；物理整步统计从原步骤 0 开始。统一渲染三场景仍由 `--regression` 选择其原目录与测量时限。
+
+主计时从 `Frame.AdvanceTime` 开始，至 `CompleteForRead` 完成原变换与事件消费者结束，包含所有阶段的调用线程工作和异步完成等待。结果列出整步平均值、p95、p99、最大值、当前及峰值实体/接触/活动量、真实连接与几何结果、最终动态体质心及范围、总线动量、最终线/角速度及其全过程峰值、托管存活内存及进程峰值工作集。原输入线动量同时列于工作量描述，供自由碰撞与惯性场景核对。诊断读取另列耗时。进程峰值范围包含该进程的创建和此前场景；单场景独立进程可得到各自的进程峰值范围。
+
+每个场景声明零热身步数，全部原步骤与首步成本进入采样，并单列首步耗时及当前进程 JIT 配置。`WithinBudget` 表达所测整步最大耗时与该场景预算的比较；行为验收继续核对相应场景的运动、约束间距和事件结果。
+
+附加 `--physics-trace=<外部路径>` 使用现有 `EngineTrace` 捕获同一运行窗口。具体阶段包装记录 `Schedule` 提交耗时和依赖就绪至完成的区间；两个范围可以重叠，分别呈现。阶段诊断为每段增加 Start 与 Finish Job，开销随诊断结果保留。普通预算运行沿同一工厂选择 `timings=null`。原分区准备、pair count、bin prefix、pair write 和 narrow phase 的 Trace 站点进一步分解碰撞成本，并记录候选数和检测数。带 trace 的定位与普通整步预算分别比较，测量沿根级公共队列提交，捕获消费后清理。
 
 ## 使用例子
 
