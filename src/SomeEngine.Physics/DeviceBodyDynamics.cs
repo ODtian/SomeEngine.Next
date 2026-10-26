@@ -10,7 +10,8 @@ using Buffer = SomeEngine.Graphics.Buffer;
 
 namespace SomeEngine.Physics;
 
-public readonly record struct DeviceBodyKernels(ComputePipelineDesc Predict, ComputePipelineDesc UpdateVelocities);
+public readonly record struct DeviceBodyKernels(ComputePipelineDesc Predict, ComputePipelineDesc UpdateVelocities,
+    ComputePipelineDesc? GyroscopicTorque = null);
 
 /// <summary>Integrates and reconstructs the selected entities in their existing device body buffer.</summary>
 public sealed class DeviceBodyDynamics : IDisposable
@@ -46,7 +47,8 @@ public sealed class DeviceBodyDynamics : IDisposable
         _indicesView = backend.CreateBufferSrv(device, new(_indices, new(0, _indices.Info.Size), StructureStride: 4));
         _parametersView = backend.CreateBufferCbv(device, new(_parameters, new(0, 256)));
         _commands = backend.CreateCommandContext(device, new(QueueType.Compute, 0, 1, Label: "Device body dynamics"));
-        ComputePipelineDesc[] descriptions = [kernels.Predict, kernels.UpdateVelocities];
+        ComputePipelineDesc[] descriptions = kernels.GyroscopicTorque is { } gyro
+            ? [kernels.Predict, kernels.UpdateVelocities, gyro] : [kernels.Predict, kernels.UpdateVelocities];
         _pipelines = descriptions.Select(kernel => backend.CreateComputePipeline(device, kernel)).ToArray();
         _layouts = descriptions.Select(kernel => kernel.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null).ToArray();
         var bindings = new Dictionary<string, ResourceBinding[]>
@@ -60,6 +62,7 @@ public sealed class DeviceBodyDynamics : IDisposable
 
     public PredictDeviceBodies Predict(Vector3 acceleration) => new(this, acceleration);
     public UpdateDeviceBodyVelocities UpdateVelocities() => new(this);
+    public ApplyDeviceGyroscopicTorque ApplyGyroscopicTorque() => new(this);
 
     internal void AddSelectionBindings(Dictionary<string, ResourceBinding[]> bindings)
     {
@@ -158,4 +161,8 @@ public readonly struct PredictDeviceBodies(DeviceBodyDynamics dynamics, Vector3 
 public readonly struct UpdateDeviceBodyVelocities(DeviceBodyDynamics dynamics) : IPhysicsStage
 {
     public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) => dynamics.Schedule(in context, Vector3.Zero, 1, dependency);
+}
+public readonly struct ApplyDeviceGyroscopicTorque(DeviceBodyDynamics dynamics) : IPhysicsStage
+{
+    public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) => dynamics.Schedule(in context, Vector3.Zero, 2, dependency);
 }
