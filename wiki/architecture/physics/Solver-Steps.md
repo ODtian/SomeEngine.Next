@@ -92,6 +92,11 @@ return dependency;
 
 `BodyMass.InverseInertia` 的上侧三阶张量全零时，动态 Body 使用三维平移局部方程。
 `AvbdBodyEquation` 仅对这三个自由度装配、分解和求响应，转动力矩的位姿响应为零。
-具有转动参与的 Body 使用原六维平移/转动耦合块与完整体惯量。
+`InverseInertia` 的零体轴行选择锁定角轴，其余体轴保留原张量耦合。
+`AvbdBodyEquation` 在三个平移轴及实际活动角轴上装配和分解；
+部分角轴随当前 `BodyPose` 转到世界空间，Jacobian 投影后进入同一局部块，
+`SolveResponse` 将响应重建为世界平移和旋转向量。
+例如体空间 `diag(0,0,invIzz)` 只产生绕体 Z 的角响应，偏心锚仍与平移共同求解。
+完整体惯量继续使用原世界 XYZ 角基与六维耦合块。
 [ApplyGyroscopicTorque](../../../src/SomeEngine.Physics/ApplyGyroscopicTorque.cs) 同样依据实际转动参与计算陀螺作用。
 动态胶囊、边和面的 reader 继续提供节点实体、局部锚及插值权重，求解从原组件取得对应自由度。
