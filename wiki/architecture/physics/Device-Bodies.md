@@ -63,6 +63,8 @@ StepState 的写版本；新实体按绑定初始化整行，既有实体只复�
 `UpdateVelocities()` 从同一子步起点与完成位姿重建线、角速度。
 `UpdateSelection()` 在 CPU 阶段读取原参与查询，更新同一主体索引、直接查找的成员标记与
 本轮参数，供预测前的活动或图阶段使用。各数值提交继续沿同一捕获函数读取当前成员。
+原查询的 `MembershipVersion` 或 `DeviceBodyBinding` 列版本变化时，重新填写派生索引与成员标记；
+其余调用复用这两个缓冲和当前数量。步长、加速度、子步、编号和完成时刻继续逐调用更新。
 项目提供第三个具体 `GyroscopicTorque` 内核后，`ApplyGyroscopicTorque()` 在预测前
 沿原完整体坐标惯量施加陀螺力矩；纯平移主体继续使用其三维自由度。
 `bodyRotationMask` 沿原逆惯量的非零体轴确定活动角轴；恢复体惯量时为零轴补单位，

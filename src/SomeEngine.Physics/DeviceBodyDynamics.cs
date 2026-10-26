@@ -33,6 +33,9 @@ public sealed class DeviceBodyDynamics : IDisposable
     private readonly JobResourceAccess[] _queryAccesses;
     private readonly JobResourceAccess[] _extraAccesses;
     private readonly int _gyroKernel, _resumeKernel;
+    private uint _membershipVersion, _selectionSystemVersion;
+    private int _selectionCount;
+    private bool _hasSelection;
 
     public DeviceBodyDynamics(IGraphicsBackend backend, Device device, World world, QueryHandle members,
         DeviceBodies bodies, DeviceBodyKernels kernels, int threadsPerGroup,
@@ -115,26 +118,38 @@ public sealed class DeviceBodyDynamics : IDisposable
 
     private int CaptureSelection(in PhysicsStepContext context, Vector3 acceleration)
     {
-        int count = 0;
-        using (MappedBuffer mapping = _backend.Map(_indices, MapType.Write, BufferRange.Whole))
-        using (MappedBuffer membership = _backend.Map(_membership, MapType.Write, BufferRange.Whole))
+        uint membershipVersion = _world.MembershipVersion(_members);
+        var changes = (Changed: !_hasSelection || membershipVersion != _membershipVersion, Version: 0u);
+        _world.ExecuteReadQuery(_members, _selectionSystemVersion, ref changes,
+            static (scoped QueryCursor rows, ref (bool Changed, uint Version) changes) =>
+            {
+                changes.Version = rows.CurrentSystemVersion;
+                if (changes.Changed) return;
+                foreach (QueryChunkView chunk in rows.Chunks)
+                    if (chunk.HasChangedSinceLastSystemVersion<DeviceBodyBinding>()) { changes.Changed = true; break; }
+            });
+        if (changes.Changed)
         {
+            using MappedBuffer mapping = _backend.Map(_indices, MapType.Write, BufferRange.Whole);
+            using MappedBuffer membership = _backend.Map(_membership, MapType.Write, BufferRange.Whole);
             membership.Bytes.Clear();
             var selection = new Selection(_bodies, mapping, membership);
             _world.ExecuteReadQuery(_members, ref selection,
                 static (scoped QueryCursor rows, ref Selection selected) => selected.Read(rows));
-            count = selection.Count;
-            mapping.Flush(new(0, (ulong)count * 4));
+            _selectionCount = selection.Count;
+            mapping.Flush(new(0, (ulong)_selectionCount * 4));
             membership.Flush(membership.Range);
+            _hasSelection = true;
         }
-        var parameters = new BodyStep((uint)count, (float)context.Duration, (uint)context.Substep,
+        _membershipVersion = membershipVersion; _selectionSystemVersion = changes.Version;
+        var parameters = new BodyStep((uint)_selectionCount, (float)context.Duration, (uint)context.Substep,
             acceleration, context.Number, context.EndTime);
         using (MappedBuffer mapping = _backend.Map(_parameters, MapType.Write, BufferRange.Whole))
         {
             MemoryMarshal.Write(mapping.Bytes, in parameters);
             mapping.Flush(new(0, (ulong)Marshal.SizeOf<BodyStep>()));
         }
-        return count;
+        return _selectionCount;
     }
     private QueueCompletion Submit(in PhysicsStepContext context, Vector3 acceleration, int kernel)
     {
