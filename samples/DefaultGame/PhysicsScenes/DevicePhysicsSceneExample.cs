@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using System.Numerics;
 using SomeEngine.ECS;
 using SomeEngine.Graphics;
 using SomeEngine.Physics;
@@ -27,6 +28,10 @@ public sealed partial class PhysicsSceneExample : IApplicationGeometryFeature
         new(description, new PhysicsSceneSettings(Iterations: 16, BodyIterations: 2, StepBudgetMilliseconds: 1000d / 60)
         {
             ContactDistance = .02f,
+            ContactNormalPenalty = 100,
+            ContactTangentPenalty = 100,
+            ContactSupports = new ContactSupportSettings(description.Dimension == 2 ? Vector3.UnitY : Vector3.UnitZ,
+                1e-5f, 1e-4f, 1e-4f, 1e-4f, .99f, .99f, 1e-6f),
             Timings = timings,
         }) { _devicePhysics = true };
 
@@ -51,6 +56,13 @@ public sealed partial class PhysicsSceneExample : IApplicationGeometryFeature
         _workload["BroadPhase"] = "Hierarchical grid";
         _workload["NarrowPhase"] = "DeviceConvexCollision<DeviceBox, DeviceBox>";
         _workload["Graph"] = new JsonObject { ["Order"] = "Device islands and colors" };
+        JsonObject solver = (JsonObject)_workload["Solver"]!;
+        solver["ContactConstraint"] = "DeviceContactPotentialAvbdConstraints";
+        solver["ContactPenaltyConditioning"] = "Inverse squared step and contact Jacobian mobility";
+        solver["ContactPenaltyMinimum"] = 1;
+        solver["ContactPenaltyMaximum"] = 1e9f;
+        solver["ContactPenaltyIncreasePerMeter"] = 100000;
+        solver["ContactPressureLengthScale"] = .0005f;
         _workload["Grid"] = new JsonObject
         {
             ["CellSize"] = gridSettings.CellSize, ["Levels"] = gridSettings.LevelCount,

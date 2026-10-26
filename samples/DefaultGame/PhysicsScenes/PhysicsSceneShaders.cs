@@ -74,9 +74,9 @@ internal sealed class PhysicsSceneShaders
     internal ComputePipelineDesc ContactGeometry() => Compile("scene_contact_geometry",
         "#include \"physics_contact_geometry.slang\"", "UpdateDeviceContactGeometry")[0];
 
-    internal DeviceGraphKernels Graph()
+    internal DeviceGraphKernels Graph(bool contactSupports)
     {
-        ComputePipelineDesc[] entries = Compile("scene_contact_graph", """
+        ComputePipelineDesc[] entries = Compile("scene_contact_graph", SupportDefine(contactSupports) + """
             #include "physics_body_activity_types.slang"
             #define DEVICE_GRAPH_BODY_ACTIVE(body) deviceBodyActivityAwake(body)
             #include "physics_contact_data.slang"
@@ -85,9 +85,15 @@ internal sealed class PhysicsSceneShaders
             typedef DeviceConstraintBodyGroups<
                 DeviceConstraintBodyGroups<DeviceContactBodies,DeviceJointBodies>,
                 DeviceDistanceRangeBodies> SceneConstraintBodies;
+            #if SCENE_CONTACT_SUPPORTS
+            #include "physics_contact_support_bodies.slang"
+            typedef DeviceConstraintBodyGroups<SceneConstraintBodies,DeviceSupportBodies> SceneGraphRows;
+            #else
+            typedef SceneConstraintBodies SceneGraphRows;
+            #endif
             [shader("compute")][numthreads(64,1,1)]
             void WriteRows(uint3 id : SV_DispatchThreadID)
-            { SceneConstraintBodies rows; writeDeviceConstraintGraphRows(id.x,rows); }
+            { SceneGraphRows rows; writeDeviceConstraintGraphRows(id.x,rows); }
             #include "physics_constraint_graph_parallel.slang"
             """, "WriteRows", "InitializeDeviceGraph", "ConnectDeviceGraph", "CompressDeviceGraph",
             "ScanDeviceGraphDegrees", "OffsetDeviceGraphBlocks", "AddDeviceGraphDegreeOffsets",
@@ -100,29 +106,101 @@ internal sealed class PhysicsSceneShaders
             entries[13], entries[14], entries[15], entries[16], entries[17]));
     }
 
-    internal DeviceAvbdKernels Avbd()
+    internal DeviceAvbdKernels Avbd(bool contactSupports)
     {
-        ComputePipelineDesc[] entries = Compile("scene_contact_avbd", """
+        ComputePipelineDesc[] entries = Compile("scene_contact_avbd", SupportDefine(contactSupports) + """
             #include "physics_avbd_contact.slang"
             #include "physics_avbd_joint.slang"
             #include "physics_avbd_distance_range.slang"
             #include "physics_awake_avbd.slang"
+            #if SCENE_CONTACT_SUPPORTS
+            #include "physics_avbd_contact_support.slang"
+            #endif
+            struct SceneContactAvbdConstraints : IDeviceAvbdConstraints
+            {
+                DeviceContactPotentialAvbdConstraints inner;
+                uint count() { return inner.count(); }
+                bool active(uint row) { return inner.active(row); }
+                uint bodyCount(uint row) { return inner.bodyCount(row); }
+                uint body(uint row,uint end) { return inner.body(row,end); }
+                bool writes(uint row,uint end) { return inner.writes(row,end); }
+                uint groupCount() { return inner.groupCount(); }
+                uint group(uint row) { return inner.group(row); }
+                void initialize(uint row,DeviceAvbdStep context)
+                {
+                    inner.initialize(row,context);
+                    DeviceContactConstraint point=DeviceContacts[row];
+                    DeviceGraphBodies bodies;
+                    float mobility=deviceContactWeight(point,point.normal,bodies);
+                    float conditioning=1/(context.duration*context.duration*mobility);
+                    DeviceAvbdContactState state=DeviceAvbdContactStates[row];
+                    state.normalPenalty=clamp(max(conditioning,state.normalPenalty*context.retention),1,1e9);
+                    state.tangentPenalty=clamp(max(conditioning,state.tangentPenalty*context.retention),1,1e9);
+                    DeviceAvbdContactStates[row]=state;
+                }
+                void accumulate(uint row,uint bodyIndex,DeviceAvbdStep context,inout DeviceAvbdEquation equation)
+                {
+                    #if SCENE_CONTACT_SUPPORTS
+                    bool supported=deviceConstraintSelected(DeviceContactsMetadata[row],DeviceContactSupportSelection[row]);
+                    deviceAccumulateAvbdContactPotential(row,bodyIndex,context,deviceContactSupportForce(row),supported,equation);
+                    #else
+                    inner.accumulate(row,bodyIndex,context,equation);
+                    #endif
+                }
+                void updateDuals(uint row,DeviceAvbdStep context)
+                {
+                    #if SCENE_CONTACT_SUPPORTS
+                    deviceUpdateAvbdContact(row,context,deviceContactSupportForce(row));
+                    #else
+                    inner.updateDuals(row,context);
+                    #endif
+                    DeviceContactConstraint point=DeviceContacts[row];
+                    float gap=point.separation+dot(point.normal,deviceContactDelta(point,false)-point.bodyAnchorDelta);
+                    DeviceAvbdContactState state=DeviceAvbdContactStates[row];
+                    float penalty=max(state.normalPenalty+100000*max(0,-gap),-state.normalMultiplier/.0005);
+                    state.normalPenalty=clamp(penalty,1,1e9); state.tangentPenalty=state.normalPenalty;
+                    DeviceAvbdContactStates[row]=state;
+                }
+                void adjust(uint bodyIndex,DeviceAvbdStep context,DeviceAvbdEquation equation,
+                    inout float3 translation,inout float3 rotation)
+                { inner.adjust(bodyIndex,context,equation,translation,rotation); }
+            };
             typedef DeviceAvbdConstraintGroups<
-                DeviceAvbdConstraintGroups<DeviceContactAvbdConstraints,DeviceJointAvbdConstraints>,
+                DeviceAvbdConstraintGroups<SceneContactAvbdConstraints,DeviceJointAvbdConstraints>,
                 DeviceDistanceRangeAvbdConstraints> SceneAvbdConstraints;
+            #if SCENE_CONTACT_SUPPORTS
+            typedef DeviceAvbdConstraintGroups<SceneAvbdConstraints,DeviceContactSupportAvbdConstraints> SceneSolveRows;
+            #else
+            typedef SceneAvbdConstraints SceneSolveRows;
+            #endif
             [shader("compute")][numthreads(64,1,1)]
             void ClearBodyIndices(uint3 id : SV_DispatchThreadID) { clearDeviceAvbdBodyIndices(id.x); }
             [shader("compute")][numthreads(64,1,1)]
             void Initialize(uint3 id : SV_DispatchThreadID)
-            { DeviceAwakeAvbdConstraints<SceneAvbdConstraints> rows; DeviceAwakeBodies bodies; initializeDeviceAvbdRows(id.x,rows,bodies); }
+            { DeviceAwakeAvbdConstraints<SceneSolveRows> rows; DeviceAwakeBodies bodies; initializeDeviceAvbdRows(id.x,rows,bodies); }
             [shader("compute")][numthreads(64,1,1)]
             void UpdateBody(uint3 id : SV_DispatchThreadID)
-            { DeviceAwakeAvbdConstraints<SceneAvbdConstraints> rows; updateDeviceAvbdBody(id.x,rows); }
+            { DeviceAwakeAvbdConstraints<SceneSolveRows> rows; updateDeviceAvbdBody(id.x,rows); }
             [shader("compute")][numthreads(64,1,1)]
             void UpdateDuals(uint3 id : SV_DispatchThreadID)
-            { DeviceAwakeAvbdConstraints<SceneAvbdConstraints> rows; updateDeviceAvbdDuals(id.x,rows); }
-            """, "ClearBodyIndices", "Initialize", "UpdateBody", "UpdateDuals");
-        return new(entries[1], entries[2], entries[3], ClearBodyIndices: entries[0]);
+            { DeviceAwakeAvbdConstraints<SceneSolveRows> rows; updateDeviceAvbdDuals(id.x,rows); }
+            [shader("compute")][numthreads(1,1,1)]
+            void InitializeSupports(uint3 id:SV_DispatchThreadID)
+            {
+                #if SCENE_CONTACT_SUPPORTS
+                DeviceAwakeBodies bodies; initializeDeviceContactSupports(AvbdStep,bodies);
+                #endif
+            }
+            [shader("compute")][numthreads(1,1,1)]
+            void UpdateSupports(uint3 id:SV_DispatchThreadID)
+            {
+                #if SCENE_CONTACT_SUPPORTS
+                DeviceAwakeBodies bodies; updateDeviceContactSupports(AvbdStep,bodies);
+                #endif
+            }
+            """, "ClearBodyIndices", "Initialize", "UpdateBody", "UpdateDuals", "InitializeSupports", "UpdateSupports");
+        return new(entries[1], entries[2], entries[3],
+            contactSupports ? entries[4] : null, contactSupports ? entries[5] : null, entries[0]);
     }
 
     internal DeviceContactKernels Responses()
@@ -139,16 +217,22 @@ internal sealed class PhysicsSceneShaders
         return new(entries[0], entries[1]);
     }
 
-    internal DeviceActivityKernels Activity()
+    internal DeviceActivityKernels Activity(bool contactSupports)
     {
-        ComputePipelineDesc[] entries = Compile("scene_activity", """
+        ComputePipelineDesc[] entries = Compile("scene_activity", SupportDefine(contactSupports) + """
             #include "physics_contact_activity.slang"
             #include "physics_joint_activity.slang"
             #include "physics_distance_range_activity.slang"
             #include "physics_constraint_activity.slang"
             #include "physics_body_input_activity.slang"
+            #if SCENE_CONTACT_SUPPORTS
+            #include "physics_contact_support_activity.slang"
+            typedef DeviceConstraintActivityGroups<DeviceSupportedContactActivity,DeviceSupportBodyActivity> SceneContactActivity;
+            #else
+            typedef DeviceContactActivity SceneContactActivity;
+            #endif
             typedef DeviceConstraintActivityGroups<
-                DeviceConstraintActivityGroups<DeviceContactActivity,DeviceJointActivity>,
+                DeviceConstraintActivityGroups<SceneContactActivity,DeviceJointActivity>,
                 DeviceDistanceRangeActivity> SceneActivityRows;
             [shader("compute")][numthreads(64,1,1)]
             void ReadRows(uint3 id : SV_DispatchThreadID)
@@ -158,9 +242,19 @@ internal sealed class PhysicsSceneShaders
         return new(entries[0], entries[1], entries[2], entries[3], entries[4], entries[5], entries[6], ReadBodyInputs: entries[7]);
     }
 
+    private static string SupportDefine(bool enabled) => "#define SCENE_CONTACT_SUPPORTS " + (enabled ? "1\n" : "0\n");
+
+    internal ComputePipelineDesc JointForces() => Compile("scene_joint_forces", """
+        #include "physics_avbd_joint_forces.slang"
+        [shader("compute")][numthreads(64,1,1)]
+        void ReadForces(uint3 id:SV_DispatchThreadID)
+        { DeviceJointAvbdForces rows; readDeviceConstraintForces(id.x,rows); }
+        """, "ReadForces")[0];
+
     internal (ComputePipelineDesc Clear, ComputePipelineDesc Bodies, ComputePipelineDesc Contacts) Statistics()
     {
         ComputePipelineDesc[] entries = Compile("scene_statistics", """
+            #include "physics_dispatch.slang"
             #include "physics_body_activity_types.slang"
             #include "physics_constraint_graph.slang"
             #include "physics_contact_geometry_math.slang"
@@ -169,28 +263,31 @@ internal sealed class PhysicsSceneShaders
             [shader("compute")][numthreads(64,1,1)]
             void Clear(uint3 id : SV_DispatchThreadID)
             {
+                uint index=devicePhysicsThreadIndex(id,64);
                 uint count,stride; SceneIslandSizes.GetDimensions(count,stride);
-                if(id.x<count) SceneIslandSizes[id.x]=0;
-                if(id.x<4) SceneStatistics[id.x]=0;
+                if(index<count) SceneIslandSizes[index]=0;
+                if(index<4) SceneStatistics[index]=0;
             }
             [shader("compute")][numthreads(64,1,1)]
             void Bodies(uint3 id : SV_DispatchThreadID)
             {
+                uint index=devicePhysicsThreadIndex(id,64);
                 uint count,stride; DeviceBodyStates.GetDimensions(count,stride);
-                if(id.x>=count) return;
-                uint root=ConstraintGraphParents[id.x];
+                if(index>=count) return;
+                uint root=ConstraintGraphParents[index];
                 if(root==0xffffffff) return;
-                if(deviceBodyActivityAwake(id.x)) InterlockedAdd(SceneStatistics[1],1);
+                if(deviceBodyActivityAwake(index)) InterlockedAdd(SceneStatistics[1],1);
                 uint previous; InterlockedAdd(SceneIslandSizes[root],1,previous);
                 InterlockedMax(SceneStatistics[3],previous+1);
             }
             [shader("compute")][numthreads(64,1,1)]
             void Contacts(uint3 id : SV_DispatchThreadID)
             {
+                uint index=devicePhysicsThreadIndex(id,64);
                 uint count,stride; DeviceContacts.GetDimensions(count,stride);
-                if(id.x>=count||!deviceContactSelected(id.x)) return;
+                if(index>=count||!deviceContactSelected(index)) return;
                 InterlockedAdd(SceneStatistics[2],1);
-                DeviceContactConstraint point=DeviceContacts[id.x];
+                DeviceContactConstraint point=DeviceContacts[index];
                 float separation=point.separation+dot(point.normal,deviceContactDelta(point,false)-point.bodyAnchorDelta);
                 if(separation<0) InterlockedMax(SceneStatistics[0],asuint(-separation));
             }
