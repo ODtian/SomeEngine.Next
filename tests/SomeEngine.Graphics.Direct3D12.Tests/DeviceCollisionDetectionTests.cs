@@ -14,7 +14,7 @@ namespace SomeEngine.Graphics.Direct3D12.Tests;
 
 [Collection("Direct3D12 shader compilation")]
 [Trait("Category", "Hardware")]
-public sealed class DeviceCollisionDetectionTests(D3D12TestCompiler shaderCompiler)
+public sealed partial class DeviceCollisionDetectionTests(D3D12TestCompiler shaderCompiler)
 {
     [Fact]
     public void IndependentUserDeviceQueryFeedsItsContactFeaturesThroughTheExistingResponse()
