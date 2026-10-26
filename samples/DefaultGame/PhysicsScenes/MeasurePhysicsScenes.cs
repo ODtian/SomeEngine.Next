@@ -94,6 +94,7 @@ internal sealed class ReadScenePhysicsResults : IDisposable
     private readonly QueryHandle _bodies, _contacts;
     private int _entitiesNow, _entityPeak, _contactsNow, _contactPeak, _awakeNow, _awakePeak, _liveJoints;
     private float _jointGap, _angularGap, _rangeGap, _penetration, _speed, _finalSpeed, _quaternionError, _dynamicMass;
+    private float _angularSpeed, _finalAngularSpeed;
     private Vector3 _centerOfMass, _linearMomentum, _minimumBodyCenter, _maximumBodyCenter;
 
     public ReadScenePhysicsResults(World world, PhysicsSceneSimulation scene)
@@ -112,7 +113,7 @@ internal sealed class ReadScenePhysicsResults : IDisposable
         _entitiesNow = _world.EntityCount;
         _entityPeak = Math.Max(_entityPeak, _entitiesNow);
         _awakeNow = _contactsNow = _liveJoints = 0;
-        _finalSpeed = _dynamicMass = 0;
+        _finalSpeed = _finalAngularSpeed = _dynamicMass = 0;
         _centerOfMass = _linearMomentum = default;
         _minimumBodyCenter = new(float.PositiveInfinity);
         _maximumBodyCenter = new(float.NegativeInfinity);
@@ -139,6 +140,8 @@ internal sealed class ReadScenePhysicsResults : IDisposable
                 }
                 _finalSpeed = MathF.Max(_finalSpeed, velocity.Linear.Length());
                 _speed = MathF.Max(_speed, velocity.Linear.Length());
+                _finalAngularSpeed = MathF.Max(_finalAngularSpeed, velocity.Angular.Length());
+                _angularSpeed = MathF.Max(_angularSpeed, velocity.Angular.Length());
                 _quaternionError = MathF.Max(_quaternionError, MathF.Abs(pose.Rotation.LengthSquared() - 1));
             }
         });
@@ -196,6 +199,7 @@ internal sealed class ReadScenePhysicsResults : IDisposable
     {
         Vector3 last = _world.Read<BodyPose>(_scene.Bodies.Span[^1]).Position;
         Vector3 velocity = _world.Read<BodyVelocity>(_scene.Bodies.Span[^1]).Linear;
+        Vector3 angularVelocity = _world.Read<BodyVelocity>(_scene.Bodies.Span[^1]).Angular;
         return new JsonObject
         {
             ["Entities"] = _entitiesNow, ["PeakEntities"] = _entityPeak,
@@ -205,12 +209,15 @@ internal sealed class ReadScenePhysicsResults : IDisposable
             ["MaximumAngularLockErrorRadians"] = _angularGap, ["MaximumQuaternionSquaredNormError"] = _quaternionError,
             ["MaximumPenetrationMeters"] = _penetration, ["MaximumSpeedMetersPerSecond"] = _speed,
             ["FinalMaximumSpeedMetersPerSecond"] = _finalSpeed,
+            ["MaximumAngularSpeedRadiansPerSecond"] = _angularSpeed,
+            ["FinalMaximumAngularSpeedRadiansPerSecond"] = _finalAngularSpeed,
             ["DynamicCenterOfMass"] = new JsonArray(_centerOfMass.X, _centerOfMass.Y, _centerOfMass.Z),
             ["LinearMomentum"] = new JsonArray(_linearMomentum.X, _linearMomentum.Y, _linearMomentum.Z),
             ["MinimumDynamicBodyCenter"] = new JsonArray(_minimumBodyCenter.X, _minimumBodyCenter.Y, _minimumBodyCenter.Z),
             ["MaximumDynamicBodyCenter"] = new JsonArray(_maximumBodyCenter.X, _maximumBodyCenter.Y, _maximumBodyCenter.Z),
             ["LastBodyPosition"] = new JsonArray(last.X, last.Y, last.Z),
             ["LastBodyVelocity"] = new JsonArray(velocity.X, velocity.Y, velocity.Z),
+            ["LastBodyAngularVelocity"] = new JsonArray(angularVelocity.X, angularVelocity.Y, angularVelocity.Z),
         };
     }
 
