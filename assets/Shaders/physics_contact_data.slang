@@ -9,6 +9,7 @@ struct DeviceContactConstraint
     float3 bodyAnchorDelta; float normalStiffness;
     float normalDamping; float staticFriction; float dynamicFriction; float restitution;
     float restitutionThreshold; uint predicted; uint2 sampleTime;
+    float3 worldPoint; uint padding;
 };
 RWStructuredBuffer<DeviceContactConstraint> DeviceContacts;
 RWStructuredBuffer<DeviceConstraintMetadata> DeviceContactsMetadata;
