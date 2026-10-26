@@ -8,7 +8,7 @@ using SomeEngine.Job;
 namespace SomeEngine.Physics;
 
 /// <summary>Transfers edited component fields and new entities into their continuing device states.</summary>
-public sealed class DeviceBodyInputs : IDisposable, IDevicePhysicsSubmission
+public sealed class DeviceBodyInputs : IDisposable
 {
     private readonly World _world;
     private readonly QueryHandle _members;
@@ -30,22 +30,20 @@ public sealed class DeviceBodyInputs : IDisposable, IDevicePhysicsSubmission
     }
 
     public UploadEditedDeviceBodies Upload() => new(this);
-    IGraphicsBackend IDevicePhysicsSubmission.Backend => _bodies.Backend;
-    Device IDevicePhysicsSubmission.Device => _bodies.Device;
     internal JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency)
     {
         Scheduler scheduler = WorldJobs.GetScheduler(context.World);
         JobResourceAccess[] accesses = [.. _queryAccesses, .. _bodies.GetInputTransferAccesses(scheduler)];
-        return DevicePhysicsJobs.Schedule(scheduler, this, accesses, dependency);
+        return DevicePhysicsJobs.Schedule(scheduler, new Transfer(this, context.Number, context.Substep), accesses, dependency);
     }
 
-    QueueCompletion IDevicePhysicsSubmission.Submit()
+    private QueueCompletion Submit(long number, int substep)
     {
         _ranges.Clear(); _changes.Clear();
-        DeviceBodyInputs inputs = this;
-        _world.ExecuteReadQuery(_members, ref inputs, static (scoped QueryCursor rows, ref DeviceBodyInputs inputs) =>
+        var inputs = (Inputs: this, Number: number, Substep: substep);
+        _world.ExecuteReadQuery(_members, ref inputs, static (scoped QueryCursor rows, ref (DeviceBodyInputs Inputs, long Number, int Substep) inputs) =>
         {
-            foreach (QueryRow row in rows.Rows) inputs.Read(row);
+            foreach (QueryRow row in rows.Rows) inputs.Inputs.Read(row, inputs.Number, inputs.Substep);
         });
         _ranges.Sort(static (first, second) => first.Offset.CompareTo(second.Offset));
         int merged = 0;
@@ -63,7 +61,7 @@ public sealed class DeviceBodyInputs : IDisposable, IDevicePhysicsSubmission
         return complete;
     }
 
-    private void Read(scoped QueryRow row)
+    private void Read(scoped QueryRow row, long number, int substep)
     {
         DeviceBodyBinding binding = row.Read<DeviceBodyBinding>();
         if (!ReferenceEquals(binding.Bodies, _bodies)) return;
@@ -71,6 +69,7 @@ public sealed class DeviceBodyInputs : IDisposable, IDevicePhysicsSubmission
         DeviceBodies.BodyInputVersions previous = _bodies.ReadCpuVersions(binding.Index);
         DeviceBodies.BodyInputComponents changed = DeviceBodies.ChangedInputs(in version, in previous);
         if (changed == 0) return;
+        _bodies.RecordCpuInputChange(binding.Index, row.Entity, changed, number, substep);
         _bodies.WriteInput(row, binding.Index);
         _changes.Add((binding.Index, version));
         ulong start = (ulong)binding.Index * DeviceBodies.StateStride;
@@ -83,6 +82,12 @@ public sealed class DeviceBodyInputs : IDisposable, IDevicePhysicsSubmission
         void Add(ulong offset, ulong size) => _ranges.Add(new(start + offset, size));
     }
     public void Dispose() => _world.ReleaseQuery(_members);
+    private readonly struct Transfer(DeviceBodyInputs inputs, long number, int substep) : IDevicePhysicsSubmission
+    {
+        public IGraphicsBackend Backend => inputs._bodies.Backend;
+        public Device Device => inputs._bodies.Device;
+        public QueueCompletion Submit() => inputs.Submit(number, substep);
+    }
 }
 
 public readonly struct UploadEditedDeviceBodies(DeviceBodyInputs inputs) : IPhysicsStage

@@ -81,7 +81,7 @@ public sealed partial class DeviceBodies : IDisposable, IDevicePhysicsSubmission
     {
         JobResourceAccess[] accesses = [GetWriteAccess(scheduler),
             JobResourceAccess.Read(scheduler.GetResourceToken(_upload), 0, (long)_upload.Info.Size),
-            JobResourceAccess.Write(scheduler.GetResourceToken(_commands))];
+            JobResourceAccess.Write(scheduler.GetResourceToken(_commands)), .. GetCpuInputTransferAccesses(scheduler, false)];
         return DevicePhysicsJobs.Schedule(scheduler, this, accesses, dependency);
     }
 
@@ -104,6 +104,7 @@ public sealed partial class DeviceBodies : IDisposable, IDevicePhysicsSubmission
             _backend.Barrier(_commands, new BufferBarrier(States, PipelineSync.Copy, PipelineSync.ComputeShading,
                 ResourceAccess.CopyDestination, ResourceAccess.UnorderedAccess));
         }
+        _cpuInputChanges?.Record(_commands);
         using RecordedCommands recorded = _backend.End(_commands);
         _initialized |= !ranges.IsEmpty;
         return _backend.Submit(_backend.GetQueue(_device, QueueType.Compute), new([], [], [recorded], [], []));
@@ -111,7 +112,7 @@ public sealed partial class DeviceBodies : IDisposable, IDevicePhysicsSubmission
 
     public void Dispose()
     {
-        _mapping.Dispose(); _commands.Dispose(); _upload.Dispose(); View.Dispose(); States.Dispose();
+        _mapping.Dispose(); _commands.Dispose(); _cpuInputChanges?.Dispose(); _upload.Dispose(); View.Dispose(); States.Dispose();
     }
 }
 
