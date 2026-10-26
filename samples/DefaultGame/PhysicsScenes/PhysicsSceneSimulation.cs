@@ -13,6 +13,9 @@ public readonly record struct PhysicsSceneSettings(int Iterations, int BodyItera
     public JointLongRangeSettings JointBounds { get; init; } = new(0, 32, .99f, .99f);
     public ContactSupportSettings? ContactSupports { get; init; }
     public float MultiplierRetention { get; init; } = .8f;
+    public float FrictionRegularizationSpeed { get; init; } = .01f;
+    public float ContactNormalPenalty { get; init; } = 1e6f;
+    public float ContactTangentPenalty { get; init; } = 1e6f;
     public PhysicsGraphSettings Graph { get; init; } = new(PhysicsGraphOrder.Islands, 16, 16, 64, 4, false);
     public float ContactDistance { get; init; }
     public PhysicsSceneTimings? Timings { get; init; }
