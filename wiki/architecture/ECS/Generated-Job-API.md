@@ -80,6 +80,8 @@ Builder 接受普通对象、数组及范围。`Memory<T>` / `ReadOnlyMemory<T>`
 
 只读共享数据和独立范围分别允许并行。含写入或 Exclusive 的重叠范围进入同一组，组内按查询行顺序执行；多个资源的冲突关系共同决定分组。查询描述器按 World 缓存分组；引用、成员、筛选状态及资源数据版本保持一致时复用分组。组件写入序号逐次递增，可区分同一 ECS tick 中的多次引用替换。已取得的组件引用和实际数据保留至执行子任务全部结束。
 
+分组结果通过组偏移和连续行索引两个数组持有，组内保持原行顺序。同一资源全部为只读访问时结束该资源的冲突扫描；含写入时按实际重叠范围连接冲突行。同一派生表示用于生成式实体 Job、实体范围组及动画字段的组件写入批次，源码见 [ComponentResourceGroups.cs](../../../src/SomeEngine.ECS.Systems/ComponentResourceGroups.cs)。
+
 chunk/SIMD API 扩展现有 `IJobChunk`，由 SG 生成显式 adapter：
 
 ```csharp

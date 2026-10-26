@@ -143,14 +143,14 @@ public static partial class EntityQueryJobs
             ranges.CurrentStarts.Add(ranges.CurrentAccesses.Count);
         }
         ranges.Update(count);
-        scheduler.ExecuteParallel(new ExecuteCompatibleGroups<TJob>(queries, ranges.Groups, job, queryStart, workStart), ranges.Groups.Length);
+        scheduler.ExecuteParallel(new ExecuteCompatibleGroups<TJob>(queries, ranges.Groups, job, queryStart, workStart), ranges.Groups.Count);
     }
 
     private sealed class GroupRanges
     {
         internal readonly List<JobResourceAccess> CurrentAccesses = [], Accesses = [];
         internal readonly List<int> CurrentStarts = [], Starts = [];
-        internal int[][] Groups = [];
+        internal ComponentResourceRows Groups = ComponentResourceRows.Empty;
 
         internal void Update(int count)
         {
@@ -168,7 +168,7 @@ public static partial class EntityQueryJobs
         }
     }
 
-    private readonly struct ExecuteCompatibleGroups<TJob>(EntityQueryData[][] queries, int[][] groups, TJob job,
+    private readonly struct ExecuteCompatibleGroups<TJob>(EntityQueryData[][] queries, ComponentResourceRows groups, TJob job,
         int queryStart, int workStart) : IJobParallelFor where TJob : struct, IEntityQueryJob
     {
         public void Execute(int index)
