@@ -1,13 +1,14 @@
-#include "physics_xpbd.slang"
+#include "physics_xpbd_selection.slang"
 #include "physics_bend_data.slang"
 RWStructuredBuffer<float> DeviceBendMultipliers;
-struct DeviceXpbdBend : IDeviceXpbdProjection
+struct DeviceXpbdBendProjection<TSelection : IDeviceBodySelection> : IDeviceXpbdProjection
 {
     bool active(uint row) { return DeviceBendsMetadata[row].active != 0; }
     void initialize(uint row, DeviceXpbdStep context) { DeviceBendMultipliers[row] = 0; }
     void project(uint row, DeviceXpbdStep context)
     {
         DeviceBendConstraint constraint = DeviceBends[row];
+        TSelection selection;
         DeviceBodyState first = DeviceBodyStates[constraint.firstBody];
         DeviceBodyState middle = DeviceBodyStates[constraint.middleBody];
         DeviceBodyState last = DeviceBodyStates[constraint.lastBody];
@@ -22,9 +23,9 @@ struct DeviceXpbdBend : IDeviceXpbdProjection
         float3 firstDerivative = (secondDirection - cosine * firstDirection) / firstLength;
         float3 secondDerivative = (firstDirection - cosine * secondDirection) / secondLength;
         float3 firstGradient = -firstDerivative, middleGradient = firstDerivative - secondDerivative, lastGradient = secondDerivative;
-        float firstWeight = first.motion == 2 ? first.inverseMass : 0;
-        float middleWeight = middle.motion == 2 ? middle.inverseMass : 0;
-        float lastWeight = last.motion == 2 ? last.inverseMass : 0;
+        float firstWeight = first.motion == 2 && selection.contains(constraint.firstBody) ? first.inverseMass : 0;
+        float middleWeight = middle.motion == 2 && selection.contains(constraint.middleBody) ? middle.inverseMass : 0;
+        float lastWeight = last.motion == 2 && selection.contains(constraint.lastBody) ? last.inverseMass : 0;
         float alpha = constraint.compliance / (context.duration * context.duration);
         float change = (-residual - alpha * multiplier) /
             (firstWeight * dot(firstGradient, firstGradient) + middleWeight * dot(middleGradient, middleGradient) +
@@ -47,4 +48,11 @@ struct DeviceXpbdBend : IDeviceXpbdProjection
             DeviceBodyStates[constraint.lastBody] = last;
         }
     }
+};
+struct DeviceXpbdBend : IDeviceXpbdProjection
+{
+    DeviceXpbdBendProjection<DeviceSelectedBodies> inner;
+    bool active(uint row) { return inner.active(row); }
+    void initialize(uint row, DeviceXpbdStep context) { inner.initialize(row, context); }
+    void project(uint row, DeviceXpbdStep context) { inner.project(row, context); }
 };

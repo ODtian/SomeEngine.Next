@@ -18,6 +18,7 @@ public sealed class DeviceXpbdProjection<TData, TState> : IDisposable where TDat
     private readonly IGraphicsBackend _backend;
     private readonly Device _device;
     private readonly DeviceBodies _bodies;
+    private readonly DeviceBodyDynamics _dynamics;
     private readonly DeviceConstraintData<TData> _data;
     private readonly DeviceConstraintState<TState> _state;
     private readonly World _world;
@@ -36,11 +37,12 @@ public sealed class DeviceXpbdProjection<TData, TState> : IDisposable where TDat
     private bool _initialized;
 
     public DeviceXpbdProjection(IGraphicsBackend backend, Device device, World world, QueryHandle rows,
-        DeviceBodies bodies, DeviceConstraintData<TData> data,
+        DeviceBodies bodies, DeviceBodyDynamics dynamics, DeviceConstraintData<TData> data,
         DeviceConstraintState<TState> state, DeviceXpbdKernels kernels, int threadsPerGroup,
         IReadOnlyDictionary<string, ResourceBinding[]>? extraBindings = null, ReadOnlyMemory<JobResourceAccess> extraAccesses = default)
     {
         _backend = backend; _device = device; _bodies = bodies; _data = data; _state = state; _threadsPerGroup = threadsPerGroup;
+        _dynamics = dynamics;
         _world = world;
         QueryDefinition definition = world.GetQueryDefinition(rows).AsReadOnly()
             .WithOptionalRead<DeviceXpbdState<TState>>();
@@ -67,6 +69,7 @@ public sealed class DeviceXpbdProjection<TData, TState> : IDisposable where TDat
             ["DeviceBodyStates"] = [ResourceBinding.WritableBuffer(bodies.View)],
         };
         data.AddBindings(bindings); state.AddBindings(bindings);
+        dynamics.AddSelectionBindings(bindings);
         if (extraBindings is not null) foreach (var binding in extraBindings) bindings.Add(binding.Key, binding.Value);
         _bindings = _layouts.Select(layout => DeviceCollisionGrid.OrderBindings(layout, bindings)).ToArray();
     }
@@ -76,7 +79,8 @@ public sealed class DeviceXpbdProjection<TData, TState> : IDisposable where TDat
     internal JobHandle Schedule(in PhysicsStepContext context, int kernel, int iterations, JobHandle dependency)
     {
         Scheduler scheduler = WorldJobs.GetScheduler(context.World);
-        JobResourceAccess[] accesses = [.. _rowAccesses, _bodies.GetWriteAccess(scheduler), .. _data.GetReadAccesses(scheduler),
+        JobResourceAccess[] accesses = [.. _rowAccesses, _bodies.GetWriteAccess(scheduler), .. _dynamics.GetSelectionReadAccesses(scheduler),
+            .. _data.GetReadAccesses(scheduler),
             _state.GetWriteAccess(scheduler), .. _extraAccesses,
             JobResourceAccess.Write(scheduler.GetResourceToken(_parameters), 0, 256),
             JobResourceAccess.Write(scheduler.GetResourceToken(_indices), 0, (long)_indices.Info.Size),
