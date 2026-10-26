@@ -16,8 +16,10 @@ internal sealed partial class PhysicsSceneShaders
         #include "physics_length_graph.slang"
         #include "physics_bend_graph.slang"
         #include "physics_motor_bodies.slang"
+        #include "physics_contact_data.slang"
         typedef DeviceConstraintBodyGroups<DeviceLengthBodies,DeviceBendBodies> CrowdInternalBodies;
-        typedef DeviceConstraintBodyGroups<CrowdInternalBodies,DeviceMotorBodies> CrowdBodies;
+        typedef DeviceConstraintBodyGroups<CrowdInternalBodies,DeviceMotorBodies> CrowdDrivenBodies;
+        typedef DeviceConstraintBodyGroups<CrowdDrivenBodies,DeviceContactBodies> CrowdBodies;
         """;
 
     internal DeviceGraphKernels CrowdGraph()
@@ -45,8 +47,10 @@ internal sealed partial class PhysicsSceneShaders
             #include "physics_xpbd_length_forces.slang"
             #include "physics_xpbd_bend_forces.slang"
             #include "physics_avbd_motor.slang"
+            #include "physics_avbd_contact.slang"
             typedef DeviceAvbdConstraintGroups<DeviceXpbdLengthForces,DeviceXpbdBendForces> CrowdInternalForces;
-            typedef DeviceAvbdConstraintGroups<CrowdInternalForces,DeviceMotorAvbdConstraints> CrowdForces;
+            typedef DeviceAvbdConstraintGroups<CrowdInternalForces,DeviceMotorAvbdConstraints> CrowdDrivenForces;
+            typedef DeviceAvbdConstraintGroups<CrowdDrivenForces,DeviceContactPotentialAvbdConstraints> CrowdForces;
             [shader("compute")][numthreads(64,1,1)]
             void ClearBodyIndices(uint3 id:SV_DispatchThreadID) { clearDeviceAvbdBodyIndices(id.x); }
             [shader("compute")][numthreads(64,1,1)]
@@ -76,7 +80,9 @@ internal sealed partial class PhysicsSceneShaders
             typedef DeviceXpbdConstraintRows<DeviceBendBodies,DeviceXpbdBendProjection<DeviceGraphBodies>> BendRows;
             typedef DeviceXpbdConstraintGroups<LengthRows,BendRows> InternalRows;
             typedef DeviceXpbdConstraintRows<DeviceMotorBodies,CrowdDrivenBody> DrivenRows;
-            typedef DeviceXpbdConstraintGroups<InternalRows,DrivenRows> CrowdRows;
+            typedef DeviceXpbdConstraintGroups<InternalRows,DrivenRows> DrivenBodyRows;
+            typedef DeviceXpbdConstraintRows<DeviceContactBodies,CrowdDrivenBody> ContactRows;
+            typedef DeviceXpbdConstraintGroups<DrivenBodyRows,ContactRows> CrowdRows;
             [shader("compute")][numthreads(64,1,1)]
             void Initialize(uint3 group:SV_GroupID,uint3 thread:SV_GroupThreadID)
             { CrowdRows rows; initializeDeviceXpbdGraph(group.x,thread.x,rows); }
@@ -84,6 +90,82 @@ internal sealed partial class PhysicsSceneShaders
             void Project(uint3 group:SV_GroupID,uint3 thread:SV_GroupThreadID)
             { CrowdRows rows; projectDeviceXpbdGraph(group.x,thread.x,rows); }
             """, "Initialize", "Project");
+        return new(entries[0], entries[1]);
+    }
+
+    internal DeviceGridKernels CrowdGrid()
+    {
+        ComputePipelineDesc[] entries = Compile("crowd_grid", """
+            #include "physics_grid_common.slang"
+            struct CrowdCapsuleFacePairs : IDevicePairRule
+            {
+                bool matches(uint a,uint b,DeviceCollisionInput first,DeviceCollisionInput second)
+                { return min(first.geometryType,second.geometryType)==1&&max(first.geometryType,second.geometryType)==2; }
+            };
+            [shader("compute")][numthreads(256,1,1)]
+            void CountPairs(uint3 id:SV_DispatchThreadID)
+            { DevicePairAnd<DeviceCollisionRules,CrowdCapsuleFacePairs> rules; DeviceShapePairs types; countDevicePairs(id.x,rules,types); }
+            [shader("compute")][numthreads(256,1,1)]
+            void WritePairs(uint3 id:SV_DispatchThreadID)
+            { DevicePairAnd<DeviceCollisionRules,CrowdCapsuleFacePairs> rules; DeviceShapePairs types; writeDevicePairs(id.x,rules,types); }
+            """, "ClearDeviceGrid", "BuildDeviceGrid", "CountPairs", "ScanDevicePairCounts",
+            "OffsetDevicePairBlocks", "OffsetDevicePairBins", "WritePairs");
+        return new(entries[0], entries[1], entries[2], entries[3], entries[4], entries[5], entries[6]);
+    }
+
+    internal ComputePipelineDesc CrowdGeometry(string type) => Compile("crowd_geometry_" + type, $$"""
+        #include "physics_geometry_update.slang"
+        struct CrowdGeometryUpdate : IDeviceGeometryUpdate
+        {
+            DeviceGeometryBounds update(uint index,inout DeviceGeometryInput geometry)
+            {
+                {{type}} shape;
+                DeviceGeometryBounds bounds=shape.update(index,geometry);
+                bounds.min-=.02; bounds.max+=.02;
+                return bounds;
+            }
+        };
+        [shader("compute")][numthreads(64,1,1)]
+        void Update(uint3 id:SV_DispatchThreadID) { updateDeviceGeometry<CrowdGeometryUpdate>(id.x); }
+        """, "Update")[0];
+
+    internal ComputePipelineDesc CrowdCapsuleFaces() => Compile("crowd_capsule_faces", """
+        #include "physics_geometry_references.slang"
+        struct CrowdCapsuleFaceCollision : IDeviceCollisionNarrowPhase
+        {
+            DeviceGeometryDistance distance(uint work,DeviceGeometryInput first,DeviceGeometryInput second)
+            {
+                if(first.geometryType==1)
+                { DeviceConvexCollision<DeviceCapsule,DeviceTriangle> shapes; return shapes.distance(work,first,second); }
+                DeviceConvexCollision<DeviceTriangle,DeviceCapsule> shapes; return shapes.distance(work,first,second);
+            }
+            uint manifold(uint work,DeviceGeometryInput first,DeviceGeometryInput second,
+                DeviceGeometryDistance distance,out DeviceGeometryDistance points[4])
+            {
+                if(first.geometryType==1)
+                { DeviceConvexCollision<DeviceCapsule,DeviceTriangle> shapes; return shapes.manifold(work,first,second,distance,points); }
+                DeviceConvexCollision<DeviceTriangle,DeviceCapsule> shapes; return shapes.manifold(work,first,second,distance,points);
+            }
+        };
+        [shader("compute")][numthreads(64,1,1)]
+        void Detect(uint3 id:SV_DispatchThreadID)
+        { CrowdCapsuleFaceCollision shapes; detectDeviceReferencedCollision(id.x,shapes); }
+        """, "Detect")[0];
+
+    internal DeviceContactKernels CrowdResponses()
+    {
+        ComputePipelineDesc[] entries = Compile("crowd_contact_responses", CrowdBodyRows + """
+
+            #include "physics_contact_actions.slang"
+            typedef DeviceNoContactResponses<CrowdDrivenBodies> InternalResponses;
+            typedef DeviceContactResponseGroups<InternalResponses,DeviceContactResponseActions<DeviceGraphBodies>> Responses;
+            [shader("compute")][numthreads(64,1,1)]
+            void Initialize(uint3 id:SV_DispatchThreadID)
+            { Responses rows; initializeDeviceContactResponses(id.x,rows); }
+            [shader("compute")][numthreads(64,1,1)]
+            void Restore(uint3 id:SV_DispatchThreadID)
+            { Responses rows; applyDeviceContactRestitution(id.x,rows); }
+            """, "Initialize", "Restore");
         return new(entries[0], entries[1]);
     }
 }
