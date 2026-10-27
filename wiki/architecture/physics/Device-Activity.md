@@ -25,6 +25,12 @@
 比较完成并 Join 后，`ComponentWriteJobs` 只为实际变化的实体取得 `BodyActivity` 写引用，
 同批实际写版本随结果确认回原版本数组。事件按 packet 顺序追加到原 `PhysicsEventBuffer`，
 本轮消费完成后清理名单计数并复用其容量。
+有实际写回目标时，同一 packet 范围按上次源读取的系统版本检查 Body 绑定、活动绑定和活动组件的原行写入。
+普通成员查询在这三列和两份成员版本均保持时，以自身组件写批次的系统版本确认镜像写回，
+下次输入刷新由此从已确认的写入之后读取变化。
+使用 `Added`、`Changed`、`ChunkChanged` 的成员查询沿原执行版本窗口读取。
+晚于设备输入捕获的 Native 编辑沿原行版本保留，并在下一次输入刷新交给设备状态；
+实际预测行为见 [活动源编辑](../../../tests/SomeEngine.Graphics.Direct3D12.Tests/DeviceActivitySourceTests.cs)。
 
 常规输入使用原查询的 `MembershipVersion` 与组件列版本：成员变化或活动组件增删时
 刷新当前成员，其余步骤只读取 Body 绑定、活动绑定或活动值有写入的 chunk。
@@ -32,6 +38,8 @@
 上一批实际输入索引负责清理修改与唤醒的瞬时标记。
 `BodyWake` 通过冷登记的必需缓冲查询逐子步读取，并沿当前输入中的成员身份选择实际主体。
 活动数值历史继续由同一设备状态持有。
+`Activity.CaptureInputs` 覆盖整个输入捕获，`Activity.ReadSources` 覆盖其组件读取回调，
+`Activity.NativeWrites` 记录本轮实际组件写回行数。
 
 原主体的显式位姿、质量和速度编辑沿 `DeviceBodyInputs` 的同一次变化判定形成
 24 字节派生标记，记录原实体代次、组件位、步号和子步号。
