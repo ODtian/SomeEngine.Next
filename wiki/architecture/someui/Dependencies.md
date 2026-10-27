@@ -53,6 +53,9 @@ public struct Dependency : IBufferElement
 应用接入（#42）将依赖比较拆成两个读取窗口：先从节点的依赖缓冲复制本次来源数据，
 结束缓冲借用，再读取各来源的组件、存在性、查询成员或环境版本。
 每个重建系统复用自己的当次依赖列表，依赖记录继续由节点缓冲持有。
+候选收集在一次表格查询中按块读取视图类型、构建请求、对象依赖与 ECS 依赖缓冲，
+另一次 sparse 读取取得计算列表。结束这些借用后才刷新对象来源、比较外部 ECS 版本并形成候选；
+候选执行前继续从节点读取当前依赖，以观察此前构建在本轮产生的写入。
 这一边界使带 `WorldJobs` 执行配置的 Game world 沿 ECS 的存储权限检查完成重建。
 公开验收由 `CounterPanelTests` 使用普通 World 与应用相同的 Job World 验证点击显示和尺寸更新。
 
@@ -142,6 +145,8 @@ public static QueryRows Each(QueryHandle query);
 `0` / `1` 保存观察结果。每轮重新判断存在性，结果变化时使视图失效；组件值写入、
 启用位变化和其它组件的结构修改保持已有存在结果。源实体销毁后，原实体身份的结果为 false。
 同帧增删在下一次检查时按最终存在结果观察。
+表格与 sparse 组件的存在性比较先使用组件类型写计数筛选；添加、移除与实体释放沿既有写入口推进计数。
+tag 与 shared 组件继续逐条比较存在性。
 
 `Scope.Each` 在调用时登记 `(QueryHandle, Membership, World.MembershipVersion)`，
 返回 `QueryRows`，通过 `foreach (Entity entity in Scope.Each(query))` 遍历。

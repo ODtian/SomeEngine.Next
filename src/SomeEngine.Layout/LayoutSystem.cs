@@ -25,7 +25,9 @@ public sealed class LayoutSystem(params ILayoutDataUpdate[] dataUpdates) : ISyst
         try
         {
             _nodeReadQuery = context.World.Query(context.World.QueryDefinition()
-                .Optional<ViewType>(QueryAccess.Read).Optional<LayoutCache>(QueryAccess.Read));
+                .Any<ViewType>().Any<ScrollOffset>()
+                .Optional<ViewType>(QueryAccess.Read).Optional<LayoutCache>(QueryAccess.Read)
+                .Optional<ScrollOffset>(QueryAccess.Read));
             try { _data = new LayoutData(context.World, dataUpdates, _nodeReadQuery); }
             catch
             {

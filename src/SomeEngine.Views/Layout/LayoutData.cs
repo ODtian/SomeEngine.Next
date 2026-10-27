@@ -30,6 +30,8 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates, Q
     private ulong _frame;
     private uint _inputVersion;
     private uint _rectangleVersion;
+    private TreeWriteVersions _treeVersions;
+    private uint _childrenVersion;
 
     internal void BeginUpdate()
     {
@@ -42,9 +44,32 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates, Q
         {
             uint viewVersion = read.World.ComponentWriteVersion<ViewType>();
             uint cacheVersion = read.World.ComponentWriteVersion<LayoutCache>();
-            foreach (NodeLayout node in read._nodes.Values)
-                if (node.TreeFrame == 0 || node.ViewTypeVersion != viewVersion || node.LayoutCacheVersion != cacheVersion)
-                    read.ReadNodeState(query, node, viewVersion, cacheVersion);
+            uint scrollVersion = read.World.ComponentWriteVersion<ScrollOffset>();
+            foreach (var chunk in query.Chunks)
+            {
+                bool hasView = chunk.TryRead<ViewType>(out var views);
+                bool hasCache = chunk.TryRead<LayoutCache>(out var caches);
+                var cacheVersions = hasCache ? chunk.ReadWriteVersions<LayoutCache>() : default;
+                bool scrolling = chunk.Has<ScrollOffset>();
+                var entities = chunk.Entities;
+                for (int index = 0; index < entities.Length; index++)
+                {
+                    if (!read._nodes.TryGetValue(entities[index], out NodeLayout? node) ||
+                        (node.TreeFrame != 0 && node.ViewTypeVersion == viewVersion &&
+                            node.LayoutCacheVersion == cacheVersion && node.ScrollOffsetVersion == scrollVersion))
+                        continue;
+                    node.Measurable = hasView && ViewTypes.HasMeasure(views[index].Id);
+                    node.SourceViewType = hasView ? views[index].Id : (ushort)0;
+                    node.CacheExists = hasCache;
+                    node.CacheVersion = hasCache ? cacheVersions[index] : 0;
+                    if (hasCache) node.Cache = caches[index];
+                    else node.HasMeasurement = false;
+                    node.ScrollExists = scrolling;
+                    node.ViewTypeVersion = viewVersion;
+                    node.LayoutCacheVersion = cacheVersion;
+                    node.ScrollOffsetVersion = scrollVersion;
+                }
+            }
         });
     }
 
@@ -119,7 +144,13 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates, Q
                 if (node.ResultFrame == _frame) ReleaseUnusedInputs(node);
                 if (node.CacheWritten) WriteCache(node);
                 Size measured = node.Cache.Size;
-                if (World.Has<ScrollOffset>(node.Entity))
+                uint scrollVersion = World.ComponentWriteVersion<ScrollOffset>();
+                if (node.ScrollOffsetVersion != scrollVersion)
+                {
+                    node.ScrollExists = World.Has<ScrollOffset>(node.Entity);
+                    node.ScrollOffsetVersion = scrollVersion;
+                }
+                if (node.ScrollExists)
                 {
                     UpdateScroll(node, measured);
                     Vector2 scroll = World.Read<ScrollOffset>(node.Entity).Value;
@@ -157,12 +188,14 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates, Q
 
     private void ReadTree(Entity entity, Entity parent, Entity canvas)
     {
-        if (!World.Has<LayoutRect>(entity)) World.Add(entity, new LayoutRect());
         if (!_nodes.TryGetValue(entity, out NodeLayout? node))
         {
+            if (!World.Has<LayoutRect>(entity)) World.Add(entity, new LayoutRect());
             node = new NodeLayout(entity, dataUpdates.Length);
             _nodes.Add(entity, node);
         }
+        else if (World.ComponentWriteVersion<LayoutRect>() != _rectangleVersion && !World.Has<LayoutRect>(entity))
+            World.Add(entity, new LayoutRect());
         ReadFixedNodeState(node);
         ushort viewType = node.SourceViewType;
         bool missingMeasurement = !node.HasMeasurement || !node.CacheExists ||
@@ -172,13 +205,19 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates, Q
             readsChanged |= dataUpdate.HasChanges(World, entity);
         bool parentChanged = node.Parent != parent;
         bool typeChanged = node.ViewType != viewType;
-        _children.Clear();
-        CollectChildren(entity, _children);
-        bool childrenChanged = !node.Children.SequenceEqual(_children);
-        if (childrenChanged)
+        uint childrenVersion = ReadChildrenVersion();
+        bool childrenChanged = false;
+        if (node.TreeFrame == 0 || node.ChildrenVersion != childrenVersion)
         {
-            node.Children.Clear();
-            node.Children.AddRange(_children);
+            _children.Clear();
+            CollectChildren(entity, _children);
+            childrenChanged = !node.Children.SequenceEqual(_children);
+            if (childrenChanged)
+            {
+                node.Children.Clear();
+                node.Children.AddRange(_children);
+            }
+            node.ChildrenVersion = childrenVersion;
         }
         node.InputsChanged = missingMeasurement || readsChanged || parentChanged || typeChanged || childrenChanged;
         node.SizeInputsChanged = missingMeasurement || parentChanged || typeChanged ||
@@ -204,14 +243,16 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates, Q
         node.CacheWritten = false;
         uint viewVersion = World.ComponentWriteVersion<ViewType>();
         uint cacheVersion = World.ComponentWriteVersion<LayoutCache>();
-        if (node.TreeFrame != 0 && node.ViewTypeVersion == viewVersion && node.LayoutCacheVersion == cacheVersion)
+        uint scrollVersion = World.ComponentWriteVersion<ScrollOffset>();
+        if (node.TreeFrame != 0 && node.ViewTypeVersion == viewVersion &&
+            node.LayoutCacheVersion == cacheVersion && node.ScrollOffsetVersion == scrollVersion)
             return;
-        var read = (Data: this, Node: node, ViewVersion: viewVersion, CacheVersion: cacheVersion);
+        var read = (Data: this, Node: node, ViewVersion: viewVersion, CacheVersion: cacheVersion, ScrollVersion: scrollVersion);
         World.ExecuteQuery(nodeReadQuery, ref read, static (query, ref values) =>
-            values.Data.ReadNodeState(query, values.Node, values.ViewVersion, values.CacheVersion));
+            values.Data.ReadNodeState(query, values.Node, values.ViewVersion, values.CacheVersion, values.ScrollVersion));
     }
 
-    private void ReadNodeState(QueryCursor query, NodeLayout node, uint viewVersion, uint cacheVersion)
+    private void ReadNodeState(QueryCursor query, NodeLayout node, uint viewVersion, uint cacheVersion, uint scrollVersion)
     {
         if (!query.TryGetRow(node.Entity, out QueryRow row))
         {
@@ -219,6 +260,7 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates, Q
             node.CacheExists = false;
             node.CacheVersion = 0;
             node.HasMeasurement = false;
+            node.ScrollExists = false;
         }
         else
         {
@@ -228,9 +270,11 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates, Q
             node.CacheVersion = node.CacheExists ? World.WriteVersion<LayoutCache>(node.Entity) : 0;
             if (node.CacheExists) node.Cache = row.Read<LayoutCache>();
             else node.HasMeasurement = false;
+            node.ScrollExists = row.Has<ScrollOffset>();
         }
         node.ViewTypeVersion = viewVersion;
         node.LayoutCacheVersion = cacheVersion;
+        node.ScrollOffsetVersion = scrollVersion;
     }
 
     private bool HasReadChanges(NodeLayout node)
@@ -685,6 +729,21 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates, Q
         }
     }
 
+    private uint ReadChildrenVersion()
+    {
+        var versions = new TreeWriteVersions(World.ComponentWriteVersion<Children<ElementTree>>(),
+            World.ComponentWriteVersion<ViewType>(), World.ComponentWriteVersion<Canvas>(),
+            World.ComponentWriteVersion<ScrollOffset>());
+        if (_treeVersions != versions)
+        {
+            _treeVersions = versions;
+            _childrenVersion++;
+        }
+        return _childrenVersion;
+    }
+
+    private readonly record struct TreeWriteVersions(uint Children, uint ViewType, uint Canvas, uint ScrollOffset);
+
     private sealed class NodeLayout(Entity entity, int contentCount)
     {
         internal readonly Entity Entity = entity;
@@ -700,12 +759,15 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates, Q
         internal ushort SourceViewType;
         internal uint ViewTypeVersion;
         internal uint LayoutCacheVersion;
+        internal uint ScrollOffsetVersion;
+        internal uint ChildrenVersion;
         internal Vector2 Position;
         internal Vector2 CanvasPosition;
         internal Size ContentSize;
         internal LayoutCache Cache;
         internal uint CacheVersion;
         internal bool CacheExists;
+        internal bool ScrollExists;
         internal Entity MeasurementRoot;
         internal Rect Rectangle;
         internal Vector2 Scroll;

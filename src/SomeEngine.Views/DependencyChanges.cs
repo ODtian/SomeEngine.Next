@@ -1,6 +1,7 @@
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hierarchy;
+using SomeEngine.ECS.Registry;
 
 namespace SomeEngine.Views;
 
@@ -56,6 +57,8 @@ internal sealed class DependencyChanges
             EnvironmentLookup.HasChanges(world, entity, in read),
         DependencyKind.Component => HasComponentChanges(world, read.Component, recheck) &&
             HasChanges(world, entity, read),
+        DependencyKind.Presence when ComponentRegistry.Get(read.Component).Storage is StoragePath.Table or StoragePath.Sparse =>
+            HasComponentChanges(world, read.Component, recheck) && HasChanges(world, entity, read),
         _ => HasChanges(world, entity, read),
     };
 
