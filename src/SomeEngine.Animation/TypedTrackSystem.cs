@@ -48,9 +48,13 @@ public struct TypedTrackSystem<T, TOps, TParameters, TState, TEvaluator>(TrackFi
     {
         var evaluation = (World: context.World, Weights: _fields == TrackFields.LayerWeights, Writes: _writes, Count: 0,
             Captures: _captures, CaptureCount: 0, CaptureOnly: false, Enabled: true);
-        context.World.ExecuteQuery(_tracks, context.LastSystemVersion, ref evaluation, &Evaluate);
+        bool hasActive = context.World.HasQueryMembers(_tracks);
+        bool hasFinished = context.World.HasQueryMembers(_finishedTracks);
+        if (hasActive)
+            context.World.ExecuteQuery(_tracks, context.LastSystemVersion, ref evaluation, &Evaluate);
         evaluation.Enabled = false;
-        context.World.ExecuteQuery(_finishedTracks, context.LastSystemVersion, ref evaluation, &Evaluate);
+        if (hasFinished)
+            context.World.ExecuteQuery(_finishedTracks, context.LastSystemVersion, ref evaluation, &Evaluate);
         if (evaluation.CaptureCount > 0)
         {
             for (int index = 0; index < evaluation.CaptureCount; index++)
@@ -62,9 +66,11 @@ public struct TypedTrackSystem<T, TOps, TParameters, TState, TEvaluator>(TrackFi
             }
             evaluation.CaptureOnly = true;
             evaluation.Enabled = true;
-            context.World.ExecuteQuery(_tracks, context.LastSystemVersion, ref evaluation, &Evaluate);
+            if (hasActive)
+                context.World.ExecuteQuery(_tracks, context.LastSystemVersion, ref evaluation, &Evaluate);
             evaluation.Enabled = false;
-            context.World.ExecuteQuery(_finishedTracks, context.LastSystemVersion, ref evaluation, &Evaluate);
+            if (hasFinished)
+                context.World.ExecuteQuery(_finishedTracks, context.LastSystemVersion, ref evaluation, &Evaluate);
         }
         _writes = evaluation.Writes;
         _captures = evaluation.Captures;

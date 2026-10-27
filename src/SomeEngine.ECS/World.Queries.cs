@@ -62,6 +62,22 @@ public partial class World
         return record.ReadMembershipVersion();
     }
 
+    /// <summary>Checks whether the query's component and enable filters have a live member.</summary>
+    /// <remarks>Version filters contribute their component requirements; execution owns their time window.</remarks>
+    public bool HasQueryMembers(QueryHandle query)
+    {
+        QueryDefinition definition = _queries.GetMembershipRecord(query).Definition;
+        using WorldJobAdmissionScope admission = EnterJobAdmission(
+            WorldJobAdmissionRequest.ForQuery(WorldTopologyAccess.Read,
+                definition.MembershipStorageAccesses, canWrite: false));
+        QueryRecord record = _queries.GetMembershipRecord(query);
+        foreach (QueryArchetypeMatch match in record.State.Matches)
+            foreach (var chunk in match.Archetype.Chunks)
+                if (match.RowFilterMask(chunk) != 0)
+                    return true;
+        return false;
+    }
+
     internal ReadOnlySpan<Entity> ReadQueryEntities(QueryHandle query, out uint version)
     {
         using WorldJobAdmissionScope control = EnterRootControlMutation();

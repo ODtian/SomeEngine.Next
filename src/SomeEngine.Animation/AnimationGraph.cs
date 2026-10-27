@@ -148,6 +148,8 @@ public struct GraphSystem : ISystem<ImmediateSystemContext>
             world.ReleaseQuery(_instances);
             _instances = CreateQuery(world);
         }
+        if (!world.HasQueryMembers(_instances))
+            return;
         world.ExecuteQuery(_instances, context.LastSystemVersion, ref world,
             static (QueryCursor rows, ref World world) =>
             {

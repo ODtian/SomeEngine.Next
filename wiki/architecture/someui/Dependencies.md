@@ -214,10 +214,12 @@ tag 与 shared 组件继续逐条比较存在性。
 public partial class World
 {
     public uint MembershipVersion(QueryHandle query);
+    public bool HasQueryMembers(QueryHandle query);
 }
 ```
 
-- 每次读取观察查询当前遍历顺序中的实体序列。创建、销毁，以及组件增删引起的匹配变化推进版本；交换删除等操作引起的结果顺序变化同样推进版本。
+- `MembershipVersion` 每次读取观察查询当前遍历顺序中的实体序列。创建、销毁，以及组件增删引起的匹配变化推进版本；交换删除等操作引起的结果顺序变化同样推进版本。
+- `HasQueryMembers` 沿同一组件要求和启用过滤寻找首个存活成员。调用沿查询定义的成员读取权限取得拓扑与启用数据，只返回存在性；组件写版本与 World 时钟保持原值。动画系统通过该入口决定实际数据查询的执行范围。
 - `Enabled<T>` 与 `Disabled<T>` 参与成员匹配；它们选择的实体进入或离开结果时推进版本。组件值写入，以及保持实体序列的结构与启用修改，保留已有成员版本。
 - `Added<T>`、`Changed<T>` 与 `ChunkChanged<T>` 的时间窗口由查询执行提供。成员观察使用这些条件的组件存在要求，时间窗口仍由 `ExecuteQuery` 处理。
 - 版本是查询观察的 `uint`，使用 `!=` 比较以覆盖回绕。多次修改在下一次读取时按当前结果合并观察。
@@ -225,7 +227,7 @@ public partial class World
 - 成员观察按需建立。静态读取先比较 chunk 身份、实体行序版本与查询过滤掩码，变化后才比较实际实体序列。结果范围内保持顺序的表格迁移保留版本。
 - 调用方使用当前 World 的有效查询句柄；开发构建通过统一 `DevelopmentCheck` 报告无效或已释放的句柄。shipping 调用中的开发检查及其参数求值由条件编译移除。
 
-实现：[World 查询 API](../../../src/SomeEngine.ECS/World.Queries.cs)、[成员观察](../../../src/SomeEngine.ECS/Queries/QueryMembership.cs)、[公开行为测试](../../../tests/SomeEngine.ECS.Tests/QueryMembershipTests.cs)。
+实现：[World 查询 API](../../../src/SomeEngine.ECS/World.Queries.cs)、[成员观察](../../../src/SomeEngine.ECS/Queries/QueryMembership.cs)、[成员版本行为测试](../../../tests/SomeEngine.ECS.Tests/QueryMembershipTests.cs)、[成员存在性行为测试](../../../tests/SomeEngine.ECS.Tests/QueryPresenceTests.cs)。
 
 ## Relations
 [[architecture/someui/State|State]] · [[architecture/someui/Rebuild-Schedule|Rebuild Schedule]] · ADR 0010

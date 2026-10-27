@@ -58,6 +58,10 @@ AnimationSystems.Add(schedule, path);
 
 用户系统可以通过 `AnimationSystems.Add(schedule, system, AnimationPhase.Properties)` 加入共同字段求值阶段；`Timeline`、`Graph`、`LayerWeights`、`LayerComposition`、`CompositionInputs`、`Composition`、`Completion` 也提供明确接入位置。`CompositionInputs` 位于属性最终合成之后、具体 Composition 系统之前，用于将当前参数与时钟形成组合输入；GPU 姿势系统在该阶段读取当前 `GraphParameters`，后续 CPU 依赖节点与同步骨骼消费同次输入。阶段展开时采用低频系统装配，热更新沿 ECS 的 managed 函数指针系统入口执行。
 
+连续的内置系统通过 [AnimationSystemBatch](../../../src/SomeEngine.Animation/AnimationSystemBatch.cs) 共用一次系统提交作用域；每项保存自己的创建状态、上次成功版本与当前版本，按原顺序取得具体上下文并执行。用户阶段系统分别注册到原有 ECS 系统组，保留各自的生命周期和观察窗口。`AnimationSystems.Describe` 在首次更新前后都展开具体阶段类型。
+
+只有内置阶段的管线通过 [AnimationInputs](../../../src/SomeEngine.Animation/AnimationInputs.cs) 观察活动时间线、图清理、实体成员版本，以及贡献、来源、基准值、层和遮罩的写版本。活动播放、完成后的清理和动态贡献恢复执行完整阶段；静态帧复用已有呈现。成功更新在共同 World 时钟上建立下一次输入观察窗口，基准值或层变化后继续通过原有合成系统写回。公开行为由 [AnimationPhaseTests](../../../tests/SomeEngine.Animation.Tests/AnimationPhaseTests.cs) 覆盖保持值、动态贡献恢复、阶段顺序及用户生命周期。
+
 GPU 结果驱动的具体叶在 Composition 消费匹配实例、实际叶启动标记、图安装标记和请求输入的反馈，再通过共同 `AnimationGraph.Submit` 提交 running。时长阶段继续采用共同时间语义；选定范围与使用期见 [GPU Pose Readback](GPU-Pose-Readback.md)。
 
 ```csharp

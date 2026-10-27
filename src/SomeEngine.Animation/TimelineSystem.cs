@@ -22,6 +22,8 @@ public struct TimelineSystem(Entity time = default) : ISystem<ImmediateSystemCon
             : context.World.Read<AnimationTime>(_time);
         DevelopmentCheck.Require(float.IsFinite(time.Delta) && time.Delta >= 0, "Animation frame time must be finite and nonnegative.");
         DevelopmentCheck.Require(float.IsFinite(time.GameScale) && time.GameScale >= 0, "Game time scale must be finite and nonnegative.");
+        if (!context.World.HasQueryMembers(_timelines))
+            return;
         AnimationDeltas deltas = time.Deltas;
         context.World.ExecuteQuery(_timelines, context.LastSystemVersion, ref deltas,
             static (QueryCursor rows, ref AnimationDeltas deltas) =>

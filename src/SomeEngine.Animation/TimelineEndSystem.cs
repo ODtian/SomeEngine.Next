@@ -15,7 +15,10 @@ public struct TimelineEndSystem : ISystem<ImmediateSystemContext>
             .ReadWrite<Timeline>().Enabled<Timeline>()
             .OptionalBuffer<TimelineStage>(QueryAccess.Read));
 
-    public void OnUpdate(ref ImmediateSystemContext context) =>
+    public void OnUpdate(ref ImmediateSystemContext context)
+    {
+        if (!context.World.HasQueryMembers(_timelines))
+            return;
         context.World.ExecuteQuery(_timelines, context.LastSystemVersion, static rows =>
         {
             foreach (QueryChunkView chunk in rows.Chunks)
@@ -35,6 +38,7 @@ public struct TimelineEndSystem : ISystem<ImmediateSystemContext>
                 }
             }
         });
+    }
 
     internal static bool ContinueStages(ref Timeline timeline, ReadOnlySpan<TimelineStage> stages)
     {
