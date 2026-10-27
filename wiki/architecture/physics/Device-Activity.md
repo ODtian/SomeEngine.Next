@@ -18,9 +18,13 @@
 `[StartTime, EndTime)` 选取请求。
 输入刷新在 chunk 边界读取可用组件、绑定变化与原 `BodyActivity` 行版本跨度，
 沿 `RowIndices` 保留原成员筛选；已确认的行先比较实体与版本，再读取活动值。
-完成应用通过 `QueryCursor.ReadRows<DeviceBodyBinding,BodyActivity>` 在原查询的 chunk 边界借用组件列。
-完成值实际变化时才取得原 `BodyActivity` 写引用，
-并在同一资源确认该行版本；事件继续沿当前实体的完成结果生成。
+[完成应用](../../../src/SomeEngine.Physics/DeviceBodyActivities.Results.cs) 在原查询的只读作用域内，
+通过 `ReadOnlyQueryPacketJobs` 按 packet 借用 Body 绑定、活动绑定和 `BodyActivity` 原列。
+每个 packet 读取对应设备结果，核对原实体代次、资源绑定、已确认版本和实际值变化，
+将变化实体、设备索引及事件留在同一活动资源的可复用名单。
+比较完成并 Join 后，`ComponentWriteJobs` 只为实际变化的实体取得 `BodyActivity` 写引用，
+同批实际写版本随结果确认回原版本数组。事件按 packet 顺序追加到原 `PhysicsEventBuffer`，
+本轮消费完成后清理名单计数并复用其容量。
 
 常规输入使用原查询的 `MembershipVersion` 与组件列版本：成员变化或活动组件增删时
 刷新当前成员，其余步骤只读取 Body 绑定、活动绑定或活动值有写入的 chunk。
