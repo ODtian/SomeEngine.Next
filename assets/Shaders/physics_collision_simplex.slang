@@ -13,28 +13,40 @@ DeviceSupportPoint supportDevicePair<TFirst : IDeviceConvex, TSecond : IDeviceCo
     return result;
 }
 
+double deviceCollisionDot(double3 first, double3 second)
+{
+    return first.x * second.x + first.y * second.y + first.z * second.z;
+}
+
+double3 deviceCollisionCross(double3 first, double3 second)
+{
+    return double3(first.y * second.z - first.z * second.y,
+        first.z * second.x - first.x * second.z,
+        first.x * second.y - first.y * second.x);
+}
+
 float3 closestDeviceSegment(float3 a, float3 b, out float2 weights)
 {
-    float3 edge = b - a;
-    float squared = dot(edge, edge);
-    float parameter = squared > 0 ? saturate(-dot(a, edge) / squared) : 0;
+    double3 first = double3(a), edge = double3(b) - first;
+    double squared = deviceCollisionDot(edge, edge);
+    double parameter = squared > 0 ? clamp(-deviceCollisionDot(first, edge) / squared, 0.0, 1.0) : 0;
     weights = float2(1 - parameter, parameter);
-    return a + edge * parameter;
+    return float3(first + edge * parameter);
 }
 
 float3 closestDeviceTriangle(float3 a, float3 b, float3 c, out float3 weights)
 {
-    float3 ab = b - a;
-    float3 ac = c - a;
-    float3 normal = cross(ab, ac);
-    float squared = dot(normal, normal);
+    double3 first = double3(a), ab = double3(b) - first, ac = double3(c) - first;
+    double3 normal = deviceCollisionCross(ab, ac);
+    double squared = deviceCollisionDot(normal, normal);
     if (squared > 0)
     {
-        float second = dot(cross(-a, ac), normal) / squared;
-        float third = dot(cross(ab, -a), normal) / squared;
+        double second = deviceCollisionDot(deviceCollisionCross(-first, ac), normal) / squared;
+        double third = deviceCollisionDot(deviceCollisionCross(ab, -first), normal) / squared;
         weights = float3(1 - second - third, second, third);
         // Face projection keeps the closest vector in the normal direction at small separations.
-        if (all(weights >= 0)) return normal * (dot(a, normal) / squared);
+        if (second >= 0 && third >= 0 && 1 - second - third >= 0)
+            return float3(normal * (deviceCollisionDot(first, normal) / squared));
     }
     float2 edgeWeights;
     float3 closest = closestDeviceSegment(a, b, edgeWeights);
@@ -73,17 +85,18 @@ float3 closestDeviceSimplex(DeviceSupportPoint points[4], int count, float3 targ
         return result;
     }
     float3 d = points[3].difference() - target;
-    float3 first = b - a;
-    float3 second = c - a;
-    float3 third = d - a;
-    float determinant = dot(first, cross(second, third));
+    double3 origin = double3(a);
+    double3 first = double3(b) - origin;
+    double3 second = double3(c) - origin;
+    double3 third = double3(d) - origin;
+    double determinant = deviceCollisionDot(first, deviceCollisionCross(second, third));
     if (determinant != 0)
     {
-        float u = dot(-a, cross(second, third)) / determinant;
-        float v = dot(first, cross(-a, third)) / determinant;
-        float w = dot(first, cross(second, -a)) / determinant;
-        float4 candidate = float4(1 - u - v - w, u, v, w);
-        if (all(candidate >= 0)) { weights = candidate; return float3(0); }
+        double u = deviceCollisionDot(-origin, deviceCollisionCross(second, third)) / determinant;
+        double v = deviceCollisionDot(first, deviceCollisionCross(-origin, third)) / determinant;
+        double w = deviceCollisionDot(first, deviceCollisionCross(second, -origin)) / determinant;
+        double4 candidate = double4(1 - u - v - w, u, v, w);
+        if (all(candidate >= 0)) { weights = float4(candidate); return float3(0); }
     }
     float3 closest = closestDeviceTriangle(a, b, c, faceWeights);
     weights = float4(faceWeights, 0);

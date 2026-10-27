@@ -47,6 +47,12 @@ Hull reader 的准备阶段在依赖就绪后读取原顶点、面及面索引�
 平面组合通过 `DeviceConvexPlaneCollision<TGeometry>`，两端交换通过 `DeviceReverseCollision<TKernel>`。
 CPU 与设备 simplex 共用的数学职责见[距离、穿透与流形](Geometry.md#距离穿透与流形)。
 
+设备 simplex 的线段投影、三角形重心权重、四面体行列式及 GJK 收敛点积使用
+`double` 局部运算，几何输入、支持点、权重输出和接触结果沿原 `float` 表示交付。
+这使宽地板与微小转角盒体的浅穿透保持竖直法向，行为分别由
+[CPU 接触检查](../../../tests/SomeEngine.Physics.Tests/BoxFloorContactTests.cs) 和
+[设备接触检查](../../../tests/SomeEngine.Graphics.Direct3D12.Tests/DeviceCollisionDetectionTests.BoxFloor.cs) 覆盖。
+
 无序类型 bin 同时包含两种参与顺序时，项目用 `DeviceTypePairCollision<TKernel>` 指定
 内核的 `firstType`。包装按本轮类型交换数值输入，并还原见证点、特征与法向；
 最终实体和位置角色继续由原 pair 提供。

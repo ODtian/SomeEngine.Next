@@ -324,11 +324,11 @@ struct DeviceConvexCollision<TFirst : IDeviceConvex, TSecond : IDeviceConvex> : 
         float tolerance = DetectionParameters.tolerance;
         [loop] for (uint iteration = 0; iteration < DetectionParameters.distanceIterations; iteration++)
         {
-            float squared = dot(closest, closest);
-            if (squared <= tolerance * tolerance)
+            double squared = deviceCollisionDot(double3(closest), double3(closest));
+            if (squared <= double(tolerance) * tolerance)
                 return penetrationDevicePair<TFirst, TSecond>(work, first, second, simplex, count);
             DeviceSupportPoint support = supportDevicePair<TFirst, TSecond>(first, second, -closest);
-            if (squared - dot(closest, support.difference()) <= tolerance * sqrt(squared)) break;
+            if (squared - deviceCollisionDot(double3(closest), double3(support.difference())) <= tolerance * sqrt(float(squared))) break;
             simplex[count++] = support;
             closest = reduceDeviceSimplex(simplex, count, weights);
         }
