@@ -89,6 +89,13 @@ public sealed partial class GameFrameTests
             Assert.Equal(expectedTimes[index], times[index], precision: 10);
             Assert.Equal((float)expectedTimes[index], positions[index], precision: 6);
         }
+        for (int number = 7; number <= 180; number++)
+        {
+            game.Update(1d / 60);
+            Assert.Equal(number, physics.Result.Number);
+            Assert.Equal(number / 60d, physics.Result.EndTime, precision: 10);
+            Assert.InRange(MathF.Abs(number / 60f - world.Read<WorldTransform>(body).Qvvs.Position.X), 0, .00001f);
+        }
         world.ReleaseQuery(copy);
     }
 
