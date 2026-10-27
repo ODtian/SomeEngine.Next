@@ -38,7 +38,9 @@ public readonly struct BreakConstraints<TConstraint, TForces> : IPhysicsStage, I
         var commands = new JobCommandBuffer(context.World, 1);
         commands.Schedule(0, new Check(this, context), _accesses, dependency);
         JobHandle playback = commands.SchedulePlayback();
-        return WorldJobs.GetScheduler(context.World).ScheduleFinally(new ReleasePhysicsEventCommands(commands), JobScheduleOptions.Default, playback);
+        Scheduler scheduler = WorldJobs.GetScheduler(context.World);
+        JobHandle cleanup = scheduler.ScheduleFinally(new ReleasePhysicsEventCommands(commands), JobScheduleOptions.Default, playback);
+        return scheduler.CombineDependencies([playback, cleanup]);
     }
     private readonly struct Check(BreakConstraints<TConstraint, TForces> stage, PhysicsStepContext context) : IJobCommandProducer
     {
