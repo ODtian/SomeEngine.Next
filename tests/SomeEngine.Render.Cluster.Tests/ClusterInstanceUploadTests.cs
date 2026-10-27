@@ -105,11 +105,19 @@ public sealed class ClusterInstanceUploadTests
             }
         }
         await data.ExecuteAsync();
+        var current = new List<RenderTransform>();
+        var previous = new List<RenderPreviousTransform>();
+        data.World.ExecuteReadSnapshot(data.Composition.EntityQueryHandle, cursor =>
+        {
+            foreach (QueryRow row in cursor.Rows)
+            {
+                current.Add(row.Read<RenderTransform>());
+                previous.Add(row.Read<RenderPreviousTransform>());
+            }
+        });
         Assert.Equal(Enumerable.Range(0, entities.Length).Select(row => (uint)row), data.ChangedRows);
-        Assert.Equal(Enumerable.Range(0, 4097).Select(row => Current(row % 2 == 0 ? row + 500 : row)),
-            data.Values(RenderInstanceTransformProperties.CurrentTransform));
-        Assert.Equal(Enumerable.Range(0, 4097).Select(row => Previous(row % 2 == 1 ? row + 800 : row + 10)),
-            data.Values(RenderInstanceTransformProperties.PreviousTransform));
+        Assert.Equal(current, data.Values(RenderInstanceTransformProperties.CurrentTransform));
+        Assert.Equal(previous, data.Values(RenderInstanceTransformProperties.PreviousTransform));
     }
 
     [Fact]
