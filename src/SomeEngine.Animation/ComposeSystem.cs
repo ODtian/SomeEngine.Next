@@ -15,10 +15,12 @@ public struct ComposeSystem<T, TOps>(TrackFields fields = TrackFields.Properties
     private QueryHandle _targets;
     private QueryHandle _sources;
     private FieldWrite<T>[] _writes = [];
+    private List<Channel<T>> _writeChannels = null!;
 
     public void OnCreate(ref ImmediateSystemContext context)
     {
         _writes = ArrayPool<FieldWrite<T>>.Shared.Rent(64);
+        _writeChannels = new();
         _targets = context.World.Query(context.World.QueryDefinition()
             .WriteBuffer<Contribution<T>>().Optional<AnimationLayers>(QueryAccess.Read)
             .OptionalBuffer<BaseValue<T>>(QueryAccess.Read).OptionalBuffer<PropertySource<T>>(QueryAccess.Read));
@@ -33,7 +35,7 @@ public struct ComposeSystem<T, TOps>(TrackFields fields = TrackFields.Properties
         var composition = (World: world, WeightChannels: _fields == TrackFields.LayerWeights, Writes: _writes, Count: 0);
         world.ExecuteQuery(_targets, context.LastSystemVersion, ref composition, &ComposeDynamic);
         world.ExecuteQuery(_sources, context.LastSystemVersion, ref composition, &ComposeFixed);
-        FieldWrites<T>.Flush(world, composition.Writes, ref composition.Count);
+        FieldWrites<T>.Flush(world, composition.Writes, ref composition.Count, _writeChannels);
         _writes = composition.Writes;
 
         static void ComposeDynamic(QueryCursor rows, ref (World World, bool WeightChannels, FieldWrite<T>[] Writes, int Count) composition)
@@ -46,6 +48,7 @@ public struct ComposeSystem<T, TOps>(TrackFields fields = TrackFields.Properties
                 foreach (QueryRow row in chunk.Rows)
                 {
                     DynamicBuffer<Contribution<T>> buffer = row.Buffer<Contribution<T>>();
+                    if (buffer.Count == 0) continue;
                     Span<Contribution<T>> contributions = buffer.AsSpan();
                     Sort(contributions);
                     bool hasLayers = row.Has<AnimationLayers>();
@@ -118,20 +121,25 @@ public struct ComposeSystem<T, TOps>(TrackFields fields = TrackFields.Properties
             bool hasBases = chunk.HasBuffer<BaseValue<T>>();
             bool hasLayers = chunk.Has<AnimationLayers>();
             bool hasMask = chunk.HasBuffer<LayerChannel>();
+            bool basesChangedInChunk = hasBases && chunk.HasBufferChangedSinceLastSystemVersion<BaseValue<T>>();
+            bool maskChangedInChunk = hasMask && chunk.HasBufferChangedSinceLastSystemVersion<LayerChannel>();
+            QueryRowChanges layerChanges = hasLayers ? chunk.ReadRowChanges<AnimationLayers>() : default;
+            ReadOnlySpan<AnimationLayers> layerValues = hasLayers ? chunk.Read<AnimationLayers>() : default;
+            AnimationLayers defaultLayers = default;
             int rowIndex = 0;
             foreach (QueryRow row in chunk.Rows)
             {
-                bool basesChanged = hasBases && chunk.RowBufferChangedSinceLastSystemVersion<BaseValue<T>>(rowIndex);
-                bool layersChanged = hasLayers && chunk.RowChangedSinceLastSystemVersion<AnimationLayers>(rowIndex);
-                bool maskChanged = layersChanged || hasMask && chunk.RowBufferChangedSinceLastSystemVersion<LayerChannel>(rowIndex);
+                bool basesChanged = basesChangedInChunk && chunk.RowBufferChangedSinceLastSystemVersion<BaseValue<T>>(rowIndex);
+                bool layersChanged = layerChanges.HasChanged(rowIndex);
+                bool maskChanged = layersChanged || maskChangedInChunk && chunk.RowBufferChangedSinceLastSystemVersion<LayerChannel>(rowIndex);
+                ref readonly AnimationLayers layers = ref (hasLayers ? ref layerValues[rowIndex] : ref defaultLayers);
                 rowIndex++;
                 DynamicBuffer<PropertySource<T>> sourceBuffer = row.Buffer<PropertySource<T>>();
                 Span<PropertySource<T>> sources = sourceBuffer.AsSpan();
                 DynamicBuffer<Contribution<T>> dynamicBuffer = row.Buffer<Contribution<T>>();
-                Span<Contribution<T>> dynamic = dynamicBuffer.AsSpan();
+                Span<Contribution<T>> dynamic = dynamicBuffer.Count > 0 ? dynamicBuffer.AsSpan() : default;
                 Sort(dynamic);
                 ReadOnlySpan<BaseValue<T>> bases = hasBases ? row.ReadBuffer<BaseValue<T>>().AsSpan() : default;
-                AnimationLayers layers = hasLayers ? row.Read<AnimationLayers>() : default;
                 int fixedIndex = 0, dynamicIndex = 0;
                 while (fixedIndex < sources.Length || dynamicIndex < dynamic.Length)
                 {

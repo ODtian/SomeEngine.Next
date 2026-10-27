@@ -1,5 +1,6 @@
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
+using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 
 namespace SomeEngine.Animation.Tests;
@@ -20,6 +21,38 @@ public sealed class TypedPropertyAnimationTests
         Tick(systems, world, 0.5);
 
         Assert.Equal(4f, style.Corner.Radius);
+    }
+
+    [Fact]
+    public void DeclaredFieldsReceiveTheirPresentedValuesAcrossMultipleTargets()
+    {
+        using var world = new World();
+        var targets = new[]
+        {
+            world.CreateEntity(new FieldPanel { Style = new PanelStyle() }),
+            world.CreateEntity(new FieldPanel { Style = new PanelStyle() }),
+        };
+        var tween = Spec.Tween<float, FloatOps, Linear>(1);
+        using var systems = TweenSystems(world);
+        foreach (Entity target in targets)
+        {
+            PropertyAnimation.Declare(world, target, FieldPanelChannels.Opacity, tween);
+            PropertyAnimation.Declare(world, target, FieldPanelChannels.Radius, tween);
+            PropertyAnimation.Declare(world, target, FieldPanelChannels.Height, tween);
+            PropertyAnimation.To(world, target, FieldPanelChannels.Opacity, 2f, tween);
+            PropertyAnimation.To(world, target, FieldPanelChannels.Radius, 8f, tween);
+            PropertyAnimation.To(world, target, FieldPanelChannels.Height, 12f, tween);
+        }
+
+        Tick(systems, world, 0.5);
+
+        foreach (Entity target in targets)
+        {
+            FieldPanel panel = world.Read<FieldPanel>(target);
+            Assert.Equal(1f, panel.Opacity);
+            Assert.Equal(4f, panel.Style.Corner.Radius);
+            Assert.Equal(6f, panel.Height);
+        }
     }
 
     [Fact]
@@ -187,7 +220,7 @@ public sealed class TypedPropertyAnimationTests
     }
 
     [Fact]
-    public void OneHundredControlsUseTheDeclaredEntityAndComponentStructure()
+    public void OneHundredControlsKeepTheDeclaredComponentMembershipAndEntityCount()
     {
         using var world = new World();
         Entity target = world.CreateEntity(new FieldPanel());
@@ -195,8 +228,8 @@ public sealed class TypedPropertyAnimationTests
         var spring = Spec.Spring<float, FloatOps>();
         PropertyAnimation.Declare(world, target, FieldPanelChannels.Opacity, tween);
         PropertyAnimation.Declare(world, target, FieldPanelChannels.Opacity, spring);
-        using var changes = world.ObserveEntityTables();
-        changes.Accept(changes.Read());
+        QueryHandle members = world.Query(world.QueryDefinition().All<Timeline>().Buffer<Track<float>>());
+        uint membershipVersion = world.MembershipVersion(members);
         int count = world.EntityCount;
         using var systems = TweenSystems(world);
         for (int repeat = 0; repeat < 100; repeat++)
@@ -209,7 +242,7 @@ public sealed class TypedPropertyAnimationTests
         }
 
         Assert.Equal(count, world.EntityCount);
-        Assert.Equal(0, changes.Read().Count);
+        Assert.Equal(membershipVersion, world.MembershipVersion(members));
     }
 
     [Fact]

@@ -26,7 +26,7 @@ internal static class FieldWrites<T> where T : unmanaged
         writes[count++] = new(target, channel, value);
     }
 
-    internal static void Flush(World world, FieldWrite<T>[] writes, ref int count)
+    internal static void Flush(World world, FieldWrite<T>[] writes, ref int count, List<Channel<T>> channels)
     {
         if (count == 0)
             return;
@@ -40,13 +40,16 @@ internal static class FieldWrites<T> where T : unmanaged
             count = 0;
             return;
         }
+
+        // Keep channel appearance order and submission order within each channel.
+        channels.Clear();
         for (int index = 0; index < count; index++)
         {
-            bool written = false;
-            for (int previous = 0; previous < index; previous++)
-                if (writes[previous].Channel == writes[index].Channel) { written = true; break; }
-            if (!written) writes[index].Channel.WriteBatch(world, writes.AsSpan(0, count));
+            channel = writes[index].Channel;
+            if (!channels.Contains(channel)) channels.Add(channel);
         }
+        foreach (Channel<T> field in channels)
+            field.WriteBatch(world, writes.AsSpan(0, count));
         count = 0;
     }
 }

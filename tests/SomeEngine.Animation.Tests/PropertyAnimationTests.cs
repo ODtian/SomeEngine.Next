@@ -1,5 +1,6 @@
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
+using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 using System.Numerics;
 using System.Runtime.InteropServices;
@@ -167,14 +168,14 @@ public sealed class PropertyAnimationTests
     }
 
     [Fact]
-    public void DeclaredTargetCanStartRetargetAndStopOneHundredTimesWithTheSameTableAndEntityCount()
+    public void DeclaredTargetCanStartRetargetAndStopOneHundredTimesWithTheSameComponentMembershipAndEntityCount()
     {
         using var world = new World();
         Entity target = world.CreateEntity(new Visual());
         PropertyAnimation.Declare<float>(world, target);
         PropertyAnimation.Declare<float>(world, target);
-        using var tables = world.ObserveEntityTables();
-        tables.Accept(tables.Read());
+        QueryHandle members = world.Query(world.QueryDefinition().All<Timeline>().Buffer<Track<float>>());
+        uint membershipVersion = world.MembershipVersion(members);
         int entityCount = world.EntityCount;
         using var systems = FloatSystems(world);
 
@@ -196,18 +197,18 @@ public sealed class PropertyAnimationTests
         }
 
         Assert.Equal(entityCount, world.EntityCount);
-        Assert.Equal(0, tables.Read().Count);
+        Assert.Equal(membershipVersion, world.MembershipVersion(members));
     }
 
     [Fact]
-    public void PauseResumeAndSpeedPreserveProgressAndTableMembership()
+    public void PauseResumeAndSpeedPreserveProgressAndComponentMembership()
     {
         using var world = new World();
         Entity target = world.CreateEntity(new Visual());
         PropertyAnimation.Declare<float>(world, target);
         Entity animation = PropertyAnimation.To(world, target, Opacity, 1f, Spec.Tween(2));
-        using var tables = world.ObserveEntityTables();
-        tables.Accept(tables.Read());
+        QueryHandle members = world.Query(world.QueryDefinition().All<Timeline>().Buffer<Track<float>>());
+        uint membershipVersion = world.MembershipVersion(members);
         using var systems = FloatSystems(world);
         Tick(systems, world, 0.25);
         Assert.Equal(0.125f, world.Read<Visual>(target).Opacity);
@@ -230,7 +231,7 @@ public sealed class PropertyAnimationTests
         Assert.Equal(0.5f, world.Read<Visual>(target).Opacity);
         Tick(systems, world, 1);
         Assert.Equal(1, world.Read<Visual>(target).Opacity);
-        Assert.Equal(0, tables.Read().Count);
+        Assert.Equal(membershipVersion, world.MembershipVersion(members));
     }
 
     [Fact]
@@ -358,7 +359,7 @@ public sealed class PropertyAnimationTests
         Assert.False(world.IsEnabled<Timeline>(animation));
     }
 
-    [Fact]
+    [Fact, Trait("Category", "Performance")]
     public void SteadyDefaultAnimationFramesAllocateZeroManagedBytes()
     {
         using var world = new World();
