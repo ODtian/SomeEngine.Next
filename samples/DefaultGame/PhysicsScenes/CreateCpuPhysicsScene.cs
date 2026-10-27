@@ -137,7 +137,11 @@ public static partial class PhysicsScenes
             [inputs, maintenance, bins, detected, detection, points, solve, activity, breakJoints, prediction, eventBuffer, contactEvents, consumption, responses]);
     }
 
-    internal static PhysicsSceneEntities CreateEntities(World world, PhysicsSceneData data)
+    internal static PhysicsSceneEntities CreateEntities(World world, PhysicsSceneData data) =>
+        CreateEntities(world, data, default(SceneBoxGeometry));
+
+    internal static PhysicsSceneEntities CreateEntities<TGeometry>(World world, PhysicsSceneData data, TGeometry geometry)
+        where TGeometry : struct, ISceneBodyGeometry
     {
         var entities = new Entity[data.Bodies.Length];
         for (int index = 0; index < entities.Length; index++)
@@ -154,8 +158,8 @@ public static partial class PhysicsScenes
             });
             world.Add(entity, new BodyVelocity { Linear = Vector(input.Velocity), Angular = Vector(input.AngularVelocity) });
             world.Add(entity, new BodyStepState());
-            world.Add(entity, new BodyActivity { Radius = Vector(input.Size).Length() * .5f });
-            world.Add(entity, new BoxGeometry(Vector(input.Size) * .5f)); world.Add(entity, new CollisionBounds());
+            world.Add(entity, new BodyActivity { Radius = geometry.Add(world, entity, input, index) });
+            world.Add(entity, new CollisionBounds());
             world.Add(entity, new ContactMaterial { NormalStiffness = (float)(data.Materials?.ContactStiffness ?? double.PositiveInfinity),
                 NormalDamping = (float)(data.Materials?.ContactDamping ?? 0),
                 StaticFriction = (float)input.Friction, DynamicFriction = (float)input.Friction });
