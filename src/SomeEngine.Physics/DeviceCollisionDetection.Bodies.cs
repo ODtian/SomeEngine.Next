@@ -34,10 +34,10 @@ public sealed partial class DeviceCollisionDetection
     public ReadOnlySpan<DeviceContactBody> ReadContactBodies(int pair, int point) =>
         _contactBodies.AsSpan((pair * 4 + point) * Capacity.BodiesPerContact, _contactBodyCounts[pair * 4 + point]);
 
-    private void AcceptContactBodies(Span<byte> bytes)
+    private void AcceptContactBodies()
     {
         if (_geometry.Bodies is null || (_readback & DeviceCollisionReadback.Contacts) == 0) return;
-        MemoryMarshal.Cast<byte, int>(bytes.Slice((int)ContactBodyCountReadbackOffset, Count * 4 * 4)).CopyTo(_contactBodyCounts);
-        MemoryMarshal.Cast<byte, DeviceContactBody>(bytes.Slice((int)ContactBodyReadbackOffset, Count * 4 * Capacity.BodiesPerContact * 32)).CopyTo(_contactBodies);
+        ReadResults(ContactBodyCountReadbackOffset, _contactBodyCounts.AsSpan(0, Count * 4));
+        ReadResults(ContactBodyReadbackOffset, _contactBodies.AsSpan(0, Count * 4 * Capacity.BodiesPerContact));
     }
 }

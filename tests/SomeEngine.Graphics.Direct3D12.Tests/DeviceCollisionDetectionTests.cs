@@ -482,7 +482,7 @@ public sealed partial class DeviceCollisionDetectionTests(D3D12TestCompiler shad
             new DeviceGridSettings(1, 3), new DeviceGridCapacity(2, 256, 257, 4, 1));
         using var geometry = new DeviceCollisionGeometry(backend, device, new DeviceGeometryCapacity(2, 0, 0, 0));
         Entity first = CreateSphere(world, grid, geometry, 0, Vector3.Zero);
-        Entity second = CreateSphere(world, grid, geometry, 1, new Vector3(1.5f, 0, 0));
+        Entity second = CreateSphere(world, grid, geometry, 1, new Vector3(5, 0, 0));
         QueryDefinition bodies = world.QueryDefinition().All<SphereGeometry>().Build();
         QueryHandle members = world.Query(bodies);
         var pairs = world.Within(members);
@@ -494,7 +494,12 @@ public sealed partial class DeviceCollisionDetectionTests(D3D12TestCompiler shad
             .Then(grid.WriteGeometryInputs<SphereGeometry, DeviceSphereReader>(pairs, default, geometryType: 0, rowsPerPacket: 64))
             .Then(grid.Build(pairs, DevicePairRules.None, DeviceInputTransfer.Upload, DevicePairReadback.None))
             .Then(detection.Detect());
-        PhysicsStepResult step = PhysicsSimulation.Create(world, bodies, stages, 1).Schedule(7, 2, 0.25);
+        var simulation = PhysicsSimulation.Create(world, bodies, stages, 1);
+        simulation.Schedule(6, 1.75, 0.25).Complete();
+        Assert.Empty(detection.ReadDistances().ToArray());
+        Assert.Equal(6, detection.Number); Assert.Equal(2, detection.Time);
+        world.Replace(second, new BodyPose { Position = new(1.5f, 0, 0), Rotation = Quaternion.Identity });
+        PhysicsStepResult step = simulation.Schedule(7, 2, 0.25);
 
         step.Complete();
 
@@ -509,6 +514,11 @@ public sealed partial class DeviceCollisionDetectionTests(D3D12TestCompiler shad
         Assert.Equal(0, result.Distance.SecondFeature);
         Assert.Equal(7, detection.Number);
         Assert.Equal(2.25, detection.Time);
+        Assert.True(backend.IsComplete(detection.Completion));
+        world.Replace(second, new BodyPose { Position = new(5, 0, 0), Rotation = Quaternion.Identity });
+        simulation.Schedule(8, 2.25, 0.25).Complete();
+        Assert.Empty(detection.ReadDistances().ToArray());
+        Assert.Equal(8, detection.Number); Assert.Equal(2.5, detection.Time);
         Assert.True(backend.IsComplete(detection.Completion));
         world.ReleaseQuery(members);
     }
