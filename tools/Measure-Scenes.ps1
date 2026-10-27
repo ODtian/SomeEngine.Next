@@ -51,7 +51,7 @@ if (!$FromBenchmarkQueue) {
     $queue = 'F:\SomeEngine.Next\tools\Invoke-Benchmark.ps1'
     $queueSession = $env:SOMEENGINE_BENCHMARK_SESSION ?? $env:CODEX_THREAD_ID ?? $env:CODEX_SESSION_ID ?? $repository
     if (![IO.File]::Exists($queue)) { throw "The shared benchmark queue is unavailable: $queue" }
-    $pwsh = (Get-Command pwsh -CommandType Application -ErrorAction Stop).Source
+    $pwsh = (Get-Command pwsh -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
     $submit = [Diagnostics.ProcessStartInfo]::new($pwsh)
     $submit.WorkingDirectory = $repository
     $submit.UseShellExecute = $false
@@ -222,7 +222,7 @@ public static class SceneDesktopProcess {
     $script = $PSCommandPath.Replace("'", "''")
     $body = "`$ErrorActionPreference = 'Stop'; `$LASTEXITCODE = 0; try { `$parameters = ConvertFrom-Json -AsHashtable ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('$data'))); & '$script' @parameters; if (!`$?) { exit 1 }; exit `$LASTEXITCODE } catch { [Console]::Error.WriteLine(`$_); exit 1 }"
     $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($body))
-    $pwsh = (Get-Command pwsh -CommandType Application -ErrorAction Stop).Source
+    $pwsh = (Get-Command pwsh -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
     $desktopExitCode = [SceneDesktopProcess]::Run($pwsh, $encoded, [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..')), $desktopTimeoutMilliseconds)
     exit $desktopExitCode
 }
