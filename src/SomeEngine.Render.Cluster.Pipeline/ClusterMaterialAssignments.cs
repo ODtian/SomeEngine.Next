@@ -54,6 +54,8 @@ public sealed class ClusterMaterialAssignmentSet
     private ImmutableHashSet<Entity> _xrayEntities = ImmutableHashSet<Entity>.Empty;
     private ImmutableHashSet<long> _xrayMaterials = ImmutableHashSet<long>.Empty;
     private uint _capacity;
+    private ulong _contentVersion;
+    private ulong _changesFromVersion;
 
     private ClusterMaterialAssignmentSet() { }
     private ClusterMaterialAssignmentSet(ClusterMaterialAssignmentSet source)
@@ -70,6 +72,8 @@ public sealed class ClusterMaterialAssignmentSet
         _changes = source._changes;
         _changedOffsets = source._changedOffsets;
         _capacity = source._capacity;
+        _contentVersion = source._contentVersion;
+        _changesFromVersion = source._changesFromVersion;
         _xrayEntities = source._xrayEntities;
         _xrayMaterials = source._xrayMaterials;
         BlendOcclusionChanged = source.BlendOcclusionChanged;
@@ -169,6 +173,7 @@ public sealed class ClusterMaterialAssignmentSet
         var result = new ClusterMaterialAssignmentSet(this);
         result._changes = result._changes.Clear();
         result._changedOffsets = result._changedOffsets.Clear();
+        result._changesFromVersion = result._contentVersion;
         result.BlendOcclusionChanged = false;
         return result;
     }
@@ -184,6 +189,10 @@ public sealed class ClusterMaterialAssignmentSet
     // Revisions and ordered-render flags are captured values. Later edits never mutate an older published set.
     internal ClusterMaterialAssignmentSet ChangesSince(ClusterMaterialAssignmentSet? previous)
     {
+        // The accumulated changes already describe the last accepted set. Other
+        // consumers retain the comparison path for their own earlier versions.
+        if (previous is not null && previous._contentVersion == _changesFromVersion)
+            return this;
         if (previous is not null && ReferenceEquals(_entries, previous._entries) && SharesCapturedValues(previous))
             return _changes.IsEmpty && _changedOffsets.IsEmpty ? this : WithoutChanges();
 
@@ -213,6 +222,7 @@ public sealed class ClusterMaterialAssignmentSet
         }
         result._changes = materials.ToImmutable();
         result._changedOffsets = offsets.ToImmutable();
+        if (previous is not null) result._changesFromVersion = previous._contentVersion;
         return result;
     }
 
@@ -254,6 +264,7 @@ public sealed class ClusterMaterialAssignmentSet
         private int _revisionChanges;
         private bool _topologyChanged;
         private bool _xrayChanged;
+        private bool _valuesChanged;
         internal Update(ClusterMaterialAssignmentSet source, RenderWorld world, bool denseRevisionSnapshots = false)
         {
             _source = source;
@@ -321,6 +332,7 @@ public sealed class ClusterMaterialAssignmentSet
             bool sameResource = found && ReferenceEquals(value.Resource, material);
             if (sameResource && ReadRevision(id, value.Revision) == revision &&
                 value.PropertyCount == propertyCount && value.Ordered == ordered) return;
+            _valuesChanged = true;
             if (found && value.Ordered != ordered) _result.BlendOcclusionChanged = true;
             (_changes ??= _result._changes.ToBuilder()).Add(id);
 
@@ -491,6 +503,8 @@ public sealed class ClusterMaterialAssignmentSet
                 }
             }
             if (_topologyChanged) _result.TopologyVersion = checked(_source.TopologyVersion + 1);
+            if (_topologyChanged || _xrayChanged || _valuesChanged)
+                _result._contentVersion = checked(_source._contentVersion + 1);
             if (_allowDenseRevisions && _result._revisionIndices is null && _result._values.Count >= 64)
                 PromoteDenseRevisions();
             return _result;
@@ -636,9 +650,11 @@ public sealed class ClusterMaterialAssignmentSystem : ISystem<RenderPrepareSyste
         {
             foreach (QueryChunkView chunk in query.Chunks)
             {
+                if (!chunk.HasChangedSinceLastSystemVersion<RenderMaterialReference>()) continue;
+                QueryRowChanges changes = chunk.ReadRowChanges<RenderMaterialReference>();
                 ReadOnlySpan<RenderMaterialReference> values = chunk.Read<RenderMaterialReference>();
                 for (int row = 0; row < values.Length; row++)
-                    _update.SetValue(values[row].Material);
+                    if (changes.HasChanged(row)) _update.SetValue(values[row].Material);
             }
         }
         internal void Collect(QueryCursor query)

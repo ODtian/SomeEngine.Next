@@ -61,6 +61,46 @@ public sealed class RawMaterialScalarRenderingTests
     }
 
     [Fact]
+    public async Task EditsAfterADiscardedFramePreserveEarlierUnsubmittedMaterialValues()
+    {
+        Shader shader = await LoadShaderAsync("D3D12", reverse: false);
+        var first = new ScalarProbeMaterial
+        {
+            Shader = shader, Leading = .5f, Triple = new(.25f, .5f, .75f), Trailing = .25f,
+            Pair = new(.125f, .375f), Tint = new(.5f, .25f, .75f, .875f),
+            Signed = -2, Unsigned = 3, Enabled = true,
+        };
+        var second = new ScalarProbeMaterial
+        {
+            Shader = shader, Leading = .125f, Triple = new(.75f, .25f, .5f), Trailing = .75f,
+            Pair = new(.5f, .25f), Tint = new(.25f, .75f, .5f, .625f),
+            Signed = 2, Unsigned = 1, Enabled = false,
+        };
+        Mesh plane = await RasterTestGeometry.CreatePlaneAsync();
+        await using var scene = await FrameStageScene.CreateAsync("D3D12", false,
+            new ClusterPipelineOptions { MaxCandidates = 1024, ForceHardwareRaster = true,
+                EnableFrameMetricsReadback = true }, plane);
+        scene.SetMeshTransform(0, new(new Vector3(-.8f, 0, -3), Quaternion.Identity)
+            { Stretch = new(.6f, .6f, 1) });
+        scene.SetMeshTransform(1, new(new Vector3(.8f, 0, -3), Quaternion.Identity)
+            { Stretch = new(.6f, .6f, 1) });
+        scene.UseMaterial(0, first);
+        scene.UseMaterial(1, second);
+        RasterImage initial = await scene.ReadRasterImageAsync();
+        AssertPixel(initial, 16, 32, Expected(first));
+        AssertPixel(initial, 48, 32, Expected(second));
+
+        first.Triple = new(.75f, .125f, .25f);
+        _ = await scene.DiscardNextFrameAsync(new DiscardedMaterialFrame());
+        first.Pair = new(.375f, .5f);
+        second.Leading = .625f;
+        RasterImage changed = await scene.ReadNextRasterImageAsync();
+
+        AssertPixel(changed, 16, 32, Expected(first));
+        AssertPixel(changed, 48, 32, Expected(second));
+    }
+
+    [Fact]
     public async Task ManyMaterialEditsSurviveDiscardedFrameWithoutNewEdits()
     {
         const int materialCount = 131;

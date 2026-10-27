@@ -676,9 +676,9 @@ public sealed partial class ClusterPipelineSystem
             binding.InstancePropertyMetadataRange);
 
         foreach ((GraphBufferId buffer, var writes) in GraphData.BufferWrites)
-            foreach (BufferWrite write in writes)
-                write.Bytes.CopyTo(graph.GetWriteSpan(buffer, write.Range.Offset, checked((int)write.Range.Size)),
-                    checked((int)write.Range.Offset));
+            foreach (BufferRange range in writes.Ranges)
+                writes.Bytes.CopyTo(graph.GetWriteSpan(buffer, range.Offset, checked((int)range.Size)),
+                    checked((int)range.Offset));
         int current = history.WriteIndex;
         graph.SetTextureInput(frame.PreviousHiZ, frame.HiZ[1 - current]);
         graph.SetTextureInput(frame.CurrentHiZ, frame.HiZ[current]);

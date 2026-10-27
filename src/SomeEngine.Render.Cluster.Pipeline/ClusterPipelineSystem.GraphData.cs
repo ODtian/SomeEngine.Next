@@ -17,7 +17,7 @@ public sealed partial class ClusterPipelineSystem
     // business keys; the RenderGraph tree supplies stage order and subtree membership.
     private sealed class ClusterGraphData
     {
-        internal ImmutableDictionary<GraphBufferId, ImmutableList<BufferWrite>> BufferWrites = ImmutableDictionary<GraphBufferId, ImmutableList<BufferWrite>>.Empty;
+        internal ImmutableDictionary<GraphBufferId, BufferWrites> BufferWrites = ImmutableDictionary<GraphBufferId, BufferWrites>.Empty;
         internal ClusterBytes ParameterData = ClusterBytes.Zero(0);
         internal GraphBufferId ShaderParameterBytes;
         internal int ParameterByteCount;
