@@ -123,13 +123,13 @@ public class TimelineTests
     }
 
     [Fact]
-    public void RunningBitsKeepTimelineEnabledAndCompletionPreservesTableMembership()
+    public void RunningBitsKeepTimelineEnabledAndCompletionPreservesComponentMembership()
     {
         using var world = new World();
         Entity entity = world.CreateEntity(new Timeline { Speed = 1 });
         Entity activity = world.CreateEntity(new Activity { Running = true });
-        using var tables = world.ObserveEntityTables();
-        tables.Accept(tables.Read());
+        QueryHandle members = world.Query(world.QueryDefinition().All<Timeline>());
+        uint membershipVersion = world.MembershipVersion(members);
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
         systems.Add(new TimelineSystem());
         systems.Add(new ActivitySystem(activity));
@@ -148,7 +148,7 @@ public class TimelineTests
         world.Enable<Timeline>(entity);
         systems.Update();
         Assert.Equal(2u, world.Read<Timeline>(entity).Completions);
-        Assert.Equal(0, tables.Read().Count);
+        Assert.Equal(membershipVersion, world.MembershipVersion(members));
     }
 
     [Fact]

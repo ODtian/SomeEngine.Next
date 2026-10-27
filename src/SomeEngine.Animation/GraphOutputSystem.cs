@@ -14,10 +14,12 @@ public struct GraphOutputSystem<T, TOps>(TrackFields fields = TrackFields.Proper
     private readonly TrackFields _fields = fields;
     private QueryHandle _outputs;
     private FieldWrite<T>[] _writes = null!;
+    private List<Channel<T>> _writeChannels = null!;
 
     public void OnCreate(ref ImmediateSystemContext context)
     {
         _writes = ArrayPool<FieldWrite<T>>.Shared.Rent(64);
+        _writeChannels = new();
         _outputs = context.World.Query(context.World.QueryDefinition().Read<Timeline>().ReadBuffer<Track<T>>()
             .ReadBuffer<GraphFieldOutput<T>>().ReadBuffer<GraphFieldTrack<T>>()
             .OptionalBuffer<PropertySource<T>>(QueryAccess.ReadWrite).Optional<AnimationLayers>(QueryAccess.Read)
@@ -31,7 +33,7 @@ public struct GraphOutputSystem<T, TOps>(TrackFields fields = TrackFields.Proper
         var evaluation = (World: context.World, Weights: _fields == TrackFields.LayerWeights, Writes: _writes, Count: 0);
         context.World.ExecuteQuery(_outputs, context.LastSystemVersion, ref evaluation, &Evaluate);
         _writes = evaluation.Writes;
-        FieldWrites<T>.Flush(context.World, _writes, ref evaluation.Count);
+        FieldWrites<T>.Flush(context.World, _writes, ref evaluation.Count, _writeChannels);
     }
 
     private static void Evaluate(QueryCursor rows, ref (World World, bool Weights, FieldWrite<T>[] Writes, int Count) evaluation)

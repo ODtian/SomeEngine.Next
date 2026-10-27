@@ -18,11 +18,13 @@ public struct TypedTrackSystem<T, TOps, TParameters, TState, TEvaluator>(TrackFi
     private QueryHandle _tracks;
     private QueryHandle _finishedTracks;
     private FieldWrite<T>[] _writes = null!;
+    private List<Channel<T>> _writeChannels = null!;
     private GraphCapture<T>[] _captures = null!;
 
     public void OnCreate(ref ImmediateSystemContext context)
     {
         _writes = ArrayPool<FieldWrite<T>>.Shared.Rent(64);
+        _writeChannels = new();
         _captures = ArrayPool<GraphCapture<T>>.Shared.Rent(64);
         _tracks = CreateQuery(context.World, enabled: true);
         _finishedTracks = CreateQuery(context.World, enabled: false);
@@ -66,7 +68,7 @@ public struct TypedTrackSystem<T, TOps, TParameters, TState, TEvaluator>(TrackFi
         }
         _writes = evaluation.Writes;
         _captures = evaluation.Captures;
-        FieldWrites<T>.Flush(context.World, _writes, ref evaluation.Count);
+        FieldWrites<T>.Flush(context.World, _writes, ref evaluation.Count, _writeChannels);
     }
 
     private static void Evaluate(QueryCursor rows, ref (World World, bool Weights, FieldWrite<T>[] Writes, int Count,
@@ -80,8 +82,8 @@ public struct TypedTrackSystem<T, TOps, TParameters, TState, TEvaluator>(TrackFi
         {
             bool hasStages = chunk.HasBuffer<TimelineStage>();
             bool hasMotions = chunk.HasBuffer<GraphMotion>();
-            bool inlineDirect = chunk.HasBuffer<PropertySource<T>>() && !chunk.Has<AnimationLayers>() &&
-                !chunk.HasBuffer<Contribution<T>>();
+            bool hasSources = chunk.HasBuffer<PropertySource<T>>();
+            bool hasLayers = chunk.Has<AnimationLayers>();
             foreach (QueryRow row in chunk.Rows)
             {
                 DynamicBuffer<MotionInstance<T, TOps, TParameters, TState, TEvaluator>> instances =
@@ -100,7 +102,7 @@ public struct TypedTrackSystem<T, TOps, TParameters, TState, TEvaluator>(TrackFi
                 }
                 if (firstSelected == previousTracks.Length)
                     continue;
-                DynamicBuffer<PropertySource<T>> sources = inlineDirect ? row.Buffer<PropertySource<T>>() : default;
+                DynamicBuffer<PropertySource<T>> sources = hasSources ? row.Buffer<PropertySource<T>>() : default;
                 Span<MotionData<T, TParameters, TState>> data = MotionStorage<T, TOps, TParameters, TState, TEvaluator>.Data(instances);
                 for (int index = 0; index < data.Length; index++)
                     data[index].Active = false;
@@ -135,14 +137,23 @@ public struct TypedTrackSystem<T, TOps, TParameters, TState, TEvaluator>(TrackFi
                     if (previous.Finished && previous.GraphMotion == 0 || !enabled || timeline.Paused)
                     {
                         if (previous.Finished && !previous.FromGraph)
-                            PropertyAnimation.FinishSource(world, row.Entity, in previous);
+                        {
+                            if (hasSources && previous.Target == Entity.Null)
+                            {
+                                if (!hasLayers || previous.GraphMotion != 0 || previous.Endpoints != TrackEndpoints.Values ||
+                                    previous.Channel.Component == ComponentId<AnimationLayers>.Value)
+                                    PropertyAnimation.FinishSource(sources, previous.SourceIndex);
+                            }
+                            else
+                                PropertyAnimation.FinishSource(world, row.Entity, in previous);
+                        }
                         if (enabled && !previous.Finished)
                             timeline.Submit(true);
                         if (!previous.FromGraph && (enabled && !previous.Finished && previous.Sampled ||
                             previous.Finished && PropertyAnimation.HoldsLayerValue(world, row.Entity, in previous)) &&
                             !(previous.Stage < lastStage && TrackSystem<T, TOps>.HasLaterTrack(tracks, index, row.Entity,
                                 previous.Target == Entity.Null ? row.Entity : previous.Target, in previous, lastStage, timeline.Time)))
-                            Submit(world, row.Entity, index, in previous, sources, inlineDirect, ref evaluation.Writes, ref writeCount);
+                            Submit(world, row.Entity, index, in previous, sources, hasSources, ref evaluation.Writes, ref writeCount);
                         continue;
                     }
                     if (writableTracks.IsEmpty)
@@ -254,7 +265,7 @@ public struct TypedTrackSystem<T, TOps, TParameters, TState, TEvaluator>(TrackFi
                     if (!track.FromGraph && !(track.Stage < lastStage && TrackSystem<T, TOps>.HasLaterTrack(tracks, index, row.Entity,
                         track.Target == Entity.Null ? row.Entity : track.Target, in track, lastStage, timeline.Time)))
                     {
-                        Submit(world, row.Entity, index, in track, sources, inlineDirect, ref evaluation.Writes, ref writeCount);
+                        Submit(world, row.Entity, index, in track, sources, hasSources, ref evaluation.Writes, ref writeCount);
                     }
                     if (!track.Finished)
                     {
@@ -275,10 +286,9 @@ public struct TypedTrackSystem<T, TOps, TParameters, TState, TEvaluator>(TrackFi
         (track.Channel.Component == ComponentId<AnimationLayers>.Value) == weights;
 
     private static void Submit(World world, Entity animation, int index, in Track<T> track,
-        DynamicBuffer<PropertySource<T>> sources, bool inlineDirect,
-        ref FieldWrite<T>[] writes, ref int count)
+        DynamicBuffer<PropertySource<T>> sources, bool hasSources, ref FieldWrite<T>[] writes, ref int count)
     {
-        if (inlineDirect && track.Target == Entity.Null)
+        if (hasSources && track.Target == Entity.Null)
         {
             if (PropertyAnimation.UpdateSource<T, TOps>(sources, track.SourceIndex, in track))
                 FieldWrites<T>.Add(ref writes, ref count, animation, track.Channel, track.Current);

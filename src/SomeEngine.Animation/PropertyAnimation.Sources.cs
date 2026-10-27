@@ -15,13 +15,16 @@ public static partial class PropertyAnimation
         if (!world.HasBuffer<PropertySource<T>>(target)) return;
         int index = track.SourceIndex;
         world.ExecuteBufferWrite<PropertySource<T>, int>(target, ref index, static (sources, ref index) =>
-        {
-            PropertySource<T> source = sources.Read(index);
-            if (!source.Active) return;
-            source.Active = false;
-            source.Dirty = true;
-            sources[index] = source;
-        });
+            FinishSource(sources, index));
+    }
+
+    internal static void FinishSource<T>(DynamicBuffer<PropertySource<T>> sources, int index) where T : unmanaged
+    {
+        PropertySource<T> source = sources.Read(index);
+        if (!source.Active) return;
+        source.Active = false;
+        source.Dirty = true;
+        sources[index] = source;
     }
 
     private static class SourceQueries<T> where T : unmanaged
