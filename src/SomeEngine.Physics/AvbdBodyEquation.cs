@@ -72,6 +72,17 @@ public struct AvbdBodyEquation : IComponent
                 _matrix[GetIndex(row, column)] += jacobian[row] * jacobian[column] * stiffness;
     }
 
+    internal readonly double GetCurvature(Vector3 translation, Vector3 rotation)
+    {
+        Span<double> change = stackalloc double[6] { translation.X, translation.Y, translation.Z, 0, 0, 0 };
+        for (int axis = 0; axis < _dimensions - 3; axis++) change[axis + 3] = Vector3.Dot(rotation, _rotationAxes[axis]);
+        double curvature = 0;
+        for (int row = 0; row < _dimensions; row++)
+            for (int column = 0; column <= row; column++)
+                curvature += change[row] * change[column] * _matrix[GetIndex(row, column)] * (row == column ? 1 : 2);
+        return curvature;
+    }
+
     internal void Factorize()
     {
         for (int row = 0; row < _dimensions; row++)
