@@ -71,10 +71,11 @@ public readonly struct AvbdJointMath : IAvbdConstraint<JointConstraint>, IPhysic
         scoped PhysicsBodies bodies, in PhysicsStepContext context, float initialErrorFraction, ref AvbdBodyEquation equation)
     {
         ref readonly var endpoints = ref row.ReadRef<DirectedRelationEndpoints<JointConstraint>>();
-        ref readonly BodyPose source = ref bodies.ReadPose(endpoints.Source);
-        ref readonly BodyPose target = ref bodies.ReadPose(endpoints.Target);
-        ref readonly BodyMass sourceMass = ref bodies.ReadMass(endpoints.Source);
-        ref readonly BodyMass targetMass = ref bodies.ReadMass(endpoints.Target);
+        QueryRow sourceRow = bodies.GetRow(endpoints.Source), targetRow = bodies.GetRow(endpoints.Target);
+        ref readonly BodyPose source = ref sourceRow.ReadRef<BodyPose>();
+        ref readonly BodyPose target = ref targetRow.ReadRef<BodyPose>();
+        ref readonly BodyMass sourceMass = ref sourceRow.ReadRef<BodyMass>();
+        ref readonly BodyMass targetMass = ref targetRow.ReadRef<BodyMass>();
         ref readonly AvbdJointState state = ref row.ReadRef<AvbdJointState>();
         bool isSource = body == endpoints.Source;
         bool worldPoint = UsesWorldPointCoordinates(in constraint);
@@ -83,10 +84,11 @@ public readonly struct AvbdJointMath : IAvbdConstraint<JointConstraint>, IPhysic
         {
             int axis = dof % 3;
             JointAxisLimit limit = JointMath.GetLimit(in constraint, dof);
+            float stiffness = dof < 3 ? constraint.LinearStiffness[axis] : constraint.AngularStiffness[axis];
+            if (limit.Motion == JointAxisMotion.Free || stiffness == 0) continue;
             JointEquationRow derivative = GetRow(in constraint, in source, in sourceMass, in target, in targetMass, dof, worldPoint);
             float multiplier = dof < 3 ? state.LinearMultiplier[axis] : state.AngularMultiplier[axis];
             if (!JointMath.TryGetError(limit, derivative.Coordinate, multiplier, out float error, out JointLimitSide side)) continue;
-            float stiffness = dof < 3 ? constraint.LinearStiffness[axis] : constraint.AngularStiffness[axis];
             float penalty = dof < 3 ? state.LinearPenalty[axis] : state.AngularPenalty[axis];
             float initial = dof < 3 ? state.InitialLinearError[axis] : state.InitialAngularError[axis];
             var material = new AvbdMaterialTerms(stiffness, penalty);
@@ -96,12 +98,15 @@ public readonly struct AvbdJointMath : IAvbdConstraint<JointConstraint>, IPhysic
             equation.AddRow(isSource ? derivative.SourceLinear : derivative.TargetLinear,
                 isSource ? derivative.SourceAngular : derivative.TargetAngular, force, material.EffectiveStiffness);
         }
-        Vector3 forcePoint = isSource && worldPoint
-            ? source.Position + Vector3.Transform(constraint.SourceFrame.Position, source.Rotation)
-            : target.Position + Vector3.Transform(constraint.TargetFrame.Position, target.Rotation);
-        Vector3 center = isSource ? source.GetCenterOfMass(in sourceMass) : target.GetCenterOfMass(in targetMass);
+        if (linearForce == Vector3.Zero) return;
+        Vector3 forceOffset = isSource
+            ? worldPoint
+                ? Vector3.Transform(constraint.SourceFrame.Position - sourceMass.CenterOfMass, source.Rotation)
+                : (target.Position - source.Position) + Vector3.Transform(constraint.TargetFrame.Position, target.Rotation)
+                    - Vector3.Transform(sourceMass.CenterOfMass, source.Rotation)
+            : Vector3.Transform(constraint.TargetFrame.Position - targetMass.CenterOfMass, target.Rotation);
         // Bounds the force-weighted angular Hessian of the current linear joint coordinates.
-        float curvature = (forcePoint - center).Length() * linearForce.Length();
+        float curvature = forceOffset.Length() * linearForce.Length();
         equation.AddRow(Vector3.Zero, Vector3.UnitX, 0, curvature);
         equation.AddRow(Vector3.Zero, Vector3.UnitY, 0, curvature);
         equation.AddRow(Vector3.Zero, Vector3.UnitZ, 0, curvature);
@@ -146,9 +151,8 @@ public readonly struct AvbdJointMath : IAvbdConstraint<JointConstraint>, IPhysic
         JointMath.GetCoordinates(in constraint, in source, in target, out linear, out angular);
         if (UsesWorldPointCoordinates(in constraint))
         {
-            Vector3 sourcePoint = source.Position + Vector3.Transform(constraint.SourceFrame.Position, source.Rotation);
-            Vector3 targetPoint = target.Position + Vector3.Transform(constraint.TargetFrame.Position, target.Rotation);
-            linear = targetPoint - sourcePoint;
+            linear = (target.Position - source.Position) + Vector3.Transform(constraint.TargetFrame.Position, target.Rotation)
+                - Vector3.Transform(constraint.SourceFrame.Position, source.Rotation);
         }
     }
 
@@ -157,10 +161,11 @@ public readonly struct AvbdJointMath : IAvbdConstraint<JointConstraint>, IPhysic
     {
         if (dof >= 3 || !worldPoint) return JointMath.GetRow(in constraint, in source, in sourceMass, in target, in targetMass, dof);
         Vector3 direction = dof == 0 ? Vector3.UnitX : dof == 1 ? Vector3.UnitY : Vector3.UnitZ;
-        Vector3 sourcePoint = source.Position + Vector3.Transform(constraint.SourceFrame.Position, source.Rotation);
-        Vector3 targetPoint = target.Position + Vector3.Transform(constraint.TargetFrame.Position, target.Rotation);
-        return new(Vector3.Dot(targetPoint - sourcePoint, direction), -direction,
-            -Vector3.Cross(sourcePoint - source.GetCenterOfMass(in sourceMass), direction), direction,
-            Vector3.Cross(targetPoint - target.GetCenterOfMass(in targetMass), direction));
+        Vector3 delta = (target.Position - source.Position) + Vector3.Transform(constraint.TargetFrame.Position, target.Rotation)
+            - Vector3.Transform(constraint.SourceFrame.Position, source.Rotation);
+        Vector3 sourceOffset = Vector3.Transform(constraint.SourceFrame.Position - sourceMass.CenterOfMass, source.Rotation);
+        Vector3 targetOffset = Vector3.Transform(constraint.TargetFrame.Position - targetMass.CenterOfMass, target.Rotation);
+        return new(Vector3.Dot(delta, direction), -direction, -Vector3.Cross(sourceOffset, direction), direction,
+            Vector3.Cross(targetOffset, direction));
     }
 }
