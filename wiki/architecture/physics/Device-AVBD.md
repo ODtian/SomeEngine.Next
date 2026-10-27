@@ -15,6 +15,9 @@
 `DeviceAvbdStateInputs<TComponent,TData,TState,TSource>` 读取原组件实际行版本，
 将新实体、绑定移动和显式组件修改的行上传到所选历史。
 其容量缓存保存实体、行位置和版本；逐轮乘子与罚参数保存在设备历史中。
+每次输入先读取原查询的成员版本及组件列变化。成员、原历史组件和两项设备绑定
+保持原值时，输入复用设备历史；成员或列变化时，再按原实体行版本上传实际修改。
+显式修改 CPU 历史后，下一完成步使用该历史；连续求解期间沿原设备历史累积。
 
 `DeviceAvbdEquationBinding` 放在原模拟 Body 上，
 选择 `DeviceAvbdBodyEquations` 的数值行。
