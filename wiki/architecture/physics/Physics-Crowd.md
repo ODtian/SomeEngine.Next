@@ -47,8 +47,9 @@ Motor 的当前动画目标继续每步写入原设备参数行。
 输入阶段另记录主体组件、约束组件和 Motor 组件历史的耗时。
 
 完成主体结果沿原 `DeviceBodyResults` 写回全部所选实体。
-每个 `DeviceBodyBinding` 通过组件资源描述器登记自身 CPU 版本数组中的一个元素，
-各个结果包依其实际主体范围调度；位姿、速度、完成时钟与输入确认继续位于原组件和资源。
+读取包按原实体捕获设备索引，写入 Job 按实际主体索引登记 CPU 版本数组中的元素，
+原写查询在当前 chunk 一次绑定三列，按捕获实体写入位姿、速度和完成时钟，
+并把该查询的真实共享写版本确认回原主体资源。
 
 时段输入沿 `DeviceBodyInputBuffers` 的原查询块读取。
 包含 `BodyForce`、`BodyImpulse`、`BodyVelocityTarget` 或 `BodyKinematicTarget` 的块进入原逐行合并，
