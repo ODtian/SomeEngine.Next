@@ -17,6 +17,7 @@ public struct AvbdBodyEquation : IComponent
     private int _dimensions;
     private int _rotationMask;
     private RotationAxes _rotationAxes;
+    private bool _curvature;
     public Vector3 LinearGradient;
     public Vector3 AngularGradient;
 
@@ -27,9 +28,9 @@ public struct AvbdBodyEquation : IComponent
         _bodyInertia = _rotationMask != 0 ? BodyInertia.InvertTensor(mass.InverseInertia) : default;
     }
 
-    internal void Reset(in BodyPose pose, in BodyMass mass, in BodyStepState state, float duration)
+    internal void Reset(in BodyPose pose, in BodyMass mass, in BodyStepState state, float duration, bool curvature = true)
     {
-        _matrix = default;
+        _curvature = curvature;
         float inverseStepSquared = 1 / (duration * duration);
         float linearWeight = inverseStepSquared / mass.InverseMass;
         LinearGradient = (pose.GetCenterOfMass(in mass) - state.PredictedCenterOfMass) * linearWeight;
@@ -40,6 +41,8 @@ public struct AvbdBodyEquation : IComponent
             AngularGradient = -Vector3.Transform(Vector3.TransformNormal(rotationError, _bodyInertia), pose.Rotation)
                 * inverseStepSquared;
         }
+        if (!curvature) return;
+        _matrix = default;
         for (int axis = 0; axis < 3; axis++)
         {
             _matrix[GetIndex(axis, axis)] = linearWeight;
@@ -65,6 +68,7 @@ public struct AvbdBodyEquation : IComponent
         if (_dimensions == 3) angularJacobian = Vector3.Zero;
         LinearGradient += linearJacobian * force;
         AngularGradient += angularJacobian * force;
+        if (!_curvature) return;
         Span<double> jacobian = stackalloc double[6] { linearJacobian.X, linearJacobian.Y, linearJacobian.Z, 0, 0, 0 };
         for (int axis = 0; axis < _dimensions - 3; axis++) jacobian[axis + 3] = Vector3.Dot(angularJacobian, _rotationAxes[axis]);
         for (int row = 0; row < _dimensions; row++)
