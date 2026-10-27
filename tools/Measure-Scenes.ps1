@@ -50,10 +50,11 @@ if (!$FromBenchmarkQueue) {
     $repository = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
     $queue = 'F:\SomeEngine.Next\tools\Invoke-Benchmark.ps1'
     $queueSession = $env:SOMEENGINE_BENCHMARK_SESSION ?? $env:CODEX_THREAD_ID ?? $env:CODEX_SESSION_ID ?? $repository
+    $queueDirectory = $env:SOMEENGINE_MEASUREMENT_OUTPUT_DIRECTORY ?? $repository
     if (![IO.File]::Exists($queue)) { throw "The shared benchmark queue is unavailable: $queue" }
     $pwsh = (Get-Command pwsh -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
     $submit = [Diagnostics.ProcessStartInfo]::new($pwsh)
-    $submit.WorkingDirectory = $repository
+    $submit.WorkingDirectory = $queueDirectory
     $submit.UseShellExecute = $false
     $submit.CreateNoWindow = $true
     $submit.RedirectStandardOutput = $true
@@ -71,7 +72,7 @@ if (!$FromBenchmarkQueue) {
     $body = "`$ErrorActionPreference = 'Stop'; `$LASTEXITCODE = 0; try { `$parameters = ConvertFrom-Json -AsHashtable ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('$data'))); & '$script' @parameters; if (!`$?) { exit 1 }; exit `$LASTEXITCODE } catch { [Console]::Error.WriteLine(`$_); exit 1 }"
     $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($body))
     $queuedArguments = @('-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', $encoded)
-    foreach ($argument in (@('-NoLogo', '-NoProfile', '-NonInteractive', '-File', $queue, '--exclusive', '--session', $queueSession, $pwsh) + $queuedArguments)) {
+    foreach ($argument in (@('-NoLogo', '-NoProfile', '-NonInteractive', '-File', $queue, '--gpu', '--session', $queueSession, $pwsh) + $queuedArguments)) {
         $submit.ArgumentList.Add($argument)
     }
     $submission = [Diagnostics.Process]::Start($submit)
@@ -87,11 +88,11 @@ if (!$FromBenchmarkQueue) {
         if ($submission.ExitCode -ne 0) { throw "Queue submission failed: $submissionErrors $receiptText" }
     } finally { $submission.Dispose() }
     $receipt = ($receiptText -split '\r?\n' | Where-Object { $_.Trim() } | Select-Object -Last 1) | ConvertFrom-Json
-    if ($receipt.Id -cnotmatch '^[a-f0-9]{32}$' -or $receipt.Kind -cne 'Exclusive' -or
+    if ($receipt.Id -cnotmatch '^[a-f0-9]{32}$' -or $receipt.Kind -cne 'Gpu' -or
         $receipt.SessionId -cne $queueSession) {
-        throw 'The official queue did not return this exclusive measurement and session.'
+        throw 'The official queue did not return this GPU measurement and session.'
     }
-    $expectedOutput = Join-Path $repository ('artifacts/benchmark-queue/' + $receipt.Id)
+    $expectedOutput = Join-Path $queueDirectory ('artifacts/benchmark-queue/' + $receipt.Id)
     if ([IO.Path]::GetFullPath($receipt.OutputDirectory) -ne [IO.Path]::GetFullPath($expectedOutput)) {
         throw 'The queue returned an unexpected result directory.'
     }
@@ -106,11 +107,11 @@ if (!$FromBenchmarkQueue) {
         } catch { if ($read -eq 9) { throw } }
         Start-Sleep -Milliseconds 50
     }
-    if ($completed.Id -cne $receipt.Id -or $completed.Kind -cne 'Exclusive' -or
+    if ($completed.Id -cne $receipt.Id -or $completed.Kind -cne 'Gpu' -or
         $completed.SessionId -cne $queueSession -or $null -eq $completed.ExitCode -or
         !$completed.Executable -or !$completed.Directory -or
         [IO.Path]::GetFullPath($completed.Executable) -ne [IO.Path]::GetFullPath($pwsh) -or
-        [IO.Path]::GetFullPath($completed.Directory) -ne $repository -or
+        [IO.Path]::GetFullPath($completed.Directory) -ne [IO.Path]::GetFullPath($queueDirectory) -or
         @($completed.Arguments).Count -ne $queuedArguments.Count) {
         throw 'The queue result does not match this measurement.'
     }
