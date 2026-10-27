@@ -99,9 +99,11 @@ void detectDeviceReferencedCollision<TKernel : IDeviceCollisionNarrowPhase>(uint
     if (work >= DetectionParameters.workItems) return;
     uint start = DetectionBinOffsets[DetectionParameters.bin];
     uint end = DetectionBinOffsets[DetectionParameters.bin + 1];
-    [loop] for (uint index = work; index < end - start; index += DetectionParameters.workItems)
+    uint outputStart = start - DetectionBinOffsets[DetectionParameters.firstBin];
+    [loop] for (uint local = work; local < end - start; local += DetectionParameters.workItems)
     {
-        DeviceCollisionPair pair = DetectionPairs[start + index];
+        uint index = outputStart + local;
+        DeviceCollisionPair pair = DetectionPairs[start + local];
         DeviceGeometryInput first = DeviceGeometries[pair.firstGeometry];
         DeviceGeometryInput second = DeviceGeometries[pair.secondGeometry];
         uint count = CollisionContactCounts[index];

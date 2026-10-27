@@ -7,7 +7,7 @@ using Buffer = SomeEngine.Graphics.Buffer;
 
 namespace SomeEngine.Physics;
 
-/// <summary>A concrete device kernel consuming one resident type bin and publishing its geometric results.</summary>
+/// <summary>Concrete device kernels consuming consecutive resident type bins into one geometric result range.</summary>
 public sealed partial class DeviceCollisionDetection : IDisposable
 {
     public const int ContactStride = 104;
@@ -15,16 +15,16 @@ public sealed partial class DeviceCollisionDetection : IDisposable
     private readonly Device _device;
     private readonly DeviceCollisionGrid _grid;
     private readonly DeviceCollisionGeometry _geometry;
-    private readonly int _bin;
+    private readonly int _firstBin;
     private readonly ConvexCollisionSettings _settings;
     private readonly float _contactDistance;
     private readonly DeviceInputTransfer _transfer;
     private readonly DeviceCollisionReadback _readback;
     private readonly List<IDisposable> _objects = [];
     private readonly List<Buffer> _workBuffers = [];
-    private readonly Pipeline _pipeline;
-    private readonly VariableLayoutReflection _layout;
-    private readonly ResourceBinding[] _bindings;
+    private readonly Pipeline[] _pipelines;
+    private readonly VariableLayoutReflection[] _layouts;
+    private readonly ResourceBinding[][] _bindings;
     private readonly JobResourceAccess[] _extraAccesses;
     private readonly Buffer _parameters;
     private readonly Buffer? _readbackBuffer;
@@ -40,12 +40,20 @@ public sealed partial class DeviceCollisionDetection : IDisposable
         ConvexCollisionSettings settings, float contactDistance, DeviceInputTransfer transfer,
         DeviceCollisionReadback readback, IReadOnlyDictionary<string, ResourceBinding[]>? extraBindings = null,
         ReadOnlyMemory<JobResourceAccess> extraAccesses = default)
+        : this(backend, device, grid, geometry, [kernel], bin, capacity, settings, contactDistance, transfer, readback,
+            extraBindings, extraAccesses) { }
+
+    public DeviceCollisionDetection(IGraphicsBackend backend, Device device, DeviceCollisionGrid grid,
+        DeviceCollisionGeometry geometry, ReadOnlySpan<ComputePipelineDesc> kernels, int firstBin, DeviceDetectionCapacity capacity,
+        ConvexCollisionSettings settings, float contactDistance, DeviceInputTransfer transfer,
+        DeviceCollisionReadback readback, IReadOnlyDictionary<string, ResourceBinding[]>? extraBindings = null,
+        ReadOnlyMemory<JobResourceAccess> extraAccesses = default)
     {
         _backend = backend;
         _device = device;
         _grid = grid;
         _geometry = geometry;
-        _bin = bin;
+        _firstBin = firstBin;
         Capacity = capacity;
         _settings = settings;
         _contactDistance = contactDistance;
@@ -70,21 +78,28 @@ public sealed partial class DeviceCollisionDetection : IDisposable
             new(grid.Pairs, new(0, grid.Pairs.Info.Size), StructureStride: DeviceCollisionGrid.PairStride)));
         BufferUav boundsView = Keep(backend.CreateBufferUav(device,
             new(grid.BinOffsets, new(0, grid.BinOffsets.Info.Size), StructureStride: 4)));
-        _parameters = Keep(backend.CreateBuffer(device, new(256, BufferUsages.Constant,
+        _parameters = Keep(backend.CreateBuffer(device, new((ulong)kernels.Length * 256, BufferUsages.Constant,
             "Device collision parameters"), MemoryType.Upload));
-        BufferCbv parametersView = Keep(backend.CreateBufferCbv(device, new(_parameters, new(0, 256))));
         _readbackBuffer = readback == DeviceCollisionReadback.None ? null :
             Keep(backend.CreateBuffer(device, new(ResultReadbackSize,
                 BufferUsages.CopyDestination, "Device collision result readback"), MemoryType.Readback));
-        bindings.Add("DetectionParameters", [ResourceBinding.ConstantBuffer(parametersView)]);
+        bindings.Add("DetectionParameters", []);
         bindings.Add("DetectionPairs", [ResourceBinding.WritableBuffer(pairsView)]);
         bindings.Add("DetectionBinOffsets", [ResourceBinding.WritableBuffer(boundsView)]);
         geometry.AddBindings(bindings);
         if (extraBindings is not null)
             foreach (var binding in extraBindings) bindings.Add(binding.Key, binding.Value);
-        _pipeline = Keep(backend.CreateComputePipeline(device, kernel));
-        _layout = kernel.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null;
-        _bindings = DeviceCollisionGrid.OrderBindings(_layout, bindings);
+        _pipelines = new Pipeline[kernels.Length];
+        _layouts = new VariableLayoutReflection[kernels.Length];
+        _bindings = new ResourceBinding[kernels.Length][];
+        for (int index = 0; index < kernels.Length; index++)
+        {
+            BufferCbv parametersView = Keep(backend.CreateBufferCbv(device, new(_parameters, new((ulong)index * 256, 256))));
+            bindings["DetectionParameters"] = [ResourceBinding.ConstantBuffer(parametersView)];
+            _pipelines[index] = Keep(backend.CreateComputePipeline(device, kernels[index]));
+            _layouts[index] = kernels[index].Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null;
+            _bindings[index] = DeviceCollisionGrid.OrderBindings(_layouts[index], bindings);
+        }
         _commands = Keep(backend.CreateCommandContext(device,
             new CommandContextDesc(QueueType.Compute, 0, 1, Label: "Device collision detection")));
         _distances = (readback & DeviceCollisionReadback.Distances) != 0 ? new DeviceCollisionDistance[capacity.Pairs] : [];
@@ -132,10 +147,10 @@ public sealed partial class DeviceCollisionDetection : IDisposable
         var accesses = new List<JobResourceAccess>();
         var resources = new JobResourceAccessBuilder(scheduler!, accesses);
         resources.Read(_grid.Pairs, 0, (long)_grid.Pairs.Info.Size);
-        resources.Read(_grid.BinOffsets, _bin * 4L, 8);
+        resources.Read(_grid.BinOffsets, _firstBin * 4L, (_pipelines.Length + 1) * 4L);
         _geometry.CollectAccesses(_transfer, ref resources);
         foreach (Buffer buffer in _workBuffers) resources.Write(buffer, 0, (long)buffer.Info.Size);
-        resources.Write(_parameters, 0, 256);
+        resources.Write(_parameters, 0, (long)_parameters.Info.Size);
         resources.Write(_commands);
         if (_readback != DeviceCollisionReadback.None)
             resources.Write(_readbackBuffer!, 0, (long)_readbackBuffer!.Info.Size);
@@ -147,30 +162,43 @@ public sealed partial class DeviceCollisionDetection : IDisposable
     [StructLayout(LayoutKind.Sequential)]
     private readonly record struct DetectionParameters(uint Bin, uint PairCapacity, float Tolerance,
         uint DistanceIterations, uint PenetrationIterations, uint FaceCapacity, float ContactDistance, uint WorkItems,
-        uint BodiesPerContact);
+        uint BodiesPerContact, uint FirstBin);
 
     private QueueCompletion Submit()
     {
-        var parameters = new DetectionParameters((uint)_bin, (uint)Capacity.Pairs, _settings.Tolerance,
-            (uint)_settings.DistanceIterations, (uint)_settings.PenetrationIterations,
-            (uint)Capacity.FaceVertices, _contactDistance, (uint)Capacity.WorkItems, (uint)Capacity.BodiesPerContact);
         using (MappedBuffer mapping = _backend.Map(_parameters, MapType.Write, BufferRange.Whole))
         {
-            MemoryMarshal.Write(mapping.Bytes, in parameters);
-            mapping.Flush(new(0, (ulong)Marshal.SizeOf<DetectionParameters>()));
+            for (int index = 0; index < _pipelines.Length; index++)
+            {
+                var parameters = new DetectionParameters((uint)(_firstBin + index), (uint)Capacity.Pairs, _settings.Tolerance,
+                    (uint)_settings.DistanceIterations, (uint)_settings.PenetrationIterations,
+                    (uint)Capacity.FaceVertices, _contactDistance, (uint)Capacity.WorkItems,
+                    (uint)Capacity.BodiesPerContact, (uint)_firstBin);
+                MemoryMarshal.Write(mapping.Bytes[(index * 256)..], in parameters);
+            }
+            mapping.Flush(mapping.Range);
         }
-        _backend.Begin(_commands, new CommandRecordingDesc(64, 0, 64));
+        uint descriptorCapacity = 64u * (uint)_pipelines.Length;
+        _backend.Begin(_commands, new CommandRecordingDesc(descriptorCapacity, 0, descriptorCapacity));
         _geometry.UploadInputs(_commands, _transfer);
         if (!_initialized)
             foreach (Buffer buffer in _workBuffers)
                 _backend.Barrier(_commands, new BufferBarrier(buffer, buffer.InitialSync, PipelineSync.ComputeShading,
                     buffer.InitialAccess, ResourceAccess.UnorderedAccess));
-        _backend.SetPipeline(_commands, _pipeline);
-        _backend.SetTransientParameterBindings(_commands, new(_layout, _bindings, []));
-        _backend.Dispatch(_commands, new((uint)((Capacity.WorkItems + 63) / 64), 1, 1));
+        for (int index = 0; index < _pipelines.Length; index++)
+        {
+            if (index != 0)
+                foreach (Buffer buffer in _workBuffers)
+                    _backend.Barrier(_commands, new BufferBarrier(buffer, PipelineSync.ComputeShading, PipelineSync.ComputeShading,
+                        ResourceAccess.UnorderedAccess, ResourceAccess.UnorderedAccess));
+            _backend.SetPipeline(_commands, _pipelines[index]);
+            _backend.SetTransientParameterBindings(_commands, new(_layouts[index], _bindings[index], []));
+            _backend.Dispatch(_commands, new((uint)((Capacity.WorkItems + 63) / 64), 1, 1));
+        }
         if (_readback != DeviceCollisionReadback.None)
         {
-            CopyResults(_grid.BinOffsets, (ulong)_bin * 4, 0, 8);
+            CopyResults(_grid.BinOffsets, (ulong)_firstBin * 4, 0, 4);
+            CopyResults(_grid.BinOffsets, (ulong)(_firstBin + _pipelines.Length) * 4, 4, 4);
             if ((_readback & DeviceCollisionReadback.Distances) != 0)
                 CopyResults(Distances, 0, 8, Distances.Info.Size);
             if ((_readback & DeviceCollisionReadback.Contacts) != 0)
