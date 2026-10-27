@@ -49,6 +49,8 @@ public sealed class DeviceAvbdStateInputs<TComponent, TData, TState, TSource> : 
     private readonly List<(Entity Entity, RowVersion Version)> _changed = [];
     private readonly List<int> _indices = [];
     private bool _initialized;
+    private bool _hasSourceVersions;
+    private uint _membershipVersion, _lastSystemVersion;
 
     public DeviceAvbdStateInputs(IGraphicsBackend backend, Device device, World world, QueryHandle rows,
         DeviceConstraintData<TData> parameters, DeviceConstraintState<TState> states, TSource source)
@@ -78,9 +80,24 @@ public sealed class DeviceAvbdStateInputs<TComponent, TData, TState, TSource> : 
     }
     private QueueCompletion Submit()
     {
-        _seen.Clear(); _changed.Clear(); _indices.Clear();
-        using (MappedBuffer mapping = _backend.Map(_upload, MapType.Write, BufferRange.Whole))
+        uint membership = _world.MembershipVersion(_rows);
+        var changes = new SourceChanges { Changed = !_hasSourceVersions || membership != _membershipVersion };
+        _world.ExecuteReadQuery(_rows, _lastSystemVersion, ref changes,
+            static (scoped QueryCursor rows, ref SourceChanges changes) =>
+            {
+                changes.Version = rows.CurrentSystemVersion;
+                if (changes.Changed) return;
+                foreach (QueryChunkView chunk in rows.Chunks)
+                    if (chunk.Has<TComponent>() && chunk.HasChangedSinceLastSystemVersion<TComponent>()
+                        || chunk.Has<DeviceConstraintBinding<TData>>() && chunk.HasChangedSinceLastSystemVersion<DeviceConstraintBinding<TData>>()
+                        || chunk.Has<DeviceAvbdState<TState>>() && chunk.HasChangedSinceLastSystemVersion<DeviceAvbdState<TState>>())
+                    { changes.Changed = true; break; }
+            });
+        _changed.Clear(); _indices.Clear();
+        if (changes.Changed)
         {
+            _seen.Clear();
+            using MappedBuffer mapping = _backend.Map(_upload, MapType.Write, BufferRange.Whole);
             var read = new ReadRows(this, mapping);
             _world.ExecuteReadQuery(_rows, ref read, static (scoped QueryCursor rows, ref ReadRows input) => input.Read(rows));
             foreach (int index in _indices) mapping.Flush(new((ulong)(index * Unsafe.SizeOf<TState>()), (ulong)Unsafe.SizeOf<TState>()));
@@ -109,10 +126,19 @@ public sealed class DeviceAvbdStateInputs<TComponent, TData, TState, TSource> : 
         QueueCompletion completed = _backend.Submit(_backend.GetQueue(_device, QueueType.Compute), new([], [], [recorded], [], []));
         _initialized |= _indices.Count != 0;
         foreach (var change in _changed) _versions[change.Entity] = change.Version;
-        _removed.Clear();
-        foreach (Entity entity in _versions.Keys) if (!_seen.Contains(entity)) _removed.Add(entity);
-        foreach (Entity entity in _removed) _versions.Remove(entity);
+        if (changes.Changed)
+        {
+            _removed.Clear();
+            foreach (Entity entity in _versions.Keys) if (!_seen.Contains(entity)) _removed.Add(entity);
+            foreach (Entity entity in _removed) _versions.Remove(entity);
+        }
+        _hasSourceVersions = true; _membershipVersion = membership; _lastSystemVersion = changes.Version;
         return completed;
+    }
+    private struct SourceChanges
+    {
+        internal bool Changed;
+        internal uint Version;
     }
     private readonly record struct RowVersion(int Index, uint Version);
     private readonly ref struct ReadRows(DeviceAvbdStateInputs<TComponent, TData, TState, TSource> input, MappedBuffer mapping)
