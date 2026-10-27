@@ -54,6 +54,9 @@ Jacobian 和 AVBD 接触势曲率共用 `R(localPoint-localCenterOfMass)` 作为
 `matching.Match()` 的完成句柄覆盖实际设备计算、fence 和派生对应关系读回。
 `points.Refresh(matching.Results)` 通过具体 `IContactPointMatches` 消费这些结果，沿原成员范围核对点身份，
 继续使用同一套点创建、参与边重定向、结束及组件写入命令。
+已给出身份的结果在同一个原接触查询内定位点，核对双方几何和参与边存活。
+需要普通点搜索的输入在该查询内按需建立几何 pair 索引，并直接借用候选点数据；
+两种输入共用原一对一声明、实际创建与结束流程。
 原 `points.Refresh()` 使用具体 `SearchContactPoints` 搜索路径。
 
 设备检测、对应关系交接、原拓扑回放和后续参数上传均属于该物理步的执行链。

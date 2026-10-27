@@ -118,8 +118,25 @@ public sealed class ContactPoints<TCombine, TComponents> : IDisposable
         _oldPoints.Clear();
         _matches.Clear();
         _claims.Clear();
-        var collect = new ReadPoints(this);
+        var collect = new MatchPointRows<TMatches>(this, matches, commands);
         _world.ExecuteQuery(_points, ref collect);
+    }
+
+    private readonly ref struct MatchPointRows<TMatches>(ContactPoints<TCombine, TComponents> points,
+        TMatches matches, JobCommandWriter commands) : IQueryExecution where TMatches : struct, IContactPointMatches
+    {
+        private readonly JobCommandWriter _commands = commands;
+        public void Execute(scoped QueryCursor rows)
+        {
+            foreach (QueryRow row in rows.Rows) points._oldPoints.Add(row.Entity);
+            points.Match(matches, _commands, rows);
+        }
+    }
+
+    private void Match<TMatches>(TMatches matches, JobCommandWriter commands, scoped QueryCursor rows)
+        where TMatches : struct, IContactPointMatches
+    {
+        bool indexed = false;
         float limit = _settings.MatchDistance * _settings.MatchDistance;
         for (int index = 0; index < _detected.Count; index++)
         {
@@ -129,21 +146,34 @@ public sealed class ContactPoints<TCombine, TComponents> : IDisposable
             bool supplied = matches.TryGetMatch(index, out Entity suppliedPoint, out float suppliedDistance);
             if (supplied)
             {
-                if (suppliedPoint != Entity.Null && _pairs.TryGetValue((input.First, input.Second), out List<Entity>? current)
-                    && current.Contains(suppliedPoint))
-                { match = suppliedPoint; distance = suppliedDistance; }
-            }
-            else if (_pairs.TryGetValue((input.First, input.Second), out List<Entity>? candidates))
-                foreach (Entity candidate in candidates)
+                if (suppliedPoint != Entity.Null && rows.TryGetRow(suppliedPoint, out QueryRow suppliedRow)
+                    && HasLiveParticipants(suppliedRow))
                 {
-                    ContactPoint old = _world.Read<ContactPoint>(candidate);
-                    float current = Vector3.DistanceSquared(input.WorldPoint, old.WorldPoint);
-                    if (current <= distance && Vector3.Dot(input.Normal, old.Normal) >= _settings.MinimumNormalDot)
-                    {
-                        match = candidate;
-                        distance = current;
-                    }
+                    ref readonly var endpoints = ref suppliedRow.ReadRef<UndirectedRelationEndpoints<ContactPoint>>();
+                    if (endpoints.EndpointA == input.First && endpoints.EndpointB == input.Second)
+                    { match = suppliedPoint; distance = suppliedDistance; }
                 }
+            }
+            else
+            {
+                if (!indexed)
+                {
+                    IndexPointPairs(rows);
+                    indexed = true;
+                }
+                if (_pairs.TryGetValue((input.First, input.Second), out List<Entity>? candidates))
+                    foreach (Entity candidate in candidates)
+                    {
+                        rows.TryGetRow(candidate, out QueryRow candidateRow);
+                        ref readonly ContactPoint old = ref candidateRow.ReadRef<ContactPoint>();
+                        float current = Vector3.DistanceSquared(input.WorldPoint, old.WorldPoint);
+                        if (current <= distance && Vector3.Dot(input.Normal, old.Normal) >= _settings.MinimumNormalDot)
+                        {
+                            match = candidate;
+                            distance = current;
+                        }
+                    }
+            }
             _matches.Add(new PointMatch { Point = match, Input = index, DistanceSquared = distance });
             if (match == Entity.Null) continue;
             if (_claims.TryGetValue(match, out int previous))
@@ -167,26 +197,26 @@ public sealed class ContactPoints<TCombine, TComponents> : IDisposable
             if (!_claims.ContainsKey(old)) commands.Relations<ContactPoint>().Destroy(new RelationEdge<ContactPoint>(old));
     }
 
-    private readonly struct ReadPoints(ContactPoints<TCombine, TComponents> points) : IQueryExecution
+    private bool HasLiveParticipants(scoped QueryRow row)
     {
-        public void Execute(scoped QueryCursor query)
+        foreach (ref readonly ContactBodyLink link in row.ReadBuffer<ContactBodyLink>().AsSpan())
+            if (!_world.IsAlive(link.Participant.Entity)) return false;
+        return true;
+    }
+
+    private void IndexPointPairs(scoped QueryCursor rows)
+    {
+        foreach (QueryRow row in rows.Rows)
         {
-            foreach (QueryRow row in query.Rows)
+            if (!HasLiveParticipants(row)) continue;
+            ref readonly var endpoints = ref row.ReadRef<UndirectedRelationEndpoints<ContactPoint>>();
+            var pair = (endpoints.EndpointA, endpoints.EndpointB);
+            if (!_pairs.TryGetValue(pair, out List<Entity>? bucket))
             {
-                points._oldPoints.Add(row.Entity);
-                bool live = true;
-                foreach (ref readonly ContactBodyLink link in row.ReadBuffer<ContactBodyLink>().AsSpan())
-                    if (!points._world.IsAlive(link.Participant.Entity)) { live = false; break; }
-                if (!live) continue;
-                ref readonly var endpoints = ref row.ReadRef<UndirectedRelationEndpoints<ContactPoint>>();
-                var pair = (endpoints.EndpointA, endpoints.EndpointB);
-                if (!points._pairs.TryGetValue(pair, out List<Entity>? bucket))
-                {
-                    bucket = points._unusedPairs.TryPop(out List<Entity>? reused) ? reused : [];
-                    points._pairs.Add(pair, bucket);
-                }
-                bucket.Add(row.Entity);
+                bucket = _unusedPairs.TryPop(out List<Entity>? reused) ? reused : [];
+                _pairs.Add(pair, bucket);
             }
+            bucket.Add(row.Entity);
         }
     }
 
