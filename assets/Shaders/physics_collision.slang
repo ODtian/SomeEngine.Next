@@ -59,6 +59,7 @@ struct DeviceDetectionParameters
     float contactDistance;
     uint workItems;
     uint bodiesPerContact;
+    uint firstBin;
 };
 
 ConstantBuffer<DeviceDetectionParameters> DetectionParameters;
@@ -430,9 +431,11 @@ void detectDeviceCollision<TKernel : IDeviceCollisionNarrowPhase>(uint work, TKe
     if (work >= DetectionParameters.workItems) return;
     uint start = DetectionBinOffsets[DetectionParameters.bin];
     uint end = DetectionBinOffsets[DetectionParameters.bin + 1];
-    [loop] for (uint index = work; index < end - start; index += DetectionParameters.workItems)
+    uint outputStart = start - DetectionBinOffsets[DetectionParameters.firstBin];
+    [loop] for (uint local = work; local < end - start; local += DetectionParameters.workItems)
     {
-        DeviceCollisionPair pair = DetectionPairs[start + index];
+        uint index = outputStart + local;
+        DeviceCollisionPair pair = DetectionPairs[start + local];
         DeviceCollisionDistance result;
         result.first = uint2(pair.firstEntity, pair.firstGeneration);
         result.second = uint2(pair.secondEntity, pair.secondGeneration);
