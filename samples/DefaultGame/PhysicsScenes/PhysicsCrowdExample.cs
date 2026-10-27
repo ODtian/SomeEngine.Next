@@ -11,9 +11,11 @@ public sealed class PhysicsCrowdExample
     private readonly IGraphicsBackend _backend;
     private readonly Device _device;
 
-    private PhysicsCrowdExample(int characters, IGraphicsBackend backend, Device device, PhysicsSceneTimings? timings)
+    private PhysicsCrowdExample(int characters, IGraphicsBackend backend, Device device, PhysicsSceneTimings? timings,
+        PhysicsSceneData? jointNet = null)
     {
         CharacterCount = characters; _backend = backend; _device = device; Timings = timings;
+        JointNet = jointNet;
         Character = new();
         var source = new GpuPoseBlend(Character.Skeleton, new GpuBlendClip(Character.Clips[1], Loop: true));
         CharacterRig = new(new GpuXpbdPose(source, new(Character.Skeleton,
@@ -52,9 +54,16 @@ public sealed class PhysicsCrowdExample
     internal GpuPoseRig CharacterRig { get; }
     internal GpuPoseRig ClothRig { get; }
     internal PhysicsSceneTimings? Timings { get; }
+    internal PhysicsSceneData? JointNet { get; }
     public static PhysicsCrowdExample CreateDevice(int characters, IGraphicsBackend backend, Device device) =>
         new(characters, backend, device, null);
     public static PhysicsCrowdExample CreateDevice(int characters, IGraphicsBackend backend, Device device, PhysicsSceneTimings timings) =>
         new(characters, backend, device, timings);
+    /// <summary>35,000 rigid bodies, 72,000 joints and 10,000 bone-cloth bodies in the shared device step.</summary>
+    public static PhysicsCrowdExample CreateMixedDevice(IGraphicsBackend backend, Device device, PhysicsSceneTimings? timings = null) =>
+        CreateMixedDevice(625, 250, 130, 6755, backend, device, timings);
+    public static PhysicsCrowdExample CreateMixedDevice(int characters, int columns, int rows, int diagonalJoints,
+        IGraphicsBackend backend, Device device, PhysicsSceneTimings? timings = null) =>
+        new(characters, backend, device, timings, PhysicsScaleScenes.CreateJointGrid(columns, rows, diagonalJoints));
     public PhysicsCrowdScene CreateSimulation(World world) => new(this, _backend, _device, world);
 }
