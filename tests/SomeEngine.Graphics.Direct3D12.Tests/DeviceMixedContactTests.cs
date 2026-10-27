@@ -41,12 +41,13 @@ public sealed partial class DeviceAvbdTests
             world.Add(entity, new DeviceCollisionBody(grid, index));
             world.Add(entity, new DeviceGeometryBinding(geometry, index));
         }
-        QueryHandle members = world.Query(new QueryDefinitionBuilder().All<DeviceBodyBinding>());
+        QueryHandle members = world.Query(new QueryDefinitionBuilder().Read<DeviceBodyBinding>());
+        QueryHandle shapes = world.Query(new QueryDefinitionBuilder().All<DeviceBodyBinding>());
         QueryHandle poses = world.Query(new QueryDefinitionBuilder().Read<BodyPose>());
         QueryHandle points = world.Query(new QueryDefinitionBuilder().Read<ContactPoint>());
         QueryHandle stateRows = world.Query(new QueryDefinitionBuilder().Read<AvbdContactState>()
             .Read<DeviceConstraintBinding<DeviceContactConstraint>>().Read<DeviceAvbdState<DeviceAvbdContactState>>());
-        var pairs = world.Within(members);
+        var pairs = world.Within(shapes);
         ComputePipelineDesc[] kernels =
         [
             CompileMixedDetection("DeviceConvexCollision<DeviceSphere, DeviceSphere>"),
@@ -118,7 +119,8 @@ public sealed partial class DeviceAvbdTests
         Assert.InRange(world.Read<BodyPose>(entities[3]).Position.X, 4.751f, 4.8f);
         Assert.Equal(1, detection.Number);
         Assert.Equal(.02, detection.Time);
-        world.ReleaseQuery(stateRows); world.ReleaseQuery(points); world.ReleaseQuery(poses); world.ReleaseQuery(members);
+        world.ReleaseQuery(stateRows); world.ReleaseQuery(points); world.ReleaseQuery(poses);
+        world.ReleaseQuery(shapes); world.ReleaseQuery(members);
     }
 
     private ComputePipelineDesc CompileMixedDetection(string type)
