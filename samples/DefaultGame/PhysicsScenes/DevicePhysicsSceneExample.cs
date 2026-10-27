@@ -60,6 +60,7 @@ public sealed partial class PhysicsSceneExample : IApplicationGeometryFeature
         _workload["DedicatedVideoMemoryBytes"] = _device.Adapter.DedicatedVideoMemory;
         _workload["BroadPhase"] = "Hierarchical grid";
         _workload["NarrowPhase"] = "DeviceConvexCollision<DeviceBox, DeviceBox>";
+        _workload["BodiesPerContact"] = 2;
         _workload["GeometryInputsFixed"] = settings.GeometryInputsFixed;
         _workload["EquationBindingsFixed"] = settings.EquationBindingsFixed;
         _workload["Graph"] = new JsonObject { ["Order"] = "Device islands and colors" };
