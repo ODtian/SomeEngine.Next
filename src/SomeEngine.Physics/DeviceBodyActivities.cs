@@ -126,41 +126,39 @@ public sealed class DeviceBodyActivities : IDisposable
     {
         internal void Execute(scoped QueryCursor rows)
         {
-            if (ReadAll)
+            foreach (QueryChunkView chunk in rows.Chunks)
             {
-                var members = rows.ReadRows<DeviceBodyBinding, BodyActivity>();
-                while (members.MoveNext(out QueryRow row, out var body, out var activity))
-                    Read(row, in body.Value, activity);
-            }
-            else
-                foreach (QueryChunkView chunk in rows.Chunks)
+                bool hasActivity = chunk.Has<BodyActivity>();
+                bool hasBinding = chunk.Has<DeviceBodyActivityBinding>();
+                bool bindingsChanged = ReadAll || chunk.HasChangedSinceLastSystemVersion<DeviceBodyBinding>() ||
+                    hasBinding && chunk.HasChangedSinceLastSystemVersion<DeviceBodyActivityBinding>();
+                if (!bindingsChanged && (!hasActivity || !chunk.HasChangedSinceLastSystemVersion<BodyActivity>())) continue;
+                ReadOnlySpan<uint> versions = hasActivity ? chunk.ReadWriteVersions<BodyActivity>() : default;
+                foreach (int index in chunk.RowIndices)
                 {
-                    if (!chunk.HasChangedSinceLastSystemVersion<DeviceBodyBinding>() &&
-                        (!chunk.Has<DeviceBodyActivityBinding>() || !chunk.HasChangedSinceLastSystemVersion<DeviceBodyActivityBinding>()) &&
-                        (!chunk.Has<BodyActivity>() || !chunk.HasChangedSinceLastSystemVersion<BodyActivity>())) continue;
-                    foreach (QueryRow row in chunk.Rows)
-                    {
-                        DeviceBodyBinding body = row.Read<DeviceBodyBinding>();
-                        row.TryReadRef<BodyActivity>(out var activity);
-                        Read(row, in body, activity);
-                    }
+                    DeviceBodyBinding body = chunk.Read<DeviceBodyBinding>(index);
+                    if (!ReferenceEquals(body.Bodies, Activities.Bodies)) continue;
+                    Entity entity = chunk.GetEntity(index);
+                    uint version = hasActivity ? versions[index] : 0;
+                    if (!bindingsChanged && new CpuVersion(entity, version) == Activities._versions[body.Index]) continue;
+                    bool selected = hasActivity && hasBinding &&
+                        ReferenceEquals(chunk.Read<DeviceBodyActivityBinding>(index).Activities, Activities);
+                    BodyActivity activity = selected ? chunk.Read<BodyActivity>(index) : default;
+                    Read(entity, in body, selected, in activity, selected ? version : 0);
                 }
+            }
         }
-        private void Read(scoped QueryRow row, in DeviceBodyBinding binding, scoped ComponentReference<BodyActivity> activity)
+        private void Read(Entity entity, in DeviceBodyBinding binding, bool hasActivity, in BodyActivity activity, uint version)
         {
-            if (!ReferenceEquals(binding.Bodies, Activities.Bodies)) return;
-            bool hasActivity = activity.HasValue && row.TryRead<DeviceBodyActivityBinding>(out var activityBinding)
-                && ReferenceEquals(activityBinding.Activities, Activities);
-            uint version = hasActivity ? row.WriteVersion<BodyActivity>() : 0;
-            var current = new CpuVersion(row.Entity, version);
+            var current = new CpuVersion(entity, version);
             if (!ReadAll && current == Activities._versions[binding.Index]) return;
-            var input = new ActivityInput { EntityIndex = (uint)row.Entity.Index,
-                EntityGeneration = (uint)row.Entity.Generation, Flags = hasActivity ? 3u : 1u };
+            var input = new ActivityInput { EntityIndex = (uint)entity.Index,
+                EntityGeneration = (uint)entity.Generation, Flags = hasActivity ? 3u : 1u };
             if (current != Activities._versions[binding.Index]) input.Flags |= 4;
             if (hasActivity)
             {
-                input.Sleeping = activity.Value.Sleeping ? 1u : 0u;
-                input.QuietSeconds = activity.Value.QuietSeconds; input.Radius = activity.Value.Radius;
+                input.Sleeping = activity.Sleeping ? 1u : 0u;
+                input.QuietSeconds = activity.QuietSeconds; input.Radius = activity.Radius;
             }
             MemoryMarshal.Write(Activities._inputMapping.Bytes.Slice(binding.Index * 32, 32), in input);
             if ((input.Flags & 4) != 0) Activities._transientInputs.Add(binding.Index);
