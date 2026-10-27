@@ -5,7 +5,7 @@ using SomeEngine.ECS.Systems;
 
 namespace SomeEngine.Physics;
 
-/// <summary>Minimizes a free island's common translation and rotation in its current AVBD objective.</summary>
+/// <summary>Minimizes an island's dynamic-body translation and rotation in its current AVBD objective.</summary>
 internal sealed class AvbdIslandEquations
 {
     private readonly List<Entity> _bodies = [];
@@ -19,35 +19,48 @@ internal sealed class AvbdIslandEquations
         foreach (PhysicsGraphBatch batch in graph.Batches)
         foreach (PhysicsGraphData.Island island in batch.Islands)
         {
-            bool hasFixedReference = false;
-            foreach (Entity body in island.Reads)
-                if (!island.DynamicBodies.Contains(body)) { hasFixedReference = true; break; }
+            bool hasReadOnlyBody = false;
             foreach (PhysicsGraphData.ConstraintInput constraint in island.Records)
-                foreach (bool writesBody in constraint.Bodies.Values)
-                    if (!writesBody) { hasFixedReference = true; break; }
-            if (hasFixedReference) continue;
+                foreach (var body in constraint.Bodies)
+                    if (!body.Value && island.DynamicBodies.Contains(body.Key)) { hasReadOnlyBody = true; break; }
+            if (hasReadOnlyBody) continue;
 
-            _bodies.Clear(); _poses.Clear();
-            double mass = 0;
-            foreach (Entity body in island.BodyOrder)
-            {
-                if (!writes.TryGetRow(body, out QueryRow row)) { hasFixedReference = true; break; }
-                ref readonly BodyMass bodyMass = ref row.ReadRef<BodyMass>();
-                ref readonly BodyPose pose = ref row.ReadRef<BodyPose>();
-                mass += 1d / bodyMass.InverseMass;
-                _bodies.Add(body); _poses.Add(pose);
-            }
-            if (hasFixedReference || _bodies.Count == 0) continue;
+            if (!ReadBodies(writes, island.BodyOrder, island.DynamicBodies) || _bodies.Count == 0) continue;
 
             for (int width = 2; width < _bodies.Count; width *= 2)
                 for (int first = 0; first < _bodies.Count; first += width)
                 {
                     int count = Math.Min(width, _bodies.Count - first);
-                    if (count > 1) MinimizeTranslation(in context, queries, bodies, constraints, initialErrorFraction, first, count);
+                    if (count > 1)
+                    {
+                        MinimizeTranslation(in context, queries, bodies, constraints, initialErrorFraction, first, count);
+                        MinimizeRotation(in context, queries, bodies, constraints, initialErrorFraction, first, count);
+                    }
                 }
+            int islandBodyCount = island.BodyOrder.Count;
+            foreach (PhysicsGraphData.ConstraintInput constraint in island.Records)
+            {
+                if (!ReadBodies(writes, constraint.Bodies.Keys, island.DynamicBodies)) continue;
+                if (_bodies.Count <= 1 || _bodies.Count == islandBodyCount) continue;
+                MinimizeTranslation(in context, queries, bodies, constraints, initialErrorFraction, 0, _bodies.Count);
+                MinimizeRotation(in context, queries, bodies, constraints, initialErrorFraction, 0, _bodies.Count);
+            }
+            if (!ReadBodies(writes, island.BodyOrder, island.DynamicBodies)) continue;
             MinimizeTranslation(in context, queries, bodies, constraints, initialErrorFraction, 0, _bodies.Count);
-            MinimizeRotation(in context, queries, bodies, constraints, initialErrorFraction, mass);
+            MinimizeRotation(in context, queries, bodies, constraints, initialErrorFraction, 0, _bodies.Count);
         }
+    }
+
+    private bool ReadBodies(scoped EntityQuery rows, IEnumerable<Entity> entities, HashSet<Entity> dynamicBodies)
+    {
+        _bodies.Clear(); _poses.Clear();
+        foreach (Entity body in entities)
+        {
+            if (!dynamicBodies.Contains(body)) continue;
+            if (!rows.TryGetRow(body, out QueryRow row)) return false;
+            _bodies.Add(body); _poses.Add(row.ReadRef<BodyPose>());
+        }
+        return true;
     }
 
     private void MinimizeTranslation<TConstraints>(in PhysicsStepContext context, scoped EntityQueryViews queries,
@@ -71,7 +84,7 @@ internal sealed class AvbdIslandEquations
         }
         double inertia = mass / squaredDuration;
         Vector3 inertiaGradient = new((float)(offsetX / squaredDuration), (float)(offsetY / squaredDuration), (float)(offsetZ / squaredDuration));
-        Vector3 constraintGradient = ReadConstraintGradient(in context, queries, bodies, constraints, initialErrorFraction, first, count);
+        Vector3 constraintGradient = ReadLinearGradient(in context, queries, bodies, constraints, initialErrorFraction, first, count, false);
         Vector3 gradient = constraintGradient + inertiaGradient;
         Vector3 direction = gradient * (float)(-1 / inertia);
         if (direction == Vector3.Zero) return;
@@ -80,7 +93,7 @@ internal sealed class AvbdIslandEquations
         try
         {
             WritePoses(queries.Get(1), direction, first, count);
-            shiftedGradient = ReadConstraintGradient(in context, queries, bodies, constraints, initialErrorFraction, first, count);
+            shiftedGradient = ReadLinearGradient(in context, queries, bodies, constraints, initialErrorFraction, first, count, false);
         }
         finally { WritePoses(queries.Get(1), Vector3.Zero, first, count); }
 
@@ -91,51 +104,72 @@ internal sealed class AvbdIslandEquations
     }
 
     private void MinimizeRotation<TConstraints>(in PhysicsStepContext context, scoped EntityQueryViews queries,
-        scoped PhysicsBodies bodies, TConstraints constraints, float initialErrorFraction, double mass)
+        scoped PhysicsBodies bodies, TConstraints constraints, float initialErrorFraction, int first, int count)
         where TConstraints : struct, IAvbdGraphConstraints
     {
-        double centerX = 0, centerY = 0, centerZ = 0;
-        for (int index = 0; index < _bodies.Count; index++)
+        double mass = 0, centerX = 0, centerY = 0, centerZ = 0;
+        for (int index = first; index < first + count; index++)
         {
             queries.Get(1).TryGetRow(_bodies[index], out QueryRow row);
             ref readonly BodyMass bodyMass = ref row.ReadRef<BodyMass>();
             BodyPose pose = _poses[index] = row.ReadRef<BodyPose>();
             Vector3 center = pose.GetCenterOfMass(in bodyMass);
             double value = 1d / bodyMass.InverseMass;
+            mass += value;
             centerX += value * center.X; centerY += value * center.Y; centerZ += value * center.Z;
         }
         Vector3 centroid = new((float)(centerX / mass), (float)(centerY / mass), (float)(centerZ / mass));
         Span<Vector3> axes = stackalloc Vector3[3];
-        int count = ReadRotationAxes(queries.Get(1), axes);
-        if (count == 0) return;
-        axes = axes[..count];
+        int axisCount = ReadRotationAxes(queries.Get(1), first, count, axes);
+        if (axisCount == 0) return;
+        axes = axes[..axisCount];
         Span<double> curvature = stackalloc double[9];
         curvature.Clear();
         Vector3 gradient = ReadRotationGradient(in context, queries, bodies, constraints, initialErrorFraction,
-            centroid, axes, curvature);
+            first, count, centroid, axes, curvature);
         Vector3 direction = SolveRotation(curvature, axes, gradient);
         if (direction == Vector3.Zero) return;
+        Vector3 linearGradient = ReadLinearGradient(in context, queries, bodies, constraints,
+            initialErrorFraction, first, count, true);
+        double linearInertia = mass / (context.Duration * context.Duration);
 
-        Vector3 shiftedGradient;
+        Vector3 shiftedGradient, shiftedLinearGradient, translation = default;
         try
         {
-            WriteRotatedPoses(queries.Get(1), centroid, direction);
+            WriteRotatedPoses(queries.Get(1), first, count, centroid, direction, Vector3.Zero);
+            Vector3 rotatedLinearGradient = ReadLinearGradient(in context, queries, bodies, constraints,
+                initialErrorFraction, first, count, true);
+            translation = (rotatedLinearGradient - linearGradient) * (float)(-1 / linearInertia);
+            if (translation != Vector3.Zero)
+            {
+                WriteRotatedPoses(queries.Get(1), first, count, centroid, direction, translation);
+                shiftedLinearGradient = ReadLinearGradient(in context, queries, bodies, constraints,
+                    initialErrorFraction, first, count, true);
+                double inertiaResponse = linearInertia * Dot(translation, translation);
+                double measuredResponse = Dot(shiftedLinearGradient - rotatedLinearGradient, translation);
+                translation *= (float)(inertiaResponse / Math.Max(inertiaResponse, measuredResponse));
+            }
+            WriteRotatedPoses(queries.Get(1), first, count, centroid, direction, translation);
+            shiftedLinearGradient = ReadLinearGradient(in context, queries, bodies, constraints,
+                initialErrorFraction, first, count, true);
             shiftedGradient = ReadRotationGradient(in context, queries, bodies, constraints, initialErrorFraction,
-                centroid, axes, default);
+                first, count, centroid + translation, axes, default);
         }
-        finally { WritePoses(queries.Get(1), Vector3.Zero); }
+        finally { WritePoses(queries.Get(1), Vector3.Zero, first, count); }
 
-        double inertiaCurvature = -Dot(gradient, direction);
-        double measuredCurvature = Dot(shiftedGradient - gradient, direction);
-        float scale = (float)(inertiaCurvature / Math.Max(inertiaCurvature, measuredCurvature));
-        WriteRotatedPoses(queries.Get(1), centroid, direction * scale);
+        double inertiaCurvature = -Dot(gradient, direction) + linearInertia * Dot(translation, translation);
+        double measuredCurvature = Dot(shiftedGradient - gradient, direction)
+            + Dot(shiftedLinearGradient - linearGradient, translation);
+        double derivative = Dot(gradient, direction) + Dot(linearGradient, translation);
+        float scale = (float)(-derivative / Math.Max(inertiaCurvature, measuredCurvature));
+        WriteRotatedPoses(queries.Get(1), first, count, centroid, direction * scale, translation * scale);
     }
 
-    private int ReadRotationAxes(scoped EntityQuery rows, Span<Vector3> axes)
+    private int ReadRotationAxes(scoped EntityQuery rows, int first, int bodyCount, Span<Vector3> axes)
     {
         Span<Vector3> locked = stackalloc Vector3[3];
         int lockedCount = 0;
-        for (int index = 0; index < _bodies.Count; index++)
+        for (int index = first; index < first + bodyCount; index++)
         {
             rows.TryGetRow(_bodies[index], out QueryRow row);
             int mask = BodyInertia.GetRotationMask(in row.ReadRef<BodyMass>().InverseInertia);
@@ -166,14 +200,15 @@ internal sealed class AvbdIslandEquations
     }
 
     private Vector3 ReadRotationGradient<TConstraints>(in PhysicsStepContext context, scoped EntityQueryViews queries,
-        scoped PhysicsBodies bodies, TConstraints constraints, float initialErrorFraction, Vector3 centroid,
+        scoped PhysicsBodies bodies, TConstraints constraints, float initialErrorFraction, int first, int count, Vector3 centroid,
         ReadOnlySpan<Vector3> axes, Span<double> curvature)
         where TConstraints : struct, IAvbdGraphConstraints
     {
         double x = 0, y = 0, z = 0;
         float inverseStepSquared = 1 / ((float)context.Duration * (float)context.Duration);
-        foreach (Entity body in _bodies)
+        for (int index = first; index < first + count; index++)
         {
+            Entity body = _bodies[index];
             queries.Get(1).TryGetRow(body, out QueryRow row);
             ref readonly BodyPose pose = ref row.ReadRef<BodyPose>();
             ref readonly BodyMass mass = ref row.ReadRef<BodyMass>();
@@ -232,8 +267,8 @@ internal sealed class AvbdIslandEquations
         return rotation;
     }
 
-    private Vector3 ReadConstraintGradient<TConstraints>(in PhysicsStepContext context, scoped EntityQueryViews queries,
-        scoped PhysicsBodies bodies, TConstraints constraints, float initialErrorFraction, int first, int count)
+    private Vector3 ReadLinearGradient<TConstraints>(in PhysicsStepContext context, scoped EntityQueryViews queries,
+        scoped PhysicsBodies bodies, TConstraints constraints, float initialErrorFraction, int first, int count, bool includeInertia)
         where TConstraints : struct, IAvbdGraphConstraints
     {
         double x = 0, y = 0, z = 0;
@@ -248,9 +283,9 @@ internal sealed class AvbdIslandEquations
             equation.Reset(in pose, in mass, in step, (float)context.Duration);
             Vector3 inertia = equation.LinearGradient;
             constraints.AccumulateBodyEquation(in context, queries, 3, body, bodies, initialErrorFraction, ref equation);
-            x += (double)equation.LinearGradient.X - inertia.X;
-            y += (double)equation.LinearGradient.Y - inertia.Y;
-            z += (double)equation.LinearGradient.Z - inertia.Z;
+            x += (double)equation.LinearGradient.X - (includeInertia ? 0 : inertia.X);
+            y += (double)equation.LinearGradient.Y - (includeInertia ? 0 : inertia.Y);
+            z += (double)equation.LinearGradient.Z - (includeInertia ? 0 : inertia.Z);
         }
         return new((float)x, (float)y, (float)z);
     }
@@ -268,16 +303,17 @@ internal sealed class AvbdIslandEquations
         }
     }
 
-    private void WriteRotatedPoses(scoped EntityQuery rows, Vector3 centroid, Vector3 rotation)
+    private void WriteRotatedPoses(scoped EntityQuery rows, int first, int count,
+        Vector3 centroid, Vector3 rotation, Vector3 translation)
     {
         float angle = rotation.Length();
         Quaternion change = Quaternion.CreateFromAxisAngle(rotation / angle, angle);
-        for (int index = 0; index < _bodies.Count; index++)
+        for (int index = first; index < first + count; index++)
         {
             rows.TryGetRow(_bodies[index], out QueryRow row);
             ref readonly BodyMass mass = ref row.ReadRef<BodyMass>();
             BodyPose pose = _poses[index];
-            Vector3 center = centroid + Vector3.Transform(pose.GetCenterOfMass(in mass) - centroid, change);
+            Vector3 center = centroid + Vector3.Transform(pose.GetCenterOfMass(in mass) - centroid, change) + translation;
             pose.Rotation = Quaternion.Normalize(change * pose.Rotation);
             pose.SetCenterOfMass(center, in mass);
             row.ReadWrite<BodyPose>() = pose;

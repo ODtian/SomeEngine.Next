@@ -10,6 +10,28 @@ namespace SomeEngine.Runtime.Tests;
 public sealed class PhysicsSceneMomentumTests
 {
     [Fact]
+    public void TheOriginalHangingHeavyChainRespectsItsInitialMechanicalEnergy()
+    {
+        using var scheduler = new Scheduler(new() { WorkerCount = 2 });
+        using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+        PhysicsSceneDescription description = PhysicsScenes.All.Single(scene => scene.Id == "3d-chain");
+        using var scene = PhysicsSceneExample.CreateCpu(description).CreateSimulation(world);
+        PhysicsStepResult result = default;
+        double maximumEnergy = ReadEnergy(world, scene);
+
+        for (int number = 0; number < 180; number++)
+        {
+            scene.AdvanceTime(scene.StepSeconds * (number == 0 ? 1.5 : 1));
+            result = scene.CompleteForRead();
+            maximumEnergy = Math.Max(maximumEnergy, ReadEnergy(world, scene));
+        }
+
+        Assert.Equal(179, result.Number);
+        // Eighteen .25 kg links and one 125 kg load begin at z=10, with potential zero at z=-2.
+        Assert.InRange(maximumEnergy, 0, 129.5 * 10 * 12);
+    }
+
+    [Fact]
     public void TheOriginalFreeChainRespectsItsMomentumAndEnergyAfterTheTimedImpulse()
     {
         using var scheduler = new Scheduler(new() { WorkerCount = 2 });
@@ -43,6 +65,7 @@ public sealed class PhysicsSceneMomentumTests
         foreach (var body in scene.Bodies.Span)
         {
             BodyMass mass = world.Read<BodyMass>(body);
+            if (mass.Motion != BodyMotion.Dynamic) continue;
             BodyPose pose = world.Read<BodyPose>(body);
             BodyVelocity velocity = world.Read<BodyVelocity>(body);
             Vector3 spin = Vector3.Transform(velocity.Angular, Quaternion.Conjugate(pose.Rotation));
