@@ -25,7 +25,9 @@ public sealed partial class PhysicsSceneExample : IApplicationGeometryFeature
     }
 
     internal static PhysicsSceneExample CreateDevice(PhysicsSceneDescription description, PhysicsSceneTimings? timings = null) =>
-        new(description, new PhysicsSceneSettings(Iterations: 16, BodyIterations: 2, StepBudgetMilliseconds: 1000d / 60)
+        description.Scene == 408 ? CreateSiloDevice(100000, timings)
+        : description.Scene == 409 ? CreateSiloDevice(500000, timings)
+        : new(description, new PhysicsSceneSettings(Iterations: 16, BodyIterations: 2, StepBudgetMilliseconds: 1000d / 60)
         {
             ContactDistance = .02f,
             GeometryInputsFixed = true,
@@ -81,9 +83,7 @@ public sealed partial class PhysicsSceneExample : IApplicationGeometryFeature
             ["Bodies"] = capacity.Bodies, ["Cells"] = capacity.Cells, ["Buckets"] = capacity.Buckets,
             ["Pairs"] = capacity.Pairs, ["Bins"] = capacity.Bins, ["ContactPoints"] = contacts,
         };
-        int[] readback = silo && bodyCount > 256
-            ? [.. Enumerable.Range(0, PhysicsSiloScenes.StaticBodies + 3), bodyCount - 3, bodyCount - 2, bodyCount - 1]
-            : Enumerable.Range(0, bodyCount).ToArray();
+        int[] readback = Enumerable.Range(0, bodyCount).ToArray();
         var events = new CountScenePhysicsEvents(_events);
         JobResourceAccess[] eventAccesses = [JobResourceAccess.Write(WorldJobs.GetScheduler(world).GetResourceToken(_events))];
         string shaders = Path.Combine(AppContext.BaseDirectory, "PhysicsShaders");
@@ -97,7 +97,8 @@ public sealed partial class PhysicsSceneExample : IApplicationGeometryFeature
                 ["HullFaces"] = PhysicsSiloScenes.Hull.Faces.Length,
                 ["StaticBoxes"] = PhysicsSiloScenes.StaticBodies,
             };
-            _workload["ReadbackBodyIndices"] = new JsonArray(readback.Select(index => (JsonNode?)JsonValue.Create(index)).ToArray());
+            _workload["ReadbackBodies"] = "All scene bodies";
+            _workload["ReadbackBodyCount"] = bodyCount;
             _workload["CompletedEventKinds"] = "Sleep and Wake";
             return PhysicsScenes.CreateDevice<SceneSiloGeometry, DeviceSiloGeometryInputs, CountScenePhysicsEvents>(
                 world, description, data, default, _backend!, _device!, settings, gridSettings, capacity, contacts,

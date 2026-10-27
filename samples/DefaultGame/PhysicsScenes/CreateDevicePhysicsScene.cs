@@ -186,7 +186,9 @@ public static partial class PhysicsScenes
         var contacts = new DeviceSceneContactEvents(backend, device, world, bodies, members, points, parameters, responses,
             shaders, bindings, reads, new IDeviceConstraintSelection[] { selected, selectedResponses }, completedEvents, contactEvents, threads);
         var eventConsumption = new ConsumePhysicsEvents<TEvents>(world, eventRows, events, eventAccesses);
-        var results = new DeviceBodyResults(backend, device, bodies, world, observed, readbackBodyIndices.Length);
+        var results = readbackBodyIndices.Length == created.Bodies.Length
+            ? new DeviceBodyResults(backend, device, bodies)
+            : new DeviceBodyResults(backend, device, bodies, world, observed, readbackBodyIndices.Length);
         var statistics = new DeviceSceneStatistics(backend, device, bodies, parameters, selected, graph,
             shaders.Statistics(), bindings, reads);
         PhysicsSceneTimings? timings = settings.Timings;
