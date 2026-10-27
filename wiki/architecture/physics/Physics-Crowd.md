@@ -19,6 +19,15 @@ XPBD 继续更新原 Length/Bend 乘子并投影节点。完成一次速度重�
 `MapBones` 和 `CopyOutput` 沿原 Game 姿势输出交付 Number、Time 与骨骼矩阵。
 场景通过原 `IGameFramePhysics` 推进及消费完成步。
 
+共同图在方程初始化前建立，AVBD 的 `Initialize(false, equationInputs)` 使用同次图和已捕获参与。
+项目在设备请求 `IndirectCommands` 时，为 XPBD 选择原图行范围生成的间接派发参数；
+原类型组、颜色次序、投影及乘子沿同一约束图推进。
+
+约束参数的 `WriteDeviceConstraintInputs` 读取原选定实体引用，
+以调用方的 `rowsPerPacket` 交给 `EntityQueryJobs`。每包在一个来源查询范围内
+调用原 `IDeviceConstraintSource.Read(component, row, access)`；组件值和写版本从实际行取得，
+各个 `DeviceConstraintBinding.Index` 继续登记自身参数及元数据的上传写入范围。
+
 `CreateDevice(characters, backend, device, timings)` 接受原 `PhysicsSceneTimings`。
 来源采样、参数输入、碰撞维护、约束图、方程初始化、每轮 AVBD/XPBD、
 速度、骨骼输出和主体完成读回使用原 `Measure` 阶段；`timings.Describe()`
@@ -42,6 +51,9 @@ Length 与 Bend 的投影共用 `physics_xpbd_projection_math.slang` 中的乘�
 为每块布料的九个四边区域创建十八个 `DynamicFace`。几何实体通过原端点引用读取同一
 `DeviceBodies`，更新设备几何和范围后进入分层网格及胶囊/面域类型 bin。
 两个具体的 Capsule/Triangle 泛型检测方向保留实际几何实体的先后顺序。
+本项目在创建时固定这些形状参数、几何实体及其主体引用；首个物理步读取并上传这些输入，
+随后沿原 `DeviceInputTransfer.Resident` 复用同一表示。
+Box、Capsule 与 Face 每步继续读取当前主体状态，更新实际几何及候选范围。
 原检测结果、匹配、当前几何更新和 `ContactPoints` 创建共同接触实体；
 其 AVBD 接触参数、状态和作用端加入上述同一图。接触响应的组范围与图中的行范围对应。
 

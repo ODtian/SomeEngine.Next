@@ -1,5 +1,6 @@
 using SomeEngine.ECS;
 using SomeEngine.ECS.Queries;
+using SomeEngine.ECS.Relations;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Job;
 
@@ -15,7 +16,8 @@ public readonly struct InitializeContactResponses : IPhysicsStage, IDisposable
     public InitializeContactResponses(World world, QueryHandle bodies, QueryHandle contacts)
     {
         _world = world;
-        _bodies = world.Query(world.GetQueryDefinition(bodies).AsReadOnly().WithOptionalRead<BodyActivity>());
+        _bodies = world.Query(QueryDefinition.Empty.WithAccessFrom(world.GetQueryDefinition(bodies).AsReadOnly())
+            .WithOptionalRead<BodyActivity>().WithOptionalRead<DirectedRelationEndpoints<ContactParticipant>>());
         _contacts = contacts;
         var accesses = new List<JobResourceAccess>();
         PhysicsQueryAccess.AddAccesses(world, _bodies, accesses);

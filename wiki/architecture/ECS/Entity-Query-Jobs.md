@@ -62,6 +62,9 @@ completed.Complete();
 
 初始化后生成的岛或颜色范围，通过 `group.ExecuteParallel(in work, in job, start, count)` 取得其当前实体行。该入口沿原捕获逻辑解析实际地址，使用现有资源覆盖检查确认组件及对象范围由当前访问集合持有，并共享本次调度的写入版本。项目的全局 work 提供生成这些派生范围所需的原实体与引用资源；数值 work 保存实际参与实体的引用。
 
+多轮同步使用同一派生范围时，`using EntityQueryGroup derived = group.Borrow(in work)` 持有该范围的原查询行、组件跨度与相容分组，再调用 `derived.ExecuteParallel(in job, start, count)`。父组的组件、拓扑和引用资源访问覆盖派生组的完整使用期。
+成员或引用变化时，项目调用 `derived.Refresh(in work)`；同一查询和实体次序继续复用组件存储跨度，当前引用资源沿原描述器重新收集并核对覆盖范围。`Dispose` 将派生工作区归还原池，数值和引用状态继续由原组件持有。
+
 两种同步入口都按各 work 的实际组件与引用资源范围调用共同 `ComponentResourceGroups`。实际重叠且含写入的 work 在组内依次执行，相容组通过原 Scheduler 同步范围并行推进；共享只读输入保留并行语义。资源分组与调用方的岛、颜色及数值次序各自承担对应职责。所有同步参与者 Join 后，外层数值工作才释放组件、拓扑和对象访问。查询数据、范围及相容性分组容量沿同一工作区池复用。
 
 ## 调度、重绑定与完成

@@ -46,6 +46,8 @@ Jacobian、惯性块与响应共同投影到该子空间。
 `DeviceAvbdSolver.Initialize()` 先从当前参与和选择构建约束图，再初始化子步历史、
 Body 方程索引和组数据；接触调节与支撑分组读取同次图的活动主体及连通根。
 `Iterate(n)` 在当前子步继续 primal/dual 迭代；`Solve()` 组合这两项职责，迭代复用初始化时构建的图。
+项目已显式建立共同图时，`Initialize(false, equationInputs)` 使用该图已捕获的参与，
+再捕获求解器自身状态选择并初始化数值；`equationInputs` 继续选择上传或复用原方程绑定。
 `Graph.ConstraintStageCount` 为零时，迭代跳过行对偶派发；组更新保持逐轮执行。
 `DeviceAvbdKernels.ClearBodyIndices` 选择独立的逐 Body 索引清理内核，
 其具体入口调用 `clearDeviceAvbdBodyIndices`；随后的初始化内核调用
@@ -65,8 +67,11 @@ Body 方程索引和组数据；接触调节与支撑分组读取同次图的活
 
 项目完成当前点、参数和成员输入后，可先调度同一 `DeviceConstraintGraph.Build()`，
 再选择 `Iterate(iterations, buildGraph: false)` 复用该次图结果。
+该继续迭代入口同时复用本次初始化与建图已经捕获的参数成员和数值行索引；
+约束输入及选择在相应初始化、建图阶段交付。默认继续迭代入口沿当前输入捕获并建图。
 `DeviceXpbdSolver.Initialize(buildGraph: false)` 与同名迭代重载使用同一完成依赖；
 原默认入口继续在自身求解链构建图。AVBD/XPBD 交替时各阶段共享当前主体、数值历史与图。
+接触反弹的显式图复用重载同样沿其初始化阶段捕获的响应行执行。
 主体、约束及并行图派发复用 `DevicePhysicsDispatch.CreateGroups` 的 X/Y 范围；
 项目 Shader 以 `devicePhysicsThreadIndex` 或 `devicePhysicsGroupIndex` 读取对应线性索引。
 固定主体与方程绑定的项目可在首次 `Initialize(DeviceInputTransfer.Upload)` 或 `Solve(Upload)`

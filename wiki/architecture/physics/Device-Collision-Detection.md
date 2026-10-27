@@ -74,6 +74,11 @@ detectDeviceCollision(id.x, kernel);
 和并行设备工作项数量。每个工作项按 `work + k × WorkItems` 处理当前 bin 中的 pair，
 复用自己的 EPA 与裁剪工作区；每个 pair 只在自身结果位置写出。
 数值 scratch 按 `WorkItems` 分配，持久结果按 `Pairs` 分配。
+构造可接收从 `firstBin` 开始的连续 `ComputePipelineDesc` 范围；每个 bin 由项目提供具体 kernel。
+各派发复用同一 scratch，派发间沿原 Buffer 屏障同步，独立参数保存在各自的 256 字节范围。
+结果索引为原 pair 位置减去首 bin 的起点，全部 bin 共用 `Distances`、`Contacts` 和 `ContactCounts`。
+同一个 `DeviceContactMatches` 继续将该连续结果匹配到原接触实体、参数索引和数值历史。
+单 kernel 构造以单元素范围接入相同执行链。
 `BodiesPerContact` 由项目按具体组合设置，默认 6；例如刚体 Box/Box 选择 2，
 两节点 Capsule/Sphere 选择 3，三节点 Face/Sphere 选择 4。
 同一值决定检测端设备缓冲、所选 CPU 读回数组及写入跨度；
