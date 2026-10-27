@@ -11,15 +11,15 @@ void addDevicePenetrationEdge(uint start, inout int count, int first, int second
 }
 
 void addDevicePenetrationFace(uint vertices, uint faces, inout int count,
-    int first, int second, int third, float3 interior)
+    int first, int second, int third, double3 interior)
 {
-    float3 a = PenetrationVertices[vertices + first].difference();
-    float3 normal = cross(PenetrationVertices[vertices + second].difference() - a,
-        PenetrationVertices[vertices + third].difference() - a);
-    float squared = dot(normal, normal);
+    double3 a = double3(PenetrationVertices[vertices + first].difference());
+    double3 normal = deviceCollisionCross(double3(PenetrationVertices[vertices + second].difference()) - a,
+        double3(PenetrationVertices[vertices + third].difference()) - a);
+    double squared = deviceCollisionDot(normal, normal);
     if (squared == 0) return;
     normal /= sqrt(squared);
-    if (dot(normal, interior - a) > 0)
+    if (deviceCollisionDot(normal, interior - a) > 0)
     {
         normal = -normal;
         int previous = second;
@@ -30,8 +30,8 @@ void addDevicePenetrationFace(uint vertices, uint faces, inout int count,
     face.first = first;
     face.second = second;
     face.third = third;
-    face.normal = normal;
-    face.distance = max(0, dot(normal, a));
+    face.normal = float3(normal);
+    face.distance = float(max(0.0, deviceCollisionDot(normal, a)));
     PenetrationFaces[faces + count++] = face;
 }
 
@@ -96,17 +96,20 @@ DeviceGeometryDistance penetrationDevicePair<TFirst : IDeviceConvex, TSecond : I
     }
     if (count == 3)
     {
-        float3 normal = normalize(cross(PenetrationVertices[vertices + 1].difference() - PenetrationVertices[vertices].difference(),
-            PenetrationVertices[vertices + 2].difference() - PenetrationVertices[vertices].difference()));
+        double3 origin = double3(PenetrationVertices[vertices].difference());
+        double3 area = deviceCollisionCross(double3(PenetrationVertices[vertices + 1].difference()) - origin,
+            double3(PenetrationVertices[vertices + 2].difference()) - origin);
+        double3 planeNormal = area / sqrt(deviceCollisionDot(area, area));
+        float3 normal = float3(planeNormal);
         PenetrationVertices[vertices + count] = supportDevicePair<TFirst, TSecond>(first, second, normal);
-        if (abs(dot(normal, PenetrationVertices[vertices + count].difference() - PenetrationVertices[vertices].difference())) <= tolerance)
+        if (abs(deviceCollisionDot(planeNormal, double3(PenetrationVertices[vertices + count].difference()) - origin)) <= tolerance)
             PenetrationVertices[vertices + count] = supportDevicePair<TFirst, TSecond>(first, second, -normal);
-        if (abs(dot(normal, PenetrationVertices[vertices + count].difference() - PenetrationVertices[vertices].difference())) <= tolerance)
+        if (abs(deviceCollisionDot(planeNormal, double3(PenetrationVertices[vertices + count].difference()) - origin)) <= tolerance)
             return roundedDeviceCore<TFirst, TSecond>(first, second, simplex, originalCount, normal);
         count++;
     }
-    float3 interior = (PenetrationVertices[vertices].difference() + PenetrationVertices[vertices + 1].difference()
-        + PenetrationVertices[vertices + 2].difference() + PenetrationVertices[vertices + 3].difference()) * 0.25f;
+    double3 interior = (double3(PenetrationVertices[vertices].difference()) + double3(PenetrationVertices[vertices + 1].difference())
+        + double3(PenetrationVertices[vertices + 2].difference()) + double3(PenetrationVertices[vertices + 3].difference())) * 0.25;
     int faceCount = 0;
     addDevicePenetrationFace(vertices, faces, faceCount, 0, 1, 2, interior);
     addDevicePenetrationFace(vertices, faces, faceCount, 0, 3, 1, interior);
@@ -120,13 +123,16 @@ DeviceGeometryDistance penetrationDevicePair<TFirst : IDeviceConvex, TSecond : I
             if (PenetrationFaces[faces + index].distance < PenetrationFaces[faces + selected].distance) selected = index;
         nearest = PenetrationFaces[faces + selected];
         DeviceSupportPoint support = supportDevicePair<TFirst, TSecond>(first, second, nearest.normal);
-        if (dot(nearest.normal, support.difference()) - nearest.distance <= tolerance) break;
+        if (deviceCollisionDot(double3(nearest.normal), double3(support.difference())) - nearest.distance <= tolerance) break;
         int edgeCount = 0;
         int kept = 0;
         for (int index = 0; index < faceCount; index++)
         {
             DevicePenetrationFace face = PenetrationFaces[faces + index];
-            if (dot(face.normal, support.difference() - PenetrationVertices[vertices + face.first].difference()) > 0)
+            double3 origin = double3(PenetrationVertices[vertices + face.first].difference());
+            double3 normal = deviceCollisionCross(double3(PenetrationVertices[vertices + face.second].difference()) - origin,
+                double3(PenetrationVertices[vertices + face.third].difference()) - origin);
+            if (deviceCollisionDot(normal, double3(support.difference()) - origin) > 0)
             {
                 addDevicePenetrationEdge(edges, edgeCount, face.first, face.second);
                 addDevicePenetrationEdge(edges, edgeCount, face.second, face.third);
