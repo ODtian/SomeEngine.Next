@@ -37,9 +37,13 @@ internal sealed class DeviceCrowdMotors : IDisposable
     internal DeviceConstraintSelection<JointMotor, DeviceMotorConstraint, DeviceAvbdStateRows<DeviceAvbdMotorState>> StateSelection { get; }
     internal void AddBindings(Dictionary<string, ResourceBinding[]> bindings) { Data.AddBindings(bindings); States.AddBindings(bindings); }
     internal UploadCrowdMotors Upload() => new(this);
-    internal JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) =>
-        _stateInputs.Upload().Schedule(in context, Data.UploadInputs().Schedule(in context,
-            _inputs.Schedule(in context, Data.BeginInputs().Schedule(in context, dependency))));
+    internal JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency)
+    {
+        if (context.Number < 0)
+            dependency = Data.UploadInputs().Schedule(in context,
+                _inputs.Schedule(in context, Data.BeginInputs().Schedule(in context, dependency)));
+        return _stateInputs.Upload().Schedule(in context, dependency);
+    }
     public void Dispose()
     {
         StateSelection.Dispose(); Selection.Dispose(); _stateInputs.Dispose(); _inputs.Dispose(); States.Dispose(); Data.Dispose();

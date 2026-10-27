@@ -129,6 +129,8 @@ public sealed class PhysicsCrowdScene : IGameFramePhysics
             DevicePoseShaders.Get(device.Capabilities.CompileTarget),
             new(count * 2, count * 112, count * 2, count * 112, 1, 0, 1, count * 5), physics));
         DevicePoseBodyStages poses = sources.CreateBodyStages(DevicePoseShaders.GetBodies(device.Capabilities.CompileTarget));
+        var motorTargets = Keep(new DeviceCrowdMotorTargets(backend, device, world, characters, sources,
+            physics.Bodies, joints.Data, motors.Data, shaders.CrowdMotorTargets()));
         var dynamics = Keep(new DeviceBodyDynamics(backend, device, world, members, physics.Bodies, shaders.CrowdBodies(), 64));
         var lengths = Keep(new DeviceConstraintSelection<XpbdLength, DeviceLengthConstraint, DeviceXpbdStateRows<float>>(
             backend, device, world, lengthRows, physics.Lengths, new(physics.LengthMultipliers), "DeviceLengthsSelection"));
@@ -165,10 +167,12 @@ public sealed class PhysicsCrowdScene : IGameFramePhysics
         var upload = bodyInputs.Upload().Then(constraintInputs.Upload()).Then(joints.Upload()).Then(motors.Upload());
         var initial = new PhysicsStepContext(world, new QueryDefinitionBuilder().All<CrowdPhysicsBody>().Build(), -1, 0, 1, 0, 0);
         contacts.Parameters.BeginInputs().Then(contacts.Parameters.UploadInputs()).Then(upload)
-            .Then(sources.Evaluate()).Then(sources.CopyOutput()).Then(results.Readback(64)).Schedule(in initial, default).Complete();
+            .Then(sources.Evaluate()).Then(motorTargets.WriteTargets()).Then(sources.CopyOutput())
+            .Then(results.Readback(1024)).Schedule(in initial, default).Complete();
         PhysicsSceneTimings? timings = example.Timings;
         var stages = controls.Measure(timings, "Scene inputs").Then(upload.Measure(timings, "Body and constraint inputs"))
             .Then(poses.WriteTargets().Measure(timings, "Pose sources and targets"))
+            .Then(motorTargets.WriteTargets().Measure(timings, "Animation motor targets"))
             .Then(inputs.WriteInputs().Then(inputs.Apply()).Measure(timings, "Timed body inputs"))
             .Then(dynamics.Predict(new(0, -9.81f, 0)).Measure(timings, "Body prediction"))
             .Then(contacts.Detect().Measure(timings, "Geometry and persistent contacts"))
@@ -180,7 +184,7 @@ public sealed class PhysicsCrowdScene : IGameFramePhysics
                 .Measure(timings, "AVBD and XPBD"))
             .Then(dynamics.UpdateVelocities().Then(response.ApplyRestitution(1, buildGraph: false)).Measure(timings, "Velocities and restitution"))
             .Then(poses.MapBones().Then(sources.CopyOutput()).Measure(timings, "Bone output"));
-        var consumer = results.Readback(64).Measure(timings, "Body results");
+        var consumer = results.Readback(1024).Measure(timings, "Body results");
         var frame = PhysicsSimulation.Create(world, initial.Bodies, stages, 1).CreateFrame(consumer, StepSeconds, 0, 0, 0);
         _frame = frame; _complete = frame.CompleteForRead;
 

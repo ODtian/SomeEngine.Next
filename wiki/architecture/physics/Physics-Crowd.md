@@ -12,6 +12,14 @@
 原 JointConstraint 关系保存两个实际端点，Motor 参数、目标及 AVBD 历史继续位于该关系实体。
 场景集合保存目标、Body 和驱动关系的实体引用。
 
+`DeviceCrowdMotorTargets` 在 `WriteTargets` 后读取同一个 `DevicePoseSources.Models`，
+以已绑定角色引用及其模型范围取得当前手部和根骨位置。
+世界空间驱动使用手部世界位置，父空间驱动沿当前源关节框架表达相对位置。
+原 `DeviceMotorSource.Read` 继续读取组件中的系数、作用上限与作者目标；
+GPU 将动画位移叠加到该目标，并把位置、速度和完成时间写入原 `DeviceMotorConstraint`。
+上一目标保留在这条设备参数行，用于计算本步目标速度。初始姿势建立首个目标，
+原 `DeviceAvbdStateInputs` 继续接收显式历史编辑，AVBD 沿同一参数及历史求解。
+
 `DevicePosePhysics` 创建 Body、Length、Bend 及其所选设备表示。
 `DevicePoseSources` 读取原动画来源，以 `WriteTargets` 在统一预测前写入骨骼目标。
 同一约束图包含 Length、Bend 和 Motor；AVBD 读取 XPBD 同源投影的试算力与响应，
