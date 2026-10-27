@@ -18,6 +18,15 @@ gap = Separation + dot(Normal, currentWeightedAnchorDelta - BodyAnchorDelta)
 
 几何表面偏移由 `Separation` 保存；模拟节点的采样锚及插值权重保持各 reader 的含义。`FirstBodyCount` 划分连续作用端中的双方，Normal 从第一方指向第二方。
 
+设备接触通过 [相对锚数学](../../../assets/Shaders/physics_contact_anchor_math.slang) 计算共同锚差。
+各侧的插值权重形成仿射点：刚体端为 1，线段端为 `(1-t,t)`，面端为三角形重心权重。
+[几何刷新](../../../assets/Shaders/physics_contact_geometry.slang) 和
+[求解采样](../../../assets/Shaders/physics_contact_geometry_math.slang) 使用第二侧首个 Body 的位置作为共同原点，
+先计算 `(body.position-origin)+R(localPoint)`，再分别加权两侧并相减。
+世界见证中点在最后加回该原点；子步起点采样使用对应的起点姿势。
+Jacobian 和 AVBD 接触势曲率共用 `R(localPoint-localCenterOfMass)` 作为力臂，
+将局部旋转与两 Body 的位置差留在其各自尺度内计算。
+
 [预测式碰撞](Predictive-Collision.md)的 `ContactPrediction` 将几何与加权锚基准关联到共同子步起点，`SampleTime` 保存该采样时刻；响应反力与冲量继续使用 `ContactResponse` 的作用区间。
 
 ## 显式范围与跨步匹配

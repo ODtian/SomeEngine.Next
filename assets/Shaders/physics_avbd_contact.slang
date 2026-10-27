@@ -90,14 +90,13 @@ void deviceAccumulateAvbdContactEquation(uint row,uint bodyIndex,DeviceAvbdStep 
     if(angularCurvature)
     {
         DeviceBodyState body=DeviceBodyStates[bodyIndex];
-        float3 center=bodyCenterOfMass(body);
         float force=length(point.normal*contact.normalForce+contact.tangentForce-extraForce);
         float curvature=0;
         for(uint end=0;end<point.bodyCount;end++)
         {
             DeviceContactBody link=DeviceContactBodyLinks[point.bodyOffset+end];
             if(link.stateIndex!=bodyIndex) continue;
-            float3 arm=body.position+bodyRotate(body.rotation,link.localPoint)-center;
+            float3 arm=deviceContactArm(body,link.localPoint);
             curvature+=abs(link.weight)*length(arm)*force;
         }
         deviceAvbdAddRow(equation,float3(0),float3(1,0,0),0,curvature);
