@@ -87,7 +87,7 @@ public readonly struct SolveAvbdGraph<TConstraints> : IPhysicsStage, IDisposable
             if (solve._queries.ReadMembers()) return false;
             solve._graph.Begin();
             solve._queries.ReadBodies(solve._graph);
-            solve._queries.ReadGraph(solve._graph, solve._constraints, in context);
+            solve._queries.ReadGraph(solve._graph, solve._constraints, in context, group.Get(0));
             if (solve._graph.Finish()) return false;
             if (solve._graph.BodyWorkCount == 0) return true;
             EntityQueryViews global = group.Get(0);
@@ -104,7 +104,7 @@ public readonly struct SolveAvbdGraph<TConstraints> : IPhysicsStage, IDisposable
             for (int iteration = 0; iteration < iterations; iteration++)
             {
                 solve._graph.Begin(); solve._queries.ReadBodies(solve._graph);
-                solve._queries.ReadGraph(solve._graph, solve._constraints, in context);
+                solve._queries.ReadGraph(solve._graph, solve._constraints, in context, global);
                 bool changed = solve._graph.Finish();
                 if (changed || solve._resources is not null) bodyRows.Refresh(in work);
                 var update = new UpdateBodies(solve, context);

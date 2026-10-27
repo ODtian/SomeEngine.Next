@@ -37,6 +37,10 @@ AVBD 为选定动态 Body 执行自身局部方程。
 
 图求解器的 `Activity(settings)` 直接复用其原图和查询，按原 `BodyActivity` 维护实际 awake 工作范围；共同时间、预测及接触后唤醒的调用方法见 [Body 活动](Body-Activity.md)。
 
+每次读取图参与引用之前，`IPhysicsGraphInputs.RefreshGraph` 沿同一组全局借用范围刷新派生拓扑。
+长程关节的原 `JointLongRangeData` 在此检查连接与质量版本，更新同一组 `LongRangeJointBound`；
+输入唤醒、求解图和活动误差随后消费当前路径。数值 `Initialize` 继续按原子步设置罚参数、起点误差和乘子保留率。
+
 ## 岛、共批与颜色
 
 `PhysicsGraphSettings` 显式选择顺序及批次大小：
