@@ -16,8 +16,10 @@
 将新实体和显式活动修改传入对应状态。其原版本缓存只保存实体及活动组件版本，
 实际结果应用时在同一个资源确认自身写入。`BodyWake.Time` 按原
 `[StartTime, EndTime)` 选取请求。
-完整输入刷新和完成应用通过 `QueryCursor.ReadRows<DeviceBodyBinding,BodyActivity>`
-在原查询的 chunk 边界借用组件列。完成值实际变化时才取得原 `BodyActivity` 写引用，
+输入刷新在 chunk 边界读取可用组件、绑定变化与原 `BodyActivity` 行版本跨度，
+沿 `RowIndices` 保留原成员筛选；已确认的行先比较实体与版本，再读取活动值。
+完成应用通过 `QueryCursor.ReadRows<DeviceBodyBinding,BodyActivity>` 在原查询的 chunk 边界借用组件列。
+完成值实际变化时才取得原 `BodyActivity` 写引用，
 并在同一资源确认该行版本；事件继续沿当前实体的完成结果生成。
 
 常规输入使用原查询的 `MembershipVersion` 与组件列版本：成员变化或活动组件增删时
