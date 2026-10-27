@@ -77,7 +77,7 @@ internal sealed class DeviceCrowdContacts : IDisposable
         Scheduler scheduler = WorldJobs.GetScheduler(world);
         _detected = Keep(new ContactPointBuffer(scheduler, contactCapacity, contactCapacity * 5));
         Parameters = Keep(new DeviceConstraintData<DeviceContactConstraint>(backend, device, contactCapacity, "DeviceContacts"));
-        _anchors = Keep(new DeviceContactBodies(backend, device, contactCapacity, 3));
+        _anchors = Keep(new DeviceContactBodies(backend, device, contactCapacity, 5));
         Histories = Keep(new DeviceConstraintState<DeviceAvbdContactState>(backend, device, contactCapacity, "DeviceAvbdContactStates"));
         Responses = Keep(new DeviceConstraintState<DeviceContactResponseState>(backend, device, contactCapacity, "DeviceContactResponses"));
         _matching = Keep(new DeviceContactMatches(backend, device, world, points, Parameters, _detection, shaders.Matching(),
