@@ -199,18 +199,6 @@ public sealed partial class DeviceCollisionDetection : IDisposable
         {
             CopyResults(_grid.BinOffsets, (ulong)_firstBin * 4, 0, 4);
             CopyResults(_grid.BinOffsets, (ulong)(_firstBin + _pipelines.Length) * 4, 4, 4);
-            if ((_readback & DeviceCollisionReadback.Distances) != 0)
-                CopyResults(Distances, 0, 8, Distances.Info.Size);
-            if ((_readback & DeviceCollisionReadback.Contacts) != 0)
-            {
-                CopyResults(ContactCounts, 0, CountReadbackOffset, ContactCounts.Info.Size);
-                CopyResults(Contacts, 0, ContactReadbackOffset, Contacts.Info.Size);
-                if (_geometry.Bodies is not null)
-                {
-                    CopyResults(ContactBodyCounts!, 0, ContactBodyCountReadbackOffset, ContactBodyCounts!.Info.Size);
-                    CopyResults(ContactBodies!, 0, ContactBodyReadbackOffset, ContactBodies!.Info.Size);
-                }
-            }
         }
         using RecordedCommands commands = _backend.End(_commands);
         Completion = _backend.Submit(_backend.GetQueue(_device, QueueType.Compute), new([], [], [commands], [], []));
@@ -225,27 +213,6 @@ public sealed partial class DeviceCollisionDetection : IDisposable
         _backend.CopyBuffer(_commands, new BufferCopy(source, sourceOffset, _readbackBuffer!, resultOffset, size));
         _backend.Barrier(_commands, new BufferBarrier(source, PipelineSync.Copy, PipelineSync.ComputeShading,
             ResourceAccess.CopySource, ResourceAccess.UnorderedAccess));
-    }
-
-    private void Accept(in PhysicsStepContext context)
-    {
-        if (_readback != DeviceCollisionReadback.None)
-        {
-            using MappedBuffer mapping = _backend.Map(_readbackBuffer!, MapType.Read, BufferRange.Whole);
-            mapping.Invalidate(mapping.Range);
-            MemoryMarshal.Cast<byte, int>(mapping.Bytes[..8]).CopyTo(_binBounds);
-            if ((_readback & DeviceCollisionReadback.Distances) != 0)
-                MemoryMarshal.Cast<byte, DeviceCollisionDistance>(mapping.Bytes.Slice(8, Count * 64)).CopyTo(_distances);
-            if ((_readback & DeviceCollisionReadback.Contacts) != 0)
-            {
-                MemoryMarshal.Cast<byte, int>(mapping.Bytes.Slice((int)CountReadbackOffset, Count * 4)).CopyTo(_contactCounts);
-                MemoryMarshal.Cast<byte, CollisionContact>(mapping.Bytes.Slice((int)ContactReadbackOffset, Count * 4 * ContactStride))
-                    .CopyTo(_contacts);
-                AcceptContactBodies(mapping.Bytes);
-            }
-        }
-        Number = context.Number;
-        Time = context.EndTime;
     }
 
     private readonly struct SubmitDetection(DeviceCollisionDetection detection, Scheduler scheduler,
@@ -275,8 +242,15 @@ public sealed partial class DeviceCollisionDetection : IDisposable
                     resources.Write(detection._contactBodyCounts.AsMemory());
                 }
             }
-            JobHandle consumed = scheduler.Schedule(new AcceptDetection(detection, context),
-                CollectionsMarshal.AsSpan(accesses), ready);
+            JobResourceAccess[] accepted = [.. accesses];
+            JobHandle consumed;
+            if (detection._readback == DeviceCollisionReadback.None)
+                consumed = detection.ScheduleAccept(scheduler, in context, accepted, ready);
+            else
+            {
+                JobResourceAccess[] bounds = [.. deviceAccesses, JobResourceAccess.Write(scheduler, detection._binBounds)];
+                consumed = scheduler.Schedule(new ReadDetectionBounds(detection, scheduler, context, deviceAccesses, accepted), bounds, ready);
+            }
             scheduler.ScheduleFinally(new CollectDetection(detection), default, consumed);
         }
     }
