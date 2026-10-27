@@ -17,6 +17,8 @@ public struct GraphEndSystem : ISystem<ImmediateSystemContext>
     public void OnUpdate(ref ImmediateSystemContext context)
     {
         World world = context.World;
+        if (!world.HasQueryMembers(_graphs))
+            return;
         world.ExecuteQuery(_graphs, context.LastSystemVersion, ref world, static (QueryCursor rows, ref World world) =>
         {
             foreach (QueryRow row in rows.Rows)

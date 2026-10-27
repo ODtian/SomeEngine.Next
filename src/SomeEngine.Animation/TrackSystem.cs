@@ -64,6 +64,8 @@ public partial struct TrackSystem<T, TOps>(TrackFields fields = TrackFields.Prop
 
     private void Evaluate(World world, uint lastVersion, QueryHandle query, bool weightChannels, bool enabled)
     {
+        if (!world.HasQueryMembers(query))
+            return;
         var evaluation = (World: world, WeightChannels: weightChannels, Enabled: enabled);
         world.ExecuteQuery(query, lastVersion, ref evaluation,
             static (QueryCursor rows, ref (World World, bool WeightChannels, bool Enabled) evaluation) =>

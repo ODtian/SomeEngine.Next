@@ -12,6 +12,7 @@ internal sealed unsafe class AnimationPipeline : ISystem<ImmediateSystemContext>
     private readonly List<Algorithm> _algorithms = new();
     private readonly List<AdditionalSystem> _additionalSystems = new();
     private SystemGroup<ImmediateSystemContext>? _systems;
+    private AnimationInputs? _inputs;
     private Entity _time;
     private bool _defaults;
 
@@ -41,20 +42,25 @@ internal sealed unsafe class AnimationPipeline : ISystem<ImmediateSystemContext>
             if (algorithm.Type == type)
                 return;
         _algorithms.Add(new Algorithm(type, typeof(ValueOps<T, TOps>),
-            &AddEvaluation<T, TOps, TParameters, TState, TEvaluator>, &AddComposition<T, TOps>));
+            &AddEvaluation<T, TOps, TParameters, TState, TEvaluator>, &AddComposition<T, TOps>, &AddInputs<T>));
     }
 
     public void OnCreate(ref ImmediateSystemContext context)
     {
         var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(context.World));
         _systems = systems;
-        Build(new SystemCollection(systems));
+        AnimationInputs? inputs = _additionalSystems.Count == 0 ? new AnimationInputs(context.World) : null;
+        _inputs = inputs;
+        if (inputs is not null)
+            foreach (Algorithm algorithm in _algorithms)
+                algorithm.AddInputs(inputs);
+        var collection = new SystemCollection(systems, inputs);
+        Build(collection);
+        collection.Flush();
     }
 
     internal Type[] Describe()
     {
-        if (_systems is not null)
-            return _systems.DescribeSystems();
         var types = new TypeCollection();
         Build(types);
         return types.Types.ToArray();
@@ -123,9 +129,18 @@ internal sealed unsafe class AnimationPipeline : ISystem<ImmediateSystemContext>
         systems.Add(new TimelineEndSystem());
     }
 
-    public void OnUpdate(ref ImmediateSystemContext context) => _systems!.Update(ref context);
+    public void OnUpdate(ref ImmediateSystemContext context)
+    {
+        _inputs?.BeginUpdate();
+        _systems!.Update(ref context);
+        _inputs?.Accept();
+    }
 
-    public void OnDestroy(ref ImmediateSystemContext context) => _systems?.Dispose();
+    public void OnDestroy(ref ImmediateSystemContext context)
+    {
+        try { _systems?.Dispose(); }
+        finally { _inputs?.Dispose(); }
+    }
 
     private void AddAdditionalSystems(ISystemCollection systems, AnimationPhase phase)
     {
@@ -163,14 +178,18 @@ internal sealed unsafe class AnimationPipeline : ISystem<ImmediateSystemContext>
         systems.Add(new ComposeSystem<T, TOps>(fields));
     }
 
+    private static void AddInputs<T>(AnimationInputs inputs) where T : unmanaged => inputs.Add<T>();
+
     private readonly struct Algorithm(Type type, Type composition,
         delegate* managed<ISystemCollection, TrackFields, void> evaluate,
-        delegate* managed<ISystemCollection, TrackFields, void> compose)
+        delegate* managed<ISystemCollection, TrackFields, void> compose,
+        delegate* managed<AnimationInputs, void> addInputs)
     {
         public readonly Type Type = type;
         public readonly Type Composition = composition;
         public readonly delegate* managed<ISystemCollection, TrackFields, void> Evaluate = evaluate;
         public readonly delegate* managed<ISystemCollection, TrackFields, void> Compose = compose;
+        public readonly delegate* managed<AnimationInputs, void> AddInputs = addInputs;
     }
 
     private abstract class AdditionalSystem(AnimationPhase phase)
@@ -182,23 +201,42 @@ internal sealed unsafe class AnimationPipeline : ISystem<ImmediateSystemContext>
     private sealed class AdditionalSystem<TSystem>(TSystem system, AnimationPhase phase) : AdditionalSystem(phase)
         where TSystem : ISystem<ImmediateSystemContext>
     {
-        public override void Add(ISystemCollection systems) => systems.Add(system);
+        public override void Add(ISystemCollection systems) => systems.AddExtension(system);
     }
 
     private interface ISystemCollection
     {
         void Add<TSystem>(TSystem system) where TSystem : ISystem<ImmediateSystemContext>;
+        void AddExtension<TSystem>(TSystem system) where TSystem : ISystem<ImmediateSystemContext>;
     }
 
-    private sealed class SystemCollection(SystemGroup<ImmediateSystemContext> systems) : ISystemCollection
+    private sealed class SystemCollection(SystemGroup<ImmediateSystemContext> systems, AnimationInputs? inputs) : ISystemCollection
     {
-        public void Add<TSystem>(TSystem system) where TSystem : ISystem<ImmediateSystemContext> => systems.Add(system);
+        private AnimationSystemBatch? _batch;
+
+        public void Add<TSystem>(TSystem system) where TSystem : ISystem<ImmediateSystemContext> =>
+            (_batch ??= new(inputs)).Add(system);
+
+        public void AddExtension<TSystem>(TSystem system) where TSystem : ISystem<ImmediateSystemContext>
+        {
+            Flush();
+            systems.Add(system);
+        }
+
+        internal void Flush()
+        {
+            if (_batch is null)
+                return;
+            systems.Add(_batch);
+            _batch = null;
+        }
     }
 
     private sealed class TypeCollection : ISystemCollection
     {
         internal readonly List<Type> Types = new();
         public void Add<TSystem>(TSystem system) where TSystem : ISystem<ImmediateSystemContext> => Types.Add(typeof(TSystem));
+        public void AddExtension<TSystem>(TSystem system) where TSystem : ISystem<ImmediateSystemContext> => Add(system);
     }
 
 }
