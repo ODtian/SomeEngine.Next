@@ -84,14 +84,13 @@ public sealed class DeviceAvbdSolver : IDisposable
     internal JobHandle ScheduleSolve(in PhysicsStepContext context,DeviceInputTransfer equationInputs,JobHandle dependency)
     {
         JobHandle initialized=Schedule(in context,true,0,true,equationInputs,dependency);
-        return Schedule(in context,false,_settings.Iterations,initialized);
+        return Schedule(in context,false,_settings.Iterations,false,initialized);
     }
     private QueueCompletion Record(in PhysicsStepContext context,bool initialize,int iterations,bool buildGraph)
     {
-        if(initialize) _graph.CaptureSelections();
         if(initialize||buildGraph)
             foreach(IDeviceConstraintSelection selection in _selections) selection.Capture();
-        if(!initialize&&buildGraph) _graph.BuildAndWait();
+        if(buildGraph) _graph.BuildAndWait();
         var step=new DeviceStep((float)context.Duration,_settings.MultiplierRetention,_settings.InitialErrorFraction,
             (uint)_settings.BodyIterations,0,(uint)context.Substep,context.Number,context.StartTime,context.EndTime);
         _backend.Begin(_commands,new(0,0,32));
