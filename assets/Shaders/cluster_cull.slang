@@ -149,6 +149,57 @@ ClusterWorldBounds TransformClusterBounds(
     return bounds;
 }
 
+uint FindClusterBoundsLane(uint pageOffset, uint clusterID, uint instanceID)
+{
+    // Per-view filters leave sparse lanes; adjacent views of one cluster and
+    // instance share the same world AABB among the surviving lanes.
+    uint lane = WaveGetLaneIndex();
+    uint4 active = WaveActiveBallot(true);
+    uint rank = WaveMaskPrefix(active, lane);
+    uint previousLane = WaveQueue::FindNthSetBit(active, rank == 0u ? 0u : rank - 1u);
+    uint3 clusterInstance = uint3(pageOffset, clusterID, instanceID);
+    uint3 previousClusterInstance = WaveReadLaneAt(clusterInstance, previousLane);
+    bool firstClusterLane = rank == 0u || any(clusterInstance != previousClusterInstance);
+    uint4 clusterStarts = WaveActiveBallot(firstClusterLane);
+    uint startRank = WaveMaskPrefix(clusterStarts, lane);
+    return WaveQueue::FindNthSetBit(clusterStarts, firstClusterLane ? startRank : startRank - 1u);
+}
+
+ClusterWorldBounds ReadClusterBoundsLane(ClusterWorldBounds bounds, uint lane)
+{
+    bounds.Min = WaveReadLaneAt(bounds.Min, lane);
+    bounds.Max = WaveReadLaneAt(bounds.Max, lane);
+    bounds.VertexCount = WaveReadLaneAt(bounds.VertexCount, lane);
+    return bounds;
+}
+
+ClusterWorldBounds TransformClusterBoundsForViews(PackedCluster cluster, RenderInstanceTransform transform,
+    float expansion, uint pageOffset, uint clusterID, uint instanceID, bool targetViews)
+{
+    uint lane = WaveGetLaneIndex();
+    uint firstLane = targetViews ? FindClusterBoundsLane(pageOffset, clusterID, instanceID) : lane;
+    ClusterWorldBounds bounds = (ClusterWorldBounds)0;
+    if (lane == firstLane) bounds = TransformClusterBounds(cluster, transform, expansion);
+    return targetViews ? ReadClusterBoundsLane(bounds, firstLane) : bounds;
+}
+
+ClusterWorldBounds LoadPreviousClusterBounds(uint pageOffset, uint clusterID, uint instanceID,
+    float expansion, bool targetViews)
+{
+    uint lane = WaveGetLaneIndex();
+    uint firstLane = targetViews ? FindClusterBoundsLane(pageOffset, clusterID, instanceID) : lane;
+    ClusterWorldBounds bounds = (ClusterWorldBounds)0;
+    if (lane == firstLane)
+    {
+        PackedCluster cluster = LoadCluster(pageOffset, clusterID);
+        ApplyDrawClusterBounds(cluster, (PageHeap.Load(pageOffset + 44u) >> 1u) + clusterID, instanceID, true);
+        RenderInstanceTransform transform = LoadRenderTransform(InstanceData,
+            LoadRenderInstanceMetadata(InstanceProperties, RENDER_PREVIOUS_TRANSFORM_METADATA_WORD), instanceID);
+        bounds = TransformClusterBounds(cluster, transform, expansion);
+    }
+    return targetViews ? ReadClusterBoundsLane(bounds, firstLane) : bounds;
+}
+
 bool ProjectClusterAabb(
     ClusterWorldBounds worldBounds,
     bool usePrev,
@@ -417,7 +468,8 @@ bool LoadAndFilterCandidate(
         ? LoadTargetDepthCacheClass(instanceID) : 1u;
     if (view.CullingEnabled != 0u)
     {
-        worldBounds = TransformClusterBounds(cluster, t, boundsExpansion);
+        worldBounds = TransformClusterBoundsForViews(cluster, t, boundsExpansion,
+            pageOffset, clusterID, instanceID, targetFilters);
         if (currentProjection)
         {
             currentBounds = ProjectClusterScreenBounds(worldBounds, false, view, depthCacheClass);
@@ -547,11 +599,8 @@ void CullClusterCandidateData(ClusterCandidate candidate, bool targetFilters)
     if (view.HasPrevHistory != 0u && view.CullingEnabled != 0u &&
         !KeepBlendOcclusion(InstanceData, InstanceProperties, instanceID, view))
     {
-        PackedCluster previousCluster = LoadCluster(pageOffset, clusterID);
-        ApplyDrawClusterBounds(previousCluster, (PageHeap.Load(pageOffset + 44u) >> 1u) + clusterID, instanceID, true);
-        RenderInstanceTransform previous = LoadRenderTransform(InstanceData,
-            LoadRenderInstanceMetadata(InstanceProperties, RENDER_PREVIOUS_TRANSFORM_METADATA_WORD), instanceID);
-        ClusterWorldBounds previousBounds = TransformClusterBounds(previousCluster, previous, boundsExpansion);
+        ClusterWorldBounds previousBounds = LoadPreviousClusterBounds(pageOffset, clusterID, instanceID,
+            boundsExpansion, targetFilters);
         bounds = ProjectClusterScreenBounds(previousBounds, true, view);
         occluded = IsOccludedByHiZ(bounds, true, viewIndex, view,
             view.TargetPolicy != 0u ? LoadTargetDepthCacheClass(instanceID) : 1u);
