@@ -519,9 +519,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             _shadeStages!.AcceptChanges();
             AcceptMaterialTextureChanges(textureChanges);
             RecordMaterialCasterChanges(assignments);
-            AcceptMaterialChanges(assignments, sourceAssignments, shadingChanged
-                ? assignments.DistinctMaterials.Select(static material => material.MaterialId).Union(assignments.ChangedMaterialIds)
-                : assignments.ChangedMaterialIds);
+            AcceptMaterialChanges(assignments, sourceAssignments, CollectMaterialBindingChanges(assignments, shadingChanged));
         });
         return GraphData.Outputs;
     }
