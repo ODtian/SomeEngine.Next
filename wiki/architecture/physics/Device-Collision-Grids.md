@@ -23,11 +23,11 @@ GPU 构建为每个有效实体计算单元范围，原子分配单元记录并�
 
 候选枚举由每个实体查询同层和更粗层。相同层级按实体身份选择发起方，跨层由细层发起；共享单元中逐项取双方最小坐标的最大值作为唯一输出单元。最终使用真实范围相交判断及所选参与角色形成配对。
 
-count 按发起实体 × 具体类型 bin 计数；prefix 对每 256 行计算块内偏移，再计算块与 bin 基址；write 复用同一候选、关系和类型入口，直接写入最终 `CollisionPairs` 的类型区间。`BinOffsets` 保存每个设备 bin 的起止位置。内置 `DeviceShapePairs` 按两种具体形状类型的无序组合选择 bin，并在配对中保留两端实际几何索引。
+count 按发起实体 × 具体类型 bin 计数，同时缓存已选择配对的两端主体和具体几何索引；每个发起实体及 bin 持有对应引用链头。prefix 对每 256 行计算块内偏移，再计算块与 bin 基址；write 沿缓存引用读取原实体身份，从各分区尾部逆向填入最终 `CollisionPairs`，保持首遍的配对顺序。引用工作区按原输出配对容量持续复用，源范围、类别和几何数据仍由原设备表示持有。`BinOffsets` 保存每个设备 bin 的起止位置。内置 `DeviceShapePairs` 按两种具体形状类型的无序组合选择 bin，并在配对中保留两端实际几何索引。
 
 ## 具体 Slang 扩展与资源
 
-[physics_grid.slang](../../../assets/Shaders/physics_grid.slang) 给出内置 Count、Write 入口。用户源码包含 `physics_grid_common.slang`，用具体结构体实现 `IDevicePairRule.matches` 和 `IDevicePairClassifier.classify`，再从具体入口调用 `countDevicePairs`、`writeDevicePairs`。两次调用使用相同具体规则值和分类器值；`DevicePairAnd` 与 `DevicePairExcept` 持有并组合具体规则值。`DeviceCollisionRules` 读取相同设备输入，按显式 `DevicePairRules` 执行类别位图及键关系。
+[physics_grid.slang](../../../assets/Shaders/physics_grid.slang) 给出内置 Count、Write 入口。用户源码包含 `physics_grid_common.slang`，用具体结构体实现 `IDevicePairRule.matches` 和 `IDevicePairClassifier.classify`，再从具体入口调用 `countDevicePairs`、`writeDevicePairs`。两次调用使用相同具体规则值和分类器值；count 执行规则和分类，write 消费其已选择的配对引用。`DevicePairAnd` 与 `DevicePairExcept` 持有并组合具体规则值。`DeviceCollisionRules` 读取相同设备输入，按显式 `DevicePairRules` 执行类别位图及键关系。
 
 网格构造接收七个现有 `ComputePipelineDesc`。Shader 代码及反射从既有 Shader 资产、就绪 Shader 或后端编译入口提供；绑定按原 Slang 反射描述解释，并在构造时整理成后端使用的绑定数组。用户规则和分类器所需的额外设备资源通过 `extraBindings` 接入，并用 `extraAccesses` 声明对应实际资源范围。规则在相同具体设备入口中读取这些资源。
 

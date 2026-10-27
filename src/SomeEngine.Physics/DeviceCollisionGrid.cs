@@ -46,7 +46,7 @@ public sealed partial class DeviceCollisionGrid : IDisposable
         Bodies = CreateGpu("CollisionBodies", (ulong)capacity.Bodies * InputStride, InputStride, bindings);
         CreateGpu("GridHeads", (ulong)capacity.Buckets * 4, 4, bindings);
         CreateGpu("GridCells", (ulong)capacity.Cells * 32, 32, bindings);
-        CreateGpu("GridCounters", 8, 4, bindings);
+        CreateGpu("GridCounters", 12, 4, bindings);
         CreateGpu("BodyLevels", (ulong)capacity.Bodies * 4, 4, bindings);
         CreateGpu("PairCounts", (ulong)capacity.Bodies * (ulong)capacity.Bins * 4, 4, bindings);
         CreateGpu("PairOffsets", (ulong)capacity.Bodies * (ulong)capacity.Bins * 4, 4, bindings);
@@ -54,6 +54,8 @@ public sealed partial class DeviceCollisionGrid : IDisposable
         CreateGpu("BlockOffsets", (ulong)BlockCount * (ulong)capacity.Bins * 4, 4, bindings);
         _binOffsets = CreateGpu("BinOffsets", (ulong)(capacity.Bins + 1) * 4, 4, bindings);
         CreateGpu("PairWritePositions", (ulong)capacity.Bodies * (ulong)capacity.Bins * 4, 4, bindings);
+        CreateGpu("GridPairHeads", (ulong)capacity.Bodies * (ulong)capacity.Bins * 4, 4, bindings);
+        CreateGpu("GridPairReferences", (ulong)capacity.Pairs * 20, 20, bindings);
         Pairs = CreateGpu("CollisionPairs", (ulong)capacity.Pairs * PairStride, PairStride, bindings);
         Upload = Keep(backend.CreateBuffer(device, new((ulong)capacity.Bodies * InputStride,
             BufferUsages.CopySource, "Device collision upload"), MemoryType.Upload));
