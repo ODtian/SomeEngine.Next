@@ -159,8 +159,10 @@ public sealed class PhysicsCrowdScene : IGameFramePhysics
             shaders.CrowdResponses(), bindings, reads, 64, new IDeviceConstraintSelection[] { contacts.ResponseSelection }));
         var controls = Keep(new AdvanceCrowdTargets(world));
         var equationInputs = new CrowdEquationInputs(avbd);
-        var upload = bodyInputs.Upload().Then(physics.Lengths.BeginInputs()).Then(writeLengths).Then(physics.Lengths.UploadInputs())
-            .Then(physics.Bends.BeginInputs()).Then(writeBends).Then(physics.Bends.UploadInputs()).Then(joints.Upload()).Then(motors.Upload());
+        var constraintInputs = Keep(DeviceCrowdConstraintInputs.Create(world, members, lengthRows, bendRows,
+            physics.Lengths.BeginInputs().Then(writeLengths).Then(physics.Lengths.UploadInputs())
+                .Then(physics.Bends.BeginInputs()).Then(writeBends).Then(physics.Bends.UploadInputs())));
+        var upload = bodyInputs.Upload().Then(constraintInputs.Upload()).Then(joints.Upload()).Then(motors.Upload());
         var initial = new PhysicsStepContext(world, new QueryDefinitionBuilder().All<CrowdPhysicsBody>().Build(), -1, 0, 1, 0, 0);
         contacts.Parameters.BeginInputs().Then(contacts.Parameters.UploadInputs()).Then(upload)
             .Then(sources.Evaluate()).Then(sources.CopyOutput()).Then(results.Readback(64)).Schedule(in initial, default).Complete();
