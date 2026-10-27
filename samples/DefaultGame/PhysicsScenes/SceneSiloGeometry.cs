@@ -1,5 +1,6 @@
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
+using SomeEngine.ECS.Registry;
 using SomeEngine.ECS.Relations;
 using SomeEngine.Graphics;
 using SomeEngine.Physics;
@@ -8,14 +9,23 @@ namespace DefaultGame;
 
 internal readonly struct SceneSiloGeometry : ISceneDeviceGeometry<DeviceSiloGeometryInputs>
 {
-    public float Add(World world, Entity body, SceneBodyData input, int index)
+    public int GetComponentId(int index) => index < PhysicsSiloScenes.StaticBodies
+        ? ComponentMetadata<BoxGeometry>.Id
+        : ((index - PhysicsSiloScenes.StaticBodies) % 3) switch
+        {
+            0 => ComponentMetadata<SphereGeometry>.Id,
+            1 => ComponentMetadata<BoxGeometry>.Id,
+            _ => ComponentMetadata<ConvexHullGeometry>.Id,
+        };
+
+    public float Write(BundleWriteView view, SceneBodyData input, int index)
     {
-        if (index < PhysicsSiloScenes.StaticBodies) return default(SceneBoxGeometry).Add(world, body, input, index);
+        if (index < PhysicsSiloScenes.StaticBodies) return default(SceneBoxGeometry).Write(view, input, index);
         switch ((index - PhysicsSiloScenes.StaticBodies) % 3)
         {
-            case 0: world.Add(body, new SphereGeometry(PhysicsSiloScenes.Radius)); return PhysicsSiloScenes.Radius;
-            case 1: return default(SceneBoxGeometry).Add(world, body, input, index);
-            default: world.Add(body, new ConvexHullGeometry(PhysicsSiloScenes.Hull, 0)); return PhysicsSiloScenes.Radius;
+            case 0: view.Write(new SphereGeometry(PhysicsSiloScenes.Radius)); return PhysicsSiloScenes.Radius;
+            case 1: return default(SceneBoxGeometry).Write(view, input, index);
+            default: view.Write(new ConvexHullGeometry(PhysicsSiloScenes.Hull, 0)); return PhysicsSiloScenes.Radius;
         }
     }
 
