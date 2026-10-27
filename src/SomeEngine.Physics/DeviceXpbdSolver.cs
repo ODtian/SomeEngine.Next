@@ -70,7 +70,8 @@ public sealed class DeviceXpbdSolver : IDisposable
 
     private QueueCompletion Record(in PhysicsStepContext context, bool initialize, int iterations, bool buildGraph)
     {
-        foreach (IDeviceConstraintSelection selection in _selections) selection.Capture();
+        if (initialize || buildGraph)
+            foreach (IDeviceConstraintSelection selection in _selections) selection.Capture();
         if (buildGraph) _graph.BuildAndWait();
         var step = new DeviceStep((uint)_graph.ConstraintCapacity, (float)context.Duration, context.Number,
             context.StartTime, context.EndTime, (uint)context.Substep, (uint)context.Substeps,

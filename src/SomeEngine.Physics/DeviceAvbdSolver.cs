@@ -88,8 +88,9 @@ public sealed class DeviceAvbdSolver : IDisposable
     }
     private QueueCompletion Record(in PhysicsStepContext context,bool initialize,int iterations,bool buildGraph)
     {
-        _graph.CaptureSelections();
-        foreach(IDeviceConstraintSelection selection in _selections) selection.Capture();
+        if(initialize) _graph.CaptureSelections();
+        if(initialize||buildGraph)
+            foreach(IDeviceConstraintSelection selection in _selections) selection.Capture();
         if(!initialize&&buildGraph) _graph.BuildAndWait();
         var step=new DeviceStep((float)context.Duration,_settings.MultiplierRetention,_settings.InitialErrorFraction,
             (uint)_settings.BodyIterations,0,(uint)context.Substep,context.Number,context.StartTime,context.EndTime);

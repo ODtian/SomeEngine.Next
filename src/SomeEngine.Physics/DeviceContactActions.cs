@@ -59,8 +59,9 @@ public sealed class DeviceContactActions : IDisposable
     }
     private QueueCompletion Record(in PhysicsStepContext context, bool initialize, int iterations, bool buildGraph)
     {
-        _graph.CaptureSelections();
-        foreach (IDeviceConstraintSelection selection in _selections) selection.Capture();
+        if (initialize) _graph.CaptureSelections();
+        if (initialize || buildGraph)
+            foreach (IDeviceConstraintSelection selection in _selections) selection.Capture();
         if (!initialize && buildGraph) _graph.BuildAndWait();
         var step = new ResponseStep((float)context.Duration, 0, 0, context.StartTime, context.EndTime);
         _backend.Begin(_commands, new(0, 0, 16));
