@@ -25,7 +25,7 @@ public sealed class GltfTextureImporter : IAssetImporter<GltfTexture, GltfTextur
         JobHandle decode = await context.Scheduler.ScheduleAsync(new DecodeImage(sourceBytes, decoded, cancellationToken),
             new JobScheduleOptions(JobPriority.Low) { Category = context.DecodingCategory },
             cancellationToken: cancellationToken).ConfigureAwait(false);
-        await decode;
+        await decode.CompleteAsync().ConfigureAwait(false);
         ImageResult pixels = decoded.Pixels!;
         uint width = checked((uint)pixels.Width), height = checked((uint)pixels.Height);
         var texture = new TextureBlock()

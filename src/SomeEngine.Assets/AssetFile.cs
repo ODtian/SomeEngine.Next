@@ -91,7 +91,7 @@ public sealed class AssetFile : IDisposable, IAsyncDisposable
             JobHandle decode = await scheduler.ScheduleAsync(new DecodeChunk(input, decoded, cancellationToken),
                 new JobScheduleOptions(JobPriority.Low) { Category = AssetDecodeJobs.GetCategory(scheduler) },
                 cancellationToken: cancellationToken).ConfigureAwait(false);
-            await decode;
+            await decode.CompleteAsync().ConfigureAwait(false);
             return decoded;
         }
         Memory<byte> bytes = await content.Document.CopyChunkAsync(new BinaryChunkRef(key, chunk.DecodedLength),

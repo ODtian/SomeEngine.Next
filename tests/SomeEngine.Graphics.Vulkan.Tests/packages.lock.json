@@ -155,6 +155,7 @@
       "someengine.core": {
         "type": "Project",
         "dependencies": {
+          "SomeEngine.Diagnostics": "[1.0.0, )",
           "SomeEngine.ECS": "[1.0.0, )",
           "SomeEngine.ECS.Systems": "[1.0.0, )",
           "SomeEngine.Job": "[1.0.0, )"
@@ -166,12 +167,14 @@
       "someengine.ecs": {
         "type": "Project",
         "dependencies": {
+          "SomeEngine.Diagnostics": "[1.0.0, )",
           "SomeEngine.Job.Contracts": "[1.0.0, )"
         }
       },
       "someengine.ecs.systems": {
         "type": "Project",
         "dependencies": {
+          "SomeEngine.Diagnostics": "[1.0.0, )",
           "SomeEngine.ECS": "[1.0.0, )",
           "SomeEngine.Job": "[1.0.0, )",
           "SomeEngine.Job.Contracts": "[1.0.0, )"
@@ -198,7 +201,8 @@
           "Silk.NET.Vulkan.Extensions.EXT": "[2.23.0, )",
           "Silk.NET.Vulkan.Extensions.KHR": "[2.23.0, )",
           "Silk.NET.Vulkan.Extensions.NV": "[2.23.0, )",
-          "SomeEngine.Graphics": "[1.0.0, )"
+          "SomeEngine.Graphics": "[1.0.0, )",
+          "SomeEngine.Job": "[1.0.0, )"
         }
       },
       "someengine.job": {

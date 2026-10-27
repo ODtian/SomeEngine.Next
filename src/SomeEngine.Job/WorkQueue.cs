@@ -272,6 +272,7 @@ internal sealed partial class WorkQueue : IWorkQueue
         int claimed = 0;
         bool hasMoreWork = false;
         JobCategory? category = stream.Category;
+        bool acquiredCategory = category is not null && !_scheduler.IsExecutingCategory(category);
         JobCategory? previousCategory = _scheduler.SetCurrentCategory(category);
         try
         {
@@ -288,7 +289,8 @@ internal sealed partial class WorkQueue : IWorkQueue
             _scheduler.SetCurrentCategory(previousCategory);
             FinishDrain(stream, claimed, hasMoreWork, priorityIndex);
             stream.DrainExited();
-            category?.CompleteExecution();
+            if (acquiredCategory)
+                category!.CompleteExecution();
         }
 
         if (stole)

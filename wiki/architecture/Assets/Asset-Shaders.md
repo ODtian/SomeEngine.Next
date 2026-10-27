@@ -111,7 +111,7 @@ Shader shader = await published.CreateAsync(slang, sessionDescription,
 
 源码处理、序列化、布局与链接在同一全局会话的串行区间内完成。ShaderAsset 与 ShaderSourceBlock 在第一次等待前捕获 `JobSystem.Current`，内部将同一 Scheduler 传到驻留 Shader 的代码生成。公开 `Shader.CreateFromSlang` 同步入口直接选择调用处的 Scheduler。
 
-链接后的 target、入口代码与入口元数据请求复用每个 Scheduler 的 `shader code` 类别：在途批次数量为 256，执行额度为 worker 数量与 4 的较小值，零 worker 时调用线程使用一个执行额度，服务份额为 1。同步代码与资源使用元数据批次由 `ExecuteParallel` 运行，各请求写入独立结果位置；全部参与者退出后按原 target/入口顺序形成驻留 Shader。按需入口元数据通过 `ScheduleAsync` 等待同一类别额度，原共享 Task 交付结果。实际工作保留 `SlangShaderData` 或 Shader 引用，失败沿原完成入口交付。
+链接后的 target、入口代码与入口元数据请求复用每个 Scheduler 的 `shader code` 类别：在途批次数量为 256，执行额度为 worker 数量与 4 的较小值，零 worker 时调用线程使用一个执行额度，服务份额为 1。同步代码与资源使用元数据批次由 `ExecuteParallel` 运行，各请求写入独立结果位置；全部参与者退出后按原 target/入口顺序形成驻留 Shader。按需入口元数据通过 `ScheduleAsync` 等待同一类别额度，再通过 `JobHandle.CompleteAsync` 完成工作，原共享 Task 交付结果。实际工作保留 `SlangShaderData` 或 Shader 引用，失败沿原完成入口交付。
 
 使用范围遵循 [Slang 2026.17.1 的并发说明](https://github.com/shader-slang/slang/blob/v2026.17.1/docs/user-guide/08-compiling.md#multithreading)；编译选项与入口顺序继续由原始会话和反射定义。实现入口为 [Shader 代码生成](../../../src/SomeEngine.Resources/Shader.Slang.cs)、[类别预算](../../../src/SomeEngine.Resources/ShaderCodeJobs.cs) 与[入口元数据](../../../src/SomeEngine.Resources/Shader.EntryMetadata.cs)。公开构建、保存加载与管线消费分别由 `DirectSlangShaderTests`、`ShaderBytecodeTests` 和 `SharedMaterialEntryTests` 覆盖。
 

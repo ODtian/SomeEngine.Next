@@ -66,7 +66,7 @@ internal sealed partial class WorkQueue
         return false;
     }
 
-    private static bool TryDequeueCategory(CategoryReadyQueues queues,
+    private bool TryDequeueCategory(CategoryReadyQueues queues,
         out ReadyTicket ticket, out int priorityIndex)
     {
         ticket = default;
@@ -75,7 +75,7 @@ internal sealed partial class WorkQueue
         {
             if (queues.Priorities[priority].IsEmpty)
                 continue;
-            if (!queues.Category.TryStartExecution())
+            if (!_scheduler.IsExecutingCategory(queues.Category) && !queues.Category.TryStartExecution())
                 return false;
             queues.Priorities[priority].TryDequeue(out ticket);
             priorityIndex = priority;
