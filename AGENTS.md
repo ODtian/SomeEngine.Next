@@ -21,11 +21,11 @@ Debug、优化时，先问是否是架构造成的，不要在错误的架构下
 - 每个完整优化方向交给一个空白上下文的子代理。派发内容提供具体方向、工作树位置及必要执行约束；子代理自行沿目录导航阅读设计和实现，完成该方向的优化与最小验证。
 - 优化保持现有功能、算法语义、数据职责及已有优化成果；通过实际调用链和行为结果核对改动前后的一致性。
 - 工作树收敛先将各树的源码、内容定义与行为夹具保存为 Git 提交，保留来源分支，再移除多余工作树。
-- 性能相关的启动、测量和捕获通过 F:/SomeEngine.Next/tools/Invoke-Benchmark.ps1 --exclusive 提交到公共队列；共享 CPU 的准备和结果分析使用 --cpu。结果在会话中汇报，临时输出用后清理。
+- 性能相关的启动、测量和捕获通过 F:/SomeEngine.Next/tools/Invoke-Benchmark.ps1 --gpu 提交到公共队列；共享 CPU 的准备和结果分析使用 --cpu。结果在会话中汇报，临时输出用后清理。
 # Testing
 测试按 [行为检查规则](wiki/harness/Behavior-Checks.md) 编写和评审；默认测试命令执行该页规定的自动检查。
 
-CPU、GPU benchmark 一律通过 `tools/Invoke-Benchmark.ps1 <原命令及参数>` 提交到公共队列，包括 `dotnet run`、直接运行产物、`just` 配方和测量脚本。原有命令默认独占整机。CPU、GPU 性能测量从测量进程启动、预热、采样到退出始终独占；测量范围内的构建、内容导入和捕获也按独占提交。测量范围外、可共享 CPU 的准备、离线参考计算、数据生成和结果分析使用 `tools/Invoke-Benchmark.ps1 --cpu <原命令及参数>`。全机以可用逻辑处理器数作为 CPU 预算；每条 CPU 任务默认使用 1 个，通过 `--cpu --cpus <数量>` 指定用核数，各任务内部并行度与申请数量对应。同一会话内按 FIFO 逐条完成，跨会话轮询；轮到独占任务时，等待当前 CPU 任务完成，再独占执行。会话自动使用 `CODEX_THREAD_ID`，可通过 `--session <会话标识>` 指定。提交自动启动后台执行器并返回任务编号；代理应提前提交已确定的命令，通过返回的结果目录读取 stdout、stderr 和退出码。长脚本按独立实验或场景拆分，任务完成后重新参与轮询。用法见 [性能测量](wiki/harness/Harness-Performance-Evidence.md)。
+CPU、GPU benchmark 一律通过 `tools/Invoke-Benchmark.ps1 <原命令及参数>` 提交到公共队列，包括 `dotnet run`、直接运行产物、`just` 配方和测量脚本。默认任务按 CPU 调度，`--cpu` 保持同样行为；使用 GPU 的任务通过 `--gpu` 提交，`--exclusive` 为其兼容写法。GPU 任务之间独占 GPU，CPU 任务与 GPU 任务按独立核心并行；等待 GPU 的任务继续保留会话顺序，其它会话的 CPU 任务使用空闲核心执行。队列自动识别整机可用物理核、逻辑处理器和每条任务进程树的实际用核量，按采样需求分配互不重叠的物理核；同一物理核的超线程归同一任务。Windows 使用 Job Object 将亲和性应用于整条进程树，任务在获得核心分配后启动原命令。同一会话内按 FIFO 逐条完成，跨会话轮询。会话自动使用 `CODEX_THREAD_ID`，可通过 `--session <会话标识>` 指定。提交自动启动后台执行器并返回任务编号；代理应提前提交已确定的命令，通过返回的结果目录读取 stdout、stderr 和退出码。长脚本按独立实验或场景拆分，任务完成后重新参与轮询。用法见 [性能测量](wiki/harness/Harness-Performance-Evidence.md)。
 
 渲染性能优化必须使用 DefaultGame 的统一场景平台，同时测试 1024 小球、Sponza、Amazon Bistro。使用 tools/Measure-Scenes.ps1 执行一次不超过 60 秒的多场景反馈；内容构建另计。未收敛、失败、缺失场景的报告不能视为性能通过。对比必须保持分辨率、场景行为、渲染选项、JIT 配置和采样方式一致；带 trace 的定位结果与不带 trace 的性能结果分开记录。
 
