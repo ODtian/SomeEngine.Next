@@ -117,7 +117,7 @@ internal sealed class AvbdIslandEquations
             BodyPose basePose = _poses[index];
             ReadStepChange(in basePose, in mass, in step, out Vector3 translation, out Vector3 rotation);
             AvbdBodyEquation equation = row.ReadRef<AvbdBodyEquation>();
-            equation.Reset(in row.ReadRef<BodyPose>(), in mass, in step, (float)context.Duration);
+            equation.Reset(in row.ReadRef<BodyPose>(), in mass, in step, (float)context.Duration, curvature: false);
             constraints.AccumulateBodyEquation(in context, queries, 3, row.Entity, bodies, initialErrorFraction, ref equation);
             float tangent = (float)(1 / (1 + scale * scale * rotation.LengthSquared() * .25));
             derivative += Dot(equation.LinearGradient, translation) + Dot(equation.AngularGradient, rotation) * tangent;
@@ -314,7 +314,7 @@ internal sealed class AvbdIslandEquations
             ref readonly BodyStepState step = ref row.ReadRef<BodyStepState>();
             Vector3 offset = pose.GetCenterOfMass(in mass) - centroid;
             AvbdBodyEquation equation = row.ReadRef<AvbdBodyEquation>();
-            equation.Reset(in pose, in mass, in step, (float)context.Duration);
+            equation.Reset(in pose, in mass, in step, (float)context.Duration, curvature: !curvature.IsEmpty);
             Vector3 inertiaForce = equation.LinearGradient;
             constraints.AccumulateBodyEquation(in context, queries, 3, body, bodies, initialErrorFraction, ref equation);
             Vector3 gradient = equation.AngularGradient + Vector3.Cross(offset, equation.LinearGradient);
@@ -382,7 +382,7 @@ internal sealed class AvbdIslandEquations
             ref readonly BodyMass mass = ref row.ReadRef<BodyMass>();
             ref readonly BodyStepState step = ref row.ReadRef<BodyStepState>();
             AvbdBodyEquation equation = row.ReadRef<AvbdBodyEquation>();
-            equation.Reset(in pose, in mass, in step, (float)context.Duration);
+            equation.Reset(in pose, in mass, in step, (float)context.Duration, curvature: false);
             Vector3 inertia = equation.LinearGradient;
             constraints.AccumulateBodyEquation(in context, queries, 3, body, bodies, initialErrorFraction, ref equation);
             x += (double)equation.LinearGradient.X - (includeInertia ? 0 : inertia.X);
