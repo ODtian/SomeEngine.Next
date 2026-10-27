@@ -4,7 +4,8 @@
 [几何绑定和 reader](../../../src/SomeEngine.Physics/DeviceCollisionGeometry.Data.cs)、
 [转换阶段](../../../src/SomeEngine.Physics/DeviceCollisionGeometry.Stages.cs)、
 [共享 Hull 数据](../../../src/SomeEngine.Physics/DeviceCollisionGeometry.Hulls.cs)、
-[设备检测](../../../src/SomeEngine.Physics/DeviceCollisionDetection.cs) 与
+[设备检测](../../../src/SomeEngine.Physics/DeviceCollisionDetection.cs)、
+[检测读回](../../../src/SomeEngine.Physics/DeviceCollisionDetection.Readback.cs) 与
 [共同接触输出](../../../src/SomeEngine.Physics/DeviceCollisionDetection.Contacts.cs)。
 公开行为入口为 [DeviceCollisionDetectionTests](../../../tests/SomeEngine.Graphics.Direct3D12.Tests/DeviceCollisionDetectionTests.cs)。
 
@@ -93,6 +94,10 @@ detectDeviceCollision(id.x, kernel);
 
 `DeviceCollisionReadback` 在构造时选择 CPU 输出。`None` 保留驻留结果，CPU 结果数组为空；
 `Distances` 和 `Contacts` 分别取得所选数据的读回 Buffer 区间及 CPU 容量。
+检测先读回所选连续 bin 的起止位置，共 8 字节。`Count` 为这两个位置之差。
+有候选时，后继提交按 `Count` 复制距离、点数、每 pair 四个接触头及对应参与端范围；
+CPU 随后分别映射这些有效范围。Buffer 和 CPU 数组的容量由同一个检测对象持有，
+每轮有效范围由当前 bin 界限确定。空候选沿界限读回完成本轮步号和时刻更新。
 CPU 消费通过 `ReadDistances`、`ReadContacts` 和 `GetReadbackAccesses`，设备消费者读取公开的
 `Distances`、`Contacts`、`ContactCounts` 及原网格 `BinOffsets`。
 
@@ -103,8 +108,10 @@ CPU 消费通过 `ReadDistances`、`ReadContacts` 和 `GetReadbackAccesses`，�
 项目按具体阶段选择传输及结果消费时机，并使用原物理区间描述查询所得数据。
 
 调度声明所用 bin、pair、几何、工作区、参数、命令上下文、附加资源和所选读回范围。
-RHI 提交之后接原 `DeviceQueueFence`，再接受所选 CPU 数据并执行 `ScheduleFinally` 的后端归还。
+RHI 提交之后接原 `DeviceQueueFence`；界限读回就绪后，有效结果复制沿同一命令上下文提交并接续设备完成信号。
+所选 CPU 数据接受完成后，`ScheduleFinally` 执行后端归还。
 返回 Job 完成覆盖全部工作；`Number`、`Time` 在接受完成时记录原步号与子步结束时刻。
+`Completion` 表示本轮最后一次设备提交，包含所选结果的实际复制。
 创建方在使用这些资源的完成链结束后释放检测和几何批次。
 
 `WriteContacts<TOutput>` 是具体的后继物理阶段，读取已选接触结果并调用原
