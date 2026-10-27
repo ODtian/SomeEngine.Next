@@ -139,7 +139,7 @@ public sealed class RenderDeviceRetirementTests
         using var gate = test.Backend.CreateExternalTimeline(test.Device, 0);
         var description = new TextureDesc(GraphicsTextureDimension.Texture2D, 1, 1, 1, 1, 1, 1,
             Format.R8UNorm, TextureUsages.Sampled | TextureUsages.CopyDestination, label: "release failure");
-        using EngineTexture texture = EngineTexture.Create(description,
+        EngineTexture texture = EngineTexture.Create(description,
             [new TexturePixels(new TextureMipTile
             {
                 Width = 1, Height = 1, RowPitch = 1, SlicePitch = 1,
@@ -166,7 +166,8 @@ public sealed class RenderDeviceRetirementTests
 
             _ = test.Backend.Submit(signalQueue, new([], [], [], [], [new(gate, 1)]));
             Assert.Equal(WaitStatus.Completed, test.Backend.WaitCpu(completion, TimeSpan.FromSeconds(10)));
-            Assert.Throws<InvalidOperationException>(() => test.RenderDevice.ReleaseTexture(texture));
+            test.RenderDevice.ReleaseTexture(texture);
+            Assert.Throws<InvalidOperationException>(() => test.RenderDevice.CollectCompleted());
             Assert.False(texture.TryGetTexture(test.Device, out _));
             Assert.Equal(new[] { "successful", "earlier" }, released);
 
@@ -274,14 +275,18 @@ public sealed class RenderDeviceRetirementTests
                 // Only the backend readies the older retirement; the frame remains unsubmitted.
                 _ = first.Backend.Submit(signalQueue, new([], [], [], [], [new(gate, 1)]));
                 Assert.Equal(WaitStatus.Completed, first.Backend.WaitCpu(completion.Value, TimeSpan.FromSeconds(10)));
+                first.RenderDevice.ReleaseTexture(texture);
                 Assert.Same(expectedFailure,
-                    Assert.Throws<InvalidOperationException>(() => first.RenderDevice.ReleaseTexture(texture)));
+                    Assert.Throws<InvalidOperationException>(() => first.RenderDevice.CollectCompleted()));
                 Assert.False(texture.TryGetTexture(first.Device, out _));
                 Assert.True(texture.TryGetTexture(second.Device, out secondTexture));
                 Assert.Same(other, secondTexture);
                 Assert.True(texture.IsUpdating);
                 Assert.False(update.IsCompleted);
                 Assert.Equal(new[] { "successful", "earlier" }, released);
+                // A failed drain must retain the release request for a later collection.
+                first.RenderDevice.CollectCompleted();
+                Assert.Equal(new[] { "successful", "earlier", "earlier" }, released);
                 Assert.Throws<ObjectDisposedException>(() =>
                 {
                     using var view = first.Backend.CreateTextureSrv(first.Device,
@@ -352,7 +357,11 @@ public sealed class RenderDeviceRetirementTests
                     if (!ReferenceEquals(testFailure, error)) cleanupErrors.Add(error);
                 }
             }
-            if (texture is not null) Cleanup(texture.Dispose);
+            if (texture is not null)
+            {
+                if (first is not null) Cleanup(() => first.RenderDevice.ReleaseTexture(texture));
+                if (second is not null) Cleanup(() => second.RenderDevice.ReleaseTexture(texture));
+            }
             if (first is not null) Cleanup(first.RenderDevice.CollectCompleted);
             if (second is not null) Cleanup(second.RenderDevice.CollectCompleted);
             if (current is not null) Cleanup(current.Dispose);

@@ -19,10 +19,9 @@ public sealed partial class ClusterPipelineSystem
     private void RecordDeformReset(ref RenderGraphEdit graph, in FrameResources frame)
     {
         GraphPassId reset = graph.AddCopyFramePass("Reset Cluster deformation capacity", PassQueueSelection.AnyOfType(QueueType.Graphics),
-            new ClusterTessellationResetParameters(frame.DeformAllocation), new PassOptions(RepeatCommands: true),
-            static (ref PassDefinition pass, ref ClusterTessellationResetParameters data) =>
-                pass.Write(data.Counters, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete),
-            ClusterTessellationResetParameters.Record, region: _regions.PrimaryGeometry);
+            frame.DeformAllocation, new PassOptions(RepeatCommands: true),
+            DeclareBufferClear,
+            RecordBufferClear, region: _regions.PrimaryGeometry);
         graph.SetPassTimeGroup(reset, DeformationTimeGroup);
     }
 

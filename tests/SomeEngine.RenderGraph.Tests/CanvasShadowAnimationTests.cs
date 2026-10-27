@@ -72,7 +72,7 @@ public sealed partial class CanvasCompositionTests
         });
         Entity root = Views.Views.Spawn(game, canvas, new AnimatedShadow(false));
         using var extraction = new RenderExtractionSystems(render, new CanvasRenderExtractor());
-        using SurfaceMaterial material = SurfaceMaterial.Create(device.Capabilities.CompileTarget);
+        SurfaceMaterial material = SurfaceMaterial.Create(device.Capabilities.CompileTarget);
         using var renderer = new CanvasRenderer(backend, device, graph, render, material, Format.R8G8B8A8UNorm);
         Entity view = render.CreateEntity(new RenderView(Matrix4x4.Identity, Matrix4x4.Identity, 64, 64));
         using SomeEngine.Graphics.Buffer readback = backend.CreateBuffer(device,

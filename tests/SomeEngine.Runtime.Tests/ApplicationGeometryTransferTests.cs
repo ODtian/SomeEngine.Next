@@ -21,14 +21,15 @@ public sealed class ApplicationGeometryTransferTests(SceneContentFixture content
         var feature = new GeometryTransferFeature();
         var scene = new ApplicationScene(content.DirectoryPath)
         {
+            RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
             Options = RuntimeStartupOptions.Parse(["--hidden-window", "--static-scene", "--no-debug-ui",
                 "--no-vsync", "--no-taa", "--no-vsm", "--frames", "2"]) with { SynchronousFrames = synchronous },
         };
         scene.InstallGeometry(feature);
 
-        int result = await Application.RunAsync([], application: scene);
+        ApplicationResult result = await Application.RunAsync([], application: scene);
 
-        Assert.Equal(0, result);
+        Assert.True(result.Succeeded, result.Error?.ToString());
         Assert.Equal([14u, 22u], feature.ReadValues);
     }
 

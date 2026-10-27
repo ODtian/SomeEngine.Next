@@ -14,7 +14,7 @@
   <ItemGroup>
     <AclNativeSource Include="Native/**/*;../../external/acl/includes/**/*;../../external/rtm/includes/**/*" />
     <Content Include="$(MSBuildProjectDirectory)/obj/native/Release/SomeEngineAcl.dll"
-             Link="SomeEngineAcl.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+             Link="SomeEngineAcl.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" DependencyBinary="true" />
     <Content Include="../../external/acl/LICENSE" Link="licenses/ACL-LICENSE.txt"
              CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="../../external/rtm/LICENSE" Link="licenses/RTM-LICENSE.txt"

@@ -19,7 +19,6 @@ public sealed record RuntimeStartupOptions(
     uint RenderDocFrame,
     bool DeviceValidation,
     RuntimeGraphicsBackend GraphicsBackend,
-    bool DynamicScene,
     bool AsyncCompute,
     ProfilerOptions Profiler)
 {
@@ -32,17 +31,12 @@ public sealed record RuntimeStartupOptions(
     public bool TraceAllocations { get; init; }
     public bool TraceFramesOnly { get; init; }
     public bool SynchronousFrames { get; init; }
-    public string? ScenePlayback { get; init; }
     public float FixedFrameSeconds { get; init; }
     public string? FrameOutputPath { get; init; }
     public string? LinearFrameOutputPath { get; init; }
     public int? CaptureFrame { get; init; }
     public ClusterShadingPath ShadingPath { get; init; } = ClusterShadingPath.Deferred;
     public bool HideDebugUi { get; init; }
-    public bool SurfacePanel { get; init; }
-    public bool WorldNameplates { get; init; }
-    public bool HudOverlay { get; init; }
-    public bool HudNumbersChange { get; init; } = true;
     public bool TemporalAntialiasing { get; init; } = true;
     public bool VirtualShadows { get; init; } = true;
     public bool MeasureBlending { get; init; }
@@ -91,9 +85,6 @@ public sealed record RuntimeStartupOptions(
             captureFrame = frameLimit - 1;
         else if (linearFrameOutputPath is not null)
             throw new ArgumentException("Linear output requires --frames or --capture-frame.", "--linear-frame-output");
-        string? playback = ReadOptionalValue(args, "--scene-playback");
-        if (playback is not null and not "motion" and not "materials" and not "camera")
-            throw new ArgumentException("--scene-playback requires 'motion', 'materials', or 'camera'.");
         bool synchronousFrames = args.Contains("--synchronous-frames", StringComparer.OrdinalIgnoreCase);
         string? shadowRayText = ReadOptionalValue(args, "--vsm-ray-count");
         uint? shadowRayCount = shadowRayText is null ? null : uint.Parse(shadowRayText, System.Globalization.CultureInfo.InvariantCulture);
@@ -127,11 +118,6 @@ public sealed record RuntimeStartupOptions(
                 ReadOptionalValue(args, "--graphics-backend") ??
                 ReadOptionalValue(args, "--backend") ??
                 "d3d12"),
-            DynamicScene: ReadBooleanOption(
-                args,
-                enableSwitches: ["--dynamic-scene"],
-                disableSwitches: ["--static-scene", "--no-dynamic-scene"],
-                defaultValue: true),
             AsyncCompute: ReadBooleanOption(
                 args,
                 enableSwitches: ["--async-compute"],
@@ -148,7 +134,6 @@ public sealed record RuntimeStartupOptions(
             TraceAllocations = args.Contains("--trace-allocations", StringComparer.OrdinalIgnoreCase),
             TraceFramesOnly = args.Contains("--trace-frames-only", StringComparer.OrdinalIgnoreCase),
             SynchronousFrames = synchronousFrames,
-            ScenePlayback = playback,
             FixedFrameSeconds = fixedStep,
             FrameOutputPath = frameOutputPath,
             LinearFrameOutputPath = linearFrameOutputPath,
@@ -160,11 +145,6 @@ public sealed record RuntimeStartupOptions(
                 _ => throw new ArgumentException("--shading-path requires 'deferred' or 'forward'.", "--shading-path"),
             },
             HideDebugUi = args.Contains("--no-debug-ui", StringComparer.OrdinalIgnoreCase),
-            SurfacePanel = args.Contains("--surface-panel", StringComparer.OrdinalIgnoreCase),
-            WorldNameplates = args.Contains("--world-nameplates", StringComparer.OrdinalIgnoreCase),
-            HudOverlay = args.Contains("--hud", StringComparer.OrdinalIgnoreCase) ||
-                args.Contains("--hud-static", StringComparer.OrdinalIgnoreCase),
-            HudNumbersChange = !args.Contains("--hud-static", StringComparer.OrdinalIgnoreCase),
             TemporalAntialiasing = ReadBooleanOption(args, ["--taa"], ["--no-taa"], true),
             VirtualShadows = ReadBooleanOption(args, ["--vsm"], ["--no-vsm"], true),
             MeasureBlending = args.Contains("--measure-blending", StringComparer.OrdinalIgnoreCase),

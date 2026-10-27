@@ -1723,6 +1723,8 @@ internal sealed unsafe partial class D3D12Backend
                     throw new ArgumentException("The parameter layout cannot change during an update.", nameof(bindings));
                 RequireNativeParameterBindings(
                     NativeLayout,
+                    bindings.Layout,
+                    OwnerPipeline,
                     bindings.Resources,
                     bindings.OrdinaryData);
                 if (_nextVersion == ulong.MaxValue)

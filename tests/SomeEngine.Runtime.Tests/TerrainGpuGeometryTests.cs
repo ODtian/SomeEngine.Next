@@ -24,6 +24,7 @@ public sealed class TerrainGpuGeometryTests(SceneContentFixture content)
         ApplicationResult? completed = null;
         var application = new ApplicationScene(content.DirectoryPath)
         {
+            RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
             SceneCompleted = value => completed = value,
             Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "9"]),
@@ -54,8 +55,8 @@ public sealed class TerrainGpuGeometryTests(SceneContentFixture content)
             },
         };
         gpu.Install(application);
-        int result = await Application.RunAsync([], application: application);
-        Assert.True(result == 0, completed?.Error?.ToString());
+        ApplicationResult result = await Application.RunAsync([], application: application);
+        Assert.True(result.Succeeded, completed?.Error?.ToString());
         HeightFieldRead values = await read!;
         Assert.Equal(1f, values[2, 2]);
         Assert.Equal(edit.Revision, build.Revision);
@@ -65,6 +66,7 @@ public sealed class TerrainGpuGeometryTests(SceneContentFixture content)
 
         var reference = new ApplicationScene(content.DirectoryPath)
         {
+            RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
             Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "9"]),
             UpdateFrame = frame =>
@@ -83,7 +85,7 @@ public sealed class TerrainGpuGeometryTests(SceneContentFixture content)
             },
         };
         cpu.Install(reference);
-        Assert.Equal(0, await Application.RunAsync([], application: reference));
+        Assert.True((await Application.RunAsync([], application: reference)).Succeeded);
         SceneImages.AssertEqual(expectedBefore!, before!);
         SceneImages.AssertEqual(before!, building!);
         SceneImages.AssertEqual(expectedAfter!, after!);

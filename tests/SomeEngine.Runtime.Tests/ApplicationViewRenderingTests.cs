@@ -13,6 +13,7 @@ public sealed class ApplicationViewRenderingTests(SceneContentFixture content)
         SceneImage? expected = null;
         var reference = new ApplicationScene(content.DirectoryPath)
         {
+            RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
             Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "3"]),
             UpdateFrame = frame =>
@@ -29,11 +30,12 @@ public sealed class ApplicationViewRenderingTests(SceneContentFixture content)
             draw.AddImage(referenceView.ImageId, new Vector2(48, 48), new Vector2(64, 64));
             draw.AddImage(ImGui.GetIO().Fonts.TexID, new Vector2(80, 0), new Vector2(96, 16));
         };
-        Assert.Equal(0, await Application.RunAsync([], application: reference));
+        Assert.True((await Application.RunAsync([], application: reference)).Succeeded);
 
         SceneImage? actual = null;
         var application = new ApplicationScene(content.DirectoryPath)
         {
+            RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
             Options = reference.Options,
             UpdateFrame = frame =>
             {
@@ -49,7 +51,7 @@ public sealed class ApplicationViewRenderingTests(SceneContentFixture content)
             draw.AddImage(view.ImageId, new Vector2(48, 48), new Vector2(64, 64));
             draw.AddImage(0, new Vector2(80, 0), new Vector2(96, 16));
         };
-        Assert.Equal(0, await Application.RunAsync([], application: application));
+        Assert.True((await Application.RunAsync([], application: application)).Succeeded);
         Assert.NotNull(expected);
         Assert.NotNull(actual);
         SceneImages.AssertEqual(expected, actual);
@@ -61,6 +63,7 @@ public sealed class ApplicationViewRenderingTests(SceneContentFixture content)
         SceneImage? expected = null;
         var reference = new ApplicationScene(content.DirectoryPath)
         {
+            RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
             Options = RuntimeStartupOptions.Parse(["--hidden-window", "--static-scene", "--no-debug-ui",
                 "--no-vsync", "--no-taa", "--no-vsm", "--frames", "4"]),
             UpdateFrame = frame =>
@@ -71,10 +74,14 @@ public sealed class ApplicationViewRenderingTests(SceneContentFixture content)
         ApplicationView referenceView = reference.AddView(new(9, 24, 24));
         reference.DrawOverlay = () => ImGui.GetBackgroundDrawList().AddImage(referenceView.ImageId,
             Vector2.Zero, new Vector2(32, 32));
-        Assert.Equal(0, await Application.RunAsync([], application: reference));
+        Assert.True((await Application.RunAsync([], application: reference)).Succeeded);
 
         SceneImage? actual = null;
-        var application = new ApplicationScene(content.DirectoryPath) { Options = reference.Options };
+        var application = new ApplicationScene(content.DirectoryPath)
+        {
+            RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
+            Options = reference.Options,
+        };
         ApplicationView view = application.AddView(new(8, 16, 16));
         application.UpdateFrame = frame =>
         {
@@ -87,7 +94,7 @@ public sealed class ApplicationViewRenderingTests(SceneContentFixture content)
         };
         application.DrawOverlay = () => ImGui.GetBackgroundDrawList().AddImage(view.ImageId,
             Vector2.Zero, new Vector2(32, 32));
-        Assert.Equal(0, await Application.RunAsync([], application: application));
+        Assert.True((await Application.RunAsync([], application: application)).Succeeded);
         Assert.NotNull(expected);
         Assert.NotNull(actual);
         SceneImages.AssertEqual(expected, actual);
@@ -99,6 +106,7 @@ public sealed class ApplicationViewRenderingTests(SceneContentFixture content)
         SceneImage? expected = null;
         var reference = new ApplicationScene(content.DirectoryPath)
         {
+            RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
             Options = RuntimeStartupOptions.Parse(["--hidden-window", "--static-scene", "--no-debug-ui",
                 "--no-vsync", "--no-taa", "--no-vsm", "--frames", "4"]),
             UpdateFrame = frame =>
@@ -109,10 +117,14 @@ public sealed class ApplicationViewRenderingTests(SceneContentFixture content)
         ApplicationView referenceView = reference.AddView(new(10, 32, 24));
         reference.DrawOverlay = () => ImGui.GetBackgroundDrawList().AddImage(referenceView.ImageId,
             Vector2.Zero, new Vector2(32, 24));
-        Assert.Equal(0, await Application.RunAsync([], application: reference));
+        Assert.True((await Application.RunAsync([], application: reference)).Succeeded);
 
         SceneImage? actual = null;
-        var application = new ApplicationScene(content.DirectoryPath) { Options = reference.Options };
+        var application = new ApplicationScene(content.DirectoryPath)
+        {
+            RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
+            Options = reference.Options,
+        };
         ApplicationView view = application.AddView(new(10, 16, 16));
         application.UpdateFrame = frame =>
         {
@@ -121,7 +133,7 @@ public sealed class ApplicationViewRenderingTests(SceneContentFixture content)
         };
         application.DrawOverlay = () => ImGui.GetBackgroundDrawList().AddImage(view.ImageId,
             Vector2.Zero, new Vector2(32, 24));
-        Assert.Equal(0, await Application.RunAsync([], application: application));
+        Assert.True((await Application.RunAsync([], application: application)).Succeeded);
         Assert.NotNull(expected);
         Assert.NotNull(actual);
         SceneImages.AssertEqual(expected, actual);

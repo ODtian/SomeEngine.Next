@@ -181,7 +181,7 @@ internal sealed unsafe partial class VulkanBackend
         internal VkSemaphore Native => _native;
         public void RetainNative() => _lifetime.Retain();
         public void ReleaseNative() => _lifetime.Release();
-        internal override void Release(bool fromParent) { _device.UnregisterChild(this); _lifetime.Release(); }
+        internal override void Release(bool fromParent) { _lifetime.Release(); _device.UnregisterChild(this); }
         private void DestroyNative()
         {
             if (_native.Handle != 0)

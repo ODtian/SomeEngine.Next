@@ -19,6 +19,7 @@ internal sealed class NativeWindow : IDisposable
     private const uint SetPositionNoMove = 0x0002;
     private const uint SetPositionNoActivate = 0x0010;
     private const uint SetPositionNoZOrder = 0x0004;
+    private const uint SetPositionNoSendChanging = 0x0400;
     private const int ShowNormal = 5;
     private const int UseDefault = unchecked((int)0x80000000);
     private const int WindowUserData = -21;
@@ -159,10 +160,12 @@ internal sealed class NativeWindow : IDisposable
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(height);
+        // Explicit output sizes may be smaller than the interactive tracking minimum.
+        // WM_SIZE still reports the actual result of this programmatic request.
         var outer = new NativeRect(0, 0, width, height);
         if (!AdjustWindowRectEx(ref outer, WindowStyleOverlapped, false, 0) ||
             !SetWindowPos(Handle, 0, 0, 0, outer.Right - outer.Left, outer.Bottom - outer.Top,
-                SetPositionNoActivate | SetPositionNoZOrder | SetPositionNoMove))
+                SetPositionNoActivate | SetPositionNoZOrder | SetPositionNoMove | SetPositionNoSendChanging))
             throw new Win32Exception(Marshal.GetLastWin32Error(), "Window size change failed.");
         ThrowDispatchFailure();
     }

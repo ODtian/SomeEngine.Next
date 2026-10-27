@@ -30,6 +30,7 @@ public sealed class TerrainGpuEditingTests(SceneContentFixture content)
         var range = new HeightRegion(0, 0, 2, 2);
         var application = new ApplicationScene(content.DirectoryPath)
         {
+            RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
             Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "8"]),
             UpdateFrame = frame =>
@@ -49,7 +50,7 @@ public sealed class TerrainGpuEditingTests(SceneContentFixture content)
         first.Install(application);
         second.Install(application);
 
-        Assert.Equal(0, await Application.RunAsync([], application: application));
+        Assert.True((await Application.RunAsync([], application: application)).Succeeded);
         Assert.Equal(1f, (await firstRead!)[1, 1]);
         Assert.Equal(2f, (await secondRead!)[1, 1]);
         Assert.Equal(1, firstRecords);
@@ -99,12 +100,13 @@ public sealed class TerrainGpuEditingTests(SceneContentFixture content)
             Task<VoxelFieldRead> voxelRead = voxel.ReadCpuAsync(new(0, 1, 1, 2, 1, 1)).AsTask();
             var application = new ApplicationScene(content.DirectoryPath)
             {
+                RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
                 Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                     "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "12"]),
             };
             application.InstallGeometry(new FieldFeature(terrain));
 
-            Assert.Equal(0, await Application.RunAsync([], application: application));
+            Assert.True((await Application.RunAsync([], application: application)).Succeeded);
             HeightFieldRead actualHeight = await heightRead;
             VoxelFieldRead actualVoxel = await voxelRead;
             Assert.Equal(5f, actualHeight[1, 1]);
@@ -144,6 +146,7 @@ public sealed class TerrainGpuEditingTests(SceneContentFixture content)
             Task<TerrainSurfaceRead>? nextSurface = null;
             var application = new ApplicationScene(content.DirectoryPath)
             {
+                RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
                 Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                     "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "16"]),
                 UpdateFrame = frame =>
@@ -167,7 +170,7 @@ public sealed class TerrainGpuEditingTests(SceneContentFixture content)
             };
             application.InstallGeometry(new FieldFeature(terrain));
 
-            Assert.Equal(0, await Application.RunAsync([], application: application));
+            Assert.True((await Application.RunAsync([], application: application)).Succeeded);
             TerrainCpuData data = await capture!;
             using (var asset = new TerrainAsset { Name = "Captured GPU terrain" })
             {
@@ -253,12 +256,13 @@ public sealed class TerrainGpuEditingTests(SceneContentFixture content)
         Task<VoxelFieldRead> flattenRead = gpu.ReadCpuAsync(range).AsTask();
         var application = new ApplicationScene(content.DirectoryPath)
         {
+            RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
             Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "16"]),
         };
         application.InstallGeometry(new FieldFeature(gpuTerrain));
 
-        Assert.Equal(0, await Application.RunAsync([], application: application));
+        Assert.True((await Application.RunAsync([], application: application)).Succeeded);
         await flattenEdit.WaitAsync();
         VoxelFieldRead actualSmooth = await smoothRead;
         VoxelFieldRead actualFlatten = await flattenRead;
@@ -300,12 +304,13 @@ public sealed class TerrainGpuEditingTests(SceneContentFixture content)
         Task<HeightFieldRead> flattenRead = gpu.ReadCpuAsync(grid.Range).AsTask();
         var application = new ApplicationScene(content.DirectoryPath)
         {
+            RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
             Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "16"]),
         };
         application.InstallGeometry(new FieldFeature(gpuTerrain));
 
-        Assert.Equal(0, await Application.RunAsync([], application: application));
+        Assert.True((await Application.RunAsync([], application: application)).Succeeded);
         await flattenEdit.WaitAsync();
         HeightFieldRead actualSmooth = await smoothRead;
         HeightFieldRead actualFlatten = await flattenRead;
@@ -339,17 +344,18 @@ public sealed class TerrainGpuEditingTests(SceneContentFixture content)
         Task<VoxelFieldRead> read = gpu.ReadCpuAsync(range).AsTask();
         var application = new ApplicationScene(content.DirectoryPath)
         {
+            RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
             Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "12"]),
         };
         application.InstallGeometry(new FieldFeature(gpuTerrain));
 
-        int result = await Application.RunAsync([], application: application);
+        ApplicationResult result = await Application.RunAsync([], application: application);
         await edit.WaitAsync();
         VoxelFieldRead actual = await read;
         VoxelFieldRead expected = await cpu.ReadCpuAsync(range);
 
-        Assert.Equal(0, result);
+        Assert.True(result.Succeeded, result.Error?.ToString());
         Assert.Equal(edit.Revision, actual.Revision);
         Assert.True(edit.Completion.IsCompleted);
         for (int z = range.MinZ; z < range.MaxZ; z++)
@@ -377,18 +383,19 @@ public sealed class TerrainGpuEditingTests(SceneContentFixture content)
         Task<VoxelFieldRead> latest = field.ReadCpuAsync(range).AsTask();
         var application = new ApplicationScene(content.DirectoryPath)
         {
+            RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
             Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "16"]),
             UpdateFrame = frame => { if (frame.Index == 0) start.Complete(); },
         };
         application.InstallGeometry(new FieldFeature(terrain));
 
-        int result = await Application.RunAsync([], application: application);
+        ApplicationResult result = await Application.RunAsync([], application: application);
         VoxelFieldRead first = await earlier;
         VoxelFieldRead second = await middle;
         VoxelFieldRead third = await latest;
 
-        Assert.Equal(0, result);
+        Assert.True(result.Succeeded, result.Error?.ToString());
         Assert.Equal([-2f, 1f, 4f], new[] { first[-1, 0, 0], first[0, 0, 0], first[1, 0, 0] });
         Assert.Equal([-6f, 3f, 12f], new[] { second[-1, 0, 0], second[0, 0, 0], second[1, 0, 0] });
         Assert.Equal([-5f, 3.5f, 12f], new[] { third[-1, 0, 0], third[0, 0, 0], third[1, 0, 0] });
@@ -409,6 +416,7 @@ public sealed class TerrainGpuEditingTests(SceneContentFixture content)
         SceneImage? before = null, after = null, expectedBefore = null, expectedAfter = null;
         var application = new ApplicationScene(content.DirectoryPath)
         {
+            RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
             Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "18"]),
             UpdateFrame = frame =>
@@ -427,14 +435,15 @@ public sealed class TerrainGpuEditingTests(SceneContentFixture content)
         };
         gpu.Install(application);
 
-        int result = await Application.RunAsync([], application: application);
+        ApplicationResult result = await Application.RunAsync([], application: application);
         await edit.WaitAsync();
         VoxelFieldRead values = await gpu.Field.ReadCpuAsync(gpu.SampleRegion);
-        Assert.Equal(0, result);
+        Assert.True(result.Succeeded, result.Error?.ToString());
         Assert.Equal(-2f, values[-1, 0, 0]);
 
         var reference = new ApplicationScene(content.DirectoryPath)
         {
+            RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
             Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "18"]),
             UpdateFrame = frame =>
@@ -452,7 +461,7 @@ public sealed class TerrainGpuEditingTests(SceneContentFixture content)
             },
         };
         cpu.Install(reference);
-        Assert.Equal(0, await Application.RunAsync([], application: reference));
+        Assert.True((await Application.RunAsync([], application: reference)).Succeeded);
 
         SceneImages.AssertEqual(expectedBefore!, before!);
         SceneImages.AssertEqual(expectedAfter!, after!);
@@ -475,17 +484,18 @@ public sealed class TerrainGpuEditingTests(SceneContentFixture content)
         Task<HeightFieldRead> read = gpu.ReadCpuAsync(grid.Range).AsTask();
         var scene = new ApplicationScene(content.DirectoryPath)
         {
+            RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
             Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "12"]),
         };
         scene.InstallGeometry(new FieldFeature(gpuTerrain));
 
-        int result = await Application.RunAsync([], application: scene);
+        ApplicationResult result = await Application.RunAsync([], application: scene);
         await edit.WaitAsync();
         HeightFieldRead actual = await read;
         HeightFieldRead expected = await cpu.ReadCpuAsync(grid.Range);
 
-        Assert.Equal(0, result);
+        Assert.True(result.Succeeded, result.Error?.ToString());
         Assert.Equal(edit.Revision, actual.Revision);
         Assert.True(edit.Completion.IsCompleted);
         for (int z = 0; z < grid.Depth; z++)
@@ -508,17 +518,18 @@ public sealed class TerrainGpuEditingTests(SceneContentFixture content)
         Task<HeightFieldRead> current = height.ReadCpuAsync(height.Grid.Range).AsTask();
         var scene = new ApplicationScene(content.DirectoryPath)
         {
+            RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
             Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "12"]),
             UpdateFrame = frame => { if (frame.Index == 0) start.Complete(); },
         };
         scene.InstallGeometry(new FieldFeature(terrain));
 
-        int result = await Application.RunAsync([], application: scene);
+        ApplicationResult result = await Application.RunAsync([], application: scene);
         HeightFieldRead gpu = await captured;
         HeightFieldRead cpu = await current;
 
-        Assert.Equal(0, result);
+        Assert.True(result.Succeeded, result.Error?.ToString());
         Assert.Equal(12f, gpu[3, 2]);
         Assert.Equal(5f, gpu[0, 0]);
         Assert.Equal(48f, cpu[3, 2]);
@@ -537,6 +548,7 @@ public sealed class TerrainGpuEditingTests(SceneContentFixture content)
         SceneImage? before = null, after = null, expectedBefore = null, expectedAfter = null;
         var application = new ApplicationScene(content.DirectoryPath)
         {
+            RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
             Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "18"]),
             UpdateFrame = frame =>
@@ -556,14 +568,15 @@ public sealed class TerrainGpuEditingTests(SceneContentFixture content)
         };
         example.Install(application);
 
-        int result = await Application.RunAsync([], application: application);
+        ApplicationResult result = await Application.RunAsync([], application: application);
         await edit.WaitAsync();
         HeightFieldRead heights = await example.Heights.ReadCpuAsync(example.Heights.Grid.Range);
-        Assert.Equal(0, result);
+        Assert.True(result.Succeeded, result.Error?.ToString());
         Assert.Equal(1f, heights[2, 2]);
 
         Mesh ground = CreateGround(0);
-        await SceneImages.RunAsync("d3d12", new SceneScript(content.DirectoryPath, 18,
+        await SceneImages.RunAsync("d3d12", new SceneScript(new ApplicationScene(content.DirectoryPath)
+            { RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register }, 18,
         [
             new(0, scene =>
             {

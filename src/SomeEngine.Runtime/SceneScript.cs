@@ -127,8 +127,31 @@ public sealed class SceneEdit
     }
     internal void End() => _active = false;
 
+    internal void Invoke(Action action)
+    {
+        bool active = _active;
+        _active = true;
+        try { action(); }
+        finally { _active = active; }
+    }
+
+    internal void Invoke(Action<SceneEdit, float>? action, float seconds)
+    {
+        if (action is null) return;
+        bool active = _active;
+        _active = true;
+        try { action(this, seconds); }
+        finally { _active = active; }
+    }
+
     public IReadOnlyList<Entity> MeshEntities { get { RequireAction(); return _scene.GetMeshEntities(); } }
     public Matrix4x4 CameraView { get { RequireAction(); return _scene.Camera.View; } }
+    public Vector3 CameraPosition { get { RequireAction(); return _scene.Camera.Position; } }
+    public Vector3 CameraForward { get { RequireAction(); return _scene.Camera.Forward; } }
+    public Vector3 MeshPositionMin { get { RequireAction(); return _scene.MeshPositionMin; } }
+    public Vector3 MeshPositionMax { get { RequireAction(); return _scene.MeshPositionMax; } }
+    /// <summary>Materials loaded for the scene, in their original asset order.</summary>
+    public IReadOnlyList<Material> Materials { get { RequireAction(); return _scene.Materials; } }
 
     public void SetShadingPath(ClusterShadingPath path)
     {
@@ -153,6 +176,20 @@ public sealed class SceneEdit
     {
         RequireAction();
         _scene.SetCameraTransform(position, rotation);
+    }
+
+    /// <summary>Moves the camera without changing its direction or world-up vector.</summary>
+    public void SetCameraPosition(Vector3 position)
+    {
+        RequireAction();
+        _scene.Camera.SetPosition(position);
+    }
+
+    /// <summary>Changes the camera position and target while retaining its world-up vector.</summary>
+    public void SetCameraView(Vector3 position, Vector3 target)
+    {
+        RequireAction();
+        _scene.Camera.SetView(position, target);
     }
 
     public Material GetMaterial(Entity entity, int index = 0)

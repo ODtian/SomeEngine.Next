@@ -28,6 +28,7 @@ public sealed class TerrainFeatureLifetimeTests(SceneContentFixture content)
         ApplicationResult? completed = null;
         var application = new ApplicationScene(content.DirectoryPath)
         {
+            RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
             SceneCompleted = value => completed = value,
             Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "5"]),
@@ -60,11 +61,11 @@ public sealed class TerrainFeatureLifetimeTests(SceneContentFixture content)
             },
         };
         ground.Install(application);
-        int result;
+        ApplicationResult result;
         try { result = await Application.RunAsync([], application: application); }
         finally { input.Complete(); }
 
-        Assert.True(result == 0, completed?.Error?.ToString());
+        Assert.True(result.Succeeded, completed?.Error?.ToString());
         Assert.False(inputReadyAtRemoval);
         Assert.True(withdrawn.Visibility.IsCompleted);
         Assert.Equal(edit.Revision, rebuilt.Revision);
@@ -91,6 +92,7 @@ public sealed class TerrainFeatureLifetimeTests(SceneContentFixture content)
         int runs = 0;
         var application = new ApplicationScene(content.DirectoryPath)
         {
+            RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
             SceneStarted = _ => runs++,
             SceneCompleted = value => completed = value,
             Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
@@ -137,7 +139,7 @@ public sealed class TerrainFeatureLifetimeTests(SceneContentFixture content)
         };
         ground.Install(application);
 
-        Assert.True(await Application.RunAsync([], application: application) == 0, completed?.Error?.ToString());
+        Assert.True((await Application.RunAsync([], application: application)).Succeeded, completed?.Error?.ToString());
         Assert.Equal(2, runs);
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => canceledHeights!);
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => canceledVoxels!);
@@ -162,6 +164,7 @@ public sealed class TerrainFeatureLifetimeTests(SceneContentFixture content)
         ApplicationResult? completed = null;
         var application = new ApplicationScene(content.DirectoryPath)
         {
+            RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
             GeometryMemoryBytes = 256 * 1024,
             SceneCompleted = value => completed = value,
             Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
@@ -190,7 +193,7 @@ public sealed class TerrainFeatureLifetimeTests(SceneContentFixture content)
         };
         ground.Install(application);
 
-        Assert.True(await Application.RunAsync([], application: application) == 0, completed?.Error?.ToString());
+        Assert.True((await Application.RunAsync([], application: application)).Succeeded, completed?.Error?.ToString());
         Assert.Equal(7, builds.Count);
         Assert.All(builds, build =>
         {
@@ -212,6 +215,7 @@ public sealed class TerrainFeatureLifetimeTests(SceneContentFixture content)
         ApplicationResult? completed = null;
         var application = new ApplicationScene(content.DirectoryPath)
         {
+            RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
             SceneStarted = _ => runs++,
             SceneCompleted = value => completed = value,
             Options = RuntimeStartupOptions.Parse(["--hidden-window", "--static-scene",
@@ -233,7 +237,7 @@ public sealed class TerrainFeatureLifetimeTests(SceneContentFixture content)
         ground.Install(application);
         application.InstallGeometry(new GameActionFeature(() => builds.Add(ground.Scene.GetGpuBuild(ground.Heights.Terrain))));
 
-        Assert.True(await Application.RunAsync([], application: application) == 0, completed?.Error?.ToString());
+        Assert.True((await Application.RunAsync([], application: application)).Succeeded, completed?.Error?.ToString());
         Assert.Equal(2, runs);
         Assert.Equal(3, builds.Count);
         Assert.True(builds[1].Revision > builds[0].Revision);
@@ -255,6 +259,7 @@ public sealed class TerrainFeatureLifetimeTests(SceneContentFixture content)
         ApplicationResult? completed = null;
         var application = new ApplicationScene(content.DirectoryPath)
         {
+            RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
             SceneCompleted = value => completed = value,
             Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "3"]),
@@ -276,7 +281,7 @@ public sealed class TerrainFeatureLifetimeTests(SceneContentFixture content)
         };
         ground.Install(application);
 
-        Assert.True(await Application.RunAsync([], application: application) == 0, completed?.Error?.ToString());
+        Assert.True((await Application.RunAsync([], application: application)).Succeeded, completed?.Error?.ToString());
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => read!);
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => edit.WaitAsync().AsTask());
     }

@@ -3,7 +3,7 @@ using SomeEngine.ECS.Entities;
 using SomeEngine.Elements.Render;
 using SomeEngine.Typography;
 
-namespace SomeEngine.Runtime;
+namespace DefaultGame;
 
 /// <summary>The font and glyph atlas shared by this scene's screen views.</summary>
 internal sealed class ScreenText : IDisposable
@@ -16,7 +16,7 @@ internal sealed class ScreenText : IDisposable
     {
         _world = world;
         using Stream stream = typeof(ScreenText).Assembly.GetManifestResourceStream(
-            "SomeEngine.Runtime.Fonts.Example.otf")!;
+            "DefaultGame.Fonts.Example.otf")!;
         using var bytes = new MemoryStream();
         stream.CopyTo(bytes);
         Font = Font.Load(bytes.ToArray());

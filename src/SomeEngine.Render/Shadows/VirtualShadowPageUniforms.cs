@@ -13,6 +13,7 @@ public struct VirtualShadowReceiverProjection
     public float ScreenPixelRadius;
     public Vector4 WorldToViewDepth;
     public CameraDepthOfField DepthOfField;
+    // The shader depth-of-field value includes one four-byte padding word.
     private uint _depthOfFieldPadding;
     public Vector3 CameraPosition;
     public float CotanHalfFieldOfView;

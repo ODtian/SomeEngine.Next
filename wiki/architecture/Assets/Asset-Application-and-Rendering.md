@@ -16,9 +16,13 @@ Game.App 只使用自身输出目录的 Manifest 和构建资产。缺少构建�
 
 ApplicationSettingsAsset 的 ApplicationSettingsBlock 记录窗口配置、场景、Shader 资源组和各功能的明确引用。读取配置不自动实例化整张引用图；应用选择需要的资产并完成对应 Block 的转换。
 
-WorldAsset 恢复真实 Game world。Mesh、Material 引用在原实体上解析，管线读取自己需要的 Block；同一 MeshAsset 中其他表示不会被错误地当作另一个场景身份。流送取得数据后再更新已有资源状态，渲染准备不隐藏 Asset 查询或文件 I/O。
+WorldAsset 恢复真实 Game world。每次加载先创建引擎组件的 `SceneSerialization.CreateRegistry()`，再调用 `ApplicationScene.RegisterSceneComponents` 加入应用自己的组件 codec，随后把同一份注册交给现有 `WorldAsset.LoadAsync`。应用回调在场景异步读取任务启动前执行；未知组件不会通过全局注册或样例回退自动补齐。
 
-公开游戏启动通过 `Application.RunAsync<TMaterials>` 采用游戏的静态 `ISceneMaterials.CreateAsync`。ApplicationContent 在应用范围持有文件读取器、Slang 设置、两份强类型 WeakValues 以及明确跨场景使用的管线与启动 Shader。内容目录、目录文件写入时间或图形后端变化时，应用建立对应的文件和 Slang 范围。场景解析 MaterialAsset.ResolveAsync 的完整 Block，按强类型资产引用取得实际 Shader、Texture，再把两份实际引用字典交给具体材质创建方法。场景保留 Material、Mesh 和几何页来源，卸载时更新普通引用；Cluster 的 Shader 准备发生在渲染消费阶段。
+DefaultGame 的 `MeshMotion` 与 codec 由 `SampleSceneSerialization` 注册。旧资产继续使用 `SomeEngine.Scene.MeshMotion` 及 `amplitude:3f;seed:u32` 的持久身份与字段定义，不依赖 C# 类型现在所在的程序集。直接读取或运行含有该组件的样例 World 时，调用方也必须明确组合这份注册。
+
+Mesh、Material 引用在原实体上解析，管线读取自己需要的 Block；同一 MeshAsset 中其他表示不会被错误地当作另一个场景身份。每个支持的已加载网格在附加几何与材质绑定后、移除 `MeshSource` 前调用 `Action<World, Entity>` 类型的 `ApplicationScene.InitializeMesh`。该回调在加载任务上按原始来源查询顺序逐个执行，供项目消费自己的网格组件；不为未加载的几何调用。DefaultGame 在此把 `MeshMotion` 转成自己的运动数据，通用加载器不认识样例运动类型。流送取得数据后再更新已有资源状态，渲染准备不隐藏 Asset 查询或文件 I/O。
+
+公开游戏启动通过 `Application.RunAsync<TMaterials>` 采用游戏的静态 `ISceneMaterials.CreateAsync`，并返回与非泛型入口相同的 `ApplicationResult`；退出码转换留给可执行项目。ApplicationContent 在应用范围持有文件读取器、Slang 设置、两份强类型 WeakValues 以及明确跨场景使用的管线与启动 Shader。内容目录、目录文件写入时间或图形后端变化时，应用建立对应的文件和 Slang 范围。场景解析 MaterialAsset.ResolveAsync 的完整 Block，按强类型资产引用取得实际 Shader、Texture，再把两份实际引用字典交给具体材质创建方法。场景保留 Material、Mesh 和几何页来源，卸载时更新普通引用；Cluster 的 Shader 准备发生在渲染消费阶段。
 
 ## 生命周期与 Shader 解释
 

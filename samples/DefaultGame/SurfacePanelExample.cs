@@ -12,7 +12,7 @@ using static SomeEngine.Elements.TextFunctions;
 using static SomeEngine.Elements.ButtonFunctions;
 using Size = SomeEngine.Layout.Size;
 
-namespace SomeEngine.Runtime;
+namespace DefaultGame;
 
 /// <summary>A counter panel made from public views, button behavior, layout and text.</summary>
 public sealed partial class SurfacePanelExample : IDisposable
@@ -34,7 +34,7 @@ public sealed partial class SurfacePanelExample : IDisposable
         _world = world;
         _text = text;
         _canvas = world.CreateEntity(new Canvas { Size = new Size(width, height) });
-        _view = Views.Views.Spawn(world, _canvas, new PanelView(width, height, text.Font, _clickCount));
+        _view = SomeEngine.Views.Views.Spawn(world, _canvas, new PanelView(width, height, text.Font, _clickCount));
     }
 
     public void Resize(int width, int height)

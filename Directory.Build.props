@@ -5,7 +5,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <Deterministic>true</Deterministic>
-    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <InterceptorsNamespaces>$(InterceptorsNamespaces);SomeEngine.Views.Generated</InterceptorsNamespaces>
     <_RequestedSlangToolchainVersion>$(SlangToolchainVersion)</_RequestedSlangToolchainVersion>
     <SlangToolchainVersion>2026.17.1</SlangToolchainVersion>

@@ -26,7 +26,7 @@ public sealed class MaterialResourcePropertiesTests
             new("Color", ResourceBindingType.TextureUav, 2, false),
         ];
 
-        using var material = new PropertyListMaterial(properties);
+        var material = new PropertyListMaterial(properties);
         uint?[] actual = material.ResolveResourceProperties(resources);
 
         uint?[] expected = [1u, null, 0u, null, 1u];
@@ -48,7 +48,7 @@ public sealed class MaterialResourcePropertiesTests
             new("Disabled", ResourceBindingType.None, 0, true),
         ];
 
-        using var material = new PropertyListMaterial(properties);
+        var material = new PropertyListMaterial(properties);
         uint?[] actual = material.ResolveResourceProperties(resources);
 
         uint?[] expected = [null, null, null];
@@ -58,11 +58,11 @@ public sealed class MaterialResourcePropertiesTests
     [Fact]
     public void GeneratedMaterialsFindTheirDeclaredPropertyPositions()
     {
-        using var material = new Game.Content.UnlitMaterial();
+        var material = new SomeEngine.Resources.UnlitMaterial();
 
-        Assert.Equal<uint?>(0u, material.FindPropertyIndex(nameof(Game.Content.UnlitMaterial.AlbedoMap)));
-        Assert.Equal<uint?>(1u, material.FindPropertyIndex(nameof(Game.Content.UnlitMaterial.MaterialSampler)));
-        Assert.Equal<uint?>(2u, material.FindPropertyIndex(nameof(Game.Content.UnlitMaterial.BaseColorTint)));
+        Assert.Equal<uint?>(0u, material.FindPropertyIndex(nameof(SomeEngine.Resources.UnlitMaterial.AlbedoMap)));
+        Assert.Equal<uint?>(1u, material.FindPropertyIndex(nameof(SomeEngine.Resources.UnlitMaterial.MaterialSampler)));
+        Assert.Equal<uint?>(2u, material.FindPropertyIndex(nameof(SomeEngine.Resources.UnlitMaterial.BaseColorTint)));
         Assert.Null(material.FindPropertyIndex("Missing"));
         Assert.Null(material.FindPropertyIndex("albedoMap"));
         Assert.Null(material.FindPropertyIndex(null));
@@ -80,7 +80,7 @@ public sealed class MaterialResourcePropertiesTests
             new("Color", ResourceBindingType.BufferSrv, 2, conflictingIsUsed),
         ];
 
-        using var material = new PropertyListMaterial(properties);
+        var material = new PropertyListMaterial(properties);
         Assert.Throws<InvalidDataException>(
             () => material.ResolveResourceProperties(resources));
     }
@@ -92,7 +92,7 @@ public sealed class MaterialResourcePropertiesTests
     [InlineData(ResourceBindingType.AccelerationStructure)]
     public void MissingDeviceResourcesKeepTheirValidation(ResourceBindingType type)
     {
-        using var material = new PropertyListMaterial([]) { Name = "Native material" };
+        var material = new PropertyListMaterial([]) { Name = "Native material" };
 
 #if DEBUG
         Assert.Throws<InvalidOperationException>(
@@ -114,7 +114,7 @@ public sealed class MaterialResourcePropertiesTests
     [InlineData((ResourceBindingType)byte.MaxValue)]
     public void NonDeviceBindingTypesDoNotReadMaterialResources(ResourceBindingType type)
     {
-        using var material = new PropertyListMaterial([]);
+        var material = new PropertyListMaterial([]);
 
         var error = Assert.Throws<ArgumentOutOfRangeException>(
             () => material.GetDeviceResourceBinding(23u, type));
@@ -148,7 +148,7 @@ public sealed class MaterialResourcePropertiesTests
             new BufferSrvDesc(secondData, BufferRange.Whole, StructureStride: 16));
         using BufferUav secondWrite = backend.CreateBufferUav(device,
             new BufferUavDesc(secondData, BufferRange.Whole, StructureStride: 16, CounterBuffer: secondCounter));
-        using var material = new DeviceResourceMaterial(firstRead, firstWrite);
+        var material = new DeviceResourceMaterial(firstRead, firstWrite);
         ShaderParameterResource[] resources =
         [
             new("WriteData", ResourceBindingType.BufferUav, 0, true),
@@ -184,7 +184,6 @@ public sealed class MaterialResourcePropertiesTests
     {
         public BufferSrv ReadData { get; set; } = readData;
         public BufferUav WriteData { get; set; } = writeData;
-        public override Guid MaterialTypeId => Guid.Empty;
         public override IReadOnlyList<MaterialPropertyDefinition> Properties { get; } =
         [
             new(17, "ReadData", typeof(BufferSrv)),
@@ -196,10 +195,6 @@ public sealed class MaterialResourcePropertiesTests
             1 => WriteData,
             _ => null,
         };
-        public override void ApplyParameter(MaterialValue parameter, SomeEngine.Resources.Texture? texture)
-            => throw new NotSupportedException();
-        protected override void CopyProperties(Material source) => throw new NotSupportedException();
-        protected override Material CreateEmpty() => throw new NotSupportedException();
     }
 
     private sealed class PropertyListMaterial(IReadOnlyList<MaterialPropertyDefinition> properties) : Material
@@ -212,11 +207,6 @@ public sealed class MaterialResourcePropertiesTests
             LastDeviceResourceProperty = index;
             return null;
         }
-        public override Guid MaterialTypeId => Guid.Empty;
         public override IReadOnlyList<MaterialPropertyDefinition> Properties => properties;
-        public override void ApplyParameter(MaterialValue parameter, SomeEngine.Resources.Texture? texture)
-            => throw new NotSupportedException();
-        protected override void CopyProperties(Material source) => throw new NotSupportedException();
-        protected override Material CreateEmpty() => new PropertyListMaterial(properties);
     }
 }

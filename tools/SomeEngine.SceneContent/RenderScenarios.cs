@@ -1,3 +1,4 @@
+using DefaultGame;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Components;
@@ -207,7 +208,7 @@ public static class RenderScenarios
         Guid sceneId = application.GetBlock<ApplicationSettingsBlock>().Scene.Value;
         if (!storage.TryFind(sceneId, out AssetEntry entry)) throw new InvalidOperationException();
         using var sceneFile = await WorldAsset.OpenAsync(loader, new AssetId<WorldAsset>(sceneId));
-        var worldTypes = SceneSerialization.CreateRegistry();
+        var worldTypes = SampleSceneSerialization.CreateRegistry();
         using World scene = await sceneFile.GetBlock<WorldBlock>().LoadAsync(worldTypes);
         sceneFile.Name = mode + " rendering scenario";
         Entity[] allInstances = Entities(scene, new QueryDefinitionBuilder().Read<MeshSource>().Read<WorldTransform>());

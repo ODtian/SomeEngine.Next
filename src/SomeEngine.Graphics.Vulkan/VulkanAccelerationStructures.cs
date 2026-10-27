@@ -1,3 +1,5 @@
+using System.Runtime.InteropServices;
+
 namespace SomeEngine.Graphics.Vulkan;
 
 internal sealed unsafe partial class VulkanBackend
@@ -65,6 +67,63 @@ internal sealed unsafe partial class VulkanBackend
         var result = new VulkanAccelerationStructureSrv(nativeDevice, structure, desc);
         nativeDevice.RegisterChild(result);
         return result;
+    }
+
+    private void EncodeAccelerationStructureInstancesCore(
+        RhiDevice device,
+        ReadOnlySpan<AccelerationStructureInstance> instances,
+        Span<byte> destination)
+    {
+        VulkanDevice nativeDevice = RequireRayTracingDevice(device);
+        int instanceSize = sizeof(AccelerationStructureInstanceKHR);
+        if (instanceSize != 64)
+            throw new NotSupportedException("The native ray-tracing instance layout is unsupported.");
+        if ((ulong)instances.Length * (uint)instanceSize > (ulong)destination.Length)
+            throw new ArgumentException("The destination is too small for the encoded instances.", nameof(destination));
+
+        foreach (AccelerationStructureInstance instance in instances)
+        {
+            instance.Validate(nameof(instances));
+            VulkanAccelerationStructure structure = RequireAccelerationStructure(
+                nativeDevice,
+                instance.AccelerationStructure,
+                nameof(instances));
+            _ = RequireBuffer(nativeDevice, structure.Info.Storage, nameof(instances));
+            if (structure.Info.Type != AccelerationStructureType.BottomLevel)
+                throw new ArgumentException("Instances must reference bottom-level acceleration structures.", nameof(instances));
+        }
+
+        // Only this second pass touches destination; normal use must not race disposal or input mutation.
+        Span<float> nativeTransform = stackalloc float[12];
+        for (int index = 0; index < instances.Length; index++)
+        {
+            AccelerationStructureInstance instance = instances[index];
+            VulkanAccelerationStructure structure = (VulkanAccelerationStructure)instance.AccelerationStructure;
+            System.Numerics.Matrix4x4 transform = instance.Transform;
+            // System.Numerics uses row vectors; the native 3x4 transform uses column vectors.
+            nativeTransform[0] = transform.M11;
+            nativeTransform[1] = transform.M21;
+            nativeTransform[2] = transform.M31;
+            nativeTransform[3] = transform.M41;
+            nativeTransform[4] = transform.M12;
+            nativeTransform[5] = transform.M22;
+            nativeTransform[6] = transform.M32;
+            nativeTransform[7] = transform.M42;
+            nativeTransform[8] = transform.M13;
+            nativeTransform[9] = transform.M23;
+            nativeTransform[10] = transform.M33;
+            nativeTransform[11] = transform.M43;
+            uint identityAndMask = instance.InstanceId | ((uint)instance.Mask << 24);
+            // The four supported option bits match the native ABI. Facing is determined in object
+            // space: a mirrored instance transform must not implicitly toggle the facing bit.
+            uint hitGroupAndOptions = instance.HitGroupOffset | ((uint)instance.Options << 24);
+            ulong address = structure.DeviceAddress;
+            Span<byte> target = destination.Slice(index * instanceSize, instanceSize);
+            MemoryMarshal.AsBytes(nativeTransform).CopyTo(target);
+            MemoryMarshal.Write(target.Slice(48, sizeof(uint)), in identityAndMask);
+            MemoryMarshal.Write(target.Slice(52, sizeof(uint)), in hitGroupAndOptions);
+            MemoryMarshal.Write(target.Slice(56, sizeof(ulong)), in address);
+        }
     }
 
     private AccelerationStructureBuildInfo GetAccelerationStructureBuildInfoCore(
@@ -552,7 +611,7 @@ internal sealed unsafe partial class VulkanBackend
         }
         public void RetainNative() => _lifetime.Retain();
         public void ReleaseNative() => _lifetime.Release();
-        internal override void Release(bool fromParent) { _device.UnregisterChild(this); _lifetime.Release(); }
+        internal override void Release(bool fromParent) { _lifetime.Release(); _device.UnregisterChild(this); }
         private void DestroyNative()
         {
             if (_native.Handle != 0)
@@ -583,7 +642,7 @@ internal sealed unsafe partial class VulkanBackend
         internal VkAccelerationStructure Native => _structure.Native;
         public void RetainNative() => _lifetime.Retain();
         public void ReleaseNative() => _lifetime.Release();
-        internal override void Release(bool fromParent) { _device.UnregisterChild(this); _lifetime.Release(); }
+        internal override void Release(bool fromParent) { _lifetime.Release(); _device.UnregisterChild(this); }
     }
 
     private sealed class VulkanAccelerationStructurePropertyQuery : IVulkanRetained

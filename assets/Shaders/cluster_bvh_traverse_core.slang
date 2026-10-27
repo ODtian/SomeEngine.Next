@@ -315,6 +315,8 @@ void ProcessTraversalNode(ClusterTraversalNode parent, bool validParent, uint ch
     }
 
 #ifdef CLUSTER_PERSISTENT_CULL
+    // Keep each lane's accepted views for inline leaf culling.
+    uint leafViews = activeViews;
     if (viewLanes > 1u)
     {
         activeViews = MergeClusterViewMaskWave(activeViews, viewLanes, CLUSTER_BVH_FANOUT);
@@ -408,10 +410,19 @@ void ProcessTraversalNode(ClusterTraversalNode parent, bool validParent, uint ch
         }
     }
 
+#ifdef CLUSTER_PERSISTENT_CULL
+    bool outputLeaf = leafViews != 0u && leaf && ClusterSliceAvailable(node);
+    leafViews = outputLeaf ? leafViews : 0u;
+#else
     bool outputLeaf = activeViews != 0u && leaf && !pageFault;
+#endif
     uint clusterCount = outputLeaf ? ClusterSliceClusterCount(node) : 0u;
     uint firstCluster = ClusterSliceFirstCluster(node);
+#ifdef CLUSTER_PERSISTENT_CULL
+    uint leafCount = clusterCount * countbits(leafViews);
+#else
     uint leafCount = clusterCount * countbits(activeViews);
+#endif
     uint waveLeafCount = WaveActiveSum(leafCount);
 #ifdef CLUSTER_PERSISTENT_CULL
     // A leaf's candidates are consumed in this wave. The count records total
@@ -428,7 +439,9 @@ void ProcessTraversalNode(ClusterTraversalNode parent, bool validParent, uint ch
         PublishCandidateDispatchArgs(candidateBase, waveLeafCount, TraversalLevel.MaxNodes);
     uint output = candidateBase + leafOffset;
 #endif
+#ifndef CLUSTER_PERSISTENT_CULL
     uint leafViews = outputLeaf ? activeViews : 0u;
+#endif
     while (leafViews != 0u)
     {
         uint bit = firstbitlow(leafViews);

@@ -406,6 +406,28 @@ public sealed partial class ValidationLayer
         }
     }
 
+    public void EncodeAccelerationStructureInstances(
+        Device device,
+        ReadOnlySpan<AccelerationStructureInstance> instances,
+        Span<byte> destination)
+    {
+        RayTracing capability = RequireCapability<RayTracing>(device);
+        if (capability.InstanceSize == 0 || capability.InstanceAlignment == 0)
+            throw new NotSupportedException("The Device does not support acceleration-structure instance encoding.");
+        if ((ulong)instances.Length * capability.InstanceSize > (ulong)destination.Length)
+            throw new ArgumentException("The destination is too small for the encoded instances.", nameof(destination));
+
+        foreach (AccelerationStructureInstance instance in instances)
+        {
+            instance.Validate(nameof(instances));
+            RequireOnDevice(device, instance.AccelerationStructure, "Instance bottom-level acceleration structure");
+            RequireOnDevice(device, instance.AccelerationStructure.Info.Storage, "Instance acceleration-structure storage");
+            if (instance.AccelerationStructure.Info.Type != AccelerationStructureType.BottomLevel)
+                throw new ArgumentException("Instances must reference bottom-level acceleration structures.", nameof(instances));
+        }
+        Backend.EncodeAccelerationStructureInstances(device, instances, destination);
+    }
+
     public AccelerationStructureBuildInfo GetAccelerationStructureBuildInfo(
         Device device,
         AccelerationStructureType type,

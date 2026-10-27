@@ -6,6 +6,7 @@ using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Resources;
 using SomeEngine.ECS;
+using SomeEngine.ECS.Serialization;
 using SomeEngine.ECS.Systems;
 using SomeEngine.ECS.Queries;
 using SomeEngine.Job;
@@ -41,7 +42,7 @@ internal static class RuntimeApplication
     private const Format PresentationFormat = Format.R8G8B8A8UNorm;
 
     internal static Task<int> RunAsync<TMaterials>(RuntimeStartupOptions options, bool useWarp, ApplicationStartupTiming startup,
-        Func<Material, float, bool>? animateMaterial = null, ApplicationScene? application = null, SceneScript? script = null)
+        ApplicationScene? application = null, SceneScript? script = null)
         where TMaterials : ISceneMaterials => Task.Factory.StartNew(() =>
     {
         using var display = new ApplicationDisplay();
@@ -71,7 +72,7 @@ internal static class RuntimeApplication
                 try
                 {
                     application?.SceneStarted?.Invoke(Stopwatch.GetTimestamp());
-                    int sceneFrames = RunScene<TMaterials>(options, useWarp, startup, animateMaterial, application, display, script, content);
+                    int sceneFrames = RunScene<TMaterials>(options, useWarp, startup, application, display, script, content);
                     frames += sceneFrames;
                     startup.FinishTrace();
                     application?.SceneCompleted?.Invoke(new(ApplicationFailure.None, sceneFrames) { Startup = startup.Result });
@@ -90,10 +91,12 @@ internal static class RuntimeApplication
     }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
 
     private static int RunScene<TMaterials>(RuntimeStartupOptions options, bool useWarp, ApplicationStartupTiming startup,
-        Func<Material, float, bool>? animateMaterial, ApplicationScene? application,
+        ApplicationScene? application,
         ApplicationDisplay display, SceneScript? script, ApplicationContent content) where TMaterials : ISceneMaterials
     {
         ArgumentNullException.ThrowIfNull(options);
+        SerializationRegistry sceneTypes = SceneSerialization.CreateRegistry();
+        (script?.Application ?? application)?.RegisterSceneComponents?.Invoke(sceneTypes);
         AssetLoader assets = content.Files;
         AssetManifest manifest = content.Manifest;
         IReadOnlyList<AssetEntry> runtimeRecords =
@@ -122,7 +125,7 @@ internal static class RuntimeApplication
         {
             long started = Stopwatch.GetTimestamp();
             WorldAsset sceneAsset = await sceneTask.ConfigureAwait(false);
-            World world = await sceneAsset.LoadAsync(SceneSerialization.CreateRegistry(),
+            World world = await sceneAsset.LoadAsync(sceneTypes,
                 new(Execution: new WorldJobs(JobSystem.Default))).ConfigureAwait(false);
             startup.RecordWork("WorldLoad", started);
             return world;
@@ -131,7 +134,8 @@ internal static class RuntimeApplication
         {
             World world = await worldTask.ConfigureAwait(false);
             long started = Stopwatch.GetTimestamp();
-            RuntimeScene scene = await RuntimeScene.CreateAsync<TMaterials>(world, content).ConfigureAwait(false);
+            RuntimeScene scene = await RuntimeScene.CreateAsync<TMaterials>(world, content,
+                (script?.Application ?? application)?.InitializeMesh).ConfigureAwait(false);
             startup.RecordWork("SceneResources", started);
             return scene;
         });
@@ -237,7 +241,7 @@ internal static class RuntimeApplication
             temporalShaderTask.Result,
             boot,
             title,
-            forceHardwareRaster: useWarp || options.ForceHardwareRaster, animateMaterial, application, script);
+            forceHardwareRaster: useWarp || options.ForceHardwareRaster, application, script);
     }
 
     private static SessionDesc CreateShaderSessionDescription(
@@ -453,6 +457,31 @@ internal static class RuntimeApplication
         }
     }
 
+    private static void ReconfigureSwapchain(
+        IGraphicsBackend backend,
+        Swapchain swapchain,
+        RuntimeStartupOptions options,
+        int width,
+        int height,
+        bool hardwareAccelerated,
+        RenderFrameCoordinator coordinator,
+        global::SomeEngine.RenderGraph.RenderGraph graph)
+    {
+        // Resize retires this renderer's accepted work, not unrelated device work.
+        // Completed graph slots still own cached back-buffer views until compacted.
+        coordinator.WaitForTrackedSubmissions();
+        graph.CollectCompleted();
+        graph.CompactTransientResources();
+        ReconfigureSwapchain(backend, swapchain, options, width, height, hardwareAccelerated);
+    }
+
+    private static RenderGraphNextFrame OpenNextGraphFrame(global::SomeEngine.RenderGraph.RenderGraph graph)
+    {
+        if (!graph.TryOpenNextFrame(out RenderGraphNextFrame next, FrameTimeout))
+            throw new TimeoutException("RenderGraph frame resources did not become available before the runtime timeout.");
+        return next;
+    }
+
     private static SwapchainImage AcquireImage(
         IGraphicsBackend backend,
         Swapchain swapchain,
@@ -496,25 +525,22 @@ internal static class RuntimeApplication
         Shader temporalShader,
         ApplicationSettingsBlock boot,
         string title,
-        bool forceHardwareRaster, Func<Material, float, bool>? animateMaterial, ApplicationScene? application, SceneScript? script)
+        bool forceHardwareRaster, ApplicationScene? application, SceneScript? script)
     {
         using World mainWorld = loadedWorld;
-        using ScreenText? screenText = options.SurfacePanel || options.HudOverlay ? new ScreenText(mainWorld) : null;
-        using SurfacePanelExample? surfacePanel = options.SurfacePanel
-            ? new SurfacePanelExample(mainWorld, boot.Width, boot.Height, screenText!) : null;
-        using HudOverlay? hud = options.HudOverlay ? new HudOverlay(mainWorld, boot.Width, boot.Height, screenText!) : null;
-        using SphereNameplates? nameplates = options.WorldNameplates
-            ? new SphereNameplates(mainWorld, scene.GetMovingMeshEntities()) : null;
+        using RuntimeScene loadedSceneResources = scene;
+        var sceneEdit = new SceneEdit(scene, window);
+        IDisposable? createdResources = null;
+        if (application?.CreateSceneResources is { } createSceneResources)
+            sceneEdit.Invoke(() => createdResources = createSceneResources(mainWorld, sceneEdit));
+        using IDisposable? sceneResources = createdResources;
         using var renderWorld = new RenderWorld(initialEntityCapacity: 2048, execution: new WorldJobs(JobSystem.Default));
         using var extraction = new RenderExtractionSystems(renderWorld, new MeshRenderExtractor(), new LightRenderExtractor(),
             new MaterialDecalRenderExtractor(), new XrayRenderExtractor(), new WorldOriginRenderExtractor(),
             new SurfaceRenderExtractor(), new SkinRenderExtractor(), new SkinBoundsRenderExtractor());
-        if (screenText is not null) extraction.Add(new GlyphRenderExtractor(screenText.AtlasSource));
 
-        bool includeInterface = application?.InterfaceEnabled == true ||
-            options.SurfacePanel || options.HudOverlay || options.WorldNameplates;
+        bool includeInterface = application?.InterfaceEnabled == true;
         using var elementSystems = new GameFrameSystems(mainWorld, includeInterface);
-        if (nameplates is not null) elementSystems.AddInterfaceSystem(nameplates);
         using WindowInput? elementInput = includeInterface ? new WindowInput(mainWorld) : null;
         ApplicationFrameMeasurements? measurements = application?.FrameMeasured is { } receiveTiming
             ? new(receiveTiming) : null;
@@ -739,14 +765,11 @@ internal static class RuntimeApplication
                 MaxCandidates = script?.ClusterWorkCapacity ?? 1_048_576,
             }, viewGrid: additionalView is null ? blendGrid : default, deformBounds: skinBounds);
 
-        GameUpdateTiming UpdateInterface(int frameNumber, int canvasWidth, int canvasHeight, double deltaSeconds, long gameUpdateStarted)
+        GameUpdateTiming UpdateInterface(double deltaSeconds, long gameUpdateStarted)
         {
             geometry.UpdateGame(deltaSeconds);
             long allocated = measure ? GC.GetAllocatedBytesForCurrentThread() : 0;
             long started = measure ? Stopwatch.GetTimestamp() : 0;
-            surfacePanel?.Resize(canvasWidth, canvasHeight);
-            hud?.Resize(canvasWidth, canvasHeight);
-            if (options.HudNumbersChange) hud?.Update(frameNumber);
             if (!measure)
             {
                 elementSystems.UpdateViews(deltaSeconds);
@@ -795,7 +818,6 @@ internal static class RuntimeApplication
 
         int frameIndex = 0;
         uint submittedFrames = 0;
-        var sceneEdit = new SceneEdit(scene, window);
         var applicationFrame = new ApplicationFrame(mainWorld, elementSystems, extraction, sceneEdit, input, cluster, startup, device.Adapter, measureShadowInvalidation)
             { Width = boot.Width, Height = boot.Height };
         int actionIndex = 0;
@@ -816,10 +838,8 @@ internal static class RuntimeApplication
             else
             {
                 gameStarted = Stopwatch.GetTimestamp();
-                if (options.ScenePlayback is not null)
-                    scene.Play(0, options.ScenePlayback is "materials" or "camera", animateMaterial,
-                        orbitCamera: options.ScenePlayback == "camera");
-                gameTiming = UpdateInterface(0, boot.Width, boot.Height, 0, gameStarted);
+                sceneEdit.Invoke(application?.BeforeCameraInput, 0);
+                gameTiming = UpdateInterface(0, gameStarted);
             }
 
             outputVerifier = options.VerifyFrameOutput || (options.FrameOutputPath is not null && options.CaptureFrame is null)
@@ -842,7 +862,6 @@ internal static class RuntimeApplication
             startup.RecordStage("RenderResources");
             long previousFrameTimestamp = Stopwatch.GetTimestamp();
             long traceFrameIndex = 0;
-            bool animateScene = options.DynamicScene;
             bool debugUiOpen = !options.HideDebugUi && !options.VerifyFrameOutput;
             FrameOutputMetrics? verifiedOutput = null;
             uint maximumRecoveredClusters = 0;
@@ -903,8 +922,7 @@ internal static class RuntimeApplication
                 }
                 backend.CollectCompleted(device);
                 coordinator.AdmitFrameResources();
-                if (!renderGraph.TryOpenNextFrame(out RenderGraphNextFrame nextGraphFrame, FrameTimeout))
-                    throw new TimeoutException("RenderGraph frame resources did not become available before the runtime timeout.");
+                RenderGraphNextFrame nextGraphFrame = OpenNextGraphFrame(renderGraph);
                 using var graphFrameResources = nextGraphFrame;
                 // Shared asset content can change only after the Game World extraction reader exits.
                 if (nextGameUpdate is not null)
@@ -939,9 +957,13 @@ internal static class RuntimeApplication
                 int clientWidth = window.ClientWidth;
                 int clientHeight = window.ClientHeight;
                 bool cameraCut = script?.UseCameraHistory == false;
-                if (clientWidth > 0 && clientHeight > 0 &&
-                    (clientWidth != width || clientHeight != height))
+                bool outputSizeChanged = clientWidth > 0 && clientHeight > 0 &&
+                    (clientWidth != width || clientHeight != height);
+                if (outputSizeChanged)
                 {
+                    // Admission still precedes game/input work. No graph writes have begun,
+                    // so release this empty reservation before compacting retained views.
+                    nextGraphFrame.Dispose();
                     outputVerifier?.Dispose();
                     outputVerifier = null;
                     linearVerifier?.Dispose();
@@ -952,7 +974,9 @@ internal static class RuntimeApplication
                         options,
                         clientWidth,
                         clientHeight,
-                        device.Adapter.HardwareAccelerated);
+                        device.Adapter.HardwareAccelerated,
+                        coordinator,
+                        renderGraph);
                     width = clientWidth;
                     height = clientHeight;
                     cameraCut = true;
@@ -960,6 +984,13 @@ internal static class RuntimeApplication
                         ? new FrameOutputVerifier(backend, device, width, height, PresentationFormat)
                         : null;
                 }
+
+                // Resize must not skip a scene action or advance logical frame time. Own a
+                // replacement reservation for the remainder of this same iteration.
+                using RenderGraphNextFrame? resizedGraphFrameResources = outputSizeChanged
+                    ? OpenNextGraphFrame(renderGraph) : null;
+                if (resizedGraphFrameResources is not null)
+                    nextGraphFrame = resizedGraphFrameResources;
 
                 long currentFrameTimestamp = Stopwatch.GetTimestamp();
                 float deltaSeconds = Math.Clamp(
@@ -992,9 +1023,8 @@ internal static class RuntimeApplication
                 cameraCut |= sceneEdit.CameraCut;
                 if (sceneEdit.ShadowMapRefreshRequested) virtualShadows.InvalidateAllCasters();
 
-                if (options.ScenePlayback is not null && (synchronousGame))
-                    scene.Play(sceneSeconds, options.ScenePlayback is "materials" or "camera", animateMaterial,
-                        orbitCamera: options.ScenePlayback == "camera");
+                if (synchronousGame)
+                    sceneEdit.Invoke(application?.BeforeCameraInput, sceneSeconds);
                 ui.BeginFrame(deltaSeconds, width, height, window.DpiScale);
                 SomeEngine.Elements.InputCapture elementCapture = elementInput?.InputCapture ?? default;
                 scene.Camera.Update(
@@ -1004,9 +1034,8 @@ internal static class RuntimeApplication
                     ui.WantCaptureMouse || elementCapture.Pointer);
                 if (synchronousGame)
                 {
-                    if (animateScene && options.ScenePlayback is null)
-                        scene.Update(sceneSeconds);
-                    gameTiming = UpdateInterface(frameIndex, width, height, deltaSeconds, gameStarted);
+                    sceneEdit.Invoke(application?.SimulateScene, sceneSeconds);
+                    gameTiming = UpdateInterface(deltaSeconds, gameStarted);
                 }
                 Matrix4x4 unjitteredProjection = scene.Projection(width, height);
                 RuntimeViewFrame viewFrame = RuntimeViewFrame.Create(
@@ -1024,7 +1053,6 @@ internal static class RuntimeApplication
                 viewSystem.Stage(viewFrame.View);
                 if (application?.DebugUiEnabled != false && debugUiOpen) ui.DrawDebugWindow(
                     ref debugUiOpen,
-                    ref animateScene,
                     new RuntimeUiMetrics(
                         frameIndex,
                         deltaSeconds,
@@ -1277,14 +1305,12 @@ internal static class RuntimeApplication
                     options.FrameLimit == 0 || frameIndex + 1 < options.FrameLimit;
                 if (hasFutureFrame && !synchronousGame)
                 {
-                    bool updateScene = animateScene;
+                    Action<SceneEdit, float>? beforeCameraInput = application?.BeforeCameraInput;
+                    Action<SceneEdit, float>? simulateScene = application?.SimulateScene;
                     float nextSceneTime = options.FixedFrameSeconds > 0 ? (frameIndex + 1) * options.FixedFrameSeconds : (float)Stopwatch.GetElapsedTime(
                         runtimeStarted,
                         Stopwatch.GetTimestamp()).TotalSeconds;
                     TraceContext gameTrace = EngineTrace.Context with { Frame = traceFrameIndex + 1 };
-                    int nextCanvasWidth = width;
-                    int nextCanvasHeight = height;
-                    int nextFrameNumber = frameIndex + 1;
                     nextGameStarted = Stopwatch.GetTimestamp();
                     nextGameUpdate = Task.Run(() =>
                     {
@@ -1293,12 +1319,9 @@ internal static class RuntimeApplication
                         using var trace = EngineTrace.Begin(ApplicationTrace.GameUpdate);
                         // CPU rendering has finished reading shared resources. Apply next-frame
                         // resource edits here while submitted GPU work retains its device data.
-                        if (options.ScenePlayback is not null)
-                            scene.Play(nextSceneTime, options.ScenePlayback is "materials" or "camera", animateMaterial,
-                                orbitCamera: options.ScenePlayback == "camera");
-                        else if (updateScene)
-                            scene.Update(nextSceneTime);
-                        return UpdateInterface(nextFrameNumber, nextCanvasWidth, nextCanvasHeight, deltaSeconds, updateStarted);
+                        sceneEdit.Invoke(beforeCameraInput, nextSceneTime);
+                        sceneEdit.Invoke(simulateScene, nextSceneTime);
+                        return UpdateInterface(deltaSeconds, updateStarted);
                     });
                 }
 
@@ -1322,7 +1345,9 @@ internal static class RuntimeApplication
                         options,
                         width,
                         height,
-                        device.Adapter.HardwareAccelerated);
+                        device.Adapter.HardwareAccelerated,
+                        coordinator,
+                        renderGraph);
 
                 applicationFrame.Timing = new(Stopwatch.GetElapsedTime(frameStarted).TotalMilliseconds,
                     prepareMs, reconcileMs, executeMs, gameTiming.Views, gameTiming.ExtractionMs,

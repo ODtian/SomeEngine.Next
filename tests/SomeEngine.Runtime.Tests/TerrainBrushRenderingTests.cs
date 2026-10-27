@@ -20,6 +20,7 @@ public sealed class TerrainBrushRenderingTests(SceneContentFixture content)
         TerrainEdit edit = default;
         var application = new ApplicationScene(content.DirectoryPath)
         {
+            RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
             Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "18"]),
             UpdateFrame = frame =>
@@ -39,7 +40,7 @@ public sealed class TerrainBrushRenderingTests(SceneContentFixture content)
         };
         example.Install(application);
 
-        Assert.Equal(0, await Application.RunAsync([], application: application));
+        Assert.True((await Application.RunAsync([], application: application)).Succeeded);
         HeightFieldRead current = await example.Heights.ReadCpuAsync(example.Heights.Grid.Range);
         Assert.Equal(3f, initial[2, 2]);
         Assert.Equal(.33333334f, current[2, 2], tolerance: 1e-6f);
@@ -57,6 +58,7 @@ public sealed class TerrainBrushRenderingTests(SceneContentFixture content)
         TerrainEdit edit = default;
         var application = new ApplicationScene(content.DirectoryPath)
         {
+            RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
             Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "18"]),
             UpdateFrame = frame =>
@@ -75,7 +77,7 @@ public sealed class TerrainBrushRenderingTests(SceneContentFixture content)
         };
         example.Install(application);
 
-        Assert.Equal(0, await Application.RunAsync([], application: application));
+        Assert.True((await Application.RunAsync([], application: application)).Succeeded);
         VoxelFieldRead current = await example.Field.ReadCpuAsync(example.SampleRegion);
         Assert.Equal(-1f, initial[-1, 0, 0]);
         Assert.Equal(0f, current[-1, 0, 0]);

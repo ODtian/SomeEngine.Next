@@ -38,7 +38,7 @@ public sealed class ClusterPipelineOutputTests
             residencyOptions: new ClusterResidencyOptions
             {
                 PageHeapCapacityBytes = 2048, BvhCapacityBytes = 65536,
-                PageFaultCapacity = 16, MaxConcurrentPageLoads = 1,
+                PageFaultCapacity = 16,
             });
         scene.SetGeometryVisible(false);
         scene.AddStreamingMesh(mesh, payload, transform);
@@ -89,6 +89,8 @@ public sealed class ClusterPipelineOutputTests
     [InlineData(31)]
     [InlineData(32)]
     [InlineData(33)]
+    [InlineData(63)]
+    [InlineData(64)]
     [InlineData(65)]
     [Trait("Category", "Hardware")]
     public async Task CasterRowsPreserveRenderedShadowsAcrossAgingClassChangesAndDiscard(int count)

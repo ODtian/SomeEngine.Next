@@ -84,6 +84,17 @@ public sealed class ShaderResourceUsageTests
         if (!includeUsage)
         {
             await Assert.ThrowsAsync<InvalidDataException>(() => reopened.CreateSavedAsync(ShaderTestCompilation.Slang, description).AsTask());
+            await Assert.ThrowsAsync<InvalidDataException>(() => reopened.CreateAsync(ShaderTestCompilation.Slang, description).AsTask());
+            // The first requested target is absent; the second still has code without usage.
+            using (var mixed = new ShaderBlock
+            {
+                InputVersions = reopened.GetBlock<ShaderBlock>().InputVersions.ToList(),
+            })
+            {
+                mixed.SetEntryCode(description, 1, 0, compiled.GetSlangEntryBytes(1, 0).ToArray());
+                reopened.SetBlock(mixed);
+            }
+            await Assert.ThrowsAsync<InvalidDataException>(() => reopened.CreateAsync(ShaderTestCompilation.Slang, description).AsTask());
             return;
         }
         Shader restored = await reopened.CreateSavedAsync(ShaderTestCompilation.Slang, description);

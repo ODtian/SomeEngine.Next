@@ -6,7 +6,7 @@ param(
     [ValidateSet('NativeAOT', 'JIT')][string]$Backend = 'NativeAOT',
     [ValidateSet('measure', 'phases')][string]$Mode = 'measure',
     [ValidateSet('Normal', 'Fixed')][string[]]$Machine = @('Fixed'),
-    [string]$QueueScript = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../tools/Invoke-Benchmark.ps1')),
+    [string]$QueueScript = 'F:/SomeEngine.Next/tools/Invoke-Benchmark.ps1',
     [string]$Session = $env:CODEX_THREAD_ID,
     [switch]$CollectReports,
     [string]$SourceCommit
@@ -48,7 +48,7 @@ try {
             $reportId = if ($Machine.Count -gt 1) { "$($case.Id)-$($configuration.ToLowerInvariant())" } else { $case.Id }
             if ($request.Comparison -eq 'HandwrittenControl') { $reportId += '-control' }
             $report = Join-Path $reportDirectory "$reportId.json"
-            [string[]]$arguments = @('--session', $Session) + $prefix + @('--mode', $Mode, '--case', $case.Class, '--size', $case.Size,
+            [string[]]$arguments = @('--exclusive', '--session', $Session) + $prefix + @('--mode', $Mode, '--case', $case.Class, '--size', $case.Size,
                 '--variant', $case.Variant, '--source', $sourceCommit, '--backend', $Backend, '--machine', $configuration,
                 '--comparison', $request.Comparison, '--output', $report)
             $submitted = & $queueTool @arguments | ConvertFrom-Json

@@ -215,7 +215,8 @@ public static partial class JobEntityRuntime
             {
                 world.ActiveStructureRoot.Iteration.EndQueryBorrow();
                 if (Interlocked.Decrement(ref discovery.Remaining) == 0 && Volatile.Read(ref discovery.Failed) == 0)
-                    JobSystem.Schedule(new CombineComponentResources<TJob, TAdapter>(discovery));
+                    // Keep packet reads within discovery's work grant until the execution accesses are registered.
+                    new CombineComponentResources<TJob, TAdapter>(discovery).Execute();
             }
         }
     }

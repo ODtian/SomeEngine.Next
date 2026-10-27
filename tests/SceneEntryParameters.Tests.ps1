@@ -37,7 +37,103 @@ $checks = @(
         & $measurement -ApplicationPath $missingApplication -Scene ''
     }
 )
+# Flat-output guards run inside the public script body. An absent application
+# would stop too early; a read-locked, non-PE props file reaches those guards but
+# cannot become an engine if a guard regresses. No -Trace: no fallback directory.
+$flatDirectory = Join-Path $repository 'samples/DefaultGame/obj'
+if (![IO.Directory]::Exists($flatDirectory)) {
+    throw [IO.DirectoryNotFoundException]::new('Flat-output checks require the existing DefaultGame obj directory.')
+}
+$guardApplication = Join-Path $repository 'Directory.Build.props'
+$environmentNames = @('SOMEENGINE_MEASUREMENT_OUTPUT_DIRECTORY', 'SOMEENGINE_MEASUREMENT_OUTPUT_BASENAME')
+$savedEnvironment = @{}
+foreach ($name in $environmentNames) {
+    $savedEnvironment[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
+}
+
+function Assert-FlatOutputRejected {
+    param([hashtable]$Case)
+    $collision = $null
+    try {
+        if ($Case.CollisionSuffix) {
+            $collisionPath = Join-Path $flatDirectory ($Case.Basename + $Case.CollisionSuffix)
+            # CreateNew cannot replace foreign content. DeleteOnClose cleans up
+            # only this owned handle/file, even when the assertion below fails.
+            $collision = [IO.FileStream]::new($collisionPath, [IO.FileMode]::CreateNew,
+                [IO.FileAccess]::ReadWrite, [IO.FileShare]::Read, 4096,
+                [IO.FileOptions]::DeleteOnClose)
+            $collision.WriteByte(0x78)
+            $collision.Flush()
+            if (![IO.File]::Exists($collisionPath)) {
+                throw [IO.IOException]::new('The collision fixture is not visible.')
+            }
+        }
+        [Environment]::SetEnvironmentVariable('SOMEENGINE_MEASUREMENT_OUTPUT_DIRECTORY', $Case.Directory, 'Process')
+        [Environment]::SetEnvironmentVariable('SOMEENGINE_MEASUREMENT_OUTPUT_BASENAME', $Case.Basename, 'Process')
+        $rejected = $false
+        try {
+            & $measurement -ApplicationPath $guardApplication -FromBenchmarkQueue -OnDefaultDesktop 6>$null
+        } catch {
+            # Different failures (including Process.Start rejecting the props
+            # file) must not masquerade as successful flat-output validation.
+            if ($_.Exception.Message -cne $Case.Error) { throw }
+            $rejected = $true
+        }
+        if (!$rejected) {
+            throw [InvalidOperationException]::new("Flat output was not rejected: $($Case.Name)")
+        }
+        return [pscustomobject]@{ Check = $Case.Name; Passed = $true }
+    } finally {
+        if ($null -ne $collision) {
+            try {
+                $collision.Position = 0
+                if ($collision.Length -ne 1 -or $collision.ReadByte() -ne 0x78) {
+                    throw [IO.IOException]::new('The collision fixture content changed.')
+                }
+            } finally { $collision.Dispose() }
+        }
+    }
+}
+
+$applicationGuard = $null
+try {
+    $applicationGuard = [IO.File]::Open($guardApplication, [IO.FileMode]::Open,
+        [IO.FileAccess]::Read, [IO.FileShare]::Read)
+    $firstByte = $applicationGuard.ReadByte()
+    $secondByte = $applicationGuard.ReadByte()
+    if ($firstByte -eq 0x4d -and $secondByte -eq 0x5a) {
+        throw [IO.InvalidDataException]::new('The application guard must not be a Windows executable.')
+    }
+    $basename = 'flat-check-' + [Guid]::NewGuid().ToString('N')
+    $missingDirectory = Join-Path $flatDirectory ('missing-flat-' + [Guid]::NewGuid().ToString('N'))
+    if (Test-Path -LiteralPath $missingDirectory) {
+        throw [IO.IOException]::new('The absent-directory guard path already exists.')
+    }
+    $invalid = 'Flat measurement output requires an existing absolute directory and an ASCII basename.'
+    $exists = 'Flat measurement output already exists.'
+    $flatCases = @(
+        @{ Name = 'Flat output rejects a relative directory'; Directory = 'samples/DefaultGame/obj'; Basename = $basename; Error = $invalid }
+        @{ Name = 'Flat output rejects a nonexistent directory'; Directory = $missingDirectory; Basename = $basename; Error = $invalid }
+        @{ Name = 'Flat output rejects an invalid basename'; Directory = $flatDirectory; Basename = 'bad.name'; Error = $invalid }
+        @{ Name = 'Flat output rejects an existing report'; Directory = $flatDirectory; Basename = $basename; CollisionSuffix = '-results.json'; Error = $exists }
+        @{ Name = 'Flat output rejects existing frame samples'; Directory = $flatDirectory; Basename = $basename; CollisionSuffix = '-frame-samples.json'; Error = $exists }
+    )
+    foreach ($case in $flatCases) {
+        $checks += Assert-FlatOutputRejected $case
+    }
+    if (Test-Path -LiteralPath $missingDirectory) {
+        throw [IO.IOException]::new('The rejected missing output directory was created.')
+    }
+} finally {
+    try {
+        foreach ($name in $environmentNames) {
+            [Environment]::SetEnvironmentVariable($name, $savedEnvironment[$name], 'Process')
+        }
+    } finally {
+        if ($null -ne $applicationGuard) { $applicationGuard.Dispose() }
+    }
+}
 $checks | Format-Table Check, Passed
-if ($checks.Count -ne 5 -or @($checks | Where-Object Passed -ne $true).Count -ne 0) {
-    throw [InvalidOperationException]::new('The public parameter checks did not all complete.')
+if ($checks.Count -ne 10 -or @($checks | Where-Object Passed -ne $true).Count -ne 0) {
+    throw [InvalidOperationException]::new('The public parameter and flat-output checks did not all complete.')
 }

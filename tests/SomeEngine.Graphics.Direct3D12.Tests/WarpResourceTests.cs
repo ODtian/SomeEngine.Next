@@ -322,14 +322,13 @@ public sealed class WarpResourceTests
     }
 
     [Fact]
-    public unsafe void Wait_fractional_timeout_polls_and_a_failed_timeout_leaves_the_completion_usable()
+    public async Task Wait_fractional_timeout_polls_and_a_failed_timeout_leaves_the_completion_usable()
     {
         using var backend = new ValidationLayer(D3D12GraphicsBackend.Create());
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         using ExternalTimeline gate = backend.CreateExternalTimeline(device, initialValue: 0);
         using var ready = new Barrier(3);
         Queue queue = backend.GetQueue(device, QueueType.Graphics);
-        var nativeGate = backend.GetNativeTimeline(gate);
         TimeSpan timeout = TimeSpan.FromSeconds(10);
         Task<WaitStatus>? firstWait = null;
         Task<WaitStatus>? secondWait = null;
@@ -348,29 +347,29 @@ public sealed class WarpResourceTests
             firstWait = StartWait(first);
             secondWait = StartWait(second);
             Assert.True(ready.SignalAndWait(timeout));
-            Assert.True(nativeGate->Signal(1) >= 0);
-            Assert.True(firstWait.Wait(timeout));
-            Assert.Equal(WaitStatus.Completed, firstWait.Result);
+            Assert.True(Signal(1) >= 0);
+            Assert.Equal(WaitStatus.Completed, await firstWait.WaitAsync(timeout));
             Assert.False(backend.IsComplete(second));
             Assert.False(secondWait.IsCompleted);
             // A consumed/reused event, or an abandoned earlier registration, must
             // never satisfy a different fence target while that target is gated.
             Assert.Equal(WaitStatus.Timeout, backend.WaitCpu(second, TimeSpan.Zero));
-            Assert.True(nativeGate->Signal(2) >= 0);
-            Assert.True(secondWait.Wait(timeout));
-            Assert.Equal(WaitStatus.Completed, secondWait.Result);
+            Assert.True(Signal(2) >= 0);
+            Assert.Equal(WaitStatus.Completed, await secondWait.WaitAsync(timeout));
             Assert.Equal(WaitStatus.Completed, backend.WaitCpu(second, TimeSpan.Zero));
         }
         finally
         {
             // Release both GPU gates even if an assertion or a waiter fails, before
             // device disposal can quiesce its queues. Workers have bounded waits.
-            int released = nativeGate->Signal(2);
+            int released = Signal(2);
             Task[] waiters = secondWait is not null ? [firstWait!, secondWait] :
                 firstWait is not null ? [firstWait] : [];
-            Task.WhenAll(waiters).GetAwaiter().GetResult();
+            await Task.WhenAll(waiters);
             Assert.True(released >= 0);
         }
+
+        unsafe int Signal(ulong value) => backend.GetNativeTimeline(gate)->Signal(value);
 
         Task<WaitStatus> StartWait(QueueCompletion completion) => Task.Factory.StartNew(() =>
         {

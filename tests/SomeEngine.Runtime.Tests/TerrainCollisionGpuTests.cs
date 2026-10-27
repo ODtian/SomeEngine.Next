@@ -31,12 +31,13 @@ public sealed class TerrainCollisionGpuTests(SceneContentFixture content)
         Task<VoxelFieldRead> latest = field.ReadCpuAsync(range).AsTask();
         var application = new ApplicationScene(content.DirectoryPath)
         {
+            RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
             Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "16"]),
         };
         application.InstallGeometry(new TerrainGpuEditingTests.FieldFeature(terrain));
 
-        Assert.Equal(0, await Application.RunAsync([], application: application));
+        Assert.True((await Application.RunAsync([], application: application)).Succeeded);
         TerrainCollisionMesh mesh = await build;
         TerrainDistanceQuery distance = (await read).QueryDistance(new(0, .75f, 0), .1f);
         TerrainDistanceQuery current = (await latest).QueryDistance(distance.Position, .1f);

@@ -7,6 +7,7 @@
     <SlangStandardModuleSourceRoot>$(MSBuildThisFileDirectory)Fixtures\$(SlangTestFixtureDirectory)</SlangStandardModuleSourceRoot>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../Shared/RayTracingInstanceAssertions.cs" Link="RayTracingInstanceAssertions.cs" />
     <Compile Include="../Shared/HardwareRowsDiscoverer.cs" Link="HardwareRowsDiscoverer.cs" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="xunit" Version="2.9.3" />
@@ -26,11 +27,11 @@
   </ItemGroup>
   <ItemGroup>
     <Content Include="Fixtures/*.dxil" CopyToOutputDirectory="PreserveNewest" />
-    <Content Include="../../external/dxc/bin/x64/dxcompiler.dll">
+    <Content Include="../../external/dxc/bin/x64/dxcompiler.dll" DependencyBinary="true">
       <Link>dxcompiler.dll</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <Content Include="../../external/dxc/bin/x64/dxil.dll">
+    <Content Include="../../external/dxc/bin/x64/dxil.dll" DependencyBinary="true">
       <Link>dxil.dll</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>

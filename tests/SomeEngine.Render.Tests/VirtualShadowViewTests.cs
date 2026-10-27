@@ -257,7 +257,7 @@ public sealed class VirtualShadowViewTests(RenderTestDevice graphics) : IClassFi
                 Assert.True(graphics.Coordinator.TryBeginPrepare(out var prepare));
                 using (prepare)
                 {
-                    systems.Update(prepare, nextFrame);
+                    systems.Update(prepare);
                     prepare.Commit();
                 }
                 Assert.True(graphics.Coordinator.TryBeginFrame(out var read));
@@ -341,7 +341,7 @@ public sealed class VirtualShadowViewTests(RenderTestDevice graphics) : IClassFi
                 Assert.True(graphics.Coordinator.TryBeginPrepare(out var prepare));
                 using (prepare)
                 {
-                    systems.Update(prepare, nextFrame);
+                    systems.Update(prepare);
                     prepare.Commit();
                 }
             }

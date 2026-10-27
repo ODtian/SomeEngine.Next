@@ -63,9 +63,9 @@ public sealed partial class CanvasDrawingTests
         using var renderDevice = new RenderDevice(backend, device);
         using var graph = new RenderGraph(backend, device, [queue]);
         using var world = new RenderWorld();
-        using SurfaceMaterial material = SurfaceMaterial.Create(device.Capabilities.CompileTarget);
-        using ImageMaterial? imageMaterial = image ? ImageMaterial.Create(device.Capabilities.CompileTarget) : null;
-        using SomeEngine.Resources.Texture texture = SomeEngine.Resources.Texture.Create(
+        SurfaceMaterial material = SurfaceMaterial.Create(device.Capabilities.CompileTarget);
+        ImageMaterial? imageMaterial = image ? ImageMaterial.Create(device.Capabilities.CompileTarget) : null;
+        SomeEngine.Resources.Texture texture = SomeEngine.Resources.Texture.Create(
             new TextureDesc(TextureDimension.Texture2D, 1, 1, 1, 1, 1, 1, Format.R8G8B8A8UNorm,
                 TextureUsages.Sampled | TextureUsages.CopyDestination),
             [new TexturePixels(new TextureMipTile { Width = 1, Height = 1, ChunkKey = 0, DecodedLength = 4,

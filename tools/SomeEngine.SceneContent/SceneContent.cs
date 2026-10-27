@@ -1,4 +1,5 @@
 using System.Numerics;
+using DefaultGame;
 using DefaultGame.Content;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
@@ -65,7 +66,7 @@ public static class SceneContent
         using var application = await ApplicationSettingsAsset.OpenAsync(loader, new(applicationEntry.AssetGuid));
         var settings = await application.GetBlockAsync<ApplicationSettingsBlock>();
         using var original = await WorldAsset.OpenAsync(loader, settings.Scene);
-        using var originalWorld = await original.LoadAsync(SceneSerialization.CreateRegistry());
+        using var originalWorld = await original.LoadAsync(SampleSceneSerialization.CreateRegistry());
         AssetId<MeshAsset> meshId = default;
         var query = originalWorld.Query(new QueryDefinitionBuilder().Read<MeshSource>());
         try

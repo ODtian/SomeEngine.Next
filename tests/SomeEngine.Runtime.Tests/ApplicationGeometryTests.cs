@@ -23,6 +23,7 @@ public sealed class ApplicationGeometryTests(SceneContentFixture content)
         Mesh? mesh = null;
         var scene = new ApplicationScene(content.DirectoryPath)
         {
+            RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
             GeometryBvhMemoryBytes = clusters.BvhLength * 3,
             Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "20"]),
@@ -35,9 +36,9 @@ public sealed class ApplicationGeometryTests(SceneContentFixture content)
             },
         };
 
-        int result = await Application.RunAsync([], application: scene);
+        ApplicationResult result = await Application.RunAsync([], application: scene);
 
-        Assert.Equal(0, result);
+        Assert.True(result.Succeeded, result.Error?.ToString());
         SceneImages.AssertEqual(before!, after!);
     }
 
@@ -49,6 +50,7 @@ public sealed class ApplicationGeometryTests(SceneContentFixture content)
         var inspection = new GeometryInspection();
         var scene = new ApplicationScene(content.DirectoryPath)
         {
+            RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
             Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "18"]),
             UpdateFrame = frame =>
@@ -65,9 +67,9 @@ public sealed class ApplicationGeometryTests(SceneContentFixture content)
         };
         scene.InstallGeometry(inspection);
 
-        int result = await Application.RunAsync([], application: scene);
+        ApplicationResult result = await Application.RunAsync([], application: scene);
 
-        Assert.Equal(0, result);
+        Assert.True(result.Succeeded, result.Error?.ToString());
         Assert.Equal(2, inspection.Geometries.Count);
         ClusterGeometry first = inspection.Geometries[0], second = inspection.Geometries[1];
         Assert.Equal(first.Revision + 1, second.Revision);

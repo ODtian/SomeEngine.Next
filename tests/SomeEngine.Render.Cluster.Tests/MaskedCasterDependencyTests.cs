@@ -513,15 +513,14 @@ public sealed class MaskedCasterDependencyTests : IClassFixture<MaskedCasterDepe
             SourceNames = [name + ".slang"],
             Specializations =
             [
-                new ShaderSpecialization { EntryPoint = "ClusterForwardShade", Arguments = ["1", "0", "false"] },
-                new ShaderSpecialization { EntryPoint = "ClusterForwardShade", Arguments = ["1", "0", "true"] },
-                new ShaderSpecialization { EntryPoint = "ClusterShadowReceiver", Arguments = ["1", "0"] },
+                new ShaderSpecialization { EntryPoint = "ClusterForwardShade", Arguments = ["1", "0"] },
+                new ShaderSpecialization { EntryPoint = "ClusterShadowRequests", Arguments = ["1", "0"] },
             ],
         };
         inputs.SetSerializedSource(0, serialized.Buffer);
         Shader shader = inputs.CreateAsync(slang, description, name).AsTask().GetAwaiter().GetResult();
-        Assert.True(shader.TryGetSpecialization("ClusterForwardShade", ["1", "0", "false"], out _));
-        Assert.True(shader.TryGetSpecialization("ClusterShadowReceiver", ["1", "0"], out _));
+        Assert.True(shader.TryGetSpecialization("ClusterForwardShade", ["1", "0"], out _));
+        Assert.True(shader.TryGetSpecialization("ClusterShadowRequests", ["1", "0"], out _));
         return shader;
     }
 }

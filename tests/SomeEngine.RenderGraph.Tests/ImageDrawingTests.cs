@@ -72,8 +72,8 @@ public sealed class ImageDrawingTests
         using var graph = new RenderGraph(backend, device, [backend.GetQueue(device, QueueType.Graphics)]);
         using var game = new World();
         using var render = new RenderWorld();
-        using Texture texture = CreateTexture(mixed ? [255, 0, 0, 128] : null);
-        using Texture secondTexture = CreateTexture([0, 255, 0, 128]);
+        Texture texture = CreateTexture(mixed ? [255, 0, 0, 128] : null);
+        Texture secondTexture = CreateTexture([0, 255, 0, 128]);
         Texture? ready = null;
         var source = new AssetId<TextureAsset>(Guid.NewGuid());
         var secondSource = new AssetId<TextureAsset>(Guid.NewGuid());
@@ -97,8 +97,8 @@ public sealed class ImageDrawingTests
             game.Add(overlay, new Surface { Fill = new Color(1, 1, 1, 0.5f) });
         }
         using var extraction = new RenderExtractionSystems(render, new CanvasRenderExtractor());
-        using SurfaceMaterial surfaces = SurfaceMaterial.Create(device.Capabilities.CompileTarget);
-        using ImageMaterial images = ImageMaterial.Create(device.Capabilities.CompileTarget);
+        SurfaceMaterial surfaces = SurfaceMaterial.Create(device.Capabilities.CompileTarget);
+        ImageMaterial images = ImageMaterial.Create(device.Capabilities.CompileTarget);
         using var renderer = new CanvasRenderer(backend, device, graph, render, surfaces,
             Format.R8G8B8A8UNorm, images, renderDevice);
         using SomeEngine.Graphics.Buffer readback = backend.CreateBuffer(device,

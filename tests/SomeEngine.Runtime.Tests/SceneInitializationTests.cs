@@ -21,7 +21,7 @@ public sealed class SceneInitializationTests(SceneContentFixture content)
                 "--static-scene", "--fixed-step", "0.016666667", "--no-vsync", "--no-taa", "--no-vsm",
                 "--no-debug-ui", "--frames", "12", "--linear-frame-output", path];
             var platform = new SceneTestPlatform([new("Initialized scene", content.DirectoryPath)],
-                RuntimeStartupOptions.Parse(arguments))
+                RuntimeStartupOptions.Parse(arguments), SampleSceneOptions.Parse(arguments))
             {
                 InitializeScene = (edit, _) =>
                 {
@@ -40,10 +40,11 @@ public sealed class SceneInitializationTests(SceneContentFixture content)
                         ((UnlitMaterial)edit.GetMaterial(red)).BaseColorTint = new(.7f, .2f, .9f, 1);
                 },
             };
-            Assert.Equal(0, await Application.RunAsync(arguments, application: platform.Application));
+            Assert.True((await Application.RunAsync(arguments, application: platform.Application)).Succeeded);
             SceneLinearImage actual = SceneLinearImage.Load(path);
             SceneLinearImage? expected = null;
-            await SceneImages.RunAsync("d3d12", new SceneScript(content.DirectoryPath, 12,
+            await SceneImages.RunAsync("d3d12", new SceneScript(new ApplicationScene(content.DirectoryPath)
+                { RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register }, 12,
             [
                 new(0, edit =>
                 {

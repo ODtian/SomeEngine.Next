@@ -24,6 +24,7 @@ public sealed class TerrainGpuLodGeometryTests(SceneContentFixture content)
         ApplicationResult? completed = null;
         var application = new ApplicationScene(content.DirectoryPath)
         {
+            RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
             SceneCompleted = value => completed = value,
             Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "18"]),
@@ -57,8 +58,8 @@ public sealed class TerrainGpuLodGeometryTests(SceneContentFixture content)
             },
         };
         gpu.Install(application);
-        int result = await Application.RunAsync([], application: application);
-        Assert.True(result == 0, completed?.Error?.ToString());
+        ApplicationResult result = await Application.RunAsync([], application: application);
+        Assert.True(result.Succeeded, completed?.Error?.ToString());
         Assert.Equal(new[] { 0, 1 }, nearChunks.Select(chunk => chunk.Lod).Distinct().Order());
         Assert.Contains(nearChunks, chunk => chunk.TransitionFaces != TerrainTransitionFaces.None);
         Assert.Equal(2, farChunks.Length);
@@ -69,6 +70,7 @@ public sealed class TerrainGpuLodGeometryTests(SceneContentFixture content)
 
         var reference = new ApplicationScene(content.DirectoryPath)
         {
+            RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
             Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "18"]),
             UpdateFrame = frame =>
@@ -91,7 +93,7 @@ public sealed class TerrainGpuLodGeometryTests(SceneContentFixture content)
             },
         };
         cpu.Install(reference);
-        Assert.Equal(0, await Application.RunAsync([], application: reference));
+        Assert.True((await Application.RunAsync([], application: reference)).Succeeded);
         SceneImages.AssertEqual(expectedNear!, near!);
         SceneImages.AssertEqual(expectedFar!, far!);
         SceneImages.AssertColorRegion(near!, 30, 30, 4, 4, 186, 0, 0);

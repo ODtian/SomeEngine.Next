@@ -2,7 +2,17 @@
 
 本页收录已实现的公共 API 与执行顺序。源码入口为 [ApplicationGeometry](../../../src/SomeEngine.Runtime/ApplicationGeometry.cs)、[ApplicationScene](../../../src/SomeEngine.Runtime/ApplicationScene.cs) 和 [ClusterGeometry](../../../src/SomeEngine.Render.Cluster/ClusterGeometry.cs)。
 
-`ApplicationScene.InstallGeometry` 注册 `IApplicationGeometryFeature`。每次场景运行调用一次 `Install`；场景结束时，在 GPU 使用和系统结束后释放它返回的资源。安装上下文提供设备、RenderDevice、持久 RenderGraph、Cluster 资源及 Rendering world。
+## 游戏侧场景资源
+
+`ApplicationScene.CreateSceneResources` 是一个 `Func<World, SceneEdit, IDisposable?>` 工厂。场景加载完成后，每次运行在几何功能安装和所有 `Initialize` 回调之前调用它。返回的资源在退出渲染器作用域之后、Game world 释放之前销毁；初始化、`Shutdown` 或渲染器清理抛出时也会进入这层释放。
+
+该属性表示一个组合工厂，不是多个返回值的订阅列表。调用方需要组合已有工厂时，应把它返回的资源与新资源一起纳入返回的 `IDisposable`；构造中途失败而尚未返回的资源由工厂自行清理。`Shutdown` 仍使用普通多播委托，某个回调抛出会中止后续回调，但不会跳过已返回场景资源的释放。
+
+DefaultGame 用这个入口持有场景运动查询与可选名牌，并通过已有 `GameFrameSystems.AddInterfaceSystem` 注册名牌跟随更新。不需要为这些游戏侧资源添加空几何功能或无实际提取工作的提取器。场景更新的绝对时间与阶段见 [场景脚本](Scene-Scripts.md#场景回调与时间)。
+
+## 几何处理与渲染接入
+
+`ApplicationScene.InstallGeometry` 注册 `IApplicationGeometryFeature`。每次场景运行调用一次 `Install`；正常场景清理中，在 GPU 使用和系统结束后释放它返回的资源。安装上下文提供设备、RenderDevice、持久 RenderGraph、Cluster 资源及 Rendering world。
 
 | 安装入口 | 执行时点 | 数据访问 |
 | --- | --- | --- |

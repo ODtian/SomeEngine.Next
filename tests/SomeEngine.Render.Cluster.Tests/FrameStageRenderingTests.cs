@@ -314,6 +314,7 @@ internal sealed partial class FrameStageScene : IAsyncDisposable
         _graph = new global::SomeEngine.RenderGraph.RenderGraph(backend, device,
             [backend.GetQueue(device, QueueType.Graphics), backend.GetQueue(device, QueueType.Compute),
                 backend.GetQueue(device, QueueType.Copy)]);
+        _ = _instances.GetDataTransfer(_graph);
         GraphRegionId scene, primary, depthAfter, target, targetAfter, shading, post, feedbackRegion;
         using (RenderGraphEdit stages = _graph.BeginEdit())
         {
@@ -415,7 +416,8 @@ internal sealed partial class FrameStageScene : IAsyncDisposable
         string content = Path.Combine(FindRoot(), "samples", "DefaultGame");
         await using AssetContent? packedContent = assetStorage is null && AssetContent.Exists(content)
             ? await AssetContent.OpenAsync(content) : null;
-        AssetManifest manifest = packedContent?.Manifest ?? AssetManifest.Load(Path.Combine(content, "Library", "AssetManifest"));
+        // Project identities and names select the fixture; the loader still reads the selected packed or loose bytes.
+        AssetManifest manifest = AssetManifest.Load(Path.Combine(content, "Library", "AssetManifest"));
         await using AssetLoader? ownedFiles = packedContent is null
             ? new AssetLoader(assetStorage ?? new LooseAssetStorage(content, manifest)) : null;
         AssetLoader assets = packedContent?.Loader ?? ownedFiles!;
@@ -446,11 +448,15 @@ internal sealed partial class FrameStageScene : IAsyncDisposable
         if (geometryMesh is not null) mesh = geometryMesh;
         else
         {
-            using MeshAsset meshFile = await MeshAsset.OpenAsync(assets,
-                new(manifest.List(MeshAsset.FileType).First().AssetGuid));
-            ClusterMeshBlock geometry = meshFile.GetBlock<ClusterMeshBlock>();
-            mesh = await geometry.CreateAsync(meshFile.GetBlock<MeshBlock>(), meshFile.Name);
-            await geometry.LoadPagesAsync(mesh, Enumerable.Range(0, mesh.PageCount));
+            Guid meshId = manifest.List(MeshAsset.FileType).Single(item =>
+                item.SubAssetKey == "mesh:index:0" &&
+                manifest.Sources.TryGetValue(item.SourceGuid, out string? source) &&
+                source.Replace('\\', '/') == "assets/Models/ico_sphere.glb").AssetGuid;
+            using MeshAsset meshFile = await MeshAsset.OpenAsync(assets, new(meshId));
+            ClusterGeometryBlock geometry = meshFile.GetBlock<ClusterGeometryBlock>();
+            ClusterVertexAttributesBlock vertexAttributes = await meshFile.GetBlockAsync<ClusterVertexAttributesBlock>();
+            mesh = await geometry.CreateAsync(meshFile.GetBlock<MeshBlock>(), vertexAttributes, meshFile.Name);
+            await geometry.LoadPagesAsync(mesh, vertexAttributes, Enumerable.Range(0, mesh.PageCount));
         }
         using MaterialAsset standardFile = await MaterialAsset.OpenAsync(assets,
             new(manifest.List(MaterialAsset.FileType).First(item => item.Name == "Standard").AssetGuid));
@@ -697,9 +703,6 @@ internal sealed partial class FrameStageScene : IAsyncDisposable
     }
 
     internal void RemoveMaterialMesh(Entity entity) => _gameWorld.DestroyEntity(entity);
-
-    internal Material CreateRasterMaterial(RasterMaterialKind kind, Vector4 color) =>
-        CreateRasterMaterial(RasterTestShaders.Create(_backendName, kind), color);
 
     internal StandardMaterial CreateEmissiveMaterial(Shader shader, Vector3 emission)
     {

@@ -28,14 +28,15 @@ public sealed class RuntimeStartupOptionsConsumerTests
     [Fact]
     public void TracePlaybackControlsKeepCaptureAndSceneBehaviorSeparate()
     {
-        var options = RuntimeStartupOptions.Parse([
+        string[] args = [
             "--trace", "capture.setrace", "--trace-detail", "--trace-allocations",
-            "--synchronous-frames", "--scene-playback", "materials", "--fixed-step", "0.02"]);
+            "--synchronous-frames", "--scene-playback", "materials", "--fixed-step", "0.02"];
+        RuntimeStartupOptions options = RuntimeStartupOptions.Parse(args);
         Assert.Equal("capture.setrace", options.TraceOutput);
         Assert.True(options.TraceDetail);
         Assert.True(options.TraceAllocations);
         Assert.True(options.SynchronousFrames);
-        Assert.Equal("materials", options.ScenePlayback);
+        Assert.Equal("materials", DefaultGame.SampleSceneOptions.Parse(args).ScenePlayback);
         Assert.Equal(0.02f, options.FixedFrameSeconds);
         Assert.False(options.Profiler.EnableTracy);
     }
@@ -54,8 +55,9 @@ public sealed class RuntimeStartupOptionsConsumerTests
     [InlineData("camera")]
     public void ScriptedSceneChangesCanUseNormalFrameOverlap(string playback)
     {
-        RuntimeStartupOptions options = RuntimeStartupOptions.Parse(["--scene-playback", playback]);
-        Assert.Equal(playback, options.ScenePlayback);
+        string[] args = ["--scene-playback", playback];
+        RuntimeStartupOptions options = RuntimeStartupOptions.Parse(args);
+        Assert.Equal(playback, DefaultGame.SampleSceneOptions.Parse(args).ScenePlayback);
         Assert.False(options.SynchronousFrames);
     }
 

@@ -29,9 +29,9 @@ public sealed class NavigationAvoidanceSystem<TSpace, TModel, TMotion, TReader>
     public JobHandle Schedule(float time, JobHandle guidanceReady, JobHandle neighborsReady, JobHandle motionReady = default)
     {
         JobHandle ready = WorldJobs.CombineDependencies(_world, [_completion, guidanceReady, neighborsReady, motionReady]);
-        JobHandle stopped = new NavigationMppiStop<TSpace, TModel, TMotion, TReader>(time)
+        JobHandle stopped = new NavigationMppiStop<TSpace, TModel, TMotion, TReader>(_world, time)
             .ScheduleParallel(_world, new JobEntityScheduleOptions(filter: _stopped), ready);
-        JobHandle candidates = new NavigationMppiPrepare<TSpace, TModel, TMotion, TReader>(time, _neighbors.Data, _neighbors.Scheduler)
+        JobHandle candidates = new NavigationMppiPrepare<TSpace, TModel, TMotion, TReader>(_world, time, _neighbors.Data, _neighbors.Scheduler)
             .ScheduleParallel(_world, [JobResourceAccess.Read(_neighbors.Scheduler.GetResourceToken(_neighbors.Data))],
                 new JobEntityScheduleOptions(filter: _active), stopped);
         _completion = new NavigationMppiOutput<TSpace, TModel>()
@@ -40,23 +40,24 @@ public sealed class NavigationAvoidanceSystem<TSpace, TModel, TMotion, TReader>
     }
 }
 
-internal partial struct NavigationMppiPrepare<TSpace, TModel, TMotion, TReader>(float time, NavigationNeighbors neighbors, Scheduler scheduler) : IJobEntity
+internal partial struct NavigationMppiPrepare<TSpace, TModel, TMotion, TReader>(World world, float time, NavigationNeighbors neighbors, Scheduler scheduler) : IJobEntity
     where TSpace : class, INavigationSpace<TSpace>
     where TModel : struct, INavigationMppiModel<TSpace>
     where TMotion : unmanaged, IComponent
     where TReader : struct, INavigationMotionReader<TMotion>
 {
+    private readonly World _world = world;
     private readonly float _time = time;
     private readonly NavigationNeighbors _neighbors = neighbors;
     private readonly Scheduler _scheduler = scheduler;
 
     public void Execute(Entity entity,
-        [JobResources(typeof(NavigationMppiResources<,>))] in NavigationMppi<TSpace, TModel> mppi,
+        [JobResources(typeof(NavigationMppiResources<,>))] ref NavigationMppi<TSpace, TModel> mppi,
         [JobResources<NavigationAgentResources>] in NavigationAgent agent,
         [JobResources<NavigationPathResources>] in NavigationPathResult path,
         in NavigationGuidance guidance, in NavigationGoal goal, in TMotion movement)
     {
-        NavigationMppiData<TSpace> data = mppi.Data;
+        NavigationMppiData<TSpace> data = NavigationMppi<TSpace, TModel>.GetData(ref mppi, _world, entity);
         NavigationMppiSettings settings = mppi.Settings;
         NavigationMotion actual = TReader.Read(in movement);
         data.Configure(settings);
@@ -145,7 +146,7 @@ internal partial struct NavigationMppiOutput<TSpace, TModel> : IJobEntity
         in NavigationTrajectorySource source, ref NavigationSteering steering, ref NavigationMppiResult result,
         DynamicBuffer<NavigationTrajectoryPoint> trajectory)
     {
-        NavigationMppiData<TSpace> data = mppi.Data;
+        NavigationMppiData<TSpace> data = mppi.Data!;
         steering = data.Steering;
         result = new(!data.Frame.Guidance.Active ? NavigationMppiStatus.Idle : data.Valid ? NavigationMppiStatus.Ready : NavigationMppiStatus.NoFeasibleTrajectory,
             data.SelectedCost, data.Frame.Guidance.RequestVersion);
@@ -159,18 +160,21 @@ internal partial struct NavigationMppiOutput<TSpace, TModel> : IJobEntity
     }
 }
 
-internal partial struct NavigationMppiStop<TSpace, TModel, TMotion, TReader>(float time) : IJobEntity
+internal partial struct NavigationMppiStop<TSpace, TModel, TMotion, TReader>(World world, float time) : IJobEntity
     where TSpace : class, INavigationSpace<TSpace>
     where TModel : struct, INavigationMppiModel<TSpace>
     where TMotion : unmanaged, IComponent
     where TReader : struct, INavigationMotionReader<TMotion>
 {
+    private readonly World _world = world;
     private readonly float _time = time;
-    public void Execute([JobResources(typeof(NavigationMppiResources<,>))] in NavigationMppi<TSpace, TModel> mppi,
+    public void Execute(Entity entity,
+        [JobResources(typeof(NavigationMppiResources<,>))] ref NavigationMppi<TSpace, TModel> mppi,
         in NavigationTrajectorySource source, in TMotion movement, in NavigationGuidance guidance,
         ref NavigationSteering steering, ref NavigationMppiResult result, DynamicBuffer<NavigationTrajectoryPoint> trajectory)
     {
-        mppi.Data.Initialized = false;
+        NavigationMppiData<TSpace> data = NavigationMppi<TSpace, TModel>.GetData(ref mppi, _world, entity);
+        data.Initialized = false;
         NavigationMotion motion = TReader.Read(in movement);
         steering = new(default, motion.Heading, guidance.RequestVersion, false);
         result = new(NavigationMppiStatus.Idle, 0, guidance.RequestVersion);

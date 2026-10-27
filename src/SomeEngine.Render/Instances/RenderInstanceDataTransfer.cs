@@ -74,7 +74,12 @@ public sealed class RenderInstanceDataTransfer : IRenderGraphFrameExecutionObser
             return;
         }
         int source = view.Generation;
-        _ranges[source].AddRange(view.PropertyDataRanges.Span);
+        RenderInstancePropertyDataChange change = view.PropertyDataChange;
+        bool adjacentRevision = ReferenceEquals(previous.Allocation, batch.Allocation) &&
+            previous.Revision == change.FromRevision && change.ToRevision == view.ContentRevision;
+        // Delta ownership is publication-local, not consumed by a graph. A lagging/new graph
+        // retains the original full-copy path; only this graph's submitted cursor may advance.
+        _ranges[source].AddRange(adjacentRevision ? change.Ranges.Span : view.PropertyDataRanges.Span);
         _changes.Add((batch, view.ContentRevision));
         frame.SetPassData(_copy, new CopyData(_sources, Data, _ranges));
         frame.SetPassEnabled(_copy, true);

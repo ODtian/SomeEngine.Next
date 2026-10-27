@@ -13,7 +13,8 @@ public sealed class ProjectionMetadataTests(SceneContentFixture content)
         string backend, bool temporalAntialiasing)
     {
         var images = new List<SceneLinearImage>();
-        var script = new SceneScript(content.DirectoryPath, 5,
+        var script = new SceneScript(new ApplicationScene(content.DirectoryPath)
+            { RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register }, 5,
         [
             new(3, edit => edit.CaptureLinearImage(images.Add)),
             new(4, edit => edit.CaptureLinearImage(images.Add)),

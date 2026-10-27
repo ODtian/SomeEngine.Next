@@ -4,11 +4,12 @@ using SomeEngine.Serialization;
 namespace SomeEngine.Assets.Schema;
 
 /// <summary>Offline Cluster geometry and the field, surface and generation data from which it was built.</summary>
+/// <remarks>Terrain caches predating reduction-group metadata require regeneration through the canonical terrain cache builder.</remarks>
 [AssetBlock("SomeEngine.Assets.Schema.TerrainClusterBlock"), BinarySerializable]
 [BinaryFields(nameof(Identity), nameof(VertexEncoding), nameof(MesherReadBorder), nameof(AttributeReadBorder),
     nameof(HeightFieldIds), nameof(VoxelFieldIds), nameof(SurfaceRoot), nameof(HeightSources), nameof(VoxelSources),
     nameof(Blends), nameof(HeightFields), nameof(VoxelFields), nameof(HeightPages), nameof(VoxelPages),
-    nameof(Entries), nameof(Pages), nameof(Regions))]
+    nameof(Entries), nameof(Pages), nameof(Regions), nameof(Groups))]
 public sealed partial class TerrainClusterBlock : AssetBlock
 {
     public partial TerrainGeometryIdentity Identity { get; set; }
@@ -28,6 +29,7 @@ public sealed partial class TerrainClusterBlock : AssetBlock
     public partial IList<TerrainClusterEntry> Entries { get; set; }
     public partial IList<TerrainClusterPage> Pages { get; set; }
     public partial IList<TerrainClusterRegion> Regions { get; set; }
+    public partial IList<TerrainClusterGroup> Groups { get; set; }
 
     /// <summary>Copies the captured source descriptions used by all entries in this block.</summary>
     public void SetSource(TerrainCpuData source, TerrainFieldInputs fields)
@@ -73,6 +75,7 @@ public sealed partial class TerrainClusterBlock : AssetBlock
         }
         data.ReadBvh(bytes.AsSpan(checked((int)data.BvhOffset)));
         foreach (MeshRegion region in data.Regions) Regions.Add(new(index, region));
+        foreach (MeshClusterGroup group in data.ClusterGroups) Groups.Add(new(index, group));
         ulong key = checked((ulong)index + 1);
         SetBytes(key, bytes);
         Entries.Add(entry with { PayloadKey = key, BvhOffset = data.BvhOffset, Bounds = data.Bounds });
@@ -95,7 +98,8 @@ public sealed partial class TerrainClusterBlock : AssetBlock
                     pages.Select(static page => page.Description).ToArray(), bytes[checked((int)entry.BvhOffset)..],
                     pages.Select(page => bytes.Slice(checked((int)page.Description.Offset), checked((int)page.Description.Length))).ToArray(),
                     entry.Bounds, copy.Regions.Where(region => region.EntryIndex == index).Select(static region => region.Region).ToArray(),
-                    pages.Where(static page => page.LowestDetail).Select(static page => checked((uint)page.PageIndex)).ToArray());
+                    pages.Where(static page => page.LowestDetail).Select(static page => checked((uint)page.PageIndex)).ToArray(),
+                    clusterGroups: copy.Groups.Where(group => group.EntryIndex == index).Select(static group => group.Group).ToArray());
             }
             meshes[index] = new(entry, mesh);
         }
@@ -128,6 +132,9 @@ public readonly partial record struct TerrainClusterPage(int EntryIndex, int Pag
 
 [BinarySerializable, BinaryValue, BinaryFields(nameof(EntryIndex), nameof(Region))]
 public readonly partial record struct TerrainClusterRegion(int EntryIndex, MeshRegion Region);
+
+[BinarySerializable, BinaryValue, BinaryFields(nameof(EntryIndex), nameof(Group))]
+public readonly partial record struct TerrainClusterGroup(int EntryIndex, MeshClusterGroup Group);
 
 [BinarySerializable, BinaryValue, BinaryFields(nameof(FieldId), nameof(X), nameof(Z), nameof(Revision), nameof(Id))]
 public readonly partial record struct TerrainHeightPageVersion(int FieldId, int X, int Z, ulong Revision, Guid Id);

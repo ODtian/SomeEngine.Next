@@ -13,6 +13,24 @@ public partial interface IGraphicsBackend
         Device device,
         in AccelerationStructureSrvDesc desc);
 
+    /// <summary>Synchronously encodes top-level instances into caller-owned CPU memory.</summary>
+    /// <remarks>
+    /// Requires a live Device with RayTracing support and live bottom-level structures on that Device.
+    /// Structures may be encoded before their GPU build; complete their build before building the top level.
+    /// All inputs and destination capacity are checked before any bytes are written. Exactly
+    /// instances.Length * RayTracing.InstanceSize bytes are written; the destination tail is unchanged.
+    /// Empty input writes nothing. The encoded bytes are specific to this Device/backend, not portable data.
+    /// No spans or object lifetimes are retained and no GPU work is submitted. The caller uploads the
+    /// bytes into AccelerationStructureInput storage at RayTracing.InstanceAlignment and supplies it
+    /// as Instances geometry. The caller must keep every referenced bottom-level structure and its
+    /// storage alive until all dependent top-level structures and ray-tracing uses have finished.
+    /// Inputs and destination must not be mutated concurrently, and normal use must not race disposal.
+    /// </remarks>
+    void EncodeAccelerationStructureInstances(
+        Device device,
+        ReadOnlySpan<AccelerationStructureInstance> instances,
+        Span<byte> destination);
+
     AccelerationStructureBuildInfo GetAccelerationStructureBuildInfo(
         Device device,
         AccelerationStructureType type,

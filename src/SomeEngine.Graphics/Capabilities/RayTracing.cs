@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Numerics;
 using SlangShaderSharp;
 
 namespace SomeEngine.Graphics;
@@ -45,7 +46,9 @@ public sealed class RayTracing : DeviceCapability
         ulong accelerationStructureAlignment,
         ulong scratchAlignment,
         ulong shaderTableAlignment,
-        ulong shaderRecordAlignment)
+        ulong shaderRecordAlignment,
+        uint instanceSize,
+        ulong instanceAlignment)
         : base(device)
     {
         Tier = tier;
@@ -69,6 +72,8 @@ public sealed class RayTracing : DeviceCapability
         ScratchAlignment = scratchAlignment;
         ShaderTableAlignment = shaderTableAlignment;
         ShaderRecordAlignment = shaderRecordAlignment;
+        InstanceSize = instanceSize;
+        InstanceAlignment = instanceAlignment;
     }
 
     public RayTracingTier Tier { get; }
@@ -97,6 +102,10 @@ public sealed class RayTracing : DeviceCapability
     public ulong ScratchAlignment { get; }
     public ulong ShaderTableAlignment { get; }
     public ulong ShaderRecordAlignment { get; }
+    /// <summary>The size in bytes of one encoded top-level instance.</summary>
+    public uint InstanceSize { get; }
+    /// <summary>The required GPU input address alignment for encoded instances, not CPU Span alignment.</summary>
+    public ulong InstanceAlignment { get; }
 }
 
 /// <remarks>
@@ -164,6 +173,85 @@ public abstract class AccelerationStructure : Resource
     }
 
     public AccelerationStructureInfo Info { get; }
+}
+
+/// <summary>Triangle facing and opacity controls for one top-level instance.</summary>
+/// <remarks>
+/// <para><b>Thread safety:</b> Thread-safe immutable value.</para>
+/// <para><b>Ownership:</b> Owns no RHI, OS, or native lifetime.</para>
+/// <para><b>After Dispose:</b> This type has no independent Dispose state.</para>
+/// <para>ForceOpaque and ForceNonOpaque are mutually exclusive.</para>
+/// </remarks>
+[Flags]
+public enum AccelerationStructureInstanceOptions : byte
+{
+    None = 0,
+    DisableTriangleFacingCull = 1 << 0,
+    TriangleFrontCounterClockwise = 1 << 1,
+    ForceOpaque = 1 << 2,
+    ForceNonOpaque = 1 << 3,
+}
+
+/// <summary>A bottom-level acceleration structure placed in a top-level acceleration structure.</summary>
+/// <param name="AccelerationStructure">The live bottom-level structure on the encoding Device.</param>
+/// <param name="Transform">A finite, invertible affine System.Numerics row-vector transform; translation is M41/M42/M43.</param>
+/// <param name="InstanceId">The 24-bit custom instance identifier reported to ray shaders.</param>
+/// <param name="Mask">The visibility mask tested against the ray mask.</param>
+/// <param name="HitGroupOffset">The 24-bit instance contribution to the hit-group record index.</param>
+/// <param name="Options">Triangle facing and opacity controls.</param>
+/// <remarks>
+/// <para><b>Thread safety:</b> Thread-safe immutable description; normal use must not race disposal.</para>
+/// <para><b>Ownership:</b> Borrows the structure and owns no native lifetime. The caller must keep the
+/// structure and its storage alive until all dependent top-level structures and ray-tracing uses
+/// have finished, not merely until the top-level build completes.</para>
+/// <para><b>After Dispose:</b> This type has no independent Dispose state; referenced objects retain theirs.</para>
+/// </remarks>
+public readonly record struct AccelerationStructureInstance(
+    AccelerationStructure AccelerationStructure,
+    Matrix4x4 Transform,
+    uint InstanceId = 0,
+    byte Mask = byte.MaxValue,
+    uint HitGroupOffset = 0,
+    AccelerationStructureInstanceOptions Options = AccelerationStructureInstanceOptions.None)
+{
+    internal void Validate(string parameterName)
+    {
+        if (InstanceId > 0x00ffffff || HitGroupOffset > 0x00ffffff)
+            throw new ArgumentOutOfRangeException(parameterName, "Instance identifiers and hit-group offsets must fit in 24 bits.");
+
+        const AccelerationStructureInstanceOptions supported =
+            AccelerationStructureInstanceOptions.DisableTriangleFacingCull |
+            AccelerationStructureInstanceOptions.TriangleFrontCounterClockwise |
+            AccelerationStructureInstanceOptions.ForceOpaque |
+            AccelerationStructureInstanceOptions.ForceNonOpaque;
+        const AccelerationStructureInstanceOptions opacity =
+            AccelerationStructureInstanceOptions.ForceOpaque |
+            AccelerationStructureInstanceOptions.ForceNonOpaque;
+        if ((Options & ~supported) != 0 || (Options & opacity) == opacity)
+            throw new ArgumentException("Instance options are invalid or force conflicting opacity modes.", parameterName);
+
+        Matrix4x4 transform = Transform;
+        if (!float.IsFinite(transform.M11) || !float.IsFinite(transform.M12) ||
+            !float.IsFinite(transform.M13) || !float.IsFinite(transform.M14) ||
+            !float.IsFinite(transform.M21) || !float.IsFinite(transform.M22) ||
+            !float.IsFinite(transform.M23) || !float.IsFinite(transform.M24) ||
+            !float.IsFinite(transform.M31) || !float.IsFinite(transform.M32) ||
+            !float.IsFinite(transform.M33) || !float.IsFinite(transform.M34) ||
+            !float.IsFinite(transform.M41) || !float.IsFinite(transform.M42) ||
+            !float.IsFinite(transform.M43) || !float.IsFinite(transform.M44) ||
+            transform.M14 != 0 || transform.M24 != 0 || transform.M34 != 0 || transform.M44 != 1)
+        {
+            throw new ArgumentException("An instance transform must be finite and affine.", parameterName);
+        }
+
+        // Use double products so finite float scales do not underflow or overflow the determinant.
+        double determinant =
+            (double)transform.M11 * ((double)transform.M22 * transform.M33 - (double)transform.M23 * transform.M32) -
+            (double)transform.M12 * ((double)transform.M21 * transform.M33 - (double)transform.M23 * transform.M31) +
+            (double)transform.M13 * ((double)transform.M21 * transform.M32 - (double)transform.M22 * transform.M31);
+        if (determinant == 0)
+            throw new ArgumentException("An instance transform must be invertible.", parameterName);
+    }
 }
 
 /// <remarks>

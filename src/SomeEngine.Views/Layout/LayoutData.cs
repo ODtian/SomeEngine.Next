@@ -7,13 +7,14 @@ using SomeEngine.Core.Math;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hierarchy;
+using SomeEngine.ECS.Queries;
 using SomeEngine.Views;
 using SomeEngine.Job;
 
 namespace SomeEngine.Layout;
 
 /// <summary>Layout reads, ordered children, and content-relative positions across canvas updates.</summary>
-internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
+internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates, QueryHandle nodeReadQuery)
 {
     internal World World { get; } = world;
     private readonly Dictionary<Entity, NodeLayout> _nodes = new();
@@ -166,12 +167,7 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
         node.ViewType = viewType;
         node.TreeFrame = _frame;
         node.Canvas = canvas;
-        node.Measurable = ViewTypes.HasMeasure(World, entity);
-        node.CacheWritten = false;
-        node.CacheExists = World.Has<LayoutCache>(entity);
-        node.CacheVersion = node.CacheExists ? World.WriteVersion<LayoutCache>(entity) : 0;
-        if (node.CacheExists) node.Cache = World.Read<LayoutCache>(entity);
-        else node.HasMeasurement = false;
+        ReadFixedNodeState(node);
         if (node.InputsChanged)
             for (int index = 0; index < dataUpdates.Length; index++)
                 if (dataUpdates[index].SupportsParallel)
@@ -181,6 +177,30 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
         _order.Add(node);
         foreach (Entity child in node.Children)
             ReadTree(child, entity, canvas);
+    }
+
+    private void ReadFixedNodeState(NodeLayout node)
+    {
+        var state = (World, Node: node);
+        World.ExecuteQuery(nodeReadQuery, ref state, static (query, ref read) =>
+        {
+            NodeLayout node = read.Node;
+            if (!query.TryGetRow(node.Entity, out QueryRow row))
+            {
+                node.Measurable = false;
+                node.CacheWritten = false;
+                node.CacheExists = false;
+                node.CacheVersion = 0;
+                node.HasMeasurement = false;
+                return;
+            }
+            node.Measurable = row.TryRead<ViewType>(out ViewType view) && ViewTypes.HasMeasure(view.Id);
+            node.CacheWritten = false;
+            node.CacheExists = row.Has<LayoutCache>();
+            node.CacheVersion = node.CacheExists ? read.World.WriteVersion<LayoutCache>(node.Entity) : 0;
+            if (node.CacheExists) node.Cache = row.Read<LayoutCache>();
+            else node.HasMeasurement = false;
+        });
     }
 
     private bool HasReadChanges(NodeLayout node)

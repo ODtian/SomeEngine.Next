@@ -67,6 +67,13 @@ public sealed record RenderInstanceDiagnostics(
     int ActiveBatches,
     int PropertyDataBytes);
 
+// One immutable publication delta, captured with the exact source generation in a batch view.
+// A graph that missed this predecessor falls back to the full allocated batch ranges.
+internal readonly record struct RenderInstancePropertyDataChange(
+    ulong FromRevision,
+    ulong ToRevision,
+    ReadOnlyMemory<BufferRange> Ranges);
+
 /// <summary>Immutable GPU-facing view of one exact live batch.</summary>
 public readonly record struct RenderInstanceBatchView(
     Buffer? PropertyData,
@@ -82,6 +89,8 @@ public readonly record struct RenderInstanceBatchView(
     /// and per-instance storage are included so changing a binding does not change the ranges.
     /// </summary>
     public ReadOnlyMemory<BufferRange> PropertyDataRanges { get; init; }
+
+    internal RenderInstancePropertyDataChange PropertyDataChange { get; init; }
 
     internal BufferBoundaryState[] PropertyDataEndpoints { get; init; } = [];
 
@@ -171,6 +180,8 @@ public sealed class RenderInstanceBatch
     internal RenderInstancePropertyLayout Contract { get; }
 
     internal ReadOnlyMemory<BufferRange> PropertyDataRanges { get; }
+
+    internal RenderInstancePropertyDataChange PropertyDataChange { get; set; }
 }
 
 /// <summary>
@@ -459,6 +470,7 @@ internal sealed class RenderInstanceResources : IDisposable
             metadata.ContentRevision)
         {
             PropertyDataRanges = metadata.PropertyDataRanges,
+            PropertyDataChange = metadata.PropertyDataChange,
             PropertyDataEndpoints = _propertyData[generation]?.CaptureEndpoints() ?? [],
             MetadataEndpoints = _batchMetadata[generation].CaptureEndpoints(),
         };
@@ -612,6 +624,32 @@ internal sealed class RenderInstanceResources : IDisposable
         MemoryMarshal.Cast<byte, uint>(metadataMapping)
             [property.Descriptor.MetadataWordOffset] =
             checked((uint)address) | RenderInstanceLinearMetadata.PerInstanceBit;
+    }
+
+    internal (BufferRange Shared, BufferRange Instances) GetPropertyDataRanges(
+        int batchSlot,
+        object allocation,
+        RenderInstancePropertyDescriptor property)
+    {
+        ValidateBatch(batchSlot, allocation);
+        PropertyStorage storage = RequireStorage(property, nameof(property));
+        RequireLinearBinding(storage.Descriptor, nameof(property));
+        PackedRange rows = _batchRows[batchSlot];
+        return (SharedElementRange(storage, batchSlot), new BufferRange(
+            checked((ulong)(storage.InstanceBase + rows.Start * property.Encoding.StorageStride)),
+            checked((ulong)(rows.Count * property.Encoding.StorageStride))));
+    }
+
+    internal bool HasPerInstanceBinding(
+        int batchSlot,
+        object allocation,
+        RenderInstancePropertyDescriptor property)
+    {
+        var ranges = GetPropertyDataRanges(batchSlot, allocation, property);
+        int generation = RequireWriteGeneration();
+        Span<byte> mapping = GetWriteBytes(_batchMetadata[generation].Handle, BatchMetadataRange(batchSlot));
+        uint binding = MemoryMarshal.Cast<byte, uint>(mapping)[property.MetadataWordOffset];
+        return binding == (checked((uint)ranges.Instances.Offset) | RenderInstanceLinearMetadata.PerInstanceBit);
     }
 
     internal void WritePerInstanceBinding(
@@ -1899,7 +1937,9 @@ internal sealed class RenderInstanceBatchComposition : IDisposable
     private const long CustomMetadata = 3;
     private const long BindingMask = 3;
     private const long Required = 4;
-    private const int WrittenCountShift = 3;
+    // Stable per-instance binding still needs a row mask until one write covers the whole column.
+    private const long TrackSparseRows = 8;
+    private const int WrittenCountShift = 4;
 
     private RenderInstanceWriteScope? _scope;
     // Binding kind, requiredness, and the atomic written-row count describe one property and
@@ -1907,6 +1947,9 @@ internal sealed class RenderInstanceBatchComposition : IDisposable
     // side tables without changing the composition's unique ownership.
     private readonly long[] _propertyStates;
     private readonly long[] _changedChunks;
+    // Allocated only on actual sparse writes, never for bind-only/no-op updates.
+    // Published without locks; contending first writers may allocate temporary losing arrays.
+    private long[]? _propertyChangedChunks;
     private readonly RenderInstancePropertyLayout _contract;
     private readonly RenderInstancePropertyLayout _authorization;
     private readonly RenderInstanceBatch? _existingBatch;
@@ -2035,8 +2078,7 @@ internal sealed class RenderInstanceBatchComposition : IDisposable
     {
         ResolvedRenderInstanceProperty<T> destination = Resolve(authorization, property);
         RequireUnbound(destination.Ordinal);
-        _propertyStates[destination.Ordinal] =
-            (_propertyStates[destination.Ordinal] & ~BindingMask) | PerInstance;
+        _propertyStates[destination.Ordinal] = PerInstanceState(destination.Descriptor);
     }
 
     internal void BindEncodedPerInstance(
@@ -2050,8 +2092,7 @@ internal sealed class RenderInstanceBatchComposition : IDisposable
             _contract.RequireCompatible(authorized, nameof(property));
         RequireUnbound(destination.Ordinal);
         _ = RequireScope();
-        _propertyStates[destination.Ordinal] =
-            (_propertyStates[destination.Ordinal] & ~BindingMask) | PerInstance;
+        _propertyStates[destination.Ordinal] = PerInstanceState(destination);
     }
 
     internal void Write<T>(
@@ -2082,6 +2123,7 @@ internal sealed class RenderInstanceBatchComposition : IDisposable
             ref _propertyStates[destination.Ordinal],
             (long)source.Length << WrittenCountShift);
         RecordChangedRows(destinationStart, source.Length);
+        RecordPropertyWrites(destination.Ordinal, destinationStart, source.Length);
     }
 
     internal void WriteEncoded(
@@ -2109,6 +2151,7 @@ internal sealed class RenderInstanceBatchComposition : IDisposable
             ref _propertyStates[destination.Ordinal],
             (long)destinationCount << WrittenCountShift);
         RecordChangedRows(destinationStart, destinationCount);
+        RecordPropertyWrites(destination.Ordinal, destinationStart, destinationCount);
     }
 
     internal void Write<T>(
@@ -2135,6 +2178,7 @@ internal sealed class RenderInstanceBatchComposition : IDisposable
             ref _propertyStates[destination.Ordinal],
             1L << WrittenCountShift);
         RecordChangedRows(checked(destinationStart + destinationOffset), 1);
+        RecordPropertyWrites(destination.Ordinal, checked(destinationStart + destinationOffset), 1);
     }
 
     /// <summary>Copies producer-authored words directly into the final mapped metadata range.</summary>
@@ -2155,6 +2199,128 @@ internal sealed class RenderInstanceBatchComposition : IDisposable
         _propertyStates[destination.Ordinal] =
             (_propertyStates[destination.Ordinal] & ~BindingMask) | CustomMetadata;
         RecordChangedRows(0, _instanceCount);
+    }
+
+    private long PerInstanceState(RenderInstancePropertyDescriptor property)
+    {
+        long state = (_propertyStates[property.Ordinal] & ~BindingMask) | PerInstance;
+        if (_mode == CompositionMode.Update &&
+            RequireScope().Resources.HasPerInstanceBinding(_batchSlot, _allocation, property))
+            state |= TrackSparseRows;
+        return state;
+    }
+
+    private void RecordPropertyWrites(int ordinal, int start, int count)
+    {
+        if (_mode != CompositionMode.Update || count == 0 ||
+            (_propertyStates[ordinal] & TrackSparseRows) == 0)
+            return;
+        if (start == 0 && count == _instanceCount)
+        {
+            // One explicit whole-column write proves coverage; accumulated row counts do not.
+            // Preserve the concurrently updated count/requiredness in the same state word.
+            _ = Interlocked.And(ref _propertyStates[ordinal], ~TrackSparseRows);
+            return;
+        }
+        long[]? changes = Volatile.Read(ref _propertyChangedChunks);
+        if (changes is null)
+        {
+            var created = new long[checked(_propertyStates.Length * _changedChunks.Length)];
+            changes = Interlocked.CompareExchange(ref _propertyChangedChunks, created, null) ?? created;
+        }
+        int offset = checked(ordinal * _changedChunks.Length);
+        int last = (start + count - 1) / 64;
+        for (int chunk = start / 64; chunk <= last; chunk++)
+        {
+            int firstBit = Math.Max(0, start - chunk * 64);
+            int endBit = Math.Min(64, start + count - chunk * 64);
+            ulong bits = (ulong.MaxValue << firstBit) & (ulong.MaxValue >> (64 - endBit));
+            _ = Interlocked.Or(ref changes[offset + chunk], unchecked((long)bits));
+        }
+    }
+
+    private ReadOnlyMemory<BufferRange> CapturePropertyDataChanges(RenderInstanceResources resources)
+    {
+        List<BufferRange>? ranges = null;
+        for (int ordinal = 0; ordinal < _propertyStates.Length; ordinal++)
+        {
+            long state = _propertyStates[ordinal];
+            long binding = state & BindingMask;
+            // Custom words may expose previously inactive data. Keep the established full-copy
+            // behavior rather than interpreting an encoding-specific address contract here.
+            if (binding == CustomMetadata)
+                return _existingBatch!.PropertyDataRanges;
+            RenderInstancePropertyDescriptor property = _contract.Properties[ordinal];
+            if (!property.Encoding.HasManagedStorage || binding == Unbound)
+                continue;
+            long writtenCount = state >> WrittenCountShift;
+            if (binding == PerInstance && writtenCount == 0 && (state & Required) == 0)
+                continue;
+            var storage = resources.GetPropertyDataRanges(_batchSlot, _allocation, property);
+            if (binding == Shared)
+            {
+                Add(storage.Shared);
+                continue;
+            }
+            if (binding != PerInstance || _instanceCount == 0)
+                continue;
+            if ((state & TrackSparseRows) == 0 || _propertyChangedChunks is null)
+            {
+                // Rebinding can expose previously inactive rows. An explicit whole-column
+                // write also makes sparse row tracking unnecessary for this property.
+                Add(storage.Instances);
+                continue;
+            }
+            int baseWord = checked(ordinal * _changedChunks.Length);
+            for (int chunk = 0; chunk < _changedChunks.Length; chunk++)
+            {
+                ulong bits = unchecked((ulong)_propertyChangedChunks[baseWord + chunk]);
+                while (bits != 0)
+                {
+                    int first = System.Numerics.BitOperations.TrailingZeroCount(bits);
+                    int count = System.Numerics.BitOperations.TrailingZeroCount(~(bits >> first));
+                    int start = checked(chunk * 64 + first);
+                    int rows = Math.Min(count, _instanceCount - start);
+                    Add(new BufferRange(
+                        checked(storage.Instances.Offset + (ulong)start * (ulong)property.Encoding.StorageStride),
+                        checked((ulong)rows * (ulong)property.Encoding.StorageStride)));
+                    bits = count == 64 ? 0 : bits & ~(((1ul << count) - 1ul) << first);
+                }
+            }
+        }
+        if (ranges is null)
+            return ReadOnlyMemory<BufferRange>.Empty;
+        // Contract ordinals need not match storage ordinals. Normalize exact byte coverage,
+        // merging only overlapping/adjacent ranges, never filling gaps between changed rows.
+        ranges.Sort(static (left, right) => left.Offset.CompareTo(right.Offset));
+        int written = 0;
+        for (int index = 0; index < ranges.Count; index++)
+        {
+            BufferRange range = ranges[index];
+            if (written != 0 && range.Offset <= ranges[written - 1].Offset + ranges[written - 1].Size)
+            {
+                BufferRange previous = ranges[written - 1];
+                ulong end = Math.Max(previous.Offset + previous.Size, range.Offset + range.Size);
+                ranges[written - 1] = new BufferRange(previous.Offset, end - previous.Offset);
+            }
+            else
+                ranges[written++] = range;
+        }
+        if (written != ranges.Count)
+            ranges.RemoveRange(written, ranges.Count - written);
+        return ranges.ToArray();
+
+        void Add(BufferRange range)
+        {
+            if (range.Size == 0) return;
+            ranges ??= [];
+            // Word runs for one property arrive in order; collapse full-column updates before
+            // growing the temporary list, including runs that cross a 64-row boundary.
+            if (ranges.Count != 0 && ranges[^1].Offset + ranges[^1].Size == range.Offset)
+                ranges[^1] = new BufferRange(ranges[^1].Offset, ranges[^1].Size + range.Size);
+            else
+                ranges.Add(range);
+        }
     }
 
     private void RecordChangedRows(int start, int count)
@@ -2257,6 +2423,12 @@ internal sealed class RenderInstanceBatchComposition : IDisposable
             return _existingBatch;
         }
 
+        // Build immutable range metadata before committing the update, while rollback is still
+        // available. The post-commit delta assignment below is an allocation-free value write.
+        ReadOnlyMemory<BufferRange> propertyChanges = _existingBatch is null
+            ? default : CapturePropertyDataChanges(scope.Resources);
+        ulong previousRevision = _existingBatch?.ContentRevision ?? 0;
+
         // An optional column with no written rows retains its previous binding. This also
         // lets a group untouched by the sparse update keep its values and content revision.
         for (int ordinal = 0; ordinal < _propertyStates.Length; ordinal++)
@@ -2277,8 +2449,10 @@ internal sealed class RenderInstanceBatchComposition : IDisposable
         }
         else
         {
-            _existingBatch.ContentRevision =
-                scope.Resources.CompleteBatchUpdate(_batchSlot, _allocation);
+            ulong revision = scope.Resources.CompleteBatchUpdate(_batchSlot, _allocation);
+            _existingBatch.PropertyDataChange =
+                new RenderInstancePropertyDataChange(previousRevision, revision, propertyChanges);
+            _existingBatch.ContentRevision = revision;
             _existingBatch.RecordChanges(_changedChunks);
             result = _existingBatch;
         }

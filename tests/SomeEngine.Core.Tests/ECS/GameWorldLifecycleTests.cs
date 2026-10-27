@@ -14,7 +14,7 @@ public sealed class GameWorldLifecycleTests
         using var runtime = new JobRuntimeScope();
         using var state = new BlockingState();
         var gameWorld = new GameWorld(new WorldJobs(JobSystem.Default));
-        ComponentJobAccess<LocalTransform>.ScheduleRead(
+        JobHandle root = ComponentJobAccess<LocalTransform>.ScheduleRead(
             gameWorld.World,
             new BlockingJob(state));
         Assert.True(state.Started.Wait(TimeSpan.FromSeconds(5)));
@@ -33,6 +33,7 @@ public sealed class GameWorldLifecycleTests
         }
 
         Assert.Null(await disposal.WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.True(root.IsCompleted);
         Assert.Throws<ObjectDisposedException>(() => _ = gameWorld.World.EntityCount);
         Assert.Throws<ObjectDisposedException>(() => gameWorld.Systems.Update());
         gameWorld.Dispose();

@@ -15,14 +15,32 @@ internal static class BenchmarkCommands
     public static int Main(string[] args)
     {
         if (args is ["--worker"]) return ExecuteQueue();
-        if (args.Length == 0) throw new ArgumentException("Usage: BenchmarkQueue <executable> [arguments...]");
+        int timeoutSeconds = QueuedCommand.DefaultTimeoutSeconds;
+        int executableIndex = 0;
+        while (executableIndex < args.Length && args[executableIndex].StartsWith("--"))
+        {
+            string option = args[executableIndex++];
+            if (option == "--") break;
+            switch (option)
+            {
+                case "--timeout":
+                    if (executableIndex == args.Length)
+                        throw new ArgumentException("--timeout requires a value in seconds.");
+                    timeoutSeconds = ParseTimeoutSeconds(args[executableIndex++]);
+                    break;
+                default: throw new ArgumentException($"Unknown queue option: {option}");
+            }
+        }
+        if (executableIndex == args.Length)
+            throw new ArgumentException("Usage: BenchmarkQueue [--timeout seconds] <executable> [arguments...]");
 
         string id = Guid.NewGuid().ToString("N");
         string directory = Directory.GetCurrentDirectory();
         string output = Path.Combine(directory, "artifacts", "benchmark-queue", id);
         var environment = Environment.GetEnvironmentVariables().Cast<DictionaryEntry>()
             .ToDictionary(entry => (string)entry.Key, entry => (string)entry.Value!);
-        var command = new QueuedCommand(id, args[0], args[1..], directory, output, environment);
+        var command = new QueuedCommand(id, args[executableIndex], args[(executableIndex + 1)..],
+            directory, output, environment) { TimeoutSeconds = timeoutSeconds };
 
         using var submission = new Mutex(false, MutexName(QueueName + ".Submit"));
         Wait(submission);
@@ -79,7 +97,7 @@ internal static class BenchmarkCommands
             commands.Add(command);
             writer.WriteLine(JsonSerializer.Serialize(new
             {
-                command.Id, command.OutputDirectory, WorkerProcessId = Environment.ProcessId,
+                command.Id, command.OutputDirectory, command.TimeoutSeconds, WorkerProcessId = Environment.ProcessId,
             }));
         }
     }
@@ -88,9 +106,11 @@ internal static class BenchmarkCommands
     {
         Directory.CreateDirectory(command.OutputDirectory);
         int exitCode = 1;
+        bool timedOut = false;
         DateTimeOffset started = DateTimeOffset.UtcNow;
         try
         {
+            int timeoutSeconds = ParseTimeoutSeconds(command.TimeoutSeconds.ToString());
             var start = new ProcessStartInfo(command.Executable)
             {
                 WorkingDirectory = command.Directory, UseShellExecute = false, CreateNoWindow = true,
@@ -102,21 +122,61 @@ internal static class BenchmarkCommands
             using var output = File.Create(Path.Combine(command.OutputDirectory, "stdout.log"));
             using var errors = File.Create(Path.Combine(command.OutputDirectory, "stderr.log"));
             using var process = Process.Start(start)!;
-            Task outputCopy = process.StandardOutput.BaseStream.CopyToAsync(output);
-            Task errorCopy = process.StandardError.BaseStream.CopyToAsync(errors);
-            process.WaitForExit();
-            Task.WhenAll(outputCopy, errorCopy).GetAwaiter().GetResult();
-            exitCode = process.ExitCode;
+            started = DateTimeOffset.UtcNow;
+            using var deadline = new CancellationTokenSource(timeoutSeconds * 1000);
+            using var copying = new CancellationTokenSource();
+            Task outputCopy = process.StandardOutput.BaseStream.CopyToAsync(output, copying.Token);
+            Task errorCopy = process.StandardError.BaseStream.CopyToAsync(errors, copying.Token);
+            Task completion = Task.WhenAll(process.WaitForExitAsync(copying.Token), outputCopy, errorCopy);
+            try
+            {
+                completion.WaitAsync(deadline.Token).GetAwaiter().GetResult();
+                exitCode = process.ExitCode;
+            }
+            catch (OperationCanceledException) when (deadline.IsCancellationRequested)
+            {
+                timedOut = true;
+                exitCode = 124;
+                try
+                {
+                    // Keep the original Process handle: descendants may still hold redirected pipes
+                    // after the root process exits, so do not skip tree termination when HasExited.
+                    process.Kill(entireProcessTree: true);
+                    if (!process.WaitForExit(5000))
+                        throw new TimeoutException("Timed-out process did not exit within 5 seconds of tree termination.");
+                }
+                finally
+                {
+                    copying.Cancel();
+                    process.StandardOutput.Dispose();
+                    process.StandardError.Dispose();
+                    try { completion.WaitAsync(TimeSpan.FromSeconds(5)).GetAwaiter().GetResult(); }
+                    catch (OperationCanceledException) { }
+                    catch (ObjectDisposedException) { }
+                    catch (IOException) { }
+                }
+            }
         }
         catch (Exception error)
         {
             File.AppendAllText(Path.Combine(command.OutputDirectory, "stderr.log"), error.ToString());
         }
+        if (timedOut)
+            File.AppendAllText(Path.Combine(command.OutputDirectory, "stderr.log"),
+                $"\nBenchmark queue execution timed out after {command.TimeoutSeconds} seconds; process-tree termination was requested.\n");
         File.WriteAllText(Path.Combine(command.OutputDirectory, "result.json"), JsonSerializer.Serialize(new
         {
             command.Id, command.Executable, command.Arguments, command.Directory, ExitCode = exitCode,
+            command.TimeoutSeconds, TimedOut = timedOut,
             StartedAtUtc = started, FinishedAtUtc = DateTimeOffset.UtcNow,
         }));
+    }
+
+    internal static int ParseTimeoutSeconds(string value)
+    {
+        if (!int.TryParse(value, out int seconds) || seconds <= 0 || seconds > int.MaxValue / 1000)
+            throw new ArgumentException($"--timeout must be a whole number of seconds between 1 and {int.MaxValue / 1000}.");
+        return seconds;
     }
 
     private static void Wait(Mutex mutex)
@@ -126,5 +186,9 @@ internal static class BenchmarkCommands
     }
 
     private sealed record QueuedCommand(string Id, string Executable, string[] Arguments, string Directory,
-        string OutputDirectory, Dictionary<string, string> Environment);
+        string OutputDirectory, Dictionary<string, string> Environment)
+    {
+        public const int DefaultTimeoutSeconds = 60;
+        public int TimeoutSeconds { get; init; } = DefaultTimeoutSeconds;
+    }
 }

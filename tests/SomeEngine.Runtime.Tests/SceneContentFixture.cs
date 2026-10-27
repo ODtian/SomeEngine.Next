@@ -1,4 +1,5 @@
 using SomeEngine.Assets;
+using SomeEngine.Assets.Importers;
 using SomeEngine.Assets.Schema;
 
 namespace SomeEngine.Runtime.Tests;
@@ -27,7 +28,6 @@ public sealed class SceneContentFixture : IAsyncLifetime
                 new AssetId<ApplicationSettingsAsset>(applications[0].AssetGuid));
             ApplicationSettingsBlock boot = await settings.GetBlockAsync<ApplicationSettingsBlock>();
             await using WorldAsset scene = await WorldAsset.OpenAsync(content.Loader, boot.Scene);
-            Game.Assets.MaterialTypes.Register();
             DirectoryPath = existingDirectory;
             Console.WriteLine($"Scene fixture: reusing existing scene without generating content: {DirectoryPath}");
             return;
@@ -36,8 +36,30 @@ public sealed class SceneContentFixture : IAsyncLifetime
         while (directory is not null && !File.Exists(Path.Combine(directory, "SomeEngine.slnx")))
             directory = Path.GetDirectoryName(directory);
         if (directory is null) throw new DirectoryNotFoundException("The engine source directory is required to generate scene content.");
-        try { await SomeEngine.SceneContent.SceneContent.GenerateSpheresAsync(DirectoryPath, directory); }
+        try
+        {
+            await SomeEngine.SceneContent.SceneContent.GenerateSpheresAsync(DirectoryPath, directory);
+            await CompileViewMaterialModesAsync();
+        }
         catch { await DisposeAsync(); throw; }
+    }
+
+    // Only the generated test scene needs the normal/UV views exercised by ApplicationViewRenderingTests.
+    private async Task CompileViewMaterialModesAsync()
+    {
+        var project = new AssetProject(DirectoryPath, []);
+        string path = Path.Combine(DirectoryPath, "assets", "Shaders", "unlit.shader.asset");
+        using ShaderAsset shader = await ShaderAsset.OpenAsync(path);
+        ShaderSourceBlock inputs = await shader.GetBlockAsync<ShaderSourceBlock>();
+        foreach (string mode in new[] { "9", "10" })
+        {
+            inputs.Specializations.Add(new() { EntryPoint = "ClusterShadeMode", Arguments = [mode] });
+            inputs.Specializations.Add(new() { EntryPoint = "ClusterShadowRequests", Arguments = ["0", mode] });
+        }
+        var slang = SlangShaderImporter.GlobalSession;
+        var settings = SlangShaderImporter.CreateSessionDescription(path, SlangShaderImporter.CreateDefaultTargets(slang));
+        await shader.CompileAsync(slang, settings);
+        project.RegisterAsset(await shader.SaveAsync(path));
     }
 
     public Task DisposeAsync()

@@ -74,7 +74,10 @@ public static class SampleApplication
             };
             scene.InstallGeometry(example);
             SceneTestPlatform.ConfigureViews(scene, args);
-            return await Application.RunAsync(args, application: scene);
+            SampleSceneOptions sampleOptions = SampleSceneOptions.Parse(args);
+            ScenePanels.Install(scene, () => sampleOptions);
+            SceneAnimation.Install(scene, () => sampleOptions);
+            return (await Application.RunAsync(args, application: scene)).Succeeded ? 0 : 1;
         }
 #endif
         string? measuredScene = null;
@@ -101,9 +104,10 @@ public static class SampleApplication
         var platform = new SceneTestPlatform(scenes.Select(scene => scene with
         {
             ContentDirectory = Path.GetFullPath(scene.ContentDirectory, AppContext.BaseDirectory),
-        }).ToArray(), startupOptions)
+        }).ToArray(), startupOptions, SampleSceneOptions.Parse(args), AnimateMaterial)
         {
             StartupTraceOutput = Environment.GetEnvironmentVariable("SOMEENGINE_STARTUP_TRACE"),
+            CaptureGpuPassTimes = args.Contains("--gpu-pass-times", StringComparer.Ordinal),
             InitializeScene = clusterScene is null ? null : clusterScene.Initialize,
             UpdateScene = clusterScene is null || args.Contains("--cluster-static", StringComparer.Ordinal) ? null : clusterScene.Update,
             ColorFeatureSettings = clusterScene is null ? null : new Dictionary<string, string>
@@ -115,16 +119,25 @@ public static class SampleApplication
             },
         };
         platform.ConfigureViews(args);
-        return await Application.RunAsync<SampleSceneMaterials>(args, static (material, seconds) =>
+        try
         {
-            float roughness = 0.5f + MathF.Sin(seconds) * 0.2f;
-            switch (material)
-            {
-                case StandardMaterial standard: standard.Roughness = roughness; return true;
-                case ImportedScenes.SceneMaterial imported: imported.Roughness = roughness; return true;
-                default: return false;
-            }
-        }, platform.Application);
+            return (await Application.RunAsync<SampleSceneMaterials>(args, application: platform.Application)).Succeeded ? 0 : 1;
+        }
+        finally
+        {
+            platform.FinishGpuPassTimingCapture();
+        }
+    }
+
+    private static bool AnimateMaterial(Material material, float seconds)
+    {
+        float roughness = 0.5f + MathF.Sin(seconds) * 0.2f;
+        switch (material)
+        {
+            case StandardMaterial standard: standard.Roughness = roughness; return true;
+            case ImportedScenes.SceneMaterial imported: imported.Roughness = roughness; return true;
+            default: return false;
+        }
     }
 
 #if SOMEENGINE_DEVELOPMENT

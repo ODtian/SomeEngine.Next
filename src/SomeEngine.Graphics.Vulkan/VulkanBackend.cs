@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using Silk.NET.Core.Contexts;
 using Silk.NET.Vulkan.Extensions.EXT;
 using Silk.NET.Vulkan.Extensions.KHR;
 
@@ -44,10 +45,10 @@ internal sealed unsafe partial class VulkanBackend : IGraphicsBackend, INativeVa
         _options = options;
         _devices = new GraphicsObjectRegistry(_gate);
         _surfaces = new GraphicsObjectRegistry(_gate);
-        _vk = Vk.GetApi();
-        _instance = CreateInstance();
+        _vk = CreateVulkanApi();
         try
         {
+            _instance = CreateInstance();
             if (!_vk.TryGetInstanceExtension(_instance, out _surfaceApi) ||
                 !_vk.TryGetInstanceExtension(_instance, out _win32SurfaceApi))
                 throw new PlatformNotSupportedException("The Vulkan Win32 surface extensions could not be loaded.");
@@ -59,10 +60,83 @@ internal sealed unsafe partial class VulkanBackend : IGraphicsBackend, INativeVa
             _surfaceApi?.Dispose();
             _win32SurfaceApi?.Dispose();
             DestroyDebugMessenger();
-            _vk.DestroyInstance(_instance, null);
-            _instance = default;
+            if (_instance.Handle != 0)
+            {
+                _vk.DestroyInstance(_instance, null);
+                _instance = default;
+            }
             _vk.Dispose();
             throw;
+        }
+    }
+
+
+    private static Vk CreateVulkanApi()
+    {
+        var library = new VulkanLibrary();
+        Vk? api = null;
+        try
+        {
+            var context = new MultiNativeContext(library, null);
+            api = new Vk(context);
+            context.Contexts[1] = new LamdaNativeContext(name =>
+            {
+                if (name.EndsWith("ProcAddr", StringComparison.Ordinal))
+                    return 0;
+                nint address = api.GetDeviceProcAddr(api.CurrentDevice.GetValueOrDefault(), name);
+                return address != 0
+                    ? address
+                    : api.GetInstanceProcAddr(api.CurrentInstance.GetValueOrDefault(), name);
+            });
+            return api;
+        }
+        catch
+        {
+            if (api is null) library.Dispose();
+            else api.Dispose();
+            throw;
+        }
+    }
+
+    private sealed class VulkanLibrary : INativeContext
+    {
+        private nint _handle;
+        private readonly bool _ownsHandle;
+
+        internal VulkanLibrary()
+        {
+            if (OperatingSystem.IsIOS())
+            {
+                _handle = NativeLibrary.GetMainProgramHandle();
+                return;
+            }
+
+            string[] names = OperatingSystem.IsWindows() ? ["vulkan-1.dll"]
+                : OperatingSystem.IsAndroid() ? ["libvulkan.so"]
+                : OperatingSystem.IsLinux() ? ["libvulkan.so.1"]
+                : OperatingSystem.IsMacOS() ? ["libvulkan.dylib", "libMoltenVK.dylib"]
+                : throw new PlatformNotSupportedException("Invalid/unsupported operating system.");
+            _ownsHandle = true;
+            foreach (string name in names)
+            {
+                if (NativeLibrary.TryLoad(name, out _handle) ||
+                    NativeLibrary.TryLoad(Path.Combine(AppContext.BaseDirectory, name), out _handle))
+                    return;
+            }
+            throw new DllNotFoundException($"Could not load a Vulkan library: {string.Join(", ", names)}.");
+        }
+
+        public nint GetProcAddress(string proc, int? slot = null) =>
+            NativeLibrary.GetExport(_handle, proc);
+
+        public bool TryGetProcAddress(string proc, out nint address, int? slot = null) =>
+            NativeLibrary.TryGetExport(_handle, proc, out address);
+
+        public void Dispose()
+        {
+            nint handle = Interlocked.Exchange(ref _handle, 0);
+            if (_ownsHandle && handle != 0)
+                NativeLibrary.Free(handle);
         }
     }
 

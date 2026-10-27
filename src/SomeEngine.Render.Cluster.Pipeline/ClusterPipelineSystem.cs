@@ -386,7 +386,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             throw new InvalidOperationException("The Cluster graph has been uninstalled.");
         ClusterMaterialAssignmentSet sourceAssignments = _materialAssignments.Current;
         ClusterMaterialAssignmentSet assignments = sourceAssignments.ChangesSince(_consumedMaterialAssignments);
-        RefreshMaterialTextures();
         bool decalResourcesChanged = UpdateMaterialDecals();
         if (_graphInstalled && _resources.GeometryPageCount > GraphData.Resources.PagePriorityCapacity)
             EditGraph((ref RenderGraphEdit edit) => GrowPageRequestPriorities(ref edit));
@@ -404,6 +403,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         bool materialDepthChanged = assignmentsChanged || _rasterChangedMaterials.Count != 0;
         if (!assignmentsChanged && !materialResourcesChanged && !shadingChanged)
         {
+            // Material edits reconcile current texture references and versions together.
+            RefreshMaterialTextures(assignments.ChangedMaterialIds.Count != 0);
             if (assignments.ChangedOffsets.Count != 0 || assignments.ChangedMaterialIds.Count != 0 ||
                 _textureScalarChanges.Count != 0)
             {
@@ -448,6 +449,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         ClusterMaterialScalars scalars = null!;
         bool cullingEnabled = false;
         bool rasterChanged = false;
+        HashSet<SomeEngine.Resources.Texture>? textureChanges = null;
         ulong rasterRevision = _rasterRevision;
         EditGraph((ref RenderGraphEdit edit) =>
         {
@@ -501,6 +503,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             ReconcileTransparency(ref edit, assignments, shadeStages);
             ReconcileBlendMeasurements(ref edit);
             UpdateMaterialResources(ref edit, rasterStages, shadeStages);
+            textureChanges = CollectMaterialTextureChanges();
             if (rasterChanged || materialDepthChanged) rasterRevision = checked(_rasterRevision + 1);
         }, () =>
         {
@@ -514,6 +517,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             _rasterRevision = rasterRevision;
             _rasterStages!.AcceptChanges();
             _shadeStages!.AcceptChanges();
+            AcceptMaterialTextureChanges(textureChanges);
             RecordMaterialCasterChanges(assignments);
             AcceptMaterialChanges(assignments, sourceAssignments);
         });

@@ -239,6 +239,11 @@ internal sealed class SamplerFailureBackend(IGraphicsBackend backend) : IGraphic
         Device device,
         in AccelerationStructureSrvDesc desc) => throw new NotSupportedException();
 
+    public void EncodeAccelerationStructureInstances(
+        Device device,
+        ReadOnlySpan<AccelerationStructureInstance> instances,
+        Span<byte> destination) => throw new NotSupportedException();
+
     public AccelerationStructureBuildInfo GetAccelerationStructureBuildInfo(
         Device device,
         AccelerationStructureType type,

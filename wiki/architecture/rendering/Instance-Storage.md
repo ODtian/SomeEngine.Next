@@ -14,7 +14,11 @@ RenderWorld 保存来源组件；composition/producer 将这些组件组合为�
 
 核心 producer 持有 transform 字段；Cluster producer 持有 geometry、deform、xray、depth 与 first-person 等 Cluster 字段；材质 producer 持有 binding 与 blend 字段。共享 MaterialId/实际引用仍由 RenderWorld 提取路径维护，不新增逐实体材质所有者或独立 first-person 镜像系统。
 
-DataTransfer 根据发布的 `ContentRevision` 将批对应的 `PropertyDataRanges` 复制到图的持久属性缓冲；元数据仍从所选 generation 的映射缓冲按帧使用期取得。只有复制 pass 的实际提交确认才推进 transport 已接受版本，部分失败时仍保留已接受的资源边界。CPU 端的 changed-row/可选列写入语义不等于 GPU 只复制这些属性的字节：当前 transport 仍按需要更新的批范围复制，精确逐属性 GPU byte-copy 粒度尚未闭环。不能据此宣称每字节仅一次写入/复制或稳定帧加速已经恢复。
+每个批只保留最近一次发布的不可变属性范围增量，包含前后 `ContentRevision`；`RenderInstanceBatchView` 连同所选 generation 一起捕获该增量。每张图独立维护 allocation 身份与已提交版本，只有复制 pass 的实际提交确认才推进该图的游标；暂存或丢弃帧不消费共享增量，部分失败时仍保留实际接受的资源边界。元数据仍直接从所选 generation 的映射缓冲按帧使用期取得。
+
+当图的已提交版本恰好是该增量的前驱时，稳定逐实例绑定只复制实际写入的属性行范围；未变版本不复制。新图、allocation 复用或错过前驱版本仍回退到完整 `PropertyDataRanges`。共享值写入复制共享元素；转为逐实例绑定时复制完整的新可见列；自定义元数据保持完整批范围回退。因此这是常见相邻版本路径的稀疏复制，不是所有路径的最小复制承诺。
+
+属性行掩码只在实际稀疏写入时惰性创建，以 `CompareExchange` 发布同一个数组，写入用原子位或合并；不增加互斥锁、全局登记表或多版本日志。首次写入竞争可能产生临时落选数组，另有规范化范围数组的 CPU 成本；尚不能据此宣称总分配更少、GPU 物理流量最小或稳定帧更快。
 
 ## Query and geometry inputs
 
@@ -24,7 +28,7 @@ Cluster 的实际几何来源为 `RenderClusterGeometry`，通用 GPU geometry �
 
 ## Verification boundary
 
-公共验证应检查单行变化、批成员替换、取消/失败更新、动态连续帧、放弃帧后的重新准备、多组局部更新、未写列保留绑定、空更新、不完整替换，以及 CPU prepare 与 GPU 在途帧不互相覆写。值与回读正确不等于 GPU 复制字节粒度已验证。
+公共验证应检查单行变化、批成员替换、取消/失败更新、动态连续帧、放弃帧后的重新准备、多组局部更新、未写列保留绑定、空更新、不完整替换，以及 CPU prepare 与 GPU 在途帧不互相覆写。普通值回读只证明值正确；独立图游标、丢弃/跳版本回退、绑定切换及范围外哨兵保持不变的公共测试用于检查实际受影响的字节覆盖。哨兵检查仍不等于硬件流量计数、范围内无重复复制或性能测量。
 
 旧测试或旧架构下的运行记录不代表本次移植已通过。依赖项目编译与生成器探针不能替代 Render/Cluster 编译、这些公共行为测试或 GPU 执行。
 

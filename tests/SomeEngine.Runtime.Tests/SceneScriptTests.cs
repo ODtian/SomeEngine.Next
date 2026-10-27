@@ -17,7 +17,8 @@ public sealed class SceneScriptTests(SceneContentFixture content)
             images.Add(image);
             imageCopies.Add(image with { Pixels = image.Pixels.ToArray() });
         }
-        var script = new SceneScript(content.DirectoryPath, 5,
+        var script = new SceneScript(new ApplicationScene(content.DirectoryPath)
+            { RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register }, 5,
         [
             new(4, edit => edit.CaptureImage(Receive)),
             new(2, edit => edit.CaptureImage(Receive)),
@@ -48,7 +49,8 @@ public sealed class SceneScriptTests(SceneContentFixture content)
     {
         var images = new List<SceneImage>();
         // Small spheres retain the same visible mesh detail across the two camera histories.
-        var script = new SceneScript(content.DirectoryPath, 5,
+        var script = new SceneScript(new ApplicationScene(content.DirectoryPath)
+            { RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register }, 5,
         [
             new(0, edit =>
             {
@@ -68,7 +70,8 @@ public sealed class SceneScriptTests(SceneContentFixture content)
         var result = await Application.RunAsync(["--hardware-adapter", "--no-taa", "--no-vsm"], script);
         Assert.True(result.Succeeded, result.Error?.ToString());
         SceneImage? expected = null;
-        var direct = new SceneScript(content.DirectoryPath, 5,
+        var direct = new SceneScript(new ApplicationScene(content.DirectoryPath)
+            { RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register }, 5,
         [
             new(0, edit =>
             {
@@ -90,7 +93,8 @@ public sealed class SceneScriptTests(SceneContentFixture content)
     [Fact]
     public async Task ActionFailuresReportTheirCategoryAndCompletedFrames()
     {
-        var script = new SceneScript(content.DirectoryPath, 4,
+        var script = new SceneScript(new ApplicationScene(content.DirectoryPath)
+            { RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register }, 4,
             [new(2, _ => throw new InvalidOperationException())]);
         var result = await Application.RunAsync(["--hardware-adapter", "--no-taa", "--no-vsm"], script);
         Assert.Equal(ApplicationFailure.SceneAction, result.Failure);
@@ -100,7 +104,8 @@ public sealed class SceneScriptTests(SceneContentFixture content)
     [Fact]
     public async Task ImageCallbackFailuresReportTheirCategoryAndCompletedFrames()
     {
-        var script = new SceneScript(content.DirectoryPath, 4,
+        var script = new SceneScript(new ApplicationScene(content.DirectoryPath)
+            { RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register }, 4,
             [new(2, edit => edit.CaptureImage(_ => throw new InvalidOperationException()))]);
         var result = await Application.RunAsync(["--hardware-adapter", "--no-taa", "--no-vsm"], script);
         Assert.Equal(ApplicationFailure.ImageCallback, result.Failure);
@@ -114,7 +119,8 @@ public sealed class SceneScriptTests(SceneContentFixture content)
         string directory = files.DirectoryPath;
         await SomeEngine.SceneContent.SceneContent.SetOutputSizeAsync(directory, 80, 48);
         SceneImage? image = null;
-        var script = new SceneScript(directory, 4, [new(3, edit => edit.CaptureImage(value => image = value))]);
+        var script = new SceneScript(new ApplicationScene(directory)
+            { RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register }, 4, [new(3, edit => edit.CaptureImage(value => image = value))]);
         var result = await Application.RunAsync(["--hardware-adapter", "--no-taa", "--no-vsm"], script);
         Assert.True(result.Succeeded, result.Error?.ToString());
         Assert.Equal(80, image!.Width);
@@ -128,7 +134,8 @@ public sealed class SceneScriptTests(SceneContentFixture content)
     public async Task OutputSizeChangeMatchesStartingAtTheNewSize()
     {
         SceneImage? resized = null;
-        var script = new SceneScript(content.DirectoryPath, 5,
+        var script = new SceneScript(new ApplicationScene(content.DirectoryPath)
+            { RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register }, 5,
         [
             new(3, edit => edit.SetOutputSize(80, 48)),
             new(4, edit => edit.CaptureImage(image => resized = image)),
@@ -139,7 +146,8 @@ public sealed class SceneScriptTests(SceneContentFixture content)
         string directory = files.DirectoryPath;
         await SomeEngine.SceneContent.SceneContent.SetOutputSizeAsync(directory, 80, 48);
         SceneImage? expected = null;
-        var direct = new SceneScript(directory, 5, [new(4, edit => edit.CaptureImage(image => expected = image))]);
+        var direct = new SceneScript(new ApplicationScene(directory)
+            { RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register }, 5, [new(4, edit => edit.CaptureImage(image => expected = image))]);
         var reference = await Application.RunAsync(["--hardware-adapter", "--no-taa", "--no-vsm"], direct);
         Assert.True(reference.Succeeded, reference.Error?.ToString());
         Assert.Equal(80, resized!.Width);

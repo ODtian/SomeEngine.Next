@@ -12,7 +12,7 @@ using static SomeEngine.Elements.VirtualListFunctions;
 using static SomeEngine.Layout.AbsoluteFunctions;
 using Size = SomeEngine.Layout.Size;
 
-namespace SomeEngine.Runtime;
+namespace DefaultGame;
 
 /// <summary>The standard scene HUD: eight hundred labels, one hundred changing numeric views and a long virtual list.</summary>
 public sealed partial class HudOverlay : IDisposable
@@ -37,7 +37,7 @@ public sealed partial class HudOverlay : IDisposable
         _text = text;
         _frame = world.CreateEntity(new HudFrame());
         Canvas = world.CreateEntity(new Canvas { Size = new Size(width, height) });
-        _view = Views.Views.Spawn(world, Canvas, new OverlayView(width, height, text.Font, _frame));
+        _view = SomeEngine.Views.Views.Spawn(world, Canvas, new OverlayView(width, height, text.Font, _frame));
     }
 
     public void Update(int frameNumber) => _world.Replace(_frame, new HudFrame(frameNumber));

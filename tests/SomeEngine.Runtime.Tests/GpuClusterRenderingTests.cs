@@ -23,6 +23,7 @@ public sealed class GpuClusterRenderingTests(SceneContentFixture content)
         ulong beforeRevision = 0;
         var scene = new ApplicationScene(content.DirectoryPath)
         {
+            RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
             SceneCompleted = value => completed = value,
             Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "4"]),
@@ -45,9 +46,9 @@ public sealed class GpuClusterRenderingTests(SceneContentFixture content)
         };
         scene.InstallGeometry(example);
 
-        int result = await Application.RunAsync([], application: scene);
+        ApplicationResult result = await Application.RunAsync([], application: scene);
 
-        Assert.True(result == 0, completed?.Error?.ToString());
+        Assert.True(result.Succeeded, completed?.Error?.ToString());
         Assert.True(example.BuildCompleted);
         Assert.Equal(beforeRevision + 1, example.GeometryRevision);
         SceneImages.AssertEqual(before!, building!);
@@ -81,6 +82,7 @@ public sealed class GpuClusterRenderingTests(SceneContentFixture content)
         SceneImage? image = null;
         var scene = new ApplicationScene(content.DirectoryPath)
         {
+            RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
             Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "1"]),
             UpdateFrame = frame =>
@@ -94,9 +96,9 @@ public sealed class GpuClusterRenderingTests(SceneContentFixture content)
         };
         scene.InstallGeometry(example);
 
-        int result = await Application.RunAsync([], application: scene);
+        ApplicationResult result = await Application.RunAsync([], application: scene);
 
-        Assert.Equal(0, result);
+        Assert.True(result.Succeeded, result.Error?.ToString());
         Assert.True(example.BuildCompleted);
         SceneImages.AssertColorRegion(image!, 26, 28, 3, 8, 0, 186, 0);
         SceneImages.AssertColorRegion(image!, 35, 28, 3, 8, 186, 0, 0);

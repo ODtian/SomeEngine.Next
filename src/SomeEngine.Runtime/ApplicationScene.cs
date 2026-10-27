@@ -1,6 +1,8 @@
 using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
 using SomeEngine.ECS;
+using SomeEngine.ECS.Entities;
+using SomeEngine.ECS.Serialization;
 using SomeEngine.Graphics;
 using SomeEngine.Render.Systems;
 using SomeEngine.Render.Cluster;
@@ -8,7 +10,7 @@ using SomeEngine.Render.Cluster.Pipeline;
 
 namespace SomeEngine.Runtime;
 
-/// <summary>Application content, rendering settings and callbacks executed on the application thread.</summary>
+/// <summary>Application content, rendering settings and callbacks for each scene run.</summary>
 public sealed class ApplicationScene(string contentDirectory)
 {
     private readonly List<IApplicationGeometryFeature> _geometryFeatures = [];
@@ -31,10 +33,27 @@ public sealed class ApplicationScene(string contentDirectory)
     /// <summary>Enables explicit caster-invalidation GPU timestamp requests for this application.</summary>
     public bool MeasureShadowInvalidation { get; init; }
     public Action<long>? SceneStarted { get; set; }
+    /// <summary>Adds application component codecs to a fresh registry before each scene load.</summary>
+    public Action<SerializationRegistry>? RegisterSceneComponents { get; set; }
+    /// <summary>Processes each supported mesh after geometry bindings are attached and before MeshSource is removed.</summary>
+    /// <remarks>Runs serially on the loading task, in the original source query order.</remarks>
+    public Action<World, Entity>? InitializeMesh { get; set; }
+    /// <summary>Creates resources before geometry installation and Initialize, for one scene run.</summary>
+    /// <remarks>The single factory returns combined resources, released after renderer cleanup and before World disposal,
+    /// including failure unwinding. The factory must clean up partial construction if it throws.</remarks>
+    public Func<World, SceneEdit, IDisposable?>? CreateSceneResources { get; set; }
     public Action<ApplicationFrame>? Initialize { get; set; }
     public Action<ApplicationFrame>? Shutdown { get; set; }
     public bool InterfaceEnabled { get; set; }
     public Action<ApplicationFrame>? UpdateFrame { get; set; }
+    /// <summary>Edits scene data before camera input, using absolute scene time in seconds.</summary>
+    /// <remarks>Synchronous frames run after UpdateFrame. Asynchronous frames run on the next-frame game task,
+    /// including the initial update at time zero. Capture, cancellation, camera-history and shadow-refresh requests remain UpdateFrame actions.</remarks>
+    public Action<SceneEdit, float>? BeforeCameraInput { get; set; }
+    /// <summary>Edits scene data before geometry game systems, using absolute scene time in seconds.</summary>
+    /// <remarks>Synchronous frames run after camera input; asynchronous frames run after BeforeCameraInput on
+    /// the next-frame game task. Not invoked for bootstrap. Capture, cancellation, camera-history and shadow-refresh requests remain UpdateFrame actions.</remarks>
+    public Action<SceneEdit, float>? SimulateScene { get; set; }
     public Action? DrawDebugUi { get; set; }
     /// <summary>Draws application ImGui overlays after the optional debug panel.</summary>
     public Action? DrawOverlay { get; set; }

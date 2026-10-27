@@ -22,6 +22,7 @@ public sealed class VoxelTerrainRenderingTests(SceneContentFixture content)
         TerrainEdit edit = default;
         var application = new ApplicationScene(content.DirectoryPath)
         {
+            RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
             Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "18"]),
             UpdateFrame = frame =>
@@ -39,8 +40,8 @@ public sealed class VoxelTerrainRenderingTests(SceneContentFixture content)
             },
         };
         example.Install(application);
-        int result = await Application.RunAsync([], application: application);
-        Assert.Equal(0, result);
+        ApplicationResult result = await Application.RunAsync([], application: application);
+        Assert.True(result.Succeeded, result.Error?.ToString());
         VoxelFieldRead current = await example.Field.ReadCpuAsync(example.SampleRegion);
         Assert.Equal(-1f, earlier[-1, 0, 0]);
         Assert.Equal(1f, current[-1, 0, 0]);
@@ -58,7 +59,8 @@ public sealed class VoxelTerrainRenderingTests(SceneContentFixture content)
         Mesh reference = ClusterMeshBuilder.Build(positions, attributes, indices, [new(0, 24, 0)],
             StandardClusterVertexEncoder.Instance, ClusterBuildStrategy.Realtime, "Sampled sphere reference");
         Entity sphere = default;
-        await SceneImages.RunAsync("d3d12", new SceneScript(content.DirectoryPath, 18,
+        await SceneImages.RunAsync("d3d12", new SceneScript(new ApplicationScene(content.DirectoryPath)
+            { RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register }, 18,
         [
             new(0, scene =>
             {

@@ -14,7 +14,7 @@ public sealed class DynamicShadowRenderingTests
 {
     [Fact]
     public Task AnAutomaticShadowCasterMovesAgainAfterReturningToStaticCache()
-        => CheckAutomaticShadowCacheAsync(null);
+        => CheckAutomaticShadowCacheAsync(null, usePackedAssets: false);
 
     [Theory]
     [InlineData(false)]

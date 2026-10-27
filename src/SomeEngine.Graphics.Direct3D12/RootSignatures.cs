@@ -348,6 +348,8 @@ internal sealed unsafe partial class D3D12Backend
 
     private static void RequireNativeParameterBindings(
         NativeParameterBinding placement,
+        VariableLayoutReflection layout,
+        D3D12Pipeline pipeline,
         ReadOnlySpan<ResourceBinding> bindings,
         ReadOnlySpan<byte> ordinaryData)
     {
@@ -355,14 +357,16 @@ internal sealed unsafe partial class D3D12Backend
         if (ordinaryData.Length != ordinarySize)
         {
             throw new ArgumentException(
-                $"The Slang parameter layout requires exactly {ordinarySize} " +
+                $"The Slang parameter layout '{layout.Name}' in {pipeline.Type} pipeline " +
+                $"'{pipeline.Label ?? "<unlabeled>"}' requires exactly {ordinarySize} " +
                 $"ordinary-data bytes; the supplied packet has {ordinaryData.Length} bytes.",
                 nameof(ordinaryData));
         }
         if (bindings.Length != placement.Slots.Length)
         {
             throw new ArgumentException(
-                $"The Slang parameter layout requires exactly {placement.Slots.Length} bounded " +
+                $"The Slang parameter layout '{layout.Name}' in {pipeline.Type} pipeline " +
+                $"'{pipeline.Label ?? "<unlabeled>"}' requires exactly {placement.Slots.Length} bounded " +
                 $"resource bindings; the supplied packet has {bindings.Length} bindings.",
                 nameof(bindings));
         }

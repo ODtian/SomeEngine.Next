@@ -214,7 +214,6 @@ internal sealed class RuntimeUiRenderer : IDisposable, IRenderGraphFrameExecutio
 
     internal void DrawDebugWindow(
         ref bool open,
-        ref bool animateScene,
         in RuntimeUiMetrics metrics, Action? drawDebugUi = null)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -240,8 +239,6 @@ internal sealed class RuntimeUiRenderer : IDisposable, IRenderGraphFrameExecutio
         ImGui.Text($"Camera ({metrics.CameraPosition.X:F2}, {metrics.CameraPosition.Y:F2}, {metrics.CameraPosition.Z:F2})");
         ImGui.Text(metrics.Focused ? "Window focus: active" : "Window focus: inactive");
         drawDebugUi?.Invoke();
-        ImGui.Separator();
-        _ = ImGui.Checkbox("Animate scene", ref animateScene);
         ImGui.TextUnformatted(metrics.TemporalAntialiasing
             ? "Temporal resolve: enabled (8-sample centered Halton)"
             : "Temporal resolve: disabled");

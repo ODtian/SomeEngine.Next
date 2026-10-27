@@ -46,7 +46,7 @@ flowchart TD
 
 `JobStorageTypeMetadata<T>` 的一个整数保存未知、可直接访问、含别名三种状态。生成的布尔分类写入该处；普通 typed access 与生成工厂读取它。`ComponentMetadata<T>` 创建的操作表保存该 getter 的函数指针，按组件 ID 收集资源的 `QueryJobAccess` 因而读取相同分类。可直接访问的表组件随后沿既有 WorldStorageResourceKey 映射为 Scheduler 读写资源。
 
-`RelationSchemaCache<T>` 持有一个 Lazy schema。生成登记把已知方向、基数和 self-edge 数据写入这个 Lazy，首次 `RelationSchema.For<T>` 执行原有 `ValidateFor`。私有封闭类型等按需路径继续由该持有处取得字段分类或 attribute 数据。
+`RelationSchemaCache<T>` 持有一个 Lazy schema。生成登记把已知方向、基数和 self-edge 数据写入这个 Lazy，首次 `RelationSchema.For<T>` 执行原有 `ValidateFor`。私有封闭类型等按需路径继续由该持有处取得字段分类或 attribute 数据。 对生成器发现但不能直接命名的私有封闭存储类型，初始化方法使用 Roslyn `DocumentationCommentId.CreateDeclarationId` 的类型名称格式（省略 `T:`，嵌套分隔使用 `.`）保留实例字段，并递归保留实际构造后的值字段类型闭包；引用程序集的私有 backing field 也由同一字段分析持有处读取。该保留使用标准 `DynamicDependency`，不改变按需分类、可用类型或运行时登记协议。
 
 ## 生成物归属
 

@@ -33,8 +33,7 @@ public static class SampleContent
         string shaders = Path.Combine(projectRoot, "assets", "Shaders");
         string engineShaders = Path.Combine(Path.GetFullPath(engineRoot), "assets", "Shaders");
         WriteInstanceLayout(shaders);
-        WriteGeneratedFile(Path.Combine(shaders, "cluster_transparency.slang"),
-            File.ReadAllText(Path.Combine(engineShaders, "cluster_transparency.slang")));
+        LinkTransparencySource(shaders, engineShaders);
         var project = new AssetProject(projectRoot, [], shaderIncludeDirectories: [engineShaders]);
         await project.BuildAsync(Path.GetFullPath(shaderSource, projectRoot), cancellationToken: cancellationToken)
             .ConfigureAwait(false);
@@ -48,8 +47,7 @@ public static class SampleContent
         string shaders = Path.Combine(projectRoot, "assets", "Shaders");
         string engineShaders = Path.Combine(engineRoot, "assets", "Shaders");
         WriteInstanceLayout(shaders);
-        WriteGeneratedFile(Path.Combine(shaders, "cluster_transparency.slang"),
-            File.ReadAllText(Path.Combine(engineShaders, "cluster_transparency.slang")));
+        LinkTransparencySource(shaders, engineShaders);
         var project = new AssetProject(projectRoot, [StandardGltfSceneImporter.CreateSourceImporter()],
             shaderIncludeDirectories: [engineShaders]);
         await BuildEngineShadersAsync(project, shaders, engineShaders, cancellationToken).ConfigureAwait(false);
@@ -81,6 +79,39 @@ public static class SampleContent
         string source = ClusterShaderSources.BuildInstanceLayout(layout).Replace("#endif",
             $"static const uint SKIN_BINDING_METADATA_WORD = {skinBinding}u;\n\n#endif", StringComparison.Ordinal);
         WriteGeneratedFile(Path.Combine(shaders, "generated", "render_instance_layout.slang"), source);
+    }
+
+    internal static void LinkTransparencySource(string shaders, string engineShaders)
+    {
+        string source = Path.GetFullPath(Path.Combine(engineShaders, "cluster_transparency.slang"));
+        string destination = Path.GetFullPath(Path.Combine(shaders, "cluster_transparency.slang"));
+        if (!File.Exists(source))
+            throw new FileNotFoundException("The engine transparency source was not found.", source);
+        StringComparison comparison = OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        if (string.Equals(destination, source, comparison)) return;
+
+        string directory = Path.GetDirectoryName(destination)!;
+        var file = new FileInfo(destination);
+        if (file.LinkTarget is { } target &&
+            string.Equals(Path.GetFullPath(target, directory), source, comparison)) return;
+
+        string temporary = destination + ".link-" + Guid.NewGuid().ToString("N");
+        try
+        {
+            File.CreateSymbolicLink(temporary, Path.GetRelativePath(directory, source));
+            File.Move(temporary, destination, overwrite: true);
+        }
+        catch (Exception failure) when (failure is IOException or UnauthorizedAccessException or NotSupportedException)
+        {
+            throw new IOException(
+                $"Cannot link transparency source '{destination}' to '{source}'. Symbolic-link support is required.",
+                failure);
+        }
+        finally
+        {
+            File.Delete(temporary);
+        }
     }
 
     private static void WriteGeneratedFile(string path, string content)
@@ -305,7 +336,7 @@ public static class SampleContent
         world.CreateEntity(new PointLight(new(-18, 4, 58), 22, new(1, 0.55f, 0.45f), 7));
         world.CreateEntity(new PointLight(new(18, 8, 60), 24, new(0.45f, 1, 0.65f), 8));
         using var asset = new WorldAsset(SampleAssetIds.Scene) { Name = "Default" };
-        asset.WriteWorld(world, SceneSerialization.CreateRegistry());
+        asset.WriteWorld(world, SampleSceneSerialization.CreateRegistry());
         AssetEntry entry = await asset.SaveAsync(Path.Combine(project.RootPath, outputPath), cancellationToken).ConfigureAwait(false);
         Guid id = project.RegisterAsset(entry);
         Console.WriteLine($"  Scene: {outputPath}");

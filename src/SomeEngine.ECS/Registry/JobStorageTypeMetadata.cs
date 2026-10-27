@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 
@@ -20,6 +21,15 @@ internal static class JobStorageTypeMetadata<T>
             int value = Volatile.Read(ref s_aliasFree);
             if (value == 0)
             {
+                // NativeAOT must not infer safety from field metadata that trimming may remove.
+                // Generated registrations and explicit RegisterJobStorage<T> use this same cache.
+                if (!RuntimeFeature.IsDynamicCodeSupported)
+                {
+                    throw new NotSupportedException(
+                        $"Job storage metadata for {typeof(T).Name} must be generated or " +
+                        "explicitly registered before use when dynamic code is unavailable.");
+                }
+
                 value = !RuntimeHelpers.IsReferenceOrContainsReferences<T>() &&
                     JobStorageTypeShape.IsAliasFree(typeof(T)) ? 1 : -1;
                 Interlocked.CompareExchange(ref s_aliasFree, value, 0);
@@ -47,12 +57,18 @@ internal static class JobStorageTypeMetadata<T>
 
 internal static class JobStorageTypeShape
 {
+    [RequiresDynamicCode("The reflective Job storage fallback requires a dynamic-code runtime; use generated or explicitly registered metadata otherwise.")]
     internal static bool IsAliasFree(Type type)
     {
         ArgumentNullException.ThrowIfNull(type);
         return IsAliasFree(type, new HashSet<Type>());
     }
 
+    [UnconditionalSuppressMessage("Trimming", "IL2070",
+        Justification = "Only the managed fallback reaches this method: JobStorageTypeMetadata<T> rejects " +
+            "missing metadata before reflection when dynamic code is unavailable. EcsTypeGenerator retains " +
+            "recursive field roots for discovered managed fallback types. Other trimmed managed callers " +
+            "must explicitly register Job storage metadata; universal retention is not assumed.")]
     private static bool IsAliasFree(Type type, HashSet<Type> visited)
     {
         if (type.IsPointer ||

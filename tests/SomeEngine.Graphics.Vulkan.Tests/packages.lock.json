@@ -12,6 +12,16 @@
           "Microsoft.TestPlatform.TestHost": "17.14.1"
         }
       },
+      "SkiaSharp": {
+        "type": "Direct",
+        "requested": "[3.119.4, )",
+        "resolved": "3.119.4",
+        "contentHash": "53NOSUZ1Us+91Sm0uCkIivh/k7jOowRErZT2sIWwPFN9mLUvdxnE6rS4sWo4255+Rd2MWUSF+j0NMZHD6Cke+Q==",
+        "dependencies": {
+          "SkiaSharp.NativeAssets.Win32": "3.119.4",
+          "SkiaSharp.NativeAssets.macOS": "3.119.4"
+        }
+      },
       "xunit": {
         "type": "Direct",
         "requested": "[2.9.3, )",
@@ -107,6 +117,16 @@
           "Silk.NET.Vulkan": "2.23.0"
         }
       },
+      "SkiaSharp.NativeAssets.macOS": {
+        "type": "Transitive",
+        "resolved": "3.119.4",
+        "contentHash": "fgBOWEqbY012x7gMfJU4ezgz6dfhJb30Z6YdW35h85Zoe39+a8YNbAAwL29ihPfWoppg5AjvyKNzD1oCvlqWwA=="
+      },
+      "SkiaSharp.NativeAssets.Win32": {
+        "type": "Transitive",
+        "resolved": "3.119.4",
+        "contentHash": "XOpbx/4CReO2wYsq2s6rbvdauc6dntG4Zv499sHGTJ87bwZaFXszFkwql3+FIZMc8kUPeaj3Mx2ezIJmo8a1Kg=="
+      },
       "SlangShaderSharp": {
         "type": "Transitive",
         "resolved": "2026.17.1",
@@ -155,6 +175,7 @@
       "someengine.core": {
         "type": "Project",
         "dependencies": {
+          "SomeEngine.Diagnostics": "[1.0.0, )",
           "SomeEngine.ECS": "[1.0.0, )",
           "SomeEngine.ECS.Systems": "[1.0.0, )",
           "SomeEngine.Job": "[1.0.0, )"
@@ -166,6 +187,7 @@
       "someengine.ecs": {
         "type": "Project",
         "dependencies": {
+          "SomeEngine.Diagnostics": "[1.0.0, )",
           "SomeEngine.Job.Contracts": "[1.0.0, )"
         }
       },

@@ -267,10 +267,28 @@ if ($StartupFrames) {
     $start.ArgumentList.Add('--no-debug-ui')
 }
 if ($TraceDetail) { $start.ArgumentList.Add('--trace-detail') }
+$flatDirectory = [Environment]::GetEnvironmentVariable('SOMEENGINE_MEASUREMENT_OUTPUT_DIRECTORY', 'Process')
+$flatBasename = [Environment]::GetEnvironmentVariable('SOMEENGINE_MEASUREMENT_OUTPUT_BASENAME', 'Process')
+$flatReport = $null
+if ($flatDirectory -or $flatBasename) {
+    if (!$flatDirectory -or !$flatBasename -or $flatBasename -cnotmatch '^[A-Za-z0-9_-]{1,96}$' -or
+        ![IO.Path]::IsPathFullyQualified($flatDirectory) -or ![IO.Directory]::Exists($flatDirectory)) {
+        throw 'Flat measurement output requires an existing absolute directory and an ASCII basename.'
+    }
+    $flatReport = Join-Path ([IO.Path]::GetFullPath($flatDirectory)) ($flatBasename + '-results.json')
+    $flatSamples = Join-Path ([IO.Path]::GetFullPath($flatDirectory)) ($flatBasename + '-frame-samples.json')
+    if ([IO.File]::Exists($flatReport) -or [IO.File]::Exists($flatSamples)) { throw 'Flat measurement output already exists.' }
+}
 if ($Trace) {
-    $startupTraces = Join-Path ([IO.Path]::GetDirectoryName($application)) 'Performance'
-    [void][IO.Directory]::CreateDirectory($startupTraces)
-    $start.Environment['SOMEENGINE_STARTUP_TRACE'] = Join-Path $startupTraces ('startup-' + [Guid]::NewGuid().ToString('N') + '.setrace')
+    if ($flatReport) {
+        $startupTrace = Join-Path ([IO.Path]::GetFullPath($flatDirectory)) ($flatBasename + '-startup.setrace')
+        if (Test-Path -LiteralPath $startupTrace) { throw 'Flat startup trace output already exists.' }
+    } else {
+        $startupTraces = Join-Path ([IO.Path]::GetDirectoryName($application)) 'Performance'
+        [void][IO.Directory]::CreateDirectory($startupTraces)
+        $startupTrace = Join-Path $startupTraces ('startup-' + [Guid]::NewGuid().ToString('N') + '.setrace')
+    }
+    $start.Environment['SOMEENGINE_STARTUP_TRACE'] = $startupTrace
 } else {
     [void]$start.Environment.Remove('SOMEENGINE_STARTUP_TRACE')
 }
@@ -284,18 +302,6 @@ if ($ShadingPath) {
 [Console]::Out.WriteLine('NATIVE_LAUNCH ' + ([ordered]@{
     Executable = $start.FileName; Arguments = @($start.ArgumentList)
 } | ConvertTo-Json -Depth 3 -Compress))
-$flatDirectory = [Environment]::GetEnvironmentVariable('SOMEENGINE_MEASUREMENT_OUTPUT_DIRECTORY', 'Process')
-$flatBasename = [Environment]::GetEnvironmentVariable('SOMEENGINE_MEASUREMENT_OUTPUT_BASENAME', 'Process')
-$flatReport = $null
-if ($flatDirectory -or $flatBasename) {
-    if (!$flatDirectory -or !$flatBasename -or $Trace -or $flatBasename -cnotmatch '^[A-Za-z0-9_-]{1,96}$' -or
-        ![IO.Path]::IsPathFullyQualified($flatDirectory) -or ![IO.Directory]::Exists($flatDirectory)) {
-        throw 'Flat measurement output requires an existing absolute directory, an ASCII basename and no trace.'
-    }
-    $flatReport = Join-Path ([IO.Path]::GetFullPath($flatDirectory)) ($flatBasename + '-results.json')
-    $flatSamples = Join-Path ([IO.Path]::GetFullPath($flatDirectory)) ($flatBasename + '-frame-samples.json')
-    if ([IO.File]::Exists($flatReport) -or [IO.File]::Exists($flatSamples)) { throw 'Flat measurement output already exists.' }
-}
 $process = [Diagnostics.Process]::Start($start)
 $output = $process.StandardOutput.ReadToEndAsync()
 $errors = $process.StandardError.ReadToEndAsync()
@@ -395,6 +401,7 @@ $requiredScenes = if ($ExpectedScene) { @($ExpectedScene) } elseif ($Scene) { @(
 if (!$result.Complete -or $result.Scenes.Count -ne $requiredScenes.Count -or
     @(Compare-Object -CaseSensitive $requiredScenes @($result.Scenes.Scene)).Count -ne 0 -or
     @($result.Scenes | Where-Object Status -ne 'Measured').Count -ne 0) {
+    if ($env:SOMEENGINE_VSM_INVALIDATION_TIMING -ne '1') { [Console]::Out.Write($applicationOutput) }
     throw 'The requested scene run is incomplete; do not use it as a passing performance comparison.'
 }
 if ($requiredScenes.Count -eq 1 -or $Managed -or $Trace) {

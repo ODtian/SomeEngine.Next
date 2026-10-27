@@ -91,7 +91,6 @@ void MarkVirtualShadowReceiverRectangle(VirtualShadowMapParameters view, uint mi
         uint2 high = uint2(lastCell.x, min(lastCell.y, word * 4u + 3u) - word * 4u);
         uint mask = VirtualShadowReceiverWordRectangle(low, high);
         uint2 texel = address + uint2(0u, word);
-        if (!SelectVirtualShadowReceiverMaskWriter(texel, mask)) continue;
         uint ignored;
         InterlockedOr(PageReceiverMasks[texel], mask, ignored);
     }

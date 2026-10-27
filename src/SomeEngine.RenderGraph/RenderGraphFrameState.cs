@@ -1207,10 +1207,10 @@ internal sealed partial class RenderGraphFrameState
         destination[..Graph.MaximumQueueCompletionCount].Clear();
         try
         {
+            _executor.Reset();
             var frame = new RenderGraphFrame(this);
             foreach (IRenderGraphFrameExecutionObserver observer in _executionObservers)
                 observer.OnRenderGraphFramePreparing(ref frame);
-            _executor.Reset();
             PrepareBufferUploads();
             PrepareReadbacks();
             _sealed = true;

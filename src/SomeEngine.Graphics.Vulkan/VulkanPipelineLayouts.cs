@@ -594,7 +594,8 @@ internal sealed unsafe partial class VulkanBackend
                         sets[pair.Value],
                         VulkanBindlessPublisher.BindingFor(pair.Value),
                         pair.Key.Name,
-                        pair.Key.LogicalSet));
+                        pair.Key.LogicalSet,
+                        pair.Key.LogicalBinding));
             foreach (VulkanBlockLayout block in _blocks.Values)
             {
                 for (int index = 0; index < block.SpirvTargets.Length; index++)

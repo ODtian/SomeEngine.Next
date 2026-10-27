@@ -87,7 +87,19 @@ public readonly record struct NavigationMppi<TSpace, TModel>(TSpace Space, Navig
     where TSpace : class, INavigationSpace<TSpace>
     where TModel : struct, INavigationMppiModel<TSpace>
 {
-    internal NavigationMppiData<TSpace> Data { get; } = new();
+    internal NavigationMppiData<TSpace>? Data { get; private init; }
+
+    internal static NavigationMppiData<TSpace> GetData(
+        ref NavigationMppi<TSpace, TModel> component, World world, Entity entity)
+    {
+        NavigationMppiData<TSpace>? data = component.Data;
+        if (data is null || !ReferenceEquals(data.World, world) || data.Entity != entity)
+        {
+            data = new(world, entity);
+            component = component with { Data = data };
+        }
+        return data;
+    }
 }
 
 public enum NavigationMppiStatus : byte { Idle, Ready, NoFeasibleTrajectory }
@@ -116,13 +128,16 @@ internal readonly struct NavigationMppiResources<TSpace, TModel> : IJobComponent
     public static long GetVersion(in NavigationMppi<TSpace, TModel> component) => TSpace.GetVersion(component.Space);
     public static void Collect(in NavigationMppi<TSpace, TModel> component, ref JobResourceAccessBuilder resources)
     {
-        resources.Exclusive(component.Data);
+        if (component.Data is { } data) resources.Exclusive(data);
         TSpace.CollectResources(component.Space, ref resources);
     }
 }
 
-internal sealed class NavigationMppiData<TSpace> where TSpace : class, INavigationSpace<TSpace>
+internal sealed class NavigationMppiData<TSpace>(World world, Entity entity)
+    where TSpace : class, INavigationSpace<TSpace>
 {
+    internal World World { get; } = world;
+    internal Entity Entity { get; } = entity;
     internal Vector2[] Controls = [], Noise = [], CandidateControls = [], UpdatedControls = [], SelectedControls = [];
     internal NavigationMotion[] CandidateMotions = [], SelectedMotions = [];
     internal NavigationPose[] Reference = [];

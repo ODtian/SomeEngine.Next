@@ -31,7 +31,7 @@ public sealed class ShaderDefinitionTests : IDisposable
         using var definition = new ShaderAsset { Name = "draw" };
         definition.GetBlock<ShaderSourceBlock>().SourceNames = ["Draw.slang"];
         await definition.SaveSourceAsync(path);
-        var project = new AssetProject(_project, [], sourceFormats: [new ShaderSourceFormat([first, second])]);
+        var project = new AssetProject(_project, [], shaderIncludeDirectories: [first, second]);
         Guid id = await project.BuildAsync(path);
         string output = Path.Combine(_project, Assert.Single(project.List()).Path);
         string recordPath = SourceMeta.GetBuildPath(path);
@@ -55,7 +55,7 @@ public sealed class ShaderDefinitionTests : IDisposable
         var timestamp = new DateTime(2001, 1, 1, 0, 0, 0, DateTimeKind.Utc);
         File.SetLastWriteTimeUtc(output, timestamp);
         File.SetLastWriteTimeUtc(recordPath, timestamp);
-        var reopened = new AssetProject(_project, [], sourceFormats: [new ShaderSourceFormat(redundant)]);
+        var reopened = new AssetProject(_project, [], shaderIncludeDirectories: redundant);
         Assert.Equal(id, await reopened.BuildAsync(path));
         Assert.Equal(timestamp, File.GetLastWriteTimeUtc(output));
         Assert.Equal(timestamp, File.GetLastWriteTimeUtc(recordPath));

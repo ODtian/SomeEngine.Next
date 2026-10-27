@@ -19,6 +19,8 @@
 CPU、GPU benchmark 通过 `tools/Invoke-Benchmark.ps1 <原命令及参数>` 提交到公共 FIFO 队列。
 同一用户的工作区共用执行器，命令按提交顺序运行；比较期间需要独占 CPU/GPU 的构建、内容导入与捕获也采用这一入口。
 
+每条命令默认最多执行 60 秒，从进程启动开始计时，排队等待不计入。需要更长时间时，必须在可执行文件之前显式指定 `--timeout <秒数>`，例如 `--timeout 300`；只接受正整数秒，`0` 不表示无限等待。时限覆盖进程执行和输出收集。超时会请求终止整个进程树，结果记录退出码 `124`、`TimedOut: true` 和 `TimeoutSeconds`，然后继续处理后续任务。
+
 ```powershell
 ./tools/Invoke-Benchmark.ps1 dotnet run --no-build --project tools/SomeEngine.Animation.Checks -c Release -- --benchmark
 ```

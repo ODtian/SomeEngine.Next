@@ -334,7 +334,14 @@ public sealed class RawMaterialScalarRenderingTests
     private static async Task<Shader> LoadShaderAsync(string backend, bool reverse)
     {
         string root = FrameStageScene.FindRoot();
-        using var source = new ShaderSourceBlock { SourceNames = ["raw_material_scalars.slang"] };
+        using var source = new ShaderSourceBlock
+        {
+            SourceNames = ["raw_material_scalars.slang"],
+            Specializations =
+            [
+                new() { EntryPoint = "ClusterShadowRequests", Arguments = ["0", "0"] },
+            ],
+        };
         var description = TestShaderLoading.CreateSessionDescription(
             backend == "Vulkan" ? SlangCompileTarget.Spirv : SlangCompileTarget.Dxil);
         description.SearchPaths = [Path.Combine(root, "tests/SomeEngine.Render.Cluster.Tests/Shaders"),

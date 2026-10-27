@@ -41,11 +41,14 @@ public sealed class ClusterMaterialTextureTests
         Dictionary<AssetId<ShaderAsset>, Shader> configurationReferences = await ShaderRef.LoadAsync(
             configurationBlock.References(), assets, shaderValues, TestShaderLoading.Slang, shaderSettings);
         ClusterShaders configuration = configurationBlock.Create(configurationFile.Name, configurationReferences);
+        // Preserve the original template fixture's IcoSphere when using the larger sample catalog.
         using MeshAsset meshFile = await MeshAsset.OpenAsync(assets,
-            new(manifest.List(MeshAsset.FileType).First().AssetGuid));
-        ClusterMeshBlock geometry = meshFile.GetBlock<ClusterMeshBlock>();
-        Mesh mesh = await geometry.CreateAsync(meshFile.GetBlock<MeshBlock>(), meshFile.Name);
-        await geometry.LoadPagesAsync(mesh, Enumerable.Range(0, mesh.PageCount));
+            new(Assert.Single(manifest.List(MeshAsset.FileType),
+                static item => item.AssetGuid == new Guid("9cc63de3-c663-4f55-8656-bd4587b0fde5")).AssetGuid));
+        ClusterGeometryBlock geometry = await meshFile.GetBlockAsync<ClusterGeometryBlock>();
+        ClusterVertexAttributesBlock vertexAttributes = await meshFile.GetBlockAsync<ClusterVertexAttributesBlock>();
+        Mesh mesh = await geometry.CreateAsync(meshFile.GetBlock<MeshBlock>(), vertexAttributes, meshFile.Name);
+        await geometry.LoadPagesAsync(mesh, vertexAttributes, Enumerable.Range(0, mesh.PageCount));
         using MaterialAsset materialFile = await MaterialAsset.OpenAsync(assets,
             new(manifest.List(MaterialAsset.FileType).First(item => item.Name == "Unlit").AssetGuid));
         Material first = await CreateMaterialAsync(materialFile);
@@ -93,6 +96,7 @@ public sealed class ClusterMaterialTextureTests
         prepare.Add(new ClusterMaterialAssignmentSystem(assignments));
         prepare.Add(instanceSystem);
         var graph = new global::SomeEngine.RenderGraph.RenderGraph(backend, device, queues);
+        _ = instances.GetDataTransfer(graph);
         ClusterGraphRegions regions;
         using (RenderGraphEdit edit = graph.BeginEdit())
         {

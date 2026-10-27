@@ -345,6 +345,60 @@ public sealed class AssetCapabilityGeneratorBehaviorTests
             ImporterVersionForBlocks(source.Replace("writer.WriteGuid(value.Value)", "writer.WriteGuid(System.Guid.Empty)", StringComparison.Ordinal)));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ExplicitStaticCodecsRoundTripAndValidateNestedValues(bool referenceCodec)
+    {
+        string source = TypedIdBlockSource
+            .Replace("[AssetBlock(\"example.versioned-block\"), BinarySerializable, BinaryFields(nameof(Value))]",
+                "[BinarySerializable, BinaryFields(nameof(Value), nameof(Optional), nameof(Items))]", StringComparison.Ordinal)
+            .Replace("public sealed partial class Data : AssetBlock { public partial TypedId<ShaderAsset> Value { get; set; } }",
+                "public sealed partial class Data { public TypedId<ShaderAsset> Value { get; set; } = default!; public TypedId<ShaderAsset>? Optional { get; set; } public TypedId<ShaderAsset>[] Items { get; set; } = []; }", StringComparison.Ordinal)
+            .Replace("public static System.Guid TypeId", "static System.Guid IBinarySerializable<TypedId<T>>.TypeId", StringComparison.Ordinal)
+            .Replace("public static ulong SchemaFingerprint", "static ulong IBinarySerializable<TypedId<T>>.SchemaFingerprint", StringComparison.Ordinal)
+            .Replace("public static uint SchemaEpoch", "static uint IBinarySerializable<TypedId<T>>.SchemaEpoch", StringComparison.Ordinal)
+            .Replace("public static BinaryCompatibility Compatibility", "static BinaryCompatibility IBinarySerializable<TypedId<T>>.Compatibility", StringComparison.Ordinal)
+            .Replace("public static void Write(ref BinaryDataWriter writer, TypedId<T> value) => writer.WriteGuid(value.Value);",
+                "static void IBinarySerializable<TypedId<T>>.Write(ref BinaryDataWriter writer, TypedId<T> value) { CodecCalls.Writes++; writer.WriteGuid(value.Value); }", StringComparison.Ordinal)
+            .Replace("public static TypedId<T> Read(ref BinaryDataReader reader) => new(reader.ReadGuid());",
+                "static TypedId<T> IBinarySerializable<TypedId<T>>.Read(ref BinaryDataReader reader) { CodecCalls.Reads++; return new(reader.ReadGuid()); }", StringComparison.Ordinal)
+            .Replace("public static void ValidateView(ref BinaryViewReader reader) => reader.ReadGuid();",
+                "static void IBinaryCustomViewContract<TypedId<T>>.ValidateView(ref BinaryViewReader reader) { CodecCalls.Validations++; reader.ReadGuid(); }", StringComparison.Ordinal);
+        if (referenceCodec)
+            source = source.Replace("public readonly struct TypedId<T>", "public sealed class TypedId<T>", StringComparison.Ordinal);
+        source += """
+
+            public static class CodecCalls { public static int Writes; public static int Reads; public static int Validations; }
+            public static class Consumer
+            {
+                public static bool Execute()
+                {
+                    var first = new System.Guid("89124bfe-7503-4d7b-b108-1ee0063574aa");
+                    var second = new System.Guid("19b6cbef-8070-4377-930a-7aaf398f8f50");
+                    var value = new Data
+                    {
+                        Value = new TypedId<ShaderAsset>(first),
+                        Optional = new TypedId<ShaderAsset>(second),
+                        Items = [new TypedId<ShaderAsset>(first), new TypedId<ShaderAsset>(second)],
+                    };
+                    var bytes = new System.Buffers.ArrayBufferWriter<byte>();
+                    BinarySerializer.Write(bytes, value);
+                    Data.ValidateCanonical(bytes.WrittenSpan);
+                    Data decoded = BinarySerializer.Deserialize<Data>(bytes.WrittenSpan);
+                    var optional = decoded.Optional ?? throw new System.InvalidOperationException("Optional codec value was lost.");
+                    BinaryContractDescriptor descriptor = BinaryContract<TypedId<ShaderAsset>>.Descriptor;
+                    return decoded.Value.Value == first && optional.Value == second
+                        && decoded.Items.Length == 2 && decoded.Items[0].Value == first && decoded.Items[1].Value == second
+                        && CodecCalls.Writes == 4 && CodecCalls.Reads == 4 && CodecCalls.Validations == 4
+                        && descriptor.TypeId != System.Guid.Empty && descriptor.SchemaFingerprint == 17
+                        && descriptor.SchemaEpoch == 1 && descriptor.Compatibility == BinaryCompatibility.ExactSchema;
+                }
+            }
+            """;
+        Assert.True((bool)Execute(Emit(Compile(source)))!);
+    }
+
     [Fact]
     public void PublicConstantsAndDefaultValuesRemainImplementationInputs()
     {

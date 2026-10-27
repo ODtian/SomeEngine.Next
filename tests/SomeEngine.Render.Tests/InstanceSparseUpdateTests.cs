@@ -307,7 +307,7 @@ public sealed class InstanceSparseUpdateTests
             using var update = context.RewriteBatch(batch.Batch!, Layout);
             var rows = update.OpenWrite(Layout).Restrict(currentOnly).Restrict(currentOnly);
             rows.BindPerInstance(current);
-            rows.Slice(1, 3).Slice(1, 1).GetWriteSpan(current)[0] = Current(9);
+            rows.Slice(1, 3).Slice(1, 1).Write(current, 0, Current(9));
             batch.Batch = update.Publish();
         };
 
@@ -346,7 +346,7 @@ public sealed class InstanceSparseUpdateTests
             Assert.Throws<ArgumentOutOfRangeException>(() => rows.Slice(-1, 1));
         };
 
-        data.ExecuteFrame();
+        data.PrepareFrame();
     }
 
     [Fact]

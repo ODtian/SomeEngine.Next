@@ -2,6 +2,7 @@ using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
+using SomeEngine.Views;
 
 namespace SomeEngine.Layout;
 
@@ -11,6 +12,7 @@ public sealed class LayoutSystem(params ILayoutDataUpdate[] dataUpdates) : ISyst
     public LayoutSystem() : this([]) { }
 
     private QueryHandle _canvasQuery;
+    private QueryHandle _nodeReadQuery;
     private LayoutData _data = null!;
     private readonly List<Entity> _canvases = new();
 
@@ -20,7 +22,22 @@ public sealed class LayoutSystem(params ILayoutDataUpdate[] dataUpdates) : ISyst
     public void OnCreate(ref ImmediateSystemContext context)
     {
         _canvasQuery = context.World.Query(context.World.QueryDefinition().Read<Canvas>());
-        _data = new LayoutData(context.World, dataUpdates);
+        try
+        {
+            _nodeReadQuery = context.World.Query(context.World.QueryDefinition()
+                .Optional<ViewType>(QueryAccess.Read).Optional<LayoutCache>(QueryAccess.Read));
+            try { _data = new LayoutData(context.World, dataUpdates, _nodeReadQuery); }
+            catch
+            {
+                context.World.ReleaseQuery(_nodeReadQuery);
+                throw;
+            }
+        }
+        catch
+        {
+            context.World.ReleaseQuery(_canvasQuery);
+            throw;
+        }
     }
 
     public void OnUpdate(ref ImmediateSystemContext context)
@@ -50,5 +67,9 @@ public sealed class LayoutSystem(params ILayoutDataUpdate[] dataUpdates) : ISyst
         }
     }
 
-    public void OnDestroy(ref ImmediateSystemContext context) => context.World.ReleaseQuery(_canvasQuery);
+    public void OnDestroy(ref ImmediateSystemContext context)
+    {
+        try { context.World.ReleaseQuery(_nodeReadQuery); }
+        finally { context.World.ReleaseQuery(_canvasQuery); }
+    }
 }

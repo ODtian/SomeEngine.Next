@@ -174,7 +174,7 @@ public sealed class ClusterSpatialSortingTests(Xunit.Abstractions.ITestOutputHel
                         frames.Update(renderFrame, commands);
                         var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
                         try { commands.Execute(completions); }
-                        catch (Exception primary)
+                        catch (Exception executionError)
                         {
                             try
                             {
@@ -183,7 +183,7 @@ public sealed class ClusterSpatialSortingTests(Xunit.Abstractions.ITestOutputHel
                             }
                             catch (Exception cleanup)
                             {
-                                throw new AggregateException("Frame execution and partial-submission cleanup failed.", primary, cleanup);
+                                throw new AggregateException("Frame execution and partial-submission cleanup failed.", executionError, cleanup);
                             }
                             throw;
                         }

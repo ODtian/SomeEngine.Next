@@ -1,5 +1,5 @@
 param(
-    [string]$QueueScript = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../tools/Invoke-Benchmark.ps1')),
+    [string]$QueueScript = 'F:/SomeEngine.Next/tools/Invoke-Benchmark.ps1',
     [string]$SourceCommit,
     [string]$Session = $env:CODEX_THREAD_ID
 )

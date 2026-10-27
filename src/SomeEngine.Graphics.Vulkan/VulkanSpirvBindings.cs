@@ -42,9 +42,12 @@ internal sealed unsafe partial class VulkanBackend
         uint Set,
         uint Binding,
         string? Name = null,
-        uint SourceSet = uint.MaxValue)
+        uint SourceSet = uint.MaxValue,
+        uint SourceBinding = uint.MaxValue)
     {
         internal uint LogicalSet => SourceSet == uint.MaxValue ? Set : SourceSet;
+        // The source binding includes the register-class prefix, before bindless relocation.
+        internal uint LogicalBinding => SourceBinding == uint.MaxValue ? Binding : SourceBinding;
     }
 
     private readonly record struct SpirvBindingDecoration(int ValueWord, uint Target);
@@ -310,12 +313,12 @@ internal sealed unsafe partial class VulkanBackend
             targets.ToArray()
                 .GroupBy(static target => (
                     target.LogicalSet,
-                    DecodeDescriptorRegisterClass(target.Binding)))
+                    DecodeDescriptorRegisterClass(target.LogicalBinding)))
                 .ToDictionary(
                     static group => group.Key,
                     static group => group
                         .Distinct()
-                        .OrderBy(static target => target.Binding)
+                        .OrderBy(static target => target.LogicalBinding)
                         .ToArray());
         var mapped = new Dictionary<int, VulkanSpirvBindingTarget>();
         foreach (IGrouping<(uint Set, DescriptorRegisterClass RegisterClass), ResolvedSpirvBinding> group
@@ -361,7 +364,21 @@ internal sealed unsafe partial class VulkanBackend
             VulkanSpirvBindingTarget[] named = available
                 .Where(target => sourceGroup.Any(source => NamesMatch(source.Name, target.Name)))
                 .ToArray();
-            if (named.Select(static target => target.Binding).Distinct().Count() != 1)
+            int destinations = named.Select(static target => (target.Set, target.Binding)).Distinct().Count();
+            if (named.Length > 1)
+            {
+                // Equal source names in different modules are legal. Prefer their
+                // declared coordinates even when relocation aliases destinations,
+                // so a named alias cannot consume a pending unnamed source.
+                uint sourceBinding = EncodeDescriptorBinding(sourceGroup.Key, group.Key.RegisterClass);
+                VulkanSpirvBindingTarget[] exact = named.Where(target => target.LogicalBinding == sourceBinding).ToArray();
+                if (exact.Length != 0 || destinations > 1)
+                {
+                    named = exact;
+                    destinations = named.Select(static target => (target.Set, target.Binding)).Distinct().Count();
+                }
+            }
+            if (destinations != 1)
             {
                 if (sourceGroup.Any(static source => !string.IsNullOrWhiteSpace(source.Name)) &&
                     available.Any(static target => !string.IsNullOrWhiteSpace(target.Name)))
@@ -378,14 +395,10 @@ internal sealed unsafe partial class VulkanBackend
             }
             VulkanSpirvBindingTarget target = named[0];
             AssignSpirvTarget(words, sourceGroup, target, mapped);
-            available.RemoveAll(value => value.Binding == target.Binding);
+            available.RemoveAll(value => value.LogicalBinding == target.LogicalBinding);
         }
 
-        VulkanSpirvBindingTarget[] remaining = available
-            .GroupBy(static target => target.Binding)
-            .Select(static values => values.First())
-            .OrderBy(static target => target.Binding)
-            .ToArray();
+        VulkanSpirvBindingTarget[] remaining = available.ToArray();
         foreach (IGrouping<uint, ResolvedSpirvBinding> sourceGroup in pending)
         {
             ResolvedSpirvBinding source = sourceGroup.First();
@@ -393,9 +406,9 @@ internal sealed unsafe partial class VulkanBackend
                 source.LogicalBinding,
                 source.RegisterClass);
             VulkanSpirvBindingTarget[] matches = remaining
-                .Where(target => target.Binding == direct)
+                .Where(target => target.LogicalBinding == direct)
                 .ToArray();
-            if (matches.Length != 1)
+            if (matches.Select(static target => (target.Set, target.Binding)).Distinct().Count() != 1)
             {
                 throw InvalidSpirv(
                     $"SPIR-V descriptor set {group.Key.Set}, register class " +

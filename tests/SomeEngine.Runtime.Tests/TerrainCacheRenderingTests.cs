@@ -36,6 +36,7 @@ public sealed class TerrainCacheRenderingTests(SceneContentFixture content)
             SceneImage? before = null, after = null, expectedBefore = null, expectedAfter = null;
             var application = new ApplicationScene(content.DirectoryPath)
             {
+                RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
                 Options = Options(),
                 UpdateFrame = frame =>
                 {
@@ -67,7 +68,7 @@ public sealed class TerrainCacheRenderingTests(SceneContentFixture content)
                 },
             };
             application.InstallGeometry(new TerrainGeometryFeature(scene));
-            Assert.Equal(0, await Application.RunAsync([], application: application));
+            Assert.True((await Application.RunAsync([], application: application)).Succeeded);
             Assert.All(beforeChunks, chunk => Assert.Equal(original.Revision, chunk.Revision));
             Assert.All(afterChunks, chunk => Assert.Equal(chunk.Coordinates.X == 0 ? edit.Revision : original.Revision, chunk.Revision));
 
@@ -76,6 +77,7 @@ public sealed class TerrainCacheRenderingTests(SceneContentFixture content)
             Assert.Equal(2, referenceScene.UseCache(reference, generated, identity));
             var expected = new ApplicationScene(content.DirectoryPath)
             {
+                RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
                 Options = Options(),
                 UpdateFrame = frame =>
                 {
@@ -92,7 +94,7 @@ public sealed class TerrainCacheRenderingTests(SceneContentFixture content)
                 },
             };
             expected.InstallGeometry(new TerrainGeometryFeature(referenceScene));
-            Assert.Equal(0, await Application.RunAsync([], application: expected));
+            Assert.True((await Application.RunAsync([], application: expected)).Succeeded);
             SceneImages.AssertEqual(expectedBefore!, before!);
             SceneImages.AssertEqual(expectedAfter!, after!);
             SceneImages.AssertChanged(before!, after!);

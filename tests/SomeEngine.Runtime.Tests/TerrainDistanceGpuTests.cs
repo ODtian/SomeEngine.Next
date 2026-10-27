@@ -34,12 +34,13 @@ public sealed class TerrainDistanceGpuTests(SceneContentFixture content)
         Task<VoxelFieldRead> latest = gpu.ReadCpuAsync(range).AsTask();
         var application = new ApplicationScene(content.DirectoryPath)
         {
+            RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
             Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "16"]),
         };
         application.InstallGeometry(new TerrainGpuEditingTests.FieldFeature(gpuTerrain));
 
-        Assert.Equal(0, await Application.RunAsync([], application: application));
+        Assert.True((await Application.RunAsync([], application: application)).Succeeded);
         await edit.WaitAsync();
         VoxelFieldRead actual = await captured;
         VoxelFieldRead current = await latest;

@@ -81,10 +81,11 @@ public sealed partial class ShaderAsset : Asset
             if (code.MatchesInputs(inputs.Select(static input => input.Version), sessionDescription)) savedCode = code;
         }
         using ShaderSourceBlock selected = source.FromInputs(inputs);
-        return savedCode is null
-            ? await selected.CreateAsync(slang, sessionDescription, copy.Name, specializations, cancellationToken).ConfigureAwait(false)
-            : await savedCode.CreateAsync(selected, slang, sessionDescription, copy.Name,
-                cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (savedCode is not null && await savedCode.TryCreateAsync(selected, slang, sessionDescription,
+            copy.Name, cancellationToken).ConfigureAwait(false) is { } saved)
+            return saved;
+        return await selected.CreateAsync(slang, sessionDescription, copy.Name, specializations,
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>Restores saved code for the complete selected input set; never compiles source code.</summary>

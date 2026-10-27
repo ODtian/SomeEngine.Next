@@ -107,6 +107,7 @@ internal sealed partial class FrameExecutor
             int waveCount;
             using (global::SomeEngine.Diagnostics.EngineTrace.Begin(RecordTopologyProbe))
             {
+                if (!PrepareSwapchainSubmissionIntervals()) _reuseRecording = false;
                 if (_reuseRecording)
                 {
                     waveCount = _waveCount;
@@ -114,6 +115,7 @@ internal sealed partial class FrameExecutor
                 else
                 {
                     waveCount = BuildWaves();
+                    ValidateSwapchainSubmissionIntervals();
                     _waveCount = waveCount;
                 }
                 KeepSplitTransitionsInSubmissions();

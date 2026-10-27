@@ -22,6 +22,7 @@ internal sealed class BenchmarkShader
     private readonly byte[][] _entryCode;
 
     internal BenchmarkShader(
+        IGlobalSession global,
         ISession session,
         IModule sourceUnit,
         IEntryPoint[] slangEntries,
@@ -37,13 +38,13 @@ internal sealed class BenchmarkShader
         _slangEntries = slangEntries;
         _combinedCode = combinedCode;
         _entryCode = entryCode;
-        SlangCode = slangCode;
+        SlangCode = new SlangShaderData(global, session, slangCode);
         Reflection = reflection;
         Entries = entries;
         ManifestSha256 = manifestSha256;
     }
 
-    internal IComponentType SlangCode { get; }
+    internal SlangShaderData SlangCode { get; }
     internal ShaderReflection Reflection { get; }
     internal EntryPointReflection[] Entries { get; }
     internal string ManifestSha256 { get; }
@@ -351,6 +352,7 @@ internal static class BenchmarkShaders
 
     private static BenchmarkShader CreateShader(Compiled compiled, string identity) =>
         new(
+            GlobalSession.Value,
             compiled.Session,
             compiled.SourceUnit,
             compiled.SlangEntries,

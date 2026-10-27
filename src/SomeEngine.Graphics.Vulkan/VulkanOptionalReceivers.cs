@@ -175,6 +175,12 @@ internal sealed unsafe partial class VulkanBackend
         RhiDevice device,
         in AccelerationStructureSrvDesc desc) =>
         CreateAccelerationStructureSrvCore(device, desc);
+    void IGraphicsBackend.EncodeAccelerationStructureInstances(
+        RhiDevice device,
+        ReadOnlySpan<AccelerationStructureInstance> instances,
+        Span<byte> destination) =>
+        EncodeAccelerationStructureInstancesCore(device, instances, destination);
+
     AccelerationStructureBuildInfo IGraphicsBackend.GetAccelerationStructureBuildInfo(
         RhiDevice device,
         AccelerationStructureType type,

@@ -1033,8 +1033,8 @@ internal sealed unsafe partial class VulkanBackend
 
         internal override void Release(bool fromParent)
         {
-            _device.UnregisterChild(this);
             _lifetime.Release();
+            _device.UnregisterChild(this);
         }
 
         private void DestroyNative() => Memory.Release();
@@ -1114,8 +1114,8 @@ internal sealed unsafe partial class VulkanBackend
 
         internal override void Release(bool fromParent)
         {
-            _device.UnregisterChild(this);
             _lifetime.Release();
+            _device.UnregisterChild(this);
         }
 
         private void DestroyNative()
@@ -1198,8 +1198,8 @@ internal sealed unsafe partial class VulkanBackend
 
         internal override void Release(bool fromParent)
         {
-            _device.UnregisterChild(this);
             _lifetime.Release();
+            _device.UnregisterChild(this);
         }
 
         private void DestroyNative()
@@ -1305,7 +1305,7 @@ internal sealed unsafe partial class VulkanBackend
         }
         public void RetainNative() => _lifetime.Retain();
         public void ReleaseNative() => _lifetime.Release();
-        internal override void Release(bool fromParent) { _device.UnregisterChild(this); _lifetime.Release(); }
+        internal override void Release(bool fromParent) { _lifetime.Release(); _device.UnregisterChild(this); }
     }
 
     private sealed class VulkanBufferSrv : BufferSrv, IVulkanRetained
@@ -1318,7 +1318,7 @@ internal sealed unsafe partial class VulkanBackend
         internal VkBufferView Native => _native;
         public void RetainNative() => _lifetime.Retain();
         public void ReleaseNative() => _lifetime.Release();
-        internal override void Release(bool fromParent) { _device.UnregisterChild(this); _lifetime.Release(); }
+        internal override void Release(bool fromParent) { _lifetime.Release(); _device.UnregisterChild(this); }
         private void DestroyNative() { if (_native.Handle != 0) _device.Backend.Api.DestroyBufferView(_device.Native, _native, null); _native = default; _resource.ReleaseNative(); }
     }
 
@@ -1333,7 +1333,7 @@ internal sealed unsafe partial class VulkanBackend
         internal VkBufferView Native => _native;
         public void RetainNative() => _lifetime.Retain();
         public void ReleaseNative() => _lifetime.Release();
-        internal override void Release(bool fromParent) { _device.UnregisterChild(this); _lifetime.Release(); }
+        internal override void Release(bool fromParent) { _lifetime.Release(); _device.UnregisterChild(this); }
         private void DestroyNative() { if (_native.Handle != 0) _device.Backend.Api.DestroyBufferView(_device.Native, _native, null); _native = default; _counter?.ReleaseNative(); _resource.ReleaseNative(); }
     }
 
@@ -1505,7 +1505,7 @@ internal sealed unsafe partial class VulkanBackend
         VulkanTexture IVulkanTextureView.Texture => _resource;
         public void RetainNative() => _lifetime.Retain();
         public void ReleaseNative() => _lifetime.Release();
-        internal override void Release(bool fromParent) { _device.UnregisterChild(this); _lifetime.Release(); }
+        internal override void Release(bool fromParent) { _lifetime.Release(); _device.UnregisterChild(this); }
         private void DestroyNative() { if (_native.Handle != 0) _device.Backend.Api.DestroyImageView(_device.Native, _native, null); _native = default; _resource.ReleaseNative(); }
     }
 
@@ -1520,7 +1520,7 @@ internal sealed unsafe partial class VulkanBackend
         VulkanTexture IVulkanTextureView.Texture => _resource;
         public void RetainNative() => _lifetime.Retain();
         public void ReleaseNative() => _lifetime.Release();
-        internal override void Release(bool fromParent) { _device.UnregisterChild(this); _lifetime.Release(); }
+        internal override void Release(bool fromParent) { _lifetime.Release(); _device.UnregisterChild(this); }
         private void DestroyNative() { if (_native.Handle != 0) _device.Backend.Api.DestroyImageView(_device.Native, _native, null); _native = default; _resource.ReleaseNative(); }
     }
 
@@ -1535,7 +1535,7 @@ internal sealed unsafe partial class VulkanBackend
         VulkanTexture IVulkanTextureView.Texture => _resource;
         public void RetainNative() => _lifetime.Retain();
         public void ReleaseNative() => _lifetime.Release();
-        internal override void Release(bool fromParent) { _device.UnregisterChild(this); _lifetime.Release(); }
+        internal override void Release(bool fromParent) { _lifetime.Release(); _device.UnregisterChild(this); }
         private void DestroyNative() { if (_native.Handle != 0) _device.Backend.Api.DestroyImageView(_device.Native, _native, null); _native = default; _resource.ReleaseNative(); }
     }
 
@@ -1550,7 +1550,7 @@ internal sealed unsafe partial class VulkanBackend
         VulkanTexture IVulkanTextureView.Texture => _resource;
         public void RetainNative() => _lifetime.Retain();
         public void ReleaseNative() => _lifetime.Release();
-        internal override void Release(bool fromParent) { _device.UnregisterChild(this); _lifetime.Release(); }
+        internal override void Release(bool fromParent) { _lifetime.Release(); _device.UnregisterChild(this); }
         private void DestroyNative() { if (_native.Handle != 0) _device.Backend.Api.DestroyImageView(_device.Native, _native, null); _native = default; _resource.ReleaseNative(); }
     }
 
@@ -1563,7 +1563,7 @@ internal sealed unsafe partial class VulkanBackend
         internal VkSampler Native => _native;
         public void RetainNative() => _lifetime.Retain();
         public void ReleaseNative() => _lifetime.Release();
-        internal override void Release(bool fromParent) { _device.UnregisterChild(this); _lifetime.Release(); }
+        internal override void Release(bool fromParent) { _lifetime.Release(); _device.UnregisterChild(this); }
         private void DestroyNative() { if (_native.Handle != 0) _device.Backend.Api.DestroySampler(_device.Native, _native, null); _native = default; }
     }
 

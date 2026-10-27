@@ -3,6 +3,8 @@ using SomeEngine.Assets;
 using SomeEngine.Core.ECS.Components;
 using SomeEngine.Core.Math;
 using SomeEngine.ECS;
+using SomeEngine.ECS.Serialization;
+using SomeEngine.Serialization;
 using SomeEngine.ECS.Components;
 using SomeEngine.Render;
 using SomeEngine.Render.Components;
@@ -18,14 +20,14 @@ public sealed class WorldAssetTests
         Directory.CreateDirectory(directory);
         try
         {
-            var registry = SceneSerialization.CreateRegistry();
+            var registry = CreateRegistry();
             using var world = new World();
             Guid meshId = Guid.NewGuid();
             var transform = new TransformQvvs(new(2, 3, 4), Quaternion.CreateFromAxisAngle(Vector3.UnitY, 0.5f))
             { Stretch = new(2, 3, 4), Scale = 0.75f };
             var entity = world.CreateEntity(new WorldTransform { Qvvs = transform });
             world.Add(entity, new MeshSource { Mesh = new(meshId), BoundsExpansion = 0.4f });
-            world.Add(entity, new MeshMotion { Amplitude = new(1, 2, 3), Seed = 73 });
+            world.Add(entity, new SpawnPoint { Position = new(1, 2, 3), TeamId = 73 });
             var cameraValue = new SceneCamera
             {
                 Position = new(1, 2, -3), Target = new(1, 2, 3), Up = Vector3.UnitY,
@@ -41,7 +43,7 @@ public sealed class WorldAssetTests
             using var asset = new WorldAsset { Name = "saved scene" };
             asset.WriteWorld(world, registry);
             using var changed = asset.Duplicate();
-            world.Replace(entity, new MeshMotion { Seed = 99 });
+            world.Replace(entity, new SpawnPoint { TeamId = 99 });
             changed.WriteWorld(world, registry);
             AssetEntry entry = await asset.SaveAsync(Path.Combine(directory, "scene.scene.asset"));
             Assert.Equal([meshId], entry.Dependencies);
@@ -60,8 +62,8 @@ public sealed class WorldAssetTests
             Assert.Equal(transform.Scale, actual.Scale);
             Assert.Equal(meshId, loaded.Read<MeshSource>(entity).Mesh.Value);
             Assert.Equal(0.4f, loaded.Read<MeshSource>(entity).BoundsExpansion);
-            Assert.Equal(73u, loaded.Read<MeshMotion>(entity).Seed);
-            Assert.Equal(new Vector3(1, 2, 3), loaded.Read<MeshMotion>(entity).Amplitude);
+            Assert.Equal(73u, loaded.Read<SpawnPoint>(entity).TeamId);
+            Assert.Equal(new Vector3(1, 2, 3), loaded.Read<SpawnPoint>(entity).Position);
             Assert.Equal(cameraValue.Position, loaded.Read<SceneCamera>(camera).Position);
             Assert.Equal(cameraValue.Target, loaded.Read<SceneCamera>(camera).Target);
             Assert.Equal(cameraValue.Up, loaded.Read<SceneCamera>(camera).Up);
@@ -72,7 +74,7 @@ public sealed class WorldAssetTests
             Assert.Equal(pointValue, loaded.Read<PointLight>(point));
             Assert.Equal(spotValue, loaded.Read<SpotLight>(spot));
             using World other = await changed.LoadAsync(registry);
-            Assert.Equal(99u, other.Read<MeshMotion>(entity).Seed);
+            Assert.Equal(99u, other.Read<SpawnPoint>(entity).TeamId);
         }
         finally { Directory.Delete(directory, recursive: true); }
     }
@@ -80,14 +82,40 @@ public sealed class WorldAssetTests
     [Fact]
     public async Task CanceledLoadLeavesTheAssetReadable()
     {
-        var registry = SceneSerialization.CreateRegistry();
+        var registry = CreateRegistry();
         using var world = new World();
-        var entity = world.CreateEntity(new MeshMotion { Seed = 12 });
+        var entity = world.CreateEntity(new SpawnPoint { TeamId = 12 });
         using var asset = new WorldAsset();
         asset.WriteWorld(world, registry);
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () => asset.LoadAsync(registry, cancellationToken: new(true)).AsTask());
         using World loaded = await asset.LoadAsync(registry);
-        Assert.Equal(12u, loaded.Read<MeshMotion>(entity).Seed);
+        Assert.Equal(12u, loaded.Read<SpawnPoint>(entity).TeamId);
+    }
+
+    private static SerializationRegistry CreateRegistry() => SceneSerialization.CreateRegistry()
+        .Register<SpawnPoint, SpawnPointCodec>(new(
+            BinaryTypeId.FromLogicalName("SomeEngine.Tests.SpawnPoint"), "SomeEngine.Tests.SpawnPoint",
+            BinaryFieldKey.FromName("position:3f;team:u32")));
+
+    private struct SpawnPoint : IComponent
+    {
+        public Vector3 Position;
+        public uint TeamId;
+    }
+
+    private struct SpawnPointCodec : ICanonicalComponentCodec<SpawnPoint>
+    {
+        public void Write(ref DataWriter writer, in SpawnPoint value)
+        {
+            writer.WriteSingle(value.Position.X); writer.WriteSingle(value.Position.Y); writer.WriteSingle(value.Position.Z);
+            writer.WriteUInt32(value.TeamId);
+        }
+
+        public void Read(ref DataReader reader, out SpawnPoint value) => value = new()
+        {
+            Position = new(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle()),
+            TeamId = reader.ReadUInt32(),
+        };
     }
 }

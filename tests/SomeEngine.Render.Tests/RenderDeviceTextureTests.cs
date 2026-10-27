@@ -174,7 +174,7 @@ public sealed class RenderDeviceTextureTests
             2, 2, 1, 2, 1, 1, Format.R8UNorm, TextureUsages.Sampled | TextureUsages.CopyDestination);
         TexturePixels fine = Tile(0, 0, 2, 2, [1, 2, 3, 4]);
         TexturePixels coarse = Tile(1, 0, 1, 1, [11]);
-        using EngineTexture texture = EngineTexture.Create(description, [fine.Tile, coarse.Tile],
+        EngineTexture texture = EngineTexture.Create(description, [fine.Tile, coarse.Tile],
             [coarse], GraphicsTextureViewDimension.Texture2D);
         var completions = new QueueCompletion[firstGraph.MaximumQueueCompletionCount];
         RhiTexture resource;
@@ -761,6 +761,69 @@ public sealed class RenderDeviceTextureTests
         Assert.True(texture.Versions.Allocation > allocationVersion);
         Assert.False(texture.TryGetTexture(secondDevice, out _));
         _ = ExecuteTextureFrame(graph, first, texture);
+    }
+
+    [Fact]
+    public void RetainedTextureAllocationWaitsForExplicitReferenceRelease()
+    {
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using Device device = CreateWarpDevice(backend, "retained texture allocation");
+        using var renderDevice = new RenderDevice(backend, device);
+        EngineTexture texture = PixelTexture(7);
+        using RenderDevice.TextureReference reference = renderDevice.RetainTexture(texture);
+        using RenderDevice.TextureReference otherReference = renderDevice.RetainTexture(texture);
+        RhiTexture allocation = reference.Resource;
+        Assert.Same(allocation, otherReference.Resource);
+        renderDevice.ReleaseTexture(texture);
+        Assert.False(texture.TryGetTexture(device, out _));
+        renderDevice.CollectCompleted();
+        using (TextureSrv readable = backend.CreateTextureSrv(device, new TextureSrvDesc(allocation,
+            new(0, 1, 0, 1, TextureAspects.Color), Format.R8UNorm, GraphicsTextureViewDimension.Texture2D)))
+            Assert.Same(allocation, readable.Description.Texture);
+        reference.Dispose();
+        reference.Dispose();
+        renderDevice.CollectCompleted();
+        using (TextureSrv stillRetained = backend.CreateTextureSrv(device, new TextureSrvDesc(allocation,
+            new(0, 1, 0, 1, TextureAspects.Color), Format.R8UNorm, GraphicsTextureViewDimension.Texture2D)))
+            Assert.Same(allocation, stillRetained.Description.Texture);
+        otherReference.Dispose();
+        renderDevice.CollectCompleted();
+        Assert.Throws<ObjectDisposedException>(() => backend.CreateTextureSrv(device, new TextureSrvDesc(allocation,
+            new(0, 1, 0, 1, TextureAspects.Color), Format.R8UNorm, GraphicsTextureViewDimension.Texture2D)));
+        GC.KeepAlive(texture);
+    }
+
+    [Fact]
+    public void RetainedDeviceAllocationDoesNotKeepManagedTextureAlive()
+    {
+        using IGraphicsBackend backend = D3D12GraphicsBackend.Create();
+        using Device device = CreateWarpDevice(backend, "retained allocation collected texture");
+        using var renderDevice = new RenderDevice(backend, device);
+        (WeakReference<EngineTexture> texture, RenderDevice.TextureReference reference) =
+            CreateRetainedTextureForCollection(renderDevice);
+        using (reference)
+        {
+            RhiTexture allocation = reference.Resource;
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            Assert.False(texture.TryGetTarget(out _));
+            renderDevice.CollectCompleted();
+            using (TextureSrv readable = backend.CreateTextureSrv(device, new TextureSrvDesc(allocation,
+                new(0, 1, 0, 1, TextureAspects.Color), Format.R8UNorm, GraphicsTextureViewDimension.Texture2D)))
+                Assert.Same(allocation, readable.Description.Texture);
+            reference.Dispose();
+            renderDevice.CollectCompleted();
+            Assert.Throws<ObjectDisposedException>(() => backend.CreateTextureSrv(device, new TextureSrvDesc(allocation,
+                new(0, 1, 0, 1, TextureAspects.Color), Format.R8UNorm, GraphicsTextureViewDimension.Texture2D)));
+        }
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static (WeakReference<EngineTexture>, RenderDevice.TextureReference) CreateRetainedTextureForCollection(
+        RenderDevice renderDevice)
+    {
+        EngineTexture texture = PixelTexture(7);
+        return (new(texture), renderDevice.RetainTexture(texture));
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]

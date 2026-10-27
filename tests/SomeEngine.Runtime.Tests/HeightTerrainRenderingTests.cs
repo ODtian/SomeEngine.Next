@@ -19,6 +19,7 @@ public sealed class HeightTerrainRenderingTests(SceneContentFixture content)
         SceneImage? before = null, after = null, expectedBefore = null, expectedAfter = null;
         var application = new ApplicationScene(content.DirectoryPath)
         {
+            RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
             Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "18"]),
             UpdateFrame = frame =>
@@ -37,11 +38,12 @@ public sealed class HeightTerrainRenderingTests(SceneContentFixture content)
             },
         };
         example.Install(application);
-        int result = await Application.RunAsync([], application: application);
-        Assert.Equal(0, result);
+        ApplicationResult result = await Application.RunAsync([], application: application);
+        Assert.True(result.Succeeded, result.Error?.ToString());
 
         Mesh ground = CreateGround(0);
-        await SceneImages.RunAsync("d3d12", new SceneScript(content.DirectoryPath, 18,
+        await SceneImages.RunAsync("d3d12", new SceneScript(new ApplicationScene(content.DirectoryPath)
+            { RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register }, 18,
         [
             new(0, scene =>
             {

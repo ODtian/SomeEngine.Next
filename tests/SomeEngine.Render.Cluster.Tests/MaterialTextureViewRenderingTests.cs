@@ -2,6 +2,7 @@ using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Text;
 using SlangShaderSharp;
+using SomeEngine.Assets.Schema;
 using SomeEngine.Graphics;
 using SomeEngine.Render.Cluster.Pipeline;
 using SomeEngine.Resources;
@@ -27,20 +28,22 @@ public sealed class MaterialTextureViewRenderingTests
                 resource.Type == ResourceBindingType.TextureSrv);
         }
         ShaderParameterResource[] surface = shader.GetSlangResourceLayout(SlangCompileTarget.Dxil,
-            "ClusterSurfaceData").Resources.ToArray();
-        // Unlit samples AlbedoMap by its scalar descriptor index. The Cluster graph declares
-        // that texture read through the same material input lookup used by explicit resources.
+            "ClusterShade").Resources.ToArray();
+        // Current Unlit uses an explicit sampled AlbedoMap and a separate scalar tint payload.
+        // Both raster storage and shade sampled views resolve through the same material property.
         Assert.Contains(surface, resource => resource.IsUsed && resource.Name == "MaterialScalarRegion" &&
             resource.Type == ResourceBindingType.BufferSrv);
         Assert.DoesNotContain(surface, resource => resource.IsUsed && resource.Name == "AlbedoMap" &&
             resource.Type == ResourceBindingType.TextureUav);
+        Assert.Contains(surface, resource => resource.IsUsed && resource.Name == "AlbedoMap" &&
+            resource.Type == ResourceBindingType.TextureSrv);
 
-        using Texture blue = CreateTexture(0, 0, 255);
-        using Texture red = CreateTexture(255, 0, 0);
-        using Texture hidden = CreateTexture(255, 0, 0, 0);
-        using var first = new Game.Content.UnlitMaterial
+        Texture blue = CreateTexture(0, 0, 255);
+        Texture red = CreateTexture(255, 0, 0);
+        Texture hidden = CreateTexture(255, 0, 0, 0);
+        var first = new SomeEngine.Resources.UnlitMaterial
             { Shader = shader, AlbedoMap = blue, BaseColorTint = Vector4.One };
-        using var second = new Game.Content.UnlitMaterial
+        var second = new SomeEngine.Resources.UnlitMaterial
             { Shader = shader, AlbedoMap = blue, BaseColorTint = Vector4.One };
         Mesh plane = await RasterTestGeometry.CreatePlaneAsync();
         await using var scene = await FrameStageScene.CreateAsync("D3D12", false,
@@ -68,7 +71,14 @@ public sealed class MaterialTextureViewRenderingTests
         ImageArtifacts.AssertEqual(new(64, 64, Format.R16G16B16A16Float, recovered.Color),
             new(64, 64, Format.R16G16B16A16Float, unchanged.Color));
 
+        // Unlike blue above, red loses its last rendered-material reference here.
         first.AlbedoMap = hidden;
+        await scene.DiscardNextFrameAsync();
+        RasterImage discardedLastReference = scene.ReadCurrentRasterImage();
+        ImageArtifacts.AssertEqual(new(64, 64, Format.R16G16B16A16Float, unchanged.Color),
+            new(64, 64, Format.R16G16B16A16Float, discardedLastReference.Color));
+        ImageArtifacts.AssertEqual(new(64, 64, Format.D32Float, unchanged.Depth),
+            new(64, 64, Format.D32Float, discardedLastReference.Depth));
         RasterImage masked = await scene.ReadNextRasterImageAsync();
         int leftPixel = 32 * 64 + 16;
         ImageArtifacts.AssertEqual(new(1, 1, Format.R16G16B16A16Float, before.Color.AsSpan(0, 8).ToArray()),
@@ -95,7 +105,7 @@ public sealed class MaterialTextureViewRenderingTests
     private static Shader CreateStorageVisibilityShader()
     {
         string root = FrameStageScene.FindRoot();
-        string projectShaders = Path.Combine(root, "templates", "DefaultProject", "assets", "Shaders");
+        string projectShaders = Path.Combine(root, "samples", "DefaultGame", "assets", "Shaders");
         string source = File.ReadAllText(Path.Combine(projectShaders, "unlit.slang"))
             .Replace("typedef OpaqueVisibilityEvaluate<VertexEvaluate.Vertex> VisibilityEvaluate;",
                 VisibilitySource + "\ntypedef StorageVisibility VisibilityEvaluate;");
@@ -116,8 +126,20 @@ public sealed class MaterialTextureViewRenderingTests
         Assert.True(session.CreateCompositeComponentType([unit, .. entries], out IComponentType combined,
             out diagnostics).Succeeded, DiagnosticText(diagnostics));
         Assert.True(combined.Link(out IComponentType linked, out diagnostics).Succeeded, DiagnosticText(diagnostics));
-        return Shader.CreateFromSlang("Material texture views", slang, session, [unit], entries, linked,
-            description.Targets);
+        Assert.True(unit.Serialize(out ISlangBlob serialized).Succeeded);
+        using var inputs = new ShaderSourceBlock
+        {
+            SourceNames = ["MaterialTextureViews.slang"],
+            Specializations =
+            [
+                new ShaderSpecialization { EntryPoint = "ClusterShadowRequests", Arguments = ["1", "0"] },
+            ],
+        };
+        inputs.SetSerializedSource(0, serialized.Buffer);
+        Shader shader = inputs.CreateAsync(slang, description, "Material texture views")
+            .AsTask().GetAwaiter().GetResult();
+        Assert.True(shader.TryGetSpecialization("ClusterShadowRequests", ["1", "0"], out _));
+        return shader;
     }
 
     private static string DiagnosticText(ISlangBlob? text) => text is null ? "" : Encoding.UTF8.GetString(text.Buffer);

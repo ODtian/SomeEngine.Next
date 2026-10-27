@@ -85,6 +85,66 @@ internal sealed unsafe partial class D3D12Backend
         }
     }
 
+    public void EncodeAccelerationStructureInstances(
+        Device device,
+        ReadOnlySpan<AccelerationStructureInstance> instances,
+        Span<byte> destination)
+    {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
+        D3D12Device nativeDevice = RequireDevice(device, nameof(device));
+        _ = nativeDevice.RequireCapability<RayTracing>(nameof(EncodeAccelerationStructureInstances));
+        int instanceSize = sizeof(RaytracingInstanceDesc);
+        if (instanceSize != 64)
+            throw new NotSupportedException("The native ray-tracing instance layout is unsupported.");
+        if ((ulong)instances.Length * (uint)instanceSize > (ulong)destination.Length)
+            throw new ArgumentException("The destination is too small for the encoded instances.", nameof(destination));
+
+        foreach (AccelerationStructureInstance instance in instances)
+        {
+            instance.Validate(nameof(instances));
+            D3D12AccelerationStructure structure = RequireAccelerationStructure(instance.AccelerationStructure);
+            RequireSameDevice(nativeDevice, structure, nameof(instances));
+            structure.ThrowIfDisposed();
+            D3D12Buffer storage = RequireBuffer(structure.Info.Storage);
+            RequireSameDevice(nativeDevice, storage, nameof(instances));
+            storage.ThrowIfDisposed();
+            if (structure.Info.Type != AccelerationStructureType.BottomLevel)
+                throw new ArgumentException("Instances must reference bottom-level acceleration structures.", nameof(instances));
+        }
+
+        // Only this second pass touches destination; normal use must not race disposal or input mutation.
+        Span<float> nativeTransform = stackalloc float[12];
+        for (int index = 0; index < instances.Length; index++)
+        {
+            AccelerationStructureInstance instance = instances[index];
+            D3D12AccelerationStructure structure = (D3D12AccelerationStructure)instance.AccelerationStructure;
+            System.Numerics.Matrix4x4 transform = instance.Transform;
+            // System.Numerics uses row vectors; the native 3x4 transform uses column vectors.
+            nativeTransform[0] = transform.M11;
+            nativeTransform[1] = transform.M21;
+            nativeTransform[2] = transform.M31;
+            nativeTransform[3] = transform.M41;
+            nativeTransform[4] = transform.M12;
+            nativeTransform[5] = transform.M22;
+            nativeTransform[6] = transform.M32;
+            nativeTransform[7] = transform.M42;
+            nativeTransform[8] = transform.M13;
+            nativeTransform[9] = transform.M23;
+            nativeTransform[10] = transform.M33;
+            nativeTransform[11] = transform.M43;
+            uint identityAndMask = instance.InstanceId | ((uint)instance.Mask << 24);
+            // The four supported option bits match the native ABI. Facing is determined in object
+            // space: a mirrored instance transform must not implicitly toggle the facing bit.
+            uint hitGroupAndOptions = instance.HitGroupOffset | ((uint)instance.Options << 24);
+            ulong address = structure.Address;
+            Span<byte> target = destination.Slice(index * instanceSize, instanceSize);
+            MemoryMarshal.AsBytes(nativeTransform).CopyTo(target);
+            MemoryMarshal.Write(target.Slice(48, sizeof(uint)), in identityAndMask);
+            MemoryMarshal.Write(target.Slice(52, sizeof(uint)), in hitGroupAndOptions);
+            MemoryMarshal.Write(target.Slice(56, sizeof(ulong)), in address);
+        }
+    }
+
     public AccelerationStructureBuildInfo GetAccelerationStructureBuildInfo(
         Device device,
         AccelerationStructureType type,
@@ -2023,6 +2083,8 @@ nativeDevice.Native, &native,
                         checked((int)block.OrdinaryDataSize));
                     RequireNativeParameterBindings(
                         export.LocalRoot.GetBlock(block.Layout),
+                        block.Layout,
+                        table.Pipeline,
                         bindings,
                         data);
                 }

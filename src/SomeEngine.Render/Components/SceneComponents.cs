@@ -22,12 +22,6 @@ public struct SkeletonSource : IComponent
     public AssetId<SkeletonAsset> Skeleton;
 }
 
-public struct MeshMotion : IComponent
-{
-    public Vector3 Amplitude;
-    public uint Seed;
-}
-
 public readonly record struct CameraDepthOfField(
     float FocusDistance,
     float InfinityCircleRadiusPixels,

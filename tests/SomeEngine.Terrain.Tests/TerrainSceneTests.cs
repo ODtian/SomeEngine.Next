@@ -17,7 +17,7 @@ public sealed class TerrainSceneTests
         using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
         using var world = new World();
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
-        using var material = new UnlitMaterial();
+        var material = new UnlitMaterial();
         using var firstTerrain = new Resources.Terrain(new TerrainEditing(scheduler));
         using var secondTerrain = new Resources.Terrain(new TerrainEditing(scheduler));
         HeightField firstHeight = firstTerrain.CreateHeightField("first", new(5, 5, 4), .5f);
@@ -61,7 +61,7 @@ public sealed class TerrainSceneTests
         using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
         using var world = new World();
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
-        using var material = new UnlitMaterial();
+        var material = new UnlitMaterial();
         var terrain = new Resources.Terrain(new TerrainEditing(scheduler));
         HeightField heights = terrain.CreateHeightField("ground", new HeightGrid(13, 5, 4, 2f), 4f);
         VoxelField voxels = terrain.CreateVoxelField("detail", new VoxelGrid(4, 2f));
@@ -103,7 +103,7 @@ public sealed class TerrainSceneTests
         using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
         using var world = new World();
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
-        using var material = new UnlitMaterial();
+        var material = new UnlitMaterial();
         var terrain = new Resources.Terrain(new TerrainEditing(scheduler));
         VoxelField voxels = terrain.CreateVoxelField("solid", new VoxelGrid(4, 2f));
         terrain.Surface = new VoxelSurface(voxels);
@@ -139,7 +139,7 @@ public sealed class TerrainSceneTests
         using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
         using var world = new World();
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
-        using var material = new UnlitMaterial();
+        var material = new UnlitMaterial();
         var terrain = new Resources.Terrain(new TerrainEditing(scheduler));
         HeightField heights = terrain.CreateHeightField("ground", new HeightGrid(9, 5, 4));
         terrain.Surface = new HeightSurface(heights);

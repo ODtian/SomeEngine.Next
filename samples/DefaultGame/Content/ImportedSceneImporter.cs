@@ -56,10 +56,13 @@ public sealed class ImportedSceneImporter : GltfSceneImporter
         foreach (string file in Directory.EnumerateFiles(defaults, "*", SearchOption.AllDirectories)
             .Where(x => x.EndsWith(".slang") || x.EndsWith(".shader")))
         {
-            string destination = Path.Combine(directory, Path.GetRelativePath(defaults, file));
+            string relativePath = Path.GetRelativePath(defaults, file);
+            if (relativePath == "cluster_transparency.slang") continue;
+            string destination = Path.Combine(directory, relativePath);
             Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
             File.Copy(file, destination, overwrite: true);
         }
+        SampleContent.LinkTransparencySource(directory, Path.Combine(engine, "assets", "Shaders"));
         WriteSurfaceShader(directory, engine);
         var shaderIds = new List<Guid>();
         foreach (float cutoff in model.LogicalMaterials.Where(static material => !material.Unlit).Select(Cutoff).Distinct())
@@ -93,8 +96,7 @@ public sealed class ImportedSceneImporter : GltfSceneImporter
 
     internal static void WriteSurfaceSources(string directory, string engineRoot)
     {
-        WriteIfChanged(Path.Combine(directory, "cluster_transparency.slang"),
-            File.ReadAllText(Path.Combine(engineRoot, "assets/Shaders/cluster_transparency.slang")));
+        SampleContent.LinkTransparencySource(directory, Path.Combine(engineRoot, "assets", "Shaders"));
         foreach (string definitionPath in Directory.EnumerateFiles(directory, "scene_*.shader"))
         {
             string shaderName = Path.GetFileNameWithoutExtension(definitionPath);

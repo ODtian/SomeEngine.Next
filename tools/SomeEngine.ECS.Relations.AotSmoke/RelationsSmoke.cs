@@ -18,6 +18,9 @@ internal static partial class RelationsSmoke
             ManagedPayloadPolicy = ManagedPayloadPolicy.Allow,
         });
         CheckNumbersAndEdges(jobs);
+        CheckPrivateStorageClassification(jobs);
+        CheckPrivateGenericStorageClassification(jobs);
+        CheckPrivateFixedBufferStorageClassification(jobs);
         CheckSpatialFrames(jobs);
         Console.WriteLine("PASS: packages; arities=1..8; Item8; ref output; schema; typed/generated/query access; edges; key; bitmap; spatial; maintenance; parallel; consumption.");
         return 0;
@@ -109,6 +112,93 @@ internal static partial class RelationsSmoke
         foreach (var query in new[] { first, second, third, fourth, fifth, sixth, seventh, eighth })
             world.ReleaseQuery(query);
         Console.WriteLine("numbers: 8 arities, Item8, typed/generated reads; edges: identities, roles, maintenance");
+    }
+
+    private static void CheckPrivateStorageClassification(Scheduler jobs)
+    {
+        using var world = WorldJobs.CreateWorld(scheduler: jobs);
+        var entity = world.CreateEntity(new PrivateSafeTable { Value = new PrivateSafeLeaf { Value = 17 } });
+        var values = new List<int>();
+        ComponentJobAccess<PrivateSafeTable>.ScheduleRead(world, new ReadPrivateSafe(world, entity, values)).Complete();
+        Require(values.SequenceEqual([17]), "private nested alias-free storage remains schedulable");
+
+        bool typedRejected = false;
+        try { ComponentJobAccess<PrivateNativeHandleTable>.Read(world); }
+        catch (InvalidOperationException) { typedRejected = true; }
+        Require(typedRejected, "private nested native handle typed access is rejected");
+
+        bool queryRejected = false;
+        var definition = world.QueryDefinition().Read<PrivateNativeHandleTable>().Build();
+        try { QueryJobAccess.CopyAccesses(world, definition, new JobResourceAccess[QueryJobAccess.Count(definition)]); }
+        catch (InvalidOperationException) { queryRejected = true; }
+        Require(queryRejected, "private nested native handle query access is rejected");
+        Console.WriteLine("private storage: nested numeric accepted; nested native handle rejected by typed and query access");
+    }
+
+    // These private types intentionally bypass generated registration and exercise the documented fallback.
+    private struct PrivateSafeLeaf
+    {
+        internal long Value { get; set; }
+    }
+
+    private struct PrivateSafeTable : IComponent
+    {
+        internal PrivateSafeLeaf Value { get; set; }
+    }
+
+    private struct PrivateNativeHandleLeaf
+    {
+        internal nuint Value { get; set; }
+    }
+
+    private struct PrivateNativeHandleTable : IComponent
+    {
+        internal PrivateNativeHandleLeaf Value { get; set; }
+    }
+
+    private readonly struct ReadPrivateSafe(World world, Entity entity, List<int> values) : IJob
+    {
+        public void Execute() => values.Add(checked((int)world.Read<PrivateSafeTable>(entity).Value.Value));
+    }
+
+    private static void CheckPrivateGenericStorageClassification(Scheduler jobs)
+    {
+        using var world = WorldJobs.CreateWorld(scheduler: jobs);
+        var entity = world.CreateEntity(new PrivateGenericTable<PrivateSafeLeaf> { Value = new PrivateSafeLeaf { Value = 23 } });
+        var values = new List<long>();
+        ComponentJobAccess<PrivateGenericTable<PrivateSafeLeaf>>.ScheduleRead(
+            world, new ReadPrivateGenericSafe(world, entity, values)).Complete();
+        Require(values.SequenceEqual([23L]), "private generic nested alias-free storage remains schedulable");
+        bool rejected = false;
+        try { ComponentJobAccess<PrivateGenericTable<PrivateNativeHandleLeaf>>.Read(world); }
+        catch (InvalidOperationException) { rejected = true; }
+        Require(rejected, "private generic nested native handle typed access is rejected");
+        Console.WriteLine("private generic storage: nested numeric accepted; nested native handle rejected");
+    }
+
+    private struct PrivateGenericTable<T> : IComponent where T : unmanaged
+    {
+        internal T Value { get; set; }
+    }
+
+    private readonly struct ReadPrivateGenericSafe(World world, Entity entity, List<long> values) : IJob
+    {
+        public void Execute() => values.Add(world.Read<PrivateGenericTable<PrivateSafeLeaf>>(entity).Value.Value);
+    }
+
+    private static void CheckPrivateFixedBufferStorageClassification(Scheduler jobs)
+    {
+        using var world = WorldJobs.CreateWorld(scheduler: jobs);
+        bool rejected = false;
+        try { ComponentJobAccess<PrivateFixedBufferTable>.Read(world); }
+        catch (InvalidOperationException) { rejected = true; }
+        Require(rejected, "private fixed-buffer storage is rejected");
+        Console.WriteLine("private fixed-buffer storage: rejected");
+    }
+
+    private unsafe struct PrivateFixedBufferTable : IComponent
+    {
+        internal fixed byte Values[4];
     }
 
     private readonly struct ReadNumber(World world, Entity entity, List<int> values) : IJob

@@ -316,7 +316,7 @@ public sealed class PassCullingAndAliasingTests
     }
 
     [Fact]
-    public void FrameExtensionParticipatesInCullingAndScheduling_DoesNotThrow()
+    public void FrameRegionParticipatesInCullingAndScheduling_DoesNotThrow()
     {
         using WarpGraphTestSupport support = WarpGraphTestSupport.Create();
         using Buffer source = support.Backend.CreateBuffer(
@@ -332,7 +332,7 @@ public sealed class PassCullingAndAliasingTests
             support.Device,
             [support.GraphicsQueue, support.CopyQueue]);
 
-        GraphExtensionPointId point;
+        GraphRegionId region;
         GraphBufferId sourceId;
         GraphBufferId destinationId;
         using (RenderGraphEdit edit = graph.BeginEdit())
@@ -341,31 +341,32 @@ public sealed class PassCullingAndAliasingTests
                 [Endpoint(source, support.CopyQueue, ResourceContentState.Defined)]);
             destinationId = edit.RegisterExternalBuffer(destination,
                 [Endpoint(destination, support.GraphicsQueue, ResourceContentState.Undefined)]);
-            point = edit.AddExtensionPoint("Dynamic work");
+            region = edit.AddFrameRegion("Dynamic work");
             edit.Commit();
         }
 
         QueueCompletion[] completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
         using (RenderGraphFrame frame = graph.BeginFrame())
         {
-            using RenderGraphFrameExtension extension = frame.BeginExtension(point);
-            GraphBufferId transient = extension.CreateBuffer(new BufferDesc(
+            GraphBufferId transient = frame.CreateBuffer(new BufferDesc(
                 ByteCount,
                 BufferUsages.CopySource | BufferUsages.CopyDestination));
-            _ = extension.AddCopyPass(
-                "Extension upload",
+            _ = frame.AddCopyPass(
+                "Frame region upload",
                 PassQueueSelection.Exact(support.CopyQueue),
                 new CopyState(sourceId, transient, ByteCount),
                 default,
                 DeclareCopy,
-                RecordCopy);
-            _ = extension.AddCopyPass(
-                "Extension readback",
+                RecordCopy,
+                region);
+            _ = frame.AddCopyPass(
+                "Frame region readback",
                 PassQueueSelection.Exact(support.GraphicsQueue),
                 new CopyState(transient, destinationId, ByteCount),
                 default,
                 DeclareCopy,
-                RecordCopy);
+                RecordCopy,
+                region);
             _ = frame.Execute(completions);
         }
         support.Wait(completions);

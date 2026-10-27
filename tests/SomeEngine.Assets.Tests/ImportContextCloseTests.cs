@@ -1,6 +1,5 @@
 using System.Collections.Concurrent;
 using SomeEngine.Assets.Importing;
-using SomeEngine.Serialization.Containers;
 
 namespace SomeEngine.Assets.Tests;
 
@@ -27,13 +26,13 @@ public sealed class ImportContextCloseTests
     public async Task CloseReleasesCompletedAssetsBeforeHeldResourcesInReverseOrder()
     {
         var events = new List<string>();
-        var context = CreateContext();
+        var context = new ImportContext();
         try
         {
             context.EnableImporter<CloseSource, CloseAsset>(Guid.NewGuid(), [],
                 (_, _, _, _) => ValueTask.CompletedTask);
-            await context.GetAssetAsync<CloseSource, CloseAsset>(new("first", () => events.Add("first")));
-            await context.GetAssetAsync<CloseSource, CloseAsset>(new("second", () => events.Add("second")));
+            await RequestAssetAsync(context, new("first", () => events.Add("first")));
+            await RequestAssetAsync(context, new("second", () => events.Add("second")));
             string[] assetOrder = context.Assets.Cast<CloseAsset>().Select(asset => asset.Label).ToArray();
             context.Hold(new CloseResource(() => events.Add("earlier-resource")));
             context.Hold(new CloseResource(() => events.Add("later-resource")));
@@ -53,14 +52,14 @@ public sealed class ImportContextCloseTests
         var secondError = new IOException();
         var earlierResourceError = new NotSupportedException();
         var nestedError = new AggregateException(new ArgumentException(), new InvalidOperationException());
-        var context = CreateContext();
+        var context = new ImportContext();
         try
         {
             context.EnableImporter<CloseSource, CloseAsset>(Guid.NewGuid(), [],
                 (_, _, _, _) => ValueTask.CompletedTask);
-            await context.GetAssetAsync<CloseSource, CloseAsset>(new("first", () =>
+            await RequestAssetAsync(context, new("first", () =>
             { events.Add("first"); throw firstError; }));
-            await context.GetAssetAsync<CloseSource, CloseAsset>(new("second", () =>
+            await RequestAssetAsync(context, new("second", () =>
             { events.Add("second"); throw secondError; }));
             string[] assetOrder = context.Assets.Cast<CloseAsset>().Select(asset => asset.Label).ToArray();
             Exception[] assetErrors = assetOrder.Select(label => label == "first"
@@ -99,7 +98,7 @@ public sealed class ImportContextCloseTests
         var assetError = new InvalidDataException();
         var resourceError = new IOException();
         CancellationTokenRegistration registration = default;
-        var context = CreateContext();
+        var context = new ImportContext();
         try
         {
             context.EnableImporter<CloseSource, CloseAsset>(Guid.NewGuid(), [], (_, _, _, token) =>
@@ -108,7 +107,7 @@ public sealed class ImportContextCloseTests
                 { events.Enqueue("cancellation"); throw cancellationError; });
                 return ValueTask.CompletedTask;
             });
-            await context.GetAssetAsync<CloseSource, CloseAsset>(new("asset", () =>
+            await RequestAssetAsync(context, new("asset", () =>
             { events.Enqueue("asset"); throw assetError; }));
             context.Hold(new CloseResource(() =>
             { events.Enqueue("resource"); throw resourceError; }));
@@ -142,7 +141,7 @@ public sealed class ImportContextCloseTests
         var canceled = Signal();
         var finish = Signal();
         CancellationTokenRegistration registration = default;
-        var context = CreateContext();
+        var context = new ImportContext();
         try
         {
             context.EnableImporter<CloseSource, CloseAsset>(Guid.NewGuid(), [], async (_, _, _, token) =>
@@ -158,7 +157,7 @@ public sealed class ImportContextCloseTests
                 events.Enqueue("conversion-ended");
             });
             context.Hold(new CloseResource(() => events.Enqueue("resource")));
-            Task<CloseAsset> request = context.GetAssetAsync<CloseSource, CloseAsset>(
+            Task<CloseAsset> request = RequestAssetAsync(context,
                 new("asset", () => events.Enqueue("asset"))).AsTask();
             await entered.Task.WaitAsync(Timeout);
             Task first = context.DisposeAsync().AsTask();
@@ -179,15 +178,12 @@ public sealed class ImportContextCloseTests
         }
     }
 
-    private static ImportContext CreateContext()
+    private static ValueTask<CloseAsset> RequestAssetAsync(ImportContext context, CloseSource source)
     {
-        var context = new ImportContext();
-        context.ConfigureAssets<CloseSource, CloseAsset>(source => source.Key,
-            (source, id) => new CloseAsset(id, source.Key, source.Release),
-            (_, id) => id.ToString("N") + ".asset",
-            (asset, path, _) => ValueTask.FromResult(
-                new AssetEntry(asset.Id, "test", 1, Guid.NewGuid()) { Path = path }));
-        return context;
+        Guid id = context.GetAssetId(source.Key);
+        context.AddAsset(source, new CloseAsset(id, source.Key, source.Release),
+            source.Key, id.ToString("N") + ".asset");
+        return context.GetAssetAsync<CloseSource, CloseAsset>(source);
     }
 
     private static TaskCompletionSource Signal() => new(TaskCreationOptions.RunContinuationsAsynchronously);

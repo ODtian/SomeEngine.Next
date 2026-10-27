@@ -195,6 +195,409 @@ public sealed partial class LayoutCacheTests
         Assert.Equal(versions, surroundings.Select(frames.World.WriteVersion<LayoutRect>).ToArray());
     }
 
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public void LayoutValueAndPresentReadsKeepBothOrdersCurrent(bool sparse, bool readFirst)
+    {
+        using var frames = new LayoutFrames();
+        Entity source = frames.World.CreateEntity();
+        SetReadDependency(frames.World, source, sparse, new Size(20, 10), replace: false);
+        Entity canvas = frames.World.CreateEntity(new Canvas { Size = new Size(800, 600) });
+        Entity root = Views.Views.Spawn(frames.World, canvas,
+            new ReadDependencyTree(new ReadDependencyProbe(source, sparse, readFirst)));
+        frames.Frame();
+        Entity leaf = ReadDependencyLeaf(frames.World, root);
+        uint version = frames.World.Read<LayoutCache>(leaf).InputVersion;
+
+        frames.Frame();
+        Assert.Equal(version, frames.World.Read<LayoutCache>(leaf).InputVersion);
+        Assert.Equal(new Rect(0, 0, 20, 10), frames.World.Read<LayoutRect>(leaf).Value);
+
+        SetReadDependency(frames.World, source, sparse, new Size(40, 30), replace: true);
+        frames.Frame();
+        Assert.NotEqual(version, frames.World.Read<LayoutCache>(leaf).InputVersion);
+        Assert.Equal(new Rect(0, 0, 40, 30), frames.World.Read<LayoutRect>(leaf).Value);
+        version = frames.World.Read<LayoutCache>(leaf).InputVersion;
+        frames.Frame();
+        Assert.Equal(version, frames.World.Read<LayoutCache>(leaf).InputVersion);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void LayoutValueReadsStillDetectRemovalReadditionAndDestruction(bool sparse)
+    {
+        using var frames = new LayoutFrames();
+        Entity source = frames.World.CreateEntity();
+        SetReadDependency(frames.World, source, sparse, new Size(20, 10), replace: false);
+        Entity canvas = frames.World.CreateEntity(new Canvas { Size = new Size(800, 600) });
+        Entity root = Views.Views.Spawn(frames.World, canvas,
+            new ReadDependencyTree(new ReadDependencyProbe(source, sparse)));
+        frames.Frame();
+        Entity leaf = ReadDependencyLeaf(frames.World, root);
+        Assert.Equal(new Rect(0, 0, 20, 10), frames.World.Read<LayoutRect>(leaf).Value);
+
+        RemoveReadDependency(frames.World, source, sparse);
+        frames.Frame();
+        Assert.Equal(new Rect(0, 0, 7, 9), frames.World.Read<LayoutRect>(leaf).Value);
+        uint absentVersion = frames.World.Read<LayoutCache>(leaf).InputVersion;
+        frames.Frame();
+        Assert.Equal(absentVersion, frames.World.Read<LayoutCache>(leaf).InputVersion);
+
+        SetReadDependency(frames.World, source, sparse, new Size(50, 25), replace: false);
+        frames.Frame();
+        Assert.NotEqual(absentVersion, frames.World.Read<LayoutCache>(leaf).InputVersion);
+        Assert.Equal(new Rect(0, 0, 50, 25), frames.World.Read<LayoutRect>(leaf).Value);
+
+        frames.World.DestroyEntity(source);
+        frames.Frame();
+        Assert.Equal(new Rect(0, 0, 7, 9), frames.World.Read<LayoutRect>(leaf).Value);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void LayoutPresenceOnlyReadsIgnoreValueWritesButObserveAbsentToPresent(bool sparse)
+    {
+        using var frames = new LayoutFrames();
+        Entity source = frames.World.CreateEntity();
+        Entity canvas = frames.World.CreateEntity(new Canvas { Size = new Size(800, 600) });
+        Entity root = Views.Views.Spawn(frames.World, canvas,
+            new ReadDependencyTree(new ReadDependencyProbe(source, sparse, PresenceOnly: true)));
+        frames.Frame();
+        Entity leaf = ReadDependencyLeaf(frames.World, root);
+        Assert.Equal(new Rect(0, 0, 7, 9), frames.World.Read<LayoutRect>(leaf).Value);
+
+        SetReadDependency(frames.World, source, sparse, new Size(100, 90), replace: false);
+        frames.Frame();
+        Assert.Equal(new Rect(0, 0, 20, 10), frames.World.Read<LayoutRect>(leaf).Value);
+        uint version = frames.World.Read<LayoutCache>(leaf).InputVersion;
+
+        SetReadDependency(frames.World, source, sparse, new Size(200, 180), replace: true);
+        frames.Frame();
+        Assert.Equal(version, frames.World.Read<LayoutCache>(leaf).InputVersion);
+        Assert.Equal(new Rect(0, 0, 20, 10), frames.World.Read<LayoutRect>(leaf).Value);
+
+        RemoveReadDependency(frames.World, source, sparse);
+        frames.Frame();
+        Assert.Equal(new Rect(0, 0, 7, 9), frames.World.Read<LayoutRect>(leaf).Value);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void LayoutPresentReadReplacesAnEarlierAbsentObservationAfterAValueRead(bool sparse)
+    {
+        using var frames = new SerialReadHistoryFrames();
+        Entity source = frames.World.CreateEntity();
+        Entity canvas = frames.World.CreateEntity(new Canvas { Size = new Size(800, 600) });
+        Entity root = Views.Views.Spawn(frames.World, canvas, new ReadPresenceHistoryTree(frames.World, source, sparse));
+        frames.Frame();
+        Entity leaf = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
+        Assert.Equal(new Rect(0, 0, 20, 10), frames.World.Read<LayoutRect>(leaf).Value);
+        uint version = frames.World.Read<LayoutCache>(leaf).InputVersion;
+
+        frames.Frame();
+        Assert.Equal(version, frames.World.Read<LayoutCache>(leaf).InputVersion);
+        frames.Frame();
+        Assert.Equal(version, frames.World.Read<LayoutCache>(leaf).InputVersion);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void LayoutAbsentObservationBeforeAValueReadRemainsADependency(bool sparse)
+    {
+        using var frames = new SerialReadHistoryFrames();
+        Entity source = frames.World.CreateEntity();
+        Entity canvas = frames.World.CreateEntity(new Canvas { Size = new Size(800, 600) });
+        Entity root = Views.Views.Spawn(frames.World, canvas,
+            new ReadPresenceHistoryTree(frames.World, source, sparse, ConfirmPresent: false));
+        frames.Frame();
+        Entity leaf = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
+        uint version = frames.World.Read<LayoutCache>(leaf).InputVersion;
+
+        frames.Frame();
+        Assert.NotEqual(version, frames.World.Read<LayoutCache>(leaf).InputVersion);
+        Assert.Equal(new Rect(0, 0, 20, 10), frames.World.Read<LayoutRect>(leaf).Value);
+        version = frames.World.Read<LayoutCache>(leaf).InputVersion;
+        frames.Frame();
+        Assert.Equal(version, frames.World.Read<LayoutCache>(leaf).InputVersion);
+    }
+
+    [Fact]
+    public void CachedLayoutStillRepairsExternallyReplacedAndRemovedRectangles()
+    {
+        using var frames = new LayoutFrames();
+        Entity canvas = frames.World.CreateEntity(new Canvas { Size = new Size(800, 600) });
+        Entity root = Views.Views.Spawn(frames.World, canvas, new PositionedTree());
+        frames.Frame();
+        Entity absolute = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
+        Entity parent = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, absolute));
+        Entity leaf = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, parent));
+        Entity[] nodes = [canvas, parent, leaf];
+        Rect[] expected = nodes.Select(node => frames.World.Read<LayoutRect>(node).Value).ToArray();
+        uint version = frames.World.Read<LayoutCache>(leaf).InputVersion;
+
+        foreach (Entity node in nodes)
+            frames.World.Replace(node, new LayoutRect { Value = new Rect(900, 800, 1, 2) });
+        frames.Frame();
+        Assert.Equal(expected, nodes.Select(node => frames.World.Read<LayoutRect>(node).Value).ToArray());
+        Assert.Equal(version, frames.World.Read<LayoutCache>(leaf).InputVersion);
+
+        foreach (Entity node in nodes) frames.World.Remove<LayoutRect>(node);
+        frames.Frame();
+        Assert.Equal(expected, nodes.Select(node => frames.World.Read<LayoutRect>(node).Value).ToArray());
+        Assert.Equal(version, frames.World.Read<LayoutCache>(leaf).InputVersion);
+    }
+
+    private static Entity ReadDependencyLeaf(World world, Entity root) =>
+        Assert.Single(Hierarchy<ElementTree>.GetChildren(world,
+            Assert.Single(Hierarchy<ElementTree>.GetChildren(world, root))));
+
+    private static void SetReadDependency(World world, Entity source, bool sparse, Size value, bool replace)
+    {
+        if (sparse)
+        {
+            if (replace) world.ReplaceSparse(source, new SparseReadDependencyValue(value));
+            else world.AddSparse(source, new SparseReadDependencyValue(value));
+        }
+        else
+        {
+            if (replace) world.Replace(source, new ReadDependencyValue(value));
+            else world.Add(source, new ReadDependencyValue(value));
+        }
+    }
+
+    private static void RemoveReadDependency(World world, Entity source, bool sparse)
+    {
+        if (sparse) world.RemoveSparse<SparseReadDependencyValue>(source);
+        else world.Remove<ReadDependencyValue>(source);
+    }
+
+    private readonly record struct ReadDependencyValue(Size Value) : IComponent;
+    private readonly record struct SparseReadDependencyValue(Size Value) : ISparseComponent;
+
+    private readonly record struct ReadDependencyTree(ReadDependencyProbe Probe) : IView, IComponent
+    {
+        public BuildTask Build()
+        {
+            using (Scope.View(new Absolute(), 1).Content()) Scope.View(Probe, 2);
+            return default;
+        }
+    }
+
+    private readonly record struct ReadDependencyProbe(Entity Source, bool Sparse,
+        bool ReadFirst = false, bool PresenceOnly = false) : ILayout, IComponent
+    {
+        public BuildTask Build() => default;
+
+        public Size Measure(ref LayoutPass pass, in Constraints constraints)
+        {
+            if (ReadFirst)
+            {
+                Size size = ReadValue(ref pass);
+                return HasValue(ref pass) ? size : new Size(7, 9);
+            }
+            if (!HasValue(ref pass)) return new Size(7, 9);
+            return PresenceOnly ? new Size(20, 10) : ReadValue(ref pass);
+        }
+
+        private bool HasValue(ref LayoutPass pass) => Sparse
+            ? pass.Has<SparseReadDependencyValue>(Source) : pass.Has<ReadDependencyValue>(Source);
+
+        private Size ReadValue(ref LayoutPass pass) => Sparse
+            ? pass.Read<SparseReadDependencyValue>(Source).Value : pass.Read<ReadDependencyValue>(Source).Value;
+    }
+
+    private readonly record struct ReadPresenceHistoryTree(World World, Entity Source, bool Sparse, bool ConfirmPresent = true) : ILayout, IComponent
+    {
+        public BuildTask Build()
+        {
+            Scope.View(new ReadPresenceHistory(World, Source, Sparse, ConfirmPresent), 1);
+            return default;
+        }
+
+        public Size Measure(ref LayoutPass pass, in Constraints constraints)
+        {
+            Entity child = pass.Children[0];
+            var childConstraints = new Constraints(default, constraints.Max);
+            Size size = pass.Measure(child, in childConstraints);
+            pass.Place(child, Vector2.Zero);
+            return constraints.Constrain(size);
+        }
+    }
+
+    private readonly record struct ReadPresenceHistory(World World, Entity Source, bool Sparse, bool ConfirmPresent) : ILayout, IComponent
+    {
+        public BuildTask Build() => default;
+
+        public Size Measure(ref LayoutPass pass, in Constraints constraints)
+        {
+            bool exists = Sparse ? pass.Has<SparseReadDependencyValue>(Source) : pass.Has<ReadDependencyValue>(Source);
+            if (!exists) SetReadDependency(World, Source, Sparse, new Size(20, 10), replace: false);
+            Size size = Sparse ? pass.Read<SparseReadDependencyValue>(Source).Value : pass.Read<ReadDependencyValue>(Source).Value;
+            if (ConfirmPresent)
+                _ = Sparse ? pass.Has<SparseReadDependencyValue>(Source) : pass.Has<ReadDependencyValue>(Source);
+            return size;
+        }
+    }
+
+    private sealed class SerialReadHistoryFrames : IDisposable
+    {
+        internal World World { get; } = new();
+        private readonly SomeEngine.ECS.Systems.SystemGroup<SomeEngine.ECS.Systems.ImmediateSystemContext> _systems;
+
+        internal SerialReadHistoryFrames()
+        {
+            _systems = new(new SomeEngine.ECS.Systems.ImmediateSystemDriver(World));
+            _systems.Add(new ViewRebuildSystem());
+            _systems.Add(new LayoutSystem { Parallel = false });
+        }
+
+        internal void Frame() => _systems.Update();
+
+        public void Dispose()
+        {
+            _systems.Dispose();
+            World.Dispose();
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void BoundLayoutFixedReadsKeepCallbacksOutsideTheReadOwner(bool parallel)
+    {
+        var updates = new FixedReadBoundaryUpdate();
+        using var frames = new BoundFixedReadFrames(parallel, updates);
+        Entity source = frames.World.CreateEntity(new ContentSize(new Size(20, 10)));
+        frames.World.AddSparse(source, new ExtraWidth(5));
+        updates.Source = source;
+        Entity canvas = frames.World.CreateEntity(new Canvas { Size = new Size(800, 600) });
+        Entity root = Views.Views.Spawn(frames.World, canvas, new SourceTree(source));
+        frames.Frame();
+        Entity absolute = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
+        Entity leaf = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, absolute));
+        Assert.Equal(new Rect(0, 0, 25, 10), frames.World.Read<LayoutRect>(leaf).Value);
+        Assert.True(frames.World.Has<FixedReadBoundaryMarker>(leaf));
+
+        frames.World.Remove<FixedReadBoundaryMarker>(leaf);
+        updates.Armed = true;
+        frames.Frame();
+
+        Assert.Equal(2, updates.WriteCallbacks);
+        Assert.Equal(updates.TickAfterHasChangesWrites, updates.TickBeforeReadContentWrites);
+        Assert.True(frames.World.Has<FixedReadBoundaryMarker>(leaf));
+        Assert.True(frames.World.Has<LayoutCache>(leaf));
+        Assert.Equal(new Size(60, 35), frames.World.Read<ContentSize>(source).Value);
+        Assert.Equal(15f, frames.World.ReadSparse<ExtraWidth>(source).Value);
+        Assert.Equal(new Rect(0, 0, 75, 35), frames.World.Read<LayoutRect>(leaf).Value);
+        uint version = frames.World.Read<LayoutCache>(leaf).InputVersion;
+        frames.Frame();
+        Assert.Equal(version, frames.World.Read<LayoutCache>(leaf).InputVersion);
+        Assert.Equal(2, updates.WriteCallbacks);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void BoundLayoutFixedReadsHandleMissingCacheAndRepairRectangles(bool parallel)
+    {
+        using var frames = new BoundFixedReadFrames(parallel);
+        Entity canvas = frames.World.CreateEntity(new Canvas { Size = new Size(800, 600) });
+        Entity root = Views.Views.Spawn(frames.World, canvas, new PositionedTree());
+        frames.Frame();
+        Entity absolute = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
+        Entity parent = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, absolute));
+        Entity leaf = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, parent));
+        uint cacheVersion = frames.World.Read<LayoutCache>(leaf).InputVersion;
+        uint rectangleVersion = frames.World.WriteVersion<LayoutRect>(leaf);
+        frames.Frame();
+        Assert.Equal(cacheVersion, frames.World.Read<LayoutCache>(leaf).InputVersion);
+        Assert.Equal(rectangleVersion, frames.World.WriteVersion<LayoutRect>(leaf));
+
+        frames.World.Remove<LayoutCache>(leaf);
+        frames.Frame();
+        Assert.True(frames.World.Has<LayoutCache>(leaf));
+        Assert.Equal(new Rect(30, 40, 20, 10), frames.World.Read<LayoutRect>(leaf).Value);
+        cacheVersion = frames.World.Read<LayoutCache>(leaf).InputVersion;
+
+        frames.World.Remove<LayoutRect>(parent);
+        frames.World.Replace(leaf, new LayoutRect { Value = new Rect(900, 800, 1, 2) });
+        frames.Frame();
+        Assert.Equal(new Rect(30, 40, 200, 100), frames.World.Read<LayoutRect>(parent).Value);
+        Assert.Equal(new Rect(30, 40, 20, 10), frames.World.Read<LayoutRect>(leaf).Value);
+        Assert.Equal(cacheVersion, frames.World.Read<LayoutCache>(leaf).InputVersion);
+    }
+
+    private readonly record struct FixedReadBoundaryMarker : IComponent;
+
+    private sealed class FixedReadBoundaryUpdate : ILayoutDataUpdate
+    {
+        internal Entity Source;
+        internal bool Armed;
+        internal int WriteCallbacks;
+        internal uint TickAfterHasChangesWrites;
+        internal uint TickBeforeReadContentWrites;
+        private bool _finishInputs;
+        public bool SupportsParallel => true;
+
+        public bool HasChanges(World world, Entity node)
+        {
+            if (!Armed || !world.HasSparse<SourceSize>(node)) return false;
+            Armed = false;
+            world.Replace(Source, new ContentSize(new Size(40, 30)));
+            world.ReplaceSparse(Source, new ExtraWidth(10));
+            if (world.Has<LayoutCache>(node)) world.Remove<LayoutCache>(node);
+            TickAfterHasChangesWrites = world.CurrentTick;
+            _finishInputs = true;
+            WriteCallbacks++;
+            return true;
+        }
+
+        public ILayoutContent? ReadContent(World world, Entity node)
+        {
+            if (!world.HasSparse<SourceSize>(node)) return null;
+            if (_finishInputs) TickBeforeReadContentWrites = world.CurrentTick;
+            if (!world.Has<FixedReadBoundaryMarker>(node)) world.Add(node, new FixedReadBoundaryMarker());
+            if (_finishInputs)
+            {
+                world.Replace(Source, new ContentSize(new Size(60, 35)));
+                world.ReplaceSparse(Source, new ExtraWidth(15));
+                _finishInputs = false;
+                WriteCallbacks++;
+            }
+            return null;
+        }
+
+        public void Update(World world, Entity node, in Constraints constraints) { }
+    }
+
+    private sealed class BoundFixedReadFrames : IDisposable
+    {
+        internal World World { get; } = SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
+        private readonly SomeEngine.ECS.Systems.SystemGroup<SomeEngine.ECS.Systems.ImmediateSystemContext> _systems;
+
+        internal BoundFixedReadFrames(bool parallel, params ILayoutDataUpdate[] dataUpdates)
+        {
+            _systems = new(new SomeEngine.ECS.Systems.ImmediateSystemDriver(World));
+            _systems.Add(new ViewRebuildSystem());
+            _systems.Add(new LayoutSystem(dataUpdates) { Parallel = parallel });
+        }
+
+        internal void Frame() => _systems.Update();
+
+        public void Dispose()
+        {
+            _systems.Dispose();
+            World.Dispose();
+        }
+    }
+
     private readonly record struct TightTree : ILayout, IComponent
     {
         public BuildTask Build()

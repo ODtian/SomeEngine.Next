@@ -254,7 +254,11 @@ public sealed class ClusterMaterialAssignmentTests(Xunit.Abstractions.ITestOutpu
                 interpretation = "CPU budget only; no product algorithm changed and no Native performance claim."
             }));
         }
-        finally { GC.KeepAlive(materials); // Managed materials remain caller-owned across preparation. }
+        finally
+        {
+            // Managed materials remain caller-owned across preparation.
+            GC.KeepAlive(materials);
+        }
 
         void Edit(int iteration)
         {
@@ -399,7 +403,11 @@ public sealed class ClusterMaterialAssignmentTests(Xunit.Abstractions.ITestOutpu
                 interpretation = "Same real WARP/ECS extraction and residency fixture and material identities; CPU preparation cost only, not isolated assignment allocation or Native frame-time evidence."
             }));
         }
-        finally { GC.KeepAlive(materials); // Managed materials remain caller-owned across preparation. }
+        finally
+        {
+            // Managed materials remain caller-owned across preparation.
+            GC.KeepAlive(materials);
+        }
 
         static void Measure(AssignmentScene scene, int iteration, long[] ticks, long[] bytes)
         {

@@ -87,4 +87,23 @@ IReadOnlyList<AssetEntry> items = assets.List();
 
 依赖追踪、缓存检查、输出版本和资产登记由 `AssetProject` 维护。游戏运行通过 `AssetLoader` 及具体资产的加载 API 打开已处理资产。正式编辑器控件与状态组织继续使用 SomeUI 既有规格。
 
+## 游戏启动与样例边界
+
+应用与脚本的 `Application.RunAsync`（包括泛型材质入口）统一返回 `ApplicationResult`。库保留失败类别、已完成帧数和原始错误；可执行项目的 `Main` 决定退出码：
+
+```csharp
+var application = new ApplicationScene(contentDirectory)
+{
+    Options = RuntimeStartupOptions.Parse(args),
+};
+ApplicationResult result = await Application.RunAsync(args, application);
+return result.Succeeded ? 0 : 1;
+```
+
+项目的额外场景组件通过 `ApplicationScene.RegisterSceneComponents` 加入本次加载的序列化注册；组件定义与 codec 留在使用它的项目中。加载及几何初始化边界见 [项目构建、启动配置与渲染接入](../wiki/architecture/Assets/Asset-Application-and-Rendering.md)。
+
 DefaultGame 的场景选择、快捷键、测量与报告由样例中的 `SceneTestPlatform` 持有。它把内容目录、渲染设置和回调交给 `ApplicationScene`，通过 `Application.RunAsync` 启动。场景开始回调在内容加载前执行，帧完成回调在 Present 后执行；帧回调读取输入和现有渲染诊断，截图使用 `SceneEdit.CaptureImage` 与 `SceneImage.SaveBmp`。调试面板由样例的 ImGui 绘制回调接入通用调试窗口。
+
+`MeshMotion`、种子正弦运动、相机／灯光／材质回放与 `SphereNameplates` 都由 DefaultGame 组合。`SampleSceneOptions` 解析动态场景、回放、世界名牌、屏幕面板和 HUD 开关；`RuntimeStartupOptions` 保存通用窗口、渲染及帧时间设置。原有样例 CLI 拼写保留，但裸 `ApplicationScene` 不会自动安装这些样例行为。通用启动 trace 不再写入样例专用的 `dynamicScene`、`scenePlayback` 元数据；DefaultGame 的测量结果继续记录自己的动画与回放设置。
+
+绝对场景时间及同步／异步更新时点见 [场景脚本](../wiki/architecture/rendering/Scene-Scripts.md#场景回调与时间)；每次运行的资源创建与释放见 [几何功能接入](../wiki/architecture/rendering/Geometry-Features.md#游戏侧场景资源)。

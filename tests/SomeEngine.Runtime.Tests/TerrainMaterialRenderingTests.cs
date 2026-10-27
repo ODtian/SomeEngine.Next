@@ -25,6 +25,7 @@ public sealed class TerrainMaterialRenderingTests(SceneContentFixture content)
         ApplicationResult? completed = null;
         var application = new ApplicationScene(content.DirectoryPath)
         {
+            RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
             SceneCompleted = value => completed = value,
             Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "12"]),
@@ -52,8 +53,8 @@ public sealed class TerrainMaterialRenderingTests(SceneContentFixture content)
             },
         };
         gpu.Install(application);
-        int result = await Application.RunAsync([], application: application);
-        Assert.True(result == 0, completed?.Error?.ToString());
+        ApplicationResult result = await Application.RunAsync([], application: application);
+        Assert.True(result.Succeeded, completed?.Error?.ToString());
         Assert.Equal(edit.Revision, build.Revision);
         Assert.True(build.Completion.IsCompleted);
         Assert.True(build.Visibility.IsCompleted);
@@ -62,6 +63,7 @@ public sealed class TerrainMaterialRenderingTests(SceneContentFixture content)
 
         var reference = new ApplicationScene(content.DirectoryPath)
         {
+            RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
             Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "12"]),
             UpdateFrame = frame =>
@@ -82,7 +84,7 @@ public sealed class TerrainMaterialRenderingTests(SceneContentFixture content)
             },
         };
         cpu.Install(reference);
-        Assert.Equal(0, await Application.RunAsync([], application: reference));
+        Assert.True((await Application.RunAsync([], application: reference)).Succeeded);
         SceneImages.AssertEqual(expectedBefore!, before!);
         SceneImages.AssertEqual(expectedPainted!, painted!);
         SceneImages.AssertEqual(expectedDisplaced!, displaced!);

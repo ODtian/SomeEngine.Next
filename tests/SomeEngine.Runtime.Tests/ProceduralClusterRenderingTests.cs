@@ -12,7 +12,8 @@ public sealed class ProceduralClusterRenderingTests(SceneContentFixture content)
     public async Task RealtimeAndOfflineGeometryDisplayTheSameMaterialRegions()
     {
         SceneImage? realtime = null, offline = null;
-        await SceneImages.RunAsync("d3d12", new SceneScript(content.DirectoryPath, 10,
+        await SceneImages.RunAsync("d3d12", new SceneScript(new ApplicationScene(content.DirectoryPath)
+            { RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register }, 10,
         [
             new(0, scene =>
             {
@@ -24,7 +25,8 @@ public sealed class ProceduralClusterRenderingTests(SceneContentFixture content)
             new(9, scene => scene.CaptureImage(image => realtime = image)),
         ]), "--no-taa", "--no-vsm");
 
-        await SceneImages.RunAsync("d3d12", new SceneScript(content.DirectoryPath, 10,
+        await SceneImages.RunAsync("d3d12", new SceneScript(new ApplicationScene(content.DirectoryPath)
+            { RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register }, 10,
         [
             new(0, scene =>
             {

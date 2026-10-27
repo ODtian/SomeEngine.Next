@@ -13,6 +13,7 @@ internal sealed class FrameOutputVerifier : IDisposable
     private readonly Device _device;
     private readonly int _width;
     private readonly int _height;
+    private readonly Format _format;
     private readonly TextureCopyFootprint _footprint;
     private readonly Buffer _readback;
     private readonly byte[] _bytes;
@@ -34,6 +35,7 @@ internal sealed class FrameOutputVerifier : IDisposable
 
         _width = width;
         _height = height;
+        _format = format;
         TextureDesc description = new(
             TextureDimension.Texture2D,
             checked((uint)width),

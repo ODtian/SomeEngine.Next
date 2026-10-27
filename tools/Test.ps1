@@ -15,7 +15,7 @@ try {
     $results = [IO.Path]::GetFullPath($ResultsDirectory)
     [IO.Directory]::CreateDirectory($results) | Out-Null
     if (!$NoBuild -and $Project -eq 'SomeEngine.slnx') {
-        & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'Build.ps1') -Configuration $Configuration -ResultsDirectory $results
+        & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'Build.ps1') -Configuration $Configuration
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         $NoBuild = $true
     }

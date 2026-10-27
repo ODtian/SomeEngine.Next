@@ -35,6 +35,7 @@ public sealed class TerrainAssetRenderingTests(SceneContentFixture content)
             SceneImage? before = null, after = null, expectedBefore = null, expectedAfter = null;
             var application = new ApplicationScene(content.DirectoryPath)
             {
+                RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
                 Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                     "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "18"]),
                 UpdateFrame = frame =>
@@ -63,7 +64,7 @@ public sealed class TerrainAssetRenderingTests(SceneContentFixture content)
                 },
             };
             application.InstallGeometry(new TerrainGeometryFeature(scene));
-            Assert.Equal(0, await Application.RunAsync([], application: application));
+            Assert.True((await Application.RunAsync([], application: application)).Succeeded);
             VoxelFieldRead originalValues = await original.Voxels.ReadCpuAsync(new(4, 2, 4, 1, 1, 1));
             VoxelFieldRead changed = await restored!.VoxelFields[0].ReadCpuAsync(new(4, 2, 4, 1, 1, 1));
             Assert.Equal(-2f, originalValues[4, 2, 4]);
@@ -75,6 +76,7 @@ public sealed class TerrainAssetRenderingTests(SceneContentFixture content)
             reference.RaiseDetail(2f);
             var expected = new ApplicationScene(content.DirectoryPath)
             {
+                RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
                 Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                     "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "18"]),
                 UpdateFrame = frame =>
@@ -92,7 +94,7 @@ public sealed class TerrainAssetRenderingTests(SceneContentFixture content)
                 },
             };
             reference.Install(expected);
-            Assert.Equal(0, await Application.RunAsync([], application: expected));
+            Assert.True((await Application.RunAsync([], application: expected)).Succeeded);
             SceneImages.AssertEqual(expectedBefore!, before!);
             SceneImages.AssertEqual(expectedAfter!, after!);
             SceneImages.AssertChanged(before!, after!);

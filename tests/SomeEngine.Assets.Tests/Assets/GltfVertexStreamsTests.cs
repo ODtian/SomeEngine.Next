@@ -446,6 +446,15 @@ public sealed class GltfVertexStreamsTests
         var mesh = await result.Asset.GetBlock<ClusterGeometryBlock>().CreateAsync(result.Asset.GetBlock<MeshBlock>(),
             result.Asset.GetBlock<ClusterVertexAttributesBlock>(), "optional bounds");
         Assert.Equal(1, mesh.PageCount);
+        var group = Assert.Single(mesh.ClusterGroups);
+        Assert.Equal(0u, group.FirstPage);
+        Assert.Equal(1u, group.PageCount);
+        Assert.Empty(group.Parents);
+        var part = Assert.Single(group.HierarchyParts);
+        Assert.Equal(0u, part.NodeIndex);
+        Assert.Equal(0u, part.ChildIndex);
+        Assert.Equal(0u, part.PageIndex);
+        Assert.Equal(0u, part.FirstCluster);
         string meshPath = Path.Combine(file.Directory, "optional.mesh.asset");
         await result.Asset.SaveAsync(meshPath);
         using MeshAsset reopenedMesh = await MeshAsset.OpenAsync(meshPath);
@@ -453,6 +462,11 @@ public sealed class GltfVertexStreamsTests
         var reopenedGeometry = await reopenedMesh.GetBlock<ClusterGeometryBlock>().CreateAsync(reopenedMesh.GetBlock<MeshBlock>(),
             await reopenedMesh.GetBlockAsync<ClusterVertexAttributesBlock>(), "reopened optional bounds");
         Assert.Equal(1, reopenedGeometry.PageCount);
+        var reopenedGroup = Assert.Single(reopenedGeometry.ClusterGroups);
+        Assert.Equal(group.FirstPage, reopenedGroup.FirstPage);
+        Assert.Equal(group.PageCount, reopenedGroup.PageCount);
+        Assert.Equal(group.HierarchyParts.ToArray(), reopenedGroup.HierarchyParts.ToArray());
+        Assert.Equal(group.Parents.ToArray(), reopenedGroup.Parents.ToArray());
         WorldAsset scene = await result.Imports.GetAssetAsync<SharpGLTF.Schema2.Scene, WorldAsset>(result.Model.LogicalScenes[0]);
         string scenePath = Path.Combine(file.Directory, "optional.scene.asset");
         await scene.SaveAsync(scenePath);

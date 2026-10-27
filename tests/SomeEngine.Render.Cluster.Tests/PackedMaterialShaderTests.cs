@@ -1,8 +1,11 @@
 using System.Buffers;
 using SlangShaderSharp;
 using SomeEngine.Assets;
+using SomeEngine.Assets.Importers;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Graphics;
 using SomeEngine.Resources;
+using SomeEngine.Serialization.IO;
 using SomeEngine.Serialization.Packs;
 
 namespace SomeEngine.Render.Cluster.Tests;
@@ -12,22 +15,34 @@ public sealed class PackedMaterialShaderTests
     [Fact]
     public async Task PackedMaterialEntryRestorationMatchesLooseEntries()
     {
-        Game.Assets.MaterialTypes.Register();
-        string content = Path.Combine(FrameStageScene.FindRoot(), "templates", "DefaultProject");
+        string content = Path.Combine(FrameStageScene.FindRoot(), "samples", "DefaultGame");
         AssetManifest manifest = AssetManifest.Load(Path.Combine(content, "Library", "AssetManifest"));
-        await using var storage = new AssetPackStorage(
-            [await AssetPack.OpenAsync(Path.Combine(content, "Library", "shared.assetpack"))]);
-        await using var packed = new AssetLoader(storage);
         await using var loose = new AssetLoader(new LooseAssetStorage(content, manifest));
-        SessionDesc description = TestShaderLoading.CreateSessionDescription();
+        var builder = new AssetPackBuilder();
+        foreach (string name in new[] { "Standard", "Unlit" })
+        {
+            AssetEntry materialEntry = manifest.List(MaterialAsset.FileType).Single(item => item.Name == name);
+            await using MaterialAsset material = await MaterialAsset.OpenAsync(loose, new(materialEntry.AssetGuid));
+            AssetEntry shaderEntry = manifest.Assets[material.GetBlock<MaterialBlock>().Shader.Value];
+            foreach (AssetEntry entry in new[] { materialEntry, shaderEntry })
+                builder.AddAsset(entry.AssetGuid, entry.AssetType,
+                    await AssetCommands.ReadAssetBytesAsync(content, entry), entry.SchemaFingerprint);
+        }
+        Assert.Equal(4, builder.Count);
+        using var packBytes = new MemoryStream();
+        await builder.WriteAsync(packBytes);
+        // This loader contains only the in-memory pack; it has no loose-file fallback.
+        await using var storage = new AssetPackStorage(
+            [await AssetPack.OpenAsync(new MemoryRangeSource(packBytes.ToArray()), ownsSource: true)]);
+        await using var packed = new AssetLoader(storage);
         var shaderIds = new HashSet<AssetId<ShaderAsset>>();
-        var loaded = new List<(string Name, uint SurfaceBytes, Shader Loose, Shader Packed,
+        var loaded = new List<(string Name, Shader Loose, Shader Packed,
             Shader[] LooseEntries, Shader[] PackedEntries)>();
 
-        foreach ((string name, uint surfaceBytes) in new[] { ("Standard", 36u), ("Unlit", 12u) })
+        foreach (string name in new[] { "Standard", "Unlit" })
         {
             var materialId = new AssetId<MaterialAsset>(
-                manifest.List(MaterialAsset.FileType).First(item => item.Name == name).AssetGuid);
+                manifest.List(MaterialAsset.FileType).Single(item => item.Name == name).AssetGuid);
             await using MaterialAsset looseMaterial = await MaterialAsset.OpenAsync(loose, materialId);
             await using MaterialAsset packedMaterial = await MaterialAsset.OpenAsync(packed, materialId);
             MaterialBlock expectedMaterial = looseMaterial.GetBlock<MaterialBlock>();
@@ -39,56 +54,55 @@ public sealed class PackedMaterialShaderTests
             Assert.True(shaderIds.Add(expectedMaterial.Shader));
             await using ShaderAsset looseFile = await ShaderAsset.OpenAsync(loose, expectedMaterial.Shader);
             await using ShaderAsset packedFile = await ShaderAsset.OpenAsync(packed, actualMaterial.Shader);
-            Shader looseDefault = await looseFile.GetBlock<ShaderBlock>().CreateAsync(
-                looseFile.GetBlock<ShaderSourceBlock>(), TestShaderLoading.Slang, description, looseFile.Name);
-            Shader packedDefault = await packedFile.GetBlock<ShaderBlock>().CreateAsync(
-                packedFile.GetBlock<ShaderSourceBlock>(), TestShaderLoading.Slang, description, packedFile.Name);
+            SessionDesc description = SlangShaderImporter.CreateSessionDescription(
+                Path.Combine(content, manifest.Assets[expectedMaterial.Shader.Value].Path),
+                SlangShaderImporter.CreateDefaultTargets(TestShaderLoading.Slang));
+            Shader looseDefault = await looseFile.CreateSavedAsync(TestShaderLoading.Slang, description);
+            Shader packedDefault = await packedFile.CreateSavedAsync(TestShaderLoading.Slang, description);
             var looseEntries = new Shader[2];
             var packedEntries = new Shader[2];
             int entryIndex = 0;
 
             foreach ((string entryName, string[] expressions) in new[]
             {
-                ("ClusterSurfaceDataMode", new[] { "0", "0" }),
+                ("ClusterShadowRequests", new[] { "0", "0" }),
                 ("ClusterShadeMode", new[] { "0" }),
             })
             {
                 SpecializationArg[] arguments = expressions.Select(SpecializationArg.FromExpression).ToArray();
-                Shader expected = await looseFile.GetBlock<ShaderBlock>().CreateAsync(
-                    looseFile.GetBlock<ShaderSourceBlock>(), TestShaderLoading.Slang, description,
-                    looseFile.Name, entryName, arguments);
-                Shader actual = await packedFile.GetBlock<ShaderBlock>().CreateAsync(
-                    packedFile.GetBlock<ShaderSourceBlock>(), TestShaderLoading.Slang, description,
-                    packedFile.Name, entryName, arguments);
+                Shader expected = await looseFile.CreateSavedAsync(
+                    TestShaderLoading.Slang, description, entryName, arguments);
+                Shader actual = await packedFile.CreateSavedAsync(
+                    TestShaderLoading.Slang, description, entryName, arguments);
                 looseEntries[entryIndex] = expected;
                 packedEntries[entryIndex++] = actual;
-                AssertShaderEntry(expected, actual, entryName, name, surfaceBytes);
+                AssertShaderEntry(expected, actual, entryName, name);
             }
-            loaded.Add((name, surfaceBytes, looseDefault, packedDefault, looseEntries, packedEntries));
+            loaded.Add((name, looseDefault, packedDefault, looseEntries, packedEntries));
         }
 
         // Match serial material loading followed by lazy stage selection after asset disposal.
-        var selected = new List<(Shader Expected, Shader Actual, string EntryName, string Name, uint SurfaceBytes)>();
+        var selected = new List<(Shader Expected, Shader Actual, string EntryName, string Name)>();
         foreach (var material in loaded)
             foreach ((int index, string entryName, string[] arguments) in new (int, string, string[])[]
             {
                 (1, "ClusterShadeMode", ["0"]),
-                (0, "ClusterSurfaceDataMode", ["0", "0"]),
+                (0, "ClusterShadowRequests", ["0", "0"]),
             })
             {
                 Assert.True(material.Loose.TryGetSpecialization(entryName, arguments, out Shader looseLazy));
                 Assert.True(material.Packed.TryGetSpecialization(entryName, arguments, out Shader packedLazy));
                 selected.Add((material.LooseEntries[index], looseLazy, entryName,
-                    material.Name, material.SurfaceBytes));
+                    material.Name));
                 selected.Add((material.PackedEntries[index], packedLazy, entryName,
-                    material.Name, material.SurfaceBytes));
+                    material.Name));
             }
         foreach (var entry in selected)
-            AssertShaderEntry(entry.Expected, entry.Actual, entry.EntryName, entry.Name, entry.SurfaceBytes);
+            AssertShaderEntry(entry.Expected, entry.Actual, entry.EntryName, entry.Name);
     }
 
     private static void AssertShaderEntry(Shader expected, Shader actual, string entryName,
-        string name, uint surfaceBytes)
+        string name)
     {
         EntryPointReflection expectedEntry = expected.RequireSlangEntry(0, entryName, SlangStage.Compute);
         EntryPointReflection actualEntry = actual.RequireSlangEntry(0, entryName, SlangStage.Compute);
@@ -103,20 +117,25 @@ public sealed class PackedMaterialShaderTests
         AssertVariables(expectedReflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null,
             actualReflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null);
         AssertVariables(expectedEntry.VarLayout, actualEntry.VarLayout);
-        foreach (string typeName in new[] { name + "Scalars", name + "SurfaceData" })
+        // Compare the live direct-request resources as well as their complete reflected layouts.
+        if (entryName == "ClusterShadowRequests" && name == "Standard")
         {
-            TypeReflection expectedType = expectedReflection.FindTypeByName(typeName)
-                ?? throw new InvalidDataException(typeName);
-            TypeReflection actualType = actualReflection.FindTypeByName(typeName)
-                ?? throw new InvalidDataException(typeName);
-            TypeLayoutReflection expectedLayout = expectedReflection.GetTypeLayout(expectedType,
-                LayoutRules.DefaultStructuredBuffer) ?? throw new InvalidDataException(typeName);
-            TypeLayoutReflection actualLayout = actualReflection.GetTypeLayout(actualType,
-                LayoutRules.DefaultStructuredBuffer) ?? throw new InvalidDataException(typeName);
-            AssertLayouts(expectedLayout, actualLayout);
-            if (typeName == name + "SurfaceData")
-                Assert.Equal((nuint)surfaceBytes, actualLayout.GetSize(SlangParameterCategory.Uniform));
+            ShaderParameterResource[] resources = actual.GetSlangResourceLayout(
+                SlangCompileTarget.Dxil, entryName).Resources.ToArray();
+            Assert.Contains(resources, resource => resource.IsUsed && resource.Name == "RequestedPageFlags" &&
+                resource.Type == ResourceBindingType.BufferUav);
         }
+        TypeLayoutReflection expectedLayout = MaterialLayout(expectedReflection, name + "Scalars");
+        TypeLayoutReflection actualLayout = MaterialLayout(actualReflection, name + "Scalars");
+        AssertLayouts(expectedLayout, actualLayout);
+    }
+
+    private static TypeLayoutReflection MaterialLayout(ShaderReflection reflection, string typeName)
+    {
+        TypeReflection type = reflection.FindTypeByName(typeName)
+            ?? throw new InvalidDataException(typeName);
+        return reflection.GetTypeLayout(type, LayoutRules.DefaultStructuredBuffer)
+            ?? throw new InvalidDataException(typeName);
     }
 
     private static void AssertVariables(VariableLayoutReflection expected, VariableLayoutReflection actual)

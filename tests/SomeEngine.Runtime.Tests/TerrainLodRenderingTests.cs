@@ -21,6 +21,7 @@ public sealed class TerrainLodRenderingTests(SceneContentFixture content)
         int placement = 0;
         var application = new ApplicationScene(content.DirectoryPath)
         {
+            RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
             Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "18"]),
             UpdateFrame = frame =>
@@ -51,7 +52,7 @@ public sealed class TerrainLodRenderingTests(SceneContentFixture content)
             },
         };
         example.Install(application);
-        Assert.Equal(0, await Application.RunAsync([], application: application));
+        Assert.True((await Application.RunAsync([], application: application)).Succeeded);
         Assert.Equal(new[] { 0, 1 }, nearChunks.Select(chunk => chunk.Lod).Distinct().Order());
         Assert.Contains(nearChunks, chunk => chunk.TransitionFaces != TerrainTransitionFaces.None);
         Assert.Equal(2, farChunks.Length);
@@ -61,6 +62,7 @@ public sealed class TerrainLodRenderingTests(SceneContentFixture content)
         fresh.RaiseDetail();
         var reference = new ApplicationScene(content.DirectoryPath)
         {
+            RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
             Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "9"]),
             UpdateFrame = frame =>
@@ -77,7 +79,7 @@ public sealed class TerrainLodRenderingTests(SceneContentFixture content)
             },
         };
         fresh.Install(reference);
-        Assert.Equal(0, await Application.RunAsync([], application: reference));
+        Assert.True((await Application.RunAsync([], application: reference)).Succeeded);
         SceneImages.AssertEqual(expected!, after!);
         SceneImages.AssertColorRegion(before!, 30, 30, 4, 4, 186, 0, 0);
         SceneImages.AssertColorRegion(after!, 30, 30, 4, 4, 186, 0, 0);

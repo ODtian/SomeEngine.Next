@@ -9,8 +9,15 @@
     <ProjectReference Include="$(SomeEnginePath)/samples/ImportedScenes/Materials/ImportedScenes.Materials.csproj" GlobalPropertiesToRemove="SomeEngineDevelopment;PublishAot;PublishAotUsingRuntimePack;SelfContained;RuntimeIdentifier" />
     <ProjectReference Include="SceneContent/DefaultGame.SceneContent.csproj" GlobalPropertiesToRemove="SomeEngineDevelopment;PublishAot;PublishAotUsingRuntimePack;SelfContained;RuntimeIdentifier" Condition="'$(SomeEngineDevelopment)' == 'true'" />
     <Compile Remove="SceneContent/**/*.cs" />
+    <Compile Include="SceneContent/MeshMotion.cs;SceneContent/SampleSceneSerialization.cs" Condition="'$(SomeEngineDevelopment)' != 'true'" />
     <ProjectReference Include="$(SomeEnginePath)/src/SomeEngine.Geometry.Cluster/SomeEngine.Geometry.Cluster.csproj" GlobalPropertiesToRemove="SomeEngineDevelopment;PublishAot;PublishAotUsingRuntimePack;SelfContained;RuntimeIdentifier" />
+    <ProjectReference Include="$(SomeEnginePath)/src/SomeEngine.Views/SomeEngine.Views.csproj" GlobalPropertiesToRemove="SomeEngineDevelopment;PublishAot;PublishAotUsingRuntimePack;SelfContained;RuntimeIdentifier" />
     <Compile Remove="Content/**/*.cs" Condition="'$(SomeEngineDevelopment)' != 'true'" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="../../assets/Fonts/Example.otf" LogicalName="DefaultGame.Fonts.Example.otf" />
+    <Content Include="../../assets/Fonts/OFL-Example.txt" Link="Fonts/OFL-Example.txt"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
   <Target Name="WriteTestScenes" AfterTargets="Build">
     <PropertyGroup>

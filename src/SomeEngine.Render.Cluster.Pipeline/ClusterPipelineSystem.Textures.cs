@@ -19,8 +19,8 @@ public sealed partial class ClusterPipelineSystem
     private readonly HashSet<int> _textureScalarChanges = [];
     private bool _missingTextureInputsToPrepare;
 
-    private void UpdateMaterialTextures(
-        ref RenderGraphEdit edit)
+    private (Dictionary<EngineTexture, List<GraphParameterInput>> Textures, List<GraphParameterInput> Missing)
+        CollectMaterialTextureInputs()
     {
         var textureInputs = new Dictionary<EngineTexture, List<GraphParameterInput>>();
         var missingInputs = new List<GraphParameterInput>();
@@ -36,6 +36,18 @@ public sealed partial class ClusterPipelineSystem
                 throw new InvalidDataException($"Material '{material.Name}' property {property} requires a Texture for writable access.");
             else missingInputs.Add(input);
         }
+        return (textureInputs, missingInputs);
+    }
+
+    private void UpdateMaterialTextures(ref RenderGraphEdit edit)
+    {
+        var (textureInputs, missingInputs) = CollectMaterialTextureInputs();
+        UpdateMaterialTextures(ref edit, textureInputs, missingInputs);
+    }
+
+    private void UpdateMaterialTextures(ref RenderGraphEdit edit,
+        Dictionary<EngineTexture, List<GraphParameterInput>> textureInputs, List<GraphParameterInput> missingInputs)
+    {
         var textures = _graphData.MaterialTextures;
         foreach ((EngineTexture asset, MaterialTexture previous) in _graphData.MaterialTextures)
             if (!textureInputs.ContainsKey(asset))
@@ -45,9 +57,20 @@ public sealed partial class ClusterPipelineSystem
             }
         foreach ((EngineTexture asset, List<GraphParameterInput> inputs) in textureInputs)
         {
-            MaterialTexture value = textures.TryGetValue(asset, out var current)
-                ? current : RegisterMaterialTexture(ref edit, _renderDevice.RetainTexture(asset)) with
-                { Versions = _resources.World.ReadTextureVersions(asset) };
+            TextureVersions versions = _resources.World.ReadTextureVersions(asset);
+            MaterialTexture value;
+            if (textures.TryGetValue(asset, out var current))
+            {
+                value = current;
+                if (!ReferenceEquals(_renderDevice.GetTexture(asset), _graph.GetExternalTexture(current.Use.Texture)))
+                {
+                    edit.ReleaseExternalTextureUse(current.Use);
+                    value = RegisterMaterialTexture(ref edit, _renderDevice.RetainTexture(asset)) with
+                        { Inputs = current.Inputs };
+                }
+            }
+            else value = RegisterMaterialTexture(ref edit, _renderDevice.RetainTexture(asset));
+            value = value with { Versions = versions };
             if (!value.Inputs.AsSpan().SequenceEqual(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(inputs)))
                 value = value with { Inputs = inputs.ToImmutableArray(), ForceRebind = true };
             textures = textures.SetItem(asset, value);
@@ -67,6 +90,7 @@ public sealed partial class ClusterPipelineSystem
             GraphData.MissingMaterialTexture = null;
         }
         GraphData.MaterialTextures = textures;
+        GraphData.MaterialTextureDecalVersion = GraphData.Decals!.Version;
     }
 
     private static MaterialTexture RegisterMaterialTexture(
@@ -104,44 +128,78 @@ public sealed partial class ClusterPipelineSystem
                 !beforeMissing.Inputs.Equals(value.Inputs));
     }
 
-    private void RefreshMaterialTextures()
+    private HashSet<EngineTexture>? CollectMaterialTextureChanges()
     {
-        var changed = new HashSet<EngineTexture>();
-        foreach ((EngineTexture texture, MaterialTexture value) in _graphData.MaterialTextures)
-            if (_resources.World.ReadTextureVersions(texture) != value.Versions ||
-                !ReferenceEquals(_renderDevice.GetTexture(texture), _graph.GetExternalTexture(value.Use.Texture)))
-                changed.Add(texture);
-        if (changed.Count == 0) return;
-        var textures = _graphData.MaterialTextures;
-        EditGraph((ref RenderGraphEdit edit) =>
+        HashSet<EngineTexture>? changed = null;
+        foreach ((EngineTexture texture, MaterialTexture next) in GraphData.MaterialTextures)
+            if (_graphData.MaterialTextures.TryGetValue(texture, out MaterialTexture previous) &&
+                (next.Use != previous.Use || next.Versions != previous.Versions))
+                (changed ??= []).Add(texture);
+        return changed;
+    }
+
+    private void RefreshMaterialTextures(bool materialChanges)
+    {
+        uint decalVersion = GraphData.Decals!.Version;
+        if (!materialChanges && _graphData.MaterialTextureDecalVersion == decalVersion)
         {
-            foreach (EngineTexture asset in changed)
+            // No material or decal edit changed the accepted reference set.
+            // In-place Texture updates keep their keys and only change versions or allocations.
+            HashSet<EngineTexture>? versionsChanged = null;
+            foreach ((EngineTexture texture, MaterialTexture value) in _graphData.MaterialTextures)
+                if (_resources.World.ReadTextureVersions(texture) != value.Versions ||
+                    !ReferenceEquals(_renderDevice.GetTexture(texture), _graph.GetExternalTexture(value.Use.Texture)))
+                    (versionsChanged ??= []).Add(texture);
+            if (versionsChanged is not null) RefreshMaterialTextureVersions(versionsChanged);
+            return;
+        }
+        RefreshMaterialTextureBindings(decalVersion);
+    }
+
+    private void RefreshMaterialTextureVersions(HashSet<EngineTexture> changed) =>
+        EditGraph((ref RenderGraphEdit edit) => UpdateMaterialTextures(ref edit),
+            () => AcceptMaterialTextureChanges(changed));
+
+    private void RefreshMaterialTextureBindings(uint decalVersion)
+    {
+        var (textureInputs, missingInputs) = CollectMaterialTextureInputs();
+        HashSet<EngineTexture>? changed = null;
+        foreach (EngineTexture texture in _graphData.MaterialTextures.Keys)
+            if (!textureInputs.ContainsKey(texture)) (changed ??= []).Add(texture);
+        foreach ((EngineTexture texture, List<GraphParameterInput> inputs) in textureInputs)
+            if (!_graphData.MaterialTextures.TryGetValue(texture, out MaterialTexture previous) ||
+                !previous.Inputs.AsSpan().SequenceEqual(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(inputs)) ||
+                _resources.World.ReadTextureVersions(texture) != previous.Versions ||
+                !ReferenceEquals(_renderDevice.GetTexture(texture), _graph.GetExternalTexture(previous.Use.Texture)))
+                (changed ??= []).Add(texture);
+        bool missingChanged = _graphData.MissingMaterialTexture is { } missing
+            ? !missing.Inputs.AsSpan().SequenceEqual(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(missingInputs))
+            : missingInputs.Count != 0;
+        if (changed is null && !missingChanged)
+        {
+            // The edit changed no texture association, so no graph mutation is needed.
+            GraphData.MaterialTextureDecalVersion = decalVersion;
+            return;
+        }
+        EditGraph((ref RenderGraphEdit edit) => UpdateMaterialTextures(ref edit, textureInputs, missingInputs),
+            () => AcceptMaterialTextureChanges(changed));
+    }
+
+    private void AcceptMaterialTextureChanges(HashSet<EngineTexture>? changed)
+    {
+        if (changed is null) return;
+        if (_installedShadeStages is { } stages)
+            foreach (int address in _materialAssignments.Current.ActiveOffsets)
             {
-                MaterialTexture current = textures[asset];
-                if (!ReferenceEquals(_renderDevice.GetTexture(asset), _graph.GetExternalTexture(current.Use.Texture)))
-                {
-                    edit.ReleaseExternalTextureUse(current.Use);
-                    current = RegisterMaterialTexture(ref edit, _renderDevice.RetainTexture(asset)) with
-                        { Inputs = current.Inputs };
-                }
-                textures = textures.SetItem(asset, current with { Versions = _resources.World.ReadTextureVersions(asset) });
+                _materialAssignments.Current.TryGetEntry(address, out var material, out _);
+                if (stages.ScalarLayouts.TryGetValue(address, out var layout) && layout.TextureProperties.Any(property =>
+                        material.GetTexture(property) is { } texture && changed.Contains(texture)))
+                    _textureScalarChanges.Add(address);
             }
-            GraphData.MaterialTextures = textures;
-        }, () =>
-        {
-            if (_installedShadeStages is { } stages)
-                foreach (int address in _materialAssignments.Current.ActiveOffsets)
-                {
-                    _materialAssignments.Current.TryGetEntry(address, out var material, out _);
-                    if (stages.ScalarLayouts.TryGetValue(address, out var layout) && layout.TextureProperties.Any(property =>
-                            material.GetTexture(property) is { } texture && changed.Contains(texture)))
-                        _textureScalarChanges.Add(address);
-                }
-            // Same-backing content changes also invalidate scalar preparation and retained depth.
-            foreach (EngineTexture asset in changed) _materialTextureInputsToPrepare.Add(asset);
-            _rasterRevision = checked(_rasterRevision + 1);
-            RecordTextureCasterChanges(changed);
-        });
+        // AcceptMaterialTextures already queues the accepted inputs and removes retired ones.
+        // Same-backing content changes also invalidate scalar preparation and retained depth.
+        _rasterRevision = checked(_rasterRevision + 1);
+        RecordTextureCasterChanges(changed);
     }
 
     private void UpdateMaterialTextureInputs(ref RenderGraphFrame frame)

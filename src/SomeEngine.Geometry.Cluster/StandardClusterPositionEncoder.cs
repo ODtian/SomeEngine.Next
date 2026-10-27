@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Collections.Immutable;
 using System.Numerics;
+using System.Runtime.InteropServices;
 
 namespace SomeEngine.Geometry.Cluster;
 
@@ -39,6 +40,6 @@ public static class StandardClusterPositionEncoder
             decodedMinimum = Vector3.Min(decodedMinimum, decoded);
             decodedMaximum = Vector3.Max(decodedMaximum, decoded);
         }
-        return new([.. data], decodedMinimum, decodedMaximum, range == 0 ? 0 : step);
+        return new(ImmutableCollectionsMarshal.AsImmutableArray(data), decodedMinimum, decodedMaximum, range == 0 ? 0 : step);
     }
 }

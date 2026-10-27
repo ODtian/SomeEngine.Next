@@ -65,6 +65,7 @@ public sealed partial class ClusterPipelineSystem
         internal ImmutableDictionary<(Material Material, uint Property, ResourceBindingType Type), GraphParameterInput> MaterialInputs = ImmutableDictionary<(Material Material, uint Property, ResourceBindingType Type), GraphParameterInput>.Empty;
         internal ImmutableHashSet<(Material Material, uint Property, ResourceBindingType Type)> MaterialInputChanges = ImmutableHashSet<(Material Material, uint Property, ResourceBindingType Type)>.Empty;
         internal MaterialTexture? MissingMaterialTexture;
+        internal uint MaterialTextureDecalVersion;
         internal GraphBufferInput ShadeScalarOffsets = null!;
         internal GraphBufferInput ShadeScalars = null!;
         internal GraphBufferId ScalarBytes;

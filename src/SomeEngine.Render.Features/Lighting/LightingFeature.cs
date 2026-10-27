@@ -318,7 +318,7 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
     }
 
     public LightingFeatureResources Resources { get; }
-    public ClusteredViewGrid ViewGrid => new(_frameViews, Resources.CellCountPerView, _viewCount);
+    public ClusteredViewGrid ViewGrid => new(_frameViews, Resources.CellCountPerView, Resources.ViewCount);
 
     /// <summary>Creates the shared view parameters for screen tile candidates with one depth slice.</summary>
     public ClusteredViewGrid CreateTileGrid()
@@ -326,7 +326,7 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
         if (_tileGrid is { } grid) return grid;
         using RenderGraphEdit edit = _graph.BeginEdit();
         grid = new(edit.CreateBufferInput(BufferUsages.ShaderRead),
-            Resources.CellCountPerView / _settings.DepthSliceCount, _viewCount);
+            Resources.CellCountPerView / _settings.DepthSliceCount, Resources.ViewCount);
         edit.Commit();
         _tileGrid = grid;
         return grid;

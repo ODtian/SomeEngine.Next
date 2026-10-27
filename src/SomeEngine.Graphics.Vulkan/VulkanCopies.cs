@@ -204,11 +204,7 @@ internal sealed unsafe partial class VulkanBackend
         if ((range.Aspects & ~TextureAspects.Color) != 0)
             throw new ArgumentException("ClearTexture requires the Color aspect.", nameof(range));
         command.Capture(native);
-        ClearColorValue clear = default;
-        clear.Float32_0 = color.X;
-        clear.Float32_1 = color.Y;
-        clear.Float32_2 = color.Z;
-        clear.Float32_3 = color.W;
+        ClearColorValue clear = ToClearColor(native.Info.Format, color);
         ImageSubresourceRange nativeRange = ToNative(range);
         Api.CmdClearColorImage(
             command.NativeRecording,

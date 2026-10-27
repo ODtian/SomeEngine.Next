@@ -1971,6 +1971,12 @@ public sealed partial class BinaryContractGenerator : IIncrementalGenerator
         }
         source.AppendLine();
 
+        if (model.Members.Any(static member => EnumerateNestedContracts(member.Shape)
+                .Any(static nested => nested.UsesExistingCodec)))
+        {
+            EmitStaticCodecDispatchHelpers(source, indent);
+            source.AppendLine();
+        }
         EmitWriteMethod(source, model, writeDepthTypeName, indent);
         source.AppendLine();
         EmitReadMethod(source, model, indent);
@@ -1999,6 +2005,43 @@ public sealed partial class BinaryContractGenerator : IIncrementalGenerator
 
         return source.ToString();
     }
+
+    // Handwritten codecs may implement static interface members explicitly. Forward the
+    // existing ref state through constrained calls; do not construct nested readers or buffers.
+    private static void EmitStaticCodecDispatchHelpers(StringBuilder source, int indent)
+    {
+        AppendIndent(source, indent).Append("private static void ").Append(GeneratedMemberPrefix)
+            .AppendLine("WriteCodec<TCodec>(ref global::SomeEngine.Serialization.BinaryDataWriter writer, TCodec value)");
+        AppendIndent(source, indent + 1).AppendLine("where TCodec : global::SomeEngine.Serialization.IBinarySerializable<TCodec>");
+        AppendIndent(source, indent + 1).AppendLine("=> TCodec.Write(ref writer, value);");
+        source.AppendLine();
+        AppendIndent(source, indent).Append("private static TCodec ").Append(GeneratedMemberPrefix)
+            .AppendLine("ReadCodec<TCodec>(ref global::SomeEngine.Serialization.BinaryDataReader reader)");
+        AppendIndent(source, indent + 1).AppendLine("where TCodec : global::SomeEngine.Serialization.IBinarySerializable<TCodec>");
+        AppendIndent(source, indent + 1).AppendLine("=> TCodec.Read(ref reader);");
+        source.AppendLine();
+        AppendIndent(source, indent).Append("private static void ").Append(GeneratedMemberPrefix)
+            .AppendLine("ValidateViewCodec<TCodec>(ref global::SomeEngine.Serialization.BinaryViewReader reader)");
+        AppendIndent(source, indent + 1).AppendLine("where TCodec : global::SomeEngine.Serialization.IBinarySerializable<TCodec>, global::SomeEngine.Serialization.IBinaryCustomViewContract<TCodec>");
+        AppendIndent(source, indent + 1).AppendLine("=> TCodec.ValidateView(ref reader);");
+        source.AppendLine();
+        AppendIndent(source, indent).Append("private static ulong ").Append(GeneratedMemberPrefix)
+            .AppendLine("SchemaFingerprintCodec<TCodec>()");
+        AppendIndent(source, indent + 1).AppendLine("where TCodec : global::SomeEngine.Serialization.IBinarySerializable<TCodec>");
+        AppendIndent(source, indent + 1).AppendLine("=> TCodec.SchemaFingerprint;");
+    }
+
+    private static string CodecMethod(ContractModel codec, string method)
+        // Local annotated codecs may expose a public ValidateView without implementing
+        // the custom-view interface. Only use constrained view dispatch when guaranteed.
+        => codec.UsesExistingCodec && (method != "ValidateView" || codec.Symbol.AllInterfaces.Any(item =>
+            item.OriginalDefinition.ToDisplayString() == "SomeEngine.Serialization.IBinaryCustomViewContract<TSelf>"
+            && SymbolEqualityComparer.Default.Equals(item.TypeArguments[0], codec.Symbol)))
+            ? GeneratedMemberPrefix + method + "Codec<" + codec.Symbol.ToDisplayString(QualifiedTypeFormat) + ">"
+            : codec.Symbol.ToDisplayString(QualifiedTypeFormat) + "." + method;
+
+    private static string CodecFingerprint(ContractModel codec)
+        => CodecMethod(codec, "SchemaFingerprint") + (codec.UsesExistingCodec ? "()" : "");
 
     private static void EmitWriteMethod(
         StringBuilder source,
@@ -2268,13 +2311,13 @@ public sealed partial class BinaryContractGenerator : IIncrementalGenerator
                 AppendIndent(source, indent).AppendLine("else");
                 AppendIndent(source, indent).AppendLine("{");
                 AppendIndent(source, indent + 1).AppendLine("writer.WriteBoolean(true);");
-                AppendIndent(source, indent + 1).Append(shape.NestedContract!.Symbol.ToDisplayString(QualifiedTypeFormat))
-                    .Append(".Write(ref writer, ").Append(expression).AppendLine(");");
+                AppendIndent(source, indent + 1).Append(CodecMethod(shape.NestedContract!, "Write"))
+                    .Append("(ref writer, ").Append(expression).AppendLine(");");
                 AppendIndent(source, indent).AppendLine("}");
                 return;
             case ShapeKind.ContractStruct:
-                AppendIndent(source, indent).Append(shape.NestedContract!.Symbol.ToDisplayString(QualifiedTypeFormat))
-                    .Append(".Write(ref writer, ").Append(expression).AppendLine(");");
+                AppendIndent(source, indent).Append(CodecMethod(shape.NestedContract!, "Write"))
+                    .Append("(ref writer, ").Append(expression).AppendLine(");");
                 return;
             case ShapeKind.NullableContractStruct:
                 AppendIndent(source, indent).Append("if (!").Append(expression).AppendLine(".HasValue)");
@@ -2284,8 +2327,8 @@ public sealed partial class BinaryContractGenerator : IIncrementalGenerator
                 AppendIndent(source, indent).AppendLine("else");
                 AppendIndent(source, indent).AppendLine("{");
                 AppendIndent(source, indent + 1).AppendLine("writer.WriteBoolean(true);");
-                AppendIndent(source, indent + 1).Append(shape.NestedContract!.Symbol.ToDisplayString(QualifiedTypeFormat))
-                    .Append(".Write(ref writer, ").Append(expression).AppendLine(".Value);");
+                AppendIndent(source, indent + 1).Append(CodecMethod(shape.NestedContract!, "Write"))
+                    .Append("(ref writer, ").Append(expression).AppendLine(".Value);");
                 AppendIndent(source, indent).AppendLine("}");
                 return;
             case ShapeKind.Collection:
@@ -2388,14 +2431,14 @@ public sealed partial class BinaryContractGenerator : IIncrementalGenerator
                 AppendIndent(source, indent).AppendLine("else");
                 AppendIndent(source, indent).AppendLine("{");
                 AppendIndent(source, indent + 1).Append(target).Append(" = ")
-                    .Append(shape.NestedContract!.Symbol.ToDisplayString(QualifiedTypeFormat))
-                    .AppendLine(".Read(ref reader);");
+                    .Append(CodecMethod(shape.NestedContract!, "Read"))
+                    .AppendLine("(ref reader);");
                 AppendIndent(source, indent).AppendLine("}");
                 return;
             case ShapeKind.ContractStruct:
                 AppendIndent(source, indent).Append(target).Append(" = ")
-                    .Append(shape.NestedContract!.Symbol.ToDisplayString(QualifiedTypeFormat))
-                    .AppendLine(".Read(ref reader);");
+                    .Append(CodecMethod(shape.NestedContract!, "Read"))
+                    .AppendLine("(ref reader);");
                 return;
             case ShapeKind.NullableContractStruct:
                 AppendIndent(source, indent).AppendLine("if (!reader.ReadBoolean())");
@@ -2405,8 +2448,8 @@ public sealed partial class BinaryContractGenerator : IIncrementalGenerator
                 AppendIndent(source, indent).AppendLine("else");
                 AppendIndent(source, indent).AppendLine("{");
                 AppendIndent(source, indent + 1).Append(target).Append(" = ")
-                    .Append(shape.NestedContract!.Symbol.ToDisplayString(QualifiedTypeFormat))
-                    .AppendLine(".Read(ref reader);");
+                    .Append(CodecMethod(shape.NestedContract!, "Read"))
+                    .AppendLine("(ref reader);");
                 AppendIndent(source, indent).AppendLine("}");
                 return;
             case ShapeKind.Collection:
@@ -2619,7 +2662,7 @@ public sealed partial class BinaryContractGenerator : IIncrementalGenerator
                 .Append(suffix).AppendLine(":");
             AppendIndent(source, indent + 3).Append("writer.WriteUInt32(")
                 .Append(unionCase.Tag.ToString(CultureInfo.InvariantCulture)).AppendLine("U);");
-            AppendIndent(source, indent + 3).Append(caseType).Append(".Write(ref writer, __unionCase")
+            AppendIndent(source, indent + 3).Append(CodecMethod(unionCase.Contract, "Write")).Append("(ref writer, __unionCase")
                 .Append(suffix).AppendLine(");");
             AppendIndent(source, indent + 3).AppendLine("break;");
         }
@@ -2654,7 +2697,7 @@ public sealed partial class BinaryContractGenerator : IIncrementalGenerator
             AppendIndent(source, indent + 2).Append("case ")
                 .Append(unionCase.Tag.ToString(CultureInfo.InvariantCulture)).AppendLine("U:");
             AppendIndent(source, indent + 3).Append(target).Append(" = ")
-                .Append(unionCase.Contract.Symbol.ToDisplayString(QualifiedTypeFormat)).AppendLine(".Read(ref reader);");
+                .Append(CodecMethod(unionCase.Contract, "Read")).AppendLine("(ref reader);");
             AppendIndent(source, indent + 3).AppendLine("break;");
         }
         AppendIndent(source, indent + 2).AppendLine("default:");
@@ -2947,8 +2990,8 @@ public sealed partial class BinaryContractGenerator : IIncrementalGenerator
 
     private static void EmitNestedViewValidation(StringBuilder source, ContractModel nested, int indent)
     {
-        AppendIndent(source, indent).Append(nested.Symbol.ToDisplayString(QualifiedTypeFormat))
-            .Append(".ValidateView(ref reader);")
+        AppendIndent(source, indent).Append(CodecMethod(nested, "ValidateView"))
+            .Append("(ref reader);")
             .AppendLine();
     }
 
@@ -3358,15 +3401,15 @@ public sealed partial class BinaryContractGenerator : IIncrementalGenerator
                     .Append(shape.AllowsNull ? "1" : "0").AppendLine(");");
                 EmitRuntimeToken(source, shape.NestedContract!.LogicalName, indent);
                 AppendIndent(source, indent).Append("__descriptor.WriteUInt64(")
-                    .Append(shape.NestedContract.Symbol.ToDisplayString(QualifiedTypeFormat))
-                    .AppendLine(".SchemaFingerprint);");
+                    .Append(CodecFingerprint(shape.NestedContract))
+                    .AppendLine(");");
                 break;
             case ShapeKind.ContractStruct:
             case ShapeKind.NullableContractStruct:
                 EmitRuntimeToken(source, shape.NestedContract!.LogicalName, indent);
                 AppendIndent(source, indent).Append("__descriptor.WriteUInt64(")
-                    .Append(shape.NestedContract.Symbol.ToDisplayString(QualifiedTypeFormat))
-                    .AppendLine(".SchemaFingerprint);");
+                    .Append(CodecFingerprint(shape.NestedContract))
+                    .AppendLine(");");
                 break;
             case ShapeKind.Collection:
                 AppendIndent(source, indent).Append("__descriptor.WriteByte(")
@@ -3395,8 +3438,8 @@ public sealed partial class BinaryContractGenerator : IIncrementalGenerator
                         .Append(unionCase.Tag.ToString(CultureInfo.InvariantCulture)).AppendLine("U);");
                     EmitRuntimeToken(source, unionCase.Contract.LogicalName, indent);
                     AppendIndent(source, indent).Append("__descriptor.WriteUInt64(")
-                        .Append(unionCase.Contract.Symbol.ToDisplayString(QualifiedTypeFormat))
-                        .AppendLine(".SchemaFingerprint);");
+                        .Append(CodecFingerprint(unionCase.Contract))
+                        .AppendLine(");");
                 }
                 break;
             default:

@@ -800,7 +800,21 @@ public sealed partial class RenderDevice
                 if (data.ActiveReferences != 0) continue;
                 data.RetirementQueued = true;
             }
-            Retire(data);
+            try
+            {
+                Retire(data);
+            }
+            catch
+            {
+                // An older retirement can fail before this release is accepted.
+                // Keep the single release queue responsible for retrying it.
+                lock (_textureGate)
+                {
+                    data.RetirementQueued = false;
+                    EnqueueTextureRelease(data);
+                }
+                throw;
+            }
         }
     }
 

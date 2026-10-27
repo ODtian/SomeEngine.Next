@@ -197,13 +197,15 @@ public sealed class ClusterInstanceUploadTests
     [Fact]
     public async Task MaterialAndTransformChangesKeepIndependentRowsAndValuesAcrossVersions()
     {
-        using var first = new UnlitMaterial();
-        using var second = new UnlitMaterial();
+        var first = new UnlitMaterial();
+        var second = new UnlitMaterial();
         var assignments = new ClusterMaterialAssignments();
         using var data = new InstanceData<ClusterMaterialOffsetProducer>(
             await RasterTestGeometry.CreateAsync(), 4, ClusterRenderFeature.InstanceLayout,
             ClusterMaterialAssignmentSystem.EntityQuery(), assignments.CreateProducer(),
             new ClusterMaterialAssignmentSystem(assignments));
+        data.World.CreateEntity(new RenderMaterialReference(first));
+        data.World.CreateEntity(new RenderMaterialReference(second));
         Entity a = AddMaterialInstance(1, first);
         Entity b = AddMaterialInstance(2, second);
         await data.ExecuteAsync(); await data.ExecuteAsync();
@@ -215,7 +217,7 @@ public sealed class ClusterInstanceUploadTests
             static (DynamicBuffer<RenderMaterialBinding> bindings, ref Material material) =>
             {
                 bindings.Clear();
-                bindings.Add(new(material));
+                bindings.Add(new(material.MaterialId));
             });
         await data.ExecuteAsync();
         Assert.Equal(new uint[] { 0 }, data.ChangedRows);
@@ -246,7 +248,7 @@ public sealed class ClusterInstanceUploadTests
             static (DynamicBuffer<RenderMaterialBinding> bindings, ref Material material) =>
             {
                 bindings.Clear();
-                bindings.Add(new(material));
+                bindings.Add(new(material.MaterialId));
             });
         await data.ExecuteAsync();
         Assert.Equal(new uint[] { 1 }, data.ChangedRows);
@@ -281,7 +283,7 @@ public sealed class ClusterInstanceUploadTests
             data.World.Add(entity, new RenderInstance());
             data.World.AddBuffer<RenderMaterialBinding>(entity);
             data.World.ExecuteBufferWrite<RenderMaterialBinding, Material>(entity, ref material,
-                static (DynamicBuffer<RenderMaterialBinding> bindings, ref Material value) => bindings.Add(new(value)));
+                static (DynamicBuffer<RenderMaterialBinding> bindings, ref Material value) => bindings.Add(new(value.MaterialId)));
             return entity;
         }
     }
@@ -299,7 +301,8 @@ public sealed class ClusterInstanceUploadTests
             var rows = update.OpenWrite(ClusterRenderFeature.GeometryLayout);
             var current = ClusterRenderFeature.GeometryLayout.Resolve<RenderTransform>(RenderInstanceTransformProperties.CurrentTransformKey);
             rows.BindPerInstance(current);
-            rows.GetWriteSpan(current).Fill(Current(999));
+            for (int index = 0; index < rows.Count; index++)
+                rows.Write(current, index, Current(999));
         }
     }
 

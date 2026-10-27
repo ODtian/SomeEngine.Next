@@ -1,3 +1,4 @@
+using System.Buffers;
 using SlangShaderSharp;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Graphics;

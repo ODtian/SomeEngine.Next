@@ -1,5 +1,6 @@
 using System.Numerics;
 using System.Text.Json.Nodes;
+using DefaultGame;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Importers;
 using SomeEngine.Assets.Pipeline;
@@ -102,7 +103,7 @@ public static partial class BehaviorScenes
         using var application = await ApplicationSettingsAsset.OpenAsync(loader,
             new(project.Manifest.List(ApplicationSettingsAsset.FileType).Single().AssetGuid));
         using var scene = await WorldAsset.OpenAsync(loader, application.GetBlock<ApplicationSettingsBlock>().Scene);
-        using var world = await scene.LoadAsync(SceneSerialization.CreateRegistry());
+        using var world = await scene.LoadAsync(SampleSceneSerialization.CreateRegistry());
         Entity entity = world.CreateEntity(new WorldTransform { Qvvs = new(new Vector3(0, 0, 6), Quaternion.Identity, 3) });
         world.Add(entity, new MeshSource { Mesh = receiver.Reference });
         var cameras = world.Query(new QueryDefinitionBuilder().ReadWrite<SceneCamera>());
@@ -111,7 +112,7 @@ public static partial class BehaviorScenes
             foreach (var row in rows.Rows) row.ReadWrite<SceneCamera>().VerticalFieldOfView = MathF.PI / 4;
         });
         world.ReleaseQuery(cameras);
-        scene.WriteWorld(world, SceneSerialization.CreateRegistry());
+        scene.WriteWorld(world, SampleSceneSerialization.CreateRegistry());
         project.RegisterAsset(await scene.SaveAsync(Path.Combine(destination, project.Manifest.Assets[scene.Id].Path)));
     }
 

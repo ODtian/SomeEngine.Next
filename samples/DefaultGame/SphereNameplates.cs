@@ -12,7 +12,7 @@ using SomeEngine.Views;
 using static SomeEngine.Layout.AbsoluteFunctions;
 using static SomeEngine.Layout.FlexFunctions;
 
-namespace SomeEngine.Runtime;
+namespace DefaultGame;
 
 /// <summary>World canvases with numbered Surface plates following selected moving spheres.</summary>
 internal sealed partial class SphereNameplates : ISystem<ImmediateSystemContext>, IDisposable
@@ -23,20 +23,28 @@ internal sealed partial class SphereNameplates : ISystem<ImmediateSystemContext>
     internal SphereNameplates(World world, IReadOnlyList<Entity> spheres)
     {
         _world = world;
-        int number = 1;
-        for (int index = 0; index < spheres.Count; index++)
+        try
         {
-            // The row and spacing select example scene targets from the moving meshes.
-            const int columns = 32;
-            if (index / columns != columns - 1 || index % 4 != 0) continue;
-            Entity sphere = spheres[index];
-            Entity canvas = world.CreateEntity(new WorldTransform { Qvvs = PlateTransform(sphere) });
-            world.Add(canvas, new Canvas
+            int number = 1;
+            for (int index = 0; index < spheres.Count; index++)
             {
-                Target = CanvasTarget.WorldSpace(canvas), Size = new Size(160, 44), DepthTest = true,
-            });
-            Views.Views.Spawn(world, canvas, new NumberPlate(number++));
-            _nameplates.Add((sphere, canvas));
+                // The row and spacing select example scene targets from the moving meshes.
+                const int columns = 32;
+                if (index / columns != columns - 1 || index % 4 != 0) continue;
+                Entity sphere = spheres[index];
+                Entity canvas = world.CreateEntity(new WorldTransform { Qvvs = PlateTransform(sphere) });
+                _nameplates.Add((sphere, canvas));
+                world.Add(canvas, new Canvas
+                {
+                    Target = CanvasTarget.WorldSpace(canvas), Size = new Size(160, 44), DepthTest = true,
+                });
+                SomeEngine.Views.Views.Spawn(world, canvas, new NumberPlate(number++));
+            }
+        }
+        catch
+        {
+            Dispose();
+            throw;
         }
     }
 

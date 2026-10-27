@@ -1,5 +1,6 @@
 using System.Numerics;
 using System.Text.Json;
+using DefaultGame;
 using SomeEngine.Render;
 using SomeEngine.Render.Components;
 using SomeEngine.Runtime;

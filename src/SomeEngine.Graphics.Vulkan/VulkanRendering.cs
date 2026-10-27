@@ -509,11 +509,7 @@ internal sealed unsafe partial class VulkanBackend
             StoreOp = ToNative(desc.Store),
             ClearValue = new ClearValue
             {
-                Color = new ClearColorValue(
-                    desc.ClearValue.X,
-                    desc.ClearValue.Y,
-                    desc.ClearValue.Z,
-                    desc.ClearValue.W),
+                Color = ToClearColor(view.Description.Format, desc.ClearValue),
             },
         };
         if (desc.ResolveView is VulkanColorAttachmentView resolve)
@@ -532,6 +528,54 @@ internal sealed unsafe partial class VulkanBackend
         return result;
     }
 
+    private static ClearColorValue ToClearColor(RhiFormat format, in Vector4 color)
+    {
+        ClearColorValue result = default;
+        switch (format)
+        {
+            case RhiFormat.R8UInt:
+            case RhiFormat.R8G8UInt:
+            case RhiFormat.R8G8B8A8UInt:
+            case RhiFormat.R16UInt:
+            case RhiFormat.R16G16UInt:
+            case RhiFormat.R16G16B16A16UInt:
+            case RhiFormat.R32UInt:
+            case RhiFormat.R32G32UInt:
+            case RhiFormat.R32G32B32A32UInt:
+                result.Uint32_0 = uint.CreateSaturating(color.X);
+                result.Uint32_1 = uint.CreateSaturating(color.Y);
+                result.Uint32_2 = uint.CreateSaturating(color.Z);
+                result.Uint32_3 = uint.CreateSaturating(color.W);
+                break;
+            case RhiFormat.R8SInt:
+            case RhiFormat.R8G8SInt:
+            case RhiFormat.R8G8B8A8SInt:
+            case RhiFormat.R16SInt:
+            case RhiFormat.R16G16SInt:
+            case RhiFormat.R16G16B16A16SInt:
+            case RhiFormat.R32SInt:
+            case RhiFormat.R32G32SInt:
+            case RhiFormat.R32G32B32A32SInt:
+                result.Int32_0 = int.CreateSaturating(color.X);
+                result.Int32_1 = int.CreateSaturating(color.Y);
+                result.Int32_2 = int.CreateSaturating(color.Z);
+                result.Int32_3 = int.CreateSaturating(color.W);
+                break;
+            case RhiFormat.R64UInt:
+                ulong value = ulong.CreateSaturating(color.X);
+                result.Uint32_0 = unchecked((uint)value);
+                result.Uint32_1 = (uint)(value >> 32);
+                break;
+            default:
+                result.Float32_0 = color.X;
+                result.Float32_1 = color.Y;
+                result.Float32_2 = color.Z;
+                result.Float32_3 = color.W;
+                break;
+        }
+        return result;
+    }
+
     private static (RenderingAttachmentInfo Depth, RenderingAttachmentInfo Stencil, bool HasDepth, bool HasStencil)
         CreateDepthStencilAttachment(
             VulkanCommandContext command,
@@ -542,14 +586,13 @@ internal sealed unsafe partial class VulkanBackend
         command.Capture(view);
         bool hasDepth = (view.Description.Range.Aspects & TextureAspects.Depth) != 0;
         bool hasStencil = (view.Description.Range.Aspects & TextureAspects.Stencil) != 0;
-        ImageLayout layout = view.Description.ReadOnlyDepth && view.Description.ReadOnlyStencil
-            ? ImageLayout.DepthStencilReadOnlyOptimal
-            : ImageLayout.DepthStencilAttachmentOptimal;
         RenderingAttachmentInfo depth = new()
         {
             SType = StructureType.RenderingAttachmentInfo,
             ImageView = view.Native,
-            ImageLayout = layout,
+            ImageLayout = ToNative(view.Description.ReadOnlyDepth
+                ? TextureLayout.DepthStencilRead
+                : TextureLayout.DepthStencilWrite),
             LoadOp = ToNative(desc.DepthLoad),
             StoreOp = ToNative(desc.DepthStore),
             ClearValue = new ClearValue
@@ -558,6 +601,9 @@ internal sealed unsafe partial class VulkanBackend
             },
         };
         RenderingAttachmentInfo stencil = depth;
+        stencil.ImageLayout = ToNative(view.Description.ReadOnlyStencil
+            ? TextureLayout.DepthStencilRead
+            : TextureLayout.DepthStencilWrite);
         stencil.LoadOp = ToNative(desc.StencilLoad);
         stencil.StoreOp = ToNative(desc.StencilStore);
         return (depth, stencil, hasDepth, hasStencil);

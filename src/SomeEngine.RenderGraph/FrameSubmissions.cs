@@ -3,6 +3,11 @@ namespace SomeEngine.RenderGraph;
 internal sealed partial class FrameExecutor
 {
     private bool _submissionsInitialized;
+    private readonly List<SwapchainSubmissionInterval> _swapchainSubmissionIntervals = [];
+    private readonly List<int> _swapchainMergeSubmissions = [];
+
+    private readonly record struct SwapchainSubmissionInterval(
+        Queue Queue, int QueueSlot, int FirstPass, int LastPass, long FirstPosition, long LastPosition);
     private Queue?[] _submissionQueues = [];
     private readonly HashSet<int> _submissionUpdates = [];
     private readonly HashSet<int> _submissionMergeCandidates = [];
@@ -19,6 +24,7 @@ internal sealed partial class FrameExecutor
 
     private int BuildWaves()
     {
+        bool initializedNow = false;
         if (!_submissionsInitialized)
         {
             int count = BuildInitialWaves();
@@ -27,46 +33,51 @@ internal sealed partial class FrameExecutor
                 _submissionQueues[submission] = _passes[_submissionPasses[submission][0]].Queue;
             _recordingSubmissionChanges.UnionWith(_changedSubmissions);
             _submissionsInitialized = true;
-            return count;
+            if (!MergeSwapchainSubmissionIntervals()) return count;
+            initializedNow = true;
         }
 
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(GraphTrace.BatchConstruction);
-        int previousCapacity = _submissionByPass.Length;
-        EnsureCapacity(ref _submissionByPass, _passes.Count);
-        Array.Fill(_submissionByPass, -1, previousCapacity, _submissionByPass.Length - previousCapacity);
-        _changedSubmissions.Clear();
-        _submissionPassChanges.Clear();
-        foreach (int pass in _changedRecordingPasses)
+        if (!initializedNow)
         {
-            int submission = (uint)pass < (uint)_submissionByPass.Length ? _submissionByPass[pass] : -1;
-            if (submission >= 0)
+            int previousCapacity = _submissionByPass.Length;
+            EnsureCapacity(ref _submissionByPass, _passes.Count);
+            Array.Fill(_submissionByPass, -1, previousCapacity, _submissionByPass.Length - previousCapacity);
+            _changedSubmissions.Clear();
+            _submissionPassChanges.Clear();
+            foreach (int pass in _changedRecordingPasses)
             {
-                _submissionUpdates.Add(submission);
-                if (!IsLive(pass) || !ReferenceEquals(_submissionQueues[submission], _passes[pass].Queue))
+                int submission = (uint)pass < (uint)_submissionByPass.Length ? _submissionByPass[pass] : -1;
+                if (submission >= 0)
                 {
-                    ChangeSubmissionMembers(submission);
-                    _submissionPasses[submission].Remove(pass);
-                    _submissionByPass[pass] = -1;
-                    QueueSubmissionConsumers(submission);
+                    _submissionUpdates.Add(submission);
+                    if (!IsLive(pass) || !ReferenceEquals(_submissionQueues[submission], _passes[pass].Queue))
+                    {
+                        ChangeSubmissionMembers(submission);
+                        _submissionPasses[submission].Remove(pass);
+                        _submissionByPass[pass] = -1;
+                        QueueSubmissionConsumers(submission);
+                    }
                 }
+                if (IsLive(pass)) _submissionPassChanges.Add((_executionOrder.Position(pass), pass));
             }
-            if (IsLive(pass)) _submissionPassChanges.Add((_executionOrder.Position(pass), pass));
-        }
-        foreach (var item in _submissionPassChanges)
-        {
-            int pass = item.Pass;
-            if (_submissionByPass[pass] >= 0) continue;
-            int predecessor = _sameQueuePredecessor[pass];
-            int submission = predecessor >= 0 ? _submissionByPass[predecessor] : -1;
-            if (submission < 0 || _passes[predecessor].Options.SubmitAfter ||
-                !ReferenceEquals(_submissionQueues[submission], _passes[pass].Queue))
-                submission = NewSubmission(_passes[pass].Queue!);
-            ChangeSubmissionMembers(submission);
-            _submissionPasses[submission].Add(pass);
-            _submissionByPass[pass] = submission;
-            QueueSubmissionConsumers(submission);
-            foreach (int consumer in _successors[pass]) QueuePassSubmission(consumer);
-            QueuePassSubmission(_sameQueueSuccessor[pass]);
+            foreach (var item in _submissionPassChanges)
+            {
+                int pass = item.Pass;
+                if (_submissionByPass[pass] >= 0) continue;
+                int predecessor = _sameQueuePredecessor[pass];
+                int submission = predecessor >= 0 ? _submissionByPass[predecessor] : -1;
+                if (submission < 0 || _passes[predecessor].Options.SubmitAfter ||
+                    !ReferenceEquals(_submissionQueues[submission], _passes[pass].Queue))
+                    submission = NewSubmission(_passes[pass].Queue!);
+                ChangeSubmissionMembers(submission);
+                _submissionPasses[submission].Add(pass);
+                _submissionByPass[pass] = submission;
+                QueueSubmissionConsumers(submission);
+                foreach (int consumer in _successors[pass]) QueuePassSubmission(consumer);
+                QueuePassSubmission(_sameQueueSuccessor[pass]);
+            }
+            MergeSwapchainSubmissionIntervals();
         }
 
         while (true)
@@ -113,6 +124,139 @@ internal sealed partial class FrameExecutor
         }
         _changedRecordingPasses.Clear();
         return waveCount;
+    }
+
+    // The current acquisition list is frame-local: a new image constraint can arrive
+    // without changing the texture or its boundary states. Check before reusing batches.
+    private bool PrepareSwapchainSubmissionIntervals()
+    {
+        _swapchainSubmissionIntervals.Clear();
+        foreach ((GraphIdentity identity, _, Queue presentQueue) in _frame.SwapchainImages)
+        {
+            int texture = ResolveTexture(identity);
+            FrameTexture row = _textures[texture];
+            if (row.FirstPass < 0) continue;
+            if (TextureEntryStates(row).IsEmpty)
+                throw new InvalidOperationException("A swapchain image requires explicit entry boundary states.");
+            if (_resourceAccessLists.TryGetValue((GraphAccessTargetKind.Texture, texture), out List<int>? accesses))
+                foreach (int access in accesses)
+                {
+                    int pass = _accesses[access].PassIndex;
+                    if (IsLive(pass) && !ReferenceEquals(_passes[pass].Queue, presentQueue))
+                        throw new InvalidOperationException("All swapchain image uses must execute on its presentation Queue.");
+                }
+            _swapchainSubmissionIntervals.Add(new(presentQueue, QueueSlot(presentQueue), row.FirstPass, row.LastPass,
+                _executionOrder.Position(row.FirstPass), _executionOrder.Position(row.LastPass)));
+        }
+        if (_swapchainSubmissionIntervals.Count > 1)
+            _swapchainSubmissionIntervals.Sort(static (left, right) =>
+            {
+                int queue = left.QueueSlot.CompareTo(right.QueueSlot);
+                return queue != 0 ? queue : left.FirstPosition.CompareTo(right.FirstPosition);
+            });
+        int retained = 0;
+        for (int index = 0; index < _swapchainSubmissionIntervals.Count; index++)
+        {
+            SwapchainSubmissionInterval interval = _swapchainSubmissionIntervals[index];
+            if (retained != 0)
+            {
+                SwapchainSubmissionInterval previous = _swapchainSubmissionIntervals[retained - 1];
+                if (ReferenceEquals(previous.Queue, interval.Queue) && interval.FirstPosition <= previous.LastPosition)
+                {
+                    if (interval.LastPosition > previous.LastPosition)
+                        _swapchainSubmissionIntervals[retained - 1] = previous with
+                        { LastPass = interval.LastPass, LastPosition = interval.LastPosition };
+                    continue;
+                }
+            }
+            _swapchainSubmissionIntervals[retained++] = interval;
+        }
+        if (retained < _swapchainSubmissionIntervals.Count)
+            _swapchainSubmissionIntervals.RemoveRange(retained, _swapchainSubmissionIntervals.Count - retained);
+
+        bool intact = true;
+        foreach (SwapchainSubmissionInterval interval in _swapchainSubmissionIntervals)
+        {
+            int submission = (uint)interval.FirstPass < (uint)_submissionByPass.Length
+                ? _submissionByPass[interval.FirstPass] : -1;
+            for (int pass = interval.FirstPass; ; pass = _sameQueueSuccessor[pass])
+            {
+                if (pass < 0 || !ReferenceEquals(_passes[pass].Queue, interval.Queue) ||
+                    _executionOrder.Position(pass) > interval.LastPosition)
+                    throw new InvalidOperationException("The swapchain image uses do not form a presentation-Queue interval.");
+                if ((uint)pass >= (uint)_submissionByPass.Length || submission < 0 || _submissionByPass[pass] != submission)
+                    intact = false;
+                if (pass == interval.LastPass) break;
+                if (_passes[pass].Options.SubmitAfter)
+                    throw new InvalidOperationException("SubmitAfter cannot split a swapchain image's single-submit interval.");
+            }
+        }
+        return intact;
+    }
+
+    private void ValidateSwapchainSubmissionIntervals()
+    {
+        foreach (SwapchainSubmissionInterval interval in _swapchainSubmissionIntervals)
+        {
+            int submission = _submissionByPass[interval.FirstPass];
+            for (int pass = interval.FirstPass; ; pass = _sameQueueSuccessor[pass])
+            {
+                if (submission < 0 || _submissionByPass[pass] != submission)
+                    throw new InvalidOperationException("A swapchain image still spans multiple submissions after grouping.");
+                if (pass == interval.LastPass) break;
+            }
+        }
+    }
+
+    // Merge only images that currently span batches. The existing dependency solver
+    // may then split non-image prefixes/suffixes or other queues, but never an image.
+    private bool MergeSwapchainSubmissionIntervals()
+    {
+        bool changed = false;
+        foreach (SwapchainSubmissionInterval interval in _swapchainSubmissionIntervals)
+        {
+            _swapchainMergeSubmissions.Clear();
+            for (int pass = interval.FirstPass; ; pass = _sameQueueSuccessor[pass])
+            {
+                int submission = _submissionByPass[pass];
+                if (submission < 0)
+                    throw new InvalidOperationException("A live swapchain image use has no submission.");
+                if (!_swapchainMergeSubmissions.Contains(submission)) _swapchainMergeSubmissions.Add(submission);
+                if (pass == interval.LastPass) break;
+            }
+            if (_swapchainMergeSubmissions.Count < 2) continue;
+            int target = _swapchainMergeSubmissions[0];
+            for (int index = 1; index < _swapchainMergeSubmissions.Count; index++)
+                MergeSubmissionMembers(target, _swapchainMergeSubmissions[index]);
+            changed = true;
+        }
+        return changed;
+    }
+
+    private void MergeSubmissionMembers(int target, int source)
+    {
+        ChangeSubmissionMembers(target);
+        ChangeSubmissionMembers(source);
+        QueueSubmissionConsumers(target);
+        QueueSubmissionConsumers(source);
+        foreach (int pass in _submissionPasses[source])
+        {
+            _submissionPasses[target].Add(pass);
+            _submissionByPass[pass] = target;
+            foreach (int consumer in _successors[pass]) QueuePassSubmission(consumer);
+            QueuePassSubmission(_sameQueueSuccessor[pass]);
+        }
+        _submissionPasses[source].Clear();
+    }
+
+    private int SwapchainSubmissionCut(Queue queue, int entry)
+    {
+        long position = _executionOrder.Position(entry);
+        foreach (SwapchainSubmissionInterval interval in _swapchainSubmissionIntervals)
+            if (ReferenceEquals(queue, interval.Queue) &&
+                interval.FirstPosition < position && position <= interval.LastPosition)
+                return interval.FirstPass;
+        return entry;
     }
 
     private int NewSubmission(Queue queue)
@@ -258,18 +402,7 @@ internal sealed partial class FrameExecutor
                 }
             if (!compatible) continue;
 
-            ChangeSubmissionMembers(earlier);
-            ChangeSubmissionMembers(later);
-            QueueSubmissionConsumers(earlier);
-            QueueSubmissionConsumers(later);
-            foreach (int pass in laterPasses)
-            {
-                earlierPasses.Add(pass);
-                _submissionByPass[pass] = earlier;
-                foreach (int consumer in _successors[pass]) QueuePassSubmission(consumer);
-                QueuePassSubmission(_sameQueueSuccessor[pass]);
-            }
-            laterPasses.Clear();
+            MergeSubmissionMembers(earlier, later);
             return true;
         }
         return false;
@@ -326,9 +459,12 @@ internal sealed partial class FrameExecutor
             int consumer = _submissionCycle[(index + _submissionCycle.Count - 1) % _submissionCycle.Count];
             FindSubmissionEdge(dependency, submission, out _, out int entry);
             FindSubmissionEdge(submission, consumer, out int exit, out _);
+            if (_swapchainSubmissionIntervals.Count != 0)
+                entry = SwapchainSubmissionCut(_submissionQueues[submission]!, entry);
             if (_executionOrder.Position(exit) >= _executionOrder.Position(entry)) continue;
             List<int> passes = _submissionPasses[submission];
             int first = passes.IndexOf(entry);
+            if (first <= 0) continue;
             int suffix = NewSubmission(_submissionQueues[submission]!);
             ChangeSubmissionMembers(submission);
             QueueSubmissionConsumers(submission);
@@ -345,7 +481,9 @@ internal sealed partial class FrameExecutor
             _submissionCycleSeeds.Add(suffix);
             return;
         }
-        throw new InvalidOperationException("Queue submission dependencies contain a pass dependency cycle.");
+        throw new InvalidOperationException(_swapchainSubmissionIntervals.Count == 0
+            ? "Queue submission dependencies contain a pass dependency cycle."
+            : "Queue submission dependencies cannot preserve the swapchain image single-submit intervals.");
     }
 
     private void FindSubmissionEdge(int source, int destination, out int predecessor, out int consumer)

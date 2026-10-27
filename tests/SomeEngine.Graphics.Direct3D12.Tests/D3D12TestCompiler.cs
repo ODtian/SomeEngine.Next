@@ -117,7 +117,7 @@ public sealed class D3D12TestCompiler : IDisposable
         CompileSource(sourceName, source, entries, ".slang", target, profileName);
 
     internal static SlangTargetFlags TargetFlagsFor(SlangCompileTarget target) =>
-        target == SlangCompileTarget.Spirv
+        target is SlangCompileTarget.Spirv or SlangCompileTarget.SpirvAsm
             ? SlangTargetFlags.GenerateSpirvDirectly
             : 0;
 

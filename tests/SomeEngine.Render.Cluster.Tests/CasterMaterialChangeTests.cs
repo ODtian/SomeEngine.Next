@@ -37,7 +37,8 @@ public sealed class CasterMaterialChangeTests
         await using var fresh = await FrameStageScene.CreateAsync(backend, true, options, plane, settings);
         Configure(fresh);
         fresh.SetMeshTransform(1, new(new Vector3(.4f, 4, -4), Quaternion.Identity) { Stretch = new(2, 1.5f, .1f) });
-        fresh.UseMaterial(1, fresh.CreateRasterMaterial(RasterMaterialKind.Ordinary, Vector4.One));
+        Shader ordinaryShader = await LoadShaderAsync(backend, "ordinary_caster_material.slang");
+        fresh.UseMaterial(1, fresh.CreateRasterMaterial(ordinaryShader, Vector4.One));
         // The independent reference reaches the same stationary-light LOD;
         // the changed scene is observed in its first frame after the edit.
         RasterImage expected = await fresh.ReadRasterImageAsync();
@@ -165,14 +166,22 @@ public sealed class CasterMaterialChangeTests
         MaxShadowLights = 1, MaxFilterRadiusTexels = 0,
         DirectionalClipmapLevels = 16, DirectionalFirstClipmapLevel = -4,
         DirectionalFirstCoarseClipmapLevel = 8, DirectionalLastCoarseClipmapLevel = 11, DynamicResolutionEnabled = false };
-    private static async Task<Shader> LoadShaderAsync(string backend)
+    private static async Task<Shader> LoadShaderAsync(string backend,
+        string sourceName = "changing_caster_material.slang")
     {
         string root = FrameStageScene.FindRoot();
-        using var source = new ShaderSourceBlock { SourceNames = ["changing_caster_material.slang"] };
+        using var source = new ShaderSourceBlock
+        {
+            SourceNames = [sourceName],
+            Specializations =
+            [
+                new ShaderSpecialization { EntryPoint = "ClusterShadowRequests", Arguments = ["1", "0"] },
+            ],
+        };
         var description = TestShaderLoading.CreateSessionDescription(backend == "Vulkan" ? SlangCompileTarget.Spirv : SlangCompileTarget.Dxil);
         description.SearchPaths = [Path.Combine(root, "tests/SomeEngine.Render.Cluster.Tests/Shaders"),
             Path.Combine(root, "samples/DefaultGame/assets/Shaders"), Path.Combine(root, "assets/Shaders")];
-        return await source.CreateAsync(TestShaderLoading.Slang, description, "User patterned and shifted caster");
+        return await source.CreateAsync(TestShaderLoading.Slang, description, Path.GetFileNameWithoutExtension(sourceName));
     }
     private static Texture Pattern(int offset)
     {

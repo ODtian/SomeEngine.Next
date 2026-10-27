@@ -258,7 +258,13 @@ public sealed class SkinBoundsFeature : IClusterBoundsSource, IDisposable,
         frame.SetBufferInput(_boxesInput, new(_definitions, _boxRange));
         frame.SetBufferInput(_workInput, new(_definitions, _workRange));
         frame.SetBufferInput(_controlsInput, frame.Upload<Control>(CollectionsMarshal.AsSpan(_controls), BufferUsages.ShaderRead));
-        if (_uploadRequired) frame.SetBufferInput(_uploadInput, frame.Upload(_definitionBytes, BufferUsages.CopySource));
+        if (_uploadRequired)
+        {
+            frame.SetBufferInput(_uploadInput, frame.Upload(_definitionBytes, BufferUsages.CopySource));
+            // The upload source exists only in frames that stage definition bytes.
+            PassDefinition upload = frame.GetPass(_uploadPass);
+            upload.Read(_uploadInput, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopySource);
+        }
         frame.SetPassEnabled(_uploadPass, _uploadRequired);
         frame.SetPassEnabled(_boundsPass, changed);
         frame.SetPassData(_boundsPass, _dispatch);
@@ -403,7 +409,6 @@ public sealed class SkinBoundsFeature : IClusterBoundsSource, IDisposable,
     {
         internal static void Declare(ref PassDefinition pass, ref DefinitionCopy data)
         {
-            pass.Read(data.Upload, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopySource);
             pass.Write(data.Definitions, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete);
             pass.Write(data.Current, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete);
             pass.Write(data.Previous, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete);

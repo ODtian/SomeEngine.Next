@@ -9,6 +9,7 @@ using SomeEngine.Core.Diagnostics;
 using SomeEngine.Render.Cluster;
 using SomeEngine.Render.Cluster.Pipeline;
 using SomeEngine.Runtime;
+using SomeEngine.Resources;
 
 namespace DefaultGame;
 
@@ -71,15 +72,20 @@ public sealed partial class SceneTestPlatform
         return selected;
     }
 
-    public SceneTestPlatform(IReadOnlyList<TestScene> scenes, RuntimeStartupOptions? options = null)
+    public SceneTestPlatform(IReadOnlyList<TestScene> scenes, RuntimeStartupOptions? options = null,
+        SampleSceneOptions? sampleOptions = null, Func<Material, float, bool>? animateMaterial = null)
     {
         if (scenes.Count == 0) throw new ArgumentException("At least one test scene is required.", nameof(scenes));
         Scenes = scenes.ToArray();
+        SampleOptions = (sampleOptions ?? SampleSceneOptions.Parse([])) with
+        {
+            DynamicScene = scenes[0].Animate, SurfacePanel = true, WorldNameplates = true,
+        };
         Application = new ApplicationScene(scenes[0].ContentDirectory)
         {
             AssetPacks = scenes[0].AssetPacks,
             ApplicationAsset = scenes[0].ApplicationAsset is { } selected ? new AssetId<ApplicationSettingsAsset>(selected) : null,
-            Options = (options ?? RuntimeStartupOptions.Parse([])) with { WindowVSync = false, DynamicScene = scenes[0].Animate, AsyncCompute = true, SurfacePanel = true, WorldNameplates = true },
+            Options = (options ?? RuntimeStartupOptions.Parse([])) with { WindowVSync = false, AsyncCompute = true },
             InterfaceEnabled = true,
             MeasureShadowInvalidation = Environment.GetEnvironmentVariable("SOMEENGINE_VSM_INVALIDATION_TIMING") == "1",
             Initialize = frame => InitializeScene?.Invoke(frame.Scene, Current),
@@ -91,12 +97,15 @@ public sealed partial class SceneTestPlatform
             BlendFrameCompleted = RecordBlendFrame,
             SceneCompleted = result => EndScene(result.Error?.Message),
         };
+        ScenePanels.Install(Application, () => SampleOptions);
+        SceneAnimation.Install(Application, () => SampleOptions, animateMaterial);
         MeasureBlending = Options.MeasureBlending;
     }
 
     public IReadOnlyList<TestScene> Scenes { get; }
     public int SelectedScene { get; private set; }
     public ApplicationScene Application { get; }
+    public SampleSceneOptions SampleOptions { get; set; }
     public Action<SceneEdit, TestScene>? InitializeScene { get; init; }
     public Action<SceneEdit, TestScene, int>? UpdateScene { get; init; }
     private Func<ApplicationRendering, TestScene, IApplicationColorFeature>? _createColorFeature;
@@ -115,8 +124,10 @@ public sealed partial class SceneTestPlatform
         get => Options.MeasureBlending;
         init => Options = Options with { MeasureBlending = value };
     }
-    public bool HudOverlayEnabled => Options.HudOverlay;
-    public bool HudNumbersChange => Options.HudNumbersChange;
+    /// <summary>Opt-in GPU pass diagnostics; requires a traced measurement.</summary>
+    public bool CaptureGpuPassTimes { get; init; }
+    public bool HudOverlayEnabled => SampleOptions.HudOverlay;
+    public bool HudNumbersChange => SampleOptions.HudNumbersChange;
     private RuntimeStartupOptions Options { get => Application.Options; set => Application.Options = value; }
     private bool ReloadRequested => Application.ReloadRequested;
     internal TestScene Current => Scenes[SelectedScene];
@@ -155,6 +166,7 @@ public sealed partial class SceneTestPlatform
     private string _frameSamplesFileName = "frame-samples.json";
     private bool _createNewResults;
     private RuntimeStartupOptions? _interactiveOptions;
+    private SampleSceneOptions? _interactiveSampleOptions;
     private int _interactiveScene;
     private int _renderWidth;
     private int _renderHeight;
@@ -210,8 +222,8 @@ public sealed partial class SceneTestPlatform
     public void SetHudOverlay(bool enabled, bool changeNumbers = true)
     {
         DevelopmentCheck.Require(!IsMeasuring, "Change the HUD between scene measurements.");
-        if (Options.HudOverlay == enabled && Options.HudNumbersChange == changeNumbers) return;
-        Options = Options with { HudOverlay = enabled, HudNumbersChange = changeNumbers };
+        if (SampleOptions.HudOverlay == enabled && SampleOptions.HudNumbersChange == changeNumbers) return;
+        SampleOptions = SampleOptions with { HudOverlay = enabled, HudNumbersChange = changeNumbers };
         Application.Reload();
     }
 
@@ -232,6 +244,8 @@ public sealed partial class SceneTestPlatform
     public void StartMeasurements(bool recordTrace = false)
     {
         if (IsMeasuring) return;
+        if (CaptureGpuPassTimes && !recordTrace)
+            throw new InvalidOperationException("--gpu-pass-times requires a traced measurement (F10 or Measure-Scenes.ps1 -Trace).");
         if (Startup is null)
         {
             _recordTrace = recordTrace;
@@ -244,12 +258,14 @@ public sealed partial class SceneTestPlatform
         _measurementError = null;
         _recordTrace = recordTrace;
         _interactiveOptions = Options;
+        _interactiveSampleOptions = SampleOptions;
         _interactiveScene = SelectedScene;
         _interactiveViewsEnabled = Application.ViewsEnabled;
         Options = Options with { WindowVSync = false, FixedFrameSeconds = 1f / 60f };
         _sceneStarted = 0;
         _testStarted = Stopwatch.GetTimestamp();
         IsMeasuring = true;
+        StartGpuPassTimingCapture();
         Application.MeasureInterface = true;
         Application.DebugUiEnabled = false;
         Application.ViewsEnabled = false;
@@ -270,11 +286,11 @@ public sealed partial class SceneTestPlatform
             Directory.CreateDirectory(_resultDirectory);
             return;
         }
-        if (string.IsNullOrEmpty(directory) || string.IsNullOrEmpty(basename) || recordTrace ||
+        if (string.IsNullOrEmpty(directory) || string.IsNullOrEmpty(basename) ||
             !Path.IsPathFullyQualified(directory) || basename.Length > 96 ||
             basename.Any(static c => !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
                 (c >= '0' && c <= '9') || c == '-' || c == '_')))
-            throw new InvalidDataException("Flat measurement output requires an existing absolute directory, an ASCII basename, and tracing disabled.");
+            throw new InvalidDataException("Flat measurement output requires an existing absolute directory and an ASCII basename.");
         directory = Path.GetFullPath(directory);
         if (!Directory.Exists(directory))
             throw new DirectoryNotFoundException("Flat measurement output directory must already exist.");
@@ -282,6 +298,16 @@ public sealed partial class SceneTestPlatform
         string samplesName = basename + "-frame-samples.json";
         if (File.Exists(Path.Combine(directory, reportName)) || File.Exists(Path.Combine(directory, samplesName)))
             throw new IOException("Flat measurement outputs already exist; choose an unused basename.");
+        if (recordTrace)
+        {
+            for (int index = 0; index < Scenes.Count; index++)
+            {
+                string prefix = $"{Path.GetFileNameWithoutExtension(reportName)}-scene-{index}";
+                if (File.Exists(Path.Combine(directory, prefix + ".setrace")) ||
+                    (CaptureGpuPassTimes && File.Exists(Path.Combine(directory, prefix + "-gpu-pass-times.json"))))
+                    throw new IOException("Flat scene diagnostic outputs already exist; choose an unused basename.");
+            }
+        }
         _resultDirectory = directory;
         _resultFileName = reportName;
         _frameSamplesFileName = samplesName;
@@ -316,7 +342,7 @@ public sealed partial class SceneTestPlatform
         Application.ContentDirectory = Current.ContentDirectory;
         Application.AssetPacks = Current.AssetPacks;
         Application.ApplicationAsset = Current.ApplicationAsset is { } selected ? new AssetId<ApplicationSettingsAsset>(selected) : null;
-        Options = Options with { DynamicScene = Current.Animate };
+        SampleOptions = SampleOptions with { DynamicScene = Current.Animate };
         Application.Reload();
     }
 
@@ -336,12 +362,15 @@ public sealed partial class SceneTestPlatform
         _readyFrames = 0;
         _frames.Clear();
         _blendFrames.Clear();
+        BeginGpuPassTimingScene();
         _firstSampleRenderedFrame = 0;
         _fixedWarmupComplete = false;
         _fixedWindowError = null;
         _sceneSampleFinished = false;
         if (_recordTrace)
-            _trace = EngineTrace.Start(Path.Combine(_resultDirectory!, $"scene-{SelectedScene}.setrace"),
+            _trace = EngineTrace.Start(Path.Combine(_resultDirectory!, _createNewResults
+                ? $"{Path.GetFileNameWithoutExtension(_resultFileName)}-scene-{SelectedScene}.setrace"
+                : $"scene-{SelectedScene}.setrace"),
                 new SomeEngine.Diagnostics.TraceOptions
                 {
                     Detail = Options.TraceDetail, Allocations = Options.TraceAllocations,
@@ -426,7 +455,7 @@ public sealed partial class SceneTestPlatform
             _frames.Count == 0 ? null : _frames.Average(f => f.ExecuteMs),
             residency.ResidentPages, residency.RegisteredPages, residency.QueuedPageLoads, residency.ActivePageLoads,
             residency.PageHeapUsedBytes, residency.PageHeapFreeBytes, residency.BackpressuredPages,
-            _renderWidth, _renderHeight, Options.DynamicScene,
+            _renderWidth, _renderHeight, SampleOptions.DynamicScene,
             _firstFrameMs, _streamingFrames, _streamingMs, _streamingMaxFrameMs, residency.DroppedPageFaults,
             _frames.Sum(f => (long)f.Views.RebuildCount),
             _frames.Count == 0 ? null : _frames.Average(f => f.Views.RebuildCount),
@@ -494,11 +523,13 @@ public sealed partial class SceneTestPlatform
             if (gpu.Length != window.Frames.Length)
                 error ??= "The GPU blend samples did not cover the complete scene-frame window.";
         }
+        SaveGpuPassTimingScene();
         if (error is null && ReloadRequested && SelectedScene + 1 < Scenes.Count && Stopwatch.GetElapsedTime(_testStarted).TotalSeconds < 45)
         {
             SelectScene(SelectedScene + 1);
             return;
         }
+        RestoreGpuPassTimingCallbacks();
         var frameSamples = new JsonObject
         {
             ["SchemaVersion"] = 3,
@@ -543,7 +574,7 @@ public sealed partial class SceneTestPlatform
             ["UseInstanceGroups"] = Options.UseInstanceGroups,
             ["FixedFrameSeconds"] = Options.FixedFrameSeconds,
             ["SynchronousFrames"] = Options.SynchronousFrames,
-            ["ScenePlayback"] = Options.ScenePlayback,
+            ["ScenePlayback"] = SampleOptions.ScenePlayback,
             ["DisableMeshShaders"] = Options.DisableMeshShaders,
             ["DeviceValidation"] = Options.DeviceValidation,
             ["GeometryMemoryMegabytes"] = GeometryMemoryMegabytes,
@@ -551,6 +582,7 @@ public sealed partial class SceneTestPlatform
                 ? new JsonObject(settings.Select(static pair => new KeyValuePair<string, JsonNode?>(pair.Key, JsonValue.Create(pair.Value)))) : null,
             ["Scenes"] = JsonSerializer.SerializeToNode(_results, SceneJsonContext.Default.ListSceneTiming),
         };
+        AddGpuPassTimingReport(report);
         WriteMeasurementText(LastReport, report.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
         Console.WriteLine($"Performance report: {LastReport}");
         IsMeasuring = false;
@@ -558,11 +590,13 @@ public sealed partial class SceneTestPlatform
         Application.DebugUiEnabled = true;
         Application.ViewsEnabled = _interactiveViewsEnabled;
         Options = _interactiveOptions!;
+        SampleOptions = _interactiveSampleOptions!;
         SelectedScene = _interactiveScene;
         Application.ContentDirectory = Current.ContentDirectory;
         Application.AssetPacks = Current.AssetPacks;
         Application.ApplicationAsset = Current.ApplicationAsset is { } selected ? new AssetId<ApplicationSettingsAsset>(selected) : null;
         _interactiveOptions = null;
+        _interactiveSampleOptions = null;
     }
 
     public void ConfigureViews(string[] args) => ConfigureViews(Application, args);
@@ -664,10 +698,10 @@ public sealed partial class SceneTestPlatform
             ApplicationViewSettings settings = view.Settings;
             int mode = checked((int)settings.Mode) - 8;
             int viewWidth = settings.Width, viewHeight = settings.Height;
-            bool changed = ImGui.Combo("Mode", ref mode, "Barycentrics\0Normal\0UV\0Deviation\0");
-            changed |= ImGui.InputInt("Width", ref viewWidth, 16, 64, ImGuiInputTextFlags.EnterReturnsTrue);
-            changed |= ImGui.InputInt("Height", ref viewHeight, 16, 64, ImGuiInputTextFlags.EnterReturnsTrue);
-            if (changed && viewWidth > 0 && viewHeight > 0)
+            bool viewSettingsChanged = ImGui.Combo("Mode", ref mode, "Barycentrics\0Normal\0UV\0Deviation\0");
+            viewSettingsChanged |= ImGui.InputInt("Width", ref viewWidth, 16, 64, ImGuiInputTextFlags.EnterReturnsTrue);
+            viewSettingsChanged |= ImGui.InputInt("Height", ref viewHeight, 16, 64, ImGuiInputTextFlags.EnterReturnsTrue);
+            if (viewSettingsChanged && viewWidth > 0 && viewHeight > 0)
                 view.Settings = new ApplicationViewSettings(checked((uint)mode + 8), viewWidth, viewHeight);
             bool remove = ImGui.Button("Close view");
             ImGui.PopID();
@@ -690,7 +724,7 @@ public sealed partial class SceneTestPlatform
         bool synchronous = Options.SynchronousFrames;
         bool validation = Options.DeviceValidation;
         string[] playbacks = ["Scene behavior", "Motion and lights", "Material changes", "Camera sweep"];
-        int playback = Options.ScenePlayback switch { "motion" => 1, "materials" => 2, "camera" => 3, _ => 0 };
+        int playback = SampleOptions.ScenePlayback switch { "motion" => 1, "materials" => 2, "camera" => 3, _ => 0 };
         bool changed = ImGui.Checkbox("Temporal antialiasing", ref taa);
         changed |= ImGui.Checkbox("Virtual shadows", ref shadows);
         changed |= ImGui.Checkbox("Async compute", ref asyncCompute);
@@ -708,6 +742,9 @@ public sealed partial class SceneTestPlatform
                 TemporalAntialiasing = taa, VirtualShadows = shadows, AsyncCompute = asyncCompute,
                 ForceHardwareRaster = hardwareRaster, UseInstanceGroups = groups, WindowVSync = vsync,
                 DisableMeshShaders = !meshShaders, SynchronousFrames = synchronous, DeviceValidation = validation,
+            };
+            SampleOptions = SampleOptions with
+            {
                 ScenePlayback = playback switch { 1 => "motion", 2 => "materials", 3 => "camera", _ => null },
             };
             Application.Reload();

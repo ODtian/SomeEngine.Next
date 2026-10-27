@@ -605,7 +605,7 @@ public sealed class LifecycleClosureTests : JobTest
         using var state = new LifetimeState(Jobs);
         var world = CreateJobWorld();
         world.CreateEntity(new LifetimeComponent());
-        Jobs.Schedule(
+        JobHandle root = Jobs.Schedule(
             new BlockingRootJob(state),
             ComponentJobAccess<LifetimeComponent>.Read(world));
         Assert.True(state.RootStarted.Wait(TimeSpan.FromSeconds(5)));
@@ -626,6 +626,7 @@ public sealed class LifecycleClosureTests : JobTest
         }
 
         Assert.Null(await disposal.WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.True(root.IsCompleted);
     }
 
     [Fact]

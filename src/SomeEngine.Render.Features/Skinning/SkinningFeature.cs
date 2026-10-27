@@ -493,7 +493,13 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
         frame.SetPassEnabled(_loadPass, _sectionOrder.Length != 0);
         frame.SetPassEnabled(_advancePass, _sectionOrder.Length != 0);
         frame.SetPassEnabled(_storePass, _sectionOrder.Length != 0);
-        if (_uploadRequired) frame.SetBufferInput(_definitionUpload, frame.Upload(_definitionBytes, BufferUsages.CopySource));
+        if (_uploadRequired)
+        {
+            frame.SetBufferInput(_definitionUpload, frame.Upload(_definitionBytes, BufferUsages.CopySource));
+            // The upload source exists only in frames that stage definition bytes.
+            PassDefinition upload = frame.GetPass(_uploadPass);
+            upload.Read(_definitionUpload, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopySource);
+        }
         frame.SetPassEnabled(_uploadPass, _uploadRequired);
         if (_cpuCopies.Count != 0)
         {
@@ -686,7 +692,6 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
     {
         internal static void Declare(ref PassDefinition pass, ref DefinitionCopy data)
         {
-            pass.Read(data.Upload, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopySource);
             pass.Write(data.Definitions, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete);
             if (!data.Migrate) return;
             pass.Write(data.Current, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete);

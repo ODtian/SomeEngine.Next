@@ -36,7 +36,7 @@ public sealed class CanvasShadowTests
     {
         using var graph = new RenderGraph(backend, device, [backend.GetQueue(device, QueueType.Graphics)]);
         using var world = new RenderWorld();
-        using SurfaceMaterial material = SurfaceMaterial.Create(device.Capabilities.CompileTarget);
+        SurfaceMaterial material = SurfaceMaterial.Create(device.Capabilities.CompileTarget);
         using var renderer = new CanvasRenderer(backend, device, graph, world, material, Format.R8G8B8A8UNorm);
         using SomeEngine.Graphics.Buffer readback = backend.CreateBuffer(device,
             new BufferDesc(64 * 256, BufferUsages.CopyDestination), MemoryType.Readback);

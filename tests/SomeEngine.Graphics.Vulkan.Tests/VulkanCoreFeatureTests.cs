@@ -184,7 +184,16 @@ public sealed class VulkanCoreFeatureTests(VulkanTestCompiler shaderCompiler)
         }
         using Buffer output = backend.CreateBuffer(
             device,
-            new BufferDesc(4, BufferUsages.ShaderWrite | BufferUsages.CopySource));
+            new BufferDesc(4, BufferUsages.ShaderWrite | BufferUsages.CopySource | BufferUsages.CopyDestination));
+        using Buffer zeroUpload = backend.CreateBuffer(
+            device,
+            new BufferDesc(4, BufferUsages.CopySource),
+            MemoryType.Upload);
+        using (MappedBuffer mapped = backend.Map(zeroUpload, MapType.Write, BufferRange.Whole))
+        {
+            mapped.Bytes.Clear();
+            mapped.Flush(mapped.Range);
+        }
         using BufferUav outputUav = backend.CreateBufferUav(
             device,
             new BufferUavDesc(
@@ -219,8 +228,15 @@ public sealed class VulkanCoreFeatureTests(VulkanTestCompiler shaderCompiler)
             backend.Barrier(context, new BufferBarrier(
                 output,
                 PipelineSync.None,
-                PipelineSync.ComputeShading,
+                PipelineSync.Copy,
                 ResourceAccess.NoAccess,
+                ResourceAccess.CopyDestination));
+            backend.CopyBuffer(context, new BufferCopy(zeroUpload, 0, output, 0, 4));
+            backend.Barrier(context, new BufferBarrier(
+                output,
+                PipelineSync.Copy,
+                PipelineSync.ComputeShading,
+                ResourceAccess.CopyDestination,
                 ResourceAccess.UnorderedAccess));
             backend.SetPipeline(context, pipeline);
             backend.SetTransientParameterBindings(

@@ -21,7 +21,8 @@ public sealed class MeshFrameCaptureTests(SceneContentFixture content)
         SceneMeshTransform[] expectedCopies = [];
         TransformQvvs firstTransform = new(new Vector3(0, 0, 6), Quaternion.Identity);
         TransformQvvs lastTransform = new(new Vector3(2, 1, 8), Quaternion.Identity, .75f);
-        var script = new SceneScript(content.DirectoryPath, 6,
+        var script = new SceneScript(new ApplicationScene(content.DirectoryPath)
+            { RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register }, 6,
         [
             new(0, edit =>
             {
@@ -77,7 +78,8 @@ public sealed class MeshFrameCaptureTests(SceneContentFixture content)
     public async Task LinearCaptureHasNoMeshInputsAfterAllInstancesAreDeleted(string backend)
     {
         SceneLinearImage? captured = null;
-        var script = new SceneScript(content.DirectoryPath, 4,
+        var script = new SceneScript(new ApplicationScene(content.DirectoryPath)
+            { RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register }, 4,
         [
             new(2, edit =>
             {
@@ -102,7 +104,8 @@ public sealed class MeshFrameCaptureTests(SceneContentFixture content)
         TransformQvvs canceledTransform = new(new Vector3(0, 0, 6), Quaternion.Identity);
         TransformQvvs nextTransform = new(new Vector3(2, 1, 8), Quaternion.Identity, .75f);
 
-        var script = new SceneScript(content.DirectoryPath, 2,
+        var script = new SceneScript(new ApplicationScene(content.DirectoryPath)
+            { RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register }, 2,
         [
             new(0, edit =>
             {
@@ -153,7 +156,8 @@ public sealed class MeshFrameCaptureTests(SceneContentFixture content)
         ulong firstRenderingFrame = 0;
         VirtualShadowViewQuality[] firstViews = [];
         VirtualShadowMipQuality[][] firstMips = [];
-        var script = new SceneScript(content.DirectoryPath, 4,
+        var script = new SceneScript(new ApplicationScene(content.DirectoryPath)
+            { RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register }, 4,
         [
             new(0, edit =>
             {

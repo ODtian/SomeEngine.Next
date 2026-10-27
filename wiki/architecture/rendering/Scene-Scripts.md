@@ -1,18 +1,29 @@
 # 场景脚本
 
-场景脚本通过 `Application.RunAsync(string[] args, SceneScript script)` 运行应用的真实帧循环。已有命令行入口继续返回退出码；脚本入口返回 `ApplicationResult`，包括成功状态、失败类别、已完成帧数和原始错误。
+场景脚本通过 `Application.RunAsync(string[] args, SceneScript script)` 运行应用的真实帧循环。脚本、`ApplicationScene` 与泛型材质启动入口统一返回 `ApplicationResult`，包括成功状态、失败类别、已完成帧数和原始错误。可执行项目的 `Main` 按 `result.Succeeded ? 0 : 1` 转为退出码，库不把结果压缩为退出码。
 
 `SceneScript` 持有内容目录、有限帧数和 `SceneAction` 序列。帧号从 0 开始；动作按帧号排列，同帧动作保持传入顺序。每次启动使用独立窗口线程，窗口与消息队列随该次启动一起结束。
 
-默认环境为 D3D12 软件适配器、隐藏窗口、同步帧、固定 1/60 秒、静态场景、关闭调试界面和窗口垂直同步。命令行可以指定固定帧时间和渲染选项，`--hardware-adapter` 选择硬件适配器。脚本帧数决定本次运行帧数。
+默认环境为 D3D12 软件适配器、隐藏窗口、同步帧、固定 1/60 秒、关闭调试界面和窗口垂直同步。通用脚本不自动安装 DefaultGame 的种子运动或测量回放；需要这些行为时由样例组合它们。命令行可以指定固定帧时间和渲染选项，`--hardware-adapter` 选择硬件适配器。脚本帧数决定本次运行帧数。
+
+## 场景回调与时间
+
+`ApplicationScene.BeforeCameraInput` 与 `SimulateScene` 接收 `SceneEdit` 和绝对场景秒数，不通过累加 `ApplicationFrame.DeltaSeconds` 推导时间。固定步长时使用帧号乘以 `FixedFrameSeconds`；普通运行使用场景时钟，异步更新在安排下一帧任务前取得该次时间。
+
+- 同步帧：同帧的全部脚本动作与 `UpdateFrame` 完成后，执行 `BeforeCameraInput`；相机输入之后执行 `SimulateScene`，再执行几何游戏系统、视图系统和提取。
+- 异步首帧准备：在 `Initialize` 后只执行时间为 0 的 `BeforeCameraInput`，随后执行几何游戏系统、视图系统和提取，不执行 `SimulateScene`。
+- 异步后续帧：下一帧游戏任务依次执行两个回调，再执行几何游戏系统、视图系统和提取。回调不会因为自身存在而强制切换为同步帧。
+- 同步启动的零时间视图更新不执行这两个回调。
+
+这两个回调只用于场景数据编辑。截图、取消帧、相机历史重置与影子刷新请求仍放在脚本动作或 `UpdateFrame` 中；它们不是异步场景数据。DefaultGame 在前一个回调执行测量回放，在后一个回调执行普通种子运动，具体策略不进入通用帧循环。
 
 ## 场景变化与帧图像
 
 `SceneEdit` 在动作执行期间提供以下操作：
 
-- `MeshEntities` 枚举当前 Game world 的网格实体。
-- `GetMaterial` 与 `ReplaceMaterial` 读取、替换实体的材质引用。传入的材质可以来自场景，也可以由调用方持有至运行结束。
-- `SetCameraTransform` 设置相机位置与旋转。
+- `MeshEntities` 枚举当前 Game world 的网格实体；`MeshPositionMin`、`MeshPositionMax` 提供加载时的实例位置范围。
+- `GetMaterial` 与 `ReplaceMaterial` 读取、替换实体的材质引用；`Materials` 提供按加载资产顺序排列的材质。传入的材质可以来自场景，也可以由调用方持有至运行结束。
+- `SetCameraTransform` 设置相机位置与旋转；`CameraPosition`、`CameraForward` 读取当前相机数据。`SetCameraPosition` 保持方向与世界向上向量，`SetCameraView` 设置位置和目标并保留世界向上向量。
 - `AddEntity` 以已有实体的网格、材质创建新实例，并返回其公共 ECS 实体身份；`DeleteEntity` 删除实体。
 - `SetOutputSize` 改变窗口客户区尺寸，现有窗口事件和帧循环尺寸检查接着处理交换链变化。
 - `CaptureImage` 登记当前帧的图像回调。

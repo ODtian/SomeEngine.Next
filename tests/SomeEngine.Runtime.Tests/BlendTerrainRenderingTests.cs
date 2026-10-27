@@ -22,6 +22,7 @@ public sealed class BlendTerrainRenderingTests(SceneContentFixture content)
         TerrainEdit edit = default;
         var application = new ApplicationScene(content.DirectoryPath)
         {
+            RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
             Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "18"]),
             UpdateFrame = frame =>
@@ -39,7 +40,7 @@ public sealed class BlendTerrainRenderingTests(SceneContentFixture content)
             },
         };
         example.Install(application);
-        Assert.Equal(0, await Application.RunAsync([], application: application));
+        Assert.True((await Application.RunAsync([], application: application)).Succeeded);
         VoxelFieldRead current = await example.Voxels.ReadCpuAsync(example.SampleRegion);
         TerrainSurfaceRead surface = await example.Voxels.Terrain.Surface!.ReadCpuAsync(new(new(0, -4, 0), new(8, 4, 8)));
         Assert.Equal(0f, initial[4, 0, 4]);
@@ -57,6 +58,7 @@ public sealed class BlendTerrainRenderingTests(SceneContentFixture content)
         var scene = new TerrainScene(adapter, new TerrainChunkGrid(4, 1));
         var reference = new ApplicationScene(content.DirectoryPath)
         {
+            RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
             Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "18"]),
             UpdateFrame = frame =>
@@ -77,7 +79,7 @@ public sealed class BlendTerrainRenderingTests(SceneContentFixture content)
             },
         };
         reference.InstallGeometry(new TerrainGeometryFeature(scene));
-        Assert.Equal(0, await Application.RunAsync([], application: reference));
+        Assert.True((await Application.RunAsync([], application: reference)).Succeeded);
 
         SceneImages.AssertEqual(expectedBefore!, before!);
         SceneImages.AssertEqual(expectedAfter!, after!);

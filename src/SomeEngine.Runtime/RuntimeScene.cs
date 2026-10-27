@@ -26,14 +26,7 @@ internal sealed class RuntimeScene : IDisposable
     private readonly World _world;
     private readonly Entity _worldOriginEntity;
     private (Guid Asset, Mesh Mesh, MeshPayloadSource Source, MeshMaterialBinding[] Bindings, ClusterSkinBounds? SkinBounds)[] _meshes = [];
-    private readonly (Entity Entity, PointLight Value)[] _playbackLights;
-    private Material[] _playbackMaterials;
-    private readonly Vector3 _initialCameraPosition;
-    private readonly Vector3 _cameraOrbitTarget;
-    private static readonly SomeEngine.Diagnostics.TraceSite MovingMeshesTrace = new("scene", "MovingMeshes");
-    private static readonly SomeEngine.Diagnostics.TraceSite MovingLightsTrace = new("scene", "MovingLights");
-    private static readonly SomeEngine.Diagnostics.TraceSite ChangingMaterialsTrace = new("scene", "ChangingMaterials");
-    private readonly QueryHandle _motionQuery;
+    private Material[] _materials;
     private readonly float _verticalFieldOfView;
     private readonly float _nearPlane;
     private readonly float _farPlane;
@@ -41,9 +34,7 @@ internal sealed class RuntimeScene : IDisposable
 
     private RuntimeScene(
         World world,
-        (Entity Entity, PointLight Value)[] playbackLights,
-        Material[] playbackMaterials,
-        QueryHandle motionQuery,
+        Material[] materials,
         RuntimeCamera camera,
         float verticalFieldOfView,
         float nearPlane,
@@ -58,13 +49,7 @@ internal sealed class RuntimeScene : IDisposable
         _world = world;
         Entity[] origins = Entities(world, new QueryDefinitionBuilder().Read<WorldOrigin>());
         _worldOriginEntity = origins.Length == 0 ? world.CreateEntity(default(WorldOrigin)) : origins.Single();
-        _playbackLights = playbackLights;
-        _playbackMaterials = playbackMaterials;
-        _initialCameraPosition = camera.Position;
-        float cameraDistance = MathF.Max(Vector3.Distance(camera.Position,
-            (meshPositionMin + meshPositionMax) * 0.5f), 1f);
-        _cameraOrbitTarget = camera.Position + camera.Forward * cameraDistance;
-        _motionQuery = motionQuery;
+        _materials = materials;
         Camera = camera;
         _verticalFieldOfView = verticalFieldOfView;
         _nearPlane = nearPlane;
@@ -88,11 +73,11 @@ internal sealed class RuntimeScene : IDisposable
 
     internal Vector3 MeshPositionMax { get; }
 
-    internal IReadOnlyList<Material> Materials => _playbackMaterials;
+    internal IReadOnlyList<Material> Materials => _materials;
 
     internal static async ValueTask<RuntimeScene> CreateAsync<TMaterials>(
         World world,
-        ApplicationContent content) where TMaterials : ISceneMaterials
+        ApplicationContent content, Action<World, Entity>? initializeMesh = null) where TMaterials : ISceneMaterials
     {
         AssetLoader assets = content.Files;
         Entity[] instances = Entities(world, new QueryDefinitionBuilder().Read<MeshSource>().Read<WorldTransform>());
@@ -216,29 +201,17 @@ internal sealed class RuntimeScene : IDisposable
                         buffer.EnsureCapacity(values.Length);
                         foreach (MeshMaterialBinding value in values) buffer.Add(value);
                     });
-                if (world.Has<MeshMotion>(entity))
-                {
-                    MeshMotion motion = world.Read<MeshMotion>(entity);
-                    if (motion.Amplitude != Vector3.Zero) world.Add(entity, SceneMotion.Create(transform, motion.Amplitude, motion.Seed));
-                    world.Remove<MeshMotion>(entity);
-                }
+                initializeMesh?.Invoke(world, entity);
                 world.Remove<MeshSource>(entity);
             }
-            var playbackLights = Entities(world, new QueryDefinitionBuilder().Read<PointLight>())
-                .Select(entity => (entity, world.Read<PointLight>(entity))).ToArray();
             var runtimeCamera = new RuntimeCamera(camera.Position, camera.Target, camera.Up);
             world.Remove<SceneCamera>(cameras[0]);
             if (instances.Length == 0) meshPositionMin = meshPositionMax = Vector3.Zero;
-            QueryHandle motionQuery = world.Query(new QueryDefinitionBuilder().Read<SceneMotion>().ReadWrite<WorldTransform>());
-            try
-            {
-                return new RuntimeScene(world, playbackLights, [.. materials.Values], motionQuery,
-                    runtimeCamera, camera.VerticalFieldOfView, camera.NearPlane,
-                    camera.FarPlane, camera.DepthOfField, camera.PlayerId, camera.FirstPerson,
-                    instances.Length, meshPositionMin, meshPositionMax)
-                    { _meshes = meshes.Select(pair => (pair.Key, pair.Value.Mesh, pair.Value.Source, pair.Value.Bindings, pair.Value.SkinBounds)).ToArray() };
-            }
-            catch { world.ReleaseQuery(motionQuery); throw; }
+            return new RuntimeScene(world, [.. materials.Values],
+                runtimeCamera, camera.VerticalFieldOfView, camera.NearPlane,
+                camera.FarPlane, camera.DepthOfField, camera.PlayerId, camera.FirstPerson,
+                instances.Length, meshPositionMin, meshPositionMax)
+                { _meshes = meshes.Select(pair => (pair.Key, pair.Value.Mesh, pair.Value.Source, pair.Value.Bindings, pair.Value.SkinBounds)).ToArray() };
         }
         catch (Exception failure)
         {
@@ -274,9 +247,6 @@ internal sealed class RuntimeScene : IDisposable
     }
 
     internal Entity[] GetMeshEntities() => Entities(_world, new QueryDefinitionBuilder().Read<MeshInstance>());
-
-    internal Entity[] GetMovingMeshEntities() => Entities(_world,
-        new QueryDefinitionBuilder().Read<SceneMotion>().Read<WorldTransform>());
 
     internal void SetWorldOrigin(WorldOrigin origin) => _world.Replace(_worldOriginEntity, origin);
 
@@ -429,81 +399,13 @@ internal sealed class RuntimeScene : IDisposable
             _farPlane);
     }
 
-    internal void Update(float elapsedSeconds)
-    {
-        using var trace = SomeEngine.Diagnostics.EngineTrace.Begin(ApplicationTrace.Scene);
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        UpdateMotionRows(elapsedSeconds);
-    }
-
-    // Reproducible input for renderer measurements; this is scene behavior, not trace policy.
-    internal void Play(float seconds, bool animateMaterials,
-        Func<Material, float, bool>? animateMaterial = null, bool orbitCamera = false)
-    {
-        using var trace = SomeEngine.Diagnostics.EngineTrace.Begin(ApplicationTrace.Playback);
-        Update(seconds);
-        if (orbitCamera)
-        {
-            Quaternion rotation = Quaternion.CreateFromYawPitchRoll(
-                MathF.Sin(seconds * 0.31f) * 0.45f, MathF.Sin(seconds * 0.17f) * 0.1f, 0);
-            Camera.SetView(_cameraOrbitTarget + Vector3.Transform(
-                _initialCameraPosition - _cameraOrbitTarget, rotation), _cameraOrbitTarget);
-        }
-        else
-            Camera.SetPosition(_initialCameraPosition + new Vector3(MathF.Sin(seconds) * 0.3f, MathF.Sin(seconds * 0.7f) * 0.15f, 0));
-        for (int index = 0; index < _playbackLights.Length; index++)
-        {
-            (Entity entity, PointLight light) = _playbackLights[index];
-            _world.Replace(entity, new PointLight(
-                light.Position + new Vector3(MathF.Sin(seconds + index) * 0.5f, 0, 0), light.Range, light.Color,
-                light.Intensity * (0.9f + MathF.Cos(seconds + index) * 0.1f), light.LayerMask));
-        }
-        int changingMaterials = 0;
-        if (animateMaterials)
-            foreach (Material material in _playbackMaterials)
-                if (animateMaterial?.Invoke(material, seconds) == true) changingMaterials++;
-        SomeEngine.Diagnostics.EngineTrace.Counter(MovingLightsTrace, _playbackLights.Length);
-        SomeEngine.Diagnostics.EngineTrace.Counter(ChangingMaterialsTrace, changingMaterials);
-    }
-
-    private void UpdateMotionRows(float seconds)
-    {
-        // Motion belongs to each Game-world entity. Querying those entities directly
-        // avoids a second entity index and lets each chunk publish its writes once.
-        var state = (Seconds: seconds, Count: 0);
-        _world.ExecuteQuery(_motionQuery, ref state,
-            static (scoped QueryCursor query, ref (float Seconds, int Count) motionState) =>
-            {
-                foreach (QueryChunkView chunk in query.Chunks)
-                {
-                    ReadOnlySpan<SceneMotion> motions = chunk.Read<SceneMotion>();
-                    Span<WorldTransform> transforms = chunk.ReadWrite<WorldTransform>();
-                    motionState.Count += motions.Length;
-                    for (int row = 0; row < motions.Length; row++)
-                    {
-                        ref readonly SceneMotion motion = ref motions[row];
-                        Vector3 offset = new(
-                            MathF.Sin(motionState.Seconds * motion.Frequency.X) * motion.Amplitude.X,
-                            MathF.Sin(motionState.Seconds * motion.Frequency.Y) * motion.Amplitude.Y,
-                            MathF.Sin(motionState.Seconds * motion.Frequency.Z) * motion.Amplitude.Z);
-                        TransformQvvs value = motion.BaseTransform;
-                        value.Position += offset;
-                        transforms[row] = new WorldTransform { Qvvs = value };
-                    }
-                }
-            });
-        SomeEngine.Diagnostics.EngineTrace.Counter(MovingMeshesTrace, state.Count);
-    }
-
     public void Dispose()
     {
         if (_disposed)
             return;
         _disposed = true;
         var errors = new List<Exception>();
-        try { _world.ReleaseQuery(_motionQuery); }
-        catch (Exception error) { errors.Add(error); }
-        _playbackMaterials = [];
+        _materials = [];
         foreach (var mesh in _meshes)
         {
             try { mesh.Source.Dispose(); } catch (Exception error) { errors.Add(error); }
@@ -511,47 +413,5 @@ internal sealed class RuntimeScene : IDisposable
         _meshes = [];
         if (errors.Count != 0)
             throw new AggregateException("Some scene resources could not be closed.", errors);
-    }
-
-    private readonly struct SceneMotion : IComponent
-    {
-        internal SceneMotion(
-            TransformQvvs baseTransform,
-            Vector3 amplitude,
-            Vector3 frequency)
-        {
-            BaseTransform = baseTransform;
-            Amplitude = amplitude;
-            Frequency = frequency;
-        }
-
-        internal readonly TransformQvvs BaseTransform;
-        internal readonly Vector3 Amplitude;
-        internal readonly Vector3 Frequency;
-
-        internal static SceneMotion Create(
-            TransformQvvs transform,
-            Vector3 amplitude,
-            uint seed)
-        {
-            float x = Unit(Hash(seed ^ 0xA511E9B3u));
-            float y = Unit(Hash(seed ^ 0x63D83595u));
-            float z = Unit(Hash(seed ^ 0xB5297A4Du));
-            return new SceneMotion(
-                transform,
-                amplitude,
-                new Vector3(0.55f + x * 0.35f, 0.70f + y * 0.45f, 0.42f + z * 0.31f));
-        }
-
-        private static uint Hash(uint value)
-        {
-            value ^= value >> 16;
-            value *= 0x7FEB352Du;
-            value ^= value >> 15;
-            value *= 0x846CA68Bu;
-            return value ^ (value >> 16);
-        }
-
-        private static float Unit(uint value) => (value >> 8) * (1.0f / 16_777_215.0f);
     }
 }

@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using SomeEngine.Assets;
 using SomeEngine.Assets.Importers;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Geometry.Cluster;
 using SomeEngine.Graphics;
 using SomeEngine.Render.Cluster.Pipeline;
 using SomeEngine.Resources.Geometry;
@@ -44,20 +45,25 @@ public sealed class GeometryStreamingHandoffTests
                 residencyOptions: new ClusterResidencyOptions
                 {
                     PageHeapCapacityBytes = 2048, BvhCapacityBytes = 65536,
-                    PageFaultCapacity = 16, MaxConcurrentPageLoads = 1,
+                    PageFaultCapacity = 16,
                 });
             scene.SetGeometryVisible(false);
             var first = scene.AddStreamingMesh(mesh, source, transform);
             RasterImage coarse = await scene.ReadNextRasterImageAsync();
+            uint openingResidentPages = scene.GeometryResidentPages;
             Assert.NotEqual(fine.Depth, coarse.Depth);
             reads.Observe = true;
             scene.PumpStreaming();
             await reads.First.Task.WaitAsync(TimeSpan.FromSeconds(20));
             reads.FirstContinue.TrySetResult();
             await reads.FirstFinished.Task.WaitAsync(TimeSpan.FromSeconds(20));
-            for (int frame = 0; frame < 24 && !reads.Second.Task.IsCompleted; frame++)
+            // Read workers may overlap; establish partial residency before releasing the second read.
+            for (int frame = 0; frame < 24 &&
+                (!reads.Second.Task.IsCompleted || scene.GeometryResidentPages != openingResidentPages + 1); frame++)
                 await scene.ReadNextRasterImageAsync();
             await reads.Second.Task.WaitAsync(TimeSpan.FromSeconds(20));
+            Assert.Equal(openingResidentPages + 1, scene.GeometryResidentPages);
+            Assert.False(reads.SecondFinished.Task.IsCompleted);
             RasterImage partial = await scene.ReadNextRasterImageAsync();
             AssertImage(coarse, partial);
             reads.SecondContinue.TrySetResult();
@@ -117,20 +123,25 @@ public sealed class GeometryStreamingHandoffTests
                 residencyOptions: new ClusterResidencyOptions
                 {
                     PageHeapCapacityBytes = 2048, BvhCapacityBytes = 65536,
-                    PageFaultCapacity = 16, MaxConcurrentPageLoads = 1,
+                    PageFaultCapacity = 16,
                 });
             scene.SetGeometryVisible(false);
             var first = scene.AddStreamingMesh(mesh, source, transform);
             RasterImage coarse = await scene.ReadNextRasterImageAsync();
+            uint openingResidentPages = scene.GeometryResidentPages;
             Assert.NotEqual(fine.Depth, coarse.Depth);
             reads.Observe = true;
             scene.PumpStreaming();
             await reads.First.Task.WaitAsync(TimeSpan.FromSeconds(20));
             reads.FirstContinue.TrySetResult();
             await reads.FirstFinished.Task.WaitAsync(TimeSpan.FromSeconds(20));
-            for (int frame = 0; frame < 24 && !reads.Second.Task.IsCompleted; frame++)
+            // Read workers may overlap; establish partial residency before releasing the second read.
+            for (int frame = 0; frame < 24 &&
+                (!reads.Second.Task.IsCompleted || scene.GeometryResidentPages != openingResidentPages + 1); frame++)
                 await scene.ReadNextRasterImageAsync();
             await reads.Second.Task.WaitAsync(TimeSpan.FromSeconds(20));
+            Assert.Equal(openingResidentPages + 1, scene.GeometryResidentPages);
+            Assert.False(reads.SecondFinished.Task.IsCompleted);
             reads.SecondContinue.TrySetResult();
             await reads.SecondFinished.Task.WaitAsync(TimeSpan.FromSeconds(20));
             AssertImage(fine, await ReadUntilDepthAsync(scene, fine.Depth));
@@ -204,7 +215,7 @@ public sealed class GeometryStreamingHandoffTests
                 residencyOptions: new ClusterResidencyOptions
                 {
                     PageHeapCapacityBytes = 2560, BvhCapacityBytes = 65536,
-                    PageFaultCapacity = 16, MaxConcurrentPageLoads = 1,
+                    PageFaultCapacity = 16,
                 });
             scene.SetGeometryVisible(false);
             var visible = scene.AddStreamingMesh(mesh, source, left);
@@ -272,7 +283,7 @@ public sealed class GeometryStreamingHandoffTests
             residencyOptions: new ClusterResidencyOptions
             {
                 PageHeapCapacityBytes = 2048, BvhCapacityBytes = 65536,
-                PageFaultCapacity = 16, MaxConcurrentPageLoads = 1,
+                PageFaultCapacity = 16,
             });
         scene.SetGeometryVisible(false);
         scene.AddStreamingMesh(mesh, source, transform);
@@ -306,7 +317,7 @@ public sealed class GeometryStreamingHandoffTests
             residencyOptions: new ClusterResidencyOptions
             {
                 PageHeapCapacityBytes = 2048, BvhCapacityBytes = 65536,
-                PageFaultCapacity = 16, MaxConcurrentPageLoads = 1,
+                PageFaultCapacity = 16,
             });
         scene.SetGeometryVisible(false);
         var previous = scene.AddStreamingMesh(mesh, source, transform);
@@ -358,7 +369,7 @@ public sealed class GeometryStreamingHandoffTests
             residencyOptions: new ClusterResidencyOptions
             {
                 PageHeapCapacityBytes = 2560, BvhCapacityBytes = 65536,
-                PageFaultCapacity = 16, MaxConcurrentPageLoads = 1,
+                PageFaultCapacity = 16,
             });
         scene.SetGeometryVisible(false);
         var previous = scene.AddStreamingMesh(mesh, source, transform);
@@ -398,7 +409,7 @@ public sealed class GeometryStreamingHandoffTests
             residencyOptions: new ClusterResidencyOptions
             {
                 PageHeapCapacityBytes = 1536, BvhCapacityBytes = 65536,
-                PageFaultCapacity = feedbackCapacity, MaxConcurrentPageLoads = 1,
+                PageFaultCapacity = feedbackCapacity,
             });
         scene.SetGeometryVisible(false);
         scene.AddStreamingMesh(mesh, source, transform);
@@ -441,7 +452,7 @@ public sealed class GeometryStreamingHandoffTests
                 residencyOptions: new ClusterResidencyOptions
                 {
                     PageHeapCapacityBytes = 2048, BvhCapacityBytes = 65536,
-                    PageFaultCapacity = 16, MaxConcurrentPageLoads = 1,
+                    PageFaultCapacity = 16,
                 });
             scene.SetGeometryVisible(false);
             scene.AddStreamingMesh(mesh, source, transform);
@@ -499,7 +510,7 @@ public sealed class GeometryStreamingHandoffTests
             residencyOptions: new ClusterResidencyOptions
             {
                 PageHeapCapacityBytes = 1536, BvhCapacityBytes = 65536,
-                PageFaultCapacity = 16, MaxConcurrentPageLoads = 1,
+                PageFaultCapacity = 16,
             });
         scene.SetGeometryVisible(false);
         var visible = scene.AddStreamingMesh(mesh, source, left);
@@ -768,7 +779,7 @@ public sealed class GeometryStreamingHandoffTests
         Assert.Equal(uint.MaxValue, firstCluster.MaterialTableOffset);
         Assert.Equal(uint.MaxValue, secondCluster.MaterialTableOffset);
         secondCluster.VertexBlobOffset = a.VertexBlobBytes;
-        secondCluster.TriangleStart = checked((ushort)(a.TotalTriangleCount * 3u));
+        secondCluster.TriangleStart = checked((ushort)a.TotalTriangleCount);
         var header = new MeshPageHeader
         {
             ClusterCount = 2, TotalVertexCount = a.TotalVertexCount + b.TotalVertexCount,
@@ -848,4 +859,9 @@ public sealed class GeometryStreamingHandoffTests
         }
         public ValueTask DisposeAsync() => bytes.DisposeAsync();
     }
+}
+
+internal sealed partial class FrameStageScene
+{
+    internal uint GeometryResidentPages => _cluster.CaptureDiagnostics().Residency.ResidentPages;
 }

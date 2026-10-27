@@ -115,7 +115,7 @@ public sealed class FrameIdentityTests
     }
 
     [Fact]
-    public void StaleFrameExtensionCannotOperateOnReusedFrameSlot()
+    public void StaleFrameCopyCannotAuthorFrameRegionAfterReuse()
     {
         using WarpGraphTestSupport support = WarpGraphTestSupport.Create();
         using var graph = new RenderGraph(
@@ -123,21 +123,28 @@ public sealed class FrameIdentityTests
             support.Device,
             [support.GraphicsQueue],
             new RenderGraphDesc(MaximumFramesInFlight: 1));
-        GraphExtensionPointId point;
+        GraphRegionId region;
         using (RenderGraphEdit edit = graph.BeginEdit())
         {
-            point = edit.AddExtensionPoint("dynamic");
+            region = edit.AddFrameRegion("dynamic");
             edit.Commit();
         }
         QueueCompletion[] completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
 
         RenderGraphFrame first = graph.BeginFrame();
-        RenderGraphFrameExtension extension = first.BeginExtension(point);
-        RenderGraphFrameExtension stale = extension;
+        RenderGraphFrame stale = first;
+        _ = first.AddCopyPass(
+            "Frame region work",
+            PassQueueSelection.Exact(support.GraphicsQueue),
+            (byte)0,
+            default,
+            static (ref PassDefinition _, ref byte _) => { },
+            static (ref CopyPassCommandScope _, in byte _) => { },
+            region);
         Assert.Equal(0, first.Execute(completions));
 
         RenderGraphFrame second = graph.BeginFrame();
-        using RenderGraphFrameExtension current = second.BeginExtension(point);
+        RenderGraphFrame current = second;
         bool rejected = false;
         try
         {
@@ -147,10 +154,36 @@ public sealed class FrameIdentityTests
         {
             rejected = true;
         }
-        Assert.True(rejected, "A copied frame-extension lease must not revive with a new frame.");
+        Assert.True(rejected, "A copied frame used for a frame region must not revive with a new frame.");
+
+        bool regionRejected = false;
+        try
+        {
+            _ = stale.AddCopyPass(
+                "Stale frame region work",
+                PassQueueSelection.Exact(support.GraphicsQueue),
+                (byte)0,
+                default,
+                static (ref PassDefinition _, ref byte _) => { },
+                static (ref CopyPassCommandScope _, in byte _) => { },
+                region);
+        }
+        catch (InvalidOperationException)
+        {
+            regionRejected = true;
+        }
+        Assert.True(regionRejected);
 
         stale.Dispose();
         _ = current.CreateBuffer(new BufferDesc(64, BufferUsages.CopySource));
+        _ = current.AddCopyPass(
+            "Frame region work",
+            PassQueueSelection.Exact(support.GraphicsQueue),
+            (byte)0,
+            default,
+            static (ref PassDefinition _, ref byte _) => { },
+            static (ref CopyPassCommandScope _, in byte _) => { },
+            region);
         second.Dispose();
     }
 }

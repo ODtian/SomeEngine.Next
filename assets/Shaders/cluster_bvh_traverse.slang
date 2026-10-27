@@ -10,84 +10,105 @@
 
 groupshared uint WorkNodeStart;
 groupshared uint WorkNodeCount;
-groupshared uint WorkNodeRead;
-groupshared uint WorkNodeEnd;
 groupshared ClusterTraversalNode WorkNodes[CLUSTER_BVH_PARENTS_PER_GROUP];
 groupshared uint WorkClusterBatch;
 groupshared uint WorkClusterReady;
-groupshared uint WorkClusterRead;
-groupshared bool WorkClusterAssigned;
-groupshared uint WorkNodesRemaining;
 groupshared uint WorkViewLanes;
 groupshared bool WorkFinished;
 
 void ClaimReadyNodes(uint thread, bool multipleViews)
 {
-    uint first = 0u;
-    uint available = 0u;
-    uint viewLanes = 1u;
-    if (thread == 0u)
-    {
-        if (WorkNodeRead == WorkNodeEnd && WorkNodeEnd < TraversalLevel.MaxNodes)
-        {
-            uint begin;
-            NodeIndirectArgs.InterlockedAdd(CLUSTER_NODE_READ, CLUSTER_BVH_PARENTS_PER_GROUP, begin);
-            WorkNodeRead = min(begin, TraversalLevel.MaxNodes);
-            WorkNodeEnd = min(begin + CLUSTER_BVH_PARENTS_PER_GROUP, TraversalLevel.MaxNodes);
-        }
-        first = WorkNodeRead;
-        if (first < WorkNodeEnd && TraversalReady[first] != 0u)
-        {
-            DeviceMemoryBarrier();
-            viewLanes = multipleViews ? min(ClusterParallelViewLanes(countbits(TraversalNodes[first].ViewMask)), CLUSTER_BVH_PARENTS_PER_GROUP) : 1u;
-            available = min(CLUSTER_BVH_PARENTS_PER_GROUP / viewLanes, WorkNodeEnd - first);
-        }
-    }
-
-    // Each group keeps its assigned range while producers fill it.
-    // One wave reads the next ready prefix within that range.
     uint leader = WaveMaskFirstLane(WaveActiveBallot(thread == 0u));
-    first = WaveReadLaneAt(first, leader);
-    available = WaveReadLaneAt(available, leader);
     uint4 active = WaveActiveBallot(true);
     uint index = WaveMaskPrefix(active, WaveGetLaneIndex());
-    bool ready = false;
-    if (index < available) ready = TraversalReady[first + index] != 0u;
-    uint4 unavailable = WaveActiveBallot(!ready);
-    uint count = min(available, WaveMaskBitCount(active));
-    if (any(unavailable != 0u)) count = WaveMaskPrefix(active, WaveMaskFirstLane(unavailable));
-    if (thread == 0u)
+    [allow_uav_condition]
+    for (;;)
     {
-        WorkNodeStart = first;
-        WorkNodeCount = count;
-        WorkViewLanes = viewLanes;
-        WorkNodeRead = first + count;
+        uint first = 0u;
+        uint available = 0u;
+        uint viewLanes = 1u;
+        if (thread == 0u)
+        {
+            NodeIndirectArgs.InterlockedAdd(CLUSTER_NODE_READ, 0u, first);
+            if (first < TraversalLevel.MaxNodes)
+            {
+                uint ready;
+                InterlockedAdd(TraversalReady[first], 0u, ready);
+                if (ready != 0u)
+                {
+                    // The publisher orders its payload before the ready exchange.
+                    DeviceMemoryBarrier();
+                    viewLanes = multipleViews ? min(ClusterParallelViewLanes(countbits(TraversalNodes[first].ViewMask)), CLUSTER_BVH_PARENTS_PER_GROUP) : 1u;
+                    available = min(CLUSTER_BVH_PARENTS_PER_GROUP / viewLanes, TraversalLevel.MaxNodes - first);
+                }
+            }
+        }
+
+        first = WaveReadLaneAt(first, leader);
+        available = WaveReadLaneAt(available, leader);
+        uint ready = 0u;
+        if (index < available) InterlockedAdd(TraversalReady[first + index], 0u, ready);
+        uint4 unavailable = WaveActiveBallot(ready == 0u);
+        uint count = min(available, WaveMaskBitCount(active));
+        if (any(unavailable != 0u)) count = min(count, WaveMaskPrefix(active, WaveMaskFirstLane(unavailable)));
+        uint retry = 0u;
+        if (thread == 0u)
+        {
+            uint observed;
+            if (count != 0u)
+                NodeIndirectArgs.InterlockedCompareExchange(CLUSTER_NODE_READ, first, first + count, observed);
+            else
+                NodeIndirectArgs.InterlockedAdd(CLUSTER_NODE_READ, 0u, observed);
+            retry = observed != first ? 1u : 0u;
+            if (retry == 0u)
+            {
+                WorkNodeStart = first;
+                WorkNodeCount = count;
+                WorkViewLanes = viewLanes;
+            }
+        }
+        // Only a successful CAS owns a ready prefix; a stale scan is discarded.
+        if (WaveReadLaneAt(retry, leader) == 0u) return;
     }
 }
 
-bool ClaimReadyClusters(uint nodesRemaining, out uint batch, out uint count)
+bool ClaimReadyClusters(out uint batch, out uint count)
 {
-    if (!WorkClusterAssigned)
+    // Resume completed this queue before the dispatch; inline leaves do not append here.
+    uint total = NodeIndirectArgs.Load(CLUSTER_BATCH_COUNT);
+    uint batches = (total + CLUSTER_BATCH_SIZE - 1u) / CLUSTER_BATCH_SIZE;
+    batch = 0u;
+    count = 0u;
+    [allow_uav_condition]
+    for (;;)
     {
-        NodeIndirectArgs.InterlockedAdd(CLUSTER_BATCH_READ, 1u, WorkClusterRead);
-        WorkClusterAssigned = true;
+        uint first;
+        NodeIndirectArgs.InterlockedAdd(CLUSTER_BATCH_READ, 0u, first);
+        if (first >= batches) return false;
+        uint expected = min(CLUSTER_BATCH_SIZE, total - first * CLUSTER_BATCH_SIZE);
+        uint ready;
+        InterlockedAdd(ClusterBatchReady[first], 0u, ready);
+        uint observed;
+        if (ready == expected)
+        {
+            NodeIndirectArgs.InterlockedCompareExchange(CLUSTER_BATCH_READ, first, first + 1u, observed);
+            if (observed == first)
+            {
+                batch = first;
+                count = expected;
+                return true;
+            }
+        }
+        else
+        {
+            NodeIndirectArgs.InterlockedAdd(CLUSTER_BATCH_READ, 0u, observed);
+            if (observed == first) return false;
+        }
     }
-    batch = WorkClusterRead;
-    uint batches = (NodeIndirectArgs.Load(CLUSTER_BATCH_COUNT) + CLUSTER_BATCH_SIZE - 1u) / CLUSTER_BATCH_SIZE;
-    count = batch < batches ? ClusterBatchReady[batch] : 0u;
-    if (count != CLUSTER_BATCH_SIZE && (nodesRemaining != 0u || count == 0u)) return false;
-    WorkClusterAssigned = false;
-    return true;
 }
 
 void CullPersistentWork(uint thread, bool targetFilters = true, bool multipleViews = true)
 {
-    if (thread == 0u)
-    {
-        WorkNodeRead = 0u;
-        WorkNodeEnd = 0u;
-        WorkClusterAssigned = false;
-    }
     for (;;)
     {
         GroupMemoryBarrierWithGroupSync();
@@ -95,20 +116,21 @@ void CullPersistentWork(uint thread, bool targetFilters = true, bool multipleVie
         if (thread == 0u)
         {
             WorkClusterReady = 0u;
-            WorkNodesRemaining = NodeIndirectArgs.Load(CLUSTER_NODE_OUTSTANDING);
-            if (WorkNodeCount == 0u && !ClaimReadyClusters(WorkNodesRemaining, WorkClusterBatch, WorkClusterReady))
+            if (WorkNodeCount == 0u && !ClaimReadyClusters(WorkClusterBatch, WorkClusterReady))
                 WorkClusterReady = 0u;
-            WorkFinished = WorkNodeCount == 0u && WorkClusterReady == 0u && WorkNodesRemaining == 0u &&
-                WorkClusterRead >= (NodeIndirectArgs.Load(CLUSTER_BATCH_COUNT) + CLUSTER_BATCH_SIZE - 1u) / CLUSTER_BATCH_SIZE;
+            // No absent work is reserved. Any remaining publisher owns live work
+            // and must finish publishing, synchronize its group, then probe again.
+            WorkFinished = WorkNodeCount == 0u && WorkClusterReady == 0u;
         }
-        GroupMemoryBarrierWithGroupSync();
+        AllMemoryBarrierWithGroupSync();
         if (WorkNodeCount != 0u)
         {
             DeviceMemoryBarrier();
             if (thread < WorkNodeCount)
             {
                 WorkNodes[thread] = TraversalNodes[WorkNodeStart + thread];
-                TraversalReady[WorkNodeStart + thread] = 0u;
+                uint ignored;
+                InterlockedExchange(TraversalReady[WorkNodeStart + thread], 0u, ignored);
             }
             GroupMemoryBarrierWithGroupSync();
             uint count = WorkNodeCount;
@@ -131,7 +153,11 @@ void CullPersistentWork(uint thread, bool targetFilters = true, bool multipleVie
         if (count != 0u)
         {
             DeviceMemoryBarrier();
-            if (thread == 0u) ClusterBatchReady[WorkClusterBatch] = 0u;
+            if (thread == 0u)
+            {
+                uint ignored;
+                InterlockedExchange(ClusterBatchReady[WorkClusterBatch], 0u, ignored);
+            }
             if (thread < count) CullClusterCandidate(WorkClusterBatch * CLUSTER_BATCH_SIZE + thread, targetFilters);
         }
         else if (WorkFinished)

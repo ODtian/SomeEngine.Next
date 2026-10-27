@@ -2,6 +2,7 @@ namespace SomeEngine.Graphics.Vulkan;
 
 internal sealed record VulkanExtendedFeatureSupport(
     bool ConditionalRendering,
+    bool InheritedConditionalRendering,
     bool TransformFeedback,
     bool GeometryStreams,
     bool TransformFeedbackQueries,
@@ -12,6 +13,7 @@ internal sealed record VulkanExtendedFeatureSupport(
     uint MaximumTransformFeedbackBufferDataStride,
     uint MaximumTransformFeedbackStreamDataSize,
     bool DeviceGeneratedCommands,
+    VulkanBufferUsageFlags2Provider BufferUsageFlags2Provider,
     uint MaximumIndirectSequenceCount,
     bool ConservativeRasterization,
     bool VertexAttributeInstanceRateDivisor,
@@ -42,6 +44,8 @@ internal sealed record VulkanExtendedFeatureSupport(
         "VK_EXT_custom_border_color";
     internal const string DeviceGeneratedCommandsExtensionName =
         "VK_EXT_device_generated_commands";
+    internal const string Maintenance5ExtensionName = "VK_KHR_maintenance5";
+    internal const string ExtendedFlagsExtensionName = "VK_KHR_extended_flags";
     internal const string Robustness2ExtensionName = "VK_EXT_robustness2";
     internal const string ShaderImageAtomicInt64ExtensionName =
         "VK_EXT_shader_image_atomic_int64";
@@ -49,7 +53,9 @@ internal sealed record VulkanExtendedFeatureSupport(
     internal static unsafe VulkanExtendedFeatureSupport Query(
         Vk vk,
         VkPhysicalDevice physicalDevice,
-        IReadOnlySet<string> extensions)
+        IReadOnlySet<string> extensions,
+        uint apiVersion,
+        bool bufferDeviceAddress)
     {
         PhysicalDeviceConditionalRenderingFeaturesEXT conditional = QueryFeature<PhysicalDeviceConditionalRenderingFeaturesEXT>(
             vk, physicalDevice, extensions.Contains("VK_EXT_conditional_rendering"),
@@ -87,6 +93,30 @@ internal sealed record VulkanExtendedFeatureSupport(
                 physicalDevice,
                 extensions.Contains(DeviceGeneratedCommandsExtensionName),
                 StructureType.PhysicalDeviceDeviceGeneratedCommandsFeaturesExt);
+        bool generatedCommandsAvailable = generatedCommands.DeviceGeneratedCommands &&
+            bufferDeviceAddress;
+        bool core14 = apiVersion >= Vk.MakeVersion(1, 4, 0);
+        PhysicalDeviceMaintenance5FeaturesKHR maintenance5 =
+            QueryFeature<PhysicalDeviceMaintenance5FeaturesKHR>(
+                vk,
+                physicalDevice,
+                generatedCommandsAvailable &&
+                    (core14 || extensions.Contains(Maintenance5ExtensionName)),
+                StructureType.PhysicalDeviceMaintenance5FeaturesKhr);
+        VulkanExtendedFlagsFeatures extendedFlags = QueryFeature<VulkanExtendedFlagsFeatures>(
+            vk,
+            physicalDevice,
+            generatedCommandsAvailable && !maintenance5.Maintenance5 &&
+                extensions.Contains(ExtendedFlagsExtensionName),
+            VulkanExtendedFlagsFeatures.StructureTypeValue);
+        VulkanBufferUsageFlags2Provider bufferUsageFlags2Provider =
+            maintenance5.Maintenance5
+                ? core14
+                    ? VulkanBufferUsageFlags2Provider.Core14
+                    : VulkanBufferUsageFlags2Provider.Maintenance5
+                : extendedFlags.ExtendedFlags
+                    ? VulkanBufferUsageFlags2Provider.ExtendedFlags
+                    : VulkanBufferUsageFlags2Provider.None;
         PhysicalDeviceDeviceGeneratedCommandsPropertiesEXT generatedProperties =
             QueryProperty<PhysicalDeviceDeviceGeneratedCommandsPropertiesEXT>(
                 vk,
@@ -134,6 +164,7 @@ internal sealed record VulkanExtendedFeatureSupport(
                 StructureType.PhysicalDeviceShaderImageAtomicInt64FeaturesExt);
         return new VulkanExtendedFeatureSupport(
             conditional.ConditionalRendering,
+            conditional.InheritedConditionalRendering,
             transform.TransformFeedback,
             transform.GeometryStreams,
             transformProperties.TransformFeedbackQueries,
@@ -143,7 +174,9 @@ internal sealed record VulkanExtendedFeatureSupport(
             transformProperties.MaxTransformFeedbackBufferDataSize,
             transformProperties.MaxTransformFeedbackBufferDataStride,
             transformProperties.MaxTransformFeedbackStreamDataSize,
-            generatedCommands.DeviceGeneratedCommands,
+            generatedCommandsAvailable &&
+                bufferUsageFlags2Provider != VulkanBufferUsageFlags2Provider.None,
+            bufferUsageFlags2Provider,
             generatedProperties.MaxIndirectSequenceCount,
             extensions.Contains(ConservativeRasterizationExtensionName),
             divisor.VertexAttributeInstanceRateDivisor,
@@ -207,4 +240,24 @@ internal sealed record VulkanExtendedFeatureSupport(
         vk.GetPhysicalDeviceProperties2(physicalDevice, &root);
         return property;
     }
+}
+
+internal enum VulkanBufferUsageFlags2Provider
+{
+    None,
+    Core14,
+    Maintenance5,
+    ExtendedFlags,
+}
+
+// Silk.NET 2.23.0 predates VK_KHR_extended_flags. This matches the Khronos
+// VkPhysicalDeviceExtendedFlagsFeaturesKHR declaration; x64 size is 24 bytes.
+[System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+internal unsafe struct VulkanExtendedFlagsFeatures
+{
+    internal const StructureType StructureTypeValue = (StructureType)1000668004;
+
+    public StructureType SType;
+    public void* PNext;
+    public Silk.NET.Core.Bool32 ExtendedFlags;
 }

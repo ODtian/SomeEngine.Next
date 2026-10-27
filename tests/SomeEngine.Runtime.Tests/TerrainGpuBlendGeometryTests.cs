@@ -32,6 +32,7 @@ public sealed class TerrainGpuBlendGeometryTests(SceneContentFixture content)
         ApplicationResult? completed = null;
         var application = new ApplicationScene(content.DirectoryPath)
         {
+            RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
             SceneCompleted = value => completed = value,
             Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "14"]),
@@ -65,8 +66,8 @@ public sealed class TerrainGpuBlendGeometryTests(SceneContentFixture content)
             },
         };
         gpu.Install(application);
-        int result = await Application.RunAsync([], application: application);
-        Assert.True(result == 0, completed?.Error?.ToString());
+        ApplicationResult result = await Application.RunAsync([], application: application);
+        Assert.True(result.Succeeded, completed?.Error?.ToString());
         TerrainSurfaceRead heightValues = await heightSurface!;
         TerrainSurfaceRead voxelValues = await voxelSurface!;
         Assert.Equal(heightEdit.Revision, heightValues.Revision);
@@ -85,6 +86,7 @@ public sealed class TerrainGpuBlendGeometryTests(SceneContentFixture content)
         TerrainSurfaceRead? expectedHeightValues = null, expectedVoxelValues = null;
         var reference = new ApplicationScene(content.DirectoryPath)
         {
+            RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
             Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "14"]),
             UpdateFrame = frame =>
@@ -112,7 +114,7 @@ public sealed class TerrainGpuBlendGeometryTests(SceneContentFixture content)
             },
         };
         cpu.Install(reference);
-        Assert.Equal(0, await Application.RunAsync([], application: reference));
+        Assert.True((await Application.RunAsync([], application: reference)).Succeeded);
         foreach (Vector3 position in new Vector3[] { center, new(0, 0, 4), new(1, 0, 4), new(4.5f, 1, 4) })
         {
             Assert.Equal(expectedHeightValues!.Sample(position), heightValues.Sample(position));

@@ -225,17 +225,20 @@ internal sealed unsafe partial class D3D12Backend
                 ref data);
             return;
         }
-        SetTransientParameterBindingsGeneral(command, layout, bindings);
+        SetTransientParameterBindingsGeneral(command, pipeline, layout, bindings);
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
     private static void SetTransientParameterBindingsGeneral(
         D3D12CommandContext command,
+        D3D12Pipeline pipeline,
         NativeParameterBinding layout,
         in ParameterBlockBindings bindings)
     {
         RequireNativeParameterBindings(
             layout,
+            bindings.Layout,
+            pipeline,
             bindings.Resources,
             bindings.OrdinaryData);
         if (command.ParameterBindingsEqual(

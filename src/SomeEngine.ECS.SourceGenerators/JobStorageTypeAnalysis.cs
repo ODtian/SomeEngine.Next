@@ -39,7 +39,7 @@ internal sealed class JobStorageTypeAnalysis
         return true;
     }
 
-    private INamedTypeSymbol WithAllFields(INamedTypeSymbol type)
+    internal INamedTypeSymbol WithAllFields(INamedTypeSymbol type)
     {
         if (type.Locations.Any(location => location.IsInSource))
             return type;

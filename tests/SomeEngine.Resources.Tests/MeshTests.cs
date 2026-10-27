@@ -130,6 +130,7 @@ public sealed class MeshTests
         MemoryMarshal.Write(bytes.AsSpan(MeshPageHeader.Size), in cluster);
         bytes[bvhOffset - 3] = 0; bytes[bvhOffset - 2] = 1; bytes[bvhOffset - 1] = 2;
         var node = new ClusterBVHNode();
+        // Root node 0 contains one leaf: page 0, cluster 0, one cluster.
         var child = new ClusterHierarchySlice { PageRangeKey = 1, GroupPartData = 1u << 16 };
         child.SetErrors(0, float.MaxValue);
         node.SetChild(0, child);

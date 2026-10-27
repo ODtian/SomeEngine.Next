@@ -44,8 +44,10 @@ internal static unsafe class ViewTypes
     }
 
     internal static bool HasMeasure(World world, Entity entity) =>
-        world.Has<ViewType>(entity) &&
-        Volatile.Read(ref s_functions)[world.Read<ViewType>(entity).Id].MeasureFunction != null;
+        world.Has<ViewType>(entity) && HasMeasure(world.Read<ViewType>(entity).Id);
+
+    internal static bool HasMeasure(ushort typeId) =>
+        Volatile.Read(ref s_functions)[typeId].MeasureFunction != null;
 
     internal static Size Measure(World world, Entity entity, ref LayoutPass pass, in Constraints constraints) =>
         Volatile.Read(ref s_functions)[world.Read<ViewType>(entity).Id].MeasureFunction(world, entity, ref pass, in constraints);

@@ -1,3 +1,6 @@
+using System.Numerics;
+using SomeEngine.Render.Components;
+
 namespace SomeEngine.Runtime.Tests;
 
 [Trait("Category", "Hardware")]
@@ -10,6 +13,7 @@ public sealed class ApplicationSceneTests(SceneContentFixture content)
         SceneImage? captured = null;
         var scene = new ApplicationScene(content.DirectoryPath)
         {
+            RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
             Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "3"]),
             UpdateFrame = frame =>
@@ -18,11 +22,45 @@ public sealed class ApplicationSceneTests(SceneContentFixture content)
             },
         };
 
-        int result = await Application.RunAsync([], application: scene);
+        ApplicationResult result = await Application.RunAsync([], application: scene);
 
-        Assert.Equal(0, result);
+        Assert.True(result.Succeeded, result.Error?.ToString());
         Assert.NotNull(captured);
         Assert.Equal(2, captured.Frame);
+        Assert.Equal(64 * 64 * 4, captured.Pixels.Length);
+    }
+
+    [Fact]
+    public async Task DefaultVirtualShadowsRenderAndCaptureCompleteFrames()
+    {
+        var completed = new List<int>();
+        var captures = new List<SceneImage>();
+        var scene = new ApplicationScene(content.DirectoryPath)
+        {
+            RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
+            Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
+                "--no-debug-ui", "--no-vsync", "--frames", "3"]),
+            Initialize = frame =>
+            {
+                frame.World.CreateEntity(new DirectionalLight(
+                    Vector3.Normalize(new Vector3(-1, -2, 1)), Vector3.One, 3));
+            },
+            UpdateFrame = frame =>
+            {
+                if (frame.Index == 2) frame.Scene.CaptureImage(image => captures.Add(image));
+            },
+            FrameCompleted = frame => completed.Add(frame.Index),
+        };
+        Assert.True(scene.Options.VirtualShadows);
+
+        ApplicationResult result = await Application.RunAsync([], application: scene);
+
+        Assert.True(result.Succeeded, result.Error?.ToString());
+        Assert.Equal([0, 1, 2], completed);
+        SceneImage captured = Assert.Single(captures);
+        Assert.Equal(2, captured.Frame);
+        Assert.Equal(64, captured.Width);
+        Assert.Equal(64, captured.Height);
         Assert.Equal(64 * 64 * 4, captured.Pixels.Length);
     }
 
@@ -32,6 +70,7 @@ public sealed class ApplicationSceneTests(SceneContentFixture content)
         var frames = new List<int>();
         var scene = new ApplicationScene(content.DirectoryPath)
         {
+            RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
             Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
                 "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "3"]),
             UpdateFrame = frame => frames.Add(frame.Index),
@@ -43,9 +82,9 @@ public sealed class ApplicationSceneTests(SceneContentFixture content)
             scene.Reload();
         };
 
-        int result = await Application.RunAsync([], application: scene);
+        ApplicationResult result = await Application.RunAsync([], application: scene);
 
-        Assert.Equal(0, result);
+        Assert.True(result.Succeeded, result.Error?.ToString());
         Assert.Equal([0, 1, 0], frames);
     }
 }

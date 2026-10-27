@@ -78,53 +78,37 @@ public sealed class TextureTests
     }
 
     [Fact]
-    public async Task ObserverFailuresKeepCommittedPixelsAndAllowLaterUpdates()
+    public async Task ConsecutiveContentReplacementsAdvanceVersionsAndPreserveEarlierReads()
     {
-        using var texture = SinglePixel(3);
-        using var replacement = SinglePixel(9);
+        Texture texture = SinglePixel(3);
+        Texture replacement = SinglePixel(9);
         ulong revision = texture.Revision;
-        var firstError = new InvalidOperationException();
-        var secondError = new ArgumentException();
-        var observedRevisions = new List<ulong>();
-        Action<Texture> firstObserver = changed =>
-        {
-            observedRevisions.Add(changed.Revision);
-            throw firstError;
-        };
-        Action<Texture> secondObserver = changed =>
-        {
-            observedRevisions.Add(changed.Revision);
-            throw secondError;
-        };
-        texture.Changed += firstObserver;
-        texture.Changed += secondObserver;
+        ulong pixelsRevision = texture.PixelsRevision;
+        Assert.True(texture.TryGetTile(texture.MipTiles[0].ChunkKey, out ReadOnlyMemory<byte> original));
 
-        AggregateException failure = await Assert.ThrowsAsync<AggregateException>(
-            () => texture.UpdateAsync(replacement).AsTask());
+        await texture.UpdateAsync(replacement);
 
-        AggregateException observerErrors = Assert.IsType<AggregateException>(Assert.Single(failure.InnerExceptions));
-        Assert.Collection(observerErrors.InnerExceptions,
-            error => Assert.Same(firstError, error),
-            error => Assert.Same(secondError, error));
-        Assert.Equal(new[] { revision + 1, revision + 1 }, observedRevisions);
-        Assert.True(replacement.IsDisposed);
-        Assert.False(texture.IsDisposed);
         Assert.False(texture.IsUpdating);
         Assert.Equal(revision + 1, texture.Revision);
+        Assert.Equal(pixelsRevision + 1, texture.PixelsRevision);
+        Assert.True(replacement.TryGetTile(replacement.MipTiles[0].ChunkKey, out ReadOnlyMemory<byte> replacementPixels));
+        Assert.Equal(new byte[] { 9, 9, 9, 9 }, replacementPixels.ToArray());
         Assert.True(texture.TryGetTile(texture.MipTiles[0].ChunkKey, out ReadOnlyMemory<byte> committed));
         Assert.Equal(new byte[] { 9, 9, 9, 9 }, committed.ToArray());
+        Assert.Equal(new byte[] { 3, 3, 3, 3 }, original.ToArray());
 
-        texture.Changed -= firstObserver;
-        texture.Changed -= secondObserver;
-        using var laterReplacement = SinglePixel(17);
+        Texture laterReplacement = SinglePixel(17);
         await texture.UpdateAsync(laterReplacement);
 
-        Assert.True(laterReplacement.IsDisposed);
         Assert.False(texture.IsUpdating);
         Assert.Equal(revision + 2, texture.Revision);
+        Assert.Equal(pixelsRevision + 2, texture.PixelsRevision);
+        Assert.True(laterReplacement.TryGetTile(laterReplacement.MipTiles[0].ChunkKey, out ReadOnlyMemory<byte> laterReplacementPixels));
+        Assert.Equal(new byte[] { 17, 17, 17, 17 }, laterReplacementPixels.ToArray());
         Assert.True(texture.TryGetTile(texture.MipTiles[0].ChunkKey, out ReadOnlyMemory<byte> later));
         Assert.Equal(new byte[] { 17, 17, 17, 17 }, later.ToArray());
         Assert.Equal(new byte[] { 9, 9, 9, 9 }, committed.ToArray());
+        Assert.Equal(new byte[] { 3, 3, 3, 3 }, original.ToArray());
     }
 
     [Fact]

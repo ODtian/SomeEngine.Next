@@ -28,6 +28,20 @@ internal static class Program
 
         try
         {
+            if (args is ["--job-storage-bridge"])
+            {
+                JobStorageSmoke.CheckBridge();
+                Console.WriteLine("PASS: NativeAOT private closed-generic field bridge; distinct cache identity; true/false/zero values.");
+                return 0;
+            }
+
+            if (args is ["--job-storage"])
+            {
+                JobStorageSmoke.Check();
+                Console.WriteLine("PASS: NativeAOT private/generic storage classification; missing metadata rejected; explicit registration recovery and alias rejection.");
+                return 0;
+            }
+
             if (args is ["--typed-fields"])
             {
                 global::SomeEngine.ECS.Tests.FieldAccessChecks.VerifyAll();
