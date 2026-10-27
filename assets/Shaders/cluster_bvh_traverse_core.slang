@@ -127,15 +127,15 @@ struct ClusterLeafCandidates : IWaveTask
     {
         uint pageOffset = WaveReadLaneAt(PageOffset, sourceLane);
         uint firstCluster = WaveReadLaneAt(FirstCluster, sourceLane);
-        uint clusterCount = WaveReadLaneAt(ClusterCount, sourceLane);
         uint instanceID = WaveReadLaneAt(InstanceID, sourceLane);
         uint viewBase = WaveReadLaneAt(ViewBase, sourceLane);
         uint views = WaveReadLaneAt(ActiveViews, sourceLane);
         if (active)
         {
-            uint bit = WaveQueue::FindNthSetBit(views, int(localIndex / clusterCount));
+            uint viewCount = countbits(views);
+            uint bit = WaveQueue::FindNthSetBit(views, int(localIndex % viewCount));
             ClusterCandidate candidate = MakeClusterCandidate(MakeDrawRequest(
-                pageOffset, firstCluster + localIndex % clusterCount, instanceID, viewBase + bit), 1u);
+                pageOffset, firstCluster + localIndex / viewCount, instanceID, viewBase + bit), 1u);
             CullClusterCandidateData(candidate, TargetFilters);
         }
     }
