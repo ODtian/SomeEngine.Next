@@ -2,6 +2,7 @@
 #define PHYSICS_CONTACT_GEOMETRY_MATH
 #include "physics_contact_values.slang"
 #include "physics_constraint_math.slang"
+#include "physics_contact_anchor_math.slang"
 bool deviceContactFirstBody(DeviceContactConstraint point,uint end)
 {
     uint body=DeviceContactBodyLinks[point.bodyOffset+end].stateIndex;
@@ -11,17 +12,20 @@ bool deviceContactFirstBody(DeviceContactConstraint point,uint end)
 }
 void deviceContactPositions(DeviceContactConstraint point,bool start,out float3 delta,out float3 midpoint)
 {
-    delta=midpoint=float3(0);
+    DeviceBodyState origin=DeviceBodyStates[DeviceContactBodyLinks[point.bodyOffset+point.firstBodyCount].stateIndex];
+    if(start) origin=deviceBodyStart(origin);
+    float3 first=float3(0),second=float3(0);
     for(uint end=0;end<point.bodyCount;end++)
     {
         DeviceContactBody link=DeviceContactBodyLinks[point.bodyOffset+end];
         DeviceBodyState body=DeviceBodyStates[link.stateIndex];
         if(start) body=deviceBodyStart(body);
-        float sign=end<point.firstBodyCount?-1:1;
-        float3 position=(body.position+bodyRotate(body.rotation,link.localPoint))*link.weight;
-        delta+=position*sign; midpoint+=position;
+        float3 position=deviceContactRelativeAnchor(body,link.localPoint,origin.position)*link.weight;
+        if(end<point.firstBodyCount) first+=position;
+        else second+=position;
     }
-    midpoint*=.5f;
+    // Each side's interpolation weights form an affine point about the same origin.
+    delta=second-first; midpoint=origin.position+(first+second)*.5f;
 }
 float3 deviceContactDelta(DeviceContactConstraint point,bool start)
 {
@@ -38,7 +42,7 @@ void deviceContactJacobian(DeviceContactConstraint point,uint bodyIndex,float3 d
         DeviceContactBody link=DeviceContactBodyLinks[point.bodyOffset+end];
         if(link.stateIndex!=bodyIndex) continue;
         float weight=link.weight*(end<point.firstBodyCount?-1:1);
-        float3 offset=bodyRotate(body.rotation,link.localPoint-body.centerOfMass);
+        float3 offset=deviceContactArm(body,link.localPoint);
         linear+=direction*weight;
         angular+=cross(offset,direction)*weight;
     }
