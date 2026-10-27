@@ -16,17 +16,18 @@ public sealed partial class DeviceBodies
 
     internal BodyInputVersions ReadCpuVersions(int index) => _cpuVersions[index];
     internal void AcceptCpuVersions(int index, in BodyInputVersions version) => _cpuVersions[index] = version;
-    internal void AcceptCpuResult(int index, scoped QueryRow row)
+    internal void AcceptCpuResult(int index, Entity entity, uint version)
     {
         BodyInputVersions previous = _cpuVersions[index];
-        bool same = previous.Entity == row.Entity;
-        _cpuVersions[index] = new(row.Entity, row.WriteVersion<BodyPose>(), same ? previous.Mass : 0,
-            row.WriteVersion<BodyVelocity>(), row.WriteVersion<BodyStepState>(),
+        bool same = previous.Entity == entity;
+        _cpuVersions[index] = new(entity, version, same ? previous.Mass : 0, version, version,
             BodyInputComponents.Pose | BodyInputComponents.Velocity | BodyInputComponents.Step
                 | (same ? previous.Known & BodyInputComponents.Mass : 0));
     }
     internal void CollectCpuResult(int index, ref JobResourceAccessBuilder resources) =>
-        resources.Write(_cpuVersions.AsMemory(index, 1));
+        CollectCpuResults(index, 1, ref resources);
+    internal void CollectCpuResults(int first, int count, ref JobResourceAccessBuilder resources) =>
+        resources.Write(_cpuVersions.AsMemory(first, count));
     internal static BodyInputVersions ReadVersions(scoped QueryRow row) => new(row.Entity,
         row.WriteVersion<BodyPose>(), row.WriteVersion<BodyMass>(), row.WriteVersion<BodyVelocity>(),
         row.WriteVersion<BodyStepState>(), BodyInputComponents.All);
