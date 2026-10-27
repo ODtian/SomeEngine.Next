@@ -747,10 +747,19 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             ulong hierarchyNodes = 0;
             foreach (BufferRange range in binding.BvhRanges) hierarchyNodes += range.Size / ClusterBvh.NodeBytes;
             ulong work = Math.Min(_options.MaxCandidates, Math.Max(hierarchyNodes, checked((ulong)binding.DispatchExtent)));
-            uint workerGroups = Math.Max(1u, Math.Min(128u, checked((uint)((work + 15u) / 16u))));
-            foreach (GraphPassId phase in GraphData.Resources.Work.Phases)
-                if (phase != default)
-                    graph.SetPassData(phase, new DispatchArguments(workerGroups, 1, 1));
+            uint groupBudget = Math.Max(128u, Math.Max(_device.Capabilities.ShaderLaneCount,
+                _device.Capabilities.Limits.MaximumComputeThreadsPerGroup) / 64u);
+            for (int phase = 0; phase < GraphData.Resources.Work.Phases.Length; phase++)
+            {
+                GraphPassId pass = GraphData.Resources.Work.Phases[phase];
+                if (pass == default) continue;
+                uint viewCount = phase >= 2 ? _renderContext.MaximumInvocationCount : checked((uint)primaryViewCount);
+                uint viewLanes = BitOperations.RoundUpToPowerOf2(Math.Max(1u, Math.Min(viewCount, 16u)));
+                uint parentsPerGroup = 16u / viewLanes;
+                uint workerGroups = Math.Max(1u, Math.Min(groupBudget,
+                    checked((uint)((work + parentsPerGroup - 1u) / parentsPerGroup))));
+                graph.SetPassData(pass, new DispatchArguments(workerGroups, 1, 1));
+            }
             UpdateShadeInputs(ref graph, _installedShadeStages!);
             uint viewGroups = ClusterRenderContext.GetViewWorkGroupCount(checked((uint)primaryViewCount));
             graph.SetPassData(
