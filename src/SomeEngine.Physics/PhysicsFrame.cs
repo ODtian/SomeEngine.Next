@@ -14,7 +14,7 @@ public sealed class PhysicsFrame<TStage, TConsumer> : IGameFramePhysics
     private readonly double _maximumDelay;
     private readonly long _firstStepNumber;
     private readonly double _startTime;
-    private double _elapsedTime;
+    private double _elapsedSteps;
 
     public PhysicsFrame(PhysicsSimulation<TStage> simulation, TConsumer consumer, double stepDuration,
         double maximumDelay, long firstStepNumber, double startTime)
@@ -32,7 +32,7 @@ public sealed class PhysicsFrame<TStage, TConsumer> : IGameFramePhysics
     public PhysicsStepResult? SubmittedStep { get; private set; }
     public JobHandle Completion => SubmittedStep?.Completion ?? Result.Completion;
 
-    public void AdvanceTime(double deltaTime) => _elapsedTime += deltaTime;
+    public void AdvanceTime(double deltaTime) => _elapsedSteps += deltaTime / _stepDuration;
 
     public JobHandle ConsumeCompleted()
     {
@@ -65,7 +65,7 @@ public sealed class PhysicsFrame<TStage, TConsumer> : IGameFramePhysics
         }
     }
 
-    private long DueStepCount => (long)Math.Floor(_elapsedTime / _stepDuration);
+    private long DueStepCount => (long)Math.Floor(_elapsedSteps);
 
     private JobHandle ReadSubmittedStep()
     {
