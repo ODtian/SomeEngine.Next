@@ -106,7 +106,7 @@ void CountPersistentCandidates(uint amount)
     CandidateArgs.InterlockedMax(0u, (first + amount + 63u) / 64u, ignored);
 }
 
-void CullClusterCandidateData(ClusterCandidate candidate, bool targetFilters);
+void CullClusterCandidateData(ClusterCandidate candidate, bool targetFilters, bool multipleViews);
 
 struct ClusterLeafCandidates : IWaveTask
 {
@@ -136,7 +136,7 @@ struct ClusterLeafCandidates : IWaveTask
             uint bit = WaveQueue::FindNthSetBit(views, int(localIndex % viewCount));
             ClusterCandidate candidate = MakeClusterCandidate(MakeDrawRequest(
                 pageOffset, firstCluster + localIndex / viewCount, instanceID, viewBase + bit), 1u);
-            CullClusterCandidateData(candidate, TargetFilters);
+            CullClusterCandidateData(candidate, TargetFilters, viewCount > 1u);
         }
     }
 };
@@ -350,11 +350,12 @@ void ProcessTraversalNode(ClusterTraversalNode parent, bool validParent, uint ch
     }
 
 #ifdef CLUSTER_PERSISTENT_CULL
-    // Keep each lane's accepted views for inline leaf culling.
+    // One producer per child and wave keeps that wave's complete accepted views.
     uint leafViews = activeViews;
     if (viewLanes > 1u)
     {
         activeViews = MergeClusterViewMaskWave(activeViews, viewLanes, CLUSTER_BVH_FANOUT);
+        leafViews = WaveGetLaneIndex() == firstViewLane ? activeViews : 0u;
         streamingPriority = MergeClusterViewPriorityWave(streamingPriority, viewLanes, CLUSTER_BVH_FANOUT);
         if (viewLanes * CLUSTER_BVH_FANOUT > WaveGetLaneCount())
         {

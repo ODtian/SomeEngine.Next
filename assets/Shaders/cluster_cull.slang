@@ -422,7 +422,8 @@ bool LoadAndFilterCandidate(
     out ClusterWorldBounds worldBounds,
     out ClusterScreenBounds currentBounds,
     bool targetFilters = true,
-    bool currentProjection = true)
+    bool currentProjection = true,
+    bool multipleViews = false)
 {
     pageOffset = 0;
     clusterID = 0;
@@ -469,7 +470,7 @@ bool LoadAndFilterCandidate(
     if (view.CullingEnabled != 0u)
     {
         worldBounds = TransformClusterBoundsForViews(cluster, t, boundsExpansion,
-            pageOffset, clusterID, instanceID, targetFilters);
+            pageOffset, clusterID, instanceID, targetFilters && multipleViews);
         if (currentProjection)
         {
             currentBounds = ProjectClusterScreenBounds(worldBounds, false, view, depthCacheClass);
@@ -545,7 +546,7 @@ void AppendVisible(uint pageOffset, uint clusterID, uint instanceID,
 }
 
 #if CLUSTER_CULL_PHASE == 1
-void CullClusterCandidateData(ClusterCandidate candidate, bool targetFilters)
+void CullClusterCandidateData(ClusterCandidate candidate, bool targetFilters, bool multipleViews)
 {
     // Target windows and the post-HiZ pass consume current bounds immediately.
     // Primary main needs them only after surviving previous-frame occlusion.
@@ -576,7 +577,7 @@ void CullClusterCandidateData(ClusterCandidate candidate, bool targetFilters)
             boundsExpansion,
             rasterWindow,
             worldBounds,
-            currentBounds, targetFilters, currentProjection);
+            currentBounds, targetFilters, currentProjection, multipleViews);
     if (!valid)
         return;
 
@@ -600,7 +601,7 @@ void CullClusterCandidateData(ClusterCandidate candidate, bool targetFilters)
         !KeepBlendOcclusion(InstanceData, InstanceProperties, instanceID, view))
     {
         ClusterWorldBounds previousBounds = LoadPreviousClusterBounds(pageOffset, clusterID, instanceID,
-            boundsExpansion, targetFilters);
+            boundsExpansion, targetFilters && multipleViews);
         bounds = ProjectClusterScreenBounds(previousBounds, true, view);
         occluded = IsOccludedByHiZ(bounds, true, viewIndex, view,
             view.TargetPolicy != 0u ? LoadTargetDepthCacheClass(instanceID) : 1u);
@@ -635,7 +636,7 @@ void CullClusterCandidate(uint candidateIndex, bool targetFilters = true)
     uint capacity, stride;
     CandidateClusters.GetDimensions(capacity, stride);
     if (candidateIndex >= min(CandidateCount[0], capacity)) return;
-    CullClusterCandidateData(CandidateClusters[candidateIndex], targetFilters);
+    CullClusterCandidateData(CandidateClusters[candidateIndex], targetFilters, targetFilters);
 }
 
 #ifndef CLUSTER_PERSISTENT_CULL
