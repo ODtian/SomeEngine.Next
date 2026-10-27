@@ -20,12 +20,16 @@ internal sealed class AvbdIslandEquations
         foreach (PhysicsGraphData.Island island in batch.Islands)
         {
             bool hasReadOnlyBody = false;
+            bool hasFixedBody = false;
             int constraintBodyCount = 1;
             foreach (PhysicsGraphData.ConstraintInput constraint in island.Records)
             {
                 constraintBodyCount = Math.Max(constraintBodyCount, constraint.Bodies.Count);
                 foreach (var body in constraint.Bodies)
-                    if (!body.Value && island.DynamicBodies.Contains(body.Key)) { hasReadOnlyBody = true; break; }
+                {
+                    if (!island.DynamicBodies.Contains(body.Key)) hasFixedBody = true;
+                    else if (!body.Value) { hasReadOnlyBody = true; break; }
+                }
             }
             if (hasReadOnlyBody) continue;
 
@@ -52,6 +56,7 @@ internal sealed class AvbdIslandEquations
             if (!ReadBodies(writes, island.BodyOrder, island.DynamicBodies)) continue;
             MinimizeTranslation(in context, queries, bodies, constraints, initialErrorFraction, 0, _bodies.Count);
             MinimizeRotation(in context, queries, bodies, constraints, initialErrorFraction, 0, _bodies.Count, constraintBodyCount);
+            if (hasFixedBody) MinimizeStepMotion(in context, queries, bodies, constraints, initialErrorFraction);
         }
     }
 
@@ -65,6 +70,82 @@ internal sealed class AvbdIslandEquations
             _bodies.Add(body); _poses.Add(row.ReadRef<BodyPose>());
         }
         return true;
+    }
+
+    private void MinimizeStepMotion<TConstraints>(in PhysicsStepContext context, scoped EntityQueryViews queries,
+        scoped PhysicsBodies bodies, TConstraints constraints, float initialErrorFraction)
+        where TConstraints : struct, IAvbdGraphConstraints
+    {
+        double derivative = 0, inertiaCurvature = 0;
+        for (int index = 0; index < _bodies.Count; index++)
+        {
+            queries.Get(1).TryGetRow(_bodies[index], out QueryRow row);
+            BodyPose pose = _poses[index] = row.ReadRef<BodyPose>();
+            ref readonly BodyMass mass = ref row.ReadRef<BodyMass>();
+            ref readonly BodyStepState step = ref row.ReadRef<BodyStepState>();
+            ReadStepChange(in pose, in mass, in step, out Vector3 translation, out Vector3 rotation);
+            AvbdBodyEquation equation = row.ReadRef<AvbdBodyEquation>();
+            equation.Reset(in pose, in mass, in step, (float)context.Duration);
+            inertiaCurvature += equation.GetCurvature(translation, rotation);
+            constraints.AccumulateBodyEquation(in context, queries, 3, row.Entity, bodies, initialErrorFraction, ref equation);
+            derivative += Dot(equation.LinearGradient, translation) + Dot(equation.AngularGradient, rotation);
+        }
+        if (derivative == 0) return;
+        double trialScale = -derivative / Math.Max(inertiaCurvature, Math.Abs(derivative));
+        double shiftedDerivative;
+        try
+        {
+            WriteStepPoses(queries.Get(1), (float)trialScale);
+            shiftedDerivative = ReadStepDerivative(in context, queries, bodies, constraints, initialErrorFraction, trialScale);
+        }
+        finally { WritePoses(queries.Get(1), Vector3.Zero); }
+        double measuredCurvature = (shiftedDerivative - derivative) / trialScale;
+        float scale = (float)(-derivative / Math.Max(inertiaCurvature, measuredCurvature));
+        WriteStepPoses(queries.Get(1), scale);
+    }
+
+    private double ReadStepDerivative<TConstraints>(in PhysicsStepContext context, scoped EntityQueryViews queries,
+        scoped PhysicsBodies bodies, TConstraints constraints, float initialErrorFraction, double scale)
+        where TConstraints : struct, IAvbdGraphConstraints
+    {
+        double derivative = 0;
+        for (int index = 0; index < _bodies.Count; index++)
+        {
+            queries.Get(1).TryGetRow(_bodies[index], out QueryRow row);
+            ref readonly BodyMass mass = ref row.ReadRef<BodyMass>();
+            ref readonly BodyStepState step = ref row.ReadRef<BodyStepState>();
+            BodyPose basePose = _poses[index];
+            ReadStepChange(in basePose, in mass, in step, out Vector3 translation, out Vector3 rotation);
+            AvbdBodyEquation equation = row.ReadRef<AvbdBodyEquation>();
+            equation.Reset(in row.ReadRef<BodyPose>(), in mass, in step, (float)context.Duration);
+            constraints.AccumulateBodyEquation(in context, queries, 3, row.Entity, bodies, initialErrorFraction, ref equation);
+            float tangent = (float)(1 / (1 + scale * scale * rotation.LengthSquared() * .25));
+            derivative += Dot(equation.LinearGradient, translation) + Dot(equation.AngularGradient, rotation) * tangent;
+        }
+        return derivative;
+    }
+
+    private void WriteStepPoses(scoped EntityQuery rows, float scale)
+    {
+        for (int index = 0; index < _bodies.Count; index++)
+        {
+            rows.TryGetRow(_bodies[index], out QueryRow row);
+            ref readonly BodyMass mass = ref row.ReadRef<BodyMass>();
+            ref readonly BodyStepState step = ref row.ReadRef<BodyStepState>();
+            BodyPose pose = _poses[index];
+            ReadStepChange(in pose, in mass, in step, out Vector3 translation, out Vector3 rotation);
+            Vector3 center = pose.GetCenterOfMass(in mass) + translation * scale;
+            pose.Rotation = BodyRotation.ApplyChange(pose.Rotation, rotation * scale);
+            pose.SetCenterOfMass(center, in mass);
+            row.ReadWrite<BodyPose>() = pose;
+        }
+    }
+
+    private static void ReadStepChange(in BodyPose pose, in BodyMass mass, in BodyStepState step,
+        out Vector3 translation, out Vector3 rotation)
+    {
+        translation = pose.GetCenterOfMass(in mass) - step.StartCenterOfMass;
+        rotation = BodyRotation.GetRotationVector(pose.Rotation * Quaternion.Conjugate(step.StartRotation));
     }
 
     private void MinimizeTranslation<TConstraints>(in PhysicsStepContext context, scoped EntityQueryViews queries,
