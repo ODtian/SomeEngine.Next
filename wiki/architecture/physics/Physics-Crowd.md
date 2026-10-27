@@ -19,6 +19,11 @@ XPBD 继续更新原 Length/Bend 乘子并投影节点。完成一次速度重�
 `MapBones` 和 `CopyOutput` 沿原 Game 姿势输出交付 Number、Time 与骨骼矩阵。
 场景通过原 `IGameFramePhysics` 推进及消费完成步。
 
+约束参数的 `WriteDeviceConstraintInputs` 读取原选定实体引用，
+以调用方的 `rowsPerPacket` 交给 `EntityQueryJobs`。每包在一个来源查询范围内
+调用原 `IDeviceConstraintSource.Read(component, row, access)`；组件值和写版本从实际行取得，
+各个 `DeviceConstraintBinding.Index` 继续登记自身参数及元数据的上传写入范围。
+
 `CreateDevice(characters, backend, device, timings)` 接受原 `PhysicsSceneTimings`。
 来源采样、参数输入、碰撞维护、约束图、方程初始化、每轮 AVBD/XPBD、
 速度、骨骼输出和主体完成读回使用原 `Measure` 阶段；`timings.Describe()`
