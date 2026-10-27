@@ -3,6 +3,7 @@
 // Source and attribution: ThirdParty/LongRange/NOTICE and the repository LICENSE.
 using System.Numerics;
 using SomeEngine.ECS.Entities;
+using SomeEngine.ECS.Queries;
 
 namespace SomeEngine.Physics;
 
@@ -51,16 +52,17 @@ internal static class DistanceRangeMath
     internal static void ReadAnchor(Entity body, Vector3 local, scoped PhysicsBodies bodies, bool start,
         out Vector3 point, out Vector3 offset)
     {
-        ref readonly BodyMass mass = ref bodies.ReadMass(body);
+        QueryRow row = bodies.GetRow(body);
+        ref readonly BodyMass mass = ref row.ReadRef<BodyMass>();
         if (start)
         {
-            ref readonly BodyStepState step = ref bodies.ReadStepState(body);
+            ref readonly BodyStepState step = ref row.ReadRef<BodyStepState>();
             offset = Vector3.Transform(local - mass.CenterOfMass, step.StartRotation);
             point = step.StartCenterOfMass + offset;
         }
         else
         {
-            ref readonly BodyPose pose = ref bodies.ReadPose(body);
+            ref readonly BodyPose pose = ref row.ReadRef<BodyPose>();
             offset = Vector3.Transform(local - mass.CenterOfMass, pose.Rotation);
             point = pose.GetCenterOfMass(in mass) + offset;
         }

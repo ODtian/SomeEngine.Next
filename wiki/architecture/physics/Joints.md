@@ -31,6 +31,8 @@ AVBD 对三个平移轴全部锁定、线性材料刚度各向同性的点连接
 自身力臂直接按 `R*(localAnchor−localCenterOfMass)` 求值，计算使用两体相对位置与局部偏移。
 `Initialize` 的起点误差、当前力、primal 与 dual 使用同一坐标基准，
 线性乘子的 warmstart 保留世界向量，力矩臂取对应 Body 的自身锚点到质心。
+逐体装配先按 `Free` 与材料刚度选择活动行，再计算当前坐标与 Jacobian；
+两端的位姿与质量从各自当前查询行一次借用，径向界的锚点同样复用当前 Body 行。
 这与所选 Newton compliant ALM 的
 [jointLinear](https://github.com/ODtian/SomeEngine.Next/blob/6e30d7393097d2d8324db2f525074c03cf89ca09/tools/SomeEngine.Physics.Research/Native/NewtonRigid.cpp#L101)
 和 `addJoint`、`updateDuals` 使用同一世界点作用量。
