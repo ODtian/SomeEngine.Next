@@ -29,6 +29,11 @@ Created
 `GetAwaiter()` 同样取得本次等待的完成结果；通知就绪后，即使消费者延后执行 `GetResult()`，
 仍取得这次等待保存的终态。底层完成记录在通知交付后继续按上述规则复用。
 
+`JobHandle.CompleteAsync()` 交付工作及其子工作的完成结果。所属 Scheduler 配置零 worker 且调用处为协调线程时，
+它通过已有 `Complete()` 在调用线程执行工作并完成等待；有 worker 的执行器及 Job 回调通过 `WaitAsync()`
+接续完成通知。公开异步消费者在内部持有 CPU 工作句柄时使用这一入口，将计算完成后再交付自己的结果。
+资产解码、按需 Shader 元数据与两个图形后端的异步管线创建均沿此完成点返回；类别额度、资源使用期及错误传播仍由原调度链持有。
+
 源码入口：[JobHandle](../../../src/SomeEngine.Job/JobHandle.cs)、
 [异步等待](../../../src/SomeEngine.Job/JobHandleAwaitExtensions.cs)、
 [完成记录](../../../src/SomeEngine.Job/Scheduler.CompletionStore.cs) 与
@@ -45,7 +50,8 @@ JobHandle CreateExternalFenceHandle(Task task, ReadOnlySpan<JobResourceAccess> a
 JobHandle CreateExternalFenceHandle(ValueTask task, ReadOnlySpan<JobResourceAccess> accesses = default);
 ```
 
-`JobSystem` 提供绑定默认 Scheduler 的同名入口。`Task<T>` 可直接交给 Task 入口，
+`JobSystem` 的同名入口使用 `Current`：Job 回调绑定该工作的 Scheduler，协调调用绑定默认 Scheduler。
+`Task<T>` 可直接交给 Task 入口，
 其返回值继续由原 Task 持有。`ValueTask` 入口调用 `AsTask()` 消费来源一次；
 带返回值的 `ValueTask<T>` 由调用方先转成 Task，再保留该 Task 读取返回值。
 
@@ -62,7 +68,7 @@ SomeUI 的恢复由 [[architecture/someui/Async-Build|BuildTaskBuilder 与重建
 
 源码入口：[外部完成提供者](../../../src/SomeEngine.Job/IJobExternalFence.cs)、
 [来源桥接](../../../src/SomeEngine.Job/Scheduler.Fence.cs)、
-[默认入口](../../../src/SomeEngine.Job/JobSystem.cs) 与
+[便利入口](../../../src/SomeEngine.Job/JobSystem.cs) 与
 [异步等待](../../../src/SomeEngine.Job/JobHandle.cs)。
 公共行为检查：[ExternalCompletionTests](../../../tests/SomeEngine.Job.Tests/ExternalCompletionTests.cs)、
 [ExternalFenceBridgeTests](../../../tests/SomeEngine.Job.Tests/ExternalFenceBridgeTests.cs) 与
@@ -70,8 +76,8 @@ SomeUI 的恢复由 [[architecture/someui/Async-Build|BuildTaskBuilder 与重建
 
 ## 带资源的终态清理
 
-本节记录已实现的公共接口与使用方法。`Scheduler` 和默认 Scheduler 的 `JobSystem`
-都提供以下入口，原有三参数入口使用空访问集合：
+本节记录已实现的公共接口与使用方法。`Scheduler` 和 `JobSystem` 都提供以下入口；
+`JobSystem` 沿用上文的当前 Scheduler 选择规则，原有三参数入口使用空访问集合：
 
 ```csharp
 JobHandle ScheduleFinally<T>(in T job, ReadOnlySpan<JobResourceAccess> accesses,
@@ -187,7 +193,7 @@ await handle;
 ```
 
 `ExecuteParallel` 同样接受该类别，调用线程参与执行并计入执行额度；同类别嵌套范围复用当前
-执行许可。类别受限的并行提交按执行上限发布参与者，所有参与者继续使用共享就绪队列。
+执行许可，等待参与者期间帮助执行同类别就绪工作也沿用该许可；队列仅归还本次取得的许可。类别受限的并行提交按执行上限发布参与者，所有参与者继续使用共享就绪队列。
 
 本节属于已实现的公共接口与行为。源码入口：
 [类别配置](../../../src/SomeEngine.Job/JobCategoryConfig.cs)、

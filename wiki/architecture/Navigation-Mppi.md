@@ -29,7 +29,7 @@
 下面是公开调度顺序的例子；角色数量、空间数据、目标和运动组件来自游戏：
 
 ```csharp
-var neighbors = new NavigationNeighborSystem<Motion, MotionReader>(world, scheduler);
+using var neighbors = new NavigationNeighborSystem<Motion, MotionReader>(world, scheduler);
 var mppi = new NavigationAvoidanceSystem<
     NavigationVehicleSpace, NavigationVehicleMppiModel, Motion, MotionReader>(world, neighbors);
 

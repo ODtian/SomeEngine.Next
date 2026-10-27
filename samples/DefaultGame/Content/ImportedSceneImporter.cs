@@ -107,7 +107,7 @@ public sealed class ImportedSceneImporter : GltfSceneImporter
         }
     }
 
-    public async Task BuildAsync(AssetProject project, ModelRoot model, string engine, bool packedVertices = false)
+    public async Task BuildAsync(AssetProject project, ModelRoot model, string engine)
     {
         string directory = Path.Combine(project.RootPath, "assets", "Shaders");
         string defaults = Path.Combine(engine, "samples", "DefaultGame", "assets", "Shaders");
@@ -135,7 +135,7 @@ public sealed class ImportedSceneImporter : GltfSceneImporter
         foreach (float cutoff in model.LogicalMaterials.Where(static material => !material.Unlit).Select(Cutoff).Distinct())
         {
             string shaderName = ShaderName(cutoff);
-            string shader = CreateSurfaceShader(defaults, shaderName, cutoff, twoSided: false, packedVertices);
+            string shader = CreateSurfaceShader(defaults, shaderName, cutoff, twoSided: false);
             WriteIfChanged(Path.Combine(directory, shaderName + ".slang"), shader);
             WriteSurfaceEntries(directory, shaderName);
             string definitionPath = Path.Combine(directory, shaderName + ".shader");
@@ -162,17 +162,13 @@ public sealed class ImportedSceneImporter : GltfSceneImporter
         {
             string shaderName = Path.GetFileNameWithoutExtension(definitionPath);
             string sourcePath = Path.Combine(directory, shaderName + ".slang");
-            bool packedVertices = File.ReadAllText(sourcePath).Contains("#include \"scene_scv1_vertex.slang\"", StringComparison.Ordinal);
             string suffix = shaderName["scene_".Length..];
             bool twoSided = suffix.EndsWith("_both", StringComparison.Ordinal);
             string surface = twoSided ? suffix[..^"_both".Length] : suffix;
             float cutoff = surface == "opaque" ? -1 : BitConverter.Int32BitsToSingle(
                 int.Parse(surface["mask_".Length..], NumberStyles.HexNumber, CultureInfo.InvariantCulture));
             string source = CreateSurfaceShader(Path.Combine(engineRoot, "templates/DefaultProject/assets/Shaders"),
-                shaderName, cutoff, twoSided, packedVertices);
-            if (packedVertices)
-                WriteIfChanged(Path.Combine(directory, "scene_scv1_vertex.slang"),
-                    File.ReadAllText(Path.Combine(engineRoot, "samples/DefaultGame/assets/Shaders/scene_scv1_vertex.slang")));
+                shaderName, cutoff, twoSided);
             WriteIfChanged(sourcePath, source);
             WriteSurfaceEntries(directory, shaderName);
             JsonNode definition = CreateSurfaceDefinition(definitionPath,
@@ -199,15 +195,11 @@ public sealed class ImportedSceneImporter : GltfSceneImporter
             "import \"" + name + "\";\n#define TRANSPARENCY_MATERIAL_TYPE SceneTransparencyMaterial_" + name +
             "\n#include \"cluster_transparency_entries.slang\"\n");
 
-    private static string CreateSurfaceShader(string defaults, string shaderName, float cutoff, bool twoSided, bool packedVertices)
+    private static string CreateSurfaceShader(string defaults, string shaderName, float cutoff, bool twoSided)
     {
         string source = File.ReadAllText(Path.Combine(defaults, "standard.slang"))
             .Replace("\"standard_material.slang\"", "\"scene_material.slang\"")
             .Replace("StandardTransparencyMaterial", "SceneTransparencyMaterial_" + shaderName);
-        if (packedVertices)
-            source = "#define CLUSTER_VERTEX_ENCODING \"someengine.vertex.standard.cluster.v1\"\n" +
-                "#include \"scene_scv1_vertex.slang\"\n" +
-                source.Replace("typedef StaticVertexEval VertexEvaluate;", "typedef SceneScv1VertexEval VertexEvaluate;");
         if (twoSided) source = "#define CLUSTER_RASTER_TWO_SIDED 1\n" + source;
         if (cutoff >= 0)
             source = Replace(source, "typedef OpaqueVisibilityEvaluate<VertexEvaluate.Vertex> VisibilityEvaluate;",

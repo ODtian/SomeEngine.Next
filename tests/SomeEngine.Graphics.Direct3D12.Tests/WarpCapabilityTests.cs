@@ -1,6 +1,7 @@
 using SlangShaderSharp;
 using SomeEngine.Graphics.Direct3D12;
 using SomeEngine.Graphics.Validation;
+using SomeEngine.Job;
 using Xunit;
 
 namespace SomeEngine.Graphics.Direct3D12.Tests;
@@ -652,10 +653,11 @@ public sealed class WarpCapabilityTests(D3D12TestCompiler shaderCompiler)
 
         ComputePipelineDesc description = new(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(0), shader.GetEntryCode(0),
             "async prewarmed compute");
-        using Pipeline pipeline = await backend.CreateComputePipelineAsync(
-            device,
-            description,
-            cache);
+        using var scheduler = new Scheduler(new() { WorkerCount = 2 });
+        var requested = new Task<Pipeline>[1];
+        await scheduler.Schedule(new CreateComputePipeline(backend, device, description, cache, requested)).WaitAsync();
+        using Pipeline pipeline = await requested[0];
+        Assert.True(scheduler.GetStats().ScheduledJobs > 1);
 
         Assert.Equal(PipelineType.Compute, pipeline.Type);
         Assert.False(backend.TryGetPipelineCacheData(cache, [], out int warmedSize));
@@ -696,6 +698,61 @@ public sealed class WarpCapabilityTests(D3D12TestCompiler shaderCompiler)
         Assert.Equal(3, retainedInfo.ComputeCount);
         Assert.Equal(1, retainedInfo.CacheLookupHitCount);
         Assert.Equal(2, retainedInfo.CacheLookupMissCount);
+    }
+
+    [Fact]
+    public async Task AsyncPipelineCreationCompletesWithZeroWorkers()
+    {
+        D3D12TestShader shader = shaderCompiler.Compile("zero_worker_pipeline", """
+            [shader("compute")][numthreads(1,1,1)] void computeMain() { }
+            """, [new("computeMain", SlangStage.Compute)]);
+        using IGraphicsBackend backend = CreateValidatedBackend();
+        using Device device = D3D12TestSupport.CreateWarpDevice(backend);
+        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 0 });
+        try
+        {
+            using Pipeline pipeline = await backend.CreateComputePipelineAsync(device,
+                new ComputePipelineDesc(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(0), shader.GetEntryCode(0)))
+                .WaitAsync(TimeSpan.FromSeconds(10));
+
+            Assert.Equal(PipelineType.Compute, pipeline.Type);
+        }
+        finally { JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 2 }); }
+    }
+
+    private readonly record struct CreateComputePipeline(IGraphicsBackend Backend, Device Device,
+        ComputePipelineDesc Description, PipelineCache Cache, Task<Pipeline>[] Result) : IJob
+    {
+        public void Execute() => Result[0] = Backend.CreateComputePipelineAsync(Device, Description, Cache);
+    }
+
+    [Fact]
+    public async Task DeviceClosureEndsAcceptedPipelineRequestBeforeSharedExecution()
+    {
+        D3D12TestShader shader = shaderCompiler.Compile("rhi_close_queued_pipeline", """
+            [shader("compute")][numthreads(1,1,1)] void computeMain() { }
+            """, [new("computeMain", SlangStage.Compute)]);
+        using IGraphicsBackend backend = CreateValidatedBackend();
+        using Device device = D3D12TestSupport.CreateWarpDevice(backend);
+        using PipelineCache cache = backend.CreatePipelineCache(device, default);
+        using var scheduler = new Scheduler(new() { WorkerCount = 1 });
+        var requested = new Task<Pipeline>[1];
+        ComputePipelineDesc description = new(shader.SlangCode, shader.Reflection,
+            shader.GetEntryPoint(0), shader.GetEntryCode(0));
+        await scheduler.Schedule(new CreatePipelineAndCloseDevice(backend, device, description, cache, requested)).WaitAsync();
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => requested[0]);
+        Assert.Equal(DeviceStatus.Disposed, device.Status);
+    }
+
+    private readonly record struct CreatePipelineAndCloseDevice(IGraphicsBackend Backend, Device Device,
+        ComputePipelineDesc Description, PipelineCache Cache, Task<Pipeline>[] Result) : IJob
+    {
+        public void Execute()
+        {
+            Result[0] = Backend.CreateComputePipelineAsync(Device, Description, Cache);
+            Device.Dispose();
+            Assert.True(Result[0].IsCompleted);
+        }
     }
 
     [Fact]
