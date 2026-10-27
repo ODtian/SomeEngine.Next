@@ -564,7 +564,7 @@ public sealed class ClusterMaterialAssignmentSystem : ISystem<RenderPrepareSyste
     private EntityTableChanges? _tableChanges;
     private bool _created;
     public ClusterMaterialAssignmentSystem(ClusterMaterialAssignments assignments)
-        : this(assignments, Environment.GetEnvironmentVariable("SOMEENGINE_DENSE_MATERIAL_SNAPSHOTS") == "1") { }
+        : this(assignments, Environment.GetEnvironmentVariable("SOMEENGINE_DENSE_MATERIAL_SNAPSHOTS") != "0") { }
 
     public ClusterMaterialAssignmentSystem(ClusterMaterialAssignments assignments, bool denseRevisionSnapshots)
     {

@@ -403,8 +403,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         bool materialDepthChanged = assignmentsChanged || _rasterChangedMaterials.Count != 0;
         if (!assignmentsChanged && !materialResourcesChanged && !shadingChanged)
         {
-            // Material edits reconcile current texture references and versions together.
-            RefreshMaterialTextures(assignments.ChangedMaterialIds.Count != 0);
+            // Resource revisions select graph edits; refresh in-place texture versions here.
+            RefreshMaterialTextures();
             if (assignments.ChangedOffsets.Count != 0 || assignments.ChangedMaterialIds.Count != 0 ||
                 _textureScalarChanges.Count != 0)
             {
@@ -519,7 +519,9 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             _shadeStages!.AcceptChanges();
             AcceptMaterialTextureChanges(textureChanges);
             RecordMaterialCasterChanges(assignments);
-            AcceptMaterialChanges(assignments, sourceAssignments);
+            AcceptMaterialChanges(assignments, sourceAssignments, shadingChanged
+                ? assignments.DistinctMaterials.Select(static material => material.MaterialId).Union(assignments.ChangedMaterialIds)
+                : assignments.ChangedMaterialIds);
         });
         return GraphData.Outputs;
     }

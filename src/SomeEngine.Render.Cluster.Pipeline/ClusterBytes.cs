@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Buffers.Binary;
 using System.Collections.Immutable;
 
@@ -52,6 +53,42 @@ internal sealed class ClusterBytes
         return WithChangedPages(length, changedPages);
     }
 
+    internal delegate void WriteBytes<T>(T value, Span<byte> destination);
+
+    internal ClusterBytes WithChanges<T>(int length,
+        IReadOnlyList<(int Offset, int Size, T Value)> changes, WriteBytes<T> write)
+    {
+        if (length == Length && changes.Count == 0) return this;
+        var changedPages = new Dictionary<int, byte[]>();
+        foreach ((int offset, int size, T value) in changes)
+        {
+            int pageIndex = offset / PageSize;
+            int pageOffset = offset % PageSize;
+            if (size <= PageSize - pageOffset)
+            {
+                byte[] page = GetChangedPage(length, pageIndex, changedPages);
+                write(value, page.AsSpan(pageOffset, size));
+                continue;
+            }
+            byte[] bytes = ArrayPool<byte>.Shared.Rent(size);
+            try
+            {
+                write(value, bytes.AsSpan(0, size));
+                ReadOnlySpan<byte> source = bytes.AsSpan(0, size);
+                while (!source.IsEmpty)
+                {
+                    byte[] page = GetChangedPage(length, pageIndex++, changedPages);
+                    int count = Math.Min(source.Length, page.Length - pageOffset);
+                    source[..count].CopyTo(page.AsSpan(pageOffset));
+                    source = source[count..];
+                    pageOffset = 0;
+                }
+            }
+            finally { ArrayPool<byte>.Shared.Return(bytes); }
+        }
+        return WithChangedPages(length, changedPages);
+    }
+
     internal ClusterBytes WithUInt32Changes(int length, IReadOnlyList<(int Offset, uint Value)> changes)
     {
         if (length == Length && changes.Count == 0) return this;
@@ -81,11 +118,11 @@ internal sealed class ClusterBytes
 
     private ClusterBytes WithChangedPages(int length, Dictionary<int, byte[]> changedPages)
     {
-        var pages = _pages;
-        foreach ((int index, byte[] page) in changedPages) pages = pages.SetItem(index, page);
+        var pages = _pages.ToBuilder();
+        foreach ((int index, byte[] page) in changedPages) pages[index] = page;
         for (int page = PageCount(length); page < PageCount(Length); page++)
-            pages = pages.Remove(page);
-        return new(length, pages);
+            pages.Remove(page);
+        return new(length, pages.ToImmutable());
     }
 
     internal void CopyTo(Span<byte> destination, int sourceOffset = 0)

@@ -108,23 +108,60 @@ public sealed partial class ClusterPipelineSystem
     private readonly Dictionary<SamplerDesc, RenderDevice.SamplerReference> _materialSamplers = [];
     // Observed property revisions serve GPU bindings and declared depth inputs; values stay on Material.
     private readonly Dictionary<long, MaterialBindingVersions> _materialBindingVersions = [];
+    private readonly List<long> _changedMaterialBindingVersions = [];
+    [Flags]
+    private enum MaterialPropertyUse : byte { None = 0, Resource = 1, Depth = 2 }
+    private readonly record struct MaterialPropertyVersion(uint Property, ulong Revision, MaterialPropertyUse Use);
+
     private sealed record MaterialBindingVersions(
-        Shader? Shader, MaterialState State, ulong[] Properties)
+        Shader? Shader, MaterialState State, int PropertyCount, bool KnownDepthInputs, MaterialPropertyVersion[] Properties)
     {
-        internal bool Matches(Material material, ClusterRasterStages raster, ClusterShadeStages shade)
+        internal MaterialPropertyUse ReadChanges(Material material, out bool revisionsChanged)
         {
-            if (!ReferenceEquals(Shader, material.Shader) || State != material.State || Properties.Length != material.PropertyCount)
-                return false;
-            // Stage resolution already retains the complete resource-property sets.
-            // Read only those revisions; scalar-only edits need no full-property scan.
-            return raster.ResourcePropertiesMatch(material, Properties) &&
-                shade.ResourcePropertiesMatch(material, Properties);
+            if (!ReferenceEquals(Shader, material.Shader) || State != material.State || PropertyCount != material.PropertyCount)
+            {
+                revisionsChanged = true;
+                return MaterialPropertyUse.Resource | MaterialPropertyUse.Depth;
+            }
+            MaterialPropertyUse changes = KnownDepthInputs ? MaterialPropertyUse.None : MaterialPropertyUse.Depth;
+            revisionsChanged = false;
+            foreach (MaterialPropertyVersion property in Properties)
+                if (material.GetPropertyRevision(property.Property) != property.Revision)
+                {
+                    changes |= property.Use;
+                    revisionsChanged = true;
+                }
+            return changes;
         }
-        internal bool MatchesDepthInputs(Material material, HashSet<uint> properties)
+
+        internal MaterialBindingVersions CapturePropertyRevisions(Material material)
         {
+            var properties = new MaterialPropertyVersion[Properties.Length];
+            for (int index = 0; index < Properties.Length; index++)
+            {
+                MaterialPropertyVersion property = Properties[index];
+                properties[index] = property with { Revision = material.GetPropertyRevision(property.Property) };
+            }
+            return this with { Properties = properties };
+        }
+
+        internal static MaterialBindingVersions Capture(Material material, ClusterRasterStages raster, ClusterShadeStages shade)
+        {
+            var resources = new HashSet<uint>();
+            raster.CollectResourceProperties(material.MaterialId, resources);
+            shade.CollectResourceProperties(material.MaterialId, resources);
+            bool knownDepth = raster.TryGetMaterialDepthInputs(material.MaterialId, out var depth);
+            var properties = new HashSet<uint>(resources);
+            if (knownDepth) properties.UnionWith(depth);
+            var versions = new MaterialPropertyVersion[properties.Count];
+            int index = 0;
             foreach (uint property in properties)
-                if (material.GetPropertyRevision(property) != Properties[property]) return false;
-            return true;
+            {
+                MaterialPropertyUse use = resources.Contains(property) ? MaterialPropertyUse.Resource : MaterialPropertyUse.None;
+                if (knownDepth && depth.Contains(property)) use |= MaterialPropertyUse.Depth;
+                versions[index++] = new(property, material.GetPropertyRevision(property), use);
+            }
+            return new(material.Shader, material.State, material.PropertyCount, knownDepth, versions);
         }
     }
 
@@ -133,43 +170,41 @@ public sealed partial class ClusterPipelineSystem
     private bool CollectMaterialChanges(ClusterMaterialAssignmentSet assignments, bool topologyChanged)
     {
         _rasterChangedMaterials.Clear();
+        _changedMaterialBindingVersions.Clear();
         bool resourcesChanged = false;
         foreach (long id in assignments.ChangedMaterialIds)
         {
             if (!assignments.TryGetMaterial(id, out Material material))
             {
                 _rasterChangedMaterials.Add(id);
+                _changedMaterialBindingVersions.Add(id);
                 continue;
             }
-            bool resourcesMatch = _materialBindingVersions.TryGetValue(id, out var versions) &&
-                versions.Matches(material, _rasterStages!, _shadeStages!);
-            resourcesChanged |= !resourcesMatch;
-            if (topologyChanged || !resourcesMatch ||
-                !_rasterStages!.TryGetMaterialDepthInputs(id, out var properties) ||
-                !versions!.MatchesDepthInputs(material, properties))
+            bool revisionsChanged = true;
+            MaterialPropertyUse changes = _materialBindingVersions.TryGetValue(id, out var versions)
+                ? versions.ReadChanges(material, out revisionsChanged)
+                : MaterialPropertyUse.Resource | MaterialPropertyUse.Depth;
+            resourcesChanged |= (changes & MaterialPropertyUse.Resource) != 0;
+            if (topologyChanged || changes != MaterialPropertyUse.None)
                 _rasterChangedMaterials.Add(id);
+            if (revisionsChanged) _changedMaterialBindingVersions.Add(id);
         }
         return resourcesChanged;
     }
 
-    private void AcceptMaterialChanges(ClusterMaterialAssignmentSet assignments, ClusterMaterialAssignmentSet source)
+    private void AcceptMaterialChanges(ClusterMaterialAssignmentSet assignments, ClusterMaterialAssignmentSet source,
+        IEnumerable<long>? changedBindings = null)
     {
-        foreach (long id in assignments.ChangedMaterialIds)
+        foreach (long id in changedBindings ?? _changedMaterialBindingVersions)
         {
             if (!assignments.TryGetMaterial(id, out Material material))
             {
                 _materialBindingVersions.Remove(id);
                 continue;
             }
-            if (_materialBindingVersions.TryGetValue(id, out var versions) &&
-                versions.Matches(material, _rasterStages!, _shadeStages!) &&
-                (!_rasterStages!.TryGetMaterialDepthInputs(id, out var propertiesRead) ||
-                 versions.MatchesDepthInputs(material, propertiesRead)))
-                continue;
-            var properties = new ulong[material.PropertyCount];
-            for (uint property = 0; property < material.PropertyCount; property++)
-                properties[property] = material.GetPropertyRevision(property);
-            _materialBindingVersions[id] = new(material.Shader, material.State, properties);
+            _materialBindingVersions[id] = changedBindings is null
+                ? _materialBindingVersions[id].CapturePropertyRevisions(material)
+                : MaterialBindingVersions.Capture(material, _rasterStages!, _shadeStages!);
         }
         _consumedMaterialAssignments = assignments;
         _materialAssignments.AcceptMaterialChanges(source);
