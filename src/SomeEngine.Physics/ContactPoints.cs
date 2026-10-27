@@ -107,7 +107,8 @@ public sealed class ContactPoints<TCombine, TComponents> : IDisposable
         components.ScheduleParallel(new AddComponents<TMatches>(this, matches, context), 1, CollectionsMarshal.AsSpan(componentAccesses), pointChanges);
         JobHandle componentChanges = components.SchedulePlayback();
         JobHandle values = _scheduler.Schedule(new WriteValues<TMatches>(this, matches), _valueAccesses, componentChanges);
-        return _scheduler.ScheduleFinally(new ReleaseCommands(points, components), JobScheduleOptions.Default, values);
+        JobHandle cleanup = _scheduler.ScheduleFinally(new ReleaseCommands(points, components), JobScheduleOptions.Default, values);
+        return _scheduler.CombineDependencies([values, cleanup]);
     }
 
     private void Match<TMatches>(TMatches matches, ref JobCommandWriter commands) where TMatches : struct, IContactPointMatches

@@ -53,7 +53,9 @@ public readonly struct ContactEvents<TScope, TSource> : IPhysicsStage, IDisposab
         var commands = new JobCommandBuffer(context.World, 1);
         commands.Schedule(0, new Observe(_data, context), _data.Accesses, dependency);
         JobHandle playback = commands.SchedulePlayback();
-        return WorldJobs.GetScheduler(context.World).ScheduleFinally(new ReleasePhysicsEventCommands(commands), JobScheduleOptions.Default, playback);
+        Scheduler scheduler = WorldJobs.GetScheduler(context.World);
+        JobHandle cleanup = scheduler.ScheduleFinally(new ReleasePhysicsEventCommands(commands), JobScheduleOptions.Default, playback);
+        return scheduler.CombineDependencies([playback, cleanup]);
     }
     private readonly struct Observe(ContactEventData<TScope, TSource> data, PhysicsStepContext context) : IJobCommandProducer
     {
