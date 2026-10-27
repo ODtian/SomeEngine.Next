@@ -71,10 +71,11 @@ public readonly struct AvbdJointMath : IAvbdConstraint<JointConstraint>, IPhysic
         scoped PhysicsBodies bodies, in PhysicsStepContext context, float initialErrorFraction, ref AvbdBodyEquation equation)
     {
         ref readonly var endpoints = ref row.ReadRef<DirectedRelationEndpoints<JointConstraint>>();
-        ref readonly BodyPose source = ref bodies.ReadPose(endpoints.Source);
-        ref readonly BodyPose target = ref bodies.ReadPose(endpoints.Target);
-        ref readonly BodyMass sourceMass = ref bodies.ReadMass(endpoints.Source);
-        ref readonly BodyMass targetMass = ref bodies.ReadMass(endpoints.Target);
+        QueryRow sourceRow = bodies.GetRow(endpoints.Source), targetRow = bodies.GetRow(endpoints.Target);
+        ref readonly BodyPose source = ref sourceRow.ReadRef<BodyPose>();
+        ref readonly BodyPose target = ref targetRow.ReadRef<BodyPose>();
+        ref readonly BodyMass sourceMass = ref sourceRow.ReadRef<BodyMass>();
+        ref readonly BodyMass targetMass = ref targetRow.ReadRef<BodyMass>();
         ref readonly AvbdJointState state = ref row.ReadRef<AvbdJointState>();
         bool isSource = body == endpoints.Source;
         bool worldPoint = UsesWorldPointCoordinates(in constraint);
@@ -83,10 +84,11 @@ public readonly struct AvbdJointMath : IAvbdConstraint<JointConstraint>, IPhysic
         {
             int axis = dof % 3;
             JointAxisLimit limit = JointMath.GetLimit(in constraint, dof);
+            float stiffness = dof < 3 ? constraint.LinearStiffness[axis] : constraint.AngularStiffness[axis];
+            if (limit.Motion == JointAxisMotion.Free || stiffness == 0) continue;
             JointEquationRow derivative = GetRow(in constraint, in source, in sourceMass, in target, in targetMass, dof, worldPoint);
             float multiplier = dof < 3 ? state.LinearMultiplier[axis] : state.AngularMultiplier[axis];
             if (!JointMath.TryGetError(limit, derivative.Coordinate, multiplier, out float error, out JointLimitSide side)) continue;
-            float stiffness = dof < 3 ? constraint.LinearStiffness[axis] : constraint.AngularStiffness[axis];
             float penalty = dof < 3 ? state.LinearPenalty[axis] : state.AngularPenalty[axis];
             float initial = dof < 3 ? state.InitialLinearError[axis] : state.InitialAngularError[axis];
             var material = new AvbdMaterialTerms(stiffness, penalty);
@@ -96,6 +98,7 @@ public readonly struct AvbdJointMath : IAvbdConstraint<JointConstraint>, IPhysic
             equation.AddRow(isSource ? derivative.SourceLinear : derivative.TargetLinear,
                 isSource ? derivative.SourceAngular : derivative.TargetAngular, force, material.EffectiveStiffness);
         }
+        if (linearForce == Vector3.Zero) return;
         Vector3 forceOffset = isSource
             ? worldPoint
                 ? Vector3.Transform(constraint.SourceFrame.Position - sourceMass.CenterOfMass, source.Rotation)
