@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using SomeEngine.Diagnostics;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
@@ -24,6 +25,8 @@ public struct DeviceBodyActivityState
 /// <summary>Activity history on the original body indices, with native input versions kept at this resource.</summary>
 public sealed partial class DeviceBodyActivities : IDisposable
 {
+    private static readonly TraceSite CaptureInputsTrace = new("physics", "Activity.CaptureInputs");
+    private static readonly TraceSite SourceRowsTrace = new("physics", "Activity.ReadSources");
     internal readonly IGraphicsBackend Backend;
     internal readonly Device Device;
     internal readonly DeviceBodies Bodies;
@@ -36,6 +39,7 @@ public sealed partial class DeviceBodyActivities : IDisposable
     private readonly BufferSrv _inputsView;
     private readonly CpuVersion[] _versions;
     private readonly QueryHandle _wakeRows, _activityMembers;
+    private readonly QueryTermFilter _sourceVersionFilters;
     private readonly List<int> _transientInputs = [];
     private MappedBuffer _inputMapping;
     private uint _membershipVersion, _activityMembershipVersion, _lastSystemVersion;
@@ -56,6 +60,8 @@ public sealed partial class DeviceBodyActivities : IDisposable
         QueryDefinition definition = world.GetQueryDefinition(members).AsFilter().WithAccess(new QueryDefinitionBuilder()
             .Read<DeviceBodyBinding>().Optional<DeviceBodyActivityBinding>(QueryAccess.Read)
             .Optional<BodyActivity>(QueryAccess.Read).OptionalBuffer<BodyWake>(QueryAccess.Read).Build());
+        foreach (QueryTerm term in definition.Terms)
+            _sourceVersionFilters |= term.Filters & (QueryTermFilter.Added | QueryTermFilter.Changed | QueryTermFilter.ChunkChanged);
         SourceRows = world.Query(definition);
         ResultRows = world.Query(definition.WithAccess(new QueryDefinitionBuilder().ReadWrite<BodyActivity>().Build()));
         _resultReads = world.Query(world.GetQueryDefinition(ResultRows).AsReadOnly());
@@ -89,6 +95,7 @@ public sealed partial class DeviceBodyActivities : IDisposable
 
     internal void CaptureInputs(in PhysicsStepContext context)
     {
+        using var trace = EngineTrace.Begin(CaptureInputsTrace);
         uint membership = World.MembershipVersion(SourceRows);
         uint activityMembership = World.MembershipVersion(_activityMembers);
         bool readAll = membership != _membershipVersion || activityMembership != _activityMembershipVersion;
@@ -127,6 +134,7 @@ public sealed partial class DeviceBodyActivities : IDisposable
     {
         internal void Execute(scoped QueryCursor rows)
         {
+            using var trace = EngineTrace.Begin(SourceRowsTrace);
             foreach (QueryChunkView chunk in rows.Chunks)
             {
                 bool hasActivity = chunk.Has<BodyActivity>();
