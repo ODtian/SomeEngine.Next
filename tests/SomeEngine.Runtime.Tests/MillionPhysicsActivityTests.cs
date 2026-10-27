@@ -92,11 +92,14 @@ public sealed class MillionPhysicsActivityTests(ITestOutputHelper output)
 
         for (int step = 3; step < 6; step++)
         {
+            WorldStructuralMetrics structure = world.GetStructuralMetrics();
             pause = GC.GetTotalPauseDuration(); collections = GC.CollectionCount(2);
             started = Stopwatch.GetTimestamp();
             scene.AdvanceTime(scene.StepSeconds);
             completed = scene.CompleteForRead();
             output.WriteLine($"ContactStep={completed.Number}; WholeStepMilliseconds={Stopwatch.GetElapsedTime(started).TotalMilliseconds:R}; GarbageCollectionPauseMilliseconds={(GC.GetTotalPauseDuration() - pause).TotalMilliseconds:R}; Generation2Collections={GC.CollectionCount(2) - collections}; AwakeBodies={scene.DeviceAwakeBodies}; ContactPoints={scene.DeviceContactPoints}; LargestIslandBodies={scene.DeviceLargestIslandBodies}");
+            WorldStructuralMetrics current = world.GetStructuralMetrics();
+            output.WriteLine($"ContactStructureStep={completed.Number}; Transactions={current.Published - structure.Published}; PrepareMilliseconds={(current.PrepareTime - structure.PrepareTime).TotalMilliseconds:R}; CommitMilliseconds={(current.CommitTime - structure.CommitTime).TotalMilliseconds:R}; LifetimeMilliseconds={(current.Lifetime - structure.Lifetime).TotalMilliseconds:R}");
         }
         process.Refresh(); output.WriteLine($"ContactProcessPeakWorkingSetBytes={process.PeakWorkingSet64}");
         output.WriteLine("ContactDiagnosticStages=" + timings.Describe().ToJsonString());
