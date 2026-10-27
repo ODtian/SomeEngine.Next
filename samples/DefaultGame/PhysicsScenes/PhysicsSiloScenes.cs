@@ -10,6 +10,10 @@ internal static class PhysicsSiloScenes
     internal const int OpenStep = 180;
     internal static readonly ConvexHullData Hull = CreateHull();
 
+    internal static PhysicsSceneDescription Describe(int particles) =>
+        new($"silo-{particles}", $"{particles:N0} mixed-shape silo", 3, particles == 500000 ? 409 : 408,
+            "Mixed shapes", "Gate opens at step 180", "Drop, pile and discharge");
+
     internal static PhysicsSceneData Create(int particles)
     {
         int columns = (int)Math.Ceiling(Math.Cbrt(particles));
