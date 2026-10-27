@@ -81,7 +81,8 @@ public static class SampleContent
         WriteGeneratedFile(Path.Combine(shaders, "generated", "render_instance_layout.slang"), source);
     }
 
-    internal static void LinkTransparencySource(string shaders, string engineShaders)
+    /// <summary>Prepares a project's transparency source against the selected engine shader library.</summary>
+    public static void LinkTransparencySource(string shaders, string engineShaders)
     {
         string source = Path.GetFullPath(Path.Combine(engineShaders, "cluster_transparency.slang"));
         string destination = Path.GetFullPath(Path.Combine(shaders, "cluster_transparency.slang"));
