@@ -2,6 +2,7 @@ using SomeEngine.ECS;
 using SomeEngine.ECS.Commands;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
+using SomeEngine.ECS.Registry;
 using SomeEngine.ECS.Relations;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Graphics;
@@ -76,12 +77,22 @@ public static partial class PhysicsScenes
         var bodies = new DeviceBodies(backend, device, created.Bodies.Length);
         var equations = new DeviceAvbdBodyEquations(backend, device, bodies);
         var geometry = new DeviceCollisionGeometry(backend, device, geometrySource.GetCapacity(created.Bodies.Length), bodies);
+        ReadOnlySpan<int> bindingComponents =
+        [
+            ComponentMetadata<DeviceBodyBinding>.Id,
+            ComponentMetadata<DeviceAvbdEquationBinding>.Id,
+            ComponentMetadata<DeviceGeometryBinding>.Id,
+        ];
         for (int index = 0; index < created.Bodies.Length; index++)
         {
-            Entity entity = created.Bodies[index];
-            world.Add(entity, new DeviceBodyBinding(bodies, index));
-            world.Add(entity, new DeviceAvbdEquationBinding(equations, index));
-            world.Add(entity, new DeviceGeometryBinding(geometry, index));
+            var bodyBindings = new SceneDeviceBodyBindings(new(bodies, index), new(equations, index), new(geometry, index));
+            world.ExecuteBundleAdd(created.Bodies[index], bindingComponents, ref bodyBindings,
+                static (BundleWriteView view, ref SceneDeviceBodyBindings values) =>
+                {
+                    view.Write(values.Body);
+                    view.Write(values.Equation);
+                    view.Write(values.Geometry);
+                });
         }
         var readbackBodies = new Entity[readbackBodyIndices.Length];
         for (int index = 0; index < readbackBodyIndices.Length; index++)
@@ -243,6 +254,9 @@ public static partial class PhysicsScenes
                 pairExclusions, contacts, jointBounds, supportGroups],
             statistics, readbackBodies);
     }
+
+    private readonly record struct SceneDeviceBodyBindings(DeviceBodyBinding Body,
+        DeviceAvbdEquationBinding Equation, DeviceGeometryBinding Geometry);
 }
 
 internal readonly struct SceneReadbackBody : IComponent;

@@ -21,6 +21,8 @@
 
 共同 `CreateEntities` 执行一次源数据到实体的创建，交回同一组实体引用和输入记录。CPU 路径为所选 Body 附加自己的 `AvbdBodyEquation` 分解工作组件。角锁连接的目标局部框架保存创建时双方相对旋转，保持原横杆、配重等场景的初始连接姿势。
 
+[主体创建](../../../samples/DefaultGame/PhysicsScenes/CreatePhysicsSceneBodies.cs)按输入中连续相同的形状组件分批，沿 `World.ExecuteBundleSpawnBatch` 一次声明主体、位姿、质量、速度、步缓存、活动、范围、材料、变换和形状组件。行回调写入该条原输入，并按同一索引交回 Entity；盒体、球体和共享凸包由项目的具体几何类型写入。原 `Bodies` 顺序继续提供关节、距离边和定时事件的实体引用。设备路径随后沿 `World.ExecuteBundleAdd` 同次添加主体、方程和几何的三个绑定，三者继续使用该主体的原设备索引。
+
 二维场景保留面积质量和仅 Z 轴转动惯量，几何 Z 厚度用于原范围与显示。调用方显式选择 `PlanarBoxCollision` 或三维具体窄相；活动角轴的共同方程见[求解阶段](Solver-Steps.md)。默认场景摩擦合成使用两侧系数的几何平均。
 
 ## 共同物理步和输入时刻

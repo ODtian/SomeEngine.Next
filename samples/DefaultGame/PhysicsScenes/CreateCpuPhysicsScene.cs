@@ -1,6 +1,5 @@
 using System.Numerics;
 using SomeEngine.Core.ECS.Components;
-using SomeEngine.Core.Math;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
@@ -143,28 +142,7 @@ public static partial class PhysicsScenes
     internal static PhysicsSceneEntities CreateEntities<TGeometry>(World world, PhysicsSceneData data, TGeometry geometry)
         where TGeometry : struct, ISceneBodyGeometry
     {
-        var entities = new Entity[data.Bodies.Length];
-        for (int index = 0; index < entities.Length; index++)
-        {
-            SceneBodyData input = data.Bodies[index];
-            Entity entity = entities[index] = world.CreateEntity(new ScenePhysicsBody());
-            var pose = new BodyPose { Position = Vector(input.Position), Rotation = Rotation(input.Rotation) };
-            world.Add(entity, pose);
-            world.Add(entity, new BodyMass
-            {
-                Motion = input.Mass == 0 ? BodyMotion.Static : BodyMotion.Dynamic,
-                InverseMass = Inverse(input.Mass),
-                InverseInertia = new Matrix4x4 { M11 = Inverse(input.Inertia[0]), M22 = Inverse(input.Inertia[1]), M33 = Inverse(input.Inertia[2]) },
-            });
-            world.Add(entity, new BodyVelocity { Linear = Vector(input.Velocity), Angular = Vector(input.AngularVelocity) });
-            world.Add(entity, new BodyStepState());
-            world.Add(entity, new BodyActivity { Radius = geometry.Add(world, entity, input, index) });
-            world.Add(entity, new CollisionBounds());
-            world.Add(entity, new ContactMaterial { NormalStiffness = (float)(data.Materials?.ContactStiffness ?? double.PositiveInfinity),
-                NormalDamping = (float)(data.Materials?.ContactDamping ?? 0),
-                StaticFriction = (float)input.Friction, DynamicFriction = (float)input.Friction });
-            world.Add(entity, new LocalTransform { Value = new TransformQvvs(pose.Position, pose.Rotation) { Stretch = Vector(input.Size) } });
-        }
+        Entity[] entities = CreateBodies(world, data, geometry);
 
         var jointEntities = new Entity[data.Joints.Length];
         for (int index = 0; index < jointEntities.Length; index++)
