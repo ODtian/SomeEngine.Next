@@ -74,5 +74,20 @@ public sealed class MillionPhysicsActivityTests(ITestOutputHelper output)
         // At height 10.75, two float position differences divided by h carry at most 6e-5 velocity error.
         foreach (int index in new[] { 1, 500_001, 1_000_000 })
             Assert.InRange(world.Read<BodyVelocity>(scene.Bodies.Span[index]).Linear.Z, -.333393f, -.333273f);
+
+        pause = GC.GetTotalPauseDuration(); collections = GC.CollectionCount(2);
+        started = Stopwatch.GetTimestamp();
+        scene.AdvanceTime(scene.StepSeconds);
+        completed = scene.CompleteForRead();
+        output.WriteLine($"ThirdStepMilliseconds={Stopwatch.GetElapsedTime(started).TotalMilliseconds:R}; GarbageCollectionPauseMilliseconds={(GC.GetTotalPauseDuration() - pause).TotalMilliseconds:R}; Generation2Collections={GC.CollectionCount(2) - collections}");
+        output.WriteLine("ThirdDiagnosticStages=" + timings.Describe().ToJsonString());
+        Assert.Equal(2, completed.Number); Assert.Equal(3d / 60, completed.EndTime);
+        Assert.Equal(1_000_000, scene.DeviceAwakeBodies); Assert.Equal(0, scene.DeviceContactPoints);
+        Assert.Equal(1, scene.DeviceLargestIslandBodies);
+        Assert.InRange(world.Read<BodyPose>(scene.Bodies.Span[1]).Position.Z, .283331f, .283336f);
+        Assert.InRange(world.Read<BodyPose>(scene.Bodies.Span[500_001]).Position.Z, 5.78331f, 5.78336f);
+        Assert.InRange(world.Read<BodyPose>(scene.Bodies.Span[1_000_000]).Position.Z, 10.73331f, 10.73336f);
+        foreach (int index in new[] { 1, 500_001, 1_000_000 })
+            Assert.InRange(world.Read<BodyVelocity>(scene.Bodies.Span[index]).Linear.Z, -.50006f, -.49994f);
     }
 }
