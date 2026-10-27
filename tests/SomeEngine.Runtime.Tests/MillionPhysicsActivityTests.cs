@@ -89,5 +89,26 @@ public sealed class MillionPhysicsActivityTests(ITestOutputHelper output)
         Assert.InRange(world.Read<BodyPose>(scene.Bodies.Span[1_000_000]).Position.Z, 10.73331f, 10.73336f);
         foreach (int index in new[] { 1, 500_001, 1_000_000 })
             Assert.InRange(world.Read<BodyVelocity>(scene.Bodies.Span[index]).Linear.Z, -.50006f, -.49994f);
+
+        for (int step = 3; step < 6; step++)
+        {
+            pause = GC.GetTotalPauseDuration(); collections = GC.CollectionCount(2);
+            started = Stopwatch.GetTimestamp();
+            scene.AdvanceTime(scene.StepSeconds);
+            completed = scene.CompleteForRead();
+            output.WriteLine($"ContactStep={completed.Number}; WholeStepMilliseconds={Stopwatch.GetElapsedTime(started).TotalMilliseconds:R}; GarbageCollectionPauseMilliseconds={(GC.GetTotalPauseDuration() - pause).TotalMilliseconds:R}; Generation2Collections={GC.CollectionCount(2) - collections}; AwakeBodies={scene.DeviceAwakeBodies}; ContactPoints={scene.DeviceContactPoints}; LargestIslandBodies={scene.DeviceLargestIslandBodies}");
+        }
+        process.Refresh(); output.WriteLine($"ContactProcessPeakWorkingSetBytes={process.PeakWorkingSet64}");
+        output.WriteLine("ContactDiagnosticStages=" + timings.Describe().ToJsonString());
+        Assert.Equal(5, completed.Number); Assert.Equal(.1, completed.EndTime, 12);
+        Assert.Equal(1_000_000, scene.DeviceAwakeBodies);
+        Assert.Equal(200_000, scene.DeviceContactPoints);
+        Assert.Equal(1, scene.DeviceLargestIslandBodies);
+        Assert.InRange(world.Read<BodyPose>(scene.Bodies.Span[1]).Position.Z, .249f, .251f);
+        Assert.InRange(world.Read<BodyPose>(scene.Bodies.Span[500_001]).Position.Z, 5.74164f, 5.74170f);
+        Assert.InRange(world.Read<BodyPose>(scene.Bodies.Span[1_000_000]).Position.Z, 10.69164f, 10.69170f);
+        // Six float position differences at height 10.75 carry at most 6 * 0.5 ULP / h = 1.72e-4 velocity error.
+        Assert.InRange(world.Read<BodyVelocity>(scene.Bodies.Span[500_001]).Linear.Z, -1.00018f, -.99982f);
+        Assert.InRange(world.Read<BodyVelocity>(scene.Bodies.Span[1_000_000]).Linear.Z, -1.00018f, -.99982f);
     }
 }
