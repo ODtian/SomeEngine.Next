@@ -51,6 +51,9 @@ public sealed class PhysicsCrowdMotorTests
                     JointMotorTarget target = world.Read<JointMotorTarget>(driver);
                     target.Frame = target.Frame with { Position = target.Frame.Position + new Vector3(.1f, 0, 0) };
                     world.Replace(driver, target);
+                    JointConstraint joint = world.Read<JointConstraint>(driver);
+                    joint.SourceFrame = joint.SourceFrame with { Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, .15f) };
+                    world.Replace(driver, joint);
                 }
             scene.AdvanceTime(scene.StepSeconds);
             PhysicsStepResult completed = scene.CompleteForRead();
@@ -73,7 +76,9 @@ public sealed class PhysicsCrowdMotorTests
             clip.SampleLocal(time % clip.Duration, local); sampled.Update(local, time);
             GpuPoseTarget target = world.Read<GpuPoseTarget>(scene.CharacterTargets[actor]);
             Vector3 hand = Vector3.Transform(sampled.ModelPose.Transforms[22].Translation, target.ModelToWorld);
-            return actor == 0 ? hand : hand - Vector3.Transform(sampled.ModelPose.Transforms[20].Translation, target.ModelToWorld);
+            if (actor == 0) return hand;
+            Vector3 relative = hand - Vector3.Transform(sampled.ModelPose.Transforms[20].Translation, target.ModelToWorld);
+            return Vector3.Transform(relative, Quaternion.Conjugate(world.Read<JointConstraint>(drivers[actor]).SourceFrame.Rotation));
         }
     }
 
