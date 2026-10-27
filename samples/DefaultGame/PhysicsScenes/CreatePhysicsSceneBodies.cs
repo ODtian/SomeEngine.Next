@@ -10,11 +10,13 @@ namespace DefaultGame;
 
 public static partial class PhysicsScenes
 {
-    private static Entity[] CreateBodies<TGeometry>(World world, PhysicsSceneData data, TGeometry geometry)
+    private static Entity[] CreateBodies<TGeometry, TBindings>(World world, PhysicsSceneData data, TGeometry geometry,
+        TBindings bindings)
         where TGeometry : struct, ISceneBodyGeometry
+        where TBindings : struct, ISceneBodyBindings
     {
         var entities = new Entity[data.Bodies.Length];
-        Span<int> componentIds =
+        ReadOnlySpan<int> bodyComponents =
         [
             ComponentMetadata<ScenePhysicsBody>.Id,
             ComponentMetadata<BodyPose>.Id,
@@ -25,24 +27,29 @@ public static partial class PhysicsScenes
             ComponentMetadata<CollisionBounds>.Id,
             ComponentMetadata<ContactMaterial>.Id,
             ComponentMetadata<LocalTransform>.Id,
-            0,
         ];
+        ReadOnlySpan<int> bindingComponents = bindings.ComponentIds;
+        Span<int> componentIds = stackalloc int[bodyComponents.Length + 1 + bindingComponents.Length];
+        bodyComponents.CopyTo(componentIds);
+        bindingComponents.CopyTo(componentIds[(bodyComponents.Length + 1)..]);
         for (int first = 0; first < entities.Length;)
         {
             int geometryId = geometry.GetComponentId(first);
             int end = first + 1;
             while (end < entities.Length && geometry.GetComponentId(end) == geometryId) end++;
-            componentIds[^1] = geometryId;
-            var batch = new SceneBodyBatch<TGeometry>(data, entities, geometry, first);
+            componentIds[bodyComponents.Length] = geometryId;
+            var batch = new SceneBodyBatch<TGeometry, TBindings>(data, entities, geometry, bindings, first);
             world.ExecuteBundleSpawnBatch(componentIds, end - first, ref batch,
-                static (BundleWriteView view, ref SceneBodyBatch<TGeometry> bodies) => bodies.Write(view));
+                static (BundleWriteView view, ref SceneBodyBatch<TGeometry, TBindings> bodies) => bodies.Write(view));
             first = end;
         }
         return entities;
     }
 
-    private readonly struct SceneBodyBatch<TGeometry>(PhysicsSceneData data, Entity[] entities, TGeometry geometry, int first)
+    private readonly struct SceneBodyBatch<TGeometry, TBindings>(PhysicsSceneData data, Entity[] entities,
+        TGeometry geometry, TBindings bindings, int first)
         where TGeometry : struct, ISceneBodyGeometry
+        where TBindings : struct, ISceneBodyBindings
     {
         internal void Write(BundleWriteView view)
         {
@@ -74,6 +81,7 @@ public static partial class PhysicsScenes
             {
                 Value = new TransformQvvs(pose.Position, pose.Rotation) { Stretch = Vector(input.Size) },
             });
+            bindings.Write(view, index);
             entities[index] = view.Entity;
         }
     }

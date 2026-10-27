@@ -24,21 +24,24 @@ public sealed partial class PhysicsSceneExample : IApplicationGeometryFeature
         return example;
     }
 
-    internal static PhysicsSceneExample CreateDevice(PhysicsSceneDescription description, PhysicsSceneTimings? timings = null) =>
-        description.Scene == 408 ? CreateSiloDevice(100000, timings)
-        : description.Scene == 409 ? CreateSiloDevice(500000, timings)
-        : new(description, new PhysicsSceneSettings(Iterations: 16, BodyIterations: 2, StepBudgetMilliseconds: 1000d / 60)
+    internal static PhysicsSceneExample CreateDevice(PhysicsSceneDescription description, PhysicsSceneTimings? timings = null)
+    {
+        if (description.Scene == 408) return CreateSiloDevice(100000, timings);
+        if (description.Scene == 409) return CreateSiloDevice(500000, timings);
+        bool million = description.Id == "million-activity";
+        return new(description, new PhysicsSceneSettings(Iterations: 16, BodyIterations: 2, StepBudgetMilliseconds: 1000d / 60)
         {
             ContactDistance = .02f,
             GeometryInputsFixed = true,
             EquationBindingsFixed = true,
-            ContactNormalPenalty = 100,
-            ContactTangentPenalty = 100,
+            ContactNormalPenalty = million ? 1e6f : 100,
+            ContactTangentPenalty = million ? 1e6f : 100,
             JointBounds = new JointLongRangeSettings(description.Scene < 400 ? 6 : 0, 32, .99f, .99f),
-            ContactSupports = new ContactSupportSettings(description.Dimension == 2 ? Vector3.UnitY : Vector3.UnitZ,
+            ContactSupports = million ? null : new ContactSupportSettings(description.Dimension == 2 ? Vector3.UnitY : Vector3.UnitZ,
                 1e-5f, 1e-4f, 1e-4f, 1e-4f, .99f, .99f, 1e-6f),
             Timings = timings,
         }) { _devicePhysics = true };
+    }
 
     IDisposable? IApplicationGeometryFeature.Install(ApplicationGeometryContext context)
     {
@@ -54,10 +57,12 @@ public sealed partial class PhysicsSceneExample : IApplicationGeometryFeature
             settings = settings with { JointBoundsPerJoint = Math.Max(1, data.Joints.Length - 1) };
         int bodyCount = data.Bodies.Length;
         bool silo = _siloParticles > 0;
+        bool million = description.Id == "million-activity";
         var gridSettings = new DeviceGridSettings(silo ? .5f : 1, 16);
         var capacity = new DeviceGridCapacity(bodyCount, bodyCount * 8, bodyCount * 16 + 1,
-            bodyCount * (silo ? 16 : 32), silo ? 6 : 1);
-        int contacts = silo ? Math.Max(128, _siloParticles * 12 + PhysicsSiloScenes.StaticBodies * 4) : bodyCount * 32;
+            million ? bodyCount - 1 : bodyCount * (silo ? 16 : 32), silo ? 6 : 1);
+        int contacts = million ? (bodyCount - 1) * 4
+            : silo ? Math.Max(128, _siloParticles * 12 + PhysicsSiloScenes.StaticBodies * 4) : bodyCount * 32;
         _workload["Device"] = "GPU";
         _workload["Adapter"] = _device!.Adapter.Name;
         _workload["Driver"] = _device.Adapter.DriverVersion;
@@ -87,6 +92,12 @@ public sealed partial class PhysicsSceneExample : IApplicationGeometryFeature
         var events = new CountScenePhysicsEvents(_events);
         JobResourceAccess[] eventAccesses = [JobResourceAccess.Write(WorldJobs.GetScheduler(world).GetResourceToken(_events))];
         string shaders = Path.Combine(AppContext.BaseDirectory, "PhysicsShaders");
+        if (million)
+        {
+            _workload["ReadbackScope"] = "All bodies";
+            _workload["ReadbackBodyCount"] = bodyCount;
+            _workload["CompletedEventKinds"] = "Sleep and Wake";
+        }
         if (silo)
         {
             _workload["ShapeDistribution"] = new JsonObject
@@ -105,6 +116,6 @@ public sealed partial class PhysicsSceneExample : IApplicationGeometryFeature
                 settings.ContactDistance, readback, shaders, events, eventAccesses, contactEvents: false);
         }
         return PhysicsScenes.CreateDevice(world, description, data, _backend!, _device!, settings, gridSettings,
-            capacity, contacts, settings.ContactDistance, readback, shaders, events, eventAccesses);
+            capacity, contacts, settings.ContactDistance, readback, shaders, events, eventAccesses, contactEvents: !million);
     }
 }

@@ -119,7 +119,8 @@ internal sealed class ReadScenePhysicsResults : IDisposable
         _inputSteps = workload["Events"]!.AsArray().Select(value => (long)value!["Step"]!.GetValue<int>()).ToHashSet();
         var bodyResults = new QueryDefinitionBuilder().All<ScenePhysicsBody>().Read<BodyPose>().Read<BodyMass>()
             .Read<BodyVelocity>().Read<BodyActivity>();
-        if (scene.DeviceStatistics is not null) bodyResults.All<SceneReadbackBody>();
+        if (scene.DeviceStatistics is not null && scene.ReadbackBodies.Length < scene.Bodies.Length)
+            bodyResults.All<SceneReadbackBody>();
         _bodies = world.Query(bodyResults);
         if (scene.ReadbackBodies.Length < scene.Bodies.Length) _readbackBodies = scene.ReadbackBodies.ToArray().ToHashSet();
         _contacts = world.Query(new QueryDefinitionBuilder().Any<ScenePhysicsContact>().Any<ScenePhysicsBody>().Any<ContactParticipant>()
