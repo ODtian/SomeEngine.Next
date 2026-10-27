@@ -42,6 +42,19 @@ struct DeviceXpbdGraphStep
     uint stage; uint rowsPerBlock; uint threadsPerGroup; uint padding;
 };
 uniform DeviceXpbdGraphStep XpbdGraphStep;
+#ifdef PHYSICS_XPBD_INDIRECT_DISPATCH
+RWStructuredBuffer<uint> DeviceXpbdDispatchArguments;
+void writeDeviceXpbdDispatchArguments(uint stage)
+{
+    if (stage >= ConstraintGraphCounts[2]) return;
+    uint count = ConstraintGraphRowRanges[stage].y;
+    uint groups = (count + XpbdGraphStep.rowsPerBlock - 1) / XpbdGraphStep.rowsPerBlock;
+    uint first = stage * 3;
+    DeviceXpbdDispatchArguments[first] = min(groups, DevicePhysicsGroupsPerRow);
+    DeviceXpbdDispatchArguments[first + 1] = (groups + DevicePhysicsGroupsPerRow - 1) / DevicePhysicsGroupsPerRow;
+    DeviceXpbdDispatchArguments[first + 2] = 1;
+}
+#endif
 void initializeDeviceXpbdGraph<T : IDeviceXpbdConstraints>(uint block, uint thread, T rows)
 {
     for (uint offset = thread; offset < XpbdGraphStep.rowsPerBlock; offset += XpbdGraphStep.threadsPerGroup)

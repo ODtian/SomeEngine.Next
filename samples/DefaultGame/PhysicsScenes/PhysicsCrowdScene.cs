@@ -151,7 +151,8 @@ public sealed class PhysicsCrowdScene : IGameFramePhysics
         var avbd = Keep(new DeviceAvbdSolver(backend, device, physics.Bodies, equations, graph, shaders.CrowdAvbd(),
             new(1, 1, .8f, 0), bindings, solverReads, 64,
             new IDeviceConstraintSelection[] { motors.StateSelection, contacts.StateSelection, contacts.ResponseSelection }));
-        var xpbd = Keep(new DeviceXpbdSolver(backend, device, physics.Bodies, graph, shaders.CrowdXpbd(), new(1, 64),
+        var xpbd = Keep(new DeviceXpbdSolver(backend, device, physics.Bodies, graph,
+            shaders.CrowdXpbd(backend.TryGetCapability<IndirectCommands>(device, out _)), new(1, 64),
             bindings, reads, new[] { physics.LengthMultipliers.States, physics.BendMultipliers.States }, 64));
         var results = Keep(new DeviceBodyResults(backend, device, physics.Bodies));
         var response = Keep(new DeviceContactActions(backend, device, physics.Bodies, graph, contacts.Responses,
@@ -235,7 +236,7 @@ internal sealed class CrowdEquationInputs(DeviceAvbdSolver solver)
     {
         DeviceInputTransfer transfer = _uploaded ? DeviceInputTransfer.Resident : DeviceInputTransfer.Upload;
         _uploaded = true;
-        return solver.Initialize(transfer).Schedule(in context, dependency);
+        return solver.Initialize(buildGraph: false, equationInputs: transfer).Schedule(in context, dependency);
     }
 }
 internal readonly struct InitializeCrowdEquations(CrowdEquationInputs inputs) : IPhysicsStage

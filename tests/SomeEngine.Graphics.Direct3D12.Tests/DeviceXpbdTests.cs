@@ -407,13 +407,13 @@ public sealed partial class DeviceXpbdTests(D3D12TestCompiler shaderCompiler)
         throw new DirectoryNotFoundException();
     }
 
-    private static Device CreateDevice(IGraphicsBackend backend)
+    private static Device CreateDevice(IGraphicsBackend backend, DeviceFeatures features = DeviceFeatures.None)
     {
         backend.TryEnumerateAdapters(new(AdapterPreference.HighPerformance, IncludeSoftware: false), [], out int count);
         var adapters = new AdapterInfo[count];
         backend.TryEnumerateAdapters(new(AdapterPreference.HighPerformance, IncludeSoftware: false), adapters, out _);
         return backend.CreateDevice(new(adapters.First(value => value.HardwareAccelerated).Id,
-            [new(QueueType.Compute)], label: "Device XPBD behavior"));
+            [new(QueueType.Compute)], requiredFeatures: features, label: "Device XPBD behavior"));
     }
 
     private static void Near(Vector3 expected, Vector3 actual) =>

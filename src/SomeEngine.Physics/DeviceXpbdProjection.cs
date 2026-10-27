@@ -10,7 +10,10 @@ using Buffer = SomeEngine.Graphics.Buffer;
 
 namespace SomeEngine.Physics;
 
-public readonly record struct DeviceXpbdKernels(ComputePipelineDesc Initialize, ComputePipelineDesc Project);
+public readonly record struct DeviceXpbdKernels(ComputePipelineDesc Initialize, ComputePipelineDesc Project)
+{
+    public ComputePipelineDesc? WriteDispatchArguments { get; init; }
+}
 
 /// <summary>Runs a concrete device projection against shared physical parameters and per-entity XPBD history.</summary>
 public sealed class DeviceXpbdProjection<TData, TState> : IDisposable where TData : unmanaged where TState : unmanaged

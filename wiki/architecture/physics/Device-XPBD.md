@@ -17,7 +17,9 @@ Entity 索引、代次和上传时的查询参与标记。`BeginInputs()` 开始
 `UploadInputs()` 将本次参数和成员 metadata 提交设备。
 
 source 的 `AddReads`、`AddReadResources` 与静态组件资源描述器声明真实读取。
-生成式 Job 的成员筛选由原定义的 `AsFilter()` 提供，原读取定义保持实际参数与引用访问。
+writer 采集原查询中的实体引用，以 `rowsPerPacket` 交给 `EntityQueryJobs`。
+每包在同一次来源查询范围内读取实际组件与引用，原行版本进入 metadata，
+参数及 metadata 的上传写入范围继续由各个 `DeviceConstraintBinding.Index` 声明。
 `AddBindings` 使用项目提供的资源名与其 `Metadata` 后缀绑定 Slang 资源；
 `GetReadAccesses` 为后续具体设备工作提供两个实际 buffer 的访问描述。
 
@@ -92,6 +94,13 @@ Source/World 空间和 Target/Both 反馈由原 motor 参数选择。
 每轮按图的类型组、颜色顺序派发，`RowOrder` 和 `RowRanges` 决定每个实际行块；
 独立岛的同色行合在同一范围，块间和块内的独立行沿实际 SIMT 工作项执行。
 颜色之间使用 UAV barrier，原主体状态与乘子在设备原位更新。
+
+项目可在 `DeviceXpbdKernels.WriteDispatchArguments` 提供具体尺寸生成内核，
+源码定义 `PHYSICS_XPBD_INDIRECT_DISPATCH` 后，其入口调用
+`writeDeviceXpbdDispatchArguments(stage)`；设备显式请求 `IndirectCommands`。
+求解器先从当前 `RowRanges` 生成每阶段的 12 字节派发参数，再沿原类型组及颜色次序
+调用 RHI `ExecuteIndirect`。`RowsPerBlock`、实际行数及共同 X/Y 组坐标决定派发大小，
+乘子初始化、`RowOrder` 及投影数学继续沿同一图执行。
 
 Body 选择由共同 `IDeviceBodySelection` 解释。独立投影采用 Dynamics 同一次捕获的
 `DeviceSelectedBodies` 成员标记，查询按原 Body index 直接寻址；图投影采用
