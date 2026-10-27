@@ -187,8 +187,12 @@ public readonly struct DeviceContactResponseResources : IJobComponentResources<D
 }
 public readonly struct DeviceContactResponseRows(DeviceConstraintState<DeviceContactResponseState> responses) : IDeviceConstraintRowSelection
 {
-    public QueryDefinition AddReads(QueryDefinition definition) => definition.WithOptionalRead<DeviceContactResponseBinding>();
+    public QueryDefinition AddReads(QueryDefinition definition) => definition.WithOptionalRead<DeviceContactResponseBinding>()
+        .WithOptionalRead<ContactResponse>();
     public void AddReadResources(QueryReadResources resources) => resources.Add<DeviceContactResponseBinding, DeviceContactResponseResources>();
     public bool Matches(scoped QueryRow row) => row.Has<ContactResponse>() && row.TryRead<DeviceContactResponseBinding>(out var binding)
         && ReferenceEquals(binding.Responses, responses);
+    public bool HasChangedInputs(scoped QueryChunkView chunk) => !chunk.Has<DeviceContactResponseBinding>()
+        || chunk.HasChangedSinceLastSystemVersion<DeviceContactResponseBinding>() || !chunk.Has<ContactResponse>()
+        || chunk.HasChangedSinceLastSystemVersion<ContactResponse>();
 }

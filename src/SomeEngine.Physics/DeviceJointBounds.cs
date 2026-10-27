@@ -44,6 +44,10 @@ public readonly struct DeviceJointBoundsRows(DeviceJointBounds bounds) : IDevice
     }
     public bool Matches(scoped QueryRow row) => row.TryRead<DeviceJointBoundsBinding>(out var binding) && ReferenceEquals(binding.Bounds, bounds)
         && row.TryRead<DeviceConstraintBinding<DeviceJointConstraint>>(out var frame) && ReferenceEquals(frame.Data, bounds.Frames);
+    public bool HasChangedInputs(scoped QueryChunkView chunk) => !chunk.Has<DeviceJointBoundsBinding>()
+        || chunk.HasChangedSinceLastSystemVersion<DeviceJointBoundsBinding>()
+        || !chunk.Has<DeviceConstraintBinding<DeviceJointConstraint>>()
+        || chunk.HasChangedSinceLastSystemVersion<DeviceConstraintBinding<DeviceJointConstraint>>();
 }
 
 /// <summary>Device bounds corresponding to the original joint's LongRangeJointBound elements.</summary>
