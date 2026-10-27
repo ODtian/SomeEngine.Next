@@ -10,6 +10,9 @@ RWStructuredBuffer<uint2> DeviceSupportGroupBlockOffsets;
 RWStructuredBuffer<uint> DeviceSupportGroupBodies;
 RWStructuredBuffer<uint> DeviceSupportGroupContacts;
 RWStructuredBuffer<uint> DeviceSupportGroupOrderCounts;
+RWStructuredBuffer<uint4> DeviceSupportGroupContactKeys;
+RWStructuredBuffer<uint> DeviceSupportGroupSortContacts;
+RWStructuredBuffer<uint2> DeviceSupportGroupSortRange;
 
 struct DeviceContactSupportGroupWork : IDeviceContactSupportWork
 {
@@ -22,6 +25,7 @@ struct DeviceContactSupportGroupWork : IDeviceContactSupportWork
     uint orderStart() { return DeviceSupportGroupRanges[root].z+1; }
     uint orderCount() { return DeviceSupportGroupOrderCounts[root]; }
     void setOrderCount(uint count) { DeviceSupportGroupOrderCounts[root]=count; }
+    override bool contactsAreHeightOrdered() { return true; }
 };
 
 uint deviceSupportContactRoot(uint row)
@@ -44,6 +48,7 @@ void ClearDeviceSupportGroups(uint3 id:SV_DispatchThreadID)
     DeviceSupportGroupRanges[root]=uint4(0);
     DeviceSupportGroupWriteCounts[root]=uint2(0);
     DeviceSupportGroupOrderCounts[root]=0;
+    if(root==0) DeviceSupportGroupSortRange[0]=uint2(1,0);
 }
 
 [shader("compute")][numthreads(64,1,1)]
@@ -94,6 +99,7 @@ void OffsetDeviceSupportGroupBlocks(uint3 id:SV_DispatchThreadID)
         DeviceSupportGroupBlockOffsets[block]=total;
         total+=DeviceSupportGroupBlockSums[block];
     }
+    DeviceSupportGroupBlockOffsets[count]=total;
 }
 
 [shader("compute")][numthreads(64,1,1)]
@@ -126,7 +132,65 @@ void WriteDeviceSupportGroups(uint3 id:SV_DispatchThreadID)
         {
             InterlockedAdd(DeviceSupportGroupWriteCounts[root].y,1,position);
             DeviceSupportGroupContacts[DeviceSupportGroupRanges[root].z+position]=index;
+            DeviceConstraintMetadata metadata=DeviceContactsMetadata[index];
+            float heightValue=dot(DeviceContacts[index].worldPoint,ContactSupportSettings.up);
+            uint height=heightValue==0?0:asuint(heightValue);
+            uint heightOrder=(height&0x80000000)!=0?~height:height^0x80000000;
+            DeviceSupportGroupContactKeys[index]=uint4(root,heightOrder,metadata.entityIndex,metadata.entityGeneration);
         }
     }
+}
+
+bool deviceSupportKeyBefore(uint4 first,uint4 second)
+{
+    if(first.x!=second.x) return first.x<second.x;
+    if(first.y!=second.y) return first.y<second.y;
+    if(first.z!=second.z) return first.z<second.z;
+    return first.w<second.w;
+}
+
+uint deviceSupportSortContact(uint index,bool scratch)
+{ return scratch?DeviceSupportGroupSortContacts[index]:DeviceSupportGroupContacts[index]; }
+
+[shader("compute")][numthreads(64,1,1)]
+void MergeDeviceSupportContacts(uint3 id:SV_DispatchThreadID)
+{
+    uint index=devicePhysicsThreadIndex(id,64);
+    uint count=DeviceSupportGroupBlockOffsets[(ContactSupportSettings.bodies+255)/256].y;
+    if(index>=count) return;
+    uint2 sorting=DeviceSupportGroupSortRange[0];
+    uint width=sorting.x,start=index/(width*2)*(width*2);
+    bool right=index-start>=width,scratch=sorting.y!=0;
+    uint ownStart=start+(right?width:0);
+    uint otherStart=min(start+(right?0:width),count);
+    uint low=otherStart,high=min(start+(right?width:width*2),count);
+    uint row=deviceSupportSortContact(index,scratch);
+    uint4 key=DeviceSupportGroupContactKeys[row];
+    while(low<high)
+    {
+        uint middle=low+(high-low)/2;
+        uint4 other=DeviceSupportGroupContactKeys[deviceSupportSortContact(middle,scratch)];
+        bool before=right?!deviceSupportKeyBefore(key,other):deviceSupportKeyBefore(other,key);
+        if(before) low=middle+1; else high=middle;
+    }
+    uint target=start+index-ownStart+low-otherStart;
+    if(scratch) DeviceSupportGroupContacts[target]=row;
+    else DeviceSupportGroupSortContacts[target]=row;
+}
+
+[shader("compute")][numthreads(1,1,1)]
+void AdvanceDeviceSupportSort(uint3 id:SV_DispatchThreadID)
+{
+    uint2 sorting=DeviceSupportGroupSortRange[0];
+    DeviceSupportGroupSortRange[0]=uint2(sorting.x*2,sorting.y^1);
+}
+
+[shader("compute")][numthreads(64,1,1)]
+void FinishDeviceSupportSort(uint3 id:SV_DispatchThreadID)
+{
+    uint index=devicePhysicsThreadIndex(id,64);
+    uint count=DeviceSupportGroupBlockOffsets[(ContactSupportSettings.bodies+255)/256].y;
+    if(index<count&&DeviceSupportGroupSortRange[0].y!=0)
+        DeviceSupportGroupContacts[index]=DeviceSupportGroupSortContacts[index];
 }
 #endif
