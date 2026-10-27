@@ -101,36 +101,127 @@ internal static class DeviceGeometrySources
 public readonly struct WriteDeviceGeometryReferences<TComponent, TSource> : IPhysicsStage, IDisposable
     where TComponent : struct, IComponent where TSource : struct, IDeviceGeometrySource<TComponent>
 {
-    private readonly DeviceCollisionGrid _grid;
-    private readonly DeviceCollisionParticipants _participants;
-    private readonly TSource _source;
-    private readonly uint _geometryType;
-    private readonly int _rowsPerPacket;
-    private readonly QueryHandle _access;
-    private readonly JobResourceAccess[] _accesses;
+    private readonly GeometryInputRows _rows;
 
     internal WriteDeviceGeometryReferences(DeviceCollisionGrid grid, DeviceCollisionParticipants participants,
-        TSource source, uint geometryType, int rowsPerPacket)
-    {
-        _grid = grid; _participants = participants; _source = source; _geometryType = geometryType; _rowsPerPacket = rowsPerPacket;
-        QueryDefinition reads = source.AddReads(QueryDefinition.Empty);
-        _access = participants.World.Query(reads);
-        var descriptions = new QueryReadResources();
-        source.AddReadResources(descriptions);
-        var accesses = new List<JobResourceAccess>(participants.GetReadAccesses());
-        var extra = new JobResourceAccess[QueryJobAccess.Count(reads)];
-        QueryJobAccess.CopyAccesses(participants.World, reads, extra, descriptions);
-        accesses.AddRange(extra);
-        _accesses = accesses.ToArray();
-    }
+        TSource source, uint geometryType, int rowsPerPacket) =>
+        _rows = new(grid, participants, source, geometryType, rowsPerPacket);
 
-    public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency)
+    public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) => _rows.Schedule(in context, dependency);
+    public void Dispose() => _rows.Dispose();
+
+    private sealed class GeometryInputRows : IQueryReadEntities, IDisposable
     {
-        dependency = _source.Prepare(in context, QueryDefinition.Empty, _rowsPerPacket, dependency);
-        return new WriteDeviceGeometryReferenceJob<TComponent, TSource>(_grid, _participants, _access, _source, _geometryType)
-            .ScheduleParallel(context.World, _accesses, new JobEntityScheduleOptions(rowsPerPacket: _rowsPerPacket), dependency);
+        private readonly DeviceCollisionGrid _grid;
+        private readonly DeviceCollisionParticipants _participants;
+        private readonly TSource _source;
+        private readonly uint _geometryType;
+        private readonly int _rowsPerPacket;
+        private readonly QueryHandle _geometries, _references;
+        private readonly QueryReadResources _resources = new();
+        private readonly JobResourceAccess[] _accesses;
+        private readonly List<Entity> _entities = [];
+        private World World => _participants.World;
+        public int Count => _entities.Count;
+        public Entity GetEntity(int index) => _entities[index];
+
+        internal GeometryInputRows(DeviceCollisionGrid grid, DeviceCollisionParticipants participants,
+            TSource source, uint geometryType, int rowsPerPacket)
+        {
+            _grid = grid; _participants = participants; _source = source;
+            _geometryType = geometryType; _rowsPerPacket = rowsPerPacket;
+            QueryDefinition references = source.AddReads(QueryDefinition.Empty);
+            QueryDefinition geometries = source.AddReads(new QueryDefinitionBuilder().Read<DeviceCollisionBody>()
+                .Read<DeviceGeometryBinding>().Read<TComponent>().Build());
+            _references = World.Query(references);
+            _geometries = World.Query(geometries);
+            source.AddReadResources(_resources);
+            _resources.Add<DeviceCollisionBody, DeviceCollisionUploadResources>();
+            _resources.Add<DeviceGeometryBinding, DeviceGeometryReferenceUploadResources>();
+            _resources.Add<TComponent, TSource>();
+            var accesses = new List<JobResourceAccess>(participants.GetReadAccesses());
+            foreach (QueryDefinition definition in new[] { references, geometries })
+            {
+                var declared = new JobResourceAccess[QueryJobAccess.Count(definition)];
+                QueryJobAccess.CopyAccesses(World, definition, declared, _resources);
+                accesses.AddRange(declared);
+            }
+            accesses.Add(JobResourceAccess.Write(WorldJobs.GetScheduler(World).GetResourceToken(this)));
+            _accesses = accesses.ToArray();
+        }
+
+        internal JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency)
+        {
+            dependency = _source.Prepare(in context, QueryDefinition.Empty, _rowsPerPacket, dependency);
+            return WorldJobs.GetScheduler(World).Schedule(new ReadMembers(this), _accesses, dependency);
+        }
+
+        public void Dispose()
+        {
+            World.ReleaseQuery(_geometries);
+            World.ReleaseQuery(_references);
+        }
+
+        private readonly struct ReadMembers(GeometryInputRows inputs) : IJob
+        {
+            public void Execute()
+            {
+                inputs._entities.Clear();
+                GeometryInputRows state = inputs;
+                inputs.World.ExecuteReadQuery(inputs._geometries, ref state,
+                    static (scoped QueryCursor rows, ref GeometryInputRows output) =>
+                    {
+                        foreach (QueryRow row in rows.Rows)
+                            if (ReferenceEquals(row.ReadRef<DeviceCollisionBody>().Grid, output._grid))
+                                output._entities.Add(row.Entity);
+                    });
+                inputs._resources.ScheduleEntities(inputs.World, inputs._geometries, inputs,
+                    new WriteInputs(inputs), inputs._accesses);
+            }
+        }
+
+        private readonly struct WriteInputs(GeometryInputRows inputs) : IJob
+        {
+            public void Execute()
+            {
+                GeometryInputRows state = inputs;
+                inputs.World.ExecuteReadQuery(inputs._references, ref state,
+                    static (scoped QueryCursor references, ref GeometryInputRows output) =>
+                    {
+                        var write = new WriteGeometryRows(output, references);
+                        output.World.ExecuteReadQuery(output._geometries, ref write,
+                            static (scoped QueryCursor rows, ref WriteGeometryRows state) => state.Execute(rows));
+                    });
+            }
+        }
+
+        private readonly ref struct WriteGeometryRows(GeometryInputRows inputs, QueryCursor references)
+        {
+            private readonly QueryCursor _references = references;
+
+            internal void Execute(scoped QueryCursor rows)
+            {
+                foreach (QueryRow row in rows.Rows)
+                {
+                    ref readonly DeviceCollisionBody body = ref row.ReadRef<DeviceCollisionBody>();
+                    if (!ReferenceEquals(body.Grid, inputs._grid)) continue;
+                    ref readonly DeviceGeometryBinding binding = ref row.ReadRef<DeviceGeometryBinding>();
+                    ref readonly TComponent component = ref row.ReadRef<TComponent>();
+                    DeviceGeometryInput value = inputs._source.Read(in component, row, _references,
+                        binding.Geometry, out DeviceGeometryReference reference);
+                    value.GeometryIndex = (uint)binding.Index;
+                    value.GeometryType = inputs._geometryType;
+                    reference.GridIndex = (uint)body.Index;
+                    binding.Geometry.WriteInput(binding.Index, in value);
+                    binding.Geometry.WriteReference(binding.Index, in reference);
+                    var input = new DeviceCollisionInput { EntityIndex = (uint)row.Entity.Index,
+                        EntityGeneration = (uint)row.Entity.Generation, GeometryType = inputs._geometryType,
+                        GeometryIndex = (uint)binding.Index, Members = inputs._participants.ReadMembers(row.Entity) };
+                    inputs._grid.WriteInput(body.Index, in input);
+                }
+            }
+        }
     }
-    public void Dispose() => _participants.World.ReleaseQuery(_access);
 }
 
 public readonly struct DeviceGeometryReferenceUploadResources : IJobComponentResources<DeviceGeometryBinding>
@@ -139,39 +230,6 @@ public readonly struct DeviceGeometryReferenceUploadResources : IJobComponentRes
     {
         DeviceGeometryUploadResources.Collect(in component, ref resources);
         component.Geometry.CollectReferenceUpload(component.Index, ref resources);
-    }
-}
-
-internal readonly partial struct WriteDeviceGeometryReferenceJob<TComponent, TSource>(DeviceCollisionGrid grid,
-    DeviceCollisionParticipants participants, QueryHandle access, TSource source, uint geometryType) : IJobEntity
-    where TComponent : struct, IComponent where TSource : struct, IDeviceGeometrySource<TComponent>
-{
-    public void Execute(Entity entity, [JobResources<DeviceCollisionUploadResources>] in DeviceCollisionBody body,
-        [JobResources<DeviceGeometryReferenceUploadResources>] in DeviceGeometryBinding binding,
-        [JobResources(nameof(TSource))] in TComponent component)
-    {
-        if (!ReferenceEquals(body.Grid, grid)) return;
-        var read = new ReadSource(entity, component, source, binding.Geometry);
-        participants.World.ExecuteQuery(access, ref read);
-        read.Input.GeometryIndex = (uint)binding.Index;
-        read.Input.GeometryType = geometryType;
-        read.Reference.GridIndex = (uint)body.Index;
-        binding.Geometry.WriteInput(binding.Index, in read.Input);
-        binding.Geometry.WriteReference(binding.Index, in read.Reference);
-        var input = new DeviceCollisionInput { EntityIndex = (uint)entity.Index, EntityGeneration = (uint)entity.Generation,
-            GeometryType = geometryType, GeometryIndex = (uint)binding.Index, Members = participants.ReadMembers(entity) };
-        grid.WriteInput(body.Index, in input);
-    }
-
-    private struct ReadSource(Entity entity, TComponent component, TSource source, DeviceCollisionGeometry destination) : IQueryExecution
-    {
-        internal DeviceGeometryInput Input;
-        internal DeviceGeometryReference Reference;
-        public void Execute(scoped QueryCursor access)
-        {
-            access.TryGetRow(entity, out QueryRow row);
-            Input = source.Read(in component, row, access, destination, out Reference);
-        }
     }
 }
 
