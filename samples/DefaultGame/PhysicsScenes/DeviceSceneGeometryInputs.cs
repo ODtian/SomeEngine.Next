@@ -6,7 +6,7 @@ using SomeEngine.Physics;
 
 namespace DefaultGame;
 
-internal sealed class DeviceSceneGeometryInputs : IDisposable
+internal sealed class DeviceSceneGeometryInputs : IPhysicsStage, IDisposable
 {
     private readonly DeviceCollisionGrid _grid;
     private readonly WriteDeviceGeometryReferences<BoxGeometry, DeviceComponentSource<BoxGeometry, DeviceBoxReader>> _references;
@@ -28,9 +28,9 @@ internal sealed class DeviceSceneGeometryInputs : IDisposable
         if (inputsFixed) _resident = new(backend, device, grid, geometry, kernel, 0, DeviceInputTransfer.Resident);
     }
 
-    internal UpdateDeviceSceneGeometry Update() => new(this);
+    internal UpdateDeviceSceneGeometry<DeviceSceneGeometryInputs> Update() => new(this);
 
-    internal JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency)
+    public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency)
     {
         if (_inputsFixed && _uploaded)
             return _resident!.Update().Measure(_timings, "Dynamic geometry and bounds").Schedule(in context, dependency);
@@ -43,7 +43,8 @@ internal sealed class DeviceSceneGeometryInputs : IDisposable
     public void Dispose() { _resident?.Dispose(); _upload.Dispose(); _references.Dispose(); }
 }
 
-internal readonly struct UpdateDeviceSceneGeometry(DeviceSceneGeometryInputs inputs) : IPhysicsStage
+internal readonly struct UpdateDeviceSceneGeometry<TInputs>(TInputs inputs) : IPhysicsStage
+    where TInputs : class, IPhysicsStage
 {
     public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) => inputs.Schedule(in context, dependency);
 }
