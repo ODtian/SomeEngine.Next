@@ -21,9 +21,14 @@ public readonly struct JointLongRangeGraphConstraints(QueryHandle joints, JointL
     public void AddResources(World world, List<JobResourceAccess> accesses, PhysicsGraphPhase phase)
     {
         JobResourceToken resource = WorldJobs.GetScheduler(world).GetResourceToken(_data);
-        accesses.Add(phase is PhysicsGraphPhase.Initialize or PhysicsGraphPhase.Duals
+        accesses.Add(phase is PhysicsGraphPhase.Metadata or PhysicsGraphPhase.Initialize or PhysicsGraphPhase.Duals
             ? JobResourceAccess.Write(resource) : JobResourceAccess.Read(resource));
+        if (phase == PhysicsGraphPhase.Metadata) PhysicsQueryAccess.AddAccesses(world, joints, accesses);
     }
+
+    public void RefreshGraph(in PhysicsStepContext context, scoped EntityQueryViews queries, int queryOffset,
+        scoped PhysicsBodies bodies) =>
+        _data.RefreshGraph(new(queries.Get(queryOffset), queries.Get(2)), bodies, in context);
 
     public void ReadGraph(in PhysicsStepContext context, ReadOnlySpan<QueryHandle> queries, int queryOffset,
         ref PhysicsConstraintGraphBuilder graph)

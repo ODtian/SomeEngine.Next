@@ -86,9 +86,12 @@ internal sealed class PhysicsGraphQueries : IDisposable
     internal void ReadBodies(PhysicsGraphData graph) => _world.ExecuteReadQuery(Queries[0], ref graph,
         static (scoped QueryCursor rows, ref PhysicsGraphData data) => data.ReadBodies(rows));
 
-    internal void ReadGraph<TInputs>(PhysicsGraphData graph, TInputs inputs, in PhysicsStepContext context)
+    internal void ReadGraph<TInputs>(PhysicsGraphData graph, TInputs inputs, in PhysicsStepContext context,
+        scoped EntityQueryViews global)
         where TInputs : struct, IPhysicsGraphInputs
     {
+        var bodies = new PhysicsBodies(global.Get(0), global.Get(1), global.Get(2));
+        inputs.RefreshGraph(in context, global, 3, bodies);
         var read = new ReadGraphInputs<TInputs>(this, graph, inputs, context);
         _world.ExecuteReadQuery(Queries[2], ref read,
             static (scoped QueryCursor rows, ref ReadGraphInputs<TInputs> state) => state.Execute(rows));
