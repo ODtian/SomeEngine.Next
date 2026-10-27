@@ -65,15 +65,15 @@ uint ClusterRasterTargetHierarchyLevelOffset(
     ClusterRasterTargetView target,
     uint hierarchyLevel)
 {
-    uint offset = target.PageHierarchyBase;
-    uint dimension = target.PagesPerRow;
-    [loop]
-    for (uint level = 0u; level < hierarchyLevel; level++)
-    {
-        offset += dimension * ((dimension + 31u) / 32u);
-        dimension = max(dimension >> 1u, 1u);
-    }
-    return offset;
+    // Power-of-two dimensions quarter the word count while rows span multiple
+    // words, then halve it once each row fits in one word.
+    uint wideLevels = min(hierarchyLevel,
+        uint(max(int(firstbithigh(target.PagesPerRow)) - 4, 0)));
+    uint narrowDimension = target.PagesPerRow >> wideLevels;
+    uint dimension = target.PagesPerRow >> hierarchyLevel;
+    uint wideWords = (target.PagesPerRow * target.PagesPerRow -
+        narrowDimension * narrowDimension) / 24u;
+    return target.PageHierarchyBase + wideWords + 2u * (narrowDimension - dimension);
 }
 
 uint ClusterRasterTargetHierarchyDimension(

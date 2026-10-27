@@ -76,7 +76,6 @@ bool ClusterTargetReceiverAccepts(
     if (target.ReceiverMaskEnabled == 0u)
         return true;
 
-    uint tableIndex = ClusterRasterTargetTableIndex(target, localPage);
     uint2 receiverMask = LoadClusterTargetReceiverMask(target, localPage);
     if (all(receiverMask == 0u.xx))
         return false;
@@ -87,12 +86,9 @@ bool ClusterTargetReceiverAccepts(
         : 0u.xx;
     uint2 localLast = min(lastPixel - min(lastPixel, pageOrigin), target.PageSize - 1u);
 
-    uint2 firstCell = min(
-        localFirst * 8u / max(target.PageSize, 1u),
-        7u.xx);
-    uint2 lastCell = min(
-        localLast * 8u / max(target.PageSize, 1u),
-        7u.xx);
+    uint cellShift = firstbithigh(target.PageSize) - 3u;
+    uint2 firstCell = min(localFirst >> cellShift, 7u.xx);
+    uint2 lastCell = min(localLast >> cellShift, 7u.xx);
     return VirtualShadowReceiverMaskRectangle(receiverMask, firstCell, lastCell);
 }
 
@@ -113,11 +109,12 @@ bool ClusterTargetPageBounds(
     out uint2 firstPage,
     out uint2 lastPage)
 {
+    uint pageShift = firstbithigh(target.PageSize);
     firstPage = max(
-        firstPixel / target.PageSize,
+        firstPixel >> pageShift,
         target.UncachedPageRect.xy);
     lastPage = min(
-        lastPixel / target.PageSize,
+        lastPixel >> pageShift,
         target.UncachedPageRect.zw);
     return all(firstPage <= lastPage);
 }
@@ -168,13 +165,20 @@ bool ClusterTargetPolicyScreenBoundsAccepts(
         return false;
     if (requiredPageFlags != 0u)
     {
-        for (uint y = firstPage.y; y <= lastPage.y; y++)
-        for (uint x = firstPage.x; x <= lastPage.x; x++)
+        uint firstWord = firstPage.x / 32u;
+        uint lastWord = lastPage.x / 32u;
+        for (uint row = firstPage.y; row <= lastPage.y; row++)
+        for (uint word = firstWord; word <= lastWord; word++)
         {
-            uint2 page = uint2(x, y);
-            if (ClusterTargetPageRequested(target, page, depthCacheClass) &&
-                (RasterTargetPageTable[ClusterRasterTargetTableIndex(target, page)] & requiredPageFlags) != 0u &&
-                (depthCacheClass == 1u || ClusterTargetReceiverAccepts(target, page, firstPixel, lastPixel))) return true;
+            uint mask = ClusterTargetHierarchyWordMask(
+                target, 0u, row, word, firstPage.x, lastPage.x, depthCacheClass);
+            while (mask != 0u)
+            {
+                uint2 page = uint2(word * 32u + firstbitlow(mask), row);
+                mask &= mask - 1u;
+                if ((RasterTargetPageTable[ClusterRasterTargetTableIndex(target, page)] & requiredPageFlags) != 0u &&
+                    (depthCacheClass == 1u || ClusterTargetReceiverAccepts(target, page, firstPixel, lastPixel))) return true;
+            }
         }
         return false;
     }
@@ -223,8 +227,9 @@ bool ClusterTargetPolicyRasterBoundsWindow(
             minUv, maxUv, view, target, firstPixel, lastPixel))
         return false;
 
-    uint2 firstPage = firstPixel / target.PageSize;
-    uint2 lastPage = lastPixel / target.PageSize;
+    uint pageShift = firstbithigh(target.PageSize);
+    uint2 firstPage = firstPixel >> pageShift;
+    uint2 lastPage = lastPixel >> pageShift;
     uint2 clippedWindow;
     if (!ClusterTargetCropRasterWindow(target, uint4(firstPage, lastPage),
             firstPixel, lastPixel, clippedWindow, depthCacheClass, requiredPageFlags)) return false;
@@ -259,23 +264,26 @@ bool ClusterTargetCropRasterWindow(
                 word,
                 firstPage.x,
                 lastPage.x, depthCacheClass);
-            while (mask != 0u)
+            if (requiredPageFlags != 0u)
             {
-                uint column = word * 32u + firstbitlow(mask);
-                mask &= mask - 1u;
-                uint2 localPage = uint2(column, row);
-                uint tableIndex;
-                uint physicalPage;
-                if (ClusterRasterTargetResolvePage(target, localPage, tableIndex, physicalPage))
+                uint requestedMask = mask;
+                mask = 0u;
+                while (requestedMask != 0u)
                 {
-                    if (requiredPageFlags != 0u && (RasterTargetPageTable[tableIndex] & requiredPageFlags) == 0u) continue;
-#ifndef CLUSTER_TARGET_BOUNDS_ONLY
-                    if (depthCacheClass == 1u && (RasterTargetPageMetadata[physicalPage].Flags & 8u) == 0u) continue;
-#endif
-                    acceptedFirst = min(acceptedFirst, localPage);
-                    acceptedLast = max(acceptedLast, localPage);
-                    accepted = true;
+                    uint column = firstbitlow(requestedMask);
+                    uint bit = 1u << column;
+                    requestedMask &= requestedMask - 1u;
+                    uint tableIndex = ClusterRasterTargetTableIndex(target, uint2(word * 32u + column, row));
+                    if ((RasterTargetPageTable[tableIndex] & requiredPageFlags) != 0u) mask |= bit;
                 }
+            }
+            // Allocation publishes these bits after the rendering entry and its
+            // matching uncached depth class. Each word supplies its page extrema.
+            if (mask != 0u)
+            {
+                acceptedFirst = min(acceptedFirst, uint2(word * 32u + firstbitlow(mask), row));
+                acceptedLast = max(acceptedLast, uint2(word * 32u + firstbithigh(mask), row));
+                accepted = true;
             }
         }
     }
@@ -433,8 +441,7 @@ bool ClusterTargetPolicyScreenBoundsOccluded(
                     lastPixel - min(lastPixel, pageOrigin),
                     target.PageSize - 1u);
                 uint2 diameter = localLast - localFirst + 1u;
-                uint hizMip = min(
-                    uint(max(0.0, ceil(log2(float(max(diameter.x, diameter.y)))) - 1.0)),
+                uint hizMip = min(uint(firstbithigh(max(max(diameter.x, diameter.y) - 1u, 1u))),
                     view.HiZMipCount - 1u);
                 float hizDepth;
                 if (usePrevious)
