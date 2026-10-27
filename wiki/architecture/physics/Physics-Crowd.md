@@ -35,14 +35,16 @@ XPBD 继续更新原 Length/Bend 乘子并投影节点。完成一次速度重�
 以调用方的 `rowsPerPacket` 交给 `EntityQueryJobs`。每包在一个来源查询范围内
 调用原 `IDeviceConstraintSource.Read(component, row, access)`；组件值和写版本从实际行取得，
 各个 `DeviceConstraintBinding.Index` 继续登记自身参数及元数据的上传写入范围。
-项目沿原查询成员版本和块版本复用已绑定的 Length、Bend 输入。
-主体绑定、约束参数、双端引用、参与关系或弯曲引用缓冲发生变化时，
+项目沿原查询成员版本和块版本复用已绑定的 Length、Bend 与 Joint 输入。
+主体绑定、约束参数、双端引用、参与关系、弯曲引用缓冲、Joint 历史或其绑定发生变化时，
 原输入阶段重新读取组件并更新同一个设备表示；动画阶段继续直接维护实际段长。
+Motor 的当前动画目标继续每步写入原设备参数行。
 
 `CreateDevice(characters, backend, device, timings)` 接受原 `PhysicsSceneTimings`。
 来源采样、参数输入、碰撞维护、约束图、方程初始化、每轮 AVBD/XPBD、
 速度、骨骼输出和主体完成读回使用原 `Measure` 阶段；`timings.Describe()`
 交付这些阶段的提交与依赖到完成耗时。原三参数入口沿同一装配推进。
+输入阶段另记录主体组件、约束组件和 Motor 组件历史的耗时。
 
 完成主体结果沿原 `DeviceBodyResults` 写回全部所选实体。
 每个 `DeviceBodyBinding` 通过组件资源描述器登记自身 CPU 版本数组中的一个元素，
@@ -78,3 +80,24 @@ Box、Capsule 与 Face 每步继续读取当前主体状态，更新实际几何
 
 `ACharacterCapsuleMovesAnotherCharactersBoneClothInTheirCompletedFrame` 沿原组件移动第二个角色及布料，
 其臂端冲量通过胶囊/面域接触推动第一个角色的布料节点，并交付该布料的同帧骨骼输出。
+
+`CreateMixedDevice(backend, device, timings)` 的设计配置复用上述角色和布料，
+将原关节网生成器的 250 列、130 行和 6,755 个对角连接加入同一主体表示。
+625 个角色提供 2,500 个臂体和 10,000 个布料点；网格的第一个静态锚使用同一地面实体，
+另外 32,499 个节点保留原 Box、质量、惯量和关节局部锚。
+刚体总数为 `2,500 + 32,499 + 1 = 35,000`，连同布料共 45,000 个主体。
+关节总数为横向 32,370、纵向 32,250、对角 6,755 和角色的 625 个驱动关系，共 72,000。
+网格沿 Y 向上坐标表达原位置、锚点与第 120 步面外冲量；原 100,000 节点入口继续使用完整对角连接。
+
+普通 Joint 在 Length、Bend、Motor 之后进入同一约束图和 AVBD，接触位于这些约束之后。
+XPBD 保留同样的行范围，更新原 Length/Bend 乘子；Joint 的数值历史由 AVBD 持有。
+混合网格继续从原 `DeviceGeometryReference` 取得 Box 的实际主体索引，
+沿原相邻碰撞排除关系筛选 Box 对；Box/Box、Box/Capsule、Box/Face 与 Capsule/Face
+通过连续类型 bin 进入同一个检测、匹配、接触历史和响应数据。
+全体主体继续在同一 Frame 完成后交付原 CPU 组件，角色和布料继续交付原 GPU 骨骼输出。
+
+参数入口 `CreateMixedDevice(characters, columns, rows, diagonalJoints, backend, device, timings)`
+复用同一装配。行为检查中的 `2, 4, 6, 8` 是小型验证例子：32 个刚体、32 个布料点和
+48 个关节；实际移动其中一个网格 Box，使其接触骨骼布料，并观察共同完成号、位移和骨骼输出。
+独立的静态锚行为观察普通 Joint 对下方动态节点的约束。
+完整规模检查沿声明的 35,000/72,000/10,000 配置连续推进 180 步并报告整步与各阶段成本。
