@@ -45,11 +45,14 @@ internal sealed partial class PhysicsGraphData
     {
         _bodyUses.Clear(); _references.Clear();
         ref readonly TConstraint constraint = ref row.ReadRef<TConstraint>();
-        for (int index = 0; index < TBodies.GetBodyCount(in constraint, row, in context); index++)
+        int bodyCount = TBodies.GetBodyCount(in constraint, row, in context);
+        for (int index = 0; index < bodyCount; index++)
             _bodyUses[PhysicsConstraintBodies.GetBody<TConstraint, TBodies>(in constraint, row, index, bodies, in context)] = true;
-        for (int index = 0; index < TBodies.GetReadBodyCount(in constraint, row, in context); index++)
+        int readBodyCount = TBodies.GetReadBodyCount(in constraint, row, in context);
+        for (int index = 0; index < readBodyCount; index++)
             _bodyUses.TryAdd(TBodies.GetReadBody(in constraint, row, index, in context), false);
-        for (int index = 0; index < TBodies.GetReadEntityCount(in constraint, row, in context); index++)
+        int readEntityCount = TBodies.GetReadEntityCount(in constraint, row, in context);
+        for (int index = 0; index < readEntityCount; index++)
             _references.Add(TBodies.GetReadEntity(in constraint, row, index, in context));
         Store(query, row.Entity);
     }
