@@ -7,7 +7,7 @@ namespace SomeEngine.Render.Cluster.Pipeline;
 
 public sealed partial class ClusterPipelineSystem
 {
-    private readonly record struct BufferWrite(BufferRange Range, ClusterBytes Bytes);
+    private readonly record struct BufferWrites(ClusterBytes Bytes, BufferRange[] Ranges);
     private readonly record struct ShaderParameters(int Offset, int Capacity);
 
     private GraphBufferId CreateBufferData(ref RenderGraphEdit edit, ClusterBytes bytes,
@@ -42,26 +42,41 @@ public sealed partial class ClusterPipelineSystem
     private void QueueBufferWrites(GraphBufferId buffer, ClusterBytes bytes,
         scoped ReadOnlySpan<BufferRange> changes)
     {
-        var writes = GraphData.BufferWrites.GetValueOrDefault(buffer, ImmutableList<BufferWrite>.Empty);
-        if (changes.Length > 1)
+        if (changes.IsEmpty) return;
+        GraphData.BufferWrites.TryGetValue(buffer, out BufferWrites before);
+        BufferRange[] ranges = MergeBufferRanges(before.Ranges ?? [], changes);
+        if (ranges.Length != 0)
+            // Every update carries the complete CPU bytes. Earlier queued ranges
+            // can use the latest bytes too, including after a discarded frame.
+            GraphData.BufferWrites = GraphData.BufferWrites.SetItem(buffer, new(bytes, ranges));
+    }
+
+    private static BufferRange[] MergeBufferRanges(ReadOnlySpan<BufferRange> before,
+        ReadOnlySpan<BufferRange> changes)
+    {
+        var ranges = new BufferRange[before.Length + changes.Length];
+        before.CopyTo(ranges);
+        changes.CopyTo(ranges.AsSpan(before.Length));
+        Array.Sort(ranges, static (left, right) => left.Offset.CompareTo(right.Offset));
+        int count = 0;
+        foreach (BufferRange range in ranges)
         {
-            var builder = writes.ToBuilder();
-            foreach (BufferRange range in changes)
+            if (range.Size == 0) continue;
+            if (count != 0)
             {
-                if (range.Size == 0) continue;
-                builder.Add(new BufferWrite(range, bytes));
+                BufferRange previous = ranges[count - 1];
+                ulong end = previous.Offset + previous.Size;
+                if (range.Offset <= end)
+                {
+                    ranges[count - 1] = new(previous.Offset,
+                        Math.Max(end, range.Offset + range.Size) - previous.Offset);
+                    continue;
+                }
             }
-            writes = builder.ToImmutable();
+            ranges[count++] = range;
         }
-        else
-        {
-            foreach (BufferRange range in changes)
-            {
-                if (range.Size == 0) continue;
-                writes = writes.Add(new BufferWrite(range, bytes));
-            }
-        }
-        GraphData.BufferWrites = GraphData.BufferWrites.SetItem(buffer, writes);
+        Array.Resize(ref ranges, count);
+        return ranges;
     }
 
     private void RemoveBufferData(ref RenderGraphEdit edit, GraphBufferId buffer)
