@@ -21,23 +21,17 @@ public sealed partial class DeviceConstraintGraph
         Initialize = 1, Connect, Compress, ScanDegrees, OffsetBlocks, AddDegreeOffsets, WriteAdjacency, ResetColorProgress,
         ProposeBodyColors, ResolveBodyColors, ProposeRowColors, ResolveRowColors, CountColors, OffsetGroups, CountRows, OffsetRanges, WriteWork,
     }
-    private void BuildParallelAndWait()
+    private void BuildParallelAndWait(bool activeWorkOnly = false)
     {
         int bodyGroups = (_bodies.Capacity + _threadsPerGroup - 1) / _threadsPerGroup;
         int rowGroups = (_capacity.Constraints + _threadsPerGroup - 1) / _threadsPerGroup;
-        _backend.Begin(_commands, new(0, 0, 32));
-        if (!_initialized)
-            foreach (var buffer in _buffers)
-                _backend.Barrier(_commands, new BufferBarrier(buffer, buffer.InitialSync, PipelineSync.ComputeShading,
-                    buffer.InitialAccess, ResourceAccess.UnorderedAccess));
-        DispatchGraphKernel(0, rowGroups);
-        DispatchGraphKernel(GraphKernel.Initialize, Math.Max(bodyGroups, rowGroups));
-        DispatchGraphKernel(GraphKernel.Connect, rowGroups);
-        DispatchGraphKernel(GraphKernel.Compress, bodyGroups);
-        DispatchGraphKernel(GraphKernel.ScanDegrees, (_bodies.Capacity + 255) / 256);
-        DispatchGraphKernel(GraphKernel.OffsetBlocks, 1);
-        DispatchGraphKernel(GraphKernel.AddDegreeOffsets, bodyGroups);
-        DispatchGraphKernel(GraphKernel.WriteAdjacency, rowGroups);
+        BeginParallelGraph();
+        if (activeWorkOnly)
+        {
+            DispatchGraphKernel(GraphKernel.Initialize, Math.Max(bodyGroups, rowGroups));
+            DispatchGraphKernel(GraphKernel.Compress, bodyGroups);
+        }
+        else RecordParallelConnectivity();
         RecordColorRounds(bodyGroups, bodies: true);
         SubmitGraphAndReadCounts();
         while (_colorProgress[0] != 0)
@@ -62,6 +56,27 @@ public sealed partial class DeviceConstraintGraph
         DispatchGraphKernel(GraphKernel.OffsetRanges, 1);
         DispatchGraphKernel(GraphKernel.WriteWork, Math.Max(bodyGroups, rowGroups));
         SubmitGraphAndReadCounts();
+    }
+    private void BeginParallelGraph()
+    {
+        _backend.Begin(_commands, new(0, 0, 32));
+        if (!_initialized)
+            foreach (var buffer in _buffers)
+                _backend.Barrier(_commands, new BufferBarrier(buffer, buffer.InitialSync, PipelineSync.ComputeShading,
+                    buffer.InitialAccess, ResourceAccess.UnorderedAccess));
+    }
+    private void RecordParallelConnectivity()
+    {
+        int bodyGroups = (_bodies.Capacity + _threadsPerGroup - 1) / _threadsPerGroup;
+        int rowGroups = (_capacity.Constraints + _threadsPerGroup - 1) / _threadsPerGroup;
+        DispatchGraphKernel(0, rowGroups);
+        DispatchGraphKernel(GraphKernel.Initialize, Math.Max(bodyGroups, rowGroups));
+        DispatchGraphKernel(GraphKernel.Connect, rowGroups);
+        DispatchGraphKernel(GraphKernel.Compress, bodyGroups);
+        DispatchGraphKernel(GraphKernel.ScanDegrees, (_bodies.Capacity + 255) / 256);
+        DispatchGraphKernel(GraphKernel.OffsetBlocks, 1);
+        DispatchGraphKernel(GraphKernel.AddDegreeOffsets, bodyGroups);
+        DispatchGraphKernel(GraphKernel.WriteAdjacency, rowGroups);
     }
     private void RecordColorRounds(int groups, bool bodies)
     {
@@ -93,9 +108,7 @@ public sealed partial class DeviceConstraintGraph
             ResourceAccess.CopySource, ResourceAccess.UnorderedAccess));
         _backend.Barrier(_commands, new BufferBarrier(_buildProgress!, PipelineSync.Copy, PipelineSync.ComputeShading,
             ResourceAccess.CopySource, ResourceAccess.UnorderedAccess));
-        using RecordedCommands recorded = _backend.End(_commands);
-        QueueCompletion completed = _backend.Submit(_backend.GetQueue(_device, QueueType.Compute), new([], [], [recorded], [], []));
-        _initialized = true;
+        QueueCompletion completed = SubmitGraphCommands();
         if (_backend.WaitCpu(in completed, TimeSpan.FromSeconds(60)) != WaitStatus.Completed) throw new TimeoutException();
         using (MappedBuffer mapping = _backend.Map(_readback, MapType.Read, BufferRange.Whole))
         {
@@ -104,5 +117,12 @@ public sealed partial class DeviceConstraintGraph
             counts[..4].CopyTo(_counts); counts.Slice(4, 4).CopyTo(_colorProgress);
         }
         _backend.CollectCompleted(_device);
+    }
+    private QueueCompletion SubmitGraphCommands()
+    {
+        using RecordedCommands recorded = _backend.End(_commands);
+        QueueCompletion completed = _backend.Submit(_backend.GetQueue(_device, QueueType.Compute), new([], [], [recorded], [], []));
+        _initialized = true;
+        return completed;
     }
 }

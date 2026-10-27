@@ -25,13 +25,17 @@ bool deviceGraphPrecedes(uint first,uint second)
 void InitializeDeviceGraph(uint3 id:SV_DispatchThreadID)
 {
     uint index=devicePhysicsThreadIndex(id,64);
+    bool activeWorkOnly=ConstraintGraphParameters.activeWorkOnly!=0;
     if(index<ConstraintGraphParameters.bodies)
     {
-        DeviceSelectedBodies selection;
-        ConstraintGraphParents[index]=selection.contains(index)&&DeviceBodyStates[index].motion==2?index:0xffffffff;
+        if(!activeWorkOnly)
+        {
+            DeviceSelectedBodies selection;
+            ConstraintGraphParents[index]=selection.contains(index)&&DeviceBodyStates[index].motion==2?index:0xffffffff;
+            ConstraintGraphBodyOffsets[index]=0; ConstraintGraphScratch[index]=0; ConstraintGraphIslands[index]=0xffffffff;
+        }
         ConstraintGraphActiveBodies[index]=ConstraintGraphParents[index]!=0xffffffff&&DEVICE_GRAPH_BODY_ACTIVE(index)?1:0;
-        ConstraintGraphBodyColors[index]=0xffffffff; ConstraintGraphBodyOffsets[index]=0;
-        ConstraintGraphScratch[index]=0; ConstraintGraphIslands[index]=0xffffffff; ConstraintGraphBodyRanges[index]=uint2(0);
+        ConstraintGraphBodyColors[index]=0xffffffff; ConstraintGraphBodyRanges[index]=uint2(0);
     }
     if(index<ConstraintGraphParameters.rows)
     {
@@ -40,7 +44,10 @@ void InitializeDeviceGraph(uint3 id:SV_DispatchThreadID)
     }
     if(index==0)
         for(uint component=0;component<4;component++)
-        { ConstraintGraphCounts[component]=0; ConstraintGraphBuildProgress[component]=0; }
+        {
+            ConstraintGraphCounts[component]=0;
+            if(!activeWorkOnly||component!=2) ConstraintGraphBuildProgress[component]=0;
+        }
 }
 void deviceGraphJoin(uint first,uint second)
 {
