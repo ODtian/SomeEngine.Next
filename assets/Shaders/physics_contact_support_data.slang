@@ -52,6 +52,7 @@ interface IDeviceContactSupportWork
     uint contactCount(); uint contact(uint index);
     uint candidateStart(); uint orderStart(); uint orderCount();
     void setOrderCount(uint count);
+    bool contactsAreHeightOrdered() { return false; }
 };
 struct DeviceAllContactSupportWork : IDeviceContactSupportWork
 {

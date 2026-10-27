@@ -145,7 +145,8 @@ internal sealed partial class PhysicsSceneShaders
         string[] names = ["ClearBodyIndices", "Initialize", "UpdateBody", "UpdateDuals", "InitializeSupports",
             "UpdateSupports", "ClearSupportBodies"];
         if (contactSupports) names = [.. names, "ClearDeviceSupportGroups", "CountDeviceSupportGroups",
-            "ScanDeviceSupportGroups", "OffsetDeviceSupportGroupBlocks", "AddDeviceSupportGroupOffsets", "WriteDeviceSupportGroups"];
+            "ScanDeviceSupportGroups", "OffsetDeviceSupportGroupBlocks", "AddDeviceSupportGroupOffsets", "WriteDeviceSupportGroups",
+            "MergeDeviceSupportContacts", "AdvanceDeviceSupportSort", "FinishDeviceSupportSort"];
         ComputePipelineDesc[] entries = Compile("scene_contact_avbd", SceneDefines(contactSupports, jointBounds) + """
             #include "physics_dispatch.slang"
             #include "physics_avbd_contact.slang"
@@ -284,13 +285,23 @@ internal sealed partial class PhysicsSceneShaders
             """, names);
         DispatchArguments bodies = DevicePhysicsDispatch.CreateGroups((bodyCount + 63) / 64);
         DispatchArguments rows = DevicePhysicsDispatch.CreateGroups((Math.Max(bodyCount, contactCapacity) + 63) / 64);
-        DeviceAvbdGroupDispatch[] initialization = contactSupports
-            ? [new(entries[6], bodies), new(entries[7], bodies), new(entries[8], rows),
+        var initialization = new List<DeviceAvbdGroupDispatch>();
+        if (contactSupports)
+        {
+            initialization.AddRange([new(entries[6], bodies), new(entries[7], bodies), new(entries[8], rows),
                 new(entries[9], DevicePhysicsDispatch.CreateGroups((bodyCount + 255) / 256)), new(entries[10], new(1, 1, 1)),
-                new(entries[11], bodies), new(entries[12], rows), new(entries[4], bodies)] : [];
+                new(entries[11], bodies), new(entries[12], rows)]);
+            for (long width = 1; width < contactCapacity; width *= 2)
+            {
+                initialization.Add(new(entries[13], rows));
+                initialization.Add(new(entries[14], new(1, 1, 1)));
+            }
+            initialization.Add(new(entries[15], rows));
+            initialization.Add(new(entries[4], bodies));
+        }
         DeviceAvbdGroupDispatch[] updates = contactSupports ? [new(entries[5], bodies)] : [];
         return new(entries[1], entries[2], entries[3], ClearBodyIndices: entries[0])
-        { GroupInitializationDispatches = initialization, GroupUpdateDispatches = updates };
+        { GroupInitializationDispatches = initialization.ToArray(), GroupUpdateDispatches = updates };
     }
 
     internal DeviceContactKernels Responses()

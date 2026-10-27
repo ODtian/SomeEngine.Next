@@ -187,7 +187,7 @@ void buildDeviceContactSupports<T : IDeviceBodySelection,TWork : IDeviceContactS
         candidate.upperPoint=deviceSupportProject(upperSecond?secondWitness:firstWitness);
         candidate.height=dot(point.worldPoint,ContactSupportSettings.up); candidate.gapHeight=dot(gap,ContactSupportSettings.up)*(upperSecond?1:-1);
         uint position=candidateCount++;
-        while(position>0)
+        while(!work.contactsAreHeightOrdered()&&position>0)
         {
             DeviceSupportCandidate previous=DeviceSupportCandidates[candidateStart+position-1];
             DeviceConstraintMetadata a=DeviceContactsMetadata[previous.contact],b=DeviceContactsMetadata[row];

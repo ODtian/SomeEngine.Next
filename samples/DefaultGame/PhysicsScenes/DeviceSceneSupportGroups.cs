@@ -25,9 +25,12 @@ internal sealed class DeviceSceneSupportGroups : IDisposable, IDevicePhysicsSubm
         Add("DeviceSupportGroupWriteCounts", bodies, 8);
         Add("DeviceSupportGroupOrderCounts", bodies, 4);
         Add("DeviceSupportGroupBlockSums", (bodies + 255) / 256, 8);
-        Add("DeviceSupportGroupBlockOffsets", (bodies + 255) / 256, 8);
+        Add("DeviceSupportGroupBlockOffsets", (bodies + 255) / 256 + 1, 8);
         Add("DeviceSupportGroupBodies", bodies, 4);
         Add("DeviceSupportGroupContacts", contacts, 4);
+        Add("DeviceSupportGroupContactKeys", contacts, 16);
+        Add("DeviceSupportGroupSortContacts", contacts, 4);
+        Add("DeviceSupportGroupSortRange", 1, 8);
 
         void Add(string name, int count, uint stride)
         {
