@@ -20,8 +20,7 @@ public static class DevicePoseShaders
         lock (s_gate)
         {
             if (s_shaders.TryGetValue(target, out PoseShader ready)) return ready;
-            if (s_global is null)
-            { Check(Slang.CreateGlobalSession(Slang.ApiVersion, out IGlobalSession global)); s_global = global; }
+            s_global ??= Shader.CreateSlangGlobalSession();
             var output = new TargetDesc
             {
                 Format = target,
