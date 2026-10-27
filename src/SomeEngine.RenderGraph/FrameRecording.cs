@@ -484,20 +484,26 @@ internal sealed partial class FrameExecutor
         bool begun = false;
         try
         {
-            ulong resourceDescriptors = 0, samplerDescriptors = 0;
-            if (context.QueueType != QueueType.Copy)
+            if (batch.DescriptorCountsChanged)
             {
-                foreach (int pass in batch.Passes)
+                ulong resourceDescriptors = 0, samplerDescriptors = 0;
+                if (context.QueueType != QueueType.Copy)
                 {
-                    PassParameters parameters = _passParameters[pass];
-                    resourceDescriptors += parameters.ResourceDescriptorCount;
-                    samplerDescriptors += parameters.SamplerDescriptorCount;
+                    foreach (int pass in batch.Passes)
+                    {
+                        PassParameters parameters = _passParameters[pass];
+                        resourceDescriptors += parameters.ResourceDescriptorCount;
+                        samplerDescriptors += parameters.SamplerDescriptorCount;
+                    }
                 }
+                DeviceLimits limits = _frame.Graph.Device.Capabilities.Limits;
+                batch.ResourceDescriptorCapacity = (uint)Math.Min(resourceDescriptors, limits.ResourceDescriptorCapacity);
+                batch.SamplerDescriptorCapacity = (uint)Math.Min(samplerDescriptors, limits.SamplerDescriptorCapacity);
+                batch.DescriptorCountsChanged = false;
             }
-            DeviceLimits limits = _frame.Graph.Device.Capabilities.Limits;
             _frame.Backend.Begin(context, new CommandRecordingDesc(
-                InitialResourceDescriptorCapacity: (uint)Math.Min(resourceDescriptors, limits.ResourceDescriptorCapacity),
-                InitialSamplerDescriptorCapacity: (uint)Math.Min(samplerDescriptors, limits.SamplerDescriptorCapacity),
+                InitialResourceDescriptorCapacity: batch.ResourceDescriptorCapacity,
+                InitialSamplerDescriptorCapacity: batch.SamplerDescriptorCapacity,
                 Label: _passes[batch.Passes[0]].Label));
             begun = true;
             foreach (int pass in batch.Passes)
@@ -1269,6 +1275,10 @@ internal sealed partial class FrameExecutor
         internal readonly CommandContext Context = context;
         internal readonly bool Repeatable = repeatable;
         internal bool CommandsChanged = true;
+        // Descriptor capacity follows parameter declarations, independently of frame values.
+        internal bool DescriptorCountsChanged = true;
+        internal uint ResourceDescriptorCapacity;
+        internal uint SamplerDescriptorCapacity;
         internal RecordedCommands? Commands;
         internal int Count => Passes.Length;
 
@@ -1456,6 +1466,8 @@ internal sealed partial class FrameExecutor
                 if (value.Data is { Length: > 0 }) parameters.ResourceDescriptorCount++;
                 value.Resources.AsSpan(value.Count).Clear();
             }
+            if ((uint)pass < (uint)_recordingBatchByPass.Length && _recordingBatchByPass[pass] is { } batch)
+                batch.DescriptorCountsChanged = true;
         }
         _parameterPassChanges.Clear();
     }
