@@ -96,18 +96,21 @@ public readonly struct SolveAvbdGraph<TConstraints> : IPhysicsStage, IDisposable
                     row.ReadWrite<AvbdBodyEquation>().Initialize(in row.ReadRef<BodyMass>());
                 solve._constraints.Initialize(in context, global, 3, bodies, solve._retention);
             }
+            if (iterations == 0) return true;
+            var work = new BodyWork(solve);
+            using EntityQueryGroup bodyRows = group.Borrow(in work);
             for (int iteration = 0; iteration < iterations; iteration++)
             {
                 solve._graph.Begin(); solve._queries.ReadBodies(solve._graph);
                 solve._queries.ReadGraph(solve._graph, solve._constraints, in context);
-                solve._graph.Finish();
-                var work = new BodyWork(solve);
+                bool changed = solve._graph.Finish();
+                if (changed || solve._resources is not null) bodyRows.Refresh(in work);
                 var update = new UpdateBodies(solve, context);
-                group.ExecuteParallel(in work, in update, 0, solve._graph.ScalarBatches.Count);
+                bodyRows.ExecuteParallel(in update, 0, solve._graph.ScalarBatches.Count);
                 int start = solve._graph.ScalarBatches.Count;
                 foreach (List<PhysicsGraphBatch> color in solve._graph.BodyGroups)
                 {
-                    group.ExecuteParallel(in work, in update, start, color.Count);
+                    bodyRows.ExecuteParallel(in update, start, color.Count);
                     start += color.Count;
                 }
                 solve._constraints.UpdateDuals(in context, global, 3, bodies, solve._initialErrorFraction);

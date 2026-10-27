@@ -9,6 +9,24 @@ namespace SomeEngine.ECS.Systems.Tests;
 public sealed class EntityQueryGroupTests
 {
     [Fact]
+    public void DerivedRangesKeepTheirWritesAcrossRepeatedUseAndRefreshedMembers()
+    {
+        using var scheduler = new Scheduler(new() { WorkerCount = 2 });
+        using var world = WorldJobs.CreateWorld(scheduler: scheduler);
+        Entity first = world.CreateEntity(new PointValue(1));
+        Entity second = world.CreateEntity(new PointValue(7));
+        QueryHandle writes = world.Query(new QueryDefinitionBuilder().ReadWrite<PointValue>());
+        var global = new PointGroups(writes, writes, [[first, second]], [[first, second]]);
+
+        EntityQueryJobs.ScheduleGroup(world, in global, new ReuseThenRefresh(writes, first, second)).Complete();
+
+        Assert.Equal(3, world.Read<PointValue>(first).Value);
+        Assert.Equal(8, world.Read<PointValue>(second).Value);
+        Assert.Equal(world.WriteVersion<PointValue>(first), world.WriteVersion<PointValue>(second));
+        world.ReleaseQuery(writes);
+    }
+
+    [Fact]
     public void ParallelRangesJoinBeforeTheFollowingGroupReadsTheirWrites()
     {
         using var scheduler = new Scheduler(new() { WorkerCount = 2 });
@@ -221,6 +239,21 @@ public sealed class EntityQueryGroupTests
                 row.ReadWrite<PointValue>() = new(row.Read<PointValue>().Value + 10);
             var derived = new PointGroups(reads, writes, [[], [anchor], [anchor]], [[], [first], [second]]);
             group.ExecuteParallel(in derived, new AddAnchor(together), 1, 2);
+            return true;
+        }
+    }
+
+    private readonly struct ReuseThenRefresh(QueryHandle writes, Entity first, Entity second) : IEntityQueryGroupJob
+    {
+        public bool Execute(scoped EntityQueryGroup group)
+        {
+            var work = new PointGroups(writes, writes, [[first]], [[first]]);
+            using EntityQueryGroup selected = group.Borrow(in work);
+            selected.ExecuteParallel(new IncrementPoints(), 0, 1);
+            selected.ExecuteParallel(new IncrementPoints(), 0, 1);
+            work = new PointGroups(writes, writes, [[second]], [[second]]);
+            selected.Refresh(in work);
+            selected.ExecuteParallel(new IncrementPoints(), 0, 1);
             return true;
         }
     }
