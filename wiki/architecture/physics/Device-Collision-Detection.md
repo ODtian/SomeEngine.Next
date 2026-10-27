@@ -54,6 +54,12 @@ CPU 与设备 simplex 共用的数学职责见[距离、穿透与流形](Geometr
 [CPU 接触检查](../../../tests/SomeEngine.Physics.Tests/BoxFloorContactTests.cs) 和
 [设备接触检查](../../../tests/SomeEngine.Graphics.Direct3D12.Tests/DeviceCollisionDetectionTests.BoxFloor.cs) 覆盖。
 
+EPA 的初始三角平面、四面体内部点、面平面和可见性判断也使用局部 `double` 运算。
+可见性由当前面三个顶点的绕序计算，面法向和距离继续存入原 28 字节工作区。
+这使阵列坐标下微小旋转的相邻单位盒保持侧向浅接触；对应输入由
+[CPU 侧接触检查](../../../tests/SomeEngine.Physics.Tests/BoxSideContactTests.cs) 和
+[设备侧接触检查](../../../tests/SomeEngine.Graphics.Direct3D12.Tests/DeviceCollisionDetectionTests.BoxSides.cs) 覆盖。
+
 无序类型 bin 同时包含两种参与顺序时，项目用 `DeviceTypePairCollision<TKernel>` 指定
 内核的 `firstType`。包装按本轮类型交换数值输入，并还原见证点、特征与法向；
 最终实体和位置角色继续由原 pair 提供。
