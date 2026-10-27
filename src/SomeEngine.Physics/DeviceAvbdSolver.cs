@@ -72,7 +72,7 @@ public sealed class DeviceAvbdSolver : IDisposable
     internal JobHandle Schedule(in PhysicsStepContext context,bool initialize,int iterations,bool buildGraph,
         DeviceInputTransfer equationInputs,JobHandle dependency)
     {
-        if(initialize&&equationInputs==DeviceInputTransfer.Upload) dependency=_equations.Upload(in context,_threadsPerGroup,dependency);
+        if(initialize&&equationInputs==DeviceInputTransfer.Upload) dependency=_equations.Upload(in context,dependency);
         Scheduler scheduler=WorldJobs.GetScheduler(context.World);
         var accesses=new List<JobResourceAccess>{_bodies.GetWriteAccess(scheduler)};
         _equations.AddAccesses(scheduler,accesses); _graph.AddBuildAccesses(scheduler,accesses);
