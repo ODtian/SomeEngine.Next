@@ -4,7 +4,7 @@
 #include "physics_body_selection.slang"
 #include "physics_constraint_selection.slang"
 #include "physics_constraint_bodies.slang"
-struct DeviceConstraintGraphParameters { uint bodies; uint rows; uint bodiesPerRow; uint padding; };
+struct DeviceConstraintGraphParameters { uint bodies; uint rows; uint bodiesPerRow; uint activeWorkOnly; };
 ConstantBuffer<DeviceConstraintGraphParameters> ConstraintGraphParameters;
 // Row = participant start/count, concrete query group, active.
 RWStructuredBuffer<uint4> ConstraintGraphRows;

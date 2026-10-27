@@ -172,7 +172,7 @@ public static partial class PhysicsScenes
         var solve = new DeviceAvbdSolver(backend, device, bodies, equations, graph, avbdKernels,
             new(settings.Iterations, settings.BodyIterations, settings.MultiplierRetention, 0), bindings, constraintAccesses, threads,
             new IDeviceConstraintSelection[] { selectedStates, selectedResponses, joints.StateSelection, ranges.StateSelection });
-        var equationInputs = new DeviceSceneEquationInputs(solve, settings.EquationBindingsFixed);
+        var equationInputs = new DeviceSceneEquationInputs(solve, settings.EquationBindingsFixed, settings.Iterations);
         var response = new DeviceContactActions(backend, device, bodies, graph, responses, responseKernels, bindings, reads,
             threads, new IDeviceConstraintSelection[] { selectedResponses });
         var activityBindings = new Dictionary<string, ResourceBinding[]>(bindings);
@@ -200,7 +200,8 @@ public static partial class PhysicsScenes
             .Then(timedInputs.WriteInputs().Measure(timings, "Timed body inputs"))
             .Then(timedInputs.Apply().Measure(timings, "Body impulses"))
             .Then(activity.UploadInputs().Measure(timings, "Activity inputs"))
-            .Then(dynamics.UpdateSelection().Then(activity.WakeConnected()).Measure(timings, "Input wake"))
+            .Then(dynamics.UpdateSelection().Then(graph.BuildConnectivity()).Then(activity.WakeConnected(buildGraph: false))
+                .Measure(timings, "Input wake"))
             .Then(dynamics.ApplyGyroscopicTorque().Measure(timings, "Gyroscopic torque"))
             .Then(dynamics.Predict(Vector(data.Gravity)).Measure(timings, "Body prediction"))
             .Then(timedInputs.ApplyKinematicTargets().Measure(timings, "Kinematic targets"))
@@ -214,8 +215,10 @@ public static partial class PhysicsScenes
             .Then(contactInputs.Upload().Then(stateInputs.Upload()).Measure(timings, "Contact inputs and history"))
             .Then(supports.Upload().Measure(timings, "Contact support inputs"))
             .Then(supportGroups.Initialize().Measure(timings, "Support group buffers"))
-            .Then(currentGeometry.Update().Then(activity.WakeConnected()).Measure(timings, "Contact wake"))
-            .Then(dynamics.Resume(Vector(data.Gravity)).Then(response.Initialize()).Measure(timings, "Resumed prediction and response inputs"))
+            .Then(currentGeometry.Update().Then(graph.BuildConnectivity()).Then(activity.WakeConnected(buildGraph: false))
+                .Measure(timings, "Contact wake"))
+            .Then(dynamics.Resume(Vector(data.Gravity)).Then(graph.UpdateActiveWork()).Then(response.Initialize())
+                .Measure(timings, "Resumed prediction and response inputs"))
             .Then(equationInputs.Solve().Measure(timings, "Constraint graph and AVBD"))
             .Then(breakJoints.BreakOverloaded().Measure(timings, "Joint forces and breaks"))
             .Then(dynamics.UpdateVelocities().Measure(timings, "Body velocities"))

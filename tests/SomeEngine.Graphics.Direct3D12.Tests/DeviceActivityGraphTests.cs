@@ -58,8 +58,9 @@ public sealed partial class DeviceXpbdTests
         using var activity = new DevicePhysicsActivity(backend, device, activities, graph, CompileLengthActivityKernels(),
             new(.05f, .25f, .01f, .01f), bindings, reads, 64);
         var stages = bodyInputs.Upload().Then(lengths.BeginInputs()).Then(inputs).Then(lengths.UploadInputs())
-            .Then(activity.UploadInputs()).Then(dynamics.UpdateSelection()).Then(activity.WakeConnected())
-            .Then(dynamics.Predict(Vector3.Zero)).Then(solve.Solve()).Then(dynamics.UpdateVelocities())
+            .Then(activity.UploadInputs()).Then(dynamics.UpdateSelection()).Then(graph.BuildConnectivity())
+            .Then(activity.WakeConnected(buildGraph: false)).Then(dynamics.Predict(Vector3.Zero)).Then(graph.UpdateActiveWork())
+            .Then(solve.Initialize(buildGraph: false)).Then(solve.Iterate(4, buildGraph: false)).Then(dynamics.UpdateVelocities())
             .Then(activity.Finish()).Then(activity.Readback(output));
         var physics = PhysicsSimulation.Create(world, QueryDefinition.Empty, stages, 1);
         physics.Schedule(0, 0, .125).Complete(); physics.Schedule(1, .125, .125).Complete();
