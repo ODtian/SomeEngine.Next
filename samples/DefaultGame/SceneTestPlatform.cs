@@ -422,7 +422,7 @@ public sealed partial class SceneTestPlatform
             if (selection.Collect) CollectFrame();
             finishedWindow = selection.Finished;
             sampled = finishedWindow && _frames.Count == requested.FrameCount &&
-                _fixedWindowError is null && _measurementError is null;
+                _fixedWindowError is null;
         }
         else
         {
@@ -506,7 +506,7 @@ public sealed partial class SceneTestPlatform
         _trace?.Dispose();
         _trace = null;
         if (!IsMeasuring || _sceneStarted == 0) return;
-        error ??= _measurementError;
+        bool renderingSucceeded = error is null;
         if (Current.MeasurementFrames is not null && !_sceneSampleFinished)
         {
             error ??= "The requested simulation-frame window was interrupted.";
@@ -524,7 +524,8 @@ public sealed partial class SceneTestPlatform
                 error ??= "The GPU blend samples did not cover the complete scene-frame window.";
         }
         SaveGpuPassTimingScene();
-        if (error is null && ReloadRequested && SelectedScene + 1 < Scenes.Count && Stopwatch.GetElapsedTime(_testStarted).TotalSeconds < 45)
+        _measurementError ??= error;
+        if (renderingSucceeded && ReloadRequested && SelectedScene + 1 < Scenes.Count && Stopwatch.GetElapsedTime(_testStarted).TotalSeconds < 45)
         {
             SelectScene(SelectedScene + 1);
             return;
@@ -543,7 +544,7 @@ public sealed partial class SceneTestPlatform
         LastReport = Path.Combine(_resultDirectory!, _resultFileName);
         var report = new JsonObject
         {
-            ["Complete"] = error is null && _results.Count == Scenes.Count && _results.All(result => result.Status == "Measured"),
+            ["Complete"] = _measurementError is null && _results.Count == Scenes.Count && _results.All(result => result.Status == "Measured"),
             ["CapturedAtUtc"] = DateTimeOffset.UtcNow.ToString("O"),
             ["FrameTimingSchemaVersion"] = 3,
             ["TimingScopes"] = FrameTimingScopes,
@@ -555,7 +556,7 @@ public sealed partial class SceneTestPlatform
             ["TieredCompilation"] = AppContext.GetData("System.Runtime.TieredCompilation")?.ToString(),
             ["TieredCompilationOverride"] = Environment.GetEnvironmentVariable("DOTNET_TieredCompilation")
                 ?? Environment.GetEnvironmentVariable("COMPlus_TieredCompilation"),
-            ["Error"] = error,
+            ["Error"] = _measurementError,
             ["ExpectedScenes"] = new JsonArray(Scenes.Select(scene => (JsonNode?)JsonValue.Create(scene.Name)).ToArray()),
             ["ElapsedSeconds"] = Stopwatch.GetElapsedTime(_testStarted).TotalSeconds,
             ["Timing"] = MeasureBlending
