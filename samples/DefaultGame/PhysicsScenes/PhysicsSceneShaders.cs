@@ -22,25 +22,7 @@ internal sealed partial class PhysicsSceneShaders
         ComputePipelineDesc[] entries = Compile("scene_grid", """
             #include "physics_grid_common.slang"
             #include "physics_bodies.slang"
-            StructuredBuffer<uint2> SceneExcludedBodyPairs;
-            struct SceneAllowedPairs : IDevicePairRule
-            {
-                bool matches(uint firstIndex,uint secondIndex,DeviceCollisionInput first,DeviceCollisionInput second)
-                {
-                    if(DeviceBodyStates[firstIndex].motion==0&&DeviceBodyStates[secondIndex].motion==0) return false;
-                    uint2 pair=uint2(min(firstIndex,secondIndex),max(firstIndex,secondIndex));
-                    uint begin=0,end=SceneExcludedBodyPairs[0].x;
-                    while(begin<end)
-                    {
-                        uint middle=begin+(end-begin)/2;
-                        uint2 excluded=SceneExcludedBodyPairs[middle+1];
-                        if(all(pair==excluded)) return false;
-                        bool before=excluded.x<pair.x||(excluded.x==pair.x&&excluded.y<pair.y);
-                        if(before) begin=middle+1; else end=middle;
-                    }
-                    return true;
-                }
-            };
+            """ + "\n" + SceneBodyPairs + "\n" + """
             [shader("compute")][numthreads(256,1,1)]
             void CountDevicePairs(uint3 id:SV_DispatchThreadID)
             { DevicePairAnd<DeviceCollisionRules,SceneAllowedPairs> rules; DeviceShapePairs types; countDevicePairs(devicePhysicsThreadIndex(id,256),rules,types); }
