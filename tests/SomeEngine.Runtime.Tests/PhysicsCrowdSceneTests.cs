@@ -27,14 +27,14 @@ public sealed class PhysicsCrowdSceneTests(ITestOutputHelper output)
         var adapters = new AdapterInfo[count];
         backend.TryEnumerateAdapters(new(AdapterPreference.HighPerformance, IncludeSoftware: false), adapters, out _);
         using Device device = backend.CreateDevice(new(adapters.First(adapter => adapter.HardwareAccelerated).Id,
-            [new(QueueType.Compute)]));
+            [new(QueueType.Compute)], requiredFeatures: DeviceFeatures.IndirectCommands));
         using var scheduler = new Scheduler(new() { WorkerCount = Environment.ProcessorCount });
         using World world = WorldJobs.CreateWorld(scheduler: scheduler);
         long setup = Stopwatch.GetTimestamp();
         var timings = new PhysicsSceneTimings();
         var example = PhysicsCrowdExample.CreateDevice(2000, backend, device, timings);
         using var scene = example.CreateSimulation(world);
-        output.WriteLine($"Characters=2000; SetupMilliseconds={Stopwatch.GetElapsedTime(setup).TotalMilliseconds:R}; StageTimings=true");
+        output.WriteLine($"Characters=2000; SetupMilliseconds={Stopwatch.GetElapsedTime(setup).TotalMilliseconds:R}; StageTimings=true; IndirectCommands={backend.TryGetCapability<IndirectCommands>(device, out _)}");
         var tip = scene.CharacterBodies[^1].Span[^1];
         Vector3 initial = world.Read<BodyPose>(tip).Position;
 
@@ -103,7 +103,7 @@ public sealed class PhysicsCrowdSceneTests(ITestOutputHelper output)
         var adapters = new AdapterInfo[count];
         backend.TryEnumerateAdapters(new(AdapterPreference.HighPerformance, IncludeSoftware: false), adapters, out _);
         using Device device = backend.CreateDevice(new(adapters.First(adapter => adapter.HardwareAccelerated).Id,
-            [new(QueueType.Compute)]));
+            [new(QueueType.Compute)], requiredFeatures: DeviceFeatures.IndirectCommands));
         using var scheduler = new Scheduler(new() { WorkerCount = 2 });
         using World world = WorldJobs.CreateWorld(scheduler: scheduler);
         using var scene = PhysicsCrowdExample.CreateDevice(2, backend, device).CreateSimulation(world);

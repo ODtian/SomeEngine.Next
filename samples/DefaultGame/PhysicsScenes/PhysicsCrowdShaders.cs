@@ -65,9 +65,9 @@ internal sealed partial class PhysicsSceneShaders
         return new(entries[0], entries[1], entries[2], ClearBodyIndices: entries[3]);
     }
 
-    internal DeviceXpbdKernels CrowdXpbd()
+    internal DeviceXpbdKernels CrowdXpbd(bool indirect = false)
     {
-        ComputePipelineDesc[] entries = Compile("crowd_xpbd", CrowdBodyRows + """
+        string source = (indirect ? "#define PHYSICS_XPBD_INDIRECT_DISPATCH\n" : "") + CrowdBodyRows + """
 
             #include "physics_xpbd_graph.slang"
             #include "physics_xpbd_length.slang"
@@ -91,8 +91,15 @@ internal sealed partial class PhysicsSceneShaders
             [shader("compute")][numthreads(64,1,1)]
             void Project(uint3 group:SV_GroupID,uint3 thread:SV_GroupThreadID)
             { CrowdRows rows; projectDeviceXpbdGraph(devicePhysicsGroupIndex(group),thread.x,rows); }
-            """, "Initialize", "Project");
-        return new(entries[0], entries[1]);
+            #ifdef PHYSICS_XPBD_INDIRECT_DISPATCH
+            [shader("compute")][numthreads(64,1,1)]
+            void WriteDispatchArguments(uint3 id:SV_DispatchThreadID)
+            { writeDeviceXpbdDispatchArguments(devicePhysicsThreadIndex(id,64)); }
+            #endif
+            """;
+        string[] names = indirect ? ["Initialize", "Project", "WriteDispatchArguments"] : ["Initialize", "Project"];
+        ComputePipelineDesc[] entries = Compile(indirect ? "crowd_xpbd_rows" : "crowd_xpbd", source, names);
+        return new(entries[0], entries[1]) { WriteDispatchArguments = indirect ? entries[2] : null };
     }
 
     internal DeviceGridKernels CrowdGrid()

@@ -61,6 +61,8 @@ public sealed class DeviceAvbdSolver : IDisposable
     public SolveDeviceAvbd Solve(DeviceInputTransfer equationInputs)=>new(this,equationInputs);
     public InitializeDeviceAvbd Initialize()=>new(this);
     public InitializeDeviceAvbd Initialize(DeviceInputTransfer equationInputs)=>new(this,equationInputs);
+    public InitializeDeviceAvbd Initialize(bool buildGraph,DeviceInputTransfer equationInputs=DeviceInputTransfer.Upload)
+        =>new(this,buildGraph,equationInputs);
     public IterateDeviceAvbd Iterate(int iterations)=>new(this,iterations);
     public IterateDeviceAvbd Iterate(int iterations,bool buildGraph)=>new(this,iterations,buildGraph);
     internal JobHandle Schedule(in PhysicsStepContext context,bool initialize,int iterations,JobHandle dependency)
@@ -197,8 +199,11 @@ public readonly struct SolveDeviceAvbd(DeviceAvbdSolver solver) : IPhysicsStage
 public readonly struct InitializeDeviceAvbd(DeviceAvbdSolver solver) : IPhysicsStage
 {
     private readonly DeviceInputTransfer _equationInputs=DeviceInputTransfer.Upload;
+    private readonly bool _buildGraph=true;
     internal InitializeDeviceAvbd(DeviceAvbdSolver solver,DeviceInputTransfer equationInputs):this(solver)=>_equationInputs=equationInputs;
-    public JobHandle Schedule(in PhysicsStepContext context,JobHandle dependency)=>solver.Schedule(in context,true,0,true,_equationInputs,dependency);
+    internal InitializeDeviceAvbd(DeviceAvbdSolver solver,bool buildGraph,DeviceInputTransfer equationInputs):this(solver)
+    { _buildGraph=buildGraph; _equationInputs=equationInputs; }
+    public JobHandle Schedule(in PhysicsStepContext context,JobHandle dependency)=>solver.Schedule(in context,true,0,_buildGraph,_equationInputs,dependency);
 }
 public readonly struct IterateDeviceAvbd(DeviceAvbdSolver solver,int iterations) : IPhysicsStage
 {

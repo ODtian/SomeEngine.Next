@@ -19,6 +19,10 @@ XPBD 继续更新原 Length/Bend 乘子并投影节点。完成一次速度重�
 `MapBones` 和 `CopyOutput` 沿原 Game 姿势输出交付 Number、Time 与骨骼矩阵。
 场景通过原 `IGameFramePhysics` 推进及消费完成步。
 
+共同图在方程初始化前建立，AVBD 的 `Initialize(false, equationInputs)` 使用同次图和已捕获参与。
+项目在设备请求 `IndirectCommands` 时，为 XPBD 选择原图行范围生成的间接派发参数；
+原类型组、颜色次序、投影及乘子沿同一约束图推进。
+
 约束参数的 `WriteDeviceConstraintInputs` 读取原选定实体引用，
 以调用方的 `rowsPerPacket` 交给 `EntityQueryJobs`。每包在一个来源查询范围内
 调用原 `IDeviceConstraintSource.Read(component, row, access)`；组件值和写版本从实际行取得，
