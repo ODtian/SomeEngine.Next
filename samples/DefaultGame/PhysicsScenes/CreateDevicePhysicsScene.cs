@@ -141,7 +141,7 @@ public static partial class PhysicsScenes
         var geometryInputs = new DeviceSceneGeometryInputs(backend, device, grid, geometry, geometryKernel, pairs,
             settings.GeometryInputsFixed, settings.Timings, threads);
         var detection = new DeviceCollisionDetection(backend, device, grid, geometry, detectionKernel, 0,
-            new(gridCapacity.Pairs, 4, Math.Min(gridCapacity.Pairs, 4096)), new(1e-5f, 32, 64), contactDistance,
+            new(gridCapacity.Pairs, 4, Math.Min(gridCapacity.Pairs, 4096)) { BodiesPerContact = 2 }, new(1e-5f, 32, 64), contactDistance,
             DeviceInputTransfer.Resident, DeviceCollisionReadback.Contacts);
         var matching = new DeviceContactMatches(backend, device, world, points, parameters, detection, matchKernels,
             new(.02f, .99f, true), contactCapacity * 2 + 1, threads);
