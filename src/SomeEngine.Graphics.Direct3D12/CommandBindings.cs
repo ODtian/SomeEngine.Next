@@ -1423,24 +1423,13 @@ internal sealed unsafe partial class D3D12Backend
     private sealed partial class D3D12CommandSlot
     {
         private DescriptorContent[] _descriptorWrites = [];
-        private DescriptorContent[] _resourceContents = [];
-        private DescriptorContent[] _samplerContents = [];
         private readonly HashSet<D3D12PersistentParameterData> _capturedParameterData =
             new(ReferenceEqualityComparer.Instance);
         private readonly List<D3D12OrdinaryDataChunk> _ordinaryDataChunks = [];
         private int _ordinaryDataCursor;
         private D3D12OrdinaryDataChunk? _ordinaryDataCurrent;
-        private CpuDescriptorHandle _resourceCpuStart;
-        private CpuDescriptorHandle _samplerCpuStart;
-        private GpuDescriptorHandle _resourceGpuStart;
-        private GpuDescriptorHandle _samplerGpuStart;
-        private ID3D12DescriptorHeap* _resourceArena;
-        private ID3D12DescriptorHeap* _samplerArena;
-        private bool _usesPrivateDescriptorArena;
         private uint _initialResourceDescriptorCapacity;
         private uint _initialSamplerDescriptorCapacity;
-        private uint _resourceCapacity;
-        private uint _samplerCapacity;
         private uint _resourceUsed;
         private uint _samplerUsed;
         private ulong _descriptorArenaVersion;
@@ -1450,8 +1439,6 @@ internal sealed unsafe partial class D3D12Backend
         private bool _samplerArenaContainsGeneration;
 
         internal ulong DescriptorArenaVersion => _descriptorArenaVersion;
-        internal uint ResourceDescriptorCapacity => _resourceCapacity;
-        internal uint SamplerDescriptorCapacity => _samplerCapacity;
 
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         internal D3D12OrdinaryDataReservation ReserveOrdinaryData(ulong size)
@@ -1603,6 +1590,8 @@ internal sealed unsafe partial class D3D12Backend
                 description.InitialSamplerDescriptorCapacity;
             _resourceUsed = 0;
             _samplerUsed = 0;
+            _resourceHeapsUsed = 0;
+            _samplerHeapsUsed = 0;
             _descriptorArenaVersion = checked(_descriptorArenaVersion + 1);
             _descriptorArenaReady = false;
             _descriptorHeapsBound = false;
@@ -1673,96 +1662,50 @@ internal sealed unsafe partial class D3D12Backend
                     checked(
                         resourcePrefix +
                         _initialResourceDescriptorCapacity))
-                : _resourceCapacity;
+                : ResourceDescriptorCapacity;
             uint samplerRequired = replaceSamplers
                 ? Math.Max(
                     1u,
                     checked(
                         samplerPrefix +
                         _initialSamplerDescriptorCapacity))
-                : _samplerCapacity;
+                : SamplerDescriptorCapacity;
             uint resourceCapacity = replaceResources
-                ? Math.Max(_resourceCapacity, resourceRequired)
-                : _resourceCapacity;
+                ? Math.Max(ResourceDescriptorCapacity, resourceRequired)
+                : ResourceDescriptorCapacity;
             uint samplerCapacity = replaceSamplers
-                ? Math.Max(_samplerCapacity, samplerRequired)
-                : _samplerCapacity;
+                ? Math.Max(SamplerDescriptorCapacity, samplerRequired)
+                : SamplerDescriptorCapacity;
             ValidateCapacity(ParameterHeap.Resource, resourceCapacity);
             ValidateCapacity(ParameterHeap.Sampler, samplerCapacity);
-            int replacedHeapCount =
-                (replaceResources && _resourceArena is not null ? 1 : 0) +
-                (replaceSamplers && _samplerArena is not null ? 1 : 0);
-            PrepareTransientObjects(replacedHeapCount);
             ulong nextVersion = checked(_descriptorArenaVersion + 1);
 
-            ID3D12DescriptorHeap* resourceReplacement = null;
-            ID3D12DescriptorHeap* samplerReplacement = null;
-            try
-            {
-                if (replaceResources)
-                {
-                    resourceReplacement = CreateShaderVisibleHeap(
-                        ParameterHeap.Resource,
-                        resourceCapacity);
-                }
-                if (replaceSamplers)
-                {
-                    samplerReplacement = CreateShaderVisibleHeap(
-                        ParameterHeap.Sampler,
-                        samplerCapacity);
-                }
-                if (replaceResources)
-                {
-                    descriptors.CopyResourceTo(
-                        _context.NativeDevice,
-                        resourceReplacement);
-                }
-                if (replaceSamplers)
-                {
-                    descriptors.CopySamplerTo(
-                        _context.NativeDevice,
-                        samplerReplacement);
-                }
+            CommandDescriptorHeap? resourceReplacement = replaceResources
+                ? TakeDescriptorHeap(ParameterHeap.Resource, resourceCapacity)
+                : null;
+            CommandDescriptorHeap? samplerReplacement = replaceSamplers
+                ? TakeDescriptorHeap(ParameterHeap.Sampler, samplerCapacity)
+                : null;
+            if (resourceReplacement is not null)
+                CopyDescriptorPrefix(ParameterHeap.Resource, resourceReplacement, descriptors);
+            if (samplerReplacement is not null)
+                CopyDescriptorPrefix(ParameterHeap.Sampler, samplerReplacement, descriptors);
 
-                if (replaceResources)
-                {
-                    ID3D12DescriptorHeap* previous = _resourceArena;
-                    _resourceArena = resourceReplacement;
-                    Array.Clear(_resourceContents);
-                    _resourceCpuStart = ResourceTrace.GetCPUDescriptorHandleForHeapStart(_resourceArena);
-                    _resourceGpuStart = ResourceTrace.GetGPUDescriptorHandleForHeapStart(_resourceArena);
-                    _resourceCapacity = resourceCapacity;
-                    _resourceUsed = resourcePrefix;
-                    _resourceArenaContainsGeneration = true;
-                    resourceReplacement = null;
-                    if (previous is not null)
-                        _transientObjects.Add((nint)previous);
-                }
-                if (replaceSamplers)
-                {
-                    ID3D12DescriptorHeap* previous = _samplerArena;
-                    _samplerArena = samplerReplacement;
-                    Array.Clear(_samplerContents);
-                    _samplerCpuStart = ResourceTrace.GetCPUDescriptorHandleForHeapStart(_samplerArena);
-                    _samplerGpuStart = ResourceTrace.GetGPUDescriptorHandleForHeapStart(_samplerArena);
-                    _samplerCapacity = samplerCapacity;
-                    _samplerUsed = samplerPrefix;
-                    _samplerArenaContainsGeneration = true;
-                    samplerReplacement = null;
-                    if (previous is not null)
-                        _transientObjects.Add((nint)previous);
-                }
-                _descriptorArenaVersion = nextVersion;
-                _descriptorHeapsBound = false;
-                _context.InvalidateParameterBindingState();
-            }
-            finally
+            if (resourceReplacement is not null)
             {
-                if (samplerReplacement is not null)
-                    _ = ResourceTrace.Release(samplerReplacement);
-                if (resourceReplacement is not null)
-                    _ = ResourceTrace.Release(resourceReplacement);
+                _resourceDescriptors = resourceReplacement;
+                _resourceUsed = resourcePrefix;
+                _resourceArenaContainsGeneration = true;
             }
+            if (samplerReplacement is not null)
+            {
+                _samplerDescriptors = samplerReplacement;
+                _samplerUsed = samplerPrefix;
+                _samplerArenaContainsGeneration = true;
+            }
+            _descriptorArenaVersion = nextVersion;
+            _descriptorHeapsBound = false;
+            _context.InvalidateParameterBindingState();
         }
 
         private void EnsureDescriptorArenaReady(uint resourceCount, uint samplerCount)
@@ -1795,15 +1738,13 @@ internal sealed unsafe partial class D3D12Backend
                 Math.Max(resourceCapacity, GrowCapacity(ParameterHeap.Resource, 0, Math.Max(1u, resourceRequired))),
                 Math.Max(samplerCapacity, GrowCapacity(ParameterHeap.Sampler, 0, Math.Max(1u, samplerRequired))));
             if (_resourceArenaContainsGeneration)
-            {
-                descriptors!.CopyResourceTo(_context.NativeDevice, _resourceArena);
-                Array.Clear(_resourceContents, 0, Math.Min(_resourceContents.Length, checked((int)resourcePrefix)));
-            }
+                CopyDescriptorPrefix(ParameterHeap.Resource, _resourceDescriptors!, descriptors!);
+            else
+                _resourceDescriptors!.PublishedDescriptorIdentity = 0;
             if (_samplerArenaContainsGeneration)
-            {
-                descriptors!.CopySamplerTo(_context.NativeDevice, _samplerArena);
-                Array.Clear(_samplerContents, 0, Math.Min(_samplerContents.Length, checked((int)samplerPrefix)));
-            }
+                CopyDescriptorPrefix(ParameterHeap.Sampler, _samplerDescriptors!, descriptors!);
+            else
+                _samplerDescriptors!.PublishedDescriptorIdentity = 0;
             _resourceUsed = resourcePrefix;
             _samplerUsed = samplerPrefix;
             _descriptorArenaReady = true;
@@ -1823,8 +1764,8 @@ internal sealed unsafe partial class D3D12Backend
             uint resourceRequired = checked(_resourceUsed + resourceCount);
             uint samplerRequired = checked(_samplerUsed + samplerCount);
             if (!_descriptorArenaReady ||
-                resourceRequired > _resourceCapacity ||
-                samplerRequired > _samplerCapacity)
+                resourceRequired > ResourceDescriptorCapacity ||
+                samplerRequired > SamplerDescriptorCapacity)
             {
                 throw new InvalidOperationException(
                     "Descriptor capacity must be prepared before allocation.");
@@ -1880,10 +1821,6 @@ internal sealed unsafe partial class D3D12Backend
         private void WriteDescriptors(uint resourceBase, uint samplerBase, ReadOnlySpan<DescriptorContent> writes)
         {
             if (writes.IsEmpty) return;
-            if (_resourceContents.Length < _resourceCapacity)
-                Array.Resize(ref _resourceContents, checked((int)_resourceCapacity));
-            if (_samplerContents.Length < _samplerCapacity)
-                Array.Resize(ref _samplerContents, checked((int)_samplerCapacity));
             CpuDescriptorHandle[]? rented = null;
             try
             {
@@ -1901,10 +1838,11 @@ internal sealed unsafe partial class D3D12Backend
                 {
                     bool sampler = next.Slot.Type == ResourceBindingType.Sampler;
                     uint index = sampler ? samplerIndex++ : resourceIndex++;
-                    DescriptorContent[] contents = sampler ? _samplerContents : _resourceContents;
+                    CommandDescriptorHeap descriptors = sampler ? _samplerDescriptors! : _resourceDescriptors!;
+                    DescriptorContent[] contents = descriptors.Contents;
                     if (contents[index] == next) continue;
                     DescriptorHeapType type = sampler ? DescriptorHeapType.Sampler : DescriptorHeapType.CbvSrvUav;
-                    CpuDescriptorHandle start = sampler ? _samplerCpuStart : _resourceCpuStart;
+                    CpuDescriptorHandle start = descriptors.CpuStart;
                     CpuDescriptorHandle destination = new(start.Ptr + checked((nuint)(
                         index * _context.NativeDevice.DescriptorIncrement(type))));
                     CpuDescriptorHandle source = next.Source?.Cpu ?? GetNullDescriptor(next.Slot);
@@ -1926,9 +1864,9 @@ internal sealed unsafe partial class D3D12Backend
                 foreach (ref readonly DescriptorContent next in writes)
                 {
                     if (next.Slot.Type == ResourceBindingType.Sampler)
-                        _samplerContents[samplerIndex++] = next;
+                        _samplerDescriptors!.Contents[samplerIndex++] = next;
                     else
-                        _resourceContents[resourceIndex++] = next;
+                        _resourceDescriptors!.Contents[resourceIndex++] = next;
                 }
             }
             finally
@@ -1985,7 +1923,7 @@ internal sealed unsafe partial class D3D12Backend
             GpuDescriptorHandle start;
             if (_descriptorArenaReady)
             {
-                start = heap == ParameterHeap.Resource ? _resourceGpuStart : _samplerGpuStart;
+                start = heap == ParameterHeap.Resource ? _resourceDescriptors!.GpuStart : _samplerDescriptors!.GpuStart;
             }
             else
             {
@@ -2015,22 +1953,16 @@ internal sealed unsafe partial class D3D12Backend
             _ordinaryDataChunks.Clear();
             _ordinaryDataCursor = 0;
             _ordinaryDataCurrent = null;
-            ID3D12DescriptorHeap* sampler = _samplerArena;
-            _samplerArena = null;
-            _samplerContents = [];
-            _samplerCpuStart = default;
-            _samplerGpuStart = default;
-            if (sampler is not null)
-                _ = ResourceTrace.Release(sampler);
-            ID3D12DescriptorHeap* resource = _resourceArena;
-            _resourceArena = null;
-            _resourceContents = [];
-            _resourceCpuStart = default;
-            _resourceGpuStart = default;
-            if (resource is not null)
-                _ = ResourceTrace.Release(resource);
-            _resourceCapacity = 0;
-            _samplerCapacity = 0;
+            foreach (CommandDescriptorHeap heap in _resourceDescriptorHeaps)
+                heap.Dispose();
+            foreach (CommandDescriptorHeap heap in _samplerDescriptorHeaps)
+                heap.Dispose();
+            _resourceDescriptorHeaps.Clear();
+            _samplerDescriptorHeaps.Clear();
+            _resourceDescriptors = null;
+            _samplerDescriptors = null;
+            _resourceHeapsUsed = 0;
+            _samplerHeapsUsed = 0;
             _resourceUsed = 0;
             _samplerUsed = 0;
             _initialResourceDescriptorCapacity = 0;
@@ -2045,147 +1977,45 @@ internal sealed unsafe partial class D3D12Backend
         {
             ValidateCapacity(ParameterHeap.Resource, resourceRequired);
             ValidateCapacity(ParameterHeap.Sampler, samplerRequired);
-            bool replaceResource = _resourceArena is null || _resourceCapacity < resourceRequired;
-            bool replaceSampler = _samplerArena is null || _samplerCapacity < samplerRequired;
-            if (!replaceResource && !replaceSampler)
-                return;
-
-            ID3D12DescriptorHeap* resourceReplacement = null;
-            ID3D12DescriptorHeap* samplerReplacement = null;
-            try
-            {
-                if (replaceResource)
-                {
-                    resourceReplacement = CreateShaderVisibleHeap(
-                        ParameterHeap.Resource,
-                        resourceRequired);
-                }
-                if (replaceSampler)
-                {
-                    samplerReplacement = CreateShaderVisibleHeap(
-                        ParameterHeap.Sampler,
-                        samplerRequired);
-                }
-
-                if (replaceResource)
-                {
-                    ID3D12DescriptorHeap* previous = _resourceArena;
-                    _resourceArena = resourceReplacement;
-                    Array.Clear(_resourceContents);
-                    _resourceCpuStart = ResourceTrace.GetCPUDescriptorHandleForHeapStart(_resourceArena);
-                    _resourceGpuStart = ResourceTrace.GetGPUDescriptorHandleForHeapStart(_resourceArena);
-                    _resourceCapacity = resourceRequired;
-                    resourceReplacement = null;
-                    if (previous is not null)
-                        _ = ResourceTrace.Release(previous);
-                }
-                if (replaceSampler)
-                {
-                    ID3D12DescriptorHeap* previous = _samplerArena;
-                    _samplerArena = samplerReplacement;
-                    Array.Clear(_samplerContents);
-                    _samplerCpuStart = ResourceTrace.GetCPUDescriptorHandleForHeapStart(_samplerArena);
-                    _samplerGpuStart = ResourceTrace.GetGPUDescriptorHandleForHeapStart(_samplerArena);
-                    _samplerCapacity = samplerRequired;
-                    samplerReplacement = null;
-                    if (previous is not null)
-                        _ = ResourceTrace.Release(previous);
-                }
-            }
-            finally
-            {
-                if (samplerReplacement is not null)
-                    _ = ResourceTrace.Release(samplerReplacement);
-                if (resourceReplacement is not null)
-                    _ = ResourceTrace.Release(resourceReplacement);
-            }
+            CommandDescriptorHeap resources = TakeDescriptorHeap(ParameterHeap.Resource, resourceRequired);
+            CommandDescriptorHeap samplers = TakeDescriptorHeap(ParameterHeap.Sampler, samplerRequired);
+            _resourceDescriptors = resources;
+            _samplerDescriptors = samplers;
         }
 
         private void EnsureRecordingCapacity(uint resourceRequired, uint samplerRequired)
         {
-            ValidateCapacity(ParameterHeap.Resource, resourceRequired);
-            ValidateCapacity(ParameterHeap.Sampler, samplerRequired);
-            bool replaceResource = resourceRequired > _resourceCapacity;
-            bool replaceSampler = samplerRequired > _samplerCapacity;
+            bool replaceResource = resourceRequired > ResourceDescriptorCapacity;
+            bool replaceSampler = samplerRequired > SamplerDescriptorCapacity;
             if (!replaceResource && !replaceSampler)
                 return;
+            ValidateCapacity(ParameterHeap.Resource, resourceRequired);
+            ValidateCapacity(ParameterHeap.Sampler, samplerRequired);
             bool rebind = _descriptorHeapsBound;
-            int retainedHeapCount =
-                (replaceResource && _resourceArena is not null ? 1 : 0) +
-                (replaceSampler && _samplerArena is not null ? 1 : 0);
-            PrepareTransientObjects(retainedHeapCount);
 
             uint resourceCapacity = replaceResource
-                ? GrowCapacity(ParameterHeap.Resource, _resourceCapacity, resourceRequired)
-                : _resourceCapacity;
+                ? GrowCapacity(ParameterHeap.Resource, ResourceDescriptorCapacity, resourceRequired)
+                : ResourceDescriptorCapacity;
             uint samplerCapacity = replaceSampler
-                ? GrowCapacity(ParameterHeap.Sampler, _samplerCapacity, samplerRequired)
-                : _samplerCapacity;
-            ID3D12DescriptorHeap* resourceReplacement = null;
-            ID3D12DescriptorHeap* samplerReplacement = null;
-            try
+                ? GrowCapacity(ParameterHeap.Sampler, SamplerDescriptorCapacity, samplerRequired)
+                : SamplerDescriptorCapacity;
+            CommandDescriptorHeap? resources = replaceResource
+                ? TakeDescriptorHeap(ParameterHeap.Resource, resourceCapacity)
+                : null;
+            CommandDescriptorHeap? samplers = replaceSampler
+                ? TakeDescriptorHeap(ParameterHeap.Sampler, samplerCapacity)
+                : null;
+            CopyRecordingDescriptors(ParameterHeap.Resource, resources, _resourceUsed);
+            CopyRecordingDescriptors(ParameterHeap.Sampler, samplers, _samplerUsed);
+            if (resources is not null)
+                _resourceDescriptors = resources;
+            if (samplers is not null)
+                _samplerDescriptors = samplers;
+            _descriptorArenaVersion = checked(_descriptorArenaVersion + 1);
+            if (rebind)
             {
-                if (replaceResource)
-                {
-                    resourceReplacement = CreateShaderVisibleHeap(
-                        ParameterHeap.Resource,
-                        resourceCapacity);
-                }
-                if (replaceSampler)
-                {
-                    samplerReplacement = CreateShaderVisibleHeap(
-                        ParameterHeap.Sampler,
-                        samplerCapacity);
-                }
-
-                CopyRecordingDescriptors(
-                    ParameterHeap.Resource,
-                    resourceReplacement,
-                    _resourceUsed);
-                CopyRecordingDescriptors(
-                    ParameterHeap.Sampler,
-                    samplerReplacement,
-                    _samplerUsed);
-
-                if (replaceResource)
-                {
-                    ID3D12DescriptorHeap* previous = _resourceArena;
-                    _resourceArena = resourceReplacement;
-                    int resourceCopied = Math.Min(_resourceContents.Length, checked((int)_resourceUsed));
-                    Array.Clear(_resourceContents, resourceCopied, _resourceContents.Length - resourceCopied);
-                    _resourceCpuStart = ResourceTrace.GetCPUDescriptorHandleForHeapStart(_resourceArena);
-                    _resourceGpuStart = ResourceTrace.GetGPUDescriptorHandleForHeapStart(_resourceArena);
-                    _resourceCapacity = resourceCapacity;
-                    resourceReplacement = null;
-                    if (previous is not null)
-                        _transientObjects.Add((nint)previous);
-                }
-                if (replaceSampler)
-                {
-                    ID3D12DescriptorHeap* previous = _samplerArena;
-                    _samplerArena = samplerReplacement;
-                    int samplerCopied = Math.Min(_samplerContents.Length, checked((int)_samplerUsed));
-                    Array.Clear(_samplerContents, samplerCopied, _samplerContents.Length - samplerCopied);
-                    _samplerCpuStart = ResourceTrace.GetCPUDescriptorHandleForHeapStart(_samplerArena);
-                    _samplerGpuStart = ResourceTrace.GetGPUDescriptorHandleForHeapStart(_samplerArena);
-                    _samplerCapacity = samplerCapacity;
-                    samplerReplacement = null;
-                    if (previous is not null)
-                        _transientObjects.Add((nint)previous);
-                }
-                _descriptorArenaVersion = checked(_descriptorArenaVersion + 1);
-                if (rebind)
-                {
-                    BindDescriptorHeaps();
-                    _context.ReapplyRootTables();
-                }
-            }
-            finally
-            {
-                if (samplerReplacement is not null)
-                    _ = ResourceTrace.Release(samplerReplacement);
-                if (resourceReplacement is not null)
-                    _ = ResourceTrace.Release(resourceReplacement);
+                BindDescriptorHeaps();
+                _context.ReapplyRootTables();
             }
         }
 
@@ -2198,58 +2028,38 @@ internal sealed unsafe partial class D3D12Backend
 
         private void CopyRecordingDescriptors(
             ParameterHeap heap,
-            ID3D12DescriptorHeap* destination,
+            CommandDescriptorHeap? destination,
             uint count)
         {
-            if (destination is null || count == 0) return;
+            if (destination is null) return;
             bool sampler = heap == ParameterHeap.Sampler;
             uint prefix = 0;
             if (sampler ? _samplerArenaContainsGeneration : _resourceArenaContainsGeneration)
             {
                 DescriptorGeneration descriptors = Descriptors;
-                if (sampler) descriptors.CopySamplerTo(_context.NativeDevice, destination);
-                else descriptors.CopyResourceTo(_context.NativeDevice, destination);
+                CopyDescriptorPrefix(heap, destination, descriptors);
                 prefix = sampler ? descriptors.SamplerCount : descriptors.ResourceCount;
             }
-            DescriptorContent[] contents = sampler ? _samplerContents : _resourceContents;
+            else
+            {
+                destination.PublishedDescriptorIdentity = 0;
+            }
+            DescriptorContent[] contents = sampler ? _samplerDescriptors!.Contents : _resourceDescriptors!.Contents;
             DescriptorHeapType type = sampler ? DescriptorHeapType.Sampler : DescriptorHeapType.CbvSrvUav;
-            CpuDescriptorHandle start = ResourceTrace.GetCPUDescriptorHandleForHeapStart(destination);
+            CpuDescriptorHandle start = destination.CpuStart;
             uint increment = _context.NativeDevice.DescriptorIncrement(type);
             for (uint index = prefix; index < count; index++)
             {
-                if (index >= contents.Length || contents[index].Slot.Type == ResourceBindingType.None)
-                    continue;
                 DescriptorContent content = contents[index];
+                if (content.Slot.Type == ResourceBindingType.None || destination.Contents[index] == content)
+                    continue;
                 CpuDescriptorHandle target = new(start.Ptr + checked((nuint)(index * increment)));
                 if (content.Source is { } source)
                     DeviceQueryTrace.CopyDescriptorsSimple(_context.NativeDevice.Native, 1, target, source.Cpu, type);
                 else
                     WriteTypedNullDescriptor(_context.NativeDevice, content.Slot, target, allowDummySampler: true);
+                destination.Contents[index] = content;
             }
-        }
-
-        private ID3D12DescriptorHeap* CreateShaderVisibleHeap(
-            ParameterHeap heap,
-            uint count)
-        {
-            DescriptorHeapDesc description = new(
-                heap == ParameterHeap.Resource
-                    ? DescriptorHeapType.CbvSrvUav
-                    : DescriptorHeapType.Sampler,
-                count,
-                DescriptorHeapFlags.ShaderVisible,
-                _context.NativeNodeMask);
-            ID3D12DescriptorHeap* result = null;
-            Guid iid = ID3D12DescriptorHeap.Guid;
-            ThrowIfFailed(
-                _context.NativeDevice,
-                    DeviceResourceTrace.CreateDescriptorHeap(
-                _context.NativeDevice.Native, &description,
-                    &iid,
-                    (void**)&result),
-                NativeOperationType.Ordinary,
-                "ID3D12Device::CreateDescriptorHeap(command arena)");
-            return result;
         }
 
         private void EnsureDescriptorHeapsBound()
@@ -2265,8 +2075,8 @@ internal sealed unsafe partial class D3D12Backend
                 : Descriptors;
             ID3D12DescriptorHeap** heaps = stackalloc ID3D12DescriptorHeap*[2]
             {
-                _descriptorArenaReady ? _resourceArena : descriptors!.ResourceHeap,
-                _descriptorArenaReady ? _samplerArena : descriptors!.SamplerHeap,
+                _descriptorArenaReady ? ResourceDescriptorHeap : descriptors!.ResourceHeap,
+                _descriptorArenaReady ? SamplerDescriptorHeap : descriptors!.SamplerHeap,
             };
             D3D12CommandListFastCalls.SetDescriptorHeaps(List, 2, heaps);
             _descriptorHeapsBound = true;
