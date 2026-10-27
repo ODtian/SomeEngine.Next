@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using SomeEngine.Diagnostics;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
@@ -9,8 +10,10 @@ namespace SomeEngine.Physics;
 
 public sealed partial class DeviceBodyActivities
 {
+    private static readonly TraceSite NativeWritesTrace = new("physics", "Activity.NativeWrites");
     private readonly QueryHandle _resultReads;
     private List<ActivityChange>[] _resultChanges = [];
+    private bool[] _resultSourceChanges = [];
     private readonly List<Entity> _writeTargets = [];
     private readonly List<int> _writeIndices = [];
     private int _resultPacketCount;
@@ -22,17 +25,16 @@ public sealed partial class DeviceBodyActivities
             var read = new ReadResults(this);
             World.ExecuteReadQuery(_resultReads, ref read,
                 static (scoped QueryCursor rows, ref ReadResults read) => read.Execute(rows));
-            for (int packet = 0; packet < _resultPacketCount; packet++)
-                foreach (ActivityChange change in _resultChanges[packet])
-                    if (change.ActivityChanged)
-                    {
-                        _writeTargets.Add(change.Entity);
-                        _writeIndices.Add(change.BodyIndex);
-                    }
+            EngineTrace.Counter(NativeWritesTrace, _writeTargets.Count);
             if (_writeTargets.Count != 0)
             {
                 var write = new WriteResults(this);
                 World.ExecuteComponentWrite<BodyActivity, WriteResults>(ref write, &WriteResults.Execute);
+                if (_sourceVersionFilters == QueryTermFilter.None
+                    && !_resultSourceChanges.AsSpan(0, _resultPacketCount).Contains(true)
+                    && _membershipVersion == World.MembershipVersion(SourceRows)
+                    && _activityMembershipVersion == World.MembershipVersion(_activityMembers))
+                    _lastSystemVersion = write.Version;
             }
             for (int packet = 0; packet < _resultPacketCount; packet++)
                 foreach (ActivityChange change in _resultChanges[packet])
@@ -63,6 +65,7 @@ public sealed partial class DeviceBodyActivities
             {
                 int previous = Activities._resultChanges.Length;
                 Array.Resize(ref Activities._resultChanges, Math.Max(packets.PacketCount, previous * 2));
+                Array.Resize(ref Activities._resultSourceChanges, Activities._resultChanges.Length);
                 for (int packet = previous; packet < Activities._resultChanges.Length; packet++)
                     Activities._resultChanges[packet] = [];
             }
@@ -70,6 +73,15 @@ public sealed partial class DeviceBodyActivities
             Scheduler scheduler = WorldJobs.GetScheduler(Activities.World);
             JobResourceAccess[] outputs = [JobResourceAccess.Write(scheduler.GetResourceToken(Activities))];
             packets.ExecuteParallel(new CompareResults(Activities), outputs);
+            for (int packet = 0; packet < Activities._resultPacketCount; packet++)
+                foreach (ActivityChange change in Activities._resultChanges[packet])
+                    if (change.ActivityChanged)
+                    {
+                        Activities._writeTargets.Add(change.Entity);
+                        Activities._writeIndices.Add(change.BodyIndex);
+                    }
+            if (Activities._writeTargets.Count != 0 && Activities._sourceVersionFilters == QueryTermFilter.None)
+                packets.ExecuteParallel(new ReadSourceChanges(Activities), outputs);
         }
     }
     private readonly struct CompareResults(DeviceBodyActivities activities) : IReadOnlyQueryPacketJob
@@ -99,13 +111,25 @@ public sealed partial class DeviceBodyActivities
             }
         }
     }
-    private readonly record struct WriteResults(DeviceBodyActivities Activities)
+    private readonly struct ReadSourceChanges(DeviceBodyActivities activities) : IReadOnlyQueryPacketJob
     {
+        public void Execute(in ReadOnlyQueryPacketContext context, ReadOnlyQueryPacket packet) =>
+            activities._resultSourceChanges[context.PacketIndex] =
+                packet.ChangedSince<DeviceBodyBinding>(activities._lastSystemVersion)
+                || packet.Has<DeviceBodyActivityBinding>() && packet.ChangedSince<DeviceBodyActivityBinding>(activities._lastSystemVersion)
+                || packet.Has<BodyActivity>() && packet.ChangedSince<BodyActivity>(activities._lastSystemVersion);
+    }
+    private struct WriteResults(DeviceBodyActivities activities)
+    {
+        private readonly DeviceBodyActivities _activities = activities;
+        internal uint Version;
+
         internal static void Execute(ComponentWriteBatch<BodyActivity> rows, ref WriteResults write)
         {
-            var job = new WriteActivities(write.Activities, rows.CurrentSystemVersion);
+            write.Version = rows.CurrentSystemVersion;
+            var job = new WriteActivities(write._activities, rows.CurrentSystemVersion);
             ComponentWriteJobs.ExecuteParallel<BodyActivity, WriteActivities, ActivityResources>(
-                rows, CollectionsMarshal.AsSpan(write.Activities._writeTargets), in job);
+                rows, CollectionsMarshal.AsSpan(write._activities._writeTargets), in job);
         }
     }
     private readonly struct WriteActivities(DeviceBodyActivities activities, uint version) : IComponentWriteJob<BodyActivity>
