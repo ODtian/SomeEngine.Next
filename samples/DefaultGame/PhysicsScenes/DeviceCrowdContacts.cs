@@ -15,6 +15,7 @@ internal sealed class DeviceCrowdContacts : IDisposable
     private readonly List<IDisposable> _resources = [];
     private readonly List<QueryHandle> _queries = [];
     private readonly DeviceCollisionGrid _grid;
+    private readonly DeviceScenePairExclusions? _pairExclusions;
     private readonly DeviceCollisionGeometry _geometry;
     private readonly RelationQuery<EntityPairsWithin, (Entity, Entity)> _pairs;
     private readonly WriteDeviceGeometryReferences<BoxGeometry, DeviceComponentSource<BoxGeometry, DeviceBoxReader>> _boxes;
@@ -32,15 +33,37 @@ internal sealed class DeviceCrowdContacts : IDisposable
     private bool _geometryUploaded;
 
     internal DeviceCrowdContacts(IGraphicsBackend backend, Device device, World world, DeviceBodies bodies,
-        IReadOnlyList<ReadOnlyMemory<Entity>> characters, IReadOnlyList<Entity> cloth, Entity floor, PhysicsSceneShaders shaders)
+        IReadOnlyList<ReadOnlyMemory<Entity>> characters, IReadOnlyList<Entity> cloth, IReadOnlyList<Entity> boxes,
+        ReadOnlySpan<Entity> bodyEntities, int exclusionCapacity, bool jointNet, PhysicsSceneShaders shaders)
     {
         _world = world;
-        int shapeCount = characters.Count * 21 + 1;
-        int pairCapacity = Math.Max(128, characters.Count * 32);
+        int shapeCount = characters.Count * 21 + boxes.Count;
+        int pairCapacity = Math.Max(128, characters.Count * 32 + (boxes.Count - 1) * 8);
         int contactCapacity = pairCapacity * 4;
-        _grid = Keep(new DeviceCollisionGrid(backend, device, shaders.CrowdGrid(), new(.4f, 12),
-            new(shapeCount, shapeCount * 8, shapeCount * 16 + 1, pairCapacity, 6)));
         _geometry = Keep(new DeviceCollisionGeometry(backend, device, new(shapeCount, 0, 0, 0), bodies));
+        var gridBindings = new Dictionary<string, ResourceBinding[]>();
+        var gridReads = new List<JobResourceAccess>();
+        if (jointNet)
+        {
+            _pairExclusions = Keep(new DeviceScenePairExclusions(backend, device, world, bodyEntities, exclusionCapacity));
+            _pairExclusions.AddBindings(gridBindings);
+            Scheduler jobs = WorldJobs.GetScheduler(world);
+            gridReads.Add(bodies.GetReadAccess(jobs)); gridReads.Add(_pairExclusions.ReadAccess(jobs));
+            BufferUav bodyView = Keep(backend.CreateBufferUav(device,
+                new(bodies.States, new(0, bodies.States.Info.Size), StructureStride: DeviceBodies.StateStride)));
+            gridBindings.Add("DeviceBodyStates", [ResourceBinding.WritableBuffer(bodyView)]);
+            var references = _geometry.References!;
+            BufferUav view = Keep(backend.CreateBufferUav(device, new(references, new(0, references.Info.Size), StructureStride: 64)));
+            gridBindings.Add("DeviceGeometryReferences", [ResourceBinding.WritableBuffer(view)]);
+            gridReads.Add(JobResourceAccess.Read(jobs.GetResourceToken(references), 0, (long)references.Info.Size));
+            var geometryPoints = _geometry.Points!;
+            BufferUav pointsView = Keep(backend.CreateBufferUav(device,
+                new(geometryPoints, new(0, geometryPoints.Info.Size), StructureStride: 12)));
+            gridBindings.Add("DeviceGeometryPoints", [ResourceBinding.WritableBuffer(pointsView)]);
+            gridReads.Add(JobResourceAccess.Read(jobs.GetResourceToken(geometryPoints), 0, (long)geometryPoints.Info.Size));
+        }
+        _grid = Keep(new DeviceCollisionGrid(backend, device, shaders.CrowdGrid(jointNet), new(.4f, 12),
+            new(shapeCount, shapeCount * 8, shapeCount * 16 + 1, pairCapacity, 6), gridBindings, gridReads.ToArray()));
         int geometryIndex = 0;
         for (int character = 0; character < characters.Count; character++)
         {
@@ -56,7 +79,7 @@ internal sealed class DeviceCrowdContacts : IDisposable
                 Add(world.CreateEntity(new DynamicFace(new(b, default), new(d, default), new(c, default), .01f)));
             }
         }
-        Add(floor);
+        foreach (Entity box in boxes) Add(box);
         QueryHandle shapes = Query(new QueryDefinitionBuilder().All<CrowdCollisionGeometry>().Build());
         QueryHandle poses = Query(new QueryDefinitionBuilder().Read<BodyPose>().Build());
         QueryHandle points = Query(new QueryDefinitionBuilder().All<CrowdContact>().Read<ContactPoint>().Build());
@@ -71,7 +94,8 @@ internal sealed class DeviceCrowdContacts : IDisposable
         _residentBoxes = Keep(new UpdateDeviceGeometry(backend, device, _grid, _geometry, boxKernel, 0, DeviceInputTransfer.Resident));
         _capsuleGeometry = Keep(new UpdateDeviceGeometry(backend, device, _grid, _geometry, shaders.CrowdGeometry("DeviceDynamicCapsuleUpdate"), 1, DeviceInputTransfer.Resident));
         _faceGeometry = Keep(new UpdateDeviceGeometry(backend, device, _grid, _geometry, shaders.CrowdGeometry("DeviceDynamicFaceUpdate"), 2, DeviceInputTransfer.Resident));
-        _detection = Keep(new DeviceCollisionDetection(backend, device, _grid, _geometry, shaders.CrowdCapsuleFaces(), 4,
+        ComputePipelineDesc[] detection = jointNet ? shaders.CrowdDetection() : [shaders.CrowdCapsuleFaces()];
+        _detection = Keep(new DeviceCollisionDetection(backend, device, _grid, _geometry, detection, jointNet ? 0 : 4,
             new(pairCapacity, 4, Math.Min(pairCapacity, 4096)), new(1e-5f, 32, 64), .02f,
             DeviceInputTransfer.Resident, DeviceCollisionReadback.Contacts));
         Scheduler scheduler = WorldJobs.GetScheduler(world);
@@ -128,6 +152,7 @@ internal sealed class DeviceCrowdContacts : IDisposable
         else dependency = _residentBoxes.Update().Schedule(in context, dependency);
         dependency = _capsuleGeometry.Update().Schedule(in context, dependency);
         dependency = _faceGeometry.Update().Schedule(in context, dependency);
+        if (_pairExclusions is { } exclusions) dependency = exclusions.Upload().Schedule(in context, dependency);
         dependency = _grid.Build(_pairs, DevicePairRules.None, DeviceInputTransfer.Resident, DevicePairReadback.None).Schedule(in context, dependency);
         dependency = WorldJobs.GetScheduler(_world).Schedule(new Clear(_detected), [_detected.WriteAccess], dependency);
         dependency = _detection.Detect().Schedule(in context, dependency);

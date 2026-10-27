@@ -66,27 +66,32 @@ public static partial class PhysicsScaleScenes
         }
     }
 
-    private static PhysicsSceneData CreateJointGrid()
+    private static PhysicsSceneData CreateJointGrid() => CreateJointGrid(400, 250, 249 * 399);
+
+    internal static PhysicsSceneData CreateJointGrid(int columns, int rows, int diagonalJoints)
     {
-        const int columns = 400, rows = 250;
         const double spacing = 1.2;
         var bodies = new SceneBodyData[columns * rows + 1];
         bodies[0] = Box(0, 0, -.5, 500, 10, 1, 0);
         for (int row = 0; row < rows; row++)
             for (int column = 0; column < columns; column++)
-                bodies[1 + row * columns + column] = Box((column - 199.5) * spacing, 0,
-                    300 - row * spacing, .3, .3, .3, row == 0 ? 0 : 1);
-        int connectionCount = rows * (columns - 1) + (rows - 1) * columns + (rows - 1) * (columns - 1);
+                bodies[1 + row * columns + column] = Box((column - (columns - 1) * .5) * spacing, 0,
+                    rows * spacing - row * spacing, .3, .3, .3, row == 0 ? 0 : 1);
+        int connectionCount = rows * (columns - 1) + (rows - 1) * columns + diagonalJoints;
         var joints = new SceneJointData[connectionCount];
         var exclusions = new SceneCollisionPair[connectionCount];
-        int index = 0;
+        int index = 0, diagonals = 0;
         for (int row = 0; row < rows; row++)
             for (int column = 0; column < columns; column++)
             {
                 int body = 1 + row * columns + column;
                 if (column > 0) Connect(body - 1, body, [.6, 0, 0], [-.6, 0, 0]);
                 if (row > 0) Connect(body - columns, body, [0, 0, -.6], [0, 0, .6]);
-                if (row > 0 && column > 0) Connect(body - columns - 1, body, [.6, 0, -.6], [-.6, 0, .6]);
+                if (row > 0 && column > 0 && diagonals < diagonalJoints)
+                {
+                    Connect(body - columns - 1, body, [.6, 0, -.6], [-.6, 0, .6]);
+                    diagonals++;
+                }
             }
         return new PhysicsSceneData(1.0 / 60, [0, 0, -10], bodies, joints,
             [new(120, 1 + (rows - 1) * columns + columns / 2, [0, 12, 0])], exclusions,

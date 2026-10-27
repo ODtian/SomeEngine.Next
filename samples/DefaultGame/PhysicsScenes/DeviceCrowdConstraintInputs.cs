@@ -10,36 +10,40 @@ namespace DefaultGame;
 internal static class DeviceCrowdConstraintInputs
 {
     internal static DeviceCrowdConstraintInputs<TInputs> Create<TInputs>(World world, QueryHandle bodies,
-        QueryHandle lengths, QueryHandle bends, TInputs inputs) where TInputs : struct, IPhysicsStage =>
-        new(world, bodies, lengths, bends, inputs);
+        QueryHandle lengths, QueryHandle bends, QueryHandle joints, TInputs inputs) where TInputs : struct, IPhysicsStage =>
+        new(world, bodies, lengths, bends, joints, inputs);
 }
 
 internal sealed class DeviceCrowdConstraintInputs<TInputs> : IDisposable where TInputs : struct, IPhysicsStage
 {
     private readonly World _world;
     private readonly TInputs _inputs;
-    private readonly QueryHandle _bodies, _lengths, _bends, _participants;
+    private readonly QueryHandle _bodies, _lengths, _bends, _joints, _participants;
     private readonly JobResourceAccess[] _accesses;
-    private readonly uint[] _memberships = new uint[4];
+    private readonly uint[] _memberships = new uint[5];
     private uint _lastSystemVersion;
 
     internal DeviceCrowdConstraintInputs(World world, QueryHandle bodies, QueryHandle lengths, QueryHandle bends,
-        TInputs inputs)
+        QueryHandle joints, TInputs inputs)
     {
         _world = world; _inputs = inputs;
         QueryDefinition bodyReads = world.GetQueryDefinition(bodies).AsFilter()
             .WithAccess(new QueryDefinitionBuilder().Read<DeviceBodyBinding>().Build());
         QueryDefinition lengthReads = world.GetQueryDefinition(lengths).AsReadOnly();
         QueryDefinition bendReads = world.GetQueryDefinition(bends).AsReadOnly();
+        QueryDefinition jointReads = world.GetQueryDefinition(joints).AsReadOnly();
         QueryDefinition participantReads = new QueryDefinitionBuilder().Read<DirectedRelationEndpoints<ConstraintParticipant>>().Build();
         _bodies = world.Query(bodyReads); _lengths = world.Query(lengthReads); _bends = world.Query(bendReads);
+        _joints = world.Query(jointReads);
         _participants = world.Query(participantReads);
         var resources = new QueryReadResources();
         resources.Add<DeviceBodyBinding, DeviceBodyReferenceResources>();
         resources.Add<DeviceConstraintBinding<DeviceLengthConstraint>, DeviceConstraintReferenceResources<DeviceLengthConstraint>>();
         resources.Add<DeviceConstraintBinding<DeviceBendConstraint>, DeviceConstraintReferenceResources<DeviceBendConstraint>>();
+        resources.Add<DeviceConstraintBinding<DeviceJointConstraint>, DeviceConstraintReferenceResources<DeviceJointConstraint>>();
+        resources.Add<DeviceAvbdState<DeviceAvbdJointState>, DeviceAvbdStateResources<DeviceAvbdJointState>>();
         var accesses = new List<JobResourceAccess>();
-        foreach (QueryDefinition definition in new[] { bodyReads, lengthReads, bendReads, participantReads })
+        foreach (QueryDefinition definition in new[] { bodyReads, lengthReads, bendReads, jointReads, participantReads })
         {
             var queryAccesses = new JobResourceAccess[QueryJobAccess.Count(definition)];
             QueryJobAccess.CopyAccesses(world, definition, queryAccesses, resources);
@@ -56,7 +60,7 @@ internal sealed class DeviceCrowdConstraintInputs<TInputs> : IDisposable where T
     private void Update(in PhysicsStepContext context)
     {
         var changes = new ChangedInputs();
-        ReadOnlySpan<QueryHandle> queries = [_bodies, _lengths, _bends, _participants];
+        ReadOnlySpan<QueryHandle> queries = [_bodies, _lengths, _bends, _joints, _participants];
         for (int index = 0; index < queries.Length; index++)
         {
             uint membership = _world.MembershipVersion(queries[index]);
@@ -94,6 +98,19 @@ internal sealed class DeviceCrowdConstraintInputs<TInputs> : IDisposable where T
                         || chunk.HasChangedSinceLastSystemVersion<DeviceConstraintBinding<DeviceBendConstraint>>())
                     { changes.Changed = true; break; }
             });
+        _world.ExecuteReadQuery(_joints, _lastSystemVersion, ref changes,
+            static (scoped QueryCursor rows, ref ChangedInputs changes) =>
+            {
+                changes.Version = rows.CurrentSystemVersion;
+                if (changes.Changed) return;
+                foreach (QueryChunkView chunk in rows.Chunks)
+                    if (chunk.HasChangedSinceLastSystemVersion<JointConstraint>()
+                        || chunk.HasChangedSinceLastSystemVersion<DirectedRelationEndpoints<JointConstraint>>()
+                        || chunk.HasChangedSinceLastSystemVersion<DeviceConstraintBinding<DeviceJointConstraint>>()
+                        || chunk.HasChangedSinceLastSystemVersion<AvbdJointState>()
+                        || chunk.HasChangedSinceLastSystemVersion<DeviceAvbdState<DeviceAvbdJointState>>())
+                    { changes.Changed = true; break; }
+            });
         _world.ExecuteReadQuery(_participants, _lastSystemVersion, ref changes,
             static (scoped QueryCursor rows, ref ChangedInputs changes) =>
             {
@@ -118,7 +135,7 @@ internal sealed class DeviceCrowdConstraintInputs<TInputs> : IDisposable where T
     }
     public void Dispose()
     {
-        _world.ReleaseQuery(_participants); _world.ReleaseQuery(_bends);
+        _world.ReleaseQuery(_participants); _world.ReleaseQuery(_joints); _world.ReleaseQuery(_bends);
         _world.ReleaseQuery(_lengths); _world.ReleaseQuery(_bodies);
     }
 }

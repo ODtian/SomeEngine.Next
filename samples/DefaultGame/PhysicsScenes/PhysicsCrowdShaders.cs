@@ -20,12 +20,18 @@ internal sealed partial class PhysicsSceneShaders
         #include "physics_contact_data.slang"
         typedef DeviceConstraintBodyGroups<DeviceLengthBodies,DeviceBendBodies> CrowdInternalBodies;
         typedef DeviceConstraintBodyGroups<CrowdInternalBodies,DeviceMotorBodies> CrowdDrivenBodies;
-        typedef DeviceConstraintBodyGroups<CrowdDrivenBodies,DeviceContactBodies> CrowdBodies;
+        #if CROWD_JOINT_NET
+        #include "physics_joint_bodies.slang"
+        typedef DeviceConstraintBodyGroups<CrowdDrivenBodies,DeviceJointBodies> CrowdConnectedBodies;
+        #else
+        typedef CrowdDrivenBodies CrowdConnectedBodies;
+        #endif
+        typedef DeviceConstraintBodyGroups<CrowdConnectedBodies,DeviceContactBodies> CrowdBodies;
         """;
 
-    internal DeviceGraphKernels CrowdGraph()
+    internal DeviceGraphKernels CrowdGraph(bool jointNet = false)
     {
-        ComputePipelineDesc[] entries = Compile("crowd_graph", CrowdBodyRows + """
+        ComputePipelineDesc[] entries = Compile("crowd_graph", (jointNet ? "#define CROWD_JOINT_NET 1\n" : "") + CrowdBodyRows + """
 
             [shader("compute")][numthreads(64,1,1)]
             void WriteRows(uint3 id:SV_DispatchThreadID)
@@ -42,9 +48,9 @@ internal sealed partial class PhysicsSceneShaders
             entries[13], entries[14], entries[15], entries[16], entries[17]));
     }
 
-    internal DeviceAvbdKernels CrowdAvbd()
+    internal DeviceAvbdKernels CrowdAvbd(bool jointNet = false)
     {
-        ComputePipelineDesc[] entries = Compile("crowd_avbd", """
+        ComputePipelineDesc[] entries = Compile("crowd_avbd", (jointNet ? "#define CROWD_JOINT_NET 1\n" : "") + """
             #include "physics_dispatch.slang"
             #include "physics_xpbd_length_forces.slang"
             #include "physics_xpbd_bend_forces.slang"
@@ -52,7 +58,13 @@ internal sealed partial class PhysicsSceneShaders
             #include "physics_avbd_contact.slang"
             typedef DeviceAvbdConstraintGroups<DeviceXpbdLengthForces,DeviceXpbdBendForces> CrowdInternalForces;
             typedef DeviceAvbdConstraintGroups<CrowdInternalForces,DeviceMotorAvbdConstraints> CrowdDrivenForces;
-            typedef DeviceAvbdConstraintGroups<CrowdDrivenForces,DeviceContactPotentialAvbdConstraints> CrowdForces;
+            #if CROWD_JOINT_NET
+            #include "physics_avbd_joint.slang"
+            typedef DeviceAvbdConstraintGroups<CrowdDrivenForces,DeviceJointAvbdConstraints> CrowdConnectedForces;
+            #else
+            typedef CrowdDrivenForces CrowdConnectedForces;
+            #endif
+            typedef DeviceAvbdConstraintGroups<CrowdConnectedForces,DeviceContactPotentialAvbdConstraints> CrowdForces;
             [shader("compute")][numthreads(64,1,1)]
             void ClearBodyIndices(uint3 id:SV_DispatchThreadID) { clearDeviceAvbdBodyIndices(devicePhysicsThreadIndex(id,64)); }
             [shader("compute")][numthreads(64,1,1)]
@@ -65,9 +77,10 @@ internal sealed partial class PhysicsSceneShaders
         return new(entries[0], entries[1], entries[2], ClearBodyIndices: entries[3]);
     }
 
-    internal DeviceXpbdKernels CrowdXpbd(bool indirect = false)
+    internal DeviceXpbdKernels CrowdXpbd(bool indirect = false, bool jointNet = false)
     {
-        string source = (indirect ? "#define PHYSICS_XPBD_INDIRECT_DISPATCH\n" : "") + CrowdBodyRows + """
+        string source = (indirect ? "#define PHYSICS_XPBD_INDIRECT_DISPATCH\n" : "")
+            + (jointNet ? "#define CROWD_JOINT_NET 1\n" : "") + CrowdBodyRows + """
 
             #include "physics_xpbd_graph.slang"
             #include "physics_xpbd_length.slang"
@@ -83,8 +96,14 @@ internal sealed partial class PhysicsSceneShaders
             typedef DeviceXpbdConstraintGroups<LengthRows,BendRows> InternalRows;
             typedef DeviceXpbdConstraintRows<DeviceMotorBodies,CrowdDrivenBody> DrivenRows;
             typedef DeviceXpbdConstraintGroups<InternalRows,DrivenRows> DrivenBodyRows;
+            #if CROWD_JOINT_NET
+            typedef DeviceXpbdConstraintRows<DeviceJointBodies,CrowdDrivenBody> JointRows;
+            typedef DeviceXpbdConstraintGroups<DrivenBodyRows,JointRows> ConnectedBodyRows;
+            #else
+            typedef DrivenBodyRows ConnectedBodyRows;
+            #endif
             typedef DeviceXpbdConstraintRows<DeviceContactBodies,CrowdDrivenBody> ContactRows;
-            typedef DeviceXpbdConstraintGroups<DrivenBodyRows,ContactRows> CrowdRows;
+            typedef DeviceXpbdConstraintGroups<ConnectedBodyRows,ContactRows> CrowdRows;
             [shader("compute")][numthreads(64,1,1)]
             void Initialize(uint3 group:SV_GroupID,uint3 thread:SV_GroupThreadID)
             { CrowdRows rows; initializeDeviceXpbdGraph(devicePhysicsGroupIndex(group),thread.x,rows); }
@@ -102,15 +121,27 @@ internal sealed partial class PhysicsSceneShaders
         return new(entries[0], entries[1]) { WriteDispatchArguments = indirect ? entries[2] : null };
     }
 
-    internal DeviceGridKernels CrowdGrid()
+    internal DeviceGridKernels CrowdGrid(bool jointNet = false)
     {
-        ComputePipelineDesc[] entries = Compile("crowd_grid", """
+        ComputePipelineDesc[] entries = Compile("crowd_grid", (jointNet ? "#define CROWD_JOINT_NET 1\n" : "") + """
             #include "physics_dispatch.slang"
             #include "physics_grid_common.slang"
+            """ + "\n" + (jointNet ? "#include \"physics_geometry_reference_data.slang\"\n" + SceneBodyPairs + "\n" : "") + """
             struct CrowdCapsuleFacePairs : IDevicePairRule
             {
                 bool matches(uint a,uint b,DeviceCollisionInput first,DeviceCollisionInput second)
-                { return min(first.geometryType,second.geometryType)==1&&max(first.geometryType,second.geometryType)==2; }
+                {
+                    #if CROWD_JOINT_NET
+                    if(first.geometryType==0&&second.geometryType==0)
+                    {
+                        SceneAllowedPairs allowed;
+                        return allowed.matches(DeviceGeometryReferences[first.geometryIndex].firstBody,
+                            DeviceGeometryReferences[second.geometryIndex].firstBody,first,second);
+                    }
+                    if(min(first.geometryType,second.geometryType)==0) return true;
+                    #endif
+                    return min(first.geometryType,second.geometryType)==1&&max(first.geometryType,second.geometryType)==2;
+                }
             };
             [shader("compute")][numthreads(256,1,1)]
             void CountPairs(uint3 id:SV_DispatchThreadID)
@@ -163,12 +194,21 @@ internal sealed partial class PhysicsSceneShaders
         { CrowdCapsuleFaceCollision shapes; detectDeviceReferencedCollision(id.x,shapes); }
         """, "Detect")[0];
 
-    internal DeviceContactKernels CrowdResponses()
+    internal ComputePipelineDesc[] CrowdDetection() =>
+    [
+        ShapePairDetection("crowd_box_box", 0, "DeviceBox", "DeviceBox"),
+        ShapePairDetection("crowd_box_capsule", 0, "DeviceBox", "DeviceCapsule"),
+        ShapePairDetection("crowd_capsule_capsule", 1, "DeviceCapsule", "DeviceCapsule"),
+        ShapePairDetection("crowd_box_face", 0, "DeviceBox", "DeviceTriangle"),
+        CrowdCapsuleFaces(),
+    ];
+
+    internal DeviceContactKernels CrowdResponses(bool jointNet = false)
     {
-        ComputePipelineDesc[] entries = Compile("crowd_contact_responses", CrowdBodyRows + """
+        ComputePipelineDesc[] entries = Compile("crowd_contact_responses", (jointNet ? "#define CROWD_JOINT_NET 1\n" : "") + CrowdBodyRows + """
 
             #include "physics_contact_actions.slang"
-            typedef DeviceNoContactResponses<CrowdDrivenBodies> InternalResponses;
+            typedef DeviceNoContactResponses<CrowdConnectedBodies> InternalResponses;
             typedef DeviceContactResponseGroups<InternalResponses,DeviceContactResponseActions<DeviceGraphBodies>> Responses;
             [shader("compute")][numthreads(64,1,1)]
             void Initialize(uint3 id:SV_DispatchThreadID)
