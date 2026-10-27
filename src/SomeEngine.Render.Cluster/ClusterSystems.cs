@@ -284,9 +284,11 @@ public sealed class ClusterInstanceSystem<TProducer> :
                 producer.Write(destination, packet);
                 return;
             }
-            producer.First.WriteChanged(destination.Restrict(producer.First.Properties), packet,
-                lastVersion, columns.AllTransformsChanged);
-            producer.Second.First.WriteChanged(destination.Restrict(producer.Second.First.Properties), packet, lastVersion);
+            if ((fields & (InstanceColumnChanges.CurrentTransform | InstanceColumnChanges.PreviousTransform)) != 0)
+                producer.First.WriteChanged(destination.Restrict(producer.First.Properties), packet,
+                    lastVersion, columns.AllTransformsChanged);
+            if ((fields & (InstanceColumnChanges.Mesh | InstanceColumnChanges.Xray)) != 0)
+                producer.Second.First.WriteChanged(destination.Restrict(producer.Second.First.Properties), packet, lastVersion);
             if ((fields & InstanceColumnChanges.Additional) != 0)
                 producer.Second.Second.WriteChanged(destination.Restrict(producer.Second.Second.Properties), packet, lastVersion);
         }

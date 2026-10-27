@@ -6,6 +6,7 @@ using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Graphics;
 using SomeEngine.Graphics.Direct3D12;
+using SomeEngine.Job;
 using SomeEngine.Render.Cluster.Pipeline;
 using SomeEngine.Render.Components;
 using SomeEngine.Render.Frame;
@@ -87,7 +88,8 @@ public sealed class ClusterInstanceUploadTests
     [Fact]
     public async Task DisjointQueryPacketsPreserveChangedRowsAndPropertyValuesInParallel()
     {
-        using var data = new InstanceData(await RasterTestGeometry.CreateAsync(), 4097);
+        using var data = new InstanceData(await RasterTestGeometry.CreateAsync(), 4097,
+            new WorldJobs(JobSystem.Default));
         Entity[] entities = Enumerable.Range(0, 4097).Select(data.Add).ToArray();
         await data.ExecuteAsync(); await data.ExecuteAsync();
 
@@ -306,10 +308,10 @@ public sealed class ClusterInstanceUploadTests
         }
     }
 
-    private sealed class InstanceData(Mesh mesh, int capacity) : InstanceData<EmptyRenderInstanceProducer>(
+    private sealed class InstanceData(Mesh mesh, int capacity, WorldJobs? jobs = null) : InstanceData<EmptyRenderInstanceProducer>(
         mesh, capacity, ClusterRenderFeature.GeometryLayout,
         new QueryDefinitionBuilder().Read<RenderTransform>().Read<RenderPreviousTransform>().Read<RenderClusterGeometry>().Build(),
-        new EmptyRenderInstanceProducer());
+        new EmptyRenderInstanceProducer(), jobs: jobs);
 
     private class InstanceData<TProducer> : IDisposable where TProducer : struct, IRenderInstanceProducer
     {
@@ -327,15 +329,17 @@ public sealed class ClusterInstanceUploadTests
         private readonly RenderInstancePropertyLayout _layout;
         private readonly BytesReceiver _properties = new(), _metadata = new();
         private RenderInstanceBatchView _view;
-        internal RenderWorld World { get; } = new();
+        internal RenderWorld World { get; }
         internal RenderPrepareSystems Prepare { get; }
         internal ClusterInstanceSystem<TProducer> Composition { get; }
         internal uint[] ChangedRows { get; private set; } = [];
         internal int RegisteredMeshCount => _cluster.CaptureDiagnostics().Meshes.RegisteredMeshes;
 
         internal InstanceData(Mesh mesh, int capacity, RenderInstancePropertyLayout layout,
-            QueryDefinition query, TProducer producer, ISystem<RenderPrepareSystemContext>? beforeComposition = null)
+            QueryDefinition query, TProducer producer, ISystem<RenderPrepareSystemContext>? beforeComposition = null,
+            WorldJobs? jobs = null)
         {
+            World = new(execution: jobs);
             _mesh = mesh;
             _layout = layout;
             var enumeration = new AdapterEnumerationOptions(AdapterPreference.Unspecified, IncludeSoftware: true);

@@ -124,6 +124,12 @@ internal static class RenderInstanceColumnWrites
     internal static bool NextChangedRows<T>(ReadOnlyQueryPacket packet, uint lastSystemVersion,
         ref int start, out int count) where T : struct
     {
+        if (start == 0 && !packet.ChangedSince<T>(lastSystemVersion))
+        {
+            start = packet.Count;
+            count = 0;
+            return false;
+        }
         while (start < packet.Count && !packet.Slice(start, 1).ChangedSince<T>(lastSystemVersion)) start++;
         int end = start;
         while (end < packet.Count && packet.Slice(end, 1).ChangedSince<T>(lastSystemVersion)) end++;
