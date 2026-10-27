@@ -25,7 +25,9 @@ public readonly struct MaintainConstraintBodies : IPhysicsStage, IDisposable
         var commands = new JobCommandBuffer(context.World, 1);
         commands.ScheduleParallel(new Check(this), 1, _accesses, dependency);
         JobHandle playback = commands.SchedulePlayback();
-        return WorldJobs.GetScheduler(context.World).ScheduleFinally(new Release(commands), JobScheduleOptions.Default, playback);
+        Scheduler scheduler = WorldJobs.GetScheduler(context.World);
+        JobHandle cleanup = scheduler.ScheduleFinally(new Release(commands), JobScheduleOptions.Default, playback);
+        return scheduler.CombineDependencies([playback, cleanup]);
     }
     private readonly struct Check(MaintainConstraintBodies maintenance) : IJobParallelCommandProducer
     {

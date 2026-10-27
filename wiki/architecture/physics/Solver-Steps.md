@@ -25,6 +25,11 @@
 从原子步起点和最终位姿重建一次速度。接触恢复继续消费该速度和共同 `ContactResponse`。
 各阶段接收同一个 `PhysicsStepContext`，作业完成依赖连接每次读取与更新。
 
+接触刷新、约束维护、活动预测以及事件发出与消费的完成句柄，同时覆盖原计算和资源清理。
+这些物理阶段用原 `ScheduleFinally` 释放命令缓冲或归还借用行，再以
+`CombineDependencies([work, cleanup])` 交付共同完成。原计算的异常随同一完成链传给
+`PhysicsStepResult.Complete` 和帧的完成消费入口，清理按原生命周期执行。
+
 AVBD 每体的局部预算仍为 `bodyIterations`；每轮继续先装配和分解，再求响应，
 调用 `AdjustBodyChange`，最后提交 BodyPose，之后更新约束 dual。
 

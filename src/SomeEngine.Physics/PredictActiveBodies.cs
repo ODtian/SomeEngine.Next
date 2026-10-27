@@ -57,7 +57,8 @@ internal sealed class ActivePredictionData : IDisposable
         lock (_gate) rows = _available.Count == 0 ? new() : _available.Pop();
         Scheduler scheduler = WorldJobs.GetScheduler(context.World);
         JobHandle handle = scheduler.Schedule(new Capture(this, rows, context, resume), _accesses, dependency);
-        return scheduler.ScheduleFinally(new ReturnRows(this, rows), JobScheduleOptions.Default, handle);
+        JobHandle cleanup = scheduler.ScheduleFinally(new ReturnRows(this, rows), JobScheduleOptions.Default, handle);
+        return scheduler.CombineDependencies([handle, cleanup]);
     }
 
     private bool ReadMembers(PredictionRows rows, bool resume)

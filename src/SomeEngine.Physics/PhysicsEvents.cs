@@ -73,7 +73,9 @@ public readonly struct EmitPhysicsEvents<TComponents>(PhysicsEventBuffer events,
         var commands = new JobCommandBuffer(context.World, 1);
         commands.ScheduleParallel(new Emit(events, components, context), 1, [events.WriteAccess], dependency);
         JobHandle playback = commands.SchedulePlayback();
-        return WorldJobs.GetScheduler(context.World).ScheduleFinally(new ReleasePhysicsEventCommands(commands), JobScheduleOptions.Default, playback);
+        Scheduler scheduler = WorldJobs.GetScheduler(context.World);
+        JobHandle cleanup = scheduler.ScheduleFinally(new ReleasePhysicsEventCommands(commands), JobScheduleOptions.Default, playback);
+        return scheduler.CombineDependencies([playback, cleanup]);
     }
     private readonly struct Emit(PhysicsEventBuffer events, TComponents components, PhysicsStepContext context) : IJobParallelCommandProducer
     {
@@ -114,7 +116,9 @@ public readonly struct ConsumePhysicsEvents<TConsumer> : IPhysicsStage, IDisposa
         var commands = new JobCommandBuffer(context.World, 1);
         commands.ScheduleParallel(new Consume(this, context.Number), 1, _accesses, dependency);
         JobHandle playback = commands.SchedulePlayback();
-        return WorldJobs.GetScheduler(context.World).ScheduleFinally(new ReleasePhysicsEventCommands(commands), JobScheduleOptions.Default, playback);
+        Scheduler scheduler = WorldJobs.GetScheduler(context.World);
+        JobHandle cleanup = scheduler.ScheduleFinally(new ReleasePhysicsEventCommands(commands), JobScheduleOptions.Default, playback);
+        return scheduler.CombineDependencies([playback, cleanup]);
     }
     private readonly struct Consume(ConsumePhysicsEvents<TConsumer> stage, long number) : IJobParallelCommandProducer
     {
