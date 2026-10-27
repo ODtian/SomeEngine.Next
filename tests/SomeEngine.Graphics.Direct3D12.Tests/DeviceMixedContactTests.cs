@@ -41,7 +41,7 @@ public sealed partial class DeviceAvbdTests
             world.Add(entity, new DeviceCollisionBody(grid, index));
             world.Add(entity, new DeviceGeometryBinding(geometry, index));
         }
-        QueryHandle members = world.Query(new QueryDefinitionBuilder().Read<DeviceBodyBinding>());
+        QueryHandle members = world.Query(new QueryDefinitionBuilder().All<DeviceBodyBinding>());
         QueryHandle poses = world.Query(new QueryDefinitionBuilder().Read<BodyPose>());
         QueryHandle points = world.Query(new QueryDefinitionBuilder().Read<ContactPoint>());
         QueryHandle stateRows = world.Query(new QueryDefinitionBuilder().Read<AvbdContactState>()
