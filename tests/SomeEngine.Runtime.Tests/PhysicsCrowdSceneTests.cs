@@ -37,11 +37,14 @@ public sealed class PhysicsCrowdSceneTests(ITestOutputHelper output)
         output.WriteLine($"Characters=2000; SetupMilliseconds={Stopwatch.GetElapsedTime(setup).TotalMilliseconds:R}; StageTimings=true; IndirectCommands={backend.TryGetCapability<IndirectCommands>(device, out _)}");
         var tip = scene.CharacterBodies[^1].Span[^1];
         Vector3 initial = world.Read<BodyPose>(tip).Position;
+        var elapsed = new List<double>(180);
+        using var process = Process.GetCurrentProcess();
 
         long started = Stopwatch.GetTimestamp();
         scene.AdvanceTime(scene.StepSeconds);
         PhysicsStepResult completed = scene.CompleteForRead();
-        output.WriteLine($"Characters=2000; Step=0; WholeStepMilliseconds={Stopwatch.GetElapsedTime(started).TotalMilliseconds:R}; ManagedBytes={GC.GetTotalMemory(false)}; Adapter={device.Adapter.Name}; DedicatedVideoMemoryBytes={device.Adapter.DedicatedVideoMemory}");
+        elapsed.Add(Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+        output.WriteLine($"Characters=2000; Step=0; WholeStepMilliseconds={elapsed[^1]:R}; ManagedBytes={GC.GetTotalMemory(false)}; Adapter={device.Adapter.Name}; DedicatedVideoMemoryBytes={device.Adapter.DedicatedVideoMemory}");
         ReportBodies(world, completed.Number);
 
         Assert.Equal(2000, scene.CharacterTargets.Count);
@@ -61,17 +64,26 @@ public sealed class PhysicsCrowdSceneTests(ITestOutputHelper output)
             Assert.Equal(completed.Number, pose.Output.Number);
             Assert.Equal(completed.EndTime, pose.Output.Time, 12);
         }
-        for (int number = 1; number < 3; number++)
+        for (int number = 1; number < 180; number++)
         {
             started = Stopwatch.GetTimestamp();
             scene.AdvanceTime(scene.StepSeconds);
             completed = scene.CompleteForRead();
-            output.WriteLine($"Characters=2000; Step={number}; WholeStepMilliseconds={Stopwatch.GetElapsedTime(started).TotalMilliseconds:R}; ManagedBytes={GC.GetTotalMemory(false)}");
+            elapsed.Add(Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+            output.WriteLine($"Characters=2000; Step={number}; WholeStepMilliseconds={elapsed[^1]:R}; ManagedBytes={GC.GetTotalMemory(false)}");
             ReportBodies(world, completed.Number);
             Assert.Equal(number, completed.Number);
             Assert.Equal((number + 1d) / 60, completed.EndTime, 12);
             Assert.Equal(completed.Number, world.Read<BodyStepState>(tip).Number);
         }
+        using (DevicePoseOutputRead pose = GpuPoseAnimation.ReadDeviceOutput(world, scene.CharacterTargets[^1]))
+        {
+            Assert.Equal(completed.Number, pose.Output.Number);
+            Assert.Equal(completed.EndTime, pose.Output.Time, 12);
+        }
+        elapsed.Sort();
+        process.Refresh();
+        output.WriteLine($"Characters=2000; CompletedSteps={elapsed.Count}; BudgetMilliseconds={1000d / 60:R}; WholeStepMeanMilliseconds={elapsed.Average():R}; WholeStepP95Milliseconds={elapsed[(int)Math.Ceiling(elapsed.Count * .95) - 1]:R}; WholeStepP99Milliseconds={elapsed[(int)Math.Ceiling(elapsed.Count * .99) - 1]:R}; WholeStepMaximumMilliseconds={elapsed[^1]:R}; ProcessPeakWorkingSetBytes={process.PeakWorkingSet64}");
         output.WriteLine(timings.Describe().ToJsonString());
     }
 
@@ -90,7 +102,14 @@ public sealed class PhysicsCrowdSceneTests(ITestOutputHelper output)
             }
         });
         world.ReleaseQuery(bodies);
-        output.WriteLine($"Step={number}; MaximumBodyDistance={largest.Position:R}; MaximumBodySpeed={largest.Speed:R}; FastestBodyIndex={largest.Body}");
+        QueryHandle contacts = world.Query(new QueryDefinitionBuilder().All<ContactPoint>());
+        int contactCount = 0;
+        world.ExecuteReadQuery(contacts, ref contactCount, static (scoped QueryCursor rows, ref int count) =>
+        {
+            foreach (QueryChunkView chunk in rows.Chunks) count += chunk.Count;
+        });
+        world.ReleaseQuery(contacts);
+        output.WriteLine($"Step={number}; MaximumBodyDistance={largest.Position:R}; MaximumBodySpeed={largest.Speed:R}; FastestBodyIndex={largest.Body}; ContactPointEntities={contactCount}");
         Assert.InRange(largest.Position, 0, 100);
         Assert.InRange(largest.Speed, 0, 100);
     }

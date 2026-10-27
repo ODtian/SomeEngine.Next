@@ -51,6 +51,7 @@ Length 与 Bend 的投影共用 `physics_xpbd_projection_math.slang` 中的乘�
 为每块布料的九个四边区域创建十八个 `DynamicFace`。几何实体通过原端点引用读取同一
 `DeviceBodies`，更新设备几何和范围后进入分层网格及胶囊/面域类型 bin。
 两个具体的 Capsule/Triangle 泛型检测方向保留实际几何实体的先后顺序。
+每个接触的 `DeviceContactBodies` 总容量为 5，分别保存胶囊的两个端点和三角面的三个端点。
 本项目在创建时固定这些形状参数、几何实体及其主体引用；首个物理步读取并上传这些输入，
 随后沿原 `DeviceInputTransfer.Resident` 复用同一表示。
 Box、Capsule 与 Face 每步继续读取当前主体状态，更新实际几何及候选范围。
@@ -61,7 +62,8 @@ Box、Capsule 与 Face 每步继续读取当前主体状态，更新实际几何
 运行 2,000 个角色及各自布料，共 40,001 个 Body（含地面），90,000 条 Length、
 36,000 条 Bend 和 2,000 个 Motor。末角色的实际实体接收 3 N·s Z 向冲量，
 同一完成帧交付其位移、速度、Body 步号/时刻以及对应骨骼设备输出。
-该公开行为在同一场景对象连续推进三个完成步，并观察全体主体的位置与速度范围。
+该公开行为在同一场景对象连续推进 180 个完成步，观察全体主体的位置、速度范围和接触实体负载，
+并记录整步均值、P95、P99、最大值及进程峰值工作集；首步沿同一计时边界保留。
 
 `ACharacterCapsuleMovesAnotherCharactersBoneClothInTheirCompletedFrame` 沿原组件移动第二个角色及布料，
 其臂端冲量通过胶囊/面域接触推动第一个角色的布料节点，并交付该布料的同帧骨骼输出。
