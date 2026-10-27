@@ -464,6 +464,59 @@ public sealed class AvbdContactTests
         world.ReleaseQuery(poses);
     }
 
+    [Fact]
+    public void RefreshReportsTheComponentFailureAfterReleasingItsCommands()
+    {
+        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var world = WorldJobs.CreateWorld(scheduler: scheduler);
+        Entity sphere = CreateBody(world, new BodyPose { Position = Vector3.UnitY, Rotation = Quaternion.Identity }, BodyMotion.Dynamic);
+        Entity plane = CreateBody(world, new BodyPose { Rotation = Quaternion.Identity }, BodyMotion.Static);
+        world.Add(sphere, new SphereGeometry(1));
+        world.Add(plane, new PlaneGeometry(Vector3.UnitY, 0));
+        world.Add(sphere, new ContactMaterial { NormalStiffness = 100 });
+        world.Add(plane, new ContactMaterial { NormalStiffness = 100 });
+        QueryHandle spheres = world.Query(new QueryDefinitionBuilder().All<SphereGeometry>());
+        QueryHandle planes = world.Query(new QueryDefinitionBuilder().All<PlaneGeometry>());
+        QueryHandle poses = world.Query(new QueryDefinitionBuilder().Read<BodyPose>());
+        QueryHandle pointScope = world.Query(new QueryDefinitionBuilder().Read<ContactPoint>());
+        var pairs = world.Between(spheres, planes).PartitionPairs();
+        using var bins = new CollisionPairBins<RelationPairPartition>(scheduler, 1, 1);
+        using var detected = new ContactPointBuffer(scheduler, contactCapacity: 4, bodyCapacity: 8);
+        var narrow = ContactNarrowPhase.Create(0, CollisionGeometry<SphereGeometry, PlaneGeometry>.Detect(
+            new ConvexPlaneCollision<SphereGeometry>(1e-5f), new ContactPointOutput(detected), contactDistance: 0));
+        using var detection = DetectContactPoints.Create(world, pairs, bins, new SpherePlaneTypes(), narrow, detected,
+            ReadOnlySpan<JobResourceAccess>.Empty);
+        var error = new InvalidOperationException("The selected contact component failed.");
+        using var points = ContactPoints.Create(world, poses, pointScope, detected, new AverageContactMaterials(),
+            new FailingContactComponents(error), new ContactRefreshSettings(.1f, .99f, true));
+        using var events = new PhysicsEventBuffer(scheduler, 1);
+        QueryHandle eventRows = world.Query(new QueryDefinitionBuilder().Read<PhysicsStepEvents>().ReadBuffer<PhysicsEvent>());
+        using var consumption = new ConsumePhysicsEvents<AcknowledgeContactEvents>(world, eventRows, default);
+        var physics = PhysicsSimulation.Create(world, QueryDefinition.Empty,
+            detection.Then(points.Refresh()).Then(events.Emit()).Then(consumption), substeps: 1);
+
+        PhysicsStepResult result = physics.Schedule(0, 0, .1);
+
+        AggregateException failure = Assert.Throws<AggregateException>(() => result.Complete());
+        Assert.Same(error, Assert.Single(failure.Flatten().InnerExceptions));
+        world.CreateEntity(new BodyStepState());
+        world.ReleaseQuery(eventRows);
+        world.ReleaseQuery(pointScope); world.ReleaseQuery(poses);
+        world.ReleaseQuery(planes); world.ReleaseQuery(spheres);
+    }
+
+    private readonly struct FailingContactComponents(InvalidOperationException error) : IContactPointComponents
+    {
+        public void AddReads(World world, List<JobResourceAccess> accesses) { }
+        public void Add(ref JobCommandWriter commands, Entity point, in ContactPoint geometry,
+            ReadOnlySpan<ContactBody> first, ReadOnlySpan<ContactBody> second, in PhysicsStepContext context) => throw error;
+    }
+
+    private readonly struct AcknowledgeContactEvents : IPhysicsEventConsumer
+    {
+        public void Consume(scoped in PhysicsStepEvents step, scoped ReadOnlySpan<PhysicsEvent> events, ref JobCommandWriter commands) { }
+    }
+
     private readonly struct InnerContacts : IComponent;
     private readonly struct OuterContacts : IComponent;
     private readonly struct GroupContactComponents<TGroup> : IContactPointComponents where TGroup : struct, IComponent
