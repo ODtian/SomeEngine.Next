@@ -16,7 +16,7 @@ internal static unsafe class ViewTypes
 
     internal static ushort Register(
         delegate*<World, Entity, ulong, void> buildFunction,
-        delegate*<World, Entity, bool> parameterCheckFunction,
+        delegate*<World, Entity, DependencyChanges, bool> parameterCheckFunction,
         delegate*<World, Entity, ref LayoutPass, in Constraints, Size> measureFunction,
         ChildSource children)
     {
@@ -37,11 +37,9 @@ internal static unsafe class ViewTypes
         Volatile.Read(ref s_functions)[typeId].BuildFunction(world, entity, frame);
     }
 
-    internal static bool HasParameterChanges(World world, Entity entity)
-    {
-        ushort typeId = world.Read<ViewType>(entity).Id;
-        return Volatile.Read(ref s_functions)[typeId].ParameterCheckFunction(world, entity);
-    }
+    internal static bool HasParameterChanges(World world, Entity entity, ushort typeId,
+        DependencyChanges changes) =>
+        Volatile.Read(ref s_functions)[typeId].ParameterCheckFunction(world, entity, changes);
 
     internal static bool HasMeasure(World world, Entity entity) =>
         world.Has<ViewType>(entity) && HasMeasure(world.Read<ViewType>(entity).Id);
@@ -108,7 +106,7 @@ internal static unsafe class ViewTypes
     {
         internal Guid SerializationId;
         internal readonly delegate*<World, Entity, ulong, void> BuildFunction;
-        internal readonly delegate*<World, Entity, bool> ParameterCheckFunction;
+        internal readonly delegate*<World, Entity, DependencyChanges, bool> ParameterCheckFunction;
         internal readonly delegate*<World, Entity, ref LayoutPass, in Constraints, Size> MeasureFunction;
 #if DEBUG
         internal readonly ChildSource Children;
@@ -116,7 +114,7 @@ internal static unsafe class ViewTypes
 
         internal ViewFunctions(
             delegate*<World, Entity, ulong, void> buildFunction,
-            delegate*<World, Entity, bool> parameterCheckFunction,
+            delegate*<World, Entity, DependencyChanges, bool> parameterCheckFunction,
             delegate*<World, Entity, ref LayoutPass, in Constraints, Size> measureFunction,
             ChildSource children)
         {
@@ -201,8 +199,9 @@ internal static unsafe class ViewRegistration<T> where T : struct, IView, IEquat
         }
     }
 
-    private static bool HasParameterChanges(World world, Entity entity) =>
+    private static bool HasParameterChanges(World world, Entity entity, DependencyChanges changes) =>
         T.Mode == BuildMode.Rerun &&
+        changes.HasComponentChanges(world, ComponentId<T>.Value, recheck: true) &&
         world.ComponentDataWriteVersion<T>(entity) != world.Read<ParameterVersion>(entity).Value;
 
     private static Size Measure(World world, Entity entity, ref LayoutPass pass, in Constraints constraints)

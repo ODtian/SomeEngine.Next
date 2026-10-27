@@ -13,12 +13,24 @@ public sealed class TextShapingSystem : ISystem<ImmediateSystemContext>, ILayout
     private readonly Dictionary<Entity, TextMeasurement> _measurements = new();
     private readonly List<Entity> _removed = new();
     private readonly List<ShapeWork> _shapes = new();
+    private TextWriteVersions _versions;
+    private bool _hasVersions;
 
     /// <summary>Shapes changed text buffers with chunk jobs. Set false for sequential execution.</summary>
     public bool Parallel { get; set; } = true;
 
     public void OnUpdate(ref ImmediateSystemContext context)
     {
+        TextWriteVersions versions = ReadVersions(context.World);
+        if (_hasVersions && _versions == versions)
+        {
+            foreach (TextMeasurement measurement in _measurements.Values)
+            {
+                measurement.Updated = false;
+                foreach (TextShapeBuffer shape in measurement.Buffers) shape.Used = false;
+            }
+            return;
+        }
         foreach (var (node, measurement) in _measurements)
         {
             measurement.Updated = false;
@@ -29,6 +41,7 @@ public sealed class TextShapingSystem : ISystem<ImmediateSystemContext>, ILayout
             }
             TextStyle style = context.World.Read<TextAppearance>(node).Style;
             TextInputs inputs = ReadInputs(context.World, node);
+            measurement.Inputs = inputs;
             if (measurement.HasResult && measurement.ResultInputs == inputs &&
                 measurement.Style != style)
             {
@@ -52,15 +65,22 @@ public sealed class TextShapingSystem : ISystem<ImmediateSystemContext>, ILayout
         _removed.Clear();
         try { ChunkJobs.Run(new ShapeJob(_shapes), _shapes.Count, Parallel); }
         finally { _shapes.Clear(); }
+        _versions = versions;
+        _hasVersions = true;
     }
 
     bool ILayoutDataUpdate.HasChanges(World world, Entity node)
     {
+        if (_measurements.TryGetValue(node, out TextMeasurement? measurement) &&
+            _hasVersions && _versions == ReadVersions(world))
+            return !measurement.HasResult || measurement.ResultInputs != measurement.Inputs;
         if (!world.Has<Text>(node))
             return false;
-        return !_measurements.TryGetValue(node, out TextMeasurement? measurement) ||
-            !measurement.HasResult || measurement.ResultInputs != ReadInputs(world, node);
+        return measurement is null || !measurement.HasResult || measurement.ResultInputs != ReadInputs(world, node);
     }
+
+    private static TextWriteVersions ReadVersions(World world) => new(world.ComponentWriteVersion<Text>(),
+        world.ComponentWriteVersion<TextContent>(), world.ComponentWriteVersion<TextAppearance>());
 
     private static TextInputs ReadInputs(World world, Entity node)
     {
@@ -185,6 +205,7 @@ public sealed class TextShapingSystem : ISystem<ImmediateSystemContext>, ILayout
     }
 
     internal readonly record struct TextInputs(uint Content, Font? Font, float Size, float LineHeight);
+    private readonly record struct TextWriteVersions(uint Text, uint Content, uint Appearance);
 
     private readonly record struct ShapeWork(TextShapeBuffer Shape, string Text, TextStyle Style, TextInputs Inputs);
 

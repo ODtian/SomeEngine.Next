@@ -33,7 +33,7 @@ internal sealed class DependencyChanges
         }
     }
 
-    private bool HasComponentChanges(World world, ushort component, bool recheck)
+    internal bool HasComponentChanges(World world, ushort component, bool recheck)
     {
         if (component >= _changes.Length)
             Array.Resize(ref _changes, Math.Max(component + 1, _changes.Length * 2));
@@ -75,11 +75,13 @@ internal sealed class DependencyChanges
             return false;
 
         _dependencies.Clear();
-        List<Dependency> dependencies = _dependencies;
-        world.ExecuteBufferRead<Dependency, List<Dependency>>(entity, ref dependencies, static (buffer, ref values) =>
+        var state = (World: world, Changes: this, Recheck: recheck);
+        world.ExecuteBufferRead<Dependency, (World World, DependencyChanges Changes, bool Recheck)>(entity, ref state, static (buffer, ref check) =>
         {
             foreach (Dependency read in buffer.AsSpan())
-                values.Add(read);
+                if (read.Kind != DependencyKind.Component ||
+                    check.Changes.HasComponentChanges(check.World, read.Component, check.Recheck))
+                    check.Changes._dependencies.Add(read);
         });
         foreach (Dependency read in _dependencies)
             if (HasChanges(world, entity, read, recheck))

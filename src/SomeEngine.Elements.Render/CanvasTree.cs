@@ -52,14 +52,6 @@ internal sealed class CanvasTree
         return false;
     }
 
-    internal CanvasNode ReadNode(Entity node)
-    {
-        while (TryRead(out CanvasNode value))
-            if (value.Node == node)
-                return value;
-        return default;
-    }
-
     private static Rect Intersect(Rect first, Rect second)
     {
         float left = MathF.Max(first.X, second.X);

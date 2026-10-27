@@ -131,7 +131,7 @@ public sealed partial class TextTests
         Entity node = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
         Assert.Equal("0042", frames.World.Read<Text>(node).Value);
         uint version = frames.World.WriteVersion<Text>(node);
-        for (int index = 0; index < 1000; index++)
+        for (int index = 0; index < 10000; index++)
             node.SetText(frames.World, 42, "D4");
 
         long before = GC.GetAllocatedBytesForCurrentThread();

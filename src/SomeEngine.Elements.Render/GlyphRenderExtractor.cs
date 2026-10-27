@@ -21,6 +21,7 @@ public sealed class GlyphRenderExtractor(Entity atlasSource) : IRenderExtraction
     private readonly HashSet<Entity> _canvasEntities = [];
     private readonly Dictionary<Entity, List<GlyphInstance>> _canvasGlyphs = [];
     private readonly Dictionary<Entity, Dictionary<Entity, List<GlyphInstance>>> _textGlyphs = [];
+    private readonly Dictionary<Entity, CanvasNode> _treeNodes = [];
     private GlyphAtlas? _atlas;
     private RenderGlyphAtlas _pixels = new(default, default, 8, 0);
     private Entity _atlasMirror;
@@ -52,6 +53,7 @@ public sealed class GlyphRenderExtractor(Entity atlasSource) : IRenderExtraction
         _changedTextNodes.Clear();
         _canvasGlyphs.Clear();
         _textGlyphs.Clear();
+        _treeNodes.Clear();
         _atlasChanged = false;
         _drawings.Clear();
     }
@@ -120,7 +122,13 @@ public sealed class GlyphRenderExtractor(Entity atlasSource) : IRenderExtraction
         {
             Entity canvas = CanvasTree.FindCanvas(sourceWorld, node);
             if (canvas == Entity.Null || _canvasGlyphs.ContainsKey(canvas)) continue;
-            CanvasNode entry = new CanvasTree(sourceWorld, canvas).ReadNode(node);
+            if (!_treeNodes.ContainsKey(canvas))
+            {
+                var tree = new CanvasTree(sourceWorld, canvas);
+                while (tree.TryRead(out CanvasNode treeNode))
+                    _treeNodes.Add(treeNode.Node, treeNode);
+            }
+            CanvasNode entry = _treeNodes[node];
             ReadGlyphs(sourceWorld, canvas, node, entry.Clip, entry.DrawOrder);
         }
         ChunkJobs.Run(new GlyphJob(_drawings), _drawings.Count, Parallel);
