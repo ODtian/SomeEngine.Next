@@ -46,6 +46,8 @@ Jacobian、惯性块与响应共同投影到该子空间。
 `DeviceAvbdSolver.Initialize()` 先从当前参与和选择构建约束图，再初始化子步历史、
 Body 方程索引和组数据；接触调节与支撑分组读取同次图的活动主体及连通根。
 `Iterate(n)` 在当前子步继续 primal/dual 迭代；`Solve()` 组合这两项职责，迭代复用初始化时构建的图。
+项目已显式建立共同图时，`Initialize(false, equationInputs)` 使用该图已捕获的参与，
+再捕获求解器自身状态选择并初始化数值；`equationInputs` 继续选择上传或复用原方程绑定。
 `Graph.ConstraintStageCount` 为零时，迭代跳过行对偶派发；组更新保持逐轮执行。
 `DeviceAvbdKernels.ClearBodyIndices` 选择独立的逐 Body 索引清理内核，
 其具体入口调用 `clearDeviceAvbdBodyIndices`；随后的初始化内核调用

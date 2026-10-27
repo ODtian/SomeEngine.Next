@@ -23,6 +23,9 @@ public sealed class DeviceXpbdSolver : IDisposable
     private readonly VariableLayoutReflection[] _layouts;
     private readonly ResourceBinding[][] _bindings;
     private readonly CommandContext _commands;
+    private readonly Buffer? _dispatchArguments;
+    private readonly BufferUav? _dispatchArgumentsView;
+    private readonly IndirectCommandLayout? _dispatchLayout;
     private readonly JobResourceAccess[] _extraAccesses;
     private readonly IDeviceConstraintSelection[] _selections;
     private bool _initialized;
@@ -36,11 +39,21 @@ public sealed class DeviceXpbdSolver : IDisposable
         _threadsPerGroup = threadsPerGroup; _extraAccesses = inputAccesses.ToArray(); _histories = histories.ToArray();
         _selections = selections.ToArray();
         _commands = backend.CreateCommandContext(device, new(QueueType.Compute, 0, 1, Label: "Device graph XPBD"));
-        ComputePipelineDesc[] descriptions = [kernels.Initialize, kernels.Project];
+        ComputePipelineDesc[] descriptions = kernels.WriteDispatchArguments is { } arguments
+            ? [kernels.Initialize, kernels.Project, arguments] : [kernels.Initialize, kernels.Project];
         _pipelines = descriptions.Select(kernel => backend.CreateComputePipeline(device, kernel)).ToArray();
         _layouts = descriptions.Select(kernel => kernel.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null).ToArray();
         var bindings = new Dictionary<string, ResourceBinding[]>();
         graph.AddBindings(bindings);
+        if (kernels.WriteDispatchArguments.HasValue)
+        {
+            _dispatchArguments = backend.CreateBuffer(device, new((ulong)graph.ConstraintCapacity * 12,
+                BufferUsages.ShaderWrite | BufferUsages.Indirect, "XPBD row dispatch arguments"), MemoryType.DeviceLocal);
+            _dispatchArgumentsView = backend.CreateBufferUav(device,
+                new(_dispatchArguments, new(0, _dispatchArguments.Info.Size), StructureStride: 4));
+            _dispatchLayout = backend.CreateIndirectCommandLayout(device, new([new(IndirectArgumentType.Dispatch)], 12));
+            bindings.Add("DeviceXpbdDispatchArguments", [ResourceBinding.WritableBuffer(_dispatchArgumentsView)]);
+        }
         foreach (var input in inputs) bindings.Add(input.Key, input.Value);
         foreach (IDeviceConstraintSelection selection in _selections) selection.AddBindings(bindings);
         _bindings = _layouts.Select(layout => DeviceCollisionGrid.OrderBindings(layout, bindings)).ToArray();
@@ -62,6 +75,8 @@ public sealed class DeviceXpbdSolver : IDisposable
         foreach (IDeviceConstraintSelection selection in _selections) selection.AddAccesses(scheduler, accesses);
         foreach (Buffer history in _histories)
             accesses.Add(JobResourceAccess.Write(scheduler.GetResourceToken(history), 0, (long)history.Info.Size));
+        if (_dispatchArguments is { } arguments)
+            accesses.Add(JobResourceAccess.Write(scheduler.GetResourceToken(arguments), 0, (long)arguments.Info.Size));
         accesses.Add(JobResourceAccess.Write(scheduler.GetResourceToken(_commands)));
         return DevicePhysicsJobs.Schedule(scheduler, new Submission(this, context, initialize, iterations, buildGraph), accesses.ToArray(), dependency);
     }
@@ -78,9 +93,14 @@ public sealed class DeviceXpbdSolver : IDisposable
             0, (uint)_settings.RowsPerBlock, (uint)_threadsPerGroup);
         _backend.Begin(_commands, new(0, 0, 32));
         if (!_initialized)
+        {
             foreach (Buffer history in _histories)
                 _backend.Barrier(_commands, new BufferBarrier(history, history.InitialSync, PipelineSync.ComputeShading,
                     history.InitialAccess, ResourceAccess.UnorderedAccess));
+            if (_dispatchArguments is { } arguments)
+                _backend.Barrier(_commands, new BufferBarrier(arguments, arguments.InitialSync, PipelineSync.ComputeShading,
+                    arguments.InitialAccess, ResourceAccess.UnorderedAccess));
+        }
         DispatchArguments blocks = DevicePhysicsDispatch.CreateGroups((_graph.ConstraintCapacity + _settings.RowsPerBlock - 1) / _settings.RowsPerBlock);
         if (initialize)
         {
@@ -88,14 +108,28 @@ public sealed class DeviceXpbdSolver : IDisposable
             _backend.Dispatch(_commands, in blocks);
             Barrier();
         }
+        bool indirect = iterations > 0 && _graph.ConstraintStageCount > 0 && _dispatchArguments is not null;
+        if (indirect)
+        {
+            Bind(2, in step);
+            _backend.Dispatch(_commands, DevicePhysicsDispatch.CreateGroups(
+                (_graph.ConstraintStageCount + _threadsPerGroup - 1) / _threadsPerGroup));
+            _backend.Barrier(_commands, new BufferBarrier(_dispatchArguments!, PipelineSync.ComputeShading, PipelineSync.ExecuteIndirect,
+                ResourceAccess.UnorderedAccess, ResourceAccess.IndirectArgument));
+        }
         for (int iteration = 0; iteration < iterations; iteration++)
             for (int stage = 0; stage < _graph.ConstraintStageCount; stage++)
             {
                 step.Stage = (uint)stage;
                 Bind(1, in step);
-                _backend.Dispatch(_commands, in blocks);
+                if (indirect)
+                    _backend.ExecuteIndirect(_commands, _dispatchLayout!, new(_dispatchArguments!, new((ulong)stage * 12, 12)), 1);
+                else _backend.Dispatch(_commands, in blocks);
                 Barrier();
             }
+        if (indirect)
+            _backend.Barrier(_commands, new BufferBarrier(_dispatchArguments!, PipelineSync.ExecuteIndirect, PipelineSync.ComputeShading,
+                ResourceAccess.IndirectArgument, ResourceAccess.UnorderedAccess));
         using RecordedCommands recorded = _backend.End(_commands);
         _initialized = true;
         return _backend.Submit(_backend.GetQueue(_device, QueueType.Compute), new([], [], [recorded], [], []));
@@ -125,7 +159,11 @@ public sealed class DeviceXpbdSolver : IDisposable
         public Device Device => solve._device;
         public QueueCompletion Submit() => solve.Record(in context, initialize, iterations, buildGraph);
     }
-    public void Dispose() { foreach (Pipeline pipeline in _pipelines) pipeline.Dispose(); _commands.Dispose(); }
+    public void Dispose()
+    {
+        foreach (Pipeline pipeline in _pipelines) pipeline.Dispose();
+        _commands.Dispose(); _dispatchLayout?.Dispose(); _dispatchArgumentsView?.Dispose(); _dispatchArguments?.Dispose();
+    }
 }
 public readonly struct SolveDeviceXpbd(DeviceXpbdSolver solve) : IPhysicsStage
 {

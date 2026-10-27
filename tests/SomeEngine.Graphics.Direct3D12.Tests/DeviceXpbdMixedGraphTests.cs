@@ -97,7 +97,7 @@ public sealed partial class DeviceXpbdTests
     public void DeviceTypedGroupsProjectUserLengthsAndProtectedBendsInTheSameColorOrder()
     {
         using var backend = D3D12GraphicsBackend.Create();
-        using Device device = CreateDevice(backend);
+        using Device device = CreateDevice(backend, DeviceFeatures.IndirectCommands);
         using var jobs = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
         using World world = WorldJobs.CreateWorld(scheduler: jobs);
         using World reference = WorldJobs.CreateWorld(scheduler: jobs);
@@ -217,6 +217,7 @@ public sealed partial class DeviceXpbdTests
             void BuildGraph(uint3 id : SV_DispatchThreadID) { buildDeviceConstraintGraph(); }
             """, [new("WriteRows", SlangStage.Compute), new("BuildGraph", SlangStage.Compute)], "sm_6_0", ShaderDirectory());
         D3D12TestShader shader = shaderCompiler.CompileWithSearchPaths("xpbd_mixed_length_bend", """
+            #define PHYSICS_XPBD_INDIRECT_DISPATCH
             #include "physics_xpbd_graph.slang"
             #include "physics_length_graph.slang"
             #include "physics_bend_graph.slang"
@@ -253,8 +254,13 @@ public sealed partial class DeviceXpbdTests
             [shader("compute")][numthreads(64,1,1)]
             void Project(uint3 group : SV_GroupID, uint3 thread : SV_GroupThreadID)
             { ProjectionRows rows; projectDeviceXpbdGraph(group.x, thread.x, rows); }
-            """, [new("Initialize", SlangStage.Compute), new("Project", SlangStage.Compute)], "sm_6_0", ShaderDirectory());
+            [shader("compute")][numthreads(64,1,1)]
+            void WriteDispatchArguments(uint3 id : SV_DispatchThreadID)
+            { writeDeviceXpbdDispatchArguments(id.x); }
+            """, [new("Initialize", SlangStage.Compute), new("Project", SlangStage.Compute),
+                new("WriteDispatchArguments", SlangStage.Compute)], "sm_6_0", ShaderDirectory());
         ComputePipelineDesc Entry(D3D12TestShader source, int index) => new(source.SlangCode, source.Reflection, source.GetEntryPoint(index), source.GetEntryCode(index));
-        return (new(Entry(graph, 0), Entry(graph, 1)), new(Entry(shader, 0), Entry(shader, 1)));
+        return (new(Entry(graph, 0), Entry(graph, 1)), new(Entry(shader, 0), Entry(shader, 1))
+            { WriteDispatchArguments = Entry(shader, 2) });
     }
 }
