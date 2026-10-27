@@ -8,6 +8,9 @@ namespace SomeEngine.Render.Cluster.Pipeline;
 /// <summary>Scalar bytes derived from extracted materials, with addresses retained across local edits.</summary>
 internal sealed class ClusterMaterialScalars
 {
+    private readonly record struct ScalarValue(Material Material,
+        ScalarLayout.ScalarMaterialLayout Layout, Func<SomeEngine.Resources.Texture?, uint> TextureIndex);
+
     internal static ClusterMaterialScalars Empty { get; } = new();
     private ImmutableDictionary<int, (int Offset, int Size)> _ranges =
         ImmutableDictionary<int, (int, int)>.Empty;
@@ -37,16 +40,16 @@ internal sealed class ClusterMaterialScalars
 
         var ranges = _ranges;
         var free = _free;
-        var writes = new List<(int Offset, byte[] Bytes)>();
+        var writes = new List<(int Offset, int Size, ScalarValue Value)>(addresses.Count);
         int byteCount = Bytes.Length;
         var offsetWrites = new List<(int Offset, uint Value)>();
         foreach (int address in addresses)
         {
             bool exists = assignments.TryGetEntry(address, out Material material, out _);
-            // Complete every potentially failing encoding before publishing any new bytes.
-            byte[] value = !exists ? [] : stages.ScalarLayouts[address].Encode(material, textureIndex);
+            ScalarLayout.ScalarMaterialLayout? layout = exists ? stages.ScalarLayouts[address] : null;
+            int size = layout?.ByteSize ?? 0;
             bool allocated = ranges.TryGetValue(address, out var range);
-            if (allocated && (!exists || range.Size != value.Length))
+            if (allocated && (!exists || range.Size != size))
             {
                 free = free.SetItem(range.Size, free.GetValueOrDefault(range.Size,
                     ImmutableStack<int>.Empty).Push(range.Offset));
@@ -61,29 +64,31 @@ internal sealed class ClusterMaterialScalars
             if (!allocated)
             {
                 int offset;
-                if (free.TryGetValue(value.Length, out var available) && !available.IsEmpty)
+                if (free.TryGetValue(size, out var available) && !available.IsEmpty)
                 {
                     offset = available.Peek();
-                    free = free.SetItem(value.Length, available.Pop());
+                    free = free.SetItem(size, available.Pop());
                 }
                 else
                 {
                     offset = byteCount;
-                    byteCount = checked(byteCount + value.Length);
+                    byteCount = checked(byteCount + size);
                 }
-                range = (offset, value.Length);
+                range = (offset, size);
                 ranges = ranges.SetItem(address, range);
             }
             if (!allocated) WriteOffset(address, checked((uint)range.Offset));
-            writes.Add((range.Offset, value));
+            writes.Add((range.Offset, size, new(material, layout!, textureIndex)));
         }
-        ClusterBytes bytes = Bytes.WithChanges(byteCount, writes);
+        // Encoders write into copied pages. An encoding failure leaves the accepted bytes intact.
+        ClusterBytes bytes = Bytes.WithChanges(byteCount, writes, static (value, destination) =>
+            value.Layout.Encode(value.Material, destination, value.TextureIndex));
         ClusterBytes offsets = Offsets.WithUInt32Changes(checked((int)assignments.SlotCapacity * sizeof(uint)), offsetWrites);
         return new ClusterMaterialScalars
         {
             _ranges = ranges, _free = free, Offsets = offsets, Bytes = bytes,
             ByteChanges = writes.Select(write => new BufferRange(checked((ulong)write.Offset),
-                checked((ulong)write.Bytes.Length))).ToArray(),
+                checked((ulong)write.Size))).ToArray(),
             OffsetChanges = offsetWrites.Select(write => new BufferRange(checked((ulong)write.Offset),
                 sizeof(uint))).ToArray(),
         };

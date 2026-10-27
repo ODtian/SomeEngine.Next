@@ -138,13 +138,13 @@ public sealed partial class ClusterPipelineSystem
         return changed;
     }
 
-    private void RefreshMaterialTextures(bool materialChanges)
+    private void RefreshMaterialTextures()
     {
         uint decalVersion = GraphData.Decals!.Version;
-        if (!materialChanges && _graphData.MaterialTextureDecalVersion == decalVersion)
+        if (_graphData.MaterialTextureDecalVersion == decalVersion)
         {
-            // No material or decal edit changed the accepted reference set.
-            // In-place Texture updates keep their keys and only change versions or allocations.
+            // Resource-property revisions keep the accepted texture references current.
+            // In-place Texture updates retain their keys and change versions or allocations.
             HashSet<EngineTexture>? versionsChanged = null;
             foreach ((EngineTexture texture, MaterialTexture value) in _graphData.MaterialTextures)
                 if (_resources.World.ReadTextureVersions(texture) != value.Versions ||
