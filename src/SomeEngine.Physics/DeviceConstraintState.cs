@@ -23,6 +23,8 @@ public readonly struct DeviceXpbdStateRows<TState>(DeviceConstraintState<TState>
     public void AddReadResources(QueryReadResources resources) => resources.Add<DeviceXpbdState<TState>, DeviceXpbdStateResources<TState>>();
     public bool Matches(scoped QueryRow row) =>
         row.TryRead<DeviceXpbdState<TState>>(out var binding) && ReferenceEquals(binding.States, states);
+    public bool HasChangedInputs(scoped QueryChunkView chunk) => !chunk.Has<DeviceXpbdState<TState>>()
+        || chunk.HasChangedSinceLastSystemVersion<DeviceXpbdState<TState>>();
 }
 
 /// <summary>Per-constraint numerical history in the selected device representation.</summary>

@@ -22,6 +22,8 @@ public interface IDeviceConstraintRowSelection
     QueryDefinition AddReads(QueryDefinition definition);
     void AddReadResources(QueryReadResources resources);
     bool Matches(scoped QueryRow row);
+    /// <summary>Reports changes to the values used by Matches; the default evaluates those values on each capture.</summary>
+    bool HasChangedInputs(scoped QueryChunkView chunk) => true;
 }
 
 public readonly struct DeviceConstraintAllRows : IDeviceConstraintRowSelection
@@ -29,6 +31,7 @@ public readonly struct DeviceConstraintAllRows : IDeviceConstraintRowSelection
     public QueryDefinition AddReads(QueryDefinition definition) => definition;
     public void AddReadResources(QueryReadResources resources) { }
     public bool Matches(scoped QueryRow row) => true;
+    public bool HasChangedInputs(scoped QueryChunkView chunk) => false;
 }
 
 public sealed class DeviceConstraintSelection<TComponent, TData> : DeviceConstraintSelection<TComponent, TData, DeviceConstraintAllRows>
@@ -53,6 +56,8 @@ public class DeviceConstraintSelection<TComponent, TData, TSelection> : IDeviceC
     private readonly Buffer _entities;
     private readonly BufferSrv _view;
     private readonly JobResourceAccess[] _queryAccesses;
+    private bool _hasCapturedMembers;
+    private uint _membershipVersion, _lastSystemVersion;
 
     public DeviceConstraintSelection(IGraphicsBackend backend, Device device, World world, QueryHandle rows,
         DeviceConstraintData<TData> data, TSelection selection, string bindingName, QueryReadResources? resources = null)
@@ -81,12 +86,37 @@ public class DeviceConstraintSelection<TComponent, TData, TSelection> : IDeviceC
     }
     public void Capture()
     {
+        uint membership = _world.MembershipVersion(_rows);
+        var changes = new SourceChanges(_selection, !_hasCapturedMembers || membership != _membershipVersion);
+        _world.ExecuteReadQuery(_rows, _lastSystemVersion, ref changes,
+            static (scoped QueryCursor rows, ref SourceChanges changes) =>
+            {
+                changes.Version = rows.CurrentSystemVersion;
+                if (changes.Changed) return;
+                foreach (QueryChunkView chunk in rows.Chunks)
+                    if (!chunk.Has<DeviceConstraintBinding<TData>>()
+                        || chunk.HasChangedSinceLastSystemVersion<DeviceConstraintBinding<TData>>()
+                        || changes.Selection.HasChangedInputs(chunk))
+                    { changes.Changed = true; break; }
+            });
+        if (!changes.Changed)
+        {
+            _lastSystemVersion = changes.Version;
+            return;
+        }
         using MappedBuffer mapping = _backend.Map(_entities, MapType.Write, BufferRange.Whole);
         mapping.Bytes.Clear();
         var selected = new ReadRows(_data, _selection, mapping);
         _world.ExecuteReadQuery(_rows, ref selected,
             static (scoped QueryCursor rows, ref ReadRows state) => state.Read(rows));
         mapping.Flush(mapping.Range);
+        _hasCapturedMembers = true; _membershipVersion = membership; _lastSystemVersion = changes.Version;
+    }
+    private struct SourceChanges(TSelection selection, bool changed)
+    {
+        internal TSelection Selection = selection;
+        internal bool Changed = changed;
+        internal uint Version;
     }
     private readonly ref struct ReadRows(DeviceConstraintData<TData> data, TSelection selection, MappedBuffer mapping)
     {

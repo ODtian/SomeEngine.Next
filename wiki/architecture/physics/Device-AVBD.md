@@ -119,6 +119,10 @@ Target 反馈的源 Body 参与当前框架读取，目标 Body 参与力装配�
 Body 候选沿共同预测阶段的 `DeviceBodyIndices` 读取，动态状态沿同一个 208 字节主体读取。
 `DeviceConstraintSelection` 从原查询保存当前实体索引和代次；每个具体组同时核对
 参数 metadata 与当前选择，算法组进一步核对原数值状态资源的选择。
+选择器的 `AddReads` 与 `Matches` 分别声明输入和判断入选行；
+`HasChangedInputs(QueryChunkView)` 可观察判定所用输入的原列版本。
+默认实现每次重新判断，内置身份、AVBD/XPBD 历史及响应选择观察各自绑定的变化。
+成员版本与绑定输入保持原值时，选择器复用已上传身份；成员或输入变化后重新捕获。
 图的完整连接与数值活动范围见[设备主体活动](Device-Activity.md)。
 
 图的行参与写入采用具体线程组；两内核 `DeviceGraphKernels(writeRows, build)`
