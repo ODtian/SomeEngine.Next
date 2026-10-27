@@ -63,6 +63,12 @@ public readonly struct XpbdGraphConstraintGroups<TFirst, TSecond>(TFirst first, 
     public QueryHandle GetQuery(int index) => index < first.QueryCount ? first.GetQuery(index) : second.GetQuery(index - first.QueryCount);
     public void AddResources(World world, List<JobResourceAccess> accesses, PhysicsGraphPhase phase)
     { first.AddResources(world, accesses, phase); second.AddResources(world, accesses, phase); }
+    public void RefreshGraph(in PhysicsStepContext context, scoped EntityQueryViews queries, int offset,
+        scoped PhysicsBodies bodies)
+    {
+        first.RefreshGraph(in context, queries, offset, bodies);
+        second.RefreshGraph(in context, queries, offset + first.QueryCount, bodies);
+    }
     public void ReadActivityErrors(in PhysicsStepContext context, scoped EntityQueryViews queries, int offset,
         scoped PhysicsBodies bodies, ref PhysicsActivityErrors errors)
     {

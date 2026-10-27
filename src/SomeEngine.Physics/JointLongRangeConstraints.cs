@@ -67,9 +67,12 @@ internal sealed class JointLongRangeData(JointLongRangeSettings settings)
     private readonly Dictionary<Entity, List<JointBoundReference>> _byBody = [];
     private readonly Stack<List<JointBoundReference>> _unused = [];
 
+    internal void RefreshGraph(scoped PhysicsQueryRows joints, scoped PhysicsBodies bodies, in PhysicsStepContext context) =>
+        _graph.Refresh(joints, bodies, in context, settings.Levels);
+
     internal void Initialize(scoped PhysicsQueryRows joints, scoped PhysicsBodies bodies, in PhysicsStepContext context)
     {
-        _graph.Refresh(joints, bodies, in context, settings.Levels);
+        RefreshGraph(joints, bodies, in context);
         foreach (List<JointBoundReference> references in _byBody.Values) { references.Clear(); _unused.Push(references); }
         _byBody.Clear();
         float squaredDuration = (float)(context.Duration * context.Duration);

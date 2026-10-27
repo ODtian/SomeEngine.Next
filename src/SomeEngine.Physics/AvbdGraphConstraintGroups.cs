@@ -63,6 +63,12 @@ public readonly struct AvbdGraphConstraintGroups<TFirst, TSecond>(TFirst first, 
     }
     public void AddResources(World world, List<JobResourceAccess> accesses, PhysicsGraphPhase phase)
     { first.AddResources(world, accesses, phase); second.AddResources(world, accesses, phase); }
+    public void RefreshGraph(in PhysicsStepContext context, scoped EntityQueryViews queries, int offset,
+        scoped PhysicsBodies bodies)
+    {
+        first.RefreshGraph(in context, queries, offset, bodies);
+        second.RefreshGraph(in context, queries, offset + first.QueryCount, bodies);
+    }
     public void ReadGraph(in PhysicsStepContext context, ReadOnlySpan<QueryHandle> queries, int offset,
         ref PhysicsConstraintGraphBuilder graph)
     { first.ReadGraph(in context, queries, offset, ref graph); second.ReadGraph(in context, queries, offset + first.QueryCount, ref graph); }
