@@ -362,16 +362,17 @@ internal sealed partial class FrameExecutor
         for (int i = 0; i < _frame.DynamicPasses.Count; i++)
         {
             FramePass source = _frame.DynamicPasses[i];
-            int ordinal = _dynamicPassPositions[i].Ordinal;
-            GraphRegionEntry interval = structureIndex.Structure.GetRegionInterval(source.Region);
+            RegionPassPosition position = _dynamicPassPositions[i];
+            GraphRegionEntry interval = position.Region.Interval;
             long insertion = source.Region.IsValid ? interval.Start :
                 interval.End;
-            source.DeclarationOrdinal = checked(insertion + ordinal + 1);
+            source.DeclarationOrdinal = checked(insertion + position.Ordinal + 1);
             if (source.IsBufferUpload) source.DeclarationOrdinal = long.MinValue + i;
             DevelopmentCheck.Require(!source.Region.IsValid || source.DeclarationOrdinal < interval.End,
                 "Frame passes must fit inside their region's declaration interval.");
-            source.Enabled &= structureIndex.Structure.IsRegionEnabled(source.Region);
+            source.Enabled &= position.Region.Enabled;
             SetPassRow(_dynamicPassRows[i], source);
+            _dynamicPassPositions[i] = default;
         }
 
         PrepareAccessRows();

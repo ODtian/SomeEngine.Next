@@ -17,7 +17,7 @@ internal sealed partial class FrameExecutor
         }
 
         List<RenderGraphPassDiagnostic>? passes = handler is null
-            ? null : new(_passIndices.Count + _regionPassRows.Count);
+            ? null : new(_passIndices.Count + _frame.DynamicPasses.Count);
         int declaredCount = 0;
         int liveCount = 0;
         for (int index = 0; index < _passes.Count; index++)
