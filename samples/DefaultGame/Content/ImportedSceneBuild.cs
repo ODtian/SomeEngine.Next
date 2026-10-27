@@ -28,6 +28,7 @@ public static class ImportedSceneBuild
         await CopySharedShadersAsync(project, applicationDirectory);
         string directory = Path.Combine(project.RootPath, "assets/Shaders");
         ImportedSceneImporter.WriteSurfaceShader(directory, engineRoot);
+        ImportedSceneImporter.WriteSurfaceSources(directory, engineRoot);
         // Preserve the incoming refresh scope: existing scene definitions only, with no glTF reimport.
         foreach (string source in Directory.EnumerateFiles(directory, "scene_*.shader"))
             await project.BuildAsync(source);
