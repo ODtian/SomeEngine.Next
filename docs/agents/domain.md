@@ -23,8 +23,8 @@
 | GameWorld/RenderWorld | [GameWorld-and-RenderWorld](../../wiki/architecture/rendering/GameWorld-and-RenderWorld.md)、[Extraction](../../wiki/architecture/rendering/Extraction.md)、[RenderDevice](../../wiki/architecture/rendering/RenderDevice.md) | `RenderExtractionSchedule.cs`、`RenderInstanceCompositionSystem.cs`、`RenderDevice.cs`；提取、实例准备及业务 GPU 完成跟踪 |
 | RHI | [RHI/Index](../../wiki/architecture/RHI/Index.md) | `SomeEngine.Graphics`、具体 backend、`Graphics.Validation`；当前公共入口包含 CommandContext、RecordedCommands、QueueCompletion、固定 DescriptorTable 与 ValidationLayer。具体 backend/capability/lifetime 规则按实现核对 |
 | Assets 与 Shader | [Asset-Objects](../../wiki/architecture/Assets/Asset-Objects.md)、[Asset-Byte-Cache](../../wiki/architecture/Assets/Asset-Byte-Cache.md)、[Asset-Shaders](../../wiki/architecture/Assets/Asset-Shaders.md) | `Asset.cs`、`Asset.Blocks.cs`、`AssetByteCache.cs`、`Shader.cs`、`Shader.Slang.cs`；身份、Block、缓存与直接 Slang 数据持有 |
-| SomeUI | ADR 0008–0014、[SomeUI](../../wiki/architecture/SomeUI.md) 与 `someui/` 原子页、`docs/SomeUI-Requirements.md` | 当前尚无实现；以 Wiki 原子页为目标设计。实现后核对 `SomeEngine.Views` 的作用域、重建调度与 ECS 写版本接口 |
-| 动画 | ADR 0014、[Animation](../../wiki/architecture/Animation.md) 与 `animation/` 原子页、`docs/Pose-Animation-Spec.md` | 当前尚无实现；属性动画与姿势动画均为目标设计 |
+| SomeUI | ADR 0008–0014、[SomeUI](../../wiki/architecture/SomeUI.md) 与 `someui/` 原子页、`docs/SomeUI-Requirements.md` | `GameFrameSystems`、`SomeEngine.Views`、`SomeEngine.Layout`、`SomeEngine.Elements.Render` 及对应行为测试；作用域、重建与布局缓存、ECS 写版本和 Rendering world 镜像 |
+| 动画 | ADR 0014、[Animation](../../wiki/architecture/Animation.md) 与 `animation/` 原子页、`docs/Pose-Animation-Spec.md` | `SomeEngine.Animation`、`SomeEngine.Animation.Pose` 及对应行为测试；`AnimationSystems` 阶段顺序、时间线、轨道状态、来源合成和组件字段写入 |
 | 资产导入扩展与 Block 划分 | ADR 0015–0017、`Assets/Importer-Discovery`、`Importer-Sets`、`Block-Division`、`Gltf-Mesh-Import` | `GltfSourceImporter`、`ImportContext`、`AssetCapabilitiesGenerator`、`ClusterGltfMeshImporter`、`ClusterBuilder`；页面中"当前代码与目标的差异"列出待迁移项 |
 | 验证与验收 | `wiki/architecture/validation/`、当前 harness 原子页 | Core.DevelopmentCheck、业务输入处理与 ValidationLayer；验收沿用根 AGENTS 的公共行为和统一渲染场景规则 |
 
