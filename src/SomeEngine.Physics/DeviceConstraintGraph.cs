@@ -19,6 +19,8 @@ public readonly record struct DeviceGraphKernels(ComputePipelineDesc WriteRows, 
 public sealed partial class DeviceConstraintGraph : IDisposable
 {
     private static readonly TraceSite BuildTrace = new("physics", "ConstraintGraph.Build");
+    private static readonly TraceSite ConnectivityTrace = new("physics", "ConstraintGraph.Connectivity");
+    private static readonly TraceSite ActiveWorkTrace = new("physics", "ConstraintGraph.ActiveWork");
     private readonly IGraphicsBackend _backend;
     private readonly Device _device;
     private readonly DeviceBodies _bodies;
@@ -99,6 +101,8 @@ public sealed partial class DeviceConstraintGraph : IDisposable
     public int ConstraintCapacity => _capacity.Constraints;
     internal int BodiesPerConstraint => _capacity.BodiesPerConstraint;
     public BuildDeviceConstraintGraph Build() => new(this);
+    public BuildDeviceConstraintConnectivity BuildConnectivity() => new(this);
+    public UpdateDeviceActiveConstraintWork UpdateActiveWork() => new(this);
     public void AddBindings(Dictionary<string, ResourceBinding[]> bindings)
     {
         foreach (var binding in _graphBindings) bindings.Add(binding.Key, binding.Value);
@@ -123,16 +127,25 @@ public sealed partial class DeviceConstraintGraph : IDisposable
         var accesses = new List<JobResourceAccess>(); AddBuildAccesses(scheduler, accesses);
         return scheduler.Schedule(new BuildGraph(this), accesses.ToArray(), dependency);
     }
+    internal JobHandle ScheduleConnectivity(in PhysicsStepContext context, JobHandle dependency)
+    {
+        if (!_parallel.HasValue) return Schedule(in context, dependency);
+        Scheduler scheduler = WorldJobs.GetScheduler(context.World);
+        var accesses = new List<JobResourceAccess>(); AddBuildAccesses(scheduler, accesses);
+        return DevicePhysicsJobs.Schedule(scheduler, new ConnectivitySubmission(this), accesses.ToArray(), dependency);
+    }
+    internal JobHandle ScheduleActiveWork(in PhysicsStepContext context, JobHandle dependency)
+    {
+        if (!_parallel.HasValue) return Schedule(in context, dependency);
+        Scheduler scheduler = WorldJobs.GetScheduler(context.World);
+        var accesses = new List<JobResourceAccess>(); AddBuildAccesses(scheduler, accesses);
+        return scheduler.Schedule(new UpdateActiveGraphWork(this), accesses.ToArray(), dependency);
+    }
     internal void BuildAndWait()
     {
         using var trace = EngineTrace.Begin(BuildTrace);
         CaptureSelections();
-        using (MappedBuffer mapping = _backend.Map(_parameters, MapType.Write, BufferRange.Whole))
-        {
-            Span<uint> values = MemoryMarshal.Cast<byte, uint>(mapping.Bytes);
-            values[0] = (uint)_bodies.Capacity; values[1] = (uint)_capacity.Constraints; values[2] = (uint)_capacity.BodiesPerConstraint; values[3] = 0;
-            mapping.Flush(new(0, 16));
-        }
+        WriteParameters(activeWorkOnly: false);
         if (_parallel.HasValue) { BuildParallelAndWait(); return; }
         _backend.Begin(_commands, new(0, 0, 16));
         if (!_initialized)
@@ -163,6 +176,29 @@ public sealed partial class DeviceConstraintGraph : IDisposable
         }
         _backend.CollectCompleted(_device);
     }
+    private QueueCompletion RecordConnectivity()
+    {
+        using var trace = EngineTrace.Begin(ConnectivityTrace);
+        CaptureSelections();
+        WriteParameters(activeWorkOnly: false);
+        BeginParallelGraph();
+        RecordParallelConnectivity();
+        return SubmitGraphCommands();
+    }
+    private void UpdateActiveWorkAndWait()
+    {
+        using var trace = EngineTrace.Begin(ActiveWorkTrace);
+        WriteParameters(activeWorkOnly: true);
+        BuildParallelAndWait(activeWorkOnly: true);
+    }
+    private void WriteParameters(bool activeWorkOnly)
+    {
+        using MappedBuffer mapping = _backend.Map(_parameters, MapType.Write, BufferRange.Whole);
+        Span<uint> values = MemoryMarshal.Cast<byte, uint>(mapping.Bytes);
+        values[0] = (uint)_bodies.Capacity; values[1] = (uint)_capacity.Constraints;
+        values[2] = (uint)_capacity.BodiesPerConstraint; values[3] = activeWorkOnly ? 1u : 0;
+        mapping.Flush(new(0, 16));
+    }
     internal void CaptureSelections()
     { foreach (IDeviceConstraintSelection selection in _selections) selection.Capture(); }
     private Buffer AddBuffer(string name, int count, uint stride)
@@ -174,6 +210,13 @@ public sealed partial class DeviceConstraintGraph : IDisposable
         return buffer;
     }
     private readonly struct BuildGraph(DeviceConstraintGraph graph) : IJob { public void Execute() => graph.BuildAndWait(); }
+    private readonly struct UpdateActiveGraphWork(DeviceConstraintGraph graph) : IJob { public void Execute() => graph.UpdateActiveWorkAndWait(); }
+    private readonly struct ConnectivitySubmission(DeviceConstraintGraph graph) : IDevicePhysicsSubmission
+    {
+        public IGraphicsBackend Backend => graph._backend;
+        public Device Device => graph._device;
+        public QueueCompletion Submit() => graph.RecordConnectivity();
+    }
     public void Dispose()
     {
         foreach (Pipeline pipeline in _pipelines) pipeline.Dispose();
@@ -185,4 +228,12 @@ public sealed partial class DeviceConstraintGraph : IDisposable
 public readonly struct BuildDeviceConstraintGraph(DeviceConstraintGraph graph) : IPhysicsStage
 {
     public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) => graph.Schedule(in context, dependency);
+}
+public readonly struct BuildDeviceConstraintConnectivity(DeviceConstraintGraph graph) : IPhysicsStage
+{
+    public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) => graph.ScheduleConnectivity(in context, dependency);
+}
+public readonly struct UpdateDeviceActiveConstraintWork(DeviceConstraintGraph graph) : IPhysicsStage
+{
+    public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) => graph.ScheduleActiveWork(in context, dependency);
 }

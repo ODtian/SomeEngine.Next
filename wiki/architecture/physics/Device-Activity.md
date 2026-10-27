@@ -48,6 +48,22 @@
 计数与打包沿它选择实际数值工作。
 `DeviceGraphBodies` 同时供当前求解数学的权重和修正读取这个范围。
 
+`DeviceConstraintGraph.BuildConnectivity()` 捕获当前约束参与，生成 Rows、Parents、
+Islands 和 CSR 邻接，并沿原设备 fence 交付连通结果。
+`UpdateActiveWork()` 从同一 Parents、邻接和当前活动状态生成 ActiveBodies、
+Body/约束颜色、计数及打包范围。两项阶段共享图持有的原缓冲。
+并行实现复用原 `DeviceGraphParallelKernels`：Initialize 按同一维度参数选择完整初始化
+或活动工作初始化，后者保留当前连通与具体组数量，再执行原压缩、着色和工作打包。
+原 `Build()` 仍一次生成连通和数值工作范围；串行 bundle 的两个细分入口执行原完整构建。
+
+`WakeConnected(buildGraph: false)` 使用调用方先行交付的当前连通结果。
+检测会产生新接触的子步先为输入唤醒构建连通，再预测、检测和刷新当前接触；
+接触唤醒消费刷新后的第二次连通结果，Resume 随后补齐新唤醒主体的预测。
+`UpdateActiveWork()` 位于这次唤醒、Resume 之后，再接续接触响应和数值初始化。
+接触响应初始化的有效质量及求解器迭代由此读取同一新活动范围。
+项目装配见 [设备场景阶段](../../../samples/DefaultGame/PhysicsScenes/CreateDevicePhysicsScene.cs)，
+新约束的公开运动结果见 [设备拓扑唤醒](../../../tests/SomeEngine.Graphics.Direct3D12.Tests/DeviceActivityChangesTests.cs)。
+
 项目的具体图初始化内核通过以下源码组合选择活动主体：
 
 ```slang

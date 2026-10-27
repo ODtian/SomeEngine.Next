@@ -64,9 +64,10 @@ public sealed class DevicePhysicsActivity : IDisposable
 
     public DeviceActivityStage UploadInputs() => new(this, 0);
     public DeviceActivityStage WakeConnected() => new(this, 1);
+    public DeviceActivityStage WakeConnected(bool buildGraph) => new(this, 1, buildGraph);
     public DeviceActivityStage Finish() => new(this, 2);
     public ReadDeviceActivityResults Readback(PhysicsEventBuffer events) => new(this, events);
-    internal JobHandle Schedule(in PhysicsStepContext context, int phase, JobHandle dependency)
+    internal JobHandle Schedule(in PhysicsStepContext context, int phase, bool buildGraph, JobHandle dependency)
     {
         Scheduler scheduler = WorldJobs.GetScheduler(context.World);
         var accesses = new List<JobResourceAccess>(_activities.GetWriteAccesses(scheduler));
@@ -78,12 +79,12 @@ public sealed class DevicePhysicsActivity : IDisposable
         accesses.Add(JobResourceAccess.Write(scheduler.GetResourceToken(_previousRows), 0, (long)_previousRows.Info.Size));
         accesses.Add(JobResourceAccess.Write(scheduler.GetResourceToken(_previousParticipants), 0, (long)_previousParticipants.Info.Size));
         accesses.Add(JobResourceAccess.Write(scheduler.GetResourceToken(_commands)));
-        return DevicePhysicsJobs.Schedule(scheduler, new Submission(this, context, phase), accesses.ToArray(), dependency);
+        return DevicePhysicsJobs.Schedule(scheduler, new Submission(this, context, phase, buildGraph), accesses.ToArray(), dependency);
     }
-    private QueueCompletion Record(in PhysicsStepContext context, int phase)
+    private QueueCompletion Record(in PhysicsStepContext context, int phase, bool buildGraph)
     {
         if (phase == 0) _activities.CaptureInputs(in context);
-        if (phase == 1) _graph.BuildAndWait();
+        if (phase == 1 && buildGraph) _graph.BuildAndWait();
         var step = new ActivityStep((uint)_activities.Bodies.Capacity, (uint)_graph.ConstraintCapacity,
             (float)context.Duration, _settings, (uint)phase, (uint)context.Substep, context.Number, context.StartTime, context.EndTime);
         _backend.Begin(_commands, new(0, 0, 16));
@@ -140,11 +141,11 @@ public sealed class DevicePhysicsActivity : IDisposable
         public long Number = number;
         public double StartTime = start, EndTime = end;
     }
-    private readonly struct Submission(DevicePhysicsActivity activity, PhysicsStepContext context, int phase) : IDevicePhysicsSubmission
+    private readonly struct Submission(DevicePhysicsActivity activity, PhysicsStepContext context, int phase, bool buildGraph) : IDevicePhysicsSubmission
     {
         public IGraphicsBackend Backend => activity._backend;
         public Device Device => activity._device;
-        public QueueCompletion Submit() => activity.Record(in context, phase);
+        public QueueCompletion Submit() => activity.Record(in context, phase, buildGraph);
     }
     internal JobHandle ScheduleReadback(in PhysicsStepContext context, PhysicsEventBuffer events, JobHandle dependency)
     {
@@ -196,7 +197,9 @@ public sealed class DevicePhysicsActivity : IDisposable
 }
 public readonly struct DeviceActivityStage(DevicePhysicsActivity activity, int phase) : IPhysicsStage
 {
-    public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) => activity.Schedule(in context, phase, dependency);
+    private readonly bool _buildGraph = true;
+    internal DeviceActivityStage(DevicePhysicsActivity activity, int phase, bool buildGraph) : this(activity, phase) => _buildGraph = buildGraph;
+    public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) => activity.Schedule(in context, phase, _buildGraph, dependency);
 }
 public readonly struct ReadDeviceActivityResults(DevicePhysicsActivity activity, PhysicsEventBuffer events) : IPhysicsStage
 {
