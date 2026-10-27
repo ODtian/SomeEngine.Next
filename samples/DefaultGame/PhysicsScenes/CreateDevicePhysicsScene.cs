@@ -2,7 +2,6 @@ using SomeEngine.ECS;
 using SomeEngine.ECS.Commands;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
-using SomeEngine.ECS.Registry;
 using SomeEngine.ECS.Relations;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Graphics;
@@ -71,37 +70,21 @@ public static partial class PhysicsScenes
             data.Bodies.Length, contactCapacity);
         DeviceContactKernels responseKernels = shaders.Responses();
 
-        PhysicsSceneEntities created = CreateEntities(world, data, geometrySource);
+        var bodies = new DeviceBodies(backend, device, data.Bodies.Length);
+        var equations = new DeviceAvbdBodyEquations(backend, device, bodies);
+        var geometry = new DeviceCollisionGeometry(backend, device, geometrySource.GetCapacity(data.Bodies.Length), bodies);
+        PhysicsSceneEntities created = CreateEntities(world, data, geometrySource,
+            new SceneDeviceBodyBindings(bodies, equations, geometry));
         Scheduler scheduler = WorldJobs.GetScheduler(world);
         const int threads = 64;
-        var bodies = new DeviceBodies(backend, device, created.Bodies.Length);
-        var equations = new DeviceAvbdBodyEquations(backend, device, bodies);
-        var geometry = new DeviceCollisionGeometry(backend, device, geometrySource.GetCapacity(created.Bodies.Length), bodies);
-        ReadOnlySpan<int> bindingComponents =
-        [
-            ComponentMetadata<DeviceBodyBinding>.Id,
-            ComponentMetadata<DeviceAvbdEquationBinding>.Id,
-            ComponentMetadata<DeviceGeometryBinding>.Id,
-        ];
-        for (int index = 0; index < created.Bodies.Length; index++)
-        {
-            var bodyBindings = new SceneDeviceBodyBindings(new(bodies, index), new(equations, index), new(geometry, index));
-            world.ExecuteBundleAdd(created.Bodies[index], bindingComponents, ref bodyBindings,
-                static (BundleWriteView view, ref SceneDeviceBodyBindings values) =>
-                {
-                    view.Write(values.Body);
-                    view.Write(values.Equation);
-                    view.Write(values.Geometry);
-                });
-        }
+        bool allBodies = readbackBodyIndices.Length == created.Bodies.Length;
         var readbackBodies = new Entity[readbackBodyIndices.Length];
         for (int index = 0; index < readbackBodyIndices.Length; index++)
-        {
-            Entity body = readbackBodies[index] = created.Bodies[readbackBodyIndices[index]];
-            world.Add(body, new SceneReadbackBody());
-        }
+            readbackBodies[index] = created.Bodies[readbackBodyIndices[index]];
+        if (!allBodies)
+            foreach (Entity body in readbackBodies) world.Add(body, new SceneReadbackBody());
         QueryDefinition filter = new QueryDefinitionBuilder().All<ScenePhysicsBody>().Build();
-        QueryDefinition selectedFilter = new QueryDefinitionBuilder().All<SceneReadbackBody>().Build();
+        QueryDefinition selectedFilter = allBodies ? filter : new QueryDefinitionBuilder().All<SceneReadbackBody>().Build();
         QueryHandle members = world.Query(filter.WithAccess(new QueryDefinitionBuilder().Read<DeviceBodyBinding>().Build()));
         QueryHandle shapes = world.Query(filter);
         QueryHandle poses = world.Query(filter.WithAccess(new QueryDefinitionBuilder().Read<BodyPose>().Read<BodyMass>().Read<BodyStepState>().Build()));
@@ -197,7 +180,7 @@ public static partial class PhysicsScenes
         var contacts = new DeviceSceneContactEvents(backend, device, world, bodies, members, points, parameters, responses,
             shaders, bindings, reads, new IDeviceConstraintSelection[] { selected, selectedResponses }, completedEvents, contactEvents, threads);
         var eventConsumption = new ConsumePhysicsEvents<TEvents>(world, eventRows, events, eventAccesses);
-        var results = readbackBodyIndices.Length == created.Bodies.Length
+        var results = allBodies
             ? new DeviceBodyResults(backend, device, bodies)
             : new DeviceBodyResults(backend, device, bodies, world, observed, readbackBodyIndices.Length);
         var statistics = new DeviceSceneStatistics(backend, device, bodies, parameters, selected, graph,
@@ -257,8 +240,6 @@ public static partial class PhysicsScenes
             statistics, readbackBodies);
     }
 
-    private readonly record struct SceneDeviceBodyBindings(DeviceBodyBinding Body,
-        DeviceAvbdEquationBinding Equation, DeviceGeometryBinding Geometry);
 }
 
 internal readonly struct SceneReadbackBody : IComponent;

@@ -21,7 +21,7 @@
 
 共同 `CreateEntities` 执行一次源数据到实体的创建，交回同一组实体引用和输入记录。CPU 路径为所选 Body 附加自己的 `AvbdBodyEquation` 分解工作组件。角锁连接的目标局部框架保存创建时双方相对旋转，保持原横杆、配重等场景的初始连接姿势。
 
-[主体创建](../../../samples/DefaultGame/PhysicsScenes/CreatePhysicsSceneBodies.cs)按输入中连续相同的形状组件分批，沿 `World.ExecuteBundleSpawnBatch` 一次声明主体、位姿、质量、速度、步缓存、活动、范围、材料、变换和形状组件。行回调写入该条原输入，并按同一索引交回 Entity；盒体、球体和共享凸包由项目的具体几何类型写入。原 `Bodies` 顺序继续提供关节、距离边和定时事件的实体引用。设备路径随后沿 `World.ExecuteBundleAdd` 同次添加主体、方程和几何的三个绑定，三者继续使用该主体的原设备索引。
+[主体创建](../../../samples/DefaultGame/PhysicsScenes/CreatePhysicsSceneBodies.cs)按输入中连续相同的形状组件分批，沿 `World.ExecuteBundleSpawnBatch` 一次声明主体、位姿、质量、速度、步缓存、活动、范围、材料、变换和形状组件。行回调写入该条原输入，并按同一索引交回 Entity；盒体、球体和共享凸包由项目的具体几何类型写入。原 `Bodies` 顺序继续提供关节、距离边和定时事件的实体引用。设备路径先按原创建容量构造 `DeviceBodies`、方程和几何对象，再通过项目内的具体 `SceneDeviceBodyBindings` 将三个绑定加入同一次主体创建批次；绑定沿原索引指向这些对象。
 
 二维场景保留面积质量和仅 Z 轴转动惯量，几何 Z 厚度用于原范围与显示。调用方显式选择 `PlanarBoxCollision` 或三维具体窄相；活动角轴的共同方程见[求解阶段](Solver-Steps.md)。默认场景摩擦合成使用两侧系数的几何平均。
 
@@ -72,6 +72,8 @@ DefaultGame 的 `--physics` 选择完整物理目录，`--physics=<id>` 选择�
 
 GPU 示例按 Body 数量派生网格单元、桶、pair 和接触容量，工作量描述记录这些容量、所选设备名称、驱动与专用显存。接触、原关节和原显式距离边共同进入设备约束图；参数与数值历史沿原实体的设备表示保存，完成后读取所选 Body 并更新原 `LocalTransform`。
 
+`million-activity` 选择原百万动态盒体和共享地板输入、16×2 AVBD、1 m/16 层网格、100 万 pair 与 400 万接触容量、法向与切向罚参数各 1e6。该项目配置使用普通接触约束，读取全部 1,000,001 个主体结果并更新原变换，完成步消费者记录 Sleep 与 Wake；工作量中的读取范围与计数明确对应全体主体。原第 180 步局部冲量和第 360 步共享地板位移使统一测量窗口覆盖 481 步。
+
 `PhysicsSceneSettings.GeometryInputsFixed` 声明形状参数和主体引用在仿真期间固定。场景首次步通过原 `WriteGeometryReferences` 与 `UpdateDeviceGeometry(..., Upload)` 上传这些输入，后续步使用同一几何和网格的 `UpdateDeviceGeometry(..., Resident)`，沿当前设备位姿重算几何与候选范围。首次上传计入第一步耗时；主体的位姿输入、冲量和运动目标继续沿原主体输入入口生效。GPU 盒体目录选择该配置，并在工作量描述中记录该值。
 
 `PhysicsSceneSettings.EquationBindingsFixed` 声明主体与方程行的绑定固定。首次步选择原 `DeviceAvbdSolver.Solve(Upload)`，后续步选择 `Solve(Resident)`；每个子步仍初始化当前数值方程并执行实际约束。GPU 示例同时记录这项配置。反弹阶段沿本步已经完成的约束图计算，后续活动阶段继续交付当前完成步结果。
@@ -91,6 +93,8 @@ GPU 示例选择 `DeviceContactPotentialAvbdConstraints` 的正法向和角向�
 设备场景在同一帧消费阶段从当前接触几何、主体活动和图 Parents 归约全局结果，仅传回 16 字节的最大穿透、活动主体数、接触点数和最大连通主体数。`PhysicsSceneSimulation.DeviceAwakeBodies`、`DeviceContactPoints`、`DeviceLargestIslandBodies` 交付这些完成步结果；岛大小工作缓冲按原主体容量复用。
 
 `ReadbackBodies` 列出本次实际读取位姿和速度的原主体引用。测量中的 `BodyMotionScope` 与 `ConstraintErrorScope` 声明位姿、动量、速度和两端约束误差的覆盖范围；全局接触、活动及连通统计继续来自上述设备归约。`LastBodyPosition` 与速度对应所选读取列表的最后一个主体，`LastBodyEntityIndex` 标明其实体索引。
+
+全体读取沿原 `ScenePhysicsBody` 成员过滤、批量 `DeviceBodyResults` 和同一变换消费查询执行。部分读取通过 `SceneReadbackBody` 标记实际选择的实体，保持显式读取列表及对应容量；结果观测使用同一完整或部分成员范围。
 
 `--physics-content=<目录>` 将 DefaultGame 现有已构建内容目录交给原 `TestScene.ContentDirectory`，共享其材质模板、灯光和渲染配置。示例显式接收项目的 `StandardMaterial` 模板，为静态与动态 Body 选择不同颜色及少量自发光，共用同一盒体几何。
 

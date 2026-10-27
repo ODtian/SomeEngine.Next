@@ -140,9 +140,15 @@ public static partial class PhysicsScenes
         CreateEntities(world, data, default(SceneBoxGeometry));
 
     internal static PhysicsSceneEntities CreateEntities<TGeometry>(World world, PhysicsSceneData data, TGeometry geometry)
+        where TGeometry : struct, ISceneBodyGeometry =>
+        CreateEntities(world, data, geometry, default(SceneBodyBindings));
+
+    internal static PhysicsSceneEntities CreateEntities<TGeometry, TBindings>(World world, PhysicsSceneData data,
+        TGeometry geometry, TBindings bindings)
         where TGeometry : struct, ISceneBodyGeometry
+        where TBindings : struct, ISceneBodyBindings
     {
-        Entity[] entities = CreateBodies(world, data, geometry);
+        Entity[] entities = CreateBodies(world, data, geometry, bindings);
 
         var jointEntities = new Entity[data.Joints.Length];
         for (int index = 0; index < jointEntities.Length; index++)

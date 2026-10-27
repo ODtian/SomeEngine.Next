@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using DefaultGame;
 using SomeEngine.ECS;
+using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Graphics;
 using SomeEngine.Graphics.Direct3D12;
@@ -14,6 +15,70 @@ namespace SomeEngine.Runtime.Tests;
 [Trait("Category", "Performance")]
 public sealed class MillionPhysicsActivityTests(ITestOutputHelper output)
 {
+    [Fact]
+    public void TheMillionExampleDeliversTheCompletedMotionOfEveryBody()
+    {
+        PhysicsSceneDescription description = PhysicsScaleScenes.All.Single(scene => scene.Id == "million-activity");
+        using var backend = D3D12GraphicsBackend.Create();
+        backend.TryEnumerateAdapters(new(AdapterPreference.HighPerformance, IncludeSoftware: false), [], out int count);
+        var adapters = new AdapterInfo[count];
+        backend.TryEnumerateAdapters(new(AdapterPreference.HighPerformance, IncludeSoftware: false), adapters, out _);
+        using Device device = backend.CreateDevice(new(adapters.First(adapter => adapter.HardwareAccelerated).Id,
+            [new(QueueType.Compute)], label: "Million body scene consumer"));
+        using var scheduler = new Scheduler(new() { WorkerCount = Environment.ProcessorCount });
+        using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+        PhysicsSceneExample example = PhysicsSceneExample.CreateDevice(description, backend, device);
+        using var process = Process.GetCurrentProcess();
+        Console.WriteLine($"MillionStage=Create; Workers={Environment.ProcessorCount}; ManagedBytes={GC.GetTotalMemory(false)}; WorkingSetBytes={process.WorkingSet64}");
+        long setup = Stopwatch.GetTimestamp();
+        using PhysicsSceneSimulation scene = example.CreateSimulation(world);
+        double setupMilliseconds = Stopwatch.GetElapsedTime(setup).TotalMilliseconds;
+        process.Refresh();
+        Console.WriteLine($"MillionStage=Created; SetupMilliseconds={setupMilliseconds:R}; Bodies={scene.Bodies.Length}; ReadbackBodies={scene.ReadbackBodies.Length}; ManagedBytes={GC.GetTotalMemory(false)}; WorkingSetBytes={process.WorkingSet64}");
+        output.WriteLine($"SetupMilliseconds={setupMilliseconds:R}; Adapter={device.Adapter.Name}; DedicatedVideoMemoryBytes={device.Adapter.DedicatedVideoMemory}");
+        output.WriteLine("Workload=" + example.Describe().ToJsonString());
+        Assert.Equal(481, example.StepCount);
+        Assert.Equal(1_000_001, scene.ReadbackBodies.Length);
+        Assert.True(scene.ReadbackBodies.Span.SequenceEqual(scene.Bodies.Span));
+
+        Console.WriteLine("MillionStage=BeginFrame");
+        long started = Stopwatch.GetTimestamp();
+        scene.AdvanceTime(scene.StepSeconds * 1.5);
+        PhysicsStepResult completed = scene.CompleteForRead();
+        double wholeMilliseconds = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+        process.Refresh();
+        Console.WriteLine($"MillionStage=Completed; Number={completed.Number}; Time={completed.EndTime:R}; WholeStepMilliseconds={wholeMilliseconds:R}; AwakeBodies={scene.DeviceAwakeBodies}; ContactPoints={scene.DeviceContactPoints}; LargestIslandBodies={scene.DeviceLargestIslandBodies}; ManagedBytes={GC.GetTotalMemory(false)}; WorkingSetBytes={process.WorkingSet64}; PeakWorkingSetBytes={process.PeakWorkingSet64}");
+        output.WriteLine($"WholeStepMilliseconds={wholeMilliseconds:R}; Consumer=AllSceneBodies; StageTimings=false; ProcessPeakWorkingSetBytes={process.PeakWorkingSet64}");
+
+        Console.WriteLine("MillionStage=Verify");
+        long verify = Stopwatch.GetTimestamp();
+        QueryHandle bodies = world.Query(new QueryDefinitionBuilder().Read<DeviceBodyBinding>().Read<BodyMass>()
+            .Read<BodyPose>().Read<BodyVelocity>());
+        int delivered = 0;
+        world.ExecuteReadQuery(bodies, ref delivered, static (scoped QueryCursor rows, ref int moved) =>
+        {
+            foreach (QueryRow row in rows.Rows)
+            {
+                if (row.ReadRef<BodyMass>().Motion != BodyMotion.Dynamic) continue;
+                int layer = (row.ReadRef<DeviceBodyBinding>().Index - 1) / 50_000;
+                // The source layer starts at .3 + .55 * layer; one h=1/60 step under -10 moves it by -1/360.
+                float height = (float)(.3 + .55 * layer - 1d / 360);
+                float position = row.ReadRef<BodyPose>().Position.Z;
+                float velocity = row.ReadRef<BodyVelocity>().Linear.Z;
+                if (MathF.Abs(position - height) <= 1e-5f && velocity is >= -.166697f and <= -.166637f)
+                    moved++;
+            }
+        });
+        world.ReleaseQuery(bodies);
+        Console.WriteLine($"MillionStage=Verified; DeliveredBodies={delivered}; VerificationMilliseconds={Stopwatch.GetElapsedTime(verify).TotalMilliseconds:R}");
+
+        Assert.Equal(1_000_000, delivered);
+        Assert.Equal(0, completed.Number); Assert.Equal(1d / 60, completed.EndTime);
+        Assert.Equal(1_000_000, scene.DeviceAwakeBodies);
+        Assert.Equal(0, scene.DeviceContactPoints);
+        Assert.Equal(1, scene.DeviceLargestIslandBodies);
+    }
+
     [Fact]
     public void AMillionDeviceBodiesAdvanceThroughTheSharedSceneFrame()
     {
