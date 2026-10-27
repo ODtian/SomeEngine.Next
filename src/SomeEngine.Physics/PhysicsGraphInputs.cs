@@ -11,6 +11,8 @@ public interface IPhysicsGraphInputs
     int QueryCount { get; }
     QueryHandle GetQuery(int index);
     void AddResources(World world, List<JobResourceAccess> accesses, PhysicsGraphPhase phase) { }
+    void RefreshGraph(in PhysicsStepContext context, scoped EntityQueryViews queries, int queryOffset,
+        scoped PhysicsBodies bodies) { }
     void ReadGraph(in PhysicsStepContext context, ReadOnlySpan<QueryHandle> queries, int queryOffset,
         ref PhysicsConstraintGraphBuilder graph);
     void ReadActivityErrors(in PhysicsStepContext context, scoped EntityQueryViews queries, int queryOffset,
