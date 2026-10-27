@@ -21,6 +21,8 @@ public readonly struct DeviceAvbdStateRows<TState>(DeviceConstraintState<TState>
     public QueryDefinition AddReads(QueryDefinition definition) => definition.WithOptionalRead<DeviceAvbdState<TState>>();
     public void AddReadResources(QueryReadResources resources) => resources.Add<DeviceAvbdState<TState>, DeviceAvbdStateResources<TState>>();
     public bool Matches(scoped QueryRow row) => row.TryRead<DeviceAvbdState<TState>>(out var binding) && ReferenceEquals(binding.States, states);
+    public bool HasChangedInputs(scoped QueryChunkView chunk) => !chunk.Has<DeviceAvbdState<TState>>()
+        || chunk.HasChangedSinceLastSystemVersion<DeviceAvbdState<TState>>();
 }
 
 public interface IDeviceAvbdStateSource<TComponent, TState> where TComponent : unmanaged, IComponent where TState : unmanaged
