@@ -20,7 +20,7 @@ internal sealed class DeviceCrowdContacts : IDisposable
     private readonly WriteDeviceGeometryReferences<BoxGeometry, DeviceComponentSource<BoxGeometry, DeviceBoxReader>> _boxes;
     private readonly WriteDeviceGeometryReferences<DynamicCapsule, DeviceDynamicCapsuleSource> _capsules;
     private readonly WriteDeviceGeometryReferences<DynamicFace, DeviceDynamicFaceSource> _faces;
-    private readonly UpdateDeviceGeometry _boxGeometry, _capsuleGeometry, _faceGeometry;
+    private readonly UpdateDeviceGeometry _boxGeometry, _residentBoxes, _capsuleGeometry, _faceGeometry;
     private readonly DeviceCollisionDetection _detection;
     private readonly ContactPointBuffer _detected;
     private readonly DeviceContactBodies _anchors;
@@ -29,6 +29,7 @@ internal sealed class DeviceCrowdContacts : IDisposable
     private readonly ContactPoints<AverageContactMaterials, DeviceMatchedContactComponents<CrowdContactComponents>> _refresh;
     private readonly DeviceContactInputs _inputs;
     private readonly DeviceAvbdStateInputs<AvbdContactState, DeviceContactConstraint, DeviceAvbdContactState, DeviceAvbdContactStateSource> _stateInputs;
+    private bool _geometryUploaded;
 
     internal DeviceCrowdContacts(IGraphicsBackend backend, Device device, World world, DeviceBodies bodies,
         IReadOnlyList<ReadOnlyMemory<Entity>> characters, IReadOnlyList<Entity> cloth, Entity floor, PhysicsSceneShaders shaders)
@@ -65,7 +66,9 @@ internal sealed class DeviceCrowdContacts : IDisposable
         _boxes = Keep(_grid.WriteGeometryReferences<BoxGeometry, DeviceComponentSource<BoxGeometry, DeviceBoxReader>>(_pairs, default, 0, 64));
         _capsules = Keep(_grid.WriteGeometryReferences<DynamicCapsule, DeviceDynamicCapsuleSource>(_pairs, default, 1, 64));
         _faces = Keep(_grid.WriteGeometryReferences<DynamicFace, DeviceDynamicFaceSource>(_pairs, default, 2, 64));
-        _boxGeometry = Keep(new UpdateDeviceGeometry(backend, device, _grid, _geometry, shaders.CrowdGeometry("DeviceBoxUpdate"), 0, DeviceInputTransfer.Upload));
+        ComputePipelineDesc boxKernel = shaders.CrowdGeometry("DeviceBoxUpdate");
+        _boxGeometry = Keep(new UpdateDeviceGeometry(backend, device, _grid, _geometry, boxKernel, 0, DeviceInputTransfer.Upload));
+        _residentBoxes = Keep(new UpdateDeviceGeometry(backend, device, _grid, _geometry, boxKernel, 0, DeviceInputTransfer.Resident));
         _capsuleGeometry = Keep(new UpdateDeviceGeometry(backend, device, _grid, _geometry, shaders.CrowdGeometry("DeviceDynamicCapsuleUpdate"), 1, DeviceInputTransfer.Resident));
         _faceGeometry = Keep(new UpdateDeviceGeometry(backend, device, _grid, _geometry, shaders.CrowdGeometry("DeviceDynamicFaceUpdate"), 2, DeviceInputTransfer.Resident));
         _detection = Keep(new DeviceCollisionDetection(backend, device, _grid, _geometry, shaders.CrowdCapsuleFaces(), 4,
@@ -113,11 +116,16 @@ internal sealed class DeviceCrowdContacts : IDisposable
 
     internal JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency)
     {
-        dependency = _grid.BeginInputs().Schedule(in context, dependency);
-        dependency = _boxes.Schedule(in context, dependency);
-        dependency = _capsules.Schedule(in context, dependency);
-        dependency = _faces.Schedule(in context, dependency);
-        dependency = _boxGeometry.Update().Schedule(in context, dependency);
+        if (!_geometryUploaded)
+        {
+            _geometryUploaded = true;
+            dependency = _grid.BeginInputs().Schedule(in context, dependency);
+            dependency = _boxes.Schedule(in context, dependency);
+            dependency = _capsules.Schedule(in context, dependency);
+            dependency = _faces.Schedule(in context, dependency);
+            dependency = _boxGeometry.Update().Schedule(in context, dependency);
+        }
+        else dependency = _residentBoxes.Update().Schedule(in context, dependency);
         dependency = _capsuleGeometry.Update().Schedule(in context, dependency);
         dependency = _faceGeometry.Update().Schedule(in context, dependency);
         dependency = _grid.Build(_pairs, DevicePairRules.None, DeviceInputTransfer.Resident, DevicePairReadback.None).Schedule(in context, dependency);

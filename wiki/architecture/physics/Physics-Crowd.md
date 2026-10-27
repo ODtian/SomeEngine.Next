@@ -47,6 +47,9 @@ Length 与 Bend 的投影共用 `physics_xpbd_projection_math.slang` 中的乘�
 为每块布料的九个四边区域创建十八个 `DynamicFace`。几何实体通过原端点引用读取同一
 `DeviceBodies`，更新设备几何和范围后进入分层网格及胶囊/面域类型 bin。
 两个具体的 Capsule/Triangle 泛型检测方向保留实际几何实体的先后顺序。
+本项目在创建时固定这些形状参数、几何实体及其主体引用；首个物理步读取并上传这些输入，
+随后沿原 `DeviceInputTransfer.Resident` 复用同一表示。
+Box、Capsule 与 Face 每步继续读取当前主体状态，更新实际几何及候选范围。
 原检测结果、匹配、当前几何更新和 `ContactPoints` 创建共同接触实体；
 其 AVBD 接触参数、状态和作用端加入上述同一图。接触响应的组范围与图中的行范围对应。
 
