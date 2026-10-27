@@ -139,6 +139,10 @@ Body 颜色按当前约束连接，约束颜色按具体组与实际动态写端
 完成的颜色按组计数、前缀和打包到原 `BodyRanges/BodyOrder`、`RowRanges/RowOrder`。
 数值阶段继续使用原缓冲与具体约束数学。
 
+连通构建和 awake 工作范围可按 [设备活动阶段](Device-Activity.md)
+分别调度；原 `Build()` 组合两项职责。接触唤醒完成后刷新工作范围，
+再由 `Initialize(false, equationInputs)` 和 `Iterate(iterations, false)` 消费同次图结果。
+
 [DeviceConstraintGraph.Parallel](../../../src/SomeEngine.Physics/DeviceConstraintGraph.Parallel.cs)
 按阶段屏障组织构建；每批颜色轮次在同一输入读取 Job 中取得控制计数和完成进度。
 新增容量保存块总量、提案、组偏移与完成计数，主体和约束状态继续由其原表示持有。
