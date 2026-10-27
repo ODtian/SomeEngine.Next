@@ -1,6 +1,7 @@
 #include "physics_contact_types.slang"
 #include "physics_collision_contact.slang"
 #include "physics_constraint_math.slang"
+#include "physics_contact_anchor_math.slang"
 struct DeviceContactGeometrySettings { uint pairs; uint bodiesPerContact; uint inputBodiesPerContact; };
 ConstantBuffer<DeviceContactGeometrySettings> ContactGeometrySettings;
 StructuredBuffer<uint> DeviceContactGeometryRows;
@@ -28,15 +29,19 @@ void UpdateDeviceContactGeometry(uint3 id:SV_DispatchThreadID)
     point.firstGeometry=current.first; point.secondGeometry=current.second;
     point.firstFeature=current.firstFeature; point.secondFeature=current.secondFeature; point.pointIndex=current.pointIndex;
     point.predicted=current.prediction.enabled; point.sampleTime=current.prediction.sampleTime;
-    float3 delta=float3(0);
+    DeviceContactBody originLink=DeviceMatchInputBodies[input*ContactGeometrySettings.inputBodiesPerContact+point.firstBodyCount];
+    DeviceBodyState origin=DeviceBodyStates[originLink.stateIndex];
+    if(point.predicted!=0) origin=deviceBodyStart(origin);
+    float3 first=float3(0),second=float3(0);
     for(uint end=0;end<count;end++)
     {
         DeviceContactBody link=DeviceMatchInputBodies[input*ContactGeometrySettings.inputBodiesPerContact+end];
         DeviceContactBodyLinks[point.bodyOffset+end]=link;
         DeviceBodyState body=DeviceBodyStates[link.stateIndex];
         if(point.predicted!=0) body=deviceBodyStart(body);
-        float3 anchor=body.position+bodyRotate(body.rotation,link.localPoint);
-        delta+=anchor*(link.weight*(end<point.firstBodyCount?-1:1));
+        float3 anchor=deviceContactRelativeAnchor(body,link.localPoint,origin.position)*link.weight;
+        if(end<point.firstBodyCount) first+=anchor;
+        else second+=anchor;
     }
-    point.bodyAnchorDelta=delta; DeviceContacts[row]=point;
+    point.bodyAnchorDelta=second-first; DeviceContacts[row]=point;
 }
