@@ -55,7 +55,7 @@ public static class MeasurePhysicsScenes
             PhysicsSceneExample example = backend is null ? PhysicsSceneExample.CreateCpu(description, timings)
                 : PhysicsSceneExample.CreateDevice(description, backend, device!, timings);
             using PhysicsSceneSimulation scene = example.CreateSimulation(world);
-            using var observation = new ReadScenePhysicsResults(world, scene);
+            using var observation = new ReadScenePhysicsResults(world, scene, example.Describe());
             var steps = new double[example.StepCount];
             var reads = new double[steps.Length];
             long managedPeak = 0;
@@ -72,7 +72,7 @@ public static class MeasurePhysicsScenes
                 }
                 if (result.Number != number) throw new InvalidOperationException("The scene must complete each original physical step in sequence.");
                 started = Stopwatch.GetTimestamp();
-                observation.Read();
+                observation.Read(result.Number);
                 managedPeak = Math.Max(managedPeak, GC.GetTotalMemory(false));
                 reads[number] = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
             }
@@ -100,14 +100,23 @@ internal sealed class ReadScenePhysicsResults : IDisposable
     private readonly PhysicsSceneSimulation _scene;
     private readonly QueryHandle _bodies, _contacts;
     private readonly HashSet<Entity>? _readbackBodies;
+    private readonly Vector3 _gravity;
+    private readonly HashSet<long> _inputSteps;
+    private readonly List<(long Step, double Before, double After)> _inputEnergies = [];
+    private readonly double _initialMechanicalEnergy;
+    private double _mechanicalEnergy, _maximumMechanicalEnergy;
     private int _entitiesNow, _entityPeak, _contactsNow, _contactPeak, _awakeNow, _awakePeak, _liveJoints, _islandPeak;
     private float _jointGap, _angularGap, _rangeGap, _penetration, _speed, _finalSpeed, _quaternionError, _dynamicMass;
     private float _angularSpeed, _finalAngularSpeed;
     private Vector3 _centerOfMass, _linearMomentum, _minimumBodyCenter, _maximumBodyCenter;
 
-    public ReadScenePhysicsResults(World world, PhysicsSceneSimulation scene)
+    public ReadScenePhysicsResults(World world, PhysicsSceneSimulation scene, JsonNode workload)
     {
         _world = world; _scene = scene;
+        JsonArray gravity = workload["Gravity"]!.AsArray();
+        _gravity = new((float)gravity[0]!.GetValue<double>(), (float)gravity[1]!.GetValue<double>(),
+            (float)gravity[2]!.GetValue<double>());
+        _inputSteps = workload["Events"]!.AsArray().Select(value => (long)value!["Step"]!.GetValue<int>()).ToHashSet();
         var bodyResults = new QueryDefinitionBuilder().All<ScenePhysicsBody>().Read<BodyPose>().Read<BodyMass>()
             .Read<BodyVelocity>().Read<BodyActivity>();
         if (scene.DeviceStatistics is not null) bodyResults.All<SceneReadbackBody>();
@@ -117,10 +126,21 @@ internal sealed class ReadScenePhysicsResults : IDisposable
             .Optional<ContactPoint>(QueryAccess.Read).Optional<BodyPose>(QueryAccess.Read)
             .Optional<SomeEngine.ECS.Relations.DirectedRelationEndpoints<ContactParticipant>>(QueryAccess.Read)
             .OptionalBuffer<ContactBodyLink>(QueryAccess.Read));
+        double energy = 0;
+        world.ExecuteReadQuery(_bodies, rows =>
+        {
+            foreach (QueryRow row in rows.Rows)
+                if (row.ReadRef<BodyMass>().Motion == BodyMotion.Dynamic)
+                    energy += CalculateMechanicalEnergy(in row.ReadRef<BodyPose>(), in row.ReadRef<BodyMass>(),
+                        in row.ReadRef<BodyVelocity>());
+        });
+        _initialMechanicalEnergy = _mechanicalEnergy = _maximumMechanicalEnergy = energy;
     }
 
-    public void Read()
+    public void Read(long number)
     {
+        double previousEnergy = _mechanicalEnergy;
+        _mechanicalEnergy = 0;
         _entitiesNow = _world.EntityCount;
         _entityPeak = Math.Max(_entityPeak, _entitiesNow);
         _awakeNow = _contactsNow = _liveJoints = 0;
@@ -140,6 +160,7 @@ internal sealed class ReadScenePhysicsResults : IDisposable
                     throw new InvalidOperationException("The completed scene body pose and velocity must be finite.");
                 if (mass.Motion == BodyMotion.Dynamic)
                 {
+                    _mechanicalEnergy += CalculateMechanicalEnergy(in pose, in mass, in velocity);
                     if (!row.ReadRef<BodyActivity>().Sleeping) _awakeNow++;
                     float value = 1 / mass.InverseMass;
                     Vector3 center = pose.GetCenterOfMass(in mass);
@@ -157,6 +178,8 @@ internal sealed class ReadScenePhysicsResults : IDisposable
             }
         });
         _centerOfMass /= _dynamicMass;
+        _maximumMechanicalEnergy = Math.Max(_maximumMechanicalEnergy, _mechanicalEnergy);
+        if (_inputSteps.Contains(number)) _inputEnergies.Add((number, previousEnergy, _mechanicalEnergy));
         if (_scene.DeviceStatistics is null) _world.ExecuteQuery(_contacts, rows =>
         {
             foreach (QueryRow row in rows.Rows)
@@ -215,6 +238,17 @@ internal sealed class ReadScenePhysicsResults : IDisposable
         _awakePeak = Math.Max(_awakePeak, _awakeNow);
     }
 
+    private double CalculateMechanicalEnergy(in BodyPose pose, in BodyMass mass, in BodyVelocity velocity)
+    {
+        Vector3 spin = Vector3.Transform(velocity.Angular, Quaternion.Conjugate(pose.Rotation));
+        double rotational = 0;
+        if (mass.InverseInertia.M11 > 0) rotational += spin.X * spin.X / mass.InverseInertia.M11;
+        if (mass.InverseInertia.M22 > 0) rotational += spin.Y * spin.Y / mass.InverseInertia.M22;
+        if (mass.InverseInertia.M33 > 0) rotational += spin.Z * spin.Z / mass.InverseInertia.M33;
+        return .5 / mass.InverseMass * velocity.Linear.LengthSquared() + .5 * rotational
+            + (2 * _gravity.Length() - Vector3.Dot(_gravity, pose.GetCenterOfMass(in mass))) / mass.InverseMass;
+    }
+
     public JsonObject Describe()
     {
         Entity lastBody = _scene.ReadbackBodies.Span[^1];
@@ -228,6 +262,18 @@ internal sealed class ReadScenePhysicsResults : IDisposable
             ["ReadbackBodyCount"] = _scene.ReadbackBodies.Length,
             ["BodyMotionScope"] = _readbackBodies is null ? "Every scene body" : "Selected readback bodies",
             ["ConstraintErrorScope"] = _readbackBodies is null ? "Every scene constraint" : "Constraints between selected readback bodies",
+            ["MechanicalEnergyScope"] = _readbackBodies is null ? "Every scene dynamic body" : "Selected readback dynamic bodies",
+            ["MechanicalEnergyDefinition"] = "Translational kinetic, rotational kinetic and gravitational potential energy",
+            ["PotentialEnergyReference"] = "Plane two metres from world origin along gravity",
+            ["InitialMechanicalEnergyJoules"] = _initialMechanicalEnergy,
+            ["CurrentMechanicalEnergyJoules"] = _mechanicalEnergy,
+            ["MaximumMechanicalEnergyJoules"] = _maximumMechanicalEnergy,
+            ["MechanicalEnergyAcrossSceneInputs"] = new JsonArray(_inputEnergies.Select(sample => (JsonNode)new JsonObject
+            {
+                ["Step"] = sample.Step, ["BeforeStepJoules"] = sample.Before, ["AfterStepJoules"] = sample.After,
+                ["ChangeJoules"] = sample.After - sample.Before,
+                ["Scope"] = "Complete step across declared scene inputs, including simulation work and dissipation",
+            }).ToArray()),
             ["LargestConnectedBodyCount"] = _scene.DeviceLargestIslandBodies,
             ["PeakConnectedBodyCount"] = _scene.DeviceStatistics is null ? null : _islandPeak,
             ["LastBodyEntityIndex"] = lastBody.Index,
