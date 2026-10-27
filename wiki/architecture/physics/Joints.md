@@ -27,6 +27,8 @@
 
 AVBD 对三个平移轴全部锁定、线性材料刚度各向同性的点连接，
 使用世界坐标的 `targetPoint − sourcePoint` 与世界线性乘子装配同一 ALM 作用量。
+点差按 `(target.Position−source.Position)+RTarget*rTarget−RSource*rSource` 求值，
+自身力臂直接按 `R*(localAnchor−localCenterOfMass)` 求值，计算使用两体相对位置与局部偏移。
 `Initialize` 的起点误差、当前力、primal 与 dual 使用同一坐标基准，
 线性乘子的 warmstart 保留世界向量，力矩臂取对应 Body 的自身锚点到质心。
 这与所选 Newton compliant ALM 的
