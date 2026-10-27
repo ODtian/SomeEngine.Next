@@ -81,7 +81,7 @@ public sealed class RenderInstanceDataTransfer : IRenderGraphFrameExecutionObser
         // retains the original full-copy path; only this graph's submitted cursor may advance.
         _ranges[source].AddRange(adjacentRevision ? change.Ranges.Span : view.PropertyDataRanges.Span);
         _changes.Add((batch, view.ContentRevision));
-        frame.SetPassData(_copy, new CopyData(_sources, Data, _ranges));
+        // The pass retains these same range lists; recording reads their completed frame contents.
         frame.SetPassEnabled(_copy, true);
     }
 

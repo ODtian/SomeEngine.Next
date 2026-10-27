@@ -162,6 +162,11 @@ public sealed class RenderInstanceBatch
             {
                 _chunkRevisions[chunk] = ContentRevision;
                 ulong bits = unchecked((ulong)changedChunks[chunk]);
+                if (bits == ulong.MaxValue)
+                {
+                    _instanceRevisions.AsSpan(chunk * 64, 64).Fill(ContentRevision);
+                    continue;
+                }
                 while (bits != 0)
                 {
                     int bit = System.Numerics.BitOperations.TrailingZeroCount(bits);
@@ -207,7 +212,7 @@ internal sealed class RenderInstanceResources : IDisposable
     private readonly int _batchMetadataStrideBytes;
     private readonly PropertyStorage[] _properties;
     private readonly record struct BufferBytes(Buffer Resource, BufferRange Range, byte[] Data);
-    private readonly Dictionary<int, BufferBytes[]> _batchOriginalBytes = [];
+    private readonly Dictionary<int, BufferBytes?[]> _batchOriginalBytes = [];
     private readonly object?[] _batchAllocations;
     private readonly bool[] _batchReady;
     private readonly PackedRange[] _batchRows;
@@ -902,7 +907,7 @@ internal sealed class RenderInstanceResources : IDisposable
         if (writeGeneration != publishedGeneration)
             CopyBatchState(batch.Slot, _batchRows[batch.Slot], publishedGeneration, writeGeneration, replacedProperties);
         else
-            _batchOriginalBytes.Add(batch.Slot, CaptureBatchBytes(batch.Slot, properties, writeGeneration));
+            _batchOriginalBytes.Add(batch.Slot, CaptureBatchBytes(batch.Slot, batch.Contract, writeGeneration));
         _batchReady[batch.Slot] = false;
         return new BatchLease(batch.Slot, batch.Allocation, batch.Contract, _batchRows[batch.Slot]);
     }
@@ -921,10 +926,11 @@ internal sealed class RenderInstanceResources : IDisposable
     internal void CancelBatchUpdate(int batchSlot, object allocation)
     {
         ValidateBatch(batchSlot, allocation);
-        if (_batchOriginalBytes.TryGetValue(batchSlot, out BufferBytes[]? original))
+        if (_batchOriginalBytes.TryGetValue(batchSlot, out BufferBytes?[]? original))
         {
-            foreach (BufferBytes value in original)
+            foreach (BufferBytes? bytes in original)
             {
+                if (bytes is not { } value) continue;
                 Span<byte> mapping = GetWriteBytes(value.Resource, value.Range);
                 value.Data.AsSpan(0, checked((int)value.Range.Size)).CopyTo(mapping);
             }
@@ -935,54 +941,52 @@ internal sealed class RenderInstanceResources : IDisposable
 
     private void ReleaseBatchBytes(int batchIndex)
     {
-        if (!_batchOriginalBytes.Remove(batchIndex, out BufferBytes[]? bytes)) return;
-        foreach (BufferBytes value in bytes)
-            ArrayPool<byte>.Shared.Return(value.Data);
+        if (!_batchOriginalBytes.Remove(batchIndex, out BufferBytes?[]? bytes)) return;
+        foreach (BufferBytes? value in bytes)
+            if (value is { } original)
+                ArrayPool<byte>.Shared.Return(original.Data);
     }
 
-    private BufferBytes[] CaptureBatchBytes(int batchIndex, RenderInstancePropertyLayout properties, int generation)
+    private BufferBytes?[] CaptureBatchBytes(int batchIndex, RenderInstancePropertyLayout properties, int generation)
     {
-        var bytes = new List<BufferBytes>();
+        // Metadata can change with any binding. Each column saves only the values selected
+        // by its binding before workers receive write slices for that column.
+        var bytes = new BufferBytes?[properties.Properties.Count + 1];
+        bytes[0] = CaptureBufferBytes(_batchMetadata[generation].Handle, BatchMetadataRange(batchIndex));
+        return bytes;
+    }
+
+    internal void CaptureBatchPropertyBytes(
+        int batchIndex,
+        RenderInstancePropertyDescriptor property,
+        bool perInstance)
+    {
+        if (!_batchOriginalBytes.TryGetValue(batchIndex, out BufferBytes?[]? bytes))
+            return;
+        PropertyStorage storage = RequireStorage(property, nameof(property));
+        PackedRange rows = _batchRows[batchIndex];
+        BufferRange range = perInstance
+            ? new BufferRange(
+                checked((ulong)(storage.InstanceBase + rows.Start * property.Encoding.StorageStride)),
+                checked((ulong)(rows.Count * property.Encoding.StorageStride)))
+            : SharedElementRange(storage, batchIndex);
+        if (range.Size != 0)
+            bytes[property.Ordinal + 1] = CaptureBufferBytes(RequirePropertyData(RequireWriteGeneration()).Handle, range);
+    }
+
+    private BufferBytes CaptureBufferBytes(Buffer resource, BufferRange range)
+    {
+        int size = checked((int)range.Size);
+        byte[] data = ArrayPool<byte>.Shared.Rent(size);
         try
         {
-            Capture(_batchMetadata[generation].Handle, BatchMetadataRange(batchIndex));
-            if (_propertyData[generation] is { } data)
-            {
-                PackedRange rows = _batchRows[batchIndex];
-                foreach (PropertyStorage storage in _properties)
-                {
-                    RenderInstancePropertyEncoding encoding = storage.Descriptor.Encoding;
-                    if (!encoding.HasManagedStorage || !properties.Contains(storage.Descriptor.Key)) continue;
-                    Capture(data.Handle, SharedElementRange(storage, batchIndex));
-                    Capture(data.Handle, new BufferRange(
-                        checked((ulong)(storage.InstanceBase + rows.Start * encoding.StorageStride)),
-                        checked((ulong)(rows.Count * encoding.StorageStride))));
-                }
-            }
-            return bytes.ToArray();
+            GetWriteMapping(resource).Read(data.AsSpan(0, size), checked((int)range.Offset));
+            return new BufferBytes(resource, range, data);
         }
         catch
         {
-            foreach (BufferBytes value in bytes)
-                ArrayPool<byte>.Shared.Return(value.Data);
+            ArrayPool<byte>.Shared.Return(data);
             throw;
-        }
-
-        void Capture(Buffer resource, BufferRange range)
-        {
-            if (range.Size == 0) return;
-            int size = checked((int)range.Size);
-            byte[] data = ArrayPool<byte>.Shared.Rent(size);
-            try
-            {
-                GetWriteMapping(resource).Read(data.AsSpan(0, size), checked((int)range.Offset));
-                bytes.Add(new BufferBytes(resource, range, data));
-            }
-            catch
-            {
-                ArrayPool<byte>.Shared.Return(data);
-                throw;
-            }
         }
     }
 
@@ -2060,6 +2064,7 @@ internal sealed class RenderInstanceBatchComposition : IDisposable
     {
         ResolvedRenderInstanceProperty<T> destination = Resolve(authorization, property);
         RequireUnbound(destination.Ordinal);
+        RequireScope().Resources.CaptureBatchPropertyBytes(_batchSlot, destination.Descriptor, perInstance: false);
         RequireScope().Resources.BindShared(
             _batchSlot,
             _allocation,
@@ -2078,6 +2083,7 @@ internal sealed class RenderInstanceBatchComposition : IDisposable
     {
         ResolvedRenderInstanceProperty<T> destination = Resolve(authorization, property);
         RequireUnbound(destination.Ordinal);
+        RequireScope().Resources.CaptureBatchPropertyBytes(_batchSlot, destination.Descriptor, perInstance: true);
         _propertyStates[destination.Ordinal] = PerInstanceState(destination.Descriptor);
     }
 
@@ -2091,7 +2097,7 @@ internal sealed class RenderInstanceBatchComposition : IDisposable
         RenderInstancePropertyDescriptor destination =
             _contract.RequireCompatible(authorized, nameof(property));
         RequireUnbound(destination.Ordinal);
-        _ = RequireScope();
+        RequireScope().Resources.CaptureBatchPropertyBytes(_batchSlot, destination, perInstance: true);
         _propertyStates[destination.Ordinal] = PerInstanceState(destination);
     }
 
@@ -2204,7 +2210,8 @@ internal sealed class RenderInstanceBatchComposition : IDisposable
     private long PerInstanceState(RenderInstancePropertyDescriptor property)
     {
         long state = (_propertyStates[property.Ordinal] & ~BindingMask) | PerInstance;
-        if (_mode == CompositionMode.Update &&
+        // Required columns are published only after every row has been written.
+        if (_mode == CompositionMode.Update && (state & Required) == 0 &&
             RequireScope().Resources.HasPerInstanceBinding(_batchSlot, _allocation, property))
             state |= TrackSparseRows;
         return state;

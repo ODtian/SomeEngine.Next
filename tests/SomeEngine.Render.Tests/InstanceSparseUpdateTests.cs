@@ -129,6 +129,42 @@ public sealed class InstanceSparseUpdateTests
     }
 
     [Fact]
+    public void CancelledSharedAndPerInstanceWritesPreserveValuesForTheFirstGpuTransfer()
+    {
+        using var data = new InstanceData();
+        var writer = new BatchWriter();
+        data.Prepare.Add(writer);
+        data.Batches = () => [writer.Batch!];
+        writer.Update = (context, batch) =>
+        {
+            using var create = context.AllocateBatch(Layout, 2);
+            var rows = create.OpenWrite(Layout);
+            rows.BindPerInstance(CurrentProperty);
+            rows.Write(CurrentProperty, new[] { Current(1), Current(2) });
+            rows.BindShared(PreviousProperty, Previous(11));
+            batch.Batch = create.Publish();
+        };
+        data.PrepareFrame();
+        ulong revision = writer.Batch!.ContentRevision;
+        writer.Update = (context, batch) =>
+        {
+            using var update = context.RewriteBatch(batch.Batch!, Layout);
+            var rows = update.OpenWrite(Layout);
+            rows.BindPerInstance(CurrentProperty);
+            rows.Write(CurrentProperty, new[] { Current(8), Current(9) });
+            rows.BindShared(PreviousProperty, Previous(19));
+        };
+
+        data.ExecuteFrame();
+
+        Assert.Equal(revision, writer.Batch!.ContentRevision);
+        Assert.Equal(new[] { Current(1), Current(2) },
+            data.Values(writer.Batch, RenderInstanceTransformProperties.CurrentTransform));
+        Assert.Equal(new[] { Previous(11), Previous(11) },
+            data.Values(writer.Batch, RenderInstanceTransformProperties.PreviousTransform));
+    }
+
+    [Fact]
     public void UnwrittenOptionalUpdateKeepsTheBatchRevisionAndGpuValues()
     {
         using var data = new InstanceData();

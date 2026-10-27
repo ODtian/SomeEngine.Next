@@ -6,6 +6,7 @@ using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Graphics;
 using SomeEngine.Graphics.Direct3D12;
+using SomeEngine.Job;
 using SomeEngine.Render.Cluster.Pipeline;
 using SomeEngine.Render.Components;
 using SomeEngine.Render.Frame;
@@ -87,7 +88,8 @@ public sealed class ClusterInstanceUploadTests
     [Fact]
     public async Task DisjointQueryPacketsPreserveChangedRowsAndPropertyValuesInParallel()
     {
-        using var data = new InstanceData(await RasterTestGeometry.CreateAsync(), 4097);
+        using var data = new InstanceData(await RasterTestGeometry.CreateAsync(), 4097,
+            new WorldJobs(JobSystem.Default));
         Entity[] entities = Enumerable.Range(0, 4097).Select(data.Add).ToArray();
         await data.ExecuteAsync(); await data.ExecuteAsync();
 
@@ -103,11 +105,19 @@ public sealed class ClusterInstanceUploadTests
             }
         }
         await data.ExecuteAsync();
+        var current = new List<RenderTransform>();
+        var previous = new List<RenderPreviousTransform>();
+        data.World.ExecuteReadSnapshot(data.Composition.EntityQueryHandle, cursor =>
+        {
+            foreach (QueryRow row in cursor.Rows)
+            {
+                current.Add(row.Read<RenderTransform>());
+                previous.Add(row.Read<RenderPreviousTransform>());
+            }
+        });
         Assert.Equal(Enumerable.Range(0, entities.Length).Select(row => (uint)row), data.ChangedRows);
-        Assert.Equal(Enumerable.Range(0, 4097).Select(row => Current(row % 2 == 0 ? row + 500 : row)),
-            data.Values(RenderInstanceTransformProperties.CurrentTransform));
-        Assert.Equal(Enumerable.Range(0, 4097).Select(row => Previous(row % 2 == 1 ? row + 800 : row + 10)),
-            data.Values(RenderInstanceTransformProperties.PreviousTransform));
+        Assert.Equal(current, data.Values(RenderInstanceTransformProperties.CurrentTransform));
+        Assert.Equal(previous, data.Values(RenderInstanceTransformProperties.PreviousTransform));
     }
 
     [Fact]
@@ -306,10 +316,10 @@ public sealed class ClusterInstanceUploadTests
         }
     }
 
-    private sealed class InstanceData(Mesh mesh, int capacity) : InstanceData<EmptyRenderInstanceProducer>(
+    private sealed class InstanceData(Mesh mesh, int capacity, WorldJobs? jobs = null) : InstanceData<EmptyRenderInstanceProducer>(
         mesh, capacity, ClusterRenderFeature.GeometryLayout,
         new QueryDefinitionBuilder().Read<RenderTransform>().Read<RenderPreviousTransform>().Read<RenderClusterGeometry>().Build(),
-        new EmptyRenderInstanceProducer());
+        new EmptyRenderInstanceProducer(), jobs: jobs);
 
     private class InstanceData<TProducer> : IDisposable where TProducer : struct, IRenderInstanceProducer
     {
@@ -327,15 +337,17 @@ public sealed class ClusterInstanceUploadTests
         private readonly RenderInstancePropertyLayout _layout;
         private readonly BytesReceiver _properties = new(), _metadata = new();
         private RenderInstanceBatchView _view;
-        internal RenderWorld World { get; } = new();
+        internal RenderWorld World { get; }
         internal RenderPrepareSystems Prepare { get; }
         internal ClusterInstanceSystem<TProducer> Composition { get; }
         internal uint[] ChangedRows { get; private set; } = [];
         internal int RegisteredMeshCount => _cluster.CaptureDiagnostics().Meshes.RegisteredMeshes;
 
         internal InstanceData(Mesh mesh, int capacity, RenderInstancePropertyLayout layout,
-            QueryDefinition query, TProducer producer, ISystem<RenderPrepareSystemContext>? beforeComposition = null)
+            QueryDefinition query, TProducer producer, ISystem<RenderPrepareSystemContext>? beforeComposition = null,
+            WorldJobs? jobs = null)
         {
+            World = new(execution: jobs);
             _mesh = mesh;
             _layout = layout;
             var enumeration = new AdapterEnumerationOptions(AdapterPreference.Unspecified, IncludeSoftware: true);
