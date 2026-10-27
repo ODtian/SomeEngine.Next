@@ -16,14 +16,15 @@ public readonly struct AvbdJointMath : IAvbdConstraint<JointConstraint>, IPhysic
     {
         ref readonly var endpoints = ref row.ReadRef<DirectedRelationEndpoints<JointConstraint>>();
         ref readonly AvbdJointState state = ref row.ReadRef<AvbdJointState>();
+        bool worldPoint = UsesWorldPointCoordinates(in constraint);
         force = torque = Vector3.Zero;
         for (int dof = 0; dof < 6; dof++)
         {
             if (JointMath.GetLimit(in constraint, dof).Motion == JointAxisMotion.Free ||
                 (dof < 3 ? constraint.LinearStiffness[dof] : constraint.AngularStiffness[dof - 3]) == 0) continue;
             float multiplier = dof < 3 ? state.LinearMultiplier[dof] : state.AngularMultiplier[dof - 3];
-            JointEquationRow derivative = JointMath.GetRow(in constraint, in bodies.ReadPose(endpoints.Source), in bodies.ReadMass(endpoints.Source),
-                in bodies.ReadPose(endpoints.Target), in bodies.ReadMass(endpoints.Target), dof);
+            JointEquationRow derivative = GetRow(in constraint, in bodies.ReadPose(endpoints.Source), in bodies.ReadMass(endpoints.Source),
+                in bodies.ReadPose(endpoints.Target), in bodies.ReadMass(endpoints.Target), dof, worldPoint);
             if (body == endpoints.Source) { force -= derivative.SourceLinear * multiplier; torque -= derivative.SourceAngular * multiplier; }
             if (body == endpoints.Target) { force -= derivative.TargetLinear * multiplier; torque -= derivative.TargetAngular * multiplier; }
         }
@@ -55,7 +56,7 @@ public readonly struct AvbdJointMath : IAvbdConstraint<JointConstraint>, IPhysic
         var target = new BodyPose { Rotation = targetStart.StartRotation };
         source.SetCenterOfMass(sourceStart.StartCenterOfMass, in sourceMass);
         target.SetCenterOfMass(targetStart.StartCenterOfMass, in targetMass);
-        JointMath.GetCoordinates(in constraint, in source, in target, out Vector3 linear, out Vector3 angular);
+        GetCoordinates(in constraint, in source, in target, out Vector3 linear, out Vector3 angular);
         ref AvbdJointState state = ref row.ReadWrite<AvbdJointState>();
         state.LinearMultiplier *= retention;
         state.AngularMultiplier *= retention;
@@ -76,11 +77,13 @@ public readonly struct AvbdJointMath : IAvbdConstraint<JointConstraint>, IPhysic
         ref readonly BodyMass targetMass = ref bodies.ReadMass(endpoints.Target);
         ref readonly AvbdJointState state = ref row.ReadRef<AvbdJointState>();
         bool isSource = body == endpoints.Source;
+        bool worldPoint = UsesWorldPointCoordinates(in constraint);
+        Vector3 linearForce = default;
         for (int dof = 0; dof < 6; dof++)
         {
             int axis = dof % 3;
             JointAxisLimit limit = JointMath.GetLimit(in constraint, dof);
-            JointEquationRow derivative = JointMath.GetRow(in constraint, in source, in sourceMass, in target, in targetMass, dof);
+            JointEquationRow derivative = GetRow(in constraint, in source, in sourceMass, in target, in targetMass, dof, worldPoint);
             float multiplier = dof < 3 ? state.LinearMultiplier[axis] : state.AngularMultiplier[axis];
             if (!JointMath.TryGetError(limit, derivative.Coordinate, multiplier, out float error, out JointLimitSide side)) continue;
             float stiffness = dof < 3 ? constraint.LinearStiffness[axis] : constraint.AngularStiffness[axis];
@@ -89,9 +92,19 @@ public readonly struct AvbdJointMath : IAvbdConstraint<JointConstraint>, IPhysic
             var material = new AvbdMaterialTerms(stiffness, penalty);
             float force = JointMath.ProjectForce(side, material.EvaluateForce(error - initialErrorFraction * initial, multiplier));
             if (limit.Motion == JointAxisMotion.Limited && force == 0) continue;
+            if (dof < 3) linearForce += derivative.TargetLinear * force;
             equation.AddRow(isSource ? derivative.SourceLinear : derivative.TargetLinear,
                 isSource ? derivative.SourceAngular : derivative.TargetAngular, force, material.EffectiveStiffness);
         }
+        Vector3 forcePoint = isSource && worldPoint
+            ? source.Position + Vector3.Transform(constraint.SourceFrame.Position, source.Rotation)
+            : target.Position + Vector3.Transform(constraint.TargetFrame.Position, target.Rotation);
+        Vector3 center = isSource ? source.GetCenterOfMass(in sourceMass) : target.GetCenterOfMass(in targetMass);
+        // Bounds the force-weighted angular Hessian of the current linear joint coordinates.
+        float curvature = (forcePoint - center).Length() * linearForce.Length();
+        equation.AddRow(Vector3.Zero, Vector3.UnitX, 0, curvature);
+        equation.AddRow(Vector3.Zero, Vector3.UnitY, 0, curvature);
+        equation.AddRow(Vector3.Zero, Vector3.UnitZ, 0, curvature);
     }
 
     public static void UpdateDuals(in JointConstraint constraint, scoped QueryRow row, scoped PhysicsBodies bodies,
@@ -100,7 +113,7 @@ public readonly struct AvbdJointMath : IAvbdConstraint<JointConstraint>, IPhysic
         ref readonly var endpoints = ref row.ReadRef<DirectedRelationEndpoints<JointConstraint>>();
         ref readonly BodyPose source = ref bodies.ReadPose(endpoints.Source);
         ref readonly BodyPose target = ref bodies.ReadPose(endpoints.Target);
-        JointMath.GetCoordinates(in constraint, in source, in target, out Vector3 linear, out Vector3 angular);
+        GetCoordinates(in constraint, in source, in target, out Vector3 linear, out Vector3 angular);
         ref AvbdJointState state = ref row.ReadWrite<AvbdJointState>();
         for (int dof = 0; dof < 6; dof++)
         {
@@ -120,5 +133,34 @@ public readonly struct AvbdJointMath : IAvbdConstraint<JointConstraint>, IPhysic
             if (dof < 3) state.LinearMultiplier[axis] = force;
             else state.AngularMultiplier[axis] = force;
         }
+    }
+
+    private static bool UsesWorldPointCoordinates(in JointConstraint constraint) =>
+        constraint.LinearX.Motion == JointAxisMotion.Locked && constraint.LinearY.Motion == JointAxisMotion.Locked
+        && constraint.LinearZ.Motion == JointAxisMotion.Locked && constraint.LinearStiffness.X == constraint.LinearStiffness.Y
+        && constraint.LinearStiffness.X == constraint.LinearStiffness.Z;
+
+    private static void GetCoordinates(in JointConstraint constraint, in BodyPose source, in BodyPose target,
+        out Vector3 linear, out Vector3 angular)
+    {
+        JointMath.GetCoordinates(in constraint, in source, in target, out linear, out angular);
+        if (UsesWorldPointCoordinates(in constraint))
+        {
+            Vector3 sourcePoint = source.Position + Vector3.Transform(constraint.SourceFrame.Position, source.Rotation);
+            Vector3 targetPoint = target.Position + Vector3.Transform(constraint.TargetFrame.Position, target.Rotation);
+            linear = targetPoint - sourcePoint;
+        }
+    }
+
+    private static JointEquationRow GetRow(in JointConstraint constraint, in BodyPose source, in BodyMass sourceMass,
+        in BodyPose target, in BodyMass targetMass, int dof, bool worldPoint)
+    {
+        if (dof >= 3 || !worldPoint) return JointMath.GetRow(in constraint, in source, in sourceMass, in target, in targetMass, dof);
+        Vector3 direction = dof == 0 ? Vector3.UnitX : dof == 1 ? Vector3.UnitY : Vector3.UnitZ;
+        Vector3 sourcePoint = source.Position + Vector3.Transform(constraint.SourceFrame.Position, source.Rotation);
+        Vector3 targetPoint = target.Position + Vector3.Transform(constraint.TargetFrame.Position, target.Rotation);
+        return new(Vector3.Dot(targetPoint - sourcePoint, direction), -direction,
+            -Vector3.Cross(sourcePoint - source.GetCenterOfMass(in sourceMass), direction), direction,
+            Vector3.Cross(targetPoint - target.GetCenterOfMass(in targetMass), direction));
     }
 }
