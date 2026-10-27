@@ -192,6 +192,21 @@ public sealed partial class ClusterPipelineSystem
         return resourcesChanged;
     }
 
+    private static HashSet<long> CollectMaterialBindingChanges(ClusterMaterialAssignmentSet assignments, bool shadingChanged)
+    {
+        var materials = new HashSet<long>(assignments.ChangedMaterialIds);
+        if (shadingChanged)
+        {
+            foreach (Material material in assignments.DistinctMaterials) materials.Add(material.MaterialId);
+        }
+        else
+        {
+            foreach (int offset in assignments.ChangedOffsets)
+                if (assignments.TryGetEntry(offset, out Material material, out _)) materials.Add(material.MaterialId);
+        }
+        return materials;
+    }
+
     private void AcceptMaterialChanges(ClusterMaterialAssignmentSet assignments, ClusterMaterialAssignmentSet source,
         IEnumerable<long>? changedBindings = null)
     {
