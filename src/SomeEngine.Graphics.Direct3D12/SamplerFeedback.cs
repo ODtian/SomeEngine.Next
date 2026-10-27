@@ -486,9 +486,7 @@ device.Native, nativeProperties,
                             cpu,
                             descriptor.Cpu,
                             DescriptorHeapType.CbvSrvUav);
-            if (_resourceContents.Length < _resourceCapacity)
-                Array.Resize(ref _resourceContents, checked((int)_resourceCapacity));
-            _resourceContents[index] = new DescriptorContent(descriptor, new DescriptorSlotDesc(ResourceBindingType.TextureUav));
+            _resourceDescriptors!.Contents[index] = new DescriptorContent(descriptor, new DescriptorSlotDesc(ResourceBindingType.TextureUav));
             return (cpu, GetGpuHandle(ParameterHeap.Resource, index));
         }
 
@@ -498,8 +496,8 @@ device.Native, nativeProperties,
                 ? DescriptorHeapType.CbvSrvUav
                 : DescriptorHeapType.Sampler;
             CpuDescriptorHandle start = heap == ParameterHeap.Resource
-                ? _resourceCpuStart
-                : _samplerCpuStart;
+                ? _resourceDescriptors!.CpuStart
+                : _samplerDescriptors!.CpuStart;
             uint increment = _context.NativeDevice.DescriptorIncrement(nativeType);
             return new CpuDescriptorHandle(
                 start.Ptr + checked((nuint)(index * increment)));

@@ -74,6 +74,7 @@ internal sealed unsafe partial class D3D12Backend
                             if (!ReferenceEquals(Descriptors, descriptors)) return false;
                             break;
                         case D3D12OrdinaryDataChunk:
+                        case CommandDescriptorHeap:
                             // These buffers belong to this command context. No new Begin has
                             // occurred, so their contents and descriptor-table storage remain intact.
                             break;

@@ -128,8 +128,6 @@ internal sealed unsafe partial class D3D12Backend
 
         internal void FinishCommandData()
         {
-            // Replaced descriptor heaps retire through _transientObjects, so such
-            // recordings cannot keep a cache entry after their transient references retire.
             // Temporary RTV/DSV descriptors are rewritten on Begin; their CPU handles
             // alone cannot establish that a cached recording still names the same views.
             bool reusable = _collectingCommands &&
@@ -145,6 +143,7 @@ internal sealed unsafe partial class D3D12Backend
                     _commandReferences.Add(_descriptorGeneration);
                 foreach (D3D12OrdinaryDataChunk chunk in _ordinaryDataChunks)
                     _commandReferences.Add(chunk);
+                AppendDescriptorHeaps(_commandReferences);
                 foreach (CachedNativeCommands? cached in _cachedCommands)
                 {
                     if (cached is not null && cached.Matches(_commandData, _commandReferences))
@@ -165,7 +164,7 @@ internal sealed unsafe partial class D3D12Backend
             if (reusable)
             {
                 CachedNativeCommands cached = _nativeRecording;
-                cached.StoreReferences(_commandReferences, _resourceArena, _samplerArena);
+                cached.StoreReferences(_commandReferences, ResourceDescriptorHeap, SamplerDescriptorHeap);
                 (cached.Data, _commandData) = (_commandData, cached.Data);
             }
             FinishCommandRecording();
