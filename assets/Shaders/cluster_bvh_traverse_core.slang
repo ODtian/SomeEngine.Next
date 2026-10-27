@@ -7,6 +7,7 @@
 #include "cluster_target_policy_contract.slang"
 #include "resource_effects.slang"
 #include "wave_aggregation.slang"
+#include "wave_queue.slang"
 #include "cluster_page_requests.slang"
 #include "cluster_view_work.slang"
 
@@ -106,6 +107,39 @@ void CountPersistentCandidates(uint amount)
 }
 
 void CullClusterCandidateData(ClusterCandidate candidate, bool targetFilters);
+
+struct ClusterLeafCandidates : IWaveTask
+{
+    uint PageOffset;
+    uint FirstCluster;
+    uint ClusterCount;
+    uint InstanceID;
+    uint ViewBase;
+    uint ActiveViews;
+    bool TargetFilters;
+
+    [mutating] uint GetTaskCount()
+    {
+        return ClusterCount * countbits(ActiveViews);
+    }
+
+    [mutating] void ExecuteTask(uint sourceLane, uint localIndex, bool active)
+    {
+        uint pageOffset = WaveReadLaneAt(PageOffset, sourceLane);
+        uint firstCluster = WaveReadLaneAt(FirstCluster, sourceLane);
+        uint clusterCount = WaveReadLaneAt(ClusterCount, sourceLane);
+        uint instanceID = WaveReadLaneAt(InstanceID, sourceLane);
+        uint viewBase = WaveReadLaneAt(ViewBase, sourceLane);
+        uint views = WaveReadLaneAt(ActiveViews, sourceLane);
+        if (active)
+        {
+            uint bit = WaveQueue::FindNthSetBit(views, int(localIndex / clusterCount));
+            ClusterCandidate candidate = MakeClusterCandidate(MakeDrawRequest(
+                pageOffset, firstCluster + localIndex % clusterCount, instanceID, viewBase + bit), 1u);
+            CullClusterCandidateData(candidate, TargetFilters);
+        }
+    }
+};
 #endif
 
 void PublishCandidateDispatchArgs(uint start, uint count, uint maxCandidates)
@@ -288,14 +322,15 @@ void ProcessTraversalNode(ClusterTraversalNode parent, bool validParent, uint ch
         ClusterViewUniforms view = LoadClusterCullView(Views, PolicyClusterViews, viewIndex, targetFilters);
         view = ApplyClusterInstanceBounds(MaterialBounds, InstanceData, InstanceProperties, instanceID, view);
         view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, instanceID, view);
+        if (!ClusterNodePassesLod(node, lodBounds, view))
+            continue;
         if (view.TargetPolicy != 0u && !ClusterTargetPolicyWorldDepthAccepts(
                 worldMin, worldMax, view,
                 LoadTargetDepthCacheClass(instanceID)))
             continue;
         ClusterProjectedBounds projectedBounds;
         bool outside = ProjectWorldAabbForView(worldMin, worldMax, view, previousProjection, projectedBounds);
-        if ((view.CullingEnabled != 0u && outside) ||
-            !ClusterNodePassesLod(node, lodBounds, view))
+        if (view.CullingEnabled != 0u && outside)
             continue;
         uint state = ClusterHierarchyNodeState(historyMin, historyMax, projectedBounds, viewIndex, view,
             view.TargetPolicy != 0u ? LoadTargetDepthCacheClass(instanceID) : 1u, instanceID);
@@ -429,6 +464,15 @@ void ProcessTraversalNode(ClusterTraversalNode parent, bool validParent, uint ch
     // work; only deferred candidates occupy the shared cluster queue.
     if (WaveIsFirstLane() && waveLeafCount != 0u)
         CountPersistentCandidates(waveLeafCount);
+    ClusterLeafCandidates candidates;
+    candidates.PageOffset = ClusterSlicePageOffset(node);
+    candidates.FirstCluster = firstCluster;
+    candidates.ClusterCount = clusterCount;
+    candidates.InstanceID = instanceID;
+    candidates.ViewBase = viewBase;
+    candidates.ActiveViews = leafViews;
+    candidates.TargetFilters = targetFilters;
+    WaveQueue::Distribute(candidates);
 #else
     uint leafOffset = WavePrefixSum(leafCount);
     uint candidateBase = 0u;
@@ -438,10 +482,7 @@ void ProcessTraversalNode(ClusterTraversalNode parent, bool validParent, uint ch
     if (WaveIsFirstLane())
         PublishCandidateDispatchArgs(candidateBase, waveLeafCount, TraversalLevel.MaxNodes);
     uint output = candidateBase + leafOffset;
-#endif
-#ifndef CLUSTER_PERSISTENT_CULL
     uint leafViews = outputLeaf ? activeViews : 0u;
-#endif
     while (leafViews != 0u)
     {
         uint bit = firstbitlow(leafViews);
@@ -450,15 +491,12 @@ void ProcessTraversalNode(ClusterTraversalNode parent, bool validParent, uint ch
         {
             ClusterCandidate candidate = MakeClusterCandidate(MakeDrawRequest(
                 ClusterSlicePageOffset(node), firstCluster + cluster, instanceID, viewBase + bit), 1u);
-#ifdef CLUSTER_PERSISTENT_CULL
-            CullClusterCandidateData(candidate, targetFilters);
-#else
             if (output < TraversalLevel.MaxNodes)
                 CandidateClusters[output] = candidate;
             output++;
-#endif
         }
     }
+#endif
 }
 
 #ifndef CLUSTER_PERSISTENT_CULL
