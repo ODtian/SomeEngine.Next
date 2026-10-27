@@ -3,6 +3,7 @@ using SlangShaderSharp;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Graphics;
 using SomeEngine.Job;
+using SomeEngine.Diagnostics;
 using Buffer = SomeEngine.Graphics.Buffer;
 
 namespace SomeEngine.Physics;
@@ -14,6 +15,9 @@ public readonly record struct DeviceActivityKernels(ComputePipelineDesc ApplyInp
 /// <summary>Wake, quiet-time and completed activity results over the solver's original full device graph.</summary>
 public sealed class DevicePhysicsActivity : IDisposable
 {
+    private static readonly TraceSite CopyCommandsTrace = new("physics", "Activity.CopyCommands");
+    private static readonly TraceSite MapResultsTrace = new("physics", "Activity.MapResults");
+    private static readonly TraceSite ApplyResultsTrace = new("physics", "Activity.ApplyResults");
     private readonly IGraphicsBackend _backend;
     private readonly Device _device;
     private readonly DeviceBodyActivities _activities;
@@ -160,6 +164,7 @@ public sealed class DevicePhysicsActivity : IDisposable
     {
         public void Execute()
         {
+            using var trace = EngineTrace.Begin(CopyCommandsTrace);
             activity._backend.Begin(activity._commands, new(0, 0, 8));
             activity._backend.Barrier(activity._commands, new BufferBarrier(activity._activities.States,
                 PipelineSync.ComputeShading, PipelineSync.Copy, ResourceAccess.UnorderedAccess, ResourceAccess.CopySource));
@@ -179,12 +184,13 @@ public sealed class DevicePhysicsActivity : IDisposable
     {
         public void Execute()
         {
-            using (MappedBuffer mapping = activity._backend.Map(activity._readback, MapType.Read, BufferRange.Whole))
+            using (EngineTrace.Begin(MapResultsTrace))
             {
+                using MappedBuffer mapping = activity._backend.Map(activity._readback, MapType.Read, BufferRange.Whole);
                 mapping.Invalidate(mapping.Range);
                 MemoryMarshal.Cast<byte, DeviceBodyActivityState>(mapping.Bytes).CopyTo(activity._activities.Results);
             }
-            activity._activities.ApplyResults(in context, events);
+            using (EngineTrace.Begin(ApplyResultsTrace)) activity._activities.ApplyResults(in context, events);
             activity._backend.CollectCompleted(activity._device);
         }
     }
