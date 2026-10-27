@@ -40,6 +40,19 @@ public static partial class PhysicsScenes
         DeviceGridCapacity gridCapacity, int contactCapacity, float contactDistance,
         ReadOnlySpan<int> readbackBodyIndices, string shaderDirectory, TEvents events, ReadOnlySpan<JobResourceAccess> eventAccesses,
         bool contactEvents = true)
+        where TEvents : struct, IPhysicsEventConsumer =>
+        CreateDevice<SceneBoxGeometry, DeviceSceneGeometryInputs, TEvents>(world, description, data, default,
+            backend, device, settings, gridSettings, gridCapacity, contactCapacity, contactDistance,
+            readbackBodyIndices, shaderDirectory, events, eventAccesses, contactEvents);
+
+    internal static PhysicsSceneSimulation CreateDevice<TGeometry, TInputs, TEvents>(World world,
+        PhysicsSceneDescription description, PhysicsSceneData data, TGeometry geometrySource,
+        IGraphicsBackend backend, Device device, PhysicsSceneSettings settings, DeviceGridSettings gridSettings,
+        DeviceGridCapacity gridCapacity, int contactCapacity, float contactDistance,
+        ReadOnlySpan<int> readbackBodyIndices, string shaderDirectory, TEvents events,
+        ReadOnlySpan<JobResourceAccess> eventAccesses, bool contactEvents)
+        where TGeometry : struct, ISceneDeviceGeometry<TInputs>
+        where TInputs : class, IPhysicsStage, IDisposable
         where TEvents : struct, IPhysicsEventConsumer
     {
         if (settings.JointBounds.Levels > 0 && settings.JointBoundsPerJoint == 0)
@@ -48,7 +61,7 @@ public static partial class PhysicsScenes
         DeviceGridKernels gridKernels = shaders.Grid();
         DeviceBodyKernels bodyKernels = shaders.Bodies();
         DeviceBodyInputKernels bodyInputKernels = shaders.BodyInputs();
-        ComputePipelineDesc geometryKernel = shaders.Geometry(contactDistance), detectionKernel = shaders.Detection();
+        ComputePipelineDesc[] detectionKernels = geometrySource.Detection(shaders);
         DeviceContactMatchKernels matchKernels = shaders.Matching();
         ComputePipelineDesc contactGeometryKernel = shaders.ContactGeometry();
         bool useJointBounds = settings.JointBounds.Levels > 0 && data.Joints.Length > 0;
@@ -57,12 +70,12 @@ public static partial class PhysicsScenes
             data.Bodies.Length, contactCapacity);
         DeviceContactKernels responseKernels = shaders.Responses();
 
-        PhysicsSceneEntities created = CreateEntities(world, data);
+        PhysicsSceneEntities created = CreateEntities(world, data, geometrySource);
         Scheduler scheduler = WorldJobs.GetScheduler(world);
         const int threads = 64;
         var bodies = new DeviceBodies(backend, device, created.Bodies.Length);
         var equations = new DeviceAvbdBodyEquations(backend, device, bodies);
-        var geometry = new DeviceCollisionGeometry(backend, device, new(created.Bodies.Length, 0, 0, 0), bodies);
+        var geometry = new DeviceCollisionGeometry(backend, device, geometrySource.GetCapacity(created.Bodies.Length), bodies);
         for (int index = 0; index < created.Bodies.Length; index++)
         {
             Entity entity = created.Bodies[index];
@@ -79,7 +92,7 @@ public static partial class PhysicsScenes
         QueryDefinition filter = new QueryDefinitionBuilder().All<ScenePhysicsBody>().Build();
         QueryDefinition selectedFilter = new QueryDefinitionBuilder().All<SceneReadbackBody>().Build();
         QueryHandle members = world.Query(filter.WithAccess(new QueryDefinitionBuilder().Read<DeviceBodyBinding>().Build()));
-        QueryHandle shapes = world.Query(filter.WithAccess(new QueryDefinitionBuilder().Read<BoxGeometry>().Build()));
+        QueryHandle shapes = world.Query(filter);
         QueryHandle poses = world.Query(filter.WithAccess(new QueryDefinitionBuilder().Read<BodyPose>().Read<BodyMass>().Read<BodyStepState>().Build()));
         QueryHandle points = world.Query(new QueryDefinitionBuilder().All<ScenePhysicsContact>().Read<ContactPoint>());
         QueryHandle states = world.Query(new QueryDefinitionBuilder().All<ScenePhysicsContact>().Read<AvbdContactState>()
@@ -142,9 +155,9 @@ public static partial class PhysicsScenes
             new JobResourceAccess[] { bodies.GetReadAccess(scheduler), pairExclusions.ReadAccess(scheduler) });
         for (int index = 0; index < created.Bodies.Length; index++)
             world.Add(created.Bodies[index], new DeviceCollisionBody(grid, index));
-        var geometryInputs = new DeviceSceneGeometryInputs(backend, device, grid, geometry, geometryKernel, pairs,
-            settings.GeometryInputsFixed, settings.Timings, threads);
-        var detection = new DeviceCollisionDetection(backend, device, grid, geometry, detectionKernel, 0,
+        TInputs geometryInputs = geometrySource.CreateInputs(backend, device, grid, geometry, shaders, pairs,
+            settings, contactDistance, threads);
+        var detection = new DeviceCollisionDetection(backend, device, grid, geometry, detectionKernels, 0,
             new(gridCapacity.Pairs, 4, Math.Min(gridCapacity.Pairs, 4096)) { BodiesPerContact = 2 }, new(1e-5f, 32, 64), contactDistance,
             DeviceInputTransfer.Resident, DeviceCollisionReadback.Contacts);
         var matching = new DeviceContactMatches(backend, device, world, points, parameters, detection, matchKernels,
@@ -191,7 +204,7 @@ public static partial class PhysicsScenes
             .Then(dynamics.ApplyGyroscopicTorque().Measure(timings, "Gyroscopic torque"))
             .Then(dynamics.Predict(Vector(data.Gravity)).Measure(timings, "Body prediction"))
             .Then(timedInputs.ApplyKinematicTargets().Measure(timings, "Kinematic targets"))
-            .Then(geometryInputs.Update())
+            .Then(new UpdateDeviceSceneGeometry<TInputs>(geometryInputs))
             .Then(grid.Build(pairs, DevicePairRules.None, DeviceInputTransfer.Resident, DevicePairReadback.None)
                 .Measure(timings, "Grid, pairs and type bins"))
             .Then(new ClearDeviceSceneContacts(detected).Then(detection.Detect()).Measure(timings, "Narrow phase"))

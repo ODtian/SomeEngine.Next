@@ -38,7 +38,7 @@ public sealed partial class PhysicsSceneExample(PhysicsSceneDescription descript
     public TestScene CreateScene(string contentDirectory, StandardMaterial displayMaterial)
     {
         _displayMaterial = displayMaterial;
-        _input = PhysicsScenes.Create(description);
+        _input = ReadInput();
         StepCount = GetStepCount(_input);
         return new($"Physics / {description.Name}", contentDirectory)
         {
@@ -59,7 +59,7 @@ public sealed partial class PhysicsSceneExample(PhysicsSceneDescription descript
 
     public PhysicsSceneSimulation CreateSimulation(World world)
     {
-        PhysicsSceneData data = _input ?? PhysicsScenes.Create(description);
+        PhysicsSceneData data = _input ?? ReadInput();
         _input = null;
         _events.Clear();
         StepCount = GetStepCount(data);
@@ -161,11 +161,15 @@ public sealed partial class PhysicsSceneExample(PhysicsSceneDescription descript
         StandardMaterial fixedMaterial = CreateMaterial(_displayMaterial, new(.12f, .16f, .21f, 1));
         StandardMaterial movingMaterial = CreateMaterial(_displayMaterial, new(.9f, .32f, .08f, 1));
         Mesh box = CreateBox();
+        Mesh? sphere = _siloParticles > 0 ? CreateSiloSphere() : null;
+        Mesh? hull = _siloParticles > 0 ? CreateSiloHull() : null;
         foreach (Entity body in simulation.Bodies.Span)
         {
             Material material = frame.World.Read<BodyMass>(body).Motion == BodyMotion.Static ? fixedMaterial : movingMaterial;
+            Mesh mesh = sphere is not null && frame.World.Has<SphereGeometry>(body) ? sphere
+                : hull is not null && frame.World.Has<ConvexHullGeometry>(body) ? hull : box;
             frame.World.Add(body, new WorldTransform { Qvvs = frame.World.Read<LocalTransform>(body).Value });
-            frame.World.Add(body, new MeshInstance { Mesh = box });
+            frame.World.Add(body, new MeshInstance { Mesh = mesh });
             frame.World.AddBuffer<MeshMaterialBinding>(body);
             frame.World.ExecuteBufferWrite<MeshMaterialBinding>(body, materials => materials.Add(new(material)));
         }
@@ -176,7 +180,7 @@ public sealed partial class PhysicsSceneExample(PhysicsSceneDescription descript
         {
             if (frame.World.Read<BodyMass>(body).Motion == BodyMotion.Static) continue;
             Vector3 position = frame.World.Read<BodyPose>(body).Position;
-            float radius = frame.World.Read<BoxGeometry>(body).HalfExtents.Length();
+            float radius = frame.World.Read<BodyActivity>(body).Radius;
             minimum = Vector3.Min(minimum, position - new Vector3(radius));
             maximum = Vector3.Max(maximum, position + new Vector3(radius));
         }
