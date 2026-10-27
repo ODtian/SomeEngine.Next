@@ -123,16 +123,18 @@ void correctDeviceContactSupport(uint body,DeviceAvbdStep context,DeviceAvbdEqua
     }
     DeviceSupportBodyStates[body]=center;
 }
-void updateDeviceContactSupports<T : IDeviceBodySelection>(DeviceAvbdStep context,T bodies)
+void updateDeviceContactSupports<T : IDeviceBodySelection,TWork : IDeviceContactSupportWork>(DeviceAvbdStep context,T bodies,TWork work)
 {
-    if(deviceSupportUpdateMotion(bodies)) buildDeviceContactSupports(context,bodies);
-    for(uint row=0;row<ContactSupportSettings.contacts;row++)
+    if(deviceSupportUpdateMotion(bodies,work)) buildDeviceContactSupports(context,bodies,work);
+    for(uint contactOffset=0;contactOffset<work.contactCount();contactOffset++)
     {
+        uint row=work.contact(contactOffset);
         if(!deviceSupportContactRuns(row,bodies)) continue;
         DeviceContactSupportState state=DeviceSupportContactStates[row]; state.load=state.reaction; DeviceSupportContactStates[row]=state;
     }
-    for(uint body=0;body<ContactSupportSettings.bodies;body++)
+    for(uint bodyOffset=0;bodyOffset<work.bodyCount();bodyOffset++)
     {
+        uint body=work.body(bodyOffset);
         if(!deviceSupportBodySelected(body)||!bodies.contains(body)) continue;
         DeviceBodySupportState state=DeviceSupportBodyStates[body]; if(state.enabled==0) continue;
         for(uint index=0;index<state.loadCount;index++)
@@ -142,9 +144,9 @@ void updateDeviceContactSupports<T : IDeviceBodySelection>(DeviceAvbdStep contex
             DeviceSupportContactStates[load.contact]=contact;
         }
     }
-    for(uint index=DeviceSupportOrder[0];index>0;index--)
+    for(uint index=work.orderCount();index>0;index--)
     {
-        uint row=DeviceSupportOrder[index];
+        uint row=DeviceSupportOrder[work.orderStart()+index-1];
         if(!deviceSupportContactRuns(row,bodies)) continue;
         DeviceContactSupportState state=DeviceSupportContactStates[row];
         DeviceContactResponseState response=DeviceContactResponses[row];
@@ -164,6 +166,8 @@ void updateDeviceContactSupports<T : IDeviceBodySelection>(DeviceAvbdStep contex
         }
     }
 }
+void updateDeviceContactSupports<T : IDeviceBodySelection>(DeviceAvbdStep context,T bodies)
+{ DeviceAllContactSupportWork work; updateDeviceContactSupports(context,bodies,work); }
 void updateDeviceContactSupports(DeviceAvbdStep context)
 { DeviceAllEquationBodies bodies; updateDeviceContactSupports(context,bodies); }
 #endif

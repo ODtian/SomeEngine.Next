@@ -46,6 +46,24 @@ RWStructuredBuffer<DeviceSupportCandidate> DeviceSupportCandidates;
 RWStructuredBuffer<uint> DeviceSupportOrder;
 RWStructuredBuffer<DeviceSupportEquation> DeviceSupportEquations;
 StructuredBuffer<uint2> DeviceContactSupportSelection;
+interface IDeviceContactSupportWork
+{
+    uint bodyCount(); uint body(uint index);
+    uint contactCount(); uint contact(uint index);
+    uint candidateStart(); uint orderStart(); uint orderCount();
+    void setOrderCount(uint count);
+};
+struct DeviceAllContactSupportWork : IDeviceContactSupportWork
+{
+    uint bodyCount() { return ContactSupportSettings.bodies; }
+    uint body(uint index) { return index; }
+    uint contactCount() { return ContactSupportSettings.contacts; }
+    uint contact(uint index) { return index; }
+    uint candidateStart() { return 0; }
+    uint orderStart() { return 1; }
+    uint orderCount() { return DeviceSupportOrder[0]; }
+    void setOrderCount(uint count) { DeviceSupportOrder[0]=count; }
+};
 float3 deviceSupportHorizontalX()
 { return normalize(cross(ContactSupportSettings.up,abs(ContactSupportSettings.up.x)<.707?float3(1,0,0):float3(0,1,0))); }
 float3 deviceSupportHorizontalY() { return cross(ContactSupportSettings.up,deviceSupportHorizontalX()); }
