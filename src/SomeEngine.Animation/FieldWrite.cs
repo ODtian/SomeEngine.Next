@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Runtime.InteropServices;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 
@@ -43,10 +44,18 @@ internal static class FieldWrites<T> where T : unmanaged
 
         // Keep channel appearance order and submission order within each channel.
         channels.Clear();
+        ReadOnlySpan<Channel<T>> previousChannels = default;
         for (int index = 0; index < count; index++)
         {
             channel = writes[index].Channel;
-            if (!channels.Contains(channel)) channels.Add(channel);
+            int previous = 0;
+            while (previous < previousChannels.Length && previousChannels[previous] != channel)
+                previous++;
+            if (previous == previousChannels.Length)
+            {
+                channels.Add(channel);
+                previousChannels = CollectionsMarshal.AsSpan(channels);
+            }
         }
         foreach (Channel<T> field in channels)
             field.WriteBatch(world, writes.AsSpan(0, count));
