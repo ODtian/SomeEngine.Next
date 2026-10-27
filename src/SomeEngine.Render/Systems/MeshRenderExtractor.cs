@@ -16,10 +16,10 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
     private readonly List<MeshSnapshot> _snapshots = [];
     private readonly List<Material> _materials = [];
     private readonly HashSet<Entity> _meshSources = [];
-    private readonly Dictionary<Entity, Material[]> _sourceMaterials = [];
-    private readonly HashSet<Entity> _collectedMaterialSources = [];
     private readonly Dictionary<Entity, MeshInstance> _sourceMeshes = [];
     private readonly HashSet<Entity> _collectedMeshSources = [];
+    private RenderWorld? _renderWorld;
+    private QueryHandle _meshQuery;
 
     public bool CanApplyChangesDirect =>
         _snapshots.Count == 0;
@@ -37,7 +37,6 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
         _snapshots.Clear();
         _materials.Clear();
         _meshSources.Clear();
-        _collectedMaterialSources.Clear();
         _collectedMeshSources.Clear();
     }
 
@@ -53,58 +52,61 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
         _sourceMeshes.Remove(source);
     }
 
-    private void TrackMaterials(Entity source, ReadOnlySpan<MeshMaterialBinding> bindings)
-    {
-        var materials = new Material[bindings.Length];
-        for (int index = 0; index < bindings.Length; index++) materials[index] = bindings[index].Material;
-        _sourceMaterials[source] = materials;
-        _collectedMaterialSources.Add(source);
-    }
-
-    private void UntrackMaterials(Entity source) => _sourceMaterials.Remove(source);
-
-    private float GetBoundsExpansion(Entity source, float meshExpansion)
-    {
-        float expansion = 0;
-        if (_sourceMaterials.TryGetValue(source, out Material[]? materials))
-            foreach (Material material in materials) expansion = Math.Max(expansion, material.BoundsExpansion);
-        return meshExpansion + expansion;
-    }
-
     public bool CompleteCollection(RenderExtractionContext context, bool fullCollection)
     {
         if (fullCollection)
         {
             foreach (Entity source in context.ChangedSources)
             {
-                if (!_collectedMaterialSources.Contains(source)) UntrackMaterials(source);
                 if (!_collectedMeshSources.Contains(source)) UntrackMesh(source);
             }
         }
 
-        bool changed = false;
-        foreach ((Entity source, MeshInstance instance) in _sourceMeshes)
+        if (!_meshQuery.IsValid)
         {
-            if (_collectedMeshSources.Contains(source)) continue;
-            Entity entity = context.RequireMirror(source);
-            RenderMesh current = context.World.Read<RenderMesh>(entity);
-            float expansion = GetBoundsExpansion(source, instance.BoundsExpansion);
-            if (current.Mesh.Revision == instance.Mesh.Revision && current.BoundsExpansion == expansion) continue;
-            Mesh data = instance.Mesh.CaptureData();
-            _snapshots.Add(new MeshSnapshot(source, default, data, expansion,
-                false, 0, 0, MeshChanged: true, MaterialsChanged: false, instance.PageSource,
-                instance.DepthCacheClass, instance.FirstPerson));
-            _meshSources.Add(source);
-            changed = true;
+            _renderWorld = context.World;
+            _meshQuery = _renderWorld.Query(new QueryDefinitionBuilder().Read<RenderSource>().Read<RenderMesh>());
         }
-        return changed;
+        int before = _snapshots.Count;
+        var state = (Extractor: this, Context: context);
+        _renderWorld!.ExecuteQuery(_meshQuery, ref state,
+            static (scoped QueryCursor query, ref (MeshRenderExtractor Extractor, RenderExtractionContext Context) state) =>
+                state.Extractor.CollectMeshChanges(query, state.Context));
+        return _snapshots.Count != before;
+    }
+
+    private void CollectMeshChanges(scoped QueryCursor query, RenderExtractionContext context)
+    {
+        foreach (QueryChunkView chunk in query.Chunks)
+        {
+            ReadOnlySpan<RenderSource> sources = chunk.Read<RenderSource>();
+            ReadOnlySpan<RenderMesh> meshes = chunk.Read<RenderMesh>();
+            for (int row = 0; row < sources.Length; row++)
+            {
+                Entity source = sources[row].Entity;
+                if (_collectedMeshSources.Contains(source) || !_sourceMeshes.TryGetValue(source, out MeshInstance instance)) continue;
+                RenderMesh current = meshes[row];
+                float expansion = instance.BoundsExpansion + context.ReadMaterialBoundsExpansion(source);
+                if (current.Mesh.Revision == instance.Mesh.Revision && current.BoundsExpansion == expansion) continue;
+                Mesh data = instance.Mesh.CaptureData();
+                _snapshots.Add(new MeshSnapshot(source, default, data, expansion,
+                    false, 0, 0, MeshChanged: true, MaterialsChanged: false, instance.PageSource,
+                    instance.DepthCacheClass, instance.FirstPerson));
+                _meshSources.Add(source);
+            }
+        }
     }
 
     public void Dispose()
     {
         Reset();
-        _sourceMaterials.Clear();
         _sourceMeshes.Clear();
+        if (_meshQuery.IsValid)
+        {
+            _renderWorld!.ReleaseQuery(_meshQuery);
+            _meshQuery = default;
+            _renderWorld = null;
+        }
     }
 
     public void Collect(QueryChunkView chunk)
@@ -122,21 +124,24 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
             Entity source = entities[row];
             int materialOffset = _materials.Count;
             int materialCount = 0;
+            float materialExpansion = 0;
             if (hasMaterialBuffer)
             {
                 ReadOnlySpan<MeshMaterialBinding> bindings =
                     chunk.ReadBuffer<MeshMaterialBinding>(row).AsSpan();
                 materialCount = bindings.Length;
-                TrackMaterials(entities[row], bindings);
                 for (int index = 0; index < bindings.Length; index++)
+                {
                     _materials.Add(bindings[index].Material);
+                    materialExpansion = Math.Max(materialExpansion, bindings[index].Material.BoundsExpansion);
+                }
             }
 
             _snapshots.Add(new MeshSnapshot(
                 source,
                 new RenderTransform(transforms[row].Qvvs),
                 TrackMesh(source, meshes[row]),
-                GetBoundsExpansion(source, meshes[row].BoundsExpansion),
+                meshes[row].BoundsExpansion + materialExpansion,
                 hasMaterialBuffer,
                 materialOffset,
                 materialCount,
@@ -187,7 +192,6 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
                     ReadOnlySpan<MeshMaterialBinding> bindings =
                         chunk.ReadBuffer<MeshMaterialBinding>(row).AsSpan();
                     materialCount = bindings.Length;
-                    TrackMaterials(entities[row], bindings);
                     for (int index = 0; index < bindings.Length; index++)
                         _materials.Add(bindings[index].Material);
                 }
@@ -198,7 +202,7 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
                     entities[row],
                     default,
                     geometryChanged ? TrackMesh(entities[row], mesh) : null!,
-                    GetBoundsExpansion(entities[row], mesh.BoundsExpansion),
+                    mesh.BoundsExpansion + context.ReadMaterialBoundsExpansion(entities[row]),
                     hasMaterialBuffer,
                     materialOffset,
                     materialCount,

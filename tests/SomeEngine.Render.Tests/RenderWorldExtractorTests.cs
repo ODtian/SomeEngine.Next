@@ -227,6 +227,83 @@ public sealed class RenderWorldExtractorTests(RenderTestDevice graphics) : IClas
         Assert.Equal(before.Content, render.ReadTextureVersions(texture).Content);
     }
 
+    [Fact]
+    public void SharedTextureRemainsUntilItsLastBindingAndCookieReferenceIsRemoved()
+    {
+        using World main = new();
+        using RenderWorld render = new();
+        using var extraction = new RenderExtractionSystems(render, new MeshRenderExtractor(), new LightRenderExtractor());
+        Texture first = TextureAsset(94, 1);
+        Texture second = TextureAsset(95, 1);
+        var firstMaterial = new StandardMaterial { AlbedoMap = first };
+        var secondMaterial = new StandardMaterial { AlbedoMap = second };
+        Entity firstSource = AddMeshSource(main, MeshAsset(5, 1), 0, Vector3.Zero);
+        Entity secondSource = AddMeshSource(main, MeshAsset(5, 1), 0, Vector3.One);
+        SetSourceBindings(main, firstSource, firstMaterial, default!, 1);
+        SetSourceBindings(main, secondSource, firstMaterial, default!, 1);
+        Entity light = main.CreateEntity(new PointLight(Vector3.Zero, 1, Vector3.One, 1));
+        main.Add(light, new LightCookie(first, 1, Vector4.One, Matrix4x4.Identity));
+        ExtractAndApply(extraction, main, render);
+
+        SetSourceBindings(main, firstSource, secondMaterial, default!, 1);
+        main.Replace(light, new LightCookie(second, 1, Vector4.One, Matrix4x4.Identity));
+        ExtractAndApply(extraction, main, render);
+
+        Assert.Equal(first.Versions, render.ReadTextureVersions(first));
+        Assert.Equal(second.Versions, render.ReadTextureVersions(second));
+
+        main.DestroyEntity(secondSource);
+        ExtractAndApply(extraction, main, render);
+
+        Assert.Throws<KeyNotFoundException>(() => render.ReadTextureVersions(first));
+        Assert.Equal(second.Versions, render.ReadTextureVersions(second));
+    }
+
+    [Fact]
+    public void MaterialTextureReplacementCrossesExtractionWithUnchangedBindings()
+    {
+        using World main = new();
+        using RenderWorld render = new();
+        using var extraction = new RenderExtractionSystems(render, new MeshRenderExtractor());
+        Texture first = TextureAsset(96, 1);
+        Texture second = TextureAsset(97, 1);
+        var material = new StandardMaterial { AlbedoMap = first };
+        Entity source = AddMeshSource(main, MeshAsset(5, 1), 0, Vector3.Zero);
+        SetSourceBindings(main, source, material, default!, 1);
+        ExtractAndApply(extraction, main, render);
+        TextureVersions before = render.ReadTextureVersions(first);
+
+        material.AlbedoMap = second;
+        extraction.Extract(main);
+        Assert.Equal(before, render.ReadTextureVersions(first));
+        graphics.Apply(extraction, render);
+
+        Assert.Throws<KeyNotFoundException>(() => render.ReadTextureVersions(first));
+        Assert.Equal(second.Versions, render.ReadTextureVersions(second));
+        Assert.Equal(material.Revision, render.ReadMaterialRevision(material.MaterialId));
+    }
+
+    [Fact]
+    public void MaterialBoundsChangesUpdateMeshesWithUnchangedBindings()
+    {
+        using World main = new();
+        using RenderWorld render = new();
+        using var extraction = new RenderExtractionSystems(render, new MeshRenderExtractor());
+        var first = new ExpandingMaterial { Expansion = 1 };
+        var second = new ExpandingMaterial { Expansion = 3 };
+        Entity source = AddMeshSource(main, MeshAsset(5, 1), 2, Vector3.Zero);
+        SetSourceBindings(main, source, first, second, 2);
+        ExtractAndApply(extraction, main, render);
+        Entity mirror = extraction.RequireMirror(source);
+        Assert.Equal(5, render.Read<RenderMesh>(mirror).BoundsExpansion);
+
+        first.Expansion = 4;
+        ExtractAndApply(extraction, main, render);
+
+        Assert.Equal(6, render.Read<RenderMesh>(mirror).BoundsExpansion);
+        AssertRenderBindings(render, mirror, first, second, 2);
+    }
+
     [Theory]
     [InlineData(1)]
     [InlineData(129)]
@@ -1738,6 +1815,13 @@ public sealed class RenderWorldExtractorTests(RenderTestDevice graphics) : IClas
         Material First,
         Material Second,
         int Count);
+
+    private sealed class ExpandingMaterial : Material
+    {
+        public float Expansion { get; set; }
+        public override float BoundsExpansion => Expansion;
+        public override IReadOnlyList<MaterialPropertyDefinition> Properties => [];
+    }
 
     private Mesh MeshAsset(int id, int revision)
         => assets.Mesh(id, revision);

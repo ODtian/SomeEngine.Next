@@ -25,13 +25,30 @@ Extraction 把 GameWorld 的渲染相关变化转换成下一次 RenderWorld 更
 
 ## 材质引用
 
-`MeshMaterialBinding.Material` 中已经加载的对象引用直接写入
-`RenderMaterialBinding.Material`，顺序与重复绑定保持原样。
-RenderWorld 不为这些对象建立材质登记实体或 ID 到对象的回查目录。
+`MeshMaterialBinding.Material` 中已经加载的对象通过 `RenderMaterialReference`
+进入 Rendering world。`RenderMaterialBinding.MaterialId` 保存实例绑定，顺序与重复绑定保持原样。
+`RenderWorld` 按 MaterialId 维护共享引用与绑定计数，`ReadMaterial` 取得同一材料对象；
+最后一个绑定移除时释放该共享引用。源码：[RenderWorld](../../../src/SomeEngine.Render/Systems/RenderWorld.cs)。
 
 Material 的字段和资源引用继续由原对象持有，并遵守既有资产更新边界；
 渲染消费者直接读取同一对象。提取交付的是实体的绑定关系，
 不生成另一份材质字段或资源值。
+
+## 资源变化收集
+
+内置资源收集在 Game world 的同一次读取窗口中，按实体表变化、材质绑定缓冲行版本
+和 `LightCookie` 行版本更新来源关系。来源关系保存实际材质与 cookie 纹理的引用计数；
+每次提取遍历这些共享资源，读取材料 Revision、纹理属性与 TextureVersions。
+用户提取器继续通过 `CollectResources` 在该读取窗口补充资源。
+网格范围扩张从同一来源关系读取材料，提取侧的来源材质引用由该索引集中持有。
+源码：[RenderSourceResources](../../../src/SomeEngine.Render/Systems/RenderExtractionResources.cs)、
+[提取顺序](../../../src/SomeEngine.Render/Systems/RenderExtractionSchedule.cs)。
+
+网格资产更新在 `CompleteCollection` 中通过一次 Rendering world 查询读取
+`RenderSource` 和 `RenderMesh` 列，比较来源网格 Revision 与材质范围扩张。
+比较结果与实体组件变化进入同一候选；RenderPrepare 成功应用后接受系统版本与实体表变化。
+应用失败时继续从上次成功版本收集受影响来源。
+源码：[MeshRenderExtractor](../../../src/SomeEngine.Render/Systems/MeshRenderExtractor.cs)。
 
 ## Relations
 [[GameWorld-and-RenderWorld]] · [[Frame-CPU-Overlap]] · [[architecture/assets/Asset-Update-Boundary]]

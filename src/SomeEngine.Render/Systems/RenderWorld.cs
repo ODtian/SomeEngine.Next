@@ -74,14 +74,13 @@ public sealed class RenderWorld : World
                 Replace(entry.Entity, reference);
     }
 
-    internal bool TryReadMaterial(long materialId, out Material? data)
+    internal bool HaveMaterialsChanged(IEnumerable<RenderMaterialReference> references)
     {
-        if (Read<RenderMaterialIndex>(_materialIndexEntity).Entries.TryGetValue(materialId, out RenderMaterialEntry entry))
-        {
-            data = Read<RenderMaterialReference>(entry.Entity).Material;
-            return true;
-        }
-        data = null;
+        var entries = Read<RenderMaterialIndex>(_materialIndexEntity).Entries;
+        foreach (RenderMaterialReference reference in references)
+            if (entries.TryGetValue(reference.Material.MaterialId, out RenderMaterialEntry entry) &&
+                Read<RenderMaterialReference>(entry.Entity).Revision != reference.Revision)
+                return true;
         return false;
     }
 

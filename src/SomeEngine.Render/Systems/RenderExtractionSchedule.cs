@@ -23,6 +23,7 @@ public sealed class RenderExtractionSystems : IDisposable
     private int[] _writtenComponents = [];
     internal QueryDefinition DestinationAccess { get; private set; } = null!;
     private readonly RenderExtractionContext _context;
+    private readonly RenderSourceResources _sourceResources = new();
     private readonly object _gate = new();
     private QueryDefinition? _sourceQuery;
     private QueryHandle _sourceQueryHandle;
@@ -45,7 +46,7 @@ public sealed class RenderExtractionSystems : IDisposable
     public RenderExtractionSystems(RenderWorld renderWorld, params ReadOnlySpan<IRenderExtractionSystem> systems)
     {
         _renderWorld = renderWorld ?? throw new ArgumentNullException(nameof(renderWorld));
-        _context = new RenderExtractionContext(renderWorld);
+        _context = new RenderExtractionContext(renderWorld, _sourceResources);
         try
         {
             foreach (IRenderExtractionSystem system in systems) Add(system);
@@ -214,19 +215,18 @@ public sealed class RenderExtractionSystems : IDisposable
                     systems._candidateFullReconciliation = systems._mainWorld is null ||
                         systems._candidateSourceChanges.Count != 0;
                     systems._context.BeginSourceChanges(systems._candidateSourceChanges.Entities);
+                    systems._sourceResources.BeginCollection(systems._candidateSourceChanges.Entities, systems._mainWorld is null);
                     if (systems._candidateFullReconciliation) systems.Collect(query);
                     else systems.CollectDelta(query);
                     foreach (IRenderExtractionSystem system in systems._systems)
                         if (system.CompleteSourceCollection(state.Source, systems._candidateFullReconciliation))
                             systems._changedSystems.Add(system);
-                    var resources = TextureExtraction.Collect(query);
+                    var resources = systems._sourceResources.CollectResources();
                     foreach (IRenderExtractionSystem system in systems._systems) system.CollectResources(query, resources);
                     systems._textureVersions = resources.Textures;
                     systems._materialReferences = resources.Materials;
                     systems._context.MaterialReferences = systems._materialReferences;
-                    systems._materialsChanged = systems._materialReferences.Values.Any(value =>
-                        systems._renderWorld.TryReadMaterial(value.Material.MaterialId, out _) &&
-                        systems._renderWorld.ReadMaterialRevision(value.Material.MaterialId) != value.Revision);
+                    systems._materialsChanged = systems._renderWorld.HaveMaterialsChanged(systems._materialReferences.Values);
                     var before = systems._renderWorld.TextureVersions;
                     systems._texturesChanged = before.Count != systems._textureVersions.Count ||
                         systems._textureVersions.Any(pair => !before.TryGetValue(pair.Key, out var version) || version != pair.Value);
@@ -327,6 +327,7 @@ public sealed class RenderExtractionSystems : IDisposable
         foreach (QueryChunkView chunk in cursor.ChangedChunks(_candidateSourceChanges!))
         {
             _context.IncludeSources(chunk.Entities);
+            _sourceResources.Collect(chunk, fullCollection: true);
             for (int index = 0; index < _systems.Count; index++)
                 _systems[index].Collect(chunk);
         }
@@ -336,6 +337,7 @@ public sealed class RenderExtractionSystems : IDisposable
     {
         foreach (QueryChunkView chunk in cursor.Chunks)
         {
+            _sourceResources.Collect(chunk, fullCollection: false);
             foreach (IRenderExtractionSystem system in _systems)
                 if (system.CollectChanges(chunk, _context)) _changedSystems.Add(system);
         }
@@ -399,6 +401,7 @@ public sealed class RenderExtractionSystems : IDisposable
             _context.CancelTransformChanges();
             foreach (IRenderExtractionSystem system in _systems) system.Dispose();
             _context.Dispose();
+            _sourceResources.Clear();
             _sourceChanges?.Dispose();
             _sourceChanges = null;
             if (_sourceQueryHandle.IsValid)
@@ -493,6 +496,7 @@ public readonly record struct RenderMirror(Entity RenderEntity, Entity Source);
 public sealed class RenderExtractionContext : IDisposable
 {
     private readonly RenderWorld _world;
+    private readonly RenderSourceResources _sourceResources;
     private readonly QueryHandle _renderSources;
     private readonly QueryHandle _transformWrites;
     private readonly Dictionary<Entity, Entity> _mirrorBySource = [];
@@ -586,9 +590,10 @@ public sealed class RenderExtractionContext : IDisposable
         }
     }
 
-    internal RenderExtractionContext(RenderWorld world)
+    internal RenderExtractionContext(RenderWorld world, RenderSourceResources sourceResources)
     {
         _world = world;
+        _sourceResources = sourceResources;
         _renderSources = world.Query(new QueryDefinitionBuilder().Read<RenderSource>());
         try
         {
@@ -603,6 +608,8 @@ public sealed class RenderExtractionContext : IDisposable
     }
 
     public RenderWorld World => _world;
+
+    internal float ReadMaterialBoundsExpansion(Entity source) => _sourceResources.ReadMaterialBoundsExpansion(source);
 
     /// <summary>Sets a mirror's material bindings and retains their shared rendering-world references.</summary>
     internal IReadOnlyDictionary<long, RenderMaterialReference> MaterialReferences { get; set; } =
