@@ -2,20 +2,28 @@ namespace SomeEngine.RenderGraph;
 
 internal sealed partial class FrameExecutor
 {
-    private readonly record struct RegionPassPosition(GraphIdentity Region, int Ordinal);
+    // Declarations use consecutive ordinals within each region and pass.
+    private sealed class RegionPassRows
+    {
+        internal readonly List<int> Rows = [];
+        internal int PassCount;
+        internal GraphRegionEntry Interval;
+        internal bool Enabled;
+    }
+
+    private readonly record struct RegionPassPosition(RegionPassRows Region, int Ordinal);
     private readonly record struct PassAccessPosition(int Pass, int Ordinal);
 
-    private readonly Dictionary<RegionPassPosition, int> _regionPassRows = [];
-    private readonly Dictionary<PassAccessPosition, int> _frameAccessRows = [];
+    private readonly Dictionary<GraphIdentity, RegionPassRows> _regionPassRows = [];
+    private List<int>[] _frameAccessRows = [];
+    private int[] _frameAccessCounts = [];
+    private readonly List<int> _frameAccessPasses = [];
     private readonly Stack<int> _freePassRows = new();
     private readonly Stack<int> _freeAccessRows = new();
-    private readonly List<RegionPassPosition> _removedRegionPasses = [];
-    private readonly List<PassAccessPosition> _removedFrameAccesses = [];
+    private readonly List<GraphIdentity> _removedRegions = [];
     private int[] _dynamicPassRows = [], _dynamicAccessRows = [];
     private RegionPassPosition[] _dynamicPassPositions = [];
-    private readonly Dictionary<GraphIdentity, int> _regionPassCounts = [];
     private PassAccessPosition[] _dynamicAccessPositions = [];
-    private readonly Dictionary<int, int> _dynamicAccessCounts = [];
 
     private void PreparePassRows()
     {
@@ -26,26 +34,31 @@ internal sealed partial class FrameExecutor
             RemovePassRow(row);
         }
 
-        _regionPassCounts.Clear();
+        foreach (RegionPassRows region in _regionPassRows.Values) region.PassCount = 0;
         EnsureCapacity(ref _dynamicPassPositions, _frame.DynamicPasses.Count);
         for (int index = 0; index < _frame.DynamicPasses.Count; index++)
         {
             FramePass pass = _frame.DynamicPasses[index];
-            ref int count = ref CollectionsMarshal.GetValueRefOrAddDefault(_regionPassCounts, pass.Region, out _);
-            int ordinal = count++;
-            var position = new RegionPassPosition(pass.Region, ordinal);
-            _dynamicPassPositions[index] = position;
+            ref RegionPassRows? region = ref CollectionsMarshal.GetValueRefOrAddDefault(_regionPassRows, pass.Region, out _);
+            region ??= new();
+            if (region.PassCount == 0)
+            {
+                region.Interval = structure.GetRegionInterval(pass.Region);
+                region.Enabled = structure.IsRegionEnabled(pass.Region);
+            }
+            _dynamicPassPositions[index] = new RegionPassPosition(region, region.PassCount++);
         }
-        _removedRegionPasses.Clear();
-        // Each region uses consecutive ordinals, so its count also defines membership.
+        _removedRegions.Clear();
         foreach (var pair in _regionPassRows)
-            if (pair.Key.Ordinal >= _regionPassCounts.GetValueOrDefault(pair.Key.Region))
-                _removedRegionPasses.Add(pair.Key);
-        foreach (RegionPassPosition position in _removedRegionPasses)
         {
-            _regionPassRows.Remove(position, out int row);
-            RemovePassRow(row);
+            RegionPassRows region = pair.Value;
+            int removed = region.Rows.Count - region.PassCount;
+            if (removed <= 0) continue;
+            for (int item = region.PassCount; item < region.Rows.Count; item++) RemovePassRow(region.Rows[item]);
+            region.Rows.RemoveRange(region.PassCount, removed);
+            if (region.PassCount == 0) _removedRegions.Add(pair.Key);
         }
+        foreach (GraphIdentity region in _removedRegions) _regionPassRows.Remove(region);
 
         if (!_rowsReady)
             foreach (GraphIdentity identity in _frame.StructureIndex.PassIds) AddPersistentPassRow(identity);
@@ -57,12 +70,9 @@ internal sealed partial class FrameExecutor
         for (int index = 0; index < _frame.DynamicPasses.Count; index++)
         {
             RegionPassPosition position = _dynamicPassPositions[index];
-            if (!_regionPassRows.TryGetValue(position, out int row))
-            {
-                row = AddPassRow();
-                _regionPassRows.Add(position, row);
-            }
-            _dynamicPassRows[index] = row;
+            List<int> rows = position.Region.Rows;
+            if (position.Ordinal == rows.Count) rows.Add(AddPassRow());
+            _dynamicPassRows[index] = rows[position.Ordinal];
         }
     }
 
@@ -92,24 +102,24 @@ internal sealed partial class FrameExecutor
                 RemoveAccessRow(row);
 
         EnsureCapacity(ref _dynamicAccessPositions, _frame.DynamicAccesses.Count);
-        _dynamicAccessCounts.Clear();
+        EnsureCapacity(ref _frameAccessRows, _passes.Count);
+        EnsureCapacity(ref _frameAccessCounts, _passes.Count);
+        foreach (int pass in _frameAccessPasses) _frameAccessCounts[pass] = 0;
         for (int index = 0; index < _frame.DynamicAccesses.Count; index++)
         {
             int pass = ResolvePass(_frame.DynamicAccesses[index].Pass);
-            ref int count = ref CollectionsMarshal.GetValueRefOrAddDefault(_dynamicAccessCounts, pass, out _);
-            int ordinal = count++;
-            var position = new PassAccessPosition(pass, ordinal);
-            _dynamicAccessPositions[index] = position;
+            _dynamicAccessPositions[index] = new PassAccessPosition(pass, _frameAccessCounts[pass]++);
         }
-        _removedFrameAccesses.Clear();
-        // Access ordinals are consecutive within each pass.
-        foreach (var pair in _frameAccessRows)
-            if (pair.Key.Ordinal >= _dynamicAccessCounts.GetValueOrDefault(pair.Key.Pass))
-                _removedFrameAccesses.Add(pair.Key);
-        foreach (PassAccessPosition position in _removedFrameAccesses)
+        for (int index = _frameAccessPasses.Count - 1; index >= 0; index--)
         {
-            _frameAccessRows.Remove(position, out int row);
-            RemoveAccessRow(row);
+            int pass = _frameAccessPasses[index];
+            List<int> rows = _frameAccessRows[pass];
+            int count = _frameAccessCounts[pass];
+            int removed = rows.Count - count;
+            if (removed <= 0) continue;
+            for (int item = count; item < rows.Count; item++) RemoveAccessRow(rows[item]);
+            rows.RemoveRange(count, removed);
+            if (count == 0) _frameAccessPasses.RemoveAt(index);
         }
 
         if (!_rowsReady)
@@ -122,12 +132,13 @@ internal sealed partial class FrameExecutor
         for (int index = 0; index < _frame.DynamicAccesses.Count; index++)
         {
             PassAccessPosition position = _dynamicAccessPositions[index];
-            if (!_frameAccessRows.TryGetValue(position, out int row))
+            List<int> rows = _frameAccessRows[position.Pass] ??= [];
+            if (position.Ordinal == rows.Count)
             {
-                row = AddAccessRow();
-                _frameAccessRows.Add(position, row);
+                if (rows.Count == 0) _frameAccessPasses.Add(position.Pass);
+                rows.Add(AddAccessRow());
             }
-            _dynamicAccessRows[index] = row;
+            _dynamicAccessRows[index] = rows[position.Ordinal];
         }
     }
 
