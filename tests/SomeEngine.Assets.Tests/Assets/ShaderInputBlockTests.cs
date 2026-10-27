@@ -44,7 +44,12 @@ public sealed class ShaderInputBlockTests
         await using var loader = new AssetLoader(project.CreateStorage());
         using var materialAsset = new MaterialAsset { Name = "Standard" };
         materialAsset.GetBlock<MaterialBlock>().Shader = new(id);
-        _ = new StandardMaterialParameters(materialAsset.GetBlock<MaterialBlock>()) { Roughness = 0.37f };
+        _ = new StandardMaterialParameters(materialAsset.GetBlock<MaterialBlock>())
+        {
+            Roughness = 0.37f,
+            NormalScale = 0.4f,
+            OcclusionStrength = 0.6f,
+        };
         using ShaderAsset shaderAsset = await ShaderAsset.OpenAsync(loader, new(id));
         Shader shader = await shaderAsset.CreateAsync(slang, description);
         StandardMaterial instance = await materialAsset.CreateAsync<StandardMaterial>(loader,
@@ -52,6 +57,8 @@ public sealed class ShaderInputBlockTests
             new Dictionary<AssetId<TextureAsset>, Texture>());
         Assert.Same(shader, instance.Shader);
         Assert.Equal(0.37f, instance.Roughness);
+        Assert.Equal(0.4f, instance.NormalScale);
+        Assert.Equal(0.6f, instance.OcclusionStrength);
 
         Assert.True(shader.TryGetSlangEntry(0, "ClusterShade", SlangStage.Compute, out EntryPointReflection clusterEntry));
         Assert.True(shader.TryGetSlangEntry(0, "ConsumerShade", SlangStage.Compute, out EntryPointReflection consumerEntry));
@@ -127,7 +134,14 @@ public sealed class ShaderInputBlockTests
             [numthreads(1, 1, 1)]
             void ConsumerShade(uniform StandardMaterial material, uint3 thread : SV_DispatchThreadID)
             {
-                Result[thread.x] = material.AlbedoMap.Load(int3(0, 0, 0)).x * Scalars[thread.x].Roughness;
+                StandardScalars scalars = Scalars[thread.x];
+                float occlusion = scalars.UseOcclusionMap
+                    ? material.OcclusionMap.Load(int3(0, 0, 0)).r * scalars.OcclusionStrength : 1.0;
+                float emission = scalars.UseEmissiveMap
+                    ? material.EmissiveMap.Load(int3(0, 0, 0)).r * scalars.EmissiveFactor.r : 0.0;
+                Result[thread.x] = material.AlbedoMap.Load(int3(0, 0, 0)).x * scalars.Roughness * scalars.NormalScale
+                    + occlusion + emission + (scalars.DecodeAlbedoSrgb ? 1.0 : 0.0)
+                    + (scalars.DecodeEmissiveSrgb ? 1.0 : 0.0);
             }
             """));
         IModule? entries = session.LoadModuleFromSource("consumer_material", "consumer_material.slang", source, out ISlangBlob? diagnostics);

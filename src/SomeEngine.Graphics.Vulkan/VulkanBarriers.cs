@@ -385,23 +385,26 @@ internal sealed unsafe partial class VulkanBackend
         PipelineStageFlags2 result = 0;
         Add(PipelineSync.Draw, PipelineStageFlags2.AllGraphicsBit);
         Add(PipelineSync.IndexInput, PipelineStageFlags2.IndexInputBit);
-        Add(PipelineSync.VertexShading, PipelineStageFlags2.VertexShaderBit);
+        // Vertex shading includes fixed-function vertex-buffer reads.
+        Add(PipelineSync.VertexShading, PipelineStageFlags2.VertexShaderBit | PipelineStageFlags2.VertexAttributeInputBit);
         Add(PipelineSync.PixelShading, PipelineStageFlags2.FragmentShaderBit);
         Add(PipelineSync.DepthStencil, PipelineStageFlags2.EarlyFragmentTestsBit | PipelineStageFlags2.LateFragmentTestsBit);
         Add(PipelineSync.RenderTarget, PipelineStageFlags2.ColorAttachmentOutputBit);
         Add(PipelineSync.ComputeShading, PipelineStageFlags2.ComputeShaderBit);
         Add(PipelineSync.RayTracing, PipelineStageFlags2.RayTracingShaderBitKhr);
-        Add(PipelineSync.Copy, PipelineStageFlags2.CopyBit);
+        // ClearBuffer uses vkCmdFillBuffer within the RHI copy scope.
+        Add(PipelineSync.Copy, PipelineStageFlags2.CopyBit | PipelineStageFlags2.ClearBit);
         Add(PipelineSync.Resolve, PipelineStageFlags2.ResolveBit);
         Add(PipelineSync.ExecuteIndirect, PipelineStageFlags2.DrawIndirectBit);
         Add(PipelineSync.Predication, PipelineStageFlags2.ConditionalRenderingBitExt);
         Add(PipelineSync.AllShading, device.NonPixelShadingStages | PipelineStageFlags2.FragmentShaderBit);
         Add(PipelineSync.NonPixelShading, device.NonPixelShadingStages);
         Add(PipelineSync.Clear, PipelineStageFlags2.ClearBit);
-        Add(PipelineSync.AccelerationStructureCopy, PipelineStageFlags2.AccelerationStructureCopyBitKhr);
+        // AS copies use the build stage with the enabled acceleration-structure features.
+        Add(PipelineSync.AccelerationStructureCopy, PipelineStageFlags2.AccelerationStructureBuildBitKhr);
         Add(PipelineSync.EmitAccelerationStructurePostBuildInfo, PipelineStageFlags2.AccelerationStructureBuildBitKhr);
         Add(PipelineSync.BuildRayTracingAccelerationStructure, PipelineStageFlags2.AccelerationStructureBuildBitKhr);
-        Add(PipelineSync.CopyRayTracingAccelerationStructure, PipelineStageFlags2.AccelerationStructureCopyBitKhr);
+        Add(PipelineSync.CopyRayTracingAccelerationStructure, PipelineStageFlags2.AccelerationStructureBuildBitKhr);
         return result == 0 ? PipelineStageFlags2.AllCommandsBit : result;
 
         void Add(PipelineSync source, PipelineStageFlags2 destination)
