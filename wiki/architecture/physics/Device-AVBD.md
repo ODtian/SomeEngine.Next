@@ -64,8 +64,11 @@ Jacobian、惯性块与响应共同投影到该子空间。
 
 项目完成当前点、参数和成员输入后，可先调度同一 `DeviceConstraintGraph.Build()`，
 再选择 `Iterate(iterations, buildGraph: false)` 复用该次图结果。
+该继续迭代入口同时复用本次初始化与建图已经捕获的参数成员和数值行索引；
+约束输入及选择在相应初始化、建图阶段交付。默认继续迭代入口沿当前输入捕获并建图。
 `DeviceXpbdSolver.Initialize(buildGraph: false)` 与同名迭代重载使用同一完成依赖；
 原默认入口继续在自身求解链构建图。AVBD/XPBD 交替时各阶段共享当前主体、数值历史与图。
+接触反弹的显式图复用重载同样沿其初始化阶段捕获的响应行执行。
 主体、约束及并行图派发复用 `DevicePhysicsDispatch.CreateGroups` 的 X/Y 范围；
 项目 Shader 以 `devicePhysicsThreadIndex` 或 `devicePhysicsGroupIndex` 读取对应线性索引。
 固定主体与方程绑定的项目可在首次 `Initialize(DeviceInputTransfer.Upload)` 或 `Solve(Upload)`
