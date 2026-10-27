@@ -1,3 +1,4 @@
+using System.Numerics;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Job;
 
@@ -16,7 +17,10 @@ internal readonly partial struct UpdateBodyVelocityJob(float duration) : IJobEnt
     public void Execute(in BodyPose pose, ref BodyVelocity velocity, in BodyMass mass, in BodyStepState state)
     {
         if (mass.Motion == BodyMotion.Static) return;
-        velocity.Linear = (pose.GetCenterOfMass(in mass) - state.StartCenterOfMass) / duration;
+        Vector3 center = pose.GetCenterOfMass(in mass);
+        velocity.Linear = mass.Motion == BodyMotion.Dynamic
+            ? velocity.Linear + (center - state.PredictedCenterOfMass) / duration
+            : (center - state.StartCenterOfMass) / duration;
         velocity.Angular = BodyRotation.Velocity(state.StartRotation, pose.Rotation, duration);
     }
 }
