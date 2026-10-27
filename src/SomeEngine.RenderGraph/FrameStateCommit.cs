@@ -5,6 +5,10 @@ internal sealed partial class FrameExecutor
     private readonly List<BufferStateValue> _bufferBoundaryScratch = [];
     private readonly List<TextureStateValue> _textureBoundaryScratch = [];
     private readonly List<BufferStateValue> _bufferContentScratch = [];
+    private readonly List<BufferRangeUpdate> _bufferRangeUpdates = [];
+    private readonly List<BufferStateValue> _bufferRangeBoundaryScratch = [];
+    private BufferContentScope[] _bufferRangeContentScopes = [];
+    private bool[] _bufferRangeContentScopeSet = [];
     private readonly List<TextureStateValue> _textureContentScratch = [];
     private readonly List<TextureStateValue> _textureWriteScratch = [];
     private List<BufferStateUpdate>[] _submissionBufferUpdates = [];
@@ -49,6 +53,7 @@ internal sealed partial class FrameExecutor
     }
 
     private readonly record struct BufferStateValue(BufferBoundaryState State, int CompletionSource);
+    private readonly record struct BufferRangeUpdate(BufferBoundaryState State, bool ReadContentScope);
     private readonly record struct BufferStateStep(int Pass, int[] Accesses,
         PipelineSync Sync, ResourceAccess Access, bool Writes, bool Acquired, bool MergeableWrites);
 
@@ -508,58 +513,61 @@ internal sealed partial class FrameExecutor
             previousQueue = queue;
             previousMergeableWrites = step.MergeableWrites;
             bool retainDistinctQueueReaders = !step.Writes && !step.Acquired;
-            BufferBoundaryState endpoint = default;
-            foreach (int index in step.Accesses)
+            if (!TryUpdateDisjointBufferRanges(step, sync, queue, retainDistinctQueueReaders,
+                out BufferBoundaryState endpoint))
             {
-                FrameResourceAccess access = _accesses[index];
-                ResourceContentState contents = access.ResultContents ?? access.Mode switch
+                foreach (int index in step.Accesses)
                 {
-                    GraphAccessMode.Read or GraphAccessMode.ReadWrite => ResourceContentState.Defined,
-                    GraphAccessMode.Write when access.Coverage == WriteCoverage.Complete => ResourceContentState.Defined,
-                    _ => ResourceContentState.Undefined,
-                };
-                bool preserveContents = access.Mode == GraphAccessMode.Write &&
-                    access.Coverage == WriteCoverage.Partial && !access.ResultContents.HasValue;
-                foreach (BufferRange range in access.BufferRanges)
-                {
-                    ReadOnlySpan<BufferStateValue> states = CollectionsMarshal.AsSpan(_bufferBoundaryScratch);
-                    BufferContentScope contentScope = contents == ResourceContentState.Defined
-                        ? access.ResultContents.HasValue
-                            ? access.BufferContentScope
-                            : access.Mode switch
-                            {
-                                GraphAccessMode.Read => FindBufferContentScope(states, range),
-                                GraphAccessMode.ReadWrite => access.BufferContentScope,
-                                GraphAccessMode.Write when access.Coverage == WriteCoverage.Complete => BufferContentScope.FullRange,
-                                _ => FindBufferContentScope(states, range),
-                            }
-                        : BufferContentScope.FullRange;
-                    endpoint = new BufferBoundaryState(range, sync, step.Access,
-                        contents, queue, null, contentScope);
-                    if (preserveContents)
+                    FrameResourceAccess access = _accesses[index];
+                    ResourceContentState contents = access.ResultContents ?? access.Mode switch
                     {
-                        _bufferContentScratch.Clear();
-                        _bufferContentScratch.AddRange(_bufferBoundaryScratch);
-                    }
-                    UpdateBufferBoundaryStates(_bufferBoundaryScratch, new(endpoint, -1), retainDistinctQueueReaders);
-                    if (preserveContents)
+                        GraphAccessMode.Read or GraphAccessMode.ReadWrite => ResourceContentState.Defined,
+                        GraphAccessMode.Write when access.Coverage == WriteCoverage.Complete => ResourceContentState.Defined,
+                        _ => ResourceContentState.Undefined,
+                    };
+                    bool preserveContents = access.Mode == GraphAccessMode.Write &&
+                        access.Coverage == WriteCoverage.Partial && !access.ResultContents.HasValue;
+                    foreach (BufferRange range in access.BufferRanges)
                     {
-                        // A partial write changes synchronization for its declared range,
-                        // but preserves the contents of each previously defined subrange.
-                        foreach (BufferStateValue previous in _bufferContentScratch)
+                        ReadOnlySpan<BufferStateValue> states = CollectionsMarshal.AsSpan(_bufferBoundaryScratch);
+                        BufferContentScope contentScope = contents == ResourceContentState.Defined
+                            ? access.ResultContents.HasValue
+                                ? access.BufferContentScope
+                                : access.Mode switch
+                                {
+                                    GraphAccessMode.Read => FindBufferContentScope(states, range),
+                                    GraphAccessMode.ReadWrite => access.BufferContentScope,
+                                    GraphAccessMode.Write when access.Coverage == WriteCoverage.Complete => BufferContentScope.FullRange,
+                                    _ => FindBufferContentScope(states, range),
+                                }
+                            : BufferContentScope.FullRange;
+                        endpoint = new BufferBoundaryState(range, sync, step.Access,
+                            contents, queue, null, contentScope);
+                        if (preserveContents)
                         {
-                            if (previous.State.Contents != ResourceContentState.Defined) continue;
-                            ulong start = Math.Max(previous.State.Range.Offset, range.Offset);
-                            ulong end = Math.Min(previous.State.Range.Offset + previous.State.Range.Size,
-                                range.Offset + range.Size);
-                            if (start >= end) continue;
-                            UpdateBufferBoundaryStates(_bufferBoundaryScratch, new(endpoint with
-                            {
-                                Range = new(start, end - start), Contents = previous.State.Contents,
-                                ContentScope = previous.State.ContentScope,
-                            }, -1), reader: false);
+                            _bufferContentScratch.Clear();
+                            _bufferContentScratch.AddRange(_bufferBoundaryScratch);
                         }
-                        _bufferContentScratch.Clear();
+                        UpdateBufferBoundaryStates(_bufferBoundaryScratch, new(endpoint, -1), retainDistinctQueueReaders);
+                        if (preserveContents)
+                        {
+                            // A partial write changes synchronization for its declared range,
+                            // but preserves the contents of each previously defined subrange.
+                            foreach (BufferStateValue previous in _bufferContentScratch)
+                            {
+                                if (previous.State.Contents != ResourceContentState.Defined) continue;
+                                ulong start = Math.Max(previous.State.Range.Offset, range.Offset);
+                                ulong end = Math.Min(previous.State.Range.Offset + previous.State.Range.Size,
+                                    range.Offset + range.Size);
+                                if (start >= end) continue;
+                                UpdateBufferBoundaryStates(_bufferBoundaryScratch, new(endpoint with
+                                {
+                                    Range = new(start, end - start), Contents = previous.State.Contents,
+                                    ContentScope = previous.State.ContentScope,
+                                }, -1), reader: false);
+                            }
+                            _bufferContentScratch.Clear();
+                        }
                     }
                 }
             }
@@ -962,6 +970,101 @@ internal sealed partial class FrameExecutor
             DevelopmentCheck.Require(value.State.Contents == contents,
                 "RayTracingShaderTable reader boundary states disagree about contents.");
         return contents;
+    }
+
+    private bool TryUpdateDisjointBufferRanges(in BufferStateStep step, PipelineSync sync,
+        Queue? queue, bool reader, out BufferBoundaryState endpoint)
+    {
+        endpoint = default;
+        if (step.Accesses.Length == 1 && _accesses[step.Accesses[0]].BufferRanges.Count <= 1)
+            return false;
+        _bufferRangeUpdates.Clear();
+        foreach (int index in step.Accesses)
+        {
+            FrameResourceAccess access = _accesses[index];
+            if (access.Mode == GraphAccessMode.Write && access.Coverage == WriteCoverage.Partial &&
+                !access.ResultContents.HasValue) return false;
+            ResourceContentState contents = access.ResultContents ?? ResourceContentState.Defined;
+            bool readContentScope = contents == ResourceContentState.Defined &&
+                !access.ResultContents.HasValue && access.Mode == GraphAccessMode.Read;
+            BufferContentScope contentScope = contents == ResourceContentState.Defined &&
+                (access.ResultContents.HasValue || access.Mode == GraphAccessMode.ReadWrite)
+                ? access.BufferContentScope : BufferContentScope.FullRange;
+            foreach (BufferRange range in access.BufferRanges)
+                _bufferRangeUpdates.Add(new(new(range, sync, step.Access, contents, queue, null, contentScope),
+                    readContentScope));
+        }
+        if (_bufferRangeUpdates.Count <= 1) return false;
+        _bufferRangeUpdates.Sort(static (left, right) => left.State.Range.Offset.CompareTo(right.State.Range.Offset));
+        for (int index = 1; index < _bufferRangeUpdates.Count; index++)
+        {
+            BufferRange previous = _bufferRangeUpdates[index - 1].State.Range;
+            if (checked(previous.Offset + previous.Size) > _bufferRangeUpdates[index].State.Range.Offset)
+                return false;
+        }
+
+        EnsureCapacity(ref _bufferRangeContentScopes, _bufferRangeUpdates.Count);
+        EnsureCapacity(ref _bufferRangeContentScopeSet, _bufferRangeUpdates.Count);
+        for (int index = 0; index < _bufferRangeUpdates.Count; index++)
+        {
+            _bufferRangeContentScopes[index] = _bufferRangeUpdates[index].State.ContentScope;
+            _bufferRangeContentScopeSet[index] = !_bufferRangeUpdates[index].ReadContentScope;
+        }
+        _bufferRangeBoundaryScratch.Clear();
+        // Disjoint accesses in one pass share synchronization and a completion. Cut
+        // their ranges out of the previous boundaries in one sweep, then add each result.
+        foreach (BufferStateValue value in _bufferBoundaryScratch)
+        {
+            BufferBoundaryState state = value.State;
+            ulong start = state.Range.Offset;
+            ulong end = checked(start + state.Range.Size);
+            bool keepReader = reader && !ResourceAccessRules.Writes(state.Access) &&
+                state.Queue is not null && queue is not null && !ReferenceEquals(state.Queue, queue);
+            ulong remainingStart = start;
+            for (int index = FirstBufferRangeEndingAfter(start); index < _bufferRangeUpdates.Count; index++)
+            {
+                BufferRange range = _bufferRangeUpdates[index].State.Range;
+                if (range.Offset >= end) break;
+                ulong rangeEnd = checked(range.Offset + range.Size);
+                if (!_bufferRangeContentScopeSet[index] && start <= range.Offset && end >= rangeEnd)
+                {
+                    _bufferRangeContentScopes[index] = state.ContentScope;
+                    _bufferRangeContentScopeSet[index] = true;
+                }
+                if (keepReader) continue;
+                if (remainingStart < range.Offset)
+                    _bufferRangeBoundaryScratch.Add(value with
+                        { State = state with { Range = new(remainingStart, range.Offset - remainingStart) } });
+                remainingStart = Math.Max(remainingStart, rangeEnd);
+            }
+            if (keepReader) _bufferRangeBoundaryScratch.Add(value);
+            else if (remainingStart < end)
+                _bufferRangeBoundaryScratch.Add(value with
+                    { State = state with { Range = new(remainingStart, end - remainingStart) } });
+        }
+        for (int index = 0; index < _bufferRangeUpdates.Count; index++)
+        {
+            endpoint = _bufferRangeUpdates[index].State with { ContentScope = _bufferRangeContentScopes[index] };
+            _bufferRangeBoundaryScratch.Add(new(endpoint, -1));
+        }
+        _bufferBoundaryScratch.Clear();
+        _bufferBoundaryScratch.AddRange(_bufferRangeBoundaryScratch);
+        _bufferRangeBoundaryScratch.Clear();
+        _bufferRangeUpdates.Clear();
+        return true;
+    }
+
+    private int FirstBufferRangeEndingAfter(ulong offset)
+    {
+        int first = 0, last = _bufferRangeUpdates.Count;
+        while (first < last)
+        {
+            int middle = first + (last - first) / 2;
+            BufferRange range = _bufferRangeUpdates[middle].State.Range;
+            if (checked(range.Offset + range.Size) <= offset) first = middle + 1;
+            else last = middle;
+        }
+        return first;
     }
 
     private static void UpdateBufferBoundaryStates(
