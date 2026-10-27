@@ -25,11 +25,28 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates, Q
     private readonly List<(Entity Entity, Size Size)> _canvases = new();
     private readonly List<Subtree> _subtrees = new();
     private readonly List<(Entity, ushort)> _unusedInputKeys = new();
+    private readonly DependencyChanges _dependencyChanges = new();
     private bool _parallelMeasurement;
     private ulong _frame;
     private uint _inputVersion;
+    private uint _rectangleVersion;
 
-    internal void BeginUpdate() => _frame++;
+    internal void BeginUpdate()
+    {
+        _frame++;
+        _dependencyChanges.Record(World, _frame);
+        if (_nodes.Count == 0) return;
+        // Content callbacks run after this shared read; their writes are checked again per node.
+        var data = this;
+        World.ExecuteQuery(nodeReadQuery, ref data, static (query, ref read) =>
+        {
+            uint viewVersion = read.World.ComponentWriteVersion<ViewType>();
+            uint cacheVersion = read.World.ComponentWriteVersion<LayoutCache>();
+            foreach (NodeLayout node in read._nodes.Values)
+                if (node.TreeFrame == 0 || node.ViewTypeVersion != viewVersion || node.LayoutCacheVersion != cacheVersion)
+                    read.ReadNodeState(query, node, viewVersion, cacheVersion);
+        });
+    }
 
     internal void EndUpdate()
     {
@@ -119,10 +136,12 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates, Q
             foreach (NodeLayout node in _order)
                 if (node.Parent == node.Canvas) AddSubtree(node, default, node.Canvas, true);
             if (coordinatesChanged) ChunkJobs.Run(new RectangleJob(this), _subtrees.Count, parallel, chunkSize: 1);
-            foreach (NodeLayout node in _order) WriteRectangle(node.Entity, node.Rectangle);
+            if (coordinatesChanged || World.ComponentWriteVersion<LayoutRect>() != _rectangleVersion)
+                foreach (NodeLayout node in _order) WriteRectangle(node.Entity, node.Rectangle);
             CompleteCacheReads();
             foreach (var canvas in _canvases)
                 WriteRectangle(canvas.Entity, new Rect(0, 0, canvas.Size.Width, canvas.Size.Height));
+            _rectangleVersion = World.ComponentWriteVersion<LayoutRect>();
             foreach (ILayoutDataUpdate dataUpdate in dataUpdates)
                 dataUpdate.Complete(World);
         }
@@ -144,9 +163,10 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates, Q
             node = new NodeLayout(entity, dataUpdates.Length);
             _nodes.Add(entity, node);
         }
-        ushort viewType = World.Read<ViewType>(entity).Id;
-        bool missingMeasurement = !node.HasMeasurement || !World.Has<LayoutCache>(entity) ||
-            World.Read<LayoutCache>(entity).InputVersion != node.InputVersion;
+        ReadFixedNodeState(node);
+        ushort viewType = node.SourceViewType;
+        bool missingMeasurement = !node.HasMeasurement || !node.CacheExists ||
+            node.Cache.InputVersion != node.InputVersion;
         bool readsChanged = HasReadChanges(node);
         foreach (ILayoutDataUpdate dataUpdate in dataUpdates)
             readsChanged |= dataUpdate.HasChanges(World, entity);
@@ -181,32 +201,42 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates, Q
 
     private void ReadFixedNodeState(NodeLayout node)
     {
-        var state = (World, Node: node);
-        World.ExecuteQuery(nodeReadQuery, ref state, static (query, ref read) =>
+        node.CacheWritten = false;
+        uint viewVersion = World.ComponentWriteVersion<ViewType>();
+        uint cacheVersion = World.ComponentWriteVersion<LayoutCache>();
+        if (node.TreeFrame != 0 && node.ViewTypeVersion == viewVersion && node.LayoutCacheVersion == cacheVersion)
+            return;
+        var read = (Data: this, Node: node, ViewVersion: viewVersion, CacheVersion: cacheVersion);
+        World.ExecuteQuery(nodeReadQuery, ref read, static (query, ref values) =>
+            values.Data.ReadNodeState(query, values.Node, values.ViewVersion, values.CacheVersion));
+    }
+
+    private void ReadNodeState(QueryCursor query, NodeLayout node, uint viewVersion, uint cacheVersion)
+    {
+        if (!query.TryGetRow(node.Entity, out QueryRow row))
         {
-            NodeLayout node = read.Node;
-            if (!query.TryGetRow(node.Entity, out QueryRow row))
-            {
-                node.Measurable = false;
-                node.CacheWritten = false;
-                node.CacheExists = false;
-                node.CacheVersion = 0;
-                node.HasMeasurement = false;
-                return;
-            }
+            node.Measurable = false;
+            node.CacheExists = false;
+            node.CacheVersion = 0;
+            node.HasMeasurement = false;
+        }
+        else
+        {
             node.Measurable = row.TryRead<ViewType>(out ViewType view) && ViewTypes.HasMeasure(view.Id);
-            node.CacheWritten = false;
+            node.SourceViewType = view.Id;
             node.CacheExists = row.Has<LayoutCache>();
-            node.CacheVersion = node.CacheExists ? read.World.WriteVersion<LayoutCache>(node.Entity) : 0;
+            node.CacheVersion = node.CacheExists ? World.WriteVersion<LayoutCache>(node.Entity) : 0;
             if (node.CacheExists) node.Cache = row.Read<LayoutCache>();
             else node.HasMeasurement = false;
-        });
+        }
+        node.ViewTypeVersion = viewVersion;
+        node.LayoutCacheVersion = cacheVersion;
     }
 
     private bool HasReadChanges(NodeLayout node)
     {
         foreach (Dependency read in node.Reads)
-            if (DependencyChanges.HasChanges(World, node.Entity, read))
+            if (_dependencyChanges.HasChanges(World, node.Entity, read, recheck: true))
                 return true;
         return false;
     }
@@ -667,6 +697,9 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates, Q
         internal Entity Parent;
         internal Entity Canvas;
         internal ushort ViewType;
+        internal ushort SourceViewType;
+        internal uint ViewTypeVersion;
+        internal uint LayoutCacheVersion;
         internal Vector2 Position;
         internal Vector2 CanvasPosition;
         internal Size ContentSize;

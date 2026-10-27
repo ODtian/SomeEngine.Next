@@ -48,11 +48,13 @@ internal sealed class BuildQueue
             _closed = false;
     }
 
-    internal bool HasParameterChanges(World world, Entity entity) =>
+    internal bool HasParameterChanges(World world, Entity entity, ushort viewType,
+        DependencyChanges changes) =>
         _builds.TryGetValue(entity, out Scope.ScopeData? data)
             ? data.ParameterVersion is uint version &&
+                changes.HasComponentChanges(world, data.ParameterComponent, recheck: true) &&
                 world.ComponentDataWriteVersion(entity, data.ParameterComponent) != version
-            : ViewTypes.HasParameterChanges(world, entity);
+            : ViewTypes.HasParameterChanges(world, entity, viewType, changes);
 
     internal void Cancel(Entity entity, bool restore)
     {
@@ -92,7 +94,8 @@ internal sealed class BuildQueue
     {
         foreach (Scope.ScopeData data in _builds.Values)
             if (!world.IsAlive(data.Entity) || world.Read<ViewType>(data.Entity).RebuildRequired ||
-                HasParameterChanges(world, data.Entity) || changes.HasChanges(world, data.Entity, recheck: true))
+                HasParameterChanges(world, data.Entity, world.Read<ViewType>(data.Entity).Id, changes) ||
+                changes.HasChanges(world, data.Entity, recheck: true))
                 _changedBuilds.Add(data);
         foreach (Scope.ScopeData data in _changedBuilds)
         {
