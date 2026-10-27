@@ -51,15 +51,18 @@ public sealed partial class PhysicsSceneExample : IApplicationGeometryFeature
         if (settings.JointBounds.Levels > 0 && settings.JointBoundsPerJoint == 0)
             settings = settings with { JointBoundsPerJoint = Math.Max(1, data.Joints.Length - 1) };
         int bodyCount = data.Bodies.Length;
-        var gridSettings = new DeviceGridSettings(1, 16);
-        var capacity = new DeviceGridCapacity(bodyCount, bodyCount * 8, bodyCount * 16 + 1, bodyCount * 32, 1);
-        int contacts = bodyCount * 32;
+        bool silo = _siloParticles > 0;
+        var gridSettings = new DeviceGridSettings(silo ? .5f : 1, 16);
+        var capacity = new DeviceGridCapacity(bodyCount, bodyCount * 8, bodyCount * 16 + 1,
+            bodyCount * (silo ? 16 : 32), silo ? 6 : 1);
+        int contacts = silo ? Math.Max(128, _siloParticles * 12 + PhysicsSiloScenes.StaticBodies * 4) : bodyCount * 32;
         _workload["Device"] = "GPU";
         _workload["Adapter"] = _device!.Adapter.Name;
         _workload["Driver"] = _device.Adapter.DriverVersion;
         _workload["DedicatedVideoMemoryBytes"] = _device.Adapter.DedicatedVideoMemory;
         _workload["BroadPhase"] = "Hierarchical grid";
-        _workload["NarrowPhase"] = "DeviceConvexCollision<DeviceBox, DeviceBox>";
+        _workload["NarrowPhase"] = silo ? "Sphere, Box and Hull: six concrete bidirectional bins"
+            : "DeviceConvexCollision<DeviceBox, DeviceBox>";
         _workload["BodiesPerContact"] = 2;
         _workload["GeometryInputsFixed"] = settings.GeometryInputsFixed;
         _workload["EquationBindingsFixed"] = settings.EquationBindingsFixed;
@@ -78,9 +81,29 @@ public sealed partial class PhysicsSceneExample : IApplicationGeometryFeature
             ["Bodies"] = capacity.Bodies, ["Cells"] = capacity.Cells, ["Buckets"] = capacity.Buckets,
             ["Pairs"] = capacity.Pairs, ["Bins"] = capacity.Bins, ["ContactPoints"] = contacts,
         };
+        int[] readback = silo && bodyCount > 256
+            ? [.. Enumerable.Range(0, PhysicsSiloScenes.StaticBodies + 3), bodyCount - 3, bodyCount - 2, bodyCount - 1]
+            : Enumerable.Range(0, bodyCount).ToArray();
+        var events = new CountScenePhysicsEvents(_events);
+        JobResourceAccess[] eventAccesses = [JobResourceAccess.Write(WorldJobs.GetScheduler(world).GetResourceToken(_events))];
+        string shaders = Path.Combine(AppContext.BaseDirectory, "PhysicsShaders");
+        if (silo)
+        {
+            _workload["ShapeDistribution"] = new JsonObject
+            {
+                ["Sphere"] = (_siloParticles + 2) / 3, ["Box"] = (_siloParticles + 1) / 3,
+                ["Hull"] = _siloParticles / 3, ["Radius"] = PhysicsSiloScenes.Radius,
+                ["HullVertices"] = PhysicsSiloScenes.Hull.Vertices.Length,
+                ["HullFaces"] = PhysicsSiloScenes.Hull.Faces.Length,
+                ["StaticBoxes"] = PhysicsSiloScenes.StaticBodies,
+            };
+            _workload["ReadbackBodyIndices"] = new JsonArray(readback.Select(index => (JsonNode?)JsonValue.Create(index)).ToArray());
+            _workload["CompletedEventKinds"] = "Sleep and Wake";
+            return PhysicsScenes.CreateDevice<SceneSiloGeometry, DeviceSiloGeometryInputs, CountScenePhysicsEvents>(
+                world, description, data, default, _backend!, _device!, settings, gridSettings, capacity, contacts,
+                settings.ContactDistance, readback, shaders, events, eventAccesses, contactEvents: false);
+        }
         return PhysicsScenes.CreateDevice(world, description, data, _backend!, _device!, settings, gridSettings,
-            capacity, contacts, settings.ContactDistance, Enumerable.Range(0, bodyCount).ToArray(),
-            Path.Combine(AppContext.BaseDirectory, "PhysicsShaders"), new CountScenePhysicsEvents(_events),
-            [JobResourceAccess.Write(WorldJobs.GetScheduler(world).GetResourceToken(_events))]);
+            capacity, contacts, settings.ContactDistance, readback, shaders, events, eventAccesses);
     }
 }
