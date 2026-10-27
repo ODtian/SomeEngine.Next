@@ -222,3 +222,9 @@ Body 位置与速度沿共同 `DeviceBodyResults` 返回原实体。
 该具体组合的组初始化与组更新入口分别调用 `initializeDeviceContactSupports` 和 `updateDeviceContactSupports`。
 这两个入口接受具体 `IDeviceBodySelection`：传入 `DeviceAwakeBodies` 时，足迹重建、载荷交接和辅助力保留
 仅更新活动参与分量，休眠接触沿原数值表示保留其支撑力。原单参数入口选择全部已绑定主体。
+
+`IDeviceContactSupportWork` 提供当前支撑工作中的主体、接触及派生顺序范围。
+原入口使用全部绑定范围，场景的 `DeviceSceneSupportGroups` 则沿当帧
+`ConstraintGraphParents` 统计和压缩各动态连通分量的引用，分别初始化及交接载荷。
+分组 buffer 保存原主体和接触索引、计数及前缀，数值继续保存在原支撑表示中。
+每个足迹沿凸包边界和三角扇求仿射权重，盒体共享固定地面时各动态岛独立推进。
