@@ -59,6 +59,38 @@ public sealed class PhysicsSceneMomentumTests
         Assert.InRange(maximumEnergy, 0, initialEnergy + .5);
     }
 
+    [Theory]
+    [InlineData("3d-oblique-collisions", 180)]
+    [InlineData("3d-release-chain", 211)]
+    [InlineData("3d-branched-chain", 211)]
+    public void OriginalSceneBodiesKeepTheirPoseAndVelocityFinite(string sceneId, int steps)
+    {
+        using var scheduler = new Scheduler(new() { WorkerCount = 2 });
+        using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+        PhysicsSceneDescription description = PhysicsScenes.All.Single(scene => scene.Id == sceneId);
+        using var scene = PhysicsSceneExample.CreateCpu(description).CreateSimulation(world);
+
+        for (int number = 0; number < steps; number++)
+        {
+            scene.AdvanceTime(scene.StepSeconds * (number == 0 ? 1.5 : 1));
+            PhysicsStepResult result = scene.CompleteForRead();
+            foreach (var body in scene.Bodies.Span)
+            {
+                BodyPose pose = world.Read<BodyPose>(body);
+                BodyVelocity velocity = world.Read<BodyVelocity>(body);
+                Assert.True(IsFinite(pose.Position) && IsFinite(pose.Rotation)
+                    && IsFinite(velocity.Linear) && IsFinite(velocity.Angular),
+                    $"Step {result.Number}, body {body.Index}: position={pose.Position}, rotation={pose.Rotation}, linear={velocity.Linear}, angular={velocity.Angular}");
+            }
+        }
+    }
+
+    private static bool IsFinite(Vector3 value) =>
+        float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
+
+    private static bool IsFinite(Quaternion value) =>
+        float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z) && float.IsFinite(value.W);
+
     private static double ReadEnergy(World world, PhysicsSceneSimulation scene)
     {
         double energy = 0;
