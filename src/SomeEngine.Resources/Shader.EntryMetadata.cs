@@ -30,7 +30,7 @@ public partial class Shader
         var values = new IMetadata[1];
         JobHandle completed = await scheduler.ScheduleAsync(new ReadEntryMetadata(this, targetIndex, entryIndex, values),
             new() { Category = ShaderCodeJobs.GetCategory(scheduler) }).ConfigureAwait(false);
-        await completed.WaitAsync().ConfigureAwait(false);
+        await completed.CompleteAsync().ConfigureAwait(false);
         return values[0];
     }
 

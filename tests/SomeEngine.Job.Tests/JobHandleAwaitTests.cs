@@ -2,6 +2,50 @@ namespace SomeEngine.Job.Tests;
 
 public sealed class JobHandleAwaitTests
 {
+    [Theory]
+    [InlineData(0)]
+    [InlineData(2)]
+    public async Task AsyncCompletionIncludesTheJobAndItsChild(int workerCount)
+    {
+        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = workerCount });
+        var number = new NumberData();
+        JobHandle work = scheduler.Schedule(new ScheduleNumber(scheduler, number));
+
+        await work.CompleteAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.Equal(42, number.Value);
+    }
+
+    [Fact]
+    public async Task AsyncCompletionFromAZeroWorkerCallbackContinuesThroughItsParent()
+    {
+        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
+        var number = new NumberData();
+        var result = new Task[1];
+        JobHandle parent = scheduler.Schedule(new CompleteChild(scheduler, number, result));
+
+        parent.Complete();
+        await result[0].WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.Equal(42, number.Value);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(2)]
+    public async Task AsyncCompletionPreservesTheJobFailure(int workerCount)
+    {
+        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = workerCount });
+        using var release = new ManualResetEventSlim(true);
+        var error = new ApplicationException();
+        JobHandle work = scheduler.Schedule(new ThrowErrorJob(error, release));
+
+        Task result = work.CompleteAsync().AsTask();
+
+        Assert.Same(error, await Assert.ThrowsAsync<ApplicationException>(
+            () => result.WaitAsync(TimeSpan.FromSeconds(10))));
+    }
+
     [Fact]
     public async Task CompletedJobCanBeAwaitedToReadItsResult()
     {
@@ -150,6 +194,16 @@ public sealed class JobHandleAwaitTests
     {
         public int Value;
         public int ThreadId;
+    }
+
+    private readonly record struct ScheduleNumber(Scheduler Scheduler, NumberData Number) : IJob
+    {
+        public void Execute() => Scheduler.Schedule(new WriteNumberJob(Number, 42));
+    }
+
+    private readonly record struct CompleteChild(Scheduler Scheduler, NumberData Number, Task[] Result) : IJob
+    {
+        public void Execute() => Result[0] = Scheduler.Schedule(new WriteNumberJob(Number, 42)).CompleteAsync().AsTask();
     }
 
     private readonly record struct WriteNumberJob(NumberData Number, int Value) : IJob

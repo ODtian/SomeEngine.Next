@@ -13,14 +13,16 @@ public sealed class GltfTextureImportTests
 {
     private const string WhitePng = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a4x8AAAAASUVORK5CYII=";
 
-    [Fact]
-    public async Task IndependentTexturesRetainPixelsAfterImportAndReopen()
+    [Theory]
+    [InlineData(0)]
+    [InlineData(2)]
+    public async Task IndependentTexturesRetainPixelsAfterImportAndReopen(int workerCount)
     {
         string directory = Directory.CreateTempSubdirectory("texture-import-").FullName;
         try
         {
             ModelRoot model = await ReadModelAsync(directory, Convert.FromBase64String(WhitePng));
-            using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+            using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = workerCount });
             var result = new ImportData();
             scheduler.Schedule(new CreateImport(result)).Complete();
             await using ImportContext context = result.Context!;
@@ -29,7 +31,8 @@ public sealed class GltfTextureImportTests
             Assert.Same(context.DecodingCategory, other.DecodingCategory);
             RegisterTextures(context, model);
             TextureAsset[] textures = await Task.WhenAll(model.LogicalTextures.Select(source =>
-                context.GetAssetAsync<SharpGLTF.Schema2.Texture, TextureAsset>(source).AsTask()));
+                context.GetAssetAsync<SharpGLTF.Schema2.Texture, TextureAsset>(source).AsTask()))
+                .WaitAsync(TimeSpan.FromSeconds(10));
             for (int index = 0; index < textures.Length; index++)
             {
                 string saved = Path.Combine(directory, $"texture-{index}.texture.asset");

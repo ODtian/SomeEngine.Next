@@ -1,6 +1,7 @@
 namespace SomeEngine.Graphics.Vulkan.Tests;
 
 using SlangShaderSharp;
+using SomeEngine.Job;
 using Xunit;
 using Xunit.Sdk;
 
@@ -36,7 +37,7 @@ public sealed class VulkanPipelineTests(VulkanTestCompiler shaderCompiler)
         """;
 
     [Fact]
-    public void Slang_spirv_creates_dynamic_rendering_graphics_and_compute_pipelines()
+    public async Task Slang_spirv_creates_dynamic_rendering_graphics_and_compute_pipelines()
     {
         VulkanTestShader shader = shaderCompiler.Compile(
             Source,
@@ -49,7 +50,7 @@ public sealed class VulkanPipelineTests(VulkanTestCompiler shaderCompiler)
         Format[] colors = [Format.R8G8B8A8UNorm];
         BlendAttachmentState[] blend = [new()];
 
-        using Pipeline graphics = backend.CreateGraphicsPipeline(
+        using Pipeline graphics = await backend.CreateGraphicsPipelineAsync(
             device,
             new GraphicsPipelineDesc(
                 shader.SlangCode, shader.Reflection, shader.Entries[0], shader.GetEntryCode(0),
@@ -73,10 +74,30 @@ public sealed class VulkanPipelineTests(VulkanTestCompiler shaderCompiler)
         Assert.Equal(PipelineType.Compute, compute.Type);
     }
 
+    [Fact]
+    public async Task AsyncPipelineCreationCompletesWithZeroWorkers()
+    {
+        VulkanTestShader shader = shaderCompiler.Compile("""
+            [shader("compute")][numthreads(1,1,1)] void computeMain() { }
+            """, ("computeMain", SlangStage.Compute));
+        using IGraphicsBackend backend = VulkanGraphicsBackend.Create();
+        using Device device = backend.CreateDevice(new DeviceDesc(default, [new(QueueType.Graphics)]));
+        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 0 });
+        try
+        {
+            using Pipeline pipeline = await backend.CreateComputePipelineAsync(device,
+                new ComputePipelineDesc(shader.SlangCode, shader.Reflection, shader.Entries[0], shader.GetEntryCode(0)))
+                .WaitAsync(TimeSpan.FromSeconds(10));
+
+            Assert.Equal(PipelineType.Compute, pipeline.Type);
+        }
+        finally { JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 2 }); }
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void Multiple_compute_entries_execute_the_requested_spirv_entry_point(bool requireWave32)
+    public async Task Multiple_compute_entries_execute_the_requested_spirv_entry_point(bool requireWave32)
     {
         const string source = """
             RWStructuredBuffer<uint> Output;
@@ -96,7 +117,7 @@ public sealed class VulkanPipelineTests(VulkanTestCompiler shaderCompiler)
         using IGraphicsBackend backend = VulkanGraphicsBackend.Create();
         DeviceQueueDesc[] queues = [new DeviceQueueDesc(QueueType.Graphics)];
         using Device device = backend.CreateDevice(new DeviceDesc(default, queues));
-        using Pipeline first = backend.CreateComputePipeline(
+        using Pipeline first = await backend.CreateComputePipelineAsync(
             device,
             new ComputePipelineDesc(shader.SlangCode, shader.Reflection, shader.Entries[0], shader.GetEntryCode(0)));
         using Pipeline second = backend.CreateComputePipeline(

@@ -110,18 +110,20 @@ public sealed partial class Scheduler
 
     internal void CategoryExecutionFinished() => _workQueue.CategoryExecutionFinished();
 
+    internal bool IsExecutingCategory(JobCategory category) =>
+        ReferenceEquals(s_executing, this) && JobExecutionContext.IsActive &&
+        ReferenceEquals(s_currentCategory, category);
+
     private CategoryRequest EnterSynchronousCategoryRequest(JobCategory? category)
     {
-        bool inherited = category is not null && ReferenceEquals(s_executing, this) &&
-            JobExecutionContext.IsActive && ReferenceEquals(category, s_currentCategory);
+        bool inherited = category is not null && IsExecutingCategory(category);
         return new CategoryRequest(category, !inherited && StartCategoryRequest(category));
     }
 
     private CategoryExecution EnterCategoryExecution(JobCategory? category)
     {
         JobCategory? previous = s_currentCategory;
-        bool acquire = category is not null && !(ReferenceEquals(s_executing, this) &&
-            JobExecutionContext.IsActive && ReferenceEquals(previous, category));
+        bool acquire = category is not null && !IsExecutingCategory(category);
         if (acquire)
         {
             while (true)

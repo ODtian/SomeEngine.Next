@@ -29,7 +29,10 @@ DeviceBodyState predictDeviceBodyState(DeviceBodyState body, DeviceBodyStep step
 DeviceBodyState updateDeviceBodyVelocityState(DeviceBodyState body, float duration)
 {
     if (body.motion == 0) return body;
-    body.linearVelocity = (bodyCenterOfMass(body) - body.startCenterOfMass) / duration;
+    float3 center=bodyCenterOfMass(body);
+    body.linearVelocity=body.motion==2
+        ?body.linearVelocity+(center-body.predictedCenterOfMass)/duration
+        :(center-body.startCenterOfMass)/duration;
     body.angularVelocity = bodyRotationVelocity(body.startRotation, body.rotation, duration);
     return body;
 }
