@@ -269,6 +269,15 @@ public sealed class ScalarLayout
         internal uint LayoutHash => _layout.LayoutHash;
         internal uint PayloadByteSize => _layout.PayloadByteSize;
 
+        internal byte[] Encode(Material material,
+            Func<SomeEngine.Resources.Texture?, uint>? textureIndex = null,
+            Func<SomeEngine.Graphics.SamplerDesc, uint>? samplerIndex = null)
+        {
+            var bytes = new byte[ByteSize];
+            Encode(material, bytes, textureIndex, samplerIndex);
+            return bytes;
+        }
+
         internal void Encode(Material material, Span<byte> destination,
             Func<SomeEngine.Resources.Texture?, uint>? textureIndex = null,
             Func<SomeEngine.Graphics.SamplerDesc, uint>? samplerIndex = null)
