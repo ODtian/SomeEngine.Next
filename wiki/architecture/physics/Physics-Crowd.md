@@ -69,7 +69,7 @@ Box、Capsule 与 Face 每步继续读取当前主体状态，更新实际几何
 原检测结果、匹配、当前几何更新和 `ContactPoints` 创建共同接触实体；
 其 AVBD 接触参数、状态和作用端加入上述同一图。接触响应的组范围与图中的行范围对应。
 
-公开行为 `PhysicsCrowdSceneTests.TwoThousandCharactersAndTheirBoneClothCompleteTheSharedPhysicalFrame`
+公开行为 `PhysicsCrowdSceneTests.CharactersAndTheirBoneClothCompleteTheSharedPhysicalFrame`
 运行 2,000 个角色及各自布料，共 40,001 个 Body（含地面），90,000 条 Length、
 36,000 条 Bend 和 2,000 个 Motor。末角色的实际实体接收 3 N·s Z 向冲量，
 同一完成帧交付其位移、速度、Body 步号/时刻以及对应骨骼设备输出。
