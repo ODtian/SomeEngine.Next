@@ -22,7 +22,7 @@ public struct DeviceBodyActivityState
 }
 
 /// <summary>Activity history on the original body indices, with native input versions kept at this resource.</summary>
-public sealed class DeviceBodyActivities : IDisposable
+public sealed partial class DeviceBodyActivities : IDisposable
 {
     internal readonly IGraphicsBackend Backend;
     internal readonly Device Device;
@@ -58,6 +58,7 @@ public sealed class DeviceBodyActivities : IDisposable
             .Optional<BodyActivity>(QueryAccess.Read).OptionalBuffer<BodyWake>(QueryAccess.Read).Build());
         SourceRows = world.Query(definition);
         ResultRows = world.Query(definition.WithAccess(new QueryDefinitionBuilder().ReadWrite<BodyActivity>().Build()));
+        _resultReads = world.Query(world.GetQueryDefinition(ResultRows).AsReadOnly());
         _wakeRows = world.Query(new QueryDefinitionBuilder().Read<DeviceBodyBinding>().ReadBuffer<BodyWake>());
         _activityMembers = world.Query(new QueryDefinitionBuilder().All<DeviceBodyBinding>()
             .All<DeviceBodyActivityBinding>().All<BodyActivity>());
@@ -187,45 +188,9 @@ public sealed class DeviceBodyActivities : IDisposable
         }
     }
 
-    internal void ApplyResults(in PhysicsStepContext context, PhysicsEventBuffer events)
-    {
-        var apply = new Apply(this, context, events);
-        World.ExecuteQuery(ResultRows, ref apply);
-    }
-    private readonly ref struct Apply(DeviceBodyActivities activities, PhysicsStepContext context, PhysicsEventBuffer events) : IQueryExecution
-    {
-        public void Execute(scoped QueryCursor rows)
-        {
-            var members = rows.ReadRows<DeviceBodyBinding, BodyActivity>();
-            while (members.MoveNext(out QueryRow row, out var bodyReference, out var current))
-            {
-                ref readonly DeviceBodyBinding body = ref bodyReference.Value;
-                if (!ReferenceEquals(body.Bodies, activities.Bodies) || !row.TryRead<DeviceBodyActivityBinding>(out var binding)
-                    || !ReferenceEquals(binding.Activities, activities)) continue;
-                ref readonly DeviceBodyActivityState result = ref activities.Results[body.Index];
-                if (result.EntityIndex != (uint)row.Entity.Index || result.EntityGeneration != (uint)row.Entity.Generation) continue;
-                CpuVersion version = activities._versions[body.Index];
-                bool sleeping = (result.Flags & 4) != 0, motionPredicted = (result.Flags & 8) != 0;
-                bool changed = current.Value.Sleeping != sleeping || current.Value.QuietSeconds != result.QuietSeconds
-                    || current.Value.Radius != result.Radius || current.Value.MotionPredicted != motionPredicted;
-                if (changed && version.Entity == row.Entity && version.Activity == row.WriteVersion<BodyActivity>())
-                {
-                    ref BodyActivity activity = ref row.ReadWrite<BodyActivity>();
-                    activity.Sleeping = sleeping; activity.QuietSeconds = result.QuietSeconds;
-                    activity.Radius = result.Radius; activity.MotionPredicted = motionPredicted;
-                    activities._versions[body.Index] = new(row.Entity, row.WriteVersion<BodyActivity>());
-                }
-                if ((result.Flags & 16) != 0) events.Add(new PhysicsEvent { Kind = PhysicsEventKind.Wake,
-                    Subject = row.Entity, Substep = context.Substep,
-                    Time = (result.Flags & 64) != 0 ? context.EndTime : context.StartTime });
-                if ((result.Flags & 32) != 0) events.Add(new PhysicsEvent { Kind = PhysicsEventKind.Sleep,
-                    Subject = row.Entity, Substep = context.Substep, Time = context.EndTime });
-            }
-        }
-    }
     public void Dispose()
     {
-        World.ReleaseQuery(SourceRows); World.ReleaseQuery(ResultRows); World.ReleaseQuery(_wakeRows);
+        World.ReleaseQuery(SourceRows); World.ReleaseQuery(ResultRows); World.ReleaseQuery(_resultReads); World.ReleaseQuery(_wakeRows);
         World.ReleaseQuery(_activityMembers);
         _inputMapping.Dispose(); _inputsView.Dispose(); _statesView.Dispose(); States.Dispose(); Inputs.Dispose();
     }
