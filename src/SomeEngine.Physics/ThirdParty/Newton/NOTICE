@@ -8,6 +8,8 @@ ApplyGyroscopicTorque.cs adapt the compliant ALM coefficients, force rows,
 joint coordinates, rotation derivatives, angular inertia and gyroscopic
 prediction from Newton.
 The mathematical migration follows the project's research NewtonRigid.cpp.
+AvbdJointMath.cs also retains a positive bound for force-weighted angular
+geometric curvature, following the research BodyEquation.cpp addJointEquation.
 
 JointMotorMath.cs, AvbdJointMotorMath.cs and XpbdJointMotorProjection.cs reuse
 these common joint Jacobians and material coefficients for timed PD drives.

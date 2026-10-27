@@ -399,7 +399,12 @@ internal sealed unsafe partial class VulkanBackend
             VulkanSpirvBindingTarget[] named = available
                 .Where(target => sourceGroup.Any(source => NamesMatch(source.Name, target.Name)))
                 .ToArray();
-            if (named.Select(static target => target.Binding).Distinct().Count() != 1)
+            if (named.Select(static target => (target.Set, target.Binding)).Distinct().Count() > 1)
+            {
+                uint sourceBinding = EncodeDescriptorBinding(sourceGroup.Key, group.Key.RegisterClass);
+                named = named.Where(target => target.Binding == sourceBinding).ToArray();
+            }
+            if (named.Select(static target => (target.Set, target.Binding)).Distinct().Count() != 1)
             {
                 if (sourceGroup.Any(static source => !string.IsNullOrWhiteSpace(source.Name)) &&
                     available.Any(static target => !string.IsNullOrWhiteSpace(target.Name)))
@@ -416,11 +421,11 @@ internal sealed unsafe partial class VulkanBackend
             }
             VulkanSpirvBindingTarget target = named[0];
             AssignSpirvTarget(words, sourceGroup, target, mapped);
-            available.RemoveAll(value => value.Binding == target.Binding);
+            available.RemoveAll(value => value.Set == target.Set && value.Binding == target.Binding);
         }
 
         VulkanSpirvBindingTarget[] remaining = available
-            .GroupBy(static target => target.Binding)
+            .GroupBy(static target => (target.Set, target.Binding))
             .Select(static values => values.First())
             .OrderBy(static target => target.Binding)
             .ToArray();

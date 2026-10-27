@@ -6,6 +6,8 @@
 
 空间散列按格坐标与实际层计算唯一分区归属。协调阶段将角色下标分发到各分区，每个分区 Job 独立建立格头和连接；角色在各格内沿原查询顺序加入，查询继续沿原格遍历和距离比较规则选择邻居。构建汇合后再启动按角色分区的邻居查询 Job，预测收集随后完成。返回句柄覆盖收集、索引、查询和预测，各阶段继续由原 `NavigationNeighbors` 持有本轮数据。`Agents` 与 `GetNeighbors(entity)` 在完成句柄之后提供本步实际数据。
 
+`NavigationNeighborSystem` 持有其角色查询，调用方通过 `using` 在 World 使用期内释放系统。`Dispose` 先完成本系统最后提交的工作及子工作，再沿 `World.ReleaseQuery` 归还查询引用。实现入口为 [NavigationNeighborSystem](../../src/SomeEngine.Navigation/NavigationNeighborSystem.cs)，公共释放行为见 [NavigationNeighborUpdateTests](../../tests/SomeEngine.Navigation.Tests/NavigationNeighborUpdateTests.cs)。
+
 ## 圆盘模型与参数
 
 `AvoidanceAgent` 的 `Radius` 是世界坐标 XZ 圆盘半径，覆盖 `NavigationProfile.Footprint` 绕角色原点旋转时的轮廓。`Spacing` 扩大该角色的圆盘；两个角色的配置距离是各自 `Radius + Spacing` 的和。Profile 提供身体高度和最大速度，实际层及高度区间决定角色之间的空间交互。
@@ -35,7 +37,7 @@ Mesh 的区域图附加和独立块提取保留这个半径。场景变换按 XZ
 `NavigationComponents.AddAvoidance` 添加避让参数和每角色独占工作区。以下是同时组合路径角色与 Flow 群体的调用例子；具体角色、空间和运动组件由业务提供：
 
 ```csharp
-var neighbors = new NavigationNeighborSystem<Movement, MovementReader>(world, scheduler);
+using var neighbors = new NavigationNeighborSystem<Movement, MovementReader>(world, scheduler);
 var avoidance = new NavigationAvoidanceSystem<OrcaAvoidance, Movement, MovementReader>(world, neighbors);
 NavigationComponents.AddAvoidance(world, entity, new AvoidanceAgent(radius, Spacing: spacing));
 

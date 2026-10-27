@@ -1,6 +1,7 @@
 using System.Numerics;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
+using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Job;
 
@@ -8,6 +9,26 @@ namespace SomeEngine.Navigation.Tests;
 
 public sealed class NavigationNeighborUpdateTests
 {
+    [Fact]
+    public void DisposingNeighborsCompletesCollectionAndReleasesItsQuery()
+    {
+        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
+        using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+        var profile = new NavigationProfile([new Vector2(-.2f), new(.2f, -.2f), new(.2f), new(-.2f, .2f)], 1);
+        Entity actor = world.CreateEntity(new LayeredMotion { Position = new(1, 0, 2) });
+        world.Add(actor, new NavigationAgent(profile, new(), 1));
+        world.Add(actor, new AvoidanceAgent(.3f));
+        QueryHandle query = world.Query(world.QueryDefinition().All<NavigationAgent>().All<AvoidanceAgent>().All<LayeredMotion>());
+        using var neighbors = new NavigationNeighborSystem<LayeredMotion, LayeredMotionReader>(world, scheduler);
+        world.ReleaseQuery(query);
+
+        neighbors.Schedule();
+        neighbors.Dispose();
+
+        Assert.Equal(actor, Assert.Single(neighbors.Data.Agents.ToArray()).Entity);
+        Assert.Throws<InvalidOperationException>(() => world.GetQueryDefinition(query));
+    }
+
     [Fact]
     public void SharedNeighborsFollowMotionAndEntityReplacementAcrossTheCrowd()
     {
@@ -18,7 +39,7 @@ public sealed class NavigationNeighborUpdateTests
         // This lattice is acceptance input spanning several query chunks and spatial cells.
         for (int z = 0; z < 16; z++)
         for (int x = 0; x < 16; x++) Add(new(x, 0, z));
-        var neighbors = new NavigationNeighborSystem<LayeredMotion, LayeredMotionReader>(world, scheduler);
+        using var neighbors = new NavigationNeighborSystem<LayeredMotion, LayeredMotionReader>(world, scheduler);
         neighbors.Schedule().Complete();
         CheckNeighbors();
 

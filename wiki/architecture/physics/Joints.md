@@ -25,11 +25,35 @@
 
 `AvbdJointState` 保存逐轴 ALM 乘子、罚系数与步起点误差；`XpbdJointState` 保存当前子步的逐轴位移乘子。两种状态都与物理参数存于同一关系实体。AVBD 的材料刚度与罚系数分别进入 compliant ALM 系数；XPBD 将材料刚度 K 转换为柔度 `1/K`，以 `1/(K*h²)` 进入投影。各端从原位 `BodyPose` 和 `BodyMass` 取得质心、完整体惯量与当前旋转，再写回动态实体的位姿。
 
+AVBD 对三个平移轴全部锁定、线性材料刚度各向同性的点连接，
+使用世界坐标的 `targetPoint − sourcePoint` 与世界线性乘子装配同一 ALM 作用量。
+`Initialize` 的起点误差、当前力、primal 与 dual 使用同一坐标基准，
+线性乘子的 warmstart 保留世界向量，力矩臂取对应 Body 的自身锚点到质心。
+这与所选 Newton compliant ALM 的
+[jointLinear](https://github.com/ODtian/SomeEngine.Next/blob/6e30d7393097d2d8324db2f525074c03cf89ca09/tools/SomeEngine.Physics.Research/Native/NewtonRigid.cpp#L101)
+和 `addJoint`、`updateDuals` 使用同一世界点作用量。
+带方向的线性限位、逐轴异向材料与 motor 继续采用参考框架坐标；角向坐标使用原相对旋转定义。
+
 [`SolveAvbd`](../../../src/SomeEngine.Physics/SolveAvbd.cs) 显式接收外层 `iterations`，带 `bodyIterations` 的重载允许每体在固定本轮乘子下重复装配、分解与原位更新。原入口每体更新一次。每轮依次更新动态实体，随后统一更新全部约束乘子；每个动态实体的有效局部块次数为 `iterations * bodyIterations`。较大角度的限位运动可通过这一显式预算提高局部非线性求解精度。
 
 两类算法的独立初始化、继续迭代、XPBD 关节当前力与力矩进入 AVBD 方程，以及实际 Body 自由度见[求解阶段](Solver-Steps.md)。
 
 AVBD 通过 `AvbdConstraints<JointConstraint, AvbdJointMath>` 接入，XPBD 通过 `XpbdConstraints<JointConstraint, XpbdJointProjection>` 接入。用户关节适配同样实现 `IAvbdConstraint<T>` 或 `IXpbdConstraint<T>`，从原 `QueryRow` 读取端点及其他参数，再经 `PhysicsBodies` 原位访问参与实体；集合组合、作业依赖、查询有效期沿对应求解阶段维护。接口说明见 [XPBD](XPBD.md) 与源文件。
+
+### 线性关节力的角向几何曲率
+
+`AvbdJointMath` 将当前三条线性行的世界力合成为 `F`，为同一个 Body 方程加入
+`|r| |F| I` 的角向正曲率。旋转方向 `u` 上的力加权几何二次型为
+`±(u×r)·(u×F)`；由 Cauchy 不等式，其绝对值至多为 `|r| |F| ‖u‖²`。
+该上界的单位是 N·m，与角向 Body 方程一致。
+
+力臂沿当前线性行的雅可比选择：世界点连接两端使用各自锚点到质心的向量；
+参考框架坐标的 source 使用目标世界锚点到 source 质心的向量，
+target 使用自身目标锚点到 target 质心的向量。
+三个世界角轴通过原 `AvbdBodyEquation.AddRow` 进入本次矩阵，继续使用原活动角自由度、梯度和 dual 更新。
+材料刚度、ALM 罚度量和迭代次数继续由原调用提供。
+原研究 AVBD 的力加权几何曲率采用角向列范数对角项，见
+[BodyEquation.cpp 的 addJointEquation](https://github.com/ODtian/SomeEngine.Next/blob/6e30d7393097d2d8324db2f525074c03cf89ca09/tools/SomeEngine.Physics.Research/Native/BodyEquation.cpp#L438)。
 
 ## 使用例子
 

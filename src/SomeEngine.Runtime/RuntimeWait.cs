@@ -8,7 +8,7 @@ internal static class RuntimeWait
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(2);
 
-    internal static void Job(ValueTask work, NativeWindow window, TimeSpan timeout)
+    internal static void WaitForCompletion(ValueTask work, NativeWindow window, TimeSpan timeout)
     {
         if (work.IsCompletedSuccessfully)
         {

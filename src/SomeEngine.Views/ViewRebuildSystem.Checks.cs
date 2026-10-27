@@ -85,6 +85,7 @@ public sealed partial class ViewRebuildSystem
     {
         foreach (Entity entity in _views)
         {
+            if (!world.Has<ObjectDependencies>(entity) && !world.HasSparse<Computations>(entity)) continue;
             if (world.Has<BuildRequest>(entity) || world.Read<ViewType>(entity).RebuildRequired ||
                 _builds.HasParameterChanges(world, entity)) continue;
             if (world.Has<ObjectDependencies>(entity))

@@ -75,7 +75,7 @@ public sealed class NavigationCrowdTests
         var solver = new NavigationFlowSystem<ReverseDijkstraFlow, ReverseDijkstraFlowState>(flow, scheduler);
         ReverseDijkstraFlowState retained = solver.Schedule().Complete();
         var navigation = new NavigationSystems<TestMotion, TestMotionReader>(world);
-        var neighbors = new NavigationNeighborSystem<TestMotion, TestMotionReader>(world, scheduler);
+        using var neighbors = new NavigationNeighborSystem<TestMotion, TestMotionReader>(world, scheduler);
         var avoidance = new NavigationAvoidanceSystem<OrcaAvoidance, TestMotion, TestMotionReader>(world, neighbors);
         var crowd = new NavigationCrowdSystem<TestMotion, TestMotionReader>(world, scheduler);
         var crowdPolicy = new NavigationCrowdPolicy
