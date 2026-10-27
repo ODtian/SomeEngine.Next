@@ -21,6 +21,11 @@
 
 `DeviceAvbdEquationBinding` 放在原模拟 Body 上，
 选择 `DeviceAvbdBodyEquations` 的数值行。
+绑定上传从当前主体过滤及两项绑定组件取得原实体行。
+[方程绑定输入](../../../src/SomeEngine.Physics/DeviceAvbdBodyEquations.Inputs.cs) 的一项 Job
+持有查询拓扑、两列读取与原 metadata upload 的整段写权限，先清零原上传区，
+再按 `DeviceAvbdEquationBinding.Index` 写入 Body 索引及实体编号、代次。
+后续沿原命令将同一上传区复制到设备 metadata，GPU 数值行继续沿该映射初始化。
 每轮从共同 `DeviceBodies.States` 的原预测结果组装惯性梯度与 Hessian，
 叠加约束当前世界 Jacobian 和力，再以 LDL 求响应。
 全零逆惯量使用三维平移方程；有效维数为 `3 + popcount(bodyRotationMask)`。

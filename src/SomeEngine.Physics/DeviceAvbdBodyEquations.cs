@@ -13,7 +13,7 @@ namespace SomeEngine.Physics;
 public readonly record struct DeviceAvbdEquationBinding(DeviceAvbdBodyEquations Equations, int Index) : IComponent;
 
 /// <summary>Component-owned local equations; body-to-equation addresses are derived from actual bindings.</summary>
-public sealed class DeviceAvbdBodyEquations : IDisposable, IDevicePhysicsSubmission
+public sealed partial class DeviceAvbdBodyEquations : IDisposable, IDevicePhysicsSubmission
 {
     private readonly IGraphicsBackend _backend;
     private readonly Device _device;
@@ -56,18 +56,6 @@ public sealed class DeviceAvbdBodyEquations : IDisposable, IDevicePhysicsSubmiss
         accesses.Add(JobResourceAccess.Write(scheduler.GetResourceToken(Indices), 0, (long)Indices.Info.Size));
         accesses.Add(JobResourceAccess.Read(scheduler.GetResourceToken(_metadata), 0, (long)_metadata.Info.Size));
     }
-    internal JobHandle Upload(in PhysicsStepContext context, int rowsPerPacket, JobHandle dependency)
-    {
-        Scheduler scheduler = WorldJobs.GetScheduler(context.World);
-        JobHandle clear = scheduler.Schedule(new Begin(this),
-            JobResourceAccess.Write(scheduler.GetResourceToken(_metadataUpload), 0, (long)_metadataUpload.Info.Size), dependency);
-        JobHandle written = new WriteDeviceAvbdEquationInputs(this).ScheduleParallel(context.World,
-            new JobEntityScheduleOptions(rowsPerPacket: rowsPerPacket, filter: context.Bodies), clear);
-        JobResourceAccess[] accesses = [JobResourceAccess.Write(scheduler.GetResourceToken(_metadata), 0, (long)_metadata.Info.Size),
-            JobResourceAccess.Read(scheduler.GetResourceToken(_metadataUpload), 0, (long)_metadataUpload.Info.Size),
-            JobResourceAccess.Write(scheduler.GetResourceToken(_commands))];
-        return DevicePhysicsJobs.Schedule(scheduler, this, accesses, written);
-    }
     internal void CollectUpload(int index, ref JobResourceAccessBuilder resources) => resources.Write(_metadataUpload, (long)index * 16, 16);
     internal void Write(int index, int bodyIndex, Entity entity)
     {
@@ -90,7 +78,6 @@ public sealed class DeviceAvbdBodyEquations : IDisposable, IDevicePhysicsSubmiss
         _initialized = true;
         return completion;
     }
-    private readonly struct Begin(DeviceAvbdBodyEquations equations) : IJob { public void Execute() => equations._mapping.Bytes.Clear(); }
     public readonly struct EquationUploadResources : IJobComponentResources<DeviceAvbdEquationBinding>
     {
         public static void Collect(in DeviceAvbdEquationBinding component, ref JobResourceAccessBuilder resources) =>
@@ -109,17 +96,8 @@ public sealed class DeviceAvbdBodyEquations : IDisposable, IDevicePhysicsSubmiss
     }
     public void Dispose()
     {
+        foreach (EquationInputRows rows in _inputRows.Values) rows.Dispose();
         _mapping.Dispose(); _commands.Dispose(); _metadataUpload.Dispose(); _valuesView.Dispose(); _metadataView.Dispose(); _indicesView.Dispose();
         Values.Dispose(); _metadata.Dispose(); Indices.Dispose();
-    }
-}
-
-internal readonly partial struct WriteDeviceAvbdEquationInputs(DeviceAvbdBodyEquations destination) : IJobEntity
-{
-    public void Execute(Entity entity, [JobResources<DeviceBodyReferenceResources>] in DeviceBodyBinding body,
-        [JobResources<DeviceAvbdBodyEquations.EquationUploadResources>] in DeviceAvbdEquationBinding binding)
-    {
-        if (ReferenceEquals(binding.Equations, destination) && ReferenceEquals(body.Bodies, destination.Bodies))
-            destination.Write(binding.Index, body.Index, entity);
     }
 }
