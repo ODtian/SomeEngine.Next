@@ -61,6 +61,23 @@ dotnet run --project samples/DefaultGame/DefaultGame.csproj -c Release -p:SomeEn
 
 统一性能验收从根级 `tools/Measure-Scenes.ps1` 进入。
 
+`SampleSceneOptions` 持有场景运动与示例界面选项。统一场景入口默认开启屏幕面板和世界名牌；
+`--surface-panel` / `--no-surface-panel`、`--world-nameplates` / `--no-world-nameplates` 与
+`--hud` / `--no-hud` 分别选择三项界面负载，同项开关按最后一次出现的值生效。
+`--hud-static` 选择数字静止的 HUD。三项均关闭时，`ApplicationScene.InterfaceEnabled` 与
+测量期间的 `MeasureInterface` 为 false；选项经 `ScenePanels` 和 `SceneAnimation` 进入现有帧阶段与渲染提取。
+
+报告记录实际的 `SurfacePanel`、`WorldNameplates`、`HudOverlay`、`HudNumbersChange`、
+`InterfaceEnabled` 和 `MeasureInterface`。`ScenePlayback` 记录附加的摄像机、灯光及材质播放选择；
+各景的 `AnimateScene` 记录自身运动选择。测量工具的 `-ScenePlayback static` 使用场景自身行为：
+1024 小球运动，Sponza 和 Amazon Bistro 静态。
+
+下面是选择纯场景负载的命令示例，采样窗口沿用应用实际发布的 `test-scenes.json`：
+
+```powershell
+./tools/Measure-Scenes.ps1 -ScenePlayback static -ApplicationArguments @('--no-surface-panel', '--no-world-nameplates', '--no-hud')
+```
+
 ```powershell
 # 开发组合生成样例内容。
 dotnet run --project samples/DefaultGame/DefaultGame.csproj -- sample

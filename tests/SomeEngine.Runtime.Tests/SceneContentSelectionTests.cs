@@ -7,6 +7,27 @@ namespace SomeEngine.Runtime.Tests;
 public sealed class SceneContentSelectionTests
 {
     [Fact]
+    public void Scene_interface_selection_follows_the_supplied_sample_options()
+    {
+        var platform = new SceneTestPlatform([new("Spheres", ".", Animate: true), new("Imported", ".")],
+            sampleOptions: SampleSceneOptions.Parse(["--no-surface-panel", "--no-world-nameplates", "--no-hud"]));
+
+        Assert.True(platform.SampleOptions.DynamicScene);
+        Assert.Null(platform.SampleOptions.ScenePlayback);
+        Assert.False(platform.Application.InterfaceEnabled);
+        Assert.False(platform.Application.MeasureInterface);
+
+        platform.SelectScene(1);
+
+        Assert.False(platform.SampleOptions.DynamicScene);
+        Assert.False(platform.Application.InterfaceEnabled);
+        platform.SetHudOverlay(true);
+        Assert.True(platform.Application.InterfaceEnabled);
+        platform.SetHudOverlay(false);
+        Assert.False(platform.Application.InterfaceEnabled);
+    }
+
+    [Fact]
     public void Selecting_a_scene_updates_its_pack_order_and_application_identity_together()
     {
         Guid first = Guid.NewGuid(), second = Guid.NewGuid();

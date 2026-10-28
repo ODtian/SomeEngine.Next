@@ -5,15 +5,27 @@ namespace SomeEngine.Runtime.Tests;
 public sealed class SampleSceneOptionsTests
 {
     [Fact]
-    public void Defaults_enable_dynamic_scene_and_changing_hud_numbers_without_example_interfaces()
+    public void Defaults_enable_dynamic_scene_surface_panel_and_world_nameplates()
     {
         SampleSceneOptions options = SampleSceneOptions.Parse([]);
 
         Assert.True(options.DynamicScene);
         Assert.True(options.HudNumbersChange);
         Assert.Null(options.ScenePlayback);
+        Assert.True(options.SurfacePanel);
+        Assert.True(options.WorldNameplates);
+        Assert.False(options.HudOverlay);
+    }
+
+    [Fact]
+    public void Interface_switches_select_each_example_from_the_supplied_defaults()
+    {
+        SampleSceneOptions options = SampleSceneOptions.Parse(
+            ["--SURFACE-PANEL", "--NO-SURFACE-PANEL", "--no-world-nameplates", "--WORLD-NAMEPLATES", "--HUD", "--NO-HUD"],
+            new SampleSceneOptions { SurfacePanel = false, WorldNameplates = false });
+
         Assert.False(options.SurfacePanel);
-        Assert.False(options.WorldNameplates);
+        Assert.True(options.WorldNameplates);
         Assert.False(options.HudOverlay);
     }
 

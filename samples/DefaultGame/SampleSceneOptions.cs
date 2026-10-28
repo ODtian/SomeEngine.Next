@@ -5,39 +5,39 @@ public sealed record SampleSceneOptions
 {
     public bool DynamicScene { get; init; } = true;
     public string? ScenePlayback { get; init; }
-    public bool SurfacePanel { get; init; }
-    public bool WorldNameplates { get; init; }
+    public bool SurfacePanel { get; init; } = true;
+    public bool WorldNameplates { get; init; } = true;
     public bool HudOverlay { get; init; }
     public bool HudNumbersChange { get; init; } = true;
 
-    public static SampleSceneOptions Parse(string[] args)
+    public static SampleSceneOptions Parse(string[] args, SampleSceneOptions? defaults = null)
     {
         ArgumentNullException.ThrowIfNull(args);
-        string? playback = ReadPlayback(args);
+        defaults ??= new SampleSceneOptions();
+        string? playback = ReadPlayback(args) ?? defaults.ScenePlayback;
         if (playback is not null and not "motion" and not "materials" and not "camera")
             throw new ArgumentException("--scene-playback requires 'motion', 'materials', or 'camera'.");
-        return new SampleSceneOptions
+        return defaults with
         {
-            DynamicScene = ReadDynamicScene(args),
+            DynamicScene = ReadBooleanOption(args, ["--dynamic-scene"],
+                ["--static-scene", "--no-dynamic-scene"], defaults.DynamicScene),
             ScenePlayback = playback,
-            SurfacePanel = args.Contains("--surface-panel", StringComparer.OrdinalIgnoreCase),
-            WorldNameplates = args.Contains("--world-nameplates", StringComparer.OrdinalIgnoreCase),
-            HudOverlay = args.Contains("--hud", StringComparer.OrdinalIgnoreCase) ||
-                args.Contains("--hud-static", StringComparer.OrdinalIgnoreCase),
-            HudNumbersChange = !args.Contains("--hud-static", StringComparer.OrdinalIgnoreCase),
+            SurfacePanel = ReadBooleanOption(args, ["--surface-panel"], ["--no-surface-panel"], defaults.SurfacePanel),
+            WorldNameplates = ReadBooleanOption(args, ["--world-nameplates"], ["--no-world-nameplates"], defaults.WorldNameplates),
+            HudOverlay = ReadBooleanOption(args, ["--hud", "--hud-static"], ["--no-hud"], defaults.HudOverlay),
+            HudNumbersChange = defaults.HudNumbersChange && !args.Contains("--hud-static", StringComparer.OrdinalIgnoreCase),
         };
     }
 
-    private static bool ReadDynamicScene(string[] args)
+    private static bool ReadBooleanOption(string[] args, string[] enabled, string[] disabled, bool defaultValue)
     {
         for (int index = args.Length - 1; index >= 0; index--)
         {
             string argument = args[index];
-            if (argument.Equals("--dynamic-scene", StringComparison.OrdinalIgnoreCase)) return true;
-            if (argument.Equals("--static-scene", StringComparison.OrdinalIgnoreCase) ||
-                argument.Equals("--no-dynamic-scene", StringComparison.OrdinalIgnoreCase)) return false;
+            if (enabled.Contains(argument, StringComparer.OrdinalIgnoreCase)) return true;
+            if (disabled.Contains(argument, StringComparer.OrdinalIgnoreCase)) return false;
         }
-        return true;
+        return defaultValue;
     }
 
     private static string? ReadPlayback(string[] args)

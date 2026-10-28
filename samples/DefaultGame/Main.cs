@@ -74,7 +74,8 @@ public static class SampleApplication
             };
             scene.InstallGeometry(example);
             SceneTestPlatform.ConfigureViews(scene, args);
-            SampleSceneOptions sampleOptions = SampleSceneOptions.Parse(args);
+            SampleSceneOptions sampleOptions = SampleSceneOptions.Parse(args,
+                new SampleSceneOptions { SurfacePanel = false, WorldNameplates = false });
             ScenePanels.Install(scene, () => sampleOptions);
             SceneAnimation.Install(scene, () => sampleOptions);
             return (await Application.RunAsync(args, application: scene)).Succeeded ? 0 : 1;

@@ -77,16 +77,11 @@ public sealed partial class SceneTestPlatform
     {
         if (scenes.Count == 0) throw new ArgumentException("At least one test scene is required.", nameof(scenes));
         Scenes = scenes.ToArray();
-        SampleOptions = (sampleOptions ?? SampleSceneOptions.Parse([])) with
-        {
-            DynamicScene = scenes[0].Animate, SurfacePanel = true, WorldNameplates = true,
-        };
         Application = new ApplicationScene(scenes[0].ContentDirectory)
         {
             AssetPacks = scenes[0].AssetPacks,
             ApplicationAsset = scenes[0].ApplicationAsset is { } selected ? new AssetId<ApplicationSettingsAsset>(selected) : null,
             Options = (options ?? RuntimeStartupOptions.Parse([])) with { WindowVSync = false, AsyncCompute = true },
-            InterfaceEnabled = true,
             MeasureShadowInvalidation = Environment.GetEnvironmentVariable("SOMEENGINE_VSM_INVALIDATION_TIMING") == "1",
             Initialize = frame => InitializeScene?.Invoke(frame.Scene, Current),
             SceneStarted = BeginScene,
@@ -97,6 +92,7 @@ public sealed partial class SceneTestPlatform
             BlendFrameCompleted = RecordBlendFrame,
             SceneCompleted = result => EndScene(result.Error?.Message),
         };
+        SampleOptions = (sampleOptions ?? new SampleSceneOptions()) with { DynamicScene = scenes[0].Animate };
         ScenePanels.Install(Application, () => SampleOptions);
         SceneAnimation.Install(Application, () => SampleOptions, animateMaterial);
         MeasureBlending = Options.MeasureBlending;
@@ -105,7 +101,17 @@ public sealed partial class SceneTestPlatform
     public IReadOnlyList<TestScene> Scenes { get; }
     public int SelectedScene { get; private set; }
     public ApplicationScene Application { get; }
-    public SampleSceneOptions SampleOptions { get; set; }
+    private SampleSceneOptions _sampleOptions = null!;
+    public SampleSceneOptions SampleOptions
+    {
+        get => _sampleOptions;
+        set
+        {
+            _sampleOptions = value;
+            Application.InterfaceEnabled = value.SurfacePanel || value.WorldNameplates || value.HudOverlay;
+            if (IsMeasuring) Application.MeasureInterface = Application.InterfaceEnabled;
+        }
+    }
     public Action<SceneEdit, TestScene>? InitializeScene { get; init; }
     public Action<SceneEdit, TestScene, int>? UpdateScene { get; init; }
     private Func<ApplicationRendering, TestScene, IApplicationColorFeature>? _createColorFeature;
@@ -266,7 +272,7 @@ public sealed partial class SceneTestPlatform
         _testStarted = Stopwatch.GetTimestamp();
         IsMeasuring = true;
         StartGpuPassTimingCapture();
-        Application.MeasureInterface = true;
+        Application.MeasureInterface = Application.InterfaceEnabled;
         Application.DebugUiEnabled = false;
         Application.ViewsEnabled = false;
         Application.PresentationBounds = null;
@@ -577,6 +583,12 @@ public sealed partial class SceneTestPlatform
             ["FixedFrameSeconds"] = Options.FixedFrameSeconds,
             ["SynchronousFrames"] = Options.SynchronousFrames,
             ["ScenePlayback"] = SampleOptions.ScenePlayback,
+            ["SurfacePanel"] = SampleOptions.SurfacePanel,
+            ["WorldNameplates"] = SampleOptions.WorldNameplates,
+            ["HudOverlay"] = SampleOptions.HudOverlay,
+            ["HudNumbersChange"] = SampleOptions.HudNumbersChange,
+            ["InterfaceEnabled"] = Application.InterfaceEnabled,
+            ["MeasureInterface"] = Application.MeasureInterface,
             ["DisableMeshShaders"] = Options.DisableMeshShaders,
             ["DeviceValidation"] = Options.DeviceValidation,
             ["GeometryMemoryMegabytes"] = GeometryMemoryMegabytes,
