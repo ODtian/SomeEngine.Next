@@ -130,7 +130,7 @@ public sealed class TypedStandardClusterVertexEncoderTests
     }
 
     [Fact]
-    public void RawCustomAttributesKeepTheirDescriptorOrderAndDoublePayload()
+    public void RawCustomAttributesKeepTheirDescriptorOrderAndSourceValues()
     {
         Vector3[] positions = [Vector3.Zero, Vector3.One];
         uint[] vertices = [1, 0, 1];
@@ -151,19 +151,19 @@ public sealed class TypedStandardClusterVertexEncoderTests
         ReadOnlySpan<byte> descriptor = data.Slice(16, 28);
         Assert.Equal(2u, BinaryPrimitives.ReadUInt32LittleEndian(descriptor[4..]));
         Assert.Equal(uint.MaxValue, BinaryPrimitives.ReadUInt32LittleEndian(descriptor[12..]));
-        Assert.Equal(0u, BinaryPrimitives.ReadUInt32LittleEndian(descriptor[24..]));
+        Assert.Equal(4u, BinaryPrimitives.ReadUInt32LittleEndian(descriptor[24..]));
         int nameOffset = (int)BinaryPrimitives.ReadUInt32LittleEndian(descriptor[16..]);
         int nameLength = (int)BinaryPrimitives.ReadUInt32LittleEndian(descriptor[20..]);
         Assert.Equal(name, Encoding.UTF8.GetString(data.Slice(nameOffset, nameLength)));
         int valueOffset = (int)BinaryPrimitives.ReadUInt32LittleEndian(descriptor[8..]);
         double[] expected = [1.5, -2.5, 0.25, -0.5, 1.5, -2.5];
-        Assert.Equal(valueOffset + expected.Length * sizeof(double), data.Length);
+        Assert.Equal(valueOffset + expected.Length * sizeof(float), data.Length);
         for (int index = 0; index < expected.Length; index++)
-            Assert.Equal(expected[index], BinaryPrimitives.ReadDoubleLittleEndian(data[(valueOffset + index * sizeof(double))..]));
+            Assert.Equal(expected[index], BinaryPrimitives.ReadSingleLittleEndian(data[(valueOffset + index * sizeof(float))..]));
     }
 
     [Fact]
-    public void CustomVariableComponentCountsAndSourceValuesKeepVersionOneGoldenBytes()
+    public void CustomVariableComponentCountsAndSourceValuesKeepTheirValues()
     {
         byte[] values = new byte[4 * sizeof(double)];
         double[] components = [1.25, -2.5, 3.75, -4];
@@ -174,15 +174,34 @@ public sealed class TypedStandardClusterVertexEncoderTests
             "01000000000000000000000000000000D253543F02000000400000002C000000" +
             "3400000009000000000000000100000003000000435553544F4D5FCEB1000000" +
             "000000000000F43F00000000000004C00000000000000E4000000000000010C0");
-        Assert.Equal(expected, StandardClusterAttributesEncoder.Encode(streams));
         Assert.Equal(expected, StandardClusterAttributesEncoder.EncodeSourceValues(streams));
+        byte[] encoded = StandardClusterAttributesEncoder.Encode(streams);
+        Assert.Equal(4u, BinaryPrimitives.ReadUInt32LittleEndian(encoded.AsSpan(40)));
+        Assert.Equal(1u, BinaryPrimitives.ReadUInt32LittleEndian(encoded.AsSpan(44)));
+        Assert.Equal(3u, BinaryPrimitives.ReadUInt32LittleEndian(encoded.AsSpan(48)));
+        for (int index = 0; index < components.Length; index++)
+            Assert.Equal(components[index], BinaryPrimitives.ReadSingleLittleEndian(encoded.AsSpan(64 + index * sizeof(float))));
+    }
+
+    [Fact]
+    public void ExtraAttributesKeepDoublePrecisionWhenTheSourceRequiresIt()
+    {
+        double value = 1.234567890123;
+        byte[] values = new byte[sizeof(double)];
+        BinaryPrimitives.WriteDoubleLittleEndian(values, value);
+        ClusterVertexAttributeData[] streams = [new("CUSTOM", 1, [1], [.. values])];
+        byte[] encoded = StandardClusterAttributesEncoder.Encode(streams);
+        ReadOnlySpan<byte> descriptor = encoded.AsSpan(16, 28);
+        Assert.Equal(0u, BinaryPrimitives.ReadUInt32LittleEndian(descriptor[24..]));
+        int offset = (int)BinaryPrimitives.ReadUInt32LittleEndian(descriptor[8..]);
+        Assert.Equal(value, BinaryPrimitives.ReadDoubleLittleEndian(encoded.AsSpan(offset)));
     }
 
     private static void AssertEquivalent(Vector3[] positions, StandardClusterAttributes[] attributes, uint[] vertices)
     {
         IClusterVertexEncoder<StandardClusterAttributes> typed = StandardClusterVertexEncoder.Instance;
         IClusterVertexEncoder raw = StandardClusterVertexEncoder.Instance;
-        Assert.Equal("someengine.cluster.positions.uint16.v1+someengine.cluster.attributes.standard.v1", typed.Compatibility);
+        Assert.Equal("someengine.cluster.positions.uint16.v1+someengine.cluster.attributes.standard.v2", typed.Compatibility);
         Assert.Equal(raw.Compatibility, typed.Compatibility);
         EncodedClusterVertices expected = EncodeRaw(positions, attributes, vertices);
         EncodedClusterVertices actual = typed.Encode(positions, attributes, vertices);

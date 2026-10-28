@@ -139,17 +139,31 @@ public sealed class ClusterGeometryImportTests
     [InlineData("material")]
     [InlineData("NORMAL")]
     [InlineData("TEXCOORD_3")]
-    public async Task LodKeepsSeamVerticesAndTriangleMaterials(string seam)
+    public async Task LodKeepsPairedSeamEdgesAndTriangleMaterials(string seam)
     {
         VertexPrimitive[] primitives = [Grid(0, 0, 16, seam), Grid(1, 16, 32, seam)];
         await using ImportResult imported = await ImportAsync(primitives);
         ClusterGeometryBlock geometry = imported.Geometry;
         Assert.Contains(geometry.Clusters, cluster => cluster.Level > 0);
-        uint[] seamVertices = geometry.Vertices.Select((row, vertex) => (row, vertex))
-            .Where(value => primitives[value.row.Primitive].Attributes["POSITION"].Values.Span[value.row.Vertex * 3] == 16)
-            .Select(value => (uint)value.vertex).ToArray();
-        foreach (uint seamVertex in seamVertices)
-            Assert.Contains(geometry.Clusters, cluster => cluster.Level > 0 && cluster.Vertices.Contains(seamVertex));
+        var seamEdges = new List<(double First, double Last)>[] { [], [] };
+        foreach (ClusterGeometry cluster in geometry.Clusters.Where(cluster => cluster.ParentGroup < 0))
+            for (int triangle = 0; triangle < cluster.Indices.Length; triangle += 3)
+                for (int corner = 0; corner < 3; corner++)
+                {
+                    ClusterVertexSource first = geometry.Vertices[(int)cluster.Vertices[cluster.Indices[triangle + corner]]];
+                    ClusterVertexSource second = geometry.Vertices[(int)cluster.Vertices[cluster.Indices[triangle + (corner + 1) % 3]]];
+                    ReadOnlySpan<double> a = primitives[first.Primitive].Attributes["POSITION"].Values.Span.Slice(first.Vertex * 3, 3);
+                    ReadOnlySpan<double> b = primitives[second.Primitive].Attributes["POSITION"].Values.Span.Slice(second.Vertex * 3, 3);
+                    if (a[0] == 16 && b[0] == 16)
+                        seamEdges[first.Primitive].Add((Math.Min(a[1], b[1]), Math.Max(a[1], b[1])));
+                }
+        foreach (var edges in seamEdges) edges.Sort();
+        Assert.NotEmpty(seamEdges[0]);
+        Assert.Equal(seamEdges[0], seamEdges[1]);
+        Assert.Equal(0, seamEdges[0][0].First);
+        Assert.Equal(16, seamEdges[0][^1].Last);
+        for (int edge = 1; edge < seamEdges[0].Count; edge++)
+            Assert.Equal(seamEdges[0][edge - 1].Last, seamEdges[0][edge].First);
         foreach (ClusterGeometry cluster in geometry.Clusters)
         {
             for (int triangle = 0; triangle < cluster.Indices.Length / 3; triangle++)

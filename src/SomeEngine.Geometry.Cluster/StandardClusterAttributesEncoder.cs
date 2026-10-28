@@ -155,6 +155,15 @@ public static class StandardClusterAttributesEncoder
                         (ushort)MathF.Round(((float)stream.ReadComponent(vertex, component) - minimum[component]) / step));
             return (data, 3);
         }
-        return (stream.Data.ToArray(), 0);
+        byte[] floats = new byte[stream.Data.Length / 2];
+        for (int component = 0; component < floats.Length / sizeof(float); component++)
+        {
+            double value = BinaryPrimitives.ReadDoubleLittleEndian(stream.Data.AsSpan()[(component * sizeof(double))..]);
+            float encoded = (float)value;
+            if (BitConverter.DoubleToInt64Bits(value) != BitConverter.DoubleToInt64Bits((double)encoded))
+                return (stream.Data.ToArray(), 0);
+            BinaryPrimitives.WriteSingleLittleEndian(floats.AsSpan(component * sizeof(float)), encoded);
+        }
+        return (floats, 4);
     }
 }

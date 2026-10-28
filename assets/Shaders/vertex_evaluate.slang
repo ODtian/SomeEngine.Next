@@ -18,8 +18,8 @@ float3 EvalObjectPosition(VertexEvalContext ctx)
     return origin + float3(position) * step;
 }
 
-// Convert the persisted double components using integer/float32 operations. This material
-// interprets normal/tangent/UV values without requiring shader float64 device features.
+// Interpret the default material's attribute formats using integer/float32 operations.
+// Source double components are converted in the material's float32 precision.
 float ReadStandardComponent(VertexEvalContext ctx, uint stream, uint component, float fallback)
 {
     if (stream == 0u) return fallback;
@@ -45,6 +45,8 @@ float ReadStandardComponent(VertexEvalContext ctx, uint stream, uint component, 
         uint packed = ctx.pageHeap.Load(address + 12u + ctx.localVertexIndex * 4u);
         return (component == 0u ? origin.x : origin.y) + float((packed >> (component * 16u)) & 65535u) * step;
     }
+    if (format == 4u)
+        return asfloat(ctx.pageHeap.Load(ctx.attributeBlobAddress + values + (ctx.localVertexIndex * components + component) * 4u));
     uint2 bits = ctx.pageHeap.Load2(ctx.attributeBlobAddress + values + (ctx.localVertexIndex * components + component) * 8u);
     uint exponent = (bits.y >> 20u) & 2047u;
     if (exponent == 0u) return asfloat(bits.y & 0x80000000u);

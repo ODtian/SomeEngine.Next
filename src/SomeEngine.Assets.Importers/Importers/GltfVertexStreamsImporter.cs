@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Numerics;
 using System.Collections.ObjectModel;
 using System.Text.Json.Nodes;
+using System.Runtime.CompilerServices;
 using Mikktspace.NET;
 using SharpGLTF.Schema2;
 using SomeEngine.Assets.Importing;
@@ -15,10 +16,38 @@ namespace SomeEngine.Assets.Importers;
     VersionInputs = new[] { typeof(ModelRoot), typeof(MikkGenerator), typeof(MeshOptimizer.Meshopt) })]
 public sealed partial class GltfVertexStreamsImporter : IAssetImporter<GltfMesh, GltfMeshSettings>
 {
+    private readonly ConditionalWeakTable<ImportContext, ModelDocuments> _modelDocuments = new();
+
+    private sealed class ModelDocuments : IAsyncDisposable
+    {
+        private readonly Dictionary<ModelRoot, JsonNode> _documents = [];
+
+        internal JsonNode GetDocument(ModelRoot model)
+        {
+            lock (_documents)
+            {
+                if (!_documents.TryGetValue(model, out JsonNode? document))
+                    _documents.Add(model, document = JsonNode.Parse(model.GetJsonPreview())!);
+                return document;
+            }
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            _documents.Clear();
+            return ValueTask.CompletedTask;
+        }
+    }
+
     public ValueTask ImportAsync(GltfMesh source, GltfMeshSettings settings, ImportContext context, ImportOutput output,
         CancellationToken cancellationToken)
     {
-        JsonNode document = JsonNode.Parse(source.LogicalParent.GetJsonPreview())!;
+        JsonNode document = _modelDocuments.GetValue(context, static context =>
+        {
+            var documents = new ModelDocuments();
+            context.Hold(documents);
+            return documents;
+        }).GetDocument(source.LogicalParent);
         var accessors = new GltfAccessorReader(source.LogicalParent, document, cancellationToken);
         List<VertexPrimitive> primitives = [];
         List<VertexImportDiagnostic> diagnostics = [];

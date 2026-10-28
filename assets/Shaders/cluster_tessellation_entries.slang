@@ -2,7 +2,7 @@
 #define CLUSTER_TESSELLATION_ENTRIES_SLANG
 
 #ifndef CLUSTER_VERTEX_ENCODING
-#define CLUSTER_VERTEX_ENCODING "someengine.cluster.positions.uint16.v1+someengine.cluster.attributes.standard.v1"
+#define CLUSTER_VERTEX_ENCODING "someengine.cluster.positions.uint16.v1+someengine.cluster.attributes.standard.v2"
 #endif
 
 #include "cluster_tessellation_core.slang"

@@ -8,7 +8,7 @@ Vertex encoding 由属性 Importer 与材质 Shader 对应实现。Cluster 维�
 
 `ClusterVertexAttributesBlock` 的公开属性记录完整保留来源流：名称、分量数、逐顶点实际分量数和 little-endian float64 数值，包含全部 UV、颜色与自定义属性。保存重开后可通过 `ReadComponent` 读取来源数值、uint32 精度与符号零。
 
-`StandardClusterAttributesEncoder` 属于 Importer 实现，默认属性 Importer 另行在每个 cluster 的 `Data` 中生成 `someengine.cluster.attributes.standard.v1` 的 Shader 字节。NORMAL 与 TANGENT 使用原有 signed-normalized 8 位量化，TEXCOORD_0 使用 cluster 内 origin、二次幂 step 与 uint16 UV，其余流继续携带 float64 数值。名称、分量数与缺省信息随编码保留。该格式的布局与解码属于属性生产者和 `vertex_evaluate.slang` 中的默认材质实现。
+`StandardClusterAttributesEncoder` 属于 Importer 实现，默认属性 Importer 另行在每个 cluster 的 `Data` 中生成 `someengine.cluster.attributes.standard.v2` 的 Shader 字节。NORMAL 与 TANGENT 使用原有 signed-normalized 8 位量化，TEXCOORD_0 使用 cluster 内 origin、二次幂 step 与 uint16 UV。其余流逐分量检查 float64 → float32 → float64 的位值：整条流精确往返时以格式 4 保存 float32，需要 double 精度的流以格式 0 保存 float64。公开属性记录继续保存全部 float64 来源值。名称、分量数与缺省信息随编码保留；位置和属性的兼容性标识在建立管线时匹配。该格式的布局与解码属于属性生产者和 `vertex_evaluate.slang` 中的默认材质实现。
 
 采用紧凑 Shader 表示的原因是：直接上传公开 float64 记录会放大 GPU 页数据，挤压既有几何驻留预算。来源记录保留完整值，默认材质继续采用迁移前的属性量化精度；额外的流交付给用户 Shader。几何划分与 LOD 构建使用已有算法。
 

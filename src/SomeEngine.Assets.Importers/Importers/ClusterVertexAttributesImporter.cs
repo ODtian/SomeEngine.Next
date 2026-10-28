@@ -7,7 +7,7 @@ using GltfMesh = SharpGLTF.Schema2.Mesh;
 namespace SomeEngine.Assets.Importers;
 
 [AssetImporter("535b2c57-2964-483b-867a-f38ef1a9fe5b", typeof(ClusterVertexAttributesBlock),
-    SettingsProvider = typeof(GltfMeshSettingsProvider), VersionInputs = new[] { typeof(ModelRoot) })]
+    SettingsProvider = typeof(GltfMeshSettingsProvider), VersionInputs = new[] { typeof(ModelRoot), typeof(SomeEngine.Geometry.Cluster.StandardClusterAttributesEncoder) })]
 public sealed class ClusterVertexAttributesImporter : IAssetImporter<GltfMesh, GltfMeshSettings>
 {
     public async ValueTask ImportAsync(GltfMesh source, GltfMeshSettings settings, ImportContext context,

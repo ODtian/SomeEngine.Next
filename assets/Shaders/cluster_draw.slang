@@ -27,7 +27,7 @@ void WriteInvalidPSInput(out PSInput output)
     output.RenderTargetIndex = 0u;
 }
 
-[VertexEncoding("someengine.cluster.positions.uint16.v1+someengine.cluster.attributes.standard.v1")]
+[VertexEncoding("someengine.cluster.positions.uint16.v1+someengine.cluster.attributes.standard.v2")]
 [ConservativeBounds("finite")]
 [shader("vertex")]
 PSInput VSMain(uint vertexID: SV_VertexID, uint instanceID: SV_InstanceID)
@@ -92,7 +92,7 @@ PSInput VSMain(uint vertexID: SV_VertexID, uint instanceID: SV_InstanceID)
     return output;
 }
 
-[VertexEncoding("someengine.cluster.positions.uint16.v1+someengine.cluster.attributes.standard.v1")]
+[VertexEncoding("someengine.cluster.positions.uint16.v1+someengine.cluster.attributes.standard.v2")]
 [ConservativeBounds("finite")]
 [shader("mesh")]
 [outputtopology("triangle")]
@@ -109,7 +109,7 @@ void MSVisBuffer(
         vertex, visibility, groupId, lane, vertices, indices, primitives);
 }
 
-[VertexEncoding("someengine.cluster.positions.uint16.v1+someengine.cluster.attributes.standard.v1")]
+[VertexEncoding("someengine.cluster.positions.uint16.v1+someengine.cluster.attributes.standard.v2")]
 [ConservativeBounds("finite")]
 [shader("mesh")]
 [outputtopology("triangle")]
@@ -141,7 +141,7 @@ float4 PSOverdraw(PSInput input) : SV_TARGET
 }
 
 
-[VertexEncoding("someengine.cluster.positions.uint16.v1+someengine.cluster.attributes.standard.v1")]
+[VertexEncoding("someengine.cluster.positions.uint16.v1+someengine.cluster.attributes.standard.v2")]
 [ConservativeBounds("finite")]
 [shader("vertex")]
 ClusterRasterPixelInput<DefaultVisibilityEvaluate.Varying> VSVisBuffer(

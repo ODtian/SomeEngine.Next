@@ -9,7 +9,7 @@ typedef OpaqueVisibilityEvaluate<VertexEvaluate.Vertex> VisibilityEvaluate;
 
 #include "cluster_policy_raster_output.slang"
 
-[VertexEncoding("someengine.cluster.positions.uint16.v1+someengine.cluster.attributes.standard.v1")]
+[VertexEncoding("someengine.cluster.positions.uint16.v1+someengine.cluster.attributes.standard.v2")]
 [ConservativeBounds("finite")]
 [shader("compute")]
 [numthreads(32, 1, 1)]
@@ -22,7 +22,7 @@ void CSSWRasterImageAtomic64(uint3 groupID : SV_GroupID, uint groupThreadIndex :
     SWRasterKernel(eval, visibility, rasterOutput, groupID, groupThreadIndex);
 }
 
-[VertexEncoding("someengine.cluster.positions.uint16.v1+someengine.cluster.attributes.standard.v1")]
+[VertexEncoding("someengine.cluster.positions.uint16.v1+someengine.cluster.attributes.standard.v2")]
 [ConservativeBounds("finite")]
 [shader("compute")]
 [numthreads(32, 1, 1)]

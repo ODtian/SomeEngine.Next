@@ -10,6 +10,7 @@ namespace SomeEngine.Assets.Importers;
 public static partial class ClusterBuilder
 {
     private const byte SourceVertexLockBit = ClusterMeshBuilder.SourceVertexLockBit;
+    private const byte AttributeSeamProtectBit = 1 << 1;
 
     internal static ClusterGeometryBlock BuildGeometry(VertexStreamsBlock streams, CancellationToken cancellationToken)
     {
@@ -91,12 +92,12 @@ public static partial class ClusterBuilder
                 }
             }
             for (int vertex = 0; vertex < workingIdentities.Count; vertex++)
-                if (regionBoundaries.Contains(workingIdentities[vertex])) workingLocks[vertex] |= SourceVertexLockBit;
+                if (regionBoundaries.Contains(workingIdentities[vertex])) workingLocks[vertex] |= AttributeSeamProtectBit;
             Vector3[] partitionPositions = workingPositions.ToArray();
             List<BuilderMeshlet> meshlets = [];
             List<uint> indices = [];
             ClusterMeshBuilder.BuildLod(ClusterLodConfig.GetDefault() with
-                { ClusterSpatial = true, SimplifyPermissive = false, SimplifyFallbackSloppy = false },
+                { ClusterSpatial = true, SimplifyFallbackSloppy = false },
                 partitionPositions, CollectionsMarshal.AsSpan(workingTriangles), workingSources.Select(source => (uint)source.Region).ToArray(),
                 meshlets, indices, CollectionsMarshal.AsSpan(workingLocks), ReadSimplificationAttributes(vertices, workingIdentities));
             foreach (BuilderMeshlet meshlet in meshlets)
@@ -152,7 +153,12 @@ public static partial class ClusterBuilder
         for (int vertex = 0; vertex < vertices.Count; vertex++)
         {
             if (positionVertices.TryGetValue(positions[vertex], out int other))
-                locks[vertex] = locks[other] = SourceVertexLockBit;
+            {
+                // UV, normal and material discontinuities keep their paired seam edges.
+                // Other shading streams already contribute to the simplification error.
+                if (!SameSeamValues(vertices[vertex], vertices[other]))
+                    locks[vertex] = locks[other] = AttributeSeamProtectBit;
+            }
             else positionVertices.Add(positions[vertex], vertex);
         }
         foreach (List<uint> indices in partitions)
@@ -164,11 +170,30 @@ public static partial class ClusterBuilder
                     int first = (int)indices[triangle + edge];
                     int second = (int)indices[triangle + (edge + 1) % 3];
                     // Conservatively preserve every changing influence/delta, with no source stream limit.
-                    if (!SameDeformValues(vertices[first], vertices[second])) locks[first] = locks[second] = SourceVertexLockBit;
+                    if (!SameDeformValues(vertices[first], vertices[second]))
+                    {
+                        locks[first] |= SourceVertexLockBit;
+                        locks[second] |= SourceVertexLockBit;
+                    }
                 }
             }
         }
         return locks;
+    }
+
+    private static bool SameSeamValues(VertexRow first, VertexRow second)
+    {
+        VertexPrimitive left = first.Rows.Primitive;
+        VertexPrimitive right = second.Rows.Primitive;
+        if (left.Material != right.Material) return false;
+        foreach ((string name, VertexStream stream) in left.Attributes)
+            if ((name == "NORMAL" || name.StartsWith("TEXCOORD_", StringComparison.Ordinal)) &&
+                (!right.Attributes.TryGetValue(name, out VertexStream? other) || !SameStreamValues(stream, first.Vertex, other, second.Vertex)))
+                return false;
+        foreach (string name in right.Attributes.Keys)
+            if ((name == "NORMAL" || name.StartsWith("TEXCOORD_", StringComparison.Ordinal)) && !left.Attributes.ContainsKey(name))
+                return false;
+        return true;
     }
 
     private static bool SameDeformValues(VertexRow first, VertexRow second)

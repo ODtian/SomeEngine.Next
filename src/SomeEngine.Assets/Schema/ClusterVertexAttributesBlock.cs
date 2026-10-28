@@ -29,7 +29,7 @@ public sealed partial record ClusterVertexAttributes
 [BinaryFields(nameof(VertexIdentity), nameof(Encoding), nameof(Clusters))]
 public sealed partial class ClusterVertexAttributesBlock : AssetBlock
 {
-    public const string EncodingCompatibility = "someengine.cluster.attributes.standard.v1";
+    public const string EncodingCompatibility = "someengine.cluster.attributes.standard.v2";
     public partial Guid VertexIdentity { get; set; }
     public partial string Encoding { get; set; }
     public partial IList<ClusterVertexAttributes> Clusters { get; set; }

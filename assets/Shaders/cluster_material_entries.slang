@@ -1,5 +1,5 @@
 #ifndef CLUSTER_VERTEX_ENCODING
-#define CLUSTER_VERTEX_ENCODING "someengine.cluster.positions.uint16.v1+someengine.cluster.attributes.standard.v1"
+#define CLUSTER_VERTEX_ENCODING "someengine.cluster.positions.uint16.v1+someengine.cluster.attributes.standard.v2"
 #endif
 
 #ifndef CLUSTER_MATERIAL_ENTRIES_SLANG

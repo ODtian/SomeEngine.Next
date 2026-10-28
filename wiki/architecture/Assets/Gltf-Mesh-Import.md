@@ -46,6 +46,8 @@ Blender 导出行为与对应要求：
 
 `VertexStream`、`VertexPrimitive` 与 `VertexStreamsBlock` 的公开构造函数接受调用方数据并复制数组或集合，供替换生产者创建同一类型的 Block；发布后的数据通过只读集合与内存读取。
 
+`GltfVertexStreamsImporter` 在一次 `ImportContext` 中按 `ModelRoot` 复用只读来源文档，逐 Mesh 的 `GltfAccessorReader` 继续读取自己的 accessor 与解码数据。上下文完成实际执行并关闭时释放这份文档；各次导入分别取得来源状态。
+
 ```csharp
 [AssetBlock("SomeEngine.Assets.Importers.VertexStreamsBlock")]
 public sealed partial class VertexStreamsBlock : AssetBlock
@@ -77,7 +79,7 @@ public sealed partial class VertexStreamsBlock : AssetBlock
 
 几何焊接逐位比较 double 中保存的全部基础属性、来源切线、各形变目标及来源形变切线，同时区分材质、属性名称与分量数、形变目标数量和 Deform 类别。只为被三角形引用的行建立顶点身份。三角形的材质与区域来源独立于焊接顶点持有；现有 Cluster/LOD 流程使用区域对应的工作拓扑保护区段边界，持久顶点身份继续共享。`Vertices` 中每一项包含来源图元号、准备流的行号和原 accessor 行号，所有逐顶点 Importer 可使用这份映射。
 
-cluster 构建按四种 Deform 类别分区。复用现有 meshoptimizer cluster 与 LOD DAG 构建流程，局部索引引用 cluster 顶点，逐三角形保留来源材质编号和网格区域编号，渲染按区域索引实例的材质绑定；不同分区的 LOD 组编号彼此独立。重合但身份不同的顶点受到简化锁保护，覆盖全部 UV 接缝、法线不连续和材质边界。蒙皮或形变流在边两端发生变化时，两端同样锁住：以变化为零的保守误差约束保留所有影响集和目标，适用于任意来源数量。新路径采用受锁约束的简化；静态及变形数据恒定区域可生成更粗 LOD。
+cluster 构建按四种 Deform 类别分区。复用现有 meshoptimizer cluster 与 LOD DAG 构建流程，局部索引引用 cluster 顶点，逐三角形保留来源材质编号和网格区域编号，渲染按区域索引实例的材质绑定；不同分区的 LOD 组编号彼此独立。几何 Importer 比较重合顶点的法线、全部 UV 集和材质，以 meshoptimizer Protect 标记保护实际接缝；配对接缝可沿自身简化，其余着色流的数值由既有属性误差参与顶点选择，结果索引继续引用原顶点。独立简化的组边界使用 Lock 标记固定公共边。蒙皮或形变流在边两端发生变化时，两端同样固定：以变化为零的保守误差约束保留所有影响集和目标，适用于任意来源数量。静态及变形数据恒定区域可生成更粗 LOD，父误差累加子组误差与本次简化误差。
 
 位置按 cluster 以 uint16 XYZ 编码，使用与标准组合编码一致的二次幂量化步长；包围半径包含量化误差。属性按同一 cluster 顶点顺序以 little-endian float64 编码，完整保留来源数值（包括 uint32 精度与符号零）。每个属性保存语义名称、最大分量数和逐顶点的实际分量数，0 表示该来源图元省略该属性。基础位置与蒙皮影响分别属于几何及后续影响 Block；其余基础属性全部进入属性 Block。属性数值与材质 Shader 的编码由同一个属性 Importer 交付，具体表示见 [Vertex Encoding](../cluster/Vertex-Encoding.md)。渲染页组合仅复制属性字节，材质 Shader 解释其布局。
 

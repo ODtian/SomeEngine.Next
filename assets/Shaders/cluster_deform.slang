@@ -63,7 +63,7 @@ uint AddDeformBytes(uint left, uint right)
 }
 
 #ifndef CLUSTER_DEFORM_VERTEX_ENCODING
-#define CLUSTER_DEFORM_VERTEX_ENCODING "someengine.cluster.positions.uint16.v1+someengine.cluster.attributes.standard.v1"
+#define CLUSTER_DEFORM_VERTEX_ENCODING "someengine.cluster.positions.uint16.v1+someengine.cluster.attributes.standard.v2"
 #endif
 
 [VertexEncoding(CLUSTER_DEFORM_VERTEX_ENCODING)]

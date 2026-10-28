@@ -9,7 +9,7 @@ public readonly record struct StandardClusterAttributes(Vector3 Normal, Vector4 
 /// <summary>Encodes the standard material's separate position and shading data.</summary>
 public sealed class StandardClusterVertexEncoder : IClusterVertexEncoder, IClusterVertexEncoder<StandardClusterAttributes>
 {
-    public const string EncodingCompatibility = "someengine.cluster.positions.uint16.v1+someengine.cluster.attributes.standard.v1";
+    public const string EncodingCompatibility = "someengine.cluster.positions.uint16.v1+someengine.cluster.attributes.standard.v2";
     public static StandardClusterVertexEncoder Instance { get; } = new();
     private StandardClusterVertexEncoder() { }
     public string Compatibility => EncodingCompatibility;
