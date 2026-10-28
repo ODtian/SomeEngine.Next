@@ -10,6 +10,9 @@ prediction from Newton.
 The mathematical migration follows the project's research NewtonRigid.cpp.
 AvbdJointMath.cs also retains a positive bound for force-weighted angular
 geometric curvature, following the research BodyEquation.cpp addJointEquation.
+The device counterparts physics_avbd_joint_math.slang, physics_avbd_joint.slang
+and physics_avbd_joint_forces.slang reuse these point coordinates, world force
+rows and the same positive angular curvature bound.
 
 JointMotorMath.cs, AvbdJointMotorMath.cs and XpbdJointMotorProjection.cs reuse
 these common joint Jacobians and material coefficients for timed PD drives.

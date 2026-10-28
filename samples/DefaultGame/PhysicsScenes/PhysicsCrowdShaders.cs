@@ -48,7 +48,7 @@ internal sealed partial class PhysicsSceneShaders
             entries[13], entries[14], entries[15], entries[16], entries[17]));
     }
 
-    internal DeviceAvbdKernels CrowdAvbd(bool jointNet = false)
+    internal DeviceAvbdKernels CrowdAvbd(bool jointNet, int bodyCapacity)
     {
         ComputePipelineDesc[] entries = Compile("crowd_avbd", (jointNet ? "#define CROWD_JOINT_NET 1\n" : "") + """
             #include "physics_dispatch.slang"
@@ -73,8 +73,16 @@ internal sealed partial class PhysicsSceneShaders
             void UpdateBody(uint3 id:SV_DispatchThreadID) { CrowdForces rows; updateDeviceAvbdBody(devicePhysicsThreadIndex(id,64),rows); }
             [shader("compute")][numthreads(64,1,1)]
             void UpdateDuals(uint3 id:SV_DispatchThreadID) { CrowdForces rows; updateDeviceAvbdDuals(devicePhysicsThreadIndex(id,64),rows); }
-            """, "Initialize", "UpdateBody", "UpdateDuals", "ClearBodyIndices");
-        return new(entries[0], entries[1], entries[2], ClearBodyIndices: entries[3]);
+            [shader("compute")][numthreads(64,1,1)]
+            void RestoreBodyStarts(uint3 id:SV_DispatchThreadID) { restoreDeviceAvbdBodyStartPose(devicePhysicsThreadIndex(id,64)); }
+            """, "Initialize", "UpdateBody", "UpdateDuals", "ClearBodyIndices", "RestoreBodyStarts");
+        return new(entries[0], entries[1], entries[2], ClearBodyIndices: entries[3])
+        {
+            GroupInitializationDispatches = new DeviceAvbdGroupDispatch[]
+            {
+                new(entries[4], DevicePhysicsDispatch.CreateGroups((bodyCapacity + 63) / 64)),
+            },
+        };
     }
 
     internal DeviceXpbdKernels CrowdXpbd(bool indirect = false, bool jointNet = false)

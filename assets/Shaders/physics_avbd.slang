@@ -86,6 +86,19 @@ void initializeDeviceAvbd<T : IDeviceAvbdConstraints,TSelection : IDeviceBodySel
 }
 void initializeDeviceAvbd<T : IDeviceAvbdConstraints>(uint index,T constraints)
 { DeviceAllEquationBodies bodies; initializeDeviceAvbd(index,constraints,bodies); }
+// The first primal iterate uses the completed start pose; the inertial target stays predicted.
+void restoreDeviceAvbdBodyStartPose(uint index)
+{
+    if(index>=BodyStep.count) return;
+    uint bodyIndex=DeviceBodyIndices[index];
+    if(ConstraintGraphActiveBodies[bodyIndex]==0||DeviceAvbdEquationIndices[bodyIndex]==0xffffffff) return;
+    DeviceBodyState body=DeviceBodyStates[bodyIndex];
+    if(body.motion!=2) return;
+    body.rotation=body.startRotation;
+    bodySetCenterOfMass(body,body.startCenterOfMass);
+    DeviceBodyStates[bodyIndex]=body;
+}
+
 void updateDeviceAvbdBody<T : IDeviceAvbdConstraints>(uint index,T constraints)
 {
     uint2 range=ConstraintGraphBodyRanges[AvbdStep.color];
