@@ -23,6 +23,11 @@ interface IDeviceGeometryUpdate
 interface IDeviceGeometryBounds
 {
     DeviceGeometryBounds getBounds(DeviceGeometryInput geometry);
+    float getRotationRadius(DeviceGeometryInput localGeometry)
+    {
+        DeviceGeometryBounds bounds = getBounds(localGeometry);
+        return length(max(abs(bounds.min), abs(bounds.max)));
+    }
 };
 
 void readDeviceGeometryPose(uint index, inout DeviceGeometryInput geometry)
@@ -92,6 +97,10 @@ struct DeviceSphereUpdate : IDeviceGeometryUpdate, IDeviceGeometryBounds
         bounds.min = geometry.position - geometry.convexRadius;
         bounds.max = geometry.position + geometry.convexRadius;
         return bounds;
+    }
+    override float getRotationRadius(DeviceGeometryInput localGeometry)
+    {
+        return length(localGeometry.position);
     }
 };
 
