@@ -193,78 +193,47 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ITransparentS
             return float4(finalColor, opacity);
         }
 
-        for (uint lightIndex = 0u; lightIndex < lighting.DirectionalCount; lightIndex++)
-        {
-            GPULight light = LightBuffer[lightIndex];
-            if (dot(mappedNormal, -light.Direction) <= 0.0)
-                continue;
-            float shadow = EvaluateVirtualShadowForwardVisibility(input.PixelCoord, lightIndex, light, receiver,
-                uint3(cameraView.ScreenWidth, cameraView.ScreenHeight, 1u), cameraView, MaterialDepth);
-            finalColor += EvaluateDirectionalLight(
-                baseColor,
-                metallic,
-                roughness,
-                mappedNormal,
-                V,
-                -normalize(light.Direction),
-                light.Color * (light.Intensity * shadow),
-                EvaluateLightingCookie(light, ctx.surfacePosition));
-        }
-
         uint cell = ClusteredLightCellIndex(
             lighting,
             ctx.pixelCoord.z,
             ctx.pixelCoord.xy,
             viewDepth);
         uint2 cellLights = ClusteredLightGrid[cell];
-        uint localCount = cellLights.y;
-        uint firstIndex = cellLights.x;
-        for (uint localIndex = 0u; localIndex < localCount; localIndex++)
+        uint lightCount = lighting.DirectionalCount + cellLights.y;
+        for (uint lightNumber = 0u; lightNumber < lightCount; lightNumber++)
         {
-            uint lightIndex = LightIndexList[firstIndex + localIndex];
+            bool directional = lightNumber < lighting.DirectionalCount;
+            uint lightIndex = directional ? lightNumber :
+                LightIndexList[cellLights.x + lightNumber - lighting.DirectionalCount];
             GPULight light = LightBuffer[lightIndex];
-            float3 toLight = light.Position - ctx.surfacePosition;
-            float distanceSq = dot(toLight, toLight);
-            if (light.Range <= 0.0 || distanceSq >= light.Range * light.Range || dot(mappedNormal, toLight) <= 0.0)
-                continue;
-            bool spotLight = dot(light.Direction, light.Direction) > 1e-8 && light.OuterConeCos > 0.0;
-            if (spotLight && EvaluateSpotCone(toLight * rsqrt(max(distanceSq, MIN_DISTANCE_SQ)),
-                    light.Direction, light.InnerConeCos, light.OuterConeCos) <= 0.0)
-                continue;
-            float shadow = EvaluateVirtualShadowForwardVisibility(input.PixelCoord, lightIndex, light, receiver,
-                uint3(cameraView.ScreenWidth, cameraView.ScreenHeight, 1u), cameraView, MaterialDepth);
-            float3 radiance = light.Color * (light.Intensity * shadow);
-            if (spotLight)
+            float3 direction;
+            float attenuation = 1.0;
+            float cone = 1.0;
+            if (directional)
             {
-                finalColor += EvaluateSpotLight(
-                    baseColor,
-                    metallic,
-                    roughness,
-                    mappedNormal,
-                    V,
-                    ctx.surfacePosition,
-                    light.Position,
-                    light.Range,
-                    light.Direction,
-                    light.InnerConeCos,
-                    light.OuterConeCos,
-                    radiance,
-                    EvaluateLightingCookie(light, ctx.surfacePosition));
+                if (dot(mappedNormal, -light.Direction) <= 0.0) continue;
+                direction = -normalize(light.Direction);
             }
             else
             {
-                finalColor += EvaluatePointLight(
-                    baseColor,
-                    metallic,
-                    roughness,
-                    mappedNormal,
-                    V,
-                    ctx.surfacePosition,
-                    light.Position,
-                    light.Range,
-                    radiance,
-                    EvaluateLightingCookie(light, ctx.surfacePosition));
+                float3 toLight = light.Position - ctx.surfacePosition;
+                float distanceSq = dot(toLight, toLight);
+                if (light.Range <= 0.0 || distanceSq >= light.Range * light.Range || dot(mappedNormal, toLight) <= 0.0)
+                    continue;
+                direction = toLight * rsqrt(max(distanceSq, MIN_DISTANCE_SQ));
+                attenuation = EvaluateDistanceAttenuation(distanceSq, light.Range);
+                bool spotLight = dot(light.Direction, light.Direction) > 1e-8 && light.OuterConeCos > 0.0;
+                if (spotLight)
+                {
+                    cone = EvaluateSpotCone(direction, light.Direction, light.InnerConeCos, light.OuterConeCos);
+                    if (cone <= 0.0) continue;
+                }
             }
+            float shadow = EvaluateVirtualShadowForwardVisibility(input.PixelCoord, lightIndex, light, receiver,
+                uint3(cameraView.ScreenWidth, cameraView.ScreenHeight, 1u), cameraView, MaterialDepth);
+            float3 radiance = light.Color * (light.Intensity * shadow);
+            finalColor += EvaluateDirectionalLight(baseColor, metallic, roughness, mappedNormal, V,
+                direction, radiance * attenuation * cone, EvaluateLightingCookie(light, ctx.surfacePosition));
         }
 
         return float4(finalColor, opacity);

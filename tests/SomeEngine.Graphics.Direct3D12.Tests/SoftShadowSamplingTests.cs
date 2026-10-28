@@ -10,6 +10,50 @@ namespace SomeEngine.Graphics.Direct3D12.Tests;
 public sealed class SoftShadowSamplingTests(D3D12TestCompiler compiler)
 {
     [Fact]
+    public void FirstPersonDirectionalMapsShadeWorldReceiversAndExcludeTheirOwnReceiver()
+    {
+        VirtualShadowView world = new()
+        {
+            LightViewProjection = Matrix4x4.Identity, VirtualResolution = 8, PageSize = 8,
+            AtlasSize = 16, PhysicalPagesPerRow = 2, MaxPhysicalPages = 4,
+            ClipmapLevelCount = 1, MipLevelCount = 1, ProjectionDepthScale = -1,
+            WorldUnitsPerCentimeter = 1, LightDirection = Vector3.UnitZ,
+        };
+        VirtualShadowView[] views = [world, world with { PageTableOffset = 1 }];
+        uint[] depths = Enumerable.Range(0, 16 * 16)
+            .Select(pixel => pixel % 16 >= 8 ? BitConverter.SingleToUInt32Bits(.75f) : 0u).ToArray();
+        uint[][] observed = new D3D12TestCompute(compiler).ExecuteSource("""
+            #define VSM_WHOLE_PAGE_SAMPLING 1
+            #include "vsm_soft_sampling.slang"
+            StructuredBuffer<VirtualShadowMapParameters> Views;
+            StructuredBuffer<uint> Pages;
+            Texture2DArray<uint> Atlas;
+            RWStructuredBuffer<float4> Result;
+            [shader("compute")]
+            [numthreads(1,1,1)]
+            void ReadWorldAndFirstPersonReceivers()
+            {
+                float3 position = float3(0,0,.75), normal = float3(0,0,-1);
+                VirtualShadowRaySettings rays = (VirtualShadowRaySettings)0;
+                float softWorld = SampleVirtualShadowDirectionalSoft(Views, Pages, Atlas, 0u, 1u,
+                    position, normal, 0.0, 0.0, 4u, 8u, 8.0, uint2(0), 0u, false, 1u).Visibility;
+                float rayWorld = TraceVirtualShadowDirectional(Views, Pages, Atlas, 0u, 1u,
+                    position, normal, 0.0, 0.0, rays, uint2(0), 0u, 1.0, 0.0, false, 1u).Visibility;
+                float softFirstPerson = SampleVirtualShadowDirectionalSoft(Views, Pages, Atlas, 0u, 1u,
+                    position, normal, 0.0, 0.0, 4u, 8u, 8.0, uint2(0), 0u, true, 1u).Visibility;
+                float rayFirstPerson = TraceVirtualShadowDirectional(Views, Pages, Atlas, 0u, 1u,
+                    position, normal, 0.0, 0.0, rays, uint2(0), 0u, 1.0, 0.0, true, 1u).Visibility;
+                Result[0] = float4(softWorld, rayWorld, softFirstPerson, rayFirstPerson);
+            }
+            """, "ReadWorldAndFirstPersonReceivers", new(1, 1, 1),
+            [(MemoryMarshal.Cast<VirtualShadowView, uint>(views).ToArray(), ResourceBindingType.BufferSrv, VirtualShadowView.SizeInBytes),
+             (new uint[] { VirtualShadowPageEntry.Encode(0, 2), VirtualShadowPageEntry.Encode(1, 2) }, ResourceBindingType.BufferSrv, 4),
+             (new uint[4], ResourceBindingType.BufferUav, 16)],
+            new SampledImage(16, 16, depths, 2, ViewDimension: TextureViewDimension.Texture2DArray));
+        Assert.Equal([0f, 0f, 1f, 1f], observed[0].Select(BitConverter.UInt32BitsToSingle).ToArray());
+    }
+
+    [Fact]
     public void FilteredDistantUmbraProvidesTheDirectionalProjection()
     {
         VirtualShadowView view = new()

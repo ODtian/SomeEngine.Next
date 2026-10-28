@@ -546,15 +546,19 @@ VirtualShadowProjectionResult TraceVirtualShadowDirectional(
     VirtualShadowRaySettings settings, uint2 pixel, uint frameIndex, float distanceFromCamera, float rayStartOffset,
     bool firstPersonReceiver = false, uint firstPersonView = 0xFFFFFFFFu)
 {
-    VirtualShadowProjectionResult result = TraceVirtualShadowDirectionalFamily(views, pages, atlas,
-        firstView, viewCount, position, normal, dynamicBias, receiverBias, settings, pixel, frameIndex,
-        distanceFromCamera, rayStartOffset);
-    if (!firstPersonReceiver && firstPersonView != 0xFFFFFFFFu && !(result.Valid && result.Visibility == 0.0))
+    VirtualShadowProjectionResult result = EmptyVirtualShadowProjection();
+    [loop]
+    for (uint family = 0u; family < 2u; family++)
     {
-        VirtualShadowProjectionResult firstPerson = TraceVirtualShadowDirectionalFamily(views, pages, atlas,
-            firstPersonView, views[firstPersonView].ClipmapLevelCount, position, normal, dynamicBias, receiverBias,
-            settings, pixel, frameIndex, distanceFromCamera, rayStartOffset);
-        if (firstPerson.Valid && (!result.Valid || firstPerson.Visibility <= result.Visibility)) result = firstPerson;
+        VirtualShadowProjectionResult sampled = TraceVirtualShadowDirectionalFamily(views, pages, atlas,
+            firstView, viewCount, position, normal, dynamicBias, receiverBias, settings, pixel, frameIndex,
+            distanceFromCamera, rayStartOffset);
+        if (family == 0u || (sampled.Valid && (!result.Valid || sampled.Visibility <= result.Visibility)))
+            result = sampled;
+        if (family != 0u || firstPersonReceiver || firstPersonView == 0xFFFFFFFFu ||
+            (result.Valid && result.Visibility == 0.0)) break;
+        firstView = firstPersonView;
+        viewCount = views[firstView].ClipmapLevelCount;
     }
     return result;
 }

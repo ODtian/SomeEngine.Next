@@ -262,21 +262,22 @@ VirtualShadowProjectionResult SampleVirtualShadowDirectionalSoft(StructuredBuffe
     uint level = SelectDirectionalVirtualShadowView(views, firstView, viewCount, position, position,
         position, dynamicBias, receiverBias);
     if (level >= viewCount) return EmptyVirtualShadowProjection();
-    VirtualShadowProjectionResult result = SampleVirtualShadowSoftView(views, pages, atlas,
-        firstView, firstView + level, viewCount, position, normal, 0u, blockerSamples,
-        filterSamples, maxRadiusTexels, pixel, frameIndex, rayStartDistance);
-    if (!firstPersonReceiver && firstPersonView != 0xffffffffu && !(result.Valid && result.Visibility == 0.0))
+    VirtualShadowProjectionResult result = EmptyVirtualShadowProjection();
+    [loop]
+    for (uint family = 0u; family < 2u; family++)
     {
-        uint count = views[firstPersonView].ClipmapLevelCount;
-        uint selected = SelectDirectionalVirtualShadowView(views, firstPersonView, count,
+        VirtualShadowProjectionResult sampled = SampleVirtualShadowSoftView(views, pages, atlas,
+            firstView, firstView + level, viewCount, position, normal, 0u, blockerSamples,
+            filterSamples, maxRadiusTexels, pixel, frameIndex, rayStartDistance);
+        if (family == 0u || (sampled.Valid && (!result.Valid || sampled.Visibility <= result.Visibility)))
+            result = sampled;
+        if (family != 0u || firstPersonReceiver || firstPersonView == 0xffffffffu ||
+            (result.Valid && result.Visibility == 0.0)) break;
+        firstView = firstPersonView;
+        viewCount = views[firstView].ClipmapLevelCount;
+        level = SelectDirectionalVirtualShadowView(views, firstView, viewCount,
             position, position, position, dynamicBias, receiverBias);
-        if (selected < count)
-        {
-            VirtualShadowProjectionResult firstPerson = SampleVirtualShadowSoftView(views, pages, atlas,
-                firstPersonView, firstPersonView + selected, count, position, normal, 0u,
-                blockerSamples, filterSamples, maxRadiusTexels, pixel, frameIndex, rayStartDistance);
-            if (firstPerson.Valid && (!result.Valid || firstPerson.Visibility <= result.Visibility)) result = firstPerson;
-        }
+        if (level >= viewCount) break;
     }
     return result;
 }
