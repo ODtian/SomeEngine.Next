@@ -53,14 +53,18 @@ bool ClusterSeedTargetAccepts(ClusterProjectedBounds bounds, ClusterViewUniforms
 {
     [branch]
     if (view.TargetPolicy == 0u) return true;
-    if (view.CullingEnabled == 0u || bounds.CrossesNearPlane)
-        return ClusterTargetPolicyScreenBoundsAccepts(0.0.xx, 1.0.xx, view, depthCacheClass);
-    float2 minUv = float2(bounds.NdcMin.x, -bounds.NdcMax.y) * 0.5 + 0.5;
-    float2 maxUv = float2(bounds.NdcMax.x, -bounds.NdcMin.y) * 0.5 + 0.5;
-    if (!RasterBoundsCoverPixelCenters(minUv, maxUv, uint2(view.ScreenWidth, view.ScreenHeight)))
-        return false;
-    return ClusterTargetPolicyScreenBoundsAccepts(minUv, maxUv, view, depthCacheClass,
-        ClusterTargetPolicyRequiredPageFlags(bounds.NearDepth, view));
+    float2 minUv = 0.0.xx;
+    float2 maxUv = 1.0.xx;
+    uint requiredPageFlags = 0u;
+    if (view.CullingEnabled != 0u && !bounds.CrossesNearPlane)
+    {
+        minUv = float2(bounds.NdcMin.x, -bounds.NdcMax.y) * 0.5 + 0.5;
+        maxUv = float2(bounds.NdcMax.x, -bounds.NdcMin.y) * 0.5 + 0.5;
+        if (!RasterBoundsCoverPixelCenters(minUv, maxUv, uint2(view.ScreenWidth, view.ScreenHeight)))
+            return false;
+        requiredPageFlags = ClusterTargetPolicyRequiredPageFlags(bounds.NearDepth, view);
+    }
+    return ClusterTargetPolicyScreenBoundsAccepts(minUv, maxUv, view, depthCacheClass, requiredPageFlags);
 }
 
 uint ClusterSeedBoundsState(
@@ -69,10 +73,13 @@ uint ClusterSeedBoundsState(
     ClusterProjectedBounds projectedBounds,
     uint viewIndex,
     ClusterViewUniforms view,
-    uint depthCacheClass = 2u)
+    uint depthCacheClass = 2u,
+    bool groupOccluded = false)
 {
     if (!ClusterSeedTargetAccepts(projectedBounds, view, depthCacheClass))
         return 0u;
+    if (groupOccluded)
+        return 2u;
     if (view.CullingEnabled == 0u ||
         view.HasPrevHistory == 0u ||
         view.HiZMipCount == 0u)
@@ -245,14 +252,13 @@ void SeedHierarchyRoots(
                 projectedBounds);
             if (view.CullingEnabled != 0u && outsideFrustum)
                 continue;
-            uint boundsState = (occludedGroupViews & (1u << bit)) != 0u
-                ? (ClusterSeedTargetAccepts(projectedBounds, view, view.TargetPolicy != 0u ? LoadTargetDepthCacheClass(instanceID) : 1u) ? 2u : 0u)
-                : ClusterSeedBoundsState(
-                    instanceWorldMin,
-                    instanceWorldMax,
-                    projectedBounds,
-                    viewIndex,
-                    view, view.TargetPolicy != 0u ? LoadTargetDepthCacheClass(instanceID) : 1u);
+            uint boundsState = ClusterSeedBoundsState(
+                instanceWorldMin,
+                instanceWorldMax,
+                projectedBounds,
+                viewIndex,
+                view, view.TargetPolicy != 0u ? LoadTargetDepthCacheClass(instanceID) : 1u,
+                (occludedGroupViews & (1u << bit)) != 0u);
             if (boundsState == 0u)
                 continue;
             if (boundsState == 2u)
