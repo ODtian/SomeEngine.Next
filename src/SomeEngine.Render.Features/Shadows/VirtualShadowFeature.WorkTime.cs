@@ -7,6 +7,8 @@ namespace SomeEngine.Render.Features.Shadows;
 public sealed partial class VirtualShadowFeature
 {
     private QueryPool? _workTimeQueries;
+    private GraphQueryPoolId _workTimeQueryId;
+    private GraphBufferId _workTimeResults;
     private GraphPassId _workTimeEndPass;
     private GraphReadbackId _workTimeReadback;
     private ulong _workTimeFrequency;
@@ -36,6 +38,8 @@ public sealed partial class VirtualShadowFeature
         GraphQueryPoolId queries = edit.RegisterQueryPool(_workTimeQueries);
         GraphBufferId results = edit.CreateBuffer(new BufferDesc(2u * sizeof(ulong), BufferUsages.CopyDestination | BufferUsages.CopySource | BufferUsages.QueryResolve,
             "Virtual shadow geometry timestamps"));
+        _workTimeQueryId = queries;
+        _workTimeResults = results;
         GraphPassId start = edit.AddGeneralFramePass("Start virtual shadow geometry timing", PassQueueSelection.AnyOfType(QueueType.Graphics),
             new WorkTimestamp(queries, 0), new PassOptions(Culling: PassCullingMode.NeverCull),
             WorkTimestamp.Declare, WorkTimestamp.Record, region: prepare);
@@ -140,6 +144,7 @@ public sealed partial class VirtualShadowFeature
     private readonly GraphRegionId _invalidationTimingRegion;
     private QueryPool? _invalidationTimingQueries;
     private GraphQueryPoolId _invalidationTimingQueryId;
+    private GraphBufferId _invalidationTimingResults;
     private GraphPassId _invalidationTimingResolvePass;
     private GraphReadbackId _invalidationTimingReadback;
     private ulong _invalidationTimingFrequency;
@@ -185,6 +190,7 @@ public sealed partial class VirtualShadowFeature
                 edit.OrderAfter(readback, resolve);
                 edit.Commit();
                 _invalidationTimingQueryId = id;
+                _invalidationTimingResults = values;
                 _invalidationTimingResolvePass = resolve;
                 _invalidationTimingReadback = readback;
                 _invalidationTimingFrequency = frequency;

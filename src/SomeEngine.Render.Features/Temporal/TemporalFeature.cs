@@ -35,6 +35,8 @@ public sealed class TemporalFeature : IDisposable, IRenderGraphFrameExecutionObs
         new(0, 1, 0, 2, TextureAspects.Color);
 
     private readonly LinkedRasterPipeline _pipeline;
+    private readonly global::SomeEngine.RenderGraph.RenderGraph _graph;
+    private readonly GraphRegionId _region;
     private readonly TemporalResource[] _resourceOrder;
     private readonly GraphTextureId _history;
     private uint _historyLayer;
@@ -71,6 +73,7 @@ public sealed class TemporalFeature : IDisposable, IRenderGraphFrameExecutionObs
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(height);
         if (!ReferenceEquals(graph.Device, device))
             throw new ArgumentException("Temporal and RenderGraph must use the same Device.", nameof(graph));
+        _graph = graph;
 
         LinkedRasterPipeline? pipeline = null;
         try
@@ -89,6 +92,8 @@ public sealed class TemporalFeature : IDisposable, IRenderGraphFrameExecutionObs
                 ResolveResource);
 
             using RenderGraphEdit edit = graph.BeginEdit();
+            _region = edit.AddRegion("Temporal output", region);
+            region = _region;
             _history = edit.CreatePersistentTexture(new TextureDesc(
                 TextureDimension.Texture2D,
                 checked((uint)width), checked((uint)height), 1, 1, 2, 1,
@@ -182,6 +187,16 @@ public sealed class TemporalFeature : IDisposable, IRenderGraphFrameExecutionObs
     }
 
     public TemporalFeatureOutput Output { get; }
+
+    /// <summary>Removes this fixed-size resolve and its histories after consumers have detached.</summary>
+    public void UninstallGraph()
+    {
+        using RenderGraphEdit edit = _graph.BeginEdit();
+        edit.Remove(_region);
+        edit.Remove(_history);
+        edit.Remove(Output.ResolvedColor);
+        edit.Commit();
+    }
 
     public void OrderAfter(ref RenderGraphEdit graph, GraphPassId producer)
     {

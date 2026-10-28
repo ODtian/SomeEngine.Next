@@ -48,6 +48,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
     private readonly IGraphicsBackend _backend;
     private readonly Device _device;
     private readonly global::SomeEngine.RenderGraph.RenderGraph _renderGraph;
+    private readonly GraphRegionId[] _graphRegions;
     private readonly VirtualShadowMap _shadowMap;
     private readonly uint _pageTableEntriesPerView;
     private readonly uint _pageHierarchyWordsPerView;
@@ -194,9 +195,6 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
         _blueNoise = shaders.BlueNoise ?? throw new ArgumentException(
             "Virtual shadow shaders require a blue-noise texture.", nameof(shaders));
         _textureDevice = textureDevice;
-        _qualityRegion = targetGeometryAfter;
-        _invalidationTimingRegion = feedback;
-        _qualityDemandRegion = primaryDepthAfter;
         _geometry = geometry ?? throw new ArgumentNullException(nameof(geometry));
         _lighting = lighting ?? throw new ArgumentNullException(nameof(lighting));
         if (!ReferenceEquals(graph.Device, device))
@@ -221,6 +219,13 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
             RenderGraphEdit edit = graph.BeginEdit();
             try
             {
+                primaryDepthAfter = edit.AddRegion("Virtual shadow primary depth", primaryDepthAfter);
+                targetGeometryAfter = edit.AddRegion("Virtual shadow target geometry", targetGeometryAfter);
+                feedback = edit.AddRegion("Virtual shadow feedback", feedback);
+                _graphRegions = [primaryDepthAfter, targetGeometryAfter, feedback];
+                _qualityRegion = targetGeometryAfter;
+                _invalidationTimingRegion = feedback;
+                _qualityDemandRegion = primaryDepthAfter;
                 _viewUploadRegion = edit.AddFrameRegion("Virtual shadow view upload", primaryDepthAfter);
                 _blueNoiseInput = edit.CreateParameterInput(ResourceBindingType.TextureSrv);
                 ConfigureShadowRequests(ref edit, primaryDepthAfter);

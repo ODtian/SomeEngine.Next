@@ -87,6 +87,7 @@ public sealed class ApplicationScene(string contentDirectory)
     /// <summary>Receives complete CPU/GPU frame timing after GPU completion, preserving asynchronous frame scheduling.</summary>
     public Action<ApplicationFrameTiming>? FrameMeasured { get; set; }
     public Action<ClusterBlendMetrics>? BlendFrameCompleted { get; set; }
+    /// <summary>Creates the color stage for each main-view output size. Its previous instance is disposed after consumers reconnect.</summary>
     public Func<ApplicationRendering, IApplicationColorFeature>? CreateColorFeature { get; set; }
     public Action<ApplicationResult>? SceneCompleted { get; set; }
     public bool ReloadRequested { get; internal set; }

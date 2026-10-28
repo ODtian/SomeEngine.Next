@@ -46,10 +46,12 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
     private LinkedComputePipeline? _singlePointFillPipeline;
     private GraphPassId _singlePointPreparePass;
     private GraphPassId _singlePointFillPass;
+    private GraphBufferId _singlePointBounds;
     private ulong _singlePointVersion;
     private readonly IGraphicsBackend _backend;
     private readonly Device _device;
     private readonly global::SomeEngine.RenderGraph.RenderGraph _graph;
+    private readonly GraphRegionId _region;
     private readonly Shader _singlePointShader;
     private readonly GraphRegionId _singlePointRegion;
     private readonly bool _supportsSinglePoint;
@@ -132,6 +134,8 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
             RenderGraphEdit edit = graph.BeginEdit();
             try
             {
+                _region = edit.AddRegion("Lighting", region);
+                region = _region;
                 _frameLights = edit.CreateBufferInput(BufferUsages.ShaderRead);
                 _frameViews = edit.CreateBufferInput(BufferUsages.ShaderRead);
                 GraphBufferId grid = edit.CreateBuffer(new BufferDesc(
@@ -319,6 +323,18 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
 
     public LightingFeatureResources Resources { get; }
     public ClusteredViewGrid ViewGrid => new(_frameViews, Resources.CellCountPerView, Resources.ViewCount);
+
+    /// <summary>Removes this fixed-size light grid after its consumers have detached.</summary>
+    public void UninstallGraph()
+    {
+        using RenderGraphEdit edit = _graph.BeginEdit();
+        edit.Remove(_region);
+        foreach (GraphBufferId buffer in new[] { Resources.Grid, Resources.LightIndices,
+            Resources.AllocationStatus, _lightLinks, _allocationCounters, _singlePointBounds })
+            if (buffer != default) edit.Remove(buffer);
+        edit.Remove(Resources.CookieAtlas);
+        edit.Commit();
+    }
 
     /// <summary>Creates the shared view parameters for screen tile candidates with one depth slice.</summary>
     public ClusteredViewGrid CreateTileGrid()
@@ -611,6 +627,7 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
                 GraphPassId fillPass = AddSinglePointPass(ref edit, fill, false, bounds);
                 edit.OrderAfter(fillPass, preparePass);
                 edit.Commit();
+                _singlePointBounds = bounds;
                 _singlePointPreparePass = preparePass;
                 _singlePointFillPass = fillPass;
                 _singlePointPreparePipeline = prepare;

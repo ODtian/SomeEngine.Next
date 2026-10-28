@@ -41,6 +41,7 @@ public sealed class SceneScript
     public uint BlendTriangleCapacity { get; init; } = ClusterPipelineOptions.DefaultBlendTriangleCapacity;
     public uint BlendReferenceCapacity { get; init; } = 1_048_576;
     public Action<ClusterBlendMetrics>? BlendFrameCompleted { get; init; }
+    /// <summary>Creates the color stage for each main-view output size. Its previous instance is disposed after consumers reconnect.</summary>
     public Func<ApplicationRendering, IApplicationColorFeature>? CreateColorFeature { get; init; }
     public bool WaitForFrames { get; init; } = true;
     public float RasterEdgePixels { get; init; } = 4;

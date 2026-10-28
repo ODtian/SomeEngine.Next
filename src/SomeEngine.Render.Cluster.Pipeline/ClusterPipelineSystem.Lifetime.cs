@@ -148,6 +148,6 @@ public sealed partial class ClusterPipelineSystem
             GraphData.MaterialTextures = GraphData.MaterialTextures.Clear();
             GraphData.MissingMaterialTexture = null;
             GraphData.Outputs = default;
-        }, () => _graphRemoved = true);
+        }, () => _graphRemoved = true, passRegions: []);
     }
 }

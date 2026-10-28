@@ -40,6 +40,20 @@ Cluster 在构造时按顺序建立目标视图第一轮几何、`IntermediateOc
 最终 HiZ 放入组合根给出的目标视图几何之后区段。`ClusterRenderContext` 持有目标资源
 绑定、数量、尺寸与遮挡策略；VSM 内部的显式顺序关系继续由 VSM 维护。
 
+## Main-view output size
+
+当前实现由 [`ApplicationFrameOutput`](../../../src/SomeEngine.Runtime/ApplicationFrameOutput.cs)
+集中持有一组固定尺寸的 Lighting、Cluster、VSM、颜色阶段、Temporal 与呈现资源。
+[`RuntimeApplication`](../../../src/SomeEngine.Runtime/RuntimeApplication.cs) 在窗口客户区尺寸变化时
+等待已有提交完成并重配 swapchain，随后按新尺寸建立输出组。Canvas 与 UI 通过现有图重连接口
+取得新输出后，旧组按消费者到生产者的顺序调用 `UninstallGraph` 并释放实例。
+正常帧持续使用当前组；Game world、Rendering world、几何处理、实例资源与图的阶段骨架保持场景生命周期。
+
+`CreateColorFeature` 每次取得该组的实际尺寸与投影；旧颜色实例在重连后释放。
+追加视图由 [`ApplicationViews`](../../../src/SomeEngine.Runtime/ApplicationViews.cs) 按各自的
+`ApplicationViewSettings` 维护，使用自己的 Cluster 输出和 Skinning 资源提供者。
+主视图尺寸切换保留追加视图的设置、公开图像身份与自身资源。
+
 ## Raster regions
 
 主视图的两轮光栅与目标视图的两轮光栅分别占据一个持久区段。每轮内部依次包含：

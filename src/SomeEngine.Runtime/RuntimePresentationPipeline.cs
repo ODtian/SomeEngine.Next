@@ -14,6 +14,7 @@ namespace SomeEngine.Runtime;
 internal sealed class RuntimePresentationPipeline : IDisposable
 {
     private readonly GraphicsPipeline _pipeline;
+    private readonly global::SomeEngine.RenderGraph.RenderGraph _graph;
     private readonly GraphTextureId _target;
     private readonly GraphPassId _drawPass;
     private readonly RuntimePresentationPassData _passData;
@@ -44,6 +45,7 @@ internal sealed class RuntimePresentationPipeline : IDisposable
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(inputHeight);
         if (!ReferenceEquals(graph.Device, device))
             throw new ArgumentException("Presentation and RenderGraph must use the same Device.", nameof(graph));
+        _graph = graph;
 
         int targetIndex = shader.RequireSlangTarget(device.Capabilities.CompileTarget);
         ShaderReflection reflection = shader.GetSlangReflection(targetIndex);
@@ -159,6 +161,14 @@ internal sealed class RuntimePresentationPipeline : IDisposable
 
     internal GraphTextureId Target => _target;
     internal GraphPassId DrawPass => _drawPass;
+
+    internal void UninstallGraph()
+    {
+        using RenderGraphEdit edit = _graph.BeginEdit();
+        edit.Remove(_drawPass);
+        edit.Remove(_target);
+        edit.Commit();
+    }
 
     internal void OrderAfter(RenderGraphEdit edit, GraphReadbackId predecessor) => edit.OrderAfter(_drawPass, predecessor);
 

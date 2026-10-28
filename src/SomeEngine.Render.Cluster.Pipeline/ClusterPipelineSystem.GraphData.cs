@@ -113,7 +113,7 @@ public sealed partial class ClusterPipelineSystem
 
     private delegate void GraphEditWork(ref RenderGraphEdit edit);
 
-    private void EditGraph(GraphEditWork update, Action? accept = null)
+    private void EditGraph(GraphEditWork update, Action? accept = null, GraphRegionId[]? passRegions = null)
     {
         RenderGraphEdit edit = _graph.BeginEdit();
         List<Exception>? failures = null;
@@ -122,8 +122,8 @@ public sealed partial class ClusterPipelineSystem
             _editingGraphData = _graphData.Copy();
             update(ref edit);
             List<GraphPassId> passes = [];
-            foreach (GraphRegionId region in new[] { _regions.PrimaryGeometry, _regions.TargetGeometry,
-                _regions.Shading, _regions.Feedback, _shadowRequestRegion, _transparencyRequestRegion })
+            foreach (GraphRegionId region in passRegions ?? [_regions.PrimaryGeometry, _regions.TargetGeometry,
+                _regions.Shading, _regions.Feedback, _shadowRequestRegion, _transparencyRequestRegion])
                 if (region != default) passes.AddRange(edit.GetPasses(region));
             _editingGraphData.Passes = passes.ToArray();
             edit.Commit();
