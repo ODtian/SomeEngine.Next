@@ -106,7 +106,7 @@ void CountPersistentCandidates(uint amount)
     CandidateArgs.InterlockedMax(0u, (first + amount + 63u) / 64u, ignored);
 }
 
-void CullClusterCandidateData(ClusterCandidate candidate, bool targetFilters, bool multipleViews);
+void CullClusterCandidateData(ClusterCandidate candidate, bool targetFilters);
 
 struct ClusterLeafCandidates : IWaveTask
 {
@@ -127,16 +127,16 @@ struct ClusterLeafCandidates : IWaveTask
     {
         uint pageOffset = WaveReadLaneAt(PageOffset, sourceLane);
         uint firstCluster = WaveReadLaneAt(FirstCluster, sourceLane);
+        uint clusterCount = WaveReadLaneAt(ClusterCount, sourceLane);
         uint instanceID = WaveReadLaneAt(InstanceID, sourceLane);
         uint viewBase = WaveReadLaneAt(ViewBase, sourceLane);
         uint views = WaveReadLaneAt(ActiveViews, sourceLane);
         if (active)
         {
-            uint viewCount = countbits(views);
-            uint bit = WaveQueue::FindNthSetBit(views, int(localIndex % viewCount));
+            uint bit = WaveQueue::FindNthSetBit(views, int(localIndex / clusterCount));
             ClusterCandidate candidate = MakeClusterCandidate(MakeDrawRequest(
-                pageOffset, firstCluster + localIndex / viewCount, instanceID, viewBase + bit), 1u);
-            CullClusterCandidateData(candidate, TargetFilters, viewCount > 1u);
+                pageOffset, firstCluster + localIndex % clusterCount, instanceID, viewBase + bit), 1u);
+            CullClusterCandidateData(candidate, TargetFilters);
         }
     }
 };
@@ -350,12 +350,11 @@ void ProcessTraversalNode(ClusterTraversalNode parent, bool validParent, uint ch
     }
 
 #ifdef CLUSTER_PERSISTENT_CULL
-    // One producer per child and wave keeps that wave's complete accepted views.
+    // Keep each lane's accepted views for inline leaf culling.
     uint leafViews = activeViews;
     if (viewLanes > 1u)
     {
         activeViews = MergeClusterViewMaskWave(activeViews, viewLanes, CLUSTER_BVH_FANOUT);
-        leafViews = WaveGetLaneIndex() == firstViewLane ? activeViews : 0u;
         streamingPriority = MergeClusterViewPriorityWave(streamingPriority, viewLanes, CLUSTER_BVH_FANOUT);
         if (viewLanes * CLUSTER_BVH_FANOUT > WaveGetLaneCount())
         {
