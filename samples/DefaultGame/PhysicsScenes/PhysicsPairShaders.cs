@@ -30,15 +30,21 @@ internal sealed partial class PhysicsSceneShaders
         bool hull = false, bool prediction = false, bool firstBodyOrigin = false, bool secondBodyOrigin = false)
     {
         string predictionMethods = prediction ? $$"""
-            float getMaximumProjection(DeviceGeometryInput geometry, float3 direction)
+            override float4 getSampleRotation(DeviceGeometryInput geometry, DeviceBodyState body)
+            { return body.predictedRotation; }
+            DeviceFeaturePoint getSupportPoint(DeviceGeometryInput geometry, float3 unitDirection)
             {
                 if (geometry.geometryType == {{firstType}})
                 {
                     {{first}} shape;
-                    return dot(shape.support(geometry, direction).point, direction) + shape.radius(geometry);
+                    DeviceFeaturePoint point=shape.support(geometry,unitDirection);
+                    point.point+=unitDirection*shape.radius(geometry);
+                    return point;
                 }
                 {{second}} shape;
-                return dot(shape.support(geometry, direction).point, direction) + shape.radius(geometry);
+                DeviceFeaturePoint point=shape.support(geometry,unitDirection);
+                point.point+=unitDirection*shape.radius(geometry);
+                return point;
             }
             uint getPredictedManifold(uint work, DeviceGeometryInput first, DeviceGeometryInput second,
                 DeviceGeometryDistance distance, float manifoldDistance, out DeviceGeometryDistance points[4])

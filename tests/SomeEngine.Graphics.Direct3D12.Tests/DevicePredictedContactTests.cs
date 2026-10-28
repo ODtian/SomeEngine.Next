@@ -201,9 +201,9 @@ public sealed partial class DeviceAvbdTests
                 uint manifold(uint work,DeviceGeometryInput first,DeviceGeometryInput second,DeviceGeometryDistance distance,out DeviceGeometryDistance points[4])
                 { if(first.geometryType=={{firstType}}) { DeviceConvexCollision<{{first}},{{second}}> shape; return shape.manifold(work,first,second,distance,points); }
                   DeviceConvexCollision<{{second}},{{first}}> shape; return shape.manifold(work,first,second,distance,points); }
-                float getMaximumProjection(DeviceGeometryInput geometry,float3 direction)
-                { if(geometry.geometryType=={{firstType}}) { {{first}} shape; return dot(shape.support(geometry,direction).point,direction)+shape.radius(geometry); }
-                  {{second}} shape; return dot(shape.support(geometry,direction).point,direction)+shape.radius(geometry); }
+                DeviceFeaturePoint getSupportPoint(DeviceGeometryInput geometry,float3 unitDirection)
+                { if(geometry.geometryType=={{firstType}}) { {{first}} shape; DeviceFeaturePoint point=shape.support(geometry,unitDirection); point.point+=unitDirection*shape.radius(geometry); return point; }
+                  {{second}} shape; DeviceFeaturePoint point=shape.support(geometry,unitDirection); point.point+=unitDirection*shape.radius(geometry); return point; }
                 uint getPredictedManifold(uint work,DeviceGeometryInput first,DeviceGeometryInput second,DeviceGeometryDistance distance,float manifoldDistance,out DeviceGeometryDistance points[4])
                 { if(first.geometryType=={{firstType}}) { DeviceConvexCollision<{{first}},{{second}}> shape; return shape.manifold(work,first,second,distance,manifoldDistance,points); }
                   DeviceConvexCollision<{{second}},{{first}}> shape; return shape.manifold(work,first,second,distance,manifoldDistance,points); }

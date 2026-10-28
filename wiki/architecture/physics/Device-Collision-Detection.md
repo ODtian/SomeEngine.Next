@@ -101,16 +101,44 @@ detectDeviceCollision(id.x, kernel);
 ## 刚体预测接触
 
 `physics_collision_prediction.slang` 提供显式 `predictDeviceRigidCollision(work, kernel)` 入口。
-它读取原 `DeviceGeometryReference.firstBody` 对应的刚体状态，在共同步起点重建形状框架，
-沿 `IDeviceCollisionPrediction` 取得分离平面和候选流形，再用双方采样锚在预测状态下的
-相对位移筛选接近。接触保存起点法向、间距、几何局部锚和 Body 局部锚，
+它读取原 `DeviceGeometryReference.firstBody` 对应的刚体状态，在真实共同步起点取得分离平面。
+`CollisionDistances` 保留该真实起点的距离结果，候选流形沿下述预测旋转姿态选择支持面。
+接触保存重基到起点的法向、间距、几何局部锚和 Body 局部材料锚，
 `Prediction.SampleTime` 使用本次 `PhysicsStepContext.StartTime`。
 检测参数沿每个 kernel 原有的 256 字节范围传递该时刻。
 
-`IDeviceCollisionPrediction` 复用普通窄阶段并增加两个实际操作：
-`getMaximumProjection(geometry, direction)` 给出具体形状沿单位方向的最远投影，
-`getPredictedManifold(..., manifoldDistance, points)` 按本 pair 的候选距离产生流形。
-具体凸形状的 support 和外扩半径提供投影；内置凸形状碰撞的带距离重载复用原裁剪算法。
+`IDeviceCollisionPrediction` 复用普通窄阶段并提供具体 kernel 的流形采样操作：
+`getSampleRotation(geometry, body)` 默认返回 `startRotation`，延续普通 AVBD 的步初姿态线性化；
+Silo 的 typed kernel 显式返回 `predictedRotation`，配合其 contact-potential AVBD 的角曲率装配。
+`getSupportPoint(geometry, unitDirection)` 返回具体形状的完整世界表面支撑点及特征，
+点已包含沿该单位方向的外扩半径；共同入口由其与方向的点积读取原投影。
+`getPredictedManifold(..., distance, manifoldDistance, points)` 接收同采样框架的距离见证及本 pair 候选距离，
+内置凸形状碰撞的带距离重载复用原裁剪算法。
+采样刚体使用该 kernel 选择的旋转，质心保持 `startCenterOfMass`，
+body 位置由该旋转和原局部 COM 重建；三个具体形状继续使用同一 typed 入口。
+原起点法向决定分离侧，采样旋转决定朝向该平面的支持面及最多四个流形点。
+具体 producer 使用 `shape.support(direction)+direction*shape.radius` 提供完整点，保留该特征。
+共同入口在该采样框架沿 `+n` 和 `-n` 读取两端表面支撑点，
+以 `dot(n, secondPoint-firstPoint)` 形成 seed，统一传给 production 及用户流形实现。
+该 seed 同时服务空裁剪和单点形状的回退，点、特征、法向与传入形状具有同一采样含义。
+`getPredictedManifold` 输出的世界见证点属于传入的采样姿态，局部材料点按同一姿态反变换。
+
+每点的间距重基使用原 normal reference。令 `D0` 为真实起点的第二减第一参考差，
+`Ds` 为采样姿态的参考差，`ss` 为采样流形的间距：
+
+```text
+s0 = ss + dot(n, D0 - Ds)
+gap(q) = s0 + dot(n, D(q) - D0)
+gap(predicted) = ss + dot(n, Dpredicted - Ds)
+```
+
+刷新继续以 BodyStart 形成 `BodyAnchorDelta=D0`，初始间距为 `s0`，
+世界材料中点按两端 true-start 位置重建，与输出局部材料点和原 `StartTime` 关联。
+摩擦仍以这些材料点在真实起点的差作为初值。
+common kernel 在流形 count0 时也使用该 sample seed；所有点统一按 sample 姿态解码及重基。
+真实起点 nearest 继续由 `CollisionDistances` 描述并决定分离侧。
+该入口消费原刚体单主体引用，普通检测继续使用原采样入口。
+
 预测距离由起点间距和两侧运动闭合量形成，逐点筛选仍使用项目的原接触距离。
 闭合量读取同一 Body 的步初及预测 COM、旋转。对单位方向 `u`，
 `d = inverse(Rpredicted) * u - inverse(Rstart) * u`；几何副本取原局部形状、
