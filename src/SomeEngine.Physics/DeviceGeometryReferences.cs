@@ -188,16 +188,48 @@ public readonly struct WriteDeviceGeometryReferences<TComponent, TSource> : IPhy
                 inputs.World.ExecuteReadQuery(inputs._references, ref state,
                     static (scoped QueryCursor references, ref GeometryInputRows output) =>
                     {
-                        var write = new WriteGeometryRows(output, references);
-                        output.World.ExecuteReadQuery(output._geometries, ref write,
-                            static (scoped QueryCursor rows, ref WriteGeometryRows state) => state.Execute(rows));
+                        var read = new ReadFirstMembers(output, references);
+                        output.World.ExecuteReadQuery(output._participants.First, ref read,
+                            static (scoped QueryCursor first, ref ReadFirstMembers state) => state.Execute(first));
                     });
             }
         }
 
-        private readonly ref struct WriteGeometryRows(GeometryInputRows inputs, QueryCursor references)
+        private readonly ref struct ReadFirstMembers(GeometryInputRows inputs, QueryCursor references)
         {
             private readonly QueryCursor _references = references;
+
+            internal void Execute(scoped QueryCursor first)
+            {
+                if (inputs._participants.Pairing == DevicePairing.Within)
+                {
+                    var write = new WriteGeometryRows(inputs, _references, first, first);
+                    inputs.World.ExecuteReadQuery(inputs._geometries, ref write,
+                        static (scoped QueryCursor rows, ref WriteGeometryRows state) => state.Execute(rows));
+                    return;
+                }
+                var read = new ReadSecondMembers(inputs, _references, first);
+                inputs.World.ExecuteReadQuery(inputs._participants.Second, ref read,
+                    static (scoped QueryCursor second, ref ReadSecondMembers state) => state.Execute(second));
+            }
+        }
+
+        private readonly ref struct ReadSecondMembers(GeometryInputRows inputs, QueryCursor references, QueryCursor first)
+        {
+            private readonly QueryCursor _references = references, _first = first;
+
+            internal void Execute(scoped QueryCursor second)
+            {
+                var write = new WriteGeometryRows(inputs, _references, _first, second);
+                inputs.World.ExecuteReadQuery(inputs._geometries, ref write,
+                    static (scoped QueryCursor rows, ref WriteGeometryRows state) => state.Execute(rows));
+            }
+        }
+
+        private readonly ref struct WriteGeometryRows(GeometryInputRows inputs, QueryCursor references, QueryCursor first,
+            QueryCursor second)
+        {
+            private readonly QueryCursor _references = references, _first = first, _second = second;
 
             internal void Execute(scoped QueryCursor rows)
             {
@@ -214,9 +246,12 @@ public readonly struct WriteDeviceGeometryReferences<TComponent, TSource> : IPhy
                     reference.GridIndex = (uint)body.Index;
                     binding.Geometry.WriteInput(binding.Index, in value);
                     binding.Geometry.WriteReference(binding.Index, in reference);
+                    uint members = _first.Contains(row.Entity) ? (uint)DevicePairMembership.First : 0;
+                    if (inputs._participants.Pairing != DevicePairing.Within && _second.Contains(row.Entity))
+                        members |= (uint)DevicePairMembership.Second;
                     var input = new DeviceCollisionInput { EntityIndex = (uint)row.Entity.Index,
                         EntityGeneration = (uint)row.Entity.Generation, GeometryType = inputs._geometryType,
-                        GeometryIndex = (uint)binding.Index, Members = inputs._participants.ReadMembers(row.Entity) };
+                        GeometryIndex = (uint)binding.Index, Members = members };
                     inputs._grid.WriteInput(body.Index, in input);
                 }
             }
