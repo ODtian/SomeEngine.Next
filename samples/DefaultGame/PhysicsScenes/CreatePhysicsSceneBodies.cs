@@ -32,28 +32,32 @@ public static partial class PhysicsScenes
         Span<int> componentIds = stackalloc int[bodyComponents.Length + 1 + bindingComponents.Length];
         bodyComponents.CopyTo(componentIds);
         bindingComponents.CopyTo(componentIds[(bodyComponents.Length + 1)..]);
-        for (int first = 0; first < entities.Length;)
+        var geometryBodies = new Dictionary<int, List<int>>();
+        for (int index = 0; index < entities.Length; index++)
         {
-            int geometryId = geometry.GetComponentId(first);
-            int end = first + 1;
-            while (end < entities.Length && geometry.GetComponentId(end) == geometryId) end++;
+            int geometryId = geometry.GetComponentId(index);
+            if (!geometryBodies.TryGetValue(geometryId, out List<int>? indices))
+                geometryBodies.Add(geometryId, indices = []);
+            indices.Add(index);
+        }
+        foreach ((int geometryId, List<int> indices) in geometryBodies)
+        {
             componentIds[bodyComponents.Length] = geometryId;
-            var batch = new SceneBodyBatch<TGeometry, TBindings>(data, entities, geometry, bindings, first);
-            world.ExecuteBundleSpawnBatch(componentIds, end - first, ref batch,
+            var batch = new SceneBodyBatch<TGeometry, TBindings>(data, entities, geometry, bindings, indices);
+            world.ExecuteBundleSpawnBatch(componentIds, indices.Count, ref batch,
                 static (BundleWriteView view, ref SceneBodyBatch<TGeometry, TBindings> bodies) => bodies.Write(view));
-            first = end;
         }
         return entities;
     }
 
     private readonly struct SceneBodyBatch<TGeometry, TBindings>(PhysicsSceneData data, Entity[] entities,
-        TGeometry geometry, TBindings bindings, int first)
+        TGeometry geometry, TBindings bindings, List<int> indices)
         where TGeometry : struct, ISceneBodyGeometry
         where TBindings : struct, ISceneBodyBindings
     {
         internal void Write(BundleWriteView view)
         {
-            int index = first + view.Index;
+            int index = indices[view.Index];
             SceneBodyData input = data.Bodies[index];
             view.Write(new ScenePhysicsBody());
             var pose = new BodyPose { Position = Vector(input.Position), Rotation = Rotation(input.Rotation) };
