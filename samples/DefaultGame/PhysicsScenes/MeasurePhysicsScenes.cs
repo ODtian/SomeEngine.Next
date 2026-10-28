@@ -25,7 +25,7 @@ public static class MeasurePhysicsScenes
     {
         PhysicsSceneDescription[] descriptions = id is null ? PhysicsScenes.All.ToArray()
             : [PhysicsScenes.All.Concat(PhysicsScaleScenes.All).Single(description => description.Id == id)];
-        int failures = 0, siloFailures = 0, scaleFailures = 0;
+        int failures = 0, siloFailures = 0, scaleFailures = 0, scaleInputFailures = 0;
         long measuredFrame = 0;
         using var process = Process.GetCurrentProcess();
         using var scheduler = new Scheduler(new() { WorkerCount = Environment.ProcessorCount });
@@ -100,12 +100,15 @@ public static class MeasurePhysicsScenes
             if (siloBehavior == false) siloFailures++;
             bool? scaleDelivery = observation.ScaleDeliverySatisfied;
             if (scaleDelivery == false) scaleFailures++;
+            bool? scaleInputs = observation.ScaleInputDeliverySatisfied;
+            if (scaleInputs == false) scaleInputFailures++;
             output.WriteLine(new JsonObject
             {
                 ["Workload"] = example.Describe().DeepClone(), ["CompletedStep"] = result.Number, ["CompletedTime"] = result.EndTime,
                 ["ClockLeadSeconds"] = scene.StepSeconds * .5, ["WithinBudget"] = withinBudget,
                 ["SiloBehaviorSatisfied"] = siloBehavior,
                 ["ScaleDeliverySatisfied"] = scaleDelivery,
+                ["ScaleInputDeliverySatisfied"] = scaleInputs,
                 ["FirstStepMilliseconds"] = steps[0],
                 ["WholeStep"] = PhysicsSceneTimings.Distribution(steps), ["Observation"] = PhysicsSceneTimings.Distribution(reads),
                 ["Stages"] = timings?.Describe(), ["Results"] = observation.Describe(),
@@ -113,8 +116,9 @@ public static class MeasurePhysicsScenes
             }.ToJsonString());
         }
         output.WriteLine(new JsonObject { ["Scenes"] = descriptions.Length, ["WithinBudget"] = descriptions.Length - failures,
-            ["SiloBehaviorFailures"] = siloFailures, ["ScaleDeliveryFailures"] = scaleFailures }.ToJsonString());
-        return failures == 0 && siloFailures == 0 && scaleFailures == 0 ? 0 : 1;
+            ["SiloBehaviorFailures"] = siloFailures, ["ScaleDeliveryFailures"] = scaleFailures,
+            ["ScaleInputDeliveryFailures"] = scaleInputFailures }.ToJsonString());
+        return failures == 0 && siloFailures == 0 && scaleFailures == 0 && scaleInputFailures == 0 ? 0 : 1;
     }
 }
 
@@ -291,6 +295,7 @@ internal sealed class ReadScenePhysicsResults : IDisposable
 
     public bool? SiloBehaviorSatisfied => _silo?.MeetsBehavior(_initialMechanicalEnergy);
     public bool? ScaleDeliverySatisfied => _scale?.DeliverySatisfied;
+    public bool? ScaleInputDeliverySatisfied => _scale?.InputDeliverySatisfied;
 
     private double CalculateMechanicalEnergy(in BodyPose pose, in BodyMass mass, in BodyVelocity velocity)
     {
