@@ -49,7 +49,7 @@ public sealed class ShadowPageReuseTests(D3D12TestCompiler compiler)
             _frame++;
             uint requestCount = page.HasValue ? 1u : 0u;
             uint[] requests = new uint[4];
-            if (page is uint region) requests[region] = _frame;
+            if (page is uint region) requests[region] = 1u;
             if (_frame == 1u)
             {
                 uint[][] initialized = _compute.ExecuteImages("vsm_state_init.slang", "InitializeVirtualShadowState", new(1, 1, 1),
@@ -58,12 +58,11 @@ public sealed class ShadowPageReuseTests(D3D12TestCompiler compiler)
                     new BufferInput("ShadowPageTable", _table, ResourceBindingType.BufferUav, 4),
                     new BufferInput("PhysicalPageOwners", _pages, ResourceBindingType.BufferUav, 4),
                     new BufferInput("PageMetadata", _metadata, ResourceBindingType.BufferUav, 32),
-                    new BufferInput("RequestedShadowPages", requests, ResourceBindingType.BufferUav, 4),
                     new BufferInput("RequestedPageFlags", new uint[4], ResourceBindingType.BufferUav, 4),
                     new BufferInput("RequestedPageCount", [0], ResourceBindingType.BufferUav, 4),
                     new BufferInput("ShadowPageLists", _lists, ResourceBindingType.BufferUav, 4),
                 ], ShadowTestImages.ReceiverHierarchy(4, 6));
-                _table = initialized[0]; _pages = initialized[1]; _metadata = initialized[2]; _lists = initialized[6];
+                _table = initialized[0]; _pages = initialized[1]; _metadata = initialized[2]; _lists = initialized[5];
             }
             BuildPool(0);
             BuildPool(1);
@@ -106,7 +105,7 @@ public sealed class ShadowPageReuseTests(D3D12TestCompiler compiler)
                     new BufferInput("PagePool", [2, 4, _frame, phase, 4, 3, 1, 1], ResourceBindingType.ConstantBuffer, 0),
                     new BufferInput("ShadowViews", _view, ResourceBindingType.BufferSrv, VirtualShadowView.SizeInBytes),
                     new BufferInput("ShadowPageTable", _table, ResourceBindingType.BufferUav, 4),
-                    new BufferInput("RequestedShadowPages", requests, ResourceBindingType.BufferSrv, 4),
+                    new BufferInput("RequestedPageFlags", requests, ResourceBindingType.BufferSrv, 4),
                     new BufferInput("RequestedPageCount", [requestCount], ResourceBindingType.BufferSrv, 4),
                     new BufferInput("PageRequestDispatchArgs", new uint[4], ResourceBindingType.BufferUav, 0),
                     new BufferInput("PhysicalPageOwners", _pages, ResourceBindingType.BufferUav, 4),

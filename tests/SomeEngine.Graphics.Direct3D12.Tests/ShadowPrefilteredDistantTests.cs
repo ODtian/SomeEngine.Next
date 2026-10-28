@@ -33,7 +33,6 @@ public sealed class ShadowPrefilteredDistantTests(D3D12TestCompiler compiler)
             new("FilterPageTable", [VirtualShadowPageEntry.Encode(0, 2)], ResourceBindingType.BufferSrv, 4),
             new("FilterPreviousPageTable", [VirtualShadowPageEntry.Encode(0, 2),0], ResourceBindingType.BufferUav, 4),
             new("FilterRequestFlags", [4], ResourceBindingType.BufferSrv, 4),
-            new("FilterRequestFrames", [0], ResourceBindingType.BufferSrv, 4),
             new("FilterPages", new uint[4], ResourceBindingType.BufferSrv, 4),
             new("FilterPageCount", new uint[24], ResourceBindingType.BufferSrv, 0),
             new("SelectedFilterPages", new uint[4], ResourceBindingType.BufferUav, 4),
@@ -53,7 +52,7 @@ public sealed class ShadowPrefilteredDistantTests(D3D12TestCompiler compiler)
         ];
         var compute = new D3D12TestCompute(compiler);
         string[] workNames = ["Prefilter", "FilterViews", "FilterPageReferences", "FilterPageTable",
-            "FilterPreviousPageTable", "FilterRequestFlags", "FilterRequestFrames", "SelectedFilterPages", "FilterArguments"];
+            "FilterPreviousPageTable", "FilterRequestFlags", "SelectedFilterPages", "FilterArguments"];
         BufferInput[] workBuffers = buffers.Where(input => workNames.Contains(input.Name)).ToArray();
         uniforms[6] = 6;
         uint[][] reset = compute.Execute("vsm_prefilter_work.slang", "ResetVirtualShadowFilterWork", new(1,1,1), workBuffers);
@@ -62,7 +61,7 @@ public sealed class ShadowPrefilteredDistantTests(D3D12TestCompiler compiler)
         uint[][] selected = compute.Execute("vsm_prefilter_work.slang", "SelectVirtualShadowFilterPages", new(1,1,1), workBuffers);
         buffers[^4] = buffers[^4] with { Data = selected[1] };
         buffers[^3] = buffers[^3] with { Data = selected[2] };
-        string[] workOnly = ["FilterRequestFlags", "FilterRequestFrames", "SelectedFilterPages", "FilterArguments"];
+        string[] workOnly = ["FilterRequestFlags", "SelectedFilterPages", "FilterArguments"];
         buffers = buffers.Where(input => !workOnly.Contains(input.Name)).ToArray();
         uniforms[6] = 0;
         uint[][] horizontal = compute.ExecuteImages("vsm_prefilter.slang", "PrefilterVirtualShadowDistant", new(1,1,1), buffers, images);

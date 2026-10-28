@@ -32,7 +32,6 @@ public sealed class ShadowCoarseCoverageTests(D3D12TestCompiler compiler)
         [
             new BufferInput("CoarsePageDemand", [2, 86, 7, 0], ResourceBindingType.ConstantBuffer, 0),
             new BufferInput("ShadowViews", viewData, ResourceBindingType.BufferSrv, VirtualShadowView.SizeInBytes),
-            new BufferInput("RequestedShadowPages", new uint[86], ResourceBindingType.BufferUav, 4),
             new BufferInput("RequestedPageFlags", new uint[86], ResourceBindingType.BufferUav, 4),
             new BufferInput("RequestedPageIndices", new uint[86], ResourceBindingType.BufferUav, 4),
             new BufferInput("RequestedPageCount", [0], ResourceBindingType.BufferUav, 4),
@@ -44,9 +43,9 @@ public sealed class ShadowCoarseCoverageTests(D3D12TestCompiler compiler)
         [
             new BufferInput("PageAllocation", [86, 85, 4, 2, 7, 0, 26, 4], ResourceBindingType.ConstantBuffer, 0),
             new BufferInput("ShadowViews", viewData, ResourceBindingType.BufferSrv, VirtualShadowView.SizeInBytes),
-            new BufferInput("RequestedPageIndices", requests[2], ResourceBindingType.BufferSrv, 4),
-            new BufferInput("RequestedPageCount", requests[3], ResourceBindingType.BufferSrv, 4),
-            new BufferInput("RequestedPageFlags", requests[1], ResourceBindingType.BufferSrv, 4),
+            new BufferInput("RequestedPageIndices", requests[1], ResourceBindingType.BufferSrv, 4),
+            new BufferInput("RequestedPageCount", requests[2], ResourceBindingType.BufferSrv, 4),
+            new BufferInput("RequestedPageFlags", requests[0], ResourceBindingType.BufferSrv, 4),
             new BufferInput("ShadowPageTable", new uint[86], ResourceBindingType.BufferUav, 4),
             new BufferInput("PhysicalPageOwners", Enumerable.Repeat(uint.MaxValue, 4).ToArray(), ResourceBindingType.BufferUav, 4),
             new BufferInput("PageMetadata", new uint[32], ResourceBindingType.BufferUav, 32),
@@ -57,7 +56,7 @@ public sealed class ShadowCoarseCoverageTests(D3D12TestCompiler compiler)
                 .Select(index => index % 4 < 2 ? uint.MaxValue : 0u).ToArray(), ResourceBindingType.BufferUav, 16),
             new BufferInput("RasterTargetPageHierarchy", new uint[104], ResourceBindingType.BufferUav, 8),
             new BufferInput("ShadowAllocationFailures", new uint[3], ResourceBindingType.BufferUav, 4),
-        ], ShadowTestImages.ReceiverHierarchy(32, 24, requests[4]));
+        ], ShadowTestImages.ReceiverHierarchy(32, 24, requests[3]));
         uint[][] completed = compute.Execute("vsm_page_depth_complete.slang", "CompleteVirtualShadowPageDepth", new(1, 1, 1),
         [
             new BufferInput("ActivePhysicalPages", allocated[4], ResourceBindingType.BufferSrv, 16),
@@ -109,7 +108,6 @@ public sealed class ShadowCoarseCoverageTests(D3D12TestCompiler compiler)
         [
             new BufferInput("CoarsePageDemand", [1, 64, 7, 0], ResourceBindingType.ConstantBuffer, 0),
             new BufferInput("ShadowViews", viewData, ResourceBindingType.BufferSrv, VirtualShadowView.SizeInBytes),
-            new BufferInput("RequestedShadowPages", new uint[64], ResourceBindingType.BufferUav, 4),
             new BufferInput("RequestedPageFlags", new uint[64], ResourceBindingType.BufferUav, 4),
             new BufferInput("RequestedPageIndices", new uint[64], ResourceBindingType.BufferUav, 4),
             new BufferInput("RequestedPageCount", [0], ResourceBindingType.BufferUav, 4),
@@ -121,9 +119,9 @@ public sealed class ShadowCoarseCoverageTests(D3D12TestCompiler compiler)
         [
             new BufferInput("PageAllocation", [64, 64, 4, 1, 7, 0, 15, 1], ResourceBindingType.ConstantBuffer, 0),
             new BufferInput("ShadowViews", viewData, ResourceBindingType.BufferSrv, VirtualShadowView.SizeInBytes),
-            new BufferInput("RequestedPageIndices", requests[2], ResourceBindingType.BufferSrv, 4),
-            new BufferInput("RequestedPageCount", requests[3], ResourceBindingType.BufferSrv, 4),
-            new BufferInput("RequestedPageFlags", requests[1], ResourceBindingType.BufferSrv, 4),
+            new BufferInput("RequestedPageIndices", requests[1], ResourceBindingType.BufferSrv, 4),
+            new BufferInput("RequestedPageCount", requests[2], ResourceBindingType.BufferSrv, 4),
+            new BufferInput("RequestedPageFlags", requests[0], ResourceBindingType.BufferSrv, 4),
             new BufferInput("ShadowPageTable", new uint[64], ResourceBindingType.BufferUav, 4),
             new BufferInput("PhysicalPageOwners", Enumerable.Repeat(uint.MaxValue, 4).ToArray(), ResourceBindingType.BufferUav, 4),
             new BufferInput("PageMetadata", new uint[32], ResourceBindingType.BufferUav, 32),
@@ -133,7 +131,7 @@ public sealed class ShadowCoarseCoverageTests(D3D12TestCompiler compiler)
             new BufferInput("UncachedPageRectBounds", [uint.MaxValue, uint.MaxValue, 0, 0], ResourceBindingType.BufferUav, 16),
             new BufferInput("RasterTargetPageHierarchy", new uint[30], ResourceBindingType.BufferUav, 8),
             new BufferInput("ShadowAllocationFailures", new uint[3], ResourceBindingType.BufferUav, 4),
-        ], ShadowTestImages.ReceiverHierarchy(16, 24, requests[4]));
+        ], ShadowTestImages.ReceiverHierarchy(16, 24, requests[3]));
         uint[][] completed = compute.Execute("vsm_page_depth_complete.slang", "CompleteVirtualShadowPageDepth", new(1, 1, 1),
         [
             new BufferInput("ActivePhysicalPages", allocated[4], ResourceBindingType.BufferSrv, 16),

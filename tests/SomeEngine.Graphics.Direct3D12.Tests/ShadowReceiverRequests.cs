@@ -19,7 +19,7 @@ internal sealed class ShadowReceiverRequests(D3D12TestCompiler compiler)
             ViewCount = 1, PageTableEntryCount = tableEntries, FrameIndex = 1,
             ReceiverProjection = new() { WorldToClipW = new(0,0,0,1), CotanHalfFieldOfView = 1 },
         };
-        uint[][] requests = _compute.ExecuteSourceImages("#include \"vsm_receiver_requests.slang\"\n" + source,
+        uint[][] requests = _compute.ExecuteSourceImages("#define VSM_WHOLE_PAGE_SAMPLING 1\n#include \"vsm_receiver_requests.slang\"\n" + source,
             entry, dispatch,
             [new("PageDemand",MemoryMarshal.Cast<VirtualShadowPageDemandUniforms,uint>(new[] { demand }).ToArray(),ResourceBindingType.ConstantBuffer,0),
              new("ShadowViews",MemoryMarshal.Cast<VirtualShadowView,uint>(new[] { view }).ToArray(),ResourceBindingType.BufferSrv,VirtualShadowView.SizeInBytes),
@@ -39,6 +39,7 @@ internal sealed class ShadowReceiverRequests(D3D12TestCompiler compiler)
     internal uint[] ReadCoverage(VirtualShadowView view, uint[] requests, Vector3[] positions)
     {
         uint[][] coverage = _compute.ExecuteSource("""
+            #define VSM_WHOLE_PAGE_SAMPLING 1
             #include "vsm_sampling.slang"
             StructuredBuffer<VirtualShadowMapParameters> Views;
             StructuredBuffer<uint> Requests;

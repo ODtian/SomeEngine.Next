@@ -1,3 +1,5 @@
+using System.Runtime.InteropServices;
+using SomeEngine.Render.Shadows;
 using Xunit;
 using static SomeEngine.Graphics.Direct3D12.Tests.D3D12TestCompute;
 
@@ -22,8 +24,9 @@ public sealed class ShadowPagePressureTests(D3D12TestCompiler shaderCompiler)
              new BufferInput("FramePageBias", [0], ResourceBindingType.BufferSrv, 4),
              new BufferInput("WorkShadowViews", [.. hot, .. cool], ResourceBindingType.BufferUav, SomeEngine.Render.Shadows.VirtualShadowView.SizeInBytes),
              new BufferInput("FrameWorkPressure", [0, 0, 0], ResourceBindingType.BufferUav, 4)]);
-        Assert.InRange(BitConverter.UInt32BitsToSingle(observed[0][31]), .0399999f, .0400001f);
-        Assert.InRange(BitConverter.UInt32BitsToSingle(observed[0][SomeEngine.Render.Shadows.VirtualShadowView.SizeInBytes / sizeof(uint) + 31]), .0039999f, .0040001f);
+        ReadOnlySpan<VirtualShadowView> views = MemoryMarshal.Cast<uint, VirtualShadowView>(observed[0]);
+        Assert.InRange(views[0].ResolutionLodBias, .0399999f, .0400001f);
+        Assert.InRange(views[1].ResolutionLodBias, .0039999f, .0040001f);
     }
 
     [Fact]
