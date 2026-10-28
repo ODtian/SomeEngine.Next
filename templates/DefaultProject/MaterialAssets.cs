@@ -12,6 +12,7 @@ internal static class MaterialAssets
     {
         using ShaderAsset standard = await ShaderAsset.OpenSourceAsync(Path.Combine(project.RootPath, "assets/Shaders/standard.shader"));
         using ShaderSourceBlock standardInputs = StandardMaterialInputs.Create();
+        standardInputs.Specializations = standard.GetBlock<ShaderSourceBlock>().Specializations;
         using ClusterMaterialEntriesBlock standardEntries = ClusterMaterialEntriesBlock.Create();
         standard.SetBlock(standardInputs);
         standard.SetBlock(standardEntries);
@@ -21,6 +22,7 @@ internal static class MaterialAssets
 
         using ShaderAsset unlit = await ShaderAsset.OpenSourceAsync(Path.Combine(project.RootPath, "assets/Shaders/unlit.shader"));
         using ShaderSourceBlock unlitInputs = UnlitMaterialInputs.Create();
+        unlitInputs.Specializations = unlit.GetBlock<ShaderSourceBlock>().Specializations;
         using ClusterMaterialEntriesBlock unlitEntries = ClusterMaterialEntriesBlock.CreateUnlit();
         unlit.SetBlock(unlitInputs);
         unlit.SetBlock(unlitEntries);

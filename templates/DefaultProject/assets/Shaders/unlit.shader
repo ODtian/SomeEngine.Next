@@ -13,7 +13,48 @@
       "Schema": "163D4CAD0FD3CEDB",
       "Fields": {
         "Inputs": [],
-        "Specializations": [],
+        "Specializations": [
+          {
+            "EntryPoint": "ClusterShadeMode",
+            "Arguments": [
+              "0"
+            ]
+          },
+          {
+            "EntryPoint": "ClusterShadowRequests",
+            "Arguments": [
+              "0",
+              "0"
+            ]
+          },
+          {
+            "EntryPoint": "ClusterForwardShade",
+            "Arguments": [
+              "0",
+              "0"
+            ]
+          },
+          {
+            "EntryPoint": "ClusterShadeMode",
+            "Arguments": [
+              "8"
+            ]
+          },
+          {
+            "EntryPoint": "ClusterShadowRequests",
+            "Arguments": [
+              "0",
+              "8"
+            ]
+          },
+          {
+            "EntryPoint": "ClusterForwardShade",
+            "Arguments": [
+              "0",
+              "8"
+            ]
+          }
+        ],
         "SourceNames": [
           "cluster_transparency.slang",
           "unlit.slang"

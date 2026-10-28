@@ -15,7 +15,7 @@ ShaderAsset
                -> Shader         同步、驻留的共同链接结果
 ```
 
-可读 `.shader` 的 `ShaderSourceBlock.SourceNames` 指定相对于定义文件的根源码。内容构建通过 Slang 读取源码及 include/import，将每个 `IModule.Serialize` 的结果保存到 Block；二进制 Asset 从这些 Slang 数据恢复模块，无需重新打开构建机器上的源码。
+可读 `.shader` 的 `ShaderSourceBlock.SourceNames` 指定根源码，按 `SessionDesc.SearchPaths` 顺序定位：定义文件目录在前，调用方显式提供的包含目录随后。内容构建通过 Slang 读取源码及 include/import，将每个 `IModule.Serialize` 的结果保存到 Block；二进制 Asset 从这些 Slang 数据恢复模块，无需重新打开构建机器上的源码。
 
 `ShaderInputBlock` 统一保存 `SourceNames` 与逐份序列化 Slang IR。`ShaderSourceBlock`、`ClusterMaterialEntriesBlock` 与消费者派生的入口 Block 使用同一 `ShaderInputData` 编码。消费者声明 `[AssetBlock("业务的持久名称")]` 的具体 partial 类；`AssetBlockGenerator` 生成该类型的复制、静态 `ReadAsync` 和保存方法，恢复为业务指定的具体类型。
 

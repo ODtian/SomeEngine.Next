@@ -10,9 +10,53 @@
   "Blocks": [
     {
       "TypeId": "def46de0-7af8-87e0-75b9-660aaa202b94",
-      "Schema": "807616378EC9A0BF",
+      "Schema": "163D4CAD0FD3CEDB",
       "Fields": {
+        "Inputs": [],
+        "Specializations": [
+          {
+            "EntryPoint": "ClusterShadeMode",
+            "Arguments": [
+              "0"
+            ]
+          },
+          {
+            "EntryPoint": "ClusterShadowRequests",
+            "Arguments": [
+              "0",
+              "0"
+            ]
+          },
+          {
+            "EntryPoint": "ClusterForwardShade",
+            "Arguments": [
+              "0",
+              "0"
+            ]
+          },
+          {
+            "EntryPoint": "ClusterShadeMode",
+            "Arguments": [
+              "8"
+            ]
+          },
+          {
+            "EntryPoint": "ClusterShadowRequests",
+            "Arguments": [
+              "0",
+              "8"
+            ]
+          },
+          {
+            "EntryPoint": "ClusterForwardShade",
+            "Arguments": [
+              "0",
+              "8"
+            ]
+          }
+        ],
         "SourceNames": [
+          "cluster_transparency.slang",
           "standard.slang"
         ]
       },

@@ -348,9 +348,21 @@ public sealed partial class ShaderSourceBlock
                 }
                 else
                 {
-                    string directory = sessionDescription.SearchPaths?.FirstOrDefault() ?? Directory.GetCurrentDirectory();
-                    string path = Path.GetFullPath(Path.Combine(directory, paths[sourceIndex]));
-                    if (sourceFiles.LoadFile(path, out ISlangBlob source).Failed)
+                    string[] directories = sessionDescription.SearchPaths is { Length: > 0 } searchPaths
+                        ? searchPaths : [Directory.GetCurrentDirectory()];
+                    string path = "";
+                    ISlangBlob source = null!;
+                    bool loaded = false;
+                    foreach (string directory in directories)
+                    {
+                        path = Path.GetFullPath(Path.Combine(directory, paths[sourceIndex]));
+                        if (!sourceFiles.LoadFile(path, out source).Failed)
+                        {
+                            loaded = true;
+                            break;
+                        }
+                    }
+                    if (!loaded)
                         throw new FileNotFoundException("Shader source file could not be read.", path);
                     sourceUnit = session.LoadModuleFromSource(Path.GetFileNameWithoutExtension(path), path,
                         source, out diagnostics);

@@ -9,6 +9,43 @@ namespace SomeEngine.Assets.Tests.Assets;
 public class ShaderSourcePolicyTests
 {
     [Theory]
+    [InlineData("templates/DefaultProject", "standard", "StandardTransparencyMaterial")]
+    [InlineData("games/SomeGame", "unlit", "UnlitTransparencyMaterial")]
+    public async Task ProjectMaterialSourcesSaveForwardDebugAndTransparencyCapabilities(
+        string projectDirectory, string name, string transparencyMaterial)
+    {
+        using var files = new AssetTestDirectory();
+        string sourceDirectory = Path.Combine(TestProjectPaths.ProjectRoot(), projectDirectory, "assets", "Shaders");
+        File.Copy(Path.Combine(sourceDirectory, name + ".shader"), files.File(name + ".shader"));
+        File.Copy(Path.Combine(sourceDirectory, name + ".slang"), files.File(name + ".slang"));
+        var project = new AssetProject(files.Path, [], shaderIncludeDirectories: [TestProjectPaths.ShaderDirectory()]);
+
+        Guid id = await project.BuildAsync(name + ".shader");
+
+        await using var loader = new AssetLoader(project.CreateStorage());
+        using ShaderAsset asset = await ShaderAsset.OpenAsync(loader, new(id));
+        Shader shader = await asset.CreateSavedAsync(ShaderTestCompilation.Slang,
+            ShaderTestCompilation.CreateSessionDescription());
+        int target = shader.RequireSlangTarget(SlangCompileTarget.Spirv);
+        _ = shader.GetSlangAttributedTypeLayout(target, "TransparencyMaterial", LayoutRules.DefaultStructuredBuffer);
+        Assert.NotNull(shader.GetSlangReflection(target).FindTypeByName(transparencyMaterial));
+        foreach (string mode in new[] { "0", "8" })
+        {
+            foreach ((string entry, string[] arguments) in new (string, string[])[]
+            {
+                ("ClusterShadeMode", [mode]),
+                ("ClusterShadowRequests", ["0", mode]),
+                ("ClusterForwardShade", ["0", mode]),
+            })
+            {
+                Shader variant = shader.RequireSpecialization(entry, arguments);
+                Assert.True(variant.TryGetSlangEntry(target, entry, SlangStage.Compute, out EntryPointReflection code));
+                Assert.False(variant.GetSlangEntryBytes(target, code).IsEmpty);
+            }
+        }
+    }
+
+    [Theory]
     [InlineData("triangle.shader", "VSMain", "PSMain")]
     [InlineData("hello_triangle.shader", "VSMain", "PSMain")]
     public async Task DefinitionsCompileOriginalSlangEntryPoints(string shaderFile, params string[] entryPoints)
