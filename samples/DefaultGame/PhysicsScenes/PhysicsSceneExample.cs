@@ -20,7 +20,10 @@ public sealed partial class PhysicsSceneExample(PhysicsSceneDescription descript
     private readonly ScenePhysicsEventCounts _events = new();
     private PhysicsSceneData? _input;
     private StandardMaterial _displayMaterial = null!;
+    private bool _scaleMeasurements;
     public int StepCount { get; private set; }
+    internal ScaleMotionMeasurements? ScaleMeasurements { get; private set; }
+    internal void EnableScaleMeasurements() => _scaleMeasurements = true;
 
     public static PhysicsSceneExample CreateCpu(PhysicsSceneDescription description, PhysicsSceneTimings? timings = null) =>
         new(description, new PhysicsSceneSettings(Iterations: 8, BodyIterations: 1, StepBudgetMilliseconds: 1000d / 60)
@@ -62,6 +65,7 @@ public sealed partial class PhysicsSceneExample(PhysicsSceneDescription descript
         PhysicsSceneData data = _input ?? ReadInput();
         _input = null;
         _events.Clear();
+        ScaleMeasurements = null;
         StepCount = GetStepCount(data);
         double[] momentum = Enumerable.Range(0, 3).Select(axis => data.Bodies.Sum(body => body.Mass * body.Velocity[axis])).ToArray();
         _workload = new JsonObject
@@ -71,6 +75,10 @@ public sealed partial class PhysicsSceneExample(PhysicsSceneDescription descript
             ["Device"] = "CPU", ["Algorithm"] = "AVBD", ["BroadPhase"] = "BVH refit",
             ["NarrowPhase"] = description.Dimension == 2 ? "PlanarBoxCollision" : "ConvexCollision<BoxGeometry, BoxGeometry>",
             ["Bodies"] = data.Bodies.Length, ["Joints"] = data.Joints.Length,
+            ["BreakableJoints"] = data.Joints.Count(joint => joint.BreakLimits.HasValue),
+            ["BreakLimits"] = new JsonArray(data.Joints.Where(joint => joint.BreakLimits.HasValue)
+                .Select(joint => joint.BreakLimits!.Value).Distinct().Select(limit => (JsonNode)new JsonObject
+                { ["MaximumForceNewtons"] = limit.MaximumForce, ["MaximumTorqueNewtonMetres"] = limit.MaximumTorque }).ToArray()),
             ["DistanceRanges"] = data.DistanceRanges?.Length ?? 0, ["CollisionExclusions"] = data.CollisionExclusions.Length,
             ["InitialLinearMomentum"] = new JsonArray(momentum[0], momentum[1], momentum[2]),
             ["StepSeconds"] = data.StepSeconds, ["Substeps"] = data.Substeps, ["StepCount"] = StepCount,
@@ -137,7 +145,16 @@ public sealed partial class PhysicsSceneExample(PhysicsSceneDescription descript
                     : new JsonArray(change.Position.Select(value => (JsonNode?)JsonValue.Create(value)).ToArray()),
             }).ToArray()),
         };
-        if (_devicePhysics) return CreateDeviceSimulation(world, description, data, settings);
+        PhysicsSceneSimulation Observe(PhysicsSceneSimulation scene)
+        {
+            if (_scaleMeasurements && description.Scene is >= 400 and <= 407)
+            {
+                ScaleMeasurements = new(description, data, scene.Bodies.Span, StepCount);
+                _events.Scale = ScaleMeasurements;
+            }
+            return scene;
+        }
+        if (_devicePhysics) return Observe(CreateDeviceSimulation(world, description, data, settings));
         JsonObject contactMetric = _workload["Solver"]!.AsObject();
         contactMetric["ContactEquation"] = nameof(AvbdContactPotentialMath);
         contactMetric["SupportedContactEquation"] = nameof(AvbdSupportedContactPotentialMath);
@@ -148,9 +165,9 @@ public sealed partial class PhysicsSceneExample(PhysicsSceneDescription descript
         contactMetric["ContactPressureLengthScale"] = SceneContactPenalty.PressureLengthScale;
         var events = new CountScenePhysicsEvents(_events);
         JobResourceAccess[] eventAccesses = [JobResourceAccess.Write(WorldJobs.GetScheduler(world).GetResourceToken(_events))];
-        return description.Dimension == 2
+        return Observe(description.Dimension == 2
             ? PhysicsScenes.CreateCpu(world, description, data, new PlanarBoxCollision(1e-5f), settings, events, eventAccesses)
-            : PhysicsScenes.CreateCpu(world, description, data, new ConvexCollision<BoxGeometry, BoxGeometry>(new(1e-5f, 32, 64)), settings, events, eventAccesses);
+            : PhysicsScenes.CreateCpu(world, description, data, new ConvexCollision<BoxGeometry, BoxGeometry>(new(1e-5f, 32, 64)), settings, events, eventAccesses));
     }
 
     private void Initialize(ApplicationFrame frame)
@@ -230,9 +247,11 @@ public sealed partial class PhysicsSceneExample(PhysicsSceneDescription descript
 internal sealed class ScenePhysicsEventCounts
 {
     private readonly Dictionary<(PhysicsEventKind Kind, PhysicsEventPhase Phase), ScenePhysicsEventCount> _counts = [];
-    public void Clear() => _counts.Clear();
+    internal ScaleMotionMeasurements? Scale { get; set; }
+    public void Clear() { _counts.Clear(); Scale = null; }
     public void Add(in PhysicsStepEvents step, in PhysicsEvent value)
     {
+        Scale?.ReadEvent(in step, in value);
         var key = (value.Kind, value.Phase);
         if (_counts.TryGetValue(key, out ScenePhysicsEventCount count))
             _counts[key] = count with { Count = count.Count + 1, LastStep = step.Number, LastTime = value.Time };

@@ -25,7 +25,7 @@ public static class MeasurePhysicsScenes
     {
         PhysicsSceneDescription[] descriptions = id is null ? PhysicsScenes.All.ToArray()
             : [PhysicsScenes.All.Concat(PhysicsScaleScenes.All).Single(description => description.Id == id)];
-        int failures = 0;
+        int failures = 0, siloFailures = 0, scaleFailures = 0;
         long measuredFrame = 0;
         using var process = Process.GetCurrentProcess();
         using var scheduler = new Scheduler(new() { WorkerCount = Environment.ProcessorCount });
@@ -48,15 +48,19 @@ public static class MeasurePhysicsScenes
             ["StageScopes"] = "Caller submission and dependency-to-completion intervals are reported separately",
             ["StageTimingJobs"] = "Trace runs add a start Job and a finish Job per stage; ordinary runs use timings=null",
             ["MemoryScope"] = "Managed live bytes sampled after each completed step; process peak working set includes setup and prior scenes in this process",
+            ["ProgressOutputScope"] = "After completed-step observation; existing result counts and current-process affinity; serialization and flush follow both timers",
+            ["ScaleObservationScope"] = "Measurement-only body index and groups; current event spans are reduced during original event consumption, body groups after whole-step timing",
         }.ToJsonString());
+        output.Flush();
         foreach (PhysicsSceneDescription description in descriptions)
         {
             using World world = WorldJobs.CreateWorld(scheduler: scheduler);
             PhysicsSceneTimings? timings = EngineTrace.IsEnabled ? new PhysicsSceneTimings() : null;
             PhysicsSceneExample example = backend is null ? PhysicsSceneExample.CreateCpu(description, timings)
                 : PhysicsSceneExample.CreateDevice(description, backend, device!, timings);
+            example.EnableScaleMeasurements();
             using PhysicsSceneSimulation scene = example.CreateSimulation(world);
-            using var observation = new ReadScenePhysicsResults(world, scene, example.Describe());
+            using var observation = new ReadScenePhysicsResults(world, scene, example.Describe(), example.ScaleMeasurements);
             var steps = new double[example.StepCount];
             var reads = new double[steps.Length];
             long managedPeak = 0;
@@ -73,25 +77,44 @@ public static class MeasurePhysicsScenes
                 }
                 if (result.Number != number) throw new InvalidOperationException("The scene must complete each original physical step in sequence.");
                 started = Stopwatch.GetTimestamp();
-                observation.Read(result.Number);
+                observation.Read(in result);
                 managedPeak = Math.Max(managedPeak, GC.GetTotalMemory(false));
                 reads[number] = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+                process.Refresh();
+                output.WriteLine(new JsonObject
+                {
+                    ["Id"] = description.Id, ["Step"] = result.Number, ["Time"] = result.EndTime,
+                    ["StepCount"] = steps.Length,
+                    ["WholeStepMilliseconds"] = steps[number], ["ObservationMilliseconds"] = reads[number],
+                    ["ObservedAtUtc"] = DateTimeOffset.UtcNow.ToString("O"),
+                    ["ProcessAffinity"] = OperatingSystem.IsWindows() || OperatingSystem.IsLinux()
+                        ? process.ProcessorAffinity.ToInt64() : (long?)null,
+                    ["Results"] = observation.Describe(),
+                }.ToJsonString());
+                output.Flush();
             }
             process.Refresh();
             bool withinBudget = steps.Max() <= scene.Settings.StepBudgetMilliseconds;
             if (!withinBudget) failures++;
+            bool? siloBehavior = observation.SiloBehaviorSatisfied;
+            if (siloBehavior == false) siloFailures++;
+            bool? scaleDelivery = observation.ScaleDeliverySatisfied;
+            if (scaleDelivery == false) scaleFailures++;
             output.WriteLine(new JsonObject
             {
                 ["Workload"] = example.Describe().DeepClone(), ["CompletedStep"] = result.Number, ["CompletedTime"] = result.EndTime,
                 ["ClockLeadSeconds"] = scene.StepSeconds * .5, ["WithinBudget"] = withinBudget,
+                ["SiloBehaviorSatisfied"] = siloBehavior,
+                ["ScaleDeliverySatisfied"] = scaleDelivery,
                 ["FirstStepMilliseconds"] = steps[0],
                 ["WholeStep"] = PhysicsSceneTimings.Distribution(steps), ["Observation"] = PhysicsSceneTimings.Distribution(reads),
                 ["Stages"] = timings?.Describe(), ["Results"] = observation.Describe(),
                 ["ManagedLivePeakBytes"] = managedPeak, ["ProcessPeakWorkingSetBytes"] = process.PeakWorkingSet64,
             }.ToJsonString());
         }
-        output.WriteLine(new JsonObject { ["Scenes"] = descriptions.Length, ["WithinBudget"] = descriptions.Length - failures }.ToJsonString());
-        return failures == 0 ? 0 : 1;
+        output.WriteLine(new JsonObject { ["Scenes"] = descriptions.Length, ["WithinBudget"] = descriptions.Length - failures,
+            ["SiloBehaviorFailures"] = siloFailures, ["ScaleDeliveryFailures"] = scaleFailures }.ToJsonString());
+        return failures == 0 && siloFailures == 0 && scaleFailures == 0 ? 0 : 1;
     }
 }
 
@@ -101,9 +124,12 @@ internal sealed class ReadScenePhysicsResults : IDisposable
     private readonly PhysicsSceneSimulation _scene;
     private readonly QueryHandle _bodies, _contacts;
     private readonly HashSet<Entity>? _readbackBodies;
+    private readonly SiloMotionMeasurements? _silo;
+    private readonly ScaleMotionMeasurements? _scale;
     private readonly Vector3 _gravity;
     private readonly HashSet<long> _inputSteps;
-    private readonly List<(long Step, double Before, double After)> _inputEnergies = [];
+    private readonly List<(long Step, double BeforeEnergy, double AfterEnergy,
+        int BeforeJoints, int AfterJoints)> _sceneInputs = [];
     private readonly double _initialMechanicalEnergy;
     private double _mechanicalEnergy, _maximumMechanicalEnergy;
     private int _entitiesNow, _entityPeak, _contactsNow, _contactPeak, _awakeNow, _awakePeak, _liveJoints, _islandPeak;
@@ -111,37 +137,53 @@ internal sealed class ReadScenePhysicsResults : IDisposable
     private float _angularSpeed, _finalAngularSpeed;
     private Vector3 _centerOfMass, _linearMomentum, _minimumBodyCenter, _maximumBodyCenter;
 
-    public ReadScenePhysicsResults(World world, PhysicsSceneSimulation scene, JsonNode workload)
+    public ReadScenePhysicsResults(World world, PhysicsSceneSimulation scene, JsonNode workload, ScaleMotionMeasurements? scale = null)
     {
-        _world = world; _scene = scene;
+        _world = world; _scene = scene; _scale = scale;
+        _liveJoints = scene.Joints.Length;
         JsonArray gravity = workload["Gravity"]!.AsArray();
         _gravity = new((float)gravity[0]!.GetValue<double>(), (float)gravity[1]!.GetValue<double>(),
             (float)gravity[2]!.GetValue<double>());
         _inputSteps = workload["Events"]!.AsArray().Select(value => (long)value!["Step"]!.GetValue<int>()).ToHashSet();
+        if (workload["ShapeDistribution"] is not null)
+            _silo = new(world, scene, workload["StepCount"]!.GetValue<int>() - 1);
         var bodyResults = new QueryDefinitionBuilder().All<ScenePhysicsBody>().Read<BodyPose>().Read<BodyMass>()
             .Read<BodyVelocity>().Read<BodyActivity>();
         if (scene.DeviceStatistics is not null && scene.ReadbackBodies.Length < scene.Bodies.Length)
             bodyResults.All<SceneReadbackBody>();
+        if (_silo is not null) bodyResults.Read<DeviceBodyBinding>();
+        if (_scale is not null) bodyResults.Read<BodyStepState>();
         _bodies = world.Query(bodyResults);
         if (scene.ReadbackBodies.Length < scene.Bodies.Length) _readbackBodies = scene.ReadbackBodies.ToArray().ToHashSet();
-        _contacts = world.Query(new QueryDefinitionBuilder().Any<ScenePhysicsContact>().Any<ScenePhysicsBody>().Any<ContactParticipant>()
+        var contactResults = new QueryDefinitionBuilder().Any<ScenePhysicsContact>().Any<ScenePhysicsBody>().Any<ContactParticipant>()
             .Optional<ContactPoint>(QueryAccess.Read).Optional<BodyPose>(QueryAccess.Read)
             .Optional<SomeEngine.ECS.Relations.DirectedRelationEndpoints<ContactParticipant>>(QueryAccess.Read)
-            .OptionalBuffer<ContactBodyLink>(QueryAccess.Read));
+            .OptionalBuffer<ContactBodyLink>(QueryAccess.Read);
+        if (_silo is not null) contactResults.Optional<BodyMass>(QueryAccess.Read).Optional<DeviceBodyBinding>(QueryAccess.Read);
+        _contacts = world.Query(contactResults);
         double energy = 0;
         world.ExecuteReadQuery(_bodies, rows =>
         {
             foreach (QueryRow row in rows.Rows)
                 if (row.ReadRef<BodyMass>().Motion == BodyMotion.Dynamic)
+                {
                     energy += CalculateMechanicalEnergy(in row.ReadRef<BodyPose>(), in row.ReadRef<BodyMass>(),
                         in row.ReadRef<BodyVelocity>());
+                    if (_silo is not null)
+                        _silo.Initialize(row.ReadRef<DeviceBodyBinding>().Index,
+                            row.ReadRef<BodyPose>().GetCenterOfMass(in row.ReadRef<BodyMass>()));
+                }
         });
         _initialMechanicalEnergy = _mechanicalEnergy = _maximumMechanicalEnergy = energy;
     }
 
-    public void Read(long number)
+    public void Read(in PhysicsStepResult completed)
     {
+        long number = completed.Number;
+        _silo?.BeginRead(number);
+        _scale?.BeginRead(in completed);
         double previousEnergy = _mechanicalEnergy;
+        int previousJoints = _liveJoints;
         _mechanicalEnergy = 0;
         _entitiesNow = _world.EntityCount;
         _entityPeak = Math.Max(_entityPeak, _entitiesNow);
@@ -157,6 +199,8 @@ internal sealed class ReadScenePhysicsResults : IDisposable
                 ref readonly BodyPose pose = ref row.ReadRef<BodyPose>();
                 ref readonly BodyVelocity velocity = ref row.ReadRef<BodyVelocity>();
                 ref readonly BodyMass mass = ref row.ReadRef<BodyMass>();
+                if (_scale is not null) _scale.ReadBody(row.Entity, in pose, in mass, in velocity,
+                    in row.ReadRef<BodyActivity>(), in row.ReadRef<BodyStepState>());
                 if (!float.IsFinite(pose.Position.LengthSquared() + pose.Rotation.LengthSquared()
                     + velocity.Linear.LengthSquared() + velocity.Angular.LengthSquared()))
                     throw new InvalidOperationException("The completed scene body pose and velocity must be finite.");
@@ -166,6 +210,7 @@ internal sealed class ReadScenePhysicsResults : IDisposable
                     if (!row.ReadRef<BodyActivity>().Sleeping) _awakeNow++;
                     float value = 1 / mass.InverseMass;
                     Vector3 center = pose.GetCenterOfMass(in mass);
+                    if (_silo is not null) _silo.Read(number, row.ReadRef<DeviceBodyBinding>().Index, center);
                     _dynamicMass += value;
                     _centerOfMass += center * value;
                     _linearMomentum += velocity.Linear * value;
@@ -181,7 +226,6 @@ internal sealed class ReadScenePhysicsResults : IDisposable
         });
         _centerOfMass /= _dynamicMass;
         _maximumMechanicalEnergy = Math.Max(_maximumMechanicalEnergy, _mechanicalEnergy);
-        if (_inputSteps.Contains(number)) _inputEnergies.Add((number, previousEnergy, _mechanicalEnergy));
         if (_scene.DeviceStatistics is null) _world.ExecuteQuery(_contacts, rows =>
         {
             foreach (QueryRow row in rows.Rows)
@@ -238,7 +282,15 @@ internal sealed class ReadScenePhysicsResults : IDisposable
         }
         _contactPeak = Math.Max(_contactPeak, _contactsNow);
         _awakePeak = Math.Max(_awakePeak, _awakeNow);
+        if (_inputSteps.Contains(number)) _sceneInputs.Add((number, previousEnergy, _mechanicalEnergy, previousJoints, _liveJoints));
+        _silo?.CompleteRead(number, _contactsNow, _mechanicalEnergy);
+        _scale?.FinishRead(_liveJoints, _scene.DeviceStatistics);
+        if (_silo is not null && _silo.IsFinalStep(number))
+            _world.ExecuteReadQuery(_contacts, rows => _silo.ReadContacts(rows));
     }
+
+    public bool? SiloBehaviorSatisfied => _silo?.MeetsBehavior(_initialMechanicalEnergy);
+    public bool? ScaleDeliverySatisfied => _scale?.DeliverySatisfied;
 
     private double CalculateMechanicalEnergy(in BodyPose pose, in BodyMass mass, in BodyVelocity velocity)
     {
@@ -262,6 +314,8 @@ internal sealed class ReadScenePhysicsResults : IDisposable
             ["Entities"] = _entitiesNow, ["PeakEntities"] = _entityPeak,
             ["BodyCount"] = _scene.Bodies.Length, ["LiveJoints"] = _liveJoints, ["DistanceRanges"] = _scene.DistanceRanges.Length,
             ["ReadbackBodyCount"] = _scene.ReadbackBodies.Length,
+            ["SiloMotion"] = _silo?.Describe(),
+            ["ScaleMotion"] = _scale?.Describe(),
             ["BodyMotionScope"] = _readbackBodies is null ? "Every scene body" : "Selected readback bodies",
             ["ConstraintErrorScope"] = _readbackBodies is null ? "Every scene constraint" : "Constraints between selected readback bodies",
             ["MechanicalEnergyScope"] = _readbackBodies is null ? "Every scene dynamic body" : "Selected readback dynamic bodies",
@@ -270,11 +324,15 @@ internal sealed class ReadScenePhysicsResults : IDisposable
             ["InitialMechanicalEnergyJoules"] = _initialMechanicalEnergy,
             ["CurrentMechanicalEnergyJoules"] = _mechanicalEnergy,
             ["MaximumMechanicalEnergyJoules"] = _maximumMechanicalEnergy,
-            ["MechanicalEnergyAcrossSceneInputs"] = new JsonArray(_inputEnergies.Select(sample => (JsonNode)new JsonObject
+            ["MechanicalEnergyAcrossSceneInputs"] = new JsonArray(_sceneInputs.Select(sample => (JsonNode)new JsonObject
             {
-                ["Step"] = sample.Step, ["BeforeStepJoules"] = sample.Before, ["AfterStepJoules"] = sample.After,
-                ["ChangeJoules"] = sample.After - sample.Before,
+                ["Step"] = sample.Step, ["BeforeStepJoules"] = sample.BeforeEnergy, ["AfterStepJoules"] = sample.AfterEnergy,
+                ["ChangeJoules"] = sample.AfterEnergy - sample.BeforeEnergy,
                 ["Scope"] = "Complete step across declared scene inputs, including simulation work and dissipation",
+            }).ToArray()),
+            ["LiveJointsAcrossSceneInputs"] = new JsonArray(_sceneInputs.Select(sample => (JsonNode)new JsonObject
+            {
+                ["Step"] = sample.Step, ["BeforeStepJoints"] = sample.BeforeJoints, ["AfterStepJoints"] = sample.AfterJoints,
             }).ToArray()),
             ["LargestConnectedBodyCount"] = _scene.DeviceLargestIslandBodies,
             ["PeakConnectedBodyCount"] = _scene.DeviceStatistics is null ? null : _islandPeak,
