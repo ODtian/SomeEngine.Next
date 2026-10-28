@@ -20,15 +20,21 @@ public sealed class MaskedCasterDependencyTests : IClassFixture<MaskedCasterDepe
 
     public MaskedCasterDependencyTests(MaskedShaders shaders) => _shaders = shaders;
 
-    [Fact]
-    public async Task ShadingOnlyRoughnessChangesKeepMaskedShadowsEqualWhileTheCameraReturns()
+    [Theory]
+    [InlineData("D3D12")]
+    [InlineData("Vulkan")]
+    public async Task ShadingOnlyRoughnessChangesKeepMaskedShadowsEqualWhileTheCameraReturns(string backend)
     {
-        Shader declaredShader = _shaders.Mask;
-        Shader conservativeShader = _shaders.Conservative;
+        SlangCompileTarget target = backend == "Vulkan" ? SlangCompileTarget.Spirv : SlangCompileTarget.Dxil;
+        Shader declaredShader = target == SlangCompileTarget.Dxil ? _shaders.Mask :
+            Compile("Declared masked depth inputs", MaskSource(), target);
+        Shader conservativeShader = target == SlangCompileTarget.Dxil ? _shaders.Conservative :
+            Compile("Conservative masked depth inputs",
+                MaskSource().Replace("[MaterialDepthInputs(\"AlbedoMap,MaterialSampler\")]", ""), target);
         Mesh plane = await RasterTestGeometry.CreatePlaneAsync();
-        await using var declared = await FrameStageScene.CreateAsync("D3D12", true, Options(), plane, Shadows());
-        await using var conservative = await FrameStageScene.CreateAsync("D3D12", true, Options(), plane, Shadows());
-        await using var fixedRoughness = await FrameStageScene.CreateAsync("D3D12", true, Options(), plane, Shadows());
+        await using var declared = await FrameStageScene.CreateAsync(backend, true, Options(), plane, Shadows());
+        await using var conservative = await FrameStageScene.CreateAsync(backend, true, Options(), plane, Shadows());
+        await using var fixedRoughness = await FrameStageScene.CreateAsync(backend, true, Options(), plane, Shadows());
         Texture alpha = AlphaPattern(0);
         StandardMaterial[] materials =
         [
@@ -493,10 +499,10 @@ public sealed class MaskedCasterDependencyTests : IClassFixture<MaskedCasterDepe
             """);
     }
 
-    private static Shader Compile(string name, string source)
+    private static Shader Compile(string name, string source, SlangCompileTarget target = SlangCompileTarget.Dxil)
     {
         string root = FrameStageScene.FindRoot();
-        var description = TestShaderLoading.CreateSessionDescription(SlangCompileTarget.Dxil);
+        var description = TestShaderLoading.CreateSessionDescription(target);
         description.SearchPaths =
         [
             Path.Combine(root, "samples/DefaultGame/assets/Shaders"),
