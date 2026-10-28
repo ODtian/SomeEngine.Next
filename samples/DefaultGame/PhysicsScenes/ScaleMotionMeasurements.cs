@@ -14,12 +14,14 @@ internal sealed class ScaleMotionMeasurements
     private readonly Group[] _groups;
     private readonly bool[] _hitStructures, _loadedStructures;
     private readonly HashSet<long> _checkpointSteps;
+    private readonly Dictionary<int, InputMeasurement> _inputs;
     private readonly List<JsonObject> _checkpoints = [];
     private readonly int[] _eventCounts = new int[15];
     private readonly double[] _eventMinimumTime = new double[15], _eventMaximumTime = new double[15];
     private readonly int[] _eventMinimumSubstep = new int[15], _eventMaximumSubstep = new int[15];
     private readonly bool _million, _breakable;
-    private readonly int _initialJoints, _dynamicBodies, _substeps, _inputStep, _sharedFloorStep, _columns, _bodiesPerLayer;
+    private readonly int _initialJoints, _dynamicBodies, _substeps, _inputStep, _sharedFloorStep, _columns, _bodiesPerLayer, _lastStep;
+    private readonly float _stepSeconds;
     private readonly ConstraintBreakSettings? _breakLimit;
     private long _step = -1, _eventStep = -1, _breaks, _sleeps, _wakes, _localWakes, _sharedFloorWakes;
     private long? _firstBreakStep, _lastBreakStep;
@@ -31,7 +33,7 @@ internal sealed class ScaleMotionMeasurements
     private int? _islands, _previousIslands, _graphActiveBodies;
     private int _wakeMinColumn, _wakeMaxColumn, _wakeMinRow, _wakeMaxRow, _wakeMinLayer, _wakeMaxLayer;
     private double _endTime;
-    private bool _deliverySatisfied = true, _breakForcesSatisfied = true;
+    private bool _deliverySatisfied = true, _breakForcesSatisfied = true, _eventWindowsSatisfied = true;
 
     internal ScaleMotionMeasurements(PhysicsSceneDescription description, PhysicsSceneData data,
         ReadOnlySpan<Entity> bodies, int stepCount)
@@ -40,6 +42,8 @@ internal sealed class ScaleMotionMeasurements
         _million = description.Scene == 407;
         bool pyramids = description.Scene is 402 or 403, network = description.Scene == 404;
         _initialJoints = data.Joints.Length; _substeps = data.Substeps;
+        _lastStep = stepCount - 1; _stepSeconds = (float)data.StepSeconds;
+        _inputs = data.Events.ToDictionary(change => change.Body!.Value, change => new InputMeasurement(change));
         _breakLimit = data.Joints.FirstOrDefault(joint => joint.BreakLimits.HasValue)?.BreakLimits;
         _breakable = _breakLimit.HasValue;
         _inputStep = data.Events.Where(change => change.Velocity is not null).Min(change => change.Frame);
@@ -111,6 +115,8 @@ internal sealed class ScaleMotionMeasurements
 
     internal void ReadEvent(in PhysicsStepEvents step, in PhysicsEvent value)
     {
+        _eventWindowsSatisfied &= step.Number == _step + 1 && value.Substep >= 0 && value.Substep < _substeps
+            && value.Time >= step.StartTime && value.Time <= step.EndTime;
         if (_eventStep != step.Number)
         {
             _eventStep = step.Number; Array.Clear(_eventCounts); _stepSelfContacts = 0;
@@ -188,6 +194,7 @@ internal sealed class ScaleMotionMeasurements
 
     internal void BeginRead(in PhysicsStepResult completed)
     {
+        _deliverySatisfied &= completed.Number == _step + 1;
         _step = completed.Number; _endTime = completed.EndTime; _readBodies = _clockBodies = 0;
         foreach (Group group in _groups) group.ClearMotion();
     }
@@ -195,8 +202,11 @@ internal sealed class ScaleMotionMeasurements
     internal void ReadBody(Entity entity, in BodyPose pose, in BodyMass mass, in BodyVelocity velocity,
         in BodyActivity activity, in BodyStepState step)
     {
-        Group group = _groups[_bodyGroups[_bodyIndices[entity]]];
+        int bodyIndex = _bodyIndices[entity];
+        Group group = _groups[_bodyGroups[bodyIndex]];
         Vector3 center = pose.GetCenterOfMass(in mass);
+        if (_inputs.TryGetValue(bodyIndex, out InputMeasurement? input))
+            input.Read(_step, _stepSeconds, in pose, in velocity, in step);
         _readBodies++; group.X += center.X; group.Y += center.Y; group.Z += center.Z;
         group.MinimumZ = MathF.Min(group.MinimumZ, center.Z); group.MaximumZ = MathF.Max(group.MaximumZ, center.Z);
         group.Speed = MathF.Max(group.Speed, velocity.Linear.Length()); group.AngularSpeed = MathF.Max(group.AngularSpeed, velocity.Angular.Length());
@@ -213,11 +223,12 @@ internal sealed class ScaleMotionMeasurements
         _previousBreaks = _completedBreaks;
         _completedBreaks = _eventStep == _step ? _eventCounts[(int)PhysicsEventKind.Break * 3] : 0;
         _deliverySatisfied &= _readBodies == _bodyGroups.Length && _clockBodies == _dynamicBodies
-            && (!_breakable || _liveJoints + _breaks == _initialJoints) && _breakForcesSatisfied;
+            && (!_breakable || _liveJoints + _breaks == _initialJoints) && _breakForcesSatisfied && _eventWindowsSatisfied;
         if (_checkpointSteps.Contains(_step)) _checkpoints.Add(DescribeCurrent());
     }
 
-    internal bool DeliverySatisfied => _deliverySatisfied;
+    internal bool DeliverySatisfied => _deliverySatisfied && _step == _lastStep;
+    internal bool InputDeliverySatisfied => _step == _lastStep && _inputs.Values.All(input => input.Delivered);
 
     internal JsonObject Describe()
     {
@@ -236,6 +247,11 @@ internal sealed class ScaleMotionMeasurements
             ["Step"] = _step, ["Time"] = _endTime, ["DeliveredBodies"] = _readBodies,
             ["DynamicBodies"] = _dynamicBodies, ["DynamicBodiesAtCompletedClock"] = _clockBodies,
             ["DeliverySatisfied"] = _deliverySatisfied,
+            ["OriginalLastStep"] = _lastStep, ["OriginalProcessCompleted"] = _step == _lastStep,
+            ["EventsWithinCompletedStep"] = _eventWindowsSatisfied,
+            ["InputDeliverySatisfied"] = InputDeliverySatisfied,
+            ["Inputs"] = new JsonArray(_inputs.Where(pair => pair.Value.Step == _step || _step == _lastStep)
+                .Select(pair => (JsonNode)pair.Value.Describe(pair.Key)).ToArray()),
             ["GraphSourceStep"] = _islands.HasValue ? _step : null,
             ["GraphStage"] = _islands.HasValue ? "Connectivity and active work before solver and automatic joint breaks" : null,
             ["GraphActiveBodies"] = _graphActiveBodies, ["DynamicIslands"] = _islands,
@@ -264,6 +280,53 @@ internal sealed class ScaleMotionMeasurements
                     ["MinimumTime"] = _eventMinimumTime[index], ["MaximumTime"] = _eventMaximumTime[index],
                     ["MinimumSubstep"] = _eventMinimumSubstep[index], ["MaximumSubstep"] = _eventMaximumSubstep[index] }).ToArray()),
             ["Groups"] = new JsonArray(_groups.Select(group => (JsonNode)group.Describe(currentEvents)).ToArray()),
+        };
+    }
+
+    private sealed class InputMeasurement(SceneInputEvent input)
+    {
+        private Vector3 _previousVelocity;
+        private double? _velocityIncrement, _roundingTolerance;
+        private Vector3? _position;
+        internal int Step => input.Frame;
+        internal bool Delivered { get; private set; }
+
+        internal void Read(long number, float duration, in BodyPose pose, in BodyVelocity velocity, in BodyStepState step)
+        {
+            if (number == input.Frame)
+            {
+                if (input.Velocity is { } increment)
+                {
+                    // All original scale impulses act on X or Y, perpendicular to gravity.
+                    int axis = increment[0] != 0 ? 0 : 1;
+                    double start = step.StartCenterOfMass[axis], predicted = step.PredictedCenterOfMass[axis];
+                    double previous = _previousVelocity[axis], requested = increment[axis];
+                    _velocityIncrement = (predicted - start) / duration - previous;
+                    // Float prediction rounds velocity arithmetic, displacement and position addition.
+                    const double unitRoundoff = 1d / (1 << 24);
+                    _roundingTolerance = 8 * unitRoundoff *
+                        ((Math.Abs(start) + Math.Abs(predicted)) / duration + Math.Abs(previous) + Math.Abs(requested));
+                    Delivered = Math.Abs(_velocityIncrement.Value - requested) <= _roundingTolerance.Value;
+                }
+                else if (input.Position is { } position)
+                {
+                    _position = pose.Position;
+                    Delivered = pose.Position == new Vector3((float)position[0], (float)position[1], (float)position[2]);
+                }
+            }
+            _previousVelocity = velocity.Linear;
+        }
+
+        internal JsonObject Describe(int bodyIndex) => new()
+        {
+            ["Step"] = input.Frame, ["BodyIndex"] = bodyIndex, ["Delivered"] = Delivered,
+            ["RequestedVelocityIncrement"] = input.Velocity is { } velocity
+                ? new JsonArray(velocity[0], velocity[1], velocity[2]) : null,
+            ["PredictedVelocityIncrementAlongInputAxis"] = _velocityIncrement,
+            ["FloatRoundingTolerance"] = _roundingTolerance,
+            ["RequestedPosition"] = input.Position is { } position
+                ? new JsonArray(position[0], position[1], position[2]) : null,
+            ["CompletedPosition"] = _position is { } completed ? new JsonArray(completed.X, completed.Y, completed.Z) : null,
         };
     }
 

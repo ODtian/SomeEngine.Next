@@ -190,8 +190,13 @@ IslandCount 包含已选 Dynamic 的睡眠岛及只读 Dynamic 参与端；stati
 `GraphSourceStep` 和 `GraphStage` 标明这些图计数在自动断裂之前生成；
 完成步交付 Break 与 LiveJoints，下一原步的图计数对应删除后重新建立的连接。
 
-`ScaleDeliverySatisfied` 核对全体读取、每个 Dynamic 的完成 number/substep/time、
-断裂计数与原阈值，和严格全部 Steps 的 `WithinBudget` 分列。
+`ScaleDeliverySatisfied` 核对原241或481步的连续完成、全体读取、每个 Dynamic 的完成
+number/substep/time、事件 time/substep 所属窗口、断裂计数与原阈值，和严格全部 Steps 的
+`WithinBudget` 分列。`ScaleInputDeliverySatisfied` 对原120或180步的每个冲量目标读取
+共享 `BodyStepState`：沿原X或Y输入轴，用预测中心位移和前一步速度取得实际速度增量，
+与原声明增量比较；这些轴垂直于原重力。容差覆盖 float 速度运算、位移乘法及位置相加的舍入，
+原值、实际增量和容差一起输出。原360步的共享地板位置则直接核对完成 `BodyPose.Position`。
+输入观察只持有这些原事件目标的上一完成速度与输入时刻结果，仍使用原全体主体读取。
 承重、冲击、坍塌、自接触及局部/共享地板唤醒沿实际组结果和对应事件边界核对。
 事件归约处于原 Frame 消费计时内，额外全体分组观察沿 `Observation` 单列；
 进度 JSON 的构造与输出按原测量口径位于两个计时区间之后。
