@@ -188,14 +188,18 @@ public sealed class RenderWorldExtractorTests(RenderTestDevice graphics) : IClas
         ulong materialRevision = material.Revision;
         ulong textureRevision = texture.Revision;
         TextureVersions before = render.ReadTextureVersions(texture);
+        IReadOnlyDictionary<Texture, TextureVersions> earlierVersions = render.ReadTextureVersions();
         await texture.UpdateAsync(TextureAsset(92, 1));
         extraction.Extract(main);
         Assert.Equal(before, render.ReadTextureVersions(texture));
+        Assert.Equal(before, render.ReadTextureVersions()[texture]);
         graphics.Apply(extraction, render);
         Assert.Equal(textureRevision + 1, texture.Revision);
         Assert.Equal(materialRevision, material.Revision);
         Assert.Equal(0, writes);
         Assert.Equal(texture.Versions, render.ReadTextureVersions(texture));
+        Assert.Equal(texture.Versions, render.ReadTextureVersions()[texture]);
+        Assert.Equal(before, earlierVersions[texture]);
         Assert.Same(material, render.ReadMaterial(material.MaterialId));
         Assert.Same(texture, material.AlbedoMap);
         Assert.Same(texture, render.Read<RenderLightCookie>(mirror).Texture);
@@ -220,10 +224,12 @@ public sealed class RenderWorldExtractorTests(RenderTestDevice graphics) : IClas
         graphics.Apply(extraction, render);
         TextureVersions allocated = render.ReadTextureVersions(texture);
         Assert.Equal(texture.Versions, allocated);
+        Assert.Equal(allocated, render.ReadTextureVersions()[texture]);
         graphics.RenderDevice.ReleaseTexture(texture);
         Assert.Equal(allocated, render.ReadTextureVersions(texture));
         ExtractAndApply(extraction, game, render);
         Assert.True(render.ReadTextureVersions(texture).Allocation > allocated.Allocation);
+        Assert.Equal(texture.Versions, render.ReadTextureVersions()[texture]);
         Assert.Equal(before.Content, render.ReadTextureVersions(texture).Content);
     }
 

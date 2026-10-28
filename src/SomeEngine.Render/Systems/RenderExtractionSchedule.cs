@@ -226,7 +226,7 @@ public sealed class RenderExtractionSystems : IDisposable
                     systems._textureVersions = resources.Textures;
                     systems._materialReferences = resources.Materials;
                     systems._context.MaterialReferences = systems._materialReferences;
-                    systems._materialsChanged = systems._renderWorld.HaveMaterialsChanged(systems._materialReferences.Values);
+                    systems._materialsChanged = systems._renderWorld.HaveMaterialsChanged(systems._materialReferences);
                     var before = systems._renderWorld.TextureVersions;
                     systems._texturesChanged = before.Count != systems._textureVersions.Count ||
                         systems._textureVersions.Any(pair => !before.TryGetValue(pair.Key, out var version) || version != pair.Value);

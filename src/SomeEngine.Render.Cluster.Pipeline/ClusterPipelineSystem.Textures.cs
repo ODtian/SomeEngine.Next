@@ -17,6 +17,7 @@ public sealed partial class ClusterPipelineSystem
     }
     private readonly HashSet<EngineTexture> _materialTextureInputsToPrepare = [];
     private readonly HashSet<int> _textureScalarChanges = [];
+    private IReadOnlyDictionary<EngineTexture, TextureVersions>? _materialTextureVersions;
     private bool _missingTextureInputsToPrepare;
 
     private (Dictionary<EngineTexture, List<GraphParameterInput>> Textures, List<GraphParameterInput> Missing)
@@ -49,6 +50,7 @@ public sealed partial class ClusterPipelineSystem
         Dictionary<EngineTexture, List<GraphParameterInput>> textureInputs, List<GraphParameterInput> missingInputs)
     {
         var textures = _graphData.MaterialTextures;
+        IReadOnlyDictionary<EngineTexture, TextureVersions> versions = _resources.World.ReadTextureVersions();
         foreach ((EngineTexture asset, MaterialTexture previous) in _graphData.MaterialTextures)
             if (!textureInputs.ContainsKey(asset))
             {
@@ -57,7 +59,7 @@ public sealed partial class ClusterPipelineSystem
             }
         foreach ((EngineTexture asset, List<GraphParameterInput> inputs) in textureInputs)
         {
-            TextureVersions versions = _resources.World.ReadTextureVersions(asset);
+            TextureVersions textureVersions = versions[asset];
             MaterialTexture value;
             if (textures.TryGetValue(asset, out var current))
             {
@@ -70,7 +72,7 @@ public sealed partial class ClusterPipelineSystem
                 }
             }
             else value = RegisterMaterialTexture(ref edit, _renderDevice.RetainTexture(asset));
-            value = value with { Versions = versions };
+            value = value with { Versions = textureVersions };
             if (!value.Inputs.AsSpan().SequenceEqual(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(inputs)))
                 value = value with { Inputs = inputs.ToImmutableArray(), ForceRebind = true };
             textures = textures.SetItem(asset, value);
@@ -140,27 +142,30 @@ public sealed partial class ClusterPipelineSystem
 
     private void RefreshMaterialTextures()
     {
+        IReadOnlyDictionary<EngineTexture, TextureVersions> versions = _resources.World.ReadTextureVersions();
         uint decalVersion = GraphData.Decals!.Version;
         if (_graphData.MaterialTextureDecalVersion == decalVersion)
         {
+            if (ReferenceEquals(versions, _materialTextureVersions)) return;
             // Resource-property revisions keep the accepted texture references current.
             // In-place Texture updates retain their keys and change versions or allocations.
             HashSet<EngineTexture>? versionsChanged = null;
             foreach ((EngineTexture texture, MaterialTexture value) in _graphData.MaterialTextures)
-                if (_resources.World.ReadTextureVersions(texture) != value.Versions ||
-                    !ReferenceEquals(_renderDevice.GetTexture(texture), _graph.GetExternalTexture(value.Use.Texture)))
+                if (versions[texture] != value.Versions)
                     (versionsChanged ??= []).Add(texture);
             if (versionsChanged is not null) RefreshMaterialTextureVersions(versionsChanged);
+            _materialTextureVersions = versions;
             return;
         }
-        RefreshMaterialTextureBindings(decalVersion);
+        RefreshMaterialTextureBindings(decalVersion, versions);
+        _materialTextureVersions = versions;
     }
 
     private void RefreshMaterialTextureVersions(HashSet<EngineTexture> changed) =>
         EditGraph((ref RenderGraphEdit edit) => UpdateMaterialTextures(ref edit),
             () => AcceptMaterialTextureChanges(changed));
 
-    private void RefreshMaterialTextureBindings(uint decalVersion)
+    private void RefreshMaterialTextureBindings(uint decalVersion, IReadOnlyDictionary<EngineTexture, TextureVersions> versions)
     {
         var (textureInputs, missingInputs) = CollectMaterialTextureInputs();
         HashSet<EngineTexture>? changed = null;
@@ -169,8 +174,7 @@ public sealed partial class ClusterPipelineSystem
         foreach ((EngineTexture texture, List<GraphParameterInput> inputs) in textureInputs)
             if (!_graphData.MaterialTextures.TryGetValue(texture, out MaterialTexture previous) ||
                 !previous.Inputs.AsSpan().SequenceEqual(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(inputs)) ||
-                _resources.World.ReadTextureVersions(texture) != previous.Versions ||
-                !ReferenceEquals(_renderDevice.GetTexture(texture), _graph.GetExternalTexture(previous.Use.Texture)))
+                versions[texture] != previous.Versions)
                 (changed ??= []).Add(texture);
         bool missingChanged = _graphData.MissingMaterialTexture is { } missing
             ? !missing.Inputs.AsSpan().SequenceEqual(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(missingInputs))

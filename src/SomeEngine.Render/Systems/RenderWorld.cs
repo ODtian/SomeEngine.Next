@@ -23,11 +23,13 @@ public sealed class RenderWorld : World
     private readonly Entity _materialIndexEntity;
     private readonly Entity _textureVersionsEntity;
     private readonly QueryHandle _worldOriginQuery;
+    private readonly QueryHandle _materialsQuery;
 
     public RenderWorld(int initialEntityCapacity = 256, WorldExecution? execution = null)
         : base(initialEntityCapacity, execution)
     {
         _worldOriginQuery = Query(new QueryDefinitionBuilder().Read<RenderWorldOrigin>());
+        _materialsQuery = Query(new QueryDefinitionBuilder().Read<RenderMaterialReference>());
         _materialIndexEntity = CreateEntity(new RenderMaterialIndex(ImmutableDictionary<long, RenderMaterialEntry>.Empty));
         _textureVersionsEntity = CreateEntity(new RenderTextureVersions(ImmutableDictionary<Texture, TextureVersions>.Empty));
     }
@@ -61,6 +63,8 @@ public sealed class RenderWorld : World
     internal RenderMaterialReference ReadMaterialReference(long materialId) =>
         Read<RenderMaterialReference>(Read<RenderMaterialIndex>(_materialIndexEntity).Entries[materialId].Entity);
     public TextureVersions ReadTextureVersions(Texture texture) => TextureVersions[texture];
+    /// <summary>Reads the immutable texture versions applied at this world's extraction boundary.</summary>
+    public IReadOnlyDictionary<Texture, TextureVersions> ReadTextureVersions() => TextureVersions;
     internal ImmutableDictionary<Texture, TextureVersions> TextureVersions =>
         Read<RenderTextureVersions>(_textureVersionsEntity).Textures;
     internal void UpdateTextureVersions(ImmutableDictionary<Texture, TextureVersions> textures) =>
@@ -74,14 +78,22 @@ public sealed class RenderWorld : World
                 Replace(entry.Entity, reference);
     }
 
-    internal bool HaveMaterialsChanged(IEnumerable<RenderMaterialReference> references)
+    internal bool HaveMaterialsChanged(IReadOnlyDictionary<long, RenderMaterialReference> references)
     {
-        var entries = Read<RenderMaterialIndex>(_materialIndexEntity).Entries;
-        foreach (RenderMaterialReference reference in references)
-            if (entries.TryGetValue(reference.Material.MaterialId, out RenderMaterialEntry entry) &&
-                Read<RenderMaterialReference>(entry.Entity).Revision != reference.Revision)
-                return true;
-        return false;
+        var comparison = (References: references, Changed: false);
+        ExecuteQuery(_materialsQuery, ref comparison,
+            static (QueryCursor query, ref (IReadOnlyDictionary<long, RenderMaterialReference> References, bool Changed) state) =>
+            {
+                foreach (QueryChunkView chunk in query.Chunks)
+                    foreach (RenderMaterialReference current in chunk.Read<RenderMaterialReference>())
+                        if (state.References.TryGetValue(current.Material.MaterialId, out var next) &&
+                            current.Revision != next.Revision)
+                        {
+                            state.Changed = true;
+                            return;
+                        }
+            });
+        return comparison.Changed;
     }
 
     internal void SetMaterials(Entity entity, ReadOnlySpan<Material> materials,

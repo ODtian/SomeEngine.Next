@@ -41,6 +41,10 @@ Material 的字段和资源引用继续由原对象持有，并遵守既有资�
 每次提取遍历这些共享资源，读取材料 Revision、纹理属性与 TextureVersions。
 用户提取器继续通过 `CollectResources` 在该读取窗口补充资源。
 网格范围扩张从同一来源关系读取材料，提取侧的来源材质引用由该索引集中持有。
+`RenderWorld.ReadTextureVersions()` 一次读取已应用的不可变纹理版本表，供管线按整批变化消费；
+持有的旧表继续表达原来的版本值。单纹理重载沿用同一张表。
+共享材质版本比较通过一次 Rendering world 查询读取全部 `RenderMaterialReference`，
+随后在查询内与本次收集值比较。
 源码：[RenderSourceResources](../../../src/SomeEngine.Render/Systems/RenderExtractionResources.cs)、
 [提取顺序](../../../src/SomeEngine.Render/Systems/RenderExtractionSchedule.cs)。
 
