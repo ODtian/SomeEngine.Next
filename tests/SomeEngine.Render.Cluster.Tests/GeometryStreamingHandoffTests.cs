@@ -32,13 +32,17 @@ public sealed class GeometryStreamingHandoffTests
             using var source = await geometry.OpenPayloadSourceAsync();
             reads.PageBytes = mesh.GetPageByteLength(1);
             var transform = new SomeEngine.Core.Math.TransformQvvs(new Vector3(0, 0, -4), Quaternion.Identity);
-            RasterImage fine;
+            RasterImage fine, coarseReference;
             await using (var reference = await FrameStageScene.CreateAsync("D3D12", false,
                 new ClusterPipelineOptions { MaxCandidates = 1024, ForceHardwareRaster = true, EnableFrameMetricsReadback = true }, await RasterTestGeometry.CreatePlaneAsync()))
             {
                 reference.SetGeometryVisible(false);
-                reference.AddGeometryMesh(await RasterTestGeometry.CreatePlaneAsync(), transform);
+                var detail = reference.AddGeometryMesh(await RasterTestGeometry.CreatePlaneAsync(), transform);
                 fine = await reference.ReadNextRasterImageAsync();
+                reference.RemoveMaterialMesh(detail);
+                reference.AddGeometryMesh(await RasterTestGeometry.CreatePlaneAsync(),
+                    new SomeEngine.Core.Math.TransformQvvs(new Vector3(0, 0, -4.5f), Quaternion.Identity));
+                coarseReference = await reference.ReadNextRasterImageAsync();
             }
             await using var scene = await FrameStageScene.CreateAsync("D3D12", false,
                 new ClusterPipelineOptions { MaxCandidates = 1024, ForceHardwareRaster = true, EnableFrameMetricsReadback = true }, await RasterTestGeometry.CreatePlaneAsync(),
@@ -51,6 +55,7 @@ public sealed class GeometryStreamingHandoffTests
             var first = scene.AddStreamingMesh(mesh, source, transform);
             RasterImage coarse = await scene.ReadNextRasterImageAsync();
             uint openingResidentPages = scene.GeometryResidentPages;
+            AssertImage(coarseReference, coarse);
             Assert.NotEqual(fine.Depth, coarse.Depth);
             reads.Observe = true;
             scene.PumpStreaming();
@@ -577,6 +582,7 @@ public sealed class GeometryStreamingHandoffTests
         result.SetBlock(new MeshBlock { Bounds = new() { Radius = new Vector3(lodBounds.X, lodBounds.Y, lodBounds.Z).Length() + lodBounds.W } });
         using var geometry = new ClusterMeshBlock();
         geometry.VertexEncoding = meshes[0].VertexEncoding;
+        geometry.LowestDetailPageIndices = [0];
         geometry.ClusterGroups =
         [
             new() { FirstPage = 0, PageCount = 1, HierarchyParts = [new() { NodeIndex = 0, ChildIndex = 0, PageIndex = 0 }] },
@@ -659,6 +665,7 @@ public sealed class GeometryStreamingHandoffTests
         result.SetBlock(new MeshBlock { Bounds = new() { Radius = 1.75f } });
         using var geometry = new ClusterMeshBlock();
         geometry.VertexEncoding = mesh.VertexEncoding;
+        geometry.LowestDetailPageIndices = [0];
         geometry.ClusterGroups =
         [
             new() { FirstPage = 0, PageCount = 1, HierarchyParts = [new() { NodeIndex = 0, ChildIndex = 0, PageIndex = 0 }] },
