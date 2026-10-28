@@ -60,7 +60,7 @@ uint reduceDeviceManifold(uint work, uint count, out DeviceGeometryDistance poin
 }
 
 uint clipDeviceManifold(uint work, uint reference, uint referenceCount, uint incident, uint incidentCount,
-    float3 normal, out DeviceGeometryDistance points[4])
+    float3 normal, float manifoldDistance, out DeviceGeometryDistance points[4])
 {
     uint polygon = work * (2 * DetectionParameters.faceCapacity + 4);
     for (uint index = 0; index < incidentCount; index++) ContactPolygon[polygon + index] = CollisionFaces[incident + index];
@@ -112,7 +112,7 @@ uint clipDeviceManifold(uint work, uint reference, uint referenceCount, uint inc
     {
         DeviceFeaturePoint point = ContactPolygon[polygon + index];
         float separation = dot(faceNormal, point.point - CollisionFaces[reference].point) / projection;
-        if (separation > DetectionParameters.contactDistance + tolerance) continue;
+        if (separation > manifoldDistance + tolerance) continue;
         DeviceGeometryDistance contact;
         contact.firstPoint = point.point - normal * separation;
         contact.secondPoint = point.point;
@@ -123,6 +123,13 @@ uint clipDeviceManifold(uint work, uint reference, uint referenceCount, uint inc
         ManifoldCandidates[polygon + contactCount++] = contact;
     }
     return reduceDeviceManifold(work, contactCount, points);
+}
+
+uint clipDeviceManifold(uint work, uint reference, uint referenceCount, uint incident, uint incidentCount,
+    float3 normal, out DeviceGeometryDistance points[4])
+{
+    return clipDeviceManifold(work, reference, referenceCount, incident, incidentCount,
+        normal, DetectionParameters.contactDistance, points);
 }
 
 uint lineDeviceManifold(uint first, uint second, float3 normal, out DeviceGeometryDistance points[4])
@@ -160,7 +167,7 @@ uint lineDeviceManifold(uint first, uint second, float3 normal, out DeviceGeomet
 
 uint manifoldDevicePair<TFirst : IDeviceConvex, TSecond : IDeviceConvex>(uint work,
     DeviceGeometryInput first, DeviceGeometryInput second, DeviceGeometryDistance distance,
-    out DeviceGeometryDistance points[4])
+    float manifoldDistance, out DeviceGeometryDistance points[4])
 {
     TFirst a;
     TSecond b;
@@ -170,10 +177,10 @@ uint manifoldDevicePair<TFirst : IDeviceConvex, TSecond : IDeviceConvex>(uint wo
     uint secondCount = b.face(second, -distance.normal, secondFace);
     uint count = 0;
     if (firstCount >= 3)
-        count = clipDeviceManifold(work, firstFace, firstCount, secondFace, secondCount, distance.normal, points);
+        count = clipDeviceManifold(work, firstFace, firstCount, secondFace, secondCount, distance.normal, manifoldDistance, points);
     else if (secondCount >= 3)
     {
-        count = clipDeviceManifold(work, secondFace, secondCount, firstFace, firstCount, -distance.normal, points);
+        count = clipDeviceManifold(work, secondFace, secondCount, firstFace, firstCount, -distance.normal, manifoldDistance, points);
         for (uint index = 0; index < count; index++) points[index] = reverseDeviceDistance(points[index]);
     }
     else if (firstCount == 2 && secondCount == 2)
@@ -181,4 +188,11 @@ uint manifoldDevicePair<TFirst : IDeviceConvex, TSecond : IDeviceConvex>(uint wo
     if (count > 0) return count;
     points[0] = distance;
     return 1;
+}
+
+uint manifoldDevicePair<TFirst : IDeviceConvex, TSecond : IDeviceConvex>(uint work,
+    DeviceGeometryInput first, DeviceGeometryInput second, DeviceGeometryDistance distance,
+    out DeviceGeometryDistance points[4])
+{
+    return manifoldDevicePair<TFirst, TSecond>(work, first, second, distance, DetectionParameters.contactDistance, points);
 }

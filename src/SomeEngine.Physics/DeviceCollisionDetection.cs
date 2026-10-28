@@ -162,9 +162,9 @@ public sealed partial class DeviceCollisionDetection : IDisposable
     [StructLayout(LayoutKind.Sequential)]
     private readonly record struct DetectionParameters(uint Bin, uint PairCapacity, float Tolerance,
         uint DistanceIterations, uint PenetrationIterations, uint FaceCapacity, float ContactDistance, uint WorkItems,
-        uint BodiesPerContact, uint FirstBin);
+        uint BodiesPerContact, uint FirstBin, double StartTime);
 
-    private QueueCompletion Submit()
+    private QueueCompletion Submit(in PhysicsStepContext context)
     {
         using (MappedBuffer mapping = _backend.Map(_parameters, MapType.Write, BufferRange.Whole))
         {
@@ -173,7 +173,7 @@ public sealed partial class DeviceCollisionDetection : IDisposable
                 var parameters = new DetectionParameters((uint)(_firstBin + index), (uint)Capacity.Pairs, _settings.Tolerance,
                     (uint)_settings.DistanceIterations, (uint)_settings.PenetrationIterations,
                     (uint)Capacity.FaceVertices, _contactDistance, (uint)Capacity.WorkItems,
-                    (uint)Capacity.BodiesPerContact, (uint)_firstBin);
+                    (uint)Capacity.BodiesPerContact, (uint)_firstBin, context.StartTime);
                 MemoryMarshal.Write(mapping.Bytes[(index * 256)..], in parameters);
             }
             mapping.Flush(mapping.Range);
@@ -220,7 +220,7 @@ public sealed partial class DeviceCollisionDetection : IDisposable
     {
         public void Execute()
         {
-            QueueCompletion completion = detection.Submit();
+            QueueCompletion completion = detection.Submit(in context);
             JobHandle ready = scheduler.CreateExternalFenceHandle(
                 new DeviceQueueFence(scheduler, detection._backend, completion), deviceAccesses);
             var accesses = new List<JobResourceAccess>();

@@ -2,11 +2,15 @@
 #define PHYSICS_HULL_UPDATE
 #include "physics_geometry_update.slang"
 #include "physics_hull_data.slang"
-struct DeviceHullUpdate : IDeviceGeometryUpdate
+struct DeviceHullUpdate : IDeviceGeometryUpdate, IDeviceGeometryBounds
 {
     DeviceGeometryBounds update(uint index, inout DeviceGeometryInput geometry)
     {
         readDeviceGeometryPose(index, geometry);
+        return getBounds(geometry);
+    }
+    DeviceGeometryBounds getBounds(DeviceGeometryInput geometry)
+    {
         float3 first = geometry.position + rotateDeviceDirection(geometry.rotation, HullVertices[geometry.vertexStart]);
         DeviceGeometryBounds bounds;
         bounds.min = first;
