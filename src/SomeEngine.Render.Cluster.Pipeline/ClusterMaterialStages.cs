@@ -254,12 +254,6 @@ internal sealed class ClusterCommandBindingKey : IEquatable<ClusterCommandBindin
             }
     }
 
-    internal void CollectTextures(HashSet<SomeEngine.Resources.Texture> textures)
-    {
-        foreach (BindingValue binding in _values)
-            if (binding.Value is SomeEngine.Resources.Texture texture) textures.Add(texture);
-    }
-
     public bool Equals(ClusterCommandBindingKey? other)
     {
         if (ReferenceEquals(this, other))
@@ -405,12 +399,20 @@ internal sealed partial class ClusterRasterStages : IDisposable
         var addresses = _resolvedAssignments is null
             ? new HashSet<int>(assignments.ActiveOffsets)
             : new HashSet<int>(assignments.ChangedOffsets);
-        foreach (long material in assignments.ChangedMaterialIds)
+        var materials = new HashSet<long>(assignments.ChangedMaterialIds);
+        foreach (int address in assignments.ChangedOffsets)
+        {
+            if (assignments.TryGetEntry(address, out Material material, out _))
+                materials.Add(material.MaterialId);
+            if (_resolvedAssignments is not null && _resolvedAssignments.TryGetEntry(address, out Material before, out _))
+                materials.Add(before.MaterialId);
+        }
+        foreach (long material in materials)
             addresses.UnionWith(assignments.GetMaterialOffsets(material));
         var bins = new ClusterBinIndexMap<ClusterRasterBinKey, ClusterRasterInvocation>(_binIndices);
         var resourceProperties = _resourceProperties;
         var depthProperties = _depthProperties;
-        foreach (long material in assignments.ChangedMaterialIds)
+        foreach (long material in materials)
         {
             resourceProperties = resourceProperties.Remove(material);
             depthProperties = depthProperties.Remove(material);
@@ -452,6 +454,11 @@ internal sealed partial class ClusterRasterStages : IDisposable
                 material.State.Surface, material.State.Ordered);
             if (resourceProperties.TryGetValue(material.MaterialId, out var existing)) properties.UnionWith(existing);
             resourceProperties = resourceProperties.SetItem(material.MaterialId, properties);
+            if (depthProperties.TryGetValue(material.MaterialId, out var existingDepth))
+            {
+                if (existingDepth is null || depthInputs is null) depthInputs = null;
+                else depthInputs.UnionWith(existingDepth);
+            }
             depthProperties = depthProperties.SetItem(material.MaterialId, depthInputs);
             bins.Set(address, key, invocation);
         }

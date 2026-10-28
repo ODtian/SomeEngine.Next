@@ -185,7 +185,7 @@ public sealed partial class ClusterPipelineSystem
                 ? versions.ReadChanges(material, out revisionsChanged)
                 : MaterialPropertyUse.Resource | MaterialPropertyUse.Depth;
             resourcesChanged |= (changes & MaterialPropertyUse.Resource) != 0;
-            if (topologyChanged || changes != MaterialPropertyUse.None)
+            if (topologyChanged || (changes & MaterialPropertyUse.Depth) != 0)
                 _rasterChangedMaterials.Add(id);
             if (revisionsChanged) _changedMaterialBindingVersions.Add(id);
         }
