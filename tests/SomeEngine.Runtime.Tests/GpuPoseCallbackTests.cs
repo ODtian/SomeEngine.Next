@@ -21,6 +21,7 @@ public sealed class GpuPoseCallbackTests(SceneContentFixture content)
         var readbacks = new List<GpuPoseReadback>();
         var application = new ApplicationScene(content.DirectoryPath)
         {
+            RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
             Initialize = frame =>
             {
                 GpuPoseAnimation.AddSystems(frame.Systems.Animation);
