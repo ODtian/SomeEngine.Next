@@ -75,6 +75,44 @@ public sealed class GltfExtensionBehaviorTests
     }
 
     [Fact]
+    public async Task ImportPreservesTheSceneWhenUnusedSourceElementsHaveNoPersistentIds()
+    {
+        using var files = new GltfFiles();
+        JsonNode source = JsonNode.Parse(File.ReadAllText(files.Source))!;
+        JsonNode unusedMesh = source["meshes"]![0]!.DeepClone();
+        unusedMesh.AsObject().Remove("extras");
+        source["meshes"]!.AsArray().Add(unusedMesh);
+        source["materials"] = JsonNode.Parse("""[{"name":"Unused"}]""");
+        source["textures"] = JsonNode.Parse("""[{"source":0}]""");
+        source["images"] = JsonNode.Parse("""[{"uri":"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO6Z0ioAAAAASUVORK5CYII="}]""");
+        File.WriteAllText(files.Source, source.ToJsonString());
+        var project = new AssetProject(files.Directory, []);
+
+        IReadOnlyList<Guid> ids = await project.ImportAsync(files.Source, CreateImporter());
+
+        Assert.Equal(2, ids.Count);
+        Assert.Single(project.List(MeshAsset.FileType));
+        Assert.Single(project.List(WorldAsset.FileType));
+        Assert.Equal(new[] { "mesh:id:mesh-A", "scene:id:scene-A" },
+            SourceMeta.Load(files.Source).ElementIds.Keys.Order(StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public async Task ReferencedMaterialsRequirePersistentIds()
+    {
+        using var files = new GltfFiles();
+        await files.WriteProjectShadersAsync();
+        JsonNode source = JsonNode.Parse(File.ReadAllText(files.Source))!;
+        source["materials"] = JsonNode.Parse("""[{"name":"Referenced"}]""");
+        source["meshes"]![0]!["primitives"]![0]!["material"] = 0;
+        File.WriteAllText(files.Source, source.ToJsonString());
+        var project = new AssetProject(files.Directory, []);
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            project.ImportAsync(files.Source, CreateImporter()).AsTask());
+    }
+
+    [Fact]
     public async Task AssetCommandUsesGeneratedProjectImporter()
     {
         using var files = new GltfFiles();

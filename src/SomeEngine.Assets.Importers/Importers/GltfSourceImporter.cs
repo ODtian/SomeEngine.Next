@@ -13,7 +13,7 @@ namespace SomeEngine.Assets.Importers;
 
 public sealed class GltfSourceImporter : IAssetSourceImporter<ModelRoot, GltfImportOverrides>
 {
-    public const uint ImporterVersion = 16;
+    public const uint ImporterVersion = 17;
     public static readonly Guid SourceImporterId = new("b0c10195-d8d1-46ab-81b8-f8c54db7d0aa");
     private readonly IServiceCollection _importers;
     private readonly string? _capabilitiesVersion;
@@ -100,31 +100,28 @@ public sealed class GltfSourceImporter : IAssetSourceImporter<ModelRoot, GltfImp
         EnableSelected<Skin, SkeletonAsset>(scope.ServiceProvider, selections, context);
         EnableSelected<Animation, AnimationClipAsset>(scope.ServiceProvider, selections, context);
 
+        var elementsWithoutIds = new List<(Guid AssetId, string Kind, int Index, ExtraProperties Source)>();
         foreach (GltfMesh mesh in source.LogicalMeshes)
         {
-            string key = ElementKey(settings, "mesh", mesh.LogicalIndex, mesh);
-            Guid id = context.GetAssetId(key);
+            (string key, Guid id) = ElementIdentity("mesh", mesh.LogicalIndex, mesh);
             context.AddAsset(mesh, new MeshAsset(id) { Name = mesh.Name ?? $"Mesh_{mesh.LogicalIndex}" },
                 key, OutputPath(context.SourcePath, "mesh", id));
         }
         foreach (Scene scene in source.LogicalScenes)
         {
-            string key = ElementKey(settings, "scene", scene.LogicalIndex, scene);
-            Guid id = context.GetAssetId(key);
+            (string key, Guid id) = ElementIdentity("scene", scene.LogicalIndex, scene);
             context.AddAsset(scene, new WorldAsset(id) { Name = scene.Name ?? $"Scene_{scene.LogicalIndex}" },
                 key, OutputPath(context.SourcePath, "scene", id));
         }
         foreach (GltfMaterial material in source.LogicalMaterials)
         {
-            string key = ElementKey(settings, "material", material.LogicalIndex, material);
-            Guid id = context.GetAssetId(key);
+            (string key, Guid id) = ElementIdentity("material", material.LogicalIndex, material);
             context.AddAsset(material, new MaterialAsset(id) { Name = material.Name ?? $"Material_{material.LogicalIndex}" },
                 key, OutputPath(context.SourcePath, "material", id));
         }
         foreach (GltfTexture texture in source.LogicalTextures)
         {
-            string key = ElementKey(settings, "texture", texture.LogicalIndex, texture);
-            Guid id = context.GetAssetId(key);
+            (string key, Guid id) = ElementIdentity("texture", texture.LogicalIndex, texture);
             context.AddAsset(texture, new TextureAsset(id) { Name = texture.Name ?? texture.PrimaryImage?.Name ?? $"Texture_{texture.LogicalIndex}" },
                 key, OutputPath(context.SourcePath, "texture", id));
         }
@@ -132,8 +129,7 @@ public sealed class GltfSourceImporter : IAssetSourceImporter<ModelRoot, GltfImp
         {
             foreach (Skin skin in source.LogicalSkins)
             {
-                string key = ElementKey(settings, "skin", skin.LogicalIndex, skin);
-                Guid id = context.GetAssetId(key);
+                (string key, Guid id) = ElementIdentity("skin", skin.LogicalIndex, skin);
                 context.AddAsset(skin, new SkeletonAsset(id) { Name = skin.Name ?? $"Skin_{skin.LogicalIndex}" },
                     key, OutputPath(context.SourcePath, "skeleton", id));
             }
@@ -142,8 +138,7 @@ public sealed class GltfSourceImporter : IAssetSourceImporter<ModelRoot, GltfImp
         {
             foreach (Animation animation in source.LogicalAnimations)
             {
-                string key = ElementKey(settings, "animation", animation.LogicalIndex, animation);
-                Guid id = context.GetAssetId(key);
+                (string key, Guid id) = ElementIdentity("animation", animation.LogicalIndex, animation);
                 context.AddAsset(animation, new AnimationClipAsset(id) { Name = animation.Name ?? $"Animation_{animation.LogicalIndex}" },
                     key, OutputPath(context.SourcePath, "animation-clip", id));
             }
@@ -157,6 +152,23 @@ public sealed class GltfSourceImporter : IAssetSourceImporter<ModelRoot, GltfImp
                 await context.GetAssetAsync<Animation, AnimationClipAsset>(animation, cancellationToken).ConfigureAwait(false);
         foreach (Scene scene in source.LogicalScenes)
             await context.GetAssetAsync<Scene, WorldAsset>(scene, cancellationToken).ConfigureAwait(false);
+
+        IReadOnlyList<Asset> completed = context.Assets;
+        foreach (var element in elementsWithoutIds)
+            if (completed.Any(asset => asset.Id == element.AssetId))
+                _ = ElementKey(settings, element.Kind, element.Index, element.Source);
+
+        (string Key, Guid Id) ElementIdentity(string kind, int index, ExtraProperties element)
+        {
+            string key = ElementKey(settings, kind, index, element, requirePersistentId: false);
+            if (settings.RequirePersistentElementIds && key == $"{kind}:index:{index}")
+            {
+                Guid id = Guid.NewGuid();
+                elementsWithoutIds.Add((id, kind, index, element));
+                return (key, id);
+            }
+            return (key, context.GetAssetId(key));
+        }
     }
 
     private static void EnableSelected<TSource, TAsset>(IServiceProvider services,
@@ -260,11 +272,12 @@ public sealed class GltfSourceImporter : IAssetSourceImporter<ModelRoot, GltfImp
         public ValueTask ImportAsync(GltfMaterial source, ImportContext context, ImportOutput output, CancellationToken cancellationToken)
             => importer.ImportMaterialAsync(source, context, output, cancellationToken);
     }
-    private static string ElementKey(GltfImporterSettings settings, string kind, int index, ExtraProperties source)
+    private static string ElementKey(GltfImporterSettings settings, string kind, int index, ExtraProperties source,
+        bool requirePersistentId = true)
     {
         string? persistentId = source.Extras?[settings.PersistentIdProperty]?.GetValue<string>();
         if (!string.IsNullOrWhiteSpace(persistentId)) return $"{kind}:id:{persistentId}";
-        if (settings.RequirePersistentElementIds)
+        if (settings.RequirePersistentElementIds && requirePersistentId)
             throw new InvalidDataException($"glTF {kind} {index} lacks extras.{settings.PersistentIdProperty}.");
         return $"{kind}:index:{index}";
     }
