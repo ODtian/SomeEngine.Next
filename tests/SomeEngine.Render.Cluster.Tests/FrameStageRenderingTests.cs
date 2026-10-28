@@ -411,7 +411,7 @@ internal sealed partial class FrameStageScene : IAsyncDisposable
         ClusterResidencyOptions? residencyOptions = null, ClusterStreamingFeedbackChannel? feedbackChannel = null,
         uint graphicsQueueCount = 1, bool nativeVulkanValidation = false, Shader? lightingKernel = null,
         RenderInstanceOptions? instanceOptions = null, int imageSize = 64, IAssetStorage? assetStorage = null,
-        DeviceFeatures requiredFeatures = DeviceFeatures.None)
+        DeviceFeatures requiredFeatures = DeviceFeatures.None, bool nativeD3D12GpuValidation = true)
     {
         string content = Path.Combine(FindRoot(), "samples", "DefaultGame");
         await using AssetContent? packedContent = assetStorage is null && AssetContent.Exists(content)
@@ -467,7 +467,8 @@ internal sealed partial class FrameStageScene : IAsyncDisposable
         IGraphicsBackend backend = new ValidationLayer(backendName == "Vulkan"
             ? VulkanGraphicsBackend.Create(new VulkanBackendOptions(
                 EnableValidation: nativeVulkanValidation, EnableDebugMessages: nativeVulkanValidation))
-            : D3D12GraphicsBackend.Create(),
+            : D3D12GraphicsBackend.Create(new D3D12BackendOptions(
+                Validation: new D3D12ValidationOptions(DisableGpuBasedValidation: !nativeD3D12GpuValidation))),
             new ValidationOptions(NativeValidationDisabled: backendName == "Vulkan" && !nativeVulkanValidation));
         var enumeration = new AdapterEnumerationOptions(AdapterPreference.HighPerformance);
         backend.TryEnumerateAdapters(enumeration, [], out int count);

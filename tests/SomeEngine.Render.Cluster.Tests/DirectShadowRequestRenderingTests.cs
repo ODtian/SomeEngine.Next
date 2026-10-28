@@ -11,7 +11,8 @@ public sealed class DirectShadowRequestRenderingTests
     [Fact]
     public async Task FirstPersonMembershipRoundTripRestoresForwardShadowImage()
     {
-        await using var scene = await FrameStageScene.CreateAsync("D3D12", true, Options());
+        await using var scene = await FrameStageScene.CreateAsync("D3D12", true, Options(),
+            nativeD3D12GpuValidation: false);
         scene.UseMaterial("Standard");
         RasterImage expected = await scene.ReadRasterImageAsync();
         Assert.Contains(MemoryMarshal.Cast<byte, float>(expected.Depth).ToArray(), value => value < 1f);
