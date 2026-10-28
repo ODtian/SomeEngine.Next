@@ -104,6 +104,8 @@ bool PassesLODFilter(
     float lodError)
 {
     // Current leaves provide complete coverage while detail pages are streaming.
+    if (((cluster.PackedCounts >> 24u) & 2u) != 0u)
+        return true;
     if (view.CullingEnabled == 0u)
         return ((cluster.PackedCounts >> 24u) & 6u) != 0u;
 
@@ -111,8 +113,7 @@ bool PassesLODFilter(
     float maxScale = abs(t.Scale) * max(max(abs(t.Stretch.x), abs(t.Stretch.y)), abs(t.Stretch.z));
     float worldRadius = cluster.LODRadius * maxScale;
     float errorScale = abs(t.Scale) * min(min(abs(t.Stretch.x), abs(t.Stretch.y)), abs(t.Stretch.z));
-    return ClusterSphereError(worldCenter, worldRadius, lodError * errorScale, view) <= view.LodThreshold ||
-        ((cluster.PackedCounts >> 24u) & 2u) != 0u;
+    return ClusterSphereError(worldCenter, worldRadius, lodError * errorScale, view) <= view.LodThreshold;
 }
 
 struct ClusterWorldBounds

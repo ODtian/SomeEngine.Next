@@ -117,7 +117,6 @@ TriangleInfo ReadTriangleInfoLane(TriangleInfo value, uint lane)
     value.vertexBlobAddress = WaveReadLaneAt(value.vertexBlobAddress, lane);
     value.vertexBlobSize = WaveReadLaneAt(value.vertexBlobSize, lane);
     value.vertexCount = WaveReadLaneAt(value.vertexCount, lane);
-    value.viewIndex = WaveReadLaneAt(value.viewIndex, lane);
     value.materialSlot = WaveReadLaneAt(value.materialSlot, lane);
     return value;
 }
@@ -133,6 +132,8 @@ bool decodeTriangle(uint3 pixelCoord, out TriangleInfo tri)
     if (WaveGetLaneIndex() == leader) valid = LoadTriangleInfo(visibility, pixelCoord.z, tri) ? 1u : 0u;
     valid = WaveReadLaneAt(valid, leader);
     tri = ReadTriangleInfoLane(tri, leader);
+    // A valid request matches this pixel view; all grouped lanes share pixelCoord.z.
+    tri.viewIndex = pixelCoord.z;
     tri.visibility = visibility;
     tri.sourceLane = leader;
     return valid != 0u;
@@ -187,15 +188,18 @@ TDomain.TriangleData evaluateTriangleWithTransform<TVE, TDomain>(
     uniform TVE evaluator,
     uniform TDomain domain,
     TriangleInfo tri,
-    RenderInstanceTransform transform,
     uint isPreviousFrame)
     where TVE : IVertexEvaluate
     where TDomain : IDomainEvaluate<TVE.Vertex>
 {
-    uint leader = GetTriangleWaveLeader(tri, isPreviousFrame);
+    // Current evaluation follows decodeTriangle or triangleInfo before any lane exits.
+    uint leader = isPreviousFrame == 0u ? tri.sourceLane : GetTriangleWaveLeader(tri, isPreviousFrame);
     TDomain.TriangleData triangle;
     if (WaveGetLaneIndex() == leader)
     {
+        RenderInstanceTransform transform = isPreviousFrame == 0u
+            ? GetCurrentInstanceTransform(tri.instanceID)
+            : GetPreviousInstanceTransform(tri.instanceID);
         TVE.Vertex v0 = evaluator.evaluate(makeVertexEvalContext(tri, transform, isPreviousFrame, tri.vi0));
         TVE.Vertex v1 = evaluator.evaluate(makeVertexEvalContext(tri, transform, isPreviousFrame, tri.vi1));
         TVE.Vertex v2 = evaluator.evaluate(makeVertexEvalContext(tri, transform, isPreviousFrame, tri.vi2));
@@ -215,7 +219,6 @@ TDomain.TriangleData evaluateTriangle<TVE, TDomain>(
         evaluator,
         domain,
         tri,
-        GetCurrentInstanceTransform(tri.instanceID),
         0u);
 }
 
@@ -345,7 +348,6 @@ void WriteClusterMotion<
         evaluator,
         domain,
         tri,
-        GetPreviousInstanceTransform(tri.instanceID),
         1u);
     float3 currentPosition = domain.position(currentTriangle, bary);
     float3 previousPosition = domain.position(previousTriangle, bary);
