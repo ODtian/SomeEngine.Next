@@ -64,15 +64,19 @@ public sealed class ApplicationSceneTests(SceneContentFixture content)
         Assert.Equal(64 * 64 * 4, captured.Pixels.Length);
     }
 
-    [Fact]
-    public async Task ReloadRestartsFramesWithUpdatedSettings()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ReloadRestartsFramesWithUpdatedSettings(bool synchronousFrames)
     {
         var frames = new List<int>();
+        string[] args = ["--hidden-window", "--static-scene", "--no-debug-ui", "--no-vsync",
+            "--no-taa", "--no-vsm", "--frames", "3"];
+        if (synchronousFrames) args = [.. args, "--synchronous-frames"];
         var scene = new ApplicationScene(content.DirectoryPath)
         {
             RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
-            Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
-                "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "3"]),
+            Options = RuntimeStartupOptions.Parse(args),
             UpdateFrame = frame => frames.Add(frame.Index),
         };
         scene.FrameCompleted = frame =>

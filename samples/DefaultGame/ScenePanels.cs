@@ -60,7 +60,7 @@ internal sealed class ScenePanels : ISystem<ImmediateSystemContext>, IRenderExtr
 
     public void OnUpdate(ref ImmediateSystemContext context)
     {
-        // Both DefaultGame run paths already update the game synchronously.
+        // Frame input and dimensions are set before game systems start.
         // Resize and update the displayed frame even when simulation time is paused.
         if (_frame.Width > 0 && _frame.Height > 0)
         {

@@ -15,12 +15,14 @@ namespace SomeEngine.Runtime.Tests;
 public sealed partial class ApplicationSimulationOrderTests(SceneContentFixture content)
 {
     [SceneTheory]
-    [InlineData("d3d12")]
-    public async Task SynchronousSimulationRunsAfterEveryFrameCallbackAndBeforeGeometryAndViews(string backend)
+    [InlineData("d3d12", true)]
+    [InlineData("d3d12", false)]
+    public async Task FrameCallbacksKeepSimulationBeforeGeometryAndViews(string backend, bool synchronousFrames)
     {
-        string[] args = ["--graphics-backend", backend, "--hidden-window", "--synchronous-frames",
+        string[] args = ["--graphics-backend", backend, "--hidden-window",
             "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm",
             "--fixed-step", ".25", "--frames", "2"];
+        if (synchronousFrames) args = [.. args, "--synchronous-frames"];
         var calls = new List<(string Stage, float Seconds)>();
         var revision = new State<int>(-1);
         float seconds = -1;
@@ -28,6 +30,7 @@ public sealed partial class ApplicationSimulationOrderTests(SceneContentFixture 
         {
             Options = RuntimeStartupOptions.Parse(args),
             InterfaceEnabled = true,
+            MeasureInterface = true,
             RegisterSceneComponents = SampleSceneSerialization.Register,
             Initialize = frame =>
             {
@@ -52,7 +55,13 @@ public sealed partial class ApplicationSimulationOrderTests(SceneContentFixture 
                 calls.Add(("simulate", time));
             },
             UpdateFrame = frame => calls.Add(("update:first", frame.Index * .25f)),
-            FrameCompleted = frame => calls.Add(("completed", frame.Index * .25f)),
+            FrameCompleted = frame =>
+            {
+                calls.Add(("completed", frame.Index * .25f));
+                Assert.Equal(frame.Index, frame.Timing.SimulationFrame);
+                Assert.Equal(.25, frame.DeltaSeconds);
+                Assert.True(frame.Timing.ElapsedMs >= frame.Timing.Views.TotalMs + frame.Timing.ExtractionMs);
+            },
             Shutdown = _ => calls.Add(("shutdown", seconds)),
         };
         application.UpdateFrame += frame => calls.Add(("update:last", frame.Index * .25f));
@@ -112,7 +121,7 @@ public sealed partial class ApplicationSimulationOrderTests(SceneContentFixture 
             Shutdown = _ => calls.Add(("shutdown", seconds)),
         };
         application.InstallGeometry(new RecordedGeometry(() => calls.Add(("geometry", seconds))));
-        // Either callback would switch the real application to synchronous game updates.
+        // This path runs its next game update after the preceding presented frame.
         Assert.Null(application.UpdateFrame);
         Assert.Null(application.FrameCompleted);
         Assert.False(application.Options.SynchronousFrames);
@@ -131,12 +140,14 @@ public sealed partial class ApplicationSimulationOrderTests(SceneContentFixture 
     }
 
     [SceneTheory]
-    [InlineData("d3d12")]
-    public async Task SimulationCallbacksDoNotClearTheCurrentFrameCancellation(string backend)
+    [InlineData("d3d12", true)]
+    [InlineData("d3d12", false)]
+    public async Task SimulationCallbacksPreserveTheCurrentFrameCancellation(string backend, bool synchronousFrames)
     {
-        string[] args = ["--graphics-backend", backend, "--hidden-window", "--synchronous-frames",
+        string[] args = ["--graphics-backend", backend, "--hidden-window",
             "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm",
             "--fixed-step", ".25", "--frames", "2"];
+        if (synchronousFrames) args = [.. args, "--synchronous-frames"];
         var beforeTimes = new List<float>();
         var simulationTimes = new List<float>();
         var completed = new List<int>();

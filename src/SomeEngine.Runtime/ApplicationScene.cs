@@ -45,14 +45,18 @@ public sealed class ApplicationScene(string contentDirectory)
     public Action<ApplicationFrame>? Initialize { get; set; }
     public Action<ApplicationFrame>? Shutdown { get; set; }
     public bool InterfaceEnabled { get; set; }
+    /// <summary>Reads platform input and edits this game frame on the window thread, before simulation.</summary>
     public Action<ApplicationFrame>? UpdateFrame { get; set; }
     /// <summary>Edits scene data before camera input, using absolute scene time in seconds.</summary>
-    /// <remarks>Synchronous frames run after UpdateFrame. Asynchronous frames run on the next-frame game task,
-    /// including the initial update at time zero. Capture, cancellation, camera-history and shadow-refresh requests remain UpdateFrame actions.</remarks>
+    /// <remarks>Frames with UpdateFrame or FrameCompleted, synchronous frames and scene scripts invoke this callback on
+    /// the window thread after UpdateFrame. Other frames begin with a window-thread update at time zero and use next-frame
+    /// game tasks for the following updates.
+    /// Capture, cancellation, camera-history and shadow-refresh requests remain UpdateFrame actions.</remarks>
     public Action<SceneEdit, float>? BeforeCameraInput { get; set; }
     /// <summary>Edits scene data before geometry game systems, using absolute scene time in seconds.</summary>
-    /// <remarks>Synchronous frames run after camera input; asynchronous frames run after BeforeCameraInput on
-    /// the next-frame game task. Not invoked for bootstrap. Capture, cancellation, camera-history and shadow-refresh requests remain UpdateFrame actions.</remarks>
+    /// <remarks>Uses the same thread as BeforeCameraInput: window-thread updates follow camera input; next-frame game
+    /// tasks follow BeforeCameraInput. Simulation begins with the first post-bootstrap update.
+    /// Capture, cancellation, camera-history and shadow-refresh requests remain UpdateFrame actions.</remarks>
     public Action<SceneEdit, float>? SimulateScene { get; set; }
     public Action? DrawDebugUi { get; set; }
     /// <summary>Draws application ImGui overlays after the optional debug panel.</summary>
@@ -76,6 +80,7 @@ public sealed class ApplicationScene(string contentDirectory)
     public bool RemoveView(ApplicationView view) => _views.Remove(view);
 
     public void ClearViews() => _views.Clear();
+    /// <summary>Observes the presented frame on the window thread after its game systems and extraction finish.</summary>
     public Action<ApplicationFrame>? FrameCompleted { get; set; }
     /// <summary>Receives this frame's Cluster results after GPU completion. Supplying this callback enables synchronous frame diagnostics.</summary>
     public Action<ClusterFrameMetrics>? FrameRendered { get; set; }

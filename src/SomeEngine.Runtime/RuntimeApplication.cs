@@ -547,7 +547,8 @@ internal static class RuntimeApplication
         bool measure = application?.MeasureInterface == true || measurements is not null;
         GameUpdateTiming gameTiming = default;
         long gameStarted = 0, nextGameStarted = 0;
-        bool synchronousGame = options.SynchronousFrames || script is not null || application?.UpdateFrame is not null || application?.FrameCompleted is not null;
+        bool synchronousGame = options.SynchronousFrames || script is not null;
+        bool updateGameAfterInput = synchronousGame || application?.UpdateFrame is not null || application?.FrameCompleted is not null;
 
         RuntimeViewFrame initialView = RuntimeViewFrame.Create(
             scene.Camera.View,
@@ -765,7 +766,7 @@ internal static class RuntimeApplication
                 MaxCandidates = script?.ClusterWorkCapacity ?? 1_048_576,
             }, viewGrid: additionalView is null ? blendGrid : default, deformBounds: skinBounds);
 
-        GameUpdateTiming UpdateInterface(double deltaSeconds, long gameUpdateStarted)
+        GameUpdateTiming UpdateGameViews(double deltaSeconds, long gameUpdateStarted)
         {
             geometry.UpdateGame(deltaSeconds);
             long allocated = measure ? GC.GetAllocatedBytesForCurrentThread() : 0;
@@ -773,7 +774,6 @@ internal static class RuntimeApplication
             if (!measure)
             {
                 elementSystems.UpdateViews(deltaSeconds);
-                extraction.Extract(mainWorld);
                 return default;
             }
             ViewTiming views = elementSystems.MeasureViews(deltaSeconds);
@@ -782,13 +782,20 @@ internal static class RuntimeApplication
                 TotalMs = Stopwatch.GetElapsedTime(started).TotalMilliseconds,
                 AllocatedBytes = GC.GetAllocatedBytesForCurrentThread() - allocated,
             };
-            double gameMs = Stopwatch.GetElapsedTime(gameUpdateStarted).TotalMilliseconds;
-            allocated = GC.GetAllocatedBytesForCurrentThread();
-            started = Stopwatch.GetTimestamp();
+            return new GameUpdateTiming(views, 0, 0, Stopwatch.GetElapsedTime(gameUpdateStarted).TotalMilliseconds);
+        }
+
+        GameUpdateTiming ExtractGame(GameUpdateTiming timing)
+        {
+            long allocated = measure ? GC.GetAllocatedBytesForCurrentThread() : 0;
+            long started = measure ? Stopwatch.GetTimestamp() : 0;
             using var trace = EngineTrace.Begin(ApplicationTrace.Extraction);
             extraction.Extract(mainWorld);
-            return new GameUpdateTiming(views, Stopwatch.GetElapsedTime(started).TotalMilliseconds,
-                GC.GetAllocatedBytesForCurrentThread() - allocated, gameMs);
+            return measure ? timing with
+            {
+                ExtractionMs = Stopwatch.GetElapsedTime(started).TotalMilliseconds,
+                ExtractionAllocatedBytes = GC.GetAllocatedBytesForCurrentThread() - allocated,
+            } : timing;
         }
 
         void CaptureRenderGraphStatistics(in RenderGraphStatistics statistics)
@@ -834,12 +841,12 @@ internal static class RuntimeApplication
             sceneEdit.Begin();
             try { application?.Initialize?.Invoke(applicationFrame); }
             finally { sceneEdit.End(); }
-            if (synchronousGame) elementSystems.UpdateViews(0);
+            if (updateGameAfterInput) elementSystems.UpdateViews(0);
             else
             {
                 gameStarted = Stopwatch.GetTimestamp();
                 sceneEdit.Invoke(application?.BeforeCameraInput, 0);
-                gameTiming = UpdateInterface(0, gameStarted);
+                gameTiming = ExtractGame(UpdateGameViews(0, gameStarted));
             }
 
             outputVerifier = options.VerifyFrameOutput || (options.FrameOutputPath is not null && options.CaptureFrame is null)
@@ -874,56 +881,13 @@ internal static class RuntimeApplication
                 {
                     if (nextGameUpdate is not null)
                     {
-                        RuntimeWait.Task(nextGameUpdate, window, FrameTimeout);
+                        gameTiming = RuntimeWait.Task(nextGameUpdate, window, FrameTimeout);
+                        gameStarted = nextGameStarted;
                         nextGameUpdate = null;
                     }
                     startup.FinishTrace();
                 }
                 using var frameTrace = EngineTrace.BeginFrame(++traceFrameIndex);
-                bool instanceAdmitted = instances.TryAdmitFrameResources(
-                    out _,
-                    out QueueCompletion[] instanceRetirementFences);
-                bool uiAdmitted = ui.TryAdmitFrameResources(
-                    out _,
-                    out QueueCompletion[] uiRetirementFences);
-                long admissionWaitStarted = Environment.TickCount64;
-                while (!instanceAdmitted || !uiAdmitted)
-                {
-                    TimeSpan remaining = FrameTimeout -
-                        TimeSpan.FromMilliseconds(
-                            Environment.TickCount64 - admissionWaitStarted);
-                    if (remaining <= TimeSpan.Zero)
-                    {
-                        throw new TimeoutException(
-                            "Frame-resource admission did not become available before the runtime timeout.");
-                    }
-                    TimeSpan waitSlice = remaining > TimeSpan.FromMilliseconds(2)
-                        ? TimeSpan.FromMilliseconds(2)
-                        : remaining;
-
-                    QueueCompletion[] retirementFences = !instanceAdmitted
-                        ? instanceRetirementFences
-                        : uiRetirementFences;
-                    _ = WaitForAll(backend, retirementFences, waitSlice);
-
-                    _ = window.PumpMessages();
-                    if (!instanceAdmitted)
-                    {
-                        instanceAdmitted = instances.TryAdmitFrameResources(
-                            out _,
-                            out instanceRetirementFences);
-                    }
-                    if (!uiAdmitted)
-                    {
-                        uiAdmitted = ui.TryAdmitFrameResources(
-                            out _,
-                            out uiRetirementFences);
-                    }
-                }
-                backend.CollectCompleted(device);
-                coordinator.AdmitFrameResources();
-                RenderGraphNextFrame nextGraphFrame = OpenNextGraphFrame(renderGraph);
-                using var graphFrameResources = nextGraphFrame;
                 // Shared asset content can change only after the Game World extraction reader exits.
                 if (nextGameUpdate is not null)
                 {
@@ -961,9 +925,6 @@ internal static class RuntimeApplication
                     (clientWidth != width || clientHeight != height);
                 if (outputSizeChanged)
                 {
-                    // Admission still precedes game/input work. No graph writes have begun,
-                    // so release this empty reservation before compacting retained views.
-                    nextGraphFrame.Dispose();
                     outputVerifier?.Dispose();
                     outputVerifier = null;
                     linearVerifier?.Dispose();
@@ -985,13 +946,6 @@ internal static class RuntimeApplication
                         : null;
                 }
 
-                // Resize must not skip a scene action or advance logical frame time. Own a
-                // replacement reservation for the remainder of this same iteration.
-                using RenderGraphNextFrame? resizedGraphFrameResources = outputSizeChanged
-                    ? OpenNextGraphFrame(renderGraph) : null;
-                if (resizedGraphFrameResources is not null)
-                    nextGraphFrame = resizedGraphFrameResources;
-
                 long currentFrameTimestamp = Stopwatch.GetTimestamp();
                 float deltaSeconds = Math.Clamp(
                     (float)Stopwatch.GetElapsedTime(previousFrameTimestamp, currentFrameTimestamp).TotalSeconds,
@@ -1002,7 +956,7 @@ internal static class RuntimeApplication
                     ? frameIndex * options.FixedFrameSeconds
                     : (float)Stopwatch.GetElapsedTime(runtimeStarted).TotalSeconds;
                 previousFrameTimestamp = currentFrameTimestamp;
-                if (synchronousGame) gameStarted = Stopwatch.GetTimestamp();
+                if (updateGameAfterInput) gameStarted = Stopwatch.GetTimestamp();
                 sceneEdit.Begin();
                 try
                 {
@@ -1023,7 +977,7 @@ internal static class RuntimeApplication
                 cameraCut |= sceneEdit.CameraCut;
                 if (sceneEdit.ShadowMapRefreshRequested) virtualShadows.InvalidateAllCasters();
 
-                if (synchronousGame)
+                if (updateGameAfterInput)
                     sceneEdit.Invoke(application?.BeforeCameraInput, sceneSeconds);
                 ui.BeginFrame(deltaSeconds, width, height, window.DpiScale);
                 SomeEngine.Elements.InputCapture elementCapture = elementInput?.InputCapture ?? default;
@@ -1032,11 +986,37 @@ internal static class RuntimeApplication
                     deltaSeconds,
                     ui.WantCaptureKeyboard || elementCapture.Keyboard,
                     ui.WantCaptureMouse || elementCapture.Pointer);
-                if (synchronousGame)
+                if (updateGameAfterInput)
                 {
                     sceneEdit.Invoke(application?.SimulateScene, sceneSeconds);
-                    gameTiming = UpdateInterface(deltaSeconds, gameStarted);
+                    if (synchronousGame) gameTiming = UpdateGameViews(deltaSeconds, gameStarted);
+                    else
+                    {
+                        TraceContext gameTrace = EngineTrace.Context;
+                        long updateStarted = gameStarted;
+                        nextGameUpdate = Task.Run(() =>
+                        {
+                            using var association = EngineTrace.Associate(gameTrace);
+                            using var trace = EngineTrace.Begin(ApplicationTrace.GameUpdate);
+                            return UpdateGameViews(deltaSeconds, updateStarted);
+                        });
+                    }
                 }
+                // Game-world systems can run while submitted GPU work finishes using
+                // instance and interface storage. Completion callbacks follow the game task.
+                WaitForFrameResources(instances, ui, backend, window);
+                if (nextGameUpdate is not null)
+                {
+                    gameTiming = RuntimeWait.Task(nextGameUpdate, window, FrameTimeout);
+                    nextGameUpdate = null;
+                }
+                backend.CollectCompleted(device);
+                coordinator.AdmitFrameResources();
+                RenderGraphNextFrame nextGraphFrame = OpenNextGraphFrame(renderGraph);
+                using var graphFrameResources = nextGraphFrame;
+                // Completion callbacks can change shared assets. Collect their final
+                // material and texture versions before publishing this game frame.
+                if (updateGameAfterInput) gameTiming = ExtractGame(gameTiming);
                 Matrix4x4 unjitteredProjection = scene.Projection(width, height);
                 RuntimeViewFrame viewFrame = RuntimeViewFrame.Create(
                     scene.Camera.View,
@@ -1301,30 +1281,6 @@ internal static class RuntimeApplication
                         metrics.PhaseTwoSoftwareClusters + metrics.PhaseTwoHardwareClusters);
                 }
 
-                bool hasFutureFrame =
-                    options.FrameLimit == 0 || frameIndex + 1 < options.FrameLimit;
-                if (hasFutureFrame && !synchronousGame)
-                {
-                    Action<SceneEdit, float>? beforeCameraInput = application?.BeforeCameraInput;
-                    Action<SceneEdit, float>? simulateScene = application?.SimulateScene;
-                    float nextSceneTime = options.FixedFrameSeconds > 0 ? (frameIndex + 1) * options.FixedFrameSeconds : (float)Stopwatch.GetElapsedTime(
-                        runtimeStarted,
-                        Stopwatch.GetTimestamp()).TotalSeconds;
-                    TraceContext gameTrace = EngineTrace.Context with { Frame = traceFrameIndex + 1 };
-                    nextGameStarted = Stopwatch.GetTimestamp();
-                    nextGameUpdate = Task.Run(() =>
-                    {
-                        long updateStarted = Stopwatch.GetTimestamp();
-                        using var association = EngineTrace.Associate(gameTrace);
-                        using var trace = EngineTrace.Begin(ApplicationTrace.GameUpdate);
-                        // CPU rendering has finished reading shared resources. Apply next-frame
-                        // resource edits here while submitted GPU work retains its device data.
-                        sceneEdit.Invoke(beforeCameraInput, nextSceneTime);
-                        sceneEdit.Invoke(simulateScene, nextSceneTime);
-                        return UpdateInterface(deltaSeconds, updateStarted);
-                    });
-                }
-
                 if (reportMilestones)
                     Console.WriteLine("First frame: presenting.");
                 PresentStatus present = backend.Present(
@@ -1359,6 +1315,28 @@ internal static class RuntimeApplication
                     prepareMs, reconcileMs, executeMs);
                 frameIndex++;
                 if (application?.ReloadRequested == true) break;
+                bool hasFutureFrame = options.FrameLimit == 0 || frameIndex < options.FrameLimit;
+                if (hasFutureFrame && !updateGameAfterInput)
+                {
+                    Action<SceneEdit, float>? beforeCameraInput = application?.BeforeCameraInput;
+                    Action<SceneEdit, float>? simulateScene = application?.SimulateScene;
+                    float nextSceneTime = options.FixedFrameSeconds > 0 ? frameIndex * options.FixedFrameSeconds : (float)Stopwatch.GetElapsedTime(
+                        runtimeStarted,
+                        Stopwatch.GetTimestamp()).TotalSeconds;
+                    TraceContext gameTrace = EngineTrace.Context with { Frame = traceFrameIndex + 1 };
+                    nextGameStarted = Stopwatch.GetTimestamp();
+                    nextGameUpdate = Task.Run(() =>
+                    {
+                        long updateStarted = Stopwatch.GetTimestamp();
+                        using var association = EngineTrace.Associate(gameTrace);
+                        using var trace = EngineTrace.Begin(ApplicationTrace.GameUpdate);
+                        // Frame callbacks have finished reading this game state. Submitted
+                        // GPU work continues using its retained rendering resources.
+                        sceneEdit.Invoke(beforeCameraInput, nextSceneTime);
+                        sceneEdit.Invoke(simulateScene, nextSceneTime);
+                        return ExtractGame(UpdateGameViews(deltaSeconds, updateStarted));
+                    });
+                }
             }
 
             if (frameIndex > 0)
@@ -1492,6 +1470,32 @@ internal static class RuntimeApplication
     }
 
     private readonly record struct GameUpdateTiming(ViewTiming Views, double ExtractionMs, long ExtractionAllocatedBytes, double GameMs = 0);
+
+    private static void WaitForFrameResources(
+        RenderInstanceStorageSystem instances,
+        RuntimeUiRenderer ui,
+        IGraphicsBackend backend,
+        NativeWindow window)
+    {
+        bool instanceAdmitted = instances.TryAdmitFrameResources(
+            out _, out QueueCompletion[] instanceRetirementFences);
+        bool uiAdmitted = ui.TryAdmitFrameResources(
+            out _, out QueueCompletion[] uiRetirementFences);
+        long started = Environment.TickCount64;
+        while (!instanceAdmitted || !uiAdmitted)
+        {
+            TimeSpan remaining = FrameTimeout - TimeSpan.FromMilliseconds(Environment.TickCount64 - started);
+            if (remaining <= TimeSpan.Zero)
+                throw new TimeoutException("Frame-resource admission did not become available before the runtime timeout.");
+            TimeSpan waitSlice = remaining > TimeSpan.FromMilliseconds(2) ? TimeSpan.FromMilliseconds(2) : remaining;
+            _ = WaitForAll(backend, instanceAdmitted ? uiRetirementFences : instanceRetirementFences, waitSlice);
+            _ = window.PumpMessages();
+            if (!instanceAdmitted)
+                instanceAdmitted = instances.TryAdmitFrameResources(out _, out instanceRetirementFences);
+            if (!uiAdmitted)
+                uiAdmitted = ui.TryAdmitFrameResources(out _, out uiRetirementFences);
+        }
+    }
 
     private static void Prepare(
         RenderPrepareSystems systems,

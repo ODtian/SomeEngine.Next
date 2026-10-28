@@ -8,5 +8,21 @@ GameWorld 下一轮 CPU 工作可以与已经交付给渲染侧的上一轮 CPU/
 - Game N+1 不需要等待 Render N GPU 完成。
 - 需要设备反馈的决策只能作用到未来 frame。
 
+## 应用帧阶段
+
+现行实现入口为 [RuntimeApplication](../../../src/SomeEngine.Runtime/RuntimeApplication.cs) 与
+[ApplicationScene](../../../src/SomeEngine.Runtime/ApplicationScene.cs)。
+
+带 `UpdateFrame` 或 `FrameCompleted` 的应用先在窗口线程执行输入、`UpdateFrame`、
+`BeforeCameraInput`、相机输入与 `SimulateScene`。普通异步帧随后把 geometry 与 views
+更新交给游戏任务，窗口线程同时等待实例与 ImGui 存储的 GPU 完成点。
+游戏任务结束后，窗口线程推进设备与图的完成交付，再提取这一帧的来源组件、材质与纹理版本，
+进入既有 RenderPrepare 边界。`SynchronousFrames` 与场景脚本在窗口线程完成游戏更新。
+
+帧内呈现完成后，`FrameCompleted` 访问同一份已完成游戏状态；场景重载判断随后执行。
+使用下一帧游戏任务的应用在这之后启动未来更新，并在下一轮平台输入前收回任务结果。
+整帧 `ElapsedMs` 从当轮入口计时到呈现等待结束；views 与 extraction 的计时对应同一个
+`SimulationFrame`。`FrameMeasured.CpuMs` 从当轮入口与该帧游戏任务调度时间中的较早者计时到 Present。
+
 ## Relations
 [[Extraction]] · [[Delayed-Feedback]]
