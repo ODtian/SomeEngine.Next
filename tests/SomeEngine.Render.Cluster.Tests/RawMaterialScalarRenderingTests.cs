@@ -100,11 +100,13 @@ public sealed class RawMaterialScalarRenderingTests
         AssertPixel(changed, 48, 32, Expected(second));
     }
 
-    [Fact]
-    public async Task ManyMaterialEditsSurviveDiscardedFrameWithoutNewEdits()
+    [Theory]
+    [InlineData("D3D12")]
+    [InlineData("Vulkan")]
+    public async Task ManyMaterialEditsSurviveDiscardedFrameWithoutNewEdits(string backend)
     {
         const int materialCount = 131;
-        Shader shader = await LoadShaderAsync("D3D12", reverse: false);
+        Shader shader = await LoadShaderAsync(backend, reverse: false);
         var materials = Enumerable.Range(0, materialCount).Select(index => new ScalarProbeMaterial
         {
             Shader = shader, Name = $"Scalar region {index:D3}",
@@ -115,7 +117,7 @@ public sealed class RawMaterialScalarRenderingTests
         try
         {
             Mesh plane = await RasterTestGeometry.CreatePlaneAsync();
-            await using var scene = await FrameStageScene.CreateAsync("D3D12", false,
+            await using var scene = await FrameStageScene.CreateAsync(backend, false,
                 new ClusterPipelineOptions { MaxCandidates = 1024, ForceHardwareRaster = true,
                     EnableFrameMetricsReadback = true }, plane,
                 instanceOptions: new RenderInstanceOptions { RowCapacity = 256, BatchCapacity = 8 },
@@ -203,10 +205,12 @@ public sealed class RawMaterialScalarRenderingTests
         }
     }
 
-    [Fact]
-    public async Task RestoredMaterialSurvivesDiscardedFrameWithoutAnotherBindingChange()
+    [Theory]
+    [InlineData("D3D12")]
+    [InlineData("Vulkan")]
+    public async Task RestoredMaterialSurvivesDiscardedFrameWithoutAnotherBindingChange(string backend)
     {
-        Shader shader = await LoadShaderAsync("D3D12", reverse: false);
+        Shader shader = await LoadShaderAsync(backend, reverse: false);
         var first = new ScalarProbeMaterial
         {
             Shader = shader, Name = "Restored scalar region",
@@ -220,7 +224,7 @@ public sealed class RawMaterialScalarRenderingTests
             Tint = new(.25f, .75f, .5f, .625f), Signed = 2, Unsigned = 1, Enabled = false,
         };
         Mesh plane = await RasterTestGeometry.CreatePlaneAsync();
-        await using var scene = await FrameStageScene.CreateAsync("D3D12", false,
+        await using var scene = await FrameStageScene.CreateAsync(backend, false,
             new ClusterPipelineOptions { MaxCandidates = 1024, ForceHardwareRaster = true,
                 EnableFrameMetricsReadback = true }, plane);
         scene.SetMeshTransform(0, new(new Vector3(-.8f, 0, -3), Quaternion.Identity)
