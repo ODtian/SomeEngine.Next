@@ -59,14 +59,15 @@ public sealed class PackedMaterialShaderTests
                 SlangShaderImporter.CreateDefaultTargets(TestShaderLoading.Slang));
             Shader looseDefault = await looseFile.CreateSavedAsync(TestShaderLoading.Slang, description);
             Shader packedDefault = await packedFile.CreateSavedAsync(TestShaderLoading.Slang, description);
-            var looseEntries = new Shader[2];
-            var packedEntries = new Shader[2];
+            var looseEntries = new Shader[3];
+            var packedEntries = new Shader[3];
             int entryIndex = 0;
 
             foreach ((string entryName, string[] expressions) in new[]
             {
                 ("ClusterShadowRequests", new[] { "0", "0" }),
                 ("ClusterShadeMode", new[] { "0" }),
+                ("ClusterForwardShade", new[] { "0", "0" }),
             })
             {
                 SpecializationArg[] arguments = expressions.Select(SpecializationArg.FromExpression).ToArray();
@@ -88,6 +89,7 @@ public sealed class PackedMaterialShaderTests
             {
                 (1, "ClusterShadeMode", ["0"]),
                 (0, "ClusterShadowRequests", ["0", "0"]),
+                (2, "ClusterForwardShade", ["0", "0"]),
             })
             {
                 Assert.True(material.Loose.TryGetSpecialization(entryName, arguments, out Shader looseLazy));

@@ -126,11 +126,10 @@ internal static class ShadowVisibilityContent
         ShaderSourceBlock source = shader.GetBlock<ShaderSourceBlock>();
         source.SourceNames = [sourceName];
         string depth = visibilityDepth.ToString(CultureInfo.InvariantCulture);
-        source.Specializations.Add(new() { EntryPoint = "ClusterShadowReceiver", Arguments = [depth, "0"] });
+        source.Specializations.Add(new() { EntryPoint = "ClusterShadowRequests", Arguments = [depth, "0"] });
         if (shadingPath == ClusterShadingPath.Forward)
         {
-            source.Specializations.Add(new() { EntryPoint = "ClusterForwardShade", Arguments = [depth, "0", "false"] });
-            source.Specializations.Add(new() { EntryPoint = "ClusterForwardShade", Arguments = [depth, "0", "true"] });
+            source.Specializations.Add(new() { EntryPoint = "ClusterForwardShade", Arguments = [depth, "0"] });
         }
         await shader.SaveSourceAsync(path);
     }
