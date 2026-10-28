@@ -710,6 +710,45 @@ public sealed class AssetCapabilityGeneratorBehaviorTests
     }
 
     [Fact]
+    public void DeclaredBuilderTracksDefaultsFromItsConfigurationType()
+    {
+        byte[] blocks = Emit(Compile(VersionedBlockSource, assemblyName: "BlockLibrary"));
+        const string dependency = """
+            namespace Algorithms;
+            public struct Configuration
+            {
+                public float Threshold;
+                public static Configuration GetDefault() => new() { Threshold = .85f };
+            }
+            public static class Builder { public static float Read() => Configuration.GetDefault().Threshold; }
+            """;
+        byte[] originalAlgorithms = Emit(Compile(dependency, assemblyName: "Algorithms"));
+        byte[] changedAlgorithms = Emit(Compile(dependency.Replace("Threshold = .85f", "Threshold = .75f", StringComparison.Ordinal),
+            assemblyName: "Algorithms"));
+        string importerSource = ExternalBlockImporterSource.Replace("typeof(BlockLibrary.Data))]",
+            "typeof(BlockLibrary.Data), VersionInputs = new[] { typeof(Algorithms.Builder) })]", StringComparison.Ordinal);
+        byte[] importer = Emit(Compile(importerSource, assemblyName: "ImporterLibrary",
+            dependencies: [MetadataReference.CreateFromImage(blocks), MetadataReference.CreateFromImage(originalAlgorithms)]));
+        const string source = """
+            using SomeEngine.Assets;
+            [AssetCapabilities] public static partial class ProjectAssets;
+            public static class Consumer
+            {
+                public static string Execute() => System.Linq.Enumerable.Single(ProjectAssets.ImporterCapabilities,
+                    value => value.ImporterType == typeof(Extension.Importer)).ImplementationVersion;
+            }
+            """;
+        byte[] originalProject = Emit(Compile(source, assemblyName: "ProjectLibrary",
+            dependencies: [MetadataReference.CreateFromImage(blocks), MetadataReference.CreateFromImage(originalAlgorithms),
+                MetadataReference.CreateFromImage(importer)]));
+        byte[] changedProject = Emit(Compile(source, assemblyName: "ProjectLibrary",
+            dependencies: [MetadataReference.CreateFromImage(blocks), MetadataReference.CreateFromImage(changedAlgorithms),
+                MetadataReference.CreateFromImage(importer)]));
+        Assert.NotEqual((string)Execute(originalProject, blocks, originalAlgorithms, importer)!,
+            (string)Execute(changedProject, blocks, changedAlgorithms, importer)!);
+    }
+
+    [Fact]
     public void ProducedBlocksWithoutTypeMetadataKeepTheirAssemblyVersionDependency()
     {
         string source = VersionedBlockSource.Replace("namespace BlockLibrary;",

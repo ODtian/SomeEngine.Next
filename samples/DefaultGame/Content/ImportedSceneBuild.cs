@@ -103,7 +103,7 @@ public static class ImportedSceneBuild
         }
         await PublishScenePackAsync(project);
         int instances = Node.Flatten(model.DefaultScene).Count(static node => node.Mesh is not null);
-        File.WriteAllText(Path.Combine(projectRoot, "scene-import.json"), JsonSerializer.Serialize(new
+        Console.WriteLine(JsonSerializer.Serialize(new
         {
             source = sourcePath, meshes = metadata.Outputs.Count(value => value.SubAssetKey.StartsWith("mesh:")),
             instances, materials = metadata.Outputs.Count(value => value.SubAssetKey.StartsWith("material:")),

@@ -1,4 +1,5 @@
 using SharpGLTF.Schema2;
+using SomeEngine.Geometry.Cluster;
 using SomeEngine.Assets.Importing;
 using SomeEngine.Assets.Schema;
 using GltfMesh = SharpGLTF.Schema2.Mesh;
@@ -6,7 +7,8 @@ using GltfMesh = SharpGLTF.Schema2.Mesh;
 namespace SomeEngine.Assets.Importers;
 
 [AssetImporter("ce474674-bd5e-4ae0-b72e-2d50d64e6413", typeof(ClusterGeometryBlock),
-    SettingsProvider = typeof(GltfMeshSettingsProvider), VersionInputs = new[] { typeof(ModelRoot), typeof(MeshOptimizer.Meshopt) })]
+    SettingsProvider = typeof(GltfMeshSettingsProvider),
+    VersionInputs = new[] { typeof(ModelRoot), typeof(MeshOptimizer.Meshopt), typeof(ClusterMeshBuilder) })]
 public sealed class ClusterGeometryImporter : IAssetImporter<GltfMesh, GltfMeshSettings>
 {
     public async ValueTask ImportAsync(GltfMesh source, GltfMeshSettings settings, ImportContext context,

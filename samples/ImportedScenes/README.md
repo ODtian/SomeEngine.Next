@@ -21,7 +21,7 @@ The development application is built into `samples/DefaultGame/bin/development`;
 published game content is read from `samples/DefaultGame/bin/game/Release/net10.0`.
 Downloads and generated applications are excluded from Git. Source checksums
 remain beside the downloaded files; import counts and repeat-import results are
-written to `Apps/<scene>/scene-import.json`.
+written to standard output.
 
 DefaultGame uses WASD to move, right mouse button to look, Space/Ctrl vertically,
 and Shift for faster movement. It does not animate imported material roughness.
