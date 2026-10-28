@@ -18,9 +18,10 @@ internal sealed class DeviceCrowdConstraintInputs<TInputs> : IDisposable where T
 {
     private readonly World _world;
     private readonly TInputs _inputs;
-    private readonly QueryHandle _bodies, _lengths, _bends, _joints, _participants;
+    private readonly QueryHandle _lengths, _bends, _joints, _participants;
     private readonly JobResourceAccess[] _accesses;
-    private readonly uint[] _memberships = new uint[5];
+    private readonly uint[] _memberships = new uint[4];
+    private uint _bodyTagVersion, _bodyBindingVersion;
     private uint _lastSystemVersion;
 
     internal DeviceCrowdConstraintInputs(World world, QueryHandle bodies, QueryHandle lengths, QueryHandle bends,
@@ -33,7 +34,7 @@ internal sealed class DeviceCrowdConstraintInputs<TInputs> : IDisposable where T
         QueryDefinition bendReads = world.GetQueryDefinition(bends).AsReadOnly();
         QueryDefinition jointReads = world.GetQueryDefinition(joints).AsReadOnly();
         QueryDefinition participantReads = new QueryDefinitionBuilder().Read<DirectedRelationEndpoints<ConstraintParticipant>>().Build();
-        _bodies = world.Query(bodyReads); _lengths = world.Query(lengthReads); _bends = world.Query(bendReads);
+        _lengths = world.Query(lengthReads); _bends = world.Query(bendReads);
         _joints = world.Query(jointReads);
         _participants = world.Query(participantReads);
         var resources = new QueryReadResources();
@@ -59,23 +60,19 @@ internal sealed class DeviceCrowdConstraintInputs<TInputs> : IDisposable where T
 
     private void Update(in PhysicsStepContext context)
     {
-        var changes = new ChangedInputs();
-        ReadOnlySpan<QueryHandle> queries = [_bodies, _lengths, _bends, _joints, _participants];
+        uint bodyTagVersion = _world.ComponentWriteVersion<CrowdPhysicsBody>();
+        uint bodyBindingVersion = _world.ComponentWriteVersion<DeviceBodyBinding>();
+        bool bodyBindingsChanged = bodyBindingVersion != _bodyBindingVersion;
+        var changes = new ChangedInputs { Changed = bodyTagVersion != _bodyTagVersion || bodyBindingsChanged };
+        _bodyTagVersion = bodyTagVersion;
+        _bodyBindingVersion = bodyBindingVersion;
+        ReadOnlySpan<QueryHandle> queries = [_lengths, _bends, _joints, _participants];
         for (int index = 0; index < queries.Length; index++)
         {
             uint membership = _world.MembershipVersion(queries[index]);
             changes.Changed |= membership != _memberships[index];
             _memberships[index] = membership;
         }
-        _world.ExecuteReadQuery(_bodies, _lastSystemVersion, ref changes,
-            static (scoped QueryCursor rows, ref ChangedInputs changes) =>
-            {
-                changes.Version = rows.CurrentSystemVersion;
-                if (changes.Changed) return;
-                foreach (QueryChunkView chunk in rows.Chunks)
-                    if (chunk.HasChangedSinceLastSystemVersion<DeviceBodyBinding>())
-                    { changes.Changed = true; break; }
-            });
         _world.ExecuteReadQuery(_lengths, _lastSystemVersion, ref changes,
             static (scoped QueryCursor rows, ref ChangedInputs changes) =>
             {
@@ -136,7 +133,7 @@ internal sealed class DeviceCrowdConstraintInputs<TInputs> : IDisposable where T
     public void Dispose()
     {
         _world.ReleaseQuery(_participants); _world.ReleaseQuery(_joints); _world.ReleaseQuery(_bends);
-        _world.ReleaseQuery(_lengths); _world.ReleaseQuery(_bodies);
+        _world.ReleaseQuery(_lengths);
     }
 }
 
