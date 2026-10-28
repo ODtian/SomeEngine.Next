@@ -388,9 +388,9 @@ bool TryEvaluateSurfacePixel<TVE, TDomain>(
     coord.xy += uint2(corner & 1u, corner >> 1u);
     if (fullTile) coord.xy += uint2(quad % 4u, quad / 4u) * 2u;
     if (!decodeTriangle(coord, tri)) return false;
+    triangle = evaluateTriangle<TVE, TDomain>(vertexEval, domain, tri);
     view = ApplyFirstPersonViewTransform(
         InstanceData, InstanceProperties, tri.instanceID, Views[tri.viewIndex]);
-    triangle = evaluateTriangle<TVE, TDomain>(vertexEval, domain, tri);
     float depth = DepthBuffer.Load(int4(coord, 0));
     float3 positionFromDepth;
     SurfaceBarycentrics coordinates = ResolveBarycentricsAtDepth<TVE.Vertex, TDomain>(
