@@ -214,7 +214,7 @@ internal sealed class AvbdIslandEquations
         Span<double> bodyCurvature = stackalloc double[3];
         bodyCurvature.Clear();
         Vector3 gradient = ReadRotationGradient(in context, queries, bodies, constraints, initialErrorFraction,
-            first, count, centroid, axes, curvature, bodyCurvature);
+            first, count, centroid, axes, curvature, bodyCurvature, out Vector3 linearGradient);
         Vector3 direction = SolveRotation(curvature, axes, gradient);
         if (direction == Vector3.Zero) return;
         double curvatureBound = 0;
@@ -227,8 +227,6 @@ internal sealed class AvbdIslandEquations
         float probeScale = (float)Math.Min(1, Math.Max(-Dot(gradient, direction) / (constraintBodyCount * curvatureBound),
             angularResolution / direction.Length()));
         Vector3 trialRotation = direction * probeScale;
-        Vector3 linearGradient = ReadLinearGradient(in context, queries, bodies, constraints,
-            initialErrorFraction, first, count, true);
         double linearInertia = mass / (context.Duration * context.Duration);
 
         Vector3 shiftedGradient, shiftedLinearGradient, translation = default;
@@ -248,10 +246,8 @@ internal sealed class AvbdIslandEquations
                 translation *= (float)(inertiaResponse / Math.Max(inertiaResponse, measuredResponse));
             }
             WriteRotatedPoses(queries.Get(1), first, count, centroid, trialRotation, translation * probeScale);
-            shiftedLinearGradient = ReadLinearGradient(in context, queries, bodies, constraints,
-                initialErrorFraction, first, count, true);
             shiftedGradient = ReadRotationGradient(in context, queries, bodies, constraints, initialErrorFraction,
-                first, count, centroid + translation * probeScale, axes, default, default);
+                first, count, centroid + translation * probeScale, axes, default, default, out shiftedLinearGradient);
         }
         finally { WritePoses(queries.Get(1), Vector3.Zero, first, count); }
 
@@ -300,10 +296,11 @@ internal sealed class AvbdIslandEquations
 
     private Vector3 ReadRotationGradient<TConstraints>(in PhysicsStepContext context, scoped EntityQueryViews queries,
         scoped PhysicsBodies bodies, TConstraints constraints, float initialErrorFraction, int first, int count, Vector3 centroid,
-        ReadOnlySpan<Vector3> axes, Span<double> curvature, Span<double> bodyCurvature)
+        ReadOnlySpan<Vector3> axes, Span<double> curvature, Span<double> bodyCurvature, out Vector3 linearGradient)
         where TConstraints : struct, IAvbdGraphConstraints
     {
         double x = 0, y = 0, z = 0;
+        double linearX = 0, linearY = 0, linearZ = 0;
         float inverseStepSquared = 1 / ((float)context.Duration * (float)context.Duration);
         for (int index = first; index < first + count; index++)
         {
@@ -317,6 +314,9 @@ internal sealed class AvbdIslandEquations
             equation.Reset(in pose, in mass, in step, (float)context.Duration, curvature: !curvature.IsEmpty);
             Vector3 inertiaForce = equation.LinearGradient;
             constraints.AccumulateBodyEquation(in context, queries, 3, body, new PhysicsBodies(bodies, row), initialErrorFraction, ref equation);
+            linearX += (double)equation.LinearGradient.X;
+            linearY += (double)equation.LinearGradient.Y;
+            linearZ += (double)equation.LinearGradient.Z;
             Vector3 gradient = equation.AngularGradient + Vector3.Cross(offset, equation.LinearGradient);
             x += gradient.X; y += gradient.Y; z += gradient.Z;
             if (curvature.IsEmpty) continue;
@@ -335,6 +335,7 @@ internal sealed class AvbdIslandEquations
                     curvature[rowIndex * 3 + column] += Dot(axes[rowIndex], response);
             }
         }
+        linearGradient = new((float)linearX, (float)linearY, (float)linearZ);
         return new((float)x, (float)y, (float)z);
     }
 
