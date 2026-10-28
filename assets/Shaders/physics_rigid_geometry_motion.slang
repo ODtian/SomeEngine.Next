@@ -32,17 +32,17 @@ struct DeviceRigidMotionUpdate<TBounds : IDeviceGeometryBounds> : IDeviceGeometr
             DeviceGeometryInput local = geometry;
             local.position = -body.centerOfMass;
             local.rotation = float4(0, 0, 0, 1);
-            DeviceGeometryBounds localBounds = shape.getBounds(local);
-            float3 farthest = max(abs(localBounds.min), abs(localBounds.max));
-            float radius = length(farthest);
             if (GeometryUpdateParameters.duration > 0)
             {
+                float radius = shape.getRotationRadius(local);
                 float padding = radius * min(length(body.angularVelocity) * GeometryUpdateParameters.duration, 2);
                 result.min -= padding;
                 result.max += padding;
             }
             else
             {
+                DeviceGeometryBounds localBounds = shape.getBounds(local);
+                float radius = length(max(abs(localBounds.min), abs(localBounds.max)));
                 result.min = min(result.min, min(body.startCenterOfMass, body.predictedCenterOfMass) - radius);
                 result.max = max(result.max, max(body.startCenterOfMass, body.predictedCenterOfMass) + radius);
             }

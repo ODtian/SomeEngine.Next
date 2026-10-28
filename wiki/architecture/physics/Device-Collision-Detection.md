@@ -123,11 +123,17 @@ first 使用法向、second 使用反向，覆盖旋转中靠近的原流形面�
 `DeviceRigidMotionUpdate<TBounds>` 生成。`TBounds` 实现
 `IDeviceGeometryBounds.getBounds(DeviceGeometryInput)`，仅计算给定形状框架的范围。
 内置球、盒和凸包更新器复用此计算；运动更新器读取同一设备 Body 的步初、共同预测和
-当前姿势，合并三个范围。发生转动时，局部形状范围相对 COM 的最远角点给出包围半径 `r`，
-再以 `r * min(|angularVelocity| * h, 2)` 扩张范围，覆盖本步角行程。
+当前姿势，合并三个完整形状范围。
+`IDeviceGeometryBounds.getRotationRadius(localGeometry)` 由具体形状给出角行程扩张所用的半径 `r`。
+该输入保留原形状参数，位置取 `-CenterOfMass`、旋转取单位旋转；默认实现沿局部 bounds 的
+最远角点求半径，原有 bounds 实现继续复用这一计算。
+球体显式返回 `length(localGeometry.position)`，表示球心绕 COM 的轨迹半径。
+球面半径保留在三个完整形状范围中；COM 居中时角行程扩张为零，偏心时按球心轨迹扩张。
+完整静态 AABB 与形状旋转特性分别由这两个操作提供，具体形状持有该知识。
+运动更新器以 `r * min(|angularVelocity| * h, 2)` 扩张范围，覆盖本步角行程。
 `h` 由 `UpdateDeviceGeometry.Schedule` 按值捕获共同子步的 `context.Duration`，
 沿同一提交及参数缓冲传入；直接 `IDevicePhysicsSubmission` 提交使用完整旋转包络，
-沿步初至预测质心的线段扩张该半径。
+继续按完整局部 bounds 的最远角点求半径，并沿步初至预测质心的线段扩张。
 项目通过现有 `UpdateDeviceGeometry` 和具体 shader 选择该更新器，再执行原网格构建。
 
 DefaultGame 料仓显式选择运动范围和刚体预测检测。完整数据链为
