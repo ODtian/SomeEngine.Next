@@ -1241,16 +1241,7 @@ internal sealed partial class ClusterMeshes : IDisposable
             ranges.Add(new(allocation.PageOffset, allocation.Sizes.PageBytes));
         foreach ((uint pageId, PageAllocation backing) in _pageAllocations)
         {
-            bool loading = publishingLoads.BinarySearch(pageId) >= 0;
-            bool evicting = false;
-            foreach (ref readonly PageRetirement retirement in publishingEvictions)
-            {
-                if (retirement.PageID != pageId)
-                    continue;
-                evicting = true;
-                break;
-            }
-            if ((!_pages.IsResident(pageId) && !loading) || evicting)
+            if (!(forceRebuild ? _pages.IsResident(pageId) : PageAvailable(pageId)))
                 continue;
             ranges.Add(new BufferRange(backing.Offset, PageHeap.AllocationSize(backing.Size)));
         }

@@ -27,7 +27,7 @@ public sealed class GeometryStreamingHandoffTests
             AssetEntry entry = await asset.SaveAsync(Path.Combine(directory, "plane.mesh.asset"));
             await using var loader = new AssetLoader(new GatedStorage(entry, reads));
             using MeshAsset file = await MeshAsset.OpenAsync(loader, new(entry.AssetGuid));
-            ClusterMeshBlock geometry = file.GetBlock<ClusterMeshBlock>();
+            ClusterMeshBlock geometry = await file.GetBlockAsync<ClusterMeshBlock>();
             var mesh = await geometry.CreateAsync(file.GetBlock<MeshBlock>(), file.Name);
             using var source = await geometry.OpenPayloadSourceAsync();
             reads.PageBytes = mesh.GetPageByteLength(1);
@@ -105,7 +105,7 @@ public sealed class GeometryStreamingHandoffTests
             AssetEntry entry = await asset.SaveAsync(Path.Combine(directory, "separated-detail.mesh.asset"));
             await using var loader = new AssetLoader(new GatedStorage(entry, reads));
             using MeshAsset file = await MeshAsset.OpenAsync(loader, new(entry.AssetGuid));
-            ClusterMeshBlock geometry = file.GetBlock<ClusterMeshBlock>();
+            ClusterMeshBlock geometry = await file.GetBlockAsync<ClusterMeshBlock>();
             var mesh = await geometry.CreateAsync(file.GetBlock<MeshBlock>(), file.Name);
             using var source = await geometry.OpenPayloadSourceAsync();
             reads.PageBytes = mesh.GetPageByteLength(1);
@@ -194,7 +194,7 @@ public sealed class GeometryStreamingHandoffTests
             AssetEntry entry = await asset.SaveAsync(Path.Combine(directory, "visible-detail.mesh.asset"));
             await using var loader = new AssetLoader(new GatedStorage(entry, reads));
             using MeshAsset file = await MeshAsset.OpenAsync(loader, new(entry.AssetGuid));
-            ClusterMeshBlock geometry = file.GetBlock<ClusterMeshBlock>();
+            ClusterMeshBlock geometry = await file.GetBlockAsync<ClusterMeshBlock>();
             var mesh = await geometry.CreateAsync(file.GetBlock<MeshBlock>(), file.Name);
             using var source = await geometry.OpenPayloadSourceAsync();
             reads.PageBytes = mesh.GetPageByteLength(1);
@@ -552,8 +552,9 @@ public sealed class GeometryStreamingHandoffTests
                 [new RawAttribute("NORMAL", [0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1], 3, ValueType.Int8, 3, true),
                  new RawAttribute("TEXCOORD_0", [(left + 1) / 2, 0, (right + 1) / 2, 0, (right + 1) / 2, 1, (left + 1) / 2, 1], 2, ValueType.Float16, 2, false)],
                 [0, 1, 2, 0, 2, 3], [new MeshMaterialSlot(Guid.Empty)], "Streamed plane part");
-            ClusterMeshBlock block = plane.GetBlock<ClusterMeshBlock>();
-            var mesh = await block.CreateAsync(plane.GetBlock<MeshBlock>(), plane.Name);
+            ClusterGeometryBlock block = plane.GetBlock<ClusterGeometryBlock>();
+            ClusterVertexAttributesBlock attributes = plane.GetBlock<ClusterVertexAttributesBlock>();
+            var mesh = await block.CreateAsync(plane.GetBlock<MeshBlock>(), attributes, plane.Name);
             meshes.Add(mesh);
         }
         var pages = meshes.Select(mesh => { mesh.TryGetPage(0, out var page); return page.ToArray(); }).ToArray();
