@@ -20,16 +20,17 @@ internal static class AvbdBodyIteration
     {
         ref readonly BodyMass mass = ref row.ReadRef<BodyMass>();
         if (mass.Motion != BodyMotion.Dynamic) return;
+        var bodyRows = new PhysicsBodies(bodies, row);
         ref BodyPose pose = ref row.ReadWrite<BodyPose>();
         ref readonly BodyStepState state = ref row.ReadRef<BodyStepState>();
         ref AvbdBodyEquation equation = ref row.ReadWrite<AvbdBodyEquation>();
         for (int local = 0; local < bodyIterations; local++)
         {
             equation.Reset(in pose, in mass, in state, (float)context.Duration);
-            constraints.AccumulateBodyEquation(in context, row.Entity, bodies, initialErrorFraction, ref equation);
+            constraints.AccumulateBodyEquation(in context, row.Entity, bodyRows, initialErrorFraction, ref equation);
             equation.Factorize();
             equation.SolveResponse(-equation.LinearGradient, -equation.AngularGradient, out var translation, out var rotation);
-            constraints.AdjustBodyChange(in context, row.Entity, bodies, in equation, ref translation, ref rotation);
+            constraints.AdjustBodyChange(in context, row.Entity, bodyRows, in equation, ref translation, ref rotation);
             var center = pose.GetCenterOfMass(in mass) + translation;
             pose.Rotation = BodyRotation.ApplyChange(pose.Rotation, rotation);
             pose.SetCenterOfMass(center, in mass);
