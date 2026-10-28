@@ -47,13 +47,29 @@ public static class SampleContent
         projectRoot = Path.GetFullPath(projectRoot);
         string shaders = Path.Combine(projectRoot, "assets", "Shaders");
         string engineShaders = Path.Combine(Path.GetFullPath(engineRoot), "assets", "Shaders");
-        WriteInstanceLayout(shaders);
-        WriteGeneratedFile(Path.Combine(shaders, "cluster_transparency.slang"),
-            File.ReadAllText(Path.Combine(engineShaders, "cluster_transparency.slang")));
+        WriteCommonShaderSources(shaders, engineShaders);
         var project = new AssetProject(projectRoot, [], shaderIncludeDirectories: [engineShaders]);
         await project.BuildAsync(Path.GetFullPath(shaderSource, projectRoot), cancellationToken: cancellationToken)
             .ConfigureAwait(false);
         Console.WriteLine($"Shader: {Path.GetFileName(shaderSource)}");
+    }
+
+    /// <summary>Builds the character and cloth material using the selected engine shader library.</summary>
+    public static async Task BuildPhysicsSkinAsync(string projectRoot, string engineRoot,
+        CancellationToken cancellationToken = default)
+    {
+        projectRoot = Path.GetFullPath(projectRoot);
+        string engineShaders = Path.Combine(Path.GetFullPath(engineRoot), "assets", "Shaders");
+        WriteCommonShaderSources(Path.Combine(projectRoot, "assets", "Shaders"), engineShaders);
+        var project = new AssetProject(projectRoot, [], shaderIncludeDirectories: [engineShaders]);
+        await SampleMaterials.BuildPhysicsSkinAsync(project, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static void WriteCommonShaderSources(string shaders, string engineShaders)
+    {
+        WriteInstanceLayout(shaders);
+        WriteGeneratedFile(Path.Combine(shaders, "cluster_transparency.slang"),
+            File.ReadAllText(Path.Combine(engineShaders, "cluster_transparency.slang")));
     }
 
     public static async Task BuildAsync(string projectRoot, string engineRoot, CancellationToken cancellationToken = default)
@@ -62,20 +78,19 @@ public static class SampleContent
         engineRoot = Path.GetFullPath(engineRoot);
         string shaders = Path.Combine(projectRoot, "assets", "Shaders");
         string engineShaders = Path.Combine(engineRoot, "assets", "Shaders");
-        WriteInstanceLayout(shaders);
-        WriteGeneratedFile(Path.Combine(shaders, "cluster_transparency.slang"),
-            File.ReadAllText(Path.Combine(engineShaders, "cluster_transparency.slang")));
+        WriteCommonShaderSources(shaders, engineShaders);
         var project = new AssetProject(projectRoot, [StandardGltfSceneImporter.CreateSourceImporter()],
             shaderIncludeDirectories: [engineShaders]);
         await BuildEngineShadersAsync(project, shaders, engineShaders, cancellationToken).ConfigureAwait(false);
         foreach (string source in Directory.EnumerateFiles(shaders, "*.shader").Order(StringComparer.Ordinal))
         {
-            if (Path.GetFileNameWithoutExtension(source) is "standard" or "unlit") continue;
+            if (Path.GetFileNameWithoutExtension(source) is "standard" or "unlit" or "physics-crowd") continue;
             cancellationToken.ThrowIfCancellationRequested();
             await project.BuildAsync(source, cancellationToken: cancellationToken).ConfigureAwait(false);
             Console.WriteLine($"Shader: {Path.GetFileName(source)}");
         }
         await SampleMaterials.BuildAsync(project, cancellationToken).ConfigureAwait(false);
+        await SampleMaterials.BuildPhysicsSkinAsync(project, cancellationToken).ConfigureAwait(false);
         await SampleBlendContent.BuildAsync(project, engineRoot, cancellationToken).ConfigureAwait(false);
         Guid pipeline = BuildClusterShaders(project);
         Guid shadows = BuildShadowShaders(project);

@@ -210,7 +210,8 @@ public sealed partial class PhysicsCrowdScene : IGameFramePhysics
                 .Measure(timings, "AVBD and XPBD"))
             .Then(dynamics.UpdateVelocities().Then(response.ApplyRestitution(1, buildGraph: false)).Measure(timings, "Velocities and restitution"))
             .Then(poses.MapBones().Then(sources.CopyOutput()).Measure(timings, "Bone output"));
-        var consumer = results.Readback(1024).Measure(timings, "Body results");
+        var consumer = results.Readback(1024).Measure(timings, "Body results")
+            .Then(new CopySceneBodyTransforms().Measure(timings, "Body transforms"));
         var frame = PhysicsSimulation.Create(world, initial.Bodies, stages, 1).CreateFrame(consumer, StepSeconds, 0, 0, 0);
         _frame = frame; _complete = frame.CompleteForRead;
 
