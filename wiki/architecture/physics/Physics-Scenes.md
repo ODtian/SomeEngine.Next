@@ -110,6 +110,8 @@ GPU 示例选择 `DeviceContactPotentialAvbdConstraints` 的正法向和角向�
 
 观测同时读取初始、当前和峰值机械能，定义为平移动能、体空间转动动能与重力势能之和。重力向量来自同一工作量的公开 `Gravity`；势能零面位于从世界原点沿重力方向两米处，与原金字塔行为检查使用相同基准。`MechanicalEnergyScope` 声明全体动态主体或所选读回动态主体的覆盖范围。每个原输入步记录其前一完成步和当前完成步的能量及差值；该区间覆盖声明的速度、位移或连接输入以及当步模拟与耗散，行为判据结合对应场景的原输入解释这些数值。初始读取在场景创建后进行，每步读取沿原诊断观测，整步计时保持上述完成边界。
 
+`LiveJointsAcrossSceneInputs` 沿同一声明输入结果记录各输入步前后的存活连接数，使用每步已有的原场景关节计数。逐级释放据此核对第 90、150、210 步各自的拓扑变化；能量与连接数由同一组完成步观测持有。
+
 每个场景声明零热身步数，全部原步骤与首步成本进入采样，并单列首步耗时及当前进程 JIT 配置。`WithinBudget` 表达所测整步最大耗时与该场景预算的比较；行为验收继续核对相应场景的运动、约束间距和事件结果。
 
 附加 `--physics-trace=<外部路径>` 使用现有 `EngineTrace` 捕获同一运行窗口。具体阶段包装记录 `Schedule` 提交耗时和依赖就绪至完成的区间；两个范围可以重叠，分别呈现。阶段诊断为每段增加 Start 与 Finish Job，开销随诊断结果保留。普通预算运行沿同一工厂选择 `timings=null`。原分区准备、pair count、bin prefix、pair write 和 narrow phase 的 Trace 站点进一步分解碰撞成本，并记录候选数和检测数。带 trace 的定位与普通整步预算分别比较，测量沿根级公共队列提交，捕获消费后清理。
@@ -131,6 +133,13 @@ GPU 示例选择 `DeviceContactPotentialAvbdConstraints` 的正法向和角向�
 工作量中的 `ReadbackBodyCount` 与完成结果中的实际主体范围一同描述该成本，
 整步预算包含全部可见主体的完成消费。
 
+测量结果中的 `SiloMotion` 沿全部颗粒记录闭闸下降、容器内数量、接触负载和机械能，
+并分别列出 Sphere、Box、Hull 实际穿过原出口的集合及终态低于出口两米的数量。
+出口平面与矩形取自原闸板的公开几何；穿越位置由相邻完成中心插值。
+终态接触查询沿原参与关系核对实际泄流集合与静态容器的接触退出。
+`SiloBehaviorSatisfied` 与 `WithinBudget` 分别报告完整行为和整步最大耗时，
+额外观察成本继续单列于 `Observation`。
+
 24 粒行为检查沿全部颗粒读取完成后的位姿和速度：闭闸的 180 步内，
 颗粒下降、保持在内侧边界 `|x|, |y| ≤ 3 m`，并由当前接触关系承托。
 闭闸结束时的全体机械能与创建能量使用同一 2 m 势能基准；
@@ -142,6 +151,50 @@ GPU 示例选择 `DeviceContactPotentialAvbdConstraints` 的正法向和角向�
 该集合中的当前接触关系同时体现与固定容器的接触退出。
 世界中的匹配接触保留原几何，当前设备锚点由 `DeviceContactGeometry.Update` 写入同一设备参数与 Body 引用；
 设备穿透统计沿原 `DeviceSceneStatistics` 读取当前几何。
+
+## 原规模过程的完成观察
+
+`--physics-check=<id> --physics-device=gpu` 沿统一 Example 的原 Factory 和 Frame 执行。
+Measure 在创建 simulation 前启用内部 Scale measurements，观察索引随当次测量创建；
+交互场景继续使用原全体结果、变换和事件消费者。
+
+| 原场景 | 实际 Body 数 | 初始 Joint 数 | 原完整步数 | 原输入 |
+| --- | ---: | ---: | ---: | --- |
+| bricks-110000 | 110002 | 0 | 241 | 120，末体速度增量(25,0,0) |
+| bricks-510000 | 510002 | 0 | 241 | 120，末体速度增量(25,0,0) |
+| pyramids-88200 | 88621 | 0 | 241 | 120，420个冲击体各增量(25,0,0) |
+| pyramids-176400 | 177241 | 0 | 241 | 120，840个冲击体各增量(25,0,0) |
+| joint-grid-100000 | 100001 | 298701 | 241 | 120，节点99801速度增量(0,12,0) |
+| breakable-100000 | 100002 | 298000 | 241 | 120，末体速度增量(25,0,0) |
+| breakable-500000 | 500002 | 1490000 | 241 | 120，末体速度增量(25,0,0) |
+| million-activity | 1000001 | 0 | 481 | 180，节点975051增量(2,0,0)；360，地板移到(.025,0,-.5) |
+
+`ScaleMotion` 在原全体 Body 读取中汇总各原砖层、金字塔、冲击体、关节节点及百万体输入列/其余层。
+组输出当前均值位移、高度范围、速度、活动数和 quiet time；119/120/240 或
+179/180/359/360/480 保存组级边界摘要。索引只保存原实体到输入组的批次身份；
+位姿、速度、活动和约束仍从原组件读取。
+
+原事件消费循环当次归约每个 Kind/Phase 的数量、实际 time/substep 范围与主体组。
+Contact 的 Subject 是持久点，First/Second 是两侧几何实体；本组原刚体布局的几何实体也是对应 Body。
+Break 的 Subject 是已结束的关节句柄，Body 是报告超限 force/torque 的端，First/Second 为原两端。
+Sleep/Wake 的 Subject 是活动变化的 Body。事件整段沿原消费命令确认，计量只保存当步计数、
+累计总数和少量边界摘要。冲击接触另列真实正法向载荷所覆盖的原结构数量；
+自接触按双方 Dynamic 的接触点 Begin/End 维护当前数量。
+可破坏场景沿原1000N/200Nm阈值报告 break 力与力矩，并核对完成态
+`LiveJoints + BreakEvents == InitialJoints`。
+
+`DeviceSceneStatistics` 读取原 `DeviceConstraintGraph.IslandCount` 与 `BodyCount`。
+IslandCount 包含已选 Dynamic 的睡眠岛及只读 Dynamic 参与端；static/kinematic 端作为引用，
+共享地板上的独立动态组保持各自连接分量。
+`GraphActiveBodies` 是求解输入的活动工作量，完成 `AwakeBodies` 来自后续活动结果。
+`GraphSourceStep` 和 `GraphStage` 标明这些图计数在自动断裂之前生成；
+完成步交付 Break 与 LiveJoints，下一原步的图计数对应删除后重新建立的连接。
+
+`ScaleDeliverySatisfied` 核对全体读取、每个 Dynamic 的完成 number/substep/time、
+断裂计数与原阈值，和严格全部 Steps 的 `WithinBudget` 分列。
+承重、冲击、坍塌、自接触及局部/共享地板唤醒沿实际组结果和对应事件边界核对。
+事件归约处于原 Frame 消费计时内，额外全体分组观察沿 `Observation` 单列；
+进度 JSON 的构造与输出按原测量口径位于两个计时区间之后。
 
 ## 使用例子
 

@@ -16,6 +16,7 @@ internal sealed class DeviceSceneStatistics : IDisposable, IDevicePhysicsSubmiss
     private readonly DeviceBodies _bodies;
     private readonly DeviceConstraintData<DeviceContactConstraint> _contacts;
     private readonly IDeviceConstraintSelection _selection;
+    private readonly DeviceConstraintGraph _graph;
     private readonly JobResourceAccess[] _inputs;
     private readonly Buffer _values, _islandSizes, _readback, _parents;
     private readonly BufferUav _view, _islandSizesView;
@@ -31,7 +32,7 @@ internal sealed class DeviceSceneStatistics : IDisposable, IDevicePhysicsSubmiss
         IReadOnlyDictionary<string, ResourceBinding[]> inputs, JobResourceAccess[] accesses)
     {
         _backend = backend; _device = device; _bodies = bodies; _contacts = contacts;
-        _selection = selection; _inputs = accesses;
+        _selection = selection; _inputs = accesses; _graph = graph;
         _values = backend.CreateBuffer(device, new(16, BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopySource,
             "Completed scene statistics"), MemoryType.DeviceLocal);
         _islandSizes = backend.CreateBuffer(device, new((ulong)bodies.Capacity * 4,
@@ -59,6 +60,8 @@ internal sealed class DeviceSceneStatistics : IDisposable, IDevicePhysicsSubmiss
     internal int AwakeBodies { get; private set; }
     internal int ContactPoints { get; private set; }
     internal int LargestIslandBodies { get; private set; }
+    internal int IslandCount => _graph.IslandCount;
+    internal int GraphActiveBodies => _graph.BodyCount;
     internal ReadDeviceSceneStatistics Readback() => new(this);
     IGraphicsBackend IDevicePhysicsSubmission.Backend => _backend;
     Device IDevicePhysicsSubmission.Device => _device;
