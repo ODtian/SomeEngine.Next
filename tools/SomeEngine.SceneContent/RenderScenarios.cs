@@ -1,4 +1,5 @@
 using DefaultGame;
+using DefaultGame.Content;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Components;
@@ -53,6 +54,7 @@ public static class RenderScenarios
             Directory.CreateDirectory(Path.GetDirectoryName(output)!);
             File.Copy(file, output, overwrite: true);
         }
+        SampleContent.LinkTransparencySource(Path.Combine(destination, "assets", "Shaders"), engineShaders);
         string shaderPath = Path.Combine(destination, "assets", "Shaders", "standard.slang");
         string shader = File.ReadAllText(shaderPath);
         if (mode is "phong" or "factors" or "materials")
@@ -125,7 +127,9 @@ public static class RenderScenarios
             Texture2D<float2> NormalMap;
             SamplerState MaterialSampler;
             TextureDisplacement surface() { return MakeTextureDisplacement(AlbedoMap, NormalMap, MaterialSampler, float2(0.0, 1.0), 0.15, -0.075); }
-            Triangle makeTriangle(StandardVertex a, StandardVertex b, StandardVertex c) { return MakeStandardTriangle(a,b,c); }
+            Triangle readLane(Triangle triangle, uint lane) { return ReadTriangleLane(triangle, lane); }
+            Triangle makeTriangle(StandardVertex a, StandardVertex b, StandardVertex c, uint materialIndex)
+            { return surface().makeTriangle(a, b, c, materialIndex); }
             float3 cornerPosition(Triangle t, uint c) { return c == 0u ? t.Position0 : (c == 1u ? t.Position1 : t.Position2); }
             float3 position(Triangle t, float3 b) { return surface().position(t,b); }
             SurfaceEval eval(Triangle t, float3 b) { return surface().eval(t,b); }
@@ -136,13 +140,14 @@ public static class RenderScenarios
         };
         """;
             shader = shader.Replace("typedef LinearSurface DomainEvaluate;", domain + "\ntypedef SampledDisplacement DomainEvaluate;") + "\n#include \"cluster_tessellation_entries.slang\"\n";
-            // This scenario uses these two material textures as height and height bounds.
-            // Its surface uses a white base and the displaced normal, not the bounds as a normal map.
-            string surfacePath = Path.Combine(destination, "assets", "Shaders", "standard.slang");
-            string surface = File.ReadAllText(surfacePath)
-                .Replace("float4 albedoSample = AlbedoMap.SampleLevel(MaterialSampler, ctx.uv0, 0.0);", "float4 albedoSample = 1.0.xxxx;")
-                .Replace("float3 normalTS     = NormalMap.SampleLevel(MaterialSampler, ctx.uv0, 0.0).rgb * 2.0 - 1.0;", "float3 normalTS = float3(0.0, 0.0, 1.0);");
+            // The scenario uses the material textures for height and height bounds,
+            // and shades the displaced surface with a white base and geometric normal.
+            string surfacePath = Path.Combine(destination, "assets", "Shaders", "scenario_material.slang");
+            string surface = File.ReadAllText(Path.Combine(engineShaders, "standard_material.slang"))
+                .Replace("float4 albedoSample = AlbedoMap.SampleGrad(MaterialSampler, ctx.uv0, uvDx, uvDy);", "float4 albedoSample = 1.0.xxxx;")
+                .Replace("float3 normalTS     = NormalMap.SampleGrad(MaterialSampler, ctx.uv0, uvDx, uvDy).rgb * 2.0 - 1.0;", "float3 normalTS = float3(0.0, 0.0, 1.0);");
             File.WriteAllText(surfacePath, surface);
+            shader = shader.Replace("#include \"standard_material.slang\"", "#include \"scenario_material.slang\"");
         }
 
         if (mode == "materials")
