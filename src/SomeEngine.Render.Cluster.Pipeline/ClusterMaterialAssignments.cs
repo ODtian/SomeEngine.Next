@@ -624,11 +624,11 @@ public sealed class ClusterMaterialAssignmentSystem : ISystem<RenderPrepareSyste
     private sealed class AssignmentChanges(ClusterMaterialAssignmentSet source, RenderWorld world, bool denseRevisionSnapshots)
     {
         private readonly ClusterMaterialAssignmentSet.Update _update = new(source, world, denseRevisionSnapshots);
-        private readonly HashSet<Entity> _membership = [];
+        private HashSet<Entity>? _membership;
 
         internal void CollectMembership(RenderWorld world, Entity entity)
         {
-            _membership.Add(entity);
+            (_membership ??= []).Add(entity);
             if (!world.IsAlive(entity) || !world.Has<RenderInstance>(entity) ||
                 !world.Has<RenderTransform>(entity) || !world.Has<RenderPreviousTransform>(entity) ||
                 !world.Has<RenderClusterGeometry>(entity) || !world.HasBuffer<RenderMaterialBinding>(entity))
@@ -669,7 +669,7 @@ public sealed class ClusterMaterialAssignmentSystem : ISystem<RenderPrepareSyste
                 for (int row = 0; row < chunk.Entities.Length; row++)
                 {
                     Entity entity = chunk.Entities[row];
-                    if (_membership.Contains(entity)) continue;
+                    if (_membership?.Contains(entity) == true) continue;
                     if (
                         !(bindingsChanged && chunk.RowBufferChangedSinceLastSystemVersion<RenderMaterialBinding>(row)) &&
                         !(meshesChanged && chunk.RowChangedSinceLastSystemVersion<RenderClusterGeometry>(row)) &&
