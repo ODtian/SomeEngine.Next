@@ -10,22 +10,14 @@ bool deviceContactFirstBody(DeviceContactConstraint point,uint end)
         if(DeviceContactBodyLinks[point.bodyOffset+earlier].stateIndex==body) return false;
     return true;
 }
+struct DeviceStoredContactBodyLinks : IDeviceContactBodyLinks
+{
+    DeviceContactBody read(uint index) { return DeviceContactBodyLinks[index]; }
+};
 void deviceContactPositions(DeviceContactConstraint point,bool start,out float3 delta,out float3 midpoint)
 {
-    DeviceBodyState origin=DeviceBodyStates[DeviceContactBodyLinks[point.bodyOffset+point.firstBodyCount].stateIndex];
-    if(start) origin=deviceBodyStart(origin);
-    float3 first=float3(0),second=float3(0);
-    for(uint end=0;end<point.bodyCount;end++)
-    {
-        DeviceContactBody link=DeviceContactBodyLinks[point.bodyOffset+end];
-        DeviceBodyState body=DeviceBodyStates[link.stateIndex];
-        if(start) body=deviceBodyStart(body);
-        float3 position=deviceContactRelativeAnchor(body,link.localPoint,origin.position)*link.weight;
-        if(end<point.firstBodyCount) first+=position;
-        else second+=position;
-    }
-    // Each side's interpolation weights form an affine point about the same origin.
-    delta=second-first; midpoint=origin.position+(first+second)*.5f;
+    DeviceStoredContactBodyLinks links;
+    deviceContactPositions(point.bodyOffset,point.firstBodyCount,point.bodyCount,start,links,delta,midpoint);
 }
 float3 deviceContactDelta(DeviceContactConstraint point,bool start)
 {

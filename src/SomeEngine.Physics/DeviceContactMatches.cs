@@ -21,12 +21,15 @@ public sealed class DeviceContactMatches : IDisposable, IDevicePhysicsSubmission
     private readonly Scheduler _scheduler;
     private readonly DeviceConstraintData<DeviceContactConstraint> _parameters;
     private readonly DeviceCollisionDetection _detection;
+    private readonly DeviceBodies _bodies;
+    private readonly DeviceContactBodies _anchors;
+    private readonly Buffer _inputBodyCounts, _inputBodies;
     private readonly ContactRefreshSettings _settings;
     private readonly int _bucketCount, _threadsPerGroup;
     private readonly DeviceConstraintSelection<ContactPoint, DeviceContactConstraint> _selection;
     private readonly Buffer _heads, _next, _matches, _readback, _settingsBuffer;
     private readonly BufferUav _headsView, _nextView, _matchesView;
-    private readonly BufferSrv _contactsView, _countsView;
+    private readonly BufferSrv _contactsView, _countsView, _bodyCountsView, _bodiesView;
     private readonly BufferCbv _settingsView;
     private readonly CommandContext _commands;
     private readonly Pipeline[] _pipelines;
@@ -41,10 +44,13 @@ public sealed class DeviceContactMatches : IDisposable, IDevicePhysicsSubmission
 
     public DeviceContactMatches(IGraphicsBackend backend, Device device, World world, QueryHandle points,
         DeviceConstraintData<DeviceContactConstraint> parameters, DeviceCollisionDetection detection,
+        DeviceBodies bodies, DeviceContactBodies anchors,
         DeviceContactMatchKernels kernels, ContactRefreshSettings settings, int bucketCount, int threadsPerGroup)
     {
         _backend = backend; _device = device; _scheduler = WorldJobs.GetScheduler(world);
-        _parameters = parameters; _detection = detection; _settings = settings;
+        _parameters = parameters; _detection = detection; _settings = settings; _bodies = bodies; _anchors = anchors;
+        _inputBodyCounts = detection.ContactBodyCounts ?? detection.ContactCounts;
+        _inputBodies = detection.ContactBodies ?? anchors.Values;
         _bucketCount = bucketCount; _threadsPerGroup = threadsPerGroup;
         _selection = new(backend, device, world, points, parameters, "DeviceContactMatchingSelection");
         _resource = _scheduler.CreateResourceToken("Matched contact identities and parameter indices");
@@ -60,6 +66,8 @@ public sealed class DeviceContactMatches : IDisposable, IDevicePhysicsSubmission
         _matchesView = backend.CreateBufferUav(device, new(_matches, new(0, _matches.Info.Size), StructureStride: 16));
         _contactsView = backend.CreateBufferSrv(device, new(detection.Contacts, new(0, detection.Contacts.Info.Size), StructureStride: DeviceCollisionDetection.ContactStride));
         _countsView = backend.CreateBufferSrv(device, new(detection.ContactCounts, new(0, detection.ContactCounts.Info.Size), StructureStride: 4));
+        _bodyCountsView = backend.CreateBufferSrv(device, new(_inputBodyCounts, new(0, _inputBodyCounts.Info.Size), StructureStride: 4));
+        _bodiesView = backend.CreateBufferSrv(device, new(_inputBodies, new(0, _inputBodies.Info.Size), StructureStride: 32));
         _settingsView = backend.CreateBufferCbv(device, new(_settingsBuffer, new(0, 256)));
         var bindings = new Dictionary<string, ResourceBinding[]>
         {
@@ -68,9 +76,12 @@ public sealed class DeviceContactMatches : IDisposable, IDevicePhysicsSubmission
             ["ContactMatches"] = [ResourceBinding.WritableBuffer(_matchesView)],
             ["DeviceMatchInputContacts"] = [ResourceBinding.ReadOnlyBuffer(_contactsView)],
             ["DeviceMatchInputCounts"] = [ResourceBinding.ReadOnlyBuffer(_countsView)],
+            ["DeviceMatchInputBodyCounts"] = [ResourceBinding.ReadOnlyBuffer(_bodyCountsView)],
+            ["DeviceMatchInputBodies"] = [ResourceBinding.ReadOnlyBuffer(_bodiesView)],
+            ["DeviceBodyStates"] = [ResourceBinding.WritableBuffer(bodies.View)],
             ["ContactMatchSettings"] = [ResourceBinding.ConstantBuffer(_settingsView)],
         };
-        parameters.AddBindings(bindings); _selection.AddBindings(bindings);
+        parameters.AddBindings(bindings); anchors.AddBindings(bindings); _selection.AddBindings(bindings);
         ComputePipelineDesc[] descriptions = [kernels.Clear, kernels.Index, kernels.Match];
         _pipelines = descriptions.Select(kernel => backend.CreateComputePipeline(device, kernel)).ToArray();
         _layouts = descriptions.Select(kernel => kernel.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null).ToArray();
@@ -118,6 +129,9 @@ public sealed class DeviceContactMatches : IDisposable, IDevicePhysicsSubmission
         accesses.AddRange(_detection.GetReadbackAccesses(_scheduler));
         _selection.AddAccesses(_scheduler, accesses);
         accesses.AddRange([
+            _bodies.GetReadAccess(_scheduler), _anchors.GetReadAccess(_scheduler),
+            JobResourceAccess.Read(_scheduler.GetResourceToken(_inputBodyCounts), 0, (long)_inputBodyCounts.Info.Size),
+            JobResourceAccess.Read(_scheduler.GetResourceToken(_inputBodies), 0, (long)_inputBodies.Info.Size),
             JobResourceAccess.Read(_scheduler.GetResourceToken(_detection.Contacts), 0, (long)_detection.Contacts.Info.Size),
             JobResourceAccess.Read(_scheduler.GetResourceToken(_detection.ContactCounts), 0, (long)_detection.ContactCounts.Info.Size),
             JobResourceAccess.Write(_scheduler.GetResourceToken(_heads), 0, (long)_heads.Info.Size),
@@ -135,7 +149,8 @@ public sealed class DeviceContactMatches : IDisposable, IDevicePhysicsSubmission
     {
         _selection.Capture();
         var settings = new MatchSettings((uint)_parameters.Capacity, (uint)_detection.Count, (uint)_bucketCount,
-            _settings.MatchDistance * _settings.MatchDistance, _settings.MinimumNormalDot);
+            _settings.MatchDistance * _settings.MatchDistance, _settings.MinimumNormalDot,
+            _detection.ContactBodies is null ? 0u : (uint)_detection.Capacity.BodiesPerContact);
         using (MappedBuffer mapping = _backend.Map(_settingsBuffer, MapType.Write, BufferRange.Whole))
         { MemoryMarshal.Write(mapping.Bytes, in settings); mapping.Flush(new(0, (ulong)Marshal.SizeOf<MatchSettings>())); }
         _backend.Begin(_commands, new(0, 0, 16));
@@ -187,12 +202,13 @@ public sealed class DeviceContactMatches : IDisposable, IDevicePhysicsSubmission
             (Point, ParameterIndex, DistanceSquared) = (point, parameterIndex, distanceSquared);
     }
     [StructLayout(LayoutKind.Sequential)]
-    private readonly record struct MatchSettings(uint Points, uint Pairs, uint Buckets, float SquaredDistance, float NormalDot);
+    private readonly record struct MatchSettings(uint Points, uint Pairs, uint Buckets, float SquaredDistance, float NormalDot,
+        uint InputBodiesPerContact);
     public void Dispose()
     {
         _selection.Dispose(); _scheduler.ReleaseResourceToken(_resource); _commands.Dispose();
         foreach (Pipeline pipeline in _pipelines) pipeline.Dispose();
-        _headsView.Dispose(); _nextView.Dispose(); _matchesView.Dispose(); _contactsView.Dispose(); _countsView.Dispose(); _settingsView.Dispose();
+        _headsView.Dispose(); _nextView.Dispose(); _matchesView.Dispose(); _contactsView.Dispose(); _countsView.Dispose(); _bodyCountsView.Dispose(); _bodiesView.Dispose(); _settingsView.Dispose();
         _heads.Dispose(); _next.Dispose(); _matches.Dispose(); _readback.Dispose(); _settingsBuffer.Dispose();
     }
 }

@@ -46,6 +46,14 @@ Jacobian 和 AVBD 接触势曲率共用 `R(localPoint-localCenterOfMass)` 作为
 [DeviceContactMatches](../../../src/SomeEngine.Physics/DeviceContactMatches.cs) 读取当前
 `DeviceCollisionDetection` 的接触和点数，以及原 `DeviceConstraintData<DeviceContactConstraint>`。
 共同参数保存原几何 Entity、特征和见证点；当前原查询的点 Binding 与 Entity 代次选择有效旧行。
+构造器显式接收同一 `DeviceBodies` 与 `DeviceContactBodies`。原参数中的世界见证点属于上次检测采样，
+当前设备主体和原局部锚提供跨步几何身份所需的当前参照；这两个既有 holder 补齐匹配阶段的读取绑定与 Job 依赖。
+匹配将当前检测与旧点的两侧局部锚分别按当前 Body 姿势和原插值权重重建为世界中点，
+再使用项目给定的 `MatchDistance`。刚体表面锚、动态胶囊中心线锚和三节点面采样分别沿各自原含义参与计算；
+双方共同运动后，相同局部接触仍落在同一匹配位置。预测接触的两组锚使用同一个子步起点参照。
+独立刚体检测直接消费当前世界见证中点；引用几何检测使用其已有多端输出，比较量与旧点保持相同锚表示。
+原法向阈值、双方几何 Entity 与代次、特征优先和一对一选择接续原匹配规则。
+当前检测锚、旧锚及 Body 状态的读取和后续几何更新的写入沿同一实际完成依赖排列。
 [设备匹配内核](../../../assets/Shaders/physics_contact_matching.slang) 先按双方几何身份建立散列表，
 再由每个 pair 的线程处理其流形点，在配置的距离和法向条件内优先匹配相同特征，并为每个旧点保留一个当前点。
 输出只保存对应点 Entity、原参数行索引和匹配距离，数值历史继续位于各算法选定的状态 buffer。
