@@ -6,10 +6,10 @@ namespace SomeEngine.Geometry.Cluster;
 
 public static partial class ClusterMeshBuilder
 {
-    private static List<int[]> PartitionClusterGroups(ReadOnlySpan<Vector3> positions, List<ClusterMeshlet> clusters,
+    private static unsafe List<int[]> PartitionClusterGroups(ClusterLodConfig config, ReadOnlySpan<Vector3> positions, List<ClusterMeshlet> clusters,
         List<uint> indices, List<int> current)
     {
-        if (current.Count <= 16) return [Enumerable.Range(0, current.Count).ToArray()];
+        if (current.Count <= config.PartitionSize) return [Enumerable.Range(0, current.Count).ToArray()];
         var remap = new uint[positions.Length];
         ReadOnlySpan<float> positionValues = MemoryMarshal.Cast<Vector3, float>(positions);
         Meshopt.GeneratePositionRemap(remap, positionValues, 12);
@@ -25,8 +25,22 @@ public static partial class ClusterMeshBuilder
                 clusterIndices[offset++] = remap[vertex];
         }
         var groupIndices = new uint[current.Count];
-        int groupCount = checked((int)Meshopt.PartitionClusters(groupIndices, clusterIndices,
-            indexCounts, positionValues, 12, 16));
+        int groupCount;
+        fixed (uint* destination = groupIndices, source = clusterIndices, counts = indexCounts)
+        fixed (float* points = positionValues)
+            groupCount = checked((int)Meshopt.PartitionClusters(destination, source, (nuint)clusterIndices.Length,
+                counts, (nuint)current.Count, config.PartitionSpatial ? points : null, (nuint)positions.Length,
+                12, (nuint)config.PartitionSize));
+        if (config.PartitionSort)
+        {
+            var groupCenters = new Vector3[groupCount];
+            for (int index = 0; index < current.Count; index++)
+                groupCenters[groupIndices[index]] = clusters[current[index]].Center;
+            var groupRemap = new uint[groupCount];
+            Meshopt.SpatialSortRemap(groupRemap, MemoryMarshal.Cast<Vector3, float>(groupCenters), 12);
+            for (int index = 0; index < current.Count; index++)
+                groupIndices[index] = groupRemap[groupIndices[index]];
+        }
         var groups = Enumerable.Range(0, groupCount).Select(_ => new List<int>()).ToArray();
         for (int index = 0; index < current.Count; index++)
             groups[groupIndices[index]].Add(index);

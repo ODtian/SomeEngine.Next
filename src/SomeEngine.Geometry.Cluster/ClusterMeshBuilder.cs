@@ -111,7 +111,7 @@ public static partial class ClusterMeshBuilder
         var attributes = current.Count > 1 ? new ClusterSimplificationAttributes(vertexAttributes ?? [], positions.Length) : null;
         while (current.Count > 1 && attributes!.CanSimplify)
         {
-            List<int[]> groups = PartitionClusterGroups(positions, clusters, globalIndices, current);
+            List<int[]> groups = PartitionClusterGroups(config, positions, clusters, globalIndices, current);
             byte[] locks = LockGroupBoundaries(positions, positions.Length, clusters, globalIndices, current,
                 groups, materialBoundaries);
             if (!vertexLocks.IsEmpty)
@@ -127,7 +127,7 @@ public static partial class ClusterMeshBuilder
                 if (group.Length == 1) { next.Add(group[0]); continue; }
                 MergeGroupIndices(globalIndices, clusters, group, mergedIndices);
                 ClusterLodBounds groupBounds = BoundsMerge(clusters, group);
-                int parentCount = Math.Max(1, (mergedIndices.Count / 3 + config.MaxTriangles * 2 - 1) / (config.MaxTriangles * 2));
+                int parentCount = Math.Max(1, (int)MathF.Ceiling(mergedIndices.Count / 3 * config.SimplifyRatio / config.MaxTriangles));
                 int targetClusterSize = config.MaxTriangles - 2;
                 float error = groupBounds.Error;
                 var parents = new List<ClusterMeshlet>();
@@ -137,9 +137,9 @@ public static partial class ClusterMeshBuilder
                     CollectionsMarshal.AsSpan(mergedIndices));
                 do
                 {
-                    SimplifyLodGroup(positions,
-                        CollectionsMarshal.AsSpan(mergedIndices), locks, parentCount * targetClusterSize * 3,
-                        attributes.Values, attributeWeights, config.SimplifyPermissive, out float reductionError, reducedIndices);
+                    SimplifyLodGroup(config, positions,
+                        CollectionsMarshal.AsSpan(mergedIndices), locks, materialIndicesArray, parentCount * targetClusterSize * 3,
+                        attributes.Values, attributeWeights, out float reductionError, reducedIndices);
                     error = groupBounds.Error + reductionError;
                     parents.Clear();
                     parentIndices.Clear();
@@ -148,7 +148,7 @@ public static partial class ClusterMeshBuilder
                     if (parents.Count <= parentCount) break;
                     targetClusterSize -= 2;
                 } while (targetClusterSize > config.MaxTriangles / 2);
-                if (parents.Count >= group.Length)
+                if (parents.Count >= group.Length || reducedIndices.Count > mergedIndices.Count * config.SimplifyThreshold)
                 {
                     foreach (int index in group)
                     {
@@ -190,6 +190,7 @@ public static partial class ClusterMeshBuilder
                     next.Add(index);
                 }
             }
+            if (next.Count == current.Count) break;
             current = next;
         }
         foreach (int index in current)
@@ -546,36 +547,6 @@ public static partial class ClusterMeshBuilder
 
 
 
-
-    private static void SimplifyLodGroup(ReadOnlySpan<Vector3> positions, ReadOnlySpan<uint> indices,
-        ReadOnlySpan<byte> locks, int targetIndexCount, ReadOnlySpan<float> attributes,
-        ReadOnlySpan<float> attributeWeights, bool allowPermissive, out float error, List<uint> outputIndices)
-    {
-        outputIndices.Clear();
-        if (targetIndexCount >= indices.Length)
-        {
-            outputIndices.AddRange(indices);
-            error = 0;
-            return;
-        }
-
-        uint[] reducedIndices = ArrayPool<uint>.Shared.Rent(indices.Length);
-        try
-        {
-            SimplificationOptions permissive = allowPermissive ? (SimplificationOptions)(1 << 5) : 0;
-            int count = checked((int)Meshopt.SimplifyWithAttributes(reducedIndices, indices,
-                MemoryMarshal.Cast<Vector3, float>(positions), (nuint)Unsafe.SizeOf<Vector3>(),
-                attributes, (nuint)(attributeWeights.Length * sizeof(float)), attributeWeights,
-                (nuint)attributeWeights.Length, locks, (nuint)targetIndexCount, float.MaxValue,
-                SimplificationOptions.SimplifyLockBorder | SimplificationOptions.meshopt_SimplifySparse |
-                SimplificationOptions.meshopt_SimplifyErrorAbsolute | permissive, out error));
-            outputIndices.AddRange(reducedIndices.AsSpan(0, count));
-        }
-        finally
-        {
-            ArrayPool<uint>.Shared.Return(reducedIndices);
-        }
-    }
 
     private static ClusterLodBounds BoundsCompute(ReadOnlySpan<Vector3> positions, ReadOnlySpan<uint> indices, float error)
     {
