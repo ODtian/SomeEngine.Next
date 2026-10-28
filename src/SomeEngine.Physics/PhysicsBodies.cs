@@ -12,12 +12,16 @@ public readonly ref struct PhysicsBodies
     private readonly EntityQuery _writes;
     private readonly EntityQuery _references;
     private readonly bool _entityQueries;
+    private readonly QueryRow _bodyRow;
+    private readonly bool _hasBodyRow;
 
     public PhysicsBodies(QueryCursor bodies)
     {
         _bodies = bodies;
         _reads = _writes = _references = default;
         _entityQueries = false;
+        _bodyRow = default;
+        _hasBodyRow = false;
     }
 
     public PhysicsBodies(EntityQuery reads, EntityQuery writes, EntityQuery references)
@@ -27,10 +31,20 @@ public readonly ref struct PhysicsBodies
         _writes = writes;
         _references = references;
         _entityQueries = true;
+        _bodyRow = default;
+        _hasBodyRow = false;
+    }
+
+    internal PhysicsBodies(PhysicsBodies bodies, QueryRow bodyRow)
+    {
+        this = bodies;
+        _bodyRow = bodyRow;
+        _hasBodyRow = true;
     }
 
     public QueryRow GetRow(Entity entity)
     {
+        if (_hasBodyRow && _bodyRow.Entity == entity) return _bodyRow;
         QueryRow row;
         if (_entityQueries)
         {

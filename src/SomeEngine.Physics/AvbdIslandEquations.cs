@@ -87,7 +87,7 @@ internal sealed class AvbdIslandEquations
             AvbdBodyEquation equation = row.ReadRef<AvbdBodyEquation>();
             equation.Reset(in pose, in mass, in step, (float)context.Duration);
             inertiaCurvature += equation.GetCurvature(translation, rotation);
-            constraints.AccumulateBodyEquation(in context, queries, 3, row.Entity, bodies, initialErrorFraction, ref equation);
+            constraints.AccumulateBodyEquation(in context, queries, 3, row.Entity, new PhysicsBodies(bodies, row), initialErrorFraction, ref equation);
             derivative += Dot(equation.LinearGradient, translation) + Dot(equation.AngularGradient, rotation);
         }
         if (derivative == 0) return;
@@ -118,7 +118,7 @@ internal sealed class AvbdIslandEquations
             ReadStepChange(in basePose, in mass, in step, out Vector3 translation, out Vector3 rotation);
             AvbdBodyEquation equation = row.ReadRef<AvbdBodyEquation>();
             equation.Reset(in row.ReadRef<BodyPose>(), in mass, in step, (float)context.Duration, curvature: false);
-            constraints.AccumulateBodyEquation(in context, queries, 3, row.Entity, bodies, initialErrorFraction, ref equation);
+            constraints.AccumulateBodyEquation(in context, queries, 3, row.Entity, new PhysicsBodies(bodies, row), initialErrorFraction, ref equation);
             float tangent = (float)(1 / (1 + scale * scale * rotation.LengthSquared() * .25));
             derivative += Dot(equation.LinearGradient, translation) + Dot(equation.AngularGradient, rotation) * tangent;
         }
@@ -316,7 +316,7 @@ internal sealed class AvbdIslandEquations
             AvbdBodyEquation equation = row.ReadRef<AvbdBodyEquation>();
             equation.Reset(in pose, in mass, in step, (float)context.Duration, curvature: !curvature.IsEmpty);
             Vector3 inertiaForce = equation.LinearGradient;
-            constraints.AccumulateBodyEquation(in context, queries, 3, body, bodies, initialErrorFraction, ref equation);
+            constraints.AccumulateBodyEquation(in context, queries, 3, body, new PhysicsBodies(bodies, row), initialErrorFraction, ref equation);
             Vector3 gradient = equation.AngularGradient + Vector3.Cross(offset, equation.LinearGradient);
             x += gradient.X; y += gradient.Y; z += gradient.Z;
             if (curvature.IsEmpty) continue;
@@ -384,7 +384,7 @@ internal sealed class AvbdIslandEquations
             AvbdBodyEquation equation = row.ReadRef<AvbdBodyEquation>();
             equation.Reset(in pose, in mass, in step, (float)context.Duration, curvature: false);
             Vector3 inertia = equation.LinearGradient;
-            constraints.AccumulateBodyEquation(in context, queries, 3, body, bodies, initialErrorFraction, ref equation);
+            constraints.AccumulateBodyEquation(in context, queries, 3, body, new PhysicsBodies(bodies, row), initialErrorFraction, ref equation);
             x += (double)equation.LinearGradient.X - (includeInertia ? 0 : inertia.X);
             y += (double)equation.LinearGradient.Y - (includeInertia ? 0 : inertia.Y);
             z += (double)equation.LinearGradient.Z - (includeInertia ? 0 : inertia.Z);
