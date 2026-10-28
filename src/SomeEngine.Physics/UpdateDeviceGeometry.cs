@@ -63,15 +63,18 @@ public sealed class UpdateDeviceGeometry : IDisposable, IDevicePhysicsSubmission
         resources.Write(_parameters, 0, 256);
         resources.Write(_commands);
         accesses.AddRange(_extraAccesses);
-        return DevicePhysicsJobs.Schedule(scheduler, this, accesses.ToArray(), dependency);
+        return DevicePhysicsJobs.Schedule(scheduler, new SubmitGeometry(this, (float)context.Duration),
+            accesses.ToArray(), dependency);
     }
 
-    QueueCompletion IDevicePhysicsSubmission.Submit()
+    QueueCompletion IDevicePhysicsSubmission.Submit() => Submit(0);
+
+    private QueueCompletion Submit(float duration)
     {
-        var parameters = new GeometryUpdateParameters((uint)_geometry.Capacity.Bodies, _geometryType);
+        var parameters = new GeometryUpdateParameters((uint)_geometry.Capacity.Bodies, _geometryType, duration);
         using (MappedBuffer mapping = _backend.Map(_parameters, MapType.Write, BufferRange.Whole))
         {
-            MemoryMarshal.Write(mapping.Bytes, in parameters); mapping.Flush(new(0, 8));
+            MemoryMarshal.Write(mapping.Bytes, in parameters); mapping.Flush(new(0, 12));
         }
         _backend.Begin(_commands, new(32, 0, 32));
         _geometry.UploadInputs(_commands, _transfer);
@@ -84,7 +87,14 @@ public sealed class UpdateDeviceGeometry : IDisposable, IDevicePhysicsSubmission
         using RecordedCommands recorded = _backend.End(_commands);
         return _backend.Submit(_backend.GetQueue(_device, QueueType.Compute), new([], [], [recorded], [], []));
     }
-    private readonly record struct GeometryUpdateParameters(uint Count, uint GeometryType);
+    private readonly record struct GeometryUpdateParameters(uint Count, uint GeometryType, float Duration);
+
+    private readonly struct SubmitGeometry(UpdateDeviceGeometry update, float duration) : IDevicePhysicsSubmission
+    {
+        public IGraphicsBackend Backend => update._backend;
+        public Device Device => update._device;
+        public QueueCompletion Submit() => update.Submit(duration);
+    }
     public void Dispose()
     {
         _commands.Dispose(); _pipeline.Dispose(); _boundsView.Dispose(); _parameterView.Dispose(); _parameters.Dispose();

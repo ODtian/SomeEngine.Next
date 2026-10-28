@@ -11,7 +11,7 @@ struct GeometryCollisionInput
     uint2 key; uint2 categories; uint2 allowed; uint hasKey; uint userValue;
 };
 struct DeviceGeometryBounds { float3 min; float3 max; };
-struct DeviceGeometryUpdateParameters { uint count; uint geometryType; };
+struct DeviceGeometryUpdateParameters { uint count; uint geometryType; float duration; };
 ConstantBuffer<DeviceGeometryUpdateParameters> GeometryUpdateParameters;
 RWStructuredBuffer<GeometryCollisionInput> GeometryCollisionInputs;
 
