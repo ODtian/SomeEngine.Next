@@ -68,10 +68,14 @@ internal sealed unsafe partial class VulkanBackend
         MemoryBarrier2 native = new()
         {
             SType = StructureType.MemoryBarrier2,
-            SrcStageMask = PipelineStageFlags2.AllCommandsBit,
-            SrcAccessMask = AccessFlags2.MemoryReadBit | AccessFlags2.MemoryWriteBit,
-            DstStageMask = PipelineStageFlags2.AllCommandsBit,
-            DstAccessMask = AccessFlags2.MemoryReadBit | AccessFlags2.MemoryWriteBit,
+            SrcStageMask = barrier.Memory is { } memoryBefore
+                ? ToNative(memoryBefore.SyncBefore, (VulkanDevice)command.Device) : PipelineStageFlags2.AllCommandsBit,
+            SrcAccessMask = barrier.Memory is { } accessBefore
+                ? ToNative(accessBefore.AccessBefore) : AccessFlags2.MemoryReadBit | AccessFlags2.MemoryWriteBit,
+            DstStageMask = barrier.Memory is { } memoryAfter
+                ? ToNative(memoryAfter.SyncAfter, (VulkanDevice)command.Device) : PipelineStageFlags2.AllCommandsBit,
+            DstAccessMask = barrier.Memory is { } accessAfter
+                ? ToNative(accessAfter.AccessAfter) : AccessFlags2.MemoryReadBit | AccessFlags2.MemoryWriteBit,
         };
         EmitBarriers(command.NativeRecording, new ReadOnlySpan<MemoryBarrier2>(&native, 1), [], []);
     }

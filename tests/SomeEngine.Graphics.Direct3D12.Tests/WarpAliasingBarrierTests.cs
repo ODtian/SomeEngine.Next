@@ -60,7 +60,9 @@ public sealed class WarpAliasingBarrierTests
             context,
             new AliasingBarrier(
                 [new AliasingResource(before0), new AliasingResource(before1)],
-                [new AliasingResource(combined)]));
+                [new AliasingResource(combined)],
+                new MemoryBarrier(PipelineSync.Copy, PipelineSync.Copy,
+                    ResourceAccess.CopyDestination, ResourceAccess.CopyDestination)));
         Transition(backend, context, combined, ResourceAccess.NoAccess, ResourceAccess.CopyDestination);
         backend.CopyBuffer(context, new BufferCopy(combinedUpload, 0, combined, 0, fullSize));
         Transition(backend, context, combined, ResourceAccess.CopyDestination, ResourceAccess.CopySource);
@@ -69,7 +71,9 @@ public sealed class WarpAliasingBarrierTests
             context,
             new AliasingBarrier(
                 [new AliasingResource(combined)],
-                [new AliasingResource(after0), new AliasingResource(after1)]));
+                [new AliasingResource(after0), new AliasingResource(after1)],
+                new MemoryBarrier(PipelineSync.Copy, PipelineSync.Copy,
+                    ResourceAccess.CopySource | ResourceAccess.CopyDestination, ResourceAccess.CopyDestination)));
         Transition(backend, context, after0, ResourceAccess.NoAccess, ResourceAccess.CopyDestination);
         Transition(backend, context, after1, ResourceAccess.NoAccess, ResourceAccess.CopyDestination);
         backend.CopyBuffer(context, new BufferCopy(splitUpload, 0, after0, 0, halfSize));

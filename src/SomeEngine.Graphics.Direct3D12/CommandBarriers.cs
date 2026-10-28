@@ -178,8 +178,11 @@ internal sealed unsafe partial class D3D12Backend
             // ordinary alias switch and its full memory visibility barrier.
             if (bufferReadDependencyCount != 0)
                 EncodeBufferReadVisibility(command, barrier.Before);
-            EncodeEnhancedAliasingBatches(command, barrier.Before, barrier.After);
-            GlobalBarrier aliasMemory = new(BarrierSync.All, BarrierSync.All, BarrierAccess.Common, BarrierAccess.Common);
+            EncodeEnhancedAliasingBatches(command, barrier.Before, barrier.After, barrier.Memory);
+            GlobalBarrier aliasMemory = barrier.Memory is { } memory
+                ? new(ToBarrierSync(memory.SyncBefore), ToBarrierSync(memory.SyncAfter),
+                    ToBarrierAccess(memory.AccessBefore), ToBarrierAccess(memory.AccessAfter))
+                : new(BarrierSync.All, BarrierSync.All, BarrierAccess.Common, BarrierAccess.Common);
             BarrierGroup aliasGroup = new(BarrierType.Global, 1, pGlobalBarriers: &aliasMemory);
             D3D12CommandListFastCalls.Barrier(command.List, 1, &aliasGroup);
             return;
@@ -578,10 +581,11 @@ internal sealed unsafe partial class D3D12Backend
     private void EncodeEnhancedAliasing(
         D3D12CommandContext command,
         in AliasingResource resource,
-        bool activate)
+        bool activate,
+        MemoryBarrier? memory)
     {
         EnhancedAliasingBarrierState state =
-            GetEnhancedAliasingBarrierState(activate);
+            GetAliasingBarrierState(activate, memory);
         if (resource.Resource is Buffer publicBuffer)
         {
             D3D12Buffer buffer = RequireBuffer(publicBuffer);
@@ -645,7 +649,8 @@ internal sealed unsafe partial class D3D12Backend
     private void EncodeEnhancedAliasingBatch(
         D3D12CommandContext command,
         ReadOnlySpan<AliasingResource> resources,
-        bool activate)
+        bool activate,
+        MemoryBarrier? memory)
     {
         if (resources.IsEmpty)
             return;
@@ -665,7 +670,7 @@ internal sealed unsafe partial class D3D12Backend
             MaximumStackBatchedBarrierCount)
         {
             foreach (ref readonly AliasingResource resource in resources)
-                EncodeEnhancedAliasing(command, resource, activate);
+                EncodeEnhancedAliasing(command, resource, activate, memory);
             return;
         }
 
@@ -673,7 +678,7 @@ internal sealed unsafe partial class D3D12Backend
             stackalloc NativeBufferBarrier[Math.Max(bufferCount, 1)];
         NativeTextureBarrier* nativeTextures =
             stackalloc NativeTextureBarrier[Math.Max(maximumTextureBarrierCount, 1)];
-        EnhancedAliasingBarrierState state = GetEnhancedAliasingBarrierState(activate);
+        EnhancedAliasingBarrierState state = GetAliasingBarrierState(activate, memory);
         BarrierSync syncBefore = ToBarrierSync(state.SyncBefore);
         BarrierSync syncAfter = ToBarrierSync(state.SyncAfter);
         TextureBarrierFlags flags = state.Discard
@@ -753,7 +758,8 @@ internal sealed unsafe partial class D3D12Backend
     private void EncodeEnhancedAliasingBatches(
         D3D12CommandContext command,
         ReadOnlySpan<AliasingResource> before,
-        ReadOnlySpan<AliasingResource> after)
+        ReadOnlySpan<AliasingResource> after,
+        MemoryBarrier? memory)
     {
         CountEnhancedAliasingResources(before, out int beforeBuffers, out int beforeTextures);
         CountEnhancedAliasingResources(after, out int afterBuffers, out int afterTextures);
@@ -762,8 +768,8 @@ internal sealed unsafe partial class D3D12Backend
         if (checked(beforeBuffers + beforeMaximumTextures + afterBuffers + afterMaximumTextures) >
             MaximumStackBatchedBarrierCount)
         {
-            EncodeEnhancedAliasingBatch(command, before, activate: false);
-            EncodeEnhancedAliasingBatch(command, after, activate: true);
+            EncodeEnhancedAliasingBatch(command, before, activate: false, memory);
+            EncodeEnhancedAliasingBatch(command, after, activate: true, memory);
             return;
         }
 
@@ -782,7 +788,8 @@ internal sealed unsafe partial class D3D12Backend
             nativeBeforeBuffers,
             out int beforeBufferCount,
             nativeBeforeTextures,
-            out int beforeTextureCount);
+            out int beforeTextureCount,
+            memory);
         AppendEnhancedAliasingResources(
             command,
             after,
@@ -790,7 +797,8 @@ internal sealed unsafe partial class D3D12Backend
             nativeAfterBuffers,
             out int afterBufferCount,
             nativeAfterTextures,
-            out int afterTextureCount);
+            out int afterTextureCount,
+            memory);
 
         BarrierGroup* groups = stackalloc BarrierGroup[4];
         int groupCount = 0;
@@ -851,9 +859,10 @@ internal sealed unsafe partial class D3D12Backend
         NativeBufferBarrier* nativeBuffers,
         out int bufferDestination,
         NativeTextureBarrier* nativeTextures,
-        out int textureDestination)
+        out int textureDestination,
+        MemoryBarrier? memory)
     {
-        EnhancedAliasingBarrierState state = GetEnhancedAliasingBarrierState(activate);
+        EnhancedAliasingBarrierState state = GetAliasingBarrierState(activate, memory);
         BarrierSync syncBefore = ToBarrierSync(state.SyncBefore);
         BarrierSync syncAfter = ToBarrierSync(state.SyncAfter);
         TextureBarrierFlags flags = state.Discard
@@ -948,6 +957,14 @@ internal sealed unsafe partial class D3D12Backend
             activate ? BarrierAccess.NoAccess : BarrierAccess.Common,
             BarrierAccess.NoAccess,
             activate);
+
+    private static EnhancedAliasingBarrierState GetAliasingBarrierState(bool activate, MemoryBarrier? memory)
+    {
+        EnhancedAliasingBarrierState state = GetEnhancedAliasingBarrierState(activate);
+        return memory is { } scopes
+            ? state with { SyncBefore = scopes.SyncBefore, SyncAfter = scopes.SyncAfter }
+            : state;
+    }
 
     internal readonly record struct EnhancedAliasingBarrierState(
         PipelineSync SyncBefore,

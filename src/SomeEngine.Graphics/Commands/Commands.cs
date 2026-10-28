@@ -451,13 +451,24 @@ public readonly ref struct AliasingBarrier
     public AliasingBarrier(
         ReadOnlySpan<AliasingResource> before,
         ReadOnlySpan<AliasingResource> after)
+        : this(before, after, null)
+    {
+    }
+
+    public AliasingBarrier(
+        ReadOnlySpan<AliasingResource> before,
+        ReadOnlySpan<AliasingResource> after,
+        MemoryBarrier? memory)
     {
         Before = before;
         After = after;
+        Memory = memory;
     }
 
     public ReadOnlySpan<AliasingResource> Before { get; }
     public ReadOnlySpan<AliasingResource> After { get; }
+    /// <summary>Known access scopes on both sides of the alias handoff; absent scopes cover all accesses.</summary>
+    public MemoryBarrier? Memory { get; }
 }
 
 /// <remarks>

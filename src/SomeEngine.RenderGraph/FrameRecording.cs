@@ -847,13 +847,45 @@ internal sealed partial class FrameExecutor
             []);
         _frame.Backend.Barrier(context, new AliasingBarrier(
             CollectionsMarshal.AsSpan(aliasBefore),
-            CollectionsMarshal.AsSpan(aliasAfter)));
+            CollectionsMarshal.AsSpan(aliasAfter),
+            GetAliasingMemoryBarrier(pass, aliasBefore, aliasAfter)));
         RecordBarrierBatch(
             context,
             [],
             CollectionsMarshal.AsSpan(_beforeBufferBarriers[pass]),
             CollectionsMarshal.AsSpan(_beforeTextureBarriers[pass]),
             []);
+    }
+
+    private MemoryBarrier? GetAliasingMemoryBarrier(int pass,
+        List<AliasingResource> before, List<AliasingResource> after)
+    {
+        if (before.Count == 0 || after.Count == 0) return null;
+        PipelineSync beforeSync = default, afterSync = default;
+        ResourceAccess beforeAccess = default, afterAccess = default;
+        Queue queue = _passes[pass].Queue!;
+        foreach (AliasingResource resource in before)
+            if (!Collect(resource.Resource, ref beforeSync, ref beforeAccess)) return null;
+        foreach (AliasingResource resource in after)
+            if (!Collect(resource.Resource, ref afterSync, ref afterAccess)) return null;
+        return new MemoryBarrier(beforeSync, afterSync, beforeAccess, afterAccess);
+
+        bool Collect(Resource resource, ref PipelineSync sync, ref ResourceAccess access)
+        {
+            if (resource is not Buffer || !_resourceRows.TryGetValue(resource, out var key) ||
+                !_resourceAccessLists.TryGetValue(key, out List<int>? indices)) return false;
+            bool found = false;
+            foreach (int index in indices)
+            {
+                FrameResourceAccess row = _accesses[index];
+                if (!row.Connected || row.BufferDescriptorOnly || !IsLive(row.PassIndex)) continue;
+                if (!ReferenceEquals(_passes[row.PassIndex].Queue, queue)) return false;
+                sync |= row.Sync;
+                access |= row.Access;
+                found = true;
+            }
+            return found;
+        }
     }
 
     private void RecordAfter(int pass, CommandContext context)
