@@ -94,21 +94,10 @@ public sealed class SelectedShaderPackUpdateTests
 
     private static async Task<(int ExitCode, string Diagnostics)> UpdateAsync(ShaderFiles files, params Guid[] ids)
     {
-        DirectoryInfo? repository = new(AppContext.BaseDirectory);
-        while (repository is not null && !File.Exists(Path.Combine(repository.FullName, "SomeEngine.slnx")))
-            repository = repository.Parent;
-        if (repository is null) throw new DirectoryNotFoundException("The test output is outside its repository.");
-#if DEBUG
-        const string configuration = "Debug";
-#else
-        const string configuration = "Release";
-#endif
-        string builder = Path.Combine(repository.FullName, "templates", "DefaultProject", "Game.Build",
-            "bin", configuration, "net10.0", "Game.Build.dll");
-        Assert.True(File.Exists(builder), $"Build the referenced Game.Build project before running this test: {builder}");
+        string builder = typeof(DefaultGame.SampleApplication).Assembly.Location;
         var start = new ProcessStartInfo(Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ?? "dotnet")
         {
-            WorkingDirectory = repository.FullName,
+            WorkingDirectory = files.Root,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
