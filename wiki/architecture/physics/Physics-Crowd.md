@@ -35,7 +35,7 @@ XPBD 继续更新原 Length/Bend 乘子并投影节点。完成一次速度重�
 以调用方的 `rowsPerPacket` 交给 `EntityQueryJobs`。每包在一个来源查询范围内
 调用原 `IDeviceConstraintSource.Read(component, row, access)`；组件值和写版本从实际行取得，
 各个 `DeviceConstraintBinding.Index` 继续登记自身参数及元数据的上传写入范围。
-项目沿原查询成员版本和块版本复用已绑定的 Length、Bend 与 Joint 输入。
+项目沿原查询成员版本和块版本复用已绑定的 Length、Bend 与 Joint 输入。主体成员由项目的 CrowdPhysicsBody 与 DeviceBodyBinding 两个普通组件确定，沿其公开写计数观察实际成员及绑定变化；主体其他组件的表移动继续沿原结果消费。
 主体绑定、约束参数、双端引用、参与关系、弯曲引用缓冲、Joint 历史或其绑定发生变化时，
 原输入阶段重新读取组件并更新同一个设备表示；动画阶段继续直接维护实际段长。
 Motor 的当前动画目标继续每步写入原设备参数行。
