@@ -568,6 +568,7 @@ public sealed partial class SceneTestPlatform
             ["Startup"] = JsonSerializer.SerializeToNode(Startup, SceneJsonContext.Default.ApplicationStartupTimes),
             ["TraceDetail"] = Options.TraceDetail,
             ["TraceAllocations"] = Options.TraceAllocations,
+            ["ShadingPath"] = Options.ShadingPath.ToString(),
             ["TemporalAntialiasing"] = Options.TemporalAntialiasing,
             ["VirtualShadows"] = Options.VirtualShadows,
             ["AsyncCompute"] = Options.AsyncCompute,
