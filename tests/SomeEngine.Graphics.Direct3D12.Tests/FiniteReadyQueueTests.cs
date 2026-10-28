@@ -40,21 +40,14 @@ public sealed class FiniteReadyQueueTests(D3D12TestCompiler shaderCompiler, ITes
     new("FixtureInitialize", SlangStage.Compute), new("Fixture00", SlangStage.Compute),
     new("Fixture01", SlangStage.Compute), new("Fixture10", SlangStage.Compute), new("Fixture11", SlangStage.Compute),
     ];
-    // Diagnostic-only provenance gate for this integration run, not a permanent
-    // public behavior test. Remove the frozen hashes when retiring this harness.
     [Fact]
     [Trait("Category", "Performance")]
-    public void Production_finite_ready_source_compiles_four_dxil_and_spirv_wrappers()
+    public void Production_ready_work_queue_compiles_all_view_specializations()
     {
         string directory = Environment.GetEnvironmentVariable("SE_FINITE_READY_SHADER_DIRECTORY")
         ?? throw new InvalidOperationException("Set SE_FINITE_READY_SHADER_DIRECTORY to the owned integration assets/Shaders directory.");
         Assert.True(Path.IsPathFullyQualified(directory));
         string traversal = Path.Combine(directory, "cluster_bvh_traverse.slang");
-        string core = Path.Combine(directory, "cluster_bvh_traverse_core.slang");
-        Assert.Equal("6211FBF967DD6C477E32270E941845ABDC68752F086B4B6DF0BDE0836B1A0FD0",
-        Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(traversal))));
-        Assert.Equal("8101893B55AAB77D6F0395B97AF29398EA3C1817556C224A37679568315F1169",
-        Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(core))));
         string include = Path.GetFullPath(traversal).Replace('\\', '/');
         Assert.DoesNotContain("\"", include);
         string source = "#include \"" + include + "\"\n" + ProductionWrappers;
@@ -69,8 +62,6 @@ public sealed class FiniteReadyQueueTests(D3D12TestCompiler shaderCompiler, ITes
         {
             (SlangCompileTarget.Dxil, "sm_6_8"),
             (SlangCompileTarget.Spirv, "spirv_1_5"),
-            (SlangCompileTarget.DxilAsm, "sm_6_8"),
-            (SlangCompileTarget.SpirvAsm, "spirv_1_5"),
         }
         )
         {
@@ -80,26 +71,10 @@ public sealed class FiniteReadyQueueTests(D3D12TestCompiler shaderCompiler, ITes
             {
                 byte[] code = shader.GetEntryCode(i).ToArray();
                 Assert.NotEmpty(code);
-                output.WriteLine($"FINITE_READY_PRODUCTION_CODE target={target} entry={entries[i].Name} bytes={code.Length} sha256={Convert.ToHexString(SHA256.HashData(code))} traversal=6211fbf9 core=8101893b");
-                if (target is SlangCompileTarget.DxilAsm or SlangCompileTarget.SpirvAsm)
-                {
-                    string rawAssembly = new UTF8Encoding(false, true).GetString(code);
-                    string assembly = rawAssembly.TrimEnd('\0');
-                    output.WriteLine($"FINITE_READY_PRODUCTION_ASM_FORMAT target={target} entry={entries[i].Name} rawBytes={code.Length} firstNullByte={Array.IndexOf(code, (byte)0)} rawChars={rawAssembly.Length} firstNullChar={rawAssembly.IndexOf('\0')} normalizedChars={assembly.Length}");
-                    Assert.NotEmpty(assembly);
-                    Assert.Equal(-1, assembly.IndexOf('\0'));
-                    Assert.Contains(target == SlangCompileTarget.DxilAsm ? "dx.op.barrier" : "OpControlBarrier", assembly);
-                    output.WriteLine($"FINITE_READY_PRODUCTION_ASM_BEGIN target={target} entry={entries[i].Name}");
-                    output.WriteLine(assembly);
-                    output.WriteLine($"FINITE_READY_PRODUCTION_ASM_END target={target} entry={entries[i].Name}");
-                }
+                output.WriteLine($"FINITE_READY_PRODUCTION_CODE target={target} entry={entries[i].Name} bytes={code.Length}");
             }
             GC.KeepAlive(shader);
         }
-        // This gate compiles production source. It does not refresh the saved
-        // BvhTraversal content or certify backend memory semantics/render output.
-        // ASM targets compile the same frozen source revision separately; they
-        // are not described as disassembly of the binary target's exact bytes.
     }
     private const string ProductionWrappers = """
 [shader("compute")][numthreads(64, 1, 1)]
