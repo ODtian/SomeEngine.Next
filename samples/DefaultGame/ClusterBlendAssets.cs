@@ -18,8 +18,9 @@ internal sealed class ClusterBlendAssets
     internal required Texture Smoke { get; init; }
     internal required Texture Leaf { get; init; }
     internal required Texture CoatingNormal { get; init; }
+    internal Shader? PhysicsSkin { get; init; }
 
-    internal static async Task<ClusterBlendAssets> OpenAsync(string root, RuntimeGraphicsBackend backend)
+    internal static async Task<ClusterBlendAssets> OpenAsync(string root, RuntimeGraphicsBackend backend, string? skinShader = null)
     {
         AssetManifest manifest = AssetManifest.Load(Path.Combine(root, "Library/AssetManifest"));
         await using var loader = new AssetLoader(new LooseAssetStorage(root, manifest));
@@ -50,6 +51,8 @@ internal sealed class ClusterBlendAssets
             Smoke = await ReadTextureAsync("Blend smoke"),
             Leaf = await ReadTextureAsync("Blend leaf"),
             CoatingNormal = await ReadTextureAsync("Blend coating normal"),
+            PhysicsSkin = skinShader is null ? null : await ShaderAsset.GetAsync(loader,
+                new(Id(skinShader, ShaderAsset.FileType)), shaders, slang, session),
         };
 
         Guid Id(string name, string type) => manifest.Assets.Values.Single(entry => entry.Name == name && entry.AssetType == type).AssetGuid;

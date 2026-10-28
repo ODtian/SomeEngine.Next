@@ -202,7 +202,7 @@ public sealed partial class PhysicsSceneExample(PhysicsSceneDescription descript
         EmissiveFactor = new Vector3(color.X, color.Y, color.Z) * .12f,
     };
 
-    private static Mesh CreateBox()
+    internal static Mesh CreateBox()
     {
         Vector3[] normals = [Vector3.UnitX, -Vector3.UnitX, Vector3.UnitY, -Vector3.UnitY, Vector3.UnitZ, -Vector3.UnitZ];
         Vector2[] uv = [new(0, 0), new(1, 0), new(1, 1), new(0, 1)];
