@@ -109,8 +109,7 @@ public sealed class ClusterCompressionTests(D3D12TestCompiler shaderCompiler)
             profile, ShaderDirectory());
         uint[] result = Execute(shader, count, words, leadingBindings:
             [ResourceBinding.Null(ResourceBindingType.BufferUav), ResourceBinding.Null(ResourceBindingType.BufferUav),
-             ResourceBinding.Null(ResourceBindingType.BufferUav), ResourceBinding.Null(ResourceBindingType.BufferUav),
-             ResourceBinding.Null(ResourceBindingType.TextureUav)]);
+             ResourceBinding.Null(ResourceBindingType.BufferUav), ResourceBinding.Null(ResourceBindingType.TextureUav)]);
         uint[] masks = [1, 0x10, 4, 0x8000, 0x20, 1, 0x80, 0x100];
         var coverageByWave = new Dictionary<(uint Wave, int Address, int Iteration), (uint Expected, uint Actual)>();
         for (int index = 0; index < count; index++)
