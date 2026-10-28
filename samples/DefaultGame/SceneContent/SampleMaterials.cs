@@ -31,6 +31,16 @@ public static class SampleMaterials
         await MaterialTemplates.SaveAsync(project, standard.Reference, unlit.Reference, cancellationToken);
     }
 
+    public static async Task BuildPhysicsSkinAsync(AssetProject project, CancellationToken cancellationToken)
+    {
+        string path = Path.Combine(project.RootPath, "assets/Shaders/physics-crowd.shader");
+        using ShaderAsset skin = await ShaderAsset.OpenSourceAsync(path, cancellationToken);
+        ShaderSourceBlock inputs = await skin.GetBlockAsync<ShaderSourceBlock>(cancellationToken);
+        inputs.Specializations = SampleContent.CreateMaterialSpecializations(0);
+        await skin.SaveSourceAsync(path, cancellationToken: cancellationToken);
+        await project.BuildAsync(path, cancellationToken: cancellationToken);
+    }
+
     private static async Task SaveShaderAsync(AssetProject project, ShaderAsset shader, string fileName,
         CancellationToken cancellationToken)
     {
