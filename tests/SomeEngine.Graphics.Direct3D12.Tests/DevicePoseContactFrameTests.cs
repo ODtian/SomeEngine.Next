@@ -82,7 +82,7 @@ public sealed partial class DeviceAvbdTests
         using var anchors = new DeviceContactBodies(backend, device, 4, 3);
         using var histories = new DeviceConstraintState<DeviceAvbdContactState>(backend, device, 4, "DeviceAvbdContactStates");
         using var responses = new DeviceConstraintState<DeviceContactResponseState>(backend, device, 4, "DeviceContactResponses");
-        using var matching = new DeviceContactMatches(backend, device, world, points, parameters, detection,
+        using var matching = new DeviceContactMatches(backend, device, world, points, parameters, detection, poseBodies.Bodies, anchors,
             CompileContactMatching(), new(.02f, .99f, true), 17, 64);
         using var currentGeometry = matching.CreateGeometryUpdate(poseBodies.Bodies, anchors, CompileCurrentContactGeometry());
         using var refresh = ContactPoints.Create(world, poses, points, detected, new AverageContactMaterials(),

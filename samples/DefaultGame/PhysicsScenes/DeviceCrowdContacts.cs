@@ -104,7 +104,7 @@ internal sealed class DeviceCrowdContacts : IDisposable
         _anchors = Keep(new DeviceContactBodies(backend, device, contactCapacity, 5));
         Histories = Keep(new DeviceConstraintState<DeviceAvbdContactState>(backend, device, contactCapacity, "DeviceAvbdContactStates"));
         Responses = Keep(new DeviceConstraintState<DeviceContactResponseState>(backend, device, contactCapacity, "DeviceContactResponses"));
-        _matching = Keep(new DeviceContactMatches(backend, device, world, points, Parameters, _detection, shaders.Matching(),
+        _matching = Keep(new DeviceContactMatches(backend, device, world, points, Parameters, _detection, bodies, _anchors, shaders.Matching(),
             new(.02f, .99f, true), contactCapacity * 2 + 1, 64));
         _current = Keep(_matching.CreateGeometryUpdate(bodies, _anchors, shaders.ContactGeometry()));
         _refresh = Keep(ContactPoints.Create(world, poses, points, _detected, new AverageContactMaterials(),

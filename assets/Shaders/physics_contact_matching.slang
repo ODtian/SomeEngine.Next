@@ -2,16 +2,28 @@
 #include "physics_collision_contact.slang"
 #include "physics_contact_types.slang"
 #include "physics_constraint_selection.slang"
+#include "physics_contact_anchor_math.slang"
 RWStructuredBuffer<DeviceContactConstraint> DeviceContacts;
 RWStructuredBuffer<DeviceConstraintMetadata> DeviceContactsMetadata;
+RWStructuredBuffer<DeviceContactBody> DeviceContactBodyLinks;
+struct DeviceMatchingStoredBodyLinks : IDeviceContactBodyLinks
+{
+    DeviceContactBody read(uint index) { return DeviceContactBodyLinks[index]; }
+};
 struct DeviceContactMatchSettings
 {
     uint points; uint pairs; uint buckets; float squaredDistance;
-    float normalDot;
+    float normalDot; uint inputBodiesPerContact;
 };
 ConstantBuffer<DeviceContactMatchSettings> ContactMatchSettings;
 StructuredBuffer<DeviceCollisionContact> DeviceMatchInputContacts;
 StructuredBuffer<uint> DeviceMatchInputCounts;
+StructuredBuffer<uint> DeviceMatchInputBodyCounts;
+StructuredBuffer<DeviceContactBody> DeviceMatchInputBodies;
+struct DeviceDetectedContactBodyLinks : IDeviceContactBodyLinks
+{
+    DeviceContactBody read(uint index) { return DeviceMatchInputBodies[index]; }
+};
 StructuredBuffer<uint2> DeviceContactMatchingSelection;
 RWStructuredBuffer<uint> ContactMatchHeads;
 RWStructuredBuffer<uint> ContactMatchNext;
@@ -46,7 +58,17 @@ void MatchDeviceContacts(uint3 id:SV_DispatchThreadID)
     uint count=DeviceMatchInputCounts[pair];
     for(uint input=0;input<count;input++)
     {
-        DeviceCollisionContact current=DeviceMatchInputContacts[pair*4+input];
+        uint inputIndex=pair*4+input;
+        DeviceCollisionContact current=DeviceMatchInputContacts[inputIndex];
+        bool start=current.prediction.enabled!=0;
+        float3 currentPosition=current.worldPoint;
+        if(ContactMatchSettings.inputBodiesPerContact!=0)
+        {
+            DeviceDetectedContactBodyLinks links;
+            float3 currentDelta;
+            deviceContactPositions(inputIndex*ContactMatchSettings.inputBodiesPerContact,uint(current.firstBodyCount),
+                DeviceMatchInputBodyCounts[inputIndex],start,links,currentDelta,currentPosition);
+        }
         uint match=0xffffffff; float distance=ContactMatchSettings.squaredDistance; bool featureMatch=false;
         for(uint row=ContactMatchHeads[deviceContactPairBucket(current.first,current.second)];row!=0xffffffff;row=ContactMatchNext[row])
         {
@@ -55,7 +77,10 @@ void MatchDeviceContacts(uint3 id:SV_DispatchThreadID)
             if(claimed) continue;
             DeviceContactConstraint old=DeviceContacts[row];
             if(any(current.first!=old.firstGeometry)||any(current.second!=old.secondGeometry)||dot(current.normal,old.normal)<ContactMatchSettings.normalDot) continue;
-            float3 delta=current.worldPoint-old.worldPoint;
+            float3 oldDelta,oldPosition;
+            DeviceMatchingStoredBodyLinks oldLinks;
+            deviceContactPositions(old.bodyOffset,old.firstBodyCount,old.bodyCount,start,oldLinks,oldDelta,oldPosition);
+            float3 delta=currentPosition-oldPosition;
             float squared=dot(delta,delta);
             if(squared>ContactMatchSettings.squaredDistance) continue;
             bool same=current.firstFeature==old.firstFeature&&current.secondFeature==old.secondFeature;

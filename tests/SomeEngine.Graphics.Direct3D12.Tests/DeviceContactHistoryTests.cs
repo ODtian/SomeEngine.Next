@@ -49,7 +49,7 @@ public sealed partial class DeviceAvbdTests
         using var anchors = new DeviceContactBodies(backend, device, 4, 2);
         using var histories = new DeviceConstraintState<DeviceAvbdContactState>(backend, device, 4, "DeviceAvbdContactStates");
         using var responses = new DeviceConstraintState<DeviceContactResponseState>(backend, device, 4, "DeviceContactResponses");
-        using var matching = new DeviceContactMatches(backend, device, world, points, parameters, detection,
+        using var matching = new DeviceContactMatches(backend, device, world, points, parameters, detection, bodies, anchors,
             CompileContactMatching(), new(.25f, .99f, true), bucketCount: 17, threadsPerGroup: 64);
         using var refresh = ContactPoints.Create(world, poses, points, detected, new AverageContactMaterials(),
             matching.Components(new DeviceHistoryComponents(histories, responses)), new(.25f, .99f, true));
@@ -134,7 +134,7 @@ public sealed partial class DeviceAvbdTests
         using var anchors = new DeviceContactBodies(backend, device, 4, 2);
         using var histories = new DeviceConstraintState<DeviceAvbdContactState>(backend, device, 4, "DeviceAvbdContactStates");
         using var responses = new DeviceConstraintState<DeviceContactResponseState>(backend, device, 4, "DeviceContactResponses");
-        using var matching = new DeviceContactMatches(backend, device, world, points, parameters, detection,
+        using var matching = new DeviceContactMatches(backend, device, world, points, parameters, detection, bodies, anchors,
             CompileContactMatching(), new(.25f, .99f, true), bucketCount: 17, threadsPerGroup: 64);
         using var currentContacts = matching.CreateGeometryUpdate(bodies, anchors, CompileCurrentContactGeometry());
         using var refresh = ContactPoints.Create(world, poses, points, detected, new AverageContactMaterials(),
@@ -223,7 +223,7 @@ public sealed partial class DeviceAvbdTests
         using var anchors = new DeviceContactBodies(backend, device, 4, 2);
         using var histories = new DeviceConstraintState<DeviceAvbdContactState>(backend, device, 4, "DeviceAvbdContactStates");
         using var responses = new DeviceConstraintState<DeviceContactResponseState>(backend, device, 4, "DeviceContactResponses");
-        using var matching = new DeviceContactMatches(backend, device, world, points, parameters, detection,
+        using var matching = new DeviceContactMatches(backend, device, world, points, parameters, detection, bodies, anchors,
             CompileContactMatching(), new(.25f, .99f, true), bucketCount: 17, threadsPerGroup: 64);
         using var currentContacts = matching.CreateGeometryUpdate(bodies, anchors, CompileCurrentContactGeometry());
         using var refresh = ContactPoints.Create(world, poses, points, detected, new AverageContactMaterials(),
@@ -319,7 +319,7 @@ public sealed partial class DeviceAvbdTests
         using var anchors = new DeviceContactBodies(backend, device, 4, 2);
         using var histories = new DeviceConstraintState<DeviceAvbdContactState>(backend, device, 4, "DeviceAvbdContactStates");
         using var responses = new DeviceConstraintState<DeviceContactResponseState>(backend, device, 4, "DeviceContactResponses");
-        using var matching = new DeviceContactMatches(backend, device, world, points, parameters, detection,
+        using var matching = new DeviceContactMatches(backend, device, world, points, parameters, detection, bodies, anchors,
             CompileContactMatching(), new(.25f, .99f, true), bucketCount: 17, threadsPerGroup: 64);
         using var currentContacts = matching.CreateGeometryUpdate(bodies, anchors, CompileCurrentContactGeometry());
         using var refresh = ContactPoints.Create(world, poses, points, detected, new AverageContactMaterials(),
