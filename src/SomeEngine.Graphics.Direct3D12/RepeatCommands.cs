@@ -19,9 +19,14 @@ internal sealed unsafe partial class D3D12Backend
                 throw new InvalidOperationException("Finish the current recording before repeating commands.");
             commands = default;
             D3D12CommandSlot? recording = _repeatCommands;
-            if (recording is null || !recording.TryClaim())
-            {
+            if (recording is null)
                 return false;
+            if (!recording.TryClaim())
+            {
+                // Queue retirement returns storage whose GPU execution has completed.
+                _queue.CollectCompleted();
+                if (!recording.TryClaim())
+                    return false;
             }
             bool completed = false;
             try
@@ -50,6 +55,7 @@ internal sealed unsafe partial class D3D12Backend
             _repeatParameters[source] = data;
         internal bool TryCaptureRepeatedCommands()
         {
+            using var trace = EngineTrace.Begin(RhiTrace.CaptureRepeatedResources);
             CachedNativeCommands commands = _nativeRecording;
             if (!commands.Repeatable) return false;
             foreach (var parameter in _repeatParameters)

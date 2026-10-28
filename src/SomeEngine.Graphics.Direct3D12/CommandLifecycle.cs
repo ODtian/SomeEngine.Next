@@ -668,14 +668,11 @@ internal sealed unsafe partial class D3D12Backend
 
             _repeatCommands = null;
 
-            D3D12CommandSlot? slot = null;
-            foreach (D3D12CommandSlot candidate in _slots)
+            D3D12CommandSlot? slot = TryClaimRecording();
+            if (slot is null)
             {
-                if (candidate.TryClaim())
-                {
-                    slot = candidate;
-                    break;
-                }
+                _queue.CollectCompleted();
+                slot = TryClaimRecording();
             }
             if (slot is null)
             {
@@ -697,6 +694,13 @@ internal sealed unsafe partial class D3D12Backend
                 slot.CompleteUse();
                 throw;
             }
+        }
+
+        private D3D12CommandSlot? TryClaimRecording()
+        {
+            foreach (D3D12CommandSlot recording in _slots)
+                if (recording.TryClaim()) return recording;
+            return null;
         }
 
         internal RecordedCommands EndCommands()

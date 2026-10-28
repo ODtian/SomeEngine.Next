@@ -37,7 +37,6 @@ public sealed class RepeatCommandsTests
                 QueueCompletion completion = backend.Submit(queue, new([], [], [commands], [], []));
                 Assert.Equal(WaitStatus.Completed, backend.WaitCpu(completion, TimeSpan.FromSeconds(10)));
             }
-            backend.CollectCompleted(device);
             using MappedBuffer result = backend.Map(destination, MapType.Read, BufferRange.Whole);
             result.Invalidate(result.Range);
             Assert.All(result.Bytes.ToArray(), item => Assert.Equal(value, item));

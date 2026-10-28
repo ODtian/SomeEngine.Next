@@ -49,7 +49,6 @@ public sealed class RepeatedCommandTests
                 using MappedBuffer result = backend.Map(destination, MapType.Read, BufferRange.Whole);
                 result.Invalidate(new(0, 64));
                 Assert.Equal(data.AsSpan((int)offset, 64).ToArray(), result.Bytes.ToArray());
-                backend.CollectCompleted(device);
             }
         }
         finally
