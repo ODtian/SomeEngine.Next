@@ -94,29 +94,38 @@ public sealed partial class ClusterPipelineSystem
         RecordCasterChange([], entities);
     }
 
-    private void RecordTextureCasterChanges(HashSet<Texture> changed)
+    private bool RecordTextureCasterChanges(HashSet<Texture> changed)
     {
-        if (_installedRasterStages is null) return;
+        if (_installedRasterStages is null) return false;
         var materials = new HashSet<long>();
-        var textures = new HashSet<Texture>();
-        foreach (ClusterRasterInvocation raster in _installedRasterStages.Invocations)
-        {
-            textures.Clear();
-            raster.CommandBindings.CollectTextures(textures);
-            if (textures.Overlaps(changed)) materials.Add(raster.Material.MaterialId);
-        }
-        // Indexed textures live in the material scalar payload, not the direct command
-        // binding key. Their contents can change without replacing the material property.
+        // Direct bindings and indexed scalar textures share the raster stage's
+        // resolved depth dependencies. Undeclared evaluators consume every texture.
         foreach (Material material in _materialAssignments.Current.DistinctMaterials)
-            for (uint property = 0; property < material.PropertyCount; property++)
-                if (material.GetTexture(property) is { } texture && changed.Contains(texture))
-                {
-                    materials.Add(material.MaterialId);
-                    break;
-                }
+        {
+            if (_rasterStages!.TryGetMaterialDepthInputs(material.MaterialId, out var properties))
+            {
+                foreach (uint property in properties)
+                    if (material.GetTexture(property) is { } texture && changed.Contains(texture))
+                    {
+                        materials.Add(material.MaterialId);
+                        break;
+                    }
+            }
+            else
+            {
+                for (uint property = 0; property < material.PropertyCount; property++)
+                    if (material.GetTexture(property) is { } texture && changed.Contains(texture))
+                    {
+                        materials.Add(material.MaterialId);
+                        break;
+                    }
+            }
+        }
+        if (materials.Count == 0) return false;
         var entities = new HashSet<Entity>();
         _materialAssignments.Current.CollectMaterialEntities(materials, entities);
         RecordCasterChange([], entities);
+        return true;
     }
 
     /// <summary>Collects current instance rows affected by uploaded geometry and extracted raster inputs.</summary>

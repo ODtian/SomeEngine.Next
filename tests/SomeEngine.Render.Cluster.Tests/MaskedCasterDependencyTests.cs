@@ -27,7 +27,7 @@ public sealed class MaskedCasterDependencyTests : IClassFixture<MaskedCasterDepe
     {
         SlangCompileTarget target = backend == "Vulkan" ? SlangCompileTarget.Spirv : SlangCompileTarget.Dxil;
         Shader declaredShader = target == SlangCompileTarget.Dxil ? _shaders.Mask :
-            Compile("Declared masked depth inputs", MaskSource(), target);
+            _shaders.SpirvMask;
         Shader conservativeShader = target == SlangCompileTarget.Dxil ? _shaders.Conservative :
             Compile("Conservative masked depth inputs",
                 MaskSource().Replace("[MaterialDepthInputs(\"AlbedoMap,MaterialSampler\")]", ""), target);
@@ -209,13 +209,15 @@ public sealed class MaskedCasterDependencyTests : IClassFixture<MaskedCasterDepe
         }
     }
 
-    [Fact]
-    public async Task InPlaceAlphaUploadRefreshesTheCasterAtItsPublicCompletionBoundary()
+    [Theory]
+    [InlineData("D3D12")]
+    [InlineData("Vulkan")]
+    public async Task InPlaceAlphaUploadRefreshesTheCasterAtItsPublicCompletionBoundary(string backend)
     {
-        Shader shader = _shaders.Mask;
+        Shader shader = backend == "Vulkan" ? _shaders.SpirvMask : _shaders.Mask;
         Mesh plane = await RasterTestGeometry.CreatePlaneAsync();
-        await using var changed = await FrameStageScene.CreateAsync("D3D12", true, Options(), plane, Shadows());
-        await using var fresh = await FrameStageScene.CreateAsync("D3D12", true, Options(), plane, Shadows());
+        await using var changed = await FrameStageScene.CreateAsync(backend, true, Options(), plane, Shadows());
+        await using var fresh = await FrameStageScene.CreateAsync(backend, true, Options(), plane, Shadows());
         Configure(changed);
         Configure(fresh);
         Texture texture = AlphaPattern(0);
@@ -385,6 +387,8 @@ public sealed class MaskedCasterDependencyTests : IClassFixture<MaskedCasterDepe
     public sealed class MaskedShaders
     {
         private readonly Lazy<Shader> _mask = new(() => Compile("Declared masked depth inputs", MaskSource()));
+        private readonly Lazy<Shader> _spirvMask = new(() => Compile("Declared masked depth inputs", MaskSource(),
+            SlangCompileTarget.Spirv));
         private readonly Lazy<Shader> _conservative = new(() => Compile("Conservative masked depth inputs",
             MaskSource().Replace("[MaterialDepthInputs(\"AlbedoMap,MaterialSampler\")]", "")));
         private readonly Lazy<Shader> _coverage = new(() => Compile("Roughness controls alpha coverage", MaskSource()
@@ -394,6 +398,7 @@ public sealed class MaskedCasterDependencyTests : IClassFixture<MaskedCasterDepe
             MaskSource().Replace(">= 0.5", ">= 0.8")));
 
         internal Shader Mask => _mask.Value;
+        internal Shader SpirvMask => _spirvMask.Value;
         internal Shader Conservative => _conservative.Value;
         internal Shader Coverage => _coverage.Value;
         internal Shader Cutoff => _cutoff.Value;

@@ -197,9 +197,9 @@ public sealed partial class ClusterPipelineSystem
                     _textureScalarChanges.Add(address);
             }
         // AcceptMaterialTextures already queues the accepted inputs and removes retired ones.
-        // Same-backing content changes also invalidate scalar preparation and retained depth.
-        _rasterRevision = checked(_rasterRevision + 1);
-        RecordTextureCasterChanges(changed);
+        // Same-backing content changes refresh scalar preparation. Declared depth textures
+        // also refresh retained depth and the casters that consume them.
+        if (RecordTextureCasterChanges(changed)) _rasterRevision = checked(_rasterRevision + 1);
     }
 
     private void UpdateMaterialTextureInputs(ref RenderGraphFrame frame)

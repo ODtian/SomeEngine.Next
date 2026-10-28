@@ -123,6 +123,7 @@ struct StaticPositionEval : IVertexEvaluate
     Vertex readLane(Vertex value, uint lane) { return WaveReadLaneAt(value, lane); }
 };
 
+[MaterialDepthInputs("")]
 struct StaticVertexEval : IVertexEvaluate
 {
     typedef StandardVertex Vertex;
