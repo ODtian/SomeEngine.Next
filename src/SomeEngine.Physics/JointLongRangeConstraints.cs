@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
+using SomeEngine.ECS.Relations;
 using SomeEngine.Job;
 
 namespace SomeEngine.Physics;
@@ -82,8 +83,8 @@ internal sealed class JointLongRangeData(JointLongRangeSettings settings)
             for (int index = 0; index < bounds.Count; index++)
             {
                 ref LongRangeJointBound bound = ref bounds[index];
-                JointBoundGeometry geometry = GetGeometry(joints, row.Entity, in bound, bodies, false);
-                JointBoundGeometry start = GetGeometry(joints, row.Entity, in bound, bodies, true);
+                JointBoundGeometry geometry = GetGeometry(joints, row, in bound, bodies, false);
+                JointBoundGeometry start = GetGeometry(joints, row, in bound, bodies, true);
                 Vector3 direction = geometry.Distance > 0 ? geometry.Delta / geometry.Distance : Vector3.Zero;
                 float mobility = BodyConstraintMath.GetWeight(in bodies.ReadMass(geometry.FirstBody), in bodies.ReadPose(geometry.FirstBody),
                     direction, Vector3.Cross(geometry.FirstOffset, direction))
@@ -116,7 +117,7 @@ internal sealed class JointLongRangeData(JointLongRangeSettings settings)
         {
             joints.TryGetRow(reference.Joint, out QueryRow row);
             ref readonly LongRangeJointBound bound = ref row.ReadBuffer<LongRangeJointBound>().AsSpan()[reference.Index];
-            JointBoundGeometry geometry = GetGeometry(joints, row.Entity, in bound, bodies, false);
+            JointBoundGeometry geometry = GetGeometry(joints, row, in bound, bodies, false);
             Evaluate(in bound, in geometry, out float force, out float penalty, out _);
             float side = body == geometry.LastBody ? 1 : -1;
             Vector3 offset = body == geometry.LastBody ? geometry.LastOffset : geometry.FirstOffset;
@@ -132,7 +133,7 @@ internal sealed class JointLongRangeData(JointLongRangeSettings settings)
             for (int index = 0; index < bounds.Count; index++)
             {
                 ref LongRangeJointBound bound = ref bounds[index];
-                JointBoundGeometry geometry = GetGeometry(joints, row.Entity, in bound, bodies, false);
+                JointBoundGeometry geometry = GetGeometry(joints, row, in bound, bodies, false);
                 Evaluate(in bound, in geometry, out _, out _, out Vector2 multiplier);
                 bound.Multiplier = multiplier;
             }
@@ -144,7 +145,7 @@ internal sealed class JointLongRangeData(JointLongRangeSettings settings)
         foreach (QueryRow row in joints.Rows)
             foreach (ref readonly LongRangeJointBound bound in row.ReadBuffer<LongRangeJointBound>().AsSpan())
             {
-                JointBoundGeometry geometry = GetGeometry(joints, row.Entity, in bound, bodies, false);
+                JointBoundGeometry geometry = GetGeometry(joints, row, in bound, bodies, false);
                 var error = new PhysicsConstraintError(MathF.Max(0, MathF.Max(bound.Minimum - geometry.Distance, geometry.Distance - bound.Maximum)), 0);
                 errors.Add(geometry.FirstBody, in error); errors.Add(geometry.LastBody, in error);
             }
@@ -155,16 +156,24 @@ internal sealed class JointLongRangeData(JointLongRangeSettings settings)
         DistanceRangeMath.Evaluate(bound.Minimum, bound.Maximum, float.PositiveInfinity, bound.Penalty,
             bound.Multiplier, bound.InitialError, settings.InitialErrorFraction, geometry.Distance, out force, out penalty, out multiplier);
 
-    private static JointBoundGeometry GetGeometry(scoped PhysicsQueryRows joints, Entity firstJoint,
+    private static JointBoundGeometry GetGeometry(scoped PhysicsQueryRows joints, scoped QueryRow first,
         in LongRangeJointBound bound, scoped PhysicsBodies bodies, bool start)
     {
-        var first = new JointGraphAnchor(firstJoint, bound.FirstEnd);
-        var last = new JointGraphAnchor(bound.OtherJoint, bound.OtherEnd);
-        Entity firstBody = JointLongRangeGraph.ReadBody(joints, first), lastBody = JointLongRangeGraph.ReadBody(joints, last);
-        DistanceRangeMath.ReadAnchor(firstBody, JointLongRangeGraph.ReadLocal(joints, first), bodies, start, out Vector3 firstPoint, out Vector3 firstOffset);
-        DistanceRangeMath.ReadAnchor(lastBody, JointLongRangeGraph.ReadLocal(joints, last), bodies, start, out Vector3 lastPoint, out Vector3 lastOffset);
+        joints.TryGetRow(bound.OtherJoint, out QueryRow last);
+        ReadAnchor(first, bound.FirstEnd, bodies, start, out Entity firstBody, out Vector3 firstPoint, out Vector3 firstOffset);
+        ReadAnchor(last, bound.OtherEnd, bodies, start, out Entity lastBody, out Vector3 lastPoint, out Vector3 lastOffset);
         Vector3 delta = lastPoint - firstPoint;
         return new(firstBody, lastBody, firstOffset, lastOffset, delta, delta.Length());
+    }
+
+    private static void ReadAnchor(scoped QueryRow row, JointEnd end, scoped PhysicsBodies bodies, bool start,
+        out Entity body, out Vector3 point, out Vector3 offset)
+    {
+        ref readonly var endpoints = ref row.ReadRef<DirectedRelationEndpoints<JointConstraint>>();
+        ref readonly JointConstraint joint = ref row.ReadRef<JointConstraint>();
+        body = end == JointEnd.Source ? endpoints.Source : endpoints.Target;
+        Vector3 local = end == JointEnd.Source ? joint.SourceFrame.Position : joint.TargetFrame.Position;
+        DistanceRangeMath.ReadAnchor(body, local, bodies, start, out point, out offset);
     }
 
     private readonly record struct JointBoundReference(Entity Joint, int Index);
