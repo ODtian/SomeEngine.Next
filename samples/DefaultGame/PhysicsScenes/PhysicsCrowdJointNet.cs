@@ -38,10 +38,19 @@ public sealed partial class PhysicsCrowdScene
         foreach (SceneJointData input in data.Joints)
         {
             Entity first = nodes[input.BodyA], second = nodes[input.BodyB];
-            Vector3 firstPoint = ToYUpVector(data.Bodies[input.BodyA].Position) + origin + ToYUpVector(input.PointA);
-            Vector3 secondPoint = ToYUpVector(data.Bodies[input.BodyB].Position) + origin + ToYUpVector(input.PointB);
-            var source = new JointFrame(firstPoint - _world.Read<BodyPose>(first).Position, Quaternion.Identity);
-            var target = new JointFrame(secondPoint - _world.Read<BodyPose>(second).Position, Quaternion.Identity);
+            SceneBodyData firstData = data.Bodies[input.BodyA], secondData = data.Bodies[input.BodyB];
+            Vector3 firstPosition = _world.Read<BodyPose>(first).Position;
+            Vector3 secondPosition = _world.Read<BodyPose>(second).Position;
+            Vector3 firstPoint = ToYUpVector(firstData.Position) + origin + ToYUpVector(input.PointA);
+            var source = new JointFrame(firstPoint - firstPosition, Quaternion.Identity);
+            double offsetX = (secondData.Position[0] + input.PointB[0]) - (firstData.Position[0] + input.PointA[0]);
+            double offsetY = (secondData.Position[2] + input.PointB[2]) - (firstData.Position[2] + input.PointA[2]);
+            double offsetZ = (firstData.Position[1] + input.PointA[1]) - (secondData.Position[1] + input.PointB[1]);
+            // Derive both frames from one realized point and retain the declared offset between the points.
+            var target = new JointFrame(new(
+                (float)((double)firstPosition.X + source.Position.X + offsetX - secondPosition.X),
+                (float)((double)firstPosition.Y + source.Position.Y + offsetY - secondPosition.Y),
+                (float)((double)firstPosition.Z + source.Position.Z + offsetZ - secondPosition.Z)), Quaternion.Identity);
             Entity joint = _world.CreateRelation(first, second,
                 JointConstraints.CreateBall(source, target, float.PositiveInfinity)).Entity;
             _world.Add(joint, new ScenePhysicsJoint());

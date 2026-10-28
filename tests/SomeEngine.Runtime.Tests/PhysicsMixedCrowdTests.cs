@@ -19,6 +19,49 @@ namespace SomeEngine.Runtime.Tests;
 public sealed class PhysicsMixedCrowdTests(ITestOutputHelper output)
 {
     [Fact]
+    public void TheRigidJointNetBeginsWithCoincidentJointFrames()
+    {
+        using var backend = D3D12GraphicsBackend.Create();
+        backend.TryEnumerateAdapters(new(AdapterPreference.HighPerformance, IncludeSoftware: false), [], out int count);
+        var adapters = new AdapterInfo[count];
+        backend.TryEnumerateAdapters(new(AdapterPreference.HighPerformance, IncludeSoftware: false), adapters, out _);
+        using Device device = backend.CreateDevice(new(adapters.First(adapter => adapter.HardwareAccelerated).Id,
+            [new(QueueType.Compute)], requiredFeatures: DeviceFeatures.IndirectCommands));
+        using var scheduler = new Scheduler(new() { WorkerCount = 2 });
+        using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using var scene = PhysicsCrowdExample.CreateMixedDevice(1, 250, 2, 0, backend, device).CreateSimulation(world);
+        var joints = new List<(JointConstraint Joint, Entity Source, Entity Target)>();
+        QueryHandle query = world.Query(new QueryDefinitionBuilder().Read<JointConstraint>()
+            .Read<DirectedRelationEndpoints<JointConstraint>>());
+        world.ExecuteReadQuery(query, ref joints,
+            static (scoped QueryCursor rows, ref List<(JointConstraint Joint, Entity Source, Entity Target)> joints) =>
+            {
+                foreach (QueryRow row in rows.Rows)
+                {
+                    var ends = row.Read<DirectedRelationEndpoints<JointConstraint>>();
+                    joints.Add((row.Read<JointConstraint>(), ends.Source, ends.Target));
+                }
+            });
+        world.ReleaseQuery(query);
+        double maximumGap = 0;
+        var links = joints.Where(link => world.Has<BoxGeometry>(link.Source)
+            && world.Has<BoxGeometry>(link.Target)).ToList();
+        Assert.NotEmpty(links);
+        foreach (var link in links)
+        {
+            BodyPose source = world.Read<BodyPose>(link.Source), target = world.Read<BodyPose>(link.Target);
+            Vector3 sourceArm = Vector3.Transform(link.Joint.SourceFrame.Position, source.Rotation);
+            Vector3 targetArm = Vector3.Transform(link.Joint.TargetFrame.Position, target.Rotation);
+            double x = ((double)target.Position.X - source.Position.X) + targetArm.X - sourceArm.X;
+            double y = ((double)target.Position.Y - source.Position.Y) + targetArm.Y - sourceArm.Y;
+            double z = ((double)target.Position.Z - source.Position.Z) + targetArm.Z - sourceArm.Z;
+            maximumGap = Math.Max(maximumGap, Math.Sqrt(x * x + y * y + z * z));
+        }
+        output.WriteLine($"JointFrameMaximumGap={maximumGap:R}");
+        Assert.InRange(maximumGap, 0, 1e-7);
+    }
+
+    [Fact]
     public void TheRigidJointNetAndBoneClothUseOneCompletedFrame()
     {
         using var backend = D3D12GraphicsBackend.Create();
