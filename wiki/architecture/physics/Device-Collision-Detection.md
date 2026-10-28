@@ -98,6 +98,40 @@ detectDeviceCollision(id.x, kernel);
 104 字节设备头与当前 CPU 结构对齐，普通检测写入 `Prediction.Enabled=false` 和零样本时刻；
 样本时刻的设备布局使用两个 uint 保存原 double 位模式。
 
+## 刚体预测接触
+
+`physics_collision_prediction.slang` 提供显式 `predictDeviceRigidCollision(work, kernel)` 入口。
+它读取原 `DeviceGeometryReference.firstBody` 对应的刚体状态，在共同步起点重建形状框架，
+沿 `IDeviceCollisionPrediction` 取得分离平面和候选流形，再用双方采样锚在预测状态下的
+相对位移筛选接近。接触保存起点法向、间距、几何局部锚和 Body 局部锚，
+`Prediction.SampleTime` 使用本次 `PhysicsStepContext.StartTime`。
+检测参数沿每个 kernel 原有的 256 字节范围传递该时刻。
+
+`IDeviceCollisionPrediction` 复用普通窄阶段并增加两个实际操作：
+`getMaximumProjection(geometry, direction)` 给出具体形状沿单位方向的最远投影，
+`getPredictedManifold(..., manifoldDistance, points)` 按本 pair 的候选距离产生流形。
+具体凸形状的 support 和外扩半径提供投影；内置凸形状碰撞的带距离重载复用原裁剪算法。
+预测距离由起点间距和两侧运动闭合量形成，逐点筛选仍使用项目的原接触距离。
+闭合量读取同一 Body 的步初及预测 COM、旋转。对单位方向 `u`，
+`d = inverse(Rpredicted) * u - inverse(Rstart) * u`；几何副本取原局部形状、
+单位旋转与 `position = -CenterOfMass`，沿 `d / |d|` 的最远投影乘 `|d|`，
+再加上 `dot(u, predictedCOM - startCOM)`。合并后取与零的最大值；
+`d` 为零时旋转项为零。此值界住同一材料点在两端姿势间的投影位移，
+first 使用法向、second 使用反向，覆盖旋转中靠近的原流形面点。
+
+刚体候选范围由 `physics_rigid_geometry_motion.slang` 中的
+`DeviceRigidMotionUpdate<TBounds>` 生成。`TBounds` 实现
+`IDeviceGeometryBounds.getBounds(DeviceGeometryInput)`，仅计算给定形状框架的范围。
+内置球、盒和凸包更新器复用此计算；运动更新器读取同一设备 Body 的步初、共同预测和
+当前姿势，合并三个范围。发生转动时，步初范围相对质心的最远角点给出包围半径，
+沿步初至预测质心的线段扩张该半径，覆盖本步的转动范围。
+项目通过现有 `UpdateDeviceGeometry` 和具体 shader 选择该更新器，再执行原网格构建。
+
+DefaultGame 料仓显式选择运动范围和刚体预测检测。完整数据链为
+Body 预测 → 几何运动范围 → 网格与类型 bins → 起点预测接触 → 原接触匹配及几何刷新
+→ AVBD → 速度响应 → 完成帧读回。匹配和几何刷新沿 `Prediction.Enabled` 选择相同的
+步初锚，AVBD 用当前锚相对起点锚的位移形成接触间距；响应时间继续由共同子步持有。
+
 `DeviceCollisionReadback` 在构造时选择 CPU 输出。`None` 保留驻留结果，CPU 结果数组为空；
 `Distances` 和 `Contacts` 分别取得所选数据的读回 Buffer 区间及 CPU 容量。
 检测先读回所选连续 bin 的起止位置，共 8 字节。`Count` 为这两个位置之差。

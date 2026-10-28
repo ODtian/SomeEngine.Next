@@ -60,6 +60,7 @@ struct DeviceDetectionParameters
     uint workItems;
     uint bodiesPerContact;
     uint firstBin;
+    uint2 startTime;
 };
 
 ConstantBuffer<DeviceDetectionParameters> DetectionParameters;
@@ -342,6 +343,11 @@ struct DeviceConvexCollision<TFirst : IDeviceConvex, TSecond : IDeviceConvex> : 
         DeviceGeometryDistance distance, out DeviceGeometryDistance points[4])
     {
         return manifoldDevicePair<TFirst, TSecond>(work, first, second, distance, points);
+    }
+    uint manifold(uint work, DeviceGeometryInput first, DeviceGeometryInput second,
+        DeviceGeometryDistance distance, float manifoldDistance, out DeviceGeometryDistance points[4])
+    {
+        return manifoldDevicePair<TFirst, TSecond>(work, first, second, distance, manifoldDistance, points);
     }
 };
 

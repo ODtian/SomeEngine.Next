@@ -26,10 +26,36 @@ internal sealed partial class PhysicsSceneShaders
         };
         """;
 
-    private ComputePipelineDesc ShapePairDetection(string name, int firstType, string first, string second, bool hull = false) =>
-        Compile(name, (hull ? "#include \"physics_collision_hull.slang\"\n" : "") + $$"""
+    private ComputePipelineDesc ShapePairDetection(string name, int firstType, string first, string second,
+        bool hull = false, bool prediction = false)
+    {
+        string predictionMethods = prediction ? $$"""
+            float getMaximumProjection(DeviceGeometryInput geometry, float3 direction)
+            {
+                if (geometry.geometryType == {{firstType}})
+                {
+                    {{first}} shape;
+                    return dot(shape.support(geometry, direction).point, direction) + shape.radius(geometry);
+                }
+                {{second}} shape;
+                return dot(shape.support(geometry, direction).point, direction) + shape.radius(geometry);
+            }
+            uint getPredictedManifold(uint work, DeviceGeometryInput first, DeviceGeometryInput second,
+                DeviceGeometryDistance distance, float manifoldDistance, out DeviceGeometryDistance points[4])
+            {
+                if (first.geometryType == {{firstType}})
+                {
+                    DeviceConvexCollision<{{first}},{{second}}> shape;
+                    return shape.manifold(work, first, second, distance, manifoldDistance, points);
+                }
+                DeviceConvexCollision<{{second}},{{first}}> shape;
+                return shape.manifold(work, first, second, distance, manifoldDistance, points);
+            }
+            """ : string.Empty;
+        return Compile(name, (hull ? "#include \"physics_collision_hull.slang\"\n" : "") +
+        (prediction ? "#include \"physics_collision_prediction.slang\"\n" : "") + $$"""
         #include "physics_geometry_references.slang"
-        struct ShapePairCollision : IDeviceCollisionNarrowPhase
+        struct ShapePairCollision : {{(prediction ? "IDeviceCollisionPrediction" : "IDeviceCollisionNarrowPhase")}}
         {
             DeviceGeometryDistance distance(uint work, DeviceGeometryInput first, DeviceGeometryInput second)
             {
@@ -44,8 +70,11 @@ internal sealed partial class PhysicsSceneShaders
                 { DeviceConvexCollision<{{first}},{{second}}> shape; return shape.manifold(work, first, second, distance, points); }
                 DeviceConvexCollision<{{second}},{{first}}> shape; return shape.manifold(work, first, second, distance, points);
             }
+            {{predictionMethods}}
         };
         [shader("compute")][numthreads(64,1,1)]
-        void Detect(uint3 id : SV_DispatchThreadID) { ShapePairCollision shape; detectDeviceReferencedCollision(id.x, shape); }
+        void Detect(uint3 id : SV_DispatchThreadID)
+        { ShapePairCollision shape; {{(prediction ? "predictDeviceRigidCollision" : "detectDeviceReferencedCollision")}}(id.x, shape); }
         """, "Detect")[0];
+    }
 }

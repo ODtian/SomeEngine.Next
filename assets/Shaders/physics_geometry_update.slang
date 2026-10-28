@@ -20,6 +20,11 @@ interface IDeviceGeometryUpdate
     DeviceGeometryBounds update(uint index, inout DeviceGeometryInput geometry);
 };
 
+interface IDeviceGeometryBounds
+{
+    DeviceGeometryBounds getBounds(DeviceGeometryInput geometry);
+};
+
 void readDeviceGeometryPose(uint index, inout DeviceGeometryInput geometry)
 {
     DeviceBodyState body = DeviceBodyStates[DeviceGeometryReferences[index].firstBody];
@@ -27,11 +32,15 @@ void readDeviceGeometryPose(uint index, inout DeviceGeometryInput geometry)
     geometry.rotation = body.rotation;
 }
 
-struct DeviceBoxUpdate : IDeviceGeometryUpdate
+struct DeviceBoxUpdate : IDeviceGeometryUpdate, IDeviceGeometryBounds
 {
     DeviceGeometryBounds update(uint index, inout DeviceGeometryInput geometry)
     {
         readDeviceGeometryPose(index, geometry);
+        return getBounds(geometry);
+    }
+    DeviceGeometryBounds getBounds(DeviceGeometryInput geometry)
+    {
         float3 half = geometry.halfExtents;
         float3 radius = abs(rotateDeviceDirection(geometry.rotation, float3(half.x, 0, 0)))
             + abs(rotateDeviceDirection(geometry.rotation, float3(0, half.y, 0)))
@@ -70,13 +79,15 @@ struct DeviceCylinderUpdate : IDeviceGeometryUpdate
     }
 };
 
-struct DeviceSphereUpdate : IDeviceGeometryUpdate
+struct DeviceSphereUpdate : IDeviceGeometryUpdate, IDeviceGeometryBounds
 {
     DeviceGeometryBounds update(uint index, inout DeviceGeometryInput geometry)
     {
-        DeviceBodyState body = DeviceBodyStates[DeviceGeometryReferences[index].firstBody];
-        geometry.position = body.position;
-        geometry.rotation = body.rotation;
+        readDeviceGeometryPose(index, geometry);
+        return getBounds(geometry);
+    }
+    DeviceGeometryBounds getBounds(DeviceGeometryInput geometry)
+    {
         DeviceGeometryBounds bounds;
         bounds.min = geometry.position - geometry.convexRadius;
         bounds.max = geometry.position + geometry.convexRadius;
