@@ -516,14 +516,14 @@ internal sealed class ClusterBvh
     private static int ValidateTopology(ReadOnlySpan<ClusterBVHNode> nodes)
     {
         if (nodes.Length == 0) throw new InvalidDataException("A cluster hierarchy requires a root.");
-        ClusterBVHNode[] data = nodes.ToArray();
-        var states = new byte[data.Length];
+        var states = new byte[nodes.Length];
         int maximumDepth = 0;
-        Visit(0, 1);
+        Visit(nodes, states, 0, 1, ref maximumDepth);
         if (states.Contains((byte)0)) throw new InvalidDataException("The hierarchy contains unreachable nodes.");
         return maximumDepth;
 
-        void Visit(int index, int depth)
+        static void Visit(ReadOnlySpan<ClusterBVHNode> data, byte[] states,
+            int index, int depth, ref int maximumDepth)
         {
             if ((uint)index >= data.Length || states[index] == 1)
                 throw new InvalidDataException("The hierarchy contains an invalid child reference or cycle.");
@@ -541,7 +541,7 @@ internal sealed class ClusterBvh
                     float.IsNaN(slice.MinLODError) || slice.MinLODError < 0 ||
                     float.IsNaN(slice.MaxParentLODError) || slice.MaxParentLODError < 0)
                     throw new InvalidDataException("The hierarchy contains invalid bounds or errors.");
-                if (!slice.IsLeaf) Visit(checked((int)slice.ChildReference), depth + 1);
+                if (!slice.IsLeaf) Visit(data, states, checked((int)slice.ChildReference), depth + 1, ref maximumDepth);
             }
             states[index] = 2;
         }
