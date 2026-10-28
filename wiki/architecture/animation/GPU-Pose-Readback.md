@@ -52,6 +52,6 @@ Game 侧在正常更新窗口读取 Task 的完成值并写入 ECS。Renderer �
 
 `SceneEdit.ReadGpuPose(target, receive)` 与 `SkinningFeature.RequestReadback(section, receive)` 请求完整自身区段，复用相同范围复制与完成实现。应用在帧提交后轮询，GPU 已完成时交付 callback；返回数据采用相同身份、范围和计算信息。
 
-诊断 callback 沿下一次实际提交交付；取消帧后重录时，结果的身份、计算时间和版本来自该次提交。
+诊断 callback 沿下一次实际提交交付；请求保存 Rendering world 的区段实体身份，取消帧后重录时从该实体取得当帧骨骼范围和播放行，结果的身份、计算时间和版本来自该次提交。移除区段时释放其尚未提交的读回。
 
 公共应用示例见 [GpuPoseFeedbackTests](../../../tests/SomeEngine.Runtime.Tests/GpuPoseFeedbackTests.cs)。同步关键骨骼的当次 Game 完成点见 [CPU/GPU Pose Handoff](CPU-GPU-Pose-Handoff.md)。

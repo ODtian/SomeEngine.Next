@@ -1,6 +1,7 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
 using SomeEngine.Animation.Pose;
+using SomeEngine.ECS.Entities;
 using SomeEngine.Graphics;
 using SomeEngine.RenderGraph;
 
@@ -12,7 +13,7 @@ public sealed partial class SkinningFeature
 
     /// <summary>Requests the next submitted current/previous pair for an extracted model section.</summary>
     public void RequestReadback(in RenderPoseSection section, Action<GpuPoseReadback> receive) =>
-        _readbacks.Add(new(section, new(0, section.Range.Count), receive));
+        _readbacks.Add(new(_sectionOrder[section.PlaybackIndex].Entity, new(0, section.Range.Count), receive));
 
     private void RequestReadbacks()
     {
@@ -21,18 +22,24 @@ public sealed partial class SkinningFeature
         {
             if (request.Completion.IsCompleted || request.Identity != section.Data.Identity
                 || _readbacks.Exists(readback => ReferenceEquals(readback.Request, request))) continue;
-            var output = new RenderPoseSection(section.Range, section.Data.Starts, section.Data.InputNumber,
-                section.FrameTime, section.Data.SampleTime, section.Index, section.FrameVersion);
-            _readbacks.Add(new(output, request.Range, request.Deliver) { Request = request });
+            _readbacks.Add(new(section.Entity, request.Range, request.Deliver) { Request = request });
         }
     }
 
     private void RecordReadbacks(ref RenderGraphFrame frame)
     {
-        foreach (Readback readback in _readbacks)
+        for (int index = 0; index < _readbacks.Count;)
         {
-            if (readback.Completion != default) continue;
-            Section section = _sectionOrder[readback.Section.PlaybackIndex];
+            Readback readback = _readbacks[index];
+            if (readback.Completion != default) { index++; continue; }
+            if (!_sections.TryGetValue(readback.SectionEntity, out Section? section))
+            {
+                _readbacks.RemoveAt(index);
+                readback.Buffer?.Dispose();
+                readback.Request?.Cancel();
+                continue;
+            }
+            index++;
             readback.Section = new(section.Range, section.Data.Starts, section.Data.InputNumber,
                 section.FrameTime, section.Data.SampleTime, section.Index, section.FrameVersion);
             readback.Identity = section.Data.Identity;
@@ -165,9 +172,10 @@ public sealed partial class SkinningFeature
     private readonly record struct ReadbackCopy(GraphBufferInput Current, GraphBufferInput Previous,
         GraphBufferInput LocalCurrent, GraphBufferInput LocalPrevious, GraphBufferInput Playback, GraphBufferId Output,
         BufferRange Range, BufferRange LocalRange, BufferRange PlaybackRange);
-    private sealed class Readback(RenderPoseSection section, PoseRange range, Action<GpuPoseReadback> receive)
+    private sealed class Readback(Entity sectionEntity, PoseRange range, Action<GpuPoseReadback> receive)
     {
-        internal RenderPoseSection Section = section;
+        internal readonly Entity SectionEntity = sectionEntity;
+        internal RenderPoseSection Section;
         internal readonly PoseRange Range = range;
         internal readonly Action<GpuPoseReadback> Receive = receive;
         internal GpuPoseReadbackRequest? Request;
