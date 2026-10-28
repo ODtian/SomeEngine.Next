@@ -289,6 +289,7 @@ internal sealed unsafe partial class D3D12Backend
                     destination,
                     description,
                     descriptor);
+                command.TrackAttachmentDescriptor(destination, description);
                 CommandExecutionTrace.ClearRenderTargetView(
                                 command.List, descriptor,
                                     values,
@@ -309,6 +310,7 @@ internal sealed unsafe partial class D3D12Backend
                 destination,
                 mipDescription,
                 mipDescriptor);
+            command.TrackAttachmentDescriptor(destination, mipDescription);
             CommandExecutionTrace.ClearRenderTargetView(
                             command.List, mipDescriptor,
                                 values,
@@ -380,6 +382,7 @@ internal sealed unsafe partial class D3D12Backend
                 destination,
                 description,
                 descriptor);
+            command.TrackAttachmentDescriptor(destination, description);
             CommandExecutionTrace.ClearDepthStencilView(
                             command.List, descriptor,
                                 flags,
@@ -692,6 +695,14 @@ internal sealed unsafe partial class D3D12Backend
 
     private sealed partial class D3D12CommandContext
     {
+        internal void TrackAttachmentDescriptor(D3D12TextureResource texture, in ColorAttachmentViewDesc desc) =>
+            Recording.TrackAttachmentDescriptor(new(texture.NativeLifetime, desc.Range, desc.Format,
+                desc.Dimension, DescriptorHeapType.Rtv));
+
+        internal void TrackAttachmentDescriptor(D3D12TextureResource texture, in DepthStencilViewDesc desc) =>
+            Recording.TrackAttachmentDescriptor(new(texture.NativeLifetime, desc.Range, desc.Format,
+                desc.Dimension, DescriptorHeapType.Dsv));
+
         internal D3D12CpuDescriptorRange AllocateTemporaryAttachmentDescriptors(
             DescriptorHeapType type,
             uint count) =>
@@ -700,6 +711,9 @@ internal sealed unsafe partial class D3D12Backend
 
     private sealed partial class D3D12CommandSlot
     {
+        internal void TrackAttachmentDescriptor(in AttachmentDescriptorContent descriptor) =>
+            _attachmentDescriptors.Add(descriptor);
+
         private CpuDescriptorHandle _temporaryRtvStart;
         private CpuDescriptorHandle _temporaryDsvStart;
         private ID3D12DescriptorHeap* _temporaryRtvHeap;
@@ -837,4 +851,8 @@ internal sealed unsafe partial class D3D12Backend
             ResetTemporaryAttachmentDescriptors();
         }
     }
+
+    private readonly record struct AttachmentDescriptorContent(
+        NativeLease Texture, TextureSubresourceRange Range, Format Format,
+        TextureViewDimension Dimension, DescriptorHeapType Type);
 }

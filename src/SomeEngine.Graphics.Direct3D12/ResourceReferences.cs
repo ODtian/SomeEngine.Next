@@ -22,25 +22,49 @@ internal sealed unsafe partial class D3D12Backend
     }
 
     private static (ResourceReferences Primary, ResourceReferences Secondary)
-        GetResourceReferences(GraphicsObject value) => value switch
+        GetResourceReferences(GraphicsObject value)
+    {
+        // Construct the tuple once to avoid per-arm GC-containing temporaries in NativeAOT.
+        ResourceReferences primary = default;
+        ResourceReferences secondary = default;
+        switch (value)
         {
-            Buffer buffer => (ResourceReferences.FromBuffer(buffer), default),
-            BufferCbv view => (ResourceReferences.FromBuffer(view.Resource), default),
-            BufferSrv view => (ResourceReferences.FromBuffer(view.Resource), default),
-            BufferUav view => (
-                ResourceReferences.FromBuffer(view.Resource),
-                view.Description.CounterBuffer is Buffer counter
-                    ? ResourceReferences.FromBuffer(counter) : default),
-            D3D12SamplerFeedbackUav view => (
-                ResourceReferences.FromTexture(view.FeedbackResource),
-                ResourceReferences.FromTexture(view.SampledResource)),
-            TextureSrv view => (ResourceReferences.FromTexture(view.Resource), default),
-            TextureUav view => (ResourceReferences.FromTexture(view.Resource), default),
-            ColorAttachmentView view => (ResourceReferences.FromTexture(view.Resource), default),
-            DepthStencilView view => (ResourceReferences.FromTexture(view.Resource), default),
-            AccelerationStructureSrv view => GetAccelerationStructureReferences(view),
-            _ => default,
-        };
+            case Buffer buffer:
+                primary = ResourceReferences.FromBuffer(buffer);
+                break;
+            case BufferCbv view:
+                primary = ResourceReferences.FromBuffer(view.Resource);
+                break;
+            case BufferSrv view:
+                primary = ResourceReferences.FromBuffer(view.Resource);
+                break;
+            case BufferUav view:
+                primary = ResourceReferences.FromBuffer(view.Resource);
+                if (view.Description.CounterBuffer is Buffer counter)
+                    secondary = ResourceReferences.FromBuffer(counter);
+                break;
+            case D3D12SamplerFeedbackUav view:
+                primary = ResourceReferences.FromTexture(view.FeedbackResource);
+                secondary = ResourceReferences.FromTexture(view.SampledResource);
+                break;
+            case TextureSrv view:
+                primary = ResourceReferences.FromTexture(view.Resource);
+                break;
+            case TextureUav view:
+                primary = ResourceReferences.FromTexture(view.Resource);
+                break;
+            case ColorAttachmentView view:
+                primary = ResourceReferences.FromTexture(view.Resource);
+                break;
+            case DepthStencilView view:
+                primary = ResourceReferences.FromTexture(view.Resource);
+                break;
+            case AccelerationStructureSrv view:
+                (primary, secondary) = GetAccelerationStructureReferences(view);
+                break;
+        }
+        return (primary, secondary);
+    }
 
     private static (ResourceReferences, ResourceReferences)
         GetAccelerationStructureReferences(AccelerationStructureSrv view)

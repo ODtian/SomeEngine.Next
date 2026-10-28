@@ -19,7 +19,7 @@ public sealed class VulkanTextureClearTests
         Queue queue = backend.GetQueue(device, QueueType.Graphics);
         using Texture texture = backend.CreateTexture(device, new TextureDesc(
             TextureDimension.Texture2D, 1, 1, 1, 1, 1, 1, format,
-            TextureUsages.CopyDestination | TextureUsages.CopySource));
+            TextureUsages.ColorAttachment | TextureUsages.CopySource));
         TextureSubresourceRange range = new(0, 1, 0, 1, TextureAspects.Color);
         using Buffer readback = backend.CreateBuffer(device,
             new BufferDesc(256, BufferUsages.CopyDestination), MemoryType.Readback);
@@ -27,12 +27,12 @@ public sealed class VulkanTextureClearTests
 
         backend.Begin(context);
         backend.Barrier(context, new TextureBarrier(texture, range,
-            PipelineSync.None, PipelineSync.Clear, ResourceAccess.NoAccess, ResourceAccess.CopyDestination,
-            TextureLayout.Undefined, TextureLayout.General));
+            PipelineSync.None, PipelineSync.RenderTarget, ResourceAccess.NoAccess, ResourceAccess.RenderTarget,
+            TextureLayout.Undefined, TextureLayout.RenderTarget));
         backend.ClearTexture(context, texture, range, new Vector4(clearValue, 0, 0, 0));
         backend.Barrier(context, new TextureBarrier(texture, range,
-            PipelineSync.Clear, PipelineSync.Copy, ResourceAccess.CopyDestination, ResourceAccess.CopySource,
-            TextureLayout.General, TextureLayout.CopySource));
+            PipelineSync.RenderTarget, PipelineSync.Copy, ResourceAccess.RenderTarget, ResourceAccess.CopySource,
+            TextureLayout.RenderTarget, TextureLayout.CopySource));
         backend.CopyTextureToBuffer(context, new BufferTextureCopy(readback, 0, 256, 1,
             texture, 0, 0, TextureAspects.Color, 0, 0, 0, 1, 1, 1));
         using RecordedCommands commands = backend.End(context);

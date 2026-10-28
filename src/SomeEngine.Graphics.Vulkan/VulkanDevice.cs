@@ -6,6 +6,17 @@ using Silk.NET.Vulkan.Extensions.EXT;
 internal sealed unsafe partial class VulkanBackend
 {
     private const string SwapchainExtension = "VK_KHR_swapchain";
+    private const string SwapchainMaintenanceExtension = "VK_EXT_swapchain_maintenance1";
+    private const string KhrSwapchainMaintenanceExtension = "VK_KHR_swapchain_maintenance1";
+    private const string ShaderUserTypeExtension = "VK_GOOGLE_user_type";
+    private const string HlslFunctionalityExtension = "VK_GOOGLE_hlsl_functionality1";
+
+    private string? GetSwapchainMaintenanceExtension(IReadOnlySet<string> extensions) =>
+        _khrSurfaceMaintenance && extensions.Contains(KhrSwapchainMaintenanceExtension)
+            ? KhrSwapchainMaintenanceExtension
+            : _surfaceMaintenance && extensions.Contains(SwapchainMaintenanceExtension)
+                ? SwapchainMaintenanceExtension
+                : null;
     private const string MemoryBudgetExtension = "VK_EXT_memory_budget";
     private const string CalibratedTimestampsExtension = "VK_KHR_calibrated_timestamps";
     private const string ConditionalRenderingExtension = "VK_EXT_conditional_rendering";
@@ -249,7 +260,9 @@ internal sealed unsafe partial class VulkanBackend
                 availableFeatures.Features,
                 extendedFeatures,
                 queuePlan);
-            if (SupportsPresentation(backend, adapter.PhysicalDevice, extensions, queuePlan))
+            string? swapchainMaintenance = backend.GetSwapchainMaintenanceExtension(extensions);
+            if (swapchainMaintenance is not null &&
+                SupportsPresentation(backend, adapter.PhysicalDevice, extensions, queuePlan))
                 supportedFeatures |= DeviceFeatures.Presentation;
             DeviceFeatures missing = desc.RequiredFeatures & ~supportedFeatures;
             if (missing != DeviceFeatures.None)
@@ -261,8 +274,15 @@ internal sealed unsafe partial class VulkanBackend
                 (desc.OptionalFeatures & supportedFeatures);
 
             List<string> enabledExtensions = [];
+            if (extensions.Contains(ShaderUserTypeExtension))
+                enabledExtensions.Add(ShaderUserTypeExtension);
+            if (extensions.Contains(HlslFunctionalityExtension))
+                enabledExtensions.Add(HlslFunctionalityExtension);
             if ((enabledFeatures & DeviceFeatures.Presentation) != 0)
+            {
                 enabledExtensions.Add(SwapchainExtension);
+                enabledExtensions.Add(swapchainMaintenance!);
+            }
             if ((enabledFeatures & DeviceFeatures.Residency) != 0)
                 enabledExtensions.Add(MemoryBudgetExtension);
             if ((enabledFeatures & DeviceFeatures.CalibratedTimestamps) != 0)
@@ -1137,6 +1157,14 @@ internal sealed unsafe partial class VulkanBackend
                     out PhysicalDeviceRayTracingPipelineFeaturesKHR rayTracing,
                     out PhysicalDeviceRayQueryFeaturesKHR rayQuery,
                     out PhysicalDeviceShaderImageAtomicInt64FeaturesEXT imageInt64);
+                PhysicalDeviceSwapchainMaintenance1FeaturesEXT swapchainMaintenance = new()
+                {
+                    SType = StructureType.PhysicalDeviceSwapchainMaintenance1FeaturesExt,
+                    SwapchainMaintenance1 = true,
+                    PNext = enabled13.PNext,
+                };
+                if ((enabledDeviceFeatures & DeviceFeatures.Presentation) != 0)
+                    enabled13.PNext = &swapchainMaintenance;
                 fixed (DeviceQueueCreateInfo* queuePointer = queues)
                 {
                     DeviceCreateInfo createInfo = new()
@@ -1188,6 +1216,7 @@ internal sealed unsafe partial class VulkanBackend
             DrawIndirectCount = available.DrawIndirectCount,
             BufferDeviceAddress = available.BufferDeviceAddress,
             ScalarBlockLayout = available.ScalarBlockLayout,
+            ShaderFloat16 = available.ShaderFloat16,
             ShaderOutputLayer = available.ShaderOutputLayer,
             SeparateDepthStencilLayouts = available.SeparateDepthStencilLayouts,
             HostQueryReset = available.HostQueryReset,
@@ -1267,6 +1296,18 @@ internal sealed unsafe partial class VulkanBackend
             QueuePlan queues)
         {
             if (!extensions.Contains(SwapchainExtension) || backend._win32SurfaceApi is null)
+                return false;
+            PhysicalDeviceSwapchainMaintenance1FeaturesEXT maintenance = new()
+            {
+                SType = StructureType.PhysicalDeviceSwapchainMaintenance1FeaturesExt,
+            };
+            PhysicalDeviceFeatures2 features = new()
+            {
+                SType = StructureType.PhysicalDeviceFeatures2,
+                PNext = &maintenance,
+            };
+            backend.Api.GetPhysicalDeviceFeatures2(physicalDevice, &features);
+            if (!maintenance.SwapchainMaintenance1)
                 return false;
             foreach (QueueAssignment queue in queues.Assignments)
                 if (queue.Type == QueueType.Graphics && queue.RhiIndex == 0)

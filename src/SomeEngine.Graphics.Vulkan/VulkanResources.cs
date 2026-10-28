@@ -315,7 +315,7 @@ internal sealed unsafe partial class VulkanBackend
     {
         VulkanDevice nativeDevice = RequireDevice(device, nameof(device));
         _ = RequireBuffer(nativeDevice, desc.Buffer, nameof(desc));
-        _ = desc.Range.Resolve(desc.Buffer.Info.Size);
+        ValidateShaderBufferRange(nativeDevice, desc.Buffer, desc.Range);
         if (desc.CounterBuffer is not null)
         {
             VulkanBuffer counter = RequireBuffer(nativeDevice, desc.CounterBuffer, nameof(desc));
@@ -372,7 +372,7 @@ internal sealed unsafe partial class VulkanBackend
             desc.Dimension,
             desc,
             static (nativeDevice, description, native) =>
-                new VulkanColorAttachmentView(nativeDevice, description, native));
+                new VulkanColorAttachmentView(nativeDevice, description, native), colorAttachment: true);
 
     internal DepthStencilView CreateDepthStencilView(
         RhiDevice device,
@@ -447,7 +447,7 @@ internal sealed unsafe partial class VulkanBackend
     {
         VulkanDevice nativeDevice = RequireDevice(device, nameof(device));
         VulkanBuffer nativeBuffer = RequireBuffer(nativeDevice, buffer, nameof(buffer));
-        _ = range.Resolve(buffer.Info.Size);
+        ValidateShaderBufferRange(nativeDevice, buffer, range);
         VkBufferView native = format.HasValue
             ? CreateNativeBufferView(nativeDevice, nativeBuffer, range, format.Value)
             : default;
@@ -465,6 +465,14 @@ internal sealed unsafe partial class VulkanBackend
         return RegisterChildOrDispose(nativeDevice, view);
     }
 
+    private static void ValidateShaderBufferRange(VulkanDevice device, RhiBuffer buffer, in BufferRange range)
+    {
+        BufferRange resolved = range.Resolve(buffer.Info.Size);
+        uint alignment = Math.Max(1u, device.Capabilities.Limits.ShaderBufferAlignment);
+        if (resolved.Offset % alignment != 0)
+            throw new ArgumentException($"Shader buffer views require {alignment}-byte aligned offsets.", nameof(range));
+    }
+
     private TView CreateTextureView<TView, TDescription>(
         RhiDevice device,
         RhiTexture texture,
@@ -472,18 +480,21 @@ internal sealed unsafe partial class VulkanBackend
         RhiFormat format,
         TextureViewDimension dimension,
         in TDescription description,
-        Func<VulkanDevice, TDescription, VkImageView, TView> factory)
+        Func<VulkanDevice, TDescription, VkImageView, TView> factory,
+        bool colorAttachment = false)
         where TView : GraphicsObject
         where TDescription : struct
     {
         VulkanDevice nativeDevice = RequireDevice(device, nameof(device));
         VulkanTexture nativeTexture = RequireTexture(nativeDevice, texture, nameof(texture));
-        ValidateTextureRange(nativeTexture.Info, range);
+        bool depthSlices = colorAttachment && nativeTexture.Info.Dimension == TextureDimension.Texture3D;
+        if (depthSlices) ValidateAttachmentRange(nativeTexture.Info, range);
+        else ValidateTextureRange(nativeTexture.Info, range);
         ImageViewCreateInfo createInfo = new()
         {
             SType = StructureType.ImageViewCreateInfo,
             Image = nativeTexture.Native,
-            ViewType = ToNative(dimension),
+            ViewType = depthSlices ? ImageViewType.Type2DArray : ToNative(dimension),
             Format = VulkanFormats.ToNative(format),
             Components = new ComponentMapping(
                 ComponentSwizzle.Identity,
@@ -569,6 +580,8 @@ internal sealed unsafe partial class VulkanBackend
                 PNext = nativeViewFormats.Length == 0 ? null : &formatList,
             };
             ImageCreateFlags flags = aliasable ? ImageCreateFlags.CreateAliasBit : ImageCreateFlags.None;
+            if (desc.Dimension == TextureDimension.Texture3D && (desc.Usages & TextureUsages.ColorAttachment) != 0)
+                flags |= ImageCreateFlags.Create2DArrayCompatibleBit;
             if (sparse)
             {
                 flags |= ImageCreateFlags.CreateSparseBindingBit |

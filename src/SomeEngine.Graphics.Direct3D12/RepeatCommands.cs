@@ -51,7 +51,7 @@ internal sealed unsafe partial class D3D12Backend
         internal bool TryCaptureRepeatedCommands()
         {
             CachedNativeCommands commands = _nativeRecording;
-            if (!commands.Complete || !commands.Data.CanRepeat) return false;
+            if (!commands.Repeatable) return false;
             foreach (var parameter in _repeatParameters)
                 if (!ReferenceEquals(parameter.Key.CurrentData, parameter.Value)) return false;
             try

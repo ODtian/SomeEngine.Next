@@ -55,12 +55,16 @@ internal sealed unsafe partial class D3D12Backend
         internal NativeCommandData Data = new();
         internal readonly List<object> References = [];
         internal bool Complete;
+        internal bool Repeatable => Complete && Data.CanRepeat;
+        private readonly List<AttachmentDescriptorContent> _attachments = [];
         private ID3D12DescriptorHeap* _resources;
         private ID3D12DescriptorHeap* _samplers;
 
-        internal bool Matches(NativeCommandData data, List<object> references)
+        internal bool Matches(NativeCommandData data, List<object> references,
+            List<AttachmentDescriptorContent> attachments)
         {
-            if (!Complete || !Data.Bytes.SequenceEqual(data.Bytes) || References.Count != references.Count)
+            if (!Complete || !Data.Bytes.SequenceEqual(data.Bytes) ||
+                References.Count != references.Count || !_attachments.SequenceEqual(attachments))
                 return false;
             for (int index = 0; index < references.Count; index++)
             {
@@ -74,6 +78,7 @@ internal sealed unsafe partial class D3D12Backend
         {
             Complete = false;
             References.Clear();
+            _attachments.Clear();
             if (_resources is not null)
                 _ = ResourceTrace.Release((IUnknown*)_resources);
             if (_samplers is not null)
@@ -82,9 +87,12 @@ internal sealed unsafe partial class D3D12Backend
             _samplers = null;
         }
 
-        internal void StoreReferences(List<object> references, ID3D12DescriptorHeap* resources, ID3D12DescriptorHeap* samplers)
+        internal void StoreReferences(List<object> references,
+            List<AttachmentDescriptorContent> attachments,
+            ID3D12DescriptorHeap* resources, ID3D12DescriptorHeap* samplers)
         {
             References.AddRange(references);
+            _attachments.AddRange(attachments);
             // Retain only descriptor heaps. Resource identities are managed references;
             // the current recording retains their native lifetimes until completion.
             // Keeping heaps alive also prevents false matches after native address reuse.
@@ -102,6 +110,7 @@ internal sealed unsafe partial class D3D12Backend
     {
         private readonly CachedNativeCommands?[] _cachedCommands = new CachedNativeCommands?[2];
         private readonly List<object> _commandReferences = [];
+        private readonly List<AttachmentDescriptorContent> _attachmentDescriptors = [];
         private NativeCommandData _commandData = new();
         private CachedNativeCommands _nativeRecording;
         private int _nextCommands;
@@ -128,12 +137,11 @@ internal sealed unsafe partial class D3D12Backend
 
         internal void FinishCommandData()
         {
-            // Temporary RTV/DSV descriptors are rewritten on Begin; their CPU handles
-            // alone cannot establish that a cached recording still names the same views.
+            // Matching a new recording compares attachment contents as well as command
+            // bytes. Repeating the closed list keeps its attachment storage intact.
             bool reusable = _collectingCommands &&
                 _transientObjects.Count == 0 && _capturedBundles.Count == 0 &&
-                SwapchainUseCount == 0 && _captures.SparseCount == 0 &&
-                _temporaryRtvUsed == 0 && _temporaryDsvUsed == 0;
+                SwapchainUseCount == 0 && _captures.SparseCount == 0;
             if (reusable)
             {
                 _captures.AppendReferences(_commandReferences);
@@ -146,7 +154,7 @@ internal sealed unsafe partial class D3D12Backend
                 AppendDescriptorHeaps(_commandReferences);
                 foreach (CachedNativeCommands? cached in _cachedCommands)
                 {
-                    if (cached is not null && cached.Matches(_commandData, _commandReferences))
+                    if (cached is not null && cached.Matches(_commandData, _commandReferences, _attachmentDescriptors))
                     {
                         using var trace = SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.ReuseNativeCommands);
                         _nativeRecording = cached;
@@ -164,7 +172,8 @@ internal sealed unsafe partial class D3D12Backend
             if (reusable)
             {
                 CachedNativeCommands cached = _nativeRecording;
-                cached.StoreReferences(_commandReferences, ResourceDescriptorHeap, SamplerDescriptorHeap);
+                cached.StoreReferences(_commandReferences, _attachmentDescriptors,
+                    ResourceDescriptorHeap, SamplerDescriptorHeap);
                 (cached.Data, _commandData) = (_commandData, cached.Data);
             }
             FinishCommandRecording();
@@ -175,6 +184,7 @@ internal sealed unsafe partial class D3D12Backend
             _collectingCommands = false;
             _recordingAddress = 0;
             _commandReferences.Clear();
+            _attachmentDescriptors.Clear();
             if (ReferenceEquals(_threadRecording, this))
                 _threadRecording = null;
         }
