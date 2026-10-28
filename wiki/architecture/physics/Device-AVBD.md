@@ -67,6 +67,11 @@ Body 方程索引和组数据；接触调节与支撑分组读取同次图的活
 `GroupInitializationDispatches` 和 `GroupUpdateDispatches` 在对应阶段接续具体的
 `DeviceAvbdGroupDispatch` 序列。每项给出 `ComputePipelineDesc` 与 RHI `DispatchArguments`，
 求解器沿同一 `DeviceAvbdStep`、原资源绑定和提交记录派发，并在相邻派发之间维护 UAV barrier。
+混合场景通过现有初始化派发选择 `restoreDeviceAvbdBodyStartPose`，
+在原行历史初始化之后，把活动方程主体的当前姿势放回本步 start pose，作为首个 primal 迭代值。
+原 predicted COM/rotation 继续作为惯性目标，原乘子、步长、逐体及 dual 方程接续执行。
+完成后的速度仍由原当前结果相对 predicted/start 数据重构。
+
 项目可用 `DevicePhysicsDispatch.CreateGroups` 组织线性主体工作，再接续读取该结果的组内计算；
 当前场景的支撑初始化先并行清理所选活动主体，再沿原支撑状态建立承重路径。
 项目提供具体 Slang `IDeviceAvbdConstraints` 内核与实际绑定，
@@ -98,6 +103,10 @@ Body 方程索引和组数据；接触调节与支撑分组读取同次图的活
 两者由同一显式组件输入阶段选择和更新历史资源。
 [关节 ALM](../../../assets/Shaders/physics_avbd_joint.slang) 沿共同关节行处理
 锁定、自由和单边限位，再将 `K/rho` 对应力与曲率叠加到 Body 方程。
+三线性坐标全锁且线性刚度等向的点关节，沿
+[共同坐标与行](../../../assets/Shaders/physics_avbd_joint_math.slang) 保存世界点残差和世界线性乘子。
+两端角 Jacobian 分别取各自锚点相对原质心的力臂；原角向坐标继续沿关节框架。
+方程装配、dual 更新与公开力观察共用该坐标和行，角向正曲率包含各锚的 `|arm| * |force|`。
 [motor ALM](../../../assets/Shaders/physics_avbd_motor.slang) 沿同一关节参数行读取框架与端点，
 在子步结束时刻计算目标位置、旋转和速度，将阻尼 `D/h` 合入平衡点与等效刚度。
 物理力/力矩按原上限投影，对偶力继续保存在对应历史行。

@@ -4,7 +4,7 @@
 #define PHYSICS_AVBD_JOINT_FORCES
 #include "physics_constraint_force_samples.slang"
 #include "physics_joint_participants.slang"
-#include "physics_joint_math.slang"
+#include "physics_avbd_joint_math.slang"
 #include "physics_avbd_joint_state.slang"
 
 struct DeviceJointAvbdForces : IDeviceConstraintForces
@@ -25,6 +25,7 @@ struct DeviceJointAvbdForces : IDeviceConstraintForces
         DeviceJointConstraint joint=DeviceJoints[row];
         DeviceAvbdJointState state=DeviceAvbdJointStates[row];
         DeviceBodyState source=DeviceBodyStates[joint.sourceBody],target=DeviceBodyStates[joint.targetBody];
+        bool worldPoint=deviceJointAvbdUsesWorldPointCoordinates(joint);
         force=torque=float3(0);
         for(uint dof=0;dof<6;dof++)
         {
@@ -32,7 +33,7 @@ struct DeviceJointAvbdForces : IDeviceConstraintForces
             float stiffness=dof<3?joint.linearStiffness[axis]:joint.angularStiffness[axis];
             if(deviceJointLimit(joint,dof).motion==0||stiffness==0) continue;
             float multiplier=dof<3?state.linearMultiplier[axis]:state.angularMultiplier[axis];
-            DeviceJointRow derivative=deviceJointRow(joint,source,target,dof);
+            DeviceJointRow derivative=deviceJointAvbdRow(joint,source,target,dof,worldPoint);
             if(bodyIndex==joint.sourceBody)
             { force-=derivative.sourceLinear*multiplier; torque-=derivative.sourceAngular*multiplier; }
             if(bodyIndex==joint.targetBody)

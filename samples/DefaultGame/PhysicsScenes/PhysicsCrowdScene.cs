@@ -173,7 +173,7 @@ public sealed partial class PhysicsCrowdScene : IGameFramePhysics
             solverReads = [.. solverReads, joints.States.GetWriteAccess(scheduler)];
             solverSelections.Add(joints.StateSelection);
         }
-        var avbd = Keep(new DeviceAvbdSolver(backend, device, physics.Bodies, equations, graph, shaders.CrowdAvbd(jointNet),
+        var avbd = Keep(new DeviceAvbdSolver(backend, device, physics.Bodies, equations, graph, shaders.CrowdAvbd(jointNet, physics.Bodies.Capacity),
             new(1, 1, .8f, 0), bindings, solverReads, 64,
             solverSelections.ToArray()));
         var xpbd = Keep(new DeviceXpbdSolver(backend, device, physics.Bodies, graph,

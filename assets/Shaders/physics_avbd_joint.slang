@@ -3,7 +3,7 @@
 #ifndef PHYSICS_AVBD_JOINT
 #define PHYSICS_AVBD_JOINT
 #include "physics_avbd.slang"
-#include "physics_joint_math.slang"
+#include "physics_avbd_joint_math.slang"
 #include "physics_joint_bodies.slang"
 #include "physics_constraint_math.slang"
 #include "physics_avbd_joint_state.slang"
@@ -24,7 +24,7 @@ struct DeviceJointAvbdConstraints : IDeviceAvbdConstraints
         DeviceAvbdJointState state=DeviceAvbdJointStates[row];
         state.linearMultiplier*=context.retention; state.angularMultiplier*=context.retention;
         float3 linear,angular;
-        deviceJointCoordinates(joint,deviceBodyStart(DeviceBodyStates[joint.sourceBody]),
+        deviceJointAvbdCoordinates(joint,deviceBodyStart(DeviceBodyStates[joint.sourceBody]),
             deviceBodyStart(DeviceBodyStates[joint.targetBody]),linear,angular);
         for(uint axis=0;axis<3;axis++)
         {
@@ -39,11 +39,13 @@ struct DeviceJointAvbdConstraints : IDeviceAvbdConstraints
         DeviceAvbdJointState state=DeviceAvbdJointStates[row];
         DeviceBodyState source=DeviceBodyStates[joint.sourceBody],target=DeviceBodyStates[joint.targetBody];
         bool isSource=bodyIndex==joint.sourceBody;
+        bool worldPoint=deviceJointAvbdUsesWorldPointCoordinates(joint);
+        float3 linearForce=float3(0);
         for(uint dof=0;dof<6;dof++)
         {
             uint axis=dof%3;
             DeviceJointLimit limit=deviceJointLimit(joint,dof);
-            DeviceJointRow derivative=deviceJointRow(joint,source,target,dof);
+            DeviceJointRow derivative=deviceJointAvbdRow(joint,source,target,dof,worldPoint);
             float multiplier=dof<3?state.linearMultiplier[axis]:state.angularMultiplier[axis];
             float error; uint side;
             if(!deviceJointTryError(limit,derivative.coordinate,multiplier,error,side)) continue;
@@ -53,16 +55,26 @@ struct DeviceJointAvbdConstraints : IDeviceAvbdConstraints
             float2 terms=deviceAvbdMaterial(stiffness,penalty);
             float force=deviceJointProjectForce(side,terms.x*multiplier+terms.y*(error-context.initialErrorFraction*initial));
             if(limit.motion==2&&force==0) continue;
+            if(dof<3) linearForce+=derivative.targetLinear*force;
             deviceAvbdAddRow(equation,isSource?derivative.sourceLinear:derivative.targetLinear,
                 isSource?derivative.sourceAngular:derivative.targetAngular,force,terms.y);
         }
+        float3 forcePoint=isSource&&worldPoint
+            ?source.position+bodyRotate(source.rotation,joint.sourcePosition)
+            :target.position+bodyRotate(target.rotation,joint.targetPosition);
+        float3 center=isSource?bodyCenterOfMass(source):bodyCenterOfMass(target);
+        // Bounds the force-weighted angular Hessian of the current linear joint coordinates.
+        float curvature=length(forcePoint-center)*length(linearForce);
+        deviceAvbdAddRow(equation,float3(0),float3(1,0,0),0,curvature);
+        deviceAvbdAddRow(equation,float3(0),float3(0,1,0),0,curvature);
+        deviceAvbdAddRow(equation,float3(0),float3(0,0,1),0,curvature);
     }
     void updateDuals(uint row,DeviceAvbdStep context)
     {
         DeviceJointConstraint joint=DeviceJoints[row];
         DeviceAvbdJointState state=DeviceAvbdJointStates[row];
         float3 linear,angular;
-        deviceJointCoordinates(joint,DeviceBodyStates[joint.sourceBody],DeviceBodyStates[joint.targetBody],linear,angular);
+        deviceJointAvbdCoordinates(joint,DeviceBodyStates[joint.sourceBody],DeviceBodyStates[joint.targetBody],linear,angular);
         for(uint dof=0;dof<6;dof++)
         {
             uint axis=dof%3;
