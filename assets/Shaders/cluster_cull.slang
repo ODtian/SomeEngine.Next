@@ -149,57 +149,6 @@ ClusterWorldBounds TransformClusterBounds(
     return bounds;
 }
 
-uint FindClusterBoundsLane(uint pageOffset, uint clusterID, uint instanceID)
-{
-    // Per-view filters leave sparse lanes; adjacent views of one cluster and
-    // instance share the same world AABB among the surviving lanes.
-    uint lane = WaveGetLaneIndex();
-    uint4 active = WaveActiveBallot(true);
-    uint rank = WaveMaskPrefix(active, lane);
-    uint previousLane = WaveQueue::FindNthSetBit(active, rank == 0u ? 0u : rank - 1u);
-    uint3 clusterInstance = uint3(pageOffset, clusterID, instanceID);
-    uint3 previousClusterInstance = WaveReadLaneAt(clusterInstance, previousLane);
-    bool firstClusterLane = rank == 0u || any(clusterInstance != previousClusterInstance);
-    uint4 clusterStarts = WaveActiveBallot(firstClusterLane);
-    uint startRank = WaveMaskPrefix(clusterStarts, lane);
-    return WaveQueue::FindNthSetBit(clusterStarts, firstClusterLane ? startRank : startRank - 1u);
-}
-
-ClusterWorldBounds ReadClusterBoundsLane(ClusterWorldBounds bounds, uint lane)
-{
-    bounds.Min = WaveReadLaneAt(bounds.Min, lane);
-    bounds.Max = WaveReadLaneAt(bounds.Max, lane);
-    bounds.VertexCount = WaveReadLaneAt(bounds.VertexCount, lane);
-    return bounds;
-}
-
-ClusterWorldBounds TransformClusterBoundsForViews(PackedCluster cluster, RenderInstanceTransform transform,
-    float expansion, uint pageOffset, uint clusterID, uint instanceID, bool targetViews)
-{
-    uint lane = WaveGetLaneIndex();
-    uint firstLane = targetViews ? FindClusterBoundsLane(pageOffset, clusterID, instanceID) : lane;
-    ClusterWorldBounds bounds = (ClusterWorldBounds)0;
-    if (lane == firstLane) bounds = TransformClusterBounds(cluster, transform, expansion);
-    return targetViews ? ReadClusterBoundsLane(bounds, firstLane) : bounds;
-}
-
-ClusterWorldBounds LoadPreviousClusterBounds(uint pageOffset, uint clusterID, uint instanceID,
-    float expansion, bool targetViews)
-{
-    uint lane = WaveGetLaneIndex();
-    uint firstLane = targetViews ? FindClusterBoundsLane(pageOffset, clusterID, instanceID) : lane;
-    ClusterWorldBounds bounds = (ClusterWorldBounds)0;
-    if (lane == firstLane)
-    {
-        PackedCluster cluster = LoadCluster(pageOffset, clusterID);
-        ApplyDrawClusterBounds(cluster, (PageHeap.Load(pageOffset + 44u) >> 1u) + clusterID, instanceID, true);
-        RenderInstanceTransform transform = LoadRenderTransform(InstanceData,
-            LoadRenderInstanceMetadata(InstanceProperties, RENDER_PREVIOUS_TRANSFORM_METADATA_WORD), instanceID);
-        bounds = TransformClusterBounds(cluster, transform, expansion);
-    }
-    return targetViews ? ReadClusterBoundsLane(bounds, firstLane) : bounds;
-}
-
 bool ProjectClusterAabb(
     ClusterWorldBounds worldBounds,
     bool usePrev,
@@ -422,8 +371,7 @@ bool LoadAndFilterCandidate(
     out ClusterWorldBounds worldBounds,
     out ClusterScreenBounds currentBounds,
     bool targetFilters = true,
-    bool currentProjection = true,
-    bool multipleViews = false)
+    bool currentProjection = true)
 {
     pageOffset = 0;
     clusterID = 0;
@@ -469,8 +417,7 @@ bool LoadAndFilterCandidate(
         ? LoadTargetDepthCacheClass(instanceID) : 1u;
     if (view.CullingEnabled != 0u)
     {
-        worldBounds = TransformClusterBoundsForViews(cluster, t, boundsExpansion,
-            pageOffset, clusterID, instanceID, targetFilters && multipleViews);
+        worldBounds = TransformClusterBounds(cluster, t, boundsExpansion);
         if (currentProjection)
         {
             currentBounds = ProjectClusterScreenBounds(worldBounds, false, view, depthCacheClass);
@@ -546,7 +493,7 @@ void AppendVisible(uint pageOffset, uint clusterID, uint instanceID,
 }
 
 #if CLUSTER_CULL_PHASE == 1
-void CullClusterCandidateData(ClusterCandidate candidate, bool targetFilters, bool multipleViews)
+void CullClusterCandidateData(ClusterCandidate candidate, bool targetFilters)
 {
     // Target windows and the post-HiZ pass consume current bounds immediately.
     // Primary main needs them only after surviving previous-frame occlusion.
@@ -577,7 +524,7 @@ void CullClusterCandidateData(ClusterCandidate candidate, bool targetFilters, bo
             boundsExpansion,
             rasterWindow,
             worldBounds,
-            currentBounds, targetFilters, currentProjection, multipleViews);
+            currentBounds, targetFilters, currentProjection);
     if (!valid)
         return;
 
@@ -600,8 +547,11 @@ void CullClusterCandidateData(ClusterCandidate candidate, bool targetFilters, bo
     if (view.HasPrevHistory != 0u && view.CullingEnabled != 0u &&
         !KeepBlendOcclusion(InstanceData, InstanceProperties, instanceID, view))
     {
-        ClusterWorldBounds previousBounds = LoadPreviousClusterBounds(pageOffset, clusterID, instanceID,
-            boundsExpansion, targetFilters && multipleViews);
+        PackedCluster previousCluster = LoadCluster(pageOffset, clusterID);
+        ApplyDrawClusterBounds(previousCluster, (PageHeap.Load(pageOffset + 44u) >> 1u) + clusterID, instanceID, true);
+        RenderInstanceTransform previous = LoadRenderTransform(InstanceData,
+            LoadRenderInstanceMetadata(InstanceProperties, RENDER_PREVIOUS_TRANSFORM_METADATA_WORD), instanceID);
+        ClusterWorldBounds previousBounds = TransformClusterBounds(previousCluster, previous, boundsExpansion);
         bounds = ProjectClusterScreenBounds(previousBounds, true, view);
         occluded = IsOccludedByHiZ(bounds, true, viewIndex, view,
             view.TargetPolicy != 0u ? LoadTargetDepthCacheClass(instanceID) : 1u);
@@ -636,7 +586,7 @@ void CullClusterCandidate(uint candidateIndex, bool targetFilters = true)
     uint capacity, stride;
     CandidateClusters.GetDimensions(capacity, stride);
     if (candidateIndex >= min(CandidateCount[0], capacity)) return;
-    CullClusterCandidateData(CandidateClusters[candidateIndex], targetFilters, targetFilters);
+    CullClusterCandidateData(CandidateClusters[candidateIndex], targetFilters);
 }
 
 #ifndef CLUSTER_PERSISTENT_CULL
