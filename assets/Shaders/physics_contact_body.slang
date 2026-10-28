@@ -6,6 +6,8 @@ struct DeviceContactBody
     float3 localPoint;
     float weight;
     uint stateIndex;
-    uint padding;
+    uint normalReference;
 };
+float3 deviceContactNormalLocalPoint(DeviceContactBody link)
+{ return link.normalReference==1?float3(0):link.localPoint; }
 #endif

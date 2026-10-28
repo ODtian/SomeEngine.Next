@@ -13,7 +13,8 @@ public interface ICollisionGeometryReader<TGeometry> where TGeometry : struct
     void GetBodies(scoped QueryRow row, scoped QueryCursor access, Vector3 point, Span<ContactBody> bodies);
 }
 
-public readonly struct ComponentGeometry<TGeometry> : ICollisionGeometryReader<TGeometry> where TGeometry : struct
+public readonly struct ComponentGeometry<TGeometry>(ContactNormalReference normalReference = ContactNormalReference.MaterialPoint)
+    : ICollisionGeometryReader<TGeometry> where TGeometry : struct
 {
     public static bool HasGeometry(scoped QueryRow row) => row.Has<TGeometry>();
 
@@ -29,5 +30,5 @@ public readonly struct ComponentGeometry<TGeometry> : ICollisionGeometryReader<T
     public int GetBodyCount(scoped QueryRow row, scoped QueryCursor access) => 1;
 
     public void GetBodies(scoped QueryRow row, scoped QueryCursor access, Vector3 point, Span<ContactBody> bodies) =>
-        bodies[0] = new(row.Entity, GeometrySpace.ToLocal(in row.ReadRef<BodyPose>(), point), 1);
+        bodies[0] = new(row.Entity, GeometrySpace.ToLocal(in row.ReadRef<BodyPose>(), point), 1, normalReference);
 }

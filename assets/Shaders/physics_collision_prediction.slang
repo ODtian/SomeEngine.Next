@@ -24,14 +24,14 @@ DeviceGeometryInput getDeviceCollisionGeometryPose(DeviceGeometryInput geometry,
     return geometry;
 }
 
-DeviceContactBody getDeviceRigidStartContactBody(uint index, DeviceBodyState start, float3 localPoint)
+DeviceContactBody getDeviceRigidStartContactBody(uint index, DeviceBodyState start, float3 localPoint, uint normalReference)
 {
     DeviceContactBody result;
     result.entity = uint2(start.entityIndex, start.entityGeneration);
     result.localPoint = localPoint;
     result.weight = 1;
     result.stateIndex = index;
-    result.padding = 0;
+    result.normalReference = normalReference;
     return result;
 }
 
@@ -93,8 +93,11 @@ void predictDeviceRigidCollision<TKernel : IDeviceCollisionPrediction>(uint work
             DeviceGeometryDistance distance = points[point];
             float3 firstLocal = bodyRotate(float4(-firstStart.rotation.xyz, firstStart.rotation.w), distance.firstPoint - firstStart.position);
             float3 secondLocal = bodyRotate(float4(-secondStart.rotation.xyz, secondStart.rotation.w), distance.secondPoint - secondStart.position);
-            float3 startDelta = getDeviceRigidContactDelta(firstStart, firstLocal, secondStart, secondLocal);
-            float3 predictedDelta = getDeviceRigidContactDelta(firstPredicted, firstLocal, secondPredicted, secondLocal);
+            uint firstNormalReference=kernel.getNormalReference(first),secondNormalReference=kernel.getNormalReference(second);
+            float3 firstNormalLocal=firstNormalReference==1?float3(0):firstLocal;
+            float3 secondNormalLocal=secondNormalReference==1?float3(0):secondLocal;
+            float3 startDelta = getDeviceRigidContactDelta(firstStart, firstNormalLocal, secondStart, secondNormalLocal);
+            float3 predictedDelta = getDeviceRigidContactDelta(firstPredicted, firstNormalLocal, secondPredicted, secondNormalLocal);
             float gap = distance.separation + dot(distance.normal, predictedDelta - startDelta);
             if (distance.separation > DetectionParameters.contactDistance && gap > DetectionParameters.contactDistance) continue;
             DeviceCollisionContact contact;
@@ -110,8 +113,8 @@ void predictDeviceRigidCollision<TKernel : IDeviceCollisionPrediction>(uint work
             uint contactIndex = index * 4 + written++;
             CollisionContacts[contactIndex] = contact;
             uint bodyOffset = contactIndex * DetectionParameters.bodiesPerContact;
-            CollisionContactBodies[bodyOffset] = getDeviceRigidStartContactBody(firstIndex, firstStart, firstLocal);
-            CollisionContactBodies[bodyOffset + 1] = getDeviceRigidStartContactBody(secondIndex, secondStart, secondLocal);
+            CollisionContactBodies[bodyOffset] = getDeviceRigidStartContactBody(firstIndex, firstStart, firstLocal, firstNormalReference);
+            CollisionContactBodies[bodyOffset + 1] = getDeviceRigidStartContactBody(secondIndex, secondStart, secondLocal, secondNormalReference);
             CollisionContactBodyCounts[contactIndex] = 2;
         }
         CollisionContactCounts[index] = written;

@@ -97,11 +97,12 @@ internal sealed partial class ContactSupportData
                 if (!workBodies.TryGetRow(lower, out QueryRow lowerWork) || lowerWork.ReadRef<LongRangeBodySupport>().Moving) continue;
             }
             else if (HasMotion(lower, bodies)) continue;
-            Vector3 delta = ContactBodyMath.GetDelta(in point, links, bodies, in context, false);
+            Vector3 delta = ContactBodyMath.GetDelta(in point, links, bodies, in context, false, normal: true);
             Vector3 gapVector = point.Normal * point.Separation + delta - point.BodyAnchorDelta;
             float pressure = Vector3.Dot(row.ReadRef<ContactResponse>().ForceOnSecond, point.Normal);
             if (Vector3.Dot(point.Normal, gapVector) > _settings.DistanceTolerance && pressure <= 0) continue;
-            Vector3 slip = delta - ContactBodyMath.GetDelta(in point, links, bodies, in context, true);
+            Vector3 slip = ContactBodyMath.GetDelta(in point, links, bodies, in context, false)
+                - ContactBodyMath.GetDelta(in point, links, bodies, in context, true);
             slip -= point.Normal * Vector3.Dot(point.Normal, slip);
             float travel = slip.Length(), mobility = 0;
             if (travel > 0)
@@ -209,12 +210,12 @@ internal sealed partial class ContactSupportData
             if (start)
             {
                 ref readonly BodyStepState step = ref bodies.ReadStepState(body);
-                position = step.StartCenterOfMass + Vector3.Transform(link.LocalPoint - mass.CenterOfMass, step.StartRotation);
+                position = step.StartCenterOfMass + Vector3.Transform(link.NormalLocalPoint - mass.CenterOfMass, step.StartRotation);
             }
             else
             {
                 ref readonly BodyPose pose = ref bodies.ReadPose(body);
-                position = pose.Position + Vector3.Transform(link.LocalPoint, pose.Rotation);
+                position = pose.Position + Vector3.Transform(link.NormalLocalPoint, pose.Rotation);
             }
             result += position * link.Weight;
         }

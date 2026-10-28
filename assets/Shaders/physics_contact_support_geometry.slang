@@ -15,7 +15,7 @@ float3 deviceSupportSidePoint(DeviceContactConstraint point,bool second,bool sta
         DeviceContactBody link=DeviceContactBodyLinks[point.bodyOffset+end];
         DeviceBodyState body=DeviceBodyStates[link.stateIndex];
         if(start) body=deviceBodyStart(body);
-        result+=(body.position+bodyRotate(body.rotation,link.localPoint))*link.weight;
+        result+=(body.position+bodyRotate(body.rotation,deviceContactNormalLocalPoint(link)))*link.weight;
     }
     return result;
 }

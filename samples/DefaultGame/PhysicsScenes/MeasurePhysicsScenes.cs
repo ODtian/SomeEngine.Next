@@ -198,7 +198,7 @@ internal sealed class ReadScenePhysicsResults : IDisposable
                     Entity body = participant.ReadRef<SomeEngine.ECS.Relations.DirectedRelationEndpoints<ContactParticipant>>().Target;
                     rows.TryGetRow(body, out QueryRow bodyRow);
                     ref readonly BodyPose pose = ref bodyRow.ReadRef<BodyPose>();
-                    Vector3 anchor = pose.Position + Vector3.Transform(link.LocalPoint, pose.Rotation);
+                    Vector3 anchor = pose.Position + Vector3.Transform(link.NormalLocalPoint, pose.Rotation);
                     delta += anchor * (link.Weight * (index < point.FirstBodyCount ? -1 : 1));
                 }
                 _penetration = MathF.Max(_penetration, -point.Separation - Vector3.Dot(point.Normal, delta - point.BodyAnchorDelta));

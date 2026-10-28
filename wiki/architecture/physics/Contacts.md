@@ -6,14 +6,14 @@
 
 几何检测的 `CollisionContact` 与双方 `ContactBody` 跨度是本次检测的派生输出，原几何及模拟状态继续由实体组件持有。`ContactPointOutput` 将结果写入可复用的 `ContactPointBuffer`，接触头和双方作用端分别使用连续容量。检测的形状、reader 与流形语义见[实体几何](Geometry.md)和[动态几何](Dynamic-Geometry.md)。
 
-持久的 `ContactPoint` 是无向原生关系的 payload；受保护的 `UndirectedRelationEndpoints<ContactPoint>` 持有双方几何实体及其原始位置角色。点 payload 保存特征、流形点序号、双方几何局部接触点、世界见证中点、法向、间距及采样锚基准。每个实际作用端通过 `ContactParticipant` 有向关系连接 Point→Body；受保护的 Target 是该作用端的模拟实体。点上的 `ContactBodyLink` Buffer 保存参与边引用、唯一的 body 局部采样锚及权重。
+持久的 `ContactPoint` 是无向原生关系的 payload；受保护的 `UndirectedRelationEndpoints<ContactPoint>` 持有双方几何实体及其原始位置角色。点 payload 保存特征、流形点序号、双方几何局部接触点、世界见证中点、法向、间距及采样锚基准。每个实际作用端通过 `ContactParticipant` 有向关系连接 Point→Body；受保护的 Target 是该作用端的模拟实体。点上的 `ContactBodyLink` Buffer 保存参与边引用、body 局部材料锚、法向参考选择及权重。
 
 一个 Body 可在一侧或双方出现多次。数值适配先合并该 Body 的全部带符号权重和相对质心杠杆，形成一个六维 Jacobian；body→constraint 派生索引让该点进入该 Body 的方程一次。这样同一刚体的多个采样点、两节点胶囊及三节点面共用相同响应入口。
 
-`BodyAnchorDelta` 是刷新时双方加权世界采样锚的差，方向为第二方减第一方。求解时的接触间距为：
+`BodyAnchorDelta` 是刷新时双方法向参考点的加权世界差，方向为第二方减第一方。求解时的接触间距为：
 
 ```text
-gap = Separation + dot(Normal, currentWeightedAnchorDelta - BodyAnchorDelta)
+gap = Separation + dot(Normal, currentWeightedNormalDelta - BodyAnchorDelta)
 ```
 
 几何表面偏移由 `Separation` 保存；模拟节点的采样锚及插值权重保持各 reader 的含义。`FirstBodyCount` 划分连续作用端中的双方，Normal 从第一方指向第二方。
@@ -24,10 +24,39 @@ gap = Separation + dot(Normal, currentWeightedAnchorDelta - BodyAnchorDelta)
 [求解采样](../../../assets/Shaders/physics_contact_geometry_math.slang) 使用第二侧首个 Body 的位置作为共同原点，
 先计算 `(body.position-origin)+R(localPoint)`，再分别加权两侧并相减。
 世界见证中点在最后加回该原点；子步起点采样使用对应的起点姿势。
-Jacobian 和 AVBD 接触势曲率共用 `R(localPoint-localCenterOfMass)` 作为力臂，
+材料点的 Jacobian 和 AVBD 接触势曲率使用 `R(localPoint-localCenterOfMass)` 作为力臂，
 将局部旋转与两 Body 的位置差留在其各自尺度内计算。
 
 [预测式碰撞](Predictive-Collision.md)的 `ContactPrediction` 将几何与加权锚基准关联到共同子步起点，`SampleTime` 保存该采样时刻；响应反力与冲量继续使用 `ContactResponse` 的作用区间。
+
+## 法向几何与摩擦材料点
+
+`ContactBody.NormalReference` 和持久的 `ContactBodyLink.NormalReference` 选择法向参考。
+默认 `MaterialPoint` 使用原 `LocalPoint`；`BodyOrigin` 使用 body 局部原点。
+`LocalPoint` 持有表面材料点，切向滑移、切向 Jacobian、摩擦历史继续读取该点。
+CPU 通过 `ComponentGeometry<TGeometry>(normalReference)` 或
+`ComponentGeometryMotion<TGeometry>(normalReference)` 显式选择，用户 reader 也可在输出的 `ContactBody` 上选择。
+GPU 的 `IDeviceCollisionNarrowPhase.getNormalReference(geometry)` 默认返回 `MaterialPoint`，
+普通 referenced 检测与预测检测沿同一选择写入参与端；
+料仓项目的 Sphere typed 组合显式返回 `BodyOrigin`，其余具体形状保持原选择。
+
+球的法向支撑由几何中心与半径决定。半径由采样 `Separation` 保存，
+法向残差随几何中心的位移更新。对于质量中心偏离几何原点的球，法向力臂为
+`R(-localCenterOfMass)`；质量中心和几何原点相同时，其法向角 Jacobian 为零。
+这是 `BodyOrigin` 选择在料仓 Sphere 中的实际用途。
+起点表面材料臂 `-radius * normal` 旋转后，材料锚会给法向间隙增加
+`radius * (1-cos(angle))`，所以球的法向读取使用独立的几何参考。
+
+检测的预测筛选、刷新基准、初始 separation、法向梯度及正曲率、接触条件化、
+压力罚参数、法向速度、恢复冲量、活动误差和完成结果中的 separation 均读取法向参考。
+`AvbdContactState.InitialDelta` 继续保存材料点的起点差，摩擦从该差计算切向滑移。
+两种参考共用原实体位姿和步状态；法向曲率按对应力臂累加，切向曲率按材料点力臂累加。
+
+`DeviceContactBody` 保持 32B：entity 位于 0、材料 local point 位于 8、weight 位于 20、
+state index 位于 24、normal reference 位于原填充位置 28。
+CPU 值和设备值沿原 `ContactPointBuffer`、参与关系和设备输入传递。
+GPU 匹配对新旧两方都按相同法向参考重建位置，保留 pair、feature、法向和距离规则；
+CPU 继续按几何采样的 `WorldPoint` 匹配。
 
 ## 显式范围与跨步匹配
 

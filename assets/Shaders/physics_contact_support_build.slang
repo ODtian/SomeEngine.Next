@@ -167,11 +167,11 @@ void buildDeviceContactSupports<T : IDeviceBodySelection,TWork : IDeviceContactS
         if(DeviceBodyStates[lower].motion==2)
         { if(!deviceSupportBodySelected(lower)||DeviceSupportBodyStates[lower].moving!=0) continue; }
         else if(deviceSupportHasMotion(lower)) continue;
-        float3 delta=deviceContactDelta(point,false);
+        float3 delta=deviceContactNormalDelta(point,false);
         float3 gap=point.normal*point.separation+delta-point.bodyAnchorDelta;
         float pressure=dot(DeviceContactResponses[row].forceOnSecond,point.normal);
         if(dot(point.normal,gap)>ContactSupportSettings.distanceTolerance&&pressure<=0) continue;
-        float3 slip=delta-deviceContactDelta(point,true); slip-=point.normal*dot(point.normal,slip);
+        float3 slip=deviceContactDelta(point,false)-deviceContactDelta(point,true); slip-=point.normal*dot(point.normal,slip);
         float travel=length(slip),mobility=0;
         if(travel>0)
         {

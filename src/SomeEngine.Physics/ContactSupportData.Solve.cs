@@ -59,7 +59,7 @@ internal sealed partial class ContactSupportData
                 state.Reaction = 0;
                 ReadOnlySpan<ContactBodyLink> links = row.ReadBuffer<ContactBodyLink>().AsSpan();
                 ContactBodyMath.GetJacobian(in point, links, body, bodies, in context, _settings.UpDirection,
-                    out Vector3 linear, out Vector3 angular);
+                    out Vector3 linear, out Vector3 angular, normal: true);
                 float side = state.UpperIsSecond ? 1 : -1;
                 linear *= side; angular *= side;
                 float height = Vector3.Dot(SidePoint(in point, links, state.UpperIsSecond, bodies, in context, false), _settings.UpDirection);

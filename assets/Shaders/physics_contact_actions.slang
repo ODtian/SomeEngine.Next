@@ -45,7 +45,7 @@ struct DeviceContactResponseActions<TSelection : IDeviceBodySelection> : IDevice
         DeviceContactResponseState response=DeviceContactResponses[row];
         if(dot(response.forceOnSecond,point.normal)<=0||response.initialNormalVelocity>=-point.restitutionThreshold||point.restitution==0) return;
         TSelection selection;
-        float mobility=deviceContactWeight(point,point.normal,selection);
+        float mobility=deviceContactWeight(point,point.normal,selection,true);
         if(mobility==0) return;
         float speed=deviceContactSpeed(point,context.duration,false);
         float next=max(0,response.restitutionImpulse+(-point.restitution*response.initialNormalVelocity-speed)/mobility);
@@ -59,7 +59,7 @@ struct DeviceContactResponseActions<TSelection : IDeviceBodySelection> : IDevice
             DeviceBodyState body=DeviceBodyStates[bodyIndex];
             if(body.motion!=2||!selection.contains(bodyIndex)) continue;
             float3 linear,angular;
-            deviceContactJacobian(point,bodyIndex,point.normal,linear,angular);
+            deviceContactNormalJacobian(point,bodyIndex,point.normal,linear,angular);
             body.linearVelocity+=linear*(body.inverseMass*change);
             body.angularVelocity+=bodyInverseInertia(body,angular)*change;
             DeviceBodyStates[bodyIndex]=body;

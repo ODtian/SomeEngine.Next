@@ -333,12 +333,12 @@ public sealed class ContactPoints<TCombine, TComponents> : IDisposable
                     {
                         ref readonly BodyMass mass = ref row.ReadRef<BodyMass>();
                         ref readonly BodyStepState step = ref row.ReadRef<BodyStepState>();
-                        position = step.StartCenterOfMass + Vector3.Transform(body.LocalPoint - mass.CenterOfMass, step.StartRotation);
+                        position = step.StartCenterOfMass + Vector3.Transform(body.NormalLocalPoint - mass.CenterOfMass, step.StartRotation);
                     }
                     else
                     {
                         ref readonly BodyPose pose = ref row.ReadRef<BodyPose>();
-                        position = pose.Position + Vector3.Transform(body.LocalPoint, pose.Rotation);
+                        position = pose.Position + Vector3.Transform(body.NormalLocalPoint, pose.Rotation);
                     }
                     delta += position * (body.Weight * (index < range.Contact.FirstBodyCount ? -1 : 1));
                 }
@@ -396,7 +396,7 @@ public sealed class ContactPoints<TCombine, TComponents> : IDisposable
             {
                 ParticipantReference reference = Points._references[Start + index];
                 RelationEdge<ContactParticipant> participant = reference.Existing.IsNull ? reference.Created.Resolve() : reference.Existing;
-                links.Add(new(participant, bodies[index].LocalPoint, bodies[index].Weight));
+                links.Add(new(participant, bodies[index].LocalPoint, bodies[index].Weight, bodies[index].NormalReference));
             }
         }
     }

@@ -67,7 +67,7 @@ void MatchDeviceContacts(uint3 id:SV_DispatchThreadID)
             DeviceDetectedContactBodyLinks links;
             float3 currentDelta;
             deviceContactPositions(inputIndex*ContactMatchSettings.inputBodiesPerContact,uint(current.firstBodyCount),
-                DeviceMatchInputBodyCounts[inputIndex],start,links,currentDelta,currentPosition);
+                DeviceMatchInputBodyCounts[inputIndex],start,links,true,currentDelta,currentPosition);
         }
         uint match=0xffffffff; float distance=ContactMatchSettings.squaredDistance; bool featureMatch=false;
         for(uint row=ContactMatchHeads[deviceContactPairBucket(current.first,current.second)];row!=0xffffffff;row=ContactMatchNext[row])
@@ -79,7 +79,7 @@ void MatchDeviceContacts(uint3 id:SV_DispatchThreadID)
             if(any(current.first!=old.firstGeometry)||any(current.second!=old.secondGeometry)||dot(current.normal,old.normal)<ContactMatchSettings.normalDot) continue;
             float3 oldDelta,oldPosition;
             DeviceMatchingStoredBodyLinks oldLinks;
-            deviceContactPositions(old.bodyOffset,old.firstBodyCount,old.bodyCount,start,oldLinks,oldDelta,oldPosition);
+            deviceContactPositions(old.bodyOffset,old.firstBodyCount,old.bodyCount,start,oldLinks,true,oldDelta,oldPosition);
             float3 delta=currentPosition-oldPosition;
             float squared=dot(delta,delta);
             if(squared>ContactMatchSettings.squaredDistance) continue;

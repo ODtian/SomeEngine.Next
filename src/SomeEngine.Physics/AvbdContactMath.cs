@@ -53,7 +53,8 @@ public readonly struct AvbdContactMath : IAvbdConstraint<ContactPoint>
         state.MultiplierNormal = point.Normal;
         Vector3 start = ContactBodyMath.GetDelta(in point, row.ReadBuffer<ContactBodyLink>().AsSpan(), bodies, in context, true);
         state.InitialDelta = start;
-        state.InitialSeparation = point.Separation + Vector3.Dot(point.Normal, start - point.BodyAnchorDelta);
+        Vector3 normalStart = ContactBodyMath.GetDelta(in point, row.ReadBuffer<ContactBodyLink>().AsSpan(), bodies, in context, true, normal: true);
+        state.InitialSeparation = point.Separation + Vector3.Dot(point.Normal, normalStart - point.BodyAnchorDelta);
     }
 
     public static void AccumulateBodyEquation(in ContactPoint point, scoped QueryRow row, Entity body,
@@ -78,24 +79,37 @@ public readonly struct AvbdContactMath : IAvbdConstraint<ContactPoint>
         ReadOnlySpan<ContactBodyLink> links = row.ReadBuffer<ContactBodyLink>().AsSpan();
         ref readonly BodyPose pose = ref bodies.ReadPose(body);
         Vector3 center = pose.GetCenterOfMass(in bodies.ReadMass(body));
-        Vector3 delta = default, weightedOffset = default;
-        float bodyWeight = 0, curvatureLength = 0;
+        Vector3 delta = default, normalDelta = default, weightedOffset = default, normalOffset = default;
+        float bodyWeight = 0, curvatureLength = 0, normalCurvatureLength = 0, frictionCurvatureLength = 0;
         for (int index = 0; index < links.Length; index++)
         {
             ref readonly ContactBodyLink link = ref links[index];
             Entity participant = ContactBodyMath.GetBody(in link, bodies, in context);
             ref readonly BodyPose participantPose = ref (participant == body ? ref pose : ref bodies.ReadPose(participant));
             Vector3 position = participantPose.Position + Vector3.Transform(link.LocalPoint, participantPose.Rotation);
+            Vector3 normalPosition = link.NormalReference == ContactNormalReference.MaterialPoint ? position
+                : participantPose.Position + Vector3.Transform(link.NormalLocalPoint, participantPose.Rotation);
             float weight = link.Weight * (index < point.FirstBodyCount ? -1 : 1);
             delta += position * weight;
+            normalDelta += normalPosition * weight;
             if (participant != body) continue;
             Vector3 offset = position - center;
             bodyWeight += weight;
             weightedOffset += offset * weight;
-            if (angularCurvature) curvatureLength += MathF.Abs(link.Weight) * offset.Length();
+            normalOffset += (normalPosition - center) * weight;
+            if (angularCurvature)
+            {
+                if (link.NormalReference == ContactNormalReference.MaterialPoint)
+                    curvatureLength += MathF.Abs(link.Weight) * offset.Length();
+                else
+                {
+                    normalCurvatureLength += MathF.Abs(link.Weight) * (normalPosition - center).Length();
+                    frictionCurvatureLength += MathF.Abs(link.Weight) * offset.Length();
+                }
+            }
         }
-        AvbdContactEquation contact = Evaluate(in point, row, in context, initialErrorFraction, extraForceOnSecond, delta);
-        Vector3 linear = point.Normal * bodyWeight, angular = Vector3.Cross(weightedOffset, point.Normal);
+        AvbdContactEquation contact = Evaluate(in point, row, in context, initialErrorFraction, extraForceOnSecond, delta, normalDelta);
+        Vector3 linear = point.Normal * bodyWeight, angular = Vector3.Cross(normalOffset, point.Normal);
         float normalStiffness = contact.NormalStiffness;
         if (normalUpperBound && normalStiffness == 0)
             normalStiffness = new AvbdMaterialTerms(row.ReadRef<ContactMaterial>().NormalStiffness,
@@ -110,8 +124,12 @@ public readonly struct AvbdContactMath : IAvbdConstraint<ContactPoint>
         equation.AddRow(linear, angular, Vector3.Dot(contact.TangentForce, across), contact.AcrossStiffness);
         if (angularCurvature)
         {
-            float force = (point.Normal * contact.NormalForce + contact.TangentForce - extraForceOnSecond).Length();
-            float curvature = curvatureLength * force;
+            Vector3 force = point.Normal * contact.NormalForce + contact.TangentForce - extraForceOnSecond;
+            float normalForce = Vector3.Dot(force, point.Normal);
+            float curvature = curvatureLength * force.Length();
+            if (normalCurvatureLength > 0 || frictionCurvatureLength > 0)
+                curvature += normalCurvatureLength * MathF.Abs(normalForce)
+                    + frictionCurvatureLength * (force - point.Normal * normalForce).Length();
             equation.AddRow(Vector3.Zero, Vector3.UnitX, 0, curvature);
             equation.AddRow(Vector3.Zero, Vector3.UnitY, 0, curvature);
             equation.AddRow(Vector3.Zero, Vector3.UnitZ, 0, curvature);
@@ -135,14 +153,15 @@ public readonly struct AvbdContactMath : IAvbdConstraint<ContactPoint>
     private static AvbdContactEquation Evaluate(in ContactPoint point, scoped QueryRow row, scoped PhysicsBodies bodies,
         in PhysicsStepContext context, float initialErrorFraction, Vector3 extraForceOnSecond) =>
         Evaluate(in point, row, in context, initialErrorFraction, extraForceOnSecond,
-            ContactBodyMath.GetDelta(in point, row.ReadBuffer<ContactBodyLink>().AsSpan(), bodies, in context, false));
+            ContactBodyMath.GetDelta(in point, row.ReadBuffer<ContactBodyLink>().AsSpan(), bodies, in context, false),
+            ContactBodyMath.GetDelta(in point, row.ReadBuffer<ContactBodyLink>().AsSpan(), bodies, in context, false, normal: true));
 
     private static AvbdContactEquation Evaluate(in ContactPoint point, scoped QueryRow row, in PhysicsStepContext context,
-        float initialErrorFraction, Vector3 extraForceOnSecond, Vector3 delta)
+        float initialErrorFraction, Vector3 extraForceOnSecond, Vector3 delta, Vector3 normalDelta)
     {
         ref readonly AvbdContactState state = ref row.ReadRef<AvbdContactState>();
         ref readonly ContactMaterial material = ref row.ReadRef<ContactMaterial>();
-        float gap = point.Separation + Vector3.Dot(point.Normal, delta - point.BodyAnchorDelta);
+        float gap = point.Separation + Vector3.Dot(point.Normal, normalDelta - point.BodyAnchorDelta);
         float residual = gap < 0 ? gap - initialErrorFraction * MathF.Min(state.InitialSeparation, 0) : gap;
         var terms = new AvbdMaterialTerms(material.NormalStiffness, state.NormalPenalty);
         float force = MathF.Min(0, terms.EvaluateForce(residual, state.NormalMultiplier));

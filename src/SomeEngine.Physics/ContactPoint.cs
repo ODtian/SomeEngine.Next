@@ -17,7 +17,7 @@ public struct ContactPoint : IComponent
     public Vector3 WorldPoint;
     public Vector3 Normal;
     public float Separation;
-    /// <summary>The weighted second-minus-first body-anchor vector at the geometry sample time.</summary>
+    /// <summary>The weighted second-minus-first normal-reference vector at the geometry sample time.</summary>
     public Vector3 BodyAnchorDelta;
     public int FirstBodyCount;
     public bool WarmStart;
@@ -30,7 +30,11 @@ public struct ContactParticipant : IComponent;
 
 [BufferCapacity(4)]
 public readonly record struct ContactBodyLink(RelationEdge<ContactParticipant> Participant,
-    Vector3 LocalPoint, float Weight) : IBufferElement;
+    Vector3 LocalPoint, float Weight,
+    ContactNormalReference NormalReference = ContactNormalReference.MaterialPoint) : IBufferElement
+{
+    public Vector3 NormalLocalPoint => NormalReference == ContactNormalReference.BodyOrigin ? Vector3.Zero : LocalPoint;
+}
 
 public struct ContactMaterial : IComponent
 {

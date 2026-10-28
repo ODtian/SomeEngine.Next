@@ -21,16 +21,16 @@ struct DeviceXpbdContactProjection<TSelection : IDeviceBodySelection> : IDeviceX
         DeviceContactConstraint point = DeviceContacts[row];
         DeviceXpbdContactState state = DeviceXpbdContactStates[row];
         TSelection selection;
-        float3 delta = deviceContactDelta(point, false), start = deviceContactDelta(point, true);
-        float gap = point.separation + dot(point.normal, delta - point.bodyAnchorDelta);
-        float startGap = point.separation + dot(point.normal, start - point.bodyAnchorDelta);
+        float3 start = deviceContactDelta(point, true);
+        float gap = point.separation + dot(point.normal, deviceContactNormalDelta(point,false) - point.bodyAnchorDelta);
+        float startGap = point.separation + dot(point.normal, deviceContactNormalDelta(point,true) - point.bodyAnchorDelta);
         float stiffness = point.normalStiffness * context.duration * context.duration;
         float damping = gap < min(startGap, 0) ? point.normalDamping * context.duration : 0;
-        float weight = deviceContactWeight(point, point.normal, selection);
+        float weight = deviceContactWeight(point, point.normal, selection, true);
         float multiplier = max(0, state.normalMultiplier -
             (stiffness * gap + damping * (gap - startGap) + state.normalMultiplier) /
             (1 + (stiffness + damping) * weight));
-        deviceContactApplyCorrection(point, point.normal, multiplier - state.normalMultiplier, selection);
+        deviceContactApplyCorrection(point, point.normal, multiplier - state.normalMultiplier, selection, true);
         state.normalMultiplier = multiplier;
         float3 slip = deviceContactDelta(point, false) - start;
         slip -= point.normal * dot(point.normal, slip);

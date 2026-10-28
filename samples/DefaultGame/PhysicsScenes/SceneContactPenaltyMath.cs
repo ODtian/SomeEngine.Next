@@ -67,7 +67,7 @@ internal static class SceneContactPenalty
                 ref readonly ContactBodyLink link = ref links[linkIndex];
                 if (ReadBody(in link, bodies, in context) != body) continue;
                 float weight = link.Weight * (linkIndex < point.FirstBodyCount ? -1 : 1);
-                Vector3 arm = pose.Position + Vector3.Transform(link.LocalPoint, pose.Rotation) - center;
+                Vector3 arm = pose.Position + Vector3.Transform(link.NormalLocalPoint, pose.Rotation) - center;
                 linear += point.Normal * weight;
                 angular += Vector3.Cross(arm, point.Normal) * weight;
             }
@@ -89,7 +89,7 @@ internal static class SceneContactPenalty
         {
             ref readonly ContactBodyLink link = ref links[index];
             ref readonly BodyPose pose = ref bodies.ReadPose(ReadBody(in link, bodies, in context));
-            delta += (pose.Position + Vector3.Transform(link.LocalPoint, pose.Rotation))
+            delta += (pose.Position + Vector3.Transform(link.NormalLocalPoint, pose.Rotation))
                 * (link.Weight * (index < point.FirstBodyCount ? -1 : 1));
         }
         float gap = point.Separation + Vector3.Dot(point.Normal, delta - point.BodyAnchorDelta);
