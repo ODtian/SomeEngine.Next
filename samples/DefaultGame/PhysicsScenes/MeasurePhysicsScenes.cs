@@ -18,7 +18,8 @@ public static class MeasurePhysicsScenes
     public static int Run(TextWriter output, string? id = null) => Run(output, id, null, null);
 
     public static int RunDevice(TextWriter output, IGraphicsBackend backend, Device device, string? id = null) =>
-        Run(output, id, backend, device);
+        PhysicsCrowdScale.Read(id) is { } scale ? MeasurePhysicsCrowd.Run(output, backend, device, scale)
+            : Run(output, id, backend, device);
 
     private static int Run(TextWriter output, string? id, IGraphicsBackend? backend, Device? device)
     {

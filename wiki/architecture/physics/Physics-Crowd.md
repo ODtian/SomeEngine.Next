@@ -1,5 +1,21 @@
 # 物理动画角色与骨骼布料
 
+DefaultGame 的 `--physics=character-cloth` 使用原两个角色。相同显示入口的
+`character-cloth-2000`、`character-cloth-5000`、`character-cloth-10000` 与
+`rigid-cloth-mixed` 通过 `PhysicsCrowdScale` 选择原具体工厂和规模。
+角色及骨骼布料使用原 `MeshSkin`；刚体网格按实际 `BoxGeometry` 建立普通网格，
+完成读回后沿 `LocalTransform`、Game world 变换及 Rendering world 提取显示。
+四权重顶点编码和解释由项目自己的材质与着色器持有。
+
+同名 `--physics-check=<id>` 使用相同工厂完整推进 180 步，混合场景保留第 120 步输入。
+每个完成边界观察全部 Body 与角色、布料的 `DevicePoseOutput`，公开输出读取单独计时；
+Frame 内的主体读回、变换和骨骼输出进入整步计时。首步与全部原步骤进入
+`Max <= 1000/60 ms` 预算，`BehaviorSatisfied` 和 `WithinBudget` 分别记录结果。
+本项目在打开资产与场景之前显式选择现有 Job 配置 `MaxResourceStates=65536`；
+独立测量 World 的原 Scheduler 使用同一容量，报告记录实际容量及场景数量。
+实际显示中的实体销毁访问声明由 [需求 #445](https://github.com/ODtian/SomeEngine.Next/issues/445)
+接续对应领域交付。
+
 项目入口是 [PhysicsCrowdExample](../../../samples/DefaultGame/PhysicsScenes/PhysicsCrowdExample.cs)
 的 `CreateDevice(characters, backend, device)`，随后以 `CreateSimulation(world)` 创建同一
 [PhysicsCrowdScene](../../../samples/DefaultGame/PhysicsScenes/PhysicsCrowdScene.cs)。

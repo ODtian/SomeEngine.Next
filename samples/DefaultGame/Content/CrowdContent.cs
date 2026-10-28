@@ -21,6 +21,7 @@ public static class CrowdContent
     public static async Task BuildMaterialsAsync(string projectRoot, string engineRoot)
     {
         string template = await File.ReadAllTextAsync(Path.Combine(projectRoot, "assets/Shaders/standard.slang"));
+        string skin = await File.ReadAllTextAsync(Path.Combine(projectRoot, "assets/Shaders/physics-crowd-skin.slang"));
         AssetManifest common = AssetManifest.Load(Path.Combine(projectRoot, "Library/AssetManifest"));
         foreach ((string directory, bool cached) in new[] { ("CrowdInline", false), ("CrowdCache", true) })
         {
@@ -34,7 +35,7 @@ public static class CrowdContent
                 File.Copy(Path.Combine(projectRoot, entry.Path), destination, overwrite: true);
                 project.RegisterAsset(entry);
             }
-            await WriteShaderAsync(project, template, cached);
+            await WriteShaderAsync(project, template, skin, cached);
         }
     }
 
@@ -46,7 +47,8 @@ public static class CrowdContent
         var example = new CrowdExample();
         var project = new AssetProject(inlineRoot, [], shaderIncludeDirectories: [Path.Combine(engineRoot, "assets/Shaders")]);
         string template = await File.ReadAllTextAsync(Path.Combine(projectRoot, "assets/Shaders/standard.slang"));
-        await WriteShaderAsync(project, template, cached: false);
+        string skin = await File.ReadAllTextAsync(Path.Combine(projectRoot, "assets/Shaders/physics-crowd-skin.slang"));
+        await WriteShaderAsync(project, template, skin, cached: false);
         string meshPath = Path.Combine(inlineRoot, "assets/Models/crowd.mesh.asset");
         Guid meshId = Guid.Empty;
         if (File.Exists(meshPath))
@@ -60,7 +62,7 @@ public static class CrowdContent
         await SetResolutionAsync(project);
         CopyContent(inlineRoot, cacheRoot);
         var cached = new AssetProject(cacheRoot, [], shaderIncludeDirectories: [Path.Combine(engineRoot, "assets/Shaders")]);
-        await WriteShaderAsync(cached, template, cached: true);
+        await WriteShaderAsync(cached, template, skin, cached: true);
         ClusterGeometryBlock geometry = await mesh.GetBlockAsync<ClusterGeometryBlock>();
         Console.WriteLine($"Crowd example: {CrowdExample.CharacterCount} instances, {CrowdExample.BoneCount} bones each, "
             + $"{example.Positions.Length} source vertices/{example.Indices.Length / 3} triangles per LOD0, 4 positive weights, "
@@ -83,9 +85,9 @@ public static class CrowdContent
         }
     }
 
-    private static async Task WriteShaderAsync(AssetProject project, string template, bool cached)
+    private static async Task WriteShaderAsync(AssetProject project, string template, string skin, bool cached)
     {
-        string evaluate = SkinEvaluator;
+        string evaluate = skin;
         if (cached) evaluate = "#include \"vertex_deform_cache.slang\"\n" + evaluate
             .Replace("struct CrowdSkin : IVertexEvaluate", "struct CrowdSkin : IVertexDeformCache")
             .Replace("precise float3 getPosition(Vertex value)", CacheEncoding + "\nprecise float3 getPosition(Vertex value)");
@@ -211,52 +213,7 @@ public static class CrowdContent
         project.RegisterAsset(await application.SaveAsync(path));
     }
 
-    private const string SkinEvaluator = """
-        #include "skin_joint_transforms.slang"
-        struct CrowdSkin : IVertexEvaluate
-        {
-            typedef StandardVertex Vertex;
-            void setSurface(inout Vertex result, float3 position, float3 normal)
-            {
-                result.position = position;
-                result.basePosition = position;
-                result.worldNormal = normal;
-                float3 tangent = normalize(abs(normal.y) < .9 ? cross(float3(0,1,0), normal) : cross(float3(1,0,0), normal));
-                result.worldTangent = float4(tangent, 1);
-            }
-            precise Vertex evaluate(VertexEvalContext ctx)
-            {
-                uint footer = ctx.pageHeap.Load(ctx.attributeBlobAddress + ctx.attributeBlobSize - 4u);
-                uint address = ctx.attributeBlobAddress + footer + ctx.localVertexIndex * 12u;
-                uint3 packed = ctx.pageHeap.Load3(address);
-                uint4 joints = uint4(packed.x & 65535u, packed.x >> 16u, packed.y & 65535u, packed.y >> 16u);
-                float4 weights = float4(packed.z & 255u, (packed.z >> 8u) & 255u, (packed.z >> 16u) & 255u, packed.z >> 24u) / 255.0;
-                uint2 binding = LoadSkinBinding(ctx.instanceID);
-                precise float3 position = EvalObjectPosition(ctx);
-                uint normalStream = ctx.pageHeap.Load(ctx.attributeBlobAddress + 4u);
-                precise float3 normal = float3(ReadStandardComponent(ctx, normalStream, 0u, 0),
-                    ReadStandardComponent(ctx, normalStream, 1u, 1), ReadStandardComponent(ctx, normalStream, 2u, 0));
-                precise float3 localPosition = 0;
-                precise float3 localNormal = 0;
-                [unroll] for (uint influence = 0; influence < 4u; influence++)
-                {
-                    precise float4x4 transform = LoadSkinJointTransform(binding, joints[influence], ctx.IsPreviousFrame != 0u);
-                    precise float3 transformedPosition = mul(float4(position, 1), transform).xyz;
-                    precise float3 transformedNormal = mul(float4(normal, 0), transform).xyz;
-                    localPosition += transformedPosition * weights[influence];
-                    localNormal += transformedNormal * weights[influence];
-                }
-                StaticVertexEval source;
-                precise Vertex result = source.evaluate(ctx);
-                precise float3 worldPosition = TransformInstanceLocalPosition(localPosition, ctx.transform);
-                precise float3 worldNormal = normalize(RotateByTransform(localNormal, ctx.transform));
-                setSurface(result, worldPosition, worldNormal);
-                return result;
-            }
-            precise float3 getPosition(Vertex value) { return value.position; }
-            precise Vertex readLane(Vertex value, uint lane) { StaticVertexEval source; return source.readLane(value, lane); }
-        };
-        """;
+
 
     // This example cache stores current/previous world position and normal in 48 bytes per selected vertex.
     private const string CacheEncoding = """
