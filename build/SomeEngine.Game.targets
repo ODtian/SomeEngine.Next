@@ -1,4 +1,16 @@
 <Project>
+  <UsingTask TaskName="ReadGameContentPacks" TaskFactory="RoslynCodeTaskFactory"
+             AssemblyFile="$(MSBuildToolsPath)/Microsoft.Build.Tasks.Core.dll">
+    <Task>
+      <Code Type="Class" Language="cs" Source="$(MSBuildThisFileDirectory)ReadGameContentPacks.cs" />
+    </Task>
+  </UsingTask>
+  <Target Name="CollectGameContentPacks" BeforeTargets="AssignTargetPaths">
+    <ReadGameContentPacks ProjectRoot="$(SomeEngineProjectRoot)"
+                          IntermediateDirectory="$(IntermediateOutputPath)GameContent">
+      <Output TaskParameter="ContentFiles" ItemName="Content" />
+    </ReadGameContentPacks>
+  </Target>
   <PropertyGroup Condition="'$(SomeEngineDevelopment)' == 'true'">
     <DefineConstants>$(DefineConstants);SOMEENGINE_DEVELOPMENT</DefineConstants>
   </PropertyGroup>

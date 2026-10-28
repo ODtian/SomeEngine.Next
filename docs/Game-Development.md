@@ -45,6 +45,8 @@ dotnet publish Game.csproj -c Release
 
 `PublishAot` 支持显式覆盖，例如 `-p:PublishAot=false` 用于托管构建。`SomeEngineProjectRoot` 默认取游戏 `.csproj` 的目录，项目可在导入 `.props` 前设置自己的资产根目录。
 
+构建和发布同时携带资产目录中的散文件、清单引用的资产包，以及 `Library/AssetPacks/packs.json` 选择的包。包列表沿原顺序发布；项目外的显式包复制到输出的 `Library/AssetPacks` 子目录，输出包列表使用对应相对路径。来源目录中的包列表保持原值。
+
 ## 资产命令与编辑器调用
 
 开发构建生成游戏 `RootNamespace` 下的 `ProjectPaths`，其中 `Root` 是项目资产根目录，`EngineShaders` 是引擎 Shader 库目录。路径在游戏编译时确定。
