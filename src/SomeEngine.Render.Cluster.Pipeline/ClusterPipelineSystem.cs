@@ -92,6 +92,9 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     private bool _hasPendingFrame;
     private bool _created;
 
+    // The application keeps this set across view removal and scene shutdown.
+    internal Func<ClusterShaders, ClusterVisibilityMode, ClusterPipelineSet>? BorrowPipelines { get; init; }
+
     public ClusterPipelineSystem(
         IGraphicsBackend backend,
         Device device,
@@ -360,6 +363,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             _rasterStages?.Dispose();
             _rasterStages = null;
 
+            ReleaseBorrowedPipelines(ref _pipelines);
             _pipelines?.Dispose();
             _pipelines = null;
             _dispatchIndirectLayout?.Dispose();
@@ -1022,6 +1026,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         Dispose(ref _rasterStages, ref failures);
         DisposeMaterialSamplers(ref failures);
 
+        ReleaseBorrowedPipelines(ref _pipelines);
         Dispose(ref _pipelines, ref failures);
         _history = null;
         Dispose(ref _dispatchIndirectLayout, ref failures);
@@ -1070,7 +1075,9 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             [new(IndirectArgumentType.Draw)];
         try
         {
-            pipelines = new ClusterPipelineSet(_backend, _device, _configuration, _visibilityMode);
+            pipelines = BorrowPipelines is { } borrow
+                ? borrow(_configuration, _visibilityMode)
+                : new ClusterPipelineSet(_backend, _device, _configuration, _visibilityMode);
             dispatchIndirectLayout = _backend.CreateIndirectCommandLayout(
                 _device,
                 new IndirectCommandLayoutDesc(
@@ -1098,6 +1105,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             Dispose(ref drawIndirectLayout, ref cleanupFailures);
             Dispose(ref dispatchIndirectLayout, ref cleanupFailures);
 
+            ReleaseBorrowedPipelines(ref pipelines);
             Dispose(ref pipelines, ref cleanupFailures);
             if (cleanupFailures is not null)
             {
@@ -1230,6 +1238,12 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         try { world.ReleaseQuery(query); }
         catch (Exception failure) { (failures ??= []).Add(failure); }
         query = default;
+    }
+
+    private void ReleaseBorrowedPipelines(ref ClusterPipelineSet? pipelines)
+    {
+        if (BorrowPipelines is not null)
+            pipelines = null;
     }
 
     private static void Dispose<T>(ref T? value, ref List<Exception>? failures)

@@ -54,6 +54,16 @@ Cluster 在构造时按顺序建立目标视图第一轮几何、`IntermediateOc
 `ApplicationViewSettings` 维护，使用自己的 Cluster 输出和 Skinning 资源提供者。
 主视图尺寸切换保留追加视图的设置、公开图像身份与自身资源。
 
+应用的 [`ApplicationDisplay`](../../../src/SomeEngine.Runtime/RuntimeApplication.cs)
+持有一组跨场景的 Cluster 可执行管线。同一个
+`ClusterShaders` 对象与 `ClusterVisibilityMode` 的主视图、追加视图及尺寸替换输出借用
+这一集合，各视图继续持有自己的图数据、材质阶段、历史和间接布局。场景关闭先等待
+已登记提交完成并释放各视图；同输入的下一场景继续使用该集合，配置或可见性模式
+改变时由 Display 替换集合，设备更换时释放集合，应用关闭由 Device 完成原生收尾。
+[`ApplicationContent`](../../../src/SomeEngine.Runtime/ApplicationContent.cs)
+在场景加载后按名称、操作角色、实际 Shader 引用和入口保留同输入的
+`ClusterShaders` 对象；Shader 来源、版本与编译设置仍由资产取得路径决定。
+
 ## Raster regions
 
 主视图的两轮光栅与目标视图的两轮光栅分别占据一个持久区段。每轮内部依次包含：

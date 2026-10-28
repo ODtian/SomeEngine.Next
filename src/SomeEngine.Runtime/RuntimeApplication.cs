@@ -207,13 +207,12 @@ internal static class RuntimeApplication
             catch (Exception cleanup) { errors.Add(cleanup); }
         }
 
-        ClusterShaders clusterShaders = pipelineTask.Result;
+        ClusterShaders clusterShaders = content.ReuseClusterShaders(pipelineTask.Result);
         VirtualShadowMapShaders shadowShaders = virtualShadowTask.Result;
         Shader uiCode = uiShaderTask.Result;
         Shader presentationCode = presentationShaderTask.Result;
         Shader lightingCode = lightingShaderTask.Result;
         Shader temporalCode = temporalShaderTask.Result;
-        content.Pipeline = clusterShaders;
         content.Shadows = shadowShaders;
         content.SharedShaders = [uiCode, presentationCode, lightingCode, temporalCode];
         using WorldAsset sceneFile = sceneTask.Result;
@@ -227,13 +226,14 @@ internal static class RuntimeApplication
         return RunRenderer(
             options,
             startup,
+            display,
             display.Backend,
             display.Device,
             display.Swapchain,
             display.Window!,
             worldTask.Result,
             sceneResourcesTask.Result,
-            pipelineTask.Result,
+            clusterShaders,
             virtualShadowTask.Result,
             uiShaderTask.Result,
             presentationShaderTask.Result,
@@ -281,6 +281,7 @@ internal static class RuntimeApplication
         private bool _meshShadersDisabled;
         private bool _validation;
         private bool _calibratedTimestampsRequired;
+        private ClusterPipelineSet? _clusterPipelines;
 
         internal void Initialize(RuntimeStartupOptions options, bool useWarp, string title, ApplicationSettingsBlock boot,
             bool measureShadowInvalidation = false)
@@ -301,6 +302,7 @@ internal static class RuntimeApplication
             _calibratedTimestampsRequired = calibratedTimestampsRequired;
             if (Window is not null)
             {
+                DisposeClusterPipelines();
                 Swapchain.Dispose();
                 Swapchain = null!;
                 Device.Dispose();
@@ -348,6 +350,23 @@ internal static class RuntimeApplication
 
         }
 
+        internal ClusterPipelineSet BorrowClusterPipelines(ClusterShaders shaders, ClusterVisibilityMode visibilityMode)
+        {
+            // All views share these inputs; replacement follows the previous scene's shutdown.
+            if (_clusterPipelines is { } pipelines && ReferenceEquals(pipelines.Shaders, shaders) &&
+                pipelines.VisibilityMode == visibilityMode)
+                return pipelines;
+            DisposeClusterPipelines();
+            return _clusterPipelines = new ClusterPipelineSet(Backend, Device, shaders, visibilityMode);
+        }
+
+        private void DisposeClusterPipelines()
+        {
+            ClusterPipelineSet? pipelines = _clusterPipelines;
+            _clusterPipelines = null;
+            pipelines?.Dispose();
+        }
+
         internal T Wait<T>(Task<T> task) => Window is null
             ? task.GetAwaiter().GetResult()
             : RuntimeWait.Task(task, Window, FrameTimeout);
@@ -362,6 +381,8 @@ internal static class RuntimeApplication
         {
             Swapchain?.Dispose();
             Device?.Dispose();
+            // Device completes native teardown, including a scene that failed during shutdown.
+            _clusterPipelines = null;
             Surface?.Dispose();
             Backend?.Dispose();
             Window?.Dispose();
@@ -511,6 +532,7 @@ internal static class RuntimeApplication
     private static int RunRenderer(
         RuntimeStartupOptions options,
         ApplicationStartupTiming startup,
+        ApplicationDisplay display,
         IGraphicsBackend backend,
         Device device,
         Swapchain swapchain,
@@ -725,7 +747,10 @@ internal static class RuntimeApplication
                 BlendTriangleCapacity = script?.BlendTriangleCapacity ?? ClusterPipelineOptions.DefaultBlendTriangleCapacity,
                 BlendReferenceCapacity = script?.BlendReferenceCapacity ?? 1_048_576,
                 MaxCandidates = script?.ClusterWorkCapacity ?? 1_048_576,
-            }, viewGrid: viewGrid, deformBounds: skinBounds);
+            }, viewGrid: viewGrid, deformBounds: skinBounds)
+        {
+            BorrowPipelines = display.BorrowClusterPipelines,
+        };
 
         GameUpdateTiming UpdateGameViews(double deltaSeconds, long gameUpdateStarted)
         {
