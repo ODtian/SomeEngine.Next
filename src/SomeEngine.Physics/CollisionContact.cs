@@ -26,7 +26,11 @@ public struct CollisionContact : IComponent
 
 /// <summary>An actual simulated endpoint, its body-local contact anchor and interpolation weight.</summary>
 [BufferCapacity(4)]
-public readonly record struct ContactBody(Entity Body, Vector3 LocalPoint, float Weight) : IBufferElement;
+public readonly record struct ContactBody(Entity Body, Vector3 LocalPoint, float Weight,
+    ContactNormalReference NormalReference = ContactNormalReference.MaterialPoint) : IBufferElement
+{
+    public Vector3 NormalLocalPoint => NormalReference == ContactNormalReference.BodyOrigin ? Vector3.Zero : LocalPoint;
+}
 
 public interface ICollisionContactOutput
 {

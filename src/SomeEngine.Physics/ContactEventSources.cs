@@ -34,7 +34,7 @@ public readonly struct BodyContactEventSource : IContactEventSource
     {
         ref readonly ContactPoint point = ref row.ReadRef<ContactPoint>();
         ref readonly var endpoints = ref row.ReadRef<UndirectedRelationEndpoints<ContactPoint>>();
-        Vector3 delta = ContactBodyMath.GetDelta(in point, row.ReadBuffer<ContactBodyLink>().AsSpan(), bodies, in context, false);
+        Vector3 delta = ContactBodyMath.GetDelta(in point, row.ReadBuffer<ContactBodyLink>().AsSpan(), bodies, in context, false, normal: true);
         float separation = point.Separation + Vector3.Dot(point.Normal, delta - point.BodyAnchorDelta);
         Vector3 force = row.TryReadRef<ContactResponse>(out var response) ? response.Value.ForceOnSecond : default;
         sample = new(endpoints.EndpointA, endpoints.EndpointB, point.WorldPoint, point.Normal, separation, force);

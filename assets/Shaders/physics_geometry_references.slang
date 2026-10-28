@@ -57,7 +57,7 @@ struct DeviceTriangle : IDevicePointGeometry
     }
 };
 
-uint writeDeviceGeometryBodies(uint geometryIndex, float3 point, uint output)
+uint writeDeviceGeometryBodies(uint geometryIndex, float3 point, uint output, uint normalReference)
 {
     DeviceGeometryReference reference = DeviceGeometryReferences[geometryIndex];
     uint indices[3] = { reference.firstBody, reference.secondBody, reference.thirdBody };
@@ -87,11 +87,13 @@ uint writeDeviceGeometryBodies(uint geometryIndex, float3 point, uint output)
             ? rotateDeviceDirection(float4(-state.rotation.xyz, state.rotation.w), point - state.position) : local[index];
         body.weight = weights[index];
         body.stateIndex = indices[index];
-        body.padding = 0;
+        body.normalReference = normalReference;
         CollisionContactBodies[output + index] = body;
     }
     return reference.bodyCount;
 }
+uint writeDeviceGeometryBodies(uint geometryIndex, float3 point, uint output)
+{ return writeDeviceGeometryBodies(geometryIndex,point,output,0); }
 
 void detectDeviceReferencedCollision<TKernel : IDeviceCollisionNarrowPhase>(uint work, TKernel kernel)
 {
@@ -113,9 +115,10 @@ void detectDeviceReferencedCollision<TKernel : IDeviceCollisionNarrowPhase>(uint
             DeviceCollisionContact contact = CollisionContacts[contactIndex];
             float3 firstPoint = first.position + rotateDeviceDirection(first.rotation, contact.firstLocalPoint);
             float3 secondPoint = second.position + rotateDeviceDirection(second.rotation, contact.secondLocalPoint);
-            uint firstCount = writeDeviceGeometryBodies(pair.firstGeometry, firstPoint, contactIndex * DetectionParameters.bodiesPerContact);
+            uint firstCount = writeDeviceGeometryBodies(pair.firstGeometry, firstPoint,
+                contactIndex * DetectionParameters.bodiesPerContact, kernel.getNormalReference(first));
             uint secondCount = writeDeviceGeometryBodies(pair.secondGeometry, secondPoint,
-                contactIndex * DetectionParameters.bodiesPerContact + firstCount);
+                contactIndex * DetectionParameters.bodiesPerContact + firstCount, kernel.getNormalReference(second));
             contact.firstBodyCount = int(firstCount);
             CollisionContacts[contactIndex] = contact;
             CollisionContactBodyCounts[contactIndex] = firstCount + secondCount;

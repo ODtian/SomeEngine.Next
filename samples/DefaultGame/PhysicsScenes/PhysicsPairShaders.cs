@@ -27,7 +27,7 @@ internal sealed partial class PhysicsSceneShaders
         """;
 
     private ComputePipelineDesc ShapePairDetection(string name, int firstType, string first, string second,
-        bool hull = false, bool prediction = false)
+        bool hull = false, bool prediction = false, bool firstBodyOrigin = false, bool secondBodyOrigin = false)
     {
         string predictionMethods = prediction ? $$"""
             float getMaximumProjection(DeviceGeometryInput geometry, float3 direction)
@@ -57,6 +57,8 @@ internal sealed partial class PhysicsSceneShaders
         #include "physics_geometry_references.slang"
         struct ShapePairCollision : {{(prediction ? "IDeviceCollisionPrediction" : "IDeviceCollisionNarrowPhase")}}
         {
+            override uint getNormalReference(DeviceGeometryInput geometry)
+            { return geometry.geometryType == {{firstType}} ? {{(firstBodyOrigin ? 1 : 0)}} : {{(secondBodyOrigin ? 1 : 0)}}; }
             DeviceGeometryDistance distance(uint work, DeviceGeometryInput first, DeviceGeometryInput second)
             {
                 if (first.geometryType == {{firstType}})

@@ -39,7 +39,7 @@ void UpdateDeviceContactGeometry(uint3 id:SV_DispatchThreadID)
         DeviceContactBodyLinks[point.bodyOffset+end]=link;
         DeviceBodyState body=DeviceBodyStates[link.stateIndex];
         if(point.predicted!=0) body=deviceBodyStart(body);
-        float3 anchor=deviceContactRelativeAnchor(body,link.localPoint,origin.position)*link.weight;
+        float3 anchor=deviceContactRelativeAnchor(body,deviceContactNormalLocalPoint(link),origin.position)*link.weight;
         if(end<point.firstBodyCount) first+=anchor;
         else second+=anchor;
     }

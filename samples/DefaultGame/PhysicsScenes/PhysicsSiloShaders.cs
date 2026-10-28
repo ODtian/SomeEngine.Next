@@ -25,10 +25,10 @@ internal sealed partial class PhysicsSceneShaders
 
     internal ComputePipelineDesc[] SiloDetection() =>
     [
-        ShapePairDetection("silo_sphere_sphere", 0, "DeviceSphere", "DeviceSphere", prediction: true),
-        ShapePairDetection("silo_sphere_box", 0, "DeviceSphere", "DeviceBox", prediction: true),
+        ShapePairDetection("silo_sphere_sphere", 0, "DeviceSphere", "DeviceSphere", prediction: true, firstBodyOrigin: true, secondBodyOrigin: true),
+        ShapePairDetection("silo_sphere_box", 0, "DeviceSphere", "DeviceBox", prediction: true, firstBodyOrigin: true),
         ShapePairDetection("silo_box_box", 1, "DeviceBox", "DeviceBox", prediction: true),
-        ShapePairDetection("silo_sphere_hull", 0, "DeviceSphere", "DeviceHull", hull: true, prediction: true),
+        ShapePairDetection("silo_sphere_hull", 0, "DeviceSphere", "DeviceHull", hull: true, prediction: true, firstBodyOrigin: true),
         ShapePairDetection("silo_box_hull", 1, "DeviceBox", "DeviceHull", hull: true, prediction: true),
         ShapePairDetection("silo_hull_hull", 2, "DeviceHull", "DeviceHull", hull: true, prediction: true),
     ];

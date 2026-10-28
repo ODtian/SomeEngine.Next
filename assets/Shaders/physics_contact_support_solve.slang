@@ -76,7 +76,7 @@ void correctDeviceContactSupport(uint body,DeviceAvbdStep context,DeviceAvbdEqua
         DeviceContactSupportState state=DeviceSupportContactStates[pointRow]; state.reaction=0; DeviceSupportContactStates[pointRow]=state;
         DeviceContactConstraint point=DeviceContacts[pointRow];
         DeviceSupportEquation equation=(DeviceSupportEquation)0; equation.contact=pointRow;
-        deviceContactJacobian(point,body,up,equation.linear,equation.angular);
+        deviceContactNormalJacobian(point,body,up,equation.linear,equation.angular);
         float side=state.upperIsSecond!=0?1:-1; equation.linear*=side; equation.angular*=side;
         float height=dot(deviceSupportSidePoint(point,state.upperIsSecond!=0,false),up);
         equation.heightError=state.minimumHeight-ContactSupportSettings.initialErrorFraction*state.initialError-height

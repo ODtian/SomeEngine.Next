@@ -174,7 +174,7 @@ internal sealed partial class PhysicsSceneShaders
                     inner.initialize(row,context);
                     DeviceContactConstraint point=DeviceContacts[row];
                     DeviceGraphBodies bodies;
-                    float mobility=deviceContactWeight(point,point.normal,bodies);
+                    float mobility=deviceContactWeight(point,point.normal,bodies,true);
                     float conditioning=1/(context.duration*context.duration*mobility);
                     DeviceAvbdContactState state=DeviceAvbdContactStates[row];
                     state.normalPenalty=clamp(max(conditioning,state.normalPenalty*context.retention),1,1e9);
@@ -199,7 +199,7 @@ internal sealed partial class PhysicsSceneShaders
                     inner.updateDuals(row,context);
                     #endif
                     DeviceContactConstraint point=DeviceContacts[row];
-                    float gap=point.separation+dot(point.normal,deviceContactDelta(point,false)-point.bodyAnchorDelta);
+                    float gap=point.separation+dot(point.normal,deviceContactNormalDelta(point,false)-point.bodyAnchorDelta);
                     DeviceAvbdContactState state=DeviceAvbdContactStates[row];
                     float penalty=max(state.normalPenalty+100000*max(0,-gap),-state.normalMultiplier/.0005);
                     state.normalPenalty=clamp(penalty,1,1e9); state.tangentPenalty=state.normalPenalty;
@@ -386,7 +386,7 @@ internal sealed partial class PhysicsSceneShaders
                 if(index>=count||!deviceContactSelected(index)) return;
                 InterlockedAdd(SceneStatistics[2],1);
                 DeviceContactConstraint point=DeviceContacts[index];
-                float separation=point.separation+dot(point.normal,deviceContactDelta(point,false)-point.bodyAnchorDelta);
+                float separation=point.separation+dot(point.normal,deviceContactNormalDelta(point,false)-point.bodyAnchorDelta);
                 if(separation<0) InterlockedMax(SceneStatistics[0],asuint(-separation));
             }
             """, "Clear", "Bodies", "Contacts");

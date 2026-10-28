@@ -24,7 +24,7 @@ DeviceAvbdContactEquation deviceEvaluateAvbdContact(uint row,DeviceAvbdStep cont
     DeviceContactConstraint point=DeviceContacts[row];
     DeviceAvbdContactState state=DeviceAvbdContactStates[row];
     float3 delta=deviceContactDelta(point,false);
-    float gap=point.separation+dot(point.normal,delta-point.bodyAnchorDelta);
+    float gap=point.separation+dot(point.normal,deviceContactNormalDelta(point,false)-point.bodyAnchorDelta);
     float residual=gap<0?gap-context.initialErrorFraction*min(state.initialSeparation,0):gap;
     float2 terms=deviceAvbdMaterial(point.normalStiffness,state.normalPenalty);
     float force=min(0,terms.x*state.normalMultiplier+terms.y*residual);
@@ -77,7 +77,7 @@ void deviceAccumulateAvbdContactEquation(uint row,uint bodyIndex,DeviceAvbdStep 
     DeviceContactConstraint point=DeviceContacts[row];
     DeviceAvbdContactEquation contact=deviceEvaluateAvbdContact(row,context,extraForce);
     float3 linear,angular;
-    deviceContactJacobian(point,bodyIndex,point.normal,linear,angular);
+    deviceContactNormalJacobian(point,bodyIndex,point.normal,linear,angular);
     float normalStiffness=contact.normalStiffness;
     if(normalUpperBound&&normalStiffness==0)
         normalStiffness=deviceAvbdMaterial(point.normalStiffness,DeviceAvbdContactStates[row].normalPenalty).y;
@@ -90,14 +90,20 @@ void deviceAccumulateAvbdContactEquation(uint row,uint bodyIndex,DeviceAvbdStep 
     if(angularCurvature)
     {
         DeviceBodyState body=DeviceBodyStates[bodyIndex];
-        float force=length(point.normal*contact.normalForce+contact.tangentForce-extraForce);
+        float3 force=point.normal*contact.normalForce+contact.tangentForce-extraForce;
+        float normalForce=dot(force,point.normal);
         float curvature=0;
         for(uint end=0;end<point.bodyCount;end++)
         {
             DeviceContactBody link=DeviceContactBodyLinks[point.bodyOffset+end];
             if(link.stateIndex!=bodyIndex) continue;
             float3 arm=deviceContactArm(body,link.localPoint);
-            curvature+=abs(link.weight)*length(arm)*force;
+            if(link.normalReference==0) curvature+=abs(link.weight)*length(arm)*length(force);
+            else
+            {
+                float3 normalArm=deviceContactArm(body,deviceContactNormalLocalPoint(link));
+                curvature+=abs(link.weight)*(length(normalArm)*abs(normalForce)+length(arm)*length(force-point.normal*normalForce));
+            }
         }
         deviceAvbdAddRow(equation,float3(0),float3(1,0,0),0,curvature);
         deviceAvbdAddRow(equation,float3(0),float3(0,1,0),0,curvature);
@@ -151,7 +157,7 @@ struct DeviceContactAvbdConstraints : IDeviceAvbdConstraints
         else { state.normalMultiplier=0; state.tangentMultiplier=float3(0); }
         state.multiplierNormal=point.normal;
         state.initialDelta=deviceContactDelta(point,true);
-        state.initialSeparation=point.separation+dot(point.normal,state.initialDelta-point.bodyAnchorDelta);
+        state.initialSeparation=point.separation+dot(point.normal,deviceContactNormalDelta(point,true)-point.bodyAnchorDelta);
         DeviceAvbdContactStates[row]=state;
     }
     void accumulate(uint row,uint bodyIndex,DeviceAvbdStep context,inout DeviceAvbdEquation equation)

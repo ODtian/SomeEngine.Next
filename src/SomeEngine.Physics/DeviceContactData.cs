@@ -81,7 +81,7 @@ public sealed class DeviceContactBodies : IDisposable, IDevicePhysicsSubmission
             access.TryGetRow(link.Participant.Entity, out QueryRow participant);
             var body = participant.Read<DirectedRelationEndpoints<ContactParticipant>>().Target;
             access.TryGetRow(body, out QueryRow bodyRow);
-            values[offset + index] = new(new(body, link.LocalPoint, link.Weight), (uint)bodyRow.Read<DeviceBodyBinding>().Index);
+            values[offset + index] = new(new(body, link.LocalPoint, link.Weight, link.NormalReference), (uint)bodyRow.Read<DeviceBodyBinding>().Index);
         }
         return offset;
     }

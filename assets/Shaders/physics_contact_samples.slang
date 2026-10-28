@@ -33,7 +33,7 @@ void readDeviceContactSamples<TForces : IDeviceContactEventForces>(uint row, TFo
         deviceContactPositions(point, false, delta, midpoint);
         sample.entity = uint2(DeviceContactsMetadata[row].entityIndex, DeviceContactsMetadata[row].entityGeneration);
         sample.active = 1; sample.worldPoint = midpoint; sample.normal = point.normal;
-        sample.separation = point.separation + dot(point.normal, delta - point.bodyAnchorDelta);
+        sample.separation = point.separation + dot(point.normal, deviceContactNormalDelta(point,false) - point.bodyAnchorDelta);
         sample.force = forces.read(row); sample.first = point.firstGeometry; sample.second = point.secondGeometry;
     }
     DeviceContactEventSamples[row] = sample;

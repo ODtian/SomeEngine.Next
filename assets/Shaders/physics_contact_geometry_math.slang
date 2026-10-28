@@ -25,7 +25,14 @@ float3 deviceContactDelta(DeviceContactConstraint point,bool start)
     deviceContactPositions(point,start,delta,midpoint);
     return delta;
 }
-void deviceContactJacobian(DeviceContactConstraint point,uint bodyIndex,float3 direction,out float3 linear,out float3 angular)
+float3 deviceContactNormalDelta(DeviceContactConstraint point,bool start)
+{
+    DeviceStoredContactBodyLinks links;
+    float3 delta,midpoint;
+    deviceContactPositions(point.bodyOffset,point.firstBodyCount,point.bodyCount,start,links,true,delta,midpoint);
+    return delta;
+}
+void deviceContactJacobian(DeviceContactConstraint point,uint bodyIndex,float3 direction,bool normal,out float3 linear,out float3 angular)
 {
     linear=angular=float3(0);
     DeviceBodyState body=DeviceBodyStates[bodyIndex];
@@ -34,11 +41,15 @@ void deviceContactJacobian(DeviceContactConstraint point,uint bodyIndex,float3 d
         DeviceContactBody link=DeviceContactBodyLinks[point.bodyOffset+end];
         if(link.stateIndex!=bodyIndex) continue;
         float weight=link.weight*(end<point.firstBodyCount?-1:1);
-        float3 offset=deviceContactArm(body,link.localPoint);
+        float3 offset=deviceContactArm(body,normal?deviceContactNormalLocalPoint(link):link.localPoint);
         linear+=direction*weight;
         angular+=cross(offset,direction)*weight;
     }
 }
+void deviceContactJacobian(DeviceContactConstraint point,uint bodyIndex,float3 direction,out float3 linear,out float3 angular)
+{ deviceContactJacobian(point,bodyIndex,direction,false,linear,angular); }
+void deviceContactNormalJacobian(DeviceContactConstraint point,uint bodyIndex,float3 direction,out float3 linear,out float3 angular)
+{ deviceContactJacobian(point,bodyIndex,direction,true,linear,angular); }
 float deviceContactSpeed(DeviceContactConstraint point,float duration,bool stepInput)
 {
     float speed=0;
@@ -54,12 +65,12 @@ float deviceContactSpeed(DeviceContactConstraint point,float duration,bool stepI
             angularVelocity=bodyRotationVelocity(body.startRotation,body.predictedRotation,duration);
         }
         float3 linear,angular;
-        deviceContactJacobian(point,bodyIndex,point.normal,linear,angular);
+        deviceContactNormalJacobian(point,bodyIndex,point.normal,linear,angular);
         speed+=dot(linear,linearVelocity)+dot(angular,angularVelocity);
     }
     return speed;
 }
-float deviceContactWeight<TSelection : IDeviceBodySelection>(DeviceContactConstraint point,float3 direction,TSelection selection)
+float deviceContactWeight<TSelection : IDeviceBodySelection>(DeviceContactConstraint point,float3 direction,TSelection selection,bool normal)
 {
     float weight=0;
     for(uint end=0;end<point.bodyCount;end++)
@@ -68,12 +79,14 @@ float deviceContactWeight<TSelection : IDeviceBodySelection>(DeviceContactConstr
         uint bodyIndex=DeviceContactBodyLinks[point.bodyOffset+end].stateIndex;
         if(!selection.contains(bodyIndex)) continue;
         float3 linear,angular;
-        deviceContactJacobian(point,bodyIndex,direction,linear,angular);
+        deviceContactJacobian(point,bodyIndex,direction,normal,linear,angular);
         weight+=bodyConstraintWeight(DeviceBodyStates[bodyIndex],linear,angular);
     }
     return weight;
 }
-void deviceContactApplyCorrection<TSelection : IDeviceBodySelection>(DeviceContactConstraint point,float3 direction,float multiplier,TSelection selection)
+float deviceContactWeight<TSelection : IDeviceBodySelection>(DeviceContactConstraint point,float3 direction,TSelection selection)
+{ return deviceContactWeight(point,direction,selection,false); }
+void deviceContactApplyCorrection<TSelection : IDeviceBodySelection>(DeviceContactConstraint point,float3 direction,float multiplier,TSelection selection,bool normal)
 {
     for(uint end=0;end<point.bodyCount;end++)
     {
@@ -81,8 +94,10 @@ void deviceContactApplyCorrection<TSelection : IDeviceBodySelection>(DeviceConta
         uint bodyIndex=DeviceContactBodyLinks[point.bodyOffset+end].stateIndex;
         if(!selection.contains(bodyIndex)) continue;
         float3 linear,angular;
-        deviceContactJacobian(point,bodyIndex,direction,linear,angular);
+        deviceContactJacobian(point,bodyIndex,direction,normal,linear,angular);
         bodyApplyCorrection(bodyIndex,linear,angular,multiplier);
     }
 }
+void deviceContactApplyCorrection<TSelection : IDeviceBodySelection>(DeviceContactConstraint point,float3 direction,float multiplier,TSelection selection)
+{ deviceContactApplyCorrection(point,direction,multiplier,selection,false); }
 #endif

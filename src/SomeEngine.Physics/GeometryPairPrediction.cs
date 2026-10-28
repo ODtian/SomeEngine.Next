@@ -36,8 +36,8 @@ public struct GeometryPairPrediction<TFirst, TSecond, TFirstMotion, TSecondMotio
             ref readonly CollisionDistance point = ref points[index];
             firstMotion.GetStartBodies(first, access, point.FirstPoint, firstBodies);
             secondMotion.GetStartBodies(second, access, point.SecondPoint, secondBodies);
-            Vector3 startDelta = BodyStepGeometry.Delta(firstBodies, secondBodies, access, false);
-            Vector3 predictedDelta = BodyStepGeometry.Delta(firstBodies, secondBodies, access, true);
+            Vector3 startDelta = BodyStepGeometry.Delta(firstBodies, secondBodies, access, false, normal: true);
+            Vector3 predictedDelta = BodyStepGeometry.Delta(firstBodies, secondBodies, access, true, normal: true);
             float gap = point.Separation + Vector3.Dot(point.Normal, predictedDelta - startDelta);
             if (point.Separation > contactDistance && gap > contactDistance) continue;
             var contact = new CollisionContact

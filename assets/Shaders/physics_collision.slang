@@ -101,6 +101,7 @@ DeviceGeometryPointDistance deviceLocalPointDistance(DeviceGeometryInput geometr
 }
 interface IDeviceCollisionNarrowPhase
 {
+    uint getNormalReference(DeviceGeometryInput geometry) { return 0; }
     DeviceGeometryDistance distance(uint work, DeviceGeometryInput first, DeviceGeometryInput second);
     uint manifold(uint work, DeviceGeometryInput first, DeviceGeometryInput second,
         DeviceGeometryDistance distance, out DeviceGeometryDistance points[4]);

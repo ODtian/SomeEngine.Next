@@ -20,7 +20,7 @@ struct DeviceContactActivity : IDeviceConstraintActivity
     float2 error(uint row,DeviceActivityStep context)
     {
         DeviceContactConstraint point=DeviceContacts[row];
-        float separation=point.separation+dot(point.normal,deviceContactDelta(point,false)-point.bodyAnchorDelta);
+        float separation=point.separation+dot(point.normal,deviceContactNormalDelta(point,false)-point.bodyAnchorDelta);
         return float2(max(0,-separation),0);
     }
 };

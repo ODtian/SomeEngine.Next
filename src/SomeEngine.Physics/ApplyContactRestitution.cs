@@ -69,7 +69,7 @@ public readonly struct ApplyContactRestitution : IPhysicsStage
         {
             if (!ContactBodyMath.IsFirstOccurrence(links, index, bodies, in context)) continue;
             Entity body = ContactBodyMath.GetBody(in links[index], bodies, in context);
-            ContactBodyMath.GetJacobian(in point, links, body, bodies, in context, point.Normal, out Vector3 linear, out Vector3 angular);
+            ContactBodyMath.GetJacobian(in point, links, body, bodies, in context, point.Normal, out Vector3 linear, out Vector3 angular, normal: true);
             mobility += BodyConstraintMath.GetWeight(in bodies.ReadMass(body), in bodies.ReadPose(body), linear, angular);
         }
         if (mobility == 0) return;
@@ -83,7 +83,7 @@ public readonly struct ApplyContactRestitution : IPhysicsStage
             Entity body = ContactBodyMath.GetBody(in links[index], bodies, in context);
             ref readonly BodyMass mass = ref bodies.ReadMass(body);
             if (mass.Motion != BodyMotion.Dynamic) continue;
-            ContactBodyMath.GetJacobian(in point, links, body, bodies, in context, point.Normal, out Vector3 linear, out Vector3 angular);
+            ContactBodyMath.GetJacobian(in point, links, body, bodies, in context, point.Normal, out Vector3 linear, out Vector3 angular, normal: true);
             ref BodyVelocity velocity = ref bodies.GetRow(body).ReadWrite<BodyVelocity>();
             velocity.Linear += linear * (mass.InverseMass * change);
             velocity.Angular += mass.ApplyInverseInertia(bodies.ReadPose(body).Rotation, angular) * change;
