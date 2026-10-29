@@ -12,7 +12,7 @@ groupshared uint WorkNodeStart;
 groupshared uint WorkNodeCount;
 groupshared ClusterTraversalNode WorkNodes[CLUSTER_BVH_PARENTS_PER_GROUP];
 groupshared uint WorkClusterBatch;
-groupshared uint WorkClusterReady;
+groupshared uint WorkClusterCount;
 groupshared uint WorkViewLanes;
 groupshared bool WorkFinished;
 
@@ -73,39 +73,18 @@ void ClaimReadyNodes(uint thread, bool multipleViews)
     }
 }
 
-bool ClaimReadyClusters(out uint batch, out uint count)
+bool ClaimClusterBatch(out uint batch, out uint count)
 {
     // Resume completed this queue before the dispatch; inline leaves do not append here.
     uint total = NodeIndirectArgs.Load(CLUSTER_BATCH_COUNT);
     uint batches = (total + CLUSTER_BATCH_SIZE - 1u) / CLUSTER_BATCH_SIZE;
     batch = 0u;
     count = 0u;
-    [allow_uav_condition]
-    for (;;)
-    {
-        uint first;
-        NodeIndirectArgs.InterlockedAdd(CLUSTER_BATCH_READ, 0u, first);
-        if (first >= batches) return false;
-        uint expected = min(CLUSTER_BATCH_SIZE, total - first * CLUSTER_BATCH_SIZE);
-        uint ready;
-        InterlockedAdd(ClusterBatchReady[first], 0u, ready);
-        uint observed;
-        if (ready == expected)
-        {
-            NodeIndirectArgs.InterlockedCompareExchange(CLUSTER_BATCH_READ, first, first + 1u, observed);
-            if (observed == first)
-            {
-                batch = first;
-                count = expected;
-                return true;
-            }
-        }
-        else
-        {
-            NodeIndirectArgs.InterlockedAdd(CLUSTER_BATCH_READ, 0u, observed);
-            if (observed == first) return false;
-        }
-    }
+    if (NodeIndirectArgs.Load(CLUSTER_BATCH_READ) >= batches) return false;
+    NodeIndirectArgs.InterlockedAdd(CLUSTER_BATCH_READ, 1u, batch);
+    if (batch >= batches) return false;
+    count = min(CLUSTER_BATCH_SIZE, total - batch * CLUSTER_BATCH_SIZE);
+    return true;
 }
 
 void CullPersistentWork(uint thread, bool targetFilters = true, bool multipleViews = true)
@@ -116,9 +95,9 @@ void CullPersistentWork(uint thread, bool targetFilters = true, bool multipleVie
         if (WaveActiveAnyTrue(thread == 0u)) ClaimReadyNodes(thread, multipleViews);
         if (thread == 0u)
         {
-            WorkClusterReady = 0u;
+            WorkClusterCount = 0u;
             WorkFinished = false;
-            if (WorkNodeCount == 0u && !ClaimReadyClusters(WorkClusterBatch, WorkClusterReady))
+            if (WorkNodeCount == 0u && !ClaimClusterBatch(WorkClusterBatch, WorkClusterCount))
             {
                 uint remaining;
                 NodeIndirectArgs.InterlockedAdd(CLUSTER_NODE_OUTSTANDING, 0u, remaining);
@@ -154,15 +133,10 @@ void CullPersistentWork(uint thread, bool targetFilters = true, bool multipleVie
             }
             continue;
         }
-        uint count = WorkClusterReady;
+        uint count = WorkClusterCount;
         if (count != 0u)
         {
             DeviceMemoryBarrier();
-            if (thread == 0u)
-            {
-                uint ignored;
-                InterlockedExchange(ClusterBatchReady[WorkClusterBatch], 0u, ignored);
-            }
             if (thread < count) CullClusterCandidate(WorkClusterBatch * CLUSTER_BATCH_SIZE + thread, targetFilters);
         }
         else if (WorkFinished)

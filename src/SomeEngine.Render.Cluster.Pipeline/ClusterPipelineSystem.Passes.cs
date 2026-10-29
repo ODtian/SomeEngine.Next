@@ -341,8 +341,6 @@ public sealed partial class ClusterPipelineSystem
             PassDefinition ready = graph.GetPass(seedPass);
             ready.Bind(graph.CreateBufferUav(frame.Work.NodeReady, structureStride: sizeof(uint)),
                 PipelineSync.ComputeShading, GraphAccessMode.Write, WriteCoverage.Partial);
-            ready.Bind(graph.CreateBufferUav(frame.Work.ClusterReady, structureStride: sizeof(uint)),
-                PipelineSync.ComputeShading, GraphAccessMode.ReadWrite, WriteCoverage.Partial);
         }
     }
 
@@ -423,8 +421,6 @@ public sealed partial class ClusterPipelineSystem
         BindWorkStatus(ref graph, ref pass);
         pass.Bind(graph.CreateBufferUav(frame.Work.NodeReady, structureStride: sizeof(uint)), PipelineSync.ComputeShading,
             GraphAccessMode.Write, WriteCoverage.Partial);
-        pass.Bind(graph.CreateBufferUav(frame.Work.ClusterReady, structureStride: sizeof(uint)), PipelineSync.ComputeShading,
-            GraphAccessMode.ReadWrite, WriteCoverage.Partial);
     }
 
     private void RecordCullStateReset(ref RenderGraphEdit graph, in FrameResources frame)

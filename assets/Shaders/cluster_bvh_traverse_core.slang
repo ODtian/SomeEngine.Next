@@ -257,6 +257,7 @@ void ProcessTraversalNode(ClusterTraversalNode parent, bool validParent, uint ch
     uint nodeIndex = ClusterTraversalNodeIndex(parent);
     ClusterHierarchySlice node = (ClusterHierarchySlice)0;
     if (validParent) node = LoadClusterNode(GlobalBVH, nodeIndex, childIndex);
+    ClusterHierarchySlice previousNode = node;
     bool validNode = validParent && ClusterSliceEnabled(node) &&
         (!ClusterTraversalHasSlice(parent) || childIndex == ClusterTraversalSliceIndex(parent));
     uint instanceID = parent.InstanceID;
@@ -291,7 +292,6 @@ void ProcessTraversalNode(ClusterTraversalNode parent, bool validParent, uint ch
     float3 historyMin = worldMin, historyMax = worldMax;
     if (validNode && computeBounds && TraversalLevel.TraversalMode != 2u)
     {
-        ClusterHierarchySlice previousNode = LoadClusterNode(GlobalBVH, nodeIndex, childIndex);
         ApplyClusterNodeBounds(previousNode, nodeIndex, childIndex, instanceID, true);
         RenderInstanceTransform previous = LoadRenderTransform(InstanceData,
             LoadRenderInstanceMetadata(InstanceProperties, RENDER_PREVIOUS_TRANSFORM_METADATA_WORD), instanceID);

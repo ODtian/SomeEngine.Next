@@ -25,6 +25,31 @@ struct ClusterProjectedBounds
     bool CrossesNearPlane;
 };
 
+void TransformClusterLocalBounds(float3 localMin, float3 localMax,
+    RenderInstanceTransform transform, out float3 worldMin, out float3 worldMax)
+{
+    float3 scaledMin = localMin * transform.Scale * transform.Stretch;
+    float3 scaledMax = localMax * transform.Scale * transform.Stretch;
+    float4 q = transform.Rotation;
+    float3 x = float3(1.0 - 2.0 * (q.y * q.y + q.z * q.z),
+        2.0 * (q.x * q.y + q.w * q.z), 2.0 * (q.x * q.z - q.w * q.y));
+    float3 y = float3(2.0 * (q.x * q.y - q.w * q.z),
+        1.0 - 2.0 * (q.x * q.x + q.z * q.z), 2.0 * (q.y * q.z + q.w * q.x));
+    float3 z = float3(2.0 * (q.x * q.z + q.w * q.y),
+        2.0 * (q.y * q.z - q.w * q.x), 1.0 - 2.0 * (q.x * q.x + q.y * q.y));
+    float3 lowX = min(x * scaledMin.x, x * scaledMax.x);
+    float3 lowY = min(y * scaledMin.y, y * scaledMax.y);
+    float3 lowZ = min(z * scaledMin.z, z * scaledMax.z);
+    float3 highX = max(x * scaledMin.x, x * scaledMax.x);
+    float3 highY = max(y * scaledMin.y, y * scaledMax.y);
+    float3 highZ = max(z * scaledMin.z, z * scaledMax.z);
+    // Cover rounding in both the quaternion position evaluator and interval sums.
+    float magnitude = dot(max(abs(scaledMin), abs(scaledMax)), 1.0.xxx);
+    float3 rounding = (magnitude + abs(transform.Position) + 1.0) * 3.814697265625e-6;
+    worldMin = lowX + lowY + lowZ + transform.Position - rounding;
+    worldMax = highX + highY + highZ + transform.Position + rounding;
+}
+
 void ClusterNodeWorldBounds(
     ClusterHierarchySlice node,
     RenderInstanceTransform transform,
@@ -37,19 +62,7 @@ void ClusterNodeWorldBounds(
         boundsExpansion);
     float3 localMin = node.BoundsCenter - node.BoundsExtent - localExpansion.xxx;
     float3 localMax = node.BoundsCenter + node.BoundsExtent + localExpansion.xxx;
-    worldMin = 1e30.xxx;
-    worldMax = -1e30.xxx;
-    [unroll]
-    for (uint corner = 0u; corner < 8u; corner++)
-    {
-        float3 local = float3(
-            (corner & 1u) != 0u ? localMax.x : localMin.x,
-            (corner & 2u) != 0u ? localMax.y : localMin.y,
-            (corner & 4u) != 0u ? localMax.z : localMin.z);
-        float3 world = TransformInstanceLocalPosition(local, transform);
-        worldMin = min(worldMin, world);
-        worldMax = max(worldMax, world);
-    }
+    TransformClusterLocalBounds(localMin, localMax, transform, worldMin, worldMax);
 }
 
 void ClusterRootWorldBounds(ByteAddressBuffer hierarchy, uint root,

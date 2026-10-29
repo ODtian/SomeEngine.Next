@@ -131,19 +131,7 @@ ClusterWorldBounds TransformClusterBounds(
     ClusterWorldBounds bounds = (ClusterWorldBounds)0;
     bounds.VertexCount = cluster.PackedCounts & 0xFF;
     if (bounds.VertexCount == 0u) return bounds;
-    bounds.Min = 1e20.xxx;
-    bounds.Max = -1e20.xxx;
-    [unroll]
-    for (uint corner = 0u; corner < 8u; corner++)
-    {
-        float3 local = float3(
-            (corner & 1u) != 0u ? cluster.BoundMax.x : cluster.BoundMin.x,
-            (corner & 2u) != 0u ? cluster.BoundMax.y : cluster.BoundMin.y,
-            (corner & 4u) != 0u ? cluster.BoundMax.z : cluster.BoundMin.z);
-        float3 world = TransformInstanceLocalPosition(local, transform);
-        bounds.Min = min(bounds.Min, world);
-        bounds.Max = max(bounds.Max, world);
-    }
+    TransformClusterLocalBounds(cluster.BoundMin, cluster.BoundMax, transform, bounds.Min, bounds.Max);
     float expansion = max(0.0, boundsExpansion);
     bounds.Min -= expansion.xxx;
     bounds.Max += expansion.xxx;

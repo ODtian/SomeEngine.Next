@@ -98,10 +98,7 @@ void ResumeDeferredClusterWork(uint3 threadId : SV_DispatchThreadID)
         waveBase = WaveReadLaneAt(waveBase, leader);
         uint output = waveBase + WaveMaskPrefix(clusterMask, lane);
         if (output < ResumeUniforms.MaxWorkItems)
-        {
             CandidateClusters[output] = candidate;
-            PublishClusterBatchRange(output, 1u, ResumeUniforms.MaxWorkItems);
-        }
     }
 }
 

@@ -115,7 +115,7 @@ public sealed partial class ClusterPipelineSystem
                     GraphData.LeafFlagEmptyData, GraphData.LeafFlagEmptyParameters,
                     frame.DeformCache, frame.DeformRegions, frame.DeformRequests, frame.DeformPrefixOffsets,
                     frame.DeformPrefixGroups, frame.DeformAllocation, frame.DeformArguments,
-                    frame.Work.Nodes, frame.Work.Clusters, frame.Work.NodeReady, frame.Work.ClusterReady, frame.Work.Arguments,
+                    frame.Work.Nodes, frame.Work.Clusters, frame.Work.NodeReady, frame.Work.Arguments,
                 ];
                 buffers.UnionWith(frame.TessellationLevelDispatchArgs);
                 foreach (GraphBufferId buffer in buffers)

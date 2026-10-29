@@ -9,7 +9,7 @@ public sealed partial class ClusterPipelineSystem
 {
     private sealed class CullWork
     {
-        internal GraphBufferId Nodes, Clusters, NodeReady, ClusterReady, Arguments;
+        internal GraphBufferId Nodes, Clusters, NodeReady, Arguments;
         internal GraphRegionId Initialization;
         internal GraphPassId Initialize;
         internal GraphPassId[] Phases = new GraphPassId[4];
@@ -23,12 +23,11 @@ public sealed partial class ClusterPipelineSystem
         work.Nodes = Create(ref graph, "Cluster node queue", capacity * TraversalNodeStride);
         work.Clusters = Create(ref graph, "Cluster cluster queue", capacity * CandidateStride);
         work.NodeReady = Create(ref graph, "Cluster node readiness", capacity * sizeof(uint));
-        work.ClusterReady = Create(ref graph, "Cluster batch readiness", ((capacity + 63u) / 64u) * sizeof(uint));
         work.Arguments = Create(ref graph, "Cluster work queue counts", TraversalArgumentStride, BufferUsages.Indirect);
         work.Initialization = graph.AddRegion("Initialize Cluster work queues", _regions.PrimaryGeometry);
         work.Initialize = graph.AddCopyFramePass("Initialize Cluster work queue data",
             PassQueueSelection.AnyOfType(QueueType.Graphics),
-            new[] { work.Nodes, work.Clusters, work.NodeReady, work.ClusterReady },
+            new[] { work.Nodes, work.Clusters, work.NodeReady },
             new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
             static (ref PassDefinition pass, ref GraphBufferId[] buffers) =>
             {
@@ -101,7 +100,6 @@ public sealed partial class ClusterPipelineSystem
                 case "TraversalNodes": Write(ref graph, ref pass, frame.Work.Nodes, TraversalNodeStride); break;
                 case "NodeIndirectArgs": Write(ref graph, ref pass, frame.Work.Arguments); break;
                 case "TraversalReady": Write(ref graph, ref pass, frame.Work.NodeReady, sizeof(uint)); break;
-                case "ClusterBatchReady": Write(ref graph, ref pass, frame.Work.ClusterReady, sizeof(uint)); break;
                 case "WorkStatus": BindWorkStatus(ref graph, ref pass); break;
                 case "HierarchyHiZ": pass.Bind(graph.CreateTextureSrv(mode == 2u ? frame.CurrentHiZ : frame.PreviousHiZ,
                     format: Format.R32Float, dimension: TextureViewDimension.Texture2DArray), PipelineSync.ComputeShading); break;
