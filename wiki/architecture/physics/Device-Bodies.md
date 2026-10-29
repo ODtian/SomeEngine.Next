@@ -80,14 +80,13 @@ StepState 的写版本；新实体按绑定初始化整行，既有实体只复�
 
 [DeviceBodyResults](../../../src/SomeEngine.Physics/DeviceBodyResults.cs) 在项目选择 CPU 消费时创建。
 `Readback(rowsPerPacket)` 提交原状态 buffer 的复制，沿外部 fence 等待真实设备完成，
-随后由 `ReadOnlyQueryPacketJobs` 按原 `DeviceBodyBinding` 捕获消费实体及同一结果中的索引，
-原 `rowsPerPacket` 继续控制这些读取包的大小。捕获后提交声明实际版本范围的写入 Job，
+全量结果按原 `DeviceBodyBinding.Index` 直接定位同一 CPU 结果数组，
+写入 Job 一次声明整段主体来源版本范围。
 它在原成员写查询内按当前 chunk 绑定位姿、速度及 `BodyStepState` 三列，
-按捕获的主体编号与实体身份选择实际写入行，各列使用该查询的共同写版本。
+按当前绑定与设备结果的实体身份选择实际写入行，各列使用该查询的共同写版本。
 回写按设备结果中的 Entity 编号与代次匹配实际实体，旧步结果保持其来源身份。
 每行三列写入后，实际查询版本在同一 Job 写访问期确认回原 `DeviceBodies` 来源版本数组；
-捕获元数据按实际主体索引排列，连续索引合并为同一版本数组访问范围，
-所选索引之间的间隔保持原范围。较早完成结果在设备后续步运行后消费时，
+较早完成结果在设备后续步运行后消费时，
 下次输入将这次 CPU 镜像写入识别为已同步来源，继续保留设备当前状态；外部 CPU 修改仍按新版本上传。
 阶段返回的 JobHandle 覆盖提交、读回、组件写入与设备完成收集。
 后续变换和动画继续读取同一实体组件。公开行为见 `DeviceXpbdTests`。
@@ -95,6 +94,9 @@ StepState 的写版本；新实体按绑定初始化整行，既有实体只复�
 消费者可用 `DeviceBodyResults(backend,device,bodies,world,members,capacity)` 绑定自己的原成员查询与
 最大结果条数。读取阶段在输入依赖完成后取得当前 Entity 与设备索引，按索引合并相邻范围，
 仅为这些区间声明 States 读取并复制到紧凑读回区。CPU 数组与读回资源按消费者容量分配。
+`ReadOnlyQueryPacketJobs` 按原绑定捕获消费实体及结果索引，`rowsPerPacket` 控制读取包大小。
+捕获元数据按实际主体索引排列，连续索引合并为同一来源版本数组访问范围，
+所选索引之间的间隔保持原范围，写入阶段按捕获目标核对当前实体。
 原查询筛选及 Entity 代次继续限定组件写入，其余主体保留在设备中。
 
 ## 引用与派生范围

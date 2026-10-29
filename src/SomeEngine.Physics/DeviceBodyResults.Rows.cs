@@ -47,11 +47,14 @@ public sealed partial class DeviceBodyResults
         public void Execute()
         {
             rows.Count = 0;
-            var read = new CaptureRows(results, rows, rowsPerPacket);
-            rows.World.ExecuteReadQuery(rows.Members, ref read,
-                static (scoped QueryCursor query, ref CaptureRows read) => read.Execute(query));
+            if (results._selection is not null)
+            {
+                var read = new CaptureRows(results, rows, rowsPerPacket);
+                rows.World.ExecuteReadQuery(rows.Members, ref read,
+                    static (scoped QueryCursor query, ref CaptureRows read) => read.Execute(query));
+            }
             JobHandle applied = default;
-            if (rows.Count != 0)
+            if (results._selection is null || rows.Count != 0)
             {
                 var accesses = new List<JobResourceAccess>(rows.WriteAccesses)
                 {
@@ -59,13 +62,18 @@ public sealed partial class DeviceBodyResults
                     JobResourceAccess.Read(scheduler.GetResourceToken(rows)),
                 };
                 var resources = new JobResourceAccessBuilder(scheduler, accesses);
-                int index = 0;
-                while (index < rows.Count)
+                if (results._selection is null)
+                    results.Bodies.CollectCpuResults(0, results.States.Length, ref resources);
+                else
                 {
-                    int first = rows.Targets[index++].Body, last = first;
-                    while (index < rows.Count && rows.Targets[index].Body == last + 1)
-                        last = rows.Targets[index++].Body;
-                    results.Bodies.CollectCpuResults(first, last - first + 1, ref resources);
+                    int index = 0;
+                    while (index < rows.Count)
+                    {
+                        int first = rows.Targets[index++].Body, last = first;
+                        while (index < rows.Count && rows.Targets[index].Body == last + 1)
+                            last = rows.Targets[index++].Body;
+                        results.Bodies.CollectCpuResults(first, last - first + 1, ref resources);
+                    }
                 }
                 applied = scheduler.Schedule(new ApplyResults(results, rows), accesses.ToArray());
             }
@@ -149,10 +157,16 @@ public sealed partial class DeviceBodyResults
                     var binding = chunk.Read<DeviceBodyBinding>(index);
                     if (!ReferenceEquals(binding.Bodies, results.Bodies)) continue;
                     Entity entity = chunk.GetEntity(index);
-                    int targetIndex = Array.BinarySearch(rows.Targets, 0, rows.Count, new(entity, binding.Index, 0));
-                    if (targetIndex < 0 || rows.Targets[targetIndex].Entity != entity) continue;
-                    ref readonly BodyResultTarget target = ref rows.Targets[targetIndex];
-                    ref readonly DeviceBodyState state = ref results.States[target.Result];
+                    int ordinal = binding.Index;
+                    if (results._selection is not null)
+                    {
+                        int targetIndex = Array.BinarySearch(rows.Targets, 0, rows.Count, new(entity, binding.Index, 0));
+                        if (targetIndex < 0 || rows.Targets[targetIndex].Entity != entity) continue;
+                        ordinal = rows.Targets[targetIndex].Result;
+                    }
+                    ref readonly DeviceBodyState state = ref results.States[ordinal];
+                    if (results._selection is null && (state.EntityIndex != (uint)entity.Index
+                        || state.EntityGeneration != (uint)entity.Generation)) continue;
                     ref BodyPose pose = ref poses[index];
                     ref BodyVelocity velocity = ref velocities[index];
                     ref BodyStepState step = ref steps[index];
@@ -161,7 +175,7 @@ public sealed partial class DeviceBodyResults
                     step.StartCenterOfMass = state.StartCenterOfMass; step.StartRotation = state.StartRotation;
                     step.PredictedCenterOfMass = state.PredictedCenterOfMass; step.PredictedRotation = state.PredictedRotation;
                     step.Number = state.Number; step.Substep = state.Substep; step.Time = state.Time;
-                    results.Bodies.AcceptCpuResult(target.Body, entity, chunk.CurrentSystemVersion);
+                    results.Bodies.AcceptCpuResult(binding.Index, entity, chunk.CurrentSystemVersion);
                 }
             }
         }
