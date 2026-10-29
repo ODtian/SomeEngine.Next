@@ -97,7 +97,7 @@ public static partial class ClusterBuilder
             List<BuilderMeshlet> meshlets = [];
             List<uint> indices = [];
             ClusterMeshBuilder.BuildLod(ClusterLodConfig.GetDefault() with
-                { ClusterSpatial = true, SimplifyFallbackSloppy = false },
+                { ClusterSpatial = false, SimplifyFallbackSloppy = false },
                 partitionPositions, CollectionsMarshal.AsSpan(workingTriangles), workingSources.Select(source => (uint)source.Region).ToArray(),
                 meshlets, indices, CollectionsMarshal.AsSpan(workingLocks), ReadSimplificationAttributes(vertices, workingIdentities));
             foreach (BuilderMeshlet meshlet in meshlets)

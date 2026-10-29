@@ -127,27 +127,18 @@ public static partial class ClusterMeshBuilder
                 if (group.Length == 1) { next.Add(group[0]); continue; }
                 MergeGroupIndices(globalIndices, clusters, group, mergedIndices);
                 ClusterLodBounds groupBounds = BoundsMerge(clusters, group);
-                int parentCount = Math.Max(1, (int)MathF.Ceiling(mergedIndices.Count / 3 * config.SimplifyRatio / config.MaxTriangles));
-                int targetClusterSize = config.MaxTriangles - 2;
-                float error = groupBounds.Error;
+                int targetIndexCount = Math.Max(3, (int)(mergedIndices.Count / 3 * config.SimplifyRatio) * 3);
                 var parents = new List<ClusterMeshlet>();
                 var parentIndices = new List<uint>();
                 var reducedIndices = new List<uint>();
                 float[] attributeWeights = attributes.GroupWeights(positions,
                     CollectionsMarshal.AsSpan(mergedIndices));
-                do
-                {
-                    SimplifyLodGroup(config, positions,
-                        CollectionsMarshal.AsSpan(mergedIndices), locks, materialIndicesArray, parentCount * targetClusterSize * 3,
-                        attributes.Values, attributeWeights, out float reductionError, reducedIndices);
-                    error = groupBounds.Error + reductionError;
-                    parents.Clear();
-                    parentIndices.Clear();
-                    Clusterize(config, CollectionsMarshal.AsSpan(reducedIndices),
-                        positions, materialIndicesArray, parents, parentIndices);
-                    if (parents.Count <= parentCount) break;
-                    targetClusterSize -= 2;
-                } while (targetClusterSize > config.MaxTriangles / 2);
+                SimplifyLodGroup(config, positions,
+                    CollectionsMarshal.AsSpan(mergedIndices), locks, materialIndicesArray, targetIndexCount,
+                    attributes.Values, attributeWeights, out float reductionError, reducedIndices);
+                float error = groupBounds.Error + reductionError;
+                Clusterize(config, CollectionsMarshal.AsSpan(reducedIndices),
+                    positions, materialIndicesArray, parents, parentIndices);
                 if (parents.Count >= group.Length || reducedIndices.Count > mergedIndices.Count * config.SimplifyThreshold)
                 {
                     foreach (int index in group)
