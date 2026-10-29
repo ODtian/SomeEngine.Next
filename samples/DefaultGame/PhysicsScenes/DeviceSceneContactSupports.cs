@@ -30,11 +30,15 @@ internal sealed class DeviceSceneContactSupports : IDisposable
             .Read<LongRangeContactSupport>().Read<DeviceConstraintBinding<DeviceContactConstraint>>()
             .Read<DeviceAvbdState<DeviceContactSupportState>>());
         _supports = new(backend, device, world, _bodyRows, bodies, contacts, supportSettings, 32);
-        foreach (Entity body in entities)
+        using (var commands = new CommandBuffer(world))
         {
-            if (world.Read<BodyMass>(body).Motion != BodyMotion.Dynamic) continue;
-            world.Add(body, new LongRangeBodySupport());
-            world.Add(body, new DeviceSupportBodyBinding(_supports));
+            foreach (Entity body in entities)
+            {
+                if (world.Read<BodyMass>(body).Motion != BodyMotion.Dynamic) continue;
+                commands.Add(body, new LongRangeBodySupport());
+                commands.Add(body, new DeviceSupportBodyBinding(_supports));
+            }
+            commands.Playback();
         }
         _inputs = new(backend, device, world, _contactRows, contacts, _supports.ContactStates, default);
         _selected = new(backend, device, world, _contactRows, contacts, new(_supports.ContactStates),

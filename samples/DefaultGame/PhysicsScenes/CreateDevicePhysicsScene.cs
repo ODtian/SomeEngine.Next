@@ -82,7 +82,11 @@ public static partial class PhysicsScenes
         for (int index = 0; index < readbackBodyIndices.Length; index++)
             readbackBodies[index] = created.Bodies[readbackBodyIndices[index]];
         if (!allBodies)
-            foreach (Entity body in readbackBodies) world.Add(body, new SceneReadbackBody());
+        {
+            using var commands = new CommandBuffer(world);
+            foreach (Entity body in readbackBodies) commands.Add(body, new SceneReadbackBody());
+            commands.Playback();
+        }
         QueryDefinition filter = new QueryDefinitionBuilder().All<ScenePhysicsBody>().Build();
         QueryDefinition selectedFilter = allBodies ? filter : new QueryDefinitionBuilder().All<SceneReadbackBody>().Build();
         QueryHandle members = world.Query(filter.WithAccess(new QueryDefinitionBuilder().Read<DeviceBodyBinding>().Build()));
@@ -99,7 +103,11 @@ public static partial class PhysicsScenes
         var timedInputs = new DeviceBodyInputBuffers(backend, device, world, members, bodies, bodyInputKernels, threads);
         var sceneInputs = new ApplySceneInputChanges(world, created.HasInputChanges);
         var activities = new DeviceBodyActivities(backend, device, world, members, bodies);
-        foreach (Entity body in created.Bodies) world.Add(body, new DeviceBodyActivityBinding(activities));
+        using (var commands = new CommandBuffer(world))
+        {
+            foreach (Entity body in created.Bodies) commands.Add(body, new DeviceBodyActivityBinding(activities));
+            commands.Playback();
+        }
         var bindings = new Dictionary<string, ResourceBinding[]>();
         activities.AddBindings(bindings);
         var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, bodyKernels, threads,
@@ -147,8 +155,12 @@ public static partial class PhysicsScenes
         pairExclusions.AddBindings(gridBindings);
         var grid = new DeviceCollisionGrid(backend, device, gridKernels, gridSettings, gridCapacity, gridBindings,
             new JobResourceAccess[] { bodies.GetReadAccess(scheduler), pairExclusions.ReadAccess(scheduler) });
-        for (int index = 0; index < created.Bodies.Length; index++)
-            world.Add(created.Bodies[index], new DeviceCollisionBody(grid, index));
+        using (var commands = new CommandBuffer(world))
+        {
+            for (int index = 0; index < created.Bodies.Length; index++)
+                commands.Add(created.Bodies[index], new DeviceCollisionBody(grid, index));
+            commands.Playback();
+        }
         TInputs geometryInputs = geometrySource.CreateInputs(backend, device, grid, geometry, shaders, pairs,
             settings, contactDistance, threads);
         var detection = new DeviceCollisionDetection(backend, device, grid, geometry, detectionKernels, 0,
