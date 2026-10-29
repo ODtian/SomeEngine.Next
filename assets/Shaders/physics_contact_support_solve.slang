@@ -123,6 +123,19 @@ void correctDeviceContactSupport(uint body,DeviceAvbdStep context,DeviceAvbdEqua
     }
     DeviceSupportBodyStates[body]=center;
 }
+void deviceApplySupportLoad(uint row)
+{
+    DeviceContactSupportState state=DeviceSupportContactStates[row];
+    DeviceContactResponseState response=DeviceContactResponses[row];
+    DeviceContactConstraint point=DeviceContacts[row];
+    float3 original=response.forceOnSecond-state.extraForceOnSecond;
+    float3 total=original+ContactSupportSettings.up*(state.load*(state.upperIsSecond!=0?1:-1));
+    float normal=dot(total,point.normal),pressure=max(0,normal);
+    float3 tangent=total-point.normal*normal; float magnitude=length(tangent),bound=point.staticFriction*pressure;
+    if(magnitude>bound) tangent*=bound/magnitude;
+    total=point.normal*pressure+tangent; state.extraForceOnSecond=total-original;
+    response.forceOnSecond=total; DeviceSupportContactStates[row]=state; DeviceContactResponses[row]=response;
+}
 void updateDeviceContactSupports<T : IDeviceBodySelection,TWork : IDeviceContactSupportWork>(DeviceAvbdStep context,T bodies,TWork work)
 {
     if(deviceSupportUpdateMotion(bodies,work)) buildDeviceContactSupports(context,bodies,work);
@@ -148,16 +161,8 @@ void updateDeviceContactSupports<T : IDeviceBodySelection,TWork : IDeviceContact
     {
         uint row=DeviceSupportOrder[work.orderStart()+index-1];
         if(!deviceSupportContactRuns(row,bodies)) continue;
+        deviceApplySupportLoad(row);
         DeviceContactSupportState state=DeviceSupportContactStates[row];
-        DeviceContactResponseState response=DeviceContactResponses[row];
-        DeviceContactConstraint point=DeviceContacts[row];
-        float3 original=response.forceOnSecond-state.extraForceOnSecond;
-        float3 total=original+ContactSupportSettings.up*(state.load*(state.upperIsSecond!=0?1:-1));
-        float normal=dot(total,point.normal),pressure=max(0,normal);
-        float3 tangent=total-point.normal*normal; float magnitude=length(tangent),bound=point.staticFriction*pressure;
-        if(magnitude>bound) tangent*=bound/magnitude;
-        total=point.normal*pressure+tangent; state.extraForceOnSecond=total-original;
-        response.forceOnSecond=total; DeviceSupportContactStates[row]=state; DeviceContactResponses[row]=response;
         for(uint loadIndex=0;loadIndex<state.loadCount;loadIndex++)
         {
             DeviceSupportLoad load=DeviceSupportContactLoads[row*3+loadIndex];

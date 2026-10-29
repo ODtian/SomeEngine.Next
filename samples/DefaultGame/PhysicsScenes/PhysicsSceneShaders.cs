@@ -128,7 +128,12 @@ internal sealed partial class PhysicsSceneShaders
             "UpdateSupports", "ClearSupportBodies"];
         if (contactSupports) names = [.. names, "ClearDeviceSupportGroups", "CountDeviceSupportGroups",
             "ScanDeviceSupportGroups", "OffsetDeviceSupportGroupBlocks", "AddDeviceSupportGroupOffsets", "WriteDeviceSupportGroups",
-            "MergeDeviceSupportContacts", "AdvanceDeviceSupportSort", "FinishDeviceSupportSort"];
+            "MergeDeviceSupportContacts", "AdvanceDeviceSupportSort", "FinishDeviceSupportSort",
+            "ClearDeviceSupportContactOrder", "WriteDeviceSupportContactOrder", "WriteDeviceSupportContactEnds", "WriteDeviceSupportDependencies",
+            "InitializeDeviceSupportRebuild", "ClearDeviceSupportRebuild", "CheckDeviceSupportMotion", "InitializeDeviceSupportWarmStart",
+            "PrepareDeviceSupportBodies", "PrepareDeviceSupportCandidates", "ClearDeviceSupportWorkQueue", "QueueDeviceSupportCandidates",
+            "SeedDeviceSupportCandidates", "FinishDeviceSupportBodies", "ReleaseDeviceUnsupportedContacts", "ClearDeviceSupportIncoming",
+            "WriteDeviceSupportIncoming", "QueueDeviceSupportLoads", "SeedDeviceSupportLoads"];
         ComputePipelineDesc[] entries = Compile("scene_contact_avbd", SceneDefines(contactSupports, jointBounds) + """
             #include "physics_dispatch.slang"
             #include "physics_avbd_contact.slang"
@@ -137,7 +142,7 @@ internal sealed partial class PhysicsSceneShaders
             #include "physics_awake_avbd.slang"
             #if SCENE_CONTACT_SUPPORTS
             #include "physics_avbd_contact_support.slang"
-            #include "physics_contact_support_groups.slang"
+            #include "physics_contact_support_parallel.slang"
             struct SceneContactSupportConstraints : IDeviceAvbdConstraints
             {
                 DeviceContactSupportAvbdConstraints inner;
@@ -238,20 +243,14 @@ internal sealed partial class PhysicsSceneShaders
             void InitializeSupports(uint3 id:SV_DispatchThreadID)
             {
                 #if SCENE_CONTACT_SUPPORTS
-                uint root=devicePhysicsThreadIndex(id,64);
-                if(root>=ContactSupportSettings.bodies||DeviceSupportGroupRanges[root].y==0) return;
-                DeviceContactSupportGroupWork work; work.root=root;
-                DeviceAwakeBodies bodies; initializeDeviceContactSupports(AvbdStep,bodies,work);
+                buildDeviceSupportCandidatesParallel();
                 #endif
             }
             [shader("compute")][numthreads(64,1,1)]
             void UpdateSupports(uint3 id:SV_DispatchThreadID)
             {
                 #if SCENE_CONTACT_SUPPORTS
-                uint root=devicePhysicsThreadIndex(id,64);
-                if(root>=ContactSupportSettings.bodies||DeviceSupportGroupRanges[root].y==0) return;
-                DeviceContactSupportGroupWork work; work.root=root;
-                DeviceAwakeBodies bodies; updateDeviceContactSupports(AvbdStep,bodies,work);
+                updateDeviceSupportLoadsParallel();
                 #endif
             }
             [shader("compute")][numthreads(64,1,1)]
@@ -267,7 +266,12 @@ internal sealed partial class PhysicsSceneShaders
             """, names);
         DispatchArguments bodies = DevicePhysicsDispatch.CreateGroups((bodyCount + 63) / 64);
         DispatchArguments rows = DevicePhysicsDispatch.CreateGroups((Math.Max(bodyCount, contactCapacity) + 63) / 64);
+        // Persistent consumers share one ready list; mapping kernels still cover every row.
+        const int maximumSupportWorkerGroups = 128;
+        DispatchArguments supportWorkers = DevicePhysicsDispatch.CreateGroups(Math.Min(maximumSupportWorkerGroups,
+            (contactCapacity + 63) / 64));
         var initialization = new List<DeviceAvbdGroupDispatch>();
+        var updates = new List<DeviceAvbdGroupDispatch>();
         if (contactSupports)
         {
             initialization.AddRange([new(entries[6], bodies), new(entries[7], bodies), new(entries[8], rows),
@@ -279,11 +283,42 @@ internal sealed partial class PhysicsSceneShaders
                 initialization.Add(new(entries[14], new(1, 1, 1)));
             }
             initialization.Add(new(entries[15], rows));
-            initialization.Add(new(entries[4], bodies));
+            Add(initialization, "ClearDeviceSupportContactOrder", rows);
+            Add(initialization, "WriteDeviceSupportContactOrder", rows);
+            Add(initialization, "WriteDeviceSupportContactEnds", rows);
+            Add(initialization, "WriteDeviceSupportDependencies", rows);
+            Add(initialization, "InitializeDeviceSupportRebuild", bodies);
+            Add(initialization, "InitializeDeviceSupportWarmStart", rows);
+            Add(initialization, "CheckDeviceSupportMotion", bodies);
+            AddBuild(initialization);
+
+            Add(updates, "ClearDeviceSupportRebuild", bodies);
+            Add(updates, "CheckDeviceSupportMotion", bodies);
+            AddBuild(updates);
+            Add(updates, "ClearDeviceSupportWorkQueue", new(1, 1, 1));
+            Add(updates, "QueueDeviceSupportLoads", rows);
+            Add(updates, "SeedDeviceSupportLoads", rows);
+            Add(updates, "UpdateSupports", supportWorkers);
         }
-        DeviceAvbdGroupDispatch[] updates = contactSupports ? [new(entries[5], bodies)] : [];
         return new(entries[1], entries[2], entries[3], ClearBodyIndices: entries[0])
-        { GroupInitializationDispatches = initialization.ToArray(), GroupUpdateDispatches = updates };
+        { GroupInitializationDispatches = initialization.ToArray(), GroupUpdateDispatches = updates.ToArray() };
+
+        void Add(List<DeviceAvbdGroupDispatch> dispatches, string name, DispatchArguments groups) =>
+            dispatches.Add(new(entries[Array.IndexOf(names, name)], groups));
+
+        void AddBuild(List<DeviceAvbdGroupDispatch> dispatches)
+        {
+            Add(dispatches, "PrepareDeviceSupportBodies", bodies);
+            Add(dispatches, "PrepareDeviceSupportCandidates", rows);
+            Add(dispatches, "ClearDeviceSupportWorkQueue", new(1, 1, 1));
+            Add(dispatches, "QueueDeviceSupportCandidates", rows);
+            Add(dispatches, "SeedDeviceSupportCandidates", rows);
+            Add(dispatches, "InitializeSupports", supportWorkers);
+            Add(dispatches, "FinishDeviceSupportBodies", bodies);
+            Add(dispatches, "ReleaseDeviceUnsupportedContacts", rows);
+            Add(dispatches, "ClearDeviceSupportIncoming", rows);
+            Add(dispatches, "WriteDeviceSupportIncoming", rows);
+        }
     }
 
     internal DeviceContactKernels Responses()
