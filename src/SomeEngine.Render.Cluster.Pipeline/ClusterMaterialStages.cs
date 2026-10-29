@@ -1243,7 +1243,7 @@ internal sealed class ClusterShadeStages : IDisposable
                 ? ClusterMaterialEntries.PrimaryDepthShadowRequests : ClusterMaterialEntries.ShadowRequests;
             invocation = invocation with
             {
-                RequestShader = requestShadowPages && material.Shader!.HasSpecializations(requestEntry)
+                RequestShader = requestShadowPages && !sharedDepthRequests && material.Shader!.HasSpecializations(requestEntry)
                     ? CreateInvocation(material, encoding,
                     requestEntry, debugMode, materialStage?.RequestShader) : null,
             };
