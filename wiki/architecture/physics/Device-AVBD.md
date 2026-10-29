@@ -253,7 +253,7 @@ Body 位置与速度沿共同 `DeviceBodyResults` 返回原实体。
 `DeviceSupportedContactAvbdConstraints` 将当前辅助世界力交给原接触法向与摩擦数学，
 `DeviceContactSupportAvbdConstraints` 提供支撑 Body 的同一图参与和响应修正。
 原 AVBD 接触乘子保存在自身 buffer，支撑贡献保存在自身对应表示。
-该具体组合的组初始化与组更新入口分别调用 `initializeDeviceContactSupports` 和 `updateDeviceContactSupports`。
+通用组合的组初始化与组更新入口分别调用 `initializeDeviceContactSupports` 和 `updateDeviceContactSupports`。
 这两个入口接受具体 `IDeviceBodySelection`：传入 `DeviceAwakeBodies` 时，足迹重建、载荷交接和辅助力保留
 仅更新活动参与分量，休眠接触沿原数值表示保留其支撑力。原单参数入口选择全部已绑定主体。
 
@@ -264,3 +264,12 @@ Body 位置与速度沿共同 `DeviceBodyResults` 返回原实体。
 分组接触引用按连通根、见证点高度及实体标识并行稳定归并，已排序范围直接生成支撑候选。
 归并只移动引用并复用两份索引工作区，主体和接触的数值仍由各自设备表示保存。
 每个足迹沿凸包边界和三角扇求仿射权重，盒体共享固定地面时各动态岛独立推进。
+
+DefaultGame 使用 [并行支撑阶段](../../../assets/Shaders/physics_contact_support_parallel.slang)。
+高度排序的逆表与原 graph 邻接给出每个接触两端的相邻访问：动态下层的足迹读取和上层的接触追加
+沿相同端点的原高度顺序形成依赖，独立端点链同时推进。固定下层保留共同只读输入角色。
+就绪接触由至多 128 个、每组 64 lane 的持久消费者处理；每项在写回可见后释放后继，剩余接触计数归零结束。
+运动变化只重建所属连通分量。原仿射权重同时产生目标接触的 incoming 引用；反向阶段等待上方接触载荷完成，
+由目标接触单独汇总 Body 反力和上方接触载荷，再写回自身世界辅助力及共同响应。
+跨组读写的支撑状态和整数依赖使用全设备可见的 UAV，发布就绪项前执行设备内存屏障。
+阶段之间沿原 `DeviceAvbdSolver` 的 UAV 屏障推进，主轮数和每体局部轮数继续使用原设置。

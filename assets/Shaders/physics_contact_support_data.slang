@@ -37,9 +37,9 @@ struct DeviceSupportEquation
     float3 rotationResponse; uint padding4;
     float heightError; float reaction; uint2 padding5;
 };
-RWStructuredBuffer<DeviceBodySupportState> DeviceSupportBodyStates;
-RWStructuredBuffer<DeviceContactSupportState> DeviceSupportContactStates;
-RWStructuredBuffer<uint> DeviceSupportBodyContacts;
+globallycoherent RWStructuredBuffer<DeviceBodySupportState> DeviceSupportBodyStates;
+globallycoherent RWStructuredBuffer<DeviceContactSupportState> DeviceSupportContactStates;
+globallycoherent RWStructuredBuffer<uint> DeviceSupportBodyContacts;
 RWStructuredBuffer<DeviceSupportLoad> DeviceSupportBodyLoads;
 RWStructuredBuffer<DeviceSupportLoad> DeviceSupportContactLoads;
 RWStructuredBuffer<DeviceSupportCandidate> DeviceSupportCandidates;
