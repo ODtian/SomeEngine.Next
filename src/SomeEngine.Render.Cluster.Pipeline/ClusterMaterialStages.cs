@@ -515,7 +515,9 @@ internal sealed partial class ClusterRasterStages : IDisposable
         string meshletSoftwareEntry = _visibilityMode == ClusterVisibilityMode.ImageAtomic64
             ? "ClusterRasterSoftwareMeshletImageAtomic64"
             : "ClusterRasterSoftwareMeshletBufferAtomic64";
+        // Prefer one wave per reuse batch to keep triangle setup and pixel queues parallel.
         bool softwareUsesMaterialRanges = softwareEntry is not null &&
+            !ClusterMaterialEntries.HasEntry(shader, target, softwareEntry, SlangStage.Compute) &&
             ClusterMaterialEntries.HasEntry(shader, target, meshletSoftwareEntry, SlangStage.Compute);
         if (softwareUsesMaterialRanges)
             softwareEntry = meshletSoftwareEntry;
