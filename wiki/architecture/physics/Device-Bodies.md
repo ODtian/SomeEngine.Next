@@ -28,8 +28,8 @@ StepState 的写版本；新实体按绑定初始化整行，既有实体只复�
 
 来源版本与已同步字段由 DeviceBodies 单处保存，查询和传输范围由输入持有者复用。
 实际数据继续位于原 208B States，上传复用原 staging 和命令资源。
-输入查询复用原 `EntityTableChanges` 与 `ChangedChunks`，按表成员变化和读取列的版本选取待检查块。
-同一块中的字段接受版本仍按上述主体来源逐行比较；持续驻留步按实际变化缩小读取范围。
+输入阶段直接遍历参与查询的当前主体，按上述主体来源逐行比较字段版本，再传输实际修改的区间。
+主体查询承担成员和启用条件筛选，设备输入版本由同一 DeviceBodies 保存。
 
 [CPU 输入变更](../../../src/SomeEngine.Physics/DeviceBodies.InputChanges.cs) 由同一 DeviceBodies 按需保存。
 活动消费者绑定后，`DeviceBodyInputs` 在原组件写版本判定处生成实体身份、组件位及本轮步号、子步号，
