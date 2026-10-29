@@ -661,9 +661,13 @@ internal sealed partial class FrameExecutor
         {
             RemoveValuePass(index);
         }
-        if (!previous.Identity.IsValid || identityChanged || previous.DeclarationOrdinal != row.DeclarationOrdinal ||
-            previous.Enabled != row.Enabled || previous.Options.Scheduling != row.Options.Scheduling)
+        if (!previous.Identity.IsValid || !row.Identity.IsValid || identityChanged ||
+            previous.DeclarationOrdinal != row.DeclarationOrdinal || previous.Enabled != row.Enabled ||
+            previous.Options.Scheduling != row.Options.Scheduling)
+        {
             _changedValuePasses.Add(index);
+            _passOrderChanged = true;
+        }
         ObservePass(index, row);
         FramePass retained = row;
         retained.Queue = _passes[index].Queue;
@@ -741,6 +745,7 @@ internal sealed partial class FrameExecutor
         }
         catch
         {
+            _passOrderChanged = true;
             _orderEdgeSources.Clear();
             _orderEdgesByPass.Clear();
             _fixedValuePasses.Clear();
@@ -766,7 +771,10 @@ internal sealed partial class FrameExecutor
         if (current == previous) return;
         _changedExecutionEdges.Add(edge);
         if (previous == 0 || current == 0)
+        {
+            _passOrderChanged = true;
             _orderDependencyChanges.TryAdd(edge, previous != 0);
+        }
         if (current == 0)
         {
             _orderEdgeSources.Remove(edge);
@@ -783,6 +791,7 @@ internal sealed partial class FrameExecutor
 
     private void RemoveValuePass(int index)
     {
+        _passOrderChanged = true;
         if (!_orderEdgesByPass.TryGetValue(index, out HashSet<PassEdge>? removedEdges)) return;
         _changedExecutionEdges.UnionWith(removedEdges);
         foreach (PassEdge edge in removedEdges.ToArray())

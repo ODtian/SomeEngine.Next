@@ -509,6 +509,7 @@ internal sealed partial class FrameExecutor
     private ulong[] _resourceOrderPassWords = [];
     private int _passOrderWordCount;
     private bool _hasPassOrderCycle;
+    private bool _passOrderChanged = true;
 
     private ReadOnlySpan<ulong> CollectPassOrderAncestors(int pass)
     {
@@ -1227,6 +1228,7 @@ internal sealed partial class FrameExecutor
     private void UpdateDependencies()
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(GraphTrace.Dependencies);
+        _passOrderChanged |= _dependencyPassCount != _passes.Count;
         EnsureCapacity(ref _live, _passes.Count);
         EnsureCapacity(ref _valuePredecessors, _passes.Count);
         EnsureCapacity(ref _valueSuccessors, _passes.Count);
@@ -1248,8 +1250,12 @@ internal sealed partial class FrameExecutor
         _passOrderWordCount = (_passes.Count + 63) / 64;
         EnsureCapacity(ref _passOrderAncestors, _passes.Count);
         EnsureCapacity(ref _passOrderSearchStates, _passes.Count);
-        Array.Clear(_passOrderSearchStates, 0, _passes.Count);
-        _hasPassOrderCycle = false;
+        if (_passOrderChanged)
+        {
+            Array.Clear(_passOrderSearchStates, 0, _passes.Count);
+            _hasPassOrderCycle = false;
+            _passOrderChanged = false;
+        }
         foreach (int pass in _changedAnalysisPasses)
         {
             if ((uint)pass < (uint)_passes.Count && HasStatisticsReceiver)
