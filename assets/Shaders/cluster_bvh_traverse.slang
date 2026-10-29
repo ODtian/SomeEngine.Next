@@ -40,9 +40,9 @@ void ClaimReadyNodes(uint thread, bool multipleViews)
                     {
                         // The publisher orders its payload before the ready exchange.
                         DeviceMemoryBarrier();
-                        // Keep each parent's children and view reductions inside one wave.
+                        // Keep two parents in each wave while distributing their view tests.
                         viewLanes = min(ClusterParallelViewLanes(countbits(TraversalNodes[first].ViewMask)),
-                            WaveGetLaneCount() / CLUSTER_BVH_FANOUT);
+                            max(1u, WaveGetLaneCount() / (2u * CLUSTER_BVH_FANOUT)));
                     }
                     available = min(CLUSTER_BVH_PARENTS_PER_GROUP / viewLanes, TraversalLevel.MaxNodes - first);
                 }
@@ -126,7 +126,7 @@ void CullPersistentWork(uint thread, bool targetFilters = true, bool multipleVie
             uint child = thread & (CLUSTER_BVH_FANOUT - 1u);
             uint viewLane = (thread / CLUSTER_BVH_FANOUT) % viewLanes;
             ProcessTraversalNode(WorkNodes[parent], parentIndex < count, child,
-                viewLane, viewLanes, parentIndex * CLUSTER_BVH_FANOUT + child, targetFilters, multipleViews);
+                viewLane, viewLanes, targetFilters, multipleViews);
             DeviceMemoryBarrierWithGroupSync();
             if (thread == 0u)
             {

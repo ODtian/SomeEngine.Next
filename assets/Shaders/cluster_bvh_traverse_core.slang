@@ -39,11 +39,6 @@ static const uint CLUSTER_BVH_PARENTS_PER_GROUP =
     CLUSTER_TRAVERSAL_THREADS / CLUSTER_BVH_FANOUT;
 static const uint CLUSTER_NODE_ARG_STRIDE = 32u;
 
-#ifdef CLUSTER_PERSISTENT_CULL
-groupshared uint TraversalActiveViews[CLUSTER_TRAVERSAL_THREADS];
-groupshared uint TraversalStreamingPriorities[CLUSTER_TRAVERSAL_THREADS];
-#endif
-
 struct ClusterTraversalLevelUniforms
 {
     uint NodeLevel;
@@ -251,7 +246,7 @@ void AppendDeferredTraversalNode(ClusterTraversalNode node, uint maxNodes)
 }
 
 void ProcessTraversalNode(ClusterTraversalNode parent, bool validParent, uint childIndex,
-    uint viewLane = 0u, uint viewLanes = 1u, uint groupChild = 0u,
+    uint viewLane = 0u, uint viewLanes = 1u,
     bool targetFilters = true, bool multipleViews = true)
 {
     uint nodeIndex = ClusterTraversalNodeIndex(parent);
@@ -356,23 +351,6 @@ void ProcessTraversalNode(ClusterTraversalNode parent, bool validParent, uint ch
     {
         activeViews = MergeClusterViewMaskWave(activeViews, viewLanes, CLUSTER_BVH_FANOUT);
         streamingPriority = MergeClusterViewPriorityWave(streamingPriority, viewLanes, CLUSTER_BVH_FANOUT);
-        if (viewLanes * CLUSTER_BVH_FANOUT > WaveGetLaneCount())
-        {
-            if (viewLane == 0u)
-            {
-                TraversalActiveViews[groupChild] = 0u;
-                TraversalStreamingPriorities[groupChild] = 1u;
-            }
-            GroupMemoryBarrierWithGroupSync();
-            if (WaveGetLaneIndex() == firstViewLane)
-            {
-                InterlockedOr(TraversalActiveViews[groupChild], activeViews);
-                InterlockedMax(TraversalStreamingPriorities[groupChild], streamingPriority);
-            }
-            GroupMemoryBarrierWithGroupSync();
-            activeViews = TraversalActiveViews[groupChild];
-            streamingPriority = TraversalStreamingPriorities[groupChild];
-        }
         if (viewLane != 0u) activeViews = 0u;
     }
 #endif
