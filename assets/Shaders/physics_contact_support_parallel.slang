@@ -9,13 +9,13 @@ RWStructuredBuffer<uint2> DeviceSupportContactSuccessors;
 globallycoherent RWStructuredBuffer<uint> DeviceSupportGroupRebuild;
 struct DeviceSupportContactTask
 {
-    uint waiting; uint nextReady; uint incoming; uint incomingContacts;
+    uint waiting; uint queuedContact; uint incoming; uint incomingContacts;
 };
 globallycoherent RWStructuredBuffer<DeviceSupportContactTask> DeviceSupportContactTasks;
 // A source below contacts denotes a contact; the remaining indices denote bodies.
 struct DeviceSupportLoadLink { uint source; uint next; float weight; };
 RWStructuredBuffer<DeviceSupportLoadLink> DeviceSupportLoadLinks;
-// Head of the ready list, followed by the number of unfinished contacts.
+// Read ticket, write ticket and the fixed number of contacts in this dispatch.
 globallycoherent RWStructuredBuffer<uint> DeviceSupportWorkQueue;
 
 bool deviceSupportRebuilds(uint row)
@@ -25,27 +25,16 @@ bool deviceSupportRebuilds(uint row)
 }
 void pushDeviceSupportContact(uint row)
 {
-    uint head;
-    InterlockedAdd(DeviceSupportWorkQueue[0],0,head);
-    for(;;)
-    {
-        DeviceSupportContactTasks[row].nextReady=head;
-        DeviceMemoryBarrier();
-        uint previous;
-        InterlockedCompareExchange(DeviceSupportWorkQueue[0],head,row,previous);
-        if(previous==head) return;
-        head=previous;
-    }
-}
-uint takeDeviceSupportContact()
-{
-    uint head;
-    InterlockedAdd(DeviceSupportWorkQueue[0],0,head);
-    if(head==0xffffffff) return head;
+    uint ticket;
+    InterlockedAdd(DeviceSupportWorkQueue[1],1,ticket);
     DeviceMemoryBarrier();
-    uint next=DeviceSupportContactTasks[head].nextReady,previous;
-    InterlockedCompareExchange(DeviceSupportWorkQueue[0],head,next,previous);
-    return previous==head?head:0xffffffff;
+    InterlockedExchange(DeviceSupportContactTasks[ticket].queuedContact,row);
+}
+uint takeDeviceSupportTicket()
+{
+    uint ticket;
+    InterlockedAdd(DeviceSupportWorkQueue[0],1,ticket);
+    return ticket;
 }
 void releaseDeviceSupportContact(uint row)
 {
@@ -54,13 +43,6 @@ void releaseDeviceSupportContact(uint row)
     InterlockedAdd(DeviceSupportContactTasks[row].waiting,0xffffffff,waiting);
     if(waiting==1) pushDeviceSupportContact(row);
 }
-bool deviceSupportContactsUnfinished()
-{
-    uint remaining;
-    InterlockedAdd(DeviceSupportWorkQueue[1],0,remaining);
-    return remaining!=0;
-}
-
 [shader("compute")][numthreads(64,1,1)]
 void ClearDeviceSupportContactOrder(uint3 id:SV_DispatchThreadID)
 {
@@ -185,16 +167,18 @@ void PrepareDeviceSupportCandidates(uint3 id:SV_DispatchThreadID)
 }
 [shader("compute")][numthreads(1,1,1)]
 void ClearDeviceSupportWorkQueue(uint3 id:SV_DispatchThreadID)
-{ DeviceSupportWorkQueue[0]=0xffffffff; DeviceSupportWorkQueue[1]=0; }
+{ DeviceSupportWorkQueue[0]=0; DeviceSupportWorkQueue[1]=0; DeviceSupportWorkQueue[2]=0; }
 [shader("compute")][numthreads(64,1,1)]
 void QueueDeviceSupportCandidates(uint3 id:SV_DispatchThreadID)
 {
     uint row=devicePhysicsThreadIndex(id,64);
+    if(row>=ContactSupportSettings.contacts) return;
+    DeviceSupportContactTasks[row].queuedContact=0xffffffff;
     DeviceAwakeBodies bodies;
-    if(row>=ContactSupportSettings.contacts||!deviceSupportContactRuns(row,bodies)||!deviceSupportRebuilds(row)) return;
+    if(!deviceSupportContactRuns(row,bodies)||!deviceSupportRebuilds(row)) return;
     uint2 previous=DeviceSupportContactPredecessors[row];
     DeviceSupportContactTasks[row].waiting=(previous.x!=0xffffffff?1:0)+(previous.y!=0xffffffff?1:0);
-    InterlockedAdd(DeviceSupportWorkQueue[1],1);
+    InterlockedAdd(DeviceSupportWorkQueue[2],1);
 }
 [shader("compute")][numthreads(64,1,1)]
 void SeedDeviceSupportCandidates(uint3 id:SV_DispatchThreadID)
@@ -206,17 +190,22 @@ void SeedDeviceSupportCandidates(uint3 id:SV_DispatchThreadID)
 }
 void buildDeviceSupportCandidatesParallel()
 {
-    while(deviceSupportContactsUnfinished())
+    uint total=DeviceSupportWorkQueue[2];
+    if(total==0) return;
+    uint ticket=takeDeviceSupportTicket();
+    while(ticket<total)
     {
-        uint row=takeDeviceSupportContact();
+        uint row;
+        InterlockedAdd(DeviceSupportContactTasks[ticket].queuedContact,0,row);
         if(row!=0xffffffff)
         {
+            DeviceMemoryBarrier();
             DeviceSupportCandidate candidate=DeviceSupportCandidates[row];
             if(candidate.padding.x!=0) deviceBuildSupportCandidate(candidate,DeviceSupportContactOrder[row]);
             DeviceMemoryBarrier();
             uint2 next=DeviceSupportContactSuccessors[row];
             releaseDeviceSupportContact(next.x); releaseDeviceSupportContact(next.y);
-            InterlockedAdd(DeviceSupportWorkQueue[1],0xffffffff);
+            ticket=takeDeviceSupportTicket();
         }
     }
 }
@@ -277,10 +266,12 @@ void WriteDeviceSupportIncoming(uint3 id:SV_DispatchThreadID)
 void QueueDeviceSupportLoads(uint3 id:SV_DispatchThreadID)
 {
     uint row=devicePhysicsThreadIndex(id,64);
+    if(row>=ContactSupportSettings.contacts) return;
+    DeviceSupportContactTasks[row].queuedContact=0xffffffff;
     DeviceAwakeBodies bodies;
-    if(row>=ContactSupportSettings.contacts||!deviceSupportContactRuns(row,bodies)||DeviceSupportContactStates[row].enabled==0) return;
+    if(!deviceSupportContactRuns(row,bodies)||DeviceSupportContactStates[row].enabled==0) return;
     DeviceSupportContactTasks[row].waiting=DeviceSupportContactTasks[row].incomingContacts;
-    InterlockedAdd(DeviceSupportWorkQueue[1],1);
+    InterlockedAdd(DeviceSupportWorkQueue[2],1);
 }
 [shader("compute")][numthreads(64,1,1)]
 void SeedDeviceSupportLoads(uint3 id:SV_DispatchThreadID)
@@ -292,11 +283,16 @@ void SeedDeviceSupportLoads(uint3 id:SV_DispatchThreadID)
 }
 void updateDeviceSupportLoadsParallel()
 {
-    while(deviceSupportContactsUnfinished())
+    uint total=DeviceSupportWorkQueue[2];
+    if(total==0) return;
+    uint ticket=takeDeviceSupportTicket();
+    while(ticket<total)
     {
-        uint row=takeDeviceSupportContact();
+        uint row;
+        InterlockedAdd(DeviceSupportContactTasks[ticket].queuedContact,0,row);
         if(row!=0xffffffff)
         {
+            DeviceMemoryBarrier();
             DeviceContactSupportState state=DeviceSupportContactStates[row]; float load=state.reaction;
             for(uint index=DeviceSupportContactTasks[row].incoming;index!=0xffffffff;)
             {
@@ -309,7 +305,7 @@ void updateDeviceSupportLoadsParallel()
             DeviceMemoryBarrier();
             for(uint index=0;index<state.loadCount;index++)
                 releaseDeviceSupportContact(DeviceSupportContactLoads[row*3+index].contact);
-            InterlockedAdd(DeviceSupportWorkQueue[1],0xffffffff);
+            ticket=takeDeviceSupportTicket();
         }
     }
 }
