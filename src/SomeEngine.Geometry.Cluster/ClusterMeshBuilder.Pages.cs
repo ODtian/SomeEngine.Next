@@ -138,7 +138,7 @@ public static partial class ClusterMeshBuilder
                 meshlets[index] = cluster;
             }
         }
-        if (strategy == ClusterBuildStrategy.Realtime) ConstrainMeshlets(meshlets, globalIndices, mesh.MaterialIndices);
+        if (strategy == ClusterBuildStrategy.Realtime) BuildLocalTopology(meshlets, globalIndices);
         return new(meshlets, globalIndices, ComputeMeshBounds(mesh.Positions, mesh.VertexCount));
     }
 

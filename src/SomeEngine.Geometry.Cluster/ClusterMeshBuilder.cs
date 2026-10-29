@@ -60,10 +60,6 @@ public struct ClusterLodConfig
 public static partial class ClusterMeshBuilder
 {
     public const byte SourceVertexLockBit = 1 << 2;
-    private const int MaxVerticesPerMeshlet = 64;
-    private const int MaxTrianglesPerMeshlet = 124;
-    private const float ConeWeight = 0.0f;
-
     public struct ClusterMeshlet
     {
         public int IndicesOffset;
@@ -189,7 +185,7 @@ public static partial class ClusterMeshBuilder
             ClusterMeshlet root = clusters[index]; root.ParentError = float.MaxValue; root.ParentGroupId = -1;
             clusters[index] = root;
         }
-        ConstrainMeshlets(clusters, globalIndices, materialIndicesArray);
+        BuildLocalTopology(clusters, globalIndices);
     }
 
     private static int InitializeLeafClusters(ReadOnlySpan<Vector3> positions,

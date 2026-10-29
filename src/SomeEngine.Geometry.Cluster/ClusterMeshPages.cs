@@ -207,17 +207,32 @@ public static partial class ClusterMeshPages
             var triangleCounts = new List<byte>();
             var used = new HashSet<byte>();
             byte triangleCount = 0;
-            foreach (int triangle in material.Triangles)
+            var remaining = new List<int>(material.Triangles);
+            while (remaining.Count > 0)
             {
-                ReadOnlySpan<byte> vertices = source.TriangleIndices.Span.Slice(triangle * 3, 3);
-                int newVertices = 0;
-                for (int corner = 0; corner < 3; corner++)
-                    if (!used.Contains(vertices[corner]) && !vertices[..corner].Contains(vertices[corner])) newVertices++;
-                if (used.Count + newVertices > 32 || triangleCount == 32)
+                int next = -1, fewestNewVertices = 4;
+                if (triangleCount < 32)
+                    for (int triangle = 0; triangle < remaining.Count; triangle++)
+                    {
+                        ReadOnlySpan<byte> candidate = source.TriangleIndices.Span.Slice(remaining[triangle] * 3, 3);
+                        int newVertices = 0;
+                        for (int corner = 0; corner < 3; corner++)
+                            if (!used.Contains(candidate[corner]) && !candidate[..corner].Contains(candidate[corner])) newVertices++;
+                        if (newVertices < fewestNewVertices && used.Count + newVertices <= 32)
+                        {
+                            next = triangle;
+                            fewestNewVertices = newVertices;
+                            if (newVertices == 0) break;
+                        }
+                    }
+                if (next < 0)
                 {
                     triangleCounts.Add(triangleCount); used.Clear(); triangleCount = 0;
+                    continue;
                 }
+                ReadOnlySpan<byte> vertices = source.TriangleIndices.Span.Slice(remaining[next] * 3, 3);
                 foreach (byte vertex in vertices) { used.Add(vertex); indices.Add(vertex); }
+                remaining.RemoveAt(next);
                 triangleCount++;
             }
             triangleCounts.Add(triangleCount);

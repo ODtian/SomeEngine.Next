@@ -41,7 +41,8 @@ public sealed class ClusterLodConfigurationTests
     public void SmallerPartitionsRetainMoreTrianglesAcrossTheFirstLod()
     {
         var (positions, indices) = CreateGrid(32);
-        ClusterLodConfig config = ClusterLodConfig.GetDefault() with { SimplifyFallbackSloppy = false };
+        ClusterLodConfig config = ClusterLodConfig.GetDefault() with
+            { SimplifyRatio = .1f, SimplifyFallbackSloppy = false };
         List<ClusterMeshlet> small = [], large = [];
         ClusterMeshBuilder.BuildLod(config with { PartitionSize = 4 }, positions, indices,
             new uint[positions.Length], small, []);
