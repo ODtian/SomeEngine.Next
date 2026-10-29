@@ -169,9 +169,13 @@ public sealed class DeviceContactMatches : IDisposable, IDevicePhysicsSubmission
             _backend.Barrier(_commands, new MemoryBarrier(PipelineSync.ComputeShading, PipelineSync.ComputeShading,
                 ResourceAccess.UnorderedAccess, ResourceAccess.UnorderedAccess));
         }
-        _backend.Barrier(_commands, new BufferBarrier(_matches, PipelineSync.ComputeShading, PipelineSync.Copy, ResourceAccess.UnorderedAccess, ResourceAccess.CopySource));
-        _backend.CopyBuffer(_commands, new(_matches, 0, _readback, 0, _matches.Info.Size));
-        _backend.Barrier(_commands, new BufferBarrier(_matches, PipelineSync.Copy, PipelineSync.ComputeShading, ResourceAccess.CopySource, ResourceAccess.UnorderedAccess));
+        if (_detection.Count != 0)
+        {
+            ulong bytes = (ulong)_detection.Count * 4 * 16;
+            _backend.Barrier(_commands, new BufferBarrier(_matches, PipelineSync.ComputeShading, PipelineSync.Copy, ResourceAccess.UnorderedAccess, ResourceAccess.CopySource));
+            _backend.CopyBuffer(_commands, new(_matches, 0, _readback, 0, bytes));
+            _backend.Barrier(_commands, new BufferBarrier(_matches, PipelineSync.Copy, PipelineSync.ComputeShading, ResourceAccess.CopySource, ResourceAccess.UnorderedAccess));
+        }
         using RecordedCommands recorded = _backend.End(_commands); _initialized = true;
         return _backend.Submit(_backend.GetQueue(_device, QueueType.Compute), new([], [], [recorded], [], []));
     }
@@ -180,7 +184,9 @@ public sealed class DeviceContactMatches : IDisposable, IDevicePhysicsSubmission
         public void Execute()
         {
             Array.Clear(matches._used); matches._pointIndices.Clear(); matches._nextIndex = 0;
-            using MappedBuffer mapping = matches._backend.Map(matches._readback, MapType.Read, BufferRange.Whole);
+            if (matches._detection.Count == 0) return;
+            ulong bytes = (ulong)matches._detection.Count * 4 * 16;
+            using MappedBuffer mapping = matches._backend.Map(matches._readback, MapType.Read, new(0, bytes));
             mapping.Invalidate(mapping.Range);
             ReadOnlySpan<MatchedContact> values = MemoryMarshal.Cast<byte, MatchedContact>(mapping.Bytes);
             int output = 0;
