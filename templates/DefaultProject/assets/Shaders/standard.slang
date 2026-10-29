@@ -1,3 +1,5 @@
+#define CLUSTER_FORWARD_DEPTH_POSITION 1
+#define CLUSTER_PRIMARY_DEPTH_RECEIVER 1
 #include "generated/render_instance_layout.slang"
 #include "cluster_shade_pipeline.slang"
 #include "triangle_surface.slang"
@@ -20,7 +22,6 @@ typedef StandardMaterial SurfaceEvaluate;
 #define CLUSTER_SURFACE_VISIBILITY_DEPTH 1
 #define CLUSTER_SURFACE_MODES 1
 #define CLUSTER_FORWARD_SHADING 1
-#define CLUSTER_FORWARD_DEPTH_POSITION 1
 #define CLUSTER_SHADOW_VERTEX_EVALUATE StaticSurfacePositionEval
 #define CLUSTER_SHADOW_DOMAIN_EVALUATE LinearPositionSurface
 #include "cluster_material_entries.slang"

@@ -9,6 +9,26 @@ namespace SomeEngine.Render.Cluster.Tests;
 public sealed class DirectShadowRequestRenderingTests
 {
     [Fact]
+    public async Task UnlitMaterialKeepsItsOwnRequestsAndRestoringStandardRestoresSharedDepthRequests()
+    {
+        await using var scene = await FrameStageScene.CreateAsync("D3D12", true, Options(),
+            nativeD3D12GpuValidation: false);
+        scene.UseMaterial("Standard");
+        RasterImage expected = await scene.ReadRasterImageAsync();
+        Assert.True(scene.Shadows.UsesPrimaryDepthReceiverRequests);
+
+        scene.UseMaterial("Unlit");
+        RasterImage unlit = await scene.ReadNextRasterImageAsync();
+        Assert.False(scene.Shadows.UsesPrimaryDepthReceiverRequests);
+        Assert.Contains(MemoryMarshal.Cast<byte, Half>(unlit.Color).ToArray(), value => (float)value > .01f);
+
+        scene.UseMaterial("Standard");
+        RasterImage actual = await scene.ReadNextRasterImageAsync();
+        Assert.True(scene.Shadows.UsesPrimaryDepthReceiverRequests);
+        RasterImage.AssertEqual(expected, actual, "shared-primary-depth-requests-after-unlit");
+    }
+
+    [Fact]
     public async Task SharedPrimaryDepthRequestsMatchMaterialRequestsAcrossFrameBoundaries()
     {
         await using var scene = await FrameStageScene.CreateAsync("D3D12", true, Options(),
