@@ -19,6 +19,11 @@ Rendering world 在安装、骨骼绑定、需求集合或具体算法连接改�
 
 来源输入、状态机和 Blend Space 相位照常随每次 Game 输入推进。`InputNumber`、实际叶 `Starts`、安装 `AnimationStarts` 及当次 `Readbacks` 集合继续通过正常提取交付。视觉降频发生在 GPU 局部姿势采样，当前请求和来源身份由该次输入持有。
 
+Game 侧 `DevicePoseSources` 与 Rendering 共用 `GpuPoseEvaluation.SelectBones`、参考姿势打包和
+`GpuPosePresentation.FromSampleTimes`，沿同一需求采样和呈现局部 TRS。
+接受的两端时钟、来源身份与需求引用保存在目标实体的来源状态；纯需求修改重建派生选择并重设相关局部样本。
+同 World 中原物理链、CPU 关键骨和低频视觉源的组合继续使用本页公开应用夹具验收。
+
 ## 局部 TRS 呈现规则
 
 每个实例保留最近两次实际视觉采样的局部 TRS、计算时钟和来源身份。第一份结果同时初始化两端；后续当来源计算时钟达到上次采样时钟加 `Interval`，采样该次实际输入。显式修改需求或重新开始播放时，从当前输入重新初始化两端。子节需求改变父生产节的有效选骨集合时，该父节也按当前来源重建两端，再沿既有 G、历史与边界依赖继续求值。

@@ -50,7 +50,7 @@ public static class ComponentWriteJobs
             if (data.Accesses.Count == 0)
             {
                 scheduler.ExecuteParallel(new WriteGroups<TComponent, TJob>(structure, data, job,
-                    roots.IsSparse, roots.CurrentSystemVersion), data.Groups.Length);
+                    roots.IsSparse, roots.CurrentSystemVersion), data.Groups.Count);
                 return;
             }
             data.ReferencesChanged = false;
@@ -76,7 +76,7 @@ public static class ComponentWriteJobs
         internal readonly List<int> Starts = [];
         internal readonly List<JobResourceAccess> CurrentAccesses = [];
         internal readonly List<int> CurrentStarts = [];
-        internal int[][] Groups = [];
+        internal ComponentResourceRows Groups = ComponentResourceRows.Empty;
         internal bool ReferencesChanged;
 
         internal bool Matches(List<JobResourceAccess> accesses, List<int> starts)
@@ -136,7 +136,7 @@ public static class ComponentWriteJobs
                 data.ReferencesChanged = true;
                 return;
             }
-            scheduler.ExecuteParallel(new WriteGroups<TComponent, TJob>(structure, data, job, sparse, version), data.Groups.Length);
+            scheduler.ExecuteParallel(new WriteGroups<TComponent, TJob>(structure, data, job, sparse, version), data.Groups.Count);
         }
     }
 

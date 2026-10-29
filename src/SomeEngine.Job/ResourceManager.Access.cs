@@ -7,6 +7,7 @@ internal sealed partial class ResourceManager
         ReadOnlySpan<JobResourceAccess> accesses,
         Type jobType)
     {
+        using var trace = SomeEngine.Diagnostics.EngineTrace.Begin(JobTrace.RegisterResources);
         if (accesses.Length == 0)
         {
             return ResourceAccessRegistration.Empty;
@@ -49,6 +50,9 @@ internal sealed partial class ResourceManager
         bool commitStarted = false;
         try
         {
+            if (registered.Count > AccessBuilder<ActiveResourceAccess>.InlineCapacity)
+                MergeResourceRanges(ref registered);
+
             // Resolve and query the complete declaration before publishing any access owned by
             // this handle. Every slice therefore observes exactly the pre-owner frontier, while
             // the lock keeps the eventual multi-resource commit linearizable.

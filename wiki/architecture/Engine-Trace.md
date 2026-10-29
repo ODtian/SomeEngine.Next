@@ -18,6 +18,10 @@ detail 站点，分类为 `system`，名称取 `typeof(TSystem).ToString()`，�
 detail 采集沿这些嵌套区间计算 total/self，用于区分具体系统及其执行框架的线程经过时间。
 源码入口为 `src/SomeEngine.ECS.Systems/SystemNode.cs` 和 `SystemGroup.cs`。
 
+Job 资源阶段登记 `Resources.Register`、`Resources.Reserve` 和 `Resources.Activate`，分别覆盖直接登记、延迟访问保留及依赖完成后的启用。生成式实体 Job 按具体 Job 类型登记 `Resources.Collect`、`ReadPacket`、`Combine`、`Group`、`CheckInputs` 和 `Execute`，对应引用发现、分包读取、访问合并、写冲突分组、当前引用复核及同步范围执行。源码入口为 [ResourceManager.Access.cs](../../src/SomeEngine.Job/ResourceManager.Access.cs)、[ResourceManager.Reservations.cs](../../src/SomeEngine.Job/ResourceManager.Reservations.cs) 和 [JobEntityRuntime.Resources.cs](../../src/SomeEngine.ECS.Systems/JobEntityRuntime.Resources.cs)。
+
+设备物理通过具体提交类型的 `Device.Submit` 记录命令构造与提交范围，`ConstraintGraph.Build` 覆盖图派生及同步读取工作数量。其线程经过时间包括这些入口内的等待；设备完成继续由原 Job 完成链持有。源码入口为 [DevicePhysicsJobs.cs](../../src/SomeEngine.Physics/DevicePhysicsJobs.cs) 和 [DeviceConstraintGraph.cs](../../src/SomeEngine.Physics/DeviceConstraintGraph.cs)。
+
 ## 归账
 
 执行父区间与因果来源分别记录。主线程在等待中帮助执行别的帧产生的 Job 时，其实际调用嵌套仍用于独占耗时计算，工作归属仍指向原始帧。跨线程工作不会被误当作同线程子调用扣除。

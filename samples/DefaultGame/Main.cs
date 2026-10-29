@@ -1,5 +1,10 @@
 using SomeEngine.Resources;
 using SomeEngine.Runtime;
+using SomeEngine.Job;
+using SomeEngine.Diagnostics;
+using SomeEngine.Graphics;
+using SomeEngine.Graphics.Direct3D12;
+using SomeEngine.Graphics.Vulkan;
 using System.Text.Json.Nodes;
 #if SOMEENGINE_DEVELOPMENT
 using DefaultGame.Content;
@@ -14,6 +19,23 @@ public static class SampleApplication
 {
     public static async Task<int> Main(string[] args)
     {
+        string? physicsSelection = args.FirstOrDefault(argument => argument == "--physics"
+            || argument.StartsWith("--physics=", StringComparison.Ordinal));
+        string? physicsId = physicsSelection is null or "--physics" ? null : physicsSelection["--physics=".Length..];
+        string? physicsCheck = args.FirstOrDefault(argument => argument == "--physics-check"
+            || argument.StartsWith("--physics-check=", StringComparison.Ordinal));
+        string? physicsCheckId = physicsCheck is null or "--physics-check" ? null : physicsCheck["--physics-check=".Length..];
+        PhysicsCrowdScale? crowdScale = PhysicsCrowdScale.Read(physicsId);
+        bool crowdCheck = PhysicsCrowdScale.Read(physicsCheckId).HasValue;
+        if (crowdScale.HasValue || crowdCheck)
+            JobSystem.Initialize(new() { MaxResourceStates = PhysicsCrowdScale.MaxResourceStates });
+        bool devicePhysics = crowdCheck || args.Contains("--physics-device=gpu", StringComparer.Ordinal);
+        if (physicsCheck is not null)
+        {
+            string? physicsTrace = args.FirstOrDefault(argument => argument.StartsWith("--physics-trace=", StringComparison.Ordinal));
+            using TraceCapture? capture = physicsTrace is null ? null : EngineTrace.Start(physicsTrace["--physics-trace=".Length..]);
+            return devicePhysics ? MeasureDevicePhysicsScenes(args, physicsCheckId) : MeasurePhysicsScenes.Run(Console.Out, physicsCheckId);
+        }
 #if SOMEENGINE_DEVELOPMENT
         if (args is ["sample-crowd-materials"])
         {
@@ -31,6 +53,12 @@ public static class SampleApplication
         if (args is ["sample"])
         {
             await SampleContent.BuildAsync(ProjectPaths.Root,
+                Path.GetFullPath(Path.Combine(ProjectPaths.EngineShaders, "../..")));
+            return 0;
+        }
+        if (args is ["sample-physics-skin"])
+        {
+            await SampleContent.BuildPhysicsSkinAsync(ProjectPaths.Root,
                 Path.GetFullPath(Path.Combine(ProjectPaths.EngineShaders, "../..")));
             return 0;
         }
@@ -86,22 +114,33 @@ public static class SampleApplication
         bool inlineCrowdOnly = args.Contains("--crowd-inline", StringComparer.Ordinal);
         bool cachedCrowdOnly = args.Contains("--crowd-cache", StringComparer.Ordinal);
         bool crowdOnly = inlineCrowdOnly || cachedCrowdOnly || args.Contains("--crowd", StringComparer.Ordinal);
+        bool characterClothOnly = crowdScale.HasValue;
+        if (characterClothOnly) devicePhysics = true;
+        bool physicsOnly = physicsSelection is not null;
+        string? physicsContent = args.FirstOrDefault(argument => argument.StartsWith("--physics-content=", StringComparison.Ordinal));
+        string physicsContentDirectory = physicsContent is null ? AppContext.BaseDirectory : physicsContent["--physics-content=".Length..];
         bool regressionOnly = args.Contains("--regression", StringComparer.Ordinal);
         bool measure = args.Contains("--measure", StringComparer.Ordinal);
-        args = args.Where(argument => argument is not ("--crowd" or "--crowd-inline" or "--crowd-cache" or "--regression" or "--measure")).ToArray();
+        args = args.Where(argument => argument != physicsSelection && argument != physicsContent
+            && !argument.StartsWith("--physics-device=", StringComparison.Ordinal)
+            && argument is not ("--crowd" or "--crowd-inline" or "--crowd-cache" or "--regression" or "--measure")).ToArray();
         RuntimeStartupOptions startupOptions = RuntimeStartupOptions.Parse(args);
         startupOptions = startupOptions with
         {
             SurfacePanel = startupOptions.SurfacePanel || !crowdOnly,
             WorldNameplates = startupOptions.WorldNameplates || !crowdOnly,
         };
+        if (physicsOnly) startupOptions = startupOptions with { FixedFrameSeconds = 1f / 60, SynchronousFrames = true };
         string? clusterEffect = args.FirstOrDefault(static value => value.StartsWith("--cluster-effect=", StringComparison.Ordinal))
             ?["--cluster-effect=".Length..] ?? (args.Contains("--cluster-oit", StringComparer.Ordinal) ? "glass" : null);
-        ClusterBlendAssets? clusterAssets = clusterEffect is null ? null
-            : await ClusterBlendAssets.OpenAsync(AppContext.BaseDirectory, startupOptions.GraphicsBackend);
-        ClusterBlendScene? clusterScene = clusterAssets is null ? null : new(clusterAssets, clusterEffect!);
+        ClusterBlendAssets? clusterAssets = clusterEffect is null && (regressionOnly || crowdOnly) ? null
+            : await ClusterBlendAssets.OpenAsync(physicsOnly ? physicsContentDirectory : AppContext.BaseDirectory, startupOptions.GraphicsBackend,
+                characterClothOnly ? "Physics crowd skin" : null);
+        PhysicsCrowdDisplay? characterCloth = crowdScale is { } displayScale
+            ? new(clusterAssets!.Standard, clusterAssets.PhysicsSkin!, displayScale) : null;
+        ClusterBlendScene? clusterScene = clusterEffect is null ? null : new(clusterAssets!, clusterEffect);
         var scenes = SceneTestPlatform.ReadScenes(Path.Combine(AppContext.BaseDirectory, "test-scenes.json")).ToList();
-        using CrowdScene? crowd = regressionOnly ? null : new(new CrowdExample());
+        using CrowdScene? crowd = regressionOnly || physicsOnly ? null : new(new CrowdExample());
         if (crowd is not null)
         {
             TestScene[] characters =
@@ -113,6 +152,19 @@ public static class SampleApplication
             else if (inlineCrowdOnly) scenes = [characters[0]];
             else if (crowdOnly) scenes = characters.ToList();
             else scenes.AddRange(characters);
+        }
+        PhysicsSceneExample[] physicsExamples = [];
+        if (!regressionOnly && !crowdOnly)
+        {
+            IEnumerable<PhysicsSceneDescription> descriptions = physicsSelection is null or "--physics"
+                ? PhysicsScenes.All : PhysicsScenes.All.Concat(PhysicsScaleScenes.All);
+            physicsExamples = descriptions
+                .Where(description => physicsSelection is null or "--physics" || description.Id == physicsSelection["--physics=".Length..])
+                .Select(description => devicePhysics ? PhysicsSceneExample.CreateDevice(description) : PhysicsSceneExample.CreateCpu(description)).ToArray();
+            TestScene[] physics = physicsExamples.Select(example => example.CreateScene(physicsContentDirectory, clusterAssets!.Standard)).ToArray();
+            if (characterCloth is not null) physics = [characterCloth.CreateScene(physicsContentDirectory)];
+            if (physicsOnly) scenes = physics.ToList();
+            else scenes.AddRange(physics);
         }
         var platform = new SceneTestPlatform(scenes.Select(scene =>
         {
@@ -129,7 +181,7 @@ public static class SampleApplication
         }).ToArray(), startupOptions)
         {
             ExitAfterMeasurements = measure,
-            MaximumMeasurementSeconds = crowdOnly ? null : 45,
+            MaximumMeasurementSeconds = regressionOnly ? 45 : null,
             StartupTraceOutput = Environment.GetEnvironmentVariable("SOMEENGINE_STARTUP_TRACE"),
             InitializeScene = clusterScene is null ? null : clusterScene.Initialize,
             UpdateScene = clusterScene is null || args.Contains("--cluster-static", StringComparer.Ordinal) ? null : clusterScene.Update,
@@ -141,6 +193,9 @@ public static class SampleApplication
                 ["Candidates"] = startupOptions.BlendIndex.ToString(),
             },
         };
+        if (devicePhysics)
+            foreach (PhysicsSceneExample example in physicsExamples) platform.Application.InstallGeometry(example);
+        if (characterCloth is not null) platform.Application.InstallGeometry(characterCloth);
         if (measure) platform.StartMeasurements();
         return await Application.RunAsync<SampleSceneMaterials>(args, static (material, seconds) =>
         {
@@ -152,5 +207,20 @@ public static class SampleApplication
                 default: return false;
             }
         }, platform.Application);
+    }
+
+    private static int MeasureDevicePhysicsScenes(string[] args, string? id)
+    {
+        RuntimeGraphicsBackend selected = RuntimeStartupOptions.Parse(args).GraphicsBackend;
+        using IGraphicsBackend backend = selected == RuntimeGraphicsBackend.Direct3D12
+            ? D3D12GraphicsBackend.Create()
+            : VulkanGraphicsBackend.Create(new VulkanBackendOptions(EnableValidation: false, EnableDebugMessages: false));
+        backend.TryEnumerateAdapters(new(AdapterPreference.HighPerformance, IncludeSoftware: false), [], out int count);
+        var adapters = new AdapterInfo[count];
+        backend.TryEnumerateAdapters(new(AdapterPreference.HighPerformance, IncludeSoftware: false), adapters, out _);
+        using Device device = backend.CreateDevice(new(adapters.First(adapter => adapter.HardwareAccelerated).Id,
+            [new(QueueType.Compute)], requiredFeatures: PhysicsCrowdScale.Read(id).HasValue ? DeviceFeatures.IndirectCommands : default,
+            label: "Scene physics measurement"));
+        return MeasurePhysicsScenes.RunDevice(Console.Out, backend, device, id);
     }
 }

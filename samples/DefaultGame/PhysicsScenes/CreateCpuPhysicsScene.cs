@@ -1,0 +1,285 @@
+using System.Numerics;
+using SomeEngine.Core.ECS.Components;
+using SomeEngine.ECS;
+using SomeEngine.ECS.Entities;
+using SomeEngine.ECS.Queries;
+using SomeEngine.ECS.Relations;
+using SomeEngine.ECS.Systems;
+using SomeEngine.Job;
+using SomeEngine.Physics;
+
+namespace DefaultGame;
+
+public static partial class PhysicsScenes
+{
+    public static PhysicsSceneSimulation CreateCpu<TCollision>(World world, PhysicsSceneDescription description,
+        TCollision collision, PhysicsSceneSettings settings)
+        where TCollision : struct, ICollisionNarrowPhase<BoxGeometry, BoxGeometry> =>
+        CreateCpu(world, description, Create(description), collision, settings);
+
+    internal static PhysicsSceneSimulation CreateCpu<TCollision>(World world, PhysicsSceneDescription description,
+        PhysicsSceneData data, TCollision collision, PhysicsSceneSettings settings)
+        where TCollision : struct, ICollisionNarrowPhase<BoxGeometry, BoxGeometry> =>
+        CreateCpu(world, description, data, collision, settings, new AcknowledgeSceneEvents(), default);
+
+    public static PhysicsSceneSimulation CreateCpu<TCollision, TEvents>(World world, PhysicsSceneDescription description,
+        TCollision collision, PhysicsSceneSettings settings, TEvents events, ReadOnlySpan<JobResourceAccess> eventAccesses = default)
+        where TCollision : struct, ICollisionNarrowPhase<BoxGeometry, BoxGeometry>
+        where TEvents : struct, IPhysicsEventConsumer =>
+        CreateCpu(world, description, Create(description), collision, settings, events, eventAccesses);
+
+    internal static PhysicsSceneSimulation CreateCpu<TCollision, TEvents>(World world, PhysicsSceneDescription description,
+        PhysicsSceneData data, TCollision collision, PhysicsSceneSettings settings, TEvents events,
+        ReadOnlySpan<JobResourceAccess> eventAccesses)
+        where TCollision : struct, ICollisionNarrowPhase<BoxGeometry, BoxGeometry>
+        where TEvents : struct, IPhysicsEventConsumer
+    {
+        PhysicsSceneEntities created = CreateEntities(world, data);
+        Entity[] entities = created.Bodies, jointEntities = created.Joints, rangeEntities = created.DistanceRanges;
+        foreach (Entity entity in entities) world.Add(entity, new AvbdBodyEquation());
+        if (settings.JointBounds.Levels > 0)
+            foreach (Entity entity in jointEntities) world.AddBuffer<LongRangeJointBound>(entity);
+        if (settings.ContactSupports.HasValue)
+            foreach (Entity entity in entities)
+            {
+                if (world.Read<BodyMass>(entity).Motion != BodyMotion.Dynamic) continue;
+                world.Add(entity, new LongRangeBodySupport());
+                world.AddBuffer<LongRangeSupportLoad>(entity);
+                world.AddBuffer<LongRangeSupportEquation>(entity);
+            }
+        var inputs = new ApplySceneInputChanges(world, created.HasInputChanges);
+        Scheduler scheduler = WorldJobs.GetScheduler(world);
+        QueryDefinition filter = new QueryDefinitionBuilder().All<ScenePhysicsBody>().Build();
+        QueryHandle shapes = world.Query(filter.WithAccess(new QueryDefinitionBuilder().Read<CollisionBounds>().Build()));
+        QueryHandle poses = world.Query(filter.WithAccess(new QueryDefinitionBuilder().Read<BodyPose>().Read<BodyMass>().Read<BodyStepState>().Build()));
+        QueryHandle bodies = world.Query(filter.WithAccess(new QueryDefinitionBuilder().ReadWrite<BodyPose>().Read<BodyMass>()
+            .Read<BodyStepState>().Read<BodyVelocity>().ReadWrite<AvbdBodyEquation>().Build()));
+        QueryHandle scope = world.Query(new QueryDefinitionBuilder().All<ScenePhysicsContact>().Read<ContactPoint>());
+        QueryHandle contacts = world.Query(ContactQuery());
+        QueryHandle ordinaryContacts = world.Query(ContactQuery().None<LongRangeContactSupport>());
+        QueryHandle supportedContacts = world.Query(ContactQuery().ReadWrite<LongRangeContactSupport>().WriteBuffer<LongRangeSupportLoad>());
+        QueryHandle supportBodies = world.Query(new QueryDefinitionBuilder().All<ScenePhysicsBody>().Read<BodyMass>()
+            .ReadWrite<LongRangeBodySupport>().WriteBuffer<LongRangeSupportLoad>().WriteBuffer<LongRangeSupportEquation>());
+        QueryHandle joints = world.Query(new QueryDefinitionBuilder().All<ScenePhysicsJoint>().Read<JointConstraint>()
+            .Read<DirectedRelationEndpoints<JointConstraint>>().ReadWrite<AvbdJointState>());
+        QueryHandle breakableJoints = world.Query(new QueryDefinitionBuilder().All<ScenePhysicsJoint>().All<ConstraintBreakSettings>()
+            .Read<JointConstraint>().Read<DirectedRelationEndpoints<JointConstraint>>().Read<AvbdJointState>().Read<ConstraintBreakSettings>());
+        QueryHandle ranges = world.Query(new QueryDefinitionBuilder().Read<DistanceRange>()
+            .Read<UndirectedRelationEndpoints<DistanceRange>>().ReadWrite<AvbdDistanceRangeState>());
+        QueryHandle jointBounds = world.Query(new QueryDefinitionBuilder().All<ScenePhysicsJoint>().Read<JointConstraint>()
+            .Read<DirectedRelationEndpoints<JointConstraint>>().WriteBuffer<LongRangeJointBound>());
+        QueryHandle eventQuery = world.Query(new QueryDefinitionBuilder().All<ScenePhysicsEventStream>()
+            .Read<PhysicsStepEvents>().ReadBuffer<PhysicsEvent>());
+        var eventBuffer = new PhysicsEventBuffer(scheduler, entities.Length);
+        var candidates = Collision.Candidates<CollisionBounds, CollisionBoundsReader>(world, shapes, new CollisionTree(), default);
+        var maintenance = candidates.CreateMaintenance(scheduler);
+        var bins = new CollisionPairBins<CollisionNodePair>(scheduler, entities.Length, 2);
+        var detected = new ContactPointBuffer(scheduler, collision.ContactCapacity, entities.Length * 4);
+        var narrow = CollisionGeometry<BoxGeometry, BoxGeometry>.Predict(new ComponentGeometryMotion<BoxGeometry>(),
+            new ComponentGeometryMotion<BoxGeometry>(), collision, new ContactPointOutput(detected), settings.ContactDistance);
+        var detection = DetectContactPoints.Create(world, maintenance.Query, bins, new SceneBoxPairs(world),
+            StepContactNarrowPhase.Create(0, narrow), detected, [maintenance.ReadAccess]);
+        var points = ContactPoints.Create(world, poses, scope, detected, new SceneContactMaterials(),
+            new ContactEventComponents<ScenePhysicsEventStream, SceneContactComponents>(
+                new SceneContactComponents(settings.ContactSupports.HasValue, new AvbdContactState
+                {
+                    NormalPenalty = settings.ContactNormalPenalty, TangentPenalty = settings.ContactTangentPenalty,
+                    FrictionRegularizationSpeed = settings.FrictionRegularizationSpeed,
+                })),
+            new ContactRefreshSettings(.02f, .99f, true));
+        var contactConstraints = AvbdGraphConstraints.Combine(
+            new AvbdGraphConstraints<ContactPoint, SceneContactPenaltyMath<AvbdContactPotentialMath>>(ordinaryContacts),
+            new AvbdGraphConstraints<ContactPoint, SceneContactPenaltyMath<AvbdSupportedContactPotentialMath>>(supportedContacts));
+        var ordinaryConstraints = AvbdGraphConstraints.Combine(
+            AvbdGraphConstraints.Combine(contactConstraints,
+                new AvbdGraphConstraints<JointConstraint, AvbdJointMath>(joints)),
+            new AvbdGraphConstraints<DistanceRange, AvbdDistanceRangeMath>(ranges));
+        var jointConstraints = AvbdGraphConstraints.Combine(ordinaryConstraints,
+            new JointLongRangeGraphConstraints(jointBounds, settings.JointBounds));
+        ContactSupportSettings supports = settings.ContactSupports ?? new ContactSupportSettings(
+            description.Dimension == 2 ? Vector3.UnitY : Vector3.UnitZ, 1e-5f, 1e-4f, 1e-4f, 1e-4f, .99f, .99f, 1e-6f);
+        var constraints = AvbdGraphConstraints.Combine(jointConstraints, new ContactLongRangeGraphConstraints(supportBodies, supportedContacts, supports));
+        var solve = SolveAvbdGraph.Create(world, bodies, constraints,
+            settings.Graph, settings.Iterations, settings.MultiplierRetention, 0,
+            bodyIterations: settings.BodyIterations);
+        var activity = solve.Activity(settings.Activity, eventBuffer);
+        var breakJoints = new BreakConstraints<JointConstraint, AvbdJointMath>(world, bodies, breakableJoints, eventBuffer);
+        var prediction = new PredictActiveBodies(world, bodies, Vector(data.Gravity), 64);
+        var contactEvents = new ContactEvents<ScenePhysicsEventStream>(world, bodies, scope, eventBuffer, .001f);
+        var consumption = new ConsumePhysicsEvents<TEvents>(world, eventQuery, events, eventAccesses);
+        var responses = new InitializeContactResponses(world, bodies, contacts);
+        PhysicsSceneTimings? timings = settings.Timings;
+        var stages = inputs.Measure(timings, "Scene inputs")
+            .Then(new ApplyBodyInputs(64).Measure(timings, "Body inputs"))
+            .Then(activity.WakeConnected().Measure(timings, "Input wake"))
+            .Then(new ApplyGyroscopicTorque(64).Measure(timings, "Gyroscopic torque"))
+            .Then(prediction.Measure(timings, "Active prediction"))
+            .Then(new UpdatePredictedBounds<BoxGeometry>(settings.ContactDistance, 64).Measure(timings, "Dynamic bounds"))
+            .Then(new RefitSceneBounds(maintenance).Measure(timings, "Spatial maintenance"))
+            .Then(detection.Measure(timings, "Pairs, type bins and narrow phase"))
+            .Then(points.Refresh().Measure(timings, "Persistent contacts"))
+            .Then(activity.WakeConnected().Measure(timings, "Contact wake"))
+            .Then(prediction.Resume().Measure(timings, "Resumed prediction"))
+            .Then(responses.Measure(timings, "Contact response inputs"))
+            .Then(solve.Measure(timings, "Constraint graph and AVBD"))
+            .Then(breakJoints.Measure(timings, "Joint breaks"))
+            .Then(new UpdateBodyVelocities(64).Measure(timings, "Body velocities"))
+            .Then(contactEvents.Measure(timings, "Contact events"))
+            .Then(activity.Finish().Measure(timings, "Activity results"))
+            .Then(eventBuffer.Emit(new SceneEventComponents()).Measure(timings, "Completed events"));
+        var simulation = PhysicsSimulation.Create(world, filter, stages, data.Substeps);
+        var consumer = new CopySceneBodyTransforms().Measure(timings, "Body transforms")
+            .Then(consumption.Measure(timings, "Event consumption"));
+        var frame = simulation.CreateFrame(consumer, data.StepSeconds, 0, 0, 0);
+        return new PhysicsSceneSimulation(world, description, settings, entities, jointEntities, rangeEntities, data.StepSeconds, frame, frame.CompleteForRead,
+            [shapes, poses, bodies, scope, contacts, ordinaryContacts, supportedContacts, supportBodies, joints, breakableJoints, ranges, jointBounds, eventQuery],
+            [inputs, maintenance, bins, detected, detection, points, solve, activity, breakJoints, prediction, eventBuffer, contactEvents, consumption, responses]);
+    }
+
+    internal static PhysicsSceneEntities CreateEntities(World world, PhysicsSceneData data) =>
+        CreateEntities(world, data, default(SceneBoxGeometry));
+
+    internal static PhysicsSceneEntities CreateEntities<TGeometry>(World world, PhysicsSceneData data, TGeometry geometry)
+        where TGeometry : struct, ISceneBodyGeometry =>
+        CreateEntities(world, data, geometry, default(SceneBodyBindings));
+
+    internal static PhysicsSceneEntities CreateEntities<TGeometry, TBindings>(World world, PhysicsSceneData data,
+        TGeometry geometry, TBindings bindings)
+        where TGeometry : struct, ISceneBodyGeometry
+        where TBindings : struct, ISceneBodyBindings
+    {
+        Entity[] entities = CreateBodies(world, data, geometry, bindings);
+
+        var jointEntities = new Entity[data.Joints.Length];
+        for (int index = 0; index < jointEntities.Length; index++)
+        {
+            SceneJointData input = data.Joints[index];
+            var source = new JointFrame(Vector(input.PointA), Quaternion.Identity);
+            Quaternion sourceRotation = world.Read<BodyPose>(entities[input.BodyA]).Rotation;
+            Quaternion targetRotation = world.Read<BodyPose>(entities[input.BodyB]).Rotation;
+            var target = new JointFrame(Vector(input.PointB), Quaternion.Normalize(Quaternion.Conjugate(targetRotation) * sourceRotation));
+            float linear = (float)(data.Materials?.JointLinearStiffness ?? double.PositiveInfinity);
+            float angular = (float)(data.Materials?.JointAngularStiffness ?? double.PositiveInfinity);
+            JointConstraint joint = input.AngularFixed ? JointConstraints.CreateFixed(source, target, linear, angular)
+                : JointConstraints.CreateBall(source, target, linear);
+            Entity entity = jointEntities[index] = world.CreateRelation(entities[input.BodyA], entities[input.BodyB], joint).Entity;
+            world.Add(entity, new ScenePhysicsJoint());
+            world.Add(entity, new AvbdJointState { LinearPenalty = new Vector3(1e6f), AngularPenalty = new Vector3(1e6f) });
+            if (input.BreakLimits is { } limits) world.Add(entity, limits);
+        }
+        foreach (SceneCollisionPair pair in data.CollisionExclusions)
+            world.CreateRelation(entities[pair.BodyA], entities[pair.BodyB], new SceneCollisionExclusion());
+        var rangeEntities = new Entity[data.DistanceRanges?.Length ?? 0];
+        for (int index = 0; index < rangeEntities.Length; index++)
+        {
+            SceneDistanceRange input = data.DistanceRanges![index];
+            Entity entity = rangeEntities[index] = world.CreateRelation(entities[input.BodyA], entities[input.BodyB], new DistanceRange
+            {
+                FirstAnchor = Vector(input.PointA), SecondAnchor = Vector(input.PointB),
+                Minimum = (float)input.Minimum, Maximum = (float)input.Maximum, Stiffness = float.PositiveInfinity,
+            }).Entity;
+            world.Add(entity, new AvbdDistanceRangeState { Penalty = 1e6f });
+        }
+        var inputChanges = new List<SceneInputChange>();
+        foreach (SceneInputEvent change in data.Events.OrderBy(change => change.Frame))
+        {
+            if (change.RemovedJoint is int joint)
+                inputChanges.Add(new(change.Frame, jointEntities[joint], SceneInputChangeKind.RemoveJoint));
+            if (change.Body is int body && change.Position is { } position)
+                inputChanges.Add(new(change.Frame, entities[body], SceneInputChangeKind.MoveBody, Vector(position)));
+        }
+        if (inputChanges.Count > 0)
+        {
+            Entity changes = world.CreateEntity(new SceneInputIndex());
+            world.AddBuffer<SceneInputChange>(changes);
+            world.ExecuteBufferWrite<SceneInputChange>(changes, buffer =>
+            {
+                foreach (SceneInputChange change in inputChanges) buffer.Add(change);
+            });
+        }
+        foreach (var bodyEvents in data.Events.Where(change => change.Body.HasValue && change.Velocity is not null).GroupBy(change => change.Body!.Value))
+        {
+            Entity body = entities[bodyEvents.Key];
+            float mass = (float)data.Bodies[bodyEvents.Key].Mass;
+            world.AddBuffer<BodyImpulse>(body);
+            world.ExecuteBufferWrite<BodyImpulse>(body, impulses =>
+            {
+                foreach (SceneInputEvent change in bodyEvents)
+                    impulses.Add(new BodyImpulse { Linear = Vector(change.Velocity!) * mass, Time = change.Frame * data.StepSeconds });
+            });
+        }
+
+        return new(entities, jointEntities, rangeEntities, inputChanges.Count > 0);
+    }
+
+    private static Vector3 Vector(double[] value) => new((float)value[0], (float)value[1], (float)value[2]);
+    private static QueryDefinitionBuilder ContactQuery() => new QueryDefinitionBuilder().All<ScenePhysicsContact>()
+        .Read<ContactPoint>().Read<ContactMaterial>().ReadBuffer<ContactBodyLink>()
+        .Optional<DirectedRelationEndpoints<ContactParticipant>>(QueryAccess.Read).ReadWrite<AvbdContactState>().ReadWrite<ContactResponse>();
+    private static Quaternion Rotation(double[] value) => new((float)value[0], (float)value[1], (float)value[2], (float)value[3]);
+    private static float Inverse(double value) => value == 0 ? 0 : (float)(1 / value);
+}
+
+internal readonly struct ScenePhysicsBody : IComponent;
+internal readonly struct ScenePhysicsContact : IComponent;
+internal readonly struct ScenePhysicsJoint : IComponent;
+
+[RelationSchema(RelationDirection.Undirected)]
+internal readonly struct SceneCollisionExclusion : IComponent;
+
+internal readonly struct SceneBoxPairs(World world) : ICollisionPairClassifier
+{
+    public QueryDefinition AddReads(QueryDefinition definition) => definition.WithOptionalRead<BodyMass>();
+    public CollisionPairType Classify(scoped QueryRow first, scoped QueryRow second) =>
+        first.ReadRef<BodyMass>().Motion == BodyMotion.Static && second.ReadRef<BodyMass>().Motion == BodyMotion.Static
+            || world.GetRelationEdgesBetween<SceneCollisionExclusion>(first.Entity, second.Entity).Count > 0
+            ? new(1, 0, 0) : new(0, 0, 0);
+}
+
+internal readonly struct SceneContactMaterials : IContactMaterialCombine
+{
+    public ContactMaterial Combine(in ContactMaterial first, in ContactMaterial second)
+    {
+        ContactMaterial combined = new AverageContactMaterials().Combine(in first, in second);
+        combined.StaticFriction = MathF.Sqrt(first.StaticFriction * second.StaticFriction);
+        combined.DynamicFriction = MathF.Sqrt(first.DynamicFriction * second.DynamicFriction);
+        return combined;
+    }
+}
+
+internal readonly struct SceneContactComponents(bool supports, AvbdContactState parameters) : IContactPointComponents
+{
+    public void AddReads(World world, List<JobResourceAccess> accesses) { }
+    public void Add(ref JobCommandWriter commands, Entity point, in ContactPoint geometry,
+        ReadOnlySpan<ContactBody> first, ReadOnlySpan<ContactBody> second, in PhysicsStepContext context)
+    {
+        commands.Add(point, new ScenePhysicsContact());
+        new AvbdContactComponents(parameters).Add(ref commands, point, in geometry, first, second, in context);
+        if (supports)
+        {
+            commands.Add(point, new LongRangeContactSupport());
+            commands.AddBuffer<LongRangeSupportLoad>(point);
+        }
+    }
+}
+
+internal readonly struct RefitSceneBounds(CollisionMaintenance<CollisionBounds, CollisionBoundsReader, SpatialAll, GroupMatch> maintenance) : IPhysicsStage
+{
+    public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) => maintenance.Schedule(dependency);
+}
+
+internal readonly struct CopySceneBodyTransforms : IPhysicsStage
+{
+    public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) =>
+        new CopySceneTransformJob().ScheduleParallel(context.World,
+            new JobEntityScheduleOptions(filter: context.Bodies), dependency);
+}
+
+internal readonly partial struct CopySceneTransformJob : IJobEntity
+{
+    public void Execute(in BodyPose pose, ref LocalTransform transform)
+    {
+        transform.Value.Position = pose.Position;
+        transform.Value.Rotation = pose.Rotation;
+    }
+}

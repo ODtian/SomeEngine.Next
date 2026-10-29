@@ -61,6 +61,32 @@ public sealed class QueryDefinition
 
     public QueryKey Key { get; }
 
+    /// <summary>Preserves members and filters while lowering writable component and buffer terms to reads.</summary>
+    public QueryDefinition AsReadOnly()
+    {
+        if (!CanWrite) return this;
+        var terms = (QueryTerm[])_terms.Clone();
+        for (int index = 0; index < terms.Length; index++)
+        {
+            QueryTerm term = terms[index];
+            if (term.Access.CanWrite())
+                terms[index] = new(term.ComponentId, term.Kind, QueryAccess.Read, term.Filters);
+        }
+        return CreateNormalized(terms);
+    }
+
+    /// <summary>Preserves membership and row filters while leaving value access to the consuming job.</summary>
+    public QueryDefinition AsFilter()
+    {
+        var terms = new QueryTerm[_terms.Length];
+        for (int index = 0; index < terms.Length; index++)
+        {
+            QueryTerm term = _terms[index];
+            terms[index] = new(term.ComponentId, term.Kind, QueryAccess.None, term.Filters);
+        }
+        return CreateNormalized(terms);
+    }
+
     /// <summary>Reports whether All or the sole Any term requires this component for every member.</summary>
     public bool Requires<T>() where T : struct
     {
@@ -83,15 +109,23 @@ public sealed class QueryDefinition
     /// <summary>Creates the optional storage-access union of both definitions.</summary>
     public QueryDefinition WithAccessFrom(QueryDefinition definition)
     {
-        var terms = new List<QueryTerm>(_dataAccesses.Length + definition._dataAccesses.Length);
-        AddAccessTerms(_dataAccesses, terms);
-        AddAccessTerms(definition._dataAccesses, terms);
+        var terms = new List<QueryTerm>(_terms.Length + definition._terms.Length);
+        AddAccessTerms(_terms, terms);
+        AddAccessTerms(definition._terms, terms);
         return CreateNormalized(CollectionsMarshal.AsSpan(terms));
     }
 
-    private static void AddAccessTerms(ReadOnlySpan<QueryDataAccess> accesses, List<QueryTerm> terms)
+    /// <summary>Preserves this query's membership and adds the input definition's optional storage access.</summary>
+    public QueryDefinition WithAccess(QueryDefinition definition)
     {
-        foreach (QueryDataAccess access in accesses)
+        var terms = new List<QueryTerm>(definition._terms.Length);
+        AddAccessTerms(definition._terms, terms);
+        return CreateNormalized(_terms, CollectionsMarshal.AsSpan(terms));
+    }
+
+    private static void AddAccessTerms(ReadOnlySpan<QueryTerm> accesses, List<QueryTerm> terms)
+    {
+        foreach (QueryTerm access in accesses)
         {
             QueryAccess mode = access.Filters == QueryTermFilter.None
                 ? access.Access

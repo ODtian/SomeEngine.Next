@@ -2,7 +2,9 @@ using System.Numerics;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
+using SomeEngine.ECS.Queries;
 using SomeEngine.Job;
+using SomeEngine.Physics;
 
 namespace SomeEngine.Animation.Pose;
 
@@ -43,10 +45,18 @@ public struct PhysicsPoseInstance : IBufferElement
     public int Index;
     public AnimationLeafPlacement Placement;
     public PoseResultReference Source, Output;
-    /// <summary>The actor's model-to-world transform for the completed physics step.</summary>
-    public Matrix4x4 ActorTransform;
-    /// <summary>Completed body-local-to-world transforms in Map.Bodies order, filled before node evaluation.</summary>
-    public Span<Matrix4x4> BodyTransforms => Samples.BodyTransforms;
+    /// <summary>The actor's model-to-world transform captured by the next physics consumption.</summary>
+    public Matrix4x4 ActorTransform { readonly get => Samples.ActorTransform; set => Samples.ActorTransform = value; }
+    /// <summary>Simulation entities in Map.Bodies order.</summary>
+    public readonly ReadOnlySpan<Entity> Bodies => Samples.Bodies;
+    /// <summary>The step and completion that produce the mapped bone models.</summary>
+    public readonly PhysicsStepResult? Step => Samples.Step;
+    /// <summary>Binds entity references and creates their mapping stage for the physics frame's consumer.</summary>
+    public readonly ReadPhysicsPose BindBodies(QueryHandle bodies, ReadOnlySpan<Entity> entities)
+    {
+        entities.CopyTo(Samples.Bodies);
+        return new(Samples, bodies);
+    }
     internal PhysicsPoseSamples Samples;
     internal PoseNode Node;
     internal PoseResult InputResult;
@@ -57,20 +67,25 @@ public struct PhysicsPoseInstance : IBufferElement
 internal sealed class PhysicsPoseSamples
 {
     internal readonly BoneTransform[] Source, Output;
-    internal readonly Matrix4x4[] BodyTransforms;
+    internal readonly Entity[] Bodies;
+    internal readonly World World;
     internal readonly PhysicsPoseMap Map;
     internal readonly BoneMask Mask;
-    internal readonly JobResourceAccess[] Accesses;
+    internal readonly JobResourceAccess[] Accesses, BodyAccesses;
+    internal Matrix4x4 ActorTransform = Matrix4x4.Identity;
+    internal PhysicsStepResult? Step;
     private readonly Matrix4x4[] _animationModels, _physicsModels, _inherited;
     private readonly BonePose[] _parents;
+    private bool _hasPhysics;
 
-    internal PhysicsPoseSamples(PhysicsPoseMap map, BoneMask mask, SkeletonInstance skeleton)
+    internal PhysicsPoseSamples(World world, PhysicsPoseMap map, BoneMask mask, SkeletonInstance skeleton)
     {
+        World = world;
         Map = map;
         Mask = mask;
         Source = new BoneTransform[map.Skeleton.BoneCount];
         Output = new BoneTransform[map.Skeleton.BoneCount];
-        BodyTransforms = new Matrix4x4[map.Bodies.Length];
+        Bodies = new Entity[map.Bodies.Length];
         _animationModels = new Matrix4x4[Source.Length];
         _physicsModels = new Matrix4x4[Source.Length];
         _inherited = new Matrix4x4[Source.Length];
@@ -78,10 +93,26 @@ internal sealed class PhysicsPoseSamples
         for (int bone = 0; bone < Source.Length; bone++)
             if (map.Skeleton.InheritedParents[bone] >= 0)
                 _parents[bone] = skeleton.ModelPose.GetBone(map.Skeleton.InheritedParents[bone]);
-        Accesses = [JobResourceAccess.Read(Source), JobResourceAccess.Read(BodyTransforms), JobResourceAccess.Write(Output),
-            JobResourceAccess.Write(_animationModels), JobResourceAccess.Write(_physicsModels), JobResourceAccess.Read(_inherited),
-            JobResourceAccess.Read(JobSystem.Default.GetResourceToken(map)),
-            JobResourceAccess.Read(JobSystem.Default.GetResourceToken(mask))];
+        Scheduler scheduler = PoseAnimation.GetScheduler(world);
+        Accesses = [JobResourceAccess.Read(scheduler, Source), JobResourceAccess.Read(scheduler, _physicsModels),
+            JobResourceAccess.Write(scheduler, Output), JobResourceAccess.Write(scheduler, _animationModels),
+            JobResourceAccess.Read(scheduler, _inherited), JobResourceAccess.Read(scheduler.GetResourceToken(map)),
+            JobResourceAccess.Read(scheduler.GetResourceToken(mask))];
+        BodyAccesses = [JobResourceAccess.Read(scheduler, Bodies), JobResourceAccess.Write(scheduler, _physicsModels),
+            JobResourceAccess.Read(scheduler.GetResourceToken(map))];
+    }
+
+    internal void ReadBodies(scoped QueryCursor bodies, in Matrix4x4 actor)
+    {
+        Matrix4x4.Invert(actor, out Matrix4x4 worldToActor);
+        for (int body = 0; body < Bodies.Length; body++)
+        {
+            bodies.TryGetRow(Bodies[body], out QueryRow row);
+            ref readonly BodyPose pose = ref row.ReadRef<BodyPose>();
+            Matrix4x4 bodyWorld = Matrix4x4.CreateFromQuaternion(pose.Rotation) * Matrix4x4.CreateTranslation(pose.Position);
+            _physicsModels[Map.Bodies[body].Bone] = Map.BoneInBody[body] * bodyWorld * worldToActor;
+        }
+        _hasPhysics = true;
     }
 
     internal void ReadParents()
@@ -90,17 +121,14 @@ internal sealed class PhysicsPoseSamples
             if (Map.Skeleton.InheritedParents[bone] >= 0) _inherited[bone] = _parents[bone].Transform;
     }
 
-    internal void Blend(in Matrix4x4 actor, float weight)
+    internal void Blend(float weight)
     {
         Source.CopyTo(Output, 0);
-        if (weight == 0) return;
+        if (weight == 0 || !_hasPhysics) return;
         ReadOnlySpan<short> parents = Map.Skeleton.Parents;
         for (int bone = 0; bone < Source.Length; bone++)
             _animationModels[bone] = Source[bone].ToMatrix() * (parents[bone] >= 0
                 ? _animationModels[parents[bone]] : RootParent(bone));
-        Matrix4x4.Invert(actor, out Matrix4x4 worldToActor);
-        for (int body = 0; body < BodyTransforms.Length; body++)
-            _physicsModels[Map.Bodies[body].Bone] = Map.BoneInBody[body] * BodyTransforms[body] * worldToActor;
         for (int bone = 0; bone < Output.Length; bone++)
         {
             float influence = weight * Mask.Weights[bone];
@@ -135,8 +163,7 @@ public readonly struct PhysicsPoseLeaf : IAnimationLeaf<PhysicsPoseParameters>
             Definition = definitions, Index = index, Placement = placement,
             Source = PoseAnimation.Resolve(world, target, parameters.Source),
             Output = PoseAnimation.Resolve(world, target, parameters.Output),
-            ActorTransform = Matrix4x4.Identity,
-            Samples = new(parameters.Map, parameters.Mask, world.Read<PoseTarget>(target).Skeleton),
+            Samples = new(world, parameters.Map, parameters.Mask, world.Read<PoseTarget>(target).Skeleton),
         };
         short[] bones = parameters.Map.Bodies.ToArray().Select(static body => (short)body.Bone).ToArray();
         instance.Node = PoseAnimation.RegisterNode(world, animation, instance.Output, [instance.Source], in placement, bones);

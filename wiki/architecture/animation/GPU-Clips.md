@@ -62,6 +62,66 @@ frame.World.Add(frame.Scene.MeshEntities[0], new MeshSkin(instance, binding));
 source joint 映射在安装或 `SkeletonInstance.BindingVersion` 改变时解析。
 GPU 目标提取 ready 片段和控制；CPU 目标按模型姿势版本复制自身 G。
 
+## Game 来源的设备求值
+
+[DevicePoseSources](../../../src/SomeEngine.Animation.Pose/DevicePoseSources.cs) 以原 Game world 的
+`GpuPoseTarget` 查询为来源，项目提供 `DevicePoseKernels` 与批次的目标、骨骼、混合状态、
+局部混合值、控制值和定义字节容量。`Evaluate()` 在输入依赖之后捕获实际成员，按原
+`GpuPoseTargetResources` 读取骨架引用与 Controls；随后运行具体 `AdvancePoseStates`、
+`SamplePoseLevel` 内核，按骨骼依赖层写出 `Models`。
+原查询列、骨架与控制引用的读取作用域在捕获完成后结束，设备阶段读取自身已经捕获的资源。
+
+来源使用同一量化片段、状态机、BlendSpace 和遮罩层定义。
+[GpuPoseDefinitions](../../../src/SomeEngine.Animation.Pose/GpuPoseDefinitions.cs) 为 Game 求值与
+Skinning 提供共同编码，[gpu_pose_sampling](../../../assets/Shaders/gpu_pose_sampling.slang)
+单处维护来源状态推进和采样数学。播放及混合状态驻留在该来源批次内，原输入的开始标记与
+输入编号决定相位推进。
+
+项目提供 `DevicePoseKernels.Translate` 后，来源求值接续原 rig 的 `TranslationBone` 与
+当次 `ModelOffset`，沿派生后代索引平移对应模型矩阵。Game 来源与 Skinning 共用
+[gpu_pose_translation](../../../assets/Shaders/gpu_pose_translation.slang) 的同一具体内核。
+
+`TwoBone`、`Aim`、`Stride` 选择对应的模型操作内核；来源从原 `GpuPoseGoal` Buffer 和
+`GpuPoseTarget.Movement` 捕获本次输入，`DevicePoseCapacity.Goals`、`Operations` 声明目标及
+操作容量。父区段的完整 rig 先于子区段，单区段按原 `GpuPoseRig.Steps` 次序执行。
+[GpuRigDefinitions](../../../src/SomeEngine.Animation.Pose/GpuRigDefinitions.cs) 与
+[gpu_pose_rig](../../../assets/Shaders/gpu_pose_rig.slang) 分别为两条求值路径提供同一份具体
+定义和 TwoBone、Aim、Stride 数学；后代范围从当前骨骼对应关系派生。
+
+`Readback()` 是项目选择的 CPU 来源消费阶段；设备 copy、外部 fence 和矩阵交付处于
+返回的物理 Job 链。完成后按原目标 Entity 调用 `ReadModels`，后续作业通过
+`GetResultReadAccesses` 声明读取。设备消费者通过 `Models`、`GetModelRange` 和
+`GetModelReadAccess` 读取同一来源结果。
+来源结果可在共同物理步中转入原 Body，再由原 PhysicsPose 消费完成状态；
+骨骼输出继续沿 Game world 到 Rendering world 的既有提取通路。
+
+`DevicePosePhysics.Bind(target)` 为原 `GpuXpbdPose` 步骤创建实际 Body 实体、
+`XpbdLength` 关系与 `XpbdBend` 参与实体，`GetBodies(target, rigStep)` 返回链的原 Body。
+项目显式选择该对象的 `Bodies`、`Lengths`、`Bends` 和 multiplier 表示，
+在来源阶段之前调度 `Upload()`；来源阶段读取同一参数，世界位置与速度保存在所选 Body 表示。
+当前源父 G 与 actor 变换给出世界 rest length，链按原等分子步、指数阻尼及 Length→Bend 顺序求解，
+随后用完成 Body 位置形成 source-frame swing 和后代骨骼输出。
+具体入口与独立数值观察见 [DevicePoseChainTests](../../../tests/SomeEngine.Graphics.Direct3D12.Tests/DevicePoseChainTests.cs)。
+
+`DevicePoseSources.CopyOutput()` 把完成模型、局部样本和播放行复制到轮换的两个消费缓冲，
+GPU copy 完成后经原命令回放写入目标的 `DevicePoseOutput` 完成编号和时刻。
+来源接受的输入与物理时钟保存在该目标实体；来源输入列可以继续接受下一次更新。
+`GpuPoseAnimation.ReadDeviceOutput(world, target)` 在读取完成组件时保留所选 GPU 范围，
+消费者使用 `DevicePoseOutputRead.CompleteAfter` 连接真实复制完成点，或在结束采集时释放读取。
+公开 [Graphics 消费检查](../../../tests/SomeEngine.Graphics.Direct3D12.Tests/DevicePoseOutputTests.cs)
+覆盖旧姿势读取期间继续 Body 结果消费与来源输入更新，以及复制结束后的输出接续。
+
+Runtime 在原 Animation 组中安装 `DevicePoseSystem`，原 `GpuXpbdLeaf` 由此创建和驱动上述
+实体 Body、Length、Bend，再经 `SkinRenderExtractor` 把完成的 `DevicePoseOutput` 交给原骨骼消费者。
+提取已经读到完成组件时，使用 `ReadDeviceOutput(world, in output)` 在同一只读范围登记选定 GPU 读取；
+Graphics copy 的实际完成点释放这次读取。Rendering 继续维护显示的 current/previous 历史。
+
+来源 FK 直接采用 `SkeletonInstance` 已完成的 CPU 父区段和显式 CPU 骨骼；后代 rig 操作在 CPU 骨骼处结束。
+原父模型与 actor 变换一起形成世界约束长度，Body 的世界位置与速度继续作为数值状态。
+公开 [原叶装配检查](../../../tests/SomeEngine.Runtime.Tests/GpuPoseBodyRenderingTests.cs) 与
+[父模型缩放检查](../../../tests/SomeEngine.Runtime.Tests/GpuPoseParentBodyRenderingTests.cs)
+同时通过原实体结果及 `ReadGpuPose` 观察；原 actor、重复输入、Stop、重播、矩阵历史、图像与影子夹具继续使用同一链路。
+
 ## GPU 求值与历史
 
 `SkinningFeature` 汇总所有活动区段，为每段分配连续 G 范围。量化片段、层级工作表、
@@ -74,6 +134,11 @@ GPU 先读取已提交的 current/previous 历史，再更新各区段的播放�
 每个区段按输入编号和开始次数识别来源推进，并按绑定、CPU 写入和父区段显示版本识别模型求值。新的模型求值令 previous 接收上次 current；
 首次结果以 current 初始化 previous。重复消费相同来源及模型依赖保留同一对矩阵；保持的子来源按新的父 G 继续计算并推进模型历史。
 历史推进由 RG 中实际提交的写入确认，区段重排通过 GPU copy 保留已有历史。
+
+已选 `DevicePoseSources` 继续持有该实体的 Game 来源表示，自动链系统捕获自身选择的目标。
+设备 Body 完成时刻也参与上述模型求值；保持同一来源输入时，后续完成步仍推进显示版本及 current/previous。
+来源播放时钟继续由 GPU 播放行交付，见
+[保持输入的完成骨骼消费者](../../../tests/SomeEngine.Runtime.Tests/GpuCompletedBodyRenderingTests.cs)。
 
 `RenderGpuPoseTarget.Section` 定位提取后的区段实体；该实体的 `RenderPoseSection` 给出
 G 范围、GPU 播放行及 `InputTime` 控制时钟。图消费者使用 `SkinningFeature.CurrentBones`、`PreviousBones`

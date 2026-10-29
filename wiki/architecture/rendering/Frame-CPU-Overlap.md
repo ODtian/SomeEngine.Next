@@ -24,6 +24,17 @@ Render prepare 与 frame 系统在各自能力范围有效期间等待其实际 
 提交 prepare 或完成图录制。关闭路径先推进最后一轮游戏步骤至完成，再释放两个 World 及渲染资源。
 Game N+1 的计算继续与已提交的 Render N GPU 工作重叠。
 
+应用挂接 `IGameFramePhysics` 时，物理完成点由该对象的步号、结果时刻和完成句柄表达。
+游戏输入完成后选择物理结果，完成项目的结果消费阶段，再传播实体变换并执行动画和提取。
+读取范围、应用回调与 `FrameCompleted` 结束后提交后续到期物理步。
+弱交互物理作业与读取独立组件的 Game/UI 工作、已提取 Rendering world 并行，
+强交互消费者在自己的读取点调用 `CompleteForRead` 完成相应到期步。
+固定步时钟与消费入口由 [[architecture/physics/Physics-Frames|Physics frames]] 维护。
+
+提取通过 `ExecuteReadQuery` 持有真实声明的拓扑、组件列和 Buffer 读取范围，
+通过 `QueryReadResources` 覆盖组件引用指向的数据直至提取消费结束。
+提取所需的真实物理列写入沿资源依赖就绪，独立列读取与原位 `BodyPose` 写入同时推进。
+
 源码入口为 `src/SomeEngine.Runtime/RuntimeApplication.cs`、`GameFrameSystems.cs`、
 `RuntimeWait.cs` 与 `src/SomeEngine.Render/Systems/RenderSystemGroups.cs`。
 

@@ -69,11 +69,18 @@ new SampleComponentHeight().ScheduleParallel(world, dependency).Complete();
 
 泛型 Job 使用 `[JobResources(typeof(Resources<>))]` 指定开放泛型描述器。生成器将组件类型的实参填入描述器，再生成闭合的静态接口调用。例如 `Source<T>` 配合 `Resources<>` 会得到 `Resources<T>`；这是开放泛型描述器的参数匹配规则。
 
+描述器本身由 Job 类型参数提供时，使用 `[JobResources(nameof(TResources))]`。
+生成器在该 Job 的类型参数中解析名称，并核对其 `IJobComponentResources<TComponent>` 约束，
+随后生成同一 `Table<TComponent,TResources>` 静态资源路径。
+具体使用见 `WriteDeviceGeometryInputsJob<TGeometry,TReader>`，原组件与引用数据在依赖就绪后读取。
+
 Builder 接受普通对象、数组及范围。`Memory<T>` / `ReadOnlyMemory<T>` 的重载沿用 `JobResourceAccess` 的数组底层与切片规则：两个指向同一数组的视图使用相同身份，范围按数组偏移协调，实际数组随工作保留。描述器的 `GetVersion(in component)` 默认为零；引用对象内部重新选择数据时，实现该方法返回随数据绑定变化的版本，并将其可变映射数据纳入访问声明。替换整个组件引用由 ECS 列写入序号追踪。
 
-组件资源查询按既有 Scheduler 的固定访问集合执行：语义依赖完成后，在 ECS 列读取权限下按查询分区发现引用、数据版本与范围；按实际资源身份和重叠范围合并冲突行；取得完整 ECS 与资源集合后再次核对列写入序号、启用序号、拓扑代次及描述器版本。发生变化时，将重新发现作为子工作提交。校验成功后，分组工作计入同一 JobHandle 的工作数量，完整权限持续到所有分组执行结束。
+组件资源查询按既有 Scheduler 的固定访问集合执行：语义依赖完成后，在 ECS 列读取权限下按查询分区发现引用、数据版本与范围；按实际资源身份和重叠范围合并冲突行；取得完整 ECS 与资源集合后再次核对列写入序号、启用序号、拓扑代次及描述器版本。发生变化时，将重新发现作为子工作提交。校验成功后，持有该访问集合的作业通过 `Scheduler.ExecuteParallel` 执行相容组并同步等待范围完成。正数 `RowsPerPacket` 同时提供组分包粒度；零值使用该同步入口的自动分包。返回的 JobHandle 覆盖引用发现、就绪后的复核和全部组执行，完整权限持续到范围结束。
 
 只读共享数据和独立范围分别允许并行。含写入或 Exclusive 的重叠范围进入同一组，组内按查询行顺序执行；多个资源的冲突关系共同决定分组。查询描述器按 World 缓存分组；引用、成员、筛选状态及资源数据版本保持一致时复用分组。组件写入序号逐次递增，可区分同一 ECS tick 中的多次引用替换。已取得的组件引用和实际数据保留至执行子任务全部结束。
+
+分组结果通过组偏移和连续行索引两个数组持有，组内保持原行顺序。同一资源全部为只读访问时结束该资源的冲突扫描；含写入时按实际重叠范围连接冲突行。同一派生表示用于生成式实体 Job、实体范围组及动画字段的组件写入批次，源码见 [ComponentResourceGroups.cs](../../../src/SomeEngine.ECS.Systems/ComponentResourceGroups.cs)。
 
 chunk/SIMD API 扩展现有 `IJobChunk`，由 SG 生成显式 adapter：
 

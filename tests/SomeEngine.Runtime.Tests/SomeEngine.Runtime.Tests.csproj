@@ -21,6 +21,7 @@
     <Using Include="Xunit" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="../../src/SomeEngine.Physics/SomeEngine.Physics.csproj" />
     <ProjectReference Include="../../samples/DefaultGame/DefaultGame.csproj" AdditionalProperties="SomeEngineDevelopment=true;PublishAot=false" />
     <ProjectReference Include="../../tools/SomeEngine.SceneContent/SomeEngine.SceneContent.csproj" />
     <ProjectReference Include="../../tools/SomeEngine.Transparency.Research/SomeEngine.Transparency.Research.csproj" />

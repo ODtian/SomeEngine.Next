@@ -1,0 +1,182 @@
+// SPDX-License-Identifier: Apache-2.0
+// Effective translation/angular equations follow AvbdBodyEquation and Newton v1.7.0.
+#ifndef PHYSICS_AVBD_BODY
+#define PHYSICS_AVBD_BODY
+#include "physics_body_math.slang"
+struct DeviceAvbdEquation
+{
+    float values[21]; float factors[21];
+    float3 inertiaX; float3 inertiaY; float3 inertiaZ;
+    float3 linearGradient; float3 angularGradient; uint dimensions;
+    // Pose of the angular basis used by the cached factorization.
+    float4 rotationFrame;
+    uint constraintRows; float duration;
+};
+RWStructuredBuffer<DeviceAvbdEquation> DeviceAvbdBodyEquations;
+// Metadata = body index, actual Entity index/generation, active.
+RWStructuredBuffer<uint4> DeviceAvbdEquationMetadata;
+RWStructuredBuffer<uint> DeviceAvbdEquationIndices;
+uint deviceAvbdMatrixIndex(uint row,uint column) { return row * (row+1) / 2 + column; }
+float3 deviceAvbdInertia(DeviceAvbdEquation equation,float3 value)
+{ return value.x * equation.inertiaX + value.y * equation.inertiaY + value.z * equation.inertiaZ; }
+float3 deviceAvbdRotationAxis(DeviceAvbdEquation equation,uint activeAxis)
+{
+    uint mask=(equation.inertiaX.x!=0?1u:0u)|(equation.inertiaY.y!=0?2u:0u)|(equation.inertiaZ.z!=0?4u:0u);
+    if(mask==7) return activeAxis==0?float3(1,0,0):activeAxis==1?float3(0,1,0):float3(0,0,1);
+    uint index=0;
+    for(uint axis=0;axis<3;axis++)
+    {
+        if((mask&(1u<<axis))==0) continue;
+        if(index++==activeAxis)
+        {
+            float3 direction=axis==0?float3(1,0,0):axis==1?float3(0,1,0):float3(0,0,1);
+            return bodyRotate(equation.rotationFrame,direction);
+        }
+    }
+    return float3(0);
+}
+void deviceAvbdInitializeEquation(uint row)
+{
+    uint4 metadata = DeviceAvbdEquationMetadata[row];
+    if (metadata.w == 0) return;
+    DeviceBodyState body = DeviceBodyStates[metadata.x];
+    if (body.entityIndex != metadata.y || body.entityGeneration != metadata.z || body.motion != 2) return;
+    DeviceAvbdEquation equation;
+    equation.dimensions = 3 + countbits(bodyRotationMask(body));
+    equation.rotationFrame = body.rotation;
+    equation.constraintRows = 0; equation.duration = 0;
+    equation.inertiaX = equation.inertiaY = equation.inertiaZ = float3(0);
+    if (equation.dimensions > 3)
+    {
+        equation.inertiaX = bodyLocalInertia(body,float3(1,0,0));
+        equation.inertiaY = bodyLocalInertia(body,float3(0,1,0));
+        equation.inertiaZ = bodyLocalInertia(body,float3(0,0,1));
+    }
+    equation.linearGradient = equation.angularGradient = float3(0);
+    [ForceUnroll] for (uint index=0;index<21;index++) equation.values[index]=equation.factors[index]=0;
+    DeviceAvbdBodyEquations[row] = equation;
+}
+void deviceAvbdUpdateGradients(inout DeviceAvbdEquation equation,DeviceBodyState body,float duration)
+{
+    float inverseSquaredStep = 1 / (duration*duration), linearWeight = inverseSquaredStep / body.inverseMass;
+    equation.linearGradient = (bodyCenterOfMass(body)-body.predictedCenterOfMass)*linearWeight;
+    equation.angularGradient = float3(0);
+    if (equation.dimensions > 3)
+    {
+        float3 error = bodyRotationVector(bodyRotationMultiply(bodyRotationConjugate(body.rotation),body.predictedRotation));
+        equation.angularGradient = -bodyRotate(body.rotation,deviceAvbdInertia(equation,error))*inverseSquaredStep;
+    }
+}
+bool deviceAvbdCanReuseInertia(DeviceAvbdEquation equation,DeviceBodyState body,float duration,uint constraintRows)
+{
+    return constraintRows==0&&equation.constraintRows==0&&equation.duration==duration&&
+        all(equation.rotationFrame==body.rotation)&&equation.factors[0]!=0&&
+        equation.values[0]==1/(duration*duration)/body.inverseMass;
+}
+void deviceAvbdReset(inout DeviceAvbdEquation equation,DeviceBodyState body,float duration)
+{
+    [ForceUnroll] for (uint index=0;index<21;index++) equation.values[index]=0;
+    equation.rotationFrame=body.rotation;
+    deviceAvbdUpdateGradients(equation,body,duration);
+    float inverseSquaredStep=1/(duration*duration),linearWeight=inverseSquaredStep/body.inverseMass;
+    [ForceUnroll] for (uint axis=0;axis<3;axis++)
+        equation.values[deviceAvbdMatrixIndex(axis,axis)] = linearWeight;
+    [ForceUnroll] for (uint axis=0;axis<3;axis++)
+    {
+        if(axis>=equation.dimensions-3) continue;
+        float3 direction=deviceAvbdRotationAxis(equation,axis);
+        float3 column=bodyRotate(body.rotation,deviceAvbdInertia(equation,bodyRotate(bodyRotationConjugate(body.rotation),direction)))*inverseSquaredStep;
+        [ForceUnroll] for (uint row=0;row<3;row++)
+            if(row>=axis&&row<equation.dimensions-3)
+                equation.values[deviceAvbdMatrixIndex(row+3,axis+3)]=dot(deviceAvbdRotationAxis(equation,row),column);
+    }
+}
+void deviceAvbdAddRow(inout DeviceAvbdEquation equation,float3 linear,float3 angular,float force,float stiffness)
+{
+    if(force==0&&stiffness==0) return;
+    if (equation.dimensions==3) angular=float3(0);
+    equation.linearGradient+=linear*force; equation.angularGradient+=angular*force;
+    float jacobian[6]={linear.x,linear.y,linear.z,0,0,0};
+    [ForceUnroll] for(uint axis=0;axis<3;axis++)
+        if(axis<equation.dimensions-3) jacobian[axis+3]=dot(angular,deviceAvbdRotationAxis(equation,axis));
+    [ForceUnroll] for (uint row=0;row<6;row++)
+        [ForceUnroll] for (uint column=0;column<6;column++)
+            if(row<equation.dimensions&&column<=row)
+                equation.values[deviceAvbdMatrixIndex(row,column)]+=jacobian[row]*jacobian[column]*stiffness;
+}
+void deviceAvbdFactorize(inout DeviceAvbdEquation equation)
+{
+    bool diagonal=true;
+    [ForceUnroll] for(uint row=1;row<6;row++)
+        [ForceUnroll] for(uint column=0;column<6;column++)
+            if(row<equation.dimensions&&column<row)
+                diagonal=diagonal&&equation.values[deviceAvbdMatrixIndex(row,column)]==0;
+    if(diagonal)
+    {
+        // A diagonal block already supplies D; the triangular coefficients of L are zero.
+        [ForceUnroll] for(uint row=0;row<6;row++)
+        {
+            if(row>=equation.dimensions) continue;
+            [ForceUnroll] for(uint column=0;column<6;column++)
+                if(column<row) equation.factors[deviceAvbdMatrixIndex(row,column)]=0;
+            equation.factors[deviceAvbdMatrixIndex(row,row)]=equation.values[deviceAvbdMatrixIndex(row,row)];
+        }
+        return;
+    }
+    [ForceUnroll] for (uint row=0;row<6;row++)
+    {
+        if(row>=equation.dimensions) continue;
+        [ForceUnroll] for (uint column=0;column<6;column++)
+        {
+            if(column>=row) continue;
+            float value=equation.values[deviceAvbdMatrixIndex(row,column)];
+            [ForceUnroll] for(uint previous=0;previous<6;previous++)
+                if(previous<column)
+                    value-=equation.factors[deviceAvbdMatrixIndex(row,previous)]*equation.factors[deviceAvbdMatrixIndex(column,previous)]*
+                        equation.factors[deviceAvbdMatrixIndex(previous,previous)];
+            equation.factors[deviceAvbdMatrixIndex(row,column)]=value/equation.factors[deviceAvbdMatrixIndex(column,column)];
+        }
+        float diagonal=equation.values[deviceAvbdMatrixIndex(row,row)];
+        [ForceUnroll] for(uint previous=0;previous<6;previous++)
+        {
+            if(previous>=row) continue;
+            float coefficient=equation.factors[deviceAvbdMatrixIndex(row,previous)];
+            diagonal-=coefficient*coefficient*equation.factors[deviceAvbdMatrixIndex(previous,previous)];
+        }
+        equation.factors[deviceAvbdMatrixIndex(row,row)]=diagonal;
+    }
+}
+void deviceAvbdResponse(DeviceAvbdEquation equation,float3 force,float3 torque,out float3 translation,out float3 rotation)
+{
+    if(!any(force!=float3(0))&&!any(torque!=float3(0)))
+    {
+        translation=rotation=float3(0);
+        return;
+    }
+    float response[6]={force.x,force.y,force.z,0,0,0};
+    [ForceUnroll] for(uint axis=0;axis<3;axis++)
+        if(axis<equation.dimensions-3) response[axis+3]=dot(torque,deviceAvbdRotationAxis(equation,axis));
+    [ForceUnroll] for(uint row=0;row<6;row++)
+        [ForceUnroll] for(uint column=0;column<6;column++)
+            if(row<equation.dimensions&&column<row)
+                response[row]-=equation.factors[deviceAvbdMatrixIndex(row,column)]*response[column];
+    [ForceUnroll] for(uint row=0;row<6;row++)
+        if(row<equation.dimensions) response[row]/=equation.factors[deviceAvbdMatrixIndex(row,row)];
+    [ForceUnroll] for(int row=5;row>=0;row--)
+        [ForceUnroll] for(uint column=0;column<6;column++)
+            if(uint(row)<equation.dimensions&&column>uint(row)&&column<equation.dimensions)
+                response[row]-=equation.factors[deviceAvbdMatrixIndex(column,uint(row))]*response[column];
+    translation=float3(response[0],response[1],response[2]);
+    rotation=float3(0);
+    [ForceUnroll] for(uint axis=0;axis<3;axis++)
+        if(axis<equation.dimensions-3) rotation+=deviceAvbdRotationAxis(equation,axis)*response[axis+3];
+}
+float2 deviceAvbdMaterial(float stiffness,float penalty)
+{
+    if(stiffness<=0||penalty<=0) return float2(0);
+    if(stiffness>=penalty) { float scale=1/(1+penalty/stiffness); return float2(scale,penalty*scale); }
+    float ratio=stiffness/penalty, complement=1/(1+ratio);
+    return float2(ratio*complement,stiffness*complement);
+}
+float3 deviceAvbdForce(float2 terms,float3 error,float3 multiplier) { return terms.x*multiplier+terms.y*error; }
+#endif
