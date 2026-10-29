@@ -223,7 +223,7 @@ internal sealed unsafe partial class VulkanBackend
                 SparseImageFormatFlags.SingleMiptailBit) != 0;
             uint subresource = (sharedTail ? 0 : layer) * mipCount + state.Info.PackedMips.StandardMipLevelCount;
             for (uint index = 0; index < count; index++)
-                result[index] = new SparseTileCoordinate(subresource, checked(region.Start.X + index), 0, 0);
+                result[index] = new SparseTileCoordinate(checked(region.Start.X + index), 0, 0, subresource);
             return result;
         }
         SparseTileShape shape = state.Info.TileShape;
@@ -256,7 +256,7 @@ internal sealed unsafe partial class VulkanBackend
                 y = (uint)(address / width % height);
                 z = (uint)(address / width / height);
             }
-            result[index] = new SparseTileCoordinate(region.Start.Subresource, x, y, z);
+            result[index] = new SparseTileCoordinate(x, y, z, region.Start.Subresource);
         }
         return result;
     }
