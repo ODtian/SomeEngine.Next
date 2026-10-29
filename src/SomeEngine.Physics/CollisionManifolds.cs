@@ -49,23 +49,23 @@ internal static class CollisionManifolds
             if (Vector3.Dot(side, center - origin) < 0) side = -side;
             if (incident.Length == 2)
             {
-                float first = Vector3.Dot(side, polygon[0].Point - origin);
-                float second = Vector3.Dot(side, polygon[count - 1].Point - origin);
-                if (first < -tolerance && second < -tolerance) return 0;
-                if (first < -tolerance) polygon[0] = Interpolate(polygon[0], polygon[count - 1], first / (first - second));
-                else if (second < -tolerance)
+                float first = Vector3.Dot(side, polygon[0].Point - origin) + tolerance;
+                float second = Vector3.Dot(side, polygon[count - 1].Point - origin) + tolerance;
+                if (first < 0 && second < 0) return 0;
+                if (first < 0) polygon[0] = Interpolate(polygon[0], polygon[count - 1], first / (first - second));
+                else if (second < 0)
                     polygon[count - 1] = Interpolate(polygon[0], polygon[count - 1], first / (first - second));
                 continue;
             }
             int written = 0;
             CollisionFeaturePoint previous = polygon[count - 1];
-            float previousDistance = Vector3.Dot(side, previous.Point - origin);
+            float previousDistance = Vector3.Dot(side, previous.Point - origin) + tolerance;
             for (int index = 0; index < count; index++)
             {
                 CollisionFeaturePoint current = polygon[index];
-                float currentDistance = Vector3.Dot(side, current.Point - origin);
-                bool previousInside = previousDistance >= -tolerance;
-                bool currentInside = currentDistance >= -tolerance;
+                float currentDistance = Vector3.Dot(side, current.Point - origin) + tolerance;
+                bool previousInside = previousDistance >= 0;
+                bool currentInside = currentDistance >= 0;
                 if (previousInside != currentInside)
                     scratch[written++] = Interpolate(previous, current, previousDistance / (previousDistance - currentDistance));
                 if (currentInside) scratch[written++] = current;

@@ -33,6 +33,8 @@
 
 有界形状之间的支持面经过侧平面裁剪；面域接触保留至多四个分布于接触区域的点，平行线特征可提供两个端点，点特征提供一个接触。平面路径将有限支持面投影到当前平面。几何距离和流形共用原组件输入及同一组支持函数。
 
+侧平面裁剪以 `d = dot(side, point - origin) + tolerance` 的符号判定内外，并用同一距离计算交点参数 `t = d_previous / (d_previous - d_current)`。多边形与双点入射边共用这一容差边界，交点沿原线段内插；CPU 与 GPU 采用相同计算。
+
 算法阅读参考为 [Jolt 的 GJK 实现](https://github.com/jrouwe/JoltPhysics/blob/master/Jolt/Geometry/GJKClosestPoint.h) 和 [支持面流形说明](https://github.com/jrouwe/JoltPhysics/blob/master/Jolt/Physics/Collision/ManifoldBetweenTwoFaces.h)；本项目的当前调用与状态职责以本页链接的 C# 源码为准。
 
 ## 类型 bin 与实际作用端
