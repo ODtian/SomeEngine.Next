@@ -45,6 +45,14 @@ public readonly record struct FirstPersonMeshData
     }
 }
 
+/// <summary>Per-instance mesh settings saved alongside its asset number.</summary>
+public struct MeshInstanceSettings : IComponent
+{
+    public float BoundsExpansion;
+    public DepthCacheClass DepthCacheClass;
+    public FirstPersonMeshData FirstPerson;
+}
+
 public struct MeshInstance : IComponent
 {
     public required Mesh Mesh;

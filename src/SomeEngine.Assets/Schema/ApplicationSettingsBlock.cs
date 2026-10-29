@@ -4,7 +4,7 @@ namespace SomeEngine.Assets.Schema;
 
 [AssetBlock("SomeEngine.Assets.Schema.ApplicationSettingsBlock")]
 [BinarySerializable, TextSerializable]
-[BinaryFields(nameof(Scene), nameof(Pipeline), nameof(VirtualShadowMap), nameof(UiShader), nameof(UiVertexEntry), nameof(UiPixelEntry), nameof(PresentationShader), nameof(PresentationVertexEntry), nameof(PresentationPixelEntry), nameof(LightingShader), nameof(LightingEntryPoint), nameof(TemporalShader), nameof(TemporalVertexEntry), nameof(TemporalPixelEntry), nameof(TranslucencyShader), nameof(TranslucencyVertexEntry), nameof(TranslucencyPixelEntry), nameof(DebugShader), nameof(DebugVertexEntry), nameof(DebugPixelEntry), nameof(Width), nameof(Height))]
+[BinaryFields(nameof(Scene), nameof(Pipeline), nameof(VirtualShadowMap), nameof(UiShader), nameof(UiVertexEntry), nameof(UiPixelEntry), nameof(PresentationShader), nameof(PresentationVertexEntry), nameof(PresentationPixelEntry), nameof(LightingShader), nameof(LightingEntryPoint), nameof(TemporalShader), nameof(TemporalVertexEntry), nameof(TemporalPixelEntry), nameof(TranslucencyShader), nameof(TranslucencyVertexEntry), nameof(TranslucencyPixelEntry), nameof(DebugShader), nameof(DebugVertexEntry), nameof(DebugPixelEntry), nameof(Width), nameof(Height), nameof(GlobalIlluminationShader))]
 public sealed partial class ApplicationSettingsBlock : AssetBlock
 {
     public partial AssetId<WorldAsset> Scene { get; set; }
@@ -29,6 +29,7 @@ public sealed partial class ApplicationSettingsBlock : AssetBlock
     public partial string DebugPixelEntry { get; set; }
     public partial int Width { get; set; }
     public partial int Height { get; set; }
+    public partial AssetId<ShaderAsset>? GlobalIlluminationShader { get; set; }
 
     partial void Initialize()
     {

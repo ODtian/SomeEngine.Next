@@ -471,7 +471,7 @@ internal sealed partial class FrameExecutor
 
     private void BuildBufferStateUpdate(BufferStateUpdate update, ReadOnlySpan<BufferBoundaryState> current)
     {
-        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(GraphTrace.StateUpdateConstruction);
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(GraphTrace.BufferStateUpdateConstruction);
         PrepareArray(ref update.Before, current.Length);
         _bufferBoundaryScratch.Clear();
         for (int item = 0; item < current.Length; item++)
@@ -482,13 +482,15 @@ internal sealed partial class FrameExecutor
                 _buffers[update.ResourceIndex].Description.Size) };
             _bufferBoundaryScratch.Add(new(state, item));
         }
+        int replacingRead = FindBufferReadResult(update, current);
         PipelineSync previousSync = default;
         ResourceAccess previousAccess = default;
         Queue? previousQueue = null;
         bool previousMergeableWrites = false;
         BufferStateStep? previousRead = null;
-        foreach (BufferStateStep step in update.Steps)
+        for (int stepIndex = 0; stepIndex < update.Steps.Length; stepIndex++)
         {
+            BufferStateStep step = update.Steps[stepIndex];
             // All steps in this result share one submission completion. Consecutive
             // reads with identical ranges and state leave the same boundary result;
             // do not split and rewrite every resident geometry range for each reader.
@@ -506,12 +508,15 @@ internal sealed partial class FrameExecutor
             previousQueue = queue;
             previousMergeableWrites = step.MergeableWrites;
             bool retainDistinctQueueReaders = !step.Writes && !step.Acquired;
-            BufferBoundaryState endpoint = default;
             foreach (int index in step.Accesses)
             {
                 FrameResourceAccess access = _accesses[index];
                 foreach (BufferRange range in access.BufferRanges)
                 {
+                    // The later read supplies the final range use and contents for this completion.
+                    if (step.Writes && stepIndex < replacingRead &&
+                        BufferReadCoversRange(update.Steps[replacingRead].Accesses, range))
+                        continue;
                     ReadOnlySpan<BufferStateValue> states = CollectionsMarshal.AsSpan(_bufferBoundaryScratch);
                     ResourceContentState contents = access.ResultContents ?? access.Mode switch
                     {
@@ -530,7 +535,7 @@ internal sealed partial class FrameExecutor
                                 _ => FindBufferContentScope(states, range),
                             }
                         : BufferContentScope.FullRange;
-                    endpoint = new BufferBoundaryState(range, sync, step.Access,
+                    var endpoint = new BufferBoundaryState(range, sync, step.Access,
                         contents, _passes[step.Pass].Queue, null, contentScope);
                     bool preserveContents = access.Mode == GraphAccessMode.Write &&
                         access.Coverage == WriteCoverage.Partial && !access.ResultContents.HasValue;
@@ -561,8 +566,8 @@ internal sealed partial class FrameExecutor
                     }
                 }
             }
-            if (endpoint.Queue?.Device.Capabilities.SupportsConcurrentBufferReads != true)
-                PublishBufferPhysicalState(CollectionsMarshal.AsSpan(_bufferBoundaryScratch), endpoint,
+            if (queue?.Device.Capabilities.SupportsConcurrentBufferReads != true)
+                StoreBufferSync(CollectionsMarshal.AsSpan(_bufferBoundaryScratch), sync, step.Access, queue,
                     retainDistinctQueueReaders, step.Acquired);
         }
         foreach (QueueRelease release in update.Releases)
@@ -596,6 +601,48 @@ internal sealed partial class FrameExecutor
         for (int item = 0; item < sources.Length; item++)
             if (_bufferCompletionSources.Add(sources[item])) _bufferCompletionItems.Add(item);
         return _bufferCompletionItems.ToArray();
+    }
+
+    private int FindBufferReadResult(BufferStateUpdate update, ReadOnlySpan<BufferBoundaryState> current)
+    {
+        int read = -1;
+        bool writes = false;
+        for (int step = update.Steps.Length - 1; step >= 0; step--)
+        {
+            if (read < 0)
+            {
+                if (!update.Steps[step].Writes) read = step;
+            }
+            else if (update.Steps[step].Writes)
+            {
+                writes = true;
+                break;
+            }
+        }
+        if (!writes) return -1;
+        Queue? queue = _passes[update.Steps[read].Pass].Queue;
+        foreach (BufferBoundaryState state in current)
+            if (state.ContentScope != BufferContentScope.FullRange ||
+                !ResourceAccessRules.Writes(state.Access) && state.Queue is not null &&
+                !ReferenceEquals(state.Queue, queue)) return -1;
+        for (int step = 0; step <= read; step++)
+            foreach (int index in update.Steps[step].Accesses)
+            {
+                FrameResourceAccess access = _accesses[index];
+                bool defines = access.ResultContents == ResourceContentState.Defined ||
+                    !access.ResultContents.HasValue && (access.Mode == GraphAccessMode.ReadWrite ||
+                        access.Mode == GraphAccessMode.Write && access.Coverage == WriteCoverage.Complete);
+                if (defines && access.BufferContentScope != BufferContentScope.FullRange) return -1;
+            }
+        return read;
+    }
+
+    private bool BufferReadCoversRange(ReadOnlySpan<int> accesses, in BufferRange range)
+    {
+        foreach (int index in accesses)
+            foreach (BufferRange read in _accesses[index].BufferRanges)
+                if (Contains(read, range)) return true;
+        return false;
     }
 
     private bool SameBufferReads(ReadOnlySpan<int> left, ReadOnlySpan<int> right)
@@ -652,7 +699,7 @@ internal sealed partial class FrameExecutor
 
     private void BuildTextureStateUpdate(TextureStateUpdate update, ReadOnlySpan<TextureBoundaryState> current)
     {
-        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(GraphTrace.StateUpdateConstruction);
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(GraphTrace.TextureStateUpdateConstruction);
         PrepareArray(ref update.Before, current.Length);
         _textureBoundaryScratch.Clear();
         for (int item = 0; item < current.Length; item++)
@@ -837,7 +884,7 @@ internal sealed partial class FrameExecutor
 
     private void BuildQueryStateUpdate(QueryStateUpdate update, ReadOnlySpan<QueryBoundaryState> current)
     {
-        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(GraphTrace.StateUpdateConstruction);
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(GraphTrace.QueryStateUpdateConstruction);
         PrepareArray(ref update.Before, current.Length);
         _queryBoundaryScratch.Clear();
         for (int item = 0; item < current.Length; item++)
@@ -899,7 +946,7 @@ internal sealed partial class FrameExecutor
     private void BuildShaderTableStateUpdate(ShaderTableStateUpdate update,
         ReadOnlySpan<RayTracingShaderTableBoundaryState> current)
     {
-        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(GraphTrace.StateUpdateConstruction);
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(GraphTrace.ShaderTableStateUpdateConstruction);
         PrepareArray(ref update.Before, current.Length);
         _shaderTableBoundaryScratch.Clear();
         for (int item = 0; item < current.Length; item++)
@@ -988,9 +1035,11 @@ internal sealed partial class FrameExecutor
             current.Add(update);
     }
 
-    private static void PublishBufferPhysicalState(
+    private static void StoreBufferSync(
         Span<BufferStateValue> boundaryStates,
-        in BufferBoundaryState endpoint,
+        PipelineSync sync,
+        ResourceAccess access,
+        Queue? queue,
         bool retainDistinctQueueReaders,
         bool publishOwnership)
     {
@@ -1005,17 +1054,17 @@ internal sealed partial class FrameExecutor
             bool distinctQueueReader = retainDistinctQueueReaders &&
                 !ResourceAccessRules.Writes(state.Access) &&
                 state.Queue is not null &&
-                endpoint.Queue is not null &&
-                !ReferenceEquals(state.Queue, endpoint.Queue);
+                queue is not null &&
+                !ReferenceEquals(state.Queue, queue);
             if (distinctQueueReader) continue;
 
             boundaryStates[index] = value with
             {
                 State = state with
                 {
-                    Sync = endpoint.Sync,
-                    Access = endpoint.Access,
-                    Queue = publishOwnership ? endpoint.Queue : state.Queue,
+                    Sync = sync,
+                    Access = access,
+                    Queue = publishOwnership ? queue : state.Queue,
                     ReleasedTo = publishOwnership ? null : state.ReleasedTo,
                 },
                 CompletionSource = publishOwnership ? -1 : value.CompletionSource,

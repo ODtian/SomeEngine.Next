@@ -7,6 +7,10 @@ using SomeEngine.Render.Cluster;
 using SomeEngine.Render.Systems;
 using SomeEngine.Render.Terrain;
 using SomeEngine.RenderGraph;
+using SomeEngine.Render.Assets;
+using SomeEngine.Assets;
+using SomeEngine.Assets.Schema;
+using SomeEngine.Resources;
 
 namespace SomeEngine.Runtime;
 
@@ -26,6 +30,8 @@ public sealed class ApplicationGeometryContext
     private readonly SystemGroup<ImmediateSystemContext> _gameSystems;
     private readonly World _gameWorld;
     private readonly Func<Vector3> _cameraPosition;
+    private readonly GraphResourceGroup _shaderResources;
+    private readonly Func<AssetId<ShaderAsset>, ValueTask<Shader>> _loadShader;
     private readonly List<IRenderGraphFrameExecutionObserver> _observers = [];
     private readonly List<IDisposable> _resources = [];
     private readonly List<Action> _gameShutdown = [];
@@ -34,7 +40,8 @@ public sealed class ApplicationGeometryContext
     internal ApplicationGeometryContext(IGraphicsBackend backend, Device device, RenderDevice renderDevice,
         ClusterRenderResources cluster, global::SomeEngine.RenderGraph.RenderGraph graph, World gameWorld,
         RenderWorld renderingWorld, RenderExtractionSystems extraction, RenderPrepareSystems preparation,
-        RenderFrameSystems frames, Func<Vector3> cameraPosition)
+        RenderFrameSystems frames, Func<Vector3> cameraPosition, GraphResourceGroup shaderResources,
+        ApplicationSettingsBlock settings, Func<AssetId<ShaderAsset>, ValueTask<Shader>> loadShader)
     {
         Backend = backend;
         Device = device;
@@ -48,6 +55,9 @@ public sealed class ApplicationGeometryContext
         _preparation = preparation;
         _frames = frames;
         _cameraPosition = cameraPosition;
+        _shaderResources = shaderResources;
+        _loadShader = loadShader;
+        Settings = settings;
     }
 
     public IGraphicsBackend Backend { get; }
@@ -56,6 +66,11 @@ public sealed class ApplicationGeometryContext
     public ClusterRenderResources Cluster { get; }
     public global::SomeEngine.RenderGraph.RenderGraph Graph { get; }
     public RenderWorld RenderingWorld { get; }
+    public ApplicationSettingsBlock Settings { get; }
+    public int Width => Settings.Width;
+    public int Height => Settings.Height;
+    public IGraphResourceProvider ShaderResources => _shaderResources;
+    public ValueTask<Shader> LoadShaderAsync(AssetId<ShaderAsset> shader) => _loadShader(shader);
     /// <summary>The active application's game-side camera position, read during game system updates.</summary>
     public Vector3 CameraPosition => _cameraPosition();
 
@@ -64,6 +79,9 @@ public sealed class ApplicationGeometryContext
         _gameSystems.Add(system);
 
     public void AddExtractor(IRenderExtractionSystem extractor) => _extraction.Add(extractor);
+
+    /// <summary>Supplies feature resources to material shader parameters.</summary>
+    public void AddResources(IGraphResourceProvider resources) => _shaderResources.Add(resources);
 
     /// <summary>Runs after extraction and before Cluster residency and instance preparation.</summary>
     public int AddPrepareSystem<TSystem>(TSystem system) where TSystem : ISystem<RenderPrepareSystemContext> =>

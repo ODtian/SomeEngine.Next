@@ -9,6 +9,9 @@
 #include "vsm_forward_sampling.slang"
 #include "cluster_instance_properties.slang"
 #include "vsm_receiver_requests.slang"
+#ifdef SOMEENGINE_GI
+#include "gi_material.slang"
+#endif
 
 StructuredBuffer<ClusterViewUniforms> MaterialViews;
 Texture2DArray<float> MaterialDepth;
@@ -89,7 +92,7 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ITransparentS
         SurfacePixelInput input,
         SurfaceEval surface,
         float3 bary,
-        Triangle triangle)
+        Triangle triangle, bool captureGi)
     {
         StandardPixelContext ctx = BuildStandardPixelContext(
             input.PixelCoord,
@@ -161,10 +164,25 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ITransparentS
         float4 sourceClip = mul(float4(ClusterPositionForView(surface.Position, surfaceView), 1.0), surfaceView.ViewProj);
         receiver.DepthOffset = input.VisibilityDepth == 2u ? input.Depth - sourceClip.z / sourceClip.w : 0.0;
         float3 V = normalize(cameraView.CameraPos - ctx.surfacePosition);
-        float3 finalColor = baseColor * armSample.r * 0.03 + scalars.EmissiveFactor;
+        float3 diffuseAmbient = baseColor * armSample.r * 0.03;
+        float3 finalColor = diffuseAmbient + scalars.EmissiveFactor;
+        float3 reflectedRadiance = diffuseAmbient;
+#ifdef SOMEENGINE_GI
+        if (captureGi)
+        {
+            WriteGiSurface(ctx.pixelCoord, mappedNormal, receiver.GeometricNormal,
+                baseColor * (1.0 - metallic));
+            if (GiCapture.Enabled != 0u)
+                finalColor += SampleGiDiffuse(ctx.pixelCoord, input.MotionVector, ctx.surfacePosition,
+                    mappedNormal, receiver.GeometricNormal, baseColor * (1.0 - metallic), cameraView);
+        }
+#endif
 
         if (dot(mappedNormal, V) <= 0.0)
         {
+#ifdef SOMEENGINE_GI
+            if (captureGi) WriteGiRadiance(ctx.pixelCoord, reflectedRadiance);
+#endif
             return float4(finalColor, opacity);
         }
 
@@ -175,6 +193,7 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ITransparentS
                 continue;
             float shadow = EvaluateVirtualShadowForwardVisibility(input.PixelCoord, lightIndex, light, receiver,
                 uint3(cameraView.ScreenWidth, cameraView.ScreenHeight, 1u), cameraView, MaterialDepth);
+            float3 diffuseRadiance;
             finalColor += EvaluateDirectionalLight(
                 baseColor,
                 metallic,
@@ -183,7 +202,8 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ITransparentS
                 V,
                 -normalize(light.Direction),
                 light.Color * (light.Intensity * shadow),
-                EvaluateLightingCookie(light, ctx.surfacePosition));
+                EvaluateLightingCookie(light, ctx.surfacePosition), diffuseRadiance);
+            reflectedRadiance += diffuseRadiance;
         }
 
         uint cell = ClusteredLightCellIndex(
@@ -209,6 +229,7 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ITransparentS
             float shadow = EvaluateVirtualShadowForwardVisibility(input.PixelCoord, lightIndex, light, receiver,
                 uint3(cameraView.ScreenWidth, cameraView.ScreenHeight, 1u), cameraView, MaterialDepth);
             float3 radiance = light.Color * (light.Intensity * shadow);
+            float3 diffuseRadiance;
             if (spotLight)
             {
                 finalColor += EvaluateSpotLight(
@@ -224,7 +245,7 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ITransparentS
                     light.InnerConeCos,
                     light.OuterConeCos,
                     radiance,
-                    EvaluateLightingCookie(light, ctx.surfacePosition));
+                    EvaluateLightingCookie(light, ctx.surfacePosition), diffuseRadiance);
             }
             else
             {
@@ -238,10 +259,14 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ITransparentS
                     light.Position,
                     light.Range,
                     radiance,
-                    EvaluateLightingCookie(light, ctx.surfacePosition));
+                    EvaluateLightingCookie(light, ctx.surfacePosition), diffuseRadiance);
             }
+            reflectedRadiance += diffuseRadiance;
         }
 
+#ifdef SOMEENGINE_GI
+        if (captureGi) WriteGiRadiance(ctx.pixelCoord, reflectedRadiance);
+#endif
         return float4(finalColor, opacity);
     }
 
@@ -249,7 +274,7 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ITransparentS
         SurfacePixelInput input, SurfaceEval surface, float3 bary,
         Triangle triangle, RWTexture2DArray<float4> outputColor)
     {
-        float4 color = evaluateColor(input, surface, bary, triangle);
+        float4 color = evaluateColor(input, surface, bary, triangle, true);
         outputColor[input.PixelCoord] = float4(color.rgb, 1.0);
     }
 
@@ -279,7 +304,7 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ITransparentS
     float4 evaluateTransparency(uint debugMode, SurfacePixelInput input,
         SurfaceEval surface, float3 bary, Triangle triangle)
     {
-        return debugMode == 0u ? evaluateColor(input, surface, bary, triangle) :
+        return debugMode == 0u ? evaluateColor(input, surface, bary, triangle, false) :
             evaluateDebugColor(debugMode, input, surface, bary, triangle);
     }
 

@@ -26,15 +26,33 @@ public static class SampleApplication
                 Path.GetFullPath(Path.Combine(ProjectPaths.EngineShaders, "../..")));
             return 0;
         }
-        if (args is ["prepare-materials"] || AssetCommands.Matches(args))
+        if (args is ["prepare-materials"] or ["prepare-materials", _]
+            or ["prepare-mesh-fields"] or ["prepare-mesh-fields", _] || AssetCommands.Matches(args))
         {
-            AssetProject project = AssetProjects.Create(ProjectPaths.Root,
+            string projectRoot = args is ["prepare-materials" or "prepare-mesh-fields", var sceneRoot]
+                ? Path.GetFullPath(sceneRoot) : ProjectPaths.Root;
+            string engineRoot = Path.GetFullPath(Path.Combine(ProjectPaths.EngineShaders, "../.."));
+            AssetProject project = AssetProjects.Create(projectRoot,
                 [ProjectPaths.EngineShaders],
                 SampleAssetCapabilities.AddAssetCapabilities(new ServiceCollection()),
                 SampleAssetCapabilities.BuildVersion);
+            if (args[0] == "prepare-mesh-fields")
+            {
+                await MeshDistanceFields.BuildAsync(project, CancellationToken.None);
+                return 0;
+            }
             if (args is ["prepare-materials"])
             {
-                await SampleMaterials.BuildAsync(project, CancellationToken.None);
+                await SampleMaterials.BuildAsync(project,
+                    Path.GetFullPath(Path.Combine(ProjectPaths.EngineShaders, "../..")), CancellationToken.None);
+                return 0;
+            }
+            if (args is ["prepare-materials", _])
+            {
+                string shaders = Path.Combine(projectRoot, "assets/Shaders");
+                ImportedSceneImporter.WriteSurfaceSources(shaders, engineRoot);
+                foreach (string definition in Directory.EnumerateFiles(shaders, "scene_*.shader"))
+                    await project.BuildAsync(definition);
                 return 0;
             }
             return await AssetCommands.RunAsync(project, args, Console.Out);
@@ -70,6 +88,9 @@ public static class SampleApplication
             : await ClusterBlendAssets.OpenAsync(AppContext.BaseDirectory, startupOptions.GraphicsBackend);
         ClusterBlendScene? clusterScene = clusterAssets is null ? null : new(clusterAssets, clusterEffect!);
         var scenes = SceneTestPlatform.ReadScenes(Path.Combine(AppContext.BaseDirectory, "test-scenes.json"));
+        int sceneArgument = Array.IndexOf(args, "--measure-scene");
+        if (sceneArgument >= 0)
+            scenes = [scenes.Single(scene => scene.Name.Equals(args[sceneArgument + 1], StringComparison.OrdinalIgnoreCase))];
         var platform = new SceneTestPlatform(scenes.Select(scene => scene with
         {
             ContentDirectory = Path.GetFullPath(scene.ContentDirectory, AppContext.BaseDirectory),
@@ -86,7 +107,13 @@ public static class SampleApplication
                 ["Candidates"] = startupOptions.BlendIndex.ToString(),
             },
         };
-        return await Application.RunAsync<SampleSceneMaterials>(args, static (material, seconds) =>
+        int gpuTimesArgument = Array.IndexOf(args, "--gpu-times");
+        var gi = new ExperimentalGi(() => platform.Application.Options.ExperimentalGlobalIllumination);
+        platform.Application.InstallGeometry(gi);
+        platform.Application.CreateColorFeature = gi.Connect;
+        SceneGpuTimes? gpuTimes = gpuTimesArgument >= 0 ? new(platform) : null;
+        if (gpuTimes is not null) platform.Application.FrameMeasured = gpuTimes.Add;
+        int result = await Application.RunAsync<SampleSceneMaterials>(args, static (material, seconds) =>
         {
             float roughness = 0.5f + MathF.Sin(seconds) * 0.2f;
             switch (material)
@@ -96,5 +123,7 @@ public static class SampleApplication
                 default: return false;
             }
         }, platform.Application);
+        gpuTimes?.Write(args[gpuTimesArgument + 1]);
+        return result;
     }
 }

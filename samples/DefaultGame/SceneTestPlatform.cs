@@ -59,8 +59,6 @@ public sealed partial class SceneTestPlatform
         Scenes = scenes.ToArray();
         Application = new ApplicationScene(scenes[0].ContentDirectory)
         {
-            Options = (options ?? RuntimeStartupOptions.Parse([])) with { WindowVSync = false, DynamicScene = scenes[0].Animate, AsyncCompute = true, SurfacePanel = true, WorldNameplates = true },
-            InterfaceEnabled = true,
             Initialize = frame => InitializeScene?.Invoke(frame.Scene, Current),
             SceneStarted = BeginScene,
             UpdateFrame = UpdateFrame,
@@ -69,6 +67,8 @@ public sealed partial class SceneTestPlatform
             BlendFrameCompleted = RecordBlendFrame,
             SceneCompleted = result => EndScene(result.Error?.Message),
         };
+        Options = (options ?? RuntimeStartupOptions.Parse([])) with
+            { WindowVSync = false, DynamicScene = scenes[0].Animate, AsyncCompute = true };
         MeasureBlending = Options.MeasureBlending;
     }
 
@@ -95,7 +95,16 @@ public sealed partial class SceneTestPlatform
     }
     public bool HudOverlayEnabled => Options.HudOverlay;
     public bool HudNumbersChange => Options.HudNumbersChange;
-    private RuntimeStartupOptions Options { get => Application.Options; set => Application.Options = value; }
+    private RuntimeStartupOptions Options
+    {
+        get => Application.Options;
+        set
+        {
+            Application.Options = value;
+            Application.InterfaceEnabled = value.SurfacePanel || value.WorldNameplates || value.HudOverlay;
+            if (IsMeasuring) Application.MeasureInterface = Application.InterfaceEnabled;
+        }
+    }
     private bool ReloadRequested => Application.ReloadRequested;
     internal TestScene Current => Scenes[SelectedScene];
     private readonly List<SceneTiming> _results = [];
@@ -217,12 +226,14 @@ public sealed partial class SceneTestPlatform
         _interactiveOptions = Options;
         _interactiveScene = SelectedScene;
         Options = Options with { WindowVSync = false, FixedFrameSeconds = 1f / 60f };
-        _resultDirectory = Path.Combine(AppContext.BaseDirectory, "Performance", DateTime.Now.ToString("yyyyMMdd-HHmmss-fff"));
+        string measurements = Environment.GetEnvironmentVariable("SOMEENGINE_SCENE_MEASUREMENTS")
+            ?? Path.Combine(Path.GetTempPath(), "SomeEngine", "scene-measurements");
+        _resultDirectory = Path.Combine(measurements, DateTime.Now.ToString("yyyyMMdd-HHmmss-fff"));
         Directory.CreateDirectory(_resultDirectory);
         _sceneStarted = 0;
         _testStarted = Stopwatch.GetTimestamp();
         IsMeasuring = true;
-        Application.MeasureInterface = true;
+        Application.MeasureInterface = Application.InterfaceEnabled;
         Application.DebugUiEnabled = false;
         SelectScene(0);
     }
@@ -462,6 +473,7 @@ public sealed partial class SceneTestPlatform
             ["TraceAllocations"] = Options.TraceAllocations,
             ["TemporalAntialiasing"] = Options.TemporalAntialiasing,
             ["VirtualShadows"] = Options.VirtualShadows,
+            ["ExperimentalGlobalIllumination"] = Options.ExperimentalGlobalIllumination,
             ["AsyncCompute"] = Options.AsyncCompute,
             ["ForceHardwareRaster"] = Options.ForceHardwareRaster,
             ["UseInstanceGroups"] = Options.UseInstanceGroups,
@@ -527,6 +539,7 @@ public sealed partial class SceneTestPlatform
         }
         bool taa = Options.TemporalAntialiasing;
         bool shadows = Options.VirtualShadows;
+        bool gi = Options.ExperimentalGlobalIllumination;
         bool asyncCompute = Options.AsyncCompute;
         bool hardwareRaster = Options.ForceHardwareRaster;
         bool groups = Options.UseInstanceGroups;
@@ -538,6 +551,7 @@ public sealed partial class SceneTestPlatform
         int playback = Options.ScenePlayback switch { "motion" => 1, "materials" => 2, "camera" => 3, _ => 0 };
         bool changed = ImGui.Checkbox("Temporal antialiasing", ref taa);
         changed |= ImGui.Checkbox("Virtual shadows", ref shadows);
+        changed |= ImGui.Checkbox("Experimental GI", ref gi);
         changed |= ImGui.Checkbox("Async compute", ref asyncCompute);
         changed |= ImGui.Checkbox("Hardware raster only", ref hardwareRaster);
         changed |= ImGui.Checkbox("Instance groups", ref groups);
@@ -551,6 +565,7 @@ public sealed partial class SceneTestPlatform
             Options = Options with
             {
                 TemporalAntialiasing = taa, VirtualShadows = shadows, AsyncCompute = asyncCompute,
+                ExperimentalGlobalIllumination = gi,
                 ForceHardwareRaster = hardwareRaster, UseInstanceGroups = groups, WindowVSync = vsync,
                 DisableMeshShaders = !meshShaders, SynchronousFrames = synchronous, DeviceValidation = validation,
                 ScenePlayback = playback switch { 1 => "motion", 2 => "materials", 3 => "camera", _ => null },

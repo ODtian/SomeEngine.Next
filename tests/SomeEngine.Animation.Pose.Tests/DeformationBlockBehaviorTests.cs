@@ -63,12 +63,12 @@ public sealed class DeformationBlockBehaviorTests
         using WorldAsset worldAsset = await WorldAsset.OpenAsync(Path.Combine(files.Directory, scene.Path));
         using World world = await worldAsset.LoadAsync(SceneSerialization.CreateRegistry());
         Entity[] nodes = MeshNodes(world);
-        Entity[] skinned = nodes.Where(node => world.Has<SkeletonSource>(node)).ToArray();
+        Entity[] skinned = nodes.Where(node => world.Has<AssetId<SkeletonAsset>>(node)).ToArray();
         Assert.Equal(2, skinned.Length);
-        Assert.All(skinned, node => Assert.Equal(mesh.Reference, world.Read<MeshSource>(node).Mesh));
-        Assert.Equal(new[] { first.Id, second.Id }.Order(), skinned.Select(node => world.Read<SkeletonSource>(node).Skeleton.Value).Order());
-        Entity staticNode = Assert.Single(nodes, node => world.Read<MeshSource>(node).Mesh == staticMesh.Reference);
-        Assert.False(world.Has<SkeletonSource>(staticNode));
+        Assert.All(skinned, node => Assert.Equal(mesh.Reference, world.Read<AssetId<MeshAsset>>(node)));
+        Assert.Equal(new[] { first.Id, second.Id }.Order(), skinned.Select(node => world.Read<AssetId<SkeletonAsset>>(node).Value).Order());
+        Entity staticNode = Assert.Single(nodes, node => world.Read<AssetId<MeshAsset>>(node) == staticMesh.Reference);
+        Assert.False(world.Has<AssetId<SkeletonAsset>>(staticNode));
 
         string saved = Path.Combine(files.Directory, "copy.skeleton.asset");
         await first.SaveAsync(saved);
@@ -225,7 +225,7 @@ public sealed class DeformationBlockBehaviorTests
     private static Entity[] MeshNodes(World world)
     {
         var nodes = new List<Entity>();
-        QueryHandle query = world.Query(new QueryDefinitionBuilder().Read<MeshSource>());
+        QueryHandle query = world.Query(new QueryDefinitionBuilder().Read<AssetId<MeshAsset>>());
         try
         {
             world.ExecuteQuery(query, ref nodes, static (QueryCursor rows, ref List<Entity> values) =>

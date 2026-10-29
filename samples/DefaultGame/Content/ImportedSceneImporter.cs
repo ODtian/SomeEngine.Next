@@ -90,17 +90,7 @@ public sealed class ImportedSceneImporter : GltfSceneImporter
             Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
             File.Copy(file, destination, overwrite: true);
         }
-        string surface = File.ReadAllText(Path.Combine(engine, "assets", "Shaders", "standard_material.slang"));
-        surface = Replace(surface, "float3 EmissiveFactor;", "float3 EmissiveFactor;\n    float NormalScale;\n    float OcclusionStrength;");
-        surface = Replace(surface, "Texture2D ARMMap;", "Texture2D ARMMap;\n    Texture2D OcclusionMap;\n    Texture2D EmissiveMap;");
-        surface = Replace(surface, "float3 N_geom =", "normalTS.xy *= scalars.NormalScale;\n        float3 N_geom =");
-        surface = Replace(surface, "float3 baseColor = albedoSample.rgb", "float3 baseColor = SceneSrgbToLinear(albedoSample.rgb)");
-        surface = Replace(surface, "float3 finalColor = baseColor * armSample.r * 0.03 + scalars.EmissiveFactor;",
-            "float ao = lerp(1.0, OcclusionMap.SampleLevel(MaterialSampler, ctx.uv0, 0.0).r, scalars.OcclusionStrength);\n" +
-            "        float3 emission = SceneSrgbToLinear(EmissiveMap.SampleLevel(MaterialSampler, ctx.uv0, 0.0).rgb) * scalars.EmissiveFactor;\n" +
-            "        float3 finalColor = baseColor * ao * 0.03 + emission;");
-        surface = "float3 SceneSrgbToLinear(float3 color) { return select(color <= 0.04045, color / 12.92, pow((color + 0.055) / 1.055, 2.4)); }\n" + surface;
-        WriteIfChanged(Path.Combine(directory, "scene_material.slang"), surface);
+        WriteSurfaceMaterial(directory, engine);
         var shaderIds = new List<Guid>();
         foreach (float cutoff in model.LogicalMaterials.Where(static material => !material.Unlit).Select(Cutoff).Distinct())
         {
@@ -126,6 +116,7 @@ public sealed class ImportedSceneImporter : GltfSceneImporter
 
     internal static void WriteSurfaceSources(string directory, string engineRoot)
     {
+        WriteSurfaceMaterial(directory, engineRoot);
         WriteIfChanged(Path.Combine(directory, "cluster_transparency.slang"),
             File.ReadAllText(Path.Combine(engineRoot, "assets/Shaders/cluster_transparency.slang")));
         foreach (string definitionPath in Directory.EnumerateFiles(directory, "scene_*.shader"))
@@ -147,6 +138,23 @@ public sealed class ImportedSceneImporter : GltfSceneImporter
         }
     }
 
+    private static void WriteSurfaceMaterial(string directory, string engineRoot)
+    {
+        string surface = File.ReadAllText(Path.Combine(engineRoot, "assets", "Shaders", "standard_material.slang"));
+        surface = Replace(surface, "float3 EmissiveFactor;", "float3 EmissiveFactor;\n    float NormalScale;\n    float OcclusionStrength;");
+        surface = Replace(surface, "Texture2D ARMMap;", "Texture2D ARMMap;\n    Texture2D OcclusionMap;\n    Texture2D EmissiveMap;");
+        surface = Replace(surface, "float3 N_geom =", "normalTS.xy *= scalars.NormalScale;\n        float3 N_geom =");
+        surface = Replace(surface, "float3 baseColor = albedoSample.rgb", "float3 baseColor = SceneSrgbToLinear(albedoSample.rgb)");
+        surface = Replace(surface, "float3 diffuseAmbient = baseColor * armSample.r * 0.03;",
+            "float ao = lerp(1.0, OcclusionMap.SampleLevel(MaterialSampler, ctx.uv0, 0.0).r, scalars.OcclusionStrength);\n" +
+            "        float3 diffuseAmbient = baseColor * ao * 0.03;");
+        surface = Replace(surface, "float3 finalColor = diffuseAmbient + scalars.EmissiveFactor;",
+            "float3 emission = SceneSrgbToLinear(EmissiveMap.SampleLevel(MaterialSampler, ctx.uv0, 0.0).rgb) * scalars.EmissiveFactor;\n" +
+            "        float3 finalColor = diffuseAmbient + emission;");
+        surface = "float3 SceneSrgbToLinear(float3 color) { return select(color <= 0.04045, color / 12.92, pow((color + 0.055) / 1.055, 2.4)); }\n" + surface;
+        WriteIfChanged(Path.Combine(directory, "scene_material.slang"), surface);
+    }
+
     private static JsonNode CreateSurfaceDefinition(string path, string defaults, string name, float cutoff)
     {
         var definition = JsonNode.Parse(File.ReadAllText(Path.Combine(defaults, "standard.shader")))!;
@@ -163,9 +171,6 @@ public sealed class ImportedSceneImporter : GltfSceneImporter
             specializations.Add(new JsonObject { ["EntryPoint"] = "ClusterShadowRequests", ["Arguments"] = new JsonArray(depth, mode) });
             specializations.Add(new JsonObject { ["EntryPoint"] = "ClusterForwardShade", ["Arguments"] = new JsonArray(depth, mode) });
         }
-        foreach (string entry in new[] { "BuildTransparentGeometry", "RequestTransparentPages", "ResolveTransparentColor", "ResolveProjectedTransparentColor" })
-            foreach (string tessellated in new[] { "false", "true" })
-                specializations.Add(new JsonObject { ["EntryPoint"] = entry, ["Arguments"] = new JsonArray(depth, tessellated) });
         definition["Blocks"]![0]!["Fields"]!["Specializations"] = specializations;
         return definition;
     }
@@ -242,7 +247,7 @@ struct SceneMask : IVisibilityEvaluate<StandardVertex>
 """;
 }
 
-[AssetCapabilities(GltfImporterSets.ClusterId)]
+[AssetCapabilities(GltfImporterSets.ClusterId, GltfImporterSets.DistanceFieldId)]
 public static partial class ImportedSceneCapabilities;
 
 // This project's material shader consumes UV0; the source file can retain other UV sets.

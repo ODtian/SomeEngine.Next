@@ -37,7 +37,7 @@
 | `ClusterSkinInfluencesBlock` | 每个顶点的全部关节与权重，按 Cluster 的顶点顺序 | Cluster 管线表示 |
 | `ClusterMorphDeltasBlock` | 逐目标、逐顶点增量与来源切线增量，按 Cluster 的顶点顺序 | Cluster 管线表示 |
 
-`SomeEngine.Animation.Pose` 的 `SkinBindingBlock` 由 `SkinBindingImporter` 在每个 skin 的骨架资产上产出，通过 `context.GetBlockAsync<SkeletonBlock>` 消费所选骨架生产者的 `JointBones`。来源逆绑定矩阵通过共享的 `GltfAccessorReader` 读取 meshopt 解压、稀疏和分量展开后的 MAT4，保持关节顺序与数值，省略时每个关节使用单位矩阵。同一 mesh 被多个 skin 的节点复用时，节点的 `SkeletonSource` 指向各自的绑定与骨架；网格资产继续共用。
+`SomeEngine.Animation.Pose` 的 `SkinBindingBlock` 由 `SkinBindingImporter` 在每个 skin 的骨架资产上产出，通过 `context.GetBlockAsync<SkeletonBlock>` 消费所选骨架生产者的 `JointBones`。来源逆绑定矩阵通过共享的 `GltfAccessorReader` 读取 meshopt 解压、稀疏和分量展开后的 MAT4，保持关节顺序与数值，省略时每个关节使用单位矩阵。同一 mesh 被多个 skin 的节点复用时，节点的 `AssetId<SkeletonAsset>` 指向各自的绑定与骨架；网格资产继续共用。
 
 `SkinBindingBlock.CreateSkinBinding()` 返回同步可读的 `SkinBinding` 使用对象，公开 `JointCount`、`InverseBindMatrices` 和 `JointBones`。使用对象集中持有不可变数组，Block 的副本与调用方通过普通引用共享；资产关闭后，已取得的使用对象继续保持数据有效。程序创建使用相同的 span 构造函数，输入数组在创建时复制。
 

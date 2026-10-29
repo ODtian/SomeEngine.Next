@@ -41,7 +41,7 @@ public sealed class ShaderLifetimeTests
         IModule? source = session.LoadModuleFromSource("lifetime", "lifetime.slang", Slang.CreateBlob(text), out _);
         Assert.NotNull(source);
         Assert.True(source.GetDefinedEntryPoint(0, out IEntryPoint entry).Succeeded);
-        Assert.True(session.CreateCompositeComponentType([source, entry], out IComponentType combined, out _).Succeeded);
+        Assert.True(SlangShaderData.CombineComponents(session, [source, entry], out IComponentType combined, out _).Succeeded);
         Assert.True(combined.Link(out IComponentType code, out _).Succeeded);
         Shader shader = Shader.CreateFromSlang("lifetime", global, session, [source], [entry], code,
             targets, generateCode: false);

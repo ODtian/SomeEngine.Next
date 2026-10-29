@@ -82,7 +82,7 @@ public sealed partial class ClusterGeometryBlock : AssetBlock
     private sealed class MeshData { internal ClusterMeshData? Value; }
     partial void CopyFrom(ClusterGeometryBlock source) => _meshData = source._meshData;
 
-    private Mesh GetMeshData(ClusterVertexAttributesBlock attributes)
+    internal Mesh GetMeshData(ClusterVertexAttributesBlock attributes)
     {
         lock (SyncRoot)
             lock (_meshData)

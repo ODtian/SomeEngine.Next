@@ -421,7 +421,7 @@ public sealed class GltfVertexStreamsTests
         Assert.Equal(mixed, await result.Asset.TryGetBlockAsync<ClusterVertexAttributesBlock>() is not null);
         SomeEngine.Assets.WorldAsset sceneAsset = await result.Imports.GetAssetAsync<SharpGLTF.Schema2.Scene, SomeEngine.Assets.WorldAsset>(result.Model.LogicalScenes[0]);
         using var world = await sceneAsset.LoadAsync(SomeEngine.Render.SceneSerialization.CreateRegistry());
-        var query = world.Query(new SomeEngine.ECS.Queries.QueryDefinitionBuilder().Read<SomeEngine.Render.Components.MeshSource>());
+        var query = world.Query(new SomeEngine.ECS.Queries.QueryDefinitionBuilder().Read<SomeEngine.Assets.AssetId<SomeEngine.Assets.Schema.MeshAsset>>());
         int count = 0;
         world.ExecuteQuery(query, rows => { foreach (var row in rows.Rows) count++; });
         world.ReleaseQuery(query);
@@ -460,11 +460,11 @@ public sealed class GltfVertexStreamsTests
         foreach (WorldAsset asset in new[] { scene, reopened })
         {
             using var world = await asset.LoadAsync(SomeEngine.Render.SceneSerialization.CreateRegistry());
-            var query = world.Query(new SomeEngine.ECS.Queries.QueryDefinitionBuilder().Read<SomeEngine.Render.Components.MeshSource>());
+            var query = world.Query(new SomeEngine.ECS.Queries.QueryDefinitionBuilder().Read<SomeEngine.Assets.AssetId<SomeEngine.Assets.Schema.MeshAsset>>());
             var references = new List<AssetId<MeshAsset>>();
             world.ExecuteQuery(query, rows =>
             {
-                foreach (var row in rows.Rows) references.Add(world.Read<SomeEngine.Render.Components.MeshSource>(row.Entity).Mesh);
+                foreach (var row in rows.Rows) references.Add(world.Read<SomeEngine.Assets.AssetId<SomeEngine.Assets.Schema.MeshAsset>>(row.Entity));
             });
             world.ReleaseQuery(query);
             Assert.Equal(result.Asset.Reference, Assert.Single(references));

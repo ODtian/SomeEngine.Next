@@ -9,10 +9,23 @@ namespace DefaultGame.Content;
 /// <summary>The sample selects its Cluster entries before saving common release code.</summary>
 public static class SampleMaterials
 {
-    public static async Task BuildAsync(AssetProject project, CancellationToken cancellationToken)
+    public static async Task BuildAsync(AssetProject project, string engineRoot, CancellationToken cancellationToken)
     {
         using ShaderAsset standard = await ShaderAsset.OpenSourceAsync(Path.Combine(project.RootPath, "assets/Shaders/standard.shader"), cancellationToken);
         using ShaderSourceBlock standardInputs = StandardMaterialInputs.Create();
+        // The experimental sample supplies GI material outputs through the existing shared input.
+        string materialSource = Path.Combine(engineRoot, "assets/Shaders/Inputs/standard_material.ir.slang");
+        IGlobalSession slang = SlangShaderImporter.GlobalSession;
+        SessionDesc settings = SlangShaderImporter.CreateSessionDescription(materialSource,
+            SlangShaderImporter.CreateDefaultTargets(slang), [Path.Combine(engineRoot, "assets/Shaders")]);
+        slang.CreateSession(settings, out ISession session);
+        string source = "#define SOMEENGINE_GI 1\n" + await File.ReadAllTextAsync(materialSource, cancellationToken);
+        IModule? material = session.LoadModuleFromSource("standard_material", materialSource,
+            Slang.CreateBlob(System.Text.Encoding.UTF8.GetBytes(source)), out ISlangBlob? diagnostics);
+        if (material is null) throw new InvalidDataException(diagnostics?.AsString);
+        SlangResult result = material.Serialize(out ISlangBlob serialized);
+        if (result.Failed) throw new InvalidDataException($"Slang serialization failed with {result}.");
+        standardInputs.SetSerializedSource(1, serialized.Buffer);
         using ClusterMaterialEntriesBlock standardEntries = ClusterMaterialEntriesBlock.Create();
         standard.SetBlock(standardInputs);
         standard.SetBlock(standardEntries);

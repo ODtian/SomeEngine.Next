@@ -125,13 +125,13 @@ public sealed class GltfAnimationElementBehaviorTests
         using World world = await asset.LoadAsync(SceneSerialization.CreateRegistry());
         Entity[] entities = MeshEntities(world);
         Assert.Equal(4, entities.Length);
-        Entity[] skinned = entities.Where(entity => world.Has<SkeletonSource>(entity)).ToArray();
+        Entity[] skinned = entities.Where(entity => world.Has<AssetId<SkeletonAsset>>(entity)).ToArray();
         Assert.Equal(3, skinned.Length);
-        Assert.All(skinned, entity => Assert.Equal(mesh, world.Read<MeshSource>(entity).Mesh.Value));
-        Assert.Equal(2, skinned.Count(entity => world.Read<SkeletonSource>(entity).Skeleton.Value == firstSkin));
-        Assert.Single(skinned, entity => world.Read<SkeletonSource>(entity).Skeleton.Value == secondSkin);
+        Assert.All(skinned, entity => Assert.Equal(mesh, world.Read<AssetId<MeshAsset>>(entity).Value));
+        Assert.Equal(2, skinned.Count(entity => world.Read<AssetId<SkeletonAsset>>(entity).Value == firstSkin));
+        Assert.Single(skinned, entity => world.Read<AssetId<SkeletonAsset>>(entity).Value == secondSkin);
         Entity first = entities.Single(entity => world.Read<WorldTransform>(entity).Qvvs.Position == new Vector3(1, 2, 3));
-        Assert.Equal(firstSkin, world.Read<SkeletonSource>(first).Skeleton.Value);
+        Assert.Equal(firstSkin, world.Read<AssetId<SkeletonAsset>>(first).Value);
     }
 
     [Theory]
@@ -153,7 +153,7 @@ public sealed class GltfAnimationElementBehaviorTests
         AssetEntry scene = Assert.Single(Entries(project, WorldAsset.FileType));
         using WorldAsset asset = await WorldAsset.OpenAsync(Path.Combine(files.Directory, scene.Path));
         using World world = await asset.LoadAsync(SceneSerialization.CreateRegistry());
-        Assert.Equal(skins ? 3 : 0, MeshEntities(world).Count(entity => world.Has<SkeletonSource>(entity)));
+        Assert.Equal(skins ? 3 : 0, MeshEntities(world).Count(entity => world.Has<AssetId<SkeletonAsset>>(entity)));
     }
 
     [Theory]
@@ -196,7 +196,8 @@ public sealed class GltfAnimationElementBehaviorTests
     }
 
     private static GltfSourceImporter CreateImporter()
-        => new(services => ConsumerAssetCapabilities.AddAssetCapabilities(services), "animation-elements-1", ElementSceneImporter.Id);
+        => new(ConsumerAssetCapabilities.AddAssetCapabilities(new Microsoft.Extensions.DependencyInjection.ServiceCollection()),
+            "animation-elements-1", ElementSceneImporter.Id);
 
     private static AssetEntry[] Entries(AssetProject project, string type)
         => project.Manifest.Assets.Values.Where(entry => entry.AssetType == type).OrderBy(entry => entry.SubAssetKey).ToArray();
@@ -204,7 +205,7 @@ public sealed class GltfAnimationElementBehaviorTests
     private static Entity[] MeshEntities(World world)
     {
         var entities = new List<Entity>();
-        QueryHandle query = world.Query(new QueryDefinitionBuilder().Read<MeshSource>());
+        QueryHandle query = world.Query(new QueryDefinitionBuilder().Read<AssetId<MeshAsset>>());
         try
         {
             world.ExecuteQuery(query, ref entities, static (QueryCursor rows, ref List<Entity> values) =>

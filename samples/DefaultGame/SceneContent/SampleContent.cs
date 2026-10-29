@@ -15,6 +15,7 @@ using SomeEngine.Render.Cluster;
 using SomeEngine.Render.Instances;
 using SomeEngine.Render.Features.Skinning;
 using SomeEngine.Serialization.Containers;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace DefaultGame.Content;
 
@@ -50,7 +51,9 @@ public static class SampleContent
         WriteInstanceLayout(shaders);
         WriteGeneratedFile(Path.Combine(shaders, "cluster_transparency.slang"),
             File.ReadAllText(Path.Combine(engineShaders, "cluster_transparency.slang")));
-        var project = new AssetProject(projectRoot, [StandardGltfSceneImporter.CreateSourceImporter()],
+        var services = SampleContentAssets.AddAssetCapabilities(new ServiceCollection());
+        var importer = new GltfSourceImporter(services, SampleContentAssets.BuildVersion, StandardGltfSceneImporter.ImporterId);
+        var project = new AssetProject(projectRoot, [importer],
             shaderIncludeDirectories: [engineShaders]);
         await BuildEngineShadersAsync(project, shaders, engineShaders, cancellationToken).ConfigureAwait(false);
         foreach (string source in Directory.EnumerateFiles(shaders, "*.shader").Order(StringComparer.Ordinal))
@@ -60,11 +63,20 @@ public static class SampleContent
             await project.BuildAsync(source, cancellationToken: cancellationToken).ConfigureAwait(false);
             Console.WriteLine($"Shader: {Path.GetFileName(source)}");
         }
-        await SampleMaterials.BuildAsync(project, cancellationToken).ConfigureAwait(false);
+        await SampleMaterials.BuildAsync(project, engineRoot, cancellationToken).ConfigureAwait(false);
         await SampleBlendContent.BuildAsync(project, engineRoot, cancellationToken).ConfigureAwait(false);
         Guid pipeline = BuildClusterShaders(project);
         Guid shadows = BuildShadowShaders(project);
-        IReadOnlyList<Guid> imported = await project.ImportAsync("assets/Models/ico_sphere.glb", cancellationToken).ConfigureAwait(false);
+        string sphereSource = Path.Combine(projectRoot, "assets/Models/ico_sphere.glb");
+        SourceMeta sphereMetadata = SourceMeta.GetOrCreate(sphereSource);
+        sphereMetadata.ImporterSets ??= [Guid.Parse(GltfImporterSets.ClusterId)];
+        Guid distanceFields = Guid.Parse(GltfImporterSets.DistanceFieldId);
+        if (!sphereMetadata.ImporterSets.Contains(distanceFields))
+        {
+            sphereMetadata.ImporterSets.Add(distanceFields);
+            SourceMeta.Save(sphereSource, sphereMetadata);
+        }
+        IReadOnlyList<Guid> imported = await project.ImportAsync(sphereSource, cancellationToken).ConfigureAwait(false);
         Guid mesh = imported.Single(id => project.Manifest.Assets[id].AssetType == MeshAsset.FileType);
         Guid scene = await BuildSceneAsync(project, mesh, cancellationToken).ConfigureAwait(false);
         BuildApplicationSettings(project, scene, pipeline, shadows);
@@ -286,7 +298,8 @@ public static class SampleContent
                 Qvvs = new(new Vector3(origin + index % columns * spacing, origin + index / columns * spacing, 65), Quaternion.Identity)
                 { Stretch = new(0.6f) },
             });
-            world.Add(entity, new MeshSource { Mesh = new(meshGuid), BoundsExpansion = 0.3f });
+            world.Add(entity, new AssetId<MeshAsset>(meshGuid));
+            world.Add(entity, new MeshInstanceSettings { BoundsExpansion = 0.3f });
             world.Add(entity, new MeshMotion
             {
                 Seed = unchecked((uint)index * 0x9E3779B9u),
@@ -322,6 +335,7 @@ public static class SampleContent
             PresentationShader = new(ResolveRequired(project, "assets/Shaders/post_tonemap.shader")), PresentationVertexEntry = "VSMain", PresentationPixelEntry = "PSMain",
             LightingShader = new(ResolveRequired(project, "assets/Shaders/clustered_light_grid.shader")), LightingEntryPoint = "BuildClusteredLightGrid",
             TemporalShader = new(ResolveRequired(project, "assets/Shaders/temporal_resolve.shader")), TemporalVertexEntry = "VSMain", TemporalPixelEntry = "PSMain",
+            GlobalIlluminationShader = new(ResolveRequired(project, "assets/Shaders/gi_screen_probes.shader")),
             TranslucencyShader = new(ResolveRequired(project, "assets/Shaders/translucency_composite.shader")), TranslucencyVertexEntry = "VSMain", TranslucencyPixelEntry = "PSMain",
             DebugShader = new(ResolveRequired(project, "assets/Shaders/render_debug_overlay.shader")), DebugVertexEntry = "VSMain", DebugPixelEntry = "PSMain",
             Width = 1280, Height = 720,

@@ -32,7 +32,7 @@ Block 的持久类型 ID 用来在一个 Asset 内索引某一种内容，不是
 
 World 的引用由实际 ECS codec 写入外部引用时收集，不把任意 GUID 或另一套 Scene 图推导为依赖。来源 Importer 只负责自身转换所产生的直接引用；完整遍历和保存由工程流程负责。
 
-glTF 蒙皮节点通过 `SkeletonSource` 保留 skin 对应的 `AssetId<SkeletonAsset>`，场景 codec 将它写入 World 的外部引用。骨架归属节点使用的 skin，而不是 mesh；两个节点可以共享网格并引用不同骨架。skin 与 animation 元素的持久键及输出规则见 [导入组合](Importer-Sets.md)。
+glTF 蒙皮节点通过 `AssetId<SkeletonAsset>` 保留 skin 对应的 `AssetId<SkeletonAsset>`，场景 codec 将它写入 World 的外部引用。骨架归属节点使用的 skin，而不是 mesh；两个节点可以共享网格并引用不同骨架。skin 与 animation 元素的持久键及输出规则见 [导入组合](Importer-Sets.md)。
 
 ## 保存与登记
 

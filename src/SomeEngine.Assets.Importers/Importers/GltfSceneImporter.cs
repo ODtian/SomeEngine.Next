@@ -92,11 +92,11 @@ public abstract class GltfSceneImporter : IAssetImporter<Scene, GltfSceneSetting
                 MeshAsset imported = await context.GetAssetAsync<GltfMesh, MeshAsset>(mesh, cancellationToken).ConfigureAwait(false);
                 VertexStreamsBlock? streams = await context.TryGetBlockAsync<VertexStreamsBlock>(imported, cancellationToken).ConfigureAwait(false);
                 if (streams is null || streams.Primitives.Any(primitive => !primitive.Indices.IsEmpty))
-                    world.Add(entity, new MeshSource { Mesh = imported.Reference });
+                    world.Add(entity, imported.Reference);
                 if (node.Skin is Skin skin && context.HasImporters<Skin, SkeletonAsset>())
                 {
                     SkeletonAsset skeleton = await context.GetAssetAsync<Skin, SkeletonAsset>(skin, cancellationToken).ConfigureAwait(false);
-                    world.Add(entity, new SkeletonSource { Skeleton = skeleton.Reference });
+                    world.Add(entity, skeleton.Reference);
                 }
             }
         }

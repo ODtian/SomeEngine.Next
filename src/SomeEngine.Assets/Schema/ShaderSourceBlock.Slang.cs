@@ -245,7 +245,7 @@ public sealed partial class ShaderSourceBlock
                     component = Specialize(session, entry, specializations);
                 components.Add(component);
             }
-            SlangResult combineResult = session.CreateCompositeComponentType(
+            SlangResult combineResult = SlangShaderData.CombineComponents(session,
                 components.ToArray(),
                 out IComponentType combinedCode,
                 out ISlangBlob? combineDiagnostics);

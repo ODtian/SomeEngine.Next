@@ -9,6 +9,9 @@ public readonly record struct ApplicationRendering(IGraphicsBackend Backend, Dev
     global::SomeEngine.RenderGraph.RenderGraph Graph, int Width, int Height, Matrix4x4 Projection = default,
     GraphRegionId Region = default)
 {
+    public ClusterPipelineOutputs Geometry { get; init; }
+    public bool CameraCut => CameraCutSource?.Invoke() ?? false;
+    internal Func<bool>? CameraCutSource { get; init; }
     public ClusterStencil? Stencil => StencilSource?.Invoke();
     internal Func<ClusterStencil>? StencilSource { get; init; }
 }

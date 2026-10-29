@@ -95,7 +95,7 @@ internal sealed class RuntimeScene : IDisposable
         ApplicationContent content) where TMaterials : ISceneMaterials
     {
         AssetLoader assets = content.Files;
-        Entity[] instances = Entities(world, new QueryDefinitionBuilder().Read<MeshSource>().Read<WorldTransform>());
+        Entity[] instances = Entities(world, new QueryDefinitionBuilder().Read<AssetId<MeshAsset>>().Read<WorldTransform>());
         Entity[] cameras = Entities(world, new QueryDefinitionBuilder().Read<SceneCamera>());
         if (cameras.Length != 1) throw new InvalidDataException("The Game world must contain one scene camera.");
         SceneCamera camera = world.Read<SceneCamera>(cameras[0]);
@@ -104,7 +104,7 @@ internal sealed class RuntimeScene : IDisposable
         Vector3 meshPositionMin = new(float.PositiveInfinity);
         Vector3 meshPositionMax = new(float.NegativeInfinity);
         AssetId<MeshAsset>[] meshIds = instances
-            .Select(entity => world.Read<MeshSource>(entity).Mesh)
+            .Select(entity => world.Read<AssetId<MeshAsset>>(entity))
             .Distinct()
             .ToArray();
         var loadedMeshes = new SceneMeshData?[meshIds.Length];
@@ -196,17 +196,19 @@ internal sealed class RuntimeScene : IDisposable
                     bindings[value.Region] = new(materials[value.Material.Value]);
                 meshes[meshId] = (data.Mesh, data.PageSource, bindings, data.SkinBounds);
             }
-            instances = instances.Where(entity => meshes.ContainsKey(world.Read<MeshSource>(entity).Mesh.Value)).ToArray();
+            instances = instances.Where(entity => meshes.ContainsKey(world.Read<AssetId<MeshAsset>>(entity).Value)).ToArray();
 
             foreach (Entity entity in instances)
             {
-                MeshSource source = world.Read<MeshSource>(entity);
-                var meshData = meshes[source.Mesh.Value];
+                AssetId<MeshAsset> reference = world.Read<AssetId<MeshAsset>>(entity);
+                var meshData = meshes[reference.Value];
+                MeshInstanceSettings settings = world.Has<MeshInstanceSettings>(entity)
+                    ? world.Read<MeshInstanceSettings>(entity) : default;
                 TransformQvvs transform = world.Read<WorldTransform>(entity).Qvvs;
                 meshPositionMin = Vector3.Min(meshPositionMin, transform.Position);
                 meshPositionMax = Vector3.Max(meshPositionMax, transform.Position);
                 world.Add(entity, new MeshInstance { Mesh = meshData.Mesh, PageSource = meshData.Source,
-                    BoundsExpansion = source.BoundsExpansion, DepthCacheClass = source.DepthCacheClass, FirstPerson = source.FirstPerson });
+                    BoundsExpansion = settings.BoundsExpansion, DepthCacheClass = settings.DepthCacheClass, FirstPerson = settings.FirstPerson });
                 if (meshData.SkinBounds is { } skinBounds) world.Add(entity, new MeshSkinBounds(skinBounds));
                 world.AddBuffer<MeshMaterialBinding>(entity);
                 MeshMaterialBinding[] bindings = meshData.Bindings;
@@ -222,7 +224,8 @@ internal sealed class RuntimeScene : IDisposable
                     if (motion.Amplitude != Vector3.Zero) world.Add(entity, SceneMotion.Create(transform, motion.Amplitude, motion.Seed));
                     world.Remove<MeshMotion>(entity);
                 }
-                world.Remove<MeshSource>(entity);
+                world.Remove<AssetId<MeshAsset>>(entity);
+                if (world.Has<MeshInstanceSettings>(entity)) world.Remove<MeshInstanceSettings>(entity);
             }
             var playbackLights = Entities(world, new QueryDefinitionBuilder().Read<PointLight>())
                 .Select(entity => (entity, world.Read<PointLight>(entity))).ToArray();

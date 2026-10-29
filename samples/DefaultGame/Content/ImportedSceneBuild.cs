@@ -1,5 +1,4 @@
 using SomeEngine.Geometry.Cluster;
-using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text.Json;
 using SomeEngine.Assets.Schema;
@@ -7,6 +6,7 @@ using ImportedScenes;
 using Microsoft.Extensions.DependencyInjection;
 using SharpGLTF.Schema2;
 using SomeEngine.Assets;
+using SomeEngine.Assets.Importing;
 using SomeEngine.Assets.Importers;
 using SomeEngine.Serialization.Containers;
 using SomeEngine.Serialization.Streaming;
@@ -27,19 +27,28 @@ public static class ImportedSceneBuild
         {
             if (Directory.Exists(projectRoot) && Directory.EnumerateFileSystemEntries(projectRoot).Any())
                 throw new ArgumentException("The output must be empty or a previously built scene application.");
-            CopyFiles(Path.Combine(applicationDirectory, "assets"), Path.Combine(projectRoot, "assets"));
             CopyFiles(Path.Combine(applicationDirectory, "Library", "AssetManifest"),
                 Path.Combine(projectRoot, "Library", "AssetManifest"));
         }
+        CopyFiles(Path.Combine(applicationDirectory, "assets"), Path.Combine(projectRoot, "assets"));
         CopyFiles(Path.GetDirectoryName(sourcePath)!, Path.GetDirectoryName(copiedSource)!);
         SourceMeta sourceMetadata = SourceMeta.GetOrCreate(copiedSource);
+        bool sourceMetadataChanged = false;
         if (!sourceMetadata.Importers.Any(selection => selection.ImporterId == GltfSourceImporter.SourceImporterId))
         {
             sourceMetadata.Importers.Add(new(GltfSourceImporter.SourceImporterId,
                 JsonSerializer.SerializeToElement(new GltfImporterSettings { RequirePersistentElementIds = false },
                     GltfSettingsJson.Default.GltfImporterSettings)));
-            SourceMeta.Save(copiedSource, sourceMetadata);
+            sourceMetadataChanged = true;
         }
+        sourceMetadata.ImporterSets ??= [Guid.Parse(GltfImporterSets.ClusterId)];
+        Guid distanceFields = Guid.Parse(GltfImporterSets.DistanceFieldId);
+        if (!sourceMetadata.ImporterSets.Contains(distanceFields))
+        {
+            sourceMetadata.ImporterSets.Add(distanceFields);
+            sourceMetadataChanged = true;
+        }
+        if (sourceMetadataChanged) SourceMeta.Save(copiedSource, sourceMetadata);
         var sceneImporter = new ImportedSceneImporter();
         var services = new ServiceCollection();
         SomeEngine.Assets.Importers.EngineAssetCapabilities.AddAssetCapabilities(services);
@@ -59,25 +68,15 @@ public static class ImportedSceneBuild
             CopyIfChanged(Path.Combine(applicationDirectory, entry.Path), destination);
             project.RegisterAsset(entry);
         }
-        ModelRoot model = ModelRoot.Load(copiedSource);
+        ModelRoot model = await importer.ReadAsync(copiedSource, CancellationToken.None);
         foreach (var material in model.LogicalMaterials)
             foreach (var channel in material.Channels)
                 if (channel.Texture is not null && channel.TextureCoordinate != 0)
                     throw new NotSupportedException($"Material {material.Name} uses UV{channel.TextureCoordinate}; this scene shader consumes UV0.");
         await sceneImporter.BuildAsync(project, model, engineRoot);
 
-        var timer = Stopwatch.StartNew();
-        await project.ImportAsync(copiedSource);
-        double importSeconds = timer.Elapsed.TotalSeconds;
+        await project.ImportAsync(copiedSource, new ImportedSceneSource(importer, model));
         SourceMeta metadata = SourceMeta.Load(copiedSource);
-        var previous = metadata.Outputs.ToDictionary(value => value.AssetGuid, value => (value.Version, value.ContentHash));
-        timer.Restart();
-        await project.ImportAsync(copiedSource);
-        double cachedSeconds = timer.Elapsed.TotalSeconds;
-        SourceMeta repeated = SourceMeta.Load(copiedSource);
-        if (repeated.Outputs.Count != previous.Count || repeated.Outputs.Any(value =>
-                !previous.TryGetValue(value.AssetGuid, out var old) || old != (value.Version, value.ContentHash)))
-            throw new InvalidDataException("Unchanged reimport changed generated assets.");
 
         string sceneKey = model.DefaultScene.Extras?["someengine_id"]?.GetValue<string>() is { Length: > 0 } id
             ? $"scene:id:{id}" : $"scene:index:{model.DefaultScene.LogicalIndex}";
@@ -89,14 +88,22 @@ public static class ImportedSceneBuild
             project.RegisterAsset(await settings.SaveAsync(settingsPath));
         }
         int instances = Node.Flatten(model.DefaultScene).Count(static node => node.Mesh is not null);
-        File.WriteAllText(Path.Combine(projectRoot, "scene-import.json"), JsonSerializer.Serialize(new
-        {
-            source = sourcePath, meshes = metadata.Outputs.Count(value => value.SubAssetKey.StartsWith("mesh:")),
-            instances, materials = metadata.Outputs.Count(value => value.SubAssetKey.StartsWith("material:")),
-            textures = metadata.Outputs.Count(value => value.SubAssetKey.StartsWith("texture:")),
-            assets = metadata.Outputs.Count, importSeconds, cachedSeconds, unchangedReimport = true,
-        }, new JsonSerializerOptions { WriteIndented = true }));
-        Console.WriteLine($"Imported {name}: {instances} mesh instances, {metadata.Outputs.Count} assets in {importSeconds:F2}s. {projectRoot}");
+        Console.WriteLine($"Imported {name}: {instances} mesh instances, {metadata.Outputs.Count} assets. {projectRoot}");
+    }
+
+    private sealed class ImportedSceneSource(GltfSourceImporter importer, ModelRoot model) : IAssetSourceImporter<ModelRoot>
+    {
+        public Guid Id => importer.Id;
+
+        public ValueTask<ModelRoot> ReadAsync(string sourcePath, CancellationToken cancellationToken) =>
+            ValueTask.FromResult(model);
+
+        public ValueTask ImportAsync(ModelRoot source, ImportContext context, CancellationToken cancellationToken) =>
+            importer.ImportAsync(source, context, null, cancellationToken);
+
+        public ValueTask<ImportInputs?> GetInputsAsync(string projectRoot, string sourcePath, SourceMeta metadata,
+            CancellationToken cancellationToken) =>
+            importer.GetInputsAsync(projectRoot, sourcePath, metadata, null, cancellationToken);
     }
 
     private static void CopyFiles(string source, string destination)

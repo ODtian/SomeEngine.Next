@@ -320,7 +320,7 @@ float2 ClusterMotionClipToUv(float4 clip)
     return float2(ndc.x * 0.5 + 0.5, 1.0 - (ndc.y * 0.5 + 0.5));
 }
 
-void WriteClusterMotion<
+float2 WriteClusterMotion<
     TVE,
     TDomain>(
     uniform TVE evaluator,
@@ -336,7 +336,7 @@ void WriteClusterMotion<
     if (view.HasPrevHistory == 0u)
     {
         OutputMotionVectors[pixelCoord] = 0.0.xx;
-        return;
+        return 0.0.xx;
     }
 
     TDomain.TriangleData previousTriangle = evaluateTriangleWithTransform<TVE, TDomain>(
@@ -349,10 +349,12 @@ void WriteClusterMotion<
     float3 previousPosition = domain.position(previousTriangle, bary);
     float4 currentClip = mul(float4(ClusterPositionForView(currentPosition, view), 1.0), view.ViewProj);
     float4 previousClip = mul(float4(ClusterPreviousPositionForView(previousPosition, view), 1.0), view.PrevViewProj);
-    OutputMotionVectors[pixelCoord] =
+    float2 motion =
         abs(currentClip.w) < 1e-6 || abs(previousClip.w) < 1e-6
             ? 0.0.xx
             : ClusterMotionClipToUv(currentClip) - ClusterMotionClipToUv(previousClip);
+    OutputMotionVectors[pixelCoord] = motion;
+    return motion;
 }
 
 bool TryEvaluateSurfacePixel<TVE, TDomain>(
@@ -425,7 +427,7 @@ void CSShadeCore<TVE, TDomain, TSurface>(
     SurfacePixelInput input;
     if (!TryEvaluateSurfacePixel<TVE, TDomain>(vertexEval, domain, tid, Uniforms.VisibilityDepth,
         tri, view, triangle, bary, evaluated, input)) return;
-    WriteClusterMotion<TVE, TDomain>(vertexEval, domain, tri, view, triangle, bary, input.PixelCoord);
+    input.MotionVector = WriteClusterMotion<TVE, TDomain>(vertexEval, domain, tri, view, triangle, bary, input.PixelCoord);
     if (debugMode != 0u)
         surface.evaluateDebug(debugMode, input, evaluated, bary, triangle, OutputColor);
     else
@@ -475,7 +477,7 @@ void CSForwardShade<TVE, TDomain, TSurface>(
     SurfacePixelInput input;
     if (!TryEvaluateSurfacePixel<TVE, TDomain>(vertexEval, domain, tid, visibilityDepth,
         tri, view, triangle, bary, evaluated, input)) return;
-    WriteClusterMotion<TVE, TDomain>(vertexEval, domain, tri, view, triangle, bary, input.PixelCoord);
+    input.MotionVector = WriteClusterMotion<TVE, TDomain>(vertexEval, domain, tri, view, triangle, bary, input.PixelCoord);
     if (debugMode != 0u)
         surface.evaluateDebug(debugMode, input, evaluated, bary, triangle, OutputColor);
     else

@@ -5,6 +5,65 @@ namespace SomeEngine.RenderGraph.Tests;
 public sealed class BufferRangeReadTests
 {
     [Fact]
+    public void FullReadsAfterSparseWritesPreserveBytesAcrossFrames()
+    {
+        using WarpGraphTestSupport support = WarpGraphTestSupport.Create(enableValidation: true);
+        using var graph = new RenderGraph(support.Backend, support.Device,
+            [support.GraphicsQueue], new RenderGraphDesc(MaximumFramesInFlight: 1));
+        using Buffer upload = support.Backend.CreateBuffer(support.Device,
+            new BufferDesc(64, BufferUsages.CopySource), MemoryType.Upload);
+        using Buffer result = support.Backend.CreateBuffer(support.Device,
+            new BufferDesc(32, BufferUsages.CopyDestination), MemoryType.Readback);
+        GraphBufferId uploadId, resultId;
+        GraphPassId initialize;
+        using (RenderGraphEdit edit = graph.BeginEdit())
+        {
+            uploadId = edit.DeclareExternalBuffer(new BufferDesc(64, BufferUsages.CopySource), MemoryType.Upload);
+            resultId = edit.DeclareExternalBuffer(new BufferDesc(32, BufferUsages.CopyDestination), MemoryType.Readback);
+            GraphBufferId buffer = edit.CreatePersistentBuffer(new BufferDesc(32,
+                BufferUsages.CopySource | BufferUsages.CopyDestination));
+            var queue = PassQueueSelection.Exact(support.GraphicsQueue);
+            initialize = edit.DeclareBufferCopy("initialize all bytes", queue,
+                new(uploadId, new(0, 32)), new(buffer, new(0, 32)));
+            edit.DeclareBufferCopy("replace first sparse band", queue,
+                new(uploadId, new(32, 4)), new(buffer, new(4, 4)));
+            edit.DeclareBufferCopy("replace second sparse band", queue,
+                new(uploadId, new(48, 4)), new(buffer, new(20, 4)));
+            edit.DeclareBufferCopy("read all bytes after sparse writes", queue,
+                new(buffer, new(0, 32)), new(resultId, new(0, 32)));
+            edit.Commit();
+        }
+        var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
+        for (int index = 0; index < 3; index++)
+        {
+            byte[] bytes = Enumerable.Range(0, 64).Select(value => (byte)value).ToArray();
+            bytes.AsSpan(32, 4).Fill((byte)(160 + index));
+            bytes.AsSpan(48, 4).Fill((byte)(224 + index));
+            byte[] expected = bytes.AsSpan(0, 32).ToArray();
+            bytes.AsSpan(32, 4).CopyTo(expected.AsSpan(4, 4));
+            bytes.AsSpan(48, 4).CopyTo(expected.AsSpan(20, 4));
+            using (MappedBuffer mapping = support.Backend.Map(upload, MapType.Write, BufferRange.Whole))
+                bytes.CopyTo(mapping.Bytes);
+            using (RenderGraphFrame frame = graph.BeginFrame())
+            {
+                frame.SetPassEnabled(initialize, index == 0);
+                frame.BindExternalBuffer(uploadId, upload,
+                    [new BufferBoundaryState(BufferRange.Whole,
+                        index == 0 ? upload.InitialSync : PipelineSync.Copy,
+                        index == 0 ? upload.InitialAccess : ResourceAccess.CopySource, ResourceContentState.Defined)]);
+                frame.BindExternalBuffer(resultId, result,
+                    [new BufferBoundaryState(BufferRange.Whole,
+                        index == 0 ? result.InitialSync : PipelineSync.Copy,
+                        index == 0 ? result.InitialAccess : ResourceAccess.CopyDestination, ResourceContentState.Undefined)]);
+                frame.Execute(completions);
+                support.Wait(completions);
+            }
+            using MappedBuffer readback = support.Backend.Map(result, MapType.Read, BufferRange.Whole);
+            Assert.True(readback.Bytes[..32].SequenceEqual(expected));
+        }
+    }
+
+    [Fact]
     public void PartialReadsPreserveOtherDefinedBytesAcrossFrames()
     {
         using WarpGraphTestSupport support = WarpGraphTestSupport.Create(enableValidation: true);

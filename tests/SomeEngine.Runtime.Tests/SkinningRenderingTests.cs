@@ -366,7 +366,7 @@ public sealed partial class SkinningRenderingTests
             foreach (Vector3 position in positions)
             {
                 Entity entity = world.CreateEntity(new WorldTransform { Qvvs = new(position, Quaternion.Identity) });
-                world.Add(entity, new MeshSource { Mesh = new(mesh.Id), BoundsExpansion = 0 });
+                world.Add(entity, new AssetId<MeshAsset>(mesh.Id));
             }
             world.CreateEntity(new SceneCamera { Position = Vector3.Zero, Target = Vector3.UnitZ, Up = Vector3.UnitY,
                 VerticalFieldOfView = 1.1f, NearPlane = .1f, FarPlane = 100 });
@@ -434,7 +434,8 @@ public sealed partial class SkinningRenderingTests
                 using MeshAsset mesh = await create(index, previous, right);
                 project.RegisterAsset(await mesh.SaveAsync(Path.Combine(project.RootPath, $"assets/Models/panel-{index}.mesh.asset")));
                 Entity entity = world.CreateEntity(new WorldTransform { Qvvs = new(new(right ? .75f : -2.5f, previous ? -1f : 1f, 6), Quaternion.Identity) });
-                world.Add(entity, new MeshSource { Mesh = new(mesh.Id), BoundsExpansion = 3 });
+                world.Add(entity, new AssetId<MeshAsset>(mesh.Id));
+                world.Add(entity, new MeshInstanceSettings { BoundsExpansion = 3 });
             }
             world.CreateEntity(new SceneCamera { Position = Vector3.Zero, Target = Vector3.UnitZ, Up = Vector3.UnitY,
                 VerticalFieldOfView = 1.1f, NearPlane = .1f, FarPlane = 100 });

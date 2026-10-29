@@ -22,7 +22,10 @@ internal static class GraphTrace
     internal static readonly global::SomeEngine.Diagnostics.TraceSite Schedule = new("rg", nameof(Schedule), detail: false);
     internal static readonly global::SomeEngine.Diagnostics.TraceSite Frontiers = new("rg", nameof(Frontiers), detail: false);
     internal static readonly global::SomeEngine.Diagnostics.TraceSite StateCommit = new("rg", nameof(StateCommit), detail: false);
-    internal static readonly global::SomeEngine.Diagnostics.TraceSite StateUpdateConstruction = new("rg", nameof(StateUpdateConstruction), detail: false);
+    internal static readonly global::SomeEngine.Diagnostics.TraceSite BufferStateUpdateConstruction = new("rg", nameof(BufferStateUpdateConstruction), detail: false);
+    internal static readonly global::SomeEngine.Diagnostics.TraceSite TextureStateUpdateConstruction = new("rg", nameof(TextureStateUpdateConstruction), detail: false);
+    internal static readonly global::SomeEngine.Diagnostics.TraceSite QueryStateUpdateConstruction = new("rg", nameof(QueryStateUpdateConstruction), detail: false);
+    internal static readonly global::SomeEngine.Diagnostics.TraceSite ShaderTableStateUpdateConstruction = new("rg", nameof(ShaderTableStateUpdateConstruction), detail: false);
     internal static readonly global::SomeEngine.Diagnostics.TraceSite Synchronization = new("rg", nameof(Synchronization), detail: false);
     internal static readonly global::SomeEngine.Diagnostics.TraceSite WaitCollection = new("rg", nameof(WaitCollection), detail: false);
     internal static readonly global::SomeEngine.Diagnostics.TraceSite BoundaryObservation = new("rg", nameof(BoundaryObservation), detail: false);

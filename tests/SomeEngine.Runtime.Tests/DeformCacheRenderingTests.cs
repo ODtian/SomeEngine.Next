@@ -69,7 +69,8 @@ public sealed class DeformCacheRenderingTests
             using (var world = new World())
             {
                 var sphere = world.CreateEntity(new WorldTransform { Qvvs = new(new(0, 0, 4), Quaternion.Identity) });
-                world.Add(sphere, new MeshSource { Mesh = new(project.Manifest.List(MeshAsset.FileType).Single().AssetGuid), BoundsExpansion = .3f });
+                world.Add(sphere, new AssetId<MeshAsset>(project.Manifest.List(MeshAsset.FileType).Single().AssetGuid));
+                world.Add(sphere, new MeshInstanceSettings { BoundsExpansion = .3f });
                 world.CreateEntity(new SceneCamera { Position = Vector3.Zero, Target = Vector3.UnitZ, Up = Vector3.UnitY,
                     VerticalFieldOfView = 1f, NearPlane = .1f, FarPlane = 100f });
                 world.CreateEntity(new DirectionalLight(new(.35f, -.85f, .4f), Vector3.One, 3));

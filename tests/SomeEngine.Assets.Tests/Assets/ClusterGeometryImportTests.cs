@@ -14,6 +14,61 @@ namespace SomeEngine.Assets.Tests.Assets;
 
 public sealed class ClusterGeometryImportTests
 {
+    [Fact]
+    public async Task SavedMeshDistanceFieldSuppliesDistancesAndOriginalTriangles()
+    {
+        await using ImportResult imported = await ImportAsync([Plane(0, -1), Plane(1, 1)]);
+        using MeshDistanceFieldBlock field = MeshDistanceFieldBlock.Build(imported.Geometry, imported.Attributes, 4, 32);
+        imported.Asset.SetBlock(field);
+        string directory = CreateDirectory();
+        try
+        {
+            string path = Path.Combine(directory, "distance-field.mesh.asset");
+            await imported.Asset.SaveAsync(path);
+            using MeshAsset reopened = await MeshAsset.OpenAsync(path);
+            MeshDistanceFieldBlock saved = await reopened.GetBlockAsync<MeshDistanceFieldBlock>();
+            MeshDistanceField data = await saved.ReadDataAsync();
+            Assert.Equal(imported.Geometry.VertexIdentity, saved.VertexIdentity);
+            Assert.Equal(64u, data.Grid.TriangleCount);
+            MeshDistanceGrid grid = data.Grid;
+            ReadOnlySpan<float> distances = MemoryMarshal.Cast<byte, float>(data.Distances.Span);
+            Vector3 center = new(grid.CenterX, grid.CenterY, grid.CenterZ);
+            for (int index = 0; index < distances.Length; index++)
+            {
+                Vector3 coordinate = new(index % grid.Width, index / grid.Width % grid.Height,
+                    index / (grid.Width * grid.Height));
+                Vector3 local = grid.Lower + (coordinate + new Vector3(.5f)) * grid.CellSize;
+                Vector3 point = center + grid.AxisX * local.X + grid.AxisY * local.Y + grid.AxisZ * local.Z;
+                float distance = Math.Min(Math.Abs(point.Z - 1), Math.Abs(point.Z + 1));
+                Assert.InRange(distances[index], Math.Max(0, distance - 1e-4f), distance + 1e-4f);
+            }
+            Assert.Contains(distances.ToArray(), distance => distance > .5f);
+            using var shape = new MeshBlock();
+            SomeEngine.Resources.Mesh mesh = await imported.Geometry.CreateAsync(shape, imported.Attributes, "Distance field source");
+            await imported.Geometry.LoadPagesAsync(mesh, imported.Attributes, Enumerable.Range(0, mesh.PageCount));
+            var pointedTriangles = new HashSet<(uint Page, uint Cluster, uint Triangle)>();
+            foreach (MeshTrianglePointer pointer in MemoryMarshal.Cast<byte, MeshTrianglePointer>(data.TrianglePointers.Span))
+            {
+                Assert.True(mesh.TryGetPage((int)pointer.Page, out ReadOnlyMemory<byte> page));
+                MeshPageHeader header = MemoryMarshal.Read<MeshPageHeader>(page.Span);
+                PackedCluster cluster = MemoryMarshal.Read<PackedCluster>(page.Span.Slice(
+                    (int)header.ClustersOffset + (int)pointer.Cluster * PackedCluster.SizeInBytes));
+                Assert.True(pointer.Triangle < ((cluster.PackedCounts >> 8) & 255u));
+                Assert.True(pointedTriangles.Add((pointer.Page, pointer.Cluster, pointer.Triangle)));
+            }
+            Assert.Equal(64, pointedTriangles.Count);
+        }
+        finally { Directory.Delete(directory, true); }
+
+        static VertexPrimitive Plane(int source, double height)
+        {
+            VertexPrimitive primitive = Grid(source, 0, 1, "material");
+            double[] positions = primitive.Attributes["POSITION"].Values.ToArray();
+            for (int index = 2; index < positions.Length; index += 3) positions[index] = height;
+            return WithAttribute(primitive, "POSITION", new(3, positions.AsSpan()));
+        }
+    }
+
     [Theory]
     [InlineData(1)]
     [InlineData(.0001f)]
