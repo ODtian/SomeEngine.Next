@@ -114,6 +114,12 @@ GPU 示例选择 `DeviceContactPotentialAvbdConstraints` 的正法向和角向�
 
 每个场景声明零热身步数，全部原步骤与首步成本进入采样，并单列首步耗时及当前进程 JIT 配置。`WithinBudget` 表达所测整步最大耗时与该场景预算的比较；行为验收继续核对相应场景的运动、约束间距和事件结果。
 
+原目录的 112 个 Box 场景同时交付 `Results.OriginalAccuracy`。该观测沿每个实际完成步的全体 `BodyPose` 和 `BoxGeometry`，复用原研究工具 `PhysicsAcceptance`、`BoxPenetration` 的独立 double 精度 SAT：二维检查两体各自的两个面轴，三维检查六个面轴和九个叉积轴；X 向排序扫描及 Y/Z 包围区间筛选缩小配对范围，静态对静态及原碰撞排除关系按原定义过滤。当前深度和全过程最大深度均以米交付，并列出达到最大值的步号、原主体输入索引、主体数与允许配对总数。允许配对总数为包含动态主体且经过原排除关系过滤的无序主体对数。
+
+原研究验收以位姿有限且全过程最大几何穿透深度 ≤ 5 mm 为通过条件。完成结果已有的位姿、速度有限性检查与 `OriginalAccuracySatisfied` 共同承接这一原义；该结果同时要求完成数等于原 `StepCount`，`OriginalAccuracyFailures` 和原整步预算分别汇总并参与退出码。SAT 观测进入 `Observation` 耗时，整步预算沿上述 `AdvanceTime → CompleteForRead` 范围统计。规模目录和混合形状料仓各沿对应行为验收。
+
+原 `MaximumPenetrationMeters` 沿当前接触法向和锚点的参考间距归约全过程最大值，`PenetrationScope` 声明该接触度量；`OriginalAccuracy` 按独立 Box 几何计算穿透深度。两项结果分别保留其来源和覆盖范围。
+
 附加 `--physics-trace=<外部路径>` 使用现有 `EngineTrace` 捕获同一运行窗口。具体阶段包装记录 `Schedule` 提交耗时和依赖就绪至完成的区间；两个范围可以重叠，分别呈现。阶段诊断为每段增加 Start 与 Finish Job，开销随诊断结果保留。普通预算运行沿同一工厂选择 `timings=null`。原分区准备、pair count、bin prefix、pair write 和 narrow phase 的 Trace 站点进一步分解碰撞成本，并记录候选数和检测数。带 trace 的定位与普通整步预算分别比较，测量沿根级公共队列提交，捕获消费后清理。
 
 ## 混合形状料仓

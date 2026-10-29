@@ -25,7 +25,7 @@ public static class MeasurePhysicsScenes
     {
         PhysicsSceneDescription[] descriptions = id is null ? PhysicsScenes.All.ToArray()
             : [PhysicsScenes.All.Concat(PhysicsScaleScenes.All).Single(description => description.Id == id)];
-        int failures = 0, siloFailures = 0, scaleFailures = 0, scaleInputFailures = 0;
+        int failures = 0, accuracyFailures = 0, siloFailures = 0, scaleFailures = 0, scaleInputFailures = 0;
         long measuredFrame = 0;
         using var process = Process.GetCurrentProcess();
         using var scheduler = new Scheduler(new() { WorkerCount = Environment.ProcessorCount });
@@ -96,6 +96,8 @@ public static class MeasurePhysicsScenes
             process.Refresh();
             bool withinBudget = steps.Max() <= scene.Settings.StepBudgetMilliseconds;
             if (!withinBudget) failures++;
+            bool? originalAccuracy = observation.OriginalAccuracySatisfied;
+            if (originalAccuracy == false) accuracyFailures++;
             bool? siloBehavior = observation.SiloBehaviorSatisfied;
             if (siloBehavior == false) siloFailures++;
             bool? scaleDelivery = observation.ScaleDeliverySatisfied;
@@ -106,6 +108,7 @@ public static class MeasurePhysicsScenes
             {
                 ["Workload"] = example.Describe().DeepClone(), ["CompletedStep"] = result.Number, ["CompletedTime"] = result.EndTime,
                 ["ClockLeadSeconds"] = scene.StepSeconds * .5, ["WithinBudget"] = withinBudget,
+                ["OriginalAccuracySatisfied"] = originalAccuracy,
                 ["SiloBehaviorSatisfied"] = siloBehavior,
                 ["ScaleDeliverySatisfied"] = scaleDelivery,
                 ["ScaleInputDeliverySatisfied"] = scaleInputs,
@@ -116,9 +119,10 @@ public static class MeasurePhysicsScenes
             }.ToJsonString());
         }
         output.WriteLine(new JsonObject { ["Scenes"] = descriptions.Length, ["WithinBudget"] = descriptions.Length - failures,
+            ["OriginalAccuracyFailures"] = accuracyFailures,
             ["SiloBehaviorFailures"] = siloFailures, ["ScaleDeliveryFailures"] = scaleFailures,
             ["ScaleInputDeliveryFailures"] = scaleInputFailures }.ToJsonString());
-        return failures == 0 && siloFailures == 0 && scaleFailures == 0 && scaleInputFailures == 0 ? 0 : 1;
+        return failures == 0 && accuracyFailures == 0 && siloFailures == 0 && scaleFailures == 0 && scaleInputFailures == 0 ? 0 : 1;
     }
 }
 
@@ -130,6 +134,7 @@ internal sealed class ReadScenePhysicsResults : IDisposable
     private readonly HashSet<Entity>? _readbackBodies;
     private readonly SiloMotionMeasurements? _silo;
     private readonly ScaleMotionMeasurements? _scale;
+    private readonly SceneBoxAccuracy? _accuracy;
     private readonly Vector3 _gravity;
     private readonly HashSet<long> _inputSteps;
     private readonly List<(long Step, double BeforeEnergy, double AfterEnergy,
@@ -151,12 +156,14 @@ internal sealed class ReadScenePhysicsResults : IDisposable
         _inputSteps = workload["Events"]!.AsArray().Select(value => (long)value!["Step"]!.GetValue<int>()).ToHashSet();
         if (workload["ShapeDistribution"] is not null)
             _silo = new(world, scene, workload["StepCount"]!.GetValue<int>() - 1);
+        if (PhysicsScenes.All.Contains(scene.Description)) _accuracy = new(world, scene, workload["StepCount"]!.GetValue<int>());
         var bodyResults = new QueryDefinitionBuilder().All<ScenePhysicsBody>().Read<BodyPose>().Read<BodyMass>()
             .Read<BodyVelocity>().Read<BodyActivity>();
         if (scene.DeviceStatistics is not null && scene.ReadbackBodies.Length < scene.Bodies.Length)
             bodyResults.All<SceneReadbackBody>();
         if (_silo is not null) bodyResults.Read<DeviceBodyBinding>();
         if (_scale is not null) bodyResults.Read<BodyStepState>();
+        if (_accuracy is not null) bodyResults.Read<BoxGeometry>();
         _bodies = world.Query(bodyResults);
         if (scene.ReadbackBodies.Length < scene.Bodies.Length) _readbackBodies = scene.ReadbackBodies.ToArray().ToHashSet();
         var contactResults = new QueryDefinitionBuilder().Any<ScenePhysicsContact>().Any<ScenePhysicsBody>().Any<ContactParticipant>()
@@ -208,6 +215,7 @@ internal sealed class ReadScenePhysicsResults : IDisposable
                 if (!float.IsFinite(pose.Position.LengthSquared() + pose.Rotation.LengthSquared()
                     + velocity.Linear.LengthSquared() + velocity.Angular.LengthSquared()))
                     throw new InvalidOperationException("The completed scene body pose and velocity must be finite.");
+                if (_accuracy is not null) _accuracy.ReadBody(row.Entity, in pose, in mass, in row.ReadRef<BoxGeometry>());
                 if (mass.Motion == BodyMotion.Dynamic)
                 {
                     _mechanicalEnergy += CalculateMechanicalEnergy(in pose, in mass, in velocity);
@@ -228,6 +236,7 @@ internal sealed class ReadScenePhysicsResults : IDisposable
                 _quaternionError = MathF.Max(_quaternionError, MathF.Abs(pose.Rotation.LengthSquared() - 1));
             }
         });
+        _accuracy?.FinishRead(number);
         _centerOfMass /= _dynamicMass;
         _maximumMechanicalEnergy = Math.Max(_maximumMechanicalEnergy, _mechanicalEnergy);
         if (_scene.DeviceStatistics is null) _world.ExecuteQuery(_contacts, rows =>
@@ -296,6 +305,7 @@ internal sealed class ReadScenePhysicsResults : IDisposable
     public bool? SiloBehaviorSatisfied => _silo?.MeetsBehavior(_initialMechanicalEnergy);
     public bool? ScaleDeliverySatisfied => _scale?.DeliverySatisfied;
     public bool? ScaleInputDeliverySatisfied => _scale?.InputDeliverySatisfied;
+    public bool? OriginalAccuracySatisfied => _accuracy?.Satisfied;
 
     private double CalculateMechanicalEnergy(in BodyPose pose, in BodyMass mass, in BodyVelocity velocity)
     {
@@ -321,6 +331,7 @@ internal sealed class ReadScenePhysicsResults : IDisposable
             ["ReadbackBodyCount"] = _scene.ReadbackBodies.Length,
             ["SiloMotion"] = _silo?.Describe(),
             ["ScaleMotion"] = _scale?.Describe(),
+            ["OriginalAccuracy"] = _accuracy?.Describe(),
             ["BodyMotionScope"] = _readbackBodies is null ? "Every scene body" : "Selected readback bodies",
             ["ConstraintErrorScope"] = _readbackBodies is null ? "Every scene constraint" : "Constraints between selected readback bodies",
             ["MechanicalEnergyScope"] = _readbackBodies is null ? "Every scene dynamic body" : "Selected readback dynamic bodies",
@@ -346,6 +357,7 @@ internal sealed class ReadScenePhysicsResults : IDisposable
             ["MaximumJointAnchorGapMeters"] = _jointGap, ["MaximumDistanceViolationMeters"] = _rangeGap,
             ["MaximumAngularLockErrorRadians"] = _angularGap, ["MaximumQuaternionSquaredNormError"] = _quaternionError,
             ["MaximumPenetrationMeters"] = _penetration, ["MaximumSpeedMetersPerSecond"] = _speed,
+            ["PenetrationScope"] = "Completed contact normal-reference anchor gap",
             ["FinalMaximumSpeedMetersPerSecond"] = _finalSpeed,
             ["MaximumAngularSpeedRadiansPerSecond"] = _angularSpeed,
             ["FinalMaximumAngularSpeedRadiansPerSecond"] = _finalAngularSpeed,
