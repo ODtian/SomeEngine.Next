@@ -39,23 +39,20 @@ public sealed class SceneContentFixture : IAsyncLifetime
         try
         {
             await SomeEngine.SceneContent.SceneContent.GenerateSpheresAsync(DirectoryPath, directory);
-            await CompileViewMaterialModesAsync();
+            await CompileViewMaterialModeAsync();
         }
         catch { await DisposeAsync(); throw; }
     }
 
-    // Only the generated test scene needs the normal/UV views exercised by ApplicationViewRenderingTests.
-    private async Task CompileViewMaterialModesAsync()
+    // The generated test scene cooks the material mode selected when replacing an ApplicationView.
+    private async Task CompileViewMaterialModeAsync()
     {
         var project = new AssetProject(DirectoryPath, []);
         string path = Path.Combine(DirectoryPath, "assets", "Shaders", "unlit.shader.asset");
         using ShaderAsset shader = await ShaderAsset.OpenAsync(path);
         ShaderSourceBlock inputs = await shader.GetBlockAsync<ShaderSourceBlock>();
-        foreach (string mode in new[] { "9", "10" })
-        {
-            inputs.Specializations.Add(new() { EntryPoint = "ClusterShadeMode", Arguments = [mode] });
-            inputs.Specializations.Add(new() { EntryPoint = "ClusterShadowRequests", Arguments = ["0", mode] });
-        }
+        inputs.Specializations.Add(new() { EntryPoint = "ClusterShadeMode", Arguments = ["9"] });
+        inputs.Specializations.Add(new() { EntryPoint = "ClusterShadowRequests", Arguments = ["0", "9"] });
         var slang = SlangShaderImporter.GlobalSession;
         var settings = SlangShaderImporter.CreateSessionDescription(path, SlangShaderImporter.CreateDefaultTargets(slang));
         await shader.CompileAsync(slang, settings);

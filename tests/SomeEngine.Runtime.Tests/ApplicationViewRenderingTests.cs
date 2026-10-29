@@ -8,6 +8,63 @@ namespace SomeEngine.Runtime.Tests;
 public sealed class ApplicationViewRenderingTests(SceneContentFixture content)
 {
     [Fact]
+    public async Task Overlay_draws_separated_by_empty_frames_match_the_same_visible_items()
+    {
+        SceneImage? empty = null;
+        SceneImage? overlay = null;
+        int referenceFrame = 0;
+        var reference = new ApplicationScene(content.DirectoryPath)
+        {
+            RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
+            Options = RuntimeStartupOptions.Parse(["--hidden-window", "--synchronous-frames", "--static-scene",
+                "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "4"]),
+            UpdateFrame = frame =>
+            {
+                referenceFrame = frame.Index;
+                if (frame.Index == 2) frame.Scene.CaptureImage(image => empty = image);
+                if (frame.Index == 3) frame.Scene.CaptureImage(image => overlay = image);
+            },
+            DrawOverlay = () =>
+            {
+                if (referenceFrame != 3) return;
+                ImDrawListPtr draw = ImGui.GetBackgroundDrawList();
+                draw.AddRectFilled(Vector2.Zero, new Vector2(16, 16), 0xff00ff00);
+                draw.AddText(new Vector2(24, 24), 0xffffffff, "A");
+            },
+        };
+        ApplicationResult referenceResult = await Application.RunAsync([], application: reference);
+        Assert.True(referenceResult.Succeeded, referenceResult.Error?.ToString());
+
+        var frames = new List<SceneImage>();
+        int overlayFrame = 0;
+        var application = new ApplicationScene(content.DirectoryPath)
+        {
+            RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
+            Options = reference.Options with { FrameLimit = 8 },
+            UpdateFrame = frame =>
+            {
+                overlayFrame = frame.Index;
+                if (frame.Index > 0) frame.Scene.CaptureImage(frames.Add);
+            },
+            DrawOverlay = () =>
+            {
+                if (overlayFrame % 2 == 0) return;
+                ImDrawListPtr draw = ImGui.GetBackgroundDrawList();
+                for (int rectangle = 0; rectangle < 3500; rectangle++)
+                    draw.AddRectFilled(Vector2.Zero, new Vector2(16, 16), 0xff00ff00);
+                draw.AddText(new Vector2(24, 24), 0xffffffff, "A");
+            },
+        };
+        ApplicationResult result = await Application.RunAsync([], application: application);
+        Assert.True(result.Succeeded, result.Error?.ToString());
+        Assert.NotNull(empty);
+        Assert.NotNull(overlay);
+        Assert.Equal(7, frames.Count);
+        foreach (SceneImage frame in frames)
+            SceneImages.AssertEqual(frame.Frame % 2 == 0 ? empty : overlay, frame);
+    }
+
+    [Fact]
     public async Task Image_font_image_commands_render_like_the_same_nonoverlapping_items_in_font_first_order()
     {
         SceneImage? expected = null;
@@ -21,7 +78,7 @@ public sealed class ApplicationViewRenderingTests(SceneContentFixture content)
                 if (frame.Index == 2) frame.Scene.CaptureImage(image => expected = image);
             },
         };
-        ApplicationView referenceView = reference.AddView(new(9, 32, 32));
+        ApplicationView referenceView = reference.AddView(new(8, 32, 32));
         reference.DrawOverlay = () =>
         {
             ImDrawListPtr draw = ImGui.GetBackgroundDrawList();
@@ -30,7 +87,8 @@ public sealed class ApplicationViewRenderingTests(SceneContentFixture content)
             draw.AddImage(referenceView.ImageId, new Vector2(48, 48), new Vector2(64, 64));
             draw.AddImage(ImGui.GetIO().Fonts.TexID, new Vector2(80, 0), new Vector2(96, 16));
         };
-        Assert.True((await Application.RunAsync([], application: reference)).Succeeded);
+        ApplicationResult referenceResult = await Application.RunAsync([], application: reference);
+        Assert.True(referenceResult.Succeeded, referenceResult.Error?.ToString());
 
         SceneImage? actual = null;
         var application = new ApplicationScene(content.DirectoryPath)
@@ -42,7 +100,7 @@ public sealed class ApplicationViewRenderingTests(SceneContentFixture content)
                 if (frame.Index == 2) frame.Scene.CaptureImage(image => actual = image);
             },
         };
-        ApplicationView view = application.AddView(new(9, 32, 32));
+        ApplicationView view = application.AddView(new(8, 32, 32));
         application.DrawOverlay = () =>
         {
             ImDrawListPtr draw = ImGui.GetBackgroundDrawList();
@@ -51,7 +109,8 @@ public sealed class ApplicationViewRenderingTests(SceneContentFixture content)
             draw.AddImage(view.ImageId, new Vector2(48, 48), new Vector2(64, 64));
             draw.AddImage(0, new Vector2(80, 0), new Vector2(96, 16));
         };
-        Assert.True((await Application.RunAsync([], application: application)).Succeeded);
+        ApplicationResult result = await Application.RunAsync([], application: application);
+        Assert.True(result.Succeeded, result.Error?.ToString());
         Assert.NotNull(expected);
         Assert.NotNull(actual);
         SceneImages.AssertEqual(expected, actual);
@@ -74,7 +133,8 @@ public sealed class ApplicationViewRenderingTests(SceneContentFixture content)
         ApplicationView referenceView = reference.AddView(new(9, 24, 24));
         reference.DrawOverlay = () => ImGui.GetBackgroundDrawList().AddImage(referenceView.ImageId,
             Vector2.Zero, new Vector2(32, 32));
-        Assert.True((await Application.RunAsync([], application: reference)).Succeeded);
+        ApplicationResult referenceResult = await Application.RunAsync([], application: reference);
+        Assert.True(referenceResult.Succeeded, referenceResult.Error?.ToString());
 
         SceneImage? actual = null;
         var application = new ApplicationScene(content.DirectoryPath)
@@ -94,7 +154,8 @@ public sealed class ApplicationViewRenderingTests(SceneContentFixture content)
         };
         application.DrawOverlay = () => ImGui.GetBackgroundDrawList().AddImage(view.ImageId,
             Vector2.Zero, new Vector2(32, 32));
-        Assert.True((await Application.RunAsync([], application: application)).Succeeded);
+        ApplicationResult result = await Application.RunAsync([], application: application);
+        Assert.True(result.Succeeded, result.Error?.ToString());
         Assert.NotNull(expected);
         Assert.NotNull(actual);
         SceneImages.AssertEqual(expected, actual);
@@ -114,10 +175,11 @@ public sealed class ApplicationViewRenderingTests(SceneContentFixture content)
                 if (frame.Index == 3) frame.Scene.CaptureImage(image => expected = image);
             },
         };
-        ApplicationView referenceView = reference.AddView(new(10, 32, 24));
+        ApplicationView referenceView = reference.AddView(new(8, 32, 24));
         reference.DrawOverlay = () => ImGui.GetBackgroundDrawList().AddImage(referenceView.ImageId,
             Vector2.Zero, new Vector2(32, 24));
-        Assert.True((await Application.RunAsync([], application: reference)).Succeeded);
+        ApplicationResult referenceResult = await Application.RunAsync([], application: reference);
+        Assert.True(referenceResult.Succeeded, referenceResult.Error?.ToString());
 
         SceneImage? actual = null;
         var application = new ApplicationScene(content.DirectoryPath)
@@ -125,15 +187,16 @@ public sealed class ApplicationViewRenderingTests(SceneContentFixture content)
             RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
             Options = reference.Options,
         };
-        ApplicationView view = application.AddView(new(10, 16, 16));
+        ApplicationView view = application.AddView(new(8, 16, 16));
         application.UpdateFrame = frame =>
         {
-            if (frame.Index == 1) view.Settings = new(10, 32, 24);
+            if (frame.Index == 1) view.Settings = new(8, 32, 24);
             if (frame.Index == 3) frame.Scene.CaptureImage(image => actual = image);
         };
         application.DrawOverlay = () => ImGui.GetBackgroundDrawList().AddImage(view.ImageId,
             Vector2.Zero, new Vector2(32, 24));
-        Assert.True((await Application.RunAsync([], application: application)).Succeeded);
+        ApplicationResult result = await Application.RunAsync([], application: application);
+        Assert.True(result.Succeeded, result.Error?.ToString());
         Assert.NotNull(expected);
         Assert.NotNull(actual);
         SceneImages.AssertEqual(expected, actual);

@@ -660,7 +660,7 @@ internal static class RuntimeApplication
             colorEffectsRegion = edit.AddRegion("Surface effects", postProcessing);
             temporalRegion = edit.AddRegion("Temporal", postProcessing);
             presentationRegion = edit.AddRegion("Presentation", postProcessing);
-            uiRegion = edit.AddRegion("UI", postProcessing);
+            uiRegion = edit.AddFrameRegion("UI", postProcessing);
             frameOutputRegion = edit.AddFrameRegion("Frame output", postProcessing);
             feedbackRegion = edit.AddRegion("Feedback");
             edit.Commit();
@@ -1048,6 +1048,7 @@ internal static class RuntimeApplication
                         window.HasFocus,
                         options.TemporalAntialiasing), application?.DrawDebugUi);
                 application?.DrawOverlay?.Invoke();
+                ui.CompleteDrawData();
                 IReadOnlyList<ApplicationView> selectedViews = application?.ViewsEnabled == true ? application.Views : [];
                 bool reportMilestones = frameIndex == 0;
                 if (reportMilestones)
