@@ -22,31 +22,20 @@ public sealed partial class ClusterPipelineSystem
         var work = new CullWork();
         work.Nodes = Create(ref graph, "Cluster node queue", capacity * TraversalNodeStride);
         work.Clusters = Create(ref graph, "Cluster cluster queue", capacity * CandidateStride);
-        work.NodeReady = Create(ref graph, "Cluster node readiness", capacity * sizeof(uint));
-        work.Arguments = Create(ref graph, "Cluster work queue counts", TraversalArgumentStride, BufferUsages.Indirect);
+        work.NodeReady = Create(ref graph, "Cluster node readiness", capacity * sizeof(uint), BufferUsages.CopyDestination);
+        work.Arguments = Create(ref graph, "Cluster work queue counts", TraversalArgumentStride,
+            BufferUsages.CopyDestination | BufferUsages.Indirect);
         work.Initialization = graph.AddRegion("Initialize Cluster work queues", _regions.PrimaryGeometry);
-        work.Initialize = graph.AddCopyFramePass("Initialize Cluster work queue data",
+        work.Initialize = graph.AddCopyFramePass("Initialize Cluster node readiness",
             PassQueueSelection.AnyOfType(QueueType.Graphics),
-            new[] { work.Nodes, work.Clusters, work.NodeReady },
+            work.NodeReady,
             new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
-            static (ref PassDefinition pass, ref GraphBufferId[] buffers) =>
-            {
-                foreach (GraphBufferId buffer in buffers)
-                    pass.Write(buffer, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopyDestination, WriteCoverage.Complete);
-            },
-            static (ref CopyPassCommandScope commands, in GraphBufferId[] buffers) =>
-            {
-                foreach (GraphBufferId id in buffers)
-                {
-                    var buffer = commands.GetBuffer(id);
-                    commands.ClearBuffer(buffer, BufferRange.Whole);
-                }
-            }, region: work.Initialization);
+            DeclareBufferClear, RecordBufferClear, region: work.Initialization);
         return work;
 
         static GraphBufferId Create(ref RenderGraphEdit graph, string label, ulong bytes, BufferUsages extra = BufferUsages.None) =>
             graph.CreatePersistentBuffer(new BufferDesc(Math.Max(bytes, 4),
-                BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopyDestination | extra, label));
+                BufferUsages.ShaderRead | BufferUsages.ShaderWrite | extra, label));
     }
 
     private void RecordPersistentCull(ref RenderGraphEdit graph, in FrameResources frame,
@@ -93,7 +82,13 @@ public sealed partial class ClusterPipelineSystem
                 case "InstanceProperties": pass.Bind(graph.CreateBufferCbv(frame.InstanceProperties, frame.InstancePropertiesRange), PipelineSync.ComputeShading); break;
                 case "MaterialBounds": Read(ref graph, ref pass, frame.MaterialBounds, sizeof(uint)); break;
                 case "CandidateArgs": Write(ref graph, ref pass, frame.CandidateArgs); break;
-                case "CandidateClusters": Write(ref graph, ref pass, frame.CandidateClusters, CandidateStride); break;
+                case "CandidateClusters":
+                    GraphBufferUavId candidates = graph.CreateBufferUav(frame.CandidateClusters, structureStride: CandidateStride);
+                    pass.Bind(mode == 2u
+                        ? GraphParameterResourceBinding.WritableBuffer(candidates, PipelineSync.ComputeShading,
+                            GraphAccessMode.Read, contentScope: BufferContentScope.CountBoundedPrefix)
+                        : GraphParameterResourceBinding.WritableBufferDescriptor(candidates));
+                    break;
                 case "CandidateCount": Write(ref graph, ref pass, frame.CandidateCount, sizeof(uint)); break;
                 case "PageFaultBuffer": Write(ref graph, ref pass, frame.PageFaults); break;
                 case "TraversalLevel": pass.Bind(graph.CreateBufferCbv(parameters.Buffer, parameters.Range), PipelineSync.ComputeShading); break;
