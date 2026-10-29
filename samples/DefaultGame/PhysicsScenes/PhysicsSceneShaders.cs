@@ -122,7 +122,8 @@ internal sealed partial class PhysicsSceneShaders
             entries[13], entries[14], entries[15], entries[16], entries[17]));
     }
 
-    internal DeviceAvbdKernels Avbd(bool contactSupports, bool jointBounds, int bodyCount, int contactCapacity)
+    internal DeviceAvbdKernels Avbd(bool contactSupports, bool jointBounds, int bodyCount, int contactCapacity,
+        bool hasJoints, bool hasDistanceRanges)
     {
         string[] names = ["ClearBodyIndices", "Initialize", "UpdateBody", "UpdateDuals", "InitializeSupports",
             "UpdateSupports", "ClearSupportBodies"];
@@ -134,12 +135,45 @@ internal sealed partial class PhysicsSceneShaders
             "PrepareDeviceSupportBodies", "PrepareDeviceSupportCandidates", "ClearDeviceSupportWorkQueue", "QueueDeviceSupportCandidates",
             "SeedDeviceSupportCandidates", "FinishDeviceSupportBodies", "ReleaseDeviceUnsupportedContacts", "ClearDeviceSupportIncoming",
             "WriteDeviceSupportIncoming", "QueueDeviceSupportLoads", "SeedDeviceSupportLoads"];
-        ComputePipelineDesc[] entries = Compile("scene_contact_avbd", SceneDefines(contactSupports, jointBounds) + """
+        string constraintDefines = "#define SCENE_HAS_JOINTS " + (hasJoints ? "1\n" : "0\n")
+            + "#define SCENE_HAS_DISTANCE_RANGES " + (hasDistanceRanges ? "1\n" : "0\n");
+        ComputePipelineDesc[] entries = Compile("scene_contact_avbd", SceneDefines(contactSupports, jointBounds) + constraintDefines + """
             #include "physics_dispatch.slang"
             #include "physics_avbd_contact.slang"
+            #if SCENE_HAS_JOINTS
             #include "physics_avbd_joint.slang"
+            #endif
+            #if SCENE_HAS_DISTANCE_RANGES
             #include "physics_avbd_distance_range.slang"
+            #endif
             #include "physics_awake_avbd.slang"
+            // Empty scene arrays still reserve one row and one group in the graph.
+            struct SceneEmptyAvbdConstraints : IDeviceAvbdConstraints
+            {
+                uint count() { return 1; }
+                bool active(uint row) { return false; }
+                uint bodyCount(uint row) { return 0; }
+                uint body(uint row,uint end) { return 0; }
+                bool writes(uint row,uint end) { return false; }
+                uint groupCount() { return 1; }
+                uint group(uint row) { return 0; }
+                void initialize(uint row,DeviceAvbdStep context) { }
+                void accumulate(uint row,uint bodyIndex,DeviceAvbdStep context,inout DeviceAvbdEquation equation) { }
+                void updateDuals(uint row,DeviceAvbdStep context) { }
+                override bool adjustsBody() { return false; }
+                void adjust(uint bodyIndex,DeviceAvbdStep context,DeviceAvbdEquation equation,
+                    inout float3 translation,inout float3 rotation) { }
+            };
+            #if SCENE_HAS_JOINTS
+            typedef DeviceJointAvbdConstraints SceneJointAvbdConstraints;
+            #else
+            typedef SceneEmptyAvbdConstraints SceneJointAvbdConstraints;
+            #endif
+            #if SCENE_HAS_DISTANCE_RANGES
+            typedef DeviceDistanceRangeAvbdConstraints SceneDistanceRangeAvbdConstraints;
+            #else
+            typedef SceneEmptyAvbdConstraints SceneDistanceRangeAvbdConstraints;
+            #endif
             #if SCENE_CONTACT_SUPPORTS
             #include "physics_avbd_contact_support.slang"
             #include "physics_contact_support_parallel.slang"
@@ -215,8 +249,8 @@ internal sealed partial class PhysicsSceneShaders
                 { inner.adjust(bodyIndex,context,equation,translation,rotation); }
             };
             typedef DeviceAvbdConstraintGroups<
-                DeviceAvbdConstraintGroups<SceneContactAvbdConstraints,DeviceJointAvbdConstraints>,
-                DeviceDistanceRangeAvbdConstraints> SceneOrdinaryConstraints;
+                DeviceAvbdConstraintGroups<SceneContactAvbdConstraints,SceneJointAvbdConstraints>,
+                SceneDistanceRangeAvbdConstraints> SceneOrdinaryConstraints;
             #if SCENE_JOINT_BOUNDS
             #include "physics_avbd_joint_bounds.slang"
             typedef DeviceAvbdConstraintGroups<SceneOrdinaryConstraints,DeviceJointBoundAvbdConstraints> SceneAvbdConstraints;
@@ -233,9 +267,9 @@ internal sealed partial class PhysicsSceneShaders
             [shader("compute")][numthreads(64,1,1)]
             void Initialize(uint3 id : SV_DispatchThreadID)
             { DeviceAwakeAvbdConstraints<SceneSolveRows> rows; DeviceAwakeBodies bodies; initializeDeviceAvbdRows(devicePhysicsThreadIndex(id,64),rows,bodies); }
-            [shader("compute")][numthreads(64,1,1)]
+            [shader("compute")][numthreads(1,1,1)]
             void UpdateBody(uint3 id : SV_DispatchThreadID)
-            { DeviceAwakeAvbdConstraints<SceneSolveRows> rows; updateDeviceAvbdBody(devicePhysicsThreadIndex(id,64),rows); }
+            { DeviceAwakeAvbdConstraints<SceneSolveRows> rows; updateDeviceAvbdBody(devicePhysicsThreadIndex(id,1),rows); }
             [shader("compute")][numthreads(64,1,1)]
             void UpdateDuals(uint3 id : SV_DispatchThreadID)
             { DeviceAwakeAvbdConstraints<SceneSolveRows> rows; updateDeviceAvbdDuals(devicePhysicsThreadIndex(id,64),rows); }
@@ -269,7 +303,7 @@ internal sealed partial class PhysicsSceneShaders
         // Persistent consumers share one ready list; mapping kernels still cover every row.
         const int maximumSupportWorkerGroups = 128;
         DispatchArguments supportWorkers = DevicePhysicsDispatch.CreateGroups(Math.Min(maximumSupportWorkerGroups,
-            (contactCapacity + 63) / 64));
+            (bodyCount + 63) / 64));
         var initialization = new List<DeviceAvbdGroupDispatch>();
         var updates = new List<DeviceAvbdGroupDispatch>();
         if (contactSupports)
@@ -440,6 +474,7 @@ internal sealed partial class PhysicsSceneShaders
         {
             Targets = [target], SearchPaths = [_directory], DefaultMatrixLayoutMode = SlangMatrixLayoutMode.RowMajor,
             CompilerOptionEntries = [new(CompilerOptionName.VulkanUseEntryPointName, CompilerOptionValue.FromInt(1)),
+                new(CompilerOptionName.Optimization, CompilerOptionValue.FromInt((int)SlangOptimizationLevel.Maximal)),
                 new(CompilerOptionName.DebugInformation, CompilerOptionValue.FromInt(0))],
         }, out ISession session));
         IModule? unit = session.LoadModuleFromSource(name, Path.Combine(_directory, name + ".slang"),

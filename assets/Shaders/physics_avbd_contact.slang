@@ -19,12 +19,10 @@ struct DeviceAvbdContactEquation
     float3 tangentForce; float3 tangentDirection;
     float alongStiffness; float acrossStiffness;
 };
-DeviceAvbdContactEquation deviceEvaluateAvbdContact(uint row,DeviceAvbdStep context,float3 extraForceOnSecond)
+DeviceAvbdContactEquation deviceEvaluateAvbdContact(DeviceContactConstraint point,DeviceAvbdContactState state,
+    DeviceAvbdStep context,float3 extraForceOnSecond,float3 delta,float3 normalDelta)
 {
-    DeviceContactConstraint point=DeviceContacts[row];
-    DeviceAvbdContactState state=DeviceAvbdContactStates[row];
-    float3 delta=deviceContactDelta(point,false);
-    float gap=point.separation+dot(point.normal,deviceContactNormalDelta(point,false)-point.bodyAnchorDelta);
+    float gap=point.separation+dot(point.normal,normalDelta-point.bodyAnchorDelta);
     float residual=gap<0?gap-context.initialErrorFraction*min(state.initialSeparation,0):gap;
     float2 terms=deviceAvbdMaterial(point.normalStiffness,state.normalPenalty);
     float force=min(0,terms.x*state.normalMultiplier+terms.y*residual);
@@ -64,6 +62,12 @@ DeviceAvbdContactEquation deviceEvaluateAvbdContact(uint row,DeviceAvbdStep cont
     result.tangentForce=tangent; result.tangentDirection=direction; result.alongStiffness=along; result.acrossStiffness=across;
     return result;
 }
+DeviceAvbdContactEquation deviceEvaluateAvbdContact(uint row,DeviceAvbdStep context,float3 extraForceOnSecond)
+{
+    DeviceContactConstraint point=DeviceContacts[row];
+    return deviceEvaluateAvbdContact(point,DeviceAvbdContactStates[row],context,extraForceOnSecond,
+        deviceContactDelta(point,false),deviceContactNormalDelta(point,false));
+}
 // Positive contact-potential curvature follows Giles AVBD through
 // tools/SomeEngine.Physics.Research/Native/AvbdContact.cpp on codex/job331-380.
 // Copyright (c) 2026 Chris Giles. Permission to use, copy, modify, distribute and sell
@@ -75,39 +79,64 @@ void deviceAccumulateAvbdContactEquation(uint row,uint bodyIndex,DeviceAvbdStep 
     bool normalUpperBound,bool angularCurvature,inout DeviceAvbdEquation equation)
 {
     DeviceContactConstraint point=DeviceContacts[row];
-    DeviceAvbdContactEquation contact=deviceEvaluateAvbdContact(row,context,extraForce);
-    float3 linear,angular;
-    deviceContactNormalJacobian(point,bodyIndex,point.normal,linear,angular);
-    float normalStiffness=contact.normalStiffness;
-    if(normalUpperBound&&normalStiffness==0)
-        normalStiffness=deviceAvbdMaterial(point.normalStiffness,DeviceAvbdContactStates[row].normalPenalty).y;
-    deviceAvbdAddRow(equation,linear,angular,contact.normalForce,normalStiffness);
-    float3 across=cross(point.normal,contact.tangentDirection);
-    deviceContactJacobian(point,bodyIndex,contact.tangentDirection,linear,angular);
-    deviceAvbdAddRow(equation,linear,angular,dot(contact.tangentForce,contact.tangentDirection),contact.alongStiffness);
-    deviceContactJacobian(point,bodyIndex,across,linear,angular);
-    deviceAvbdAddRow(equation,linear,angular,dot(contact.tangentForce,across),contact.acrossStiffness);
-    if(angularCurvature)
+    DeviceAvbdContactState state=DeviceAvbdContactStates[row];
+    DeviceContactBody originLink=DeviceContactBodyLinks[point.bodyOffset+point.firstBodyCount];
+    float3 origin=DeviceBodyStates[originLink.stateIndex].position;
+    float3 first=float3(0),second=float3(0),firstNormal=float3(0),secondNormal=float3(0);
+    float3 materialArm=float3(0),normalArm=float3(0); float linearWeight=0;
+    float materialCurvatureLength=0,normalCurvatureLength=0,tangentCurvatureLength=0;
+    for(uint end=0;end<point.bodyCount;end++)
     {
-        DeviceBodyState body=DeviceBodyStates[bodyIndex];
-        float3 force=point.normal*contact.normalForce+contact.tangentForce-extraForce;
-        float normalForce=dot(force,point.normal);
-        float curvature=0;
-        for(uint end=0;end<point.bodyCount;end++)
+        DeviceContactBody link=DeviceContactBodyLinks[point.bodyOffset+end];
+        DeviceBodyState body=DeviceBodyStates[link.stateIndex];
+        float3 relative=body.position-origin;
+        float3 materialPoint=relative+bodyRotate(body.rotation,link.localPoint);
+        float3 normalPoint=link.normalReference==1?relative:materialPoint;
+        if(end<point.firstBodyCount)
+        { first+=materialPoint*link.weight; firstNormal+=normalPoint*link.weight; }
+        else
+        { second+=materialPoint*link.weight; secondNormal+=normalPoint*link.weight; }
+        if(link.stateIndex!=bodyIndex) continue;
+        float weight=link.weight*(end<point.firstBodyCount?-1:1);
+        float3 arm=deviceContactArm(body,link.localPoint);
+        float3 normalReferenceArm=link.normalReference==1?deviceContactArm(body,float3(0)):arm;
+        linearWeight+=weight; materialArm+=arm*weight; normalArm+=normalReferenceArm*weight;
+        if(angularCurvature)
         {
-            DeviceContactBody link=DeviceContactBodyLinks[point.bodyOffset+end];
-            if(link.stateIndex!=bodyIndex) continue;
-            float3 arm=deviceContactArm(body,link.localPoint);
-            if(link.normalReference==0) curvature+=abs(link.weight)*length(arm)*length(force);
+            float materialLength=abs(link.weight)*length(arm);
+            if(link.normalReference==0) materialCurvatureLength+=materialLength;
             else
             {
-                float3 normalArm=deviceContactArm(body,deviceContactNormalLocalPoint(link));
-                curvature+=abs(link.weight)*(length(normalArm)*abs(normalForce)+length(arm)*length(force-point.normal*normalForce));
+                normalCurvatureLength+=abs(link.weight)*length(normalReferenceArm);
+                tangentCurvatureLength+=materialLength;
             }
         }
-        deviceAvbdAddRow(equation,float3(0),float3(1,0,0),0,curvature);
-        deviceAvbdAddRow(equation,float3(0),float3(0,1,0),0,curvature);
-        deviceAvbdAddRow(equation,float3(0),float3(0,0,1),0,curvature);
+    }
+    DeviceAvbdContactEquation contact=deviceEvaluateAvbdContact(point,state,context,extraForce,second-first,secondNormal-firstNormal);
+    float normalStiffness=contact.normalStiffness;
+    if(normalUpperBound&&normalStiffness==0)
+        normalStiffness=deviceAvbdMaterial(point.normalStiffness,state.normalPenalty).y;
+    if(contact.normalForce!=0||normalStiffness!=0)
+        deviceAvbdAddRow(equation,point.normal*linearWeight,cross(normalArm,point.normal),contact.normalForce,normalStiffness);
+    float tangentForce=dot(contact.tangentForce,contact.tangentDirection);
+    if(tangentForce!=0||contact.alongStiffness!=0)
+        deviceAvbdAddRow(equation,contact.tangentDirection*linearWeight,cross(materialArm,contact.tangentDirection),tangentForce,contact.alongStiffness);
+    float3 across=cross(point.normal,contact.tangentDirection);
+    float acrossForce=dot(contact.tangentForce,across);
+    if(acrossForce!=0||contact.acrossStiffness!=0)
+        deviceAvbdAddRow(equation,across*linearWeight,cross(materialArm,across),acrossForce,contact.acrossStiffness);
+    if(angularCurvature)
+    {
+        float3 force=point.normal*contact.normalForce+contact.tangentForce-extraForce;
+        float normalForce=dot(force,point.normal);
+        float curvature=materialCurvatureLength*length(force)+normalCurvatureLength*abs(normalForce)
+            +tangentCurvatureLength*length(force-point.normal*normalForce);
+        if(curvature!=0)
+        {
+            deviceAvbdAddRow(equation,float3(0),float3(1,0,0),0,curvature);
+            deviceAvbdAddRow(equation,float3(0),float3(0,1,0),0,curvature);
+            deviceAvbdAddRow(equation,float3(0),float3(0,0,1),0,curvature);
+        }
     }
 }
 void deviceAccumulateAvbdContact(uint row,uint bodyIndex,DeviceAvbdStep context,float3 extraForce,inout DeviceAvbdEquation equation)

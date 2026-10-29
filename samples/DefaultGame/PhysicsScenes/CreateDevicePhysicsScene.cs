@@ -67,7 +67,8 @@ public static partial class PhysicsScenes
         bool useJointBounds = settings.JointBounds.Levels > 0 && data.Joints.Length > 0;
         DeviceGraphKernels graphKernels = shaders.Graph(settings.ContactSupports.HasValue, useJointBounds);
         DeviceAvbdKernels avbdKernels = shaders.Avbd(settings.ContactSupports.HasValue, useJointBounds,
-            data.Bodies.Length, contactCapacity);
+            data.Bodies.Length, contactCapacity, hasJoints: data.Joints.Length > 0,
+            hasDistanceRanges: data.DistanceRanges is { Length: > 0 });
         DeviceContactKernels responseKernels = shaders.Responses();
 
         var bodies = new DeviceBodies(backend, device, data.Bodies.Length);
