@@ -59,8 +59,8 @@ public sealed class PackedMaterialShaderTests
                 SlangShaderImporter.CreateDefaultTargets(TestShaderLoading.Slang));
             Shader looseDefault = await looseFile.CreateSavedAsync(TestShaderLoading.Slang, description);
             Shader packedDefault = await packedFile.CreateSavedAsync(TestShaderLoading.Slang, description);
-            var looseEntries = new Shader[3];
-            var packedEntries = new Shader[3];
+            var looseEntries = new Shader[4];
+            var packedEntries = new Shader[4];
             int entryIndex = 0;
 
             foreach ((string entryName, string[] expressions) in new[]
@@ -68,6 +68,7 @@ public sealed class PackedMaterialShaderTests
                 ("ClusterShadowRequests", new[] { "0", "0" }),
                 ("ClusterShadeMode", new[] { "0" }),
                 ("ClusterForwardShade", new[] { "0", "0" }),
+                ("ClusterPrimaryDepthShadowRequests", new[] { "0", "0" }),
             })
             {
                 SpecializationArg[] arguments = expressions.Select(SpecializationArg.FromExpression).ToArray();
@@ -90,6 +91,7 @@ public sealed class PackedMaterialShaderTests
                 (1, "ClusterShadeMode", ["0"]),
                 (0, "ClusterShadowRequests", ["0", "0"]),
                 (2, "ClusterForwardShade", ["0", "0"]),
+                (3, "ClusterPrimaryDepthShadowRequests", ["0", "0"]),
             })
             {
                 Assert.True(material.Loose.TryGetSpecialization(entryName, arguments, out Shader looseLazy));
@@ -120,7 +122,7 @@ public sealed class PackedMaterialShaderTests
             actualReflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null);
         AssertVariables(expectedEntry.VarLayout, actualEntry.VarLayout);
         // Compare the live direct-request resources as well as their complete reflected layouts.
-        if (entryName == "ClusterShadowRequests" && name == "Standard")
+        if ((entryName is "ClusterShadowRequests" or "ClusterPrimaryDepthShadowRequests") && name == "Standard")
         {
             ShaderParameterResource[] resources = actual.GetSlangResourceLayout(
                 SlangCompileTarget.Dxil, entryName).Resources.ToArray();

@@ -20,6 +20,18 @@ Deform、Raster、Shade 的执行兼容性由各 stage 自己的 Slang 类型与
 
 `IVertexEvaluate` 使用通用变换数据和用户顶点表示；Cluster 的实例布局及资源读取由 Cluster 实现持有。
 
+材质组合通过 `CLUSTER_FORWARD_DEPTH_POSITION` 声明普通 Forward 接收点与主视图深度一致，
+并实现 `IPrimaryDepthSurfaceEvaluate<TSurface, TTriangle>`。`evaluatePrimaryDepthSurface` 接收完整曲面输入，
+由材质选择该深度位置与相应深度偏移；`markPrimaryDepthShadowPages` 接收当前分箱像素与深度，
+由材质解释位置并调用 VSM 标页函数。Standard 使用自己的 `MaterialViews` 重建位置。
+组合入口生成 `ClusterPrimaryDepthShadowRequests`，保存与普通请求相同的深度和调试特化参数后，
+Forward 在材质阶段解析时选择该入口。含第一人称网格时，材质请求沿完整 vertex/domain 和材质求值取得位置。
+Deferred 与通用材质使用 `ClusterShadowRequests`，透明材质在自己的覆盖求值中标页。
+实现见 [材质接口](../../../assets/Shaders/material_interfaces.slang)、
+[Standard](../../../assets/Shaders/standard_material.slang)、
+[Cluster 入口](../../../assets/Shaders/cluster_material_entries.slang)与
+[材质阶段选择](../../../src/SomeEngine.Render.Cluster.Pipeline/ClusterMaterialStages.cs)。
+
 `IDomainEvaluate<TVertex>.makeTriangle(first, second, third, materialIndex)` 接收三个用户顶点和当前三角形对应的材质标量地址。Shade 与 Tessellation 都按实例材质绑定起点加上 Cluster 三角形的局部材质编号取得该地址。用户 `TriangleData` 可保存它，再通过 `LoadMaterialScalars<T>` 解释自己的参数结构；两个阶段共用 `MaterialScalarRegion` 和 `MaterialScalarOffsets`。曲面继续提供 `position`、`eval`、`reconstruct`、`bounds`、`patchBounds` 与 `errorBounds`，细分与着色使用同一数学定义。
 
 公共 Cluster 材质入口和细分入口都接受 `CLUSTER_VERTEX_ENCODING`，值与调用方编码器的身份一致。细分入口通过 `CLUSTER_TESSELLATION_BOUNDS` 声明有限包围或对应的裁剪配置。实现分别见 [domain_interfaces](../../../assets/Shaders/domain_interfaces.slang)、[cluster_tessellation_entries](../../../assets/Shaders/cluster_tessellation_entries.slang) 与 [ClusterPipelineSystem.Materials](../../../src/SomeEngine.Render.Cluster.Pipeline/ClusterPipelineSystem.Materials.cs)。

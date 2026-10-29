@@ -28,6 +28,13 @@
             ]
           },
           {
+            "EntryPoint": "ClusterPrimaryDepthShadowRequests",
+            "Arguments": [
+              "0",
+              "0"
+            ]
+          },
+          {
             "EntryPoint": "ClusterForwardShade",
             "Arguments": [
               "0",
@@ -42,6 +49,13 @@
           },
           {
             "EntryPoint": "ClusterShadowRequests",
+            "Arguments": [
+              "0",
+              "8"
+            ]
+          },
+          {
+            "EntryPoint": "ClusterPrimaryDepthShadowRequests",
             "Arguments": [
               "0",
               "8"

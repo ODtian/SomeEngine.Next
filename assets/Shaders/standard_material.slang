@@ -88,7 +88,8 @@ StandardPixelContext BuildStandardPixelContext(
     return ctx;
 }
 
-struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ITransparentSurfaceEvaluate<SurfaceEval, Triangle>
+struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ITransparentSurfaceEvaluate<SurfaceEval, Triangle>,
+    IPrimaryDepthSurfaceEvaluate<SurfaceEval, Triangle>
 {
     // Textures
     Texture2D AlbedoMap;
@@ -102,14 +103,17 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ITransparentS
         SurfacePixelInput input,
         SurfaceEval surface,
         float3 bary,
-        Triangle triangle)
+        Triangle triangle,
+        bool primaryDepthPosition = false)
     {
         StandardPixelContext ctx = BuildStandardPixelContext(
             input.PixelCoord,
             input.InstanceID,
             surface);
 
-        if (input.VisibilityDepth == 2u)
+        bool firstPerson = (LoadInstanceFirstPerson(MaterialInstanceData, MaterialInstanceProperties, input.InstanceID).x & 3u) == 1u;
+        bool depthPosition = input.VisibilityDepth == 2u || (primaryDepthPosition && !firstPerson);
+        if (depthPosition)
             ctx.surfacePosition = input.PositionFromDepth;
         float2 uvDx = triangle.TexCoord0 * input.BarycentricDx.x + triangle.TexCoord1 * input.BarycentricDx.y + triangle.TexCoord2 * input.BarycentricDx.z;
         float2 uvDy = triangle.TexCoord0 * input.BarycentricDy.x + triangle.TexCoord1 * input.BarycentricDy.y + triangle.TexCoord2 * input.BarycentricDy.z;
@@ -176,7 +180,7 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ITransparentS
         ClusterViewUniforms surfaceView = ApplyFirstPersonViewTransform(MaterialInstanceData, MaterialInstanceProperties,
             input.InstanceID, cameraView);
         float4 sourceClip = mul(float4(ClusterPositionForView(surface.Position, surfaceView), 1.0), surfaceView.ViewProj);
-        receiver.DepthOffset = input.VisibilityDepth == 2u ? input.Depth - sourceClip.z / sourceClip.w : 0.0;
+        receiver.DepthOffset = depthPosition ? input.Depth - sourceClip.z / sourceClip.w : 0.0;
         float3 V = normalize(cameraView.CameraPos - ctx.surfacePosition);
         // Default materials retain the legacy ARM.r occlusion convention.
         float ao = scalars.UseOcclusionMap ? OcclusionMap.SampleLevel(MaterialSampler, ctx.uv0, 0.0).r : armSample.r;
@@ -246,6 +250,22 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ITransparentS
     {
         float4 color = evaluateColor(input, surface, bary, triangle);
         outputColor[input.PixelCoord] = float4(color.rgb, 1.0);
+    }
+
+    void evaluatePrimaryDepthSurface(SurfacePixelInput input, SurfaceEval surface, float3 bary,
+        Triangle triangle, RWTexture2DArray<float4> outputColor)
+    {
+        float4 color = evaluateColor(input, surface, bary, triangle, true);
+        outputColor[input.PixelCoord] = float4(color.rgb, 1.0);
+    }
+
+    void markPrimaryDepthShadowPages(uint3 pixelCoord, float depth)
+    {
+        ClusterViewUniforms view = MaterialViews[pixelCoord.z];
+        float2 uv = (float2(pixelCoord.xy) + .5) / float2(view.ScreenWidth, view.ScreenHeight);
+        float4 world = mul(float4(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, depth, 1.0), view.ClipToWorld);
+        float3 position = abs(world.w) > 1e-8 ? world.xyz / world.w : world.xyz;
+        MarkVirtualShadowPages(position, pixelCoord.z);
     }
 
     float4 evaluateDebugColor(uint debugMode, SurfacePixelInput input,

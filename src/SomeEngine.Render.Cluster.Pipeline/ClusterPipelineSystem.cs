@@ -398,10 +398,17 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         bool assignmentsChanged = !_graphInstalled ||
             _installedMaterialTopologyVersion != assignments.TopologyVersion;
         bool materialResourcesChanged = CollectMaterialChanges(assignments, assignmentsChanged) || decalResourcesChanged;
+        bool primaryDepthRequests = _options.ShadingPath == ClusterShadingPath.Forward && _shadowRequestRegion != default;
+        if (primaryDepthRequests)
+        {
+            RefreshCasterInputs();
+            primaryDepthRequests = !_hasFirstPersonReceiverMeshes;
+        }
         bool shadingChanged = _installedShadeStages is null ||
             _installedShadeStages.ShadingPath != _options.ShadingPath ||
             _installedShadeStages.DebugMode != _options.DebugMode ||
-            _installedShadeStages.HasShadowRequests != (_shadowRequestRegion != default);
+            _installedShadeStages.HasShadowRequests != (_shadowRequestRegion != default) ||
+            _installedShadeStages.PrimaryDepthRequests != primaryDepthRequests;
         // Unknown evaluators remain conservative. Complete declarations let shading-only
         // edits preserve depth while the ordinary scalar upload still carries their new values.
         bool materialDepthChanged = assignmentsChanged || _rasterChangedMaterials.Count != 0;
@@ -428,20 +435,21 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             if (materialDepthChanged) _rasterRevision = checked(_rasterRevision + 1);
             return GraphData.Outputs;
         }
-        return ReconcileGraph(assignments, sourceAssignments, materialResourcesChanged);
+        return ReconcileGraph(assignments, sourceAssignments, materialResourcesChanged, primaryDepthRequests);
     }
 
     private ClusterPipelineOutputs ReconcileGraph(
         ClusterMaterialAssignmentSet assignments,
         ClusterMaterialAssignmentSet sourceAssignments,
-        bool materialResourcesChanged)
+        bool materialResourcesChanged, bool primaryDepthRequests)
     {
         bool assignmentsChanged = !_graphInstalled ||
             _installedMaterialTopologyVersion != assignments.TopologyVersion;
         bool shadingChanged = _installedShadeStages is null ||
             _installedShadeStages.ShadingPath != _options.ShadingPath ||
             _installedShadeStages.DebugMode != _options.DebugMode ||
-            _installedShadeStages.HasShadowRequests != (_shadowRequestRegion != default);
+            _installedShadeStages.HasShadowRequests != (_shadowRequestRegion != default) ||
+            _installedShadeStages.PrimaryDepthRequests != primaryDepthRequests;
         bool materialDepthChanged = assignmentsChanged || _rasterChangedMaterials.Count != 0;
         if (!_graphInstalled)
         {
@@ -465,7 +473,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             else rasterStages = _installedRasterStages!;
             using (SomeEngine.Diagnostics.EngineTrace.Begin(ShadeStagesTrace))
                 shadeStages = _shadeStages!.Resolve(assignments, _options.ShadingPath, _options.DebugMode,
-                    _shadowRequestRegion != default);
+                    _shadowRequestRegion != default, primaryDepthRequests);
             scalars = _materialScalars.Update(shadeStages, assignments,
                 _renderDevice.GetTextureDescriptorIndex, shadingChanged
                     ? assignments.ActiveOffsets.Concat(_textureScalarChanges) : _textureScalarChanges);

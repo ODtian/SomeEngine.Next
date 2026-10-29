@@ -31,7 +31,8 @@ UnlitPixelContext BuildUnlitPixelContext(
     return ctx;
 }
 
-struct UnlitMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ITransparentSurfaceEvaluate<SurfaceEval, Triangle>
+struct UnlitMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ITransparentSurfaceEvaluate<SurfaceEval, Triangle>,
+    IPrimaryDepthSurfaceEvaluate<SurfaceEval, Triangle>
 {
     Texture2D AlbedoMap;
     SamplerState MaterialSampler;
@@ -93,6 +94,14 @@ struct UnlitMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ITransparentSurf
     }
 
     void markShadowPages(SurfacePixelInput input, SurfaceEval surface, float3 bary, Triangle triangle) {}
+
+    void evaluatePrimaryDepthSurface(SurfacePixelInput input, SurfaceEval surface, float3 bary,
+        Triangle triangle, RWTexture2DArray<float4> outputColor)
+    {
+        evaluateSurface(input, surface, bary, triangle, outputColor);
+    }
+
+    void markPrimaryDepthShadowPages(uint3 pixelCoord, float depth) {}
 
 };
 

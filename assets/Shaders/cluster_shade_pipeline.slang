@@ -385,6 +385,27 @@ void WriteClusterMotion<
             : ClusterMotionClipToUv(currentClip) - ClusterMotionClipToUv(previousClip);
 }
 
+bool TryReadShadePixel(uint3 tid, out uint3 coord)
+{
+    coord = 0u.xxx;
+    uint group = tid.x / 64u + tid.y * 65535u, lane = tid.x % 64u;
+    uint tiles = BinCounts[Uniforms.ShadingBin * 2u];
+    uint quads = BinCounts[Uniforms.ShadingBin * 2u + 1u];
+    bool fullTile = group < tiles;
+    uint workIndex = fullTile ? group : (group - tiles) * 16u + lane / 4u;
+    if (!fullTile && workIndex >= quads) return false;
+    ShadePixelWork work = PixelCoordBuffer[BinOffsets[Uniforms.ShadingBin * 2u + (fullTile ? 0u : 1u)] + workIndex];
+    uint row = work.PixelIndex / Uniforms.ScreenWidth;
+    coord = uint3(work.PixelIndex % Uniforms.ScreenWidth,
+        row % Uniforms.ScreenHeight, row / Uniforms.ScreenHeight);
+    uint corner = lane & 3u;
+    if (!fullTile && (work.Mask & (1u << corner)) == 0u) return false;
+    uint quad = lane / 4u;
+    coord.xy += uint2(corner & 1u, corner >> 1u);
+    if (fullTile) coord.xy += uint2(quad % 4u, quad / 4u) * 2u;
+    return coord.x < Uniforms.ScreenWidth && coord.y < Uniforms.ScreenHeight;
+}
+
 bool TryEvaluateSurfacePixel<TVE, TDomain>(
     uniform TVE vertexEval, uniform TDomain domain, uint3 tid, uint visibilityDepth,
     out TriangleInfo tri, out ClusterViewUniforms view, out TDomain.TriangleData triangle,
@@ -398,21 +419,8 @@ bool TryEvaluateSurfacePixel<TVE, TDomain>(
     bary = 0.0.xxx;
     evaluated = {};
     input = {};
-    uint group = tid.x / 64u + tid.y * 65535u, lane = tid.x % 64u;
-    uint tiles = BinCounts[Uniforms.ShadingBin * 2u];
-    uint quads = BinCounts[Uniforms.ShadingBin * 2u + 1u];
-    bool fullTile = group < tiles;
-    uint workIndex = fullTile ? group : (group - tiles) * 16u + lane / 4u;
-    if (!fullTile && workIndex >= quads) return false;
-    ShadePixelWork work = PixelCoordBuffer[BinOffsets[Uniforms.ShadingBin * 2u + (fullTile ? 0u : 1u)] + workIndex];
-    uint row = work.PixelIndex / Uniforms.ScreenWidth;
-    uint3 coord = uint3(work.PixelIndex % Uniforms.ScreenWidth,
-        row % Uniforms.ScreenHeight, row / Uniforms.ScreenHeight);
-    uint corner = lane & 3u;
-    if (!fullTile && (work.Mask & (1u << corner)) == 0u) return false;
-    uint quad = lane / 4u;
-    coord.xy += uint2(corner & 1u, corner >> 1u);
-    if (fullTile) coord.xy += uint2(quad % 4u, quad / 4u) * 2u;
+    uint3 coord;
+    if (!TryReadShadePixel(tid, coord)) return false;
     if (!decodeTriangle(coord, tri)) return false;
     triangle = evaluateTriangle<TVE, TDomain>(vertexEval, domain, tri);
     view = ApplyFirstPersonViewTransform(
@@ -496,7 +504,6 @@ void CSForwardShade<TVE, TDomain, TSurface>(
     where TVE : IVertexEvaluate
     where TDomain : IDomainEvaluate<TVE.Vertex>
     where TSurface : ISurfaceEvaluate<TDomain.Surface, TDomain.TriangleData>
-    where TSurface : ITransparentSurfaceEvaluate<TDomain.Surface, TDomain.TriangleData>
 {
     TriangleInfo tri;
     ClusterViewUniforms view;
@@ -511,6 +518,16 @@ void CSForwardShade<TVE, TDomain, TSurface>(
         surface.evaluateDebug(debugMode, input, evaluated, bary, triangle, OutputColor);
     else
         surface.evaluateSurface(input, evaluated, bary, triangle, OutputColor);
+}
+
+void CSRequestPrimaryDepthShadowPages<TSurface, TTriangle, TEvaluator>(uniform TEvaluator surface, uint3 tid)
+    where TEvaluator : IPrimaryDepthSurfaceEvaluate<TSurface, TTriangle>
+{
+    uint3 coord;
+    if (!TryReadShadePixel(tid, coord)) return;
+    uint visibility = VisBuffer[coord];
+    if (IsVisBufferEmpty(visibility)) return;
+    surface.markPrimaryDepthShadowPages(coord, DepthBuffer.Load(int4(coord, 0)));
 }
 
 #endif

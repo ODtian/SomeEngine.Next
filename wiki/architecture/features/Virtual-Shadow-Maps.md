@@ -16,6 +16,12 @@ void MarkVirtualShadowPages(float3 worldPosition, uint viewIndex, bool firstPers
 
 Cluster 的标准材质通过 `markShadowPages` 接口在已分箱的表面求值阶段调用该函数。透明管线沿实际三角形投影、像素覆盖及命中求值调用同一接口；请求阶段每帧执行。调用链见 [Cluster 页请求](../../../src/SomeEngine.Render.Cluster.Pipeline/ClusterPipelineSystem.ShadowRequests.cs)、[标准材质](../../../assets/Shaders/standard_material.slang)与[透明请求](../../../assets/Shaders/cluster_transparency.slang)。
 
+声明 `CLUSTER_FORWARD_DEPTH_POSITION` 并保存 `ClusterPrimaryDepthShadowRequests` 特化的材质，
+在普通 Forward 请求中通过 `markPrimaryDepthShadowPages` 解释已分箱像素的主深度。
+Standard 的 Forward 着色使用同一个深度位置，并保留完整曲面数据用于法线、纹理与运动矢量。
+含第一人称网格时，材质请求通过原表面求值取得位置；页请求继续进入本页的同一个标记函数与覆盖资源。
+材质接口与选择规则见 [User Stage Interfaces](../shader/User-Stage-Interfaces.md)。
+
 页标记根据提供的位置、视图投影参数和动态精度偏移选择方向光 clipmap 级别或局部光 mip。请求范围覆盖过滤半径与法线偏移，并处理相邻页、覆盖单元和点光源相邻面。
 
 ## 每页基础请求数据

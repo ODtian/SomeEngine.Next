@@ -40,6 +40,7 @@ public static class SampleMaterials
         {
             inputs.Specializations.Add(new() { EntryPoint = "ClusterShadeMode", Arguments = [mode] });
             inputs.Specializations.Add(new() { EntryPoint = "ClusterShadowRequests", Arguments = ["0", mode] });
+            inputs.Specializations.Add(new() { EntryPoint = "ClusterPrimaryDepthShadowRequests", Arguments = ["0", mode] });
             inputs.Specializations.Add(new() { EntryPoint = "ClusterForwardShade", Arguments = ["0", mode] });
         }
         IGlobalSession slang = SlangShaderImporter.GlobalSession;

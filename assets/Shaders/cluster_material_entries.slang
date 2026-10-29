@@ -278,6 +278,18 @@ void ClusterShadowRequests<let visibilityDepth : uint, let debugMode : uint>(
     CSRequestShadowPages(vertex, domain, surface, tid, visibilityDepth);
 }
 
+#if defined(CLUSTER_FORWARD_DEPTH_POSITION) && defined(CLUSTER_SURFACE_MODES)
+[VertexEncoding(CLUSTER_VERTEX_ENCODING)]
+[shader("compute")]
+[numthreads(64, 1, 1)]
+void ClusterPrimaryDepthShadowRequests<let visibilityDepth : uint, let debugMode : uint>(
+    uniform VertexEvaluate vertex, uniform DomainEvaluate domain,
+    uniform SurfaceEvaluate surface, uint3 tid : SV_DispatchThreadID)
+{
+    CSRequestPrimaryDepthShadowPages<DomainEvaluate.Surface, DomainEvaluate.TriangleData, SurfaceEvaluate>(surface, tid);
+}
+#endif
+
 [VertexEncoding(CLUSTER_VERTEX_ENCODING)]
 [shader("compute")]
 [numthreads(64, 1, 1)]
@@ -285,7 +297,13 @@ void ClusterForwardShade<let visibilityDepth : uint, let debugMode : uint>(
     uniform VertexEvaluate vertex, uniform DomainEvaluate domain,
     uniform SurfaceEvaluate surface, uint3 tid : SV_DispatchThreadID)
 {
+#if defined(CLUSTER_FORWARD_DEPTH_POSITION) && defined(CLUSTER_SURFACE_MODES)
+    PrimaryDepthMaterial<DomainEvaluate.Surface, DomainEvaluate.TriangleData, SurfaceEvaluate> selected;
+    selected.Evaluator = surface;
+    CSForwardShade(vertex, domain, selected, tid, visibilityDepth, debugMode);
+#else
     CSForwardShade(vertex, domain, surface, tid, visibilityDepth, debugMode);
+#endif
 }
 #endif
 

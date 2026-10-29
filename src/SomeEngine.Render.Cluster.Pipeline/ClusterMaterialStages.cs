@@ -16,6 +16,7 @@ internal static class ClusterMaterialEntries
     internal const string Shade = "ClusterShade";
     internal const string ShadeMode = "ClusterShadeMode";
     internal const string ShadowRequests = "ClusterShadowRequests";
+    internal const string PrimaryDepthShadowRequests = "ClusterPrimaryDepthShadowRequests";
     internal const string ForwardShade = "ClusterForwardShade";
     internal const string SoftwareTarget = "ClusterRasterSoftwareTarget";
     internal const string SoftwareMeshletTarget = "ClusterRasterSoftwareMeshletTarget";
@@ -1185,12 +1186,12 @@ internal sealed class ClusterShadeStages : IDisposable
     private ClusterMaterialAssignmentSet? _resolvedAssignments;
 
     internal ClusterShadeStageSet Resolve(ClusterMaterialAssignmentSet assignments,
-        ClusterShadingPath shadingPath, uint debugMode, bool requestShadowPages)
+        ClusterShadingPath shadingPath, uint debugMode, bool requestShadowPages, bool primaryDepthRequests)
     {
         using var trace = SomeEngine.Diagnostics.EngineTrace.Begin(ResolveTrace);
         ObjectDisposedException.ThrowIf(_disposed, this);
         bool shadingChanged = _resolved.ShadingPath != shadingPath || _resolved.DebugMode != debugMode ||
-            _resolved.HasShadowRequests != requestShadowPages;
+            _resolved.HasShadowRequests != requestShadowPages || _resolved.PrimaryDepthRequests != primaryDepthRequests;
         if (ReferenceEquals(assignments, _resolvedAssignments) && !shadingChanged) return _resolved;
         var addresses = _resolvedAssignments is null || shadingChanged
             ? new HashSet<int>(assignments.ActiveOffsets)
@@ -1217,11 +1218,13 @@ internal sealed class ClusterShadeStages : IDisposable
             bool forward = shadingPath == ClusterShadingPath.Forward;
             ClusterShadeInvocation invocation = CreateInvocation(material, encoding,
                 forward ? ClusterMaterialEntries.ForwardShade : ClusterMaterialEntries.Shade, debugMode, materialStage);
+            string requestEntry = primaryDepthRequests && material.Shader!.HasSpecializations(ClusterMaterialEntries.PrimaryDepthShadowRequests)
+                ? ClusterMaterialEntries.PrimaryDepthShadowRequests : ClusterMaterialEntries.ShadowRequests;
             invocation = invocation with
             {
-                RequestShader = requestShadowPages && material.Shader!.HasSpecializations(ClusterMaterialEntries.ShadowRequests)
+                RequestShader = requestShadowPages && material.Shader!.HasSpecializations(requestEntry)
                     ? CreateInvocation(material, encoding,
-                    ClusterMaterialEntries.ShadowRequests, debugMode, materialStage?.RequestShader) : null,
+                    requestEntry, debugMode, materialStage?.RequestShader) : null,
             };
             HashSet<uint> properties = [];
             ClusterMaterialEntries.AddResourceProperties(properties, invocation.MaterialProperties);
@@ -1242,7 +1245,8 @@ internal sealed class ClusterShadeStages : IDisposable
             { BinIndex = index, RequestShader = stage.RequestShader is { } receiver ? receiver with { BinIndex = index } : null });
         var result = new ClusterShadeStageSet(bins.GetIndices(
             assignments.SlotCapacity, _resolved.BinIndices, addresses),
-            invocations, bins.Range, scalarLayouts, [.. bins.Changes], [.. addresses], shadingPath, debugMode, requestShadowPages);
+            invocations, bins.Range, scalarLayouts, [.. bins.Changes], [.. addresses], shadingPath, debugMode, requestShadowPages,
+            primaryDepthRequests);
         _binIndices = bins;
         _resourceProperties = resourceProperties;
         _resolvedAssignments = assignments;
@@ -1255,7 +1259,8 @@ internal sealed class ClusterShadeStages : IDisposable
     {
         Shader shader = ClusterMaterialEntries.RequireShader(material);
         ClusterVisibilityDepth visibilityDepth = ClusterGeometryRequirements.RequireVisibilityDepth(shader);
-        bool forward = entryPoint is ClusterMaterialEntries.ForwardShade or ClusterMaterialEntries.ShadowRequests;
+        bool forward = entryPoint is ClusterMaterialEntries.ForwardShade or ClusterMaterialEntries.ShadowRequests or
+            ClusterMaterialEntries.PrimaryDepthShadowRequests;
         string mode = debugMode.ToString(System.Globalization.CultureInfo.InvariantCulture);
         string depth = ((uint)visibilityDepth).ToString(System.Globalization.CultureInfo.InvariantCulture);
         string selectedEntry = entryPoint switch
@@ -1392,7 +1397,7 @@ internal sealed class ClusterShadeStageSet
     internal static ClusterShadeStageSet Empty { get; } =
         new(ClusterBytes.Zero(0), ImmutableSortedDictionary<uint, ClusterShadeInvocation>.Empty, 0u,
             ImmutableDictionary<int, ScalarLayout.ScalarMaterialLayout>.Empty,
-            [], [], ClusterShadingPath.Deferred, 0u, false);
+            [], [], ClusterShadingPath.Deferred, 0u, false, false);
 
     private readonly ImmutableSortedDictionary<uint, ClusterShadeInvocation> _bins;
     internal ImmutableDictionary<int, ScalarLayout.ScalarMaterialLayout> ScalarLayouts { get; }
@@ -1406,11 +1411,12 @@ internal sealed class ClusterShadeStageSet
         int[] changedOffsets,
         ClusterShadingPath shadingPath,
         uint debugMode,
-        bool requestShadowPages)
+        bool requestShadowPages, bool primaryDepthRequests)
     {
         ShadingPath = shadingPath;
         DebugMode = debugMode;
         HasShadowRequests = requestShadowPages;
+        PrimaryDepthRequests = primaryDepthRequests;
         BinIndices = binIndices;
         _bins = invocations;
         BinCount = binCount;
@@ -1425,6 +1431,7 @@ internal sealed class ClusterShadeStageSet
     internal ClusterShadingPath ShadingPath { get; }
     internal uint DebugMode { get; }
     internal bool HasShadowRequests { get; }
+    internal bool PrimaryDepthRequests { get; }
     internal uint BinCount { get; }
     internal ClusterShadeInvocation GetBin(uint bin) => _bins[bin];
     internal IReadOnlyList<uint> ChangedBins { get; }

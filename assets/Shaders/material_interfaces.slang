@@ -60,6 +60,34 @@ interface ITransparentSurfaceEvaluate<TSurface, TTriangle>
         TSurface surface, float3 bary, TTriangle triangle);
 };
 
+// Materials opt in through CLUSTER_FORWARD_DEPTH_POSITION. They interpret the
+// primary depth for both ordinary Forward lighting and page requests.
+interface IPrimaryDepthSurfaceEvaluate<TSurface, TTriangle> : ISurfaceEvaluate<TSurface, TTriangle>
+{
+    void evaluatePrimaryDepthSurface(SurfacePixelInput input, TSurface surface,
+        float3 bary, TTriangle triangle, RWTexture2DArray<float4> outputColor);
+
+    void markPrimaryDepthShadowPages(uint3 pixelCoord, float depth);
+};
+
+struct PrimaryDepthMaterial<TSurface, TTriangle,
+    TEvaluator : IPrimaryDepthSurfaceEvaluate<TSurface, TTriangle>> : ISurfaceEvaluate<TSurface, TTriangle>
+{
+    TEvaluator Evaluator;
+
+    void evaluateSurface(SurfacePixelInput input, TSurface surface, float3 bary,
+        TTriangle triangle, RWTexture2DArray<float4> outputColor)
+    {
+        Evaluator.evaluatePrimaryDepthSurface(input, surface, bary, triangle, outputColor);
+    }
+
+    void evaluateDebug(uint debugMode, SurfacePixelInput input, TSurface surface,
+        float3 bary, TTriangle triangle, RWTexture2DArray<float4> outputColor)
+    {
+        Evaluator.evaluateDebug(debugMode, input, surface, bary, triangle, outputColor);
+    }
+};
+
 static const uint MATERIAL_SCALAR_HEADER_BYTES = 16;
 
 ByteAddressBuffer MaterialScalarRegion;
