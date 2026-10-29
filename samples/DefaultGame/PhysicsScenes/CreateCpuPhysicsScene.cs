@@ -272,7 +272,7 @@ internal readonly struct CopySceneBodyTransforms : IPhysicsStage
 {
     public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) =>
         new CopySceneTransformJob().ScheduleParallel(context.World,
-            new JobEntityScheduleOptions(rowsPerPacket: 64, filter: context.Bodies), dependency);
+            new JobEntityScheduleOptions(filter: context.Bodies), dependency);
 }
 
 internal readonly partial struct CopySceneTransformJob : IJobEntity
