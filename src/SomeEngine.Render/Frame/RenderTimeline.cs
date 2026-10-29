@@ -68,14 +68,12 @@ internal sealed class RenderTimeline
 
     internal bool IsGenerationAvailable(int generation)
     {
-        ValidateGeneration(generation);
         ReadOnlySpan<QueueCompletion> fences = GetGenerationFences(generation);
         return fences.IsEmpty || _renderDevice.WaitAll(fences, TimeSpan.Zero);
     }
 
     internal bool WaitForGeneration(int generation, TimeSpan timeout)
     {
-        ValidateGeneration(generation);
         ReadOnlySpan<QueueCompletion> fences = GetGenerationFences(generation);
         return fences.IsEmpty || _renderDevice.WaitAll(fences, timeout);
     }
@@ -83,7 +81,8 @@ internal sealed class RenderTimeline
     internal QueueCompletion[] GetGenerationFences(int generation)
     {
         ValidateGeneration(generation);
-        return _generations[generation].Fences.ToArray();
+        // Submissions replace this array; retained readers keep their original completion values.
+        return _generations[generation].Fences;
     }
 
     private void ValidateGeneration(int generation)

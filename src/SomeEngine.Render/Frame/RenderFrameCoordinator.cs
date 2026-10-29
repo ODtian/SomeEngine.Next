@@ -450,15 +450,17 @@ public sealed class RenderFrameCoordinator : IDisposable
 
     private bool ReleaseCompletedReadersLocked()
     {
-        QueueCompletion[] pending = new QueueCompletion[_readerFences.Length];
-        int pendingCount = 0;
+        int incompleteCount = 0;
         foreach (QueueCompletion fence in _readerFences)
         {
             if (!_renderDevice.IsComplete(fence))
-                pending[pendingCount++] = fence;
+                _readerFences[incompleteCount++] = fence;
         }
-        _readerFences = pending.AsSpan(0, pendingCount).ToArray();
-        return pendingCount == 0;
+        if (incompleteCount == 0)
+            _readerFences = [];
+        else if (incompleteCount != _readerFences.Length)
+            Array.Resize(ref _readerFences, incompleteCount);
+        return incompleteCount == 0;
     }
 
     private int CountReaderPositionsLocked()

@@ -11,26 +11,19 @@ internal static class RenderQueueCompletions
         if (left.IsEmpty && right.IsEmpty)
             return [];
 
-        QueueCompletion[] merged = new QueueCompletion[checked(left.Length + right.Length)];
+        int queueCount = checked(CountNewQueues(left, default) + CountNewQueues(right, left));
+        QueueCompletion[] merged = new QueueCompletion[queueCount];
         int count = 0;
         Add(left);
         Add(right);
-        return merged.AsSpan(0, count).ToArray();
+        return merged;
 
         void Add(ReadOnlySpan<QueueCompletion> values)
         {
             foreach (ref readonly QueueCompletion value in values)
             {
                 Queue queue = value.Queue;
-                int existing = -1;
-                for (int index = 0; index < count; index++)
-                {
-                    if (ReferenceEquals(merged[index].Queue, queue))
-                    {
-                        existing = index;
-                        break;
-                    }
-                }
+                int existing = FindQueue(merged.AsSpan(0, count), queue);
 
                 if (existing < 0)
                     merged[count++] = value;
@@ -38,6 +31,28 @@ internal static class RenderQueueCompletions
                     merged[existing] = value;
             }
         }
+    }
+
+    private static int CountNewQueues(
+        ReadOnlySpan<QueueCompletion> values,
+        ReadOnlySpan<QueueCompletion> preceding)
+    {
+        int count = 0;
+        for (int index = 0; index < values.Length; index++)
+        {
+            Queue queue = values[index].Queue;
+            if (FindQueue(preceding, queue) < 0 && FindQueue(values[..index], queue) < 0)
+                count++;
+        }
+        return count;
+    }
+
+    private static int FindQueue(ReadOnlySpan<QueueCompletion> values, Queue queue)
+    {
+        for (int index = 0; index < values.Length; index++)
+            if (ReferenceEquals(values[index].Queue, queue))
+                return index;
+        return -1;
     }
 
     internal static bool WaitAll(
