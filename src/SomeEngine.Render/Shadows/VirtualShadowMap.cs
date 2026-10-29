@@ -72,6 +72,7 @@ public sealed partial class VirtualShadowMap : IDisposable
         Settings = settings ?? throw new ArgumentNullException(nameof(settings));
         settings.Validate();
         LinkedComputePipeline? resetFrame = null;
+        LinkedComputePipeline? markDepthPages = null;
         LinkedComputePipeline? resetReceiverMasks = null;
         LinkedComputePipeline? markCoarsePages = null;
         LinkedComputePipeline? allocatePages = null;
@@ -94,6 +95,9 @@ public sealed partial class VirtualShadowMap : IDisposable
             resetFrame = LinkedComputePipeline.Create(
                 _backend, _device, shaders.ResetFrameShader, shaders.ResetFrame,
                 "Virtual shadow frame reset");
+            if (shaders.MarkDepthPagesShader is { } depthPagesShader)
+                markDepthPages = LinkedComputePipeline.Create(_backend, _device, depthPagesShader,
+                    shaders.MarkDepthPages, "Virtual shadow primary-depth page marking");
             markCoarsePages = LinkedComputePipeline.Create(
                 _backend,
                 _device,
@@ -196,6 +200,7 @@ public sealed partial class VirtualShadowMap : IDisposable
             if (allocatePages is not null) TryDispose(allocatePages, ref cleanupFailures);
             if (markCoarsePages is not null) TryDispose(markCoarsePages, ref cleanupFailures);
             if (resetFrame is not null) TryDispose(resetFrame, ref cleanupFailures);
+            if (markDepthPages is not null) TryDispose(markDepthPages, ref cleanupFailures);
             if (resetReceiverMasks is not null) TryDispose(resetReceiverMasks, ref cleanupFailures);
             if (cleanupFailures is not null)
             {
@@ -208,6 +213,7 @@ public sealed partial class VirtualShadowMap : IDisposable
         }
 
         FrameResetPipeline = resetFrame;
+        DepthPageMarkPipeline = markDepthPages;
         ReceiverMaskResetPipeline = resetReceiverMasks;
         CoarsePageMarkPipeline = markCoarsePages;
         PageAllocatePipeline = allocatePages;
@@ -242,6 +248,7 @@ public sealed partial class VirtualShadowMap : IDisposable
 
     public VirtualShadowMapSettings Settings { get; }
     public LinkedComputePipeline FrameResetPipeline { get; }
+    public LinkedComputePipeline? DepthPageMarkPipeline { get; }
     public LinkedComputePipeline ReceiverMaskResetPipeline { get; }
     public LinkedComputePipeline CoarsePageMarkPipeline { get; }
     public LinkedComputePipeline PageAllocatePipeline { get; }
@@ -1134,6 +1141,7 @@ public sealed partial class VirtualShadowMap : IDisposable
         TryDispose(PageAllocatePipeline, ref failures);
         TryDispose(CoarsePageMarkPipeline, ref failures);
         TryDispose(FrameResetPipeline, ref failures);
+        if (DepthPageMarkPipeline is { } depthPageMark) TryDispose(depthPageMark, ref failures);
         TryDispose(ReceiverMaskResetPipeline, ref failures);
         Array.Clear(_pageTableEndpoint);
         Array.Clear(_physicalPageOwnersEndpoint);

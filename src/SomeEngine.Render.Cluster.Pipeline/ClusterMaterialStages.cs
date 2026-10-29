@@ -1185,13 +1185,34 @@ internal sealed class ClusterShadeStages : IDisposable
 
     private ClusterMaterialAssignmentSet? _resolvedAssignments;
 
+    internal bool SupportsPrimaryDepthReceivers(ClusterMaterialAssignmentSet assignments, uint debugMode)
+    {
+        var checkedShaders = new HashSet<Shader>();
+        foreach (int address in assignments.ActiveOffsets)
+        {
+            if (!assignments.TryGetEntry(address, out Material material, out _)) continue;
+            Shader shader = ClusterMaterialEntries.RequireShader(material);
+            if (!checkedShaders.Add(shader)) continue;
+            string depth = ((uint)ClusterGeometryRequirements.RequireVisibilityDepth(shader))
+                .ToString(System.Globalization.CultureInfo.InvariantCulture);
+            string mode = debugMode.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            if (!shader.TryGetSpecialization(ClusterMaterialEntries.ForwardShade, [depth, mode], out Shader selected) ||
+                !selected.TryGetSlangTarget(_device.Capabilities.CompileTarget, out int target) ||
+                !selected.TryGetSlangEntry(target, ClusterMaterialEntries.ForwardShade, SlangStage.Compute, out var entry) ||
+                !ClusterGeometryRequirements.UsesPrimaryDepthReceiver(entry)) return false;
+        }
+        return true;
+    }
+
     internal ClusterShadeStageSet Resolve(ClusterMaterialAssignmentSet assignments,
-        ClusterShadingPath shadingPath, uint debugMode, bool requestShadowPages, bool primaryDepthRequests)
+        ClusterShadingPath shadingPath, uint debugMode, bool requestShadowPages, bool primaryDepthRequests,
+        bool sharedDepthRequests)
     {
         using var trace = SomeEngine.Diagnostics.EngineTrace.Begin(ResolveTrace);
         ObjectDisposedException.ThrowIf(_disposed, this);
         bool shadingChanged = _resolved.ShadingPath != shadingPath || _resolved.DebugMode != debugMode ||
-            _resolved.HasShadowRequests != requestShadowPages || _resolved.PrimaryDepthRequests != primaryDepthRequests;
+            _resolved.HasShadowRequests != requestShadowPages || _resolved.PrimaryDepthRequests != primaryDepthRequests ||
+            _resolved.SharedDepthRequests != sharedDepthRequests;
         if (ReferenceEquals(assignments, _resolvedAssignments) && !shadingChanged) return _resolved;
         var addresses = _resolvedAssignments is null || shadingChanged
             ? new HashSet<int>(assignments.ActiveOffsets)
@@ -1246,7 +1267,7 @@ internal sealed class ClusterShadeStages : IDisposable
         var result = new ClusterShadeStageSet(bins.GetIndices(
             assignments.SlotCapacity, _resolved.BinIndices, addresses),
             invocations, bins.Range, scalarLayouts, [.. bins.Changes], [.. addresses], shadingPath, debugMode, requestShadowPages,
-            primaryDepthRequests);
+            primaryDepthRequests, sharedDepthRequests);
         _binIndices = bins;
         _resourceProperties = resourceProperties;
         _resolvedAssignments = assignments;
@@ -1411,12 +1432,13 @@ internal sealed class ClusterShadeStageSet
         int[] changedOffsets,
         ClusterShadingPath shadingPath,
         uint debugMode,
-        bool requestShadowPages, bool primaryDepthRequests)
+        bool requestShadowPages, bool primaryDepthRequests, bool sharedDepthRequests = false)
     {
         ShadingPath = shadingPath;
         DebugMode = debugMode;
         HasShadowRequests = requestShadowPages;
         PrimaryDepthRequests = primaryDepthRequests;
+        SharedDepthRequests = sharedDepthRequests;
         BinIndices = binIndices;
         _bins = invocations;
         BinCount = binCount;
@@ -1432,6 +1454,7 @@ internal sealed class ClusterShadeStageSet
     internal uint DebugMode { get; }
     internal bool HasShadowRequests { get; }
     internal bool PrimaryDepthRequests { get; }
+    internal bool SharedDepthRequests { get; }
     internal uint BinCount { get; }
     internal ClusterShadeInvocation GetBin(uint bin) => _bins[bin];
     internal IReadOnlyList<uint> ChangedBins { get; }

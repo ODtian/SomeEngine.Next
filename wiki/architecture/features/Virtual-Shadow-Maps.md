@@ -22,6 +22,15 @@ Standard 的 Forward 着色使用同一个深度位置，并保留完整曲面�
 含第一人称网格时，材质请求通过原表面求值取得位置；页请求继续进入本页的同一个标记函数与覆盖资源。
 材质接口与选择规则见 [User Stage Interfaces](../shader/User-Stage-Interfaces.md)。
 
+`VirtualShadowMapShadersBlock.MarkDepthPages` 显式保存共享主深度请求 Shader 的引用，
+`VirtualShadowMap` 持有对应管线。`VirtualShadowFeature` 持久安装
+`MarkVirtualShadowDepthPages`，在全部材质的已保存 Forward 入口声明 `PrimaryDepthReceiver` 时启用。
+该 Shader 读取当前主深度与 Rendering world 视图，对每个可见像素调用同一个 `MarkVirtualShadowPages`；
+页请求与逐像素覆盖沿本页的同一资源和分配顺序更新。
+使用共享 pass 的帧关闭每材质请求 region；第一人称或自定义接收解释通过材质请求处理。
+实现见 [共享请求](../../../src/SomeEngine.Render.Features/Shadows/VirtualShadowFeature.DepthRequests.cs)与
+[主深度 Shader](../../../assets/Shaders/vsm_mark_depth_pages.slang)。
+
 页标记根据提供的位置、视图投影参数和动态精度偏移选择方向光 clipmap 级别或局部光 mip。请求范围覆盖过滤半径与法线偏移，并处理相邻页、覆盖单元和点光源相邻面。
 
 ## 每页基础请求数据

@@ -144,7 +144,7 @@ public sealed partial class ClusterPipelineSystem
         graph.SetRegionEnabled(_regions.TargetGeometry, hasTargetGeometry);
         graph.SetRegionEnabled(GraphData.ShadeBinning, hasGeometry);
         graph.SetRegionEnabled(GraphData.ShadeGroups.Parent, hasGeometry);
-        graph.SetRegionEnabled(GraphData.ShadowRequestGroups.Parent, hasGeometry);
+        graph.SetRegionEnabled(GraphData.ShadowRequestGroups.Parent, hasGeometry && !UsesPrimaryDepthReceiverRequests);
         graph.SetRegionEnabled(GraphData.ShadeScatter, scatter);
     }
 

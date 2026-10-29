@@ -9,12 +9,35 @@ namespace SomeEngine.Render.Cluster.Tests;
 public sealed class DirectShadowRequestRenderingTests
 {
     [Fact]
+    public async Task SharedPrimaryDepthRequestsMatchMaterialRequestsAcrossFrameBoundaries()
+    {
+        await using var scene = await FrameStageScene.CreateAsync("D3D12", true, Options(),
+            nativeD3D12GpuValidation: false);
+        scene.UseMaterial("Standard");
+        RasterImage expected = await scene.ReadRasterImageAsync();
+        Assert.True(scene.Shadows.UsesPrimaryDepthReceiverRequests);
+        ClusterPipelineOutputs outputs = scene.Outputs;
+
+        scene.Shadows.SetPrimaryDepthReceiverRequests(false);
+        RasterImage materialRequests = await scene.ReadNextRasterImageAsync();
+        Assert.False(scene.Shadows.UsesPrimaryDepthReceiverRequests);
+        RasterImage.AssertEqual(expected, materialRequests, "shared-primary-depth-and-material-requests");
+
+        scene.Shadows.SetPrimaryDepthReceiverRequests(true);
+        RasterImage actual = await scene.ReadNextRasterImageAsync();
+        Assert.True(scene.Shadows.UsesPrimaryDepthReceiverRequests);
+        RasterImage.AssertEqual(expected, actual, "shared-primary-depth-requests-after-reenabling");
+        AssertOutputs(outputs, scene.Outputs);
+    }
+
+    [Fact]
     public async Task FirstPersonMembershipRoundTripRestoresForwardShadowImage()
     {
         await using var scene = await FrameStageScene.CreateAsync("D3D12", true, Options(),
             nativeD3D12GpuValidation: false);
         scene.UseMaterial("Standard");
         RasterImage expected = await scene.ReadRasterImageAsync();
+        Assert.True(scene.Shadows.UsesPrimaryDepthReceiverRequests);
         Assert.Contains(MemoryMarshal.Cast<byte, float>(expected.Depth).ToArray(), value => value < 1f);
         Assert.Contains(MemoryMarshal.Cast<byte, Half>(expected.Color).ToArray(), value => (float)value > .01f);
         ClusterPipelineOutputs outputs = scene.Outputs;
@@ -24,6 +47,7 @@ public sealed class DirectShadowRequestRenderingTests
             PlayerId: 1, FirstPerson: new FirstPersonCamera(1.2f, .8f)));
         scene.SetMeshFirstPerson(1, new(FirstPersonMeshKind.FirstPerson, 1));
         RasterImage firstPerson = await scene.ReadNextRasterImageAsync();
+        Assert.False(scene.Shadows.UsesPrimaryDepthReceiverRequests);
         Assert.Equal(ClusterShadingPath.Forward, scene.InstalledShadingPath);
         Assert.False(expected.Depth.AsSpan().SequenceEqual(firstPerson.Depth));
         Assert.Contains(MemoryMarshal.Cast<byte, Half>(firstPerson.Color).ToArray(), value => (float)value > .01f);
@@ -32,6 +56,7 @@ public sealed class DirectShadowRequestRenderingTests
         scene.SetView(new RenderView(Matrix4x4.Identity,
             Matrix4x4.CreatePerspectiveFieldOfView(1, 1, .1f, 100), 64, 64));
         RasterImage actual = await scene.ReadNextRasterImageAsync();
+        Assert.True(scene.Shadows.UsesPrimaryDepthReceiverRequests);
         Assert.Equal(ClusterShadingPath.Forward, scene.InstalledShadingPath);
         RasterImage.AssertEqual(expected, actual, "direct-shadow-requests-after-first-person");
         AssertOutputs(outputs, scene.Outputs);
@@ -44,6 +69,7 @@ public sealed class DirectShadowRequestRenderingTests
             nativeD3D12GpuValidation: false);
         scene.UseMaterial("Standard");
         RasterImage expected = await scene.ReadRasterImageAsync();
+        Assert.True(scene.Shadows.UsesPrimaryDepthReceiverRequests);
         ClusterPipelineOutputs outputs = scene.Outputs;
 
         scene.SetDebugMode(uint.MaxValue);
@@ -52,6 +78,7 @@ public sealed class DirectShadowRequestRenderingTests
 
         scene.SetDebugMode(0);
         RasterImage actual = await scene.ReadNextRasterImageAsync();
+        Assert.True(scene.Shadows.UsesPrimaryDepthReceiverRequests);
         Assert.Equal(ClusterShadingPath.Forward, scene.InstalledShadingPath);
         AssertOutputs(outputs, scene.Outputs);
         RasterImage.AssertEqual(expected, actual, "direct-shadow-requests-after-failed-debug");

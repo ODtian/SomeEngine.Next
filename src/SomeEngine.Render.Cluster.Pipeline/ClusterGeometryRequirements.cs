@@ -13,6 +13,14 @@ internal enum ClusterVisibilityDepth : byte { Opaque, Masked, Offset }
 
 internal static class ClusterGeometryRequirements
 {
+    internal static bool UsesPrimaryDepthReceiver(EntryPointReflection entry)
+    {
+        FunctionReflection function = entry.Function;
+        for (uint index = 0; index < function.AttributeCount; index++)
+            if (function.GetAttribute(index).Name == "PrimaryDepthReceiver") return true;
+        return false;
+    }
+
     internal static ClusterConservativeBounds RequireConservativeBounds(
         Shader shader,
         string entryPoint,

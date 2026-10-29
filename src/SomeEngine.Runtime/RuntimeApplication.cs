@@ -1095,6 +1095,7 @@ internal static class RuntimeApplication
                 if (sceneEdit.ShadingPath is { } selectedShadingPath) shadingPath = selectedShadingPath;
                 frameOutput.Pipeline.SetShadingPath(shadingPath);
                 frameOutput.Shadows.ReconcileLights(lightSystem.RequireCurrent());
+                frameOutput.Shadows.SetPrimaryDepthReceiverRequests(true);
                 ClusterPipelineOutputs clusterOutputs;
                 using (EngineTrace.Begin(ApplicationTrace.Reconcile))
                 {

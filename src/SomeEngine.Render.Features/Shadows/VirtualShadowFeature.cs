@@ -229,6 +229,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                 _viewUploadRegion = edit.AddFrameRegion("Virtual shadow view upload", primaryDepthAfter);
                 _blueNoiseInput = edit.CreateParameterInput(ResourceBindingType.TextureSrv);
                 ConfigureShadowRequests(ref edit, primaryDepthAfter);
+                CreateDepthPageMarking(ref edit, primaryDepthAfter);
                 ulong pageBytes = checked((ulong)settings.MaxPhysicalPages * sizeof(uint));
                 _pageOwners = edit.DeclareExternalBuffer(new BufferDesc(
                     pageBytes,
@@ -682,6 +683,8 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                 }
                 InstallWorkFeedback(ref edit, shaders, rasterViewCapacity / settings.MipLevelCount,
                     primaryDepthAfter, feedback);
+                BindDepthPageMarking(ref edit);
+                OrderDepthPageMarking(ref edit);
                 InstallWorkTime(ref edit, primaryDepthAfter, targetGeometryAfter, feedback);
                 if (_prefilterPipeline is not null && _workTimeQueries is not null)
                     edit.OrderAfter(_prefilterPasses[0], _workTimeEndPass);
@@ -1042,6 +1045,12 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
             ClusterPipelineOutputs geometry = _geometry.Outputs;
             graph.SetBufferInput(_geometryWorkStatus, new GraphBufferSlice(geometry.Geometry.WorkStatus, BufferRange.Whole));
             graph.SetBufferInput(_casterBounds, new GraphBufferSlice(geometry.Geometry.InstanceWorldBounds, BufferRange.Whole));
+            UsesPrimaryDepthReceiverRequests = _depthMarkPass != default && _geometry.UsesPrimaryDepthReceiverRequests;
+            if (_depthMarkPass != default)
+            {
+                graph.SetTextureInput(_receiverDepth, geometry.Depth);
+                graph.SetBufferInput(_depthReceiverViews, new GraphBufferSlice(geometry.Geometry.PackedViews, BufferRange.Whole));
+            }
             GraphBufferSlice viewUpload = graph.Upload(
                 views.IsEmpty ? [default(VirtualShadowView)] : views,
                 BufferUsages.CopySource,
@@ -1383,6 +1392,12 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
             ReceiverProjection = receiverProjection,
         };
         WriteUniform(uniformBytes, _demandUniforms, in demand);
+        if (_depthMarkPass != default)
+        {
+            graph.SetPassDataIfChanged(_depthMarkPass, new VirtualShadowDispatchPassData(new DispatchArguments(
+                DivideRoundUp(receiverView.ViewportWidth, 8u), DivideRoundUp(receiverView.ViewportHeight, 8u), 1u)));
+            graph.SetPassEnabled(_depthMarkPass, viewCount != 0u && UsesPrimaryDepthReceiverRequests);
+        }
         UploadPoolUniforms(uniformBytes, _poolPrepareUniforms, 0u);
         UploadPoolUniforms(uniformBytes, _poolUniforms, 1u);
         UploadPoolUniforms(uniformBytes, _poolCompactUniforms, 2u);

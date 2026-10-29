@@ -10,6 +10,13 @@ struct MaterialScalarsAttribute
 {
 };
 
+// Ordinary receivers use the primary visibility-depth position and publish no
+// additional receiver positions through this Forward entry.
+[__AttributeUsage(_AttributeTargets.Function)]
+struct PrimaryDepthReceiverAttribute
+{
+};
+
 [__AttributeUsage(_AttributeTargets.Var)]
 struct InstancePropertyAttribute
 {

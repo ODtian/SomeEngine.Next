@@ -401,6 +401,7 @@ internal sealed partial class FrameStageScene : IAsyncDisposable
                 AtlasSize = 2048, MaxShadowLights = 1, DirectionalClipmapLevels = 1,
                 DynamicResolutionEnabled = false }, _graph, _pipeline, _lighting,
             depthAfter, targetAfter, feedbackRegion, _renderDevice);
+        _shadows.SetPrimaryDepthReceiverRequests(true);
         resources.Add(_shadows);
         _lightSystem = new RenderLightSetSystem();
         _prepare.Add(_lightSystem);
@@ -621,6 +622,7 @@ internal sealed partial class FrameStageScene : IAsyncDisposable
     });
 
     internal void UseStandardShader(Shader shader) => _standard.Shader = shader;
+    internal VirtualShadowFeature Shadows => _shadows;
 
     private void SetMaterial(Material material)
     {

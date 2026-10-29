@@ -290,6 +290,9 @@ void ClusterPrimaryDepthShadowRequests<let visibilityDepth : uint, let debugMode
 }
 #endif
 
+#if defined(CLUSTER_FORWARD_DEPTH_POSITION) && defined(CLUSTER_SURFACE_MODES)
+[PrimaryDepthReceiver]
+#endif
 [VertexEncoding(CLUSTER_VERTEX_ENCODING)]
 [shader("compute")]
 [numthreads(64, 1, 1)]
