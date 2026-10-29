@@ -25,6 +25,10 @@ Rendering world 的网格组件保存 source joint 到区段实体及区段内�
 和上一份 G，持久图通过四个 `GraphBufferInput` 绑定它们。用户 shader 的读取依赖于
 `CompletePass`，资源使用期由帧资源与 GPU 完成状态共同管理。
 
+骨骼集合为空时，当前与上一份 G 绑定姿势定义中的单位矩阵，控制与工作区绑定同一份
+持久零记录。空帧沿用这些范围，集合变化时随定义重新上传；`CompletePass` 直接排在
+定义上传之后，历史迁移和读回继续使用原有提交完成点。
+
 ## 应用接入
 
 `ApplicationScene.Initialize` 在网格资产加载完成后提供 Game world、`GameFrameSystems`

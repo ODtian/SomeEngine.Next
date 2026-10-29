@@ -45,7 +45,7 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
     private readonly List<BufferRange> _workLevels = [];
     private Section[] _sectionOrder = [];
     private byte[] _definitionBytes = [];
-    private BufferRange _sectionBytes, _jointBytes, _inverseBytes;
+    private BufferRange _sectionBytes, _jointBytes, _inverseBytes, _emptyInputBytes;
     private QueryHandle _sectionQuery, _meshQuery;
     private GraphPassId _uploadPass, _advancePass, _loadPass, _cpuPass, _storePass;
     private ulong _collection;
@@ -88,7 +88,7 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
         _inverseBind = edit.CreateBufferInput(BufferUsages.ShaderRead);
         _definitionUpload = edit.CreateBufferInput(BufferUsages.CopySource);
         _cpuUpload = edit.CreateBufferInput(BufferUsages.CopySource);
-        _definitions = edit.CreatePersistentBuffer(new BufferDesc(256, BufferUsages.ShaderRead | BufferUsages.CopyDestination, Label: "Pose definitions"));
+        _definitions = edit.CreatePersistentBuffer(new BufferDesc(256, PoseUsages, Label: "Pose definitions"));
         CompletePass = edit.AddCopyFramePass("Model poses complete", PassQueueSelection.AnyOfType(QueueType.Graphics), 0,
             new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
             static (ref PassDefinition _, ref int _) => { }, static (ref CopyPassCommandScope _, in int _) => { });
@@ -319,6 +319,8 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
         if ((ulong)bytes.Position == jointsStart) writer.Write(0u);
         _jointBytes = new(jointsStart, (ulong)bytes.Position - jointsStart);
         Align(writer, 64);
+        _emptyInputBytes = new((ulong)bytes.Position, 64);
+        writer.Write(new byte[64]);
         _definitionBytes = bytes.ToArray();
 
         using RenderGraphEdit edit = _graph.BeginEdit();
@@ -327,7 +329,7 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
         foreach (GraphBufferId buffer in _retiredHistories) edit.Remove(buffer);
         _retiredHistories.Clear();
         edit.SetBufferDescription(_definitions, new BufferDesc((ulong)_definitionBytes.Length,
-            BufferUsages.ShaderRead | BufferUsages.CopyDestination, Label: "Pose definitions"));
+            PoseUsages, Label: "Pose definitions"));
         var migrations = new List<HistoryCopy>();
         if (_membershipChanged)
         {
@@ -381,6 +383,7 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
         _storePass = AddKernel(edit, _storePipeline, Kernel.Store, BufferRange.Whole, _boneCount);
         edit.OrderAfter(_storePass, predecessor);
         edit.OrderAfter(CompletePass, _storePass);
+        edit.OrderAfter(CompletePass, _uploadPass);
         edit.Commit();
         _uploadRequired = true;
         _membershipChanged = _definitionsChanged = false;
@@ -466,33 +469,54 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
     public void OnUpdate(ref RenderFrameSystemContext context)
     {
         RenderGraphFrame frame = context.Graph;
-        ReadFrameInputs();
-        if (_controls.Count == 0) _controls.Add(default);
-        if (_controlValues.Count == 0) _controlValues.Add(0);
-        if (_goalValues.Count == 0) _goalValues.Add(default);
-        if (_modelOffsets.Count == 0) _modelOffsets.Add(default);
-        if (_rootCorrections.Count == 0) _rootCorrections.Add(default);
-        frame.SetBufferInput(_currentBones, new(frame.CreateBuffer(new BufferDesc((ulong)_boneCount * 64, PoseUsages, Label: "Current model bones")), BufferRange.Whole));
-        frame.SetBufferInput(_previousBones, new(frame.CreateBuffer(new BufferDesc((ulong)_boneCount * 64, PoseUsages, Label: "Previous model bones")), BufferRange.Whole));
+        bool hasSections = _sectionOrder.Length != 0;
+        if (hasSections)
+        {
+            ReadFrameInputs();
+            if (_controlValues.Count == 0) _controlValues.Add(0);
+            if (_goalValues.Count == 0) _goalValues.Add(default);
+            frame.SetBufferInput(_currentBones, new(frame.CreateBuffer(new BufferDesc((ulong)_boneCount * 64, PoseUsages, Label: "Current model bones")), BufferRange.Whole));
+            frame.SetBufferInput(_previousBones, new(frame.CreateBuffer(new BufferDesc((ulong)_boneCount * 64, PoseUsages, Label: "Previous model bones")), BufferRange.Whole));
+            frame.SetBufferInput(_blendLocalsInput, new(frame.CreateBuffer(new BufferDesc((ulong)_blendLocalCount * 48,
+                BufferUsages.ShaderWrite, Label: "GPU blend local workspace")), BufferRange.Whole));
+            frame.SetBufferInput(_valuesInput, frame.Upload<float>(CollectionsMarshal.AsSpan(_controlValues), BufferUsages.ShaderRead));
+            frame.SetBufferInput(_goalsInput, frame.Upload<GpuPoseGoal>(CollectionsMarshal.AsSpan(_goalValues), BufferUsages.ShaderRead));
+            frame.SetBufferInput(_offsetsInput, frame.Upload<Vector4>(CollectionsMarshal.AsSpan(_modelOffsets), BufferUsages.ShaderRead));
+            frame.SetBufferInput(_rootsInput, frame.Upload<RootCorrection>(CollectionsMarshal.AsSpan(_rootCorrections), BufferUsages.ShaderRead));
+            frame.SetBufferInput(_controlsInput, frame.Upload<Control>(CollectionsMarshal.AsSpan(_controls), BufferUsages.ShaderRead));
+            if (_cpuCopies.Count != 0)
+            {
+                frame.SetBufferInput(_cpuUpload, frame.Upload<Matrix4x4>(CollectionsMarshal.AsSpan(_cpuValues), BufferUsages.CopySource));
+                GraphPassId copy = frame.AddCopyPass("Copy CPU model ranges", PassQueueSelection.AnyOfType(QueueType.Graphics),
+                    new CpuPoseCopy(_cpuUpload, _currentBones, _cpuCopies), new PassOptions(Culling: PassCullingMode.NeverCull),
+                    CpuPoseCopy.Declare, CpuPoseCopy.Record);
+                frame.OrderAfter(copy, _advancePass);
+                frame.OrderAfter(_cpuPass, copy);
+            }
+        }
+        else
+        {
+            frame.SetBufferInput(_currentBones, new(_definitions, _inverseBytes));
+            frame.SetBufferInput(_previousBones, new(_definitions, _inverseBytes));
+            frame.SetBufferInput(_blendLocalsInput, new(_definitions, new(_emptyInputBytes.Offset, 48)));
+            frame.SetBufferInput(_valuesInput, new(_definitions, new(_emptyInputBytes.Offset, 4)));
+            frame.SetBufferInput(_goalsInput, new(_definitions, new(_emptyInputBytes.Offset, 48)));
+            frame.SetBufferInput(_offsetsInput, new(_definitions, new(_emptyInputBytes.Offset, 16)));
+            frame.SetBufferInput(_rootsInput, new(_definitions, new(_emptyInputBytes.Offset, 32)));
+            frame.SetBufferInput(_controlsInput, new(_definitions, _emptyInputBytes));
+        }
         frame.SetBufferInput(_historyCurrentInput, new(_historyCurrent, BufferRange.Whole));
         frame.SetBufferInput(_historyPreviousInput, new(_historyPrevious, BufferRange.Whole));
         frame.SetBufferInput(_playbackInput, new(_playback, BufferRange.Whole));
         frame.SetBufferInput(_blendStatesInput, new(_blendStates, BufferRange.Whole));
-        frame.SetBufferInput(_blendLocalsInput, new(frame.CreateBuffer(new BufferDesc((ulong)_blendLocalCount * 48,
-            BufferUsages.ShaderWrite, Label: "GPU blend local workspace")), BufferRange.Whole));
-        frame.SetBufferInput(_valuesInput, frame.Upload<float>(CollectionsMarshal.AsSpan(_controlValues), BufferUsages.ShaderRead));
-        frame.SetBufferInput(_goalsInput, frame.Upload<GpuPoseGoal>(CollectionsMarshal.AsSpan(_goalValues), BufferUsages.ShaderRead));
-        frame.SetBufferInput(_offsetsInput, frame.Upload<Vector4>(CollectionsMarshal.AsSpan(_modelOffsets), BufferUsages.ShaderRead));
-        frame.SetBufferInput(_rootsInput, frame.Upload<RootCorrection>(CollectionsMarshal.AsSpan(_rootCorrections), BufferUsages.ShaderRead));
-        frame.SetBufferInput(_controlsInput, frame.Upload<Control>(CollectionsMarshal.AsSpan(_controls), BufferUsages.ShaderRead));
         frame.SetBufferInput(_sectionsInput, new(_definitions, _sectionBytes));
         frame.SetBufferInput(_jointIndices, new(_definitions, _jointBytes));
         frame.SetBufferInput(_inverseBind, new(_definitions, _inverseBytes));
         frame.SetBufferInput(_workInput, new(_definitions, BufferRange.Whole));
         frame.SetBufferInput(_clipsInput, new(_definitions, BufferRange.Whole));
-        frame.SetPassEnabled(_loadPass, _sectionOrder.Length != 0);
-        frame.SetPassEnabled(_advancePass, _sectionOrder.Length != 0);
-        frame.SetPassEnabled(_storePass, _sectionOrder.Length != 0);
+        frame.SetPassEnabled(_loadPass, hasSections);
+        frame.SetPassEnabled(_advancePass, hasSections);
+        frame.SetPassEnabled(_storePass, hasSections);
         if (_uploadRequired)
         {
             frame.SetBufferInput(_definitionUpload, frame.Upload(_definitionBytes, BufferUsages.CopySource));
@@ -501,16 +525,7 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
             upload.Read(_definitionUpload, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopySource);
         }
         frame.SetPassEnabled(_uploadPass, _uploadRequired);
-        if (_cpuCopies.Count != 0)
-        {
-            frame.SetBufferInput(_cpuUpload, frame.Upload<Matrix4x4>(CollectionsMarshal.AsSpan(_cpuValues), BufferUsages.CopySource));
-            GraphPassId copy = frame.AddCopyPass("Copy CPU model ranges", PassQueueSelection.AnyOfType(QueueType.Graphics),
-                new CpuPoseCopy(_cpuUpload, _currentBones, _cpuCopies), new PassOptions(Culling: PassCullingMode.NeverCull),
-                CpuPoseCopy.Declare, CpuPoseCopy.Record);
-            frame.OrderAfter(copy, _advancePass);
-            frame.OrderAfter(_cpuPass, copy);
-        }
-        frame.SetPassEnabled(_cpuPass, _sectionOrder.Length != 0);
+        frame.SetPassEnabled(_cpuPass, hasSections);
         frame.ObserveExecution(this);
         RecordReadbacks(ref frame);
     }
@@ -578,6 +593,7 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
             new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true), DefinitionCopy.Declare, DefinitionCopy.Record);
         _posePasses.Add(_uploadPass);
         edit.OrderAfter(_advancePass, _uploadPass);
+        edit.OrderAfter(CompletePass, _uploadPass);
         foreach (GraphBufferId buffer in _retiredHistories) edit.Remove(buffer);
         _retiredHistories.Clear();
         edit.Commit();
