@@ -20,39 +20,60 @@ float3 EvalObjectPosition(VertexEvalContext ctx)
 
 // Interpret the default material's attribute formats using integer/float32 operations.
 // Source double components are converted in the material's float32 precision.
-float ReadStandardComponent(VertexEvalContext ctx, uint stream, uint component, float fallback)
+float DecodeStandardDouble(uint2 bits)
 {
-    if (stream == 0u) return fallback;
-    uint descriptor = ctx.attributeBlobAddress + 16u + (stream - 1u) * 28u;
-    uint components = ctx.pageHeap.Load(descriptor + 4u);
-    uint counts = ctx.pageHeap.Load(descriptor + 12u);
-    uint count = counts == 0xFFFFFFFFu ? components : ctx.pageHeap.Load(ctx.attributeBlobAddress + counts + ctx.localVertexIndex * 4u);
-    if (component >= count) return fallback;
-    uint values = ctx.pageHeap.Load(descriptor + 8u);
-    uint format = ctx.pageHeap.Load(descriptor + 24u);
-    if (format == 1u || format == 2u)
-    {
-        uint raw = ctx.pageHeap.Load(ctx.attributeBlobAddress + values + ctx.localVertexIndex * 4u);
-        int value = (int((raw >> (component * 8u)) & 255u) << 24) >> 24;
-        return max(float(value) / 127.0, -1.0);
-    }
-    if (format == 3u)
-    {
-        if (component >= 2u) return fallback;
-        uint address = ctx.attributeBlobAddress + values;
-        float2 origin = asfloat(ctx.pageHeap.Load2(address));
-        float step = asfloat(ctx.pageHeap.Load(address + 8u));
-        uint packed = ctx.pageHeap.Load(address + 12u + ctx.localVertexIndex * 4u);
-        return (component == 0u ? origin.x : origin.y) + float((packed >> (component * 16u)) & 65535u) * step;
-    }
-    if (format == 4u)
-        return asfloat(ctx.pageHeap.Load(ctx.attributeBlobAddress + values + (ctx.localVertexIndex * components + component) * 4u));
-    uint2 bits = ctx.pageHeap.Load2(ctx.attributeBlobAddress + values + (ctx.localVertexIndex * components + component) * 8u);
     uint exponent = (bits.y >> 20u) & 2047u;
     if (exponent == 0u) return asfloat(bits.y & 0x80000000u);
     float fraction = 1.0 + float(bits.y & 1048575u) * (1.0 / 1048576.0) + float(bits.x) * (1.0 / 4503599627370496.0);
     float value = ldexp(fraction, int(exponent) - 1023);
     return (bits.y & 0x80000000u) == 0u ? value : -value;
+}
+
+float4 ReadStandardAttribute(VertexEvalContext ctx, uint stream, uint componentCount, float4 fallback)
+{
+    if (stream == 0u) return fallback;
+    uint descriptor = ctx.attributeBlobAddress + 16u + (stream - 1u) * 28u;
+    uint3 descriptorValues = ctx.pageHeap.Load3(descriptor + 4u);
+    uint components = descriptorValues.x;
+    uint values = descriptorValues.y;
+    uint counts = descriptorValues.z;
+    uint count = counts == 0xFFFFFFFFu ? components : ctx.pageHeap.Load(ctx.attributeBlobAddress + counts + ctx.localVertexIndex * 4u);
+    count = min(count, componentCount);
+    if (count == 0u) return fallback;
+    uint address = ctx.attributeBlobAddress + values;
+    uint format = ctx.pageHeap.Load(descriptor + 24u);
+    if (format == 1u || format == 2u)
+    {
+        uint packed = ctx.pageHeap.Load(address + ctx.localVertexIndex * 4u);
+        int4 signedComponents = int4(packed << uint4(24u, 16u, 8u, 0u)) >> 24;
+        float4 decoded = max(float4(signedComponents) / 127.0, -1.0);
+        return select(uint4(0u, 1u, 2u, 3u) < count, decoded, fallback);
+    }
+    if (format == 3u)
+    {
+        float3 originStep = asfloat(ctx.pageHeap.Load3(address));
+        uint packed = ctx.pageHeap.Load(address + 12u + ctx.localVertexIndex * 4u);
+        float2 decoded = originStep.xy + float2(packed & 65535u, packed >> 16u) * originStep.z;
+        return float4(select(uint2(0u, 1u) < count, decoded, fallback.xy), fallback.zw);
+    }
+    float4 result = fallback;
+    if (format == 4u)
+    {
+        uint vertexAddress = address + ctx.localVertexIndex * components * 4u;
+        [unroll]
+        for (uint component = 0u; component < 4u; component++)
+            if (component < count)
+                result[component] = asfloat(ctx.pageHeap.Load(vertexAddress + component * 4u));
+    }
+    else
+    {
+        uint vertexAddress = address + ctx.localVertexIndex * components * 8u;
+        [unroll]
+        for (uint component = 0u; component < 4u; component++)
+            if (component < count)
+                result[component] = DecodeStandardDouble(ctx.pageHeap.Load2(vertexAddress + component * 8u));
+    }
+    return result;
 }
 
 float3 EvalWorldPosition(VertexEvalContext ctx)
@@ -78,15 +99,10 @@ struct StaticVertexAttributes
 
 StaticVertexAttributes EvalStaticVertexAttributes(VertexEvalContext ctx)
 {
-    uint normalStream = ctx.pageHeap.Load(ctx.attributeBlobAddress + 4u);
-    uint tangentStream = ctx.pageHeap.Load(ctx.attributeBlobAddress + 8u);
-    uint uvStream = ctx.pageHeap.Load(ctx.attributeBlobAddress + 12u);
-    float3 normal = float3(ReadStandardComponent(ctx, normalStream, 0u, 0.0),
-        ReadStandardComponent(ctx, normalStream, 1u, 1.0), ReadStandardComponent(ctx, normalStream, 2u, 0.0));
-    float4 tangent = float4(ReadStandardComponent(ctx, tangentStream, 0u, 1.0),
-        ReadStandardComponent(ctx, tangentStream, 1u, 0.0), ReadStandardComponent(ctx, tangentStream, 2u, 0.0),
-        ReadStandardComponent(ctx, tangentStream, 3u, 1.0));
-    float2 uv = float2(ReadStandardComponent(ctx, uvStream, 0u, 0.0), ReadStandardComponent(ctx, uvStream, 1u, 0.0));
+    uint3 streams = ctx.pageHeap.Load3(ctx.attributeBlobAddress + 4u);
+    float3 normal = ReadStandardAttribute(ctx, streams.x, 3u, float4(0.0, 1.0, 0.0, 0.0)).xyz;
+    float4 tangent = ReadStandardAttribute(ctx, streams.y, 4u, float4(1.0, 0.0, 0.0, 1.0));
+    float2 uv = ReadStandardAttribute(ctx, streams.z, 2u, 0.0.xxxx).xy;
 
     StaticVertexAttributes attrs;
     float3 scale = ctx.transform.Scale * ctx.transform.Stretch;
