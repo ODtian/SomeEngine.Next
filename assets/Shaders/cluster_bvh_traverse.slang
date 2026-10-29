@@ -40,7 +40,9 @@ void ClaimReadyNodes(uint thread, bool multipleViews)
                     {
                         // The publisher orders its payload before the ready exchange.
                         DeviceMemoryBarrier();
-                        viewLanes = min(ClusterParallelViewLanes(countbits(TraversalNodes[first].ViewMask)), CLUSTER_BVH_PARENTS_PER_GROUP);
+                        // Keep each parent's children and view reductions inside one wave.
+                        viewLanes = min(ClusterParallelViewLanes(countbits(TraversalNodes[first].ViewMask)),
+                            WaveGetLaneCount() / CLUSTER_BVH_FANOUT);
                     }
                     available = min(CLUSTER_BVH_PARENTS_PER_GROUP / viewLanes, TraversalLevel.MaxNodes - first);
                 }

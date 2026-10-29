@@ -1,6 +1,8 @@
 #ifndef CLUSTER_VIEW_WORK_SLANG
 #define CLUSTER_VIEW_WORK_SLANG
 
+#include "wave_queue.slang"
+
 // A traversal item retains its 32-view mask. Threads share each item's view
 // tests; a single view uses all 64 threads for different instances or children.
 uint ClusterParallelViewLanes(uint viewCount)
@@ -33,33 +35,30 @@ uint ClusterViewWaveFirstLane(uint viewLanes, uint stride)
 
 uint MergeClusterViewMaskWave(uint mask, uint viewLanes, uint stride)
 {
-    uint first = ClusterViewWaveFirstLane(viewLanes, stride);
     uint count = ClusterViewWaveSpan(viewLanes, stride);
-    uint result = 0u;
-    for (uint view = 0u; view < count; view++)
-        result |= WaveReadLaneAt(mask, first + view * stride);
+    uint result = mask;
+    for (uint distance = 1u; distance < count; distance <<= 1u)
+        result |= WaveReadLaneAt(result, WaveGetLaneIndex() ^ (distance * stride));
     return result;
 }
 
 uint MergeClusterViewPriorityWave(uint priority, uint viewLanes, uint stride)
 {
-    uint first = ClusterViewWaveFirstLane(viewLanes, stride);
     uint count = ClusterViewWaveSpan(viewLanes, stride);
-    uint result = 1u;
-    for (uint view = 0u; view < count; view++)
-        result = max(result, WaveReadLaneAt(priority, first + view * stride));
+    uint result = priority;
+    for (uint distance = 1u; distance < count; distance <<= 1u)
+        result = max(result, WaveReadLaneAt(result, WaveGetLaneIndex() ^ (distance * stride)));
     return result;
 }
 
 uint DistributeClusterViewMask(uint mask, uint viewLane, uint viewLanes)
 {
     uint result = 0u;
-    uint ordinal = 0u;
-    while (mask != 0u)
+    uint count = countbits(mask);
+    for (uint ordinal = viewLane; ordinal < count; ordinal += viewLanes)
     {
-        uint bit = firstbitlow(mask);
-        mask &= mask - 1u;
-        if ((ordinal++ & (viewLanes - 1u)) == viewLane) result |= 1u << bit;
+        uint bit = WaveQueue::FindNthSetBit(mask, int(ordinal));
+        result |= 1u << bit;
     }
     return result;
 }
