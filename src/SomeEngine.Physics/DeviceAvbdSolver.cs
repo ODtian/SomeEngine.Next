@@ -59,6 +59,8 @@ public sealed class DeviceAvbdSolver : IDisposable
     }
     public SolveDeviceAvbd Solve()=>new(this);
     public SolveDeviceAvbd Solve(DeviceInputTransfer equationInputs)=>new(this,equationInputs);
+    public SolveDeviceAvbd Solve(bool buildGraph,DeviceInputTransfer equationInputs=DeviceInputTransfer.Upload)
+        =>new(this,buildGraph,equationInputs);
     public InitializeDeviceAvbd Initialize()=>new(this);
     public InitializeDeviceAvbd Initialize(DeviceInputTransfer equationInputs)=>new(this,equationInputs);
     public InitializeDeviceAvbd Initialize(bool buildGraph,DeviceInputTransfer equationInputs=DeviceInputTransfer.Upload)
@@ -81,13 +83,8 @@ public sealed class DeviceAvbdSolver : IDisposable
         foreach(IDeviceConstraintSelection selection in _selections) selection.AddAccesses(scheduler,accesses);
         return DevicePhysicsJobs.Schedule(scheduler,new SolverSubmission(this,context,initialize,iterations,buildGraph),accesses.ToArray(),dependency);
     }
-    internal JobHandle ScheduleSolve(in PhysicsStepContext context,JobHandle dependency)
-        =>ScheduleSolve(in context,DeviceInputTransfer.Upload,dependency);
-    internal JobHandle ScheduleSolve(in PhysicsStepContext context,DeviceInputTransfer equationInputs,JobHandle dependency)
-    {
-        JobHandle initialized=Schedule(in context,true,0,true,equationInputs,dependency);
-        return Schedule(in context,false,_settings.Iterations,false,initialized);
-    }
+    internal JobHandle ScheduleSolve(in PhysicsStepContext context,bool buildGraph,DeviceInputTransfer equationInputs,JobHandle dependency)
+        =>Schedule(in context,true,_settings.Iterations,buildGraph,equationInputs,dependency);
     private QueueCompletion Record(in PhysicsStepContext context,bool initialize,int iterations,bool buildGraph)
     {
         if(initialize||buildGraph)
@@ -116,24 +113,23 @@ public sealed class DeviceAvbdSolver : IDisposable
             Barrier();
             DispatchGroups(_groupInitialization,in step);
         }
-        else
-            for(int iteration=0;iteration<iterations;iteration++)
+        for(int iteration=0;iteration<iterations;iteration++)
+        {
+            for(int color=0;color<_graph.BodyColorCount;color++)
             {
-                for(int color=0;color<_graph.BodyColorCount;color++)
-                {
-                    step.Color=(uint)color; Bind(1,in step);
-                    _backend.Dispatch(_commands,DevicePhysicsDispatch.CreateGroups((_graph.MaximumBodyColorSize+_threadsPerGroup-1)/_threadsPerGroup));
-                    Barrier();
-                }
-                step.Color=0;
-                if(_graph.ConstraintStageCount>0)
-                {
-                    Bind(2,in step);
-                    _backend.Dispatch(_commands,DevicePhysicsDispatch.CreateGroups((_graph.ConstraintCapacity+_threadsPerGroup-1)/_threadsPerGroup));
-                    Barrier();
-                }
-                DispatchGroups(_groupUpdates,in step);
+                step.Color=(uint)color; Bind(1,in step);
+                _backend.Dispatch(_commands,DevicePhysicsDispatch.CreateGroups((_graph.MaximumBodyColorSize+_threadsPerGroup-1)/_threadsPerGroup));
+                Barrier();
             }
+            step.Color=0;
+            if(_graph.ConstraintStageCount>0)
+            {
+                Bind(2,in step);
+                _backend.Dispatch(_commands,DevicePhysicsDispatch.CreateGroups((_graph.ConstraintCapacity+_threadsPerGroup-1)/_threadsPerGroup));
+                Barrier();
+            }
+            DispatchGroups(_groupUpdates,in step);
+        }
         using RecordedCommands recorded=_backend.End(_commands);
         QueueCompletion completion=_backend.Submit(_backend.GetQueue(_device,QueueType.Compute),new([],[],[recorded],[],[]));
         _initialized=true;
@@ -193,8 +189,11 @@ public sealed class DeviceAvbdSolver : IDisposable
 public readonly struct SolveDeviceAvbd(DeviceAvbdSolver solver) : IPhysicsStage
 {
     private readonly DeviceInputTransfer _equationInputs=DeviceInputTransfer.Upload;
+    private readonly bool _buildGraph=true;
     internal SolveDeviceAvbd(DeviceAvbdSolver solver,DeviceInputTransfer equationInputs):this(solver)=>_equationInputs=equationInputs;
-    public JobHandle Schedule(in PhysicsStepContext context,JobHandle dependency)=>solver.ScheduleSolve(in context,_equationInputs,dependency);
+    internal SolveDeviceAvbd(DeviceAvbdSolver solver,bool buildGraph,DeviceInputTransfer equationInputs):this(solver)
+    { _buildGraph=buildGraph; _equationInputs=equationInputs; }
+    public JobHandle Schedule(in PhysicsStepContext context,JobHandle dependency)=>solver.ScheduleSolve(in context,_buildGraph,_equationInputs,dependency);
 }
 public readonly struct InitializeDeviceAvbd(DeviceAvbdSolver solver) : IPhysicsStage
 {

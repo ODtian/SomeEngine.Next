@@ -3,7 +3,7 @@ using SomeEngine.Physics;
 
 namespace DefaultGame;
 
-internal sealed class DeviceSceneEquationInputs(DeviceAvbdSolver solver, bool bindingsFixed, int iterations)
+internal sealed class DeviceSceneEquationInputs(DeviceAvbdSolver solver, bool bindingsFixed)
 {
     private bool _uploaded;
 
@@ -13,8 +13,7 @@ internal sealed class DeviceSceneEquationInputs(DeviceAvbdSolver solver, bool bi
     {
         DeviceInputTransfer transfer = bindingsFixed && _uploaded ? DeviceInputTransfer.Resident : DeviceInputTransfer.Upload;
         _uploaded = true;
-        JobHandle initialized = solver.Initialize(buildGraph: false, transfer).Schedule(in context, dependency);
-        return solver.Iterate(iterations, buildGraph: false).Schedule(in context, initialized);
+        return solver.Solve(buildGraph: false, transfer).Schedule(in context, dependency);
     }
 }
 

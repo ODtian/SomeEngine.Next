@@ -178,7 +178,7 @@ public static partial class PhysicsScenes
         var solve = new DeviceAvbdSolver(backend, device, bodies, equations, graph, avbdKernels,
             new(settings.Iterations, settings.BodyIterations, settings.MultiplierRetention, 0), bindings, constraintAccesses, threads,
             new IDeviceConstraintSelection[] { selectedStates, selectedResponses, joints.StateSelection, ranges.StateSelection });
-        var equationInputs = new DeviceSceneEquationInputs(solve, settings.EquationBindingsFixed, settings.Iterations);
+        var equationInputs = new DeviceSceneEquationInputs(solve, settings.EquationBindingsFixed);
         var response = new DeviceContactActions(backend, device, bodies, graph, responses, responseKernels, bindings, reads,
             threads, new IDeviceConstraintSelection[] { selectedResponses });
         var activityBindings = new Dictionary<string, ResourceBinding[]>(bindings);
