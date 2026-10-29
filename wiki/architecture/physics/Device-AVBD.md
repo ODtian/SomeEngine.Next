@@ -53,9 +53,12 @@ Jacobian、惯性块与响应共同投影到该子空间。
 
 `DeviceAvbdSolver.Initialize()` 先从当前参与和选择构建约束图，再初始化子步历史、
 Body 方程索引和组数据；接触调节与支撑分组读取同次图的活动主体及连通根。
-`Iterate(n)` 在当前子步继续 primal/dual 迭代；`Solve()` 组合这两项职责，迭代复用初始化时构建的图。
+`Iterate(n)` 在当前子步继续 primal/dual 迭代；`Solve()` 在同一次调度和设备记录中先初始化，
+再执行配置的 primal/dual 迭代，复用初始化时构建的图与原派发间 UAV barrier。
 项目已显式建立共同图时，`Initialize(false, equationInputs)` 使用该图已捕获的参与，
 再捕获求解器自身状态选择并初始化数值；`equationInputs` 继续选择上传或复用原方程绑定。
+`Solve(false, equationInputs)` 在同一设备记录中初始化并迭代，使用项目已交付的图；
+DefaultGame 的设备场景通过此入口复用接触唤醒后的图和固定方程绑定选择。
 `Graph.ConstraintStageCount` 为零时，迭代跳过行对偶派发；组更新保持逐轮执行。
 `DeviceAvbdKernels.ClearBodyIndices` 选择独立的逐 Body 索引清理内核，
 其具体入口调用 `clearDeviceAvbdBodyIndices`；随后的初始化内核调用
@@ -163,7 +166,7 @@ AVBD 的每色派发以这个最大行数确定线程组，各色内核按自身
 
 连通构建和 awake 工作范围可按 [设备活动阶段](Device-Activity.md)
 分别调度；原 `Build()` 组合两项职责。接触唤醒完成后刷新工作范围，
-再由 `Initialize(false, equationInputs)` 和 `Iterate(iterations, false)` 消费同次图结果。
+再由 `Solve(false, equationInputs)` 消费同次图结果；独立初始化与继续迭代入口保留各自职责。
 
 [DeviceConstraintGraph.Parallel](../../../src/SomeEngine.Physics/DeviceConstraintGraph.Parallel.cs)
 按阶段屏障组织构建；每批颜色轮次在同一输入读取 Job 中取得控制计数和完成进度。
