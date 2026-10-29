@@ -23,7 +23,6 @@ public readonly struct SolveAvbdGraph<TConstraints> : IPhysicsStage, IDisposable
     private readonly PhysicsGraphData _graph;
     private readonly PhysicsGraphQueries _queries;
     private readonly QueryReadResources? _resources;
-    private readonly AvbdIslandEquations _islandEquations;
     private readonly JobResourceAccess[] _accesses;
     private readonly int _iterations, _bodyIterations;
     private readonly float _retention, _initialErrorFraction;
@@ -34,7 +33,6 @@ public readonly struct SolveAvbdGraph<TConstraints> : IPhysicsStage, IDisposable
     {
         _constraints = constraints; _iterations = iterations; _bodyIterations = bodyIterations;
         _retention = multiplierRetention; _initialErrorFraction = initialErrorFraction; _resources = resources;
-        _islandEquations = new();
         _graph = new(WorldJobs.GetScheduler(world), constraints.QueryCount, settings, bodyUpdates: true);
         var handles = new QueryHandle[constraints.QueryCount];
         for (int index = 0; index < handles.Length; index++) handles[index] = constraints.GetQuery(index);
@@ -115,8 +113,6 @@ public readonly struct SolveAvbdGraph<TConstraints> : IPhysicsStage, IDisposable
                     bodyRows.ExecuteParallel(in update, start, color.Count);
                     start += color.Count;
                 }
-                solve._islandEquations.Minimize(solve._graph, in context, global, bodies,
-                    solve._constraints, solve._initialErrorFraction);
                 solve._constraints.UpdateDuals(in context, global, 3, bodies, solve._initialErrorFraction);
             }
             return true;
