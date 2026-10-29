@@ -141,6 +141,30 @@ struct StaticPositionEval : IVertexEvaluate
     Vertex readLane(Vertex value, uint lane) { return WaveReadLaneAt(value, lane); }
 };
 
+// Provides positions to the default linear surface's shadow page requests.
+struct StaticSurfacePositionEval : IVertexEvaluate
+{
+    typedef StandardVertex Vertex;
+
+    Vertex evaluate(VertexEvalContext ctx)
+    {
+        Vertex value = {};
+        value.position = EvalWorldPosition(ctx);
+        value.basePosition = value.position;
+        return value;
+    }
+
+    float3 getPosition(Vertex value) { return value.position; }
+
+    Vertex readLane(Vertex value, uint lane)
+    {
+        Vertex result = {};
+        result.position = WaveReadLaneAt(value.position, lane);
+        result.basePosition = result.position;
+        return result;
+    }
+};
+
 [MaterialDepthInputs("")]
 struct StaticVertexEval : IVertexEvaluate
 {

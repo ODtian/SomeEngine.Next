@@ -273,4 +273,64 @@ LinearSurface MakeLinearSurface()
     return result;
 }
 
+// The default request material consumes this domain's positions. Its geometry,
+// reconstruction and surface evaluation follow the same linear definition.
+[MaterialDepthInputs("")]
+struct LinearPositionSurface : IDomainEvaluate<StandardVertex>
+{
+    typealias TriangleData = Triangle;
+    typealias Surface = SurfaceEval;
+
+    Triangle readLane(Triangle triangle, uint lane)
+    {
+        Triangle result = {};
+        result.Position0 = WaveReadLaneAt(triangle.Position0, lane);
+        result.Position1 = WaveReadLaneAt(triangle.Position1, lane);
+        result.Position2 = WaveReadLaneAt(triangle.Position2, lane);
+        return result;
+    }
+
+    Triangle makeTriangle(StandardVertex first, StandardVertex second, StandardVertex third, uint materialIndex)
+    {
+        return MakeStandardTriangle(first, second, third);
+    }
+
+    float3 cornerPosition(Triangle triangle, uint corner)
+    {
+        return MakeLinearSurface().cornerPosition(triangle, corner);
+    }
+
+    float3 position(Triangle triangle, float3 barycentric)
+    {
+        return EvalLinearPosition(triangle, barycentric);
+    }
+
+    SurfaceEval eval(Triangle triangle, float3 barycentric)
+    {
+        return EvalLinearSurface(triangle, barycentric);
+    }
+
+    SurfaceBarycentrics reconstruct(Triangle triangle, SurfaceReconstructionInput input)
+    {
+        return MakeLinearSurface().reconstruct(triangle, input);
+    }
+
+    void bounds(Triangle triangle, out float3 minimum, out float3 maximum)
+    {
+        MakeLinearSurface().bounds(triangle, minimum, maximum);
+    }
+
+    void patchBounds(Triangle triangle, float3 bary0, float3 bary1, float3 bary2,
+        out float3 minimum, out float3 maximum)
+    {
+        MakeLinearSurface().patchBounds(triangle, bary0, bary1, bary2, minimum, maximum);
+    }
+
+    DomainErrorBounds errorBounds(Triangle triangle, float3 bary0, float3 bary1, float3 bary2,
+        float3 position0, float3 position1, float3 position2)
+    {
+        return MakeLinearSurface().errorBounds(triangle, bary0, bary1, bary2, position0, position1, position2);
+    }
+};
+
 #endif

@@ -21,6 +21,8 @@ position/normal/UV/color 布局、量化、bit packing、压缩方式和私有 b
 
 默认线性、Opaque 材质以 `StaticPositionEval` 生成深度与阴影，以 `StaticVertexEval` 生成着色数据。用户的可见性、变形和细分实现按自己的函数消费所需字节。
 
+默认 Standard 的阴影页请求在材质入口定义中选择 `CLUSTER_SHADOW_VERTEX_EVALUATE = StaticSurfacePositionEval` 与 `CLUSTER_SHADOW_DOMAIN_EVALUATE = LinearPositionSurface`。前者沿默认位置解码和实例变换产生位置，后者在 wave 内传递三个角点的位置，并复用 `LinearSurface` 的重建与位置数学。请求继续通过材质 `markShadowPages` 进入 VSM。选择入口见 [默认材质定义](../../../assets/Shaders/Inputs/cluster_material.ir.slang)，实现见 [顶点求值](../../../assets/Shaders/vertex_evaluate.slang)、[线性曲面](../../../assets/Shaders/triangle_surface.slang)与 [Cluster 材质入口](../../../assets/Shaders/cluster_material_entries.slang)。用户材质通过自己的兼容 Vertex、Domain 和 Surface 类型提供请求位置。
+
 表面求值与透明覆盖通过 [`EvaluateTriangleVertices`](../../../assets/Shaders/vertex_consumer_cache.slang) 读取三个角点。它沿同一个 `VertexEvalContext` 依次设置局部顶点编号，在一个循环中调用用户的 `evaluate`，并将完整用户顶点交给后续 Domain 与可见性函数。表面求值的 wave 共享及当前帧、历史帧变换选择由 [`cluster_shade_pipeline`](../../../assets/Shaders/cluster_shade_pipeline.slang) 持有。
 
 软件 meshlet 光栅在组内共享已求值的裁剪位置，跨三角形批次复用这些几何值。用户可见性的 Varying 仍由自己的 `readLane` 实现传递。双后端公开读回覆盖这一位置缓存的行为。

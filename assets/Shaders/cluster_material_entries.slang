@@ -261,11 +261,18 @@ void ClusterShadeMode<let debugMode : uint>(uniform VertexEvaluate vertex, unifo
 #endif
 
 #if defined(CLUSTER_FORWARD_SHADING)
+#ifndef CLUSTER_SHADOW_VERTEX_EVALUATE
+#define CLUSTER_SHADOW_VERTEX_EVALUATE VertexEvaluate
+#endif
+#ifndef CLUSTER_SHADOW_DOMAIN_EVALUATE
+#define CLUSTER_SHADOW_DOMAIN_EVALUATE DomainEvaluate
+#endif
+
 [VertexEncoding(CLUSTER_VERTEX_ENCODING)]
 [shader("compute")]
 [numthreads(64, 1, 1)]
 void ClusterShadowRequests<let visibilityDepth : uint, let debugMode : uint>(
-    uniform VertexEvaluate vertex, uniform DomainEvaluate domain,
+    uniform CLUSTER_SHADOW_VERTEX_EVALUATE vertex, uniform CLUSTER_SHADOW_DOMAIN_EVALUATE domain,
     uniform SurfaceEvaluate surface, uint3 tid : SV_DispatchThreadID)
 {
     CSRequestShadowPages(vertex, domain, surface, tid, visibilityDepth);

@@ -47,7 +47,8 @@ typedef StandardMaterial SurfaceEvaluate;
 
 #define CLUSTER_SURFACE_MODES 1
 #define CLUSTER_FORWARD_SHADING 1
-#define CLUSTER_FORWARD_DEPTH_POSITION 1
+#define CLUSTER_SHADOW_VERTEX_EVALUATE StaticSurfacePositionEval
+#define CLUSTER_SHADOW_DOMAIN_EVALUATE LinearPositionSurface
 #include "../Pipeline/cluster_material.slang"
 
 #define TRANSPARENCY_MATERIAL_TYPE StandardTransparencyMaterial
