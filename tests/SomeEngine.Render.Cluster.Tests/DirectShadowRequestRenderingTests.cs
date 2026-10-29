@@ -40,7 +40,8 @@ public sealed class DirectShadowRequestRenderingTests
     [Fact]
     public async Task FailedDebugSelectionPreservesForwardShadowImage()
     {
-        await using var scene = await FrameStageScene.CreateAsync("D3D12", true, Options());
+        await using var scene = await FrameStageScene.CreateAsync("D3D12", true, Options(),
+            nativeD3D12GpuValidation: false);
         scene.UseMaterial("Standard");
         RasterImage expected = await scene.ReadRasterImageAsync();
         ClusterPipelineOutputs outputs = scene.Outputs;
