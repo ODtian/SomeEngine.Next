@@ -108,14 +108,9 @@ public sealed partial class ClusterPipelineSystem
         {
             offset = GraphData.ParameterByteCount;
             GraphData.ParameterByteCount = checked(offset + capacity);
-            var description = new BufferDesc(checked((ulong)GraphData.ParameterByteCount),
-                BufferUsages.Constant, "Cluster shader parameters");
-            if (GraphData.ShaderParameterBytes == default)
-                GraphData.ShaderParameterBytes = edit.DeclareExternalBuffer(description, MemoryType.Upload);
-            else edit.SetBufferDescription(GraphData.ShaderParameterBytes, description, MemoryType.Upload);
         }
         var parameters = new ShaderParameters(offset, capacity);
-        WriteParameterData(parameters, bytes);
+        WriteParameterData(ref edit, parameters, bytes);
         return parameters;
     }
 
@@ -124,15 +119,28 @@ public sealed partial class ClusterPipelineSystem
         ShaderParameters parameters = new(checked((int)input.Range.Offset), checked((int)input.Range.Size));
         DevelopmentCheck.Require(bytes.Length <= parameters.Capacity,
             "Each shader parameter record keeps the size of its declared type.");
-        WriteParameterData(parameters, bytes);
+        WriteParameterData(ref edit, parameters, bytes);
     }
 
-    private void WriteParameterData(ShaderParameters parameters, scoped ReadOnlySpan<byte> bytes)
+    private void WriteParameterData(ref RenderGraphEdit edit, ShaderParameters parameters,
+        scoped ReadOnlySpan<byte> bytes)
     {
         byte[] record = new byte[parameters.Capacity];
         bytes.CopyTo(record);
+        if (GraphData.ParameterData.Length == GraphData.ParameterByteCount)
+        {
+            Span<byte> previous = stackalloc byte[parameters.Capacity];
+            GraphData.ParameterData.CopyTo(previous, parameters.Offset);
+            if (previous.SequenceEqual(record)) return;
+        }
         GraphData.ParameterData = GraphData.ParameterData.WithChanges(GraphData.ParameterByteCount,
             [(parameters.Offset, record)]);
+        if (GraphData.ShaderParameterBytes == default)
+            GraphData.ShaderParameterBytes = CreateBufferData(ref edit, GraphData.ParameterData,
+                BufferUsages.Constant, "Cluster shader parameters");
+        else
+            UpdateBufferData(ref edit, GraphData.ShaderParameterBytes, GraphData.ParameterData,
+                [new BufferRange(checked((ulong)parameters.Offset), checked((ulong)parameters.Capacity))]);
     }
 
     private void ReleaseParameters(ShaderParameters parameters) => GraphData.ParameterFreeOffsets =

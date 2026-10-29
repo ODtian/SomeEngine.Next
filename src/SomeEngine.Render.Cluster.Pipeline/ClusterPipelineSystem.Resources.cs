@@ -723,36 +723,29 @@ public sealed partial class ClusterPipelineSystem
 
 
     private void WriteFrameUploads(
-        ref RenderGraphFrame graph, ClusterRasterStageSet rasterStages,
-        ClusterShadeStageSet shadeStages, scoped ReadOnlySpan<ClusterViewUniforms> packedViews,
+        ref RenderGraphFrame graph, scoped ReadOnlySpan<ClusterViewUniforms> packedViews,
         int primaryViewCount)
     {
         graph.SetBufferData(GraphData.Resources.PackedViews, MemoryMarshal.AsBytes(packedViews));
-        Span<byte> parametersBytes = graph.GetBufferDataWriteSpan(GraphData.ShaderParameterBytes);
-        GraphData.ParameterData.CopyTo(parametersBytes);
         if (_options.EnableFrameMetricsReadback)
         {
             ulong frameIndex = checked(++_metricFrameIndex);
             graph.WriteBuffer(GraphData.Resources.FrameMetricsBuffer, MetricsFrameIndexOffset,
                 MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(ref frameIndex, 1)));
         }
-        WriteUniform(parametersBytes, _sceneValues, GraphData.SceneUniforms);
-        WriteUniform(parametersBytes, new ClusterTraversalSeedUniforms
+        graph.SetBufferInput(GraphData.PrimarySeedUniforms, graph.Upload(new ClusterTraversalSeedUniforms
         {
             ViewCount = checked((uint)primaryViewCount), ViewIndexMode = 0u, InvocationCountIndex = 2u,
             MaxNodes = _options.MaxCandidates, UseInstanceGroups = _options.UseInstanceGroups ? 1u : 0u,
-        }, GraphData.PrimarySeedUniforms);
+        }, BufferUsages.Constant, "Cluster primary seed parameters"));
         if (_renderContext.IsValid)
-            WriteUniform(parametersBytes, new ClusterTraversalSeedUniforms
+            graph.SetBufferInput(GraphData.TargetSeedUniforms, graph.Upload(new ClusterTraversalSeedUniforms
             {
                 ViewCount = _renderContext.MaximumInvocationCount, ViewIndexMode = 1u,
                 InvocationCountIndex = _renderContext.InvocationCountIndex,
                 MaxNodes = _options.MaxCandidates, UseInstanceGroups = _options.UseInstanceGroups ? 1u : 0u,
-            }, GraphData.TargetSeedUniforms);
+            }, BufferUsages.Constant, "Cluster target seed parameters"));
     }
-
-    private void WriteUniform<T>(Span<byte> bytes, in T value, GraphBufferSlice input)
-        where T : unmanaged => MemoryMarshal.Write(bytes.Slice(checked((int)input.Range.Offset)), in value);
 
     private void RecordBufferInitialization(
         ref RenderGraphEdit graph,

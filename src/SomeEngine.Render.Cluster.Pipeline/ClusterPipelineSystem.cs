@@ -759,8 +759,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             using (SomeEngine.Diagnostics.EngineTrace.Begin(FrameUploadsTrace))
                 WriteFrameUploads(
                     ref graph,
-                    _installedRasterStages ?? throw new InvalidOperationException("Raster stages were not installed."),
-                    _installedShadeStages ?? throw new InvalidOperationException("Shade stages were not installed."),
                     packedViews[..primaryViewCount],
                     primaryViewCount);
             using (SomeEngine.Diagnostics.EngineTrace.Begin(RasterInputsTrace))

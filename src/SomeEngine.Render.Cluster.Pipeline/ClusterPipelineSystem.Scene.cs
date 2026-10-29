@@ -23,7 +23,6 @@ public sealed partial class ClusterPipelineSystem
         private float TranslationPadding;
     }
 
-    private ClusterSceneUniforms _sceneValues;
     private RenderInstanceBatch? _sceneBatch;
     private ulong _sceneInstanceRevision;
     private ulong _sceneGeometryRevision;
@@ -55,7 +54,7 @@ public sealed partial class ClusterPipelineSystem
         GraphData.SceneInstanceData = CreateBufferData(ref graph,
             ClusterBytes.Zero(_options.UseInstanceGroups ? checked((int)Math.Max(capacity, 1u) * sizeof(uint)) : sizeof(uint)),
             BufferUsages.ShaderRead, "Cluster spatial instance indices");
-        GraphData.SceneUniforms = CreateParameters(ref graph, new byte[32]);
+        GraphData.SceneUniforms = graph.CreateBufferInput(BufferUsages.Constant);
         PassDefinition pass = graph.GetPass(GraphData.SceneBounds);
         _ = pass.Bind(GraphData.SceneUniforms, PipelineSync.ComputeShading);
         pass.Bind(GraphParameterResourceBinding.ReadOnlyBufferDescriptor(
@@ -105,12 +104,14 @@ public sealed partial class ClusterPipelineSystem
         }
         graph.SetBufferInput(GraphData.SceneInstances, new GraphBufferSlice(GraphData.SceneInstanceData,
             new BufferRange(0, _options.UseInstanceGroups ? checked((ulong)Math.Max(batch.InstanceCount, 1) * sizeof(uint)) : sizeof(uint))));
-        _sceneValues = new ClusterSceneUniforms
+        var uniforms = new ClusterSceneUniforms
         {
             InstanceCount = checked((uint)batch.InstanceCount), HasPreviousBounds = hasPrevious ? 1u : 0u,
             UseInstanceGroups = _options.UseInstanceGroups ? 1u : 0u,
             PreviousWorldTranslation = hasPrevious ? _sceneOrigin.RelativeTo(worldOrigin) : Vector3.Zero,
         };
+        graph.SetBufferInput(GraphData.SceneUniforms,
+            graph.Upload(in uniforms, BufferUsages.Constant, "Cluster scene parameters"));
         graph.SetPassData(GraphData.SceneBounds, new DispatchArguments(
             (checked((uint)batch.InstanceCount) + 63u) / 64u, 1, 1));
         bool hasGeometry = batch.InstanceCount != 0 && GraphData.Outputs.Geometry.HasBvhData;

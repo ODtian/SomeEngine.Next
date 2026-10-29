@@ -70,13 +70,13 @@ public sealed partial class ClusterPipelineSystem
         internal GraphBufferInput ShadeScalars = null!;
         internal GraphBufferId ScalarBytes;
         internal GraphBufferId ScalarOffsets;
-        internal GraphBufferSlice PrimarySeedUniforms;
-        internal GraphBufferSlice TargetSeedUniforms;
+        internal GraphBufferInput PrimarySeedUniforms = null!;
+        internal GraphBufferInput TargetSeedUniforms = null!;
         internal GraphBufferId SceneChunks;
         internal GraphBufferId InstanceWorldBounds;
         internal GraphBufferId SceneInstanceData;
         internal GraphBufferInput SceneInstances = null!;
-        internal GraphBufferSlice SceneUniforms;
+        internal GraphBufferInput SceneUniforms = null!;
         internal ImmutableDictionary<SomeEngine.Graphics.Buffer, MaterialBuffer> MaterialBuffers =
             ImmutableDictionary<SomeEngine.Graphics.Buffer, MaterialBuffer>.Empty;
         internal ImmutableDictionary<SomeEngine.Resources.Texture, MaterialTexture> MaterialTextures =

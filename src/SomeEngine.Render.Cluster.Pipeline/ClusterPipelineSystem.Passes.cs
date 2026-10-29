@@ -50,7 +50,7 @@ public sealed partial class ClusterPipelineSystem
         InstallLeafFlagFixups(ref graph);
         GraphData.PrimaryGeometry = graph.AddRegion("Cluster primary geometry work", _regions.PrimaryGeometry);
         GraphRegionId primaryTraversal = graph.AddRegion("Cluster primary traversal", GraphData.PrimaryGeometry);
-        RecordWorkSeed(ref graph, frame, frame.PackedViews, frame.ViewCount, 0u, "primary", primaryTraversal);
+        RecordWorkSeed(ref graph, frame, frame.PackedViews, 0u, "primary", primaryTraversal);
         RecordPersistentCull(ref graph, frame, frame.PackedViews, frame.DrawArgs,
             frame.ReadOffsetZero, frame.ReadOffsetZero, frame.ReadOffsetZero, 0, "primary", primaryTraversal);
         RasterPhase first = RecordRasterPhase(ref graph, frame, rasterBins, frame.DrawArgs,
@@ -103,7 +103,7 @@ public sealed partial class ClusterPipelineSystem
             reset, new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
             ClusterContinuationResetParameters.Declare, ClusterContinuationResetParameters.Record, region: GraphData.TargetFirstReference);
         GraphRegionId targetTraversal = graph.AddRegion("Cluster target traversal", GraphData.TargetFirstReference);
-        RecordWorkSeed(ref graph, targets, packedViews, _renderContext.MaximumInvocationCount, 1u, "continuation", targetTraversal);
+        RecordWorkSeed(ref graph, targets, packedViews, 1u, "continuation", targetTraversal);
         RecordPersistentCull(ref graph, targets, packedViews, targets.ContinuationDrawArgs,
             targets.ReadOffsetZero, targets.ReadOffsetZero, targets.ReadOffsetZero, 2, "continuation", targetTraversal);
         RasterPhase first = RecordRasterPhase(ref graph, targets, rasterBins, targets.ContinuationDrawArgs,
@@ -257,7 +257,7 @@ public sealed partial class ClusterPipelineSystem
     }
 
     private void RecordWorkSeed(ref RenderGraphEdit graph, in FrameResources frame, GraphBufferId packedViews,
-        uint viewCount, uint viewIndexMode, string epochLabel, GraphRegionId region)
+        uint viewIndexMode, string epochLabel, GraphRegionId region)
     {
         int bindingCount = 0;
         GraphPassId seedPass;
@@ -287,23 +287,13 @@ public sealed partial class ClusterPipelineSystem
                 PipelineSync.ComputeShading,
                 GraphAccessMode.ReadWrite,
                 WriteCoverage.Complete));
-            GraphBufferSlice seedUniforms = UploadUniform(
-                ref graph,
-                new ClusterTraversalSeedUniforms
-                {
-                    ViewCount = viewCount,
-                    ViewIndexMode = viewIndexMode,
-                    MaxNodes = _options.MaxCandidates,
-                    ArgsOffset = 0u,
-                    UseInstanceGroups = _options.UseInstanceGroups ? 1u : 0u,
-                    InvocationCountIndex = viewIndexMode == 0u ? 2u : _renderContext.InvocationCountIndex,
-                });
+            GraphBufferInput seedUniforms = graph.CreateBufferInput(BufferUsages.Constant);
             if (viewIndexMode == 0u)
                 GraphData.PrimarySeedUniforms = seedUniforms;
             else
                 GraphData.TargetSeedUniforms = seedUniforms;
             AddBinding(ref bindingCount, GraphParameterResourceBinding.ConstantBuffer(
-                CreateConstantBufferView(graph, seedUniforms),
+                seedUniforms,
                 PipelineSync.ComputeShading));
             if (viewIndexMode == 0u)
             {
