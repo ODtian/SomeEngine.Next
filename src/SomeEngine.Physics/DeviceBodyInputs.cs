@@ -14,7 +14,6 @@ public sealed class DeviceBodyInputs : IDisposable
     private readonly World _world;
     private readonly QueryHandle _members;
     private readonly DeviceBodies _bodies;
-    private readonly EntityTableChanges _tableChanges;
     private readonly JobResourceAccess[] _queryAccesses;
     private readonly List<BufferRange> _ranges = [];
     private readonly List<(int Index, DeviceBodies.BodyInputVersions Version)> _changes = [];
@@ -23,7 +22,6 @@ public sealed class DeviceBodyInputs : IDisposable
     public DeviceBodyInputs(World world, QueryHandle members, DeviceBodies bodies)
     {
         _world = world; _bodies = bodies;
-        _tableChanges = world.ObserveEntityTables();
         QueryDefinition definition = world.GetQueryDefinition(members).AsFilter().WithAccess(new QueryDefinitionBuilder()
             .Read<DeviceBodyBinding>().Read<BodyPose>().Read<BodyMass>().Read<BodyVelocity>().Read<BodyStepState>().Build());
         _members = world.Query(definition);
@@ -44,14 +42,12 @@ public sealed class DeviceBodyInputs : IDisposable
     private QueueCompletion Submit(long number, int substep)
     {
         _ranges.Clear(); _changes.Clear();
-        EntityTableChangeBatch changes = _tableChanges.Read();
-        var inputs = (Inputs: this, Number: number, Substep: substep, Changes: changes, Version: 0u);
+        var inputs = (Inputs: this, Number: number, Substep: substep, Version: 0u);
         _world.ExecuteReadQuery(_members, _lastSystemVersion, ref inputs,
             static (scoped QueryCursor rows,
-                ref (DeviceBodyInputs Inputs, long Number, int Substep, EntityTableChangeBatch Changes, uint Version) inputs) =>
+                ref (DeviceBodyInputs Inputs, long Number, int Substep, uint Version) inputs) =>
         {
-            foreach (QueryChunkView chunk in rows.ChangedChunks(inputs.Changes))
-                foreach (QueryRow row in chunk.Rows) inputs.Inputs.Read(row, inputs.Number, inputs.Substep);
+            foreach (QueryRow row in rows.Rows) inputs.Inputs.Read(row, inputs.Number, inputs.Substep);
             inputs.Version = rows.CurrentSystemVersion;
         });
         _ranges.Sort(static (first, second) => first.Offset.CompareTo(second.Offset));
@@ -67,7 +63,6 @@ public sealed class DeviceBodyInputs : IDisposable
         }
         QueueCompletion complete = _bodies.SubmitInputRanges(CollectionsMarshal.AsSpan(_ranges)[..merged]);
         foreach (var change in _changes) _bodies.AcceptCpuVersions(change.Index, in change.Version);
-        _tableChanges.Accept(changes);
         _lastSystemVersion = inputs.Version;
         return complete;
     }
@@ -92,7 +87,7 @@ public sealed class DeviceBodyInputs : IDisposable
         if ((changed & DeviceBodies.BodyInputComponents.Step) != 0) Add(128, 80);
         void Add(ulong offset, ulong size) => _ranges.Add(new(start + offset, size));
     }
-    public void Dispose() { _tableChanges.Dispose(); _world.ReleaseQuery(_members); }
+    public void Dispose() => _world.ReleaseQuery(_members);
     private readonly struct Transfer(DeviceBodyInputs inputs, long number, int substep) : IDevicePhysicsSubmission
     {
         public IGraphicsBackend Backend => inputs._bodies.Backend;
