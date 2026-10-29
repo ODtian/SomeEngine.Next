@@ -158,11 +158,13 @@ HiZ 使用两张图持久纹理。`GraphTextureInput` 在每帧选择之前的 H
 
 ## Behavior evidence
 
-`FrameStageRenderingTests` 通过硬件适配器上的完整 Cluster 着色组合，覆盖 D3D12 与 Vulkan。
-VSM 开关两种状态的 64×64 RGBA16F 输出逐字节比较迁移前的图像；Standard 与 Unlit
-运行中互换后，Temporal 输出与最终材质的全新安装逐字节一致。测试只经公开纹理输出、
-图复制命令与缓冲映射观察结果。迁移基线的提交、适配器与采样参数由
-`tests/SomeEngine.Render.Cluster.Tests/FrameStageImages/README.md` 记录。
+[`FrameStageRenderingTests`](../../../tests/SomeEngine.Render.Cluster.Tests/FrameStageRenderingTests.cs)
+使用 [`RasterTestGeometry`](../../../tests/SomeEngine.Render.Cluster.Tests/RasterTestGeometry.cs)
+通过公共几何构建入口创建固定八面体与平面，覆盖 D3D12、Vulkan 和 VSM 开关两种状态。
+网格变换恢复后的 64×64 RGBA16F 颜色和深度与初始状态逐字节一致；平面接收区域在启用
+阴影后变暗，相机深度保持一致。Standard 与 Unlit 运行中互换后，Temporal 输出与最终
+材质的全新安装逐字节一致。丢弃相机帧之后的颜色、深度和运动与直接接受相同相机状态
+逐字节一致。测试经公开纹理输出、图复制命令与缓冲映射观察结果。
 
 `RasterRegionRenderingTests` 使用完整 Cluster 与 VSM 组合，通过硬件适配器上的 D3D12
 和 Vulkan，覆盖软件光栅与硬件光栅。普通材质和细分材质的新增、删除、替换，以及共享

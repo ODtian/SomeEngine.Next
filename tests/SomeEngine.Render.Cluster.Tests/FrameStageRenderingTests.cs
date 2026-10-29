@@ -1,4 +1,3 @@
-using System.IO.Compression;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using SomeEngine.Assets;
@@ -26,6 +25,7 @@ using SomeEngine.Render.Systems;
 using SomeEngine.RenderGraph;
 using SomeEngine.Resources;
 using SlangShaderSharp;
+using Xunit.Sdk;
 using Buffer = SomeEngine.Graphics.Buffer;
 
 namespace SomeEngine.Render.Cluster.Tests;
@@ -52,8 +52,10 @@ public sealed class FrameStageRenderingTests
             FirstPerson = new FirstPersonCamera(1.25f, .75f),
         };
 
+        Mesh mesh = await RasterTestGeometry.CreateAsync();
         await using var scene = await FrameStageScene.CreateAsync("D3D12", shadows: false,
-            pipelineOptions: new ClusterPipelineOptions { MaxCandidates = 4096 });
+            pipelineOptions: new ClusterPipelineOptions { MaxCandidates = 4096 }, geometryMesh: mesh,
+            nativeD3D12GpuValidation: false);
         try
         {
             scene.UseMaterial("Unlit");
@@ -71,6 +73,9 @@ public sealed class FrameStageRenderingTests
             scene.SetView(current);
             PostProcessedImage actual = await scene.ReadNextPostProcessedImageAsync();
 
+            ImageArtifacts.AssertEqual(new(64, 64, Format.R16G16B16A16Float, expected.Color),
+                new(64, 64, Format.R16G16B16A16Float, actual.Color),
+                nameof(DiscardedCameraFrameKeepsMotionRelativeToLastAcceptedCamera) + "-color");
             ImageArtifacts.AssertEqual(new(64, 64, Format.D32Float, expected.Depth),
                 new(64, 64, Format.D32Float, actual.Depth), nameof(DiscardedCameraFrameKeepsMotionRelativeToLastAcceptedCamera) + "-depth");
             ImageArtifacts.AssertEqual(new(64, 64, Format.R16G16B16A16Float, MotionImage(expected.Motion)),
@@ -120,14 +125,16 @@ public sealed class FrameStageRenderingTests
     [Fact]
     public async Task Pending_shadow_quality_captures_keep_each_frames_bias_after_reuse_and_resize()
     {
-        await using var scene = await FrameStageScene.CreateAsync("D3D12", shadows: true,
+        Mesh mesh = await RasterTestGeometry.CreateAsync();
+        await using var scene = await FrameStageScene.CreateAsync("D3D12", shadows: true, geometryMesh: mesh,
             pipelineOptions: new ClusterPipelineOptions { MaxCandidates = 4096, EnableFrameMetricsReadback = true },
             shadowSettings: new VirtualShadowMapSettings
             {
                 Enabled = true, VirtualResolution = 4096, AtlasSize = 2048, MaxShadowLights = 1,
                 DirectionalClipmapLevels = 1, DynamicResolutionEnabled = false,
                 LocalResolutionLodBias = 0, LocalMovingResolutionLodBias = 0,
-            }, graphicsQueueCount: 2, requiredFeatures: DeviceFeatures.ExternalTimelines);
+            }, graphicsQueueCount: 2, requiredFeatures: DeviceFeatures.ExternalTimelines,
+            nativeD3D12GpuValidation: false);
         PointLight Light(float bias) => new(new Vector3(-4, 2, -3), 20, Vector3.One, 30,
             ShadowSettings: new LightShadowSettings(ResolutionLodBias: bias));
         scene.SetPointLight(Light(1));
@@ -183,18 +190,62 @@ public sealed class FrameStageRenderingTests
     [InlineData("D3D12", true)]
     [InlineData("Vulkan", false)]
     [InlineData("Vulkan", true)]
-    public async Task FrameStagesPreserveClusterColorWithShadowsEnabledOrDisabled(string backendName, bool shadows)
+    public async Task FrameStagesRestoreColorAndDepthAfterMeshTransformChanges(string backendName, bool shadows)
     {
-        await using var scene = await FrameStageScene.CreateAsync(backendName, shadows);
-        byte[] pixels = await scene.ReadClusterColorAsync();
-        string path = Path.Combine(FrameStageScene.FindRoot(), "tests", "SomeEngine.Render.Cluster.Tests",
-            "FrameStageImages", $"{backendName}-{shadows}.rgba16.gz");
-        using var file = File.OpenRead(path);
-        using var compressed = new GZipStream(file, CompressionMode.Decompress);
-        using var expected = new MemoryStream();
-        await compressed.CopyToAsync(expected);
-        ImageArtifacts.AssertEqual(new(64, 64, Format.R16G16B16A16Float, expected.ToArray()),
-            new(64, 64, Format.R16G16B16A16Float, pixels));
+        Mesh mesh = await RasterTestGeometry.CreateAsync();
+        var options = new ClusterPipelineOptions { MaxCandidates = 4096, EnableFrameMetricsReadback = true };
+        await using var scene = await FrameStageScene.CreateAsync(backendName, shadows, options, mesh,
+            nativeD3D12GpuValidation: false);
+        RasterImage expected = await scene.ReadRasterImageAsync();
+
+        scene.SetMeshTransform(1, new TransformQvvs(new Vector3(1.5f, 0, -6), Quaternion.Identity, .6f));
+        RasterImage moved = await scene.ReadNextRasterImageAsync();
+        Assert.NotEqual(expected.Color, moved.Color);
+        Assert.NotEqual(expected.Depth, moved.Depth);
+
+        scene.SetMeshTransform(1, new TransformQvvs(new Vector3(0, 0, -6), Quaternion.Identity, .6f));
+        RasterImage actual = await scene.ReadNextRasterImageAsync();
+        RasterImage.AssertEqual(expected, actual);
+    }
+
+    [Theory]
+    [InlineData("D3D12")]
+    [InlineData("Vulkan")]
+    public async Task ShadowsDarkenTheReceiverWhilePreservingCameraDepth(string backendName)
+    {
+        Mesh mesh = await RasterTestGeometry.CreatePlaneAsync();
+        var options = new ClusterPipelineOptions { MaxCandidates = 4096, EnableFrameMetricsReadback = true };
+        RasterImage unshadowed;
+        await using (var scene = await FrameStageScene.CreateAsync(backendName, false, options, mesh,
+            nativeD3D12GpuValidation: false))
+            unshadowed = await scene.ReadRasterImageAsync();
+
+        await using var shadowed = await FrameStageScene.CreateAsync(backendName, true, options, mesh,
+            nativeD3D12GpuValidation: false);
+        RasterImage actual = await shadowed.ReadRasterImageAsync();
+        ImageArtifacts.AssertEqual(new(64, 64, Format.D32Float, unshadowed.Depth),
+            new(64, 64, Format.D32Float, actual.Depth));
+        try
+        {
+            ReadOnlySpan<Half> lit = MemoryMarshal.Cast<byte, Half>(unshadowed.Color);
+            ReadOnlySpan<Half> dark = MemoryMarshal.Cast<byte, Half>(actual.Color);
+            // Rays from the point light through the foreground plane meet this receiver region.
+            for (int y = 40; y < 43; y++)
+            for (int x = 50; x < 53; x++)
+            for (int channel = 0; channel < 3; channel++)
+            {
+                int index = (y * 64 + x) * 4 + channel;
+                Assert.True((float)dark[index] + .001f < (float)lit[index],
+                    $"Receiver ({x}, {y}), channel {channel}: lit={(float)lit[index]}, shadowed={(float)dark[index]}.");
+            }
+        }
+        catch (XunitException)
+        {
+            ImageArtifacts.SaveComparison(new(64, 64, Format.R16G16B16A16Float, unshadowed.Color),
+                new(64, 64, Format.R16G16B16A16Float, actual.Color),
+                nameof(ShadowsDarkenTheReceiverWhilePreservingCameraDepth));
+            throw;
+        }
     }
 
     [Theory]
@@ -204,13 +255,16 @@ public sealed class FrameStageRenderingTests
     [InlineData("Vulkan", "Unlit")]
     public async Task MaterialReplacementKeepsPostProcessingEqualToFreshInstallation(string backendName, string material)
     {
+        Mesh mesh = await RasterTestGeometry.CreateAsync();
         byte[] expected;
-        await using (var fresh = await FrameStageScene.CreateAsync(backendName, true))
+        await using (var fresh = await FrameStageScene.CreateAsync(backendName, true, geometryMesh: mesh,
+            nativeD3D12GpuValidation: false))
         {
             fresh.UseMaterial(material);
             expected = await fresh.ReadPostProcessedColorAsync();
         }
-        await using var changed = await FrameStageScene.CreateAsync(backendName, true);
+        await using var changed = await FrameStageScene.CreateAsync(backendName, true, geometryMesh: mesh,
+            nativeD3D12GpuValidation: false);
         changed.UseMaterial(material == "Standard" ? "Unlit" : "Standard");
         byte[] previous = await changed.ReadPostProcessedColorAsync();
         changed.UseMaterial(material);
