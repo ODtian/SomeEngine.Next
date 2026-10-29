@@ -47,6 +47,13 @@ Jacobian、惯性块与响应共同投影到该子空间。
 旋转惯性采用原张量，锚点 Jacobian 以质心为力臂原点。
 源码见 [设备局部数学](../../../assets/Shaders/physics_avbd_body.slang)。
 
+局部矩阵的 21 个压缩元素和最多六个自由度采用固定上界循环，
+由 Slang `ForceUnroll` 在生成目标代码前展开，维数条件继续选择当前活动子空间。
+力与刚度同时为零的行直接结束装配。
+共同接触装配在一次参与端遍历中取得两侧材料锚与法向锚、加权力臂和曲率长度，
+随后由同一组几何量计算法向与两个切向的 Jacobian。
+`normalReference` 继续选择材料点或主体原点，多节点接触继续按参与端权重与侧别累加。
+
 `AvbdMaterialTerms` 对应的设备函数 `deviceAvbdMaterial(K,rho)` 分开处理材料刚度
 与数值罚参数。`physics_avbd_elastic.slang` 从原 `ElasticConnection` 的同一物理参数
 组装线性/角弹性，当前误差与累积对偶力共同进入 Body 方程。
@@ -90,6 +97,12 @@ DefaultGame 的设备场景通过此入口复用接触唤醒后的图和固定�
 接触反弹的显式图复用重载同样沿其初始化阶段捕获的响应行执行。
 主体、约束及并行图派发复用 `DevicePhysicsDispatch.CreateGroups` 的 X/Y 范围；
 项目 Shader 以 `devicePhysicsThreadIndex` 或 `devicePhysicsGroupIndex` 读取对应线性索引。
+Body 更新的派发宽度来自 `UpdateBody` 入口的线程组 X 维，
+其余内核继续使用构造时给出的线程组宽度。
+DefaultGame 设备场景选择每组一个 Body 的入口，并按场景实际关节与距离约束数据
+实例化具体数值类型；空集合保留图中原来的一行及一组编号，数值方法为空。
+场景着色器显式选择最高优化等级，支撑队列的消费者数量按 Body 数量分配，
+清理、映射和固定任务总数仍覆盖原接触容量。
 固定主体与方程绑定的项目可在首次 `Initialize(DeviceInputTransfer.Upload)` 或 `Solve(Upload)`
 交付原映射后，选择对应的 `Resident` 重载复用同一设备映射。
 数值方程仍逐步初始化，现行状态及当前步长继续进入原 kernel；原默认入口继续上传当前绑定。

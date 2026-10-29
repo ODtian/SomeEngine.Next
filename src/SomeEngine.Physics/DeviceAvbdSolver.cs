@@ -25,7 +25,7 @@ public sealed class DeviceAvbdSolver : IDisposable
     private readonly DeviceAvbdBodyEquations _equations;
     private readonly DeviceConstraintGraph _graph;
     private readonly DeviceAvbdSettings _settings;
-    private readonly int _threadsPerGroup;
+    private readonly int _threadsPerGroup, _bodyThreadsPerGroup;
     private readonly Pipeline[] _pipelines;
     private readonly VariableLayoutReflection[] _layouts;
     private readonly ResourceBinding[][] _bindings;
@@ -43,6 +43,9 @@ public sealed class DeviceAvbdSolver : IDisposable
     {
         _backend=backend; _device=device; _bodies=bodies; _equations=equations; _graph=graph; _settings=settings;
         _threadsPerGroup=threadsPerGroup; _extraAccesses=inputAccesses.ToArray(); _selections=selections.ToArray();
+        Span<nuint> bodyGroupSize=stackalloc nuint[3];
+        kernels.UpdateBody.Compute.GetComputeThreadGroupSize(bodyGroupSize);
+        _bodyThreadsPerGroup=(int)bodyGroupSize[0];
         _commands=backend.CreateCommandContext(device,new(QueueType.Compute,0,1,Label:"Device compliant ALM"));
         var descriptions=new List<ComputePipelineDesc>{kernels.Initialize,kernels.UpdateBody,kernels.UpdateDuals};
         _groupInitialization=AddGroupDispatches(descriptions,kernels.InitializeGroups,kernels.GroupInitializationDispatches.Span);
@@ -118,7 +121,7 @@ public sealed class DeviceAvbdSolver : IDisposable
             for(int color=0;color<_graph.BodyColorCount;color++)
             {
                 step.Color=(uint)color; Bind(1,in step);
-                _backend.Dispatch(_commands,DevicePhysicsDispatch.CreateGroups((_graph.MaximumBodyColorSize+_threadsPerGroup-1)/_threadsPerGroup));
+                _backend.Dispatch(_commands,DevicePhysicsDispatch.CreateGroups((_graph.MaximumBodyColorSize+_bodyThreadsPerGroup-1)/_bodyThreadsPerGroup));
                 Barrier();
             }
             step.Color=0;
