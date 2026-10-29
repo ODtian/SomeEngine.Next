@@ -52,17 +52,16 @@ public sealed partial class RenderDevice
     public TextureViews PrepareTextureForInputs(ref RenderGraphFrame frame,
         scoped ReadOnlySpan<GraphParameterInput> inputs, EngineTexture asset, out bool hasFrameUploads)
     {
-        RhiTexture texture = PrepareTexture(ref frame, ReadOnlySpan<GraphPassId>.Empty, asset);
-        TextureRealization realization = GetOrCreateTexture(asset);
+        TextureRealization realization = PrepareTexture(ref frame, [], asset, null);
         OrderTextureInputs(ref frame, realization, inputs);
         hasFrameUploads = realization.HasUploadTransaction;
         TextureSrv? srv = null;
         TextureUav? uav = null;
         foreach (GraphParameterInput input in inputs)
-            if (input.Type == ResourceBindingType.TextureSrv) srv ??= GetTextureSrv(asset);
+            if (input.Type == ResourceBindingType.TextureSrv) srv ??= GetTextureSrv(realization);
             else if (input.Type == ResourceBindingType.TextureUav)
-                uav ??= GetTextureUav(asset, realization.Shape.ResidentRange(realization.FirstResidentMip));
-        return new(texture, srv, uav);
+                uav ??= GetTextureUav(realization, realization.Shape.ResidentRange(realization.FirstResidentMip));
+        return new(realization.Resource, srv, uav);
     }
 
     public TextureSrv PrepareMissingTextureForInputs(ref RenderGraphFrame frame,
@@ -72,11 +71,10 @@ public sealed partial class RenderDevice
     public TextureSrv PrepareMissingTextureForInputs(ref RenderGraphFrame frame,
         scoped ReadOnlySpan<GraphParameterInput> inputs, out bool hasFrameUploads)
     {
-        _ = PrepareMissingTexture(ref frame, ReadOnlySpan<GraphPassId>.Empty);
-        TextureRealization texture = RequireMissingTexture();
+        TextureRealization texture = PrepareMissingTexture(ref frame, [], null);
         OrderTextureInputs(ref frame, texture, inputs);
         hasFrameUploads = texture.HasUploadTransaction;
-        TextureSrv view = MissingTextureSrv;
+        TextureSrv view = GetMissingTextureSrv(texture);
         UpdateSampledDescriptor(texture, view);
         return view;
     }
@@ -104,7 +102,7 @@ public sealed partial class RenderDevice
                     TextureDimension: shape.SampledDimension)], "Material sampled texture");
             texture.SampledIndex = _backend.GetDescriptorIndex(texture.SampledDescriptor, 0).Value;
             if (texture.FirstResidentMip < shape.MipLevelCount)
-                UpdateSampledDescriptor(texture, asset is null ? MissingTextureSrv : GetTextureSrv(asset));
+                UpdateSampledDescriptor(texture, asset is null ? GetMissingTextureSrv(texture) : GetTextureSrv(texture));
         }
         return texture.SampledIndex;
     }

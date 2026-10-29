@@ -36,17 +36,12 @@ public sealed partial class RenderDevice
         }
     }
 
-    public TextureSrv MissingTextureSrv
-    {
-        get
-        {
-            ThrowIfDisposed();
-            TextureRealization realization = RequireMissingTexture();
-            return GetTextureSrv(realization, realization.Shape.FullRange,
-                realization.Shape.SampledFormat, realization.Shape.SampledDimension,
-                "RenderDevice missing texture SRV");
-        }
-    }
+    public TextureSrv MissingTextureSrv => GetMissingTextureSrv(RequireMissingTexture());
+
+    private TextureSrv GetMissingTextureSrv(TextureRealization realization) =>
+        GetTextureSrv(realization, realization.Shape.FullRange,
+            realization.Shape.SampledFormat, realization.Shape.SampledDimension,
+            "RenderDevice missing texture SRV");
 
     public RhiTexture GetTexture(EngineTexture asset)
     {
@@ -99,8 +94,8 @@ public sealed partial class RenderDevice
         return GetTextureSrv(realization, range, format, dimension, label);
     }
 
-    private TextureSrv GetTextureSrv(TextureRealization realization, TextureSubresourceRange? range,
-        Format? format, TextureViewDimension? dimension, string? label)
+    private TextureSrv GetTextureSrv(TextureRealization realization, TextureSubresourceRange? range = null,
+        Format? format = null, TextureViewDimension? dimension = null, string? label = null)
     {
         TextureShape shape = realization.Shape;
         TextureSubresourceRange resolved = range ?? shape.ResidentRange(realization.FirstResidentMip);
@@ -254,14 +249,14 @@ public sealed partial class RenderDevice
 
     /// <summary>Prepares the fallback texture for every pass bound to the parameter input.</summary>
     public RhiTexture PrepareMissingTexture(ref RenderGraphFrame frame, GraphParameterInput input) =>
-        PrepareMissingTexture(ref frame, [], input);
+        PrepareMissingTexture(ref frame, [], input).Resource;
 
     /// <summary>Prepares the fallback texture and orders every supplied consumer after its upload.</summary>
     public RhiTexture PrepareMissingTexture(
         ref RenderGraphFrame frame,
-        scoped ReadOnlySpan<GraphPassId> consumers) => PrepareMissingTexture(ref frame, consumers, null);
+        scoped ReadOnlySpan<GraphPassId> consumers) => PrepareMissingTexture(ref frame, consumers, null).Resource;
 
-    private RhiTexture PrepareMissingTexture(ref RenderGraphFrame frame,
+    private TextureRealization PrepareMissingTexture(ref RenderGraphFrame frame,
         scoped ReadOnlySpan<GraphPassId> consumers, GraphParameterInput? input)
     {
         ThrowIfDisposed();
@@ -286,7 +281,7 @@ public sealed partial class RenderDevice
             realization.FirstResidentMip = 0;
         }
         OrderTextureConsumers(ref frame, realization, consumers, input);
-        return realization.Resource;
+        return realization;
     }
 
     private void OrderTextureConsumers(ref RenderGraphFrame frame,
