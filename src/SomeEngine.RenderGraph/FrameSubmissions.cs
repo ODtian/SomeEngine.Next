@@ -314,20 +314,10 @@ internal sealed partial class FrameExecutor
         for (int index = 0; index + 1 < passes.Count; index++)
         {
             if (!_passes[passes[index]].Options.SubmitAfter) continue;
-            int suffix = NewSubmission(_submissionQueues[submission]!);
-            ChangeSubmissionMembers(submission);
-            QueueSubmissionConsumers(submission);
-            for (int item = index + 1; item < passes.Count; item++)
-            {
-                int pass = passes[item];
-                _submissionPasses[suffix].Add(pass);
-                _submissionByPass[pass] = suffix;
-                foreach (int next in _successors[pass]) QueuePassSubmission(next);
-                QueuePassSubmission(_sameQueueSuccessor[pass]);
-            }
-            passes.RemoveRange(index + 1, passes.Count - index - 1);
+            SplitSubmission(submission, index + 1);
             return;
         }
+        if (SplitNewSubmissionWait(submission)) return;
         _submissionMergeCandidates.Add(submission);
         int nextPass = _sameQueueSuccessor[passes[^1]];
         if (nextPass >= 0 && _submissionByPass[nextPass] >= 0)
@@ -365,6 +355,72 @@ internal sealed partial class FrameExecutor
             int dependency = _submissionByPass[pass];
             if (dependency >= 0 && dependency != submission) _dependencySet.Add(dependency);
         }
+    }
+
+    private bool SplitNewSubmissionWait(int submission)
+    {
+        List<int> passes = _submissionPasses[submission];
+        Queue queue = _submissionQueues[submission]!;
+        _dependencySet.Clear();
+        for (int index = 0; index < passes.Count; index++)
+        {
+            int pass = passes[index];
+            bool newWait = false;
+            foreach (int predecessor in _predecessors[pass])
+                if (NeedsWait(predecessor)) { newWait = true; break; }
+            if (!newWait)
+                foreach (int predecessor in _physicalPredecessors[pass])
+                    if (NeedsWait(predecessor)) { newWait = true; break; }
+            if (index != 0 && newWait)
+            {
+                int first = passes.IndexOf(SwapchainSubmissionCut(queue, pass));
+                if (first > 0)
+                {
+                    SplitSubmission(submission, first);
+                    return true;
+                }
+            }
+            foreach (int predecessor in _predecessors[pass]) Add(predecessor);
+            foreach (int predecessor in _physicalPredecessors[pass]) Add(predecessor);
+            Add(_sameQueuePredecessor[pass]);
+        }
+        return false;
+
+        bool NeedsWait(int pass)
+        {
+            if (pass < 0 || !IsLive(pass)) return false;
+            int dependency = _submissionByPass[pass];
+            if (dependency < 0 || dependency == submission || ReferenceEquals(_submissionQueues[dependency], queue))
+                return false;
+            foreach (int covered in _dependencySet)
+                if (SubmissionDependsOn(covered, dependency, _submissionCount)) return false;
+            return true;
+        }
+
+        void Add(int pass)
+        {
+            if (pass < 0 || !IsLive(pass)) return;
+            int dependency = _submissionByPass[pass];
+            if (dependency >= 0 && dependency != submission) _dependencySet.Add(dependency);
+        }
+    }
+
+    private int SplitSubmission(int submission, int first)
+    {
+        List<int> passes = _submissionPasses[submission];
+        int suffix = NewSubmission(_submissionQueues[submission]!);
+        ChangeSubmissionMembers(submission);
+        QueueSubmissionConsumers(submission);
+        for (int item = first; item < passes.Count; item++)
+        {
+            int pass = passes[item];
+            _submissionPasses[suffix].Add(pass);
+            _submissionByPass[pass] = suffix;
+            foreach (int next in _successors[pass]) QueuePassSubmission(next);
+            QueuePassSubmission(_sameQueueSuccessor[pass]);
+        }
+        passes.RemoveRange(first, passes.Count - first);
+        return suffix;
     }
 
     private bool MergeAdjacentSubmissions()
@@ -465,18 +521,7 @@ internal sealed partial class FrameExecutor
             List<int> passes = _submissionPasses[submission];
             int first = passes.IndexOf(entry);
             if (first <= 0) continue;
-            int suffix = NewSubmission(_submissionQueues[submission]!);
-            ChangeSubmissionMembers(submission);
-            QueueSubmissionConsumers(submission);
-            for (int item = first; item < passes.Count; item++)
-            {
-                int pass = passes[item];
-                _submissionPasses[suffix].Add(pass);
-                _submissionByPass[pass] = suffix;
-                foreach (int next in _successors[pass]) QueuePassSubmission(next);
-                QueuePassSubmission(_sameQueueSuccessor[pass]);
-            }
-            passes.RemoveRange(first, passes.Count - first);
+            int suffix = SplitSubmission(submission, first);
             _submissionCycleSeeds.Add(submission);
             _submissionCycleSeeds.Add(suffix);
             return;

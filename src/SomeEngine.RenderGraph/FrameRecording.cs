@@ -221,7 +221,7 @@ internal sealed partial class FrameExecutor
             if (!split)
             {
                 foreach (int dependency in _incomingSubmissions)
-                    if (dependency != current && SubmissionDependsOn(dependency, current, _submissionCount))
+                    if (dependency != current && !SubmissionDependsOn(current, dependency, _submissionCount))
                     {
                         split = true;
                         break;

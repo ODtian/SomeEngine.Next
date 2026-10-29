@@ -68,7 +68,7 @@ public sealed class QueueSubmissionTests
             Assert.All(data.Threads, thread => Assert.Equal(0, thread.Dropped));
             int submitSite = data.Sites.Single(site => site.Name == "ID3D12CommandQueue.ExecuteCommandLists").Id;
             for (int frameIndex = 1; frameIndex <= 2; frameIndex++)
-                Assert.Equal(crossesBack ? 4 : 3, data.Events.Count(value =>
+                Assert.Equal(4, data.Events.Count(value =>
                     value.Event.Frame == frameIndex && value.Event.Kind == TraceEventKind.Begin &&
                     value.Event.Site == submitSite));
         }

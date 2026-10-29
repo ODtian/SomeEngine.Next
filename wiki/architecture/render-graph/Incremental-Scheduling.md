@@ -19,3 +19,18 @@ pass 计算祖先位集，资源通过与自身使用者相交获得排序约束
 
 ## Relations
 [[Incremental-Reconciliation]] · [[Incremental-Hazards]]
+
+## Compatible queues and submissions
+
+Compatible compute passes compare the estimated queue start time, charging one minimum
+execution-cost unit for a producer handoff. Producer and consumer transfer counts break
+equal estimates. Compatible copies retain their producer/consumer queue preference.
+An existing compute queue remains selected while it satisfies the pass declaration.
+The implementation is in [FrameSchedule](../../../src/SomeEngine.RenderGraph/FrameSchedule.cs).
+
+Initial submission construction and incremental submission updates split before a pass
+that introduces another queue's wait for the existing prefix. The prefix can be submitted
+with its own dependencies while the suffix waits for its producers. Adjacent submissions
+merge under the existing wait and consumer-release constraints; swapchain image uses retain
+their single-submit interval. See [FrameRecording](../../../src/SomeEngine.RenderGraph/FrameRecording.cs)
+and [FrameSubmissions](../../../src/SomeEngine.RenderGraph/FrameSubmissions.cs).
