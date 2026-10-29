@@ -22,10 +22,14 @@ pass 计算祖先位集，资源通过与自身使用者相交获得排序约束
 
 ## Compatible queues and submissions
 
-Compatible compute passes compare the estimated queue start time, charging one minimum
-execution-cost unit for a producer handoff. Producer and consumer transfer counts break
-equal estimates. Compatible copies retain their producer/consumer queue preference.
-An existing compute queue remains selected while it satisfies the pass declaration.
+Compatible compute passes are grouped through their compute dependencies. A group whose
+fixed producer and consumer boundaries use one queue stays on that queue when its summed
+estimated execution cost fits the boundary handoff cost. Each boundary direction contributes
+two minimum execution-cost units for source and destination submission work. Other compute
+groups compare the estimated queue start time, including a producer handoff. Producer and
+consumer transfer counts break equal estimates. Compatible copies retain their
+producer/consumer queue preference. Existing compute queues remain selected while they
+satisfy the pass declaration and the group's boundary preference.
 The implementation is in [FrameSchedule](../../../src/SomeEngine.RenderGraph/FrameSchedule.cs).
 
 Initial submission construction and incremental submission updates split before a pass

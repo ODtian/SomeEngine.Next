@@ -6,6 +6,64 @@ namespace SomeEngine.RenderGraph.Tests;
 
 public sealed class ComputeQueueTests
 {
+    [Theory]
+    [InlineData(2, QueueType.Graphics)]
+    [InlineData(5, QueueType.Compute)]
+    public void ComputeChainsChooseQueuesFromTheirTotalCostAndBoundaryWork(int count, QueueType expectedType)
+    {
+        using WarpGraphTestSupport support = WarpGraphTestSupport.Create(enableValidation: true);
+        using var graph = new RenderGraph(support.Backend, support.Device,
+            [support.GraphicsQueue, support.ComputeQueue, support.CopyQueue]);
+        using Buffer background = support.Backend.CreateBuffer(support.Device,
+            new BufferDesc(64, BufferUsages.CopyDestination), MemoryType.Readback);
+        using Buffer result = support.Backend.CreateBuffer(support.Device,
+            new BufferDesc(64, BufferUsages.CopyDestination), MemoryType.Readback);
+        var compute = new GraphPassId[count];
+        using (RenderGraphEdit edit = graph.BeginEdit())
+        {
+            GraphBufferId source = edit.CreateBuffer(new(64, BufferUsages.CopySource | BufferUsages.CopyDestination));
+            GraphBufferId backgroundOutput = edit.RegisterExternalBuffer(background,
+                [Endpoint(background, support.GraphicsQueue, ResourceContentState.Undefined)]);
+            GraphBufferId output = edit.RegisterExternalBuffer(result,
+                [Endpoint(result, support.GraphicsQueue, ResourceContentState.Undefined)]);
+            GraphPassId produce = AddClear(edit, "graphics produces compute input", support.GraphicsQueue, source, 7);
+            GraphPassId busy = AddClear(edit, "independent graphics work", support.GraphicsQueue, backgroundOutput, 9);
+            edit.SetPassOptions(busy, new PassOptions(Culling: PassCullingMode.NeverCull, EstimatedExecutionCost: 64));
+            edit.OrderAfter(busy, produce);
+            for (int index = 0; index < count; index++)
+            {
+                GraphBufferId destination = edit.CreateBuffer(new(64, BufferUsages.CopySource | BufferUsages.CopyDestination));
+                compute[index] = edit.AddComputeFramePass($"compute copy {index}", PassQueueSelection.AnyCompatible(),
+                    new CopyState(source, destination, 64), default, DeclareCopy,
+                    static (ref ComputePassCommandScope commands, in CopyState data) =>
+                        commands.CopyBuffer(new(commands.GetBuffer(data.Source), 0, commands.GetBuffer(data.Destination), 0, data.Size)));
+                source = destination;
+            }
+            GraphPassId consume = AddCopy(edit, "graphics consumes compute output", support.GraphicsQueue,
+                new CopyState(source, output, 64));
+            edit.OrderAfter(consume, busy);
+            edit.Commit();
+        }
+        var selected = new Queue?[count];
+        var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
+        using (RenderGraphFrame frame = graph.BeginFrame(new(Diagnostics: CaptureQueues))) frame.Execute(completions);
+        support.Wait(completions);
+        Queue expected = expectedType == QueueType.Graphics ? support.GraphicsQueue : support.ComputeQueue;
+        Assert.All(selected, queue => Assert.Same(expected, queue));
+        using MappedBuffer mapped = support.Backend.Map(result, MapType.Read, BufferRange.Whole);
+        mapped.Invalidate(mapped.Range);
+        Assert.All(MemoryMarshal.Cast<byte, uint>(mapped.Bytes).ToArray(), value => Assert.Equal(7u, value));
+
+        void CaptureQueues(in RenderGraphDiagnosticsView diagnostics)
+        {
+            foreach (RenderGraphPassDiagnostic pass in diagnostics.Passes)
+            {
+                int index = Array.IndexOf(compute, pass.Id);
+                if (index >= 0) selected[index] = pass.Queue;
+            }
+        }
+    }
+
     [Fact]
     public void AddedComputeDependencyKeepsEarlierGraphicsWorkRunnable()
     {

@@ -2,6 +2,7 @@ namespace SomeEngine.RenderGraph;
 
 internal sealed partial class FrameExecutor
 {
+    private const uint QueueHandoffCost = 2;
     private readonly PassOrder _executionOrder = new();
     private readonly HashSet<int> _scheduleSeeds = [];
     private readonly HashSet<int> _frontierSeeds = [];
@@ -17,6 +18,9 @@ internal sealed partial class FrameExecutor
     private readonly HashSet<int> _visitedConsumerPasses = [];
     private int[] _componentFinish = [], _sameQueueSuccessor = [];
     private bool _scheduleInitialized;
+    private Queue?[] _computeQueuePreferences = [];
+    private readonly HashSet<int> _computeGroupVisited = [];
+    private readonly List<int> _computeGroupPasses = [];
 
     private void ResolveSchedule()
     {
@@ -49,6 +53,7 @@ internal sealed partial class FrameExecutor
         else
         {
             ExpandQueueChanges();
+            UpdateComputeQueuePreferences(_queueSelectionChanges);
             long first = long.MaxValue;
             long last = long.MinValue;
             foreach (int seed in _scheduleSeeds)
@@ -153,13 +158,17 @@ internal sealed partial class FrameExecutor
     {
         FramePass row = _passes[pass];
         _frame.Graph.ResolveQueueCandidates(row.QueuePolicy, row.Kind, _queueCandidateScratch);
+        Queue? preferred = row.Kind == GraphPassKind.Compute && row.QueuePolicy.AllowsAnyType
+            ? _computeQueuePreferences[pass] : null;
         bool chooseCompatibleQueue = row.Kind == GraphPassKind.Copy && row.QueuePolicy.AllowsAnyType;
-        if (!chooseCompatibleQueue && row.Queue is not null && _queueCandidateScratch.Contains(row.Queue)) return;
-        Queue? chosen = null;
+        if (!chooseCompatibleQueue && row.Queue is not null && _queueCandidateScratch.Contains(row.Queue) &&
+            (preferred is null || ReferenceEquals(preferred, row.Queue))) return;
+        Queue? chosen = preferred;
         int producerTransfers = int.MaxValue;
         int consumerTransfers = int.MaxValue;
         foreach (Queue candidate in _queueCandidateScratch)
         {
+            if (preferred is not null) break;
             int producers = chooseCompatibleQueue ? CountPredecessorQueueTransfers(pass, candidate) : 0;
             int consumers = chooseCompatibleQueue ? CountConsumerQueueTransfers(pass, candidate) : 0;
             if (producers > producerTransfers || producers == producerTransfers && consumers > consumerTransfers) continue;
@@ -174,6 +183,62 @@ internal sealed partial class FrameExecutor
         if (ReferenceEquals(_passes[pass].Queue, chosen)) return;
         _passes[pass] = row;
         _executionOrder.Changed.Add(pass);
+    }
+
+    private void UpdateComputeQueuePreferences(IEnumerable<int> changedPasses)
+    {
+        EnsureCapacity(ref _computeQueuePreferences, _passes.Count);
+        _computeGroupVisited.Clear();
+        foreach (int seed in changedPasses)
+        {
+            if (!CompatibleCompute(seed) || !_computeGroupVisited.Add(seed)) continue;
+            _computeGroupPasses.Clear();
+            _computeGroupPasses.Add(seed);
+            ulong cost = 0;
+            Queue? boundaryQueue = null;
+            bool mixedQueues = false, producer = false, consumer = false;
+            for (int item = 0; item < _computeGroupPasses.Count; item++)
+            {
+                int pass = _computeGroupPasses[item];
+                cost = SaturatingAdd(cost, Math.Max(_passes[pass].Options.EstimatedExecutionCost, 1));
+                foreach (int predecessor in _predecessors[pass]) Visit(predecessor, before: true);
+                foreach (int successor in _successors[pass]) Visit(successor, before: false);
+            }
+            uint boundaryCost = (producer ? QueueHandoffCost : 0) + (consumer ? QueueHandoffCost : 0);
+            Queue? preferred = !mixedQueues && boundaryQueue is not null && cost <= boundaryCost &&
+                RenderGraph.QueueSupports(GraphPassKind.Compute, boundaryQueue.Type) ? boundaryQueue : null;
+            foreach (int pass in _computeGroupPasses) _computeQueuePreferences[pass] = preferred;
+
+            void Visit(int pass, bool before)
+            {
+                if (!IsLive(pass)) return;
+                if (CompatibleCompute(pass))
+                {
+                    if (_computeGroupVisited.Add(pass)) _computeGroupPasses.Add(pass);
+                    return;
+                }
+                Queue? queue = BoundaryQueue(pass);
+                if (queue is null) return;
+                if (boundaryQueue is null) boundaryQueue = queue;
+                else if (!ReferenceEquals(boundaryQueue, queue)) mixedQueues = true;
+                if (before) producer = true;
+                else consumer = true;
+            }
+        }
+
+        bool CompatibleCompute(int pass) => IsLive(pass) &&
+            _passes[pass].Kind == GraphPassKind.Compute && _passes[pass].QueuePolicy.AllowsAnyType;
+
+        Queue? BoundaryQueue(int pass)
+        {
+            FramePass row = _passes[pass];
+            if (row.QueuePolicy.AllowsAnyType) return row.Queue;
+            if (row.QueuePolicy.IsExact) return row.QueuePolicy.Queue;
+            if (row.Queue is not null && row.Queue.Type == row.QueuePolicy.Type) return row.Queue;
+            foreach (Queue queue in _frame.Graph.Queues)
+                if (queue.Type == row.QueuePolicy.Type) return queue;
+            return null;
+        }
     }
 
     private int CountPredecessorQueueTransfers(int pass, Queue queue)
@@ -267,6 +332,7 @@ internal sealed partial class FrameExecutor
 
     private void ScheduleComponent(HashSet<int> component)
     {
+        UpdateComputeQueuePreferences(component);
         int[] criticalRanks = ResolveCriticalRanks(component);
         EnsureCapacity(ref _scheduleIndegrees, _passes.Count);
         EnsureCapacity(ref _componentFinish, _passes.Count);
@@ -322,6 +388,8 @@ internal sealed partial class FrameExecutor
                 }
                 foreach (Queue queue in _queueCandidateScratch)
                 {
+                    if (_passes[pass].Kind == GraphPassKind.Compute && _passes[pass].QueuePolicy.AllowsAnyType &&
+                        _computeQueuePreferences[pass] is { } preferred && !ReferenceEquals(preferred, queue)) continue;
                     _queueTime.TryGetValue(queue, out int queueAvailable);
                     int predecessorFinish = 0;
                     int transfers = 0;
@@ -337,10 +405,10 @@ internal sealed partial class FrameExecutor
                         ? CountConsumerQueueTransfers(pass, queue) : 0;
                     if (preferTransfers && consumers > minimumConsumerTransfers) continue;
                     long start = Math.Max(queueAvailable, predecessorFinish);
-                    // Charge a handoff one minimum execution-cost unit. Compute can
-                    // use an idle queue when that saves more work than the transfer.
+                    // A handoff has source and destination submission work. Short
+                    // compute groups stay with a shared producer/consumer queue.
                     if (_passes[pass].Kind == GraphPassKind.Compute &&
-                        _passes[pass].QueuePolicy.AllowsAnyType && transfers != 0) start++;
+                        _passes[pass].QueuePolicy.AllowsAnyType && transfers != 0) start += QueueHandoffCost;
                     int rank = criticalRanks[pass];
                     long declaration = _passes[pass].DeclarationOrdinal;
                     bool declarationMode =

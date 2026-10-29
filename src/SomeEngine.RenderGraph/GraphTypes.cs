@@ -136,8 +136,9 @@ public readonly struct PassQueueSelection : IEquatable<PassQueueSelection>
 
     /// <summary>
     /// Allows any registered queue that supports the pass commands. Copies prefer
-    /// fewer producer and consumer transfers. Compute work compares the estimated
-    /// queue start time including a handoff before using transfers to break ties.
+    /// fewer producer and consumer transfers. Short compute groups prefer their
+    /// shared boundary queue when their cost fits the handoffs. Other compute work
+    /// compares estimated queue start time including a handoff, with transfer tie breaks.
     /// </summary>
     public static PassQueueSelection AnyCompatible() => new(null, default, false, true);
 }
