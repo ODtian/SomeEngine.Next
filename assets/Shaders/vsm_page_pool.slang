@@ -111,7 +111,7 @@ bool PublishOwnedPage(uint atlasPage, uint owner)
     return true;
 }
 
-groupshared uint PagePrefix[256];
+groupshared uint PageMasks[8];
 
 void CompactAvailableShadowPages(uint groupIndex)
 {
@@ -126,19 +126,31 @@ void CompactAvailableShadowPages(uint groupIndex)
     {
         uint index = first + groupIndex;
         uint page = index < PagePool.MaxPhysicalPages ? ShadowPageLists[lruStart + index] : VSM_UNOWNED_PAGE;
-        PagePrefix[groupIndex] = page != VSM_UNOWNED_PAGE ? 1u : 0u;
+        if (groupIndex < 8u)
+            PageMasks[groupIndex] = 0u;
         GroupMemoryBarrierWithGroupSync();
-        for (uint step = 1u; step < 256u; step <<= 1u)
-        {
-            uint preceding = groupIndex >= step ? PagePrefix[groupIndex - step] : 0u;
-            GroupMemoryBarrierWithGroupSync();
-            PagePrefix[groupIndex] += preceding;
-            GroupMemoryBarrierWithGroupSync();
-        }
-        uint prefix = PagePrefix[groupIndex];
+        // Bits follow the original positions within this LRU block.
+        uint word = groupIndex >> 5u;
+        uint bit = 1u << (groupIndex & 31u);
         if (page != VSM_UNOWNED_PAGE)
-            ShadowPageLists[availableStart + total + prefix - 1u] = page;
-        total += PagePrefix[255];
+        {
+            uint ignored;
+            InterlockedOr(PageMasks[word], bit, ignored);
+        }
+        GroupMemoryBarrierWithGroupSync();
+        uint prefix = countbits(PageMasks[word] & (bit - 1u));
+        uint blockCount = 0u;
+        [unroll]
+        for (uint precedingWord = 0u; precedingWord < 8u; precedingWord++)
+        {
+            uint count = countbits(PageMasks[precedingWord]);
+            if (precedingWord < word)
+                prefix += count;
+            blockCount += count;
+        }
+        if (page != VSM_UNOWNED_PAGE)
+            ShadowPageLists[availableStart + total + prefix] = page;
+        total += blockCount;
         GroupMemoryBarrierWithGroupSync();
     }
     uint emptyStart = ShadowPageListStart(VSM_PAGE_LIST_EMPTY, PagePool.MaxPhysicalPages);

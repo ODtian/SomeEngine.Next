@@ -26,6 +26,88 @@ public sealed class ShadowPageReuseTests(D3D12TestCompiler compiler)
         Assert.Equal(fresh.Observe().AsSpan(2, 2).ToArray(), history.Observe().AsSpan(2, 2).ToArray());
     }
 
+    [Fact]
+    public void CachedShadowsKeepReuseOrderAcrossPageBatches()
+    {
+        const uint capacity = 640, tableEntries = 4096, hierarchyWords = 191;
+        uint[] positions = [13, 73, 158, 236, 271, 355, 423, 538, 612];
+        uint[] cachedPages = [18, 502, 5, 64, 508, 31, 387, 7, 511];
+        uint[] emptyPages = [19, 617];
+        uint[] lists = Enumerable.Repeat(uint.MaxValue, 4 * ((int)capacity + 1)).ToArray();
+        for (int index = 0; index < positions.Length; index++)
+            lists[positions[index]] = cachedPages[index];
+        lists[capacity] = 0;
+        lists[2 * capacity + 1] = 0;
+        emptyPages.CopyTo(lists, 2 * ((int)capacity + 1));
+        lists[3 * capacity + 2] = (uint)emptyPages.Length;
+        lists[4 * capacity + 3] = capacity - (uint)(cachedPages.Length + emptyPages.Length);
+
+        var compute = new D3D12TestCompute(compiler);
+        uint[] table = new uint[tableEntries];
+        uint[] pages = Enumerable.Repeat(uint.MaxValue, (int)capacity).ToArray();
+        uint[] metadata = new uint[capacity * 8];
+        VirtualShadowView view = new()
+        {
+            LightViewProjection = Matrix4x4.Identity,
+            VirtualResolution = 512, PageSize = 8, AtlasSize = 256,
+            PhysicalPagesPerRow = 32, MaxPhysicalPages = capacity,
+            CacheGeneration = 7, MipLevelCount = 1,
+            LightKind = VirtualShadowLightKind.Spot, LightRange = 10,
+            WorldUnitsPerCentimeter = 1,
+        };
+        uint[] views = MemoryMarshal.Cast<VirtualShadowView, uint>(MemoryMarshal.CreateReadOnlySpan(ref view, 1)).ToArray();
+        uint[][] compacted = compute.Execute("vsm_page_pool.slang", "BuildVirtualShadowPagePool", new(1, 1, 1),
+        [
+            new BufferInput("PagePool", [capacity, tableEntries, 1, 2, tableEntries, hierarchyWords, 1, 1], ResourceBindingType.ConstantBuffer, 0),
+            new BufferInput("ShadowViews", views, ResourceBindingType.BufferSrv, VirtualShadowView.SizeInBytes),
+            new BufferInput("ShadowPageTable", table, ResourceBindingType.BufferUav, 4),
+            new BufferInput("RequestedPageFlags", new uint[tableEntries], ResourceBindingType.BufferSrv, 4),
+            new BufferInput("RequestedPageCount", [0], ResourceBindingType.BufferSrv, 4),
+            new BufferInput("PageRequestDispatchArgs", new uint[4], ResourceBindingType.BufferUav, 0),
+            new BufferInput("PhysicalPageOwners", pages, ResourceBindingType.BufferUav, 4),
+            new BufferInput("PageMetadata", metadata, ResourceBindingType.BufferUav, VirtualShadowPageMetadata.SizeInBytes),
+            new BufferInput("ShadowPageLists", lists, ResourceBindingType.BufferUav, 4),
+            new BufferInput("AllocatedPageHierarchy", new uint[hierarchyWords], ResourceBindingType.BufferUav, 4),
+            new BufferInput("AllocatedPageRectBounds", [uint.MaxValue, uint.MaxValue, 0, 0], ResourceBindingType.BufferUav, 16),
+        ]);
+        lists = compacted[4];
+
+        uint[] expectedPages = [.. emptyPages.Reverse(), .. cachedPages.Reverse()];
+        var activePages = new List<uint>();
+        for (uint index = 0; index < expectedPages.Length; index++)
+        {
+            uint[][] allocated = compute.ExecuteImages("vsm_allocate_pages.slang", "AllocateVirtualShadowPages", new(1, 1, 1),
+            [
+                new BufferInput("PageAllocation", [tableEntries, tableEntries, capacity, 1, 1, 0, hierarchyWords, 1], ResourceBindingType.ConstantBuffer, 0),
+                new BufferInput("ShadowViews", views, ResourceBindingType.BufferSrv, VirtualShadowView.SizeInBytes),
+                new BufferInput("RequestedPageIndices", [index], ResourceBindingType.BufferSrv, 4),
+                new BufferInput("RequestedPageCount", [1], ResourceBindingType.BufferSrv, 4),
+                new BufferInput("RequestedPageFlags", new uint[tableEntries], ResourceBindingType.BufferSrv, 4),
+                new BufferInput("ShadowPageTable", table, ResourceBindingType.BufferUav, 4),
+                new BufferInput("PhysicalPageOwners", pages, ResourceBindingType.BufferUav, 4),
+                new BufferInput("PageMetadata", metadata, ResourceBindingType.BufferUav, VirtualShadowPageMetadata.SizeInBytes),
+                new BufferInput("ShadowPageLists", lists, ResourceBindingType.BufferUav, 4),
+                new BufferInput("ActivePhysicalPages", new uint[capacity * 4], ResourceBindingType.BufferUav, 16),
+                new BufferInput("ActivePhysicalPageCount", [0], ResourceBindingType.BufferUav, 4),
+                new BufferInput("UncachedPageRectBounds", [uint.MaxValue, uint.MaxValue, 0, 0], ResourceBindingType.BufferUav, 16),
+                new BufferInput("RasterTargetPageHierarchy", new uint[hierarchyWords * 2], ResourceBindingType.BufferUav, 8),
+                new BufferInput("ShadowAllocationFailures", new uint[3], ResourceBindingType.BufferUav, 4),
+            ], ShadowTestImages.ReceiverHierarchy(64, 128));
+            table = allocated[0]; pages = allocated[1]; metadata = allocated[2]; lists = allocated[3];
+            activePages.AddRange(allocated[4].AsSpan(0, 4).ToArray());
+        }
+        uint[][] completed = compute.Execute("vsm_page_depth_complete.slang", "CompleteVirtualShadowPageDepth", new(1, 1, 1),
+        [
+            new BufferInput("ActivePhysicalPages", activePages.ToArray(), ResourceBindingType.BufferSrv, 16),
+            new BufferInput("CompletePageCount", [(uint)expectedPages.Length], ResourceBindingType.BufferSrv, 4),
+            new BufferInput("CompletedShadowPageTable", table, ResourceBindingType.BufferUav, 4),
+            new BufferInput("GeometryWorkStatus", [0], ResourceBindingType.BufferSrv, 0),
+            new BufferInput("CompletedPageMetadata", metadata, ResourceBindingType.BufferUav, VirtualShadowPageMetadata.SizeInBytes),
+        ]);
+        Assert.Equal(expectedPages.Select(page => VirtualShadowPageEntry.Encode(page, view.PhysicalPagesPerRow)),
+            completed[0].AsSpan(0, expectedPages.Length).ToArray());
+    }
+
     private sealed class ShadowPages(D3D12TestCompiler compiler)
     {
         private readonly D3D12TestCompute _compute = new(compiler);
