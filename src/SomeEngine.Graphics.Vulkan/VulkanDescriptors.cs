@@ -231,8 +231,7 @@ internal sealed unsafe partial class VulkanBackend
         Span<VkDescriptorSet> sets = arena.PrepareSetStorage(setIndices.Length);
         for (int index = 0; index < sets.Length; index++)
         {
-            sets[index] = arena.Allocate(
-                pipeline.Layout.SetLayouts[checked((int)setIndices[index])]);
+            sets[index] = arena.Allocate(pipeline.Layout, setIndices[index]);
         }
 
         if (block.Ordinary is VulkanOrdinaryBinding ordinary)
@@ -639,13 +638,19 @@ internal sealed unsafe partial class VulkanBackend
         VkDescriptorPool Pool,
         VkDescriptorSet Set);
 
+    private readonly record struct VulkanTransientDescriptorSet(
+        VulkanPipelineLayoutState Layout,
+        uint SetIndex,
+        VulkanDescriptorSetAllocation Allocation);
+
     private sealed class VulkanDescriptorArena
     {
         private const ulong DefaultUploadPageSize = 64 * 1024;
 
         private readonly VulkanDevice _device;
-        private VulkanDescriptorSetAllocation[] _allocations = [];
-        private int _allocationCount;
+        private VulkanTransientDescriptorSet[] _sets = [];
+        private int _setCount;
+        private int _usedSetCount;
         private VkDescriptorSet[] _setScratch = [];
         private VulkanUploadPage[] _uploadPages = [];
         private int _uploadPageCount;
@@ -658,12 +663,32 @@ internal sealed unsafe partial class VulkanBackend
             return _setScratch.AsSpan(0, count);
         }
 
-        internal VkDescriptorSet Allocate(VkDescriptorSetLayout layout)
+        internal VkDescriptorSet Allocate(VulkanPipelineLayoutState layout, uint setIndex)
         {
-            EnsureArray(ref _allocations, checked(_allocationCount + 1));
-            VulkanDescriptorSetAllocation allocation =
-                _device.DescriptorAllocator.Allocate(layout);
-            _allocations[_allocationCount++] = allocation;
+            if (_usedSetCount < _setCount)
+            {
+                VulkanTransientDescriptorSet existing = _sets[_usedSetCount];
+                if (ReferenceEquals(existing.Layout, layout) && existing.SetIndex == setIndex)
+                {
+                    _usedSetCount++;
+                    return existing.Allocation.Set;
+                }
+                ReleaseSets(_usedSetCount);
+            }
+            EnsureArray(ref _sets, checked(_setCount + 1));
+            layout.RetainSetLayouts();
+            VulkanDescriptorSetAllocation allocation;
+            try
+            {
+                allocation = _device.DescriptorAllocator.Allocate(layout.SetLayouts[checked((int)setIndex)]);
+            }
+            catch
+            {
+                layout.ReleaseSetLayouts();
+                throw;
+            }
+            _sets[_setCount++] = new VulkanTransientDescriptorSet(layout, setIndex, allocation);
+            _usedSetCount++;
             return allocation.Set;
         }
 
@@ -696,23 +721,33 @@ internal sealed unsafe partial class VulkanBackend
 
         internal void ResetAfterCompletion()
         {
-            for (int index = _allocationCount - 1; index >= 0; index--)
-            {
-                _device.DescriptorAllocator.Free(_allocations[index]);
-                _allocations[index] = default;
-            }
-            _allocationCount = 0;
+            ReleaseSets(_usedSetCount);
+            _usedSetCount = 0;
             for (int index = 0; index < _uploadPageCount; index++)
                 _uploadPages[index].Reset();
         }
 
         internal void Release()
         {
-            ResetAfterCompletion();
+            ReleaseSets(0);
+            _usedSetCount = 0;
             for (int index = _uploadPageCount - 1; index >= 0; index--)
                 _uploadPages[index].Release();
             Array.Clear(_uploadPages, 0, _uploadPageCount);
             _uploadPageCount = 0;
+        }
+
+        private void ReleaseSets(int count)
+        {
+            while (_setCount > count)
+            {
+                int index = _setCount - 1;
+                VulkanTransientDescriptorSet set = _sets[index];
+                _device.DescriptorAllocator.Free(set.Allocation);
+                _sets[index] = default;
+                _setCount = index;
+                set.Layout.ReleaseSetLayouts();
+            }
         }
 
         private static void EnsureArray<T>(ref T[] storage, int count)

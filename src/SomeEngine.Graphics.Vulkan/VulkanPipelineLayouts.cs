@@ -7,6 +7,7 @@ internal sealed unsafe partial class VulkanBackend
     private sealed class VulkanPipelineLayoutState
     {
         private readonly VulkanDevice _device;
+        private readonly VulkanLifetime _setLifetime;
         private VkPipelineLayout _native;
         private VkDescriptorSetLayout[] _setLayouts;
         private bool[] _ownedSetLayouts;
@@ -27,6 +28,7 @@ internal sealed unsafe partial class VulkanBackend
             Dictionary<EntryPointReflection, VulkanSpirvBindingTarget[]> spirvTargets)
         {
             _device = device;
+            _setLifetime = new VulkanLifetime(DestroySetLayouts);
             _native = native;
             _setLayouts = setLayouts;
             _ownedSetLayouts = ownedSetLayouts;
@@ -42,6 +44,8 @@ internal sealed unsafe partial class VulkanBackend
         internal ReadOnlySpan<VkDescriptorSetLayout> SetLayouts => _setLayouts;
         internal ReadOnlySpan<VulkanBindlessSetBinding> BindlessBindings =>
             _bindlessBindings;
+        internal void RetainSetLayouts() => _setLifetime.Retain();
+        internal void ReleaseSetLayouts() => _setLifetime.Release();
 
         internal ReadOnlySpan<VulkanSpirvBindingTarget> GetSpirvTargets(
             EntryPointReflection entry) =>
@@ -64,6 +68,11 @@ internal sealed unsafe partial class VulkanBackend
             _native = default;
             if (native.Handle != 0)
                 _device.Backend.Api.DestroyPipelineLayout(_device.Native, native, null);
+            ReleaseSetLayouts();
+        }
+
+        private void DestroySetLayouts()
+        {
             for (int index = 0; index < _setLayouts.Length; index++)
                 if (_ownedSetLayouts[index] && _setLayouts[index].Handle != 0)
                     _device.Backend.Api.DestroyDescriptorSetLayout(
