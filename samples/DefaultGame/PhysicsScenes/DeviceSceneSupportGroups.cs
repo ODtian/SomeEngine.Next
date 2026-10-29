@@ -38,7 +38,7 @@ internal sealed class DeviceSceneSupportGroups : IDisposable, IDevicePhysicsSubm
         Add("DeviceSupportGroupRebuild", bodies, 4);
         Add("DeviceSupportContactTasks", contacts, 16);
         Add("DeviceSupportLoadLinks", (contacts + bodies) * 3, 12);
-        Add("DeviceSupportWorkQueue", 2, 4);
+        Add("DeviceSupportWorkQueue", 3, 4);
 
         void Add(string name, int count, uint stride)
         {
