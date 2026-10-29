@@ -1804,17 +1804,32 @@ internal sealed unsafe partial class D3D12Backend
         internal void CopyPersistentDescriptors(
             uint resourceBase, uint samplerBase, ReadOnlySpan<DescriptorRecord> records)
         {
-            if (_descriptorWrites.Length < records.Length)
-                Array.Resize(ref _descriptorWrites, records.Length);
+            if (records.IsEmpty) return;
+            CpuDescriptorHandle[]? rented = null;
             try
             {
-                for (int index = 0; index < records.Length; index++)
-                    _descriptorWrites[index] = new DescriptorContent(records[index].Source, records[index].Slot);
-                WriteDescriptors(resourceBase, samplerBase, _descriptorWrites.AsSpan(0, records.Length));
+                int length = records.Length;
+                Span<CpuDescriptorHandle> handles = length <= 128
+                    ? stackalloc CpuDescriptorHandle[length * 4]
+                    : (rented = ArrayPool<CpuDescriptorHandle>.Shared.Rent(checked(length * 4)));
+                var copies = new DescriptorCopies(this, resourceBase, samplerBase, handles, length);
+                foreach (ref readonly DescriptorRecord record in records)
+                    copies.Add(new DescriptorContent(record.Source, record.Slot));
+                copies.Copy();
+
+                uint resourceIndex = resourceBase, samplerIndex = samplerBase;
+                foreach (ref readonly DescriptorRecord record in records)
+                {
+                    DescriptorContent next = new(record.Source, record.Slot);
+                    if (next.Slot.Type == ResourceBindingType.Sampler)
+                        _samplerDescriptors!.Contents[samplerIndex++] = next;
+                    else
+                        _resourceDescriptors!.Contents[resourceIndex++] = next;
+                }
             }
             finally
             {
-                Array.Clear(_descriptorWrites, 0, records.Length);
+                if (rented is not null) ArrayPool<CpuDescriptorHandle>.Shared.Return(rented);
             }
         }
 
@@ -1828,39 +1843,12 @@ internal sealed unsafe partial class D3D12Backend
                 Span<CpuDescriptorHandle> handles = length <= 128
                     ? stackalloc CpuDescriptorHandle[length * 4]
                     : (rented = ArrayPool<CpuDescriptorHandle>.Shared.Rent(checked(length * 4)));
-                Span<CpuDescriptorHandle> resourceSources = handles.Slice(0, length);
-                Span<CpuDescriptorHandle> resourceDestinations = handles.Slice(length, length);
-                Span<CpuDescriptorHandle> samplerSources = handles.Slice(length * 2, length);
-                Span<CpuDescriptorHandle> samplerDestinations = handles.Slice(length * 3, length);
-                int resourceCopies = 0, samplerCopies = 0;
-                uint resourceIndex = resourceBase, samplerIndex = samplerBase;
+                var copies = new DescriptorCopies(this, resourceBase, samplerBase, handles, length);
                 foreach (ref readonly DescriptorContent next in writes)
-                {
-                    bool sampler = next.Slot.Type == ResourceBindingType.Sampler;
-                    uint index = sampler ? samplerIndex++ : resourceIndex++;
-                    CommandDescriptorHeap descriptors = sampler ? _samplerDescriptors! : _resourceDescriptors!;
-                    DescriptorContent[] contents = descriptors.Contents;
-                    if (contents[index] == next) continue;
-                    DescriptorHeapType type = sampler ? DescriptorHeapType.Sampler : DescriptorHeapType.CbvSrvUav;
-                    CpuDescriptorHandle start = descriptors.CpuStart;
-                    CpuDescriptorHandle destination = new(start.Ptr + checked((nuint)(
-                        index * _context.NativeDevice.DescriptorIncrement(type))));
-                    CpuDescriptorHandle source = next.Source?.Cpu ?? GetNullDescriptor(next.Slot);
-                    if (sampler)
-                    {
-                        samplerSources[samplerCopies] = source;
-                        samplerDestinations[samplerCopies++] = destination;
-                    }
-                    else
-                    {
-                        resourceSources[resourceCopies] = source;
-                        resourceDestinations[resourceCopies++] = destination;
-                    }
-                }
-                CopyDescriptorRanges(resourceSources[..resourceCopies], resourceDestinations[..resourceCopies], DescriptorHeapType.CbvSrvUav);
-                CopyDescriptorRanges(samplerSources[..samplerCopies], samplerDestinations[..samplerCopies], DescriptorHeapType.Sampler);
-                resourceIndex = resourceBase;
-                samplerIndex = samplerBase;
+                    copies.Add(next);
+                copies.Copy();
+
+                uint resourceIndex = resourceBase, samplerIndex = samplerBase;
                 foreach (ref readonly DescriptorContent next in writes)
                 {
                     if (next.Slot.Type == ResourceBindingType.Sampler)
@@ -1872,6 +1860,70 @@ internal sealed unsafe partial class D3D12Backend
             finally
             {
                 if (rented is not null) ArrayPool<CpuDescriptorHandle>.Shared.Return(rented);
+            }
+        }
+
+        private ref struct DescriptorCopies
+        {
+            private readonly D3D12CommandSlot _recording;
+            private readonly Span<CpuDescriptorHandle> _resourceSources;
+            private readonly Span<CpuDescriptorHandle> _resourceDestinations;
+            private readonly Span<CpuDescriptorHandle> _samplerSources;
+            private readonly Span<CpuDescriptorHandle> _samplerDestinations;
+            private int _resourceCopies;
+            private int _samplerCopies;
+            private uint _resourceIndex;
+            private uint _samplerIndex;
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal DescriptorCopies(
+                D3D12CommandSlot recording,
+                uint resourceBase,
+                uint samplerBase,
+                Span<CpuDescriptorHandle> handles,
+                int length)
+            {
+                _recording = recording;
+                _resourceSources = handles.Slice(0, length);
+                _resourceDestinations = handles.Slice(length, length);
+                _samplerSources = handles.Slice(length * 2, length);
+                _samplerDestinations = handles.Slice(length * 3, length);
+                _resourceIndex = resourceBase;
+                _samplerIndex = samplerBase;
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal void Add(scoped in DescriptorContent next)
+            {
+                bool sampler = next.Slot.Type == ResourceBindingType.Sampler;
+                uint index = sampler ? _samplerIndex++ : _resourceIndex++;
+                CommandDescriptorHeap descriptors = sampler
+                    ? _recording._samplerDescriptors!
+                    : _recording._resourceDescriptors!;
+                if (descriptors.Contents[index] == next) return;
+                DescriptorHeapType type = sampler ? DescriptorHeapType.Sampler : DescriptorHeapType.CbvSrvUav;
+                CpuDescriptorHandle destination = new(descriptors.CpuStart.Ptr + checked((nuint)(
+                    index * _recording._context.NativeDevice.DescriptorIncrement(type))));
+                CpuDescriptorHandle source = next.Source?.Cpu ?? _recording.GetNullDescriptor(next.Slot);
+                if (sampler)
+                {
+                    _samplerSources[_samplerCopies] = source;
+                    _samplerDestinations[_samplerCopies++] = destination;
+                }
+                else
+                {
+                    _resourceSources[_resourceCopies] = source;
+                    _resourceDestinations[_resourceCopies++] = destination;
+                }
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal readonly void Copy()
+            {
+                _recording.CopyDescriptorRanges(
+                    _resourceSources[.._resourceCopies], _resourceDestinations[.._resourceCopies], DescriptorHeapType.CbvSrvUav);
+                _recording.CopyDescriptorRanges(
+                    _samplerSources[.._samplerCopies], _samplerDestinations[.._samplerCopies], DescriptorHeapType.Sampler);
             }
         }
 
