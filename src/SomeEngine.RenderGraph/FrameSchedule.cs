@@ -153,7 +153,7 @@ internal sealed partial class FrameExecutor
     {
         FramePass row = _passes[pass];
         _frame.Graph.ResolveQueueCandidates(row.QueuePolicy, row.Kind, _queueCandidateScratch);
-        bool chooseCompatibleQueue = row.QueuePolicy.AllowsAnyType;
+        bool chooseCompatibleQueue = row.Kind == GraphPassKind.Copy && row.QueuePolicy.AllowsAnyType;
         if (!chooseCompatibleQueue && row.Queue is not null && _queueCandidateScratch.Contains(row.Queue)) return;
         Queue? chosen = null;
         int producerTransfers = int.MaxValue;
@@ -292,6 +292,7 @@ internal sealed partial class FrameExecutor
             int chosenRank = int.MinValue;
             long chosenDeclaration = long.MaxValue;
             int chosenTransfers = int.MaxValue;
+            int chosenConsumerTransfers = int.MaxValue;
 
             for (int readyIndex = 0; readyIndex < _scheduleReady.Count; readyIndex++)
             {
@@ -302,7 +303,9 @@ internal sealed partial class FrameExecutor
                     _queueCandidateScratch);
                 int minimumTransfers = int.MaxValue;
                 int minimumConsumerTransfers = int.MaxValue;
-                if (_passes[pass].QueuePolicy.AllowsAnyType)
+                bool preferTransfers = _passes[pass].Kind == GraphPassKind.Copy &&
+                    _passes[pass].QueuePolicy.AllowsAnyType;
+                if (preferTransfers)
                 {
                     foreach (Queue candidate in _queueCandidateScratch)
                     {
@@ -330,9 +333,14 @@ internal sealed partial class FrameExecutor
                         if (!ReferenceEquals(_passes[predecessor].Queue, queue)) transfers++;
                     }
                     if (transfers > minimumTransfers) continue;
-                    if (_passes[pass].QueuePolicy.AllowsAnyType &&
-                        CountConsumerQueueTransfers(pass, queue) > minimumConsumerTransfers) continue;
+                    int consumers = _passes[pass].QueuePolicy.AllowsAnyType
+                        ? CountConsumerQueueTransfers(pass, queue) : 0;
+                    if (preferTransfers && consumers > minimumConsumerTransfers) continue;
                     long start = Math.Max(queueAvailable, predecessorFinish);
+                    // Charge a handoff one minimum execution-cost unit. Compute can
+                    // use an idle queue when that saves more work than the transfer.
+                    if (_passes[pass].Kind == GraphPassKind.Compute &&
+                        _passes[pass].QueuePolicy.AllowsAnyType && transfers != 0) start++;
                     int rank = criticalRanks[pass];
                     long declaration = _passes[pass].DeclarationOrdinal;
                     bool declarationMode =
@@ -344,7 +352,8 @@ internal sealed partial class FrameExecutor
                           start == chosenStart && rank == chosenRank && declaration < chosenDeclaration ||
                           start == chosenStart && rank == chosenRank && declaration == chosenDeclaration &&
                           (transfers < chosenTransfers ||
-                           transfers == chosenTransfers && QueueBefore(queue, chosenQueue));
+                           transfers == chosenTransfers && (consumers < chosenConsumerTransfers ||
+                            consumers == chosenConsumerTransfers && QueueBefore(queue, chosenQueue)));
                     if (!better) continue;
                     chosenReady = readyIndex;
                     chosenPass = pass;
@@ -353,6 +362,7 @@ internal sealed partial class FrameExecutor
                     chosenRank = rank;
                     chosenDeclaration = declaration;
                     chosenTransfers = transfers;
+                    chosenConsumerTransfers = consumers;
                 }
             }
 
