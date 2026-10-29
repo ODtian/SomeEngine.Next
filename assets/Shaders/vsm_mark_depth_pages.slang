@@ -7,8 +7,9 @@ Texture2DArray<float> ReceiverDepth;
 
 [shader("compute")]
 [numthreads(8, 8, 1)]
-void MarkVirtualShadowDepthPages(uint3 pixel : SV_DispatchThreadID)
+void MarkVirtualShadowDepthPages(uint3 thread : SV_DispatchThreadID)
 {
+    uint3 pixel = uint3(thread.xy * 2u, thread.z);
     ClusterViewUniforms view = ReceiverViews[pixel.z];
     if (pixel.x >= view.ScreenWidth || pixel.y >= view.ScreenHeight) return;
     float depth = ReceiverDepth.Load(int4(pixel, 0));

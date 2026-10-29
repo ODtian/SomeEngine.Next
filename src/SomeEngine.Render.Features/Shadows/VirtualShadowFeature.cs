@@ -1395,7 +1395,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
         if (_depthMarkPass != default)
         {
             graph.SetPassDataIfChanged(_depthMarkPass, new VirtualShadowDispatchPassData(new DispatchArguments(
-                DivideRoundUp(receiverView.ViewportWidth, 8u), DivideRoundUp(receiverView.ViewportHeight, 8u), 1u)));
+                DivideRoundUp(receiverView.ViewportWidth, 16u), DivideRoundUp(receiverView.ViewportHeight, 16u), 1u)));
             graph.SetPassEnabled(_depthMarkPass, viewCount != 0u && UsesPrimaryDepthReceiverRequests);
         }
         UploadPoolUniforms(uniformBytes, _poolPrepareUniforms, 0u);
