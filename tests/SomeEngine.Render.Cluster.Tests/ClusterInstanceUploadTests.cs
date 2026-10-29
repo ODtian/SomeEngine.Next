@@ -1,5 +1,7 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
+using SomeEngine.Core.ECS.Components;
+using SomeEngine.Core.Math;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
@@ -9,8 +11,10 @@ using SomeEngine.Graphics.Direct3D12;
 using SomeEngine.Job;
 using SomeEngine.Render.Cluster.Pipeline;
 using SomeEngine.Render.Components;
+using SomeEngine.Render.Features.Skinning;
 using SomeEngine.Render.Frame;
 using SomeEngine.Render.Instances;
+using SomeEngine.Render.Materials;
 using SomeEngine.Render.Systems;
 using SomeEngine.RenderGraph;
 using SomeEngine.Resources;
@@ -32,6 +36,33 @@ public sealed class ClusterInstanceUploadTests
         Assert.Equal(new uint[] { 0, 1 }, data.ChangedRows);
         Assert.Equal(new[] { Current(8), Current(2) }, data.Values(RenderInstanceTransformProperties.CurrentTransform));
         Assert.Equal(new[] { Previous(11), Previous(19) }, data.Values(RenderInstanceTransformProperties.PreviousTransform));
+    }
+
+    [Fact]
+    public async Task SkinBindingEditChangesItsOwnGpuRowAndPreservesTransforms()
+    {
+        var layoutBuilder = new RenderInstancePropertyLayoutBuilder();
+        layoutBuilder.Include(ClusterRenderFeature.GeometryLayout);
+        layoutBuilder.Include(SkinInstanceProducer.Layout);
+        QueryDefinition query = new QueryDefinitionBuilder().Read<RenderTransform>().Read<RenderPreviousTransform>()
+            .Read<RenderClusterGeometry>().Read<RenderSkinBinding>().Build();
+        using var data = new InstanceData<SkinInstanceProducer>(await RasterTestGeometry.CreateAsync(), 4,
+            layoutBuilder.Freeze(), query, new SkinInstanceProducer());
+        Entity first = data.Add(1);
+        Entity second = data.Add(2);
+        data.World.Add(first, new RenderSkinBinding(1, 11));
+        data.World.Add(second, new RenderSkinBinding(2, 12));
+        await data.ExecuteAsync();
+        await data.ExecuteAsync();
+
+        data.World.Replace(second, new RenderSkinBinding(9, 19));
+        await data.ExecuteAsync();
+
+        Assert.Equal(new uint[] { 1 }, data.ChangedRows);
+        Assert.Equal(new[] { new RenderSkinBinding(1, 11), new RenderSkinBinding(9, 19) },
+            data.Values<RenderSkinBinding>(SkinInstanceProducer.BindingKey));
+        Assert.Equal(new[] { Current(1), Current(2) }, data.Values(RenderInstanceTransformProperties.CurrentTransform));
+        Assert.Equal(new[] { Previous(11), Previous(12) }, data.Values(RenderInstanceTransformProperties.PreviousTransform));
     }
 
     [Fact]
@@ -210,18 +241,29 @@ public sealed class ClusterInstanceUploadTests
         var first = new UnlitMaterial();
         var second = new UnlitMaterial();
         var assignments = new ClusterMaterialAssignments();
+        using World source = new();
+        Mesh mesh = await RasterTestGeometry.CreateAsync();
         using var data = new InstanceData<ClusterMaterialOffsetProducer>(
-            await RasterTestGeometry.CreateAsync(), 4, ClusterRenderFeature.InstanceLayout,
+            mesh, 4, ClusterRenderFeature.InstanceLayout,
             ClusterMaterialAssignmentSystem.EntityQuery(), assignments.CreateProducer(),
             new ClusterMaterialAssignmentSystem(assignments));
-        data.World.CreateEntity(new RenderMaterialReference(first));
-        data.World.CreateEntity(new RenderMaterialReference(second));
-        Entity a = AddMaterialInstance(1, first);
-        Entity b = AddMaterialInstance(2, second);
+        Entity sourceA = AddMaterialInstance(1, first);
+        Entity sourceB = AddMaterialInstance(2, second);
+        data.ExtractMeshes(source);
+        Entity a = data.Mirror(sourceA), b = data.Mirror(sourceB);
+        data.World.Replace(a, Previous(11));
+        data.World.Replace(b, Previous(12));
         await data.ExecuteAsync(); await data.ExecuteAsync();
         uint[] offsets = data.Values<uint>(ClusterRenderFeature.MaterialSlotOffsetKey);
         Assert.NotEqual(offsets[0], offsets[1]);
         uint[] roots = data.Values<uint>(ClusterRenderFeature.BvhRootKey);
+        var entityOrder = new List<Entity>();
+        data.World.ExecuteReadSnapshot(data.Composition.EntityQueryHandle, query =>
+        {
+            foreach (QueryRow row in query.Rows)
+                entityOrder.Add(row.Entity);
+        });
+        int firstRow = entityOrder.IndexOf(a), secondRow = entityOrder.IndexOf(b);
         Material replacement = second;
         data.World.ExecuteBufferWrite<RenderMaterialBinding, Material>(a, ref replacement,
             static (DynamicBuffer<RenderMaterialBinding> bindings, ref Material material) =>
@@ -230,8 +272,13 @@ public sealed class ClusterInstanceUploadTests
                 bindings.Add(new(material.MaterialId));
             });
         await data.ExecuteAsync();
-        Assert.Equal(new uint[] { 0 }, data.ChangedRows);
-        Assert.Equal(new[] { offsets[1], offsets[1] },
+        Assert.Equal(entityOrder.Select(data.World.Read<RenderTransform>),
+            data.Values(RenderInstanceTransformProperties.CurrentTransform));
+        Assert.Equal(entityOrder.Select(data.World.Read<RenderPreviousTransform>),
+            data.Values(RenderInstanceTransformProperties.PreviousTransform));
+        Assert.Equal(new[] { a }, data.ChangedRows.Select(row => entityOrder[(int)row]));
+        Assert.Equal(new[] { (uint)firstRow }, data.ChangedRows);
+        Assert.Equal(new[] { offsets[secondRow], offsets[secondRow] },
             data.Values<uint>(ClusterRenderFeature.MaterialSlotOffsetKey));
         Assert.Equal(roots, data.Values<uint>(ClusterRenderFeature.BvhRootKey));
         Assert.Equal(new[] { 0f, 0f }, data.Values<float>(ClusterRenderFeature.BoundsExpansionKey));
@@ -239,15 +286,14 @@ public sealed class ClusterInstanceUploadTests
             data.Values<uint>(ClusterRenderFeature.DepthCacheClassKey));
         Assert.Equal(new FirstPersonMeshData[] { default, default },
             data.Values<FirstPersonMeshData>(ClusterRenderFeature.FirstPersonKey));
-        Assert.Equal(new[] { Current(1), Current(2) }, data.Values(RenderInstanceTransformProperties.CurrentTransform));
-        Assert.Equal(new[] { Previous(11), Previous(12) }, data.Values(RenderInstanceTransformProperties.PreviousTransform));
+        AssertGeometry(1, 2);
 
 
         // First-only: a transform edit must not repeat the previous material row changes.
         data.World.Replace(a, Current(101));
         await data.ExecuteAsync();
-        Assert.Equal(new uint[] { 0 }, data.ChangedRows);
-        Assert.Equal(new[] { offsets[1], offsets[1] },
+        Assert.Equal(new[] { (uint)firstRow }, data.ChangedRows);
+        Assert.Equal(new[] { offsets[secondRow], offsets[secondRow] },
             data.Values<uint>(ClusterRenderFeature.MaterialSlotOffsetKey));
         AssertGeometry(101, 2);
 
@@ -261,10 +307,10 @@ public sealed class ClusterInstanceUploadTests
                 bindings.Add(new(material.MaterialId));
             });
         await data.ExecuteAsync();
-        Assert.Equal(new uint[] { 1 }, data.ChangedRows);
+        Assert.Equal(new[] { (uint)secondRow }, data.ChangedRows);
         uint[] changedOffsets = data.Values<uint>(ClusterRenderFeature.MaterialSlotOffsetKey);
-        Assert.Equal(offsets[1], changedOffsets[0]);
-        Assert.NotEqual(changedOffsets[0], changedOffsets[1]);
+        Assert.Equal(offsets[secondRow], changedOffsets[firstRow]);
+        Assert.NotEqual(changedOffsets[firstRow], changedOffsets[secondRow]);
         AssertGeometry(101, 202);
 
         // Neither changes: the next system version must not report either old row change again.
@@ -281,19 +327,19 @@ public sealed class ClusterInstanceUploadTests
                 data.Values<uint>(ClusterRenderFeature.DepthCacheClassKey));
             Assert.Equal(new FirstPersonMeshData[] { default, default },
                 data.Values<FirstPersonMeshData>(ClusterRenderFeature.FirstPersonKey));
-            Assert.Equal(new[] { Current(currentAValue), Current(currentBValue) },
+            Assert.Equal(entityOrder.Select(entity => entity == a ? Current(currentAValue) : Current(currentBValue)),
                 data.Values(RenderInstanceTransformProperties.CurrentTransform));
-            Assert.Equal(new[] { Previous(11), Previous(12) },
+            Assert.Equal(entityOrder.Select(entity => entity == a ? Previous(11) : Previous(12)),
                 data.Values(RenderInstanceTransformProperties.PreviousTransform));
         }
 
         Entity AddMaterialInstance(int value, Material material)
         {
-            Entity entity = data.Add(value);
-            data.World.Add(entity, new RenderInstance());
-            data.World.AddBuffer<RenderMaterialBinding>(entity);
-            data.World.ExecuteBufferWrite<RenderMaterialBinding, Material>(entity, ref material,
-                static (DynamicBuffer<RenderMaterialBinding> bindings, ref Material value) => bindings.Add(new(value.MaterialId)));
+            Entity entity = source.CreateEntity(new MeshInstance { Mesh = mesh });
+            source.Add(entity, new WorldTransform { Qvvs = new TransformQvvs(new Vector3(value, 0, 0), Quaternion.Identity) });
+            source.AddBuffer<MeshMaterialBinding>(entity);
+            source.ExecuteBufferWrite<MeshMaterialBinding, Material>(entity, ref material,
+                static (DynamicBuffer<MeshMaterialBinding> bindings, ref Material value) => bindings.Add(new(value)));
             return entity;
         }
     }
@@ -383,6 +429,16 @@ public sealed class ClusterInstanceUploadTests
             World.Add(entity, new RenderMesh(_mesh, 0));
             return entity;
         }
+
+        internal void ExtractMeshes(World source)
+        {
+            _extraction.Add(new MeshRenderExtractor());
+            _extraction.Extract(source);
+            Assert.True(_coordinator.TryBeginPrepare(out var scope));
+            using (scope) { Prepare.ApplyExtraction(scope); scope.Commit(); }
+        }
+
+        internal Entity Mirror(Entity source) => _extraction.RequireMirror(source);
 
         internal async Task PrepareMeshesAsync()
         {

@@ -100,6 +100,7 @@ public interface IRenderInstanceBatchComposer<TGroupKey>
         int entityRow,
         RenderInstanceWriteSlice destination);
 
+    /// <summary>Writes every row in a packet into its matching destination range.</summary>
     void WritePacket(
         in TGroupKey group,
         int groupIndex,
@@ -114,6 +115,40 @@ public interface IRenderInstanceBatchComposer<TGroupKey>
                 packet,
                 row,
                 destination.Slice(row, 1));
+        }
+    }
+
+    /// <summary>
+    /// Writes changed rows from a packet. Composers with column-specific changes may select
+    /// their own row ranges while the default implementation selects changed entity ranges.
+    /// </summary>
+    void WriteChangedPacket(
+        in TGroupKey group,
+        int groupIndex,
+        ReadOnlyQueryPacket packet,
+        uint lastSystemVersion,
+        RenderInstanceWriteSlice destination)
+    {
+        if (AllRowsChanged(packet, lastSystemVersion))
+        {
+            WritePacket(in group, groupIndex, packet, destination);
+            return;
+        }
+
+        int start = 0;
+        while (start < packet.Count)
+        {
+            while (start < packet.Count &&
+                GetChanges(packet.Slice(start, 1), lastSystemVersion) == RenderInstanceChanges.None)
+                start++;
+            if (start == packet.Count) break;
+            int end = start + 1;
+            while (end < packet.Count &&
+                GetChanges(packet.Slice(end, 1), lastSystemVersion) != RenderInstanceChanges.None)
+                end++;
+            WritePacket(in group, groupIndex, packet.Slice(start, end - start),
+                destination.Slice(start, end - start));
+            start = end;
         }
     }
 }
@@ -1112,26 +1147,11 @@ public sealed class RenderInstanceBatchBuilder<TGroupKey>
                 local.OneInstancePerEntity)
             {
                 TGroupKey key = default!;
-                if (writeAll || local.AllRowsChanged(packet, context.LastSystemVersion))
-                    local.WritePacket(in key, 0, packet, destinations[0].Slice(context.OutputStart, packet.Count));
+                RenderInstanceWriteSlice destination = destinations[0].Slice(context.OutputStart, packet.Count);
+                if (writeAll)
+                    local.WritePacket(in key, 0, packet, destination);
                 else
-                {
-                    int start = 0;
-                    while (start < packet.Count)
-                    {
-                        while (start < packet.Count &&
-                            local.GetChanges(packet.Slice(start, 1), context.LastSystemVersion) == RenderInstanceChanges.None)
-                            start++;
-                        if (start == packet.Count) break;
-                        int end = start + 1;
-                        while (end < packet.Count &&
-                            local.GetChanges(packet.Slice(end, 1), context.LastSystemVersion) != RenderInstanceChanges.None)
-                            end++;
-                        local.WritePacket(in key, 0, packet.Slice(start, end - start),
-                            destinations[0].Slice(context.OutputStart + start, end - start));
-                        start = end;
-                    }
-                }
+                    local.WriteChangedPacket(in key, 0, packet, context.LastSystemVersion, destination);
                 return;
             }
 

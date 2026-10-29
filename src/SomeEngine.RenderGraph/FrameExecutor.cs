@@ -979,7 +979,7 @@ internal sealed partial class FrameExecutor
                     connection.Primary = buffer;
                     AddParameterConnection(_resourceParameterConnections, (GraphAccessTargetKind.Buffer, buffer), connection);
                 }
-                _parameterValueChanges.Add(connection);
+                AddParameterValueChange(connection);
             }
         }
         _changedBufferInputs.Clear();
@@ -994,7 +994,7 @@ internal sealed partial class FrameExecutor
     {
         foreach (GraphParameterInput input in _changedParameterInputs)
             if (_parameterInputConnections.TryGetValue(input, out HashSet<ParameterConnection>? connections))
-                _parameterValueChanges.UnionWith(connections);
+                foreach (ParameterConnection connection in connections) AddParameterValueChange(connection);
         _changedParameterInputs.Clear();
     }
 }

@@ -26,11 +26,26 @@ public interface IRenderInstanceProducer
     /// </summary>
     void Write(RenderInstanceWriteSlice destination, ReadOnlyQueryPacket packet);
 
-    /// <summary>Writes changed values, falling back to this producer's complete packet write.</summary>
+    /// <summary>Writes changed values, selecting changed entity ranges by default.</summary>
     void WriteChanged(RenderInstanceWriteSlice destination, ReadOnlyQueryPacket packet, uint lastSystemVersion)
     {
-        if (GetChanges(packet, lastSystemVersion) != RenderInstanceChanges.None)
-            Write(destination, packet);
+        if (GetChanges(packet, lastSystemVersion) == RenderInstanceChanges.None)
+            return;
+
+        int start = 0;
+        while (start < packet.Count)
+        {
+            while (start < packet.Count &&
+                GetChanges(packet.Slice(start, 1), lastSystemVersion) == RenderInstanceChanges.None)
+                start++;
+            if (start == packet.Count) break;
+            int end = start + 1;
+            while (end < packet.Count &&
+                GetChanges(packet.Slice(end, 1), lastSystemVersion) != RenderInstanceChanges.None)
+                end++;
+            Write(destination.Slice(start, end - start), packet.Slice(start, end - start));
+            start = end;
+        }
     }
 }
 

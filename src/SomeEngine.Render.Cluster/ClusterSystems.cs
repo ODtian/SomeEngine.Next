@@ -120,7 +120,7 @@ public sealed class ClusterInstanceSystem<TProducer> :
         _resources.EnterInstanceComposition();
         try
         {
-            _columnChanges.Reset(context.LastSystemVersion);
+            _columnChanges.Reset();
             _composition.OnUpdate(ref context, forcedChanges);
             _publishedMeshCount = publishedMeshCount;
         }
@@ -157,16 +157,14 @@ public sealed class ClusterInstanceSystem<TProducer> :
     private sealed class InstanceColumnChanges
     {
         internal const int CurrentTransform = 1, PreviousTransform = 2, Mesh = 4, Additional = 8;
-        internal const int InitialValues = 16, Xray = 32;
-        internal const int All = CurrentTransform | PreviousTransform | Mesh | Additional | InitialValues | Xray;
+        internal const int Xray = 16;
+        internal const int All = CurrentTransform | PreviousTransform | Mesh | Additional | Xray;
         private int _fields;
         private int _partialTransformChanges;
-        internal uint LastVersion { get; private set; }
         internal int Fields => Volatile.Read(ref _fields);
         internal bool AllTransformsChanged => Volatile.Read(ref _partialTransformChanges) == 0;
-        internal void Reset(uint lastVersion)
+        internal void Reset()
         {
-            LastVersion = lastVersion;
             _fields = 0;
             _partialTransformChanges = 0;
         }
@@ -189,37 +187,32 @@ public sealed class ClusterInstanceSystem<TProducer> :
 
         public RenderInstanceChanges CollectChanges(ReadOnlyQueryPacket packet, uint lastSystemVersion)
         {
-            if (!packet.AllRowsChangedSince<RenderTransform>(lastSystemVersion) ||
-                !packet.AllRowsChangedSince<RenderPreviousTransform>(lastSystemVersion))
-                columns.RecordPartialTransformChanges();
-            RenderInstanceChanges changes = producer.First.GetChanges(packet, lastSystemVersion)
-                | producer.Second.First.GetChanges(packet, lastSystemVersion);
-            RenderInstanceChanges additionalChanges = producer.Second.Second.GetChanges(packet, lastSystemVersion);
-            changes |= additionalChanges;
-            if ((changes & RenderInstanceChanges.Structure) != 0)
-                columns.Add(InstanceColumnChanges.All);
-            else if (changes != RenderInstanceChanges.None)
+            int fields = 0;
+            if (packet.AllRowsChangedSince<RenderTransform>(lastSystemVersion) &&
+                packet.AllRowsChangedSince<RenderPreviousTransform>(lastSystemVersion))
+                fields = InstanceColumnChanges.CurrentTransform | InstanceColumnChanges.PreviousTransform;
+            else
             {
-                int fields = 0;
+                columns.RecordPartialTransformChanges();
                 if (packet.ChangedSince<RenderTransform>(lastSystemVersion)) fields |= InstanceColumnChanges.CurrentTransform;
                 if (packet.ChangedSince<RenderPreviousTransform>(lastSystemVersion)) fields |= InstanceColumnChanges.PreviousTransform;
-                if (ClusterRenderResources.ClusterGeometryProducer.MeshChanged(packet, lastSystemVersion))
-                    fields |= InstanceColumnChanges.Mesh;
-                if (ClusterRenderResources.ClusterGeometryProducer.XrayChanged(packet, lastSystemVersion))
-                    fields |= InstanceColumnChanges.Xray;
-                if (additionalChanges != RenderInstanceChanges.None)
-                    fields |= InstanceColumnChanges.Additional;
-                columns.Add(fields);
             }
+            if (ClusterRenderResources.ClusterGeometryProducer.MeshChanged(packet, lastSystemVersion))
+                fields |= InstanceColumnChanges.Mesh;
+            if (ClusterRenderResources.ClusterGeometryProducer.XrayChanged(packet, lastSystemVersion))
+                fields |= InstanceColumnChanges.Xray;
+            RenderInstanceChanges additionalChanges = producer.Second.Second.GetChanges(packet, lastSystemVersion);
+            if (additionalChanges != RenderInstanceChanges.None)
+                fields |= InstanceColumnChanges.Additional;
+            RenderInstanceChanges changes = additionalChanges;
+            if (fields != 0)
+                changes |= RenderInstanceChanges.Values;
+            if ((changes & RenderInstanceChanges.Structure) != 0)
+                columns.Add(InstanceColumnChanges.All);
+            else if (fields != 0)
+                columns.Add(fields);
             return changes;
         }
-
-        public bool AllRowsChanged(
-            ReadOnlyQueryPacket packet,
-            uint lastSystemVersion) =>
-            columns.AllTransformsChanged || packet.AllRowsChangedSince<RenderTransform>(lastSystemVersion)
-            || packet.AllRowsChangedSince<RenderPreviousTransform>(lastSystemVersion)
-            || packet.AllRowsChangedSince<RenderClusterGeometry>(lastSystemVersion);
 
         public int CountGroups(ReadOnlyQueryPacket packet, int entityRow) => 1;
 
@@ -276,21 +269,26 @@ public sealed class ClusterInstanceSystem<TProducer> :
         {
             if (groupIndex != 0)
                 throw new ArgumentOutOfRangeException(nameof(groupIndex));
+            producer.Write(destination, packet);
+        }
+
+        public void WriteChangedPacket(
+            in RenderInstanceSingleGroup group,
+            int groupIndex,
+            ReadOnlyQueryPacket packet,
+            uint lastSystemVersion,
+            RenderInstanceWriteSlice destination)
+        {
+            if (groupIndex != 0)
+                throw new ArgumentOutOfRangeException(nameof(groupIndex));
             int fields = columns.Fields;
-            bool all = (fields & InstanceColumnChanges.InitialValues) != 0;
-            uint lastVersion = columns.LastVersion;
-            if (all)
-            {
-                producer.Write(destination, packet);
-                return;
-            }
             if ((fields & (InstanceColumnChanges.CurrentTransform | InstanceColumnChanges.PreviousTransform)) != 0)
                 producer.First.WriteChanged(destination.Restrict(producer.First.Properties), packet,
-                    lastVersion, columns.AllTransformsChanged);
+                    lastSystemVersion, columns.AllTransformsChanged);
             if ((fields & (InstanceColumnChanges.Mesh | InstanceColumnChanges.Xray)) != 0)
-                producer.Second.First.WriteChanged(destination.Restrict(producer.Second.First.Properties), packet, lastVersion);
+                producer.Second.First.WriteChanged(destination.Restrict(producer.Second.First.Properties), packet, lastSystemVersion);
             if ((fields & InstanceColumnChanges.Additional) != 0)
-                producer.Second.Second.WriteChanged(destination.Restrict(producer.Second.Second.Properties), packet, lastVersion);
+                producer.Second.Second.WriteChanged(destination.Restrict(producer.Second.Second.Properties), packet, lastSystemVersion);
         }
     }
 }

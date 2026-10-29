@@ -1349,13 +1349,11 @@ internal sealed partial class FrameExecutor
     }
 
     private readonly HashSet<int> _parameterPassChanges = [];
-    private HashSet<ParameterConnection> _parameterValueChanges = [];
-    private HashSet<ParameterConnection> _inactiveParameterChanges = [];
+    private readonly List<ParameterConnection> _parameterValueChanges = [];
     private readonly Dictionary<int, HashSet<ParameterConnection>> _viewParameterConnections = [];
     private readonly Dictionary<(GraphAccessTargetKind Kind, int Index), HashSet<ParameterConnection>> _resourceParameterConnections = [];
     private readonly List<PassParameters> _passParameters = [];
-    private HashSet<ParameterBlock> _parameterBindingChanges = [];
-    private HashSet<ParameterBlock> _inactiveBindingChanges = [];
+    private readonly List<ParameterBlock> _parameterBindingChanges = [];
 
     private sealed class PassParameters
     {
@@ -1369,6 +1367,7 @@ internal sealed partial class FrameExecutor
     private sealed class ParameterBlock
     {
         internal int Pass;
+        internal int BindingChangeIndex = -1;
         internal required VariableLayoutReflection Layout;
         internal PersistentParameterBindings? Bindings;
         internal VariableLayoutReflection? CachedLayout;
@@ -1388,6 +1387,7 @@ internal sealed partial class FrameExecutor
     private sealed class ParameterConnection
     {
         internal int Pass;
+        internal int ValueChangeIndex = -1;
         internal ParameterBlock Block = null!;
         internal int Position;
         internal GraphParameterResourceBinding Source;
@@ -1481,7 +1481,7 @@ internal sealed partial class FrameExecutor
                         if (connection.Secondary >= 0)
                             AddParameterConnection(_resourceParameterConnections, (connection.Kind, connection.Secondary), connection);
                     }
-                    _parameterValueChanges.Add(connection);
+                    AddParameterValueChange(connection);
                 }
             }
             if (parameters.Connections.Count > connectionIndex)
@@ -1512,15 +1512,14 @@ internal sealed partial class FrameExecutor
         block.Layout = layout;
         block.Data = data;
         block.Count = 0;
-        _parameterBindingChanges.Add(block);
+        AddParameterBindingChange(block);
         return block;
     }
 
     private void ReleaseParameterBlock(ParameterBlock block)
     {
         ReleaseParameterBindingData(block);
-        _parameterBindingChanges.Remove(block);
-        _inactiveBindingChanges.Remove(block);
+        RemoveParameterBindingChange(block);
     }
 
     private static void ReleaseParameterBindingData(ParameterBlock block)
@@ -1548,7 +1547,7 @@ internal sealed partial class FrameExecutor
 
     private void DisconnectParameter(ParameterConnection connection)
     {
-        _parameterValueChanges.Remove(connection);
+        RemoveParameterValueChange(connection);
         if (connection.Source.ParameterInput is not null) RemoveParameterConnection(_parameterInputConnections, connection.Source.ParameterInput, connection);
         if (connection.Source.BufferInput is not null) RemoveParameterConnection(_bufferInputParameters, connection.Source.BufferInput, connection);
         if (connection.View >= 0) RemoveParameterConnection(_viewParameterConnections, connection.View, connection);
@@ -1559,7 +1558,7 @@ internal sealed partial class FrameExecutor
     private void ChangeViewParameters(int view)
     {
         if (_viewParameterConnections.TryGetValue(view, out HashSet<ParameterConnection>? connections))
-            _parameterValueChanges.UnionWith(connections);
+            foreach (ParameterConnection connection in connections) AddParameterValueChange(connection);
     }
 
     private void MarkViewCommands(GraphAccessTargetKind kind, int resource)
@@ -1589,7 +1588,43 @@ internal sealed partial class FrameExecutor
     private void ChangeResourceParameters((GraphAccessTargetKind Kind, int Index) resource)
     {
         if (_resourceParameterConnections.TryGetValue(resource, out HashSet<ParameterConnection>? connections))
-            _parameterValueChanges.UnionWith(connections);
+            foreach (ParameterConnection connection in connections) AddParameterValueChange(connection);
+    }
+
+    private void AddParameterValueChange(ParameterConnection connection)
+    {
+        if (connection.ValueChangeIndex >= 0) return;
+        connection.ValueChangeIndex = _parameterValueChanges.Count;
+        _parameterValueChanges.Add(connection);
+    }
+
+    private void RemoveParameterValueChange(ParameterConnection connection)
+    {
+        int index = connection.ValueChangeIndex;
+        if (index < 0) return;
+        ParameterConnection last = _parameterValueChanges[^1];
+        _parameterValueChanges[index] = last;
+        last.ValueChangeIndex = index;
+        _parameterValueChanges.RemoveAt(_parameterValueChanges.Count - 1);
+        connection.ValueChangeIndex = -1;
+    }
+
+    private void AddParameterBindingChange(ParameterBlock block)
+    {
+        if (block.BindingChangeIndex >= 0) return;
+        block.BindingChangeIndex = _parameterBindingChanges.Count;
+        _parameterBindingChanges.Add(block);
+    }
+
+    private void RemoveParameterBindingChange(ParameterBlock block)
+    {
+        int index = block.BindingChangeIndex;
+        if (index < 0) return;
+        ParameterBlock last = _parameterBindingChanges[^1];
+        _parameterBindingChanges[index] = last;
+        last.BindingChangeIndex = index;
+        _parameterBindingChanges.RemoveAt(_parameterBindingChanges.Count - 1);
+        block.BindingChangeIndex = -1;
     }
 
     private void RefreshParameterBindings()
@@ -1597,12 +1632,13 @@ internal sealed partial class FrameExecutor
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(GraphTrace.BindingResolution);
         RefreshBufferInputParameters();
         RefreshParameterInputs();
-        _inactiveParameterChanges.Clear();
-        foreach (ParameterConnection connection in _parameterValueChanges)
+        int connectionIndex = 0;
+        while (connectionIndex < _parameterValueChanges.Count)
         {
+            ParameterConnection connection = _parameterValueChanges[connectionIndex];
             if (!_live[connection.Pass])
             {
-                _inactiveParameterChanges.Add(connection);
+                connectionIndex++;
                 continue;
             }
             ResourceBinding value = ResolveParameterValue(connection);
@@ -1610,23 +1646,25 @@ internal sealed partial class FrameExecutor
             {
                 InvalidateCommands(connection.Pass);
                 connection.Block.Resources[connection.Position] = value;
-                _parameterBindingChanges.Add(connection.Block);
+                AddParameterBindingChange(connection.Block);
             }
+            RemoveParameterValueChange(connection);
         }
         // Disabled passes can become live without changing their resource declarations.
-        (_parameterValueChanges, _inactiveParameterChanges) = (_inactiveParameterChanges, _parameterValueChanges);
-        _inactiveBindingChanges.Clear();
-        foreach (ParameterBlock block in _parameterBindingChanges)
+        int blockIndex = 0;
+        while (blockIndex < _parameterBindingChanges.Count)
         {
+            ParameterBlock block = _parameterBindingChanges[blockIndex];
             if (!_live[block.Pass])
             {
-                _inactiveBindingChanges.Add(block);
+                blockIndex++;
                 continue;
             }
             Pipeline? pipeline = _passParameters[block.Pass].Pipeline;
             if (pipeline is null || block.Count == 0)
             {
                 ReleaseParameterBindingData(block);
+                RemoveParameterBindingChange(block);
                 continue;
             }
             if (block.CachedLayout != block.Layout)
@@ -1652,6 +1690,7 @@ internal sealed partial class FrameExecutor
                 }
                 block.Bindings = matched.Bindings;
                 block.BindingData.Add(matched);
+                RemoveParameterBindingChange(block);
                 continue;
             }
             // Frame resources and temporal histories can rotate at different rates.
@@ -1671,14 +1710,13 @@ internal sealed partial class FrameExecutor
             bindings.OrdinaryData.CopyTo(next.Data);
             block.BindingData.Add(next);
             block.Bindings = null;
-            _inactiveBindingChanges.Add(block);
+            blockIndex++;
         }
-        (_parameterBindingChanges, _inactiveBindingChanges) = (_inactiveBindingChanges, _parameterBindingChanges);
     }
 
     private ResourceBinding ResolveParameterValue(ParameterConnection connection)
     {
-        GraphParameterResourceBinding source = connection.Source;
+        ref readonly GraphParameterResourceBinding source = ref connection.Source;
         if (source.ParameterInput is not null) return _frame.ResolveParameterInput(source.ParameterInput).Binding;
         if (source.IsNull) return new ResourceBinding(source.Type, null);
         if (source.Type == ResourceBindingType.Sampler) return new ResourceBinding(source.Type, source.Sampler);
