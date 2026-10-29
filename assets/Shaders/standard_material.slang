@@ -127,20 +127,25 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ITransparentS
         float3 T = normalize(ctx.worldTangent.xyz - N_geom * dot(N_geom, ctx.worldTangent.xyz)); // Gram-Schmidt
         float3 B = cross(N_geom, T) * ctx.worldTangent.w; // handedness
         float3 mappedNormal = normalize(T * normalTS.x + B * normalTS.y + N_geom * normalTS.z);
+        float3 geometricNormal = SafeNormalize(cross(triangle.Position1 - triangle.Position0,
+            triangle.Position2 - triangle.Position0), surface.Normal);
+        if (dot(geometricNormal, surface.Normal) < 0.0) geometricNormal = -geometricNormal;
 
         ClusterViewUniforms cameraView = MaterialViews[input.PixelCoord.z];
-        float3 positionDx = TransformFirstPersonWorldPosition(MaterialInstanceData, MaterialInstanceProperties,
-            input.InstanceID, cameraView, ctx.surfacePosition + input.PositionDx);
-        float3 positionDy = TransformFirstPersonWorldPosition(MaterialInstanceData, MaterialInstanceProperties,
-            input.InstanceID, cameraView, ctx.surfacePosition + input.PositionDy);
-        ctx.surfacePosition = TransformFirstPersonWorldPosition(MaterialInstanceData, MaterialInstanceProperties,
-            input.InstanceID, cameraView, ctx.surfacePosition);
+        bool firstPerson = (LoadInstanceFirstPerson(MaterialInstanceData, MaterialInstanceProperties, input.InstanceID).x & 3u) == 1u;
+        float3 positionDx = ctx.surfacePosition + input.PositionDx;
+        float3 positionDy = ctx.surfacePosition + input.PositionDy;
+        if (firstPerson && cameraView.FirstPersonTransformEnabled != 0u)
+        {
+            positionDx = mul(float4(positionDx, 1.0), cameraView.WorldToFirstPerson).xyz;
+            positionDy = mul(float4(positionDy, 1.0), cameraView.WorldToFirstPerson).xyz;
+            ctx.surfacePosition = mul(float4(ctx.surfacePosition, 1.0), cameraView.WorldToFirstPerson).xyz;
+            mappedNormal = normalize(mul(mappedNormal, transpose((float3x3)cameraView.FirstPersonToWorld)));
+            N_geom = normalize(mul(N_geom, transpose((float3x3)cameraView.FirstPersonToWorld)));
+            geometricNormal = normalize(mul(geometricNormal, transpose((float3x3)cameraView.FirstPersonToWorld)));
+        }
         positionDx -= ctx.surfacePosition;
         positionDy -= ctx.surfacePosition;
-        mappedNormal = TransformFirstPersonWorldNormal(MaterialInstanceData, MaterialInstanceProperties,
-            input.InstanceID, cameraView, mappedNormal);
-        N_geom = TransformFirstPersonWorldNormal(MaterialInstanceData, MaterialInstanceProperties,
-            input.InstanceID, cameraView, N_geom);
         float3 albedo = scalars.DecodeAlbedoSrgb ? StandardSrgbToLinear(albedoSample.rgb) : albedoSample.rgb;
         float3 baseColor = albedo * scalars.BaseColorTint.rgb;
         float roughness = saturate(armSample.g * scalars.Roughness);
@@ -163,13 +168,9 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ITransparentS
         SurfaceReceiver receiver = (SurfaceReceiver)0;
         receiver.Position = ctx.surfacePosition;
         receiver.ShadingNormal = mappedNormal;
-        float3 geometricNormal = SafeNormalize(cross(triangle.Position1 - triangle.Position0,
-            triangle.Position2 - triangle.Position0), surface.Normal);
-        if (dot(geometricNormal, surface.Normal) < 0.0) geometricNormal = -geometricNormal;
-        receiver.GeometricNormal = TransformFirstPersonWorldNormal(MaterialInstanceData, MaterialInstanceProperties,
-            input.InstanceID, cameraView, geometricNormal);
+        receiver.GeometricNormal = geometricNormal;
         receiver.Flags = SURFACE_RECEIVER_PRESENT | SURFACE_RECEIVER_LIGHTING;
-        if ((LoadInstanceFirstPerson(MaterialInstanceData, MaterialInstanceProperties, input.InstanceID).x & 3u) == 1u)
+        if (firstPerson)
             receiver.Flags |= SURFACE_RECEIVER_FIRST_PERSON;
         receiver.Depth = input.Depth;
         ClusterViewUniforms surfaceView = ApplyFirstPersonViewTransform(MaterialInstanceData, MaterialInstanceProperties,

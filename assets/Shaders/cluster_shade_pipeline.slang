@@ -139,13 +139,13 @@ bool decodeTriangle(uint3 pixelCoord, out TriangleInfo tri)
     return valid != 0u;
 }
 
-uint GetTriangleWaveLeader(TriangleInfo tri, uint previousFrame)
+uint GetTriangleWaveLeader(TriangleInfo tri)
 {
-    uint4 frameLanes = WaveMatchingLanes(previousFrame);
-    if ((frameLanes[tri.sourceLane >> 5u] & (1u << (tri.sourceLane & 31u))) != 0u)
+    uint4 activeLanes = WaveActiveBallot(true);
+    if ((activeLanes[tri.sourceLane >> 5u] & (1u << (tri.sourceLane & 31u))) != 0u)
         return tri.sourceLane;
     // Surface reconstruction can end individual lanes before motion evaluation.
-    return WaveMaskFirstLane(WaveMatchingLanes(tri.visibility) & WaveMatchingLanes(tri.viewIndex) & frameLanes);
+    return WaveMaskFirstLane(WaveMatchingLanes(tri.visibility) & WaveMatchingLanes(tri.viewIndex));
 }
 
 struct PipelineTriangleProjection
@@ -193,17 +193,17 @@ TDomain.TriangleData evaluateTriangleWithTransform<TVE, TDomain>(
     where TDomain : IDomainEvaluate<TVE.Vertex>
 {
     // Current evaluation follows decodeTriangle or triangleInfo before any lane exits.
-    uint leader = isPreviousFrame == 0u ? tri.sourceLane : GetTriangleWaveLeader(tri, isPreviousFrame);
+    uint leader = isPreviousFrame == 0u ? tri.sourceLane : GetTriangleWaveLeader(tri);
     TDomain.TriangleData triangle;
     if (WaveGetLaneIndex() == leader)
     {
         RenderInstanceTransform transform = isPreviousFrame == 0u
             ? GetCurrentInstanceTransform(tri.instanceID)
             : GetPreviousInstanceTransform(tri.instanceID);
-        TVE.Vertex v0 = evaluator.evaluate(makeVertexEvalContext(tri, transform, isPreviousFrame, tri.vi0));
-        TVE.Vertex v1 = evaluator.evaluate(makeVertexEvalContext(tri, transform, isPreviousFrame, tri.vi1));
-        TVE.Vertex v2 = evaluator.evaluate(makeVertexEvalContext(tri, transform, isPreviousFrame, tri.vi2));
-        triangle = domain.makeTriangle(v0, v1, v2, tri.materialSlot);
+        VertexEvalContext context = makeVertexEvalContext(tri, transform, isPreviousFrame, tri.vi0);
+        TriangleVertices<TVE.Vertex> vertices = EvaluateTriangleVertices(
+            evaluator, context, uint3(tri.vi0, tri.vi1, tri.vi2));
+        triangle = domain.makeTriangle(vertices.First, vertices.Second, vertices.Third, tri.materialSlot);
     }
     return domain.readLane(triangle, leader);
 }
@@ -229,7 +229,7 @@ PipelineTriangleProjection ProjectTriangleWave<TVertex, TDomain>(
     TriangleInfo info)
     where TDomain : IDomainEvaluate<TVertex>
 {
-    uint leader = GetTriangleWaveLeader(info, 0u);
+    uint leader = GetTriangleWaveLeader(info);
     PipelineTriangleProjection projection;
     if (WaveGetLaneIndex() == leader)
     {
@@ -266,14 +266,24 @@ float3 computeTriangleBarycentricAt<TVertex, TDomain>(
 float3 ReconstructWorldPositionAt(
     float2 pixelPosition,
     float depth,
-    ClusterViewUniforms view)
+    ClusterViewUniforms view,
+    out float4 world)
 {
     float2 uv = pixelPosition /
         float2(Uniforms.ScreenWidth, Uniforms.ScreenHeight);
-    float4 world = mul(
+    world = mul(
         float4(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, depth, 1.0),
         view.ClipToWorld);
     return abs(world.w) > 1e-8 ? world.xyz / world.w : world.xyz;
+}
+
+float3 ReconstructWorldPositionAt(
+    float2 pixelPosition,
+    float depth,
+    ClusterViewUniforms view)
+{
+    float4 world;
+    return ReconstructWorldPositionAt(pixelPosition, depth, view, world);
 }
 
 SurfaceBarycentrics ResolveBarycentricsAtDepth<TVertex, TDomain>(
@@ -283,7 +293,8 @@ SurfaceBarycentrics ResolveBarycentricsAtDepth<TVertex, TDomain>(
     TDomain.TriangleData triangle,
     TriangleInfo info,
     float depth,
-    out float3 positionFromDepth)
+    out float3 positionFromDepth,
+    out float4 worldAtDepth)
     where TDomain : IDomainEvaluate<TVertex>
 {
     float2 pixelCenter = float2(pixelCoord.xy) + 0.5;
@@ -291,7 +302,7 @@ SurfaceBarycentrics ResolveBarycentricsAtDepth<TVertex, TDomain>(
     float3 seed = TriangleBarycentricAt(projection, pixelCenter);
     float3 seedX = TriangleBarycentricAt(projection, pixelCenter + float2(1.0, 0.0));
     float3 seedY = TriangleBarycentricAt(projection, pixelCenter + float2(0.0, 1.0));
-    positionFromDepth = ReconstructWorldPositionAt(pixelCenter, depth, view);
+    positionFromDepth = ReconstructWorldPositionAt(pixelCenter, depth, view, worldAtDepth);
 
     SurfaceReconstructionInput input;
     input.PixelCenter = pixelCenter;
@@ -308,6 +319,21 @@ SurfaceBarycentrics ResolveBarycentricsAtDepth<TVertex, TDomain>(
     input.ViewProjection = view.ViewProj;
     input.ScreenSize = uint2(Uniforms.ScreenWidth, Uniforms.ScreenHeight);
     return domain.reconstruct(triangle, input);
+}
+
+SurfaceBarycentrics ResolveBarycentricsAtDepth<TVertex, TDomain>(
+    uniform TDomain domain,
+    uint3 pixelCoord,
+    ClusterViewUniforms view,
+    TDomain.TriangleData triangle,
+    TriangleInfo info,
+    float depth,
+    out float3 positionFromDepth)
+    where TDomain : IDomainEvaluate<TVertex>
+{
+    float4 worldAtDepth;
+    return ResolveBarycentricsAtDepth<TVertex, TDomain>(
+        domain, pixelCoord, view, triangle, info, depth, positionFromDepth, worldAtDepth);
 }
 
 SurfaceBarycentrics ResolveBarycentrics<TVertex, TDomain>(
@@ -393,13 +419,14 @@ bool TryEvaluateSurfacePixel<TVE, TDomain>(
         InstanceData, InstanceProperties, tri.instanceID, Views[tri.viewIndex]);
     float depth = DepthBuffer.Load(int4(coord, 0));
     float3 positionFromDepth;
+    float4 worldAtDepth;
     SurfaceBarycentrics coordinates = ResolveBarycentricsAtDepth<TVE.Vertex, TDomain>(
-        domain, coord, view, triangle, tri, depth, positionFromDepth);
+        domain, coord, view, triangle, tri, depth, positionFromDepth, worldAtDepth);
     if (coordinates.Valid == 0u) return false;
     bary = coordinates.Value;
     evaluated = domain.eval(triangle, bary);
     VirtualShadowReceiverPixel receiver = ReconstructVirtualShadowReceiverPixel(
-        DepthBuffer, coord, uint2(view.ScreenWidth, view.ScreenHeight), depth, view.ClipToWorld);
+        worldAtDepth, uint2(Uniforms.ScreenWidth, Uniforms.ScreenHeight), view.ClipToWorld);
     input.PixelCoord = coord;
     input.InstanceID = tri.instanceID;
     input.MaterialIndex = tri.materialSlot;

@@ -16,7 +16,7 @@ Deform、Raster、Shade 的执行兼容性由各 stage 自己的 Slang 类型与
 
 `ISurfaceEvaluate<TSurface, TTriangle>` 接收用户定义的曲面、三角形和 `SurfacePixelInput`。后者包含输出像素坐标、实例编号、材质编号、相机世界坐标，以及相邻屏幕像素对应的世界坐标差 `PositionDx` / `PositionDy`。材质通过这些显式输入进行着色和调试求值。
 
-管线负责从自己的视图和深度资源取得这些输入。Cluster 的着色实现从深度图重建屏幕邻域，选择临近前景深度处理轮廓，再把坐标差传入材质。Standard 用自己的曲面位置加上该坐标差计算阴影接收点，并自行解释纹理、BRDF、共享灯光网格与阴影资源。管线继续通过泛型接口传递用户曲面和三角形。
+管线负责从自己的视图和深度资源取得这些输入。[Cluster 着色实现](../../../assets/Shaders/cluster_shade_pipeline.slang) 从像素深度取得齐次世界坐标，表面重建与[相邻像素位置](../../../assets/Shaders/vsm_receiver_pixel.slang)共用该结果。相邻位置保持该像素的相机深度，其世界坐标差传入材质。Standard 用自己的最终曲面位置加上该坐标差处理贴花采样，并将该位置、几何法线、着色法线与深度交给阴影采样。纹理、BRDF、共享灯光网格与阴影资源由材质解释。管线通过泛型接口传递用户曲面和三角形。
 
 `IVertexEvaluate` 使用通用变换数据和用户顶点表示；Cluster 的实例布局及资源读取由 Cluster 实现持有。
 

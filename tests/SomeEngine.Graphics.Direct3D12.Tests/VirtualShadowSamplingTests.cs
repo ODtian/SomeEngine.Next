@@ -19,73 +19,50 @@ public sealed class VirtualShadowSamplingTests(D3D12TestCompiler shaderCompiler)
     [InlineData(2, 0, 2)]
     public void ReceiverDepthsPreservePixelDensityAtViewportAndDepthEdges(int pixelIndex, int depthEdge, int planeAxis)
     {
-        const int levels = 4, pageEntries = 16;
-        uint[] views = new uint[levels * 44];
-        uint[] pages = new uint[levels * pageEntries * 4];
-        uint[] pixels = new uint[512 * 128];
-        for (int level = 0; level < levels; level++)
-        {
-            uint[] view = CreateView(level);
-            Matrix4x4 rotation = planeAxis switch
-            {
-                0 => Matrix4x4.CreateRotationY(MathF.PI * .5f),
-                1 => Matrix4x4.CreateRotationX(MathF.PI * .5f),
-                _ => Matrix4x4.Identity,
-            };
-            Matrix4x4 projection = rotation *
-                Matrix4x4.CreateScale(1.0f / (4 << level), 1.0f / (4 << level), 1) *
-                Matrix4x4.CreateTranslation(planeAxis == 0 ? -.5f / (4 << level) : 0,
-                    planeAxis == 1 ? .5f / (4 << level) : 0, planeAxis == 2 ? 0 : .5f);
-            MemoryMarshal.Write(MemoryMarshal.AsBytes(view.AsSpan()), in projection);
-            view[16] = 512;
-            view[23] = (uint)(level * pageEntries);
-            view.CopyTo(views, level * 44);
-            for (int row = 0; row < 4; row++)
-            for (int column = 0; column < 4; column++)
-            {
-                int entry = (level * pageEntries + row * 4 + column) * 4;
-                pages[entry] = (uint)level + 1;
-                pages[entry + 1] = (uint)column;
-                pages[entry + 2] = (uint)row;
-                pages[entry + 3] = 7;
-            }
-            for (int row = 0; row < 128; row++)
-                Array.Fill(pixels, BitConverter.SingleToUInt32Bits(level == 2 ? .75f : .25f),
-                    row * 512 + level * 128, 128);
-        }
         // The receivers are z = x + 0.5, z = -y + 0.5, and z = 0.5.
-        // Their pixel projection covers 6.4 texels
-        // in the base light view and 1.6 texels in the selected second level.
         uint[] depths = Enumerable.Range(0, 25)
             .Select(index => BitConverter.SingleToUInt32Bits(planeAxis == 2 ? .5f :
                 .3f + .1f * (planeAxis == 0 ? index % 5 : index / 5))).ToArray();
         if (depthEdge != 0) depths[13] = BitConverter.SingleToUInt32Bits(depthEdge == 1 ? 1.0f : .95f);
-        uint[][] result = new D3D12TestCompute(shaderCompiler).ExecuteSource("""
-            #include "vsm_sampling.slang"
+        uint pixelX = (uint)(planeAxis == 1 ? 2 : pixelIndex);
+        uint pixelY = (uint)(planeAxis == 1 ? pixelIndex : 2);
+        uint[] result = Assert.Single(new D3D12TestCompute(shaderCompiler).ExecuteSource("""
             #include "vsm_receiver_pixel.slang"
-            StructuredBuffer<VirtualShadowMapParameters> Views;
-            StructuredBuffer<uint4> Pages;
-            Texture2D<uint> Atlas;
             Texture2DArray<float> ReceiverDepth;
             StructuredBuffer<uint> Pixel;
-            RWStructuredBuffer<float> Result;
+            RWStructuredBuffer<float4> Result;
             [shader("compute")]
             [numthreads(1, 1, 1)]
             void SampleReceiver()
             {
                 uint3 pixel = uint3(Pixel[0], Pixel[1], 0u);
                 float4x4 clipToWorld = float4x4(.25,0,0,0, 0,.25,0,0, 0,0,1,0, 0,0,0,1);
+                float depth = ReceiverDepth.Load(int4(pixel, 0));
                 VirtualShadowReceiverPixel receiver = ReconstructVirtualShadowReceiverPixel(
-                    ReceiverDepth, pixel, uint2(5u, 5u), ReceiverDepth.Load(int4(pixel, 0)), clipToWorld);
-                Result[0] = SampleDirectionalVirtualShadowMap(Views, Pages, Atlas, 0u, 4u, 0.0,
-                    receiver.Position, receiver.PositionDx, receiver.PositionDy, 1u, 1u, 0.0, 0.0);
+                    ReceiverDepth, pixel, uint2(5u, 5u), depth, clipToWorld);
+                float2 uv = (float2(pixel.xy) + .5) / 5.0;
+                float4 world = mul(float4(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, depth, 1.0), clipToWorld);
+                VirtualShadowReceiverPixel reused = ReconstructVirtualShadowReceiverPixel(
+                    world, uint2(5u, 5u), clipToWorld);
+                Result[0] = float4(receiver.Position, 1);
+                Result[1] = float4(receiver.PositionDx - receiver.Position, 0);
+                Result[2] = float4(receiver.PositionDy - receiver.Position, 0);
+                Result[3] = float4(reused.Position, 1);
+                Result[4] = float4(reused.PositionDx - reused.Position, 0);
+                Result[5] = float4(reused.PositionDy - reused.Position, 0);
             }
             """, "SampleReceiver", new(1, 1, 1),
-            [(views, ResourceBindingType.BufferSrv, 176), (pages, ResourceBindingType.BufferSrv, 16),
-             ([(uint)(planeAxis == 1 ? 2 : pixelIndex), (uint)(planeAxis == 1 ? pixelIndex : 2)],
-              ResourceBindingType.BufferSrv, 4), (new uint[1], ResourceBindingType.BufferUav, 4)],
-            images: [new(512, 128, pixels, 2), new(5, 5, depths, 3, Format.R32Float, TextureViewDimension.Texture2DArray)]);
-        Assert.Equal(0.0f, BitConverter.UInt32BitsToSingle(result[0][0]));
+            [([pixelX, pixelY], ResourceBindingType.BufferSrv, 4), (new uint[24], ResourceBindingType.BufferUav, 16)],
+            image: new(5, 5, depths, 0, Format.R32Float, TextureViewDimension.Texture2DArray)));
+        Vector4[] expected =
+        [
+            new(((pixelX + .5f) / 5 * 2 - 1) * .25f, (1 - (pixelY + .5f) / 5 * 2) * .25f,
+                BitConverter.UInt32BitsToSingle(depths[pixelY * 5 + pixelX]), 1),
+            new(.1f, 0, 0, 0), new(0, -.1f, 0, 0),
+        ];
+        ReadOnlySpan<Vector4> actual = MemoryMarshal.Cast<uint, Vector4>(result);
+        for (int index = 0; index < actual.Length; index++)
+            Assert.InRange(Vector4.Distance(expected[index % 3], actual[index]), 0, 1e-6f);
     }
 
     [Theory]

@@ -136,9 +136,11 @@ struct TRANSPARENCY_EVALUATOR(TRANSPARENCY_MATERIAL_TYPE)
     {
         TriangleInfo info = triangleInfo(source, coord.z);
         RenderInstanceTransform transform = GetCurrentInstanceTransform(info.instanceID);
-        VertexEvaluate.Vertex first = Vertex.evaluate(makeVertexEvalContext(info, transform, 0u, info.vi0));
-        VertexEvaluate.Vertex second = Vertex.evaluate(makeVertexEvalContext(info, transform, 0u, info.vi1));
-        VertexEvaluate.Vertex third = Vertex.evaluate(makeVertexEvalContext(info, transform, 0u, info.vi2));
+        TriangleVertices<VertexEvaluate.Vertex> vertices = EvaluateTriangleVertices(
+            Vertex, makeVertexEvalContext(info, transform, 0u, info.vi0), uint3(info.vi0, info.vi1, info.vi2));
+        VertexEvaluate.Vertex first = vertices.First;
+        VertexEvaluate.Vertex second = vertices.Second;
+        VertexEvaluate.Vertex third = vertices.Third;
         DomainEvaluate.TriangleData triangle = Domain.makeTriangle(first, second, third, info.materialSlot);
         ClusterViewUniforms view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, info.instanceID, Views[coord.z]);
         float3 bary0 = Barycentric(domain[0]), bary1 = Barycentric(domain[1]), bary2 = Barycentric(domain[2]);
