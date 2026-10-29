@@ -64,6 +64,11 @@ public sealed partial class ClusterPipelineSystem
                 DeformCache = frame.DeformCache,
                 DeformRegions = frame.DeformRegions,
                 InstanceWorldBounds = GraphData.InstanceWorldBounds,
+                InstanceGroups = GraphData.SceneChunks,
+                InstanceOrder = GraphData.SceneInstances,
+                UseInstanceGroups = _options.UseInstanceGroups,
+                PageRequests = frame.PageFaults,
+                CompletePageRequests = GraphData.CompletePageRequests,
                 WorkStatus = frame.WorkStatus,
                 BoundsReady = GraphData.SceneBounds.Pass,
             }, frame.Width, frame.Height, frame.ViewCount)
@@ -227,6 +232,7 @@ public sealed partial class ClusterPipelineSystem
             static (ref PassDefinition _, ref DispatchArguments _) => { },
             static (ref ComputePassCommandScope commands, in DispatchArguments dispatch) => commands.Dispatch(dispatch),
             region: _regions.Feedback);
+        GraphData.CompletePageRequests = requests;
         ulong workOffset = checked(sizeof(uint) + (ulong)frame.PageFaultCapacity * 16u);
         var workCopy = new ClusterBufferCopyParameters(frame.WorkStatus, 0, frame.PageFaults, workOffset, sizeof(uint));
         GraphPassId work = graph.AddCopyFramePass("Copy Cluster work result", PassQueueSelection.AnyCompatible(), workCopy,

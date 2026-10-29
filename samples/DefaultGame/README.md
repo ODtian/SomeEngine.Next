@@ -61,7 +61,9 @@ dotnet run --project samples/DefaultGame/DefaultGame.csproj -c Release -p:SomeEn
 
 统一性能验收从根级 `tools/Measure-Scenes.ps1` 进入。
 
-实验性 GI 使用 `--experimental-gi` 启动，或在渲染选项中勾选 `Experimental GI`。GI 采用拉模式，材质着色直接采样探针的方向辐射，用自己的表面参数积分并合成到 `MaterialColor`。当前屏幕阶段复用材质提供的表面数据与辐射，以及 Cluster 的深度、可见性和 motion vector；当帧追踪更新下一帧可读的探针层。接入范围与后续迁入职责见 [GI 架构](../../docs/GI-Architecture.md)。
+实验性 GI 使用 `--experimental-gi` 启动，或在渲染选项中勾选 `Experimental GI`。材质着色查询上一帧屏幕空间探针的方向辐射，以自己的表面参数积分并合成到 `MaterialColor`；发光几何体直接光采用独立结果。射线沿屏幕空间、近景 Mesh SDF 和 Global SDF 逐级追踪，远段距离场命中直接查询 SHARC／NRC 的表面反射辐射。近景与稀疏训练共用现有材质分桶和原三角求值。
+
+内容构建通过距离场导入组合为同一 MeshAsset 生成 `MeshDistanceFieldBlock`；实例通过已有提取把共享字段交给 Rendering world。材质的 `IGiSurfaceEvaluate` 提供法线、漫反射反照率、发光、遮蔽与覆盖率，`CLUSTER_GI_MATERIAL` 组合入口生成对应的求交、表面和发光几何求值 Shader。标准与 Unlit 材质已采用该入口。完整数据职责与帧顺序见 [GI 架构](../../docs/GI-Architecture.md)。
 
 开发构建的 `prepare-materials` 更新默认场景的材质编译输入。`prepare-materials <场景目录>` 复用导入场景的 Shader 定义与资产构建入口，更新 Sponza、Bistro 等已有场景的材质 Shader。
 

@@ -210,9 +210,9 @@ public static class RenderScenarios
         var worldTypes = SceneSerialization.CreateRegistry();
         using World scene = await sceneFile.GetBlock<WorldBlock>().LoadAsync(worldTypes);
         sceneFile.Name = mode + " rendering scenario";
-        Entity[] allInstances = Entities(scene, new QueryDefinitionBuilder().Read<MeshSource>().Read<WorldTransform>());
+        Entity[] allInstances = Entities(scene, new QueryDefinitionBuilder().Read<AssetId<MeshAsset>>().Read<WorldTransform>());
         Entity[] instances = allInstances.Take(mode == "phong" ? 1 : mode == "wpo-alpha" ? 8 : mode == "sparse-motion" ? 128 : 4).ToArray();
-        using MeshAsset sourceMesh = await MeshAsset.OpenAsync(loader, scene.Read<MeshSource>(instances[0]).Mesh);
+        using MeshAsset sourceMesh = await MeshAsset.OpenAsync(loader, scene.Read<AssetId<MeshAsset>>(instances[0]));
         AssetId<MaterialAsset> baseMaterial = sourceMesh.GetBlock<MeshMaterialsBlock>().Materials[0];
         var materialIds = new AssetId<MaterialAsset>[instances.Length];
         foreach (Entity entity in allInstances.Skip(instances.Length)) scene.DestroyEntity(entity);
@@ -223,9 +223,9 @@ public static class RenderScenarios
             transform.Qvvs.Position = new(0, 0, 12);
             transform.Qvvs.Stretch = new(0.8f);
             scene.Replace(entity, transform);
-            MeshSource mesh = scene.Read<MeshSource>(entity);
-            mesh.BoundsExpansion = mode == "wpo-alpha" ? .31f : 1;
-            scene.Replace(entity, mesh);
+            MeshInstanceSettings settings = scene.Read<MeshInstanceSettings>(entity);
+            settings.BoundsExpansion = mode == "wpo-alpha" ? .31f : 1;
+            scene.Replace(entity, settings);
         }
         if (mode == "materials")
         {
@@ -263,9 +263,7 @@ public static class RenderScenarios
                 using MeshAsset mesh = ClusterBuilder.ProcessRaw(vertices, attributes, indices,
                     [new MeshMaterialSlot((mode == "materials" ? materialIds[index] : baseMaterial).Value)], $"Tessellation factor geometry {index}");
                 project.RegisterAsset(await mesh.SaveAsync(Path.Combine(project.RootPath, $"assets/Meshes/factor-{index}.mesh.asset")));
-                MeshSource meshSource = scene.Read<MeshSource>(entity);
-                meshSource.Mesh = mesh.Reference;
-                scene.Replace(entity, meshSource);
+                scene.Replace(entity, mesh.Reference);
                 WorldTransform transform = scene.Read<WorldTransform>(entity);
                 transform.Qvvs.Position = new(index % 2 == 0 ? -1.5f : 1.5f, index / 2 == 0 ? -1.5f : 1.5f, 12);
                 if (mode == "wpo-alpha" && index >= 4) transform.Qvvs.Position = new(index % 2 == 0 ? -8 : 8, (index - 4) / 2 == 0 ? -4 : 4, 65);
@@ -309,9 +307,9 @@ public static class RenderScenarios
                 transform.Qvvs.Stretch = new(.4f);
                 scene.Replace(entity, transform);
                 scene.Replace(entity, new MeshMotion { Amplitude = new(index == 0 ? .5f : 0, 0, 0), Seed = 1 });
-                MeshSource mesh = scene.Read<MeshSource>(entity);
-                mesh.BoundsExpansion = 0;
-                scene.Replace(entity, mesh);
+                MeshInstanceSettings settings = scene.Read<MeshInstanceSettings>(entity);
+                settings.BoundsExpansion = 0;
+                scene.Replace(entity, settings);
             }
         }
         sceneFile.GetBlock<WorldBlock>().WriteWorld(scene, worldTypes);

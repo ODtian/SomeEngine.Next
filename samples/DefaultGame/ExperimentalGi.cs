@@ -17,23 +17,25 @@ internal sealed class ExperimentalGi(Func<bool> enabled) : IApplicationGeometryF
             ? context.LoadShaderAsync(context.Settings.GlobalIlluminationShader!.Value).AsTask().GetAwaiter().GetResult()
             : null;
         _screen = new ScreenProbeFeature(context.Backend, context.Device, context.Graph,
-            context.Width, context.Height, 1, shader, active);
+            context.Width, context.Height, 1, shader, active, context.RenderingWorld, context.ShaderResources);
         context.AddResources(_screen);
         return _screen;
     }
 
     internal IApplicationColorFeature Connect(ApplicationRendering rendering)
     {
-        RenderGraphEdit edit = rendering.Graph.BeginEdit();
-        try { _screen!.Connect(ref edit, rendering.Geometry); edit.Commit(); }
-        finally { edit.Dispose(); }
-        return new ProbeFrame(_screen, rendering);
+        return new ProbeFrame(_screen!, rendering);
     }
 
     private sealed class ProbeFrame(ScreenProbeFeature screen, ApplicationRendering rendering) : IApplicationColorFeature
     {
         private GraphPassId _complete = screen.CompletePass;
         public GraphPassId CompletePass => _complete;
+        public void Reconcile(in SomeEngine.Render.Cluster.Pipeline.ClusterPipelineOutputs geometry)
+        {
+            screen.Reconcile(rendering.ClusterPipeline!, in geometry);
+            _complete = screen.CompletePass;
+        }
         public void OrderAfter(ref RenderGraphEdit graph, GraphPassId colorReady)
         {
             if (screen.Enabled) graph.OrderAfter(screen.CompletePass, colorReady);

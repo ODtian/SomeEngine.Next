@@ -143,14 +143,12 @@ public sealed class ImportedSceneImporter : GltfSceneImporter
         string surface = File.ReadAllText(Path.Combine(engineRoot, "assets", "Shaders", "standard_material.slang"));
         surface = Replace(surface, "float3 EmissiveFactor;", "float3 EmissiveFactor;\n    float NormalScale;\n    float OcclusionStrength;");
         surface = Replace(surface, "Texture2D ARMMap;", "Texture2D ARMMap;\n    Texture2D OcclusionMap;\n    Texture2D EmissiveMap;");
-        surface = Replace(surface, "float3 N_geom =", "normalTS.xy *= scalars.NormalScale;\n        float3 N_geom =");
+        surface = Replace(surface, "float3 N_geom = normalize(surface.Normal);", "normalTS.xy *= scalars.NormalScale;\n        float3 N_geom = normalize(surface.Normal);");
         surface = Replace(surface, "float3 baseColor = albedoSample.rgb", "float3 baseColor = SceneSrgbToLinear(albedoSample.rgb)");
-        surface = Replace(surface, "float3 diffuseAmbient = baseColor * armSample.r * 0.03;",
-            "float ao = lerp(1.0, OcclusionMap.SampleLevel(MaterialSampler, ctx.uv0, 0.0).r, scalars.OcclusionStrength);\n" +
-            "        float3 diffuseAmbient = baseColor * ao * 0.03;");
-        surface = Replace(surface, "float3 finalColor = diffuseAmbient + scalars.EmissiveFactor;",
-            "float3 emission = SceneSrgbToLinear(EmissiveMap.SampleLevel(MaterialSampler, ctx.uv0, 0.0).rgb) * scalars.EmissiveFactor;\n" +
-            "        float3 finalColor = diffuseAmbient + emission;");
+        surface = Replace(surface, "float occlusion = armSample.r;",
+            "float occlusion = lerp(1.0, OcclusionMap.SampleGrad(MaterialSampler, surface.TexCoord, uvDx, uvDy).r, scalars.OcclusionStrength);");
+        surface = Replace(surface, "float3 emission = scalars.EmissiveFactor;",
+            "float3 emission = SceneSrgbToLinear(EmissiveMap.SampleGrad(MaterialSampler, surface.TexCoord, uvDx, uvDy).rgb) * scalars.EmissiveFactor;");
         surface = "float3 SceneSrgbToLinear(float3 color) { return select(color <= 0.04045, color / 12.92, pow((color + 0.055) / 1.055, 2.4)); }\n" + surface;
         WriteIfChanged(Path.Combine(directory, "scene_material.slang"), surface);
     }

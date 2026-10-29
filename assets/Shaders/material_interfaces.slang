@@ -52,6 +52,33 @@ interface ISurfaceEvaluate<TSurface, TTriangle>
         RWTexture2DArray<float4> outputColor);
 };
 
+struct GiMaterialInput
+{
+    uint InstanceIndex;
+    uint MaterialIndex;
+    float3 RayDirection;
+    float Footprint;
+};
+
+// The material interprets its own surface payload and textures for diffuse transport.
+struct GiMaterialSurface
+{
+    float3 Normal;
+    float Coverage;
+    float3 Diffuse;
+    float Occlusion;
+    float3 Emission;
+    float3 GeometricNormal;
+};
+
+interface IGiSurfaceEvaluate<TSurface, TTriangle>
+{
+    // A nonnegative radiance bound gives every emitting region sampling support.
+    float3 getGiEmissionBound(uint materialIndex);
+    GiMaterialSurface evaluateGiSurface(GiMaterialInput input, TSurface surface,
+        float3 barycentric, TTriangle triangle);
+};
+
 interface ITransparentSurfaceEvaluate<TSurface, TTriangle>
 {
     float4 evaluateTransparency(uint debugMode, SurfacePixelInput input,

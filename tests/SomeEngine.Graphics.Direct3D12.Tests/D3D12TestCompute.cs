@@ -37,10 +37,26 @@ internal sealed class D3D12TestCompute(D3D12TestCompiler shaderCompiler)
             image,
             images);
 
+    internal uint[][] ExecuteSource(string source, (string Entry, DispatchArguments Groups)[] steps,
+        (uint[] Data, ResourceBindingType Type, uint Stride)[] inputs) =>
+        ExecuteSourceSteps(source, steps,
+            inputs.Select(static input => new BufferInput("", input.Data, input.Type, input.Stride)).ToArray(), null);
+
+    internal uint[][] ExecuteSource(string source, (string Entry, DispatchArguments Groups)[] steps,
+        BufferInput[] inputs) => ExecuteSourceSteps(source, steps, inputs, null);
+
     private uint[][] ExecuteSourceCore(
         string source,
         string entry,
         DispatchArguments dispatch,
+        BufferInput[] inputs,
+        SampledImage? image,
+        SampledImage[]? images = null) =>
+        ExecuteSourceSteps(source, [(entry, dispatch)], inputs, image, images);
+
+    private uint[][] ExecuteSourceSteps(
+        string source,
+        (string Entry, DispatchArguments Groups)[] steps,
         BufferInput[] inputs,
         SampledImage? image,
         SampledImage[]? images = null)
@@ -49,8 +65,10 @@ internal sealed class D3D12TestCompute(D3D12TestCompiler shaderCompiler)
         for (DirectoryInfo? current = new(AppContext.BaseDirectory); current is not null; current = current.Parent)
             if (Directory.Exists(Path.Combine(current.FullName, "assets", "Shaders")))
             { directory = Path.Combine(current.FullName, "assets", "Shaders"); break; }
+        string[] entries = steps.Select(static step => step.Entry).Distinct(StringComparer.Ordinal).ToArray();
         D3D12TestShader shader = shaderCompiler.CompileWithSearchPaths("compute_test", source,
-            [new(entry, SlangStage.Compute)], "sm_6_0", directory ?? throw new DirectoryNotFoundException());
+            entries.Select(static entry => new D3D12TestEntry(entry, SlangStage.Compute)).ToArray(),
+            "sm_6_0", directory ?? throw new DirectoryNotFoundException());
         using var backend = D3D12GraphicsBackend.Create();
         using Device device = D3D12TestSupport.CreateWarpDevice(backend);
         List<IDisposable> owned = [];
@@ -112,14 +130,26 @@ internal sealed class D3D12TestCompute(D3D12TestCompiler shaderCompiler)
                 TextureSrv view = Keep(backend.CreateTextureSrv(device, new(texture, range, sourceImage.PixelFormat, sourceImage.ViewDimension)));
                 bindings.Insert(sourceImage.BindingIndex, ("", ResourceBinding.SampledTexture(view)));
             }
-            Pipeline pipeline = Keep(backend.CreateComputePipeline(device, new(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(0), shader.GetEntryCode(0))));
-            backend.SetPipeline(context, pipeline);
             ResourceBinding[] resourceBindings = bindings.Any(static binding => binding.Name.Length != 0)
-                ? OrderNamedBindings(shader.Reflection, bindings)
+                ? OrderNamedBindings(shader, entries.Length, bindings)
                 : bindings.Select(static binding => binding.Binding).ToArray();
-            backend.SetTransientParameterBindings(context, new(shader.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null,
-                resourceBindings, []));
-            backend.Dispatch(context, dispatch);
+            Pipeline[] pipelines = new Pipeline[entries.Length];
+            for (int entry = 0; entry < entries.Length; entry++)
+                pipelines[entry] = Keep(backend.CreateComputePipeline(device,
+                    new(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(entry), shader.GetEntryCode(entry))));
+            for (int index = 0; index < steps.Length; index++)
+            {
+                if (index > 0)
+                    foreach (var output in outputs)
+                        backend.Barrier(context, new BufferBarrier(output.Buffer,
+                            PipelineSync.ComputeShading, PipelineSync.ComputeShading,
+                            ResourceAccess.UnorderedAccess, ResourceAccess.UnorderedAccess));
+                Pipeline pipeline = pipelines[Array.IndexOf(entries, steps[index].Entry)];
+                backend.SetPipeline(context, pipeline);
+                backend.SetTransientParameterBindings(context, new(shader.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null,
+                    resourceBindings, []));
+                backend.Dispatch(context, steps[index].Groups);
+            }
             ulong total = outputs.Aggregate(0ul, (sum, buffer) => sum + buffer.Size), offset = 0;
             Buffer readback = Keep(backend.CreateBuffer(device, new(total, BufferUsages.CopyDestination), MemoryType.Readback));
             foreach (var output in outputs)
@@ -143,9 +173,17 @@ internal sealed class D3D12TestCompute(D3D12TestCompiler shaderCompiler)
     }
 
     private static ResourceBinding[] OrderNamedBindings(
-        ShaderReflection reflection,
+        D3D12TestShader shader,
+        int entryCount,
         IReadOnlyList<(string Name, ResourceBinding Binding)> bindings)
     {
+        ShaderReflection reflection = shader.Reflection;
+        IMetadata[] metadata = new IMetadata[entryCount];
+        for (int index = 0; index < metadata.Length; index++)
+        {
+            SlangResult status = shader.SlangCode.Code.GetEntryPointMetadata(index, 0, out metadata[index], out ISlangBlob? diagnostics);
+            if (status.Failed) throw new InvalidDataException(diagnostics?.AsString);
+        }
         var byName = new Dictionary<string, Queue<ResourceBinding>>(StringComparer.Ordinal);
         foreach ((string name, ResourceBinding binding) in bindings)
         {
@@ -189,8 +227,29 @@ internal sealed class D3D12TestCompute(D3D12TestCompiler shaderCompiler)
                     if (!byName.TryGetValue(name, out Queue<ResourceBinding>? values) ||
                         !values.TryDequeue(out ResourceBinding binding))
                     {
-                        throw new InvalidDataException(
-                            $"The test did not supply Slang resource '{name}'.");
+                        SlangDescriptorLocation location = SlangDescriptorLocation.FromLayout(root, contents, set, first + relative, element);
+                        bool used = false;
+                        foreach (IMetadata entry in metadata)
+                        {
+                            SlangResult status = entry.IsParameterLocationUsed(location.Category, (nuint)location.Space,
+                                (nuint)location.Register, out bool referenced);
+                            if (status.Failed) throw new InvalidDataException(status.ToString());
+                            used |= referenced;
+                        }
+                        if (used) throw new InvalidDataException($"The test did not supply Slang resource '{name}'.");
+                        SlangBindingType reflected = contents.GetDescriptorSetDescriptorRangeType(set, first + relative);
+                        bool mutable = (reflected & SlangBindingType.MutableFlag) != 0;
+                        ResourceBindingType type = (reflected & SlangBindingType.BaseMask) switch
+                        {
+                            SlangBindingType.ConstantBuffer => ResourceBindingType.ConstantBuffer,
+                            SlangBindingType.Sampler => ResourceBindingType.Sampler,
+                            SlangBindingType.Texture => mutable ? ResourceBindingType.TextureUav : ResourceBindingType.TextureSrv,
+                            SlangBindingType.TypedBuffer or SlangBindingType.RawBuffer =>
+                                mutable ? ResourceBindingType.BufferUav : ResourceBindingType.BufferSrv,
+                            SlangBindingType.RayTracingAccelerationStructure => ResourceBindingType.AccelerationStructure,
+                            _ => throw new InvalidDataException($"Unsupported test binding type {reflected}."),
+                        };
+                        binding = ResourceBinding.Null(type);
                     }
                     result.Add(binding);
                 }

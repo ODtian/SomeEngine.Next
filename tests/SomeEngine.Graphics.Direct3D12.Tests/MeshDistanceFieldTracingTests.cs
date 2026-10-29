@@ -8,12 +8,11 @@ using SomeEngine.Assets.Schema;
 using SomeEngine.Resources;
 using SomeEngine.Resources.Geometry;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace SomeEngine.Graphics.Direct3D12.Tests;
 
 [Collection("Direct3D12 shader compilation")]
-public sealed class MeshDistanceFieldTracingTests(D3D12TestCompiler shaderCompiler, ITestOutputHelper output)
+public sealed class MeshDistanceFieldTracingTests(D3D12TestCompiler shaderCompiler)
 {
     [Theory]
     [InlineData(1)]
@@ -81,14 +80,6 @@ public sealed class MeshDistanceFieldTracingTests(D3D12TestCompiler shaderCompil
         float[] bounds = [lower.X, lower.Y, lower.Z, 0, upper.X, upper.Y, upper.Z, 0,
             0, 0, 0, 0, 0, 0, 0, 0];
         float[] groups = [lower.X, lower.Y, lower.Z, 1, upper.X, upper.Y, upper.Z, 0];
-        float[] globalDistances = new float[512];
-        Vector3 globalLower = new(0, -6, 1), normal = Vector3.Transform(Vector3.UnitZ, rotation);
-        for (int index = 0; index < globalDistances.Length; index++)
-        {
-            Vector3 center = globalLower + new Vector3(index % 8 + .5f, index / 8 % 8 + .5f, index / 64 + .5f);
-            float z = Vector3.Dot(center - new Vector3(4, -3, 5), normal);
-            globalDistances[index] = Math.Min(Math.Abs(z - 1), Math.Abs(z + 1));
-        }
         const string source = """
             #include "gi_mesh_distance_field.slang"
             #include "gi_mesh_triangles.slang"
@@ -100,9 +91,6 @@ public sealed class MeshDistanceFieldTracingTests(D3D12TestCompiler shaderCompil
             StructuredBuffer<float4> InstanceBounds;
             StructuredBuffer<float4> GroupBounds;
             StructuredBuffer<uint> InstanceOrder;
-            StructuredBuffer<float> GlobalDistances;
-            StructuredBuffer<uint> ObjectHeads;
-            StructuredBuffer<uint2> ObjectLinks;
             RWStructuredBuffer<float4> Results;
             struct MeshTriangles : IGiMeshTriangles
             {
@@ -156,34 +144,14 @@ public sealed class MeshDistanceFieldTracingTests(D3D12TestCompiler shaderCompil
                 GiMeshHit complete = TraceGiMeshCells(Fields, 64u, triangles, origin, direction, 0.0, 10.0);
                 SceneMeshes meshes;
                 meshes.Triangles = triangles;
-                GiGlobalField field = (GiGlobalField)0;
-                field.Lower = float3(0, -6, 1);
-                field.Upper = float3(8, 2, 9);
-                field.Pitch = 1.0;
-                field.Error = 1e-5;
-                field.Shape = uint3(8, 8, 8);
-                field.ObjectShape = uint3(2, 2, 2);
                 GiSceneHit sceneNear = TraceGiNearScene(meshes, InstanceBounds, GroupBounds, InstanceOrder,
                     1u, true, triangles.WorldOrigin, triangles.WorldDirection, 0.0, 10.0);
-                GiSceneHit sceneGlobal = TraceGiGlobalScene(meshes, field, GlobalDistances, ObjectHeads,
-                    ObjectLinks, InstanceBounds, triangles.WorldOrigin, triangles.WorldDirection, 0.0, 10.0);
-                GiSceneHit staged = TraceGiScene(meshes, MissGiScene(10.0), field, GlobalDistances, ObjectHeads,
-                    ObjectLinks, InstanceBounds, GroupBounds, InstanceOrder, 1u, true,
-                    triangles.WorldOrigin, triangles.WorldDirection, 0.0, 10.0, 1.0);
-                Results[lane * 7u] = float4(near.Distance, float(near.Hit), near.Barycentric.x +
-                    near.Barycentric.y + near.Barycentric.z, float(near.FieldSamples));
-                Results[lane * 7u + 1u] = float4(complete.Distance, float(complete.Hit),
-                    float(near.TriangleTests), float(complete.TriangleTests));
-                Results[lane * 7u + 2u] = float4(float(near.CellVisits), float(near.CellGroups),
-                    float(complete.CellVisits), float(complete.CellGroups));
-                Results[lane * 7u + 3u] = float4(sceneNear.Mesh.Distance, float(sceneNear.Mesh.Hit),
-                    float(sceneNear.Stage), float(sceneNear.Instance));
-                Results[lane * 7u + 4u] = float4(sceneGlobal.Mesh.Distance, float(sceneGlobal.Mesh.Hit),
-                    float(sceneGlobal.Stage), float(sceneGlobal.Instance));
-                Results[lane * 7u + 5u] = float4(staged.Mesh.Distance, float(staged.Mesh.Hit),
-                    float(staged.Stage), float(staged.Instance));
-                Results[lane * 7u + 6u] = float4(float(staged.Mesh.TriangleTests), float(staged.Mesh.FieldSamples),
-                    float(staged.BoundsTests), float(staged.InstanceQueries));
+                GiSceneHit training = TraceGiTrainingScene(meshes, InstanceBounds, 1u,
+                    triangles.WorldOrigin, triangles.WorldDirection, 0.0, 10.0);
+                Results[lane * 4u] = float4(near.Distance, float(near.Hit), near.Barycentric.xy);
+                Results[lane * 4u + 1u] = float4(complete.Distance, float(complete.Hit), complete.Barycentric.xy);
+                Results[lane * 4u + 2u] = float4(sceneNear.Mesh.Distance, float(sceneNear.Mesh.Hit), sceneNear.Mesh.Barycentric.xy);
+                Results[lane * 4u + 3u] = float4(training.Mesh.Distance, float(training.Mesh.Hit), training.Mesh.Barycentric.xy);
             }
             """;
         uint[] words = Assert.Single(new D3D12TestCompute(shaderCompiler).ExecuteSource(source, "Evaluate", new(1, 1, 1),
@@ -192,29 +160,23 @@ public sealed class MeshDistanceFieldTracingTests(D3D12TestCompiler shaderCompil
                 (MemoryMarshal.Cast<float, uint>(bounds.AsSpan()).ToArray(), ResourceBindingType.BufferSrv, 16),
                 (MemoryMarshal.Cast<float, uint>(groups.AsSpan()).ToArray(), ResourceBindingType.BufferSrv, 16),
                 (new uint[] { 0 }, ResourceBindingType.BufferSrv, 4),
-                (MemoryMarshal.Cast<float, uint>(globalDistances.AsSpan()).ToArray(), ResourceBindingType.BufferSrv, 4),
-                (new uint[8], ResourceBindingType.BufferSrv, 4),
-                (new uint[] { 0, uint.MaxValue }, ResourceBindingType.BufferSrv, 8),
-                (new uint[84], ResourceBindingType.BufferUav, 16)]));
+                (new uint[48], ResourceBindingType.BufferUav, 16)]));
         float[] results = MemoryMarshal.Cast<uint, float>(words.AsSpan()).ToArray();
         Assert.InRange(results[0], 1.9999f, 2.0001f);
         Assert.Equal(1f, results[1]);
-        Assert.InRange(results[2], .9999f, 1.0001f);
-        Assert.InRange(results[28], 1.4999f, 1.5001f);
-        Assert.Equal(1f, results[29]);
-        Assert.Equal(0f, results[57]);
+        Assert.InRange(results[16], 1.4999f, 1.5001f);
+        Assert.Equal(1f, results[17]);
+        Assert.Equal(0f, results[33]);
         for (int ray = 0; ray < 3; ray++)
         {
-            int first = ray * 28;
-            foreach (int query in new[] { 4, 12, 16, 20 })
+            int first = ray * 16;
+            foreach (int query in new[] { 4, 8, 12 })
             {
                 Assert.Equal(results[first + 1], results[first + query + 1]);
                 Assert.InRange(Math.Abs(results[first] - results[first + query]), 0f, 1e-4f);
+                Assert.InRange(Math.Abs(results[first + 2] - results[first + query + 2]), 0f, 1e-4f);
+                Assert.InRange(Math.Abs(results[first + 3] - results[first + query + 3]), 0f, 1e-4f);
             }
-            output.WriteLine($"Triangles={divisions * 2}, ray={ray}, triangle tests={results[first + 6]}, " +
-                $"field samples={results[first + 3]}, cells={results[first + 8]}, " +
-                $"complete cells={results[first + 10]}, staged tests={results[first + 24]}, " +
-                $"staged samples={results[first + 25]}");
         }
     }
 }

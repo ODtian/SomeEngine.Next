@@ -26,8 +26,16 @@ struct GiGlobalField
     float Error;
     uint3 Shape;
     uint Padding0;
-    uint3 ObjectShape;
-    uint Padding1;
+    uint3 Padding1;
+    uint Padding2;
+};
+
+struct GiDistanceHit
+{
+    float3 Position;
+    float Distance;
+    float3 Normal;
+    uint Hit;
 };
 
 GiSceneHit MissGiScene(float limit)
@@ -89,22 +97,15 @@ GiSceneHit TraceGiNearScene<T : IGiSceneMeshes>(T meshes, StructuredBuffer<float
     return hit;
 }
 
-GiSceneHit LocateGiGlobalSurface<T : IGiSceneMeshes>(T meshes, GiGlobalField field,
-    StructuredBuffer<uint> objectHeads, StructuredBuffer<uint2> objectLinks,
-    StructuredBuffer<float4> instanceBounds, float3 origin, float3 direction, float start, float limit)
+// Sparse training follows the actual mesh surfaces over its entire ray interval.
+GiSceneHit TraceGiTrainingScene<T : IGiSceneMeshes>(T meshes,
+    StructuredBuffer<float4> instanceBounds, uint instanceCount,
+    float3 origin, float3 direction, float start, float limit)
 {
-    float3 pitch = (field.Upper - field.Lower) / float3(field.ObjectShape);
-    float3 position = origin + direction * ((start + limit) * 0.5);
-    uint3 cell = uint3(clamp(floor((position - field.Lower) / pitch), 0.0.xxx, float3(field.ObjectShape - 1u)));
-    uint index = cell.x + cell.y * field.ObjectShape.x + cell.z * field.ObjectShape.x * field.ObjectShape.y;
-    uint link = objectHeads[index];
     GiSceneHit hit = MissGiScene(limit);
-    hit.Stage = 2u;
-    while (link != 0xffffffffu)
+    hit.Stage = 3u;
+    for (uint instance = 0u; instance < instanceCount; instance++)
     {
-        uint2 value = objectLinks[link];
-        link = value.y;
-        uint instance = value.x;
         float2 range = GiRayBox(instanceBounds[instance * 4u].xyz,
             instanceBounds[instance * 4u + 1u].xyz, origin, direction);
         hit.BoundsTests++;
@@ -115,89 +116,65 @@ GiSceneHit LocateGiGlobalSurface<T : IGiSceneMeshes>(T meshes, GiGlobalField fie
     return hit;
 }
 
-// The Global SDF skips empty space. Object Grid supplies objects only in a potential surface interval.
-GiSceneHit TraceGiGlobalScene<T : IGiSceneMeshes>(T meshes, GiGlobalField field,
-    StructuredBuffer<float> globalDistances, StructuredBuffer<uint> objectHeads,
-    StructuredBuffer<uint2> objectLinks, StructuredBuffer<float4> instanceBounds,
+float SampleGiGlobalDistance(GiGlobalField field, StructuredBuffer<float> distances, float3 position)
+{
+    float3 coordinate = clamp((position - field.Lower) / field.Pitch - 0.5,
+        0.0.xxx, float3(field.Shape - 1u));
+    uint3 first = uint3(floor(coordinate));
+    float3 amount = frac(coordinate);
+    float value = 0.0;
+    for (uint corner = 0u; corner < 8u; corner++)
+    {
+        uint3 offset = uint3(corner & 1u, (corner >> 1u) & 1u, corner >> 2u);
+        uint3 cell = min(first + offset, field.Shape - 1u);
+        float3 weight = select(offset != 0u, amount, 1.0 - amount);
+        uint index = cell.x + cell.y * field.Shape.x + cell.z * field.Shape.x * field.Shape.y;
+        value += distances[index] * weight.x * weight.y * weight.z;
+    }
+    return value;
+}
+
+float3 GiGlobalNormal(GiGlobalField field, StructuredBuffer<float> distances,
+    float3 position, float3 direction)
+{
+    float3 offset = float3(field.Pitch, 0.0, 0.0);
+    float3 gradient = float3(
+        SampleGiGlobalDistance(field, distances, position + offset.xyz) - SampleGiGlobalDistance(field, distances, position - offset.xyz),
+        SampleGiGlobalDistance(field, distances, position + offset.yxz) - SampleGiGlobalDistance(field, distances, position - offset.yxz),
+        SampleGiGlobalDistance(field, distances, position + offset.yzx) - SampleGiGlobalDistance(field, distances, position - offset.yzx));
+    float square = dot(gradient, gradient);
+    float3 normal = square > 1e-12 ? gradient * rsqrt(square) : -direction;
+    return dot(normal, direction) > 0.0 ? -normal : normal;
+}
+
+// The far stage ends at the distance-field surface. Its result contains the
+// position and normal used by the reflected-radiance cache.
+GiDistanceHit TraceGiGlobalScene(GiGlobalField field, StructuredBuffer<float> distances,
     float3 origin, float3 direction, float start, float limit)
 {
-    GiSceneHit hit = MissGiScene(limit);
-    hit.Stage = 2u;
+    GiDistanceHit hit = (GiDistanceHit)0;
+    hit.Distance = limit;
     float2 box = GiRayBox(field.Lower, field.Upper, origin, direction);
     float travel = max(start, box.x), end = min(limit, box.y);
-    float3 objectPitch = (field.Upper - field.Lower) / float3(field.ObjectShape);
+    float thickness = field.Pitch * 0.75 + field.Error;
     while (travel < end)
     {
         float3 position = origin + direction * travel;
-        uint3 cell = uint3(clamp(floor((position - field.Lower) / field.Pitch), 0.0.xxx, float3(field.Shape - 1u)));
-        uint index = cell.x + cell.y * field.Shape.x + cell.z * field.Shape.x * field.Shape.y;
-        float3 center = field.Lower + (float3(cell) + 0.5) * field.Pitch;
-        float distance = globalDistances[index] - length(position - center) - field.Error;
-        hit.Mesh.FieldSamples++;
-        if (distance > field.Error)
+        float distance = SampleGiGlobalDistance(field, distances, position);
+        if (distance <= thickness)
         {
-            travel += distance;
-            continue;
-        }
-        float3 objectCell = floor((position - field.Lower) / objectPitch);
-        float3 boundary = field.Lower + (objectCell + select(direction >= 0.0, 1.0.xxx, 0.0.xxx)) * objectPitch;
-        float3 exits = select(direction != 0.0, (boundary - origin) / direction, asfloat(0x7f800000u).xxx);
-        float next = min(end, max(travel + field.Error, min(exits.x, min(exits.y, exits.z))));
-        GiSceneHit local = LocateGiGlobalSurface(meshes, field, objectHeads, objectLinks, instanceBounds,
-            origin, direction, max(start, travel - field.Error), min(limit, next + field.Error));
-        hit.Mesh.TriangleTests += local.Mesh.TriangleTests;
-        hit.Mesh.FieldSamples += local.Mesh.FieldSamples;
-        hit.Mesh.CellVisits += local.Mesh.CellVisits + 1u;
-        hit.Mesh.CellGroups += local.Mesh.CellGroups;
-        hit.InstanceQueries += local.InstanceQueries;
-        hit.BoundsTests += local.BoundsTests;
-        if (local.Mesh.Hit != 0u)
-        {
-            hit.Mesh.Hit = 1u;
-            hit.Mesh.Distance = local.Mesh.Distance;
-            hit.Mesh.Barycentric = local.Mesh.Barycentric;
-            hit.Mesh.Triangle = local.Mesh.Triangle;
-            hit.Instance = local.Instance;
+            hit.Normal = GiGlobalNormal(field, distances, position, direction);
+            float alignment = max(1e-4, -dot(hit.Normal, direction));
+            float surfaceDistance = max(start, travel + distance / alignment);
+            if (surfaceDistance >= end) return hit;
+            hit.Distance = surfaceDistance;
+            hit.Position = origin + direction * surfaceDistance;
+            hit.Hit = 1u;
             return hit;
         }
-        travel = next + field.Error * 0.1;
+        travel += max(distance - thickness, field.Pitch * 0.2);
     }
     return hit;
-}
-
-// Screen tracing supplies its confirmed distance. The caller retains its hit pixel for radiance reuse.
-// Near queries confirm the interval before that candidate; Global SDF receives only the far segment.
-GiSceneHit TraceGiScene<T : IGiSceneMeshes>(T meshes, GiSceneHit screen,
-    GiGlobalField field, StructuredBuffer<float> globalDistances,
-    StructuredBuffer<uint> objectHeads, StructuredBuffer<uint2> objectLinks,
-    StructuredBuffer<float4> instanceBounds, StructuredBuffer<float4> groupBounds,
-    StructuredBuffer<uint> instanceOrder, uint instanceCount, bool useGroups,
-    float3 origin, float3 direction, float start, float limit, float nearDistance)
-{
-    float nearEnd = min(nearDistance, screen.Mesh.Hit != 0u ? screen.Mesh.Distance : limit);
-    GiSceneHit near = TraceGiNearScene(meshes, instanceBounds, groupBounds, instanceOrder,
-        instanceCount, useGroups, origin, direction, start, nearEnd);
-    if (near.Mesh.Hit != 0u) return near;
-    if (screen.Mesh.Hit != 0u)
-    {
-        screen.Mesh.TriangleTests += near.Mesh.TriangleTests;
-        screen.Mesh.FieldSamples += near.Mesh.FieldSamples;
-        screen.Mesh.CellVisits += near.Mesh.CellVisits;
-        screen.Mesh.CellGroups += near.Mesh.CellGroups;
-        screen.InstanceQueries += near.InstanceQueries;
-        screen.BoundsTests += near.BoundsTests;
-        return screen;
-    }
-    if (limit <= nearDistance) return near;
-    GiSceneHit far = TraceGiGlobalScene(meshes, field, globalDistances, objectHeads, objectLinks,
-        instanceBounds, origin, direction, max(start, nearDistance), limit);
-    far.Mesh.TriangleTests += near.Mesh.TriangleTests;
-    far.Mesh.FieldSamples += near.Mesh.FieldSamples;
-    far.Mesh.CellVisits += near.Mesh.CellVisits;
-    far.Mesh.CellGroups += near.Mesh.CellGroups;
-    far.InstanceQueries += near.InstanceQueries;
-    far.BoundsTests += near.BoundsTests;
-    return far;
 }
 
 #endif

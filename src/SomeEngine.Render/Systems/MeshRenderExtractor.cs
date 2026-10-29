@@ -1,6 +1,7 @@
 using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Resources;
+using SomeEngine.Resources.Geometry;
 using SomeEngine.Core.ECS.Components;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
@@ -93,7 +94,7 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
             Mesh data = instance.Mesh.CaptureData();
             _snapshots.Add(new MeshSnapshot(source, default, data, expansion,
                 false, 0, 0, MeshChanged: true, MaterialsChanged: false, instance.PageSource,
-                instance.DepthCacheClass, instance.FirstPerson));
+                instance.DepthCacheClass, instance.FirstPerson, instance.DistanceField));
             _meshSources.Add(source);
             changed = true;
         }
@@ -144,7 +145,8 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
                 MaterialsChanged: true,
                 meshes[row].PageSource,
                 meshes[row].DepthCacheClass,
-                meshes[row].FirstPerson));
+                meshes[row].FirstPerson,
+                meshes[row].DistanceField));
             _meshSources.Add(source);
         }
     }
@@ -206,7 +208,8 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
                     materialsChanged,
                     mesh.PageSource,
                     mesh.DepthCacheClass,
-                    mesh.FirstPerson));
+                    mesh.FirstPerson,
+                    mesh.DistanceField));
             }
         }
 
@@ -226,7 +229,8 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
                 snapshot.BoundsExpansion,
                 snapshot.PageSource,
                 snapshot.DepthCacheClass,
-                snapshot.FirstPerson));
+                snapshot.FirstPerson,
+                snapshot.DistanceField));
             if (snapshot.MaterialsChanged) SyncMaterials(context, snapshot, entity, allowStructuralChanges: true);
         }
 
@@ -259,7 +263,8 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
                         snapshot.BoundsExpansion,
                         snapshot.PageSource,
                         snapshot.DepthCacheClass,
-                        snapshot.FirstPerson));
+                        snapshot.FirstPerson,
+                        snapshot.DistanceField));
             }
             if (snapshot.MaterialsChanged)
             {
@@ -324,7 +329,8 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
         bool MaterialsChanged,
         SomeEngine.Assets.Pipeline.MeshPayloadSource? PageSource,
         DepthCacheClass DepthCacheClass,
-        FirstPersonMeshData FirstPerson);
+        FirstPersonMeshData FirstPerson,
+        MeshDistanceField? DistanceField);
 
     private readonly record struct MaterialSlice(
         List<Material> Values,

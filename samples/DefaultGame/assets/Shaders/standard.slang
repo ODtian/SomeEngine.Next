@@ -1,5 +1,6 @@
 #define CLUSTER_FORWARD_DEPTH_POSITION 1
 #define SOMEENGINE_GI 1
+#define CLUSTER_GI_MATERIAL 1
 #include "generated/render_instance_layout.slang"
 #include "cluster_shade_pipeline.slang"
 #include "triangle_surface.slang"

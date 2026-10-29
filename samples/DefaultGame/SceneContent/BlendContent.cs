@@ -109,6 +109,10 @@ internal static class SampleBlendContent
         async Task SaveMeshAsync(MeshAsset source, Guid id, string name)
         {
             using MeshAsset mesh = source.CreateCopy(id);
+            using MeshDistanceFieldBlock field = MeshDistanceFieldBlock.Build(
+                mesh.GetBlock<ClusterGeometryBlock>(), mesh.GetBlock<ClusterVertexAttributesBlock>(),
+                4, 32, cancellationToken);
+            mesh.SetBlock(field);
             project.RegisterAsset(await mesh.SaveAsync(Path.Combine(project.RootPath, $"assets/Meshes/{name}.mesh.asset"), cancellationToken));
         }
 

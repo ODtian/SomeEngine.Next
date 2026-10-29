@@ -1430,6 +1430,9 @@ internal sealed class ClusterShadeStages : IDisposable
         return true;
     }
 
+    internal IReadOnlyCollection<uint> GetResourceProperties(long materialId) =>
+        _resourceProperties.TryGetValue(materialId, out var properties) ? properties : Array.Empty<uint>();
+
     private ClusterShadeStageSet _resolved = ClusterShadeStageSet.Empty;
     private bool _disposed;
 
@@ -1463,10 +1466,9 @@ internal sealed class ClusterShadeStages : IDisposable
         foreach (long material in assignments.ChangedMaterialIds)
             addresses.UnionWith(assignments.GetMaterialOffsets(material));
         var bins = new ClusterBinIndexMap<ClusterShadeBinKey, ClusterShadeInvocation>(_binIndices);
-        var resourceProperties = shadingChanged
-            ? ImmutableDictionary<long, HashSet<uint>>.Empty : _resourceProperties;
+        var resourceProperties = _resourceProperties;
         foreach (long material in assignments.ChangedMaterialIds)
-            resourceProperties = resourceProperties.Remove(material);
+            if (!assignments.TryGetMaterial(material, out _)) resourceProperties = resourceProperties.Remove(material);
         var scalarLayouts = _resolved.ScalarLayouts;
         foreach (int address in addresses)
         {
@@ -1545,6 +1547,38 @@ internal sealed class ClusterShadeStages : IDisposable
             entryPoint,
             vertexEncoding,
             $"Material '{material.Name}' shade");
+        return CreateStage(material, vertexEncoding, shader, entryPoint, visibilityDepth, forward, _featureResources);
+    }
+
+    internal ClusterShadeInvocation ResolveCompute(Material material, string vertexEncoding,
+        Shader shader, string entryPoint, IGraphResourceProvider resources)
+    {
+        ClusterShadeInvocation result = CreateStage(material, vertexEncoding, shader, entryPoint,
+            default, false, new AdditionalMaterialResources(resources, _featureResources));
+        HashSet<uint> properties = _resourceProperties.TryGetValue(material.MaterialId, out var existing)
+            ? new(existing) : [];
+        ClusterMaterialEntries.AddResourceProperties(properties, result.MaterialBindings);
+        properties.UnionWith(result.Scalars.TextureProperties);
+        _resourceProperties = _resourceProperties.SetItem(material.MaterialId, properties);
+        return result;
+    }
+
+    private sealed class AdditionalMaterialResources(IGraphResourceProvider additional,
+        IGraphResourceProvider? shared) : IGraphResourceProvider
+    {
+        public bool TryResolve(string name, ResourceBindingType type, out GraphResourceBinder binder)
+        {
+            if (additional.TryResolve(name, type, out binder)) return true;
+            if (shared is not null) return shared.TryResolve(name, type, out binder);
+            binder = null!;
+            return false;
+        }
+    }
+
+    private ClusterShadeInvocation CreateStage(Material material, string vertexEncoding, Shader shader,
+        string entryPoint, ClusterVisibilityDepth visibilityDepth, bool forward,
+        IGraphResourceProvider? featureResources)
+    {
         int targetIndex = shader.RequireSlangTarget(_device.Capabilities.CompileTarget);
         EntryPointReflection entry = shader.RequireSlangEntry(
             targetIndex,
@@ -1590,7 +1624,7 @@ internal sealed class ClusterShadeStages : IDisposable
         resources.ValidateMaterialResources(materialResources);
         GraphResourceBinder?[] featureResourceBinders = resources.ResolveFeatureResources(
             materialResources,
-            _featureResources,
+            featureResources,
             name => ClusterShadeCoreResources.Contains(name) || ClusterDeformResourceNames.IsRead(name));
         ClusterMaterialStageBinding[] materialBindings = ResolveMaterialBindings(
             material,

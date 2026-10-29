@@ -26,6 +26,7 @@ public sealed partial class ClusterPipelineSystem
         internal ImmutableDictionary<int, ImmutableStack<int>> ParameterFreeOffsets = ImmutableDictionary<int, ImmutableStack<int>>.Empty;
         internal GraphPassId[] Passes = [];
         internal GraphReadbackId PageFaultReadback;
+        internal GraphPassId CompletePageRequests;
         internal GraphReadbackId FrameMetricsReadback;
         internal GraphPassId PageUpload;
         internal GraphPassId BvhUpload;

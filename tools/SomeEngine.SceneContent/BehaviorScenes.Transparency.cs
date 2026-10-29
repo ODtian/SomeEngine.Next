@@ -66,9 +66,9 @@ public static partial class BehaviorScenes
         project.RegisterAsset(await second.SaveAsync(Path.Combine(destination, "assets/Meshes/green-panel.mesh.asset")));
         using var world = new World();
         Entity redEntity = world.CreateEntity(new WorldTransform { Qvvs = new(new Vector3(0, 0, 6), Quaternion.Identity) });
-        world.Add(redEntity, new MeshSource { Mesh = first.Reference });
+        world.Add(redEntity, first.Reference);
         Entity greenEntity = world.CreateEntity(new WorldTransform { Qvvs = new(new Vector3(0, 0, 6), Quaternion.Identity) });
-        world.Add(greenEntity, new MeshSource { Mesh = second.Reference });
+        world.Add(greenEntity, second.Reference);
         await WriteSceneAsync(project, world);
         await SceneContent.SetOutputSizeAsync(destination, 64, 64);
     }

@@ -1,0 +1,192 @@
+#ifndef GI_MATERIAL_ENTRIES_SLANG
+#define GI_MATERIAL_ENTRIES_SLANG
+
+#include "cluster_common.slang"
+#include "gi_material_queries.slang"
+#include "gi_emissive_data.slang"
+#include "gi_mesh_triangles.slang"
+
+ByteAddressBuffer GiHierarchy;
+
+struct GiTriangleVertices<TVertex>
+{
+    TVertex First;
+    TVertex Second;
+    TVertex Third;
+    uint3 Indices;
+    uint Page;
+};
+
+GiTriangleVertices<TVE.Vertex> ReadGiTriangle<TVE : IVertexEvaluate>(
+    uniform TVE vertex, GiTriangleCandidate candidate)
+{
+    uint reference = GiHierarchy.Load(candidate.Triangle.x);
+    uint page = (reference >> 8u) << 9u;
+    uint cluster = page + PageHeap.Load(page + 16u) + candidate.Triangle.y * PACKED_CLUSTER_STRIDE_BYTES;
+    uint blob = page + PageHeap.Load(page + 20u) + PageHeap.Load(cluster);
+    uint firstTriangle = PageHeap.Load(cluster + 56u) >> 16u;
+    uint firstIndex = page + PageHeap.Load(page + 24u) + (firstTriangle + candidate.Triangle.z) * 3u;
+    GiTriangleVertices<TVE.Vertex> result;
+    result.Page = page;
+    result.Indices = uint3(GiMeshVertexIndex(PageHeap, firstIndex),
+        GiMeshVertexIndex(PageHeap, firstIndex + 1u), GiMeshVertexIndex(PageHeap, firstIndex + 2u));
+    VertexEvalContext context;
+    context.pageHeap = PageHeap;
+    context.instanceID = candidate.InstanceIndex;
+    context.transform = GetCurrentInstanceTransform(candidate.InstanceIndex);
+    context.visibleClusterIndex = 0xffffffffu;
+    context.IsPreviousFrame = 0u;
+    LoadVertexData(context, blob);
+    context.localVertexIndex = result.Indices.x;
+    result.First = vertex.evaluate(context);
+    context.localVertexIndex = result.Indices.y;
+    result.Second = vertex.evaluate(context);
+    context.localVertexIndex = result.Indices.z;
+    result.Third = vertex.evaluate(context);
+    return result;
+}
+
+bool GiTriangleVisible<TVE, TVisibility>(uniform TVisibility visibility,
+    GiTriangleVertices<TVE.Vertex> vertices, GiTriangleCandidate candidate, float3 barycentric)
+    where TVE : IVertexEvaluate
+    where TVisibility : IVisibilityEvaluate<TVE.Vertex>
+{
+    VisibilityVertexInput input = (VisibilityVertexInput)0;
+    input.Source = MakeDrawRequest(vertices.Page, candidate.Triangle.y, candidate.InstanceIndex, 0u);
+    input.LocalVertexIndex = vertices.Indices.x;
+    TVisibility.Varying first = visibility.makeVarying(vertices.First, input);
+    input.LocalVertexIndex = vertices.Indices.y;
+    TVisibility.Varying second = visibility.makeVarying(vertices.Second, input);
+    input.LocalVertexIndex = vertices.Indices.z;
+    TVisibility.Varying third = visibility.makeVarying(vertices.Third, input);
+    VisibilityInterpolationInput interpolation = (VisibilityInterpolationInput)0;
+    interpolation.PerspectiveBarycentric = barycentric;
+    interpolation.LinearBarycentric = barycentric;
+    TVisibility.Varying varying = visibility.interpolatePixel(first, second, third, interpolation);
+    VisibilityPixelInput pixel = (VisibilityPixelInput)0;
+    pixel.Source = input.Source;
+    pixel.TriangleID = candidate.Triangle.z;
+    return visibility.evaluate(pixel, varying).Visible != 0u;
+}
+
+[VertexEncoding(CLUSTER_VERTEX_ENCODING)]
+[shader("compute")]
+[numthreads(64, 1, 1)]
+void IntersectGiMaterial(uniform VertexEvaluate vertex, uniform DomainEvaluate domain,
+    uniform VisibilityEvaluate visibility, uint3 thread : SV_DispatchThreadID)
+{
+    uint2 work = GiMaterialWorkRanges[GiMaterialWork.MaterialIndex];
+    if (thread.x >= work.y) return;
+    uint index = GiMaterialWorkIndices[work.x + thread.x];
+    GiTriangleCandidate candidate = GiCandidates[index];
+    GiTraceRay ray = GiRays[candidate.RayIndex];
+    GiTriangleVertices<VertexEvaluate.Vertex> vertices = ReadGiTriangle(vertex, candidate);
+    DomainEvaluate.TriangleData triangle = domain.makeTriangle(vertices.First, vertices.Second, vertices.Third, candidate.MaterialIndex);
+    float distance;
+    float3 barycentric;
+    bool hit = IntersectGiTriangle(domain.cornerPosition(triangle, 0u), domain.cornerPosition(triangle, 1u),
+        domain.cornerPosition(triangle, 2u), ray.Origin, ray.Direction,
+        candidate.Start, candidate.Limit, distance, barycentric);
+    if (hit) hit = GiTriangleVisible<VertexEvaluate, VisibilityEvaluate>(visibility, vertices, candidate, barycentric);
+    GiCandidateHits[index] = hit ? float4(distance, barycentric) : float4(candidate.Limit, 0.0, 0.0, 0.0);
+}
+
+[VertexEncoding(CLUSTER_VERTEX_ENCODING)]
+[shader("compute")]
+[numthreads(64, 1, 1)]
+void ShadeGiMaterial(uniform VertexEvaluate vertex, uniform DomainEvaluate domain,
+    uniform VisibilityEvaluate visibility, uniform SurfaceEvaluate surface, uint3 thread : SV_DispatchThreadID)
+{
+    uint2 work = GiMaterialWorkRanges[GiMaterialWork.MaterialIndex];
+    if (thread.x >= work.y) return;
+    uint index = GiMaterialWorkIndices[work.x + thread.x];
+    GiTriangleCandidate candidate = GiCandidates[index];
+    GiTraceRay ray = GiRays[candidate.RayIndex];
+    float4 hit = GiCandidateHits[index];
+    GiTriangleVertices<VertexEvaluate.Vertex> vertices = ReadGiTriangle(vertex, candidate);
+    DomainEvaluate.TriangleData triangle = domain.makeTriangle(vertices.First, vertices.Second, vertices.Third, candidate.MaterialIndex);
+    DomainEvaluate.Surface value = domain.eval(triangle, hit.yzw);
+    GiMaterialInput input;
+    input.InstanceIndex = candidate.InstanceIndex;
+    input.MaterialIndex = candidate.MaterialIndex;
+    input.RayDirection = ray.Direction;
+    input.Footprint = 0.0;
+    GiMaterialSurface material = surface.evaluateGiSurface(input, value, hit.yzw, triangle);
+    GiSurfaceSample sample = (GiSurfaceSample)0;
+    sample.Position = domain.position(triangle, hit.yzw);
+    sample.Distance = hit.x;
+    sample.Normal = material.Normal;
+    sample.Coverage = material.Coverage;
+    if (!GiTriangleVisible<VertexEvaluate, VisibilityEvaluate>(visibility, vertices, candidate, hit.yzw)) sample.Coverage = 0.0;
+    sample.Diffuse = material.Diffuse;
+    sample.Occlusion = material.Occlusion;
+    sample.Emission = material.Emission;
+    sample.GeometricNormal = material.GeometricNormal;
+    GiSurfaceSamples[index] = sample;
+}
+
+[shader("compute")]
+[numthreads(1, 1, 1)]
+void ClassifyGiMaterialEmission(uniform SurfaceEvaluate surface)
+{
+    float3 emission = max(surface.getGiEmissionBound(GiMaterialWork.MaterialIndex), 0.0);
+    uint index = GiMaterialWork.MaterialIndex;
+    float3 previous = GiEmissionBounds[((GiEmissive.Frame + 1u) & 1u) * GiEmissive.MaterialCount + index].rgb;
+    GiEmissionBounds[(GiEmissive.Frame & 1u) * GiEmissive.MaterialCount + index] =
+        float4(emission, any(emission != previous) ? 1.0 : 0.0);
+}
+
+[VertexEncoding(CLUSTER_VERTEX_ENCODING)]
+[shader("compute")]
+[numthreads(64, 1, 1)]
+void UpdateGiEmissiveTriangles(uniform VertexEvaluate vertex, uniform DomainEvaluate domain,
+    uniform VisibilityEvaluate visibility, uniform SurfaceEvaluate surface, uint3 thread : SV_DispatchThreadID)
+{
+    uint2 work = GiMaterialWorkRanges[GiMaterialWork.MaterialIndex];
+    if (thread.x >= work.y) return;
+    uint index = GiMaterialWorkIndices[work.x + thread.x];
+    GiTriangleCandidate candidate = GiCandidates[index];
+    GiTriangleVertices<VertexEvaluate.Vertex> vertices = ReadGiTriangle(vertex, candidate);
+    DomainEvaluate.TriangleData triangle = domain.makeTriangle(vertices.First, vertices.Second, vertices.Third, candidate.MaterialIndex);
+    float3 first = domain.cornerPosition(triangle, 0u);
+    float3 edgeU = domain.cornerPosition(triangle, 1u) - first;
+    float3 edgeV = domain.cornerPosition(triangle, 2u) - first;
+    float3 normal = cross(edgeU, edgeV);
+    float area = length(normal) * 0.5;
+    GiMaterialInput input;
+    input.InstanceIndex = candidate.InstanceIndex;
+    input.MaterialIndex = candidate.MaterialIndex;
+    input.RayDirection = -normalize(normal);
+    input.Footprint = 0.0;
+    float2 sequence = frac(float2(0.7548776662, 0.5698402910) * float(index * 13u + GiEmissive.Frame + 1u));
+    float root = sqrt(sequence.x);
+    float3 barycentric = float3(1.0 - root, root * (1.0 - sequence.y), root * sequence.y);
+    float3 emitted = 0.0;
+    if (GiTriangleVisible<VertexEvaluate, VisibilityEvaluate>(visibility, vertices, candidate, barycentric))
+    {
+        GiMaterialSurface material = surface.evaluateGiSurface(input, domain.eval(triangle, barycentric), barycentric, triangle);
+        emitted = material.Emission * material.Coverage;
+    }
+    float3 center = first + (edgeU + edgeV) / 3.0;
+    float radius = max(length(first - center), max(length(first + edgeU - center), length(first + edgeV - center)));
+    float4 bound = GiMaterialEmissionBound(candidate.MaterialIndex);
+    float flux = area * max(GiEmissionBrightness(emitted), GiEmissionBrightness(bound.rgb) * 0.01);
+    RenderInstanceTransform current = GetCurrentInstanceTransform(candidate.InstanceIndex);
+    RenderInstanceTransform previous = GetPreviousInstanceTransform(candidate.InstanceIndex);
+    bool changed = any(current.Position != previous.Position) || any(current.Rotation != previous.Rotation) ||
+        current.Scale != previous.Scale || any(current.Stretch != previous.Stretch) ||
+        bound.w > 0.0 ||
+        any(abs(GiEmissiveTriangles[index].Emission.rgb - emitted) > max(emitted * 0.01, 1e-4.xxx));
+    GiEmissiveTriangle result = (GiEmissiveTriangle)0;
+    result.PositionArea = float4(first, area);
+    result.EdgeUFlux = float4(edgeU, flux);
+    result.EdgeV = float4(edgeV, 0.0);
+    result.Emission = float4(emitted, 0.0);
+    result.SamplePositionRadius = float4(domain.position(triangle, barycentric), radius);
+    result.TriangleInstance = uint4(candidate.Triangle, candidate.InstanceIndex);
+    result.Material.x = candidate.MaterialIndex;
+    result.Material.y = changed ? 1u : 0u;
+    GiEmissiveTriangles[index] = result;
+}
+
+#endif

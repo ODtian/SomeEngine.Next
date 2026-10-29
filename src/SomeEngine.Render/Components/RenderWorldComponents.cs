@@ -2,6 +2,7 @@ using System.Numerics;
 using System.Runtime.InteropServices;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Resources;
+using SomeEngine.Resources.Geometry;
 using SomeEngine.Core.Math;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Components;
@@ -107,7 +108,8 @@ public readonly record struct RenderInstance : IComponent;
 /// </summary>
 public readonly record struct RenderMesh(Mesh Mesh, float BoundsExpansion,
     SomeEngine.Assets.Pipeline.MeshPayloadSource? PageSource = null,
-    DepthCacheClass DepthCacheClass = DepthCacheClass.Auto, FirstPersonMeshData FirstPerson = default) : IComponent;
+    DepthCacheClass DepthCacheClass = DepthCacheClass.Auto, FirstPersonMeshData FirstPerson = default,
+    MeshDistanceField? DistanceField = null) : IComponent;
 
 public enum RenderViewFamily : uint
 {

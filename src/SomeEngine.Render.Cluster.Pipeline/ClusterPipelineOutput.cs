@@ -186,6 +186,15 @@ public sealed class ClusterGeometryCapabilities
     public uint PackedViewStride => ClusterViewUniforms.SizeInBytes;
     public GraphBufferId InstanceData { get; }
     public GraphBufferId InstanceWorldBounds { get; internal init; }
+    /// <summary>Existing 64-instance group bounds, two float4 values per group.</summary>
+    public GraphBufferId InstanceGroups { get; internal init; }
+    /// <summary>Existing instance indices with the active frame's declared range.</summary>
+    public GraphBufferInput InstanceOrder { get; internal init; } = null!;
+    public bool UseInstanceGroups { get; internal init; }
+    /// <summary>Shared Cluster page faults, page demand and priorities.</summary>
+    public GraphBufferId PageRequests { get; internal init; }
+    /// <summary>All page-request producers execute before this existing completion pass.</summary>
+    public GraphPassId CompletePageRequests { get; internal init; }
     /// <summary>Whole-frame ClusterWorkOverflow flags. Nonzero forbids publishing cached depth as complete.</summary>
     public GraphBufferId WorkStatus { get; internal init; }
     public GraphPassId BoundsReady { get; internal init; }
@@ -230,6 +239,16 @@ public sealed class ClusterGeometryCapabilities
 
     public void ReadPageHeap(ref PassDefinition pass, PipelineSync sync) =>
         pass.ReadRanges(PageHeap, _residentPageReads, sync, ResourceAccess.ShaderResource);
+
+    /// <summary>Connects the hierarchy descriptor; ReadBvh supplies its existing frame ranges.</summary>
+    public void BindBvh(RenderGraphEdit graph, ref PassDefinition pass, PipelineSync sync, string? label = null)
+    {
+        pass.Bind(GraphParameterResourceBinding.ReadOnlyBufferDescriptor(
+            graph.CreateBufferSrv(Bvh, label: label ?? "Cluster geometry hierarchy")));
+    }
+
+    public void ReadBvh(ref PassDefinition pass, PipelineSync sync) =>
+        pass.ReadRanges(Bvh, _bvhReadRanges, sync, ResourceAccess.ShaderResource);
 
     public bool HasBvhData => _bvhReadRanges.Count != 0;
 

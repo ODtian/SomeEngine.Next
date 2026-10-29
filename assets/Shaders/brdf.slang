@@ -9,6 +9,17 @@ static const float PI = 3.14159265358979323846;
 static const float MIN_N_DOT_V = 0.05;
 static const float MIN_DISTANCE_SQ = 0.0001;
 
+// Diffuse transport uses the material's hemispherical reflectance, shared by screen capture and ray hits.
+float3 DiffuseReflectance(float3 baseColor, float metallic)
+{
+    return baseColor * (1.0 - metallic) * 0.96;
+}
+
+float3 DiffuseEnvironmentIrradiance(float occlusion)
+{
+    return 0.03.xxx * occlusion;
+}
+
 /// GGX / Trowbridge-Reitz Normal Distribution Function
 float D_GGX(float NdotH, float roughness)
 {
@@ -54,7 +65,8 @@ float3 EvaluateDirectionalLight(
     out float3 diffuseRadiance
 )
 {
-    diffuseRadiance = 0.0;
+    diffuseRadiance = DiffuseReflectance(baseColor, metallic) *
+        lightColor * (max(dot(N, L), 0.0) * shadow / PI);
     float NdotL = max(dot(N, L), 0.0);
     if (NdotL <= 0.0)
         return float3(0.0);
@@ -85,7 +97,6 @@ float3 EvaluateDirectionalLight(
     float3 kD = (1.0 - F) * (1.0 - metallic);
     float3 diffuse = kD * baseColor / PI;
 
-    diffuseRadiance = diffuse * lightColor * NdotL * shadow;
     return (diffuse + specular) * lightColor * NdotL * shadow;
 }
 

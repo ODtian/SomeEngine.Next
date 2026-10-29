@@ -70,10 +70,19 @@
       },
       "enabled": true,
       "set_member_id": "99da2dee-eeb5-4442-8b0c-501c3fa55650"
+    },
+    {
+      "importer_id": "084c59d6-3951-4a5e-8fb9-271e965cb948",
+      "settings": {
+        "generate_tangents": false
+      },
+      "enabled": true,
+      "set_member_id": "084c59d6-3951-4a5e-8fb9-271e965cb948"
     }
   ],
   "importer_sets": [
-    "04bf0353-5bf3-4824-a87a-3868d3b5a441"
+    "04bf0353-5bf3-4824-a87a-3868d3b5a441",
+    "e253ed1e-84f2-4901-98c3-f9721a962b18"
   ],
   "use_default_importers": true,
   "element_ids": {

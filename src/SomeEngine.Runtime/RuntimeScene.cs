@@ -20,7 +20,8 @@ internal sealed class RuntimeScene : IDisposable
         Mesh Mesh,
         MeshPayloadSource PageSource,
         RegionMaterial[] Materials,
-        ClusterSkinBounds? SkinBounds);
+        ClusterSkinBounds? SkinBounds,
+        MeshDistanceField? DistanceField);
     private readonly record struct RegionMaterial(int Region, AssetId<MaterialAsset> Material);
 
     private readonly World _world;
@@ -99,7 +100,8 @@ internal sealed class RuntimeScene : IDisposable
         Entity[] cameras = Entities(world, new QueryDefinitionBuilder().Read<SceneCamera>());
         if (cameras.Length != 1) throw new InvalidDataException("The Game world must contain one scene camera.");
         SceneCamera camera = world.Read<SceneCamera>(cameras[0]);
-        var meshes = new Dictionary<Guid, (Mesh Mesh, MeshPayloadSource Source, MeshMaterialBinding[] Bindings, ClusterSkinBounds? SkinBounds)>();
+        var meshes = new Dictionary<Guid, (Mesh Mesh, MeshPayloadSource Source, MeshMaterialBinding[] Bindings,
+            ClusterSkinBounds? SkinBounds, MeshDistanceField? DistanceField)>();
         var materials = new Dictionary<Guid, Material>();
         Vector3 meshPositionMin = new(float.PositiveInfinity);
         Vector3 meshPositionMax = new(float.NegativeInfinity);
@@ -131,6 +133,9 @@ internal sealed class RuntimeScene : IDisposable
                         ? await clusters.CreateAsync(geometry, attributes!, file.Name, cancellationToken).ConfigureAwait(false)
                         : await packed!.CreateAsync(geometry, file.Name, cancellationToken).ConfigureAwait(false);
                     ClusterSkinBoundsBlock? skinBounds = await file.TryGetBlockAsync<ClusterSkinBoundsBlock>(cancellationToken).ConfigureAwait(false);
+                    MeshDistanceFieldBlock? distanceField = await file.TryGetBlockAsync<MeshDistanceFieldBlock>(cancellationToken).ConfigureAwait(false);
+                    MeshDistanceField? distances = distanceField is null ? null
+                        : await distanceField.ReadDataAsync(cancellationToken).ConfigureAwait(false);
                     MeshPayloadSource? pages = null;
                     try
                     {
@@ -146,7 +151,7 @@ internal sealed class RuntimeScene : IDisposable
                         foreach (RegionMaterial value in regionMaterials)
                             if (value.Material.IsEmpty)
                                 throw new InvalidDataException($"Mesh {file.Id} region {value.Region} requires a material.");
-                        loadedMeshes[index] = new SceneMeshData(mesh, pages, regionMaterials, skinBounds?.CreateBounds());
+                        loadedMeshes[index] = new SceneMeshData(mesh, pages, regionMaterials, skinBounds?.CreateBounds(), distances);
                     }
                     catch { pages?.Dispose(); throw; }
                 }).ConfigureAwait(false);
@@ -187,14 +192,14 @@ internal sealed class RuntimeScene : IDisposable
             {
                 if (loadedMeshes[meshIndex] is not SceneMeshData data) continue;
                 Guid meshId = meshIds[meshIndex].Value;
-                meshes.Add(meshId, (data.Mesh, data.PageSource, [], data.SkinBounds));
+                meshes.Add(meshId, (data.Mesh, data.PageSource, [], data.SkinBounds, data.DistanceField));
                 loadedMeshes[meshIndex] = null;
                 var bindings = new MeshMaterialBinding[data.Materials[^1].Region + 1];
                 // Gaps keep original region indices and share one valid binding; only retained regions draw.
                 Array.Fill(bindings, new MeshMaterialBinding(materials[data.Materials[0].Material.Value]));
                 foreach (RegionMaterial value in data.Materials)
                     bindings[value.Region] = new(materials[value.Material.Value]);
-                meshes[meshId] = (data.Mesh, data.PageSource, bindings, data.SkinBounds);
+                meshes[meshId] = (data.Mesh, data.PageSource, bindings, data.SkinBounds, data.DistanceField);
             }
             instances = instances.Where(entity => meshes.ContainsKey(world.Read<AssetId<MeshAsset>>(entity).Value)).ToArray();
 
@@ -208,7 +213,8 @@ internal sealed class RuntimeScene : IDisposable
                 meshPositionMin = Vector3.Min(meshPositionMin, transform.Position);
                 meshPositionMax = Vector3.Max(meshPositionMax, transform.Position);
                 world.Add(entity, new MeshInstance { Mesh = meshData.Mesh, PageSource = meshData.Source,
-                    BoundsExpansion = settings.BoundsExpansion, DepthCacheClass = settings.DepthCacheClass, FirstPerson = settings.FirstPerson });
+                    BoundsExpansion = settings.BoundsExpansion, DepthCacheClass = settings.DepthCacheClass,
+                    FirstPerson = settings.FirstPerson, DistanceField = meshData.DistanceField });
                 if (meshData.SkinBounds is { } skinBounds) world.Add(entity, new MeshSkinBounds(skinBounds));
                 world.AddBuffer<MeshMaterialBinding>(entity);
                 MeshMaterialBinding[] bindings = meshData.Bindings;

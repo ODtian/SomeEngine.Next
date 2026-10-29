@@ -1059,7 +1059,8 @@ internal static class RuntimeApplication
                 if (connectPostProcessing && (script?.CreateColorFeature ?? application?.CreateColorFeature) is { } createColorFeature)
                     colorFeature = createColorFeature(new(backend, device, renderGraph, boot.Width, boot.Height,
                         viewFrame.View.Projection, colorEffectsRegion)
-                        { StencilSource = pipeline.GetStencil, Geometry = clusterOutputs, CameraCutSource = () => cameraCut });
+                        { StencilSource = pipeline.GetStencil, Geometry = clusterOutputs, ClusterPipeline = pipeline, CameraCutSource = () => cameraCut });
+                colorFeature?.Reconcile(in clusterOutputs);
                 temporal ??= new TemporalFeature(
                     backend,
                     device,

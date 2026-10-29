@@ -10,6 +10,10 @@
 #include "cluster_policy_raster_output.slang"
 #include "cluster_draw_core.slang"
 
+#if defined(CLUSTER_GI_MATERIAL)
+#include "gi_material_entries.slang"
+#endif
+
 #ifndef CLUSTER_POSITION_RASTER
 typedef VertexEvaluate RasterVertexEvaluate;
 typedef VisibilityEvaluate RasterVisibilityEvaluate;

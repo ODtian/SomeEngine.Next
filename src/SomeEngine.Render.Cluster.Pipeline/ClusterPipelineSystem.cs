@@ -198,6 +198,9 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         }
     }
 
+    public ulong CurrentInstanceRevision => _instances.Current is { GroupCount: 1 } current
+        ? current.Groups[0].Batch.ContentRevision : 0;
+
     /// <summary>
     /// Appends views to the one shared Cluster work stream. Policy zero writes the primary dense
     /// visibility output; non-zero policies use a registered context adapter. View kind never

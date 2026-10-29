@@ -1,5 +1,6 @@
 using SomeEngine.Assets.Schema;
 using SomeEngine.Resources;
+using SomeEngine.Resources.Geometry;
 using SomeEngine.Assets.Pipeline;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Components;
@@ -61,5 +62,7 @@ public struct MeshInstance : IComponent
     public FirstPersonMeshData FirstPerson;
     /// <summary>Optional explicit source for geometry pages not yet resident in Mesh.</summary>
     public MeshPayloadSource? PageSource;
+    /// <summary>Mesh-local distance samples and triangle references shared by instances.</summary>
+    public MeshDistanceField? DistanceField;
 }
 

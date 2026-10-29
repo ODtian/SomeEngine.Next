@@ -108,6 +108,7 @@ public static class ImportedSceneBuild
 
     private static void CopyFiles(string source, string destination)
     {
+        if (StringComparer.OrdinalIgnoreCase.Equals(Path.GetFullPath(source), Path.GetFullPath(destination))) return;
         foreach (string file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
         {
             string target = Path.Combine(destination, Path.GetRelativePath(source, file));

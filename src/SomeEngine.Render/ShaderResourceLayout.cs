@@ -13,6 +13,14 @@ public static class ShaderResourceLayout
         VariableLayoutReflection layout,
         Func<string, ResourceBindingType, TKey?> resolve)
         where TKey : struct
+        => Resolve(layout, (name, type, _) => resolve(name, type), null);
+
+    /// <summary>Includes the compiler's entry-specific resource usage in descriptor order.</summary>
+    public static TKey[] Resolve<TKey>(
+        VariableLayoutReflection layout,
+        Func<string, ResourceBindingType, bool, TKey?> resolve,
+        Func<SlangParameterCategory, nuint, nuint, bool>? isUsed)
+        where TKey : struct
     {
         ArgumentNullException.ThrowIfNull(resolve);
         if (layout == VariableLayoutReflection.Null)
@@ -59,10 +67,14 @@ public static class ShaderResourceLayout
                 ResourceBindingType type = ConvertType(
                     contents.GetDescriptorSetDescriptorRangeType(set, descriptorRange),
                     contents.GetDescriptorSetDescriptorRangeCategory(set, descriptorRange));
-                TKey key = resolve(name, type) ?? throw new InvalidDataException(
-                    $"Feature shader resource '{name}' ({type}) has no installed binding.");
                 for (int element = 0; element < descriptorCount; element++)
+                {
+                    var location = SlangDescriptorLocation.FromLayout(layout, contents, set, descriptorRange, element);
+                    bool used = isUsed?.Invoke(location.Category, (nuint)location.Space, (nuint)location.Register) ?? true;
+                    TKey key = resolve(name, type, used) ?? throw new InvalidDataException(
+                        $"Feature shader resource '{name}' ({type}) has no installed binding.");
                     result.Add(key);
+                }
             }
         }
         return [.. result];

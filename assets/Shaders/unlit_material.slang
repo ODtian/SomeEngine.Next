@@ -31,10 +31,34 @@ UnlitPixelContext BuildUnlitPixelContext(
     return ctx;
 }
 
-struct UnlitMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ITransparentSurfaceEvaluate<SurfaceEval, Triangle>
+struct UnlitMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ITransparentSurfaceEvaluate<SurfaceEval, Triangle>,
+    IGiSurfaceEvaluate<SurfaceEval, Triangle>
 {
     Texture2D AlbedoMap;
     SamplerState MaterialSampler;
+
+    float3 getGiEmissionBound(uint materialIndex)
+    {
+        return LoadMaterialScalars<UnlitScalars>(materialIndex).BaseColorTint.rgb;
+    }
+
+    GiMaterialSurface evaluateGiSurface(GiMaterialInput input, SurfaceEval surface,
+        float3 barycentric, Triangle triangle)
+    {
+        float4 albedo = AlbedoMap.SampleLevel(MaterialSampler, surface.TexCoord, 0.0);
+        UnlitScalars scalars = LoadMaterialScalars<UnlitScalars>(input.MaterialIndex);
+        float3 plane = SafeNormalize(cross(triangle.Position1 - triangle.Position0,
+            triangle.Position2 - triangle.Position0), surface.Normal);
+        if (dot(plane, input.RayDirection) > 0.0) plane = -plane;
+        GiMaterialSurface result;
+        result.Normal = plane;
+        result.GeometricNormal = plane;
+        result.Coverage = 1.0;
+        result.Diffuse = 0.0;
+        result.Occlusion = 1.0;
+        result.Emission = albedo.rgb * scalars.BaseColorTint.rgb;
+        return result;
+    }
 
     float4 evaluateColor(SurfacePixelInput input, SurfaceEval surface, float3 bary, Triangle triangle)
     {

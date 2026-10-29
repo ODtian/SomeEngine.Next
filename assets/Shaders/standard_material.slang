@@ -80,13 +80,72 @@ StandardPixelContext BuildStandardPixelContext(
     return ctx;
 }
 
-struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ITransparentSurfaceEvaluate<SurfaceEval, Triangle>
+struct StandardSurfaceSample
+{
+    float3 BaseColor;
+    float Opacity;
+    float3 Normal;
+    float Metallic;
+    float Roughness;
+    float Occlusion;
+    float3 Emission;
+};
+
+struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ITransparentSurfaceEvaluate<SurfaceEval, Triangle>,
+    IGiSurfaceEvaluate<SurfaceEval, Triangle>
 {
     // Textures
     Texture2D AlbedoMap;
     Texture2D NormalMap;
     Texture2D ARMMap;
     SamplerState MaterialSampler;
+
+    float3 getGiEmissionBound(uint materialIndex)
+    {
+        return LoadMaterialScalars<StandardScalars>(materialIndex).EmissiveFactor;
+    }
+
+    StandardSurfaceSample sampleMaterial(SurfaceEval surface, float2 uvDx, float2 uvDy, uint materialIndex)
+    {
+        float4 albedoSample = AlbedoMap.SampleGrad(MaterialSampler, surface.TexCoord, uvDx, uvDy);
+        float3 armSample = ARMMap.SampleGrad(MaterialSampler, surface.TexCoord, uvDx, uvDy).rgb;
+        float3 normalTS = NormalMap.SampleGrad(MaterialSampler, surface.TexCoord, uvDx, uvDy).rgb * 2.0 - 1.0;
+        StandardScalars scalars = LoadMaterialScalars<StandardScalars>(materialIndex);
+        float3 N_geom = normalize(surface.Normal);
+        float3 T = normalize(surface.Tangent.xyz - N_geom * dot(N_geom, surface.Tangent.xyz));
+        float3 B = cross(N_geom, T) * surface.Tangent.w;
+        float3 baseColor = albedoSample.rgb * scalars.BaseColorTint.rgb;
+        float occlusion = armSample.r;
+        float3 emission = scalars.EmissiveFactor;
+        StandardSurfaceSample result;
+        result.BaseColor = baseColor;
+        result.Opacity = albedoSample.a * scalars.BaseColorTint.a;
+        result.Normal = normalize(T * normalTS.x + B * normalTS.y + N_geom * normalTS.z);
+        result.Metallic = saturate(armSample.b * scalars.MetallicFactor);
+        result.Roughness = max(saturate(armSample.g * scalars.Roughness), 0.04);
+        result.Occlusion = occlusion;
+        result.Emission = emission;
+        return result;
+    }
+
+    GiMaterialSurface evaluateGiSurface(GiMaterialInput input, SurfaceEval surface,
+        float3 barycentric, Triangle triangle)
+    {
+        float2 uvDx = float2(input.Footprint / max(length(surface.DpDu), 1e-6), 0.0);
+        float2 uvDy = float2(0.0, input.Footprint / max(length(surface.DpDv), 1e-6));
+        StandardSurfaceSample sample = sampleMaterial(surface, uvDx, uvDy, input.MaterialIndex);
+        float3 geometricNormal = SafeNormalize(cross(triangle.Position1 - triangle.Position0,
+            triangle.Position2 - triangle.Position0), surface.Normal);
+        if (dot(geometricNormal, input.RayDirection) > 0.0) geometricNormal = -geometricNormal;
+        GiMaterialSurface result;
+        result.Normal = dot(sample.Normal, geometricNormal) >= 0.0 ? sample.Normal : -sample.Normal;
+        result.GeometricNormal = geometricNormal;
+        result.Coverage = 1.0;
+        result.Diffuse = DiffuseReflectance(sample.BaseColor, sample.Metallic);
+        result.Occlusion = sample.Occlusion;
+        result.Emission = sample.Emission;
+        return result;
+    }
 
     float4 evaluateColor(
         SurfacePixelInput input,
@@ -104,17 +163,9 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ITransparentS
         float2 uvDx = triangle.TexCoord0 * input.BarycentricDx.x + triangle.TexCoord1 * input.BarycentricDx.y + triangle.TexCoord2 * input.BarycentricDx.z;
         float2 uvDy = triangle.TexCoord0 * input.BarycentricDy.x + triangle.TexCoord1 * input.BarycentricDy.y + triangle.TexCoord2 * input.BarycentricDy.z;
 
-        // Sample material textures
-        float4 albedoSample = AlbedoMap.SampleGrad(MaterialSampler, ctx.uv0, uvDx, uvDy);
-        float3 armSample    = ARMMap.SampleGrad(MaterialSampler, ctx.uv0, uvDx, uvDy).rgb;
-        float3 normalTS     = NormalMap.SampleGrad(MaterialSampler, ctx.uv0, uvDx, uvDy).rgb * 2.0 - 1.0;
-        StandardScalars scalars = LoadMaterialScalars<StandardScalars>(input.MaterialIndex);
-
-        // TBN matrix: transform normal from tangent space to world space
+        StandardSurfaceSample sample = sampleMaterial(surface, uvDx, uvDy, input.MaterialIndex);
         float3 N_geom = normalize(ctx.worldNormal);
-        float3 T = normalize(ctx.worldTangent.xyz - N_geom * dot(N_geom, ctx.worldTangent.xyz)); // Gram-Schmidt
-        float3 B = cross(N_geom, T) * ctx.worldTangent.w; // handedness
-        float3 mappedNormal = normalize(T * normalTS.x + B * normalTS.y + N_geom * normalTS.z);
+        float3 mappedNormal = sample.Normal;
 
         ClusterViewUniforms cameraView = MaterialViews[input.PixelCoord.z];
         float3 positionDx = TransformFirstPersonWorldPosition(MaterialInstanceData, MaterialInstanceProperties,
@@ -129,10 +180,9 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ITransparentS
             input.InstanceID, cameraView, mappedNormal);
         N_geom = TransformFirstPersonWorldNormal(MaterialInstanceData, MaterialInstanceProperties,
             input.InstanceID, cameraView, N_geom);
-        float3 baseColor = albedoSample.rgb * scalars.BaseColorTint.rgb;
-        float roughness = saturate(armSample.g * scalars.Roughness);
-        float metallic = saturate(armSample.b * scalars.MetallicFactor);
-        roughness = max(roughness, 0.04);
+        float3 baseColor = sample.BaseColor;
+        float roughness = sample.Roughness;
+        float metallic = sample.Metallic;
         MaterialDecalIterator decals = BeginMaterialDecals(input.PixelCoord, ctx.surfacePosition);
         MaterialDecalInput decal;
         while (NextMaterialDecal(decals, ctx.surfacePosition, positionDx, positionDy, decal))
@@ -143,7 +193,7 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ITransparentS
             roughness = lerp(roughness, layer.Roughness, alpha);
             mappedNormal = SafeNormalize(lerp(mappedNormal, layer.Normal, alpha), N_geom);
         }
-        float opacity = albedoSample.a * scalars.BaseColorTint.a;
+        float opacity = sample.Opacity;
         ClusteredLightGridParameters lighting = LightingViews[ctx.pixelCoord.z];
         float3 viewPosition = mul(float4(ctx.surfacePosition, 1.0), lighting.View).xyz;
         float viewDepth = max(-viewPosition.z, lighting.ZParams.x);
@@ -164,27 +214,27 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ITransparentS
         float4 sourceClip = mul(float4(ClusterPositionForView(surface.Position, surfaceView), 1.0), surfaceView.ViewProj);
         receiver.DepthOffset = input.VisibilityDepth == 2u ? input.Depth - sourceClip.z / sourceClip.w : 0.0;
         float3 V = normalize(cameraView.CameraPos - ctx.surfacePosition);
-        float3 diffuseAmbient = baseColor * armSample.r * 0.03;
-        float3 finalColor = diffuseAmbient + scalars.EmissiveFactor;
+        float3 diffuseAmbient = DiffuseReflectance(baseColor, metallic) * DiffuseEnvironmentIrradiance(sample.Occlusion);
+        float3 finalColor = diffuseAmbient + sample.Emission;
         float3 reflectedRadiance = diffuseAmbient;
 #ifdef SOMEENGINE_GI
         if (captureGi)
         {
             WriteGiSurface(ctx.pixelCoord, mappedNormal, receiver.GeometricNormal,
-                baseColor * (1.0 - metallic));
+                DiffuseReflectance(baseColor, metallic));
             if (GiCapture.Enabled != 0u)
-                finalColor += SampleGiDiffuse(ctx.pixelCoord, input.MotionVector, ctx.surfacePosition,
-                    mappedNormal, receiver.GeometricNormal, baseColor * (1.0 - metallic), cameraView);
+            {
+                float3 indirect = SampleGiDiffuse(ctx.pixelCoord, input.MotionVector, ctx.surfacePosition,
+                    mappedNormal, receiver.GeometricNormal, DiffuseReflectance(baseColor, metallic), cameraView);
+                finalColor += indirect;
+                reflectedRadiance += indirect;
+                float3 emissiveLight = SampleGiEmissiveLight(ctx.pixelCoord, input.MotionVector,
+                    ctx.surfacePosition, receiver.GeometricNormal, cameraView) * DiffuseReflectance(baseColor, metallic);
+                finalColor += emissiveLight;
+                reflectedRadiance += emissiveLight;
+            }
         }
 #endif
-
-        if (dot(mappedNormal, V) <= 0.0)
-        {
-#ifdef SOMEENGINE_GI
-            if (captureGi) WriteGiRadiance(ctx.pixelCoord, reflectedRadiance);
-#endif
-            return float4(finalColor, opacity);
-        }
 
         for (uint lightIndex = 0u; lightIndex < lighting.DirectionalCount; lightIndex++)
         {

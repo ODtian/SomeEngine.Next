@@ -26,6 +26,7 @@ typedef UnlitMaterial SurfaceEvaluate;
 #define CLUSTER_SURFACE_MODES 1
 #define CLUSTER_FORWARD_SHADING 1
 #define CLUSTER_FORWARD_DEPTH_POSITION 1
+#define CLUSTER_GI_MATERIAL 1
 #include "../Pipeline/cluster_material.slang"
 
 #define TRANSPARENCY_MATERIAL_TYPE UnlitTransparencyMaterial

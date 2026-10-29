@@ -47,50 +47,40 @@ public sealed partial class ClusterPipelineSystem
         HashSet<GraphParameterInput> inputs = edit.GetParameterInputs().ToHashSet();
         GraphData.MaterialInputs = GraphData.MaterialInputs.RemoveRange(GraphData.MaterialInputs
             .Where(pair => !inputs.Contains(pair.Value.Input)).Select(static pair => pair.Key));
-        // The installed shader bindings already retain the graph's resource references.
-        // Count only changed bins; no copy of material properties is needed for removals.
-        var changes = new Dictionary<SomeEngine.Graphics.Buffer, int>();
-        var resources = new HashSet<SomeEngine.Graphics.Buffer>();
-        foreach (uint bin in rasterStages.ChangedBins)
+        return (UpdateMaterialBuffers(ref edit), UpdateMaterialTextures(ref edit));
+    }
+
+    private ImmutableDictionary<SomeEngine.Graphics.Buffer, MaterialBuffer> UpdateMaterialBuffers(ref RenderGraphEdit edit)
+    {
+        // The same inputs serve raster, surface shading and material compute consumers.
+        var references = new Dictionary<SomeEngine.Graphics.Buffer, int>();
+        foreach (((Material material, uint property), MaterialInput input) in GraphData.MaterialInputs)
         {
-            if (_installedRasterStages is not null && _installedRasterStages.TryGetBin(bin, out var before))
-                CountBuffers(before.CommandBindings, -1);
-            if (rasterStages.TryGetBin(bin, out var after)) CountBuffers(after.CommandBindings, 1);
-        }
-        foreach (uint bin in shadeStages.ChangedBins)
-        {
-            if (_installedShadeStages is not null && _installedShadeStages.TryGetBin(bin, out var before))
+            if (input.Input.Type is ResourceBindingType.TextureSrv or ResourceBindingType.TextureUav or ResourceBindingType.Sampler)
+                continue;
+            switch (material.GetDeviceResource(property))
             {
-                CountBuffers(before.CommandBindings, -1);
-                if (before.RequestShader is { } receiver) CountBuffers(receiver.CommandBindings, -1);
-            }
-            if (shadeStages.TryGetBin(bin, out var after))
-            {
-                CountBuffers(after.CommandBindings, 1);
-                if (after.RequestShader is { } receiver) CountBuffers(receiver.CommandBindings, 1);
+                case BufferSrv view: Add(view.Description.Buffer); break;
+                case BufferUav view:
+                    Add(view.Description.Buffer);
+                    if (view.Description.CounterBuffer is { } counter) Add(counter);
+                    break;
+                case BufferCbv view: Add(view.Description.Buffer); break;
+                case AccelerationStructureSrv view: Add(view.Resource.Info.Storage); break;
             }
         }
-        void CountBuffers(ClusterCommandBindingKey bindings, int change)
-        {
-            resources.Clear();
-            bindings.CollectBuffers(resources);
-            foreach (SomeEngine.Graphics.Buffer buffer in resources)
-                changes[buffer] = changes.GetValueOrDefault(buffer) + change;
-        }
+        void Add(SomeEngine.Graphics.Buffer buffer) => references[buffer] = references.GetValueOrDefault(buffer) + 1;
         var buffers = GraphData.MaterialBuffers;
-        foreach ((SomeEngine.Graphics.Buffer buffer, int change) in changes)
+        foreach ((SomeEngine.Graphics.Buffer buffer, MaterialBuffer previous) in GraphData.MaterialBuffers)
         {
-            if (change == 0) continue;
+            if (references.ContainsKey(buffer)) continue;
+            if (previous.RegisteredHere) edit.Remove(previous.Id);
+            buffers = buffers.Remove(buffer);
+        }
+        foreach ((SomeEngine.Graphics.Buffer buffer, int count) in references)
+        {
             if (buffers.TryGetValue(buffer, out MaterialBuffer current))
-            {
-                int references = checked(current.References + change);
-                if (references != 0) buffers = buffers.SetItem(buffer, current with { References = references });
-                else
-                {
-                    if (current.RegisteredHere) edit.Remove(current.Id);
-                    buffers = buffers.Remove(buffer);
-                }
-            }
+                buffers = buffers.SetItem(buffer, current with { References = count });
             else
             {
                 bool registeredHere = !_graph.TryGetBufferId(buffer, out GraphBufferId id);
@@ -98,10 +88,10 @@ public sealed partial class ClusterPipelineSystem
                     id = edit.RegisterExternalBuffer(buffer,
                         [new BufferBoundaryState(new BufferRange(0, buffer.Info.Size), buffer.InitialSync,
                             buffer.InitialAccess, ResourceContentState.Defined)]);
-                buffers = buffers.Add(buffer, new MaterialBuffer(id, change, registeredHere));
+                buffers = buffers.Add(buffer, new MaterialBuffer(id, count, registeredHere));
             }
         }
-        return (buffers, UpdateMaterialTextures(ref edit));
+        return buffers;
     }
 
     private readonly Dictionary<SamplerDesc, Sampler> _materialSamplers = [];
@@ -140,8 +130,9 @@ public sealed partial class ClusterPipelineSystem
                 _rasterChangedMaterials.Add(id);
                 continue;
             }
-            bool resourcesMatch = _materialBindingVersions.TryGetValue(id, out var versions) &&
-                versions.Matches(material, _rasterStages!, _shadeStages!);
+            bool observed = _materialBindingVersions.TryGetValue(id, out var versions);
+            bool inputsMatch = observed && MaterialInputsMatch(material, versions!.Properties, recordChanges: true);
+            bool resourcesMatch = observed && inputsMatch && versions!.Matches(material, _rasterStages!, _shadeStages!);
             resourcesChanged |= !resourcesMatch;
             if (topologyChanged || !resourcesMatch ||
                 !_rasterStages!.TryGetMaterialDepthInputs(id, out var properties) ||
@@ -162,6 +153,7 @@ public sealed partial class ClusterPipelineSystem
             }
             if (_materialBindingVersions.TryGetValue(id, out var versions) &&
                 versions.Matches(material, _rasterStages!, _shadeStages!) &&
+                MaterialInputsMatch(material, versions.Properties, recordChanges: false) &&
                 (!_rasterStages!.TryGetMaterialDepthInputs(id, out var propertiesRead) ||
                  versions.MatchesDepthInputs(material, propertiesRead)))
                 continue;
@@ -172,6 +164,19 @@ public sealed partial class ClusterPipelineSystem
         }
         _consumedMaterialAssignments = assignments;
         _materialAssignments.AcceptMaterialChanges(source);
+    }
+
+    private bool MaterialInputsMatch(Material material, ReadOnlySpan<ulong> versions, bool recordChanges)
+    {
+        bool same = true;
+        foreach (uint property in _shadeStages!.GetResourceProperties(material.MaterialId))
+        {
+            if (!GraphData.MaterialInputs.ContainsKey((material, property)) ||
+                material.GetPropertyRevision(property) == versions[(int)property]) continue;
+            same = false;
+            if (recordChanges) GraphData.MaterialInputChanges = GraphData.MaterialInputChanges.Add((material, property));
+        }
+        return same;
     }
 
     private static bool BindInactiveStageResource(
@@ -929,6 +934,13 @@ public sealed partial class ClusterPipelineSystem
         pass.SetParameterBlock(invocation.Pipeline.ParameterLayout);
         GraphBufferSlice uniformBuffer = UploadUniform(ref graph,
             ShadeUniforms(invocation.BinIndex, stages), "Cluster shade parameters");
+        BindMaterialComputeInputs(ref graph, ref pass, invocation, uniformBuffer);
+        return uniformBuffer;
+    }
+
+    private void BindMaterialComputeInputs(ref RenderGraphEdit graph, ref PassDefinition pass,
+        ClusterShadeInvocation invocation, GraphBufferSlice uniformBuffer)
+    {
         ReadOnlySpan<ClusterLinkedStageResource> resources = invocation.Resources.Resources;
         for (int resourceIndex = 0; resourceIndex < resources.Length; resourceIndex++)
         {
@@ -972,7 +984,6 @@ public sealed partial class ClusterPipelineSystem
                 invocation.Material,
                 PipelineSync.ComputeShading);
         }
-        return uniformBuffer;
     }
 
     private void BindShadeCoreResource(

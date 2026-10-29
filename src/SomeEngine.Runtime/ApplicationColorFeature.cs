@@ -10,6 +10,7 @@ public readonly record struct ApplicationRendering(IGraphicsBackend Backend, Dev
     GraphRegionId Region = default)
 {
     public ClusterPipelineOutputs Geometry { get; init; }
+    public ClusterPipelineSystem? ClusterPipeline { get; init; }
     public bool CameraCut => CameraCutSource?.Invoke() ?? false;
     internal Func<bool>? CameraCutSource { get; init; }
     public ClusterStencil? Stencil => StencilSource?.Invoke();
@@ -20,6 +21,7 @@ public readonly record struct ApplicationRendering(IGraphicsBackend Backend, Dev
 public interface IApplicationColorFeature : IDisposable
 {
     GraphPassId CompletePass { get; }
+    void Reconcile(in ClusterPipelineOutputs geometry) { }
     void OrderAfter(ref RenderGraphEdit graph, GraphPassId colorReady);
     GraphTextureId Record(ref RenderGraphFrame graph, GraphTextureId color, GraphTextureId depth);
 }

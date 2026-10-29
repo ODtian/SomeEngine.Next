@@ -13,6 +13,28 @@ namespace SomeEngine.Assets.Tests;
 public sealed class AssetImportTests
 {
     [Fact]
+    public async Task RegisteringAnUpdatedImportedAssetPreservesItsSourceForReimport()
+    {
+        using var files = new TestFiles();
+        var importer = new SourceImporter();
+        var project = new AssetProject(files.Root, [importer]);
+        Guid id = Assert.Single(await project.ImportAsync(files.Source, importer));
+        AssetEntry original = project.Manifest.Assets[id];
+        using (ShaderAsset asset = await ShaderAsset.OpenAsync(files.Path("shader0.shader.asset")))
+        {
+            asset.Name = "updated imported asset";
+            project.RegisterAsset(await asset.SaveAsync(files.Path("shader0.shader.asset")));
+        }
+        AssetEntry registered = AssetManifest.Load(files.Catalog).Assets[id];
+        Assert.Equal(original.SourceGuid, registered.SourceGuid);
+        Assert.Equal(original.SubAssetKey, registered.SubAssetKey);
+        File.WriteAllText(files.Source, "updated source");
+        Assert.Equal(id, Assert.Single(await project.ImportAsync(files.Source, importer)));
+        using ShaderAsset reimported = await ShaderAsset.OpenAsync(files.Path("shader0.shader.asset"));
+        Assert.Equal("updated source:0", reimported.Name);
+    }
+
+    [Fact]
     public async Task RebuildingWithoutTheBuildRecordRestoresSourceElementIdentities()
     {
         using var files = new TestFiles();

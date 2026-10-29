@@ -68,10 +68,6 @@ internal sealed class MeshDistanceFieldBuilder
     private MeshDistanceField BuildData(int distanceBudgetPerTriangle, int triangleGridSide)
     {
         MeshTrianglePointer[] pointers = _triangles.Select(static value => value.Pointer).ToArray();
-        if (_triangles.Length <= 4)
-            return new(new() { TriangleCount = (uint)pointers.Length }, default, default, default, default,
-                MemoryMarshal.AsBytes(pointers.AsSpan()).ToArray());
-
         (Vector3 center, Vector3 x, Vector3 y, Vector3 z) = PrincipalAxes();
         Vector3 lower = new(float.MaxValue), upper = new(float.MinValue);
         double area = 0;
@@ -112,6 +108,9 @@ internal sealed class MeshDistanceFieldBuilder
                 distances[(int)(ix + iy * grid.Width + iz * grid.Width * grid.Height)] = tree.Distance(point);
             }
         }
+        if (_triangles.Length <= 4)
+            return new(grid, default, distanceBytes, default, default,
+                MemoryMarshal.AsBytes(pointers.AsSpan()).ToArray());
         Vector3 meshLower = _triangles[0].Minimum, meshUpper = _triangles[0].Maximum;
         foreach (ref readonly Triangle triangle in _triangles.AsSpan())
         {

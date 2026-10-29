@@ -2,6 +2,7 @@
 #define GI_MATERIAL_SLANG
 #include "gi_normal.slang"
 #include "gi_probe_sampling.slang"
+#include "gi_direct_sampling.slang"
 
 struct GiSurfaceSettings
 {
