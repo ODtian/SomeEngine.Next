@@ -76,24 +76,24 @@ uint clipDeviceManifold(uint work, uint reference, uint referenceCount, uint inc
         if (dot(side, center - origin) < 0) side = -side;
         if (incidentCount == 2)
         {
-            float first = dot(side, ContactPolygon[polygon].point - origin);
-            float second = dot(side, ContactPolygon[polygon + count - 1].point - origin);
-            if (first < -tolerance && second < -tolerance) return 0;
-            if (first < -tolerance)
+            float first = dot(side, ContactPolygon[polygon].point - origin) + tolerance;
+            float second = dot(side, ContactPolygon[polygon + count - 1].point - origin) + tolerance;
+            if (first < 0 && second < 0) return 0;
+            if (first < 0)
                 ContactPolygon[polygon] = interpolateDeviceFeature(ContactPolygon[polygon], ContactPolygon[polygon + count - 1], first / (first - second));
-            else if (second < -tolerance)
+            else if (second < 0)
                 ContactPolygon[polygon + count - 1] = interpolateDeviceFeature(ContactPolygon[polygon], ContactPolygon[polygon + count - 1], first / (first - second));
             continue;
         }
         uint written = 0;
         DeviceFeaturePoint previous = ContactPolygon[polygon + count - 1];
-        float previousDistance = dot(side, previous.point - origin);
+        float previousDistance = dot(side, previous.point - origin) + tolerance;
         for (uint index = 0; index < count; index++)
         {
             DeviceFeaturePoint current = ContactPolygon[polygon + index];
-            float currentDistance = dot(side, current.point - origin);
-            bool previousInside = previousDistance >= -tolerance;
-            bool currentInside = currentDistance >= -tolerance;
+            float currentDistance = dot(side, current.point - origin) + tolerance;
+            bool previousInside = previousDistance >= 0;
+            bool currentInside = currentDistance >= 0;
             if (previousInside != currentInside)
                 ContactClip[polygon + written++] = interpolateDeviceFeature(previous, current, previousDistance / (previousDistance - currentDistance));
             if (currentInside) ContactClip[polygon + written++] = current;
