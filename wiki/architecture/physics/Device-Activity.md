@@ -143,6 +143,9 @@ Body/约束颜色、计数及打包范围。两项阶段共享图持有的原缓
 
 `Readback(events)` 沿实际 RHI fence 读取活动转换，将当前实体的结果应用回原
 `BodyActivity`，并向原 `PhysicsEventBuffer` 添加 Sleep/Wake。
+CPU 完成观察在同一查询借用内按 chunk 读取活动值与原行写版本，并在同一次遍历中比较结果、收集待写主体和事件。
+接收设备活动值继续要求输入时保存的实体身份与活动行版本相等，CPU 后续编辑由此保持优先。
+写回沿原组件写入口完成；源输入变化的独立检查及两项成员版本条件继续决定输入观察窗口的推进。
 `events.Emit()` 将该步输出转入普通 `PhysicsStepEvents` 实体；
 原 `ConsumePhysicsEvents` 在 Frame 消费阶段读取并通过普通命令确认。
 完成链与消费者见 [物理事件](Events.md)。
