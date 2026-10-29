@@ -25,7 +25,8 @@ public sealed class RenderWorldExtractorTests(RenderTestDevice graphics) : IClas
         using World main = new();
         using RenderWorld render = new();
         using var extraction = new RenderExtractionSystems(render, new MeshRenderExtractor(), new CustomGeometryExtractor());
-        var material = new StandardMaterial();
+        Texture texture = TextureAsset(90, 1);
+        var material = new StandardMaterial { AlbedoMap = texture };
         Entity mesh = AddMeshSource(main, MeshAsset(5, 1), 0, Vector3.Zero);
         SetSourceBindings(main, mesh, material, default!, 1);
         Entity custom = main.CreateEntity(new CustomGeometry(material));
@@ -34,10 +35,12 @@ public sealed class RenderWorldExtractorTests(RenderTestDevice graphics) : IClas
         main.DestroyEntity(mesh);
         ExtractAndApply(extraction, main, render);
         Assert.Same(material, render.ReadMaterial(material.MaterialId));
+        Assert.Equal(texture.Versions, render.ReadTextureVersions(texture));
 
         main.DestroyEntity(custom);
         ExtractAndApply(extraction, main, render);
         Assert.Throws<KeyNotFoundException>(() => render.ReadMaterial(material.MaterialId));
+        Assert.Throws<KeyNotFoundException>(() => render.ReadTextureVersions(texture));
     }
 
     private readonly record struct CustomGeometry(Material Material) : IComponent;
@@ -203,6 +206,44 @@ public sealed class RenderWorldExtractorTests(RenderTestDevice graphics) : IClas
         Assert.Same(material, render.ReadMaterial(material.MaterialId));
         Assert.Same(texture, material.AlbedoMap);
         Assert.Same(texture, render.Read<RenderLightCookie>(mirror).Texture);
+    }
+
+    [Fact]
+    public async Task MaterialAndTextureVersionChangesApplyWhenExtractionRetries()
+    {
+        using World main = new();
+        using RenderWorld render = new();
+        using var extraction = new RenderExtractionSystems(render, new MeshRenderExtractor());
+        Texture texture = TextureAsset(98, 1);
+        var material = new StandardMaterial { AlbedoMap = texture };
+        Entity source = AddMeshSource(main, MeshAsset(5, 1), 0, Vector3.Zero);
+        SetSourceBindings(main, source, material, default!, 1);
+        ExtractAndApply(extraction, main, render);
+        ulong materialRevision = render.ReadMaterialRevision(material.MaterialId);
+        IReadOnlyDictionary<Texture, TextureVersions> earlierVersions = render.ReadTextureVersions();
+        TextureVersions before = earlierVersions[texture];
+        bool rejectChange = true;
+        render.Hooks<RenderMaterialReference>().OnReplace((DeferredWorld _, Entity _, in RenderMaterialReference _) =>
+        {
+            if (rejectChange)
+            {
+                rejectChange = false;
+                throw new InvalidOperationException();
+            }
+        });
+
+        material.Roughness = 0.9f;
+        await texture.UpdateAsync(TextureAsset(99, 1));
+        extraction.Extract(main);
+        Assert.Throws<InvalidOperationException>(() => graphics.Apply(extraction, render));
+        Assert.Equal(materialRevision, render.ReadMaterialRevision(material.MaterialId));
+        Assert.Equal(before, render.ReadTextureVersions(texture));
+
+        ExtractAndApply(extraction, main, render);
+
+        Assert.Equal(material.Revision, render.ReadMaterialRevision(material.MaterialId));
+        Assert.Equal(texture.Versions, render.ReadTextureVersions(texture));
+        Assert.Equal(before, earlierVersions[texture]);
     }
 
     [Fact]

@@ -11,14 +11,55 @@ public sealed class RenderExtractionResources
 {
     private readonly ImmutableDictionary<Texture, TextureVersions>.Builder _textures = ImmutableDictionary.CreateBuilder<Texture, TextureVersions>();
     private readonly ImmutableDictionary<long, RenderMaterialReference>.Builder _materials = ImmutableDictionary.CreateBuilder<long, RenderMaterialReference>();
-    public void Add(Texture texture) => _textures[texture] = texture.Versions;
+    private readonly HashSet<Texture> _collectedTextures = new(ReferenceEqualityComparer.Instance);
+    private readonly HashSet<long> _collectedMaterials = [];
+
+    public void Add(Texture texture)
+    {
+        if (!_collectedTextures.Add(texture)) return;
+        TextureVersions versions = texture.Versions;
+        if (!_textures.TryGetValue(texture, out TextureVersions previous) || previous != versions)
+            _textures[texture] = versions;
+    }
+
     public void Add(Material material)
     {
-        if (_materials.ContainsKey(material.MaterialId)) return;
-        _materials.Add(material.MaterialId, new(material));
+        if (!_collectedMaterials.Add(material.MaterialId)) return;
+        var reference = new RenderMaterialReference(material);
+        if (!_materials.TryGetValue(material.MaterialId, out RenderMaterialReference previous) || previous != reference)
+            _materials[material.MaterialId] = reference;
         for (uint property = 0; property < material.PropertyCount; property++)
             if (material.GetTexture(property) is { } texture) Add(texture);
     }
+
+    internal void BeginCollection()
+    {
+        _collectedTextures.Clear();
+        _collectedMaterials.Clear();
+    }
+
+    internal void CompleteCollection()
+    {
+        RemoveUncollected(_textures, _collectedTextures);
+        RemoveUncollected(_materials, _collectedMaterials);
+    }
+
+    private static void RemoveUncollected<TKey, TValue>(ImmutableDictionary<TKey, TValue>.Builder values,
+        HashSet<TKey> collected) where TKey : notnull
+    {
+        // Add has placed every collected key in the builder.
+        if (values.Count == collected.Count) return;
+        foreach (TKey key in values.Keys.ToArray())
+            if (!collected.Contains(key)) values.Remove(key);
+    }
+
+    internal void Clear()
+    {
+        _textures.Clear();
+        _materials.Clear();
+        BeginCollection();
+    }
+
     internal ImmutableDictionary<Texture, TextureVersions> Textures => _textures.ToImmutable();
     internal ImmutableDictionary<long, RenderMaterialReference> Materials => _materials.ToImmutable();
 }
@@ -29,6 +70,7 @@ internal sealed class RenderSourceResources
     private readonly Dictionary<Entity, Texture> _sourceCookies = [];
     private readonly Dictionary<Material, int> _materialReferences = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<Texture, int> _cookieReferences = new(ReferenceEqualityComparer.Instance);
+    private readonly RenderExtractionResources _resources = new();
 
     internal void BeginCollection(IEnumerable<Entity> changedSources, bool firstCollection)
     {
@@ -93,10 +135,10 @@ internal sealed class RenderSourceResources
 
     internal RenderExtractionResources CollectResources()
     {
-        var resources = new RenderExtractionResources();
-        foreach (Material material in _materialReferences.Keys) resources.Add(material);
-        foreach (Texture texture in _cookieReferences.Keys) resources.Add(texture);
-        return resources;
+        _resources.BeginCollection();
+        foreach (Material material in _materialReferences.Keys) _resources.Add(material);
+        foreach (Texture texture in _cookieReferences.Keys) _resources.Add(texture);
+        return _resources;
     }
 
     internal float ReadMaterialBoundsExpansion(Entity source)
@@ -138,5 +180,6 @@ internal sealed class RenderSourceResources
         _sourceCookies.Clear();
         _materialReferences.Clear();
         _cookieReferences.Clear();
+        _resources.Clear();
     }
 }

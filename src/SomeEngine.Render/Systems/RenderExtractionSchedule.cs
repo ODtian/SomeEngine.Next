@@ -223,13 +223,15 @@ public sealed class RenderExtractionSystems : IDisposable
                             systems._changedSystems.Add(system);
                     var resources = systems._sourceResources.CollectResources();
                     foreach (IRenderExtractionSystem system in systems._systems) system.CollectResources(query, resources);
+                    resources.CompleteCollection();
                     systems._textureVersions = resources.Textures;
                     systems._materialReferences = resources.Materials;
                     systems._context.MaterialReferences = systems._materialReferences;
                     systems._materialsChanged = systems._renderWorld.HaveMaterialsChanged(systems._materialReferences);
                     var before = systems._renderWorld.TextureVersions;
-                    systems._texturesChanged = before.Count != systems._textureVersions.Count ||
-                        systems._textureVersions.Any(pair => !before.TryGetValue(pair.Key, out var version) || version != pair.Value);
+                    systems._texturesChanged = !ReferenceEquals(before, systems._textureVersions) &&
+                        (before.Count != systems._textureVersions.Count ||
+                            systems._textureVersions.Any(pair => !before.TryGetValue(pair.Key, out var version) || version != pair.Value));
                 });
             foreach (IRenderExtractionSystem system in _systems)
                 if (system.CompleteCollection(_context, _candidateFullReconciliation))
