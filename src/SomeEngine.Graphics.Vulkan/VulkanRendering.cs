@@ -76,35 +76,24 @@ internal sealed unsafe partial class VulkanBackend
         VulkanCommandContext command = RequireCommandContext(context, nameof(context));
         VulkanPipeline native = RequirePipeline((VulkanDevice)command.Device, pipeline, nameof(pipeline));
         PipelineBindPoint bindPoint = ToBindPoint(native.Type);
-        ReadOnlySpan<VulkanBindlessSetBinding> bindings = native.Layout.BindlessBindings;
-        VulkanBindlessSnapshot? snapshot = bindings.IsEmpty
-            ? null
-            : ((VulkanDevice)command.Device).BindlessPublisher.Acquire(bindings);
-        try
-        {
-            Api.CmdBindPipeline(command.NativeRecording, bindPoint, native.Native);
-            if (snapshot is not null)
-                BindBindlessDescriptors(command, native, bindPoint, snapshot);
-            command.SetCurrentPipeline(native);
-            command.Capture(native);
-            if (snapshot is not null)
-                command.Capture(snapshot);
-        }
-        finally
-        {
-            snapshot?.ReleaseNative();
-        }
+        ReadOnlySpan<VulkanBoundBindlessSet> sets =
+            command.CaptureBindlessDescriptors(native.Layout.BindlessBindings);
+        Api.CmdBindPipeline(command.NativeRecording, bindPoint, native.Native);
+        BindBindlessDescriptors(command, native, bindPoint, sets);
+        command.SetCurrentPipeline(native);
+        command.Capture(native);
+        command.CaptureBindlessSparseBindings(sets);
     }
 
     private void BindBindlessDescriptors(
         VulkanCommandContext command,
         VulkanPipeline pipeline,
         PipelineBindPoint bindPoint,
-        VulkanBindlessSnapshot snapshot)
+        ReadOnlySpan<VulkanBoundBindlessSet> sets)
     {
-        foreach (ref readonly VulkanBoundDescriptorSet binding in snapshot.Sets.AsSpan())
+        foreach (ref readonly VulkanBoundBindlessSet binding in sets)
         {
-            VkDescriptorSet set = binding.Native;
+            VkDescriptorSet set = binding.Generation.Set;
             Api.CmdBindDescriptorSets(
                 command.NativeRecording,
                 bindPoint,

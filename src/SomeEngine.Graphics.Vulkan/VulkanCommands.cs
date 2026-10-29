@@ -690,6 +690,20 @@ internal sealed unsafe partial class VulkanBackend
             ReturnSlot(slot);
         }
 
+        internal ReadOnlySpan<VulkanBoundBindlessSet> CaptureBindlessDescriptors(
+            ReadOnlySpan<VulkanBindlessSetBinding> bindings)
+        {
+            VulkanCommandSlot commands = _recording
+                ?? throw new InvalidOperationException("The CommandContext is not recording.");
+            return commands.CaptureBindlessDescriptors(bindings);
+        }
+
+        internal void CaptureBindlessSparseBindings(ReadOnlySpan<VulkanBoundBindlessSet> sets)
+        {
+            foreach (ref readonly VulkanBoundBindlessSet binding in sets)
+                binding.Generation.CaptureSparseBindings(_recording!);
+        }
+
         internal void Capture(IVulkanRetained value)
         {
             VulkanCommandSlot slot = _recording
@@ -915,6 +929,7 @@ internal sealed unsafe partial class VulkanBackend
         VkCommandBuffer native)
     {
         private readonly HashSet<IVulkanRetained> _captures = [];
+        private VulkanBoundBindlessSet[] _bindlessSets = [];
         private VulkanSwapchainUse[] _swapchainUses = [];
         private int _swapchainUseCount;
         private VulkanRecordedCommandsLease? _activeLease;
@@ -1015,6 +1030,36 @@ internal sealed unsafe partial class VulkanBackend
             return _swapchainUses[index];
         }
 
+        internal ReadOnlySpan<VulkanBoundBindlessSet> CaptureBindlessDescriptors(
+            ReadOnlySpan<VulkanBindlessSetBinding> bindings)
+        {
+            if (bindings.IsEmpty)
+                return [];
+            if (_bindlessSets.Length < bindings.Length)
+                Array.Resize(ref _bindlessSets, bindings.Length);
+            Span<VulkanBoundBindlessSet> sets = _bindlessSets.AsSpan(0, bindings.Length);
+            device.BindlessPublisher.Capture(bindings, this, sets);
+            return sets;
+        }
+
+        internal void CaptureSparseBindings(VulkanSparseState resource)
+        {
+            VulkanSparseBindings bindings = resource.CaptureBindings();
+            try { CaptureReference(bindings); }
+            finally { bindings.ReleaseNative(); }
+        }
+
+        internal static VulkanSparseState? GetSparseState(IVulkanRetained value) => value switch
+        {
+            VulkanBuffer buffer => buffer.SparseState,
+            VulkanTexture texture => texture.SparseState,
+            BufferCbv view => ((VulkanBuffer)view.Resource).SparseState,
+            BufferSrv view => ((VulkanBuffer)view.Resource).SparseState,
+            BufferUav view => ((VulkanBuffer)view.Resource).SparseState,
+            IVulkanTextureView view => view.Texture.SparseState,
+            _ => null,
+        };
+
         internal void CaptureSparseBindings(IVulkanRetained value)
         {
             switch (value)
@@ -1025,26 +1070,9 @@ internal sealed unsafe partial class VulkanBackend
                 case VulkanBindlessGeneration descriptors:
                     descriptors.CaptureSparseBindings(this);
                     return;
-                case VulkanBindlessSnapshot descriptors:
-                    descriptors.CaptureSparseBindings(this);
-                    return;
             }
-            VulkanSparseState? state = value switch
-            {
-                VulkanBuffer buffer => buffer.SparseState,
-                VulkanTexture texture => texture.SparseState,
-                BufferCbv view => ((VulkanBuffer)view.Resource).SparseState,
-                BufferSrv view => ((VulkanBuffer)view.Resource).SparseState,
-                BufferUav view => ((VulkanBuffer)view.Resource).SparseState,
-                IVulkanTextureView view => view.Texture.SparseState,
-                _ => null,
-            };
-            if (state is not null)
-            {
-                VulkanSparseBindings bindings = state.CaptureBindings();
-                try { Capture(bindings); }
-                finally { bindings.ReleaseNative(); }
-            }
+            if (GetSparseState(value) is VulkanSparseState resource)
+                CaptureSparseBindings(resource);
             if (value is BufferUav { Description.CounterBuffer: VulkanBuffer counter })
                 CaptureSparseBindings(counter);
         }
@@ -1052,6 +1080,11 @@ internal sealed unsafe partial class VulkanBackend
         internal void Capture(IVulkanRetained value)
         {
             CaptureSparseBindings(value);
+            CaptureReference(value);
+        }
+
+        internal void CaptureReference(IVulkanRetained value)
+        {
             if (!_captures.Add(value))
                 return;
             try
@@ -1070,6 +1103,7 @@ internal sealed unsafe partial class VulkanBackend
             foreach (IVulkanRetained value in _captures)
                 value.ReleaseNative();
             _captures.Clear();
+            Array.Clear(_bindlessSets);
             DescriptorArena.ResetAfterCompletion();
             Array.Clear(_swapchainUses, 0, _swapchainUseCount);
             _swapchainUseCount = 0;

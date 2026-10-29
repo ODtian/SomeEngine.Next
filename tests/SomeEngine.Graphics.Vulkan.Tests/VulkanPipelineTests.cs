@@ -449,7 +449,7 @@ public sealed class VulkanPipelineTests(VulkanTestCompiler shaderCompiler)
             new ComputePipelineDesc(shader.SlangCode, shader.Reflection, shader.Entries[0], shader.GetEntryCode(0)));
         using Buffer output = backend.CreateBuffer(
             device,
-            new BufferDesc(12, BufferUsages.ShaderWrite | BufferUsages.CopySource));
+            new BufferDesc(20, BufferUsages.ShaderWrite | BufferUsages.CopySource));
         using BufferUav outputView = backend.CreateBufferUav(
             device,
             new BufferUavDesc(
@@ -458,7 +458,7 @@ public sealed class VulkanPipelineTests(VulkanTestCompiler shaderCompiler)
                 StructureStride: sizeof(uint)));
         using Buffer readback = backend.CreateBuffer(
             device,
-            new BufferDesc(12, BufferUsages.CopyDestination),
+            new BufferDesc(20, BufferUsages.CopyDestination),
             MemoryType.Readback);
         using CommandContext context = backend.CreateCommandContext(
             device,
@@ -497,13 +497,37 @@ public sealed class VulkanPipelineTests(VulkanTestCompiler shaderCompiler)
             ResourceAccess.UnorderedAccess,
             ResourceAccess.UnorderedAccess));
         RecordDispatch(2);
+        backend.WriteDescriptor(
+            table,
+            0,
+            ResourceBinding.ReadOnlyBuffer(firstView));
+        backend.PublishDescriptors(device);
+        backend.Barrier(context, new BufferBarrier(
+            output,
+            PipelineSync.ComputeShading,
+            PipelineSync.ComputeShading,
+            ResourceAccess.UnorderedAccess,
+            ResourceAccess.UnorderedAccess));
+        RecordDispatch(3);
+        backend.WriteDescriptor(
+            table,
+            0,
+            ResourceBinding.ReadOnlyBuffer(secondView));
+        backend.PublishDescriptors(device);
+        backend.Barrier(context, new BufferBarrier(
+            output,
+            PipelineSync.ComputeShading,
+            PipelineSync.ComputeShading,
+            ResourceAccess.UnorderedAccess,
+            ResourceAccess.UnorderedAccess));
+        RecordDispatch(4);
         backend.Barrier(context, new BufferBarrier(
             output,
             PipelineSync.ComputeShading,
             PipelineSync.Copy,
             ResourceAccess.UnorderedAccess,
             ResourceAccess.CopySource));
-        backend.CopyBuffer(context, new BufferCopy(output, 0, readback, 0, 12));
+        backend.CopyBuffer(context, new BufferCopy(output, 0, readback, 0, 20));
         using RecordedCommands secondCommands = backend.End(context);
 
         table.Dispose();
@@ -526,6 +550,8 @@ public sealed class VulkanPipelineTests(VulkanTestCompiler shaderCompiler)
         Assert.Equal(11u, BitConverter.ToUInt32(mapped.Bytes));
         Assert.Equal(11u, BitConverter.ToUInt32(mapped.Bytes[4..]));
         Assert.Equal(22u, BitConverter.ToUInt32(mapped.Bytes[8..]));
+        Assert.Equal(11u, BitConverter.ToUInt32(mapped.Bytes[12..]));
+        Assert.Equal(22u, BitConverter.ToUInt32(mapped.Bytes[16..]));
 
         Buffer CreateSource(uint value)
         {

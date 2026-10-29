@@ -164,34 +164,22 @@ internal sealed unsafe partial class VulkanBackend
             }
         }
 
-        internal VulkanBindlessSnapshot Acquire(
-            ReadOnlySpan<VulkanBindlessSetBinding> bindings)
+        internal void Capture(
+            ReadOnlySpan<VulkanBindlessSetBinding> bindings,
+            VulkanCommandSlot commands,
+            Span<VulkanBoundBindlessSet> sets)
         {
             lock (_gate)
             {
                 ThrowIfReleased();
-                var generations = new VulkanBindlessGeneration[bindings.Length];
-                var sets = new VulkanBoundDescriptorSet[bindings.Length];
-                int acquired = 0;
-                try
+                for (int index = 0; index < bindings.Length; index++)
                 {
-                    for (int index = 0; index < bindings.Length; index++)
-                    {
-                        VulkanBindlessHeap heap = GetOrCreateHeap(bindings[index].Kind);
-                        VulkanBindlessGeneration generation = heap.AcquireGeneration();
-                        generations[index] = generation;
-                        sets[index] = new VulkanBoundDescriptorSet(
-                            bindings[index].Set,
-                            generation.Set);
-                        acquired++;
-                    }
-                    return new VulkanBindlessSnapshot(generations, sets);
-                }
-                catch
-                {
-                    for (int index = acquired - 1; index >= 0; index--)
-                        generations[index].ReleaseNative();
-                    throw;
+                    VulkanBindlessHeap heap = GetOrCreateHeap(bindings[index].Kind);
+                    VulkanBindlessGeneration generation = heap.CurrentGeneration;
+                    commands.CaptureReference(generation);
+                    sets[index] = new VulkanBoundBindlessSet(
+                        bindings[index].Set,
+                        generation);
                 }
             }
         }
@@ -440,19 +428,7 @@ internal sealed unsafe partial class VulkanBackend
         internal VulkanBindlessGeneration CreateGeneration() =>
             VulkanBindlessGeneration.Create(_device, Layout, _type, _capacity);
 
-        internal VulkanBindlessGeneration AcquireGeneration()
-        {
-            while (true)
-            {
-                VulkanBindlessGeneration generation = Volatile.Read(ref _current)
-                    ?? throw new ObjectDisposedException(nameof(VulkanBindlessHeap));
-                try { generation.RetainNative(); }
-                catch (ObjectDisposedException) { continue; }
-                if (ReferenceEquals(generation, Volatile.Read(ref _current)))
-                    return generation;
-                generation.ReleaseNative();
-            }
-        }
+        internal VulkanBindlessGeneration CurrentGeneration => _current!;
 
         internal void Publish(VulkanBindlessGeneration generation)
         {
@@ -478,6 +454,7 @@ internal sealed unsafe partial class VulkanBackend
     {
         private readonly VulkanDevice _device;
         private readonly List<IVulkanRetained> _retained = [];
+        private List<VulkanSparseState>? _sparseResources;
         private readonly VulkanLifetime _lifetime;
         private VkDescriptorPool _pool;
 
@@ -495,7 +472,9 @@ internal sealed unsafe partial class VulkanBackend
         internal VkDescriptorSet Set { get; }
         internal void CaptureSparseBindings(VulkanCommandSlot commands)
         {
-            foreach (IVulkanRetained resource in _retained)
+            if (_sparseResources is null)
+                return;
+            foreach (VulkanSparseState resource in _sparseResources)
                 commands.CaptureSparseBindings(resource);
         }
 
@@ -560,6 +539,13 @@ internal sealed unsafe partial class VulkanBackend
             {
                 retained.RetainNative();
                 _retained.Add(retained);
+                if (VulkanCommandSlot.GetSparseState(retained) is VulkanSparseState resource)
+                    (_sparseResources ??= []).Add(resource);
+                if (retained is BufferUav { Description.CounterBuffer: VulkanBuffer counter } &&
+                    counter.SparseState is VulkanSparseState counterResource)
+                {
+                    (_sparseResources ??= []).Add(counterResource);
+                }
             }
             var slot = new VulkanDescriptorSlot(
                 value.Type,
@@ -584,39 +570,13 @@ internal sealed unsafe partial class VulkanBackend
             for (int index = _retained.Count - 1; index >= 0; index--)
                 _retained[index].ReleaseNative();
             _retained.Clear();
+            _sparseResources?.Clear();
         }
     }
 
-    private sealed class VulkanBindlessSnapshot : IVulkanRetained
-    {
-        private readonly VulkanBindlessGeneration[] _generations;
-        private readonly VulkanLifetime _lifetime;
-
-        internal VulkanBindlessSnapshot(
-            VulkanBindlessGeneration[] generations,
-            VulkanBoundDescriptorSet[] sets)
-        {
-            _generations = generations;
-            Sets = sets;
-            _lifetime = new VulkanLifetime(DestroyNative);
-        }
-
-        internal VulkanBoundDescriptorSet[] Sets { get; }
-        internal void CaptureSparseBindings(VulkanCommandSlot commands)
-        {
-            foreach (IVulkanRetained resource in _generations)
-                commands.CaptureSparseBindings(resource);
-        }
-
-        public void RetainNative() => _lifetime.Retain();
-        public void ReleaseNative() => _lifetime.Release();
-
-        private void DestroyNative()
-        {
-            for (int index = _generations.Length - 1; index >= 0; index--)
-                _generations[index].ReleaseNative();
-        }
-    }
+    private readonly record struct VulkanBoundBindlessSet(
+        uint Set,
+        VulkanBindlessGeneration Generation);
 
     private readonly record struct VulkanBoundDescriptorSet(
         uint Set,
