@@ -177,7 +177,7 @@ void buildDeviceConstraintGraph()
         uint color = 0; while (deviceGraphBodyColorUsed(body,color)) color++;
         ConstraintGraphBodyColors[body] = color; bodyColors = max(bodyColors,color+1);
     }
-    uint bodyPosition = 0;
+    uint bodyPosition = 0, maximumBodyColorSize = 0;
     for (uint color = 0; color < bodyColors; color++)
     {
         uint first = bodyPosition;
@@ -188,6 +188,7 @@ void buildDeviceConstraintGraph()
             if (ConstraintGraphBodyColors[body] == color) ConstraintGraphBodyOrder[bodyPosition++] = body;
         }
         ConstraintGraphBodyRanges[color] = uint2(first,bodyPosition-first);
+        maximumBodyColorSize = max(maximumBodyColorSize,bodyPosition-first);
     }
     uint rowPosition = 0, stages = 0;
     for (uint group = 0; group < groupCount; group++)
@@ -211,5 +212,6 @@ void buildDeviceConstraintGraph()
     }
     ConstraintGraphCounts[0] = activeBodies; ConstraintGraphCounts[1] = bodyColors;
     ConstraintGraphCounts[2] = stages; ConstraintGraphCounts[3] = islandCount;
+    ConstraintGraphCounts[4] = maximumBodyColorSize;
 }
 #endif

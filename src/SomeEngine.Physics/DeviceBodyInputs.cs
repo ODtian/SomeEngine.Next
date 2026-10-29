@@ -47,7 +47,7 @@ public sealed class DeviceBodyInputs : IDisposable
             static (scoped QueryCursor rows,
                 ref (DeviceBodyInputs Inputs, long Number, int Substep, uint Version) inputs) =>
         {
-            foreach (QueryRow row in rows.Rows) inputs.Inputs.Read(row, inputs.Number, inputs.Substep);
+            foreach (QueryChunkView chunk in rows.Chunks) inputs.Inputs.Read(chunk, inputs.Number, inputs.Substep);
             inputs.Version = rows.CurrentSystemVersion;
         });
         _ranges.Sort(static (first, second) => first.Offset.CompareTo(second.Offset));
@@ -67,25 +67,39 @@ public sealed class DeviceBodyInputs : IDisposable
         return complete;
     }
 
-    private void Read(scoped QueryRow row, long number, int substep)
+    private void Read(scoped QueryChunkView chunk, long number, int substep)
     {
-        DeviceBodyBinding binding = row.Read<DeviceBodyBinding>();
-        if (!ReferenceEquals(binding.Bodies, _bodies)) return;
-        DeviceBodies.BodyInputVersions version = DeviceBodies.ReadVersions(row);
-        DeviceBodies.BodyInputVersions previous = _bodies.ReadCpuVersions(binding.Index);
-        DeviceBodies.BodyInputComponents changed = DeviceBodies.ChangedInputs(in version, in previous);
-        if (changed == 0) return;
-        _bodies.RecordCpuInputChange(binding.Index, row.Entity, changed, number, substep);
-        _bodies.WriteInput(row, binding.Index);
-        _changes.Add((binding.Index, version));
-        ulong start = (ulong)binding.Index * DeviceBodies.StateStride;
-        if (previous.Entity != row.Entity) { _ranges.Add(new(start, DeviceBodies.StateStride)); return; }
-        if ((changed & DeviceBodies.BodyInputComponents.Pose) != 0) { Add(0, 12); Add(16, 16); }
-        if ((changed & DeviceBodies.BodyInputComponents.Mass) != 0)
-        { Add(12, 4); Add(44, 4); Add(64, 12); Add(80, 12); Add(96, 12); Add(112, 12); }
-        if ((changed & DeviceBodies.BodyInputComponents.Velocity) != 0) { Add(32, 12); Add(48, 12); }
-        if ((changed & DeviceBodies.BodyInputComponents.Step) != 0) Add(128, 80);
-        void Add(ulong offset, ulong size) => _ranges.Add(new(start + offset, size));
+        ReadOnlySpan<uint> poseVersions = chunk.ReadWriteVersions<BodyPose>();
+        ReadOnlySpan<uint> massVersions = chunk.ReadWriteVersions<BodyMass>();
+        ReadOnlySpan<uint> velocityVersions = chunk.ReadWriteVersions<BodyVelocity>();
+        ReadOnlySpan<uint> stepVersions = chunk.ReadWriteVersions<BodyStepState>();
+        foreach (int index in chunk.RowIndices)
+        {
+            DeviceBodyBinding binding = chunk.Read<DeviceBodyBinding>(index);
+            if (!ReferenceEquals(binding.Bodies, _bodies)) continue;
+            Entity entity = chunk.GetEntity(index);
+            var version = new DeviceBodies.BodyInputVersions(entity, poseVersions[index], massVersions[index],
+                velocityVersions[index], stepVersions[index], DeviceBodies.BodyInputComponents.All);
+            DeviceBodies.BodyInputVersions previous = _bodies.ReadCpuVersions(binding.Index);
+            DeviceBodies.BodyInputComponents changed = DeviceBodies.ChangedInputs(in version, in previous);
+            if (changed == 0) continue;
+            _bodies.RecordCpuInputChange(binding.Index, entity, changed, number, substep);
+            BodyPose pose = chunk.Read<BodyPose>(index);
+            BodyMass mass = chunk.Read<BodyMass>(index);
+            BodyVelocity velocity = chunk.Read<BodyVelocity>(index);
+            BodyStepState step = chunk.Read<BodyStepState>(index);
+            DeviceBodyState input = DeviceBodies.ReadInput(entity, in pose, in mass, in velocity, in step);
+            _bodies.WriteInput(binding.Index, in input);
+            _changes.Add((binding.Index, version));
+            ulong start = (ulong)binding.Index * DeviceBodies.StateStride;
+            if (previous.Entity != entity) { _ranges.Add(new(start, DeviceBodies.StateStride)); continue; }
+            if ((changed & DeviceBodies.BodyInputComponents.Pose) != 0) { Add(0, 12); Add(16, 16); }
+            if ((changed & DeviceBodies.BodyInputComponents.Mass) != 0)
+            { Add(12, 4); Add(44, 4); Add(64, 12); Add(80, 12); Add(96, 12); Add(112, 12); }
+            if ((changed & DeviceBodies.BodyInputComponents.Velocity) != 0) { Add(32, 12); Add(48, 12); }
+            if ((changed & DeviceBodies.BodyInputComponents.Step) != 0) Add(128, 80);
+            void Add(ulong offset, ulong size) => _ranges.Add(new(start + offset, size));
+        }
     }
     public void Dispose() => _world.ReleaseQuery(_members);
     private readonly struct Transfer(DeviceBodyInputs inputs, long number, int substep) : IDevicePhysicsSubmission

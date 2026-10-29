@@ -38,7 +38,7 @@ public sealed partial class DeviceConstraintGraph : IDisposable
     private readonly List<BufferUav> _views = [];
     private readonly JobResourceAccess[] _extraAccesses;
     private readonly IDeviceConstraintSelection[] _selections;
-    private readonly uint[] _counts = new uint[4];
+    private readonly uint[] _counts = new uint[5];
     private readonly Buffer _countBuffer;
     private readonly DeviceGraphParallelKernels? _parallel;
     private readonly Buffer? _buildProgress;
@@ -67,7 +67,7 @@ public sealed partial class DeviceConstraintGraph : IDisposable
         AddBuffer("ConstraintGraphAdjacency", capacity.Constraints * capacity.BodiesPerConstraint, 4);
         AddBuffer("ConstraintGraphScratch", bodies.Capacity, 4);
         AddBuffer("ConstraintGraphIslands", bodies.Capacity, 4);
-        _countBuffer = AddBuffer("ConstraintGraphCounts", 4, 4);
+        _countBuffer = AddBuffer("ConstraintGraphCounts", 5, 4);
         if (_parallel.HasValue)
         {
             int blocks = (bodies.Capacity + 255) / 256;
@@ -80,7 +80,7 @@ public sealed partial class DeviceConstraintGraph : IDisposable
         }
         _parameters = backend.CreateBuffer(device, new(256, BufferUsages.Constant, "Constraint graph dimensions"), MemoryType.Upload);
         _parametersView = backend.CreateBufferCbv(device, new(_parameters, new(0, 256)));
-        _readback = backend.CreateBuffer(device, new(_parallel.HasValue ? 32UL : 16UL, BufferUsages.CopyDestination, "Constraint graph work counts"), MemoryType.Readback);
+        _readback = backend.CreateBuffer(device, new(_parallel.HasValue ? 36UL : 20UL, BufferUsages.CopyDestination, "Constraint graph work counts"), MemoryType.Readback);
         _commands = backend.CreateCommandContext(device, new(QueueType.Compute, 0, 1, Label: "Device constraint graph"));
         _graphBindings.Add("ConstraintGraphParameters", [ResourceBinding.ConstantBuffer(_parametersView)]);
         _graphBindings.Add("DeviceBodyStates", [ResourceBinding.WritableBuffer(bodies.View)]);
@@ -99,6 +99,7 @@ public sealed partial class DeviceConstraintGraph : IDisposable
     public int BodyCount => (int)_counts[0];
     public int IslandCount => (int)_counts[3];
     public int ConstraintCapacity => _capacity.Constraints;
+    internal int MaximumBodyColorSize => (int)_counts[4];
     internal int BodiesPerConstraint => _capacity.BodiesPerConstraint;
     public BuildDeviceConstraintGraph Build() => new(this);
     public BuildDeviceConstraintConnectivity BuildConnectivity() => new(this);
@@ -162,7 +163,7 @@ public sealed partial class DeviceConstraintGraph : IDisposable
         _backend.Dispatch(_commands, new(1, 1, 1));
         _backend.Barrier(_commands, new BufferBarrier(_countBuffer, PipelineSync.ComputeShading, PipelineSync.Copy,
             ResourceAccess.UnorderedAccess, ResourceAccess.CopySource));
-        _backend.CopyBuffer(_commands, new(_countBuffer, 0, _readback, 0, 16));
+        _backend.CopyBuffer(_commands, new(_countBuffer, 0, _readback, 0, 20));
         _backend.Barrier(_commands, new BufferBarrier(_countBuffer, PipelineSync.Copy, PipelineSync.ComputeShading,
             ResourceAccess.CopySource, ResourceAccess.UnorderedAccess));
         using RecordedCommands recorded = _backend.End(_commands);

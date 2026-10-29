@@ -102,8 +102,8 @@ public sealed partial class DeviceConstraintGraph
             ResourceAccess.UnorderedAccess, ResourceAccess.CopySource));
         _backend.Barrier(_commands, new BufferBarrier(_buildProgress!, PipelineSync.ComputeShading, PipelineSync.Copy,
             ResourceAccess.UnorderedAccess, ResourceAccess.CopySource));
-        _backend.CopyBuffer(_commands, new(_countBuffer, 0, _readback, 0, 16));
-        _backend.CopyBuffer(_commands, new(_buildProgress!, 0, _readback, 16, 16));
+        _backend.CopyBuffer(_commands, new(_countBuffer, 0, _readback, 0, 20));
+        _backend.CopyBuffer(_commands, new(_buildProgress!, 0, _readback, 20, 16));
         _backend.Barrier(_commands, new BufferBarrier(_countBuffer, PipelineSync.Copy, PipelineSync.ComputeShading,
             ResourceAccess.CopySource, ResourceAccess.UnorderedAccess));
         _backend.Barrier(_commands, new BufferBarrier(_buildProgress!, PipelineSync.Copy, PipelineSync.ComputeShading,
@@ -114,7 +114,7 @@ public sealed partial class DeviceConstraintGraph
         {
             mapping.Invalidate(mapping.Range);
             ReadOnlySpan<uint> counts = MemoryMarshal.Cast<byte, uint>(mapping.Bytes);
-            counts[..4].CopyTo(_counts); counts.Slice(4, 4).CopyTo(_colorProgress);
+            counts[..5].CopyTo(_counts); counts.Slice(5, 4).CopyTo(_colorProgress);
         }
         _backend.CollectCompleted(_device);
     }
