@@ -37,34 +37,13 @@ StructuredBuffer<uint> LightIndexList;
 StructuredBuffer<float> DynamicResolutionBias;
 #include "vsm_page_request_common.slang"
 
-uint PublishVirtualShadowPage(
-    VirtualShadowMapParameters shadowView,
-    uint mipLevel,
-    int2 localPage)
-{
-    uint dimension = VirtualShadowMipPagesPerRow(shadowView, mipLevel);
-    if (any(localPage < 0) || any(localPage >= int(dimension)))
-        return 0xFFFFFFFFu;
-    uint tableIndex = VirtualShadowPageTableIndex(
-        shadowView, mipLevel, uint2(localPage));
-    PublishVirtualShadowRequest(
-        tableIndex,
-        VSM_PAGE_REQUEST_DETAIL,
-        PageDemand.FrameIndex,
-        PageDemand.PageTableEntryCount);
-    return tableIndex;
-}
-
 bool PublishProjectedShadowViewPixels(
-    uint viewIndex,
+    VirtualShadowMapParameters shadowView,
     uint mipLevel,
     float3 worldPosition, out float2 footprintUV, out float2 footprintBorder)
 {
     footprintUV = 0.0.xx;
     footprintBorder = 0.0.xx;
-    if (viewIndex >= PageDemand.ViewCount)
-        return false;
-    VirtualShadowMapParameters shadowView = ShadowViews[viewIndex];
     mipLevel = clamp(mipLevel, VirtualShadowFirstMip(shadowView), shadowView.MipLevelCount - 1u);
     float3 shadowNdc;
     float2 shadowUv;
@@ -73,24 +52,8 @@ bool PublishProjectedShadowViewPixels(
 
     uint mipResolution = VirtualShadowMipResolution(shadowView, mipLevel);
     float2 borderPixels = max(PageDemand.PageDilationBorderPages, shadowView.PageDilationBorder) * float(shadowView.PageSize);
-    if (shadowView.LightKind != VSM_LIGHT_DIRECTIONAL && shadowView.SourceRadius > 0.0)
-    {
-        float radius = CalculateVirtualShadowLocalSourceSupport(shadowView, worldPosition);
-        float4 clip = ProjectVirtualShadowClip(shadowView, worldPosition);
-        float3 x = float3(shadowView.LightViewProjection[0][0],
-            shadowView.LightViewProjection[1][0], shadowView.LightViewProjection[2][0]);
-        float3 y = float3(shadowView.LightViewProjection[0][1],
-            shadowView.LightViewProjection[1][1], shadowView.LightViewProjection[2][1]);
-        float3 w = float3(shadowView.LightViewProjection[0][3],
-            shadowView.LightViewProjection[1][3], shadowView.LightViewProjection[2][3]);
-        float minimumW = clip.w - length(w) * radius;
-        float2 border = minimumW > 1e-6
-            ? 0.5 * (float2(length(x), length(y)) * radius * clip.w +
-                abs(clip.xy) * length(w) * radius) / (clip.w * minimumW)
-            : 1.0.xx;
-        borderPixels += border * float(mipResolution);
-    }
-    if (PageDemand.NormalBias > 0.0)
+    bool localSource = shadowView.LightKind != VSM_LIGHT_DIRECTIONAL && shadowView.SourceRadius > 0.0;
+    if (localSource || PageDemand.NormalBias > 0.0)
     {
         float4 clip = ProjectVirtualShadowClip(shadowView, worldPosition);
         float3 x = float3(shadowView.LightViewProjection[0][0],
@@ -99,15 +62,29 @@ bool PublishProjectedShadowViewPixels(
             shadowView.LightViewProjection[1][1], shadowView.LightViewProjection[2][1]);
         float3 w = float3(shadowView.LightViewProjection[0][3],
             shadowView.LightViewProjection[1][3], shadowView.LightViewProjection[2][3]);
-        float normalBiasLength = CalculateVirtualShadowNormalBiasLength(PageDemand.ReceiverProjection,
-            worldPosition, PageDemand.NormalBias, shadowView.WorldUnitsPerCentimeter);
-        float2 xyChange = float2(length(x), length(y)) * normalBiasLength;
-        float wChange = length(w) * normalBiasLength;
-        float minimumW = clip.w - wChange;
-        float2 uvBorder = minimumW > 1e-6
-            ? 0.5 * (xyChange * clip.w + abs(clip.xy) * wChange) / (clip.w * minimumW)
-            : 1.0.xx;
-        borderPixels += uvBorder * float(mipResolution);
+        float2 xyLength = float2(length(x), length(y));
+        float wLength = length(w);
+        if (localSource)
+        {
+            float radius = CalculateVirtualShadowLocalSourceSupport(shadowView, worldPosition);
+            float minimumW = clip.w - wLength * radius;
+            float2 border = minimumW > 1e-6
+                ? 0.5 * (xyLength * radius * clip.w + abs(clip.xy) * wLength * radius) / (clip.w * minimumW)
+                : 1.0.xx;
+            borderPixels += border * float(mipResolution);
+        }
+        if (PageDemand.NormalBias > 0.0)
+        {
+            float normalBiasLength = CalculateVirtualShadowNormalBiasLength(PageDemand.ReceiverProjection,
+                worldPosition, PageDemand.NormalBias, shadowView.WorldUnitsPerCentimeter);
+            float2 xyChange = xyLength * normalBiasLength;
+            float wChange = wLength * normalBiasLength;
+            float minimumW = clip.w - wChange;
+            float2 uvBorder = minimumW > 1e-6
+                ? 0.5 * (xyChange * clip.w + abs(clip.xy) * wChange) / (clip.w * minimumW)
+                : 1.0.xx;
+            borderPixels += uvBorder * float(mipResolution);
+        }
     }
     footprintUV = shadowUv;
     footprintBorder = borderPixels / float(mipResolution);
@@ -118,24 +95,27 @@ bool PublishProjectedShadowViewPixels(
         0.0.xx, float(mipResolution - 1u).xx);
     uint2 lastPixel = (uint2)clamp(floor(shadowUv * float(mipResolution) + borderPixels),
         0.0.xx, float(mipResolution - 1u).xx);
-    uint2 firstPage = firstPixel / shadowView.PageSize;
-    uint2 lastPage = lastPixel / shadowView.PageSize;
+    uint pageShift = firstbithigh(shadowView.PageSize);
+    uint2 firstPage = firstPixel >> pageShift;
+    uint2 lastPage = lastPixel >> pageShift;
     for (uint y = firstPage.y; y <= lastPage.y; y++)
     for (uint x = firstPage.x; x <= lastPage.x; x++)
     {
         uint2 page = uint2(x, y);
-        uint tableIndex = PublishVirtualShadowPage(shadowView, mipLevel, int2(page));
-        if (tableIndex != 0xFFFFFFFFu && (shadowView.Flags & VSM_VIEW_USE_RECEIVER_MASK) != 0u)
+        uint tableIndex = VirtualShadowPageTableIndex(shadowView, mipLevel, page);
+        PublishVirtualShadowRequest(tableIndex, VSM_PAGE_REQUEST_DETAIL,
+            PageDemand.FrameIndex, PageDemand.PageTableEntryCount);
+        if ((shadowView.Flags & VSM_VIEW_USE_RECEIVER_MASK) != 0u)
             MarkVirtualShadowReceiverRectangle(shadowView, mipLevel, page, firstPixel, lastPixel);
     }
     return true;
 }
 
-void PublishProjectedShadowView(uint viewIndex, uint mipLevel, float3 worldPosition)
+void PublishProjectedShadowView(uint viewIndex, VirtualShadowMapParameters view,
+    uint mipLevel, float3 worldPosition)
 {
     float2 uv, border;
-    if (!PublishProjectedShadowViewPixels(viewIndex, mipLevel, worldPosition, uv, border)) return;
-    VirtualShadowMapParameters view = ShadowViews[viewIndex];
+    if (!PublishProjectedShadowViewPixels(view, mipLevel, worldPosition, uv, border)) return;
     if (view.LightKind != VSM_LIGHT_POINT ||
         (all(uv - border >= 0.0) && all(uv + border < 1.0))) return;
     float3 axisX = normalize(float3(view.LightViewProjection[0][0],
@@ -146,7 +126,7 @@ void PublishProjectedShadowView(uint viewIndex, uint mipLevel, float3 worldPosit
         view.LightViewProjection[1][3], view.LightViewProjection[2][3]));
     uint firstFace = viewIndex - view.FaceIndex;
     float distance = length(worldPosition - view.LightPosition);
-    [unroll]
+    [loop]
     for (uint corner = 0u; corner < 4u; corner++)
     {
         float2 edgeUV = uv + border * float2((corner & 1u) != 0u ? 1.0 : -1.0,
@@ -157,12 +137,13 @@ void PublishProjectedShadowView(uint viewIndex, uint mipLevel, float3 worldPosit
         uint face = VirtualShadowPointFace(direction);
         if (face == view.FaceIndex) continue;
         float2 adjacentUV, adjacentBorder;
-        PublishProjectedShadowViewPixels(firstFace + face, mipLevel,
+        PublishProjectedShadowViewPixels(ShadowViews[firstFace + face], mipLevel,
             view.LightPosition + direction * distance, adjacentUV, adjacentBorder);
     }
 }
 
-void PublishLocalShadowPosition(float3 worldPosition, uint viewIndex, float dynamicResolutionBias)
+void PublishLocalShadowPosition(float3 worldPosition, uint viewIndex,
+    float dynamicResolutionBias, float receiverResolutionBias)
 {
     ClusteredLightGridParameters lighting = LightingViews[viewIndex];
     float3 viewPosition = mul(float4(worldPosition, 1.0), lighting.View).xyz;
@@ -175,6 +156,7 @@ void PublishLocalShadowPosition(float3 worldPosition, uint viewIndex, float dyna
     uint2 cellLights = ClusteredLightGrid[cell];
     uint localCount = cellLights.y;
     uint firstIndex = cellLights.x;
+    float nominalPixelRadius = CalculateVirtualShadowNominalWorldPixelRadius(PageDemand.ReceiverProjection, worldPosition);
     for (uint localIndex = 0u; localIndex < localCount; localIndex++)
     {
         uint lightIndex = LightIndexList[firstIndex + localIndex];
@@ -216,45 +198,51 @@ void PublishLocalShadowPosition(float3 worldPosition, uint viewIndex, float dyna
         uint mipLevel = VirtualShadowLocalMipFromNominalPixelRadius(
             shadowView,
             worldPosition,
-            CalculateVirtualShadowNominalWorldPixelRadius(PageDemand.ReceiverProjection, worldPosition),
-            dynamicResolutionBias + CalculateVirtualShadowReceiverResolutionBias(PageDemand.ReceiverProjection, worldPosition));
+            nominalPixelRadius,
+            dynamicResolutionBias + receiverResolutionBias);
         PublishProjectedShadowView(
             shadowViewIndex,
+            shadowView,
             mipLevel,
             worldPosition);
     }
 }
 
 void PublishDirectionalShadowPosition(uint baseViewIndex, VirtualShadowMapParameters baseView,
-    float3 worldPosition, float dynamicResolutionBias, bool firstPerson)
+    float3 worldPosition, float dynamicResolutionBias, float receiverResolutionBias, bool firstPerson)
 {
     if (firstPerson && (PageDemand.FirstPersonPixelRequestBias < 0.0 ||
         (baseView.Flags & VSM_VIEW_FIRST_PERSON_SHADOW) != 0u)) return;
     uint relativeLevel = CalculateDirectionalVirtualShadowBiasedLevel(ShadowViews, baseViewIndex,
         baseView.ClipmapLevelCount, worldPosition, dynamicResolutionBias,
-        CalculateVirtualShadowReceiverResolutionBias(PageDemand.ReceiverProjection, worldPosition) +
-            (firstPerson ? PageDemand.FirstPersonPixelRequestBias : 0.0));
+        receiverResolutionBias + (firstPerson ? PageDemand.FirstPersonPixelRequestBias : 0.0));
     if (firstPerson)
         relativeLevel = max(relativeLevel, uint(max(PageDemand.FirstPersonPixelRequestMinLevel - baseView.FirstClipmapLevel, 0)));
     if (relativeLevel < baseView.ClipmapLevelCount && baseViewIndex + relativeLevel < PageDemand.ViewCount)
-        PublishProjectedShadowView(baseViewIndex + relativeLevel, 0u, worldPosition);
+    {
+        float2 uv, border;
+        PublishProjectedShadowViewPixels(ShadowViews[baseViewIndex + relativeLevel], 0u, worldPosition, uv, border);
+    }
 }
 
 // Position production belongs to the caller; requests use the supplied world position.
 void MarkVirtualShadowPages(float3 worldPosition, uint viewIndex, bool firstPerson = false)
 {
     float dynamicResolutionBias = DynamicResolutionBias[0];
+    float receiverResolutionBias = CalculateVirtualShadowReceiverResolutionBias(PageDemand.ReceiverProjection, worldPosition);
     for (uint baseViewIndex = 0u, familyLevels = 1u; baseViewIndex < PageDemand.ViewCount; baseViewIndex += familyLevels)
     {
-        familyLevels = 1u;
         VirtualShadowMapParameters baseView = ShadowViews[baseViewIndex];
+        // Point faces occupy one contiguous group before the next light family.
+        familyLevels = baseView.LightKind == VSM_LIGHT_POINT ? 6u - baseView.FaceIndex : 1u;
         if (baseView.LightKind != VSM_LIGHT_DIRECTIONAL || baseView.FaceIndex != 0u) continue;
         familyLevels = baseView.ClipmapLevelCount;
-        PublishDirectionalShadowPosition(baseViewIndex, baseView, worldPosition, dynamicResolutionBias, firstPerson);
+        PublishDirectionalShadowPosition(baseViewIndex, baseView, worldPosition,
+            dynamicResolutionBias, receiverResolutionBias, firstPerson);
     }
     if (PageDemand.PointLightCount == 0u && PageDemand.SpotLightCount == 0u) return;
     if (!firstPerson || PageDemand.FirstPersonPixelRequestBias >= 0.0)
-        PublishLocalShadowPosition(worldPosition, viewIndex, dynamicResolutionBias);
+        PublishLocalShadowPosition(worldPosition, viewIndex, dynamicResolutionBias, receiverResolutionBias);
 }
 
 #endif

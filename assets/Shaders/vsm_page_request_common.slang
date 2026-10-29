@@ -22,6 +22,9 @@ void PublishVirtualShadowRequest(
     if (tableIndex >= pageTableEntryCount)
         return;
     if ((flags & VSM_PAGE_REQUEST_SECONDARY) == 0u) flags |= VSM_PAGE_REQUEST_PRIMARY;
+    // Request bits accumulate until the frame's receiver reset. A completed
+    // request already contains every bit this lane would add.
+    if ((RequestedPageFlags[tableIndex] & flags) == flags) return;
 
     // Receiver pixels in a wave frequently request the same page. Only one
     // lane needs to publish each identical request; other lanes still mark
@@ -91,6 +94,7 @@ void MarkVirtualShadowReceiverRectangle(VirtualShadowMapParameters view, uint mi
         uint2 high = uint2(lastCell.x, min(lastCell.y, word * 4u + 3u) - word * 4u);
         uint mask = VirtualShadowReceiverWordRectangle(low, high);
         uint2 texel = address + uint2(0u, word);
+        if ((PageReceiverMasks[texel] & mask) == mask) continue;
         if (!SelectVirtualShadowReceiverMaskWriter(texel, mask)) continue;
         uint ignored;
         InterlockedOr(PageReceiverMasks[texel], mask, ignored);
