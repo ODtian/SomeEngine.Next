@@ -43,11 +43,14 @@ void InitializeDeviceGraph(uint3 id:SV_DispatchThreadID)
         ConstraintGraphGroupColors[index]=0; ConstraintGraphRowProposals[index]=0xffffffff;
     }
     if(index==0)
+    {
         for(uint component=0;component<4;component++)
         {
             ConstraintGraphCounts[component]=0;
             if(!activeWorkOnly||component!=2) ConstraintGraphBuildProgress[component]=0;
         }
+        ConstraintGraphCounts[4]=0;
+    }
 }
 void deviceGraphJoin(uint first,uint second)
 {
@@ -229,12 +232,14 @@ void CountDeviceGraphRows(uint3 id:SV_DispatchThreadID)
 [shader("compute")][numthreads(1,1,1)]
 void OffsetDeviceGraphRanges(uint3 id:SV_DispatchThreadID)
 {
-    uint bodySum=0,rowSum=0;
+    uint bodySum=0,rowSum=0,maximumBodyColorSize=0;
     for(uint color=0;color<ConstraintGraphCounts[1];color++)
     {
         uint2 range=ConstraintGraphBodyRanges[color]; range.x=bodySum; bodySum+=range.y;
         ConstraintGraphBodyRanges[color]=range; ConstraintGraphScratch[color]=0;
+        maximumBodyColorSize=max(maximumBodyColorSize,range.y);
     }
+    ConstraintGraphCounts[4]=maximumBodyColorSize;
     for(uint stage=0;stage<ConstraintGraphCounts[2];stage++)
     {
         uint2 range=ConstraintGraphRowRanges[stage]; range.x=rowSum; rowSum+=range.y;

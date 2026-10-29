@@ -122,7 +122,7 @@ public sealed class DeviceAvbdSolver : IDisposable
                 for(int color=0;color<_graph.BodyColorCount;color++)
                 {
                     step.Color=(uint)color; Bind(1,in step);
-                    _backend.Dispatch(_commands,DevicePhysicsDispatch.CreateGroups((_bodies.Capacity+_threadsPerGroup-1)/_threadsPerGroup));
+                    _backend.Dispatch(_commands,DevicePhysicsDispatch.CreateGroups((_graph.MaximumBodyColorSize+_threadsPerGroup-1)/_threadsPerGroup));
                     Barrier();
                 }
                 step.Color=0;

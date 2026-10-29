@@ -21,8 +21,9 @@
 `GetReadAccess`、`GetWriteAccess` 为项目自己的设备工作提供原 buffer 的实际访问描述。
 
 [DeviceBodyInputs](../../../src/SomeEngine.Physics/DeviceBodyInputs.cs) 在装配时绑定原 World、
-参与查询和同一 DeviceBodies。`Upload()` 从有效 QueryRow 读取原 Pose、Mass、Velocity 与
-StepState 的写版本；新实体按绑定初始化整行，既有实体只复制发生 CPU 修改的组件字段。
+参与查询和同一 DeviceBodies。`Upload()` 按当前查询块取得原 Pose、Mass、Velocity 与
+StepState 的四列写版本，再按原筛选行比较主体来源；变化行沿当前块读取对应组件值。
+新实体按绑定初始化整行，既有实体只复制发生 CPU 修改的组件字段。
 例如，只修改 Velocity 的输入保留设备当前 Pose，修改 Mass 的输入保留当前运动与步历史。
 这是连续驻留步的一种公开输入用法；上述整批输入阶段继续服务显式初始化。
 
