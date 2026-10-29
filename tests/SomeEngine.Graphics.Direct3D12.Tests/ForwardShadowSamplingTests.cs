@@ -57,8 +57,10 @@ public sealed class ForwardShadowSamplingTests(D3D12TestCompiler compiler)
                 ClusterViewUniforms view = (ClusterViewUniforms)0;
                 view.P11 = 1;
                 #if FORWARD_SHADOW
+                VirtualShadowProjectionReceiver projectionReceiver = MakeVirtualShadowProjectionReceiver(receiver);
+                float noise = VirtualShadowRayStepOffset(uint2(index,64), 31u);
                 float visibility = EvaluateVirtualShadowForwardVisibility(uint3(index,64,0), 0u,
-                    light, receiver, uint3(128,128,1), view, TestDepth);
+                    light, projectionReceiver, noise, uint3(128,128,1), view, TestDepth);
                 #else
                 // The projection uses the authored geometric plane of this receiver.
                 float bias = max(.02, .025 * length(receiver.Position));
@@ -132,8 +134,10 @@ public sealed class ForwardShadowSamplingTests(D3D12TestCompiler compiler)
                 ClusterViewUniforms view = (ClusterViewUniforms)0;
                 view.P11 = 1;
                 #if FORWARD_SHADOW
+                VirtualShadowProjectionReceiver projectionReceiver = MakeVirtualShadowProjectionReceiver(receiver);
+                float noise = VirtualShadowRayStepOffset(uint2(index,64), 63u);
                 float visibility = EvaluateVirtualShadowForwardVisibility(uint3(index,64,0), 3u,
-                    light, receiver, uint3(128,128,1), view, TestDepth);
+                    light, projectionReceiver, noise, uint3(128,128,1), view, TestDepth);
                 #else
                 float bias = max(.02, .025 * length(receiver.Position));
                 float visibility = SampleVirtualShadowLocalSoft(VirtualShadowViews,

@@ -204,6 +204,15 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ITransparentS
             viewDepth);
         uint2 cellLights = ClusteredLightGrid[cell];
         uint lightCount = lighting.DirectionalCount + cellLights.y;
+        VirtualShadowProjectionReceiver shadowReceiver = (VirtualShadowProjectionReceiver)0;
+        float localVisibilityNoise = 0.0;
+        if (lightCount != 0u && VirtualShadowSampling.ViewCount != 0u)
+        {
+            shadowReceiver = MakeVirtualShadowProjectionReceiver(receiver);
+            if (shadowReceiver.Valid &&
+                (VirtualShadowSampling.PointLightCount != 0u || VirtualShadowSampling.SpotLightCount != 0u))
+                localVisibilityNoise = VirtualShadowRayStepOffset(ctx.pixelCoord.xy, VirtualShadowSampling.FrameIndex);
+        }
         for (uint lightNumber = 0u; lightNumber < lightCount; lightNumber++)
         {
             bool directional = lightNumber < lighting.DirectionalCount;
@@ -233,7 +242,8 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ITransparentS
                     if (cone <= 0.0) continue;
                 }
             }
-            float shadow = EvaluateVirtualShadowForwardVisibility(input.PixelCoord, lightIndex, light, receiver,
+            float shadow = EvaluateVirtualShadowForwardVisibility(input.PixelCoord, lightIndex, light,
+                shadowReceiver, localVisibilityNoise,
                 uint3(cameraView.ScreenWidth, cameraView.ScreenHeight, 1u), cameraView, MaterialDepth);
             float3 radiance = light.Color * (light.Intensity * shadow);
             finalColor += EvaluateDirectionalLight(baseColor, metallic, roughness, mappedNormal, V,

@@ -51,25 +51,40 @@ bool ProjectVirtualShadowSoftCubeTap(StructuredBuffer<VirtualShadowMapParameters
     return ProjectVirtualShadowPosition(views[queryView], queryPosition, ndc, queryUV);
 }
 
-float2 ProjectVirtualShadowLocalSourceTap(VirtualShadowMapParameters view, float3 position,
-    float separation, float2 disk)
+struct VirtualShadowLocalSourceCone
 {
+    float3 Direction;
+    float3 Right;
+    float3 Up;
+    float Area;
+};
+
+VirtualShadowLocalSourceCone BuildVirtualShadowLocalSourceCone(VirtualShadowMapParameters view,
+    float3 position)
+{
+    VirtualShadowLocalSourceCone cone;
     float3 lightToReceiver = position - view.LightPosition;
     float distance = length(lightToReceiver);
-    float3 direction = lightToReceiver / max(distance, 1e-20);
-    float3 axis = abs(direction.z) < 0.9 ? float3(0.0, 0.0, 1.0) : float3(0.0, 1.0, 0.0);
-    float3 right = normalize(cross(direction, axis));
-    float3 up = cross(direction, right);
+    cone.Direction = lightToReceiver / max(distance, 1e-20);
+    float3 axis = abs(cone.Direction.z) < 0.9 ? float3(0.0, 0.0, 1.0) : float3(0.0, 1.0, 0.0);
+    cone.Right = normalize(cross(cone.Direction, axis));
+    cone.Up = cross(cone.Direction, cone.Right);
     float sourceRatio = min(view.SourceRadius / max(distance, 1e-20), 1.0);
-    float coneArea = sourceRatio * sourceRatio /
+    cone.Area = sourceRatio * sourceRatio /
         (1.0 + sqrt(max(1.0 - sourceRatio * sourceRatio, 0.0)));
+    return cone;
+}
+
+float2 ProjectVirtualShadowLocalSourceTap(VirtualShadowMapParameters view,
+    VirtualShadowLocalSourceCone cone, float3 position, float separation, float2 disk)
+{
     float radialSquared = dot(disk, disk);
-    float angularArea = radialSquared * coneArea;
+    float angularArea = radialSquared * cone.Area;
     float tangent = sqrt(max(angularArea * (2.0 - angularArea), 0.0)) /
         max(1.0 - angularArea, 1e-20);
-    float3 offset = (right * disk.x + up * disk.y) *
+    float3 offset = (cone.Right * disk.x + cone.Up * disk.y) *
         (separation * tangent / max(sqrt(radialSquared), 1e-20));
-    float3 blocker = position - direction * separation + offset;
+    float3 blocker = position - cone.Direction * separation + offset;
     float4 clip = ProjectVirtualShadowClip(view, blocker);
     return clip.xy / clip.w * float2(0.5, -0.5) + 0.5;
 }
@@ -190,6 +205,10 @@ VirtualShadowProjectionResult SampleVirtualShadowSoftView(StructuredBuffer<Virtu
     float searchRadius = IsDirectionalVirtualShadowProjection(view)
         ? emitter * maximumSeparation : CalculateVirtualShadowLocalSourceSupport(view, position);
     searchRadius = min(searchRadius, maxRadiusWorld);
+    // The center's actual source view fixes this cone for every tap of the receiver.
+    VirtualShadowLocalSourceCone sourceCone = (VirtualShadowLocalSourceCone)0;
+    if (!IsDirectionalVirtualShadowProjection(view))
+        sourceCone = BuildVirtualShadowLocalSourceCone(source, position);
     float angle = VirtualShadowRayStepOffset(pixel, frameIndex) * 6.28318530718;
     float sine, cosine;
     sincos(angle, sine, cosine);
@@ -197,15 +216,15 @@ VirtualShadowProjectionResult SampleVirtualShadowSoftView(StructuredBuffer<Virtu
     uint validSearches = centerValid ? 1u : 0u;
     float separationSum = centerBlocked ? centerSeparation : 0.0;
     uint searchCount = clamp(blockerSampleCount, 1u, VSM_SOFT_MAX_BLOCKER_QUERIES);
+    float searchSeparation = distanceToLight * searchRadius / max(emitter + searchRadius, minimumDistance);
     for (uint index = 1u; index < searchCount; index++)
     {
         float2 triangle = index == 1u ? float2(1.0, 0.0) :
             index == 2u ? float2(-.5, .8660254038) : float2(-.5, -.8660254038);
         float2 disk = RotateVirtualShadowDiskSample(triangle, sine, cosine);
-        float searchSeparation = distanceToLight * searchRadius / max(emitter + searchRadius, minimumDistance);
         float2 queryUV = IsDirectionalVirtualShadowProjection(view)
             ? plane.UV + CalculateVirtualShadowSolarDiskOffset(disk, sourceArea, emitter, searchRadius) * uvPerWorldUnit
-            : ProjectVirtualShadowLocalSourceTap(source, position, searchSeparation, disk);
+            : ProjectVirtualShadowLocalSourceTap(source, sourceCone, position, searchSeparation, disk);
         VirtualShadowDepthSample sample;
         bool blocked;
         float separation;
@@ -235,7 +254,7 @@ VirtualShadowProjectionResult SampleVirtualShadowSoftView(StructuredBuffer<Virtu
         float2 disk = RotateVirtualShadowDiskSample(VirtualShadowDiskSample(index, samples), sine, cosine);
         float2 queryUV = IsDirectionalVirtualShadowProjection(view)
             ? plane.UV + CalculateVirtualShadowSolarDiskOffset(disk, sourceArea, emitter, radius) * uvPerWorldUnit
-            : ProjectVirtualShadowLocalSourceTap(source, position, averageSeparation, disk);
+            : ProjectVirtualShadowLocalSourceTap(source, sourceCone, position, averageSeparation, disk);
         VirtualShadowDepthSample sample;
         bool blocked;
         float separation;
