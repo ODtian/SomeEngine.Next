@@ -22,7 +22,7 @@ public sealed partial class VirtualShadowFeature
     private GraphBufferId _prefilterPreviousPages;
     private GraphTextureId _prefilterPreviousMasks;
     private GraphBufferInput _prefilterPreviousViews = null!;
-    private GraphBufferInput _prefilterProjections = null!;
+    private GraphBufferId _prefilterProjections;
     private readonly GraphBufferSlice[] _prefilterUniforms;
     private GraphPassId[] _prefilterPasses = [];
     private GraphPassId _prefilterInitialize;
@@ -40,9 +40,10 @@ public sealed partial class VirtualShadowFeature
         public uint EntryCount;
     }
 
-    [StructLayout(LayoutKind.Sequential, Pack = 4, Size = 80)]
+    [StructLayout(LayoutKind.Sequential, Pack = 4, Size = PrefilterProjection.SizeInBytes)]
     private struct PrefilterProjection
     {
+        public const int SizeInBytes = 80;
         public Matrix4x4 ShadowToWorld;
         public uint PreviousFirstView;
         public uint Pad0, Pad1, Pad2;
@@ -95,7 +96,7 @@ public sealed partial class VirtualShadowFeature
             "Virtual shadow prefilter page histories"));
         _prefilterPreviousMasks = edit.CreatePersistentTexture(PrefilterReceiverHistoryDescription);
         _prefilterPreviousViews = edit.CreateBufferInput(BufferUsages.ShaderRead);
-        _prefilterProjections = edit.CreateBufferInput(BufferUsages.ShaderRead);
+        _prefilterProjections = edit.DeclareExternalBuffer(DescribePrefilterProjections(_sourceViewCapacity), MemoryType.Upload);
         _prefilterPasses = new GraphPassId[6];
         _prefilterPages = edit.CreatePersistentBuffer(new BufferDesc(
             checked((ulong)settings.MaxPhysicalPages * sizeof(uint)), bufferUses, "Virtual shadow filtered pages"));
@@ -185,7 +186,7 @@ public sealed partial class VirtualShadowFeature
             case PrefilterResource.Uniforms: _ = pass.Bind(uniforms, sync); break;
             case PrefilterResource.Views: _ = pass.Bind(edit.CreateBufferSrv(_frameShadowViews, structureStride: VirtualShadowView.SizeInBytes), sync); break;
             case PrefilterResource.PreviousViews: _ = pass.Bind(edit.CreateBufferSrv(_prefilterPreviousViews, structureStride: VirtualShadowView.SizeInBytes), sync); break;
-            case PrefilterResource.Projections: _ = pass.Bind(edit.CreateBufferSrv(_prefilterProjections, structureStride: 80), sync); break;
+            case PrefilterResource.Projections: _ = pass.Bind(edit.CreateBufferSrv(_prefilterProjections, structureStride: PrefilterProjection.SizeInBytes), sync); break;
             case PrefilterResource.PageReferences: _ = pass.Bind(edit.CreateBufferSrv(_pageOwners, structureStride: 4), sync); break;
             case PrefilterResource.Pages: _ = pass.Bind(edit.CreateBufferSrv(_framePageTable, structureStride: sizeof(uint)), sync); break;
             case PrefilterResource.ReceiverMasks: _ = pass.Bind(edit.CreateTextureSrv(_pageReceiverMasks,
@@ -206,6 +207,10 @@ public sealed partial class VirtualShadowFeature
         TextureUsages.Sampled | TextureUsages.Storage | TextureUsages.ColorAttachment | TextureUsages.CopyDestination,
         label: "Virtual shadow prefilter receiver histories");
 
+    private static BufferDesc DescribePrefilterProjections(uint viewCount) => new(
+        checked((ulong)Math.Max(viewCount, 1u) * PrefilterProjection.SizeInBytes), BufferUsages.ShaderRead,
+        "Virtual shadow filter inverse projections");
+
     private void StagePrefilter(ref RenderGraphFrame graph, scoped Span<byte> uniformBytes, scoped ReadOnlySpan<VirtualShadowView> views)
     {
         if (_prefilterPipeline is null)
@@ -213,7 +218,9 @@ public sealed partial class VirtualShadowFeature
             graph.SetPassEnabled(_prefilterInitialize, !_prefilterHistoryReady);
             return;
         }
-        var projections = new PrefilterProjection[Math.Max(views.Length, 1)];
+        Span<PrefilterProjection> projections = MemoryMarshal.Cast<byte, PrefilterProjection>(
+            graph.GetBufferDataWriteSpan(_prefilterProjections));
+        projections.Clear();
         for (int index = 0; index < views.Length; index++)
         {
             Matrix4x4.Invert(views[index].LightViewProjection, out projections[index].ShadowToWorld);
@@ -225,8 +232,6 @@ public sealed partial class VirtualShadowFeature
                 projections[index].PreviousFirstView = previous - checked((uint)(old.ClipmapLevel - old.FirstClipmapLevel));
             }
         }
-        graph.SetBufferInput(_prefilterProjections, graph.Upload<PrefilterProjection>(projections, BufferUsages.ShaderRead,
-            "Virtual shadow filter inverse projections"));
         graph.SetBufferInput(_prefilterPreviousViews, graph.Upload<VirtualShadowView>(
             _frameHasPreviousHistory && _previousShadowViews.Length != 0 ? _previousShadowViews : [default],
             BufferUsages.ShaderRead, "Previous virtual shadow filtered views"));

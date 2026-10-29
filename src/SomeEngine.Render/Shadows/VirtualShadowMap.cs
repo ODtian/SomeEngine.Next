@@ -413,9 +413,8 @@ public sealed partial class VirtualShadowMap : IDisposable
                         absoluteClipmapLevel >= Settings.DirectionalFirstCoarseClipmapLevel &&
                         absoluteClipmapLevel <= Settings.DirectionalLastCoarseClipmapLevel ||
                         clipmapLevel == familyLevels - 1;
-                    _views[viewIndex] = new VirtualShadowView
+                    var view = new VirtualShadowView
                     {
-                        LightViewProjection = lightView * lightProjection,
                         WorldTranslation = -snappedCenter,
                         VirtualResolution = Settings.VirtualResolution,
                         PageSize = Settings.PageSize,
@@ -460,7 +459,9 @@ public sealed partial class VirtualShadowMap : IDisposable
                                 ? new Vector2(-float.MaxValue, lightProjection.M43 - cullingEndDistance * lightProjection.M33)
                                 : new Vector2(-float.MaxValue, float.MaxValue),
                     };
-                    if (!firstPerson && Settings.PrefilteredDistantEnabled) _views[viewIndex].Flags |= VirtualShadowViewFlags.PrefilteredDistant;
+                    view.SetLightViewProjection(lightView * lightProjection, in _views[viewIndex]);
+                    if (!firstPerson && Settings.PrefilteredDistantEnabled) view.Flags |= VirtualShadowViewFlags.PrefilteredDistant;
+                    _views[viewIndex] = view;
                     _preparedLightViews[viewIndex] = lightView;
                     _preparedLightProjections[viewIndex] = lightProjection;
                 }
@@ -965,42 +966,46 @@ public sealed partial class VirtualShadowMap : IDisposable
         float lightRange,
         float resolutionLodBias,
         uint physicalPagesPerRow,
-        uint pageTableEntriesPerView) => new()
+        uint pageTableEntriesPerView)
     {
-        LightViewProjection = lightView * lightProjection,
-        WorldTranslation = -lightPosition,
-        VirtualResolution = Settings.VirtualResolution,
-        PageSize = Settings.PageSize,
-        AtlasSize = Settings.AtlasSize,
-        PhysicalPagesPerRow = physicalPagesPerRow,
-        MaxPhysicalPages = Settings.MaxPhysicalPages,
-        DepthBias = Settings.DepthBias,
-        PageTableOffset = checked((uint)viewIndex * pageTableEntriesPerView),
-        ClipmapLevel = -1,
-        LightIndex = lightIndex,
-        ResolutionLodBias = resolutionLodBias,
-        FirstClipmapLevel = -1,
-        ClipmapLevelCount = 1u,
-        MipLevelCount = Settings.MipLevelCount,
-        MinMipLevel = 0u,
-        Flags = CalculateCoarsePageFlags(Settings.LocalCoarsePageMode, true) |
-            (Settings.LocalMipMode switch
-            {
-                VirtualShadowLocalMipMode.Even => VirtualShadowViewFlags.EvenMipLevels,
-                VirtualShadowLocalMipMode.Odd => VirtualShadowViewFlags.OddMipLevels,
-                _ => 0u,
-            }) |
-            (Settings.LocalReceiverMask ? VirtualShadowViewFlags.UseReceiverMask : 0u),
-        LightKind = lightKind,
-        FaceIndex = faceIndex,
-        LightPosition = lightPosition,
-        LightRange = lightRange,
-        GeometryLodScale = Settings.ShadowGeometryLodScale,
-        MaxPixelsPerEdge = Settings.ShadowMaxPixelsPerEdge,
-        MinPixelsPerEdgeHardware = Settings.ShadowMinPixelsPerEdgeHardware,
-        DicingRate = Settings.ShadowDicingRate,
-        WorldUnitsPerCentimeter = Settings.WorldUnitsPerCentimeter,
-    };
+        var view = new VirtualShadowView
+        {
+            WorldTranslation = -lightPosition,
+            VirtualResolution = Settings.VirtualResolution,
+            PageSize = Settings.PageSize,
+            AtlasSize = Settings.AtlasSize,
+            PhysicalPagesPerRow = physicalPagesPerRow,
+            MaxPhysicalPages = Settings.MaxPhysicalPages,
+            DepthBias = Settings.DepthBias,
+            PageTableOffset = checked((uint)viewIndex * pageTableEntriesPerView),
+            ClipmapLevel = -1,
+            LightIndex = lightIndex,
+            ResolutionLodBias = resolutionLodBias,
+            FirstClipmapLevel = -1,
+            ClipmapLevelCount = 1u,
+            MipLevelCount = Settings.MipLevelCount,
+            MinMipLevel = 0u,
+            Flags = CalculateCoarsePageFlags(Settings.LocalCoarsePageMode, true) |
+                (Settings.LocalMipMode switch
+                {
+                    VirtualShadowLocalMipMode.Even => VirtualShadowViewFlags.EvenMipLevels,
+                    VirtualShadowLocalMipMode.Odd => VirtualShadowViewFlags.OddMipLevels,
+                    _ => 0u,
+                }) |
+                (Settings.LocalReceiverMask ? VirtualShadowViewFlags.UseReceiverMask : 0u),
+            LightKind = lightKind,
+            FaceIndex = faceIndex,
+            LightPosition = lightPosition,
+            LightRange = lightRange,
+            GeometryLodScale = Settings.ShadowGeometryLodScale,
+            MaxPixelsPerEdge = Settings.ShadowMaxPixelsPerEdge,
+            MinPixelsPerEdgeHardware = Settings.ShadowMinPixelsPerEdgeHardware,
+            DicingRate = Settings.ShadowDicingRate,
+            WorldUnitsPerCentimeter = Settings.WorldUnitsPerCentimeter,
+        };
+        view.SetLightViewProjection(lightView * lightProjection, in _views[viewIndex]);
+        return view;
+    }
 
     private void ValidateLocalLight(Vector3 position, float range, string lightKind, int lightIndex)
     {

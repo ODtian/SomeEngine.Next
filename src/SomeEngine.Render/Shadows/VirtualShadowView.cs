@@ -94,6 +94,18 @@ public struct VirtualShadowView
     private Matrix4x4 _shadowUv;
     public readonly Matrix4x4 ShadowUv => _shadowUv;
 
+    internal void SetLightViewProjection(in Matrix4x4 lightViewProjection, in VirtualShadowView previousView)
+    {
+        if (lightViewProjection == previousView._lightViewProjection)
+        {
+            _lightViewProjection = lightViewProjection;
+            _shadowUv = previousView._shadowUv;
+            _shadowUvNormal = previousView._shadowUvNormal;
+        }
+        else
+            LightViewProjection = lightViewProjection;
+    }
+
     /// <summary>Projects a position expressed relative to the current world data origin.</summary>
     public readonly Vector4 ProjectPosition(Vector3 position) =>
         Vector4.Transform(new Vector4(position + WorldTranslation, 1), _lightViewProjection);

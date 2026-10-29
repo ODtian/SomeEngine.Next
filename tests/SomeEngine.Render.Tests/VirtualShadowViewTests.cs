@@ -167,6 +167,46 @@ public sealed class VirtualShadowViewTests(RenderTestDevice graphics) : IClassFi
     }
 
     [Fact]
+    public async Task RepeatedViewUpdatesMatchNewShadowMaps()
+    {
+        VirtualShadowMapShaders shaders = await CreateShaders();
+        var settings = new VirtualShadowMapSettings
+        {
+            VirtualResolution = 512, AtlasSize = 256, MaxShadowLights = 3,
+            DirectionalClipmapLevels = 2,
+            FirstPersonFirstClipmapLevel = 2, FirstPersonLastClipmapLevel = 3,
+        };
+        using var shadows = new VirtualShadowMap(graphics.Backend, graphics.Device, shaders, settings);
+        foreach (int change in new[] { 0, 0, 1, 2, 0 })
+        {
+            var lights = new RenderLightSet();
+            lights.AddDirectional(new RenderDirectionalLight(change == 2 ? -Vector3.UnitY : Vector3.UnitZ,
+                Vector3.One, 1, uint.MaxValue));
+            lights.AddPoint(new RenderPointLight(new(change, 1, 0), change == 2 ? 20 : 10,
+                Vector3.One, 1, uint.MaxValue));
+            lights.AddSpot(new RenderSpotLight(new(0, change, 0), 10,
+                change == 2 ? Vector3.UnitX : -Vector3.UnitZ, .5f, change == 2 ? .4f : .25f,
+                Vector3.One, 1, uint.MaxValue));
+            var receiver = new RenderView(Matrix4x4.CreateLookAt(new(change, 0, 0), new(change, 0, -1), Vector3.UnitY),
+                Matrix4x4.CreatePerspectiveFieldOfView(MathF.PI / 2, 1, .1f, 100), 128, 128);
+            using var fresh = new VirtualShadowMap(graphics.Backend, graphics.Device, shaders, settings);
+            shadows.BeginFrame();
+            fresh.BeginFrame();
+            VirtualShadowView[] actual = shadows.PrepareViews(lights, receiver, 1, 1, 1,
+                hasFirstPersonCasters: true).ToArray();
+            VirtualShadowView[] expected = fresh.PrepareViews(lights, receiver, 1, 1, 1,
+                hasFirstPersonCasters: true).ToArray();
+            Assert.Equal(expected, actual);
+            var actualRenderViews = new RenderView[actual.Length];
+            var expectedRenderViews = new RenderView[expected.Length];
+            Assert.Equal(fresh.CopyPreparedRenderViews(expectedRenderViews), shadows.CopyPreparedRenderViews(actualRenderViews));
+            Assert.Equal(expectedRenderViews, actualRenderViews);
+            shadows.Discard()?.Dispose();
+            fresh.Discard()?.Dispose();
+        }
+    }
+
+    [Fact]
     public async Task DirectionalLevelsCoverTheirNativeDepthRange()
     {
         VirtualShadowMapShaders shaders = await CreateShaders();

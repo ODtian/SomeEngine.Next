@@ -51,6 +51,16 @@ mask 使用两个垂直排列的 `R32UInt` texel，各保存 `8×4` 位覆盖，
 
 ## 采样与缓存
 
+`VirtualShadowMap.PrepareViews` 根据当前光源与相机填写视图记录。投影矩阵与该位置原有记录相同时，
+新记录复用其 UV 投影与法线转换矩阵；投影变化时通过 `VirtualShadowView.LightViewProjection`
+执行原有派生运算。每次填写的业务字段从默认值开始，已提交视图与页缓存历史仍由帧完成路径推进。
+
+远处预过滤的逆投影与历史视图索引直接写入图声明的映射上传缓冲。
+该缓冲按光源视图容量保存，沿 `ReconcileLights` 扩容；每帧按当前视图数填写，
+Shader 使用同一份 `ViewCount` 读取有效记录。实现见
+[预过滤数据](../../../src/SomeEngine.Render.Features/Shadows/VirtualShadowFeature.Prefilter.cs)与
+[光源容量](../../../src/SomeEngine.Render.Features/Shadows/VirtualShadowFeature.Capacity.cs)。
+
 材质使用当次求得的位置、法线和深度偏移直接执行 VSM 采样。方向光和局部光沿 soft shadow、第一人称与屏幕射线起点处理；局部 `SurfaceReceiver` 保存本次函数采样参数。
 
 驻留读取在本级命中时复用已经读取的页表项、页坐标和视图；粗层回退继续读取实际来源层。
