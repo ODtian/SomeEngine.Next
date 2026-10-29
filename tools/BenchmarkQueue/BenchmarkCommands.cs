@@ -1,5 +1,4 @@
 using System.Collections;
-using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO.Pipes;
 using System.Text.Json;
@@ -15,7 +14,16 @@ internal static class BenchmarkCommands
     public static int Main(string[] args)
     {
         if (args is ["--worker"]) return ExecuteQueue();
+        if (args is ["--execute"]) return ExecuteCommand();
+
+        CommandKind kind = CommandKind.Default;
+        bool allCores = false;
         int timeoutSeconds = QueuedCommand.DefaultTimeoutSeconds;
+        string directory = Directory.GetCurrentDirectory();
+        string sessionId = Environment.GetEnvironmentVariable("SOMEENGINE_BENCHMARK_SESSION")
+            ?? Environment.GetEnvironmentVariable("CODEX_THREAD_ID")
+            ?? Environment.GetEnvironmentVariable("CODEX_SESSION_ID")
+            ?? directory;
         int executableIndex = 0;
         while (executableIndex < args.Length && args[executableIndex].StartsWith("--"))
         {
@@ -23,6 +31,11 @@ internal static class BenchmarkCommands
             if (option == "--") break;
             switch (option)
             {
+                case "--cpu": kind = CommandKind.Cpu; break;
+                case "--all-cores": allCores = true; break;
+                case "--gpu":
+                case "--exclusive": kind = CommandKind.Gpu; break;
+                case "--session": sessionId = args[executableIndex++]; break;
                 case "--timeout":
                     if (executableIndex == args.Length)
                         throw new ArgumentException("--timeout requires a value in seconds.");
@@ -32,15 +45,21 @@ internal static class BenchmarkCommands
             }
         }
         if (executableIndex == args.Length)
-            throw new ArgumentException("Usage: BenchmarkQueue [--timeout seconds] <executable> [arguments...]");
+            throw new ArgumentException("Usage: BenchmarkQueue [--cpu|--gpu] [--all-cores] [--session id] [--timeout seconds] <executable> [arguments...]");
+
+        string executable = args[executableIndex];
+        string[] arguments = args[(executableIndex + 1)..];
 
         string id = Guid.NewGuid().ToString("N");
-        string directory = Directory.GetCurrentDirectory();
         string output = Path.Combine(directory, "artifacts", "benchmark-queue", id);
         var environment = Environment.GetEnvironmentVariables().Cast<DictionaryEntry>()
             .ToDictionary(entry => (string)entry.Key, entry => (string)entry.Value!);
-        var command = new QueuedCommand(id, args[executableIndex], args[(executableIndex + 1)..],
-            directory, output, environment) { TimeoutSeconds = timeoutSeconds };
+        var command = new QueuedCommand(id, executable, arguments,
+            directory, output, environment, sessionId, kind, DateTimeOffset.UtcNow)
+        {
+            AllCores = allCores,
+            TimeoutSeconds = timeoutSeconds,
+        };
 
         using var submission = new Mutex(false, MutexName(QueueName + ".Submit"));
         Wait(submission);
@@ -79,11 +98,8 @@ internal static class BenchmarkCommands
         try { if (!worker.WaitOne(0)) return 0; }
         catch (AbandonedMutexException) { }
 
-        using var commands = new BlockingCollection<QueuedCommand>(new ConcurrentQueue<QueuedCommand>());
-        var execution = new Thread(() =>
-        {
-            foreach (QueuedCommand command in commands.GetConsumingEnumerable()) Execute(command);
-        }) { IsBackground = true, Name = "benchmark queue" };
+        var commands = new CommandQueue();
+        var execution = new Thread(commands.Run) { IsBackground = true, Name = "benchmark queue" };
         execution.Start();
 
         while (true)
@@ -94,15 +110,19 @@ internal static class BenchmarkCommands
             using var reader = new StreamReader(pipe);
             using var writer = new StreamWriter(pipe) { AutoFlush = true };
             QueuedCommand command = JsonSerializer.Deserialize<QueuedCommand>(reader.ReadLine()!)!;
-            commands.Add(command);
+            if (command.Kind == CommandKind.Default) command = command with { Kind = CommandKind.Cpu };
+            commands.Enqueue(command);
             writer.WriteLine(JsonSerializer.Serialize(new
             {
-                command.Id, command.OutputDirectory, command.TimeoutSeconds, WorkerProcessId = Environment.ProcessId,
+                command.Id, command.OutputDirectory, command.SessionId, Kind = command.Kind.ToString(),
+                TotalCpuCount = Environment.ProcessorCount,
+                commands.TotalCoreCount,
+                command.SubmittedAtUtc, command.AllCores, command.TimeoutSeconds, WorkerProcessId = Environment.ProcessId,
             }));
         }
     }
 
-    private static void Execute(QueuedCommand command)
+    internal static void Execute(QueuedCommand command, CommandCpu commandCpu)
     {
         Directory.CreateDirectory(command.OutputDirectory);
         int exitCode = 1;
@@ -111,17 +131,22 @@ internal static class BenchmarkCommands
         try
         {
             int timeoutSeconds = ParseTimeoutSeconds(command.TimeoutSeconds.ToString());
-            var start = new ProcessStartInfo(command.Executable)
+            var start = new ProcessStartInfo("dotnet")
             {
                 WorkingDirectory = command.Directory, UseShellExecute = false, CreateNoWindow = true,
                 RedirectStandardOutput = true, RedirectStandardError = true,
+                RedirectStandardInput = true,
             };
-            foreach (string argument in command.Arguments) start.ArgumentList.Add(argument);
+            start.ArgumentList.Add(typeof(BenchmarkCommands).Assembly.Location);
+            start.ArgumentList.Add("--execute");
             start.Environment.Clear();
             foreach (var variable in command.Environment) start.Environment.Add(variable.Key, variable.Value);
             using var output = File.Create(Path.Combine(command.OutputDirectory, "stdout.log"));
             using var errors = File.Create(Path.Combine(command.OutputDirectory, "stderr.log"));
             using var process = Process.Start(start)!;
+            commandCpu.Attach(process);
+            process.StandardInput.WriteLine(JsonSerializer.Serialize(command));
+            process.StandardInput.Close();
             started = DateTimeOffset.UtcNow;
             using var deadline = new CancellationTokenSource(timeoutSeconds * 1000);
             using var copying = new CancellationTokenSource();
@@ -139,9 +164,7 @@ internal static class BenchmarkCommands
                 exitCode = 124;
                 try
                 {
-                    // Keep the original Process handle: descendants may still hold redirected pipes
-                    // after the root process exits, so do not skip tree termination when HasExited.
-                    process.Kill(entireProcessTree: true);
+                    commandCpu.Terminate();
                     if (!process.WaitForExit(5000))
                         throw new TimeoutException("Timed-out process did not exit within 5 seconds of tree termination.");
                 }
@@ -164,12 +187,33 @@ internal static class BenchmarkCommands
         if (timedOut)
             File.AppendAllText(Path.Combine(command.OutputDirectory, "stderr.log"),
                 $"\nBenchmark queue execution timed out after {command.TimeoutSeconds} seconds; process-tree termination was requested.\n");
+        var cpu = commandCpu.Complete();
         File.WriteAllText(Path.Combine(command.OutputDirectory, "result.json"), JsonSerializer.Serialize(new
         {
             command.Id, command.Executable, command.Arguments, command.Directory, ExitCode = exitCode,
+            command.SessionId, Kind = command.Kind.ToString(), command.SubmittedAtUtc, command.AllCores,
+            cpu.CpuCount, cpu.CpuSeconds, cpu.PeakCpuCount,
+            cpu.CoreCount, cpu.ProcessorMask,
+            TotalCpuCount = Environment.ProcessorCount,
             command.TimeoutSeconds, TimedOut = timedOut,
             StartedAtUtc = started, FinishedAtUtc = DateTimeOffset.UtcNow,
         }));
+    }
+
+    private static int ExecuteCommand()
+    {
+        QueuedCommand command = JsonSerializer.Deserialize<QueuedCommand>(Console.ReadLine()!)!;
+        var start = new ProcessStartInfo(command.Executable)
+        {
+            UseShellExecute = false, CreateNoWindow = true,
+            RedirectStandardOutput = true, RedirectStandardError = true,
+        };
+        foreach (string argument in command.Arguments) start.ArgumentList.Add(argument);
+        using var process = Process.Start(start)!;
+        Task output = process.StandardOutput.BaseStream.CopyToAsync(Console.OpenStandardOutput());
+        Task errors = process.StandardError.BaseStream.CopyToAsync(Console.OpenStandardError());
+        Task.WhenAll(process.WaitForExitAsync(), output, errors).GetAwaiter().GetResult();
+        return process.ExitCode;
     }
 
     internal static int ParseTimeoutSeconds(string value)
@@ -185,10 +229,4 @@ internal static class BenchmarkCommands
         catch (AbandonedMutexException) { }
     }
 
-    private sealed record QueuedCommand(string Id, string Executable, string[] Arguments, string Directory,
-        string OutputDirectory, Dictionary<string, string> Environment)
-    {
-        public const int DefaultTimeoutSeconds = 60;
-        public int TimeoutSeconds { get; init; } = DefaultTimeoutSeconds;
-    }
 }

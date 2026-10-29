@@ -16,8 +16,12 @@
 
 ## 公共队列
 
+本节记录已有公共 API 与操作用法，入口为 [`Invoke-Benchmark.ps1`](../../tools/Invoke-Benchmark.ps1)，请求与结果见 [`BenchmarkCommands`](../../tools/BenchmarkQueue/BenchmarkCommands.cs)，调度见 [`CommandQueue`](../../tools/BenchmarkQueue/CommandQueue.cs)。
+
 CPU、GPU benchmark 通过 `tools/Invoke-Benchmark.ps1 <原命令及参数>` 提交到公共队列。默认任务和 `--cpu` 任务按 CPU 调度；使用 GPU 的任务通过 `--gpu` 提交，`--exclusive` 为其兼容写法。
 同一会话按 FIFO 完成任务；跨会话的 CPU 任务和 GPU 任务按独立物理核心并行，GPU 任务之间独占 GPU。执行器按任务进程树的实际用核量动态分配核心，并通过 Windows Job Object 应用于整条进程树。构建、内容导入与捕获采用同一入口；性能比较记录实际核心分配，并保持工作负载、JIT 与处理器条件一致。
+
+显式指定 `--all-cores` 时，任务到达自己的轮次后等待当前活动任务释放全部 CPU 核心，再保留整机可用的全部物理核心，整条进程树在执行期间保持原始完整亲和性。这项参数可与 `--cpu` 或 `--gpu` 组合，GPU 任务沿用 GPU 独占规则。该模式适用于复现系统默认 CPU 调度条件的测量；默认任务继续按实际用核量动态分配核心。
 
 每条命令默认最多执行 60 秒，从进程启动开始计时，排队等待不计入。需要更长时间时，必须在可执行文件之前显式指定 `--timeout <秒数>`，例如 `--timeout 300`；只接受正整数秒，`0` 不表示无限等待。时限覆盖进程执行和输出收集。超时会请求终止整个进程树，结果记录退出码 `124`、`TimedOut: true` 和 `TimeoutSeconds`，然后继续处理后续任务。
 
@@ -25,8 +29,14 @@ CPU、GPU benchmark 通过 `tools/Invoke-Benchmark.ps1 <原命令及参数>` 提
 ./tools/Invoke-Benchmark.ps1 dotnet run --no-build --project tools/SomeEngine.Animation.Checks -c Release -- --benchmark
 ```
 
+以下是使用全部核心运行同一 CPU benchmark 的用法示例：
+
+```powershell
+./tools/Invoke-Benchmark.ps1 --cpu --all-cores dotnet run --no-build --project tools/SomeEngine.Animation.Checks -c Release -- --benchmark
+```
+
 提交返回任务编号和结果目录，自动启动隐藏的后台执行器。
-目录保存 `stdout.log`、`stderr.log` 与 `result.json`，结果包含命令、工作目录、起止时间及退出码。
+目录保存 `stdout.log`、`stderr.log` 与 `result.json`，结果包含命令、工作目录、起止时间及退出码。提交回执和结果中的 `AllCores` 记录全部核心请求；结果中的 `CoreCount` 与 `ProcessorMask` 记录实际分配的物理核心数及处理器亲和性。
 测量使用提交时的环境变量和参数分组。结果直接在会话中汇报；运行所需的临时输出放在项目外，使用完成后立即清理。
 
 参见 [[evidence/RHI/Performance-Evidence-2026-08-20]] · [[architecture/cluster/Deform-Cache-Allocation]].
