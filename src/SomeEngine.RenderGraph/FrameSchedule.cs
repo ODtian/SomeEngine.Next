@@ -587,6 +587,8 @@ internal sealed partial class FrameExecutor
         ObservePass(index, row);
         FramePass retained = row;
         retained.Queue = _passes[index].Queue;
+        _frame.Graph.ResolveQueueCandidates(row.QueuePolicy, row.Kind, _queueCandidateScratch);
+        retained.SingleQueueCandidate = _queueCandidateScratch.Count == 1 ? _queueCandidateScratch[0] : null;
         _passes[index] = retained;
         if (row.Definition is not null)
             _rowChanges.Accesses.UnionWith(row.Definition.Accesses);

@@ -20,7 +20,7 @@ public sealed class GiSceneData : IRenderGraphFrameExecutionObserver, IDisposabl
     private readonly List<uint> _removedRoots = [];
     private readonly GraphPassId _meshUpload;
     private QueryHandle _query;
-    private byte[] _meshBytes = new byte[4];
+    private int _meshByteLength = 4;
     private MeshFieldIndex[] _index = [new(uint.MaxValue, 0)];
     private ulong _collection;
     private bool _fieldsChanged;
@@ -67,7 +67,7 @@ public sealed class GiSceneData : IRenderGraphFrameExecutionObserver, IDisposabl
             _fieldsChanged = true;
         }
         if (!_fieldsChanged) return false;
-        PackFields();
+        UpdateFieldIndex();
         _fieldsChanged = false;
         _uploadRequired = true;
         return true;
@@ -92,13 +92,13 @@ public sealed class GiSceneData : IRenderGraphFrameExecutionObserver, IDisposabl
         _fieldsChanged = true;
     }
 
-    private void PackFields()
+    private void UpdateFieldIndex()
     {
         KeyValuePair<uint, MeshField>[] fields = _fields.OrderBy(value => value.Key).ToArray();
         int byteCount = 0;
         foreach (KeyValuePair<uint, MeshField> field in fields)
             byteCount = AlignField(byteCount) + field.Value.DistanceField.GpuByteLength;
-        byte[] bytes = new byte[Math.Max(4, AlignField(byteCount))];
+        int byteLength = Math.Max(4, AlignField(byteCount));
         MeshFieldIndex[] index = new MeshFieldIndex[fields.Length == 0 ? 1 : checked((int)fields[^1].Key + 1)];
         Array.Fill(index, new MeshFieldIndex(uint.MaxValue, 0));
         int offset = 0;
@@ -106,20 +106,18 @@ public sealed class GiSceneData : IRenderGraphFrameExecutionObserver, IDisposabl
         {
             offset = AlignField(offset);
             index[root] = new((uint)offset, field.MaterialCount);
-            field.DistanceField.WriteGpuData(bytes.AsSpan(offset, field.DistanceField.GpuByteLength),
-                field.Mesh, field.Allocation.FirstBvhNode);
             offset += field.DistanceField.GpuByteLength;
         }
-        if (bytes.Length != _meshBytes.Length || index.Length != _index.Length)
+        if (byteLength != _meshByteLength || index.Length != _index.Length)
         {
             using RenderGraphEdit edit = _graph.BeginEdit();
             edit.SetBufferDescription(MeshFields,
-                new BufferDesc((ulong)bytes.Length, FieldUsages, "GI mesh distance fields"));
+                new BufferDesc((ulong)byteLength, FieldUsages, "GI mesh distance fields"));
             edit.SetBufferDescription(MeshFieldsIndex,
                 new BufferDesc((ulong)index.Length * 8u, FieldUsages, "GI mesh field index"));
             edit.Commit();
         }
-        _meshBytes = bytes;
+        _meshByteLength = byteLength;
         _index = index;
     }
 
@@ -128,7 +126,16 @@ public sealed class GiSceneData : IRenderGraphFrameExecutionObserver, IDisposabl
     public void Record(ref RenderGraphFrame graph)
     {
         if (!_uploadRequired) return;
-        graph.WriteBuffer(MeshFields, 0, _meshBytes);
+        Span<byte> bytes = graph.GetWriteSpan(MeshFields, 0, _meshByteLength);
+        if (_fields.Count == 0) bytes.Clear();
+        foreach ((uint root, MeshField field) in _fields)
+        {
+            int offset = (int)_index[root].DistanceFieldAddress;
+            int length = field.DistanceField.GpuByteLength;
+            field.DistanceField.WriteGpuData(bytes.Slice(offset, length),
+                field.Mesh, field.Allocation.FirstBvhNode);
+            bytes.Slice(offset + length, AlignField(length) - length).Clear();
+        }
         graph.WriteBuffer(MeshFieldsIndex, 0, MemoryMarshal.AsBytes(_index.AsSpan()));
         graph.ObserveExecution(this);
     }
@@ -145,7 +152,6 @@ public sealed class GiSceneData : IRenderGraphFrameExecutionObserver, IDisposabl
         _query = default;
         _fields.Clear();
         _removedRoots.Clear();
-        _meshBytes = [];
         _index = [];
     }
 

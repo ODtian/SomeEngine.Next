@@ -31,25 +31,28 @@ public sealed partial class ScreenProbeFeature
     }
     private void BindPreviousSurfaces(ref RenderGraphEdit edit, ref PassDefinition pass, PipelineSync sync) => BindProbeBuffer(ref edit, ref pass, "GiProbeSurfaces", ResourceBindingType.BufferSrv, sync);
     private void BindPreviousRadiance(ref RenderGraphEdit edit, ref PassDefinition pass, PipelineSync sync) => BindProbeBuffer(ref edit, ref pass, "GiProbeRadiance", ResourceBindingType.BufferSrv, sync);
-    private void BindRequests(ref RenderGraphEdit edit, ref PassDefinition pass, PipelineSync sync) => BindProbeBuffer(ref edit, ref pass, "GiProbeRequests", ResourceBindingType.BufferUav, sync);
+    private void BindRequests(ref RenderGraphEdit edit, ref PassDefinition pass, PipelineSync sync) => BindProbeBuffer(ref edit, ref pass, "GiProbeRequests", ResourceBindingType.BufferUav, sync, UnorderedAccessHazardMode.AtomicMergeable);
     private void BindSurfaceNormal(ref RenderGraphEdit edit, ref PassDefinition pass, PipelineSync sync) => BindSurface(ref edit, ref pass, _normal, Format.R16G16B16A16Float, sync);
     private void BindSurfaceDiffuse(ref RenderGraphEdit edit, ref PassDefinition pass, PipelineSync sync) => BindSurface(ref edit, ref pass, _diffuse, Format.R8G8B8A8UNorm, sync);
     private void BindSurfaceRadiance(ref RenderGraphEdit edit, ref PassDefinition pass, PipelineSync sync) => BindSurface(ref edit, ref pass, _reflectedRadiance, Format.R11G11B10Float, sync);
 
     private void BindProbeBuffer(ref RenderGraphEdit edit, ref PassDefinition pass,
-        string name, ResourceBindingType type, PipelineSync sync)
+        string name, ResourceBindingType type, PipelineSync sync,
+        UnorderedAccessHazardMode unorderedAccessHazards = UnorderedAccessHazardMode.Ordered)
     {
         if (Enabled) edit.OrderAfter(pass.Id, _initializeProbes);
-        BindBuffer(ref edit, ref pass, name, type, sync);
+        BindBuffer(ref edit, ref pass, name, type, sync, unorderedAccessHazards: unorderedAccessHazards);
     }
 
     private void BindBuffer(ref RenderGraphEdit edit, ref PassDefinition pass, string name, ResourceBindingType type,
-        PipelineSync sync, GraphAccessMode access = GraphAccessMode.ReadWrite, WriteCoverage coverage = WriteCoverage.Partial)
+        PipelineSync sync, GraphAccessMode access = GraphAccessMode.ReadWrite, WriteCoverage coverage = WriteCoverage.Partial,
+        UnorderedAccessHazardMode unorderedAccessHazards = UnorderedAccessHazardMode.Ordered)
     {
         if (!Enabled) { pass.Bind(GraphParameterResourceBinding.Null(type)); return; }
         BufferData buffer = _buffers[name];
         if (type == ResourceBindingType.BufferSrv) pass.Bind(edit.CreateBufferSrv(buffer.Id, structureStride: buffer.Stride), sync);
-        else pass.Bind(edit.CreateBufferUav(buffer.Id, structureStride: buffer.Stride), sync, access, coverage);
+        else pass.Bind(edit.CreateBufferUav(buffer.Id, structureStride: buffer.Stride), sync, access, coverage,
+            unorderedAccessHazards: unorderedAccessHazards);
     }
 
     private void BindSurface(ref RenderGraphEdit edit, ref PassDefinition pass, GraphTextureId texture, Format format, PipelineSync sync)
@@ -58,7 +61,8 @@ public sealed partial class ScreenProbeFeature
         {
             edit.OrderAfter(pass.Id, ClearSurfacesPass);
             pass.Bind(edit.CreateTextureUav(texture, format: format, dimension: TextureViewDimension.Texture2DArray),
-                sync, GraphAccessMode.Write, WriteCoverage.Partial);
+                sync, GraphAccessMode.Write, WriteCoverage.Partial,
+                unorderedAccessHazards: UnorderedAccessHazardMode.DisjointWrites);
         }
         else pass.Bind(GraphParameterResourceBinding.Null(ResourceBindingType.TextureUav));
     }
@@ -105,12 +109,22 @@ public sealed partial class ScreenProbeFeature
     private static void BindTexture(ref RenderGraphEdit edit, ref PassDefinition pass, GraphTextureId texture, Format format, PipelineSync sync) =>
         pass.Bind(edit.CreateTextureSrv(texture, format: format, dimension: TextureViewDimension.Texture2DArray), sync);
 
-    private sealed class MaterialResources(ScreenProbeFeature feature, GraphBufferId constant) : IGraphResourceProvider
+    private sealed class MaterialResources(ScreenProbeFeature feature, GraphBufferId constant,
+        string? outputBufferName = null) : IGraphResourceProvider
     {
         public bool TryResolve(string name, ResourceBindingType type, out GraphResourceBinder binder)
         {
             if (name == "GiMaterialWork") binder = BindIndex;
-            else binder = (ref RenderGraphEdit edit, ref PassDefinition pass, PipelineSync sync) => feature.BindSceneResource(ref edit, ref pass, name, type, sync);
+            else binder = (ref RenderGraphEdit edit, ref PassDefinition pass, PipelineSync sync) =>
+            {
+                if (name == outputBufferName)
+                    feature.BindBuffer(ref edit, ref pass, name, type, sync, GraphAccessMode.Write,
+                        unorderedAccessHazards: UnorderedAccessHazardMode.DisjointWrites);
+                else if (name is "GiMaterialWorkRanges" or "GiMaterialWorkIndices" or "GiCandidates" or "GiRays" or
+                    "GiCandidateHits" or "GiSurfaceSamples")
+                    feature.BindBuffer(ref edit, ref pass, name, type, sync, GraphAccessMode.Read);
+                else feature.BindSceneResource(ref edit, ref pass, name, type, sync);
+            };
             return true;
         }
         private void BindIndex(ref RenderGraphEdit edit, ref PassDefinition pass, PipelineSync sync) =>

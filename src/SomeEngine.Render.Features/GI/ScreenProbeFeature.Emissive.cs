@@ -90,7 +90,7 @@ public sealed partial class ScreenProbeFeature
     }
 
     private GraphPassId[] AddEmissiveMaterialPasses(ref RenderGraphEdit edit, uint index,
-        Shader shader, IGraphResourceProvider resources)
+        Shader shader, IGraphResourceProvider resources, IGraphResourceProvider surfaceResources)
     {
         GiEmissiveLights lights = _emissive!;
         GraphPassId classify = _cluster!.AddMaterialComputePass(ref edit, index, shader, "ClassifyGiMaterialEmission",
@@ -102,7 +102,7 @@ public sealed partial class ScreenProbeFeature
         edit.OrderAfter(geometry, lights.GeometryWork);
         edit.OrderAfter(lights.Distribution, geometry);
         GraphPassId shade = _cluster.AddMaterialComputePass(ref edit, index, shader, "ShadeGiMaterial",
-            _buffers["GiMaterialDispatch"].Id, index * 12ul, resources, _traceRegion);
+            _buffers["GiMaterialDispatch"].Id, index * 12ul, surfaceResources, _traceRegion);
         edit.OrderAfter(shade, lights.DirectWork);
         edit.OrderAfter(lights.Resolve, shade);
         return [classify, geometry, shade];

@@ -845,13 +845,8 @@ internal sealed partial class FrameExecutor
 
     private bool CanOverlapWrites(int leftPass, int rightPass)
     {
-        FramePass left = _passes[leftPass];
-        FramePass right = _passes[rightPass];
-        Queue[] leftCandidates = _frame.Graph.ResolveQueueCandidates(left.QueuePolicy, left.Kind);
-        Queue[] rightCandidates = _frame.Graph.ResolveQueueCandidates(right.QueuePolicy, right.Kind);
-        return leftCandidates.Length == 1 &&
-            rightCandidates.Length == 1 &&
-            ReferenceEquals(leftCandidates[0], rightCandidates[0]);
+        Queue? left = _passes[leftPass].SingleQueueCandidate;
+        return left is not null && ReferenceEquals(left, _passes[rightPass].SingleQueueCandidate);
     }
 
     private static bool HasRequiredBufferContents(

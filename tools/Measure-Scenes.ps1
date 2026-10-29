@@ -92,7 +92,7 @@ try {
     $key = if ($Trace) { 0x79 } else { 0x78 }
     [void][SceneTestKeys]::PostMessage($window, 0x100, [UIntPtr]$key, [IntPtr]0)
     [void][SceneTestKeys]::PostMessage($window, 0x101, [UIntPtr]$key, [IntPtr]0)
-    while (!$process.HasExited -and $timer.Elapsed.TotalSeconds -lt 57) {
+    while (!$process.HasExited -and $timer.Elapsed.TotalSeconds -lt 58.5) {
         $report = Get-ChildItem -LiteralPath $reports -Filter results.json -Recurse -ErrorAction SilentlyContinue |
             Where-Object { $_.LastWriteTimeUtc -ge $started } | Select-Object -First 1
         if ($report) { break }

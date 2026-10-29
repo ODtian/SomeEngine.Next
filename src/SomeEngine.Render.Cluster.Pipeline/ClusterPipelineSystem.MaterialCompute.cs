@@ -51,13 +51,9 @@ public sealed partial class ClusterPipelineSystem
         return id;
     }
 
-    /// <summary>Declares this frame's resident geometry after Cluster has recorded its resource ranges.</summary>
-    public void ReadMaterialComputeResources(ref RenderGraphFrame graph, GraphPassId pass)
+    /// <summary>Orders material compute after this frame's geometry builds.</summary>
+    public void OrderMaterialGeometryBuilds(ref RenderGraphFrame graph, GraphPassId pass)
     {
-        PassDefinition access = graph.GetPass(pass);
-        ClusterGeometryCapabilities geometry = GraphData.Outputs.Geometry;
-        geometry.ReadPageHeap(ref access, PipelineSync.ComputeShading);
-        access.ReadRanges(geometry.Bvh, geometry.BvhReadRanges, PipelineSync.ComputeShading, ResourceAccess.ShaderResource);
         foreach (GraphPassId build in _resources.GeometryBuilds(graph.FrameIdentity)) graph.OrderAfter(pass, build);
     }
 }

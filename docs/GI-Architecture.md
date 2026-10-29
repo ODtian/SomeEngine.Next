@@ -69,9 +69,9 @@ Global SDF 命中后直接消费这个缓存结果。近景取得详细表面位
 
 `MeshDistanceFieldBlock` 与同一 MeshAsset 中的 Cluster 几何共用资产身份。导入器生产局部距离采样、三角网格和原三角指针，加载方创建 `MeshDistanceField` 使用对象。`MeshInstance.DistanceField` 通过已有 `MeshRenderExtractor` 交付 `RenderMesh.DistanceField`，同一网格的实例共享同一数据引用。
 
-`GiSceneData` 消费 Rendering world 的 `RenderMesh` 和 `RenderClusterGeometry`。它持有 GPU 距离场数据及按现有 `RootBvh` 索引的 `uint2`：距离场字节地址、材质绑定范围数。三角指针按已有驻留分配重定位；原始几何页、BVH、实例、材质标量和纹理仍由对应引擎设施持有。
+`GiSceneData` 消费 Rendering world 的 `RenderMesh` 和 `RenderClusterGeometry`。它维护 GPU 距离场缓冲及按现有 `RootBvh` 索引的 `uint2`：距离场字节地址、材质绑定范围数。三角指针按已有驻留分配重定位，结果直接写入 RenderGraph 的当帧上传页；原始采样由共享网格数据持有，上传字节由 RenderGraph 持有。原始几何页、BVH、实例、材质标量和纹理由对应引擎设施持有。
 
-近景与训练的候选按既有材质编号分桶。`IntersectGiMaterial` 和 `ShadeGiMaterial` 调用用户的 `IVertexEvaluate`、`IDomainEvaluate`、可见性解释与 `IGiSurfaceEvaluate`。Cluster 的材质 compute 接入复用同一 Shader 管线缓存、标量区、纹理输入和图资源绑定。
+近景与训练的候选按既有材质编号分桶。`IntersectGiMaterial` 和 `ShadeGiMaterial` 调用用户的 `IVertexEvaluate`、`IDomainEvaluate`、可见性解释与 `IGiSurfaceEvaluate`。Cluster 的材质 compute 接入复用同一 Shader 管线缓存、标量区、纹理输入和图资源绑定。共同输入声明为读取；每个材质桶的命中与表面输出声明为独立写入，各阶段通过既有汇合依赖交付完整结果。屏幕空间探针的覆盖请求采用原子合并。
 
 固定 pass 与长期缓冲通过持久 RenderGraph 建立。场内容随实例版本或网格字段变化更新；当帧射线、候选、分桶与训练样本通过已有 pass 更新。几何页和 BVH 访问使用引擎现有的实际驻留范围。GI 页请求在既有请求完成 pass 之前交付，随后沿同一反馈通路进入流送。
 

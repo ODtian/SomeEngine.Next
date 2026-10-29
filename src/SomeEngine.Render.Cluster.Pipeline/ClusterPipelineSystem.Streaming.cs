@@ -44,19 +44,8 @@ public sealed partial class ClusterPipelineSystem
             (uint)((data.Length + 63) / 64), 1, 1)));
         graph.SetRegionEnabled(GraphData.LeafFlagRegion, !data.IsEmpty);
         PassDefinition pass = graph.GetPass(GraphData.LeafFlagPass);
-        uint[] addresses = data.ToArray().Select(static fixup => fixup.ClusterByteAddress + 60u).ToArray();
-        Array.Sort(addresses);
-        uint first = addresses[0], end = first + sizeof(uint);
-        for (int index = 1; index <= addresses.Length; index++)
-        {
-            if (index < addresses.Length && addresses[index] <= end)
-            {
-                end = addresses[index] + sizeof(uint);
-                continue;
-            }
-            _ = pass.ReadWrite(GraphData.Resources.PageHeap, new BufferRange(first, end - first),
+        foreach (ref readonly BufferRange range in _residentPageReads.Ranges)
+            _ = pass.ReadWrite(GraphData.Resources.PageHeap, range,
                 PipelineSync.ComputeShading, ResourceAccess.UnorderedAccess);
-            if (index < addresses.Length) { first = addresses[index]; end = first + sizeof(uint); }
-        }
     }
 }

@@ -59,6 +59,7 @@ public sealed partial class SceneTestPlatform
         Scenes = scenes.ToArray();
         Application = new ApplicationScene(scenes[0].ContentDirectory)
         {
+            GeometryMemoryBytes = 512u * 1024u * 1024u,
             Initialize = frame => InitializeScene?.Invoke(frame.Scene, Current),
             SceneStarted = BeginScene,
             UpdateFrame = UpdateFrame,
@@ -112,6 +113,7 @@ public sealed partial class SceneTestPlatform
     private readonly Dictionary<int, ClusterBlendMetrics> _blendFrames = [];
     private readonly List<SceneFrameWindow> _frameWindows = [];
     private int _firstSampleRenderedFrame;
+    private const double MeasurementTimeLimitSeconds = 52;
     private bool _fixedWarmupComplete;
     private string? _fixedWindowError;
     private string? _measurementError;
@@ -259,7 +261,7 @@ public sealed partial class SceneTestPlatform
     private void BeginScene(long started)
     {
         if (!IsMeasuring) return;
-        _sceneTimeLimit = (45 - Stopwatch.GetElapsedTime(_testStarted, started).TotalSeconds) / (Scenes.Count - SelectedScene);
+        _sceneTimeLimit = (MeasurementTimeLimitSeconds - Stopwatch.GetElapsedTime(_testStarted, started).TotalSeconds) / (Scenes.Count - SelectedScene);
         _sceneStarted = started;
         _sampleStarted = 0;
         _renderingStarted = 0;
@@ -342,7 +344,7 @@ public sealed partial class SceneTestPlatform
             }
             sampled = _sampleStarted != 0 && Stopwatch.GetElapsedTime(_sampleStarted).TotalSeconds >= 2;
         }
-        bool expired = elapsed >= _sceneTimeLimit || Stopwatch.GetElapsedTime(_testStarted).TotalSeconds >= 45;
+        bool expired = elapsed >= _sceneTimeLimit || Stopwatch.GetElapsedTime(_testStarted).TotalSeconds >= MeasurementTimeLimitSeconds;
         if (!sampled && !expired && !finishedWindow) return;
         if (Current.MeasurementFrames is not null && !sampled)
         {
@@ -430,7 +432,7 @@ public sealed partial class SceneTestPlatform
             if (gpu.Length != window.Frames.Length)
                 error ??= "The GPU blend samples did not cover the complete scene-frame window.";
         }
-        if (error is null && ReloadRequested && SelectedScene + 1 < Scenes.Count && Stopwatch.GetElapsedTime(_testStarted).TotalSeconds < 45)
+        if (error is null && ReloadRequested && SelectedScene + 1 < Scenes.Count && Stopwatch.GetElapsedTime(_testStarted).TotalSeconds < MeasurementTimeLimitSeconds)
         {
             SelectScene(SelectedScene + 1);
             return;

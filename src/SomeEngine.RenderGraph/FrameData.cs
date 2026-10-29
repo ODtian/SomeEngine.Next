@@ -316,6 +316,7 @@ internal struct FramePass
     internal bool Enabled;
     internal bool Live;
     internal Queue? Queue;
+    internal Queue? SingleQueueCandidate;
     internal PassCallbackStorage? PersistentCallbacks;
     internal FramePassCallbackStore? FrameCallbacks;
     internal int FrameCallbackIndex;

@@ -29,7 +29,6 @@ public sealed partial class ScreenProbeFeature : IGraphResourceProvider, IRender
     private readonly Dictionary<string, BufferData> _buffers = [];
     private readonly Dictionary<string, LinkedComputePipeline> _pipelines = [];
     private readonly Dictionary<uint, MaterialPasses> _materials = [];
-    private readonly HashSet<GraphPassId> _geometryReaders = [];
     private readonly List<GraphPassId> _resets = [];
     private readonly List<GraphPassId> _fieldPasses = [];
     private readonly QueryPasses[] _queries = new QueryPasses[2];
@@ -127,14 +126,16 @@ public sealed partial class ScreenProbeFeature : IGraphResourceProvider, IRender
                 uint index = entry.Index;
                 MemoryMarshal.Write(bytes, in index);
                 var resources = new MaterialResources(this, constant);
+                var intersectionResources = new MaterialResources(this, constant, "GiCandidateHits");
+                var surfaceResources = new MaterialResources(this, constant, "GiSurfaceSamples");
                 var passes = new GraphPassId[7];
                 for (int stage = 0; stage < 2; stage++)
                 {
                     QueryPasses query = _queries[stage];
                     GraphPassId intersect = cluster.AddMaterialComputePass(ref edit, index, shader, "IntersectGiMaterial",
-                        _buffers["GiMaterialDispatch"].Id, index * 12ul, resources, _traceRegion);
+                        _buffers["GiMaterialDispatch"].Id, index * 12ul, intersectionResources, _traceRegion);
                     GraphPassId shade = cluster.AddMaterialComputePass(ref edit, index, shader, "ShadeGiMaterial",
-                        _buffers["GiMaterialDispatch"].Id, index * 12ul, resources, _traceRegion);
+                        _buffers["GiMaterialDispatch"].Id, index * 12ul, surfaceResources, _traceRegion);
                     edit.OrderAfter(intersect, query.TriangleWork);
                     edit.OrderAfter(query.Reduce, intersect);
                     edit.OrderAfter(shade, query.SurfaceWork);
@@ -142,7 +143,7 @@ public sealed partial class ScreenProbeFeature : IGraphResourceProvider, IRender
                     passes[stage * 2] = intersect;
                     passes[stage * 2 + 1] = shade;
                 }
-                AddEmissiveMaterialPasses(ref edit, index, shader, resources).CopyTo(passes, 4);
+                AddEmissiveMaterialPasses(ref edit, index, shader, resources, surfaceResources).CopyTo(passes, 4);
                 _materials[index] = new(entry.Material, shader, constant, bytes, passes);
             }
             foreach (uint index in _materials.Keys.Where(index => !active.Contains(index)).ToArray())
@@ -183,16 +184,10 @@ public sealed partial class ScreenProbeFeature : IGraphResourceProvider, IRender
             graph.SetPassEnabled(_clearBuffers, _resetBuffers);
             foreach (GraphPassId reset in _resets) graph.SetPassEnabled(reset, _resetBuffers);
             graph.SetPassEnabled(_initializeProbes, _resetBuffers || cameraCut);
-            foreach (GraphPassId id in _geometryReaders)
-            {
-                PassDefinition pass = graph.GetPass(id);
-                _surfaces.Geometry.ReadPageHeap(ref pass, PipelineSync.ComputeShading);
-                _surfaces.Geometry.ReadBvh(ref pass, PipelineSync.ComputeShading);
-            }
             foreach (MaterialPasses material in _materials.Values)
             {
                 graph.SetBufferData(material.Constants, material.Bytes);
-                foreach (GraphPassId pass in material.Passes) _cluster.ReadMaterialComputeResources(ref graph, pass);
+                foreach (GraphPassId pass in material.Passes) _cluster.OrderMaterialGeometryBuilds(ref graph, pass);
             }
             graph.ObserveExecution(this);
         }

@@ -225,7 +225,7 @@ public sealed class ClusterGeometryCapabilities
         InstancePropertiesRange.Size != 0;
 
     /// <summary>
-    /// Connects the page heap descriptor. ReadPageHeap supplies each frame's resident ranges.
+    /// Connects the page heap descriptor to the resident ranges supplied by Cluster for this frame.
     /// </summary>
     public void BindPageHeap(
         RenderGraphEdit graph,
@@ -240,15 +240,12 @@ public sealed class ClusterGeometryCapabilities
     public void ReadPageHeap(ref PassDefinition pass, PipelineSync sync) =>
         pass.ReadRanges(PageHeap, _residentPageReads, sync, ResourceAccess.ShaderResource);
 
-    /// <summary>Connects the hierarchy descriptor; ReadBvh supplies its existing frame ranges.</summary>
+    /// <summary>Connects the hierarchy descriptor to the ranges supplied by Cluster for this frame.</summary>
     public void BindBvh(RenderGraphEdit graph, ref PassDefinition pass, PipelineSync sync, string? label = null)
     {
         pass.Bind(GraphParameterResourceBinding.ReadOnlyBufferDescriptor(
             graph.CreateBufferSrv(Bvh, label: label ?? "Cluster geometry hierarchy")));
     }
-
-    public void ReadBvh(ref PassDefinition pass, PipelineSync sync) =>
-        pass.ReadRanges(Bvh, _bvhReadRanges, sync, ResourceAccess.ShaderResource);
 
     public bool HasBvhData => _bvhReadRanges.Count != 0;
 

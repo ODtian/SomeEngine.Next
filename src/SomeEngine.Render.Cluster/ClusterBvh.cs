@@ -386,7 +386,19 @@ internal sealed class ClusterBvh
             ranges.Add(new(offset, size));
         }
         ranges.Sort(static (left, right) => left.Offset.CompareTo(right.Offset));
-        _readRanges = [.. ranges];
+        int rangeCount = 0;
+        for (int index = 0; index < ranges.Count; index++)
+        {
+            BufferRange range = ranges[index];
+            if (rangeCount != 0 && ranges[rangeCount - 1].Offset + ranges[rangeCount - 1].Size >= range.Offset)
+            {
+                BufferRange previous = ranges[rangeCount - 1];
+                ranges[rangeCount - 1] = new(previous.Offset,
+                    Math.Max(previous.Offset + previous.Size, range.Offset + range.Size) - previous.Offset);
+            }
+            else ranges[rangeCount++] = range;
+        }
+        _readRanges = CollectionsMarshal.AsSpan(ranges)[..rangeCount].ToArray();
     }
 
     public Exception? Clear()

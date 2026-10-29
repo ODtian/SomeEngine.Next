@@ -145,7 +145,6 @@ public sealed partial class ScreenProbeFeature
                     GraphAccessMode.Write, WriteCoverage.Complete);
                 continue;
             }
-            if (name is "PageHeap" or "GiHierarchy") _geometryReaders.Add(id);
             BindSceneResource(ref edit, ref pass, name, type, PipelineSync.ComputeShading, stage);
         }
         return id;
