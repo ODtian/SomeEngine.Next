@@ -136,7 +136,6 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ITransparentS
         if (dot(geometricNormal, surface.Normal) < 0.0) geometricNormal = -geometricNormal;
 
         ClusterViewUniforms cameraView = MaterialViews[input.PixelCoord.z];
-        bool firstPerson = (LoadInstanceFirstPerson(MaterialInstanceData, MaterialInstanceProperties, input.InstanceID).x & 3u) == 1u;
         float3 positionDx = ctx.surfacePosition + input.PositionDx;
         float3 positionDy = ctx.surfacePosition + input.PositionDy;
         if (firstPerson && cameraView.FirstPersonTransformEnabled != 0u)
