@@ -28,6 +28,18 @@ Windows 测量进程使用 `WinSta0\Default` 桌面并置顶应用窗口。Linux
 
 原 `docs/agents/acceptance-performance.md` 的长期验收要求迁移至本节；旧提交、原始测量与历史运行记录不在此重写，也不作为本次 rebase 后的通过证据。重新测量必须记录最终源码提交、对应内容版本、实际设备/backend、配置与采样边界；旧 shader/import 记录不能冒充新内容。
 
+## Color GPU 范围计时
+
+DefaultGame 的 `--color-times=control` 和 `--color-times=coarse` 沿统一场景平台测量 color 工作。
+可通过 `Measure-Scenes.ps1` 的 `ApplicationArguments` 传入该参数，并继续使用已配置的固定模拟帧窗口。
+两种模式都在预热期通过当前图的 pass 标签识别实际 color 执行首末，在同一队列上维护覆盖全部 color pass 的顺序。
+Control 在正式窗口移除查询；coarse 仅测量首末 pass，其他 color pass 继续使用原资源声明和命令复用。
+
+既有报告的 `ColorTimes` 保存实际配置、队列、覆盖顺序、时间戳频率、模拟帧与图帧身份以及原始时间戳。
+整段时间由最后一个 pass 的结束值减去第一个 pass 的开始值计算；不同首末 pass 各有两个时间戳，
+其内部两条计时边界的影响随两端自身时长一同解释。该诊断结果与普通三景性能报告分别使用。
+选择性计时沿 `RenderGraphEdit.GetPasses`、`GetPassLabel`、`MeasurePassTime` 和普通 resolve/readback 链完成。
+
 ## 公共队列
 
 CPU、GPU benchmark 通过 `tools/Invoke-Benchmark.ps1 <原命令及参数>` 提交到公共队列。默认任务和 `--cpu` 任务按 CPU 调度；使用 GPU 的任务通过 `--gpu` 提交，`--exclusive` 为其兼容写法。

@@ -122,6 +122,7 @@ public static class SampleApplication
             },
         };
         platform.ConfigureViews(args);
+        platform.InstallColorTimes(args);
         if (platform.ExitAfterMeasurements)
             platform.StartMeasurements(recordTrace: args.Contains("--measure-trace", StringComparer.Ordinal));
         try

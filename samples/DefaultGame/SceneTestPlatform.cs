@@ -262,6 +262,7 @@ public sealed partial class SceneTestPlatform
         }
         ConfigureMeasurementOutput(recordTrace);
         _results.Clear();
+        _colorTimes?.Reports.Clear();
         _frameWindows.Clear();
         _measurementError = null;
         _recordTrace = recordTrace;
@@ -531,6 +532,8 @@ public sealed partial class SceneTestPlatform
                 error ??= "The GPU blend samples did not cover the complete scene-frame window.";
         }
         SaveGpuPassTimingScene();
+        string? colorTimeError = _colorTimes?.FinishScene(_frameWindows[^1].Frames);
+        error ??= colorTimeError;
         _measurementError ??= error;
         if (renderingSucceeded && ReloadRequested && SelectedScene + 1 < Scenes.Count && Stopwatch.GetElapsedTime(_testStarted).TotalSeconds < 45)
         {
@@ -599,6 +602,7 @@ public sealed partial class SceneTestPlatform
             ["Scenes"] = JsonSerializer.SerializeToNode(_results, SceneJsonContext.Default.ListSceneTiming),
         };
         AddGpuPassTimingReport(report);
+        AddColorTimesReport(report);
         WriteMeasurementText(LastReport, report.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
         Console.WriteLine($"Performance report: {LastReport}");
         IsMeasuring = false;
