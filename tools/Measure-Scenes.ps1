@@ -3,6 +3,7 @@ param(
     [string[]]$ApplicationArguments = @(),
     [string]$SceneConfigurationJson,
     [string]$PlatformConfigurationJson,
+    [string]$PublishSourceRevision,
     [ValidateSet('deferred', 'forward')][string]$ShadingPath,
     [ValidateSet('static', 'motion', 'materials', 'camera')][string]$ScenePlayback = 'camera',
     [string]$ExpectedScene,
@@ -23,6 +24,7 @@ if ($ApplicationPath) {
 }
 if ($SceneConfigurationJson) { $measurementArguments += @('--scene-configuration-json', $SceneConfigurationJson) }
 if ($PlatformConfigurationJson) { $measurementArguments += @('--platform-configuration-json', $PlatformConfigurationJson) }
+if ($PublishSourceRevision) { $measurementArguments += @('--publish-source-revision', $PublishSourceRevision) }
 if ($Managed) { $measurementArguments += '--managed' }
 if ($Trace) { $measurementArguments += '--trace' }
 if ($TraceDetail) { $measurementArguments += '--trace-detail' }
@@ -34,7 +36,9 @@ foreach ($argument in $ApplicationArguments) { $measurementArguments += "--appli
 
 Push-Location $repository
 try {
-    $receiptText = & $queue --gpu --session $session python @measurementArguments
+    $queueArguments = @('--gpu', '--session', $session)
+    if ($PublishSourceRevision) { $queueArguments += @('--timeout', '1200') }
+    $receiptText = & $queue @queueArguments python @measurementArguments
     if ($LASTEXITCODE -ne 0) { throw 'The GPU measurement queue submission failed.' }
 } finally { Pop-Location }
 $receipt = ($receiptText -split '\r?\n' | Where-Object { $_.Trim() } | Select-Object -Last 1) | ConvertFrom-Json

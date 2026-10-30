@@ -18,6 +18,8 @@
 
 `-PlatformConfigurationJson` 用于队列可能在不同操作系统执行的测量，JSON 按 Python `sys.platform` 的 `win32`、`linux` 分别提供 `ApplicationPath` 与 `Scenes`。执行端选择本机对应的应用和场景数组，再沿同一测量流程运行；这些值优先于单平台的应用与场景参数。两端分别复用各自的正式发布目录和内容，报告按实际设备与构建配置评估。
 
+`-PublishSourceRevision <提交>` 让同一 GPU 队列任务在实际执行主机上先完成该提交的 NativeAOT/Satori 增量发布，再开始原有应用测量预算。该模式的任务时限为 1200 秒，构建单独计时。已完成本轮发布的主机可以在对应平台配置中提供从成功发布回执取得的 `PublishedHost`、`PublishedSourceRevision`，执行端匹配后直接复用该产物。其余执行主机按本机 RID 发布到所选应用原目录，随后沿相同三景、帧窗与报告检查运行。
+
 Windows 测量进程使用 `WinSta0\Default` 桌面并置顶应用窗口。Linux 使用 Vulkan；已有 `DISPLAY` 时复用该显示，队列服务器通过 `tools/x11_display.py` 的 `open_display` 在所分配 GPU 上建立私有 Xorg 显示，并在进程结束后释放。报告中的 `GraphicsDevice`、`GraphicsDriver`、`GraphicsBackend` 和队列返回的 GPU 身份共同说明当次设备条件。
 
 测量进程通过 stdout 的 `SCENE_REPORT` 和 `SCENE_FRAME_SAMPLES` 行交付完整 JSON，按应用随附 `test-scenes.json` 核对逐帧区间。设置 `SOMEENGINE_MEASUREMENT_OUTPUT_DIRECTORY` 和 `SOMEENGINE_MEASUREMENT_OUTPUT_BASENAME` 后，PowerShell 客户端把这两份 JSON 保存到指定的平铺输出位置；运行机器上的临时报告随测量释放。Trace 文件保存在当次发布目录的 `Performance` 子目录，`SCENE_DIAGNOSTICS` 输出其位置，供同一执行机器上的 Trace 工具读取后清理。
