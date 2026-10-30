@@ -92,6 +92,8 @@ internal sealed unsafe partial class VulkanBackend
         CreateCommandContext(device, desc);
     void IGraphicsBackend.Begin(CommandContext context, in CommandRecordingDesc desc) => Begin(context, desc);
     RecordedCommands IGraphicsBackend.End(CommandContext context) => End(context);
+    bool IGraphicsBackend.TryRepeatCommands(CommandContext context, out RecordedCommands commands) =>
+        TryRepeatCommands(context, out commands);
     RecordedBundle IGraphicsBackend.EndBundle(CommandContext context) => EndBundle(context);
     void IGraphicsBackend.Discard(CommandContext context) => Discard(context);
     void IGraphicsBackend.Barrier(CommandContext context, in MemoryBarrier barrier) => Barrier(context, barrier);

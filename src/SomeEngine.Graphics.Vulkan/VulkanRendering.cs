@@ -122,6 +122,7 @@ internal sealed unsafe partial class VulkanBackend
         {
             BindDescriptorGeneration(command, pipeline, generation);
             command.Capture(generation);
+            command.TrackRepeatedParameters(native, generation);
         }
         finally
         {

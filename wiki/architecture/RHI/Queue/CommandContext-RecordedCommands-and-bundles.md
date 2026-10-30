@@ -28,6 +28,16 @@ D3D12 可以通过 `TryRepeatCommands` 为上一份已完成的命令列表生�
 与 [CommandRecordingReuse](../../../../src/SomeEngine.Graphics.Direct3D12/CommandRecordingReuse.cs) 实现；
 临时附件内容由 [CommandCopies](../../../../src/SomeEngine.Graphics.Direct3D12/CommandCopies.cs) 随录制收集。
 
+Vulkan 通过同一 `TryRepeatCommands` 入口，为上一份已完成的原生命令缓冲生成新的单次提交句柄。
+命令存储保存资源身份与实际绑定的长期参数、bindless descriptor 代际；复用时核对当前代际，
+再沿原捕获集合取得本次 GPU 使用的原生引用和当前 sparse backing。每次完成释放本次捕获，
+命令存储继续持有临时 descriptor sets、普通数据上传内容与内置 clear 的原生附件 views。
+下一次 `Begin` 重置这些命令内容；参数更新或 descriptor 发布后，新录制取得新代际。
+业务资源的原生生命周期由原有资源持有者和逐次提交捕获维护，缓存的资源身份属于 CPU 元数据。
+实现见 [VulkanCommands](../../../../src/SomeEngine.Graphics.Vulkan/VulkanCommands.cs)、
+[VulkanDescriptors](../../../../src/SomeEngine.Graphics.Vulkan/VulkanDescriptors.cs) 与
+[VulkanCopies](../../../../src/SomeEngine.Graphics.Vulkan/VulkanCopies.cs)。
+
 Bundles are caller-disposed Device children and may contain only the command inventory permitted by
 the backend. `ExecuteBundle` captures the bundle and its native dependencies.
 ^rhi-que-004

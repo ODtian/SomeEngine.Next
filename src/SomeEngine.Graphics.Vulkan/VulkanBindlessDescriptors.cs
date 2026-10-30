@@ -177,6 +177,7 @@ internal sealed unsafe partial class VulkanBackend
                     VulkanBindlessHeap heap = GetOrCreateHeap(bindings[index].Kind);
                     VulkanBindlessGeneration generation = heap.CurrentGeneration;
                     commands.CaptureReference(generation);
+                    commands.TrackRepeatedDescriptors(heap, generation);
                     sets[index] = new VulkanBoundBindlessSet(
                         bindings[index].Set,
                         generation);
@@ -416,7 +417,7 @@ internal sealed unsafe partial class VulkanBackend
         internal VulkanBindlessGeneration CreateGeneration() =>
             VulkanBindlessGeneration.Create(_device, Layout, _type, _capacity);
 
-        internal VulkanBindlessGeneration CurrentGeneration => _current!;
+        internal VulkanBindlessGeneration CurrentGeneration => Volatile.Read(ref _current)!;
 
         internal void Publish(VulkanBindlessGeneration generation)
         {

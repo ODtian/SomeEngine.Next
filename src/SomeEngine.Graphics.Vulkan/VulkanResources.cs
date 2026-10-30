@@ -490,23 +490,7 @@ internal sealed unsafe partial class VulkanBackend
         bool depthSlices = colorAttachment && nativeTexture.Info.Dimension == TextureDimension.Texture3D;
         if (depthSlices) ValidateAttachmentRange(nativeTexture.Info, range);
         else ValidateTextureRange(nativeTexture.Info, range);
-        ImageViewCreateInfo createInfo = new()
-        {
-            SType = StructureType.ImageViewCreateInfo,
-            Image = nativeTexture.Native,
-            ViewType = depthSlices ? ImageViewType.Type2DArray : ToNative(dimension),
-            Format = VulkanFormats.ToNative(format),
-            Components = new ComponentMapping(
-                ComponentSwizzle.Identity,
-                ComponentSwizzle.Identity,
-                ComponentSwizzle.Identity,
-                ComponentSwizzle.Identity),
-            SubresourceRange = ToNative(range),
-        };
-        VkImageView native = default;
-        nativeDevice.ThrowIfDeviceCallFailed(
-            Api.CreateImageView(nativeDevice.Native, &createInfo, null, &native),
-            "vkCreateImageView");
+        VkImageView native = CreateNativeImageView(nativeDevice, nativeTexture, range, format, dimension, depthSlices);
         TView view;
         try
         {
@@ -518,6 +502,34 @@ internal sealed unsafe partial class VulkanBackend
             throw;
         }
         return RegisterChildOrDispose(nativeDevice, view);
+    }
+
+    private VkImageView CreateNativeImageView(
+        VulkanDevice device,
+        VulkanTexture texture,
+        in TextureSubresourceRange range,
+        RhiFormat format,
+        TextureViewDimension dimension,
+        bool depthSlices)
+    {
+        ImageViewCreateInfo createInfo = new()
+        {
+            SType = StructureType.ImageViewCreateInfo,
+            Image = texture.Native,
+            ViewType = depthSlices ? ImageViewType.Type2DArray : ToNative(dimension),
+            Format = VulkanFormats.ToNative(format),
+            Components = new ComponentMapping(
+                ComponentSwizzle.Identity,
+                ComponentSwizzle.Identity,
+                ComponentSwizzle.Identity,
+                ComponentSwizzle.Identity),
+            SubresourceRange = ToNative(range),
+        };
+        VkImageView native = default;
+        device.ThrowIfDeviceCallFailed(
+            Api.CreateImageView(device.Native, &createInfo, null, &native),
+            "vkCreateImageView");
+        return native;
     }
 
     private VkBuffer CreateNativeBuffer(VulkanDevice device, in BufferDesc desc)

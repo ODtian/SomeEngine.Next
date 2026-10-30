@@ -748,9 +748,10 @@ internal sealed unsafe partial class VulkanBackend
             buffer = page.Native;
         }
 
-        internal void ResetAfterCompletion()
+        internal void ReleaseUnusedSets() => ReleaseSets(_usedSetCount);
+
+        internal void ResetForRecording()
         {
-            ReleaseSets(_usedSetCount);
             _usedSetCount = 0;
             for (int index = 0; index < _uploadPageCount; index++)
                 _uploadPages[index].Reset();
@@ -1048,6 +1049,7 @@ internal sealed unsafe partial class VulkanBackend
 
         internal VulkanPipeline Pipeline { get; }
         internal VulkanBlockLayout Block { get; }
+        internal VulkanDescriptorGeneration? CurrentGeneration => Volatile.Read(ref _generation);
 
         internal VulkanDescriptorGeneration AcquireGeneration()
         {

@@ -208,10 +208,16 @@ internal sealed unsafe partial class VulkanBackend
         for (uint mip = range.FirstMipLevel; mip < range.FirstMipLevel + range.MipLevelCount; mip++)
         {
             TextureSubresourceRange single = new(mip, 1, range.FirstArrayLayer, range.ArrayLayerCount, range.Aspects);
-            using ColorAttachmentView view = CreateColorAttachmentView(command.Device,
-                new ColorAttachmentViewDesc(texture, single, native.Info.Format, ClearViewDimension(native.Info)));
-            RenderingAttachmentInfo attachment = CreateColorAttachment(command,
-                new ColorAttachmentDesc(view, LoadType.Clear, StoreType.Store, color));
+            VkImageView view = command.CreateClearAttachment(native, single);
+            RenderingAttachmentInfo attachment = new()
+            {
+                SType = StructureType.RenderingAttachmentInfo,
+                ImageView = view,
+                ImageLayout = ImageLayout.ColorAttachmentOptimal,
+                LoadOp = AttachmentLoadOp.Clear,
+                StoreOp = AttachmentStoreOp.Store,
+                ClearValue = new ClearValue { Color = ToClearColor(native.Info.Format, color) },
+            };
             RenderingInfo rendering = new()
             {
                 SType = StructureType.RenderingInfo,
@@ -246,10 +252,19 @@ internal sealed unsafe partial class VulkanBackend
         for (uint mip = range.FirstMipLevel; mip < range.FirstMipLevel + range.MipLevelCount; mip++)
         {
             TextureSubresourceRange single = new(mip, 1, range.FirstArrayLayer, range.ArrayLayerCount, range.Aspects);
-            using DepthStencilView view = CreateDepthStencilView(command.Device,
-                new DepthStencilViewDesc(texture, single, native.Info.Format, ClearViewDimension(native.Info)));
-            var (depthAttachment, stencilAttachment, hasDepth, hasStencil) = CreateDepthStencilAttachment(command,
-                new DepthStencilAttachmentDesc(view, LoadType.Clear, StoreType.Store, LoadType.Clear, StoreType.Store, depth, stencil));
+            VkImageView view = command.CreateClearAttachment(native, single);
+            bool hasDepth = (range.Aspects & TextureAspects.Depth) != 0;
+            bool hasStencil = (range.Aspects & TextureAspects.Stencil) != 0;
+            RenderingAttachmentInfo depthAttachment = new()
+            {
+                SType = StructureType.RenderingAttachmentInfo,
+                ImageView = view,
+                ImageLayout = ToNative(TextureLayout.DepthStencilWrite),
+                LoadOp = AttachmentLoadOp.Clear,
+                StoreOp = AttachmentStoreOp.Store,
+                ClearValue = new ClearValue { DepthStencil = new ClearDepthStencilValue(depth, stencil) },
+            };
+            RenderingAttachmentInfo stencilAttachment = depthAttachment;
             RenderingInfo rendering = new()
             {
                 SType = StructureType.RenderingInfo,

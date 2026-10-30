@@ -35,6 +35,9 @@ internal sealed unsafe partial class VulkanBackend
     internal RecordedCommands End(CommandContext context) =>
         RequireCommandContext(context, nameof(context)).EndCommands();
 
+    internal bool TryRepeatCommands(CommandContext context, out RecordedCommands commands) =>
+        RequireCommandContext(context, nameof(context)).TryRepeatCommands(out commands);
+
     internal RecordedBundle EndBundle(CommandContext context) =>
         throw new NotSupportedException(
             "This Vulkan Device does not report secondary command-buffer bundle support.");
@@ -595,9 +598,10 @@ internal sealed unsafe partial class VulkanBackend
         private readonly object _gate = new();
         private readonly VulkanDevice _device;
         private readonly VulkanQueue _queue;
-        private readonly Stack<VulkanCommandSlot> _freeSlots = [];
+        private readonly List<VulkanCommandSlot> _freeSlots = [];
         private readonly HashSet<VulkanCommandSlot> _slots = [];
         private VulkanCommandSlot? _recording;
+        private VulkanCommandSlot? _repeatCommands;
         private ulong _nextSequence;
         private bool _released;
         private int _unregistered;
@@ -621,7 +625,7 @@ internal sealed unsafe partial class VulkanBackend
         internal void PrepareSlots(uint count)
         {
             for (uint index = 0; index < count; index++)
-                _freeSlots.Push(CreateSlot());
+                _freeSlots.Add(CreateSlot());
         }
 
         internal void Begin(in CommandRecordingDesc desc)
@@ -633,9 +637,18 @@ internal sealed unsafe partial class VulkanBackend
                     throw new ObjectDisposedException(nameof(VulkanCommandContext));
                 if (_recording is not null)
                     throw new InvalidOperationException("The CommandContext is already recording.");
-                VulkanCommandSlot slot = _freeSlots.Count != 0
-                    ? _freeSlots.Pop()
-                    : CreateSlot();
+                _repeatCommands = null;
+                VulkanCommandSlot slot;
+                if (_freeSlots.Count != 0)
+                {
+                    int index = _freeSlots.Count - 1;
+                    slot = _freeSlots[index];
+                    _freeSlots.RemoveAt(index);
+                }
+                else
+                {
+                    slot = CreateSlot();
+                }
                 _device.ThrowIfDeviceCallFailed(
                     _device.Backend.Api.ResetCommandPool(
                         _device.Native,
@@ -647,7 +660,7 @@ internal sealed unsafe partial class VulkanBackend
                 CommandBufferBeginInfo begin = new()
                 {
                     SType = StructureType.CommandBufferBeginInfo,
-                    Flags = CommandBufferUsageFlags.OneTimeSubmitBit,
+                    Flags = CommandBufferUsageFlags.None,
                 };
                 _device.ThrowIfDeviceCallFailed(
                     _device.Backend.Api.BeginCommandBuffer(slot.Native, &begin),
@@ -669,12 +682,60 @@ internal sealed unsafe partial class VulkanBackend
                     _device.Backend.Api.EndCommandBuffer(slot.Native),
                     "vkEndCommandBuffer");
                 _recording = null;
+                _repeatCommands = slot;
                 sequence = checked(++_nextSequence);
             }
             VulkanRecordedCommandsLease lease = slot.Lease;
             lease.ActivateCommands(sequence);
             slot.AttachLease(lease, sequence);
             return new RecordedCommands(lease, sequence);
+        }
+
+        internal bool TryRepeatCommands(out RecordedCommands commands)
+        {
+            commands = default;
+            VulkanCommandSlot? slot;
+            lock (_gate)
+            {
+                ThrowIfDisposed();
+                if (_recording is not null)
+                    throw new InvalidOperationException("Finish the current recording before repeating commands.");
+                slot = _repeatCommands;
+                if (slot is null)
+                    return false;
+                if (!_freeSlots.Remove(slot))
+                    slot = null;
+            }
+            if (slot is null)
+            {
+                _queue.CollectCompleted();
+                lock (_gate)
+                {
+                    slot = _repeatCommands;
+                    if (slot is null || !_freeSlots.Remove(slot))
+                        return false;
+                }
+            }
+            bool activated = false;
+            try
+            {
+                if (!slot.TryCaptureRepeatedCommands())
+                    return false;
+                ulong sequence;
+                lock (_gate)
+                    sequence = checked(++_nextSequence);
+                VulkanRecordedCommandsLease lease = slot.Lease;
+                lease.ActivateCommands(sequence);
+                slot.AttachLease(lease, sequence);
+                commands = new RecordedCommands(lease, sequence);
+                activated = true;
+                return true;
+            }
+            finally
+            {
+                if (!activated)
+                    ReturnSlot(slot);
+            }
         }
 
         internal void Discard()
@@ -702,6 +763,19 @@ internal sealed unsafe partial class VulkanBackend
         {
             foreach (ref readonly VulkanBoundBindlessSet binding in sets)
                 binding.Generation.CaptureSparseBindings(_recording!);
+        }
+
+        internal void TrackRepeatedParameters(
+            VulkanPersistentParameterBindings source,
+            VulkanDescriptorGeneration generation) =>
+            _recording!.TrackRepeatedParameters(source, generation);
+
+        internal VkImageView CreateClearAttachment(
+            VulkanTexture texture,
+            in TextureSubresourceRange range)
+        {
+            Capture(texture);
+            return _recording!.CreateClearAttachment(texture, range);
         }
 
         internal void Capture(IVulkanRetained value)
@@ -749,7 +823,7 @@ internal sealed unsafe partial class VulkanBackend
                     try
                     {
                         slot.ReleaseCaptures();
-                        _freeSlots.Push(slot);
+                        _freeSlots.Add(slot);
                     }
                     catch (Exception exception)
                     {
@@ -793,6 +867,7 @@ internal sealed unsafe partial class VulkanBackend
                 if (_released && !abandonAll)
                     return;
                 _released = true;
+                _repeatCommands = null;
                 ResetRecordingState();
                 if (abandonAll)
                 {
@@ -801,7 +876,7 @@ internal sealed unsafe partial class VulkanBackend
                 else
                 {
                     var detached = new List<VulkanCommandSlot>(_freeSlots.Count + 1);
-                    while (_freeSlots.TryPop(out VulkanCommandSlot? free))
+                    foreach (VulkanCommandSlot free in _freeSlots)
                     {
                         if (_slots.Contains(free))
                             detached.Add(free);
@@ -904,6 +979,7 @@ internal sealed unsafe partial class VulkanBackend
             {
                 slot.ReleaseCaptures();
                 slot.DescriptorArena.Release();
+                slot.ReleaseAttachmentViews();
                 if (_device.Native.Handle != 0)
                     _device.Backend.Api.DestroyCommandPool(_device.Native, slot.Pool, null);
                 _slots.Remove(slot);
@@ -929,6 +1005,11 @@ internal sealed unsafe partial class VulkanBackend
         VkCommandBuffer native)
     {
         private readonly HashSet<IVulkanRetained> _captures = [];
+        private readonly List<VkImageView> _attachmentViews = [];
+        private readonly HashSet<IVulkanRetained> _repeatReferences = [];
+        private readonly Dictionary<VulkanPersistentParameterBindings, VulkanDescriptorGeneration> _repeatParameters = [];
+        private readonly Dictionary<VulkanBindlessHeap, VulkanBindlessGeneration> _repeatDescriptors = [];
+        private bool _repeatable;
         private VulkanBoundBindlessSet[] _bindlessSets = [];
         private VulkanSwapchainUse[] _swapchainUses = [];
         private int _swapchainUseCount;
@@ -991,10 +1072,17 @@ internal sealed unsafe partial class VulkanBackend
             if (_captures.Count != 0 || _swapchainUseCount != 0)
                 throw new InvalidOperationException("A Vulkan command slot still retains native dependencies.");
             _captures.EnsureCapacity(checked((int)capacity));
+            ReleaseAttachmentViews();
+            _repeatReferences.Clear();
+            _repeatParameters.Clear();
+            _repeatDescriptors.Clear();
+            _repeatable = true;
+            DescriptorArena.ResetForRecording();
         }
 
         internal void AddSwapchainUse(in VulkanSwapchainUse use)
         {
+            _repeatable = false;
             for (int index = 0; index < _swapchainUseCount; index++)
             {
                 ref readonly VulkanSwapchainUse existing = ref _swapchainUses[index];
@@ -1089,6 +1177,8 @@ internal sealed unsafe partial class VulkanBackend
                 return;
             try
             {
+                if (value is not VulkanSparseBindings)
+                    _repeatReferences.Add(value);
                 value.RetainNative();
             }
             catch
@@ -1098,13 +1188,88 @@ internal sealed unsafe partial class VulkanBackend
             }
         }
 
+        internal VkImageView CreateClearAttachment(
+            VulkanTexture texture,
+            in TextureSubresourceRange range)
+        {
+            _attachmentViews.EnsureCapacity(checked(_attachmentViews.Count + 1));
+            VkImageView view = device.Backend.CreateNativeImageView(
+                device, texture, range, texture.Info.Format, ClearViewDimension(texture.Info),
+                texture.Info.Dimension == TextureDimension.Texture3D);
+            _attachmentViews.Add(view);
+            return view;
+        }
+
+        internal void ReleaseAttachmentViews()
+        {
+            foreach (VkImageView view in _attachmentViews)
+                device.Backend.Api.DestroyImageView(device.Native, view, null);
+            _attachmentViews.Clear();
+        }
+
+        internal void TrackRepeatedParameters(
+            VulkanPersistentParameterBindings source,
+            VulkanDescriptorGeneration generation)
+        {
+            if (_repeatParameters.TryGetValue(source, out VulkanDescriptorGeneration? previous) &&
+                !ReferenceEquals(previous, generation))
+                _repeatable = false;
+            _repeatParameters[source] = generation;
+        }
+
+        internal void TrackRepeatedDescriptors(
+            VulkanBindlessHeap heap,
+            VulkanBindlessGeneration generation)
+        {
+            if (_repeatDescriptors.TryGetValue(heap, out VulkanBindlessGeneration? previous) &&
+                !ReferenceEquals(previous, generation))
+                _repeatable = false;
+            _repeatDescriptors[heap] = generation;
+        }
+
+        internal bool TryCaptureRepeatedCommands()
+        {
+            if (!_repeatable)
+                return false;
+            foreach (var parameter in _repeatParameters)
+                if (!ReferenceEquals(parameter.Key.CurrentGeneration, parameter.Value))
+                    return false;
+            foreach (var descriptor in _repeatDescriptors)
+                if (!ReferenceEquals(descriptor.Key.CurrentGeneration, descriptor.Value))
+                    return false;
+            try
+            {
+                foreach (IVulkanRetained reference in _repeatReferences)
+                {
+                    switch (reference)
+                    {
+                        case GraphicsObject resource:
+                            if (resource.IsDisposed)
+                                return false;
+                            break;
+                        case VulkanDescriptorGeneration:
+                        case VulkanBindlessGeneration:
+                            break;
+                        default:
+                            return false;
+                    }
+                    Capture(reference);
+                }
+                return true;
+            }
+            catch (ObjectDisposedException)
+            {
+                return false;
+            }
+        }
+
         internal void ReleaseCaptures()
         {
             foreach (IVulkanRetained value in _captures)
                 value.ReleaseNative();
             _captures.Clear();
             Array.Clear(_bindlessSets);
-            DescriptorArena.ResetAfterCompletion();
+            DescriptorArena.ReleaseUnusedSets();
             Array.Clear(_swapchainUses, 0, _swapchainUseCount);
             _swapchainUseCount = 0;
         }
