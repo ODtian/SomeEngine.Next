@@ -8,6 +8,8 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="ImGui.NET" Version="1.91.6.1" />
+    <PackageReference Include="ImGui.NET.SourceBuild" Version="1.91.6" GeneratePathProperty="true"
+                      ExcludeAssets="all" PrivateAssets="all" Condition="'$(NETCoreSdkRuntimeIdentifier)' == 'linux-x64'" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\SomeEngine.Generators\SomeEngine.Generators.csproj"
@@ -37,4 +39,16 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
+  <ItemGroup Condition="'$(NETCoreSdkRuntimeIdentifier)' == 'linux-x64'">
+    <CimguiNativeSource Include="Native/CMakeLists.txt;$(PkgImGui_NET_SourceBuild)/src/**/*" />
+  </ItemGroup>
+  <Target Name="BuildCimgui" BeforeTargets="PrepareForBuild;GetCopyToOutputDirectoryItems"
+          Condition="'$(NETCoreSdkRuntimeIdentifier)' == 'linux-x64'"
+          Inputs="@(CimguiNativeSource)" Outputs="$(CimguiNativeLibrary)">
+    <Exec Command="cmake -S &quot;$(MSBuildProjectDirectory)/Native&quot; -B &quot;$(MSBuildProjectDirectory)/obj/cimgui&quot; -DCMAKE_BUILD_TYPE=Release -DCIMGUI_SOURCE_DIRECTORY=&quot;$(PkgImGui_NET_SourceBuild)/src&quot;" />
+    <Exec Command="cmake --build &quot;$(MSBuildProjectDirectory)/obj/cimgui&quot; --config Release --parallel 1" />
+    <ItemGroup>
+      <FileWrites Include="$(CimguiNativeLibrary)" />
+    </ItemGroup>
+  </Target>
 </Project>

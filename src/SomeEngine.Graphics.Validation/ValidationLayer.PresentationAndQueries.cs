@@ -2,16 +2,17 @@ namespace SomeEngine.Graphics.Validation;
 
 public sealed partial class ValidationLayer
 {
+    public SwapchainSupport[] GetSwapchainSupport(Device device, Surface surface)
+    {
+        RequireDevice(device);
+        RequireSurface(surface);
+        return Backend.GetSwapchainSupport(device, surface);
+    }
+
     public Swapchain CreateSwapchain(Device device, in SwapchainDesc desc)
     {
         RequireDevice(device);
-        lock (_gate)
-        {
-            if (!_surfaces.TryGetValueUnderLock(desc.Surface, out _))
-                Reject("Ownership", "Swapchain Surface was not created through this Validation Layer.");
-        }
-        if (desc.Surface.IsDisposed)
-            Reject("Lifetime", "Swapchain Surface is disposed.", desc.Surface.Label);
+        RequireSurface(desc.Surface);
         SwapchainDesc createDesc = desc;
         var objectInfo = new ValidationObjectInfo(device);
         lock (_gate)
@@ -34,6 +35,17 @@ public sealed partial class ValidationLayer
                 throw;
             }
         }
+    }
+
+    private void RequireSurface(Surface surface)
+    {
+        lock (_gate)
+        {
+            if (!_surfaces.TryGetValueUnderLock(surface, out _))
+                Reject("Ownership", "Surface was not created through this Validation Layer.");
+        }
+        if (surface.IsDisposed)
+            Reject("Lifetime", "Surface is disposed.", surface.Label);
     }
 
     public SwapchainAcquireStatus Acquire(

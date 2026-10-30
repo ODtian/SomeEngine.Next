@@ -6,6 +6,10 @@ target_compile_features(SomeEngineAcl PRIVATE cxx_std_17)
 target_include_directories(SomeEngineAcl PRIVATE
     ../../../external/acl/includes
     ../../../external/rtm/includes)
-target_compile_definitions(SomeEngineAcl PRIVATE NOMINMAX)
-set_property(TARGET SomeEngineAcl PROPERTY MSVC_RUNTIME_LIBRARY MultiThreaded)
-target_compile_options(SomeEngineAcl PRIVATE /O2 /fp:precise)
+if(MSVC)
+    target_compile_definitions(SomeEngineAcl PRIVATE NOMINMAX)
+    set_property(TARGET SomeEngineAcl PROPERTY MSVC_RUNTIME_LIBRARY MultiThreaded)
+    target_compile_options(SomeEngineAcl PRIVATE /O2 /fp:precise)
+else()
+    target_compile_options(SomeEngineAcl PRIVATE -O2 -ffp-contract=off)
+endif()

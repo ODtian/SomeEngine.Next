@@ -132,6 +132,8 @@ public sealed partial class SceneTestPlatform
     }
     /// <summary>Opt-in GPU pass diagnostics; requires a traced measurement.</summary>
     public bool CaptureGpuPassTimes { get; init; }
+    /// <summary>Returns from the application after writing the scene measurement report.</summary>
+    public bool ExitAfterMeasurements { get; init; }
     public bool HudOverlayEnabled => SampleOptions.HudOverlay;
     public bool HudNumbersChange => SampleOptions.HudNumbersChange;
     private RuntimeStartupOptions Options { get => Application.Options; set => Application.Options = value; }
@@ -556,6 +558,7 @@ public sealed partial class SceneTestPlatform
             ["TimingScopes"] = FrameTimingScopes,
             ["GraphicsDevice"] = _graphicsDevice,
             ["GraphicsDriver"] = _graphicsDriver,
+            ["GraphicsBackend"] = Options.GraphicsBackend.ToString(),
             ["Processor"] = Environment.GetEnvironmentVariable("PROCESSOR_IDENTIFIER"),
             ["Framework"] = System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription,
             ["NativeAot"] = !System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported,
@@ -611,6 +614,7 @@ public sealed partial class SceneTestPlatform
         Application.ApplicationAsset = Current.ApplicationAsset is { } selected ? new AssetId<ApplicationSettingsAsset>(selected) : null;
         _interactiveOptions = null;
         _interactiveSampleOptions = null;
+        if (ExitAfterMeasurements) Application.Exit();
     }
 
     public void ConfigureViews(string[] args) => ConfigureViews(Application, args);

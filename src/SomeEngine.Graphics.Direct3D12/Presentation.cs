@@ -52,6 +52,16 @@ internal sealed unsafe partial class D3D12Backend
     private const int DxgiErrorSessionDisconnected = unchecked((int)0x887A0028);
     private const int DxgiErrorRestrictToOutputStale = unchecked((int)0x887A0029);
 
+    public SwapchainSupport[] GetSwapchainSupport(Device device, Surface surface)
+    {
+        D3D12Device nativeDevice = RequireDevice(device, nameof(device));
+        D3D12Surface nativeSurface = RequireSurface(surface);
+        nativeDevice.ThrowIfUnavailable();
+        nativeSurface.ThrowIfDisposed();
+        _ = nativeDevice.RequireCapability<Presentation>(nameof(GetSwapchainSupport));
+        return CreateSwapchainSupport(nativeDevice, native: null, QueryTearingSupport(nativeDevice));
+    }
+
     public Swapchain CreateSwapchain(Device device, in SwapchainDesc desc)
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiResourceCreation);

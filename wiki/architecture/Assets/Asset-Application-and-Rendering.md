@@ -26,6 +26,8 @@ Mesh、Material 引用在原实体上解析，管线读取自己需要的 Block�
 
 ## 生命周期与 Shader 解释
 
+应用通过 `ApplicationScene.Reload()` 请求重新加载当前内容和设置，通过 `ApplicationScene.Exit()` 请求完成当前呈现帧后结束应用。退出请求由 `ApplicationScene` 保存，帧完成边界结束场景，场景清理与 `SceneCompleted` 回调完成后，应用循环根据该请求返回；DefaultGame 的自动测量使用这条公共退出路径。
+
 Texture 的设备关联、Mesh 的页、材质依赖及 Shader 代码分别由实际使用者保留。打开新资产、更新使用对象和旧 GPU 资源释放不是同一个时点。帧、队列和完成信号继续保护旧内容，不新增全局资产版本等待机制。
 
 用户材质与 Shader 解释顶点和业务数据。默认项目的编码器不是引擎固定顶点布局。一个 Material 保持一个 Shader 引用，项目组合所需管线入口，不引入替换表、自动回退或根据类型名选择实现。

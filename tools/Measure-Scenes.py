@@ -23,6 +23,7 @@ def arguments():
     parser.add_argument("--scene-playback", choices=["static", "motion", "materials", "camera"], default="camera")
     parser.add_argument("--scene")
     parser.add_argument("--expected-scene")
+    parser.add_argument("--scene-configuration-json")
     parser.add_argument("--startup-frames", type=int)
     parser.add_argument("--on-default-desktop", action="store_true", help=argparse.SUPPRESS)
     result = parser.parse_args()
@@ -87,7 +88,7 @@ def run_on_default_desktop():
                               input=inherit(msvcrt.get_osfhandle(input_file.fileno())),
                               output=inherit(kernel.GetStdHandle(-11)), error=inherit(kernel.GetStdHandle(-12)))
             command = ctypes.create_unicode_buffer(subprocess.list2cmdline(
-                [sys.executable, str(Path(__file__).resolve()), *sys.argv[1:], "--on-default-desktop"]))
+                [sys.executable, "-B", str(Path(__file__).resolve()), *sys.argv[1:], "--on-default-desktop"]))
             if not kernel.CreateProcessW(sys.executable, command, None, None, True, 0x08000000,
                                          None, os.getcwd(), ctypes.byref(start), ctypes.byref(child)):
                 raise ctypes.WinError(ctypes.get_last_error())
@@ -157,7 +158,7 @@ def run_application(application, values, environment):
     started = time.monotonic()
     process = subprocess.Popen([str(application), *values], cwd=application.parent,
                                env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    foreground = os.name != "nt"
+    foreground = os.name != "nt" or not any(value in {"--measure", "--measure-trace"} for value in values)
     output = errors = ""
     try:
         while True:
@@ -229,6 +230,11 @@ def main():
     if options.trace_detail:
         values += ["--trace-detail"]
     with contextlib.ExitStack() as cleanup:
+        scene_configuration = application.parent / "test-scenes.json"
+        if options.scene_configuration_json:
+            previous_configuration = scene_configuration.read_bytes()
+            cleanup.callback(scene_configuration.write_bytes, previous_configuration)
+            scene_configuration.write_text(options.scene_configuration_json, encoding="utf-8")
         if options.trace:
             diagnostics = application.parent / "Performance" / time.strftime("%Y%m%d-%H%M%S")
             diagnostics.mkdir(parents=True)
@@ -239,6 +245,8 @@ def main():
         if sys.platform == "linux":
             from x11_display import open_display
             environment = cleanup.enter_context(open_display(1280, 720))
+            # Older loaders filter newer instance extensions provided by the driver.
+            environment.setdefault("VK_LOADER_DISABLE_INST_EXT_FILTER", "1")
         else:
             environment = os.environ.copy()
         environment["SOMEENGINE_MEASUREMENT_OUTPUT_DIRECTORY"] = temporary
@@ -253,7 +261,7 @@ def main():
             return 0
         report = json.loads((Path(temporary) / "measurement-results.json").read_text(encoding="utf-8-sig"))
         samples = json.loads((Path(temporary) / report["FrameSamples"]).read_text(encoding="utf-8-sig"))
-        configuration = json.loads((application.parent / "test-scenes.json").read_text(encoding="utf-8-sig"))
+        configuration = json.loads(scene_configuration.read_text(encoding="utf-8-sig"))
         print("SCENE_REPORT " + json.dumps(report, separators=(",", ":")))
         print("SCENE_FRAME_SAMPLES " + json.dumps(samples, separators=(",", ":")))
         print("Measurement elapsed: " + str(round(elapsed, 2)) + " seconds including application startup.")
@@ -261,7 +269,9 @@ def main():
         for scene in report["Scenes"]:
             print(f'{scene["Scene"]}: {scene["Status"]}; {scene["Frames"]} frames; '
                   f'median {scene["MedianMs"]:.4f} ms; P95 {scene["P95Ms"]:.4f} ms')
-        if not comparison:
+        if comparison:
+            print("Three-scene P95 below 1 ms: " + str(all(scene["P95Ms"] < 1 for scene in report["Scenes"])))
+        else:
             print("Diagnostic scene measurement.")
     return 0
 

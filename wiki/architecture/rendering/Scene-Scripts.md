@@ -4,6 +4,10 @@
 
 `SceneScript` 持有内容目录、有限帧数和 `SceneAction` 序列。帧号从 0 开始；动作按帧号排列，同帧动作保持传入顺序。每次启动使用独立窗口线程，窗口与消息队列随该次启动一起结束。
 
+应用窗口在 Windows 使用 Win32，在 Linux 使用 Xlib。Linux 启动使用 `--graphics-backend vulkan`，场景脚本同时指定 `--hardware-adapter`。窗口的尺寸、焦点、键鼠与文字事件经过同一输入消费入口；Xlib 窗口和显示连接沿 `SurfaceDesc` 交给 Vulkan，帧继续通过现有 RHI 交换链呈现。
+
+应用通过 `GetSwapchainSupport(device, surface)` 取得实际呈现组合，默认依次选择 `R8G8B8A8UNorm` 或 `B8G8R8A8UNorm`，并保持请求的色彩空间、呈现模式与 tearing 设置。呈现、界面和读回从交换链配置取得同一输出格式；BGRA 读回在交付 `SceneImage` 前转换为 RGBA 字节，尺寸重配置沿用已选格式。
+
 默认环境为 D3D12 软件适配器、隐藏窗口、同步帧、固定 1/60 秒、关闭调试界面和窗口垂直同步。通用脚本不自动安装 DefaultGame 的种子运动或测量回放；需要这些行为时由样例组合它们。命令行可以指定固定帧时间和渲染选项，`--hardware-adapter` 选择硬件适配器。脚本帧数决定本次运行帧数。
 
 ## 场景回调与时间

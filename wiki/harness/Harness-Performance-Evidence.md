@@ -12,6 +12,14 @@
 
 `Complete=true`、三景 `Measured` 或采样完整仅表示反馈齐全；必须逐景检查整帧 P95 数值，不能把它们当作阈值已通过。构建、生成器探针、源码模型、局部行为测试、启动成功或 CPU/GPU 子阶段计时，也都不能替代最终三景验收。
 
+统一入口 `tools/Measure-Scenes.ps1` 向公共 GPU 队列提交 `python -B tools/Measure-Scenes.py`。测量进程在执行机器上通过 MSBuild 查询 DefaultGame 的正常构建或 NativeAOT 发布目录；`-Managed` 选择托管诊断，默认选择 NativeAOT。应用参数 `--measure`、`--measure-trace` 在首个就绪呈现帧后调用 `SceneTestPlatform.StartMeasurements`，沿现有三景切换、预热、采样窗口与报告流程运行，报告写完后通过 `ApplicationScene.Exit()` 返回。
+
+`-SceneConfigurationJson` 把已有场景配置文本透传给目标进程，测量作用域使用这份配置并在退出时恢复应用原配置；配置中的绝对内容目录可以复用执行机器上的同一份正式内容。显式 JSON 优先于客户端应用目录旁的配置读取。
+
+Windows 测量进程使用 `WinSta0\Default` 桌面并置顶应用窗口。Linux 使用 Vulkan；已有 `DISPLAY` 时复用该显示，队列服务器通过 `tools/x11_display.py` 的 `open_display` 在所分配 GPU 上建立私有 Xorg 显示，并在进程结束后释放。报告中的 `GraphicsDevice`、`GraphicsDriver`、`GraphicsBackend` 和队列返回的 GPU 身份共同说明当次设备条件。
+
+测量进程通过 stdout 的 `SCENE_REPORT` 和 `SCENE_FRAME_SAMPLES` 行交付完整 JSON，按应用随附 `test-scenes.json` 核对逐帧区间。设置 `SOMEENGINE_MEASUREMENT_OUTPUT_DIRECTORY` 和 `SOMEENGINE_MEASUREMENT_OUTPUT_BASENAME` 后，PowerShell 客户端把这两份 JSON 保存到指定的平铺输出位置；运行机器上的临时报告随测量释放。Trace 文件保存在当次发布目录的 `Performance` 子目录，`SCENE_DIAGNOSTICS` 输出其位置，供同一执行机器上的 Trace 工具读取后清理。
+
 原 `docs/agents/acceptance-performance.md` 的长期验收要求迁移至本节；旧提交、原始测量与历史运行记录不在此重写，也不作为本次 rebase 后的通过证据。重新测量必须记录最终源码提交、对应内容版本、实际设备/backend、配置与采样边界；旧 shader/import 记录不能冒充新内容。
 
 ## 公共队列

@@ -32,7 +32,9 @@ public sealed class SceneTheoryDiscoverer : TheoryDiscoverer
 
     private static BackendSupport ReadBackendSupport(string name)
     {
-        if (!OperatingSystem.IsWindows()) return new($"{name}: the application window requires Windows.", false);
+        if (!OperatingSystem.IsWindows() && !(OperatingSystem.IsLinux() && name == "vulkan" &&
+            !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY"))))
+            return new($"{name}: presentation requires Windows or a Linux Vulkan display.", false);
         try
         {
             using IGraphicsBackend backend = name == "vulkan" ? VulkanGraphicsBackend.Create() : D3D12GraphicsBackend.Create();

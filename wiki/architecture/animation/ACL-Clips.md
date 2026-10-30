@@ -56,9 +56,9 @@ clip.SampleLocal(0.5f, destination);
 
 ## Native build and distribution
 
-The Pose project builds `SomeEngineAcl.dll` with CMake and the Windows x64 C++ toolchain under its `obj/native` directory. The adapter uses C++17, the static C runtime and the ordinary x64 SIMD baseline. Managed calls use source-generated `LibraryImport` entry points.
+The Pose project builds the C++17 adapter with CMake under `obj/native`. Windows x64 builds `Release/SomeEngineAcl.dll` with the static C runtime; Linux builds `libSomeEngineAcl.so` with its C++ compiler. Both export the same four C functions and use the ordinary x64 SIMD baseline. Source-generated `LibraryImport("SomeEngineAcl")` resolves the native library for the current platform.
 
-The native DLL and both MIT notices are transitive output and publish content. A project referencing the Pose library receives these files with its managed output, including NativeAOT publishing. The upstream headers and notices are kept in `external/acl` and `external/rtm` with pinned-version READMEs.
+The native library and both MIT notices are transitive output and publish content. A project referencing the Pose library receives these files with its managed output, including NativeAOT publishing. The upstream headers and notices are kept in `external/acl` and `external/rtm` with pinned-version READMEs.
 
 The public behavior tests compare decoded full poses and caller-selected batch results against source curves, then import, save, reopen and play a compressed clip after closing its asset. A separate consumer codec exercises source-metadata selection through the same public sampling entry.
 

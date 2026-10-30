@@ -42,6 +42,9 @@ public sealed class VulkanAdapterTests(ITestOutputHelper output)
             default,
             queues,
             optionalFeatures: DeviceFeatures.IndirectCommands));
+        output.WriteLine($"Adapter={device.Adapter.Name}; Driver={device.Adapter.DriverVersion}; " +
+            $"AdapterId={device.Adapter.Id.Low:X16}:{device.Adapter.Id.High:X16}; " +
+            $"OS={System.Runtime.InteropServices.RuntimeInformation.OSDescription}");
 
         Assert.Equal(QueueType.Graphics, backend.GetQueue(device, QueueType.Graphics).Type);
         Assert.Equal(QueueType.Compute, backend.GetQueue(device, QueueType.Compute).Type);

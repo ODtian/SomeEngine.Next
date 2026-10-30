@@ -109,6 +109,8 @@ public static class SampleApplication
         {
             StartupTraceOutput = Environment.GetEnvironmentVariable("SOMEENGINE_STARTUP_TRACE"),
             CaptureGpuPassTimes = args.Contains("--gpu-pass-times", StringComparer.Ordinal),
+            ExitAfterMeasurements = args.Contains("--measure", StringComparer.Ordinal) ||
+                args.Contains("--measure-trace", StringComparer.Ordinal),
             InitializeScene = clusterScene is null ? null : clusterScene.Initialize,
             UpdateScene = clusterScene is null || args.Contains("--cluster-static", StringComparer.Ordinal) ? null : clusterScene.Update,
             ColorFeatureSettings = clusterScene is null ? null : new Dictionary<string, string>
@@ -120,6 +122,8 @@ public static class SampleApplication
             },
         };
         platform.ConfigureViews(args);
+        if (platform.ExitAfterMeasurements)
+            platform.StartMeasurements(recordTrace: args.Contains("--measure-trace", StringComparer.Ordinal));
         try
         {
             return (await Application.RunAsync<SampleSceneMaterials>(args, application: platform.Application)).Succeeded ? 0 : 1;

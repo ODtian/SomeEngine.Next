@@ -7,22 +7,37 @@ internal sealed unsafe partial class VulkanBackend
     private RhiSurface CreateSurfaceCore(in SurfaceDesc desc)
     {
         ThrowIfDisposed();
-        if (!OperatingSystem.IsWindows() || desc.Type != NativeWindowType.Win32)
-            throw new PlatformNotSupportedException("The Vulkan backend currently requires a Win32 Surface.");
         if (desc.WindowHandle == 0)
             throw new ArgumentOutOfRangeException(nameof(desc));
-        Win32SurfaceCreateInfoKHR createInfo = new()
-        {
-            SType = StructureType.Win32SurfaceCreateInfoKhr,
-            Hinstance = desc.DisplayHandle != 0
-                ? desc.DisplayHandle
-                : NativeLibrary.GetMainProgramHandle(),
-            Hwnd = desc.WindowHandle,
-        };
         VkSurface native = default;
-        ThrowIfFailed(
-            _win32SurfaceApi!.CreateWin32Surface(_instance, &createInfo, null, &native),
-            "vkCreateWin32SurfaceKHR");
+        if (desc.Type == NativeWindowType.Win32 && _win32SurfaceApi is { } win32)
+        {
+            Win32SurfaceCreateInfoKHR createInfo = new()
+            {
+                SType = StructureType.Win32SurfaceCreateInfoKhr,
+                Hinstance = desc.DisplayHandle != 0
+                    ? desc.DisplayHandle
+                    : NativeLibrary.GetMainProgramHandle(),
+                Hwnd = desc.WindowHandle,
+            };
+            ThrowIfFailed(win32.CreateWin32Surface(_instance, &createInfo, null, &native),
+                "vkCreateWin32SurfaceKHR");
+        }
+        else if (desc.Type == NativeWindowType.Xlib && _xlibSurfaceApi is { } xlib)
+        {
+            if (desc.DisplayHandle == 0)
+                throw new ArgumentOutOfRangeException(nameof(desc));
+            XlibSurfaceCreateInfoKHR createInfo = new()
+            {
+                SType = StructureType.XlibSurfaceCreateInfoKhr,
+                Dpy = (nint*)desc.DisplayHandle,
+                Window = desc.WindowHandle,
+            };
+            ThrowIfFailed(xlib.CreateXlibSurface(_instance, &createInfo, null, &native),
+                "vkCreateXlibSurfaceKHR");
+        }
+        else
+            throw new PlatformNotSupportedException("The Vulkan window type requires its platform surface extension.");
         var surface = new VulkanSurface(this, native, desc);
         try
         {
@@ -34,6 +49,14 @@ internal sealed unsafe partial class VulkanBackend
             surface.Dispose();
             throw;
         }
+    }
+
+    private SwapchainSupport[] GetSwapchainSupportCore(RhiDevice device, RhiSurface surface)
+    {
+        VulkanDevice nativeDevice = RequireDevice(device, nameof(device));
+        VulkanSurface nativeSurface = RequireSurface(surface, nameof(surface));
+        nativeDevice.ThrowIfUnavailable();
+        return VulkanSwapchain.QuerySupport(nativeDevice, nativeSurface);
     }
 
     private Swapchain CreateSwapchainCore(RhiDevice device, in SwapchainDesc desc)
@@ -269,7 +292,7 @@ internal sealed unsafe partial class VulkanBackend
             lock (_gate)
             {
                 image = default;
-                if (IsIconic(_surface.WindowHandle))
+                if (IsMinimized(_surface))
                     _outOfDate = true;
                 if (_outOfDate)
                     return SwapchainAcquireStatus.OutOfDate;
@@ -334,7 +357,7 @@ internal sealed unsafe partial class VulkanBackend
                 foreach (VulkanSwapchainImageLease lease in _leases)
                     if (!lease.CanAcquire)
                         return ReconfigureStatus.Busy;
-                if (IsIconic(_surface.WindowHandle))
+                if (IsMinimized(_surface))
                     return ReconfigureStatus.Busy;
                 SwapchainCreateInfoKHR createInfo = GetCreateInfo(
                     _device, _surface, _requestedImageCount, ImageUsages, config,
@@ -683,7 +706,7 @@ internal sealed unsafe partial class VulkanBackend
             return semaphore;
         }
 
-        private static SwapchainSupport[] QuerySupport(VulkanDevice device, VulkanSurface surface)
+        internal static SwapchainSupport[] QuerySupport(VulkanDevice device, VulkanSurface surface)
         {
             KhrSurface api = device.Backend._surfaceApi!;
             uint formatCount = 0;
@@ -1137,7 +1160,7 @@ internal sealed unsafe partial class VulkanBackend
                     _presentEnqueued = true;
                     _image!.EndAcquisition(this, sequence);
                     _inUse = false;
-                    return IsIconic(owner.Surface.WindowHandle) ? PresentStatus.Occluded :
+                    return IsMinimized(owner.Surface) ? PresentStatus.Occluded :
                         result == Result.SuboptimalKhr ? PresentStatus.Suboptimal : PresentStatus.Success;
                 case Result.ErrorOutOfDateKhr:
                 case Result.ErrorSurfaceLostKhr:
@@ -1192,6 +1215,9 @@ internal sealed unsafe partial class VulkanBackend
                 throw new ArgumentException("Swapchain presentation requires the Device Graphics Queue at index zero.", nameof(queue));
         }
     }
+
+    private static bool IsMinimized(RhiSurface surface) =>
+        surface.Type == NativeWindowType.Win32 && IsIconic(surface.WindowHandle);
 
     [DllImport("user32.dll")]
     [return: MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]

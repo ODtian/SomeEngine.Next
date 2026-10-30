@@ -7,6 +7,39 @@ namespace SomeEngine.Runtime.Tests;
 [Collection("Scene content")]
 public sealed class ApplicationViewRenderingTests(SceneContentFixture content)
 {
+    [SceneTheory]
+    [InlineData("d3d12")]
+    [InlineData("vulkan")]
+    public async Task Captured_overlay_preserves_red_and_blue_channels(string backend)
+    {
+        SceneImage? captured = null;
+        var application = new ApplicationScene(content.DirectoryPath)
+        {
+            RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
+            Options = RuntimeStartupOptions.Parse(["--hardware-adapter", "--graphics-backend", backend,
+                "--hidden-window", "--synchronous-frames", "--static-scene", "--frames", "3",
+                "--no-debug-ui", "--no-vsync"]),
+            UpdateFrame = frame =>
+            {
+                if (frame.Index == 2) frame.Scene.CaptureImage(image => captured = image);
+            },
+            DrawOverlay = () =>
+            {
+                ImDrawListPtr draw = ImGui.GetBackgroundDrawList();
+                draw.AddRectFilled(Vector2.Zero, new Vector2(16, 16), 0xff0000ff);
+                draw.AddRectFilled(new Vector2(16, 0), new Vector2(32, 16), 0xffff0000);
+            },
+        };
+
+        ApplicationResult result = await Application.RunAsync([], application: application);
+
+        Assert.True(result.Succeeded, result.Error?.ToString());
+        Assert.Equal(3, result.CompletedFrames);
+        Assert.NotNull(captured);
+        Assert.Equal(new byte[] { 255, 0, 0, 255 }, captured.Pixels.Span.Slice((8 * captured.Width + 8) * 4, 4).ToArray());
+        Assert.Equal(new byte[] { 0, 0, 255, 255 }, captured.Pixels.Span.Slice((8 * captured.Width + 24) * 4, 4).ToArray());
+    }
+
     [Fact]
     public async Task Overlay_draws_separated_by_empty_frames_match_the_same_visible_items()
     {
@@ -161,15 +194,17 @@ public sealed class ApplicationViewRenderingTests(SceneContentFixture content)
         SceneImages.AssertEqual(expected, actual);
     }
 
-    [Fact]
-    public async Task Resizing_a_registered_output_matches_a_view_created_at_its_final_dimensions()
+    [SceneTheory]
+    [InlineData("d3d12")]
+    [InlineData("vulkan")]
+    public async Task Resizing_a_registered_output_matches_a_view_created_at_its_final_dimensions(string backend)
     {
         SceneImage? expected = null;
         var reference = new ApplicationScene(content.DirectoryPath)
         {
             RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
             Options = RuntimeStartupOptions.Parse(["--hidden-window", "--static-scene", "--no-debug-ui",
-                "--no-vsync", "--no-taa", "--no-vsm", "--frames", "4"]),
+                "--no-vsync", "--no-taa", "--no-vsm", "--frames", "4", "--graphics-backend", backend]),
             UpdateFrame = frame =>
             {
                 if (frame.Index == 3) frame.Scene.CaptureImage(image => expected = image);

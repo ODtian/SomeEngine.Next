@@ -137,6 +137,8 @@ internal sealed class SamplerFailureBackend(IGraphicsBackend backend) : IGraphic
 
     public QueueCompletion Submit(Queue queue, in QueueSubmitDesc desc) => throw new NotSupportedException();
 
+    public SwapchainSupport[] GetSwapchainSupport(Device device, Surface surface) => backend.GetSwapchainSupport(device, surface);
+
     public Swapchain CreateSwapchain(Device device, in SwapchainDesc desc) => throw new NotSupportedException();
 
     public SwapchainAcquireStatus Acquire(

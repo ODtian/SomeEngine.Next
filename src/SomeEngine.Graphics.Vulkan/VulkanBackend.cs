@@ -22,6 +22,7 @@ internal sealed unsafe partial class VulkanBackend : IGraphicsBackend, INativeVa
 {
     private const string SurfaceExtension = "VK_KHR_surface";
     private const string Win32SurfaceExtension = "VK_KHR_win32_surface";
+    private const string XlibSurfaceExtension = "VK_KHR_xlib_surface";
     private const string SurfaceCapabilities2Extension = "VK_KHR_get_surface_capabilities2";
     private const string SurfaceMaintenanceExtension = "VK_EXT_surface_maintenance1";
     private const string KhrSurfaceMaintenanceExtension = "VK_KHR_surface_maintenance1";
@@ -37,6 +38,7 @@ internal sealed unsafe partial class VulkanBackend : IGraphicsBackend, INativeVa
     private VkInstance _instance;
     private KhrSurface? _surfaceApi;
     private KhrWin32Surface? _win32SurfaceApi;
+    private KhrXlibSurface? _xlibSurfaceApi;
     private ExtDebugUtils? _debugUtilsApi;
     private DebugUtilsMessengerEXT _debugMessenger;
     private PfnDebugUtilsMessengerCallbackEXT _debugCallback;
@@ -54,9 +56,14 @@ internal sealed unsafe partial class VulkanBackend : IGraphicsBackend, INativeVa
         try
         {
             _instance = CreateInstance();
-            if (!_vk.TryGetInstanceExtension(_instance, out _surfaceApi) ||
-                !_vk.TryGetInstanceExtension(_instance, out _win32SurfaceApi))
+            if (OperatingSystem.IsWindows() &&
+                (!_vk.TryGetInstanceExtension(_instance, out _surfaceApi) ||
+                 !_vk.TryGetInstanceExtension(_instance, out _win32SurfaceApi)))
                 throw new PlatformNotSupportedException("The Vulkan Win32 surface extensions could not be loaded.");
+            if (OperatingSystem.IsLinux() &&
+                (!_vk.TryGetInstanceExtension(_instance, out _surfaceApi) ||
+                 !_vk.TryGetInstanceExtension(_instance, out _xlibSurfaceApi)))
+                throw new PlatformNotSupportedException("The Vulkan Xlib surface extensions could not be loaded.");
             CreateDebugMessenger();
             _adapters = EnumerateAdapters();
         }
@@ -64,6 +71,7 @@ internal sealed unsafe partial class VulkanBackend : IGraphicsBackend, INativeVa
         {
             _surfaceApi?.Dispose();
             _win32SurfaceApi?.Dispose();
+            _xlibSurfaceApi?.Dispose();
             DestroyDebugMessenger();
             if (_instance.Handle != 0)
             {
@@ -254,6 +262,8 @@ internal sealed unsafe partial class VulkanBackend : IGraphicsBackend, INativeVa
         _surfaceApi = null;
         _win32SurfaceApi?.Dispose();
         _win32SurfaceApi = null;
+        _xlibSurfaceApi?.Dispose();
+        _xlibSurfaceApi = null;
         DestroyDebugMessenger();
         if (_instance.Handle != 0)
         {
@@ -284,17 +294,22 @@ internal sealed unsafe partial class VulkanBackend : IGraphicsBackend, INativeVa
             ? Vk.Version13
             : _options.ApiVersion;
         string[] availableExtensions = EnumerateInstanceExtensions();
-        RequireName(availableExtensions, SurfaceExtension, "instance extension");
-        RequireName(availableExtensions, Win32SurfaceExtension, "instance extension");
-
-        List<string> extensions = [SurfaceExtension, Win32SurfaceExtension];
-        if (availableExtensions.Contains(SurfaceCapabilities2Extension))
+        List<string> extensions = [];
+        if (OperatingSystem.IsWindows() || OperatingSystem.IsLinux())
         {
-            extensions.Add(SurfaceCapabilities2Extension);
-            _surfaceMaintenance = availableExtensions.Contains(SurfaceMaintenanceExtension);
-            _khrSurfaceMaintenance = availableExtensions.Contains(KhrSurfaceMaintenanceExtension);
-            if (_surfaceMaintenance) extensions.Add(SurfaceMaintenanceExtension);
-            if (_khrSurfaceMaintenance) extensions.Add(KhrSurfaceMaintenanceExtension);
+            string windowSurfaceExtension = OperatingSystem.IsWindows() ? Win32SurfaceExtension : XlibSurfaceExtension;
+            RequireName(availableExtensions, SurfaceExtension, "instance extension");
+            RequireName(availableExtensions, windowSurfaceExtension, "instance extension");
+            extensions.Add(SurfaceExtension);
+            extensions.Add(windowSurfaceExtension);
+            if (availableExtensions.Contains(SurfaceCapabilities2Extension))
+            {
+                extensions.Add(SurfaceCapabilities2Extension);
+                _surfaceMaintenance = availableExtensions.Contains(SurfaceMaintenanceExtension);
+                _khrSurfaceMaintenance = availableExtensions.Contains(KhrSurfaceMaintenanceExtension);
+                if (_surfaceMaintenance) extensions.Add(SurfaceMaintenanceExtension);
+                if (_khrSurfaceMaintenance) extensions.Add(KhrSurfaceMaintenanceExtension);
+            }
         }
         if (_options.EnableDebugMessages && availableExtensions.Contains(DebugUtilsExtension))
             extensions.Add(DebugUtilsExtension);

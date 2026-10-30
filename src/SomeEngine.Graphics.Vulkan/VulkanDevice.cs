@@ -1295,7 +1295,7 @@ internal sealed unsafe partial class VulkanBackend
             IReadOnlySet<string> extensions,
             QueuePlan queues)
         {
-            if (!extensions.Contains(SwapchainExtension) || backend._win32SurfaceApi is null)
+            if (!extensions.Contains(SwapchainExtension) || backend._surfaceApi is null)
                 return false;
             PhysicalDeviceSwapchainMaintenance1FeaturesEXT maintenance = new()
             {
@@ -1311,8 +1311,9 @@ internal sealed unsafe partial class VulkanBackend
                 return false;
             foreach (QueueAssignment queue in queues.Assignments)
                 if (queue.Type == QueueType.Graphics && queue.RhiIndex == 0)
-                    return backend._win32SurfaceApi.GetPhysicalDeviceWin32PresentationSupport(
-                        physicalDevice, queue.FamilyIndex);
+                    return backend._win32SurfaceApi is { } win32
+                        ? win32.GetPhysicalDeviceWin32PresentationSupport(physicalDevice, queue.FamilyIndex)
+                        : backend._xlibSurfaceApi is not null;
             return false;
         }
 

@@ -39,7 +39,6 @@ namespace SomeEngine.Runtime;
 internal static class RuntimeApplication
 {
     private static readonly TimeSpan FrameTimeout = TimeSpan.FromSeconds(60);
-    private const Format PresentationFormat = Format.R8G8B8A8UNorm;
 
     internal static Task<int> RunAsync<TMaterials>(RuntimeStartupOptions options, bool useWarp, ApplicationStartupTiming startup,
         ApplicationScene? application = null, SceneScript? script = null)
@@ -49,6 +48,7 @@ internal static class RuntimeApplication
         ApplicationContent? content = null;
         try
         {
+            if (application is not null) application.ExitRequested = false;
             int frames = 0;
             do
             {
@@ -84,7 +84,7 @@ internal static class RuntimeApplication
                     throw new ApplicationRunException(ApplicationRunException.Classify(error, ApplicationFailure.ContentLoad),
                         frames + (error is ApplicationRunException run ? run.CompletedFrames : 0), error);
                 }
-            } while (application?.ReloadRequested == true);
+            } while (application is { ReloadRequested: true, ExitRequested: false });
             return frames;
         }
         finally { content?.Assets.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
@@ -300,6 +300,7 @@ internal static class RuntimeApplication
             _meshShadersDisabled = options.DisableMeshShaders;
             _validation = options.DeviceValidation;
             _calibratedTimestampsRequired = calibratedTimestampsRequired;
+            IGraphicsBackend? previousBackend = Backend;
             if (Window is not null)
             {
                 DisposeClusterPipelines();
@@ -309,15 +310,14 @@ internal static class RuntimeApplication
                 Device = null!;
                 Surface.Dispose();
                 Surface = null!;
-                Backend.Dispose();
-                Backend = null!;
             }
-            else Window = new NativeWindow(title, boot.Width, boot.Height, visible: !options.HideWindow);
+            else Window = NativeWindow.Create(title, boot.Width, boot.Height, visible: !options.HideWindow);
             if (useWarp && options.GraphicsBackend != RuntimeGraphicsBackend.Direct3D12)
                 throw new ArgumentException("The WARP adapter is available only with the D3D12 backend.");
             Backend = CreateBackend(
                 options.GraphicsBackend,
                 options.DeviceValidation);
+            previousBackend?.Dispose();
             AdapterId adapterId = useWarp ? SelectAdapter(Backend, true).Id : default;
             DeviceQueueDesc[] queues =
             [
@@ -326,8 +326,9 @@ internal static class RuntimeApplication
                 new(QueueType.Copy),
             ];
             Surface = Backend.CreateSurface(new SurfaceDesc(
-                NativeWindowType.Win32,
+                Window.Type,
                 Window.Handle,
+                Window.DisplayHandle,
                 Label: title));
             Device = Backend.CreateDevice(new DeviceDesc(
                 adapterId,
@@ -341,13 +342,14 @@ internal static class RuntimeApplication
                 Surface,
                 3,
                 TextureUsages.ColorAttachment | TextureUsages.CopySource,
-                CreateSwapchainConfig(
-                    options,
-                    boot.Width,
-                    boot.Height,
-                    Device.Adapter.HardwareAccelerated),
+                SelectDefaultSwapchainConfig(
+                    CreateSwapchainConfig(options, boot.Width, boot.Height,
+                        Device.Adapter.HardwareAccelerated, Format.R8G8B8A8UNorm),
+                    Backend.GetSwapchainSupport(Device, Surface)),
                 title));
-
+            Console.WriteLine($"Display: backend={options.GraphicsBackend}, adapter={Device.Adapter.Name}, " +
+                $"adapterId={Device.Adapter.Id.Low:x16}:{Device.Adapter.Id.High:x16}, " +
+                $"surface={Window.Type}, format={Swapchain.Info.Config.Format}.");
         }
 
         internal ClusterPipelineSet BorrowClusterPipelines(ClusterShaders shaders, ClusterVisibilityMode visibilityMode)
@@ -384,8 +386,8 @@ internal static class RuntimeApplication
             // Device completes native teardown, including a scene that failed during shutdown.
             _clusterPipelines = null;
             Surface?.Dispose();
-            Backend?.Dispose();
             Window?.Dispose();
+            Backend?.Dispose();
         }
     }
 
@@ -443,14 +445,33 @@ internal static class RuntimeApplication
         throw new NotSupportedException("No hardware Direct3D 12 adapter is available.");
     }
 
+    private static SwapchainConfig SelectDefaultSwapchainConfig(
+        in SwapchainConfig defaults,
+        ReadOnlySpan<SwapchainSupport> support)
+    {
+        ReadOnlySpan<Format> formats = [Format.R8G8B8A8UNorm, Format.B8G8R8A8UNorm];
+        foreach (Format format in formats)
+        {
+            foreach (ref readonly SwapchainSupport value in support)
+            {
+                if (value.Format == format && value.ColorSpace == defaults.ColorSpace &&
+                    value.PresentType == defaults.PresentType &&
+                    (value.TearingSupported || !defaults.AllowTearing))
+                    return defaults with { Format = format };
+            }
+        }
+        throw new NotSupportedException("The application display requires an RGBA8 or BGRA8 swapchain for its presentation settings.");
+    }
+
     private static SwapchainConfig CreateSwapchainConfig(
         RuntimeStartupOptions options,
         int width,
         int height,
-        bool hardwareAccelerated) => new(
+        bool hardwareAccelerated,
+        Format format) => new(
             checked((uint)width),
             checked((uint)height),
-            PresentationFormat,
+            format,
             ColorSpace.Srgb,
             options.WindowVSync
                 ? PresentType.Fifo
@@ -470,7 +491,7 @@ internal static class RuntimeApplication
     {
         ReconfigureStatus status = backend.Reconfigure(
             swapchain,
-            CreateSwapchainConfig(options, width, height, hardwareAccelerated));
+            CreateSwapchainConfig(options, width, height, hardwareAccelerated, swapchain.Info.Config.Format));
         if (status != ReconfigureStatus.Success)
         {
             throw new InvalidOperationException(
@@ -549,6 +570,7 @@ internal static class RuntimeApplication
         string title,
         bool forceHardwareRaster, ApplicationScene? application, SceneScript? script)
     {
+        Format presentationFormat = swapchain.Info.Config.Format;
         using World mainWorld = loadedWorld;
         using RuntimeScene loadedSceneResources = scene;
         var sceneEdit = new SceneEdit(scene, window);
@@ -641,7 +663,7 @@ internal static class RuntimeApplication
         GlyphsMaterial? glyphMaterial = includeInterface
             ? GlyphsMaterial.Create(device.Capabilities.CompileTarget) : null;
         using CanvasRenderer? surfaces = surfaceMaterial is null ? null
-            : new CanvasRenderer(backend, device, renderGraph, renderWorld, surfaceMaterial, PresentationFormat, glyphMaterial);
+            : new CanvasRenderer(backend, device, renderGraph, renderWorld, surfaceMaterial, presentationFormat, glyphMaterial);
         GraphRegionId sceneRegion, primaryGeometryRegion, primaryDepthAfterRegion, targetGeometryRegion;
         GraphRegionId targetGeometryAfterRegion, shadingRegion, temporalRegion, presentationRegion, uiRegion, feedbackRegion;
         GraphRegionId frameOutputRegion, linearOutputRegion, colorEffectsRegion, additionalViewsRegion;
@@ -853,7 +875,7 @@ internal static class RuntimeApplication
             }
 
             outputVerifier = options.VerifyFrameOutput || (options.FrameOutputPath is not null && options.CaptureFrame is null)
-                ? new FrameOutputVerifier(backend, device, frameOutput.Width, frameOutput.Height, PresentationFormat)
+                ? new FrameOutputVerifier(backend, device, frameOutput.Width, frameOutput.Height, presentationFormat)
                 : null;
             ui = new RuntimeUiRenderer(
                 backend,
@@ -862,7 +884,7 @@ internal static class RuntimeApplication
                 uiShader,
                 boot.UiVertexEntry,
                 boot.UiPixelEntry,
-                PresentationFormat);
+                presentationFormat);
             Console.WriteLine(
                 $"Runtime configuration '{title}' loaded from {contentRootLabel(script?.ContentDirectory ?? application?.ContentDirectory ?? FindContentRoot())}; " +
                 $"sceneInstances={scene.MeshInstanceCount}, " +
@@ -946,7 +968,7 @@ internal static class RuntimeApplication
                     frameOutput.Systems.Initialize();
                     cameraCut = true;
                     outputVerifier = options.VerifyFrameOutput || (options.FrameOutputPath is not null && options.CaptureFrame is null)
-                        ? new FrameOutputVerifier(backend, device, frameOutput.Width, frameOutput.Height, PresentationFormat)
+                        ? new FrameOutputVerifier(backend, device, frameOutput.Width, frameOutput.Height, presentationFormat)
                         : null;
                 }
 
@@ -1061,7 +1083,7 @@ internal static class RuntimeApplication
                 bool captureLinear = sceneEdit.LinearImages.Count > 0 ||
                     (selectedCapture && options.LinearFrameOutputPath is not null);
                 if (captureBeauty)
-                    outputVerifier ??= new FrameOutputVerifier(backend, device, frameOutput.Width, frameOutput.Height, PresentationFormat);
+                    outputVerifier ??= new FrameOutputVerifier(backend, device, frameOutput.Width, frameOutput.Height, presentationFormat);
                 if (captureLinear)
                 {
                     linearVerifier ??= new FrameOutputVerifier(backend, device, frameOutput.Width, frameOutput.Height, Format.R16G16B16A16Float);
@@ -1151,7 +1173,7 @@ internal static class RuntimeApplication
                     presentationShader,
                     boot.PresentationVertexEntry,
                     boot.PresentationPixelEntry,
-                    PresentationFormat,
+                    presentationFormat,
                     presentationRegion);
                 if (frameOutput.PresentationReadback != frameOutput.Pipeline.PageFaultReadback)
                 {
@@ -1328,7 +1350,7 @@ internal static class RuntimeApplication
                     gameTiming.GameMs, gameTiming.Views.AnimationMs, gameTiming.ExtractionMs,
                     prepareMs, reconcileMs, executeMs);
                 frameIndex++;
-                if (application?.ReloadRequested == true) break;
+                if (application is { ReloadRequested: true } or { ExitRequested: true }) break;
                 bool hasFutureFrame = options.FrameLimit == 0 || frameIndex < options.FrameLimit;
                 if (hasFutureFrame && !updateGameAfterInput)
                 {

@@ -91,4 +91,37 @@ public sealed class ApplicationSceneTests(SceneContentFixture content)
         Assert.True(result.Succeeded, result.Error?.ToString());
         Assert.Equal([0, 1, 0], frames);
     }
+
+    [SceneTheory]
+    [InlineData("d3d12")]
+    [InlineData("vulkan")]
+    public async Task ExitFinishesThePresentedFrameAndReleasesTheScene(string backend)
+    {
+        var frames = new List<int>();
+        var completion = new List<string>();
+        var scene = new ApplicationScene(content.DirectoryPath)
+        {
+            RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
+            Options = RuntimeStartupOptions.Parse(["--graphics-backend", backend, "--hidden-window",
+                "--static-scene", "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "3"]),
+            Shutdown = _ => completion.Add("shutdown"),
+            SceneCompleted = _ => completion.Add("completed"),
+        };
+        scene.FrameCompleted = frame =>
+        {
+            frames.Add(frame.Index);
+            if (frame.Index == 1)
+            {
+                scene.Reload();
+                scene.Exit();
+            }
+        };
+
+        ApplicationResult result = await Application.RunAsync([], application: scene);
+
+        Assert.True(result.Succeeded, result.Error?.ToString());
+        Assert.Equal(2, result.CompletedFrames);
+        Assert.Equal([0, 1], frames);
+        Assert.Equal(["shutdown", "completed"], completion);
+    }
 }

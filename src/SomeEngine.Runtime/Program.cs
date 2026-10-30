@@ -32,9 +32,6 @@ public static class Application
         using var startup = new ApplicationStartupTiming(System.Diagnostics.Stopwatch.GetTimestamp());
         try
         {
-            if (!OperatingSystem.IsWindows())
-                throw new PlatformNotSupportedException("SomeEngine.Runtime currently requires Direct3D 12 on Windows.");
-
             RuntimeStartupOptions options = application?.Options ?? RuntimeStartupOptions.Parse(args);
             if (script is not null) options = options with { FrameLimit = script.FrameCount, SynchronousFrames = script.WaitForFrames };
             using var trace = options.TraceOutput is null ? null : SomeEngine.Diagnostics.EngineTrace.Start(
