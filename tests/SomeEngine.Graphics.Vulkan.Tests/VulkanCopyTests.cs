@@ -4,13 +4,15 @@ using Xunit;
 
 public sealed class VulkanCopyTests
 {
-    [Fact]
-    public void Synchronization2_and_copy_commands_round_trip_buffer_bytes()
+    [Theory]
+    [InlineData(QueueType.Graphics)]
+    [InlineData(QueueType.Copy)]
+    public void Synchronization2_and_copy_commands_round_trip_buffer_bytes(QueueType queueType)
     {
         using var backend = VulkanGraphicsBackend.Create();
-        DeviceQueueDesc[] queues = [new DeviceQueueDesc(QueueType.Graphics)];
+        DeviceQueueDesc[] queues = [new DeviceQueueDesc(queueType)];
         using Device device = backend.CreateDevice(new DeviceDesc(default, queues));
-        Queue queue = backend.GetQueue(device, QueueType.Graphics);
+        Queue queue = backend.GetQueue(device, queueType);
         using Buffer upload = backend.CreateBuffer(
             device,
             new BufferDesc(4096, BufferUsages.CopySource),
@@ -31,7 +33,7 @@ public sealed class VulkanCopyTests
 
         using CommandContext context = backend.CreateCommandContext(
             device,
-            new CommandContextDesc(QueueType.Graphics, 0, 1));
+            new CommandContextDesc(queueType, 0, 1));
         backend.Begin(context);
         backend.Barrier(context, new BufferBarrier(
             upload,

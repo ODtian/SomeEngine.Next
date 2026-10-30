@@ -1638,17 +1638,16 @@ internal sealed unsafe partial class VulkanBackend
         {
             QueueType.Graphics => (flags & QueueFlags.GraphicsBit) != 0,
             QueueType.Compute => (flags & QueueFlags.ComputeBit) != 0,
-            QueueType.Copy => (flags & QueueFlags.TransferBit) != 0,
+            // Copy contexts also reset and resolve timestamp queries.
+            QueueType.Copy => (flags & QueueFlags.TransferBit) != 0 &&
+                (flags & (QueueFlags.GraphicsBit | QueueFlags.ComputeBit)) != 0,
             _ => false,
         };
 
         private static int Score(QueueFlags flags, QueueType type) => type switch
         {
             QueueType.Graphics => 100,
-            QueueType.Compute => (flags & QueueFlags.GraphicsBit) == 0 ? 200 : 100,
-            QueueType.Copy => (flags & (QueueFlags.GraphicsBit | QueueFlags.ComputeBit)) == 0
-                ? 300
-                : (flags & QueueFlags.GraphicsBit) == 0 ? 200 : 100,
+            QueueType.Compute or QueueType.Copy => (flags & QueueFlags.GraphicsBit) == 0 ? 200 : 100,
             _ => 0,
         };
     }

@@ -11,6 +11,9 @@
   display connection. Windows enables `VK_KHR_win32_surface` and carries its window handle. Both use
   the same acquired-image, graphics-queue submission and swapchain reconfiguration path. Swapchain
   creation checks graphics queue 0 against the actual surface with `vkGetPhysicalDeviceSurfaceSupportKHR`.
+- Copy queues use a transfer-capable graphics or compute queue family so the same command context
+  supports timestamp reset, writes and resolves. Queue selection prefers a dedicated compute family;
+  each requested queue retains its own native queue index and completion semaphore.
 - Vulkan shader records carry ordinary bytes only. `RayTracing.ShaderRecordResourceBindings` is false;
   opaque per-record values use global bindless indices stored in those bytes.
 - Pipeline creation uses the caller's explicit `PipelineCache`, or one backend-private native cache
