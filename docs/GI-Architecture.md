@@ -16,6 +16,8 @@
 
 `CollectGiMeshQueries` 把几何任务组织为射线、实例和用户材质。`IntersectGiMaterial` 在用户 Shader 内执行近景距离场查询，三角求交立即更新本次查询和该射线的最近距离，供后续局部遍历剪枝。主视图的近景 tile 候选负责剔除物体。
 
+距离场加载时通过同一份 `MeshPayloadSource` 读取打包页中的三角材质区域，生成原三角指针对应的局部材质编号，并合并原始簇的材质包围范围。近景任务入队前先用该范围裁剪材质。每个终端网格单元的指针按材质连续排列，同材质内保持原有顺序。用户材质查询通过二分定位自己的连续区间，再沿 SDF 跳步和最近命中反馈执行求交；多材质网格共享同一份距离场和页资源。
+
 Gather 和训练续射共同消费 `ResolveGiRayRadiance`。两者的材质几何任务都截在近景区间；远段终点统一为 `TraceGiGlobalScene → QueryGiReflectedRadiance`。天空辐射提供未命中方向的入射边界。
 
 实现：[距离场与局部三角指针](../assets/Shaders/gi_mesh_distance_field.slang)、[用户材质求交](../assets/Shaders/gi_material_entries.slang)、[统一追踪与训练](../assets/Shaders/gi_pipeline.slang)、[Global SDF 命中](../assets/Shaders/gi_scene_tracing.slang)。
@@ -23,6 +25,10 @@ Gather 和训练续射共同消费 `ResolveGiRayRadiance`。两者的材质几�
 ## 两个 World 与数据持有
 
 Game world 的网格引用通过既有提取进入 Rendering world。`RenderMesh.DistanceField` 保存该网格共享的距离场对象，`GiSceneData` 使用现有 Cluster root 建立地址索引，并直接写入 RenderGraph 的上传页。三角指针指向既有层级中的页引用；页驻留、请求、搬移和回收沿用 Cluster 的同一份资源。
+
+指针重定位读取网格持有的不可变数据，并向上传页写入最终地址。应用通过 `ApplicationRendering.Lights` 把 Rendering world 的同一份 `RenderLightSet` 交给 GI，其版本驱动辐射历史刷新。GI 批量接入材质 pass 后调用一次 `ReconcileMaterialResources`，由 Cluster 统一清理输入并登记缓冲和纹理。
+
+所有材质编号共用一份持久常量缓冲，各材质 pass 读取自己的对齐区间。容量及 GI 缓冲重置驱动上传，帧内复用既有数据与绑定。
 
 顶点字节、域、可见性和表面属性由用户自己的材质 Shader 解释。`IGiSurfaceEvaluate` 给出法线、几何法线、漫反射率、覆盖率、环境遮蔽与发光。主材质在既有着色阶段输出这些主表面数据及解析直接光，GI 随后完成本帧方向辐射重建与颜色积分。
 
@@ -83,12 +89,12 @@ SHARC 使用 65,536 个条目、八个空间尺度和六轴法线分组，查询
 
 主体图保持持久拓扑。网格、材质及容量变化通过显式编辑维护；帧内更新常量、资源内容、启用区域和间接工作量。DefaultGame 通过 `ExperimentalGi` 选择资产并安装引擎功能。
 
-探针过滤完成是必需主线的阶段边界。每四帧启用的稀疏训练从该边界形成支链；发光直接光依赖探针过滤，并在训练启用时等待训练完成，随后复用同一份射线与材质几何工作区。
+探针过滤完成是主线的阶段边界。训练支链持续保留，每四帧生成一批有效样本，其余帧由空工作量贯穿；有效训练样本决定 SHARC／NRC 的间接派发和网络更新次数。发光直接光等待该支链完成，随后复用同一份射线与材质几何工作区。
 
 ## Linux 与测量入口
 
 Linux 使用 Xlib 窗口和 Vulkan Surface，窗口句柄与 display 通过现有 `SurfaceDesc` 传递。开发资产在 Linux 构建 SPIRV，发布沿用 Release NativeAOT。
 
-Linux 窗口与呈现复用引擎优化树的 `97277eb9` 适配，Vulkan 绑定坐标与紧凑布局复用 `15616875`。`--measure` 自动启动统一场景平台并在结果完成后退出；`tools/Measure-Scenes.ps1` 沿用该树的 Python 执行器与 Xorg 入口，为队列选择的 GPU 创建普通呈现窗口。性能运行通过共享队列在服务器执行 1024 小球、Sponza 和 Amazon Bistro。比较使用相同分辨率、场景行为、渲染选项、NativeAOT 和采样窗口。
+Linux 窗口与呈现复用引擎优化树的 `97277eb9` 适配，图形后端复用该树的 `5535b59f`，包含紧凑绑定坐标、管线编译数据复用与时间戳队列选择。Shader 特化使用 `8199bba8` 的驻留输入恢复方式。`--measure` 自动启动统一场景平台并在结果完成后退出；`tools/Measure-Scenes.ps1` 沿用该树的 Python 执行器与 Xorg 入口，为队列选择的 GPU 创建普通呈现窗口。性能运行通过共享队列在服务器执行 1024 小球、Sponza 和 Amazon Bistro。比较使用相同分辨率、场景行为、渲染选项、NativeAOT 和采样窗口。
 
 `--gpu-times` 按平台实际采样的帧归档 GPU 命令时间与包含屏障、等待和提交间隙的整帧跨度。定位运行与普通性能运行分别记录。

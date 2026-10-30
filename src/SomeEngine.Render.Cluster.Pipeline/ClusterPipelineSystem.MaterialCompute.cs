@@ -23,6 +23,7 @@ public sealed partial class ClusterPipelineSystem
     }
 
     /// <summary>Connects a material compute entry to the same geometry, scalar and texture resources as surface shading.</summary>
+    /// <remarks>Finish the batch by calling <see cref="ReconcileMaterialResources"/>.</remarks>
     public GraphPassId AddMaterialComputePass(ref RenderGraphEdit graph, uint materialIndex,
         Shader shader, string entryPoint, GraphBufferId dispatchArguments, ulong dispatchOffset,
         IGraphResourceProvider resources, GraphRegionId region = default)
@@ -46,9 +47,15 @@ public sealed partial class ClusterPipelineSystem
                 material.Properties[(int)property].Name, ResourceBindingType.TextureSrv);
             access.Read(input.Input, PipelineSync.ComputeShading);
         }
-        GraphData.MaterialBuffers = UpdateMaterialBuffers(ref graph);
-        AcceptMaterialTextures(UpdateMaterialTextures(ref graph), GraphData.MissingMaterialTexture);
         return id;
+    }
+
+    /// <summary>Refreshes material buffers and textures after a batch of compute passes has changed.</summary>
+    public void ReconcileMaterialResources(ref RenderGraphEdit graph)
+    {
+        var resources = UpdateMaterialResources(ref graph);
+        GraphData.MaterialBuffers = resources.Buffers;
+        AcceptMaterialTextures(resources.Textures, GraphData.MissingMaterialTexture);
     }
 
     /// <summary>Orders material compute after this frame's geometry builds.</summary>

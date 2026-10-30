@@ -1,5 +1,7 @@
+using System.Numerics;
 using System.Runtime.InteropServices;
 using SomeEngine.Assets.Pipeline;
+using SomeEngine.Resources;
 using SomeEngine.Resources.Geometry;
 using SomeEngine.Serialization;
 using SomeEngine.Serialization.Containers;
@@ -41,7 +43,8 @@ public sealed partial class MeshDistanceFieldBlock : AssetBlock
         }
     }
 
-    public async ValueTask<MeshDistanceField> ReadDataAsync(CancellationToken cancellationToken = default)
+    public async ValueTask<MeshDistanceField> ReadDataAsync(MeshPayloadSource pages,
+        CancellationToken cancellationToken = default)
     {
         using MeshDistanceFieldBlock copy = Duplicate();
         Task<ReadOnlyMemory<byte>>[] reads = [
@@ -53,7 +56,52 @@ public sealed partial class MeshDistanceFieldBlock : AssetBlock
             copy.ReadBytesAsync(PointersKey, cancellationToken).AsTask(),
         ];
         ReadOnlyMemory<byte>[] bytes = await Task.WhenAll(reads).ConfigureAwait(false);
+        uint[] materials = new uint[bytes[5].Length / 12];
+        List<Vector4> materialBounds = [];
+        int first = 0;
+        while (first < materials.Length)
+        {
+            MeshTrianglePointer pointer = MemoryMarshal.Read<MeshTrianglePointer>(bytes[5].Span.Slice(first * 12));
+            ReadOnlyMemory<byte> page = await pages.ReadPageAsync((int)pointer.Page, cancellationToken).ConfigureAwait(false);
+            first = ReadPageMaterials(page.Span, MemoryMarshal.Cast<byte, MeshTrianglePointer>(bytes[5].Span),
+                first, materials, materialBounds);
+        }
         return new(MemoryMarshal.Read<MeshDistanceGrid>(bytes[0].Span),
-            MemoryMarshal.Read<MeshTriangleGrid>(bytes[1].Span), bytes[2], bytes[3], bytes[4], bytes[5]);
+            MemoryMarshal.Read<MeshTriangleGrid>(bytes[1].Span), bytes[2], bytes[3], bytes[4], bytes[5], materials,
+            materialBounds.ToArray());
+    }
+
+    private static int ReadPageMaterials(ReadOnlySpan<byte> page, ReadOnlySpan<MeshTrianglePointer> pointers,
+        int first, Span<uint> materials, List<Vector4> materialBounds)
+    {
+        MeshPageHeader header = MemoryMarshal.Read<MeshPageHeader>(page);
+        uint pageIndex = pointers[first].Page;
+        while (first < pointers.Length && pointers[first].Page == pageIndex)
+        {
+            uint cluster = pointers[first].Cluster;
+            PackedCluster packed = MemoryMarshal.Read<PackedCluster>(page.Slice(
+                (int)header.ClustersOffset + (int)cluster * PackedCluster.SizeInBytes));
+            for (int index = 0; index < packed.MaterialRangeCount; index++)
+            {
+                uint material = packed.GetMaterialRange(page, index).MaterialIndex;
+                int lower = (int)material * 2;
+                while (materialBounds.Count <= lower)
+                {
+                    materialBounds.Add(new Vector4(float.MaxValue));
+                    materialBounds.Add(new Vector4(float.MinValue));
+                }
+                materialBounds[lower] = Vector4.Min(materialBounds[lower], new(packed.BoundMin, 1));
+                materialBounds[lower + 1] = Vector4.Max(materialBounds[lower + 1], new(packed.BoundMax, 0));
+            }
+            int rangeIndex = 0;
+            ClusterMaterialRange range = packed.GetMaterialRange(page, rangeIndex);
+            while (first < pointers.Length && pointers[first].Page == pageIndex && pointers[first].Cluster == cluster)
+            {
+                while (pointers[first].Triangle >= range.FirstTriangle + range.TriangleCount)
+                    range = packed.GetMaterialRange(page, ++rangeIndex);
+                materials[first++] = range.MaterialIndex;
+            }
+        }
+        return first;
     }
 }

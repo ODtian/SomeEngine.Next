@@ -42,7 +42,7 @@ public sealed partial class ClusterPipelineSystem
 
     private (ImmutableDictionary<SomeEngine.Graphics.Buffer, MaterialBuffer> Buffers,
         ImmutableDictionary<EngineTexture, MaterialTexture> Textures) UpdateMaterialResources(
-        ref RenderGraphEdit edit, ClusterRasterStageSet rasterStages, ClusterShadeStageSet shadeStages)
+        ref RenderGraphEdit edit)
     {
         HashSet<GraphParameterInput> inputs = edit.GetParameterInputs().ToHashSet();
         GraphData.MaterialInputs = GraphData.MaterialInputs.RemoveRange(GraphData.MaterialInputs

@@ -289,6 +289,7 @@ internal static class RuntimeApplication
             _windowVSync = options.WindowVSync;
             _meshShadersDisabled = options.DisableMeshShaders;
             _validation = options.DeviceValidation;
+            IGraphicsBackend? previousBackend = Backend;
             if (Window is not null)
             {
                 Swapchain.Dispose();
@@ -297,8 +298,6 @@ internal static class RuntimeApplication
                 Device = null!;
                 Surface.Dispose();
                 Surface = null!;
-                Backend.Dispose();
-                Backend = null!;
             }
             else Window = NativeWindow.Create(title, boot.Width, boot.Height, visible: !options.HideWindow);
             if (useWarp && options.GraphicsBackend != RuntimeGraphicsBackend.Direct3D12)
@@ -306,6 +305,7 @@ internal static class RuntimeApplication
             Backend = CreateBackend(
                 options.GraphicsBackend,
                 options.DeviceValidation);
+            previousBackend?.Dispose();
             AdapterId adapterId = useWarp ? SelectAdapter(Backend, true).Id : default;
             DeviceQueueDesc[] queues =
             [
@@ -353,8 +353,8 @@ internal static class RuntimeApplication
             Swapchain?.Dispose();
             Device?.Dispose();
             Surface?.Dispose();
-            Backend?.Dispose();
             Window?.Dispose();
+            Backend?.Dispose();
         }
     }
 
@@ -843,6 +843,7 @@ internal static class RuntimeApplication
             bool debugUiOpen = !options.HideDebugUi && !options.VerifyFrameOutput;
             FrameOutputMetrics? verifiedOutput = null;
             uint maximumRecoveredClusters = 0;
+            bool cameraCut = false;
             while (options.FrameLimit == 0 || frameIndex < options.FrameLimit)
             {
                 long frameStarted = Stopwatch.GetTimestamp();
@@ -933,7 +934,7 @@ internal static class RuntimeApplication
 
                 int clientWidth = window.ClientWidth;
                 int clientHeight = window.ClientHeight;
-                bool cameraCut = script?.UseCameraHistory == false;
+                cameraCut = script?.UseCameraHistory == false;
                 if (clientWidth > 0 && clientHeight > 0 &&
                     (clientWidth != width || clientHeight != height))
                 {
@@ -1079,7 +1080,8 @@ internal static class RuntimeApplication
                 if (connectPostProcessing && (script?.CreateColorFeature ?? application?.CreateColorFeature) is { } createColorFeature)
                     colorFeature = createColorFeature(new(backend, device, renderGraph, boot.Width, boot.Height,
                         viewFrame.View.Projection, colorEffectsRegion)
-                        { StencilSource = pipeline.GetStencil, Geometry = clusterOutputs, ClusterPipeline = pipeline, CameraCutSource = () => cameraCut });
+                        { StencilSource = pipeline.GetStencil, Geometry = clusterOutputs, ClusterPipeline = pipeline,
+                            Lights = lightSystem.RequireCurrent(), CameraCutSource = () => cameraCut });
                 colorFeature?.Reconcile(in clusterOutputs);
                 temporal ??= new TemporalFeature(
                     backend,
@@ -1570,9 +1572,10 @@ internal static class RuntimeApplication
                     using (EngineTrace.Begin(ApplicationTrace.TemporalRecording))
                     {
                         GraphTextureId sceneColor = clusterOutputs.MaterialColor;
+                        GraphTextureId giColor = colorFeature?.Record(ref graphFrame, sceneColor, clusterOutputs.Depth) ?? sceneColor;
                         temporal.Record(
                             ref graphFrame,
-                            colorFeature?.Record(ref graphFrame, sceneColor, clusterOutputs.Depth) ?? sceneColor,
+                            giColor,
                             clusterOutputs.Depth,
                             motion,
                             temporalSettings,

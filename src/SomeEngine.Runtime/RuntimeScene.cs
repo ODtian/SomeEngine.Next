@@ -134,14 +134,14 @@ internal sealed class RuntimeScene : IDisposable
                         : await packed!.CreateAsync(geometry, file.Name, cancellationToken).ConfigureAwait(false);
                     ClusterSkinBoundsBlock? skinBounds = await file.TryGetBlockAsync<ClusterSkinBoundsBlock>(cancellationToken).ConfigureAwait(false);
                     MeshDistanceFieldBlock? distanceField = await file.TryGetBlockAsync<MeshDistanceFieldBlock>(cancellationToken).ConfigureAwait(false);
-                    MeshDistanceField? distances = distanceField is null ? null
-                        : await distanceField.ReadDataAsync(cancellationToken).ConfigureAwait(false);
                     MeshPayloadSource? pages = null;
                     try
                     {
                         pages = clusters is not null
                             ? await clusters.OpenPayloadSourceAsync(attributes!, cancellationToken).ConfigureAwait(false)
                             : await packed!.OpenPayloadSourceAsync(cancellationToken).ConfigureAwait(false);
+                        MeshDistanceField? distances = distanceField is null ? null
+                            : await distanceField.ReadDataAsync(pages, cancellationToken).ConfigureAwait(false);
                         int[] regions = clusters is not null ? clusters.Clusters.SelectMany(cluster => cluster.TriangleRegions.IsEmpty
                                 ? cluster.TriangleMaterials : cluster.TriangleRegions)
                             .Select(region => Math.Max(0, region)).Distinct().Order().ToArray()

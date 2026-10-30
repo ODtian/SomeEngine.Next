@@ -15,6 +15,7 @@ namespace SomeEngine.Render.Features.GI;
 public sealed partial class ScreenProbeFeature : IGraphResourceProvider, IRenderGraphFrameExecutionObserver, IDisposable
 {
     private const uint TrainingCount = 128, HashCount = 65_536, GridSide = 128;
+    private const uint MaterialIndexBytes = 256;
     private readonly int _width, _height;
     private readonly uint _views, _probeCount, _rayCount, _candidateCapacity;
     private readonly IGraphicsBackend _backend;
@@ -27,6 +28,8 @@ public sealed partial class ScreenProbeFeature : IGraphResourceProvider, IRender
     private readonly IndirectCommandLayout? _dispatchLayout;
     private readonly GraphBufferInput _captureSettings, _screenSettings, _cacheSettings;
     private readonly GraphBufferInput[] _sceneSettings;
+    private readonly GraphBufferId _materialIndices;
+    private readonly GraphPassId _materialIndexUpload;
     private readonly FeatureUniformBuffer _uniformData;
     private readonly GraphTextureId _normal, _diffuse, _reflectedRadiance, _surfaceInstance;
     private readonly Dictionary<string, BufferData> _buffers = [];
@@ -72,6 +75,9 @@ public sealed partial class ScreenProbeFeature : IGraphResourceProvider, IRender
                 device.Capabilities.Limits.ConstantBufferAlignment, "GI constants");
             if (enabled)
             {
+                _materialIndices = edit.CreatePersistentBuffer(new BufferDesc(MaterialIndexBytes,
+                    BufferUsages.Constant | BufferUsages.CopyDestination, "GI material indices"));
+                _materialIndexUpload = edit.AddBufferUploadPass(_materialIndices);
                 _normal = edit.CreatePersistentTexture(SurfaceTexture(Format.R16G16B16A16Float, "GI material normals"));
                 _diffuse = edit.CreatePersistentTexture(SurfaceTexture(Format.R8G8B8A8UNorm, "GI material diffuse"));
                 _reflectedRadiance = edit.CreatePersistentTexture(SurfaceTexture(Format.R11G11B10Float, "GI reflected radiance"));
@@ -131,6 +137,7 @@ public sealed partial class ScreenProbeFeature : IGraphResourceProvider, IRender
             }
             ReconcileEmissiveResources(ref edit, (uint)cluster.CurrentInstanceCount, capacity);
             HashSet<uint> active = [];
+            bool materialPassesChanged = false;
             foreach (ClusterMaterialEntry entry in cluster.EnumerateMaterials())
             {
                 Shader shader = entry.Material.Shader!;
@@ -141,13 +148,11 @@ public sealed partial class ScreenProbeFeature : IGraphResourceProvider, IRender
                 if (_materials.TryGetValue(entry.Index, out MaterialPasses? previous) &&
                     ReferenceEquals(previous.Material, entry.Material) && ReferenceEquals(previous.Shader, shader)) continue;
                 if (previous is not null) RemoveMaterial(ref edit, previous);
-                GraphBufferId constant = edit.DeclareExternalBuffer(new BufferDesc(256, BufferUsages.Constant, "GI material index"), MemoryType.Upload);
-                byte[] bytes = new byte[256];
+                materialPassesChanged = true;
                 uint index = entry.Index;
-                MemoryMarshal.Write(bytes, in index);
-                var resources = new MaterialResources(this, constant);
-                var intersectionResources = new MaterialResources(this, constant, "GiCandidateHits");
-                var surfaceResources = new MaterialResources(this, constant, "GiSurfaceSamples");
+                var resources = new MaterialResources(this, index);
+                var intersectionResources = new MaterialResources(this, index, "GiCandidateHits");
+                var surfaceResources = new MaterialResources(this, index, "GiSurfaceSamples");
                 var passes = new GraphPassId[7];
                 for (int stage = 0; stage < 2; stage++)
                 {
@@ -164,13 +169,15 @@ public sealed partial class ScreenProbeFeature : IGraphResourceProvider, IRender
                     passes[stage * 2 + 1] = shade;
                 }
                 AddEmissiveMaterialPasses(ref edit, index, shader, resources, surfaceResources).CopyTo(passes, 4);
-                _materials[index] = new(entry.Material, shader, constant, bytes, passes);
+                _materials[index] = new(entry.Material, shader, passes);
             }
             foreach (uint index in _materials.Keys.Where(index => !active.Contains(index)).ToArray())
             {
                 RemoveMaterial(ref edit, _materials[index]);
                 _materials.Remove(index);
+                materialPassesChanged = true;
             }
+            if (materialPassesChanged) cluster.ReconcileMaterialResources(ref edit);
             edit.Commit();
         }
         finally { edit.Dispose(); }
@@ -183,6 +190,14 @@ public sealed partial class ScreenProbeFeature : IGraphResourceProvider, IRender
         if (Enabled)
         {
             _scene!.Record(ref graph);
+            if (_resetBuffers)
+            {
+                Span<byte> indices = graph.GetWriteSpan(_materialIndices, 0,
+                    (int)(_materialCapacity * MaterialIndexBytes));
+                indices.Clear();
+                for (uint index = 0; index < _materialCapacity; index++)
+                    MemoryMarshal.Write(indices.Slice((int)(index * MaterialIndexBytes), sizeof(uint)), in index);
+            }
             bool instancesChanged = _fieldRevision != _cluster!.CurrentInstanceRevision;
             bool instancesReplaced = !ReferenceEquals(_fieldInstances, _cluster.CurrentInstances);
             bool materialsChanged = _materials.Values.Any(value => value.Revision != value.Material.Revision);
@@ -212,10 +227,8 @@ public sealed partial class ScreenProbeFeature : IGraphResourceProvider, IRender
             graph.SetPassEnabled(_clearBuffers, _resetBuffers);
             foreach (GraphPassId reset in _resets) graph.SetPassEnabled(reset, _resetBuffers);
             graph.SetPassEnabled(_initializeProbes, _resetBuffers || cameraCut || instancesReplaced);
-            graph.SetRegionEnabled(_trainingRegion, _frame % 4u == 0u);
             foreach (MaterialPasses material in _materials.Values)
             {
-                graph.SetBufferData(material.Constants, material.Bytes);
                 material.Revision = material.Material.Revision;
                 foreach (GraphPassId pass in material.Passes) _cluster.OrderMaterialGeometryBuilds(ref graph, pass);
             }
@@ -240,7 +253,6 @@ public sealed partial class ScreenProbeFeature : IGraphResourceProvider, IRender
     private static void RemoveMaterial(ref RenderGraphEdit edit, MaterialPasses material)
     {
         foreach (GraphPassId pass in material.Passes) edit.Remove(pass);
-        edit.Remove(material.Constants);
     }
 
     public void Dispose()
@@ -250,7 +262,7 @@ public sealed partial class ScreenProbeFeature : IGraphResourceProvider, IRender
         _dispatchLayout?.Dispose();
     }
 
-    private sealed record MaterialPasses(Material Material, Shader Shader, GraphBufferId Constants, byte[] Bytes, GraphPassId[] Passes)
+    private sealed record MaterialPasses(Material Material, Shader Shader, GraphPassId[] Passes)
     {
         internal ulong Revision;
     }

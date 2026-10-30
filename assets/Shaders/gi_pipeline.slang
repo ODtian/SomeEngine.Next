@@ -234,8 +234,13 @@ void AddGiMeshQueries(uint rayIndex, uint instance, GiTraceRay ray, float limit)
     if (box.y < max(ray.Start, box.x) || box.x >= limit) return;
     uint first = GetClusterMaterialSlotOffset(instance);
     uint count = GiInstanceMaterialCount(instance);
+    RenderInstanceTransform transform = GetCurrentInstanceTransform(instance);
+    float3 origin = InverseTransformInstancePosition(ray.Origin, transform);
+    float3 direction = InverseTransformInstanceVector(ray.Direction, transform);
+    bool useMaterialBounds = GetInstanceBoundsExpansion(instance) <= 0.0;
     for (uint local = 0u; local < count; local++)
     {
+        if (useMaterialBounds && !GiMeshMaterialIntersects(GiMeshFields, address, local, origin, direction, ray.Start, limit)) continue;
         uint at;
         InterlockedAdd(GiQueueCounts[0], 1u, at);
         if (at >= GiScene.CandidateCapacity) { InterlockedAdd(GiQueueCounts[1], 1u); return; }
@@ -543,7 +548,7 @@ void ClearGiRadianceTraining(uint3 thread : SV_DispatchThreadID)
 void SelectGiTrainingProbes(uint3 thread : SV_DispatchThreadID)
 {
     uint index = thread.x;
-    if (index >= GiScene.TrainingCount) return;
+    if (index >= GiScene.TrainingCount || GiSettings.Frame % 4u != 0u) return;
     uint first = (index * GiProbeCount() + GiScene.TrainingCount - 1u) / GiScene.TrainingCount;
     uint end = ((index + 1u) * GiProbeCount() + GiScene.TrainingCount - 1u) / GiScene.TrainingCount;
     uint width = end - first, probe = first + (GiSettings.Frame / 4u + index) % width;

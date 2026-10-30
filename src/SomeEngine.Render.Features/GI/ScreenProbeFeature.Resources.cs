@@ -97,7 +97,7 @@ public sealed partial class ScreenProbeFeature
     private static void BindTexture(ref RenderGraphEdit edit, ref PassDefinition pass, GraphTextureId texture, Format format, PipelineSync sync) =>
         pass.Bind(edit.CreateTextureSrv(texture, format: format, dimension: TextureViewDimension.Texture2DArray), sync);
 
-    private sealed class MaterialResources(ScreenProbeFeature feature, GraphBufferId constant,
+    private sealed class MaterialResources(ScreenProbeFeature feature, uint materialIndex,
         string? outputBufferName = null) : IGraphResourceProvider
     {
         public bool TryResolve(string name, ResourceBindingType type, out GraphResourceBinder binder)
@@ -118,7 +118,11 @@ public sealed partial class ScreenProbeFeature
             };
             return true;
         }
-        private void BindIndex(ref RenderGraphEdit edit, ref PassDefinition pass, PipelineSync sync) =>
-            pass.Bind(edit.CreateBufferCbv(constant, BufferRange.Whole), sync);
+        private void BindIndex(ref RenderGraphEdit edit, ref PassDefinition pass, PipelineSync sync)
+        {
+            pass.Bind(edit.CreateBufferCbv(feature._materialIndices,
+                new BufferRange(materialIndex * (ulong)MaterialIndexBytes, MaterialIndexBytes)), sync);
+            edit.OrderAfter(pass.Id, feature._materialIndexUpload);
+        }
     }
 }

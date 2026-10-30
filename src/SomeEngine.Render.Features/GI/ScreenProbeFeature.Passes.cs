@@ -224,6 +224,8 @@ public sealed partial class ScreenProbeFeature
 
     private void ResizeMaterialBuffers(ref RenderGraphEdit edit, uint count)
     {
+        edit.SetBufferDescription(_materialIndices, new BufferDesc(count * (ulong)MaterialIndexBytes,
+            BufferUsages.Constant | BufferUsages.CopyDestination, "GI material indices"));
         foreach (string name in new[] { "GiMaterialWorkCounts", "GiMaterialWorkWrites", "GiMaterialWorkRanges", "GiMaterialDispatch" })
         {
             BufferData buffer = _buffers[name];

@@ -480,7 +480,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                 using (SomeEngine.Diagnostics.EngineTrace.Begin(GraphInstallTrace))
                     GraphData.RasterPhases = InstallGraph(ref edit, in _outputDescription, assignments, rasterStages, shadeStages);
             }
-            var materialResources = UpdateMaterialResources(ref edit, rasterStages, shadeStages);
+            var materialResources = UpdateMaterialResources(ref edit);
             GraphData.MaterialBuffers = materialResources.Buffers;
             GraphData.MaterialTextures = materialResources.Textures;
             ReconcileTransparency(ref edit, assignments, shadeStages);

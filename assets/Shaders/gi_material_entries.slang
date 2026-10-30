@@ -121,7 +121,7 @@ void IntersectGiMaterial(uniform VertexEvaluate vertex, uniform DomainEvaluate d
     float3 direction = InverseTransformInstanceVector(ray.Direction, transform);
     float limit = min(query.Limit, asfloat(GiClosestDistances[query.RayIndex]));
     GiMeshHit hit = TraceGiMeshDistanceField(GiMeshFields, query.FieldAddress, triangles,
-        origin, direction, query.Start, limit);
+        origin, direction, query.Start, limit, query.MaterialIndex - GetClusterMaterialSlotOffset(query.InstanceIndex));
     GiTriangleCandidate candidate = (GiTriangleCandidate)0;
     candidate.RayIndex = query.RayIndex;
     candidate.InstanceIndex = query.InstanceIndex;

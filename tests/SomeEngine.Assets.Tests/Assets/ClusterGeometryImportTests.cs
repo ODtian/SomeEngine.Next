@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using SharpGLTF.Schema2;
 using SomeEngine.Assets.Importing;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Assets.Pipeline;
 using SomeEngine.Resources.Geometry;
 using SomeEngine.Tests;
 using GltfMesh = SharpGLTF.Schema2.Mesh;
@@ -27,7 +28,8 @@ public sealed class ClusterGeometryImportTests
             await imported.Asset.SaveAsync(path);
             using MeshAsset reopened = await MeshAsset.OpenAsync(path);
             MeshDistanceFieldBlock saved = await reopened.GetBlockAsync<MeshDistanceFieldBlock>();
-            MeshDistanceField data = await saved.ReadDataAsync();
+            using MeshPayloadSource payload = await imported.Geometry.OpenPayloadSourceAsync(imported.Attributes);
+            MeshDistanceField data = await saved.ReadDataAsync(payload);
             Assert.Equal(imported.Geometry.VertexIdentity, saved.VertexIdentity);
             Assert.Equal(64u, data.Grid.TriangleCount);
             MeshDistanceGrid grid = data.Grid;

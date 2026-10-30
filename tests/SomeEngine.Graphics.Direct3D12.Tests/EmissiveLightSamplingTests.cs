@@ -2,6 +2,7 @@ using System.Numerics;
 using System.Runtime.InteropServices;
 using SomeEngine.Assets.Importers;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Assets.Pipeline;
 using SomeEngine.Resources;
 using SomeEngine.Resources.Geometry;
 using Xunit;
@@ -23,7 +24,8 @@ public sealed class EmissiveLightSamplingTests(D3D12TestCompiler compiler)
         Mesh mesh = await geometry.CreateAsync(asset.GetBlock<MeshBlock>(), attributes, asset.Name);
         await geometry.LoadPagesAsync(mesh, attributes, Enumerable.Range(0, mesh.PageCount));
         using MeshDistanceFieldBlock block = MeshDistanceFieldBlock.Build(geometry, attributes, 4, 32);
-        MeshDistanceField field = await block.ReadDataAsync();
+        using MeshPayloadSource payload = await geometry.OpenPayloadSourceAsync(attributes);
+        MeshDistanceField field = await block.ReadDataAsync(payload);
         byte[] fieldBytes = new byte[field.GpuByteLength];
         field.WriteGpuData(fieldBytes, mesh, 0);
         uint pointerOffset = MemoryMarshal.Read<uint>(fieldBytes.AsSpan(172));

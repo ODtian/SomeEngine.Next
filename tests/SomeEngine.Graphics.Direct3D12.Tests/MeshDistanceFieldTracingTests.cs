@@ -5,8 +5,11 @@ using System.Numerics;
 using System.Runtime.InteropServices;
 using SomeEngine.Assets.Importers;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Assets.Pipeline;
 using SomeEngine.Resources;
 using SomeEngine.Resources.Geometry;
+using SomeEngine.Geometry.Cluster;
+using ValueType = SomeEngine.Resources.Geometry.ValueType;
 using Xunit;
 
 namespace SomeEngine.Graphics.Direct3D12.Tests;
@@ -17,10 +20,11 @@ public sealed class MeshDistanceFieldTracingTests(D3D12TestCompiler shaderCompil
     [Theory]
     [InlineData(1)]
     [InlineData(32)]
-    public async System.Threading.Tasks.Task DistanceFieldAndCompleteGridFindOriginalMeshSurfaces(int divisions)
+    public async System.Threading.Tasks.Task DistanceFieldAndCompleteGridFindOriginalMeshSurfacesByMaterial(int divisions)
     {
         List<Vector3> positions = [];
         List<uint> indices = [];
+        List<float> materials = [];
         for (int plane = 0; plane < 2; plane++)
         for (int part = 0; part < divisions; part++)
         {
@@ -29,13 +33,16 @@ public sealed class MeshDistanceFieldTracingTests(D3D12TestCompiler shaderCompil
             positions.AddRange([new(-1 + 2f * part / divisions, -1, z),
                 new(-1 + 2f * (part + 1) / divisions, -1, z), new(0, 1, z)]);
             indices.AddRange([first, first + 1, first + 2]);
+            materials.AddRange([plane, plane, plane]);
         }
-        using MeshAsset asset = ClusterBuilder.ProcessRaw(positions.ToArray(), [], indices.ToArray(),
-            [new MeshMaterialSlot(Guid.Empty)], "GI query surfaces");
+        using MeshAsset asset = ClusterBuilder.ProcessRaw(positions.ToArray(),
+            [new RawAttribute("_MATERIAL_INDEX", materials.ToArray(), 1, ValueType.UInt8, 1, false)], indices.ToArray(),
+            [new MeshMaterialSlot(Guid.Empty), new MeshMaterialSlot(Guid.Empty)], "GI query surfaces");
         ClusterGeometryBlock geometry = asset.GetBlock<ClusterGeometryBlock>();
         ClusterVertexAttributesBlock attributes = asset.GetBlock<ClusterVertexAttributesBlock>();
         using MeshDistanceFieldBlock block = MeshDistanceFieldBlock.Build(geometry, attributes, 4, 32);
-        MeshDistanceField field = await block.ReadDataAsync();
+        using MeshPayloadSource payload = await geometry.OpenPayloadSourceAsync(attributes);
+        MeshDistanceField field = await block.ReadDataAsync(payload);
         SomeEngine.Resources.Mesh mesh = await geometry.CreateAsync(asset.GetBlock<MeshBlock>(), attributes, asset.Name);
         await geometry.LoadPagesAsync(mesh, attributes, Enumerable.Range(0, mesh.PageCount));
         const uint firstNode = 3;
@@ -85,6 +92,7 @@ public sealed class MeshDistanceFieldTracingTests(D3D12TestCompiler shaderCompil
             #include "gi_mesh_triangles.slang"
             #include "gi_scene_tracing.slang"
             #include "vertex_evaluate.slang"
+            #include "cluster_common.slang"
             ByteAddressBuffer Fields;
             ByteAddressBuffer Pages;
             ByteAddressBuffer Hierarchy;
@@ -97,11 +105,14 @@ public sealed class MeshDistanceFieldTracingTests(D3D12TestCompiler shaderCompil
                 RenderInstanceTransform Transform;
                 float3 WorldOrigin;
                 float3 WorldDirection;
+                uint Material;
                 bool intersect(uint3 triangle, float3 origin, float3 direction, float start, float limit,
                     out float distance, out float3 barycentric)
                 {
                     uint reference = Hierarchy.Load(triangle.x);
                     uint page = (reference >> 8u) << 9u;
+                    distance = limit; barycentric = 0.0;
+                    if (GetClusterLocalMaterial(Pages, page, triangle.y, triangle.z) != Material) return false;
                     VertexEvalContext context = { Pages, 0u, 0u, 0u, 0u, 0u, 0u, 0u, Transform, 0u };
                     StaticPositionEval vertex;
                     return IntersectGiMeshTriangle(vertex, context, page, triangle.y, triangle.z,
@@ -115,17 +126,19 @@ public sealed class MeshDistanceFieldTracingTests(D3D12TestCompiler shaderCompil
                 {
                     return TraceGiMeshDistanceField(Fields, 64u, Triangles,
                         InverseTransformInstancePosition(origin, Triangles.Transform),
-                        InverseTransformInstanceVector(direction, Triangles.Transform), start, limit);
+                        InverseTransformInstanceVector(direction, Triangles.Transform), start, limit, Triangles.Material);
                 }
             };
             [shader("compute")]
-            [numthreads(4, 1, 1)]
+            [numthreads(8, 1, 1)]
             void Evaluate(uint lane : SV_GroupIndex)
             {
-                if (lane >= 3u) return;
+                if (lane >= 6u) return;
                 MeshTriangles triangles;
-                float3 origin = lane == 0u ? float3(0.001, 0.98, 3.0) :
-                    lane == 1u ? float3(0.001, 0.98, 0.5) : float3(2.0, 2.0, 3.0);
+                triangles.Material = lane / 3u;
+                uint ray = lane % 3u;
+                float3 origin = ray == 0u ? float3(0.001, 0.98, 3.0) :
+                    ray == 1u ? float3(0.001, 0.98, 0.5) : float3(2.0, 2.0, 3.0);
                 float3 direction = float3(0, 0, -1);
                 triangles.Transform = (RenderInstanceTransform)0;
                 triangles.Transform.Position = float3(4, -3, 5);
@@ -134,7 +147,9 @@ public sealed class MeshDistanceFieldTracingTests(D3D12TestCompiler shaderCompil
                 triangles.Transform.Rotation = float4(0, sin(0.4), 0, cos(0.4));
                 triangles.WorldOrigin = TransformInstanceLocalPosition(origin, triangles.Transform);
                 triangles.WorldDirection = TransformInstanceLocalPosition(direction, triangles.Transform) - triangles.Transform.Position;
-                GiMeshHit near = TraceGiMeshDistanceField(Fields, 64u, triangles, origin, direction, 0.0, 10.0);
+                GiMeshHit near = MissGiMesh(10.0);
+                if (GiMeshMaterialIntersects(Fields, 64u, triangles.Material, origin, direction, 0.0, 10.0))
+                    near = TraceGiMeshDistanceField(Fields, 64u, triangles, origin, direction, 0.0, 10.0, triangles.Material);
                 GiMeshHit complete = TraceGiMeshCells(Fields, 64u, triangles, origin, direction, 0.0, 10.0);
                 SceneMeshes meshes;
                 meshes.Triangles = triangles;
@@ -145,20 +160,29 @@ public sealed class MeshDistanceFieldTracingTests(D3D12TestCompiler shaderCompil
                 Results[lane * 3u + 2u] = float4(sceneNear.Mesh.Distance, float(sceneNear.Mesh.Hit), sceneNear.Mesh.Barycentric.xy);
             }
             """;
-        uint[] words = Assert.Single(new D3D12TestCompute(shaderCompiler).ExecuteSource(source, "Evaluate", new(1, 1, 1),
-            [(fieldWords, ResourceBindingType.BufferSrv, 0), (pages, ResourceBindingType.BufferSrv, 0),
-                (hierarchy, ResourceBindingType.BufferSrv, 0),
-                (MemoryMarshal.Cast<float, uint>(bounds.AsSpan()).ToArray(), ResourceBindingType.BufferSrv, 16),
-                (MemoryMarshal.Cast<float, uint>(groups.AsSpan()).ToArray(), ResourceBindingType.BufferSrv, 16),
-                (new uint[] { 0 }, ResourceBindingType.BufferSrv, 4),
-                (new uint[36], ResourceBindingType.BufferUav, 16)]));
+        uint[] words = Assert.Single(new D3D12TestCompute(shaderCompiler).ExecuteSource(source,
+            [("Evaluate", new DispatchArguments(1, 1, 1))],
+            new D3D12TestCompute.BufferInput[]
+            {
+                new("Fields", fieldWords, ResourceBindingType.BufferSrv, 0),
+                new("Pages", pages, ResourceBindingType.BufferSrv, 0),
+                new("Hierarchy", hierarchy, ResourceBindingType.BufferSrv, 0),
+                new("InstanceBounds", MemoryMarshal.Cast<float, uint>(bounds.AsSpan()).ToArray(), ResourceBindingType.BufferSrv, 16),
+                new("GroupBounds", MemoryMarshal.Cast<float, uint>(groups.AsSpan()).ToArray(), ResourceBindingType.BufferSrv, 16),
+                new("InstanceOrder", [0], ResourceBindingType.BufferSrv, 4),
+                new("Results", new uint[72], ResourceBindingType.BufferUav, 16)
+            }));
         float[] results = MemoryMarshal.Cast<uint, float>(words.AsSpan()).ToArray();
-        Assert.InRange(results[0], 1.9999f, 2.0001f);
+        Assert.InRange(results[0], 3.9999f, 4.0001f);
         Assert.Equal(1f, results[1]);
         Assert.InRange(results[12], 1.4999f, 1.5001f);
         Assert.Equal(1f, results[13]);
         Assert.Equal(0f, results[25]);
-        for (int ray = 0; ray < 3; ray++)
+        Assert.InRange(results[36], 1.9999f, 2.0001f);
+        Assert.Equal(1f, results[37]);
+        Assert.Equal(0f, results[49]);
+        Assert.Equal(0f, results[61]);
+        for (int ray = 0; ray < 6; ray++)
         {
             int first = ray * 12;
             foreach (int query in new[] { 4, 8 })
