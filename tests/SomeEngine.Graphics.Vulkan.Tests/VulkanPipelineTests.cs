@@ -76,7 +76,7 @@ public sealed class VulkanPipelineTests(VulkanTestCompiler shaderCompiler)
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void Multiple_compute_entries_execute_the_requested_spirv_entry_point(bool requireWave32)
+    public async Task Multiple_compute_entries_execute_the_requested_spirv_entry_point(bool requireWave32)
     {
         const string source = """
             RWStructuredBuffer<uint> Output;
@@ -87,8 +87,14 @@ public sealed class VulkanPipelineTests(VulkanTestCompiler shaderCompiler)
             [numthreads(1, 1, 1)]
             void writeTwentyTwo(uint3 id : SV_DispatchThreadID) { Output[0] = 22; Output[1] = WaveGetLaneCount(); }
             """;
+        string selectedSource = requireWave32
+            ? source.Replace("[numthreads", "[WaveSize(32)] [numthreads", StringComparison.Ordinal) : source;
         VulkanTestShader shader = shaderCompiler.Compile(
-            requireWave32 ? source.Replace("[numthreads", "[WaveSize(32)] [numthreads", StringComparison.Ordinal) : source,
+            selectedSource,
+            ("writeEleven", SlangStage.Compute),
+            ("writeTwentyTwo", SlangStage.Compute));
+        VulkanTestShader reloadedShader = shaderCompiler.Compile(
+            selectedSource,
             ("writeEleven", SlangStage.Compute),
             ("writeTwentyTwo", SlangStage.Compute));
         VariableLayoutReflection globals = shader.Reflection.GetGlobalParamsVarLayout()
@@ -96,12 +102,19 @@ public sealed class VulkanPipelineTests(VulkanTestCompiler shaderCompiler)
         using IGraphicsBackend backend = VulkanGraphicsBackend.Create();
         DeviceQueueDesc[] queues = [new DeviceQueueDesc(QueueType.Graphics)];
         using Device device = backend.CreateDevice(new DeviceDesc(default, queues));
-        using Pipeline first = backend.CreateComputePipeline(
+        Task<Pipeline> firstCreation = backend.CreateComputePipelineAsync(
             device,
             new ComputePipelineDesc(shader.SlangCode, shader.Reflection, shader.Entries[0], shader.GetEntryCode(0)));
-        using Pipeline second = backend.CreateComputePipeline(
+        Task<Pipeline> secondCreation = backend.CreateComputePipelineAsync(
             device,
             new ComputePipelineDesc(shader.SlangCode, shader.Reflection, shader.Entries[1], shader.GetEntryCode(1)));
+        Task<Pipeline> reloadedCreation = backend.CreateComputePipelineAsync(
+            device,
+            new ComputePipelineDesc(reloadedShader.SlangCode, reloadedShader.Reflection,
+                reloadedShader.Entries[0], reloadedShader.GetEntryCode(0)));
+        using Pipeline first = await firstCreation;
+        using Pipeline second = await secondCreation;
+        using Pipeline reloaded = await reloadedCreation;
         using Buffer output = backend.CreateBuffer(
             device,
             new BufferDesc(8, BufferUsages.ShaderWrite | BufferUsages.CopySource));
@@ -110,15 +123,17 @@ public sealed class VulkanPipelineTests(VulkanTestCompiler shaderCompiler)
             new BufferUavDesc(output, BufferRange.Whole, StructureStride: sizeof(uint)));
         using Buffer readback = backend.CreateBuffer(
             device,
-            new BufferDesc(16, BufferUsages.CopyDestination),
+            new BufferDesc(24, BufferUsages.CopyDestination),
             MemoryType.Readback);
         using CommandContext context = backend.CreateCommandContext(
             device,
             new CommandContextDesc(QueueType.Graphics, 0, 1));
 
         backend.Begin(context);
-        Record(first, 0);
-        Record(second, 2 * sizeof(uint));
+        Record(first, globals, 0);
+        Record(second, globals, 2 * sizeof(uint));
+        Record(reloaded, reloadedShader.Reflection.GetGlobalParamsVarLayout()
+            ?? VariableLayoutReflection.Null, 4 * sizeof(uint));
         using RecordedCommands commands = backend.End(context);
         Queue queue = backend.GetQueue(device, QueueType.Graphics);
         QueueCompletion completion = backend.Submit(
@@ -131,19 +146,21 @@ public sealed class VulkanPipelineTests(VulkanTestCompiler shaderCompiler)
         mapped.Invalidate(mapped.Range);
         Assert.Equal(11u, BitConverter.ToUInt32(mapped.Bytes[..4]));
         Assert.Equal(22u, BitConverter.ToUInt32(mapped.Bytes[8..12]));
+        Assert.Equal(11u, BitConverter.ToUInt32(mapped.Bytes[16..20]));
         if (requireWave32)
         {
             Assert.Equal(32u, BitConverter.ToUInt32(mapped.Bytes[4..8]));
             Assert.Equal(32u, BitConverter.ToUInt32(mapped.Bytes[12..16]));
+            Assert.Equal(32u, BitConverter.ToUInt32(mapped.Bytes[20..24]));
         }
 
-        void Record(Pipeline pipeline, ulong readbackOffset)
+        void Record(Pipeline pipeline, VariableLayoutReflection parameters, ulong readbackOffset)
         {
             backend.SetPipeline(context, pipeline);
             backend.SetTransientParameterBindings(
                 context,
                 new ParameterBlockBindings(
-                    globals,
+                    parameters,
                     [ResourceBinding.WritableBuffer(outputUav)],
                     []));
             backend.Barrier(context, new BufferBarrier(

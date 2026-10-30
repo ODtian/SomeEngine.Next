@@ -13,7 +13,8 @@ internal sealed unsafe partial class VulkanBackend
     private SomeEngine.Graphics.PipelineCache CreatePipelineCacheCore(
         RhiDevice device,
         in PipelineCacheDesc desc,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int maximumNativeByteCount = 0)
     {
         VulkanDevice nativeDevice = RequireDevice(device, nameof(device));
         ValidatePipelineCachePolicy(desc);
@@ -50,7 +51,8 @@ internal sealed unsafe partial class VulkanBackend
                 parsed.Entries.ToArray(),
                 compatibility,
                 limits,
-                desc.Label);
+                desc.Label,
+                maximumNativeByteCount);
             cache.ValidateExportPolicy(cancellationToken);
             nativeDevice.RegisterChild(cache);
             return cache;
@@ -140,12 +142,28 @@ internal sealed unsafe partial class VulkanBackend
         }
     }
 
-    private VulkanPipelineCache? ResolvePipelineCache(
+    private sealed partial class VulkanDevice
+    {
+        private const int MaximumPipelineCacheBytes = 64 * 1024 * 1024;
+        private VulkanPipelineCache? _defaultPipelineCache;
+
+        internal VulkanPipelineCache GetDefaultPipelineCache()
+        {
+            lock (_gate)
+                return _defaultPipelineCache ??= (VulkanPipelineCache)_backend.CreatePipelineCacheCore(
+                    this,
+                    new PipelineCacheDesc(label: "Vulkan device pipeline cache"),
+                    CancellationToken.None,
+                    MaximumPipelineCacheBytes);
+        }
+    }
+
+    private VulkanPipelineCache ResolvePipelineCache(
         VulkanDevice device,
         SomeEngine.Graphics.PipelineCache? cache)
     {
         if (cache is null)
-            return null;
+            return device.GetDefaultPipelineCache();
         VulkanPipelineCache native = RequirePipelineCache(cache, nameof(cache));
         if (!ReferenceEquals(native.Device, device))
             throw new ArgumentException("The PipelineCache belongs to a different Vulkan Device.", nameof(cache));
@@ -211,6 +229,8 @@ internal sealed unsafe partial class VulkanBackend
         private readonly VulkanDevice _device;
         private readonly byte[] _compatibility;
         private readonly PipelineCacheLimits _limits;
+        private readonly int _maximumNativeByteCount;
+        private readonly ReaderWriterLockSlim? _nativeDataLock;
         private PipelineCacheEntry[] _entries;
         private VkPipelineCache _native;
         private int _pipelineCreationUses;
@@ -222,7 +242,8 @@ internal sealed unsafe partial class VulkanBackend
             PipelineCacheEntry[] entries,
             byte[] compatibility,
             PipelineCacheLimits limits,
-            string? label)
+            string? label,
+            int maximumNativeByteCount)
             : base(device, label)
         {
             _device = device;
@@ -230,11 +251,52 @@ internal sealed unsafe partial class VulkanBackend
             _entries = entries;
             _compatibility = compatibility;
             _limits = limits;
+            _maximumNativeByteCount = maximumNativeByteCount;
+            _nativeDataLock = maximumNativeByteCount == 0 ? null : new ReaderWriterLockSlim();
         }
 
         internal new VulkanDevice Device => _device;
         internal VkPipelineCache Native => _native;
         internal object Gate { get; } = new();
+
+        internal void EnterNativeCreation()
+        {
+            if (_nativeDataLock is { } dataLock) dataLock.EnterReadLock();
+            else Monitor.Enter(Gate);
+        }
+
+        internal void ExitNativeCreation()
+        {
+            if (_nativeDataLock is { } dataLock) dataLock.ExitReadLock();
+            else Monitor.Exit(Gate);
+        }
+
+        internal void ResetNativeDataAboveLimit()
+        {
+            if (_nativeDataLock is not { } dataLock)
+                return;
+            dataLock.EnterWriteLock();
+            try
+            {
+                nuint size = 0;
+                Result result = _device.Backend.Api.GetPipelineCacheData(
+                    _device.Native,
+                    _native,
+                    &size,
+                    null);
+                _device.ThrowIfDeviceCallFailed(result, "vkGetPipelineCacheData(size)");
+                if (size <= (nuint)_maximumNativeByteCount)
+                    return;
+                VkPipelineCache replacement = _device.Backend.CreateNativePipelineCache(
+                    _device,
+                    [],
+                    CancellationToken.None);
+                VkPipelineCache previous = _native;
+                _native = replacement;
+                _device.Backend.Api.DestroyPipelineCache(_device.Native, previous, null);
+            }
+            finally { dataLock.ExitWriteLock(); }
+        }
 
         internal void RetainForPipelineCreation()
         {
@@ -470,10 +532,19 @@ internal sealed unsafe partial class VulkanBackend
 
         private void DestroyNativeUnderGate()
         {
-            if (_native.Handle != 0)
-                _device.Backend.Api.DestroyPipelineCache(_device.Native, _native, null);
-            _native = default;
-            _entries = [];
+            _nativeDataLock?.EnterWriteLock();
+            try
+            {
+                if (_native.Handle != 0)
+                    _device.Backend.Api.DestroyPipelineCache(_device.Native, _native, null);
+                _native = default;
+                _entries = [];
+            }
+            finally
+            {
+                _nativeDataLock?.ExitWriteLock();
+                _nativeDataLock?.Dispose();
+            }
         }
     }
 }
