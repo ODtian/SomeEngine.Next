@@ -233,19 +233,7 @@ internal sealed unsafe partial class VulkanBackend
                     $"Vulkan bindless descriptor {bindingType}/{descriptorType} is unsupported."),
             };
 
-        internal static uint BindingFor(VulkanBindlessKind kind) => kind switch
-        {
-            VulkanBindlessKind.WritableStorageBuffer or
-            VulkanBindlessKind.WritableTexelBuffer or
-            VulkanBindlessKind.StorageImage => 0,
-            VulkanBindlessKind.ReadOnlyStorageBuffer or
-            VulkanBindlessKind.ReadOnlyTexelBuffer or
-            VulkanBindlessKind.SampledImage or
-            VulkanBindlessKind.AccelerationStructure => DescriptorRegisterClassStride,
-            VulkanBindlessKind.Sampler => DescriptorRegisterClassStride * 2,
-            VulkanBindlessKind.ConstantBuffer => DescriptorRegisterClassStride * 3,
-            _ => throw new ArgumentOutOfRangeException(nameof(kind)),
-        };
+        internal const uint DescriptorBinding = 0;
 
         private void PopulateGeneration(
             VulkanBindlessKind kind,
@@ -302,7 +290,7 @@ internal sealed unsafe partial class VulkanBackend
             heap = VulkanBindlessHeap.Create(
                 _device,
                 DescriptorTypeFor(kind),
-                BindingFor(kind),
+                DescriptorBinding,
                 kind == VulkanBindlessKind.Sampler
                     ? _device.Capabilities.Limits.SamplerDescriptorCapacity
                     : _device.Capabilities.Limits.ResourceDescriptorCapacity);
@@ -551,7 +539,7 @@ internal sealed unsafe partial class VulkanBackend
                 value.Type,
                 ToDescriptorType(value.Type, shape),
                 0,
-                VulkanBindlessPublisher.BindingFor(kind),
+                VulkanBindlessPublisher.DescriptorBinding,
                 index,
                 shape,
                 null);

@@ -97,7 +97,7 @@ internal sealed unsafe partial class VulkanBackend
     {
         internal VariableLayoutReflection ReflectedLayout { get; } = reflectedLayout;
         internal VulkanDescriptorSlot[] Slots { get; } = slots;
-        internal VulkanOrdinaryBinding? Ordinary { get; } = ordinary;
+        internal VulkanOrdinaryBinding? Ordinary { get; set; } = ordinary;
         internal uint[] SetIndices { get; } = setIndices;
         internal VulkanSpirvBindingTarget[] SpirvTargets { get; } = spirvTargets;
 
@@ -128,7 +128,8 @@ internal sealed unsafe partial class VulkanBackend
         uint Binding,
         uint PushConstantOffset,
         ShaderStageFlags Stages,
-        uint SourceSet);
+        uint SourceSet,
+        uint SourceBinding);
 
     private sealed class VulkanPipelineLayoutCompiler
     {
@@ -264,7 +265,7 @@ internal sealed unsafe partial class VulkanBackend
             {
                 uint offset = ResolveUInt(layout.GetOffset(SlangParameterCategory.PushConstantBuffer), 0);
                 _pushConstants.Add(new PushConstantRange(stages, offset, size));
-                return new VulkanOrdinaryBinding(size, true, 0, 0, offset, stages, 0);
+                return new VulkanOrdinaryBinding(size, true, 0, 0, offset, stages, 0, 0);
             }
             SlangParameterCategory category = SlangParameterCategory.DescriptorTableSlot;
             uint binding = NormalizeOrdinaryDescriptorBinding(
@@ -278,7 +279,7 @@ internal sealed unsafe partial class VulkanBackend
                 1,
                 stages,
                 DescriptorBindingFlags.PartiallyBoundBit);
-            return new VulkanOrdinaryBinding(size, false, set, binding, 0, stages, sourceSet);
+            return new VulkanOrdinaryBinding(size, false, set, binding, 0, stages, sourceSet, binding);
         }
 
         private uint AllocateParameterSet(Dictionary<uint, uint> parameterSets, uint sourceSet)
@@ -475,6 +476,7 @@ internal sealed unsafe partial class VulkanBackend
             ReadOnlySpan<EntryPointReflection> entries)
         {
             VulkanBindlessSetBinding[] bindlessBindings = AssignBindlessSets();
+            AssignDescriptorBindings();
             Dictionary<EntryPointReflection, VulkanSpirvBindingTarget[]> spirvTargets =
                 CreateSpirvTargetMap(global, entries);
             uint maximumSet = 0;
@@ -557,6 +559,46 @@ internal sealed unsafe partial class VulkanBackend
             }
         }
 
+        private void AssignDescriptorBindings()
+        {
+            // Register-class prefixes identify source declarations. Native sets use
+            // consecutive bindings so their storage follows the actual descriptor count.
+            Dictionary<uint, Dictionary<uint, uint>> bindingIndices = [];
+            foreach ((uint set, Dictionary<uint, SetBindingBuild> source) in _sets.ToArray())
+            {
+                var indices = new Dictionary<uint, uint>(source.Count);
+                var bindings = new Dictionary<uint, SetBindingBuild>(source.Count);
+                foreach ((uint binding, SetBindingBuild value) in source.OrderBy(static pair => pair.Key))
+                {
+                    uint index = checked((uint)indices.Count);
+                    indices.Add(binding, index);
+                    bindings.Add(index, value);
+                }
+                bindingIndices.Add(set, indices);
+                _sets[set] = bindings;
+            }
+            foreach (VulkanBlockLayout block in _blocks.Values)
+            {
+                if (block.Ordinary is { PushConstants: false } ordinary)
+                    block.Ordinary = ordinary with { Binding = bindingIndices[ordinary.Set][ordinary.Binding] };
+                for (int index = 0; index < block.Slots.Length; index++)
+                {
+                    VulkanDescriptorSlot slot = block.Slots[index];
+                    block.Slots[index] = slot with { Binding = bindingIndices[slot.Set][slot.Binding] };
+                }
+                for (int index = 0; index < block.SpirvTargets.Length; index++)
+                {
+                    VulkanSpirvBindingTarget target = block.SpirvTargets[index];
+                    if (!bindingIndices.TryGetValue(target.Set, out Dictionary<uint, uint>? indices)) continue;
+                    block.SpirvTargets[index] = target with
+                    {
+                        Binding = indices[target.Binding],
+                        SourceBinding = target.LogicalBinding,
+                    };
+                }
+            }
+        }
+
         private VulkanBindlessSetBinding[] AssignBindlessSets()
         {
             if (_unboundedBindings.Count == 0)
@@ -597,7 +639,7 @@ internal sealed unsafe partial class VulkanBackend
                     static pair => pair.Key,
                     pair => new VulkanSpirvBindingTarget(
                         sets[pair.Value],
-                        VulkanBindlessPublisher.BindingFor(pair.Value),
+                        VulkanBindlessPublisher.DescriptorBinding,
                         pair.Key.Name,
                         pair.Key.LogicalSet,
                         pair.Key.LogicalBinding));
@@ -647,7 +689,8 @@ internal sealed unsafe partial class VulkanBackend
             }
             targets.UnionWith(block.SpirvTargets);
             if (block.Ordinary is VulkanOrdinaryBinding ordinary && !ordinary.PushConstants)
-                targets.Add(new VulkanSpirvBindingTarget(ordinary.Set, ordinary.Binding, SourceSet: ordinary.SourceSet));
+                targets.Add(new VulkanSpirvBindingTarget(ordinary.Set, ordinary.Binding,
+                    SourceSet: ordinary.SourceSet, SourceBinding: ordinary.SourceBinding));
 
             TypeLayoutReflection dataLayout = GetParameterDataLayout(layout);
             for (nint index = 0; index < dataLayout.SubObjectRangeCount; index++)
