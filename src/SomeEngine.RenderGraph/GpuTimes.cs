@@ -161,7 +161,11 @@ internal sealed partial class FrameExecutor
     {
         bool enabled = _frame.Options.GpuTimes is not null;
         if (_measureGpu != enabled)
-            foreach (int pass in _executionOrder.Nodes) ChangeRecording(pass);
+            foreach (int pass in _executionOrder.Nodes)
+            {
+                _recordingConfigurationPasses.Add(pass);
+                ChangeRecording(pass);
+            }
         _measureGpu = enabled;
         if (!enabled) return;
         _gpuTimes ??= new FrameGpuTimes(_frame.Graph);

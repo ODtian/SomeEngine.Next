@@ -1158,7 +1158,8 @@ internal sealed partial class FrameExecutor
     {
         FramePass previous = _passes[index];
         if (previous.Options.Recording != pass.Options.Recording ||
-            previous.Options.EstimatedRecordingCost != pass.Options.EstimatedRecordingCost)
+            previous.Options.EstimatedRecordingCost != pass.Options.EstimatedRecordingCost ||
+            previous.Options.RepeatCommands != pass.Options.RepeatCommands)
             _recordingConfigurationPasses.Add(index);
         if (previous.Identity.IsValid && previous.Kind == pass.Kind && previous.Enabled == pass.Enabled &&
             previous.QueuePolicy == pass.QueuePolicy && previous.Options == pass.Options &&

@@ -77,17 +77,17 @@ internal sealed partial class FrameExecutor
 
     private static int AheadBatchSize(RecordingBatch[] work, int count)
     {
-        // Keep the existing sixteen-pass recording granularity for small runs.
-        // Command lists remain separate while one worker records the ready range.
+        // Combine small ranges using the same work estimate that formed the command
+        // lists. The command lists retain their individual reuse and submission order.
         CommandContext first = work[0].Context;
-        int passes = 0;
+        ulong weight = 0;
         for (int index = 0; index < count; index++)
         {
             RecordingBatch batch = work[index];
             if (batch.Context.QueueType != first.QueueType ||
-                batch.Context.QueueIndex != first.QueueIndex || batch.Count > 16 - passes)
+                batch.Context.QueueIndex != first.QueueIndex || batch.Weight > RecordingWeightPerBatch - weight)
                 return 1;
-            passes += batch.Count;
+            weight += batch.Weight;
         }
         return count;
     }

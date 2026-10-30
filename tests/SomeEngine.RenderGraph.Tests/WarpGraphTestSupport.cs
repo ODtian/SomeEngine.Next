@@ -1,6 +1,7 @@
 using SomeEngine.Graphics;
 using SomeEngine.Graphics.Direct3D12;
 using SomeEngine.Graphics.Validation;
+using SomeEngine.Graphics.Vulkan;
 using Xunit.Sdk;
 
 namespace SomeEngine.RenderGraph.Tests;
@@ -30,10 +31,11 @@ internal sealed class WarpGraphTestSupport : IDisposable
     internal static WarpGraphTestSupport Create(bool enableValidation = false,
         DeviceFeatures requiredFeatures = DeviceFeatures.None)
     {
-        if (!OperatingSystem.IsWindows())
-            throw SkipException.ForSkip("D3D12 WARP requires Windows.");
-        IGraphicsBackend native = D3D12GraphicsBackend.Create();
-        IGraphicsBackend backend = enableValidation ? new ValidationLayer(native) : native;
+        IGraphicsBackend native = OperatingSystem.IsWindows()
+            ? D3D12GraphicsBackend.Create() : VulkanGraphicsBackend.Create();
+        IGraphicsBackend backend = enableValidation
+            ? new ValidationLayer(native, new ValidationOptions(NativeValidationDisabled: !OperatingSystem.IsWindows()))
+            : native;
         try
         {
             AdapterEnumerationOptions options = new(
@@ -46,21 +48,28 @@ internal sealed class WarpGraphTestSupport : IDisposable
             {
                 throw new InvalidOperationException("The adapter set changed during enumeration.");
             }
-            AdapterInfo warp = adapters.FirstOrDefault(static value => !value.HardwareAccelerated);
-            if (warp.Name.Length == 0)
-                throw SkipException.ForSkip("The D3D12 WARP adapter is unavailable.");
-
             DeviceQueueDesc[] queues =
             [
                 new(QueueType.Graphics),
                 new(QueueType.Compute),
                 new(QueueType.Copy),
             ];
-            Device device = backend.CreateDevice(new DeviceDesc(
-                warp.Id,
-                queues,
-                requiredFeatures: requiredFeatures,
-                label: "RenderGraph WARP test"));
+            Device? device = null;
+            foreach (AdapterInfo adapter in adapters.OrderBy(static value => value.HardwareAccelerated))
+            {
+                if (OperatingSystem.IsWindows() && adapter.HardwareAccelerated) continue;
+                try
+                {
+                    device = backend.CreateDevice(new DeviceDesc(adapter.Id, queues,
+                        requiredFeatures: requiredFeatures, label: "RenderGraph behavior test"));
+                    break;
+                }
+                catch (NotSupportedException) when (!OperatingSystem.IsWindows() && !adapter.HardwareAccelerated)
+                {
+                }
+            }
+            if (device is null)
+                throw SkipException.ForSkip("An adapter with the required graph queues is unavailable.");
             return new WarpGraphTestSupport(
                 backend,
                 device,
@@ -81,7 +90,7 @@ internal sealed class WarpGraphTestSupport : IDisposable
         {
             if (completion == default) continue;
             if (Backend.WaitCpu(completion, TimeSpan.FromSeconds(10)) != WaitStatus.Completed)
-                throw new TimeoutException("A WARP Queue did not complete within ten seconds.");
+                throw new TimeoutException("A graph Queue did not complete within ten seconds.");
         }
     }
 

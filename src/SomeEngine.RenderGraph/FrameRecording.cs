@@ -4,6 +4,7 @@ using System.Runtime.ExceptionServices;
 
 internal sealed partial class FrameExecutor
 {
+    private const ulong RecordingWeightPerBatch = 16;
     private static readonly Action<object?, int> RecordLatencyBatchAction = RecordLatencyBatch;
     private static readonly global::SomeEngine.Diagnostics.TraceSite RecordSetupProbe =
         new("rg-probe", "RecordSetup", detail: true);
@@ -30,7 +31,6 @@ internal sealed partial class FrameExecutor
     private RecordingBatch[][] _callingRecordingUnits = [];
     private RecordingBatch[][] _workerRecordingUnits = [];
     private RecordingBatch[][] _submissionRecordingUnits = [];
-    private bool[] _submissionWorkerEligible = [];
     private readonly HashSet<int> _recordingSubmissionChanges = [];
     private readonly HashSet<int> _recordingConfigurationPasses = [];
     private RenderGraphDebugOptions _recordingDebug;
@@ -353,7 +353,6 @@ internal sealed partial class FrameExecutor
             if ((uint)pass < (uint)_submissionByPass.Length && _submissionByPass[pass] >= 0)
                 _recordingSubmissionChanges.Add(_submissionByPass[pass]);
         EnsureCapacity(ref _submissionRecordingUnits, _submissionCount);
-        EnsureCapacity(ref _submissionWorkerEligible, _submissionCount);
         EnsureCapacity(ref _recordingBatchByPass, _passes.Count);
         int maximumUnitCount = checked(JobSystem.WorkerCount + 1);
         foreach (int submission in _recordingSubmissionChanges)
@@ -378,23 +377,25 @@ internal sealed partial class FrameExecutor
                 .CompareTo(_executionOrder.Position(_submissionPasses[right][0])));
             var callingUnits = new List<RecordingBatch>();
             var workerUnits = new List<RecordingBatch>();
-            var workerPasses = new List<int>();
+            ulong workerWeight = 0;
             for (int group = 0; group < submissions.Length; group++)
             {
                 int submission = submissions[group];
-                List<int> passes = _submissionPasses[submission];
-                if (_submissionWorkerEligible[submission])
+                foreach (RecordingBatch batch in _submissionRecordingUnits[submission])
                 {
-                    workerUnits.AddRange(_submissionRecordingUnits[submission]);
-                    workerPasses.AddRange(passes);
+                    if (_passes[batch.Passes[0]].Options.Recording == PassRecordingMode.WorkerEligible)
+                    {
+                        workerUnits.Add(batch);
+                        workerWeight = SaturatingAdd(workerWeight, batch.Weight);
+                    }
+                    else callingUnits.Add(batch);
                 }
-                else callingUnits.AddRange(_submissionRecordingUnits[submission]);
             }
             _recordingSubmissions[wave] = submissions;
             _callingRecordingUnits[wave] = callingUnits.ToArray();
             _workerRecordingUnits[wave] = workerUnits.ToArray();
             _recordingParallel[wave] = maximumUnitCount >= 2 &&
-                IsParallelRecordingWorthwhile(CollectionsMarshal.AsSpan(workerPasses));
+                IsParallelRecordingWorthwhile(workerWeight);
         }
         _recordingSubmissionChanges.Clear();
         _recordingConfigurationPasses.Clear();
@@ -424,21 +425,12 @@ internal sealed partial class FrameExecutor
             RecordBatch(batch);
     }
 
-    private bool IsParallelRecordingWorthwhile(ReadOnlySpan<int> passes)
+    private bool IsParallelRecordingWorthwhile(ulong weight)
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(GraphTrace.BatchConstruction);
         if ((_frame.Options.Debug & RenderGraphDebugOptions.DisableParallelRecording) != 0)
             return false;
-        int count = 0;
-        ulong weight = 0;
-        foreach (int pass in passes)
-        {
-            if (_passes[pass].Options.Recording != PassRecordingMode.WorkerEligible)
-                continue;
-            count++;
-            weight = SaturatingAdd(weight, RecordingWeight(pass));
-        }
-        return count > 1 && weight >= (ulong)count * 8;
+        return weight >= RecordingWeightPerBatch;
     }
 
     private ulong RecordingWeight(int pass)
@@ -618,9 +610,7 @@ internal sealed partial class FrameExecutor
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(GraphTrace.BatchConstruction);
         List<int> passes = _submissionPasses[submission];
         RecordingBatch[] previous = _submissionRecordingUnits[submission] ?? [];
-        bool workerEligible = (_frame.Options.Debug & RenderGraphDebugOptions.DisableParallelRecording) == 0;
-        foreach (int pass in passes)
-            workerEligible &= _passes[pass].Options.Recording == PassRecordingMode.WorkerEligible;
+        bool parallel = (_frame.Options.Debug & RenderGraphDebugOptions.DisableParallelRecording) == 0;
         var units = new List<RecordingBatch>(Math.Max(previous.Length, 1));
         try
         {
@@ -628,15 +618,21 @@ internal sealed partial class FrameExecutor
             while (start < passes.Count)
             {
                 bool repeatable = CanRepeatCommands(passes[start]);
+                PassRecordingMode recording = _passes[passes[start]].Options.Recording;
                 int end = start + 1;
-                while (end < passes.Count && CanRepeatCommands(passes[end]) == repeatable) end++;
-                // Keep adjacent passes that allow command reuse in one native list.
-                // Split the remaining callbacks for parallel recording.
-                int unitCount = repeatable || !workerEligible ? 1 :
-                    Math.Min(maximumUnitCount, Math.Max(1, (end - start + 15) / 16));
+                while (end < passes.Count && CanRepeatCommands(passes[end]) == repeatable &&
+                    _passes[passes[end]].Options.Recording == recording) end++;
                 ulong remainingWeight = 0;
                 for (int index = start; index < end; index++)
                     remainingWeight = SaturatingAdd(remainingWeight, RecordingWeight(passes[index]));
+                // Reuse and re-recording share the same bounded command storage. Each
+                // worker-eligible range can be encoded in parallel when reuse is unavailable
+                // or a local command change invalidates part of the range.
+                ulong weightedUnitCount = remainingWeight / RecordingWeightPerBatch +
+                    (remainingWeight % RecordingWeightPerBatch == 0 ? 0UL : 1UL);
+                int unitCount = parallel && recording == PassRecordingMode.WorkerEligible
+                    ? (int)Math.Min((ulong)Math.Min(maximumUnitCount, end - start), weightedUnitCount)
+                    : 1;
                 for (int unit = 0; start < end; unit++)
                 {
                     int remainingUnits = Math.Max(1, unitCount - unit);
@@ -664,11 +660,11 @@ internal sealed partial class FrameExecutor
                         count = 1;
                     }
                     int index = units.Count;
-                    CommandContext? context = index < previous.Length ? previous[index].Context : null;
+                    RecordingBatch? reusable = index < previous.Length ? previous[index] : null;
                     Queue queue = _passes[passes[start]].Queue!;
-                    if (context?.QueueType != queue.Type || context?.QueueIndex != queue.Index) context = null;
+                    if (reusable?.Context.QueueType != queue.Type || reusable?.Context.QueueIndex != queue.Index) reusable = null;
                     units.Add(CreateRecordingBatch(
-                        CollectionsMarshal.AsSpan(passes).Slice(start, count).ToArray(), repeatable, context));
+                        CollectionsMarshal.AsSpan(passes).Slice(start, count), repeatable, weight, reusable));
                     start += count;
                     remainingWeight = remainingWeight > weight ? remainingWeight - weight : 0;
                 }
@@ -683,7 +679,6 @@ internal sealed partial class FrameExecutor
             throw;
         }
         _submissionRecordingUnits[submission] = units.ToArray();
-        _submissionWorkerEligible[submission] = workerEligible;
         for (int index = 0; index < previous.Length; index++)
         {
             RecordingBatch old = previous[index];
@@ -702,16 +697,19 @@ internal sealed partial class FrameExecutor
         }
     }
 
-    private RecordingBatch CreateRecordingBatch(int[] passes, bool repeatable, CommandContext? reusable)
+    private RecordingBatch CreateRecordingBatch(ReadOnlySpan<int> passes, bool repeatable, ulong weight, RecordingBatch? reusable)
     {
-        if (reusable is not null) return new RecordingBatch(passes, reusable, repeatable);
+        if (reusable is not null && reusable.Repeatable == repeatable && reusable.Weight == weight &&
+            passes.SequenceEqual(reusable.Passes)) return reusable;
+        int[] members = passes.ToArray();
+        if (reusable is not null) return new RecordingBatch(members, reusable.Context, repeatable, weight);
         Queue queue = _passes[passes[0]].Queue!;
         var storage = _frame.Graph.CommandContexts.Acquire(queue, false, _passes[passes[0]].Label, initialSlotCount: 1);
         CommandContext context = storage.Context;
         try
         {
             _recordingContexts.Add(context, storage);
-            return new RecordingBatch(passes, context, repeatable);
+            return new RecordingBatch(members, context, repeatable, weight);
         }
         catch
         {
@@ -1300,19 +1298,19 @@ internal sealed partial class FrameExecutor
         height = Math.Min(height, mipHeight);
     }
 
-    private sealed class RecordingBatch(int[] passes, CommandContext context, bool repeatable)
+    private sealed class RecordingBatch(int[] passes, CommandContext context, bool repeatable, ulong weight)
     {
         // Membership changes replace the batch. Command data changes invalidate it directly.
         internal readonly int[] Passes = passes;
         internal readonly CommandContext Context = context;
         internal readonly bool Repeatable = repeatable;
+        internal readonly ulong Weight = weight;
         internal bool CommandsChanged = true;
         // Descriptor capacity follows parameter declarations, independently of frame values.
         internal bool DescriptorCountsChanged = true;
         internal uint ResourceDescriptorCapacity;
         internal uint SamplerDescriptorCapacity;
         internal RecordedCommands? Commands;
-        internal int Count => Passes.Length;
 
         internal void DisposeCommands()
         {

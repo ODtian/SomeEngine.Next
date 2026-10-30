@@ -40,3 +40,23 @@ with its own dependencies while the suffix waits for its producers. Adjacent sub
 merge under the existing wait and consumer-release constraints; swapchain image uses retain
 their single-submit interval. See [FrameRecording](../../../src/SomeEngine.RenderGraph/FrameRecording.cs)
 and [FrameSubmissions](../../../src/SomeEngine.RenderGraph/FrameSubmissions.cs).
+
+## CPU command recording
+
+Each submission retains its GPU pass order and completion dependencies. Within it, contiguous
+passes with the same recording-thread requirement and command-reuse setting form recording
+ranges. Worker-eligible ranges use summed callback and barrier recording estimates to form
+balanced command lists, bounded by the current worker count plus the calling thread. The same
+work estimate determines parallel recording and combines small ready ranges in `RecordAhead`.
+The lists persist until submission membership, recording options, worker configuration or GPU
+timing settings change.
+When a changed submission retains a command list's pass members and recording settings, it
+retains that list and its command-reuse state while updating the affected ranges.
+
+Command-data, binding and resource changes invalidate the affected command list. Other lists
+continue through `TryRepeatCommands`; an invalidated list uses its existing command context.
+Calling-thread callbacks retain their calling thread and relative order while worker-eligible
+lists can record ahead. Submission consumes the lists in GPU pass order, and every recording
+job is joined before frame execution returns. The implementation is in
+[FrameRecording](../../../src/SomeEngine.RenderGraph/FrameRecording.cs) and
+[FrameRecordingAhead](../../../src/SomeEngine.RenderGraph/FrameRecordingAhead.cs).

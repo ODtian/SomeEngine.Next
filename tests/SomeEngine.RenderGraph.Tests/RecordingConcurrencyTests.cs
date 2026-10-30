@@ -5,6 +5,91 @@ namespace SomeEngine.RenderGraph.Tests;
 
 public sealed class RecordingConcurrencyTests
 {
+    [Fact]
+    public void WorkerRecordingOverlapsOrderedCallingThreadPassesOnTheSameQueue()
+    {
+        using WarpGraphTestSupport support = WarpGraphTestSupport.Create(enableValidation: true);
+        using var graph = new RenderGraph(support.Backend, support.Device,
+            [support.GraphicsQueue], new RenderGraphDesc(MaximumFramesInFlight: 1));
+        const int workerCopies = 32;
+        using Buffer output = support.Backend.CreateBuffer(support.Device,
+            new BufferDesc((workerCopies + 1) * sizeof(uint), BufferUsages.CopyDestination), MemoryType.Readback);
+        using var recorded = new ManualResetEventSlim();
+        int callingThread = Environment.CurrentManagedThreadId;
+        var callingOrder = new List<int>();
+        using (RenderGraphEdit edit = graph.BeginEdit())
+        {
+            GraphBufferId source = edit.CreateTransientBuffer(new BufferDesc(4,
+                BufferUsages.CopySource | BufferUsages.CopyDestination));
+            GraphBufferId destination = edit.RegisterExternalBuffer(output,
+                [new(BufferRange.Whole, output.InitialSync, output.InitialAccess, ResourceContentState.Undefined)]);
+            var data = new CopyData(source, destination, recorded, callingThread, true);
+            GraphPassId first = edit.AddCopyFramePass("first calling-thread write",
+                PassQueueSelection.Exact(support.GraphicsQueue), data,
+                new PassOptions(Culling: PassCullingMode.NeverCull, Recording: PassRecordingMode.CallingThread),
+                static (ref PassDefinition pass, ref CopyData data) =>
+                    pass.Write(data.Source, new BufferRange(0, 4), PipelineSync.Copy,
+                        ResourceAccess.CopyDestination, WriteCoverage.Complete),
+                (ref CopyPassCommandScope commands, in CopyData data) =>
+                {
+                    Assert.Equal(data.CallingThread, Environment.CurrentManagedThreadId);
+                    callingOrder.Add(1);
+                    Assert.True(data.Recorded.Wait(TimeSpan.FromSeconds(10)));
+                    commands.ClearBuffer(commands.GetBuffer(data.Source), new BufferRange(0, 4), 73);
+                });
+            GraphPassId previous = first;
+            for (int index = 0; index < workerCopies; index++)
+            {
+                ulong offset = (ulong)index * sizeof(uint);
+                GraphPassId worker = edit.AddCopyFramePass("worker copy between calling-thread writes",
+                    PassQueueSelection.Exact(support.GraphicsQueue), data,
+                    new PassOptions(Culling: PassCullingMode.NeverCull),
+                    (ref PassDefinition pass, ref CopyData data) =>
+                    {
+                        pass.Read(data.Source, new BufferRange(0, 4), PipelineSync.Copy, ResourceAccess.CopySource);
+                        pass.Write(data.Destination, new BufferRange(offset, 4), PipelineSync.Copy,
+                            ResourceAccess.CopyDestination, WriteCoverage.Complete);
+                    },
+                    (ref CopyPassCommandScope commands, in CopyData data) =>
+                    {
+                        commands.CopyBuffer(new BufferCopy(commands.GetBuffer(data.Source), 0,
+                            commands.GetBuffer(data.Destination), offset, 4));
+                        data.Recorded.Set();
+                    });
+                edit.OrderAfter(worker, previous);
+                previous = worker;
+            }
+            GraphPassId last = edit.AddCopyFramePass("last calling-thread write",
+                PassQueueSelection.Exact(support.GraphicsQueue), data,
+                new PassOptions(Culling: PassCullingMode.NeverCull, Recording: PassRecordingMode.CallingThread),
+                static (ref PassDefinition pass, ref CopyData data) =>
+                    pass.Write(data.Destination, new BufferRange(workerCopies * sizeof(uint), 4), PipelineSync.Copy,
+                        ResourceAccess.CopyDestination, WriteCoverage.Complete),
+                (ref CopyPassCommandScope commands, in CopyData data) =>
+                {
+                    Assert.Equal(data.CallingThread, Environment.CurrentManagedThreadId);
+                    callingOrder.Add(2);
+                    commands.ClearBuffer(commands.GetBuffer(data.Destination), new BufferRange(workerCopies * sizeof(uint), 4), 149);
+                });
+            edit.OrderAfter(last, previous);
+            edit.Commit();
+        }
+        var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
+        for (int index = 0; index < 4; index++)
+        {
+            recorded.Reset();
+            callingOrder.Clear();
+            using (RenderGraphFrame frame = graph.BeginFrame(new RenderGraphFrameOptions(FrameSubmissionMode.RecordAhead)))
+                frame.Execute(completions);
+            support.Wait(completions);
+            Assert.Equal(new[] { 1, 2 }, callingOrder);
+            using MappedBuffer mapping = support.Backend.Map(output, MapType.Read, BufferRange.Whole);
+            mapping.Invalidate(mapping.Range);
+            Assert.Equal(Enumerable.Repeat(73u, workerCopies).Append(149u),
+                MemoryMarshal.Cast<byte, uint>(mapping.Bytes).ToArray());
+        }
+    }
+
     [Theory]
     [InlineData(FrameSubmissionMode.RecordAhead, false)]
     [InlineData(FrameSubmissionMode.RecordAhead, true)]
