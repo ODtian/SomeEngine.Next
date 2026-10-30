@@ -2,6 +2,9 @@ namespace SomeEngine.RenderGraph;
 
 internal static class GraphTrace
 {
+    internal static readonly global::SomeEngine.Diagnostics.TraceSite FrameOpen = new("rg", nameof(FrameOpen), detail: false);
+    internal static readonly global::SomeEngine.Diagnostics.TraceSite FrameCompletionWait = new("wait", nameof(FrameCompletionWait), detail: false);
+    internal static readonly global::SomeEngine.Diagnostics.TraceSite ReadbackDelivery = new("rg", nameof(ReadbackDelivery), detail: false);
     internal static readonly global::SomeEngine.Diagnostics.TraceSite RowsSetAccessRow = new("rg", nameof(RowsSetAccessRow), detail: true);
     internal static readonly global::SomeEngine.Diagnostics.TraceSite Dependencies = new("rg", nameof(Dependencies), detail: false);
     internal static readonly global::SomeEngine.Diagnostics.TraceSite Diagnostics = new("rg", nameof(Diagnostics), detail: false);

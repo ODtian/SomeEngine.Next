@@ -250,6 +250,7 @@ internal sealed class FrameBufferTransfers : IDisposable
 
     internal void CollectReadbacks()
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(GraphTrace.ReadbackDelivery);
         ReadbackResult[] results = [.. _readbackResults];
         _readbackResults.Clear();
         List<Exception>? errors = null;

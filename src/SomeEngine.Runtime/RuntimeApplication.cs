@@ -1048,7 +1048,8 @@ internal static class RuntimeApplication
                 }
                 using (EngineTrace.Begin(ApplicationTrace.CollectCompleted))
                     backend.CollectCompleted(device);
-                coordinator.AdmitFrameResources();
+                using (EngineTrace.Begin(ApplicationTrace.CollectRenderResources))
+                    coordinator.AdmitFrameResources();
                 RenderGraphNextFrame nextGraphFrame = OpenNextGraphFrame(renderGraph);
                 using var graphFrameResources = nextGraphFrame;
                 // Completion callbacks can change shared assets. Collect their final

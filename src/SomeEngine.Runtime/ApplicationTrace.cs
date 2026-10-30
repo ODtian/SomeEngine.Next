@@ -16,6 +16,7 @@ internal static class ApplicationTrace
     internal static readonly TraceSite Reconcile = new("app", "ReconcileGraph");
     internal static readonly TraceSite FrameResources = new("wait", "FrameResources");
     internal static readonly TraceSite CollectCompleted = new("app", "CollectCompleted");
+    internal static readonly TraceSite CollectRenderResources = new("app", "CollectRenderResources");
     internal static readonly TraceSite AcquireImage = new("app", "AcquireImage");
     internal static readonly TraceSite Present = new("app", "Present");
     internal static readonly TraceSite Execute = new("app", "ExecuteFrame");

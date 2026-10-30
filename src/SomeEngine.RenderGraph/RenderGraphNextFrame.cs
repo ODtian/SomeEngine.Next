@@ -63,6 +63,7 @@ public sealed partial class RenderGraph
     /// <summary>Collects completed work and waits within the timeout for the selected frame resources.</summary>
     public bool TryOpenNextFrame(out RenderGraphNextFrame next, TimeSpan timeout)
     {
+        using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(GraphTrace.FrameOpen);
         EnsureAvailable();
         DevelopmentCheck.Require(timeout >= TimeSpan.Zero || timeout == Timeout.InfiniteTimeSpan,
             "A frame wait requires a positive timeout or an infinite wait.");
@@ -101,6 +102,7 @@ public sealed partial class RenderGraph
                 TimeSpan remaining = timeout == Timeout.InfiniteTimeSpan ? timeout :
                     timeout - System.Diagnostics.Stopwatch.GetElapsedTime(started);
                 if (remaining < TimeSpan.Zero && timeout != Timeout.InfiniteTimeSpan) remaining = TimeSpan.Zero;
+                using var waitTrace = global::SomeEngine.Diagnostics.EngineTrace.Begin(GraphTrace.FrameCompletionWait);
                 if (_backend.WaitCpu(completion, remaining) == WaitStatus.Completed) continue;
                 EndFrame(identity);
                 next = null!;
