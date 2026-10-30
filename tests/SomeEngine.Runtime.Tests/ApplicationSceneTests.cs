@@ -95,6 +95,38 @@ public sealed class ApplicationSceneTests(SceneContentFixture content)
     [SceneTheory]
     [InlineData("d3d12")]
     [InlineData("vulkan")]
+    public async Task ReloadPreservesRenderedMaterialPixels(string backend)
+    {
+        var captures = new List<SceneImage>();
+        var scene = new ApplicationScene(content.DirectoryPath)
+        {
+            RegisterSceneComponents = DefaultGame.SampleSceneSerialization.Register,
+            Options = RuntimeStartupOptions.Parse(["--graphics-backend", backend, "--hidden-window", "--synchronous-frames", "--static-scene",
+                "--no-debug-ui", "--no-vsync", "--no-taa", "--no-vsm", "--frames", "3"]),
+            UpdateFrame = frame =>
+            {
+                if (frame.Index == 2) frame.Scene.CaptureImage(captures.Add);
+            },
+        };
+        scene.AddView(new(8, 32, 32));
+        bool reloaded = false;
+        scene.FrameCompleted = frame =>
+        {
+            if (frame.Index != 2 || reloaded) return;
+            reloaded = true;
+            scene.Reload();
+        };
+
+        ApplicationResult result = await Application.RunAsync([], application: scene);
+
+        Assert.True(result.Succeeded, result.Error?.ToString());
+        Assert.Equal(2, captures.Count);
+        SceneImages.AssertEqual(captures[0], captures[1]);
+    }
+
+    [SceneTheory]
+    [InlineData("d3d12")]
+    [InlineData("vulkan")]
     public async Task ExitFinishesThePresentedFrameAndReleasesTheScene(string backend)
     {
         var frames = new List<int>();

@@ -60,6 +60,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     private RenderInstanceDataTransfer? _instanceDataTransfer;
     private int _frameInstanceGeneration;
     private ClusterPipelineSet? _pipelines;
+    private HashSet<IDisposable>? _materialPipelineUse;
     private ClusterRasterStages? _rasterStages;
     private ClusterShadeStages? _shadeStages;
     private ClusterRasterStageSet? _installedRasterStages;
@@ -337,20 +338,18 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             _viewQuery = view;
             _sceneQuery = context.World.Query(_instances.EntityQuery);
             EnsurePipelineResources();
+            _materialPipelineUse = _pipelines!.RegisterMaterialPipelineUse();
             _decalWorld = context.World;
             _decalQuery = context.World.Query(new QueryDefinitionBuilder().Read<RenderMaterialDecal>().Read<RenderTransform>());
             EditGraph(InstallMaterialDecals);
             _rasterStages = new ClusterRasterStages(
                 _backend,
                 _device,
-                _visibilityMode,
-                _pipelines!.DefaultRasterVertexEncoding,
-                _pipelines.SoftwareRaster,
-                _pipelines.HardwareRaster,
+                _pipelines,
                 new RasterMaterialResources(this, _stageResourceProvider));
             _shadeStages = new ClusterShadeStages(
-                _backend,
                 _device,
+                _pipelines,
                 _stageResourceProvider);
             _history = new ClusterCullingHistory(_outputDescription.ViewCount);
             _created = true;
@@ -358,11 +357,13 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         catch
         {
             _history = null;
-            _shadeStages?.Dispose();
             _shadeStages = null;
-            _rasterStages?.Dispose();
             _rasterStages = null;
-
+            if (_materialPipelineUse is { } use)
+            {
+                _materialPipelineUse = null;
+                _pipelines!.ReleaseMaterialPipelineUse(use);
+            }
             ReleaseBorrowedPipelines(ref _pipelines);
             _pipelines?.Dispose();
             _pipelines = null;
@@ -538,6 +539,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             _rasterRevision = rasterRevision;
             _rasterStages!.AcceptChanges();
             _shadeStages!.AcceptChanges();
+            _pipelines!.UpdateMaterialPipelineUse(_materialPipelineUse!, rasterStages, shadeStages);
             AcceptMaterialTextureChanges(textureChanges);
             RecordMaterialCasterChanges(assignments);
             AcceptMaterialChanges(assignments, sourceAssignments, CollectMaterialBindingChanges(assignments, shadingChanged));
@@ -1030,7 +1032,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         Release(ref _sceneQuery, context.World, ref failures);
         Release(ref _decalQuery, context.World, ref failures);
         _decalWorld = null;
-        Dispose(ref _shadeStages, ref failures);
+        _shadeStages = null;
         foreach (TransparencyShaders shaders in _transparencyShaders)
         {
             foreach (TransparencyPipeline pipeline in shaders.Pipelines.Values)
@@ -1038,9 +1040,15 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                 catch (Exception error) { (failures ??= []).Add(error); }
         }
         _transparencyShaders.Clear();
-        Dispose(ref _rasterStages, ref failures);
+        _rasterStages = null;
         DisposeMaterialSamplers(ref failures);
 
+        if (_materialPipelineUse is { } use)
+        {
+            _materialPipelineUse = null;
+            try { _pipelines!.ReleaseMaterialPipelineUse(use); }
+            catch (Exception failure) { (failures ??= []).Add(failure); }
+        }
         ReleaseBorrowedPipelines(ref _pipelines);
         Dispose(ref _pipelines, ref failures);
         _history = null;

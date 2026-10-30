@@ -84,10 +84,6 @@ internal static class ClusterMaterialEntries
     }
 }
 
-internal readonly record struct ClusterComputeKey(
-    SlangShaderData SlangCode,
-    EntryPointReflection EntryPoint);
-
 // This index is derived from material addresses. A candidate shares unchanged groups, and
 // records affected bin identities directly instead of diffing a newly collected scene.
 internal sealed class ClusterBinIndexMap<TKey, TStage> where TKey : notnull
@@ -329,7 +325,7 @@ internal readonly record struct ClusterShadeBinKey(
     SurfaceMode Surface);
 
 /// <summary>Owns raster-only compatibility grouping and its material-slot mapping.</summary>
-internal sealed partial class ClusterRasterStages : IDisposable
+internal sealed partial class ClusterRasterStages
 {
     private static readonly SomeEngine.Diagnostics.TraceSite ResolveTrace =
         new("render", "Cluster.RasterStageResolve");
@@ -340,8 +336,7 @@ internal sealed partial class ClusterRasterStages : IDisposable
     private readonly LinkedComputePipeline? _defaultSoftware;
     private readonly LinkedRasterPipeline _defaultHardware;
     private readonly IGraphResourceProvider? _featureResources;
-    private readonly Dictionary<ClusterComputeKey, LinkedComputePipeline> _computePipelines = [];
-    private readonly Dictionary<ClusterRasterHardwareKey, LinkedRasterPipeline> _hardwarePipelines = [];
+    private readonly ClusterPipelineSet _pipelines;
     private ClusterBinIndexMap<ClusterRasterBinKey, ClusterRasterInvocation> _binIndices =
         new(static (before, after) => ReferenceEquals(before.Material, after.Material) &&
             before.HasSameBindings(after) && before.Bounds == after.Bounds);
@@ -367,26 +362,19 @@ internal sealed partial class ClusterRasterStages : IDisposable
     private ClusterRasterStageSet? _resolved;
 
     internal void AcceptChanges() => _binIndices.AcceptChanges();
-    private bool _disposed;
-
     internal ClusterRasterStages(
         IGraphicsBackend backend,
         Device device,
-        ClusterVisibilityMode visibilityMode,
-        string vertexEncoding,
-        LinkedComputePipeline? defaultSoftware,
-        LinkedRasterPipeline defaultHardware,
+        ClusterPipelineSet pipelines,
         IGraphResourceProvider? featureResources)
     {
         _backend = backend ?? throw new ArgumentNullException(nameof(backend));
         _device = device ?? throw new ArgumentNullException(nameof(device));
-        _visibilityMode = visibilityMode;
-        ArgumentException.ThrowIfNullOrWhiteSpace(vertexEncoding);
-        _defaultVertexEncoding = vertexEncoding;
-        if (visibilityMode != ClusterVisibilityMode.HardwareOnly && defaultSoftware is null)
-            throw new ArgumentNullException(nameof(defaultSoftware));
-        _defaultSoftware = defaultSoftware;
-        _defaultHardware = defaultHardware ?? throw new ArgumentNullException(nameof(defaultHardware));
+        _visibilityMode = pipelines.VisibilityMode;
+        _defaultVertexEncoding = pipelines.DefaultRasterVertexEncoding;
+        _defaultSoftware = pipelines.SoftwareRaster;
+        _defaultHardware = pipelines.HardwareRaster;
+        _pipelines = pipelines;
         _featureResources = featureResources;
     }
 
@@ -395,7 +383,6 @@ internal sealed partial class ClusterRasterStages : IDisposable
     internal ClusterRasterStageSet Resolve(ClusterMaterialAssignmentSet assignments)
     {
         using var trace = SomeEngine.Diagnostics.EngineTrace.Begin(ResolveTrace);
-        ObjectDisposedException.ThrowIf(_disposed, this);
         if (ReferenceEquals(assignments, _resolvedAssignments)) return _resolved!;
         var addresses = _resolvedAssignments is null
             ? new HashSet<int>(assignments.ActiveOffsets)
@@ -892,17 +879,7 @@ internal sealed partial class ClusterRasterStages : IDisposable
             targetIndex,
             entryPoint,
             SlangStage.Compute);
-        var key = new ClusterComputeKey(shader.SlangCode, entry);
-        if (_computePipelines.TryGetValue(key, out LinkedComputePipeline? pipeline))
-            return pipeline;
-        pipeline = LinkedComputePipeline.Create(
-            _backend,
-            _device,
-            shader,
-            entry,
-            $"Cluster material compute raster {entryPoint}");
-        _computePipelines.Add(key, pipeline);
-        return pipeline;
+        return _pipelines.GetMaterialComputePipeline(shader, entry);
     }
 
     private LinkedRasterPipeline ResolveHardwarePipeline(
@@ -928,39 +905,7 @@ internal sealed partial class ClusterRasterStages : IDisposable
             targetIndex,
             pixelEntry,
             SlangStage.Fragment);
-        var key = new ClusterRasterHardwareKey(shader.SlangCode, vertex, pixel);
-        if (_hardwarePipelines.TryGetValue(key, out LinkedRasterPipeline? pipeline))
-            return pipeline;
-        bool targetOutput = pixelEntry is ClusterMaterialEntries.HardwarePixelTarget or
-            ClusterMaterialEntries.HardwareMeshPixelTarget;
-        pipeline = LinkedRasterPipeline.Create(
-            _backend,
-            _device,
-            shader,
-            geometryStage,
-            vertexEntry,
-            pixelEntry,
-            !targetOutput && _visibilityMode == ClusterVisibilityMode.HardwareOnly
-                ? [Format.R32UInt]
-                : [],
-            depthStencilFormat: !targetOutput && _visibilityMode == ClusterVisibilityMode.HardwareOnly
-                ? Format.D32Float
-                : null,
-            rasterizer: new RasterizerState(Cull: ClusterGeometryRequirements.UsesBothRasterFaces(pixel, targetOutput)
-                ? CullType.None : CullType.Back),
-            depthStencil: !targetOutput && _visibilityMode == ClusterVisibilityMode.HardwareOnly
-                ? new DepthStencilState(
-                    DepthTest: true,
-                    DepthWrite: true,
-                    DepthComparison: SomeEngine.Graphics.CompareOperation.LessOrEqual)
-                : default,
-            label: $"Cluster material hardware raster {vertexEntry}/{pixelEntry}",
-            vertexBuffers: vertexEntry == ClusterMaterialEntries.TessellationHardwareVertex
-                ? [new VertexBufferLayout(0, sizeof(uint), PerInstance: true)] : [],
-            vertexAttributes: vertexEntry == ClusterMaterialEntries.TessellationHardwareVertex
-                ? [new VertexAttribute(0, 0, Format.R32UInt, 0)] : []);
-        _hardwarePipelines.Add(key, pipeline);
-        return pipeline;
+        return _pipelines.GetMaterialHardwarePipeline(shader, vertex, pixel);
     }
 
     private static ClusterConservativeBounds ResolveBounds(
@@ -983,27 +928,6 @@ internal sealed partial class ClusterRasterStages : IDisposable
             : ClusterConservativeBounds.Unbounded;
     }
 
-    public void Dispose()
-    {
-        if (_disposed)
-            return;
-        List<Exception>? failures = null;
-        foreach (LinkedComputePipeline pipeline in _computePipelines.Values)
-        {
-            try { pipeline.Dispose(); }
-            catch (Exception failure) { (failures ??= []).Add(failure); }
-        }
-        foreach (LinkedRasterPipeline pipeline in _hardwarePipelines.Values)
-        {
-            try { pipeline.Dispose(); }
-            catch (Exception failure) { (failures ??= []).Add(failure); }
-        }
-        _computePipelines.Clear();
-        _hardwarePipelines.Clear();
-        _disposed = true;
-        if (failures is not null)
-            throw failures.Count == 1 ? failures[0] : new AggregateException(failures);
-    }
 }
 
 internal sealed class ClusterRasterStageSet
@@ -1138,23 +1062,17 @@ internal sealed class ClusterRasterStageResources<TCore>
     internal GraphResourceBinder?[] FeatureBinders { get; }
 }
 
-internal readonly record struct ClusterRasterHardwareKey(
-    SlangShaderData SlangCode,
-    EntryPointReflection Vertex,
-    EntryPointReflection Pixel);
-
 /// <summary>
 /// Resolves the final cooked shade entries and groups work by execution plus command binding
 /// compatibility. Material identity and indexed scalar values never participate in the bin key.
 /// </summary>
-internal sealed class ClusterShadeStages : IDisposable
+internal sealed class ClusterShadeStages
 {
     private static readonly SomeEngine.Diagnostics.TraceSite ResolveTrace =
         new("render", "Cluster.ShadeStageResolve");
-    private readonly IGraphicsBackend _backend;
     private readonly Device _device;
     private readonly IGraphResourceProvider? _featureResources;
-    private readonly Dictionary<ClusterComputeKey, LinkedComputePipeline> _pipelines = [];
+    private readonly ClusterPipelineSet _pipelines;
     private readonly Dictionary<ShaderParameterLayout,
         (ScalarLayout Scalars, ClusterShadeCoreResource[] CoreResources)> _stageLayouts =
         new(ReferenceEqualityComparer.Instance);
@@ -1169,17 +1087,26 @@ internal sealed class ClusterShadeStages : IDisposable
     }
 
     private ClusterShadeStageSet _resolved = ClusterShadeStageSet.Empty;
-    private bool _disposed;
-
-    internal void AcceptChanges() => _binIndices.AcceptChanges();
+    internal void AcceptChanges()
+    {
+        _binIndices.AcceptChanges();
+        HashSet<ShaderParameterLayout> used = new(ReferenceEqualityComparer.Instance);
+        foreach (ClusterShadeInvocation stage in _resolved.Invocations)
+        {
+            used.Add(stage.Resources);
+            if (stage.RequestShader is { } receiver) used.Add(receiver.Resources);
+        }
+        foreach (ShaderParameterLayout layout in _stageLayouts.Keys.ToArray())
+            if (!used.Contains(layout)) _stageLayouts.Remove(layout);
+    }
 
     internal ClusterShadeStages(
-        IGraphicsBackend backend,
         Device device,
+        ClusterPipelineSet pipelines,
         IGraphResourceProvider? featureResources)
     {
-        _backend = backend ?? throw new ArgumentNullException(nameof(backend));
         _device = device ?? throw new ArgumentNullException(nameof(device));
+        _pipelines = pipelines;
         _featureResources = featureResources;
     }
 
@@ -1209,7 +1136,6 @@ internal sealed class ClusterShadeStages : IDisposable
         bool sharedDepthRequests)
     {
         using var trace = SomeEngine.Diagnostics.EngineTrace.Begin(ResolveTrace);
-        ObjectDisposedException.ThrowIf(_disposed, this);
         bool shadingChanged = _resolved.ShadingPath != shadingPath || _resolved.DebugMode != debugMode ||
             _resolved.HasShadowRequests != requestShadowPages || _resolved.PrimaryDepthRequests != primaryDepthRequests ||
             _resolved.SharedDepthRequests != sharedDepthRequests;
@@ -1316,17 +1242,7 @@ internal sealed class ClusterShadeStages : IDisposable
             targetIndex,
             entryPoint,
             SlangStage.Compute);
-        var key = new ClusterComputeKey(shader.SlangCode, entry);
-        if (!_pipelines.TryGetValue(key, out LinkedComputePipeline? pipeline))
-        {
-            pipeline = LinkedComputePipeline.Create(
-                _backend,
-                _device,
-                shader,
-                entry,
-                $"Cluster shade {entryPoint}");
-            _pipelines.Add(key, pipeline);
-        }
+        LinkedComputePipeline pipeline = _pipelines.GetMaterialComputePipeline(shader, entry);
 
         ShaderParameterLayout resources = shader.GetSlangResourceLayout(
             _device.Capabilities.CompileTarget, entryPoint);
@@ -1396,21 +1312,6 @@ internal sealed class ClusterShadeStages : IDisposable
         return ScalarLayout.FromSlangByteAddress(layout);
     }
 
-    public void Dispose()
-    {
-        if (_disposed)
-            return;
-        List<Exception>? failures = null;
-        foreach (LinkedComputePipeline pipeline in _pipelines.Values)
-        {
-            try { pipeline.Dispose(); }
-            catch (Exception failure) { (failures ??= []).Add(failure); }
-        }
-        _pipelines.Clear();
-        _disposed = true;
-        if (failures is not null)
-            throw failures.Count == 1 ? failures[0] : new AggregateException(failures);
-    }
 }
 
 internal sealed class ClusterShadeStageSet

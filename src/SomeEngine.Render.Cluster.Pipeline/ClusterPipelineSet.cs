@@ -12,13 +12,15 @@ namespace SomeEngine.Render.Cluster.Pipeline;
 /// and register numbers never enter frame execution; all descriptors are linked from cooked
 /// entry-point reflection.
 /// </summary>
-internal sealed class ClusterPipelineSet : IDisposable
+internal sealed partial class ClusterPipelineSet : IDisposable
 {
     private static readonly int RequiredPipelineCount = Enum
         .GetValues<ClusterShaderOperationRole>()
         .Count(static role => role != ClusterShaderOperationRole.None);
 
     private readonly List<IDisposable> _pipelines = [];
+    private readonly IGraphicsBackend _backend;
+    private readonly Device _device;
     private readonly Dictionary<(bool TargetFilters, bool MultipleViews), LinkedComputePipeline> _traversals = [];
     private readonly Func<bool, bool, LinkedComputePipeline> _createTraversal;
     private bool _disposed;
@@ -35,6 +37,8 @@ internal sealed class ClusterPipelineSet : IDisposable
         ArgumentNullException.ThrowIfNull(backend);
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(configuration);
+        _backend = backend;
+        _device = device;
         Shaders = configuration;
         VisibilityMode = visibilityMode;
         _pipelines.EnsureCapacity(RequiredPipelineCount);
@@ -512,6 +516,7 @@ internal sealed class ClusterPipelineSet : IDisposable
 
     private void DisposeOwnedResources(ref List<Exception>? failures)
     {
+        DisposeMaterialPipelines(ref failures);
         for (int index = _pipelines.Count - 1; index >= 0; index--)
             TryDispose(_pipelines[index], ref failures);
         _pipelines.Clear();
