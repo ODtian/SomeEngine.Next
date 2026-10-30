@@ -417,8 +417,7 @@ public sealed partial class SceneTestPlatform
         _wasStreaming = !ready;
         _readyFrames = ready ? _readyFrames + 1 : 0;
         double elapsed = Stopwatch.GetElapsedTime(_sceneStarted).TotalSeconds;
-        bool warmupReady = _readyFrames >= 32 && _renderedFrames >= 128 &&
-            Stopwatch.GetElapsedTime(_renderingStarted).TotalSeconds >= 3;
+        bool warmupReady = _readyFrames >= 32 && _renderedFrames >= 128;
         bool sampled;
         bool finishedWindow = false;
         if (Current.MeasurementFrames is { } requested)
@@ -434,7 +433,7 @@ public sealed partial class SceneTestPlatform
         }
         else
         {
-            if (warmupReady) CollectFrame();
+            if (warmupReady && Stopwatch.GetElapsedTime(_renderingStarted).TotalSeconds >= 3) CollectFrame();
             else
             {
                 _sampleStarted = 0;

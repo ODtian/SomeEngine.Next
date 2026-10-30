@@ -10,6 +10,8 @@
 
 当前三景配置统一使用 `MeasurementFrames.FirstFrame = 2048`、`FrameCount = 1024`，即每景采样第 2048–3071 帧；1024 小球保持运动。以实际生成并随应用发布的 `test-scenes.json` 核对配置和完整帧数，不回退到旧文档中的按秒采样窗口。整帧指标沿 presented-frame elapsed 计时边界；比较前冻结双方实际使用的 GPU、驱动、backend、分辨率、render path、NativeAOT/Satori、TAA/VSM/async、场景播放方式与时间步设置，并记录源码/二进制/内容身份。必须证明比较条件一致；不能把历史硬件、模式或旧基线身份当成本次已核实条件。改变窗口或其它条件的试验须单独标明，不能替代此验收。
 
+固定帧采样在窗口前要求至少呈现 128 帧、连续 32 帧流式就绪，窗口中的每帧继续检查流式就绪。原按墙钟采样另外保留 3 秒渲染预热；固定帧窗口通过指定的首帧确定预热长度。
+
 `Complete=true`、三景 `Measured` 或采样完整仅表示反馈齐全；必须逐景检查整帧 P95 数值，不能把它们当作阈值已通过。构建、生成器探针、源码模型、局部行为测试、启动成功或 CPU/GPU 子阶段计时，也都不能替代最终三景验收。
 
 统一入口 `tools/Measure-Scenes.ps1` 向公共 GPU 队列提交 `python -B tools/Measure-Scenes.py`。测量进程在执行机器上通过 MSBuild 查询 DefaultGame 的正常构建或 NativeAOT 发布目录；`-Managed` 选择托管诊断，默认选择 NativeAOT。应用参数 `--measure`、`--measure-trace` 在首个就绪呈现帧后调用 `SceneTestPlatform.StartMeasurements`，沿现有三景切换、预热、采样窗口与报告流程运行，报告写完后通过 `ApplicationScene.Exit()` 返回。
