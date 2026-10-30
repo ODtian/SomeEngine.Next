@@ -205,6 +205,7 @@ public sealed class GeometryStreamingHandoffTests
             reads.PageBytes = mesh.GetPageByteLength(1);
             var left = new SomeEngine.Core.Math.TransformQvvs(new Vector3(-1.25f, 0, -4), Quaternion.Identity);
             var right = new SomeEngine.Core.Math.TransformQvvs(new Vector3(1.25f, 0, -4), Quaternion.Identity);
+            var offscreenTransform = new SomeEngine.Core.Math.TransformQvvs(new Vector3(100, 0, -4), Quaternion.Identity);
             RasterImage visibleFine, bothFine;
             await using (var reference = await FrameStageScene.CreateAsync("D3D12", false,
                 new ClusterPipelineOptions { MaxCandidates = 1024, ForceHardwareRaster = true, EnableFrameMetricsReadback = true }, await RasterTestGeometry.CreatePlaneAsync()))
@@ -239,11 +240,11 @@ public sealed class GeometryStreamingHandoffTests
             ClusterMeshBlock coldGeometry = coldFile.GetBlock<ClusterMeshBlock>();
             var coldMesh = await coldGeometry.CreateAsync(coldFile.GetBlock<MeshBlock>(), coldFile.Name);
             using var coldSource = await coldGeometry.OpenPayloadSourceAsync();
-            scene.RemoveMaterialMesh(visible);
+            scene.SetMeshTransform(visible, offscreenTransform);
             var cold = scene.AddStreamingMesh(coldMesh, coldSource, left);
             AssertImage(visibleFine, await ReadUntilDepthAsync(scene, visibleFine.Depth));
-            scene.RemoveMaterialMesh(cold);
-            scene.AddStreamingMesh(mesh, source, left);
+            scene.SetMeshTransform(cold, offscreenTransform);
+            scene.SetMeshTransform(visible, left);
             for (int frame = 0; frame < 4; frame++)
                 AssertImage(visibleFine, await scene.ReadNextRasterImageAsync());
 
@@ -535,12 +536,14 @@ public sealed class GeometryStreamingHandoffTests
         return image;
     }
 
-    private static void AssertImage(RasterImage expected, RasterImage actual)
+    private static void AssertImage(RasterImage expected, RasterImage actual,
+        [System.Runtime.CompilerServices.CallerMemberName] string testName = "",
+        [System.Runtime.CompilerServices.CallerLineNumber] int lineNumber = 0)
     {
         ImageArtifacts.AssertEqual(new(64, 64, Format.R16G16B16A16Float, expected.Color),
-            new(64, 64, Format.R16G16B16A16Float, actual.Color));
+            new(64, 64, Format.R16G16B16A16Float, actual.Color), $"{testName}-{lineNumber}-color");
         ImageArtifacts.AssertEqual(new(64, 64, Format.D32Float, expected.Depth),
-            new(64, 64, Format.D32Float, actual.Depth));
+            new(64, 64, Format.D32Float, actual.Depth), $"{testName}-{lineNumber}-depth");
     }
 
     internal static Task<MeshAsset> CreateStreamingPlaneAsync() => CreateStreamingPartsAsync(
