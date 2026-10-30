@@ -481,6 +481,25 @@ void CSShade<TVE, TDomain, TSurface>(
     CSShadeCore<TVE, TDomain, TSurface>(vertexEval, domain, surface, tid, debugMode);
 }
 
+void CSShadeDebug<TVE, TDomain, TSurface>(
+    uniform TVE vertexEval, uniform TDomain domain, uniform TSurface surface, uint3 tid,
+    uint visibilityDepth, uint debugMode)
+    where TVE : IVertexEvaluate
+    where TDomain : IDomainEvaluate<TVE.Vertex>
+    where TSurface : ISurfaceEvaluate<TDomain.Surface, TDomain.TriangleData>
+{
+    TriangleInfo tri;
+    ClusterViewUniforms view;
+    TDomain.TriangleData triangle;
+    float3 bary;
+    TDomain.Surface evaluated;
+    SurfacePixelInput input;
+    if (!TryEvaluateSurfacePixel<TVE, TDomain>(vertexEval, domain, tid, visibilityDepth,
+        tri, view, triangle, bary, evaluated, input)) return;
+    WriteClusterMotion<TVE, TDomain>(vertexEval, domain, tri, view, triangle, bary, input.PixelCoord);
+    surface.evaluateDebug(debugMode, input, evaluated, bary, triangle, OutputColor);
+}
+
 void CSRequestShadowPages<TVE, TDomain, TSurface>(
     uniform TVE vertexEval, uniform TDomain domain, uniform TSurface surface, uint3 tid, uint visibilityDepth)
     where TVE : IVertexEvaluate

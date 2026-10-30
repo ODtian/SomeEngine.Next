@@ -52,6 +52,9 @@ Cluster 在构造时按顺序建立目标视图第一轮几何、`IntermediateOc
 `CreateColorFeature` 每次取得该组的实际尺寸与投影；旧颜色实例在重连后释放。
 追加视图由 [`ApplicationViews`](../../../src/SomeEngine.Runtime/ApplicationViews.cs) 按各自的
 `ApplicationViewSettings` 维护，使用自己的 Cluster 输出和 Skinning 资源提供者。
+已保存的 `ClusterShadeMode` 和 `ClusterForwardShade` 在入口按模式选择用户材质的
+`evaluateDebug`；该路径复用现有像素重建与运动输出，Slang 按所选诊断调用建立资源使用集合。
+Standard 的诊断模式使用几何与视图数据，普通表面着色的 Lighting、VSM 资源由主视图组合提供。
 主视图尺寸切换保留追加视图的设置、公开图像身份与自身资源。
 
 应用的 [`ApplicationDisplay`](../../../src/SomeEngine.Runtime/RuntimeApplication.cs)

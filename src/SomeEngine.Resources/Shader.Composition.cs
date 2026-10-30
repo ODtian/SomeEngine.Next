@@ -15,8 +15,7 @@ public partial class Shader
         SlangResult result = Slang.CreateGlobalSession(Slang.ApiVersion, out IGlobalSession slang);
         if (result.Failed || slang is null)
             throw new InvalidOperationException($"Slang global session creation failed with {result}.");
-        if (OperatingSystem.IsWindows())
-            slang.SetDownstreamCompilerPath(SlangPassThrough.Dxc, AppContext.BaseDirectory);
+        slang.SetDownstreamCompilerPath(SlangPassThrough.Dxc, AppContext.BaseDirectory);
         return slang;
     }
 

@@ -256,7 +256,11 @@ void ClusterShade(
 void ClusterShadeMode<let debugMode : uint>(uniform VertexEvaluate vertex, uniform DomainEvaluate domain,
     uniform SurfaceEvaluate surface, uint3 tid : SV_DispatchThreadID)
 {
-    CSShade(vertex, domain, surface, tid, debugMode);
+    // Select the evaluator here so each cooked mode keeps its own resource reads.
+    if (debugMode == 0u)
+        CSShade(vertex, domain, surface, tid, debugMode);
+    else
+        CSShadeDebug(vertex, domain, surface, tid, Uniforms.VisibilityDepth, debugMode);
 }
 #endif
 
@@ -300,6 +304,11 @@ void ClusterForwardShade<let visibilityDepth : uint, let debugMode : uint>(
     uniform VertexEvaluate vertex, uniform DomainEvaluate domain,
     uniform SurfaceEvaluate surface, uint3 tid : SV_DispatchThreadID)
 {
+    if (debugMode != 0u)
+    {
+        CSShadeDebug(vertex, domain, surface, tid, visibilityDepth, debugMode);
+        return;
+    }
 #if defined(CLUSTER_FORWARD_DEPTH_POSITION) && defined(CLUSTER_SURFACE_MODES)
     PrimaryDepthMaterial<DomainEvaluate.Surface, DomainEvaluate.TriangleData, SurfaceEvaluate> selected;
     selected.Evaluator = surface;
