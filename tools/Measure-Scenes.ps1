@@ -2,6 +2,7 @@ param(
     [switch]$Trace, [switch]$TraceDetail, [string]$ApplicationPath, [switch]$Managed,
     [string[]]$ApplicationArguments = @(),
     [string]$SceneConfigurationJson,
+    [string]$PlatformConfigurationJson,
     [ValidateSet('deferred', 'forward')][string]$ShadingPath,
     [ValidateSet('static', 'motion', 'materials', 'camera')][string]$ScenePlayback = 'camera',
     [string]$ExpectedScene,
@@ -21,6 +22,7 @@ if ($ApplicationPath) {
     }
 }
 if ($SceneConfigurationJson) { $measurementArguments += @('--scene-configuration-json', $SceneConfigurationJson) }
+if ($PlatformConfigurationJson) { $measurementArguments += @('--platform-configuration-json', $PlatformConfigurationJson) }
 if ($Managed) { $measurementArguments += '--managed' }
 if ($Trace) { $measurementArguments += '--trace' }
 if ($TraceDetail) { $measurementArguments += '--trace-detail' }

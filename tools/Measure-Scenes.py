@@ -6,6 +6,7 @@ import ctypes
 import json
 import os
 from pathlib import Path
+import platform
 import subprocess
 import sys
 import tempfile
@@ -25,6 +26,7 @@ def arguments():
     parser.add_argument("--scene")
     parser.add_argument("--expected-scene")
     parser.add_argument("--scene-configuration-json")
+    parser.add_argument("--platform-configuration-json")
     parser.add_argument("--startup-frames", type=int)
     parser.add_argument("--on-default-desktop", action="store_true", help=argparse.SUPPRESS)
     result = parser.parse_args()
@@ -223,6 +225,10 @@ def main():
     options = arguments()
     if os.name == "nt" and not options.on_default_desktop:
         return run_on_default_desktop()
+    if options.platform_configuration_json:
+        configuration = json.loads(options.platform_configuration_json)[sys.platform]
+        options.application = configuration["ApplicationPath"]
+        options.scene_configuration_json = json.dumps(configuration["Scenes"])
     application = application_path(options)
     values = ["--measure-scene", options.scene] if options.scene else []
     values += options.application_argument
@@ -245,6 +251,9 @@ def main():
             previous_configuration = scene_configuration.read_bytes()
             cleanup.callback(scene_configuration.write_bytes, previous_configuration)
             scene_configuration.write_text(options.scene_configuration_json, encoding="utf-8")
+        print("SCENE_EXECUTION " + json.dumps({"Platform": sys.platform, "Host": platform.node(),
+              "ApplicationPath": str(application),
+              "Scenes": json.loads(scene_configuration.read_text(encoding="utf-8-sig"))}), flush=True)
         if options.trace:
             diagnostics = application.parent / "Performance" / time.strftime("%Y%m%d-%H%M%S")
             diagnostics.mkdir(parents=True)
