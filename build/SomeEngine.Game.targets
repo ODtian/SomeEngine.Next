@@ -31,6 +31,13 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>
+    <Content Include="$(SomeEnginePath)/external/dxc/lib/linux-x64/libdxcompiler.so;$(SomeEnginePath)/external/dxc/lib/linux-x64/libdxil.so"
+             Condition="'$(NETCoreSdkRuntimeIdentifier)' == 'linux-x64'">
+      <Link>%(Filename)%(Extension)</Link>
+      <DependencyBinary>true</DependencyBinary>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
   </ItemGroup>
   <ItemGroup Condition="'$(SomeEngineDevelopment)' == 'true'">
     <ProjectReference Include="$(SomeEnginePath)/src/SomeEngine.Assets.Importers/SomeEngine.Assets.Importers.csproj"
