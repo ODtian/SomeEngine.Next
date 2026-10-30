@@ -1,6 +1,5 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
-using SomeEngine.Diagnostics;
 using SomeEngine.Resources;
 using SomeEngine.Resources.Geometry;
 
@@ -55,33 +54,8 @@ internal sealed class ClusterPageFixups
     private int _groupCount;
     internal sealed record Batch(ClusterLeafFlagFixup[] Flags, ClusterLodChange[] Changes, Dictionary<Group, bool> GroupStates);
 
-    // The mesh gate owns this cache. Residency changes still pass through the
-    // caller's fresh ReferenceAndResolvePages; only dependency expansion is reused.
-    private static readonly bool s_reuseDemandClosure =
-        Environment.GetEnvironmentVariable("SOMEENGINE_REUSE_PAGE_DEMAND_CLOSURE") == "1";
-    private static readonly bool s_traceDemandClosure =
-        Environment.GetEnvironmentVariable("SOMEENGINE_TRACE_PAGE_DEMAND_CLOSURE") == "1";
-    private static readonly TraceSite DemandClosure = new("render", "Prepare.PageDemandClosure");
-    private static readonly TraceSite DemandClosureOriginal = new("render", "Prepare.PageDemandClosureOriginal");
-    private static readonly TraceSite DemandClosureReuse = new("render", "PageDemandClosure.Reuse");
-    private static readonly TraceSite DemandPriorityConsumer = new("render", "PageDemandClosure.PriorityConsumer");
-    private static readonly TraceSite DemandUnresolvedPages = new("render", "PageDemandClosure.UnresolvedPages");
-    private readonly bool _reuseDemandClosure;
     private ulong _dependencyRevision;
     internal ulong DependencyRevision => _dependencyRevision;
-    private ulong _cachedDependencyRevision;
-    private bool _cachedDemandValid;
-    private bool _cachedPrioritiesRequired;
-    private int _cachedPageCount;
-    private int[] _cachedDemandPositions = [];
-    private ClusterPageDemand[] _cachedDemands = [];
-    private int _cachedDemandCount;
-    private uint[] _cachedExpandedPriorities = [];
-    private ClusterPageDemand[] _cachedDependencyTail = [];
-    private int _cachedDependencyTailCount;
-
-    internal ClusterPageFixups() : this(s_reuseDemandClosure) { }
-    internal ClusterPageFixups(bool reuseDemandClosure) => _reuseDemandClosure = reuseDemandClosure;
 
     internal readonly record struct Registration(Group[] Groups, PageDependency[] Dependencies);
 
@@ -322,7 +296,6 @@ internal sealed class ClusterPageFixups
     {
         Group[] groups = registration.Groups;
         _groupsByMesh.Add(groups[0].Mesh, groups);
-        _cachedDemandValid = false;
         _dependencyRevision++;
         // Mesh parent edges stay inside their registration. Appending each mesh in
         // child-before-parent order also gives the full epoch that same ordering.
@@ -368,7 +341,6 @@ internal sealed class ClusterPageFixups
         for (int index = 0; index < _dependencies.Count; index++)
             _dependencies[index].Order = index;
         _groupCount -= groups.Length;
-        _cachedDemandValid = false;
         _dependencyRevision++;
         Array.Clear(_demandWords);
         Array.Clear(_demandPositions);
@@ -434,177 +406,6 @@ internal sealed class ClusterPageFixups
     }
 
     internal bool TryExpandDependencies(
-        ReadOnlySpan<ClusterPageDemand> demands,
-        int pageCount,
-        List<ClusterPageDemand> expanded)
-    {
-        if (!s_traceDemandClosure || !EngineTrace.IsEnabled)
-            return _reuseDemandClosure
-                ? TryExpandDependenciesCached(demands, pageCount, expanded, out _)
-                : TryExpandDependenciesCore(demands, pageCount, expanded);
-
-        bool reused = false;
-        bool valid;
-        using (EngineTrace.Begin(DemandClosure))
-            valid = _reuseDemandClosure
-                ? TryExpandDependenciesCached(demands, pageCount, expanded, out reused)
-                : TryExpandDependenciesOriginal(demands, pageCount, expanded);
-        EngineTrace.Counter(DemandClosureReuse, valid ? (reused ? 1 : 0) : -1);
-        return valid;
-    }
-
-    private bool TryExpandDependenciesOriginal(
-        ReadOnlySpan<ClusterPageDemand> demands,
-        int pageCount,
-        List<ClusterPageDemand> expanded)
-    {
-        if (!s_traceDemandClosure || !EngineTrace.IsEnabled)
-            return TryExpandDependenciesCore(demands, pageCount, expanded);
-        using (EngineTrace.Begin(DemandClosureOriginal))
-            return TryExpandDependenciesCore(demands, pageCount, expanded);
-    }
-
-    internal bool TryExpandDependencyPages(
-        ReadOnlySpan<ClusterPageDemand> demands,
-        int pageCount,
-        List<ClusterPageDemand> expanded,
-        out bool reused)
-    {
-        if (!s_traceDemandClosure || !EngineTrace.IsEnabled)
-            return TryExpandDependenciesCached(demands, pageCount, expanded, out reused, prioritiesRequired: false);
-        bool valid;
-        using (EngineTrace.Begin(DemandClosure))
-            valid = TryExpandDependenciesCached(demands, pageCount, expanded, out reused, prioritiesRequired: false);
-        EngineTrace.Counter(DemandClosureReuse, valid ? (reused ? 1 : 0) : -1);
-        return valid;
-    }
-
-    internal void CompleteDeferredPriorities(
-        ReadOnlySpan<ClusterPageDemand> demands,
-        int pageCount,
-        List<ClusterPageDemand> expanded,
-        bool prioritiesResolved,
-        List<KeyValuePair<uint, uint>> unresolved)
-    {
-        // The caller has already applied the current page order to references and
-        // residency. Only pages which really need loading consume priority.
-        if (s_traceDemandClosure && EngineTrace.IsEnabled)
-        {
-            EngineTrace.Counter(DemandPriorityConsumer,
-                prioritiesResolved ? 0 : unresolved.Count == 0 ? 1 : 2);
-            EngineTrace.Counter(DemandUnresolvedPages, unresolved.Count);
-        }
-        if (prioritiesResolved || unresolved.Count == 0) return;
-        if (!TryExpandDependenciesOriginal(demands, pageCount, expanded))
-            throw new InvalidOperationException("A validated page demand became invalid inside its mesh epoch.");
-        int next = 0;
-        foreach (ClusterPageDemand demand in expanded)
-            if (next < unresolved.Count && unresolved[next].Key == demand.PageId)
-                unresolved[next++] = new(demand.PageId, demand.Priority);
-        if (next != unresolved.Count)
-            throw new InvalidOperationException("Deferred page priorities changed the dependency page order.");
-    }
-
-    private bool TryExpandDependenciesCached(
-        ReadOnlySpan<ClusterPageDemand> demands,
-        int pageCount,
-        List<ClusterPageDemand> expanded,
-        out bool reused,
-        bool prioritiesRequired = true)
-    {
-        reused = false;
-        // Compare exact membership (and max priority only for the older full-value
-        // cache). Keep this frame's first-occurrence order for the eager LRU.
-        // The topology-only result never publishes a previous frame's priority.
-        CollectionsMarshal.SetCount(expanded, pageCount);
-        Span<ClusterPageDemand> output = CollectionsMarshal.AsSpan(expanded);
-        if (_demandPositions.Length < pageCount)
-            Array.Resize(ref _demandPositions, pageCount);
-        int inputCount = 0;
-        try
-        {
-            foreach (ClusterPageDemand demand in demands)
-            {
-                if (demand.PageId >= (uint)pageCount) return false;
-                int position = _demandPositions[demand.PageId];
-                if (position == 0)
-                {
-                    output[inputCount++] = demand;
-                    _demandPositions[demand.PageId] = inputCount;
-                }
-                else if (prioritiesRequired && demand.Priority > output[position - 1].Priority)
-                    output[position - 1] = demand;
-            }
-
-            bool same = _cachedDemandValid && _cachedPrioritiesRequired == prioritiesRequired &&
-                _cachedPageCount == pageCount &&
-                _cachedDependencyRevision == _dependencyRevision && _cachedDemandCount == inputCount;
-            if (same)
-                foreach (ClusterPageDemand demand in output[..inputCount])
-                {
-                    int position = _cachedDemandPositions[demand.PageId];
-                    if (position == 0 || (prioritiesRequired && _cachedDemands[position - 1].Priority != demand.Priority))
-                    {
-                        same = false;
-                        break;
-                    }
-                }
-
-            if (same)
-            {
-                for (int index = 0; index < inputCount; index++)
-                {
-                    uint page = output[index].PageId;
-                    output[index] = new(page, prioritiesRequired ? _cachedExpandedPriorities[page] : 0);
-                }
-                _cachedDependencyTail.AsSpan(0, _cachedDependencyTailCount).CopyTo(output[inputCount..]);
-                reused = true;
-                return true;
-            }
-
-            // Own every cached value: neither caller input nor its reusable output
-            // list may be retained. Publish validity only after the original walk.
-            _cachedDemandValid = false;
-            if (_cachedDemandPositions.Length < pageCount)
-                Array.Resize(ref _cachedDemandPositions, pageCount);
-            if (prioritiesRequired && _cachedExpandedPriorities.Length < pageCount)
-                Array.Resize(ref _cachedExpandedPriorities, pageCount);
-            if (_cachedDemands.Length < inputCount)
-                Array.Resize(ref _cachedDemands, inputCount);
-            foreach (ClusterPageDemand previous in _cachedDemands.AsSpan(0, _cachedDemandCount))
-                _cachedDemandPositions[previous.PageId] = 0;
-            output[..inputCount].CopyTo(_cachedDemands);
-            _cachedDemandCount = inputCount;
-            for (int index = 0; index < inputCount; index++)
-                _cachedDemandPositions[_cachedDemands[index].PageId] = index + 1;
-        }
-        finally
-        {
-            foreach (ClusterPageDemand demand in output[..inputCount])
-                _demandPositions[demand.PageId] = 0;
-            CollectionsMarshal.SetCount(expanded, reused ? inputCount + _cachedDependencyTailCount : 0);
-        }
-
-        if (!TryExpandDependenciesOriginal(demands, pageCount, expanded)) return false;
-        output = CollectionsMarshal.AsSpan(expanded);
-        if (prioritiesRequired)
-            foreach (ClusterPageDemand demand in output)
-                _cachedExpandedPriorities[demand.PageId] = demand.Priority;
-        _cachedDependencyTailCount = output.Length - inputCount;
-        if (_cachedDependencyTail.Length < _cachedDependencyTailCount)
-            Array.Resize(ref _cachedDependencyTail, _cachedDependencyTailCount);
-        output[inputCount..].CopyTo(_cachedDependencyTail);
-        if (!prioritiesRequired)
-            for (int index = 0; index < _cachedDependencyTailCount; index++)
-                _cachedDependencyTail[index] = new(_cachedDependencyTail[index].PageId, 0);
-        _cachedPrioritiesRequired = prioritiesRequired;
-        _cachedDependencyRevision = _dependencyRevision;
-        _cachedPageCount = pageCount;
-        _cachedDemandValid = true;
-        return true;
-    }
-
-    private bool TryExpandDependenciesCore(
         ReadOnlySpan<ClusterPageDemand> demands,
         int pageCount,
         List<ClusterPageDemand> expanded)
@@ -760,7 +561,6 @@ internal sealed class ClusterPageFixups
 
     internal void Clear()
     {
-        _cachedDemandValid = false;
         _dependencyRevision++;
         _groupsByMesh.Clear();
         Array.Clear(_dependenciesByPage); _groupsByPage.Clear(); _groupsByParentPage.Clear(); _changedGroups.Clear(); _groupCount = 0;

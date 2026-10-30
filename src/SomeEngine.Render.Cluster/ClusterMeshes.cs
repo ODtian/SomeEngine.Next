@@ -57,9 +57,6 @@ internal sealed partial class ClusterMeshes : IDisposable
         get { lock (_gate) return _pages.Count; }
     }
     private static long s_nextEpochId;
-    private static readonly bool s_deferDemandPriorities =
-        Environment.GetEnvironmentVariable("SOMEENGINE_DEFER_PAGE_DEMAND_PRIORITIES") == "1";
-
     private readonly PageHeap _heap;
     private readonly object _gate = new();
     private readonly ClusterBvh _bvh;
@@ -244,7 +241,6 @@ internal sealed partial class ClusterMeshes : IDisposable
     internal ClusterStreamingDemand ReferenceAndResolvePages(
         ReadOnlySpan<ClusterPageDemand> demands,
         List<ClusterPageDemand> expanded,
-        bool prioritiesResolved,
         ulong dependencyRevision,
         bool complete,
         List<KeyValuePair<uint, uint>> unresolved)
@@ -258,7 +254,6 @@ internal sealed partial class ClusterMeshes : IDisposable
             {
                 if (!_fixups.TryExpandDependencies(demands, checked((int)_pages.Count), expanded))
                     throw new InvalidOperationException("Geometry page demands changed during dependency expansion.");
-                prioritiesResolved = true;
             }
             _pages.ClearReferences();
             unresolved.Clear();
@@ -272,13 +267,6 @@ internal sealed partial class ClusterMeshes : IDisposable
                 if (resolution.Kind is not (PageFaultResolutionKind.Satisfied or PageFaultResolutionKind.Pending or PageFaultResolutionKind.Unknown))
                     unresolved.Add(new(request.PageId, request.Priority));
             }
-            if (s_deferDemandPriorities)
-            {
-                // This mesh lock keeps the validated dependency order unchanged while
-                // resolving any priorities still required by the current load candidates.
-                _fixups.CompleteDeferredPriorities(demands, checked((int)_pages.Count),
-                    expanded, prioritiesResolved, unresolved);
-            }
             return new(bytes, _pages.CalculateStreamingCapacityBytes(StreamingPageHeapCapacity), complete);
         }
     }
@@ -286,21 +274,12 @@ internal sealed partial class ClusterMeshes : IDisposable
     internal bool TryCollectPageDependencies(
         ReadOnlySpan<ClusterPageDemand> demands,
         List<ClusterPageDemand> expanded,
-        out bool prioritiesResolved,
         out ulong dependencyRevision)
     {
         lock (_gate)
         {
             ThrowIfDisposed();
             dependencyRevision = _fixups.DependencyRevision;
-            if (s_deferDemandPriorities)
-            {
-                bool valid = _fixups.TryExpandDependencyPages(demands, checked((int)_pages.Count),
-                    expanded, out bool reused);
-                prioritiesResolved = !reused;
-                return valid;
-            }
-            prioritiesResolved = true;
             return _fixups.TryExpandDependencies(demands, checked((int)_pages.Count), expanded);
         }
     }

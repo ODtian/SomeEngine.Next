@@ -292,13 +292,13 @@ internal sealed class PageStream : IDisposable, IAsyncDisposable
         if (demandComplete.HasValue)
         {
             if (_resources.TryCollectPageDependencies(demands, _expandedDemands,
-                out bool prioritiesResolved, out ulong dependencyRevision))
+                out ulong dependencyRevision))
             {
                 global::SomeEngine.Diagnostics.EngineTrace.Counter(StreamingDemandPath, 1);
                 global::SomeEngine.Diagnostics.EngineTrace.Counter(StreamingDemandExpandedEntries, _expandedDemands.Count);
                 _queuedPages.Clear();
                 demand = _resources.ReferenceAndResolvePages(demands, _expandedDemands,
-                    prioritiesResolved, dependencyRevision, demandComplete.Value, _loadCandidates);
+                    dependencyRevision, demandComplete.Value, _loadCandidates);
                 global::SomeEngine.Diagnostics.EngineTrace.Counter(StreamingResolvedLoadCandidates, _loadCandidates.Count);
                 foreach ((uint page, uint priority) in _loadCandidates)
                     QueuePageIfNeeded(page, priority);
