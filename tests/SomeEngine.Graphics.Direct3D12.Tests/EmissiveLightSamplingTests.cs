@@ -30,7 +30,7 @@ public sealed class EmissiveLightSamplingTests(D3D12TestCompiler compiler)
         ReadOnlySpan<uint> pointers = MemoryMarshal.Cast<byte, uint>(fieldBytes.AsSpan((int)pointerOffset, 24));
         uint[] candidates = new uint[16];
         for (int triangle = 0; triangle < 2; triangle++)
-            pointers.Slice(triangle * 3, 3).CopyTo(candidates.AsSpan(triangle * 8 + 2, 3));
+            pointers.Slice(triangle * 3, 3).CopyTo(candidates.AsSpan(triangle * 8 + 4, 3));
         uint[] pageOffsets = new uint[mesh.PageCount];
         var pageBytes = new List<byte>();
         for (int page = 0; page < mesh.PageCount; page++)
@@ -84,12 +84,13 @@ public sealed class EmissiveLightSamplingTests(D3D12TestCompiler compiler)
             {
                 uint index = thread.x;
                 if (index >= 4096u) return;
-                GiDirectLightProposal proposal = SelectGiEmitter((float(index) + 0.5) / 4096.0);
-                GiEmissiveTriangle light = GiEmissiveTriangles[proposal.Emitter];
-                float3 barycentric = GiEmitterBarycentric(frac((float(index) + 0.5) * float2(0.7548776662, 0.5698402910)));
-                float3 point = light.PositionArea.xyz + light.EdgeUFlux.xyz * barycentric.y + light.EdgeV.xyz * barycentric.z;
+                GiDirectLightProposal proposal = SelectGiEmittingObject(0.0, float3(0, 0, 1), (float(index) + 0.5) / 4096.0);
+                GiEmitterPointSample sample = SampleGiEmitterTriangle(0.0, float3(0, 0, 1), proposal.Instance,
+                    frac((float(index) + 0.5) * float3(0.7548776662, 0.5698402910, 0.438579021)));
+                GiEmissiveTriangle light = GiEmissiveTriangles[sample.Emitter];
+                float3 point = light.PositionArea.xyz + light.EdgeUFlux.xyz * sample.Barycentric.y + light.EdgeV.xyz * sample.Barycentric.z;
                 float3 plane = normalize(cross(light.EdgeUFlux.xyz, light.EdgeV.xyz));
-                float scale = light.PositionArea.w / proposal.Probability;
+                float scale = 1.0 / (proposal.Probability * sample.AreaPdf);
                 Results[index * 2u] = float4(EvaluateGiEmissiveIrradiance(light.Emission.rgb, 1.0,
                     float3(0, 0, 1), plane, point, scale), 1.0);
                 Results[index * 2u + 1u] = float4(EvaluateGiEmissiveIrradiance(light.Emission.rgb, 1.0,
@@ -99,15 +100,19 @@ public sealed class EmissiveLightSamplingTests(D3D12TestCompiler compiler)
         float[] transform = [0, 0, 0, 1, 0, 0, 0, 1, 1, 1, 1, 0];
         uint[][] output = new D3D12TestCompute(compiler).ExecuteSource(source,
             [("ClassifyGiMaterialEmission", new(1, 1, 1)), ("UpdateGiEmissiveTriangles", new(1, 1, 1)),
-             ("BuildGiEmitterDistribution", new(1, 1, 1)), ("BuildGiEmitterGroupDistribution", new(1, 1, 1)),
+             ("BuildGiEmitterTriangleTrees", new(1, 1, 1)), ("BuildGiEmitterObjectTree", new(1, 1, 1)),
              ("EvaluateDirectLight", new(64, 1, 1))],
             new D3D12TestCompute.BufferInput[]
-            {new("GiEmissive", [1, 1, 1, 0, 2, 1, 1, 0], ResourceBindingType.ConstantBuffer, 0),
+            {new("GiEmissive", [1, 1, 1, 0, 2, 1, 1, 0, 0, 1, 0, 0], ResourceBindingType.ConstantBuffer, 0),
              new("GiEmissionBounds", new uint[8], ResourceBindingType.BufferUav, 16),
              new("GiEmissiveTriangles", new uint[56], ResourceBindingType.BufferUav, 112),
-             new("GiEmitterState", [2, 1, 0, 0, 0, 0, 0, 0], ResourceBindingType.BufferUav, 16),
-             new("GiEmitterPrefix", new uint[2], ResourceBindingType.BufferUav, 4),
-             new("GiEmitterGroupPrefix", new uint[1], ResourceBindingType.BufferUav, 4),
+             new("GiEmitterState", [2, 1, 0, 0, 1, 0, 0, 0], ResourceBindingType.BufferUav, 16),
+             new("GiEmitterChanges", [1, 0], ResourceBindingType.BufferUav, 4),
+             new("GiEmitterInstanceRanges", [0, 2], ResourceBindingType.BufferUav, 8),
+             new("GiEmitterTreeRanges", [0, 2], ResourceBindingType.BufferUav, 8),
+             new("GiEmitterInstanceChanges", [1], ResourceBindingType.BufferUav, 4),
+             new("GiEmitterTriangleTree", new uint[32], ResourceBindingType.BufferUav, 32),
+             new("GiEmitterObjectTree", new uint[16], ResourceBindingType.BufferUav, 32),
              new("GiMaterialWork", new uint[4], ResourceBindingType.ConstantBuffer, 0),
              new("GiMaterialWorkRanges", [0, 2], ResourceBindingType.BufferUav, 8),
              new("GiMaterialWorkIndices", [0, 1], ResourceBindingType.BufferUav, 4),

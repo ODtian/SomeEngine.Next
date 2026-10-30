@@ -4,6 +4,7 @@ using SomeEngine.Graphics;
 using SomeEngine.Render.Assets;
 using SomeEngine.Render.Cluster.Pipeline;
 using SomeEngine.Render.Systems;
+using SomeEngine.Render.Instances;
 using SomeEngine.RenderGraph;
 using SomeEngine.Resources;
 using TextureViewDimension = SomeEngine.Graphics.TextureViewDimension;
@@ -22,10 +23,12 @@ public sealed partial class ScreenProbeFeature : IGraphResourceProvider, IRender
     private readonly Shader? _shader;
     private readonly IGraphResourceProvider? _shared;
     private readonly GraphRegionId _sceneRegion, _traceRegion;
+    private GraphRegionId _trainingRegion;
+    private readonly IndirectCommandLayout? _dispatchLayout;
     private readonly GraphBufferInput _captureSettings, _screenSettings, _cacheSettings;
     private readonly GraphBufferInput[] _sceneSettings;
     private readonly FeatureUniformBuffer _uniformData;
-    private readonly GraphTextureId _normal, _diffuse, _reflectedRadiance;
+    private readonly GraphTextureId _normal, _diffuse, _reflectedRadiance, _surfaceInstance;
     private readonly Dictionary<string, BufferData> _buffers = [];
     private readonly Dictionary<string, LinkedComputePipeline> _pipelines = [];
     private readonly Dictionary<uint, MaterialPasses> _materials = [];
@@ -35,9 +38,11 @@ public sealed partial class ScreenProbeFeature : IGraphResourceProvider, IRender
     private readonly GiSceneData? _scene;
     private ClusterPipelineOutputs _surfaces;
     private ClusterPipelineSystem? _cluster;
-    private GraphPassId _clearBuffers, _initializeProbes, _composeField, _complete;
-    private uint _frame, _materialCapacity = 1;
+    private GraphPassId _clearBuffers, _initializeProbes, _markMoving, _composeStatic, _composeField, _complete;
+    private uint _frame, _materialCapacity = 1, _nearObjectWordCount = 1;
     private ulong _fieldRevision;
+    private RenderInstanceBatch? _fieldInstances;
+    private ulong _lightingRevision, _frameLightingRevision;
     private bool _fieldChanged = true;
     private bool _resetBuffers = true;
 
@@ -49,10 +54,12 @@ public sealed partial class ScreenProbeFeature : IGraphResourceProvider, IRender
         (_backend, _device, _graph, _shader, _shared) = (backend, device, graph, shader, shared);
         (_width, _height, _views, Enabled) = (width, height, viewCount, enabled);
         (_sceneRegion, _traceRegion) = (sceneRegion, traceRegion);
-        _probeCount = ProbeWidth * ProbeHeight * viewCount;
+        _probeCount = ProbeWidth * ProbeHeight * viewCount * 4u;
         _rayCount = _probeCount + TrainingCount;
         _candidateCapacity = _probeCount * 64u + TrainingCount * 2048u;
         if (enabled) _scene = new GiSceneData(world!, graph);
+        if (enabled) _dispatchLayout = backend.CreateIndirectCommandLayout(device,
+            new IndirectCommandLayoutDesc([new(IndirectArgumentType.Dispatch)], 12, label: "GI compute dispatch"));
         RenderGraphEdit edit = graph.BeginEdit();
         try
         {
@@ -68,10 +75,11 @@ public sealed partial class ScreenProbeFeature : IGraphResourceProvider, IRender
                 _normal = edit.CreatePersistentTexture(SurfaceTexture(Format.R16G16B16A16Float, "GI material normals"));
                 _diffuse = edit.CreatePersistentTexture(SurfaceTexture(Format.R8G8B8A8UNorm, "GI material diffuse"));
                 _reflectedRadiance = edit.CreatePersistentTexture(SurfaceTexture(Format.R11G11B10Float, "GI reflected radiance"));
+                _surfaceInstance = edit.CreatePersistentTexture(SurfaceTexture(Format.R32UInt, "GI surface instances"));
                 CreateBuffers(ref edit);
                 CreateEmissiveResources(ref edit);
                 InitializeBuffers(ref edit);
-                var clear = new SurfaceClearData(_normal, _diffuse, _reflectedRadiance, viewCount);
+                var clear = new SurfaceClearData(_normal, _diffuse, _reflectedRadiance, _surfaceInstance, viewCount);
                 ClearSurfacesPass = edit.AddCopyFramePass("Clear GI material surfaces", PassQueueSelection.AnyOfType(QueueType.Graphics), clear,
                     new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
                     SurfaceClearData.Declare, SurfaceClearData.Record, region: sceneRegion);
@@ -88,8 +96,9 @@ public sealed partial class ScreenProbeFeature : IGraphResourceProvider, IRender
     public bool Enabled { get; }
     public GraphPassId ClearSurfacesPass { get; }
     public GraphPassId CompletePass => _complete;
-    private uint ProbeWidth => ((uint)_width + 7u) / 8u;
-    private uint ProbeHeight => ((uint)_height + 7u) / 8u;
+    private uint ProbeWidth => ((uint)_width + 15u) / 16u;
+    private uint ProbeHeight => ((uint)_height + 15u) / 16u;
+    private uint NearTileCount => ProbeWidth * ProbeHeight * _views;
 
     /// <summary>Applies mesh and material changes at the existing graph-edit boundary.</summary>
     public void Reconcile(ClusterPipelineSystem cluster, in ClusterPipelineOutputs surfaces)
@@ -103,6 +112,17 @@ public sealed partial class ScreenProbeFeature : IGraphResourceProvider, IRender
         {
             if (_complete == default) Connect(ref edit);
             uint capacity = cluster.MaterialIndexCapacity;
+            uint nearObjectWords = Math.Max(1u, ((uint)cluster.CurrentInstanceCount + 31u) / 32u);
+            if (nearObjectWords != _nearObjectWordCount)
+            {
+                BufferData buffer = _buffers["GiNearObjectWords"];
+                edit.SetBufferDescription(buffer.Id, new BufferDesc(NearTileCount * nearObjectWords * 4ul,
+                    buffer.Usages, "GI near object words"));
+                BufferData moving = _buffers["GiInstanceMovement"];
+                edit.SetBufferDescription(moving.Id, new BufferDesc(nearObjectWords * 32ul * 4u, moving.Usages, "GI moving instances"));
+                _nearObjectWordCount = nearObjectWords;
+                _resetBuffers = true;
+            }
             if (capacity != _materialCapacity)
             {
                 ResizeMaterialBuffers(ref edit, capacity);
@@ -133,9 +153,9 @@ public sealed partial class ScreenProbeFeature : IGraphResourceProvider, IRender
                 {
                     QueryPasses query = _queries[stage];
                     GraphPassId intersect = cluster.AddMaterialComputePass(ref edit, index, shader, "IntersectGiMaterial",
-                        _buffers["GiMaterialDispatch"].Id, index * 12ul, intersectionResources, _traceRegion);
+                        _buffers["GiMaterialDispatch"].Id, index * 12ul, intersectionResources, stage == 0 ? _traceRegion : _trainingRegion);
                     GraphPassId shade = cluster.AddMaterialComputePass(ref edit, index, shader, "ShadeGiMaterial",
-                        _buffers["GiMaterialDispatch"].Id, index * 12ul, surfaceResources, _traceRegion);
+                        _buffers["GiMaterialDispatch"].Id, index * 12ul, surfaceResources, stage == 0 ? _traceRegion : _trainingRegion);
                     edit.OrderAfter(intersect, query.TriangleWork);
                     edit.OrderAfter(query.Reduce, intersect);
                     edit.OrderAfter(shade, query.SurfaceWork);
@@ -156,37 +176,47 @@ public sealed partial class ScreenProbeFeature : IGraphResourceProvider, IRender
         finally { edit.Dispose(); }
     }
 
-    public void Record(ref RenderGraphFrame graph, bool cameraCut)
+    public void Record(ref RenderGraphFrame graph, bool cameraCut, ulong lightingRevision = 0)
     {
         GiCaptureSettings capture = new(Enabled ? 1u : 0u, 0, 0, 0);
         _uniformData.Write(ref graph, _captureSettings, in capture);
         if (Enabled)
         {
             _scene!.Record(ref graph);
-            RecordEmissive(ref graph, cameraCut);
+            bool instancesChanged = _fieldRevision != _cluster!.CurrentInstanceRevision;
+            bool instancesReplaced = !ReferenceEquals(_fieldInstances, _cluster.CurrentInstances);
+            bool materialsChanged = _materials.Values.Any(value => value.Revision != value.Material.Revision);
+            RecordEmissive(ref graph, cameraCut || instancesReplaced, materialsChanged);
+            _frameLightingRevision = lightingRevision;
             GiScreenSettings screen = new((uint)_width, (uint)_height, ProbeWidth, ProbeHeight,
-                _frame, _frame & 1u, _frame != 0u && !cameraCut ? 1u : 0u, _views);
+                _frame, _frame & 1u, _frame != 0u && !cameraCut && !instancesReplaced ? 1u : 0u, _views,
+                _resetBuffers || _fieldChanged || instancesChanged || instancesReplaced ? 1u : 0u,
+                instancesChanged || materialsChanged || lightingRevision != _lightingRevision ? 1u : 0u, 0, 0);
             _uniformData.Write(ref graph, _screenSettings, in screen);
-            GiCacheSettings cache = new(_frame, TrainingCount * 2u, HashCount, 3, 0.25f, 0.002f, _resetBuffers ? 1u : 0u, 0);
+            GiCacheSettings cache = new(_frame, TrainingCount, HashCount, 3, 0.25f, 0.004f, _resetBuffers ? 1u : 0u, screen.RadianceChanged);
             _uniformData.Write(ref graph, _cacheSettings, in cache);
             for (uint stage = 0; stage < 2; stage++)
             {
                 GiSceneSettings scene = new((uint)_cluster!.CurrentInstanceCount, _materialCapacity, _candidateCapacity,
                     TrainingCount, GridSide, stage, _scene.MeshFieldsIndexCount, _surfaces.Geometry.UseInstanceGroups ? 1u : 0u,
-                    2f, 24f, Vector2.Zero);
+                    2f, 24f, _resetBuffers || _fieldChanged || instancesReplaced ? 1u : 0u, _nearObjectWordCount);
                 _uniformData.Write(ref graph, _sceneSettings[stage], in scene);
                 graph.SetPassData(_queries[stage].Begin, new DispatchArguments((Math.Max(_rayCount, _materialCapacity) + 63u) / 64u, 1, 1));
                 graph.SetPassData(_queries[stage].Clear, new DispatchArguments((_materialCapacity + 63u) / 64u, 1, 1));
             }
             graph.SetPassData(_composeField, new DispatchArguments(Math.Max(1u, (uint)_cluster!.CurrentInstanceCount), 1, 1));
-            bool updateField = _resetBuffers || _fieldChanged || _fieldRevision != _cluster.CurrentInstanceRevision;
+            graph.SetPassData(_composeStatic, new DispatchArguments(Math.Max(1u, (uint)_cluster.CurrentInstanceCount), 1, 1));
+            graph.SetPassData(_markMoving, new DispatchArguments(((uint)_cluster.CurrentInstanceCount + 63u) / 64u, 1, 1));
+            bool updateField = _resetBuffers || _fieldChanged || instancesChanged || instancesReplaced;
             foreach (GraphPassId pass in _fieldPasses) graph.SetPassEnabled(pass, updateField);
             graph.SetPassEnabled(_clearBuffers, _resetBuffers);
             foreach (GraphPassId reset in _resets) graph.SetPassEnabled(reset, _resetBuffers);
-            graph.SetPassEnabled(_initializeProbes, _resetBuffers || cameraCut);
+            graph.SetPassEnabled(_initializeProbes, _resetBuffers || cameraCut || instancesReplaced);
+            graph.SetRegionEnabled(_trainingRegion, _frame % 4u == 0u);
             foreach (MaterialPasses material in _materials.Values)
             {
                 graph.SetBufferData(material.Constants, material.Bytes);
+                material.Revision = material.Material.Revision;
                 foreach (GraphPassId pass in material.Passes) _cluster.OrderMaterialGeometryBuilds(ref graph, pass);
             }
             graph.ObserveExecution(this);
@@ -202,6 +232,8 @@ public sealed partial class ScreenProbeFeature : IGraphResourceProvider, IRender
             _resetBuffers = false;
             _fieldChanged = false;
             _fieldRevision = _cluster!.CurrentInstanceRevision;
+            _fieldInstances = _cluster.CurrentInstances;
+            _lightingRevision = _frameLightingRevision;
         }
     }
 
@@ -215,22 +247,29 @@ public sealed partial class ScreenProbeFeature : IGraphResourceProvider, IRender
     {
         _scene?.Dispose();
         foreach (LinkedComputePipeline pipeline in _pipelines.Values) pipeline.Dispose();
+        _dispatchLayout?.Dispose();
     }
 
-    private sealed record MaterialPasses(Material Material, Shader Shader, GraphBufferId Constants, byte[] Bytes, GraphPassId[] Passes);
+    private sealed record MaterialPasses(Material Material, Shader Shader, GraphBufferId Constants, byte[] Bytes, GraphPassId[] Passes)
+    {
+        internal ulong Revision;
+    }
     private readonly record struct BufferData(GraphBufferId Id, uint Stride, BufferUsages Usages);
     private readonly record struct QueryPasses(GraphPassId Begin, GraphPassId Clear, GraphPassId TriangleWork, GraphPassId Reduce, GraphPassId SurfaceWork, GraphPassId Finish);
     private readonly record struct GiCaptureSettings(uint Enabled, uint Padding0, uint Padding1, uint Padding2);
-    private readonly record struct GiScreenSettings(uint Width, uint Height, uint ProbeWidth, uint ProbeHeight, uint Frame, uint HistoryLayer, uint UseHistory, uint ViewCount);
-    private readonly record struct GiCacheSettings(uint Frame, uint TrainingCount, uint HashCount, uint CacheMode, float CellSize, float LearningRate, uint Reset, uint Padding);
+    private readonly record struct GiScreenSettings(uint Width, uint Height, uint ProbeWidth, uint ProbeHeight, uint Frame, uint HistoryLayer,
+        uint UseHistory, uint ViewCount, uint SceneChanged, uint RadianceChanged, uint Padding0, uint Padding1);
+    private readonly record struct GiCacheSettings(uint Frame, uint TrainingCount, uint HashCount, uint CacheMode, float CellSize, float LearningRate, uint Reset, uint RadianceChanged);
     private readonly record struct GiSceneSettings(uint InstanceCount, uint MaterialCount, uint CandidateCapacity, uint TrainingCount,
-        uint GridSide, uint TrainingStage, uint MeshFieldsIndexCount, uint UseInstanceGroups, float NearDistance, float TraceDistance, Vector2 Padding0);
-    private readonly record struct SurfaceClearData(GraphTextureId Normal, GraphTextureId Diffuse, GraphTextureId Radiance, uint Views)
+        uint GridSide, uint TrainingStage, uint MeshFieldsIndexCount, uint UseInstanceGroups, float NearDistance, float TraceDistance,
+        uint FieldsChanged, uint NearObjectWordCount);
+    private readonly record struct SurfaceClearData(GraphTextureId Normal, GraphTextureId Diffuse, GraphTextureId Radiance,
+        GraphTextureId Instance, uint Views)
     {
         internal static void Declare(ref PassDefinition pass, ref SurfaceClearData data)
         {
             var range = new TextureSubresourceRange(0, 1, 0, data.Views, TextureAspects.Color);
-            foreach (GraphTextureId texture in new[] { data.Normal, data.Diffuse, data.Radiance })
+            foreach (GraphTextureId texture in new[] { data.Normal, data.Diffuse, data.Radiance, data.Instance })
                 pass.Write(texture, range, PipelineSync.Copy, ResourceAccess.CopyDestination, TextureLayout.CopyDestination, WriteCoverage.Complete);
         }
         internal static void Record(ref CopyPassCommandScope commands, in SurfaceClearData data)
@@ -239,6 +278,7 @@ public sealed partial class ScreenProbeFeature : IGraphResourceProvider, IRender
             commands.ClearTexture(commands.GetTexture(data.Normal), range, default);
             commands.ClearTexture(commands.GetTexture(data.Diffuse), range, default);
             commands.ClearTexture(commands.GetTexture(data.Radiance), range, default);
+            commands.ClearTexture(commands.GetTexture(data.Instance), range, default);
         }
     }
 }

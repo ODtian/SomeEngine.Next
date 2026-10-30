@@ -220,19 +220,8 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ITransparentS
 #ifdef SOMEENGINE_GI
         if (captureGi)
         {
-            WriteGiSurface(ctx.pixelCoord, mappedNormal, receiver.GeometricNormal,
-                DiffuseReflectance(baseColor, metallic));
-            if (GiCapture.Enabled != 0u)
-            {
-                float3 indirect = SampleGiDiffuse(ctx.pixelCoord, input.MotionVector, ctx.surfacePosition,
-                    mappedNormal, receiver.GeometricNormal, DiffuseReflectance(baseColor, metallic), cameraView);
-                finalColor += indirect;
-                reflectedRadiance += indirect;
-                float3 emissiveLight = SampleGiEmissiveLight(ctx.pixelCoord, input.MotionVector,
-                    ctx.surfacePosition, receiver.GeometricNormal, cameraView) * DiffuseReflectance(baseColor, metallic);
-                finalColor += emissiveLight;
-                reflectedRadiance += emissiveLight;
-            }
+            WriteGiSurface(ctx.pixelCoord, input.InstanceID, mappedNormal, receiver.GeometricNormal,
+                DiffuseReflectance(baseColor, metallic), sample.Occlusion);
         }
 #endif
 

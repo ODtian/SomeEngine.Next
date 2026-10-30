@@ -5,6 +5,9 @@ internal sealed unsafe partial class VulkanBackend
     RhiSurface IGraphicsBackend.CreateSurface(in SurfaceDesc desc) =>
         CreateSurfaceCore(desc);
 
+    ReadOnlyMemory<SwapchainSupport> IGraphicsBackend.GetSwapchainSupport(RhiDevice device, RhiSurface surface) =>
+        VulkanSwapchain.QuerySupport(RequireDevice(device, nameof(device)), RequireSurface(surface, nameof(surface)));
+
     Swapchain IGraphicsBackend.CreateSwapchain(RhiDevice device, in SwapchainDesc desc) =>
         CreateSwapchainCore(device, desc);
     SwapchainAcquireStatus IGraphicsBackend.Acquire(

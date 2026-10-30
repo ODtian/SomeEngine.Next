@@ -61,17 +61,19 @@ dotnet run --project samples/DefaultGame/DefaultGame.csproj -c Release -p:SomeEn
 
 统一性能验收从根级 `tools/Measure-Scenes.ps1` 进入。
 
-场景平台为三场景分配 52 秒测量预算，反馈工具通过 59 秒进程 watchdog 将启动、预热和采样约束在 60 秒总时限内。自适应窗口沿用 128 帧、连续 32 帧驻留就绪、至少 3 秒预热和 2 秒采样。
+场景平台为三场景分配 52 秒测量预算，反馈工具通过 59 秒进程时限将启动、预热和采样约束在 60 秒总时限内。自适应窗口沿用 128 帧、连续 32 帧驻留就绪、至少 3 秒预热和 2 秒采样。
 
-实验性 GI 使用 `--experimental-gi` 启动，或在渲染选项中勾选 `Experimental GI`。材质着色查询上一帧屏幕空间探针的方向辐射，以自己的表面参数积分并合成到 `MaterialColor`；发光几何体直接光采用独立结果。射线沿屏幕空间、近景 Mesh SDF 和 Global SDF 逐级追踪，远段距离场命中直接查询 SHARC／NRC 的表面反射辐射。近景与稀疏训练共用现有材质分桶和原三角求值。
+实验性 GI 使用 `--experimental-gi` 启动，或在渲染选项中勾选 `Experimental GI`。用户材质输出主表面与直接反射辐射，GI 沿用原型的 16×16 tile、0–4 个自适应屏幕空间探针、64 样本成熟门控及 SH 滤波；接收像素使用本帧方向辐射和材质法线积分，并合成到 `MaterialColor`。Gather 与训练续射均沿屏幕空间、2 米近景 Mesh SDF、Global SDF 接续，远段命中直接查询 SHARC／NRC 的完整反射辐射。
 
 统一场景平台默认使用 512 MiB 几何驻留配额，覆盖主视图、近景 GI 与稀疏训练共同请求的几何页；测试面板的 `Geometry memory` 可调整该配额。
 
 内容构建通过距离场导入组合为同一 MeshAsset 生成 `MeshDistanceFieldBlock`；实例通过已有提取把共享字段交给 Rendering world。材质的 `IGiSurfaceEvaluate` 提供法线、漫反射反照率、发光、遮蔽与覆盖率，`CLUSTER_GI_MATERIAL` 组合入口生成对应的求交、表面和发光几何求值 Shader。标准与 Unlit 材质已采用该入口。完整数据职责与帧顺序见 [GI 架构](../../docs/GI-Architecture.md)。
 
-开发构建的 `prepare-materials` 更新默认场景的材质编译输入。`prepare-materials <场景目录>` 复用导入场景的 Shader 定义与资产构建入口，更新 Sponza、Bistro 等已有场景的材质 Shader。
+开发构建的 `prepare-materials` 更新默认场景的材质编译输入。`prepare-materials <场景目录>` 更新已有导入场景的材质 Shader，并登记默认场景已构建的 GI Shader。几何与纹理继续使用原有资产。
 
 `Measure-Scenes.ps1 -OutputDirectory <目录>` 指定场景测量输出目录，默认位置为系统临时目录中的 `SomeEngine/scene-measurements`。统一场景平台通过 `SOMEENGINE_SCENE_MEASUREMENTS` 接收该目录。
+
+Linux 启动默认采用 Vulkan，通过 Xlib display 创建窗口。`--measure-scenes` 自动启动并完成统一测量后退出；`--trace-scenes` 收集对应定位 trace。`Measure-Scenes.ps1` 在 Linux 使用 `--skip-present`，将同一渲染图输出到持久纹理，并执行几何、直接光、GI、TAA 和色调映射。共享队列提供 CPU、GPU 和内存配额，测量结果记录后端及离屏配置。
 
 ```powershell
 # 开发组合生成样例内容。
@@ -85,6 +87,6 @@ dotnet run --project samples/DefaultGame/DefaultGame.csproj -c Release -p:SomeEn
 ```
 `--gpu-times <外部文件路径>` 使用现有 `ApplicationScene.FrameMeasured` 收集统一场景平台所选采样帧的 GPU 时间，保存整帧跨度、各 pass 命令时间与含屏障时间。带 GPU 时间戳的定位运行与普通性能对比分开执行。
 
-实验构建、导入和捕获通过公共队列运行，并由 `tools/Invoke-Watchdog.ps1` 保护整个命令进程树。默认内存警戒线为 3.75 GiB、内核硬上限为 4 GiB，总时限 300 秒，CPU 与输出同时停滞 30 秒时终止。`Measure-Scenes.ps1` 已直接启用保护，保留内存储备并将输出流写入结果目录。watchdog 退出会回收全部子进程，构建也沿此进程树完成。
+实验构建、导入和捕获通过公共队列运行，队列保存 stdout、stderr、退出码和资源配置。Linux 执行器使用 systemd 约束整个命令进程树；Windows 的 `tools/Invoke-Watchdog.ps1` 提供进程树保护。`Measure-Scenes.ps1` 将应用输出流写入结果目录，并检查完整场景集合与测量状态。
 
-`Measure-Scenes.ps1` 的场景进程默认使用 8 GiB 内存限额，`-MemoryMB` 可指定本轮预算。`-Scene` 选择配置中的同名场景，默认执行全部场景。`--gpu-times <path>` 通过已有 GPU 时间戳输出各阶段耗时；普通限帧运行标记为 `PresentedFrames`，统一测量窗口标记为 `Measurement`。
+Windows 场景进程的默认内存限额为 8 GiB，`-MemoryMB` 可指定本轮预算；Linux 采用共享队列的内存配额。`-Scene` 选择配置中的同名场景，默认执行全部场景。`--gpu-times <path>` 通过已有 GPU 时间戳输出各阶段耗时；普通限帧运行标记为 `PresentedFrames`，统一测量窗口标记为 `Measurement`。

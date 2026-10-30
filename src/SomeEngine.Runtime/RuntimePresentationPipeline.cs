@@ -31,7 +31,8 @@ internal sealed class RuntimePresentationPipeline : IDisposable
         string vertexEntryPoint,
         string pixelEntryPoint,
         Format outputFormat,
-        GraphRegionId region)
+        GraphRegionId region,
+        bool offscreen = false)
     {
         ArgumentNullException.ThrowIfNull(backend);
         ArgumentNullException.ThrowIfNull(device);
@@ -88,7 +89,7 @@ internal sealed class RuntimePresentationPipeline : IDisposable
             RenderGraphEdit edit = graph.BeginEdit();
             try
             {
-                GraphTextureId target = edit.DeclareExternalTexture(new TextureDesc(
+                TextureDesc targetDescription = new(
                     TextureDimension.Texture2D,
                     checked((uint)inputWidth),
                     checked((uint)inputHeight),
@@ -98,7 +99,9 @@ internal sealed class RuntimePresentationPipeline : IDisposable
                     1,
                     outputFormat,
                     TextureUsages.ColorAttachment | TextureUsages.CopySource,
-                    label: "Runtime presentation target"));
+                    label: "Runtime presentation target");
+                GraphTextureId target = offscreen ? edit.CreatePersistentTexture(targetDescription)
+                    : edit.DeclareExternalTexture(targetDescription);
                 GraphTextureSrvId source = edit.CreateTextureSrv(
                     inputColor,
                     new TextureSubresourceRange(

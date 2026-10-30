@@ -16,4 +16,15 @@ float3 DecodeGiNormal(float2 encoded)
     return normalize(normal);
 }
 
+uint PackGiNormal16(float3 normal)
+{
+    float2 oct = EncodeGiNormal(normal);
+    return f32tof16(oct.x) | (f32tof16(oct.y) << 16u);
+}
+
+float3 UnpackGiNormal16(uint packed)
+{
+    return DecodeGiNormal(float2(f16tof32(packed), f16tof32(packed >> 16u)));
+}
+
 #endif

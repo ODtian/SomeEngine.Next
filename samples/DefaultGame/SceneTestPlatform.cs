@@ -89,6 +89,7 @@ public sealed partial class SceneTestPlatform
         }
     }
     public IReadOnlyDictionary<string, string>? ColorFeatureSettings { get; init; }
+    public bool ExitAfterMeasurements { get; init; }
     public bool MeasureBlending
     {
         get => Options.MeasureBlending;
@@ -146,6 +147,8 @@ public sealed partial class SceneTestPlatform
     private string? _graphicsDevice;
     private string? _graphicsDriver;
     public bool IsMeasuring { get; private set; }
+    internal bool WasFrameMeasured(int frame) => _frames.Count > 0 &&
+        frame >= _frames[0].SimulationFrame && frame <= _frames[^1].SimulationFrame;
     public string? LastReport { get; private set; }
     public string? StartupTraceOutput { get => Application.StartupTraceOutput; init => Application.StartupTraceOutput = value; }
     public ApplicationStartupTimes? Startup { get; private set; }
@@ -459,6 +462,8 @@ public sealed partial class SceneTestPlatform
             ["Processor"] = Environment.GetEnvironmentVariable("PROCESSOR_IDENTIFIER"),
             ["Framework"] = System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription,
             ["NativeAot"] = !System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported,
+            ["GraphicsBackend"] = Options.GraphicsBackend.ToString(),
+            ["Offscreen"] = Options.SkipSwapchainPresent,
             ["TieredCompilation"] = AppContext.GetData("System.Runtime.TieredCompilation")?.ToString(),
             ["TieredCompilationOverride"] = Environment.GetEnvironmentVariable("DOTNET_TieredCompilation")
                 ?? Environment.GetEnvironmentVariable("COMPlus_TieredCompilation"),
@@ -498,6 +503,7 @@ public sealed partial class SceneTestPlatform
         SelectedScene = _interactiveScene;
         Application.ContentDirectory = Current.ContentDirectory;
         _interactiveOptions = null;
+        if (ExitAfterMeasurements) Application.Stop();
     }
 
     internal void Draw()

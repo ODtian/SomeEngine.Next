@@ -20,7 +20,7 @@ struct GiCacheParameters
     float CellSize;
     float LearningRate;
     uint Reset;
-    uint Padding;
+    uint RadianceChanged;
 };
 
 ConstantBuffer<GiCacheParameters> GiCache;
@@ -56,7 +56,7 @@ uint GiRadianceKey(float3 position, float3 normal, uint level)
 
 float4 QueryGiHashedRadiance(float3 position, float3 normal, float footprint)
 {
-    uint first = uint(clamp(ceil(log2(max(1.0, footprint / GiCache.CellSize))), 0.0, 7.0));
+    uint first = uint(clamp(floor(log2(max(1.0, footprint / GiCache.CellSize))), 0.0, 7.0));
     for (uint level = first; level < 8u; level++)
     {
         uint key = GiRadianceKey(position, normal, level);
@@ -69,17 +69,40 @@ float4 QueryGiHashedRadiance(float3 position, float3 normal, float footprint)
             if (stored == key)
             {
                 float4 value = GiRadianceValues[at];
-                if (value.w >= 1.0) return value;
+                if (value.w >= 2.0) return value;
                 break;
             }
         }
+    }
+    for (uint level = first; level < 3u; level++)
+    {
+        float3 sum = 0.0;
+        float count = 0.0, pitch = GiCache.CellSize * float(1u << level);
+        for (uint neighbor = 0u; neighbor < 6u; neighbor++)
+        {
+            float3 shift = 0.0; shift[neighbor / 2u] = (neighbor & 1u) != 0u ? pitch : -pitch;
+            uint key = GiRadianceKey(position + shift, normal, level);
+            uint address = GiMixBits(key) & (GiCache.HashCount - 1u);
+            for (uint probe = 0u; probe < 16u; probe++)
+            {
+                uint at = (address + probe) & (GiCache.HashCount - 1u), stored = GiRadianceKeys[at];
+                if (stored == 0u) break;
+                if (stored == key)
+                {
+                    float4 value = GiRadianceValues[at];
+                    if (value.w >= 2.0) { sum += value.rgb; count += 1.0; }
+                    break;
+                }
+            }
+        }
+        if (count > 0.0) return float4(sum / count, 1.0);
     }
     return 0.0;
 }
 
 void GiNeuralFeatures(float3 position, float3 normal, out float values[24])
 {
-    float3 point = position / 32.0;
+    float3 point = (position - float3(-8.0, -2.0, -8.0)) / 16.0;
     values[0] = point.x; values[1] = point.y; values[2] = point.z;
     values[3] = normal.x; values[4] = normal.y; values[5] = normal.z;
     for (uint band = 0u; band < 3u; band++)
@@ -108,7 +131,7 @@ float3 QueryGiNeuralRadiance(float3 position, float3 normal)
     {
         float sum = GiNeuralWeights[896u + channel];
         for (uint neuron = 0u; neuron < 32u; neuron++) sum += hidden[neuron] * GiNeuralWeights[800u + channel * 32u + neuron];
-        result[channel] = exp(clamp(sum, 0.0, 6.0)) - 1.0;
+        result[channel] = exp(clamp(sum, 0.0, 4.0)) - 1.0;
     }
     return result;
 }
@@ -157,7 +180,7 @@ void UpdateGiHashedRadiance(uint3 thread : SV_DispatchThreadID)
     if (thread.x >= GiCache.TrainingCount) return;
     GiRadianceSample sample = GiRadianceTraining[thread.x];
     if (sample.Valid == 0u) return;
-    uint3 value = uint3(clamp(sample.Radiance, 0.0.xxx, 256.0.xxx) * 4096.0);
+    uint3 value = uint3(clamp(sample.Radiance, 0.0.xxx, 64.0.xxx) * 4096.0);
     for (uint level = 0u; level < 8u; level++)
     {
         uint key = GiRadianceKey(sample.Position, sample.Normal, level);
@@ -187,9 +210,9 @@ void ResolveGiHashedRadiance(uint3 thread : SV_DispatchThreadID)
     uint4 sum = GiRadianceSums[index];
     if (sum.w == 0u) return;
     float4 old = GiRadianceValues[index];
-    float history = min(old.w, 4.0);
+    float history = min(old.w, GiCache.RadianceChanged != 0u ? 2.0 : 8.0);
     GiRadianceValues[index] = float4((old.rgb * history + float3(sum.xyz) / 4096.0) / (history + float(sum.w)),
-        min(32.0, old.w + float(sum.w)));
+        min(64.0, old.w + float(sum.w)));
     GiRadianceSums[index] = 0u;
 }
 
@@ -216,7 +239,7 @@ void EvaluateGiNeuralTraining(uint3 thread : SV_DispatchThreadID)
     {
         float sum = GiNeuralWeights[896u + channel];
         for (uint neuron = 0u; neuron < 32u; neuron++) sum += hidden[neuron] * GiNeuralWeights[800u + channel * 32u + neuron];
-        float prediction = exp(clamp(sum, 0.0, 6.0)) - 1.0;
+        float prediction = exp(clamp(sum, 0.0, 4.0)) - 1.0;
         errors[channel] = sample.Valid != 0u ? (prediction - sample.Radiance[channel]) / (1.0 + prediction) : 0.0;
         GiNeuralActivations[first + 56u + channel] = errors[channel];
     }

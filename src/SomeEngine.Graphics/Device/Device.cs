@@ -492,6 +492,7 @@ public abstract class Queue
 public enum NativeWindowType : byte
 {
     Win32,
+    Xlib,
 }
 
 /// <remarks>

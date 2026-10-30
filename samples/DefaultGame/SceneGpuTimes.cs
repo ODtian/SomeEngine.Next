@@ -10,8 +10,7 @@ internal sealed class SceneGpuTimes(SceneTestPlatform platform)
     internal void Add(ApplicationFrameTiming frame)
     {
         bool measurement = platform.IsMeasuring;
-        if (measurement && (platform.Current.MeasurementFrames is not { } window ||
-            frame.Frame < window.FirstFrame || frame.Frame >= window.FirstFrame + window.FrameCount)) return;
+        if (measurement && !platform.WasFrameMeasured(frame.Frame)) return;
         AddTime("Frame", 0, frame.Gpu.ElapsedMs);
         foreach (var pass in frame.Gpu.Passes)
             AddTime(pass.Label, pass.CommandsMs, pass.EndMs - pass.StartMs);

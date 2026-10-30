@@ -127,7 +127,7 @@ public sealed record RuntimeStartupOptions(
             GraphicsBackend: ParseGraphicsBackend(
                 ReadOptionalValue(args, "--graphics-backend") ??
                 ReadOptionalValue(args, "--backend") ??
-                "d3d12"),
+                (OperatingSystem.IsLinux() ? "vulkan" : "d3d12")),
             DynamicScene: ReadBooleanOption(
                 args,
                 enableSwitches: ["--dynamic-scene"],

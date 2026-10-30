@@ -23,3 +23,9 @@ foreach (string name in new[] { "material_interfaces", "standard_material", "clu
     await File.WriteAllBytesAsync(Path.Combine(inputsDirectory, name + ".slang-module"), serialized.Buffer.ToArray());
     Console.WriteLine($"Exported {name}: {serialized.GetBufferSize()} bytes");
 }
+
+string giPath = Path.Combine(shaderDirectory, "gi_screen_probes.slang");
+IModule? gi = session.LoadModuleFromSource("gi_screen_probes", giPath,
+    Slang.CreateBlob(await File.ReadAllBytesAsync(giPath)), out ISlangBlob? giDiagnostics);
+if (gi is null) throw new InvalidDataException(giDiagnostics?.AsString);
+Console.WriteLine("Validated GI shader sources");

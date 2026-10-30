@@ -5,7 +5,7 @@ using System.Text;
 
 namespace SomeEngine.Runtime;
 
-internal sealed class NativeWindow : IDisposable
+internal sealed partial class NativeWindow : IDisposable
 {
     private const string WindowClassName = "SomeEngine.Runtime.Window";
     private const uint ClassHorizontalRedraw = 0x0002;
@@ -83,12 +83,25 @@ internal sealed class NativeWindow : IDisposable
     private bool _trackingMouseLeave;
     private bool _closeRequested;
     private bool _disposed;
+    private readonly bool _offscreen;
 
-    internal NativeWindow(string title, int clientWidth, int clientHeight, bool visible = true)
+    internal NativeWindow(string title, int clientWidth, int clientHeight, bool visible = true, bool offscreen = false)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(title);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(clientWidth);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(clientHeight);
+        _offscreen = offscreen;
+        if (offscreen)
+        {
+            ClientWidth = clientWidth; ClientHeight = clientHeight; HasFocus = true;
+            return;
+        }
+
+        if (OperatingSystem.IsLinux())
+        {
+            CreateXlibWindow(title, clientWidth, clientHeight, visible);
+            return;
+        }
 
         EnsureWindowClass();
         _selfHandle = GCHandle.Alloc(this, GCHandleType.Normal);
@@ -141,7 +154,11 @@ internal sealed class NativeWindow : IDisposable
 
     internal nint Handle { get; private set; }
 
-    internal long VisibleTimestamp { get; }
+    internal long VisibleTimestamp { get; private set; }
+
+    internal nint DisplayHandle => _xDisplay;
+    internal SomeEngine.Graphics.NativeWindowType Type => OperatingSystem.IsLinux()
+        ? SomeEngine.Graphics.NativeWindowType.Xlib : SomeEngine.Graphics.NativeWindowType.Win32;
 
     internal int ClientWidth { get; private set; }
 
@@ -159,6 +176,13 @@ internal sealed class NativeWindow : IDisposable
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(height);
+        if (_offscreen)
+        {
+            ClientWidth = width; ClientHeight = height;
+            _events.Enqueue(NativeWindowEvent.Resized(width, height));
+            return;
+        }
+        if (OperatingSystem.IsLinux()) { ResizeXlibWindow(width, height); return; }
         var outer = new NativeRect(0, 0, width, height);
         if (!AdjustWindowRectEx(ref outer, WindowStyleOverlapped, false, 0) ||
             !SetWindowPos(Handle, 0, 0, 0, outer.Right - outer.Left, outer.Bottom - outer.Top,
@@ -169,6 +193,8 @@ internal sealed class NativeWindow : IDisposable
 
     internal bool PumpMessages()
     {
+        if (_offscreen) return !_closeRequested;
+        if (OperatingSystem.IsLinux()) return PumpXlibEvents();
         ThrowDispatchFailure();
         nint handle = Handle;
         if (handle == 0 || _closeRequested)
@@ -195,6 +221,8 @@ internal sealed class NativeWindow : IDisposable
 
     internal void RequestClose()
     {
+        if (_offscreen) { _closeRequested = true; return; }
+        if (OperatingSystem.IsLinux()) { _closeRequested = true; return; }
         nint handle = Handle;
         if (handle != 0 && !_closeRequested)
             _ = PostMessageW(handle, MessageClose, 0, 0);
@@ -202,11 +230,19 @@ internal sealed class NativeWindow : IDisposable
 
     internal void WaitForEvents(TimeSpan timeout)
     {
+        if (_offscreen) { Thread.Sleep((int)Math.Min(int.MaxValue, GetWaitMilliseconds(timeout))); return; }
+        if (OperatingSystem.IsLinux()) { WaitForXlibEvents(timeout); return; }
         _ = MsgWaitForMultipleObjectsEx(0, 0, GetWaitMilliseconds(timeout), QueueAllInput, WaitInputAvailable);
     }
 
     internal void WaitForEvents(WaitHandle completion, TimeSpan timeout)
     {
+        if (_offscreen) { completion.WaitOne(timeout); return; }
+        if (OperatingSystem.IsLinux())
+        {
+            completion.WaitOne(TimeSpan.FromMilliseconds(Math.Min(10, GetWaitMilliseconds(timeout))));
+            return;
+        }
         var handle = completion.SafeWaitHandle;
         bool referenced = false;
         try
@@ -237,6 +273,14 @@ internal sealed class NativeWindow : IDisposable
     {
         if (_disposed)
             return;
+        if (_offscreen) { _disposed = true; return; }
+
+        if (OperatingSystem.IsLinux())
+        {
+            DestroyXlibWindow();
+            _disposed = true;
+            return;
+        }
 
         nint handle = Handle;
         if (handle != 0 && IsWindow(handle) && !DestroyWindow(handle))

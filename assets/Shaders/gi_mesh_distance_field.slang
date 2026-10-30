@@ -164,7 +164,7 @@ GiMeshHit TraceGiMeshDenseCells<T : IGiMeshTriangles>(ByteAddressBuffer fields, 
     return hit;
 }
 
-// Complete triangle-grid query, also used inside the Global SDF / Object Grid branch.
+// Sparse training and the near field resolve the original triangle pointers.
 GiMeshHit TraceGiMeshCells<T : IGiMeshTriangles>(ByteAddressBuffer fields, uint address,
     T triangles, float3 origin, float3 direction, float start, float limit)
 {
@@ -206,7 +206,23 @@ GiMeshHit TraceGiMeshCells<T : IGiMeshTriangles>(ByteAddressBuffer fields, uint 
     return hit;
 }
 
-// Original near-stage budget: up to eight conservative distance jumps, then the complete grid.
+float GiMeshDistanceBound(ByteAddressBuffer fields, uint distances, GiMeshDistanceGrid grid, float3 point)
+{
+    int3 first = int3(floor((point - grid.Lower) / grid.CellSize - 0.5));
+    float bound = -1e20;
+    for (uint corner = 0u; corner < 8u; corner++)
+    {
+        int3 offset = int3(corner & 1u, (corner >> 1u) & 1u, corner >> 2u);
+        uint3 cell = uint3(clamp(first + offset, int3(0), int3(grid.Shape) - 1));
+        float3 center = grid.Lower + (float3(cell) + 0.5) * grid.CellSize;
+        uint index = grid.FirstDistance + cell.x + cell.y * grid.Shape.x + cell.z * grid.Shape.x * grid.Shape.y;
+        bound = max(bound, asfloat(fields.Load(distances + index * 4u)) - length(point - center) - grid.DistanceError);
+    }
+    return bound;
+}
+
+// The prototype skips empty space with distance bounds, then resolves local
+// pointers with immediate hit feedback and the current closest distance.
 GiMeshHit TraceGiMeshDistanceField<T : IGiMeshTriangles>(ByteAddressBuffer fields, uint address,
     T triangles, float3 origin, float3 direction, float start, float limit)
 {
@@ -232,6 +248,8 @@ GiMeshHit TraceGiMeshDistanceField<T : IGiMeshTriangles>(ByteAddressBuffer field
         float value = asfloat(fields.Load(offsets.x + index * 4u));
         float distance = value - length(point - sampleCenter) - grid.DistanceError;
         hit.FieldSamples++;
+        if (distance <= grid.DistanceError)
+            distance = max(distance, GiMeshDistanceBound(fields, offsets.x, grid, point));
         if (distance <= grid.DistanceError) break;
         travel += distance / speed;
         if (travel >= end) return hit;

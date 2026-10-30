@@ -7,22 +7,29 @@ internal sealed unsafe partial class VulkanBackend
     private RhiSurface CreateSurfaceCore(in SurfaceDesc desc)
     {
         ThrowIfDisposed();
-        if (!OperatingSystem.IsWindows() || desc.Type != NativeWindowType.Win32)
-            throw new PlatformNotSupportedException("The Vulkan backend currently requires a Win32 Surface.");
         if (desc.WindowHandle == 0)
             throw new ArgumentOutOfRangeException(nameof(desc));
-        Win32SurfaceCreateInfoKHR createInfo = new()
+        VkSurface native;
+        if (desc.Type == NativeWindowType.Xlib)
         {
-            SType = StructureType.Win32SurfaceCreateInfoKhr,
-            Hinstance = desc.DisplayHandle != 0
-                ? desc.DisplayHandle
-                : NativeLibrary.GetMainProgramHandle(),
-            Hwnd = desc.WindowHandle,
-        };
-        VkSurface native = default;
-        ThrowIfFailed(
-            _win32SurfaceApi!.CreateWin32Surface(_instance, &createInfo, null, &native),
-            "vkCreateWin32SurfaceKHR");
+            XlibSurfaceCreateInfoKHR createInfo = new()
+            {
+                SType = StructureType.XlibSurfaceCreateInfoKhr,
+                Dpy = (nint*)desc.DisplayHandle,
+                Window = desc.WindowHandle,
+            };
+            ThrowIfFailed(_xlibSurfaceApi!.CreateXlibSurface(_instance, &createInfo, null, out native), "vkCreateXlibSurfaceKHR");
+        }
+        else
+        {
+            Win32SurfaceCreateInfoKHR createInfo = new()
+            {
+                SType = StructureType.Win32SurfaceCreateInfoKhr,
+                Hinstance = desc.DisplayHandle != 0 ? desc.DisplayHandle : NativeLibrary.GetMainProgramHandle(),
+                Hwnd = desc.WindowHandle,
+            };
+            ThrowIfFailed(_win32SurfaceApi!.CreateWin32Surface(_instance, &createInfo, null, out native), "vkCreateWin32SurfaceKHR");
+        }
         var surface = new VulkanSurface(this, native, desc);
         try
         {
@@ -524,7 +531,7 @@ internal sealed unsafe partial class VulkanBackend
             return semaphore;
         }
 
-        private static SwapchainSupport[] QuerySupport(VulkanDevice device, VulkanSurface surface)
+        internal static SwapchainSupport[] QuerySupport(VulkanDevice device, VulkanSurface surface)
         {
             KhrSurface api = device.Backend._surfaceApi!;
             uint formatCount = 0;

@@ -11,15 +11,38 @@ struct GiScreenSettings
     uint HistoryLayer;
     uint UseHistory;
     uint ViewCount;
+    uint SceneChanged;
+    uint RadianceChanged;
+    uint2 Padding;
 };
 
 struct GiProbeSurface
 {
     float4 Position;
     float4 Normal;
+    uint2 Pixel;
+    uint Instance;
+    uint Tile;
+    uint Seed;
+    uint Padding0;
+    uint Padding1;
+    uint Padding2;
 };
 
-static const uint GI_PROBE_SPACING = 8u;
+struct GiPixelSurface
+{
+    float3 Position;
+    uint Normal;
+    uint Instance;
+    uint Age;
+    uint2 Padding;
+};
+
+static const uint GI_PROBE_SPACING = 16u;
+static const uint GI_PROBES_PER_TILE = 4u;
+
+uint GiTileCount(GiScreenSettings settings) { return settings.ProbeWidth * settings.ProbeHeight * settings.ViewCount; }
+uint GiProbeCapacity(GiScreenSettings settings) { return GiTileCount(settings) * GI_PROBES_PER_TILE; }
 
 float GiSh(uint coefficient, float3 direction)
 {

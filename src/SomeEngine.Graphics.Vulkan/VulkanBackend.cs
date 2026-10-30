@@ -21,6 +21,7 @@ internal sealed unsafe partial class VulkanBackend : IGraphicsBackend, INativeVa
 {
     private const string SurfaceExtension = "VK_KHR_surface";
     private const string Win32SurfaceExtension = "VK_KHR_win32_surface";
+    private const string XlibSurfaceExtension = "VK_KHR_xlib_surface";
     private const string DebugUtilsExtension = "VK_EXT_debug_utils";
     private const string ValidationLayer = "VK_LAYER_KHRONOS_validation";
 
@@ -33,6 +34,7 @@ internal sealed unsafe partial class VulkanBackend : IGraphicsBackend, INativeVa
     private VkInstance _instance;
     private KhrSurface? _surfaceApi;
     private KhrWin32Surface? _win32SurfaceApi;
+    private KhrXlibSurface? _xlibSurfaceApi;
     private ExtDebugUtils? _debugUtilsApi;
     private DebugUtilsMessengerEXT _debugMessenger;
     private PfnDebugUtilsMessengerCallbackEXT _debugCallback;
@@ -48,9 +50,11 @@ internal sealed unsafe partial class VulkanBackend : IGraphicsBackend, INativeVa
         _instance = CreateInstance();
         try
         {
-            if (!_vk.TryGetInstanceExtension(_instance, out _surfaceApi) ||
-                !_vk.TryGetInstanceExtension(_instance, out _win32SurfaceApi))
-                throw new PlatformNotSupportedException("The Vulkan Win32 surface extensions could not be loaded.");
+            bool windowSurface = OperatingSystem.IsWindows()
+                ? _vk.TryGetInstanceExtension(_instance, out _win32SurfaceApi)
+                : _vk.TryGetInstanceExtension(_instance, out _xlibSurfaceApi);
+            if (!_vk.TryGetInstanceExtension(_instance, out _surfaceApi) || !windowSurface)
+                throw new PlatformNotSupportedException("The Vulkan window surface extension could not be loaded.");
             CreateDebugMessenger();
             _adapters = EnumerateAdapters();
         }
@@ -58,6 +62,7 @@ internal sealed unsafe partial class VulkanBackend : IGraphicsBackend, INativeVa
         {
             _surfaceApi?.Dispose();
             _win32SurfaceApi?.Dispose();
+            _xlibSurfaceApi?.Dispose();
             DestroyDebugMessenger();
             _vk.DestroyInstance(_instance, null);
             _instance = default;
@@ -175,6 +180,8 @@ internal sealed unsafe partial class VulkanBackend : IGraphicsBackend, INativeVa
         _surfaceApi = null;
         _win32SurfaceApi?.Dispose();
         _win32SurfaceApi = null;
+        _xlibSurfaceApi?.Dispose();
+        _xlibSurfaceApi = null;
         DestroyDebugMessenger();
         if (_instance.Handle != 0)
         {
@@ -206,9 +213,10 @@ internal sealed unsafe partial class VulkanBackend : IGraphicsBackend, INativeVa
             : _options.ApiVersion;
         string[] availableExtensions = EnumerateInstanceExtensions();
         RequireName(availableExtensions, SurfaceExtension, "instance extension");
-        RequireName(availableExtensions, Win32SurfaceExtension, "instance extension");
+        string windowSurface = OperatingSystem.IsWindows() ? Win32SurfaceExtension : XlibSurfaceExtension;
+        RequireName(availableExtensions, windowSurface, "instance extension");
 
-        List<string> extensions = [SurfaceExtension, Win32SurfaceExtension];
+        List<string> extensions = [SurfaceExtension, windowSurface];
         if (_options.EnableDebugMessages && availableExtensions.Contains(DebugUtilsExtension))
             extensions.Add(DebugUtilsExtension);
 

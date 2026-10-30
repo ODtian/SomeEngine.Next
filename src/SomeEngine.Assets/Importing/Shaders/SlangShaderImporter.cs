@@ -18,13 +18,14 @@ public static partial class SlangShaderImporter
         SlangResult result = Slang.CreateGlobalSession(Slang.ApiVersion, out IGlobalSession session);
         if (result.Failed || session is null)
             throw new InvalidOperationException($"Slang global session creation failed with {result}.");
-        session.SetDownstreamCompilerPath(SlangPassThrough.Dxc, AppContext.BaseDirectory);
+        if (OperatingSystem.IsWindows()) session.SetDownstreamCompilerPath(SlangPassThrough.Dxc, AppContext.BaseDirectory);
         return session;
     }
 
     public static TargetDesc[] CreateDefaultTargets(IGlobalSession slang)
     {
         ArgumentNullException.ThrowIfNull(slang);
+        if (OperatingSystem.IsLinux()) return [new TargetDesc { Format = SlangCompileTarget.Spirv, Profile = slang.FindProfile("glsl_460") }];
         return
         [
             new TargetDesc

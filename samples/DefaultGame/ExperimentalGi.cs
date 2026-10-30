@@ -43,7 +43,7 @@ internal sealed class ExperimentalGi(Func<bool> enabled) : IApplicationGeometryF
         }
         public GraphTextureId Record(ref RenderGraphFrame graph, GraphTextureId color, GraphTextureId depth)
         {
-            screen.Record(ref graph, rendering.CameraCut);
+            screen.Record(ref graph, rendering.CameraCut, rendering.Lights!.Revision);
             return color;
         }
         public void Dispose() { }

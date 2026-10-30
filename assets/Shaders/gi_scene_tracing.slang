@@ -6,7 +6,6 @@
 interface IGiSceneMeshes
 {
     GiMeshHit traceDistanceField(uint instance, float3 origin, float3 direction, float start, float limit);
-    GiMeshHit traceTriangles(uint instance, float3 origin, float3 direction, float start, float limit);
 };
 
 struct GiSceneHit
@@ -93,25 +92,6 @@ GiSceneHit TraceGiNearScene<T : IGiSceneMeshes>(T meshes, StructuredBuffer<float
             GiMeshHit mesh = meshes.traceDistanceField(instance, origin, direction, start, hit.Mesh.Distance);
             MergeGiMeshHit(hit, mesh, instance);
         }
-    }
-    return hit;
-}
-
-// Sparse training follows the actual mesh surfaces over its entire ray interval.
-GiSceneHit TraceGiTrainingScene<T : IGiSceneMeshes>(T meshes,
-    StructuredBuffer<float4> instanceBounds, uint instanceCount,
-    float3 origin, float3 direction, float start, float limit)
-{
-    GiSceneHit hit = MissGiScene(limit);
-    hit.Stage = 3u;
-    for (uint instance = 0u; instance < instanceCount; instance++)
-    {
-        float2 range = GiRayBox(instanceBounds[instance * 4u].xyz,
-            instanceBounds[instance * 4u + 1u].xyz, origin, direction);
-        hit.BoundsTests++;
-        if (range.y < max(start, range.x) || range.x >= hit.Mesh.Distance) continue;
-        GiMeshHit mesh = meshes.traceTriangles(instance, origin, direction, start, hit.Mesh.Distance);
-        MergeGiMeshHit(hit, mesh, instance);
     }
     return hit;
 }

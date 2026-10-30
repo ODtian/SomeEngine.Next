@@ -16,6 +16,7 @@ internal sealed class FrameOutputVerifier : IDisposable
     private readonly TextureCopyFootprint _footprint;
     private readonly Buffer _readback;
     private readonly byte[] _bytes;
+    private readonly bool _bgra;
     private bool _disposed;
 
     internal FrameOutputVerifier(
@@ -29,11 +30,12 @@ internal sealed class FrameOutputVerifier : IDisposable
         _device = device ?? throw new ArgumentNullException(nameof(device));
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(height);
-        if (format is not (Format.R8G8B8A8UNorm or Format.R16G16B16A16Float))
+        if (format is not (Format.R8G8B8A8UNorm or Format.B8G8R8A8UNorm or Format.R16G16B16A16Float))
             throw new NotSupportedException($"Runtime frame verification does not support {format}.");
 
         _width = width;
         _height = height;
+        _bgra = format == Format.B8G8R8A8UNorm;
         TextureDesc description = new(
             TextureDimension.Texture2D,
             checked((uint)width),
@@ -144,6 +146,13 @@ internal sealed class FrameOutputVerifier : IDisposable
         using MappedBuffer mapping = _backend.Map(_readback, MapType.Read, range);
         mapping.Invalidate(range);
         mapping.Bytes.CopyTo(_bytes);
+        if (_bgra)
+            for (int row = 0; row < _height; row++)
+            for (int column = 0; column < _width; column++)
+            {
+                int at = checked((int)(_footprint.Offset + (ulong)row * _footprint.RowPitch) + column * 4);
+                (_bytes[at], _bytes[at + 2]) = (_bytes[at + 2], _bytes[at]);
+            }
     }
 
     internal SceneLinearImage CopyLinearImage(SceneFrame frame)

@@ -2,6 +2,7 @@ using System.Numerics;
 using SomeEngine.Graphics;
 using SomeEngine.RenderGraph;
 using SomeEngine.Render.Cluster.Pipeline;
+using SomeEngine.Render.Lighting;
 
 namespace SomeEngine.Runtime;
 
@@ -11,6 +12,7 @@ public readonly record struct ApplicationRendering(IGraphicsBackend Backend, Dev
 {
     public ClusterPipelineOutputs Geometry { get; init; }
     public ClusterPipelineSystem? ClusterPipeline { get; init; }
+    public RenderLightSet? Lights { get; init; }
     public bool CameraCut => CameraCutSource?.Invoke() ?? false;
     internal Func<bool>? CameraCutSource { get; init; }
     public ClusterStencil? Stencil => StencilSource?.Invoke();

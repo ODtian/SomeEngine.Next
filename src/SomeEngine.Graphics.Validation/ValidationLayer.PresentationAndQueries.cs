@@ -2,6 +2,15 @@ namespace SomeEngine.Graphics.Validation;
 
 public sealed partial class ValidationLayer
 {
+    public ReadOnlyMemory<SwapchainSupport> GetSwapchainSupport(Device device, Surface surface)
+    {
+        RequireDevice(device);
+        lock (_gate)
+            if (!_surfaces.Contains(surface)) Reject("Ownership", "Surface was not created through this Validation Layer.");
+        if (surface.IsDisposed) Reject("Lifetime", "Surface is disposed.", surface.Label);
+        return Backend.GetSwapchainSupport(device, surface);
+    }
+
     public Swapchain CreateSwapchain(Device device, in SwapchainDesc desc)
     {
         RequireDevice(device);

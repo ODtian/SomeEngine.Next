@@ -11,6 +11,9 @@ struct GiEmissiveSettings
     uint InstanceCount;
     uint MaterialCount;
     uint UseHistory;
+    uint MaterialsChanged;
+    uint ObjectLeafCount;
+    uint2 Padding;
 };
 
 struct GiEmissiveTriangle
@@ -26,21 +29,21 @@ struct GiEmissiveTriangle
 
 struct GiDirectLightProposal
 {
-    uint Emitter;
+    uint Instance;
     float Probability;
 };
 
 struct GiDirectLightGuide
 {
-    uint Emitter;
+    uint Instance;
     float Brightness;
     uint2 Padding;
-    uint4 TriangleInstance;
 };
 
 ConstantBuffer<GiEmissiveSettings> GiEmissive;
 RWStructuredBuffer<float4> GiEmissionBounds;
 RWStructuredBuffer<GiEmissiveTriangle> GiEmissiveTriangles;
+RWStructuredBuffer<uint> GiEmitterChanges;
 
 float4 GiMaterialEmissionBound(uint materialIndex)
 {

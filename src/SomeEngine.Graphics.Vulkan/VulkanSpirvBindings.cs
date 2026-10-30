@@ -398,8 +398,14 @@ internal sealed unsafe partial class VulkanBackend
         {
             VulkanSpirvBindingTarget[] named = available
                 .Where(target => sourceGroup.Any(source => NamesMatch(source.Name, target.Name)))
+                .DistinctBy(static target => (target.Set, target.Binding))
                 .ToArray();
-            if (named.Select(static target => target.Binding).Distinct().Count() != 1)
+            if (named.Length > 1)
+            {
+                uint binding = EncodeDescriptorBinding(sourceGroup.Key, group.Key.RegisterClass);
+                named = named.Where(target => target.Binding == binding).ToArray();
+            }
+            if (named.Length != 1)
             {
                 if (sourceGroup.Any(static source => !string.IsNullOrWhiteSpace(source.Name)) &&
                     available.Any(static target => !string.IsNullOrWhiteSpace(target.Name)))
@@ -407,20 +413,20 @@ internal sealed unsafe partial class VulkanBackend
                     throw InvalidSpirv(
                         "A named SPIR-V descriptor could not be matched uniquely to Slang " +
                         $"reflection: source=[{string.Join(", ", sourceGroup.Select(
-                            static source => source.Name ?? $"%{source.Target}"))}], " +
+                            static source => $"{source.Name ?? $"%{source.Target}"}@{source.LogicalBinding}"))}], " +
                         $"targets=[{string.Join(", ", available.Select(
-                            static target => target.Name ?? $"{target.Set}:{target.Binding}"))}].");
+                            static target => $"{target.Name}@{target.Set}:{target.Binding}"))}].");
                 }
                 pending.Add(sourceGroup);
                 continue;
             }
             VulkanSpirvBindingTarget target = named[0];
             AssignSpirvTarget(words, sourceGroup, target, mapped);
-            available.RemoveAll(value => value.Binding == target.Binding);
+            available.RemoveAll(value => value.Set == target.Set && value.Binding == target.Binding);
         }
 
         VulkanSpirvBindingTarget[] remaining = available
-            .GroupBy(static target => target.Binding)
+            .GroupBy(static target => (target.Set, target.Binding))
             .Select(static values => values.First())
             .OrderBy(static target => target.Binding)
             .ToArray();

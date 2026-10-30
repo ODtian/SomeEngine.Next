@@ -14,43 +14,10 @@ Texture2DArray<float4> GiReflectedRadiance;
 RWStructuredBuffer<GiProbeSurface> GiProbeSurfaces;
 RWStructuredBuffer<float4> GiProbeRadiance;
 RWStructuredBuffer<uint> GiProbeRequests;
-RWStructuredBuffer<uint2> GiProbeHistoryData;
+Texture2DArray<uint> GiSurfaceInstances;
 static const float GI_PI = 3.14159265359;
 
-uint GiProbeCount() { return GiSettings.ProbeWidth * GiSettings.ProbeHeight * GiSettings.ViewCount; }
-
-uint GiProbeIndex(uint2 pixel, uint view)
-{
-    uint2 probe = min(pixel / GI_PROBE_SPACING, uint2(GiSettings.ProbeWidth, GiSettings.ProbeHeight) - 1u);
-    return (view * GiSettings.ProbeHeight + probe.y) * GiSettings.ProbeWidth + probe.x;
-}
-uint3 GiProbePixel(uint index)
-{
-    uint view = index / (GiSettings.ProbeWidth * GiSettings.ProbeHeight);
-    uint local = index % (GiSettings.ProbeWidth * GiSettings.ProbeHeight);
-    uint2 first = uint2(local % GiSettings.ProbeWidth, local / GiSettings.ProbeWidth) * GI_PROBE_SPACING;
-    uint2 size = uint2(GiSettings.Width, GiSettings.Height);
-    uint request = GiProbeRequests[index];
-    GiProbeRequests[index] = 0u;
-    if (request != 0u)
-    {
-        uint offset = request & 63u;
-        uint3 requested = uint3(first + uint2(offset % GI_PROBE_SPACING, offset / GI_PROBE_SPACING), view);
-        if (!IsVisBufferEmpty(GiVisibility.Load(int4(requested, 0))) && GiDiffuse.Load(int4(requested, 0)).w > 0.0)
-            return requested;
-    }
-    uint3 center = uint3(min(first + GI_PROBE_SPACING / 2u, size - 1u), view);
-    if (!IsVisBufferEmpty(GiVisibility.Load(int4(center, 0))) && GiDiffuse.Load(int4(center, 0)).w > 0.0)
-        return center;
-    for (uint offset = 0u; offset < GI_PROBE_SPACING * GI_PROBE_SPACING; offset++)
-    {
-        uint3 candidate = uint3(first + uint2(offset % GI_PROBE_SPACING, offset / GI_PROBE_SPACING), view);
-        if (any(candidate.xy >= size)) continue;
-        if (!IsVisBufferEmpty(GiVisibility.Load(int4(candidate, 0))) && GiDiffuse.Load(int4(candidate, 0)).w > 0.0)
-            return candidate;
-    }
-    return center;
-}
+uint GiProbeCount() { return GiProbeCapacity(GiSettings); }
 
 float3 GiWorldPosition(uint3 pixel)
 {
@@ -62,8 +29,7 @@ float3 GiWorldPosition(uint3 pixel)
 
 float GiPixelFootprint(float3 position, uint view)
 {
-    float3 viewPosition = ClusterPositionForView(position, GiViews[view]);
-    return max(0.001, abs(mul(float4(viewPosition, 1.0), GiViews[view].View).z) *
+    return max(0.002, length(position - GiViews[view].CameraPos) *
         2.0 / (abs(GiViews[view].P11) * float(GiSettings.Height)));
 }
 
@@ -99,7 +65,7 @@ bool TraceGiScreen(float3 origin, float3 direction, uint view, out uint3 hitPixe
         if (any(uv < 0.0) || any(uv >= 1.0)) return false;
         uint3 pixel = uint3(uint2(uv * float2(GiSettings.Width, GiSettings.Height)), view);
         uint triangle = GiVisibility.Load(int4(pixel, 0));
-        if (!IsVisBufferEmpty(triangle) && GiDiffuse.Load(int4(pixel, 0)).w > 0.0)
+        if (!IsVisBufferEmpty(triangle) && GiSurfaceInstances.Load(int4(pixel, 0)) != 0u)
         {
             float3 surface = GiWorldPosition(pixel);
             float3 normal = GiPlaneNormal(pixel);
@@ -127,76 +93,50 @@ bool TraceGiScreen(float3 origin, float3 direction, uint view, out uint3 hitPixe
     return false;
 }
 
+#include "gi_probe_layout.slang"
+
+[shader("compute")]
 [numthreads(64, 1, 1)]
 void InitializeGiScreenProbes(uint3 thread : SV_DispatchThreadID)
 {
     uint count = GiProbeCount();
     if (thread.x >= count * 2u) return;
-    if (thread.x < count) GiProbeRequests[thread.x] = 0u;
-    GiProbeSurface surface = {};
-    GiProbeSurfaces[thread.x] = surface;
+    if (thread.x < GiTileCount(GiSettings) * 2u) GiProbeRequests[thread.x] = 0u;
+    GiProbeSurfaces[thread.x] = (GiProbeSurface)0;
+    GiProbeSamples[thread.x] = 0.0;
     for (uint coefficient = 0u; coefficient < 9u; coefficient++)
+    {
         GiProbeRadiance[thread.x * 9u + coefficient] = 0.0;
+        GiFilteredProbeRadiance[thread.x * 9u + coefficient] = 0.0;
+    }
 }
 
+[shader("compute")]
 [numthreads(64, 1, 1)]
 void TraceGiScreenProbes(uint3 thread : SV_DispatchThreadID)
 {
     uint index = thread.x;
-    uint count = GiProbeCount();
-    if (index >= count) return;
-    uint3 pixel = GiProbePixel(index);
-    uint current = GiSettings.HistoryLayer * count + index;
-    GiProbeSurface surface = {};
-    if (IsVisBufferEmpty(GiVisibility.Load(int4(pixel, 0))) || GiDiffuse.Load(int4(pixel, 0)).w == 0.0)
-    {
-        GiRays[index] = (GiTraceRay)0;
-        GiScreenHits[index] = float4(0.0, 0.0, 0.0, GiScene.TraceDistance);
-        GiProbeSurfaces[current] = surface;
-        for (uint coefficient = 0u; coefficient < 9u; coefficient++)
-            GiProbeRadiance[current * 9u + coefficient] = 0.0;
-        return;
-    }
-    float3 position = GiWorldPosition(pixel);
-    float3 normal = GiPlaneNormal(pixel);
-    float footprint = GiPixelFootprint(position, pixel.z);
-    float2 uv = (float2(pixel.xy) + 0.5) / float2(GiSettings.Width, GiSettings.Height);
-    // Both grids use the material shade's raster positions, including projection jitter.
-    float2 previousUv = uv - GiMotion.Load(int4(pixel, 0));
-    uint previous = 0u;
-    float historyCount = 0.0;
-    if (GiSettings.UseHistory != 0u && all(previousUv >= 0.0) && all(previousUv < 1.0))
-    {
-        previous = (GiSettings.HistoryLayer ^ 1u) * count +
-            GiProbeIndex(uint2(previousUv * float2(GiSettings.Width, GiSettings.Height)), pixel.z);
-        GiProbeSurface old = GiProbeSurfaces[previous];
-        float3 delta = old.Position.xyz + GiViews[pixel.z].PreviousDataTranslation - position;
-        float tolerance = max(0.003, footprint * 1.5);
-        if (old.Position.w > 0.0 && dot(old.Normal.xyz, normal) > 0.95 &&
-            abs(dot(delta, normal)) < tolerance && length(delta) < footprint * float(GI_PROBE_SPACING * 2u))
-            historyCount = min(old.Position.w, 7.0);
-    }
-    float2 sequence = frac(float2(GiRandom(index + 71u), GiRandom(index + 12119u)) +
-        float(GiSettings.Frame + 1u) * float2(0.7548776662, 0.5698402910));
-    float z = sequence.x;
-    float radius = sqrt(1.0 - z * z);
-    float angle = sequence.y * (2.0 * GI_PI);
+    if (index >= GiProbeCount()) return;
+    GiRays[index] = (GiTraceRay)0;
+    GiScreenHits[index] = float4(0.0, 0.0, 0.0, GiScene.TraceDistance);
+    uint current = GiSettings.HistoryLayer * GiProbeCount() + index;
+    GiProbeSurface source = GiProbeSurfaces[current];
+    if (source.Position.w == 0.0 || GiProbeSamples[current].y == 0.0) return;
+    uint view = source.Tile / (GiSettings.ProbeWidth * GiSettings.ProbeHeight);
+    float2 rotation = float2(GiRandom(source.Seed + 71u), GiRandom(source.Seed + 12119u));
+    float2 sequence = frac(rotation + float(GiSettings.Frame + 1u) * float2(0.7548776662, 0.5698402910));
+    float z = sequence.x, radius = sqrt(1.0 - z * z), angle = sequence.y * (2.0 * GI_PI);
+    float3 normal = source.Normal.xyz;
     float3 tangent = normalize(cross(normal, abs(normal.y) > 0.95 ? float3(1, 0, 0) : float3(0, 1, 0)));
     float3 direction = tangent * (radius * cos(angle)) + cross(normal, tangent) * (radius * sin(angle)) + normal * z;
     GiTraceRay ray;
-    ray.Origin = position + normal * max(0.003, footprint * 0.25);
-    ray.Direction = direction;
-    ray.Start = 0.002;
-    ray.Limit = GiScene.TraceDistance;
+    ray.Origin = source.Position.xyz + normal * 0.012;
+    ray.Direction = direction; ray.Start = 0.002; ray.Limit = GiScene.TraceDistance;
     GiRays[index] = ray;
     uint3 hitPixel;
     float hitDistance;
-    bool screen = TraceGiScreen(ray.Origin, direction, pixel.z, hitPixel, hitDistance);
+    bool screen = TraceGiScreen(ray.Origin, direction, view, hitPixel, hitDistance);
     GiScreenHits[index] = float4(float3(hitPixel), screen ? hitDistance : GiScene.TraceDistance);
-    surface.Position = float4(position, historyCount + 1.0);
-    surface.Normal = float4(normal, 0.0);
-    GiProbeSurfaces[current] = surface;
-    GiProbeHistoryData[index] = uint2(previous, asuint(historyCount));
 }
 
 [shader("compute")]
@@ -206,18 +146,19 @@ void IntegrateGiScreenProbes(uint3 thread : SV_DispatchThreadID)
     uint index = thread.x;
     if (index >= GiProbeCount()) return;
     uint current = GiSettings.HistoryLayer * GiProbeCount() + index;
-    if (GiProbeSurfaces[current].Position.w == 0.0) return;
-    uint previous = GiProbeHistoryData[index].x;
-    float historyCount = asfloat(GiProbeHistoryData[index].y);
-    float3 radiance = GiProbeIncoming[index].rgb;
-    float3 direction = GiRays[index].Direction;
+    float2 samples = GiProbeSamples[current];
+    if (samples.y == 0.0) return;
+    float3 radiance = GiProbeIncoming[index].rgb, direction = GiRays[index].Direction;
     for (uint coefficient = 0u; coefficient < 9u; coefficient++)
     {
-        float3 old = historyCount > 0.0 ? GiProbeRadiance[previous * 9u + coefficient].rgb : 0.0;
-        float3 sampleRadiance = radiance * (GiSh(coefficient, direction) * (2.0 * GI_PI));
-        GiProbeRadiance[current * 9u + coefficient] = float4((old * historyCount + sampleRadiance) / (historyCount + 1.0), 0.0);
+        float3 old = GiProbeRadiance[current * 9u + coefficient].rgb;
+        float3 value = radiance * (GiSh(coefficient, direction) * (2.0 * GI_PI));
+        GiProbeRadiance[current * 9u + coefficient] = float4((old * samples.x + value) / (samples.x + samples.y), 0.0);
     }
+    GiProbeSamples[current] = float2(samples.x + samples.y, samples.y);
 }
 
 #include "gi_pipeline.slang"
+#include "gi_probe_history.slang"
 #include "gi_emissive_lights.slang"
+#include "gi_pixel_radiance.slang"

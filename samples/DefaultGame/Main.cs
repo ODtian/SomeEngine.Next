@@ -53,6 +53,11 @@ public static class SampleApplication
                 ImportedSceneImporter.WriteSurfaceSources(shaders, engineRoot);
                 foreach (string definition in Directory.EnumerateFiles(shaders, "scene_*.shader"))
                     await project.BuildAsync(definition);
+                const string giPath = "assets/Shaders/gi_screen_probes.shader.asset";
+                AssetManifest shared = AssetManifest.Load(Path.Combine(ProjectPaths.Root, "Library/AssetManifest"));
+                AssetEntry giShader = shared.Assets.Values.Single(entry => entry.Path == giPath);
+                File.Copy(Path.Combine(ProjectPaths.Root, giPath), Path.Combine(projectRoot, giPath), true);
+                project.RegisterAsset(giShader);
                 return 0;
             }
             return await AssetCommands.RunAsync(project, args, Console.Out);
@@ -97,6 +102,7 @@ public static class SampleApplication
         }).ToArray(), startupOptions)
         {
             StartupTraceOutput = Environment.GetEnvironmentVariable("SOMEENGINE_STARTUP_TRACE"),
+            ExitAfterMeasurements = args.Contains("--measure-scenes", StringComparer.Ordinal),
             InitializeScene = clusterScene is null ? null : clusterScene.Initialize,
             UpdateScene = clusterScene is null || args.Contains("--cluster-static", StringComparer.Ordinal) ? null : clusterScene.Update,
             ColorFeatureSettings = clusterScene is null ? null : new Dictionary<string, string>
@@ -113,6 +119,7 @@ public static class SampleApplication
         platform.Application.CreateColorFeature = gi.Connect;
         SceneGpuTimes? gpuTimes = gpuTimesArgument >= 0 ? new(platform) : null;
         if (gpuTimes is not null) platform.Application.FrameMeasured = gpuTimes.Add;
+        if (platform.ExitAfterMeasurements) platform.StartMeasurements(args.Contains("--trace-scenes", StringComparer.Ordinal));
         int result = await Application.RunAsync<SampleSceneMaterials>(args, static (material, seconds) =>
         {
             float roughness = 0.5f + MathF.Sin(seconds) * 0.2f;

@@ -5,8 +5,10 @@
 #include "gi_radiance_cache.slang"
 #include "cluster_common.slang"
 #include "cluster_page_requests.slang"
+#include "gi_geometry_pages.slang"
 #include "render_lighting.slang"
 #include "brdf.slang"
+#include "gi_emissive_sampling.slang"
 
 struct GiSceneParameters
 {
@@ -20,29 +22,35 @@ struct GiSceneParameters
     uint UseInstanceGroups;
     float NearDistance;
     float TraceDistance;
-    float2 Padding0;
+    uint FieldsChanged;
+    uint NearObjectWordCount;
 };
 ConstantBuffer<GiSceneParameters> GiScene;
 ByteAddressBuffer GiMeshFields;
 StructuredBuffer<uint2> GiMeshFieldsIndex;
-ByteAddressBuffer GiHierarchy;
 ByteAddressBuffer PageHeap;
 StructuredBuffer<float4> GiInstanceBounds;
 StructuredBuffer<float4> GiInstanceGroups;
 StructuredBuffer<uint> GiInstanceOrder;
-RWByteAddressBuffer GiPageRequests;
+RWStructuredBuffer<uint> GiNearObjectWords;
 RWStructuredBuffer<uint> GiGlobalDistanceWrites;
+RWStructuredBuffer<uint> GiStaticDistances;
+RWStructuredBuffer<uint> GiInstanceMovement;
+RWStructuredBuffer<uint> GiGlobalFieldChanges;
 StructuredBuffer<float> GiGlobalDistances;
 RWStructuredBuffer<GiGlobalField> GiGlobalFields;
 RWStructuredBuffer<uint> GiQueueCounts;
 RWStructuredBuffer<uint> GiMaterialWorkCounts;
 RWStructuredBuffer<uint> GiMaterialWorkWrites;
 RWStructuredBuffer<uint> GiMaterialDispatch;
-RWStructuredBuffer<uint> GiClosestDistances;
 RWStructuredBuffer<uint> GiClosestCandidates;
 RWStructuredBuffer<float4> GiScreenHits;
 RWStructuredBuffer<float4> GiProbeIncoming;
 RWStructuredBuffer<GiSurfaceSample> GiTrainingSurfaces;
+RWStructuredBuffer<uint> GiTrainingProbes;
+RWStructuredBuffer<uint> GiTrainingWork;
+RWStructuredBuffer<uint> GiTrainingDispatch;
+RWStructuredBuffer<uint> GiQueryDispatch;
 StructuredBuffer<GPULight> LightBuffer;
 StructuredBuffer<ClusteredLightGridParameters> LightingViews;
 
@@ -89,6 +97,27 @@ float GiMeshDistance(uint address, float3 point)
 groupshared float3 GiBoundsLow[64];
 groupshared float3 GiBoundsHigh[64];
 [shader("compute")]
+[numthreads(1, 1, 1)]
+void BeginGiGlobalUpdate()
+{
+    GiGlobalFieldChanges[0] = GiScene.FieldsChanged;
+}
+
+[shader("compute")]
+[numthreads(64, 1, 1)]
+void UpdateGiInstanceMovement(uint3 thread : SV_DispatchThreadID)
+{
+    uint index = thread.x;
+    if (index >= GiScene.InstanceCount) return;
+    RenderInstanceTransform current = GetCurrentInstanceTransform(index), previous = GetPreviousInstanceTransform(index);
+    bool moving = any(current.Position != previous.Position + GiViews[0].PreviousDataTranslation) ||
+        any(current.Rotation != previous.Rotation) || current.Scale != previous.Scale || any(current.Stretch != previous.Stretch);
+    uint old = GiInstanceMovement[index];
+    GiInstanceMovement[index] = (old & 1u) | (moving ? 3u : 0u);
+    if (moving && (old & 1u) == 0u) InterlockedOr(GiGlobalFieldChanges[0], 1u);
+}
+
+[shader("compute")]
 [numthreads(64, 1, 1)]
 void BuildGiGlobalBounds(uint lane : SV_GroupIndex)
 {
@@ -115,6 +144,16 @@ void BuildGiGlobalBounds(uint lane : SV_GroupIndex)
     {
         low = GiBoundsLow[0]; high = GiBoundsHigh[0];
         if (GiScene.InstanceCount == 0u || any(low > high)) { low = -1.0; high = 1.0; }
+        GiGlobalField old = GiGlobalFields[0];
+        float3 translation = GiViews[0].PreviousDataTranslation;
+        if (GiScene.FieldsChanged == 0u && old.Pitch > 0.0 &&
+            all(low >= old.Lower + translation + old.Pitch) && all(high <= old.Upper + translation - old.Pitch))
+        {
+            old.Lower += translation; old.Upper += translation;
+            GiGlobalFields[0] = old;
+            return;
+        }
+        low -= GiScene.NearDistance; high += GiScene.NearDistance;
         float3 size = high - low;
         float pitch = max(0.02, max(size.x, max(size.y, size.z)) / float(GiScene.GridSide - 4u));
         float3 center = (low + high) * 0.5;
@@ -125,23 +164,23 @@ void BuildGiGlobalBounds(uint lane : SV_GroupIndex)
         field.Upper = field.Lower + float3(field.Shape) * pitch;
         field.Error = pitch * 0.01;
         GiGlobalFields[0] = field;
+        GiGlobalFieldChanges[0] = 1u;
     }
 }
 
 [shader("compute")]
 [numthreads(64, 1, 1)]
-void ClearGiGlobalDistances(uint3 thread : SV_DispatchThreadID)
+void ClearGiStaticDistances(uint3 thread : SV_DispatchThreadID)
 {
     uint count = GiScene.GridSide * GiScene.GridSide * GiScene.GridSide;
-    if (thread.x < count) GiGlobalDistanceWrites[thread.x] = asuint(min(GiScene.TraceDistance, GiGlobalFields[0].Pitch * 4.0));
+    if (thread.x < count && GiGlobalFieldChanges[0] != 0u)
+        GiStaticDistances[thread.x] = asuint(min(GiScene.TraceDistance, GiGlobalFields[0].Pitch * 4.0));
 }
 
-[shader("compute")]
-[numthreads(64, 1, 1)]
-void ComposeGiGlobalDistances(uint3 group : SV_GroupID, uint lane : SV_GroupIndex)
+void ComposeGiInstanceDistances(uint instance, uint lane, bool moving)
 {
-    uint instance = group.x;
     if (instance >= GiScene.InstanceCount) return;
+    if ((GiInstanceMovement[instance] != 0u) != moving || (!moving && GiGlobalFieldChanges[0] == 0u)) return;
     uint address = GiInstanceField(instance);
     if (address == 0xffffffffu) return;
     GiGlobalField field = GiGlobalFields[0];
@@ -158,65 +197,96 @@ void ComposeGiGlobalDistances(uint3 group : SV_GroupID, uint lane : SV_GroupInde
         float3 position = field.Lower + (float3(cell) + 0.5) * field.Pitch;
         float distance = GiMeshDistance(address, InverseTransformInstancePosition(position, transform)) * distanceScale;
         uint ignored;
-        InterlockedMin(GiGlobalDistanceWrites[cell.x + cell.y * field.Shape.x + cell.z * field.Shape.x * field.Shape.y], asuint(distance), ignored);
+        uint at = cell.x + cell.y * field.Shape.x + cell.z * field.Shape.x * field.Shape.y;
+        if (moving) InterlockedMin(GiGlobalDistanceWrites[at], asuint(distance), ignored);
+        else InterlockedMin(GiStaticDistances[at], asuint(distance), ignored);
     }
 }
 
-bool GetGiTrianglePage(uint3 pointer, out uint page)
+[shader("compute")]
+[numthreads(64, 1, 1)]
+void ComposeGiStaticDistances(uint3 group : SV_GroupID, uint lane : SV_GroupIndex)
 {
-    page = 0u;
-    uint node = pointer.x / 240u;
-    uint child = (pointer.x % 240u - 140u) / 16u;
-    ClusterHierarchySlice slice = LoadClusterNode(GiHierarchy, node, child);
-    uint capacity = GiViews[0].MaxPageFaults;
-    for (uint pageIndex = ClusterSliceFirstPage(slice); pageIndex < ClusterSliceFirstPage(slice) + ClusterSlicePageCount(slice); pageIndex++)
-    {
-        uint previous;
-        GiPageRequests.InterlockedMax(ClusterPageRequestPriorityOffset(capacity, pageIndex),
-        PackClusterStreamingPriority(1.0, 1.0, 2u), previous);
-        if (previous == 0u)
-        {
-        uint demand;
-        GiPageRequests.InterlockedAdd(ClusterPageDemandCountOffset(capacity), 1u, demand);
-        if (demand < capacity) GiPageRequests.Store2(ClusterPageDemandOffset(capacity, demand), uint2(pageIndex, 0u));
-        if (!ClusterSliceAvailable(slice))
-        {
-            uint at;
-            GiPageRequests.InterlockedAdd(0u, 1u, at);
-            if (at < capacity) GiPageRequests.Store4(4u + at * 16u, uint4(node * 4u + child, pageIndex, 1u, 0u));
-        }
-        }
-    }
-    if (!ClusterSliceAvailable(slice)) return false;
-    page = ClusterSlicePageOffset(slice);
-    return true;
+    ComposeGiInstanceDistances(group.x, lane, false);
 }
 
-struct GiTriangleCollector : IGiMeshTriangles
+[shader("compute")]
+[numthreads(64, 1, 1)]
+void CopyGiStaticDistances(uint3 thread : SV_DispatchThreadID)
 {
-    uint RayIndex;
-    uint Instance;
-    bool intersect(uint3 pointer, float3 origin, float3 direction, float start, float limit,
-        out float distance, out float3 barycentric)
+    if (thread.x < GiScene.GridSide * GiScene.GridSide * GiScene.GridSide)
+        GiGlobalDistanceWrites[thread.x] = GiStaticDistances[thread.x];
+}
+
+[shader("compute")]
+[numthreads(64, 1, 1)]
+void ComposeGiGlobalDistances(uint3 group : SV_GroupID, uint lane : SV_GroupIndex)
+{
+    ComposeGiInstanceDistances(group.x, lane, true);
+}
+
+void AddGiMeshQueries(uint rayIndex, uint instance, GiTraceRay ray, float limit)
+{
+    uint address = GiInstanceField(instance);
+    if (address == 0xffffffffu) return;
+    float2 box = GiRayBox(GiInstanceBounds[instance * 4u].xyz, GiInstanceBounds[instance * 4u + 1u].xyz,
+        ray.Origin, ray.Direction);
+    if (box.y < max(ray.Start, box.x) || box.x >= limit) return;
+    uint first = GetClusterMaterialSlotOffset(instance);
+    uint count = GiInstanceMaterialCount(instance);
+    for (uint local = 0u; local < count; local++)
     {
-        distance = limit; barycentric = 0.0;
-        uint page; if (!GetGiTrianglePage(pointer, page)) return false;
-        uint material = GetClusterMaterialSlotOffset(Instance) + GetClusterLocalMaterial(PageHeap, page, pointer.y, pointer.z);
         uint at;
         InterlockedAdd(GiQueueCounts[0], 1u, at);
-        if (at >= GiScene.CandidateCapacity) { InterlockedAdd(GiQueueCounts[1], 1u); return false; }
-        GiTriangleCandidate candidate;
-        candidate.RayIndex = RayIndex;
-        candidate.InstanceIndex = Instance;
-        candidate.Triangle = pointer;
-        candidate.MaterialIndex = material;
-        candidate.Start = start;
-        candidate.Limit = limit;
-        GiCandidates[at] = candidate;
-        InterlockedAdd(GiMaterialWorkCounts[material], 1u);
-        return false;
+        if (at >= GiScene.CandidateCapacity) { InterlockedAdd(GiQueueCounts[1], 1u); return; }
+        GiMeshQuery query = (GiMeshQuery)0;
+        query.RayIndex = rayIndex;
+        query.InstanceIndex = instance;
+        query.FieldAddress = address;
+        query.MaterialIndex = first + local;
+        query.Start = ray.Start;
+        query.Limit = limit;
+        GiMeshQueries[at] = query;
+        InterlockedAdd(GiMaterialWorkCounts[query.MaterialIndex], 1u);
     }
-};
+}
+
+groupshared float3 GiNearTileLower;
+groupshared float3 GiNearTileUpper;
+[shader("compute")]
+[numthreads(64, 1, 1)]
+void BuildGiNearObjectWords(uint3 group : SV_GroupID, uint lane : SV_GroupIndex)
+{
+    uint tileHeight = GiSettings.ProbeHeight;
+    uint view = group.x / (GiSettings.ProbeWidth * tileHeight);
+    uint tile = group.x % (GiSettings.ProbeWidth * tileHeight);
+    if (lane == 0u)
+    {
+        float3 low = 1e20.xxx, high = -1e20.xxx;
+        uint2 range = GiProbeTileRange(group.x, GiSettings.HistoryLayer);
+        for (uint offset = 0u; offset < range.y; offset++)
+        {
+            GiTraceRay ray = GiRays[range.x + offset];
+            if (ray.Limit <= ray.Start) continue;
+            low = min(low, ray.Origin); high = max(high, ray.Origin);
+        }
+        GiNearTileLower = low - GiScene.NearDistance;
+        GiNearTileUpper = high + GiScene.NearDistance;
+    }
+    GroupMemoryBarrierWithGroupSync();
+    for (uint word = lane; word < GiScene.NearObjectWordCount; word += 64u)
+    {
+        uint mask = 0u;
+        for (uint bit = 0u; bit < 32u; bit++)
+        {
+            uint instance = word * 32u + bit;
+            if (instance >= GiScene.InstanceCount) break;
+            if (all(GiInstanceBounds[instance * 4u].xyz <= GiNearTileUpper) &&
+                all(GiInstanceBounds[instance * 4u + 1u].xyz >= GiNearTileLower)) mask |= 1u << bit;
+        }
+        GiNearObjectWords[group.x * GiScene.NearObjectWordCount + word] = mask;
+    }
+}
 
 [shader("compute")]
 [numthreads(64, 1, 1)]
@@ -235,14 +305,28 @@ void BeginGiTriangleQueries(uint3 thread : SV_DispatchThreadID)
 
 [shader("compute")]
 [numthreads(64, 1, 1)]
-void CollectGiTriangleCandidates(uint3 thread : SV_DispatchThreadID)
+void CollectGiMeshQueries(uint3 thread : SV_DispatchThreadID)
 {
     uint rayIndex = thread.x + (GiScene.TrainingStage != 0u ? GiProbeCount() : 0u);
     if (rayIndex >= GiProbeCount() + GiScene.TrainingCount) return;
     GiTraceRay ray = GiRays[rayIndex];
     if (ray.Limit <= ray.Start) return;
     bool training = rayIndex >= GiProbeCount();
-    float limit = training ? ray.Limit : min(GiScene.NearDistance, GiScreenHits[rayIndex].w);
+    float limit = min(GiScene.NearDistance, GiScreenHits[rayIndex].w);
+    if (!training)
+    {
+        uint tile = GiProbeSurfaces[GiSettings.HistoryLayer * GiProbeCount() + rayIndex].Tile;
+        for (uint word = 0u; word < GiScene.NearObjectWordCount; word++)
+        {
+            uint mask = GiNearObjectWords[tile * GiScene.NearObjectWordCount + word];
+            while (mask != 0u)
+            {
+                uint bit = firstbitlow(mask); mask &= mask - 1u;
+                AddGiMeshQueries(rayIndex, word * 32u + bit, ray, limit);
+            }
+        }
+        return;
+    }
     uint groupCount = GiScene.UseInstanceGroups != 0u ? (GiScene.InstanceCount + 63u) / 64u : 1u;
     for (uint group = 0u; group < groupCount; group++)
     {
@@ -256,19 +340,28 @@ void CollectGiTriangleCandidates(uint3 thread : SV_DispatchThreadID)
         for (uint index = first; index < end; index++)
         {
             uint instance = GiScene.UseInstanceGroups != 0u ? GiInstanceOrder[index] : index;
-            uint address = GiInstanceField(instance);
-            if (address == 0xffffffffu) continue;
-            float2 box = GiRayBox(GiInstanceBounds[instance * 4u].xyz, GiInstanceBounds[instance * 4u + 1u].xyz, ray.Origin, ray.Direction);
-            if (box.y < max(ray.Start, box.x) || box.x >= limit) continue;
-            RenderInstanceTransform transform = GetCurrentInstanceTransform(instance);
-            GiTriangleCollector collector;
-            collector.RayIndex = rayIndex; collector.Instance = instance;
-            float3 localOrigin = InverseTransformInstancePosition(ray.Origin, transform);
-            float3 localDirection = InverseTransformInstanceVector(ray.Direction, transform);
-            if (training) TraceGiMeshCells(GiMeshFields, address, collector, localOrigin, localDirection, ray.Start, limit);
-            else TraceGiMeshDistanceField(GiMeshFields, address, collector, localOrigin, localDirection, ray.Start, limit);
+            AddGiMeshQueries(rayIndex, instance, ray, limit);
         }
     }
+}
+
+[shader("compute")]
+[numthreads(64, 1, 1)]
+void ScatterGiMeshQueries(uint3 thread : SV_DispatchThreadID)
+{
+    uint index = thread.x;
+    if (index >= min(GiQueueCounts[0], GiScene.CandidateCapacity)) return;
+    uint material = GiMeshQueries[index].MaterialIndex, offset;
+    InterlockedAdd(GiMaterialWorkWrites[material], 1u, offset);
+    GiMaterialWorkIndices[GiMaterialWorkRanges[material].x + offset] = index;
+}
+
+[shader("compute")]
+[numthreads(1, 1, 1)]
+void BuildGiQueryDispatch()
+{
+    GiQueryDispatch[0] = (min(GiQueueCounts[0], GiScene.CandidateCapacity) + 63u) / 64u;
+    GiQueryDispatch[1] = 1u; GiQueryDispatch[2] = 1u;
 }
 
 [shader("compute")]
@@ -352,7 +445,7 @@ void ScatterGiSurfaceWork(uint3 thread : SV_DispatchThreadID)
     GiMaterialWorkIndices[GiMaterialWorkRanges[material].x + offset] = candidate;
 }
 
-float3 GiDiffuseDirect(GiSurfaceSample surface)
+float3 GiDiffuseDirect(GiSurfaceSample surface, bool includeEmission = true)
 {
     GiGlobalField field = GiGlobalFields[0];
     float3 value = DiffuseEnvironmentIrradiance(surface.Occlusion);
@@ -369,11 +462,9 @@ float3 GiDiffuseDirect(GiSurfaceSample surface)
             distance = length(delta);
             if (distance >= light.Range) continue;
             direction = delta / distance;
-            float fade = saturate(1.0 - pow(distance / light.Range, 4.0));
-            attenuation = fade * fade / max(distance * distance, 1e-4);
+            attenuation = EvaluateDistanceAttenuation(distance * distance, light.Range);
             if (light.OuterConeCos > 0.0)
-                attenuation *= saturate((dot(-direction, light.Direction) - light.OuterConeCos) /
-                    max(light.InnerConeCos - light.OuterConeCos, 1e-4));
+                attenuation *= EvaluateSpotCone(direction, light.Direction, light.InnerConeCos, light.OuterConeCos);
         }
         float cosine = max(0.0, dot(surface.Normal, direction));
         if (cosine == 0.0) continue;
@@ -382,46 +473,117 @@ float3 GiDiffuseDirect(GiSurfaceSample surface)
             field.Pitch, max(field.Pitch, distance - field.Pitch));
         if (blocker.Hit == 0u) value += light.Color * (light.Intensity * cosine * attenuation / GI_PI);
     }
-    value += SampleGiEmissiveIrradiance(surface.Position, surface.Normal,
+    if (includeEmission) value += SampleGiEmissiveIrradiance(surface.Position, surface.Normal,
         GiMixBits(asuint(surface.Position.x) ^ asuint(surface.Position.y) ^ GiSettings.Frame));
     return surface.Diffuse * (surface.Coverage * value);
+}
+
+float3 GiSkyRadiance(float3 direction)
+{
+    return lerp(float3(0.03, 0.035, 0.04), float3(0.17, 0.23, 0.34), saturate(direction.y * 0.5 + 0.5));
+}
+
+GiSurfaceSample ReadGiScreenSurface(uint3 pixel)
+{
+    GiSurfaceSample result = (GiSurfaceSample)0;
+    result.Position = GiWorldPosition(pixel);
+    float4 normals = GiNormal.Load(int4(pixel, 0)), diffuse = GiDiffuse.Load(int4(pixel, 0));
+    result.Normal = DecodeGiNormal(normals.xy); result.GeometricNormal = DecodeGiNormal(normals.zw);
+    result.Diffuse = diffuse.rgb; result.Occlusion = diffuse.w; result.Coverage = 1.0;
+    return result;
+}
+
+float4 ResolveGiRayRadiance(uint index)
+{
+    GiTraceRay ray = GiRays[index];
+    if (ray.Limit <= ray.Start) return 0.0;
+    uint candidate = GiClosestCandidates[index];
+    if (candidate != 0xffffffffu)
+    {
+        GiSurfaceSample surface = GiSurfaceSamples[candidate];
+        float4 cached = QueryGiRadianceValue(GiCachePosition(surface.Position), surface.GeometricNormal, GiCache.CellSize);
+        return float4(cached.w > 0.0 ? cached.rgb : GiDiffuseDirect(surface), surface.Distance);
+    }
+    if (GiScreenHits[index].w < ray.Limit)
+    {
+        uint3 pixel = uint3(GiScreenHits[index].xyz);
+        GiSurfaceSample surface = ReadGiScreenSurface(pixel);
+        float4 cached = QueryGiRadianceValue(GiCachePosition(surface.Position), surface.GeometricNormal, GiCache.CellSize);
+        return float4(cached.w > 0.0 ? cached.rgb : ReadGiScreenReflectedRadiance(pixel), GiScreenHits[index].w);
+    }
+    GiDistanceHit hit = TraceGiGlobalScene(GiGlobalFields[0], GiGlobalDistances, ray.Origin, ray.Direction,
+        GiScene.NearDistance, ray.Limit);
+    if (hit.Hit != 0u)
+        return float4(QueryGiReflectedRadiance(GiCachePosition(hit.Position), hit.Normal, GiGlobalFields[0].Pitch), hit.Distance);
+    return float4(GiSkyRadiance(ray.Direction), 0.0);
 }
 
 [shader("compute")]
 [numthreads(64, 1, 1)]
 void ResolveGiProbeRays(uint3 thread : SV_DispatchThreadID)
 {
-    uint index = thread.x;
-    if (index >= GiProbeCount()) return;
-    GiTraceRay ray = GiRays[index];
-    float3 radiance = 0.0;
-    uint candidate = GiClosestCandidates[index];
-    if (candidate != 0xffffffffu)
-    {
-        GiSurfaceSample surface = GiSurfaceSamples[candidate];
-        float4 cached = QueryGiRadianceValue(GiCachePosition(surface.Position), surface.GeometricNormal, GiCache.CellSize);
-        radiance = cached.w > 0.0 ? cached.rgb : GiDiffuseDirect(surface);
-    }
-    else if (GiScreenHits[index].w < GiScene.TraceDistance)
-        radiance = GiReflectedRadiance.Load(int4(uint3(GiScreenHits[index].xyz), 0)).rgb;
-    else if (ray.Limit > ray.Start)
-    {
-        GiDistanceHit hit = TraceGiGlobalScene(GiGlobalFields[0], GiGlobalDistances, ray.Origin, ray.Direction,
-            GiScene.NearDistance, ray.Limit);
-        if (hit.Hit != 0u)
-            radiance = QueryGiReflectedRadiance(GiCachePosition(hit.Position), hit.Normal, GiGlobalFields[0].Pitch);
-    }
-    GiProbeIncoming[index] = float4(radiance, 0.0);
+    if (thread.x < GiProbeCount()) GiProbeIncoming[thread.x] = ResolveGiRayRadiance(thread.x);
 }
 
 [shader("compute")]
 [numthreads(64, 1, 1)]
-void CreateGiTrainingRays(uint3 thread : SV_DispatchThreadID)
+void ClearGiRadianceTraining(uint3 thread : SV_DispatchThreadID)
+{
+    uint index = thread.x;
+    if (index == 0u) GiTrainingWork[0] = 0u;
+    if (index >= GiScene.TrainingCount) return;
+    GiTrainingProbes[index] = 0xffffffffu;
+    GiTrainingSurfaces[index] = (GiSurfaceSample)0;
+    GiRadianceTraining[index] = (GiRadianceSample)0;
+    GiRays[GiProbeCount() + index] = (GiTraceRay)0;
+}
+
+[shader("compute")]
+[numthreads(64, 1, 1)]
+void SelectGiTrainingProbes(uint3 thread : SV_DispatchThreadID)
 {
     uint index = thread.x;
     if (index >= GiScene.TrainingCount) return;
-    uint probe = (index * GiProbeCount() / GiScene.TrainingCount + GiSettings.Frame) % GiProbeCount();
-    GiRays[GiProbeCount() + index] = GiRays[probe];
+    uint first = (index * GiProbeCount() + GiScene.TrainingCount - 1u) / GiScene.TrainingCount;
+    uint end = ((index + 1u) * GiProbeCount() + GiScene.TrainingCount - 1u) / GiScene.TrainingCount;
+    uint width = end - first, probe = first + (GiSettings.Frame / 4u + index) % width;
+    bool trainReceiver = ((index + GiSettings.Frame / 4u) & 1u) == 0u;
+    for (uint offset = 0u; offset < width; offset++)
+    {
+        uint current = GiSettings.HistoryLayer * GiProbeCount() + probe;
+        GiProbeSurface anchor = GiProbeSurfaces[current];
+        if (anchor.Position.w > 0.0 && GiProbeSamples[current].y > 0.0)
+        {
+            GiSurfaceSample parent = (GiSurfaceSample)0;
+            uint candidate = GiClosestCandidates[probe];
+            if (candidate != 0xffffffffu) parent = GiSurfaceSamples[candidate];
+            else if (GiScreenHits[probe].w < GiScene.TraceDistance)
+                parent = ReadGiScreenSurface(uint3(GiScreenHits[probe].xyz));
+            if (!trainReceiver && parent.Coverage > 0.0 && any(parent.Diffuse > 0.0))
+            {
+                GiTrainingSurfaces[index] = parent;
+                GiTrainingProbes[index] = probe;
+                InterlockedAdd(GiTrainingWork[0], 1u);
+                return;
+            }
+            uint view = anchor.Tile / (GiSettings.ProbeWidth * GiSettings.ProbeHeight);
+            uint3 pixel = uint3(anchor.Pixel, view);
+            GiSurfaceSample receiver = ReadGiScreenSurface(pixel);
+            if (trainReceiver && any(receiver.Diffuse > 0.0))
+            {
+                float cosine = max(0.0, dot(receiver.Normal, GiRays[probe].Direction));
+                GiRadianceSample sample = (GiRadianceSample)0;
+                sample.Position = GiCachePosition(anchor.Position.xyz); sample.Normal = anchor.Normal.xyz;
+                sample.Radiance = ReadGiScreenDirectRadiance(pixel) + receiver.Diffuse * (GiProbeIncoming[probe].rgb * (2.0 * cosine));
+                sample.Valid = 1u; sample.Weight = 1.0;
+                GiRadianceTraining[index] = sample;
+                GiTrainingProbes[index] = probe;
+                InterlockedAdd(GiTrainingWork[0], 1u);
+                return;
+            }
+        }
+        probe++; if (probe == end) probe = first;
+    }
 }
 
 [shader("compute")]
@@ -431,22 +593,31 @@ void ContinueGiTrainingRays(uint3 thread : SV_DispatchThreadID)
     uint index = thread.x;
     if (index >= GiScene.TrainingCount) return;
     uint rayIndex = GiProbeCount() + index;
-    uint candidate = GiClosestCandidates[rayIndex];
-    GiSurfaceSample surface = (GiSurfaceSample)0;
+    GiSurfaceSample parent = GiTrainingSurfaces[index];
     GiTraceRay ray = (GiTraceRay)0;
-    if (candidate != 0xffffffffu)
+    GiScreenHits[rayIndex] = float4(0.0, 0.0, 0.0, GiScene.TraceDistance);
+    if (parent.Coverage > 0.0)
     {
-        surface = GiSurfaceSamples[candidate];
-        float z = sqrt(GiRandom(index * 7919u + GiSettings.Frame * 104729u + 1u));
-        float angle = GiRandom(index * 12007u + GiSettings.Frame * 7411u + 7u) * 2.0 * GI_PI;
-        float3 n = surface.Normal;
-        float3 tangent = normalize(cross(n, abs(n.y) > 0.95 ? float3(1, 0, 0) : float3(0, 1, 0)));
-        ray.Origin = surface.Position + surface.GeometricNormal * 0.012;
-        ray.Direction = tangent * (sqrt(1.0 - z * z) * cos(angle)) + cross(n, tangent) * (sqrt(1.0 - z * z) * sin(angle)) + n * z;
-        ray.Start = 0.002;
-        ray.Limit = GiScene.TraceDistance;
+        uint seed = index * 289u + GiSettings.Frame * 7919u + 919u;
+        float z = sqrt(GiRandom(seed)), angle = GiRandom(seed + 7u) * 2.0 * GI_PI;
+        float3 normal = parent.Normal;
+        float3 tangent = normalize(cross(normal, abs(normal.y) > 0.95 ? float3(1, 0, 0) : float3(0, 1, 0)));
+        ray.Origin = parent.Position + parent.GeometricNormal * 0.012;
+        ray.Direction = tangent * (sqrt(1.0 - z * z) * cos(angle)) + cross(normal, tangent) * (sqrt(1.0 - z * z) * sin(angle)) + normal * z;
+        ray.Start = 0.002; ray.Limit = GiScene.TraceDistance;
+        if (dot(parent.GeometricNormal, ray.Direction) <= 0.0)
+        {
+            ray.Limit = 0.0;
+            GiRays[rayIndex] = ray;
+            return;
+        }
+        uint probe = GiTrainingProbes[index];
+        uint view = GiProbeSurfaces[GiSettings.HistoryLayer * GiProbeCount() + probe].Tile / (GiSettings.ProbeWidth * GiSettings.ProbeHeight);
+        uint3 pixel;
+        float distance;
+        bool screen = TraceGiScreen(ray.Origin, ray.Direction, view, pixel, distance);
+        GiScreenHits[rayIndex] = float4(float3(pixel), screen ? distance : GiScene.TraceDistance);
     }
-    GiTrainingSurfaces[index] = surface;
     GiRays[rayIndex] = ray;
 }
 
@@ -457,41 +628,27 @@ void FinishGiRadianceTraining(uint3 thread : SV_DispatchThreadID)
     uint index = thread.x;
     if (index >= GiScene.TrainingCount) return;
     GiSurfaceSample parent = GiTrainingSurfaces[index];
+    if (parent.Coverage == 0.0) return;
+    float3 incoming = ResolveGiRayRadiance(GiProbeCount() + index).rgb;
     GiRadianceSample sample = (GiRadianceSample)0;
-    if (parent.Coverage > 0.0)
-    {
-        float3 incoming = 0.0;
-        uint candidate = GiClosestCandidates[GiProbeCount() + index];
-        if (candidate != 0xffffffffu)
-        {
-            GiSurfaceSample surface = GiSurfaceSamples[candidate];
-            float4 cached = QueryGiRadianceValue(GiCachePosition(surface.Position), surface.GeometricNormal, GiCache.CellSize);
-            incoming = cached.w > 0.0 ? cached.rgb : GiDiffuseDirect(surface);
-        }
-        sample.Position = GiCachePosition(parent.Position);
-        sample.Normal = parent.GeometricNormal;
-        sample.Radiance = GiDiffuseDirect(parent) + parent.Diffuse * (parent.Coverage * incoming);
-        sample.Valid = 1u;
-        sample.Weight = 1.0;
-    }
+    sample.Position = GiCachePosition(parent.Position); sample.Normal = parent.GeometricNormal;
+    sample.Radiance = GiDiffuseDirect(parent) + parent.Diffuse * (parent.Coverage * incoming);
+    sample.Valid = 1u; sample.Weight = 1.0;
     GiRadianceTraining[index] = sample;
-    uint probe = (index * GiProbeCount() / GiScene.TrainingCount + GiSettings.Frame) % GiProbeCount();
-    uint current = GiSettings.HistoryLayer * GiProbeCount() + probe;
-    GiProbeSurface anchor = GiProbeSurfaces[current];
-    sample = (GiRadianceSample)0;
-    if (anchor.Position.w > 0.0)
+}
+[shader("compute")]
+[numthreads(1, 1, 1)]
+void PrepareGiRadianceTraining()
+{
+    bool available = GiTrainingWork[0] > 0u;
+    if (available && (GiCache.CacheMode & 2u) != 0u) GiNeuralUpdates[0]++;
+    uint groups[5] = { (GiScene.TrainingCount + 63u) / 64u, (GiCache.HashCount + 63u) / 64u,
+        (GiScene.TrainingCount + 31u) / 32u, (899u * 8u + 63u) / 64u, (899u + 63u) / 64u };
+    for (uint item = 0u; item < 5u; item++)
     {
-        uint view = probe / (GiSettings.ProbeWidth * GiSettings.ProbeHeight);
-        float4 clip = mul(float4(ClusterPositionForView(anchor.Position.xyz, GiViews[view]), 1.0), GiViews[view].ViewProj);
-        float2 uv = float2(clip.x / clip.w * 0.5 + 0.5, 0.5 - clip.y / clip.w * 0.5);
-        uint2 pixel = uint2(clamp(uv * float2(GiSettings.Width, GiSettings.Height), 0.0.xx, float2(GiSettings.Width - 1u, GiSettings.Height - 1u)));
-        sample.Position = GiCachePosition(anchor.Position.xyz);
-        sample.Normal = anchor.Normal.xyz;
-        sample.Radiance = GiReflectedRadiance.Load(int4(pixel, view, 0u)).rgb;
-        sample.Valid = 1u;
-        sample.Weight = 1.0;
+        GiTrainingDispatch[item * 3u] = available ? groups[item] : 0u;
+        GiTrainingDispatch[item * 3u + 1u] = 1u; GiTrainingDispatch[item * 3u + 2u] = 1u;
     }
-    GiRadianceTraining[GiScene.TrainingCount + index] = sample;
 }
 
 #endif

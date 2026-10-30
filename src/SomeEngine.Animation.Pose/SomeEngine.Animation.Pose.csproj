@@ -3,6 +3,13 @@
     <TargetFramework>net10.0</TargetFramework>
     <IsAotCompatible>true</IsAotCompatible>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AclRid Condition="'$(RuntimeIdentifier)' != ''">$(RuntimeIdentifier)</AclRid>
+    <AclRid Condition="'$(AclRid)' == ''">$(NETCoreSdkRuntimeIdentifier)</AclRid>
+    <AclPrefix Condition="$([System.String]::Copy('$(AclRid)').StartsWith('linux'))">lib</AclPrefix>
+    <AclExtension Condition="$([System.String]::Copy('$(AclRid)').StartsWith('win'))">dll</AclExtension>
+    <AclExtension Condition="$([System.String]::Copy('$(AclRid)').StartsWith('linux'))">so</AclExtension>
+    <AclArchitecture Condition="$([System.String]::Copy('$(AclRid)').StartsWith('win'))">-A x64</AclArchitecture>
+    <AclOutput>$(MSBuildProjectDirectory)/obj/native/$(AclRid)/Release/$(AclPrefix)SomeEngineAcl.$(AclExtension)</AclOutput>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../SomeEngine.Animation/SomeEngine.Animation.csproj" />
@@ -13,16 +20,16 @@
   </ItemGroup>
   <ItemGroup>
     <AclNativeSource Include="Native/**/*;../../external/acl/includes/**/*;../../external/rtm/includes/**/*" />
-    <Content Include="$(MSBuildProjectDirectory)/obj/native/Release/SomeEngineAcl.dll"
-             Link="SomeEngineAcl.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="$(AclOutput)"
+             Link="$(AclPrefix)SomeEngineAcl.$(AclExtension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="../../external/acl/LICENSE" Link="licenses/ACL-LICENSE.txt"
              CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="../../external/rtm/LICENSE" Link="licenses/RTM-LICENSE.txt"
              CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
   <Target Name="BuildAclNative" BeforeTargets="PrepareForBuild;GetCopyToOutputDirectoryItems"
-          Inputs="@(AclNativeSource)" Outputs="$(MSBuildProjectDirectory)/obj/native/Release/SomeEngineAcl.dll">
-    <Exec Command="cmake -S &quot;$(MSBuildProjectDirectory)/Native&quot; -B &quot;$(MSBuildProjectDirectory)/obj/native&quot; -A x64" />
-    <Exec Command="cmake --build &quot;$(MSBuildProjectDirectory)/obj/native&quot; --config Release --parallel 1 -- /nodeReuse:false" />
+          Inputs="@(AclNativeSource)" Outputs="$(AclOutput)">
+    <Exec Command="cmake -S &quot;$(MSBuildProjectDirectory)/Native&quot; -B &quot;$(MSBuildProjectDirectory)/obj/native/$(AclRid)&quot; $(AclArchitecture) -DCMAKE_BUILD_TYPE=Release" />
+    <Exec Command="cmake --build &quot;$(MSBuildProjectDirectory)/obj/native/$(AclRid)&quot; --config Release --parallel 1" />
   </Target>
 </Project>

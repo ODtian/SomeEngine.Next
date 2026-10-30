@@ -11,38 +11,21 @@ public sealed partial class ScreenProbeFeature
         binder = name switch
         {
             "GiCapture" => BindCapture,
-            "GiSettings" => BindScreen,
-            "GiPreviousProbeSurfaces" => BindPreviousSurfaces,
-            "GiPreviousProbeRadiance" => BindPreviousRadiance,
-            "GiProbeRequests" => BindRequests,
             "GiSurfaceNormal" => BindSurfaceNormal,
             "GiSurfaceDiffuse" => BindSurfaceDiffuse,
             "GiSurfaceRadiance" => BindSurfaceRadiance,
+            "GiSurfaceInstance" => BindSurfaceInstance,
             _ => null!,
         };
-        return binder is not null || TryResolveEmissiveMaterial(name, type, out binder);
+        return binder is not null;
     }
 
     private void BindCapture(ref RenderGraphEdit edit, ref PassDefinition pass, PipelineSync sync) => pass.Bind(_captureSettings, sync);
-    private void BindScreen(ref RenderGraphEdit edit, ref PassDefinition pass, PipelineSync sync)
-    {
-        if (Enabled) pass.Bind(_screenSettings, sync);
-        else pass.Bind(GraphParameterResourceBinding.Null(ResourceBindingType.ConstantBuffer));
-    }
-    private void BindPreviousSurfaces(ref RenderGraphEdit edit, ref PassDefinition pass, PipelineSync sync) => BindProbeBuffer(ref edit, ref pass, "GiProbeSurfaces", ResourceBindingType.BufferSrv, sync);
-    private void BindPreviousRadiance(ref RenderGraphEdit edit, ref PassDefinition pass, PipelineSync sync) => BindProbeBuffer(ref edit, ref pass, "GiProbeRadiance", ResourceBindingType.BufferSrv, sync);
-    private void BindRequests(ref RenderGraphEdit edit, ref PassDefinition pass, PipelineSync sync) => BindProbeBuffer(ref edit, ref pass, "GiProbeRequests", ResourceBindingType.BufferUav, sync, UnorderedAccessHazardMode.AtomicMergeable);
     private void BindSurfaceNormal(ref RenderGraphEdit edit, ref PassDefinition pass, PipelineSync sync) => BindSurface(ref edit, ref pass, _normal, Format.R16G16B16A16Float, sync);
     private void BindSurfaceDiffuse(ref RenderGraphEdit edit, ref PassDefinition pass, PipelineSync sync) => BindSurface(ref edit, ref pass, _diffuse, Format.R8G8B8A8UNorm, sync);
     private void BindSurfaceRadiance(ref RenderGraphEdit edit, ref PassDefinition pass, PipelineSync sync) => BindSurface(ref edit, ref pass, _reflectedRadiance, Format.R11G11B10Float, sync);
+    private void BindSurfaceInstance(ref RenderGraphEdit edit, ref PassDefinition pass, PipelineSync sync) => BindSurface(ref edit, ref pass, _surfaceInstance, Format.R32UInt, sync);
 
-    private void BindProbeBuffer(ref RenderGraphEdit edit, ref PassDefinition pass,
-        string name, ResourceBindingType type, PipelineSync sync,
-        UnorderedAccessHazardMode unorderedAccessHazards = UnorderedAccessHazardMode.Ordered)
-    {
-        if (Enabled) edit.OrderAfter(pass.Id, _initializeProbes);
-        BindBuffer(ref edit, ref pass, name, type, sync, unorderedAccessHazards: unorderedAccessHazards);
-    }
 
     private void BindBuffer(ref RenderGraphEdit edit, ref PassDefinition pass, string name, ResourceBindingType type,
         PipelineSync sync, GraphAccessMode access = GraphAccessMode.ReadWrite, WriteCoverage coverage = WriteCoverage.Partial,
@@ -89,7 +72,8 @@ public sealed partial class ScreenProbeFeature
                 if (_surfaces.Geometry.UseInstanceGroups) pass.Bind(_surfaces.Geometry.InstanceOrder, sync);
                 else pass.Bind(GraphParameterResourceBinding.Null(type));
                 return;
-            case "GiPageRequests": pass.Bind(edit.CreateBufferUav(_surfaces.Geometry.PageRequests), sync, GraphAccessMode.ReadWrite); return;
+            case "GiPageRequests": pass.Bind(edit.CreateBufferUav(_surfaces.Geometry.PageRequests), sync, GraphAccessMode.ReadWrite,
+                unorderedAccessHazards: UnorderedAccessHazardMode.AtomicMergeable); return;
             case "InstanceData": pass.Bind(edit.CreateBufferSrv(_surfaces.Geometry.InstanceData), sync); return;
             case "InstanceProperties": pass.Bind(edit.CreateBufferCbv(_surfaces.Geometry.InstanceProperties, _surfaces.Geometry.InstancePropertiesRange), sync); return;
             case "GiViews": pass.Bind(edit.CreateBufferSrv(_surfaces.Geometry.PackedViews, structureStride: _surfaces.Geometry.PackedViewStride), sync); return;
@@ -101,6 +85,10 @@ public sealed partial class ScreenProbeFeature
             case "GiNormal": BindTexture(ref edit, ref pass, _normal, Format.R16G16B16A16Float, sync); return;
             case "GiDiffuse": BindTexture(ref edit, ref pass, _diffuse, Format.R8G8B8A8UNorm, sync); return;
             case "GiReflectedRadiance": BindTexture(ref edit, ref pass, _reflectedRadiance, Format.R11G11B10Float, sync); return;
+            case "GiSurfaceInstances": BindTexture(ref edit, ref pass, _surfaceInstance, Format.R32UInt, sync); return;
+            case "GiColor":
+                pass.Bind(edit.CreateTextureUav(_surfaces.MaterialColor, format: Format.R16G16B16A16Float,
+                    dimension: TextureViewDimension.Texture2DArray), sync, GraphAccessMode.ReadWrite); return;
         }
         if (_shared is not null && _shared.TryResolve(name, type, out GraphResourceBinder binder)) { binder(ref edit, ref pass, sync); return; }
         throw new InvalidDataException($"GI resource '{name}' has no binding.");
@@ -117,10 +105,13 @@ public sealed partial class ScreenProbeFeature
             if (name == "GiMaterialWork") binder = BindIndex;
             else binder = (ref RenderGraphEdit edit, ref PassDefinition pass, PipelineSync sync) =>
             {
-                if (name == outputBufferName)
+                if (name == "GiClosestDistances")
+                    feature.BindBuffer(ref edit, ref pass, name, type, sync,
+                        unorderedAccessHazards: UnorderedAccessHazardMode.AtomicMergeable);
+                else if (name == outputBufferName || outputBufferName == "GiCandidateHits" && name == "GiCandidates")
                     feature.BindBuffer(ref edit, ref pass, name, type, sync, GraphAccessMode.Write,
                         unorderedAccessHazards: UnorderedAccessHazardMode.DisjointWrites);
-                else if (name is "GiMaterialWorkRanges" or "GiMaterialWorkIndices" or "GiCandidates" or "GiRays" or
+                else if (name is "GiMaterialWorkRanges" or "GiMaterialWorkIndices" or "GiMeshQueries" or "GiCandidates" or "GiRays" or
                     "GiCandidateHits" or "GiSurfaceSamples")
                     feature.BindBuffer(ref edit, ref pass, name, type, sync, GraphAccessMode.Read);
                 else feature.BindSceneResource(ref edit, ref pass, name, type, sync);

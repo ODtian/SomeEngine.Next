@@ -1,100 +1,92 @@
 # GI 架构
 
-本页记录用户确认的软件漫反射 GI 架构。2026-10-29 的修订确定：Global SDF 自身给出近似命中，随后查询 SHARC／NRC 的表面反射辐射；三角形求值集中在近景与稀疏训练。缓存内容、训练目标和查询结果采用同一光路范围。
+本页以用户最初确认的迁移任务为准：把软件 GI 原型的整条管线接入引擎，保留其阶段和采样算法；Global SDF 自身确定命中并查询 SHARC／NRC 的完整漫反射辐射。缓存内容、训练目标和消费范围采用同一量纲。
 
-## 逐级追踪
+原型入口为 [generic-lod](F:/CodexProjects/2026-10-14/gi-lumen-sharc-nrc-surfal-3d/outputs/gi-validation-demo/generic-lod/AGENTS.md)。实际 `screen_grid_ray` 配置由 `screen_probes.py` 转入 `screen_radiance_cache.py`，该文件的 `encode` 持有本页对应的执行顺序。
+
+## 追踪与反射辐射
 
 **屏幕空间追踪 → 近景 Mesh SDF → 后续射线段的 Global SDF。**
 
-| 阶段 | 几何来源 | 结果与消费 |
+| 阶段 | 几何与命中数据 | 光照消费 |
 | --- | --- | --- |
-| 屏幕空间追踪 | 引擎深度、可见三角编号、材质提供的几何法线 | 确认当前可见表面，复用其反射辐射 |
-| 近景 Mesh SDF | 网格局部距离采样、三角引用网格、现有几何页 | 距离跳步后对原三角求交，交给对应用户材质 Shader 解释 |
-| Global SDF | 合成后的场景距离采样 | 重建近似命中位置与法线，直接查询 SHARC／NRC 的反射辐射 |
-| 稀疏训练 | 原三角引用、用户顶点、域、可见性和表面 Shader | 生成缓存更新样本，包括该表面的材质与直接、间接光反射 |
+| 屏幕空间追踪 | 主表面的深度、可见三角编号、用户材质给出的几何法线 | 命中表面的完整反射辐射，结合反射辐射缓存与像素历史复用 |
+| 近景 Mesh SDF | 每个网格的距离采样，默认处理射线起点后的 2 米 | SDF 保守跳步后查询局部三角指针，由用户的顶点、域和可见性求值器确认表面 |
+| Global SDF | 合成后的距离采样，重建近似位置、距离与法线 | 直接以命中位置、法线和足迹查询 SHARC／NRC 的反射辐射 |
 
-近景按每条射线起点计，默认长度 2 米；GI 默认射程 24 米。屏幕空间候选给出距离上界，近景确认候选之前的区间。其余区间交给 Global SDF。
+`CollectGiMeshQueries` 把几何任务组织为射线、实例和用户材质。`IntersectGiMaterial` 在用户 Shader 内执行近景距离场查询，三角求交立即更新本次查询和该射线的最近距离，供后续局部遍历剪枝。主视图的近景 tile 候选负责剔除物体。
 
-近景候选复用 Cluster 的实例包围盒、实例分组及顺序。三角指针指向既有 BVH 子项中的页引用，页缺失沿现有 Cluster 请求和驻留通路处理。Global SDF 的求交输入为距离场与射线，返回距离、位置和法线。
+Gather 和训练续射共同消费 `ResolveGiRayRadiance`。两者的材质几何任务都截在近景区间；远段终点统一为 `TraceGiGlobalScene → QueryGiReflectedRadiance`。天空辐射提供未命中方向的入射边界。
 
-当前局部场保存最近三角距离。Global SDF 合成采样后的场景距离，按场分辨率确定表面厚度，通过距离梯度重建法线，并沿射线细化命中位置。距离场几何来自资产中的局部采样；实例的平移、旋转与缩放在合成时生效。
+实现：[距离场与局部三角指针](../assets/Shaders/gi_mesh_distance_field.slang)、[用户材质求交](../assets/Shaders/gi_material_entries.slang)、[统一追踪与训练](../assets/Shaders/gi_pipeline.slang)、[Global SDF 命中](../assets/Shaders/gi_scene_tracing.slang)。
 
-实现：[近景查询](../assets/Shaders/gi_mesh_distance_field.slang)、[用户顶点求值](../assets/Shaders/gi_mesh_triangles.slang)、[Global SDF 求交](../assets/Shaders/gi_scene_tracing.slang)、[场合成与逐级调度](../assets/Shaders/gi_pipeline.slang)。
+## 两个 World 与数据持有
 
-## 反射辐射缓存
+Game world 的网格引用通过既有提取进入 Rendering world。`RenderMesh.DistanceField` 保存该网格共享的距离场对象，`GiSceneData` 使用现有 Cluster root 建立地址索引，并直接写入 RenderGraph 的上传页。三角指针指向既有层级中的页引用；页驻留、请求、搬移和回收沿用 Cluster 的同一份资源。
 
-对次级命中表面 Y，缓存保存它向上一光路顶点返回的漫反射辐射。按引擎的漫反射积分约定：
+顶点字节、域、可见性和表面属性由用户自己的材质 Shader 解释。`IGiSurfaceEvaluate` 给出法线、几何法线、漫反射率、覆盖率、环境遮蔽与发光。主材质在既有着色阶段输出这些主表面数据及解析直接光，GI 随后完成本帧方向辐射重建与颜色积分。
 
-```text
-表面反射辐射(Y)
-  = 材质漫反射反照率(Y)
-    × [直接光入射积分(Y) + 间接光入射积分(Y)]
-```
+全局场采用静态场和当前场两份采样。实例运动由同一份 current／previous transform 派生；静态部分在几何、成员或覆盖范围变化时维护，当帧从静态场复制并合成运动部分。
 
-直接光包括解析光源、发光几何体采样及当前材质的环境光项。表面自身发光由对应的直达光路持有。主表面 X 直接看见发光表面 Y 的照明由发光几何体直接光处理；X 经 Y 反射看到发光表面 Z 的照明进入 Y 的反射辐射。
-
-SHARC 与 NRC 共用 `GiRadianceSample`，其数据为位置、几何法线、反射辐射和有效性。SHARC 按位置、法线与尺度组织空间散列表；NRC 根据位置与法线预测同一种反射辐射。查询优先使用已有 SHARC 数据，再使用已开始有效更新的 NRC。缓存的神经网络更新次数独立于屏幕帧号维护。
-
-稀疏训练先取得详细三角命中 Y，以用户材质求得反照率、法线、遮蔽和发光；再从 Y 采样续射，取得 Z 的反射辐射。Y 的直接光与续射贡献在更新端组合，生成完整反射辐射目标。发光几何体直达使用共用的重要性采样分布；训练续射保存后续反射项。屏幕上已经完成材质着色的反射辐射也作为更新样本。
-
-Global SDF 命中后直接消费这个缓存结果。近景取得详细表面位置和法线，复用同一缓存；缓存建立期间由该表面的直接光提供初始反射值。
-
-实现：[缓存及在线训练](../assets/Shaders/gi_radiance_cache.slang)、[训练光路](../assets/Shaders/gi_pipeline.slang)、[材质命中记录](../assets/Shaders/gi_material_queries.slang)。
+实现：[渲染场景距离数据](../src/SomeEngine.Render.Features/GI/GiSceneData.cs)、[GI 资源与更新](../src/SomeEngine.Render.Features/GI/ScreenProbeFeature.cs)、[两个 World](../wiki/architecture/rendering/GameWorld-and-RenderWorld.md)。
 
 ## 屏幕空间探针
 
-本页的屏幕空间探针指 Screen Probe：按屏幕 tile 布置、锚定在当前可见表面的采样点。它们发出的射线沿完整逐级追踪链查询场景。
+本框架的方向辐射探针是屏幕空间探针。它们保存接收表面的方向入射辐射；SHARC／NRC 保存次级表面的反射辐射，两者依次承担光路复用与接收面积分。
 
-每个 8×8 像素 tile 选择一个有效表面位置。失配像素通过 `GiProbeRequests` 请求覆盖，布置依次采用请求位置、tile 中心和 tile 内有效表面。探针保存双帧 SH9 方向入射辐射。
+布局沿用原型的 16×16 像素 tile，每个 tile 分配 0–4 个探针。几何法线和相对平面分布决定数量，前缀和给出双帧探针区间，误差最大的表面点补充后续锚点。覆盖请求选择下一帧 tile 的最后一个探针。
 
-材质采用拉模式：以当前表面位置、几何法线、材质法线和漫反射参数查询上一帧屏幕空间探针，完成漫反射积分并合成颜色。同一次材质着色输出几何法线、材质法线、漫反射反照率和完整反射辐射，供当帧屏幕空间追踪及缓存训练消费。
+重投影使用引擎的 previous／current transform、视图和运动向量，核对实例、位置、表面朝向与 tile。静态探针累计到 64 个样本后保存已有 SH；辐射变化时历史上限为 8，刷新按原型的 2 帧节奏分散。每个活动探针发射一条 R2 方向射线。
 
-运动对应使用材质已生成的运动向量。历史候选先核对几何法线、平面距离与空间范围，再对有效候选归一化。场景数据原点变化通过现有 `PreviousDataTranslation` 换算。首帧和相机切换由显式初始化 pass 重置屏幕历史，实际材质读取者直接依赖对应初始化 pass。
+原始 SH9 先累计本帧入射样本，再读取 3×3 tile 中最多 36 个邻近锚点做几何匹配与空间滤波。有效样本数决定高阶方向系数向低频先验的混合。像素从相邻四个 tile 的全部锚点中选择权重最高的四个，使用本帧过滤 SH 和用户材质法线完成漫反射积分。
 
-实现：[屏幕空间追踪及探针更新](../assets/Shaders/gi_screen_probes.slang)、[材质查询](../assets/Shaders/gi_probe_sampling.slang)、[材质输出](../assets/Shaders/gi_material.slang)、[运动向量](../wiki/architecture/features/Motion.md)。
+实现：[布局与分配](../assets/Shaders/gi_probe_layout.slang)、[重投影与 SH 滤波](../assets/Shaders/gi_probe_history.slang)、[射线与 SH 累计](../assets/Shaders/gi_screen_probes.slang)、[本帧像素积分](../assets/Shaders/gi_pixel_radiance.slang)。
 
-## 直接光
+## 缓存与训练目标
 
-太阳、点光源与聚光灯继续使用引擎 Lighting 和 VSM。标准材质与稀疏 GI 表面求值共用材质采样和方向无关的漫反射反照率。现有环境光项由共用的 `DiffuseEnvironmentIrradiance` 持有。
+缓存保存表面向外反射的漫反射辐射。直接光、环境和后续反射传播共同形成该值；发光表面的自发光通过直接光采样处理。
 
-发光几何体直接光采用独立采样与重建。材质 Shader 提供发光强度上界及实际表面发光；GPU 按实例材质范围筛选发光几何，取得原三角位置、面积与通量分布。每个屏幕 tile 生成两个候选，像素从邻域候选重采样一个表面点，再按实际材质求值该点发光。直接光经过表面感知的空间过滤和运动重投影积累，由材质与间接光分别合成。
+训练每四帧从活动探针的分层区间旋转选样，单批最多 128 个样本。接收面样本与已知次级表面样本的选择独立于该方向落入哪一级追踪，以保持接收面半球估计的采样分布。
 
-发光分布也供稀疏训练使用，直接光与缓存训练保持一致的发光表面解释。次级直接光的可见性查询采用当前 Global SDF。
+- 已知主表面使用当前直接反射辐射和 gather 的入射样本形成完整反射目标。均匀半球采样的漫反射权重为 `2 × max(dot(materialNormal, rayDirection), 0)`。
+- 已知近景或屏幕次级表面使用余弦续射，目标为 `DirectReflected(Y) + Diffuse(Y) × ContinuationIncoming(Y)`。几何面下方的方向贡献归零，续射的远段直接查询 Global SDF 命中的反射辐射缓存。
 
-实现：[发光几何体采样与重建](../assets/Shaders/gi_emissive_lights.slang)、[直接光材质查询](../assets/Shaders/gi_direct_sampling.slang)、[标准材质](../assets/Shaders/standard_material.slang)。
+有效训练批次驱动 GPU 间接派发和神经更新次数。Probe shading 消费更新前的缓存；本帧探针累计与滤波完成后再更新训练缓存。
 
-## 数据持有与引擎接入
+SHARC 使用 65,536 个条目、八个空间尺度和六轴法线分组，查询成熟单元及邻近成熟单元；静态与变化历史分别采用原型的 8 和 2。NRC 保留原型的 24→32 ReLU→3 网络、899 个权重、相对辐射误差与 Adam 更新。两者消费相同的完整反射目标。
 
-数据进入路径为 **Game world → extraction → Rendering world → 渲染资源与 pass**。
+实现：[训练与查询](../assets/Shaders/gi_pipeline.slang)、[SHARC／NRC](../assets/Shaders/gi_radiance_cache.slang)。
 
-`MeshDistanceFieldBlock` 与同一 MeshAsset 中的 Cluster 几何共用资产身份。导入器生产局部距离采样、三角网格和原三角指针，加载方创建 `MeshDistanceField` 使用对象。`MeshInstance.DistanceField` 通过已有 `MeshRenderExtractor` 交付 `RenderMesh.DistanceField`，同一网格的实例共享同一数据引用。
+## 发光几何体直接光
 
-`GiSceneData` 消费 Rendering world 的 `RenderMesh` 和 `RenderClusterGeometry`。它维护 GPU 距离场缓冲及按现有 `RootBvh` 索引的 `uint2`：距离场字节地址、材质绑定范围数。三角指针按已有驻留分配重定位，结果直接写入 RenderGraph 的当帧上传页；原始采样由共享网格数据持有，上传字节由 RenderGraph 持有。原始几何页、BVH、实例、材质标量和纹理由对应引擎设施持有。
+用户 Shader 计算发光范围、三角位置和采样点发光。发光物体树与物体内三角树使用包围范围、通量和接收面的方向关系选择候选。三角采样沿用原型的球面三角采样与面积采样切换。
 
-近景与训练的候选按既有材质编号分桶。`IntersectGiMaterial` 和 `ShadeGiMaterial` 调用用户的 `IVertexEvaluate`、`IDomainEvaluate`、可见性解释与 `IGiSurfaceEvaluate`。Cluster 的材质 compute 接入复用同一 Shader 管线缓存、标量区、纹理输入和图资源绑定。共同输入声明为读取；每个材质桶的命中与表面输出声明为独立写入，各阶段通过既有汇合依赖交付完整结果。屏幕空间探针的覆盖请求采用原子合并。
+每个 8×8 像素区域共享两个物体候选；像素汇集邻区候选并重采样物体，再为该像素采样三角上的光点。对应用户材质解释光点的实际覆盖与发光。静态与运动光照分开滤波和累计，像素几何历史由 `GiPixelSurfaces` 统一持有。
 
-固定 pass 与长期缓冲通过持久 RenderGraph 建立。场内容随实例版本或网格字段变化更新；当帧射线、候选、分桶与训练样本通过已有 pass 更新。几何页和 BVH 访问使用引擎现有的实际驻留范围。GI 页请求在既有请求完成 pass 之前交付，随后沿同一反馈通路进入流送。
+发光拓扑持久保存；实例、材料发光或几何页可用性变化触发相应维护。发光分布在探针与训练消费之前准备。
 
-入口：
+实现：[重要性树与三角采样](../assets/Shaders/gi_emissive_sampling.slang)、[候选、材质光点与重建](../assets/Shaders/gi_emissive_lights.slang)、[资源与拓扑](../src/SomeEngine.Render.Features/GI/ScreenProbeFeature.Emissive.cs)。
 
-- [ScreenProbeFeature](../src/SomeEngine.Render.Features/GI/ScreenProbeFeature.cs)：GI 资源、缓存与完整帧链。
-- [GiSceneData](../src/SomeEngine.Render.Features/GI/GiSceneData.cs)：网格字段及根编号索引。
-- [材质 compute 接入](../src/SomeEngine.Render.Cluster.Pipeline/ClusterPipelineSystem.MaterialCompute.cs)：复用现有材质和几何资源。
-- [DefaultGame 接入](../samples/DefaultGame/ExperimentalGi.cs)：通过 `--experimental-gi` 或场景面板选择 GI。
+## 本帧执行顺序
 
-## 帧顺序
+```text
+主几何与直接光表面输出
+  → 静态／当前 Global SDF 与发光分布维护
+  → 探针布局、锚点重投影、刷新预算
+  → Screen Trace、近景 Mesh SDF、Global SDF 缓存查询
+  → 原始 SH 累计、空间滤波
+  → 活动探针训练选样、续射、SHARC／NRC 更新
+  → 发光直接光候选、像素重采样、用户材质光点求值、空间滤波
+  → 本帧 SH 的像素积分与三类光照历史累计
+  → 材质颜色、TAA、呈现
+```
 
-1. 几何准备与图协调：处理网格字段及材质变化，维护已有资源和 pass。
-2. 初始化历史后，主表面材质读取上一帧屏幕空间探针及直接光历史，并输出当前表面数据。
-3. 按变化更新 Global SDF，生成屏幕空间探针射线及稀疏训练射线。
-4. 近景和训练候选按材质分桶求交、选取最近命中，再按材质求表面数据。
-5. 普通射线完成屏幕、近景与 Global SDF 的逐级选择，取得反射辐射；稀疏训练继续追踪并生成完整反射辐射样本。
-6. 更新 SHARC 与 NRC，积累当帧屏幕空间探针方向辐射。
-7. 更新发光几何体分布，采样、重建并积累独立直接光结果，供下一帧材质查询。
-8. 完成共享页请求和当帧输出。
+主体图保持持久拓扑。网格、材质及容量变化通过显式编辑维护；帧内更新常量、资源内容、启用区域和间接工作量。DefaultGame 通过 `ExperimentalGi` 选择资产并安装引擎功能。
 
-## 验证与来源
+## Linux 与测量入口
 
-公共行为检查覆盖近景三角命中、Global SDF 的位置／法线／射程，以及反射辐射缓存的更新与查询。引擎画面沿 DefaultGame 公共入口检查；统一场景平台使用 1024 小球、Sponza、Amazon Bistro。测试和测量条件及结果在当前会话汇报，规范见 [行为检查](../wiki/harness/Behavior-Checks.md)与[性能测量](../wiki/harness/Harness-Performance-Evidence.md)。
+Linux 使用 Xlib 窗口和 Vulkan Surface，窗口句柄与 display 通过现有 `SurfaceDesc` 传递。开发资产在 Linux 构建 SPIRV，发布沿用 Release NativeAOT。
 
-算法来源为外部 [软件 GI 原型](F:/CodexProjects/2026-10-14/gi-lumen-sharc-nrc-surfal-3d/outputs/gi-validation-demo/generic-lod/AGENTS.md)。原型中的 Global SDF 曾通过 Object Grid 回查三角；本页采用上述用户确认的距离场终点与反射辐射缓存职责。
+`--measure-scenes` 自动启动统一场景平台并在结果完成后退出；`tools/Measure-Scenes.ps1` 消费同一入口。性能运行通过共享队列提交，在服务器执行 1024 小球、Sponza 和 Amazon Bistro。比较使用相同分辨率、场景行为、渲染选项、NativeAOT 和采样窗口。
+
+`--gpu-times` 按平台实际采样的帧归档 GPU 命令时间与包含屏障、等待和提交间隙的整帧跨度。定位运行与普通性能运行分别记录。

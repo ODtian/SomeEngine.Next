@@ -117,12 +117,6 @@ public sealed class MeshDistanceFieldTracingTests(D3D12TestCompiler shaderCompil
                         InverseTransformInstancePosition(origin, Triangles.Transform),
                         InverseTransformInstanceVector(direction, Triangles.Transform), start, limit);
                 }
-                GiMeshHit traceTriangles(uint instance, float3 origin, float3 direction, float start, float limit)
-                {
-                    return TraceGiMeshCells(Fields, 64u, Triangles,
-                        InverseTransformInstancePosition(origin, Triangles.Transform),
-                        InverseTransformInstanceVector(direction, Triangles.Transform), start, limit);
-                }
             };
             [shader("compute")]
             [numthreads(4, 1, 1)]
@@ -146,12 +140,9 @@ public sealed class MeshDistanceFieldTracingTests(D3D12TestCompiler shaderCompil
                 meshes.Triangles = triangles;
                 GiSceneHit sceneNear = TraceGiNearScene(meshes, InstanceBounds, GroupBounds, InstanceOrder,
                     1u, true, triangles.WorldOrigin, triangles.WorldDirection, 0.0, 10.0);
-                GiSceneHit training = TraceGiTrainingScene(meshes, InstanceBounds, 1u,
-                    triangles.WorldOrigin, triangles.WorldDirection, 0.0, 10.0);
-                Results[lane * 4u] = float4(near.Distance, float(near.Hit), near.Barycentric.xy);
-                Results[lane * 4u + 1u] = float4(complete.Distance, float(complete.Hit), complete.Barycentric.xy);
-                Results[lane * 4u + 2u] = float4(sceneNear.Mesh.Distance, float(sceneNear.Mesh.Hit), sceneNear.Mesh.Barycentric.xy);
-                Results[lane * 4u + 3u] = float4(training.Mesh.Distance, float(training.Mesh.Hit), training.Mesh.Barycentric.xy);
+                Results[lane * 3u] = float4(near.Distance, float(near.Hit), near.Barycentric.xy);
+                Results[lane * 3u + 1u] = float4(complete.Distance, float(complete.Hit), complete.Barycentric.xy);
+                Results[lane * 3u + 2u] = float4(sceneNear.Mesh.Distance, float(sceneNear.Mesh.Hit), sceneNear.Mesh.Barycentric.xy);
             }
             """;
         uint[] words = Assert.Single(new D3D12TestCompute(shaderCompiler).ExecuteSource(source, "Evaluate", new(1, 1, 1),
@@ -160,17 +151,17 @@ public sealed class MeshDistanceFieldTracingTests(D3D12TestCompiler shaderCompil
                 (MemoryMarshal.Cast<float, uint>(bounds.AsSpan()).ToArray(), ResourceBindingType.BufferSrv, 16),
                 (MemoryMarshal.Cast<float, uint>(groups.AsSpan()).ToArray(), ResourceBindingType.BufferSrv, 16),
                 (new uint[] { 0 }, ResourceBindingType.BufferSrv, 4),
-                (new uint[48], ResourceBindingType.BufferUav, 16)]));
+                (new uint[36], ResourceBindingType.BufferUav, 16)]));
         float[] results = MemoryMarshal.Cast<uint, float>(words.AsSpan()).ToArray();
         Assert.InRange(results[0], 1.9999f, 2.0001f);
         Assert.Equal(1f, results[1]);
-        Assert.InRange(results[16], 1.4999f, 1.5001f);
-        Assert.Equal(1f, results[17]);
-        Assert.Equal(0f, results[33]);
+        Assert.InRange(results[12], 1.4999f, 1.5001f);
+        Assert.Equal(1f, results[13]);
+        Assert.Equal(0f, results[25]);
         for (int ray = 0; ray < 3; ray++)
         {
-            int first = ray * 16;
-            foreach (int query in new[] { 4, 8, 12 })
+            int first = ray * 12;
+            foreach (int query in new[] { 4, 8 })
             {
                 Assert.Equal(results[first + 1], results[first + query + 1]);
                 Assert.InRange(Math.Abs(results[first] - results[first + query]), 0f, 1e-4f);
