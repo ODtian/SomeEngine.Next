@@ -529,6 +529,7 @@ internal static class RuntimeApplication
         Swapchain swapchain,
         NativeWindow window)
     {
+        using var trace = EngineTrace.Begin(ApplicationTrace.AcquireImage);
         long started = Environment.TickCount64;
         while (true)
         {
@@ -902,6 +903,7 @@ internal static class RuntimeApplication
             while (options.FrameLimit == 0 || frameIndex < options.FrameLimit)
             {
                 long frameStarted = Stopwatch.GetTimestamp();
+                bool reportMilestones = frameIndex == 0;
                 if (startup.Result is not null && startup.IsTracing)
                 {
                     if (nextGameUpdate is not null)
@@ -983,6 +985,8 @@ internal static class RuntimeApplication
                     : (float)Stopwatch.GetElapsedTime(runtimeStarted).TotalSeconds;
                 previousFrameTimestamp = currentFrameTimestamp;
                 if (updateGameAfterInput) gameStarted = Stopwatch.GetTimestamp();
+                if (reportMilestones)
+                    Console.WriteLine("First frame: updating scene.");
                 sceneEdit.Begin();
                 try
                 {
@@ -1005,6 +1009,8 @@ internal static class RuntimeApplication
 
                 if (updateGameAfterInput)
                     sceneEdit.Invoke(application?.BeforeCameraInput, sceneSeconds);
+                if (reportMilestones)
+                    Console.WriteLine("First frame: beginning interface frame.");
                 ui.BeginFrame(deltaSeconds, frameOutput.Width, frameOutput.Height, window.DpiScale);
                 SomeEngine.Elements.InputCapture elementCapture = elementInput?.InputCapture ?? default;
                 scene.Camera.Update(
@@ -1030,18 +1036,25 @@ internal static class RuntimeApplication
                 }
                 // Game-world systems can run while submitted GPU work finishes using
                 // instance and interface storage. Completion callbacks follow the game task.
+                if (reportMilestones)
+                    Console.WriteLine("First frame: waiting for frame resources.");
                 WaitForFrameResources(instances, ui, backend, window);
                 if (nextGameUpdate is not null)
                 {
+                    if (reportMilestones)
+                        Console.WriteLine("First frame: waiting for game update.");
                     gameTiming = RuntimeWait.Task(nextGameUpdate, window, FrameTimeout);
                     nextGameUpdate = null;
                 }
-                backend.CollectCompleted(device);
+                using (EngineTrace.Begin(ApplicationTrace.CollectCompleted))
+                    backend.CollectCompleted(device);
                 coordinator.AdmitFrameResources();
                 RenderGraphNextFrame nextGraphFrame = OpenNextGraphFrame(renderGraph);
                 using var graphFrameResources = nextGraphFrame;
                 // Completion callbacks can change shared assets. Collect their final
                 // material and texture versions before publishing this game frame.
+                if (reportMilestones)
+                    Console.WriteLine("First frame: extracting scene.");
                 if (updateGameAfterInput) gameTiming = ExtractGame(gameTiming);
                 Matrix4x4 unjitteredProjection = scene.Projection(frameOutput.Width, frameOutput.Height);
                 RuntimeViewFrame viewFrame = RuntimeViewFrame.Create(
@@ -1072,7 +1085,6 @@ internal static class RuntimeApplication
                 application?.DrawOverlay?.Invoke();
                 ui.CompleteDrawData();
                 IReadOnlyList<ApplicationView> selectedViews = application?.ViewsEnabled == true ? application.Views : [];
-                bool reportMilestones = frameIndex == 0;
                 if (reportMilestones)
                     Console.WriteLine("First frame: applying extracted scene.");
                 long prepareStarted = Stopwatch.GetTimestamp();
@@ -1319,9 +1331,9 @@ internal static class RuntimeApplication
 
                 if (reportMilestones)
                     Console.WriteLine("First frame: presenting.");
-                PresentStatus present = backend.Present(
-                    graphicsQueue,
-                    image.Value);
+                PresentStatus present;
+                using (EngineTrace.Begin(ApplicationTrace.Present))
+                    present = backend.Present(graphicsQueue, image.Value);
                 double cpuMs = measurements is null ? 0
                     : Stopwatch.GetElapsedTime(Math.Min(frameStarted, gameStarted)).TotalMilliseconds;
                 if (sceneGeometryReady && startup.Result is null)
@@ -1513,6 +1525,7 @@ internal static class RuntimeApplication
         IGraphicsBackend backend,
         NativeWindow window)
     {
+        using var trace = EngineTrace.Begin(ApplicationTrace.FrameResources);
         bool instanceAdmitted = instances.TryAdmitFrameResources(
             out _, out QueueCompletion[] instanceRetirementFences);
         bool uiAdmitted = ui.TryAdmitFrameResources(
