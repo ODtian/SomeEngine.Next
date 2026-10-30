@@ -7,6 +7,7 @@
 ## 串行测量
 
 CPU、GPU benchmark 通过 `tools/Invoke-Benchmark.ps1 <原命令及参数>` 提交到公共 FIFO 队列。
+队列优先使用服务器；服务器资源忙或 SSH 连接失败时，命令进入同一队列的本机资源调度。临时固定本机时使用 `--local` 或任务配置的 `Local: true`。`result.json` 的 `DispatchReason` 区分 `RemoteResourcesBusy`、`RemoteUnavailable` 和 `RequestedLocal`，连接失败时同时保留 `RemoteError`。跨平台命令由调用脚本按实际执行主机选择构建参数和应用路径。
 同一用户的工作区共用执行器，命令按提交顺序运行；比较期间需要独占 CPU/GPU 的构建、内容导入与捕获也采用这一入口。
 
 ```powershell

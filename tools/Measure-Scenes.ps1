@@ -2,6 +2,8 @@ param(
     [switch]$Trace, [switch]$TraceDetail, [string]$ApplicationPath, [switch]$Managed,
     [string[]]$ApplicationArguments = @(),
     [string]$SceneConfigurationJson,
+    [string]$PlatformConfigurationJson,
+    [string]$PublishSourceRevision,
     [ValidateSet('deferred', 'forward')][string]$ShadingPath,
     [ValidateSet('static', 'motion', 'materials', 'camera')][string]$ScenePlayback = 'camera',
     [string]$ExpectedScene,
@@ -21,6 +23,8 @@ if ($ApplicationPath) {
     }
 }
 if ($SceneConfigurationJson) { $measurementArguments += @('--scene-configuration-json', $SceneConfigurationJson) }
+if ($PlatformConfigurationJson) { $measurementArguments += @('--platform-configuration-json', $PlatformConfigurationJson) }
+if ($PublishSourceRevision) { $measurementArguments += @('--publish-source-revision', $PublishSourceRevision) }
 if ($Managed) { $measurementArguments += '--managed' }
 if ($Trace) { $measurementArguments += '--trace' }
 if ($TraceDetail) { $measurementArguments += '--trace-detail' }
@@ -32,7 +36,9 @@ foreach ($argument in $ApplicationArguments) { $measurementArguments += "--appli
 
 Push-Location $repository
 try {
-    $receiptText = & $queue --gpu --session $session python @measurementArguments
+    $queueArguments = @('--gpu', '--session', $session)
+    if ($PublishSourceRevision) { $queueArguments += @('--timeout', '1200') }
+    $receiptText = & $queue @queueArguments python @measurementArguments
     if ($LASTEXITCODE -ne 0) { throw 'The GPU measurement queue submission failed.' }
 } finally { Pop-Location }
 $receipt = ($receiptText -split '\r?\n' | Where-Object { $_.Trim() } | Select-Object -Last 1) | ConvertFrom-Json
@@ -46,8 +52,6 @@ foreach ($line in ($output -split '\r?\n')) {
     if (!$line.StartsWith('SCENE_FRAME_SAMPLES ')) { [Console]::Out.WriteLine($line) }
 }
 [Console]::Error.Write($errors)
-if ($StartupFrames) { exit [int]$completed.ExitCode }
-
 $directory = $env:SOMEENGINE_MEASUREMENT_OUTPUT_DIRECTORY
 $basename = $env:SOMEENGINE_MEASUREMENT_OUTPUT_BASENAME
 if ($directory -or $basename) {
@@ -60,6 +64,14 @@ if ($directory -or $basename) {
     $reportName = 'results.json'
     $samplesName = 'frame-samples.json'
 }
+if ($directory) {
+    [void][IO.Directory]::CreateDirectory($directory)
+    $prefix = if ($basename) { $basename + '-' } else { '' }
+    foreach ($name in @('stdout.log', 'stderr.log', 'result.json')) {
+        [IO.File]::Copy((Join-Path $receipt.OutputDirectory $name), (Join-Path $directory ($prefix + $name)))
+    }
+}
+if ($StartupFrames) { exit [int]$completed.ExitCode }
 if ($directory) {
     foreach ($entry in @(
         @{ Prefix = 'SCENE_REPORT '; Name = $reportName },

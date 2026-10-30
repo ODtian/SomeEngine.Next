@@ -6,6 +6,7 @@ import ctypes
 import json
 import os
 from pathlib import Path
+import platform
 import subprocess
 import sys
 import tempfile
@@ -25,6 +26,8 @@ def arguments():
     parser.add_argument("--scene")
     parser.add_argument("--expected-scene")
     parser.add_argument("--scene-configuration-json")
+    parser.add_argument("--platform-configuration-json")
+    parser.add_argument("--publish-source-revision")
     parser.add_argument("--startup-frames", type=int)
     parser.add_argument("--on-default-desktop", action="store_true", help=argparse.SUPPRESS)
     result = parser.parse_args()
@@ -93,10 +96,10 @@ def run_on_default_desktop():
             if not kernel.CreateProcessW(sys.executable, command, None, None, True, 0x08000000,
                                          None, os.getcwd(), ctypes.byref(start), ctypes.byref(child)):
                 raise ctypes.WinError(ctypes.get_last_error())
-            wait = kernel.WaitForSingleObject(child.process, 60000)
+            wait = kernel.WaitForSingleObject(child.process, 1200000 if "--publish-source-revision" in sys.argv else 60000)
             if wait == 0x102:
                 subprocess.run(["taskkill", "/PID", str(child.process_id), "/T", "/F"], capture_output=True)
-                raise TimeoutError("The desktop measurement exceeded 60 seconds.")
+                raise TimeoutError("The desktop measurement exceeded its execution budget.")
             if wait != 0:
                 raise ctypes.WinError(ctypes.get_last_error())
             code = wintypes.DWORD()
@@ -152,6 +155,23 @@ def application_path(options):
     if not directory.is_absolute():
         directory = project.parent / directory
     return directory / (properties["AssemblyName"] + (".exe" if os.name == "nt" else ""))
+
+
+def publish_application(application, revision):
+    repository = Path(__file__).resolve().parents[1]
+    rid = "win-x64" if sys.platform == "win32" else "linux-x64"
+    settings = ["-p:RuntimeIdentifier=" + rid, "-p:RuntimeIdentifiers=", "-p:SomeEngineDevelopment=false",
+                "-p:PublishAot=true", "-p:UseSatoriGC=true", "-p:SelfContained=true",
+                "-p:SourceRevisionId=" + revision, "-p:BuildInParallel=false", "-p:UseSharedCompilation=false",
+                "-m:1", "-nodeReuse:false"]
+    print("SCENE_PUBLISH " + json.dumps({"Host": platform.node(), "Platform": sys.platform,
+          "SourceRevisionId": revision, "ApplicationPath": str(application), "Settings": settings}), flush=True)
+    started = time.monotonic()
+    subprocess.run(["dotnet", "publish", str(repository / "samples/DefaultGame/DefaultGame.csproj"),
+                    "-c", "Release", *settings, "-o", str(application.parent), "--verbosity", "minimal"],
+                   cwd=repository, check=True)
+    print("SCENE_PUBLISH_COMPLETE " + json.dumps({"SourceRevisionId": revision,
+          "ApplicationPath": str(application), "Seconds": time.monotonic() - started}), flush=True)
 
 
 def run_application(application, values, environment, deadline):
@@ -223,7 +243,21 @@ def main():
     options = arguments()
     if os.name == "nt" and not options.on_default_desktop:
         return run_on_default_desktop()
+    configuration = {}
+    if options.platform_configuration_json:
+        configuration = json.loads(options.platform_configuration_json)[sys.platform]
+        options.application = configuration["ApplicationPath"]
+        options.scene_configuration_json = json.dumps(configuration["Scenes"])
     application = application_path(options)
+    if options.publish_source_revision:
+        reuse = application.is_file() and configuration.get("PublishedHost") == platform.node() and \
+            configuration.get("PublishedSourceRevision") == options.publish_source_revision
+        print("SCENE_BUILD " + json.dumps({"Host": platform.node(), "Platform": sys.platform,
+              "SourceRevisionId": options.publish_source_revision, "ApplicationPath": str(application),
+              "ReusedPublishedApplication": reuse}), flush=True)
+        if not reuse:
+            publish_application(application, options.publish_source_revision)
+        deadline = time.monotonic() + 59
     values = ["--measure-scene", options.scene] if options.scene else []
     values += options.application_argument
     if sys.platform == "linux" and not any(value.split("=", 1)[0] in
@@ -245,6 +279,9 @@ def main():
             previous_configuration = scene_configuration.read_bytes()
             cleanup.callback(scene_configuration.write_bytes, previous_configuration)
             scene_configuration.write_text(options.scene_configuration_json, encoding="utf-8")
+        print("SCENE_EXECUTION " + json.dumps({"Platform": sys.platform, "Host": platform.node(),
+              "ApplicationPath": str(application),
+              "Scenes": json.loads(scene_configuration.read_text(encoding="utf-8-sig"))}), flush=True)
         if options.trace:
             diagnostics = application.parent / "Performance" / time.strftime("%Y%m%d-%H%M%S")
             diagnostics.mkdir(parents=True)
