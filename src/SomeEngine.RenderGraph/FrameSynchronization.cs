@@ -1234,6 +1234,8 @@ internal sealed partial class FrameExecutor
     private readonly Dictionary<(GraphAccessTargetKind Kind, int Index), ResourceSynchronization> _synchronizationByResource = [];
     private readonly Dictionary<int, HashSet<(GraphAccessTargetKind Kind, int Index)>> _synchronizationByPass = [];
     private readonly OrderedDictionary<int, HashSet<(GraphAccessTargetKind Kind, int Index)>> _initialWaitResources = [];
+    private readonly HashSet<int> _initialWaitPassChanges = [];
+    private readonly HashSet<int> _initialWaitSubmissionChanges = [];
     private readonly Dictionary<(GraphAccessTargetKind Kind, int Index), bool> _synchronizationChanges = [];
     private readonly HashSet<int> _changedSynchronizationPasses = [];
     private readonly HashSet<(GraphAccessTargetKind Kind, int Index)> _splitTextureResources = [];
@@ -1305,28 +1307,17 @@ internal sealed partial class FrameExecutor
             // Derivation may reject a boundary. Do not detach the previous result until every
             // barrier and transfer for this resource has been constructed successfully.
             UpdateAliasScopeSource(key, previous?.AliasScopeSource, exists ? value.AliasScopeSource : null);
+            if (previous is null || !previous.WaitPasses.SetEquals(value.WaitPasses))
+            {
+                if (previous is not null) _initialWaitPassChanges.UnionWith(previous.WaitPasses);
+                _initialWaitPassChanges.UnionWith(value.WaitPasses);
+            }
             if (previous is not null)
             {
                 foreach (int pass in previous.Passes.Keys)
                 {
                     _changedSynchronizationPasses.Add(pass);
                     _synchronizationByPass[pass].Remove(key);
-                }
-                foreach (int pass in previous.WaitPasses)
-                {
-                    if (value.WaitPasses.Contains(pass)) continue;
-
-                    int index = _initialWaitResources.IndexOf(pass);
-                    var resources = _initialWaitResources.GetAt(index).Value;
-                    resources.Remove(key);
-                    if (resources.Count != 0) continue;
-
-                    // Wait collection order does not determine submission order.
-                    int lastIndex = _initialWaitResources.Count - 1;
-                    var last = _initialWaitResources.GetAt(lastIndex);
-                    _initialWaitResources.RemoveAt(lastIndex);
-                    if (index != lastIndex)
-                        _initialWaitResources.SetAt(index, last.Key, last.Value);
                 }
                 foreach (PendingQueueRelease release in previous.LateReleases) _lateReleases.Remove(release);
             }
@@ -1355,13 +1346,6 @@ internal sealed partial class FrameExecutor
                 _changedSynchronizationPasses.Add(pass);
                 if (!_synchronizationByPass.TryGetValue(pass, out var resources))
                     _synchronizationByPass.Add(pass, resources = []);
-                resources.Add(key);
-            }
-            foreach (int pass in value.WaitPasses)
-            {
-                if (previous?.WaitPasses.Contains(pass) == true) continue;
-                if (!_initialWaitResources.TryGetValue(pass, out var resources))
-                    _initialWaitResources.Add(pass, resources = []);
                 resources.Add(key);
             }
             _lateReleases.AddRange(value.LateReleases);
@@ -1455,16 +1439,44 @@ internal sealed partial class FrameExecutor
         _splitTextureChanges.Clear();
     }
 
+    private void RefreshInitialWaitResources()
+    {
+        // WaitPasses holds resource membership. This reverse index groups those facts
+        // by submission, so several passes in one batch read a resource's waits once.
+        foreach (int pass in _initialWaitPassChanges)
+            if (IsLive(pass)) _initialWaitSubmissionChanges.Add(_submissionByPass[pass]);
+        _initialWaitPassChanges.Clear();
+        foreach (int submission in _initialWaitSubmissionChanges)
+        {
+            if (!_initialWaitResources.TryGetValue(submission, out var resources))
+                _initialWaitResources.Add(submission, resources = []);
+            else resources.Clear();
+            foreach (int pass in _submissionPasses[submission])
+            {
+                if (_passAccesses[pass] is not { } accesses) continue;
+                foreach (int index in accesses)
+                {
+                    FrameResourceAccess access = _accesses[index];
+                    var key = (access.TargetKind, access.ResourceIndex);
+                    if (_synchronizationByResource.TryGetValue(key, out ResourceSynchronization? synchronization) &&
+                        synchronization.WaitPasses.Contains(pass)) resources.Add(key);
+                }
+            }
+            if (resources.Count == 0) _initialWaitResources.Remove(submission);
+        }
+        _initialWaitSubmissionChanges.Clear();
+    }
+
     private void RefreshCompletionWaits(int waveCount)
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(GraphTrace.WaitCollection);
+        RefreshInitialWaitResources();
         for (int wave = 0; wave < waveCount; wave++)
             foreach (int submission in _recordingSubmissions[wave]) _submissionWaits[submission].Clear();
-        foreach ((int pass, var resources) in _initialWaitResources)
+        foreach ((int submission, var resources) in _initialWaitResources)
         {
-            if (!IsLive(pass)) continue;
-            Queue queue = _passes[pass].Queue!;
-            List<QueueCompletion> waits = _submissionWaits[_submissionByPass[pass]];
+            Queue queue = _submissionQueues[submission]!;
+            List<QueueCompletion> waits = _submissionWaits[submission];
             foreach (var key in resources)
             {
                 switch (key.Kind)

@@ -273,6 +273,7 @@ internal sealed partial class FrameExecutor
     private void ChangeSubmissionMembers(int submission)
     {
         _recordingSubmissionChanges.Add(submission);
+        _initialWaitSubmissionChanges.Add(submission);
         if (_changedSubmissions.Add(submission))
             foreach (int pass in _submissionPasses[submission]) MarkPassResources(pass, _stateConnectionChanges);
         _submissionUpdates.Add(submission);

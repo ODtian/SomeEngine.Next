@@ -373,6 +373,101 @@ public sealed class InitialWaitMembershipTests
         }
     }
 
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void ChangingSubmissionBoundariesPreservesSharedExternalWaits(int framesInFlight)
+    {
+        if (!OperatingSystem.IsWindows())
+            throw SkipException.ForSkip("D3D12 WARP requires Windows.");
+        using IGraphicsBackend backend = new ValidationLayer(D3D12GraphicsBackend.Create());
+        using Device device = CreateDevice(backend);
+        Queue sourceQueue = backend.GetQueue(device, QueueType.Graphics, 0);
+        Queue targetQueue = backend.GetQueue(device, QueueType.Graphics, 1);
+        Queue signalQueue = backend.GetQueue(device, QueueType.Copy);
+        using ExternalTimeline gate = backend.CreateExternalTimeline(device, 0);
+        using QueryPool pool = backend.CreateQueryPool(device,
+            new QueryPoolDesc(QueryType.Timestamp, QueueType.Graphics, 1));
+        using CommandContext sourceCommands = backend.CreateCommandContext(device,
+            new CommandContextDesc(QueueType.Graphics, 0, 1));
+        var description = new BufferDesc(16, BufferUsages.CopySource);
+        using Buffer source = backend.CreateBuffer(device, description, MemoryType.Upload);
+        using var graph = new RenderGraph(backend, device, [targetQueue],
+            new RenderGraphDesc(MaximumFramesInFlight: (uint)framesInFlight));
+        GraphBufferId buffer;
+        GraphPassId first, second;
+        var options = new PassOptions(Culling: PassCullingMode.NeverCull);
+        using (RenderGraphEdit edit = graph.BeginEdit())
+        {
+            buffer = edit.DeclareExternalBuffer(description, MemoryType.Upload);
+            GraphQueryPoolId queries = edit.RegisterQueryPool(pool);
+            first = edit.AddGeneralFramePass("first shared external wait", PassQueueSelection.Exact(targetQueue),
+                (buffer, queries), options,
+                static (ref PassDefinition pass, ref (GraphBufferId Buffer, GraphQueryPoolId Queries) data) =>
+                {
+                    pass.Read(data.Buffer, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopySource);
+                    pass.Write(data.Queries, new QueryRange(0, 1), resultContents: ResourceContentState.Undefined);
+                },
+                static (ref GeneralPassCommandScope _, in (GraphBufferId Buffer, GraphQueryPoolId Queries) _) => { });
+            second = edit.AddGeneralFramePass("second shared external wait", PassQueueSelection.Exact(targetQueue),
+                (buffer, queries), options,
+                static (ref PassDefinition pass, ref (GraphBufferId Buffer, GraphQueryPoolId Queries) data) =>
+                {
+                    pass.Read(data.Buffer, BufferRange.Whole, PipelineSync.Copy, ResourceAccess.CopySource);
+                    pass.Write(data.Queries, new QueryRange(0, 1), resultContents: ResourceContentState.Undefined);
+                },
+                static (ref GeneralPassCommandScope _, in (GraphBufferId Buffer, GraphQueryPoolId Queries) _) => { });
+            edit.OrderAfter(second, first);
+            edit.Commit();
+        }
+
+        var completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
+        for (ulong iteration = 1; iteration <= 6; iteration++)
+        {
+            backend.Begin(sourceCommands);
+            backend.ResetQueries(sourceCommands, pool, 0, 1);
+            using RecordedCommands commands = backend.End(sourceCommands);
+            QueueCompletion external = backend.Submit(sourceQueue, new(
+                [], [new TimelinePoint(gate, iteration)], [commands], [], []));
+            Assert.False(backend.IsComplete(external));
+            bool split = iteration % 2 == 1;
+            var receiver = new PassCompletions(first, second);
+            try
+            {
+                using RenderGraphFrame frame = graph.BeginFrame();
+                frame.BindExternalBuffer(buffer, source,
+                    [new(BufferRange.Whole, source.InitialSync, source.InitialAccess,
+                        ResourceContentState.Defined, sourceQueue, external)]);
+                frame.SetPassOptions(first, options with { SubmitAfter = split });
+                frame.ObserveExecution(receiver);
+                Assert.Equal(1, frame.Execute(completions));
+                Assert.Equal(split, receiver.First != receiver.Second);
+            }
+            finally
+            {
+                QueueCompletion signal = backend.Submit(signalQueue,
+                    new([], [], [], [], [new TimelineSignal(gate, iteration)]));
+                Assert.Equal(WaitStatus.Completed, backend.WaitCpu(signal, TimeSpan.FromSeconds(10)));
+                Assert.Equal(WaitStatus.Completed, backend.WaitCpu(external, TimeSpan.FromSeconds(10)));
+                foreach (QueueCompletion completion in completions)
+                    if (completion != default)
+                        Assert.Equal(WaitStatus.Completed, backend.WaitCpu(completion, TimeSpan.FromSeconds(10)));
+            }
+        }
+    }
+
+    private sealed class PassCompletions(GraphPassId first, GraphPassId second) : IRenderGraphFrameExecutionObserver
+    {
+        internal QueueCompletion First;
+        internal QueueCompletion Second;
+
+        public void OnRenderGraphFrameFinished(RenderGraphFrameResult result)
+        {
+            Assert.True(result.TryGetPassCompletion(first, out First));
+            Assert.True(result.TryGetPassCompletion(second, out Second));
+        }
+    }
+
     private static Device CreateDevice(IGraphicsBackend backend)
     {
         AdapterEnumerationOptions options = new(AdapterPreference.HighPerformance, IncludeSoftware: true);

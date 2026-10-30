@@ -41,6 +41,13 @@ merge under the existing wait and consumer-release constraints; swapchain image 
 their single-submit interval. See [FrameRecording](../../../src/SomeEngine.RenderGraph/FrameRecording.cs)
 and [FrameSubmissions](../../../src/SomeEngine.RenderGraph/FrameSubmissions.cs).
 
+Initial completion-wait membership is held by each resource's `ResourceSynchronization.WaitPasses`.
+Its reverse resource index groups these facts by submission. Changes to wait membership or
+submission members refresh the affected submissions through their existing pass accesses.
+Each frame collects the current boundary completions once per resource in each submission;
+completion values from one queue reduce to that queue's maximum wait. See
+[FrameSynchronization](../../../src/SomeEngine.RenderGraph/FrameSynchronization.cs).
+
 ## CPU command recording
 
 Each submission retains its GPU pass order and completion dependencies. Within it, contiguous

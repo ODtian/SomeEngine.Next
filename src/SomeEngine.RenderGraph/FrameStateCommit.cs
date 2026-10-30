@@ -436,9 +436,16 @@ internal sealed partial class FrameExecutor
     private void CommitBuffer(BufferStateUpdate update, QueueCompletion completion)
     {
         BufferBoundaryState[] boundaryStates = update.Values;
-        for (int item = 0; item < boundaryStates.Length; item++)
-            boundaryStates[item].SetCompletion(
-                update.CompletionSources[item] < 0 ? completion : update.Completions[item]);
+        if (update.Boundaries.CompletionItems is [int completionItem] &&
+            update.CompletionSources[completionItem] < 0)
+        {
+            foreach (ref BufferBoundaryState state in boundaryStates.AsSpan())
+                state.SetCompletion(completion);
+        }
+        else
+            for (int item = 0; item < boundaryStates.Length; item++)
+                boundaryStates[item].SetCompletion(
+                    update.CompletionSources[item] < 0 ? completion : update.Completions[item]);
         StoreBufferStates(update.ResourceIndex, update.Boundaries, update.BoundaryChanged);
     }
 

@@ -301,6 +301,7 @@ internal sealed partial class FrameExecutor
         _submissionWaits[submission] ??= [];
         _submissionWaves[submission] = -1;
         _changedSubmissions.Add(submission);
+        _initialWaitSubmissionChanges.Add(submission);
         return submission;
     }
 
