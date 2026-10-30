@@ -65,6 +65,8 @@ dotnet run --project tools/ExportShaderInputs/SomeEngine.ExportShaderInputs.cspr
 
 `ShaderAsset.CreateAsync` 在链接前依据输入版本和现有代码设置寻址选择保存代码或 IR 代码生成。匹配保存代码时，同一组 IR 恢复直接 Slang 对象及反射，代码 chunk 取得为最终托管数组。IR 分发、额外特化以及编译设置变化使用共同输入生成 Slang blob。两条路径都按所选顺序链接一次，并返回同一种 `Shader`。
 
+保存特化的首次取得复用基础 `Shader` 已驻留的 Slang session、输入和入口，在同一全局 Slang 会话的串行边界内完成专门化、链接与布局，再附上该特化保存的代码和资源使用数据。每个特化的 `Lazy` 合并并发取得，返回的 `Shader` 通过普通引用持有直接 Slang 数据。
+
 ```csharp
 await asset.CompileAsync(slang, sessionDescription, cancellationToken);
 await asset.SaveAsync(releasePath, cancellationToken);

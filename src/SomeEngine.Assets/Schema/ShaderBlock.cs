@@ -136,7 +136,6 @@ public sealed partial class ShaderBlock : AssetBlock
             return baseCode is { } saved
                 ? shader.WithManagedCode(saved.Targets, saved.Entries, saved.Usage) : null;
 
-        var savedSources = await inputs.ReadSavedSourcesAsync(cancellationToken).ConfigureAwait(false);
         SessionDesc description = CopySessionDescription(sessionDescription);
         var variants = new List<(string EntryPoint, string[] Arguments, Lazy<Shader> Shader)>(inputs.Specializations.Count);
         bool missingVariant = false;
@@ -152,8 +151,8 @@ public sealed partial class ShaderBlock : AssetBlock
                 continue;
             }
             variants.Add((entryPoint, values, new Lazy<Shader>(() =>
-                ShaderSourceBlock.RestoreSavedEntry(slang, description, name, entryPoint, values,
-                    savedSources.Names, savedSources.Sources).WithManagedCode(code.Targets, code.Entries, code.Usage),
+                ShaderSourceBlock.RestoreSavedEntry(shader, entryPoint, values)
+                    .WithManagedCode(code.Targets, code.Entries, code.Usage),
                 LazyThreadSafetyMode.ExecutionAndPublication)));
         }
         return baseCode is { } savedBase && !missingVariant

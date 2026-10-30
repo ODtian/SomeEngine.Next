@@ -65,8 +65,9 @@ public sealed partial class ShaderSourceBlock
 
     // A specialization shares its base compilation's session, loaded sources and input tracking.
     internal static async ValueTask<ShaderCompilation> CompileUsingLoadedSourcesAsync(
-        IGlobalSession slang, Shader shader, ShaderSourceFiles sourceFiles, string entryPoint,
-        ReadOnlyMemory<SpecializationArg> specializations, CancellationToken cancellationToken)
+        IGlobalSession slang, Shader shader, ShaderSourceFiles? sourceFiles, string entryPoint,
+        ReadOnlyMemory<SpecializationArg> specializations, CancellationToken cancellationToken,
+        bool generateCode = true)
     {
         SemaphoreSlim frontEnd = s_slangFrontEnds.GetValue(slang, static _ => new SemaphoreSlim(1, 1));
         await frontEnd.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -81,8 +82,8 @@ public sealed partial class ShaderSourceBlock
             TargetDesc[] targets = Enumerable.Range(0, shader.SlangTargetCount)
                 .Select(shader.GetSlangTarget).ToArray();
             Shader variant = CompileShader(slang, shader.SlangSession, shader.Name,
-                sourceUnits, entries, targets, specializations, generateCode: true, cancellationToken, entryPoint);
-            return new(variant, [], sourceFiles.Finish());
+                sourceUnits, entries, targets, specializations, generateCode, cancellationToken, entryPoint);
+            return new(variant, [], sourceFiles?.Finish() ?? []);
         }
         finally
         {
@@ -214,40 +215,10 @@ public sealed partial class ShaderSourceBlock
             saveSources: false,
             cancellationToken, entryPoint).ConfigureAwait(false)).Shader;
 
-    internal async ValueTask<(string[] Names, byte[][] Sources)> ReadSavedSourcesAsync(CancellationToken cancellationToken)
-    {
-        string[] names = SourceNames.ToArray();
-        var sources = new byte[names.Length][];
-        for (int index = 0; index < sources.Length; index++)
-        {
-            ulong key = SerializedSourceKey(index);
-            if (!ContentKeys.Contains(key))
-                throw new InvalidDataException("Saved shader specializations require their serialized Slang source.");
-            // File-backed arrays survive source disposal. Keep copying caller-supplied chunks.
-            bool local = Chunks.ContainsKey(key);
-            ReadOnlyMemory<byte> bytes = await ReadBytesAsync(key, cancellationToken).ConfigureAwait(false);
-            sources[index] = !local &&
-                System.Runtime.InteropServices.MemoryMarshal.TryGetArray(bytes, out ArraySegment<byte> data) &&
-                data.Offset == 0 && data.Count == data.Array!.Length
-                    ? data.Array! : bytes.ToArray();
-            if (sources[index].Length == 0)
-                throw new InvalidDataException("Saved shader specializations have empty serialized Slang source.");
-        }
-        return (names, sources);
-    }
-
-    internal static Shader RestoreSavedEntry(IGlobalSession slang, SessionDesc description, string name,
-        string entryPoint, string[] arguments, string[] sourceNames, byte[][] sources)
-    {
-        using var source = new ShaderSourceBlock();
-        foreach (string path in sourceNames) source.SourceNames.Add(path);
-        // ReadSavedSourcesAsync already owns and validates these immutable bytes.
-        for (int index = 0; index < sources.Length; index++)
-            source.SetBytes(SerializedSourceKey(index), sources[index]);
-        return source.CreateUsingSavedCodeAsync(slang, description, name,
-            arguments.Select(SpecializationArg.FromExpression).ToArray(), CancellationToken.None, entryPoint)
-            .AsTask().GetAwaiter().GetResult();
-    }
+    internal static Shader RestoreSavedEntry(Shader shader, string entryPoint, string[] arguments)
+        => CompileUsingLoadedSourcesAsync(shader.SlangCode.Global, shader, null, entryPoint,
+            arguments.Select(SpecializationArg.FromExpression).ToArray(), CancellationToken.None,
+            generateCode: false).AsTask().GetAwaiter().GetResult().Shader;
 
     internal async ValueTask<Shader> CreateSelectedAsync(IReadOnlyList<ShaderInputSource> inputs,
         IGlobalSession slang, SessionDesc description, string name, ReadOnlyMemory<SpecializationArg> arguments,
