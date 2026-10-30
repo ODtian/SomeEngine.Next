@@ -2,6 +2,7 @@ using System.Numerics;
 using System.Runtime.InteropServices;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Graphics;
+using SomeEngine.Graphics.Vulkan;
 using SomeEngine.Render.Components;
 using SomeEngine.Render.Frame;
 using SomeEngine.Render.Instances;
@@ -12,6 +13,25 @@ namespace SomeEngine.Render.Tests;
 
 public sealed class InstanceDataTransferTests
 {
+    [Fact]
+    public void MetadataOnlyUpdatesReachEachGraph()
+    {
+        using var data = new InstanceData(2);
+        data.Run([0, 1]);
+        uint binding = data.Binding(CurrentProperty) & RenderInstanceLinearMetadata.AddressMask;
+        data.Edit = context =>
+        {
+            using var update = context.RewriteBatch(data.Batch, Layout);
+            update.OpenWrite(Layout).BindMetadata(CurrentProperty, new uint[] { binding });
+            update.Publish();
+        };
+
+        data.Run([0]);
+        data.AssertDeviceMetadata(0);
+        data.Run([1]);
+        data.AssertDeviceMetadata(1);
+    }
+
     [Fact]
     public void AdjacentRevisionCopiesOnlyTheWrittenPropertyRows()
     {
@@ -251,8 +271,7 @@ public sealed class InstanceDataTransferTests
 
     private sealed class InstanceData : IDisposable
     {
-        private readonly RenderTestDevice _device = new(DeviceFeatures.None,
-            [new(QueueType.Graphics), new(QueueType.Compute), new(QueueType.Copy)]);
+        private readonly RenderTestDevice _device = CreateDevice();
         private readonly RenderWorld _world = new();
         private readonly RenderInstanceStorageSystem _storage;
         private readonly RenderExtractionSystems _extraction;
@@ -265,6 +284,14 @@ public sealed class InstanceDataTransferTests
         internal RenderInstanceBatchView View;
         internal Action<RenderPrepareSystemContext>? Edit;
         internal int Count { get; }
+
+        private static RenderTestDevice CreateDevice()
+        {
+            DeviceQueueDesc[] queues = [new(QueueType.Graphics), new(QueueType.Compute), new(QueueType.Copy)];
+            return OperatingSystem.IsWindows()
+                ? new RenderTestDevice(DeviceFeatures.None, queues)
+                : new RenderTestDevice(VulkanGraphicsBackend.Create(), new DeviceDesc(default, queues));
+        }
 
         internal InstanceData(int count, bool sharedCurrent = false)
         {
@@ -396,6 +423,9 @@ public sealed class InstanceDataTransferTests
 
         internal void AssertFullCopy(int graph) => AssertOnlyCopied(graph, View.PropertyDataRanges.ToArray());
 
+        internal void AssertDeviceMetadata(int graph) =>
+            Assert.Equal(_metadata, _graphs[graph].MetadataReadback.Bytes);
+
         internal void AssertOnlyCopied(int graph, params BufferRange[] ranges)
         {
             byte[] actual = _graphs[graph].Readback.Bytes;
@@ -462,6 +492,7 @@ public sealed class InstanceDataTransferTests
             internal readonly RenderInstanceDataTransfer Transfer;
             internal readonly GraphPassId Poison;
             internal readonly BytesReceiver Readback = new();
+            internal readonly BytesReceiver MetadataReadback = new();
             internal ulong SubmittedRevision;
 
             internal GraphData(RenderTestDevice device, RenderInstanceStorageSystem storage)
@@ -480,6 +511,7 @@ public sealed class InstanceDataTransferTests
                     static (ref CopyPassCommandScope commands, in GraphBufferId buffer) =>
                         commands.ClearBuffer(commands.GetBuffer(buffer), BufferRange.Whole, uint.MaxValue));
                 edit.AddReadback(Transfer.Data, BufferRange.Whole, Readback, "Instance transfer values");
+                edit.AddReadback(Transfer.Metadata, BufferRange.Whole, MetadataReadback, "Instance transfer metadata");
                 edit.Commit();
             }
         }

@@ -7,7 +7,7 @@ namespace SomeEngine.Render.Tests;
 
 public sealed class RenderTestDevice : IDisposable
 {
-    public IGraphicsBackend Backend { get; } = D3D12GraphicsBackend.Create();
+    public IGraphicsBackend Backend { get; }
     public Device Device { get; }
     public RenderDevice RenderDevice { get; }
     public RenderFrameCoordinator Coordinator { get; }
@@ -16,6 +16,7 @@ public sealed class RenderTestDevice : IDisposable
 
     internal RenderTestDevice(DeviceFeatures features, DeviceQueueDesc[]? queues = null)
     {
+        Backend = D3D12GraphicsBackend.Create();
         var options = new AdapterEnumerationOptions(AdapterPreference.HighPerformance, IncludeSoftware: true);
         Backend.TryEnumerateAdapters(options, [], out int count);
         var adapters = new AdapterInfo[count];
@@ -23,6 +24,14 @@ public sealed class RenderTestDevice : IDisposable
         AdapterInfo warp = adapters.First(adapter => !adapter.HardwareAccelerated);
         Device = Backend.CreateDevice(new DeviceDesc(warp.Id, queues ?? [new DeviceQueueDesc(QueueType.Graphics)],
             requiredFeatures: features, label: "Render public behavior tests"));
+        RenderDevice = new RenderDevice(Backend, Device);
+        Coordinator = new RenderFrameCoordinator(RenderDevice);
+    }
+
+    internal RenderTestDevice(IGraphicsBackend backend, in DeviceDesc description)
+    {
+        Backend = backend;
+        Device = backend.CreateDevice(description);
         RenderDevice = new RenderDevice(Backend, Device);
         Coordinator = new RenderFrameCoordinator(RenderDevice);
     }

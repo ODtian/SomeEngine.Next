@@ -58,7 +58,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     private QueryHandle _viewQuery;
     private QueryHandle _sceneQuery;
     private RenderInstanceDataTransfer? _instanceDataTransfer;
-    private int _frameInstanceGeneration;
     private ClusterPipelineSet? _pipelines;
     private HashSet<IDisposable>? _materialPipelineUse;
     private ClusterRasterStages? _rasterStages;
@@ -644,7 +643,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             _instanceLayout);
         RenderGraphFrame graph = context.Graph;
         bool writeGeometry = BeginGeometryFrame(ref graph, binding.Publication);
-        _frameInstanceGeneration = binding.InstanceGeneration;
         ClusterCullingHistory history = _history ?? throw new InvalidOperationException(
             "The Cluster culling history was not created.");
         bool historyPrepared = false;
@@ -969,8 +967,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
     void IRenderGraphFrameExecutionObserver.OnRenderGraphFrameFinished(RenderGraphFrameResult result)
     {
         if (!_hasPendingFrame) return;
-        _resources.InstanceResources.StoreMetadataReadStates(_frameInstanceGeneration,
-            result.GetBufferStates(GraphData.Resources.InstanceProperties));
         CullWork work = GraphData.Resources.Work;
         if (result.TryGetPassCompletion(work.Initialize, out _)) work.Initialized = true;
         for (int phase = 0; phase < work.Phases.Length; phase++)

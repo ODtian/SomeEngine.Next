@@ -6,7 +6,9 @@ RenderWorld 保存来源组件；composition/producer 将这些组件组合为�
 
 `RenderFrameCoordinator` 管理 prepare、prepared/committed frame lease 与 GPU 完成 fences。写入通过 prepare scope 选择可写 generation；消费帧登记实际使用的 generation，所选代仍被未完成帧使用时不能覆写。`RenderInstanceBatchView` 的属性范围、元数据范围及边界属于该帧使用期；lease 结束后不能继续访问借来的映射/视图。在有效 lease 内复制到自身数组的元数据快照可以独立保留。
 
-每张 RenderGraph 通过 storage 的 `GetDataTransfer(graph)` 取得 transport；图内消费者读取 transport 暴露的持久 GPU 资源。图资源状态与已提交 GPU 工作由 RenderGraph 管理，CPU prepare 权限、存储 generation 和帧使用期由 coordinator/storage 管理；不恢复旧 `Install(graph)`/`RenderDataLock` 所有权。
+每张 RenderGraph 通过 storage 的 `GetDataTransfer(graph)` 取得 transport；图内消费者读取 transport 暴露的持久 GPU 属性 `Data` 与元数据 `Metadata`。两者保持原批地址与元数据布局。图资源状态与已提交 GPU 工作由 RenderGraph 管理，CPU prepare 权限、存储 generation 和帧使用期由 coordinator/storage 管理。
+
+transport 为两代上传源分别维护复制 pass，每个 pass 只读取该代的属性和元数据源。实际有更新的代启用复制，在复制后提交队列批次；完成观察使用 `TryGetPassCompletion` 将已经接受的复制完成点登记到同一个 storage timeline。Cluster 的 shader 读取 device 属性与元数据，CPU 上传代在实际复制完成后复用；公开 `RenderInstanceStorageView.Bind` 继续保护直接读取上传 buffer 的调用方，按该帧的全部提交完成点保留对应代。
 
 ## Publishing batch updates
 
@@ -18,7 +20,7 @@ RenderWorld 保存来源组件；composition/producer 将这些组件组合为�
 
 每个实体对应一行的单组值重写通过 composer 的 `WriteChangedPacket` 执行。Cluster composer 交给各 producer 按源列选择变化行；普通 composer 的默认实现按实体变化范围调用 `WritePacket`。producer 的默认 `WriteChanged` 同样通过自身 `GetChanges` 选择连续变化行。首次构建和强制重写通过 `WritePacket` 完整填充所选范围。源码入口：[批组合与写入](../../../src/SomeEngine.Render/Instances/RenderInstanceBatchBuilder.cs)、[属性 producer](../../../src/SomeEngine.Render/Instances/RenderInstanceProducer.cs)。
 
-每个批只保留最近一次发布的不可变属性范围增量，包含前后 `ContentRevision`；`RenderInstanceBatchView` 连同所选 generation 一起捕获该增量。每张图独立维护 allocation 身份与已提交版本，只有复制 pass 的实际提交确认才推进该图的游标；暂存或丢弃帧不消费共享增量，部分失败时仍保留实际接受的资源边界。元数据仍直接从所选 generation 的映射缓冲按帧使用期取得。
+每个批只保留最近一次发布的不可变属性范围增量，包含前后 `ContentRevision`；`RenderInstanceBatchView` 连同所选 generation 一起捕获该增量。每张图独立维护 allocation 身份与已提交版本，只有对应代复制 pass 的实际提交确认才推进该图的版本；暂存或丢弃帧保持原版本，部分失败按已接受的复制登记资源边界。批元数据与属性共享 `ContentRevision`，绑定变更推进该版本，批行数变化通过新 allocation 发布；元数据随更新复制原批的完整元数据范围。
 
 当图的已提交版本恰好是该增量的前驱时，稳定逐实例绑定只复制实际写入的属性行范围；未变版本不复制。新图、allocation 复用或错过前驱版本仍回退到完整 `PropertyDataRanges`。共享值写入复制共享元素；转为逐实例绑定时复制完整的新可见列；自定义元数据保持完整批范围回退。因此这是常见相邻版本路径的稀疏复制，不是所有路径的最小复制承诺。
 

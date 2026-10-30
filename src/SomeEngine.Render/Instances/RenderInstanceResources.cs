@@ -327,6 +327,8 @@ internal sealed class RenderInstanceResources : IDisposable
 
     public int PropertyDataBytes { get; }
 
+    internal ulong MetadataBytes => _batchMetadata[0].Size;
+
     internal RenderTimeline Timeline => _timeline;
 
     internal int BatchMetadataStrideBytes => _batchMetadataStrideBytes;
@@ -511,14 +513,20 @@ internal sealed class RenderInstanceResources : IDisposable
         });
     }
 
-    internal void BindDataSources(ref RenderGraphFrame frame, GraphBufferId[] sources)
+    internal void BindDataSources(ref RenderGraphFrame frame,
+        GraphBufferId[] propertySources, GraphBufferId[] metadataSources)
     {
-        for (int generation = 0; generation < sources.Length; generation++)
+        for (int generation = 0; generation < propertySources.Length; generation++)
         {
             UploadBuffer data = _propertyData[generation]!;
-            frame.BindExternalBuffer(sources[generation], data.Handle, data.CaptureEndpoints());
+            frame.BindExternalBuffer(propertySources[generation], data.Handle, data.CaptureEndpoints());
+            UploadBuffer metadata = _batchMetadata[generation];
+            frame.BindExternalBuffer(metadataSources[generation], metadata.Handle, metadata.CaptureEndpoints());
         }
     }
+
+    internal void RegisterCopyCompletion(int generation, in QueueCompletion completion) =>
+        _timeline.Owner.RegisterGenerationSubmission(_timeline, generation, completion);
 
     internal void StorePropertyReadStates(int generation, ReadOnlySpan<BufferBoundaryState> states) =>
         _propertyData[generation]!.StoreStates(states);

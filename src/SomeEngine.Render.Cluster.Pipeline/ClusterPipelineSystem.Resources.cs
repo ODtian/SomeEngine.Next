@@ -85,9 +85,7 @@ public sealed partial class ClusterPipelineSystem
             PageHeap = geometryBuffers.PageHeap,
             Bvh = geometryBuffers.Bvh,
             InstanceData = _instanceDataTransfer!.Data,
-            InstanceProperties = graph.DeclareExternalBuffer(new BufferDesc(
-                instanceMetadataStride * (ulong)instanceResources.Options.BatchCapacity,
-                BufferUsages.Constant | BufferUsages.CopySource, "Cluster instance metadata"), MemoryType.Upload),
+            InstanceProperties = _instanceDataTransfer!.Metadata,
             InstancePropertiesRange = new BufferRange(0, instanceMetadataStride),
             HiZ = [graph.CreatePersistentTexture(historyDescription), graph.CreatePersistentTexture(historyDescription)],
             PreviousHiZ = graph.CreateTextureInput(),
@@ -670,7 +668,6 @@ public sealed partial class ClusterPipelineSystem
         ClusterCullingHistory history)
     {
         FrameResources frame = GraphData.Resources;
-        graph.BindExternalBuffer(frame.InstanceProperties, binding.InstancePropertyMetadata, binding.InstancePropertyMetadataEndpoints);
         graph.SetBufferRange(
             frame.InstanceProperties,
             binding.InstancePropertyMetadataRange);

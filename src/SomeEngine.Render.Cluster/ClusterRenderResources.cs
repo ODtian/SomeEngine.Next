@@ -393,7 +393,6 @@ public sealed partial class ClusterRenderResources : IDisposable
                 frameUse);
             frameUse = frame.AcquireUse([_residencyTimeline, _instances.Timeline]);
             frameUse.RegisterGeneration(_residencyTimeline, 0);
-            frameUse.RegisterGeneration(_instances.Timeline, batch.Generation);
             ClusterRenderBinding binding = new(
                 residency,
                 batch,

@@ -257,6 +257,13 @@ public sealed class RenderFrameCoordinator : IDisposable
         }
     }
 
+    internal void RegisterGenerationSubmission(RenderTimeline timeline, int generation,
+        in QueueCompletion completion)
+    {
+        lock (_gate)
+            timeline.RegisterSubmission(generation, [completion]);
+    }
+
     internal void CompleteRead(
         RenderReadKind kind,
         ReadOnlySpan<QueueCompletion> completions)
