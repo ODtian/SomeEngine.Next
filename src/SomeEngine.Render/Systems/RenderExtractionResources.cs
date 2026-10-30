@@ -66,9 +66,10 @@ public sealed class RenderExtractionResources
 
 internal sealed class RenderSourceResources
 {
-    private readonly Dictionary<Entity, Material[]> _sourceMaterials = [];
+    private readonly Dictionary<Entity, RenderSourceMaterials> _sourceMaterials = [];
+    private readonly Dictionary<RenderSourceMaterial[], RenderSourceMaterials> _materialSets = new(new MaterialArrayComparison());
     private readonly Dictionary<Entity, Texture> _sourceCookies = [];
-    private readonly Dictionary<Material, int> _materialReferences = new(ReferenceEqualityComparer.Instance);
+    private readonly Dictionary<Material, RenderSourceMaterial> _materialReferences = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<Texture, int> _cookieReferences = new(ReferenceEqualityComparer.Instance);
     private readonly RenderExtractionResources _resources = new();
 
@@ -110,13 +111,22 @@ internal sealed class RenderSourceResources
                 ReadOnlySpan<MeshMaterialBinding> bindings = chunk.ReadBuffer<MeshMaterialBinding>(row).AsSpan();
                 if (!bindings.IsEmpty)
                 {
-                    var materials = new Material[bindings.Length];
+                    var materials = new RenderSourceMaterial[bindings.Length];
                     for (int index = 0; index < bindings.Length; index++)
                     {
-                        Material material = materials[index] = bindings[index].Material;
-                        AddReference(_materialReferences, material);
+                        Material material = bindings[index].Material;
+                        if (!_materialReferences.TryGetValue(material, out RenderSourceMaterial? reference))
+                            _materialReferences.Add(material, reference = new RenderSourceMaterial(material));
+                        materials[index] = reference;
                     }
-                    _sourceMaterials.Add(source, materials);
+                    if (!_materialSets.TryGetValue(materials, out RenderSourceMaterials? set))
+                    {
+                        set = new RenderSourceMaterials(materials);
+                        _materialSets.Add(materials, set);
+                        foreach (RenderSourceMaterial material in materials) material.ReferenceCount++;
+                    }
+                    set.SourceCount++;
+                    _sourceMaterials.Add(source, set);
                 }
             }
             if (cookiesChanged &&
@@ -136,23 +146,30 @@ internal sealed class RenderSourceResources
     internal RenderExtractionResources CollectResources()
     {
         _resources.BeginCollection();
-        foreach (Material material in _materialReferences.Keys) _resources.Add(material);
+        foreach (RenderSourceMaterial reference in _materialReferences.Values)
+        {
+            reference.BoundsExpansion = reference.Material.BoundsExpansion;
+            _resources.Add(reference.Material);
+        }
+        foreach (RenderSourceMaterials set in _materialSets.Values)
+        {
+            float expansion = 0;
+            foreach (RenderSourceMaterial material in set.Materials)
+                expansion = Math.Max(expansion, material.BoundsExpansion);
+            set.BoundsExpansion = expansion;
+        }
         foreach (Texture texture in _cookieReferences.Keys) _resources.Add(texture);
         return _resources;
     }
 
-    internal float ReadMaterialBoundsExpansion(Entity source)
-    {
-        float expansion = 0;
-        if (_sourceMaterials.TryGetValue(source, out Material[]? materials))
-            foreach (Material material in materials) expansion = Math.Max(expansion, material.BoundsExpansion);
-        return expansion;
-    }
+    internal RenderSourceMaterials? ReadMaterials(Entity source) => _sourceMaterials.GetValueOrDefault(source);
 
     private void RemoveMaterials(Entity source)
     {
-        if (_sourceMaterials.Remove(source, out Material[]? materials))
-            foreach (Material material in materials) RemoveReference(_materialReferences, material);
+        if (!_sourceMaterials.Remove(source, out RenderSourceMaterials? set) || --set.SourceCount != 0) return;
+        _materialSets.Remove(set.Materials);
+        foreach (RenderSourceMaterial material in set.Materials)
+            if (--material.ReferenceCount == 0) _materialReferences.Remove(material.Material);
     }
 
     private void RemoveCookie(Entity source)
@@ -177,9 +194,43 @@ internal sealed class RenderSourceResources
     internal void Clear()
     {
         _sourceMaterials.Clear();
+        _materialSets.Clear();
         _sourceCookies.Clear();
         _materialReferences.Clear();
         _cookieReferences.Clear();
         _resources.Clear();
     }
+
+    private sealed class MaterialArrayComparison : IEqualityComparer<RenderSourceMaterial[]>
+    {
+        public bool Equals(RenderSourceMaterial[]? first, RenderSourceMaterial[]? second)
+        {
+            if (ReferenceEquals(first, second)) return true;
+            if (first is null || second is null || first.Length != second.Length) return false;
+            for (int index = 0; index < first.Length; index++)
+                if (!ReferenceEquals(first[index], second[index])) return false;
+            return true;
+        }
+
+        public int GetHashCode(RenderSourceMaterial[] materials)
+        {
+            var hash = new HashCode();
+            foreach (RenderSourceMaterial material in materials) hash.Add(material.Material.MaterialId);
+            return hash.ToHashCode();
+        }
+    }
+}
+
+internal sealed class RenderSourceMaterial(Material material)
+{
+    internal Material Material { get; } = material;
+    internal int ReferenceCount;
+    internal float BoundsExpansion;
+}
+
+internal sealed class RenderSourceMaterials(RenderSourceMaterial[] materials)
+{
+    internal RenderSourceMaterial[] Materials { get; } = materials;
+    internal int SourceCount;
+    internal float BoundsExpansion;
 }

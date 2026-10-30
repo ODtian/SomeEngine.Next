@@ -1,5 +1,6 @@
 using SomeEngine.Graphics;
 using SomeEngine.Graphics.Direct3D12;
+using SomeEngine.Graphics.Vulkan;
 using SomeEngine.Render.Frame;
 using SomeEngine.Render.Systems;
 
@@ -16,13 +17,13 @@ public sealed class RenderTestDevice : IDisposable
 
     internal RenderTestDevice(DeviceFeatures features, DeviceQueueDesc[]? queues = null)
     {
-        Backend = D3D12GraphicsBackend.Create();
+        Backend = OperatingSystem.IsWindows() ? D3D12GraphicsBackend.Create() : VulkanGraphicsBackend.Create();
         var options = new AdapterEnumerationOptions(AdapterPreference.HighPerformance, IncludeSoftware: true);
         Backend.TryEnumerateAdapters(options, [], out int count);
         var adapters = new AdapterInfo[count];
         Backend.TryEnumerateAdapters(options, adapters, out _);
-        AdapterInfo warp = adapters.First(adapter => !adapter.HardwareAccelerated);
-        Device = Backend.CreateDevice(new DeviceDesc(warp.Id, queues ?? [new DeviceQueueDesc(QueueType.Graphics)],
+        AdapterInfo softwareAdapter = adapters.First(adapter => !adapter.HardwareAccelerated);
+        Device = Backend.CreateDevice(new DeviceDesc(softwareAdapter.Id, queues ?? [new DeviceQueueDesc(QueueType.Graphics)],
             requiredFeatures: features, label: "Render public behavior tests"));
         RenderDevice = new RenderDevice(Backend, Device);
         Coordinator = new RenderFrameCoordinator(RenderDevice);

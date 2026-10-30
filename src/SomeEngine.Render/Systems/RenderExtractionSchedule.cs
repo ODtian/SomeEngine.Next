@@ -611,7 +611,7 @@ public sealed class RenderExtractionContext : IDisposable
 
     public RenderWorld World => _world;
 
-    internal float ReadMaterialBoundsExpansion(Entity source) => _sourceResources.ReadMaterialBoundsExpansion(source);
+    internal RenderSourceMaterials? ReadSourceMaterials(Entity source) => _sourceResources.ReadMaterials(source);
 
     /// <summary>Sets a mirror's material bindings and retains their shared rendering-world references.</summary>
     internal IReadOnlyDictionary<long, RenderMaterialReference> MaterialReferences { get; set; } =

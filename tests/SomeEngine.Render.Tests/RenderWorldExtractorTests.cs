@@ -351,6 +351,46 @@ public sealed class RenderWorldExtractorTests(RenderTestDevice graphics) : IClas
         AssertRenderBindings(render, mirror, first, second, 2);
     }
 
+    [Fact]
+    public void SharedGeometryChangesReachEverySourceWhenExtractionRetries()
+    {
+        using World game = new();
+        using RenderWorld render = new();
+        using var extraction = new RenderExtractionSystems(render, new MeshRenderExtractor());
+        Mesh mesh = MeshAsset(813, 1);
+        Mesh replacement = MeshAsset(814, 1);
+        var material = new ExpandingMaterial { Expansion = 1 };
+        Entity[] sources = Enumerable.Range(0, 3)
+            .Select(index => AddMeshSource(game, mesh, 2, new Vector3(index, 0, 0))).ToArray();
+        foreach (Entity source in sources) SetSourceBindings(game, source, material, default!, 1);
+        ExtractAndApply(extraction, game, render);
+        Entity[] mirrors = sources.Select(extraction.RequireMirror).ToArray();
+        Mesh before = render.Read<RenderMesh>(mirrors[0]).Mesh;
+        int writes = 0;
+        render.Hooks<RenderMesh>().OnReplace((DeferredWorld _, Entity _, in RenderMesh _) =>
+        {
+            if (++writes == 2) throw new InvalidOperationException();
+        });
+
+        game.Replace(sources[0], new MeshInstance { Mesh = replacement, BoundsExpansion = 2 });
+        mesh.Update(MeshAsset(813, 2));
+        material.Expansion = 4;
+        extraction.Extract(game);
+        Assert.Throws<InvalidOperationException>(() => graphics.Apply(extraction, render));
+        foreach (Entity mirror in mirrors)
+        {
+            Assert.Same(before, render.Read<RenderMesh>(mirror).Mesh);
+            Assert.Equal(3, render.Read<RenderMesh>(mirror).BoundsExpansion);
+        }
+
+        ExtractAndApply(extraction, game, render);
+
+        Assert.Same(replacement.CaptureData(), render.Read<RenderMesh>(mirrors[0]).Mesh);
+        Assert.Same(mesh.CaptureData(), render.Read<RenderMesh>(mirrors[1]).Mesh);
+        Assert.Same(mesh.CaptureData(), render.Read<RenderMesh>(mirrors[2]).Mesh);
+        foreach (Entity mirror in mirrors) Assert.Equal(6, render.Read<RenderMesh>(mirror).BoundsExpansion);
+    }
+
     [Theory]
     [InlineData(1)]
     [InlineData(129)]
