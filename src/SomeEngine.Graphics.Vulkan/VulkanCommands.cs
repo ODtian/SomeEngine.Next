@@ -1006,7 +1006,7 @@ internal sealed unsafe partial class VulkanBackend
     {
         private readonly HashSet<IVulkanRetained> _captures = [];
         private readonly List<VkImageView> _attachmentViews = [];
-        private readonly HashSet<IVulkanRetained> _repeatReferences = [];
+        private readonly List<IVulkanRetained> _repeatReferences = [];
         private readonly Dictionary<VulkanPersistentParameterBindings, VulkanDescriptorGeneration> _repeatParameters = [];
         private readonly Dictionary<VulkanBindlessHeap, VulkanBindlessGeneration> _repeatDescriptors = [];
         private bool _repeatable;
@@ -1173,13 +1173,18 @@ internal sealed unsafe partial class VulkanBackend
 
         internal void CaptureReference(IVulkanRetained value)
         {
+            if (CaptureGpuReference(value) && value is not VulkanSparseBindings)
+                _repeatReferences.Add(value);
+        }
+
+        private bool CaptureGpuReference(IVulkanRetained value)
+        {
             if (!_captures.Add(value))
-                return;
+                return false;
             try
             {
-                if (value is not VulkanSparseBindings)
-                    _repeatReferences.Add(value);
                 value.RetainNative();
+                return true;
             }
             catch
             {
@@ -1253,7 +1258,8 @@ internal sealed unsafe partial class VulkanBackend
                         default:
                             return false;
                     }
-                    Capture(reference);
+                    CaptureSparseBindings(reference);
+                    CaptureGpuReference(reference);
                 }
                 return true;
             }
