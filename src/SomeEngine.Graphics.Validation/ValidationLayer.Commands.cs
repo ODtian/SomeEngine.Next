@@ -83,19 +83,22 @@ public sealed partial class ValidationLayer
             if (state.Rendering)
                 Reject("Commands", "EndRendering is required before End.", context.Label);
             RecordingValidationPayload payload = state.TransferPayload();
-            RecordedValidationState validation = state.RentRecording(payload);
-            lock (_gate)
-                ReserveValidationCapacity(null, default, reserveRecorded: true);
+            RecordedValidationState? validation = null;
+            bool capacityReserved = false;
             bool backendEnded = false;
             RecordedCommands result = default;
             try
             {
+                validation = state.RentRecording(payload);
+                lock (_gate)
+                    ReserveValidationCapacity(reserveRecorded: true);
+                capacityReserved = true;
                 result = Backend.End(context);
                 backendEnded = true;
                 lock (_gate)
                 {
                     _recorded.Add(new RecordedCommandsKey(result), validation);
-                    result.Lease.Discarded += ForgetDiscardedCommands;
+                    result.Lease.Discarded += _discardedCommandsCallback;
                 }
                 ResetContextRecordingState(state);
                 return result;
@@ -109,16 +112,19 @@ public sealed partial class ValidationLayer
                 }
                 else
                 {
-                    _ = validation.ReleasePayload();
-                    state.ReturnRecording(validation);
+                    if (validation is not null)
+                        _ = validation.ReleasePayload();
                     state.RestorePayload(payload);
+                    if (validation is not null)
+                        state.ReturnRecording(validation);
                 }
                 throw;
             }
             finally
             {
-                lock (_gate)
-                    _recordedCapacityReservations--;
+                if (capacityReserved)
+                    lock (_gate)
+                        _recordedCapacityReservations--;
             }
         }
     }
@@ -135,23 +141,25 @@ public sealed partial class ValidationLayer
             if (state.QueryEvents.Count != 0)
                 Reject("Queries", "Bundles cannot contain query lifecycle operations.", context.Label);
             RecordingValidationPayload payload = state.TransferPayload();
-            var bundleState = new BundleValidationState(payload.Dependencies);
+            bool backendAttempted = false;
             try
             {
+                var bundleState = new BundleValidationState(payload.Dependencies);
                 var objectInfo = new ValidationObjectInfo(context.Device);
                 lock (_gate)
                 {
-                    _objects.EnsureAdditionalCapacity();
-                    _bundleStates.EnsureAdditionalCapacity();
+                    _objects.EnsureAdditionalCapacityUnderLock();
+                    _bundleStates.EnsureAdditionalCapacityUnderLock();
                     RecordedBundle? result = null;
                     bool objectAdded = false;
                     bool stateAdded = false;
                     try
                     {
+                        backendAttempted = true;
                         result = Backend.EndBundle(context);
-                        _objects.Add(result, objectInfo);
+                        _objects.AddUnderLock(result, objectInfo);
                         objectAdded = true;
-                        _bundleStates.Add(result, bundleState);
+                        _bundleStates.AddUnderLock(result, bundleState);
                         stateAdded = true;
                         ResetContextRecordingState(state);
                         return result;
@@ -159,9 +167,9 @@ public sealed partial class ValidationLayer
                     catch
                     {
                         if (stateAdded)
-                            _bundleStates.Remove(result!);
+                            _bundleStates.RemoveUnderLock(result!);
                         if (objectAdded)
-                            _objects.Remove(result!);
+                            _objects.RemoveUnderLock(result!);
                         result?.Dispose();
                         throw;
                     }
@@ -171,7 +179,8 @@ public sealed partial class ValidationLayer
             {
                 if (state.Recording)
                     state.RestorePayload(payload);
-                ResetContextRecordingState(state);
+                if (backendAttempted)
+                    ResetContextRecordingState(state);
                 throw;
             }
         }
@@ -422,10 +431,13 @@ public sealed partial class ValidationLayer
                 PrepareCommandDependencyCore(state, preparedDepthStencil.View, ref capacity);
             ReserveCommandMutation(state, capacity);
             Backend.BeginRendering(context, desc);
-            foreach (ColorAttachmentDesc attachment in desc.Colors)
-                RecordCommandDependencyCore(state, attachment.View);
-            if (desc.DepthStencil is { } recordedDepthStencil)
-                RecordCommandDependencyCore(state, recordedDepthStencil.View);
+            if (state.Bundle)
+            {
+                foreach (ColorAttachmentDesc attachment in desc.Colors)
+                    RecordCommandDependencyCore(state, attachment.View);
+                if (desc.DepthStencil is { } recordedDepthStencil)
+                    RecordCommandDependencyCore(state, recordedDepthStencil.View);
+            }
             state.Rendering = true;
         }
     }
@@ -511,13 +523,8 @@ public sealed partial class ValidationLayer
         VariableLayoutReflection reflectedLayout = RequireParameterBlockLayout(
             state,
             context,
-            bindings.Layout);
-        Pipeline selectedPipeline;
-        lock (state)
-            selectedPipeline = state.Pipeline!;
-        if (!_pipelineBindingStates.TryGetValue(
-                selectedPipeline, out PipelineBindingValidationState? pipelineBindings))
-            Reject("Ownership", "The selected Pipeline has no binding validation state.", context.Label);
+            bindings.Layout,
+            out PipelineBindingValidationState pipelineBindings);
         if (DiagnoseParameterBindings(reflectedLayout, bindings.Resources,
                 bindings.OrdinaryData, pipelineBindings) is string diagnostic)
             Reject("Bindings", diagnostic, context.Label);
@@ -553,8 +560,11 @@ public sealed partial class ValidationLayer
             ReserveCommandMutation(state, capacity);
         }
         Backend.SetVertexBuffers(context, firstSlot, bindings);
-        foreach (VertexBufferBinding binding in bindings)
-            RecordCommandDependency(state, binding.Buffer);
+        if (state.Bundle)
+        {
+            foreach (VertexBufferBinding binding in bindings)
+                RecordCommandDependency(state, binding.Buffer);
+        }
     }
 
     public void SetIndexBuffer(CommandContext context, in IndexBufferBinding binding)
@@ -592,11 +602,14 @@ public sealed partial class ValidationLayer
             ReserveCommandMutation(state, capacity);
         }
         Backend.SetStreamOutputBuffers(context, firstSlot, bindings);
-        foreach (StreamOutputBufferBinding binding in bindings)
+        if (state.Bundle)
         {
-            RecordCommandDependency(state, binding.Buffer);
-            if (binding.FilledSizeBuffer is not null)
-                RecordCommandDependency(state, binding.FilledSizeBuffer);
+            foreach (StreamOutputBufferBinding binding in bindings)
+            {
+                RecordCommandDependency(state, binding.Buffer);
+                if (binding.FilledSizeBuffer is not null)
+                    RecordCommandDependency(state, binding.FilledSizeBuffer);
+            }
         }
     }
 
@@ -853,8 +866,6 @@ public sealed partial class ValidationLayer
             reservation.Timelines = timelines;
 
             ReserveValidationCapacity(
-                null,
-                default,
                 reserveRecorded: false,
                 queryStateCapacity: queries?.NewStates.Count ?? 0,
                 resourceCellCapacities: resources?.CellCapacities,
@@ -913,7 +924,7 @@ public sealed partial class ValidationLayer
             var key = new RecordedCommandsKey(commands, sequence);
             if (_recorded.Remove(key, out RecordedValidationState? recording))
             {
-                commands.Discarded -= ForgetDiscardedCommands;
+                commands.Discarded -= _discardedCommandsCallback;
                 recording.Owner.RecycleRecording(recording);
             }
         }
@@ -932,7 +943,7 @@ public sealed partial class ValidationLayer
                     var key = new RecordedCommandsKey(command);
                     if (_recorded.Remove(key, out RecordedValidationState? recording))
                     {
-                        key.Lease.Discarded -= ForgetDiscardedCommands;
+                        key.Lease.Discarded -= _discardedCommandsCallback;
                         recording.Owner.RecycleRecording(recording);
                     }
                 }
@@ -981,10 +992,11 @@ public sealed partial class ValidationLayer
                 Reject("Ownership", "ExternalTimeline was not created through this Validation Layer.");
 
             TimelineValidationState requiredState = state!;
-                ulong previous = proposed.TryGetValue(requiredState, out ulong pending)
+                bool hasProposedValue = proposed.TryGetValue(requiredState, out ulong pending);
+                ulong previous = hasProposedValue
                     ? pending
                     : requiredState.LastSignalValue;
-                bool previousKnown = proposed.ContainsKey(requiredState) || requiredState.LastSignalKnown;
+                bool previousKnown = hasProposedValue || requiredState.LastSignalKnown;
                 if (previousKnown && signal.Value < previous)
                 {
                     Reject(
@@ -1191,7 +1203,7 @@ public sealed partial class ValidationLayer
     {
         lock (_gate)
         {
-            if (!_contexts.TryGetValue(context, out ContextValidationState? state))
+            if (!_contexts.TryGetValueUnderLock(context, out ContextValidationState? state))
                 Reject("Ownership", "CommandContext was not created through this Validation Layer.", context.Label);
             return state!;
         }
@@ -1308,6 +1320,8 @@ public sealed partial class ValidationLayer
         ContextValidationState state,
         HashSet<GraphicsObject> dependencies)
     {
+        if (!state.Bundle)
+            return;
         lock (state)
         {
             foreach (GraphicsObject dependency in dependencies)
@@ -1330,14 +1344,23 @@ public sealed partial class ValidationLayer
         }
     }
 
-    private void ReserveCommandMutation(
+    private static void ReserveCommandMutation(
         ContextValidationState state,
-        in CommandMutationCapacity capacity) =>
-        ReserveValidationCapacity(state, capacity, reserveRecorded: false);
+        in CommandMutationCapacity capacity)
+    {
+        if (state.Bundle && capacity.Dependencies != 0)
+            state.Dependencies.EnsureCapacity(checked(state.Dependencies.Count + capacity.Dependencies));
+        if (capacity.QueryEvents != 0)
+            state.QueryEvents.EnsureCapacity(checked(state.QueryEvents.Count + capacity.QueryEvents));
+        if (capacity.QueryPhases != 0)
+            state.QueryPhases.EnsureCapacity(checked(state.QueryPhases.Count + capacity.QueryPhases));
+        if (capacity.ResourceEvents != 0)
+            state.ResourceEvents.EnsureCapacity(checked(state.ResourceEvents.Count + capacity.ResourceEvents));
+        if (capacity.ResourceStates != 0)
+            state.ResourceStates.EnsureCapacity(checked(state.ResourceStates.Count + capacity.ResourceStates));
+    }
 
     private void ReserveValidationCapacity(
-        ContextValidationState? state,
-        in CommandMutationCapacity capacity,
         bool reserveRecorded,
         int queryStateCapacity = 0,
         Dictionary<ResourceValidationState, int>? resourceCellCapacities = null,
@@ -1346,14 +1369,6 @@ public sealed partial class ValidationLayer
         SubmitValidationReservation? submitReservation = null)
     {
         {
-            if (state is not null)
-            {
-                state.Dependencies.EnsureCapacity(checked(state.Dependencies.Count + capacity.Dependencies));
-                state.QueryEvents.EnsureCapacity(checked(state.QueryEvents.Count + capacity.QueryEvents));
-                state.QueryPhases.EnsureCapacity(checked(state.QueryPhases.Count + capacity.QueryPhases));
-                state.ResourceEvents.EnsureCapacity(checked(state.ResourceEvents.Count + capacity.ResourceEvents));
-                state.ResourceStates.EnsureCapacity(checked(state.ResourceStates.Count + capacity.ResourceStates));
-            }
             if (reserveRecorded)
             {
                 _recorded.EnsureCapacity(checked(
@@ -1422,8 +1437,6 @@ public sealed partial class ValidationLayer
 
     private void ReserveCompletionCapacity(int capacity = 1)
         => ReserveValidationCapacity(
-            null,
-            default,
             reserveRecorded: false,
             completionCapacity: capacity);
 
@@ -1453,6 +1466,8 @@ public sealed partial class ValidationLayer
         ContextValidationState state,
         GraphicsObject dependency)
     {
+        if (!state.Bundle)
+            return;
         lock (state)
             RecordCommandDependencyCore(state, dependency);
     }
@@ -1461,6 +1476,8 @@ public sealed partial class ValidationLayer
         ContextValidationState state,
         GraphicsObject dependency)
     {
+        if (!state.Bundle)
+            return;
         GraphicsObject? current = dependency;
         while (current is not null && current is not Device)
         {
@@ -1475,6 +1492,8 @@ public sealed partial class ValidationLayer
         ContextValidationState state,
         ReadOnlySpan<GraphicsObject> dependencies)
     {
+        if (!state.Bundle)
+            return;
         lock (state)
         {
             foreach (GraphicsObject dependency in dependencies)
@@ -1568,7 +1587,8 @@ public sealed partial class ValidationLayer
     private VariableLayoutReflection RequireParameterBlockLayout(
         ContextValidationState state,
         CommandContext context,
-        SlangShaderSharp.VariableLayoutReflection layout)
+        SlangShaderSharp.VariableLayoutReflection layout,
+        out PipelineBindingValidationState pipelineBindings)
     {
         Pipeline pipeline;
         lock (state)
@@ -1586,6 +1606,7 @@ public sealed partial class ValidationLayer
                 "The Slang parameter layout is not part of the selected Pipeline.",
                 context.Label);
         }
+        pipelineBindings = bindings!;
         return layout;
     }
 

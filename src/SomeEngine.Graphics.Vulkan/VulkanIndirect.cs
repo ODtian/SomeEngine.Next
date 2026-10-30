@@ -323,8 +323,8 @@ internal sealed unsafe partial class VulkanBackend
         public void ReleaseNative() => _lifetime.Release();
         internal override void Release(bool fromParent)
         {
-            _device.UnregisterChild(this);
             _lifetime.Release();
+            _device.UnregisterChild(this);
         }
 
         private void DestroyNative()

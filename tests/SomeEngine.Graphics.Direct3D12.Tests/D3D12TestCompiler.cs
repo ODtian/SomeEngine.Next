@@ -213,8 +213,7 @@ public sealed class D3D12TestCompiler : IDisposable
             components[index + 1] = component;
         }
 
-        SlangResult compose = SlangShaderData.CombineComponents(session,
-            components,
+        SlangResult compose = session.CreateCompositeComponentType(components,
             out IComponentType? composite,
             out ISlangBlob? composeDiagnostics);
         if (!compose.Succeeded || composite is null)

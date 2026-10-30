@@ -35,7 +35,7 @@ public sealed class ApplicationScene(string contentDirectory)
     public Func<ApplicationRendering, IApplicationColorFeature>? CreateColorFeature { get; set; }
     public Action<ApplicationResult>? SceneCompleted { get; set; }
     public bool ReloadRequested { get; internal set; }
-    public bool StopRequested { get; private set; }
+    public bool ExitRequested { get; internal set; }
 
     /// <summary>Installs the feature for each scene run, before extraction and rendering begin.</summary>
     public void InstallGeometry(IApplicationGeometryFeature feature) => _geometryFeatures.Add(feature);
@@ -43,11 +43,8 @@ public sealed class ApplicationScene(string contentDirectory)
     /// <summary>Loads the current content and settings after this scene run completes.</summary>
     public void Reload() => ReloadRequested = true;
 
-    public void Stop()
-    {
-        StopRequested = true;
-        ReloadRequested = false;
-    }
+    /// <summary>Finishes the current presented frame and releases application resources before returning.</summary>
+    public void Exit() => ExitRequested = true;
 }
 
 /// <summary>Access to the application's current frame; rendering diagnostics are read on request.</summary>

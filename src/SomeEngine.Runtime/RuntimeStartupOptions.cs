@@ -13,7 +13,6 @@ public enum RuntimeGraphicsBackend : byte
 public sealed record RuntimeStartupOptions(
     int FrameLimit,
     bool WindowVSync,
-    bool SkipSwapchainPresent,
     bool VerifyFrameOutput,
     string? RenderDocCapture,
     uint RenderDocFrame,
@@ -107,11 +106,6 @@ public sealed record RuntimeStartupOptions(
         return new RuntimeStartupOptions(
             FrameLimit: frameLimit,
             WindowVSync: windowVSync,
-            SkipSwapchainPresent: ReadBooleanOption(
-                args,
-                enableSwitches: ["--skip-present"],
-                disableSwitches: ["--no-skip-present"],
-                defaultValue: false),
             VerifyFrameOutput: ReadBooleanOption(
                 args,
                 enableSwitches: ["--verify-frame-output"],

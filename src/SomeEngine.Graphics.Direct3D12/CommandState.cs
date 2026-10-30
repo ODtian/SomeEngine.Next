@@ -1,5 +1,6 @@
 using System.Numerics;
 using System.Runtime.CompilerServices;
+using System.Text;
 using Silk.NET.Core.Native;
 using Silk.NET.Direct3D12;
 using Silk.NET.Maths;
@@ -403,8 +404,11 @@ internal sealed unsafe partial class D3D12Backend
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12CommandContext command = RequireCommandContext(context, nameof(context));
-        fixed (byte* label = utf8Label)
-            CommandExecutionTrace.BeginEvent(command.List, 0, label, checked((uint)utf8Label.Length));
+        // D3D12 metadata 0 identifies a null-terminated UTF-16 label.
+        string labelText = Encoding.UTF8.GetString(utf8Label);
+        fixed (char* label = labelText)
+            CommandExecutionTrace.BeginEvent(command.List, 0, label,
+                checked((uint)(labelText.Length + 1) * sizeof(char)));
     }
 
     public void EndEvent(CommandContext context)
@@ -418,8 +422,11 @@ internal sealed unsafe partial class D3D12Backend
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         D3D12CommandContext command = RequireCommandContext(context, nameof(context));
-        fixed (byte* label = utf8Label)
-            CommandBindingTrace.SetMarker(command.List, 0, label, checked((uint)utf8Label.Length));
+        // D3D12 metadata 0 identifies a null-terminated UTF-16 label.
+        string labelText = Encoding.UTF8.GetString(utf8Label);
+        fixed (char* label = labelText)
+            CommandBindingTrace.SetMarker(command.List, 0, label,
+                checked((uint)(labelText.Length + 1) * sizeof(char)));
     }
 
     private static D3DPrimitiveTopology ToNativeTopology(PrimitiveTopology topology) =>

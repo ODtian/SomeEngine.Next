@@ -42,9 +42,12 @@ internal sealed unsafe partial class VulkanBackend
         uint Set,
         uint Binding,
         string? Name = null,
-        uint SourceSet = uint.MaxValue)
+        uint SourceSet = uint.MaxValue,
+        uint SourceBinding = uint.MaxValue)
     {
         internal uint LogicalSet => SourceSet == uint.MaxValue ? Set : SourceSet;
+        // The source binding includes the register-class prefix, before bindless relocation.
+        internal uint LogicalBinding => SourceBinding == uint.MaxValue ? Binding : SourceBinding;
     }
 
     private readonly record struct SpirvBindingDecoration(int ValueWord, uint Target);
@@ -195,8 +198,7 @@ internal sealed unsafe partial class VulkanBackend
 
     internal static byte[] NormalizeSpirvDescriptorBindings(
         ReadOnlySpan<byte> code,
-        ReadOnlySpan<VulkanSpirvBindingTarget> targets,
-        out VulkanSpirvBindingTarget[] activeTargets)
+        ReadOnlySpan<VulkanSpirvBindingTarget> targets)
     {
         if (code.Length < 5 * sizeof(uint) || (code.Length & 3) != 0)
             throw InvalidSpirv("SPIR-V is truncated or not word aligned.");
@@ -215,7 +217,6 @@ internal sealed unsafe partial class VulkanBackend
             words,
             bindings,
             targets);
-        activeTargets = CollectActiveSpirvTargets(bindings, mappedTargets);
         return AddSpirvAliasingDecorations(normalized, bindings, mappedTargets);
     }
 
@@ -273,42 +274,6 @@ internal sealed unsafe partial class VulkanBackend
         return MemoryMarshal.AsBytes(result.AsSpan()).ToArray();
     }
 
-    private static VulkanSpirvBindingTarget[] CollectActiveSpirvTargets(
-        ReadOnlySpan<ResolvedSpirvBinding> bindings,
-        ReadOnlySpan<VulkanSpirvBindingTarget> mappedTargets)
-    {
-        var ordered = new List<(
-            VulkanSpirvBindingTarget Target,
-            uint PhysicalBinding,
-            uint SourceBinding,
-            uint SourceId)>(bindings.Length);
-        foreach (ref readonly ResolvedSpirvBinding binding in bindings)
-        {
-            int index = ordered.Count;
-            VulkanSpirvBindingTarget target = mappedTargets[index];
-            ordered.Add((
-                target,
-                target.Binding,
-                binding.LogicalBinding,
-                binding.Target));
-        }
-        ordered.Sort(static (left, right) =>
-        {
-            int set = left.Target.Set.CompareTo(right.Target.Set);
-            if (set != 0) return set;
-            int physical = left.PhysicalBinding.CompareTo(right.PhysicalBinding);
-            if (physical != 0) return physical;
-            int source = left.SourceBinding.CompareTo(right.SourceBinding);
-            return source != 0 ? source : left.SourceId.CompareTo(right.SourceId);
-        });
-        var result = new List<VulkanSpirvBindingTarget>();
-        var seen = new HashSet<VulkanSpirvBindingTarget>();
-        foreach (var binding in ordered)
-            if (seen.Add(binding.Target))
-                result.Add(binding.Target);
-        return result.ToArray();
-    }
-
     private static ResolvedSpirvBinding[] ResolveSpirvBindings(
         ReadOnlySpan<uint> words,
         SpirvBindingFacts facts)
@@ -348,12 +313,12 @@ internal sealed unsafe partial class VulkanBackend
             targets.ToArray()
                 .GroupBy(static target => (
                     target.LogicalSet,
-                    DecodeDescriptorRegisterClass(target.Binding)))
+                    DecodeDescriptorRegisterClass(target.LogicalBinding)))
                 .ToDictionary(
                     static group => group.Key,
                     static group => group
                         .Distinct()
-                        .OrderBy(static target => target.Binding)
+                        .OrderBy(static target => target.LogicalBinding)
                         .ToArray());
         var mapped = new Dictionary<int, VulkanSpirvBindingTarget>();
         foreach (IGrouping<(uint Set, DescriptorRegisterClass RegisterClass), ResolvedSpirvBinding> group
@@ -398,14 +363,22 @@ internal sealed unsafe partial class VulkanBackend
         {
             VulkanSpirvBindingTarget[] named = available
                 .Where(target => sourceGroup.Any(source => NamesMatch(source.Name, target.Name)))
-                .DistinctBy(static target => (target.Set, target.Binding))
                 .ToArray();
+            int destinations = named.Select(static target => (target.Set, target.Binding)).Distinct().Count();
             if (named.Length > 1)
             {
-                uint binding = EncodeDescriptorBinding(sourceGroup.Key, group.Key.RegisterClass);
-                named = named.Where(target => target.Binding == binding).ToArray();
+                // Equal source names in different modules are legal. Prefer their
+                // declared coordinates even when relocation aliases destinations,
+                // so a named alias cannot consume a pending unnamed source.
+                uint sourceBinding = EncodeDescriptorBinding(sourceGroup.Key, group.Key.RegisterClass);
+                VulkanSpirvBindingTarget[] exact = named.Where(target => target.LogicalBinding == sourceBinding).ToArray();
+                if (exact.Length != 0 || destinations > 1)
+                {
+                    named = exact;
+                    destinations = named.Select(static target => (target.Set, target.Binding)).Distinct().Count();
+                }
             }
-            if (named.Length != 1)
+            if (destinations != 1)
             {
                 if (sourceGroup.Any(static source => !string.IsNullOrWhiteSpace(source.Name)) &&
                     available.Any(static target => !string.IsNullOrWhiteSpace(target.Name)))
@@ -413,23 +386,19 @@ internal sealed unsafe partial class VulkanBackend
                     throw InvalidSpirv(
                         "A named SPIR-V descriptor could not be matched uniquely to Slang " +
                         $"reflection: source=[{string.Join(", ", sourceGroup.Select(
-                            static source => $"{source.Name ?? $"%{source.Target}"}@{source.LogicalBinding}"))}], " +
+                            static source => source.Name ?? $"%{source.Target}"))}], " +
                         $"targets=[{string.Join(", ", available.Select(
-                            static target => $"{target.Name}@{target.Set}:{target.Binding}"))}].");
+                            static target => target.Name ?? $"{target.Set}:{target.Binding}"))}].");
                 }
                 pending.Add(sourceGroup);
                 continue;
             }
             VulkanSpirvBindingTarget target = named[0];
             AssignSpirvTarget(words, sourceGroup, target, mapped);
-            available.RemoveAll(value => value.Set == target.Set && value.Binding == target.Binding);
+            available.RemoveAll(value => value.LogicalBinding == target.LogicalBinding);
         }
 
-        VulkanSpirvBindingTarget[] remaining = available
-            .GroupBy(static target => (target.Set, target.Binding))
-            .Select(static values => values.First())
-            .OrderBy(static target => target.Binding)
-            .ToArray();
+        VulkanSpirvBindingTarget[] remaining = available.ToArray();
         foreach (IGrouping<uint, ResolvedSpirvBinding> sourceGroup in pending)
         {
             ResolvedSpirvBinding source = sourceGroup.First();
@@ -437,9 +406,9 @@ internal sealed unsafe partial class VulkanBackend
                 source.LogicalBinding,
                 source.RegisterClass);
             VulkanSpirvBindingTarget[] matches = remaining
-                .Where(target => target.Binding == direct)
+                .Where(target => target.LogicalBinding == direct)
                 .ToArray();
-            if (matches.Length != 1)
+            if (matches.Select(static target => (target.Set, target.Binding)).Distinct().Count() != 1)
             {
                 throw InvalidSpirv(
                     $"SPIR-V descriptor set {group.Key.Set}, register class " +

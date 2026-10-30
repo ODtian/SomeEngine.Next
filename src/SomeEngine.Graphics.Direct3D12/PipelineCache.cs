@@ -51,10 +51,13 @@ internal sealed unsafe partial class D3D12Backend
     {
         using var trace = global::SomeEngine.Diagnostics.EngineTrace.Begin(RhiTrace.RhiCommandsAndOther);
         cancellationToken.ThrowIfCancellationRequested();
-        byte[] data = RequirePipelineCache(cache).Serialize(cancellationToken);
+        byte[]? data = RequirePipelineCache(cache).Serialize(
+            destination.Length,
+            out int byteCount,
+            cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
-        requiredByteCount = data.Length;
-        if (destination.Length < data.Length)
+        requiredByteCount = byteCount;
+        if (data is null)
             return false;
         data.CopyTo(destination);
         return true;
@@ -386,13 +389,20 @@ internal sealed unsafe partial class D3D12Backend
             }
         }
 
-        internal byte[] Serialize(CancellationToken cancellationToken)
+        internal byte[]? Serialize(
+            int destinationByteCount,
+            out int requiredByteCount,
+            CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
             lock (_gate)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 ThrowIfDisposed();
+                requiredByteCount = _residentWireByteCount;
+                if (destinationByteCount < requiredByteCount)
+                    return null;
+
                 var entries = new PipelineCacheEntry[_entries.Count];
                 int index = 0;
                 foreach ((CacheEntryKey key, CacheEntry entry) in _entries)

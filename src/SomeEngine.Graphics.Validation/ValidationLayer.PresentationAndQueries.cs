@@ -2,25 +2,17 @@ namespace SomeEngine.Graphics.Validation;
 
 public sealed partial class ValidationLayer
 {
-    public ReadOnlyMemory<SwapchainSupport> GetSwapchainSupport(Device device, Surface surface)
+    public SwapchainSupport[] GetSwapchainSupport(Device device, Surface surface)
     {
         RequireDevice(device);
-        lock (_gate)
-            if (!_surfaces.Contains(surface)) Reject("Ownership", "Surface was not created through this Validation Layer.");
-        if (surface.IsDisposed) Reject("Lifetime", "Surface is disposed.", surface.Label);
+        RequireSurface(surface);
         return Backend.GetSwapchainSupport(device, surface);
     }
 
     public Swapchain CreateSwapchain(Device device, in SwapchainDesc desc)
     {
         RequireDevice(device);
-        lock (_gate)
-        {
-            if (!_surfaces.Contains(desc.Surface))
-                Reject("Ownership", "Swapchain Surface was not created through this Validation Layer.");
-        }
-        if (desc.Surface.IsDisposed)
-            Reject("Lifetime", "Swapchain Surface is disposed.", desc.Surface.Label);
+        RequireSurface(desc.Surface);
         SwapchainDesc createDesc = desc;
         var objectInfo = new ValidationObjectInfo(device);
         lock (_gate)
@@ -43,6 +35,17 @@ public sealed partial class ValidationLayer
                 throw;
             }
         }
+    }
+
+    private void RequireSurface(Surface surface)
+    {
+        lock (_gate)
+        {
+            if (!_surfaces.TryGetValueUnderLock(surface, out _))
+                Reject("Ownership", "Surface was not created through this Validation Layer.");
+        }
+        if (surface.IsDisposed)
+            Reject("Lifetime", "Surface is disposed.", surface.Label);
     }
 
     public SwapchainAcquireStatus Acquire(
@@ -130,6 +133,9 @@ public sealed partial class ValidationLayer
         var pool = (QueryPool)value;
         lock (_gate)
         {
+            if (_queryStates.Count == 0)
+                return;
+
             for (uint index = 0; index < pool.Description.Count; index++)
                 _queryStates.Remove(new QuerySlot(pool, index));
         }
@@ -170,8 +176,7 @@ public sealed partial class ValidationLayer
 
     public void ResetQueries(CommandContext context, QueryPool pool, uint firstQuery, uint queryCount)
     {
-        RequireOutsideRendering(context);
-        ContextValidationState state = GetContextState(context);
+        ContextValidationState state = RequireOutsideRendering(context);
         RequireOnDevice(context.Device, pool, "QueryPool");
         if (queryCount == 0 || firstQuery >= pool.Description.Count ||
             queryCount > pool.Description.Count - firstQuery)
@@ -237,8 +242,7 @@ public sealed partial class ValidationLayer
 
     public void WriteTimestamp(CommandContext context, QueryPool pool, uint queryIndex)
     {
-        RequireOutsideRendering(context);
-        ContextValidationState state = GetContextState(context);
+        ContextValidationState state = RequireOutsideRendering(context);
         RequireOnDevice(context.Device, pool, "QueryPool");
         ValidateQueryPool(context, pool, queryIndex, QueryValidationEventType.Write);
         QuerySlot slot = new(pool, queryIndex);
@@ -264,8 +268,7 @@ public sealed partial class ValidationLayer
         Buffer destination,
         in BufferRange destinationRange)
     {
-        RequireOutsideRendering(context);
-        ContextValidationState state = GetContextState(context);
+        ContextValidationState state = RequireOutsideRendering(context);
         RequireOnDevice(context.Device, pool, "QueryPool");
         RequireOnDevice(context.Device, destination, "Query destination");
         if (queryCount == 0 ||

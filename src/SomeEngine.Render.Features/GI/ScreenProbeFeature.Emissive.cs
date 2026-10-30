@@ -62,10 +62,11 @@ public sealed partial class ScreenProbeFeature
         return Then(ref edit, lights.Distribution, "BuildGiEmitterObjectTree", 128, threads: 128);
     }
 
-    private GraphPassId ConnectEmissive(ref RenderGraphEdit edit, GraphPassId previous)
+    private GraphPassId ConnectEmissive(ref RenderGraphEdit edit, GraphPassId probes, GraphPassId training)
     {
         GiEmissiveLights lights = _emissive!;
-        GraphPassId last = Then(ref edit, previous, "SampleGiDirectProposals", DirectTileCount * 2u);
+        GraphPassId last = Then(ref edit, probes, "SampleGiDirectProposals", DirectTileCount * 2u);
+        edit.OrderAfter(last, training);
         lights.ClearDirectWork = Then(ref edit, last, "ClearGiMaterialWork", _materialCapacity);
         last = Then(ref edit, lights.ClearDirectWork, "CreateGiDirectSamples", DirectPixelCount);
         last = Then(ref edit, last, "BuildGiMaterialWorkRanges", 1, threads: 1);

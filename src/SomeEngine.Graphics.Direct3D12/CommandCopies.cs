@@ -34,12 +34,10 @@ internal sealed unsafe partial class D3D12Backend
             command.NativeDevice,
             source,
             destination,
-            copy);
+            copy,
+            out uint textureSubresource);
         TextureCopyLocation textureLocation = CreateTextureCopyLocation(
-            destination,
-            copy.MipLevel,
-            copy.ArrayLayer,
-            copy.Aspect);
+            destination, textureSubresource);
         Box sourceBox = new(0, 0, 0, copy.Width, copy.Height, copy.Depth);
         command.PrepareCaptures(2, 0, 2);
         command.PrepareSwapchainUses(1);
@@ -64,12 +62,10 @@ internal sealed unsafe partial class D3D12Backend
             command.NativeDevice,
             destination,
             source,
-            copy);
+            copy,
+            out uint textureSubresource);
         TextureCopyLocation textureLocation = CreateTextureCopyLocation(
-            source,
-            copy.MipLevel,
-            copy.ArrayLayer,
-            copy.Aspect);
+            source, textureSubresource);
         Box sourceBox = new(
             copy.X,
             copy.Y,
@@ -96,7 +92,7 @@ internal sealed unsafe partial class D3D12Backend
         D3D12CommandContext command = RequireCommandContext(context, nameof(context));
         D3D12TextureResource source = RequireTexture(copy.Source);
         D3D12TextureResource destination = RequireTexture(copy.Destination);
-        ValidateTextureRegion(
+        uint sourceSubresource = ValidateTextureRegion(
             source.Info,
             copy.SourceMipLevel,
             copy.SourceArrayLayer,
@@ -107,7 +103,7 @@ internal sealed unsafe partial class D3D12Backend
             copy.Width,
             copy.Height,
             copy.Depth);
-        ValidateTextureRegion(
+        uint destinationSubresource = ValidateTextureRegion(
             destination.Info,
             copy.DestinationMipLevel,
             copy.DestinationArrayLayer,
@@ -142,15 +138,9 @@ internal sealed unsafe partial class D3D12Backend
                 "Multisampled and depth/stencil copies must cover both complete subresources.", nameof(copy));
         }
         TextureCopyLocation sourceLocation = CreateTextureCopyLocation(
-            source,
-            copy.SourceMipLevel,
-            copy.SourceArrayLayer,
-            copy.SourceAspect);
+            source, sourceSubresource);
         TextureCopyLocation destinationLocation = CreateTextureCopyLocation(
-            destination,
-            copy.DestinationMipLevel,
-            copy.DestinationArrayLayer,
-            copy.DestinationAspect);
+            destination, destinationSubresource);
         Box sourceBox = new(
             copy.SourceX,
             copy.SourceY,
@@ -192,16 +182,17 @@ internal sealed unsafe partial class D3D12Backend
         uint sourceHeight = MipDimension(source.Info.Height, resolve.SourceMipLevel);
         uint destinationWidth = MipDimension(destination.Info.Width, resolve.DestinationMipLevel);
         uint destinationHeight = MipDimension(destination.Info.Height, resolve.DestinationMipLevel);
+        Silk.NET.DXGI.Format sourceFamily = FormatMappings.ToTypelessFamily(source.Info.Format);
         if (source.Info.Dimension != TextureDimension.Texture2D ||
             destination.Info.Dimension != TextureDimension.Texture2D ||
             source.Info.SampleCount <= 1 ||
             destination.Info.SampleCount != 1 ||
             sourceWidth != destinationWidth ||
             sourceHeight != destinationHeight ||
-            FormatMappings.ToTypelessFamily(source.Info.Format) !=
+            sourceFamily !=
             FormatMappings.ToTypelessFamily(destination.Info.Format) ||
             FormatMappings.ToTypelessFamily(resolve.Format) !=
-            FormatMappings.ToTypelessFamily(source.Info.Format))
+            sourceFamily)
         {
             throw new ArgumentException(
                 "Resolve requires equally sized compatible 2D subresources from multisampled to single-sampled storage.",
@@ -265,9 +256,7 @@ internal sealed unsafe partial class D3D12Backend
         ResolveTextureRange(destination.Info, range, TextureAspects.Color);
 
         float* values = stackalloc float[4] { color.X, color.Y, color.Z, color.W };
-        uint descriptorCount = checked(
-            range.MipLevelCount *
-            (destination.Info.Dimension == TextureDimension.Texture3D ? 1u : range.ArrayLayerCount));
+        uint descriptorCount = range.MipLevelCount;
         command.PrepareCaptures(1, sparseGenerations: 1);
         command.PrepareSwapchainUses(1);
         command.PrepareAttachmentDescriptors(descriptorCount, 0);
@@ -300,6 +289,7 @@ internal sealed unsafe partial class D3D12Backend
                     destination,
                     description,
                     descriptor);
+                command.TrackAttachmentDescriptor(destination, description);
                 CommandExecutionTrace.ClearRenderTargetView(
                                 command.List, descriptor,
                                     values,
@@ -307,29 +297,25 @@ internal sealed unsafe partial class D3D12Backend
                                     null);
                 continue;
             }
-            uint layerEnd = destination.Info.Dimension == TextureDimension.Texture3D
-                ? range.FirstArrayLayer + 1
-                : range.FirstArrayLayer + range.ArrayLayerCount;
-            for (uint layer = range.FirstArrayLayer; layer < layerEnd; layer++)
-            {
-                TextureSubresourceRange single = new(mip, 1, layer, 1, TextureAspects.Color);
-                ColorAttachmentViewDesc description = new(
-                    texture,
-                    single,
-                    destination.Info.Format,
-                    ToAttachmentDimension(destination.Info));
-                CpuDescriptorHandle descriptor = descriptors[descriptorIndex++];
-                WriteColorAttachmentView(
-                    command.NativeDevice,
-                    destination,
-                    description,
-                    descriptor);
-                CommandExecutionTrace.ClearRenderTargetView(
-                                command.List, descriptor,
-                                    values,
-                                    0,
-                                    null);
-            }
+            TextureSubresourceRange mipRange = new(
+                mip, 1, range.FirstArrayLayer, range.ArrayLayerCount, TextureAspects.Color);
+            ColorAttachmentViewDesc mipDescription = new(
+                texture,
+                mipRange,
+                destination.Info.Format,
+                ToAttachmentDimension(destination.Info));
+            CpuDescriptorHandle mipDescriptor = descriptors[descriptorIndex++];
+            WriteColorAttachmentView(
+                command.NativeDevice,
+                destination,
+                mipDescription,
+                mipDescriptor);
+            command.TrackAttachmentDescriptor(destination, mipDescription);
+            CommandExecutionTrace.ClearRenderTargetView(
+                            command.List, mipDescriptor,
+                                values,
+                                0,
+                                null);
         }
     }
 
@@ -366,9 +352,7 @@ internal sealed unsafe partial class D3D12Backend
         if ((range.Aspects & TextureAspects.Stencil) != 0)
             flags |= ClearFlags.Stencil;
 
-        uint descriptorCount = checked(
-            range.MipLevelCount *
-            (destination.Info.Dimension == TextureDimension.Texture3D ? 1u : range.ArrayLayerCount));
+        uint descriptorCount = range.MipLevelCount;
         command.PrepareCaptures(1, sparseGenerations: 1);
         command.PrepareSwapchainUses(1);
         command.PrepareAttachmentDescriptors(0, descriptorCount);
@@ -382,31 +366,30 @@ internal sealed unsafe partial class D3D12Backend
              mip < range.FirstMipLevel + range.MipLevelCount;
              mip++)
         {
-            uint layerEnd = destination.Info.Dimension == TextureDimension.Texture3D
-                ? range.FirstArrayLayer + 1
-                : range.FirstArrayLayer + range.ArrayLayerCount;
-            for (uint layer = range.FirstArrayLayer; layer < layerEnd; layer++)
-            {
-                TextureSubresourceRange single = new(mip, 1, layer, 1, range.Aspects);
-                DepthStencilViewDesc description = new(
-                    texture,
-                    single,
-                    destination.Info.Format,
-                    ToAttachmentDimension(destination.Info));
-                CpuDescriptorHandle descriptor = descriptors[descriptorIndex++];
-                WriteDepthStencilView(
-                    command.NativeDevice,
-                    destination,
-                    description,
-                    descriptor);
-                CommandExecutionTrace.ClearDepthStencilView(
-                                command.List, descriptor,
-                                    flags,
-                                    depth,
-                                    stencil,
-                                    0,
-                                    null);
-            }
+            uint layerCount = destination.Info.Dimension == TextureDimension.Texture3D
+                ? 1u
+                : range.ArrayLayerCount;
+            TextureSubresourceRange mipRange = new(
+                mip, 1, range.FirstArrayLayer, layerCount, range.Aspects);
+            DepthStencilViewDesc description = new(
+                texture,
+                mipRange,
+                destination.Info.Format,
+                ToAttachmentDimension(destination.Info));
+            CpuDescriptorHandle descriptor = descriptors[descriptorIndex++];
+            WriteDepthStencilView(
+                command.NativeDevice,
+                destination,
+                description,
+                descriptor);
+            command.TrackAttachmentDescriptor(destination, description);
+            CommandExecutionTrace.ClearDepthStencilView(
+                            command.List, descriptor,
+                                flags,
+                                depth,
+                                stencil,
+                                0,
+                                null);
         }
     }
 
@@ -414,9 +397,10 @@ internal sealed unsafe partial class D3D12Backend
         D3D12Device device,
         D3D12Buffer buffer,
         D3D12TextureResource texture,
-        in BufferTextureCopy copy)
+        in BufferTextureCopy copy,
+        out uint textureSubresource)
     {
-        ValidateTextureRegion(
+        textureSubresource = ValidateTextureRegion(
             texture.Info,
             copy.MipLevel,
             copy.ArrayLayer,
@@ -474,16 +458,14 @@ internal sealed unsafe partial class D3D12Backend
 
     private static TextureCopyLocation CreateTextureCopyLocation(
         D3D12TextureResource texture,
-        uint mip,
-        uint layer,
-        TextureAspects aspect)
+        uint subresource)
     {
         TextureCopyLocation location = new()
         {
             PResource = texture.Native,
             Type = TextureCopyType.SubresourceIndex,
         };
-        location.SubresourceIndex = NativeSubresource(texture.Info, mip, layer, aspect);
+        location.SubresourceIndex = subresource;
         return location;
     }
 
@@ -491,19 +473,31 @@ internal sealed unsafe partial class D3D12Backend
         TextureInfo info,
         uint mip,
         uint layer,
+        TextureAspects aspect) =>
+        NativeSubresource(
+            info.Dimension, info.MipLevelCount, info.ArrayLayerCount, info.Format,
+            mip, layer, aspect);
+
+    private static uint NativeSubresource(
+        TextureDimension dimension,
+        uint mipLevelCount,
+        uint arrayLayerCount,
+        Format format,
+        uint mip,
+        uint layer,
         TextureAspects aspect)
     {
-        if (mip >= info.MipLevelCount)
+        if (mip >= mipLevelCount)
             throw new ArgumentOutOfRangeException(nameof(mip));
-        if (info.Dimension == TextureDimension.Texture3D && layer != 0)
+        if (dimension == TextureDimension.Texture3D && layer != 0)
             throw new ArgumentOutOfRangeException(nameof(layer));
-        uint arrayLayer = info.Dimension == TextureDimension.Texture3D ? 0u : layer;
-        if (arrayLayer >= info.ArrayLayerCount)
+        uint arrayLayer = dimension == TextureDimension.Texture3D ? 0u : layer;
+        if (arrayLayer >= arrayLayerCount)
             throw new ArgumentOutOfRangeException(nameof(layer));
-        uint plane = FormatMappings.PlaneIndex(info.Format, aspect);
+        uint plane = FormatMappings.PlaneIndex(format, aspect);
         return checked(
-            mip + arrayLayer * info.MipLevelCount +
-            plane * info.MipLevelCount * info.ArrayLayerCount);
+            mip + arrayLayer * mipLevelCount +
+            plane * mipLevelCount * arrayLayerCount);
     }
 
     private static ResolveMode ToResolveMode(ResolveType type, Format format)
@@ -537,16 +531,22 @@ internal sealed unsafe partial class D3D12Backend
             throw new ArgumentOutOfRangeException(nameof(range));
         if (range.ArrayLayerCount == 0)
             throw new ArgumentOutOfRangeException(nameof(range));
-        for (uint mip = range.FirstMipLevel;
-             mip < range.FirstMipLevel + range.MipLevelCount;
-             mip++)
+        if (info.Dimension == TextureDimension.Texture3D)
         {
-            uint layers = info.Dimension == TextureDimension.Texture3D
-                ? MipDimension(info.Depth, mip)
-                : info.ArrayLayerCount;
-            if (range.FirstArrayLayer >= layers ||
-                range.ArrayLayerCount > layers - range.FirstArrayLayer)
-                throw new ArgumentOutOfRangeException(nameof(range));
+            for (uint mip = range.FirstMipLevel;
+                 mip < range.FirstMipLevel + range.MipLevelCount;
+                 mip++)
+            {
+                uint layers = MipDimension(info.Depth, mip);
+                if (range.FirstArrayLayer >= layers ||
+                    range.ArrayLayerCount > layers - range.FirstArrayLayer)
+                    throw new ArgumentOutOfRangeException(nameof(range));
+            }
+        }
+        else if (range.FirstArrayLayer >= info.ArrayLayerCount ||
+                 range.ArrayLayerCount > info.ArrayLayerCount - range.FirstArrayLayer)
+        {
+            throw new ArgumentOutOfRangeException(nameof(range));
         }
         if (range.Aspects == TextureAspects.None ||
             (range.Aspects & ~allowedAspects) != 0)
@@ -581,8 +581,46 @@ internal sealed unsafe partial class D3D12Backend
         }
     }
 
-    private static void ValidateTextureRegion(
+    private static uint ValidateTextureRegion(
         TextureInfo info,
+        uint mip,
+        uint layer,
+        TextureAspects aspect,
+        uint x,
+        uint y,
+        uint z,
+        uint width,
+        uint height,
+        uint depth) =>
+        ValidateTextureRegion(
+            info.Dimension, info.Width, info.Height, info.Depth,
+            info.MipLevelCount, info.ArrayLayerCount, info.Format,
+            mip, layer, aspect, x, y, z, width, height, depth);
+
+    private static uint ValidateTextureRegion(
+        in TextureDesc desc,
+        uint mip,
+        uint layer,
+        TextureAspects aspect,
+        uint x,
+        uint y,
+        uint z,
+        uint width,
+        uint height,
+        uint depth) =>
+        ValidateTextureRegion(
+            desc.Dimension, desc.Width, desc.Height, desc.Depth,
+            desc.MipLevelCount, desc.ArrayLayerCount, desc.Format,
+            mip, layer, aspect, x, y, z, width, height, depth);
+
+    private static uint ValidateTextureRegion(
+        TextureDimension dimension,
+        uint textureWidth,
+        uint textureHeight,
+        uint textureDepth,
+        uint mipLevelCount,
+        uint arrayLayerCount,
+        Format format,
         uint mip,
         uint layer,
         TextureAspects aspect,
@@ -593,15 +631,16 @@ internal sealed unsafe partial class D3D12Backend
         uint height,
         uint depth)
     {
-        _ = NativeSubresource(info, mip, layer, aspect);
+        uint subresource = NativeSubresource(
+            dimension, mipLevelCount, arrayLayerCount, format, mip, layer, aspect);
         if (width == 0 || height == 0 || depth == 0)
             throw new ArgumentOutOfRangeException(nameof(width), "A Texture copy extent must be nonzero.");
-        uint mipWidth = MipDimension(info.Width, mip);
-        uint mipHeight = info.Dimension == TextureDimension.Texture1D
+        uint mipWidth = MipDimension(textureWidth, mip);
+        uint mipHeight = dimension == TextureDimension.Texture1D
             ? 1u
-            : MipDimension(info.Height, mip);
-        uint mipDepth = info.Dimension == TextureDimension.Texture3D
-            ? MipDimension(info.Depth, mip)
+            : MipDimension(textureHeight, mip);
+        uint mipDepth = dimension == TextureDimension.Texture3D
+            ? MipDimension(textureDepth, mip)
             : 1u;
         if (x > mipWidth || width > mipWidth - x ||
             y > mipHeight || height > mipHeight - y ||
@@ -609,7 +648,7 @@ internal sealed unsafe partial class D3D12Backend
             throw new ArgumentOutOfRangeException(nameof(width), "The Texture copy region escapes the mip extent.");
 
         FormatMappings.GetCopyBlockInfo(
-            info.Format,
+            format,
             out uint blockWidth,
             out uint blockHeight,
             out _);
@@ -621,6 +660,7 @@ internal sealed unsafe partial class D3D12Backend
         {
             throw new ArgumentException("A block-compressed copy region is not block aligned.");
         }
+        return subresource;
     }
 
     private static uint MipDimension(uint value, uint mip) =>
@@ -655,6 +695,14 @@ internal sealed unsafe partial class D3D12Backend
 
     private sealed partial class D3D12CommandContext
     {
+        internal void TrackAttachmentDescriptor(D3D12TextureResource texture, in ColorAttachmentViewDesc desc) =>
+            Recording.TrackAttachmentDescriptor(new(texture.NativeLifetime, desc.Range, desc.Format,
+                desc.Dimension, DescriptorHeapType.Rtv));
+
+        internal void TrackAttachmentDescriptor(D3D12TextureResource texture, in DepthStencilViewDesc desc) =>
+            Recording.TrackAttachmentDescriptor(new(texture.NativeLifetime, desc.Range, desc.Format,
+                desc.Dimension, DescriptorHeapType.Dsv));
+
         internal D3D12CpuDescriptorRange AllocateTemporaryAttachmentDescriptors(
             DescriptorHeapType type,
             uint count) =>
@@ -663,6 +711,9 @@ internal sealed unsafe partial class D3D12Backend
 
     private sealed partial class D3D12CommandSlot
     {
+        internal void TrackAttachmentDescriptor(in AttachmentDescriptorContent descriptor) =>
+            _attachmentDescriptors.Add(descriptor);
+
         private CpuDescriptorHandle _temporaryRtvStart;
         private CpuDescriptorHandle _temporaryDsvStart;
         private ID3D12DescriptorHeap* _temporaryRtvHeap;
@@ -800,4 +851,8 @@ internal sealed unsafe partial class D3D12Backend
             ResetTemporaryAttachmentDescriptors();
         }
     }
+
+    private readonly record struct AttachmentDescriptorContent(
+        NativeLease Texture, TextureSubresourceRange Range, Format Format,
+        TextureViewDimension Dimension, DescriptorHeapType Type);
 }

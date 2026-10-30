@@ -35,7 +35,7 @@ internal static class SkinBoundsShaders
             SlangShaderData.RetainSession(session, module);
             Require(module.FindEntryPointByName("TransformSkinBounds", out IEntryPoint entry), null);
             SlangShaderData.RetainSession(session, entry);
-            Require(SlangShaderData.CombineComponents(session, [module, entry], out IComponentType combined, out diagnostics), diagnostics);
+            Require(session.CreateCompositeComponentType([module, entry], out IComponentType combined, out diagnostics), diagnostics);
             SlangShaderData.RetainSession(session, combined);
             Require(combined.Link(out IComponentType linked, out diagnostics), diagnostics);
             SlangShaderData.RetainSession(session, linked);

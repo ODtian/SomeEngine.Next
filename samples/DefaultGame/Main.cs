@@ -102,7 +102,7 @@ public static class SampleApplication
         }).ToArray(), startupOptions)
         {
             StartupTraceOutput = Environment.GetEnvironmentVariable("SOMEENGINE_STARTUP_TRACE"),
-            ExitAfterMeasurements = args.Contains("--measure-scenes", StringComparer.Ordinal),
+            ExitAfterMeasurements = args.Contains("--measure", StringComparer.Ordinal) || args.Contains("--measure-trace", StringComparer.Ordinal),
             InitializeScene = clusterScene is null ? null : clusterScene.Initialize,
             UpdateScene = clusterScene is null || args.Contains("--cluster-static", StringComparer.Ordinal) ? null : clusterScene.Update,
             ColorFeatureSettings = clusterScene is null ? null : new Dictionary<string, string>
@@ -119,7 +119,7 @@ public static class SampleApplication
         platform.Application.CreateColorFeature = gi.Connect;
         SceneGpuTimes? gpuTimes = gpuTimesArgument >= 0 ? new(platform) : null;
         if (gpuTimes is not null) platform.Application.FrameMeasured = gpuTimes.Add;
-        if (platform.ExitAfterMeasurements) platform.StartMeasurements(args.Contains("--trace-scenes", StringComparer.Ordinal));
+        if (platform.ExitAfterMeasurements) platform.StartMeasurements(args.Contains("--measure-trace", StringComparer.Ordinal));
         int result = await Application.RunAsync<SampleSceneMaterials>(args, static (material, seconds) =>
         {
             float roughness = 0.5f + MathF.Sin(seconds) * 0.2f;

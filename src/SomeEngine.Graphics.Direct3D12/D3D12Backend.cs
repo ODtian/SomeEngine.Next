@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Runtime.CompilerServices;
 using Silk.NET.Core.Native;
+using Silk.NET.Core.Contexts;
 using Silk.NET.Direct3D12;
 using Silk.NET.DXGI;
 using NativeD3D12 = Silk.NET.Direct3D12.D3D12;
@@ -115,8 +116,8 @@ internal sealed unsafe partial class D3D12Backend :
         _surfaces = new GraphicsObjectRegistry(_gate);
         try
         {
-            _d3d12 = NativeD3D12.GetApi();
-            _dxgi = NativeDxgi.GetApi((Silk.NET.Core.Contexts.INativeWindowSource)null!);
+            _d3d12 = CreateApi("D3D12.dll", static context => new NativeD3D12(context));
+            _dxgi = CreateApi("DXGI.dll", static context => new NativeDxgi(context));
             CreateDeviceFactory();
         }
         catch (Exception exception)
@@ -136,6 +137,46 @@ internal sealed unsafe partial class D3D12Backend :
         }
     }
 
+    private static TApi CreateApi<TApi>(string name, Func<INativeContext, TApi> create)
+        where TApi : NativeAPI
+    {
+        var library = new GraphicsLibrary(name);
+        try
+        {
+            return create(library);
+        }
+        catch
+        {
+            library.Dispose();
+            throw;
+        }
+    }
+
+    private sealed class GraphicsLibrary : INativeContext
+    {
+        private nint _handle;
+
+        internal GraphicsLibrary(string name)
+        {
+            if (!NativeLibrary.TryLoad(name, out _handle) &&
+                !NativeLibrary.TryLoad(Path.Combine(AppContext.BaseDirectory, name), out _handle))
+                throw new DllNotFoundException($"Could not load {name}.");
+        }
+
+        public nint GetProcAddress(string proc, int? slot = null) =>
+            NativeLibrary.GetExport(_handle, proc);
+
+        public bool TryGetProcAddress(string proc, out nint address, int? slot = null) =>
+            NativeLibrary.TryGetExport(_handle, proc, out address);
+
+        public void Dispose()
+        {
+            nint handle = Interlocked.Exchange(ref _handle, 0);
+            if (handle != 0)
+                NativeLibrary.Free(handle);
+        }
+    }
+
     public bool TryEnumerateAdapters(
         in AdapterEnumerationOptions options,
         Span<AdapterInfo> destination,
@@ -145,7 +186,8 @@ internal sealed unsafe partial class D3D12Backend :
         ThrowIfDisposed();
         IDXGIFactory6* factory = EnsureFactory();
         GpuPreference preference = ToGpuPreference(options.Preference);
-        List<AdapterInfo> adapters = [];
+        List<AdapterInfo>? adapters = destination.IsEmpty ? null : [];
+        int adapterCount = 0;
 
         for (uint index = 0; ; index++)
         {
@@ -172,7 +214,13 @@ factory, index,
 
                 bool software = (native.Flags & AdapterFlag3.Software) != 0;
                 if ((!software || options.IncludeSoftware) && SupportsDirect3D12(adapter))
-                    adapters.Add(ToAdapterInfo(adapter, native));
+                {
+                    AdapterInfo info = ToAdapterInfo(adapter, native);
+                    if (adapters is null)
+                        adapterCount = checked(adapterCount + 1);
+                    else
+                        adapters.Add(info);
+                }
             }
             finally
             {
@@ -181,11 +229,12 @@ factory, index,
             }
         }
 
-        requiredCount = adapters.Count;
+        requiredCount = adapters?.Count ?? adapterCount;
         if (destination.Length < requiredCount)
             return false;
 
-        CollectionsMarshal.AsSpan(adapters).CopyTo(destination);
+        if (adapters is not null)
+            CollectionsMarshal.AsSpan(adapters).CopyTo(destination);
         return true;
     }
 
@@ -398,8 +447,8 @@ factory, index,
             }
         }
 
-        // Pinned Silk.NET 2.23 owns a nonzero handle from successful GetApi creation.
-        // Its generated VTable.Dispose is empty and its context release forwards that
+        // Each API owns a nonzero handle through its GraphicsLibrary context.
+        // Silk.NET 2.23's generated VTable.Dispose is empty; the context forwards that
         // valid handle to NativeLibrary.Free, whose public contract has no failure
         // result or documented exception. Keep the release sequence linear.
         try

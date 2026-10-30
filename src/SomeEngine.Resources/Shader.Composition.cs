@@ -82,7 +82,7 @@ public partial class Shader
             entries.Add(entry);
         }
 
-        SlangResult combineResult = SlangShaderData.CombineComponents(session, [sourceUnit, .. entries],
+        SlangResult combineResult = session.CreateCompositeComponentType([sourceUnit, .. entries],
             out IComponentType combinedCode, out diagnostics);
         if (combineResult.Failed || combinedCode is null)
             throw new InvalidDataException("Slang composition failed: " + DiagnosticText(diagnostics));

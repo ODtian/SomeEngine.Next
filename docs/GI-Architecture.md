@@ -83,10 +83,12 @@ SHARC 使用 65,536 个条目、八个空间尺度和六轴法线分组，查询
 
 主体图保持持久拓扑。网格、材质及容量变化通过显式编辑维护；帧内更新常量、资源内容、启用区域和间接工作量。DefaultGame 通过 `ExperimentalGi` 选择资产并安装引擎功能。
 
+探针过滤完成是必需主线的阶段边界。每四帧启用的稀疏训练从该边界形成支链；发光直接光依赖探针过滤，并在训练启用时等待训练完成，随后复用同一份射线与材质几何工作区。
+
 ## Linux 与测量入口
 
 Linux 使用 Xlib 窗口和 Vulkan Surface，窗口句柄与 display 通过现有 `SurfaceDesc` 传递。开发资产在 Linux 构建 SPIRV，发布沿用 Release NativeAOT。
 
-`--measure-scenes` 自动启动统一场景平台并在结果完成后退出；`tools/Measure-Scenes.ps1` 消费同一入口。性能运行通过共享队列提交，在服务器执行 1024 小球、Sponza 和 Amazon Bistro。比较使用相同分辨率、场景行为、渲染选项、NativeAOT 和采样窗口。
+Linux 窗口与呈现复用引擎优化树的 `97277eb9` 适配，Vulkan 绑定坐标与紧凑布局复用 `15616875`。`--measure` 自动启动统一场景平台并在结果完成后退出；`tools/Measure-Scenes.ps1` 沿用该树的 Python 执行器与 Xorg 入口，为队列选择的 GPU 创建普通呈现窗口。性能运行通过共享队列在服务器执行 1024 小球、Sponza 和 Amazon Bistro。比较使用相同分辨率、场景行为、渲染选项、NativeAOT 和采样窗口。
 
 `--gpu-times` 按平台实际采样的帧归档 GPU 命令时间与包含屏障、等待和提交间隙的整帧跨度。定位运行与普通性能运行分别记录。

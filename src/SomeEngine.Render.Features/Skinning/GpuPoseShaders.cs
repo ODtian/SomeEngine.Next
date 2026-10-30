@@ -47,7 +47,7 @@ internal static class GpuPoseShaders
             SlangShaderData.RetainSession(session, twoBone);
             Require(module.FindEntryPointByName("SolveAim", out IEntryPoint aim), null);
             SlangShaderData.RetainSession(session, aim);
-            Require(SlangShaderData.CombineComponents(session, [module, advance, load, sample, store, translate, twoBone, aim], out IComponentType combined, out diagnostics), diagnostics);
+            Require(session.CreateCompositeComponentType([module, advance, load, sample, store, translate, twoBone, aim], out IComponentType combined, out diagnostics), diagnostics);
             SlangShaderData.RetainSession(session, combined);
             Require(combined.Link(out IComponentType linked, out diagnostics), diagnostics);
             SlangShaderData.RetainSession(session, linked);

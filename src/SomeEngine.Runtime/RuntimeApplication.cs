@@ -47,6 +47,7 @@ internal static class RuntimeApplication
         ApplicationContent? content = null;
         try
         {
+            if (application is not null) application.ExitRequested = false;
             int frames = 0;
             do
             {
@@ -81,7 +82,7 @@ internal static class RuntimeApplication
                     throw new ApplicationRunException(ApplicationRunException.Classify(error, ApplicationFailure.ContentLoad),
                         frames + (error is ApplicationRunException run ? run.CompletedFrames : 0), error);
                 }
-            } while (application?.ReloadRequested == true && !application.StopRequested);
+            } while (application is { ReloadRequested: true, ExitRequested: false });
             return frames;
         }
         finally { content?.Files.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
@@ -290,16 +291,16 @@ internal static class RuntimeApplication
             _validation = options.DeviceValidation;
             if (Window is not null)
             {
-                Swapchain?.Dispose();
+                Swapchain.Dispose();
                 Swapchain = null!;
                 Device.Dispose();
                 Device = null!;
-                Surface?.Dispose();
+                Surface.Dispose();
                 Surface = null!;
                 Backend.Dispose();
                 Backend = null!;
             }
-            else Window = new NativeWindow(title, boot.Width, boot.Height, visible: !options.HideWindow, offscreen: options.SkipSwapchainPresent);
+            else Window = NativeWindow.Create(title, boot.Width, boot.Height, visible: !options.HideWindow);
             if (useWarp && options.GraphicsBackend != RuntimeGraphicsBackend.Direct3D12)
                 throw new ArgumentException("The WARP adapter is available only with the D3D12 backend.");
             Backend = CreateBackend(
@@ -312,7 +313,7 @@ internal static class RuntimeApplication
                 new(QueueType.Compute),
                 new(QueueType.Copy),
             ];
-            if (!options.SkipSwapchainPresent) Surface = Backend.CreateSurface(new SurfaceDesc(
+            Surface = Backend.CreateSurface(new SurfaceDesc(
                 Window.Type,
                 Window.Handle,
                 Window.DisplayHandle,
@@ -320,21 +321,19 @@ internal static class RuntimeApplication
             Device = Backend.CreateDevice(new DeviceDesc(
                 adapterId,
                 queues,
-                requiredFeatures: (options.SkipSwapchainPresent ? DeviceFeatures.None : DeviceFeatures.Presentation) | DeviceFeatures.IndirectCommands |
+                requiredFeatures: DeviceFeatures.Presentation | DeviceFeatures.IndirectCommands |
                     (options.MeasureBlending ? DeviceFeatures.CalibratedTimestamps : DeviceFeatures.None),
                 optionalFeatures: DeviceFeatures.CalibratedTimestamps |
                     (options.DisableMeshShaders ? DeviceFeatures.None : DeviceFeatures.MeshShaders),
                 label: "SomeEngine Runtime Device"));
-            if (!options.SkipSwapchainPresent) Swapchain = Backend.CreateSwapchain(Device, new SwapchainDesc(
+            Swapchain = Backend.CreateSwapchain(Device, new SwapchainDesc(
                 Surface,
                 3,
                 TextureUsages.ColorAttachment | TextureUsages.CopySource,
-                CreateSwapchainConfig(
-                    options,
-                    boot.Width,
-                    boot.Height,
-                    Device.Adapter.HardwareAccelerated,
-                    Backend.GetSwapchainSupport(Device, Surface).Span),
+                SelectDefaultSwapchainConfig(
+                    CreateSwapchainConfig(options, boot.Width, boot.Height,
+                        Device.Adapter.HardwareAccelerated, Format.R8G8B8A8UNorm),
+                    Backend.GetSwapchainSupport(Device, Surface)),
                 title));
 
         }
@@ -413,24 +412,41 @@ internal static class RuntimeApplication
         throw new NotSupportedException("No hardware Direct3D 12 adapter is available.");
     }
 
+    private static SwapchainConfig SelectDefaultSwapchainConfig(
+        in SwapchainConfig defaults,
+        ReadOnlySpan<SwapchainSupport> support)
+    {
+        ReadOnlySpan<Format> formats = [Format.R8G8B8A8UNorm, Format.B8G8R8A8UNorm];
+        foreach (Format format in formats)
+        {
+            foreach (ref readonly SwapchainSupport value in support)
+            {
+                if (value.Format == format && value.ColorSpace == defaults.ColorSpace &&
+                    value.PresentType == defaults.PresentType &&
+                    (value.TearingSupported || !defaults.AllowTearing))
+                    return defaults with { Format = format };
+            }
+        }
+        throw new NotSupportedException("The application display requires an RGBA8 or BGRA8 swapchain for its presentation settings.");
+    }
+
     private static SwapchainConfig CreateSwapchainConfig(
         RuntimeStartupOptions options,
         int width,
         int height,
         bool hardwareAccelerated,
-        ReadOnlySpan<SwapchainSupport> support)
-    {
-        PresentType preferred = hardwareAccelerated ? PresentType.Immediate : PresentType.Mailbox;
-        PresentType[] modes = options.WindowVSync ? [PresentType.Fifo] : [preferred, PresentType.Mailbox, PresentType.Fifo];
-        Format[] formats = [Format.R8G8B8A8UNorm, Format.B8G8R8A8UNorm];
-        foreach (PresentType mode in modes)
-        foreach (Format format in formats)
-        foreach (ref readonly SwapchainSupport item in support)
-            if (item.PresentType == mode && item.Format == format && item.ColorSpace == ColorSpace.Srgb)
-                return new(checked((uint)width), checked((uint)height), item.Format, item.ColorSpace, item.PresentType,
-                    AllowTearing: !options.WindowVSync && item.TearingSupported, MaximumFrameLatency: 2);
-        throw new NotSupportedException("The Surface exposes no supported SDR presentation format.");
-    }
+        Format format) => new(
+            checked((uint)width),
+            checked((uint)height),
+            format,
+            ColorSpace.Srgb,
+            options.WindowVSync
+                ? PresentType.Fifo
+                : hardwareAccelerated
+                    ? PresentType.Immediate
+                    : PresentType.Mailbox,
+            AllowTearing: !options.WindowVSync && hardwareAccelerated,
+            MaximumFrameLatency: 2);
 
     private static void ReconfigureSwapchain(
         IGraphicsBackend backend,
@@ -442,7 +458,7 @@ internal static class RuntimeApplication
     {
         ReconfigureStatus status = backend.Reconfigure(
             swapchain,
-            CreateSwapchainConfig(options, width, height, hardwareAccelerated, swapchain.Info.Support));
+            CreateSwapchainConfig(options, width, height, hardwareAccelerated, swapchain.Info.Config.Format));
         if (status != ReconfigureStatus.Success)
         {
             throw new InvalidOperationException(
@@ -496,8 +512,8 @@ internal static class RuntimeApplication
         string title,
         bool forceHardwareRaster, Func<Material, float, bool>? animateMaterial, ApplicationScene? application, SceneScript? script)
     {
+        Format presentationFormat = swapchain.Info.Config.Format;
         using World mainWorld = loadedWorld;
-        Format presentationFormat = options.SkipSwapchainPresent ? Format.R8G8B8A8UNorm : swapchain.Info.Config.Format;
         using ScreenText? screenText = options.SurfacePanel || options.HudOverlay ? new ScreenText(mainWorld) : null;
         using SurfacePanelExample? surfacePanel = options.SurfacePanel
             ? new SurfacePanelExample(mainWorld, boot.Width, boot.Height, screenText!) : null;
@@ -806,7 +822,7 @@ internal static class RuntimeApplication
             outputVerifier = options.VerifyFrameOutput || (options.FrameOutputPath is not null && options.CaptureFrame is null)
                 ? new FrameOutputVerifier(backend, device, width, height, presentationFormat)
                 : null;
-            ui = options.HideDebugUi ? null : new RuntimeUiRenderer(
+            ui = new RuntimeUiRenderer(
                 backend,
                 device,
                 window,
@@ -829,7 +845,6 @@ internal static class RuntimeApplication
             uint maximumRecoveredClusters = 0;
             while (options.FrameLimit == 0 || frameIndex < options.FrameLimit)
             {
-                if (application?.StopRequested == true) break;
                 long frameStarted = Stopwatch.GetTimestamp();
                 if (startup.Result is not null && startup.IsTracing)
                 {
@@ -844,10 +859,9 @@ internal static class RuntimeApplication
                 bool instanceAdmitted = instances.TryAdmitFrameResources(
                     out _,
                     out QueueCompletion[] instanceRetirementFences);
-                QueueCompletion[] uiRetirementFences = [];
-                bool uiAdmitted = ui is null || ui.TryAdmitFrameResources(
+                bool uiAdmitted = ui.TryAdmitFrameResources(
                     out _,
-                    out uiRetirementFences);
+                    out QueueCompletion[] uiRetirementFences);
                 long admissionWaitStarted = Environment.TickCount64;
                 while (!instanceAdmitted || !uiAdmitted)
                 {
@@ -877,7 +891,7 @@ internal static class RuntimeApplication
                     }
                     if (!uiAdmitted)
                     {
-                        uiAdmitted = ui!.TryAdmitFrameResources(
+                        uiAdmitted = ui.TryAdmitFrameResources(
                             out _,
                             out uiRetirementFences);
                     }
@@ -900,7 +914,7 @@ internal static class RuntimeApplication
                 while (window.TryReadEvent(out NativeWindowEvent windowEvent))
                 {
                     input.Process(windowEvent);
-                    ui?.ProcessEvent(windowEvent, input);
+                    ui.ProcessEvent(windowEvent, input);
                 }
                 elementSystems.UpdateInput();
                 if (input.WasKeyPressed(RuntimeInput.KeyEscape))
@@ -927,7 +941,7 @@ internal static class RuntimeApplication
                     outputVerifier = null;
                     linearVerifier?.Dispose();
                     linearVerifier = null;
-                    if (!options.SkipSwapchainPresent) ReconfigureSwapchain(
+                    ReconfigureSwapchain(
                         backend,
                         swapchain,
                         options,
@@ -975,13 +989,13 @@ internal static class RuntimeApplication
                 if (options.ScenePlayback is not null && (synchronousGame))
                     scene.Play(sceneSeconds, options.ScenePlayback is "materials" or "camera", animateMaterial,
                         orbitCamera: options.ScenePlayback == "camera");
-                ui?.BeginFrame(deltaSeconds, width, height, window.DpiScale);
+                ui.BeginFrame(deltaSeconds, width, height, window.DpiScale);
                 SomeEngine.Elements.InputCapture elementCapture = elementInput?.InputCapture ?? default;
                 scene.Camera.Update(
                     input,
                     deltaSeconds,
-                    (ui?.WantCaptureKeyboard ?? false) || elementCapture.Keyboard,
-                    (ui?.WantCaptureMouse ?? false) || elementCapture.Pointer);
+                    ui.WantCaptureKeyboard || elementCapture.Keyboard,
+                    ui.WantCaptureMouse || elementCapture.Pointer);
                 if (synchronousGame)
                 {
                     if (animateScene && options.ScenePlayback is null)
@@ -1001,7 +1015,7 @@ internal static class RuntimeApplication
                     playerId: scene.PlayerId,
                     firstPerson: scene.FirstPerson);
                 viewSystem.Stage(viewFrame.View);
-                if (application?.DebugUiEnabled != false) ui?.DrawDebugWindow(
+                if (application?.DebugUiEnabled != false) ui.DrawDebugWindow(
                     ref debugUiOpen,
                     ref animateScene,
                     new RuntimeUiMetrics(
@@ -1065,8 +1079,7 @@ internal static class RuntimeApplication
                 if (connectPostProcessing && (script?.CreateColorFeature ?? application?.CreateColorFeature) is { } createColorFeature)
                     colorFeature = createColorFeature(new(backend, device, renderGraph, boot.Width, boot.Height,
                         viewFrame.View.Projection, colorEffectsRegion)
-                        { StencilSource = pipeline.GetStencil, Geometry = clusterOutputs, ClusterPipeline = pipeline,
-                            Lights = lightSystem.RequireCurrent(), CameraCutSource = () => cameraCut });
+                        { StencilSource = pipeline.GetStencil, Geometry = clusterOutputs, ClusterPipeline = pipeline, CameraCutSource = () => cameraCut });
                 colorFeature?.Reconcile(in clusterOutputs);
                 temporal ??= new TemporalFeature(
                     backend,
@@ -1110,8 +1123,7 @@ internal static class RuntimeApplication
                     boot.PresentationVertexEntry,
                     boot.PresentationPixelEntry,
                     presentationFormat,
-                    presentationRegion,
-                    offscreen: options.SkipSwapchainPresent);
+                    presentationRegion);
                 if (presentationReadback != pipeline.PageFaultReadback)
                 {
                     using RenderGraphEdit edit = renderGraph.BeginEdit();
@@ -1120,12 +1132,11 @@ internal static class RuntimeApplication
                     presentationReadback = pipeline.PageFaultReadback;
                 }
                 surfaces?.ReconcileGraph(presentation.Target, new WorldCanvasTarget(presentation.Target, clusterOutputs.Depth, viewEntity));
-                ui?.InstallGraph(renderGraph, presentation.Target, uiRegion);
+                ui.InstallGraph(renderGraph, presentation.Target, uiRegion);
                 if (reportMilestones)
                     Console.WriteLine("First frame: acquiring presentation image.");
-                bool renderOutput = !sceneEdit.FrameCanceled;
-                SwapchainImage? image = renderOutput && !options.SkipSwapchainPresent
-                    ? AcquireImage(backend, swapchain, window) : null;
+                SwapchainImage? image = sceneEdit.FrameCanceled
+                    ? null : AcquireImage(backend, swapchain, window);
                 SceneFrame? capturedFrame = captureLinear ? scene.CaptureFrame(new SceneFrame
                 {
                     Frame = frameIndex, SubmittedFrame = submittedFrames, SceneSeconds = sceneSeconds,
@@ -1162,7 +1173,6 @@ internal static class RuntimeApplication
                     presentation,
                     ui,
                     surfaces,
-                    renderOutput,
                     image,
                     width,
                     height,
@@ -1182,7 +1192,7 @@ internal static class RuntimeApplication
                     script?.TemporalSettings ?? TemporalResolveSettings.Default,
                     measurements,
                     out ulong graphFrameIdentity);
-                if (!renderOutput)
+                if (image is null)
                 {
                     frameIndex++;
                     continue;
@@ -1273,8 +1283,9 @@ internal static class RuntimeApplication
 
                 if (reportMilestones)
                     Console.WriteLine("First frame: presenting.");
-                PresentStatus present = image is { } presentedImage
-                    ? backend.Present(backend.GetQueue(device, QueueType.Graphics), presentedImage) : PresentStatus.Success;
+                PresentStatus present = backend.Present(
+                    backend.GetQueue(device, QueueType.Graphics),
+                    image.Value);
                 double cpuMs = measurements is null ? 0
                     : Stopwatch.GetElapsedTime(Math.Min(frameStarted, gameStarted)).TotalMilliseconds;
                 if (sceneGeometryReady && startup.Result is null)
@@ -1301,7 +1312,7 @@ internal static class RuntimeApplication
                     gameTiming.GameMs, gameTiming.Views.AnimationMs, gameTiming.ExtractionMs,
                     prepareMs, reconcileMs, executeMs);
                 frameIndex++;
-                if (application?.ReloadRequested == true) break;
+                if (application is { ReloadRequested: true } or { ExitRequested: true }) break;
             }
 
             if (frameIndex > 0)
@@ -1493,9 +1504,8 @@ internal static class RuntimeApplication
         IApplicationColorFeature? colorFeature,
         TemporalFeature temporal,
         RuntimePresentationPipeline presentation,
-        RuntimeUiRenderer? ui,
+        RuntimeUiRenderer ui,
         CanvasRenderer? surfaces,
-        bool renderOutput,
         SwapchainImage? image,
         int width,
         int height,
@@ -1555,7 +1565,7 @@ internal static class RuntimeApplication
                         clusterOutputs.Width,
                         clusterOutputs.Height,
                         clusterOutputs.ViewCount);
-                    if (renderOutput)
+                    if (image is not null)
                         linearVerifier?.Record(ref graphFrame, clusterOutputs.MaterialColor, graphicsQueue, linearOutputRegion);
                     using (EngineTrace.Begin(ApplicationTrace.TemporalRecording))
                     {
@@ -1572,8 +1582,8 @@ internal static class RuntimeApplication
                             jitterPixels: jitterPixels);
                     }
                     surfaces?.UpdateFrame(ref graphFrame);
-                    ui?.Record(ref graphFrame, width, height);
-                    if (!renderOutput) return null;
+                    ui.Record(ref graphFrame, width, height);
+                    if (image is null) return null;
                     if (captureShadowQuality is not null) virtualShadows.CaptureQuality(ref graphFrame, captureShadowQuality);
                     outputVerifier?.Record(ref graphFrame, presentation.Target, graphicsQueue, frameOutputRegion);
                     if (reportMilestones)
@@ -1628,7 +1638,7 @@ internal static class RuntimeApplication
             }
             finally
             {
-                ui?.Discard();
+                ui.Discard();
             }
         }
     }

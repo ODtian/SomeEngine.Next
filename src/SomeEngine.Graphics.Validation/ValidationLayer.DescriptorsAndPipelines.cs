@@ -540,6 +540,9 @@ public sealed partial class ValidationLayer
         Device device,
         ReadOnlySpan<ResourceBinding> resources)
     {
+        if (resources.IsEmpty)
+            return [];
+
         var dependencies = new HashSet<GraphicsObject>(ReferenceEqualityComparer.Instance);
         foreach (ref readonly ResourceBinding binding in resources)
         {

@@ -226,8 +226,21 @@ internal sealed unsafe partial class VulkanBackend
                 SignalSemaphoreInfoCount = checked((uint)signalCount),
                 PSignalSemaphoreInfos = signalPointer,
             };
-            Result result = Api.QueueSubmit2(queue.Native, 1, &submit, default);
-            return result;
+            if (signalCount == 1)
+                return Api.QueueSubmit2(queue.Native, 1, &submit, default);
+
+            // Signals in one batch are unordered. Queue completion must follow
+            // each binary or external timeline signal from this submission.
+            submit.SignalSemaphoreInfoCount = checked((uint)(signalCount - 1));
+            SubmitInfo2* batches = stackalloc SubmitInfo2[2];
+            batches[0] = submit;
+            batches[1] = new SubmitInfo2
+            {
+                SType = StructureType.SubmitInfo2,
+                SignalSemaphoreInfoCount = 1,
+                PSignalSemaphoreInfos = signalPointer + signalCount - 1,
+            };
+            return Api.QueueSubmit2(queue.Native, 2, batches, default);
         }
     }
 
@@ -677,6 +690,20 @@ internal sealed unsafe partial class VulkanBackend
             ReturnSlot(slot);
         }
 
+        internal ReadOnlySpan<VulkanBoundBindlessSet> CaptureBindlessDescriptors(
+            ReadOnlySpan<VulkanBindlessSetBinding> bindings)
+        {
+            VulkanCommandSlot commands = _recording
+                ?? throw new InvalidOperationException("The CommandContext is not recording.");
+            return commands.CaptureBindlessDescriptors(bindings);
+        }
+
+        internal void CaptureBindlessSparseBindings(ReadOnlySpan<VulkanBoundBindlessSet> sets)
+        {
+            foreach (ref readonly VulkanBoundBindlessSet binding in sets)
+                binding.Generation.CaptureSparseBindings(_recording!);
+        }
+
         internal void Capture(IVulkanRetained value)
         {
             VulkanCommandSlot slot = _recording
@@ -699,12 +726,14 @@ internal sealed unsafe partial class VulkanBackend
             }
             slot.Capture(value);
             if (swapchainUse is VulkanSwapchainUse captured)
+            {
+                slot.Capture((VulkanSwapchain)captured.Lease.Swapchain);
                 slot.AddSwapchainUse(captured);
+            }
         }
 
         internal void ReturnSlot(VulkanCommandSlot slot)
         {
-            bool destroy;
             bool unregister;
             lock (_gate)
             {
@@ -713,18 +742,25 @@ internal sealed unsafe partial class VulkanBackend
                 slot.DetachLease();
                 if (_released)
                 {
-                    destroy = _slots.Remove(slot);
+                    DestroySlotNative(slot);
                 }
                 else
                 {
-                    slot.ReleaseCaptures();
-                    _freeSlots.Push(slot);
-                    destroy = false;
+                    try
+                    {
+                        slot.ReleaseCaptures();
+                        _freeSlots.Push(slot);
+                    }
+                    catch (Exception exception)
+                    {
+                        // A partially released capture set must not be released twice.
+                        slot.NativeReleaseFailed = true;
+                        _device.RecordReleaseFailure(exception);
+                        throw;
+                    }
                 }
                 unregister = _released && _slots.Count == 0;
             }
-            if (destroy)
-                DestroySlotNative(slot);
             if (unregister)
                 UnregisterOnce();
         }
@@ -752,7 +788,6 @@ internal sealed unsafe partial class VulkanBackend
         private void ReleaseSlots(bool abandonAll)
         {
             VulkanCommandSlot[] destroy;
-            bool unregister;
             lock (_gate)
             {
                 if (_released && !abandonAll)
@@ -762,40 +797,47 @@ internal sealed unsafe partial class VulkanBackend
                 if (abandonAll)
                 {
                     destroy = _slots.ToArray();
-                    _slots.Clear();
                 }
                 else
                 {
                     var detached = new List<VulkanCommandSlot>(_freeSlots.Count + 1);
                     while (_freeSlots.TryPop(out VulkanCommandSlot? free))
                     {
-                        if (_slots.Remove(free))
+                        if (_slots.Contains(free))
                             detached.Add(free);
                     }
-                    if (_recording is not null && _slots.Remove(_recording))
+                    if (_recording is not null && _slots.Contains(_recording))
                         detached.Add(_recording);
                     destroy = detached.ToArray();
                 }
                 _recording = null;
                 _freeSlots.Clear();
-                unregister = _slots.Count == 0;
             }
             if (abandonAll)
             {
+                // This can join RecordedCommands.Dispose, whose ReturnSlot takes _gate.
+                // Keep the slots registered, but never hold _gate during that join.
                 foreach (VulkanCommandSlot slot in destroy)
                     slot.DiscardExecutableFromDeviceNoThrow();
             }
             Exception? failure = null;
-            foreach (VulkanCommandSlot slot in destroy)
+            bool unregister;
+            lock (_gate)
             {
-                try
+                foreach (VulkanCommandSlot slot in destroy)
                 {
-                    DestroySlotNative(slot);
+                    if (!_slots.Contains(slot))
+                        continue;
+                    try
+                    {
+                        DestroySlotNative(slot);
+                    }
+                    catch (Exception exception)
+                    {
+                        failure ??= exception;
+                    }
                 }
-                catch (Exception exception)
-                {
-                    failure ??= exception;
-                }
+                unregister = _slots.Count == 0;
             }
             if (unregister)
                 UnregisterOnce();
@@ -854,10 +896,24 @@ internal sealed unsafe partial class VulkanBackend
 
         private void DestroySlotNative(VulkanCommandSlot slot)
         {
-            slot.ReleaseCaptures();
-            slot.DescriptorArena.Release();
-            if (_device.Native.Handle != 0)
-                _device.Backend.Api.DestroyCommandPool(_device.Native, slot.Pool, null);
+            // Caller holds _gate. An empty _slots must prove the native releases,
+            // including the final captured-owner handoff, have already completed.
+            if (slot.NativeReleaseFailed)
+                return;
+            try
+            {
+                slot.ReleaseCaptures();
+                slot.DescriptorArena.Release();
+                if (_device.Native.Handle != 0)
+                    _device.Backend.Api.DestroyCommandPool(_device.Native, slot.Pool, null);
+                _slots.Remove(slot);
+            }
+            catch (Exception exception)
+            {
+                slot.NativeReleaseFailed = true;
+                _device.RecordReleaseFailure(exception);
+                throw;
+            }
         }
 
         private void UnregisterOnce()
@@ -873,6 +929,7 @@ internal sealed unsafe partial class VulkanBackend
         VkCommandBuffer native)
     {
         private readonly HashSet<IVulkanRetained> _captures = [];
+        private VulkanBoundBindlessSet[] _bindlessSets = [];
         private VulkanSwapchainUse[] _swapchainUses = [];
         private int _swapchainUseCount;
         private VulkanRecordedCommandsLease? _activeLease;
@@ -882,6 +939,7 @@ internal sealed unsafe partial class VulkanBackend
         internal VkCommandBuffer Native { get; } = native;
         internal VulkanDescriptorArena DescriptorArena { get; } = new(device);
         internal VulkanRecordedCommandsLease Lease { get; private set; } = null!;
+        internal bool NativeReleaseFailed { get; set; }
 
         internal void InitializeLease(VulkanRecordedCommandsLease lease)
         {
@@ -972,6 +1030,36 @@ internal sealed unsafe partial class VulkanBackend
             return _swapchainUses[index];
         }
 
+        internal ReadOnlySpan<VulkanBoundBindlessSet> CaptureBindlessDescriptors(
+            ReadOnlySpan<VulkanBindlessSetBinding> bindings)
+        {
+            if (bindings.IsEmpty)
+                return [];
+            if (_bindlessSets.Length < bindings.Length)
+                Array.Resize(ref _bindlessSets, bindings.Length);
+            Span<VulkanBoundBindlessSet> sets = _bindlessSets.AsSpan(0, bindings.Length);
+            device.BindlessPublisher.Capture(bindings, this, sets);
+            return sets;
+        }
+
+        internal void CaptureSparseBindings(VulkanSparseState resource)
+        {
+            VulkanSparseBindings bindings = resource.CaptureBindings();
+            try { CaptureReference(bindings); }
+            finally { bindings.ReleaseNative(); }
+        }
+
+        internal static VulkanSparseState? GetSparseState(IVulkanRetained value) => value switch
+        {
+            VulkanBuffer buffer => buffer.SparseState,
+            VulkanTexture texture => texture.SparseState,
+            BufferCbv view => ((VulkanBuffer)view.Resource).SparseState,
+            BufferSrv view => ((VulkanBuffer)view.Resource).SparseState,
+            BufferUav view => ((VulkanBuffer)view.Resource).SparseState,
+            IVulkanTextureView view => view.Texture.SparseState,
+            _ => null,
+        };
+
         internal void CaptureSparseBindings(IVulkanRetained value)
         {
             switch (value)
@@ -982,26 +1070,9 @@ internal sealed unsafe partial class VulkanBackend
                 case VulkanBindlessGeneration descriptors:
                     descriptors.CaptureSparseBindings(this);
                     return;
-                case VulkanBindlessSnapshot descriptors:
-                    descriptors.CaptureSparseBindings(this);
-                    return;
             }
-            VulkanSparseState? state = value switch
-            {
-                VulkanBuffer buffer => buffer.SparseState,
-                VulkanTexture texture => texture.SparseState,
-                BufferCbv view => ((VulkanBuffer)view.Resource).SparseState,
-                BufferSrv view => ((VulkanBuffer)view.Resource).SparseState,
-                BufferUav view => ((VulkanBuffer)view.Resource).SparseState,
-                IVulkanTextureView view => view.Texture.SparseState,
-                _ => null,
-            };
-            if (state is not null)
-            {
-                VulkanSparseBindings bindings = state.CaptureBindings();
-                try { Capture(bindings); }
-                finally { bindings.ReleaseNative(); }
-            }
+            if (GetSparseState(value) is VulkanSparseState resource)
+                CaptureSparseBindings(resource);
             if (value is BufferUav { Description.CounterBuffer: VulkanBuffer counter })
                 CaptureSparseBindings(counter);
         }
@@ -1009,6 +1080,11 @@ internal sealed unsafe partial class VulkanBackend
         internal void Capture(IVulkanRetained value)
         {
             CaptureSparseBindings(value);
+            CaptureReference(value);
+        }
+
+        internal void CaptureReference(IVulkanRetained value)
+        {
             if (!_captures.Add(value))
                 return;
             try
@@ -1027,6 +1103,7 @@ internal sealed unsafe partial class VulkanBackend
             foreach (IVulkanRetained value in _captures)
                 value.ReleaseNative();
             _captures.Clear();
+            Array.Clear(_bindlessSets);
             DescriptorArena.ResetAfterCompletion();
             Array.Clear(_swapchainUses, 0, _swapchainUseCount);
             _swapchainUseCount = 0;

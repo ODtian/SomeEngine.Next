@@ -42,6 +42,7 @@ public sealed partial class ValidationLayer : IGraphicsBackend
         new(ReferenceEqualityComparer.Instance);
     private readonly IValidationMessageSink? _sink;
     private readonly bool _reportLiveObjectsOnDispose;
+    private readonly Action<RecordedCommandsLease, ulong> _discardedCommandsCallback;
     private DisposeGate _disposeGate;
     private IGraphicsBackend? _backend;
     private int _recordedCapacityReservations;
@@ -51,6 +52,7 @@ public sealed partial class ValidationLayer : IGraphicsBackend
     {
         ArgumentNullException.ThrowIfNull(backend);
         _backend = backend;
+        _discardedCommandsCallback = ForgetDiscardedCommands;
         _sink = options.MessageSink;
         _reportLiveObjectsOnDispose = options.ReportLiveObjectsOnDispose;
         _devices = new IdentityRegistry<Device, byte>(_gate);
@@ -292,7 +294,7 @@ public sealed partial class ValidationLayer : IGraphicsBackend
         ArgumentNullException.ThrowIfNull(device);
         lock (_gate)
         {
-            if (!_devices.Contains(device))
+            if (!_devices.TryGetValueUnderLock(device, out _))
                 Reject("Ownership", "The Device was not created through this Validation Layer.", device.Label);
         }
         device.ThrowIfUnavailable();
@@ -347,20 +349,29 @@ public sealed partial class ValidationLayer : IGraphicsBackend
         internal void EnsureAdditionalCapacity(int additionalCount = 1)
         {
             if (additionalCount < 0) throw new ArgumentOutOfRangeException(nameof(additionalCount));
-            lock (_gate) _entries.EnsureCapacity(checked(_entries.Count + additionalCount));
+            lock (_gate) EnsureAdditionalCapacityUnderLock(additionalCount);
+        }
+
+        internal void EnsureAdditionalCapacityUnderLock(int additionalCount = 1)
+        {
+            System.Diagnostics.Debug.Assert(System.Threading.Monitor.IsEntered(_gate));
+            _entries.EnsureCapacity(checked(_entries.Count + additionalCount));
         }
 
         internal void Add(TKey key, TValue value)
         {
-            lock (_gate)
+            lock (_gate) AddUnderLock(key, value);
+        }
+
+        internal void AddUnderLock(TKey key, TValue value)
+        {
+            System.Diagnostics.Debug.Assert(System.Threading.Monitor.IsEntered(_gate));
+            _entries.Add(key, value);
+            if (key is GraphicsObject graphicsObject)
             {
-                _entries.Add(key, value);
-                if (key is GraphicsObject graphicsObject)
-                {
-                    graphicsObject.Disposed += RemoveDisposed;
-                    // Disposal may have finished before its validation registration arrived.
-                    if (graphicsObject.IsDisposed) Remove(key);
-                }
+                graphicsObject.Disposed += RemoveDisposed;
+                // Disposal may have finished before its validation registration arrived.
+                if (graphicsObject.IsDisposed) RemoveUnderLock(key);
             }
         }
 
@@ -381,19 +392,23 @@ public sealed partial class ValidationLayer : IGraphicsBackend
             }
         }
 
-        internal bool Contains(TKey key)
+        internal bool TryGetValueUnderLock(TKey key, [MaybeNullWhen(false)] out TValue value)
         {
-            lock (_gate) return _entries.ContainsKey(key);
+            System.Diagnostics.Debug.Assert(System.Threading.Monitor.IsEntered(_gate));
+            return _entries.TryGetValue(key, out value);
         }
 
         internal bool Remove(TKey key)
         {
-            lock (_gate)
-            {
-                if (!_entries.Remove(key)) return false;
-                if (key is GraphicsObject graphicsObject) graphicsObject.Disposed -= RemoveDisposed;
-                return true;
-            }
+            lock (_gate) return RemoveUnderLock(key);
+        }
+
+        internal bool RemoveUnderLock(TKey key)
+        {
+            System.Diagnostics.Debug.Assert(System.Threading.Monitor.IsEntered(_gate));
+            if (!_entries.Remove(key)) return false;
+            if (key is GraphicsObject graphicsObject) graphicsObject.Disposed -= RemoveDisposed;
+            return true;
         }
 
         internal void RemoveWhere(Func<TKey, bool> predicate)
@@ -553,15 +568,6 @@ public sealed partial class ValidationLayer : IGraphicsBackend
             }
         }
 
-        internal void RecyclePayload(RecordingValidationPayload payload)
-        {
-            lock (_recyclingGate)
-            {
-                payload.Clear();
-                AvailablePayloads.Push(payload);
-            }
-        }
-
         internal RecordedValidationState RentRecording(RecordingValidationPayload payload)
         {
             lock (_recyclingGate)
@@ -586,7 +592,8 @@ public sealed partial class ValidationLayer : IGraphicsBackend
             lock (_recyclingGate)
             {
                 RecordingValidationPayload payload = recording.ReleasePayload();
-                RecyclePayload(payload);
+                payload.Clear();
+                AvailablePayloads.Push(payload);
                 AvailableRecordings.Push(recording);
             }
         }

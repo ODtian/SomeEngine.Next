@@ -19,9 +19,14 @@ internal sealed unsafe partial class D3D12Backend
                 throw new InvalidOperationException("Finish the current recording before repeating commands.");
             commands = default;
             D3D12CommandSlot? recording = _repeatCommands;
-            if (recording is null || !recording.TryClaim())
-            {
+            if (recording is null)
                 return false;
+            if (!recording.TryClaim())
+            {
+                // Queue retirement returns storage whose GPU execution has completed.
+                _queue.CollectCompleted();
+                if (!recording.TryClaim())
+                    return false;
             }
             bool completed = false;
             try
@@ -48,11 +53,11 @@ internal sealed unsafe partial class D3D12Backend
         private readonly Dictionary<D3D12PersistentParameterBindings, D3D12PersistentParameterData> _repeatParameters = [];
         internal void TrackRepeatedParameters(D3D12PersistentParameterBindings source, D3D12PersistentParameterData data) =>
             _repeatParameters[source] = data;
-        private int _repeatRestrictions;
         internal bool TryCaptureRepeatedCommands()
         {
+            using var trace = EngineTrace.Begin(RhiTrace.CaptureRepeatedResources);
             CachedNativeCommands commands = _nativeRecording;
-            if (!commands.Complete || !commands.Data.CanRepeat) return false;
+            if (!commands.Repeatable) return false;
             foreach (var parameter in _repeatParameters)
                 if (!ReferenceEquals(parameter.Key.CurrentData, parameter.Value)) return false;
             try
@@ -75,6 +80,7 @@ internal sealed unsafe partial class D3D12Backend
                             if (!ReferenceEquals(Descriptors, descriptors)) return false;
                             break;
                         case D3D12OrdinaryDataChunk:
+                        case CommandDescriptorHeap:
                             // These buffers belong to this command context. No new Begin has
                             // occurred, so their contents and descriptor-table storage remain intact.
                             break;

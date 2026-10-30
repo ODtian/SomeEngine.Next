@@ -46,14 +46,16 @@ internal sealed unsafe partial class D3D12Backend
             desc.VertexCode,
             desc.VertexCodeBlob,
             SlangStage.Vertex,
-            "vertex");
+            "vertex",
+            includeCodeHash: nativeCache is not null || desc.HasStreamOutput);
         CompiledShader pixel = CompileShader(
             reflection,
             desc.Pixel,
             desc.PixelCode,
             desc.PixelCodeBlob,
             SlangStage.Fragment,
-            "pixel");
+            "pixel",
+            includeCodeHash: nativeCache is not null || desc.HasStreamOutput);
         ValidateVertexLocations(desc.Vertex, desc.VertexAttributes);
 
         EntryPointReflection[] entries = [desc.Vertex, desc.Pixel];
@@ -142,7 +144,9 @@ internal sealed unsafe partial class D3D12Backend
         ref nint[] allocatedSemantics,
         out ID3D12PipelineState* pipelineState)
     {
-        byte[] key = CreateGraphicsPipelineKey(nativeDevice, root, vertex, pixel, desc);
+        byte[] key = nativeCache is null && !desc.HasStreamOutput
+            ? []
+            : CreateGraphicsPipelineKey(nativeDevice, root, vertex, pixel, desc);
         InputElementDesc[] inputElements = CreateInputElements(
             desc.VertexBuffers,
             desc.VertexAttributes);
@@ -361,7 +365,8 @@ internal sealed unsafe partial class D3D12Backend
             desc.Code,
             desc.CodeBlob,
             SlangStage.Compute,
-            "compute");
+            "compute",
+            includeCodeHash: nativeCache is not null);
         EntryPointReflection[] entries = [desc.Compute];
         D3D12RootSignatureState root = D3D12RootSignatureBuilder.Compile(
             this,
@@ -379,7 +384,9 @@ internal sealed unsafe partial class D3D12Backend
         D3D12ClassicPipeline? result = null;
         try
         {
-            byte[] key = CreateComputePipelineKey(nativeDevice, root, compute);
+            byte[] key = nativeCache is null
+                ? []
+                : CreateComputePipelineKey(nativeDevice, root, compute);
             D3D12PipelineCache.CacheCandidate? cacheCandidate =
                 TryGetCachedData(nativeCache, 2, key);
             byte[]? cachedData = cacheCandidate?.Payload;
@@ -496,7 +503,8 @@ nativeDevice.Native, &native,
             desc.MeshCode,
             desc.MeshCodeBlob,
             SlangStage.Mesh,
-            "mesh");
+            "mesh",
+            includeCodeHash: nativeCache is not null);
         CompiledShader? amplification = desc.Amplification == EntryPointReflection.Null
             ? null
             : CompileShader(
@@ -505,7 +513,8 @@ nativeDevice.Native, &native,
                 desc.AmplificationCode,
                 desc.AmplificationCodeBlob,
                 SlangStage.Amplification,
-                "amplification");
+                "amplification",
+                includeCodeHash: nativeCache is not null);
         CompiledShader? pixel = desc.Pixel == EntryPointReflection.Null
             ? null
             : CompileShader(
@@ -514,7 +523,8 @@ nativeDevice.Native, &native,
                 desc.PixelCode,
                 desc.PixelCodeBlob,
                 SlangStage.Fragment,
-                "pixel");
+                "pixel",
+                includeCodeHash: nativeCache is not null);
 
         List<EntryPointReflection> entryList = [desc.Mesh];
         if (desc.Amplification != EntryPointReflection.Null)
@@ -599,13 +609,15 @@ nativeDevice.Native, &native,
         in MeshPipelineDesc desc,
         out ID3D12PipelineState* pipelineState)
     {
-        byte[] key = CreateMeshPipelineKey(
-            nativeDevice,
-            root,
-            mesh,
-            amplification,
-            pixel,
-            desc);
+        byte[] key = nativeCache is null
+            ? []
+            : CreateMeshPipelineKey(
+                nativeDevice,
+                root,
+                mesh,
+                amplification,
+                pixel,
+                desc);
         BlendDesc blend = CreateBlend(
             desc.Blend,
             desc.Attachments.ColorFormats.Length,
@@ -766,7 +778,8 @@ nativeDevice.Native, &native,
         ReadOnlySequence<byte> code,
         ISlangBlob? codeBlob,
         SlangStage expectedStage,
-        string role)
+        string role,
+        bool includeCodeHash = true)
     {
         if (entryPoint == EntryPointReflection.Null)
             throw new ArgumentException($"The {role} entry point is null.", nameof(entryPoint));
@@ -816,7 +829,7 @@ nativeDevice.Native, &native,
         return new CompiledShader(
             entryPoint,
             bytes,
-            SHA256.HashData(bytes));
+            includeCodeHash ? SHA256.HashData(bytes) : Array.Empty<byte>());
     }
 
     private static readonly ConditionalWeakTable<ISlangBlob, ShaderCodeData> ShaderCodeBytes = new();

@@ -148,6 +148,7 @@ internal sealed unsafe partial class VulkanBackend
                 sets[index] = allocations[index].Set;
             }
             byte[] pushConstants = [];
+            DescriptorBufferInfo uniformInfo = default;
             if (block.Ordinary is VulkanOrdinaryBinding ordinary)
             {
                 if (ordinary.PushConstants)
@@ -157,33 +158,28 @@ internal sealed unsafe partial class VulkanBackend
                 else
                 {
                     uniform = new VulkanUniformBuffer(device, bindings.OrdinaryData);
-                    DescriptorBufferInfo bufferInfo = new(uniform.Native, 0, ordinary.Size);
-                    WriteNativeDescriptor(
-                        device,
-                        FindDescriptorSet(block.SetIndices, sets, ordinary.Set),
-                        ordinary.Binding,
-                        0,
-                        DescriptorType.UniformBuffer,
-                        &bufferInfo,
-                        null,
-                        null);
+                    uniformInfo = new DescriptorBufferInfo(uniform.Native, 0, ordinary.Size);
                 }
             }
             for (int index = 0; index < slots.Length; index++)
             {
-                VulkanDescriptorSlot slot = slots[index];
                 ResourceBinding value = bindings.Resources[index];
                 if (value.Value is IVulkanRetained dependency)
                 {
                     dependency.RetainNative();
                     retained.Add(dependency);
                 }
-                WriteResourceDescriptor(
-                    device,
-                    FindDescriptorSet(block.SetIndices, sets, slot.Set),
-                    slot,
-                    value);
             }
+            int writeCount = slots.Length + (block.Ordinary is { PushConstants: false } ? 1 : 0);
+            WriteParameterDescriptors(
+                device,
+                block,
+                sets,
+                slots,
+                bindings.Resources,
+                uniformInfo,
+                new WriteDescriptorSet[writeCount],
+                new VulkanDescriptorData[writeCount]);
             return new VulkanDescriptorGeneration(
                 device,
                 allocations,
@@ -231,10 +227,15 @@ internal sealed unsafe partial class VulkanBackend
         Span<VkDescriptorSet> sets = arena.PrepareSetStorage(setIndices.Length);
         for (int index = 0; index < sets.Length; index++)
         {
-            sets[index] = arena.Allocate(
-                pipeline.Layout.SetLayouts[checked((int)setIndices[index])]);
+            sets[index] = arena.Allocate(pipeline.Layout, setIndices[index]);
         }
 
+        int writeCount = slots.Length + (block.Ordinary is { PushConstants: false } ? 1 : 0);
+        arena.PrepareDescriptorStorage(
+            writeCount,
+            out Span<WriteDescriptorSet> writes,
+            out Span<VulkanDescriptorData> descriptorData);
+        DescriptorBufferInfo uniformInfo = default;
         if (block.Ordinary is VulkanOrdinaryBinding ordinary)
         {
             if (ordinary.PushConstants)
@@ -256,31 +257,25 @@ internal sealed unsafe partial class VulkanBackend
                     bindings.OrdinaryData,
                     out VkBuffer uniform,
                     out ulong offset);
-                DescriptorBufferInfo bufferInfo = new(uniform, offset, ordinary.Size);
-                WriteNativeDescriptor(
-                    device,
-                    FindDescriptorSet(setIndices, sets, ordinary.Set),
-                    ordinary.Binding,
-                    0,
-                    DescriptorType.UniformBuffer,
-                    &bufferInfo,
-                    null,
-                    null);
+                uniformInfo = new DescriptorBufferInfo(uniform, offset, ordinary.Size);
             }
         }
 
         for (int index = 0; index < slots.Length; index++)
         {
-            VulkanDescriptorSlot slot = slots[index];
             ResourceBinding value = bindings.Resources[index];
             if (value.Value is IVulkanRetained dependency)
                 command.Capture(dependency);
-            WriteResourceDescriptor(
-                device,
-                FindDescriptorSet(setIndices, sets, slot.Set),
-                slot,
-                value);
         }
+        WriteParameterDescriptors(
+            device,
+            block,
+            sets,
+            slots,
+            bindings.Resources,
+            uniformInfo,
+            writes,
+            descriptorData);
 
         PipelineBindPoint bindPoint = ToBindPoint(pipeline.Type);
         for (int index = 0; index < sets.Length; index++)
@@ -297,6 +292,53 @@ internal sealed unsafe partial class VulkanBackend
                 null);
         }
 
+    }
+
+    private static void WriteParameterDescriptors(
+        VulkanDevice device,
+        VulkanBlockLayout block,
+        ReadOnlySpan<VkDescriptorSet> sets,
+        ReadOnlySpan<VulkanDescriptorSlot> slots,
+        ReadOnlySpan<ResourceBinding> resources,
+        in DescriptorBufferInfo uniformInfo,
+        Span<WriteDescriptorSet> writes,
+        Span<VulkanDescriptorData> descriptorData)
+    {
+        if (writes.IsEmpty)
+            return;
+        // Vulkan consumes every descriptor pointer before these arrays leave the fixed scope.
+        fixed (WriteDescriptorSet* writePointer = writes)
+        fixed (VulkanDescriptorData* dataPointer = descriptorData)
+        {
+            int writeIndex = 0;
+            if (block.Ordinary is { PushConstants: false } ordinary)
+            {
+                dataPointer[writeIndex].Buffer = uniformInfo;
+                writePointer[writeIndex] = CreateNativeDescriptor(
+                    FindDescriptorSet(block.SetIndices, sets, ordinary.Set),
+                    ordinary.Binding,
+                    0,
+                    DescriptorType.UniformBuffer,
+                    &dataPointer[writeIndex]);
+                writeIndex++;
+            }
+            for (int index = 0; index < slots.Length; index++, writeIndex++)
+            {
+                ref readonly VulkanDescriptorSlot slot = ref slots[index];
+                writePointer[writeIndex] = CreateResourceDescriptor(
+                    device,
+                    FindDescriptorSet(block.SetIndices, sets, slot.Set),
+                    slot,
+                    resources[index],
+                    &dataPointer[writeIndex]);
+            }
+            device.Backend.Api.UpdateDescriptorSets(
+                device.Native,
+                checked((uint)writes.Length),
+                writePointer,
+                0,
+                null);
+        }
     }
 
     private static VkDescriptorSet FindDescriptorSet(
@@ -316,11 +358,23 @@ internal sealed unsafe partial class VulkanBackend
         in VulkanDescriptorSlot slot,
         in ResourceBinding value)
     {
-        DescriptorBufferInfo bufferInfo = default;
-        DescriptorImageInfo imageInfo = default;
-        VkBufferView texelView = default;
+        VulkanDescriptorData data = default;
+        WriteDescriptorSet write = CreateResourceDescriptor(device, set, slot, value, &data);
+        Api.UpdateDescriptorSets(device.Native, 1, &write, 0, null);
+    }
+
+    private static WriteDescriptorSet CreateResourceDescriptor(
+        VulkanDevice device,
+        VkDescriptorSet set,
+        in VulkanDescriptorSlot slot,
+        in ResourceBinding value,
+        VulkanDescriptorData* data)
+    {
+        *data = default;
         if (value.IsNull)
         {
+            // A null buffer descriptor requires VK_WHOLE_SIZE (VUID 02999).
+            data->Buffer.Range = Vk.WholeSize;
             if (slot.BindingType == ResourceBindingType.Sampler)
                 throw new ArgumentException("Sampler bindings cannot be null.", nameof(value));
             if (!device.ExtendedFeatures.NullDescriptor)
@@ -328,74 +382,47 @@ internal sealed unsafe partial class VulkanBackend
                 throw new NotSupportedException(
                     "This Vulkan Device cannot provide typed null descriptors.");
             }
-            if (slot.DescriptorType == DescriptorType.AccelerationStructureKhr)
-            {
-                WriteAccelerationStructureDescriptor(
-                    device,
-                    set,
-                    slot.Binding,
-                    slot.ArrayElement,
-                    default);
-                return;
-            }
-            WriteNativeDescriptor(
-                device,
-                set,
-                slot.Binding,
-                slot.ArrayElement,
-                slot.DescriptorType,
-                &bufferInfo,
-                &imageInfo,
-                &texelView);
-            return;
+            return CreateNativeDescriptor(set, slot.Binding, slot.ArrayElement, slot.DescriptorType, data);
         }
         switch (value.Value)
         {
             case VulkanAccelerationStructureSrv acceleration:
-                WriteAccelerationStructureDescriptor(
-                    device,
-                    set,
-                    slot.Binding,
-                    slot.ArrayElement,
-                    acceleration.Native);
-                return;
+                data->AccelerationStructure = acceleration.Native;
+                break;
             case VulkanBuffer direct when value.Type == ResourceBindingType.ConstantBuffer:
-                bufferInfo = new DescriptorBufferInfo(direct.Native, value.BufferRange.Offset, value.BufferRange.Size);
+                data->Buffer = new DescriptorBufferInfo(direct.Native, value.BufferRange.Offset, value.BufferRange.Size);
                 break;
             case VulkanBufferCbv cbv:
             {
                 VulkanBuffer buffer = (VulkanBuffer)cbv.Resource;
                 BufferRange range = cbv.Description.Range.Resolve(buffer.Info.Size);
-                bufferInfo = new DescriptorBufferInfo(buffer.Native, range.Offset, range.Size);
+                data->Buffer = new DescriptorBufferInfo(buffer.Native, range.Offset, range.Size);
                 break;
             }
             case VulkanBufferSrv srv:
-                PrepareBufferDescriptor(srv.Resource, srv.Description.Range, srv.Native, slot.DescriptorType, ref bufferInfo, ref texelView);
+                PrepareBufferDescriptor(srv.Resource, srv.Description.Range, srv.Native, slot.DescriptorType, ref data->Buffer, ref data->TexelView);
                 break;
             case VulkanBufferUav uav:
-                PrepareBufferDescriptor(uav.Resource, uav.Description.Range, uav.Native, slot.DescriptorType, ref bufferInfo, ref texelView);
+                PrepareBufferDescriptor(uav.Resource, uav.Description.Range, uav.Native, slot.DescriptorType, ref data->Buffer, ref data->TexelView);
                 break;
             case VulkanTextureSrv srv:
-                imageInfo = new DescriptorImageInfo(default, srv.Native, ImageLayout.ShaderReadOnlyOptimal);
+                data->Image = new DescriptorImageInfo(default, srv.Native, ImageLayout.ShaderReadOnlyOptimal);
                 break;
             case VulkanTextureUav uav:
-                imageInfo = new DescriptorImageInfo(default, uav.Native, ImageLayout.General);
+                data->Image = new DescriptorImageInfo(default, uav.Native, ImageLayout.General);
                 break;
             case VulkanSampler sampler:
-                imageInfo = new DescriptorImageInfo(sampler.Native, default, ImageLayout.Undefined);
+                data->Image = new DescriptorImageInfo(sampler.Native, default, ImageLayout.Undefined);
                 break;
             default:
                 throw new NotSupportedException($"Vulkan descriptor value {value.Value?.GetType().Name} is not implemented.");
         }
-        WriteNativeDescriptor(
-            device,
+        return CreateNativeDescriptor(
             set,
             slot.Binding,
             slot.ArrayElement,
             slot.DescriptorType,
-            &bufferInfo,
-            &imageInfo,
-            &texelView);
+            data);
     }
 
     private static void PrepareBufferDescriptor(
@@ -440,15 +467,12 @@ internal sealed unsafe partial class VulkanBackend
         return slots;
     }
 
-    private static void WriteNativeDescriptor(
-        VulkanDevice device,
+    private static WriteDescriptorSet CreateNativeDescriptor(
         VkDescriptorSet set,
         uint binding,
         uint arrayElement,
         DescriptorType type,
-        DescriptorBufferInfo* buffer,
-        DescriptorImageInfo* image,
-        VkBufferView* texel)
+        VulkanDescriptorData* data)
     {
         WriteDescriptorSet write = new()
         {
@@ -459,43 +483,36 @@ internal sealed unsafe partial class VulkanBackend
             DescriptorCount = 1,
             DescriptorType = type,
             PBufferInfo = type is DescriptorType.UniformBuffer or DescriptorType.StorageBuffer
-                ? buffer
+                ? &data->Buffer
                 : null,
             PImageInfo = type is DescriptorType.SampledImage or DescriptorType.StorageImage or
                 DescriptorType.Sampler or DescriptorType.InputAttachment or DescriptorType.CombinedImageSampler
-                ? image
+                ? &data->Image
                 : null,
             PTexelBufferView = type is DescriptorType.UniformTexelBuffer or DescriptorType.StorageTexelBuffer
-                ? texel
+                ? &data->TexelView
                 : null,
         };
-        device.Backend.Api.UpdateDescriptorSets(device.Native, 1, &write, 0, null);
+        if (type == DescriptorType.AccelerationStructureKhr)
+        {
+            data->Acceleration = new WriteDescriptorSetAccelerationStructureKHR
+            {
+                SType = StructureType.WriteDescriptorSetAccelerationStructureKhr,
+                AccelerationStructureCount = 1,
+                PAccelerationStructures = &data->AccelerationStructure,
+            };
+            write.PNext = &data->Acceleration;
+        }
+        return write;
     }
 
-    private static void WriteAccelerationStructureDescriptor(
-        VulkanDevice device,
-        VkDescriptorSet set,
-        uint binding,
-        uint arrayElement,
-        VkAccelerationStructure accelerationStructure)
+    private struct VulkanDescriptorData
     {
-        WriteDescriptorSetAccelerationStructureKHR acceleration = new()
-        {
-            SType = StructureType.WriteDescriptorSetAccelerationStructureKhr,
-            AccelerationStructureCount = 1,
-            PAccelerationStructures = &accelerationStructure,
-        };
-        WriteDescriptorSet write = new()
-        {
-            SType = StructureType.WriteDescriptorSet,
-            PNext = &acceleration,
-            DstSet = set,
-            DstBinding = binding,
-            DstArrayElement = arrayElement,
-            DescriptorCount = 1,
-            DescriptorType = DescriptorType.AccelerationStructureKhr,
-        };
-        device.Backend.Api.UpdateDescriptorSets(device.Native, 1, &write, 0, null);
+        internal DescriptorBufferInfo Buffer;
+        internal DescriptorImageInfo Image;
+        internal VkBufferView TexelView;
+        internal WriteDescriptorSetAccelerationStructureKHR Acceleration;
+        internal VkAccelerationStructure AccelerationStructure;
     }
 
     private VulkanPipeline RequirePipeline(
@@ -637,14 +654,22 @@ internal sealed unsafe partial class VulkanBackend
         VkDescriptorPool Pool,
         VkDescriptorSet Set);
 
+    private readonly record struct VulkanTransientDescriptorSet(
+        VulkanPipelineLayoutState Layout,
+        uint SetIndex,
+        VulkanDescriptorSetAllocation Allocation);
+
     private sealed class VulkanDescriptorArena
     {
         private const ulong DefaultUploadPageSize = 64 * 1024;
 
         private readonly VulkanDevice _device;
-        private VulkanDescriptorSetAllocation[] _allocations = [];
-        private int _allocationCount;
+        private VulkanTransientDescriptorSet[] _sets = [];
+        private int _setCount;
+        private int _usedSetCount;
         private VkDescriptorSet[] _setScratch = [];
+        private WriteDescriptorSet[] _descriptorWrites = [];
+        private VulkanDescriptorData[] _descriptorData = [];
         private VulkanUploadPage[] _uploadPages = [];
         private int _uploadPageCount;
 
@@ -656,12 +681,43 @@ internal sealed unsafe partial class VulkanBackend
             return _setScratch.AsSpan(0, count);
         }
 
-        internal VkDescriptorSet Allocate(VkDescriptorSetLayout layout)
+        internal void PrepareDescriptorStorage(
+            int count,
+            out Span<WriteDescriptorSet> writes,
+            out Span<VulkanDescriptorData> data)
         {
-            EnsureArray(ref _allocations, checked(_allocationCount + 1));
-            VulkanDescriptorSetAllocation allocation =
-                _device.DescriptorAllocator.Allocate(layout);
-            _allocations[_allocationCount++] = allocation;
+            EnsureArray(ref _descriptorWrites, count);
+            EnsureArray(ref _descriptorData, count);
+            writes = _descriptorWrites.AsSpan(0, count);
+            data = _descriptorData.AsSpan(0, count);
+        }
+
+        internal VkDescriptorSet Allocate(VulkanPipelineLayoutState layout, uint setIndex)
+        {
+            if (_usedSetCount < _setCount)
+            {
+                VulkanTransientDescriptorSet existing = _sets[_usedSetCount];
+                if (ReferenceEquals(existing.Layout, layout) && existing.SetIndex == setIndex)
+                {
+                    _usedSetCount++;
+                    return existing.Allocation.Set;
+                }
+                ReleaseSets(_usedSetCount);
+            }
+            EnsureArray(ref _sets, checked(_setCount + 1));
+            layout.RetainSetLayouts();
+            VulkanDescriptorSetAllocation allocation;
+            try
+            {
+                allocation = _device.DescriptorAllocator.Allocate(layout.SetLayouts[checked((int)setIndex)]);
+            }
+            catch
+            {
+                layout.ReleaseSetLayouts();
+                throw;
+            }
+            _sets[_setCount++] = new VulkanTransientDescriptorSet(layout, setIndex, allocation);
+            _usedSetCount++;
             return allocation.Set;
         }
 
@@ -694,23 +750,33 @@ internal sealed unsafe partial class VulkanBackend
 
         internal void ResetAfterCompletion()
         {
-            for (int index = _allocationCount - 1; index >= 0; index--)
-            {
-                _device.DescriptorAllocator.Free(_allocations[index]);
-                _allocations[index] = default;
-            }
-            _allocationCount = 0;
+            ReleaseSets(_usedSetCount);
+            _usedSetCount = 0;
             for (int index = 0; index < _uploadPageCount; index++)
                 _uploadPages[index].Reset();
         }
 
         internal void Release()
         {
-            ResetAfterCompletion();
+            ReleaseSets(0);
+            _usedSetCount = 0;
             for (int index = _uploadPageCount - 1; index >= 0; index--)
                 _uploadPages[index].Release();
             Array.Clear(_uploadPages, 0, _uploadPageCount);
             _uploadPageCount = 0;
+        }
+
+        private void ReleaseSets(int count)
+        {
+            while (_setCount > count)
+            {
+                int index = _setCount - 1;
+                VulkanTransientDescriptorSet set = _sets[index];
+                _device.DescriptorAllocator.Free(set.Allocation);
+                _sets[index] = default;
+                _setCount = index;
+                set.Layout.ReleaseSetLayouts();
+            }
         }
 
         private static void EnsureArray<T>(ref T[] storage, int count)

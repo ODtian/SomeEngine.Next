@@ -233,7 +233,8 @@ public sealed partial class SceneTestPlatform
         Options = Options with { WindowVSync = false, FixedFrameSeconds = 1f / 60f };
         string measurements = Environment.GetEnvironmentVariable("SOMEENGINE_SCENE_MEASUREMENTS")
             ?? Path.Combine(Path.GetTempPath(), "SomeEngine", "scene-measurements");
-        _resultDirectory = Path.Combine(measurements, DateTime.Now.ToString("yyyyMMdd-HHmmss-fff"));
+        _resultDirectory = Environment.GetEnvironmentVariable("SOMEENGINE_MEASUREMENT_OUTPUT_DIRECTORY")
+            ?? Path.Combine(measurements, DateTime.Now.ToString("yyyyMMdd-HHmmss-fff"));
         Directory.CreateDirectory(_resultDirectory);
         _sceneStarted = 0;
         _testStarted = Stopwatch.GetTimestamp();
@@ -448,9 +449,11 @@ public sealed partial class SceneTestPlatform
             ["Sampling"] = "Default warmup and wall-clock samples, or the configured zero-based simulation-frame interval.",
             ["Scenes"] = JsonSerializer.SerializeToNode(_frameWindows, SceneJsonContext.Default.ListSceneFrameWindow),
         };
-        File.WriteAllText(Path.Combine(_resultDirectory!, "frame-samples.json"),
+        string? basename = Environment.GetEnvironmentVariable("SOMEENGINE_MEASUREMENT_OUTPUT_BASENAME");
+        string frameSamplesName = basename is null ? "frame-samples.json" : basename + "-frame-samples.json";
+        File.WriteAllText(Path.Combine(_resultDirectory!, frameSamplesName),
             frameSamples.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
-        LastReport = Path.Combine(_resultDirectory!, "results.json");
+        LastReport = Path.Combine(_resultDirectory!, basename is null ? "results.json" : basename + "-results.json");
         var report = new JsonObject
         {
             ["Complete"] = error is null && _results.Count == Scenes.Count && _results.All(result => result.Status == "Measured"),
@@ -463,7 +466,8 @@ public sealed partial class SceneTestPlatform
             ["Framework"] = System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription,
             ["NativeAot"] = !System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported,
             ["GraphicsBackend"] = Options.GraphicsBackend.ToString(),
-            ["Offscreen"] = Options.SkipSwapchainPresent,
+            ["ShadingPath"] = Options.ShadingPath.ToString(),
+            ["FrameSamples"] = frameSamplesName,
             ["TieredCompilation"] = AppContext.GetData("System.Runtime.TieredCompilation")?.ToString(),
             ["TieredCompilationOverride"] = Environment.GetEnvironmentVariable("DOTNET_TieredCompilation")
                 ?? Environment.GetEnvironmentVariable("COMPlus_TieredCompilation"),
@@ -503,7 +507,7 @@ public sealed partial class SceneTestPlatform
         SelectedScene = _interactiveScene;
         Application.ContentDirectory = Current.ContentDirectory;
         _interactiveOptions = null;
-        if (ExitAfterMeasurements) Application.Stop();
+        if (ExitAfterMeasurements) Application.Exit();
     }
 
     internal void Draw()

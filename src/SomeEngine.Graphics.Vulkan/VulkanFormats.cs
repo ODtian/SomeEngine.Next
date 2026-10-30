@@ -173,7 +173,8 @@ internal static unsafe class VulkanFormats
             checked((uint)Math.Max(1, Math.Max(limits.MinStorageBufferOffsetAlignment, limits.MinTexelBufferOffsetAlignment))),
             checked((uint)Math.Max(limits.OptimalBufferCopyRowPitchAlignment, 1)),
             checked((uint)Math.Max(limits.OptimalBufferCopyOffsetAlignment, 1)),
-            limits.MaxUniformBufferRange);
+            limits.MaxUniformBufferRange,
+            limits.MaxComputeWorkGroupInvocations);
 
         RhiFormat[] formats = Enum.GetValues<RhiFormat>();
         FormatSupport[] support = new FormatSupport[formats.Length];
@@ -197,7 +198,7 @@ internal static unsafe class VulkanFormats
             dynamicStates |= DynamicStates.PrimitiveTopology;
         if (extendedFeatures.ExtendedDynamicState2)
             dynamicStates |= DynamicStates.StripCut;
-        FormatFeatures r64Features = support[(int)RhiFormat.R64UInt].Features;
+        FormatFeatures r64Features = support[Array.IndexOf(formats, RhiFormat.R64UInt)].Features;
         const FormatFeatures requiredImageA64Features =
             FormatFeatures.ShaderLoad |
             FormatFeatures.Storage |

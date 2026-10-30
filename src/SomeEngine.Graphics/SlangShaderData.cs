@@ -23,25 +23,6 @@ public sealed class SlangShaderData
     public ISession Session { get; }
     public IComponentType Code { get; }
 
-    /// <summary>Combines components and releases the temporary native references after the call.</summary>
-    public static unsafe SlangResult CombineComponents(ISession session, ReadOnlySpan<IComponentType> components,
-        out IComponentType code, out ISlangBlob? diagnostics)
-    {
-        nint* pointers = stackalloc nint[components.Length];
-        int acquired = 0;
-        try
-        {
-            for (; acquired < components.Length; acquired++)
-                pointers[acquired] = (nint)ComInterfaceMarshaller<IComponentType>.ConvertToUnmanaged(components[acquired]);
-            return session.CreateCompositeComponentType(pointers, components.Length, out code, out diagnostics);
-        }
-        finally
-        {
-            for (int index = 0; index < acquired; index++)
-                ComInterfaceMarshaller<IComponentType>.Free((void*)pointers[index]);
-        }
-    }
-
     /// <summary>Keeps a component's native session alive through its COM wrapper's finalizer.</summary>
     public static void RetainSession(ISession session, IComponentType component)
     {

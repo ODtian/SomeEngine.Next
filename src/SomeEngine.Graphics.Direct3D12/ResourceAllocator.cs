@@ -37,6 +37,7 @@ internal sealed unsafe partial class D3D12Backend
     private readonly record struct ResourcePoolKey(
         MemoryType MemoryType,
         ResourceHeapClass Class,
+        bool Multisampled,
         uint CreationNodeMask,
         uint VisibleNodeMask);
 
@@ -111,6 +112,7 @@ internal sealed unsafe partial class D3D12Backend
             NativeHeapDesc description = new()
             {
                 SizeInBytes = size,
+                Alignment = key.Multisampled ? 4_194_304UL : 0,
                 Properties = CreateHeapProperties(
                     key.MemoryType,
                     key.CreationNodeMask,
@@ -337,6 +339,7 @@ internal sealed unsafe partial class D3D12Backend
         internal D3D12MemoryAllocation? TryAllocate(
             MemoryType memoryType,
             ResourceHeapClass heapClass,
+            uint sampleCount,
             uint creationNodeMask,
             uint visibleNodeMask,
             in MemoryRequirements requirements,
@@ -357,6 +360,7 @@ internal sealed unsafe partial class D3D12Backend
                 ResourcePoolKey key = new(
                     memoryType,
                     heapClass,
+                    sampleCount > 1,
                     creationNodeMask,
                     visibleNodeMask);
                 if (_blocks.TryGetValue(key, out List<ResourceHeapBlock>? existing))
@@ -533,6 +537,7 @@ internal sealed unsafe partial class D3D12Backend
         D3D12MemoryAllocation? allocation = device.ResourceAllocator.TryAllocate(
             memoryType,
             heapClass,
+            description.SampleDesc.Count,
             creationNodeMask,
             visibleNodeMask,
             requirements,

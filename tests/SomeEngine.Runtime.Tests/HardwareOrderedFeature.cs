@@ -158,7 +158,7 @@ internal sealed class HardwareOrderedFeature : IApplicationColorFeature
             Slang.CreateBlob(Source), out ISlangBlob? diagnostics) ?? throw new InvalidDataException(diagnostics?.AsString);
         var entries = new IEntryPoint[4];
         for (int index = 0; index < entries.Length; index++) unit.GetDefinedEntryPoint(index, out entries[index]);
-        SlangShaderData.CombineComponents(session, [unit, .. entries], out IComponentType combined, out diagnostics);
+        session.CreateCompositeComponentType([unit, .. entries], out IComponentType combined, out diagnostics);
         Assert.True(combined.Link(out IComponentType linked, out diagnostics).Succeeded, diagnostics?.AsString);
         return Shader.CreateFromSlang("Ordered hardware reference", global, session, [unit], entries, linked, [target], generateLibraryCode: false);
     }

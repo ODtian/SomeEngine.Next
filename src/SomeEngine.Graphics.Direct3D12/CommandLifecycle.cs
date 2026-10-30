@@ -83,7 +83,7 @@ internal sealed unsafe partial class D3D12Backend
             CollectReferencedSwapchainImages(submission);
             ValidateSwapchainImages(nativeQueue, desc.SwapchainImages, submission);
             claimedImages = ClaimSwapchainImages(nativeQueue, submission);
-            retainedTimelines = RetainSubmissionTimelines(submission);
+            RetainSubmissionTimelines(submission, ref retainedTimelines);
 
             using (nativeQueue.Gate.EnterScope())
             {
@@ -347,15 +347,15 @@ internal sealed unsafe partial class D3D12Backend
         return claimed;
     }
 
-    private static int RetainSubmissionTimelines(D3D12PendingSubmission submission)
+    private static void RetainSubmissionTimelines(
+        D3D12PendingSubmission submission,
+        ref int retained)
     {
-        int retained = 0;
         for (int index = 0; index < submission.TimelineCount; index++)
         {
             submission.Timelines[index].RetainSubmission();
             retained++;
         }
-        return retained;
     }
 
     private static QueueCompletion ExecuteSubmissionUnderGate(
@@ -586,12 +586,6 @@ internal sealed unsafe partial class D3D12Backend
             CaptureDescriptor(value, descriptor.NativeDescriptor);
         }
 
-        internal CpuDescriptorHandle Capture(ColorAttachmentView value)
-        {
-            D3D12TextureResource resource = RequireAttachment(value);
-            return Capture(value, resource);
-        }
-
         internal D3D12TextureResource RequireAttachment(ColorAttachmentView value)
         {
             D3D12ColorAttachmentView native = value as D3D12ColorAttachmentView ??
@@ -605,19 +599,11 @@ internal sealed unsafe partial class D3D12Backend
             return resource;
         }
 
-        internal CpuDescriptorHandle Capture(
-            ColorAttachmentView value,
-            D3D12TextureResource resource)
+        internal CpuDescriptorHandle Capture(ColorAttachmentView value)
         {
-            INativeDescriptor descriptor = (INativeDescriptor)value;
-            CaptureDescriptor(value, descriptor.NativeDescriptor);
-            return descriptor.NativeDescriptor.Cpu;
-        }
-
-        internal CpuDescriptorHandle Capture(DepthStencilView value)
-        {
-            D3D12TextureResource resource = RequireAttachment(value);
-            return Capture(value, resource);
+            DescriptorLease descriptor = ((INativeDescriptor)value).NativeDescriptor;
+            CaptureDescriptor(value, descriptor);
+            return descriptor.Cpu;
         }
 
         internal D3D12TextureResource RequireAttachment(DepthStencilView value)
@@ -633,13 +619,11 @@ internal sealed unsafe partial class D3D12Backend
             return resource;
         }
 
-        internal CpuDescriptorHandle Capture(
-            DepthStencilView value,
-            D3D12TextureResource resource)
+        internal CpuDescriptorHandle Capture(DepthStencilView value)
         {
-            INativeDescriptor descriptor = (INativeDescriptor)value;
-            CaptureDescriptor(value, descriptor.NativeDescriptor);
-            return descriptor.NativeDescriptor.Cpu;
+            DescriptorLease descriptor = ((INativeDescriptor)value).NativeDescriptor;
+            CaptureDescriptor(value, descriptor);
+            return descriptor.Cpu;
         }
 
         internal void CaptureBundle(D3D12RecordedBundle value)
@@ -684,14 +668,11 @@ internal sealed unsafe partial class D3D12Backend
 
             _repeatCommands = null;
 
-            D3D12CommandSlot? slot = null;
-            foreach (D3D12CommandSlot candidate in _slots)
+            D3D12CommandSlot? slot = TryClaimRecording();
+            if (slot is null)
             {
-                if (candidate.TryClaim())
-                {
-                    slot = candidate;
-                    break;
-                }
+                _queue.CollectCompleted();
+                slot = TryClaimRecording();
             }
             if (slot is null)
             {
@@ -713,6 +694,13 @@ internal sealed unsafe partial class D3D12Backend
                 slot.CompleteUse();
                 throw;
             }
+        }
+
+        private D3D12CommandSlot? TryClaimRecording()
+        {
+            foreach (D3D12CommandSlot recording in _slots)
+                if (recording.TryClaim()) return recording;
+            return null;
         }
 
         internal RecordedCommands EndCommands()
@@ -790,7 +778,6 @@ internal sealed unsafe partial class D3D12Backend
         internal void Discard()
         {
             _device.ThrowIfUnavailable();
-            RequireRenderingClosed();
             D3D12CommandSlot slot = Recording;
             slot.AbortCommandData();
             _recording = null;
@@ -1610,7 +1597,6 @@ internal sealed unsafe partial class D3D12Backend
             Array.Clear(CompletionWaitQueues, 0, CompletionWaitCount);
             Array.Clear(Images, 0, ImageCount);
             Array.Clear(ReferencedImages, 0, ReferencedImageCount);
-            Array.Clear(ReferencedImageUses, 0, ReferencedImageCount);
             CompletionWaitCount = 0;
             ImageCount = 0;
             ReferencedImageCount = 0;
@@ -1620,7 +1606,6 @@ internal sealed unsafe partial class D3D12Backend
         {
             Array.Clear(Payloads, 0, PayloadCount);
             Array.Clear(Timelines, 0, TimelineCount);
-            Array.Clear(NativeLists, 0, PayloadCount);
             ReleaseScratchReferences();
             Completion = 0;
             PayloadCount = 0;

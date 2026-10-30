@@ -1,79 +1,86 @@
-param([switch]$Trace, [string]$ApplicationPath, [string]$OutputDirectory,
-    [string[]]$ApplicationArguments, [string]$Scene, [string]$ShadingPath, [string]$Playback,
-    [switch]$PassThru, [int]$MemoryMB = 8192)
+param(
+    [switch]$Trace, [switch]$TraceDetail, [string]$ApplicationPath, [switch]$Managed,
+    [string[]]$ApplicationArguments = @(),
+    [string]$SceneConfigurationJson,
+    [ValidateSet('deferred', 'forward')][string]$ShadingPath,
+    [ValidateSet('static', 'motion', 'materials', 'camera')][string]$ScenePlayback = 'camera',
+    [string]$ExpectedScene,
+    [ValidateRange(1, 120)][int]$StartupFrames,
+    [ValidateNotNullOrEmpty()][string]$Scene
+)
 $ErrorActionPreference = 'Stop'
-function Write-LogTail([string]$Path) {
-    Get-Content -LiteralPath $Path -Tail 40 | Out-Host
-}
-$executable = if ($IsWindows) { 'DefaultGame.exe' } else { 'DefaultGame' }
-$application = if ($ApplicationPath) { [IO.Path]::GetFullPath($ApplicationPath) }
-    else { [IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../samples/DefaultGame/bin/game/Release/net10.0/$executable")) }
-if (!(Test-Path -LiteralPath $application)) { throw 'Publish samples/DefaultGame in Release first.' }
-$reports = if ($OutputDirectory) { [IO.Path]::GetFullPath($OutputDirectory) }
-    else { Join-Path ([IO.Path]::GetTempPath()) ('SomeEngine/scene-measurements/' + [Guid]::NewGuid().ToString('N')) }
-[void][IO.Directory]::CreateDirectory($reports)
-$start = [Diagnostics.ProcessStartInfo]::new($application)
-if ($IsWindows) {
-    $watchdog = Join-Path $PSScriptRoot 'ProcessWatchdog/bin/Release/net10.0/SomeEngine.ProcessWatchdog.dll'
-    if (!(Test-Path -LiteralPath $watchdog)) {
-        & dotnet build (Join-Path $PSScriptRoot 'ProcessWatchdog/ProcessWatchdog.csproj') -c Release -m:1 -nr:false -p:UseSharedCompilation=false -v quiet
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-    }
-    $start.FileName = 'dotnet'
-    foreach ($argument in @($watchdog, '--memory-mb', [string]$MemoryMB, '--timeout', '59', '--idle-timeout', '20', '--', $application)) {
-        $start.ArgumentList.Add($argument)
+$repository = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+$queue = 'F:/SomeEngine.Next/tools/Invoke-Benchmark.ps1'
+$session = $env:SOMEENGINE_BENCHMARK_SESSION ?? $env:CODEX_THREAD_ID ?? $env:CODEX_SESSION_ID ?? $repository
+$measurementArguments = @('-B', 'tools/Measure-Scenes.py', '--scene-playback', $ScenePlayback)
+if ($ApplicationPath) {
+    $measurementArguments += @('--application', $ApplicationPath)
+    if (!$SceneConfigurationJson -and [IO.File]::Exists($ApplicationPath)) {
+        $sceneConfiguration = Join-Path ([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($ApplicationPath))) 'test-scenes.json'
+        $measurementArguments += @('--scene-configuration-json', [IO.File]::ReadAllText($sceneConfiguration))
     }
 }
-$start.UseShellExecute = $false
-$start.CreateNoWindow = $true
-$start.RedirectStandardOutput = $true
-$start.RedirectStandardError = $true
-$start.ArgumentList.Add('--measure-scenes')
-if ($IsLinux) { $start.ArgumentList.Add('--graphics-backend'); $start.ArgumentList.Add('vulkan'); $start.ArgumentList.Add('--skip-present') }
-if ($Scene) { $start.ArgumentList.Add('--measure-scene'); $start.ArgumentList.Add($Scene) }
-foreach ($argument in $ApplicationArguments) { $start.ArgumentList.Add($argument) }
-if ($ShadingPath) { $start.ArgumentList.Add('--shading-path'); $start.ArgumentList.Add($ShadingPath) }
-if ($Playback) { $start.ArgumentList.Add('--scene-playback'); $start.ArgumentList.Add($Playback) }
-$start.Environment['SOMEENGINE_SCENE_MEASUREMENTS'] = $reports
-if ($Trace) {
-    $start.ArgumentList.Add('--trace-scenes')
-    $start.Environment['SOMEENGINE_STARTUP_TRACE'] = Join-Path $reports 'startup.setrace'
-} else { [void]$start.Environment.Remove('SOMEENGINE_STARTUP_TRACE') }
-$started = [DateTime]::UtcNow
-$timer = [Diagnostics.Stopwatch]::StartNew()
-$process = [Diagnostics.Process]::Start($start)
-$outputPath = Join-Path $reports 'stdout.log'
-$errorPath = Join-Path $reports 'stderr.log'
-$outputFile = [IO.File]::Create($outputPath)
-$errorFile = [IO.File]::Create($errorPath)
-$output = $process.StandardOutput.BaseStream.CopyToAsync($outputFile)
-$errors = $process.StandardError.BaseStream.CopyToAsync($errorFile)
+if ($SceneConfigurationJson) { $measurementArguments += @('--scene-configuration-json', $SceneConfigurationJson) }
+if ($Managed) { $measurementArguments += '--managed' }
+if ($Trace) { $measurementArguments += '--trace' }
+if ($TraceDetail) { $measurementArguments += '--trace-detail' }
+if ($ShadingPath) { $measurementArguments += @('--shading-path', $ShadingPath) }
+if ($ExpectedScene) { $measurementArguments += @('--expected-scene', $ExpectedScene) }
+if ($StartupFrames) { $measurementArguments += @('--startup-frames', [string]$StartupFrames) }
+if ($Scene) { $measurementArguments += @('--scene', $Scene) }
+foreach ($argument in $ApplicationArguments) { $measurementArguments += "--application-argument=$argument" }
+
+Push-Location $repository
 try {
-    if (!$process.WaitForExit(59000)) { $process.Kill($true); $process.WaitForExit() }
-    [void]$output.GetAwaiter().GetResult()
-    [void]$errors.GetAwaiter().GetResult()
-    $applicationExitCode = $process.ExitCode
-} finally {
-    $outputFile.Dispose(); $errorFile.Dispose(); $process.Dispose()
+    $receiptText = & $queue --gpu --session $session python @measurementArguments
+    if ($LASTEXITCODE -ne 0) { throw 'The GPU measurement queue submission failed.' }
+} finally { Pop-Location }
+$receipt = ($receiptText -split '\r?\n' | Where-Object { $_.Trim() } | Select-Object -Last 1) | ConvertFrom-Json
+Write-Host "Queued $($receipt.Id); waiting for $($receipt.OutputDirectory)."
+$resultPath = Join-Path $receipt.OutputDirectory 'result.json'
+while (!(Test-Path -LiteralPath $resultPath)) { Start-Sleep -Seconds 1 }
+$completed = Get-Content -LiteralPath $resultPath -Raw | ConvertFrom-Json
+$output = [IO.File]::ReadAllText((Join-Path $receipt.OutputDirectory 'stdout.log'))
+$errors = [IO.File]::ReadAllText((Join-Path $receipt.OutputDirectory 'stderr.log'))
+foreach ($line in ($output -split '\r?\n')) {
+    if (!$line.StartsWith('SCENE_FRAME_SAMPLES ')) { [Console]::Out.WriteLine($line) }
 }
-$report = Get-ChildItem -LiteralPath $reports -Filter results.json -Recurse |
-    Where-Object LastWriteTimeUtc -ge $started | Select-Object -First 1
-if (!$report -or $applicationExitCode -ne 0) {
-    Write-LogTail $outputPath
-    Write-LogTail $errorPath
-    throw 'The scene measurement did not complete successfully within 60 seconds.'
+[Console]::Error.Write($errors)
+if ($StartupFrames) { exit [int]$completed.ExitCode }
+
+$directory = $env:SOMEENGINE_MEASUREMENT_OUTPUT_DIRECTORY
+$basename = $env:SOMEENGINE_MEASUREMENT_OUTPUT_BASENAME
+if ($directory -or $basename) {
+    if (!$directory -or !$basename) { throw 'Flat measurement output requires both directory and basename.' }
+    $reportName = $basename + '-results.json'
+    $samplesName = $basename + '-frame-samples.json'
+} elseif ($ApplicationPath -and [IO.File]::Exists($ApplicationPath)) {
+    $directory = Join-Path ([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($ApplicationPath))) ('Performance/' + [DateTime]::Now.ToString('yyyyMMdd-HHmmss-fff'))
+    [void][IO.Directory]::CreateDirectory($directory)
+    $reportName = 'results.json'
+    $samplesName = 'frame-samples.json'
 }
-$result = Get-Content -LiteralPath $report.FullName -Raw | ConvertFrom-Json
-$result.Scenes | Format-Table Scene, Status, Frames, MeanMs, MedianMs, P95Ms, PrepareMs, ExecuteMs | Out-Host
-if ($result.Startup) {
-    $result.Startup | Format-Table ApplicationToWindowMs, WindowToFirstFrameMs, ApplicationToFirstFrameMs | Out-Host
-    $result.Startup.Stages | Format-Table Stage, ElapsedMs | Out-Host
+if ($directory) {
+    foreach ($entry in @(
+        @{ Prefix = 'SCENE_REPORT '; Name = $reportName },
+        @{ Prefix = 'SCENE_FRAME_SAMPLES '; Name = $samplesName }
+    )) {
+        $line = $output -split '\r?\n' | Where-Object { $_.StartsWith($entry.Prefix) } | Select-Object -Last 1
+        if ($line) {
+            $path = Join-Path $directory $entry.Name
+            $json = $line.Substring($entry.Prefix.Length)
+            if ($entry.Prefix -eq 'SCENE_REPORT ') {
+                $report = $json | ConvertFrom-Json
+                $report.FrameSamples = $samplesName
+                $json = $report | ConvertTo-Json -Depth 30
+            }
+            $file = [IO.File]::Open($path, [IO.FileMode]::CreateNew)
+            try {
+                $bytes = [Text.UTF8Encoding]::new($false).GetBytes($json)
+                $file.Write($bytes, 0, $bytes.Length)
+            } finally { $file.Dispose() }
+        }
+    }
+    Write-Host "Report: $(Join-Path $directory $reportName)"
 }
-Write-Host "Report: $($report.FullName) ($([Math]::Round($timer.Elapsed.TotalSeconds, 2)) seconds including application startup)"
-$requiredScenes = if ($Scene) { @($Scene) } else { @('1024 spheres', 'Sponza', 'Amazon Bistro') }
-if (!$result.Complete -or $result.Scenes.Count -ne $requiredScenes.Count -or
-    @(Compare-Object $requiredScenes @($result.Scenes.Scene)).Count -ne 0 -or
-    @($result.Scenes | Where-Object Status -ne 'Measured').Count -ne 0) {
-    throw 'The requested scenes did not reach a complete measurement window.'
-}
-if ($PassThru) { [pscustomobject]@{ ReportPath = $report.FullName; Report = $result } }
+exit [int]$completed.ExitCode

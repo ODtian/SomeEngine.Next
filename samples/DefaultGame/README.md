@@ -71,9 +71,9 @@ dotnet run --project samples/DefaultGame/DefaultGame.csproj -c Release -p:SomeEn
 
 开发构建的 `prepare-materials` 更新默认场景的材质编译输入。`prepare-materials <场景目录>` 更新已有导入场景的材质 Shader，并登记默认场景已构建的 GI Shader。几何与纹理继续使用原有资产。
 
-`Measure-Scenes.ps1 -OutputDirectory <目录>` 指定场景测量输出目录，默认位置为系统临时目录中的 `SomeEngine/scene-measurements`。统一场景平台通过 `SOMEENGINE_SCENE_MEASUREMENTS` 接收该目录。
+`Measure-Scenes.ps1` 沿用引擎优化树的共享队列入口。应用路径通过 `-ApplicationPath` 指定，场景配置通过 `-SceneConfigurationJson` 传入；队列结果保存 stdout、stderr、退出码、测量配置和采样数据。
 
-Linux 启动默认采用 Vulkan，通过 Xlib display 创建窗口。`--measure-scenes` 自动启动并完成统一测量后退出；`--trace-scenes` 收集对应定位 trace。`Measure-Scenes.ps1` 在 Linux 使用 `--skip-present`，将同一渲染图输出到持久纹理，并执行几何、直接光、GI、TAA 和色调映射。共享队列提供 CPU、GPU 和内存配额，测量结果记录后端及离屏配置。
+Linux 启动默认采用 Vulkan，通过 Xlib 创建窗口。`--measure` 自动执行统一测量后退出，`--measure-trace` 收集定位 trace。`Measure-Scenes.ps1` 复用 `Measure-Scenes.py` 和 `x11_display.py`，为队列分配的 GPU 启动 Xorg，并通过普通 swapchain 执行几何、直接光、GI、TAA、色调映射和呈现。
 
 ```powershell
 # 开发组合生成样例内容。
@@ -83,10 +83,10 @@ Linux 启动默认采用 Vulkan，通过 Xlib display 创建窗口。`--measure-
 & F:/SomeEngine.Next/tools/Invoke-Benchmark.ps1 --cpu --timeout 310 pwsh -NoProfile -File tools/Invoke-Watchdog.ps1 -- dotnet publish samples/DefaultGame/DefaultGame.csproj -c Release -o samples/DefaultGame/bin/game/Release/net10.0
 
 & F:/SomeEngine.Next/tools/Invoke-Benchmark.ps1 --cpu --timeout 310 pwsh -NoProfile -File samples/ImportedScenes/build_scenes.ps1
-& F:/SomeEngine.Next/tools/Invoke-Benchmark.ps1 --gpu --timeout 70 pwsh -NoProfile -File tools/Measure-Scenes.ps1
+./tools/Measure-Scenes.ps1 -ShadingPath forward -ScenePlayback static -ApplicationArguments @('--experimental-gi', '--no-debug-ui')
 ```
 `--gpu-times <外部文件路径>` 使用现有 `ApplicationScene.FrameMeasured` 收集统一场景平台所选采样帧的 GPU 时间，保存整帧跨度、各 pass 命令时间与含屏障时间。带 GPU 时间戳的定位运行与普通性能对比分开执行。
 
 实验构建、导入和捕获通过公共队列运行，队列保存 stdout、stderr、退出码和资源配置。Linux 执行器使用 systemd 约束整个命令进程树；Windows 的 `tools/Invoke-Watchdog.ps1` 提供进程树保护。`Measure-Scenes.ps1` 将应用输出流写入结果目录，并检查完整场景集合与测量状态。
 
-Windows 场景进程的默认内存限额为 8 GiB，`-MemoryMB` 可指定本轮预算；Linux 采用共享队列的内存配额。`-Scene` 选择配置中的同名场景，默认执行全部场景。`--gpu-times <path>` 通过已有 GPU 时间戳输出各阶段耗时；普通限帧运行标记为 `PresentedFrames`，统一测量窗口标记为 `Measurement`。
+场景进程采用共享队列的内存配额。`-Scene` 选择配置中的同名场景，默认执行全部场景。`--gpu-times <path>` 通过已有 GPU 时间戳输出各阶段耗时；普通限帧运行标记为 `PresentedFrames`，统一测量窗口标记为 `Measurement`。

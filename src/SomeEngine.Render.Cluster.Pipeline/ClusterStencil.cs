@@ -220,7 +220,7 @@ public sealed class ClusterStencil
             unit.GetDefinedEntryPoint(index, out entries[index]);
             SlangShaderData.RetainSession(session, entries[index]);
         }
-        SlangShaderData.CombineComponents(session, [unit, .. entries], out IComponentType combined, out diagnostics);
+        session.CreateCompositeComponentType([unit, .. entries], out IComponentType combined, out diagnostics);
         SlangShaderData.RetainSession(session, combined);
         if (!combined.Link(out IComponentType linked, out diagnostics).Succeeded) throw new InvalidDataException(diagnostics?.AsString);
         SlangShaderData.RetainSession(session, linked);

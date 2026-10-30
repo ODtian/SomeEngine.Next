@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using Silk.NET.Core.Contexts;
 using Silk.NET.Vulkan.Extensions.EXT;
 using Silk.NET.Vulkan.Extensions.KHR;
 
@@ -22,6 +23,9 @@ internal sealed unsafe partial class VulkanBackend : IGraphicsBackend, INativeVa
     private const string SurfaceExtension = "VK_KHR_surface";
     private const string Win32SurfaceExtension = "VK_KHR_win32_surface";
     private const string XlibSurfaceExtension = "VK_KHR_xlib_surface";
+    private const string SurfaceCapabilities2Extension = "VK_KHR_get_surface_capabilities2";
+    private const string SurfaceMaintenanceExtension = "VK_EXT_surface_maintenance1";
+    private const string KhrSurfaceMaintenanceExtension = "VK_KHR_surface_maintenance1";
     private const string DebugUtilsExtension = "VK_EXT_debug_utils";
     private const string ValidationLayer = "VK_LAYER_KHRONOS_validation";
 
@@ -40,21 +44,26 @@ internal sealed unsafe partial class VulkanBackend : IGraphicsBackend, INativeVa
     private PfnDebugUtilsMessengerCallbackEXT _debugCallback;
     private DisposeGate _disposeGate;
     private Exception? _releaseFailure;
+    private bool _surfaceMaintenance;
+    private bool _khrSurfaceMaintenance;
 
     internal VulkanBackend(in VulkanBackendOptions options = default)
     {
         _options = options;
         _devices = new GraphicsObjectRegistry(_gate);
         _surfaces = new GraphicsObjectRegistry(_gate);
-        _vk = Vk.GetApi();
-        _instance = CreateInstance();
+        _vk = CreateVulkanApi();
         try
         {
-            bool windowSurface = OperatingSystem.IsWindows()
-                ? _vk.TryGetInstanceExtension(_instance, out _win32SurfaceApi)
-                : _vk.TryGetInstanceExtension(_instance, out _xlibSurfaceApi);
-            if (!_vk.TryGetInstanceExtension(_instance, out _surfaceApi) || !windowSurface)
-                throw new PlatformNotSupportedException("The Vulkan window surface extension could not be loaded.");
+            _instance = CreateInstance();
+            if (OperatingSystem.IsWindows() &&
+                (!_vk.TryGetInstanceExtension(_instance, out _surfaceApi) ||
+                 !_vk.TryGetInstanceExtension(_instance, out _win32SurfaceApi)))
+                throw new PlatformNotSupportedException("The Vulkan Win32 surface extensions could not be loaded.");
+            if (OperatingSystem.IsLinux() &&
+                (!_vk.TryGetInstanceExtension(_instance, out _surfaceApi) ||
+                 !_vk.TryGetInstanceExtension(_instance, out _xlibSurfaceApi)))
+                throw new PlatformNotSupportedException("The Vulkan Xlib surface extensions could not be loaded.");
             CreateDebugMessenger();
             _adapters = EnumerateAdapters();
         }
@@ -64,10 +73,83 @@ internal sealed unsafe partial class VulkanBackend : IGraphicsBackend, INativeVa
             _win32SurfaceApi?.Dispose();
             _xlibSurfaceApi?.Dispose();
             DestroyDebugMessenger();
-            _vk.DestroyInstance(_instance, null);
-            _instance = default;
+            if (_instance.Handle != 0)
+            {
+                _vk.DestroyInstance(_instance, null);
+                _instance = default;
+            }
             _vk.Dispose();
             throw;
+        }
+    }
+
+
+    private static Vk CreateVulkanApi()
+    {
+        var library = new VulkanLibrary();
+        Vk? api = null;
+        try
+        {
+            var context = new MultiNativeContext(library, null);
+            api = new Vk(context);
+            context.Contexts[1] = new LamdaNativeContext(name =>
+            {
+                if (name.EndsWith("ProcAddr", StringComparison.Ordinal))
+                    return 0;
+                nint address = api.GetDeviceProcAddr(api.CurrentDevice.GetValueOrDefault(), name);
+                return address != 0
+                    ? address
+                    : api.GetInstanceProcAddr(api.CurrentInstance.GetValueOrDefault(), name);
+            });
+            return api;
+        }
+        catch
+        {
+            if (api is null) library.Dispose();
+            else api.Dispose();
+            throw;
+        }
+    }
+
+    private sealed class VulkanLibrary : INativeContext
+    {
+        private nint _handle;
+        private readonly bool _ownsHandle;
+
+        internal VulkanLibrary()
+        {
+            if (OperatingSystem.IsIOS())
+            {
+                _handle = NativeLibrary.GetMainProgramHandle();
+                return;
+            }
+
+            string[] names = OperatingSystem.IsWindows() ? ["vulkan-1.dll"]
+                : OperatingSystem.IsAndroid() ? ["libvulkan.so"]
+                : OperatingSystem.IsLinux() ? ["libvulkan.so.1"]
+                : OperatingSystem.IsMacOS() ? ["libvulkan.dylib", "libMoltenVK.dylib"]
+                : throw new PlatformNotSupportedException("Invalid/unsupported operating system.");
+            _ownsHandle = true;
+            foreach (string name in names)
+            {
+                if (NativeLibrary.TryLoad(name, out _handle) ||
+                    NativeLibrary.TryLoad(Path.Combine(AppContext.BaseDirectory, name), out _handle))
+                    return;
+            }
+            throw new DllNotFoundException($"Could not load a Vulkan library: {string.Join(", ", names)}.");
+        }
+
+        public nint GetProcAddress(string proc, int? slot = null) =>
+            NativeLibrary.GetExport(_handle, proc);
+
+        public bool TryGetProcAddress(string proc, out nint address, int? slot = null) =>
+            NativeLibrary.TryGetExport(_handle, proc, out address);
+
+        public void Dispose()
+        {
+            nint handle = Interlocked.Exchange(ref _handle, 0);
+            if (_ownsHandle && handle != 0)
+                NativeLibrary.Free(handle);
         }
     }
 
@@ -212,11 +294,23 @@ internal sealed unsafe partial class VulkanBackend : IGraphicsBackend, INativeVa
             ? Vk.Version13
             : _options.ApiVersion;
         string[] availableExtensions = EnumerateInstanceExtensions();
-        RequireName(availableExtensions, SurfaceExtension, "instance extension");
-        string windowSurface = OperatingSystem.IsWindows() ? Win32SurfaceExtension : XlibSurfaceExtension;
-        RequireName(availableExtensions, windowSurface, "instance extension");
-
-        List<string> extensions = [SurfaceExtension, windowSurface];
+        List<string> extensions = [];
+        if (OperatingSystem.IsWindows() || OperatingSystem.IsLinux())
+        {
+            string windowSurfaceExtension = OperatingSystem.IsWindows() ? Win32SurfaceExtension : XlibSurfaceExtension;
+            RequireName(availableExtensions, SurfaceExtension, "instance extension");
+            RequireName(availableExtensions, windowSurfaceExtension, "instance extension");
+            extensions.Add(SurfaceExtension);
+            extensions.Add(windowSurfaceExtension);
+            if (availableExtensions.Contains(SurfaceCapabilities2Extension))
+            {
+                extensions.Add(SurfaceCapabilities2Extension);
+                _surfaceMaintenance = availableExtensions.Contains(SurfaceMaintenanceExtension);
+                _khrSurfaceMaintenance = availableExtensions.Contains(KhrSurfaceMaintenanceExtension);
+                if (_surfaceMaintenance) extensions.Add(SurfaceMaintenanceExtension);
+                if (_khrSurfaceMaintenance) extensions.Add(KhrSurfaceMaintenanceExtension);
+            }
+        }
         if (_options.EnableDebugMessages && availableExtensions.Contains(DebugUtilsExtension))
             extensions.Add(DebugUtilsExtension);
 

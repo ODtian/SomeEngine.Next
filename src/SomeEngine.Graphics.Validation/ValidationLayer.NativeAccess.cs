@@ -155,8 +155,11 @@ public sealed partial class ValidationLayer
 
         lock (state)
         {
-            foreach (Resource resource in retainedResources)
-                RecordCommandDependencyCore(state, resource);
+            if (state.Bundle)
+            {
+                foreach (Resource resource in retainedResources)
+                    RecordCommandDependencyCore(state, resource);
+            }
             state.Pipeline = null;
             state.PipelineType = null;
             state.WorkGraphBound = false;

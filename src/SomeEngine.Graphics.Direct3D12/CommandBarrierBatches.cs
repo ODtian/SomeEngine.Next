@@ -57,13 +57,13 @@ internal sealed unsafe partial class D3D12Backend
         {
             bool useStack = checked(globalCount + bufferCount + maximumTextureBarrierCount) <=
                 MaximumStackBatchedBarrierCount;
-            Span<GlobalBarrier> globals = useStack
+            Span<GlobalBarrier> globals = useStack || globalCount == 0
                 ? stackalloc GlobalBarrier[Math.Max(globalCount, 1)]
                 : (rentedGlobals = ArrayPool<GlobalBarrier>.Shared.Rent(Math.Max(globalCount, 1)));
-            Span<NativeBufferBarrier> buffers = useStack
+            Span<NativeBufferBarrier> buffers = useStack || bufferCount == 0
                 ? stackalloc NativeBufferBarrier[Math.Max(bufferCount, 1)]
                 : (rentedBuffers = ArrayPool<NativeBufferBarrier>.Shared.Rent(Math.Max(bufferCount, 1)));
-            Span<NativeTextureBarrier> textures = useStack
+            Span<NativeTextureBarrier> textures = useStack || maximumTextureBarrierCount == 0
                 ? stackalloc NativeTextureBarrier[Math.Max(maximumTextureBarrierCount, 1)]
                 : (rentedTextures = ArrayPool<NativeTextureBarrier>.Shared.Rent(Math.Max(maximumTextureBarrierCount, 1)));
             fixed (GlobalBarrier* nativeGlobals = globals)

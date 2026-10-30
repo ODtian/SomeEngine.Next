@@ -5,8 +5,8 @@ internal sealed unsafe partial class VulkanBackend
     RhiSurface IGraphicsBackend.CreateSurface(in SurfaceDesc desc) =>
         CreateSurfaceCore(desc);
 
-    ReadOnlyMemory<SwapchainSupport> IGraphicsBackend.GetSwapchainSupport(RhiDevice device, RhiSurface surface) =>
-        VulkanSwapchain.QuerySupport(RequireDevice(device, nameof(device)), RequireSurface(surface, nameof(surface)));
+    SwapchainSupport[] IGraphicsBackend.GetSwapchainSupport(RhiDevice device, RhiSurface surface) =>
+        GetSwapchainSupportCore(device, surface);
 
     Swapchain IGraphicsBackend.CreateSwapchain(RhiDevice device, in SwapchainDesc desc) =>
         CreateSwapchainCore(device, desc);
@@ -178,6 +178,12 @@ internal sealed unsafe partial class VulkanBackend
         RhiDevice device,
         in AccelerationStructureSrvDesc desc) =>
         CreateAccelerationStructureSrvCore(device, desc);
+    void IGraphicsBackend.EncodeAccelerationStructureInstances(
+        RhiDevice device,
+        ReadOnlySpan<AccelerationStructureInstance> instances,
+        Span<byte> destination) =>
+        EncodeAccelerationStructureInstancesCore(device, instances, destination);
+
     AccelerationStructureBuildInfo IGraphicsBackend.GetAccelerationStructureBuildInfo(
         RhiDevice device,
         AccelerationStructureType type,

@@ -1,0 +1,19 @@
+<Project>
+  <PropertyGroup>
+    <CimguiNativeLibrary>$(SomeEngineRepositoryRoot)src/SomeEngine.Runtime/obj/cimgui/libcimgui.so</CimguiNativeLibrary>
+  </PropertyGroup>
+  <!-- Keep the package's selected destination and dependency metadata while
+       compiling its native source against the Linux host's C library. -->
+  <Target Name="UseBuiltCimgui" AfterTargets="ResolvePackageAssets">
+    <ItemGroup>
+      <_CimguiNativeFiles Include="@(NativeCopyLocalItems)"
+          Condition="'%(NativeCopyLocalItems.NuGetPackageId)' == 'ImGui.NET' and '%(NativeCopyLocalItems.Filename)%(NativeCopyLocalItems.Extension)' == 'libcimgui.so'" />
+      <_CimguiTargetFiles Include="@(RuntimeTargetsCopyLocalItems)"
+          Condition="'%(RuntimeTargetsCopyLocalItems.NuGetPackageId)' == 'ImGui.NET' and '%(RuntimeTargetsCopyLocalItems.Filename)%(RuntimeTargetsCopyLocalItems.Extension)' == 'libcimgui.so'" />
+      <NativeCopyLocalItems Remove="@(_CimguiNativeFiles)" />
+      <RuntimeTargetsCopyLocalItems Remove="@(_CimguiTargetFiles)" />
+      <NativeCopyLocalItems Include="@(_CimguiNativeFiles->'$(CimguiNativeLibrary)')" />
+      <RuntimeTargetsCopyLocalItems Include="@(_CimguiTargetFiles->'$(CimguiNativeLibrary)')" />
+    </ItemGroup>
+  </Target>
+</Project>

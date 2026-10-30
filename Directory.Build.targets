@@ -1,4 +1,6 @@
 <Project>
+  <Import Project="$(SomeEngineRepositoryRoot)src/SomeEngine.Runtime/Native/Cimgui.targets"
+          Condition="'$(NETCoreSdkRuntimeIdentifier)' == 'linux-x64'" />
   <ItemGroup>
     <_FieldReference Include="@(ProjectReference->WithMetadataValue('Filename', 'SomeEngine.ECS'))" />
     <_FieldReference Include="@(ProjectReference->WithMetadataValue('Filename', 'SomeEngine.Animation'))" />

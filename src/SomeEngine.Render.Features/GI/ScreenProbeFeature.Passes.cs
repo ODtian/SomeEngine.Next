@@ -111,6 +111,7 @@ public sealed partial class ScreenProbeFeature
         _queries[0] = AddQueries(ref edit, last, 0);
         last = Then(ref edit, _queries[0].Finish, "IntegrateGiScreenProbes", _probeCount);
         last = Then(ref edit, last, "FilterGiScreenProbes", _probeCount * 64u);
+        GraphPassId filteredProbes = last;
         last = Then(ref edit, last, "ClearGiRadianceTraining", TrainingCount, stage: 1);
         last = Then(ref edit, last, "SelectGiTrainingProbes", TrainingCount, stage: 1);
         last = Then(ref edit, last, "ContinueGiTrainingRays", TrainingCount, stage: 1);
@@ -121,7 +122,7 @@ public sealed partial class ScreenProbeFeature
         last = ThenIndirect(ref edit, last, "EvaluateGiNeuralTraining", "GiTrainingDispatch", 24, 1);
         last = ThenIndirect(ref edit, last, "DifferentiateGiNeuralTraining", "GiTrainingDispatch", 36, 1);
         last = ThenIndirect(ref edit, last, "UpdateGiNeuralRadiance", "GiTrainingDispatch", 48, 1);
-        last = ConnectEmissive(ref edit, last);
+        last = ConnectEmissive(ref edit, filteredProbes, last);
         _complete = Then(ref edit, last, "IntegrateGiPixelRadiance", (uint)_width * (uint)_height * _views);
         GraphReadbackId capacity = edit.AddReadback(_buffers["GiQueueCounts"].Id,
             new BufferRange(4, 4), new CandidateReadback(_candidateCapacity), "GI triangle work capacity", _traceRegion);
@@ -197,7 +198,9 @@ public sealed partial class ScreenProbeFeature
                 continue;
             }
             if ((name == "GiEmitterTriangleTree" && entry != "BuildGiEmitterTriangleTrees") ||
-                (name == "GiEmitterObjectTree" && entry != "BuildGiEmitterObjectTree"))
+                (name == "GiEmitterObjectTree" && entry != "BuildGiEmitterObjectTree") ||
+                (entry == "IntegrateGiPixelRadiance" && name is "GiEmitterChanges" or "GiInstanceMovement" or
+                    "GiProbeSamples" or "GiProbeSurfaces" or "GiFilteredProbeRadiance"))
                 BindBuffer(ref edit, ref pass, name, type, PipelineSync.ComputeShading, GraphAccessMode.Read);
             else BindSceneResource(ref edit, ref pass, name, type, PipelineSync.ComputeShading, stage);
         }

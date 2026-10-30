@@ -908,7 +908,9 @@ internal sealed unsafe partial class D3D12Backend
                 accelerationStructureAlignment: 256,
                 scratchAlignment: 256,
                 shaderTableAlignment: 64,
-                shaderRecordAlignment: 32));
+                shaderRecordAlignment: 32,
+                instanceSize: (uint)sizeof(RaytracingInstanceDesc),
+                instanceAlignment: 16));
         }
 
         private void AddMeshAndShadingCapabilities(
@@ -1234,6 +1236,7 @@ internal sealed unsafe partial class D3D12Backend
             if (Interlocked.Exchange(ref _released, 1) != 0)
                 return;
 
+            ReleaseCpuWaitEvent();
             ID3D12Fence* fence = Fence;
             Fence = null;
             if (fence is not null)

@@ -37,10 +37,10 @@ public sealed partial class ValidationLayer
         nint reflectedDescriptorSetCount = contents.DescriptorSetCount;
         nint bindingRangeCount = GetResolvedSlangCount(
             reflectedBindingRangeCount,
-            $"Slang layout '{layout.Name}' has unresolved binding-range or descriptor-set counts.");
+            layout.Name);
         nint descriptorSetCount = GetResolvedSlangCount(
             reflectedDescriptorSetCount,
-            $"Slang layout '{layout.Name}' has unresolved binding-range or descriptor-set counts.");
+            layout.Name);
 
         int ordinal = 0;
         for (nint rangeIndex = 0; rangeIndex < bindingRangeCount; rangeIndex++)
@@ -60,11 +60,13 @@ public sealed partial class ValidationLayer
             $"The Slang parameter layout requires exactly {ordinal} bounded resource bindings; the supplied packet has {bindings.Length} bindings.";
     }
 
-    private static nint GetResolvedSlangCount(nint count, string diagnostic)
+    private static nint GetResolvedSlangCount(nint count, string layoutName, nint? rangeIndex = null)
     {
         nuint marker = unchecked((nuint)count);
         if (count < 0 || marker == Slang.UnknownSize || marker == Slang.UnboundedSize)
-            throw new GraphicsException(GraphicsError.NativeFailure, diagnostic);
+            throw new GraphicsException(GraphicsError.NativeFailure, rangeIndex is { } index
+                ? $"Slang binding range {index} on layout '{layoutName}' has an unresolved descriptor-range count."
+                : $"Slang layout '{layoutName}' has unresolved binding-range or descriptor-set counts.");
         return count;
     }
 
@@ -79,7 +81,7 @@ public sealed partial class ValidationLayer
     {
         nint descriptorRangeCount = GetResolvedSlangCount(
             contents.GetBindingRangeDescriptorRangeCount(rangeIndex),
-            $"Slang binding range {rangeIndex} on layout '{layout.Name}' has an unresolved descriptor-range count.");
+            layout.Name, rangeIndex);
         if (descriptorRangeCount == 0)
             return null;
 

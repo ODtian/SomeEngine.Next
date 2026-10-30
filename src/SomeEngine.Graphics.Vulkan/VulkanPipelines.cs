@@ -555,8 +555,7 @@ internal sealed unsafe partial class VulkanBackend
         byte[] source = CopyCode(code, codeBlob);
         byte[] bytes = NormalizeSpirvDescriptorBindings(
             source,
-            layout.GetSpirvTargets(entry),
-            out _);
+            layout.GetSpirvTargets(entry));
         string reflectedName = string.IsNullOrWhiteSpace(entry.NameOverride)
             ? entry.Name
             : entry.NameOverride;
@@ -742,7 +741,7 @@ internal sealed unsafe partial class VulkanBackend
         if ((states & DynamicStates.DepthBias) != 0) result.Add(DynamicState.DepthBias);
         if ((states & DynamicStates.PrimitiveTopology) != 0) result.Add(DynamicState.PrimitiveTopologyExt);
         if ((states & DynamicStates.StripCut) != 0) result.Add(DynamicState.PrimitiveRestartEnableExt);
-        return result.Distinct().ToArray();
+        return result.ToArray();
     }
 
     private static Silk.NET.Vulkan.PrimitiveTopology ToNative(SomeEngine.Graphics.PrimitiveTopology topology) => topology switch
@@ -1044,7 +1043,7 @@ internal sealed unsafe partial class VulkanBackend
         internal VulkanRayTracingPipelineState? RayTracing { get; }
         public void RetainNative() => _lifetime.Retain();
         public void ReleaseNative() => _lifetime.Release();
-        internal override void Release(bool fromParent) { _device.UnregisterChild(this); _lifetime.Release(); }
+        internal override void Release(bool fromParent) { _lifetime.Release(); _device.UnregisterChild(this); }
         private void DestroyNative()
         {
             if (_native.Handle != 0)
