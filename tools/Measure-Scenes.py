@@ -166,13 +166,6 @@ def publish_application(application, revision):
                 "-m:1", "-nodeReuse:false"]
     print("SCENE_PUBLISH " + json.dumps({"Host": platform.node(), "Platform": sys.platform,
           "SourceRevisionId": revision, "ApplicationPath": str(application), "Settings": settings}), flush=True)
-    for folder in ["src", "samples/DefaultGame", "samples/ImportedScenes/Materials"]:
-        for current, directories, files in os.walk(repository / folder):
-            directories[:] = [name for name in directories if name not in {"bin", "obj", "external", ".git"}]
-            for name in files:
-                path = Path(current) / name
-                if path.suffix in {".cs", ".csproj", ".props", ".targets"}:
-                    os.utime(path, None)
     started = time.monotonic()
     subprocess.run(["dotnet", "publish", str(repository / "samples/DefaultGame/DefaultGame.csproj"),
                     "-c", "Release", *settings, "-o", str(application.parent), "--verbosity", "minimal"],
