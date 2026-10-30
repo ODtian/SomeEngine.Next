@@ -53,7 +53,6 @@ public sealed partial class ClusterPipelineSystem
                     frame.WorkStatus,
                     frame.FrameMetricsBuffer,
                     frame.PackedViews,
-                    frame.InstanceProperties,
                     frame.RasterSlots,
                     frame.MaterialBounds,
                     frame.ShadeSlots,
