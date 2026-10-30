@@ -110,28 +110,54 @@ public sealed partial class ShaderBlock : AssetBlock
         ArgumentNullException.ThrowIfNull(source);
         if (!specializations.IsEmpty)
             throw new ArgumentException("Saved specialization arguments require an entry-point name.", nameof(specializations));
+        return await CreateSavedCoreAsync(source, slang, sessionDescription, name, requireCode: true,
+            cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException("The required saved shader code was not restored.");
+    }
+
+    // Only the general ShaderAsset path may treat absent code as a cache miss.
+    // Present chunks are still validated, even if another requested entry is absent.
+    internal ValueTask<Shader?> TryCreateAsync(ShaderSourceBlock source, IGlobalSession slang,
+        SessionDesc sessionDescription, string name, CancellationToken cancellationToken)
+        => CreateSavedCoreAsync(source, slang, sessionDescription, name, requireCode: false, cancellationToken);
+
+    private async ValueTask<Shader?> CreateSavedCoreAsync(ShaderSourceBlock source, IGlobalSession slang,
+        SessionDesc sessionDescription, string name, bool requireCode, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(source);
         using ShaderBlock copy = Duplicate();
         using ShaderSourceBlock inputs = source.Duplicate();
         copy.ValidateContent();
-        Shader shader = await ReadVariantAsync(copy, inputs, slang, sessionDescription, name, null, [],
-            cancellationToken).ConfigureAwait(false);
-        if (inputs.Specializations.Count == 0) return shader;
+        Shader shader = await inputs.CreateUsingSavedCodeAsync(slang, sessionDescription, name,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+        SavedShaderCode? baseCode = await ReadCodeCoreAsync(copy, shader, sessionDescription, name, null, [],
+            requireCode, cancellationToken).ConfigureAwait(false);
+        if (inputs.Specializations.Count == 0)
+            return baseCode is { } saved
+                ? shader.WithManagedCode(saved.Targets, saved.Entries, saved.Usage) : null;
 
-        var savedSources = await inputs.ReadSavedSourcesAsync(cancellationToken).ConfigureAwait(false);
         SessionDesc description = CopySessionDescription(sessionDescription);
         var variants = new List<(string EntryPoint, string[] Arguments, Lazy<Shader> Shader)>(inputs.Specializations.Count);
+        bool missingVariant = false;
         foreach (ShaderSpecialization specialization in inputs.Specializations)
         {
             string entryPoint = specialization.EntryPoint;
             string[] values = specialization.Arguments.ToArray();
-            var code = await ReadCodeAsync(copy, shader, description, name, entryPoint, values,
-                cancellationToken).ConfigureAwait(false);
+            SavedShaderCode? variant = await ReadCodeCoreAsync(copy, shader, description, name,
+                entryPoint, values, requireCode, cancellationToken).ConfigureAwait(false);
+            if (variant is not { } code)
+            {
+                missingVariant = true;
+                continue;
+            }
             variants.Add((entryPoint, values, new Lazy<Shader>(() =>
-                ShaderSourceBlock.RestoreSavedEntry(slang, description, name, entryPoint, values,
-                    savedSources.Names, savedSources.Sources).WithManagedCode(code.Targets, code.Entries, code.Usage),
+                ShaderSourceBlock.RestoreSavedEntry(shader, entryPoint, values)
+                    .WithManagedCode(code.Targets, code.Entries, code.Usage),
                 LazyThreadSafetyMode.ExecutionAndPublication)));
         }
-        return shader.WithSpecializations(variants);
+        return baseCode is { } savedBase && !missingVariant
+            ? shader.WithManagedCode(savedBase.Targets, savedBase.Entries, savedBase.Usage).WithSpecializations(variants)
+            : null;
     }
 
     public async ValueTask<Shader> CreateAsync(
@@ -172,9 +198,19 @@ public sealed partial class ShaderBlock : AssetBlock
         return shader.WithManagedCode(code.Targets, code.Entries, code.Usage);
     }
 
-    private static async ValueTask<(byte[]?[] Targets, byte[][] Entries, ImmutableHashSet<SlangDescriptorLocation>[] Usage)>
-        ReadCodeAsync(ShaderBlock copy, Shader shader, SessionDesc sessionDescription, string name,
-            string? entryPoint, string[] arguments, CancellationToken cancellationToken)
+    private readonly record struct SavedShaderCode(byte[]?[] Targets, byte[][] Entries,
+        ImmutableHashSet<SlangDescriptorLocation>[] Usage);
+
+    private static async ValueTask<SavedShaderCode> ReadCodeAsync(ShaderBlock copy, Shader shader,
+        SessionDesc sessionDescription, string name, string? entryPoint, string[] arguments,
+        CancellationToken cancellationToken)
+        => await ReadCodeCoreAsync(copy, shader, sessionDescription, name, entryPoint, arguments,
+            requireCode: true, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException("The required saved shader code was not read.");
+
+    private static async ValueTask<SavedShaderCode?> ReadCodeCoreAsync(ShaderBlock copy, Shader shader,
+        SessionDesc sessionDescription, string name, string? entryPoint, string[] arguments,
+        bool requireCode, CancellationToken cancellationToken)
     {
         int entryCount = entryPoint is null ? shader.SlangEntryCount :
             Enumerable.Range(0, shader.SlangEntryCount).Count(index =>
@@ -184,10 +220,12 @@ public sealed partial class ShaderBlock : AssetBlock
         var targetCode = new byte[]?[shader.SlangTargetCount];
         var entryCode = new byte[checked(shader.SlangTargetCount * entryCount)][];
         var usedParameters = new ImmutableHashSet<SlangDescriptorLocation>[entryCode.Length];
+        IReadOnlyCollection<ulong> contentKeys = copy.ContentKeys;
+        bool missingCode = false;
         for (int targetIndex = 0; targetIndex < shader.SlangTargetCount; targetIndex++)
         {
             ulong targetKey = TargetCodeKey(sessionDescription, targetIndex, arguments, entryPoint);
-            targetCode[targetIndex] = copy.ContentKeys.Contains(targetKey)
+            targetCode[targetIndex] = contentKeys.Contains(targetKey)
                 ? await AcquireCodeAsync(copy, targetKey, cancellationToken).ConfigureAwait(false)
                 : null;
             for (int entryIndex = 0; entryIndex < entryCount; entryIndex++)
@@ -201,16 +239,23 @@ public sealed partial class ShaderBlock : AssetBlock
                 }
                 ulong codeKey = EntryCodeKey(sessionDescription, targetIndex, entryIndex, arguments, entryPoint);
                 ulong usageKey = EntryUsageKey(sessionDescription, targetIndex, entryIndex, arguments, entryPoint);
-                if (!copy.ContentKeys.Contains(codeKey))
-                    throw new InvalidDataException($"Shader '{name}' is missing cooked code for its target and entry specialization.");
-                if (!copy.ContentKeys.Contains(usageKey))
+                if (!contentKeys.Contains(codeKey))
+                {
+                    if (requireCode)
+                        throw new InvalidDataException($"Shader '{name}' is missing cooked code for its target and entry specialization.");
+                    missingCode = true;
+                    if (contentKeys.Contains(usageKey))
+                        _ = ReadEntryUsage(await AcquireCodeAsync(copy, usageKey, cancellationToken).ConfigureAwait(false));
+                    continue;
+                }
+                if (!contentKeys.Contains(usageKey))
                     throw new InvalidDataException("Saved shader entry code requires its cooked resource usage metadata.");
                 entryCode[index] = await AcquireCodeAsync(copy, codeKey, cancellationToken).ConfigureAwait(false);
                 usedParameters[index] = ReadEntryUsage(await AcquireCodeAsync(copy, usageKey, cancellationToken).ConfigureAwait(false));
             }
         }
         cancellationToken.ThrowIfCancellationRequested();
-        return (targetCode, entryCode, usedParameters);
+        return missingCode ? null : new SavedShaderCode(targetCode, entryCode, usedParameters);
     }
 
     private static SessionDesc CopySessionDescription(SessionDesc description)

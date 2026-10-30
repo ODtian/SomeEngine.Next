@@ -1,6 +1,7 @@
 namespace SomeEngine.Graphics.Vulkan.Tests;
 
 using SlangShaderSharp;
+using System.Diagnostics;
 using Xunit;
 using Xunit.Sdk;
 
@@ -23,23 +24,26 @@ public sealed class VulkanCoreFeatureTests(VulkanTestCompiler shaderCompiler)
         Assert.Equal(256UL, buffer.Info.Size);
     }
 
-    [Fact]
-    public void Timestamp_query_resolves_to_buffer()
+    [Theory]
+    [InlineData(QueueType.Graphics)]
+    [InlineData(QueueType.Compute)]
+    [InlineData(QueueType.Copy)]
+    public void Timestamp_query_resolves_to_buffer(QueueType queueType)
     {
         using IGraphicsBackend backend = VulkanGraphicsBackend.Create();
-        DeviceQueueDesc[] queues = [new DeviceQueueDesc(QueueType.Graphics)];
+        DeviceQueueDesc[] queues = [new DeviceQueueDesc(queueType)];
         using Device device = backend.CreateDevice(new DeviceDesc(default, queues));
-        Queue queue = backend.GetQueue(device, QueueType.Graphics);
+        Queue queue = backend.GetQueue(device, queueType);
         using QueryPool queries = backend.CreateQueryPool(
             device,
-            new QueryPoolDesc(QueryType.Timestamp, QueueType.Graphics, 1));
+            new QueryPoolDesc(QueryType.Timestamp, queueType, 1));
         using Buffer readback = backend.CreateBuffer(
             device,
             new BufferDesc(8, BufferUsages.CopyDestination | BufferUsages.QueryResolve),
             MemoryType.Readback);
         using CommandContext context = backend.CreateCommandContext(
             device,
-            new CommandContextDesc(QueueType.Graphics, 0, 1));
+            new CommandContextDesc(queueType, 0, 1));
         backend.Begin(context);
         backend.ResetQueries(context, queries, 0, 1);
         backend.WriteTimestamp(context, queries, 0);
@@ -184,7 +188,16 @@ public sealed class VulkanCoreFeatureTests(VulkanTestCompiler shaderCompiler)
         }
         using Buffer output = backend.CreateBuffer(
             device,
-            new BufferDesc(4, BufferUsages.ShaderWrite | BufferUsages.CopySource));
+            new BufferDesc(4, BufferUsages.ShaderWrite | BufferUsages.CopySource | BufferUsages.CopyDestination));
+        using Buffer zeroUpload = backend.CreateBuffer(
+            device,
+            new BufferDesc(4, BufferUsages.CopySource),
+            MemoryType.Upload);
+        using (MappedBuffer mapped = backend.Map(zeroUpload, MapType.Write, BufferRange.Whole))
+        {
+            mapped.Bytes.Clear();
+            mapped.Flush(mapped.Range);
+        }
         using BufferUav outputUav = backend.CreateBufferUav(
             device,
             new BufferUavDesc(
@@ -219,8 +232,15 @@ public sealed class VulkanCoreFeatureTests(VulkanTestCompiler shaderCompiler)
             backend.Barrier(context, new BufferBarrier(
                 output,
                 PipelineSync.None,
-                PipelineSync.ComputeShading,
+                PipelineSync.Copy,
                 ResourceAccess.NoAccess,
+                ResourceAccess.CopyDestination));
+            backend.CopyBuffer(context, new BufferCopy(zeroUpload, 0, output, 0, 4));
+            backend.Barrier(context, new BufferBarrier(
+                output,
+                PipelineSync.Copy,
+                PipelineSync.ComputeShading,
+                ResourceAccess.CopyDestination,
                 ResourceAccess.UnorderedAccess));
             backend.SetPipeline(context, pipeline);
             backend.SetTransientParameterBindings(
@@ -275,6 +295,24 @@ public sealed class VulkanCoreFeatureTests(VulkanTestCompiler shaderCompiler)
         Assert.True(timestamps.CpuFrequency > 0);
         Assert.True(timestamps.QueueCounter > 0);
         Assert.True(timestamps.QueueFrequency > 0);
+    }
+
+    [Fact]
+    public void Calibrated_cpu_counter_uses_the_process_stopwatch_clock()
+    {
+        using IGraphicsBackend backend = VulkanGraphicsBackend.Create();
+        using Device device = backend.CreateDevice(new DeviceDesc(
+            default,
+            [new DeviceQueueDesc(QueueType.Graphics)],
+            requiredFeatures: DeviceFeatures.CalibratedTimestamps));
+        Queue queue = backend.GetQueue(device, QueueType.Graphics);
+
+        long started = Stopwatch.GetTimestamp();
+        CalibratedTimestampInfo timestamps = backend.CalibrateTimestamps(queue);
+        long finished = Stopwatch.GetTimestamp();
+
+        Assert.Equal(Stopwatch.Frequency, timestamps.CpuFrequency);
+        Assert.InRange(timestamps.CpuCounter, started, finished);
     }
 
     [Fact]

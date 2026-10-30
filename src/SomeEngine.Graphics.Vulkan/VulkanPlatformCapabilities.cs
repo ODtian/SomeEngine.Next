@@ -101,14 +101,17 @@ internal sealed unsafe partial class VulkanBackend
                 getDomains(device.PhysicalDevice, &domainCount, domainPointer),
                 "vkGetPhysicalDeviceCalibrateableTimeDomainsEXT(data)");
         }
-        if (!domains.Contains(TimeDomainKHR.QueryPerformanceCounterKhr) ||
+        TimeDomainKHR cpuDomain = OperatingSystem.IsWindows()
+            ? TimeDomainKHR.QueryPerformanceCounterKhr
+            : TimeDomainKHR.ClockMonotonicKhr;
+        if (!domains.Contains(cpuDomain) ||
             !domains.Contains(TimeDomainKHR.DeviceKhr))
-            throw new NotSupportedException("The Vulkan driver does not expose QPC/device calibrated time domains.");
+            throw new NotSupportedException("The Vulkan driver does not expose the platform CPU and device calibrated time domains.");
         CalibratedTimestampInfoKHR* infos = stackalloc CalibratedTimestampInfoKHR[2];
         infos[0] = new CalibratedTimestampInfoKHR
         {
             SType = StructureType.CalibratedTimestampInfoKhr,
-            TimeDomain = TimeDomainKHR.QueryPerformanceCounterKhr,
+            TimeDomain = cpuDomain,
         };
         infos[1] = new CalibratedTimestampInfoKHR
         {

@@ -13,7 +13,7 @@ internal sealed unsafe partial class VulkanBackend
     {
         VulkanDevice nativeDevice = RequireRayTracingDevice(device);
         ValidateRayTracingPipeline(desc, GetRayTracingCapability(nativeDevice));
-        VulkanPipelineCache? nativeCache = ResolvePipelineCache(nativeDevice, cache);
+        VulkanPipelineCache nativeCache = ResolvePipelineCache(nativeDevice, cache);
         ShaderReflection reflection = desc.Reflection;
         RayPipelineBuild build = BuildRayPipeline(desc, reflection);
         VulkanPipelineLayoutState layout = VulkanPipelineLayoutCompiler.Compile(
@@ -26,11 +26,13 @@ internal sealed unsafe partial class VulkanBackend
         SlangShaderData? retainedCode = null;
         try
         {
-            if (nativeCache is null)
-                native = CreateRayPipelineNative(nativeDevice, layout, desc, build, default);
-            else
-                lock (nativeCache.Gate)
-                    native = CreateRayPipelineNative(nativeDevice, layout, desc, build, nativeCache.Native);
+            nativeCache.EnterNativeCreation();
+            try
+            {
+                native = CreateRayPipelineNative(nativeDevice, layout, desc, build, nativeCache.Native);
+            }
+            finally { nativeCache.ExitNativeCreation(); }
+            nativeCache.ResetNativeDataAboveLimit();
             PhysicalDeviceRayTracingPipelinePropertiesKHR properties = GetRayPipelineProperties(nativeDevice);
             var state = new VulkanRayTracingPipelineState(
                 build.GeneralGroups,
@@ -68,7 +70,7 @@ internal sealed unsafe partial class VulkanBackend
         SomeEngine.Graphics.PipelineCache? cache)
     {
         VulkanDevice nativeDevice = RequireRayTracingDevice(device);
-        VulkanPipelineCache? nativeCache = ResolvePipelineCache(nativeDevice, cache);
+        VulkanPipelineCache nativeCache = ResolvePipelineCache(nativeDevice, cache);
         SlangShaderData slangCode = desc.SlangCode;
         var data = new RayPipelineData(desc);
         return EnqueuePipelineCreation(

@@ -7,18 +7,21 @@ namespace SomeEngine.Resources;
 public partial class Shader
 {
     private readonly ImmutableArray<ImmutableHashSet<SlangDescriptorLocation>> _slangUsedParameters;
-    private readonly Dictionary<(int Target, string Name), (int Index, EntryPointReflection Entry)> _slangNamedEntries = [];
-    private readonly Dictionary<(int Target, string Name, SlangStage Stage), EntryPointReflection> _slangStageEntries = [];
+    private readonly Dictionary<(int Target, string Name), (int Index, EntryPointReflection Entry)> _slangNamedEntries;
+    private readonly Dictionary<(int Target, string Name, SlangStage Stage), EntryPointReflection> _slangStageEntries;
 
     public IReadOnlySet<SlangDescriptorLocation> GetSlangUsedParameters(int targetIndex, int entryIndex) =>
         _slangUsedParameters[GetCodeIndex(targetIndex, entryIndex)];
 
     public bool IsSlangParameterLocationUsed(int targetIndex, string entryName,
-        SlangParameterCategory category, nuint space, nuint register)
+        SlangParameterCategory category, nuint space, nuint register) =>
+        GetSlangUsedParameters(targetIndex, entryName).Contains(
+            new(category, checked((ulong)space), checked((ulong)register)));
+
+    internal ImmutableHashSet<SlangDescriptorLocation> GetSlangUsedParameters(int targetIndex, string entryName)
     {
         var entry = _slangNamedEntries[(targetIndex, entryName)];
-        return _slangUsedParameters[GetCodeIndex(targetIndex, entry.Index)].Contains(
-            new(category, checked((ulong)space), checked((ulong)register)));
+        return _slangUsedParameters[GetCodeIndex(targetIndex, entry.Index)];
     }
 
     private void IndexSlangEntries()
@@ -35,11 +38,12 @@ public partial class Shader
     }
 
     private static ImmutableArray<ImmutableHashSet<SlangDescriptorLocation>> ReadSlangUsedParameters(
-        IComponentType code, int targetCount, int entryCount, ImmutableArray<bool> unboundEntries)
+        IComponentType code, IReadOnlyList<ShaderReflection> reflections, int entryCount, ImmutableArray<bool> unboundEntries)
     {
         var result = ImmutableArray.CreateBuilder<ImmutableHashSet<SlangDescriptorLocation>>();
-        for (int target = 0; target < targetCount; target++)
+        for (int target = 0; target < reflections.Count; target++)
         {
+            SlangDescriptorLocation[]? locations = null;
             for (int entry = 0; entry < entryCount; entry++)
             {
                 if (unboundEntries[entry])
@@ -51,9 +55,8 @@ public partial class Shader
                     out ISlangBlob? diagnostics);
                 if (status.Failed)
                     throw new InvalidDataException("Slang resource usage failed: " + DiagnosticText(diagnostics));
-                ShaderReflection targetLayout = code.GetLayout(target, out _);
-                SlangDescriptorLocation[] locations = CollectSlangParameterLocations(
-                    targetLayout.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null);
+                locations ??= CollectSlangParameterLocations(
+                    reflections[target].GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null);
                 var used = ImmutableHashSet.CreateBuilder<SlangDescriptorLocation>();
                 foreach (SlangDescriptorLocation location in locations)
                 {

@@ -47,7 +47,7 @@ internal sealed unsafe partial class VulkanBackend
         SlangShaderData? capturedSlangCode)
     {
         VulkanDevice nativeDevice = RequireDevice(device, nameof(device));
-        VulkanPipelineCache? nativeCache = ResolvePipelineCache(nativeDevice, cache);
+        VulkanPipelineCache nativeCache = ResolvePipelineCache(nativeDevice, cache);
         ValidateGraphicsPipeline(nativeDevice, desc);
         ShaderReflection reflection = desc.Reflection;
         VulkanStreamOutputPlan? streamOutput = desc.HasStreamOutput
@@ -81,11 +81,13 @@ internal sealed unsafe partial class VulkanBackend
                 desc.PixelCodeBlob,
                 SlangStage.Fragment,
                 "fragment");
-            if (nativeCache is null)
-                native = CreateGraphicsPipelineNative(nativeDevice, layout, vertex, pixel, desc, default);
-            else
-                lock (nativeCache.Gate)
-                    native = CreateGraphicsPipelineNative(nativeDevice, layout, vertex, pixel, desc, nativeCache.Native);
+            nativeCache.EnterNativeCreation();
+            try
+            {
+                native = CreateGraphicsPipelineNative(nativeDevice, layout, vertex, pixel, desc, nativeCache.Native);
+            }
+            finally { nativeCache.ExitNativeCreation(); }
+            nativeCache.ResetNativeDataAboveLimit();
             retainedCode = capturedSlangCode ?? desc.SlangCode;
             pipeline = new VulkanPipeline(
                 nativeDevice,
@@ -113,7 +115,7 @@ internal sealed unsafe partial class VulkanBackend
         SomeEngine.Graphics.PipelineCache? cache = null)
     {
         VulkanDevice nativeDevice = RequireDevice(device, nameof(device));
-        VulkanPipelineCache? nativeCache = ResolvePipelineCache(nativeDevice, cache);
+        VulkanPipelineCache nativeCache = ResolvePipelineCache(nativeDevice, cache);
         SlangShaderData slangCode = desc.SlangCode;
         GraphicsPipelineData data = new(desc);
         return EnqueuePipelineCreation(
@@ -137,7 +139,7 @@ internal sealed unsafe partial class VulkanBackend
         SlangShaderData? capturedSlangCode)
     {
         VulkanDevice nativeDevice = RequireDevice(device, nameof(device));
-        VulkanPipelineCache? nativeCache = ResolvePipelineCache(nativeDevice, cache);
+        VulkanPipelineCache nativeCache = ResolvePipelineCache(nativeDevice, cache);
         ArgumentNullException.ThrowIfNull(desc.SlangCode);
         ShaderReflection reflection = desc.Reflection;
         VulkanPipelineLayoutState layout = VulkanPipelineLayoutCompiler.Compile(
@@ -185,19 +187,15 @@ internal sealed unsafe partial class VulkanBackend
                 Stage = stage,
                 Layout = layout.Native,
             };
-            Result result;
-            if (nativeCache is null)
+            nativeCache.EnterNativeCreation();
+            try
             {
-                result = Api.CreateComputePipelines(
-                    nativeDevice.Native, default, 1, &createInfo, null, &native);
+                Result result = Api.CreateComputePipelines(
+                    nativeDevice.Native, nativeCache.Native, 1, &createInfo, null, &native);
+                ThrowPipelineFailure(nativeDevice, result, "vkCreateComputePipelines");
             }
-            else
-            {
-                lock (nativeCache.Gate)
-                    result = Api.CreateComputePipelines(
-                        nativeDevice.Native, nativeCache.Native, 1, &createInfo, null, &native);
-            }
-            ThrowPipelineFailure(nativeDevice, result, "vkCreateComputePipelines");
+            finally { nativeCache.ExitNativeCreation(); }
+            nativeCache.ResetNativeDataAboveLimit();
             retainedCode = capturedSlangCode ?? desc.SlangCode;
             pipeline = new VulkanPipeline(
                 nativeDevice,
@@ -232,7 +230,7 @@ internal sealed unsafe partial class VulkanBackend
         SomeEngine.Graphics.PipelineCache? cache = null)
     {
         VulkanDevice nativeDevice = RequireDevice(device, nameof(device));
-        VulkanPipelineCache? nativeCache = ResolvePipelineCache(nativeDevice, cache);
+        VulkanPipelineCache nativeCache = ResolvePipelineCache(nativeDevice, cache);
         SlangShaderData slangCode = desc.SlangCode;
         ComputePipelineData data = new(desc);
         return EnqueuePipelineCreation(

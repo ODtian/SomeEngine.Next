@@ -46,5 +46,6 @@ public partial class Shader
             _slangTargets, _slangReflections, _slangTargetBlobs, _slangEntryBlobs,
             _slangTargetBytes, _slangEntryBytes, _slangEntryCount, _slangUsedParameters, _slangUnboundEntries,
             variants.Select(static variant =>
-                (variant.EntryPoint, variant.Arguments.ToImmutableArray(), variant.Shader)).ToImmutableArray());
+                (variant.EntryPoint, variant.Arguments.ToImmutableArray(), variant.Shader)).ToImmutableArray(),
+            entryIndexSource: this);
 }
