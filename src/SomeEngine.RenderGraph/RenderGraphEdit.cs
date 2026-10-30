@@ -498,6 +498,13 @@ public ref partial struct RenderGraphEdit
         Changes.TouchTexture(texture.Value);
     }
 
+    /// <summary>Reads the pass label from this edit's graph structure.</summary>
+    public string GetPassLabel(GraphPassId pass)
+    {
+        ValidatePass(pass);
+        return Structure.Passes.Get(pass.Value).Label;
+    }
+
     public void SetPassLabel(GraphPassId pass, string label)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(label);
