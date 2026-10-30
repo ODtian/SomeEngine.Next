@@ -192,35 +192,30 @@ bool GetClusteredLightCellBounds(
 groupshared uint3 LightCellMinimum;
 groupshared uint3 LightCellExtent;
 
-// A wave reserves from the shared budget, rather than truncating each cell.
-// Saturation keeps both list addresses and the allocator safe even after overflow.
-bool AllocateClusteredLightLink(out uint link)
+groupshared uint LightLinkFirst;
+groupshared uint LightLinkCount;
+
+// Each group reserves its cell assignments from the shared budget once.
+// Saturation keeps list addresses and the allocator within the shared capacity.
+void AllocateClusteredLightLinks(uint requested, out uint first, out uint retained)
 {
     uint capacity, stride;
     LightLinkList.GetDimensions(capacity, stride);
-    uint requested = WaveActiveCountBits(true);
-    uint first = 0u, retained = 0u;
-    if (WaveIsFirstLane())
+    uint expected = LightAllocationCounters[0];
+    for (;;)
     {
-        uint expected = LightAllocationCounters[0];
-        for (;;)
-        {
-            retained = min(requested, capacity - expected);
-            first = expected;
-            if (retained == 0u) break;
-            uint observed;
-            InterlockedCompareExchange(LightAllocationCounters[0], expected, expected + retained, observed);
-            if (observed == expected) break;
-            expected = observed;
-        }
-        if (retained != requested) InterlockedOr(LightAllocationStatus[0], 1u);
+        retained = min(requested, capacity - expected);
+        first = expected;
+        if (retained == 0u) break;
+        uint observed;
+        InterlockedCompareExchange(LightAllocationCounters[0], expected, expected + retained, observed);
+        if (observed == expected) break;
+        expected = observed;
     }
-    uint lane = WavePrefixCountBits(true);
-    link = WaveReadLaneFirst(first) + lane;
-    return lane < WaveReadLaneFirst(retained);
+    if (retained != requested) InterlockedOr(LightAllocationStatus[0], 1u);
 }
 
-void AssignClusteredLightCell(ClusteredLightGridParameters parameters, uint viewOffset, uint lightIndex, uint index)
+void AssignClusteredLightCell(ClusteredLightGridParameters parameters, uint viewOffset, uint lightIndex, uint index, uint link)
 {
     uint x = index % LightCellExtent.x;
     uint yz = index / LightCellExtent.x;
@@ -228,8 +223,6 @@ void AssignClusteredLightCell(ClusteredLightGridParameters parameters, uint view
     uint z = yz / LightCellExtent.y;
     uint3 coordinate = LightCellMinimum + uint3(x, y, z);
     uint cell = viewOffset + (coordinate.z * parameters.TileCountY + coordinate.y) * parameters.TileCountX + coordinate.x;
-    uint link;
-    if (!AllocateClusteredLightLink(link)) return;
     uint previous;
     InterlockedExchange(ClusteredLightGrid[cell].x, link, previous);
     LightLinkList[link] = uint2(lightIndex, previous);
@@ -254,20 +247,23 @@ void BuildClusteredLightGrid(uint3 groupId : SV_GroupID, uint threadIndex : SV_G
         GetClusteredLightCellBounds(parameters, LightBuffer[lightIndex], minimum, extent);
         LightCellMinimum = minimum;
         LightCellExtent = extent;
+        uint count = extent.x * extent.y * extent.z;
+        uint start = groupId.z * 64u;
+        uint remaining = count > start ? count - start : 0u;
+        uint stride = 64u * parameters.GroupsPerLight;
+        uint requested = remaining / stride * 64u + min(remaining % stride, 64u);
+        AllocateClusteredLightLinks(requested, LightLinkFirst, LightLinkCount);
     }
     GroupMemoryBarrierWithGroupSync();
-    // Share cell work between groups when there are few lights. With many
-    // lights, keep the parallelism across lights instead of multiplying empty work.
-    uint count = LightCellExtent.x * LightCellExtent.y * LightCellExtent.z;
+    // The group ordinal follows the existing interleaved cell partition.
     uint viewOffset = viewIndex * parameters.CellCountPerView;
-    if (parameters.GroupsPerLight == 1u)
+    uint index = groupId.z * 64u + threadIndex;
+    uint stride = 64u * parameters.GroupsPerLight;
+    for (uint ordinal = threadIndex; ordinal < LightLinkCount; ordinal += 64u)
     {
-        for (uint index = threadIndex; index < count; index += 64u)
-            AssignClusteredLightCell(parameters, viewOffset, lightIndex, index);
+        AssignClusteredLightCell(parameters, viewOffset, lightIndex, index, LightLinkFirst + ordinal);
+        index += stride;
     }
-    else
-        for (uint index = groupId.z * 64u + threadIndex; index < count; index += 64u * parameters.GroupsPerLight)
-            AssignClusteredLightCell(parameters, viewOffset, lightIndex, index);
 }
 
 [shader("compute")]
