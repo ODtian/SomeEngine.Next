@@ -9,6 +9,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 
 
@@ -153,29 +154,37 @@ def application_path(options):
     return directory / (properties["AssemblyName"] + (".exe" if os.name == "nt" else ""))
 
 
-def run_application(application, values, environment):
+def run_application(application, values, environment, deadline):
     print("NATIVE_LAUNCH " + json.dumps({"Executable": str(application), "Arguments": values}), flush=True)
     started = time.monotonic()
     process = subprocess.Popen([str(application), *values], cwd=application.parent,
                                env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     foreground = os.name != "nt" or not any(value in {"--measure", "--measure-trace"} for value in values)
-    output = errors = ""
+    def forward(source, destination):
+        for line in source:
+            destination.write(line)
+            destination.flush()
+
+    output = threading.Thread(target=forward, args=(process.stdout, sys.stdout))
+    errors = threading.Thread(target=forward, args=(process.stderr, sys.stderr))
+    output.start()
+    errors.start()
     try:
         while True:
             if not foreground:
                 foreground = foreground_window(process.pid)
             try:
-                output, errors = process.communicate(timeout=min(.1, max(.001, 59 - (time.monotonic() - started))))
+                process.wait(timeout=min(.1, max(.001, deadline - time.monotonic())))
                 break
             except subprocess.TimeoutExpired:
-                if time.monotonic() - started >= 59:
-                    raise TimeoutError("The scene measurement exceeded 60 seconds including application startup.")
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("The scene measurement exhausted its 60-second display, application and cleanup budget.")
     finally:
         if process.poll() is None:
             process.kill()
-            output, errors = process.communicate()
-        sys.stdout.write(output)
-        sys.stderr.write(errors)
+            process.wait()
+        output.join()
+        errors.join()
     if process.returncode:
         raise RuntimeError("DefaultGame exited with code " + str(process.returncode))
     return time.monotonic() - started
@@ -210,6 +219,7 @@ def check_result(report, samples, options, configuration):
 
 
 def main():
+    deadline = time.monotonic() + 59
     options = arguments()
     if os.name == "nt" and not options.on_default_desktop:
         return run_on_default_desktop()
@@ -255,7 +265,7 @@ def main():
             environment["SOMEENGINE_STARTUP_TRACE"] = str(Path(temporary) / "startup.setrace")
         else:
             environment.pop("SOMEENGINE_STARTUP_TRACE", None)
-        elapsed = run_application(application, values, environment)
+        elapsed = run_application(application, values, environment, deadline - (5 if sys.platform == "linux" else 0))
         if options.startup_frames:
             print("Startup completed: requested frames " + str(options.startup_frames) + "; exit 0.")
             return 0
