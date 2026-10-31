@@ -99,7 +99,10 @@ public sealed class ShaderInputBlockTests
             asset.SelectInputs<ConsumerMaterialEntriesBlock>();
             asset.GetBlock<ShaderSourceBlock>().Specializations =
             [new() { EntryPoint = "WriteValue", Arguments = ["3"] },
-             new() { EntryPoint = "WriteValue", Arguments = ["7"] }];
+             new() { EntryPoint = "WriteValue", Arguments = ["7"] },
+             new() { EntryPoint = "WriteValue", Arguments = ["11"] },
+             new() { EntryPoint = "WriteValue", Arguments = ["13"] },
+             new() { EntryPoint = "WriteValue", Arguments = ["17"] }];
             await asset.CompileAsync(slang, description);
             await asset.SaveAsync(path);
         }
@@ -107,12 +110,17 @@ public sealed class ShaderInputBlockTests
         Shader shader = await restored.CreateAsync(slang, description);
         Assert.True(shader.TryGetSpecialization("WriteValue", ["3"], out Shader first));
         Assert.True(shader.TryGetSpecialization("WriteValue", ["7"], out Shader second));
+        Assert.True(shader.TryGetSpecialization("WriteValue", ["17"], out Shader seventeen));
         Assert.True(first.TryGetSlangEntry(0, "WriteValue", SlangStage.Compute, out EntryPointReflection firstEntry));
         Assert.True(second.TryGetSlangEntry(0, "WriteValue", SlangStage.Compute, out EntryPointReflection secondEntry));
+        Assert.True(seventeen.TryGetSlangEntry(0, "WriteValue", SlangStage.Compute, out EntryPointReflection seventeenEntry));
         Assert.True(first.GetSlangEntryBytes(0, firstEntry).Length > 0);
         Assert.True(second.GetSlangEntryBytes(0, secondEntry).Length > 0);
+        Assert.True(seventeen.GetSlangEntryBytes(0, seventeenEntry).Length > 0);
         Assert.NotEqual(first.GetSlangEntryBytes(0, firstEntry).ToArray(),
             second.GetSlangEntryBytes(0, secondEntry).ToArray());
+        Assert.NotEqual(first.GetSlangEntryBytes(0, firstEntry).ToArray(),
+            seventeen.GetSlangEntryBytes(0, seventeenEntry).ToArray());
     }
 
     private static async Task<byte[]> SerializeConsumerEntryAsync(

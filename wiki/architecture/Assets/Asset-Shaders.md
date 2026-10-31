@@ -150,6 +150,6 @@ Shader 资产编译的所有者是 `ShaderAsset.CompileAsync`；原生 `.shader`
 
 编译过程使用 `SomeEngine.Shaders` 活动源，记录 `Shader.Inputs`、`Shader.Compile`、`Shader.Save`、`Shader.Layout`、`Shader.TargetCode`、`Shader.EntryCode`。编译事件记录资产身份，保存事件记录实际输出路径。通用开发工具库的 `ShaderBuildMeasurements` 为导入/构建命令提供编译次数统计；设置 `SOMEENGINE_SHADER_MEASUREMENTS` 时写出阶段测量。样例专有内容命令只创建这一库作用域，不复制统计实现。
 
-所有 target 的 layout 先串行取得。完全特化且已链接的 component 才并行取得逐入口代码，最多四项；含未绑定 generic 的 component 保留串行路径。批次结果按原请求顺序归位，失败或取消也等待已发出的后端工作收尾，资源使用信息在批次 join 后取得。`generateLibraryCode=false` 仍仅省略整 target 代码，不省略已绑定入口代码。frontend 的会话串行约束和 `SlangShaderData` 生命周期保持不变。
+资产保存按每组最多四个特化处理，各组复用基础 Shader 的同一个 `ISession` 与已加载输入。每组先串行取得全部 target 的 layout，再以最多四路并行取得完全特化且已链接 component 的逐入口代码；含未绑定 generic 的 component 使用串行路径。结果按原请求顺序归位，失败或取消时等待已发出的后端工作收尾，资源使用信息在整组 join 后取得。随后立即把该组代码写入同一个 `ShaderBlock`，结束组内临时 Shader 引用的持有，再处理下一组；来源记录由 `ShaderAsset.CompileAsync` 汇总，最终完成来源与取消检查后一次发布 Block。所选输入共用各输入 Block 的不可变 IR 数组。`generateLibraryCode=false` 继续省略整 target 代码并生成已绑定入口代码。frontend 的会话串行约束及 `SlangShaderData` 使用期沿用现有规则。
 
 上述并行与测量接口不构成性能提升或覆盖率结论；本次完整 shader、引擎及 GPU 验证仍须在最终冲突解决后的源码与重新生成内容上执行。

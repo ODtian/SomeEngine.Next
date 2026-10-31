@@ -155,15 +155,24 @@ public sealed partial class ShaderAsset : Asset
         code.InputVersions = inputs.Select(static input => input.Version).ToList();
         var requests = compiled.Specializations.Select(specialization =>
             (specialization.EntryPoint, Arguments: specialization.Arguments.ToArray())).ToArray();
-        // Compilation and source snapshot ownership stay here. Variants share their loaded base graph.
-        var batch = await ShaderSourceBlock.CompileUsingLoadedSourcesBatchAsync(slang, compiled.Shader, sourceFiles,
-            requests.Select(static request => (request.EntryPoint,
-                (ReadOnlyMemory<SpecializationArg>)request.Arguments.Select(SpecializationArg.FromExpression).ToArray())).ToArray(),
-            cancellationToken).ConfigureAwait(false);
-        for (int index = 0; index < requests.Length; index++)
+        var compilationFiles = new List<ShaderSourceFile>(compiled.Files);
+        for (int index = 0; index < requests.Length; index += 4)
+            compilationFiles.AddRange(await CompileAndSaveSpecializationsAsync(index).ConfigureAwait(false));
+
+        async ValueTask<ShaderSourceFile[]> CompileAndSaveSpecializationsAsync(int firstSpecialization)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            SaveCode(batch.Shaders[index], requests[index].Arguments, requests[index].EntryPoint);
+            // Keep each group's linked components and code alive only through its block writes.
+            var specializations = requests.AsSpan(firstSpecialization, Math.Min(4, requests.Length - firstSpecialization)).ToArray();
+            var batch = await ShaderSourceBlock.CompileUsingLoadedSourcesBatchAsync(slang, compiled.Shader, sourceFiles,
+                specializations.Select(static request => (request.EntryPoint,
+                    (ReadOnlyMemory<SpecializationArg>)request.Arguments.Select(SpecializationArg.FromExpression).ToArray())).ToArray(),
+                cancellationToken).ConfigureAwait(false);
+            for (int index = 0; index < specializations.Length; index++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                SaveCode(batch.Shaders[index], specializations[index].Arguments, specializations[index].EntryPoint);
+            }
+            return batch.Files;
         }
 
         void SaveCode(Shader shader, string[] arguments, string? entryPoint)
@@ -183,7 +192,7 @@ public sealed partial class ShaderAsset : Asset
             }
         }
         // Include callbacks made during detached code/usage saving, not only the base module load.
-        ShaderSourceFile[] files = compiled.Files.Concat(batch.Files).Concat(sourceFiles.Finish())
+        ShaderSourceFile[] files = compilationFiles.Concat(sourceFiles.Finish())
             .GroupBy(static file => file.Path, OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal)
             .Select(static group => group.First()).ToArray();
         sourceFiles.ThrowIfInputChanged();

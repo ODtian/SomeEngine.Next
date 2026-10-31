@@ -13,9 +13,9 @@ Shader 构建是一次显式异步 Block 行为。它可以发生在内容导入
 - pipeline 创建只消费已驻留 `Shader` 的直接 Slang 对象与代码，不隐式打开 Asset 或启动编译。
 - 名称查找和反射发生在创建材质/pipeline 等冷路径；命令热路径只使用消费者已经派生的数据。
 
-## 当前实现差距
+## 当前编译与读取边界
 
-以上是共同编译边界的要求。当前原生源码编译仍位于 Importer，`ShaderSourceBlock.CreateAsync` 只恢复并编译已有 IR；保存代码读取仍经过页再复制为数组。两项分别见 [2026-09-29 审查](../../../reviews/AssetSpecReview-2026-09-29.md) I06、I11，不能作为已经完成统一取得和存储的证据。
+`ShaderAsset.CompileAsync` 统一组织完整输入、来源检查和代码发布，Importer 负责外围来源、依赖与保存编排。`ShaderSourceBlock.CreateAsync` 从所选序列化 IR 或调用方搜索路径中的源码取得驻留 Shader；`ShaderBlock` 通过统一 AssetByteCache 取得最终托管数组。具体调用链、数据持有与后端并行规则见 [ShaderAsset、Block 与驻留 Shader](../Assets/Asset-Shaders.md)。
 
 ## Relations
 

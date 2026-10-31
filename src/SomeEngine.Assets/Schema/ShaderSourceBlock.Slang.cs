@@ -247,7 +247,7 @@ public sealed partial class ShaderSourceBlock
     {
         var source = new ShaderSourceBlock { SourceNames = inputs.Select(input => input.Name).ToList(),
             Specializations = Specializations.ToList() };
-        for (int index = 0; index < inputs.Count; index++) source.SetSerializedSource(index, inputs[index].Serialized.Span);
+        for (int index = 0; index < inputs.Count; index++) source.SetBytes(SerializedSourceKey(index), inputs[index].Serialized);
         return source;
     }
 
