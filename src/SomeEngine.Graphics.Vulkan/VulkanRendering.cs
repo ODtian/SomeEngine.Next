@@ -78,9 +78,9 @@ internal sealed unsafe partial class VulkanBackend
         PipelineBindPoint bindPoint = ToBindPoint(native.Type);
         ReadOnlySpan<VulkanBoundBindlessSet> sets =
             command.CaptureBindlessDescriptors(native.Layout.BindlessBindings);
-        Api.CmdBindPipeline(command.NativeRecording, bindPoint, native.Native);
+        if (command.SetCurrentPipeline(native))
+            Api.CmdBindPipeline(command.NativeRecording, bindPoint, native.Native);
         BindBindlessDescriptors(command, native, bindPoint, sets);
-        command.SetCurrentPipeline(native);
         command.Capture(native);
         command.CaptureBindlessSparseBindings(sets);
     }
@@ -652,7 +652,12 @@ internal sealed unsafe partial class VulkanBackend
         internal VulkanPipeline CurrentPipeline => _currentPipeline
             ?? throw new InvalidOperationException("No Vulkan Pipeline is currently bound.");
 
-        internal void SetCurrentPipeline(VulkanPipeline pipeline) => _currentPipeline = pipeline;
+        internal bool SetCurrentPipeline(VulkanPipeline pipeline)
+        {
+            bool changed = !ReferenceEquals(_currentPipeline, pipeline);
+            _currentPipeline = pipeline;
+            return changed;
+        }
 
         internal void PrepareColorAttachments(
             int count,

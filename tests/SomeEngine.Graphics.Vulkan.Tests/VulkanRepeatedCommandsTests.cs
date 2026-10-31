@@ -151,6 +151,7 @@ public sealed class VulkanRepeatedCommandsTests(VulkanTestCompiler compiler)
                 backend.SetTransientParameterBindings(context,
                     new(globals, [ResourceBinding.ReadOnlyBuffer(inputView), ResourceBinding.WritableBuffer(firstView)], firstOrdinary));
                 backend.Dispatch(context, new(1, 1, 1));
+                backend.SetPipeline(context, pipeline);
                 backend.SetTransientParameterBindings(context,
                     new(globals, [ResourceBinding.ReadOnlyBuffer(inputView), ResourceBinding.WritableBuffer(secondView)], secondOrdinary));
                 backend.Dispatch(context, new(1, 1, 1));
