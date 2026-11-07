@@ -47,10 +47,9 @@ internal static class LinuxCommands
             "--property=CPUAffinity=" + string.Join(' ', directory.Processors),
             "--working-directory=" + Path.Combine(source, request.WorkingDirectory));
         ConfigureBus(start);
-        var environment = command.Environment.Where(variable =>
-            variable.Key.StartsWith("DOTNET_") || variable.Key.StartsWith("COMPlus_") || variable.Key.StartsWith("SOMEENGINE_")
-            || variable.Key.StartsWith("OMP_") || variable.Key.StartsWith("OPENBLAS_") || variable.Key.StartsWith("MKL_"))
-            .ToDictionary(variable => variable.Key, variable => variable.Value);
+        var environment = command.GetThreadEnvironment();
+        foreach (var variable in command.Environment.Where(variable => variable.Key.StartsWith("SOMEENGINE_")))
+            environment[variable.Key] = variable.Value;
         environment["HOME"] = home; environment["TMPDIR"] = temporary;
         environment["DOTNET_CLI_HOME"] = home;
         environment["NUGET_PACKAGES"] = Path.Combine(directory.Path, "packages");
@@ -60,10 +59,6 @@ internal static class LinuxCommands
             environment["DOTNET_ROOT"] = dotnet;
             environment["PATH"] = dotnet + ":" + Environment.GetEnvironmentVariable("PATH");
         }
-        environment["DOTNET_PROCESSOR_COUNT"] = command.Settings.CpuCoreCount.ToString();
-        environment["OMP_NUM_THREADS"] = command.Settings.CpuCoreCount.ToString();
-        environment["OPENBLAS_NUM_THREADS"] = command.Settings.CpuCoreCount.ToString();
-        environment["MKL_NUM_THREADS"] = command.Settings.CpuCoreCount.ToString();
         if (directory.Gpu is { } gpu)
             foreach (var variable in GpuDevices.EnvironmentFor(gpu)) environment[variable.Key] = variable.Value;
         foreach (var variable in environment) start.ArgumentList.Add("--setenv=" + variable.Key + "=" + variable.Value);
@@ -96,7 +91,7 @@ internal static class LinuxCommands
                 Task.Delay(100).GetAwaiter().GetResult();
                 fields = ProcessCommands.Run(status).Output.Split('\n', StringSplitOptions.RemoveEmptyEntries)
                     .Select(line => line.Split('=', 2)).ToDictionary(pair => pair[0], pair => pair[1]);
-            } while (!process.HasExited && fields.GetValueOrDefault("SubState") is not ("exited" or "failed")
+            } while (fields.GetValueOrDefault("SubState") is not ("exited" or "failed")
                 && elapsed.Elapsed.TotalSeconds < command.TimeoutSeconds + 5);
             result = fields.GetValueOrDefault("Result", "failed");
             int.TryParse(fields.GetValueOrDefault("ExecMainStatus"), out exitCode);
@@ -126,7 +121,9 @@ internal static class LinuxCommands
             GpuModel = directory.Gpu?.Name, GpuId = directory.Gpu?.Id,
             GpuFreeMiBAtStart = directory.Gpu?.FreeMiB, GpuUtilizationAtStart = directory.Gpu?.Utilization,
             CoreCount = command.Settings.CpuCoreCount, Processors = directory.Processors,
-            command.Settings.MemoryMiB, MemoryPeakBytes = memoryPeak, CpuSeconds = cpuNanoseconds / 1e9,
+            command.Settings.MemoryMiB, command.Settings.OutputMiB,
+            ThreadEnvironment = command.GetThreadEnvironment(),
+            MemoryPeakBytes = memoryPeak, CpuSeconds = cpuNanoseconds / 1e9,
             WorkDirectoryLimitBytes = LinuxWorkDirectory.DirectoryBytes,
             command.TimeoutSeconds, TimedOut = result == "timeout", MemoryLimitExceeded = result == "oom-kill",
             ExitCode = exitCode, command.SubmittedAtUtc, StartedAtUtc = started, FinishedAtUtc = DateTimeOffset.UtcNow,

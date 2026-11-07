@@ -7,6 +7,7 @@
 ```powershell
 pwsh -NoProfile -File tools/Configure-BenchmarkRemote.ps1 -HostName 4090
 pwsh -NoProfile -File tools/Invoke-Benchmark.ps1 --cpu dotnet run --project tools/SomeEngine.Job.Benchmarks -c Release
+pwsh -NoProfile -File tools/Invoke-Benchmark.ps1 --remote --cpu dotnet run --project tools/SomeEngine.Job.Benchmarks -c Release
 pwsh -NoProfile -File tools/Invoke-Benchmark.ps1 --gpu --timeout 60 <executable> <arguments>
 pwsh -NoProfile -File tools/Invoke-Benchmark.ps1 --timeout 120 <executable> <arguments>
 ```
@@ -16,6 +17,8 @@ pwsh -NoProfile -File tools/Invoke-Benchmark.ps1 --timeout 120 <executable> <arg
 同一会话按 FIFO 完成，跨会话轮询；远程与本机共用这一顺序。会话标识依次来自 `--session`、`SOMEENGINE_BENCHMARK_SESSION`、`CODEX_THREAD_ID`、`CODEX_SESSION_ID` 和工作目录。执行器每两秒重新检查排队任务。
 
 远程执行器通过 SSH 在 Linux 普通用户账户下运行，在同一资源锁中分配 CPU、GPU 和工作目录。Git 工作目录按 Git 文件列表同步，其它目录按提交工作目录中的文件同步；同步比较文件大小和修改时间，并复用编译输出。源目录绝对路径映射到远程工作目录。远程执行器设置 HOME、临时目录、NuGet 缓存和系统路径，并传递提交时的 .NET JIT 配置。
+
+跨主机任务使用 `dotnet run` 或一条脚本命令共同完成构建与消费，使产物留在本次分配的工作目录。分开提交构建和执行的本机消费者使用 `--local`，沿提交时的同一工作目录读取产物；`SomeEngine.Animation.Checks` 的 Windows 发布与诊断采用这一方式。
 
 ## 基线与限额
 
@@ -35,6 +38,10 @@ pwsh -NoProfile -File tools/Invoke-Benchmark.ps1 --timeout 120 <executable> <arg
 远程通过 Mesa Vulkan 设备选择层设置可见设备，执行前核对 Vulkan UUID 与分配的 GPU UUID。`GpuMemoryMiB` 默认 4096，是分配前的剩余显存要求；系统内存上限由操作系统执行。
 
 结果记录实际 CPU 型号、GPU 型号和 UUID、核心编号、内存上限及退出状态。不同机器、型号和并发条件分别比较。换算估计经过对应 workload 的独立验证后，单独说明误差和适用范围。
+
+本机 GPU 任务独占本机 GPU 资源，`Gpus` 保存系统枚举的设备名称、身份及硬件标识；Windows 使用系统显示设备枚举。远程任务分配一张 NVIDIA GPU，使用 `GpuModel` 和 `GpuId` 记录分配的型号与 UUID。
+
+核心在命令开始前分配，并在整条进程树执行期间保持固定；每两秒的采样仅更新使用量。本机结果的 `ProcessorMask` 与远程结果的 `Processors` 记录这次分配。`ThreadEnvironment` 保存实际生效的 `DOTNET_*`、`COMPlus_*`、OpenMP、OpenBLAS 和 MKL 配置；构建配置和发布参数保存在 `Executable`、`Arguments` 中。`MemoryMiB`、`OutputMiB` 和 `TimeoutSeconds` 保存本次限额。
 
 共享配置位于 `%LOCALAPPDATA%/SomeEngine/BenchmarkQueue/settings.json`。`SOMEENGINE_BENCHMARK_CONFIG` 指向的任务配置覆盖其中指定的字段，其余字段继承共享配置，因此单独调整 CPU 或内存时保留远程主机设置。支持 `RemoteHost`、`RemoteDirectory`、`CpuCoreCount`、`MemoryMiB`、`TimeoutSeconds`、`GpuMemoryMiB`、`MinimumIdleGpuCount` 和 `OutputMiB`。远程依赖用户级 systemd、cgroup v2 内存控制器、FUSE、NVIDIA 驱动和 Mesa Vulkan 设备选择层。
 

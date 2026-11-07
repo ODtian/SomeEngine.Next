@@ -9,8 +9,8 @@
 本机通过公共 FIFO 提交构建、运行与 NativeAOT 发布。PowerShell 以字符串传递 MSBuild 属性。
 
 ```powershell
-& ./tools/Invoke-Benchmark.ps1 dotnet build tools/SomeEngine.Animation.Checks/SomeEngine.Animation.Checks.csproj -c Release '--property:PublishAot=false' '-m:1' '-nodeReuse:false' '--property:UseSharedCompilation=false'
-& ./tools/Invoke-Benchmark.ps1 dotnet tools/SomeEngine.Animation.Checks/bin/Release/net10.0/SomeEngine.Animation.Checks.dll
+& ./tools/Invoke-Benchmark.ps1 --local dotnet build tools/SomeEngine.Animation.Checks/SomeEngine.Animation.Checks.csproj -c Release '--property:PublishAot=false' '-m:1' '-nodeReuse:false' '--property:UseSharedCompilation=false'
+& ./tools/Invoke-Benchmark.ps1 --local dotnet tools/SomeEngine.Animation.Checks/bin/Release/net10.0/SomeEngine.Animation.Checks.dll
 ```
 
 测量使用同一发布配置和固定 JIT 配置，队列保存提交进程的环境。纯批次入口为 `--benchmark`；完整路径入口为 `--full-benchmark`。`--full-benchmark --smoke` 使用 1,000 项检查测量流程，完整入口使用 1,000 / 10,000 / 100,000 项。
@@ -18,8 +18,8 @@
 ```powershell
 $env:DOTNET_TieredCompilation = '0'
 $animationChecks = Join-Path $PWD 'tools/SomeEngine.Animation.Checks/bin/Release/net10.0/SomeEngine.Animation.Checks.exe'
-& ./tools/Invoke-Benchmark.ps1 $animationChecks --benchmark
-& ./tools/Invoke-Benchmark.ps1 $animationChecks --full-benchmark
+& ./tools/Invoke-Benchmark.ps1 --local $animationChecks --benchmark
+& ./tools/Invoke-Benchmark.ps1 --local $animationChecks --full-benchmark
 ```
 
 NativeAOT 使用相同消费者与输入，发布时生成方法映射以核对代码体积。
@@ -27,10 +27,10 @@ NativeAOT 使用相同消费者与输入，发布时生成方法映射以核对�
 `--codegen` 独立执行静态 `IEasing` Tween、Spring、消费者 History、标量函数回调和引用字段批次。Release 使用 `DOTNET_JitDisasm` 记录这些具体方法，NativeAOT 使用同一次发布的方法映射与反汇编核对入口、内循环和字节数。此入口与性能采样分别运行。
 
 ```powershell
-& ./tools/Invoke-Benchmark.ps1 dotnet publish tools/SomeEngine.Animation.Checks/SomeEngine.Animation.Checks.csproj -c Release -r win-x64 --self-contained true '--property:PublishAot=true' '--property:IlcGenerateMapFile=true' '--property:OptimizationPreference=Speed' '-m:1' '-nodeReuse:false' '--property:UseSharedCompilation=false' -o tools/SomeEngine.Animation.Checks/bin/Release/net10.0/win-x64/native-publish
+& ./tools/Invoke-Benchmark.ps1 --local dotnet publish tools/SomeEngine.Animation.Checks/SomeEngine.Animation.Checks.csproj -c Release -r win-x64 --self-contained true '--property:PublishAot=true' '--property:IlcGenerateMapFile=true' '--property:OptimizationPreference=Speed' '-m:1' '-nodeReuse:false' '--property:UseSharedCompilation=false' -o tools/SomeEngine.Animation.Checks/bin/Release/net10.0/win-x64/native-publish
 $nativeChecks = Join-Path $PWD 'tools/SomeEngine.Animation.Checks/bin/Release/net10.0/win-x64/native-publish/SomeEngine.Animation.Checks.exe'
-& ./tools/Invoke-Benchmark.ps1 $nativeChecks
-& ./tools/Invoke-Benchmark.ps1 $nativeChecks --full-benchmark
+& ./tools/Invoke-Benchmark.ps1 --local $nativeChecks
+& ./tools/Invoke-Benchmark.ps1 --local $nativeChecks --full-benchmark
 ```
 
 预先排入发布依赖时，`Run-NativeChecks.ps1` 接收 `-PublishResultPath` 和 `-NativeDirectory`，先读取发布任务的 `result.json`，成功后打印本机映像字节并执行默认公开消费者，通过后顺序执行 `--view-switch-allocations`。该最小诊断在 128 帧预热后，记录预声明 Linear / CubicOut / 便利 Spec 交替选择的合计 1,000 次完整帧，分别列出 State 提交、Views 构建、Animation、声明及目标提交的当前线程分配，以及构建和计算次数。`--view-switch-benchmark` 保留单行完整帧分配入口。发布与检查按同一 FIFO 的顺序执行。
@@ -63,10 +63,10 @@ $nativeChecks = Join-Path $PWD 'tools/SomeEngine.Animation.Checks/bin/Release/ne
 $nativeDirectory = Join-Path $PWD 'tools/SomeEngine.Animation.Checks/bin/Release/net10.0/win-x64/native-publish'
 $nativeMap = Join-Path $PWD 'tools/SomeEngine.Animation.Checks/obj/Release/net10.0/win-x64/native/SomeEngine.Animation.Checks.map.xml'
 $nativeCodeReader = Join-Path $PWD 'tools/SomeEngine.Animation.Checks/Read-NativeCode.ps1'
-$symbolTask = (& ./tools/Invoke-Benchmark.ps1 pwsh -NoProfile -File $nativeCodeReader -NativeDirectory $nativeDirectory -MapPath $nativeMap -LlvmBinDirectory 'C:/Program Files/LLVM/bin') | ConvertFrom-Json
+$symbolTask = (& ./tools/Invoke-Benchmark.ps1 --local pwsh -NoProfile -File $nativeCodeReader -NativeDirectory $nativeDirectory -MapPath $nativeMap -LlvmBinDirectory 'C:/Program Files/LLVM/bin') | ConvertFrom-Json
 $nativeSymbolsPath = Join-Path $symbolTask.OutputDirectory 'stdout.log'
 $nativeInstructions = Join-Path $PWD 'tools/SomeEngine.Animation.Checks/Read-NativeInstructions.ps1'
-& ./tools/Invoke-Benchmark.ps1 pwsh -NoProfile -File $nativeInstructions -SymbolsPath $nativeSymbolsPath -NativeDirectory $nativeDirectory -LlvmBinDirectory 'C:/Program Files/LLVM/bin'
+& ./tools/Invoke-Benchmark.ps1 --local pwsh -NoProfile -File $nativeInstructions -SymbolsPath $nativeSymbolsPath -NativeDirectory $nativeDirectory -LlvmBinDirectory 'C:/Program Files/LLVM/bin'
 ```
 
 `Read-NativeInstructions.ps1` 按符号采集任务记录的映像地址和方法长度，输出最终 PE 中的代表批次、字段写入、系统回调与 Timeline 启用读取指令。两个诊断任务沿共同 FIFO 顺序执行，使用同一次发布的映像与符号。

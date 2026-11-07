@@ -4,9 +4,21 @@ using System.Runtime.InteropServices;
 namespace SomeEngine.Tools;
 
 internal sealed record GpuDevice(string Id, string Name, string Address, int FreeMiB, int Utilization);
+internal sealed record LocalGpuDevice(string Id, string Name, string HardwareId);
 
 internal static unsafe class GpuDevices
 {
+    public static LocalGpuDevice[] ReadLocal()
+    {
+        if (!OperatingSystem.IsWindows())
+            return Read().Select(gpu => new LocalGpuDevice(gpu.Id, gpu.Name, gpu.Address)).ToArray();
+        var devices = new List<LocalGpuDevice>();
+        var display = new DisplayDevice { Size = Marshal.SizeOf<DisplayDevice>() };
+        for (uint index = 0; EnumDisplayDevices(null, index, ref display, 0); index++)
+            devices.Add(new(display.Key, display.Description, display.Id));
+        return devices.ToArray();
+    }
+
     public static GpuDevice[] Read()
     {
         var result = ProcessCommands.Run(ProcessCommands.StartInfo("nvidia-smi",
@@ -62,4 +74,19 @@ internal static unsafe class GpuDevices
 
     [DllImport("libc", EntryPoint = "setenv")]
     private static extern int SetEnvironment(string name, string value, int overwrite);
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct DisplayDevice
+    {
+        public int Size;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string Name;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string Description;
+        public uint StateFlags;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string Id;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string Key;
+    }
+
+    [DllImport("user32.dll", EntryPoint = "EnumDisplayDevicesW", CharSet = CharSet.Unicode)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool EnumDisplayDevices(string? device, uint index, ref DisplayDevice display, uint flags);
 }

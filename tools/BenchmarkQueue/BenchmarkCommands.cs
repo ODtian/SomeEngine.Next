@@ -163,9 +163,11 @@ internal static class BenchmarkCommands
         Directory.CreateDirectory(command.OutputDirectory);
         int exitCode = 1;
         bool timedOut = false;
+        LocalGpuDevice[] gpus = [];
         DateTimeOffset started = DateTimeOffset.UtcNow;
         try
         {
+            if (command.Kind == CommandKind.Gpu) gpus = GpuDevices.ReadLocal();
             int timeoutSeconds = ParseTimeoutSeconds(command.TimeoutSeconds.ToString());
             var start = new ProcessStartInfo("dotnet")
             {
@@ -177,10 +179,7 @@ internal static class BenchmarkCommands
             start.ArgumentList.Add("--execute");
             start.Environment.Clear();
             foreach (var variable in command.Environment) start.Environment.Add(variable.Key, variable.Value);
-            start.Environment["DOTNET_PROCESSOR_COUNT"] = command.Settings.CpuCoreCount.ToString();
-            start.Environment["OMP_NUM_THREADS"] = command.Settings.CpuCoreCount.ToString();
-            start.Environment["OPENBLAS_NUM_THREADS"] = command.Settings.CpuCoreCount.ToString();
-            start.Environment["MKL_NUM_THREADS"] = command.Settings.CpuCoreCount.ToString();
+            foreach (var variable in command.GetThreadEnvironment()) start.Environment[variable.Key] = variable.Value;
             using var output = File.Create(Path.Combine(command.OutputDirectory, "stdout.log"));
             using var errors = File.Create(Path.Combine(command.OutputDirectory, "stderr.log"));
             using var process = Process.Start(start)!;
@@ -235,7 +234,11 @@ internal static class BenchmarkCommands
             cpu.CpuCount, cpu.CpuSeconds, cpu.PeakCpuCount,
             cpu.CoreCount, cpu.ProcessorMask,
             TotalCpuCount = Environment.ProcessorCount,
-            Host = Environment.MachineName, command.Settings.MemoryMiB,
+            Host = Environment.MachineName,
+            CpuModel = Environment.GetEnvironmentVariable("PROCESSOR_IDENTIFIER"),
+            Gpus = gpus,
+            ThreadEnvironment = command.GetThreadEnvironment(),
+            command.Settings.MemoryMiB, command.Settings.OutputMiB,
             DispatchReason = command.DispatchReason ?? (command.Settings.Local ? "RequestedLocal" : "RemoteResourcesBusy"),
             command.RemoteError,
             command.TimeoutSeconds, TimedOut = timedOut,

@@ -12,7 +12,6 @@ internal sealed class CommandCpu : IDisposable
     private long sampled;
     private TimeSpan cpuTime;
     private bool finished;
-    private bool hasSample;
     private double cpuCount;
     private double peakCpuCount;
     private ulong processorMask;
@@ -40,15 +39,6 @@ internal sealed class CommandCpu : IDisposable
                 process.ProcessorAffinity = (nint)mask;
             processorMask = mask;
             coreCount = count;
-        }
-    }
-
-    public double RequiredCpuCount
-    {
-        get
-        {
-            lock (sync)
-                return finished ? 0 : hasSample ? Math.Max(1, cpuCount) : Environment.ProcessorCount;
         }
     }
 
@@ -87,7 +77,6 @@ internal sealed class CommandCpu : IDisposable
             peakCpuCount = Math.Max(peakCpuCount, cpuCount);
             cpuTime = total;
             sampled = now;
-            hasSample = true;
         }
     }
 
