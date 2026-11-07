@@ -58,7 +58,7 @@ public sealed partial class ClusterPipelineSystem
         ulong binnedCapacity = checked(candidates * entriesPerCluster);
         int width = output.Width;
         int height = output.Height;
-        uint viewCount = output.ViewCount;
+        uint layerCount = output.LayerCount;
         int pageFaultCapacity = _resources.PageFaultCapacity;
         ClusterResidencyBinding residency = _resources.Residency.GetBinding();
         var geometryBuffers = _resources.Residency.GeometryBuffers;
@@ -66,7 +66,7 @@ public sealed partial class ClusterPipelineSystem
         ulong instanceMetadataStride = checked((ulong)instanceResources.BatchMetadataStrideBytes);
         int mipCount = ClusterCullingHistory.CalculateMipCount(width, height);
         var historyDescription = new TextureDesc(TextureDimension.Texture2D,
-            checked((uint)width), checked((uint)height), 1, checked((uint)mipCount), viewCount, 1,
+            checked((uint)width), checked((uint)height), 1, checked((uint)mipCount), layerCount, 1,
             Format.R32Float, TextureUsages.Sampled | TextureUsages.Storage | TextureUsages.ColorAttachment | TextureUsages.CopySource,
             label: "Cluster HiZ history");
         var frame = new FrameResources()
@@ -74,7 +74,7 @@ public sealed partial class ClusterPipelineSystem
             BinnedEntriesPerCluster = entriesPerCluster,
             Width = width,
             Height = height,
-            ViewCount = viewCount,
+            LayerCount = layerCount,
             RasterBinCount = rasterBinCount,
             ShadeBinCount = shadeBinCount,
             SlotCapacity = assignments.SlotCapacity,
@@ -362,7 +362,7 @@ public sealed partial class ClusterPipelineSystem
                 "Cluster shade reserve counter");
         frame.PixelCoordinates = frame.AddBuffer(
                 ref graph,
-                checked((ulong)width * (ulong)height * viewCount * 2ul * sizeof(uint)),
+                checked((ulong)width * (ulong)height * layerCount * 2ul * sizeof(uint)),
                 BufferUsages.None,
                 "Cluster shade tiles and quads");
 
@@ -372,7 +372,7 @@ public sealed partial class ClusterPipelineSystem
                 checked((uint)height),
                 1,
                 1,
-                viewCount,
+                layerCount,
                 1,
                 Format.R32UInt,
                 TextureUsages.Sampled | TextureUsages.Storage | TextureUsages.ColorAttachment |
@@ -386,7 +386,7 @@ public sealed partial class ClusterPipelineSystem
                     checked((uint)height),
                     1,
                     1,
-                    viewCount,
+                    layerCount,
                     1,
                     Format.R64UInt,
                     TextureUsages.Sampled | TextureUsages.Storage,
@@ -396,7 +396,7 @@ public sealed partial class ClusterPipelineSystem
             {
                 frame.VisibilityWinnerBuffer = frame.AddBuffer(
                     ref graph,
-                    checked((ulong)width * (ulong)height * viewCount * 8u),
+                    checked((ulong)width * (ulong)height * layerCount * 8u),
                     BufferUsages.None,
                     "Cluster visibility winner buffer");
             }
@@ -406,7 +406,7 @@ public sealed partial class ClusterPipelineSystem
                 checked((uint)height),
                 1,
                 1,
-                viewCount,
+                layerCount,
                 1,
                 Format.D32Float,
                 TextureUsages.Sampled | TextureUsages.DepthStencilAttachment | TextureUsages.CopySource,
@@ -455,7 +455,7 @@ public sealed partial class ClusterPipelineSystem
                 checked((uint)height),
                 1,
                 1,
-                viewCount,
+                layerCount,
                 1,
                 Format.R16G16B16A16Float,
                 TextureUsages.Sampled | TextureUsages.Storage | TextureUsages.ColorAttachment | TextureUsages.CopySource,
@@ -466,7 +466,7 @@ public sealed partial class ClusterPipelineSystem
                 checked((uint)height),
                 1,
                 1,
-                viewCount,
+                layerCount,
                 1,
                 Format.R16G16Float,
                 TextureUsages.Sampled | TextureUsages.Storage | TextureUsages.CopySource,
@@ -494,7 +494,7 @@ public sealed partial class ClusterPipelineSystem
             {
                 Width = checked((uint)frame.Width),
                 Height = checked((uint)frame.Height),
-                ViewCount = frame.ViewCount,
+                ViewCount = frame.LayerCount,
             },
             "Cluster visibility winner clear uniforms");
         int bindingCount = 0;
@@ -519,7 +519,7 @@ public sealed partial class ClusterPipelineSystem
                 new ClusterDispatchParameters(new DispatchArguments(
                     Groups(frame.Width, 8),
                     Groups(frame.Height, 8),
-                    frame.ViewCount)),
+                    frame.LayerCount)),
                 bindingCount,
                 ClusterDispatchParameters.Record);
             return;
@@ -530,7 +530,7 @@ public sealed partial class ClusterPipelineSystem
             PipelineSync.ComputeShading,
             GraphAccessMode.Write,
             WriteCoverage.Complete));
-        ulong pixels = checked((ulong)frame.Width * (ulong)frame.Height * frame.ViewCount);
+        ulong pixels = checked((ulong)frame.Width * (ulong)frame.Height * frame.LayerCount);
         ulong groups = (pixels + 63u) / 64u;
         uint groupsX = checked((uint)Math.Min(groups, 65_535u));
         uint groupsY = checked((uint)((groups + 65_534u) / 65_535u));
@@ -875,7 +875,7 @@ public sealed partial class ClusterPipelineSystem
             0,
             1,
             0,
-            frame.ViewCount,
+            frame.LayerCount,
             TextureAspects.Color);
         GraphColorAttachmentViewId vis = graph.CreateColorAttachmentView(
             frame.VisBuffer,
@@ -893,7 +893,7 @@ public sealed partial class ClusterPipelineSystem
                 0,
                 1,
                 0,
-                frame.ViewCount,
+                frame.LayerCount,
                 TextureAspects.Depth),
             dimension: TextureViewDimension.Texture2DArray,
             label: "Cluster depth clear view");
@@ -962,7 +962,7 @@ public sealed partial class ClusterPipelineSystem
         for (int mip = 0; mip < ClusterCullingHistory.CalculateMipCount(frame.Width, frame.Height); mip++)
         {
             GraphColorAttachmentViewId view = graph.CreateColorAttachmentView(texture,
-                new TextureSubresourceRange(checked((uint)mip), 1, 0, frame.ViewCount, TextureAspects.Color),
+                new TextureSubresourceRange(checked((uint)mip), 1, 0, frame.LayerCount, TextureAspects.Color),
                 dimension: TextureViewDimension.Texture2DArray, label: $"Cluster HiZ initialization mip {mip}");
             var data = new ClusterColorAttachmentClearParameters(view, Vector4.Zero);
             graph.AddRasterFramePass($"Initialize Cluster HiZ mip {mip}", PassQueueSelection.AnyOfType(QueueType.Graphics),
@@ -1071,7 +1071,7 @@ public sealed partial class ClusterPipelineSystem
         public FrameResources() { }
         internal int Width;
         internal int Height;
-        internal uint ViewCount;
+        internal uint LayerCount;
         internal uint RasterBinCount;
         internal uint ShadeBinCount;
         internal uint SlotCapacity;

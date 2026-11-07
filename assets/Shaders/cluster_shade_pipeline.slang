@@ -102,7 +102,7 @@ bool LoadTriangleInfo(uint visibility, uint viewIndex, out TriangleInfo tri)
     DrawRequest request = VisibleClusterRequest(VisibleClusters[visible]);
     bool loaded = LoadTriangleInfo(request, DecodeVisBufferTriangleID(visibility), tri);
     tri.visibleClusterIndex = visible;
-    return loaded && DrawRequestViewIndex(request) == viewIndex;
+    return loaded && Views[DrawRequestViewIndex(request)].TargetViewIndex == viewIndex;
 }
 
 TriangleInfo ReadTriangleInfoLane(TriangleInfo value, uint lane)
@@ -384,8 +384,7 @@ bool TryEvaluateSurfacePixel<TVE, TDomain>(
     coord.xy += uint2(corner & 1u, corner >> 1u);
     if (fullTile) coord.xy += uint2(quad % 4u, quad / 4u) * 2u;
     if (!decodeTriangle(coord, tri)) return false;
-    view = ApplyFirstPersonViewTransform(
-        InstanceData, InstanceProperties, tri.instanceID, Views[tri.viewIndex]);
+    view = Views[tri.viewIndex];
     triangle = evaluateTriangle<TVE, TDomain>(vertexEval, domain, tri);
     float depth = DepthBuffer.Load(int4(coord, 0));
     float3 positionFromDepth;
@@ -397,6 +396,7 @@ bool TryEvaluateSurfacePixel<TVE, TDomain>(
     VirtualShadowReceiverPixel receiver = ReconstructVirtualShadowReceiverPixel(
         DepthBuffer, coord, uint2(view.ScreenWidth, view.ScreenHeight), depth, view.ClipToWorld);
     input.PixelCoord = coord;
+    input.ViewIndex = tri.viewIndex;
     input.InstanceID = tri.instanceID;
     input.MaterialIndex = tri.materialSlot;
     input.CameraPosition = view.CameraPos;

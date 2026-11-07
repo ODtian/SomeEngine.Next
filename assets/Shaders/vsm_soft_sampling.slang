@@ -257,7 +257,7 @@ VirtualShadowProjectionResult SampleVirtualShadowDirectionalSoft(StructuredBuffe
     StructuredBuffer<uint> pages, Texture2DArray<uint> atlas, uint firstView, uint viewCount,
     float3 position, float3 normal, float dynamicBias, float receiverBias, uint blockerSamples,
     uint filterSamples, float maxRadiusTexels, uint2 pixel, uint frameIndex,
-    bool firstPersonReceiver = false, uint firstPersonView = 0xffffffffu, float rayStartDistance = 0.0)
+    float rayStartDistance = 0.0)
 {
     if (viewCount == 0u) return EmptyVirtualShadowProjection();
     uint level = SelectDirectionalVirtualShadowView(views, firstView, viewCount, position, position,
@@ -266,19 +266,6 @@ VirtualShadowProjectionResult SampleVirtualShadowDirectionalSoft(StructuredBuffe
     VirtualShadowProjectionResult result = SampleVirtualShadowSoftView(views, pages, atlas,
         firstView, firstView + level, viewCount, position, normal, 0u, blockerSamples,
         filterSamples, maxRadiusTexels, pixel, frameIndex, rayStartDistance);
-    if (!firstPersonReceiver && firstPersonView != 0xffffffffu && !(result.Valid && result.Visibility == 0.0))
-    {
-        uint count = views[firstPersonView].ClipmapLevelCount;
-        uint selected = SelectDirectionalVirtualShadowView(views, firstPersonView, count,
-            position, position, position, dynamicBias, receiverBias);
-        if (selected < count)
-        {
-            VirtualShadowProjectionResult firstPerson = SampleVirtualShadowSoftView(views, pages, atlas,
-                firstPersonView, firstPersonView + selected, count, position, normal, 0u,
-                blockerSamples, filterSamples, maxRadiusTexels, pixel, frameIndex, rayStartDistance);
-            if (firstPerson.Valid && (!result.Valid || firstPerson.Visibility <= result.Visibility)) result = firstPerson;
-        }
-    }
     return result;
 }
 
@@ -301,7 +288,7 @@ VirtualShadowProjectionResult SampleVirtualShadowDirectionalFilteredSoft(
     Texture2DArray<uint> atlas, Texture2D<float> filteredAtlas, uint firstView, uint viewCount,
     float3 position, float3 normal, float receiverBias, uint blockerSamples, uint filterSamples,
     float maxRadiusTexels, uint2 pixel, uint frameIndex,
-    bool firstPersonReceiver = false, uint firstPersonView = 0xffffffffu, float rayStartDistance = 0.0)
+    float rayStartDistance = 0.0)
 {
     VirtualShadowPrefilterResult distant = SampleDirectionalVirtualShadowPrefiltered(
         views, pages, filteredAtlas, firstView, viewCount, position);
@@ -316,7 +303,7 @@ VirtualShadowProjectionResult SampleVirtualShadowDirectionalFilteredSoft(
     // changes requested residency; the existing mapped-coarse lookup supplies it.
     VirtualShadowProjectionResult soft = SampleVirtualShadowDirectionalSoft(views, pages, atlas,
         firstView, viewCount, position, normal, 0.0, receiverBias, blockerSamples, filterSamples,
-        maxRadiusTexels, pixel, frameIndex, firstPersonReceiver, firstPersonView, rayStartDistance);
+        maxRadiusTexels, pixel, frameIndex, rayStartDistance);
     if (filtered.Valid)
     {
         if (soft.Visibility < 1.0)

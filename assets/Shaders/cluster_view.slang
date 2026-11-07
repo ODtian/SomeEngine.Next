@@ -55,13 +55,10 @@ struct ClusterViewUniforms
     float PreviousOriginHighPadding;
     float3 PreviousWorldOriginLow;
     float PreviousOriginLowPadding;
-    uint PlayerId;
-    uint Family;
-    uint FirstPersonTransformEnabled;
     uint DepthClipEnabled;
-    float4x4 WorldToFirstPerson;
-    float4x4 FirstPersonToWorld;
-    float4x4 PreviousWorldToFirstPerson;
+    uint InstanceSelectionOffset;
+    uint InstanceSelectionCount;
+    uint ViewPadding1;
     float3 WorldTranslation;
     float WorldTranslationPadding;
     float3 PreviousWorldTranslation;

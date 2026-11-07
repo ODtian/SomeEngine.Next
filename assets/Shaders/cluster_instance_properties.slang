@@ -58,12 +58,6 @@ uint LoadInstanceDepthCacheClass(ByteAddressBuffer data, RenderInstancePropertyM
         instanceId, CLUSTER_UINT32_PROPERTY_STRIDE);
 }
 
-uint2 LoadInstanceFirstPerson(ByteAddressBuffer data, RenderInstancePropertyMetadata metadata, uint instanceId)
-{
-    return RenderInstanceLoad<uint2>(data, LoadRenderInstanceMetadata(metadata, RENDER_FIRST_PERSON_METADATA_WORD),
-        instanceId, 8u);
-}
-
 struct InstanceXray
 {
     float4 Visible;
@@ -83,56 +77,8 @@ bool KeepBlendOcclusion(ByteAddressBuffer data, RenderInstancePropertyMetadata m
 {
     uint ordered = RenderInstanceLoad<uint>(data,
         LoadRenderInstanceMetadata(metadata, CLUSTER_BLEND_OCCLUSION_METADATA_WORD), instanceId, 4u);
-    return view.Family == 0u && view.TargetPolicy == 0u &&
+    return view.TargetPolicy == 0u &&
         (ordered != 0u || LoadInstanceXray(data, metadata, instanceId).Enabled != 0u);
-}
-
-bool IsInstanceVisibleToView(uint2 firstPerson, ClusterViewUniforms view)
-{
-    uint kind = firstPerson.x & 3u;
-    uint visibility = firstPerson.x >> 2u;
-    bool player = firstPerson.y == view.PlayerId;
-    if (view.Family == 2u) return kind == 2u && player;
-    if (kind == 1u && view.Family != 0u) return false;
-    if (visibility == 1u && !player) return false;
-    if ((visibility == 2u || kind == 2u) && player) return false;
-    return true;
-}
-
-float3 TransformFirstPersonWorldPosition(ByteAddressBuffer data, RenderInstancePropertyMetadata metadata,
-    uint instanceId, ClusterViewUniforms view, float3 position)
-{
-    return (LoadInstanceFirstPerson(data, metadata, instanceId).x & 3u) == 1u && view.FirstPersonTransformEnabled != 0u
-        ? mul(float4(position, 1.0), view.WorldToFirstPerson).xyz : position;
-}
-
-float3 TransformFirstPersonWorldNormal(ByteAddressBuffer data, RenderInstancePropertyMetadata metadata,
-    uint instanceId, ClusterViewUniforms view, float3 normal)
-{
-    return (LoadInstanceFirstPerson(data, metadata, instanceId).x & 3u) == 1u && view.FirstPersonTransformEnabled != 0u
-        ? normalize(mul(normal, transpose((float3x3)view.FirstPersonToWorld))) : normal;
-}
-
-ClusterViewUniforms ApplyFirstPersonViewTransform(ByteAddressBuffer data, RenderInstancePropertyMetadata metadata,
-    uint instanceId, ClusterViewUniforms view)
-{
-    uint2 firstPerson = LoadInstanceFirstPerson(data, metadata, instanceId);
-    if ((firstPerson.x & 3u) == 1u && view.FirstPersonTransformEnabled != 0u)
-    {
-        // Compose with the public position result so user vertex and domain types remain opaque.
-        float4x4 nearTransform = view.WorldToFirstPerson;
-        nearTransform[3].xyz += view.WorldTranslation - mul(view.WorldTranslation, (float3x3)nearTransform);
-        float4x4 previousNearTransform = view.PreviousWorldToFirstPerson;
-        previousNearTransform[3].xyz += view.PreviousWorldTranslation -
-            mul(view.PreviousWorldTranslation, (float3x3)previousNearTransform);
-        view.ViewProj = mul(nearTransform, view.ViewProj);
-        view.PrevViewProj = mul(previousNearTransform, view.PrevViewProj);
-        view.GeometryViewProj = mul(nearTransform, view.GeometryViewProj);
-        view.View = mul(nearTransform, view.View);
-        view.PrevView = mul(previousNearTransform, view.PrevView);
-        view.ClipToWorld = mul(view.ClipToWorld, view.FirstPersonToWorld);
-    }
-    return view;
 }
 
 #endif

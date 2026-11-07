@@ -191,7 +191,7 @@ bool IsTessellationBoundsVisible(
         TessellationViews,
         TessellationPolicyViews,
         viewIndex);
-    view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, instanceId, view);
+
     bool usePrevious = TessellationUniformData.UsePreviousHiZ != 0u;
     if (WorldAabbOutsideFrustum(minimum, maximum, usePrevious, view))
         return false;
@@ -536,8 +536,7 @@ void ProcessTessellationPatch<TVE, TDomain>(
     EvaluateTessellationPatch<TVE.Vertex, TDomain>(
         domain,
         triangle,
-        ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, VisibleClusterRequest(TessellationVisibleClusters[patch.VisibleClusterIndex]).InstanceID,
-            LoadClusterView(TessellationViews, TessellationPolicyViews, viewIndex)),
+        LoadClusterView(TessellationViews, TessellationPolicyViews, viewIndex),
         bary0,
         bary1,
         bary2,
@@ -672,8 +671,7 @@ void DiceTessellationPatches<
                 TessellationPatchTriangle(patch),
                 sourceVaryings);
             viewIndex = DrawRequestViewIndex(TessellationVisibleClusters[patch.VisibleClusterIndex]);
-            view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, VisibleClusterRequest(TessellationVisibleClusters[patch.VisibleClusterIndex]).InstanceID,
-                LoadClusterView(TessellationViews, TessellationPolicyViews, viewIndex));
+            view = LoadClusterView(TessellationViews, TessellationPolicyViews, viewIndex);
         }
     }
 

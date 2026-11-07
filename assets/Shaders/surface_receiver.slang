@@ -5,7 +5,6 @@ static const uint SURFACE_RECEIVER_PRESENT = 1u << 0;
 static const uint SURFACE_RECEIVER_LIGHTING = 1u << 1;
 static const uint SURFACE_RECEIVER_SUBSURFACE = 1u << 2;
 static const uint SURFACE_RECEIVER_HAIR = 1u << 3;
-static const uint SURFACE_RECEIVER_FIRST_PERSON = 1u << 4;
 static const uint SURFACE_RECEIVER_MULTIPLE_NORMAL_BASES = 1u << 5;
 static const uint SURFACE_RECEIVER_WATER = 1u << 6;
 static const uint SURFACE_RECEIVER_TRANSLUCENCY = 1u << 7;

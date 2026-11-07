@@ -49,8 +49,7 @@ internal sealed class RuntimeScene : IDisposable
         float nearPlane,
         float farPlane,
         CameraDepthOfField? depthOfField,
-        uint playerId,
-        FirstPersonCamera? firstPerson,
+        ReadOnlyMemory<uint> instanceSets,
         int meshInstanceCount,
         Vector3 meshPositionMin,
         Vector3 meshPositionMax)
@@ -70,8 +69,7 @@ internal sealed class RuntimeScene : IDisposable
         _nearPlane = nearPlane;
         _farPlane = farPlane;
         DepthOfField = depthOfField;
-        PlayerId = playerId;
-        FirstPerson = firstPerson;
+        InstanceSets = instanceSets;
         MeshInstanceCount = meshInstanceCount;
         MeshPositionMin = meshPositionMin;
         MeshPositionMax = meshPositionMax;
@@ -79,8 +77,7 @@ internal sealed class RuntimeScene : IDisposable
 
     internal RuntimeCamera Camera { get; private set; }
     internal CameraDepthOfField? DepthOfField { get; }
-    internal uint PlayerId { get; }
-    internal FirstPersonCamera? FirstPerson { get; }
+    internal ReadOnlyMemory<uint> InstanceSets { get; set; }
 
     internal int MeshInstanceCount { get; }
 
@@ -99,6 +96,17 @@ internal sealed class RuntimeScene : IDisposable
         Entity[] cameras = Entities(world, new QueryDefinitionBuilder().Read<SceneCamera>());
         if (cameras.Length != 1) throw new InvalidDataException("The Game world must contain one scene camera.");
         SceneCamera camera = world.Read<SceneCamera>(cameras[0]);
+        bool hasCameraSets = world.HasBuffer<CameraInstanceSet>(cameras[0]);
+        uint[] instanceSets = [];
+        if (hasCameraSets)
+        {
+            world.ExecuteBufferRead<CameraInstanceSet>(cameras[0], buffer =>
+            {
+                ReadOnlySpan<CameraInstanceSet> sets = buffer.AsSpan();
+                instanceSets = new uint[sets.Length];
+                for (int index = 0; index < sets.Length; index++) instanceSets[index] = sets[index].Value;
+            });
+        }
         var meshes = new Dictionary<Guid, (Mesh Mesh, MeshPayloadSource Source, MeshMaterialBinding[] Bindings, ClusterSkinBounds? SkinBounds)>();
         var materials = new Dictionary<Guid, Material>();
         Vector3 meshPositionMin = new(float.PositiveInfinity);
@@ -206,7 +214,7 @@ internal sealed class RuntimeScene : IDisposable
                 meshPositionMin = Vector3.Min(meshPositionMin, transform.Position);
                 meshPositionMax = Vector3.Max(meshPositionMax, transform.Position);
                 world.Add(entity, new MeshInstance { Mesh = meshData.Mesh, PageSource = meshData.Source,
-                    BoundsExpansion = source.BoundsExpansion, DepthCacheClass = source.DepthCacheClass, FirstPerson = source.FirstPerson });
+                    BoundsExpansion = source.BoundsExpansion, DepthCacheClass = source.DepthCacheClass });
                 if (meshData.SkinBounds is { } skinBounds) world.Add(entity, new MeshSkinBounds(skinBounds));
                 world.AddBuffer<MeshMaterialBinding>(entity);
                 MeshMaterialBinding[] bindings = meshData.Bindings;
@@ -227,6 +235,7 @@ internal sealed class RuntimeScene : IDisposable
             var playbackLights = Entities(world, new QueryDefinitionBuilder().Read<PointLight>())
                 .Select(entity => (entity, world.Read<PointLight>(entity))).ToArray();
             var runtimeCamera = new RuntimeCamera(camera.Position, camera.Target, camera.Up);
+            if (hasCameraSets) world.RemoveBuffer<CameraInstanceSet>(cameras[0]);
             world.Remove<SceneCamera>(cameras[0]);
             if (instances.Length == 0) meshPositionMin = meshPositionMax = Vector3.Zero;
             QueryHandle motionQuery = world.Query(new QueryDefinitionBuilder().Read<SceneMotion>().ReadWrite<WorldTransform>());
@@ -234,7 +243,7 @@ internal sealed class RuntimeScene : IDisposable
             {
                 return new RuntimeScene(world, playbackLights, [.. materials.Values], motionQuery,
                     runtimeCamera, camera.VerticalFieldOfView, camera.NearPlane,
-                    camera.FarPlane, camera.DepthOfField, camera.PlayerId, camera.FirstPerson,
+                    camera.FarPlane, camera.DepthOfField, instanceSets,
                     instances.Length, meshPositionMin, meshPositionMax)
                     { _meshes = meshes.Select(pair => (pair.Key, pair.Value.Mesh, pair.Value.Source, pair.Value.Bindings, pair.Value.SkinBounds)).ToArray() };
             }

@@ -186,7 +186,7 @@ uint ClusterHierarchyNodeState(
             worldMin,
             worldMax,
             usePrevious,
-            viewIndex,
+            view.TargetViewIndex,
             view,
             unusedMinUv,
             unusedMaxUv);
@@ -287,7 +287,7 @@ void ProcessTraversalNode(ClusterTraversalNode parent, bool validParent, uint ch
         uint viewIndex = viewBase + bit;
         ClusterViewUniforms view = LoadClusterCullView(Views, PolicyClusterViews, viewIndex, targetFilters);
         view = ApplyClusterInstanceBounds(MaterialBounds, InstanceData, InstanceProperties, instanceID, view);
-        view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, instanceID, view);
+
         if (view.TargetPolicy != 0u && !ClusterTargetPolicyWorldDepthAccepts(
                 worldMin, worldMax, view,
                 LoadTargetDepthCacheClass(instanceID)))

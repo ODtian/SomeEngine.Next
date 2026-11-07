@@ -989,8 +989,7 @@ internal static class RuntimeApplication
                     cameraCut: cameraCut,
                     cameraTarget: scene.Camera.Target,
                     depthOfField: scene.DepthOfField,
-                    playerId: scene.PlayerId,
-                    firstPerson: scene.FirstPerson);
+                    instanceSets: scene.InstanceSets);
                 viewSystem.Stage(viewFrame.View);
                 if (application?.DebugUiEnabled != false) ui.DrawDebugWindow(
                     ref debugUiOpen,
@@ -1533,7 +1532,7 @@ internal static class RuntimeApplication
                         clusterOutputs.MotionVectors,
                         clusterOutputs.Width,
                         clusterOutputs.Height,
-                        clusterOutputs.ViewCount);
+                        clusterOutputs.LayerCount);
                     if (image is not null)
                         linearVerifier?.Record(ref graphFrame, clusterOutputs.MaterialColor, graphicsQueue, linearOutputRegion);
                     using (EngineTrace.Begin(ApplicationTrace.TemporalRecording))

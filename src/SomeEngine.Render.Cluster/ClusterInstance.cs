@@ -29,7 +29,6 @@ public static class ClusterRenderFeature
 
     public static RenderInstancePropertyKey XrayKey { get; } = new("someengine.xray");
     public static RenderInstancePropertyKey DepthCacheClassKey { get; } = new("someengine.shadow.depth_cache_class");
-    public static RenderInstancePropertyKey FirstPersonKey { get; } = new("someengine.shadow.first_person");
 
     public const uint MissingBvhRoot = uint.MaxValue;
     public const uint MissingMaterialSlots = uint.MaxValue;
@@ -70,8 +69,6 @@ public static class ClusterRenderFeature
         _ = builder.Register<RenderDeformBounds>("SomeEngine.Render.Cluster", DeformBoundsKey,
             new("someengine.cluster.bounds.uint2.v1", valueSize: 8, storageAlignment: 4, storageStride: 8, metadataWordCount: 1));
         _ = builder.Register<uint>("SomeEngine.Render", DepthCacheClassKey, UInt32Encoding);
-        _ = builder.Register<FirstPersonMeshData>("SomeEngine.Render", FirstPersonKey,
-            new("someengine.render.first_person.v1", valueSize: 8, storageAlignment: 4, storageStride: 8, metadataWordCount: 1));
         _ = builder.Register<RenderXray>("SomeEngine.Render", XrayKey,
             new("someengine.render.xray.v1", valueSize: 48, storageAlignment: 4, storageStride: 48, metadataWordCount: 1));
         return builder.Freeze();

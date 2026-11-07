@@ -54,7 +54,7 @@ public sealed partial class ClusterPipelineSystem
         GraphBufferId base0, GraphBufferId base1, GraphBufferId base2, bool target,
         int phase, string label, GraphRegionId region)
     {
-        uint maximumViews = target ? _renderContext.MaximumInvocationCount : frame.ViewCount;
+        uint maximumViews = target ? _renderContext.MaximumInvocationCount : _outputDescription.ViewCount;
         ClusterComputePipeline traversal = _pipelines!.GetTraversal(target, maximumViews > 1u);
         GraphBufferSlice parameters = UploadUniform(ref graph,
             new ClusterTraversalLevelUniforms { MaxNodes = _options.MaxCandidates, TraversalMode = mode },

@@ -35,7 +35,7 @@ public sealed partial class ClusterPipelineSystem
         InstallLeafFlagFixups(ref graph);
         GraphData.PrimaryGeometry = graph.AddRegion("Cluster primary geometry work", _regions.PrimaryGeometry);
         GraphRegionId primaryTraversal = graph.AddRegion("Cluster primary traversal", GraphData.PrimaryGeometry);
-        RecordWorkSeed(ref graph, frame, frame.PackedViews, frame.ViewCount, 0u, "primary", primaryTraversal);
+        RecordWorkSeed(ref graph, frame, frame.PackedViews, output.ViewCount, 0u, "primary", primaryTraversal);
         RecordPersistentCull(ref graph, frame, frame.PackedViews, 0u, frame.DrawArgs,
             frame.ReadOffsetZero, frame.ReadOffsetZero, frame.ReadOffsetZero, false, 0, "primary", primaryTraversal);
         RasterPhase first = RecordRasterPhase(ref graph, frame, rasterBins, frame.DrawArgs,
@@ -66,7 +66,7 @@ public sealed partial class ClusterPipelineSystem
                 InstanceWorldBounds = GraphData.InstanceWorldBounds,
                 WorkStatus = frame.WorkStatus,
                 BoundsReady = GraphData.SceneBounds.Pass,
-            }, frame.Width, frame.Height, frame.ViewCount)
+            }, frame.Width, frame.Height, frame.LayerCount)
         {
             CurrentHiZ = frame.HiZ[0],
         };
@@ -513,7 +513,7 @@ public sealed partial class ClusterPipelineSystem
                 PolicyTarget = epoch >= 2 ? 1u : 0u,
                 ScreenWidth = checked((uint)frame.Width),
                 ScreenHeight = checked((uint)frame.Height),
-                ViewCount = frame.ViewCount,
+                ViewCount = frame.LayerCount,
                 BinnedEntriesPerCluster = frame.BinnedEntriesPerCluster,
                 DepthBucketsEnabled = frame.DepthBucketsEnabled ? 1u : 0u,
             },
@@ -1210,7 +1210,7 @@ public sealed partial class ClusterPipelineSystem
         GraphTextureId depthTarget = policyTarget
             ? frame.PolicyDepthScratch
             : frame.Depth;
-        uint targetLayers = policyTarget ? 1u : frame.ViewCount;
+        uint targetLayers = policyTarget ? 1u : frame.LayerCount;
         if (visibilityTarget == default || depthTarget == default)
         {
             throw new InvalidOperationException(
@@ -1390,7 +1390,7 @@ public sealed partial class ClusterPipelineSystem
                 0,
                 1,
                 0,
-                frame.ViewCount,
+                frame.LayerCount,
                 TextureAspects.Color),
             format: Format.R32UInt,
             dimension: TextureViewDimension.Texture2DArray,
@@ -1403,7 +1403,7 @@ public sealed partial class ClusterPipelineSystem
                 0,
                 1,
                 0,
-                frame.ViewCount,
+                frame.LayerCount,
                 TextureAspects.Depth),
             Format.D32Float,
             TextureViewDimension.Texture2DArray,
@@ -1418,7 +1418,7 @@ public sealed partial class ClusterPipelineSystem
             {
                 Width = checked((uint)frame.Width),
                 Height = checked((uint)frame.Height),
-                ViewCount = frame.ViewCount,
+                ViewCount = frame.LayerCount,
             },
             phaseOne
                 ? "Cluster phase one visibility winner resolve uniforms"
@@ -1518,7 +1518,7 @@ public sealed partial class ClusterPipelineSystem
         GraphTextureId depthTarget = policyTarget
             ? frame.PolicyDepthScratch
             : frame.Depth;
-        uint targetLayers = policyTarget ? 1u : frame.ViewCount;
+        uint targetLayers = policyTarget ? 1u : frame.LayerCount;
         if (fixedFunctionVisibility &&
             (visibilityTarget == default || depthTarget == default))
         {
@@ -1656,12 +1656,12 @@ public sealed partial class ClusterPipelineSystem
         int bindingCount = 0;
         AddBinding(ref bindingCount, GraphParameterResourceBinding.SampledTexture(
             CreateSampledTextureView(graph, frame.Depth, Format.D32Float,
-                new TextureSubresourceRange(0, 1, 0, frame.ViewCount, TextureAspects.Depth),
+                new TextureSubresourceRange(0, 1, 0, frame.LayerCount, TextureAspects.Depth),
                 TextureViewDimension.Texture2DArray), PipelineSync.ComputeShading));
         for (int mip = 0; mip < 5; mip++)
             AddBinding(ref bindingCount, GraphParameterResourceBinding.StorageTexture(
                 CreateStorageTextureView(graph, frame.CurrentHiZ, Format.R32Float,
-                    Mip(Math.Min(mip, mipCount - 1), frame.ViewCount), TextureViewDimension.Texture2DArray),
+                    Mip(Math.Min(mip, mipCount - 1), frame.LayerCount), TextureViewDimension.Texture2DArray),
                 PipelineSync.ComputeShading, outputAccess, outputCoverage));
 
         uint firstWidth = checked((uint)MipExtent(frame.Width, 4));
@@ -1683,12 +1683,12 @@ public sealed partial class ClusterPipelineSystem
             bindingCount = 0;
             AddBinding(ref bindingCount, GraphParameterResourceBinding.StorageTexture(
                 CreateStorageTextureView(graph, frame.CurrentHiZ, Format.R32Float,
-                    Mip(sourceMip, frame.ViewCount), TextureViewDimension.Texture2DArray),
+                    Mip(sourceMip, frame.LayerCount), TextureViewDimension.Texture2DArray),
                 PipelineSync.ComputeShading, GraphAccessMode.Read));
             for (int output = 0; output < outputCount; output++)
                 AddBinding(ref bindingCount, GraphParameterResourceBinding.StorageTexture(
                     CreateStorageTextureView(graph, frame.CurrentHiZ, Format.R32Float,
-                        Mip(Math.Min(sourceMip + 1 + output, mipCount - 1), frame.ViewCount),
+                        Mip(Math.Min(sourceMip + 1 + output, mipCount - 1), frame.LayerCount),
                         TextureViewDimension.Texture2DArray),
                     PipelineSync.ComputeShading, outputAccess, outputCoverage));
 
@@ -1809,7 +1809,7 @@ public sealed partial class ClusterPipelineSystem
                 ShadeBinCount = frame.ShadeBinCount,
                 SlotCapacity = frame.SlotCapacity,
                 BinItemCapacity = CalculateShadeBinItemCapacity(frame),
-                ViewCount = frame.ViewCount,
+                ViewCount = frame.LayerCount,
             },
             "Cluster shade bin uniforms");
         int bindingCount = 0;

@@ -212,7 +212,7 @@ bool IsOccludedByHiZ(ClusterScreenBounds bounds, bool usePrev, uint viewIndex, C
         return false;
     if (view.TargetPolicy != 0u)
         return ClusterTargetPolicyScreenBoundsOccluded(bounds.MinUv, bounds.MaxUv, bounds.NearDepth, usePrev, view, depthCacheClass);
-    float hizDepth = SampleHiZMax(HiZTexture, bounds.MinUv, bounds.MaxUv, bounds.MipLevel, viewIndex, view);
+    float hizDepth = SampleHiZMax(HiZTexture, bounds.MinUv, bounds.MaxUv, bounds.MipLevel, view.TargetViewIndex, view);
     float epsilon = (abs(bounds.NearDepth) + abs(hizDepth) + 1.0) * 9.5367431640625e-7;
     return bounds.NearDepth > hizDepth + epsilon;
 }
@@ -396,8 +396,7 @@ bool LoadAndFilterCandidate(
     viewIndex = DrawRequestViewIndex(candidate);
     view = LoadClusterCullView(Views, PolicyClusterViews, viewIndex, targetFilters);
     view = ApplyClusterInstanceBounds(MaterialBounds, InstanceData, InstanceProperties, instanceID, view);
-    if (!IsInstanceVisibleToView(LoadInstanceFirstPerson(InstanceData, InstanceProperties, instanceID), view)) return false;
-    view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, instanceID, view);
+
     if (view.TargetPolicy != 0u) AddClusterWorkMetric(8u, 1u);
 
     cluster = LoadCluster(pageOffset, clusterID);

@@ -235,7 +235,7 @@ public sealed partial class ClusterPipelineSystem
                     PolicyTarget = binning.PolicyTarget ? 1u : 0u,
                     ScreenWidth = checked((uint)GraphData.Resources.Width),
                     ScreenHeight = checked((uint)GraphData.Resources.Height),
-                    ViewCount = GraphData.Resources.ViewCount,
+                    ViewCount = GraphData.Resources.LayerCount,
                     BinnedEntriesPerCluster = GraphData.Resources.BinnedEntriesPerCluster,
                     DepthBucketsEnabled = GraphData.Resources.DepthBucketsEnabled ? 1u : 0u,
                 };

@@ -136,6 +136,13 @@ public sealed class SceneEdit
         ShadingPath = path;
     }
 
+    /// <summary>Selects the mesh instance sets traversed by the camera. An empty list selects all sets.</summary>
+    public void SetCameraInstanceSets(ReadOnlyMemory<uint> sets)
+    {
+        RequireAction();
+        _scene.InstanceSets = sets;
+    }
+
     public void SetWorldOrigin(WorldOrigin origin)
     {
         RequireAction();

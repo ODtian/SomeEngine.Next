@@ -75,6 +75,8 @@ public sealed partial class ClusterPipelineSystem
         internal GraphBufferId SceneChunks;
         internal GraphBufferId InstanceWorldBounds;
         internal GraphBufferId SceneInstanceData;
+        internal GraphBufferId SceneGroups;
+        internal GraphBufferInput SceneSelections = null!;
         internal GraphBufferInput SceneInstances = null!;
         internal GraphBufferSlice SceneUniforms;
         internal ImmutableDictionary<SomeEngine.Graphics.Buffer, MaterialBuffer> MaterialBuffers =

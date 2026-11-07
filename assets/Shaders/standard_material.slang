@@ -113,24 +113,15 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ITransparentS
         float3 B = cross(N_geom, T) * ctx.worldTangent.w; // handedness
         float3 mappedNormal = normalize(T * normalTS.x + B * normalTS.y + N_geom * normalTS.z);
 
-        ClusterViewUniforms cameraView = MaterialViews[input.PixelCoord.z];
-        float3 positionDx = TransformFirstPersonWorldPosition(MaterialInstanceData, MaterialInstanceProperties,
-            input.InstanceID, cameraView, ctx.surfacePosition + input.PositionDx);
-        float3 positionDy = TransformFirstPersonWorldPosition(MaterialInstanceData, MaterialInstanceProperties,
-            input.InstanceID, cameraView, ctx.surfacePosition + input.PositionDy);
-        ctx.surfacePosition = TransformFirstPersonWorldPosition(MaterialInstanceData, MaterialInstanceProperties,
-            input.InstanceID, cameraView, ctx.surfacePosition);
-        positionDx -= ctx.surfacePosition;
-        positionDy -= ctx.surfacePosition;
-        mappedNormal = TransformFirstPersonWorldNormal(MaterialInstanceData, MaterialInstanceProperties,
-            input.InstanceID, cameraView, mappedNormal);
-        N_geom = TransformFirstPersonWorldNormal(MaterialInstanceData, MaterialInstanceProperties,
-            input.InstanceID, cameraView, N_geom);
+        ctx.pixelCoord.z = input.ViewIndex;
+        ClusterViewUniforms cameraView = MaterialViews[input.ViewIndex];
+        float3 positionDx = input.PositionDx;
+        float3 positionDy = input.PositionDy;
         float3 baseColor = albedoSample.rgb * scalars.BaseColorTint.rgb;
         float roughness = saturate(armSample.g * scalars.Roughness);
         float metallic = saturate(armSample.b * scalars.MetallicFactor);
         roughness = max(roughness, 0.04);
-        MaterialDecalIterator decals = BeginMaterialDecals(input.PixelCoord, ctx.surfacePosition);
+        MaterialDecalIterator decals = BeginMaterialDecals(ctx.pixelCoord, ctx.surfacePosition);
         MaterialDecalInput decal;
         while (NextMaterialDecal(decals, ctx.surfacePosition, positionDx, positionDy, decal))
         {
@@ -150,14 +141,10 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ITransparentS
         float3 geometricNormal = SafeNormalize(cross(triangle.Position1 - triangle.Position0,
             triangle.Position2 - triangle.Position0), surface.Normal);
         if (dot(geometricNormal, surface.Normal) < 0.0) geometricNormal = -geometricNormal;
-        receiver.GeometricNormal = TransformFirstPersonWorldNormal(MaterialInstanceData, MaterialInstanceProperties,
-            input.InstanceID, cameraView, geometricNormal);
+        receiver.GeometricNormal = geometricNormal;
         receiver.Flags = SURFACE_RECEIVER_PRESENT | SURFACE_RECEIVER_LIGHTING;
-        if ((LoadInstanceFirstPerson(MaterialInstanceData, MaterialInstanceProperties, input.InstanceID).x & 3u) == 1u)
-            receiver.Flags |= SURFACE_RECEIVER_FIRST_PERSON;
         receiver.Depth = input.Depth;
-        ClusterViewUniforms surfaceView = ApplyFirstPersonViewTransform(MaterialInstanceData, MaterialInstanceProperties,
-            input.InstanceID, cameraView);
+        ClusterViewUniforms surfaceView = cameraView;
         float4 sourceClip = mul(float4(ClusterPositionForView(surface.Position, surfaceView), 1.0), surfaceView.ViewProj);
         receiver.DepthOffset = input.VisibilityDepth == 2u ? input.Depth - sourceClip.z / sourceClip.w : 0.0;
         float3 V = normalize(cameraView.CameraPos - ctx.surfacePosition);
@@ -286,10 +273,7 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ITransparentS
     void markShadowPages(SurfacePixelInput input, SurfaceEval surface, float3 bary, Triangle triangle)
     {
         float3 position = input.VisibilityDepth == 2u ? input.PositionFromDepth : surface.Position;
-        position = TransformFirstPersonWorldPosition(MaterialInstanceData, MaterialInstanceProperties, input.InstanceID,
-            MaterialViews[input.PixelCoord.z], position);
-        bool firstPerson = (LoadInstanceFirstPerson(MaterialInstanceData, MaterialInstanceProperties, input.InstanceID).x & 3u) == 1u;
-        MarkVirtualShadowPages(position, input.PixelCoord.z, firstPerson);
+        MarkVirtualShadowPages(position, input.ViewIndex);
     }
 
 };

@@ -25,6 +25,7 @@ public sealed class WorldAssetTests
             { Stretch = new(2, 3, 4), Scale = 0.75f };
             var entity = world.CreateEntity(new WorldTransform { Qvvs = transform });
             world.Add(entity, new MeshSource { Mesh = new(meshId), BoundsExpansion = 0.4f });
+            world.Add(entity, new InstanceSet(7));
             world.Add(entity, new MeshMotion { Amplitude = new(1, 2, 3), Seed = 73 });
             var cameraValue = new SceneCamera
             {
@@ -32,6 +33,12 @@ public sealed class WorldAssetTests
                 VerticalFieldOfView = 0.8f, NearPlane = 0.1f, FarPlane = 500,
             };
             var camera = world.CreateEntity(cameraValue);
+            world.AddBuffer<CameraInstanceSet>(camera);
+            world.ExecuteBufferWrite<CameraInstanceSet>(camera, buffer =>
+            {
+                buffer.Add(new(3));
+                buffer.Add(new(7));
+            });
             var directionalValue = new DirectionalLight(Vector3.UnitY, new(1, 0.5f, 0.25f), 3, 7);
             var pointValue = new PointLight(new(4, 5, 6), 20, Vector3.One, 2, 13);
             var spotValue = new SpotLight(new(7, 8, 9), 30, Vector3.UnitZ, 0.9f, 0.8f, Vector3.One, 5, 19);
@@ -60,6 +67,9 @@ public sealed class WorldAssetTests
             Assert.Equal(transform.Scale, actual.Scale);
             Assert.Equal(meshId, loaded.Read<MeshSource>(entity).Mesh.Value);
             Assert.Equal(0.4f, loaded.Read<MeshSource>(entity).BoundsExpansion);
+            Assert.Equal(7u, loaded.Read<InstanceSet>(entity).Value);
+            loaded.ExecuteBufferRead<CameraInstanceSet>(camera, buffer =>
+                Assert.Equal(new CameraInstanceSet[] { new(3), new(7) }, buffer.AsSpan().ToArray()));
             Assert.Equal(73u, loaded.Read<MeshMotion>(entity).Seed);
             Assert.Equal(new Vector3(1, 2, 3), loaded.Read<MeshMotion>(entity).Amplitude);
             Assert.Equal(cameraValue.Position, loaded.Read<SceneCamera>(camera).Position);

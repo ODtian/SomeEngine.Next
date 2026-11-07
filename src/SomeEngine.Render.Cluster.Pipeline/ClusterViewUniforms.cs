@@ -56,13 +56,10 @@ internal struct ClusterViewUniforms
     internal float PreviousOriginHighPadding;
     internal Vector3 PreviousWorldOriginLow;
     internal float PreviousOriginLowPadding;
-    internal uint PlayerId;
-    internal RenderViewFamily Family;
-    internal uint FirstPersonTransformEnabled;
     internal uint DepthClipEnabled;
-    internal Matrix4x4 WorldToFirstPerson;
-    internal Matrix4x4 FirstPersonToWorld;
-    internal Matrix4x4 PreviousWorldToFirstPerson;
+    internal uint InstanceSelectionOffset;
+    internal uint InstanceSelectionCount;
+    private uint ViewPadding1;
     internal Vector3 WorldTranslation;
     private float WorldTranslationPadding;
     internal Vector3 PreviousWorldTranslation;
@@ -101,8 +98,6 @@ internal struct ClusterViewUniforms
             throw new ArgumentException("The render-view projection must be invertible.", nameof(source));
         cameraPosition += source.WorldOrigin.RelativeTo(dataOrigin);
         viewOrigin.Split(out Vector3 originHigh, out Vector3 originLow);
-        Matrix4x4 firstPersonTransform = source.FirstPerson?.CalculateWorldToFirstPerson(source.View) ?? Matrix4x4.Identity;
-        Matrix4x4.Invert(firstPersonTransform, out Matrix4x4 firstPersonInverse);
         if (!IsFinite(viewProjection)
             || !IsFinite(cameraPosition))
         {
@@ -147,12 +142,6 @@ internal struct ClusterViewUniforms
             WorldOriginLow = originLow,
             PreviousWorldOriginHigh = originHigh,
             PreviousWorldOriginLow = originLow,
-            PlayerId = source.PlayerId,
-            Family = source.Family,
-            FirstPersonTransformEnabled = source.FirstPerson.HasValue ? 1u : 0u,
-            WorldToFirstPerson = firstPersonTransform,
-            FirstPersonToWorld = firstPersonInverse,
-            PreviousWorldToFirstPerson = firstPersonTransform,
             WorldTranslation = worldTranslation,
             PreviousWorldTranslation = worldTranslation,
         };
@@ -175,7 +164,6 @@ internal struct ClusterViewUniforms
         PrevP11 = P11;
         PreviousWorldOriginHigh = WorldOriginHigh;
         PreviousWorldOriginLow = WorldOriginLow;
-        PreviousWorldToFirstPerson = WorldToFirstPerson;
         PreviousWorldTranslation = WorldTranslation;
         PreviousDataTranslation = default;
     }

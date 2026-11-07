@@ -113,5 +113,4 @@ public static class VirtualShadowViewFlags
     public const uint DistantLight = 1u << 8;
     public const uint CachedDistantLight = 1u << 9;
     public const uint PrefilteredDistant = 1u << 10;
-    public const uint FirstPersonShadow = 1u << 11;
 }

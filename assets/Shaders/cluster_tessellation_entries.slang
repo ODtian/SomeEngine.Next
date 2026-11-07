@@ -133,7 +133,7 @@ ClusterRasterPixelInput<VisibilityEvaluate.Varying> ClusterTessellationHardwareV
         TessellationViews,
         TessellationPolicyViews,
         viewIndex);
-    view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, VisibleClusterRequest(TessellationVisibleClusters[patch.VisibleClusterIndex]).InstanceID, view);
+
     output.Pos = mul(float4(ClusterPositionForView(position, view), 1.0), view.ViewProj);
     output.ClipDepth = CalculateClusterRasterDepthInput(position, output.Pos, view);
     output.Pos = ClusterHardwareRasterPosition(output.Pos, patch.VisibleClusterIndex, view,
@@ -195,7 +195,7 @@ void ClusterTessellationHardwareMesh(
     SetMeshOutputCounts(vertexCount, triangleCount);
     uint viewIndex = DrawRequestViewIndex(TessellationVisibleClusters[patch.VisibleClusterIndex]);
     ClusterViewUniforms view = LoadClusterView(TessellationViews, TessellationPolicyViews, viewIndex);
-    view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, VisibleClusterRequest(TessellationVisibleClusters[patch.VisibleClusterIndex]).InstanceID, view);
+
     for (uint index = lane; index < vertexCount; index += 32u)
     {
         float3 localBary = TessellationGridBarycentric(factor, TessellationPatchEdgeFactors(patch), index);
@@ -245,7 +245,7 @@ ClusterTessellationHardwareOutput EvaluateClusterTessellationHardwarePixel(
     if (!ClusterRasterQuadAcceptsPixel(accepted))
         discard;
     VisibilityPixelInput pixelInput;
-    pixelInput.PixelCoord = uint3(uint2(input.Pos.xy), input.ViewIndex);
+    pixelInput.PixelCoord = uint3(uint2(input.Pos.xy), view.TargetViewIndex);
     float rasterDepth = ReadClusterRasterDepth(input.Pos, input.ClipDepth, view);
     pixelInput.Depth = ClusterRasterMaterialDepth(rasterDepth, view.TargetPolicy);
     pixelInput.EncodedDepth = EncodeClusterRasterDepth(rasterDepth, view.TargetPolicy);

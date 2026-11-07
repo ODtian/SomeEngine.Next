@@ -19,9 +19,7 @@ struct VirtualShadowPageDemandUniforms
     float PageDilationBorderPages;
     float NormalBias;
     uint CullBackfacingPixels;
-    float FirstPersonPixelRequestBias;
-    int FirstPersonPixelRequestMinLevel;
-    uint2 Padding;
+    uint4 Padding;
     VirtualShadowReceiverProjection ReceiverProjection;
 };
 
@@ -226,22 +224,17 @@ void PublishLocalShadowPosition(float3 worldPosition, uint viewIndex, float dyna
 }
 
 void PublishDirectionalShadowPosition(uint baseViewIndex, VirtualShadowMapParameters baseView,
-    float3 worldPosition, float dynamicResolutionBias, bool firstPerson)
+    float3 worldPosition, float dynamicResolutionBias)
 {
-    if (firstPerson && (PageDemand.FirstPersonPixelRequestBias < 0.0 ||
-        (baseView.Flags & VSM_VIEW_FIRST_PERSON_SHADOW) != 0u)) return;
     uint relativeLevel = CalculateDirectionalVirtualShadowBiasedLevel(ShadowViews, baseViewIndex,
         baseView.ClipmapLevelCount, worldPosition, dynamicResolutionBias,
-        CalculateVirtualShadowReceiverResolutionBias(PageDemand.ReceiverProjection, worldPosition) +
-            (firstPerson ? PageDemand.FirstPersonPixelRequestBias : 0.0));
-    if (firstPerson)
-        relativeLevel = max(relativeLevel, uint(max(PageDemand.FirstPersonPixelRequestMinLevel - baseView.FirstClipmapLevel, 0)));
+        CalculateVirtualShadowReceiverResolutionBias(PageDemand.ReceiverProjection, worldPosition));
     if (relativeLevel < baseView.ClipmapLevelCount && baseViewIndex + relativeLevel < PageDemand.ViewCount)
         PublishProjectedShadowView(baseViewIndex + relativeLevel, 0u, worldPosition);
 }
 
 // Position production belongs to the caller; requests use the supplied world position.
-void MarkVirtualShadowPages(float3 worldPosition, uint viewIndex, bool firstPerson = false)
+void MarkVirtualShadowPages(float3 worldPosition, uint viewIndex)
 {
     float dynamicResolutionBias = DynamicResolutionBias[0];
     for (uint baseViewIndex = 0u, familyLevels = 1u; baseViewIndex < PageDemand.ViewCount; baseViewIndex += familyLevels)
@@ -250,10 +243,9 @@ void MarkVirtualShadowPages(float3 worldPosition, uint viewIndex, bool firstPers
         VirtualShadowMapParameters baseView = ShadowViews[baseViewIndex];
         if (baseView.LightKind != VSM_LIGHT_DIRECTIONAL || baseView.FaceIndex != 0u) continue;
         familyLevels = baseView.ClipmapLevelCount;
-        PublishDirectionalShadowPosition(baseViewIndex, baseView, worldPosition, dynamicResolutionBias, firstPerson);
+        PublishDirectionalShadowPosition(baseViewIndex, baseView, worldPosition, dynamicResolutionBias);
     }
-    if (!firstPerson || PageDemand.FirstPersonPixelRequestBias >= 0.0)
-        PublishLocalShadowPosition(worldPosition, viewIndex, dynamicResolutionBias);
+    PublishLocalShadowPosition(worldPosition, viewIndex, dynamicResolutionBias);
 }
 
 #endif

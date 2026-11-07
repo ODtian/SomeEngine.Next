@@ -76,7 +76,7 @@ PSInput VSMain(uint vertexID: SV_VertexID, uint instanceID: SV_InstanceID)
         HardwareRasterViews,
         HardwareRasterPolicyViews,
         viewIndex);
-    view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, realInstanceID, view);
+
     output.Pos = mul(
         float4(ClusterPositionForView(eval.getPosition(vertex), view), 1.0),
         view.ViewProj);

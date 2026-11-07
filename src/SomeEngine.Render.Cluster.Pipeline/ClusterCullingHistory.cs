@@ -16,10 +16,6 @@ internal sealed class ClusterCullingHistory
     private readonly Matrix4x4[] _pendingViews;
     private readonly Matrix4x4[] _pendingProjections;
     private readonly WorldOrigin[] _previousOrigins;
-    private readonly FirstPersonCamera?[] _previousFirstPerson;
-    private readonly FirstPersonCamera?[] _frameFirstPerson;
-    private readonly uint[] _previousPlayers;
-    private readonly uint[] _framePlayers;
     private readonly WorldOrigin[] _frameOrigins;
     private readonly Entity[] _previousViewEntities;
     private readonly Entity[] _pendingViewEntities;
@@ -37,10 +33,6 @@ internal sealed class ClusterCullingHistory
         _pendingViews = new Matrix4x4[count];
         _pendingProjections = new Matrix4x4[count];
         _previousOrigins = new WorldOrigin[count];
-        _previousFirstPerson = new FirstPersonCamera?[count];
-        _frameFirstPerson = new FirstPersonCamera?[count];
-        _previousPlayers = new uint[count];
-        _framePlayers = new uint[count];
         _frameOrigins = new WorldOrigin[count];
         _previousViewEntities = new Entity[count];
         _pendingViewEntities = new Entity[count];
@@ -63,15 +55,12 @@ internal sealed class ClusterCullingHistory
         {
             ref readonly RenderView view = ref views[index];
             _usePreviousView[index] = _hasPreviousView[index] && !view.CameraCut &&
-                identities[index] != Entity.Null && identities[index] == _previousViewEntities[index] &&
-                view.PlayerId == _previousPlayers[index];
+                identities[index] != Entity.Null && identities[index] == _previousViewEntities[index];
 
             _pendingViews[index] = view.View;
             _pendingProjections[index] = view.Projection;
             _pendingViewEntities[index] = identities[index];
             _frameOrigins[index] = view.WorldOrigin;
-            _frameFirstPerson[index] = view.FirstPerson;
-            _framePlayers[index] = view.PlayerId;
         }
         for (int index = views.Length; index < _hasPreviousView.Length; index++)
             _usePreviousView[index] = false;
@@ -99,8 +88,6 @@ internal sealed class ClusterCullingHistory
         return true;
     }
 
-    internal Matrix4x4 PreviousFirstPersonTransform(int viewIndex) =>
-        _previousFirstPerson[viewIndex]?.CalculateWorldToFirstPerson(_previousViews[viewIndex]) ?? Matrix4x4.Identity;
 
     internal void FinishFrame(bool currentHiZWritten)
     {
@@ -112,8 +99,6 @@ internal sealed class ClusterCullingHistory
             _previousProjections[index] = _pendingProjections[index];
             _previousViewEntities[index] = _pendingViewEntities[index];
             _previousOrigins[index] = _frameOrigins[index];
-            _previousFirstPerson[index] = _frameFirstPerson[index];
-            _previousPlayers[index] = _framePlayers[index];
             _hasPreviousView[index] = _pendingViewEntities[index] != Entity.Null;
         }
         for (int index = _pendingViewCount; index < _hasPreviousView.Length; index++)
@@ -135,8 +120,6 @@ internal sealed class ClusterCullingHistory
         Array.Clear(_pendingProjections);
         Array.Clear(_pendingViewEntities);
         Array.Clear(_frameOrigins);
-        Array.Clear(_frameFirstPerson);
-        Array.Clear(_framePlayers);
         Array.Clear(_usePreviousView);
         _pendingViewCount = 0;
         _pending = false;

@@ -33,9 +33,7 @@ public struct VirtualShadowPageDemandUniforms
     public float PageDilationBorderPages;
     public float NormalBias;
     public uint CullBackfacingPixels;
-    public float FirstPersonPixelRequestBias;
-    public int FirstPersonPixelRequestMinLevel;
-    private uint _padding0, _padding1;
+    private uint _padding0, _padding1, _padding2, _padding3;
     public VirtualShadowReceiverProjection ReceiverProjection;
 }
 
@@ -155,7 +153,7 @@ public struct VirtualShadowSamplingUniforms
     public float MaxFilterRadiusTexels;
     public float NormalBias;
     public uint FrameIndex;
-    public uint FirstPersonViewOffset;
+    private uint _samplingPadding;
     public VirtualShadowReceiverProjection ReceiverProjection;
     public VirtualShadowRaySettings DirectionalRays;
     public VirtualShadowRaySettings LocalRays;

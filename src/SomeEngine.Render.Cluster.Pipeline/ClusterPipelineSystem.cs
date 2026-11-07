@@ -332,7 +332,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         {
             view = context.World.Query(new QueryDefinitionBuilder().Read<RenderView>());
             _viewQuery = view;
-            _sceneQuery = context.World.Query(_instances.EntityQuery);
+            _sceneQuery = context.World.Query(_instances.EntityQuery.WithOptionalRead<InstanceSet>());
             EnsurePipelineResources();
             _decalWorld = context.World;
             _decalQuery = context.World.Query(new QueryDefinitionBuilder().Read<RenderMaterialDecal>().Read<RenderTransform>());
@@ -385,6 +385,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             throw new InvalidOperationException("The Cluster graph has been uninstalled.");
         ClusterMaterialAssignmentSet sourceAssignments = _materialAssignments.Current;
         ClusterMaterialAssignmentSet assignments = sourceAssignments.ChangesSince(_consumedMaterialAssignments);
+        ReconcileSceneGroups();
         bool decalResourcesChanged = UpdateMaterialDecals();
         if (_graphInstalled && _resources.GeometryPageCount > GraphData.Resources.PagePriorityCapacity)
             EditGraph((ref RenderGraphEdit edit) => GrowPageRequestPriorities(ref edit));
@@ -633,7 +634,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                     : 0u;
                 packedViews[viewIndex].TargetViewIndex = isTargetView
                     ? _stagedPolicyViewIndices[viewIndex]
-                    : checked((uint)viewIndex);
+                    : views[viewIndex].OutputLayer ?? checked((uint)viewIndex);
                 if (!isTargetView && history.TryGetPrevious(
                         viewIndex,
                         out Matrix4x4 previousView,
@@ -655,7 +656,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                         1.0f / _outputDescription.Width,
                         1.0f / _outputDescription.Height);
                     uniforms.PrevView = previousNearView;
-                    uniforms.PreviousWorldToFirstPerson = history.PreviousFirstPersonTransform(viewIndex);
                     uniforms.PrevP00 = previousProjection.M11;
                     uniforms.PrevP11 = previousProjection.M22;
                     previousViewOrigin.Split(out uniforms.PreviousWorldOriginHigh, out uniforms.PreviousWorldOriginLow);
@@ -687,6 +687,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             graph.SetReadbackTag(GraphData.PageFaultReadback, graph.FrameIdentity);
             if (_options.EnableFrameMetricsReadback)
                 graph.SetReadbackTag(GraphData.FrameMetricsReadback, binding.ReadbackEpoch.Value);
+            BindSceneSelections(ref graph, views, packedViews);
             int policyViewCount = views.Length - primaryViewCount;
             _framePolicyViews = policyViewCount == 0
                 ? new GraphBufferSlice(GraphData.Resources.PackedViews, BufferRange.Whole)
@@ -705,7 +706,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                     history);
             _instanceDataTransfer!.Stage(ref graph, batch, binding.InstanceData);
             using (SomeEngine.Diagnostics.EngineTrace.Begin(SceneBoundsTrace))
-                BindSceneBounds(ref graph, context.World, batch, policyViewCount != 0, views[0].WorldOrigin);
+                BindSceneBounds(ref graph, batch, policyViewCount != 0, views[0].WorldOrigin);
             using (SomeEngine.Diagnostics.EngineTrace.Begin(ResidencyUploadsTrace))
                 RecordResidencyUploads(ref graph, in binding, writeGeometry);
             using (SomeEngine.Diagnostics.EngineTrace.Begin(ResidencyReadsTrace))
@@ -733,7 +734,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             graph.SetPassData(
                 GraphData.PrimarySeed.Pass,
                 new ClusterDispatchParameters(new DispatchArguments(
-                    checked((checked((uint)binding.DispatchExtent) + 63u) / 64u),
+                    CurrentInstanceGroupCount,
                     Math.Min(viewGroups, 65535u),
                     Math.Max(1u, (viewGroups + 65534u) / 65535u))));
             foreach (ClusterLayerDispatch dispatch in GraphData.LayerDispatches)
@@ -743,7 +744,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                     new ClusterDispatchParameters(new DispatchArguments(
                         dispatch.GroupX,
                         dispatch.GroupY,
-                        checked((uint)primaryViewCount))));
+                        _outputDescription.LayerCount)));
             }
             foreach (ClusterLayerDispatch dispatch in GraphData.WinnerDispatches)
             {
@@ -752,7 +753,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                     new ClusterFullscreenParameters(
                         _outputDescription.Width,
                         _outputDescription.Height,
-                        checked((uint)primaryViewCount)));
+                        _outputDescription.LayerCount));
             }
             bool initializeHistory = history.RequiresInitialization;
             graph.SetRegionEnabled(GraphData.HistoryInitialization, initializeHistory);
@@ -939,6 +940,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
                     GraphData.BufferWrites = GraphData.BufferWrites.Remove(buffer);
             if (result.TryGetPassCompletion(GraphData.SceneBounds.Pass, out _))
             {
+                _sceneGroupsChanged = false;
                 _sceneBatch = CurrentInstances;
                 _sceneInstanceRevision = _sceneBatch?.ContentRevision ?? 0;
                 _sceneGeometryRevision = GeometryRevision;

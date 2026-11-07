@@ -889,7 +889,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                 receiverView,
                 0,
                 0,
-                instanceCount, _geometry.HasFirstPersonWorldMeshes(), ReceiverMaskColumns);
+                instanceCount, ReceiverMaskColumns);
             _viewCount = views.Length;
             _frameBaseShadowBias = new float[views.Length];
             for (int index = 0; index < views.Length; index++) _frameBaseShadowBias[index] = views[index].ResolutionLodBias;
@@ -980,7 +980,6 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                     MaxSlopeBias = _shadowMap.Settings.LocalMaxSlopeBias,
                 },
                 ReceiverProjection = receiverProjection,
-                FirstPersonViewOffset = _shadowMap.FirstPersonViewOffset,
             };
             _uniformData.Write(ref graph, _frameSamplingUniforms, in sampling);
             _geometry.StageViews([receiverView], identities: [receiver]);
@@ -1243,8 +1242,6 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
                 lights.Directional.Count + lights.Points.Count)),
             SpotViewOffset = _shadowMap.PendingSpotViewOffset,
             CullBackfacingPixels = _shadowMap.Settings.CullBackfacingPixels ? 1u : 0u,
-            FirstPersonPixelRequestBias = _shadowMap.Settings.FirstPersonPixelRequestBias,
-            FirstPersonPixelRequestMinLevel = _shadowMap.Settings.FirstPersonPixelRequestMinLevel,
             FrameIndex = _frameIndex,
             PageDilationBorderPages = (float)(
                 Math.Max(
@@ -1318,7 +1315,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
             PageHiZMipCount = checked((uint)(
                 BitOperations.Log2(Math.Max(_shadowMap.Settings.PageSize / 2u, 1u)) + 1)),
             PhysicalPagesPerRow = _shadowMap.Settings.PhysicalPagesPerRow,
-            InstanceGroupCount = DivideRoundUp(checked((uint)instanceCount), 64u),
+            InstanceGroupCount = _geometry.CurrentInstanceGroupCount,
             HasPreviousHistory = _frameHasPreviousHistory ? 1u : 0u,
             StaticHiZLayerOffset = PageHiZStaticLayerOffset,
             WorkFeedbackEnabled = _qualityReadbacks is not null ? 3u : (_shadowMap.Settings.WorkThrottlingEnabled ? 1u : 0u),
