@@ -78,7 +78,7 @@ public sealed class TileRendering : IRenderGraphFrameExecutionObserver
         BufferDesc counts = new((ulong)tiles * 4u, counted, "Tile counts");
         BufferDesc references = new((ulong)description.ReferenceCapacity * 4u, storage, "Tile references");
         BufferDesc triangleCount = new(20, counted, "Tile triangle count");
-        BufferDesc arguments = new(172, storage | BufferUsages.Indirect, "Tile arguments");
+        BufferDesc arguments = new(184, storage | BufferUsages.Indirect, "Tile arguments");
         Triangles = edit.CreatePersistentBuffer(triangles);
         _buffers.Add("TransparencyTriangles", (Triangles, description.TriangleStride));
         _buffers.Add("TransparencyRasterTriangles", (Triangles, description.TriangleStride));
@@ -159,7 +159,7 @@ public sealed class TileRendering : IRenderGraphFrameExecutionObserver
         AddBuild(ref edit, "BuildTransparentGeometry", 0, true, 0);
         if (!pixelLists)
         {
-            AddBuild(ref edit, "CountTransparentCells", 0, true, 36);
+            AddBuild(ref edit, "CountTransparentCells", 0, true, 172);
             AddBuild(ref edit, "ReserveTransparentCells", tiles);
             if (hardwareBinning)
             {
@@ -168,7 +168,7 @@ public sealed class TileRendering : IRenderGraphFrameExecutionObserver
                 AddBuild(ref edit, "ReserveTransparentCells", tiles, region:Coverage);
                 AddBuild(ref edit, "ScatterTransparentHardwareCells", 0, true, 124, Coverage);
             }
-            else AddBuild(ref edit, "ScatterTransparentCells", 0, true, 36);
+            else AddBuild(ref edit, "ScatterTransparentCells", 0, true, 172);
             if (splitSorting)
             {
                 AddBuild(ref edit, "PrepareTransparentCells", 0, true, 60, hardwareBinning ? Coverage : Geometry);

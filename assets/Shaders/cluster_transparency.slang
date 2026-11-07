@@ -165,6 +165,7 @@ void ClearTransparency(uint3 thread)
         TransparencyDispatch(12u, count);
         TransparencyDispatch(36u, 0u);
         WriteTransparencyDispatch(160u, uint3(0u, 1u, 1u));
+        WriteTransparencyDispatch(172u, uint3(0u, 1u, 1u));
     }
 }
 
@@ -353,7 +354,9 @@ void BuildTransparency<TMaterials : ITransparencyMaterials>(uniform TMaterials m
         if (WaveIsFirstLane())
         {
             TransparencyTriangleCount.InterlockedAdd(0u,emitted,index);
-            ExtendTransparencyDispatch(36u, (min(index + emitted, TransparencyUniforms.TriangleCapacity) + 63u) / 64u);
+            uint triangles = min(index + emitted, TransparencyUniforms.TriangleCapacity);
+            ExtendTransparencyDispatch(36u, (triangles + 63u) / 64u);
+            ExtendTransparencyDispatch(172u, max(min(triangles, 64u), (triangles + 63u) / 64u));
         }
         index = WaveReadLaneFirst(index) + WavePrefixCountBits(true);
         if (index < TransparencyUniforms.TriangleCapacity)
@@ -385,54 +388,93 @@ void BuildTransparency<TMaterials : ITransparencyMaterials>(uniform TMaterials m
     }
 }
 
-void CountTransparencyCells(uint3 thread)
+struct TransparencyPrimitiveCells
 {
-    uint index = TransparencyWork(thread);
-    bool reproject = TransparencyTriangleCount.Load(0u) > TransparencyUniforms.TriangleCapacity;
-    uint count = TransparencyTriangleCount.Load(reproject ? 16u : 0u);
-    if (index >= count || (reproject && count > TransparencyUniforms.TriangleCapacity)) return;
-    uint3 minimum, maximum;
-    uint view;
+    uint3 Minimum, Maximum;
+    uint View, Reference;
+};
+
+groupshared TransparencyPrimitiveCells TransparencyGroupCells;
+groupshared uint TransparencyGroupFirstAssociation;
+
+TransparencyPrimitiveCells ReadTransparencyCellRange(uint index, bool reproject)
+{
+    TransparencyPrimitiveCells cells;
     if (reproject)
     {
         TransparencySourceBounds source = TransparencyProjectedSources[index];
-        minimum = source.Minimum; maximum = source.Maximum;
-        view = DrawRequestViewIndex(TransparencySourceRequest(source.Source));
+        cells.Minimum = source.Minimum; cells.Maximum = source.Maximum;
+        cells.View = DrawRequestViewIndex(TransparencySourceRequest(source.Source));
+        cells.Reference = source.Source;
     }
     else
     {
         TransparencyTriangle triangle = TransparencyRasterTriangles[index];
-        TransparencyCellBounds(triangle, minimum, maximum);
-        view = triangle.View;
+        TransparencyCellBounds(triangle, cells.Minimum, cells.Maximum);
+        cells.View = triangle.View;
+        cells.Reference = index;
     }
+    return cells;
+}
+
+uint ReserveTransparencyCoverageRange(uint index, TransparencyPrimitiveCells cells)
+{
+    uint width = cells.Maximum.x - cells.Minimum.x + 1u, first;
+    TransparencyCellWork.InterlockedAdd(8u, width * (cells.Maximum.y - cells.Minimum.y + 1u), first);
+    TransparencyCoverageRanges[index] = uint4(first, cells.Minimum.xy, width);
+    return first;
+}
+
+void CountTransparencyCells(uint3 group, uint thread)
+{
+    uint index = group.x + group.y * 65535u;
+    bool reproject = TransparencyTriangleCount.Load(0u) > TransparencyUniforms.TriangleCapacity;
+    uint count = TransparencyTriangleCount.Load(reproject ? 16u : 0u);
+    uint cellStep = count <= 64u ? 64u : 1u;
+    uint firstCell = cellStep == 64u ? thread : 0u;
+    if (cellStep == 1u) index = index * 64u + thread;
+    if (index >= count || (reproject && count > TransparencyUniforms.TriangleCapacity)) return;
+    TransparencyPrimitiveCells cells;
+    if (cellStep == 64u)
+    {
+        if (thread == 0u)
+        {
+            TransparencyGroupCells = ReadTransparencyCellRange(index, reproject);
+            if (TransparencyUniforms.UseIndex == 3u && !reproject)
+                TransparencyGroupFirstAssociation = ReserveTransparencyCoverageRange(index, TransparencyGroupCells);
+        }
+        GroupMemoryBarrierWithGroupSync();
+        cells = TransparencyGroupCells;
+    }
+    else cells = ReadTransparencyCellRange(index, reproject);
+    uint3 size = cells.Maximum - cells.Minimum + 1u;
     if (TransparencyUniforms.UseIndex == 3u && !reproject)
     {
-        uint width = maximum.x - minimum.x + 1u, first;
-        TransparencyCellWork.InterlockedAdd(8u, width * (maximum.y - minimum.y + 1u), first);
-        TransparencyCoverageRanges[index] = uint4(first, minimum.xy, width);
+        uint first;
+        if (cellStep == 64u) first = TransparencyGroupFirstAssociation;
+        else first = ReserveTransparencyCoverageRange(index, cells);
         if ((TransparencyUniforms.Effects & 8u) != 0u)
         {
-            ClusteredLightGridParameters grid = TransparencyLightingViews[view];
-            for (uint y = minimum.y; y <= maximum.y; y++)
-            for (uint x = minimum.x; x <= maximum.x; x++)
+            ClusteredLightGridParameters grid = TransparencyLightingViews[cells.View];
+            for (uint cellIndex = firstCell; cellIndex < size.x * size.y; cellIndex += cellStep)
             {
-                uint association = first + (y - minimum.y) * width + x - minimum.x;
-                uint tile = view * grid.TileCountX * grid.TileCountY + y * grid.TileCountX + x;
-                TransparencyHardwareAssociations[association] = uint2(index,tile);
+                uint2 coordinate = cells.Minimum.xy + uint2(cellIndex % size.x, cellIndex / size.x);
+                uint tile = cells.View * grid.TileCountX * grid.TileCountY + coordinate.y * grid.TileCountX + coordinate.x;
+                TransparencyHardwareAssociations[first + cellIndex] = uint2(index,tile);
             }
             return;
         }
     }
     if (TransparencyUniforms.UseIndex == 0u)
     {
-        InterlockedAdd(TransparencyTileCounts[0], 1u);
+        if (firstCell == 0u) InterlockedAdd(TransparencyTileCounts[0], 1u);
         return;
     }
-    for (uint z = minimum.z; z <= maximum.z; z++)
-    for (uint y = minimum.y; y <= maximum.y; y++)
-    for (uint x = minimum.x; x <= maximum.x; x++)
+    for (uint cellIndex = firstCell; cellIndex < size.x * size.y * size.z; cellIndex += cellStep)
     {
-        uint cell = TransparencyCell(view, uint3(x, y, z));
+        uint row = cellIndex / size.x;
+        uint3 coordinate = cells.Minimum + uint3(cellIndex % size.x, row % size.y, row / size.y);
+        uint cell = TransparencyCell(cells.View, coordinate);
         uint previous;
         InterlockedAdd(TransparencyTileCounts[cell], 1u, previous);
         if (previous == 0u)
@@ -440,8 +482,8 @@ void CountTransparencyCells(uint3 thread)
             uint job;
             TransparencyCellWork.InterlockedAdd(0u, 1u, job);
             TransparencyCellWork.Store(16u + job * 4u, cell);
-            ClusteredLightGridParameters grid = TransparencyLightingViews[view];
-            uint tile = view * grid.TileCountX * grid.TileCountY + y * grid.TileCountX + x;
+            ClusteredLightGridParameters grid = TransparencyLightingViews[cells.View];
+            uint tile = cells.View * grid.TileCountX * grid.TileCountY + coordinate.y * grid.TileCountX + coordinate.x;
             uint occupied;
             InterlockedAdd(TransparencyTileCounts[TransparencyUniforms.CellCount + tile], 1u, occupied);
             if (occupied == 0u)
@@ -460,6 +502,9 @@ void ReserveTransparency(uint3 thread)
         bool reproject = TransparencyTriangleCount.Load(0u) > TransparencyUniforms.TriangleCapacity;
         uint count = TransparencyTriangleCount.Load(reproject ? 16u : 0u);
         TransparencyDispatch(36u, min(count, TransparencyUniforms.TriangleCapacity));
+        uint cellGroups = min(count, TransparencyUniforms.TriangleCapacity);
+        if (count > 64u) cellGroups = (cellGroups + 63u) / 64u;
+        WriteTransparencyDispatch(172u, uint3(min(cellGroups, 65535u), (cellGroups + 65534u) / 65535u, 1u));
         uint3 groups = uint3((TransparencyUniforms.Width + 15u) / 16u,
             (TransparencyUniforms.Height + 15u) / 16u, TransparencyUniforms.ViewCount);
         WriteTransparencyDispatch(24u, reproject ? 0u.xxx : groups);
@@ -498,38 +543,34 @@ void ReserveTransparency(uint3 thread)
     }
 }
 
-void ScatterTransparency(uint3 thread)
+void ScatterTransparency(uint3 group, uint thread)
 {
-    uint index = TransparencyWork(thread);
+    uint index = group.x + group.y * 65535u;
     if (TransparencyUniforms.UseIndex == 0u) return;
     bool reproject = TransparencyTriangleCount.Load(0u) > TransparencyUniforms.TriangleCapacity;
     uint count = TransparencyTriangleCount.Load(reproject ? 16u : 0u);
+    uint cellStep = count <= 64u ? 64u : 1u;
+    uint firstCell = cellStep == 64u ? thread : 0u;
+    if (cellStep == 1u) index = index * 64u + thread;
     if (index >= count || (reproject && count > TransparencyUniforms.TriangleCapacity)) return;
-    uint3 minimum, maximum;
-    uint view, value;
-    if (reproject)
+    TransparencyPrimitiveCells cells;
+    if (cellStep == 64u)
     {
-        TransparencySourceBounds source = TransparencyProjectedSources[index];
-        minimum = source.Minimum; maximum = source.Maximum;
-        view = DrawRequestViewIndex(TransparencySourceRequest(source.Source));
-        value = source.Source;
+        if (thread == 0u) TransparencyGroupCells = ReadTransparencyCellRange(index, reproject);
+        GroupMemoryBarrierWithGroupSync();
+        cells = TransparencyGroupCells;
     }
-    else
+    else cells = ReadTransparencyCellRange(index, reproject);
+    uint3 size = cells.Maximum - cells.Minimum + 1u;
+    for (uint cellIndex = firstCell; cellIndex < size.x * size.y * size.z; cellIndex += cellStep)
     {
-        TransparencyTriangle triangle = TransparencyRasterTriangles[index];
-        TransparencyCellBounds(triangle, minimum, maximum);
-        view = triangle.View;
-        value = index;
-    }
-    for (uint z = minimum.z; z <= maximum.z; z++)
-    for (uint y = minimum.y; y <= maximum.y; y++)
-    for (uint x = minimum.x; x <= maximum.x; x++)
-    {
-        uint cell = TransparencyCell(view, uint3(x, y, z));
+        uint row = cellIndex / size.x;
+        uint3 coordinate = cells.Minimum + uint3(cellIndex % size.x, row % size.y, row / size.y);
+        uint cell = TransparencyCell(cells.View, coordinate);
         if (TransparencyCellStreams[cell] != 0u) continue;
         uint offset;
         InterlockedAdd(TransparencyCellWrites[cell], 1u, offset);
-        TransparencyReferences[TransparencyCellOffsets[cell] + offset] = value;
+        TransparencyReferences[TransparencyCellOffsets[cell] + offset] = cells.Reference;
     }
 }
 

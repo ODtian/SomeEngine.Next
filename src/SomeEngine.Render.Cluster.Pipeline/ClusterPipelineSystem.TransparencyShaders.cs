@@ -274,11 +274,11 @@ public sealed partial class ClusterPipelineSystem
             return source.ToString();
         }
         string[] geometryEntries = ["ClearTransparentTiles", "CopyTransparentSources", "BuildTransparentGeometry", "CountTransparentCells", "ReserveTransparentCells", "ScatterTransparentCells"];
-        string[] geometryCalls = ["ClearTransparency(thread)", "CopyTransparencySources(thread)", "BuildTransparency(materials, thread)", "CountTransparencyCells(thread)", "ReserveTransparency(thread)", "ScatterTransparency(thread)"];
+        string[] geometryCalls = ["ClearTransparency(thread)", "CopyTransparencySources(thread)", "BuildTransparency(materials, thread)", "CountTransparencyCells(group, thread)", "ReserveTransparency(thread)", "ScatterTransparency(group, thread)"];
         for (int entry = 0; entry < (pixelLists ? 3 : geometryEntries.Length); entry++)
             source.Append("[shader(\"compute\")] [numthreads(64,1,1)] void ").Append(geometryEntries[entry])
                 .Append(entry == 2 ? "(uniform SceneTransparencyMaterials materials, " : "(")
-                .Append("uint3 thread : SV_DispatchThreadID) { ")
+                .Append(entry is 3 or 5 ? "uint3 group : SV_GroupID, uint thread : SV_GroupIndex) { " : "uint3 thread : SV_DispatchThreadID) { ")
                 .Append(geometryCalls[entry]).AppendLine("; }");
         source.AppendLine("[shader(\"compute\")] [numthreads(256,1,1)] void RequestTransparentPages(uniform SceneTransparencyMaterials materials, uint3 group : SV_GroupID, uint thread : SV_GroupIndex) { RequestTransparencyPages(materials,group,thread); }");
 #if SOMEENGINE_TRANSPARENCY_RESEARCH

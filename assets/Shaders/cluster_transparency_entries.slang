@@ -62,13 +62,13 @@ void BuildTransparentGeometry<let visibilityDepth : uint, let tessellated : bool
 { BuildTransparency(materials, thread); }
 
 [shader("compute")] [numthreads(64,1,1)]
-void CountTransparentCells(uint3 thread : SV_DispatchThreadID) { CountTransparencyCells(thread); }
+void CountTransparentCells(uint3 group : SV_GroupID, uint thread : SV_GroupIndex) { CountTransparencyCells(group, thread); }
 
 [shader("compute")] [numthreads(64,1,1)]
 void ReserveTransparentCells(uint3 thread : SV_DispatchThreadID) { ReserveTransparency(thread); }
 
 [shader("compute")] [numthreads(64,1,1)]
-void ScatterTransparentCells(uint3 thread : SV_DispatchThreadID) { ScatterTransparency(thread); }
+void ScatterTransparentCells(uint3 group : SV_GroupID, uint thread : SV_GroupIndex) { ScatterTransparency(group, thread); }
 
 [shader("compute")] [numthreads(128,1,1)] [WaveSize(32)]
 void SortTransparentCells(uint3 group : SV_GroupID, uint thread : SV_GroupIndex) { SortTransparencyCells(group, thread); }

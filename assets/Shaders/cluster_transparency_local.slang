@@ -4,8 +4,11 @@
 groupshared TransparencyTriangle TransparencyLocalTriangles[16];
 groupshared uint TransparencyLocalIds[16];
 groupshared uint TransparencyLocalMasks[128];
-groupshared float TransparencyHitDepths[16 * 128];
-groupshared uint TransparencyHitIds[16 * 128];
+groupshared float TransparencyHitDepths[32 * 64];
+groupshared uint TransparencyHitIds[32 * 64];
+static const uint TransparencyLocalHitCapacity = 8u;
+groupshared float TransparencyLocalHitDepths[TransparencyLocalHitCapacity * 128];
+groupshared uint TransparencyLocalHitIds[TransparencyLocalHitCapacity * 128];
 groupshared uint TransparencyLocalMore;
 
 uint GetTransparencyLocalHitAddress(uint item, uint thread)
@@ -93,9 +96,9 @@ void ResolveTransparencyLocalTile<TMaterials : ITransparencyMaterials>(uniform T
     while (true)
     {
         uint hits = 0u;
-        uint lastHitAddress = GetTransparencyLocalHitAddress(15u,thread);
-        TransparencyHitDepths[lastHitAddress] = 2.0;
-        TransparencyHitIds[lastHitAddress] = 0xFFFFFFFFu;
+        uint lastHitAddress = GetTransparencyLocalHitAddress(TransparencyLocalHitCapacity - 1u,thread);
+        TransparencyLocalHitDepths[lastHitAddress] = 2.0;
+        TransparencyLocalHitIds[lastHitAddress] = 0xFFFFFFFFu;
         for (uint start = 0u; start < count; start += 16u)
         {
             uint packetCount = min(16u,count - start);
@@ -149,23 +152,23 @@ void ResolveTransparencyLocalTile<TMaterials : ITransparencyMaterials>(uniform T
                         {
                             depth = coveredDepth;
                             uint index = cached ? selected : id;
-                            uint position = min(hits,15u);
+                            uint position = min(hits,TransparencyLocalHitCapacity - 1u);
                             hits++;
                             uint address = GetTransparencyLocalHitAddress(position,thread);
-                            if (hits <= 16u || TransparencyQueuedHitBefore(depth,triangle,TransparencyHitDepths[address],TransparencyHitIds[address],cached))
+                            if (hits <= TransparencyLocalHitCapacity || TransparencyQueuedHitBefore(depth,triangle,TransparencyLocalHitDepths[address],TransparencyLocalHitIds[address],cached))
                             {
                                 while (position > 0u)
                                 {
                                     uint previous = GetTransparencyLocalHitAddress(position - 1u,thread);
-                                    float otherDepth = TransparencyHitDepths[previous];
-                                    uint otherId = TransparencyHitIds[previous];
+                                    float otherDepth = TransparencyLocalHitDepths[previous];
+                                    uint otherId = TransparencyLocalHitIds[previous];
                                     if (!TransparencyQueuedHitBefore(depth,triangle,otherDepth,otherId,cached)) break;
-                                    TransparencyHitDepths[address] = otherDepth;
-                                    TransparencyHitIds[address] = otherId;
+                                    TransparencyLocalHitDepths[address] = otherDepth;
+                                    TransparencyLocalHitIds[address] = otherId;
                                     position--; address = previous;
                                 }
-                                TransparencyHitDepths[address] = depth;
-                                TransparencyHitIds[address] = index;
+                                TransparencyLocalHitDepths[address] = depth;
+                                TransparencyLocalHitIds[address] = index;
                             }
                         }
                     }
@@ -174,8 +177,8 @@ void ResolveTransparencyLocalTile<TMaterials : ITransparencyMaterials>(uniform T
             }
             GroupMemoryBarrierWithGroupSync();
         }
-        more = hits > 16u;
-        uint queued = min(hits,16u);
+        more = hits > TransparencyLocalHitCapacity;
+        uint queued = min(hits,TransparencyLocalHitCapacity);
         uint totalHits = WaveActiveSum(queued), maximumHits = WaveActiveMax(queued);
         uint compactBatches = (totalHits + 31u) / 32u;
         bool compact = compactBatches < maximumHits;
@@ -208,8 +211,8 @@ void ResolveTransparencyLocalTile<TMaterials : ITransparencyMaterials>(uniform T
             if (covered)
             {
                 uint address = GetTransparencyLocalHitAddress(item,thread - lane + pixelLane);
-                uint index = TransparencyHitIds[address];
-                float depth = TransparencyHitDepths[address];
+                uint index = TransparencyLocalHitIds[address];
+                float depth = TransparencyLocalHitDepths[address];
                 TransparencyTriangle triangle = cached ? TransparencyLocalTriangles[index] : TransparencyRasterTriangles[index];
                 uint3 samplePixel = uint3(origin + uint2(pixelLane & 7u,pixelLane >> 3u),view);
                 surface = cached
@@ -228,8 +231,8 @@ void ResolveTransparencyLocalTile<TMaterials : ITransparencyMaterials>(uniform T
         if (queued != 0u)
         {
             uint address = GetTransparencyLocalHitAddress(queued - 1u,thread);
-            uint index = TransparencyHitIds[address];
-            float depth = TransparencyHitDepths[address];
+            uint index = TransparencyLocalHitIds[address];
+            float depth = TransparencyLocalHitDepths[address];
             TransparencyTriangle triangle = cached ? TransparencyLocalTriangles[index] : TransparencyRasterTriangles[index];
             previousDepth = depth; previousSource = triangle.Source; previousPrimitive = triangle.Primitive;
             contributed = true;
@@ -237,7 +240,6 @@ void ResolveTransparencyLocalTile<TMaterials : ITransparencyMaterials>(uniform T
         float limit = max(TransparencyUniforms.ColorLimit,max(background.r,max(background.g,background.b)));
         if (TransparencyUniforms.MaximumError > 0.0 && transmission * limit * .5 <= TransparencyUniforms.MaximumError)
         { color += transmission * limit * .5; transmission = 0.0; more = false; }
-        if (cached) break;
         if (thread == 0u) TransparencyLocalMore = 0u;
         GroupMemoryBarrierWithGroupSync();
         bool waveMore = WaveActiveAnyTrue(more);

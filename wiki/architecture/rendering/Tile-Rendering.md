@@ -20,6 +20,8 @@ Cluster 提供已有的 `GraphResourceBinder`，将几何、材质及 Feature �
 
 Tile 自己创建 compute、间接 dispatch 和硬件覆盖 pass。Cluster 的材质变化仍通过原有参数输入和标量数据更新流程送入这些 pass。
 
+Count 与 Scatter 按实际图元或来源数量派发线程组。数量在一个 64 线程组内时，每组共享一份 cell 范围，由 64 个线程分摊 XYZ cell 和硬件关联；大量图元继续由每个线程处理一份范围，保持微三角形吞吐。两种粒度共用 cell 遍历与连续引用分配，GPU 计数形成对应的间接参数。
+
 光栅、着色与透明入口通过 `Material.ResolveResourceProperties` 匹配属性编号，分箱根据关联结果汇总资源。缓冲视图和加速结构通过 `Material.GetDeviceResourceBinding` 形成借用的绑定值；Cluster 将绑定值写入 RenderGraph 参数输入。采样器通过 `RenderDevice.RetainSampler` 取得，描述符索引也持有同一份设备采样器；纹理继续通过 `PrepareTextureForInputs` 准备。完成与释放规则见 [[architecture/rendering/RenderDevice|RenderDevice]]。
 
 稳定拓扑保存在持久图内。Cluster 根据几何版本、实例、相机和驻留状态提出复用判断；Tile 通过已有的 `IRenderGraphFrameExecutionObserver` 自行接收构建 pass 的提交结果与完成点，维护复用条件，并更新自身 pass 的启用状态。
