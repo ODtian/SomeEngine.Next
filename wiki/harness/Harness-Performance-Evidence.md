@@ -1,20 +1,47 @@
-# Performance Evidence
+# 性能测量
 
-性能结论必须对应明确 workload、设备、backend、构建配置与计时边界；证据页面可以按日期保存，但不得把一次 benchmark 的实现选择提升成长期架构规则。
+本页维护已实现的队列入口与使用方法。实现入口为 `tools/Invoke-Benchmark.ps1`、`tools/BenchmarkQueue/BenchmarkCommands.cs`、`CommandQueue.cs`、`RemoteCommands.cs` 和 `LinuxCommands.cs`。性能结论对应 workload、设备、backend、构建配置与计时边界；结果在会话中汇报，临时输出读取后清理。
 
-当一个算法选择明确依赖性能数据时，architecture 页面只固定语义约束，具体候选和结论链接到相应 evidence/benchmark 记录。
-
-## 串行测量
-
-CPU、GPU benchmark 通过 `tools/Invoke-Benchmark.ps1 <原命令及参数>` 提交到公共 FIFO 队列。
-同一用户的工作区共用执行器，命令按提交顺序运行；比较期间需要独占 CPU/GPU 的构建、内容导入与捕获也采用这一入口。
+## 提交与分发
 
 ```powershell
-./tools/Invoke-Benchmark.ps1 dotnet run --no-build --project tools/SomeEngine.Animation.Checks -c Release -- --benchmark
+pwsh -NoProfile -File tools/Configure-BenchmarkRemote.ps1 -HostName 4090
+pwsh -NoProfile -File tools/Invoke-Benchmark.ps1 --cpu dotnet run --project tools/SomeEngine.Job.Benchmarks -c Release
+pwsh -NoProfile -File tools/Invoke-Benchmark.ps1 --gpu --timeout 60 <executable> <arguments>
+pwsh -NoProfile -File tools/Invoke-Benchmark.ps1 --timeout 120 <executable> <arguments>
 ```
 
-提交返回任务编号和 `artifacts/benchmark-queue/<编号>/` 结果目录，自动启动隐藏的后台执行器。
-目录保存 `stdout.log`、`stderr.log` 与 `result.json`，结果包含命令、工作目录、起止时间及退出码。
-测量使用提交时的环境变量和参数分组。原始测量证据随对应报告保存在 `wiki/evidence/`。
+默认类别为 CPU；`--gpu` 和兼容选项 `--exclusive` 标记 GPU 任务。队列选项放在可执行文件之前。默认先申请远程资源；远程返回 `ResourcesBusy`，或 SSH 连接阶段发生 `IOException`、`TimeoutException` 时，命令进入本机资源调度。临时固定本机时使用 `--local` 或任务配置的 `Local: true`。调用脚本按实际执行主机选择构建参数和应用路径。`result.json` 用 `DispatchReason` 区分 `RemoteResourcesBusy`、`RemoteUnavailable` 和 `RequestedLocal`，连接失败时保留 `RemoteError`。
 
-参见 [[evidence/RHI/Performance-Evidence-2026-08-20]] · [[architecture/cluster/Deform-Cache-Allocation]].
+同一会话按 FIFO 完成，跨会话轮询；远程与本机共用这一顺序。会话标识依次来自 `--session`、`SOMEENGINE_BENCHMARK_SESSION`、`CODEX_THREAD_ID`、`CODEX_SESSION_ID` 和工作目录。执行器每两秒重新检查排队任务。
+
+远程执行器通过 SSH 在 Linux 普通用户账户下运行，在同一资源锁中分配 CPU、GPU 和工作目录。Git 工作目录按 Git 文件列表同步，其它目录按提交工作目录中的文件同步；同步比较文件大小和修改时间，并复用编译输出。源目录绝对路径映射到远程工作目录。远程执行器设置 HOME、临时目录、NuGet 缓存和系统路径，并传递提交时的 .NET JIT 配置。
+
+## 基线与限额
+
+| 项目 | 默认行为 |
+| --- | --- |
+| CPU | 固定 4 个物理核，包含其硬件线程；远程从同一 L3 缓存域选择空闲核心 |
+| 线程配置 | .NET、OpenMP、OpenBLAS、MKL 默认使用 4 个线程 |
+| 系统内存 | 8 GiB；Windows Job Object、Linux 用户级 systemd 服务约束整棵进程树 |
+| 执行超时 | 默认 60 秒；`--timeout` 指定正整数秒，排队和源码同步另计；超时退出码 124 |
+| 远程 GPU | 按利用率和剩余显存分配实际设备，每张卡同时分配给一条队列任务 |
+| GPU 选择条件 | 利用率至多 10%，剩余显存至少达到 `GpuMemoryMiB` 加 512 MiB，候选空闲卡至少 2 张 |
+| 工作目录 | 最多 3 个，每个使用 8 GiB 固定容量的 ext4 映像，通过用户态 FUSE 挂载 |
+| SDK 缓存 | 固定 2 GiB 映像，复用 .NET SDK 10.0.112 |
+| 标准输出 | stdout、stderr 各至多 8 MiB，超出部分继续收集并丢弃 |
+| 结果保留 | 每次提交保留最近 8 个已完成结果；调用方读取后清理自己的结果目录 |
+
+远程通过 Mesa Vulkan 设备选择层设置可见设备，执行前核对 Vulkan UUID 与分配的 GPU UUID。`GpuMemoryMiB` 默认 4096，是分配前的剩余显存要求；系统内存上限由操作系统执行。
+
+结果记录实际 CPU 型号、GPU 型号和 UUID、核心编号、内存上限及退出状态。不同机器、型号和并发条件分别比较。换算估计经过对应 workload 的独立验证后，单独说明误差和适用范围。
+
+共享配置位于 `%LOCALAPPDATA%/SomeEngine/BenchmarkQueue/settings.json`。`SOMEENGINE_BENCHMARK_CONFIG` 指向的任务配置覆盖其中指定的字段，其余字段继承共享配置，因此单独调整 CPU 或内存时保留远程主机设置。支持 `RemoteHost`、`RemoteDirectory`、`CpuCoreCount`、`MemoryMiB`、`TimeoutSeconds`、`GpuMemoryMiB`、`MinimumIdleGpuCount` 和 `OutputMiB`。远程依赖用户级 systemd、cgroup v2 内存控制器、FUSE、NVIDIA 驱动和 Mesa Vulkan 设备选择层。
+
+## 结果与清理
+
+回执返回任务编号、会话、执行器进程编号和结果目录。结果位于 `%LOCALAPPDATA%/SomeEngine/BenchmarkQueue/results/<编号>/`，包含 `stdout.log`、`stderr.log` 和 `result.json`。
+
+远程超出系统内存上限后终止任务，记录退出码 137 和 `MemoryLimitExceeded`。超时记录退出码 124 和 `TimedOut`。远程分配链路失败记录 `FailureStage=RemoteDispatch`；资源紧张后在本机执行的结果记录 `DispatchReason=RemoteResourcesBusy`。远程临时目录随任务清理，源码、编译输出和 SDK 保存在有容量上限的目录中。
+
+渲染性能优化采用根级 AGENTS 规定的 DefaultGame 三场景平台与采样要求。原始结果和当次验证结论在会话中汇报。
