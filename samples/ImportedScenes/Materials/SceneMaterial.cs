@@ -23,6 +23,7 @@ public sealed partial class SceneMaterial : Material
     public partial Vector3 EmissiveFactor { get; set; }
     public partial float NormalScale { get; set; } = 1;
     public partial float OcclusionStrength { get; set; } = 1;
+    public partial float AlphaCutoff { get; set; } = 0.5f;
 }
 
 public sealed class SceneMaterialAsset : MaterialAsset

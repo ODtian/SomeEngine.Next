@@ -1,5 +1,4 @@
 using SomeEngine.Geometry.Cluster;
-using System.Globalization;
 using System.Numerics;
 using System.Text.Json.Nodes;
 using SomeEngine.Assets.Schema;
@@ -70,7 +69,8 @@ public sealed class ImportedSceneImporter : GltfSceneImporter
         content.SetParameter(new("OcclusionMap", MaterialParameterKind.Texture) { Texture = occlusionId });
         content.SetParameter(new("NormalScale", MaterialParameterKind.Float) { Float = source.FindChannel("Normal")?.GetFactor("NormalScale") ?? 1 });
         content.SetParameter(new("OcclusionStrength", MaterialParameterKind.Float) { Float = occlusion?.GetFactor("OcclusionStrength") ?? 1 });
-        string shaderPath = Path.Combine(context.ProjectRoot, "assets/Shaders", ShaderName(Cutoff(source)) + ".shader");
+        content.SetParameter(new("AlphaCutoff", MaterialParameterKind.Float) { Float = Cutoff(source) });
+        string shaderPath = Path.Combine(context.ProjectRoot, "assets/Shaders", ShaderName(source.Alpha == AlphaMode.MASK) + ".shader");
         await context.ReportInputAsync(shaderPath, cancellationToken);
         using ShaderAsset shader = await ShaderAsset.OpenSourceAsync(shaderPath, cancellationToken);
         content.Shader = shader.Reference;
@@ -91,7 +91,7 @@ public sealed class ImportedSceneImporter : GltfSceneImporter
             File.Copy(file, destination, overwrite: true);
         }
         string surface = File.ReadAllText(Path.Combine(engine, "assets", "Shaders", "standard_material.slang"));
-        surface = Replace(surface, "float3 EmissiveFactor;", "float3 EmissiveFactor;\n    float NormalScale;\n    float OcclusionStrength;");
+        surface = Replace(surface, "float3 EmissiveFactor;", "float3 EmissiveFactor;\n    float NormalScale;\n    float OcclusionStrength;\n    float AlphaCutoff;");
         surface = Replace(surface, "Texture2D ARMMap;", "Texture2D ARMMap;\n    Texture2D OcclusionMap;\n    Texture2D EmissiveMap;");
         surface = Replace(surface, "float3 N_geom =", "normalTS.xy *= scalars.NormalScale;\n        float3 N_geom =");
         surface = Replace(surface, "float3 baseColor = albedoSample.rgb", "float3 baseColor = SceneSrgbToLinear(albedoSample.rgb)");
@@ -101,16 +101,18 @@ public sealed class ImportedSceneImporter : GltfSceneImporter
             "        float3 finalColor = baseColor * ao * 0.03 + emission;");
         surface = "float3 SceneSrgbToLinear(float3 color) { return select(color <= 0.04045, color / 12.92, pow((color + 0.055) / 1.055, 2.4)); }\n" + surface;
         WriteIfChanged(Path.Combine(directory, "scene_material.slang"), surface);
-        WriteSurfaceSources(directory, engine);
+        WriteIfChanged(Path.Combine(directory, "cluster_transparency.slang"),
+            File.ReadAllText(Path.Combine(engine, "assets/Shaders/cluster_transparency.slang")));
         var shaderIds = new List<Guid>();
-        foreach (float cutoff in model.LogicalMaterials.Where(static material => !material.Unlit).Select(Cutoff).Distinct())
+        foreach (bool masked in model.LogicalMaterials.Where(static material => !material.Unlit)
+            .Select(static material => material.Alpha == AlphaMode.MASK).Distinct())
         {
-            string shaderName = ShaderName(cutoff);
+            string shaderName = ShaderName(masked);
             WriteIfChanged(Path.Combine(directory, shaderName + ".slang"),
-                CreateSurfaceShader(defaults, shaderName, cutoff, false));
+                CreateSurfaceShader(defaults, shaderName, masked, false));
             WriteSurfaceEntries(directory, shaderName);
             string definitionPath = Path.Combine(directory, shaderName + ".shader");
-            JsonNode definition = CreateSurfaceDefinition(definitionPath, defaults, shaderName, cutoff);
+            JsonNode definition = CreateSurfaceDefinition(definitionPath, defaults, shaderName, masked);
             Guid shaderId = Guid.Parse(definition["Fields"]!["Id"]!.GetValue<string>());
             WriteIfChanged(definitionPath, definition.ToJsonString());
             await project.BuildAsync(definitionPath);
@@ -125,30 +127,7 @@ public sealed class ImportedSceneImporter : GltfSceneImporter
         project.RegisterAsset(await template.SaveAsync(Path.Combine(project.RootPath, SampleSceneMaterials.ImportedTemplatePath)));
     }
 
-    internal static void WriteSurfaceSources(string directory, string engineRoot)
-    {
-        WriteIfChanged(Path.Combine(directory, "cluster_transparency.slang"),
-            File.ReadAllText(Path.Combine(engineRoot, "assets/Shaders/cluster_transparency.slang")));
-        foreach (string definitionPath in Directory.EnumerateFiles(directory, "scene_*.shader"))
-        {
-            string shaderName = Path.GetFileNameWithoutExtension(definitionPath);
-            string sourcePath = Path.Combine(directory, shaderName + ".slang");
-            string suffix = shaderName["scene_".Length..];
-            bool twoSided = suffix.EndsWith("_both", StringComparison.Ordinal);
-            string surface = twoSided ? suffix[..^"_both".Length] : suffix;
-            float cutoff = surface == "opaque" ? -1 : BitConverter.Int32BitsToSingle(
-                int.Parse(surface["mask_".Length..], NumberStyles.HexNumber, CultureInfo.InvariantCulture));
-            string source = CreateSurfaceShader(Path.Combine(engineRoot, "samples/DefaultGame/assets/Shaders"),
-                shaderName, cutoff, twoSided);
-            WriteIfChanged(sourcePath, source);
-            WriteSurfaceEntries(directory, shaderName);
-            JsonNode definition = CreateSurfaceDefinition(definitionPath,
-                Path.Combine(engineRoot, "samples/DefaultGame/assets/Shaders"), shaderName, cutoff);
-            WriteIfChanged(definitionPath, definition.ToJsonString());
-        }
-    }
-
-    private static JsonNode CreateSurfaceDefinition(string path, string defaults, string name, float cutoff)
+    private static JsonNode CreateSurfaceDefinition(string path, string defaults, string name, bool masked)
     {
         var definition = JsonNode.Parse(File.ReadAllText(Path.Combine(defaults, "standard.shader")))!;
         Guid id = File.Exists(path)
@@ -157,7 +136,7 @@ public sealed class ImportedSceneImporter : GltfSceneImporter
         definition["Fields"]!["Name"] = name;
         definition["Blocks"]![0]!["Fields"]!["SourceNames"] = new JsonArray("cluster_transparency.slang", name + ".slang", name + "_transparency.slang");
         var specializations = new JsonArray();
-        string depth = cutoff >= 0 ? "1" : "0";
+        string depth = masked ? "1" : "0";
         foreach (string mode in new[] { "0", "8" })
         {
             specializations.Add(new JsonObject { ["EntryPoint"] = "ClusterShadeMode", ["Arguments"] = new JsonArray(mode) });
@@ -176,15 +155,15 @@ public sealed class ImportedSceneImporter : GltfSceneImporter
             "import \"" + name + "\";\n#define TRANSPARENCY_MATERIAL_TYPE SceneTransparencyMaterial_" + name +
             "\n#include \"cluster_transparency_entries.slang\"\n");
 
-    private static string CreateSurfaceShader(string defaults, string shaderName, float cutoff, bool twoSided)
+    private static string CreateSurfaceShader(string defaults, string shaderName, bool masked, bool twoSided)
     {
         string source = File.ReadAllText(Path.Combine(defaults, "standard.slang"))
             .Replace("\"standard_material.slang\"", "\"scene_material.slang\"")
             .Replace("StandardTransparencyMaterial", "SceneTransparencyMaterial_" + shaderName);
         if (twoSided) source = "#define CLUSTER_RASTER_TWO_SIDED 1\n" + source;
-        if (cutoff >= 0)
+        if (masked)
             source = Replace(source, "typedef OpaqueVisibilityEvaluate<VertexEvaluate.Vertex> VisibilityEvaluate;",
-                MaskShader.Replace("ALPHA_CUTOFF", cutoff.ToString("R", CultureInfo.InvariantCulture)) +
+                MaskShader +
                 "\ntypedef SceneMask VisibilityEvaluate;");
         return source;
     }
@@ -207,8 +186,7 @@ public sealed class ImportedSceneImporter : GltfSceneImporter
 
     private static float Cutoff(GltfMaterial material) => material.Alpha == AlphaMode.MASK
         ? material.AlphaCutoff / Math.Max(material.FindChannel("BaseColor")?.Color.W ?? 1, 1e-8f) : -1;
-    private static string ShaderName(float cutoff) => cutoff < 0 ? "scene_opaque"
-        : "scene_mask_" + BitConverter.SingleToInt32Bits(cutoff).ToString("x8");
+    private static string ShaderName(bool masked) => masked ? "scene_mask" : "scene_opaque";
     private static string Replace(string source, string previous, string next) => source.Contains(previous)
         ? source.Replace(previous, next) : throw new InvalidDataException($"The sample shader integration changed: {previous}");
     private static void WriteIfChanged(string path, string content)
@@ -235,7 +213,10 @@ struct SceneMask : IVisibilityEvaluate<StandardVertex>
     VisibilityPixelResult evaluate(VisibilityPixelInput input, Varying varying)
     {
         VisibilityPixelResult result;
-        result.Visible = AlbedoMap.SampleLevel(MaterialSampler, varying.UV, 0.0).a >= ALPHA_CUTOFF ? 1u : 0u;
+        uint materialIndex = GetClusterMaterialSlotOffset(input.Source.InstanceID) +
+            GetClusterLocalMaterial(PageHeap, input.Source.PageOffset, DrawRequestClusterID(input.Source), input.TriangleID);
+        StandardScalars scalars = LoadMaterialScalars<StandardScalars>(materialIndex);
+        result.Visible = AlbedoMap.SampleLevel(MaterialSampler, varying.UV, 0.0).a >= scalars.AlphaCutoff ? 1u : 0u;
         result.Depth = input.Depth;
         return result;
     }

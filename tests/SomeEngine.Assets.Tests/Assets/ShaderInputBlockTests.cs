@@ -100,6 +100,9 @@ public sealed class ShaderInputBlockTests
         Shader shader = await restored.CreateAsync(slang, description);
         Assert.True(shader.TryGetSpecialization("WriteValue", ["3"], out Shader first));
         Assert.True(shader.TryGetSpecialization("WriteValue", ["7"], out Shader second));
+        Assert.Same(shader.SlangCode.Session, first.SlangCode.Session);
+        Assert.Same(shader.GetSlangSourceUnit(0), first.GetSlangSourceUnit(0));
+        Assert.Same(first.GetSlangSourceUnit(0), second.GetSlangSourceUnit(0));
         Assert.True(first.TryGetSlangEntry(0, "WriteValue", SlangStage.Compute, out EntryPointReflection firstEntry));
         Assert.True(second.TryGetSlangEntry(0, "WriteValue", SlangStage.Compute, out EntryPointReflection secondEntry));
         Assert.True(first.GetSlangEntryBytes(0, firstEntry).Length > 0);

@@ -107,16 +107,15 @@ public sealed partial class ShaderAsset : Asset
         using var code = new ShaderBlock();
         code.InputVersions = inputs.Select(static input => input.Version).ToList();
         SaveCode(compiled.Shader, [], null);
-        using ShaderSourceBlock selected = source.FromInputs(inputs);
         source.Specializations = compiled.Specializations.ToList();
         inputs = await copy.ReadInputsAsync(source, cancellationToken).ConfigureAwait(false);
         code.InputVersions = inputs.Select(static input => input.Version).ToList();
         foreach (ShaderSpecialization variant in compiled.Specializations)
         {
             // Code generation belongs to asset preparation, alongside the common entries.
-            ShaderCompilation cooked = await selected.CompileSelectedEntryAsync(slang, sessionDescription, copy.Name,
-                variant.EntryPoint, variant.ToSlangArguments(), cancellationToken).ConfigureAwait(false);
-            SaveCode(cooked.Shader, variant.Arguments.ToArray(), variant.EntryPoint);
+            Shader cooked = await ShaderSourceBlock.CreateEntryAsync(compiled.Shader,
+                variant.EntryPoint, variant.ToSlangArguments(), generateCode: true, cancellationToken).ConfigureAwait(false);
+            SaveCode(cooked, variant.Arguments.ToArray(), variant.EntryPoint);
         }
 
         void SaveCode(Shader shader, string[] arguments, string? entryPoint)

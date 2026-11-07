@@ -117,7 +117,6 @@ public sealed partial class ShaderBlock : AssetBlock
             cancellationToken).ConfigureAwait(false);
         if (inputs.Specializations.Count == 0) return shader;
 
-        var savedSources = await inputs.ReadSavedSourcesAsync(cancellationToken).ConfigureAwait(false);
         SessionDesc description = CopySessionDescription(sessionDescription);
         var variants = new List<(string EntryPoint, string[] Arguments, Lazy<Shader> Shader)>(inputs.Specializations.Count);
         foreach (ShaderSpecialization specialization in inputs.Specializations)
@@ -127,8 +126,9 @@ public sealed partial class ShaderBlock : AssetBlock
             var code = await ReadCodeAsync(copy, shader, description, name, entryPoint, values,
                 cancellationToken).ConfigureAwait(false);
             variants.Add((entryPoint, values, new Lazy<Shader>(() =>
-                ShaderSourceBlock.RestoreSavedEntry(slang, description, name, entryPoint, values,
-                    savedSources.Names, savedSources.Sources).WithManagedCode(code.Targets, code.Entries, code.Usage),
+                ShaderSourceBlock.CreateEntryAsync(shader, entryPoint,
+                    values.Select(SpecializationArg.FromExpression).ToArray(), generateCode: false, CancellationToken.None)
+                    .AsTask().GetAwaiter().GetResult().WithManagedCode(code.Targets, code.Entries, code.Usage),
                 LazyThreadSafetyMode.ExecutionAndPublication)));
         }
         return shader.WithSpecializations(variants);
