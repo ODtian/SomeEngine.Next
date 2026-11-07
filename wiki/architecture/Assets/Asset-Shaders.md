@@ -6,6 +6,23 @@
 文件读取并发由 `AssetLoader` 的既有预算控制。Cluster 向 RHI 异步创建接口批量提交
 独立 PSO，在管线集合安装前统一取得结果；场景首次使用材质时沿用同一创建方式。
 
+同一 ShaderAsset 的入口特化复用基础 Shader 的 `ISession`、`IModule` 与入口对象。
+内容构建在这些驻留输入上 specialize/link 并生成入口代码；已保存资产恢复特化时
+使用相同输入恢复直接 Slang 反射，代码继续来自 ShaderBlock。单入口特化保存入口代码，
+共同 Shader 保留可选的整库代码。这样每个特化的工作集中在实际变化的入口上。
+
+`ShaderAssetLibrary.OpenAsync(AssetPack)` 通过既有 AssetPackStorage、AssetLoader 建立
+名称索引；`CreateAsync(name, global, settings)` 沿 ShaderAsset/Block 入口返回驻留 Shader。
+库持有资产包和读取缓存，调用方持有自己使用的 Shader。UI 与蒙皮功能各自拥有自己的
+内置资产包，应用可以把已有 Slang global session 交给材质和功能构造入口复用。
+
+数值材质参数通过现有 MaterialScalars 传递。导入场景的 AlphaCutoff 是材质参数，
+shader 按 opaque/masked 两种结构区分；不同裁剪阈值共享同一 masked ShaderAsset。
+
+这些做法对应 [UE 材质参数复用](https://dev.epicgames.com/documentation/en-us/unreal-engine/instanced-materials-in-unreal-engine)、
+[UE 全局 shader 离线构建](https://dev.epicgames.com/documentation/unreal-engine/shader-development-in-unreal-engine)
+和 [Slang 长期 session 的输入复用](https://docs.shader-slang.org/en/stable/compilation-api.html)。
+
 完整规则见 [Shader Block、驻留与 Slang 重构规范](../shader/Shader-Block-Residency-Refactor.md)。本页说明当前取得 API；具名修复及验证状态见 [2026-09-29 审查](../../../reviews/AssetSpecReview-2026-09-29.md)。
 
 ## Block 组成

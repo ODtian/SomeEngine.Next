@@ -112,8 +112,8 @@ Canvas 尺寸、缩放与实例值属于当帧数据，保留图的结构版本�
 取消图帧后，该次编码的数据仍可供下一帧绘制。
 画布绘制器释放时，通过显式编辑删除自身 pass 与视图，缓冲和管线沿同一完成边界回收。
 
-`SurfaceMaterial` 是普通 `Material`。`Create` 编译内嵌 `Surface.slang`，生成与
-图设备对应的 DXIL 或 SPIR-V。材质的 Surface 绘制实现负责实例编码和 shader 接口。
+`SurfaceMaterial` 是普通 `Material`。`Create` 从内嵌 ShaderAsset 包取得与图设备对应的
+DXIL 或 SPIR-V，并恢复直接 Slang 反射。材质的 Surface 绘制实现负责实例编码和 shader 接口。
 shader 以 `SV_VertexID` 生成矩形的三角形顶点，以 `SV_InstanceID` 读取自己的实例字节；
 管线的顶点缓冲布局和顶点属性声明为空。图只声明实际缓冲读取和颜色目标访问。
 绘制顺序采用提取缓冲的树序。
@@ -190,8 +190,8 @@ Stretch 使用整个内容区域和 `(0, 0, 1, 1)` UV；Contain 保持纹理比�
 `SurfaceRenderExtractor` 保留为同一提取者的原有调用入口。实例包含来源节点、就绪纹理、绘制矩形、
 UV 矩形、画布裁剪、树序和绘制版本。数据更新与结构更新沿 ECS 写版本处理。
 
-`ImageMaterial` 编译自身的 Slang shader，并解释自己的实例字节。
-Surface、Glyphs 与 Image 的内嵌 shader 由 ElementShaders 统一持有，每个图形目标各编译一份。
+`ImageMaterial` 使用自身的已构建 shader，并解释自己的实例字节。
+Surface、Glyphs 与 Image 的内嵌 ShaderAsset 由 ElementShaders 按名称、目标和 Slang global session 复用。
 这些不可变 shader 供材质与管线引用，使用期限覆盖进程中的画布绘制。
 Slang 的全局对象由这一份数据保持有效，其派生对象按
 [Slang 生命周期规则](https://github.com/shader-slang/slang/blob/master/docs/user-guide/08-compiling.md)
@@ -266,7 +266,10 @@ using var canvases = new CanvasRenderer(backend, device, graph, renderWorld,
 材质按自己的实例字节大小建立各绘制范围的缓冲视图，shader 使用相对的 `SV_InstanceID`。
 这与 [Slang 的 SPIR-V 实例编号规则](https://docs.shader-slang.org/en/latest/external/slang/docs/user-guide/a2-01-spirv-target-specific.html)
 及当前 D3D12 编译目标采用同一套实例寻址，连续范围从对应缓冲视图的起点开始。
-内置 shader 编译结果由 `ElementShaders` 按名称与目标统一持有，供应用生命周期内的材质共用。
+内置 shader 由 `ElementShaders` 按名称、目标和 Slang global session 统一持有，供材质共用。
+显式执行 `dotnet run --project tools/ExportBuiltInShaders -c Release -- .` 从源码生成 UI 和
+蒙皮功能各自的 ShaderAsset 包；普通构建嵌入这些包。运行时从资产包取得既有代码及
+Slang 输入。导出和读取使用同一份编译配置。
 原有 Surface、Surface/Glyphs 与 Surface/Image 构造入口继续接入这一份画布绘制器。
 同时绘制三种材质时，调用方传入 GlyphsMaterial、ImageMaterial 和 RenderDevice：
 

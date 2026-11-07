@@ -9,8 +9,6 @@
     <ProjectReference Include="../SomeEngine.Render/SomeEngine.Render.csproj" />
     <ProjectReference Include="../SomeEngine.RenderGraph/SomeEngine.RenderGraph.csproj" />
     <None Update="README.md" Pack="true" PackagePath="/" />
-    <EmbeddedResource Include="Shaders/Surface.slang" />
-    <EmbeddedResource Include="Shaders/Image.slang" />
-    <EmbeddedResource Include="Shaders/Glyphs.slang" />
+    <EmbeddedResource Include="Shaders/Elements.assetpack" />
   </ItemGroup>
 </Project>

@@ -1,74 +1,48 @@
 using SlangShaderSharp;
+using SomeEngine.Assets;
+using SomeEngine.Assets.Schema;
 using SomeEngine.Graphics;
 using SomeEngine.Resources;
+using SomeEngine.Serialization.IO;
+using SomeEngine.Serialization.Packs;
+using System.Runtime.CompilerServices;
 
 namespace SomeEngine.Elements.Render;
 
 /// <summary>Holds the immutable built-in shader resources for the application's lifetime.</summary>
 internal static class ElementShaders
 {
-    private static readonly Dictionary<(string Name, SlangCompileTarget Target), Shader> s_shaders = [];
+    private static readonly ConditionalWeakTable<IGlobalSession, Dictionary<(string Name, SlangCompileTarget Target), Shader>> s_shaders = new();
     private static readonly object s_gate = new();
     private static IGlobalSession? s_global;
+    private static ShaderAssetLibrary? s_assets;
 
-    internal static Shader Get(string name, SlangCompileTarget target)
+    internal static Shader Get(string name, SlangCompileTarget target, IGlobalSession? global = null)
     {
         lock (s_gate)
         {
-            if (s_shaders.TryGetValue((name, target), out Shader? shader)) return shader;
-            shader = Compile(name, target);
-            s_shaders.Add((name, target), shader);
+            global ??= s_global ??= Shader.CreateSlangGlobalSession();
+            var shaders = s_shaders.GetValue(global, static _ => []);
+            if (shaders.TryGetValue((name, target), out Shader? shader)) return shader;
+            shader = Load(name, target, global);
+            shaders.Add((name, target), shader);
             return shader;
         }
     }
 
-    private static Shader Compile(string name, SlangCompileTarget target)
+    private static Shader Load(string name, SlangCompileTarget target, IGlobalSession global)
     {
-        if (s_global is null)
+        if (s_assets is null)
         {
-            Require(Slang.CreateGlobalSession(Slang.ApiVersion, out IGlobalSession global), null);
-            s_global = global;
+            using Stream resource = typeof(ElementShaders).Assembly.GetManifestResourceStream(
+                "SomeEngine.Elements.Render.Shaders.Elements.assetpack")!;
+            using var bytes = new MemoryStream();
+            resource.CopyTo(bytes);
+            AssetPack pack = AssetPack.OpenAsync(new MemoryRangeSource(bytes.ToArray()), ownsSource: true)
+                .AsTask().GetAwaiter().GetResult();
+            s_assets = ShaderAssetLibrary.OpenAsync(pack).AsTask().GetAwaiter().GetResult();
         }
-        var targetDescription = new TargetDesc
-        {
-            Format = target,
-            Profile = s_global.FindProfile(target == SlangCompileTarget.Spirv ? "glsl_460" : "sm_6_0"),
-            Flags = target == SlangCompileTarget.Spirv ? SlangTargetFlags.GenerateSpirvDirectly : 0,
-        };
-        var description = new SessionDesc
-        {
-            Targets = [targetDescription],
-            DefaultMatrixLayoutMode = SlangMatrixLayoutMode.RowMajor,
-            CompilerOptionEntries =
-            [
-                new(CompilerOptionName.VulkanUseEntryPointName, CompilerOptionValue.FromInt(1)),
-                new(CompilerOptionName.DebugInformation, CompilerOptionValue.FromInt(0)),
-            ],
-        };
-        Require(s_global.CreateSession(description, out ISession session), null);
-        using Stream source = typeof(ElementShaders).Assembly.GetManifestResourceStream(
-            $"SomeEngine.Elements.Render.Shaders.{name}.slang")!;
-        using var reader = new StreamReader(source);
-        IModule? shaderSource = session.LoadModuleFromSource(name, $"{name}.slang",
-            Slang.CreateBlob(reader.ReadToEnd()), out ISlangBlob? diagnostics);
-        if (shaderSource is null) throw new InvalidDataException(DiagnosticText(diagnostics));
-        SlangShaderData.RetainSession(session, shaderSource);
-        Require(shaderSource.FindEntryPointByName("vertexMain", out IEntryPoint vertex), null);
-        SlangShaderData.RetainSession(session, vertex);
-        Require(shaderSource.FindEntryPointByName("pixelMain", out IEntryPoint pixel), null);
-        SlangShaderData.RetainSession(session, pixel);
-        Require(session.CreateCompositeComponentType([shaderSource, vertex, pixel],
-            out IComponentType combined, out diagnostics), diagnostics);
-        SlangShaderData.RetainSession(session, combined);
-        Require(combined.Link(out IComponentType linked, out diagnostics), diagnostics);
-        SlangShaderData.RetainSession(session, linked);
-        return Shader.CreateFromSlang(name, s_global, session, [shaderSource], [vertex, pixel], linked, [targetDescription]);
+        SessionDesc description = ElementShaderSettings.Create(global, target);
+        return s_assets.CreateAsync(name, global, description).AsTask().GetAwaiter().GetResult();
     }
-
-    private static void Require(SlangResult result, ISlangBlob? diagnostics)
-    {
-        if (result.Failed) throw new InvalidDataException($"Element shader compilation failed: {result}. {DiagnosticText(diagnostics)}");
-    }
-
-    private static string DiagnosticText(ISlangBlob? diagnostics) => diagnostics is null ? string.Empty : diagnostics.AsString;
 }

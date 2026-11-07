@@ -594,12 +594,12 @@ internal static class RuntimeApplication
                 MaximumFramesInFlight: 2,
                 Label: "SomeEngine Runtime Render Graph"));
         _ = instances.GetDataTransfer(renderGraph);
-        using var skinning = new SkinningFeature(backend, device, renderGraph);
-        using var skinBounds = new SkinBoundsFeature(backend, device, renderGraph, skinning);
+        using var skinning = new SkinningFeature(backend, device, renderGraph, uiShader.SlangCode.Global);
+        using var skinBounds = new SkinBoundsFeature(backend, device, renderGraph, skinning, uiShader.SlangCode.Global);
         SurfaceMaterial? surfaceMaterial = includeInterface
-            ? SurfaceMaterial.Create(device.Capabilities.CompileTarget) : null;
+            ? SurfaceMaterial.Create(device.Capabilities.CompileTarget, uiShader.SlangCode.Global) : null;
         GlyphsMaterial? glyphMaterial = includeInterface
-            ? GlyphsMaterial.Create(device.Capabilities.CompileTarget) : null;
+            ? GlyphsMaterial.Create(device.Capabilities.CompileTarget, uiShader.SlangCode.Global) : null;
         using CanvasRenderer? surfaces = surfaceMaterial is null ? null
             : new CanvasRenderer(backend, device, renderGraph, renderWorld, surfaceMaterial, PresentationFormat, glyphMaterial);
         GraphRegionId sceneRegion, primaryGeometryRegion, primaryDepthAfterRegion, targetGeometryRegion;
