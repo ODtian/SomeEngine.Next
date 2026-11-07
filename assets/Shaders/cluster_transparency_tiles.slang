@@ -236,6 +236,11 @@ uint LoadTransparencyHardwareMask(uint id, uint2 origin, uint2 tile, ClusteredLi
 
 void FinalizeTransparencyTiles()
 {
+    if (TransparencyRequestsUseTiles())
+    {
+        uint tiles = TransparencyCellWork.Load(12u);
+        WriteTransparencyDispatch(160u, uint3(min(tiles, 65535u), (tiles + 65534u) / 65535u, 1u));
+    }
     uint general = TransparencyTileWork.Load(16u) * 4u, depth = TransparencyTileWork.Load(20u) * 32u;
     WriteTransparencyDispatch(100u,uint3(min(general,65535u),(general + 65534u) / 65535u,1u));
     WriteTransparencyDispatch(136u,uint3(min(depth,65535u),(depth + 65534u) / 65535u,1u));

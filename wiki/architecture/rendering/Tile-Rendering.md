@@ -34,7 +34,9 @@ Count 与 Scatter 按实际图元或来源数量派发线程组。数量在一�
 
 原有着色阶段与透明阶段共同调用 `ResolveBarycentricsAtDepth` 和 `EvaluateMaterialHit` 准备命中输入，再通过 `evaluateSurface` 或 `evaluateTransparency` 进入用户的表面求值。透明投影记录提供已经计算的投影系数；原有着色入口从图元计算投影系数。用户三角形与求值数据保留在当次 pass 的局部变量或组共享数据中，两条路径共用同一份重建与表面输入实现。
 
-阴影页请求保留在 VSM 页分配之前的请求阶段。普通请求从用户 Domain 取得位置，透明请求从当次覆盖深度还原位置，两者直接调用 VSM 的 `MarkVirtualShadowPages`。材质的表面求值接口提供颜色与调试行为。
+LocalTile 先从组共享来源或当次计算取得同一份 `Shading`，再通过一个 `shadeShading` 调用点进入完整用户材质。8 项命中队列通过后续批次完成累积，16 份组共享来源数据供本组复用。
+
+阴影页请求保留在 VSM 页分配之前的请求阶段。普通请求从用户 Domain 取得位置，透明请求从当次覆盖深度还原位置，两者直接调用 VSM 的 `MarkVirtualShadowPages`。几何和引用完整驻留时，透明请求按既有 occupied XY tile 列表派发，每批 16 图元在组内复用当前求值数据；全扫描和预算继续处理沿来源投影枚举。材质的表面求值接口提供颜色与调试行为。
 
 实现入口：`src/SomeEngine.Render/Tiles/`、`ClusterPipelineSystem.Transparency.cs`、`cluster_shade_pipeline.slang` 与 `cluster_transparency_material.slang`。
 

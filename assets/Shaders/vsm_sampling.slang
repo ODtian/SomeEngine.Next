@@ -1126,8 +1126,9 @@ Texture2D<float> VirtualShadowPrefilteredAtlas;
 
 VirtualShadowDepthSample ReadVirtualShadowDirectionalResidentSample(StructuredBuffer<VirtualShadowMapParameters> views,
     StructuredBuffer<uint> pageTable, StructuredBuffer<uint> residentPages, Texture2DArray<uint> atlas,
-    uint requestedViewIndex, float2 uv)
+    uint requestedViewIndex, float2 uv, out VirtualShadowFilterContext context)
 {
+    context = (VirtualShadowFilterContext)0;
     VirtualShadowDepthSample sample = (VirtualShadowDepthSample)0;
     sample.ViewIndex = requestedViewIndex;
     VirtualShadowMapParameters requested = views[requestedViewIndex];
@@ -1160,6 +1161,10 @@ VirtualShadowDepthSample ReadVirtualShadowDirectionalResidentSample(StructuredBu
         bool wholePage;
         if (TryResolveVirtualShadowPixel(source, entry, 0u, uint2(sourcePage), atlasPage, wholePage))
         {
+            context.LocalPage = uint2(sourcePage);
+            context.AtlasPage = atlasPage;
+            context.Resident = true;
+            context.WholePage = wholePage;
             sample.Valid = true;
             sample.Depth = ReadVirtualShadowReverseDepth(source, atlas, atlasPage, pixel & (source.PageSize - 1u));
             sample.ViewIndex = requestedViewIndex + sourceOffset;
@@ -1170,6 +1175,15 @@ VirtualShadowDepthSample ReadVirtualShadowDirectionalResidentSample(StructuredBu
         offset = sourceOffset + 1u;
     }
     return sample;
+}
+
+VirtualShadowDepthSample ReadVirtualShadowDirectionalResidentSample(StructuredBuffer<VirtualShadowMapParameters> views,
+    StructuredBuffer<uint> pageTable, StructuredBuffer<uint> residentPages, Texture2DArray<uint> atlas,
+    uint requestedViewIndex, float2 uv)
+{
+    VirtualShadowFilterContext context;
+    return ReadVirtualShadowDirectionalResidentSample(views, pageTable, residentPages, atlas,
+        requestedViewIndex, uv, context);
 }
 
 bool TryReadVirtualShadowDirectionalResidentSourceReverseDepth(StructuredBuffer<VirtualShadowMapParameters> views,

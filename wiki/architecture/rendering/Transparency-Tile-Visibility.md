@@ -449,7 +449,7 @@ RTX 3080，驱动 32.0.16.1074，1280×720。每条方法预热目标为 250 ms 
 
 每帧几何阶段读取两轮 Cluster 可见几何的实际数量，并生成投影三角形和 tile 图元引用。每个 tile 的实际引用数量决定查询范围。每个像素在寄存器中保留四个按深度、来源图元次序排列的命中；处理一批后，继续从上批最后的命中向后查询，直到完整覆盖输入。逐命中使用自己的深度、位置、重心坐标及其梯度求值表面，调用 `evaluateSurface` 后以该 receiver 进行 Forward 光照和阴影采样，再执行前向 alpha 累积。opaque 颜色作为累积背景，合成位置位于 opaque 着色之后、TAA 之前。
 
-透明 receiver 的覆盖请求在 VSM 页分配之前执行。该阶段在局部变量中复用当次投影产生的用户数据，沿覆盖深度还原渲染位置并直接调用 `MarkVirtualShadowPages`；VSM 持有页需求发布和 receiver footprint 计算。颜色阶段复用 Forward 的逐 receiver 阴影采样。
+透明 receiver 的覆盖请求在 VSM 页分配之前执行。几何和引用完整驻留时，该阶段读取 occupied XY tile 的既有引用，每批 16 图元在组内形成并复用本次用户求值数据；全扫描和预算继续处理沿来源投影枚举。请求沿覆盖深度还原渲染位置并直接调用 `MarkVirtualShadowPages`，VSM 持有页需求发布和 receiver footprint 计算。颜色阶段复用 Forward 的逐 receiver 阴影采样。
 
 `MaterialState.ColorLimit` 声明线性 RGB 每通道的颜色上界，默认 `1`；`MaximumError` 声明线性 RGB 最大通道误差，默认 `0`，表示完整合成。近似合成仅在剩余透射率乘以颜色上界的一半落入误差限时结束，并以剩余区间的中点估计尾部。场景使用全部参与材质的最大颜色上界和最小误差限，背景颜色同时参与上界计算。
 

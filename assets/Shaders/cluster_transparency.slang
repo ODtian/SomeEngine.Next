@@ -890,12 +890,85 @@ bool TransparencyHit<TMaterials : ITransparencyMaterials>(uniform TMaterials mat
         TransparencyMaterialHit(materials, pixel, triangle, cell, opaque, depth);
 }
 
-groupshared TransparencyTriangle TransparencyRequestTriangle;
+bool TransparencyRequestsUseTiles()
+{
+    return TransparencyUniforms.UseIndex != 0u &&
+        TransparencyTriangleCount.Load(0u) <= TransparencyUniforms.TriangleCapacity &&
+        TransparencyTriangleCount.Load(4u) == TransparencyTriangleCount.Load(8u) &&
+        TransparencyCellWork.Load(12u) != 0u;
+}
+
+void MarkTransparencyShadowPages(uint3 pixel, float depth, float4x4 clipToWorld, bool firstPerson)
+{
+    float2 uv = (float2(pixel.xy) + .5) / float2(TransparencyUniforms.Width, TransparencyUniforms.Height);
+    float4 world = mul(float4(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, depth, 1.0), clipToWorld);
+    float3 position = abs(world.w) > 1e-8 ? world.xyz / world.w : world.xyz;
+    MarkVirtualShadowPages(position, pixel.z, firstPerson);
+}
+
+groupshared TransparencyTriangle TransparencyRequestTriangles[16];
+groupshared uint TransparencyRequestFirstPerson[16];
 groupshared uint TransparencyRequestMore;
+
+void RequestTransparencyTilePages<TMaterials : ITransparencyMaterials>(uniform TMaterials materials, uint work, uint thread)
+{
+    if (work >= TransparencyCellWork.Load(12u)) return;
+    uint tileIndex = TransparencyCellWork.Load(16u + (TransparencyUniforms.CellCount + work) * 4u);
+    ClusteredLightGridParameters grid = TransparencyLightingViews[0];
+    uint view = tileIndex / (grid.TileCountX * grid.TileCountY);
+    grid = TransparencyLightingViews[view];
+    tileIndex %= grid.TileCountX * grid.TileCountY;
+    uint2 tile = uint2(tileIndex % grid.TileCountX, tileIndex / grid.TileCountX);
+    uint2 origin = tile * uint2(grid.TileSizeX, grid.TileSizeY);
+    uint pixelCount = grid.TileSizeX * grid.TileSizeY;
+    float4x4 clipToWorld = TransparencyViews[view].ClipToWorld;
+    for (uint slice = 0u; slice < grid.DepthSliceCount; slice++)
+    {
+        uint cell = TransparencyCell(view, uint3(tile, slice));
+        uint first = TransparencyCellOffsets[cell], count = TransparencyTileCounts[cell];
+        for (uint start = 0u; start < count; start += 16u)
+        {
+            uint batch = min(count - start, 16u);
+            if (thread < batch)
+            {
+                uint index = TransparencyReferences[first + start + thread];
+                TransparencyTriangle triangle = TransparencyRasterTriangles[index];
+                TransparencyRequestTriangles[thread] = triangle;
+                materials.cacheTileShading(thread, materials.evaluateShading(index));
+                uint instance = TransparencySourceRequest(triangle.Source).InstanceID;
+                TransparencyRequestFirstPerson[thread] = LoadInstanceFirstPerson(TransparencyInstances, TransparencyProperties, instance).x;
+            }
+            GroupMemoryBarrierWithGroupSync();
+            for (uint firstPixel = 0u; firstPixel < pixelCount; firstPixel += 256u)
+            {
+                uint pixelIndex = firstPixel + thread;
+                uint3 pixel = uint3(origin + uint2(pixelIndex % grid.TileSizeX, pixelIndex / grid.TileSizeX), view);
+                if (pixelIndex >= pixelCount || pixel.x >= TransparencyUniforms.Width || pixel.y >= TransparencyUniforms.Height) continue;
+                float opaque = TransparencyOpaqueDepth.Load(int4(pixel, 0));
+                for (uint item = 0u; item < batch; item++)
+                {
+                    TransparencyTriangle triangle = TransparencyRequestTriangles[item];
+                    float depth, resultDepth;
+                    if (!TransparencyCovered(triangle, float2(pixel.xy) + .5, depth) ||
+                        !materials.coverShading(triangle.Bin, triangle.Source, materials.loadTileShading(item),
+                            triangle.Domain, pixel, depth, resultDepth) ||
+                        !TransparencyDepthHit(pixel, triangle, cell, opaque, resultDepth)) continue;
+                    MarkTransparencyShadowPages(pixel, resultDepth, clipToWorld, (TransparencyRequestFirstPerson[item] & 3u) == 1u);
+                }
+            }
+            GroupMemoryBarrierWithGroupSync();
+        }
+    }
+}
 
 void RequestTransparencyPages<TMaterials : ITransparencyMaterials>(uniform TMaterials materials, uint3 group, uint thread)
 {
     uint work = group.x + group.y * 65535u;
+    if (TransparencyRequestsUseTiles())
+    {
+        RequestTransparencyTilePages(materials, work, thread);
+        return;
+    }
     uint projectedSources = TransparencyTriangleCount.Load(16u);
     bool compact = projectedSources <= TransparencyUniforms.TriangleCapacity;
     uint count = compact ? projectedSources : TransparencySourceCount() * 128u;
@@ -923,7 +996,7 @@ void RequestTransparencyPages<TMaterials : ITransparencyMaterials>(uniform TMate
             {
                 TransparencyTriangle triangle;
                 if (!ProjectTransparency(source, primitive, bin, material, view, domain, first, second, third, triangle)) continue;
-                TransparencyRequestTriangle = triangle;
+                TransparencyRequestTriangles[0] = triangle;
                 materials.cacheTileShading(0u, materials.readProjectionShading(bin, source, projection));
                 TransparencyRequestMore = 1u;
                 break;
@@ -931,7 +1004,7 @@ void RequestTransparencyPages<TMaterials : ITransparencyMaterials>(uniform TMate
         }
         GroupMemoryBarrierWithGroupSync();
         if (TransparencyRequestMore == 0u) break;
-        TransparencyTriangle triangle = TransparencyRequestTriangle;
+        TransparencyTriangle triangle = TransparencyRequestTriangles[0];
         TMaterials.Shading shading = materials.loadTileShading(0u);
         int2 minimum = max(0, int2(ceil(min(triangle.First, min(triangle.Second, triangle.Third)) - .5)));
         int2 maximum = min(int2(TransparencyUniforms.Width, TransparencyUniforms.Height) - 1,
@@ -945,11 +1018,7 @@ void RequestTransparencyPages<TMaterials : ITransparencyMaterials>(uniform TMate
             if (!TransparencyCovered(triangle, float2(pixel.xy) + .5, depth) ||
                 !materials.coverShading(bin, source, shading, triangle.Domain, pixel, depth, resultDepth) ||
                 !TransparencyDepthHit(pixel, triangle, 0xFFFFFFFFu, opaque, resultDepth)) continue;
-            float2 uv = (float2(pixel.xy) + .5) / float2(TransparencyUniforms.Width, TransparencyUniforms.Height);
-            float4 world = mul(float4(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, resultDepth, 1.0),
-                clipToWorld);
-            float3 position = abs(world.w) > 1e-8 ? world.xyz / world.w : world.xyz;
-            MarkVirtualShadowPages(position, view, firstPerson);
+            MarkTransparencyShadowPages(pixel, resultDepth, clipToWorld, firstPerson);
         }
         GroupMemoryBarrierWithGroupSync();
     }

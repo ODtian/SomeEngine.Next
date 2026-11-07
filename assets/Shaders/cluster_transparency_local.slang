@@ -213,11 +213,21 @@ void ResolveTransparencyLocalTile<TMaterials : ITransparencyMaterials>(uniform T
                 uint address = GetTransparencyLocalHitAddress(item,thread - lane + pixelLane);
                 uint index = TransparencyLocalHitIds[address];
                 float depth = TransparencyLocalHitDepths[address];
-                TransparencyTriangle triangle = cached ? TransparencyLocalTriangles[index] : TransparencyRasterTriangles[index];
+                TransparencyTriangle triangle;
+                TMaterials.Shading shading;
+                [branch]
+                if (cached)
+                {
+                    triangle = TransparencyLocalTriangles[index];
+                    shading = materials.loadTileShading(index);
+                }
+                else
+                {
+                    triangle = TransparencyRasterTriangles[index];
+                    shading = materials.evaluateShading(index);
+                }
                 uint3 samplePixel = uint3(origin + uint2(pixelLane & 7u,pixelLane >> 3u),view);
-                surface = cached
-                    ? materials.shadeShading(triangle.Bin,triangle.Source,materials.loadTileShading(index),samplePixel,depth)
-                    : materials.shadeTriangle(triangle.Bin,index,samplePixel,depth);
+                surface = materials.shadeShading(triangle.Bin,triangle.Source,shading,samplePixel,depth);
             }
             if (compact)
                 CompositeTransparencyWaveBatch(surface,pixelLane,firstHit,queued,batchFirst,color,transmission);

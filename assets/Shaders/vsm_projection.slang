@@ -59,8 +59,10 @@ float CalculateVirtualShadowDirectionalDepthOffset(VirtualShadowMapParameters vi
 
 VirtualShadowDepthSample ReadVirtualShadowProjectionDepth(
     StructuredBuffer<VirtualShadowMapParameters> views, StructuredBuffer<uint> pages,
-    Texture2DArray<uint> atlas, uint requestedView, float2 uv, uint firstMip)
+    Texture2DArray<uint> atlas, uint requestedView, float2 uv, uint firstMip,
+    out VirtualShadowFilterContext context)
 {
+    context = (VirtualShadowFilterContext)0;
     VirtualShadowDepthSample sample = (VirtualShadowDepthSample)0;
     sample.ViewIndex = requestedView;
     VirtualShadowMapParameters view = views[requestedView];
@@ -69,7 +71,7 @@ VirtualShadowDepthSample ReadVirtualShadowProjectionDepth(
     {
 #ifdef VSM_RESIDENT_LOOKUP_ENABLED
         return ReadVirtualShadowDirectionalResidentSample(views, pages,
-            VirtualShadowResidentPages, atlas, requestedView, uv);
+            VirtualShadowResidentPages, atlas, requestedView, uv, context);
 #else
         uint remaining = view.ClipmapLevelCount - uint(view.ClipmapLevel - view.FirstClipmapLevel);
         for (uint offset = 0u; offset < remaining; offset++)
@@ -79,7 +81,14 @@ VirtualShadowDepthSample ReadVirtualShadowProjectionDepth(
             float2 sourceUV = uv * transform.x + transform.yz;
             if (any(sourceUV < 0.0) || any(sourceUV >= 1.0)) continue;
             uint2 pixel = uint2(sourceUV * float(source.VirtualResolution));
-            if (!TryReadVirtualShadowMipReverseDepth(source, pages, atlas, 0u, pixel, reverseDepth)) continue;
+            uint atlasPage;
+            bool wholePage;
+            if (!TryResolveVirtualShadowPixel(source, pages, 0u, pixel, atlasPage, wholePage)) continue;
+            reverseDepth = ReadVirtualShadowReverseDepth(source, atlas, atlasPage, pixel & (source.PageSize - 1u));
+            context.LocalPage = pixel >> firstbithigh(source.PageSize);
+            context.AtlasPage = atlasPage;
+            context.Resident = true;
+            context.WholePage = wholePage;
             sample.ViewIndex = requestedView + offset;
             sample.Valid = true;
             break;
@@ -100,16 +109,26 @@ VirtualShadowDepthSample ReadVirtualShadowProjectionDepth(
     }
     else
     {
-        sample.Valid = TryReadVirtualShadowReverseDepthAtOrCoarser(view, pages, atlas, firstMip, uv,
-            reverseDepth, sample.MipLevel);
+        context = BuildVirtualShadowFilterContext(view, pages, firstMip, uv);
+        sample.Valid = context.Resident;
+        sample.MipLevel = sample.Valid ? context.MipLevel : max(view.MipLevelCount, 1u) - 1u;
         if (!sample.Valid) return sample;
         uint resolution = VirtualShadowMipResolution(view, sample.MipLevel);
         uint2 pixel = min(uint2(uv * float(resolution)), resolution - 1u);
+        reverseDepth = ReadVirtualShadowReverseDepth(view, atlas, context.AtlasPage, pixel & (view.PageSize - 1u));
         sample.UV = uv;
         sample.TexelCenter = (float2(pixel) + 0.5) / float(resolution);
     }
     sample.Depth = reverseDepth;
     return sample;
+}
+
+VirtualShadowDepthSample ReadVirtualShadowProjectionDepth(
+    StructuredBuffer<VirtualShadowMapParameters> views, StructuredBuffer<uint> pages,
+    Texture2DArray<uint> atlas, uint requestedView, float2 uv, uint firstMip)
+{
+    VirtualShadowFilterContext context;
+    return ReadVirtualShadowProjectionDepth(views, pages, atlas, requestedView, uv, firstMip, context);
 }
 
 float CalculateVirtualShadowSlopeBias(VirtualShadowMapParameters source,

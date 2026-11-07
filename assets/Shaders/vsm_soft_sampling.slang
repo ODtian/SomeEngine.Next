@@ -10,23 +10,29 @@ static const uint VSM_SOFT_MAX_FILTER_QUERIES = 8u;
 struct VirtualShadowSoftPlane
 {
     uint ViewIndex;
-    float3 Ndc;
+    float Depth;
     float2 UV;
     float2 Gradient;
     float DepthOffset;
+    float RoundingRadius;
+    float RayStartBias;
 };
 
-VirtualShadowSoftPlane BuildVirtualShadowSoftPlane(StructuredBuffer<VirtualShadowMapParameters> views,
-    uint viewIndex, float3 position, float3 normal)
+VirtualShadowSoftPlane BuildVirtualShadowSoftPlane(VirtualShadowMapParameters view,
+    uint viewIndex, float3 position, float3 normal, float rayStartDistance)
 {
     VirtualShadowSoftPlane plane;
     plane.ViewIndex = viewIndex;
-    VirtualShadowMapParameters view = views[viewIndex];
-    ProjectVirtualShadowPosition(view, position, plane.Ndc, plane.UV);
+    float3 ndc;
+    ProjectVirtualShadowPosition(view, position, ndc, plane.UV);
+    plane.Depth = ndc.z;
     plane.Gradient = CalculateVirtualShadowReceiverPlaneDepthGradient(view, position, normal);
     plane.DepthOffset = 0.0;
     if (IsDirectionalVirtualShadowProjection(view))
         plane.DepthOffset = CalculateVirtualShadowDirectionalDepthOffset(view, position);
+    precise float receiver = 1.0 - plane.Depth;
+    plane.RoundingRadius = VirtualShadowReverseDepthRoundingRadius(receiver);
+    plane.RayStartBias = CalculateVirtualShadowRayStartBias(view, position, rayStartDistance);
     return plane;
 }
 
@@ -103,24 +109,24 @@ float2 CalculateVirtualShadowSolarDiskOffset(float2 disk, float sourceArea, floa
 
 bool ReadVirtualShadowSoftDepth(StructuredBuffer<VirtualShadowMapParameters> views,
     StructuredBuffer<uint> pages, Texture2DArray<uint> atlas,
-    uint firstView, uint requestedView, uint viewCount, uint mip, float3 position,
+    uint firstView, uint requestedView, VirtualShadowMapParameters view, uint viewCount, uint mip, float3 position,
     float2 sampleUV, float3 normal, inout VirtualShadowSoftPlane plane,
+    inout VirtualShadowFilterContext context,
     out VirtualShadowDepthSample sample, out bool blocked, out float separation, float rayStartDistance)
 {
-    VirtualShadowMapParameters baseView = views[firstView];
     uint queryView = requestedView;
     float2 uv = sampleUV;
     sample = (VirtualShadowDepthSample)0;
     blocked = false;
     separation = 0.0;
-    if (IsDirectionalVirtualShadowProjection(baseView))
+    if (IsDirectionalVirtualShadowProjection(view))
     {
         while (queryView < firstView + viewCount && (any(uv < 0.0) || any(uv >= 1.0)))
         {
             queryView++;
             if (queryView < firstView + viewCount)
             {
-                float4 transform = VirtualShadowClipmapScaleBias(views[requestedView], views[queryView], queryView - requestedView);
+                float4 transform = VirtualShadowClipmapScaleBias(view, views[queryView], queryView - requestedView);
                 uv = sampleUV * transform.x + transform.yz;
             }
         }
@@ -128,27 +134,43 @@ bool ReadVirtualShadowSoftDepth(StructuredBuffer<VirtualShadowMapParameters> vie
     }
     else if (any(uv < 0.0) || any(uv >= 1.0))
     {
-        if (baseView.LightKind != VSM_LIGHT_POINT ||
+        if (view.LightKind != VSM_LIGHT_POINT ||
             !ProjectVirtualShadowSoftCubeTap(views, firstView, requestedView, sampleUV, position, normal, queryView, uv)) return false;
     }
-    sample = ReadVirtualShadowProjectionDepth(views, pages, atlas, queryView, uv, mip);
+    if (context.Resident && queryView == requestedView)
+    {
+        uint resolution = VirtualShadowMipResolution(view, context.MipLevel);
+        uint2 pixel = min(uint2(uv * float(resolution)), resolution - 1u);
+        if (all((pixel >> firstbithigh(view.PageSize)) == context.LocalPage))
+        {
+            sample.Valid = true;
+            sample.ViewIndex = requestedView;
+            sample.MipLevel = context.MipLevel;
+            sample.UV = uv;
+            sample.TexelCenter = (float2(pixel) + 0.5) / float(resolution);
+            sample.Depth = ReadVirtualShadowReverseDepth(view, atlas, context.AtlasPage, pixel & (view.PageSize - 1u));
+        }
+    }
+    if (!sample.Valid)
+        sample = ReadVirtualShadowProjectionDepth(views, pages, atlas, queryView, uv, mip, context);
     if (!sample.Valid) return false;
-    VirtualShadowMapParameters source = views[sample.ViewIndex];
+    VirtualShadowMapParameters source = view;
+    if (sample.ViewIndex != requestedView)
+        source = views[sample.ViewIndex];
     if (plane.ViewIndex != sample.ViewIndex)
-        plane = BuildVirtualShadowSoftPlane(views, sample.ViewIndex, position, normal);
+        plane = BuildVirtualShadowSoftPlane(source, sample.ViewIndex, position, normal, rayStartDistance);
     float stored = sample.Depth;
-    precise float receiver = 1.0 - plane.Ndc.z;
+    precise float receiver = 1.0 - plane.Depth;
     float planeOffset = dot(sample.UV - plane.UV, plane.Gradient);
-    precise float centerDepthDifference = IsDirectionalVirtualShadowProjection(baseView)
+    precise float centerDepthDifference = IsDirectionalVirtualShadowProjection(view)
         ? (stored - 0.5) + plane.DepthOffset : stored - receiver;
     precise float depthDifference = centerDepthDifference + planeOffset;
     float slopeBias = CalculateVirtualShadowSlopeBias(source, sample, plane.Gradient);
     float roundingRadius = VirtualShadowReverseDepthRoundingRadius(stored)
-        + VirtualShadowReverseDepthRoundingRadius(receiver);
-    float rayStartBias = CalculateVirtualShadowRayStartBias(source, position, rayStartDistance);
-    blocked = depthDifference - slopeBias - rayStartBias > roundingRadius;
+        + plane.RoundingRadius;
+    blocked = depthDifference - slopeBias - plane.RayStartBias > roundingRadius;
     if (blocked)
-        separation = IsDirectionalVirtualShadowProjection(baseView)
+        separation = IsDirectionalVirtualShadowProjection(view)
             ? max(1e-6 * source.WorldUnitsPerCentimeter, centerDepthDifference / abs(source.ProjectionDepthScale))
             : VirtualShadowOccluderDistance(source, stored, receiver, length(position - source.LightPosition));
     return true;
@@ -164,16 +186,19 @@ VirtualShadowProjectionResult SampleVirtualShadowSoftView(StructuredBuffer<Virtu
     if (emitter <= 0.0 || maxRadiusTexels <= 0.0)
         return ProjectVirtualShadowHard(views, pages, atlas, requestedView, position, normal, mip, rayStartDistance);
     VirtualShadowProjectionResult result = EmptyVirtualShadowProjection();
-    VirtualShadowSoftPlane plane = BuildVirtualShadowSoftPlane(views, requestedView, position, normal);
+    VirtualShadowSoftPlane plane = BuildVirtualShadowSoftPlane(view, requestedView, position, normal, rayStartDistance);
+    VirtualShadowFilterContext context = (VirtualShadowFilterContext)0;
     VirtualShadowDepthSample center;
     bool centerBlocked;
     float centerSeparation;
-    bool centerValid = ReadVirtualShadowSoftDepth(views, pages, atlas, firstView, requestedView, viewCount, mip,
-        position, plane.UV, normal, plane, center, centerBlocked, centerSeparation, rayStartDistance);
+    bool centerValid = ReadVirtualShadowSoftDepth(views, pages, atlas, firstView, requestedView, view, viewCount, mip,
+        position, plane.UV, normal, plane, context, center, centerBlocked, centerSeparation, rayStartDistance);
     if (!centerValid) { center.ViewIndex = requestedView; center.MipLevel = mip; }
     result.ViewIndex = center.ViewIndex;
     result.MipLevel = center.MipLevel;
-    VirtualShadowMapParameters source = views[center.ViewIndex];
+    VirtualShadowMapParameters source = view;
+    if (center.ViewIndex != requestedView)
+        source = views[center.ViewIndex];
     float4 clip = ProjectVirtualShadowClip(source, position);
     float projectionScale = .5 * length(float3(source.LightViewProjection[0][0],
         source.LightViewProjection[1][0], source.LightViewProjection[2][0])) / max(abs(clip.w), 1e-20);
@@ -200,7 +225,7 @@ VirtualShadowProjectionResult SampleVirtualShadowSoftView(StructuredBuffer<Virtu
     float minimumDistance = 1e-6 * view.WorldUnitsPerCentimeter;
     float distanceToLight = length(position - view.LightPosition);
     float maximumSeparation = IsDirectionalVirtualShadowProjection(view)
-        ? max(plane.Ndc.z, 0.0) / max(abs(source.ProjectionDepthScale), 1e-20)
+        ? max(plane.Depth, 0.0) / max(abs(source.ProjectionDepthScale), 1e-20)
         : max(distanceToLight - minimumDistance, 0.0);
     float searchRadius = IsDirectionalVirtualShadowProjection(view)
         ? emitter * maximumSeparation : CalculateVirtualShadowLocalSourceSupport(view, position);
@@ -229,8 +254,9 @@ VirtualShadowProjectionResult SampleVirtualShadowSoftView(StructuredBuffer<Virtu
         bool blocked;
         float separation;
         VirtualShadowSoftPlane queryPlane = plane;
-        if (!ReadVirtualShadowSoftDepth(views, pages, atlas, firstView, requestedView, viewCount, mip,
-                position, queryUV, normal, queryPlane, sample, blocked, separation, rayStartDistance))
+        VirtualShadowFilterContext queryContext = context;
+        if (!ReadVirtualShadowSoftDepth(views, pages, atlas, firstView, requestedView, source, viewCount, mip,
+                position, queryUV, normal, queryPlane, queryContext, sample, blocked, separation, rayStartDistance))
             continue;
         validSearches++;
         // A directional emitter can reach this query only inside the cone at
@@ -259,8 +285,9 @@ VirtualShadowProjectionResult SampleVirtualShadowSoftView(StructuredBuffer<Virtu
         bool blocked;
         float separation;
         VirtualShadowSoftPlane queryPlane = plane;
-        if (!ReadVirtualShadowSoftDepth(views, pages, atlas, firstView, requestedView, viewCount, mip,
-                position, queryUV, normal, queryPlane, sample, blocked, separation, rayStartDistance))
+        VirtualShadowFilterContext queryContext = context;
+        if (!ReadVirtualShadowSoftDepth(views, pages, atlas, firstView, requestedView, source, viewCount, mip,
+                position, queryUV, normal, queryPlane, queryContext, sample, blocked, separation, rayStartDistance))
             continue;
         validFilters++;
         visible += blocked ? 0.0 : 1.0;
