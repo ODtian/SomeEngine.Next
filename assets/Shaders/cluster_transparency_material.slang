@@ -19,22 +19,105 @@ struct TRANSPARENCY_EVALUATOR(TRANSPARENCY_MATERIAL_TYPE)
     VisibilityEvaluate Visibility;
     SurfaceEvaluate Surface;
 
-    TriangleInfo triangleInfo(uint source, uint viewIndex)
+    TriangleInfo triangleInfo(uint source, uint viewIndex, bool shareSource = true)
     {
-        TriangleInfo info;
-        LoadTriangleInfo(TransparencySourceRequest(source), TransparencySourceTriangle(source), info);
+        TriangleInfo info = {};
+        uint leader = shareSource ? WaveMaskFirstLane(WaveMatchingLanes(source) & WaveMatchingLanes(viewIndex)) : WaveGetLaneIndex();
+        if (WaveGetLaneIndex() == leader)
+            LoadTriangleInfo(TransparencySourceRequest(source), TransparencySourceTriangle(source), info);
+        if (shareSource) info = ReadTriangleInfoLane(info, leader);
+        info.viewIndex = viewIndex;
         info.visibleClusterIndex = source >> 7u;
         info.visibility = source;
-        info.sourceLane = WaveMaskFirstLane(WaveMatchingLanes(source) & WaveMatchingLanes(viewIndex));
+        info.sourceLane = leader;
         return info;
+    }
+
+    struct SourceData
+    {
+        TriangleInfo Info;
+        DomainEvaluate.TriangleData Triangle;
+        VisibilityEvaluate.Varying First, Second, Third;
+        PipelineTriangleProjection Projected;
+    };
+
+    SourceData readSourceData(SourceData value, uint lane)
+    {
+        value.Info.visibility = WaveReadLaneAt(value.Info.visibility, lane);
+        value.Info.viewIndex = WaveReadLaneAt(value.Info.viewIndex, lane);
+        value.Info = ReadTriangleInfoLane(value.Info, lane);
+        value.Info.sourceLane = lane;
+        value.Triangle = Domain.readLane(value.Triangle, lane);
+        value.First = Visibility.readLane(value.First, lane);
+        value.Second = Visibility.readLane(value.Second, lane);
+        value.Third = Visibility.readLane(value.Third, lane);
+        value.Projected.Origin = WaveReadLaneAt(value.Projected.Origin, lane);
+        value.Projected.FirstEdge = WaveReadLaneAt(value.Projected.FirstEdge, lane);
+        value.Projected.SecondEdge = WaveReadLaneAt(value.Projected.SecondEdge, lane);
+        value.Projected.InverseArea = WaveReadLaneAt(value.Projected.InverseArea, lane);
+        value.Projected.InverseW = WaveReadLaneAt(value.Projected.InverseW, lane);
+        return value;
+    }
+
+    SourceData evaluateSource(TriangleInfo info, ClusterViewUniforms view,
+        out float4 firstClip, out float4 secondClip, out float4 thirdClip, bool shareSource = true)
+    {
+        SourceData value = {};
+        uint leader = info.sourceLane;
+        if (WaveGetLaneIndex() == leader)
+        {
+            value.Info = info;
+            RenderInstanceTransform transform = GetCurrentInstanceTransform(info.instanceID);
+            TriangleVertices<VertexEvaluate.Vertex> vertices = EvaluateTriangleVertices(
+                Vertex, makeVertexEvalContext(info, transform, 0u, info.vi0), uint3(info.vi0, info.vi1, info.vi2));
+            VertexEvaluate.Vertex first = vertices.First;
+            VertexEvaluate.Vertex second = vertices.Second;
+            VertexEvaluate.Vertex third = vertices.Third;
+            value.Triangle = Domain.makeTriangle(first, second, third, info.materialSlot);
+            VisibilityVertexInput input = { TransparencySourceRequest(info.visibility), info.vi0 };
+            value.First = Visibility.makeVarying(first, input);
+            input.LocalVertexIndex = info.vi1; value.Second = Visibility.makeVarying(second, input);
+            input.LocalVertexIndex = info.vi2; value.Third = Visibility.makeVarying(third, input);
+        }
+        if (shareSource) value = readSourceData(value, leader);
+        firstClip = secondClip = thirdClip = 0.0.xxxx;
+        if (WaveGetLaneIndex() == leader)
+        {
+            firstClip = projectPosition(Domain.cornerPosition(value.Triangle,0u),view);
+            secondClip = projectPosition(Domain.cornerPosition(value.Triangle,1u),view);
+            thirdClip = projectPosition(Domain.cornerPosition(value.Triangle,2u),view);
+        }
+        if (shareSource)
+        {
+            firstClip = WaveReadLaneAt(firstClip,leader);
+            secondClip = WaveReadLaneAt(secondClip,leader);
+            thirdClip = WaveReadLaneAt(thirdClip,leader);
+        }
+        float2 firstPixel = TessellationScreenPosition(firstClip,view);
+        float2 secondPixel = TessellationScreenPosition(secondClip,view);
+        float2 thirdPixel = TessellationScreenPosition(thirdClip,view);
+        value.Projected.Origin = firstPixel;
+        value.Projected.FirstEdge = secondPixel - firstPixel;
+        value.Projected.SecondEdge = thirdPixel - firstPixel;
+        value.Projected.InverseArea = 1.0 / (value.Projected.FirstEdge.x * value.Projected.SecondEdge.y -
+            value.Projected.FirstEdge.y * value.Projected.SecondEdge.x);
+        value.Projected.InverseW = 1.0 / float3(firstClip.w,secondClip.w,thirdClip.w);
+        return value;
+    }
+
+    SourceData evaluateSource(TriangleInfo info, ClusterViewUniforms view)
+    {
+        float4 firstClip, secondClip, thirdClip;
+        return evaluateSource(info,view,firstClip,secondClip,thirdClip);
     }
 
     struct Projection
     {
-        DomainEvaluate.TriangleData Triangle;
+        SourceData Source;
         TessellationTraversal Traversal;
         TessellationPatch Patch;
         float4 ScreenBounds;
+        float4 FirstClip, SecondClip, ThirdClip;
         uint Instance, Primitive, PatchPrimitive, PatchCount, Factor, Enabled;
         uint3 EdgeFactors;
     };
@@ -59,15 +142,20 @@ struct TRANSPARENCY_EVALUATOR(TRANSPARENCY_MATERIAL_TYPE)
     Projection beginProjection(uint source, uint viewIndex, bool tessellated, float4 screenBounds)
     {
         Projection value = {};
-        TriangleInfo info = triangleInfo(source, viewIndex);
-        value.Triangle = evaluateTriangle<VertexEvaluate, DomainEvaluate>(Vertex, Domain, info);
+        bool shareSource = WaveActiveAllEqual(source) && WaveActiveAllEqual(viewIndex);
+        TriangleInfo info = triangleInfo(source, viewIndex,shareSource);
         ClusterViewUniforms view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, info.instanceID, Views[viewIndex]);
-        float3 minimum, maximum;
-        Domain.bounds(value.Triangle, minimum, maximum);
-        value.Enabled = overlapsScreenBounds(minimum, maximum, view, screenBounds) ? 1u : 0u;
+        value.Source = evaluateSource(info, view,value.FirstClip,value.SecondClip,value.ThirdClip,shareSource);
+        value.Enabled = 1u;
         value.Instance = info.instanceID;
         value.ScreenBounds = screenBounds;
-        if (tessellated) value.Traversal = BeginTessellationTraversal();
+        if (tessellated)
+        {
+            float3 minimum, maximum;
+            Domain.bounds(value.Source.Triangle,minimum,maximum);
+            value.Enabled = overlapsScreenBounds(minimum,maximum,view,screenBounds) ? 1u : 0u;
+            value.Traversal = BeginTessellationTraversal();
+        }
         return value;
     }
 
@@ -83,20 +171,18 @@ struct TRANSPARENCY_EVALUATOR(TRANSPARENCY_MATERIAL_TYPE)
         domain = {};
         first = second = third = 0.0.xxxx;
         if (value.Enabled == 0u) return false;
-        ClusterViewUniforms view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, value.Instance, Views[viewIndex]);
         if (!tessellated)
         {
             value.Enabled = 0u;
             domain[1] = float2(1, 0);
             domain[2] = float2(0, 1);
-            first = projectPosition(Domain.cornerPosition(value.Triangle, 0u), view);
-            second = projectPosition(Domain.cornerPosition(value.Triangle, 1u), view);
-            third = projectPosition(Domain.cornerPosition(value.Triangle, 2u), view);
+            first = value.FirstClip; second = value.SecondClip; third = value.ThirdClip;
             return true;
         }
+        ClusterViewUniforms view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, value.Instance, Views[viewIndex]);
         while (value.PatchPrimitive >= value.PatchCount)
         {
-            if (!NextTessellationPatch<VertexEvaluate.Vertex, DomainEvaluate>(Domain, value.Triangle, view,
+            if (!NextTessellationPatch<VertexEvaluate.Vertex, DomainEvaluate>(Domain, value.Source.Triangle, view,
                 TransparencyGeometryUniforms.MaxFactor, TransparencyGeometryUniforms.TargetEdgePixels, value.Traversal, value.Patch))
                 return false;
             value.EdgeFactors = TessellationPatchEdgeFactors(value.Patch);
@@ -104,7 +190,7 @@ struct TRANSPARENCY_EVALUATOR(TRANSPARENCY_MATERIAL_TYPE)
             value.PatchCount = TessellationGridTriangleCount(value.Factor);
             value.PatchPrimitive = 0u;
             float3 minimum, maximum;
-            Domain.patchBounds(value.Triangle, DecodeTessellationPatchBarycentric(value.Patch, 0u),
+            Domain.patchBounds(value.Source.Triangle, DecodeTessellationPatchBarycentric(value.Patch, 0u),
                 DecodeTessellationPatchBarycentric(value.Patch, 1u), DecodeTessellationPatchBarycentric(value.Patch, 2u), minimum, maximum);
             if (!overlapsScreenBounds(minimum, maximum, view, value.ScreenBounds))
             {
@@ -126,22 +212,39 @@ struct TRANSPARENCY_EVALUATOR(TRANSPARENCY_MATERIAL_TYPE)
         domain[0] = firstDomain.yz;
         domain[1] = secondDomain.yz;
         domain[2] = thirdDomain.yz;
-        first = projectPosition(Domain.position(value.Triangle, firstDomain), view);
-        second = projectPosition(Domain.position(value.Triangle, secondDomain), view);
-        third = projectPosition(Domain.position(value.Triangle, thirdDomain), view);
+        first = projectPosition(Domain.position(value.Source.Triangle, firstDomain), view);
+        second = projectPosition(Domain.position(value.Source.Triangle, secondDomain), view);
+        third = projectPosition(Domain.position(value.Source.Triangle, thirdDomain), view);
         return true;
     }
 
     bool cover(uint source, float3x2 domain, bool tessellated, uint3 coord, float depth, out float resultDepth)
     {
         TriangleInfo info = triangleInfo(source, coord.z);
-        RenderInstanceTransform transform = GetCurrentInstanceTransform(info.instanceID);
-        TriangleVertices<VertexEvaluate.Vertex> vertices = EvaluateTriangleVertices(
-            Vertex, makeVertexEvalContext(info, transform, 0u, info.vi0), uint3(info.vi0, info.vi1, info.vi2));
-        VertexEvaluate.Vertex first = vertices.First;
-        VertexEvaluate.Vertex second = vertices.Second;
-        VertexEvaluate.Vertex third = vertices.Third;
-        DomainEvaluate.TriangleData triangle = Domain.makeTriangle(first, second, third, info.materialSlot);
+        ClusterViewUniforms view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, info.instanceID, Views[coord.z]);
+        return coverData<1u>(evaluateSource(info, view), domain, tessellated, coord, depth, resultDepth);
+    }
+
+    SurfaceBarycentrics coordinates(SourceData value, uint3 coord, float depth, out float3 position)
+    {
+        ClusterViewUniforms view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, value.Info.instanceID, Views[coord.z]);
+        return ResolveBarycentricsAtDepth<VertexEvaluate.Vertex, DomainEvaluate>(
+            Domain, coord, view, value.Triangle, value.Projected, depth, position);
+    }
+
+    bool coverData<let visibilityDepth : uint>(SourceData value, float3x2 domain, bool tessellated,
+        uint3 coord, float depth, out float resultDepth)
+    {
+        resultDepth = depth;
+        if (visibilityDepth == 0u)
+        {
+            float3 position;
+            return coordinates(value,coord,depth,position).Valid != 0u;
+        }
+        TriangleInfo info = value.Info;
+        uint source = info.visibility;
+        DomainEvaluate.TriangleData triangle = value.Triangle;
+        VisibilityEvaluate.Varying source0 = value.First, source1 = value.Second, source2 = value.Third;
         ClusterViewUniforms view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, info.instanceID, Views[coord.z]);
         float3 bary0 = Barycentric(domain[0]), bary1 = Barycentric(domain[1]), bary2 = Barycentric(domain[2]);
         resultDepth = depth;
@@ -172,12 +275,6 @@ struct TRANSPARENCY_EVALUATOR(TRANSPARENCY_MATERIAL_TYPE)
         interpolation.LinearBarycentricDy = (TriangleBarycentricAt(projection, center + float2(0, 1)) / projection.InverseW);
         interpolation.LinearBarycentricDy /= dot(interpolation.LinearBarycentricDy, 1.0.xxx);
         interpolation.LinearBarycentricDy -= interpolation.LinearBarycentric;
-        VisibilityVertexInput vertexInput = { TransparencySourceRequest(source), info.vi0 };
-        VisibilityEvaluate.Varying source0 = Visibility.makeVarying(first, vertexInput);
-        vertexInput.LocalVertexIndex = info.vi1;
-        VisibilityEvaluate.Varying source1 = Visibility.makeVarying(second, vertexInput);
-        vertexInput.LocalVertexIndex = info.vi2;
-        VisibilityEvaluate.Varying source2 = Visibility.makeVarying(third, vertexInput);
         VisibilityEvaluate.Varying v0 = Visibility.interpolateVertex(source0, source1, source2, bary0);
         VisibilityEvaluate.Varying v1 = Visibility.interpolateVertex(source0, source1, source2, bary1);
         VisibilityEvaluate.Varying v2 = Visibility.interpolateVertex(source0, source1, source2, bary2);
@@ -193,9 +290,44 @@ struct TRANSPARENCY_EVALUATOR(TRANSPARENCY_MATERIAL_TYPE)
         resultDepth = result.Depth;
         if (result.Visible == 0u) return false;
         float3 position;
+        return coordinates(value,coord,result.Depth,position).Valid != 0u;
+    }
+
+    bool reconstruct(SourceData value, uint3 coord, float depth, uint visibilityDepth,
+        out float3 bary, out DomainEvaluate.Surface evaluated, out SurfacePixelInput pixel)
+    {
+        ClusterViewUniforms view = ApplyFirstPersonViewTransform(
+            InstanceData, InstanceProperties, value.Info.instanceID, Views[coord.z]);
+        float3 position;
         SurfaceBarycentrics coordinates = ResolveBarycentricsAtDepth<VertexEvaluate.Vertex, DomainEvaluate>(
-            Domain, coord, view, triangle, info, result.Depth, position);
-        return coordinates.Valid != 0u;
+            Domain, coord, view, value.Triangle, value.Projected, depth, position);
+        bary = coordinates.Value;
+        if (coordinates.Valid == 0u) { evaluated = {}; pixel = {}; return false; }
+        float3 surfacePosition = Domain.position(value.Triangle, bary);
+        EvaluateMaterialHit<VertexEvaluate.Vertex, DomainEvaluate>(Domain, value.Triangle, value.Info,
+            coordinates, view, coord, depth, position,
+            Domain.position(value.Triangle, bary + coordinates.Dx) - surfacePosition,
+            Domain.position(value.Triangle, bary + coordinates.Dy) - surfacePosition,
+            visibilityDepth, evaluated, pixel);
+        return true;
+    }
+
+    float4 shadeData<let visibilityDepth : uint, let debugMode : uint>(SourceData value, uint3 coord, float depth)
+    {
+        float3 bary;
+        DomainEvaluate.Surface evaluated;
+        SurfacePixelInput pixel;
+        if (!reconstruct(value, coord, depth, visibilityDepth, bary, evaluated, pixel)) return 0.0.xxxx;
+        return Surface.evaluateTransparency(debugMode, pixel, evaluated, bary, value.Triangle);
+    }
+
+    void markShadowPagesData<let visibilityDepth : uint>(SourceData value, uint3 coord, float depth)
+    {
+        float3 bary;
+        DomainEvaluate.Surface evaluated;
+        SurfacePixelInput pixel;
+        if (!reconstruct(value, coord, depth, visibilityDepth, bary, evaluated, pixel)) return;
+        Surface.markShadowPages(pixel, evaluated, bary, value.Triangle);
     }
 
     void reconstruct(uint source, uint3 coord, float depth, uint visibilityDepth, out TriangleInfo info,
@@ -205,21 +337,15 @@ struct TRANSPARENCY_EVALUATOR(TRANSPARENCY_MATERIAL_TYPE)
         ClusterViewUniforms view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, info.instanceID, Views[coord.z]);
         triangle = evaluateTriangle<VertexEvaluate, DomainEvaluate>(Vertex, Domain, info);
         float3 position;
-        SurfaceBarycentrics coordinates = ResolveBarycentricsAtDepth<VertexEvaluate.Vertex, DomainEvaluate>(Domain, coord, view, triangle, info, depth, position);
+        SurfaceBarycentrics coordinates = ResolveBarycentricsAtDepth<VertexEvaluate.Vertex, DomainEvaluate>(
+            Domain, coord, view, triangle, info, depth, position);
         bary = coordinates.Value;
-        evaluated = Domain.eval(triangle, bary);
-        pixel.PixelCoord = coord;
-        pixel.InstanceID = info.instanceID;
-        pixel.MaterialIndex = info.materialSlot;
-        pixel.CameraPosition = view.CameraPos;
-        pixel.Depth = depth;
-        pixel.VisibilityDepth = visibilityDepth;
-        pixel.PositionFromDepth = position;
-        pixel.BarycentricDx = coordinates.Dx;
-        pixel.BarycentricDy = coordinates.Dy;
         float3 surfacePosition = Domain.position(triangle, bary);
-        pixel.PositionDx = Domain.position(triangle, bary + coordinates.Dx) - surfacePosition;
-        pixel.PositionDy = Domain.position(triangle, bary + coordinates.Dy) - surfacePosition;
+        EvaluateMaterialHit<VertexEvaluate.Vertex, DomainEvaluate>(Domain, triangle, info,
+            coordinates, view, coord, depth, position,
+            Domain.position(triangle, bary + coordinates.Dx) - surfacePosition,
+            Domain.position(triangle, bary + coordinates.Dy) - surfacePosition,
+            visibilityDepth, evaluated, pixel);
     }
 
     float4 shade<let visibilityDepth : uint>(uint source, uint primitive, uint3 coord, float depth)
@@ -243,7 +369,6 @@ struct TRANSPARENCY_EVALUATOR(TRANSPARENCY_MATERIAL_TYPE)
         reconstruct(source, coord, depth, visibilityDepth, info, triangle, bary, evaluated, pixel);
         Surface.markShadowPages(pixel, evaluated, bary, triangle);
     }
-
 };
 #endif
 
@@ -253,6 +378,16 @@ struct TRANSPARENCY_MATERIAL_TYPE
 {
     TRANSPARENCY_EVALUATOR(TRANSPARENCY_MATERIAL_TYPE) Material;
     typealias Projection = TRANSPARENCY_EVALUATOR(TRANSPARENCY_MATERIAL_TYPE).Projection;
+    typealias SourceData = TRANSPARENCY_EVALUATOR(TRANSPARENCY_MATERIAL_TYPE).SourceData;
+    SourceData sourceData(Projection value) { return value.Source; }
+    SourceData readSourceData(SourceData value, uint lane) { return Material.readSourceData(value,lane); }
+    bool coverData<let visibilityDepth : uint>(SourceData value, float3x2 domain, bool tessellated,
+        uint3 pixel, float depth, out float resultDepth)
+    { return Material.coverData<visibilityDepth>(value,domain,tessellated,pixel,depth,resultDepth); }
+    float4 shadeData<let visibilityDepth : uint, let debugMode : uint>(SourceData value, uint3 pixel, float depth)
+    { return Material.shadeData<visibilityDepth,debugMode>(value,pixel,depth); }
+    void markShadowPagesData<let visibilityDepth : uint>(SourceData value, uint3 pixel, float depth)
+    { Material.markShadowPagesData<visibilityDepth>(value,pixel,depth); }
     Projection beginProjection(uint source, uint view, bool tessellated, float4 screenBounds)
     { return Material.beginProjection(source, view, tessellated, screenBounds); }
     bool nextProjection(uint source, uint view, bool tessellated, inout Projection value,

@@ -291,14 +291,13 @@ SurfaceBarycentrics ResolveBarycentricsAtDepth<TVertex, TDomain>(
     uint3 pixelCoord,
     ClusterViewUniforms view,
     TDomain.TriangleData triangle,
-    TriangleInfo info,
+    PipelineTriangleProjection projection,
     float depth,
     out float3 positionFromDepth,
     out float4 worldAtDepth)
     where TDomain : IDomainEvaluate<TVertex>
 {
     float2 pixelCenter = float2(pixelCoord.xy) + 0.5;
-    PipelineTriangleProjection projection = ProjectTriangleWave<TVertex, TDomain>(domain, view, triangle, info);
     float3 seed = TriangleBarycentricAt(projection, pixelCenter);
     float3 seedX = TriangleBarycentricAt(projection, pixelCenter + float2(1.0, 0.0));
     float3 seedY = TriangleBarycentricAt(projection, pixelCenter + float2(0.0, 1.0));
@@ -319,6 +318,37 @@ SurfaceBarycentrics ResolveBarycentricsAtDepth<TVertex, TDomain>(
     input.ViewProjection = view.ViewProj;
     input.ScreenSize = uint2(Uniforms.ScreenWidth, Uniforms.ScreenHeight);
     return domain.reconstruct(triangle, input);
+}
+
+SurfaceBarycentrics ResolveBarycentricsAtDepth<TVertex, TDomain>(
+    uniform TDomain domain,
+    uint3 pixelCoord,
+    ClusterViewUniforms view,
+    TDomain.TriangleData triangle,
+    TriangleInfo info,
+    float depth,
+    out float3 positionFromDepth,
+    out float4 worldAtDepth)
+    where TDomain : IDomainEvaluate<TVertex>
+{
+    PipelineTriangleProjection projection = ProjectTriangleWave<TVertex, TDomain>(domain, view, triangle, info);
+    return ResolveBarycentricsAtDepth<TVertex, TDomain>(
+        domain, pixelCoord, view, triangle, projection, depth, positionFromDepth, worldAtDepth);
+}
+
+SurfaceBarycentrics ResolveBarycentricsAtDepth<TVertex, TDomain>(
+    uniform TDomain domain,
+    uint3 pixelCoord,
+    ClusterViewUniforms view,
+    TDomain.TriangleData triangle,
+    PipelineTriangleProjection projection,
+    float depth,
+    out float3 positionFromDepth)
+    where TDomain : IDomainEvaluate<TVertex>
+{
+    float4 worldAtDepth;
+    return ResolveBarycentricsAtDepth<TVertex, TDomain>(
+        domain, pixelCoord, view, triangle, projection, depth, positionFromDepth, worldAtDepth);
 }
 
 SurfaceBarycentrics ResolveBarycentricsAtDepth<TVertex, TDomain>(
@@ -406,6 +436,27 @@ bool TryReadShadePixel(uint3 tid, out uint3 coord)
     return coord.x < Uniforms.ScreenWidth && coord.y < Uniforms.ScreenHeight;
 }
 
+void EvaluateMaterialHit<TVertex, TDomain>(
+    uniform TDomain domain, TDomain.TriangleData triangle, TriangleInfo info,
+    SurfaceBarycentrics coordinates, ClusterViewUniforms view, uint3 coord,
+    float depth, float3 positionFromDepth, float3 positionDx, float3 positionDy, uint visibilityDepth,
+    out TDomain.Surface evaluated, out SurfacePixelInput input)
+    where TDomain : IDomainEvaluate<TVertex>
+{
+    evaluated = domain.eval(triangle, coordinates.Value);
+    input.PixelCoord = coord;
+    input.InstanceID = info.instanceID;
+    input.MaterialIndex = info.materialSlot;
+    input.CameraPosition = view.CameraPos;
+    input.PositionDx = positionDx;
+    input.PositionDy = positionDy;
+    input.BarycentricDx = coordinates.Dx;
+    input.BarycentricDy = coordinates.Dy;
+    input.Depth = depth;
+    input.VisibilityDepth = visibilityDepth;
+    input.PositionFromDepth = positionFromDepth;
+}
+
 bool TryEvaluateSurfacePixel<TVE, TDomain>(
     uniform TVE vertexEval, uniform TDomain domain, uint3 tid, uint visibilityDepth,
     out TriangleInfo tri, out ClusterViewUniforms view, out TDomain.TriangleData triangle,
@@ -432,20 +483,11 @@ bool TryEvaluateSurfacePixel<TVE, TDomain>(
         domain, coord, view, triangle, tri, depth, positionFromDepth, worldAtDepth);
     if (coordinates.Valid == 0u) return false;
     bary = coordinates.Value;
-    evaluated = domain.eval(triangle, bary);
     VirtualShadowReceiverPixel receiver = ReconstructVirtualShadowReceiverPixel(
         worldAtDepth, uint2(Uniforms.ScreenWidth, Uniforms.ScreenHeight), view.ClipToWorld);
-    input.PixelCoord = coord;
-    input.InstanceID = tri.instanceID;
-    input.MaterialIndex = tri.materialSlot;
-    input.CameraPosition = view.CameraPos;
-    input.PositionDx = receiver.PositionDx - receiver.Position;
-    input.PositionDy = receiver.PositionDy - receiver.Position;
-    input.BarycentricDx = coordinates.Dx;
-    input.BarycentricDy = coordinates.Dy;
-    input.Depth = depth;
-    input.VisibilityDepth = visibilityDepth;
-    input.PositionFromDepth = positionFromDepth;
+    EvaluateMaterialHit<TVE.Vertex, TDomain>(domain, triangle, tri, coordinates,
+        view, coord, depth, positionFromDepth, receiver.PositionDx - receiver.Position,
+        receiver.PositionDy - receiver.Position, visibilityDepth, evaluated, input);
     return true;
 }
 

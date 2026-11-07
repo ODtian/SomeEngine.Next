@@ -5,6 +5,23 @@ namespace SomeEngine.Render.Tests;
 public sealed class RenderDeviceSamplerTests
 {
     [Fact]
+    public void SamplerDescriptorIndicesRetainTheSharedDeviceResource()
+    {
+        using var fixture = new RenderTestDevice();
+        var description = new SamplerDesc(FilterType.Linear, FilterType.Linear, FilterType.Linear,
+            AddressType.ClampToEdge, AddressType.ClampToEdge, AddressType.ClampToEdge);
+        using var first = fixture.RenderDevice.RetainSampler(description);
+        Sampler sampler = first.Resource;
+        uint index = fixture.RenderDevice.GetSamplerDescriptorIndex(description);
+
+        first.Dispose();
+        using var second = fixture.RenderDevice.RetainSampler(description);
+
+        Assert.Same(sampler, second.Resource);
+        Assert.Equal(index, fixture.RenderDevice.GetSamplerDescriptorIndex(description));
+    }
+
+    [Fact]
     public void SamplerReferencesShareResourcesOnlyWhileTheyAreRetained()
     {
         using var fixture = new RenderTestDevice();

@@ -80,6 +80,7 @@
 - [[architecture/cluster-streaming/Streaming-Shutdown|Streaming Shutdown]]
 
 ## World and features
+- [[architecture/rendering/Tile-Rendering|Tile rendering integration]]
 - [[architecture/rendering/GameWorld-and-RenderWorld|GameWorld and RenderWorld]]
 - [[architecture/rendering/Extraction|Extraction]]
 - [[architecture/rendering/Geometry-Features|Geometry Features]]

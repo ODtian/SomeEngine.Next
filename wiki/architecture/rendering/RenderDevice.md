@@ -41,6 +41,16 @@ RenderDevice 是一个 Graphics.Device 对应的 render-side 长期设备状态�
 
 CPU prepare/read 权限与 GPU 完成是不同边界：前者由实际 frame/coordinator 作用域负责，后者控制资源复用与回收。关闭和失败排空必须保留已接受提交的完成点，不得为了清理绕过仍在途使用。
 
+## Material resource values
+
+`GetMaterialResourceBinding` 从材质属性读取缓冲视图、常量缓冲视图、加速结构视图或采样器，
+转换为已有 `ResourceBinding`。调用方将绑定值写入相应的图参数输入；纹理继续通过
+`PrepareTextureForInputs` 处理设备准备、上传和视图更新。
+
+`GetSampler` 与 `GetSamplerDescriptorIndex` 使用同一份按 `SamplerDesc` 索引的设备缓存。
+直接绑定取得其中的采样器，描述符索引访问在首次需要时为该采样器建立描述符表。
+缓存及描述符表随 `RenderDevice` 关闭释放，使多个渲染 feature 共用设备对象。
+
 ## Relations
 
 应用的呈现 pass 通过 `OrderTextureUploadsBefore` 排在当帧纹理上传完成之后，并通过 Cluster 的 `PageFaultReadbackPass` 排在缺页反馈的提前提交之后。呈现与当帧图像读回由同一次交换链图像提交覆盖；是否完成首帧正确性或性能验收须由最终内容与实际运行证明。

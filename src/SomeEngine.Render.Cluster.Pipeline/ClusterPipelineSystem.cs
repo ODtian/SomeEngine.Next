@@ -724,7 +724,7 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
             BindMaterialDecalFrame(ref graph, views[..primaryViewCount]);
             BindTransparencyFrame(ref graph, batch, views[..primaryViewCount], binding.Publication is not null);
             GraphData.BlendMeasurements?.Stage(ref graph, _measurementSimulationFrame,
-                GraphData.Transparency?.Reused ?? true, GraphData.Decals!.Reused, GraphData.DecalMeasurementBuffers);
+                GraphData.Transparency?.Tiles.ReusedGeometry ?? true, GraphData.Decals!.Reused, GraphData.DecalMeasurementBuffers);
             GraphData.Outputs.Geometry.SetFrameRanges(binding.ResidentPageRanges, binding.BvhRanges);
             _residentPageReads = GraphData.Outputs.Geometry.ResidentPageReads;
             _hasPendingFrame = true;
@@ -1031,9 +1031,8 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         _shadeStages = null;
         foreach (TransparencyShaders shaders in _transparencyShaders)
         {
-            foreach (TransparencyPipeline pipeline in shaders.Pipelines.Values)
-                try { pipeline.Pipeline.Dispose(); }
-                catch (Exception error) { (failures ??= []).Add(error); }
+            try { shaders.Pipelines.Dispose(); }
+            catch (Exception error) { (failures ??= []).Add(error); }
         }
         _transparencyShaders.Clear();
         _rasterStages = null;

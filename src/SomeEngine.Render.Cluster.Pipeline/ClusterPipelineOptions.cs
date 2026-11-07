@@ -26,6 +26,7 @@ public enum ClusterBlendIndex : byte
     FullScan,
     Xyz,
     Xy,
+    Adaptive,
 }
 
 /// <summary>Capacity and quality policy for Cluster visibility graph construction.</summary>
@@ -75,6 +76,10 @@ public sealed record ClusterPipelineOptions
     /// <summary>Measures blend phases on the graphics queue and reads back their work and resource sizes.</summary>
     public bool MeasureBlending { get; init; }
     public ClusterBlendIndex BlendIndex { get; init; } = ClusterBlendIndex.Xyz;
+#if SOMEENGINE_TRANSPARENCY_RESEARCH
+    /// <summary>Uses the development pixel-list reference with the Tile geometry and material inputs.</summary>
+    public bool TransparencyPixelListReference { get; init; }
+#endif
     /// <summary>Projected primitives retained together; remaining primitives continue through the source batches.</summary>
     public uint BlendTriangleCapacity { get; init; } = DefaultBlendTriangleCapacity;
     /// <summary>Continuous cell references retained together; remaining cells continue through the source batches.</summary>
