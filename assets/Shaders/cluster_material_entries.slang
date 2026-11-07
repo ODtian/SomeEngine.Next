@@ -5,6 +5,7 @@
 #ifndef CLUSTER_MATERIAL_ENTRIES_SLANG
 #define CLUSTER_MATERIAL_ENTRIES_SLANG
 
+#include "vsm_receiver_requests.slang"
 #include "cluster_shade_pipeline.slang"
 #include "sw_raster_core.slang"
 #include "cluster_policy_raster_output.slang"

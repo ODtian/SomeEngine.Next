@@ -6,7 +6,6 @@
 #include "material_interfaces.slang"
 #include "cluster_view.slang"
 #include "vsm_receiver_pixel.slang"
-#include "vsm_receiver_requests.slang"
 #include "shade_bin_common.slang"
 
 struct ShadeUniforms
