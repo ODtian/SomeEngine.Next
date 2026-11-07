@@ -6,7 +6,11 @@ string shaderDirectory = Path.Combine(root, "assets", "Shaders");
 string inputsDirectory = Path.Combine(shaderDirectory, "Inputs");
 // Omitting selectors retains the existing complete export and its dependency order.
 // Select only known output modules; compilation still resolves their real source inputs.
-string[] moduleNames = ["material_interfaces", "standard_material", "cluster_material", "unlit_material", "cluster_unlit_material", "cluster_transparency"];
+string[] moduleNames =
+[
+    "material_interfaces", "standard_material", "cluster_material", "unlit_material", "cluster_unlit_material",
+    "cluster_transparency", "cluster_standard_transparency", "cluster_unlit_transparency",
+];
 var selectedModules = new HashSet<string>(StringComparer.Ordinal);
 for (int index = 1; index < args.Length; index++)
 {

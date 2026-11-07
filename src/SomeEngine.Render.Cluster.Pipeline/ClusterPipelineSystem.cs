@@ -979,7 +979,6 @@ public sealed partial class ClusterPipelineSystem : ISystem<RenderFrameSystemCon
         }
         try
         {
-            CompleteTransparencyFrame(result);
             CompleteMaterialDecalFrame(result);
             bool geometryWritten = result.TryGetPassCompletion(GraphData.Outputs.Geometry.CompletePass, out _);
             _history!.FinishFrame(geometryWritten);

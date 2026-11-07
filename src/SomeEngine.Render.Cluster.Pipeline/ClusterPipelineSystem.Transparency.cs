@@ -104,8 +104,7 @@ public sealed partial class ClusterPipelineSystem
         bool hardwareBinning = !pixelLists && tileColor && _options.ForceHardwareRaster &&
             _options.BlendIndex is ClusterBlendIndex.Xy or ClusterBlendIndex.Adaptive;
         ulong pixels = (ulong)frame.Width * (ulong)frame.Height * frame.ViewCount;
-        GraphRegionId preparation = _transparencyRequestRegion != default ? _transparencyRequestRegion : _surfaceReceiverRegion;
-        if (preparation == default) preparation = _regions.Shading;
+        GraphRegionId preparation = _transparencyRequestRegion != default ? _transparencyRequestRegion : _regions.Shading;
         BufferUsages storage = BufferUsages.ShaderRead | BufferUsages.ShaderWrite;
         var tilesRendering = new TileRendering(ref edit,
             new TileRenderingDescription(CellCount: tiles, ViewCount: frame.ViewCount,
@@ -131,9 +130,9 @@ public sealed partial class ClusterPipelineSystem
             SourceCounts = edit.CreatePersistentBuffer(new BufferDesc(16, storage, "Cluster transparency source counts")),
             ActiveSources = edit.CreatePersistentBuffer(new BufferDesc((ulong)_options.MaxCandidates * 4, storage, "Cluster transparency active sources")),
 
-            GeometryParameters = CreateParameters(ref edit, new byte[8], "Cluster transparency geometry parameters"),
-            Parameters = CreateParameters(ref edit, new byte[48], "Cluster transparency parameters"),
-            ShadeParameters = CreateParameters(ref edit, new byte[48], "Cluster transparency surface parameters"),
+            GeometryParameters = CreateParameters(ref edit, new byte[8]),
+            Parameters = CreateParameters(ref edit, new byte[48]),
+            ShadeParameters = CreateParameters(ref edit, new byte[48]),
         };
         GraphData.Transparency = data;
         UpdateTransparencyParameters(ref edit, data, assignments);
@@ -312,7 +311,7 @@ public sealed partial class ClusterPipelineSystem
             case "TransparencyInstances": buffer = frame.InstanceData; stride = 0; break;
             case "TransparencyProperties": pass.Bind(graph.CreateBufferCbv(frame.InstanceProperties, frame.InstancePropertiesRange), sync); return true;
             case "TransparencyVisibleClusters": buffer = frame.VisibleClusters; stride = VisibleClusterStride; break;
-            case "TransparencyPageHeap": BindPageHeapDescriptor(ref graph, ref pass, "Cluster transparent geometry", sync); return true;
+            case "TransparencyPageHeap": BindPageHeapDescriptor(ref graph, ref pass, "Cluster transparent geometry"); return true;
             case "TransparencyFirstDraw": buffer = frame.DrawArgs; stride = 0; break;
             case "TransparencySecondDraw": buffer = frame.Phase2DrawArgs; stride = 0; break;
             case "TransparencyMaterialStates": buffer = data.States; stride = 8; break;

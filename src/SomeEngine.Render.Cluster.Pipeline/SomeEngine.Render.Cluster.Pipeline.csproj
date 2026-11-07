@@ -19,6 +19,9 @@
     <PackageReference Include="SlangShaderSharp" Version="$(SlangShaderSharpPackageVersion)" />
   </ItemGroup>
   <ItemGroup>
+    <EmbeddedResource Include="../../assets/Shaders/cluster_transparency_hardware.slang" LogicalName="ClusterTransparencyHardware" />
+  </ItemGroup>
+  <ItemGroup>
     <Content Include="..\..\external\Alimer.Bindings\native\win-x64\meshoptimizer.dll" DependencyBinary="true" Condition="'$(NETCoreSdkRuntimeIdentifier)' == 'win-x64'">
       <Link>meshoptimizer.dll</Link><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>

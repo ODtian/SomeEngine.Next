@@ -406,16 +406,27 @@ public sealed class TileRendering : IRenderGraphFrameExecutionObserver
         ResourceBindingType type, GraphBufferId buffer, uint stride, PipelineSync sync)
     {
         bool hardware = name is "TransparencyCoverageRanges" or "TransparencyHardwareMasks" or "TransparencyHardwareAssociations";
+        bool usesHardware = entry switch
+        {
+            "CountTransparentCells" => name == "TransparencyCoverageRanges" || HardwareBinning,
+            "ClearTransparentHardwareMasks" or "StoreTransparentCoverage" => true,
+            "CountTransparentHardwareCells" or "ScatterTransparentHardwareCells" or
+                "PrepareTransparentCells" or "SortTransparentCells" or "RequestTransparentShadows" => HardwareBinning,
+            "ResolveTileTransparentColor" or "ResolveLocalTileTransparentColor" or
+                "ResolveDepthTileTransparentColor" => _description.IndexedColor,
+            _ => false,
+        };
         bool depth = name is "TransparencyDepthCells" or "TransparencyDepthReferences";
-        if ((depth && !AdaptiveDepth) || (hardware && (!_description.HardwareCoverage || _description.PixelLists || !_description.Indexed)))
+        if ((depth && !AdaptiveDepth) || (hardware && (!_description.HardwareCoverage || _description.PixelLists || !_description.Indexed || !usesHardware)))
         {
             pass.Bind(GraphParameterResourceBinding.Null(type));
             return;
         }
+        BufferContentScope contentScope = hardware || name == "TransparencyRasterTriangles"
+            ? BufferContentScope.CountBoundedPrefix : BufferContentScope.FullRange;
         if (type == ResourceBindingType.BufferSrv)
         {
-            pass.Bind(graph.CreateBufferSrv(buffer, structureStride: stride), sync,
-                name == "TransparencyRasterTriangles" ? BufferContentScope.CountBoundedPrefix : BufferContentScope.FullRange);
+            pass.Bind(graph.CreateBufferSrv(buffer, structureStride: stride), sync, contentScope);
             return;
         }
         string accessEntry = entry is "PrepareTransparentCells" or "SortTransparentRanges" ? "SortTransparentCells" : entry;
@@ -463,6 +474,6 @@ public sealed class TileRendering : IRenderGraphFrameExecutionObserver
         bool clear = entry == "ClearTransparentTiles" ||
             (entry == "PrepareTransparentPixelLists" && name is "TransparencyPixelHeads" or "TransparencyFragmentCount");
         pass.Bind(graph.CreateBufferUav(buffer, structureStride: stride), sync, mode,
-            clear ? WriteCoverage.Complete : WriteCoverage.Partial, ResourceContentState.Defined);
+            clear ? WriteCoverage.Complete : WriteCoverage.Partial, ResourceContentState.Defined, contentScope);
     }
 }

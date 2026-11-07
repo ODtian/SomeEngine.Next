@@ -376,6 +376,50 @@ bool ClusterRasterIntegerCoverageAccepts(ClusterRasterTriangle triangle, int2 pi
         ClusterRasterIntegerEdgeAccepts(triangle.Screen0, triangle.Screen1, pixel, winding);
 }
 
+// One lane prepares an 8 x 4 packet with the same integer edges as Cluster SW.
+// Crossings are rebased before the scanline work; the packet then uses int32.
+uint ClusterRasterTileCoverage(float2 vertices[3], int winding, int2 origin, int2 extent)
+{
+    int3 constants = 1, stepX = 0, stepY = 0;
+    [unroll]
+    for (uint edge = 0u; edge < 3u; edge++)
+    {
+        int64_t2 a = int64_t2(vertices[edge] * CLUSTER_RASTER_SUBPIXEL_SCALE_F);
+        int64_t2 b = int64_t2(vertices[(edge + 1u) % 3u] * CLUSTER_RASTER_SUBPIXEL_SCALE_F);
+        int64_t2 delta = (a - b) * int64_t(winding);
+        int64_t2 point = int64_t2(origin) * 256 + 128;
+        int64_t bias = delta.y > 0 || (delta.y == 0 && delta.x <= 0) ? 1 : 0;
+        int64_t value = delta.y * (a.x - point.x) - delta.x * (a.y - point.y) - bias;
+        int64_t dx = -delta.y * 256, dy = delta.x * 256;
+        int64_t endX = dx * int64_t(extent.x - 1), endY = dy * int64_t(extent.y - 1);
+        if (value + max(endX, int64_t(0)) + max(endY, int64_t(0)) < 0) return 0u;
+        if (value + min(endX, int64_t(0)) + min(endY, int64_t(0)) < 0)
+        { constants[edge] = int(value); stepX[edge] = int(dx); stepY[edge] = int(dy); }
+    }
+    uint mask = 0u;
+    [unroll]
+    for (int row = 0; row < 4; row++)
+    {
+        if (row >= extent.y) break;
+        int3 values = constants + row * stepY;
+        int low = 0, high = extent.x - 1;
+        [unroll]
+        for (uint edge = 0u; edge < 3u; edge++)
+        {
+            if (stepX[edge] > 0) low = max(low, int(ceil(-float(values[edge]) / float(stepX[edge]))));
+            else if (stepX[edge] < 0) high = min(high, int(floor(-float(values[edge]) / float(stepX[edge]))));
+            else if (values[edge] < 0) high = -1;
+        }
+        if (low <= high)
+        {
+            if (any(values + low * stepX < 0)) low++;
+            if (any(values + high * stepX < 0)) high--;
+            if (low <= high) mask |= ((1u << uint(high - low + 1)) - 1u) << uint(row * 8 + low);
+        }
+    }
+    return mask;
+}
+
 struct ClusterPixelRasterTask<
     TVertex,
     TVisibility : IVisibilityEvaluate<TVertex>,

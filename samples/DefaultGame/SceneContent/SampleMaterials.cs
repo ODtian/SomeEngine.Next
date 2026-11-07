@@ -43,6 +43,16 @@ public static class SampleMaterials
             inputs.Specializations.Add(new() { EntryPoint = "ClusterPrimaryDepthShadowRequests", Arguments = ["0", mode] });
             inputs.Specializations.Add(new() { EntryPoint = "ClusterForwardShade", Arguments = ["0", mode] });
         }
+        foreach (string entry in new[]
+        {
+            "BuildTransparentGeometry", "RequestTransparentPages", "RequestTransparentShadows", "RequestProjectedTransparentShadows",
+            "ResolveTileTransparentColor", "ResolveLocalTileTransparentColor", "ResolveDepthTileTransparentColor",
+            "ResolveTransparentColor", "ResolveProjectedTransparentColor",
+            "ResolveUnorderedTransparentColor", "ResolveProjectedUnorderedTransparentColor",
+            "ResolveOrderedTransparentColor", "ResolveProjectedOrderedTransparentColor",
+        })
+            foreach (string tessellated in new[] { "false", "true" })
+                inputs.Specializations.Add(new() { EntryPoint = entry, Arguments = ["0", tessellated] });
         IGlobalSession slang = SlangShaderImporter.GlobalSession;
         SessionDesc settings = SlangShaderImporter.CreateSessionDescription(path, SlangShaderImporter.CreateDefaultTargets(slang));
         await shader.CompileAsync(slang, settings, cancellationToken);

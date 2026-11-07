@@ -43,13 +43,15 @@ CPU prepare/read 权限与 GPU 完成是不同边界：前者由实际 frame/coo
 
 ## Material resource values
 
-`GetMaterialResourceBinding` 从材质属性读取缓冲视图、常量缓冲视图、加速结构视图或采样器，
-转换为已有 `ResourceBinding`。调用方将绑定值写入相应的图参数输入；纹理继续通过
-`PrepareTextureForInputs` 处理设备准备、上传和视图更新。
+`Material.ResolveResourceProperties` 形成 shader 资源与属性编号的关联；
+`Material.GetDeviceResourceBinding` 将具体缓冲视图、常量缓冲视图和加速结构视图转换为借用的
+`ResourceBinding`。调用方将绑定值写入相应的图参数输入；纹理通过 `PrepareTextureForInputs`
+处理设备准备、上传和视图更新，采样器通过 `RetainSampler` 取得设备资源。
 
-`GetSampler` 与 `GetSamplerDescriptorIndex` 使用同一份按 `SamplerDesc` 索引的设备缓存。
-直接绑定取得其中的采样器，描述符索引访问在首次需要时为该采样器建立描述符表。
-缓存及描述符表随 `RenderDevice` 关闭释放，使多个渲染 feature 共用设备对象。
+`RetainSampler` 与 `GetSamplerDescriptorIndex` 使用同一份按 `SamplerDesc` 索引的设备缓存。
+描述符索引在首次需要时持有一份 `SamplerReference` 并建立描述符表。直接绑定结束时释放自己的
+引用；最后一份引用沿已登记 GPU 完成点退休采样器。索引持有的引用和描述符表随 `RenderDevice`
+关闭释放，使多个渲染 feature 共用设备对象。
 
 ## Relations
 

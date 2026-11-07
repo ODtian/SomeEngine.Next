@@ -1,3 +1,14 @@
+#ifdef CLUSTER_TRANSPARENCY_HARDWARE_ENTRIES
+import "cluster_transparency";
+
+[shader("vertex")]
+TransparencyHardwareVertex DrawTransparentCoverage(uint vertex : SV_VertexID)
+{ return MakeTransparencyHardwareVertex(vertex); }
+
+[shader("fragment")] [earlydepthstencil]
+void StoreTransparentCoverage(TransparencyHardwareVertex input)
+{ StoreTransparencyHardwareCoverage(input); }
+#else
 #ifndef CLUSTER_TRANSPARENCY_HARDWARE_SLANG
 #define CLUSTER_TRANSPARENCY_HARDWARE_SLANG
 struct TransparencyHardwareVertex
@@ -90,4 +101,5 @@ void ScatterTransparencyHardwareCells(uint3 thread)
     InterlockedAdd(TransparencyCellWrites[association.y],1u,output);
     TransparencyReferences[TransparencyCellOffsets[association.y] + output] = association.x & 0x7FFFFFFFu;
 }
+#endif
 #endif

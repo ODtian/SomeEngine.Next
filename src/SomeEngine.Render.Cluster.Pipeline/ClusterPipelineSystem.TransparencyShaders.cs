@@ -82,7 +82,8 @@ public sealed partial class ClusterPipelineSystem
             saved = new[] { "RequestTransparentShadows", "RequestProjectedTransparentShadows" }
                 .All(entry => source.TryGetSpecialization(entry, arguments, out _));
         Shader? composition = saved ? null : ComposeTransparencyShaders(members,capacities,_device.Capabilities.CompileTarget,_options.DebugMode,reference,tileColor,splitSorting);
-        var pipelines = new TileShaders(_backend, _device, reference ?? source);
+        Shader hardware = reference ?? (_options.ForceHardwareRaster ? ComposeTransparencyHardware(source) : source);
+        var pipelines = new TileShaders(_backend, _device, hardware);
         foreach (string entry in new[] { "ClearTransparentTiles", "CopyTransparentSources", "BuildTransparentGeometry" })
             AddPipeline(entry);
         if (!pixelLists)
@@ -137,6 +138,14 @@ public sealed partial class ClusterPipelineSystem
         ClusterShadeInvocation[][] GroupResources(TransparencyMember[] types) => types.Select(member => materials
             .Where(stage => ReferenceEquals(stage.Material.Shader, member.Shader) && stage.VisibilityDepth == member.VisibilityDepth)
             .DistinctBy(stage => stage.CommandBindings).ToArray()).ToArray();
+    }
+
+    private Shader ComposeTransparencyHardware(Shader source)
+    {
+        using Stream shader = typeof(ClusterPipelineSystem).Assembly.GetManifestResourceStream("ClusterTransparencyHardware")!;
+        using var reader = new StreamReader(shader);
+        return source.Compose("Tile hardware coverage", "tile_transparency_hardware.slang",
+            "#define CLUSTER_TRANSPARENCY_HARDWARE_ENTRIES\n" + reader.ReadToEnd(), [], _device.Capabilities.CompileTarget);
     }
 
     private static string[] GetTransparencyArguments(TransparencyMember member) =>

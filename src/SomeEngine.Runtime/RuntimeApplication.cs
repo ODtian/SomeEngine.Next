@@ -820,7 +820,7 @@ internal static class RuntimeApplication
             var description = new ClusterPipelineOutputDescription(outputWidth, outputHeight, 1);
             var lighting = new LightingFeature(backend, device, renderGraph, description.Width, description.Height,
                 description.ViewCount, lightingShader, boot.LightingEntryPoint, region: sceneRegion);
-            ClusteredViewGrid blendGrid = options.BlendIndex == ClusterBlendIndex.Xy
+            ClusteredViewGrid blendGrid = options.BlendIndex is ClusterBlendIndex.Xy or ClusterBlendIndex.Adaptive
                 ? lighting.CreateTileGrid() : lighting.ViewGrid;
             var stageResources = new GraphResourceGroup();
             stageResources.Add(lighting);
