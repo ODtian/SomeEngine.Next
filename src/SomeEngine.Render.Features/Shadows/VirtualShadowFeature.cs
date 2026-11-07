@@ -1768,7 +1768,7 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
         GraphRegionId region) =>
         edit.AddComputeFramePass(
             label,
-            PassQueueSelection.AnyOfType(QueueType.Graphics),
+            PassQueueSelection.AnyCompatible(),
             data,
             new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
             pipeline.Pipeline,
@@ -1786,10 +1786,9 @@ public sealed partial class VirtualShadowFeature : IGraphResourceProvider, IDisp
         GraphRegionId region = default)
     {
         var data = new VirtualShadowIndirectPassData(_dispatchLayout, arguments, offset);
-        // These passes update the exclusive atlas and HiZ between graphics raster passes.
         return edit.AddComputeFramePass(
             label,
-            PassQueueSelection.AnyOfType(QueueType.Graphics),
+            PassQueueSelection.AnyCompatible(),
             data,
             new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
             pipeline.Pipeline,

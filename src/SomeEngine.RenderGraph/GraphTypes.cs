@@ -131,9 +131,8 @@ public readonly struct PassQueueSelection : IEquatable<PassQueueSelection>
     }
 
     /// <summary>
-    /// Allows any registered queue that supports the pass commands, preferring
-    /// fewer transfers from predecessor queues before comparing available time.
-    /// Compatible pass chains also prefer the queues requested by their consumers.
+    /// Allows any registered queue that supports the pass commands. Ready work uses
+    /// the earliest available queue; equal start times prefer fewer producer and consumer transfers.
     /// </summary>
     public static PassQueueSelection AnyCompatible() => new(null, default, false, true);
 }

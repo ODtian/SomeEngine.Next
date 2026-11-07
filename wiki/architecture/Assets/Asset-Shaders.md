@@ -2,6 +2,10 @@
 
 `ShaderAsset` 是唯一 Shader 语义资产身份。材质、场景和管线配置保存 `AssetId<ShaderAsset>`；target、入口和特化不会产生新的资产类型。
 
+`ShaderRef.LoadAsync` 同时发起独立 shader 的取得，共享 `WeakValues` 合并重复请求，
+文件读取并发由 `AssetLoader` 的既有预算控制。Cluster 向 RHI 异步创建接口批量提交
+独立 PSO，在管线集合安装前统一取得结果；场景首次使用材质时沿用同一创建方式。
+
 完整规则见 [Shader Block、驻留与 Slang 重构规范](../shader/Shader-Block-Residency-Refactor.md)。本页说明当前取得 API；具名修复及验证状态见 [2026-09-29 审查](../../../reviews/AssetSpecReview-2026-09-29.md)。
 
 ## Block 组成

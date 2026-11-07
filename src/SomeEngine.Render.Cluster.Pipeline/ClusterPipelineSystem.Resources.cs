@@ -21,6 +21,7 @@ public sealed partial class ClusterPipelineSystem
     internal const int RasterReserveReadbackOffset = 64;
     internal const int ShadeReserveReadbackOffset = 72;
     internal const int SoftwareDebugReadbackOffset = 76;
+    internal const uint SoftwareDebugDataBytes = 8192u * 24u;
     internal const int ShadeBinCountReadbackOffset = 80;
     internal const int PhaseOneTessellationCountersReadbackOffset = 84;
     internal const int PhaseTwoTessellationCountersReadbackOffset = 116;
@@ -327,7 +328,7 @@ public sealed partial class ClusterPipelineSystem
         ulong softwareDebugBytes =
             _visibilityMode != ClusterVisibilityMode.HardwareOnly &&
             _options.EnableFrameMetricsReadback
-                ? 4ul + 8192ul * 24ul
+                ? sizeof(uint) + SoftwareDebugDataBytes
                 : (ulong)sizeof(uint);
         frame.SoftwareDebug = frame.AddBuffer(
             ref graph,

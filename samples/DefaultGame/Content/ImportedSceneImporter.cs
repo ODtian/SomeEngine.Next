@@ -101,6 +101,7 @@ public sealed class ImportedSceneImporter : GltfSceneImporter
             "        float3 finalColor = baseColor * ao * 0.03 + emission;");
         surface = "float3 SceneSrgbToLinear(float3 color) { return select(color <= 0.04045, color / 12.92, pow((color + 0.055) / 1.055, 2.4)); }\n" + surface;
         WriteIfChanged(Path.Combine(directory, "scene_material.slang"), surface);
+        WriteSurfaceSources(directory, engine);
         var shaderIds = new List<Guid>();
         foreach (float cutoff in model.LogicalMaterials.Where(static material => !material.Unlit).Select(Cutoff).Distinct())
         {

@@ -28,7 +28,7 @@ internal sealed class WarpGraphTestSupport : IDisposable
     internal Queue CopyQueue { get; }
 
     internal static WarpGraphTestSupport Create(bool enableValidation = false,
-        DeviceFeatures requiredFeatures = DeviceFeatures.None)
+        DeviceFeatures requiredFeatures = DeviceFeatures.None, uint graphicsQueueCount = 1)
     {
         if (!OperatingSystem.IsWindows())
             throw SkipException.ForSkip("D3D12 WARP requires Windows.");
@@ -52,7 +52,7 @@ internal sealed class WarpGraphTestSupport : IDisposable
 
             DeviceQueueDesc[] queues =
             [
-                new(QueueType.Graphics),
+                new(QueueType.Graphics, graphicsQueueCount),
                 new(QueueType.Compute),
                 new(QueueType.Copy),
             ];

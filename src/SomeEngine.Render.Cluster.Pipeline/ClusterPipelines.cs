@@ -10,25 +10,26 @@ internal abstract class ClusterPipeline : IDisposable
 {
     private bool _disposed;
 
-    protected ClusterPipeline(ShaderReflection reflection, GraphicsPipeline pipeline)
+    protected ClusterPipeline(ShaderReflection reflection, Task<GraphicsPipeline> pipeline)
     {
         if (reflection == ShaderReflection.Null)
             throw new ArgumentException("Slang reflection is null.", nameof(reflection));
         Reflection = reflection;
-        Pipeline = pipeline ?? throw new ArgumentNullException(nameof(pipeline));
+        PipelineTask = pipeline ?? throw new ArgumentNullException(nameof(pipeline));
     }
 
     internal ShaderReflection Reflection { get; }
     internal VariableLayoutReflection ParameterLayout =>
         Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null;
-    internal GraphicsPipeline Pipeline { get; }
+    internal Task<GraphicsPipeline> PipelineTask { get; }
+    internal GraphicsPipeline Pipeline => PipelineTask.GetAwaiter().GetResult();
 
     public void Dispose()
     {
         if (_disposed)
             return;
         List<Exception>? failures = null;
-        TryDispose(Pipeline, ref failures);
+        TryDispose(PipelineTask, ref failures);
         _disposed = true;
         if (failures is not null)
             throw failures.Count == 1 ? failures[0] : new AggregateException(failures);
@@ -36,7 +37,7 @@ internal abstract class ClusterPipeline : IDisposable
 
     protected static void CleanupConstructionFailure(
         Exception primary,
-        GraphicsPipeline? pipeline,
+        Task<GraphicsPipeline>? pipeline,
         string message)
     {
         List<Exception>? cleanupFailures = null;
@@ -48,11 +49,11 @@ internal abstract class ClusterPipeline : IDisposable
         throw new AggregateException(message, cleanupFailures);
     }
 
-    private static void TryDispose(IDisposable value, ref List<Exception>? failures)
+    private static void TryDispose(Task<GraphicsPipeline> value, ref List<Exception>? failures)
     {
         try
         {
-            value.Dispose();
+            value.GetAwaiter().GetResult().Dispose();
         }
         catch (Exception failure)
         {
@@ -63,7 +64,7 @@ internal abstract class ClusterPipeline : IDisposable
 
 internal sealed class ClusterComputePipeline : ClusterPipeline
 {
-    private ClusterComputePipeline(ShaderReflection reflection, GraphicsPipeline pipeline)
+    private ClusterComputePipeline(ShaderReflection reflection, Task<GraphicsPipeline> pipeline)
         : base(reflection, pipeline)
     {
     }
@@ -119,12 +120,12 @@ internal sealed class ClusterComputePipeline : ClusterPipeline
         ISlangBlob? codeBlob,
         string name)
     {
-        GraphicsPipeline? pipeline = null;
+        Task<GraphicsPipeline>? pipeline = null;
         try
         {
             int targetIndex = shader.RequireSlangTarget(device.Capabilities.CompileTarget);
             ShaderReflection reflection = shader.GetSlangReflection(targetIndex);
-            pipeline = backend.CreateComputePipeline(
+            pipeline = backend.CreateComputePipelineAsync(
                 device,
                 new ComputePipelineDesc(
                     shader.SlangCode,
@@ -150,7 +151,7 @@ internal sealed class ClusterRasterPipeline : ClusterPipeline
 {
     private ClusterRasterPipeline(
         ShaderReflection reflection,
-        GraphicsPipeline pipeline,
+        Task<GraphicsPipeline> pipeline,
         bool usesMesh,
         string geometryEntry)
         : base(reflection, pipeline)
@@ -197,7 +198,7 @@ internal sealed class ClusterRasterPipeline : ClusterPipeline
         ReadOnlySpan<VertexAttribute> vertexAttributes = default,
         SlangStage geometryStage = SlangStage.Vertex)
     {
-        GraphicsPipeline? pipeline = null;
+        Task<GraphicsPipeline>? pipeline = null;
         try
         {
             int targetIndex = shader.RequireSlangTarget(device.Capabilities.CompileTarget);
@@ -224,7 +225,7 @@ internal sealed class ClusterRasterPipeline : ClusterPipeline
                 sampleCount);
             bool usesMesh = geometryStage == SlangStage.Mesh;
             pipeline = usesMesh
-                ? backend.CreateMeshPipeline(
+                ? backend.CreateMeshPipelineAsync(
                     device,
                     new MeshPipelineDesc(
                         shader.SlangCode,
@@ -244,7 +245,7 @@ internal sealed class ClusterRasterPipeline : ClusterPipeline
                         name,
                         meshCodeBlob: geometryBlob,
                         pixelCodeBlob: pixelBlob))
-                : backend.CreateGraphicsPipeline(
+                : backend.CreateGraphicsPipelineAsync(
                     device,
                     new GraphicsPipelineDesc(
                         shader.SlangCode,

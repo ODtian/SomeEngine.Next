@@ -51,10 +51,17 @@ public static class ImportedSceneBuild
         var project = new AssetProject(projectRoot, [importer],
             shaderIncludeDirectories: [Path.Combine(engineRoot, "assets/Shaders")]);
         AssetManifest applicationAssets = AssetManifest.Load(Path.Combine(applicationDirectory, "Library", "AssetManifest"));
-        foreach (AssetEntry entry in applicationAssets.Assets.Values)
+        var sharedAssets = new HashSet<Guid>(applicationAssets.Assets.Values.Where(entry =>
+            entry.Path.StartsWith("assets/Shaders/", StringComparison.OrdinalIgnoreCase)
+            || entry.Path.StartsWith("assets/Pipelines/", StringComparison.OrdinalIgnoreCase)
+            || entry.AssetGuid == MaterialTemplates.Standard.Value).Select(entry => entry.AssetGuid));
+        var dependencies = new Queue<Guid>(sharedAssets);
+        while (dependencies.TryDequeue(out Guid assetId))
+            foreach (Guid dependency in applicationAssets.Assets[assetId].Dependencies)
+                if (sharedAssets.Add(dependency)) dependencies.Enqueue(dependency);
+        foreach (Guid assetId in sharedAssets)
         {
-            if (!entry.Path.StartsWith("assets/Shaders/", StringComparison.OrdinalIgnoreCase)
-                && !entry.Path.StartsWith("assets/Pipelines/", StringComparison.OrdinalIgnoreCase)) continue;
+            AssetEntry entry = applicationAssets.Assets[assetId];
             string destination = Path.Combine(projectRoot, entry.Path);
             CopyIfChanged(Path.Combine(applicationDirectory, entry.Path), destination);
             project.RegisterAsset(entry);

@@ -9,6 +9,11 @@ namespace SomeEngine.Render.Cluster.Pipeline;
 
 public sealed partial class ClusterPipelineSystem
 {
+    // Keep shared-output writers on one queue. Disjoint pixel writes can overlap
+    // within one submission while preserving the backend's texture access rules.
+    private PassQueueSelection ShadeQueueSelection => PassQueueSelection.AnyOfType(
+        _options.EnableAsyncCompute ? QueueType.Compute : QueueType.Graphics);
+
     private readonly record struct IndexedTextureRead(SomeEngine.Resources.Material Material, uint Property,
         SomeEngine.Resources.Texture? Texture);
 
@@ -57,7 +62,7 @@ public sealed partial class ClusterPipelineSystem
                 var dispatch = new ClusterIndirectDispatchParameters(RequireDispatchIndirectLayout(),
                     GraphData.Resources.ShadeIndirectArgs, checked((ulong)bin * ClusterIndirectAbi.DispatchBytes));
                 GraphPassId pass = edit.AddComputeFramePass($"Evaluate Cluster {(requests ? "shadow requests" : "color")} bin {bin}",
-                    PassQueueSelection.AnyOfType(QueueType.Graphics), dispatch, new PassOptions(RepeatCommands: true),
+                    ShadeQueueSelection, dispatch, new PassOptions(RepeatCommands: true),
                     value.Stage.Pipeline.Pipeline, VariableLayoutReflection.Null, default,
                     static (ref PassDefinition access, ref ClusterIndirectDispatchParameters data) =>
                         _ = access.Read(data.Arguments, new BufferRange(data.Offset, ClusterIndirectAbi.DispatchBytes),

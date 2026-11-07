@@ -62,3 +62,7 @@ await Application.RunAsync(args, scene);
 
 相关主题：[Frame Data](Frame-Data.md)、[Range Completions](Range-Completions.md)、
 [Calibrated Timestamps](../RHI/Capabilities/Calibrated-timestamps.md)。
+
+`ApplicationScene.GraphAnalyzed` 接收同一帧的 `RenderGraphDiagnosticsView`，包含实际队列、资源范围、
+数据依赖、执行依赖和屏障。应用将该回调透传到现有图帧诊断入口，可以同时核对 bin 的依赖与
+`FrameMeasured` 中的 GPU 区间。

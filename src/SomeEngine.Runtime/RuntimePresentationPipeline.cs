@@ -15,7 +15,9 @@ internal sealed class RuntimePresentationPipeline : IDisposable
 {
     private readonly GraphicsPipeline _pipeline;
     private readonly GraphTextureId _target;
+    private readonly GraphTextureId _swapchainTarget;
     private readonly GraphPassId _drawPass;
+    private readonly PresentationCopy _presentation;
     private bool _disposed;
 
     internal RuntimePresentationPipeline(
@@ -88,7 +90,7 @@ internal sealed class RuntimePresentationPipeline : IDisposable
             RenderGraphEdit edit = graph.BeginEdit();
             try
             {
-                GraphTextureId target = edit.DeclareExternalTexture(new TextureDesc(
+                GraphTextureId target = edit.CreateTransientTexture(new TextureDesc(
                     TextureDimension.Texture2D,
                     checked((uint)inputWidth),
                     checked((uint)inputHeight),
@@ -98,6 +100,11 @@ internal sealed class RuntimePresentationPipeline : IDisposable
                     1,
                     outputFormat,
                     TextureUsages.ColorAttachment | TextureUsages.CopySource,
+                    label: "Runtime composed color"));
+                GraphTextureId swapchainTarget = edit.DeclareExternalTexture(new TextureDesc(
+                    TextureDimension.Texture2D, checked((uint)inputWidth), checked((uint)inputHeight),
+                    1, 1, 1, 1, outputFormat,
+                    TextureUsages.ColorAttachment | TextureUsages.CopySource | TextureUsages.CopyDestination,
                     label: "Runtime presentation target"));
                 GraphTextureSrvId source = edit.CreateTextureSrv(
                     inputColor,
@@ -139,6 +146,8 @@ internal sealed class RuntimePresentationPipeline : IDisposable
                 edit.OrderAfter(pass, pageFaultReadback);
                 edit.Commit();
                 _target = target;
+                _swapchainTarget = swapchainTarget;
+                _presentation = new(target, swapchainTarget, checked((uint)inputWidth), checked((uint)inputHeight));
                 _drawPass = pass;
             }
             finally
@@ -166,8 +175,23 @@ internal sealed class RuntimePresentationPipeline : IDisposable
         Queue presentQueue)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        frame.BindExternalTexture(_target, image, presentQueue);
+        frame.BindExternalTexture(_swapchainTarget, image, presentQueue);
     }
+
+    internal void Record(ref RenderGraphFrame frame) =>
+        frame.AddCopyPass("Present composed color", PassQueueSelection.AnyOfType(QueueType.Graphics), _presentation,
+            new PassOptions(Culling: PassCullingMode.NeverCull),
+            static (ref PassDefinition access, ref PresentationCopy data) =>
+            {
+                var range = new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Color);
+                access.Read(data.Source, range, PipelineSync.Copy, ResourceAccess.CopySource, TextureLayout.CopySource);
+                access.Write(data.Destination, range, PipelineSync.Copy, ResourceAccess.CopyDestination,
+                    TextureLayout.CopyDestination, WriteCoverage.Complete);
+            },
+            static (ref CopyPassCommandScope commands, in PresentationCopy data) =>
+                commands.CopyTexture(new TextureCopy(commands.GetTexture(data.Source), 0, 0, TextureAspects.Color,
+                    0, 0, 0, commands.GetTexture(data.Destination), 0, 0, TextureAspects.Color,
+                    0, 0, 0, data.Width, data.Height, 1)));
 
     public void Dispose()
     {
@@ -202,4 +226,6 @@ internal sealed class RuntimePresentationPipeline : IDisposable
             commands.Draw(new DrawArguments(3, 1, 0, 0));
         }
     }
+
+    private readonly record struct PresentationCopy(GraphTextureId Source, GraphTextureId Destination, uint Width, uint Height);
 }

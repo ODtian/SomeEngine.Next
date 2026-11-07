@@ -214,11 +214,11 @@ internal sealed partial class FrameExecutor
             int predecessor = _sameQueuePredecessor[pass];
             int previous = predecessor >= 0 ? _submissionByPass[predecessor] : -1;
             int current = previous;
-            bool split = current < 0 || _passes[predecessor].Options.SubmitAfter;
+            bool split = current < 0 || RequiresSubmissionAfter(predecessor);
             if (!split)
             {
                 foreach (int dependency in _incomingSubmissions)
-                    if (dependency != current && SubmissionDependsOn(dependency, current, _submissionCount))
+                    if (dependency != current && !SubmissionDependsOn(current, dependency, _submissionCount))
                     {
                         split = true;
                         break;
