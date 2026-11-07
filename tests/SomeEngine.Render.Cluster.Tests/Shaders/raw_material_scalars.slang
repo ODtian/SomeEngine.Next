@@ -59,14 +59,6 @@ struct RawMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ITransparentSurfac
     {
         return evaluateColor(input);
     }
-    void markShadowPages(SurfacePixelInput input, SurfaceEval surface, float3 bary, Triangle triangle)
-    {
-        float3 position = input.VisibilityDepth == 2u ? input.PositionFromDepth : surface.Position;
-        position = TransformFirstPersonWorldPosition(MaterialInstanceData, MaterialInstanceProperties, input.InstanceID,
-            MaterialViews[input.PixelCoord.z], position);
-        bool firstPerson = (LoadInstanceFirstPerson(MaterialInstanceData, MaterialInstanceProperties, input.InstanceID).x & 3u) == 1u;
-        MarkVirtualShadowPages(position, input.PixelCoord.z, firstPerson);
-    }
 };
 
 typedef StaticVertexEval VertexEvaluate;

@@ -45,7 +45,7 @@ public static class SampleMaterials
         }
         foreach (string entry in new[]
         {
-            "BuildTransparentGeometry", "RequestTransparentPages", "RequestTransparentShadows", "RequestProjectedTransparentShadows",
+            "BuildTransparentGeometry", "RequestTransparentPages",
             "ResolveTileTransparentColor", "ResolveLocalTileTransparentColor", "ResolveDepthTileTransparentColor",
             "ResolveTransparentColor", "ResolveProjectedTransparentColor",
             "ResolveUnorderedTransparentColor", "ResolveProjectedUnorderedTransparentColor",

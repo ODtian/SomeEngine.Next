@@ -78,7 +78,7 @@ public sealed class TileRendering : IRenderGraphFrameExecutionObserver
         BufferDesc counts = new((ulong)tiles * 4u, counted, "Tile counts");
         BufferDesc references = new((ulong)description.ReferenceCapacity * 4u, storage, "Tile references");
         BufferDesc triangleCount = new(20, counted, "Tile triangle count");
-        BufferDesc arguments = new(160, storage | BufferUsages.Indirect, "Tile arguments");
+        BufferDesc arguments = new(172, storage | BufferUsages.Indirect, "Tile arguments");
         Triangles = edit.CreatePersistentBuffer(triangles);
         _buffers.Add("TransparencyTriangles", (Triangles, description.TriangleStride));
         _buffers.Add("TransparencyRasterTriangles", (Triangles, description.TriangleStride));
@@ -199,8 +199,11 @@ public sealed class TileRendering : IRenderGraphFrameExecutionObserver
         CoveragePasses = coveragePasses.ToArray();
         _coverageReady = geometryReady;
         if (requestShadows)
-            RequestPasses = AddPixelPasses(ref edit, pixelLists ? ["RequestTransparentShadows"]
-                : ["RequestTransparentShadows", "RequestProjectedTransparentShadows"], Requests);
+        {
+            GraphPassId request = BuildPass(ref edit, "RequestTransparentPages", Requests, default, 160);
+            edit.OrderAfter(request, geometryReady);
+            RequestPasses = [request];
+        }
         SetColorPasses(ref edit, shaders, inputs, colorEntries, stencilReady, connect);
 
         GraphPassId BuildPass(ref RenderGraphEdit graph, string entry, GraphRegionId region,
@@ -228,18 +231,6 @@ public sealed class TileRendering : IRenderGraphFrameExecutionObserver
             geometryReady = pass;
         }
 
-        GraphPassId[] AddPixelPasses(ref RenderGraphEdit graph, string[] names, GraphRegionId region)
-        {
-            var passes = new GraphPassId[names.Length];
-            for (int index = 0; index < names.Length; index++)
-            {
-                passes[index] = BuildPass(ref graph, names[index], region,
-                    default, GetPixelDispatchOffset(names[index]));
-                graph.OrderAfter(passes[index], index == 0 ? geometryReady : passes[index - 1]);
-                if (index == 0 && region == Color) graph.OrderAfter(passes[index], stencilReady);
-            }
-            return passes;
-        }
     }
 
     public void SetColorPasses(ref RenderGraphEdit edit, TileShaders shaders, TilePassInputs inputs,
@@ -269,7 +260,7 @@ public sealed class TileRendering : IRenderGraphFrameExecutionObserver
         "ResolveLocalTileTransparentColor" => 112,
         "ResolveDepthTileTransparentColor" => 136,
         "ResolveProjectedTransparentColor" or "ResolveProjectedUnorderedTransparentColor" or
-            "ResolveProjectedOrderedTransparentColor" or "RequestProjectedTransparentShadows" => 48,
+            "ResolveProjectedOrderedTransparentColor" => 48,
         _ => 24,
     };
 
@@ -411,7 +402,7 @@ public sealed class TileRendering : IRenderGraphFrameExecutionObserver
             "CountTransparentCells" => name == "TransparencyCoverageRanges" || HardwareBinning,
             "ClearTransparentHardwareMasks" or "StoreTransparentCoverage" => true,
             "CountTransparentHardwareCells" or "ScatterTransparentHardwareCells" or
-                "PrepareTransparentCells" or "SortTransparentCells" or "RequestTransparentShadows" => HardwareBinning,
+                "PrepareTransparentCells" or "SortTransparentCells" => HardwareBinning,
             "ResolveTileTransparentColor" or "ResolveLocalTileTransparentColor" or
                 "ResolveDepthTileTransparentColor" => _description.IndexedColor,
             _ => false,
@@ -422,7 +413,7 @@ public sealed class TileRendering : IRenderGraphFrameExecutionObserver
             pass.Bind(GraphParameterResourceBinding.Null(type));
             return;
         }
-        BufferContentScope contentScope = hardware || name == "TransparencyRasterTriangles"
+        BufferContentScope contentScope = hardware || name is "TransparencyRasterTriangles" or "TransparencyProjectedSources"
             ? BufferContentScope.CountBoundedPrefix : BufferContentScope.FullRange;
         if (type == ResourceBindingType.BufferSrv)
         {

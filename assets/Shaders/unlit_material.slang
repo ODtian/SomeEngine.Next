@@ -93,15 +93,11 @@ struct UnlitMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ITransparentSurf
             evaluateDebugColor(debugMode, input, surface, bary, triangle);
     }
 
-    void markShadowPages(SurfacePixelInput input, SurfaceEval surface, float3 bary, Triangle triangle) {}
-
     void evaluatePrimaryDepthSurface(SurfacePixelInput input, SurfaceEval surface, float3 bary,
         Triangle triangle, RWTexture2DArray<float4> outputColor)
     {
         evaluateSurface(input, surface, bary, triangle, outputColor);
     }
-
-    void markPrimaryDepthShadowPages(uint3 pixelCoord, float depth) {}
 
 };
 

@@ -439,17 +439,17 @@ RTX 3080，驱动 32.0.16.1074，1280×720。每条方法预热目标为 250 ms 
 
 游戏通过 `Material.State.Surface = SurfaceMode.Translucent` 选择透明表面。材质状态沿现有材质变化通知、世界提取和 Rendering world 的 Cluster 材质分配传递。材质标量和纹理索引继续由现有实例材质地址读取；同一 evaluator 的不同实例共享静态代码，使用各自的参数。
 
-用户 shader 导出带 `TransparencyMaterial` 属性的具体类型，并实现几何投影、覆盖求值、颜色求值和 receiver 求值。DefaultProject 的 Standard、Unlit 以及导入场景材质通过 `cluster_transparency_material.slang` 复用自己的 `VertexEvaluate`、`DomainEvaluate`、`VisibilityEvaluate` 和 `SurfaceEvaluate`。顶点解码、属性插值、表面重建、纹理梯度、法线与资源含义均由这些用户类型解释。
+用户 shader 导出带 `TransparencyMaterial` 属性的具体类型，并实现几何投影、覆盖求值和颜色求值。DefaultProject 的 Standard、Unlit 以及导入场景材质通过 `cluster_transparency_material.slang` 复用自己的 `VertexEvaluate`、`DomainEvaluate`、`VisibilityEvaluate` 和 `SurfaceEvaluate`。顶点解码、属性插值、表面重建、纹理梯度、法线与资源含义均由这些用户类型解释。
 
 `Shader.Compose` 将驻留用户 shader 的 Slang IR 导入同一 session，按唯一的用户 shader 与 visibility-depth 类型组合 evaluator。共享 `cluster_transparency.slang` 以 builtin 几何和颜色类型连接各个用户源文件。材质地址对应的 GPU 状态保存 evaluator 分类及直接资源项；同类型的采样器和 buffer 通过具体 evaluator 结构数组绑定，相同绑定共用资源项。用户 evaluator 从自身材质地址读取标量与纹理索引，组合阶段生成数组布局及资源选择。材质资源按整个入口的反射布局绑定，各资源对应到该字段及数组项所属的材质。源 shader 与组合入口使用 `NoMangle=0`，保留各个源文件的符号身份；资源寄存器由 Slang 在组合布局中自动分配。
 
 资源数组容量按二次幂分档；材质箱编号、实例参数或同一容量内的资源项变化只更新数据。源 `Shader` 持有以源名称、源文本、目标和库 shader 引用序列为键的组合结果，同一批 gallery 材质跨场景重载复用编译结果。每个渲染管线继续持有自己的 GPU pipeline 与资源绑定。代码生成和入口资源归属位于 `ClusterPipelineSystem.TransparencyShaders.cs`。
 
-单 evaluator、单直接资源项的十个透明入口随用户 `ShaderAsset` 在内容构建期保存。用户的第三个源文件导入自己的 evaluator，再包含 `cluster_transparency_entries.slang`，以一个具体的 `Material0` 实现 `ITransparencyMaterials`。五个数据准备入口保存为普通入口，用户几何以及缓存、重投影两套 receiver 和颜色入口按 visibility-depth 与 tessellated 常量保存专门化。它们继续调用共享透明核心中的几何、阴影请求与合成函数。DefaultProject 的 Standard、Unlit、Deformed Phong 及导入材质生成函数使用同一包装。管线在这个资源分组下取得保存代码；每个入口连同自己的 `Shader` 传入反射和绑定流程。多 evaluator、多资源项沿前述 `Compose` 组合路径生成具体资源数组。
+单 evaluator、单直接资源项的透明入口随用户 `ShaderAsset` 在内容构建期保存。入口源文件导入自己的 evaluator，再包含 `cluster_transparency_entries.slang`，以一个具体的 `Material0` 实现 `ITransparencyMaterials`。数据准备入口保存为普通入口，用户几何、单个阴影页请求入口及缓存和重投影颜色入口按 visibility-depth 与 tessellated 常量保存专门化。它们继续调用共享透明核心中的几何、阴影请求与合成函数。DefaultProject 的 Standard、Unlit、Deformed Phong 及导入材质生成函数使用同一包装。管线在这个资源分组下取得保存代码；每个入口连同自己的 `Shader` 传入反射和绑定流程。多 evaluator、多资源项沿前述 `Compose` 组合路径生成具体资源数组。
 
 每帧几何阶段读取两轮 Cluster 可见几何的实际数量，并生成投影三角形和 tile 图元引用。每个 tile 的实际引用数量决定查询范围。每个像素在寄存器中保留四个按深度、来源图元次序排列的命中；处理一批后，继续从上批最后的命中向后查询，直到完整覆盖输入。逐命中使用自己的深度、位置、重心坐标及其梯度求值表面，调用 `evaluateSurface` 后以该 receiver 进行 Forward 光照和阴影采样，再执行前向 alpha 累积。opaque 颜色作为累积背景，合成位置位于 opaque 着色之后、TAA 之前。
 
-透明 receiver 的覆盖请求在 VSM 页分配之前执行。请求复用 VSM 页需求发布和 receiver footprint 计算，颜色阶段复用 Forward 的逐 receiver 阴影采样。
+透明 receiver 的覆盖请求在 VSM 页分配之前执行。该阶段在局部变量中复用当次投影产生的用户数据，沿覆盖深度还原渲染位置并直接调用 `MarkVirtualShadowPages`；VSM 持有页需求发布和 receiver footprint 计算。颜色阶段复用 Forward 的逐 receiver 阴影采样。
 
 `MaterialState.ColorLimit` 声明线性 RGB 每通道的颜色上界，默认 `1`；`MaximumError` 声明线性 RGB 最大通道误差，默认 `0`，表示完整合成。近似合成仅在剩余透射率乘以颜色上界的一半落入误差限时结束，并以剩余区间的中点估计尾部。场景使用全部参与材质的最大颜色上界和最小误差限，背景颜色同时参与上界计算。
 
@@ -497,7 +497,7 @@ GPU 从 primary 两阶段的实际可见数量保存配套源请求，每项 12 
 
 GPU 复制源请求时，同时形成参与混合的 cluster 索引及数量，保留原 source 编码。用户几何阶段为每个原三角形汇总实际微三角形的保守 cell 范围，保存 28 B 的 source bounds。Count 在实际投影数形成后选择微三角形或 source bounds 计数，Reserve 为每 cell 分配连续引用区间，Scatter 写入对应的投影索引或 source 身份。投影缓存与引用池分别由 `ClusterPipelineOptions.BlendTriangleCapacity/BlendReferenceCapacity` 设置；source bounds 使用相同的三角形预算。完整 cell 区间在预算内驻留，引用容量之外的 cell 扫描对应的缓存记录。source bounds 容量之外的输入沿 active cluster 索引完整继续。
 
-缓存和重投影各使用静态专门化的 receiver、颜色内核，GPU 实际投影数写入两个间接调度范围。缓存内核仅持有 cell、引用和四项命中队列；重投影内核按 wave 覆盖的 cell 引用选择相关 source，由一个 lane 继续用户投影，再广播一份实际微三角形。各像素以最终命中所属 cell 去重，执行自己的覆盖、receiver 和完整次序累积。一次 Deformed Phong DXIL 对照中，缓存颜色入口从 501,980 B 降为 112,352 B，原来的 24 个 16 项局部数组全部消失，仅保留四项局部队列。
+缓存和重投影各使用静态专门化的颜色内核，GPU 实际投影数写入两个间接调度范围。缓存内核仅持有 cell、引用和四项命中队列；重投影内核按 wave 覆盖的 cell 引用选择相关 source，由一个 lane 继续用户投影，再广播一份实际微三角形。各像素以最终命中所属 cell 去重，执行自己的覆盖、表面求色和完整次序累积。阴影页请求由前述独立的既有请求阶段完成。一次 Deformed Phong DXIL 对照中，缓存颜色入口从 501,980 B 降为 112,352 B，原来的 24 个 16 项局部数组全部消失，仅保留四项局部队列。
 
 默认投影预算由 `ClusterPipelineOptions.DefaultBlendTriangleCapacity` 统一设为 `524288`，管线选项、场景脚本与应用入口读取同一常量。45° 相机下的 16 个动态曲面部件实际产生 `298280` 个微三角形，投影缓存与 source bounds 按实际 stride 分别计算使用字节。相对于 `262144`，两份缓冲的配置容量合计增加 `27 MiB`；显式指定的容量继续决定分段粒度。统一场景报告记录实际使用、容量和分配。
 

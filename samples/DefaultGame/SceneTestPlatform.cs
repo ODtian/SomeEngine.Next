@@ -800,7 +800,7 @@ public sealed partial class SceneTestPlatform
     private const string BlendTimingScopes =
         "GPU milliseconds on the graphics queue, matched to the recorded SimulationFrame. " +
         "ProjectionIndexMs covers geometry projection and candidate-index construction; " +
-        "CoverageReceiverMs covers hit coverage for shadow-receiver requests; " +
+        "CoverageReceiverMs covers transparent receiver position evaluation and direct shadow page requests; " +
         "MaterialCompositeMs covers covered-hit selection, user-material evaluation and color/state composition. " +
         "It extends through declared hardware stencil export, hardware stages and stencil import. " +
         "DecalIndexMs covers decal Clear, Count, Reserve, Scatter and Sort; " +

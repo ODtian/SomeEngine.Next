@@ -321,15 +321,6 @@ struct TRANSPARENCY_EVALUATOR(TRANSPARENCY_MATERIAL_TYPE)
         return Surface.evaluateTransparency(debugMode, pixel, evaluated, bary, value.Triangle);
     }
 
-    void markShadowPagesData<let visibilityDepth : uint>(SourceData value, uint3 coord, float depth)
-    {
-        float3 bary;
-        DomainEvaluate.Surface evaluated;
-        SurfacePixelInput pixel;
-        if (!reconstruct(value, coord, depth, visibilityDepth, bary, evaluated, pixel)) return;
-        Surface.markShadowPages(pixel, evaluated, bary, value.Triangle);
-    }
-
     void reconstruct(uint source, uint3 coord, float depth, uint visibilityDepth, out TriangleInfo info,
         out DomainEvaluate.TriangleData triangle, out float3 bary, out DomainEvaluate.Surface evaluated, out SurfacePixelInput pixel)
     {
@@ -359,16 +350,6 @@ struct TRANSPARENCY_EVALUATOR(TRANSPARENCY_MATERIAL_TYPE)
         return Surface.evaluateTransparency(Uniforms.DebugMode, pixel, evaluated, bary, triangle);
     }
 
-    void markShadowPages<let visibilityDepth : uint>(uint source, uint primitive, uint3 coord, float depth)
-    {
-        TriangleInfo info;
-        DomainEvaluate.TriangleData triangle;
-        float3 bary;
-        DomainEvaluate.Surface evaluated;
-        SurfacePixelInput pixel;
-        reconstruct(source, coord, depth, visibilityDepth, info, triangle, bary, evaluated, pixel);
-        Surface.markShadowPages(pixel, evaluated, bary, triangle);
-    }
 };
 #endif
 
@@ -386,8 +367,6 @@ struct TRANSPARENCY_MATERIAL_TYPE
     { return Material.coverData<visibilityDepth>(value,domain,tessellated,pixel,depth,resultDepth); }
     float4 shadeData<let visibilityDepth : uint, let debugMode : uint>(SourceData value, uint3 pixel, float depth)
     { return Material.shadeData<visibilityDepth,debugMode>(value,pixel,depth); }
-    void markShadowPagesData<let visibilityDepth : uint>(SourceData value, uint3 pixel, float depth)
-    { Material.markShadowPagesData<visibilityDepth>(value,pixel,depth); }
     Projection beginProjection(uint source, uint view, bool tessellated, float4 screenBounds)
     { return Material.beginProjection(source, view, tessellated, screenBounds); }
     bool nextProjection(uint source, uint view, bool tessellated, inout Projection value,
@@ -397,8 +376,6 @@ struct TRANSPARENCY_MATERIAL_TYPE
     { return Material.cover(source, domain, tessellated, pixel, depth, resultDepth); }
     float4 shade<let visibilityDepth : uint>(uint source, uint primitive, uint3 pixel, float depth)
     { return Material.shade<visibilityDepth>(source, primitive, pixel, depth); }
-    void markShadowPages<let visibilityDepth : uint>(uint source, uint primitive, uint3 pixel, float depth)
-    { Material.markShadowPages<visibilityDepth>(source, primitive, pixel, depth); }
 };
 #undef TRANSPARENCY_MATERIAL_TYPE
 #endif

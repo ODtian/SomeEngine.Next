@@ -35,7 +35,7 @@ public sealed partial class ClusterPipelineSystem
         internal required ClusterShadeInvocation[][] ResourceMaterials;
         internal required ImmutableArray<IndexedTextureRead> TextureReads;
         internal required TileRendering Tiles;
-        internal GraphBufferId ShadingTriangles, States;
+        internal GraphBufferId States;
         internal GraphBufferId Sources, SourceCounts, ActiveSources, OrderedStates;
 
         internal GraphBufferSlice Parameters, ShadeParameters, GeometryParameters;
@@ -120,8 +120,6 @@ public sealed partial class ClusterPipelineSystem
             Shaders = shaders, Materials = materials, ResourceMaterials = resources, TextureReads = textureReads,
             MaterialCapacity = assignments.SlotCapacity,
 
-            ShadingTriangles = edit.CreatePersistentBuffer(new BufferDesc((ulong)capacity * shaders.ShadingStride, storage,
-                "Cluster transparent user triangle data")),
             States = CreateBufferData(ref edit, new byte[checked((int)assignments.SlotCapacity * 8)], BufferUsages.ShaderRead, "Cluster transparency material states"),
 
             OrderedStates = CreateBufferData(ref edit, new byte[checked((int)assignments.SlotCapacity * 64)], BufferUsages.ShaderRead, "Cluster ordered material states"),
@@ -140,7 +138,7 @@ public sealed partial class ClusterPipelineSystem
         data.Tiles.Install(ref edit, shaders.Pipelines,
             new TilePassInputs(RequireDispatchIndirectLayout(), RequireDrawIndirectLayout(), frame.Depth, frame.Width, frame.Height),
             shaders.SplitSorting,
-            _transparencyRequestRegion != default && shaders.Pipelines.ContainsKey("RequestTransparentShadows"),
+            _transparencyRequestRegion != default && shaders.Pipelines.ContainsKey("RequestTransparentPages"),
             shaders.ColorEntries, GraphData.Stencil!.ClearPass, ConnectResources);
         GraphData.Outputs = GraphData.Outputs with { Transparency = new(data.Tiles.Triangles,data.Tiles.Counts,
             data.Tiles.References,data.Tiles.TriangleCount,capacity,shaders.TriangleStride,data.Tiles.GeometryReady)
@@ -319,9 +317,6 @@ public sealed partial class ClusterPipelineSystem
             case "OrderedStencil": pass.Bind(graph.CreateTextureUav(GraphData.Stencil!.Values, format: Format.R32UInt,
                 dimension: SomeEngine.Graphics.TextureViewDimension.Texture2DArray), sync,
                 GraphAccessMode.Write, WriteCoverage.Partial); return true;
-            case "TransparencyShadingTriangles": case "TransparencyShadingInputs":
-            case "SceneTransparencyShadingTriangles": case "SceneTransparencyShadingInputs":
-                buffer = data.ShadingTriangles; stride = data.Shaders.ShadingStride; break;
             case "TransparencyOpaqueDepth": pass.Bind(graph.CreateTextureSrv(frame.Depth, new TextureSubresourceRange(0, 1, 0, frame.ViewCount, TextureAspects.Depth),
                 Format.D32Float, SomeEngine.Graphics.TextureViewDimension.Texture2DArray), sync); return true;
             case "TransparencyColor": pass.Bind(graph.CreateTextureUav(frame.SceneColor, format: Format.R16G16B16A16Float,
@@ -336,14 +331,13 @@ public sealed partial class ClusterPipelineSystem
             {
                 ("ClearTransparentTiles", _) => GraphAccessMode.Write,
                 ("CopyTransparentSources", "TransparencySourceOutput" or "TransparencyActiveSources") => GraphAccessMode.Write,
-                ("BuildTransparentGeometry", "TransparencyShadingTriangles" or "SceneTransparencyShadingTriangles") => GraphAccessMode.Write,
                 _ => GraphAccessMode.Read,
             };
             pass.Bind(graph.CreateBufferUav(buffer, structureStride: stride), sync, mode,
                 clear ? WriteCoverage.Complete : WriteCoverage.Partial, ResourceContentState.Defined);
         }
         else pass.Bind(graph.CreateBufferSrv(buffer, structureStride: stride), sync,
-            resource.Name is "TransparencyVisibleClusters" or "TransparencySources" or "TransparencyShadingInputs" or "SceneTransparencyShadingInputs"
+            resource.Name is "TransparencyVisibleClusters" or "TransparencySources"
                 ? BufferContentScope.CountBoundedPrefix : BufferContentScope.FullRange);
         return true;
     }
@@ -372,7 +366,6 @@ public sealed partial class ClusterPipelineSystem
     private void RemoveTransparency(ref RenderGraphEdit edit, TransparencyData data)
     {
         data.Tiles.Remove(ref edit);
-        edit.Remove(data.ShadingTriangles);
         edit.Remove(data.Sources); edit.Remove(data.SourceCounts); edit.Remove(data.ActiveSources);
         RemoveParameters(data.GeometryParameters);
         RemoveBufferData(ref edit, data.States);

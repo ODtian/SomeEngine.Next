@@ -1,8 +1,6 @@
 import "cluster_transparency";
 
 struct TransparencyShadingData { TRANSPARENCY_MATERIAL_TYPE.SourceData Material0; };
-RWStructuredBuffer<TransparencyShadingData> TransparencyShadingTriangles;
-StructuredBuffer<TransparencyShadingData> TransparencyShadingInputs;
 groupshared TransparencyShadingData TransparencyTileShading[16];
 
 struct SingleTransparencyMaterials<let visibilityDepth : uint, let tessellated : bool> : ITransparencyMaterials
@@ -11,8 +9,16 @@ struct SingleTransparencyMaterials<let visibilityDepth : uint, let tessellated :
     typealias Projection = TRANSPARENCY_MATERIAL_TYPE.Projection;
     typealias Shading = TransparencyShadingData;
 
-    Shading loadShading(uint index) { return TransparencyShadingInputs[index]; }
-    void cacheTileShading(uint packet, uint index) { TransparencyTileShading[packet] = TransparencyShadingInputs[index]; }
+    Shading readProjectionShading(uint bin, uint source, Projection value)
+    { Shading result = { Material0.sourceData(value) }; return result; }
+    Shading evaluateShading(uint index)
+    {
+        TransparencyTriangle triangle = TransparencyRasterTriangles[index];
+        Projection value = beginProjection(triangle.Bin, triangle.Source, triangle.View,
+            float4(.5, .5, float(TransparencyUniforms.Width) - .5, float(TransparencyUniforms.Height) - .5));
+        return readProjectionShading(triangle.Bin, triangle.Source, value);
+    }
+    void cacheTileShading(uint packet, Shading value) { TransparencyTileShading[packet] = value; }
     Shading loadTileShading(uint packet) { return TransparencyTileShading[packet]; }
     Shading readShadingLane(Shading value, uint lane)
     { value.Material0 = Material0.readSourceData(value.Material0,lane); return value; }
@@ -26,8 +32,6 @@ struct SingleTransparencyMaterials<let visibilityDepth : uint, let tessellated :
 
     Projection beginProjection(uint bin, uint source, uint view, float4 screenBounds)
     { return Material0.beginProjection(source, view, tessellated, screenBounds); }
-    void storeProjection(uint bin, uint source, uint index, Projection value)
-    { TransparencyShadingTriangles[index].Material0 = Material0.sourceData(value); }
     bool nextProjection(uint bin, uint source, uint view, inout Projection value,
         out uint primitive, out float3x2 domain, out float4 first, out float4 second, out float4 third)
     { return Material0.nextProjection(source, view, tessellated, value, primitive, domain, first, second, third); }
@@ -35,19 +39,15 @@ struct SingleTransparencyMaterials<let visibilityDepth : uint, let tessellated :
     { return Material0.cover(source, domain, tessellated, pixel, depth, resultDepth); }
     float4 shade(uint bin, uint source, uint primitive, uint3 pixel, float depth)
     { return Material0.shade<visibilityDepth>(source, primitive, pixel, depth); }
-    TRANSPARENCY_MATERIAL_TYPE.SourceData readSource(uint index)
-    { return TransparencyShadingInputs[index].Material0; }
-    bool coverCached(uint bin, uint index, float3x2 domain, uint3 pixel, float depth, out float resultDepth)
+    TRANSPARENCY_MATERIAL_TYPE.SourceData evaluateSource(uint index)
+    { return evaluateShading(index).Material0; }
+    bool coverTriangle(uint bin, uint index, float3x2 domain, uint3 pixel, float depth, out float resultDepth)
     {
         if (visibilityDepth == 0u) { resultDepth = depth; return true; }
-        return Material0.coverData<visibilityDepth>(readSource(index), domain, tessellated, pixel, depth, resultDepth);
+        return Material0.coverData<visibilityDepth>(evaluateSource(index), domain, tessellated, pixel, depth, resultDepth);
     }
-    float4 shadeCached(uint bin, uint index, uint3 pixel, float depth)
-    { return Material0.shadeData<visibilityDepth,0u>(readSource(index), pixel, depth); }
-    void markShadowPages(uint bin, uint source, uint primitive, uint3 pixel, float depth)
-    { Material0.markShadowPages<visibilityDepth>(source, primitive, pixel, depth); }
-    void markShadowPagesShading(uint bin, uint source, Shading value, uint3 pixel, float depth)
-    { Material0.markShadowPagesData<visibilityDepth>(value.Material0,pixel,depth); }
+    float4 shadeTriangle(uint bin, uint index, uint3 pixel, float depth)
+    { return Material0.shadeData<visibilityDepth,0u>(evaluateSource(index), pixel, depth); }
 };
 
 [shader("compute")] [numthreads(64,1,1)]
@@ -103,18 +103,6 @@ TransparencyHardwareVertex DrawTransparentCoverage(uint vertex : SV_VertexID) { 
 [shader("fragment")] [earlydepthstencil]
 void StoreTransparentCoverage(TransparencyHardwareVertex input) { StoreTransparencyHardwareCoverage(input); }
 
-[shader("compute")] [numthreads(64,1,1)] [WaveSize(32)]
-void RequestTransparentShadows<let visibilityDepth : uint, let tessellated : bool>(
-    uniform SingleTransparencyMaterials<visibilityDepth, tessellated> materials, uint3 group : SV_GroupID, uint thread : SV_GroupIndex)
-{
-    RequestTransparencyShadowJobs(materials,group,thread);
-}
-
-[shader("compute")] [numthreads(16,16,1)]
-void RequestProjectedTransparentShadows<let visibilityDepth : uint, let tessellated : bool>(
-    uniform SingleTransparencyMaterials<visibilityDepth, tessellated> materials, uint3 pixel : SV_DispatchThreadID)
-{ RequestTransparencyShadows<SingleTransparencyMaterials<visibilityDepth, tessellated>, true>(materials, pixel); }
-
 [shader("compute")] [numthreads(16,16,1)]
 void ResolveTransparentColor<let visibilityDepth : uint, let tessellated : bool>(
     uniform SingleTransparencyMaterials<visibilityDepth, tessellated> materials, uint3 pixel : SV_DispatchThreadID)
@@ -140,10 +128,10 @@ void ResolveDepthTileTransparentColor<let visibilityDepth : uint, let tessellate
     uniform SingleTransparencyMaterials<visibilityDepth,tessellated> materials, uint3 group : SV_GroupID, uint thread : SV_GroupIndex)
 { ResolveTransparencyDepthTileJobs(materials,group,thread); }
 
-[shader("compute")] [numthreads(64,1,1)]
+[shader("compute")] [numthreads(256,1,1)]
 void RequestTransparentPages<let visibilityDepth : uint, let tessellated : bool>(
-    uniform SingleTransparencyMaterials<visibilityDepth, tessellated> materials, uint3 thread : SV_DispatchThreadID)
-{ RequestTransparencyPages(materials, thread); }
+    uniform SingleTransparencyMaterials<visibilityDepth, tessellated> materials, uint3 group : SV_GroupID, uint thread : SV_GroupIndex)
+{ RequestTransparencyPages(materials, group, thread); }
 
 
 [shader("compute")] [numthreads(16,16,1)]

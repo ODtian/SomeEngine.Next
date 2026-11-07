@@ -55,19 +55,18 @@ public sealed partial class ClusterPipelineSystem
         ulong fixedBytes = capacityBytes + tiles.FixedBytes;
         capacityBytes += tiles.CapacityBytes;
         allocationBytes += tiles.AllocationBytes;
-        GraphBufferId[] buffers = [data.ShadingTriangles, data.States, data.OrderedStates,
+        GraphBufferId[] buffers = [data.States, data.OrderedStates,
             data.Sources, data.SourceCounts, data.ActiveSources];
         foreach (GraphBufferId buffer in buffers)
         {
             BufferDesc description = edit.GetBufferDescription(buffer);
             capacityBytes += description.Size;
             allocationBytes += _backend.GetBufferMemoryRequirements(_device, description).Size;
-            if (buffer != data.ShadingTriangles && buffer != data.Sources && buffer != data.ActiveSources)
+            if (buffer != data.Sources && buffer != data.ActiveSources)
                 fixedBytes += description.Size;
         }
         return new(data.Tiles.TriangleCount, data.Shaders.TriangleStride, data.Shaders.SourceBoundsStride,
-            fixedBytes, capacityBytes, allocationBytes, data.Tiles.TriangleCapacity)
-        { ShadingStride = data.Shaders.ShadingStride };
+            fixedBytes, capacityBytes, allocationBytes, data.Tiles.TriangleCapacity);
     }
 
     private BlendDecalBuffers CaptureDecalBuffers(ref RenderGraphEdit edit)

@@ -13,7 +13,7 @@ public sealed partial class ClusterPipelineSystem
     private readonly record struct TransparencyMember(Shader Shader, ClusterVisibilityDepth VisibilityDepth);
 
     private sealed class TransparencyShaders(TransparencyMember[] members, uint[] resourceCapacities,
-        TileShaders pipelines, string shadingType, bool tileColor, bool splitSorting, string[] colorEntries)
+        TileShaders pipelines, bool tileColor, bool splitSorting, string[] colorEntries)
     {
         internal readonly TransparencyMember[] Members = members;
         internal readonly uint[] ResourceCapacities = resourceCapacities;
@@ -24,7 +24,6 @@ public sealed partial class ClusterPipelineSystem
         internal bool UsesUnorderedColor => Pipelines.ContainsKey("ResolveUnorderedTransparentColor");
         internal readonly uint TriangleStride = GetStride(pipelines["BuildTransparentGeometry"], "TransparencyTriangle");
         internal readonly uint SourceBoundsStride = GetStride(pipelines["BuildTransparentGeometry"], "TransparencySourceBounds");
-        internal readonly uint ShadingStride = GetStride(pipelines["BuildTransparentGeometry"], shadingType);
         private static uint GetStride(TileComputeShader compiled, string name)
         {
             ShaderReflection reflection = compiled.Pipeline.Reflection;
@@ -77,10 +76,8 @@ public sealed partial class ClusterPipelineSystem
         bool saved = !pixelLists && _options.DebugMode == 0 && members.Length == 1 && capacities[0] == 1 &&
             colorEntries.Concat(["BuildTransparentGeometry"])
                 .All(entry => source.TryGetSpecialization(entry, arguments, out _));
-        if (saved && (colorEntries.Any(entry => HasVirtualShadowInputs(source.RequireSpecialization(entry, arguments), entry)) ||
-            HasShadowRequests(null)))
-            saved = new[] { "RequestTransparentShadows", "RequestProjectedTransparentShadows" }
-                .All(entry => source.TryGetSpecialization(entry, arguments, out _));
+        if (saved && colorEntries.Any(entry => HasVirtualShadowInputs(source.RequireSpecialization(entry, arguments), entry)))
+            saved = source.TryGetSpecialization("RequestTransparentPages", arguments, out _);
         Shader? composition = saved ? null : ComposeTransparencyShaders(members,capacities,_device.Capabilities.CompileTarget,_options.DebugMode,reference,tileColor,splitSorting);
         Shader hardware = reference ?? (_options.ForceHardwareRaster ? ComposeTransparencyHardware(source) : source);
         var pipelines = new TileShaders(_backend, _device, hardware);
@@ -98,41 +95,28 @@ public sealed partial class ClusterPipelineSystem
             foreach (string entry in new[] { "PrepareTransparentPixelLists", "BuildTransparentPixelLists" }) AddPipeline(entry);
 #endif
         foreach (string entry in colorEntries) AddPipeline(entry);
-        if (colorEntries.Any(UsesVirtualShadows) || HasShadowRequests(composition))
+        if (colorEntries.Any(UsesVirtualShadows))
         {
-            AddPipeline("RequestTransparentShadows");
-            if (!pixelLists) AddPipeline("RequestProjectedTransparentShadows");
+            AddPipeline("RequestTransparentPages");
         }
-        var result = new TransparencyShaders(members, capacities, pipelines,
-            composition is null ? "TransparencyShadingData" : "SceneTransparencyShadingData",tileColor,splitSorting,colorEntries);
+        var result = new TransparencyShaders(members, capacities, pipelines, tileColor, splitSorting, colorEntries);
         _transparencyShaders.Add(result);
         return result;
 
         void AddPipeline(string entry)
         {
-            Shader shader = entry is "PrepareTransparentPixelLists" or "BuildTransparentPixelLists" ? reference! : composition ?? (entry is "BuildTransparentGeometry" or "RequestTransparentShadows" or "ResolveTransparentColor" or
-                "RequestProjectedTransparentShadows" or "ResolveProjectedTransparentColor" or "ResolveTransparentPixelLists" or "ResolveTileTransparentColor" or "ResolveLocalTileTransparentColor" or "ResolveDepthTileTransparentColor" or "ResolveUnorderedTransparentColor" or "ResolveProjectedUnorderedTransparentColor"
+            Shader shader = entry is "PrepareTransparentPixelLists" or "BuildTransparentPixelLists" ? reference! : composition ?? (entry is "BuildTransparentGeometry" or "RequestTransparentPages" or "ResolveTransparentColor" or
+                "ResolveProjectedTransparentColor" or "ResolveTransparentPixelLists" or "ResolveTileTransparentColor" or "ResolveLocalTileTransparentColor" or "ResolveDepthTileTransparentColor" or "ResolveUnorderedTransparentColor" or "ResolveProjectedUnorderedTransparentColor"
                 ? source.RequireSpecialization(entry, arguments) : source);
             pipelines.Add(entry, shader);
         }
 
         bool UsesVirtualShadows(string entry) => HasVirtualShadowInputs(pipelines[entry].Shader, entry);
 
-        bool HasShadowRequests(Shader? composed)
-        {
-            if (composed is not null) return HasVirtualShadowInputs(composed, "RequestTransparentShadows");
-            foreach (string entry in new[] { "RequestTransparentShadows", "RequestTransparentPages" })
-                if (source.TryGetSpecialization(entry, arguments, out Shader requests))
-                    return HasVirtualShadowInputs(requests, entry);
-            return false;
-        }
-
         bool HasVirtualShadowInputs(Shader shader, string entry)
         {
             ShaderParameterLayout layout = shader.GetSlangResourceLayout(_device.Capabilities.CompileTarget, entry);
-            return layout.Contains("VirtualShadowSampling") || layout.Contains("VirtualShadowPageTable") ||
-                layout.Contains("RequestedPageFlags") || layout.Contains("RequestedPageIndices") ||
-                layout.Contains("RequestedPageCount") || layout.Contains("PageReceiverMasks");
+            return layout.Contains("VirtualShadowSampling") || layout.Contains("VirtualShadowPageTable");
         }
 
         ClusterShadeInvocation[][] GroupResources(TransparencyMember[] types) => types.Select(member => materials
@@ -195,8 +179,6 @@ public sealed partial class ClusterPipelineSystem
         for (int index = 0; index < materials.Length; index++)
             source.Append(FindTransparencyType(materials[index].Shader)).Append(".SourceData Material").Append(index).AppendLine(";");
         source.AppendLine("};");
-        source.AppendLine("RWStructuredBuffer<SceneTransparencyShadingData> SceneTransparencyShadingTriangles;");
-        source.AppendLine("StructuredBuffer<SceneTransparencyShadingData> SceneTransparencyShadingInputs;");
         source.AppendLine("groupshared SceneTransparencyShadingData SceneTransparencyTileShading[16];");
         source.AppendLine("struct SceneTransparencyMaterials : ITransparencyMaterials {");
         source.AppendLine("typealias Projection = SceneTransparencyProjection;");
@@ -212,11 +194,11 @@ public sealed partial class ClusterPipelineSystem
             source.Append("if (bin == ").Append(index).Append("u) value.Material").Append(index).Append(" = ").Append(Resource(index))
                 .Append(".beginProjection(source, view, ").Append(Tessellated(index)).AppendLine(", screenBounds);");
         source.AppendLine("return value; }");
-        source.AppendLine("void storeProjection(uint bin, uint source, uint index, Projection value) {");
+        source.AppendLine("Shading readProjectionShading(uint bin, uint source, Projection value) { Shading result = {};");
         for (int index = 0; index < materials.Length; index++)
-            source.Append("if (bin == ").Append(index).Append("u) SceneTransparencyShadingTriangles[index].Material").Append(index)
+            source.Append("if (bin == ").Append(index).Append("u) result.Material").Append(index)
                 .Append(" = ").Append(Resource(index)).Append(".sourceData(value.Material").Append(index).AppendLine(");");
-        source.AppendLine("}");
+        source.AppendLine("return result; }");
         source.AppendLine("bool nextProjection(uint bin, uint source, uint view, inout Projection value, out uint primitive, out float3x2 domain, out float4 first, out float4 second, out float4 third) {");
         for (int index = 0; index < materials.Length; index++)
             source.Append("if (bin == ").Append(index).Append("u) return ").Append(Resource(index))
@@ -230,8 +212,10 @@ public sealed partial class ClusterPipelineSystem
             source.Append("if (bin == ").Append(index).Append("u) return ").Append(Resource(index))
                 .Append(".shade<").Append((uint)materials[index].VisibilityDepth).AppendLine("u>(source, primitive, pixel, depth);");
         source.AppendLine("return 0.0.xxxx; }");
-        source.AppendLine("Shading loadShading(uint index) { return SceneTransparencyShadingInputs[index]; }");
-        source.AppendLine("void cacheTileShading(uint packet, uint index) { SceneTransparencyTileShading[packet] = SceneTransparencyShadingInputs[index]; }");
+        source.AppendLine("Shading evaluateShading(uint index) { TransparencyTriangle triangle = TransparencyRasterTriangles[index]; uint source = triangle.Source;");
+        source.AppendLine("Projection value = beginProjection(triangle.Bin,source,triangle.View,float4(.5,.5,float(TransparencyUniforms.Width)-.5,float(TransparencyUniforms.Height)-.5));");
+        source.AppendLine("return readProjectionShading(triangle.Bin,source,value); }");
+        source.AppendLine("void cacheTileShading(uint packet, Shading value) { SceneTransparencyTileShading[packet] = value; }");
         source.AppendLine("Shading loadTileShading(uint packet) { return SceneTransparencyTileShading[packet]; }");
         source.AppendLine("Shading readShadingLane(Shading value, uint lane) {");
         for (int index = 0; index < materials.Length; index++)
@@ -263,8 +247,8 @@ public sealed partial class ClusterPipelineSystem
         foreach (bool coverage in new[] { true, false })
         {
             source.AppendLine(coverage
-                ? "bool coverCached(uint bin, uint index, float3x2 domain, uint3 pixel, float depth, out float resultDepth) {"
-                : "float4 shadeCached(uint bin, uint index, uint3 pixel, float depth) {");
+                ? "bool coverTriangle(uint bin, uint index, float3x2 domain, uint3 pixel, float depth, out float resultDepth) {"
+                : "float4 shadeTriangle(uint bin, uint index, uint3 pixel, float depth) {");
             source.AppendLine("uint source = TransparencyRasterTriangles[index].Source;");
             for (int index = 0; index < materials.Length; index++)
             {
@@ -274,7 +258,7 @@ public sealed partial class ClusterPipelineSystem
                     source.AppendLine("resultDepth = depth; return true; }");
                     continue;
                 }
-                source.Append(FindTransparencyType(materials[index].Shader)).Append(".SourceData value = SceneTransparencyShadingInputs[index].Material").Append(index).AppendLine(";");
+                source.Append(FindTransparencyType(materials[index].Shader)).Append(".SourceData value = evaluateShading(index).Material").Append(index).AppendLine(";");
                 source.Append("return ").Append(Resource(index)).Append(coverage ? ".coverData<" : ".shadeData<")
                     .Append((uint)materials[index].VisibilityDepth).Append(coverage ? "u>(value,domain," : $"u,{debugMode}u>(value,");
                 if (coverage) source.Append(Tessellated(index)).Append(',');
@@ -282,17 +266,6 @@ public sealed partial class ClusterPipelineSystem
             }
             source.AppendLine(coverage ? "resultDepth = depth; return false; }" : "return 0.0.xxxx; }");
         }
-        source.AppendLine("void markShadowPages(uint bin, uint source, uint primitive, uint3 pixel, float depth) {");
-        for (int index = 0; index < materials.Length; index++)
-            source.Append("if (bin == ").Append(index).Append("u) { ").Append(Resource(index))
-                .Append(".markShadowPages<").Append((uint)materials[index].VisibilityDepth).AppendLine("u>(source, primitive, pixel, depth); return; }");
-        source.AppendLine("}");
-        source.AppendLine("void markShadowPagesShading(uint bin, uint source, Shading value, uint3 pixel, float depth) {");
-        for (int index = 0; index < materials.Length; index++)
-            source.Append("if (bin == ").Append(index).Append("u) { ").Append(Resource(index))
-                .Append(".markShadowPagesData<").Append((uint)materials[index].VisibilityDepth).Append("u>(value.Material").Append(index)
-                .AppendLine(",pixel,depth); return; }");
-        source.AppendLine("}");
         source.AppendLine("};");
         if (orderedColorOnly)
         {
@@ -307,11 +280,11 @@ public sealed partial class ClusterPipelineSystem
                 .Append(entry == 2 ? "(uniform SceneTransparencyMaterials materials, " : "(")
                 .Append("uint3 thread : SV_DispatchThreadID) { ")
                 .Append(geometryCalls[entry]).AppendLine("; }");
+        source.AppendLine("[shader(\"compute\")] [numthreads(256,1,1)] void RequestTransparentPages(uniform SceneTransparencyMaterials materials, uint3 group : SV_GroupID, uint thread : SV_GroupIndex) { RequestTransparencyPages(materials,group,thread); }");
 #if SOMEENGINE_TRANSPARENCY_RESEARCH
         if (pixelLists)
         {
             source.AppendLine("[shader(\"compute\")] [numthreads(16,16,1)] void ResolveTransparentPixelLists(uniform SceneTransparencyMaterials materials, uint3 pixel : SV_DispatchThreadID) { ResolveTransparencyPixelLists(materials,pixel); }");
-            source.AppendLine("[shader(\"compute\")] [numthreads(16,16,1)] void RequestTransparentShadows(uniform SceneTransparencyMaterials materials, uint3 pixel : SV_DispatchThreadID) { RequestTransparencyPixelListShadows(materials,pixel); }");
             return source.ToString();
         }
 #endif
@@ -328,12 +301,10 @@ public sealed partial class ClusterPipelineSystem
         source.AppendLine("[shader(\"compute\")] [numthreads(64,1,1)] void CountTransparentHardwareCells(uint3 thread : SV_DispatchThreadID) { CountTransparencyHardwareCells(thread); }");
         source.AppendLine("[shader(\"compute\")] [numthreads(1,1,1)] void FinalizeTransparentTiles() { FinalizeTransparencyTiles(); }");
         source.AppendLine("[shader(\"compute\")] [numthreads(64,1,1)] void ClearTransparentHardwareMasks(uint3 thread : SV_DispatchThreadID) { ClearTransparencyHardwareMasks(thread); }");
-        source.AppendLine("[shader(\"compute\")] [numthreads(64,1,1)] [WaveSize(32)] void RequestTransparentShadows(uniform SceneTransparencyMaterials materials, uint3 group : SV_GroupID, uint thread : SV_GroupIndex) { RequestTransparencyShadowJobs(materials,group,thread); }");
         if (!tileColor) source.AppendLine("[shader(\"compute\")] [numthreads(16,16,1)] void ResolveTransparentColor(uniform SceneTransparencyMaterials materials, uint3 pixel : SV_DispatchThreadID) { ResolveTransparency<SceneTransparencyMaterials,false>(materials, pixel); }");
         if (tileColor) source.AppendLine("[shader(\"compute\")] [numthreads(64,1,1)] [WaveSize(32)] void ResolveTileTransparentColor(uniform SceneTransparencyMaterials materials, uint3 group : SV_GroupID, uint thread : SV_GroupIndex) { ResolveTransparencyTiles(materials, group, thread); }");
         if (tileColor) source.AppendLine("[shader(\"compute\")] [numthreads(128,1,1)] [WaveSize(32)] void ResolveLocalTileTransparentColor(uniform SceneTransparencyMaterials materials, uint3 group : SV_GroupID, uint thread : SV_GroupIndex) { ResolveTransparencyLocalTileJobs(materials, group, thread); }");
         if (tileColor) source.AppendLine("[shader(\"compute\")] [numthreads(256,1,1)] [WaveSize(32)] void ResolveDepthTileTransparentColor(uniform SceneTransparencyMaterials materials, uint3 group : SV_GroupID, uint thread : SV_GroupIndex) { ResolveTransparencyDepthTileJobs(materials, group, thread); }");
-        source.AppendLine("[shader(\"compute\")] [numthreads(16,16,1)] void RequestProjectedTransparentShadows(uniform SceneTransparencyMaterials materials, uint3 pixel : SV_DispatchThreadID) { RequestTransparencyShadows<SceneTransparencyMaterials,true>(materials, pixel); }");
         source.AppendLine("[shader(\"compute\")] [numthreads(16,16,1)] void ResolveProjectedTransparentColor(uniform SceneTransparencyMaterials materials, uint3 pixel : SV_DispatchThreadID) { ResolveTransparency<SceneTransparencyMaterials,true>(materials, pixel); }");
         source.AppendLine("[shader(\"compute\")] [numthreads(16,16,1)] void ResolveUnorderedTransparentColor(uniform SceneTransparencyMaterials materials, uint3 pixel : SV_DispatchThreadID) { ResolveUnorderedTransparency<SceneTransparencyMaterials,false>(materials, pixel); }");
         source.AppendLine("[shader(\"compute\")] [numthreads(16,16,1)] void ResolveProjectedUnorderedTransparentColor(uniform SceneTransparencyMaterials materials, uint3 pixel : SV_DispatchThreadID) { ResolveUnorderedTransparency<SceneTransparencyMaterials,true>(materials, pixel); }");

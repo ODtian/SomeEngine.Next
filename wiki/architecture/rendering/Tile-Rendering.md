@@ -28,9 +28,11 @@ Tile 自己创建 compute、间接 dispatch 和硬件覆盖 pass。Cluster 的�
 
 ## 材质求值
 
-用户继续提供 `IVertexEvaluate`、`IDomainEvaluate`、`IVisibilityEvaluate` 与 `IForwardSurfaceEvaluate`。
+用户继续提供 `IVertexEvaluate`、`IDomainEvaluate`、`IVisibilityEvaluate`、`ISurfaceEvaluate` 与 `ITransparentSurfaceEvaluate`。
 
-原有着色阶段与透明阶段共同调用 `ResolveBarycentricsAtDepth` 和 `EvaluateMaterialHit` 准备命中输入，再通过 `EvaluateMaterialSurface` 进入用户的表面求值。透明缓存提供已经计算的投影系数；原有着色入口从图元计算投影系数。两条路径共用同一份重建与表面输入实现。
+原有着色阶段与透明阶段共同调用 `ResolveBarycentricsAtDepth` 和 `EvaluateMaterialHit` 准备命中输入，再通过 `evaluateSurface` 或 `evaluateTransparency` 进入用户的表面求值。透明投影记录提供已经计算的投影系数；原有着色入口从图元计算投影系数。用户三角形与求值数据保留在当次 pass 的局部变量或组共享数据中，两条路径共用同一份重建与表面输入实现。
+
+阴影页请求保留在 VSM 页分配之前的请求阶段。普通请求从用户 Domain 取得位置，透明请求从当次覆盖深度还原位置，两者直接调用 VSM 的 `MarkVirtualShadowPages`。材质的表面求值接口提供颜色与调试行为。
 
 实现入口：`src/SomeEngine.Render/Tiles/`、`ClusterPipelineSystem.Transparency.cs`、`cluster_shade_pipeline.slang` 与 `cluster_transparency_material.slang`。
 

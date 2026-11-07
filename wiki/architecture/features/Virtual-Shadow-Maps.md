@@ -14,10 +14,10 @@ void MarkVirtualShadowPages(float3 worldPosition, uint viewIndex, bool firstPers
 
 `worldPosition` 使用当前渲染坐标系；`viewIndex` 指明对应的相机视图。调用方负责从几何、深度或自己的计算取得该位置，并完成第一人称位置变换。VSM 函数立即标记页请求和页内覆盖位，再将首次请求的页编号加入工作列表。
 
-Cluster 的标准材质通过 `markShadowPages` 接口在已分箱的表面求值阶段调用该函数。透明管线沿实际三角形投影、像素覆盖及命中求值调用同一接口；请求阶段每帧执行。调用链见 [Cluster 页请求](../../../src/SomeEngine.Render.Cluster.Pipeline/ClusterPipelineSystem.ShadowRequests.cs)、[标准材质](../../../assets/Shaders/standard_material.slang)与[透明请求](../../../assets/Shaders/cluster_transparency.slang)。
+Cluster 在既有页请求阶段通过用户 Vertex 与 Domain 取得已分箱表面的位置，完成第一人称变换后直接调用该函数。透明请求沿实际三角形投影和像素覆盖取得当次命中深度，通过相机逆投影还原渲染位置并直接标页；投影和覆盖复用本次请求内的局部数据。VSM 持有标页行为，材质接口持有表面求色行为。调用链见 [Cluster 页请求](../../../src/SomeEngine.Render.Cluster.Pipeline/ClusterPipelineSystem.ShadowRequests.cs)、[位置求值](../../../assets/Shaders/cluster_shade_pipeline.slang)与[透明请求](../../../assets/Shaders/cluster_transparency.slang)。
 
 声明 `CLUSTER_FORWARD_DEPTH_POSITION` 并保存 `ClusterPrimaryDepthShadowRequests` 特化的材质，
-在普通 Forward 请求中通过 `markPrimaryDepthShadowPages` 解释已分箱像素的主深度。
+在普通 Forward 请求中由管线读取已分箱像素的主深度并直接标页。
 Standard 的 Forward 着色使用同一个深度位置，并保留完整曲面数据用于法线、纹理与运动矢量。
 含第一人称网格时，材质请求通过原表面求值取得位置；页请求继续进入本页的同一个标记函数与覆盖资源。
 材质接口与选择规则见 [User Stage Interfaces](../shader/User-Stage-Interfaces.md)。

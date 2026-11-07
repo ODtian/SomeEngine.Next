@@ -277,9 +277,9 @@ void ClusterShadeMode<let debugMode : uint>(uniform VertexEvaluate vertex, unifo
 [numthreads(64, 1, 1)]
 void ClusterShadowRequests<let visibilityDepth : uint, let debugMode : uint>(
     uniform CLUSTER_SHADOW_VERTEX_EVALUATE vertex, uniform CLUSTER_SHADOW_DOMAIN_EVALUATE domain,
-    uniform SurfaceEvaluate surface, uint3 tid : SV_DispatchThreadID)
+    uint3 tid : SV_DispatchThreadID)
 {
-    CSRequestShadowPages(vertex, domain, surface, tid, visibilityDepth);
+    CSRequestShadowPages(vertex, domain, tid, visibilityDepth);
 }
 
 #if defined(CLUSTER_FORWARD_DEPTH_POSITION) && defined(CLUSTER_SURFACE_MODES)
@@ -287,10 +287,9 @@ void ClusterShadowRequests<let visibilityDepth : uint, let debugMode : uint>(
 [shader("compute")]
 [numthreads(64, 1, 1)]
 void ClusterPrimaryDepthShadowRequests<let visibilityDepth : uint, let debugMode : uint>(
-    uniform VertexEvaluate vertex, uniform DomainEvaluate domain,
-    uniform SurfaceEvaluate surface, uint3 tid : SV_DispatchThreadID)
+    uint3 tid : SV_DispatchThreadID)
 {
-    CSRequestPrimaryDepthShadowPages<DomainEvaluate.Surface, DomainEvaluate.TriangleData, SurfaceEvaluate>(surface, tid);
+    CSRequestPrimaryDepthShadowPages(tid);
 }
 #endif
 

@@ -62,9 +62,6 @@ interface ITransparentSurfaceEvaluate<TSurface, TTriangle>
 {
     float4 evaluateTransparency(uint debugMode, SurfacePixelInput input,
         TSurface surface, float3 bary, TTriangle triangle);
-
-    void markShadowPages(SurfacePixelInput input,
-        TSurface surface, float3 bary, TTriangle triangle);
 };
 
 // Materials opt in through CLUSTER_FORWARD_DEPTH_POSITION. They interpret the
@@ -73,8 +70,6 @@ interface IPrimaryDepthSurfaceEvaluate<TSurface, TTriangle> : ISurfaceEvaluate<T
 {
     void evaluatePrimaryDepthSurface(SurfacePixelInput input, TSurface surface,
         float3 bary, TTriangle triangle, RWTexture2DArray<float4> outputColor);
-
-    void markPrimaryDepthShadowPages(uint3 pixelCoord, float depth);
 };
 
 struct PrimaryDepthMaterial<TSurface, TTriangle,

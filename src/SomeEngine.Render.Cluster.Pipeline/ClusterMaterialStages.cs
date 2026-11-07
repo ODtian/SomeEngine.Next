@@ -1115,6 +1115,7 @@ internal sealed class ClusterShadeStages
     internal bool SupportsPrimaryDepthReceivers(ClusterMaterialAssignmentSet assignments, uint debugMode)
     {
         var checkedShaders = new HashSet<Shader>();
+        bool hasReceivers = false;
         foreach (int address in assignments.ActiveOffsets)
         {
             if (!assignments.TryGetEntry(address, out Material material, out _)) continue;
@@ -1124,11 +1125,15 @@ internal sealed class ClusterShadeStages
                 .ToString(System.Globalization.CultureInfo.InvariantCulture);
             string mode = debugMode.ToString(System.Globalization.CultureInfo.InvariantCulture);
             if (!shader.TryGetSpecialization(ClusterMaterialEntries.ForwardShade, [depth, mode], out Shader selected) ||
-                !selected.TryGetSlangTarget(_device.Capabilities.CompileTarget, out int target) ||
-                !selected.TryGetSlangEntry(target, ClusterMaterialEntries.ForwardShade, SlangStage.Compute, out var entry) ||
+                !selected.TryGetSlangTarget(_device.Capabilities.CompileTarget, out int target)) return false;
+            ShaderParameterLayout resources = selected.GetSlangResourceLayout(_device.Capabilities.CompileTarget,
+                ClusterMaterialEntries.ForwardShade);
+            if (!resources.Contains("VirtualShadowSampling") && !resources.Contains("VirtualShadowPageTable")) continue;
+            hasReceivers = true;
+            if (!selected.TryGetSlangEntry(target, ClusterMaterialEntries.ForwardShade, SlangStage.Compute, out var entry) ||
                 !ClusterGeometryRequirements.UsesPrimaryDepthReceiver(entry)) return false;
         }
-        return true;
+        return hasReceivers;
     }
 
     internal ClusterShadeStageSet Resolve(ClusterMaterialAssignmentSet assignments,
@@ -1169,7 +1174,9 @@ internal sealed class ClusterShadeStages
                 ? ClusterMaterialEntries.PrimaryDepthShadowRequests : ClusterMaterialEntries.ShadowRequests;
             invocation = invocation with
             {
-                RequestShader = requestShadowPages && !sharedDepthRequests && material.Shader!.HasSpecializations(requestEntry)
+                RequestShader = requestShadowPages && !sharedDepthRequests &&
+                    (invocation.Resources.Contains("VirtualShadowSampling") || invocation.Resources.Contains("VirtualShadowPageTable")) &&
+                    material.Shader!.HasSpecializations(requestEntry)
                     ? CreateInvocation(material, encoding,
                     requestEntry, debugMode, materialStage?.RequestShader) : null,
             };

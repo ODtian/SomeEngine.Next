@@ -122,7 +122,7 @@ void ResolveTransparencyLocalTile<TMaterials : ITransparencyMaterials>(uniform T
                 else
                     needed = all(max(triangle.First,max(triangle.Second,triangle.Third)) >= float2(tile * 16u + uint2(0u,halfTile * 8u)) + .5) &&
                         all(min(triangle.First,min(triangle.Second,triangle.Third)) <= float2(tile * 16u + uint2(16u,halfTile * 8u + 8u)) - .5);
-                if (cached && needed) materials.cacheTileShading(thread,id);
+                if (cached && needed) materials.cacheTileShading(thread,materials.evaluateShading(id));
             }
             GroupMemoryBarrierWithGroupSync();
             uint mask = lane < packetCount && origin.x < TransparencyUniforms.Width && origin.y < TransparencyUniforms.Height
@@ -143,7 +143,7 @@ void ResolveTransparencyLocalTile<TMaterials : ITransparencyMaterials>(uniform T
                         uint id = TransparencyLocalIds[selected];
                         bool covered = cached
                             ? materials.coverShading(triangle.Bin,triangle.Source,materials.loadTileShading(selected),triangle.Domain,pixel,depth,coveredDepth)
-                            : materials.coverCached(triangle.Bin,id,triangle.Domain,pixel,depth,coveredDepth);
+                            : materials.coverTriangle(triangle.Bin,id,triangle.Domain,pixel,depth,coveredDepth);
                         if (covered &&
                             coveredDepth >= 0.0 && coveredDepth <= min(opaque,1.0))
                         {
@@ -214,7 +214,7 @@ void ResolveTransparencyLocalTile<TMaterials : ITransparencyMaterials>(uniform T
                 uint3 samplePixel = uint3(origin + uint2(pixelLane & 7u,pixelLane >> 3u),view);
                 surface = cached
                     ? materials.shadeShading(triangle.Bin,triangle.Source,materials.loadTileShading(index),samplePixel,depth)
-                    : materials.shadeCached(triangle.Bin,index,samplePixel,depth);
+                    : materials.shadeTriangle(triangle.Bin,index,samplePixel,depth);
             }
             if (compact)
                 CompositeTransparencyWaveBatch(surface,pixelLane,firstHit,queued,batchFirst,color,transmission);

@@ -166,7 +166,7 @@ public static partial class BehaviorScenes
         JsonArray specializations = document["Blocks"]![0]!["Fields"]!["Specializations"]!.AsArray();
         for (int index = specializations.Count - 1; index >= 0; index--)
             if (specializations[index]!["EntryPoint"]!.GetValue<string>() is
-                "BuildTransparentGeometry" or "RequestTransparentShadows" or "RequestProjectedTransparentShadows" or
+                "BuildTransparentGeometry" or "RequestTransparentPages" or
                 "ResolveTransparentColor" or "ResolveProjectedTransparentColor")
                 specializations.RemoveAt(index);
         string path = Path.Combine(shaderDirectory, name + ".shader");

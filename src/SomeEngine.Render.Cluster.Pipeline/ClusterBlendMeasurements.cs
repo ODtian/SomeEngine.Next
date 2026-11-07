@@ -10,10 +10,7 @@ internal readonly record struct BlendMeasurementPasses(
     GraphPassId[] Decals, GraphPassId[] OpaqueReceivers, GraphPassId[] OpaqueColors);
 
 internal readonly record struct BlendMeasurementBuffers(
-    GraphBufferId TriangleCount, uint TriangleStride, uint SourceBoundsStride, ulong FixedBytes, ulong CapacityBytes, ulong AllocationBytes, uint TriangleCapacity)
-{
-    public uint ShadingStride { get; init; }
-}
+    GraphBufferId TriangleCount, uint TriangleStride, uint SourceBoundsStride, ulong FixedBytes, ulong CapacityBytes, ulong AllocationBytes, uint TriangleCapacity);
 
 internal readonly record struct BlendDecalBuffers(
     uint ViewCount, ulong FixedBytes, ulong PropertyBytes,
@@ -164,7 +161,7 @@ internal sealed class ClusterBlendMeasurements : IGraphReadbackReceiver, IRender
         BlendDecalBuffers decals = frame.Decals;
         ulong decalUsed = decals.FixedBytes + (ulong)decalVolumes * (144u + decals.ViewCount * 32u) +
             (decalVolumes == 0 ? 0 : decals.PropertyBytes) + (ulong)decalResidentReferences * sizeof(uint);
-        ulong used = buffers.FixedBytes + (ulong)Math.Min(triangles, buffers.TriangleCapacity) * (buffers.TriangleStride + buffers.ShadingStride) +
+        ulong used = buffers.FixedBytes + (ulong)Math.Min(triangles, buffers.TriangleCapacity) * buffers.TriangleStride +
             (ulong)residentReferences * sizeof(uint) + (ulong)sources * 16u +
             (ulong)Math.Min(projectedSources, buffers.TriangleCapacity) * buffers.SourceBoundsStride;
         frame.Result = new(frame.SimulationFrame, tag,

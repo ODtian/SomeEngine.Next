@@ -291,7 +291,7 @@ void ResolveTransparencyDepthTiles<TMaterials : ITransparencyMaterials>(uniform 
             float4 surface = 0.0.xxxx;
             if (covered && TransparencySliceAccepts(partition,adaptive,slice,depth) && TransparencyDepthHit(pixel,triangle,cell,opaque,depth))
             {
-                TMaterials.Shading shading = materials.readShadingLane(materials.loadShading(id),lane);
+                TMaterials.Shading shading = materials.readShadingLane(materials.evaluateShading(id),lane);
                 float resultDepth;
                 if (materials.coverShading(triangle.Bin,triangle.Source,shading,triangle.Domain,pixel,depth,resultDepth) &&
                     TransparencyDepthHit(pixel,triangle,cell,opaque,resultDepth) && TransparencySliceAccepts(partition,adaptive,slice,resultDepth))
@@ -372,83 +372,6 @@ uint FindTransparencyCoveredBit(uint mask, uint rank)
     return bit;
 }
 
-// Each wave keeps 32 triangles in registers and expands their covered samples
-// into consecutive lanes before marking user shadow pages.
-void RequestTransparencyTileShadows<TMaterials : ITransparencyMaterials>(uniform TMaterials materials, uint3 group, uint thread)
-{
-    uint lane = WaveGetLaneIndex();
-    uint2 tile = group.xy;
-    uint cell = TransparencyCell(group.z,uint3(tile,0u));
-    uint first = TransparencyCellOffsets[cell], count = TransparencyTileCounts[cell];
-    for (uint start = thread - lane; start < count; start += 64u)
-    {
-        uint item = start + lane;
-        uint id = item < count ? TransparencyReferences[first + item] : 0u;
-        TMaterials.Shading shading = materials.loadShading(id);
-        uint masks[8];
-        uint samples = 0u;
-        uint4 range = item < count ? TransparencyCoverageRanges[id] : 0u.xxxx;
-        uint association = range.x + (tile.y - range.z) * range.w + tile.x - range.y;
-        [unroll] for (uint word = 0u; word < 8u; word++)
-        {
-            uint mask = item < count ? TransparencyHardwareMasks[association * 8u + word] : 0u;
-            masks[word] = mask;
-            samples += countbits(mask);
-        }
-        uint firstHit = WavePrefixSum(samples), total = WaveActiveSum(samples);
-        for (uint hit = lane; WaveActiveAnyTrue(hit < total); hit += 32u)
-        {
-            uint sampleIndex = min(hit,total - 1u);
-            uint low = 0u, high = 32u;
-            while (low + 1u < high)
-            {
-                uint mid = (low + high) >> 1u;
-                if (WaveReadLaneAt(firstHit,mid) <= sampleIndex) low = mid; else high = mid;
-            }
-            uint rank = sampleIndex - WaveReadLaneAt(firstHit,low);
-            uint selectedMask = 0u, selectedWord = 0u;
-            bool found = false;
-            [unroll] for (uint word = 0u; word < 8u; word++)
-            {
-                uint mask = WaveReadLaneAt(masks[word],low);
-                uint covered = countbits(mask);
-                if (!found)
-                {
-                    if (rank < covered) { selectedMask = mask; selectedWord = word; found = true; }
-                    else rank -= covered;
-                }
-            }
-            uint bit = selectedWord * 32u + FindTransparencyCoveredBit(selectedMask,rank);
-            uint selected = WaveReadLaneAt(id,low);
-            TMaterials.Shading selectedShading = materials.readShadingLane(shading,low);
-            if (hit < total)
-            {
-                uint3 pixel = uint3(tile * 16u + uint2(bit & 15u,bit >> 4u),group.z);
-                TransparencyTriangle triangle = TransparencyRasterTriangles[selected];
-                float depth = triangle.Depths.x + dot(float2(pixel.xy) + .5 - triangle.First,triangle.DepthPlane.yz);
-                float coveredDepth;
-                if (materials.coverShading(triangle.Bin,triangle.Source,selectedShading,triangle.Domain,pixel,depth,coveredDepth) &&
-                    coveredDepth >= 0.0 && coveredDepth <= 1.0)
-                {
-                    materials.markShadowPagesShading(triangle.Bin,triangle.Source,selectedShading,pixel,coveredDepth);
-                }
-            }
-        }
-    }
-}
-
-
-void RequestTransparencyShadowJobs<TMaterials : ITransparencyMaterials>(uniform TMaterials materials, uint3 group, uint thread)
-{
-    uint cell = TransparencyCell(group.z,uint3(group.xy,0u));
-    if ((TransparencyUniforms.Effects & 8u) != 0u && TransparencyCellStreams[cell] == 0u)
-        RequestTransparencyTileShadows(materials,group,thread);
-    else
-        for (uint quarterTile = 0u; quarterTile < 4u; quarterTile++)
-            RequestTransparencyShadows<TMaterials,false>(materials,
-                uint3(group.xy * 16u + uint2(thread & 15u,(thread >> 4u) + quarterTile * 4u),group.z));
-}
-
 uint GetTransparencyHitAddress(uint item, uint thread)
 {
     // Spread a pixel's consecutive hits across the wave's shared-memory banks.
@@ -502,7 +425,7 @@ void ResolveTransparencyTiles<TMaterials : ITransparencyMaterials>(uniform TMate
             for (uint firstItem = 0u; firstItem < count && WaveActiveAnyTrue(running); firstItem += 32u)
             {
                 TransparencyRasterPacket packet = LoadTransparencyRasterPacket(first, count, firstItem + lane, origin, tile, pixel.z, adaptive);
-                TMaterials.Shading shading = materials.loadShading(packet.Id);
+                TMaterials.Shading shading = materials.evaluateShading(packet.Id);
                 uint candidates = running ? packet.Coverage : 0u;
                 while (WaveActiveAnyTrue(candidates != 0u))
                 {
@@ -681,7 +604,7 @@ void ResolveTransparencyTiles<TMaterials : ITransparencyMaterials>(uniform TMate
                     float depth = TransparencyHitDepths[address];
                     TransparencyTriangle triangle = TransparencyRasterTriangles[index];
                     uint3 samplePixel = uint3(origin + uint2(pixelLane & 7u,pixelLane >> 3u),view);
-                    surface = materials.shadeCached(triangle.Bin,index,samplePixel,depth);
+                    surface = materials.shadeTriangle(triangle.Bin,index,samplePixel,depth);
                 }
                 if (compact)
                     CompositeTransparencyWaveBatch(surface,pixelLane,firstHit,queued,batchFirst,color,transmission);

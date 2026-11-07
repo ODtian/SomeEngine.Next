@@ -22,11 +22,10 @@ Deform、Raster、Shade 的执行兼容性由各 stage 自己的 Slang 类型与
 
 材质组合通过 `CLUSTER_FORWARD_DEPTH_POSITION` 声明普通 Forward 接收点与主视图深度一致，
 并实现 `IPrimaryDepthSurfaceEvaluate<TSurface, TTriangle>`。`evaluatePrimaryDepthSurface` 接收完整曲面输入，
-由材质选择该深度位置与相应深度偏移；`markPrimaryDepthShadowPages` 接收当前分箱像素与深度，
-由材质解释位置并调用 VSM 标页函数。Standard 使用自己的 `MaterialViews` 重建位置。
+由材质选择该深度位置与相应深度偏移。管线读取当前分箱像素与深度，使用相机视图重建位置并直接调用 VSM 标页函数。
 组合入口生成 `ClusterPrimaryDepthShadowRequests`，保存与普通请求相同的深度和调试特化参数后，
-Forward 在材质阶段解析时选择该入口。含第一人称网格时，材质请求沿完整 vertex/domain 和材质求值取得位置。
-Deferred 与通用材质使用 `ClusterShadowRequests`，透明材质在自己的覆盖求值中标页。
+Forward 在材质阶段解析时选择该入口。含第一人称网格时，请求沿用户 vertex/domain 取得位置并完成第一人称变换。
+Deferred 与通用材质使用 `ClusterShadowRequests`，透明请求用当次覆盖深度还原渲染位置；两者在既有请求阶段直接调用 `MarkVirtualShadowPages`。材质的表面求值接口只负责着色和调试。
 实现见 [材质接口](../../../assets/Shaders/material_interfaces.slang)、
 [Standard](../../../assets/Shaders/standard_material.slang)、
 [Cluster 入口](../../../assets/Shaders/cluster_material_entries.slang)与
@@ -38,7 +37,7 @@ VSM 的 `SetPrimaryDepthReceiverRequests(true)` 在下一次图协调时检查�
 全部入口具有该属性且当前场景采用普通接收位置时，使用一个跨材质的主深度请求 pass。
 第一人称成员与材质声明变化在 Rendering world 的帧边界重新选择请求方式。
 每材质请求和透明覆盖请求继续提供各自的曲面解释。
-默认 Standard 选择该共享声明；Unlit 使用自身的空请求方法。
+默认 Standard 选择该共享声明；请求启用依据为实际着色入口使用的 VSM 资源。
 
 `IDomainEvaluate<TVertex>.makeTriangle(first, second, third, materialIndex)` 接收三个用户顶点和当前三角形对应的材质标量地址。Shade 与 Tessellation 都按实例材质绑定起点加上 Cluster 三角形的局部材质编号取得该地址。用户 `TriangleData` 可保存它，再通过 `LoadMaterialScalars<T>` 解释自己的参数结构；两个阶段共用 `MaterialScalarRegion` 和 `MaterialScalarOffsets`。曲面继续提供 `position`、`eval`、`reconstruct`、`bounds`、`patchBounds` 与 `errorBounds`，细分与着色使用同一数学定义。
 

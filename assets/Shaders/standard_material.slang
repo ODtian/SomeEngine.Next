@@ -268,15 +268,6 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ITransparentS
         outputColor[input.PixelCoord] = float4(color.rgb, 1.0);
     }
 
-    void markPrimaryDepthShadowPages(uint3 pixelCoord, float depth)
-    {
-        ClusterViewUniforms view = MaterialViews[pixelCoord.z];
-        float2 uv = (float2(pixelCoord.xy) + .5) / float2(view.ScreenWidth, view.ScreenHeight);
-        float4 world = mul(float4(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, depth, 1.0), view.ClipToWorld);
-        float3 position = abs(world.w) > 1e-8 ? world.xyz / world.w : world.xyz;
-        MarkVirtualShadowPages(position, pixelCoord.z);
-    }
-
     float4 evaluateDebugColor(uint debugMode, SurfacePixelInput input,
         SurfaceEval surface, float3 bary, Triangle triangle)
     {
@@ -310,15 +301,6 @@ struct StandardMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ITransparentS
     {
         return debugMode == 0u ? evaluateColor(input, surface, bary, triangle) :
             evaluateDebugColor(debugMode, input, surface, bary, triangle);
-    }
-
-    void markShadowPages(SurfacePixelInput input, SurfaceEval surface, float3 bary, Triangle triangle)
-    {
-        float3 position = input.VisibilityDepth == 2u ? input.PositionFromDepth : surface.Position;
-        position = TransformFirstPersonWorldPosition(MaterialInstanceData, MaterialInstanceProperties, input.InstanceID,
-            MaterialViews[input.PixelCoord.z], position);
-        bool firstPerson = (LoadInstanceFirstPerson(MaterialInstanceData, MaterialInstanceProperties, input.InstanceID).x & 3u) == 1u;
-        MarkVirtualShadowPages(position, input.PixelCoord.z, firstPerson);
     }
 
 };

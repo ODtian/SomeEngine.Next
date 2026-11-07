@@ -6,6 +6,7 @@
 #include "material_interfaces.slang"
 #include "cluster_view.slang"
 #include "vsm_receiver_pixel.slang"
+#include "vsm_receiver_requests.slang"
 #include "shade_bin_common.slang"
 
 struct ShadeUniforms
@@ -542,11 +543,10 @@ void CSShadeDebug<TVE, TDomain, TSurface>(
     surface.evaluateDebug(debugMode, input, evaluated, bary, triangle, OutputColor);
 }
 
-void CSRequestShadowPages<TVE, TDomain, TSurface>(
-    uniform TVE vertexEval, uniform TDomain domain, uniform TSurface surface, uint3 tid, uint visibilityDepth)
+void CSRequestShadowPages<TVE, TDomain>(
+    uniform TVE vertexEval, uniform TDomain domain, uint3 tid, uint visibilityDepth)
     where TVE : IVertexEvaluate
     where TDomain : IDomainEvaluate<TVE.Vertex>
-    where TSurface : ITransparentSurfaceEvaluate<TDomain.Surface, TDomain.TriangleData>
 {
     TriangleInfo tri;
     ClusterViewUniforms view;
@@ -556,7 +556,11 @@ void CSRequestShadowPages<TVE, TDomain, TSurface>(
     SurfacePixelInput input;
     if (!TryEvaluateSurfacePixel<TVE, TDomain>(vertexEval, domain, tid, visibilityDepth,
         tri, view, triangle, bary, evaluated, input)) return;
-    surface.markShadowPages(input, evaluated, bary, triangle);
+    float3 position = visibilityDepth == 2u ? input.PositionFromDepth : domain.position(triangle, bary);
+    position = TransformFirstPersonWorldPosition(InstanceData, InstanceProperties, input.InstanceID,
+        Views[input.PixelCoord.z], position);
+    bool firstPerson = (LoadInstanceFirstPerson(InstanceData, InstanceProperties, input.InstanceID).x & 3u) == 1u;
+    MarkVirtualShadowPages(position, input.PixelCoord.z, firstPerson);
 }
 
 void CSForwardShade<TVE, TDomain, TSurface>(
@@ -581,14 +585,15 @@ void CSForwardShade<TVE, TDomain, TSurface>(
         surface.evaluateSurface(input, evaluated, bary, triangle, OutputColor);
 }
 
-void CSRequestPrimaryDepthShadowPages<TSurface, TTriangle, TEvaluator>(uniform TEvaluator surface, uint3 tid)
-    where TEvaluator : IPrimaryDepthSurfaceEvaluate<TSurface, TTriangle>
+void CSRequestPrimaryDepthShadowPages(uint3 tid)
 {
     uint3 coord;
     if (!TryReadShadePixel(tid, coord)) return;
     uint visibility = VisBuffer[coord];
     if (IsVisBufferEmpty(visibility)) return;
-    surface.markPrimaryDepthShadowPages(coord, DepthBuffer.Load(int4(coord, 0)));
+    float depth = DepthBuffer.Load(int4(coord, 0));
+    float3 position = ReconstructWorldPositionAt(float2(coord.xy) + .5, depth, Views[coord.z]);
+    MarkVirtualShadowPages(position, coord.z);
 }
 
 #endif
