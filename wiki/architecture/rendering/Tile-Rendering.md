@@ -32,6 +32,8 @@ Count 与 Scatter 按实际图元或来源数量派发线程组。数量在一�
 
 用户继续提供 `IVertexEvaluate`、`IDomainEvaluate`、`IVisibilityEvaluate`、`ISurfaceEvaluate` 与 `ITransparentSurfaceEvaluate`。
 
+固定清空、来源复制、cell 构建与排序入口优先复用所选 Shader 已有的入口。动态材质组合只生成本次采用的几何、颜色入口与缺少的固定入口；颜色资源表表明使用 VSM 时，单独取得保存的请求特化或组合该请求入口。晚加入 Ordered 沿原有准备路径取得对应的两个颜色入口。
+
 原有着色阶段与透明阶段共同调用 `ResolveBarycentricsAtDepth` 和 `EvaluateMaterialHit` 准备命中输入，再通过 `evaluateSurface` 或 `evaluateTransparency` 进入用户的表面求值。透明投影记录提供已经计算的投影系数；原有着色入口从图元计算投影系数。用户三角形与求值数据保留在当次 pass 的局部变量或组共享数据中，两条路径共用同一份重建与表面输入实现。
 
 LocalTile 先从组共享来源或当次计算取得同一份 `Shading`，再通过一个 `shadeShading` 调用点进入完整用户材质。8 项命中队列通过后续批次完成累积，16 份组共享来源数据供本组复用。
