@@ -91,6 +91,7 @@ internal static class BenchmarkCommands
                 worker.ReleaseMutex();
                 var start = new ProcessStartInfo("dotnet")
                 {
+                    WorkingDirectory = QueueSettings.DataDirectory,
                     UseShellExecute = true, WindowStyle = ProcessWindowStyle.Hidden,
                 };
                 string application = Path.GetFullPath(Environment.GetCommandLineArgs()[0]);
