@@ -112,9 +112,13 @@ internal sealed class ClusterBlendMeasurements : IGraphReadbackReceiver, IRender
         MeasuredFrame frame = _frames[graph.FrameIdentity];
         PassDefinition resolve = graph.GetPass(_resolve);
         for (int index = 0; index < frame.Times.Length; index++)
-        {
             frame.Active[index] = graph.IsPassEnabled(frame.Times[index].Pass);
-            if (frame.Active[index]) resolve.Read(_queryId, new QueryRange((uint)index * 2u, 2));
+        for (int index = 0; index < frame.Active.Length; index++)
+        {
+            if (!frame.Active[index]) continue;
+            int first = index;
+            while (index + 1 < frame.Active.Length && frame.Active[index + 1]) index++;
+            resolve.Read(_queryId, new QueryRange((uint)first * 2u, (uint)(index - first + 1) * 2u));
         }
         graph.SetPassData(_resolve, new Results(_queryId, _results, _buffers.TriangleCount, _decalWork, frame.Active));
     }
@@ -204,10 +208,14 @@ internal sealed class ClusterBlendMeasurements : IGraphReadbackReceiver, IRender
         internal static void Record(ref GeneralPassCommandScope commands, in Results data)
         {
             var destination = commands.GetBuffer(data.Destination);
-            for (int index = 0; index < data.Active.Length; index++)
+            for (int index = 0; index < data.Active.Length;)
             {
-                var range = new BufferRange((ulong)index * 16u, 16);
-                if (data.Active[index]) commands.ResolveQueries(data.Queries, (uint)index * 2u, 2, destination, range);
+                int first = index++;
+                bool active = data.Active[first];
+                while (index < data.Active.Length && data.Active[index] == active) index++;
+                uint count = (uint)(index - first);
+                var range = new BufferRange((ulong)first * 16u, count * 16u);
+                if (active) commands.ResolveQueries(data.Queries, (uint)first * 2u, count * 2u, destination, range);
                 else commands.ClearBuffer(destination, range);
             }
             ulong timeBytes = (ulong)data.Active.Length * 16u;

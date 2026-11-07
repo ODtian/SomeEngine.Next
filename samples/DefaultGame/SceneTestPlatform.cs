@@ -81,7 +81,7 @@ public sealed partial class SceneTestPlatform
         {
             AssetPacks = scenes[0].AssetPacks,
             ApplicationAsset = scenes[0].ApplicationAsset is { } selected ? new AssetId<ApplicationSettingsAsset>(selected) : null,
-            Options = (options ?? RuntimeStartupOptions.Parse([])) with { WindowVSync = false, AsyncCompute = true },
+            Options = (options ?? RuntimeStartupOptions.Parse([])) with { WindowVSync = false },
             MeasureShadowInvalidation = Environment.GetEnvironmentVariable("SOMEENGINE_VSM_INVALIDATION_TIMING") == "1",
             Initialize = frame => InitializeScene?.Invoke(frame.Scene, Current),
             SceneStarted = BeginScene,
