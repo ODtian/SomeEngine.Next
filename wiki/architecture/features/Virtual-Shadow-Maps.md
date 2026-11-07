@@ -68,6 +68,8 @@ Shader 使用同一份 `ViewCount` 读取有效记录。实现见
 
 PCSS 的中心读取同时交付已有 `VirtualShadowFilterContext`，后续同页 tap 直接使用当次解码的 atlas 页；跨页、clipmap 和点光源相邻面使用原有投影查找。接收平面同时持有本次 rounding tolerance 与 screen ray bias，逐 tap 复用这两个接收点派生值。该数据随一次采样调用持有，采样位置、数量、半径和深度比较沿用原定义。
 
+方向光与局部光入口通过 Slang `let bool` 将已知光源类别传入 PCSS、深度查询和接收平面计算，在编译时形成各自的运算。接受普通视图的同名入口继续根据该视图选择调用。
+
 Standard Forward 在单像素的灯光循环前计算接收位置对应的投影参数和局部可见度量化噪声。
 局部 PCSS 在一次采样中共用实际来源视图的光源方向、正交基和立体角面积；各 tap 继续使用各自的采样点与分离距离。
 
