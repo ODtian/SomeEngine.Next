@@ -101,6 +101,7 @@ RWStructuredBuffer<uint4> TransparencyDepthCells;
 RWStructuredBuffer<uint> TransparencyDepthReferences;
 RWStructuredBuffer<float2> TransparencyReferenceDepths;
 RWByteAddressBuffer TransparencyTileWork;
+[ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWByteAddressBuffer TransparencyArguments;
 // Actual primitives, reserved references, resident references, active source clusters, projected sources.
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
@@ -122,6 +123,13 @@ void TransparencyDispatch(uint offset, uint work)
 {
     uint groups = max(1u, (work + 63u) / 64u);
     WriteTransparencyDispatch(offset, uint3(min(groups, 65535u), (groups + 65534u) / 65535u, 1u));
+}
+
+void ExtendTransparencyDispatch(uint offset, uint work)
+{
+    uint groups = max(1u, (work + 63u) / 64u);
+    TransparencyArguments.InterlockedMax(offset, min(groups, 65535u));
+    TransparencyArguments.InterlockedMax(offset + 4u, (groups + 65534u) / 65535u);
 }
 
 void ClearTransparency(uint3 thread)
@@ -155,8 +163,9 @@ void ClearTransparency(uint3 thread)
         TransparencySortJobs.Store(0u,0u);
         TransparencyTileWork.Store4(0u,0u.xxxx);
         TransparencyTileWork.Store4(16u,0u.xxxx);
-        TransparencyDispatch(0u, count * 128u);
+        TransparencyDispatch(0u, 0u);
         TransparencyDispatch(12u, count);
+        TransparencyDispatch(36u, 0u);
     }
 }
 
@@ -221,8 +230,11 @@ void CopyTransparencySources(uint3 thread)
     uint cluster = request.PageOffset + TransparencyPageHeap.Load(request.PageOffset + 16u) +
         DrawRequestClusterID(request) * PACKED_CLUSTER_STRIDE_BYTES;
     uint count = (TransparencyPageHeap.Load(cluster + 60u) >> 8u) & 255u;
-    for (uint triangle = 0u; triangle < count; triangle++)
+    ClusterMaterialRanges ranges = LoadClusterMaterialRanges(TransparencyPageHeap, cluster, request.PageOffset);
+    uint rangeCount = ClusterMaterialRangeCount(ranges, count);
+    for (uint rangeIndex = 0u; rangeIndex < rangeCount; rangeIndex++)
     {
+        uint triangle = ClusterMaterialRange(TransparencyPageHeap, ranges, count, rangeIndex).x & 255u;
         uint bin, material, view;
         if (!TransparencyRequestMaterial(request, triangle, bin, material, view)) continue;
         TransparencySource value = { request.PageOffset, request.InstanceID, request.ClusterAndView };
@@ -230,6 +242,7 @@ void CopyTransparencySources(uint3 thread)
         uint index;
         TransparencyTriangleCount.InterlockedAdd(12u, 1u, index);
         TransparencyActiveSources[index] = visible;
+        ExtendTransparencyDispatch(0u, (index + 1u) * 128u);
         break;
     }
 }
@@ -338,7 +351,11 @@ void BuildTransparency<TMaterials : ITransparencyMaterials>(uniform TMaterials m
         if (!ProjectTransparency(source, primitive, bin, material, view, domain, first, second, third, triangle)) continue;
         uint index = 0u;
         uint emitted = WaveActiveCountBits(true);
-        if (WaveIsFirstLane()) TransparencyTriangleCount.InterlockedAdd(0u,emitted,index);
+        if (WaveIsFirstLane())
+        {
+            TransparencyTriangleCount.InterlockedAdd(0u,emitted,index);
+            ExtendTransparencyDispatch(36u, min(index + emitted, TransparencyUniforms.TriangleCapacity));
+        }
         index = WaveReadLaneFirst(index) + WavePrefixCountBits(true);
         if (index < TransparencyUniforms.TriangleCapacity)
         {
@@ -533,7 +550,7 @@ bool TransparencyCovered(TransparencyTriangle triangle, float2 pixel, out float 
 struct TransparencyCandidates<TMaterials : ITransparencyMaterials>
 {
     uint Slice, Reference, Work, Projected;
-    uint Cell, LastSlice, Source;
+    uint Cell, LastSlice, Source, TriangleIndex;
     uint4 OccupiedSlices;
     float4 ScreenBounds;
     TMaterials.Projection Projection;
@@ -722,7 +739,9 @@ bool NextTransparencyCandidate<TMaterials : ITransparencyMaterials, let reprojec
     if (TransparencyUniforms.UseIndex == 0u)
     {
         input.Cell = 0xFFFFFFFFu;
-        return ReadCachedTransparencySource(pixel, input.Projected, triangle);
+        bool found = ReadCachedTransparencySource(pixel, input.Projected, triangle);
+        input.TriangleIndex = input.Projected - 1u;
+        return found;
     }
     ClusteredLightGridParameters grid = TransparencyLightingViews[pixel.z];
     uint2 tile = pixel.xy / uint2(grid.TileSizeX, grid.TileSizeY);
@@ -738,7 +757,8 @@ bool NextTransparencyCandidate<TMaterials : ITransparencyMaterials, let reprojec
         {
             if (input.Reference < TransparencyTileCounts[cell])
             {
-                triangle = TransparencyRasterTriangles[TransparencyReferences[TransparencyCellOffsets[cell] + input.Reference++]];
+                input.TriangleIndex = TransparencyReferences[TransparencyCellOffsets[cell] + input.Reference++];
+                triangle = TransparencyRasterTriangles[input.TriangleIndex];
                 input.Cell = cell;
                 return true;
             }
@@ -747,6 +767,7 @@ bool NextTransparencyCandidate<TMaterials : ITransparencyMaterials, let reprojec
         {
             while (ReadCachedTransparencySource(pixel, input.Projected, triangle))
             {
+                input.TriangleIndex = input.Projected - 1u;
                 uint3 minimum, maximum;
                 TransparencyCellBounds(triangle, minimum, maximum);
                 uint3 position = uint3(tile, input.Slice);
@@ -837,8 +858,12 @@ void RequestTransparencyShadows<TMaterials : ITransparencyMaterials, let reproje
     while (NextTransparencyCandidate<TMaterials, reproject>(materials, pixel, input, triangle))
     {
         float depth;
-        if (!TransparencyHit(materials, pixel, triangle, input.Cell, opaque, depth)) continue;
-        materials.markShadowPages(triangle.Bin, triangle.Source, triangle.Primitive, pixel, depth);
+        if (!TransparencyCovered(triangle, float2(pixel.xy) + .5, depth) ||
+            !TransparencyMaterialHit(materials, pixel, triangle, input.Cell, opaque, depth,
+                reproject ? 0xFFFFFFFFu : input.TriangleIndex)) continue;
+        if (reproject) materials.markShadowPages(triangle.Bin, triangle.Source, triangle.Primitive, pixel, depth);
+        else materials.markShadowPagesShading(triangle.Bin, triangle.Source,
+            materials.loadShading(input.TriangleIndex), pixel, depth);
     }
 }
 

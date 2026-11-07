@@ -147,7 +147,7 @@ public sealed class TileRendering : IRenderGraphFrameExecutionObserver
     public void Install(ref RenderGraphEdit edit, TileShaders shaders, TilePassInputs inputs,
         bool splitSorting, bool requestShadows, string[] colorEntries, GraphPassId stencilReady, GraphResourceBinder connect)
     {
-        uint tiles = _description.CellCount, capacity = _description.TriangleCapacity;
+        uint tiles = _description.CellCount;
         ulong pixels = _description.PixelCapacity;
         bool tileColor = _description.IndexedColor, hardwareCoverage = _description.HardwareCoverage;
         bool pixelLists = _description.PixelLists, hardwareBinning = _description.HardwareBinning;
@@ -159,7 +159,7 @@ public sealed class TileRendering : IRenderGraphFrameExecutionObserver
         AddBuild(ref edit, "BuildTransparentGeometry", 0, true, 0);
         if (!pixelLists)
         {
-            AddBuild(ref edit, "CountTransparentCells", Math.Max(tiles, capacity));
+            AddBuild(ref edit, "CountTransparentCells", 0, true, 36);
             AddBuild(ref edit, "ReserveTransparentCells", tiles);
             if (hardwareBinning)
             {
@@ -434,8 +434,10 @@ public sealed class TileRendering : IRenderGraphFrameExecutionObserver
         {
             ("ClearTransparentTiles", _) => GraphAccessMode.Write,
             ("CopyTransparentSources", "TransparencyTriangleCount") => GraphAccessMode.ReadWrite,
+            ("CopyTransparentSources", "TransparencyArguments") => GraphAccessMode.ReadWrite,
             ("BuildTransparentGeometry", "TransparencyTriangles" or "TransparencyProjectedSources") => GraphAccessMode.Write,
             ("BuildTransparentGeometry", "TransparencyTriangleCount") => GraphAccessMode.ReadWrite,
+            ("BuildTransparentGeometry", "TransparencyArguments") => GraphAccessMode.ReadWrite,
             ("CountTransparentCells", "TransparencyTileCounts") => GraphAccessMode.ReadWrite,
             ("CountTransparentCells", "TransparencyCellWork") => GraphAccessMode.ReadWrite,
             ("CountTransparentCells", "TransparencyCoverageRanges" or "TransparencyHardwareAssociations") => GraphAccessMode.Write,
