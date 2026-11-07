@@ -133,7 +133,7 @@ public sealed class ImportedSceneImporter : GltfSceneImporter
             specializations.Add(new JsonObject { ["EntryPoint"] = "ClusterPrimaryDepthShadowRequests", ["Arguments"] = new JsonArray(depth, mode) });
             specializations.Add(new JsonObject { ["EntryPoint"] = "ClusterForwardShade", ["Arguments"] = new JsonArray(depth, mode) });
         }
-        foreach (string entry in new[] { "BuildTransparentGeometry", "RequestTransparentPages", "ResolveTransparentColor", "ResolveProjectedTransparentColor" })
+        foreach (string entry in new[] { "BuildTransparentGeometry", "RequestTransparentPages", "ResolveUnorderedTransparentColor", "ResolveProjectedUnorderedTransparentColor" })
             foreach (string tessellated in new[] { "false", "true" })
                 specializations.Add(new JsonObject { ["EntryPoint"] = entry, ["Arguments"] = new JsonArray(depth, tessellated) });
         definition["Blocks"]![0]!["Fields"]!["Specializations"] = specializations;

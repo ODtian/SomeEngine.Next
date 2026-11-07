@@ -18,6 +18,7 @@ public sealed partial class ClusterPipelineSystem
         internal readonly TransparencyMember[] Members = members;
         internal readonly uint[] ResourceCapacities = resourceCapacities;
         internal readonly Dictionary<string, TransparencyPipeline> Pipelines = pipelines;
+        internal bool UsesUnorderedColor => Pipelines.ContainsKey("ResolveUnorderedTransparentColor");
         internal readonly uint TriangleStride = GetStride(pipelines["BuildTransparentGeometry"].Shader, target, "TransparencyTriangle");
         internal readonly uint SourceBoundsStride = GetStride(pipelines["BuildTransparentGeometry"].Shader, target, "TransparencySourceBounds");
         private static uint GetStride(Shader shader, SlangCompileTarget target, string name)
@@ -47,16 +48,21 @@ public sealed partial class ClusterPipelineSystem
         resources = GroupResources(members);
         uint[] capacities = resources.Select(group => BitOperations.RoundUpToPowerOf2((uint)group.Length)).ToArray();
         Shader source = members[0].Shader;
-        string[] arguments = [((uint)members[0].VisibilityDepth).ToString(CultureInfo.InvariantCulture),
-            source.TryGetSlangEntry(0, ClusterMaterialEntries.TessellationSeed, SlangStage.Compute, out _) ? "true" : "false"];
-        bool saved = members.Length == 1 && capacities[0] == 1 &&
-            source.TryGetSpecialization("ResolveProjectedTransparentColor", arguments, out _);
+        string[] arguments = GetTransparencyArguments(members[0]);
+        bool unordered = members.Length == 1 && capacities[0] == 1 &&
+            source.TryGetSpecialization("ResolveUnorderedTransparentColor", arguments, out _) &&
+            source.TryGetSpecialization("ResolveProjectedUnorderedTransparentColor", arguments, out _);
+        bool saved = unordered || (members.Length == 1 && capacities[0] == 1 &&
+            source.TryGetSpecialization("ResolveProjectedTransparentColor", arguments, out _));
         Shader? composition = saved ? null : ComposeTransparencyShaders(members, capacities, _device.Capabilities.CompileTarget);
         var pipelines = new Dictionary<string, TransparencyPipeline>();
         foreach (string entry in new[] { "ClearTransparentTiles", "CopyTransparentSources", "BuildTransparentGeometry", "CountTransparentCells", "ReserveTransparentCells",
-                     "ScatterTransparentCells", "ResolveTransparentColor", "ResolveProjectedTransparentColor" })
+                     "ScatterTransparentCells" })
             AddPipeline(entry);
-        if (UsesVirtualShadows("ResolveTransparentColor") || UsesVirtualShadows("ResolveProjectedTransparentColor"))
+        string[] colors = unordered ? ["ResolveUnorderedTransparentColor", "ResolveProjectedUnorderedTransparentColor"] :
+            ["ResolveTransparentColor", "ResolveProjectedTransparentColor"];
+        foreach (string entry in colors) AddPipeline(entry);
+        if (colors.Any(UsesVirtualShadows))
         {
             AddPipeline("RequestTransparentPages");
         }
@@ -66,7 +72,8 @@ public sealed partial class ClusterPipelineSystem
 
         void AddPipeline(string entry)
         {
-            Shader shader = composition ?? (entry is "BuildTransparentGeometry" or "RequestTransparentPages" or "ResolveTransparentColor" or "ResolveProjectedTransparentColor"
+            Shader shader = composition ?? (entry is "BuildTransparentGeometry" or "RequestTransparentPages" or "ResolveTransparentColor" or "ResolveProjectedTransparentColor" or
+                "ResolveUnorderedTransparentColor" or "ResolveProjectedUnorderedTransparentColor"
                 ? source.RequireSpecialization(entry, arguments) : source);
             pipelines.Add(entry, new(shader, LinkedComputePipeline.Create(_backend, _device, shader, entry, entry)));
         }
@@ -83,11 +90,36 @@ public sealed partial class ClusterPipelineSystem
             .DistinctBy(stage => stage.CommandBindings).ToArray()).ToArray();
     }
 
+    private static string[] GetTransparencyArguments(TransparencyMember member) =>
+        [((uint)member.VisibilityDepth).ToString(CultureInfo.InvariantCulture),
+            member.Shader.TryGetSlangEntry(0, ClusterMaterialEntries.TessellationSeed, SlangStage.Compute, out _) ? "true" : "false"];
+
+    private void PrepareOrderedTransparencyShaders(TransparencyShaders shaders)
+    {
+        if (!shaders.UsesUnorderedColor || shaders.Pipelines.ContainsKey("ResolveOrderedTransparentColor")) return;
+        Shader material = shaders.Members[0].Shader;
+        string[] arguments = GetTransparencyArguments(shaders.Members[0]);
+        string[] entries = ["ResolveOrderedTransparentColor", "ResolveProjectedOrderedTransparentColor"];
+        Shader? composition = null;
+        if (!entries.All(entry => material.TryGetSpecialization(entry, arguments, out _)))
+        {
+            composition = material.Compose("Cluster ordered transparent material", "scene_ordered_transparency.slang",
+                CreateTransparencySource(shaders.Members, shaders.ResourceCapacities, orderedColorOnly: true),
+                [], _device.Capabilities.CompileTarget);
+        }
+        foreach (string entry in entries)
+        {
+            Shader shader = composition ?? material.RequireSpecialization(entry, arguments);
+            shaders.Pipelines.Add(entry, new(shader, LinkedComputePipeline.Create(_backend, _device, shader, entry, entry)));
+        }
+    }
+
     private static Shader ComposeTransparencyShaders(TransparencyMember[] materials, uint[] resourceCapacities, SlangCompileTarget target)
         => materials[0].Shader.Compose("Cluster transparent materials", "scene_transparency.slang",
             CreateTransparencySource(materials, resourceCapacities), materials.Skip(1).Select(stage => stage.Shader).ToArray(), target);
 
-    private static string CreateTransparencySource(TransparencyMember[] materials, uint[] resourceCapacities)
+    private static string CreateTransparencySource(TransparencyMember[] materials, uint[] resourceCapacities,
+        bool orderedColorOnly = false)
     {
         var source = new StringBuilder();
         foreach (string unit in materials.SelectMany(stage => Enumerable.Range(0, stage.Shader.SlangSourceUnitCount)
@@ -129,6 +161,12 @@ public sealed partial class ClusterPipelineSystem
                 .Append(".markShadowPages<").Append((uint)materials[index].VisibilityDepth).AppendLine("u>(source, primitive, pixel, depth); return; }");
         source.AppendLine("}");
         source.AppendLine("};");
+        if (orderedColorOnly)
+        {
+            source.AppendLine("[shader(\"compute\")] [numthreads(16,16,1)] void ResolveOrderedTransparentColor(uniform SceneTransparencyMaterials materials, uint3 pixel : SV_DispatchThreadID) { ResolveOrderedTransparency<SceneTransparencyMaterials,false>(materials, pixel); }");
+            source.AppendLine("[shader(\"compute\")] [numthreads(16,16,1)] void ResolveProjectedOrderedTransparentColor(uniform SceneTransparencyMaterials materials, uint3 pixel : SV_DispatchThreadID) { ResolveOrderedTransparency<SceneTransparencyMaterials,true>(materials, pixel); }");
+            return source.ToString();
+        }
         string[] geometryEntries = ["ClearTransparentTiles", "CopyTransparentSources", "BuildTransparentGeometry", "CountTransparentCells", "ReserveTransparentCells", "ScatterTransparentCells"];
         string[] geometryCalls = ["ClearTransparency(thread)", "CopyTransparencySources(thread)", "BuildTransparency(materials, thread)", "CountTransparencyCells(thread)", "ReserveTransparency(thread)", "ScatterTransparency(thread)"];
         for (int entry = 0; entry < geometryEntries.Length; entry++)

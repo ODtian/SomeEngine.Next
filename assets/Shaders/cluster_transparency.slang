@@ -769,11 +769,8 @@ void ResolveOrderedTransparency<TMaterials : ITransparencyMaterials, let reproje
     if (colorRead) TransparencyColor[pixel] = color;
 }
 
-void ResolveTransparency<TMaterials : ITransparencyMaterials, let reproject : bool>(uniform TMaterials materials, uint3 pixel)
+void CompositeUnorderedTransparency<TMaterials : ITransparencyMaterials, let reproject : bool>(uniform TMaterials materials, uint3 pixel, float opaque)
 {
-    if (pixel.x >= TransparencyUniforms.Width || pixel.y >= TransparencyUniforms.Height || pixel.z >= TransparencyUniforms.ViewCount) return;
-    if (TransparencyTriangleCount.Load(0u) == 0u) return;
-    float opaque = TransparencyOpaqueDepth.Load(int4(pixel, 0));
     float4 background = 0.0.xxxx;
     bool backgroundRead = false, contributed = false;
     float3 color = 0.0.xxx;
@@ -839,6 +836,30 @@ void ResolveTransparency<TMaterials : ITransparencyMaterials, let reproject : bo
         }
     }
     if (contributed) TransparencyColor[pixel] = float4(color + transmission * background.rgb, background.a);
+}
+
+void ResolveUnorderedTransparency<TMaterials : ITransparencyMaterials, let reproject : bool>(uniform TMaterials materials, uint3 pixel)
+{
+    if (pixel.x >= TransparencyUniforms.Width || pixel.y >= TransparencyUniforms.Height || pixel.z >= TransparencyUniforms.ViewCount) return;
+    if (TransparencyTriangleCount.Load(0u) == 0u) return;
+    float opaque = TransparencyOpaqueDepth.Load(int4(pixel, 0));
+    CompositeUnorderedTransparency<TMaterials, reproject>(materials, pixel, opaque);
+}
+
+void ResolveOrderedTransparency<TMaterials : ITransparencyMaterials, let reproject : bool>(uniform TMaterials materials, uint3 pixel)
+{
+    if (pixel.x >= TransparencyUniforms.Width || pixel.y >= TransparencyUniforms.Height || pixel.z >= TransparencyUniforms.ViewCount) return;
+    if (TransparencyTriangleCount.Load(0u) == 0u || (TransparencyUniforms.Effects & 2u) == 0u) return;
+    float opaque = TransparencyOpaqueDepth.Load(int4(pixel, 0));
+    ResolveOrderedTransparency<TMaterials, reproject>(materials, pixel, opaque);
+}
+
+void ResolveTransparency<TMaterials : ITransparencyMaterials, let reproject : bool>(uniform TMaterials materials, uint3 pixel)
+{
+    if (pixel.x >= TransparencyUniforms.Width || pixel.y >= TransparencyUniforms.Height || pixel.z >= TransparencyUniforms.ViewCount) return;
+    if (TransparencyTriangleCount.Load(0u) == 0u) return;
+    float opaque = TransparencyOpaqueDepth.Load(int4(pixel, 0));
+    CompositeUnorderedTransparency<TMaterials, reproject>(materials, pixel, opaque);
     if ((TransparencyUniforms.Effects & 2u) != 0u)
         ResolveOrderedTransparency<TMaterials, reproject>(materials, pixel, opaque);
 }

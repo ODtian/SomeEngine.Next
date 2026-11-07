@@ -52,3 +52,23 @@ void ResolveTransparentColor<let visibilityDepth : uint, let tessellated : bool>
 void ResolveProjectedTransparentColor<let visibilityDepth : uint, let tessellated : bool>(
     uniform SingleTransparencyMaterials<visibilityDepth, tessellated> materials, uint3 pixel : SV_DispatchThreadID)
 { ResolveTransparency<SingleTransparencyMaterials<visibilityDepth, tessellated>, true>(materials, pixel); }
+
+[shader("compute")] [numthreads(16,16,1)]
+void ResolveUnorderedTransparentColor<let visibilityDepth : uint, let tessellated : bool>(
+    uniform SingleTransparencyMaterials<visibilityDepth, tessellated> materials, uint3 pixel : SV_DispatchThreadID)
+{ ResolveUnorderedTransparency<SingleTransparencyMaterials<visibilityDepth, tessellated>, false>(materials, pixel); }
+
+[shader("compute")] [numthreads(16,16,1)]
+void ResolveProjectedUnorderedTransparentColor<let visibilityDepth : uint, let tessellated : bool>(
+    uniform SingleTransparencyMaterials<visibilityDepth, tessellated> materials, uint3 pixel : SV_DispatchThreadID)
+{ ResolveUnorderedTransparency<SingleTransparencyMaterials<visibilityDepth, tessellated>, true>(materials, pixel); }
+
+[shader("compute")] [numthreads(16,16,1)]
+void ResolveOrderedTransparentColor<let visibilityDepth : uint, let tessellated : bool>(
+    uniform SingleTransparencyMaterials<visibilityDepth, tessellated> materials, uint3 pixel : SV_DispatchThreadID)
+{ ResolveOrderedTransparency<SingleTransparencyMaterials<visibilityDepth, tessellated>, false>(materials, pixel); }
+
+[shader("compute")] [numthreads(16,16,1)]
+void ResolveProjectedOrderedTransparentColor<let visibilityDepth : uint, let tessellated : bool>(
+    uniform SingleTransparencyMaterials<visibilityDepth, tessellated> materials, uint3 pixel : SV_DispatchThreadID)
+{ ResolveOrderedTransparency<SingleTransparencyMaterials<visibilityDepth, tessellated>, true>(materials, pixel); }

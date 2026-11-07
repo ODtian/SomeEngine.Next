@@ -16,6 +16,10 @@
 
 持久 RenderGraph 保存投影、计数、范围保留、引用散布和求色阶段。每帧上传及 GPU 引用内容沿这些阶段更新；几何、实例、视图、驻留或相关渲染设置变化时刷新索引。静态输入复用既有数据。
 
+同一 Shader/可见性深度且只有一组资源绑定的保存内容，通过 `ResolveUnorderedTransparentColor` 与 `ResolveProjectedUnorderedTransparentColor` 特化选择独立 OIT 求色；标量不同的多个具体材质可以共享这组入口。现有材质分配首次出现 Ordered 时，管线从用户标记的透明材质类型组合两个有序入口，显式添加对应的持久 pass。颜色链依次执行 OIT 缓存、OIT 重投影、有序缓存与有序重投影；每对沿既有间接参数的 `24/48` 字节偏移选择实际工作。末尾有序 pass 成为共享 stencil 图的生产完成点，硬件导出沿同一完成链执行。后续 Ordered 状态变化更新现有 `Effects` 和材质状态缓冲。
+
+旧保存求色入口与多材质、typed-input 动态组合继续使用 `ResolveTransparency` 的完整 OIT→Ordered 顺序。新旧入口共用源请求、投影、cell 引用和材质状态；`ITransparencyMaterials` 继续通过用户自己的 `Projection`、覆盖和求色方法解释几何与表面。入口选择与持久 pass 更新见 [透明 shader](../../../src/SomeEngine.Render.Cluster.Pipeline/ClusterPipelineSystem.TransparencyShaders.cs) 和[透明阶段](../../../src/SomeEngine.Render.Cluster.Pipeline/ClusterPipelineSystem.Transparency.cs)。
+
 材质的边界能力按实例使用的完整材质序列汇总，光栅阶段持有 `MaterialBounds` 及其 GPU 数据。根播种、层级遍历、LOD、HiZ 和 cluster 筛选读取各实例自己的能力；空间组保存组内能力的汇总。用户 shader 的域可以声明 `CLUSTER_TESSELLATION_BOUNDS "finite"`，调用方通过 `SceneEdit.AddEntity(mesh, materials, transform, boundsExpansion)` 提供世界单位外扩。
 
 Wave/Phong 示例采用六个二次控制点的凸包确定外扩：`.35` 缩放部件使用 `.66`，公共单位球使用 `1.31`。推导和实例剔除的实际工作量见 [Cluster 工作列表](../cluster/Worklists.md)。透明投影默认驻留 `524288` 个微三角形；容量控制缓存与按源单元重投影的选择，两条路径保留相同命中和材质求值。

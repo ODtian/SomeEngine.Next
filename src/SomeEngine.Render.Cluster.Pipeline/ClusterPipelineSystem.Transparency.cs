@@ -59,6 +59,7 @@ public sealed partial class ClusterPipelineSystem
         uint capacity = _options.BlendTriangleCapacity;
         ClusterShadeInvocation[][] resources = [];
         TransparencyShaders? shaders = materials.Length == 0 ? null : GetTransparencyShaders(materials, out resources);
+        if (shaders is not null && assignments.HasOrdered) PrepareOrderedTransparencyShaders(shaders);
         var textureReads = CollectIndexedTextureReads(stages.BinIndices, stages, includeDecals: true)
             .Where(pair => materials.Any(material => material.BinIndex == pair.Key)).OrderBy(pair => pair.Key)
             .SelectMany(pair => pair.Value).ToImmutableArray();
@@ -75,6 +76,7 @@ public sealed partial class ClusterPipelineSystem
             }
             UpdateTransparencyParameters(ref edit, previous, assignments);
             UpdateTransparencyStates(ref edit, previous, assignments, stages);
+            AddOrderedTransparencyPasses(ref edit, previous);
             return;
         }
         if (previous is not null)
@@ -150,20 +152,32 @@ public sealed partial class ClusterPipelineSystem
             edit.OrderAfter(request, geometryReady);
             data.RequestPasses = [request];
         }
-        data.ColorPasses = AddPixelPasses(ref edit, ["ResolveTransparentColor", "ResolveProjectedTransparentColor"], data.Color);
+        string[] colors = shaders.UsesUnorderedColor ? ["ResolveUnorderedTransparentColor", "ResolveProjectedUnorderedTransparentColor"] :
+            ["ResolveTransparentColor", "ResolveProjectedTransparentColor"];
+        data.ColorPasses = AddTransparencyColorPasses(ref edit, data, colors, geometryReady);
+        edit.OrderAfter(data.ColorPasses[0], GraphData.Stencil!.ClearPass);
+        AddOrderedTransparencyPasses(ref edit, data);
+    }
 
-        GraphPassId[] AddPixelPasses(ref RenderGraphEdit graph, string[] names, GraphRegionId region)
+    private GraphPassId[] AddTransparencyColorPasses(ref RenderGraphEdit edit, TransparencyData data,
+        string[] names, GraphPassId previous)
+    {
+        var passes = new GraphPassId[names.Length];
+        for (int index = 0; index < names.Length; index++)
         {
-            var passes = new GraphPassId[names.Length];
-            for (int index = 0; index < names.Length; index++)
-            {
-                passes[index] = AddTransparencyPass(ref graph, data, shaders.Pipelines[names[index]], names[index], region,
-                    default, true, index == 0 ? 24u : 48u);
-                graph.OrderAfter(passes[index], index == 0 ? geometryReady : passes[index - 1]);
-                if (index == 0 && region == data.Color) graph.OrderAfter(passes[index], GraphData.Stencil!.ClearPass);
-            }
-            return passes;
+            passes[index] = AddTransparencyPass(ref edit, data, data.Shaders.Pipelines[names[index]], names[index], data.Color,
+                default, true, index == 0 ? 24u : 48u);
+            edit.OrderAfter(passes[index], index == 0 ? previous : passes[index - 1]);
         }
+        return passes;
+    }
+
+    private void AddOrderedTransparencyPasses(ref RenderGraphEdit edit, TransparencyData data)
+    {
+        if (data.ColorPasses.Length != 2 || !data.Shaders.Pipelines.ContainsKey("ResolveOrderedTransparentColor")) return;
+        GraphPassId[] ordered = AddTransparencyColorPasses(ref edit, data,
+            ["ResolveOrderedTransparentColor", "ResolveProjectedOrderedTransparentColor"], data.ColorPass);
+        data.ColorPasses = [.. data.ColorPasses, .. ordered];
     }
 
     private static bool SameTransparencyBindings(ClusterShadeInvocation[] previous, ClusterShadeInvocation[] next) =>

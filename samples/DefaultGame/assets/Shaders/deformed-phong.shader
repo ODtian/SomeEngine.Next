@@ -34,14 +34,14 @@
             ]
           },
           {
-            "EntryPoint": "ResolveTransparentColor",
+            "EntryPoint": "ResolveUnorderedTransparentColor",
             "Arguments": [
               "0",
               "true"
             ]
           },
           {
-            "EntryPoint": "ResolveProjectedTransparentColor",
+            "EntryPoint": "ResolveProjectedUnorderedTransparentColor",
             "Arguments": [
               "0",
               "true"
