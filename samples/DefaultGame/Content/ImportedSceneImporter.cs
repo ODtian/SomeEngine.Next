@@ -168,7 +168,7 @@ public sealed class ImportedSceneImporter : GltfSceneImporter
             string surface = twoSided ? suffix[..^"_both".Length] : suffix;
             float cutoff = surface == "opaque" ? -1 : BitConverter.Int32BitsToSingle(
                 int.Parse(surface["mask_".Length..], NumberStyles.HexNumber, CultureInfo.InvariantCulture));
-            string source = CreateSurfaceShader(Path.Combine(engineRoot, "templates/DefaultProject/assets/Shaders"),
+            string source = CreateSurfaceShader(Path.Combine(engineRoot, "samples/DefaultGame/assets/Shaders"),
                 shaderName, cutoff, twoSided, packedVertices);
             if (packedVertices)
                 WriteIfChanged(Path.Combine(directory, "scene_scv1_vertex.slang"),
@@ -176,7 +176,7 @@ public sealed class ImportedSceneImporter : GltfSceneImporter
             WriteIfChanged(sourcePath, source);
             WriteSurfaceEntries(directory, shaderName);
             JsonNode definition = CreateSurfaceDefinition(definitionPath,
-                Path.Combine(engineRoot, "templates/DefaultProject/assets/Shaders"), shaderName, cutoff);
+                Path.Combine(engineRoot, "samples/DefaultGame/assets/Shaders"), shaderName, cutoff);
             WriteIfChanged(definitionPath, definition.ToJsonString());
         }
     }
@@ -189,8 +189,12 @@ public sealed class ImportedSceneImporter : GltfSceneImporter
         definition["Fields"]!["Id"] = id.ToString();
         definition["Fields"]!["Name"] = name;
         definition["Blocks"]![0]!["Fields"]!["SourceNames"] = new JsonArray("cluster_transparency.slang", name + ".slang", name + "_transparency.slang");
-        definition["Blocks"]![0]!["Fields"]!["Specializations"] =
-            JsonSerializer.SerializeToNode(SampleContent.CreateMaterialSpecializations(cutoff >= 0 ? 1 : 0));
+        int depth = cutoff >= 0 ? 1 : 0;
+        JsonArray specializations = JsonSerializer.SerializeToNode(SampleContent.CreateMaterialSpecializations(depth))!.AsArray();
+        foreach (string entry in new[] { "BuildTransparentGeometry", "RequestTransparentPages", "ResolveTransparentColor", "ResolveProjectedTransparentColor" })
+            foreach (string tessellated in new[] { "false", "true" })
+                specializations.Add(new JsonObject { ["EntryPoint"] = entry, ["Arguments"] = new JsonArray(depth.ToString(CultureInfo.InvariantCulture), tessellated) });
+        definition["Blocks"]![0]!["Fields"]!["Specializations"] = specializations;
         return definition;
     }
 

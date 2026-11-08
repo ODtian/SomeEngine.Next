@@ -173,6 +173,8 @@ public sealed class PropertyAnimationTests
         Entity target = world.CreateEntity(new Visual());
         PropertyAnimation.Declare<float>(world, target);
         PropertyAnimation.Declare<float>(world, target);
+        var timelines = world.Query(world.QueryDefinition().Read<Timeline>());
+        uint members = world.MembershipVersion(timelines);
         using var tables = world.ObserveEntityTables();
         tables.Accept(tables.Read());
         int entityCount = world.EntityCount;
@@ -196,7 +198,9 @@ public sealed class PropertyAnimationTests
         }
 
         Assert.Equal(entityCount, world.EntityCount);
-        Assert.Equal(0, tables.Read().Count);
+        Assert.Equal(members, world.MembershipVersion(timelines));
+        Assert.Equal(target, Assert.Single(tables.Read().Entities));
+        world.ReleaseQuery(timelines);
     }
 
     [Fact]
@@ -206,6 +210,8 @@ public sealed class PropertyAnimationTests
         Entity target = world.CreateEntity(new Visual());
         PropertyAnimation.Declare<float>(world, target);
         Entity animation = PropertyAnimation.To(world, target, Opacity, 1f, Spec.Tween(2));
+        var timelines = world.Query(world.QueryDefinition().Read<Timeline>());
+        uint members = world.MembershipVersion(timelines);
         using var tables = world.ObserveEntityTables();
         tables.Accept(tables.Read());
         using var systems = FloatSystems(world);
@@ -230,7 +236,9 @@ public sealed class PropertyAnimationTests
         Assert.Equal(0.5f, world.Read<Visual>(target).Opacity);
         Tick(systems, world, 1);
         Assert.Equal(1, world.Read<Visual>(target).Opacity);
-        Assert.Equal(0, tables.Read().Count);
+        Assert.Equal(members, world.MembershipVersion(timelines));
+        Assert.Equal(target, Assert.Single(tables.Read().Entities));
+        world.ReleaseQuery(timelines);
     }
 
     [Fact]

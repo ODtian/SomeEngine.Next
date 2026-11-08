@@ -49,7 +49,7 @@ public sealed partial class ClusterPipelineSystem
         uint first = addresses[0], end = first + sizeof(uint);
         for (int index = 1; index <= addresses.Length; index++)
         {
-            if (index < addresses.Length && addresses[index] <= end + PackedCluster.SizeInBytes - sizeof(uint))
+            if (index < addresses.Length && addresses[index] <= end)
             {
                 end = addresses[index] + sizeof(uint);
                 continue;

@@ -5,8 +5,6 @@
 #include "wave_aggregation.slang"
 
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
-RWStructuredBuffer<uint> RequestedShadowPages;
-[ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<uint> RequestedPageFlags;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
 RWStructuredBuffer<uint> RequestedPageIndices;
@@ -33,15 +31,9 @@ void PublishVirtualShadowRequest(
         return;
 
     uint previous;
-    InterlockedExchange(RequestedShadowPages[tableIndex], frameIndex, previous);
-    if (previous == frameIndex)
-    {
-        uint ignored;
-        InterlockedOr(RequestedPageFlags[tableIndex], flags, ignored);
-        return;
-    }
+    InterlockedOr(RequestedPageFlags[tableIndex], flags, previous);
+    if (previous != 0u) return;
 
-    RequestedPageFlags[tableIndex] = flags;
     uint outputIndex;
     InterlockedAdd(RequestedPageCount[0], 1u, outputIndex);
     if (outputIndex < pageTableEntryCount)
@@ -51,8 +43,8 @@ void PublishVirtualShadowRequest(
 
 void MarkVirtualShadowReceiverCell(VirtualShadowMapParameters view, uint mipLevel, uint2 localPage, uint2 cell)
 {
-    uint2 address = VirtualShadowReceiverMaskOrigin(view, mipLevel) + localPage * 2u + (cell >> 2u);
-    uint bit = (cell.y & 3u) * 4u + (cell.x & 3u);
+    uint2 address = VirtualShadowReceiverMaskOrigin(view, mipLevel) + localPage * uint2(1u, 2u) + uint2(0u, cell.y >> 2u);
+    uint bit = (cell.y & 3u) * 8u + cell.x;
     uint4 matching = WaveMatchingLanes(address.x) & WaveMatchingLanes(address.y) & WaveMatchingLanes(bit);
     if (WaveGetLaneIndex() != WaveMaskFirstLane(matching)) return;
     uint ignored;
@@ -61,11 +53,9 @@ void MarkVirtualShadowReceiverCell(VirtualShadowMapParameters view, uint mipLeve
 
 void MarkVirtualShadowFullReceiverMask(VirtualShadowMapParameters view, uint mipLevel, uint2 localPage)
 {
-    uint2 address = VirtualShadowReceiverMaskOrigin(view, mipLevel) + localPage * 2u;
-    PageReceiverMasks[address] = 0xffffu;
-    PageReceiverMasks[address + uint2(1, 0)] = 0xffffu;
-    PageReceiverMasks[address + uint2(0, 1)] = 0xffffu;
-    PageReceiverMasks[address + 1u.xx] = 0xffffu;
+    uint2 address = VirtualShadowReceiverMaskOrigin(view, mipLevel) + localPage * uint2(1u, 2u);
+    PageReceiverMasks[address] = 0xffffffffu;
+    PageReceiverMasks[address + uint2(0, 1)] = 0xffffffffu;
 }
 
 void MarkVirtualShadowReceiverRectangle(VirtualShadowMapParameters view, uint mipLevel,
@@ -75,16 +65,13 @@ void MarkVirtualShadowReceiverRectangle(VirtualShadowMapParameters view, uint mi
     uint shift = firstbithigh(view.PageSize) - 3u;
     uint2 firstCell = (max(firstPixel, pageOrigin) - pageOrigin) >> shift;
     uint2 lastCell = (min(lastPixel, pageOrigin + view.PageSize - 1u) - pageOrigin) >> shift;
-    uint2 address = VirtualShadowReceiverMaskOrigin(view, mipLevel) + localPage * 2u;
-    for (uint y = firstCell.y >> 2u; y <= lastCell.y >> 2u; y++)
-    for (uint x = firstCell.x >> 2u; x <= lastCell.x >> 2u; x++)
+    uint2 address = VirtualShadowReceiverMaskOrigin(view, mipLevel) + localPage * uint2(1u, 2u);
+    for (uint word = firstCell.y >> 2u; word <= lastCell.y >> 2u; word++)
     {
-        uint2 low = max(firstCell, uint2(x, y) * 4u) - uint2(x, y) * 4u;
-        uint2 high = min(lastCell, uint2(x, y) * 4u + 3u) - uint2(x, y) * 4u;
-        uint columns = (0xfu << low.x) & (0xfu >> (3u - high.x));
-        uint rows = (0xffffu << (low.y * 4u)) & (0xffffu >> ((3u - high.y) * 4u));
-        uint mask = (columns * 0x1111u) & rows;
-        uint2 texel = address + uint2(x, y);
+        uint2 low = uint2(firstCell.x, max(firstCell.y, word * 4u) - word * 4u);
+        uint2 high = uint2(lastCell.x, min(lastCell.y, word * 4u + 3u) - word * 4u);
+        uint mask = VirtualShadowReceiverWordRectangle(low, high);
+        uint2 texel = address + uint2(0u, word);
         uint4 matching = WaveMatchingLanes(texel.x) & WaveMatchingLanes(texel.y) & WaveMatchingLanes(mask);
         if (WaveGetLaneIndex() != WaveMaskFirstLane(matching)) continue;
         uint ignored;

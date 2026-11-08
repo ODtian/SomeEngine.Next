@@ -5,6 +5,7 @@ using SomeEngine.Assets.Schema;
 using SomeEngine.Resources;
 using SomeEngine.Tests;
 using System.Runtime.InteropServices;
+using System.Numerics;
 using SlangShaderSharp;
 using SomeEngine.Render.Shadows;
 
@@ -28,15 +29,14 @@ public sealed class ClusterShaderDataTests
             SessionDesc description = SlangShaderImporter.CreateSessionDescription(
                 path,
                 [targetDescription]);
-            Shader saved = await file.GetBlock<ShaderBlock>().CreateAsync(
-                file.GetBlock<ShaderSourceBlock>(),
+            Shader saved = await file.CreateAsync(
                 ShaderTestCompilation.Slang,
-                description,
-                file.Name);
-            Shader direct = await file.GetBlock<ShaderSourceBlock>().CreateAsync(
+                description);
+            using ShaderAsset directInputs = file.Duplicate();
+            directInputs.RemoveBlock<ShaderBlock>();
+            Shader direct = await directInputs.CreateAsync(
                 ShaderTestCompilation.Slang,
-                description,
-                file.Name);
+                description);
             Assert.Contains(
                 Enumerable.Range(0, saved.SlangSourceUnitCount),
                 unit => ContainsMaterialScalars(
@@ -48,10 +48,21 @@ public sealed class ClusterShaderDataTests
                 string reflectedName = saved.GetSlangReflection(0)
                     .GetEntryPointByIndex(checked((nuint)entry)).Name;
                 Assert.Equal(componentName, reflectedName);
-                Assert.True(
-                    GetCode(saved, 0, entry).AsSpan().SequenceEqual(
-                        GetCode(direct, 0, entry)),
-                    $"Target {targetDescription.Format}, entry {entry} differs.");
+                if (saved.GetSlangEntryPoint(entry).GetSpecializationParamCount() == 0)
+                    Assert.True(
+                        GetCode(saved, 0, entry).AsSpan().SequenceEqual(GetCode(direct, 0, entry)),
+                        $"Target {targetDescription.Format}, entry {entry} differs.");
+            }
+            foreach (ShaderSpecialization specialization in file.GetBlock<ShaderSourceBlock>().Specializations)
+            {
+                string[] arguments = specialization.Arguments.ToArray();
+                Shader savedVariant = saved.RequireSpecialization(specialization.EntryPoint, arguments);
+                Shader directVariant = direct.RequireSpecialization(specialization.EntryPoint, arguments);
+                Assert.Equal(directVariant.SlangEntryCount, savedVariant.SlangEntryCount);
+                for (int entry = 0; entry < savedVariant.SlangEntryCount; entry++)
+                    Assert.True(
+                        GetCode(savedVariant, 0, entry).AsSpan().SequenceEqual(GetCode(directVariant, 0, entry)),
+                        $"Target {targetDescription.Format}, {specialization.EntryPoint}({string.Join(",", arguments)}) differs.");
             }
         }
 
@@ -277,7 +288,7 @@ public sealed class ClusterShaderDataTests
     [InlineData(
         "clustered_light_grid.shader.asset",
         "BuildClusteredLightGrid",
-        "ClusteredLightGrid|LightBuffer|LightIndexList|LightingViews")]
+        "ClusteredLightGrid|LightAllocationCounters|LightAllocationStatus|LightBuffer|LightLinkList|LightingViews")]
     [InlineData(
         "temporal_resolve.shader.asset",
         "PSMain",
@@ -438,6 +449,12 @@ public sealed class ClusterShaderDataTests
     public async Task ShadowViewBuffersAcceptTheSameCpuDataOnBothTargets(string asset, string resource)
     {
         Shader shader = await ReadTemplateShader(asset);
+        var view = new VirtualShadowView
+        {
+            LightViewProjection = Matrix4x4.CreateScale(2, 3, 4) * Matrix4x4.CreateTranslation(5, 6, 7),
+        };
+        byte[] values = new byte[Marshal.SizeOf<VirtualShadowView>()];
+        MemoryMarshal.Write(values, in view);
         foreach (SlangCompileTarget target in new[]
                  {
                      SlangCompileTarget.Dxil,
@@ -449,7 +466,24 @@ public sealed class ClusterShaderDataTests
             for (uint index = 0; index < element.FieldCount; index++)
             {
                 VariableLayoutReflection field = element.GetFieldByIndex(index);
-                Assert.Equal((nuint)Marshal.OffsetOf<VirtualShadowView>(field.Name), field.GetOffset());
+                switch (field.Name)
+                {
+                    case nameof(VirtualShadowView.LightViewProjection):
+                        Assert.Equal(view.LightViewProjection, MemoryMarshal.Read<Matrix4x4>(values.AsSpan((int)field.GetOffset())));
+                        break;
+                    case nameof(VirtualShadowView.ShadowUv):
+                        Assert.Equal(view.ShadowUv, MemoryMarshal.Read<Matrix4x4>(values.AsSpan((int)field.GetOffset())));
+                        break;
+                    case nameof(VirtualShadowView.ShadowUvNormal):
+                        Assert.Equal(view.ShadowUvNormal, MemoryMarshal.Read<Matrix4x4>(values.AsSpan((int)field.GetOffset())));
+                        break;
+                    case "AddressPadding":
+                    case "TranslationPadding":
+                        break;
+                    default:
+                        Assert.Equal((nuint)Marshal.OffsetOf<VirtualShadowView>(field.Name), field.GetOffset());
+                        break;
+                }
             }
         }
     }

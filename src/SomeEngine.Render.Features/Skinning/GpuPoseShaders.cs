@@ -1,4 +1,5 @@
 using SlangShaderSharp;
+using SomeEngine.Graphics;
 using SomeEngine.Resources;
 
 namespace SomeEngine.Render.Features.Skinning;
@@ -14,11 +15,7 @@ internal static class GpuPoseShaders
         lock (s_gate)
         {
             if (s_shaders.TryGetValue(target, out Shader? shader)) return shader;
-            if (s_global is null)
-            {
-                Require(Slang.CreateGlobalSession(Slang.ApiVersion, out IGlobalSession global), null);
-                s_global = global;
-            }
+            s_global ??= Shader.CreateSlangGlobalSession();
             var output = new TargetDesc
             {
                 Format = target,
@@ -35,17 +32,29 @@ internal static class GpuPoseShaders
             using var reader = new StreamReader(source);
             IModule? module = session.LoadModuleFromSource("gpu_pose", "gpu_pose.slang", Slang.CreateBlob(reader.ReadToEnd()), out ISlangBlob? diagnostics);
             if (module is null) throw new InvalidDataException(diagnostics?.AsString);
+            SlangShaderData.RetainSession(session, module);
             Require(module.FindEntryPointByName("AdvancePoseStates", out IEntryPoint advance), null);
+            SlangShaderData.RetainSession(session, advance);
             Require(module.FindEntryPointByName("LoadPoseHistory", out IEntryPoint load), null);
+            SlangShaderData.RetainSession(session, load);
             Require(module.FindEntryPointByName("SamplePoseLevel", out IEntryPoint sample), null);
+            SlangShaderData.RetainSession(session, sample);
             Require(module.FindEntryPointByName("StorePoseHistory", out IEntryPoint store), null);
+            SlangShaderData.RetainSession(session, store);
             Require(module.FindEntryPointByName("TranslatePose", out IEntryPoint translate), null);
+            SlangShaderData.RetainSession(session, translate);
             Require(module.FindEntryPointByName("SolveTwoBone", out IEntryPoint twoBone), null);
+            SlangShaderData.RetainSession(session, twoBone);
             Require(module.FindEntryPointByName("SolveAim", out IEntryPoint aim), null);
+            SlangShaderData.RetainSession(session, aim);
             Require(module.FindEntryPointByName("WarpStride", out IEntryPoint stride), null);
+            SlangShaderData.RetainSession(session, stride);
             Require(module.FindEntryPointByName("SimulateXpbdChain", out IEntryPoint xpbd), null);
+            SlangShaderData.RetainSession(session, xpbd);
             Require(session.CreateCompositeComponentType([module, advance, load, sample, store, translate, twoBone, aim, stride, xpbd], out IComponentType combined, out diagnostics), diagnostics);
+            SlangShaderData.RetainSession(session, combined);
             Require(combined.Link(out IComponentType linked, out diagnostics), diagnostics);
+            SlangShaderData.RetainSession(session, linked);
             shader = Shader.CreateFromSlang("GPU poses", s_global, session, [module], [advance, load, sample, store, translate, twoBone, aim, stride, xpbd], linked, [output]);
             s_shaders.Add(target, shader);
             return shader;

@@ -141,7 +141,6 @@ public sealed partial class ClusterRenderResources : IDisposable
     private bool _residencyDestroyed;
     private bool _instanceBorrowerReleased;
     private ulong _lastFaultFeedbackFrame;
-    private ulong _lastUsageFeedbackFrame;
 
     public ClusterRenderResources(
         IGraphicsBackend backend,
@@ -468,26 +467,6 @@ public sealed partial class ClusterRenderResources : IDisposable
         try
         {
             _residency.PumpStreaming();
-        }
-        finally
-        {
-            ExitActiveOperation();
-        }
-    }
-
-    internal void IngestPageUsageReadback(
-        ClusterReadbackTicket ticket,
-        ReadOnlySpan<uint> leafNodeIndices)
-    {
-        EnterActiveOperation();
-        try
-        {
-            lock (_feedbackGate)
-            {
-                ValidateReadbackTicket(ticket, _lastUsageFeedbackFrame);
-                _residency.ReportLeafUsage(leafNodeIndices);
-                _lastUsageFeedbackFrame = ticket.FeedbackSequence;
-            }
         }
         finally
         {

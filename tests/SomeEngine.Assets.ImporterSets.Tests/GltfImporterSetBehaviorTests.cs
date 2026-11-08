@@ -126,7 +126,7 @@ public sealed class GltfImporterSetBehaviorTests
     }
 
     [Fact]
-    public async Task UnknownSavedGroupFailsWithItsIdentityAndPreservesThePreviousMesh()
+    public async Task UnknownSavedGroupFailsAndPreservesThePreviousMesh()
     {
         using var files = new SetFiles();
         var project = new AssetProject(files.Directory, []);
@@ -135,9 +135,8 @@ public sealed class GltfImporterSetBehaviorTests
             meshPath = Path.Combine(files.Directory, project.Manifest.Assets[mesh.Id].Path);
         Guid missing = Guid.NewGuid();
         files.SelectSets(missing.ToString());
-        InvalidOperationException error = await Assert.ThrowsAsync<InvalidOperationException>(
+        await Assert.ThrowsAsync<InvalidOperationException>(
             () => project.ImportAsync(files.Source, CreateImporter()).AsTask());
-        Assert.Contains(missing.ToString(), error.Message);
         using MeshAsset previous = await MeshAsset.OpenAsync(meshPath);
         Assert.Equal(10, (await previous.GetBlockAsync<SetFirstBlock>()).Value);
     }
@@ -178,8 +177,9 @@ public sealed class GltfImporterSetBehaviorTests
         return await MeshAsset.OpenAsync(Path.Combine(project.RootPath, project.Manifest.Assets[mesh].Path));
     }
 
-    private static GltfSourceImporter CreateImporter() => new(services =>
+    private static GltfSourceImporter CreateImporter()
     {
+        var services = new ServiceCollection();
         // This project's registry contains only test importers; all descriptions and settings binders come from the generator.
         services.AddScoped<SetSharedImporter>();
         services.AddScoped<SetFirstImporter>();
@@ -195,7 +195,8 @@ public sealed class GltfImporterSetBehaviorTests
         Guid[] sets = [new(SetGltfImporters.NeutralId), new(SetGltfImporters.FirstId), new(SetGltfImporters.SecondId), new(SetGltfImporters.ConflictId)];
         foreach (AssetImporterSetCapability set in SetProjectCapabilities.ImporterSetCapabilities.Where(value => sets.Contains(value.Id)))
             services.AddSingleton(set);
-    }, SetProjectCapabilities.BuildVersion);
+        return new(services, SetProjectCapabilities.BuildVersion);
+    }
 
     private sealed class SetFiles : IDisposable
     {

@@ -16,8 +16,7 @@ interface ITransparencyMaterials
         out uint primitive, out float3x2 domain, out float4 first, out float4 second, out float4 third);
     bool cover(uint bin, uint source, float3x2 domain, uint3 pixel, float depth, out float resultDepth);
     float4 shade(uint bin, uint source, uint primitive, uint3 pixel, float depth);
-    void receiver(uint bin, uint source, uint primitive, uint3 pixel, float depth,
-        out float3 position, out float3 normal, out uint flags);
+    void markShadowPages(uint bin, uint source, uint primitive, uint3 pixel, float depth);
 };
 
 struct TransparencyParameters
@@ -156,8 +155,7 @@ bool TransparencyRequestMaterial(DrawRequest request, uint triangle, out uint bi
     if (triangle >= count) return false;
     material = LoadClusterMaterialSlotOffset(TransparencyInstances,
         LoadRenderInstanceMetadata(TransparencyProperties, CLUSTER_MATERIAL_SLOT_OFFSET_METADATA_WORD), request.InstanceID) +
-        LocalMaterial(LoadClusterMaterials(TransparencyPageHeap, request.PageOffset, cluster),
-            TransparencyPageHeap.Load(cluster + 72u), triangle);
+        LocalMaterial(TransparencyPageHeap, cluster, request.PageOffset, triangle);
     uint state = TransparencyMaterialStates[material].x;
     if ((state & 3u) == 0u || ((state & 0x80000000u) != 0u &&
         LoadInstanceXray(TransparencyInstances, TransparencyProperties, request.InstanceID).Enabled == 0u)) return false;
@@ -689,21 +687,34 @@ bool TransparencyHit<TMaterials : ITransparencyMaterials>(uniform TMaterials mat
         TransparencyViewDepth(pixel.z, float2(pixel.xy) + .5, depth));
 }
 
-void RequestTransparencyShadows<TMaterials : ITransparencyMaterials, let reproject : bool>(uniform TMaterials materials, uint3 pixel)
+void RequestTransparencyPages<TMaterials : ITransparencyMaterials>(uniform TMaterials materials, uint3 thread)
 {
-    if (pixel.x >= TransparencyUniforms.Width || pixel.y >= TransparencyUniforms.Height || pixel.z >= TransparencyUniforms.ViewCount) return;
-    float opaque = TransparencyOpaqueDepth.Load(int4(pixel, 0));
-    TransparencyCandidates<TMaterials> input = BeginTransparencyCandidates<TMaterials, reproject>(pixel, opaque);
-    TransparencyTriangle triangle;
-    while (NextTransparencyCandidate<TMaterials, reproject>(materials, pixel, input, triangle))
+    uint work = TransparencyWork(thread);
+    if (work / 128u >= TransparencySourceCount()) return;
+    uint source = TransparencyActiveSources[work / 128u] * 128u + work % 128u;
+    uint bin, material, view;
+    if (!TransparencySourceMaterial(source, bin, material, view)) return;
+    TMaterials.Projection projection = materials.beginProjection(bin, source, view,
+        float4(.5, .5, float(TransparencyUniforms.Width) - .5, float(TransparencyUniforms.Height) - .5));
+    uint primitive;
+    float3x2 domain;
+    float4 first, second, third;
+    while (materials.nextProjection(bin, source, view, projection, primitive, domain, first, second, third))
     {
-        float depth;
-        if (!TransparencyHit(materials, pixel, triangle, input.Cell, opaque, depth)) continue;
-        SurfaceShadowReceiver receiver = (SurfaceShadowReceiver)0;
-        materials.receiver(triangle.Bin, triangle.Source, triangle.Primitive, pixel, depth,
-            receiver.Position, receiver.GeometricNormal, receiver.Flags);
-        receiver.Depth = depth;
-        MarkVirtualShadowReceiver(pixel.xy, receiver);
+        TransparencyTriangle triangle;
+        if (!ProjectTransparency(source, primitive, bin, material, view, domain, first, second, third, triangle)) continue;
+        int2 minimum = max(0, int2(ceil(min(triangle.First, min(triangle.Second, triangle.Third)) - .5)));
+        int2 maximum = min(int2(TransparencyUniforms.Width, TransparencyUniforms.Height) - 1,
+            int2(floor(max(triangle.First, max(triangle.Second, triangle.Third)) - .5)));
+        for (int y = minimum.y; y <= maximum.y; y++)
+        for (int x = minimum.x; x <= maximum.x; x++)
+        {
+            uint3 pixel = uint3(x, y, view);
+            float opaque = TransparencyOpaqueDepth.Load(int4(pixel, 0));
+            float depth;
+            if (!TransparencyHit(materials, pixel, triangle, 0xFFFFFFFFu, opaque, depth)) continue;
+            materials.markShadowPages(bin, source, primitive, pixel, depth);
+        }
     }
 }
 

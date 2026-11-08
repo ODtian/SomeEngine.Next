@@ -12,16 +12,16 @@ public sealed partial class ClusterPipelineSystem
     private sealed record TransparencyPipeline(Shader Shader, ClusterComputePipeline Pipeline);
 
     private sealed class TransparencyShaders(TransparencyMember[] members, uint[] resourceCapacities,
-        Dictionary<string, TransparencyPipeline> pipelines)
+        Dictionary<string, TransparencyPipeline> pipelines, SlangCompileTarget target)
     {
         internal readonly TransparencyMember[] Members = members;
         internal readonly uint[] ResourceCapacities = resourceCapacities;
         internal readonly Dictionary<string, TransparencyPipeline> Pipelines = pipelines;
-        internal readonly uint TriangleStride = GetStride(pipelines["BuildTransparentGeometry"].Shader, "TransparencyTriangle");
-        internal readonly uint SourceBoundsStride = GetStride(pipelines["BuildTransparentGeometry"].Shader, "TransparencySourceBounds");
-        private static uint GetStride(Shader shader, string name)
+        internal readonly uint TriangleStride = GetStride(pipelines["BuildTransparentGeometry"].Shader, target, "TransparencyTriangle");
+        internal readonly uint SourceBoundsStride = GetStride(pipelines["BuildTransparentGeometry"].Shader, target, "TransparencySourceBounds");
+        private static uint GetStride(Shader shader, SlangCompileTarget target, string name)
         {
-            ShaderReflection reflection = shader.GetSlangReflection(0);
+            ShaderReflection reflection = shader.GetSlangReflection(shader.RequireSlangTarget(target));
             TypeReflection type = reflection.FindTypeByName(name)!.Value;
             return checked((uint)reflection.GetTypeLayout(type, LayoutRules.DefaultStructuredBuffer)!.Value.GetSize(SlangParameterCategory.Uniform));
         }
@@ -57,17 +57,15 @@ public sealed partial class ClusterPipelineSystem
             AddPipeline(entry);
         if (UsesVirtualShadows("ResolveTransparentColor") || UsesVirtualShadows("ResolveProjectedTransparentColor"))
         {
-            AddPipeline("RequestTransparentShadows");
-            AddPipeline("RequestProjectedTransparentShadows");
+            AddPipeline("RequestTransparentPages");
         }
-        var result = new TransparencyShaders(members, capacities, pipelines);
+        var result = new TransparencyShaders(members, capacities, pipelines, _device.Capabilities.CompileTarget);
         _transparencyShaders.Add(result);
         return result;
 
         void AddPipeline(string entry)
         {
-            Shader shader = composition ?? (entry is "BuildTransparentGeometry" or "RequestTransparentShadows" or "ResolveTransparentColor" or
-                "RequestProjectedTransparentShadows" or "ResolveProjectedTransparentColor"
+            Shader shader = composition ?? (entry is "BuildTransparentGeometry" or "RequestTransparentPages" or "ResolveTransparentColor" or "ResolveProjectedTransparentColor"
                 ? source.RequireSpecialization(entry, arguments) : source);
             pipelines.Add(entry, new(shader, ClusterComputePipeline.Create(_backend, _device, shader, entry, entry)));
         }
@@ -124,11 +122,11 @@ public sealed partial class ClusterPipelineSystem
             source.Append("if (bin == ").Append(index).Append("u) return ").Append(Resource(index))
                 .Append(".shade<").Append((uint)materials[index].VisibilityDepth).AppendLine("u>(source, primitive, pixel, depth);");
         source.AppendLine("return 0.0.xxxx; }");
-        source.AppendLine("void receiver(uint bin, uint source, uint primitive, uint3 pixel, float depth, out float3 position, out float3 normal, out uint flags) {");
+        source.AppendLine("void markShadowPages(uint bin, uint source, uint primitive, uint3 pixel, float depth) {");
         for (int index = 0; index < materials.Length; index++)
             source.Append("if (bin == ").Append(index).Append("u) { ").Append(Resource(index))
-                .Append(".receiver<").Append((uint)materials[index].VisibilityDepth).AppendLine("u>(source, primitive, pixel, depth, position, normal, flags); return; }");
-        source.AppendLine("position=0.0.xxx; normal=0.0.xxx; flags=0u; }");
+                .Append(".markShadowPages<").Append((uint)materials[index].VisibilityDepth).AppendLine("u>(source, primitive, pixel, depth); return; }");
+        source.AppendLine("}");
         source.AppendLine("};");
         string[] geometryEntries = ["ClearTransparentTiles", "CopyTransparentSources", "BuildTransparentGeometry", "CountTransparentCells", "ReserveTransparentCells", "ScatterTransparentCells"];
         string[] geometryCalls = ["ClearTransparency(thread)", "CopyTransparencySources(thread)", "BuildTransparency(materials, thread)", "CountTransparencyCells(thread)", "ReserveTransparency(thread)", "ScatterTransparency(thread)"];
@@ -137,9 +135,8 @@ public sealed partial class ClusterPipelineSystem
                 .Append(entry == 2 ? "(uniform SceneTransparencyMaterials materials, " : "(")
                 .Append("uint3 thread : SV_DispatchThreadID) { ")
                 .Append(geometryCalls[entry]).AppendLine("; }");
-        source.AppendLine("[shader(\"compute\")] [numthreads(16,16,1)] void RequestTransparentShadows(uniform SceneTransparencyMaterials materials, uint3 pixel : SV_DispatchThreadID) { RequestTransparencyShadows<SceneTransparencyMaterials,false>(materials, pixel); }");
+        source.AppendLine("[shader(\"compute\")] [numthreads(64,1,1)] void RequestTransparentPages(uniform SceneTransparencyMaterials materials, uint3 thread : SV_DispatchThreadID) { RequestTransparencyPages(materials, thread); }");
         source.AppendLine("[shader(\"compute\")] [numthreads(16,16,1)] void ResolveTransparentColor(uniform SceneTransparencyMaterials materials, uint3 pixel : SV_DispatchThreadID) { ResolveTransparency<SceneTransparencyMaterials,false>(materials, pixel); }");
-        source.AppendLine("[shader(\"compute\")] [numthreads(16,16,1)] void RequestProjectedTransparentShadows(uniform SceneTransparencyMaterials materials, uint3 pixel : SV_DispatchThreadID) { RequestTransparencyShadows<SceneTransparencyMaterials,true>(materials, pixel); }");
         source.AppendLine("[shader(\"compute\")] [numthreads(16,16,1)] void ResolveProjectedTransparentColor(uniform SceneTransparencyMaterials materials, uint3 pixel : SV_DispatchThreadID) { ResolveTransparency<SceneTransparencyMaterials,true>(materials, pixel); }");
         return source.ToString();
 

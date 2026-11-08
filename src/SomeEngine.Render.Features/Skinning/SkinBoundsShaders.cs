@@ -1,4 +1,5 @@
 using SlangShaderSharp;
+using SomeEngine.Graphics;
 using SomeEngine.Resources;
 
 namespace SomeEngine.Render.Features.Skinning;
@@ -14,11 +15,7 @@ internal static class SkinBoundsShaders
         lock (s_gate)
         {
             if (s_shaders.TryGetValue(target, out Shader? shader)) return shader;
-            if (s_global is null)
-            {
-                Require(Slang.CreateGlobalSession(Slang.ApiVersion, out IGlobalSession global), null);
-                s_global = global;
-            }
+            s_global ??= Shader.CreateSlangGlobalSession();
             var output = new TargetDesc
             {
                 Format = target,
@@ -35,10 +32,15 @@ internal static class SkinBoundsShaders
             using var reader = new StreamReader(source);
             IModule? module = session.LoadModuleFromSource("skin_bounds", "skin_bounds.slang", Slang.CreateBlob(reader.ReadToEnd()), out ISlangBlob? diagnostics);
             if (module is null) throw new InvalidDataException(diagnostics?.AsString);
+            SlangShaderData.RetainSession(session, module);
             Require(module.FindEntryPointByName("TransformSkinBounds", out IEntryPoint entry), null);
+            SlangShaderData.RetainSession(session, entry);
             Require(module.FindEntryPointByName("TransformSkinJoints", out IEntryPoint joints), null);
+            SlangShaderData.RetainSession(session, joints);
             Require(session.CreateCompositeComponentType([module, entry, joints], out IComponentType combined, out diagnostics), diagnostics);
+            SlangShaderData.RetainSession(session, combined);
             Require(combined.Link(out IComponentType linked, out diagnostics), diagnostics);
+            SlangShaderData.RetainSession(session, linked);
             shader = Shader.CreateFromSlang("Skin bounds", s_global, session, [module], [entry, joints], linked, [output]);
             s_shaders.Add(target, shader);
             return shader;

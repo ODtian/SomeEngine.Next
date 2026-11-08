@@ -148,6 +148,13 @@ public static partial class PropertyAnimation
         Timeline timeline = ReadStartingTimeline(world, instance);
         T current = source.Active ? source.Value : previous.SourceActive && (!previous.Finished || HoldsLayerValue(world, instance, in previous))
             ? previous.Current : channel.Read(world, target);
+        bool presentationChanged = false;
+        if (previous.SourceActive && source.Direct)
+        {
+            T presented = channel.Read(world, target);
+            presentationChanged = !TOps.Equals(in presented, in previous.Current);
+            if (presentationChanged) current = presented;
+        }
         if (world.Has<AnimationLayers>(target) && (endpoints == TrackEndpoints.Displacement || !previous.SourceActive &&
             world.Read<AnimationLayers>(target).Items[layer].Mode == LayerMode.Additive)) ReadBase(world, target, channel, ref current);
         T from = endpoints == TrackEndpoints.Displacement ? TOps.Add(in current, in value) : current;
@@ -161,14 +168,14 @@ public static partial class PropertyAnimation
         int stateIndex = same ? previous.MotionIndex : FreeMotionIndex<T, TOps, TParameters, TState, TEvaluator>(world, instance);
         MotionStorage<T, TOps, TParameters, TState, TEvaluator>.UseInstanceParameters(world, instance);
         var change = (Parameters: spec.Parameters, Previous: previous, Values: values, Running: running, Index: stateIndex,
-            Unchanged: false, ParametersOnly: false, Endpoints: endpoints, Target: value);
+            Unchanged: false, ParametersOnly: false, Endpoints: endpoints, Target: value, PresentationChanged: presentationChanged);
         world.ExecuteBufferWrite<MotionInstance<T, TOps, TParameters, TState, TEvaluator>,
-            (TParameters Parameters, Track<T> Previous, MotionValues<T> Values, bool Running, int Index, bool Unchanged, bool ParametersOnly, TrackEndpoints Endpoints, T Target)>(instance, ref change,
+            (TParameters Parameters, Track<T> Previous, MotionValues<T> Values, bool Running, int Index, bool Unchanged, bool ParametersOnly, TrackEndpoints Endpoints, T Target, bool PresentationChanged)>(instance, ref change,
             static (instances, ref change) =>
             {
                 ref MotionData<T, TParameters, TState> data = ref instances[change.Index].Data;
                 bool equal = change.Running && TEvaluator.ParametersEqual(in data.Parameters, in change.Parameters);
-                bool sameTarget = change.Previous.Endpoints == TrackEndpoints.Values && change.Endpoints == TrackEndpoints.Values &&
+                bool sameTarget = !change.PresentationChanged && change.Previous.Endpoints == TrackEndpoints.Values && change.Endpoints == TrackEndpoints.Values &&
                     TOps.Equals(in change.Previous.To, in change.Target);
                 if (change.Previous.SourceActive && sameTarget && equal &&
                     (change.Running || TOps.Equals(in change.Previous.Current, in change.Target)) &&

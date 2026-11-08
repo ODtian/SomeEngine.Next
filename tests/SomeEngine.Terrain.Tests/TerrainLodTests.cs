@@ -17,7 +17,7 @@ public sealed class TerrainLodTests
         using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
         using var world = new World();
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
-        using var material = new UnlitMaterial();
+        var material = new UnlitMaterial();
         using var terrain = new Resources.Terrain(new TerrainEditing(scheduler));
         HeightField heights = terrain.CreateHeightField("ground", new HeightGrid(33, 17, 4), .5f);
         terrain.Surface = new HeightSurface(heights);

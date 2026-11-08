@@ -10,9 +10,6 @@ struct MaterialScalarsAttribute
 {
 };
 
-[__AttributeUsage(_AttributeTargets.Function)]
-struct PrimaryDepthReceiverAttribute {};
-
 [__AttributeUsage(_AttributeTargets.Var)]
 struct InstancePropertyAttribute
 {
@@ -59,7 +56,7 @@ interface ITransparentSurfaceEvaluate<TSurface, TTriangle>
     float4 evaluateTransparency(uint debugMode, SurfacePixelInput input,
         TSurface surface, float3 bary, TTriangle triangle);
 
-    SurfaceShadowReceiver evaluateShadowReceiver(SurfacePixelInput input,
+    void markShadowPages(SurfacePixelInput input,
         TSurface surface, float3 bary, TTriangle triangle);
 };
 

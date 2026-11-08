@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
+using Microsoft.Extensions.DependencyInjection;
 using SomeEngine.Assets.Importers;
 using SomeEngine.Assets.Importing;
 using SomeEngine.Assets.Schema;
@@ -196,7 +197,7 @@ public sealed class GltfAnimationElementBehaviorTests
     }
 
     private static GltfSourceImporter CreateImporter()
-        => new(services => ConsumerAssetCapabilities.AddAssetCapabilities(services), "animation-elements-1", ElementSceneImporter.Id);
+        => new(ConsumerAssetCapabilities.AddAssetCapabilities(new ServiceCollection()), "animation-elements-1", ElementSceneImporter.Id);
 
     private static AssetEntry[] Entries(AssetProject project, string type)
         => project.Manifest.Assets.Values.Where(entry => entry.AssetType == type).OrderBy(entry => entry.SubAssetKey).ToArray();

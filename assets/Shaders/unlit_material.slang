@@ -92,17 +92,8 @@ struct UnlitMaterial : ISurfaceEvaluate<SurfaceEval, Triangle>, ITransparentSurf
             evaluateDebugColor(debugMode, input, surface, bary, triangle);
     }
 
-    SurfaceShadowReceiver evaluateShadowReceiver(SurfacePixelInput input,
-        SurfaceEval surface, float3 bary, Triangle triangle)
-    {
-        SurfaceShadowReceiver receiver;
-        receiver.Position = input.VisibilityDepth == 2u ? input.PositionFromDepth : surface.Position;
-        receiver.GeometricNormal = SafeNormalize(cross(triangle.Position1 - triangle.Position0,
-            triangle.Position2 - triangle.Position0), surface.Normal);
-        receiver.Flags = SURFACE_RECEIVER_PRESENT;
-        receiver.Depth = input.Depth;
-        return receiver;
-    }
+    void markShadowPages(SurfacePixelInput input, SurfaceEval surface, float3 bary, Triangle triangle) {}
+
 };
 
 #endif

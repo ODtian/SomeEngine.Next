@@ -2,6 +2,8 @@ using static SomeEngine.Graphics.Direct3D12.Tests.D3D12TestCompute;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using SlangShaderSharp;
+using SomeEngine.Render.Shadows;
+using SomeEngine.Resources.Geometry;
 using Xunit;
 using Buffer = SomeEngine.Graphics.Buffer;
 
@@ -17,28 +19,28 @@ public sealed class VirtualShadowPageTests(D3D12TestCompiler shaderCompiler)
     public void CoarseRequestsUseDirectionalCentersAndOneLocalFallback(uint lightKind, int originX, int originY)
     {
         const int pageTableEntryCount = 22000;
-        uint[] view = new uint[44];
-        view[16] = 16384;
-        view[17] = 128;
-        view[21] = unchecked((uint)originX);
-        view[25] = unchecked((uint)originY);
-        view[33] = 1;
-        view[34] = 5;
-        view[36] = lightKind == 0 ? 1u : 0u;
-        view[37] = lightKind;
+        VirtualShadowView view = new()
+        {
+            LightViewProjection = Matrix4x4.Identity,
+            VirtualResolution = 16384, PageSize = 128,
+            VirtualPageOriginX = originX, VirtualPageOriginY = originY,
+            ClipmapLevelCount = 1, MipLevelCount = 8,
+            Flags = VirtualShadowViewFlags.CoarseClipLevel,
+            LightKind = (VirtualShadowLightKind)lightKind,
+        };
         uint[][] result = new D3D12TestCompute(shaderCompiler).Execute("vsm_mark_coarse_pages.slang", "MarkVirtualShadowCoarsePages", new(1, 1, 1),
         [
             new BufferInput("CoarsePageDemand", [1, pageTableEntryCount, 7, 0], ResourceBindingType.ConstantBuffer, 0),
-            new BufferInput("ShadowViews", view, ResourceBindingType.BufferSrv, 176),
-            new BufferInput("RequestedShadowPages", new uint[pageTableEntryCount], ResourceBindingType.BufferUav, 4),
+            new BufferInput("ShadowViews", MemoryMarshal.Cast<VirtualShadowView, uint>(new[] { view }.AsSpan()).ToArray(),
+                ResourceBindingType.BufferSrv, VirtualShadowView.SizeInBytes),
             new BufferInput("RequestedPageFlags", new uint[pageTableEntryCount], ResourceBindingType.BufferUav, 4),
             new BufferInput("RequestedPageIndices", new uint[pageTableEntryCount], ResourceBindingType.BufferUav, 4),
             new BufferInput("RequestedPageCount", new uint[1], ResourceBindingType.BufferUav, 4),
-            new BufferInput("PageReceiverMasks", new uint[pageTableEntryCount * 2], ResourceBindingType.BufferUav, 8),
+            new BufferInput("PageReceiverMasks", null, ResourceBindingType.TextureUav, 0),
         ]);
-        int expectedRequests = lightKind == 0 ? 5 : 1;
-        Assert.Equal(expectedRequests, result[0].Count(value => value == 7));
-        Assert.Equal((uint)expectedRequests, result[3][0]);
+        int expectedRequests = lightKind == 0 ? 4 : 1;
+        Assert.Equal(expectedRequests, result[0].Count(value => value == 10));
+        Assert.Equal((uint)expectedRequests, result[2][0]);
     }
 
     [Theory]
@@ -50,73 +52,83 @@ public sealed class VirtualShadowPageTests(D3D12TestCompiler shaderCompiler)
         const int capacity = 256, requests = 255;
         uint[] counts = [3, 0, 13, 17, 0, 5, 31, 2];
         int available = freeCount + (int)counts.Sum(x => (long)x);
-        var table = new uint[1024 * 4];
+        var table = new uint[1024];
         var owners = Enumerable.Repeat(uint.MaxValue, capacity).ToArray();
-        var eviction = new uint[capacity * 8];
-        int next = freeCount;
-        for (int bucket = 0; bucket < counts.Length; bucket++)
-        for (int index = 0; index < counts[bucket]; index++)
+        for (int page = freeCount; page < available; page++)
         {
-            eviction[bucket * capacity + index] = (uint)next;
-            owners[next] = (uint)(512 + next);
-            table[(512 + next) * 4] = (uint)next + 1;
-            next++;
+            owners[page] = (uint)(512 + page);
+            table[512 + page] = VirtualShadowPageEntry.Encode((uint)page, 16);
         }
-        var requested = new uint[1024];
-        Array.Fill(requested, 10u, 0, requests);
-        uint[] views = new uint[44];
-        views[16] = 4096; views[17] = 128; views[21] = unchecked((uint)-3);
-        views[24] = 5; views[25] = 5; views[34] = 1;
+        VirtualShadowView view = new()
+        {
+            VirtualResolution = 4096, PageSize = 128, PhysicalPagesPerRow = 16,
+            MaxPhysicalPages = capacity, VirtualPageOriginX = -3, VirtualPageOriginY = 5,
+            CacheGeneration = 5, MipLevelCount = 1,
+        };
+        uint[] lists = new uint[4 * (capacity + 1)];
+        for (int page = 0; page < available; page++) lists[capacity + 1 + page] = (uint)page;
+        lists[2 * (capacity + 1) - 1] = (uint)available;
         uint[][] result = new D3D12TestCompute(shaderCompiler).Execute("vsm_allocate_pages.slang", "AllocateVirtualShadowPages", new(16, 1, 1),
         [
-            ([1024, 1024, capacity, 1, 10, 8, 63, 1], ResourceBindingType.ConstantBuffer, 0),
-            (views, ResourceBindingType.BufferSrv, 176),
-            (Enumerable.Range(0, requests).Select(index => (uint)index).ToArray(), ResourceBindingType.BufferSrv, 4),
-            ([requests], ResourceBindingType.BufferSrv, 4),
-            (Enumerable.Repeat(1u, 1024).ToArray(), ResourceBindingType.BufferSrv, 4),
-            (table, ResourceBindingType.BufferUav, 16), (owners, ResourceBindingType.BufferUav, 4),
-            (new uint[capacity * 4], ResourceBindingType.BufferUav, 16),
-            (Enumerable.Range(0, capacity).Select(x => (uint)x).ToArray(), ResourceBindingType.BufferUav, 4),
-            ([(uint)freeCount], ResourceBindingType.BufferUav, 4),
-            (eviction, ResourceBindingType.BufferUav, 4), (counts, ResourceBindingType.BufferUav, 4),
-            (new uint[capacity * 4], ResourceBindingType.BufferUav, 16), ([0], ResourceBindingType.BufferUav, 4),
-            ([uint.MaxValue, uint.MaxValue, 0, 0], ResourceBindingType.BufferUav, 16),
-            (new uint[63], ResourceBindingType.BufferUav, 4),
-            ([0, 0], ResourceBindingType.BufferUav, 4),
-            (new uint[2048], ResourceBindingType.BufferUav, 8),
-        ]);
-        Assert.Equal(0u, result[4][0]);
-        Assert.All(result[6], count => Assert.Equal(0u, count));
-        Assert.Equal((uint)available, result[8][0]);
-        Assert.Equal(new uint[] { (uint)(requests - available), 0 }, result[11]);
+            new BufferInput("PageAllocation", [1024, 1024, capacity, 1, 10, 8, 63, 1], ResourceBindingType.ConstantBuffer, 0),
+            new BufferInput("ShadowViews", MemoryMarshal.Cast<VirtualShadowView, uint>(new[] { view }.AsSpan()).ToArray(),
+                ResourceBindingType.BufferSrv, VirtualShadowView.SizeInBytes),
+            new BufferInput("RequestedPageIndices", Enumerable.Range(0, requests).Select(index => (uint)index).ToArray(), ResourceBindingType.BufferSrv, 4),
+            new BufferInput("RequestedPageCount", [requests], ResourceBindingType.BufferSrv, 4),
+            new BufferInput("RequestedPageFlags", Enumerable.Repeat(1u, 1024).ToArray(), ResourceBindingType.BufferSrv, 4),
+            new BufferInput("ShadowPageTable", table, ResourceBindingType.BufferUav, 4),
+            new BufferInput("PhysicalPageOwners", owners, ResourceBindingType.BufferUav, 4),
+            new BufferInput("PageMetadata", new uint[capacity * 8], ResourceBindingType.BufferUav, VirtualShadowPageMetadata.SizeInBytes),
+            new BufferInput("ShadowPageLists", lists, ResourceBindingType.BufferUav, 4),
+            new BufferInput("ActivePhysicalPages", new uint[capacity * 4], ResourceBindingType.BufferUav, 16),
+            new BufferInput("ActivePhysicalPageCount", [0], ResourceBindingType.BufferUav, 4),
+            new BufferInput("UncachedPageRectBounds", [uint.MaxValue, uint.MaxValue, 0, 0], ResourceBindingType.BufferUav, 16),
+            new BufferInput("RasterTargetPageHierarchy", new uint[63 * 2], ResourceBindingType.BufferUav, 8),
+            new BufferInput("ShadowAllocationFailures", [0, 0, 0], ResourceBindingType.BufferUav, 4),
+            new BufferInput("PageReceiverMaskMip1", null, ResourceBindingType.TextureUav, 0),
+            new BufferInput("PageReceiverMaskMip2", null, ResourceBindingType.TextureUav, 0),
+            new BufferInput("PageReceiverMaskMip3", null, ResourceBindingType.TextureUav, 0),
+            new BufferInput("PageReceiverMaskMip4", null, ResourceBindingType.TextureUav, 0),
+            new BufferInput("PageReceiverMaskMip5", null, ResourceBindingType.TextureUav, 0),
+            new BufferInput("PageReceiverMaskMip6", null, ResourceBindingType.TextureUav, 0),
+            new BufferInput("PageReceiverMaskMip7", null, ResourceBindingType.TextureUav, 0),
+        ], [new WritableImage("PageReceiverMasks", 32, 64)]);
+        Assert.Equal(0u, result[3][2 * (capacity + 1) - 1]);
+        Assert.Equal((uint)available, result[3][4 * (capacity + 1) - 1]);
+        Assert.Equal((uint)available, result[5][0]);
+        Assert.Equal(new uint[] { (uint)(requests - available), 0, 0 }, result[8]);
         var allocated = new HashSet<uint>();
         var activeTables = new HashSet<uint>();
         for (int index = 0; index < available; index++)
         {
-            uint page = result[7][index * 4], entry = result[7][index * 4 + 1];
+            uint page = result[4][index * 4], entry = result[4][index * 4 + 1];
             Assert.True(allocated.Add(page));
             Assert.True(activeTables.Add(entry));
             Assert.InRange(page, 0u, (uint)available - 1u);
             Assert.InRange(entry, 0u, requests - 1u);
-            Assert.Equal(page + 1, result[0][entry * 4]);
-            Assert.Equal(5u, result[0][entry * 4 + 3]);
+            Assert.Equal(VirtualShadowPageEntry.Encode(page, 16) & 0x000fffffu, result[0][entry] & 0x000fffffu);
+            Assert.NotEqual(0u, result[0][entry] & 0x40000000u);
             Assert.Equal(entry, result[1][page]);
-            Assert.Equal(10u, result[2][page * 4]);
+            Assert.Equal(10u, result[2][page * 8]);
+            Assert.Equal(5u, result[2][page * 8 + 6]);
         }
         for (int page = freeCount; page < available; page++)
-            Assert.Equal(0u, result[0][(512 + page) * 4]);
+            Assert.Equal(0u, result[0][512 + page]);
     }
 
     [Fact]
     public void Dirty_casters_invalidate_both_transforms_and_dilated_coarse_pages_with_overlapping_groups()
     {
         const int dimension = 16, pages = 320;
-        uint[] views = new uint[44];
-        Matrix4x4 matrix = Matrix4x4.Identity;
-        MemoryMarshal.Write(MemoryMarshal.AsBytes(views.AsSpan()), in matrix);
-        views[16] = 2048; views[17] = 128; views[21] = unchecked((uint)-3);
-        views[24] = 9; views[25] = 5; views[34] = 2; views[37] = 1;
-        var table = new uint[pages * 4];
+        VirtualShadowView view = new()
+        {
+            LightViewProjection = Matrix4x4.Identity,
+            VirtualResolution = 2048, PageSize = 128, PhysicalPagesPerRow = 32,
+            MaxPhysicalPages = pages, VirtualPageOriginX = -3, VirtualPageOriginY = 5,
+            CacheGeneration = 9, MipLevelCount = 2, LightKind = VirtualShadowLightKind.Point,
+        };
+        var table = new uint[pages];
+        var metadata = new VirtualShadowPageMetadata[pages];
         for (int level = 0; level < 2; level++)
         for (int y = 0; y < (dimension >> level); y++)
         for (int x = 0; x < (dimension >> level); x++)
@@ -124,10 +136,8 @@ public sealed class VirtualShadowPageTests(D3D12TestCompiler shaderCompiler)
             int wx = (level == 0 ? -3 : -2) + x, wy = (level == 0 ? 5 : 2) + y;
             int size = dimension >> level;
             int entry = level * 256 + (wy & (size - 1)) * size + (wx & (size - 1));
-            table[entry * 4] = (uint)entry + 1;
-            table[entry * 4 + 1] = unchecked((uint)wx);
-            table[entry * 4 + 2] = unchecked((uint)wy);
-            table[entry * 4 + 3] = 9;
+            table[entry] = VirtualShadowPageEntry.Encode((uint)entry, 32);
+            metadata[entry] = new() { Generation = 9, WorldPageX = wx, WorldPageY = wy };
         }
         // Three casters share one root. Only IDs 0 and 2 are dirty; ID 1 must leave its region intact.
         uint[] bounds = new uint[3 * 16];
@@ -142,15 +152,20 @@ public sealed class VirtualShadowPageTests(D3D12TestCompiler shaderCompiler)
         }
         uint[][] result = new D3D12TestCompute(shaderCompiler).Execute("vsm_caster_invalidation.slang", "InvalidateMovedVirtualShadowCasters", new(2, 1, 1),
         [
-            ([2, 1, pages, 1, 10, 46, 2, 0], ResourceBindingType.ConstantBuffer, 0),
-            (views, ResourceBindingType.BufferSrv, 176), (bounds, ResourceBindingType.BufferSrv, 16),
-            ([0, 2], ResourceBindingType.BufferSrv, 4),
-            (new uint[pages], ResourceBindingType.BufferSrv, 4),
-            (new uint[pages], ResourceBindingType.BufferSrv, 4),
-            (new uint[pages * 4], ResourceBindingType.BufferSrv, 16),
-            (Enumerable.Repeat(uint.MaxValue, 46).ToArray(), ResourceBindingType.BufferSrv, 4),
-            ([0, 0, 15, 15, 0, 0, 7, 7], ResourceBindingType.BufferSrv, 16),
-            (table, ResourceBindingType.BufferUav, 16),
+            new BufferInput("Invalidation", [2, 1, pages, 1, 10, 46, 2, 0], ResourceBindingType.ConstantBuffer, 0),
+            new BufferInput("ShadowViews", MemoryMarshal.Cast<VirtualShadowView, uint>(new[] { view }.AsSpan()).ToArray(),
+                ResourceBindingType.BufferSrv, VirtualShadowView.SizeInBytes),
+            new BufferInput("InstanceWorldBounds", bounds, ResourceBindingType.BufferSrv, 16),
+            new BufferInput("ChangedInstances", [0, 2], ResourceBindingType.BufferSrv, 4),
+            new BufferInput("RasterTargetDepthCacheClasses", [0], ResourceBindingType.BufferSrv, 4),
+            new BufferInput("PreviousDepthCacheClasses", [0], ResourceBindingType.BufferSrv, 4),
+            new BufferInput("LodWorldBounds", new uint[pages * 4], ResourceBindingType.BufferSrv, 16),
+            new BufferInput("RequestedPageFlags", new uint[pages], ResourceBindingType.BufferSrv, 4),
+            new BufferInput("AllocatedPageHierarchy", Enumerable.Repeat(uint.MaxValue, 46).ToArray(), ResourceBindingType.BufferSrv, 4),
+            new BufferInput("AllocatedPageRectBounds", [0, 0, 15, 15, 0, 0, 7, 7], ResourceBindingType.BufferSrv, 16),
+            new BufferInput("ShadowPageTable", table, ResourceBindingType.BufferUav, 4),
+            new BufferInput("PageMetadata", MemoryMarshal.Cast<VirtualShadowPageMetadata, uint>(metadata.AsSpan()).ToArray(),
+                ResourceBindingType.BufferUav, VirtualShadowPageMetadata.SizeInBytes),
         ]);
         HashSet<int> expected = [];
         foreach (float center in new[] { -0.5f, 0.25f })
@@ -166,8 +181,8 @@ public sealed class VirtualShadowPageTests(D3D12TestCompiler shaderCompiler)
         }
         for (int entry = 0; entry < pages; entry++)
         {
-            Assert.Equal(expected.Contains(entry) ? 0u : 9u, result[0][entry * 4 + 3]);
-            Assert.Equal(table[entry * 4], result[0][entry * 4]);
+            Assert.Equal(!expected.Contains(entry), (result[0][entry] & 0x80000000u) != 0u);
+            Assert.Equal(table[entry] & 0x000fffffu, result[0][entry] & 0x000fffffu);
         }
     }
 
@@ -198,17 +213,27 @@ public sealed class VirtualShadowPageTests(D3D12TestCompiler shaderCompiler)
             for (int axis = 0; axis < 3; axis++)
             { bounds[id * 16 + axis] = Float(-1000 - id); bounds[id * 16 + 4 + axis] = Float(1000 + id); }
         }
-        uint[] node = new uint[16];
-        node[0] = node[1] = node[2] = Float(-1);
-        node[4] = node[5] = node[6] = Float(1);
+        ClusterBVHNode node = new();
+        node.SetChild(0, new ClusterHierarchySlice { BoundsExtent = Vector3.One, PageRangeKey = 1 });
+        uint[] properties = new uint[12];
+        properties[1] = 0x80000000u;
+        properties[2] = 0x80000000u | count * 4u;
+        properties[3] = count * 4u;
+        properties[4] = count * 4u;
+        properties[5] = 0x80000000u | (uint)currentOffset;
+        properties[6] = 0x80000000u | (uint)previousOffset;
         uint[][] result = new D3D12TestCompute(shaderCompiler).Execute("cluster_scene_bounds.slang", "BuildClusterSceneBounds", new(3, 1, 1),
         [
-            ([(uint)count, history ? 1u : 0u, instanceGroups ? 1u : 0u, 0], ResourceBindingType.ConstantBuffer, 0),
-            (node, ResourceBindingType.BufferSrv, 64), (data, ResourceBindingType.BufferSrv, 0),
-            ([0x80000000, 0x80000000 | count * 4, 0, 0x80000000 | (uint)currentOffset,
-                0x80000000 | (uint)previousOffset], ResourceBindingType.ConstantBuffer, 0),
-            (order, ResourceBindingType.BufferSrv, 4), (new uint[3 * 8], ResourceBindingType.BufferUav, 16),
-            (bounds, ResourceBindingType.BufferUav, 16),
+            new BufferInput("Scene", [(uint)count, history ? 1u : 0u, instanceGroups ? 1u : 0u, 0], ResourceBindingType.ConstantBuffer, 0),
+            new BufferInput("GlobalBVH", MemoryMarshal.Cast<ClusterBVHNode, uint>(new[] { node }.AsSpan()).ToArray(), ResourceBindingType.BufferSrv, 0),
+            new BufferInput("InstanceData", data, ResourceBindingType.BufferSrv, 0),
+            new BufferInput("InstanceProperties", properties, ResourceBindingType.ConstantBuffer, 0),
+            new BufferInput("ClusterCurrentBounds", null, ResourceBindingType.BufferSrv, 16),
+            new BufferInput("ClusterPreviousBounds", null, ResourceBindingType.BufferSrv, 16),
+            new BufferInput("MaterialBounds", [1], ResourceBindingType.BufferSrv, 4),
+            new BufferInput("SceneInstances", order, ResourceBindingType.BufferSrv, 4),
+            new BufferInput("SceneChunks", new uint[3 * 8], ResourceBindingType.BufferUav, 16),
+            new BufferInput("InstanceWorldBounds", bounds, ResourceBindingType.BufferUav, 16),
         ]);
         for (int chunk = 0; instanceGroups && chunk < 3; chunk++)
         {

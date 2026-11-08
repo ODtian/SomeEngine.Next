@@ -35,9 +35,9 @@ struct SkinBoundsGroup
 struct SkinBoundsUse
 {
     uint output;
-    float error;
+    float minError;
     uint flags;
-    uint padding;
+    float maxParentError;
 };
 
 StructuredBuffer<float4x4> SkinCurrentBones;
@@ -140,8 +140,10 @@ void TransformSkinBounds(uint3 thread : SV_DispatchThreadID)
         uint address = (control.output + use.output) * 48u;
         if (use.flags == 3u)
         {
-            SkinCurrentBounds.Store4(address, asuint(float4(currentMin, use.error * currentStretch)));
-            SkinPreviousBounds.Store4(address, asuint(float4(previousMin, use.error * previousStretch)));
+            SkinCurrentBounds.Store4(address, asuint(float4(currentMin, use.minError * currentStretch)));
+            SkinPreviousBounds.Store4(address, asuint(float4(previousMin, use.minError * previousStretch)));
+            SkinCurrentBounds.Store4(address + 16u, asuint(float4(currentMax, use.maxParentError * currentStretch)));
+            SkinPreviousBounds.Store4(address + 16u, asuint(float4(previousMax, use.maxParentError * previousStretch)));
         }
         else
         {
@@ -150,17 +152,16 @@ void TransformSkinBounds(uint3 thread : SV_DispatchThreadID)
             {
                 SkinCurrentBounds.Store3(address, asuint(currentMin));
                 SkinPreviousBounds.Store3(address, asuint(previousMin));
+                SkinCurrentBounds.Store3(address + 16u, asuint(currentMax));
+                SkinPreviousBounds.Store3(address + 16u, asuint(previousMax));
             }
             if ((use.flags & 2u) != 0u)
             {
-                SkinCurrentBounds.Store(address + 12u, asuint(use.error * currentStretch));
-                SkinPreviousBounds.Store(address + 12u, asuint(use.error * previousStretch));
+                SkinCurrentBounds.Store(address + 12u, asuint(use.minError * currentStretch));
+                SkinPreviousBounds.Store(address + 12u, asuint(use.minError * previousStretch));
+                SkinCurrentBounds.Store(address + 28u, asuint(use.maxParentError * currentStretch));
+                SkinPreviousBounds.Store(address + 28u, asuint(use.maxParentError * previousStretch));
             }
-        }
-        if ((use.flags & 1u) != 0u)
-        {
-            SkinCurrentBounds.Store4(address + 16u, asuint(float4(currentMax, 0.0)));
-            SkinPreviousBounds.Store4(address + 16u, asuint(float4(previousMax, 0.0)));
         }
         if ((use.flags & 2u) != 0u)
         {

@@ -29,21 +29,12 @@
               "0",
               "0"
             ],
-            "EntryPoint": "ClusterShadowReceiver"
+            "EntryPoint": "ClusterShadowRequests"
           },
           {
             "Arguments": [
               "0",
-              "0",
-              "false"
-            ],
-            "EntryPoint": "ClusterForwardShade"
-          },
-          {
-            "Arguments": [
-              "0",
-              "0",
-              "true"
+              "0"
             ],
             "EntryPoint": "ClusterForwardShade"
           },
@@ -58,21 +49,12 @@
               "0",
               "8"
             ],
-            "EntryPoint": "ClusterShadowReceiver"
+            "EntryPoint": "ClusterShadowRequests"
           },
           {
             "Arguments": [
               "0",
-              "8",
-              "false"
-            ],
-            "EntryPoint": "ClusterForwardShade"
-          },
-          {
-            "Arguments": [
-              "0",
-              "8",
-              "true"
+              "8"
             ],
             "EntryPoint": "ClusterForwardShade"
           }

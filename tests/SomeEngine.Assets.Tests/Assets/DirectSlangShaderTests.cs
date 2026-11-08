@@ -279,18 +279,26 @@ public sealed class DirectSlangShaderTests
         byte[] lowCode = GetCode(low, 0, lowEntry);
         Assert.False(highCode.AsSpan().SequenceEqual(lowCode));
 
-        using var savedCode = new ShaderBlock();
+        block.Specializations.Add(new() { EntryPoint = "Compute", Arguments = ["HighQuality"] });
+        block.Specializations.Add(new() { EntryPoint = "Compute", Arguments = ["LowQuality"] });
+        using var asset = new ShaderAsset { Name = "SpecializedSourceBlock" };
+        asset.SetBlock(block);
+        await asset.CompileAsync(slang, sessionDescription);
+        ShaderBlock savedCode = asset.GetBlock<ShaderBlock>();
+        ShaderSourceBlock savedSource = asset.GetBlock<ShaderSourceBlock>();
         Shader savedBlockHigh = await savedCode.CreateAsync(
-            block,
+            savedSource,
             slang,
             sessionDescription,
             "saved-high",
+            "Compute",
             new[] { SpecializationArg.FromExpression("HighQuality") });
         Shader savedBlockLow = await savedCode.CreateAsync(
-            block,
+            savedSource,
             slang,
             sessionDescription,
             "saved-low",
+            "Compute",
             new[] { SpecializationArg.FromExpression("LowQuality") });
         Assert.True(savedBlockHigh.TryGetSlangEntry(
             0,

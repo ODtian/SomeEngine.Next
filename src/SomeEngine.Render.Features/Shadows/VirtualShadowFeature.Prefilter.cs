@@ -51,7 +51,7 @@ public sealed partial class VirtualShadowFeature
     private enum PrefilterResource
     {
         Uniforms, Views, PreviousViews, Projections, PageReferences, Pages, Depth,
-        AxisX, Separate, Merged, ReceiverMasks, PreviousPages, PreviousMasks, RequestFlags, RequestFrames, WorkPages, PageCount, SelectedPages, Arguments,
+        AxisX, Separate, Merged, ReceiverMasks, PreviousPages, PreviousMasks, RequestFlags, WorkPages, PageCount, SelectedPages, Arguments,
     }
 
     private void InstallPrefilter(ref RenderGraphEdit edit, VirtualShadowMapShaders shaders, uint entryCapacity,
@@ -108,7 +108,6 @@ public sealed partial class VirtualShadowFeature
         _prefilterRequestPass = AddComputePass(ref edit, "Propagate virtual shadow filtered receiver requests",
             _prefilterRequestPipeline, new VirtualShadowDispatchPassData(default), prepare);
         BindCoarseMark(ref edit, _prefilterRequestPass, _prefilterUniforms[6]);
-        edit.OrderAfter(_prefilterRequestPass, _markPass);
         edit.OrderAfter(_prefilterRequestPass, _coarseMarkPass);
         edit.OrderAfter(_poolPreparePass, _prefilterRequestPass);
         var initialize = new PrefilterInitializeData(_prefilterAxisX, _prefilterSeparate, _prefilterMerged,
@@ -137,7 +136,6 @@ public sealed partial class VirtualShadowFeature
                 "FilterPreviousPageTable" => PrefilterResource.PreviousPages,
                 "FilterPreviousReceiverMasks" => PrefilterResource.PreviousMasks,
                 "FilterRequestFlags" => PrefilterResource.RequestFlags,
-                "FilterRequestFrames" => PrefilterResource.RequestFrames,
                 "FilterPages" => PrefilterResource.WorkPages,
                 "FilterPageCount" => PrefilterResource.PageCount,
                 "SelectedFilterPages" => PrefilterResource.SelectedPages,
@@ -185,7 +183,6 @@ public sealed partial class VirtualShadowFeature
         switch (resource)
         {
             case PrefilterResource.RequestFlags: _ = pass.Bind(edit.CreateBufferSrv(_requestedPageFlags, structureStride: sizeof(uint)), sync); break;
-            case PrefilterResource.RequestFrames: _ = pass.Bind(edit.CreateBufferSrv(_requestedPages, structureStride: sizeof(uint)), sync); break;
             case PrefilterResource.WorkPages: _ = pass.Bind(edit.CreateBufferSrv(_prefilterPages, structureStride: sizeof(uint)), sync, BufferContentScope.CountBoundedPrefix); break;
             case PrefilterResource.PageCount: _ = pass.Bind(edit.CreateBufferSrv(_prefilterArguments), sync); break;
             case PrefilterResource.SelectedPages: _ = pass.Bind(edit.CreateBufferUav(_prefilterPages, structureStride: sizeof(uint)), sync, GraphAccessMode.Write, WriteCoverage.Partial, contentScope: BufferContentScope.CountBoundedPrefix); break;

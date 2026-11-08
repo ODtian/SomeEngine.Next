@@ -6,8 +6,8 @@ namespace SomeEngine.Render.Features.Shadows;
 
 public sealed partial class VirtualShadowFeature
 {
-    private uint ReceiverMaskColumns => checked((uint)Math.Ceiling(Math.Sqrt(_sourceViewCapacity * 1.5)));
-    private uint ReceiverMaskWidth => ReceiverMaskColumns * _shadowMap.Settings.VirtualPagesPerRow * 2u;
+    private uint ReceiverMaskColumns => checked((uint)Math.Ceiling(Math.Sqrt(_sourceViewCapacity * 3.0)));
+    private uint ReceiverMaskWidth => ReceiverMaskColumns * _shadowMap.Settings.VirtualPagesPerRow;
     private uint ReceiverMaskHeight => DivideRoundUp(_sourceViewCapacity, ReceiverMaskColumns) * _shadowMap.Settings.VirtualPagesPerRow * 3u;
     private uint ReceiverMaskMipCount => Math.Min(checked((uint)BitOperations.Log2(_shadowMap.Settings.VirtualPagesPerRow) + 1u), 8u);
 
@@ -36,6 +36,8 @@ public sealed partial class VirtualShadowFeature
             PipelineSync.ComputeShading, BufferContentScope.CountBoundedPrefix);
         _ = pass.Bind(graph.CreateTextureUav(_pageReceiverMasks, new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Color),
             Format.R32UInt, SomeEngine.Graphics.TextureViewDimension.Texture2D),
+            PipelineSync.ComputeShading, GraphAccessMode.Write, WriteCoverage.Partial);
+        _ = pass.Bind(graph.CreateBufferUav(_requestedPageFlags, structureStride: sizeof(uint)),
             PipelineSync.ComputeShading, GraphAccessMode.Write, WriteCoverage.Partial);
         BindReceiverMaskMips(ref graph, ref pass, GraphAccessMode.Write, WriteCoverage.Partial);
     }

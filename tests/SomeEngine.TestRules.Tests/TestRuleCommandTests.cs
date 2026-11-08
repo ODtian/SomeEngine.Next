@@ -157,7 +157,11 @@ public class TestRuleCommandTests
         {
             Project = Path.Combine(directory, "tests", projectName, projectName + ".csproj");
             var repository = FindRepository();
-            foreach (var relative in new[] { "Directory.Build.props", "Directory.Build.targets", "tools/Check-TestRules.ps1", "tools/TestRules/CheckTestRules.cs", "tools/TestRules/SomeEngine.TestRules.csproj" })
+            foreach (var relative in new[]
+            {
+                "Directory.Build.props", "Directory.Build.targets", "src/SomeEngine.Views/buildTransitive/SomeEngine.Views.targets",
+                "tools/Check-TestRules.ps1", "tools/TestRules/CheckTestRules.cs", "tools/TestRules/SomeEngine.TestRules.csproj",
+            })
                 Write(relative, File.ReadAllText(Path.Combine(repository, relative)));
             Write($"tests/{projectName}/{projectName}.csproj", "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net10.0</TargetFramework><IsTestProject>true</IsTestProject></PropertyGroup></Project>");
         }

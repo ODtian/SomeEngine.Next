@@ -105,7 +105,7 @@ float VirtualShadowFilterPrevious(VirtualShadowMapParameters view, uint viewInde
     if ((FilterPreviousPageTable[previousIndex] & VSM_PAGE_PARTIAL_DEPTH) != 0u)
     {
         uint2 cell = (previousPixel & (previous.PageSize - 1u)) * 8u / previous.PageSize;
-        uint4 mask = LoadVirtualShadowReceiverMask(FilterPreviousReceiverMasks, previous, 0u,
+        uint2 mask = LoadVirtualShadowReceiverMask(FilterPreviousReceiverMasks, previous, 0u,
             previousPixel / previous.PageSize, Prefilter.WriteLayer ^ 1u);
         if (!VirtualShadowReceiverMaskCell(mask, cell)) return current;
     }
@@ -132,12 +132,10 @@ void PrefilterVirtualShadowDistant(uint3 thread : SV_DispatchThreadID, uint3 gro
             Prefilter.ViewCount, Prefilter.EntryCount, atlasPage, view, viewIndex, page)) return;
         uint destination = Prefilter.WriteLayer * Prefilter.EntryCapacity + index;
         FilterPreviousPageTable[destination] = FilterPageTable[index];
-        uint4 masks = LoadVirtualShadowReceiverMask(FilterReceiverMasks, view, 0u, page);
-        uint2 address = VirtualShadowReceiverMaskOrigin(view, 0u) + page * 2u;
+        uint2 masks = LoadVirtualShadowReceiverMask(FilterReceiverMasks, view, 0u, page);
+        uint2 address = VirtualShadowReceiverMaskOrigin(view, 0u) + page * uint2(1u, 2u);
         FilterPreviousReceiverMasks[uint3(address, Prefilter.WriteLayer)] = masks.x;
-        FilterPreviousReceiverMasks[uint3(address + uint2(1,0), Prefilter.WriteLayer)] = masks.y;
-        FilterPreviousReceiverMasks[uint3(address + uint2(0,1), Prefilter.WriteLayer)] = masks.z;
-        FilterPreviousReceiverMasks[uint3(address + 1u.xx, Prefilter.WriteLayer)] = masks.w;
+        FilterPreviousReceiverMasks[uint3(address + uint2(0, 1), Prefilter.WriteLayer)] = masks.y;
         return;
     }
     bool border = Prefilter.Mode == 2u || Prefilter.Mode == 4u;

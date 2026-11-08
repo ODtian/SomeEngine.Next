@@ -353,54 +353,61 @@ public sealed class SkinBoundsFeature : IClusterBoundsSource, IGraphResourceProv
         for (int index = 0; index < sourceLod.Length; index++)
             if (sourceLod[index].ParentGroup >= 0) lodGroups[sourceLod[index].ParentGroup].Boxes.Add(sourceBoxes[index]);
         var lodBoxes = lodGroups.ToDictionary(pair => pair.Key, pair => MergeBoxes(pair.Value.Boxes.SelectMany(boxes => boxes)));
-        var groups = new SkinJointBounds[nodes.Length + mesh.ClusterGeometryIndices.Length][];
+        int sliceCount = nodes.Length * ClusterBVHNode.ChildCount;
+        var groups = new SkinJointBounds[sliceCount + mesh.ClusterGeometryIndices.Length][];
         var selection = new SkinJointBounds[groups.Length][];
-        var errors = new float[groups.Length];
+        var minErrors = new float[groups.Length];
+        var maxErrors = new float[groups.Length];
         var pageStarts = new uint[mesh.PageCount];
         for (int page = 1; page < pageStarts.Length; page++) pageStarts[page] = pageStarts[page - 1] + mesh.PageDigests[page - 1].ClusterCount;
         for (int cluster = 0; cluster < mesh.ClusterGeometryIndices.Length; cluster++)
         {
             uint source = mesh.ClusterGeometryIndices[cluster];
-            int output = nodes.Length + cluster;
+            int output = sliceCount + cluster;
             groups[output] = sourceBoxes[source];
             SkinClusterLod lod = sourceLod[source];
             selection[output] = lod.Level == 0 ? groups[output] : lodBoxes[lod.Group];
-            errors[output] = lod.Level == 0 ? 0 : lodGroups[lod.Group].Error;
+            minErrors[output] = lod.Level == 0 ? 0 : lodGroups[lod.Group].Error;
+            maxErrors[output] = lod.ParentGroup < 0 ? float.PositiveInfinity : lodGroups[lod.ParentGroup].Error;
         }
-        for (int index = 0; index < nodes.Length; index++)
-        {
-            ClusterBVHNode node = nodes[index];
-            uint first = node.ChildPointer, count = node.ChildCount;
-            if (node.NodeType != 0)
+        for (int index = nodes.Length - 1; index >= 0; index--)
+            for (int child = 0; child < ClusterBVHNode.ChildCount; child++)
             {
-                node.GetLeafData(out uint start, out count);
-                first = (uint)nodes.Length + pageStarts[node.ChildPointer] + start;
+                int output = index * ClusterBVHNode.ChildCount + child;
+                ClusterHierarchySlice slice = nodes[index].GetChild(child);
+                if (!slice.IsEnabled) { groups[output] = []; selection[output] = []; continue; }
+                uint first = slice.IsLeaf
+                    ? (uint)sliceCount + pageStarts[slice.ChildReference >> 8] + slice.FirstCluster
+                    : slice.ChildReference * ClusterBVHNode.ChildCount;
+                uint count = slice.IsLeaf ? slice.ClusterCount : ClusterBVHNode.ChildCount;
+                groups[output] = MergeBoxes(groups.Skip((int)first).Take((int)count).SelectMany(boxes => boxes));
+                if (slice.IsLeaf)
+                {
+                    uint source = mesh.ClusterGeometryIndices[(int)(first - (uint)sliceCount)];
+                    int parentGroup = sourceLod[source].ParentGroup;
+                    selection[output] = parentGroup >= 0 ? lodBoxes[parentGroup] : groups[output];
+                }
+                else selection[output] = MergeBoxes(selection.Skip((int)first).Take((int)count).SelectMany(boxes => boxes));
+                minErrors[output] = float.PositiveInfinity;
+                for (uint item = first; item < first + count; item++)
+                {
+                    if (groups[item].Length == 0) continue;
+                    minErrors[output] = Math.Min(minErrors[output], minErrors[item]);
+                    maxErrors[output] = Math.Max(maxErrors[output], maxErrors[item]);
+                }
             }
-            groups[index] = MergeBoxes(groups.Skip((int)first).Take((int)count).SelectMany(boxes => boxes));
-            if (node.NodeType == 0)
-            {
-                selection[index] = MergeBoxes(selection.Skip((int)first).Take((int)count).SelectMany(boxes => boxes));
-                for (uint child = 0; child < count; child++) errors[index] = Math.Max(errors[index], errors[first + child]);
-            }
-            else
-            {
-                int parent = (int)node.BoundMax.W - 1;
-                selection[index] = parent >= 0 ? lodBoxes[parent] : groups[index];
-                errors[index] = parent >= 0 ? lodGroups[parent].Error : node.LODError;
-            }
-        }
         var boxes = new List<Box>();
         var locations = new Dictionary<SkinJointBounds[], uint>();
         var influenceRanges = new List<InfluenceRange>();
         var ranges = new BoundsGroup[groups.Length];
         for (int group = 0; group < groups.Length; group++)
-            ranges[group] = new(AddBoxes(groups[group]), AddBoxes(selection[group]), errors[group]);
+            ranges[group] = new(AddBoxes(groups[group]), AddBoxes(selection[group]), minErrors[group], maxErrors[group]);
         var rangeUses = Enumerable.Range(0, influenceRanges.Count).Select(_ => new List<RangeUse>()).ToArray();
         for (uint group = 0; group < ranges.Length; group++)
         {
             BoundsGroup bounds = ranges[group];
-            rangeUses[bounds.Cull].Add(new(group, bounds.Error, bounds.Cull == bounds.Lod ? 3u : 1u, 0));
-            if (bounds.Cull != bounds.Lod) rangeUses[bounds.Lod].Add(new(group, bounds.Error, 2u, 0));
+            rangeUses[bounds.Cull].Add(new(group, bounds.MinError, bounds.Cull == bounds.Lod ? 3u : 1u, bounds.MaxParentError));
+            if (bounds.Cull != bounds.Lod) rangeUses[bounds.Lod].Add(new(group, bounds.MinError, 2u, bounds.MaxParentError));
         }
         var uses = new List<RangeUse>();
         for (int range = 0; range < influenceRanges.Count; range++)
@@ -449,7 +456,7 @@ public sealed class SkinBoundsFeature : IClusterBoundsSource, IGraphResourceProv
     private readonly record struct GeometryKey(ReadOnlyMemory<byte> Bvh, ImmutableArray<uint> Clusters, ClusterSkinBounds Data);
     private readonly record struct BoundsChanges(SkinBoundsFeature Feature, bool MembersChanged);
     private readonly record struct InfluenceRange(uint First, uint Count, uint FirstUse, uint UseCount);
-    private readonly record struct BoundsGroup(uint Cull, uint Lod, float Error);
+    private readonly record struct BoundsGroup(uint Cull, uint Lod, float MinError, float MaxParentError);
     private sealed record GeometryBounds(uint NodeCount, uint OutputCount, InfluenceRange[] Ranges, RangeUse[] Uses, Box[] Boxes);
     private sealed class LodGroup
     {
@@ -460,7 +467,7 @@ public sealed class SkinBoundsFeature : IClusterBoundsSource, IGraphResourceProv
         uint Update, uint JointCount, uint Pad0, uint Pad1, uint Pad2);
     [StructLayout(LayoutKind.Sequential)] private readonly record struct Work(uint Instance, uint FirstBox, uint BoxCount,
         uint FirstUse, uint UseCount, uint Pad0, uint Pad1, uint Pad2);
-    [StructLayout(LayoutKind.Sequential)] private readonly record struct RangeUse(uint Output, float Error, uint Flags, uint Pad);
+    [StructLayout(LayoutKind.Sequential)] private readonly record struct RangeUse(uint Output, float MinError, uint Flags, float MaxParentError);
     [StructLayout(LayoutKind.Sequential)] private readonly record struct Box(Vector3 Center, uint Joint, Vector3 Extent, uint Pad);
     private sealed class MeshBounds(Entity entity)
     {

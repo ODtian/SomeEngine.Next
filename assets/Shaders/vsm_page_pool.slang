@@ -17,7 +17,7 @@ struct VirtualShadowPagePoolUniforms
 ConstantBuffer<VirtualShadowPagePoolUniforms> PagePool;
 StructuredBuffer<VirtualShadowMapParameters> ShadowViews;
 RWStructuredBuffer<uint> ShadowPageTable;
-StructuredBuffer<uint> RequestedShadowPages;
+StructuredBuffer<uint> RequestedPageFlags;
 StructuredBuffer<uint> RequestedPageCount;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
 RWByteAddressBuffer PageRequestDispatchArgs;
@@ -203,7 +203,7 @@ void BuildVirtualShadowPagePool(uint3 threadId : SV_DispatchThreadID, uint group
         ShadowPageLists[lruIndex] = VSM_UNOWNED_PAGE;
         return;
     }
-    if (RequestedShadowPages[owner] == PagePool.FrameIndex)
+    if (RequestedPageFlags[owner] != 0u)
     {
         AppendShadowPage(VSM_PAGE_LIST_REQUESTED, capacity, atlasPage);
         ShadowPageLists[lruIndex] = VSM_UNOWNED_PAGE;

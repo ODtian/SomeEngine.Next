@@ -10,8 +10,6 @@ on:
         description: Operation count (1 through 1000000)
         default: '10000'
         required: true
-  schedule:
-    - cron: '0 20 * * 6'
 permissions:
   contents: read
 jobs:

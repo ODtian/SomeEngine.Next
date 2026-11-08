@@ -22,7 +22,6 @@ StructuredBuffer<uint> ChangedInstances;
 #include "cluster_depth_cache.slang"
 StructuredBuffer<uint> PreviousDepthCacheClasses;
 StructuredBuffer<float4> LodWorldBounds;
-StructuredBuffer<uint> RequestedShadowPages;
 StructuredBuffer<uint> RequestedPageFlags;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.Atomic)]
 RWStructuredBuffer<VirtualShadowPageMetadata> PageMetadata;
@@ -193,7 +192,7 @@ void InvalidateBoundsInView(
                     continue;
                 if (PageMetadata[atlasPage].Generation != view.CacheGeneration || any(PageMetadata[atlasPage].WorldPage != worldPage)) continue;
                 uint requestFlags = PageMetadata[atlasPage].RequestFlags;
-                if (RequestedShadowPages[tableIndex] == Invalidation.FrameIndex)
+                if (RequestedPageFlags[tableIndex] != 0u)
                     requestFlags = RequestedPageFlags[tableIndex];
                 uint ignored;
                 if (deferred)

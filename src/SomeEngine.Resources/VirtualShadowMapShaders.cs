@@ -8,26 +8,10 @@ public sealed class VirtualShadowMapShaders
     /// <summary>Owned blue-noise pixels; GPU data uses the existing texture device path.</summary>
     public Texture? BlueNoise { get; init; }
     public string? Name { get; init; }
-    public Shader? ProjectDirectionalLightsShader { get; init; }
-    public EntryPointReflection ProjectDirectionalLights { get; init; }
-    public Shader? ProjectLocalLightsShader { get; init; }
-    public EntryPointReflection ProjectLocalLights { get; init; }
-    public Shader? FroxelBuildShader { get; init; }
-    public EntryPointReflection FroxelBuild { get; init; }
-    public Shader? FroxelArgumentsShader { get; init; }
-    public EntryPointReflection FroxelArguments { get; init; }
-    public Shader? FroxelMarkShader { get; init; }
-    public EntryPointReflection FroxelMark { get; init; }
-    public Shader? FroxelPixelShader { get; init; }
-    public EntryPointReflection FroxelPixel { get; init; }
     public Shader? ResetReceiverMasksShader { get; init; }
     public EntryPointReflection ResetReceiverMasks { get; init; }
     public Shader? ResetFrameShader { get; init; }
     public EntryPointReflection ResetFrame { get; init; }
-    public Shader? MarkDepthPagesShader { get; init; }
-    public EntryPointReflection MarkDepthPages { get; init; }
-    public Shader? MarkPagesShader { get; init; }
-    public EntryPointReflection MarkPages { get; init; }
     public Shader? MarkCoarsePagesShader { get; init; }
     public EntryPointReflection MarkCoarsePages { get; init; }
     public Shader? AllocatePagesShader { get; init; }

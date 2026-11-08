@@ -195,6 +195,8 @@ public sealed class TypedPropertyAnimationTests
         var spring = Spec.Spring<float, FloatOps>();
         PropertyAnimation.Declare(world, target, FieldPanelChannels.Opacity, tween);
         PropertyAnimation.Declare(world, target, FieldPanelChannels.Opacity, spring);
+        var timelines = world.Query(world.QueryDefinition().Read<Timeline>());
+        uint members = world.MembershipVersion(timelines);
         using var changes = world.ObserveEntityTables();
         changes.Accept(changes.Read());
         int count = world.EntityCount;
@@ -209,7 +211,9 @@ public sealed class TypedPropertyAnimationTests
         }
 
         Assert.Equal(count, world.EntityCount);
-        Assert.Equal(0, changes.Read().Count);
+        Assert.Equal(members, world.MembershipVersion(timelines));
+        Assert.Equal(target, Assert.Single(changes.Read().Entities));
+        world.ReleaseQuery(timelines);
     }
 
     [Fact]

@@ -43,32 +43,55 @@ public sealed class ClusteredLightingTests(D3D12TestCompiler shaderCompiler)
         }
         uint[] grid = Enumerable.Repeat(untouched, cells * views * 2).ToArray();
         uint[] indices = Enumerable.Repeat(untouched, cells * views * capacity).ToArray();
-        uint[][] cleared = Dispatch("ClearClusteredLightGrid", new(cells / 64, views, 1), grid, indices);
-        Assert.All(cleared[0], value => Assert.Equal(0u, value));
+        uint[] links = Enumerable.Repeat(untouched, indices.Length * 2).ToArray();
+        uint[][] cleared = Dispatch("ClearClusteredLightGrid", new(cells / 64, views, 1),
+            [grid, indices, links, [untouched, untouched], [untouched]]);
+        for (int cell = 0; cell < cells * views; cell++)
+        {
+            Assert.Equal(uint.MaxValue, cleared[0][cell * 2]);
+            Assert.Equal(0u, cleared[0][cell * 2 + 1]);
+        }
         Assert.All(cleared[1], value => Assert.Equal(untouched, value));
+        Assert.All(cleared[2], value => Assert.Equal(untouched, value));
+        Assert.Equal([0u, 0u], cleared[3]);
+        Assert.Equal([0u], cleared[4]);
         uint[][] assigned = lightCount == 0 ? cleared : Dispatch("BuildClusteredLightGrid",
-            new((uint)lightCount, views, sliceGroups), cleared[0], cleared[1]);
+            new((uint)lightCount, views, sliceGroups), cleared);
+        uint[][] compacted = Dispatch("CompactClusteredLightGrid", new(cells / 64, views, 1), assigned);
+        uint requested = (uint)((large ? cells : 1) * lightCount);
+        uint retained = Math.Min(requested, (uint)indices.Length);
+        Assert.Equal([retained, retained], compacted[3]);
+        Assert.Equal([requested > retained ? 1u : 0u], compacted[4]);
+        uint total = 0;
         for (int cell = 0; cell < cells * views; cell++)
         {
             // Small spheres lie strictly within tile (4, 1), depth slice 1.
             bool covered = cell < cells && (large || cell == (1 * 4 + 1) * 8 + 4);
             uint count = covered ? (uint)lightCount : 0;
-            Assert.Equal(0u, assigned[0][cell * 2]);
-            Assert.Equal(count, assigned[0][cell * 2 + 1]);
-            int valid = Math.Min((int)count, capacity);
-            uint[] prefix = assigned[1].AsSpan(cell * capacity, valid).ToArray();
-            Assert.Equal(valid, prefix.Distinct().Count());
+            uint first = compacted[0][cell * 2], stored = compacted[0][cell * 2 + 1];
+            Assert.InRange(stored, 0u, count);
+            if (requested <= retained) Assert.Equal(count, stored);
+            Assert.InRange(first + stored, 0u, retained);
+            uint[] prefix = compacted[1].AsSpan((int)first, (int)stored).ToArray();
+            Assert.Equal((int)stored, prefix.Distinct().Count());
             Assert.All(prefix, value => Assert.InRange(value, (uint)directional, (uint)(directional + lightCount - 1)));
-            Assert.All(assigned[1].AsSpan(cell * capacity + valid, capacity - valid).ToArray(),
-                value => Assert.Equal(untouched, value));
+            total += stored;
         }
+        Assert.Equal(retained, total);
+        Assert.All(compacted[1].AsSpan((int)retained).ToArray(), value => Assert.Equal(untouched, value));
 
-        uint[][] Dispatch(string entry, DispatchArguments dispatch, uint[] counts, uint[] output) =>
+        uint[][] Dispatch(string entry, DispatchArguments dispatch, uint[][] output) =>
             new D3D12TestCompute(shaderCompiler).Execute("clustered_light_grid.slang", entry, dispatch,
-            [
-                (parameters, ResourceBindingType.BufferSrv, 192), (lights, ResourceBindingType.BufferSrv, 144),
-                (counts, ResourceBindingType.BufferUav, 8), (output, ResourceBindingType.BufferUav, 4),
-            ]);
+            new BufferInput[]
+            {
+                new("LightingViews", parameters, ResourceBindingType.BufferSrv, 192),
+                new("LightBuffer", lights, ResourceBindingType.BufferSrv, 144),
+                new("ClusteredLightGrid", output[0], ResourceBindingType.BufferUav, 8),
+                new("LightIndexList", output[1], ResourceBindingType.BufferUav, 4),
+                new("LightLinkList", output[2], ResourceBindingType.BufferUav, 8),
+                new("LightAllocationCounters", output[3], ResourceBindingType.BufferUav, 4),
+                new("LightAllocationStatus", output[4], ResourceBindingType.BufferUav, 4),
+            });
     }
 
     private static uint Float(float value) => BitConverter.SingleToUInt32Bits(value);

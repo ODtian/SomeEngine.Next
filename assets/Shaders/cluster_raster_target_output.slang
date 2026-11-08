@@ -20,7 +20,7 @@ static const uint CLUSTER_RASTER_TARGET_PAGE_CACHE_COUNT =
 static const uint CLUSTER_RASTER_TARGET_INVALID_PAGE = 0xFFFFFFFFu;
 
 groupshared uint ClusterRasterTargetCachedPages[CLUSTER_RASTER_TARGET_PAGE_CACHE_COUNT];
-groupshared uint4 ClusterRasterTargetCachedReceiverMasks[CLUSTER_RASTER_TARGET_PAGE_CACHE_COUNT];
+groupshared uint2 ClusterRasterTargetCachedReceiverMasks[CLUSTER_RASTER_TARGET_PAGE_CACHE_COUNT];
 groupshared uint2 ClusterRasterTargetCachedOrigin;
 groupshared uint2 ClusterRasterTargetCachedExtent;
 groupshared uint ClusterRasterTargetPageCacheEnabled;
@@ -43,7 +43,7 @@ bool ClusterRasterTargetReceiverAccepts(
     if (target.ReceiverMaskEnabled == 0u)
         return true;
 
-    uint4 mask = LoadClusterTargetReceiverMask(target, localPage);
+    uint2 mask = LoadClusterTargetReceiverMask(target, localPage);
     uint2 cell = min(
         pagePixel * 8u / max(target.PageSize, 1u),
         7u.xx);
@@ -52,7 +52,7 @@ bool ClusterRasterTargetReceiverAccepts(
 
 bool ClusterRasterTargetCachedReceiverAccepts(
     ClusterRasterTargetView target,
-    uint4 receiverMask,
+    uint2 receiverMask,
     uint2 pagePixel)
 {
     if (target.ReceiverMaskEnabled == 0u)
@@ -95,7 +95,7 @@ int4 PrepareRasterTargetScissor(
                 pageIndex / extent.x);
             uint cacheIndex = cacheCoord.y * CLUSTER_RASTER_TARGET_PAGE_CACHE_DIM + cacheCoord.x;
             uint page = CLUSTER_RASTER_TARGET_INVALID_PAGE;
-            uint4 receiverMask = 0u.xxxx;
+            uint2 receiverMask = 0u.xx;
             uint2 localPage = pageWindow.xy + cacheCoord;
             if (ClusterRasterTargetPageRequested(target, localPage) &&
                 (requiredPageFlags == 0u || (RasterTargetPageTable[ClusterRasterTargetTableIndex(target, localPage)] & requiredPageFlags) != 0u))
@@ -105,7 +105,7 @@ int4 PrepareRasterTargetScissor(
                 {
                     receiverMask = target.ReceiverMaskEnabled != 0u
                         ? LoadClusterTargetReceiverMask(target, localPage)
-                        : 0xffffu.xxxx;
+                        : 0xffffffffu.xx;
                 }
             }
             ClusterRasterTargetCachedPages[cacheIndex] = page;

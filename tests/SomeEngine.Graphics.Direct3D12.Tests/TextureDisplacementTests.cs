@@ -81,8 +81,12 @@ public sealed class TextureDisplacementTests(D3D12TestCompiler shaderCompiler)
                 view.ViewProj = orthographic
                     ? float4x4(0.3,0,0,0, 0,0.4,0,0, 0,0,0.1,0, 0.2,-0.3,0,1)
                     : float4x4(1.2,0,0,0.2, 0,0.8,0,0.3, 0.4,-0.3,-1,-1, 0.2,-0.3,-0.1,0);
+                view.GeometryViewProj = view.ViewProj;
                 float3 center = float3(-1.0+float(test)*0.05,0.35,-5.0-float(depth));
-                float projectedBound = ClusterSphereError(center,0.7,0.15,view);
+                float3 scales = ClusterProjectionScales(view);
+                float4 clipCenter = mul(float4(center,1.0),view.GeometryViewProj);
+                float projectedBound = ClusterProjectedError(clipCenter.w-0.7*scales.z,
+                    abs(clipCenter.xy)+0.7*scales.xy,0.15,scales,uint2(view.ScreenWidth,view.ScreenHeight));
                 float projectionViolation = -1e30;
                 for (uint direction = 0; direction < 64u; direction++)
                 {
@@ -144,8 +148,8 @@ public sealed class TextureDisplacementTests(D3D12TestCompiler shaderCompiler)
         backend.Barrier(context, new BufferBarrier(output, PipelineSync.None, PipelineSync.ComputeShading, ResourceAccess.NoAccess, ResourceAccess.UnorderedAccess));
         backend.SetPipeline(context, pipeline);
         backend.SetTransientParameterBindings(context, new ParameterBlockBindings(shader.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null,
-            [ResourceBinding.Null(ResourceBindingType.BufferSrv), ResourceBinding.Null(ResourceBindingType.ConstantBuffer),
-             ResourceBinding.SampledTexture(heightView), ResourceBinding.SampledTexture(boundsView), ResourceBinding.SampledWith(sampler), ResourceBinding.WritableBuffer(outputView)], []));
+            [ResourceBinding.SampledTexture(heightView), ResourceBinding.SampledTexture(boundsView),
+             ResourceBinding.SampledWith(sampler), ResourceBinding.WritableBuffer(outputView)], []));
         backend.Dispatch(context, new DispatchArguments((count + 31u) / 32u, 1, 1));
         backend.Barrier(context, new BufferBarrier(output, PipelineSync.ComputeShading, PipelineSync.Copy, ResourceAccess.UnorderedAccess, ResourceAccess.CopySource));
         backend.CopyBuffer(context, new BufferCopy(output, 0, readback, 0, bytes));

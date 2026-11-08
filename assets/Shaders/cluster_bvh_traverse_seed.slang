@@ -303,7 +303,7 @@ void SeedHierarchyRoots(
             TraversalSeed.ArgsOffset + 24u,
             admittedCount,
             ignoredRemaining);
-        uint groupCount = (publishedCount + 3u) / 4u;
+        uint groupCount = (publishedCount + 15u) / 16u;
         uint ignored;
         NodeIndirectArgs.InterlockedMax(
             TraversalSeed.ArgsOffset,

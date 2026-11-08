@@ -121,6 +121,24 @@ Triangle ReorderTriangle(Triangle triangle, uint3 order)
         Corner(triangle, order.z));
 }
 
+Triangle ReadTriangleLane(Triangle triangle, uint lane)
+{
+    Triangle result;
+    result.Position0 = WaveReadLaneAt(triangle.Position0, lane);
+    result.Position1 = WaveReadLaneAt(triangle.Position1, lane);
+    result.Position2 = WaveReadLaneAt(triangle.Position2, lane);
+    result.Normal0 = WaveReadLaneAt(triangle.Normal0, lane);
+    result.Normal1 = WaveReadLaneAt(triangle.Normal1, lane);
+    result.Normal2 = WaveReadLaneAt(triangle.Normal2, lane);
+    result.Tangent0 = WaveReadLaneAt(triangle.Tangent0, lane);
+    result.Tangent1 = WaveReadLaneAt(triangle.Tangent1, lane);
+    result.Tangent2 = WaveReadLaneAt(triangle.Tangent2, lane);
+    result.TexCoord0 = WaveReadLaneAt(triangle.TexCoord0, lane);
+    result.TexCoord1 = WaveReadLaneAt(triangle.TexCoord1, lane);
+    result.TexCoord2 = WaveReadLaneAt(triangle.TexCoord2, lane);
+    return result;
+}
+
 SurfaceEval EvalLinearSurface(Triangle triangle, float3 barycentric)
 {
     SurfaceEval result;
@@ -161,6 +179,8 @@ struct LinearSurface : IDomainEvaluate<StandardVertex>
 {
     typealias TriangleData = Triangle;
     typealias Surface = SurfaceEval;
+
+    Triangle readLane(Triangle triangle, uint lane) { return ReadTriangleLane(triangle, lane); }
 
     Triangle makeTriangle(
         StandardVertex first,
