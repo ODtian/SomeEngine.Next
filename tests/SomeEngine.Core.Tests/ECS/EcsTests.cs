@@ -15,7 +15,7 @@ public class EcsTests
     [Fact]
     public void UpdateCompletesSimulationAndCommandsBeforeComputingTransforms()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0 });
         using var game = new GameWorld(new WorldJobs(scheduler));
         Entity entity = game.World.CreateEntity(new LocalTransform
         {

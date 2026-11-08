@@ -151,7 +151,7 @@ internal static unsafe partial class FullPathMeasurements
 
     private static void MeasureBoundFields(int count)
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
         var spec = Spec.Tween<float, FloatOps, Linear>(10_000);
         MeasureFull<Plain, PlainAccess, TweenParameters, TweenState, Tween<float, FloatOps, Linear>>(
             "tween-plain-worldjobs", count, static () => default,

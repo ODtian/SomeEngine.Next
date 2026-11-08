@@ -10,7 +10,7 @@ public sealed class NavigationIncrementalFlowTests
     [Fact]
     public void CompletedSourceChangesUpdateSharedGridCostsAndMoveFollowersAroundTheNewObstacle()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 3 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 3 });
         using World world = WorldJobs.CreateWorld(scheduler: scheduler);
         var profile = new NavigationProfile([new(-0.1f, -0.1f), new(0.1f, -0.1f), new(0.1f, 0.1f), new(-0.1f, 0.1f)], 1);
         var scene = new NavigationScene(new(default, default, default));
@@ -67,7 +67,7 @@ public sealed class NavigationIncrementalFlowTests
     [Fact]
     public void EikonalFollowersRepairBothUpwindDirectionsAfterCostAndGoalChanges()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 3 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 3 });
         using World world = WorldJobs.CreateWorld(scheduler: scheduler);
         var profile = new NavigationProfile([new(-0.1f, -0.1f), new(0.1f, -0.1f), new(0.1f, 0.1f), new(-0.1f, 0.1f)], 1);
         var policy = new NavigationPolicy();
@@ -129,7 +129,7 @@ public sealed class NavigationIncrementalFlowTests
     [Fact]
     public void SharedDijkstraFollowersUseRaisedThenLoweredChannelCostsAndReachTheirChangedGoal()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 3 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 3 });
         using World world = WorldJobs.CreateWorld(scheduler: scheduler);
         var profile = new NavigationProfile([new(-0.1f, -0.1f), new(0.1f, -0.1f), new(0.1f, 0.1f), new(-0.1f, 0.1f)], 1);
         var policy = new NavigationPolicy([new(7, 1), new(8, 2)]);

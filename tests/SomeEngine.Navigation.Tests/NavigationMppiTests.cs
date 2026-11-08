@@ -11,7 +11,7 @@ public sealed class NavigationMppiTests
     [Fact]
     public void VehicleSelectsFeasibleBendTrajectoriesAroundAPredictedMovingNeighbor()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 3, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 3, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using World world = WorldJobs.CreateWorld(scheduler: scheduler);
         var model = new NavigationVehicleModel(1.5f, allowReverse: true);
         var profile = new NavigationProfile(

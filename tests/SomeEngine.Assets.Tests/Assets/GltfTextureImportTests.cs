@@ -22,7 +22,7 @@ public sealed class GltfTextureImportTests
         try
         {
             ModelRoot model = await ReadModelAsync(directory, Convert.FromBase64String(WhitePng));
-            using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = workerCount });
+            using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = workerCount });
             var result = new ImportData();
             scheduler.Schedule(new CreateImport(result)).Complete();
             await using ImportContext context = result.Context!;
@@ -71,7 +71,7 @@ public sealed class GltfTextureImportTests
         {
             ModelRoot model = await ReadModelAsync(directory, Convert.FromBase64String(WhitePng));
             using var cancellation = new CancellationTokenSource();
-            using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+            using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
             using var release = new ManualResetEventSlim();
             var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             await using (var context = new ImportContext(cancellation.Token, scheduler))

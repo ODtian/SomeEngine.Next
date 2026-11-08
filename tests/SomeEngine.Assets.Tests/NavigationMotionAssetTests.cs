@@ -16,7 +16,7 @@ public sealed class NavigationMotionAssetTests : IDisposable
     [Fact]
     public async Task ReopenedVehicleProfileAndMotionSetDriveAnActorThroughTheBend()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var model = new NavigationVehicleModel(2, allowReverse: true);
         var sourceProfile = new NavigationProfile(
             [new(-0.25f, -0.6f), new(0.25f, -0.6f), new(0.25f, 0.6f), new(-0.25f, 0.6f)],

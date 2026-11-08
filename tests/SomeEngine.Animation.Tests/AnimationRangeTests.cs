@@ -9,7 +9,7 @@ public sealed class AnimationRangeTests
     [Fact]
     public void IndependentMotionInstancesEvaluateTogetherBeforeTimelineCompletion()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using var world = WorldJobs.CreateWorld(scheduler: scheduler);
         using var reached = new CountdownEvent(2);
         var spec = Spec.Create<float, FloatOps, TogetherParameters, TogetherState, TogetherMotion>(new(reached));

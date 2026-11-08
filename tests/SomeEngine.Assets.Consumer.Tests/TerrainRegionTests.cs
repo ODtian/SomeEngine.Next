@@ -14,7 +14,7 @@ public sealed class TerrainRegionTests
         string path = Path.Combine(Path.GetTempPath(), $"SomeEngine-Terrain-Retry-{Guid.NewGuid():N}.terrain.asset");
         try
         {
-            using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+            using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
             var editing = new TerrainEditing(scheduler);
             using var initial = new Terrain(editing);
             HeightField heights = initial.CreateHeightField("ground", new HeightGrid(4, 4, 4));
@@ -67,7 +67,7 @@ public sealed class TerrainRegionTests
         string changedPath = Path.Combine(Path.GetTempPath(), $"SomeEngine-Terrain-Edited-{Guid.NewGuid():N}.terrain.asset");
         try
         {
-            using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+            using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
             var editing = new TerrainEditing(scheduler);
             var initial = new Terrain(editing);
             HeightField heights = initial.CreateHeightField("ground", new HeightGrid(8, 4, 4));

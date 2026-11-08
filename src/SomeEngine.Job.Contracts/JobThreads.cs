@@ -1,11 +1,10 @@
 namespace SomeEngine.Job;
 
 /// <summary>
-/// Minimal thread-local sentinel shared with integrations that must fail closed inside arbitrary
-/// Job callbacks. It deliberately lives in the contracts assembly so checking the sentinel does
-/// not couple an integration to, initialize, or create worker threads for the Job scheduler.
+/// Tracks the current thread's nested Job execution for engine access checks.
+/// Sharing this state with resource declarations keeps integrations independent of scheduler initialization.
 /// </summary>
-internal static class JobExecutionContext
+internal static class JobThreads
 {
     [ThreadStatic]
     private static int s_depth;

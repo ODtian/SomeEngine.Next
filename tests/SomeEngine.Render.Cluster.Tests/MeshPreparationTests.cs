@@ -115,7 +115,7 @@ public sealed class MeshPreparationTests
 
         internal PreparationContext()
         {
-            JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 2 });
+            JobSystem.Initialize(new JobConfiguration { WorkerCount = 2 });
             _device = new();
             _instances = new RenderInstanceStorageSystem(_device.Backend, _device.Device, _device.Coordinator,
                 World, ClusterRenderFeature.GeometryLayout, new RenderInstanceOptions { RowCapacity = 4, BatchCapacity = 1 });

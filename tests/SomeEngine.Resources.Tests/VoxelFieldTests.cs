@@ -8,7 +8,7 @@ public sealed class VoxelFieldTests
     [Fact]
     public async Task SphereDeltaChangesSparseSamplesWithDistanceFalloff()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         var terrain = new Terrain(new TerrainEditing(scheduler));
         VoxelField field = terrain.CreateVoxelField("cave", new VoxelGrid(4), 2f);
 
@@ -26,7 +26,7 @@ public sealed class VoxelFieldTests
     [Fact]
     public async Task TrilinearSamplingUsesFieldSpacingAndGlobalCoordinates()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         var terrain = new Terrain(new TerrainEditing(scheduler));
         VoxelField field = terrain.CreateVoxelField("corners", new VoxelGrid(4, 2f));
         var range = new VoxelRegion(-1, 0, 0, 2, 2, 2);
@@ -41,7 +41,7 @@ public sealed class VoxelFieldTests
     [Fact]
     public async Task ReadsAndDuplicatesKeepTheirVersionWhileLaterEditsUsePreviousValues()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         var terrain = new Terrain(new TerrainEditing(scheduler));
         VoxelField field = terrain.CreateVoxelField("cave", new VoxelGrid(4), 2f);
         var brush = new VoxelSphereDeltaBrush(field.Grid, new Vector3(-1, 0, 0), 2f, -4f);

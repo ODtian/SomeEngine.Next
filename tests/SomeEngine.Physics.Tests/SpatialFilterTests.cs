@@ -121,7 +121,7 @@ public sealed class SpatialFilterTests
     [Fact]
     public void FullSpatialRulesAndHandwrittenGroupsReturnTheFourContactPairs()
     {
-        using var jobs = new Scheduler(new JobRuntimeConfig { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
+        using var jobs = new Scheduler(new JobConfiguration { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
         using var world = WorldJobs.CreateWorld(scheduler: jobs);
         var characterA = world.CreateEntity();
         var characterB = world.CreateEntity();

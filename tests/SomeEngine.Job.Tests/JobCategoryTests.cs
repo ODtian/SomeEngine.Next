@@ -5,7 +5,7 @@ public sealed class JobCategoryTests
     [Fact]
     public void FailedWorkReturnsItsCategoryQuota()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0 });
         JobCategory category = scheduler.CreateCategory(new JobCategoryConfig { MaxInFlight = 1 });
         var options = new JobScheduleOptions { Category = category };
         JobHandle failed = scheduler.Schedule(new ThrowWork(), options);
@@ -18,7 +18,7 @@ public sealed class JobCategoryTests
     [Fact]
     public async Task SchedulerCloseFinishesQueuedCategoryWork()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0 });
         JobCategory category = scheduler.CreateCategory(new JobCategoryConfig { MaxInFlight = 1 });
         var options = new JobScheduleOptions { Category = category };
         int[] result = [0];
@@ -32,7 +32,7 @@ public sealed class JobCategoryTests
     [Fact]
     public void NestedSynchronousRangesReuseTheirCategoryBudget()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         JobCategory category = scheduler.CreateCategory(new JobCategoryConfig
         {
             MaxInFlight = 1, MaxExecuting = 1,
@@ -46,7 +46,7 @@ public sealed class JobCategoryTests
     [Fact]
     public void ConcurrentNestedSynchronousRangesReuseTheirCategoryBudget()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         JobCategory category = scheduler.CreateCategory(new JobCategoryConfig
         {
             MaxInFlight = 1, MaxExecuting = 2,
@@ -62,7 +62,7 @@ public sealed class JobCategoryTests
     [Fact]
     public async Task QueuedCategoryWorkKeepsItsSubmittingScope()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0 });
         JobCategory category = scheduler.CreateCategory(new JobCategoryConfig { MaxInFlight = 1 });
         var options = new JobScheduleOptions { Category = category };
         using var entered = new ManualResetEventSlim();
@@ -91,7 +91,7 @@ public sealed class JobCategoryTests
     [Fact]
     public async Task QuotaWaitRetainsTheActualContainer()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         JobCategory category = scheduler.CreateCategory(new JobCategoryConfig { MaxInFlight = 1 });
         var options = new JobScheduleOptions { Category = category };
         using var entered = new ManualResetEventSlim();
@@ -130,7 +130,7 @@ public sealed class JobCategoryTests
     [Fact]
     public async Task ParallelSubmissionWaitsForQuotaAndReturnsCompleteResults()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         JobCategory category = scheduler.CreateCategory(new JobCategoryConfig
         {
             Name = "decode", MaxInFlight = 1, MaxExecuting = 1, ServiceShare = 1,
@@ -162,7 +162,7 @@ public sealed class JobCategoryTests
     [Fact]
     public async Task CancelledQuotaWaitLetsTheNextRequestProceed()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         JobCategory category = scheduler.CreateCategory(new JobCategoryConfig
         {
             Name = "decode", MaxInFlight = 1, MaxExecuting = 1, ServiceShare = 1,
@@ -195,7 +195,7 @@ public sealed class JobCategoryTests
     [Fact]
     public async Task SynchronousCallerUsesTheSameExecutionLimit()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0 });
         JobCategory category = scheduler.CreateCategory(new JobCategoryConfig
         {
             Name = "decode", MaxInFlight = 4, MaxExecuting = 1, ServiceShare = 1,
@@ -225,7 +225,7 @@ public sealed class JobCategoryTests
     [Fact]
     public void ServiceShareAdvancesBackgroundDuringForegroundWork()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0 });
         JobCategory foreground = scheduler.CreateCategory(new JobCategoryConfig
         {
             Name = "frame", MaxInFlight = 1, MaxExecuting = 1, ServiceShare = 4,
@@ -247,7 +247,7 @@ public sealed class JobCategoryTests
     [Fact]
     public void ExecutionLimitOrdersCallbacksAcrossWorkTypes()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         JobCategory category = scheduler.CreateCategory(new JobCategoryConfig
         {
             Name = "decode", MaxInFlight = 4, MaxExecuting = 1, ServiceShare = 1,
@@ -276,7 +276,7 @@ public sealed class JobCategoryTests
     [Fact]
     public async Task InFlightLimitWaitsForThePriorWorkAndItsChildren()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         JobCategory category = scheduler.CreateCategory(new JobCategoryConfig
         {
             Name = "decode",

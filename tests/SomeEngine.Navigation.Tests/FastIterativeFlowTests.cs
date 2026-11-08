@@ -11,7 +11,7 @@ public sealed class FastIterativeFlowTests
     [Fact]
     public void BudgetedIsotropicFieldGuidesAlongTheGeometricDirectionInUniformTerrain()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 3, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 3, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using World world = WorldJobs.CreateWorld(scheduler: scheduler);
         NavigationGrid grid = OpenGrid(24, 20, 0.5f);
         var profile = new NavigationProfile([new Vector2(-0.1f), new(0.1f, -0.1f), new(0.1f), new(-0.1f, 0.1f)], 1);
@@ -41,7 +41,7 @@ public sealed class FastIterativeFlowTests
     [Fact]
     public void FollowerGoesAroundScalarHighCostTerrainAndReportsArrivalFromActualMovement()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 3, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 3, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using World world = WorldJobs.CreateWorld(scheduler: scheduler);
         NavigationGrid open = OpenGrid(26, 20, 0.5f);
         NavigationGridCell[] cells = open.Cells.ToArray();

@@ -2,7 +2,7 @@ using System.Diagnostics;
 
 namespace SomeEngine.Job;
 
-internal sealed class RuntimeCounters
+internal sealed class JobCounters
 {
     private readonly bool _enabled;
     private readonly Lock _shardLock = new();
@@ -15,7 +15,7 @@ internal sealed class RuntimeCounters
     [ThreadStatic]
     private static CounterShardRegistration? s_threadShard;
 
-    internal RuntimeCounters(bool enabled)
+    internal JobCounters(bool enabled)
     {
         _enabled = enabled;
     }
@@ -162,7 +162,7 @@ internal sealed class RuntimeCounters
         SetHighWater(ref _resourceStateHighWater, value);
     }
 
-    internal JobRuntimeStats Snapshot()
+    internal JobStatistics Snapshot()
     {
         long scheduledJobs = 0;
         long executedWorkItems = 0;
@@ -218,7 +218,7 @@ internal sealed class RuntimeCounters
         long readyLatencyMaxNanoseconds =
             TicksToNanoseconds(Volatile.Read(ref _readyLatencyMaxTicks));
 
-        return new JobRuntimeStats(
+        return new JobStatistics(
             scheduledJobs,
             executedWorkItems,
             completedHandles,
@@ -309,13 +309,13 @@ internal sealed class RuntimeCounters
 
     private sealed class CounterShardRegistration
     {
-        internal CounterShardRegistration(RuntimeCounters owner, CounterShard shard)
+        internal CounterShardRegistration(JobCounters owner, CounterShard shard)
         {
             Owner = owner;
             Shard = shard;
         }
 
-        internal RuntimeCounters Owner { get; }
+        internal JobCounters Owner { get; }
 
         internal CounterShard Shard { get; }
     }

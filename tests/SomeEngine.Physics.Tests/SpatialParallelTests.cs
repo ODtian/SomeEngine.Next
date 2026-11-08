@@ -15,7 +15,7 @@ public sealed class SpatialParallelTests
     [Fact]
     public void PartitionedCountAndFillReturnTheFourSerialContactPairs()
     {
-        using var jobs = new Scheduler(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked });
+        using var jobs = new Scheduler(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked });
         using var world = WorldJobs.CreateWorld(scheduler: jobs);
         var characterA = world.CreateEntity();
         var characterB = world.CreateEntity();
@@ -55,7 +55,7 @@ public sealed class SpatialParallelTests
     [Fact]
     public void MaintainedParallelAndHandwrittenFramesConsumeEveryChangedContactPair()
     {
-        using var jobs = new Scheduler(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked });
+        using var jobs = new Scheduler(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked });
         using var world = WorldJobs.CreateWorld(scheduler: jobs);
         var characterA = world.CreateEntity();
         var characterB = world.CreateEntity();
@@ -126,7 +126,7 @@ public sealed class SpatialParallelTests
     [Fact]
     public void CountAndFillKeepTheirComponentInputUntilEveryPartitionCompletes()
     {
-        using var jobs = new Scheduler(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked });
+        using var jobs = new Scheduler(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked });
         using var world = WorldJobs.CreateWorld(scheduler: jobs);
         using var gate = new SpatialReadGate();
         var a = world.CreateEntity(new Body { Kind = MotionKind.Dynamic, Bounds = Box(0) });

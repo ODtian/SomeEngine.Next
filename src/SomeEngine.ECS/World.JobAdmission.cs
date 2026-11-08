@@ -361,7 +361,7 @@ public partial class World
     internal JobCommandProducerScope EnterJobCommandProducer(CommandBuffer buffer)
     {
         ArgumentNullException.ThrowIfNull(buffer);
-        if (!JobExecutionContext.IsActive)
+        if (!JobThreads.IsActive)
         {
             throw new InvalidOperationException(
                 "A Job command producer scope may only be entered by a running Job callback.");
@@ -444,7 +444,7 @@ public partial class World
     {
         if (_execution is not null)
             return _execution;
-        if (JobExecutionContext.IsActive)
+        if (JobThreads.IsActive)
             throw new InvalidOperationException(
                 "This World was created for synchronous use. Create it with WorldJobs to schedule ECS work.");
         return null;
@@ -601,7 +601,7 @@ public partial class World
             request.StorageAccess == WorldStorageAccess.Write &&
             request.StorageKind is WorldStorageKind.Buffer or WorldStorageKind.Sparse;
         bool admittedJobStorageWrite =
-            JobExecutionContext.IsActive && request.CanWrite && !topologyWrite;
+            JobThreads.IsActive && request.CanWrite && !topologyWrite;
         _hooks.ThrowIfReentrantWorldMutation(
             (request.CanWrite || topologyWrite) &&
             !hookSafeDirectStorageWrite &&

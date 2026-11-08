@@ -11,7 +11,7 @@ public sealed class AsaNavigationTests
     [Fact]
     public void ActorInsideTheArrivalRegionAtItsGoalHeadingKeepsItsActualPose()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         using World world = WorldJobs.CreateWorld(scheduler: scheduler);
         NavigationProfile profile = Profile();
         var policy = new NavigationPolicy();
@@ -35,7 +35,7 @@ public sealed class AsaNavigationTests
     [Fact]
     public void LongActorTurnsInTheWideRegionAndArrivesThroughTheAlignedExit()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 3 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 3 });
         using World world = WorldJobs.CreateWorld(scheduler: scheduler);
         NavigationProfile profile = Profile();
         var policy = new NavigationPolicy();

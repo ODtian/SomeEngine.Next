@@ -12,7 +12,7 @@ public sealed class JobCommandBufferTests : JobTest
     [Fact]
     public void ParallelProducersMergeByStableLogicalIndex()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         using var commands = new JobCommandBuffer(world, producerCount: 32);
 
@@ -37,7 +37,7 @@ public sealed class JobCommandBufferTests : JobTest
     public void ManyRelationshipProducerSegmentsShareOneTypedGenerationAndLinearAdjacencyBatch()
     {
         const int ProducerCount = 1024;
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         Entity source = world.CreateEntity();
         var targets = new Entity[ProducerCount];
@@ -61,7 +61,7 @@ public sealed class JobCommandBufferTests : JobTest
     [Fact]
     public void DeferredUniqueTargetSwapAcrossSegmentsValidatesTheMergedFinalImage()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         Entity sourceA = world.CreateEntity();
         Entity sourceB = world.CreateEntity();
@@ -111,7 +111,7 @@ public sealed class JobCommandBufferTests : JobTest
     [Fact]
     public void RelationshipFaultInLaterSegmentRollsBackWholeMergedBatch()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         Entity sourceA = world.CreateEntity();
         Entity sourceB = world.CreateEntity();
@@ -138,7 +138,7 @@ public sealed class JobCommandBufferTests : JobTest
     [Fact]
     public void ProducerFaultInvalidatesEverySegmentWithoutPublishing()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         var deferred = new Commands.DeferredEntity[8];
         using var commands = new JobCommandBuffer(world, deferred.Length);
@@ -159,7 +159,7 @@ public sealed class JobCommandBufferTests : JobTest
     [Fact]
     public void PlaybackFaultRollsBackEarlierProducerSegments()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         Entity target = world.CreateEntity();
         var deferred = new Commands.DeferredEntity[1];
@@ -179,7 +179,7 @@ public sealed class JobCommandBufferTests : JobTest
     [Fact]
     public void EmptyBatchConsumesNoTopologyRevision()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         using var commands = new JobCommandBuffer(world, producerCount: 1);
 
@@ -192,7 +192,7 @@ public sealed class JobCommandBufferTests : JobTest
     [Fact]
     public void ProducerScopeDoesNotAuthorizeWorldSharedCommandBuffer()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         using var commands = new JobCommandBuffer(world, producerCount: 1);
 
@@ -209,7 +209,7 @@ public sealed class JobCommandBufferTests : JobTest
     [Fact]
     public void ProducerCannotSynchronouslyPlaybackItsOwningBatch()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         using var commands = new JobCommandBuffer(world, producerCount: 1);
 
@@ -226,7 +226,7 @@ public sealed class JobCommandBufferTests : JobTest
     [Fact]
     public void ProducerCannotSchedulePlaybackForItsOwningBatch()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         using var commands = new JobCommandBuffer(world, producerCount: 1);
 
@@ -243,7 +243,7 @@ public sealed class JobCommandBufferTests : JobTest
     [Fact]
     public void FaultedProducerDependencyStillRunsCleanupAndReleasesPlaybackOwnership()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         var commands = new JobCommandBuffer(world, producerCount: 1);
         JobHandle dependency = Jobs.Schedule(new ThrowingDependencyJob());
@@ -264,7 +264,7 @@ public sealed class JobCommandBufferTests : JobTest
     [Fact]
     public void FaultedTopologyPredecessorStillRunsCleanup()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         for (int iteration = 0; iteration < 32; iteration++)
         {
             using var release = new ManualResetEventSlim();
@@ -324,7 +324,7 @@ public sealed class JobCommandBufferTests : JobTest
     [Fact]
     public void FinalizerScheduleFailureRecoversAlreadyScheduledPublication()
     {
-        ConfigureJobs(new JobRuntimeConfig
+        ConfigureJobs(new JobConfiguration
         {
             WorkerCount = 0,
             MaxCompletionStates = 1,
@@ -348,7 +348,7 @@ public sealed class JobCommandBufferTests : JobTest
     [Fact]
     public async Task ScheduleAndPlaybackRaceIsLinearizable()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
 
         for (int iteration = 0; iteration < 32; iteration++)
         {
@@ -414,7 +414,7 @@ public sealed class JobCommandBufferTests : JobTest
     [Fact]
     public async Task ScheduleAndDisposeRaceHasExactlyOneOwner()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
 
         for (int iteration = 0; iteration < 32; iteration++)
         {
@@ -478,7 +478,7 @@ public sealed class JobCommandBufferTests : JobTest
     [Fact]
     public void ZeroProducerBatchIsAValidTopologyFreeNoOp()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         using var commands = new JobCommandBuffer(world, producerCount: 0);
 
@@ -490,7 +490,7 @@ public sealed class JobCommandBufferTests : JobTest
     [Fact]
     public void ZeroProducerParallelSchedulePreservesItsExplicitDependency()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         var visits = new int[1];
         var commands = new JobCommandBuffer(world, producerCount: 0);

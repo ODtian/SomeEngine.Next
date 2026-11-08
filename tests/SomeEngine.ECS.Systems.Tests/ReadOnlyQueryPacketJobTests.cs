@@ -82,7 +82,7 @@ public sealed class ReadOnlyQueryPacketJobTests : JobTest
     [Fact]
     public void RowFiltersBecomeDenseContiguousPacketsWithDisjointOutputRanges()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
         Entity[] source = new Entity[6];
         for (int index = 0; index < source.Length; index++)
@@ -140,7 +140,7 @@ public sealed class ReadOnlyQueryPacketJobTests : JobTest
     [Fact]
     public void PacketReadRejectsComponentsNotDeclaredByTheQuery()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         Entity entity = world.CreateEntity(new PacketValue(7));
         world.Add(entity, new UndeclaredValue(9));
@@ -171,7 +171,7 @@ public sealed class ReadOnlyQueryPacketJobTests : JobTest
     [Fact]
     public void PreparedPlanReusesPacketsForSeveralPassesAndCommandRecording()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         Entity[] entities = new Entity[5];
         for (int index = 0; index < entities.Length; index++)

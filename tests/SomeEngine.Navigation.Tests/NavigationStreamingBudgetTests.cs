@@ -8,7 +8,7 @@ public sealed class NavigationStreamingBudgetTests
     [Fact]
     public void NearestRequestedTileIsReacquiredAfterTheBudgetMovesAcrossTheDirectory()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         // This strip is acceptance input spanning several directory ranges.
         NavigationRegionTile[] tiles = Enumerable.Range(0, 260).Select(index =>
             new NavigationRegionTile(new(index, 0), new(new(index * 4, 3, 0), new(index * 4 + 4, 4, 4)), 1, 0, 0)).ToArray();

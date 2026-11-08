@@ -8,7 +8,7 @@ public sealed class TerrainMaterialFieldTests
     [Fact]
     public async Task SurfaceReadsKeepDeclaredMaterialFieldsFromTheSameCapturedRevision()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         using var terrain = new Terrain(new TerrainEditing(scheduler));
         HeightField ground = terrain.CreateHeightField("ground", new HeightGrid(9, 9, 3, .5f), .5f);
         VoxelField shape = terrain.CreateVoxelField("shape", new VoxelGrid(3, .5f), 1.5f);

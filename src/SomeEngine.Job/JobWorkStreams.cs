@@ -5,26 +5,15 @@ using System.Runtime.ExceptionServices;
 
 namespace SomeEngine.Job;
 
-internal abstract class QueuedWork
+internal abstract class WorkStream
 {
     internal JobCategory? Category { get; set; }
-    internal virtual void DrainExited() { }
 
-    internal abstract int DrainAndFinish(
-        Scheduler scheduler,
-        int maxItems,
-        int priorityIndex,
-        int maxDrainers,
-        out int retiredItems,
-        out bool hasMoreWork);
-}
+    internal abstract int DrainAndFinish(Scheduler scheduler, int maxItems, int priorityIndex,
+        int maxDrainers, out int retiredItems, out bool hasMoreWork);
 
-internal abstract class WorkStream : QueuedWork
-{
     internal abstract int MakeReady(int slot, int maxDrainers, int priorityIndex);
-
     internal abstract int MakeReady(ReadOnlySpan<int> slots, int count, int maxDrainers, int priorityIndex);
-
     internal abstract void Cancel(int slot);
 }
 
@@ -60,7 +49,10 @@ internal interface IWorkStreamItem<TSelf>
 
     static abstract int CompletionCountOnRetire { get; }
 
-    static abstract WorkItemExecutionResult Execute(ref TSelf item);
+    static virtual bool IsSynchronous => false;
+    static virtual bool ManagesCompletion => false;
+
+    static abstract WorkItemExecutionResult Execute(ref TSelf item, Scheduler scheduler);
 
     static abstract int Abandon(ref TSelf item);
 
@@ -442,7 +434,7 @@ internal struct ScheduledJob<T> : IWorkStreamItem<ScheduledJob<T>>
 
     public static int CompletionCountOnRetire => 0;
 
-    public static WorkItemExecutionResult Execute(ref ScheduledJob<T> item)
+    public static WorkItemExecutionResult Execute(ref ScheduledJob<T> item, Scheduler scheduler)
     {
         item._job.Execute();
         return new WorkItemExecutionResult(retire: true, completedWorkItems: 1);
@@ -503,7 +495,7 @@ internal struct ScheduledParallelToken<T> : IWorkStreamItem<ScheduledParallelTok
 
     public static int CompletionCountOnRetire => 1;
 
-    public static WorkItemExecutionResult Execute(ref ScheduledParallelToken<T> item)
+    public static WorkItemExecutionResult Execute(ref ScheduledParallelToken<T> item, Scheduler scheduler)
     {
         ParallelJobGroup<T> group = item._group
             ?? throw new InvalidOperationException("Parallel work token has no group.");

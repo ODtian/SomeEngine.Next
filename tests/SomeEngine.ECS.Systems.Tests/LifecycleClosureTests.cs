@@ -11,7 +11,7 @@ public sealed class LifecycleClosureTests : JobTest
     [Fact]
     public async Task CompleteAsyncWaitsForRootAndDescendantAndKeepsTheGroupOpen()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using var state = new LifetimeState(Jobs);
         using var group = new SystemGroup<LifetimeContext>(new LifetimeDriver(state));
         group.Add(new SpawnDescendantSystem());
@@ -40,7 +40,7 @@ public sealed class LifecycleClosureTests : JobTest
     [Fact]
     public async Task Dispose_WaitsRootAndDescendantScopeBeforeOnDestroy()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using var state = new LifetimeState(Jobs);
         var group = new SystemGroup<LifetimeContext>(new LifetimeDriver(state));
         group.Add(new SpawnDescendantSystem());
@@ -66,7 +66,7 @@ public sealed class LifecycleClosureTests : JobTest
     [Fact]
     public async Task Disable_WaitsOutstandingScopeAndEnableCreatesFreshLifetime()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using var state = new LifetimeState(Jobs);
         var group = new SystemGroup<LifetimeContext>(new LifetimeDriver(state));
         int slot = group.Add(new BlockingSystem());
@@ -93,7 +93,7 @@ public sealed class LifecycleClosureTests : JobTest
     [Fact]
     public async Task Remove_WaitsOutstandingScopeDestroysSystemAndShiftsSlots()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using var state = new LifetimeState(Jobs);
         var group = new SystemGroup<LifetimeContext>(new LifetimeDriver(state));
         group.Add(new BlockingSystem());
@@ -118,7 +118,7 @@ public sealed class LifecycleClosureTests : JobTest
     public async Task SystemTeardownDoesNotBlockReadOnlyGroupQueries(
         PendingSystemTeardown operation)
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using var state = new LifetimeState(Jobs);
         var group = new SystemGroup<LifetimeContext>(new LifetimeDriver(state));
         int slot = group.Add(new BlockingSystem());
@@ -161,7 +161,7 @@ public sealed class LifecycleClosureTests : JobTest
     public async Task SystemTeardownFailureDoesNotBlockReadOnlyGroupQueries(
         PendingSystemTeardown operation)
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using var state = new LifetimeState(Jobs);
         using var waiterStarted = new ManualResetEventSlim();
         var group = new SystemGroup<LifetimeContext>(new LifetimeDriver(state));
@@ -235,7 +235,7 @@ public sealed class LifecycleClosureTests : JobTest
     [Fact]
     public async Task ConcurrentDispose_WaitsForClosureAndPendingJobControlFailsFast()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using var state = new LifetimeState(Jobs);
         var group = new SystemGroup<LifetimeContext>(new LifetimeDriver(state));
         group.Add(new BlockingSystem());
@@ -269,7 +269,7 @@ public sealed class LifecycleClosureTests : JobTest
     [Fact]
     public void Dispose_AggregatesJobAndDestroyFaultsAndContinuesTeardown()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using var state = new LifetimeState(Jobs);
         var group = new SystemGroup<LifetimeContext>(new LifetimeDriver(state));
         group.Add(new FaultingLifecycleSystem("destroy-one"));
@@ -288,7 +288,7 @@ public sealed class LifecycleClosureTests : JobTest
     [Fact]
     public void OnDestroy_LaunchesCleanupRootAndDisposeDrainsIt()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using var state = new LifetimeState(Jobs);
         var group = new SystemGroup<LifetimeContext>(new LifetimeDriver(state));
         group.Add(new SchedulingDestroySystem());
@@ -304,7 +304,7 @@ public sealed class LifecycleClosureTests : JobTest
     public void OnDestroy_CanScheduleParallelCleanupAndDisposeDrainsEveryWorkItem()
     {
         const int WorkItemCount = 37;
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using var state = new LifetimeState(Jobs);
         var group = new SystemGroup<LifetimeContext>(new LifetimeDriver(state));
         group.Add(new ParallelSchedulingDestroySystem(WorkItemCount));
@@ -323,7 +323,7 @@ public sealed class LifecycleClosureTests : JobTest
     [InlineData(true)]
     public async Task RemoveAndDispose_WaitForOnDestroyCleanupJobs(bool remove)
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using var state = new LifetimeState(Jobs);
         var group = new SystemGroup<LifetimeContext>(new LifetimeDriver(state));
         group.Add(new BlockingDestroySystem(fault: false));
@@ -354,7 +354,7 @@ public sealed class LifecycleClosureTests : JobTest
     [InlineData(true)]
     public async Task OnDestroyFault_StillDrainsCleanupJobAndAggregatesBothFaults(bool remove)
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using var state = new LifetimeState(Jobs);
         var group = new SystemGroup<LifetimeContext>(new LifetimeDriver(state));
         group.Add(new BlockingDestroySystem(fault: true));
@@ -388,7 +388,7 @@ public sealed class LifecycleClosureTests : JobTest
     [Fact]
     public void RepeatedUpdatesFinishEverySubmittedJobBeforeGroupDisposal()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using var state = new LifetimeState(Jobs);
         var world = CreateJobWorld();
         world.CreateEntity(new LifetimeComponent());
@@ -407,7 +407,7 @@ public sealed class LifecycleClosureTests : JobTest
     [Fact]
     public void ObservedJobFailuresDoNotPreventLaterUpdatesAndDisposal()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using var state = new LifetimeState(Jobs);
         var world = CreateJobWorld();
         world.CreateEntity(new LifetimeComponent());
@@ -428,7 +428,7 @@ public sealed class LifecycleClosureTests : JobTest
     [Fact]
     public void DisposeFromJobCallback_RejectsBeforeMutatingSystemGroupState()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using var state = new LifetimeState(Jobs);
         var group = new SystemGroup<LifetimeContext>(new LifetimeDriver(state));
         group.Add(new PassiveSystem());
@@ -446,7 +446,7 @@ public sealed class LifecycleClosureTests : JobTest
     [Fact]
     public void CreateAndUpdateCallbacks_RejectReentrantLifecycleControlWithoutMutation()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         foreach (bool invokeOnCreate in new[] { true, false })
         {
             foreach (ReentrantGroupOperation operation in Enum.GetValues<ReentrantGroupOperation>())
@@ -489,7 +489,7 @@ public sealed class LifecycleClosureTests : JobTest
         DriverLifecycleCallback callback,
         ReentrantGroupOperation operation)
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using var state = new LifetimeState(Jobs)
         {
             DriverReentryPoint = callback,
@@ -523,7 +523,7 @@ public sealed class LifecycleClosureTests : JobTest
     [Fact]
     public async Task ExternalDispose_WaitsForActiveUpdateCallback()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using var state = new LifetimeState(Jobs);
         var group = new SystemGroup<LifetimeContext>(new LifetimeDriver(state));
         group.Add(new BlockingCallbackSystem());
@@ -549,7 +549,7 @@ public sealed class LifecycleClosureTests : JobTest
     public void OnDestroy_RejectsEveryReentrantControlWithoutMutatingSlots(
         ReentrantGroupOperation operation)
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using var state = new LifetimeState(Jobs);
         var group = new SystemGroup<LifetimeContext>(new LifetimeDriver(state));
         int destroyedSlot = group.Add(new ReentrantDestroySystem());
@@ -576,7 +576,7 @@ public sealed class LifecycleClosureTests : JobTest
     [Fact]
     public async Task WorldDispose_RejectsNewWorkAndWaitsTypedRootAndDescendant()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using var state = new LifetimeState(Jobs);
         var world = CreateJobWorld();
         world.CreateEntity(new LifetimeComponent { Value = 1 });
@@ -607,7 +607,7 @@ public sealed class LifecycleClosureTests : JobTest
     [Fact]
     public async Task WorldClosing_RejectsUnrelatedJobCallback()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using var state = new LifetimeState(Jobs);
         var world = CreateJobWorld();
         world.CreateEntity(new LifetimeComponent());
@@ -637,7 +637,7 @@ public sealed class LifecycleClosureTests : JobTest
     [Fact]
     public void WorldDisposalWaitsForDataUseWithoutConsumingTheTaskFailure()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         world.CreateEntity(new LifetimeComponent());
         JobHandle task = Jobs.Schedule(
@@ -652,7 +652,7 @@ public sealed class LifecycleClosureTests : JobTest
     [Fact]
     public void WorldDispose_FromBoundQueryCallbackRejectsBeforeClosing()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         var entity = world.CreateEntity(new LifetimeComponent { Value = 7 });
         var query = world.Query(world.QueryDefinition().Read<LifetimeComponent>());
@@ -669,7 +669,7 @@ public sealed class LifecycleClosureTests : JobTest
     [Fact]
     public void WorldDispose_FromBoundBundleCallbackRejectsBeforePublication()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         int[] componentIds = [ComponentMetadata<LifetimeComponent>.Id];
         Exception? disposeError = null;
@@ -692,7 +692,7 @@ public sealed class LifecycleClosureTests : JobTest
     [Fact]
     public void WorldDispose_FromBoundHookCallbackRejectsBeforeClosing()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         Exception? hookError = null;
         world.Hooks<LifetimeComponent>().OnAdd(
@@ -710,7 +710,7 @@ public sealed class LifecycleClosureTests : JobTest
     [Fact]
     public async Task WorldDisposalWaitsForAnActiveQueryAndRejectsNewOperations()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using var entered = new ManualResetEventSlim();
         using var release = new ManualResetEventSlim();
         var world = CreateJobWorld();
@@ -751,7 +751,7 @@ public sealed class LifecycleClosureTests : JobTest
     [Fact]
     public async Task WorldDisposalDrainsQueryAndRejectsLaterMutation()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using var holderEntered = new ManualResetEventSlim();
         using var releaseHolder = new ManualResetEventSlim();
         using var lateStarted = new ManualResetEventSlim();

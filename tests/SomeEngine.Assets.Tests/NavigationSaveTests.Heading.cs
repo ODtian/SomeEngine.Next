@@ -13,7 +13,7 @@ public sealed partial class NavigationSaveTests
     [Fact]
     public async Task HeadingFollowersResumeSavedActionExecutionAndKeepTheirSharedFlowAndRequestSequence()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 3, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 3, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var resources = new NavigationSaveResources();
         var manifest = new AssetManifest();
         var profile = new NavigationProfile([new(-0.2f, -0.8f), new(0.2f, -0.8f), new(0.2f, 0.8f), new(-0.2f, 0.8f)],

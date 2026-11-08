@@ -8,8 +8,8 @@ public sealed partial class Scheduler : IDisposable
 {
     private const string InvalidJobPriorityMessage = "Job priority is invalid.";
     private const string InvalidBatchSizeMessage = "Batch size must be positive.";
-    private readonly JobRuntimeConfig _config;
-    private readonly RuntimeCounters _counters;
+    private readonly JobConfiguration _config;
+    private readonly JobCounters _counters;
     private readonly CompletionStore _completion;
     private readonly IDependencyStore _dependencies;
     private readonly IExecutionStore _execution;
@@ -32,8 +32,8 @@ public sealed partial class Scheduler : IDisposable
 
     internal static Scheduler? Executing => s_executing;
 
-    public Scheduler(JobRuntimeConfig? config = null)
-        : this(config ?? JobRuntimeConfig.Default, Interlocked.Increment(ref s_nextGeneration))
+    public Scheduler(JobConfiguration? config = null)
+        : this(config ?? JobConfiguration.Default, Interlocked.Increment(ref s_nextGeneration))
     {
     }
 
@@ -45,14 +45,14 @@ public sealed partial class Scheduler : IDisposable
     [ThreadStatic]
     private static ScopeToken s_currentScope;
 
-    internal Scheduler(JobRuntimeConfig config, long generation)
+    internal Scheduler(JobConfiguration config, long generation)
     {
         ArgumentNullException.ThrowIfNull(config);
         config.Validate();
 
         Generation = generation;
         _config = config;
-        _counters = new RuntimeCounters(config.EnableCounters);
+        _counters = new JobCounters(config.EnableCounters);
         var completion = new CompletionStore(this, config, _counters, generation);
         _completion = completion;
         _dependencies = completion;
@@ -110,7 +110,7 @@ public sealed partial class Scheduler : IDisposable
     /// <summary>The number of worker threads configured for this scheduler.</summary>
     public int WorkerCount => _config.WorkerCount;
 
-    public JobRuntimeStats GetStats()
+    public JobStatistics GetStats()
     {
         return _counters.Snapshot();
     }

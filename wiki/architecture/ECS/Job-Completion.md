@@ -229,6 +229,6 @@ await handle;
 
 源码入口：[自动批次代价](../../../src/SomeEngine.Job/ParallelBatchSizer.cs)、
 [同步范围](../../../src/SomeEngine.Job/Scheduler.SynchronousParallel.cs)、
-[统计](../../../src/SomeEngine.Job/RuntimeCounters.cs)。公共检查：
+[统计](../../../src/SomeEngine.Job/JobCounters.cs)。公共检查：
 [类型、规模与统计配置](../../../tests/SomeEngine.Job.Tests/AutomaticBatchTests.cs)；
 完整调用测量：[Job benchmark](../../../tools/SomeEngine.Job.Benchmarks/README.md)。

@@ -13,7 +13,7 @@ public sealed partial class NavigationSaveTests
     [Fact]
     public async Task StreamedFlowsRestoreSharedCostsAndTheClosedPassageAfterItsTileWasRemoved()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var profile = new NavigationProfile([new Vector2(-0.1f), new(0.1f, -0.1f), new(0.1f), new(-0.1f, 0.1f)], 1);
         var policy = new NavigationPolicy();
         NavigationGrid original = ExampleGrid(profile);

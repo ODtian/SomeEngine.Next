@@ -17,7 +17,7 @@ public sealed class NavigationBakeTests
         var profile = new NavigationProfile([new(-1, -0.2f), new(1, -0.2f), new(1, 0.2f), new(-1, 0.2f)],
             1f, maximumStepHeight: 0.5f);
         var policy = new NavigationPolicy();
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         NavigationMesh mesh = NavigationMeshBuilder.Schedule(Scene(), profile, policy, scheduler: scheduler).Complete().Mesh;
 
         (NavigationStatus status, Vector3[] positions) = Move(mesh, profile, policy, scheduler);
@@ -35,7 +35,7 @@ public sealed class NavigationBakeTests
         {
             NavigationProfile[] profiles = [Profile(0.2f, 1f, 0.5f), Profile(0.7f, 2f, 0.2f)];
             var policy = new NavigationPolicy();
-            using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+            using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
             NavigationMeshSelection[] selections = [new(new(Guid.NewGuid()), "main"), new(new(Guid.NewGuid()), "main")];
             var source = new NavigationMeshImportSource(Scene(),
                 [new(selections[0], profiles[0], policy), new(selections[1], profiles[1], policy)], scheduler);
@@ -76,7 +76,7 @@ public sealed class NavigationBakeTests
     {
         NavigationProfile profile = Profile(radius, height, stepHeight);
         var policy = new NavigationPolicy();
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         NavigationMesh mesh = NavigationMeshBuilder.Schedule(Scene(), profile, policy, scheduler: scheduler).Complete().Mesh;
 
         (NavigationStatus status, Vector3[] positions) = Move(mesh, profile, policy, scheduler);

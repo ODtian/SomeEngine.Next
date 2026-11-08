@@ -11,7 +11,7 @@ public sealed class NavigationDynamicTests
     [Fact]
     public void SourceInputVersionsSelectGeometryFromCompletedTransforms()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 3, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 3, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using World world = WorldJobs.CreateWorld(scheduler: scheduler);
         var scene = new NavigationScene(new(default, default, default));
         var profile = new NavigationProfile([new Vector2(-0.1f), new(0.1f, -0.1f), new(0.1f), new(-0.1f, 0.1f)], 1.5f);
@@ -51,7 +51,7 @@ public sealed class NavigationDynamicTests
     [Fact]
     public void AddingAnObstacleRepairsItsMovingRouteAndRemovingItRestoresThePassage()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 4, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 4, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using World world = WorldJobs.CreateWorld(scheduler: scheduler);
         var scene = new NavigationScene(new(default, default, default));
         var profile = new NavigationProfile([new Vector2(-0.15f), new(0.15f, -0.15f), new(0.15f), new(-0.15f, 0.15f)], 1.5f);
@@ -112,7 +112,7 @@ public sealed class NavigationDynamicTests
     [Fact]
     public void ManySourcesMergeMovedAndRemovedTileVersionsIntoOrderedInput()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 3, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 3, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using World world = WorldJobs.CreateWorld(scheduler: scheduler);
         var scene = new NavigationScene(new(default, default, default));
         var profile = new NavigationProfile([new Vector2(-0.1f), new(0.1f, -0.1f), new(0.1f), new(-0.1f, 0.1f)], 1);

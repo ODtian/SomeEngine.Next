@@ -11,7 +11,7 @@ public sealed class HeadingNavigationFlowTests
     [Fact]
     public void ChangedConnectionsAndGoalsUpdateTheSharedFieldFromActualPose()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using World world = WorldJobs.CreateWorld(scheduler: scheduler);
         var profile = new NavigationProfile([new Vector2(-0.2f), new(0.2f, -0.2f), new(0.2f), new(-0.2f, 0.2f)], 1);
         var policy = new NavigationPolicy();
@@ -56,7 +56,7 @@ public sealed class HeadingNavigationFlowTests
     [Fact]
     public void SharedFollowersTurnThroughAOneWayPassageAndHandOffTheSelectedAction()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 3, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 3, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using World world = WorldJobs.CreateWorld(scheduler: scheduler);
         var profile = new NavigationProfile([new Vector2(-0.2f, -0.8f), new(0.2f, -0.8f), new(0.2f, 0.8f), new(-0.2f, 0.8f)],
             1.5f, maximumSpeed: 2, maximumAngularSpeed: MathF.PI);

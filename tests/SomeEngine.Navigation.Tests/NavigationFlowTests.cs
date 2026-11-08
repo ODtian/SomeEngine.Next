@@ -11,7 +11,7 @@ public sealed class NavigationFlowTests
     [Fact]
     public void BudgetedDijkstraFollowsDirectedCostsAcrossLayersIntoTheGoalRegion()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         NavigationGrid grid = DirectedGrid();
         var profile = new NavigationProfile([new Vector2(-0.1f), new(0.1f, -0.1f), new(0.1f), new(-0.1f, 0.1f)], 1);
         var policy = new NavigationPolicy([new(7, 10)], [new(5, 3)]);
@@ -35,7 +35,7 @@ public sealed class NavigationFlowTests
     [Fact]
     public void SurfaceGridFollowersShareOneFieldAndReachItsGoalFromDifferentLayers()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 3, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 3, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using World world = WorldJobs.CreateWorld(scheduler: scheduler);
         var profile = new NavigationProfile([new Vector2(-0.1f), new(0.1f, -0.1f), new(0.1f), new(-0.1f, 0.1f)],
             0.8f, maximumStepHeight: 1.1f, maximumSpeed: 2);
@@ -71,7 +71,7 @@ public sealed class NavigationFlowTests
     [Fact]
     public void PolicyRejectsAnUnavailableDestinationLayer()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         NavigationGrid original = DirectedGrid();
         NavigationGridCell[] cells = original.Cells.ToArray();
         cells[3] = cells[3] with { Area = 7 };
@@ -90,7 +90,7 @@ public sealed class NavigationFlowTests
     [Fact]
     public void ReplacingSharedGoalsRedirectsAnExistingFollower()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using World world = WorldJobs.CreateWorld(scheduler: scheduler);
         var profile = new NavigationProfile([new Vector2(-0.1f), new(0.1f, -0.1f), new(0.1f), new(-0.1f, 0.1f)], 1);
         NavigationCosts costs = NavigationCostSystem.Schedule(DirectedGrid(), new NavigationPolicy(), scheduler: scheduler).Complete().Costs;

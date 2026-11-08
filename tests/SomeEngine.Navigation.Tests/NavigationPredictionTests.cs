@@ -11,7 +11,7 @@ public sealed class NavigationPredictionTests
     [Fact]
     public void AnimationReadsFutureTurningAndTheNextPredictionStartsAtActualFeedback()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using World world = WorldJobs.CreateWorld(scheduler: scheduler);
         var profile = new NavigationProfile([new Vector2(-0.2f), new(0.2f, -0.2f), new(0.2f), new(-0.2f, 0.2f)],
             1, maximumSpeed: 1, maximumAcceleration: 2, maximumAngularSpeed: 1);

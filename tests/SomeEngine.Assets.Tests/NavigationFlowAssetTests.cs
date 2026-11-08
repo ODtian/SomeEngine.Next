@@ -17,7 +17,7 @@ public sealed class NavigationFlowAssetTests : IDisposable
     [InlineData(true)]
     public async Task ReopenedFlowResolvesItsInputsAndDrivesMovementAfterAssetsClose(bool precomputed)
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var manifest = new AssetManifest();
         string flowPath = Path.Combine(_directory, "group.navigation-flow.asset");
         NavigationFlowSource source;

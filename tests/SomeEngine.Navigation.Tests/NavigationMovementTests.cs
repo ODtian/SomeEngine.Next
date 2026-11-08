@@ -11,7 +11,7 @@ public sealed class NavigationMovementTests
     [Fact]
     public void MovingEntityTargetKeepsBudgetedSearchProgressAndActorMovement()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using World world = WorldJobs.CreateWorld(scheduler: scheduler);
         var navigation = new NavigationSystems<NavigationMesh, PolygonNavigationSearch,
             PolygonSearchState, TestMotion, TestMotionReader>(world);
@@ -34,7 +34,7 @@ public sealed class NavigationMovementTests
     [Fact]
     public void MovementConsumerFollowsThePathAroundAnObstacleAndReportsArrival()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig
+        using var scheduler = new Scheduler(new JobConfiguration
         {
             WorkerCount = 4,
             ManagedPayloadPolicy = ManagedPayloadPolicy.Allow,
@@ -64,7 +64,7 @@ public sealed class NavigationMovementTests
     [Fact]
     public void ReplacingTheGoalContinuesMovementTowardTheNewPoint()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using World world = WorldJobs.CreateWorld(scheduler: scheduler);
         var navigation = new NavigationSystems<NavigationMesh, PolygonNavigationSearch,
             PolygonSearchState, TestMotion, TestMotionReader>(world);
@@ -86,7 +86,7 @@ public sealed class NavigationMovementTests
     [Fact]
     public void EntityGoalUsesTheTargetsCurrentPositionAndReportsDistanceToItsRange()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using World world = WorldJobs.CreateWorld(scheduler: scheduler);
         var navigation = new NavigationSystems<NavigationMesh, PolygonNavigationSearch,
             PolygonSearchState, TestMotion, TestMotionReader>(world);
@@ -106,7 +106,7 @@ public sealed class NavigationMovementTests
     [Fact]
     public void GoalEnablementPausesAndResumesMovement()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using World world = WorldJobs.CreateWorld(scheduler: scheduler);
         var navigation = new NavigationSystems<NavigationMesh, PolygonNavigationSearch,
             PolygonSearchState, TestMotion, TestMotionReader>(world);
@@ -132,7 +132,7 @@ public sealed class NavigationMovementTests
     [Fact]
     public void ArrivalWaitsForTheMovementConsumersActualHeading()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using World world = WorldJobs.CreateWorld(scheduler: scheduler);
         var navigation = new NavigationSystems<NavigationMesh, PolygonNavigationSearch,
             PolygonSearchState, TestMotion, TestMotionReader>(world);

@@ -17,7 +17,7 @@ public sealed class WorldJobAdmissionTests : JobTest
     public void FreshWorldRemainsUsableBySynchronousCallersWithoutTypedAccessBinding()
     {
         EnsureAmbientAdmissionInstalled();
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
 
         Entity entity = world.CreateEntity(new AdmissionProbe { Value = 3 });
@@ -35,7 +35,7 @@ public sealed class WorldJobAdmissionTests : JobTest
     public void FreshWorldManagedPayloadEscapeCannotReplaceWithoutDeclaredAccess()
     {
         EnsureAmbientAdmissionInstalled();
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         Entity entity = world.CreateEntity(new AdmissionProbe { Value = 11 });
         int entityCount = world.EntityCount;
@@ -52,7 +52,7 @@ public sealed class WorldJobAdmissionTests : JobTest
     public void CapturedWorldCreateRequiresDeclaredAccess()
     {
         EnsureAmbientAdmissionInstalled();
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         int entityCount = world.EntityCount;
         try
@@ -71,7 +71,7 @@ public sealed class WorldJobAdmissionTests : JobTest
     public void FreshWorldPrebuiltCommandBufferCannotRecordFromJob()
     {
         EnsureAmbientAdmissionInstalled();
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         Entity entity = world.CreateEntity();
         using var commands = new CommandBuffer(world);
@@ -89,7 +89,7 @@ public sealed class WorldJobAdmissionTests : JobTest
     [Fact]
     public async Task SynchronousWorldRejectsSchedulingDuringAndAfterAQuery()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using var entered = new ManualResetEventSlim();
         using var release = new ManualResetEventSlim();
         using var world = new World();
@@ -119,7 +119,7 @@ public sealed class WorldJobAdmissionTests : JobTest
     [Fact]
     public void SynchronousQueryCannotMakeRawJobsUseItsWorld()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using var world = new World();
         world.CreateEntity(new AdmissionProbe { Value = 1 });
         QueryHandle query = world.Query(world.QueryDefinition().Read<AdmissionProbe>());
@@ -134,7 +134,7 @@ public sealed class WorldJobAdmissionTests : JobTest
     [Fact]
     public void SynchronousQueryCannotChangeItsWorldExecutionMode()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using var world = new World();
         Entity entity = world.CreateEntity(new AdmissionProbe { Value = 1 });
         QueryHandle query = world.Query(world.QueryDefinition().Read<AdmissionProbe>());
@@ -149,7 +149,7 @@ public sealed class WorldJobAdmissionTests : JobTest
     {
         ManagedPayloadPolicy previousPolicy = Jobs.ManagedPayloadPolicy;
         JobSafetyMode previousSafety = Jobs.SafetyMode;
-        ConfigureJobs(new JobRuntimeConfig
+        ConfigureJobs(new JobConfiguration
         {
             WorkerCount = 2,
             SafetyMode = previousSafety,
@@ -178,7 +178,7 @@ public sealed class WorldJobAdmissionTests : JobTest
         }
         finally
         {
-            ConfigureJobs(new JobRuntimeConfig
+            ConfigureJobs(new JobConfiguration
             {
                 SafetyMode = previousSafety,
                 ManagedPayloadPolicy = previousPolicy,
@@ -191,7 +191,7 @@ public sealed class WorldJobAdmissionTests : JobTest
     {
         ManagedPayloadPolicy previousPolicy = Jobs.ManagedPayloadPolicy;
         JobSafetyMode previousSafety = Jobs.SafetyMode;
-        ConfigureJobs(new JobRuntimeConfig
+        ConfigureJobs(new JobConfiguration
         {
             WorkerCount = 2,
             SafetyMode = previousSafety,
@@ -221,7 +221,7 @@ public sealed class WorldJobAdmissionTests : JobTest
         }
         finally
         {
-            ConfigureJobs(new JobRuntimeConfig
+            ConfigureJobs(new JobConfiguration
             {
                 SafetyMode = previousSafety,
                 ManagedPayloadPolicy = previousPolicy,
@@ -234,7 +234,7 @@ public sealed class WorldJobAdmissionTests : JobTest
     {
         ManagedPayloadPolicy previousPolicy = Jobs.ManagedPayloadPolicy;
         JobSafetyMode previousSafety = Jobs.SafetyMode;
-        ConfigureJobs(new JobRuntimeConfig
+        ConfigureJobs(new JobConfiguration
         {
             WorkerCount = 2,
             SafetyMode = previousSafety,
@@ -258,7 +258,7 @@ public sealed class WorldJobAdmissionTests : JobTest
         }
         finally
         {
-            ConfigureJobs(new JobRuntimeConfig
+            ConfigureJobs(new JobConfiguration
             {
                 SafetyMode = previousSafety,
                 ManagedPayloadPolicy = previousPolicy,
@@ -269,7 +269,7 @@ public sealed class WorldJobAdmissionTests : JobTest
     [Fact]
     public void MultiWorkItemOwnerCannotUseOrdinaryTopologyWriteApis()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         int entityCount = world.EntityCount;
 
@@ -286,7 +286,7 @@ public sealed class WorldJobAdmissionTests : JobTest
     [Fact]
     public void MultiWorkItemOwnerCannotUseOrdinaryComponentWriteApis()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         Entity entity = world.CreateEntity(new AdmissionProbe { Value = 3 });
         JobResourceAccess[] accesses =
@@ -308,7 +308,7 @@ public sealed class WorldJobAdmissionTests : JobTest
     [Fact]
     public void MultiWorkItemReadOnlyWorldAccessRemainsAvailable()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         Entity entity = world.CreateEntity(new AdmissionProbe { Value = 13 });
         var values = new int[4];
@@ -330,7 +330,7 @@ public sealed class WorldJobAdmissionTests : JobTest
     [Fact]
     public void SingleWorkItemParallelOwnerCanUseOrdinaryTopologyWriteApis()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
 
         Jobs.ScheduleParallel(
@@ -345,7 +345,7 @@ public sealed class WorldJobAdmissionTests : JobTest
     [Fact]
     public void SerialTopologyWriteJobCanRecordNextWaveFromImmediateHook()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         Entity trigger = world.CreateEntity();
         Entity destination = world.CreateEntity();
@@ -371,7 +371,7 @@ public sealed class WorldJobAdmissionTests : JobTest
     [Fact]
     public void ImmediateHookCannotEscapeThroughCapturedWorldCommands()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         Entity trigger = world.CreateEntity();
         Entity destination = world.CreateEntity();
@@ -396,7 +396,7 @@ public sealed class WorldJobAdmissionTests : JobTest
     [Fact]
     public void ImmediateHookCannotRecordIntoAnotherPrebuiltCommandBuffer()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         Entity trigger = world.CreateEntity();
         Entity destination = world.CreateEntity();
@@ -419,7 +419,7 @@ public sealed class WorldJobAdmissionTests : JobTest
     [Fact]
     public void LeakedDeferredWorldCannotMintACommandWriterAfterItsHookReturns()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         Entity trigger = world.CreateEntity();
         Entity destination = world.CreateEntity();
@@ -453,7 +453,7 @@ public sealed class WorldJobAdmissionTests : JobTest
     [Fact]
     public void RawDeferredOverloadsRejectJobAccessBeforeReadingInvalidHandles()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         CommandBuffer commands = world.Commands();
         JobResourceAccess topologyWrite = RelationshipJobAccess.TopologyWrite(world);
@@ -471,7 +471,7 @@ public sealed class WorldJobAdmissionTests : JobTest
     [Fact]
     public void HookFaultPreservesOriginalExceptionAndDiscardsOwnedOverlayInsideJob()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         Entity trigger = world.CreateEntity();
         Entity destination = world.CreateEntity();
@@ -497,7 +497,7 @@ public sealed class WorldJobAdmissionTests : JobTest
     [Fact]
     public void ConcurrentFlushReservesTheExactEarlierWaveWithoutBlockingHookRecording()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using var hookEntered = new ManualResetEventSlim();
         using var allowHookRecord = new ManualResetEventSlim();
         using var hookRecorded = new ManualResetEventSlim();
@@ -571,7 +571,7 @@ public sealed class WorldJobAdmissionTests : JobTest
     [Fact]
     public void EmptyFlushCannotDisposeAWriterMintedByAnExecutingHook()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using var writerMinted = new ManualResetEventSlim();
         using var allowRecord = new ManualResetEventSlim();
         var world = CreateJobWorld();
@@ -634,7 +634,7 @@ public sealed class WorldJobAdmissionTests : JobTest
         var events = new System.Collections.Concurrent.ConcurrentQueue<string>();
         ManagedPayloadPolicy previousPolicy = Jobs.ManagedPayloadPolicy;
         JobSafetyMode previousSafety = Jobs.SafetyMode;
-        ConfigureJobs(new JobRuntimeConfig
+        ConfigureJobs(new JobConfiguration
         {
             WorkerCount = 2,
             SafetyMode = previousSafety,
@@ -691,7 +691,7 @@ public sealed class WorldJobAdmissionTests : JobTest
             releaseBlocker.Set();
             blocker.Complete();
             mutationThread?.Join(TimeSpan.FromSeconds(5));
-            ConfigureJobs(new JobRuntimeConfig
+            ConfigureJobs(new JobConfiguration
             {
                 SafetyMode = previousSafety,
                 ManagedPayloadPolicy = previousPolicy,
@@ -710,7 +710,7 @@ public sealed class WorldJobAdmissionTests : JobTest
         var events = new System.Collections.Concurrent.ConcurrentQueue<string>();
         ManagedPayloadPolicy previousPolicy = Jobs.ManagedPayloadPolicy;
         JobSafetyMode previousSafety = Jobs.SafetyMode;
-        ConfigureJobs(new JobRuntimeConfig
+        ConfigureJobs(new JobConfiguration
         {
             WorkerCount = 2,
             SafetyMode = previousSafety,
@@ -770,7 +770,7 @@ public sealed class WorldJobAdmissionTests : JobTest
             releaseHook.Set();
             mutationThread?.Join(TimeSpan.FromSeconds(5));
             laterWriter.Complete();
-            ConfigureJobs(new JobRuntimeConfig
+            ConfigureJobs(new JobConfiguration
             {
                 SafetyMode = previousSafety,
                 ManagedPayloadPolicy = previousPolicy,

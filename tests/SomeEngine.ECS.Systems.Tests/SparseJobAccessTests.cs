@@ -11,7 +11,7 @@ public sealed class SparseJobAccessTests : JobTest
     [Fact]
     public void SparseCallbackInsideJob_RejectsMissingLogicalResource()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateWorldWith<SparseA>();
         _ = SparseJobAccess<SparseA>.Read(world);
         JobHandle handle = Jobs.Schedule(
@@ -24,7 +24,7 @@ public sealed class SparseJobAccessTests : JobTest
     [Fact]
     public void SparseCallbackInsideJob_RejectsMissingTopologyReadResource()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateWorldWith<SparseA>();
         JobHandle handle = Jobs.Schedule(
             new ReadSparseJob<SparseA>(world),
@@ -36,7 +36,7 @@ public sealed class SparseJobAccessTests : JobTest
     [Fact]
     public void SameWorldSameSparseType_ReadOwnersRunConcurrently()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateWorldWith<SparseA>();
         using var firstStarted = new ManualResetEventSlim();
         using var releaseFirst = new ManualResetEventSlim();
@@ -66,7 +66,7 @@ public sealed class SparseJobAccessTests : JobTest
     public void SameWorldSameSparseType_WriteOwnerBlocksReadersAndWriters()
     {
         var events = new System.Collections.Concurrent.ConcurrentQueue<string>();
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateWorldWith<SparseA>();
         using var writerStarted = new ManualResetEventSlim();
         using var releaseWriter = new ManualResetEventSlim();
@@ -113,7 +113,7 @@ public sealed class SparseJobAccessTests : JobTest
     [Fact]
     public void DifferentSparseTypesAndWorlds_DoNotShareLogicalResource()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateWorldWith<SparseA>();
         AddSparse<SparseB>(world);
         var otherWorld = CreateWorldWith<SparseA>();
@@ -152,7 +152,7 @@ public sealed class SparseJobAccessTests : JobTest
     public void DirectSparseOwner_BlocksLaterScheduledConflictUntilCallbackReturns()
     {
         var events = new System.Collections.Concurrent.ConcurrentQueue<string>();
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateWorldWith<SparseA>();
         _ = SparseJobAccess<SparseA>.Write(world);
         using var directStarted = new ManualResetEventSlim();
@@ -211,7 +211,7 @@ public sealed class SparseJobAccessTests : JobTest
     {
         using var attempted = new ManualResetEventSlim();
         var events = new System.Collections.Concurrent.ConcurrentQueue<string>();
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateWorldWith<SparseA>();
         using var writerStarted = new ManualResetEventSlim();
         using var releaseWriter = new ManualResetEventSlim();
@@ -265,7 +265,7 @@ public sealed class SparseJobAccessTests : JobTest
     [Fact]
     public void FaultedSparseBody_ReleasesIterationAndSynchronousResourceOwner()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateWorldWith<SparseA>();
         _ = SparseJobAccess<SparseA>.Write(world);
 
@@ -283,7 +283,7 @@ public sealed class SparseJobAccessTests : JobTest
     [Fact]
     public void RepeatedSparseAccessPreservesCallbackResults()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateWorldWith<SparseA>();
         _ = SparseJobAccess<SparseA>.Write(world);
         Entity sparseEntity = FirstSparseEntity<SparseA>(world);
@@ -310,7 +310,7 @@ public sealed class SparseJobAccessTests : JobTest
     [Fact]
     public void TopologyWriteHook_CanBorrowSparseAfterLaterSparseOwnerWasRegistered()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateWorldWith<SparseA>();
         Entity entity = world.CreateEntity();
         _ = SparseJobAccess<SparseA>.Write(world);

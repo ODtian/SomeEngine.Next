@@ -26,7 +26,7 @@ public readonly struct JobHandle
     /// <remarks>Job callbacks and schedulers with workers continue through asynchronous completion notifications.</remarks>
     public async ValueTask CompleteAsync()
     {
-        if (Scheduler is { WorkerCount: 0 } && !JobExecutionContext.IsActive)
+        if (Scheduler is { WorkerCount: 0 } && !JobThreads.IsActive)
             Complete();
         else
             await WaitAsync().ConfigureAwait(false);

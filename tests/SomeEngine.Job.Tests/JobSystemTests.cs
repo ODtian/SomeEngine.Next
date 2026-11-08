@@ -2,7 +2,7 @@ namespace SomeEngine.Job.Tests;
 
 public sealed class JobSystemTests
 {
-    public JobSystemTests() => JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 2 });
+    public JobSystemTests() => JobSystem.Initialize(new JobConfiguration { WorkerCount = 2 });
 
     [Fact]
     public void SchedulingOneJobIncrementsItsResultOnce()

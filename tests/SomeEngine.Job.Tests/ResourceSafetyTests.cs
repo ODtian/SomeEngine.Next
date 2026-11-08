@@ -6,7 +6,7 @@ public sealed class ResourceSafetyTests
 
     public ResourceSafetyTests()
     {
-        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 4 });
+        JobSystem.Initialize(new JobConfiguration { WorkerCount = 4 });
         JobSystem.SafetyMode = JobSafetyMode.Checked;
         _data.Reset();
     }
@@ -1197,7 +1197,7 @@ public sealed class ResourceSafetyTests
     [Fact]
     public void TypedListAccessesParticipateInResourceOrdering()
     {
-        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 0 });
+        JobSystem.Initialize(new JobConfiguration { WorkerCount = 0 });
         _data.Reset();
         var values = new List<int> { 0 };
 
@@ -1217,7 +1217,7 @@ public sealed class ResourceSafetyTests
     [Fact]
     public void TypedContainerAccessesSupportStackDictionaryQueueAndArrayRanges()
     {
-        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 2 });
+        JobSystem.Initialize(new JobConfiguration { WorkerCount = 2 });
         _data.Reset();
         var stack = new Stack<int>();
         var dictionary = new Dictionary<string, int> { ["value"] = 0 };
@@ -1275,7 +1275,7 @@ public sealed class ResourceSafetyTests
     [Fact]
     public void MemoryAccessesUseArrayBackedSliceRanges()
     {
-        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 2 });
+        JobSystem.Initialize(new JobConfiguration { WorkerCount = 2 });
         _data.Reset();
         var array = new int[3];
         using var firstStarted = _data.Events.CreateSignal();
@@ -1308,7 +1308,7 @@ public sealed class ResourceSafetyTests
     [Fact]
     public void SpanAccessesUseExplicitArrayOwner()
     {
-        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 2 });
+        JobSystem.Initialize(new JobConfiguration { WorkerCount = 2 });
         _data.Reset();
         var array = new int[2];
         var other = new int[1];
@@ -1344,7 +1344,7 @@ public sealed class ResourceSafetyTests
     [Fact]
     public void CustomStructContainerProviderUsesTypedStaticAccess()
     {
-        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 0 });
+        JobSystem.Initialize(new JobConfiguration { WorkerCount = 0 });
         _data.Reset();
         var container = new ResourceData.CustomCounterContainer(
             [0],

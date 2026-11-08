@@ -12,7 +12,7 @@ public sealed class TerrainGpuGeometryTests(SceneContentFixture content)
     [Fact]
     public async Task GpuHeightGeometrySwitchesTheCompletedBatchToTheCpuPicture()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         using GpuHeightTerrainExample gpu = await GpuHeightTerrainExample.CreateAsync(scheduler, content.DirectoryPath);
         var cpu = new HeightTerrainExample(scheduler);
         SceneImage? before = null, building = null, after = null, expectedBefore = null, expectedAfter = null;

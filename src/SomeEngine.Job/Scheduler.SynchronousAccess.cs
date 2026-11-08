@@ -6,7 +6,7 @@ public sealed partial class Scheduler
         "A running Job cannot acquire a nested synchronous Resource Owner. Declare the resource on the " +
         "Job and use RequireCurrentAccess from the owner-specific API instead.";
 
-    internal SynchronousResourceOwner AcquireSynchronousAccess(
+    internal SynchronousResourceAccess AcquireSynchronousAccess(
         ReadOnlySpan<JobResourceAccess> accesses)
     {
         using Submission submissionScope = EnterSubmission();
@@ -21,16 +21,13 @@ public sealed partial class Scheduler
         ResourceAccessRegistration registration = ResourceAccessRegistration.Empty;
         try
         {
-            registration = _resources.RegisterAccesses(
-                state,
-                accesses,
-                typeof(SynchronousResourceOwner));
-            SetResourceAccesses(state, registration);
+            registration = _resources.RegisterAccesses(state, accesses, typeof(SynchronousResourceAccess));
+            if (!SetResourceAccesses(state, registration)) registration = ResourceAccessRegistration.Empty;
             RegisterExternalDependencies(state, registration);
         }
         catch
         {
-            ReleaseAccessesIfRegistered(registration);
+            _resources.ReleaseAccesses(registration, state);
             CancelUnscheduledState(state);
             throw;
         }
@@ -38,7 +35,56 @@ public sealed partial class Scheduler
         try
         {
             WaitForSynchronousAdmission(state);
-            return new SynchronousResourceOwner(this, state);
+            return new SynchronousResourceAccess(this, state);
+        }
+        catch
+        {
+            ReleaseSynchronousAccess(state);
+            throw;
+        }
+    }
+
+    internal SynchronousResourceAccess AcquireSynchronousAccess(
+        JobResourceAccess first, in AccessBuilder<JobResourceAccess> following)
+    {
+        ReadOnlySpan<JobResourceAccess> firstStage = stackalloc JobResourceAccess[] { first };
+        if (following.Count == 0) return AcquireSynchronousAccess(firstStage);
+        return AcquireSynchronousAccess(firstStage, following);
+    }
+
+    private SynchronousResourceAccess AcquireSynchronousAccess(
+        ReadOnlySpan<JobResourceAccess> accesses, in AccessBuilder<JobResourceAccess> following)
+    {
+        using Submission submissionScope = EnterSubmission();
+        EnsureCurrentScopeBelongsToThisRuntime();
+        if (s_currentScope.Index != 0)
+            throw new InvalidOperationException(NestedSynchronousAccessMessage);
+
+        JobHandle state = CreateState(pendingWork: 1, pendingDependencies: 0);
+        ResourceAccessRegistration registration = ResourceAccessRegistration.Empty;
+        ResourceAccessRegistration next = ResourceAccessRegistration.Empty;
+        bool followingRegistered;
+        try
+        {
+            (registration, next, followingRegistered) = _resources.RegisterAccesses(state, accesses, following, typeof(SynchronousResourceAccess));
+            if (!SetResourceAccesses(state, registration)) registration = ResourceAccessRegistration.Empty;
+            if (!SetResourceAccesses(state, next)) next = ResourceAccessRegistration.Empty;
+            RegisterExternalDependencies(state, registration);
+            if (next.Data is not null) RegisterExternalDependencies(state, next);
+        }
+        catch
+        {
+            _resources.ReleaseAccesses(next, state);
+            _resources.ReleaseAccesses(registration, state);
+            CancelUnscheduledState(state);
+            throw;
+        }
+
+        try
+        {
+            WaitForSynchronousAdmission(state);
+            if (!followingRegistered) AppendSynchronousAccess(state, following);
+            return new SynchronousResourceAccess(this, state);
         }
         catch
         {

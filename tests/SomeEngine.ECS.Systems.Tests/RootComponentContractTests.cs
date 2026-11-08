@@ -9,7 +9,7 @@ public sealed class RootComponentContractTests : JobTest
     [Fact]
     public void RootOnlyComponent_WorksWithComponentJobAccessAndJobCommandBuffer()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using var world = CreateJobWorld();
 
         Assert.NotEqual(
@@ -41,7 +41,7 @@ public sealed class RootComponentContractTests : JobTest
     [Fact]
     public void GeneratedJobEntity_AcceptsRootOnlyComponentAtCompileAndRuntime()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using var world = CreateJobWorld();
         Entity entity = world.CreateEntity(new RootOnlyGeneratedValue { Value = 3 });
 

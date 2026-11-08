@@ -13,7 +13,7 @@ public sealed partial class NavigationSaveTests
     [Fact]
     public async Task HeadingCostsRestoreDistinctStatesAndTheChosenTraversalForSharedFlows()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 3, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 3, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var profile = new NavigationProfile([new(-0.2f, -0.8f), new(0.2f, -0.8f), new(0.2f, 0.8f), new(-0.2f, 0.8f)],
             1.5f, maximumSpeed: 2, maximumAngularSpeed: MathF.PI);
         var policy = new NavigationPolicy();

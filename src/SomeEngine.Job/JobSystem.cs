@@ -21,7 +21,7 @@ public static partial class JobSystem
 
     public static int WorkerCount => Current.WorkerCount;
 
-    public static void Initialize(JobRuntimeConfig config)
+    public static void Initialize(JobConfiguration config)
     {
         ArgumentNullException.ThrowIfNull(config);
         config.Validate();
@@ -66,7 +66,7 @@ public static partial class JobSystem
         }
     }
 
-    public static JobRuntimeStats GetStats()
+    public static JobStatistics GetStats()
     {
         return Current.GetStats();
     }
@@ -213,7 +213,7 @@ public static partial class JobSystem
 
 public static partial class JobSystem
 {
-    internal static bool IsExecutingJob => JobExecutionContext.IsActive;
+    internal static bool IsExecutingJob => JobThreads.IsActive;
 
     public static JobHandle CreateExternalFenceHandle(ValueTask task, ReadOnlySpan<JobResourceAccess> accesses = default) =>
         Current.CreateExternalFenceHandle(task, accesses);
@@ -372,14 +372,14 @@ public static partial class JobSystem
         return Current.ScheduleFinally(job, accesses, options, dependency);
     }
 
-    internal static SynchronousResourceOwner AcquireSynchronousAccess(
+    internal static SynchronousResourceAccess AcquireSynchronousAccess(
         JobResourceAccess access)
     {
         ReadOnlySpan<JobResourceAccess> accesses = stackalloc JobResourceAccess[] { access };
         return Current.AcquireSynchronousAccess(accesses);
     }
 
-    internal static SynchronousResourceOwner AcquireSynchronousAccess(
+    internal static SynchronousResourceAccess AcquireSynchronousAccess(
         ReadOnlySpan<JobResourceAccess> accesses)
     {
         return Current.AcquireSynchronousAccess(accesses);

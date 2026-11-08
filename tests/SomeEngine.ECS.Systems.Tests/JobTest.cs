@@ -13,7 +13,7 @@ public abstract class JobTest : IDisposable
         get
         {
             if (_jobs is null)
-                ConfigureJobs(new JobRuntimeConfig
+                ConfigureJobs(new JobConfiguration
                 {
                     WorkerCount = 4,
                     SafetyMode = JobSafetyMode.Checked,
@@ -23,7 +23,7 @@ public abstract class JobTest : IDisposable
         }
     }
 
-    protected void ConfigureJobs(JobRuntimeConfig config)
+    protected void ConfigureJobs(JobConfiguration config)
     {
         _jobs = new Scheduler(config);
         _schedulers.Add(_jobs);

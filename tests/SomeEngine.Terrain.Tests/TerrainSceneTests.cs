@@ -14,7 +14,7 @@ public sealed class TerrainSceneTests
     [Fact]
     public async Task ScenesInOneWorldKeepTheirChunksAndEditsSeparate()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         using var world = new World();
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
         var material = new UnlitMaterial();
@@ -58,7 +58,7 @@ public sealed class TerrainSceneTests
     [Fact]
     public async Task BlendSourceEditsUpdateChunksWithinEachFieldsSamplingNeighborhood()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         using var world = new World();
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
         var material = new UnlitMaterial();
@@ -100,7 +100,7 @@ public sealed class TerrainSceneTests
     [Fact]
     public async Task VoxelEditUpdatesChunksWithinItsSamplingNeighborhood()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         using var world = new World();
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
         var material = new UnlitMaterial();
@@ -136,7 +136,7 @@ public sealed class TerrainSceneTests
     [Fact]
     public async Task HeightEditUpdatesAffectedChunksInBothSharedPlacements()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         using var world = new World();
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
         var material = new UnlitMaterial();

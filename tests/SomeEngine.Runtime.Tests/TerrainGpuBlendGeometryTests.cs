@@ -13,7 +13,7 @@ public sealed class TerrainGpuBlendGeometryTests(SceneContentFixture content)
     [Fact]
     public async Task GpuNestedSurfaceMatchesCpuAfterHeightAndVoxelEdits()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         using GpuBlendTerrainExample gpu = await GpuBlendTerrainExample.CreateAsync(scheduler, content.DirectoryPath);
         var cpu = new BlendTerrainExample(scheduler);
         var bounds = new TerrainBounds(new(0, -4, 0), new(8, 4, 8));

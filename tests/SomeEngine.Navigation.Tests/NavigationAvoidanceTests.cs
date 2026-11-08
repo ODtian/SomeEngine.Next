@@ -11,7 +11,7 @@ public sealed class NavigationAvoidanceTests
     [Fact]
     public void PathAndFlowActorsShareNeighborsAndPassThroughTheCorridor()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 3, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 3, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using World world = WorldJobs.CreateWorld(scheduler: scheduler);
         var profile = new NavigationProfile([new Vector2(-0.2f), new(0.2f, -0.2f), new(0.2f), new(-0.2f, 0.2f)],
             1, maximumSpeed: 1.5f);
@@ -68,7 +68,7 @@ public sealed class NavigationAvoidanceTests
     [InlineData(0.3f)]
     public void BoundaryClearanceIncludesTheAlreadyBakedDisk(float bakedRadius)
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using World world = WorldJobs.CreateWorld(scheduler: scheduler);
         var profile = new NavigationProfile([new Vector2(-0.2f), new(0.2f, -0.2f), new(0.2f), new(-0.2f, 0.2f)], 1);
         var mesh = new NavigationMesh(
@@ -98,7 +98,7 @@ public sealed class NavigationAvoidanceTests
     [Fact]
     public void SharedIndexUsesActualLayersHeightAndInteractionRange()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using World world = WorldJobs.CreateWorld(scheduler: scheduler);
         var profile = new NavigationProfile([new Vector2(-0.2f), new(0.2f, -0.2f), new(0.2f), new(-0.2f, 0.2f)], 1);
         Entity source = Add(new(0, 0, 0), 0, 1);
@@ -127,7 +127,7 @@ public sealed class NavigationAvoidanceTests
     [Fact]
     public void ScenePlacementPreservesBakedClearanceThroughTileExtraction()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var profile = new NavigationProfile([new Vector2(-0.2f), new(0.2f, -0.2f), new(0.2f), new(-0.2f, 0.2f)], 1);
         NavigationMesh geometry = CorridorMesh();
         var mesh = new NavigationMesh(geometry.Positions, geometry.PolygonVertices, geometry.Polygons, geometry.Portals, bakedRadius: 0.3f);

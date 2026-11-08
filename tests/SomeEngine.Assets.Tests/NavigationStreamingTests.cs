@@ -12,7 +12,7 @@ public sealed class NavigationStreamingTests
     [Fact]
     public void SubmittedHeightSampleKeepsItsTileAfterTheResidenceBudgetRemovesTheDirectoryEntry()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         var mesh = new NavigationMesh([new(0, 3.25f, 0), new(0, 3.25f, 2), new(4, 3.25f, 2), new(4, 3.25f, 0)],
             [0, 1, 2, 3], [new(0, 4, 0, 0)], []);
         var profile = new NavigationProfile([new(-0.1f, -0.1f), new(0.1f, -0.1f), new(0.1f, 0.1f), new(-0.1f, 0.1f)], 1);
@@ -62,7 +62,7 @@ public sealed class NavigationStreamingTests
         var signals = new ReadSignals();
         try
         {
-            using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+            using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
             var profile = new NavigationProfile([new(-0.1f, -0.1f), new(0.1f, -0.1f), new(0.1f, 0.1f), new(-0.1f, 0.1f)], 1f);
             var policy = new NavigationPolicy();
             NavigationMesh mesh = NavigationRegionBuilder.Schedule(Corridor(), profile, policy, scheduler: scheduler).Complete().Mesh;

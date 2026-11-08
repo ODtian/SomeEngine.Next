@@ -11,7 +11,7 @@ public sealed class PolyanyaPathTests
     [Fact]
     public void SelectedPolyanyaSearchDrivesIndependentAgentsAlongGeometricShortestPaths()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig
+        using var scheduler = new Scheduler(new JobConfiguration
         {
             WorkerCount = 4,
             ManagedPayloadPolicy = ManagedPayloadPolicy.Allow,

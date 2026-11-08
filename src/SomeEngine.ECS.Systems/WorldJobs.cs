@@ -16,7 +16,7 @@ public sealed partial class WorldJobs : WorldExecution, IJobSubmissionObserver
     [ThreadStatic]
     private static Stack<AdmissionFrame>? s_framePool;
 
-    internal override bool HasCurrentJobScope => JobExecutionContext.IsActive;
+    internal override bool HasCurrentJobScope => JobThreads.IsActive;
 
     internal override bool HasCurrentThreadScope(World world)
     {
@@ -34,7 +34,7 @@ public sealed partial class WorldJobs : WorldExecution, IJobSubmissionObserver
             ? stackalloc RequestedStorage[scratchLength]
             : (rented = ArrayPool<RequestedStorage>.Shared.Rent(scratchLength))
                 .AsSpan(0, scratchLength);
-        bool countUse = !JobExecutionContext.IsActive && !HasCurrentThreadScope(world);
+        bool countUse = !JobThreads.IsActive && !HasCurrentThreadScope(world);
         bool begun = false;
         try
         {
@@ -83,8 +83,8 @@ public sealed partial class WorldJobs : WorldExecution, IJobSubmissionObserver
             int storageCount = CollectStorage(in request, scratch);
             RemoveStorage(frame, scratch[..storageCount]);
 
-            bool endUse = frame.Depth == 1 && !JobExecutionContext.IsActive;
-            SynchronousResourceOwner owner = frame.Owners.Pop();
+            bool endUse = frame.Depth == 1 && !JobThreads.IsActive;
+            SynchronousResourceAccess owner = frame.Owners.Pop();
             frame.Depth--;
             if (frame.Depth == 0)
             {
@@ -111,7 +111,7 @@ public sealed partial class WorldJobs : WorldExecution, IJobSubmissionObserver
     internal override void ValidateCommandBufferAccess(World world)
     {
         ArgumentNullException.ThrowIfNull(world);
-        if (!JobExecutionContext.IsActive)
+        if (!JobThreads.IsActive)
             return;
 
         throw new InvalidOperationException(
@@ -127,7 +127,7 @@ public sealed partial class WorldJobs : WorldExecution, IJobSubmissionObserver
     {
         Dictionary<World, AdmissionFrame> frames = s_frames ??= new Dictionary<World, AdmissionFrame>();
         frames.TryGetValue(world, out AdmissionFrame? frame);
-        bool runningJob = JobExecutionContext.IsActive;
+        bool runningJob = JobThreads.IsActive;
         ValidateNesting(frame, in request, storage, runningJob);
 
         int maximumResourceCount = storage.Length + 1;
@@ -147,7 +147,7 @@ public sealed partial class WorldJobs : WorldExecution, IJobSubmissionObserver
                 resourceScratch);
             ReadOnlySpan<JobResourceAccess> required = resourceScratch[..resourceCount];
 
-            SynchronousResourceOwner owner = default;
+            SynchronousResourceAccess owner = default;
             if (runningJob)
             {
                 // Whole-World writes are ordinary scalar APIs. A Write capability serializes
@@ -184,7 +184,7 @@ public sealed partial class WorldJobs : WorldExecution, IJobSubmissionObserver
         AdmissionFrame? existing,
         in WorldJobAdmissionRequest request,
         ReadOnlySpan<RequestedStorage> storage,
-        SynchronousResourceOwner owner)
+        SynchronousResourceAccess owner)
     {
         AdmissionFrame frame = existing ?? RentFrame(request.Topology);
         int storageAdded = 0;
@@ -404,7 +404,7 @@ public sealed partial class WorldJobs : WorldExecution, IJobSubmissionObserver
 
         internal Dictionary<WorldStorageResourceKey, StorageFrame> Storage { get; } = new();
 
-        internal Stack<SynchronousResourceOwner> Owners { get; } = new();
+        internal Stack<SynchronousResourceAccess> Owners { get; } = new();
 
         internal void Reset(WorldTopologyAccess topology)
         {

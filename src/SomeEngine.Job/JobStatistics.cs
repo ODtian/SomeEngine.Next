@@ -1,8 +1,8 @@
 namespace SomeEngine.Job;
 
-public readonly struct JobRuntimeStats
+public readonly struct JobStatistics
 {
-    internal JobRuntimeStats(
+    internal JobStatistics(
         long scheduledJobs,
         long executedWorkItems,
         long completedHandles,

@@ -13,7 +13,7 @@ public sealed class GraphParameterUpdateTests(D3D12TestCompiler shaderCompiler)
     [Fact]
     public void IndependentParameterBlocksPreservePixelsAcrossResourceAndOrdinaryDataChanges()
     {
-        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 2 });
+        JobSystem.Initialize(new JobConfiguration { WorkerCount = 2 });
         D3D12TestShader shader = shaderCompiler.Compile("graph_parameter_updates", """
             struct InputValue { uint Value; };
             ConstantBuffer<InputValue> source;

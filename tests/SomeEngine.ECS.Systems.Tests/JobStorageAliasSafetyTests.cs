@@ -23,7 +23,7 @@ public sealed class JobStorageAliasSafetyTests : JobTest
     [Fact]
     public void TypedScheduleRejectsAliasBearingStorageBeforeJobCallback()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         var counter = new Counter();
         var job = new CountJob(counter);
@@ -57,7 +57,7 @@ public sealed class JobStorageAliasSafetyTests : JobTest
     [Fact]
     public void RecursivelyAliasFreeStorageKeepsOrdinaryTypedSchedulingAvailable()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         var counter = new Counter();
         var job = new CountJob(counter);
@@ -76,7 +76,7 @@ public sealed class JobStorageAliasSafetyTests : JobTest
     [Fact]
     public void SharedValueAliasesAreRejectedOnlyWhenAJobBorrowsTheValue()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         Entity entity = world.CreateEntity();
         world.AddShared(entity, new AliasShared { Value = "scene" });
@@ -118,7 +118,7 @@ public sealed class JobStorageAliasSafetyTests : JobTest
     [Fact]
     public void SharedReadCapabilityIsExactByComponentType()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         Entity entity = world.CreateEntity();
         world.AddShared(entity, new SafeShared { Value = 17 });
@@ -148,7 +148,7 @@ public sealed class JobStorageAliasSafetyTests : JobTest
     public void AliasFreeDynamicSharedFilterRequiresExactSharedReadCapability(
         SharedFilterPath path)
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         Entity entity = world.CreateEntity();
         var filter = new SafeShared { Value = 17 };
@@ -174,7 +174,7 @@ public sealed class JobStorageAliasSafetyTests : JobTest
     public void DynamicSharedValueFilterRejectsAliasesInsideTopologyReadJob(
         SharedFilterPath path)
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         Entity entity = world.CreateEntity();
         var filter = new AliasShared { Value = "scene" };

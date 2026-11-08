@@ -11,7 +11,7 @@ public sealed class NavigationTraversalTests
     [Fact]
     public void ChangedActionLinksHandOffMovementAndResumeNavigationAfterActualCompletion()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using World world = WorldJobs.CreateWorld(scheduler: scheduler);
         var profile = new NavigationProfile([new Vector2(-0.1f), new(0.1f, -0.1f), new(0.1f), new(-0.1f, 0.1f)],
             1, maximumSpeed: 2, capabilities: 1);

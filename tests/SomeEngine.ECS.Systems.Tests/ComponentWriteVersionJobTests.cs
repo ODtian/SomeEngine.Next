@@ -105,7 +105,7 @@ public sealed class ComponentWriteVersionJobTests
 
         internal JobWorkers()
         {
-            JobSystem.Initialize(new JobRuntimeConfig
+            JobSystem.Initialize(new JobConfiguration
             {
                 WorkerCount = 2,
                 SafetyMode = _safety,
@@ -115,7 +115,7 @@ public sealed class ComponentWriteVersionJobTests
 
         public void Dispose()
         {
-            JobSystem.Initialize(new JobRuntimeConfig
+            JobSystem.Initialize(new JobConfiguration
             {
                 SafetyMode = _safety,
                 ManagedPayloadPolicy = _payload,

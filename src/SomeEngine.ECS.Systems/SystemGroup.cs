@@ -578,7 +578,7 @@ public sealed class SystemGroup<TContext> : IDisposable
 
     private void ThrowIfJobCallbackWouldWaitForLifecycleControl()
     {
-        if (JobExecutionContext.IsActive &&
+        if (JobThreads.IsActive &&
             (Volatile.Read(ref _lifecycleControlState) != LifecycleControlIdle ||
              Volatile.Read(ref _disposeState) == 1))
         {
@@ -588,7 +588,7 @@ public sealed class SystemGroup<TContext> : IDisposable
 
     private static void ThrowIfJobCallbackLifecycleControlWait()
     {
-        if (JobExecutionContext.IsActive)
+        if (JobThreads.IsActive)
         {
             throw new InvalidOperationException(
                 "A running Job callback cannot wait for SystemGroup lifecycle control.");
@@ -638,7 +638,7 @@ public sealed class SystemGroup<TContext> : IDisposable
 
     private static void ThrowIfJobCallbackTeardown(string operation)
     {
-        if (JobExecutionContext.IsActive)
+        if (JobThreads.IsActive)
         {
             throw new InvalidOperationException(
                 $"A system cannot be {operation} from a running Job callback.");

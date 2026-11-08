@@ -13,7 +13,7 @@ public sealed class RelationshipJobAccessTests : JobTest
     {
         ManagedPayloadPolicy previousPolicy = Jobs.ManagedPayloadPolicy;
         JobSafetyMode previousSafety = Jobs.SafetyMode;
-        ConfigureJobs(new JobRuntimeConfig
+        ConfigureJobs(new JobConfiguration
         {
             WorkerCount = 4,
             SafetyMode = previousSafety,
@@ -46,7 +46,7 @@ public sealed class RelationshipJobAccessTests : JobTest
         {
             release.Set();
             blocker.Complete();
-            ConfigureJobs(new JobRuntimeConfig
+            ConfigureJobs(new JobConfiguration
             {
                 SafetyMode = previousSafety,
                 ManagedPayloadPolicy = previousPolicy,
@@ -59,7 +59,7 @@ public sealed class RelationshipJobAccessTests : JobTest
     {
         ManagedPayloadPolicy previousPolicy = Jobs.ManagedPayloadPolicy;
         JobSafetyMode previousSafety = Jobs.SafetyMode;
-        ConfigureJobs(new JobRuntimeConfig
+        ConfigureJobs(new JobConfiguration
         {
             WorkerCount = 4,
             SafetyMode = previousSafety,
@@ -99,7 +99,7 @@ public sealed class RelationshipJobAccessTests : JobTest
         {
             release.Set();
             blocker.Complete();
-            ConfigureJobs(new JobRuntimeConfig
+            ConfigureJobs(new JobConfiguration
             {
                 SafetyMode = previousSafety,
                 ManagedPayloadPolicy = previousPolicy,

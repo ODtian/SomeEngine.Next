@@ -11,7 +11,7 @@ public sealed class AccelerationVelocityAvoidanceTests
     [Fact]
     public void ActorsWithDifferentAccelerationAndResponsePassUsingActualFeedback()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 3, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 3, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using World world = WorldJobs.CreateWorld(scheduler: scheduler);
         var paths = new NavigationSystems<NavigationMesh, PolygonNavigationSearch, PolygonSearchState, TestMotion, TestMotionReader>(world);
         using var neighbors = new NavigationNeighborSystem<TestMotion, TestMotionReader>(world, scheduler);
@@ -62,7 +62,7 @@ public sealed class AccelerationVelocityAvoidanceTests
     [Fact]
     public void FiniteAccelerationBrakesAgainstLocalBoundarySegments()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using World world = WorldJobs.CreateWorld(scheduler: scheduler);
         var profile = new NavigationProfile([new Vector2(-0.2f), new(0.2f, -0.2f), new(0.2f), new(-0.2f, 0.2f)],
             1, maximumSpeed: 1.6f, maximumAcceleration: 0.8f);

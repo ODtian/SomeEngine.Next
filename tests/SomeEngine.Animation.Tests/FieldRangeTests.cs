@@ -9,7 +9,7 @@ public sealed class FieldRangeTests
     [Fact]
     public void IndependentReferencedFieldsWriteTogetherThroughTheirDeclaredResources()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         using var world = WorldJobs.CreateWorld(scheduler: scheduler);
         using var reached = new CountdownEvent(2);
         var firstData = new ReferenceValue { Reached = reached };
@@ -32,7 +32,7 @@ public sealed class FieldRangeTests
     [Fact]
     public void GeneratedReferenceFieldsWriteTogetherWithOneComponentVersion()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         using var world = WorldJobs.CreateWorld(scheduler: scheduler);
         using var reached = new CountdownEvent(2);
         var firstData = new ReferenceValue { Reached = reached };
@@ -52,7 +52,7 @@ public sealed class FieldRangeTests
     [Fact]
     public void AliasedReferenceTargetsKeepTheInputWriteOrder()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         using var world = WorldJobs.CreateWorld(scheduler: scheduler);
         var data = new ReferenceValue();
         var first = world.CreateEntity(new ReferenceRoot { Data = data });
@@ -69,7 +69,7 @@ public sealed class FieldRangeTests
     [Fact]
     public void ReplacingTheRootReferenceWritesTheCurrentObjectForItsResourceConsumer()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         using var world = WorldJobs.CreateWorld(scheduler: scheduler);
         var previous = new ReferenceValue();
         var current = new ReferenceValue();
@@ -95,7 +95,7 @@ public sealed class FieldRangeTests
     [Fact]
     public void DisjointFieldsInOneArrayWriteTogetherThroughTheirActualRanges()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         using var world = WorldJobs.CreateWorld(scheduler: scheduler);
         using var reached = new CountdownEvent(2);
         float[] values = [0, 0];

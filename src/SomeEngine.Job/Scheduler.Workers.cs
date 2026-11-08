@@ -84,8 +84,16 @@ public sealed partial class Scheduler
             throw CreateCurrentAccessException(required, CurrentJobRequiredMessage);
         }
 
+        RequireAccess(scope.ToHandle(), required, requireSingleWorkItem);
+    }
+
+    internal bool HasCurrentAccess(JobResourceAccess required) =>
+        _execution.HasResourceAccess(GetCurrentScope(), required, out _);
+
+    internal void RequireAccess(JobHandle handle, JobResourceAccess required, bool requireSingleWorkItem)
+    {
         if (!_execution.HasResourceAccess(
-                scope.ToHandle(),
+                handle,
                 required,
                 out bool mayExecuteConcurrently))
         {

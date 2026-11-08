@@ -910,7 +910,7 @@ public sealed class ComponentJobAccessTests
 
         internal TestJobs(int workerCount)
         {
-            Scheduler = new Scheduler(new JobRuntimeConfig
+            Scheduler = new Scheduler(new JobConfiguration
             {
                 WorkerCount = workerCount,
                 SafetyMode = JobSafetyMode.Checked,

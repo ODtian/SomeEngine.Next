@@ -10,7 +10,7 @@ public sealed class NavigationTiledFlowTests
     [Fact]
     public void ResidenceAndGoalChangesKeepInstalledPassageCostsAndTheirRouteChoice()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         var profile = new NavigationProfile([new(-0.1f, -0.1f), new(0.1f, -0.1f), new(0.1f, 0.1f), new(-0.1f, 0.1f)], 1);
         var policy = new NavigationPolicy();
         NavigationGrid tiled = NavigationGridRegionBuilder.Schedule(OpenGrid(), profile, policy, scheduler: scheduler).Complete().Grid;
@@ -83,7 +83,7 @@ public sealed class NavigationTiledFlowTests
     [Fact]
     public void EikonalFieldCrossesSuccessiveDetailedTilesAndMatchesTheWholeGridAtTheirBoundaries()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 3 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 3 });
         using World world = WorldJobs.CreateWorld(scheduler: scheduler);
         var profile = new NavigationProfile([new(-0.1f, -0.1f), new(0.1f, -0.1f), new(0.1f, 0.1f), new(-0.1f, 0.1f)], 1);
         var policy = new NavigationPolicy();

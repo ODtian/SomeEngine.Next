@@ -9,7 +9,7 @@ internal static partial class CheckAnimation
 {
     private static void CheckBoundWorldFields()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
         using var world = WorldJobs.CreateWorld(scheduler: scheduler);
         Entity single = world.CreateEntity(new ConsumerFields { Style = new ConsumerStyle() });
         Entity layered = world.CreateEntity(new ConsumerFields { Style = new ConsumerStyle() });

@@ -5,7 +5,7 @@ public sealed class DependencyMergeTests
     [Fact]
     public void SingleEffectivePredecessorReturnsItsHandle()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0 });
         JobHandle predecessor = scheduler.Schedule(new EmptyJob());
 
         JobHandle combined = scheduler.CombineDependencies([default, predecessor, predecessor]);
@@ -22,7 +22,7 @@ public sealed class DependencyMergeTests
     [Fact]
     public void LargeDuplicateInputsKeepAllPredecessorsForTheirConsumer()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0 });
         int[] values = new int[256];
         JobHandle[] inputs = new JobHandle[512];
         for (int index = 0; index < values.Length; index++)
@@ -44,7 +44,7 @@ public sealed class DependencyMergeTests
     [Fact]
     public void LargeDuplicateInputsDeliverFailureToTheirConsumer()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0 });
         JobHandle[] inputs = new JobHandle[512];
         for (int index = 0; index < 255; index++)
         {

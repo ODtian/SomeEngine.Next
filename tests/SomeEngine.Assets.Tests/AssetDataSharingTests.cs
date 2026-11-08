@@ -25,14 +25,14 @@ public sealed class AssetDataSharingTests : IDisposable
         TextureBlock block = asset.GetBlock<TextureBlock>();
         ulong key = asset.BlockDescriptions.Single().GetStorageKey(block.MipTiles[0].ChunkKey);
         await using AssetFile file = await AssetFile.OpenAsync(entry.Path, TextureAsset.WireType);
-        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 0 });
+        JobSystem.Initialize(new JobConfiguration { WorkerCount = 0 });
         try
         {
             byte[] pixels = await file.ReadBytesAsync(key).AsTask().WaitAsync(TimeSpan.FromSeconds(10));
 
             Assert.Equal(new byte[] { 11, 11, 11, 11 }, pixels);
         }
-        finally { JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 2 }); }
+        finally { JobSystem.Initialize(new JobConfiguration { WorkerCount = 2 }); }
     }
 
     [Fact]

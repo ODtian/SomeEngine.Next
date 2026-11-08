@@ -180,7 +180,7 @@ public sealed class ParallelTransformPropagationTests
     {
         ManagedPayloadPolicy previousPolicy = JobSystem.ManagedPayloadPolicy;
         JobSafetyMode previousSafety = JobSystem.SafetyMode;
-        JobSystem.Initialize(new JobRuntimeConfig
+        JobSystem.Initialize(new JobConfiguration
         {
             WorkerCount = 4,
             SafetyMode = previousSafety,
@@ -192,7 +192,7 @@ public sealed class ParallelTransformPropagationTests
         }
         finally
         {
-            JobSystem.Initialize(new JobRuntimeConfig
+            JobSystem.Initialize(new JobConfiguration
             {
                 SafetyMode = previousSafety,
                 ManagedPayloadPolicy = previousPolicy,

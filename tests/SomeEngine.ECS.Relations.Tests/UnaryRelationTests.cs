@@ -132,7 +132,7 @@ public sealed class UnaryRelationTests
     [Fact]
     public void ChainedComponentRulesShareTheDeclaredWorldJobsScope()
     {
-        using var jobs = new Scheduler(new JobRuntimeConfig { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
+        using var jobs = new Scheduler(new JobConfiguration { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
         using var world = WorldJobs.CreateWorld(scheduler: jobs);
         var light = world.CreateEntity(new Score { Value = 8 });
         world.Add(light, new Weight { Value = 3 });

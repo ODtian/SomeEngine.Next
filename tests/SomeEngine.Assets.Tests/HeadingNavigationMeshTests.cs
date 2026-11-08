@@ -16,7 +16,7 @@ public sealed class HeadingNavigationMeshTests
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         try
         {
-            using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 3 });
+            using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 3 });
             NavigationProfile profile = Profile();
             var policy = new NavigationPolicy();
             HeadingNavigationMesh mesh = HeadingNavigationMeshBuilder.Schedule(Scene(), profile, policy,
@@ -97,7 +97,7 @@ public sealed class HeadingNavigationMeshTests
         Directory.CreateDirectory(directory);
         try
         {
-            using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+            using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
             NavigationSurface surface = NavigationSurfaceBuilder.Schedule(Scene(), scheduler: scheduler).Complete().Surface;
             var policy = new NavigationPolicy();
             var small = new NavigationProfile([new(-0.1f, -0.1f), new(0.1f, -0.1f), new(0.1f, 0.1f), new(-0.1f, 0.1f)], 1.5f);
@@ -136,7 +136,7 @@ public sealed class HeadingNavigationMeshTests
     [Fact]
     public void LongFootprintUsesAlignedEntrancesAndTurnsInTheWiderRegion()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         HeadingNavigationMesh mesh = HeadingNavigationMeshBuilder.Schedule(Scene(), Profile(), new NavigationPolicy(),
             new() { ChannelCount = 32 }, scheduler: scheduler).Complete().Mesh;
         Vector3 entrance = new(3, 0, 2), turning = new(3, 0, 7), exit = new(9, 0, 7);

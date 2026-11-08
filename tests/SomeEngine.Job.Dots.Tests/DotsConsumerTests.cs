@@ -4,7 +4,7 @@ namespace SomeEngine.Job.Dots.Tests;
 
 public sealed class DotsConsumerTests
 {
-    public DotsConsumerTests() => JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 2 });
+    public DotsConsumerTests() => JobSystem.Initialize(new JobConfiguration { WorkerCount = 2 });
 
     [Fact]
     public void AdapterScheduleCompletesSingleWork()
@@ -54,7 +54,7 @@ public sealed class DotsConsumerTests
     [Trait("Category", "Performance")]
     public void RepeatedJobForSchedulingDoesNotThrow()
     {
-        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 0 });
+        JobSystem.Initialize(new JobConfiguration { WorkerCount = 0 });
         for (int index = 0; index < 160; index++)
             new EmptyJobFor().Schedule(length: 1, batchSize: 1).Complete();
     }
@@ -63,7 +63,7 @@ public sealed class DotsConsumerTests
     [Trait("Category", "Performance")]
     public void RepeatedJobChunkSchedulingDoesNotThrow()
     {
-        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 0 });
+        JobSystem.Initialize(new JobConfiguration { WorkerCount = 0 });
         var source = new ArrayChunkSource([new JobChunk(0, 0, 0)]);
         for (int index = 0; index < 160; index++)
             new EmptyJobChunk().Schedule(source, batchSize: 1).Complete();

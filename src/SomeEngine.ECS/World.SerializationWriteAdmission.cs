@@ -80,7 +80,7 @@ public partial class World
     {
         // A Job callback must not hold caller-controlled external I/O while carrying
         // scheduler-scoped resource ownership.
-        if (JobExecutionContext.IsActive)
+        if (JobThreads.IsActive)
         {
             throw new InvalidOperationException(
                 "Whole-World serialization cannot execute inside a Job callback. Validate and " +

@@ -51,7 +51,7 @@ public sealed class SceneSurfaceQueryTests
     [Fact]
     public void MovingSurfaceUpdatesKeepTheContactAnchorAndSphereSweepOnItsCurrentTransform()
     {
-        using var jobs = new Scheduler(new JobRuntimeConfig { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
+        using var jobs = new Scheduler(new JobConfiguration { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
         using var world = WorldJobs.CreateWorld(scheduler: jobs);
         CollisionMesh mesh = Quad(new(-1, 0, -1), new(1, 0, -1), new(1, 0, 1), new(-1, 0, 1));
         var reader = new PlatformReader(mesh);

@@ -16,7 +16,7 @@ public sealed class GeneratedMetadataTests
             new RelationSchema(RelationDirection.Directed, RelationCardinality.UniquePair, false));
         GeneratedEcsTypes.RegisterJobStorage<RegisteredValue<int>>(true);
         GeneratedEcsTypes.RegisterJobStorage<DirectedRelationEndpoints<RegisteredLink<int>>>(true);
-        using var jobs = new Scheduler(new JobRuntimeConfig { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
+        using var jobs = new Scheduler(new JobConfiguration { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
         using var world = WorldJobs.CreateWorld(scheduler: jobs);
         var source = world.CreateEntity(new RegisteredValue<int> { Value = 4 });
         var target = world.CreateEntity();
@@ -43,7 +43,7 @@ public sealed class GeneratedMetadataTests
     [Fact]
     public void ClosedComponentsUseOrdinaryAndGeneratedJobStorageChecks()
     {
-        using var jobs = new Scheduler(new JobRuntimeConfig { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
+        using var jobs = new Scheduler(new JobConfiguration { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
         using var world = WorldJobs.CreateWorld(scheduler: jobs);
         var entity = world.CreateEntity(new RegisteredValue<int> { Value = 4 });
 

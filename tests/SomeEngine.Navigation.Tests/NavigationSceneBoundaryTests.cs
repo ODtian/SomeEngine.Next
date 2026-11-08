@@ -10,7 +10,7 @@ public sealed class NavigationSceneBoundaryTests
     [Fact]
     public void AvoidanceFollowsPlacedTileWallsAndPassesTheirConnectedRegionBoundary()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         using World world = WorldJobs.CreateWorld(scheduler: scheduler);
         var profile = new NavigationProfile([new(-0.1f, -0.1f), new(0.1f, -0.1f), new(0.1f, 0.1f), new(-0.1f, 0.1f)],
             1, maximumSpeed: 1.5f);

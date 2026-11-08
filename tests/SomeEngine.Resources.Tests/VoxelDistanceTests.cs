@@ -8,7 +8,7 @@ public sealed class VoxelDistanceTests
     [Fact]
     public async Task RebuiltDistancesKeepTheCapturedPlaneAndAnIndependentVersion()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         using var terrain = new Terrain(new TerrainEditing(scheduler));
         VoxelField field = terrain.CreateVoxelField("varying plane scalar", new VoxelGrid(2, .5f));
         var range = new VoxelRegion(-2, -2, -1, 5, 5, 3);

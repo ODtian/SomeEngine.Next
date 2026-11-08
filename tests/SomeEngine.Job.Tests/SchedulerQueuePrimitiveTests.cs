@@ -6,7 +6,7 @@ public sealed class SchedulerQueuePrimitiveTests
     public async Task ConcurrentProducersExecuteEveryWorkItemOnce()
     {
         JobSystem.Shutdown();
-        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 4 });
+        JobSystem.Initialize(new JobConfiguration { WorkerCount = 4 });
         var counts = new int[1024];
         try
         {

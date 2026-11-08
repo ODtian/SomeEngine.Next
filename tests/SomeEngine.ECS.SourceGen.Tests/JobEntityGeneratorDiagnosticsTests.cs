@@ -32,7 +32,7 @@ public static class Consumer
     public static int Execute()
     {
         SomeEngine.Job.JobSystem.Shutdown();
-        SomeEngine.Job.JobSystem.Initialize(new SomeEngine.Job.JobRuntimeConfig { WorkerCount = 2 });
+        SomeEngine.Job.JobSystem.Initialize(new SomeEngine.Job.JobConfiguration { WorkerCount = 2 });
         try
         {
             using var world = new SomeEngine.ECS.World(execution: new WorldJobs(SomeEngine.Job.JobSystem.Default));

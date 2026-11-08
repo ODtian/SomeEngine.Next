@@ -35,7 +35,7 @@ public sealed class EdgeRelationTests
     [Fact]
     public void EndpointRulesKeepEdgeRowsAndForwardEarlyOutputState()
     {
-        using var jobs = new Scheduler(new JobRuntimeConfig { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
+        using var jobs = new Scheduler(new JobConfiguration { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
         using var world = WorldJobs.CreateWorld(scheduler: jobs);
         var source = world.CreateEntity(new Score { Value = 1 });
         var target = world.CreateEntity(new Weight { Value = 8 });
@@ -81,7 +81,7 @@ public sealed class EdgeRelationTests
     [Fact]
     public void RetargetingAndMaintenanceUpdateEdgeMembershipAndCurrentEndpointRules()
     {
-        using var jobs = new Scheduler(new JobRuntimeConfig { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
+        using var jobs = new Scheduler(new JobConfiguration { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
         using var world = WorldJobs.CreateWorld(scheduler: jobs);
         var source = world.CreateEntity(new Score { Value = 1 });
         var target = world.CreateEntity(new Weight { Value = 8 });
@@ -137,7 +137,7 @@ public sealed class EdgeRelationTests
     [Fact]
     public void EndpointProjectionsDeduplicateDeclaredPairOrderAfterMaintenance()
     {
-        using var jobs = new Scheduler(new JobRuntimeConfig { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
+        using var jobs = new Scheduler(new JobConfiguration { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
         using var world = WorldJobs.CreateWorld(scheduler: jobs);
         var first = world.CreateEntity(new Score { Value = 1 });
         var second = world.CreateEntity(new Weight { Value = 8 });

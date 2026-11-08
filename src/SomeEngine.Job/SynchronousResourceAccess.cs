@@ -8,12 +8,12 @@ namespace SomeEngine.Job;
 /// not a second public scheduling model: callers outside the Job assembly receive it only through
 /// an owner-specific access coordinator.
 /// </remarks>
-internal readonly struct SynchronousResourceOwner : IDisposable
+internal readonly struct SynchronousResourceAccess : IDisposable
 {
     private readonly Scheduler? _scheduler;
     private readonly JobHandle _handle;
 
-    internal SynchronousResourceOwner(Scheduler scheduler, JobHandle handle)
+    internal SynchronousResourceAccess(Scheduler scheduler, JobHandle handle)
     {
         _scheduler = scheduler;
         _handle = handle;

@@ -19,7 +19,7 @@ internal static class Program
 {
     public static int Main(string[] args)
     {
-        JobSystem.Initialize(new JobRuntimeConfig
+        JobSystem.Initialize(new JobConfiguration
         {
             WorkerCount = Math.Clamp(Environment.ProcessorCount - 1, 1, 4),
             SafetyMode = JobSafetyMode.Checked,

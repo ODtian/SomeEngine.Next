@@ -9,7 +9,7 @@ public sealed class NavigationMppiResourceTests
     [Fact]
     public void CandidateAndSelectedTrajectoryReadSpaceBeforeAnIndependentWriterChangesIt()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using var world = WorldJobs.CreateWorld(scheduler: scheduler);
         var space = new MutableSpace(scheduler);
         var profile = new NavigationProfile([new Vector2(-0.1f), new(0.1f, -0.1f), new(0.1f), new(-0.1f, 0.1f)], 1);

@@ -33,6 +33,7 @@ public sealed partial class Scheduler
         internal bool MayExecuteConcurrently;
         internal List<DependencyContinuation> WorkContinuations { get; } = [];
         internal ResourceAccessRegistration ResourceAccesses { get; set; } = ResourceAccessRegistration.Empty;
+        internal ResourceAccessRegistration AdditionalAccesses { get; set; } = ResourceAccessRegistration.Empty;
         internal List<ScopeOwnedResource> ScopeOwnedResources { get; } = [];
         internal List<ScopeOwnedResource> ScopeOwnedResourceDispatchBuffer { get; } = [];
 
@@ -66,6 +67,7 @@ public sealed partial class Scheduler
             MayExecuteConcurrently = pendingWork > 1;
             ClearIfNotEmpty(WorkContinuations);
             ResourceAccesses = ResourceAccessRegistration.Empty;
+            AdditionalAccesses = ResourceAccessRegistration.Empty;
             ClearIfNotEmpty(ScopeOwnedResources);
             ClearIfNotEmpty(ScopeOwnedResourceDispatchBuffer);
         }
@@ -93,6 +95,7 @@ public sealed partial class Scheduler
             MayExecuteConcurrently = false;
             ClearIfNotEmpty(WorkContinuations);
             ResourceAccesses = ResourceAccessRegistration.Empty;
+            AdditionalAccesses = ResourceAccessRegistration.Empty;
             ClearIfNotEmpty(ScopeOwnedResources);
             ClearIfNotEmpty(ScopeOwnedResourceDispatchBuffer);
         }

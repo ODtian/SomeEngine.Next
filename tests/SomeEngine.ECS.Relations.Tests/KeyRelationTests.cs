@@ -181,7 +181,7 @@ public sealed class KeyRelationTests
     [Fact]
     public void KeyBucketsForwardRefStructOutputAndEarlyStop()
     {
-        using var jobs = new Scheduler(new JobRuntimeConfig { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
+        using var jobs = new Scheduler(new JobConfiguration { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
         using var world = WorldJobs.CreateWorld(scheduler: jobs);
         var first = world.CreateEntity(new IndexedWord { Value = "cloth" });
         var second = world.CreateEntity(new IndexedWord { Value = "cloth" });

@@ -10,11 +10,13 @@ public sealed partial class Scheduler
     {
         internal readonly bool Started;
         internal readonly ResourceAccessRegistration Accesses;
+        internal readonly ResourceAccessRegistration AdditionalAccesses;
 
-        internal WorkRelease(bool started, ResourceAccessRegistration accesses)
+        internal WorkRelease(bool started, ResourceAccessRegistration accesses, ResourceAccessRegistration additionalAccesses)
         {
             Started = started;
             Accesses = accesses;
+            AdditionalAccesses = additionalAccesses;
         }
     }
 
@@ -176,8 +178,10 @@ public sealed partial class Scheduler
 
                 state.WorkDependencyReleaseInProgress = true;
                 ResourceAccessRegistration accesses = state.ResourceAccesses;
+                ResourceAccessRegistration additionalAccesses = state.AdditionalAccesses;
                 state.ResourceAccesses = ResourceAccessRegistration.Empty;
-                return new WorkRelease(started: true, accesses);
+                state.AdditionalAccesses = ResourceAccessRegistration.Empty;
+                return new WorkRelease(started: true, accesses, additionalAccesses);
             }
         }
 
@@ -324,7 +328,8 @@ public sealed partial class Scheduler
                     return false;
                 }
 
-                state.ResourceAccesses = registration;
+                if (state.ResourceAccesses.Data is null) state.ResourceAccesses = registration;
+                else state.AdditionalAccesses = registration;
                 return true;
             }
         }
@@ -350,7 +355,7 @@ public sealed partial class Scheduler
 
                 mayExecuteConcurrently = state.MayExecuteConcurrently;
                 ResourceAccessRegistration registration = state.ResourceAccesses;
-                return registration.Covers(required);
+                return registration.Covers(required) || state.AdditionalAccesses.Covers(required);
             }
         }
     }

@@ -110,7 +110,7 @@ public sealed class HierarchyPropagationRestrictedApiTests : JobTest
     {
         ManagedPayloadPolicy previousPolicy = Jobs.ManagedPayloadPolicy;
         JobSafetyMode previousSafety = Jobs.SafetyMode;
-        ConfigureJobs(new JobRuntimeConfig
+        ConfigureJobs(new JobConfiguration
         {
             WorkerCount = 4,
             SafetyMode = previousSafety,
@@ -122,7 +122,7 @@ public sealed class HierarchyPropagationRestrictedApiTests : JobTest
         }
         finally
         {
-            ConfigureJobs(new JobRuntimeConfig
+            ConfigureJobs(new JobConfiguration
             {
                 SafetyMode = previousSafety,
                 ManagedPayloadPolicy = previousPolicy,

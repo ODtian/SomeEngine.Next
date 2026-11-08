@@ -16,7 +16,7 @@ public sealed class NavigationGridStreamingTests
         var signals = new TileSignals();
         try
         {
-            using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 3 });
+            using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 3 });
             var profile = new NavigationProfile([new(-0.1f, -0.1f), new(0.1f, -0.1f), new(0.1f, 0.1f), new(-0.1f, 0.1f)], 1);
             var policy = new NavigationPolicy();
             NavigationFlowGoal[] goals = [new(new(11.5f, 0, 1.5f), 0.05f)];

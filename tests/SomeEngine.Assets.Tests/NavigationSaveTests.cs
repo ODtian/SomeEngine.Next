@@ -17,7 +17,7 @@ public sealed partial class NavigationSaveTests : IDisposable
     [Fact]
     public async Task DurableRestoreKeepsSharedResourcesGoalsAndPassageChangesWhileActorsContinueMoving()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 3, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 3, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var manifest = new AssetManifest();
         var profile = new NavigationProfile([new Vector2(-0.1f), new(0.1f, -0.1f), new(0.1f), new(-0.1f, 0.1f)], 1);
         var policy = new NavigationPolicy();
@@ -136,7 +136,7 @@ public sealed partial class NavigationSaveTests : IDisposable
     [Fact]
     public async Task RestoredSourceGeometryRebuildsSceneAndSharedGridBeforeActorsResume()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 3, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 3, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var manifest = new AssetManifest();
         var resources = new NavigationSaveResources();
         var profile = new NavigationProfile([new Vector2(-0.1f), new(0.1f, -0.1f), new(0.1f), new(-0.1f, 0.1f)], 1);

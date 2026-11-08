@@ -17,7 +17,7 @@ public sealed class TerrainCacheTests
         string path = Path.Combine(Path.GetTempPath(), $"SomeEngine-Terrain-Cache-{Guid.NewGuid():N}.terrain.asset");
         try
         {
-            using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+            using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
             var editing = new TerrainEditing(scheduler);
             using var terrain = new Resources.Terrain(editing);
             HeightField heights = terrain.CreateHeightField("ground", new HeightGrid(129, 65, 16, .25f));

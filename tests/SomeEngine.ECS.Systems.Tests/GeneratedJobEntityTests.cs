@@ -17,7 +17,7 @@ public sealed class GeneratedJobEntityTests : JobTest
     [InlineData(7)]
     public void ParallelSparseJobAdvancesComponentWriteVersionForEveryRow(int rowsPerPacket)
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using World world = CreateMovingWorld(32, out Entity[] entities);
         foreach (Entity entity in entities)
             world.AddSparse(entity, new GeneratedSparse { Value = 3 });
@@ -37,7 +37,7 @@ public sealed class GeneratedJobEntityTests : JobTest
     [InlineData(7)]
     public void ParallelTableJobAdvancesComponentWriteVersionForEveryRow(int rowsPerPacket)
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using World world = CreateMovingWorld(128, out Entity[] entities);
         uint positionVersion = world.ComponentWriteVersion<GeneratedPosition>();
         uint velocityVersion = world.ComponentWriteVersion<GeneratedVelocity>();
@@ -54,7 +54,7 @@ public sealed class GeneratedJobEntityTests : JobTest
     [Fact]
     public void GeneratedCommandRecordingRequiresAJobCommandWriter()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         World world = CreateMovingWorld(8, out _);
         var commands = world.Commands();
         using var data = new CallbackData<GeneratedCommandData>(new GeneratedCommandData(commands));
@@ -70,7 +70,7 @@ public sealed class GeneratedJobEntityTests : JobTest
     [Fact]
     public async Task GeneratedCallbacksFinishBeforeStructuralMutation()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         World world = CreateMovingWorld(16, out _);
         using var attempted = new ManualResetEventSlim();
         using var data = new CallbackData<GeneratedTopologyData>(new GeneratedTopologyData(16));
@@ -106,7 +106,7 @@ public sealed class GeneratedJobEntityTests : JobTest
     [Fact]
     public void RuntimeBoundaryHoist_StillRejectsAnUndeclaredSparseBorrow()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         Entity entity = world.CreateEntity(new GeneratedPosition { Value = 4 });
         world.AddSparse(entity, new GeneratedSparse { Value = 9 });
@@ -176,7 +176,7 @@ public sealed class GeneratedJobEntityTests : JobTest
     [Fact]
     public void ExplicitFilter_ComposesSelectionWithoutAddingValueAccess()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         World world = CreateMovingWorld(8, out Entity[] entities);
         for (int i = 0; i < entities.Length; i += 2)
             world.AddTag<GeneratedExcludedTag>(entities[i]);
@@ -201,7 +201,7 @@ public sealed class GeneratedJobEntityTests : JobTest
     [Fact]
     public void ExactChangedFilter_RunsAfterRangeHazardsAndBeforeCurrentRowWrite()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 3, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 3, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         World world = CreateMovingWorld(10, out Entity[] entities);
         uint baseline = world.AcquireSystemTick();
         for (int i = 0; i < entities.Length; i += 2)
@@ -222,7 +222,7 @@ public sealed class GeneratedJobEntityTests : JobTest
     [Fact]
     public void EmptySerialAndParallelJobs_DoNotAcquireAnExecutionVersion()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         uint tickBefore = world.CurrentTick;
 
@@ -238,7 +238,7 @@ public sealed class GeneratedJobEntityTests : JobTest
     [Fact]
     public void FullyRowFilteredSerialAndParallelJobs_DoNotAcquireAnExecutionVersion()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         World world = CreateMovingWorld(4, out Entity[] entities);
         foreach (Entity entity in entities)
         {
@@ -262,7 +262,7 @@ public sealed class GeneratedJobEntityTests : JobTest
     [Fact]
     public void FullyChunkFilteredParallelPackets_DoNotAcquireAnExecutionVersion()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         World world = CreateMovingWorld(4, out _);
         QueryDefinition filter = world.QueryDefinition().ChunkChanged<GeneratedVelocity>().Build();
         uint tickBefore = world.CurrentTick;
@@ -280,7 +280,7 @@ public sealed class GeneratedJobEntityTests : JobTest
     [Fact]
     public void MatchingReadOnlySerialAndParallelJobs_DoNotAcquireAnExecutionVersion()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         World world = CreateMovingWorld(6, out Entity[] entities);
         uint tickBefore = world.CurrentTick;
         using var data = new CallbackData<GeneratedReadCount>(new GeneratedReadCount());
@@ -301,7 +301,7 @@ public sealed class GeneratedJobEntityTests : JobTest
     [Fact]
     public void EnabledFilter_OwnsPacketBitRangesAndSkipsDisabledRows()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 3, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 3, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         World world = CreateMovingWorld(10, out Entity[] entities);
         for (int i = 0; i < entities.Length; i++)
         {
@@ -322,7 +322,7 @@ public sealed class GeneratedJobEntityTests : JobTest
     [Fact]
     public void ChunkChangedFilter_WithSameFamilyDirectWriteIsExplicitlySerialOnly()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         World world = CreateMovingWorld(4, out _);
         QueryDefinition filter = world.QueryDefinition().ChunkChanged<GeneratedPosition>().Build();
 
@@ -339,7 +339,7 @@ public sealed class GeneratedJobEntityTests : JobTest
     [Fact]
     public void GeneratedParallelWritesEachMatchingEntityOnce()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         World world = CreateMovingWorld(32, out Entity[] entities);
         using var data = new CallbackData<GeneratedConcurrencyData>(new GeneratedConcurrencyData());
         JobHandle handle = new GeneratedConcurrencyJob(data).ScheduleParallel(world,
@@ -362,7 +362,7 @@ public sealed class GeneratedJobEntityTests : JobTest
     [Fact]
     public async Task ScheduleParallel_ResolvesPacketsAfterSemanticDependencyWithoutBlockingIntermediateTopology()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 3, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 3, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         World world = CreateMovingWorld(4, out _);
         using var dependencyStarted = new ManualResetEventSlim();
         using var releaseDependency = new ManualResetEventSlim();
@@ -393,7 +393,7 @@ public sealed class GeneratedJobEntityTests : JobTest
     [Fact]
     public void ScheduleParallel_CapturesAfterDynamicTopologyWriterDescendant()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 3, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 3, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         World world = CreateMovingWorld(3, out _);
         var capture = new EntityCapture();
         JobHandle dependency = Jobs.Schedule(
@@ -412,7 +412,7 @@ public sealed class GeneratedJobEntityTests : JobTest
     [Fact]
     public void ScheduleParallel_RegisteredTopologySuccessorCannotSilentlyInvalidateCapturedPackets()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 1, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 1, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         World world = CreateMovingWorld(3, out Entity[] originalEntities);
         using var workerOccupied = new ManualResetEventSlim();
         using var releaseWorker = new ManualResetEventSlim();
@@ -457,7 +457,7 @@ public sealed class GeneratedJobEntityTests : JobTest
     [Fact]
     public void Schedule_RegistersQueryResourcesAfterDynamicTopologyAndDataWriterDescendant()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 3, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 3, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         World world = CreateMovingWorld(3, out _);
         var capture = new EntityCapture();
         JobHandle dependency = Jobs.Schedule(
@@ -473,7 +473,7 @@ public sealed class GeneratedJobEntityTests : JobTest
     [Fact]
     public void GeneratedParallelWritesPreserveValuesAfterCommandPlayback()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         World world = CreateMovingWorld(48, out Entity[] entities);
         world.Commands().CreateEntity();
         world.Flush();
@@ -498,7 +498,7 @@ public sealed class GeneratedJobEntityTests : JobTest
     [Fact]
     public void ScheduleParallel_SparseWrapperFiltersAndWritesRequiredRows()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 3, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 3, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         World world = CreateMovingWorld(12, out Entity[] entities);
         for (int i = 0; i < entities.Length; i += 2)
             world.AddSparse(entities[i], new GeneratedSparse { Value = i });
@@ -519,7 +519,7 @@ public sealed class GeneratedJobEntityTests : JobTest
     [Fact]
     public void ScheduleParallel_BufferWrapperBorrowsOnlyCurrentPacketRows()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 3, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 3, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         World world = CreateMovingWorld(10, out Entity[] entities);
         foreach (Entity entity in entities)
         {
@@ -546,7 +546,7 @@ public sealed class GeneratedJobEntityTests : JobTest
     [Fact]
     public void GeneratedStorageWritesShareOneWorldWriteVersion()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 3, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 3, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         World world = CreateMovingWorld(12, out Entity[] entities);
         foreach (Entity entity in entities)
         {
@@ -587,7 +587,7 @@ public sealed class GeneratedJobEntityTests : JobTest
     [Fact]
     public void ColdBufferDescriptor_CompilesLogicalBufferAdmissionBeforeAnyBufferExists()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         GeneratedQueryAccessDescriptor descriptor =
             new GeneratedColdBufferJob().GetGeneratedQueryAccess();
         Assert.Equal(1, descriptor.AccessCount);
@@ -612,7 +612,7 @@ public sealed class GeneratedJobEntityTests : JobTest
     [Fact]
     public void SerialCanonicalParentWriter_UsesWorldFinalizerAndHasNoParallelSurface()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         Entity firstParent = world.CreateEntity();
         Entity secondParent = world.CreateEntity();

@@ -13,7 +13,7 @@ public sealed partial class NavigationSaveTests
     [Fact]
     public async Task MotionAssetRestoreResumesSelectedVehicleSearchAndMppiFromActualFeedback()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 3, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 3, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var manifest = new AssetManifest();
         var resources = new NavigationSaveResources();
         var model = new NavigationVehicleModel(0.5f, allowReverse: true);

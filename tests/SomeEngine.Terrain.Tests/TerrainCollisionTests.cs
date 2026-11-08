@@ -10,7 +10,7 @@ public sealed class TerrainCollisionTests
     [Fact]
     public async Task CapturedQueriesAndCollisionMeshesKeepTheSameSurfaceVersions()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         using var terrain = new Resources.Terrain(new TerrainEditing(scheduler));
         HeightField heights = terrain.CreateHeightField("ground", new HeightGrid(9, 9, 3, .5f), .25f);
         VoxelField voxels = terrain.CreateVoxelField("distance", new VoxelGrid(3, .5f));

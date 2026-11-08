@@ -21,7 +21,7 @@ public sealed class TerrainGpuEditingTests(SceneContentFixture content)
     [Fact]
     public async Task MultipleTerrainFeaturesRecordEachFieldEditOnce()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         var first = new HeightTerrainExample(scheduler);
         var second = new HeightTerrainExample(scheduler);
         Shader shader = await LoadHeightShaderAsync();
@@ -73,7 +73,7 @@ public sealed class TerrainGpuEditingTests(SceneContentFixture content)
         string path = Path.Combine(Path.GetTempPath(), $"SomeEngine-Terrain-Gpu-Read-{Guid.NewGuid():N}.terrain.asset");
         try
         {
-            using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+            using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
             var editing = new TerrainEditing(scheduler);
             var original = new Terrain(editing);
             HeightField heights = original.CreateHeightField("ground", new HeightGrid(8, 4, 4), 2f);
@@ -122,7 +122,7 @@ public sealed class TerrainGpuEditingTests(SceneContentFixture content)
         string path = Path.Combine(Path.GetTempPath(), $"SomeEngine-Gpu-Terrain-{Guid.NewGuid():N}.terrain.asset");
         try
         {
-            using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+            using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
             var editing = new TerrainEditing(scheduler);
             using var terrain = new Terrain(editing);
             HeightField heights = terrain.CreateHeightField("ground", new HeightGrid(5, 5, 2));
@@ -229,7 +229,7 @@ public sealed class TerrainGpuEditingTests(SceneContentFixture content)
     [Fact]
     public async Task GpuVoxelNeighborhoodEditsMatchTheCpuVersions()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         var cpuTerrain = new Terrain(new TerrainEditing(scheduler));
         var gpuTerrain = new Terrain(new TerrainEditing(scheduler));
         var grid = new VoxelGrid(3);
@@ -278,7 +278,7 @@ public sealed class TerrainGpuEditingTests(SceneContentFixture content)
     [Fact]
     public async Task GpuHeightNeighborhoodEditsMatchTheCpuVersions()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         var cpuTerrain = new Terrain(new TerrainEditing(scheduler));
         var gpuTerrain = new Terrain(new TerrainEditing(scheduler));
         var grid = new HeightGrid(7, 7, 3);
@@ -325,7 +325,7 @@ public sealed class TerrainGpuEditingTests(SceneContentFixture content)
     [Fact]
     public async Task GpuVoxelSphereDeltaMatchesCpuSamplesAfterTheEditCompletes()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         var cpuTerrain = new Terrain(new TerrainEditing(scheduler));
         var gpuTerrain = new Terrain(new TerrainEditing(scheduler));
         var grid = new VoxelGrid(4);
@@ -361,7 +361,7 @@ public sealed class TerrainGpuEditingTests(SceneContentFixture content)
     [Fact]
     public async Task AlternatingCpuAndGpuVoxelEditsKeepEachCapturedVersion()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         var terrain = new Terrain(new TerrainEditing(scheduler));
         VoxelField field = terrain.CreateVoxelField("cave", new VoxelGrid(4), 2f);
         Shader shader = await LoadVoxelShaderAsync();
@@ -400,7 +400,7 @@ public sealed class TerrainGpuEditingTests(SceneContentFixture content)
     [Fact]
     public async Task GpuVoxelSphereDeltaRendersTheSameChangedSurfaceAsCpu()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         var gpu = new VoxelTerrainExample(scheduler);
         var cpu = new VoxelTerrainExample(scheduler);
         Shader shader = await LoadVoxelShaderAsync();
@@ -462,7 +462,7 @@ public sealed class TerrainGpuEditingTests(SceneContentFixture content)
     [Fact]
     public async Task GpuHeightDeltaMatchesCpuSamplesAfterTheEditCompletes()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         var cpuTerrain = new Terrain(new TerrainEditing(scheduler));
         var gpuTerrain = new Terrain(new TerrainEditing(scheduler));
         var grid = new HeightGrid(8, 6, 4);
@@ -496,7 +496,7 @@ public sealed class TerrainGpuEditingTests(SceneContentFixture content)
     [Fact]
     public async Task CpuAndGpuEditsReadThePreviouslySubmittedHeightVersion()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         var terrain = new Terrain(new TerrainEditing(scheduler));
         HeightField height = terrain.CreateHeightField("ground", new HeightGrid(8, 6, 4), 2f);
         Shader shader = await LoadHeightShaderAsync();
@@ -530,7 +530,7 @@ public sealed class TerrainGpuEditingTests(SceneContentFixture content)
     [Fact]
     public async Task GpuHeightEditMovesBothPlacementsToTheRaisedSurface()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         var example = new HeightTerrainExample(scheduler);
         Shader shader = await LoadHeightShaderAsync();
         TerrainEdit edit = default;

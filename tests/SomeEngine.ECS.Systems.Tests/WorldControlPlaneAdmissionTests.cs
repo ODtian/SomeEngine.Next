@@ -15,7 +15,7 @@ public sealed class WorldControlPlaneAdmissionTests : JobTest
     {
         using var attempted = new ManualResetEventSlim();
         var events = new System.Collections.Concurrent.ConcurrentQueue<string>();
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         Entity entity = world.CreateEntity();
         _ = RelationshipJobAccess.TopologyWrite(world);
@@ -98,7 +98,7 @@ public sealed class WorldControlPlaneAdmissionTests : JobTest
     {
         using var attempted = new ManualResetEventSlim();
         var events = new System.Collections.Concurrent.ConcurrentQueue<string>();
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         Entity entity = world.CreateEntity();
         QueryHandle query = world.Query(world.QueryDefinition().Read<QueryTickTrigger>());

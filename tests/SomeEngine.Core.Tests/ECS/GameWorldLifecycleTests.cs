@@ -278,7 +278,7 @@ public sealed class GameWorldLifecycleTests
 
         internal JobRuntimeScope()
         {
-            JobSystem.Initialize(new JobRuntimeConfig
+            JobSystem.Initialize(new JobConfiguration
             {
                 WorkerCount = 2,
                 ManagedPayloadPolicy = ManagedPayloadPolicy.Allow,
@@ -288,7 +288,7 @@ public sealed class GameWorldLifecycleTests
 
         public void Dispose()
         {
-            JobSystem.Initialize(new JobRuntimeConfig
+            JobSystem.Initialize(new JobConfiguration
             {
                 WorkerCount = 2,
                 ManagedPayloadPolicy = _payloadPolicy,

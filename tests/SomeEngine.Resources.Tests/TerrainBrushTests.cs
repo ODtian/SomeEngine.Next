@@ -8,7 +8,7 @@ public sealed class TerrainBrushTests
     [Fact]
     public async Task HeightSmoothingUsesTheSameSourceNeighborhoodAcrossPages()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         var terrain = new Terrain(new TerrainEditing(scheduler));
         HeightField field = terrain.CreateHeightField("ground", new HeightGrid(7, 7, 3));
         await field.EditCpu(new HeightDeltaBrush(new HeightRegion(3, 3, 1, 1), 9f)).WaitAsync();
@@ -36,7 +36,7 @@ public sealed class TerrainBrushTests
     [Fact]
     public async Task VoxelSmoothingUsesTheSameSourceNeighborhoodAcrossPages()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         var terrain = new Terrain(new TerrainEditing(scheduler));
         VoxelField field = terrain.CreateVoxelField("density", new VoxelGrid(3), 0f);
         await field.EditCpu(new VoxelSphereDeltaBrush(field.Grid, Vector3.Zero, .5f, 27f)).WaitAsync();
@@ -80,7 +80,7 @@ public sealed class TerrainBrushTests
     [Fact]
     public async Task FlattenBrushesUseMeterRadiusAndTheSameRadialStrength()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         var terrain = new Terrain(new TerrainEditing(scheduler));
         HeightField heights = terrain.CreateHeightField("ground", new HeightGrid(5, 5, 2, 2f), 6f);
         VoxelField voxels = terrain.CreateVoxelField("density", new VoxelGrid(2, 2f), 6f);
@@ -102,7 +102,7 @@ public sealed class TerrainBrushTests
     [Fact]
     public async Task CustomBrushesUseCapturedGradientsInTerrainMeters()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         var terrain = new Terrain(new TerrainEditing(scheduler));
         HeightField heights = terrain.CreateHeightField("ground", new HeightGrid(7, 5, 3, 2f));
         VoxelField voxels = terrain.CreateVoxelField("density", new VoxelGrid(3, 2f));

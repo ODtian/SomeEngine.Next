@@ -1,6 +1,6 @@
 namespace SomeEngine.Job;
 
-public sealed class JobRuntimeConfig
+public sealed class JobConfiguration
 {
     private const string WorkerCountMessage = "Worker count must be non-negative.";
     private const string QueuedWorkItemCapacityMessage = "Queued work item capacity must be positive.";
@@ -42,7 +42,7 @@ public sealed class JobRuntimeConfig
     /// <summary>Maximum automatic tile density; cold work uses up to four tiles per worker within this limit.</summary>
     public int AutoBatchMaxTilesPerWorker { get; init; } = 16;
 
-    public static JobRuntimeConfig Default => new();
+    public static JobConfiguration Default => new();
 
     internal static int DefaultWorkerCount => Math.Max(1, Environment.ProcessorCount - 1);
 

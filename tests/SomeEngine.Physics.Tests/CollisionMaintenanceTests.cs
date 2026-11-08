@@ -14,7 +14,7 @@ public sealed class CollisionMaintenanceTests
     [Fact]
     public void PositionCategoryAndCharacterWritesRefreshThePersistentContactQuery()
     {
-        using var jobs = new Scheduler(new JobRuntimeConfig { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
+        using var jobs = new Scheduler(new JobConfiguration { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
         using var world = WorldJobs.CreateWorld(scheduler: jobs);
         var characterA = world.CreateEntity();
         var characterB = world.CreateEntity();
@@ -83,7 +83,7 @@ public sealed class CollisionMaintenanceTests
     [Fact]
     public void MemberInsertionRemovalAndDestructionRefreshBothMaintainedContactQueries()
     {
-        using var jobs = new Scheduler(new JobRuntimeConfig { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
+        using var jobs = new Scheduler(new JobConfiguration { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
         using var world = WorldJobs.CreateWorld(scheduler: jobs);
         var a = world.CreateEntity(new Body { Kind = MotionKind.Dynamic, Bounds = Box(0), CollisionCategories = new(1, 1) });
         var b = world.CreateEntity(new Body { Kind = MotionKind.Dynamic, Bounds = Box(0.2f), CollisionCategories = new(1, 1) });
@@ -141,7 +141,7 @@ public sealed class CollisionMaintenanceTests
     [Fact]
     public void ExplicitWriterMaintenanceAndContactDependenciesConsumeTheUpdatedFrame()
     {
-        using var jobs = new Scheduler(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked });
+        using var jobs = new Scheduler(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked });
         using var world = WorldJobs.CreateWorld(scheduler: jobs);
         var characterA = world.CreateEntity();
         var characterB = world.CreateEntity();
@@ -303,7 +303,7 @@ public sealed class CollisionMaintenanceTests
 
         public CollisionMemberData(QueryTermFilter filter)
         {
-            _jobs = new Scheduler(new JobRuntimeConfig { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
+            _jobs = new Scheduler(new JobConfiguration { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
             World = WorldJobs.CreateWorld(scheduler: _jobs);
             First = World.CreateEntity(new Body { Kind = MotionKind.Dynamic, Bounds = Box(0) });
             Second = World.CreateEntity(new Body { Kind = MotionKind.Dynamic, Bounds = Box(0.2f) });

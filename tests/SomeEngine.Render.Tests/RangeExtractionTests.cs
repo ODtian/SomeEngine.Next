@@ -12,7 +12,7 @@ public sealed class RangeExtractionTests(RenderTestDevice graphics) : IClassFixt
     [Fact]
     public void RangeCollectorPublishesSourceChangesThroughExistingRenderBoundary()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         using World source = WorldJobs.CreateWorld(scheduler: scheduler);
         using var destination = new RenderWorld();
         using var extraction = new RenderExtractionSystems(destination, new ValueExtractor());

@@ -112,7 +112,7 @@ internal static class GraphConsumerChecks
 
     private static void CheckCustomCondition()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
         using var world = WorldJobs.CreateWorld(scheduler: scheduler);
         Entity first = world.CreateEntity(new GraphValue());
         Entity second = world.CreateEntity(new GraphValue());
@@ -185,7 +185,7 @@ internal static class GraphConsumerChecks
 
     private static void CheckPublicLeaf()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
         using var world = WorldJobs.CreateWorld(scheduler: scheduler);
         Entity first = world.CreateEntity(new MarkerValue());
         Entity second = world.CreateEntity(new MarkerValue());
@@ -219,7 +219,7 @@ internal static class GraphConsumerChecks
 
     private static void CheckOutputRemoval()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
         using var world = WorldJobs.CreateWorld(scheduler: scheduler);
         Entity target = world.CreateEntity(new GraphValue());
         var spec = Spec.Tween<float, FloatOps, Linear>(1);

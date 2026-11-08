@@ -8,7 +8,7 @@ public sealed class TerrainSurfaceTests
     [Fact]
     public async Task HeightSurfaceInitializesEditableVoxelsWithAContinuousLocalBlend()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         var terrain = new Terrain(new TerrainEditing(scheduler));
         HeightField heights = terrain.CreateHeightField("ground", new HeightGrid(9, 9, 4));
         VoxelField voxels = terrain.CreateVoxelField("detail", new VoxelGrid(2));
@@ -39,7 +39,7 @@ public sealed class TerrainSurfaceTests
     [Fact]
     public async Task BlendSurfaceKeepsBothCapturedInputsAcrossSourceEdits()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         var terrain = new Terrain(new TerrainEditing(scheduler));
         HeightField heights = terrain.CreateHeightField("ground", new HeightGrid(4, 4, 2), 1f);
         VoxelField voxels = terrain.CreateVoxelField("detail", new VoxelGrid(2), 3f);
@@ -60,7 +60,7 @@ public sealed class TerrainSurfaceTests
     [Fact]
     public async Task HeightSurfaceReadsSignedValuesFromOneCapturedVersion()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         var terrain = new Terrain(new TerrainEditing(scheduler));
         HeightField heights = terrain.CreateHeightField("ground", new HeightGrid(4, 4, 2), 1f);
         terrain.Surface = new HeightSurface(heights);
@@ -81,7 +81,7 @@ public sealed class TerrainSurfaceTests
     [Fact]
     public async Task VoxelSurfaceKeepsItsCapturedScalarVersionAcrossLaterEdits()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         var terrain = new Terrain(new TerrainEditing(scheduler));
         VoxelField voxels = terrain.CreateVoxelField("solid", new VoxelGrid(4));
         terrain.Surface = new VoxelSurface(voxels);

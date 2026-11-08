@@ -13,7 +13,7 @@ public sealed class TerrainCollisionGpuTests(SceneContentFixture content)
     [Fact]
     public async Task CollisionAndQueriesReadTheCapturedGpuDistanceWhileTheFieldContinuesEditing()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         using var terrain = new Terrain(new TerrainEditing(scheduler));
         VoxelField field = terrain.CreateVoxelField("GPU distance", new VoxelGrid(2, .5f));
         var surface = new VoxelSurface(field);

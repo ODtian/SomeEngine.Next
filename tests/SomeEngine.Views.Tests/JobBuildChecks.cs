@@ -10,7 +10,7 @@ internal static partial class JobBuildChecks
 {
     internal static void VerifyResult(bool completed)
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0 });
         using var frames = new HeadlessFrameDriver();
         var number = new NumberData();
         JobHandle handle = scheduler.Schedule(new WriteNumberJob(number));

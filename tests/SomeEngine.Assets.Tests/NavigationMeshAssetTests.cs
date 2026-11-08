@@ -47,7 +47,7 @@ public sealed class NavigationMeshAssetTests : IDisposable
             policy = await (await asset.GetBlockAsync<NavigationPolicyBlock>()).CreateAsync();
         using (var asset = await NavigationAsset.OpenAsync(meshPath))
             mesh = await (await asset.GetBlockAsync<NavigationMeshBlock>()).CreateAsync(selection);
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         using World world = WorldJobs.CreateWorld(scheduler: scheduler);
         var navigation = new NavigationSystems<NavigationMesh, PolygonNavigationSearch,
             PolygonSearchState, AssetMotion, AssetMotionReader>(world);

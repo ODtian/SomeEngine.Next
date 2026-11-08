@@ -13,7 +13,7 @@ public sealed class WorldJobFailClosedTests
     [Fact]
     public void RawJobFailsClosedWhenAdmissionIntegrationWasNeverLoaded()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0 });
         using var world = new World();
         long revision = world.PublishedTopologyRevision;
         JobHandle handle = scheduler.Schedule(new RawWorldJob(world));

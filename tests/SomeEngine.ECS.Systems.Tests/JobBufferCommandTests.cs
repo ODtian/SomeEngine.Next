@@ -57,7 +57,7 @@ public sealed class JobBufferCommandTests : JobTest
     [Fact]
     public void ParallelJobSegmentsPublishPipelineOwnedBuffersByStableProducerKey()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         Entity[] entities = new Entity[8];
         BufferItem[] items = new BufferItem[entities.Length * 2];

@@ -289,7 +289,7 @@ public static partial class TypedAnimationChecks
 
     private sealed class TypedFrames : IDisposable
     {
-        private readonly Scheduler _scheduler = new(new JobRuntimeConfig { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
+        private readonly Scheduler _scheduler = new(new JobConfiguration { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
         internal World World { get; }
         private readonly SystemGroup<ImmediateSystemContext> _builds;
         private readonly SystemGroup<ImmediateSystemContext> _animations;

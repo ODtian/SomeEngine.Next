@@ -13,7 +13,7 @@ public sealed class CompositionRangeTests
     [Fact]
     public void IndependentTargetsComposeTogetherBeforeTheirFieldsAreRead()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         using var world = WorldJobs.CreateWorld(scheduler: scheduler);
         using var reached = new CountdownEvent(2);
         GCHandle signal = GCHandle.Alloc(reached);
@@ -51,7 +51,7 @@ public sealed class CompositionRangeTests
     [Fact]
     public void DeclaredTargetsComposeTogetherInTheCommonAnimationUpdate()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         using var world = WorldJobs.CreateWorld(scheduler: scheduler);
         using var reached = new CountdownEvent(2);
         GCHandle signal = GCHandle.Alloc(reached);

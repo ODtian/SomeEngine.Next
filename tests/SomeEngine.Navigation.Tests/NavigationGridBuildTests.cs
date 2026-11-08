@@ -8,7 +8,7 @@ public sealed class NavigationGridBuildTests
     [Fact]
     public void CompletedGridConnectsTileBordersAndPreservesLayerActions()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 3, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 3, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var tiles = new NavigationSurfaceTile[2];
         for (int tile = 0; tile < tiles.Length; tile++)
         {

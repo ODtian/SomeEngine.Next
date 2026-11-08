@@ -147,7 +147,7 @@ public sealed class BitmapRelationTests
     [Fact]
     public void BitmapFiltersForwardCountExistenceAndRefStructEarlyStop()
     {
-        using var jobs = new Scheduler(new JobRuntimeConfig { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
+        using var jobs = new Scheduler(new JobConfiguration { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
         using var world = WorldJobs.CreateWorld(scheduler: jobs);
         var first = world.CreateEntity(new CollisionLayer
             { Categories = CollisionCategory.Character, AllowedCategories = CollisionCategory.Scenery | CollisionCategory.Sensor });

@@ -5,7 +5,7 @@ public sealed class CompletionNotificationTests
     [Fact]
     public async Task ResourceReaderProceedsAfterCpuWorkWhileChildFenceIsIncomplete()
     {
-        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 1 });
+        JobSystem.Initialize(new JobConfiguration { WorkerCount = 1 });
         JobResource resource = JobSystem.CreateResource("CPU data with outstanding child fence");
         var fence = new TestFence();
         using var entered = new ManualResetEventSlim();
@@ -44,7 +44,7 @@ public sealed class CompletionNotificationTests
     [InlineData(4)]
     public async Task CompletionObservesFenceSignalsWithoutNewQueuedWork(int workerCount)
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = workerCount });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = workerCount });
         for (int iteration = 0; iteration < 128; iteration++)
         {
             var fence = new TestFence();

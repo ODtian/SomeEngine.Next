@@ -11,7 +11,7 @@ public sealed class BufferJobAccessTests : JobTest
     [Fact]
     public void BufferCallbackInsideJob_RejectsMissingLogicalResource()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         Entity entity = CreateBufferEntity<Element>(world);
 
@@ -27,7 +27,7 @@ public sealed class BufferJobAccessTests : JobTest
     [Fact]
     public void SameWorldSameBuffer_ReadOwnersCanRunConcurrently()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         Entity entity = CreateBufferEntity<Element>(world);
         using var firstStarted = new ManualResetEventSlim();
@@ -58,7 +58,7 @@ public sealed class BufferJobAccessTests : JobTest
     public void SameWorldSameBuffer_WriteOwnerBlocksReadersAndWriters()
     {
         var events = new System.Collections.Concurrent.ConcurrentQueue<string>();
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         Entity entity = CreateBufferEntity<Element>(world);
         using var writerStarted = new ManualResetEventSlim();
@@ -106,7 +106,7 @@ public sealed class BufferJobAccessTests : JobTest
     [Fact]
     public void DifferentBufferTypesAndWorlds_DoNotShareLogicalResource()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         var otherWorld = CreateJobWorld();
         Entity entity = CreateBufferEntity<Element>(world);
@@ -146,7 +146,7 @@ public sealed class BufferJobAccessTests : JobTest
     [Fact]
     public void FaultedBufferBody_ReleasesIterationAndSynchronousResourceOwner()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         Entity entity = CreateBufferEntity<Element>(world);
         _ = BufferJobAccess<Element>.Write(world);
@@ -167,7 +167,7 @@ public sealed class BufferJobAccessTests : JobTest
     [Fact]
     public void RepeatedBufferAccessInvokesEveryCallback()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var unboundWorld = new World();
         Entity unboundEntity = CreateBufferEntity<Element>(unboundWorld);
         int unboundCallbacks = 0;
@@ -197,7 +197,7 @@ public sealed class BufferJobAccessTests : JobTest
     [Fact]
     public void TopologyWriteHook_CanBorrowBufferAfterLaterBufferOwnerWasRegistered()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         Entity entity = CreateBufferEntity<Element>(world);
         _ = BufferJobAccess<Element>.Write(world);

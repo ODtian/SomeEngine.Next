@@ -12,7 +12,7 @@ public sealed class TerrainGpuBrushRenderingTests(SceneContentFixture content)
     [Fact]
     public async Task GpuHeightSmoothingAndFlatteningRenderTheCpuSurfaces()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         Shader shader = await TerrainGpuEditingTests.LoadNeighborhoodShaderAsync("terrain_height_neighborhood.slang");
         var gpu = new HeightTerrainExample(scheduler);
         var cpu = new HeightTerrainExample(scheduler);
@@ -84,7 +84,7 @@ public sealed class TerrainGpuBrushRenderingTests(SceneContentFixture content)
     [Fact]
     public async Task GpuVoxelSmoothingAndFlatteningRenderTheCpuSurfaces()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
         Shader shader = await TerrainGpuEditingTests.LoadNeighborhoodShaderAsync("terrain_voxel_neighborhood.slang");
         var gpu = new VoxelTerrainExample(scheduler);
         var cpu = new VoxelTerrainExample(scheduler);

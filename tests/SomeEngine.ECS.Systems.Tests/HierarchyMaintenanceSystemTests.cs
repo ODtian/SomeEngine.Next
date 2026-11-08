@@ -170,7 +170,7 @@ public sealed class HierarchyMaintenanceSystemTests : JobTest
     {
         ManagedPayloadPolicy previousPolicy = Jobs.ManagedPayloadPolicy;
         JobSafetyMode previousSafety = Jobs.SafetyMode;
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0 });
         using var world = CreateJobWorld(scheduler: scheduler);
         Entity parent = world.CreateEntity();
         Entity child = world.CreateEntity();
@@ -229,7 +229,7 @@ public sealed class HierarchyMaintenanceSystemTests : JobTest
 
     private void InitializeJobRuntime(JobSafetyMode safetyMode)
     {
-        ConfigureJobs(new JobRuntimeConfig
+        ConfigureJobs(new JobConfiguration
         {
             WorkerCount = 4,
             SafetyMode = safetyMode,
@@ -241,7 +241,7 @@ public sealed class HierarchyMaintenanceSystemTests : JobTest
         ManagedPayloadPolicy payloadPolicy,
         JobSafetyMode safetyMode)
     {
-        ConfigureJobs(new JobRuntimeConfig
+        ConfigureJobs(new JobConfiguration
         {
             SafetyMode = safetyMode,
             ManagedPayloadPolicy = payloadPolicy,

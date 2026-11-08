@@ -11,7 +11,7 @@ public partial class World
     /// </summary>
     internal WorldJobAdmissionScope EnterReadSnapshotControlPlane()
     {
-        if (JobExecutionContext.IsActive)
+        if (JobThreads.IsActive)
         {
             throw new InvalidOperationException(
                 "A whole-World read snapshot cannot execute inside a Job callback. Declare the " +

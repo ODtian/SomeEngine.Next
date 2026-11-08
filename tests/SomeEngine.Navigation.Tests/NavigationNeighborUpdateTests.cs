@@ -12,7 +12,7 @@ public sealed class NavigationNeighborUpdateTests
     [Fact]
     public void DisposingNeighborsCompletesCollectionAndReleasesItsQuery()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0 });
         using World world = WorldJobs.CreateWorld(scheduler: scheduler);
         var profile = new NavigationProfile([new Vector2(-.2f), new(.2f, -.2f), new(.2f), new(-.2f, .2f)], 1);
         Entity actor = world.CreateEntity(new LayeredMotion { Position = new(1, 0, 2) });
@@ -32,7 +32,7 @@ public sealed class NavigationNeighborUpdateTests
     [Fact]
     public void SharedNeighborsFollowMotionAndEntityReplacementAcrossTheCrowd()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 3 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 3 });
         using World world = WorldJobs.CreateWorld(scheduler: scheduler);
         var profile = new NavigationProfile([new Vector2(-.2f), new(.2f, -.2f), new(.2f), new(-.2f, .2f)], 1);
         var positions = new Dictionary<Entity, Vector3>();

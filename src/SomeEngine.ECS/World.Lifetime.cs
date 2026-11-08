@@ -24,7 +24,7 @@ public partial class World
         if (state == LifetimeClosing &&
             (_execution?.IsExecutingCurrentScope == true ||
              OwnsCurrentSerializationWriteLifetime() ||
-             (!JobExecutionContext.IsActive &&
+             (!JobThreads.IsActive &&
               Volatile.Read(ref _lifetimeOwnerThreadId) == Environment.CurrentManagedThreadId)))
             return;
 
@@ -59,7 +59,7 @@ public partial class World
     internal void ValidateDisposePreconditions()
     {
         ThrowIfRestrictedWorldApi();
-        if (JobExecutionContext.IsActive)
+        if (JobThreads.IsActive)
         {
             throw new InvalidOperationException(
                 "World cannot be disposed from a running Job callback.");

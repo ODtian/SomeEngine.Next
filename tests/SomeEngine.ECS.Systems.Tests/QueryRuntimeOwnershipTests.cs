@@ -13,7 +13,7 @@ public sealed class QueryRuntimeOwnershipTests : JobTest
     [Fact]
     public void ConcurrentRepeatedReadQueriesDoesNotThrow()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         Entity first = world.CreateEntity(new ComponentA { Value = 1 });
         Entity second = world.CreateEntity(new ComponentB { Value = 2 });
@@ -34,7 +34,7 @@ public sealed class QueryRuntimeOwnershipTests : JobTest
     [Fact]
     public void DifferentTableComponents_EnterQueryCallbacksConcurrently()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         _ = world.CreateEntity(new ComponentA { Value = 1 });
         _ = world.CreateEntity(new ComponentB { Value = 2 });
@@ -74,7 +74,7 @@ public sealed class QueryRuntimeOwnershipTests : JobTest
     public void SameTableComponent_WriteQueryBlocksReadQueryAtResourceFrontier()
     {
         var events = new System.Collections.Concurrent.ConcurrentQueue<string>();
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         _ = world.CreateEntity(new ComponentA { Value = 1 });
         QueryHandle writeQuery = world.Query(
@@ -121,7 +121,7 @@ public sealed class QueryRuntimeOwnershipTests : JobTest
     [Fact]
     public void SameTableComponent_InDifferentWorldsDoesNotShareQueryOwner()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var firstWorld = CreateJobWorld();
         var secondWorld = CreateJobWorld();
         _ = firstWorld.CreateEntity(new ComponentA { Value = 1 });
@@ -161,7 +161,7 @@ public sealed class QueryRuntimeOwnershipTests : JobTest
     [Fact]
     public void ReadonlyRelationshipQuery_CanOverlapUnrelatedTableQuery()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         Entity parent = world.CreateEntity();
         Entity child = world.CreateEntity();
@@ -204,7 +204,7 @@ public sealed class QueryRuntimeOwnershipTests : JobTest
     public void WritableRelationshipQuery_BlocksOrdinaryQueryAtTopologyFrontier()
     {
         var events = new System.Collections.Concurrent.ConcurrentQueue<string>();
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         Entity parent = world.CreateEntity();
         Entity child = world.CreateEntity();
@@ -255,7 +255,7 @@ public sealed class QueryRuntimeOwnershipTests : JobTest
     [Fact]
     public void WritableRelationshipOwner_DefensivelyRejectsNestedOrdinaryQuery()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         Entity parent = world.CreateEntity();
         Entity child = world.CreateEntity();
@@ -278,7 +278,7 @@ public sealed class QueryRuntimeOwnershipTests : JobTest
     [Fact]
     public void FaultedOrdinaryQuery_ReleasesBorrowAndSynchronousResourceOwner()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         Entity entity = world.CreateEntity(new ComponentA { Value = 1 });
         QueryHandle query = world.Query(
@@ -301,7 +301,7 @@ public sealed class QueryRuntimeOwnershipTests : JobTest
     [Fact]
     public void WritableRelationshipQuery_BodyFaultStillRollsBackCanonicalValue()
     {
-        ConfigureJobs(new JobRuntimeConfig { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
         Entity oldParent = world.CreateEntity();
         Entity newParent = world.CreateEntity();

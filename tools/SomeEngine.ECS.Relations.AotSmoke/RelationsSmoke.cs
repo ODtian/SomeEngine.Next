@@ -11,7 +11,7 @@ internal static partial class RelationsSmoke
 {
     private static int Main()
     {
-        using var jobs = new Scheduler(new JobRuntimeConfig
+        using var jobs = new Scheduler(new JobConfiguration
         {
             WorkerCount = 2,
             SafetyMode = JobSafetyMode.Checked,

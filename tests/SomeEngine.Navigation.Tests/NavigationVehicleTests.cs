@@ -11,7 +11,7 @@ public sealed class NavigationVehicleTests
     [Fact]
     public void StateLatticeExecutesACompleteLongTurnFromItsSuppliedMotionControl()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using World world = WorldJobs.CreateWorld(scheduler: scheduler);
         var model = new NavigationVehicleModel(1);
         var profile = new NavigationProfile([new Vector2(-0.1f), new(0.1f, -0.1f), new(0.1f), new(-0.1f, 0.1f)],
@@ -59,7 +59,7 @@ public sealed class NavigationVehicleTests
     [Fact]
     public void HybridAStarDrivesFromAnArbitraryHeadingToTheDockingPoseUsingContinuousControls()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using World world = WorldJobs.CreateWorld(scheduler: scheduler);
         var model = new NavigationVehicleModel(minimumTurningRadius: 2);
         var profile = new NavigationProfile(
@@ -107,7 +107,7 @@ public sealed class NavigationVehicleTests
     [Fact]
     public void StateLatticeControlsDriveTheVehicleThroughABendWithinItsTurningRadius()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using World world = WorldJobs.CreateWorld(scheduler: scheduler);
         var model = new NavigationVehicleModel(minimumTurningRadius: 2);
         var profile = new NavigationProfile(

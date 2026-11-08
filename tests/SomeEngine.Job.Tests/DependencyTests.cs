@@ -6,7 +6,7 @@ public sealed class DependencyTests
 
     public DependencyTests()
     {
-        JobSystem.Initialize(new JobRuntimeConfig { WorkerCount = 2 });
+        JobSystem.Initialize(new JobConfiguration { WorkerCount = 2 });
         _data.Reset();
     }
 
@@ -15,7 +15,7 @@ public sealed class DependencyTests
     {
         using var gate = new ManualResetEventSlim();
         var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 0 });
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0 });
         var dependency = scheduler.Schedule(new DependencyData.BlockingJob(_data, gate, started),
             new JobScheduleOptions(JobPriority.Low));
         var dependent = scheduler.Schedule(new DependencyData.DependentJob(_data),
@@ -108,7 +108,7 @@ public sealed class DependencyTests
     [Fact]
     public void ObservingDependencyFailuresAllowsFurtherWorkAndCleanShutdown()
     {
-        using var scheduler = new Scheduler(new JobRuntimeConfig
+        using var scheduler = new Scheduler(new JobConfiguration
         {
             WorkerCount = 0,
             MaxCompletionStates = 4,
