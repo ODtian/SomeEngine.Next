@@ -1,5 +1,6 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
+using SomeEngine.Job;
 
 namespace SomeEngine.Transparency.Research;
 
@@ -93,30 +94,25 @@ public sealed class BlendEffectData
         Bounds = bounds.ToArray();
         Triangles = triangles.ToArray();
         Coverage = coverage.ToArray();
-        var tiles = Enumerable.Range(0, TileColumns * TileRows).Select(static _ => new List<uint>()).ToArray();
-        for (int index = 0; index < Bounds.Length; index++)
+        var tileCoverage = new TileCoverage[Bounds.Length];
+        Scheduler jobs = JobSystem.Current;
+        jobs.ExecuteParallel(new PrepareCoverage(Bounds, width, height, TileColumns, TileRows, tileCoverage),
+            Bounds.Length, JobScheduleOptions.AutomaticBatchSize,
+            [JobResourceAccess.Read(jobs, Bounds), JobResourceAccess.Write(jobs, tileCoverage)]);
+        var references = new TileReferenceData(tileCoverage, TileColumns, TileRows);
+        References = references.References;
+        TileWords = new BlendRange[references.Ranges.Length];
+        uint wordCount = 0;
+        for (int tile = 0; tile < TileWords.Length; tile++)
         {
-            Vector4 rectangle = Bounds[index].Rectangle;
-            int left = Math.Clamp((int)MathF.Floor((rectangle.X + 1) * .5f * width / TileSize), 0, TileColumns - 1);
-            int right = Math.Clamp((int)MathF.Floor((rectangle.Z + 1) * .5f * width / TileSize), 0, TileColumns - 1);
-            int top = Math.Clamp((int)MathF.Floor((1 - rectangle.W) * .5f * height / TileSize), 0, TileRows - 1);
-            int bottom = Math.Clamp((int)MathF.Floor((1 - rectangle.Y) * .5f * height / TileSize), 0, TileRows - 1);
-            for (int row = top; row <= bottom; row++)
-            for (int column = left; column <= right; column++) tiles[row * TileColumns + column].Add((uint)index);
+            uint countForTile = (references.Ranges[tile].TriangleCount + 31) / 32;
+            TileWords[tile] = new(wordCount, countForTile);
+            wordCount += countForTile;
         }
-        References = tiles.SelectMany(static tile => tile).ToArray();
-        var words = new List<BlendWord>();
-        TileWords = new BlendRange[tiles.Length];
-        int firstReference = 0;
-        for (int index = 0; index < tiles.Length; index++)
-        {
-            int firstWord = words.Count;
-            for (int first = 0; first < tiles[index].Count; first += 32)
-                words.Add(new((uint)(firstReference + first), (uint)Math.Min(32, tiles[index].Count - first)));
-            TileWords[index] = new((uint)firstWord, (uint)(words.Count - firstWord));
-            firstReference += tiles[index].Count;
-        }
-        Words = words.ToArray();
+        Words = new BlendWord[wordCount];
+        jobs.ExecuteParallel(new FillWords(references.Ranges, TileWords, Words), TileWords.Length,
+            JobScheduleOptions.AutomaticBatchSize,
+            [JobResourceAccess.Read(jobs, references.Ranges), JobResourceAccess.Read(jobs, TileWords), JobResourceAccess.Write(jobs, Words)]);
         Pattern = new Vector4[64 * 64];
         for (int y = 0; y < 64; y++)
         for (int x = 0; x < 64; x++)
@@ -137,6 +133,34 @@ public sealed class BlendEffectData
             Vector3 maximum = Vector3.Max(a.Position, Vector3.Max(b.Position, c.Position));
             bounds.Add(new(new(minimum.X, minimum.Y, maximum.X, maximum.Y), new(minimum.Z, maximum.Z), material, 0));
             coverage.Add(TriangleCoverage.Create(new(new(a.Position, 1), new(b.Position, 1), new(c.Position, 1), Vector4.One, index), material));
+        }
+    }
+
+    private readonly struct PrepareCoverage(BlendBounds[] bounds, int width, int height, int columns, int rows,
+        TileCoverage[] output) : IJobParallelFor
+    {
+        public void Execute(int index)
+        {
+            Vector4 rectangle = bounds[index].Rectangle;
+            int left = Math.Clamp((int)MathF.Floor((rectangle.X + 1) * .5f * width / TileSize), 0, columns - 1);
+            int right = Math.Clamp((int)MathF.Floor((rectangle.Z + 1) * .5f * width / TileSize), 0, columns - 1);
+            int top = Math.Clamp((int)MathF.Floor((1 - rectangle.W) * .5f * height / TileSize), 0, rows - 1);
+            int bottom = Math.Clamp((int)MathF.Floor((1 - rectangle.Y) * .5f * height / TileSize), 0, rows - 1);
+            output[index] = new(left, top, right, bottom);
+        }
+    }
+
+    private readonly struct FillWords(TileRange[] references, BlendRange[] tiles, BlendWord[] output) : IJobParallelFor
+    {
+        public void Execute(int tile)
+        {
+            TileRange range = references[tile];
+            BlendRange words = tiles[tile];
+            for (uint word = 0; word < words.WordCount; word++)
+            {
+                uint first = word * 32;
+                output[words.FirstWord + word] = new(range.FirstTriangle + first, Math.Min(32u, range.TriangleCount - first));
+            }
         }
     }
 

@@ -22,7 +22,7 @@ public sealed class NavigationMppiTests
         NavigationCosts costs = NavigationCostSystem.Schedule(grid, policy, scheduler: scheduler).Complete().Costs;
         var space = new NavigationVehicleSpace(grid, NavigationMotionSet.CreateCarLattice(profile, 0.5f, 1.2f), costs);
         var paths = new NavigationSystems<NavigationVehicleSpace, StateLatticeSearch, StateLatticeSearchState, TestMotion, TestMotionReader>(world);
-        var neighbors = new NavigationNeighborSystem<TestMotion, TestMotionReader>(world, scheduler);
+        using var neighbors = new NavigationNeighborSystem<TestMotion, TestMotionReader>(world, scheduler);
         var mppi = new NavigationAvoidanceSystem<NavigationVehicleSpace, NavigationVehicleMppiModel, TestMotion, TestMotionReader>(world, neighbors);
         var prediction = new NavigationPredictionSystem<NavigationVelocityPrediction, TestMotion, TestMotionReader>(world);
         Entity actor = world.CreateEntity(new TestMotion { Position = new(1.75f, 0, 1.25f) });

@@ -14,7 +14,7 @@ public sealed class GameWorldLifecycleTests
         using var runtime = new JobRuntimeScope();
         using var state = new BlockingState();
         var gameWorld = new GameWorld(new WorldJobs(JobSystem.Default));
-        ComponentJobAccess<LocalTransform>.ScheduleRead(
+        _ = ComponentJobAccess<LocalTransform>.ScheduleRead(
             gameWorld.World,
             new BlockingJob(state));
         Assert.True(state.Started.Wait(TimeSpan.FromSeconds(5)));

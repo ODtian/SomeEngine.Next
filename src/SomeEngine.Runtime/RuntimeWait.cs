@@ -8,6 +8,17 @@ internal static class RuntimeWait
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(2);
 
+    internal static void WaitForCompletion(ValueTask work, NativeWindow window, TimeSpan timeout)
+    {
+        if (work.IsCompletedSuccessfully)
+        {
+            work.GetAwaiter().GetResult();
+            return;
+        }
+        SomeEngine.Job.JobHandle completion = SomeEngine.Job.JobSystem.CreateExternalFenceHandle(work);
+        Task(completion.WaitAsync().AsTask(), window, timeout);
+    }
+
     internal static void Task(Task task, NativeWindow window, TimeSpan timeout)
     {
         using var trace = SomeEngine.Diagnostics.EngineTrace.Begin(ApplicationTrace.TaskCompletion);

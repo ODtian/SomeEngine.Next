@@ -159,6 +159,18 @@ public readonly ref struct ReadOnlyQueryPacket
         return ColumnChangedSince(headerColumn, lastSystemVersion);
     }
 
+    public bool RowChangedSince<T>(int row, uint lastSystemVersion) where T : struct
+    {
+        int column = QueryAccessGuards.RequireAccess<T>(_match, read: true, write: false);
+        return VersionClock.IsNewer(_chunk.WriteVersionRows(column).Slice(_rowStart, Count)[row], lastSystemVersion);
+    }
+
+    public bool RowBufferChangedSince<T>(int row, uint lastSystemVersion) where T : struct, IBufferElement
+    {
+        QueryAccessGuards.RequireBufferAccess<T>(_match, read: true, write: false, out int column, out _);
+        return VersionClock.IsNewer(_chunk.WriteVersionRows(column).Slice(_rowStart, Count)[row], lastSystemVersion);
+    }
+
     private bool ColumnChangedSince(int column, uint lastSystemVersion)
     {
         if (unchecked((int)(_chunk.ChangeVersions[column] - lastSystemVersion)) <= 0)
@@ -365,6 +377,13 @@ public static class ReadOnlyQueryPacketJobs
 {
     private const int InitialPacketCapacity = 16;
 
+    /// <summary>Borrows the chunk's existing read access for the duration of its surrounding query callback.</summary>
+    public static ReadOnlyQueryPacket Borrow(scoped QueryChunkView chunk)
+    {
+        var data = chunk.BorrowReadOnlyChunk();
+        return new(data.Match, data.Chunk, 0, chunk.Count);
+    }
+
     public static int ExecuteParallel<TJob>(
         scoped QueryCursor cursor,
         in TJob job,
@@ -455,8 +474,9 @@ public static class ReadOnlyQueryPacketJobs
         // surrounding query already keeps their ECS columns alive; only external data need
         // resource declarations. Do not register this private array in a global resource table.
         var adapter = new PacketJob<TJob>(packets, lastSystemVersion, job);
-        WorldStorageJobResources.RequireJobs(world).Scheduler.ScheduleParallel(
-            adapter, packetCount, batchSize: 1, externalAccesses, options).Complete();
+        Scheduler scheduler = world.Execution is WorldJobs jobs ? jobs.Scheduler : JobSystem.Current;
+        scheduler.ExecuteParallel(
+            adapter, packetCount, batchSize: 1, externalAccesses, options);
         return outputCount;
     }
 

@@ -62,7 +62,7 @@ public struct PoseBlendSystem : ISystem<ImmediateSystemContext>, ISystem<PoseNod
                 }
         });
         if (_work.Count > 0)
-            JobSystem.ScheduleParallel(new BlendBones(_work), _work.Count, 8, CollectionsMarshal.AsSpan(_accesses)).Complete();
+            PoseAnimation.GetScheduler(frame.World).ScheduleParallel(new BlendBones(_work), _work.Count, 8, CollectionsMarshal.AsSpan(_accesses)).Complete();
         frame.World.ExecuteQuery(_blends, ref frame, static (scoped QueryCursor rows, ref BlendFrame frame) =>
         {
             World world = frame.World;

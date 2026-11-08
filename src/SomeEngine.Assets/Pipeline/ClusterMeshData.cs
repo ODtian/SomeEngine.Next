@@ -2,6 +2,8 @@ using System.Buffers.Binary;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using SomeEngine.Assets.Schema;
+using SomeEngine.Geometry.Cluster;
+using SomeEngine.Job;
 using SomeEngine.Resources;
 using SomeEngine.Resources.Geometry;
 
@@ -30,52 +32,63 @@ internal sealed class ClusterMeshData
     {
         if (geometry.VertexIdentity != attributes.VertexIdentity || geometry.Clusters.Count != attributes.Clusters.Count)
             throw new InvalidDataException("Cluster geometry and attributes must describe the same vertices.");
-        var encoded = new List<SomeEngine.Geometry.Cluster.EncodedClusterGeometry>(geometry.Clusters.Count);
+        var encoded = new EncodedClusterGeometry[geometry.Clusters.Count];
+        JobSystem.ExecuteParallel(new EncodeClusters(geometry.Clusters, attributes.Clusters, encoded), encoded.Length, 16);
         Vector3 minimum = new(float.MaxValue), maximum = new(float.MinValue);
-        for (int index = 0; index < geometry.Clusters.Count; index++)
+        foreach (EncodedClusterGeometry cluster in encoded)
         {
-            ClusterGeometry source = geometry.Clusters[index];
-            ReadOnlySpan<byte> positions = source.PositionData.AsSpan();
-            ReadOnlySpan<byte> values = attributes.Clusters[index].Data.AsSpan();
-            int attributeOffset = 16 + ((positions.Length + 3) & ~3);
-            byte[] blob = new byte[attributeOffset + values.Length];
-            BinaryPrimitives.WriteUInt32LittleEndian(blob, 16);
-            BinaryPrimitives.WriteUInt32LittleEndian(blob.AsSpan(4), (uint)positions.Length);
-            BinaryPrimitives.WriteUInt32LittleEndian(blob.AsSpan(8), (uint)attributeOffset);
-            BinaryPrimitives.WriteUInt32LittleEndian(blob.AsSpan(12), (uint)values.Length);
-            positions.CopyTo(blob.AsSpan(16));
-            values.CopyTo(blob.AsSpan(attributeOffset));
-            var materials = source.TriangleRegions.IsEmpty ? source.TriangleMaterials : source.TriangleRegions;
-            uint[] regions = materials.Select(static value => unchecked((uint)value)).ToArray();
-            Vector3 low = Vector(source.BoundMin), high = Vector(source.BoundMax);
-            minimum = Vector3.Min(minimum, low); maximum = Vector3.Max(maximum, high);
-            double edgeSquared = 0;
-            for (int triangle = 0; triangle < source.Indices.Length; triangle += 3)
-            {
-                Vector3 first = source.DecodePosition(source.Indices[triangle]);
-                Vector3 second = source.DecodePosition(source.Indices[triangle + 1]);
-                Vector3 third = source.DecodePosition(source.Indices[triangle + 2]);
-                edgeSquared = Math.Max(edgeSquared, Math.Max(SquaredEdge(first, second),
-                    Math.Max(SquaredEdge(second, third), SquaredEdge(third, first))));
-            }
-            encoded.Add(new()
-            {
-                VertexBlob = blob, TriangleIndices = source.Indices.ToArray(), TriangleMaterials = regions,
-                VertexCount = source.Vertices.Length, BoundMin = low, BoundMax = high,
-                Center = Vector(source.Center),
-                LodSphere = new(Vector(source.LodCenter), source.LodRadius),
-                SelfLodSphere = new(Vector(source.SelfLodCenter), source.SelfLodRadius),
-                Error = source.Error, ParentError = source.ParentError, Level = source.Level,
-                Group = source.Group, ParentGroup = source.ParentGroup, SourceClusterIndex = (uint)index,
-                MaximumEdgeLength = Math.Sqrt(edgeSquared),
-            });
+            minimum = Vector3.Min(minimum, cluster.BoundMin);
+            maximum = Vector3.Max(maximum, cluster.BoundMax);
         }
         Vector3 center = (minimum + maximum) * .5f;
         var bounds = new Bounds { Center = new() { X = center.X, Y = center.Y, Z = center.Z },
             Radius = Vector3.Distance(minimum, maximum) * .5f };
-        Mesh mesh = SomeEngine.Geometry.Cluster.ClusterMeshPages.Build("Cluster geometry",
+        Mesh mesh = ClusterMeshPages.Build("Cluster geometry",
             geometry.PositionEncoding + "+" + attributes.Encoding, encoded, bounds);
         return new(mesh, geometry, attributes);
+    }
+
+    private readonly record struct EncodeClusters(IList<ClusterGeometry> Geometry,
+        IList<ClusterVertexAttributes> Attributes, EncodedClusterGeometry[] Results) : IJobParallelFor
+    {
+        public void Execute(int index) => Results[index] = EncodeCluster(Geometry[index], Attributes[index], index);
+    }
+
+    private static EncodedClusterGeometry EncodeCluster(ClusterGeometry source, ClusterVertexAttributes attributes, int index)
+    {
+        ReadOnlySpan<byte> positions = source.PositionData.AsSpan();
+        ReadOnlySpan<byte> values = attributes.Data.AsSpan();
+        int attributeOffset = 16 + ((positions.Length + 3) & ~3);
+        byte[] blob = new byte[attributeOffset + values.Length];
+        BinaryPrimitives.WriteUInt32LittleEndian(blob, 16);
+        BinaryPrimitives.WriteUInt32LittleEndian(blob.AsSpan(4), (uint)positions.Length);
+        BinaryPrimitives.WriteUInt32LittleEndian(blob.AsSpan(8), (uint)attributeOffset);
+        BinaryPrimitives.WriteUInt32LittleEndian(blob.AsSpan(12), (uint)values.Length);
+        positions.CopyTo(blob.AsSpan(16));
+        values.CopyTo(blob.AsSpan(attributeOffset));
+        var materials = source.TriangleRegions.IsEmpty ? source.TriangleMaterials : source.TriangleRegions;
+        uint[] regions = materials.Select(static value => unchecked((uint)value)).ToArray();
+        Vector3 low = Vector(source.BoundMin), high = Vector(source.BoundMax);
+        double edgeSquared = 0;
+        for (int triangle = 0; triangle < source.Indices.Length; triangle += 3)
+        {
+            Vector3 first = source.DecodePosition(source.Indices[triangle]);
+            Vector3 second = source.DecodePosition(source.Indices[triangle + 1]);
+            Vector3 third = source.DecodePosition(source.Indices[triangle + 2]);
+            edgeSquared = Math.Max(edgeSquared, Math.Max(SquaredEdge(first, second),
+                Math.Max(SquaredEdge(second, third), SquaredEdge(third, first))));
+        }
+        return new EncodedClusterGeometry
+        {
+            VertexBlob = blob, TriangleIndices = source.Indices.ToArray(), TriangleMaterials = regions,
+            VertexCount = source.Vertices.Length, BoundMin = low, BoundMax = high,
+            Center = Vector(source.Center),
+            LodSphere = new(Vector(source.LodCenter), source.LodRadius),
+            SelfLodSphere = new(Vector(source.SelfLodCenter), source.SelfLodRadius),
+            Error = source.Error, ParentError = source.ParentError, Level = source.Level,
+            Group = source.Group, ParentGroup = source.ParentGroup, SourceClusterIndex = (uint)index,
+            MaximumEdgeLength = Math.Sqrt(edgeSquared),
+        };
     }
 
     private static Vector3 Vector(Vec3 value) => new(value.X, value.Y, value.Z);

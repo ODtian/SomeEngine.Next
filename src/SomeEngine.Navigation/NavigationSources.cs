@@ -166,14 +166,15 @@ public sealed class NavigationSourceSystem<TTransform, TReader>
                 if (old is null || !ReferenceEquals(old.Settings, settings)) Array.Fill(changed, true);
                 else
                 {
-                    foreach (NavigationSourceRecord record in current.Values)
-                    {
-                        if (previous.TryGetValue(record.Key, out NavigationSourceRecord before) && before == record) continue;
-                        AddBounds(record.Bounds);
-                        if (previous.TryGetValue(record.Key, out before)) AddBounds(before.Bounds);
-                    }
-                    foreach (NavigationSourceRecord before in previous.Values)
-                        if (!current.ContainsKey(before.Key)) AddBounds(before.Bounds);
+                    NavigationSourceRecord[] records = current.Values.Concat(previous.Values).ToArray();
+                    const int recordsPerRange = 128;
+                    var changedByRange = new HashSet<int>[(records.Length + recordsPerRange - 1) / recordsPerRange];
+                    float comparisonPadding = NavigationSurfaceTraversal.GetRotationRadius(settings.Profile.Footprint.Span) + 3 * settings.Surface.CellSize;
+                    JobSystem.ExecuteParallel(new CompareSources(records, current.Count, current, previous,
+                        region.Bounds, tileWidth, width, depth, comparisonPadding, recordsPerRange, changedByRange),
+                        changedByRange.Length, batchSize: 1);
+                    foreach (HashSet<int> range in changedByRange)
+                        foreach (int tile in range) changed[tile] = true;
                 }
                 previous.Clear();
                 foreach (var pair in current) previous.Add(pair.Key, pair.Value);
@@ -192,18 +193,44 @@ public sealed class NavigationSourceSystem<TTransform, TReader>
                 var surface = settings.Surface with { BorderSize = MathF.Max(settings.Surface.BorderSize, padding) };
                 state.Input = new(settings, new(sources, region.Bounds, surface), tileVersions, version);
                 region.SetInput(state.Input);
-
-                void AddBounds(NavigationBounds bounds)
-                {
-                    float padding = NavigationSurfaceTraversal.GetRotationRadius(settings.Profile.Footprint.Span) + 3 * settings.Surface.CellSize;
-                    int minX = Math.Max(0, (int)MathF.Floor((bounds.Minimum.X - padding - region.Bounds.Minimum.X) / tileWidth));
-                    int maxX = Math.Min(width - 1, (int)MathF.Floor((bounds.Maximum.X + padding - region.Bounds.Minimum.X) / tileWidth));
-                    int minZ = Math.Max(0, (int)MathF.Floor((bounds.Minimum.Z - padding - region.Bounds.Minimum.Z) / tileWidth));
-                    int maxZ = Math.Min(depth - 1, (int)MathF.Floor((bounds.Maximum.Z + padding - region.Bounds.Minimum.Z) / tileWidth));
-                    for (int z = minZ; z <= maxZ; z++)
-                    for (int x = minX; x <= maxX; x++) changed[z * width + x] = true;
-                }
             }
+        }
+    }
+
+    private readonly struct CompareSources(NavigationSourceRecord[] records, int currentCount,
+        Dictionary<NavigationSourceKey, NavigationSourceRecord> current,
+        Dictionary<NavigationSourceKey, NavigationSourceRecord> previous, NavigationBounds bounds,
+        float tileWidth, int width, int depth, float padding, int recordsPerRange, HashSet<int>[] output) : IJobParallelFor
+    {
+        public void Execute(int range)
+        {
+            var changed = new HashSet<int>();
+            int end = Math.Min(records.Length, (range + 1) * recordsPerRange);
+            for (int index = range * recordsPerRange; index < end; index++)
+            {
+                NavigationSourceRecord record = records[index];
+                if (index < currentCount)
+                {
+                    if (previous.TryGetValue(record.Key, out NavigationSourceRecord before))
+                    {
+                        if (before == record) continue;
+                        AddBounds(before.Bounds, changed);
+                    }
+                    AddBounds(record.Bounds, changed);
+                }
+                else if (!current.ContainsKey(record.Key)) AddBounds(record.Bounds, changed);
+            }
+            output[range] = changed;
+        }
+
+        private void AddBounds(NavigationBounds sourceBounds, HashSet<int> changed)
+        {
+            int minX = Math.Max(0, (int)MathF.Floor((sourceBounds.Minimum.X - padding - bounds.Minimum.X) / tileWidth));
+            int maxX = Math.Min(width - 1, (int)MathF.Floor((sourceBounds.Maximum.X + padding - bounds.Minimum.X) / tileWidth));
+            int minZ = Math.Max(0, (int)MathF.Floor((sourceBounds.Minimum.Z - padding - bounds.Minimum.Z) / tileWidth));
+            int maxZ = Math.Min(depth - 1, (int)MathF.Floor((sourceBounds.Maximum.Z + padding - bounds.Minimum.Z) / tileWidth));
+            for (int z = minZ; z <= maxZ; z++)
+            for (int x = minX; x <= maxX; x++) changed.Add(z * width + x);
         }
     }
 }

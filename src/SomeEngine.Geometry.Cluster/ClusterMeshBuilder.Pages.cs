@@ -10,6 +10,7 @@ using System.Runtime.InteropServices;
 using MeshOptimizer;
 using SomeEngine.Resources.Geometry;
 using SomeEngine.Resources;
+using SomeEngine.Job;
 using ValueType = SomeEngine.Resources.Geometry.ValueType;
 using Stream = System.IO.Stream;
 
@@ -25,47 +26,65 @@ public static partial class ClusterMeshBuilder
         {
             MeshInput mesh = PrepareMesh(positions, attributes, indices, materialIndices, strategy, scratch);
             MeshletBuild meshlets = BuildMeshletData(mesh, strategy);
-            var encoded = new List<EncodedClusterGeometry>(meshlets.Meshlets.Count);
-            for (int index = 0; index < meshlets.Meshlets.Count; index++)
-            {
-                ClusterMeshlet cluster = meshlets.Meshlets[index];
-                uint[] vertices = cluster.LocalVertices;
-                byte[] local = cluster.LocalIndices;
-                uint[] materials = new uint[local.Length / 3];
-                double edgeSquared = 0;
-                for (int triangle = 0; triangle < local.Length; triangle += 3)
-                {
-                    materials[triangle / 3] = mesh.MaterialIndices[vertices[local[triangle]]];
-                    Vector3 first = mesh.Positions[vertices[local[triangle]]];
-                    Vector3 second = mesh.Positions[vertices[local[triangle + 1]]];
-                    Vector3 third = mesh.Positions[vertices[local[triangle + 2]]];
-                    edgeSquared = Math.Max(edgeSquared, Math.Max(SquaredEdge(first, second),
-                        Math.Max(SquaredEdge(second, third), SquaredEdge(third, first))));
-                }
-                EncodedClusterVertices data = mesh.Attributes.Encode(mesh.Positions.AsSpan(0, mesh.VertexCount), vertices.AsSpan());
-                byte[] blob = new byte[16 + data.Blob.Length];
-                int positionBytes = data.PositionBytes == 0 ? data.Blob.Length : data.PositionBytes;
-                BinaryPrimitives.WriteUInt32LittleEndian(blob, 16);
-                BinaryPrimitives.WriteUInt32LittleEndian(blob.AsSpan(4), (uint)positionBytes);
-                BinaryPrimitives.WriteUInt32LittleEndian(blob.AsSpan(8), (uint)(data.PositionBytes == 0 ? 16 : 16 + positionBytes));
-                BinaryPrimitives.WriteUInt32LittleEndian(blob.AsSpan(12), (uint)(data.PositionBytes == 0 ? data.Blob.Length : data.Blob.Length - positionBytes));
-                data.Blob.Span.CopyTo(blob.AsSpan(16));
-                encoded.Add(new()
-                {
-                    VertexBlob = blob, TriangleIndices = local, TriangleMaterials = materials, VertexCount = vertices.Length,
-                    BoundMin = data.BoundMin, BoundMax = data.BoundMax, Center = cluster.Center,
-                    LodSphere = new(cluster.LodCenter, cluster.LodRadius),
-                    SelfLodSphere = new(cluster.SelfLodCenter, cluster.SelfLodRadius),
-                    Level = cluster.Level, Error = cluster.Error, ParentError = cluster.ParentError,
-                    Group = cluster.GroupId, ParentGroup = strategy == ClusterBuildStrategy.Realtime ? index : cluster.ParentGroupId,
-                    SourceClusterIndex = (uint)index, MaximumEdgeLength = Math.Sqrt(edgeSquared),
-                });
-            }
+            int batchCount = (meshlets.Meshlets.Count + ClustersPerEncodingBatch - 1) / ClustersPerEncodingBatch;
+            var encoders = new VertexData[batchCount];
+            for (int batch = 0; batch < batchCount; batch++) encoders[batch] = mesh.Attributes.CreateBatch();
+            var encoded = new EncodedClusterGeometry[meshlets.Meshlets.Count];
+            JobSystem.ExecuteParallel(new EncodeClusters(mesh, meshlets.Meshlets, encoders, strategy, encoded), batchCount);
             int regionCount = materialCount ?? checked((int)((ulong)materialIndices.Max() + 1));
             MeshRegion[] regions = Enumerable.Range(0, regionCount).Select(static index => new MeshRegion { Name = "Material " + index.ToString(System.Globalization.CultureInfo.InvariantCulture) }).ToArray();
             return ClusterMeshPages.Build(name, attributes.Compatibility, encoded, CreateBounds(meshlets.Bounds), regions);
         }
         finally { scratch.Return(); }
+    }
+
+    private const int ClustersPerEncodingBatch = 16;
+
+    private readonly record struct EncodeClusters(MeshInput Mesh, List<ClusterMeshlet> Meshlets,
+        VertexData[] Encoders, ClusterBuildStrategy Strategy, EncodedClusterGeometry[] Results) : IJobParallelFor
+    {
+        public void Execute(int batch)
+        {
+            int end = Math.Min((batch + 1) * ClustersPerEncodingBatch, Results.Length);
+            for (int index = batch * ClustersPerEncodingBatch; index < end; index++)
+                Results[index] = EncodeCluster(Mesh, Meshlets[index], Encoders[batch], Strategy, index);
+        }
+    }
+
+    private static EncodedClusterGeometry EncodeCluster(MeshInput mesh, ClusterMeshlet cluster,
+        VertexData encoder, ClusterBuildStrategy strategy, int index)
+    {
+        uint[] vertices = cluster.LocalVertices;
+        byte[] local = cluster.LocalIndices;
+        uint[] materials = new uint[local.Length / 3];
+        double edgeSquared = 0;
+        for (int triangle = 0; triangle < local.Length; triangle += 3)
+        {
+            materials[triangle / 3] = mesh.MaterialIndices[vertices[local[triangle]]];
+            Vector3 first = mesh.Positions[vertices[local[triangle]]];
+            Vector3 second = mesh.Positions[vertices[local[triangle + 1]]];
+            Vector3 third = mesh.Positions[vertices[local[triangle + 2]]];
+            edgeSquared = Math.Max(edgeSquared, Math.Max(SquaredEdge(first, second),
+                Math.Max(SquaredEdge(second, third), SquaredEdge(third, first))));
+        }
+        EncodedClusterVertices data = encoder.Encode(mesh.Positions.AsSpan(0, mesh.VertexCount), vertices.AsSpan());
+        byte[] blob = new byte[16 + data.Blob.Length];
+        int positionBytes = data.PositionBytes == 0 ? data.Blob.Length : data.PositionBytes;
+        BinaryPrimitives.WriteUInt32LittleEndian(blob, 16);
+        BinaryPrimitives.WriteUInt32LittleEndian(blob.AsSpan(4), (uint)positionBytes);
+        BinaryPrimitives.WriteUInt32LittleEndian(blob.AsSpan(8), (uint)(data.PositionBytes == 0 ? 16 : 16 + positionBytes));
+        BinaryPrimitives.WriteUInt32LittleEndian(blob.AsSpan(12), (uint)(data.PositionBytes == 0 ? data.Blob.Length : data.Blob.Length - positionBytes));
+        data.Blob.Span.CopyTo(blob.AsSpan(16));
+        return new EncodedClusterGeometry
+        {
+            VertexBlob = blob, TriangleIndices = local, TriangleMaterials = materials, VertexCount = vertices.Length,
+            BoundMin = data.BoundMin, BoundMax = data.BoundMax, Center = cluster.Center,
+            LodSphere = new(cluster.LodCenter, cluster.LodRadius),
+            SelfLodSphere = new(cluster.SelfLodCenter, cluster.SelfLodRadius),
+            Level = cluster.Level, Error = cluster.Error, ParentError = cluster.ParentError,
+            Group = cluster.GroupId, ParentGroup = strategy == ClusterBuildStrategy.Realtime ? index : cluster.ParentGroupId,
+            SourceClusterIndex = (uint)index, MaximumEdgeLength = Math.Sqrt(edgeSquared),
+        };
     }
 
     private static double SquaredEdge(Vector3 first, Vector3 second)

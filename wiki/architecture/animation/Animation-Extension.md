@@ -38,6 +38,8 @@
 
 `IMotion.EvaluateBatch<TMotion>` 的默认循环对具体算法执行逐值 `Evaluate`。算法可以实现包含整段循环的批量版本。两者通过相同的 `MotionDispatcher<T, TOps, TParameters, TState, TEvaluator>.EvaluateBatch(ref batch)` 进入；共享的 `Function` 地址为 `delegate* managed`，每个实际批次调用一次。`FunctionTween` 的标量函数地址按活动样本调用，其成本单独计入。
 
+`TypedTrackSystem` 在当前可写查询中按实例准备具体类型的数值范围，起点捕获沿现有字段读取阶段先完成。每个范围复用自己的 `MotionData` 工作区，包含该实例的参数、状态、端点和时间；共享图参数继续读取编译定义。`WorldJobs.TryGetScheduler` 取得世界所选执行器，带 `WorldJobs` 的世界通过该 `Scheduler.ExecuteParallel` 求值这些范围，同步世界通过相同具体批次直接求值。准备、数值执行和写回均在同一次查询回调的访问持有期内完成。数值阶段完成后，原查询将状态和样本写回实例，按来源顺序提交输出及运行结果；`GraphEndSystem`、`TimelineEndSystem` 在共同完成阶段汇总并推进阶段和事件。工作区在写回后清除参数与状态引用，容量由系统复用。
+
 ```csharp
 var hover = Spec.Tween<float, FloatOps, CubicOut>(0.15f);
 var spring = Spec.Spring<float, FloatOps>(180, 20);

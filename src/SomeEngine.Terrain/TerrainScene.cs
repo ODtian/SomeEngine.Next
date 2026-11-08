@@ -12,7 +12,7 @@ using SomeEngine.Resources;
 namespace SomeEngine.Terrains;
 
 /// <summary>Placement identities, spatial chunk entities and geometry build batches for a game world.</summary>
-public sealed class TerrainScene
+public sealed partial class TerrainScene
 {
     private readonly ITerrainMesher? _mesher;
     private readonly ITerrainClusterAdapter? _adapter;
@@ -22,7 +22,7 @@ public sealed class TerrainScene
     private readonly Dictionary<int, PlacementData> _placements = [];
     private readonly Dictionary<Resources.Terrain, Entity> _terrainSources = [];
     private readonly Dictionary<ChunkKey, ChunkData> _chunks = [];
-    private readonly Dictionary<GeometryKey, GeometryData> _geometryByKey = [];
+    private readonly Dictionary<Resources.Terrain, Dictionary<int, GeometryLevel>> _geometryByTerrain = [];
     private readonly Dictionary<int, GeometryData> _geometryById = [];
     private readonly Dictionary<Resources.Terrain, MeshBatch> _batches = [];
     private readonly HashSet<int> _dirtyGeometry = [];
@@ -138,7 +138,7 @@ public sealed class TerrainScene
         _world = null;
         _chunks.Clear();
         _terrainSources.Clear();
-        _geometryByKey.Clear();
+        _geometryByTerrain.Clear();
         _geometryById.Clear();
         _batches.Clear();
         _gpuBuilds.Clear();
@@ -179,24 +179,7 @@ public sealed class TerrainScene
         }
         ApplyGeometry(completed);
 
-        while (_changes.TryDequeue(out TerrainChange? change))
-        foreach (GeometryData geometry in _geometryById.Values)
-        {
-            if (!ReferenceEquals(geometry.Key.Terrain, change.Terrain) || geometry.Revision >= change.Revision) continue;
-            if (_batches.TryGetValue(change.Terrain, out MeshBatch? batch)
-                && batch.Work.Revision >= change.Revision && batch.GeometryIds.Contains(geometry.Id)) continue;
-            TerrainChunkBounds bounds = Grid.GetBounds(geometry.Key.Coordinates, geometry.Key.Lod);
-            float border = ReadBorder * bounds.CellSize;
-            TerrainSurface? surface = change.Terrain.Surface;
-            TerrainFieldInputs fields = GpuAdapter?.Attributes.Fields ?? _adapter?.Fields ?? default;
-            bool attributeChanged = change switch
-            {
-                HeightFieldChange height => fields.HeightFieldIds.AsSpan().Contains(height.Field.Id) && height.Affects(bounds.Volume, border),
-                VoxelFieldChange voxel => fields.VoxelFieldIds.AsSpan().Contains(voxel.Field.Id) && voxel.Affects(bounds.Volume, border),
-                _ => false,
-            };
-            if (surface is null || change.Affects(surface, bounds.Volume, border) || attributeChanged) _dirtyGeometry.Add(geometry.Id);
-        }
+        while (_changes.TryDequeue(out TerrainChange? change)) MarkChangedGeometry(change);
     }
 
     private void ApplyGeometry(HashSet<int> completed)
@@ -285,10 +268,10 @@ public sealed class TerrainScene
         foreach (MeshBatch batch in _batches.Values)
         foreach (PlacementBuild placement in batch.Placements)
         foreach (GeometryData geometry in placement.Selection) used.Add(geometry.Id);
-        foreach ((GeometryKey key, GeometryData geometry) in _geometryByKey.ToArray())
+        foreach (GeometryData geometry in _geometryById.Values.ToArray())
             if (!geometry.Cached && !used.Contains(geometry.Id))
             {
-                _geometryByKey.Remove(key);
+                RemoveGeometry(geometry);
                 _geometryById.Remove(geometry.Id);
                 _dirtyGeometry.Remove(geometry.Id);
             }
@@ -296,11 +279,20 @@ public sealed class TerrainScene
 
     private GeometryData GetGeometry(Resources.Terrain terrain, TerrainChunkBounds bounds)
     {
-        var key = new GeometryKey(terrain, bounds.Coordinates, bounds.Lod, bounds.TransitionFaces);
-        if (!_geometryByKey.TryGetValue(key, out GeometryData? geometry))
+        if (!_geometryByTerrain.TryGetValue(terrain, out var levels))
+            _geometryByTerrain.Add(terrain, levels = []);
+        if (!levels.TryGetValue(bounds.Lod, out GeometryLevel? level))
+            levels.Add(bounds.Lod, level = new());
+        var columnKey = (bounds.Coordinates.X, bounds.Coordinates.Z);
+        if (!level.Columns.TryGetValue(columnKey, out List<GeometryData>? column))
+            level.Columns.Add(columnKey, column = []);
+        GeometryData? geometry = column.Find(value => value.Key.Coordinates.Y == bounds.Coordinates.Y
+            && value.Key.TransitionFaces == bounds.TransitionFaces);
+        if (geometry is null)
         {
+            var key = new GeometryKey(terrain, bounds.Coordinates, bounds.Lod, bounds.TransitionFaces);
             geometry = new GeometryData(++_nextGeometryId, key);
-            _geometryByKey.Add(key, geometry);
+            column.Add(geometry);
             _geometryById.Add(geometry.Id, geometry);
             _dirtyGeometry.Add(geometry.Id);
         }

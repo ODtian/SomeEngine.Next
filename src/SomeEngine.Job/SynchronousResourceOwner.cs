@@ -19,6 +19,8 @@ internal readonly struct SynchronousResourceOwner : IDisposable
         _handle = handle;
     }
 
+    internal JobHandle Handle => _handle;
+
     public void Dispose()
     {
         _scheduler?.ReleaseSynchronousAccess(_handle);

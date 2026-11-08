@@ -34,7 +34,7 @@ public sealed class NavigationSceneBoundaryTests
         world.Add(entity, new NavigationGuidance(new(1, 0, -0.3f), 0, 1, true));
         world.Add(entity, default(NavigationSteering));
         NavigationComponents.AddAvoidance(world, entity, new(0.1f, Spacing: 0.05f));
-        var neighbors = new NavigationNeighborSystem<Motion, MotionReader>(world, scheduler);
+        using var neighbors = new NavigationNeighborSystem<Motion, MotionReader>(world, scheduler);
         var avoidance = new NavigationAvoidanceSystem<OrcaAvoidance, Motion, MotionReader>(world, neighbors);
         for (int frame = 0; frame < 160; frame++)
         {

@@ -11,7 +11,7 @@ public sealed class TerrainGeometryFeature(TerrainScene scene) : IApplicationGeo
         RenderTerrainData data = context.GetTerrainData();
         context.AddGameSystem(new TerrainCommitSystem(scene));
         context.AddGameSystem(new TerrainLodSystem(scene, () => context.CameraPosition));
-        context.AddGameSystem(new TerrainMeshSystem(scene));
+        context.AddTerrainBuild(scene.ScheduleBuilds);
         context.AddGameShutdown(scene.FinishBuilds);
         if (scene.GpuAdapter is not null)
         {

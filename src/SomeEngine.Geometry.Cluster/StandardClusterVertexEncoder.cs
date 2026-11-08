@@ -14,6 +14,9 @@ public sealed class StandardClusterVertexEncoder : IClusterVertexEncoder, IClust
     private StandardClusterVertexEncoder() { }
     public string Compatibility => EncodingCompatibility;
 
+    IClusterVertexEncoder IClusterVertexEncoder.CreateBatchEncoder() => this;
+    IClusterVertexEncoder<StandardClusterAttributes> IClusterVertexEncoder<StandardClusterAttributes>.CreateBatchEncoder() => this;
+
     public EncodedClusterVertices Encode(ReadOnlySpan<Vector3> positions,
         ReadOnlySpan<StandardClusterAttributes> attributes, ReadOnlySpan<uint> clusterVertices)
     {

@@ -15,6 +15,10 @@ public readonly ref struct ComponentWriteBatch<TComponent> where TComponent : st
 
     public uint CurrentSystemVersion { get; }
 
+    internal World World => _world;
+    internal WorldStructureRoot Structure => _world.ActiveStructureRoot;
+    internal bool IsSparse => _sparse;
+
     /// <summary>Borrows a declared query column using this batch's shared write version.</summary>
     public ComponentWriteColumn<TComponent> ReadWriteColumn(QueryChunkView chunk) =>
         chunk.ReadWriteColumn<TComponent>(_world, CurrentSystemVersion);

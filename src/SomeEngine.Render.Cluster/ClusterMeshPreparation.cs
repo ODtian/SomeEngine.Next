@@ -125,11 +125,10 @@ internal sealed class ClusterMeshPrepareSystem : IDisposable
         {
             RenderMesh[] missingMeshes = [.. _missing.Values];
             var lowestDetailPageIds = new HashSet<uint>();
-            foreach (RenderMesh mesh in missingMeshes)
+            ClusterMeshRegistrationResult[] results =
+                await _residency.RegisterMeshesAsync(missingMeshes, cancellationToken).ConfigureAwait(false);
+            foreach (ClusterMeshRegistrationResult result in results)
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                ClusterMeshRegistrationResult result =
-                    await _residency.RegisterMeshAsync(mesh.Mesh, cancellationToken, mesh.PageSource).ConfigureAwait(false);
                 if (result.Added)
                     registered++;
                 lowestDetailPageIds.UnionWith(result.Registration.LowestDetailPageIds);

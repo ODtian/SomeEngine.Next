@@ -16,7 +16,7 @@ public sealed class NavigationNeighbors(float cellSize = 2)
     private int[] _neighborCounts = [];
     private NavigationTrajectoryPoint[][] _predictions = [];
     private int[] _predictionCounts = [];
-    private readonly Dictionary<(int X, int Z, int Layer), int> _heads = [];
+    private SpatialPartition[] _spatialPartitions = [];
     private readonly Dictionary<Entity, int> _indices = [];
     private int _count;
 
@@ -24,13 +24,19 @@ public sealed class NavigationNeighbors(float cellSize = 2)
     public ReadOnlyMemory<int> GetNeighbors(Entity entity) => GetNeighbors(_indices[entity]);
     internal ReadOnlyMemory<int> GetNeighbors(int index) => _neighbors[index].AsMemory(0, _neighborCounts[index]);
     internal int Find(Entity entity) => _indices[entity];
-    internal void Clear() { _count = 0; _heads.Clear(); _indices.Clear(); }
-
-    internal void Add(NavigationNeighborAgent agent)
+    private sealed class SpatialPartition
     {
-        if (_count == _agents.Length)
+        internal readonly List<int> Agents = [];
+        internal readonly Dictionary<(int X, int Z, int Layer), int> Heads = [];
+    }
+
+    internal void BeginCollection(int count)
+    {
+        _indices.Clear();
+        _count = count;
+        if (count > _agents.Length)
         {
-            int capacity = Math.Max(16, _count * 2);
+            int capacity = Math.Max(count, Math.Max(16, _agents.Length * 2));
             Array.Resize(ref _agents, capacity);
             Array.Resize(ref _next, capacity);
             Array.Resize(ref _neighbors, capacity);
@@ -38,23 +44,50 @@ public sealed class NavigationNeighbors(float cellSize = 2)
             Array.Resize(ref _predictions, capacity);
             Array.Resize(ref _predictionCounts, capacity);
         }
-        _agents[_count++] = agent;
     }
 
-    internal void BuildIndex()
+    internal void SetEntity(int index, Entity entity) => _indices.Add(entity, index);
+    internal void Set(NavigationNeighborAgent agent) => _agents[_indices[agent.Entity]] = agent;
+
+    internal void BuildIndex(Scheduler scheduler)
     {
-        for (int index = 0; index < _count; index++)
+        int partitionCount = Math.Min(Math.Max(1, (_count + 63) / 64), Math.Max(1, (scheduler.WorkerCount + 1) * 4));
+        if (_spatialPartitions.Length != partitionCount)
         {
-            NavigationNeighborAgent agent = _agents[index];
-            var cell = Cell(agent.Motion);
-            _next[index] = _heads.GetValueOrDefault(cell, -1);
-            _heads[cell] = index;
-            _indices.Add(agent.Entity, index);
-            _predictionCounts[index] = 0;
-            if (_neighbors[index] is null || _neighbors[index].Length < agent.Avoidance.MaximumNeighbors)
-                _neighbors[index] = new int[agent.Avoidance.MaximumNeighbors];
+            _spatialPartitions = new SpatialPartition[partitionCount];
+            for (int index = 0; index < partitionCount; index++) _spatialPartitions[index] = new();
+        }
+        foreach (SpatialPartition partition in _spatialPartitions)
+        {
+            partition.Agents.Clear();
+            partition.Heads.Clear();
+        }
+        for (int index = 0; index < _count; index++)
+            _spatialPartitions[Partition(Cell(_agents[index].Motion))].Agents.Add(index);
+        scheduler.ExecuteParallel(new BuildSpatialPartition(this), partitionCount,
+            batchSize: JobScheduleOptions.AutomaticBatchSize);
+    }
+
+    private readonly struct BuildSpatialPartition(NavigationNeighbors data) : IJobParallelFor
+    {
+        public void Execute(int partitionIndex)
+        {
+            SpatialPartition partition = data._spatialPartitions[partitionIndex];
+            foreach (int index in partition.Agents)
+            {
+                NavigationNeighborAgent agent = data._agents[index];
+                var cell = data.Cell(agent.Motion);
+                data._next[index] = partition.Heads.GetValueOrDefault(cell, -1);
+                partition.Heads[cell] = index;
+                data._predictionCounts[index] = 0;
+                if (data._neighbors[index] is null || data._neighbors[index].Length < agent.Avoidance.MaximumNeighbors)
+                    data._neighbors[index] = new int[agent.Avoidance.MaximumNeighbors];
+            }
         }
     }
+
+    private int Partition((int X, int Z, int Layer) cell) =>
+        (int)((uint)HashCode.Combine(cell.X, cell.Z, cell.Layer) % (uint)_spatialPartitions.Length);
 
     internal void SetPrediction(Entity entity, ReadOnlySpan<NavigationTrajectoryPoint> points)
     {
@@ -105,7 +138,7 @@ public sealed class NavigationNeighbors(float cellSize = 2)
         int count = 0;
         for (int z = center.Z - reach; z <= center.Z + reach; z++)
         for (int x = center.X - reach; x <= center.X + reach; x++)
-        for (int other = _heads.GetValueOrDefault((x, z, center.Layer), -1); other >= 0; other = _next[other])
+        for (int other = Head((x, z, center.Layer)); other >= 0; other = _next[other])
         {
             NavigationNeighborAgent sample = _agents[other];
             if (index == other || (self.Avoidance.InteractionMask & sample.Avoidance.InteractionMask) == 0 ||
@@ -132,14 +165,19 @@ public sealed class NavigationNeighbors(float cellSize = 2)
 
     private (int X, int Z, int Layer) Cell(NavigationMotion motion) =>
         ((int)MathF.Floor(motion.Position.X / cellSize), (int)MathF.Floor(motion.Position.Z / cellSize), motion.Layer);
+
+    private int Head((int X, int Z, int Layer) cell) =>
+        _spatialPartitions[Partition(cell)].Heads.GetValueOrDefault(cell, -1);
 }
 
-public sealed class NavigationNeighborSystem<TMotion, TReader>
+public sealed class NavigationNeighborSystem<TMotion, TReader> : IDisposable
     where TMotion : unmanaged, IComponent
     where TReader : struct, INavigationMotionReader<TMotion>
 {
     private readonly World _world;
     private readonly QueryDefinition _actors;
+    private QueryHandle _actorQuery;
+    private readonly JobResourceAccess[] _collectionAccesses;
     private JobHandle _completion;
     public NavigationNeighborSystem(World world, Scheduler scheduler, float cellSize = 2)
     {
@@ -147,6 +185,10 @@ public sealed class NavigationNeighborSystem<TMotion, TReader>
         _actors = world.QueryDefinition().All<NavigationAgent>().All<AvoidanceAgent>().All<TMotion>().Build();
         Scheduler = scheduler;
         Data = new(cellSize);
+        _actorQuery = world.Query(_actors);
+        _collectionAccesses = new JobResourceAccess[QueryJobAccess.Count(_actors) + 1];
+        QueryJobAccess.CopyAccesses(world, _actors, _collectionAccesses);
+        _collectionAccesses[^1] = JobResourceAccess.Write(scheduler.GetResourceToken(Data));
     }
 
     public Scheduler Scheduler { get; }
@@ -154,26 +196,55 @@ public sealed class NavigationNeighborSystem<TMotion, TReader>
 
     public JobHandle Schedule(JobHandle motionReady = default, JobHandle predictionReady = default)
     {
-        JobResourceAccess access = JobResourceAccess.Write(Scheduler.GetResourceToken(Data));
-        JobHandle cleared = Scheduler.Schedule(new ClearNeighbors(Data), [access],
+        _completion = Scheduler.Schedule(new CollectNeighbors(this), _collectionAccesses,
             Scheduler.CombineDependencies([_completion, motionReady, predictionReady]));
-        JobHandle collected = new CollectNavigationNeighbors<TMotion, TReader>(Data).Schedule(_world, [access], cleared);
-        JobHandle built = Scheduler.Schedule(new BuildNeighbors(Data, Scheduler), [access], collected);
-        _completion = new CollectNavigationNeighborPredictions(Data).Schedule(_world, [access],
-            new JobEntityScheduleOptions(filter: _actors), built);
         return _completion;
     }
 
-    private readonly struct ClearNeighbors(NavigationNeighbors data) : IJob
+    public void Dispose()
     {
-        public void Execute() => data.Clear();
+        if (!_actorQuery.IsValid) return;
+        try { _completion.Complete(); }
+        finally
+        {
+            _world.ReleaseQuery(_actorQuery);
+            _actorQuery = default;
+        }
+    }
+
+    private readonly struct CollectNeighbors(NavigationNeighborSystem<TMotion, TReader> system) : IJob
+    {
+        public void Execute()
+        {
+            NavigationNeighbors data = system.Data;
+            system._world.ExecuteQuery(system._actorQuery, ref data,
+                static (scoped QueryCursor query, ref NavigationNeighbors output) =>
+                {
+                    using ReadOnlyQueryPacketPlan packets = ReadOnlyQueryPacketJobs.CreatePlan(query);
+                    output.BeginCollection(packets.RowCount);
+                    packets.ExecuteInline(new CollectEntities(output));
+                });
+            JobResourceAccess access = JobResourceAccess.Write(system.Scheduler.GetResourceToken(data));
+            JobHandle collected = new CollectNavigationNeighbors<TMotion, TReader>(data).ScheduleParallel(system._world, [access]);
+            JobHandle built = system.Scheduler.Schedule(new BuildNeighbors(data, system.Scheduler), [access], collected);
+            new CollectNavigationNeighborPredictions(data).Schedule(system._world, [access],
+                new JobEntityScheduleOptions(filter: system._actors), built);
+        }
+    }
+
+    private readonly struct CollectEntities(NavigationNeighbors data) : IReadOnlyQueryPacketJob
+    {
+        public void Execute(in ReadOnlyQueryPacketContext context, ReadOnlyQueryPacket packet)
+        {
+            for (int row = 0; row < packet.Count; row++) data.SetEntity(context.OutputStart + row, packet.Entities[row]);
+        }
     }
 
     private readonly struct BuildNeighbors(NavigationNeighbors data, Scheduler scheduler) : IJob
     {
         public void Execute()
         {
-            data.BuildIndex();
+            data.BuildIndex(scheduler);
             scheduler.ScheduleParallel(new QueryNeighbors(data), data.Agents.Length, 16,
                 [JobResourceAccess.Write(scheduler.GetResourceToken(data))]);
         }
@@ -199,5 +270,5 @@ internal partial struct CollectNavigationNeighbors<TMotion, TReader>(NavigationN
     private readonly NavigationNeighbors _data = data;
     public void Execute(Entity entity, in AvoidanceAgent avoidance,
         [JobResources<NavigationAgentResources>] in NavigationAgent agent, in TMotion motion) =>
-        _data.Add(new(entity, TReader.Read(in motion), avoidance, agent.Profile));
+        _data.Set(new(entity, TReader.Read(in motion), avoidance, agent.Profile));
 }

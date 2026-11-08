@@ -6,6 +6,9 @@
   rendering, custom border colors and counted indirect dispatch use their native extensions.
 - KHR acceleration structures, ray pipelines, shader binding tables, sparse resources, external Win32
   memory/timelines, calibrated timestamps, residency budgets and Win32 swapchains are native paths.
+- An adapter exposing `VK_KHR_swapchain` supports the requested `DeviceFeatures.Presentation`.
+  Device creation enables that extension, loads its entry points and exposes the typed `Presentation`
+  capability; surface compatibility is checked through the existing swapchain support queries.
 - Vulkan shader records carry ordinary bytes only. `RayTracing.ShaderRecordResourceBindings` is false;
   opaque per-record values use global bindless indices stored in those bytes.
 

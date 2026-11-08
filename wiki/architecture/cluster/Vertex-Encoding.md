@@ -18,6 +18,18 @@ glTF 与 Raw 来源入口共用局部索引和 `StandardClusterPositionEncoder`�
 
 Cluster 蒙皮影响与逐目标形变增量各有自己的 Block 和编码标识，按几何 Block 的顶点映射保存完整数值。默认编码沿用流描述布局并保留 float64 值；材质 Importer 可在页组合之前将所需数据编入自己的属性字节。数据与入口见 [Deformation Import](Deformation-Import.md)。
 
+## CPU 编码批次
+
+本节记录已实现的公共编码入口和页面构建数据流。程序几何通过 `ClusterMeshBuilder.Build` 传入位置、用户属性、索引、材质分组与 `ClusterBuildStrategy`。实时策略构建叶子 Cluster，离线策略沿既有焊接、优化与 LOD 核心完成几何划分，随后进入同一批次编码和页面填充路径。
+
+`IClusterVertexEncoder<TAttributes>` 与 `IClusterVertexEncoder` 保留 `Encode` 作为用户字节及边界的生产入口。可选的 `CreateBatchEncoder()` 在协调阶段按批次调用，创建过程具有单一发起者。默认返回 `null` 时，整次构建共享原编码器，在同一锁内调用 `Encode` 并复制返回字节，因此原编码器可继续复用自己的返回缓冲。提供批次编码器时，该实例使用相同编码标识，并持有本批独立可变状态；无状态编码器可显式返回自身，内置 `StandardClusterVertexEncoder` 使用这一入口。
+
+每个编码批次持有自己的局部顶点映射、索引及压缩输出。编码结果就绪后，协调阶段按原 Cluster 顺序归并长度，确定页面编号及记录、顶点字节和三角形的区间。填充工作只写分配给自己的页面，完成后按页面顺序交付完整 Mesh。编码与填充消费 `JobSystem.ExecuteParallel` 的共享执行器；同步返回覆盖全部参与者退出和临时输入的使用结束。实现入口为 [编码接口](../../../src/SomeEngine.Geometry.Cluster/ClusterVertexEncoder.cs)、[程序构建输入](../../../src/SomeEngine.Geometry.Cluster/ClusterMeshBuilder.Input.cs) 和 [页面构建](../../../src/SomeEngine.Geometry.Cluster/ClusterMeshBuilder.Pages.cs)。
+
+资产导入先固定来源映射和几何记录，再独立编码位置及属性；自定义 Raw 编码使用相同的批次工厂与共享编码器兼容路径。Block 在全部结果就绪后集中组装。`ClusterGeometryBlock.CreateAsync` 消费两份 Block，页面组合固定不透明字节和材料记录，归并长度后按独立页面区间填充。程序 Mesh 与资产 Block 继续使用各自既有的页面表示，位置及属性的解释由对应用户编码器与 Shader 持有。实现入口为 [几何编码](../../../src/SomeEngine.Assets.Importers/Importers/ClusterBuilder.Geometry.cs)、[属性导入](../../../src/SomeEngine.Assets.Importers/Importers/ClusterVertexAttributesImporter.cs)、[Raw 编码](../../../src/SomeEngine.Assets.Importers/Importers/ClusterBuilder.Assets.cs) 和 [资产页面组合](../../../src/SomeEngine.Assets/Pipeline/ClusterMeshData.cs)。
+
+公开行为入口为 [CPU 构建与共享编码器](../../../tests/SomeEngine.Resources.Tests/ClusterMeshBuilderTests.cs)、[资产保存重开与页面消费](../../../tests/SomeEngine.Assets.Tests/Assets/ClusterBuilderTests.cs) 和 [实时及离线程序几何呈现](../../../tests/SomeEngine.Runtime.Tests/ProceduralClusterRenderingTests.cs)。
+
 ## Invariants
 - 用户编码可以定义自己的 AoS、SoA、bit packing 或私有头部。
 - 更换属性编码通过替换 Importer 与对应 Shader 完成。
