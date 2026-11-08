@@ -2,6 +2,12 @@ param([switch]$Download)
 $ErrorActionPreference = 'Stop'
 $sceneRoot = $PSScriptRoot
 $engineRoot = [IO.Path]::GetFullPath((Join-Path $sceneRoot '../..'))
+if ($env:SOMEENGINE_PROCESS_WATCHDOG -ne '1') {
+    $command = @('pwsh', '-NoProfile', '-File', $PSCommandPath)
+    if ($Download) { $command += '-Download' }
+    & (Join-Path $engineRoot 'tools/Invoke-Watchdog.ps1') -Command $command
+    exit $LASTEXITCODE
+}
 $buildRoot = Join-Path $engineRoot 'samples/DefaultGame/bin/development/Debug/net10.0'
 $applicationRoot = Join-Path $engineRoot 'samples/DefaultGame/bin/game/Release/net10.0'
 if ($Download) {

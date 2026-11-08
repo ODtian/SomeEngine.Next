@@ -215,7 +215,7 @@ public sealed partial class SkinningRenderingTests
             foreach (Vector3 position in new Vector3[] { new(0, 0, 6), new(0, 0, 8) })
             {
                 Entity entity = world.CreateEntity(new WorldTransform { Qvvs = new(position, Quaternion.Identity) });
-                world.Add(entity, new MeshSource { Mesh = new(position.Z == 6 ? mesh.Id : receiver.Id) });
+                world.Add(entity, new AssetId<MeshAsset>(position.Z == 6 ? mesh.Id : receiver.Id));
             }
             world.CreateEntity(new SceneCamera { Position = Vector3.Zero, Target = Vector3.UnitZ, Up = Vector3.UnitY,
                 VerticalFieldOfView = 1.1f, NearPlane = .1f, FarPlane = 100 });

@@ -105,7 +105,7 @@ inline 材质直接把该类型作为 `VertexEvaluate` 与 `RasterVertexEvaluate
 ## 变形范围
 
 配套 LBS 通过 [Deformed Bounds](Deformed-Bounds.md) 的关节影响盒生成每个姿势对应的
-实例、BVH 和 cluster 边界。`MeshSource.BoundsExpansion` / `MeshInstance.BoundsExpansion`
+实例、BVH 和 cluster 边界。`MeshInstanceSettings.BoundsExpansion` / `MeshInstance.BoundsExpansion`
 继续表达调用者声明的额外有限偏移，并参与 Cluster 可见性判断。
 
 相关主题：[Skeleton Inheritance](Skeleton-Inheritance.md)、[Pose Graphs](Pose-Graphs.md)、

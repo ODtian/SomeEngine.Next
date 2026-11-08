@@ -61,13 +61,24 @@ dotnet run --project samples/DefaultGame/DefaultGame.csproj -c Release -p:SomeEn
 
 统一性能验收从根级 `tools/Measure-Scenes.ps1` 进入。
 
+实验性 GI 使用 `--experimental-gi` 启动，或在渲染选项中勾选 `Experimental GI`。GI 采用拉模式，材质着色直接采样探针的方向辐射，用自己的表面参数积分并合成到 `MaterialColor`。当前屏幕阶段复用材质提供的表面数据与辐射，以及 Cluster 的深度、可见性和 motion vector；当帧追踪更新下一帧可读的探针层。接入范围与后续迁入职责见 [GI 架构](../../docs/GI-Architecture.md)。
+
+开发构建的 `prepare-materials` 更新默认场景的材质编译输入。`prepare-materials <场景目录>` 复用导入场景的 Shader 定义与资产构建入口，更新 Sponza、Bistro 等已有场景的材质 Shader。
+
+`Measure-Scenes.ps1 -OutputDirectory <目录>` 指定场景测量输出目录，默认位置为系统临时目录中的 `SomeEngine/scene-measurements`。统一场景平台通过 `SOMEENGINE_SCENE_MEASUREMENTS` 接收该目录。
+
 ```powershell
 # 开发组合生成样例内容。
-dotnet run --project samples/DefaultGame/DefaultGame.csproj -- sample
+& F:/SomeEngine.Next/tools/Invoke-Benchmark.ps1 --cpu --timeout 310 pwsh -NoProfile -File tools/Invoke-Watchdog.ps1 -- dotnet run --project samples/DefaultGame/DefaultGame.csproj -- sample
 
 # NativeAOT 游戏组合发布到统一场景工具使用的目录。
-dotnet publish samples/DefaultGame/DefaultGame.csproj -c Release -o samples/DefaultGame/bin/game/Release/net10.0
+& F:/SomeEngine.Next/tools/Invoke-Benchmark.ps1 --cpu --timeout 310 pwsh -NoProfile -File tools/Invoke-Watchdog.ps1 -- dotnet publish samples/DefaultGame/DefaultGame.csproj -c Release -o samples/DefaultGame/bin/game/Release/net10.0
 
-./samples/ImportedScenes/build_scenes.ps1
-./tools/Measure-Scenes.ps1
+& F:/SomeEngine.Next/tools/Invoke-Benchmark.ps1 --cpu --timeout 310 pwsh -NoProfile -File samples/ImportedScenes/build_scenes.ps1
+& F:/SomeEngine.Next/tools/Invoke-Benchmark.ps1 --gpu --timeout 70 pwsh -NoProfile -File tools/Measure-Scenes.ps1
 ```
+`--gpu-times <外部文件路径>` 使用现有 `ApplicationScene.FrameMeasured` 收集统一场景平台所选采样帧的 GPU 时间，保存整帧跨度、各 pass 命令时间与含屏障时间。带 GPU 时间戳的定位运行与普通性能对比分开执行。
+
+实验构建、导入和捕获通过公共队列运行，并由 `tools/Invoke-Watchdog.ps1` 保护整个命令进程树。默认内存警戒线为 3.75 GiB、内核硬上限为 4 GiB，总时限 300 秒，CPU 与输出同时停滞 30 秒时终止。`Measure-Scenes.ps1` 已直接启用保护，保留内存储备并将输出流写入结果目录。watchdog 退出会回收全部子进程，构建也沿此进程树完成。
+
+`Measure-Scenes.ps1` 的场景进程默认使用 8 GiB 内存限额，`-MemoryMB` 可指定本轮预算。`-Scene` 选择配置中的同名场景，默认执行全部场景。`--gpu-times <path>` 通过已有 GPU 时间戳输出各阶段耗时；普通限帧运行标记为 `PresentedFrames`，统一测量窗口标记为 `Measurement`。

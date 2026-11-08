@@ -1,5 +1,6 @@
 using System.Buffers;
 using SlangShaderSharp;
+using SomeEngine.Graphics;
 using SomeEngine.Assets.Importers;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Resources;
@@ -99,7 +100,7 @@ public sealed class DirectSlangShaderTests
         Assert.NotNull(secondUnit);
         Assert.True(string.IsNullOrEmpty(reloadText), reloadText);
         AssertSuccess(secondUnit!.GetDefinedEntryPoint(0, out IEntryPoint entry));
-        SlangResult combineResult = secondSession.CreateCompositeComponentType(
+        SlangResult combineResult = SlangShaderData.CombineComponents(secondSession,
             [secondUnit, entry],
             out IComponentType combinedCode,
             out ISlangBlob? combineDiagnostics);
@@ -322,7 +323,7 @@ public sealed class DirectSlangShaderTests
         Assert.NotNull(sourceUnit);
         Assert.True(string.IsNullOrEmpty(loadText), loadText);
         AssertSuccess(sourceUnit!.GetDefinedEntryPoint(0, out IEntryPoint entry));
-        SlangResult combineResult = session.CreateCompositeComponentType(
+        SlangResult combineResult = SlangShaderData.CombineComponents(session,
             [sourceUnit, entry],
             out IComponentType combinedCode,
             out ISlangBlob? combineDiagnostics);

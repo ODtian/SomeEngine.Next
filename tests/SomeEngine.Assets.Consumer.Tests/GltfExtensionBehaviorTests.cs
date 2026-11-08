@@ -121,13 +121,13 @@ public sealed class GltfExtensionBehaviorTests
         Guid id = MeshId(project, await project.ImportAsync(files.Source, original));
         Guid version = project.Manifest.Assets[id].Version;
         SourceMeta metadata = SourceMeta.Load(files.Source);
-        Assert.Equal(new[] { ImporterId<GltfMeshImporter>(), ImporterId<ClusterGltfMeshImporter>(), ImporterId<GltfTextureImporter>(), StandardGltfSceneImporter.ImporterId }.Order(),
-            metadata.Importers.Select(value => value.ImporterId).Order());
+        Guid[] selectedImporters = metadata.Importers.Select(value => value.ImporterId).Order().ToArray();
         var extended = StandardGltfSceneImporter.CreateSourceImporter(ConsumerAssetCapabilities.AddAssetCapabilities(new ServiceCollection()), "project-services-1");
         Assert.Equal(id, MeshId(project, await project.ImportAsync(files.Source, extended)));
         Assert.Equal(version, project.Manifest.Assets[id].Version);
+        Assert.Equal(selectedImporters, SourceMeta.Load(files.Source).Importers.Select(value => value.ImporterId).Order());
         using MeshAsset mesh = await MeshAsset.OpenAsync(Path.Combine(files.Directory, project.Manifest.Assets[id].Path));
-        Assert.True(mesh.ContainsBlock<ClusterMeshBlock>());
+        Assert.True(mesh.ContainsBlock<ClusterGeometryBlock>());
         Assert.False(mesh.ContainsBlock<ExtensionGltfBlock>());
     }
 
@@ -331,7 +331,7 @@ public sealed class GltfExtensionBehaviorTests
     }
 }
 
-[AssetImporterSet("4a62c958-14cf-48d9-9c7a-a21c8b166d40", typeof(ExtensionGltfImporter), typeof(StandardGltfSceneImporter))]
+[AssetImporterSet("4a62c958-14cf-48d9-9c7a-a21c8b166d40", "Extension glTF", typeof(ExtensionGltfImporter), typeof(StandardGltfSceneImporter))]
 public static class ExtensionGltfImporters;
 
 [AssetBlock("SomeEngine.Assets.Consumer.Tests.ExtensionGltfBlock"), BinarySerializable, BinaryFields(nameof(Number), nameof(Label))]

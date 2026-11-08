@@ -31,6 +31,7 @@ struct SurfacePixelInput
     float Depth;
     uint VisibilityDepth;
     float3 PositionFromDepth;
+    float2 MotionVector;
 };
 
 interface ISurfaceEvaluate<TSurface, TTriangle>

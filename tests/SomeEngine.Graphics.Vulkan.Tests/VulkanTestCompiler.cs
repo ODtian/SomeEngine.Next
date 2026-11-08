@@ -69,7 +69,7 @@ public sealed class VulkanTestCompiler : IDisposable
             components[index + 1] = entry;
         }
         Require(
-            session.CreateCompositeComponentType(
+            SlangShaderData.CombineComponents(session,
                 components,
                 out IComponentType combinedCode,
                 out ISlangBlob? compositionDiagnostics),

@@ -1,5 +1,6 @@
 using System.Numerics;
 using SomeEngine.Assets;
+using SomeEngine.Assets.Schema;
 using SomeEngine.Core.ECS.Components;
 using SomeEngine.Core.Math;
 using SomeEngine.ECS;
@@ -24,7 +25,8 @@ public sealed class WorldAssetTests
             var transform = new TransformQvvs(new(2, 3, 4), Quaternion.CreateFromAxisAngle(Vector3.UnitY, 0.5f))
             { Stretch = new(2, 3, 4), Scale = 0.75f };
             var entity = world.CreateEntity(new WorldTransform { Qvvs = transform });
-            world.Add(entity, new MeshSource { Mesh = new(meshId), BoundsExpansion = 0.4f });
+            world.Add(entity, new AssetId<MeshAsset>(meshId));
+            world.Add(entity, new MeshInstanceSettings { BoundsExpansion = 0.4f });
             world.Add(entity, new MeshMotion { Amplitude = new(1, 2, 3), Seed = 73 });
             var cameraValue = new SceneCamera
             {
@@ -58,8 +60,8 @@ public sealed class WorldAssetTests
             Assert.Equal(transform.Rotation, actual.Rotation);
             Assert.Equal(transform.Stretch, actual.Stretch);
             Assert.Equal(transform.Scale, actual.Scale);
-            Assert.Equal(meshId, loaded.Read<MeshSource>(entity).Mesh.Value);
-            Assert.Equal(0.4f, loaded.Read<MeshSource>(entity).BoundsExpansion);
+            Assert.Equal(meshId, loaded.Read<AssetId<MeshAsset>>(entity).Value);
+            Assert.Equal(0.4f, loaded.Read<MeshInstanceSettings>(entity).BoundsExpansion);
             Assert.Equal(73u, loaded.Read<MeshMotion>(entity).Seed);
             Assert.Equal(new Vector3(1, 2, 3), loaded.Read<MeshMotion>(entity).Amplitude);
             Assert.Equal(cameraValue.Position, loaded.Read<SceneCamera>(camera).Position);

@@ -4,7 +4,7 @@ using System.Text.Json;
 namespace SomeEngine.Assets;
 
 /// <summary>A typed disk asset number. The default value denotes no asset.</summary>
-public readonly struct AssetId<T> : IEquatable<AssetId<T>>, IBinarySerializable<AssetId<T>>,
+public readonly struct AssetId<T> : SomeEngine.ECS.IComponent, IEquatable<AssetId<T>>, IBinarySerializable<AssetId<T>>,
     IBinaryCustomViewContract<AssetId<T>>, ITextSerializable<AssetId<T>>
     where T : Asset
 {

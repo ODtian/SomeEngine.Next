@@ -39,4 +39,17 @@ float3 TransformInstanceLocalPosition(float3 position, RenderInstanceTransform t
     return scaled + transform.Position;
 }
 
+float3 InverseTransformInstanceVector(float3 vector, RenderInstanceTransform transform)
+{
+    float3 q = -transform.Rotation.xyz;
+    float3 crossVector = cross(q, vector);
+    float3 rotated = vector + 2.0 * (crossVector * transform.Rotation.w + cross(q, crossVector));
+    return rotated / (transform.Scale * transform.Stretch);
+}
+
+float3 InverseTransformInstancePosition(float3 position, RenderInstanceTransform transform)
+{
+    return InverseTransformInstanceVector(position - transform.Position, transform);
+}
+
 #endif

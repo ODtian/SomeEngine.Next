@@ -1,4 +1,5 @@
 using SlangShaderSharp;
+using SomeEngine.Graphics;
 using SomeEngine.Resources;
 
 namespace SomeEngine.Transparency.Research;
@@ -35,7 +36,7 @@ public static class ResearchShader
         var entries = new IEntryPoint[entryNames.Length];
         for (int index = 0; index < entries.Length; index++)
             sourceUnit.FindEntryPointByName(entryNames[index], out entries[index]);
-        session.CreateCompositeComponentType([sourceUnit, .. entries], out IComponentType combined, out diagnostics);
+        SlangShaderData.CombineComponents(session, [sourceUnit, .. entries], out IComponentType combined, out diagnostics);
         if (!combined.Link(out IComponentType linked, out diagnostics).Succeeded)
             throw new InvalidDataException(diagnostics?.AsString);
         return Shader.CreateFromSlang(filename, global, session, [sourceUnit], entries, linked, [target]);

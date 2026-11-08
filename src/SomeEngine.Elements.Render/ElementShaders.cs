@@ -57,7 +57,7 @@ internal static class ElementShaders
         SlangShaderData.RetainSession(session, vertex);
         Require(shaderSource.FindEntryPointByName("pixelMain", out IEntryPoint pixel), null);
         SlangShaderData.RetainSession(session, pixel);
-        Require(session.CreateCompositeComponentType([shaderSource, vertex, pixel],
+        Require(SlangShaderData.CombineComponents(session, [shaderSource, vertex, pixel],
             out IComponentType combined, out diagnostics), diagnostics);
         SlangShaderData.RetainSession(session, combined);
         Require(combined.Link(out IComponentType linked, out diagnostics), diagnostics);

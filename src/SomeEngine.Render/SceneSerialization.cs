@@ -1,4 +1,6 @@
 using System.Numerics;
+using SomeEngine.Assets;
+using SomeEngine.Assets.Schema;
 using SomeEngine.Core.ECS.Components;
 using SomeEngine.Core.Math;
 using SomeEngine.ECS.Serialization;
@@ -14,8 +16,9 @@ public static class SceneSerialization
     public static SerializationRegistry CreateRegistry() => new SerializationRegistry()
         .Register<WorldTransform, TransformCodec>(Key(nameof(WorldTransform), "rotation:4f;position:3f;stretch:3f;scale:f"))
         .RegisterHierarchyDomain<DefaultHierarchyDomain>()
-        .Register<MeshSource, MeshSourceCodec>(Key(nameof(MeshSource), "mesh:external;bounds:f"))
-        .Register<SkeletonSource, SkeletonSourceCodec>(Key(nameof(SkeletonSource), "skeleton:external"))
+        .Register<AssetId<MeshAsset>, AssetIdCodec<MeshAsset>>(AssetKey<MeshAsset>())
+        .Register<AssetId<SkeletonAsset>, AssetIdCodec<SkeletonAsset>>(AssetKey<SkeletonAsset>())
+        .Register<MeshInstanceSettings, MeshInstanceSettingsCodec>(Key(nameof(MeshInstanceSettings), "bounds:f;depth:u32;firstPerson:3u32"))
         .Register<MeshMotion, MotionCodec>(Key(nameof(MeshMotion), "amplitude:3f;seed:u32"))
         .Register<SceneCamera, CameraCodec>(Key(nameof(SceneCamera), "position:3f;target:3f;up:3f;fov:f;near:f;far:f"))
         .Register<DirectionalLight, DirectionalCodec>(Key(nameof(DirectionalLight), "direction:3f;color:3f;intensity:f;layers:u32"))
@@ -24,6 +27,8 @@ public static class SceneSerialization
 
     private static SerializationTypeKey Key(string name, string fields)
         => new(BinaryTypeId.FromLogicalName("SomeEngine.Scene." + name), "SomeEngine.Scene." + name, BinaryFieldKey.FromName(fields));
+    private static SerializationTypeKey AssetKey<TAsset>() where TAsset : Asset =>
+        new(AssetId<TAsset>.TypeId, "SomeEngine.AssetId:" + typeof(TAsset).FullName, BinaryFieldKey.FromName("asset:external"));
     private static void WriteVector(ref DataWriter writer, Vector3 value)
     {
         writer.WriteSingle(value.X); writer.WriteSingle(value.Y); writer.WriteSingle(value.Z);
@@ -44,22 +49,36 @@ public static class SceneSerialization
             value = new() { Qvvs = new TransformQvvs(ReadVector(ref reader), rotation) { Stretch = ReadVector(ref reader), Scale = reader.ReadSingle() } };
         }
     }
-    private struct MeshSourceCodec : ICanonicalComponentCodec<MeshSource>
+    private struct AssetIdCodec<TAsset> : ICanonicalComponentCodec<AssetId<TAsset>> where TAsset : Asset
     {
-        public void Write(ref DataWriter writer, in MeshSource value)
+        public void Write(ref DataWriter writer, in AssetId<TAsset> value) =>
+            writer.WriteExternalReference(new(value.Value));
+        public void Read(ref DataReader reader, out AssetId<TAsset> value) =>
+            value = new(reader.ReadExternalReference().Value);
+    }
+
+    private struct MeshInstanceSettingsCodec : ICanonicalComponentCodec<MeshInstanceSettings>
+    {
+        public void Write(ref DataWriter writer, in MeshInstanceSettings value)
         {
-            writer.WriteExternalReference(new(value.Mesh.Value)); writer.WriteSingle(value.BoundsExpansion);
+            writer.WriteSingle(value.BoundsExpansion);
+            writer.WriteUInt32((uint)value.DepthCacheClass);
+            writer.WriteUInt32((uint)value.FirstPerson.Kind);
+            writer.WriteUInt32(value.FirstPerson.PlayerId);
+            writer.WriteUInt32((uint)value.FirstPerson.PlayerVisibility);
         }
-        public void Read(ref DataReader reader, out MeshSource value)
-            => value = new() { Mesh = new(reader.ReadExternalReference().Value), BoundsExpansion = reader.ReadSingle() };
+        public void Read(ref DataReader reader, out MeshInstanceSettings value)
+        {
+            float expansion = reader.ReadSingle();
+            var depth = (DepthCacheClass)reader.ReadUInt32();
+            var kind = (FirstPersonMeshKind)reader.ReadUInt32();
+            uint player = reader.ReadUInt32();
+            var visibility = (MeshPlayerVisibility)reader.ReadUInt32();
+            value = new() { BoundsExpansion = expansion, DepthCacheClass = depth,
+                FirstPerson = new(kind, player, visibility) };
+        }
     }
-    private struct SkeletonSourceCodec : ICanonicalComponentCodec<SkeletonSource>
-    {
-        public void Write(ref DataWriter writer, in SkeletonSource value)
-            => writer.WriteExternalReference(new(value.Skeleton.Value));
-        public void Read(ref DataReader reader, out SkeletonSource value)
-            => value = new() { Skeleton = new(reader.ReadExternalReference().Value) };
-    }
+
     private struct XrayCodec : ICanonicalComponentCodec<Xray>
     {
         public void Write(ref DataWriter writer, in Xray value)

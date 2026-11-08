@@ -37,7 +37,7 @@ glTF 来源集成声明 mesh、material、texture、scene、skin、animation 六
 
 元素键沿用来源设置中的持久 ID 属性；显式关闭 `RequirePersistentElementIds` 后才采用 `skin:index:<index>`、`animation:index:<index>`。显示名称不参与身份。输出文件名包含资产 GUID，重命名元素与调整带持久 ID 的元素顺序保留身份及路径。
 
-选中 skin 生产者时，场景中带 skin 的网格节点同时具有 `MeshSource` 与 `SkeletonSource`，骨架引用对应其 skin 的资产；多个节点共用同一 skin 时共用骨架身份，同一 mesh 可由不同节点引用不同骨架。`SceneSerialization` 在真实 ECS 内容中写入骨架外部引用，WorldAsset 的依赖来自这些引用。skin 或 animation 的生产者全部关闭时，对应输出随重新导入移除；骨架组件随 skin 选择生成。
+选中 skin 生产者时，场景中带 skin 的网格节点同时具有 `AssetId<MeshAsset>` 与 `AssetId<SkeletonAsset>`，骨架引用对应其 skin 的资产；多个节点共用同一 skin 时共用骨架身份，同一 mesh 可由不同节点引用不同骨架。`SceneSerialization` 在真实 ECS 内容中写入骨架外部引用，WorldAsset 的依赖来自这些引用。skin 或 animation 的生产者全部关闭时，对应输出随重新导入移除；骨架组件随 skin 选择生成。
 
 公开行为验收见 [GltfImporterSetBehaviorTests](../../../tests/SomeEngine.Assets.ImporterSets.Tests/GltfImporterSetBehaviorTests.cs)：测试项目只注册测试 Importer，核对保存重开后的 Block，覆盖默认与中立选择、切换、替换、多管线、单次覆盖、来源类型、失败与来源复制。跨程序集发现、默认值合并和声明诊断见 [AssetCapabilityGeneratorBehaviorTests](../../../tests/SomeEngine.Assets.Consumer.Tests/AssetCapabilityGeneratorBehaviorTests.cs)；原生 AOT 验收通过资产冒烟工具执行。
 

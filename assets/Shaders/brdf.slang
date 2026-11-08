@@ -50,9 +50,11 @@ float3 EvaluateDirectionalLight(
     float3 V,           // view direction (normalized, toward camera)
     float3 L,           // light direction (normalized, toward light)
     float3 lightColor,  // light radiance (color * intensity)
-    float  shadow       // 1.0 = fully lit, 0.0 = fully shadowed
+    float  shadow,      // 1.0 = fully lit, 0.0 = fully shadowed
+    out float3 diffuseRadiance
 )
 {
+    diffuseRadiance = 0.0;
     float NdotL = max(dot(N, L), 0.0);
     if (NdotL <= 0.0)
         return float3(0.0);
@@ -83,7 +85,15 @@ float3 EvaluateDirectionalLight(
     float3 kD = (1.0 - F) * (1.0 - metallic);
     float3 diffuse = kD * baseColor / PI;
 
+    diffuseRadiance = diffuse * lightColor * NdotL * shadow;
     return (diffuse + specular) * lightColor * NdotL * shadow;
+}
+
+float3 EvaluateDirectionalLight(float3 baseColor, float metallic, float roughness,
+    float3 N, float3 V, float3 L, float3 lightColor, float shadow)
+{
+    float3 diffuseRadiance;
+    return EvaluateDirectionalLight(baseColor, metallic, roughness, N, V, L, lightColor, shadow, diffuseRadiance);
 }
 
 float EvaluateDistanceAttenuation(float distanceSq, float range)
@@ -112,9 +122,11 @@ float3 EvaluatePointLight(
     float3 lightPosition,
     float  range,
     float3 lightColor,
-    float  shadow
+    float  shadow,
+    out float3 diffuseRadiance
 )
 {
+    diffuseRadiance = 0.0;
     float3 toLight = lightPosition - surfacePosition;
     float distanceSq = dot(toLight, toLight);
     float attenuation = EvaluateDistanceAttenuation(distanceSq, range);
@@ -130,7 +142,17 @@ float3 EvaluatePointLight(
         V,
         L,
         lightColor * attenuation,
-        shadow);
+        shadow,
+        diffuseRadiance);
+}
+
+float3 EvaluatePointLight(float3 baseColor, float metallic, float roughness,
+    float3 N, float3 V, float3 surfacePosition, float3 lightPosition, float range,
+    float3 lightColor, float shadow)
+{
+    float3 diffuseRadiance;
+    return EvaluatePointLight(baseColor, metallic, roughness, N, V, surfacePosition,
+        lightPosition, range, lightColor, shadow, diffuseRadiance);
 }
 
 float EvaluateSpotCone(float3 L, float3 spotDirection, float innerConeCos, float outerConeCos)
@@ -160,9 +182,11 @@ float3 EvaluateSpotLight(
     float  innerConeCos,
     float  outerConeCos,
     float3 lightColor,
-    float  shadow
+    float  shadow,
+    out float3 diffuseRadiance
 )
 {
+    diffuseRadiance = 0.0;
     float3 toLight = lightPosition - surfacePosition;
     float distanceSq = dot(toLight, toLight);
     float attenuation = EvaluateDistanceAttenuation(distanceSq, range);
@@ -182,7 +206,18 @@ float3 EvaluateSpotLight(
         V,
         L,
         lightColor * attenuation * cone,
-        shadow);
+        shadow,
+        diffuseRadiance);
+}
+
+float3 EvaluateSpotLight(float3 baseColor, float metallic, float roughness,
+    float3 N, float3 V, float3 surfacePosition, float3 lightPosition, float range,
+    float3 spotDirection, float innerConeCos, float outerConeCos, float3 lightColor, float shadow)
+{
+    float3 diffuseRadiance;
+    return EvaluateSpotLight(baseColor, metallic, roughness, N, V, surfacePosition,
+        lightPosition, range, spotDirection, innerConeCos, outerConeCos,
+        lightColor, shadow, diffuseRadiance);
 }
 
 #endif

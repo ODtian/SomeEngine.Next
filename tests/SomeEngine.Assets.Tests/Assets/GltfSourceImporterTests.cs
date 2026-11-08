@@ -43,7 +43,7 @@ public class GltfSourceImporterTests
             Assert.Equal(2, asset.ExternalReferences.Length);
             using World world = await asset.LoadAsync(SceneSerialization.CreateRegistry());
             var entities = new List<Entity>();
-            QueryHandle query = world.Query(new QueryDefinitionBuilder().Read<MeshSource>());
+            QueryHandle query = world.Query(new QueryDefinitionBuilder().Read<AssetId<MeshAsset>>());
             try
             {
                 world.ExecuteQuery(query, ref entities, static (scoped QueryCursor rows, ref List<Entity> values) =>
@@ -54,7 +54,7 @@ public class GltfSourceImporterTests
             finally { world.ReleaseQuery(query); }
             Assert.Equal(3, entities.Count);
             Guid sharedMesh = Assert.Single(imported, value => value.SubAssetKey == "mesh:index:0").AssetGuid;
-            Entity[] matching = entities.Where(entity => world.Read<MeshSource>(entity).Mesh.Value == sharedMesh).ToArray();
+            Entity[] matching = entities.Where(entity => world.Read<AssetId<MeshAsset>>(entity).Value == sharedMesh).ToArray();
             Assert.Equal(2, matching.Length);
             Assert.Single(matching, entity => matching.Contains(Hierarchy.GetParent(world, entity)));
         }

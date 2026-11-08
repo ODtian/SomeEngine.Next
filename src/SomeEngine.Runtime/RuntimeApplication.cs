@@ -232,6 +232,7 @@ internal static class RuntimeApplication
             presentationShaderTask.Result,
             lightingShaderTask.Result,
             temporalShaderTask.Result,
+            content,
             boot,
             title,
             forceHardwareRaster: useWarp || options.ForceHardwareRaster, animateMaterial, application, script);
@@ -487,6 +488,7 @@ internal static class RuntimeApplication
         Shader presentationShader,
         Shader lightingShader,
         Shader temporalShader,
+        ApplicationContent content,
         ApplicationSettingsBlock boot,
         string title,
         bool forceHardwareRaster, Func<Material, float, bool>? animateMaterial, ApplicationScene? application, SceneScript? script)
@@ -661,7 +663,8 @@ internal static class RuntimeApplication
         stageResources.Add(virtualShadows);
         var frameSystems = new RenderFrameSystems(renderWorld, instances);
         var geometry = new ApplicationGeometryContext(backend, device, renderDevice, cluster, renderGraph,
-            mainWorld, renderWorld, extraction, prepareSystems, frameSystems, () => scene.Camera.Position);
+            mainWorld, renderWorld, extraction, prepareSystems, frameSystems, () => scene.Camera.Position, stageResources,
+            boot, id => ShaderAsset.GetAsync(content.Files, id, content.ShaderValues, content.Slang, content.ShaderSettings));
         var graphCompletionSlots = new QueueCompletion[renderGraph.MaximumQueueCompletionCount];
         var graphCompletions = new QueueCompletion[renderGraph.MaximumQueueCompletionCount];
         FrameOutputVerifier? outputVerifier = null;
@@ -1055,7 +1058,8 @@ internal static class RuntimeApplication
                 bool connectPostProcessing = temporal is null;
                 if (connectPostProcessing && (script?.CreateColorFeature ?? application?.CreateColorFeature) is { } createColorFeature)
                     colorFeature = createColorFeature(new(backend, device, renderGraph, boot.Width, boot.Height,
-                        viewFrame.View.Projection, colorEffectsRegion) { StencilSource = pipeline.GetStencil });
+                        viewFrame.View.Projection, colorEffectsRegion)
+                        { StencilSource = pipeline.GetStencil, Geometry = clusterOutputs, CameraCutSource = () => cameraCut });
                 temporal ??= new TemporalFeature(
                     backend,
                     device,
@@ -1071,7 +1075,13 @@ internal static class RuntimeApplication
                     RenderGraphEdit edit = renderGraph.BeginEdit();
                     try
                     {
-                        temporal.OrderAfter(ref edit, colorFeature.CompletePass);
+                        GraphPassId colorReady = clusterOutputs.Geometry.CompletePass;
+                        if (colorFeature is not null)
+                        {
+                            colorFeature.OrderAfter(ref edit, colorReady);
+                            colorReady = colorFeature.CompletePass;
+                        }
+                        temporal.OrderAfter(ref edit, colorReady);
                         edit.Commit();
                     }
                     finally
@@ -1537,10 +1547,11 @@ internal static class RuntimeApplication
                     if (image is not null)
                         linearVerifier?.Record(ref graphFrame, clusterOutputs.MaterialColor, graphicsQueue, linearOutputRegion);
                     using (EngineTrace.Begin(ApplicationTrace.TemporalRecording))
+                    {
+                        GraphTextureId sceneColor = clusterOutputs.MaterialColor;
                         temporal.Record(
                             ref graphFrame,
-                            colorFeature?.Record(ref graphFrame, clusterOutputs.MaterialColor, clusterOutputs.Depth)
-                                ?? clusterOutputs.MaterialColor,
+                            colorFeature?.Record(ref graphFrame, sceneColor, clusterOutputs.Depth) ?? sceneColor,
                             clusterOutputs.Depth,
                             motion,
                             temporalSettings,
@@ -1548,6 +1559,7 @@ internal static class RuntimeApplication
                             cameraCut: cameraCut,
                             view: viewEntity,
                             jitterPixels: jitterPixels);
+                    }
                     surfaces?.UpdateFrame(ref graphFrame);
                     ui.Record(ref graphFrame, width, height);
                     if (image is null) return null;

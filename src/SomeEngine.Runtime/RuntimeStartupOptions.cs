@@ -45,6 +45,7 @@ public sealed record RuntimeStartupOptions(
     public bool HudNumbersChange { get; init; } = true;
     public bool TemporalAntialiasing { get; init; } = true;
     public bool VirtualShadows { get; init; } = true;
+    public bool ExperimentalGlobalIllumination { get; init; }
     public bool MeasureBlending { get; init; }
     public ClusterBlendIndex BlendIndex { get; init; } = ClusterBlendIndex.Xyz;
     /// <summary>Optional directional and local ray count; zero selects hard depth comparison.</summary>
@@ -167,6 +168,7 @@ public sealed record RuntimeStartupOptions(
             HudNumbersChange = !args.Contains("--hud-static", StringComparer.OrdinalIgnoreCase),
             TemporalAntialiasing = ReadBooleanOption(args, ["--taa"], ["--no-taa"], true),
             VirtualShadows = ReadBooleanOption(args, ["--vsm"], ["--no-vsm"], true),
+            ExperimentalGlobalIllumination = args.Contains("--experimental-gi", StringComparer.OrdinalIgnoreCase),
             MeasureBlending = args.Contains("--measure-blending", StringComparer.OrdinalIgnoreCase),
             BlendIndex = (ReadOptionalValue(args, "--blend-index") ?? "xyz").ToLowerInvariant() switch
             {
