@@ -17,6 +17,7 @@
     <ProjectReference Include="../SomeEngine.Core/SomeEngine.Core.csproj" />
     <ProjectReference Include="../SomeEngine.Job/SomeEngine.Job.csproj" />
     <TypographyFile Include="$(TypographyNativeRoot)/bin/$(TypographyRid)/$(TypographyLibraryPrefix)freetype.$(TypographyLibraryExtension);$(TypographyNativeRoot)/bin/$(TypographyRid)/$(TypographyLibraryPrefix)harfbuzz.$(TypographyLibraryExtension);$(TypographyNativeRoot)/bin/$(TypographyRid)/FreeType-LICENSE.txt;$(TypographyNativeRoot)/bin/$(TypographyRid)/HarfBuzz-LICENSE.txt" />
+    <TypographyFile Update="$(TypographyNativeRoot)/bin/$(TypographyRid)/$(TypographyLibraryPrefix)freetype.$(TypographyLibraryExtension);$(TypographyNativeRoot)/bin/$(TypographyRid)/$(TypographyLibraryPrefix)harfbuzz.$(TypographyLibraryExtension)" DependencyBinary="true" />
     <Content Include="@(TypographyFile)"
              Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>

@@ -18,11 +18,11 @@
     <PackageReference Include="Silk.NET.DXGI" Version="2.23.0" />
   </ItemGroup>
   <ItemGroup>
-    <Content Include="$(PkgMicrosoft_Direct3D_D3D12)\build\native\bin\x64\D3D12Core.dll"
+    <Content Include="$(PkgMicrosoft_Direct3D_D3D12)\build\native\bin\x64\D3D12Core.dll" DependencyBinary="true"
              Link="D3D12\D3D12Core.dll"
              CopyToOutputDirectory="PreserveNewest"
              CopyToPublishDirectory="PreserveNewest" />
-    <Content Include="$(PkgMicrosoft_Direct3D_D3D12)\build\native\bin\x64\d3d12SDKLayers.dll"
+    <Content Include="$(PkgMicrosoft_Direct3D_D3D12)\build\native\bin\x64\d3d12SDKLayers.dll" DependencyBinary="true"
              Link="D3D12\d3d12SDKLayers.dll"
              CopyToOutputDirectory="PreserveNewest"
              CopyToPublishDirectory="PreserveNewest" />

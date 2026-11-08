@@ -7,8 +7,8 @@
     <PublishAotUsingRuntimePack>true</PublishAotUsingRuntimePack>
   </PropertyGroup>
   <ItemGroup>
-    <Content Include="../../external/dxc/bin/x64/dxcompiler.dll" Link="dxcompiler.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
-    <Content Include="../../external/dxc/bin/x64/dxil.dll" Link="dxil.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../external/dxc/bin/x64/dxcompiler.dll" DependencyBinary="true" Link="dxcompiler.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../external/dxc/bin/x64/dxil.dll" DependencyBinary="true" Link="dxil.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.9" />
     <Compile Include="../../tests/SomeEngine.ECS.Tests/FieldAccessChecks.cs" Link="FieldAccessChecks.cs" />
     <Compile Include="../SomeEngine.ECS.AotSmoke/ComponentBytesSmoke.cs" Link="ComponentBytesSmoke.cs" />
