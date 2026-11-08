@@ -27,7 +27,6 @@ public sealed partial class ScreenProbeFeature
         AddBuffer(ref edit, "GiGlobalFieldChanges", 1, 4);
         _buffers.Add("GiGlobalDistanceWrites", _buffers["GiGlobalDistances"]);
         AddBuffer(ref edit, "GiRays", Math.Max(_rayCount, (uint)_width * (uint)_height * _views), 32);
-        AddBuffer(ref edit, "GiMeshQueries", _candidateCapacity, 32);
         AddBuffer(ref edit, "GiNearObjectWords", NearTileCount, 4);
         AddBuffer(ref edit, "GiCandidates", _candidateCapacity, 32);
         AddBuffer(ref edit, "GiCandidateHits", _candidateCapacity, 16);
@@ -133,10 +132,10 @@ public sealed partial class ScreenProbeFeature
     private QueryPasses AddQueries(ref RenderGraphEdit edit, GraphPassId previous, int stage)
     {
         GraphPassId begin = Then(ref edit, previous, "BeginGiTriangleQueries", Math.Max(_rayCount, _materialCapacity), stage);
-        GraphPassId last = Then(ref edit, begin, "CollectGiMeshQueries", stage == 0 ? _probeCount : TrainingCount, stage);
+        GraphPassId last = Then(ref edit, begin, "CollectGiTriangleCandidates", stage == 0 ? _probeCount : TrainingCount, stage);
         last = Then(ref edit, last, "BuildGiQueryDispatch", 1, stage, 1);
         last = Then(ref edit, last, "BuildGiMaterialWorkRanges", 1, stage, 1);
-        GraphPassId triangles = ThenIndirect(ref edit, last, "ScatterGiMeshQueries", "GiQueryDispatch", 0, stage);
+        GraphPassId triangles = ThenIndirect(ref edit, last, "ScatterGiTriangleCandidates", "GiQueryDispatch", 0, stage);
         GraphPassId reduce = ThenIndirect(ref edit, triangles, "ReduceGiCandidateDistances", "GiQueryDispatch", 0, stage);
         last = ThenIndirect(ref edit, reduce, "SelectGiClosestCandidates", "GiQueryDispatch", 0, stage);
         GraphPassId clear = Then(ref edit, last, "ClearGiMaterialWork", _materialCapacity, stage);

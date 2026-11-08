@@ -21,34 +21,20 @@ struct GiMeshDistanceGrid
     uint TriangleCount;
 };
 
-struct GiMeshTriangleGrid
-{
-    float3 Lower;
-    uint Side;
-    float3 Upper;
-    uint FirstRange;
-};
-
 struct GiMeshHit
 {
     float Distance;
     float3 Barycentric;
     uint3 Triangle;
     uint Hit;
-    uint TriangleTests;
-    uint FieldSamples;
-    uint CellVisits;
-    uint CellGroups;
 };
 
-// The caller specializes this with the material's existing vertex and domain evaluators.
-// A GPU pointer addresses an existing hierarchy page reference, cluster and triangle.
-// The caller follows that reference to the resident page; vertex bytes stay with that caller.
-interface IGiMeshTriangles
+GiMeshHit MissGiMesh(float limit)
 {
-    bool intersect(uint3 triangle, float3 origin, float3 direction, float start, float limit,
-        out float distance, out float3 barycentric);
-};
+    GiMeshHit hit = (GiMeshHit)0;
+    hit.Distance = limit;
+    return hit;
+}
 
 bool IntersectGiTriangle(float3 first, float3 second, float3 third, float3 origin,
     float3 direction, float start, float limit, out float distance, out float3 barycentric)
@@ -70,14 +56,6 @@ bool IntersectGiTriangle(float3 first, float3 second, float3 third, float3 origi
     return true;
 }
 
-struct GiGridRay
-{
-    int3 Cell;
-    int3 Step;
-    float3 Next;
-    float3 Delta;
-};
-
 float2 GiRayBox(float3 lower, float3 upper, float3 origin, float3 direction)
 {
     float3 a = (lower - origin) / direction;
@@ -86,208 +64,74 @@ float2 GiRayBox(float3 lower, float3 upper, float3 origin, float3 direction)
     return float2(max(low.x, max(low.y, low.z)), min(high.x, min(high.y, high.z)));
 }
 
-GiGridRay StartGiGridRay(float3 origin, float3 direction, float3 lower, float3 pitch,
-    float start, uint3 shape)
+// Each near-zero SDF cell directly addresses its complete surface neighborhood.
+// Neighborhoods include the declared displacement envelope in mesh coordinates.
+struct GiMeshSurfaceTrace
 {
-    GiGridRay ray;
-    ray.Cell = int3(clamp(floor((origin + direction * start - lower) / pitch),
-        0.0.xxx, float3(shape - 1u)));
-    ray.Step = select(direction >= 0.0, int3(1), int3(-1));
-    float3 boundary = lower + (float3(ray.Cell) + select(direction >= 0.0, 1.0.xxx, 0.0.xxx)) * pitch;
-    ray.Next = select(direction != 0.0, (boundary - origin) / direction, asfloat(0x7f800000u).xxx);
-    ray.Delta = abs(pitch / direction);
-    return ray;
-}
+    float3 Origin;
+    float3 Direction;
+    float Travel;
+    float End;
+    float Speed;
+    float Expansion;
+    float Padding;
+    uint SmallMesh;
+};
 
-void AdvanceGiGridRay(inout GiGridRay ray)
-{
-    uint axis = ray.Next.y < ray.Next.x ? 1u : 0u;
-    if (ray.Next.z < ray.Next[axis]) axis = 2u;
-    ray.Cell[axis] += ray.Step[axis];
-    ray.Next[axis] += ray.Delta[axis];
-}
-
-GiMeshHit MissGiMesh(float limit)
-{
-    GiMeshHit hit = (GiMeshHit)0;
-    hit.Distance = limit;
-    return hit;
-}
-
-GiMeshHit TestGiMeshTriangle<T : IGiMeshTriangles>(ByteAddressBuffer fields, uint pointers,
-    uint triangle, T triangles, float3 origin, float3 direction, float start, GiMeshHit hit)
-{
-    uint3 pointer = fields.Load3(pointers + triangle * 12u);
-    float distance;
-    float3 barycentric;
-    hit.TriangleTests++;
-    if (triangles.intersect(pointer, origin, direction, start, hit.Distance, distance, barycentric))
-    {
-        hit.Distance = distance;
-        hit.Barycentric = barycentric;
-        hit.Triangle = pointer;
-        hit.Hit = 1u;
-    }
-    return hit;
-}
-
-bool GiMeshMaterialIntersects(ByteAddressBuffer fields, uint address, uint material,
-    float3 origin, float3 direction, float start, float limit)
-{
-    uint2 bounds = fields.Load2(address + 184u);
-    if (bounds.y == 0u) return true;
-    if (material >= bounds.y) return false;
-    uint at = address + bounds.x + material * 32u;
-    float4 lower = asfloat(fields.Load4(at));
-    if (lower.w != 1.0) return false;
-    float2 range = GiRayBox(lower.xyz, asfloat(fields.Load3(at + 16u)), origin, direction);
-    return range.y >= max(start, range.x) && range.x < limit;
-}
-
-GiMeshHit TraceGiMeshTriangleList<T : IGiMeshTriangles>(ByteAddressBuffer fields, uint4 offsets, uint3 materials,
-    uint2 list, T triangles, float3 origin, float3 direction, float start, GiMeshHit hit)
-{
-    bool selectMaterial = materials.y > 1u && materials.z != 0xffffffffu;
-    if (selectMaterial)
-    {
-        uint low = list.x, high = list.x + list.y, end = high;
-        while (low < high)
-        {
-            uint middle = low + (high - low) / 2u;
-            uint triangle = fields.Load(offsets.z + middle * 4u);
-            uint material = fields.Load(materials.x + triangle * 4u);
-            if (material < materials.z) low = middle + 1u;
-            else high = middle;
-        }
-        list = uint2(low, end - low);
-    }
-    if (list.y != 0u) hit.CellGroups++;
-    for (uint index = 0u; index < list.y; index++)
-    {
-        uint triangle = fields.Load(offsets.z + (list.x + index) * 4u);
-        if (selectMaterial && fields.Load(materials.x + triangle * 4u) != materials.z) break;
-        hit = TestGiMeshTriangle(fields, offsets.w, triangle, triangles, origin, direction, start, hit);
-    }
-    return hit;
-}
-
-GiMeshHit TraceGiMeshDenseCells<T : IGiMeshTriangles>(ByteAddressBuffer fields, uint4 offsets, uint3 materials,
-    uint2 page, float3 lower, float3 pitch, T triangles, float3 origin, float3 direction,
-    float start, float entry, float end, GiMeshHit hit)
-{
-    uint side = page.y & 65535u;
-    GiGridRay ray = StartGiGridRay(origin, direction, lower, pitch / float(side), entry, side.xxx);
-    for (uint step = 0u; step < side * 3u + 3u; step++)
-    {
-        if (any(ray.Cell < 0) || any(ray.Cell >= int(side))) return hit;
-        uint3 cell = uint3(ray.Cell);
-        float next = min(ray.Next.x, min(ray.Next.y, ray.Next.z));
-        hit.CellVisits++;
-        uint index = page.x + cell.x + cell.y * side + cell.z * side * side;
-        uint2 list = fields.Load2(offsets.y + index * 8u);
-        hit = TraceGiMeshTriangleList(fields, offsets, materials, list, triangles, origin, direction, start, hit);
-        if ((hit.Hit != 0u && hit.Distance <= next) || next >= end) return hit;
-        AdvanceGiGridRay(ray);
-    }
-    return hit;
-}
-
-// Sparse training and the near field resolve the original triangle pointers.
-GiMeshHit TraceGiMeshCells<T : IGiMeshTriangles>(ByteAddressBuffer fields, uint address,
-    T triangles, float3 origin, float3 direction, float start, float limit, uint localMaterial = 0xffffffffu)
-{
-    uint4 offsets = fields.Load4(address + 160u) + address;
-    uint2 materialData = fields.Load2(address + 176u);
-    uint3 materials = uint3(address + materialData.x, materialData.y, localMaterial);
-    GiMeshHit hit = MissGiMesh(limit);
-    uint triangleCount = fields.Load(address + 124u);
-    if (triangleCount <= 4u)
-    {
-        uint first = fields.Load(address + 108u);
-        for (uint triangle = 0u; triangle < triangleCount; triangle++)
-            hit = TestGiMeshTriangle(fields, offsets.w, first + triangle, triangles,
-                origin, direction, start, hit);
-        return hit;
-    }
-    GiMeshTriangleGrid grid = fields.Load<GiMeshTriangleGrid>(address + 128u);
-    float2 box = GiRayBox(grid.Lower, grid.Upper, origin, direction);
-    float entry = max(start, box.x), end = min(limit, box.y);
-    if (entry >= end) return hit;
-    float3 pitch = (grid.Upper - grid.Lower) / float(grid.Side);
-    GiGridRay ray = StartGiGridRay(origin, direction, grid.Lower, pitch, entry, grid.Side.xxx);
-    float travel = entry;
-    for (uint step = 0u; step < grid.Side * 3u + 3u; step++)
-    {
-        if (any(ray.Cell < 0) || any(ray.Cell >= int(grid.Side))) return hit;
-        uint3 cell = uint3(ray.Cell);
-        float next = min(ray.Next.x, min(ray.Next.y, ray.Next.z));
-        hit.CellVisits++;
-        uint index = grid.FirstRange + cell.x + cell.y * grid.Side + cell.z * grid.Side * grid.Side;
-        uint2 list = fields.Load2(offsets.y + index * 8u);
-        if ((list.y & 0x80000000u) != 0u)
-            hit = TraceGiMeshDenseCells(fields, offsets, materials, list, grid.Lower + float3(cell) * pitch,
-                pitch, triangles, origin, direction, start, travel, min(next, end), hit);
-        else
-            hit = TraceGiMeshTriangleList(fields, offsets, materials, list, triangles, origin, direction, start, hit);
-        if ((hit.Hit != 0u && hit.Distance <= next) || next >= end) return hit;
-        AdvanceGiGridRay(ray);
-        travel = next;
-    }
-    return hit;
-}
-
-float GiMeshDistanceBound(ByteAddressBuffer fields, uint distances, GiMeshDistanceGrid grid, float3 point)
-{
-    int3 first = int3(floor((point - grid.Lower) / grid.CellSize - 0.5));
-    float bound = -1e20;
-    for (uint corner = 0u; corner < 8u; corner++)
-    {
-        int3 offset = int3(corner & 1u, (corner >> 1u) & 1u, corner >> 2u);
-        uint3 cell = uint3(clamp(first + offset, int3(0), int3(grid.Shape) - 1));
-        float3 center = grid.Lower + (float3(cell) + 0.5) * grid.CellSize;
-        uint index = grid.FirstDistance + cell.x + cell.y * grid.Shape.x + cell.z * grid.Shape.x * grid.Shape.y;
-        bound = max(bound, asfloat(fields.Load(distances + index * 4u)) - length(point - center) - grid.DistanceError);
-    }
-    return bound;
-}
-
-// The prototype skips empty space with distance bounds, then resolves local
-// pointers with immediate hit feedback and the current closest distance.
-GiMeshHit TraceGiMeshDistanceField<T : IGiMeshTriangles>(ByteAddressBuffer fields, uint address,
-    T triangles, float3 origin, float3 direction, float start, float limit, uint localMaterial = 0xffffffffu)
+GiMeshSurfaceTrace BeginGiMeshSurfaceTrace(ByteAddressBuffer fields, uint address,
+    float3 origin, float3 direction, float start, float limit, float expansion)
 {
     GiMeshDistanceGrid grid = fields.Load<GiMeshDistanceGrid>(address);
-    uint4 offsets = fields.Load4(address + 160u) + address;
-    GiMeshHit hit = MissGiMesh(limit);
-    if (grid.TriangleCount <= 4u)
-        return TraceGiMeshCells(fields, address, triangles, origin, direction, start, limit, localMaterial);
-    float3 center = float3(grid.CenterX, grid.CenterY, grid.CenterZ);
-    float3 offset = origin - center;
-    float3 fieldOrigin = float3(dot(offset, grid.AxisX), dot(offset, grid.AxisY), dot(offset, grid.AxisZ));
-    float3 fieldDirection = float3(dot(direction, grid.AxisX), dot(direction, grid.AxisY), dot(direction, grid.AxisZ));
-    float2 box = GiRayBox(grid.Lower, grid.Upper, fieldOrigin, fieldDirection);
-    float travel = max(start, box.x), end = min(limit, box.y);
-    if (travel >= end) return hit;
-    float speed = length(fieldDirection);
-    for (uint step = 0u; step < 8u; step++)
+    GiMeshSurfaceTrace trace = (GiMeshSurfaceTrace)0;
+    float3 offset = origin - float3(grid.CenterX, grid.CenterY, grid.CenterZ);
+    trace.Origin = float3(dot(offset, grid.AxisX), dot(offset, grid.AxisY), dot(offset, grid.AxisZ));
+    trace.Direction = float3(dot(direction, grid.AxisX), dot(direction, grid.AxisY), dot(direction, grid.AxisZ));
+    float2 box = GiRayBox(grid.GeometryLower - expansion, grid.GeometryUpper + expansion,
+        trace.Origin, trace.Direction);
+    trace.Travel = max(start, box.x);
+    trace.End = min(limit, box.y);
+    trace.Speed = length(direction);
+    trace.Expansion = expansion;
+    trace.Padding = asfloat(fields.Load(address + 128u)) - expansion;
+    trace.SmallMesh = grid.TriangleCount <= 4u ? grid.TriangleCount : 0u;
+    return trace;
+}
+
+bool NextGiMeshSurface(ByteAddressBuffer fields, uint address,
+    inout GiMeshSurfaceTrace trace, out uint2 references)
+{
+    references = 0u;
+    if (trace.Travel >= trace.End) return false;
+    if (trace.SmallMesh != 0u)
     {
-        float3 point = fieldOrigin + fieldDirection * travel;
-        uint3 cell = uint3(clamp(floor((point - grid.Lower) / grid.CellSize), 0.0.xxx, float3(grid.Shape - 1u)));
-        float3 sampleCenter = grid.Lower + (float3(cell) + 0.5) * grid.CellSize;
-        uint index = grid.FirstDistance + cell.x + cell.y * grid.Shape.x + cell.z * grid.Shape.x * grid.Shape.y;
-        float value = asfloat(fields.Load(offsets.x + index * 4u));
-        float distance = value - length(point - sampleCenter) - grid.DistanceError;
-        hit.FieldSamples++;
-        if (distance <= grid.DistanceError)
-            distance = max(distance, GiMeshDistanceBound(fields, offsets.x, grid, point));
-        if (distance <= grid.DistanceError) break;
-        travel += distance / speed;
-        if (travel >= end) return hit;
+        references = uint2(0u, trace.SmallMesh);
+        trace.Travel = trace.End;
+        return true;
     }
-    uint samples = hit.FieldSamples;
-    hit = TraceGiMeshCells(fields, address, triangles, origin, direction, travel, limit, localMaterial);
-    hit.FieldSamples += samples;
-    return hit;
+    GiMeshDistanceGrid grid = fields.Load<GiMeshDistanceGrid>(address);
+    uint4 offsets = fields.Load4(address + 160u) + address;
+    while (trace.Travel < trace.End)
+    {
+        float3 point = trace.Origin + trace.Direction * trace.Travel;
+        uint3 cell = uint3(clamp(floor((point - grid.Lower) / grid.CellSize),
+            0.0.xxx, float3(grid.Shape - 1u)));
+        uint index = cell.x + cell.y * grid.Shape.x + cell.z * grid.Shape.x * grid.Shape.y;
+        float3 lower = grid.Lower + float3(cell) * grid.CellSize;
+        float3 center = lower + 0.5 * grid.CellSize;
+        float distance = asfloat(fields.Load(offsets.x + (grid.FirstDistance + index) * 4u));
+        float bound = distance - length(point - center) - grid.DistanceError - trace.Expansion;
+        if (bound > trace.Padding)
+        {
+            trace.Travel += bound / trace.Speed;
+            continue;
+        }
+        references = fields.Load2(offsets.y + index * 8u);
+        float end = GiRayBox(lower - trace.Padding, lower + grid.CellSize + trace.Padding,
+            trace.Origin, trace.Direction).y;
+        trace.Travel = min(trace.End, end);
+        return true;
+    }
+    return false;
 }
 
 #endif

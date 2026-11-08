@@ -70,38 +70,6 @@ bool GiTriangleVisible<TVE, TVisibility>(uniform TVisibility visibility,
     return visibility.evaluate(pixel, varying).Visible != 0u;
 }
 
-struct GiMaterialTriangles : IGiMeshTriangles
-{
-    VertexEvaluate Vertex;
-    DomainEvaluate Domain;
-    VisibilityEvaluate Visibility;
-    GiMeshQuery Query;
-    GiTraceRay Ray;
-
-    bool intersect(uint3 pointer, float3 origin, float3 direction, float start, float limit,
-        out float distance, out float3 barycentric)
-    {
-        distance = limit; barycentric = 0.0;
-        uint page;
-        if (!GetGiTrianglePage(pointer, Views[0].MaxPageFaults, page)) return false;
-        uint material = GetClusterMaterialSlotOffset(Query.InstanceIndex) +
-            GetClusterLocalMaterial(PageHeap, page, pointer.y, pointer.z);
-        if (material != Query.MaterialIndex) return false;
-        GiTriangleCandidate candidate = (GiTriangleCandidate)0;
-        candidate.InstanceIndex = Query.InstanceIndex;
-        candidate.MaterialIndex = material;
-        candidate.Triangle = pointer;
-        GiTriangleVertices<VertexEvaluate.Vertex> vertices = ReadGiTriangle(Vertex, candidate);
-        DomainEvaluate.TriangleData triangle = Domain.makeTriangle(vertices.First, vertices.Second, vertices.Third, material);
-        limit = min(limit, asfloat(GiClosestDistances[Query.RayIndex]));
-        bool hit = IntersectGiTriangle(Domain.cornerPosition(triangle, 0u), Domain.cornerPosition(triangle, 1u),
-            Domain.cornerPosition(triangle, 2u), Ray.Origin, Ray.Direction, start, limit, distance, barycentric);
-        hit = hit && GiTriangleVisible<VertexEvaluate, VisibilityEvaluate>(Visibility, vertices, candidate, barycentric);
-        if (hit) InterlockedMin(GiClosestDistances[Query.RayIndex], asuint(distance));
-        return hit;
-    }
-};
-
 [VertexEncoding(CLUSTER_VERTEX_ENCODING)]
 [shader("compute")]
 [numthreads(64, 1, 1)]
@@ -111,25 +79,23 @@ void IntersectGiMaterial(uniform VertexEvaluate vertex, uniform DomainEvaluate d
     uint2 work = GiMaterialWorkRanges[GiMaterialWork.MaterialIndex];
     if (thread.x >= work.y) return;
     uint index = GiMaterialWorkIndices[work.x + thread.x];
-    GiMeshQuery query = GiMeshQueries[index];
-    GiTraceRay ray = GiRays[query.RayIndex];
-    GiMaterialTriangles triangles;
-    triangles.Vertex = vertex; triangles.Domain = domain; triangles.Visibility = visibility;
-    triangles.Query = query; triangles.Ray = ray;
-    RenderInstanceTransform transform = GetCurrentInstanceTransform(query.InstanceIndex);
-    float3 origin = InverseTransformInstancePosition(ray.Origin, transform);
-    float3 direction = InverseTransformInstanceVector(ray.Direction, transform);
-    float limit = min(query.Limit, asfloat(GiClosestDistances[query.RayIndex]));
-    GiMeshHit hit = TraceGiMeshDistanceField(GiMeshFields, query.FieldAddress, triangles,
-        origin, direction, query.Start, limit, query.MaterialIndex - GetClusterMaterialSlotOffset(query.InstanceIndex));
-    GiTriangleCandidate candidate = (GiTriangleCandidate)0;
-    candidate.RayIndex = query.RayIndex;
-    candidate.InstanceIndex = query.InstanceIndex;
-    candidate.MaterialIndex = query.MaterialIndex;
-    candidate.Triangle = hit.Triangle;
-    candidate.Start = query.Start; candidate.Limit = query.Limit;
-    GiCandidates[index] = candidate;
-    GiCandidateHits[index] = hit.Hit != 0u ? float4(hit.Distance, hit.Barycentric) : float4(query.Limit, 0.0, 0.0, 0.0);
+    GiTriangleCandidate candidate = GiCandidates[index];
+    GiTraceRay ray = GiRays[candidate.RayIndex];
+    float distance = candidate.Limit;
+    float3 barycentric = 0.0;
+    uint page;
+    if (GetGiTrianglePage(candidate.Triangle, Views[0].MaxPageFaults, page))
+    {
+        GiTriangleVertices<VertexEvaluate.Vertex> vertices = ReadGiTriangle(vertex, candidate);
+        DomainEvaluate.TriangleData triangle = domain.makeTriangle(vertices.First, vertices.Second, vertices.Third, candidate.MaterialIndex);
+        float limit = min(candidate.Limit, asfloat(GiClosestDistances[candidate.RayIndex]));
+        bool hit = IntersectGiTriangle(domain.cornerPosition(triangle, 0u), domain.cornerPosition(triangle, 1u),
+            domain.cornerPosition(triangle, 2u), ray.Origin, ray.Direction, candidate.Start, limit, distance, barycentric);
+        hit = hit && GiTriangleVisible<VertexEvaluate, VisibilityEvaluate>(visibility, vertices, candidate, barycentric);
+        if (hit) InterlockedMin(GiClosestDistances[candidate.RayIndex], asuint(distance));
+        else { distance = candidate.Limit; barycentric = 0.0; }
+    }
+    GiCandidateHits[index] = float4(distance, barycentric);
 }
 
 [VertexEncoding(CLUSTER_VERTEX_ENCODING)]

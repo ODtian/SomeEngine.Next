@@ -27,7 +27,7 @@ struct GiSceneParameters
 };
 ConstantBuffer<GiSceneParameters> GiScene;
 ByteAddressBuffer GiMeshFields;
-StructuredBuffer<uint2> GiMeshFieldsIndex;
+StructuredBuffer<uint> GiMeshFieldsIndex;
 ByteAddressBuffer PageHeap;
 StructuredBuffer<float4> GiInstanceBounds;
 StructuredBuffer<float4> GiInstanceGroups;
@@ -63,13 +63,7 @@ float3 GiCachePosition(float3 position)
 uint GiInstanceField(uint instance)
 {
     uint root = GetClusterInstanceBvhRoot(instance);
-    return root < GiScene.MeshFieldsIndexCount ? GiMeshFieldsIndex[root].x : 0xffffffffu;
-}
-
-uint GiInstanceMaterialCount(uint instance)
-{
-    uint root = GetClusterInstanceBvhRoot(instance);
-    return root < GiScene.MeshFieldsIndexCount ? GiMeshFieldsIndex[root].y : 0u;
+    return root < GiScene.MeshFieldsIndexCount ? GiMeshFieldsIndex[root] : 0xffffffffu;
 }
 
 float GiMeshDistance(uint address, float3 point)
@@ -225,34 +219,42 @@ void ComposeGiGlobalDistances(uint3 group : SV_GroupID, uint lane : SV_GroupInde
     ComposeGiInstanceDistances(group.x, lane, true);
 }
 
-void AddGiMeshQueries(uint rayIndex, uint instance, GiTraceRay ray, float limit)
+void AddGiTriangleCandidates(uint rayIndex, uint instance, GiTraceRay ray, float limit)
 {
     uint address = GiInstanceField(instance);
     if (address == 0xffffffffu) return;
     float2 box = GiRayBox(GiInstanceBounds[instance * 4u].xyz, GiInstanceBounds[instance * 4u + 1u].xyz,
         ray.Origin, ray.Direction);
     if (box.y < max(ray.Start, box.x) || box.x >= limit) return;
-    uint first = GetClusterMaterialSlotOffset(instance);
-    uint count = GiInstanceMaterialCount(instance);
     RenderInstanceTransform transform = GetCurrentInstanceTransform(instance);
     float3 origin = InverseTransformInstancePosition(ray.Origin, transform);
     float3 direction = InverseTransformInstanceVector(ray.Direction, transform);
-    bool useMaterialBounds = GetInstanceBoundsExpansion(instance) <= 0.0;
-    for (uint local = 0u; local < count; local++)
+    float3 scale = abs(transform.Scale * transform.Stretch);
+    float expansion = max(0.0, GetInstanceBoundsExpansion(instance)) / min(scale.x, min(scale.y, scale.z));
+    GiMeshSurfaceTrace trace = BeginGiMeshSurfaceTrace(GiMeshFields, address, origin, direction, ray.Start, limit, expansion);
+    uint4 offsets = GiMeshFields.Load4(address + 160u) + address;
+    uint2 materials = GiMeshFields.Load2(address + 176u);
+    uint firstMaterial = GetClusterMaterialSlotOffset(instance);
+    uint2 neighborhood;
+    while (NextGiMeshSurface(GiMeshFields, address, trace, neighborhood))
     {
-        if (useMaterialBounds && !GiMeshMaterialIntersects(GiMeshFields, address, local, origin, direction, ray.Start, limit)) continue;
-        uint at;
-        InterlockedAdd(GiQueueCounts[0], 1u, at);
-        if (at >= GiScene.CandidateCapacity) { InterlockedAdd(GiQueueCounts[1], 1u); return; }
-        GiMeshQuery query = (GiMeshQuery)0;
-        query.RayIndex = rayIndex;
-        query.InstanceIndex = instance;
-        query.FieldAddress = address;
-        query.MaterialIndex = first + local;
-        query.Start = ray.Start;
-        query.Limit = limit;
-        GiMeshQueries[at] = query;
-        InterlockedAdd(GiMaterialWorkCounts[query.MaterialIndex], 1u);
+        for (uint index = 0u; index < neighborhood.y; index++)
+        {
+            uint triangle = GiMeshFields.Load(offsets.z + (neighborhood.x + index) * 4u);
+            uint localMaterial = materials.y != 0u ? GiMeshFields.Load(address + materials.x + triangle * 4u) : 0u;
+            uint at;
+            InterlockedAdd(GiQueueCounts[0], 1u, at);
+            if (at >= GiScene.CandidateCapacity) { InterlockedAdd(GiQueueCounts[1], 1u); continue; }
+            GiTriangleCandidate candidate = (GiTriangleCandidate)0;
+            candidate.RayIndex = rayIndex;
+            candidate.InstanceIndex = instance;
+            candidate.MaterialIndex = firstMaterial + localMaterial;
+            candidate.Triangle = GiMeshFields.Load3(offsets.w + triangle * 12u);
+            candidate.Start = ray.Start;
+            candidate.Limit = limit;
+            GiCandidates[at] = candidate;
+            InterlockedAdd(GiMaterialWorkCounts[candidate.MaterialIndex], 1u);
+        }
     }
 }
 
@@ -310,7 +312,7 @@ void BeginGiTriangleQueries(uint3 thread : SV_DispatchThreadID)
 
 [shader("compute")]
 [numthreads(64, 1, 1)]
-void CollectGiMeshQueries(uint3 thread : SV_DispatchThreadID)
+void CollectGiTriangleCandidates(uint3 thread : SV_DispatchThreadID)
 {
     uint rayIndex = thread.x + (GiScene.TrainingStage != 0u ? GiProbeCount() : 0u);
     if (rayIndex >= GiProbeCount() + GiScene.TrainingCount) return;
@@ -327,7 +329,7 @@ void CollectGiMeshQueries(uint3 thread : SV_DispatchThreadID)
             while (mask != 0u)
             {
                 uint bit = firstbitlow(mask); mask &= mask - 1u;
-                AddGiMeshQueries(rayIndex, word * 32u + bit, ray, limit);
+                AddGiTriangleCandidates(rayIndex, word * 32u + bit, ray, limit);
             }
         }
         return;
@@ -345,20 +347,9 @@ void CollectGiMeshQueries(uint3 thread : SV_DispatchThreadID)
         for (uint index = first; index < end; index++)
         {
             uint instance = GiScene.UseInstanceGroups != 0u ? GiInstanceOrder[index] : index;
-            AddGiMeshQueries(rayIndex, instance, ray, limit);
+            AddGiTriangleCandidates(rayIndex, instance, ray, limit);
         }
     }
-}
-
-[shader("compute")]
-[numthreads(64, 1, 1)]
-void ScatterGiMeshQueries(uint3 thread : SV_DispatchThreadID)
-{
-    uint index = thread.x;
-    if (index >= min(GiQueueCounts[0], GiScene.CandidateCapacity)) return;
-    uint material = GiMeshQueries[index].MaterialIndex, offset;
-    InterlockedAdd(GiMaterialWorkWrites[material], 1u, offset);
-    GiMaterialWorkIndices[GiMaterialWorkRanges[material].x + offset] = index;
 }
 
 [shader("compute")]

@@ -21,17 +21,6 @@ struct GiTriangleCandidate
     uint MaterialIndex;
 };
 
-struct GiMeshQuery
-{
-    uint RayIndex;
-    uint InstanceIndex;
-    uint FieldAddress;
-    uint MaterialIndex;
-    float Start;
-    float Limit;
-    uint2 Padding;
-};
-
 struct GiSurfaceSample
 {
     float3 Position;
@@ -58,7 +47,6 @@ ConstantBuffer<GiMaterialWorkSettings> GiMaterialWork;
 RWStructuredBuffer<uint2> GiMaterialWorkRanges;
 RWStructuredBuffer<uint> GiMaterialWorkIndices;
 RWStructuredBuffer<GiTraceRay> GiRays;
-RWStructuredBuffer<GiMeshQuery> GiMeshQueries;
 RWStructuredBuffer<uint> GiClosestDistances;
 RWStructuredBuffer<GiTriangleCandidate> GiCandidates;
 RWStructuredBuffer<float4> GiCandidateHits;

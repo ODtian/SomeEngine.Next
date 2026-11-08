@@ -60,7 +60,7 @@ public sealed partial class ScreenProbeFeature
             case "GiCache": pass.Bind(_cacheSettings, sync); return;
             case "GiScene": pass.Bind(_sceneSettings[stage], sync); return;
             case "GiMeshFields": pass.Bind(edit.CreateBufferSrv(_scene!.MeshFields), sync); return;
-            case "GiMeshFieldsIndex": pass.Bind(edit.CreateBufferSrv(_scene!.MeshFieldsIndex, structureStride: 8), sync); return;
+            case "GiMeshFieldsIndex": pass.Bind(edit.CreateBufferSrv(_scene!.MeshFieldsIndex, structureStride: 4), sync); return;
             case "GiHierarchy": _surfaces.Geometry.BindBvh(edit, ref pass, sync); return;
             case "PageHeap": _surfaces.Geometry.BindPageHeap(edit, ref pass, sync); return;
             case "GiInstanceBounds": pass.Bind(edit.CreateBufferSrv(_surfaces.Geometry.InstanceWorldBounds, structureStride: 16), sync); return;
@@ -111,7 +111,7 @@ public sealed partial class ScreenProbeFeature
                 else if (name == outputBufferName || outputBufferName == "GiCandidateHits" && name == "GiCandidates")
                     feature.BindBuffer(ref edit, ref pass, name, type, sync, GraphAccessMode.Write,
                         unorderedAccessHazards: UnorderedAccessHazardMode.DisjointWrites);
-                else if (name is "GiMaterialWorkRanges" or "GiMaterialWorkIndices" or "GiMeshQueries" or "GiCandidates" or "GiRays" or
+                else if (name is "GiMaterialWorkRanges" or "GiMaterialWorkIndices" or "GiCandidates" or "GiRays" or
                     "GiCandidateHits" or "GiSurfaceSamples")
                     feature.BindBuffer(ref edit, ref pass, name, type, sync, GraphAccessMode.Read);
                 else feature.BindSceneResource(ref edit, ref pass, name, type, sync);
