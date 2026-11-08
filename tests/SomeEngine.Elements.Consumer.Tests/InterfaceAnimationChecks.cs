@@ -62,7 +62,8 @@ public static partial class InterfaceAnimationChecks
         target.Value = 10;
         Frame(0);
         Require(world.Read<DistanceNode>(distance).Value.Meters == 5, "Retargeting keeps the first presented value continuous.");
-        Require(world.Read<PresentationOffset>(panel).Matrix == Matrix3x2.CreateTranslation(-50, 0), "A second layout change continues from the current presentation.");
+        Matrix3x2 presentation = world.Read<PresentationOffset>(panel).Matrix;
+        Require(presentation == Matrix3x2.CreateTranslation(-50, 0), $"A second layout change continues from the current presentation: {presentation}.");
         Frame(0.5f);
         Require(world.Read<DistanceNode>(distance).Value.Meters == 7.5f, "A user's channel continues toward the new target.");
         Frame(0.5f);

@@ -76,9 +76,7 @@ public static partial class ClusterMeshPages
             int capacity = pages.Count == 0 ? MeshPageHeader.RootPageSize : MeshPageHeader.MaxPageSize;
             int clusterLimit = pages.Count == 0 ? 64 : 256;
             if (currentBytes + bytes > capacity || records.Count == clusterLimit) Flush();
-            capacity = pages.Count == 0 ? MeshPageHeader.RootPageSize : MeshPageHeader.MaxPageSize;
-            if (currentBytes + bytes > capacity)
-                throw new InvalidDataException("The encoded cluster exceeds the current mesh page payload capacity.");
+            // A single opaque vertex blob occupies its own page when it exceeds the grouping size.
 
             uint rangeOffset = uint.MaxValue, batchOffset = uint.MaxValue;
             if (external)

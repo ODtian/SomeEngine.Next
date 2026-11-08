@@ -86,14 +86,16 @@ public sealed class TopologyFinalizerAndHierarchyPropagationTests : JobTest
                 new BlockingNoopParentPacketJob<Domain>(packetData),
                 new TopologyPacketScheduleOptions(rowsPerPacket: 1));
             Assert.True(packetArrived.Wait(TimeSpan.FromSeconds(3)));
+            Assert.Equal(tickBefore, world.CurrentTick);
 
             // A no-op image must not register a late topology writer or validate a stale
             // preimage. The dependency-independent write can finish before the packet returns.
             Hierarchy<Domain>.SetParent(world, child, competingParent);
+            uint editedTick = world.CurrentTick;
             releasePacket.Set();
             transaction.Handle.Complete();
 
-            Assert.Equal(tickBefore, world.CurrentTick);
+            Assert.Equal(editedTick, world.CurrentTick);
             Assert.Equal(competingParent, Hierarchy<Domain>.GetParent(world, child));
         });
     }

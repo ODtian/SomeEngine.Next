@@ -19,6 +19,9 @@ public readonly ref struct RenderGraphFrameResult
 
     internal RenderGraphFrameResult(RenderGraphFrameState? frame) => _frame = frame;
 
+    /// <summary>Identifies the same frame as its authored data and completed GPU times.</summary>
+    public ulong FrameIdentity => _frame?.Identity ?? 0;
+
     /// <summary>Accepted submissions, including work accepted before a later failure.</summary>
     public ReadOnlySpan<QueueCompletion> SubmittedCompletions =>
         _frame is null ? [] : _frame.SubmittedCompletions;

@@ -2,6 +2,7 @@ using ImGuiNET;
 using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 using SomeEngine.Diagnostics;
 using SomeEngine.Core.Diagnostics;
 using SomeEngine.Render.Cluster;
@@ -13,6 +14,11 @@ namespace DefaultGame;
 public sealed record TestScene(string Name, string ContentDirectory, bool Animate = false)
 {
     public SimulationFrameWindow? MeasurementFrames { get; init; }
+    [JsonIgnore] public Action<ApplicationFrame>? Initialize { get; init; }
+    [JsonIgnore] public Action<ApplicationFrame>? UpdateFrame { get; init; }
+    [JsonIgnore] public Action<ApplicationFrameTiming>? FrameMeasured { get; init; }
+    [JsonIgnore] public Func<JsonNode>? DescribeWorkload { get; init; }
+    public uint DeformCacheBytes { get; init; } = 64u * 1024 * 1024;
 }
 
 /// <summary>The simulation frames selected before comparing scene runs.</summary>
@@ -59,15 +65,22 @@ public sealed partial class SceneTestPlatform
         Scenes = scenes.ToArray();
         Application = new ApplicationScene(scenes[0].ContentDirectory)
         {
-            Options = (options ?? RuntimeStartupOptions.Parse([])) with { WindowVSync = false, DynamicScene = scenes[0].Animate, AsyncCompute = true, SurfacePanel = true, WorldNameplates = true },
+            Options = (options ?? RuntimeStartupOptions.Parse([]) with { AsyncCompute = true, SurfacePanel = true, WorldNameplates = true })
+                with { WindowVSync = false, DynamicScene = scenes[0].Animate },
             InterfaceEnabled = true,
-            Initialize = frame => InitializeScene?.Invoke(frame.Scene, Current),
+            DeformCacheBytes = scenes[0].DeformCacheBytes,
+            Initialize = frame =>
+            {
+                Current.Initialize?.Invoke(frame);
+                InitializeScene?.Invoke(frame.Scene, Current);
+            },
             SceneStarted = BeginScene,
-            UpdateFrame = UpdateFrame,
+            UpdateFrame = scenes[0].UpdateFrame is null ? null : UpdateFrame,
             DrawDebugUi = Draw,
             FrameCompleted = FrameCompleted,
             BlendFrameCompleted = RecordBlendFrame,
             SceneCompleted = result => EndScene(result.Error?.Message),
+            FrameMeasured = scenes[0].FrameMeasured,
         };
         MeasureBlending = Options.MeasureBlending;
     }
@@ -76,7 +89,17 @@ public sealed partial class SceneTestPlatform
     public int SelectedScene { get; private set; }
     public ApplicationScene Application { get; }
     public Action<SceneEdit, TestScene>? InitializeScene { get; init; }
-    public Action<SceneEdit, TestScene, int>? UpdateScene { get; init; }
+    private Action<SceneEdit, TestScene, int>? _updateScene;
+    public Action<SceneEdit, TestScene, int>? UpdateScene
+    {
+        get => _updateScene;
+        init
+        {
+            _updateScene = value;
+            Application.UpdateFrame = SceneUpdate;
+        }
+    }
+    private Action<ApplicationFrame>? SceneUpdate => Current.UpdateFrame is not null || _updateScene is not null ? UpdateFrame : null;
     private Func<ApplicationRendering, TestScene, IApplicationColorFeature>? _createColorFeature;
     public Func<ApplicationRendering, TestScene, IApplicationColorFeature>? CreateColorFeature
     {
@@ -135,6 +158,8 @@ public sealed partial class SceneTestPlatform
     private string? _graphicsDevice;
     private string? _graphicsDriver;
     public bool IsMeasuring { get; private set; }
+    public bool ExitAfterMeasurements { get; init; }
+    public double? MaximumMeasurementSeconds { get; init; } = 45;
     public string? LastReport { get; private set; }
     public string? StartupTraceOutput { get => Application.StartupTraceOutput; init => Application.StartupTraceOutput = value; }
     public ApplicationStartupTimes? Startup { get; private set; }
@@ -148,8 +173,14 @@ public sealed partial class SceneTestPlatform
 
     private void UpdateFrame(ApplicationFrame frame)
     {
+        Current.UpdateFrame?.Invoke(frame);
         UpdateScene?.Invoke(frame.Scene, Current, frame.Index);
+    }
+
+    private void FrameCompleted(ApplicationFrame frame)
+    {
         SetRenderingInfo(frame.Width, frame.Height, frame.Adapter.Name, frame.Adapter.DriverVersion);
+        if (Startup is null && frame.Startup is { } times) RecordStartup(times);
         if (!IsMeasuring)
         {
             for (int index = 0; index < Math.Min(Scenes.Count, 3); index++)
@@ -160,17 +191,12 @@ public sealed partial class SceneTestPlatform
             if (frame.WasKeyPressed(0x79)) StartMeasurements(recordTrace: true);
         }
         if (ImageRequested)
-            frame.Scene.CaptureImage(image =>
+            Application.CaptureImage(image =>
             {
                 string path = ImageDestination();
                 image.SaveBmp(path);
                 ImageSaved(path);
             });
-    }
-
-    private void FrameCompleted(ApplicationFrame frame)
-    {
-        if (Startup is null && frame.Startup is { } times) RecordStartup(times);
         if (IsMeasuring && !ReloadRequested) RecordFrame(frame.Timing, frame.GetRenderingDiagnostics());
     }
 
@@ -241,6 +267,9 @@ public sealed partial class SceneTestPlatform
         ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(index, Scenes.Count);
         SelectedScene = index;
         Application.ContentDirectory = Current.ContentDirectory;
+        Application.DeformCacheBytes = Current.DeformCacheBytes;
+        Application.FrameMeasured = IsMeasuring ? RecordCompletedFrame : Current.FrameMeasured;
+        Application.UpdateFrame = SceneUpdate;
         Options = Options with { DynamicScene = Current.Animate };
         Application.Reload();
     }
@@ -248,7 +277,9 @@ public sealed partial class SceneTestPlatform
     private void BeginScene(long started)
     {
         if (!IsMeasuring) return;
-        _sceneTimeLimit = (45 - Stopwatch.GetElapsedTime(_testStarted, started).TotalSeconds) / (Scenes.Count - SelectedScene);
+        _sceneTimeLimit = MaximumMeasurementSeconds is { } seconds
+            ? (seconds - Stopwatch.GetElapsedTime(_testStarted, started).TotalSeconds) / (Scenes.Count - SelectedScene)
+            : double.PositiveInfinity;
         _sceneStarted = started;
         _sampleStarted = 0;
         _renderingStarted = 0;
@@ -260,6 +291,7 @@ public sealed partial class SceneTestPlatform
         _firstFrameMs = 0;
         _readyFrames = 0;
         _frames.Clear();
+        _completedFrames.Clear();
         _blendFrames.Clear();
         _firstSampleRenderedFrame = 0;
         _fixedWarmupComplete = false;
@@ -312,7 +344,8 @@ public sealed partial class SceneTestPlatform
         if (Current.MeasurementFrames is { } requested)
         {
             var selection = requested.SelectFrame(frame.SimulationFrame, _frames.Count, _fixedWarmupComplete, ready);
-            if (frame.SimulationFrame < requested.FirstFrame) _fixedWarmupComplete = warmupReady;
+            if (frame.SimulationFrame < requested.FirstFrame)
+                _fixedWarmupComplete = _readyFrames >= 16 && _renderedFrames >= 16;
             _fixedWindowError ??= selection.Error;
             _measurementError ??= selection.Error;
             if (selection.Collect) CollectFrame();
@@ -331,7 +364,8 @@ public sealed partial class SceneTestPlatform
             }
             sampled = _sampleStarted != 0 && Stopwatch.GetElapsedTime(_sampleStarted).TotalSeconds >= 2;
         }
-        bool expired = elapsed >= _sceneTimeLimit || Stopwatch.GetElapsedTime(_testStarted).TotalSeconds >= 45;
+        bool expired = elapsed >= _sceneTimeLimit || MaximumMeasurementSeconds is { } maximum &&
+            Stopwatch.GetElapsedTime(_testStarted).TotalSeconds >= maximum;
         if (!sampled && !expired && !finishedWindow) return;
         if (Current.MeasurementFrames is not null && !sampled)
         {
@@ -402,6 +436,12 @@ public sealed partial class SceneTestPlatform
         _trace?.Dispose();
         _trace = null;
         if (!IsMeasuring || _sceneStarted == 0) return;
+        if (_results.Count != 0 && _results[^1].Scene == Current.Name)
+            _results[^1] = _results[^1] with
+            {
+                Costs = _frames.Count == 0 ? null : SummarizeCosts(),
+                Workload = Current.DescribeWorkload?.Invoke(),
+            };
         error ??= _measurementError;
         if (Current.MeasurementFrames is not null && !_sceneSampleFinished)
         {
@@ -419,7 +459,8 @@ public sealed partial class SceneTestPlatform
             if (gpu.Length != window.Frames.Length)
                 error ??= "The GPU blend samples did not cover the complete scene-frame window.";
         }
-        if (error is null && ReloadRequested && SelectedScene + 1 < Scenes.Count && Stopwatch.GetElapsedTime(_testStarted).TotalSeconds < 45)
+        if (error is null && ReloadRequested && SelectedScene + 1 < Scenes.Count &&
+            (MaximumMeasurementSeconds is null || Stopwatch.GetElapsedTime(_testStarted).TotalSeconds < MaximumMeasurementSeconds))
         {
             SelectScene(SelectedScene + 1);
             return;
@@ -449,6 +490,9 @@ public sealed partial class SceneTestPlatform
             ["TieredCompilation"] = AppContext.GetData("System.Runtime.TieredCompilation")?.ToString(),
             ["TieredCompilationOverride"] = Environment.GetEnvironmentVariable("DOTNET_TieredCompilation")
                 ?? Environment.GetEnvironmentVariable("COMPlus_TieredCompilation"),
+            ["ProcessorCount"] = Environment.GetEnvironmentVariable("DOTNET_PROCESSOR_COUNT"),
+            ["ReadyToRun"] = Environment.GetEnvironmentVariable("DOTNET_ReadyToRun"),
+            ["Instrumentation"] = "Four timestamps per executed pass; command reuse tracks queue, pool and query range; resolves after application work",
             ["Error"] = error,
             ["ExpectedScenes"] = new JsonArray(Scenes.Select(scene => (JsonNode?)JsonValue.Create(scene.Name)).ToArray()),
             ["ElapsedSeconds"] = Stopwatch.GetElapsedTime(_testStarted).TotalSeconds,
@@ -483,7 +527,10 @@ public sealed partial class SceneTestPlatform
         Options = _interactiveOptions!;
         SelectedScene = _interactiveScene;
         Application.ContentDirectory = Current.ContentDirectory;
+        Application.FrameMeasured = Current.FrameMeasured;
+        Application.UpdateFrame = SceneUpdate;
         _interactiveOptions = null;
+        if (ExitAfterMeasurements) Application.Exit();
     }
 
     internal void Draw()
@@ -569,6 +616,8 @@ public sealed partial class SceneTestPlatform
         double? RebuildMs, double? TextMs, double? LayoutMs, double? ViewMs, double? ExtractionMs,
         double? ViewAllocatedBytes, double? ExtractionAllocatedBytes, double? AnimationMs)
     {
+        public SceneFrameCosts? Costs { get; init; }
+        public JsonNode? Workload { get; init; }
         public SceneBlendTiming? Blending { get; init; }
         public SimulationFrameWindow? RequestedSimulationWindow { get; init; }
         public int? FirstSimulationFrame { get; init; }

@@ -74,30 +74,37 @@ internal struct GpuBlendSystem : ISystem<ImmediateSystemContext>
         World world = context.World;
         world.ExecuteQuery(_blends, ref world, static (scoped QueryCursor rows, ref World world) =>
         {
-            foreach (QueryRow row in rows.Rows)
+            foreach (QueryChunkView chunk in rows.Chunks)
             {
-                GraphParameters controls = row.Read<GraphParameters>();
-                foreach (ref GpuBlendInstance instance in row.Buffer<GpuBlendInstance>().AsSpan())
+                var timelines = chunk.ReadWriteColumn<Timeline>();
+                var blends = chunk.WriteBufferColumn<GpuBlendInstance>();
+                var times = AnimationGraph.ReadTimeColumn(chunk);
+                foreach (int row in chunk.RowIndices)
                 {
-                    AnimationLeafTime time = AnimationGraph.ReadTime(world, row.Entity, in instance.Placement);
-                    if (instance.Starts != time.Starts) { instance.Starts = time.Starts; instance.Finished = false; }
-                    if (!time.Active || instance.Finished) continue;
-                    GpuBlendParameters parameters = instance.Definition.Parameters[instance.Index];
-                    float elapsed = Math.Min(time.Time.Time, parameters.Duration);
-                    for (int input = 0; input < instance.Controls.Length; input++) instance.Controls[input] = controls.Values[input];
-                    GpuPoseTarget output = world.Read<GpuPoseTarget>(instance.Target);
-                    output.Clip = null;
-                    output.StateMachine = null;
-                    output.Blend = parameters.Blend;
-                    output.Rig = null;
-                    output.Controls = instance.Controls;
-                    output.PlaybackTime = elapsed;
-                    output.Playing = true;
-                    output.Starts = time.Starts;
-                    output.ExtractRootMotion = false;
-                    world.Replace(instance.Target, output);
-                    instance.Finished = elapsed >= parameters.Duration;
-                    AnimationGraph.Submit(world, row.Entity, in instance.Placement, !instance.Finished);
+                    ref Timeline timeline = ref timelines[row];
+                    GraphParameters controls = chunk.Read<GraphParameters>(row);
+                    foreach (ref GpuBlendInstance instance in blends[row].AsSpan())
+                    {
+                        AnimationLeafTime time = times.Read(row, in timeline, in instance.Placement);
+                        if (instance.Starts != time.Starts) { instance.Starts = time.Starts; instance.Finished = false; }
+                        if (!time.Active || instance.Finished) continue;
+                        GpuBlendParameters parameters = instance.Definition.Parameters[instance.Index];
+                        float elapsed = Math.Min(time.Time.Time, parameters.Duration);
+                        for (int input = 0; input < instance.Controls.Length; input++) instance.Controls[input] = controls.Values[input];
+                        GpuPoseTarget output = world.Read<GpuPoseTarget>(instance.Target);
+                        output.Clip = null;
+                        output.StateMachine = null;
+                        output.Blend = parameters.Blend;
+                        output.Rig = null;
+                        output.Controls = instance.Controls;
+                        output.PlaybackTime = elapsed;
+                        output.Playing = true;
+                        output.Starts = time.Starts;
+                        output.ExtractRootMotion = false;
+                        world.Replace(instance.Target, output);
+                        instance.Finished = elapsed >= parameters.Duration;
+                        times.Submit(row, ref timeline, in instance.Placement, !instance.Finished);
+                    }
                 }
             }
         });

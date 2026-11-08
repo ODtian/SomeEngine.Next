@@ -177,8 +177,9 @@ public sealed class GltfImporterSetBehaviorTests
         return await MeshAsset.OpenAsync(Path.Combine(project.RootPath, project.Manifest.Assets[mesh].Path));
     }
 
-    private static GltfSourceImporter CreateImporter() => new(services =>
+    private static GltfSourceImporter CreateImporter()
     {
+        var services = new ServiceCollection();
         // This project's registry contains only test importers; all descriptions and settings binders come from the generator.
         services.AddScoped<SetSharedImporter>();
         services.AddScoped<SetFirstImporter>();
@@ -194,7 +195,8 @@ public sealed class GltfImporterSetBehaviorTests
         Guid[] sets = [new(SetGltfImporters.NeutralId), new(SetGltfImporters.FirstId), new(SetGltfImporters.SecondId), new(SetGltfImporters.ConflictId)];
         foreach (AssetImporterSetCapability set in SetProjectCapabilities.ImporterSetCapabilities.Where(value => sets.Contains(value.Id)))
             services.AddSingleton(set);
-    }, SetProjectCapabilities.BuildVersion);
+        return new(services, SetProjectCapabilities.BuildVersion);
+    }
 
     private sealed class SetFiles : IDisposable
     {

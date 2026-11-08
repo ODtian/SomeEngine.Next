@@ -14,9 +14,9 @@ public sealed class AssetCapabilityGeneratorBehaviorTests
     [Fact]
     public void ImporterConstructorServicesProduceACompilerDiagnostic()
     {
-        var result = Compile(ExtensionSource.Replace("public Importer() { Number = 47; }",
-            "public Importer(Dependency dependency) { Number = dependency.Number; }", StringComparison.Ordinal));
-        Assert.Contains(result.Diagnostics, value => value.Id == "SEAC001"
+        var result = Compile(ExtensionSource.Replace("public Importer() { }",
+            "public Importer(object dependency) { }", StringComparison.Ordinal));
+        Assert.Contains(result.Diagnostics, value => value.Id == "SEAC004"
             && value.Severity == DiagnosticSeverity.Error);
     }
 

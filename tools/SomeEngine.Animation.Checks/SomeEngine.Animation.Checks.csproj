@@ -7,6 +7,9 @@
     <PublishAotUsingRuntimePack>true</PublishAotUsingRuntimePack>
   </PropertyGroup>
   <ItemGroup>
+    <Content Include="../../external/dxc/bin/x64/dxcompiler.dll" Link="dxcompiler.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../external/dxc/bin/x64/dxil.dll" Link="dxil.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.9" />
     <Compile Include="../../tests/SomeEngine.ECS.Tests/FieldAccessChecks.cs" Link="FieldAccessChecks.cs" />
     <Compile Include="../SomeEngine.ECS.AotSmoke/ComponentBytesSmoke.cs" Link="ComponentBytesSmoke.cs" />
     <Compile Include="../SomeEngine.ECS.AotSmoke/TypedFieldSmoke.cs" Link="TypedFieldSmoke.cs" />
@@ -14,5 +17,9 @@
     <ProjectReference Include="../../src/SomeEngine.Views/SomeEngine.Views.csproj" GlobalPropertiesToRemove="PublishAot" />
     <ProjectReference Include="../../src/SomeEngine.Animation/SomeEngine.Animation.csproj" GlobalPropertiesToRemove="PublishAot" />
     <ProjectReference Include="../../src/SomeEngine.Animation.Pose/SomeEngine.Animation.Pose.csproj" GlobalPropertiesToRemove="PublishAot" />
+    <ProjectReference Include="../../src/SomeEngine.Runtime/SomeEngine.Runtime.csproj" GlobalPropertiesToRemove="PublishAot" />
+    <ProjectReference Include="../../src/SomeEngine.Assets.Importers/SomeEngine.Assets.Importers.csproj" GlobalPropertiesToRemove="PublishAot" />
+    <ProjectReference Include="../../src/SomeEngine.Generators/SomeEngine.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" GlobalPropertiesToRemove="PublishAot" />
+    <Content Include="PoseExample/*.json;PoseExample/*.slang;PoseExample/*.shader" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

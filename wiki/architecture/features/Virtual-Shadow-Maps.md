@@ -38,4 +38,6 @@ mask 使用两个垂直排列的 `R32UInt` texel，各保存 `8×4` 位覆盖，
 
 页原点沿光视图的 X/Y UV 方向滚动。相机跨过对齐边界时，固定世界几何的细页地址保持连续。clipmap 每次滚动四分之一页表；较粗 mip 按投影变化重新绘制。目标页的驻留状态决定当前可采样的精度，并沿既有页回退路径取得结果。
 
+`VirtualShadowReceiverProjection` 的 GPU 参数占 96 字节；28 字节的 `CameraDepthOfField` 后保留 4 字节填充，使 `CameraPosition` 和 `CotanHalfFieldOfView` 分别位于字节 80、92。该结构与 `vsm_receiver_projection.slang` 共用字段顺序，请求与材质采样读取同一份参数。
+
 参见 [[architecture/rendering/Multi-View]] · [[architecture/cluster/Cluster-Scope]]。

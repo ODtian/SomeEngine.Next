@@ -85,8 +85,7 @@ public sealed class ClusterCompressionTests(D3D12TestCompiler shaderCompiler)
             """;
         D3D12TestShader shader = shaderCompiler.CompileWithSearchPaths(
             "quadratic_error", source, [new("TestQuadraticBounds", SlangStage.Compute)], "sm_6_0", ShaderDirectory());
-        uint[] results = Execute(shader, count, 2, leadingBindings:
-            [ResourceBinding.Null(ResourceBindingType.BufferSrv), ResourceBinding.Null(ResourceBindingType.ConstantBuffer)]);
+        uint[] results = Execute(shader, count, 2);
         for (int index = 0; index < count; index++)
         {
             double a = (index % 8) / 7.0, b = ((index / 8) % 8) / 7.0, c = (index / 64) / 7.0;
@@ -374,7 +373,7 @@ public sealed class ClusterCompressionTests(D3D12TestCompiler shaderCompiler)
     }
 
     private static uint[] Execute(D3D12TestShader shader, int count, int words, int groupWidth = 64,
-        ReadOnlySpan<ResourceBinding> leadingBindings = default, Func<IGraphicsBackend, Device>? createDevice = null)
+        Func<IGraphicsBackend, Device>? createDevice = null)
     {
         using var backend = D3D12GraphicsBackend.Create();
         using Device device = createDevice is null ? D3D12TestSupport.CreateWarpDevice(backend) : createDevice(backend);
@@ -393,7 +392,7 @@ public sealed class ClusterCompressionTests(D3D12TestCompiler shaderCompiler)
         backend.SetPipeline(context, pipeline);
         backend.SetTransientParameterBindings(context, new ParameterBlockBindings(
             shader.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null,
-            [.. leadingBindings, ResourceBinding.WritableBuffer(outputView)], []));
+            [ResourceBinding.WritableBuffer(outputView)], []));
         backend.Dispatch(context, new DispatchArguments(checked((uint)((count + groupWidth - 1) / groupWidth)), 1, 1));
         backend.Barrier(context, new BufferBarrier(output, PipelineSync.ComputeShading, PipelineSync.Copy,
             ResourceAccess.UnorderedAccess, ResourceAccess.CopySource));

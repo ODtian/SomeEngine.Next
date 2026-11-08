@@ -44,12 +44,12 @@ public sealed partial class CanvasCompositionTests
         using var renderDevice = new RenderDevice(backend, device);
         using var graph = new RenderGraph(backend, device, [backend.GetQueue(device, QueueType.Graphics)]);
         using var world = new RenderWorld();
-        using SurfaceMaterial surfaces = SurfaceMaterial.Create(device.Capabilities.CompileTarget);
-        using GlyphsMaterial glyphs = GlyphsMaterial.Create(device.Capabilities.CompileTarget);
-        using ImageMaterial images = ImageMaterial.Create(device.Capabilities.CompileTarget);
-        using Texture red = SolidTexture([255, 0, 0, 128]);
-        using Texture magenta = SolidTexture([255, 0, 255, 128]);
-        using Texture yellow = SolidTexture([255, 255, 0, 128]);
+        SurfaceMaterial surfaces = SurfaceMaterial.Create(device.Capabilities.CompileTarget);
+        GlyphsMaterial glyphs = GlyphsMaterial.Create(device.Capabilities.CompileTarget);
+        ImageMaterial images = ImageMaterial.Create(device.Capabilities.CompileTarget);
+        Texture red = SolidTexture([255, 0, 0, 128]);
+        Texture magenta = SolidTexture([255, 0, 255, 128]);
+        Texture yellow = SolidTexture([255, 255, 0, 128]);
         using var renderer = new CanvasRenderer(backend, device, graph, world, surfaces,
             Format.R8G8B8A8UNorm, glyphs, images, renderDevice);
         Entity atlas = world.CreateEntity(new RenderGlyphAtlas(

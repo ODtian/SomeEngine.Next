@@ -36,12 +36,8 @@ public static class SampleMaterials
     {
         string path = Path.Combine(project.RootPath, $"assets/Shaders/{fileName}.shader.asset");
         ShaderSourceBlock inputs = shader.GetBlock<ShaderSourceBlock>();
-        foreach (string mode in new[] { "0", "8" })
-        {
-            inputs.Specializations.Add(new() { EntryPoint = "ClusterShadeMode", Arguments = [mode] });
-            inputs.Specializations.Add(new() { EntryPoint = "ClusterShadowRequests", Arguments = ["0", mode] });
-            inputs.Specializations.Add(new() { EntryPoint = "ClusterForwardShade", Arguments = ["0", mode] });
-        }
+        foreach (ShaderSpecialization specialization in SampleContent.CreateMaterialSpecializations(0))
+            inputs.Specializations.Add(specialization);
         IGlobalSession slang = SlangShaderImporter.GlobalSession;
         SessionDesc settings = SlangShaderImporter.CreateSessionDescription(path, SlangShaderImporter.CreateDefaultTargets(slang));
         await shader.CompileAsync(slang, settings, cancellationToken);

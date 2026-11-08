@@ -81,9 +81,7 @@ public static partial class PropertyAnimation
                         if (track.Layer == matches.Layer && track.Endpoints == TrackEndpoints.Values && matches.Endpoints == TrackEndpoints.Values)
                         {
                             matches.ExistingAnimation = row.Entity;
-                            matches.CurveKind = track.Curve.Kind;
-                            matches.Velocity = track.Velocity;
-                            matches.Current = track.Current;
+                            matches.Track = track;
                             if (matches.InlineTarget != Entity.Null && row.Entity != matches.InlineTarget)
                                 tracks.SwapRemoveAt(i--);
                         }
@@ -104,8 +102,15 @@ public static partial class PropertyAnimation
 
         if (matches.SharedField && !world.HasBuffer<Contribution<T>>(target))
             world.AddBuffer<Contribution<T>>(target);
-        if (matches.ExistingAnimation != Entity.Null && (hasLayers || world.HasBuffer<Contribution<T>>(target)))
-            current = matches.Current;
+        bool composed = hasLayers || world.HasBuffer<Contribution<T>>(target);
+        if (matches.ExistingAnimation != Entity.Null && (!inline || matches.ExistingAnimation == target) &&
+            (composed || EqualityComparer<T>.Default.Equals(matches.Track.Current, current)) &&
+            EqualityComparer<T>.Default.Equals(matches.Track.To, value) && matches.Track.Duration == spec.Duration &&
+            SameCurve(in matches.Track.Curve, in spec.Curve))
+            return matches.ExistingAnimation;
+
+        if (matches.ExistingAnimation != Entity.Null && composed)
+            current = matches.Track.Current;
 
         Entity animation = target;
         if (!inline)
@@ -137,8 +142,8 @@ public static partial class PropertyAnimation
             Start = timeline.Time, SampleTime = timeline.Time,
             StartId = timeline.Starts,
             Endpoints = endpoints,
-            Velocity = endpoints == TrackEndpoints.Values && matches.CurveKind == CurveKind.Spring && spec.Curve.Kind == CurveKind.Spring
-                ? matches.Velocity : default,
+            Velocity = endpoints == TrackEndpoints.Values && matches.Track.Curve.Kind == CurveKind.Spring && spec.Curve.Kind == CurveKind.Spring
+                ? matches.Track.Velocity : default,
         };
         world.ExecuteBufferWrite<Track<T>, Track<T>>(animation, ref track,
             static (DynamicBuffer<Track<T>> tracks, ref Track<T> track) =>
@@ -266,6 +271,12 @@ public static partial class PropertyAnimation
 
     private struct PooledAnimation : ITag;
 
+    private static unsafe bool SameCurve(in Curve left, in Curve right) =>
+        left.Kind == right.Kind && left.Easing == right.Easing && left.Stiffness == right.Stiffness &&
+        left.Damping == right.Damping && left.Tolerance == right.Tolerance &&
+        left.KeyframeStart == right.KeyframeStart && left.KeyframeCount == right.KeyframeCount &&
+        (nint)left.Function == (nint)right.Function;
+
     private struct FieldAnimations<T> where T : unmanaged
     {
         public World World;
@@ -275,8 +286,6 @@ public static partial class PropertyAnimation
         public TrackEndpoints Endpoints;
         public Entity InlineTarget, ExistingAnimation, AvailableAnimation;
         public bool SharedField;
-        public CurveKind CurveKind;
-        public T Velocity;
-        public T Current;
+        public Track<T> Track;
     }
 }

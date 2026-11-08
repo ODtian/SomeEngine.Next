@@ -44,6 +44,17 @@ public class ShaderSourcePolicyTests
             ? Path.Combine(TestProjectPaths.ProjectRoot(), "templates", "DefaultProject", "assets", "Shaders", shaderFile)
             : TestProjectPaths.ShaderPath(shaderFile);
         using var definition = await ShaderAsset.OpenSourceAsync(path);
+        using ShaderSourceBlock? material = shaderFile == "standard.shader" ? StandardMaterialInputs.Create()
+            : shaderFile == "unlit.shader" ? UnlitMaterialInputs.Create() : null;
+        using ClusterMaterialEntriesBlock? entries = shaderFile == "standard.shader" ? ClusterMaterialEntriesBlock.Create()
+            : shaderFile == "unlit.shader" ? ClusterMaterialEntriesBlock.CreateUnlit() : null;
+        if (material is not null)
+        {
+            definition.SetBlock(material);
+            definition.SetBlock(entries!);
+            definition.SelectInputs<ShaderSourceBlock>();
+            definition.SelectInputs<ClusterMaterialEntriesBlock>();
+        }
         using var asset = SlangShaderImporter.CompileDefinition(definition, path,
             includeDirectories: [TestProjectPaths.ShaderDirectory()]);
 

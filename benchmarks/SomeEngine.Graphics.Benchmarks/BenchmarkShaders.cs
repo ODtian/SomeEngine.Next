@@ -15,13 +15,13 @@ internal sealed record ShaderManifest(
 
 internal sealed class BenchmarkShader
 {
-    private readonly ISession _session;
     private readonly IModule _sourceUnit;
     private readonly IEntryPoint[] _slangEntries;
     private readonly IComponentType _combinedCode;
     private readonly byte[][] _entryCode;
 
     internal BenchmarkShader(
+        IGlobalSession global,
         ISession session,
         IModule sourceUnit,
         IEntryPoint[] slangEntries,
@@ -32,18 +32,20 @@ internal sealed class BenchmarkShader
         byte[][] entryCode,
         string manifestSha256)
     {
-        _session = session;
         _sourceUnit = sourceUnit;
         _slangEntries = slangEntries;
         _combinedCode = combinedCode;
         _entryCode = entryCode;
-        SlangCode = slangCode;
+        SlangCode = new SlangShaderData(global, session, slangCode);
+        SlangShaderData.RetainSession(session, sourceUnit);
+        foreach (IEntryPoint entry in slangEntries) SlangShaderData.RetainSession(session, entry);
+        SlangShaderData.RetainSession(session, combinedCode);
         Reflection = reflection;
         Entries = entries;
         ManifestSha256 = manifestSha256;
     }
 
-    internal IComponentType SlangCode { get; }
+    internal SlangShaderData SlangCode { get; }
     internal ShaderReflection Reflection { get; }
     internal EntryPointReflection[] Entries { get; }
     internal string ManifestSha256 { get; }
@@ -351,6 +353,7 @@ internal static class BenchmarkShaders
 
     private static BenchmarkShader CreateShader(Compiled compiled, string identity) =>
         new(
+            GlobalSession.Value,
             compiled.Session,
             compiled.SourceUnit,
             compiled.SlangEntries,

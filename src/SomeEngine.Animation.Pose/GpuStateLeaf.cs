@@ -69,34 +69,48 @@ internal struct GpuStateSystem : ISystem<ImmediateSystemContext>
             .ReadWrite<Timeline>().Enabled<Timeline>().WriteBuffer<GpuStateInstance>()
             .Optional<GpuPoseTarget>(QueryAccess.ReadWrite)));
 
-    public void OnUpdate(ref ImmediateSystemContext context)
+    public unsafe void OnUpdate(ref ImmediateSystemContext context)
     {
         World world = context.World;
-        world.ExecuteQuery(_states, ref world, static (QueryCursor rows, ref World world) =>
+        world.ExecuteQuery(_states, ref world, static (scoped QueryCursor rows, ref World world) =>
+            world.ExecuteComponentWrite<GpuPoseTarget, QueryCursor>(ref rows, &UpdateTargets));
+    }
+
+    private static void UpdateTargets(ComponentWriteBatch<GpuPoseTarget> targets, ref QueryCursor rows)
+    {
+        foreach (QueryChunkView chunk in rows.Chunks)
         {
-            foreach (QueryRow row in rows.Rows)
-            foreach (ref GpuStateInstance instance in row.Buffer<GpuStateInstance>().AsSpan())
+            var timelines = chunk.ReadWriteColumn<Timeline>();
+            var states = chunk.WriteBufferColumn<GpuStateInstance>();
+            var times = AnimationGraph.ReadTimeColumn(chunk);
+            var inlineTargets = chunk.Has<GpuPoseTarget>() ? targets.ReadWriteColumn(chunk) : default;
+            foreach (int row in chunk.RowIndices)
             {
-                AnimationLeafTime time = AnimationGraph.ReadTime(world, row.Entity, in instance.Placement);
-                if (instance.Starts != time.Starts) { instance.Starts = time.Starts; instance.Finished = false; }
-                if (!time.Active || instance.Finished) continue;
-                GpuStateParameters parameters = instance.Definition.Parameters[instance.Index];
-                float elapsed = Math.Min(time.Time.Time, parameters.Duration);
-                GpuPoseTarget output = world.Read<GpuPoseTarget>(instance.Target);
-                output.Clip = null;
-                output.StateMachine = parameters.Machine;
-                output.Blend = null;
-                output.Rig = null;
-                output.Controls = instance.Controls;
-                output.PlaybackTime = elapsed;
-                output.Playing = true;
-                output.Starts = time.Starts;
-                output.ExtractRootMotion = false;
-                world.Replace(instance.Target, output);
-                instance.Finished = elapsed >= parameters.Duration;
-                AnimationGraph.Submit(world, row.Entity, in instance.Placement, !instance.Finished);
+                Entity animation = chunk.GetEntity(row);
+                ref Timeline timeline = ref timelines[row];
+                foreach (ref GpuStateInstance instance in states[row].AsSpan())
+                {
+                    AnimationLeafTime time = times.Read(row, in timeline, in instance.Placement);
+                    if (instance.Starts != time.Starts) { instance.Starts = time.Starts; instance.Finished = false; }
+                    if (!time.Active || instance.Finished) continue;
+                    GpuStateParameters parameters = instance.Definition.Parameters[instance.Index];
+                    float elapsed = Math.Min(time.Time.Time, parameters.Duration);
+                    ref GpuPoseTarget output = ref (instance.Target == animation
+                        ? ref inlineTargets[row] : ref targets.Write(instance.Target));
+                    output.Clip = null;
+                    output.StateMachine = parameters.Machine;
+                    output.Blend = null;
+                    output.Rig = null;
+                    output.Controls = instance.Controls;
+                    output.PlaybackTime = elapsed;
+                    output.Playing = true;
+                    output.Starts = time.Starts;
+                    output.ExtractRootMotion = false;
+                    instance.Finished = elapsed >= parameters.Duration;
+                    times.Submit(row, ref timeline, in instance.Placement, !instance.Finished);
+                }
             }
-        });
+        }
     }
 
     public void OnDestroy(ref ImmediateSystemContext context) => context.World.ReleaseQuery(_states);

@@ -128,6 +128,8 @@ public class TimelineTests
         using var world = new World();
         Entity entity = world.CreateEntity(new Timeline { Speed = 1 });
         Entity activity = world.CreateEntity(new Activity { Running = true });
+        var timelines = world.Query(world.QueryDefinition().Read<Timeline>());
+        uint members = world.MembershipVersion(timelines);
         using var tables = world.ObserveEntityTables();
         tables.Accept(tables.Read());
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
@@ -148,7 +150,9 @@ public class TimelineTests
         world.Enable<Timeline>(entity);
         systems.Update();
         Assert.Equal(2u, world.Read<Timeline>(entity).Completions);
-        Assert.Equal(0, tables.Read().Count);
+        Assert.Equal(members, world.MembershipVersion(timelines));
+        Assert.Equal(entity, Assert.Single(tables.Read().Entities));
+        world.ReleaseQuery(timelines);
     }
 
     [Fact]

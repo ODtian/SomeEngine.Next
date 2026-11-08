@@ -99,6 +99,11 @@ void CountBins(uint3 threadId : SV_DispatchThreadID)
         triangleCount,
         packedMaterials,
         packedRanges);
+    if (Uniforms.CollectMetrics != 0u && Uniforms.PolicyTarget == 0u)
+    {
+        AddClusterWorkMetric(96u, vertexCount);
+        AddClusterWorkMetric(104u, triangleCount);
+    }
     uint clusterAddress = entry.PageOffset + PageHeap.Load(entry.PageOffset + 16u) +
         DrawRequestClusterID(entry) * PACKED_CLUSTER_STRIDE_BYTES;
     ClusterMaterialRanges materials = LoadClusterMaterialRanges(PageHeap, clusterAddress, entry.PageOffset);

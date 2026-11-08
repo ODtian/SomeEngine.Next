@@ -16,6 +16,8 @@ glTF 中立组合提供语义网格与准备后的顶点流。Cluster 几何 Imp
 
 当前 CPU 读取取得公开 Block 的数据，并为该对内容建立渲染页与 BVH。页组合维护地址、拓扑、区域与 LOD，位置及属性布局由生产者与 Shader 持有。完整位置字节与保守 AABB 来自几何 Importer，页组合直接复制这两份数据。位置段与属性段各有地址和长度；细节页沿既有 GPU 页驻留机制加载。
 
+常规页按根页 32 KiB、流送页 128 KiB 分组。单个 Cluster 的用户顶点字节超过分组大小时，独占一页；页描述与 GPU 驻留分配沿该页的实际字节数处理。
+
 同一内容及其分支共用生成的页与 BVH 数组。可编辑集合的变化使下一次创建取得新数据；已返回的 Mesh 与保留来源继续引用原数组。GPU 页交付后通过已有 Mesh 变更、Game world 提取及 Rendering world 准备路径生效。
 
 `MeshPayloadSource` 保留普通托管数组。页与 BVH 的视图具有 GC 生命周期，来源关闭后已返回的视图继续有效。纹理与 Shader 的文件字节缓存继续由 [Asset Byte Cache](Asset-Byte-Cache.md) 管理。

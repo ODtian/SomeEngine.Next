@@ -395,19 +395,19 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
             BufferUsages.ShaderRead,
             "Lighting frame views"));
 
-        graph.SetPassData(
+        graph.SetPassDataIfChanged(
             _clearPass,
             new LightingBuildPassData(new DispatchArguments(
                 DivideRoundUp(Resources.CellCountPerView, ThreadCount),
                 checked((uint)views.Length),
                 1)));
-        graph.SetPassData(
+        graph.SetPassDataIfChanged(
             _buildPass,
             new LightingBuildPassData(new DispatchArguments(
                 nonDirectionalCount,
                 checked((uint)views.Length),
                 parameters[0].GroupsPerLight)));
-        graph.SetPassData(_compactPass, new LightingBuildPassData(new DispatchArguments(
+        graph.SetPassDataIfChanged(_compactPass, new LightingBuildPassData(new DispatchArguments(
             DivideRoundUp(Resources.CellCountPerView, ThreadCount), checked((uint)views.Length), 1)));
         bool useSinglePoint = _supportsSinglePoint && enabled && _viewCount == 1 && views.Length == 1 &&
             lights.Points.Count == 1 && lights.Spots.Count == 0 &&
@@ -422,8 +422,8 @@ public sealed class LightingFeature : IGraphResourceProvider, IDisposable, IRend
         if (singlePointVisible)
         {
             uint groups = Resources.CellCountPerView / ThreadCount + (Resources.CellCountPerView % ThreadCount != 0 ? 1u : 0u);
-            graph.SetPassData(_singlePointPreparePass, new LightingBuildPassData(new DispatchArguments(1, 1, 1)));
-            graph.SetPassData(_singlePointFillPass, new LightingBuildPassData(new DispatchArguments(Math.Min(groups, 65535u), (groups + 65534u) / 65535u, 1)));
+            graph.SetPassDataIfChanged(_singlePointPreparePass, new LightingBuildPassData(new DispatchArguments(1, 1, 1)));
+            graph.SetPassDataIfChanged(_singlePointFillPass, new LightingBuildPassData(new DispatchArguments(Math.Min(groups, 65535u), (groups + 65534u) / 65535u, 1)));
             graph.SetPassEnabled(_singlePointPreparePass, useSinglePoint);
             graph.SetPassEnabled(_singlePointFillPass, useSinglePoint);
         }

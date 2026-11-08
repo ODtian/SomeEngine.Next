@@ -218,6 +218,8 @@ public sealed partial class InterfaceAnimationTests
         frames.Frame(0);
         Entity panel = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
         Assert.Equal(new Color(1, 0, 0), frames.World.Read<Surface>(panel).Fill);
+        var timelines = frames.World.Query(frames.World.QueryDefinition().Read<Timeline>());
+        uint members = frames.World.MembershipVersion(timelines);
         using var tables = frames.World.ObserveEntityTables();
         tables.Accept(tables.Read());
         int entities = frames.World.EntityCount;
@@ -238,7 +240,9 @@ public sealed partial class InterfaceAnimationTests
         frames.Frame(0.5f);
         Assert.Equal(new Color(1, 0, 0), frames.World.Read<Surface>(panel).Fill);
         Assert.Equal(entities, frames.World.EntityCount);
-        Assert.Equal(0, tables.Read().Count);
+        Assert.Equal(members, frames.World.MembershipVersion(timelines));
+        Assert.Equal(panel, Assert.Single(tables.Read().Entities));
+        frames.World.ReleaseQuery(timelines);
     }
 
     private readonly record struct HoverPanel(State<bool> Hovered) : IView, IComponent

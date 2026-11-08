@@ -94,7 +94,11 @@ public sealed class GltfVertexInputTests
                 ModelRoot model = ModelRoot.Load(path);
                 using MeshAsset asset = ClusterBuilder.ProcessMesh(model.LogicalMeshes[0], [], "Mixed source layouts",
                     new ClusterBuilderOptions { VertexEncoder = encoder });
-                Assert.Equal(encoder.Compatibility, asset.GetBlock<ClusterMeshBlock>().VertexEncoding);
+                ClusterGeometryBlock geometry = asset.GetBlock<ClusterGeometryBlock>();
+                ClusterVertexAttributesBlock attributes = asset.GetBlock<ClusterVertexAttributesBlock>();
+                Assert.Equal(encoder.Compatibility, attributes.Encoding);
+                Assert.Equal(geometry.VertexIdentity, attributes.VertexIdentity);
+                Assert.Equal(geometry.Clusters.Count, attributes.Clusters.Count);
             })).ToArray();
             await Task.WhenAll(imports).WaitAsync(TimeSpan.FromSeconds(30));
             Assert.All(encoders, encoder =>

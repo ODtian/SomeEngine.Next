@@ -27,7 +27,7 @@ public sealed partial class ImageTests(SurfaceExtractionDevice graphics) : IClas
         ImageFit fit, uint width, uint height, float x, float y, float drawWidth, float drawHeight,
         float u, float v, float uvWidth, float uvHeight)
     {
-        using Texture texture = CreateTexture(width, height);
+        Texture texture = CreateTexture(width, height);
         var source = new AssetId<TextureAsset>(Guid.NewGuid());
         using var world = new World();
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
@@ -54,7 +54,7 @@ public sealed partial class ImageTests(SurfaceExtractionDevice graphics) : IClas
     [Fact]
     public void ImageMeasuresTheLoadedTexturesIntrinsicSize()
     {
-        using Texture texture = CreateTexture(80, 40);
+        Texture texture = CreateTexture(80, 40);
         var source = new AssetId<TextureAsset>(Guid.NewGuid());
         using var world = new World();
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
@@ -72,7 +72,7 @@ public sealed partial class ImageTests(SurfaceExtractionDevice graphics) : IClas
     [Fact]
     public void ReadyTexturesUpdateGeneratedImageDeclarationsAndExtractionInTheSameFrame()
     {
-        using Texture texture = CreateTexture(80, 40);
+        Texture texture = CreateTexture(80, 40);
         Texture? ready = null;
         var source = new AssetId<TextureAsset>(Guid.NewGuid());
         using var world = new World();
@@ -110,7 +110,7 @@ public sealed partial class ImageTests(SurfaceExtractionDevice graphics) : IClas
     [Fact]
     public void FittingUsesPaddingAndRespondsToImageParameters()
     {
-        using Texture texture = CreateTexture(80, 40);
+        Texture texture = CreateTexture(80, 40);
         var source = new AssetId<TextureAsset>(Guid.NewGuid());
         using var world = new World();
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
@@ -145,7 +145,7 @@ public sealed partial class ImageTests(SurfaceExtractionDevice graphics) : IClas
     [InlineData(ImageFit.Cover)]
     public void ZeroSizeImagesSupplyFiniteEmptyDrawingData(ImageFit fit)
     {
-        using Texture texture = CreateTexture(80, 40);
+        Texture texture = CreateTexture(80, 40);
         using var world = new World();
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
         systems.Add(new ViewRebuildSystem());
@@ -195,7 +195,7 @@ public sealed partial class ImageTests(SurfaceExtractionDevice graphics) : IClas
     [Fact]
     public void ImagesInheritScrollViewportClipsAndRefreshWithTheViewport()
     {
-        using Texture texture = CreateTexture(80, 40);
+        Texture texture = CreateTexture(80, 40);
         using var world = new World();
         Entity canvas = world.CreateEntity(new Canvas { Size = new Size(200, 150) });
         Entity viewport = world.CreateEntity(new LayoutRect { Value = new Rect(20, 10, 100, 60) });

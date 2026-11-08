@@ -49,7 +49,7 @@ bool throughReference = channel.ThroughReference;
 
 ## 控制和生命周期
 
-- To 从本来源当前输出继续；新来源从字段或叠加层基准捕获起点。By 从启动基准加位移开始，衰减回启动基准，叠加层保持围绕最新基准的位移。
+- To 从本来源当前输出继续；新来源从字段或叠加层基准捕获起点。单来源直接写回时，调用方已改写的呈现字段作为下一次 To 的起点，FLIP 的布局补偿值通过这一入口交给动画。By 从启动基准加位移开始，衰减回启动基准，叠加层保持围绕最新基准的位移。
 - 同算法改目标调用 Retarget，保留状态；参数变化调用 UpdateParameters。只有参数变化时保留原始时间与端点；相同参数和目标保留进度。叶值比较采用 TOps.Equals。
 - 已声明算法切换时，从当前来源输出初始化新状态，并调用原算法 Release。完成保留来源输出与算法历史，下一次同算法目标变化可继续历史；Stop、切换与池复用按各自回收点释放状态。
 - Retarget 使用已取得动画实体上的活动通道。Pause、Resume、SetSpeed 继续操作同一时间线。Stop 保留呈现值并禁用时间线。
@@ -58,6 +58,10 @@ bool throughReference = channel.ThroughReference;
 ## 执行与写回
 
 `AnimationSystems.Add(schedule,spec)` 进入共同阶段，时间线与图推进后先求值和合成层权重，再处理普通字段，最后统一收尾。查询执行入口使用 managed 函数指针，批内保留具体算法与值运算类型。
+
+`TypedTrackSystem`、`TrackSystem`、`GraphOutputSystem` 和 `ComposeSystem` 先经
+`World.HasQueryMembers` 检查各自的活动、完成或目标查询，再为实际成员建立求值及写回访问范围。
+成员资格由当前 ECS 匹配表及启用状态提供；后续安装的轨道和目标进入相同查询路径。
 
 单来源采用直接写回批次；固定多来源及分层值由 [[architecture/animation/Animation-Layers|Animation Layers]] 合成。`FieldWrite<T>` 保存最终字段值，系统在对应阶段查询完成后汇总相同 Channel。`Channel.WriteBatch` 经一次 `World.ExecuteComponentWrite` 取得具体根组件批次，再以具体 IFieldAccess 循环写入。写入沿 [[architecture/ECS/Component-Fields|Component Fields]] 推进根组件版本，table 与 sparse 根共享调用形状。
 

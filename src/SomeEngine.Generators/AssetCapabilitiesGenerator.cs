@@ -48,7 +48,7 @@ public sealed class AssetCapabilitiesGenerator : IIncrementalGenerator
         bool valid = true;
         foreach (INamedTypeSymbol type in local.Where(type => Attribute(type, ImporterAttribute) is not null))
         {
-            Importer? importer = ReadImporter(output, type, true, buildVersion);
+            Importer? importer = ReadImporter(output, type, buildVersion);
             if (importer is null) { valid = false; continue; }
             importers.Add(importer);
         }
@@ -67,7 +67,7 @@ public sealed class AssetCapabilitiesGenerator : IIncrementalGenerator
                 setDeclarations.Add(type);
                 if (IsBlock(type)) blocks.Add(type);
                 if (Attribute(type, ImporterAttribute) is null) continue;
-                Importer? importer = ReadImporter(output, type, false, null);
+                Importer? importer = ReadImporter(output, type, null);
                 if (importer is null) valid = false;
                 else importers.Add(importer);
             }
@@ -173,7 +173,7 @@ public sealed class AssetCapabilitiesGenerator : IIncrementalGenerator
         return new ImporterSet(type, id, name!, ids.ToArray(), neutral);
     }
 
-    private static Importer? ReadImporter(SourceProductionContext output, INamedTypeSymbol type, bool local, string? buildVersion)
+    private static Importer? ReadImporter(SourceProductionContext output, INamedTypeSymbol type, string? buildVersion)
     {
         void Error(string reason) => output.ReportDiagnostic(Diagnostic.Create(InvalidDeclaration, Location(type), type.ToDisplayString(), reason));
         if (!IsPublic(type) || type.ContainingType is not null || type.Arity != 0 || type.IsAbstract
@@ -224,25 +224,22 @@ public sealed class AssetCapabilitiesGenerator : IIncrementalGenerator
                 && SymbolEqualityComparer.Default.Equals(value.TypeArguments[0], interfaces[0].TypeArguments[1]))))
         { Error("SettingsProvider must publicly implement IAssetImporterSettings<TSettings> and have a public parameterless constructor"); return null; }
         string version = buildVersion ?? AssemblyBuildVersion(type.ContainingAssembly);
-        if (local)
-        {
-            var versions = new SortedSet<string>(StringComparer.Ordinal) { version };
-            var dependencies = new List<INamedTypeSymbol>(blocks);
-            TypedConstant declaredInputs = attribute.NamedArguments.FirstOrDefault(argument => argument.Key == "VersionInputs").Value;
-            if (declaredInputs.Kind == TypedConstantKind.Array && !declaredInputs.IsNull)
-                dependencies.AddRange(declaredInputs.Values.Select(value => value.Value).OfType<INamedTypeSymbol>());
-            foreach (INamedTypeSymbol dependency in dependencies)
-                if (!SymbolEqualityComparer.Default.Equals(dependency.ContainingAssembly, type.ContainingAssembly))
-                {
-                    versions.Add(dependency.ContainingAssembly.Identity.ToString());
-                    foreach (AttributeData input in dependency.ContainingAssembly.GetAttributes())
-                        if (input.AttributeClass?.ToDisplayString() == "System.Reflection.AssemblyMetadataAttribute"
-                            && input.ConstructorArguments.Length == 2 && input.ConstructorArguments[0].Value as string == "SomeEngine.SourceBuild")
-                            versions.Add(input.ConstructorArguments[1].Value as string ?? "");
-                }
-            using SHA256 versionHash = SHA256.Create();
-            version = BitConverter.ToString(versionHash.ComputeHash(Encoding.UTF8.GetBytes(string.Join("\n", versions)))).Replace("-", "");
-        }
+        var versions = new SortedSet<string>(StringComparer.Ordinal) { version };
+        var dependencies = new List<INamedTypeSymbol>(blocks);
+        TypedConstant declaredInputs = attribute.NamedArguments.FirstOrDefault(argument => argument.Key == "VersionInputs").Value;
+        if (declaredInputs.Kind == TypedConstantKind.Array && !declaredInputs.IsNull)
+            dependencies.AddRange(declaredInputs.Values.Select(value => value.Value).OfType<INamedTypeSymbol>());
+        foreach (INamedTypeSymbol dependency in dependencies)
+            if (!SymbolEqualityComparer.Default.Equals(dependency.ContainingAssembly, type.ContainingAssembly))
+            {
+                versions.Add(dependency.ContainingAssembly.Identity.ToString());
+                foreach (AttributeData input in dependency.ContainingAssembly.GetAttributes())
+                    if (input.AttributeClass?.ToDisplayString() == "System.Reflection.AssemblyMetadataAttribute"
+                        && input.ConstructorArguments.Length == 2 && input.ConstructorArguments[0].Value as string == "SomeEngine.SourceBuild")
+                        versions.Add(input.ConstructorArguments[1].Value as string ?? "");
+            }
+        using SHA256 versionHash = SHA256.Create();
+        version = BitConverter.ToString(versionHash.ComputeHash(Encoding.UTF8.GetBytes(string.Join("\n", versions)))).Replace("-", "");
         return new Importer(type, id, interfaces[0], blocks.ToArray(), provider, version);
     }
 

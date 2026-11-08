@@ -19,6 +19,8 @@ Asset importer DI 是 Importer 的注册表，唯一用途是让一次来源导�
 ## Current design
 `AssetCapabilitiesGenerator` 对带参数的 Importer 构造函数报告 `SEAC004` 编译错误，检查本项目与引用程序集的声明。公开无参构造函数通过直接工厂注册；按具体类型和强类型 Importer 接口解析时共用同一作用域的实例。
 
+Importer 的实现版本由自身代码、产出的 Block 和显式版本依赖共同确定。本项目与引用程序集使用同一套版本计算，多个能力注册表中的同一个 Importer 保持相同版本。
+
 `StandardGltfSceneImporter` 与默认场景构建工具的 `ImportedSceneImporter` 通过 `context.GetSettings(GltfSourceImporter.SourceImporterId, new GltfImporterSettings(), GltfSettingsJson.Default.GltfImporterSettings)` 读取来源的材质模板路径。来源集成在请求资产前通过 `context.ConfigureSettings<T>(Guid importerId, T settings)` 设置单次覆盖；该覆盖只由本次上下文持有。持久设置继续从 `.meta` 读取。Importer 持有自己的编码资源，导入作用域保持到所有 Block 保存完成。
 
 导入组合由 `[AssetImporterSet]` 声明，项目通过 `[AssetCapabilities]` 的组合 ID 参数指定默认管线。生成的组合描述与 Importer 能力注册到同一容器；来源集成按能力的来源类型展开成员。成员替换、保存与多管线行为见 [Importer Sets](Importer-Sets.md)。

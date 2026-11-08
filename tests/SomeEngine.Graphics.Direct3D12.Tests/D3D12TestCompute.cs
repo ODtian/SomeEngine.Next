@@ -9,12 +9,14 @@ internal sealed class D3D12TestCompute(D3D12TestCompiler shaderCompiler)
 {
     internal sealed record BufferInput(
         string Name,
-        uint[] Data,
+        uint[]? Data,
         ResourceBindingType Type,
         uint Stride);
 
     internal sealed record SampledImage(uint Width, uint Height, uint[] Pixels, int BindingIndex,
-        Format PixelFormat = Format.R32UInt, TextureViewDimension ViewDimension = TextureViewDimension.Texture2D);
+        Format PixelFormat = Format.R32UInt, TextureViewDimension ViewDimension = TextureViewDimension.Texture2D,
+        string Name = "");
+    internal sealed record WritableImage(string Name, uint Width, uint Height);
     internal uint[][] Execute(string file, string entry, DispatchArguments dispatch,
         (uint[] Data, ResourceBindingType Type, uint Stride)[] inputs)
         => ExecuteSource($"#include \"{file}\"", entry, dispatch, inputs);
@@ -23,8 +25,8 @@ internal sealed class D3D12TestCompute(D3D12TestCompiler shaderCompiler)
         string file,
         string entry,
         DispatchArguments dispatch,
-        BufferInput[] inputs) =>
-        ExecuteSourceCore($"#include \"{file}\"", entry, dispatch, inputs, null);
+        BufferInput[] inputs, WritableImage[]? writableImages = null) =>
+        ExecuteSourceCore($"#include \"{file}\"", entry, dispatch, inputs, null, writableImages: writableImages);
 
     internal uint[][] ExecuteSource(string source, string entry, DispatchArguments dispatch,
         (uint[] Data, ResourceBindingType Type, uint Stride)[] inputs, SampledImage? image = null,
@@ -37,13 +39,18 @@ internal sealed class D3D12TestCompute(D3D12TestCompiler shaderCompiler)
             image,
             images);
 
+    internal uint[][] ExecuteSource(string source, string entry, DispatchArguments dispatch,
+        BufferInput[] inputs, SampledImage? image = null, SampledImage[]? images = null) =>
+        ExecuteSourceCore(source, entry, dispatch, inputs, image, images);
+
     private uint[][] ExecuteSourceCore(
         string source,
         string entry,
         DispatchArguments dispatch,
         BufferInput[] inputs,
         SampledImage? image,
-        SampledImage[]? images = null)
+        SampledImage[]? images = null,
+        WritableImage[]? writableImages = null)
     {
         string? directory = null;
         for (DirectoryInfo? current = new(AppContext.BaseDirectory); current is not null; current = current.Parent)
@@ -63,6 +70,11 @@ internal sealed class D3D12TestCompute(D3D12TestCompiler shaderCompiler)
             List<(Buffer Buffer, ulong Size)> outputs = [];
             foreach (var input in inputs)
             {
+                if (input.Data is null)
+                {
+                    bindings.Add((input.Name, ResourceBinding.Null(input.Type)));
+                    continue;
+                }
                 ulong bytes = (ulong)input.Data.Length * 4u;
                 bool constant = input.Type == ResourceBindingType.ConstantBuffer, writable = input.Type == ResourceBindingType.BufferUav;
                 if (constant) bytes = (bytes + 255u) & ~255ul;
@@ -110,12 +122,23 @@ internal sealed class D3D12TestCompute(D3D12TestCompiler shaderCompiler)
                 backend.Barrier(context, new TextureBarrier(texture, range, PipelineSync.Copy, PipelineSync.ComputeShading,
                     ResourceAccess.CopyDestination, ResourceAccess.ShaderResource, TextureLayout.CopyDestination, TextureLayout.ShaderResource));
                 TextureSrv view = Keep(backend.CreateTextureSrv(device, new(texture, range, sourceImage.PixelFormat, sourceImage.ViewDimension)));
-                bindings.Insert(sourceImage.BindingIndex, ("", ResourceBinding.SampledTexture(view)));
+                bindings.Insert(sourceImage.BindingIndex, (sourceImage.Name, ResourceBinding.SampledTexture(view)));
+            }
+            foreach (WritableImage output in writableImages ?? [])
+            {
+                Texture texture = Keep(backend.CreateTexture(device, new(TextureDimension.Texture2D,
+                    output.Width, output.Height, 1, 1, 1, 1, Format.R32UInt, TextureUsages.Storage)));
+                TextureSubresourceRange range = new(0, 1, 0, 1, TextureAspects.Color);
+                backend.Barrier(context, new TextureBarrier(texture, range, PipelineSync.None, PipelineSync.ComputeShading,
+                    ResourceAccess.NoAccess, ResourceAccess.UnorderedAccess, TextureLayout.Undefined, TextureLayout.UnorderedAccess));
+                TextureUav view = Keep(backend.CreateTextureUav(device, new(texture, range, Format.R32UInt,
+                    TextureViewDimension.Texture2D)));
+                bindings.Add((output.Name, ResourceBinding.StorageTexture(view)));
             }
             Pipeline pipeline = Keep(backend.CreateComputePipeline(device, new(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(0), shader.GetEntryCode(0))));
             backend.SetPipeline(context, pipeline);
             ResourceBinding[] resourceBindings = bindings.Any(static binding => binding.Name.Length != 0)
-                ? OrderNamedBindings(shader.Reflection, bindings)
+                ? OrderNamedBindings(shader, bindings)
                 : bindings.Select(static binding => binding.Binding).ToArray();
             backend.SetTransientParameterBindings(context, new(shader.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null,
                 resourceBindings, []));
@@ -143,7 +166,7 @@ internal sealed class D3D12TestCompute(D3D12TestCompiler shaderCompiler)
     }
 
     private static ResourceBinding[] OrderNamedBindings(
-        ShaderReflection reflection,
+        D3D12TestShader shader,
         IReadOnlyList<(string Name, ResourceBinding Binding)> bindings)
     {
         var byName = new Dictionary<string, Queue<ResourceBinding>>(StringComparer.Ordinal);
@@ -156,13 +179,18 @@ internal sealed class D3D12TestCompute(D3D12TestCompiler shaderCompiler)
             values.Enqueue(binding);
         }
 
-        VariableLayoutReflection root = reflection.GetGlobalParamsVarLayout()
+        VariableLayoutReflection root = shader.Reflection.GetGlobalParamsVarLayout()
             ?? VariableLayoutReflection.Null;
         if (root == VariableLayoutReflection.Null)
             throw new InvalidDataException("The Slang test entry has no global parameter layout.");
         TypeLayoutReflection contents = root.TypeLayout.UnwrapArray();
         if (contents.Kind is SlangTypeKind.ConstantBuffer or SlangTypeKind.ParameterBlock)
             contents = contents.ElementTypeLayout.UnwrapArray();
+
+        SlangResult status = shader.SlangCode.Code.GetEntryPointMetadata(0, 0,
+            out IMetadata metadata, out _);
+        if (status.Failed)
+            throw new InvalidDataException("The test shader resource usage could not be read.");
 
         var result = new List<ResourceBinding>(bindings.Count);
         for (nint range = 0; range < contents.BindingRangeCount; range++)
@@ -189,8 +217,14 @@ internal sealed class D3D12TestCompute(D3D12TestCompiler shaderCompiler)
                     if (!byName.TryGetValue(name, out Queue<ResourceBinding>? values) ||
                         !values.TryDequeue(out ResourceBinding binding))
                     {
-                        throw new InvalidDataException(
-                            $"The test did not supply Slang resource '{name}'.");
+                        nint descriptor = first + relative;
+                        SlangDescriptorLocation location = SlangDescriptorLocation.FromLayout(
+                            root, contents, set, descriptor, element);
+                        status = metadata.IsParameterLocationUsed(location.Category,
+                            checked((nuint)location.Space), checked((nuint)location.Register), out bool used);
+                        if (status.Failed || used)
+                            throw new InvalidDataException($"The test did not supply Slang resource '{name}'.");
+                        binding = ResourceBinding.Null(ConvertResourceType(contents.GetDescriptorSetDescriptorRangeType(set, descriptor)));
                     }
                     result.Add(binding);
                 }
@@ -207,5 +241,19 @@ internal sealed class D3D12TestCompute(D3D12TestCompiler shaderCompiler)
                 string.Join(", ", remaining));
         }
         return [.. result];
+    }
+
+    private static ResourceBindingType ConvertResourceType(SlangBindingType reflected)
+    {
+        SlangBindingType type = reflected & SlangBindingType.BaseMask;
+        return type switch
+        {
+            SlangBindingType.ConstantBuffer => ResourceBindingType.ConstantBuffer,
+            SlangBindingType.Texture => (reflected & SlangBindingType.MutableFlag) != 0
+                ? ResourceBindingType.TextureUav : ResourceBindingType.TextureSrv,
+            SlangBindingType.TypedBuffer or SlangBindingType.RawBuffer => (reflected & SlangBindingType.MutableFlag) != 0
+                ? ResourceBindingType.BufferUav : ResourceBindingType.BufferSrv,
+            _ => throw new InvalidDataException($"The test shader resource type '{reflected}' requires an explicit binding."),
+        };
     }
 }

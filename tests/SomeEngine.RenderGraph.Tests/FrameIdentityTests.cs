@@ -115,7 +115,7 @@ public sealed class FrameIdentityTests
     }
 
     [Fact]
-    public void StaleFrameExtensionCannotOperateOnReusedFrameSlot()
+    public void StaleFrameCopyCannotChangeARegionAfterFrameStorageIsReused()
     {
         using WarpGraphTestSupport support = WarpGraphTestSupport.Create();
         using var graph = new RenderGraph(
@@ -123,34 +123,32 @@ public sealed class FrameIdentityTests
             support.Device,
             [support.GraphicsQueue],
             new RenderGraphDesc(MaximumFramesInFlight: 1));
-        GraphExtensionPointId point;
+        GraphRegionId region;
         using (RenderGraphEdit edit = graph.BeginEdit())
         {
-            point = edit.AddExtensionPoint("dynamic");
+            region = edit.AddFrameRegion("dynamic");
             edit.Commit();
         }
         QueueCompletion[] completions = new QueueCompletion[graph.MaximumQueueCompletionCount];
 
         RenderGraphFrame first = graph.BeginFrame();
-        RenderGraphFrameExtension extension = first.BeginExtension(point);
-        RenderGraphFrameExtension stale = extension;
+        RenderGraphFrame stale = first;
         Assert.Equal(0, first.Execute(completions));
 
         RenderGraphFrame second = graph.BeginFrame();
-        using RenderGraphFrameExtension current = second.BeginExtension(point);
         bool rejected = false;
         try
         {
-            _ = stale.CreateBuffer(new BufferDesc(64, BufferUsages.CopySource));
+            stale.SetRegionEnabled(region, false);
         }
         catch (InvalidOperationException)
         {
             rejected = true;
         }
-        Assert.True(rejected, "A copied frame-extension lease must not revive with a new frame.");
+        Assert.True(rejected);
 
         stale.Dispose();
-        _ = current.CreateBuffer(new BufferDesc(64, BufferUsages.CopySource));
+        second.SetRegionEnabled(region, true);
         second.Dispose();
     }
 }

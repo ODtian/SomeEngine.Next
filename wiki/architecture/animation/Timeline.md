@@ -55,7 +55,7 @@ systems.Add(new TimelineEndSystem());
 - 阶段和事件缓冲使用 ECS 的内联缓冲机制；启用、完成、外部推进和已有事件计数的写入都保留实体的表格成员关系。
 
 ## Verification
-`tests/SomeEngine.Animation.Tests/TimelineTests.cs` 通过公开 World、系统组和组件/缓冲 API 验证时钟暂停、时间缩放、运行位、完成计数、三个阶段边界与事件。`ObserveEntityTables()` 的结果验证反复启用和完成后的表格成员关系。开发构建通过 `DevelopmentCheck` 报告边界类型和外部推进的使用错误。
+`tests/SomeEngine.Animation.Tests/TimelineTests.cs` 通过公开 World、系统组和组件/缓冲 API 验证时钟暂停、时间缩放、运行位、完成计数、三个阶段边界与事件。未加启用过滤的 Timeline 查询成员版本验证反复启用和完成后的成员关系；`ObserveEntityTables()` 验证启用位变化发布到对应实体。开发构建通过 `DevelopmentCheck` 报告边界类型和外部推进的使用错误。
 
 ## Relations
 [[architecture/animation/Animation-Graph|Animation Graph]] · [[architecture/animation/Property-Animation|Property Animation]] · ADR 0014
