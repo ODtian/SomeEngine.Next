@@ -3,6 +3,9 @@ namespace SomeEngine.RenderGraph;
 internal sealed partial class FrameExecutor
 {
     private bool _submissionsInitialized;
+    private readonly HashSet<int> _crossQueueSources = [];
+    private readonly HashSet<int> _crossQueueSourceScratch = [];
+    private readonly Dictionary<Queue, int> _crossQueueSourceByQueue = new(ReferenceEqualityComparer.Instance);
     private Queue?[] _submissionQueues = [];
     private readonly HashSet<int> _submissionUpdates = [];
     private readonly HashSet<int> _submissionMergeCandidates = [];
@@ -19,6 +22,7 @@ internal sealed partial class FrameExecutor
 
     private int BuildWaves()
     {
+        UpdateSubmissionBoundaries();
         if (!_submissionsInitialized)
         {
             int count = BuildInitialWaves();
@@ -58,7 +62,7 @@ internal sealed partial class FrameExecutor
             if (_submissionByPass[pass] >= 0) continue;
             int predecessor = _sameQueuePredecessor[pass];
             int submission = predecessor >= 0 ? _submissionByPass[predecessor] : -1;
-            if (submission < 0 || _passes[predecessor].Options.SubmitAfter ||
+            if (submission < 0 || RequiresSubmissionAfter(predecessor) ||
                 !ReferenceEquals(_submissionQueues[submission], _passes[pass].Queue))
                 submission = NewSubmission(_passes[pass].Queue!);
             ChangeSubmissionMembers(submission);
@@ -115,6 +119,47 @@ internal sealed partial class FrameExecutor
         return waveCount;
     }
 
+    private bool RequiresSubmissionAfter(int pass) =>
+        _passes[pass].Options.SubmitAfter || _crossQueueSources.Contains(pass);
+
+    private void UpdateSubmissionBoundaries()
+    {
+        if (_submissionsInitialized && _changedRecordingPasses.Count == 0) return;
+        _crossQueueSourceScratch.Clear();
+        foreach (int consumer in _executionOrder.Nodes)
+        {
+            _crossQueueSourceByQueue.Clear();
+            foreach (int source in _predecessors[consumer]) Add(source, consumer);
+            foreach (int source in _physicalPredecessors[consumer]) Add(source, consumer);
+            foreach (int source in _crossQueueSourceByQueue.Values) _crossQueueSourceScratch.Add(source);
+        }
+        foreach (int source in _crossQueueSources)
+            if (!_crossQueueSourceScratch.Contains(source)) Changed(source);
+        foreach (int source in _crossQueueSourceScratch)
+            if (!_crossQueueSources.Contains(source)) Changed(source);
+        _crossQueueSources.Clear();
+        _crossQueueSources.UnionWith(_crossQueueSourceScratch);
+        return;
+
+        void Add(int source, int consumer)
+        {
+            if (!IsLive(source)) return;
+            Queue queue = _passes[source].Queue!;
+            if (ReferenceEquals(queue, _passes[consumer].Queue)) return;
+            // The latest required source on a queue covers its earlier sources.
+            // Shared-output bins reach their consumer through one completion.
+            if (!_crossQueueSourceByQueue.TryGetValue(queue, out int previous) ||
+                _executionOrder.Position(source) > _executionOrder.Position(previous))
+                _crossQueueSourceByQueue[queue] = source;
+        }
+        void Changed(int source)
+        {
+            ChangeRecording(source);
+            int next = _sameQueueSuccessor[source];
+            if (next >= 0) ChangeRecording(next);
+        }
+    }
+
     private int NewSubmission(Queue queue)
     {
         int submission = CreateSubmission();
@@ -167,22 +212,29 @@ internal sealed partial class FrameExecutor
             passes.Sort((left, right) => _executionOrder.Position(left).CompareTo(_executionOrder.Position(right)));
             break;
         }
-        for (int index = 0; index + 1 < passes.Count; index++)
+        _dependencySet.Clear();
+        for (int index = 0; index < passes.Count; index++)
         {
-            if (!_passes[passes[index]].Options.SubmitAfter) continue;
-            int suffix = NewSubmission(_submissionQueues[submission]!);
-            ChangeSubmissionMembers(submission);
-            QueueSubmissionConsumers(submission);
-            for (int item = index + 1; item < passes.Count; item++)
+            int pass = passes[index];
+            _incomingSubmissions.Clear();
+            AddSubmissionDependencies(_predecessors[pass]);
+            AddSubmissionDependencies(_physicalPredecessors[pass]);
+            int previousPass = _sameQueuePredecessor[pass];
+            if (previousPass >= 0) _incomingSubmissions.Add(_submissionByPass[previousPass]);
+            bool split = index > 0 && RequiresSubmissionAfter(passes[index - 1]);
+            foreach (int dependency in _incomingSubmissions)
             {
-                int pass = passes[item];
-                _submissionPasses[suffix].Add(pass);
-                _submissionByPass[pass] = suffix;
-                foreach (int next in _successors[pass]) QueuePassSubmission(next);
-                QueuePassSubmission(_sameQueueSuccessor[pass]);
+                if (dependency == submission || _dependencySet.Contains(dependency)) continue;
+                if (index > 0 && !_dependencySet.Any(previous =>
+                    SubmissionDependsOn(previous, dependency, _submissionCount))) split = true;
             }
-            passes.RemoveRange(index + 1, passes.Count - index - 1);
-            return;
+            if (split)
+            {
+                SplitSubmissionBefore(submission, index);
+                return;
+            }
+            foreach (int dependency in _incomingSubmissions)
+                if (dependency != submission) _dependencySet.Add(dependency);
         }
         _submissionMergeCandidates.Add(submission);
         int nextPass = _sameQueueSuccessor[passes[^1]];
@@ -223,6 +275,23 @@ internal sealed partial class FrameExecutor
         }
     }
 
+    private void SplitSubmissionBefore(int submission, int index)
+    {
+        List<int> passes = _submissionPasses[submission];
+        int suffix = NewSubmission(_submissionQueues[submission]!);
+        ChangeSubmissionMembers(submission);
+        QueueSubmissionConsumers(submission);
+        for (int item = index; item < passes.Count; item++)
+        {
+            int pass = passes[item];
+            _submissionPasses[suffix].Add(pass);
+            _submissionByPass[pass] = suffix;
+            foreach (int next in _successors[pass]) QueuePassSubmission(next);
+            QueuePassSubmission(_sameQueueSuccessor[pass]);
+        }
+        passes.RemoveRange(index, passes.Count - index);
+    }
+
     private bool MergeAdjacentSubmissions()
     {
         while (_submissionMergeCandidates.Count != 0)
@@ -232,7 +301,7 @@ internal sealed partial class FrameExecutor
             List<int> laterPasses = _submissionPasses[later];
             if (laterPasses.Count == 0) continue;
             int previousPass = _sameQueuePredecessor[laterPasses[0]];
-            if (previousPass < 0 || _passes[previousPass].Options.SubmitAfter) continue;
+            if (previousPass < 0 || RequiresSubmissionAfter(previousPass)) continue;
             int earlier = _submissionByPass[previousPass];
             if (earlier < 0 || earlier == later ||
                 !ReferenceEquals(_submissionQueues[earlier], _submissionQueues[later])) continue;

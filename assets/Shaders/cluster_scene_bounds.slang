@@ -1,4 +1,5 @@
 #include "cluster_structures.slang"
+#include "cluster_scene_groups.slang"
 #include "cluster_instance_properties.slang"
 #include "cluster_bvh_cull_common.slang"
 #include "resource_effects.slang"
@@ -18,6 +19,7 @@ ByteAddressBuffer InstanceData;
 ConstantBuffer<RenderInstancePropertyMetadata> InstanceProperties;
 #include "cluster_deform_bounds.slang"
 StructuredBuffer<uint> SceneInstances;
+StructuredBuffer<ClusterSceneInstanceGroup> SceneGroups;
 [ResourceEffect(ResourceEffects.Write, ResourceQualifiers.None)]
 RWStructuredBuffer<float4> SceneChunks;
 [ResourceEffect(ResourceEffects.ReadWrite, ResourceQualifiers.None)]
@@ -49,13 +51,14 @@ void ClusterDeformRootWorldBounds(uint root, uint instance, RenderInstanceTransf
 [numthreads(64, 1, 1)]
 void BuildClusterSceneBounds(uint3 group : SV_GroupID, uint lane : SV_GroupIndex)
 {
-    uint index = group.x * 64u + lane;
+    ClusterSceneInstanceGroup instances = SceneGroups[group.x];
+    uint index = instances.FirstInstance + lane;
     float3 worldMin = 1e30.xxx;
     float3 worldMax = -1e30.xxx;
     uint finite = 1u;
-    if (index < Scene.InstanceCount)
+    if (lane < instances.InstanceCount)
     {
-        uint instance = Scene.UseInstanceGroups != 0u ? SceneInstances[index] : index;
+        uint instance = SceneInstances[index];
         uint root = LoadClusterBvhRoot(InstanceData,
             LoadRenderInstanceMetadata(InstanceProperties, CLUSTER_BVH_ROOT_METADATA_WORD), instance);
         float3 previousMin = worldMin;

@@ -354,7 +354,7 @@ public sealed partial class ClusterPipelineSystem
                             0,
                             1,
                             0,
-                            frame.ViewCount,
+                            frame.LayerCount,
                             TextureAspects.Depth),
                         Format.D32Float,
                         SomeEngine.Graphics.TextureViewDimension.Texture2DArray,
@@ -735,7 +735,7 @@ public sealed partial class ClusterPipelineSystem
                             0,
                             1,
                             0,
-                            frame.ViewCount,
+                            frame.LayerCount,
                             TextureAspects.Depth),
                         Format.D32Float,
                         SomeEngine.Graphics.TextureViewDimension.Texture2DArray,
@@ -760,16 +760,16 @@ public sealed partial class ClusterPipelineSystem
                 BindVisibilityWinnerBuffer(ref graph, ref pass, PipelineSync.ComputeShading);
                 return;
             case ClusterSoftwareRasterCoreResource.Diagnostics:
-                _ = pass.Bind(
-                    graph.CreateBufferUav(frame.SoftwareDebug, label: "Cluster software raster diagnostics"),
-                    PipelineSync.ComputeShading,
-                    GraphAccessMode.Write,
-                    WriteCoverage.Partial);
-                _ = pass.Read(
-                    frame.SoftwareDebug,
-                    new BufferRange(0, sizeof(uint)),
-                    PipelineSync.ComputeShading,
-                    ResourceAccess.ShaderResource);
+                pass.Bind(GraphParameterResourceBinding.WritableBufferDescriptor(
+                    graph.CreateBufferUav(frame.SoftwareDebug, label: "Cluster software raster diagnostics")));
+                _ = pass.ReadWrite(frame.SoftwareDebug, new BufferRange(0, sizeof(uint)),
+                    PipelineSync.ComputeShading, ResourceAccess.UnorderedAccess,
+                    unorderedAccessHazards: UnorderedAccessHazardMode.AtomicMergeable);
+                if (_options.EnableFrameMetricsReadback)
+                    _ = pass.Write(frame.SoftwareDebug, new BufferRange(sizeof(uint), SoftwareDebugDataBytes),
+                        PipelineSync.ComputeShading, ResourceAccess.UnorderedAccess, WriteCoverage.Partial,
+                        contentScope: BufferContentScope.CountBoundedPrefix,
+                        unorderedAccessHazards: UnorderedAccessHazardMode.DisjointWrites);
                 return;
             default:
                 throw new InvalidOperationException(
@@ -1044,7 +1044,7 @@ public sealed partial class ClusterPipelineSystem
                             0,
                             1,
                             0,
-                            frame.ViewCount,
+                            frame.LayerCount,
                             TextureAspects.Depth),
                         Format.D32Float,
                         SomeEngine.Graphics.TextureViewDimension.Texture2DArray,

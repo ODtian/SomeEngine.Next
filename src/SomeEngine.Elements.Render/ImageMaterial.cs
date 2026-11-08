@@ -20,6 +20,12 @@ public sealed class ImageMaterial : Material
         Shader = ElementShaders.Get("Image", target),
     };
 
+    /// <summary>Uses cooked code with the application's existing Slang compiler context.</summary>
+    public static ImageMaterial Create(SlangCompileTarget target, IGlobalSession global) => new()
+    {
+        Shader = ElementShaders.Get("Image", target, global),
+    };
+
 }
 
 /// <summary>Image's shader-specific pipeline, sampler and instance bytes.</summary>

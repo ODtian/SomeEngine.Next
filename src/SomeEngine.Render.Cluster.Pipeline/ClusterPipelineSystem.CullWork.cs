@@ -26,7 +26,7 @@ public sealed partial class ClusterPipelineSystem
         work.Arguments = Create(ref graph, "Cluster work queue counts", TraversalArgumentStride, BufferUsages.Indirect);
         work.Initialization = graph.AddRegion("Initialize Cluster work queues", _regions.PrimaryGeometry);
         work.Initialize = graph.AddCopyFramePass("Initialize Cluster work queue data",
-            PassQueueSelection.AnyOfType(QueueType.Graphics),
+            ComputeQueueSelection,
             new[] { work.Nodes, work.Clusters, work.NodeReady, work.ClusterReady },
             new PassOptions(Culling: PassCullingMode.NeverCull, RepeatCommands: true),
             static (ref PassDefinition pass, ref GraphBufferId[] buffers) =>
@@ -54,13 +54,13 @@ public sealed partial class ClusterPipelineSystem
         GraphBufferId base0, GraphBufferId base1, GraphBufferId base2, bool target,
         int phase, string label, GraphRegionId region)
     {
-        uint maximumViews = target ? _renderContext.MaximumInvocationCount : frame.ViewCount;
+        uint maximumViews = target ? _renderContext.MaximumInvocationCount : _outputDescription.ViewCount;
         ClusterComputePipeline traversal = _pipelines!.GetTraversal(target, maximumViews > 1u);
         GraphBufferSlice parameters = UploadUniform(ref graph,
             new ClusterTraversalLevelUniforms { MaxNodes = _options.MaxCandidates, TraversalMode = mode },
             $"Cluster {label} work parameters");
         var dispatch = new ClusterDispatchParameters(new DispatchArguments(1, 1, 1));
-        GraphPassId id = graph.AddComputeFramePass($"Cull Cluster {label} work", PassQueueSelection.AnyOfType(QueueType.Graphics),
+        GraphPassId id = graph.AddComputeFramePass($"Cull Cluster {label} work", ComputeQueueSelection,
             dispatch, new PassOptions(RepeatCommands: true), traversal.Pipeline, traversal.ParameterLayout,
             default, static (ref PassDefinition _, ref ClusterDispatchParameters _) => { },
             ClusterDispatchParameters.Record, region: region);

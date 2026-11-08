@@ -56,7 +56,7 @@ public sealed partial class ClusterPipelineSystem
         FrameResources frame = GraphData.Resources;
         BufferUsages storage = BufferUsages.ShaderRead | BufferUsages.ShaderWrite;
         BufferDesc triangles = new((ulong)data.TriangleCapacity * data.Shaders.TriangleStride, storage);
-        BufferDesc counts = new((ulong)_viewGrid.CellCountPerView * frame.ViewCount * 4u, storage | BufferUsages.CopySource);
+        BufferDesc counts = new((ulong)_viewGrid.CellCountPerView * frame.LayerCount * 4u, storage | BufferUsages.CopySource);
         BufferDesc triangleCount = new(20, storage | BufferUsages.CopySource);
         BufferDesc arguments = new(60, storage | BufferUsages.Indirect);
         BufferDesc states = GraphData.BufferDescriptions[data.States].Description;

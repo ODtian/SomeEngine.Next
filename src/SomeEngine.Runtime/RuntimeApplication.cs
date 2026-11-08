@@ -45,7 +45,7 @@ internal static class RuntimeApplication
         where TMaterials : ISceneMaterials => Task.Factory.StartNew(() =>
     {
         using var display = new ApplicationDisplay();
-        ApplicationContent? content = null;
+        var loadedContent = new List<ApplicationContent>();
         try
         {
             int frames = 0;
@@ -55,10 +55,16 @@ internal static class RuntimeApplication
                 if (application is not null) application.ReloadRequested = false;
                 string contentRoot = Path.GetFullPath(script?.ContentDirectory ?? application?.ContentDirectory ?? FindContentRoot());
                 DateTime catalogWriteTime = File.GetLastWriteTimeUtc(Path.Combine(contentRoot, "Library", "AssetManifest", AssetManifest.CatalogFileName));
-                if (content is null || !StringComparer.OrdinalIgnoreCase.Equals(content.Directory, contentRoot) ||
-                    content.GraphicsBackend != options.GraphicsBackend || content.CatalogWriteTime != catalogWriteTime)
+                ApplicationContent? content = loadedContent.Find(value =>
+                    StringComparer.OrdinalIgnoreCase.Equals(value.Directory, contentRoot) &&
+                    value.GraphicsBackend == options.GraphicsBackend);
+                if (content is null || content.CatalogWriteTime != catalogWriteTime)
                 {
-                    content?.Files.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                    if (content is not null)
+                    {
+                        content.Files.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                        loadedContent.Remove(content);
+                    }
                     AssetManifest manifest = AssetManifest.Load(Path.Combine(contentRoot, "Library", "AssetManifest"));
                     SlangCompileTarget target = options.GraphicsBackend == RuntimeGraphicsBackend.Vulkan
                         ? SlangCompileTarget.Spirv : SlangCompileTarget.Dxil;
@@ -66,6 +72,7 @@ internal static class RuntimeApplication
                     var files = new AssetLoader(new LooseAssetStorage(contentRoot, manifest));
                     content = new ApplicationContent(contentRoot, options.GraphicsBackend, catalogWriteTime,
                         files, manifest, slang, CreateShaderSessionDescription(slang, target));
+                    loadedContent.Add(content);
                 }
                 try
                 {
@@ -85,7 +92,11 @@ internal static class RuntimeApplication
             } while (application?.ReloadRequested == true);
             return frames;
         }
-        finally { content?.Files.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
+        finally
+        {
+            foreach (ApplicationContent content in loadedContent)
+                content.Files.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        }
     }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
 
     private static int RunScene<TMaterials>(RuntimeStartupOptions options, bool useWarp, ApplicationStartupTiming startup,
@@ -222,6 +233,7 @@ internal static class RuntimeApplication
             startup,
             display.Backend,
             display.Device,
+            display.Rendering,
             display.Swapchain,
             display.Window!,
             worldTask.Result,
@@ -269,6 +281,7 @@ internal static class RuntimeApplication
         internal IGraphicsBackend Backend { get; private set; } = null!;
         internal Surface Surface { get; private set; } = null!;
         internal Device Device { get; private set; } = null!;
+        internal RenderDevice Rendering { get; private set; } = null!;
         internal Swapchain Swapchain { get; private set; } = null!;
         private bool _windowVSync;
         private bool _meshShadersDisabled;
@@ -290,6 +303,7 @@ internal static class RuntimeApplication
             _validation = options.DeviceValidation;
             if (Window is not null)
             {
+                Rendering.Dispose();
                 Swapchain.Dispose();
                 Swapchain = null!;
                 Device.Dispose();
@@ -324,10 +338,11 @@ internal static class RuntimeApplication
                 optionalFeatures: DeviceFeatures.CalibratedTimestamps |
                     (options.DisableMeshShaders ? DeviceFeatures.None : DeviceFeatures.MeshShaders),
                 label: "SomeEngine Runtime Device"));
+            Rendering = new RenderDevice(Backend, Device, FrameTimeout);
             Swapchain = Backend.CreateSwapchain(Device, new SwapchainDesc(
                 Surface,
                 3,
-                TextureUsages.ColorAttachment | TextureUsages.CopySource,
+                TextureUsages.ColorAttachment | TextureUsages.CopySource | TextureUsages.CopyDestination,
                 CreateSwapchainConfig(
                     options,
                     boot.Width,
@@ -349,6 +364,7 @@ internal static class RuntimeApplication
 
         public void Dispose()
         {
+            Rendering?.Dispose();
             Swapchain?.Dispose();
             Device?.Dispose();
             Surface?.Dispose();
@@ -477,6 +493,7 @@ internal static class RuntimeApplication
         ApplicationStartupTiming startup,
         IGraphicsBackend backend,
         Device device,
+        RenderDevice renderDevice,
         Swapchain swapchain,
         NativeWindow window,
         World loadedWorld,
@@ -524,7 +541,6 @@ internal static class RuntimeApplication
             temporalFrameIndex: 0);
         Entity viewEntity = renderWorld.CreateEntity(initialView.View);
 
-        using var renderDevice = new RenderDevice(backend, device, FrameTimeout);
         using var coordinator = new RenderFrameCoordinator(renderDevice, FrameTimeout);
         RenderInstancePropertyLayout instanceLayout = RenderInstancePropertyLayout.Compose(
             ClusterRenderFeature.InstanceLayout, SkinInstanceProducer.Layout);
@@ -578,12 +594,12 @@ internal static class RuntimeApplication
                 MaximumFramesInFlight: 2,
                 Label: "SomeEngine Runtime Render Graph"));
         _ = instances.GetDataTransfer(renderGraph);
-        using var skinning = new SkinningFeature(backend, device, renderGraph);
-        using var skinBounds = new SkinBoundsFeature(backend, device, renderGraph, skinning);
+        using var skinning = new SkinningFeature(backend, device, renderGraph, uiShader.SlangCode.Global);
+        using var skinBounds = new SkinBoundsFeature(backend, device, renderGraph, skinning, uiShader.SlangCode.Global);
         SurfaceMaterial? surfaceMaterial = includeInterface
-            ? SurfaceMaterial.Create(device.Capabilities.CompileTarget) : null;
+            ? SurfaceMaterial.Create(device.Capabilities.CompileTarget, uiShader.SlangCode.Global) : null;
         GlyphsMaterial? glyphMaterial = includeInterface
-            ? GlyphsMaterial.Create(device.Capabilities.CompileTarget) : null;
+            ? GlyphsMaterial.Create(device.Capabilities.CompileTarget, uiShader.SlangCode.Global) : null;
         using CanvasRenderer? surfaces = surfaceMaterial is null ? null
             : new CanvasRenderer(backend, device, renderGraph, renderWorld, surfaceMaterial, PresentationFormat, glyphMaterial);
         GraphRegionId sceneRegion, primaryGeometryRegion, primaryDepthAfterRegion, targetGeometryRegion;
@@ -744,6 +760,7 @@ internal static class RuntimeApplication
 
         void CaptureRenderGraphDiagnostics(in RenderGraphDiagnosticsView diagnostics)
         {
+            application?.GraphAnalyzed?.Invoke(in diagnostics);
             latestGraphStatistics = diagnostics.Statistics;
             hasGraphStatistics = true;
             analyzedFrames++;
@@ -989,8 +1006,7 @@ internal static class RuntimeApplication
                     cameraCut: cameraCut,
                     cameraTarget: scene.Camera.Target,
                     depthOfField: scene.DepthOfField,
-                    playerId: scene.PlayerId,
-                    firstPerson: scene.FirstPerson);
+                    instanceSets: scene.InstanceSets);
                 viewSystem.Stage(viewFrame.View);
                 if (application?.DebugUiEnabled != false) ui.DrawDebugWindow(
                     ref debugUiOpen,
@@ -1154,7 +1170,8 @@ internal static class RuntimeApplication
                     captureLinear ? linearVerifier : null,
                     linearOutputRegion,
                     captureLinear && shadowSettings.Enabled ? value => shadowQuality = value : null,
-                    options.VerifyFrameOutput ? CaptureRenderGraphDiagnostics : null,
+                    (options.VerifyFrameOutput || application?.GraphAnalyzed is not null) ? CaptureRenderGraphDiagnostics : null,
+                    options.VerifyFrameOutput,
                     options.SynchronousFrames || application?.FrameRendered is not null,
                     options.TemporalAntialiasing,
                     viewFrame.JitterPixels,
@@ -1488,6 +1505,7 @@ internal static class RuntimeApplication
         GraphRegionId linearOutputRegion,
         Action<VirtualShadowFrameQuality>? captureShadowQuality,
         RenderGraphDiagnosticsHandler? graphDiagnostics,
+        bool verifyFrameOutput,
         bool synchronousFrames,
         bool temporalAntialiasing,
         Vector2 jitterPixels,
@@ -1533,7 +1551,7 @@ internal static class RuntimeApplication
                         clusterOutputs.MotionVectors,
                         clusterOutputs.Width,
                         clusterOutputs.Height,
-                        clusterOutputs.ViewCount);
+                        clusterOutputs.LayerCount);
                     if (image is not null)
                         linearVerifier?.Record(ref graphFrame, clusterOutputs.MaterialColor, graphicsQueue, linearOutputRegion);
                     using (EngineTrace.Begin(ApplicationTrace.TemporalRecording))
@@ -1553,6 +1571,7 @@ internal static class RuntimeApplication
                     if (image is null) return null;
                     if (captureShadowQuality is not null) virtualShadows.CaptureQuality(ref graphFrame, captureShadowQuality);
                     outputVerifier?.Record(ref graphFrame, presentation.Target, graphicsQueue, frameOutputRegion);
+                    presentation.Record(ref graphFrame);
                     if (reportMilestones)
                         Console.WriteLine("First frame: analyzing and submitting render graph.");
 
@@ -1569,7 +1588,7 @@ internal static class RuntimeApplication
                     if (outputVerifier is not null)
                     {
                         outputVerifier.ReadPixels();
-                        if (graphDiagnostics is not null) frameOutput = outputVerifier.Analyze();
+                        if (verifyFrameOutput) frameOutput = outputVerifier.Analyze();
                     }
                     linearVerifier?.ReadPixels();
                     if (synchronousFrames || readOutput) graph.CollectCompleted();

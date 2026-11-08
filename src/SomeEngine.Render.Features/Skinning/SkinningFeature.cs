@@ -58,9 +58,13 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
     public GraphPassId CompletePass { get; }
 
     public SkinningFeature(IGraphicsBackend backend, Device device, global::SomeEngine.RenderGraph.RenderGraph graph)
+        : this(backend, device, graph, null) { }
+
+    public SkinningFeature(IGraphicsBackend backend, Device device, global::SomeEngine.RenderGraph.RenderGraph graph,
+        SlangShaderSharp.IGlobalSession? global)
     {
         (_backend, _device, _graph) = (backend, device, graph);
-        var shader = GpuPoseShaders.Get(device.Capabilities.CompileTarget);
+        var shader = SkinningShaders.Get("GPU poses", device.Capabilities.CompileTarget, global);
         _advancePipeline = LinkedComputePipeline.Create(backend, device, shader, "AdvancePoseStates", "Advance GPU pose states");
         _loadPipeline = LinkedComputePipeline.Create(backend, device, shader, "LoadPoseHistory", "Load pose history");
         _samplePipeline = LinkedComputePipeline.Create(backend, device, shader, "SamplePoseLevel", "Sample GPU pose level");

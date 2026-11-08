@@ -46,9 +46,13 @@ public sealed class SkinBoundsFeature : IClusterBoundsSource, IDisposable,
 
     public SkinBoundsFeature(IGraphicsBackend backend, Device device, global::SomeEngine.RenderGraph.RenderGraph graph,
         SkinningFeature skinning)
+        : this(backend, device, graph, skinning, null) { }
+
+    public SkinBoundsFeature(IGraphicsBackend backend, Device device, global::SomeEngine.RenderGraph.RenderGraph graph,
+        SkinningFeature skinning, SlangShaderSharp.IGlobalSession? global)
     {
         _graph = graph;
-        _pipeline = LinkedComputePipeline.Create(backend, device, SkinBoundsShaders.Get(device.Capabilities.CompileTarget),
+        _pipeline = LinkedComputePipeline.Create(backend, device, SkinningShaders.Get("Skin bounds", device.Capabilities.CompileTarget, global),
             "TransformSkinBounds", "Transform skin influence bounds");
         RenderGraphEdit edit = graph.BeginEdit();
         try

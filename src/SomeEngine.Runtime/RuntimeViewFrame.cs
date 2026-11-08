@@ -16,8 +16,7 @@ internal readonly record struct RuntimeViewFrame(RenderView View, Vector2 Jitter
         bool cameraCut = false,
         Vector3? cameraTarget = null,
         CameraDepthOfField? depthOfField = null,
-        uint playerId = 0,
-        FirstPersonCamera? firstPerson = null)
+        ReadOnlyMemory<uint> instanceSets = default)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(height);
@@ -40,8 +39,7 @@ internal readonly record struct RuntimeViewFrame(RenderView View, Vector2 Jitter
                 cameraCut,
                 CameraTarget: cameraTarget,
                 DepthOfField: depthOfField,
-                PlayerId: playerId,
-                FirstPerson: firstPerson),
+                InstanceSets: instanceSets),
             jitter);
     }
 }

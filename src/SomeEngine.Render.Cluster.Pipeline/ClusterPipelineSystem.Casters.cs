@@ -13,14 +13,6 @@ public sealed partial class ClusterPipelineSystem
     private DepthCacheClass[] _casterCacheClasses = [];
     private RenderInstanceBatches<RenderInstanceSingleGroup>? _casterInputInstances;
     private uint _casterInputVersion;
-    private bool _hasFirstPersonWorldMeshes;
-
-    /// <summary>Reports world-space first-person representations in the current render entities.</summary>
-    public bool HasFirstPersonWorldMeshes()
-    {
-        RefreshCasterInputs();
-        return _hasFirstPersonWorldMeshes;
-    }
 
     private void RefreshCasterInputs()
     {
@@ -50,7 +42,6 @@ public sealed partial class ClusterPipelineSystem
             {
                 if (pipeline._casterCacheClasses.Length != instances.AddressCount)
                     pipeline._casterCacheClasses = new DepthCacheClass[instances.AddressCount];
-                bool firstPerson = false;
                 int entityIndex = 0;
                 foreach (QueryChunkView chunk in query.Chunks)
                 {
@@ -58,12 +49,10 @@ public sealed partial class ClusterPipelineSystem
                     for (int row = 0; row < chunk.Count; row++)
                     {
                         RenderMesh mesh = hasMesh ? meshes[row] : default;
-                        firstPerson |= hasMesh && mesh.FirstPerson.Kind == FirstPersonMeshKind.WorldRepresentation;
                         foreach (var address in instances.RowsForEntity(entityIndex++))
                             pipeline._casterCacheClasses[address.Row] = hasMesh ? mesh.DepthCacheClass : DepthCacheClass.Auto;
                     }
                 }
-                pipeline._hasFirstPersonWorldMeshes = firstPerson;
                 pipeline._casterInputInstances = instances;
             }
             pipeline._casterInputVersion = query.CurrentSystemVersion;

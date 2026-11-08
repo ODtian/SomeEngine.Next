@@ -86,7 +86,7 @@ public sealed partial class ClusterPipelineSystem
         if (shaders is null) return;
         FrameResources frame = GraphData.Resources;
         _ = CreateStencil(ref edit);
-        uint tiles = checked(_viewGrid.CellCountPerView * frame.ViewCount);
+        uint tiles = checked(_viewGrid.CellCountPerView * frame.LayerCount);
         GraphRegionId preparation = _transparencyRequestRegion != default ? _transparencyRequestRegion : _shadowRequestRegion;
         if (preparation == default) preparation = _regions.Shading;
         BufferUsages storage = BufferUsages.ShaderRead | BufferUsages.ShaderWrite;
@@ -185,10 +185,10 @@ public sealed partial class ClusterPipelineSystem
             }
         parameters[0] = new()
         {
-            Width = (uint)frame.Width, Height = (uint)frame.Height, ViewCount = frame.ViewCount,
+            Width = (uint)frame.Width, Height = (uint)frame.Height, ViewCount = frame.LayerCount,
             MaterialCapacity = assignments.SlotCapacity, TriangleCapacity = data.TriangleCapacity,
             VisibleCapacity = _options.MaxCandidates, ReferenceCapacity = _options.BlendReferenceCapacity,
-            UseIndex = _options.BlendIndex == ClusterBlendIndex.FullScan ? 0u : 1u, CellCount = _viewGrid.CellCountPerView * frame.ViewCount,
+            UseIndex = _options.BlendIndex == ClusterBlendIndex.FullScan ? 0u : 1u, CellCount = _viewGrid.CellCountPerView * frame.LayerCount,
             Effects = (assignments.HasXray ? 1u : 0u) | (assignments.HasOrdered ? 2u : 0u),
             ColorLimit = colorLimit,
             MaximumError = assignments.HasXray ? 0 : maximumError,
@@ -198,7 +198,7 @@ public sealed partial class ClusterPipelineSystem
         UpdateParameters(ref edit, data.GeometryParameters, MemoryMarshal.AsBytes(geometry));
         Span<ClusterShadeUniforms> shade = stackalloc ClusterShadeUniforms[1];
         shade[0] = new ClusterShadeUniforms { ScreenWidth = (uint)frame.Width, ScreenHeight = (uint)frame.Height,
-            ViewCount = frame.ViewCount, MaterialSlotCapacity = assignments.SlotCapacity, DebugMode = _options.DebugMode };
+            ViewCount = frame.LayerCount, MaterialSlotCapacity = assignments.SlotCapacity, DebugMode = _options.DebugMode };
         UpdateParameters(ref edit, data.ShadeParameters, MemoryMarshal.AsBytes(shade));
     }
 
@@ -328,7 +328,7 @@ public sealed partial class ClusterPipelineSystem
             case "TransparencyReferences": buffer = data.References; break;
             case "TransparencyArguments": buffer = data.Arguments; stride = 0; break;
             case "TransparencyTriangleCount": buffer = data.TriangleCount; stride = 0; break;
-            case "TransparencyOpaqueDepth": pass.Bind(graph.CreateTextureSrv(frame.Depth, new TextureSubresourceRange(0, 1, 0, frame.ViewCount, TextureAspects.Depth),
+            case "TransparencyOpaqueDepth": pass.Bind(graph.CreateTextureSrv(frame.Depth, new TextureSubresourceRange(0, 1, 0, frame.LayerCount, TextureAspects.Depth),
                 Format.D32Float, SomeEngine.Graphics.TextureViewDimension.Texture2DArray), PipelineSync.ComputeShading); return true;
             case "TransparencyColor": pass.Bind(graph.CreateTextureUav(frame.SceneColor, format: Format.R16G16B16A16Float,
                 dimension: SomeEngine.Graphics.TextureViewDimension.Texture2DArray), PipelineSync.ComputeShading,

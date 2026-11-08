@@ -1,6 +1,7 @@
 using SomeEngine.ECS;
 using SomeEngine.Graphics;
 using SomeEngine.Render.Systems;
+using SomeEngine.RenderGraph;
 using SomeEngine.Render.Cluster;
 using SomeEngine.Render.Cluster.Pipeline;
 
@@ -29,6 +30,8 @@ public sealed class ApplicationScene(string contentDirectory)
     public Action<ApplicationFrame>? FrameCompleted { get; set; }
     /// <summary>Receives this frame's Cluster results after GPU completion. Supplying this callback enables synchronous frame diagnostics.</summary>
     public Action<ClusterFrameMetrics>? FrameRendered { get; set; }
+    /// <summary>Receives this frame's resolved passes, queues, resource dependencies and barriers.</summary>
+    public RenderGraphDiagnosticsHandler? GraphAnalyzed { get; set; }
     /// <summary>Receives complete CPU/GPU frame timing after GPU completion, preserving asynchronous frame scheduling.</summary>
     public Action<ApplicationFrameTiming>? FrameMeasured { get; set; }
     public Action<ClusterBlendMetrics>? BlendFrameCompleted { get; set; }

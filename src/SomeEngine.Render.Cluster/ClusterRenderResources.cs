@@ -801,7 +801,6 @@ public sealed partial class ClusterRenderResources : IDisposable
 
         private readonly ResolvedRenderInstanceProperty<RenderXray> _xray;
         private readonly ResolvedRenderInstanceProperty<uint> _depthCacheClass;
-        private readonly ResolvedRenderInstanceProperty<FirstPersonMeshData> _firstPerson;
 
         public ClusterGeometryProducer()
         {
@@ -815,7 +814,6 @@ public sealed partial class ClusterRenderResources : IDisposable
             _deformBounds = clusterProperties.Resolve<RenderDeformBounds>(ClusterRenderFeature.DeformBoundsKey);
             _xray = clusterProperties.Resolve<RenderXray>(ClusterRenderFeature.XrayKey);
             _depthCacheClass = clusterProperties.Resolve<uint>(ClusterRenderFeature.DepthCacheClassKey);
-            _firstPerson = clusterProperties.Resolve<FirstPersonMeshData>(ClusterRenderFeature.FirstPersonKey);
         }
 
         public RenderInstancePropertyLayout Properties => ClusterRenderFeature.GeometryLayout;
@@ -849,7 +847,6 @@ public sealed partial class ClusterRenderResources : IDisposable
             if (mesh)
             {
                 destination.BindPerInstance(_depthCacheClass);
-                destination.BindPerInstance(_firstPerson);
                 destination.BindPerInstance(_bvhRoot);
                 destination.BindPerInstance(_boundsExpansion);
                 destination.BindPerInstance(_deformBounds);
@@ -874,7 +871,6 @@ public sealed partial class ClusterRenderResources : IDisposable
             for (int row = 0; row < packet.Count; row++)
             {
                 destination.Write(_depthCacheClass, row, hasMesh ? (uint)meshes[row].DepthCacheClass : 0u);
-                destination.Write(_firstPerson, row, hasMesh ? meshes[row].FirstPerson : default);
             }
 
             ReadOnlySpan<RenderClusterGeometry> geometries = packet.Read<RenderClusterGeometry>();

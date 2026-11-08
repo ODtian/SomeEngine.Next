@@ -20,6 +20,7 @@ struct InstancePropertyAttribute
 struct SurfacePixelInput
 {
     uint3 PixelCoord;
+    uint ViewIndex;
     uint InstanceID;
     uint MaterialIndex;
     float3 CameraPosition;

@@ -107,31 +107,15 @@ public readonly record struct RenderInstance : IComponent;
 /// </summary>
 public readonly record struct RenderMesh(Mesh Mesh, float BoundsExpansion,
     SomeEngine.Assets.Pipeline.MeshPayloadSource? PageSource = null,
-    DepthCacheClass DepthCacheClass = DepthCacheClass.Auto, FirstPersonMeshData FirstPerson = default) : IComponent;
-
-public enum RenderViewFamily : uint
-{
-    Primary = 0,
-    Shadow = 1,
-    FirstPersonShadow = 2,
-}
-
-/// <summary>Camera deformation with FOV correction tan(scene FOV/2)/tan(first-person FOV/2).</summary>
-public readonly record struct FirstPersonCamera(float FieldOfViewCorrection = 1f, float Scale = 1f)
-{
-    public FirstPersonCamera() : this(1f, 1f) { }
-    public Matrix4x4 CalculateWorldToFirstPerson(Matrix4x4 view)
-    {
-        Matrix4x4.Invert(view, out Matrix4x4 inverse);
-        return view * Matrix4x4.CreateScale(FieldOfViewCorrection * Scale, FieldOfViewCorrection * Scale, Scale) * inverse;
-    }
-}
+    DepthCacheClass DepthCacheClass = DepthCacheClass.Auto) : IComponent;
 
 /// <summary>
 /// Pipeline-neutral view input stored as an ordinary RenderWorld component. A view entity may
 /// carry additional pipeline-owned components, while queue/bin state remains transient output of
 /// the consuming frame system. Camera position is derived from <see cref="View"/> so the ECS does
-/// not store a second copy of the same transform fact.
+/// not store a second copy of the same transform fact. InstanceSets selects collections before
+/// BVH expansion; an empty list selects all collections. OutputLayer selects the shared depth and
+/// visibility layer, defaulting to the view index. Projection supplies the caller's depth range.
 /// </summary>
 public readonly record struct RenderView(
     Matrix4x4 View,
@@ -145,6 +129,5 @@ public readonly record struct RenderView(
     CameraDepthOfField? DepthOfField = null,
     WorldOrigin WorldOrigin = default,
     uint StreamingPriorityCategory = 3u,
-    uint PlayerId = 0,
-    FirstPersonCamera? FirstPerson = null,
-    RenderViewFamily Family = RenderViewFamily.Primary) : IComponent;
+    ReadOnlyMemory<uint> InstanceSets = default,
+    uint? OutputLayer = null) : IComponent;

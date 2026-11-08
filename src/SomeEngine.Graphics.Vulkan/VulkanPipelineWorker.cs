@@ -36,7 +36,7 @@ internal sealed partial class VulkanBackend
                     AllowSynchronousContinuations = false,
                 });
             int workerCount = Math.Clamp(
-                (Environment.ProcessorCount + 3) / 4,
+                Environment.ProcessorCount,
                 1,
                 MaximumWorkerCount);
             _workers = new Task[workerCount];

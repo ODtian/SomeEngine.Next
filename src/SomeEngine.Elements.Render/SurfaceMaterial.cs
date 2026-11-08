@@ -20,6 +20,12 @@ public sealed class SurfaceMaterial : Material
         Shader = ElementShaders.Get("Surface", target),
     };
 
+    /// <summary>Uses cooked code with the application's existing Slang compiler context.</summary>
+    public static SurfaceMaterial Create(SlangCompileTarget target, IGlobalSession global) => new()
+    {
+        Shader = ElementShaders.Get("Surface", target, global),
+    };
+
 }
 
 /// <summary>Surface's shader-specific pipeline and instance encoding.</summary>

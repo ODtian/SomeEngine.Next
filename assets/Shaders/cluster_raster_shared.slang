@@ -610,7 +610,7 @@ struct ClusterPixelRasterTask<
                 varying2,
                 interpolation);
             VisibilityPixelInput pixelInput;
-            pixelInput.PixelCoord = uint3(pixel, viewIndex);
+            pixelInput.PixelCoord = uint3(pixel, targetViewIndex);
             pixelInput.Depth = ClusterRasterMaterialDepth(depth, targetPolicy);
             pixelInput.EncodedDepth = EncodeClusterRasterDepth(depth, targetPolicy);
             pixelInput.EncodedTargetDepth = encodedDepth;

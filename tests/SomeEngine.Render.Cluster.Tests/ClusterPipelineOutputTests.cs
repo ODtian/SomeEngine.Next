@@ -37,7 +37,7 @@ public sealed class ClusterPipelineOutputTests
         Assert.False(outputs.IsValid);
         Assert.Equal(64, outputs.Width);
         Assert.Equal(32, outputs.Height);
-        Assert.Equal(4u, outputs.ViewCount);
+        Assert.Equal(4u, outputs.LayerCount);
         Assert.DoesNotContain(
             typeof(ClusterPipelineOutputs).GetProperties(),
             static property => property.Name.Contains(

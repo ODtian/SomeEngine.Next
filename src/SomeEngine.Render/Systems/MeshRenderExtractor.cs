@@ -27,8 +27,10 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
     public void DeclareReads(RenderExtractionQuery query)
     {
         query.Write<RenderMesh>();
+        query.Write<InstanceSet>();
         query.ReadOptional<WorldTransform>();
         query.ReadOptional<MeshInstance>();
+        query.ReadOptional<InstanceSet>();
         query.ReadOptionalBuffer<MeshMaterialBinding>();
     }
 
@@ -93,7 +95,7 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
             Mesh data = instance.Mesh.CaptureData();
             _snapshots.Add(new MeshSnapshot(source, default, data, expansion,
                 false, 0, 0, MeshChanged: true, MaterialsChanged: false, instance.PageSource,
-                instance.DepthCacheClass, instance.FirstPerson));
+                instance.DepthCacheClass, context.World.Read<InstanceSet>(entity).Value));
             _meshSources.Add(source);
             changed = true;
         }
@@ -115,6 +117,7 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
         if (!chunk.TryRead<MeshInstance>(out ReadOnlySpan<MeshInstance> meshes))
             return;
 
+        chunk.TryRead<InstanceSet>(out ReadOnlySpan<InstanceSet> sets);
         ReadOnlySpan<Entity> entities = chunk.Entities;
         bool hasMaterialBuffer = chunk.HasBuffer<MeshMaterialBinding>();
         for (int row = 0; row < entities.Length; row++)
@@ -144,7 +147,7 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
                 MaterialsChanged: true,
                 meshes[row].PageSource,
                 meshes[row].DepthCacheClass,
-                meshes[row].FirstPerson));
+                sets.IsEmpty ? 0u : sets[row].Value));
             _meshSources.Add(source);
         }
     }
@@ -161,20 +164,22 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
             context.CollectTransformChanges(chunk);
 
         bool meshChunkChanged = chunk.HasChangedSinceLastSystemVersion<MeshInstance>();
+        bool setsChanged = chunk.Has<InstanceSet>() && chunk.HasChangedSinceLastSystemVersion<InstanceSet>();
         bool hasMaterialBuffer = chunk.HasBuffer<MeshMaterialBinding>();
         bool materialChunkChanged =
             hasMaterialBuffer &&
             chunk.HasBufferChangedSinceLastSystemVersion<MeshMaterialBinding>();
-        if (!meshChunkChanged && !materialChunkChanged)
+        if (!meshChunkChanged && !setsChanged && !materialChunkChanged)
             return false;
 
         int firstSnapshot = _snapshots.Count;
+        chunk.TryRead<InstanceSet>(out ReadOnlySpan<InstanceSet> sets);
         ReadOnlySpan<Entity> entities = chunk.Entities;
         for (int row = 0; row < entities.Length; row++)
         {
             bool meshChanged =
-                meshChunkChanged &&
-                chunk.RowChangedSinceLastSystemVersion<MeshInstance>(row);
+                (meshChunkChanged && chunk.RowChangedSinceLastSystemVersion<MeshInstance>(row)) ||
+                (setsChanged && chunk.RowChangedSinceLastSystemVersion<InstanceSet>(row));
             bool materialsChanged =
                 materialChunkChanged &&
                 chunk.RowBufferChangedSinceLastSystemVersion<MeshMaterialBinding>(row);
@@ -206,7 +211,7 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
                     materialsChanged,
                     mesh.PageSource,
                     mesh.DepthCacheClass,
-                    mesh.FirstPerson));
+                    sets.IsEmpty ? 0u : sets[row].Value));
             }
         }
 
@@ -225,8 +230,8 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
                 snapshot.Mesh,
                 snapshot.BoundsExpansion,
                 snapshot.PageSource,
-                snapshot.DepthCacheClass,
-                snapshot.FirstPerson));
+                snapshot.DepthCacheClass));
+            context.Upsert(entity, new InstanceSet(snapshot.InstanceSet));
             if (snapshot.MaterialsChanged) SyncMaterials(context, snapshot, entity, allowStructuralChanges: true);
         }
 
@@ -239,6 +244,7 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
             {
                 context.RemoveIfExists<RenderInstance>(mirror.RenderEntity);
                 context.RemoveIfExists<RenderMesh>(mirror.RenderEntity);
+                context.RemoveIfExists<InstanceSet>(mirror.RenderEntity);
                 context.World.RemoveMaterials(mirror.RenderEntity);
             }
         }
@@ -258,8 +264,8 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
                         snapshot.Mesh,
                         snapshot.BoundsExpansion,
                         snapshot.PageSource,
-                        snapshot.DepthCacheClass,
-                        snapshot.FirstPerson));
+                        snapshot.DepthCacheClass));
+                context.UpdateExisting(entity, new InstanceSet(snapshot.InstanceSet));
             }
             if (snapshot.MaterialsChanged)
             {
@@ -324,7 +330,7 @@ public sealed class MeshRenderExtractor : IRenderExtractionSystem
         bool MaterialsChanged,
         SomeEngine.Assets.Pipeline.MeshPayloadSource? PageSource,
         DepthCacheClass DepthCacheClass,
-        FirstPersonMeshData FirstPerson);
+        uint InstanceSet);
 
     private readonly record struct MaterialSlice(
         List<Material> Values,

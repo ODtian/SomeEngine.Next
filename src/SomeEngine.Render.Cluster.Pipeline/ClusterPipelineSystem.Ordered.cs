@@ -27,7 +27,7 @@ public sealed partial class ClusterPipelineSystem
         GraphData.BlendColors = edit.AddRegion("Cluster blend colors", _regions.Shading);
         GraphRegionId stages = edit.AddRegion("Cluster hardware stencil stages", _regions.Shading);
         var stencil = new ClusterStencil(_backend, _device, _graph, ref edit,
-            frame.Width, frame.Height, frame.ViewCount, GraphData.BlendColors, stages);
+            frame.Width, frame.Height, frame.LayerCount, GraphData.BlendColors, stages);
         GraphData.Stencil = stencil;
         GraphData.Outputs = GraphData.Outputs with { Stencil = stencil };
         return stencil;

@@ -13,7 +13,6 @@ public struct MeshSource : IComponent
     public AssetId<MeshAsset> Mesh;
     public float BoundsExpansion;
     public DepthCacheClass DepthCacheClass;
-    public FirstPersonMeshData FirstPerson;
 }
 
 /// <summary>Skeleton identity for a skinned mesh node in a saved Game world.</summary>
@@ -37,6 +36,9 @@ public readonly record struct CameraDepthOfField(
     float DepthBlurExponent = 0f,
     float ShadowResolutionBiasStrength = 0f);
 
+/// <summary>One collection selected by a saved scene camera; an empty buffer selects all collections.</summary>
+public readonly record struct CameraInstanceSet(uint Value) : IBufferElement;
+
 public struct SceneCamera : IComponent
 {
     public Vector3 Position;
@@ -46,6 +48,4 @@ public struct SceneCamera : IComponent
     public float NearPlane;
     public float FarPlane;
     public CameraDepthOfField? DepthOfField;
-    public uint PlayerId;
-    public FirstPersonCamera? FirstPerson;
 }

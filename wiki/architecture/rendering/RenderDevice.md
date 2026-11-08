@@ -3,6 +3,10 @@
 ## Definition
 RenderDevice 是一个 Graphics.Device 对应的 render-side 长期设备状态，位于 SomeEngine.Render。
 
+应用显示设备持有 RenderDevice，场景的 RenderFrameCoordinator 借用同一设备状态。
+场景切换保留设备上的纹理、视图与 sampler；Graphics.Device 关闭前统一收尾。
+应用按内容目录、后端和目录版本复用已读取的资产数据，目录版本变化时替换该项。
+
 ## Responsibilities
 - per-device asset realization
 - Texture SRV/UAV cache
@@ -22,7 +26,7 @@ RenderDevice 是一个 Graphics.Device 对应的 render-side 长期设备状态�
 
 ## Relations
 
-应用的呈现 pass 通过 `OrderTextureUploadsBefore` 排在当帧纹理上传完成之后，并通过 Cluster 的 `PageFaultReadbackPass` 排在缺页反馈的提前提交之后。呈现与当帧图像读回由同一次交换链图像提交覆盖；首个场景帧沿这一公共路径验收。
+应用的 tone map pass 通过 `OrderTextureUploadsBefore` 排在当帧纹理上传完成之后，并通过 Cluster 的 `PageFaultReadbackPass` 排在缺页反馈的提前提交之后。tone map、界面与图像读回使用普通颜色目标；当帧最终 copy 把完成的颜色写入交换链并返回 Present。
 
 [[architecture/assets/Texture-Device-Realization]] · [[architecture/render-graph/Resource-Access]]
 

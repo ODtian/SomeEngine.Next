@@ -24,8 +24,6 @@ public static class ClusterShaderSources
             .Descriptor.MetadataWordOffset;
         int depthCacheClass = layout.Resolve<uint>(ClusterRenderFeature.DepthCacheClassKey)
             .Descriptor.MetadataWordOffset;
-        int firstPerson = layout.Resolve<FirstPersonMeshData>(ClusterRenderFeature.FirstPersonKey)
-            .Descriptor.MetadataWordOffset;
         int xray = layout.Resolve<RenderXray>(ClusterRenderFeature.XrayKey)
             .Descriptor.MetadataWordOffset;
 
@@ -58,7 +56,6 @@ public static class ClusterShaderSources
             static const uint RENDER_CURRENT_TRANSFORM_METADATA_WORD = {{currentTransform}}u;
             static const uint RENDER_PREVIOUS_TRANSFORM_METADATA_WORD = {{previousTransform}}u;
             static const uint RENDER_DEPTH_CACHE_CLASS_METADATA_WORD = {{depthCacheClass}}u;
-            static const uint RENDER_FIRST_PERSON_METADATA_WORD = {{firstPerson}}u;
             static const uint RENDER_XRAY_METADATA_WORD = {{xray}}u;
 
             #endif

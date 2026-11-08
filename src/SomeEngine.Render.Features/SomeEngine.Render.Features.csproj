@@ -13,7 +13,6 @@
     <ProjectReference Include="..\SomeEngine.RenderGraph\SomeEngine.RenderGraph.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <EmbeddedResource Include="../../assets/Shaders/gpu_pose.slang" LogicalName="SomeEngine.Render.Features.Shaders.gpu_pose.slang" />
-    <EmbeddedResource Include="../../assets/Shaders/skin_bounds.slang" LogicalName="SomeEngine.Render.Features.Shaders.skin_bounds.slang" />
+    <EmbeddedResource Include="Skinning/Skinning.assetpack" LogicalName="SomeEngine.Render.Features.Shaders.Skinning.assetpack" />
   </ItemGroup>
 </Project>

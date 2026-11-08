@@ -184,6 +184,7 @@ internal sealed class ClusterPipelineSet : IDisposable
                     ClusterShaderOperationRole.MaterialBinningScatter,
                     "Cluster material bin scatter");
                 Resolve = Compute(ClusterShaderOperationRole.VisibilityResolve, "Cluster visibility resolve");
+            Task.WhenAll(_pipelines.Select(static pipeline => pipeline.PipelineTask)).GetAwaiter().GetResult();
         }
         catch (Exception primary)
         {

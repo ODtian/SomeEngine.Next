@@ -34,22 +34,26 @@ public sealed partial class VirtualShadowFeature
     private void BindRequestedPageFlags(ref RenderGraphEdit graph, ref PassDefinition pass, PipelineSync sync) =>
         _ = pass.Bind(graph.CreateBufferUav(_requestedPageFlags, structureStride: sizeof(uint),
             label: "Virtual shadow request flags"), sync,
-            GraphAccessMode.ReadWrite, WriteCoverage.Partial);
+            GraphAccessMode.ReadWrite, WriteCoverage.Partial,
+            unorderedAccessHazards: UnorderedAccessHazardMode.AtomicMergeable);
 
     private void BindRequestedPageIndices(ref RenderGraphEdit graph, ref PassDefinition pass, PipelineSync sync) =>
         _ = pass.Bind(graph.CreateBufferUav(_requestedPageIndices, structureStride: sizeof(uint),
             label: "Virtual shadow requested page indices"), sync,
             GraphAccessMode.Write, WriteCoverage.Partial,
-            resultContents: ResourceContentState.Defined, contentScope: BufferContentScope.CountBoundedPrefix);
+            resultContents: ResourceContentState.Defined, contentScope: BufferContentScope.CountBoundedPrefix,
+            unorderedAccessHazards: UnorderedAccessHazardMode.DisjointWrites);
 
     private void BindRequestedPageCount(ref RenderGraphEdit graph, ref PassDefinition pass, PipelineSync sync) =>
         _ = pass.Bind(graph.CreateBufferUav(_requestedPageCount, structureStride: sizeof(uint),
             label: "Virtual shadow requested page count"), sync,
-            GraphAccessMode.ReadWrite, WriteCoverage.Partial);
+            GraphAccessMode.ReadWrite, WriteCoverage.Partial,
+            unorderedAccessHazards: UnorderedAccessHazardMode.AtomicMergeable);
 
     private void BindPageReceiverMasks(ref RenderGraphEdit graph, ref PassDefinition pass, PipelineSync sync) =>
         _ = pass.Bind(graph.CreateTextureUav(_pageReceiverMasks,
             new TextureSubresourceRange(0, 1, 0, 1, TextureAspects.Color), Format.R32UInt,
             SomeEngine.Graphics.TextureViewDimension.Texture2D, label: "Virtual shadow page receiver masks"), sync,
-            GraphAccessMode.ReadWrite, WriteCoverage.Partial);
+            GraphAccessMode.ReadWrite, WriteCoverage.Partial,
+            unorderedAccessHazards: UnorderedAccessHazardMode.AtomicMergeable);
 }

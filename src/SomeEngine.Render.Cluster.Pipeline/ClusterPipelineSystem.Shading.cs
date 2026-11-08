@@ -9,6 +9,11 @@ namespace SomeEngine.Render.Cluster.Pipeline;
 
 public sealed partial class ClusterPipelineSystem
 {
+    // Keep shared-output writers on one queue. Disjoint pixel writes can overlap
+    // within one submission while preserving the backend's texture access rules.
+    private PassQueueSelection ShadeQueueSelection => PassQueueSelection.AnyOfType(
+        _options.EnableAsyncCompute ? QueueType.Compute : QueueType.Graphics);
+
     private readonly record struct IndexedTextureRead(SomeEngine.Resources.Material Material, uint Property,
         SomeEngine.Resources.Texture? Texture);
 
@@ -57,7 +62,7 @@ public sealed partial class ClusterPipelineSystem
                 var dispatch = new ClusterIndirectDispatchParameters(RequireDispatchIndirectLayout(),
                     GraphData.Resources.ShadeIndirectArgs, checked((ulong)bin * ClusterIndirectAbi.DispatchBytes));
                 GraphPassId pass = edit.AddComputeFramePass($"Evaluate Cluster {(requests ? "shadow requests" : "color")} bin {bin}",
-                    PassQueueSelection.AnyOfType(QueueType.Graphics), dispatch, new PassOptions(RepeatCommands: true),
+                    ShadeQueueSelection, dispatch, new PassOptions(RepeatCommands: true),
                     value.Stage.Pipeline.Pipeline, VariableLayoutReflection.Null, default,
                     static (ref PassDefinition access, ref ClusterIndirectDispatchParameters data) =>
                         _ = access.Read(data.Arguments, new BufferRange(data.Offset, ClusterIndirectAbi.DispatchBytes),
@@ -126,16 +131,16 @@ public sealed partial class ClusterPipelineSystem
         ShadingBin = bin,
         ShadeBinCount = stages.BinCount,
         MaterialSlotCapacity = checked((uint)(stages.BinIndices.Length / sizeof(uint))),
-        ViewCount = GraphData.Resources.ViewCount,
+        ViewCount = GraphData.Resources.LayerCount,
         VisibilityDepth = (uint)stages.GetBin(bin).VisibilityDepth,
     };
 
     private static uint CalculateShadeBinItemCapacity(in FrameResources frame)
     {
-        ulong itemCapacity = Math.Min((ulong)frame.Width * (ulong)frame.Height * frame.ViewCount, uint.MaxValue);
+        ulong itemCapacity = Math.Min((ulong)frame.Width * (ulong)frame.Height * frame.LayerCount, uint.MaxValue);
         ulong quadWidth = ((ulong)frame.Width + 1u) / 2u;
         ulong quadHeight = ((ulong)frame.Height + 1u) / 2u;
-        ulong quads = quadWidth * quadHeight * frame.ViewCount;
+        ulong quads = quadWidth * quadHeight * frame.LayerCount;
         // Reserve a disjoint worst-case range per bin only when it fits the existing
         // pixel buffer. Larger bin sets retain compact count/reserve/scatter storage.
         return quads != 0 && quads <= uint.MaxValue && frame.ShadeBinCount <= itemCapacity / quads
@@ -152,7 +157,7 @@ public sealed partial class ClusterPipelineSystem
             ShadeBinCount = GraphData.Resources.ShadeBinCount,
             SlotCapacity = GraphData.Resources.SlotCapacity,
             BinItemCapacity = CalculateShadeBinItemCapacity(GraphData.Resources),
-            ViewCount = GraphData.Resources.ViewCount,
+            ViewCount = GraphData.Resources.LayerCount,
         };
         UpdateParameters(ref graph, GraphData.ShadeBinUniforms, MemoryMarshal.AsBytes(value));
     }

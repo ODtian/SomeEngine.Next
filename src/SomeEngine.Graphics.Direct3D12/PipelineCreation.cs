@@ -866,7 +866,7 @@ internal sealed unsafe partial class D3D12Backend
         internal D3D12PipelineCompiler(D3D12Device device)
         {
             int workerCount = Math.Clamp(
-                (Environment.ProcessorCount + 3) / 4,
+                Environment.ProcessorCount,
                 1,
                 MaximumWorkerCount);
             _workers = new Thread[workerCount];

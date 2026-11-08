@@ -9,7 +9,7 @@ namespace SomeEngine.Render.Cluster.Pipeline;
 /// </summary>
 public readonly record struct ClusterPipelineOutputDescription
 {
-    public ClusterPipelineOutputDescription(int width, int height, uint viewCount)
+    public ClusterPipelineOutputDescription(int width, int height, uint viewCount, uint? layerCount = null)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(height);
@@ -17,12 +17,15 @@ public readonly record struct ClusterPipelineOutputDescription
         // DrawRequest has a 20-bit view identity, with one bit selecting target views.
         if (viewCount > ClusterRenderContext.MaximumViewCount)
             throw new ArgumentOutOfRangeException(nameof(viewCount), "Primary view identities exceed the Cluster draw ABI.");
-        if (checked((ulong)width * (ulong)height * viewCount) > uint.MaxValue)
+        uint layers = layerCount ?? viewCount;
+        ArgumentOutOfRangeException.ThrowIfZero(layers, nameof(layerCount));
+        if (checked((ulong)width * (ulong)height * layers) > uint.MaxValue)
             throw new ArgumentOutOfRangeException(nameof(viewCount),
-                "The combined view pixels must fit the 32-bit shading counters and offsets.");
+                "The combined output pixels must fit the 32-bit shading counters and offsets.");
         Width = width;
         Height = height;
         ViewCount = viewCount;
+        LayerCount = layers;
     }
 
     public int Width { get; }
@@ -30,6 +33,8 @@ public readonly record struct ClusterPipelineOutputDescription
     public int Height { get; }
 
     public uint ViewCount { get; }
+
+    public uint LayerCount { get; }
 }
 
 /// <summary>
@@ -50,7 +55,7 @@ public readonly record struct ClusterPipelineOutputs(
     ClusterGeometryCapabilities Geometry,
     int Width,
     int Height,
-    uint ViewCount)
+    uint LayerCount)
 {
     public GraphTextureId CurrentHiZ { get; init; }
     public ClusterTransparencyGeometry? Transparency { get; init; }
@@ -63,7 +68,7 @@ public readonly record struct ClusterPipelineOutputs(
         Geometry is { IsValid: true } &&
         Width > 0 &&
         Height > 0 &&
-        ViewCount > 0;
+        LayerCount > 0;
 }
 
 /// <summary>Projected transparent geometry, source data and continuous view-cell references.</summary>
@@ -108,7 +113,7 @@ public readonly record struct ClusterRenderContext(
 {
     public const uint MaximumViewCount = 1u << 19;
     public const uint TargetViewSizeInBytes = 96;
-    public const int ViewSizeInBytes = 816;
+    public const int ViewSizeInBytes = 624;
 
     /// <summary>Distributes each compressed 32-view batch across instance and view threads.</summary>
     public static uint GetViewWorkGroupCount(uint viewCount)

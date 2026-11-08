@@ -14,6 +14,8 @@ public static class SceneSerialization
     public static SerializationRegistry CreateRegistry() => new SerializationRegistry()
         .Register<WorldTransform, TransformCodec>(Key(nameof(WorldTransform), "rotation:4f;position:3f;stretch:3f;scale:f"))
         .RegisterHierarchyDomain<DefaultHierarchyDomain>()
+        .Register<InstanceSet, InstanceSetCodec>(Key(nameof(InstanceSet), "value:u32"))
+        .RegisterBuffer<CameraInstanceSet, CameraInstanceSetCodec>(Key(nameof(CameraInstanceSet), "value:u32"))
         .Register<MeshSource, MeshSourceCodec>(Key(nameof(MeshSource), "mesh:external;bounds:f"))
         .Register<SkeletonSource, SkeletonSourceCodec>(Key(nameof(SkeletonSource), "skeleton:external"))
         .Register<MeshMotion, MotionCodec>(Key(nameof(MeshMotion), "amplitude:3f;seed:u32"))
@@ -43,6 +45,16 @@ public static class SceneSerialization
             Quaternion rotation = new(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
             value = new() { Qvvs = new TransformQvvs(ReadVector(ref reader), rotation) { Stretch = ReadVector(ref reader), Scale = reader.ReadSingle() } };
         }
+    }
+    private struct InstanceSetCodec : ICanonicalComponentCodec<InstanceSet>
+    {
+        public void Write(ref DataWriter writer, in InstanceSet value) => writer.WriteUInt32(value.Value);
+        public void Read(ref DataReader reader, out InstanceSet value) => value = new(reader.ReadUInt32());
+    }
+    private struct CameraInstanceSetCodec : ICanonicalComponentCodec<CameraInstanceSet>
+    {
+        public void Write(ref DataWriter writer, in CameraInstanceSet value) => writer.WriteUInt32(value.Value);
+        public void Read(ref DataReader reader, out CameraInstanceSet value) => value = new(reader.ReadUInt32());
     }
     private struct MeshSourceCodec : ICanonicalComponentCodec<MeshSource>
     {

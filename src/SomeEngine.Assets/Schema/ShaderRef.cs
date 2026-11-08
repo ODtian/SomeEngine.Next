@@ -31,13 +31,12 @@ public sealed partial record ShaderRef
         IGlobalSession slang, SessionDesc settings,
         CancellationToken cancellationToken = default)
     {
-        var shaders = new Dictionary<AssetId<ShaderAsset>, Shader>();
-        foreach (Guid id in references.Where(static id => id != Guid.Empty).Distinct())
-        {
-            var reference = new AssetId<ShaderAsset>(id);
-            shaders.Add(reference, await ShaderAsset.GetAsync(files, reference, values, slang, settings,
-                cancellationToken).ConfigureAwait(false));
-        }
+        AssetId<ShaderAsset>[] ids = references.Where(static id => id != Guid.Empty).Distinct()
+            .Select(static id => new AssetId<ShaderAsset>(id)).ToArray();
+        Shader[] loaded = await Task.WhenAll(ids.Select(id =>
+            ShaderAsset.GetAsync(files, id, values, slang, settings, cancellationToken).AsTask())).ConfigureAwait(false);
+        var shaders = new Dictionary<AssetId<ShaderAsset>, Shader>(ids.Length);
+        for (int index = 0; index < ids.Length; index++) shaders.Add(ids[index], loaded[index]);
         cancellationToken.ThrowIfCancellationRequested();
         return shaders;
     }

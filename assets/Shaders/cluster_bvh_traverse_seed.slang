@@ -1,4 +1,5 @@
 #include "cluster_structures.slang"
+#include "cluster_scene_groups.slang"
 #include "cluster_instance_properties.slang"
 #include "cluster_view_access.slang"
 #include "cluster_bvh_cull_common.slang"
@@ -29,8 +30,6 @@ RWByteAddressBuffer DeferredWorkDispatchArgs;
 #include "cluster_target_policy_contract.slang"
 StructuredBuffer<ClusterViewUniforms> PolicyClusterViews;
 
-groupshared float3 ClusterSceneWorldMin[64];
-groupshared float3 ClusterSceneWorldMax[64];
 groupshared uint ClusterSceneActiveViewMask;
 groupshared uint ClusterSceneOccludedViewMask;
 groupshared uint ClusterRootActiveViews[64];
@@ -98,7 +97,7 @@ uint ClusterSeedBoundsState(
         worldMin,
         worldMax,
         true,
-        viewIndex,
+        view.TargetViewIndex,
         view,
         unusedMinUv,
         unusedMaxUv);
@@ -108,6 +107,16 @@ uint ClusterSeedBoundsState(
 
 #include "cluster_raster_target_filter.slang"
 StructuredBuffer<uint> SceneInstances;
+StructuredBuffer<ClusterSceneInstanceGroup> SceneGroups;
+StructuredBuffer<uint> SceneSelections;
+
+bool ClusterSceneSetSelected(ClusterViewUniforms view, uint set)
+{
+    if (view.InstanceSelectionCount == 0u) return true;
+    for (uint index = 0u; index < view.InstanceSelectionCount; index++)
+        if (SceneSelections[view.InstanceSelectionOffset + index] == set) return true;
+    return false;
+}
 StructuredBuffer<float4> SceneChunks;
 StructuredBuffer<float4> InstanceWorldBounds;
 StructuredBuffer<uint> MaterialBounds;
@@ -132,62 +141,47 @@ void SeedHierarchyRoots(
     uint instanceTile = viewGroup % 16u;
     uint instanceInGroup = groupThreadIndex / viewLanes;
     uint viewLane = groupThreadIndex % viewLanes;
-    uint sortedIndex = groupID.x * 64u + instanceTile * (64u / viewLanes) + instanceInGroup;
-    uint firstViewIndex = ClusterSeedViewIndex(viewSlotBase);
-    bool valid = activeViewCount != 0u &&
-        sortedIndex < LoadClusterCullView(Views, PolicyClusterViews, firstViewIndex).InstanceCount;
-    uint activeGroupViews = activeViewCount == 32u ? 0xFFFFFFFFu : (1u << activeViewCount) - 1u;
+    ClusterSceneInstanceGroup instances = SceneGroups[groupID.x];
+    uint localIndex = instanceTile * (64u / viewLanes) + instanceInGroup;
+    uint sortedIndex = instances.FirstInstance + localIndex;
+    bool valid = localIndex < instances.InstanceCount;
+    uint activeGroupViews = 0u;
     uint occludedGroupViews = 0u;
-    if (useInstanceGroups)
+    if (groupThreadIndex == 0u)
     {
-        if (groupThreadIndex == 0u)
-        {
-            ClusterSceneWorldMin[0] = SceneChunks[groupID.x * 2u].xyz;
-            ClusterSceneWorldMax[0] = SceneChunks[groupID.x * 2u + 1u].xyz;
-            ClusterSceneActiveViewMask = 0u;
-            ClusterSceneOccludedViewMask = 0u;
-        }
-        GroupMemoryBarrierWithGroupSync();
-
-        if (groupThreadIndex < activeViewCount &&
-            all(ClusterSceneWorldMin[0] <= ClusterSceneWorldMax[0]))
-        {
-            uint viewSlot = viewSlotBase + groupThreadIndex;
-            uint viewIndex = ClusterSeedViewIndex(viewSlot);
-            ClusterViewUniforms view = LoadClusterCullView(Views, PolicyClusterViews, viewIndex);
-            if (SceneChunks[groupID.x * 2u].w == 0.0) view.CullingEnabled = 0u;
-            bool active = true;
-            ClusterProjectedBounds sceneBounds;
-            bool outside = ProjectWorldAabb(
-                ClusterSceneWorldMin[0],
-                ClusterSceneWorldMax[0],
-                view,
-                sceneBounds);
-            // The chunk holds both world and camera-deformed geometry; per-instance
-            // tests below select the corresponding projection.
-            active = active && (view.FirstPersonTransformEnabled != 0u || view.CullingEnabled == 0u || !outside);
-            uint boundsState = view.FirstPersonTransformEnabled != 0u ? 1u : active
-                ? ClusterSeedBoundsState(
-                    ClusterSceneWorldMin[0],
-                    ClusterSceneWorldMax[0],
-                    sceneBounds,
-                    viewIndex,
-                    view)
-                : 0u;
-            if (boundsState != 0u)
-                InterlockedOr(ClusterSceneActiveViewMask, 1u << groupThreadIndex);
-            if (boundsState == 2u)
-                InterlockedOr(ClusterSceneOccludedViewMask, 1u << groupThreadIndex);
-        }
-        GroupMemoryBarrierWithGroupSync();
-
-        activeGroupViews = ClusterSceneActiveViewMask;
-        occludedGroupViews = ClusterSceneOccludedViewMask;
+        ClusterSceneActiveViewMask = 0u;
+        ClusterSceneOccludedViewMask = 0u;
     }
+    GroupMemoryBarrierWithGroupSync();
+    if (groupThreadIndex < activeViewCount)
+    {
+        uint viewIndex = ClusterSeedViewIndex(viewSlotBase + groupThreadIndex);
+        ClusterViewUniforms view = LoadClusterCullView(Views, PolicyClusterViews, viewIndex);
+        uint boundsState = 0u;
+        if (ClusterSceneSetSelected(view, instances.InstanceSet))
+        {
+            boundsState = 1u;
+            if (useInstanceGroups)
+            {
+                float3 worldMin = SceneChunks[groupID.x * 2u].xyz;
+                float3 worldMax = SceneChunks[groupID.x * 2u + 1u].xyz;
+                if (SceneChunks[groupID.x * 2u].w == 0.0) view.CullingEnabled = 0u;
+                ClusterProjectedBounds sceneBounds;
+                bool outside = ProjectWorldAabb(worldMin, worldMax, view, sceneBounds);
+                boundsState = view.CullingEnabled == 0u || !outside
+                    ? ClusterSeedBoundsState(worldMin, worldMax, sceneBounds, viewIndex, view) : 0u;
+            }
+        }
+        if (boundsState != 0u) InterlockedOr(ClusterSceneActiveViewMask, 1u << groupThreadIndex);
+        if (boundsState == 2u) InterlockedOr(ClusterSceneOccludedViewMask, 1u << groupThreadIndex);
+    }
+    GroupMemoryBarrierWithGroupSync();
+    activeGroupViews = ClusterSceneActiveViewMask;
+    occludedGroupViews = ClusterSceneOccludedViewMask;
 
     if (activeGroupViews == 0u)
         return;
-    if (valid) instanceID = useInstanceGroups ? SceneInstances[sortedIndex] : sortedIndex;
+    if (valid) instanceID = SceneInstances[sortedIndex];
     uint rootIndex = valid
         ? LoadClusterBvhRoot(
             InstanceData,
@@ -228,10 +222,8 @@ void SeedHierarchyRoots(
             ClusterViewUniforms view = LoadClusterCullView(Views, PolicyClusterViews, viewIndex);
             if (instanceID >= view.InstanceCount)
                 continue;
-            if (!IsInstanceVisibleToView(LoadInstanceFirstPerson(InstanceData, InstanceProperties, instanceID), view))
-                continue;
             view = ApplyClusterInstanceBounds(MaterialBounds, InstanceData, InstanceProperties, instanceID, view);
-            view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, instanceID, view);
+
             if (view.TargetPolicy != 0u && !ClusterTargetPolicyWorldDepthAccepts(
                     instanceWorldMin, instanceWorldMax, view,
                     LoadTargetDepthCacheClass(instanceID)))

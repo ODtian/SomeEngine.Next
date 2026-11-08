@@ -49,7 +49,7 @@ VisibilityPixelResult EvaluateHardwareRasterPixel<TVertex, TVisibility>(
     where TVisibility : IVisibilityEvaluate<TVertex>
 {
     VisibilityPixelInput pixelInput;
-    pixelInput.PixelCoord = uint3(uint2(input.Pos.xy), input.ViewIndex);
+    pixelInput.PixelCoord = uint3(uint2(input.Pos.xy), view.TargetViewIndex);
     float rasterDepth = ReadClusterRasterDepth(input.Pos, input.ClipDepth, view);
     pixelInput.Depth = ClusterRasterMaterialDepth(rasterDepth, view.TargetPolicy);
     pixelInput.EncodedDepth = EncodeClusterRasterDepth(rasterDepth, view.TargetPolicy);
@@ -222,7 +222,7 @@ ClusterRasterPixelInput<TVisibility.Varying> BuildVisBufferVertex<TVE, TVisibili
         HardwareRasterViews,
         HardwareRasterPolicyViews,
         viewIndex);
-    view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, realInstanceID, view);
+
     float3 position = evaluator.getPosition(vertex);
     output.Pos = mul(
         float4(ClusterPositionForView(position, view), 1.0),
@@ -291,7 +291,7 @@ void BuildClusterMesh<TVE, TVisibility, let VertexCapacity : int, let TriangleCa
     if (!validBatch) return;
     uint viewIndex = DrawRequestViewIndex(request);
     ClusterViewUniforms view = LoadClusterView(HardwareRasterViews, HardwareRasterPolicyViews, viewIndex);
-    view = ApplyFirstPersonViewTransform(InstanceData, InstanceProperties, request.InstanceID, view);
+
     RenderInstanceTransform transform = GetCurrentInstanceTransform(request.InstanceID);
     float2 targetWindowSize = 0.0.xx;
     if (view.TargetPolicy != 0u)

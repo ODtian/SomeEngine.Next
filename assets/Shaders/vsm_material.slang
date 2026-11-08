@@ -26,7 +26,7 @@ struct VirtualShadowSamplingUniforms
     float MaxFilterRadiusTexels;
     float NormalBias;
     uint FrameIndex;
-    uint FirstPersonViewOffset;
+    uint SamplingPadding;
     VirtualShadowReceiverProjection ReceiverProjection;
     VirtualShadowRaySettings DirectionalRays;
     VirtualShadowRaySettings LocalRays;

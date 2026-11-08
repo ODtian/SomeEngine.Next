@@ -95,7 +95,6 @@ static const uint VSM_VIEW_SINGLE_PAGE = 1u << 7u;
 static const uint VSM_VIEW_DISTANT_LIGHT = 1u << 8u;
 static const uint VSM_VIEW_CACHED_DISTANT_LIGHT = 1u << 9u;
 static const uint VSM_VIEW_PREFILTERED_DISTANT = 1u << 10u;
-static const uint VSM_VIEW_FIRST_PERSON_SHADOW = 1u << 11u;
 static const uint VSM_PAGE_REQUEST_DETAIL = 1u << 0u;
 static const uint VSM_PAGE_REQUEST_COARSE = 1u << 1u;
 static const uint VSM_PAGE_REQUEST_SECONDARY = 1u << 2u;
