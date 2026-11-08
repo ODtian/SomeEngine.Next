@@ -3,6 +3,7 @@ using System.Numerics;
 using System.Runtime.InteropServices;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Geometry.Cluster;
+using SomeEngine.Job;
 using BuilderMeshlet = SomeEngine.Geometry.Cluster.ClusterMeshBuilder.ClusterMeshlet;
 
 namespace SomeEngine.Assets.Importers;
@@ -99,12 +100,11 @@ public static partial class ClusterBuilder
                 { ClusterSpatial = true, SimplifyPermissive = false, SimplifyFallbackSloppy = false },
                 partitionPositions, CollectionsMarshal.AsSpan(workingTriangles), workingSources.Select(source => (uint)source.Region).ToArray(),
                 meshlets, indices, CollectionsMarshal.AsSpan(workingLocks), ReadSimplificationAttributes(vertices, workingIdentities));
-            foreach (BuilderMeshlet meshlet in meshlets)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                clusters.Add(EncodeGeometry(meshlet, CollectionsMarshal.AsSpan(indices), workingIdentities,
-                    workingSources, partitionPositions, (ClusterDeform)partition, groupOffset));
-            }
+            var encoded = new ClusterGeometry[meshlets.Count];
+            JobSystem.ExecuteParallel(new EncodeGeometryClusters(meshlets, indices, workingIdentities,
+                workingSources, partitionPositions, (ClusterDeform)partition, groupOffset, cancellationToken, encoded),
+                encoded.Length, 16);
+            clusters.AddRange(encoded);
             groupOffset += meshlets.Max(meshlet => Math.Max(meshlet.GroupId, meshlet.ParentGroupId)) + 1;
         }
         return new ClusterGeometryBlock
@@ -219,6 +219,18 @@ public static partial class ClusterBuilder
     }
 
 
+
+    private readonly record struct EncodeGeometryClusters(List<BuilderMeshlet> Meshlets, List<uint> Indices,
+        List<uint> Identities, List<ClusterTriangleSource> Sources, Vector3[] Positions, ClusterDeform Deform,
+        int GroupOffset, CancellationToken Cancellation, ClusterGeometry[] Results) : IJobParallelFor
+    {
+        public void Execute(int index)
+        {
+            Cancellation.ThrowIfCancellationRequested();
+            Results[index] = EncodeGeometry(Meshlets[index], CollectionsMarshal.AsSpan(Indices), Identities,
+                Sources, Positions, Deform, GroupOffset);
+        }
+    }
 
     private readonly record struct ClusterTriangleSource(int Material, int Region);
 

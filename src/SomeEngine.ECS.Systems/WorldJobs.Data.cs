@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using SomeEngine.Job;
 
 namespace SomeEngine.ECS.Systems;
@@ -27,6 +28,13 @@ public sealed partial class WorldJobs
 
     /// <summary>Returns the scheduler selected for this World's component jobs.</summary>
     public static Scheduler GetScheduler(World world) => WorldStorageJobResources.RequireJobs(world).Scheduler;
+
+    /// <summary>Finds this World's selected scheduler so synchronous callers can retain direct execution for a synchronous World.</summary>
+    public static bool TryGetScheduler(World world, [NotNullWhen(true)] out Scheduler? scheduler)
+    {
+        scheduler = (world.Execution as WorldJobs)?.Scheduler;
+        return scheduler is not null;
+    }
 
     /// <summary>Joins stage completions on the scheduler selected by this World.</summary>
     public static JobHandle CombineDependencies(World world, ReadOnlySpan<JobHandle> dependencies) =>

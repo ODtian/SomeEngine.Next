@@ -20,7 +20,9 @@ has begun.
 compile-required detection or specialization. Basic asynchronous creation is a core operation and is
 not conditional on obtaining that capability.
 
-D3D12 uses a per-Device bounded queue of 256 requests and one to four background workers. Its
+D3D12 keeps accepted requests on the Device and executes compilation through the common Job scheduler.
+The Device queue, shared category and closing order are described in
+[D3D12 asynchronous creation](../Backends/D3D12/Production-allocation-asynchronous-creation-and-diagnostics.md). Its
 `D3D12Diagnostics.PipelineCreation` snapshot reports accepted/queued/running/ready/failed/Device-Lost
 counts, cache lookups, Queue wait, native creation duration and family counts.
 

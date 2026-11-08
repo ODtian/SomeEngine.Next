@@ -22,6 +22,10 @@ public sealed partial class Scheduler : IDisposable
     private int _managedPayloadPolicy;
     private static long s_nextGeneration;
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Type, WorkStream> _streams = new();
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<Type, object> _parallelBatchCosts = new();
+
+    private ParallelBatchSizer<T> GetParallelBatchSizer<T>() where T : struct, IJobParallelFor =>
+        (ParallelBatchSizer<T>)_parallelBatchCosts.GetOrAdd(typeof(T), static _ => new ParallelBatchSizer<T>());
 
     [ThreadStatic]
     private static Scheduler? s_executing;
@@ -33,8 +37,9 @@ public sealed partial class Scheduler : IDisposable
     {
     }
 
-    private WorkStream<TItem> GetWorkStream<TItem>()
+    private WorkStream<TItem> GetWorkStream<TItem>(JobCategory? category = null)
         where TItem : struct, IWorkStreamItem<TItem> =>
+        category is not null ? category.GetWorkStream<TItem>() :
         (WorkStream<TItem>)_streams.GetOrAdd(typeof(TItem), static _ => new WorkStream<TItem>());
 
     [ThreadStatic]
@@ -102,7 +107,8 @@ public sealed partial class Scheduler : IDisposable
         }
     }
 
-    internal int WorkerCount => _config.WorkerCount;
+    /// <summary>The number of worker threads configured for this scheduler.</summary>
+    public int WorkerCount => _config.WorkerCount;
 
     public JobRuntimeStats GetStats()
     {
@@ -185,9 +191,19 @@ public sealed partial class Scheduler : IDisposable
         JobHandle dependency)
         where T : struct, IJob
     {
+        return ScheduleFinally(job, ReadOnlySpan<JobResourceAccess>.Empty, options, dependency);
+    }
+
+    public JobHandle ScheduleFinally<T>(
+        in T job,
+        ReadOnlySpan<JobResourceAccess> accesses,
+        JobScheduleOptions options,
+        JobHandle dependency)
+        where T : struct, IJob
+    {
         return ScheduleCore(
             job,
-            ReadOnlySpan<JobResourceAccess>.Empty,
+            accesses,
             options,
             dependency,
             ignoreExplicitDependencyFault: true);
@@ -204,7 +220,9 @@ public sealed partial class Scheduler : IDisposable
         using Submission submissionScope = EnterSubmission();
         ValidateDependency(dependency);
         JobPayloadLane lane = BeginSchedule<T>(options);
-        JobSubmissionReservation submission = JobSubmissionTracker.Begin(this, accesses);
+        options = ResolveCategoryOptions(options);
+        JobSubmissionReservation submission = default;
+        bool ownsCategoryRequest = false;
         bool hasResourceAccesses = accesses.Length != 0;
         bool hasScheduleDependencies = dependency.Index != 0 || hasResourceAccesses;
         bool deferResourceActivation =
@@ -217,6 +235,8 @@ public sealed partial class Scheduler : IDisposable
         WorkBatch work = default;
         try
         {
+            ownsCategoryRequest = StartCategoryRequest(options.Category);
+            submission = JobSubmissionTracker.Begin(this, accesses);
             state = CreateState(
                 pendingWork: 1,
                 pendingDependencies: 0,
@@ -238,6 +258,7 @@ public sealed partial class Scheduler : IDisposable
                 deferResourceActivation,
                 ignoreExplicitDependencyFault,
                 ref work);
+            BindCategoryRequest(state, options.Category, ownsCategoryRequest);
             _counters.Scheduled(lane);
             return state;
         }
@@ -252,10 +273,16 @@ public sealed partial class Scheduler : IDisposable
             finally
             {
                 submission.Rollback();
+                if (ownsCategoryRequest)
+                    options.Category!.CompleteRequest();
             }
             throw;
         }
-        finally { submission.Release(); }
+        finally
+        {
+            _resources.ReleaseReservationReference(reservation);
+            submission.Release();
+        }
     }
 
     private JobPayloadLane BeginSchedule<T>(JobScheduleOptions options)
@@ -302,7 +329,7 @@ public sealed partial class Scheduler : IDisposable
         ref WorkBatch work)
         where T : struct, IJob
     {
-        WorkStream<ScheduledJob<T>> stream = GetWorkStream<ScheduledJob<T>>();
+        WorkStream<ScheduledJob<T>> stream = GetWorkStream<ScheduledJob<T>>(options.Category);
         var scheduled = new ScheduledJob<T>(job, state);
         if (!hasScheduleDependencies)
         {
@@ -318,7 +345,8 @@ public sealed partial class Scheduler : IDisposable
                 state,
                 dependency,
                 reservation,
-                work);
+                work,
+                ignoreExplicitDependencyFault);
         }
         else if (RegisterScheduleDependencies(
                      state,
@@ -406,21 +434,26 @@ public sealed partial class Scheduler : IDisposable
         var lane = BeginParallelSchedule<T>(options, batchSize);
         if (length <= 0)
             return dependency;
+        options = ResolveCategoryOptions(options);
 
         bool automaticBatch = batchSize == JobScheduleOptions.AutomaticBatchSize;
+        ParallelBatchSizer<T>? batchSizer = automaticBatch ? GetParallelBatchSizer<T>() : null;
         int resolvedBatchSize = automaticBatch
-            ? ParallelBatchSizer<T>.Resolve(
+            ? batchSizer!.Resolve(
                 length,
                 _config.WorkerCount,
                 _config.AutoBatchTargetMicroseconds,
                 _config.AutoBatchMaxTilesPerWorker)
             : batchSize;
 
-        JobSubmissionReservation submission = JobSubmissionTracker.Begin(this, accesses);
+        JobSubmissionReservation submission = default;
+        bool ownsCategoryRequest = false;
 
         int batchCount = CalculateParallelBatchCount(length, resolvedBatchSize);
         _workQueue.EnsureItemCapacity(batchCount);
         int tokenCount = CalculateParallelTokenCount(batchCount);
+        if (options.Category is { } category)
+            tokenCount = Math.Min(tokenCount, category.Config.MaxExecuting);
         bool hasResourceAccesses = accesses.Length != 0;
         bool hasScheduleDependencies = dependency.Index != 0 || hasResourceAccesses;
         bool deferResourceActivation =
@@ -437,8 +470,10 @@ public sealed partial class Scheduler : IDisposable
         int preparedSlots = 0;
         try
         {
+            ownsCategoryRequest = StartCategoryRequest(options.Category);
+            submission = JobSubmissionTracker.Begin(this, accesses);
             state = CreateState(
-                batchCount,
+                batchCount + tokenCount,
                 pendingDependencies: 0,
                 scheduleDependenciesSealed: !hasScheduleDependencies);
             if (deferResourceActivation)
@@ -458,7 +493,7 @@ public sealed partial class Scheduler : IDisposable
                 resolvedBatchSize,
                 batchCount,
                 tokenCount,
-                automaticBatch,
+                batchSizer,
                 hasScheduleDependencies,
                 deferResourceActivation,
                 ref work,
@@ -466,6 +501,7 @@ public sealed partial class Scheduler : IDisposable
                 ref stream,
                 ref group,
                 ref preparedSlots);
+            BindCategoryRequest(state, options.Category, ownsCategoryRequest);
             _counters.Scheduled(lane);
             return state;
         }
@@ -482,10 +518,16 @@ public sealed partial class Scheduler : IDisposable
             finally
             {
                 submission.Rollback();
+                if (ownsCategoryRequest)
+                    options.Category!.CompleteRequest();
             }
             throw;
         }
-        finally { submission.Release(); }
+        finally
+        {
+            _resources.ReleaseReservationReference(reservation);
+            submission.Release();
+        }
     }
 
     private JobPayloadLane BeginParallelSchedule<T>(JobScheduleOptions options, int batchSize)
@@ -513,7 +555,7 @@ public sealed partial class Scheduler : IDisposable
         int batchSize,
         int batchCount,
         int tokenCount,
-        bool automaticBatch,
+        ParallelBatchSizer<T>? batchSizer,
         bool hasScheduleDependencies,
         bool deferResourceActivation,
         ref WorkBatch work,
@@ -523,13 +565,13 @@ public sealed partial class Scheduler : IDisposable
         ref int preparedSlots)
         where T : struct, IJobParallelFor
     {
-        stream = GetWorkStream<ScheduledParallelToken<T>>();
+        stream = GetWorkStream<ScheduledParallelToken<T>>(options.Category);
         group = ParallelJobGroup<T>.Rent(
             job,
             length,
             batchSize,
             batchCount,
-            measureCost: automaticBatch);
+            batchSizer);
         ScheduledParallelTokenSource<T> source = new(group, state);
         if (!hasScheduleDependencies)
         {

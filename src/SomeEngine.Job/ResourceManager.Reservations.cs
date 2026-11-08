@@ -9,10 +9,15 @@ internal sealed partial class ResourceManager
         if (accesses.Length == 0)
             return ResourceAccessReservation.Empty;
 
-        var reserved = new ReservedResourceAccess[accesses.Length];
-        int count = 0;
         lock (_sync)
         {
+            ResourceAccessReservationData data = _freeReservations.Count == 0
+                ? new ResourceAccessReservationData() : _freeReservations.Pop();
+            if (data.Accesses.Length < accesses.Length)
+                data.Accesses = new ReservedResourceAccess[accesses.Length];
+            data.JobType = jobType;
+            data.References = 1;
+            data.Status = ResourceReservationStatus.Reserved;
             try
             {
                 foreach (JobResourceAccess access in accesses)
@@ -22,21 +27,37 @@ internal sealed partial class ResourceManager
                         continue;
 
                     state.PendingReservations = checked(state.PendingReservations + 1);
-                    reserved[count++] = new ReservedResourceAccess(access, state);
+                    data.Accesses[data.Count++] = new ReservedResourceAccess(access, state);
                 }
             }
             catch
             {
-                ReleaseReservationCounts(reserved, count);
+                ConsumeReservation(data, ResourceReservationStatus.Cancelled);
+                ReleaseReservationReference(new(data));
                 throw;
             }
-        }
-
-        if (count == 0)
+            if (data.Count != 0)
+                return new(data);
+            ReleaseReservationReference(new(data));
             return ResourceAccessReservation.Empty;
+        }
+    }
 
-        return new ResourceAccessReservation(
-            new ResourceAccessReservationData(reserved, count, jobType));
+    internal static void AddReservationReference(ResourceAccessReservation reservation)
+    {
+        if (reservation.Data is { } data)
+            Interlocked.Increment(ref data.References);
+    }
+
+    internal void ReleaseReservationReference(ResourceAccessReservation reservation)
+    {
+        if (reservation.Data is not { } data || Interlocked.Decrement(ref data.References) != 0)
+            return;
+        lock (_sync)
+        {
+            data.JobType = null!;
+            _freeReservations.Push(data);
+        }
     }
 
     internal ResourceAccessRegistration ActivateReservation(
@@ -131,10 +152,12 @@ internal sealed partial class ResourceManager
         {
             Access = access;
             State = state;
+            Container = state.ContainerReference?.Target;
         }
 
         internal JobResourceAccess Access { get; }
 
         internal ResourceState State { get; }
+        internal object? Container { get; }
     }
 }

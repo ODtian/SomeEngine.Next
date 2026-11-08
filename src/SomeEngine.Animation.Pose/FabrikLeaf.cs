@@ -39,7 +39,7 @@ public readonly struct FabrikLeaf : IAnimationLeaf<FabrikParameters>
             Source = PoseAnimation.Resolve(world, target, parameters.Source),
             Output = PoseAnimation.Resolve(world, target, parameters.Output),
             Target = skeleton.ModelPose.GetBone(skeleton.Skeleton.InheritedBoneCount + parameters.Chain.Bones[^1]).Transform.Translation,
-            Samples = new(parameters.Chain, skeleton),
+            Samples = new(PoseAnimation.GetScheduler(world), parameters.Chain, skeleton),
         };
         short[] bones = parameters.Chain.Bones.ToArray().Select(static bone => (short)bone).ToArray();
         instance.Node = PoseAnimation.RegisterNode(world, animation, instance.Output, [instance.Source], in placement, bones);

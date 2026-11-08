@@ -22,21 +22,49 @@ public readonly struct JobHandle
         Scheduler?.Complete(this);
     }
 
+    /// <summary>Completes the work and its descendants, with caller execution on a zero-worker coordinating thread.</summary>
+    /// <remarks>Job callbacks and schedulers with workers continue through asynchronous completion notifications.</remarks>
+    public async ValueTask CompleteAsync()
+    {
+        if (Scheduler is { WorkerCount: 0 } && !JobExecutionContext.IsActive)
+            Complete();
+        else
+            await WaitAsync().ConfigureAwait(false);
+    }
+
+    /// <summary>Cancels this wait while the shared work and its resource use continue to completion.</summary>
+    public ValueTask WaitAsync(CancellationToken cancellationToken) => cancellationToken.CanBeCanceled
+        ? new ValueTask(WaitAsync().AsTask().WaitAsync(cancellationToken))
+        : WaitAsync();
+
     /// <summary>Waits for the work and its descendants, propagating their completion result.</summary>
     public ValueTask WaitAsync()
     {
-        if (IsCompleted)
+        JobHandleAwaiter completion = this.GetAwaiter();
+        if (completion.IsCompleted)
         {
-            Complete();
-            return ValueTask.CompletedTask;
+            try
+            {
+                completion.GetResult();
+                return ValueTask.CompletedTask;
+            }
+            catch (OperationCanceledException canceled)
+            {
+                CancellationToken token = canceled.CancellationToken;
+                return ValueTask.FromCanceled(token.IsCancellationRequested ? token : new CancellationToken(true));
+            }
+            catch (Exception error)
+            {
+                return ValueTask.FromException(error);
+            }
         }
         var result = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        JobSystem.OnCompleted(this, static (handle, state) =>
+        completion.OnCompleted(() =>
         {
-            var result = (TaskCompletionSource)state!;
-            try { handle.Complete(); result.SetResult(); }
+            try { completion.GetResult(); result.SetResult(); }
+            catch (OperationCanceledException canceled) { result.SetCanceled(canceled.CancellationToken); }
             catch (Exception error) { result.SetException(error); }
-        }, result);
+        });
         return new ValueTask(result.Task);
     }
 }

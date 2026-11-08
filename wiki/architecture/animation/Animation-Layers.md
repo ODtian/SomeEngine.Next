@@ -14,7 +14,7 @@ for 每个来源（层、Source.Index、Source.Generation、Output）:
 
 ## 固定关系与保持值
 
-目标上的 `PropertySource<T>` 是固定来源关系的主要持有者，记录通道、层、动画实体与输出编号，并保存供合成使用的派生输出。`Declare`、图安装及公开 `RefreshSources<T>(world,target)` 在关系变化时排序，解析 BaseValue 索引、遮罩成员和直接/合成方式；轨道保存来源索引。
+目标上的 `PropertySource<T>` 是固定来源关系的主要持有者，记录通道、层、动画实体与输出编号，并保存供合成使用的派生输出。`Declare`、图安装及公开 `RefreshSources<T>(world,target)` 在关系变化时排序，解析 BaseValue 索引、遮罩成员和直接/合成方式，并在 `PropertyChannelRange<T>` 保存每个通道的连续来源起点与长度；轨道保存来源索引。
 
 持续活动轨道逐帧更新自己的输出记录。完成后，来源继续持有最终值与算法历史；基准、层权重、遮罩或来源关系变化时，该输出参加重新合成。相同输入的保持值保留目标组件的呈现写版本。By 的派生输出保存位移参考值，叠加层在基准变化时重新形成相同位移，结束值回到最新基准。
 
@@ -41,6 +41,8 @@ PropertyAnimation.Contribute(world, node, new Contribution<float>
 ## 阶段与批次
 
 层权重是 Channel<float>，先完成 `TrackFields.LayerWeights` 求值与合成，再读取本帧权重合成普通字段。`AnimationSystems.Add` 与 AddDefaults 共同进入这条阶段链，外部系统可按 AnimationPhase 加入。
+
+`ComposeSystem` 在原查询访问持有期内，将每个目标的固定来源、当帧贡献、基准和层设置复制到复用的类型化工作区。世界绑定的 Scheduler 并行处理独立目标，完成后由原查询按目标顺序写回来源状态并汇总字段输出；同步世界执行相同的目标范围。每个目标内部继续按上述来源顺序合成。源码：[ComposeSystem](../../../src/SomeEngine.Animation/ComposeSystem.cs)。
 
 单来源直接输出，多来源使用 `ComposeSystem<T,TOps>` 的同一值运算规则。每个最终字段在对应阶段产生一个 `FieldWrite<T>`。系统在对应阶段查询完成后汇总字段写入，再按共享 Channel 选择一个批次入口，经过一次 World.ExecuteComponentWrite 取得具体根组件批次，内部以具体 IFieldAccess 循环写值及推进版本。合成与字段访问分别按实际类型专门化。
 

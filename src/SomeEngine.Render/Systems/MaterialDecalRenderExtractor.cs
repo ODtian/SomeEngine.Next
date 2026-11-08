@@ -1,12 +1,13 @@
 using SomeEngine.Core.ECS.Components;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
+using SomeEngine.ECS.Systems;
 using SomeEngine.Render.Components;
 
 namespace SomeEngine.Render.Systems;
 
 /// <summary>Transfers decal references and transforms through the shared extraction boundary.</summary>
-public sealed class MaterialDecalRenderExtractor : IRenderExtractionSystem
+public sealed partial class MaterialDecalRenderExtractor : IRenderExtractionSystem
 {
     private readonly List<(Entity Source, RenderTransform Transform, RenderMaterialDecal Decal)> _decals = [];
     private readonly HashSet<Entity> _sources = [];
@@ -19,7 +20,7 @@ public sealed class MaterialDecalRenderExtractor : IRenderExtractionSystem
         query.ReadOptional<WorldTransform>();
     }
 
-    public void Reset() { _decals.Clear(); _sources.Clear(); }
+    public void Reset() { _decals.Clear(); _sources.Clear(); _transformChanges.Clear(); }
 
     public void CollectResources(scoped QueryCursor source, RenderExtractionResources resources)
     {
@@ -28,7 +29,9 @@ public sealed class MaterialDecalRenderExtractor : IRenderExtractionSystem
                 foreach (MaterialDecal decal in decals) resources.Add(decal.Material);
     }
 
-    public void Collect(QueryChunkView chunk)
+    public void Collect(QueryChunkView chunk) => Collect(ReadOnlyQueryPacketJobs.Borrow(chunk));
+
+    private void Collect(ReadOnlyQueryPacket chunk)
     {
         if (!chunk.TryRead<MaterialDecal>(out var decals) || !chunk.TryRead<WorldTransform>(out var transforms)) return;
         for (int row = 0; row < decals.Length; row++)
@@ -41,14 +44,21 @@ public sealed class MaterialDecalRenderExtractor : IRenderExtractionSystem
 
     public bool CollectChanges(QueryChunkView chunk, RenderExtractionContext context)
     {
+        bool changed = CollectChanges(ReadOnlyQueryPacketJobs.Borrow(chunk), chunk.LastSystemVersion);
+        _transformChanges.Merge(context);
+        return changed;
+    }
+
+    private bool CollectChanges(ReadOnlyQueryPacket chunk, uint lastSystemVersion)
+    {
         if (!chunk.TryRead<MaterialDecal>(out var decals) || !chunk.TryRead<WorldTransform>(out var transforms)) return false;
         int before = _decals.Count;
         for (int row = 0; row < decals.Length; row++)
         {
             Entity source = chunk.Entities[row];
-            if (chunk.RowChangedSinceLastSystemVersion<WorldTransform>(row))
-                context.CollectTransformChange(source, new RenderTransform(transforms[row].Qvvs));
-            if (chunk.RowChangedSinceLastSystemVersion<MaterialDecal>(row))
+            if (chunk.RowChangedSince<WorldTransform>(row, lastSystemVersion))
+                _transformChanges.Add(source, new RenderTransform(transforms[row].Qvvs));
+            if (chunk.RowChangedSince<MaterialDecal>(row, lastSystemVersion))
                 _decals.Add((source, default, new(decals[row].Material, decals[row].Order)));
         }
         return _decals.Count != before;

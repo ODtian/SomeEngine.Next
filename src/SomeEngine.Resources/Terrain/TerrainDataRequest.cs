@@ -1,4 +1,3 @@
-using System.Runtime.ExceptionServices;
 using SomeEngine.Job;
 
 namespace SomeEngine.Resources;
@@ -20,34 +19,35 @@ internal abstract class TerrainDataRequest(long sequence, JobHandle dependency, 
 }
 
 /// <summary>Bridges an external completion and its result into the borrowed job scheduler.</summary>
-internal sealed class TerrainCompletion : IJobExternalFence
+internal sealed class TerrainCompletion
 {
     private readonly TaskCompletionSource _signal = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly Scheduler _scheduler;
-    private ExceptionDispatchInfo? _failure;
+    private readonly JobHandleAwaiter _sourceResult;
+    private Action? _work;
+    private Action? _cleanup;
 
     internal TerrainCompletion(Scheduler scheduler, ReadOnlySpan<JobResourceAccess> accesses = default)
     {
         _scheduler = scheduler;
-        JobHandle fence = scheduler.CreateExternalFenceHandle(this, accesses);
-        Handle = scheduler.Schedule(new CompleteWork(this), [], fence);
+        JobHandle ready = scheduler.CreateExternalFenceHandle(_signal.Task, accesses);
+        _sourceResult = ready.GetAwaiter();
+        Handle = scheduler.ScheduleFinally(new CompleteWork(this), accesses, default, ready);
     }
 
     internal JobHandle Handle { get; }
-    public bool IsSignaled => _signal.Task.IsCompleted;
-
-    public void OnSignaled(Action<object?> callback, object? state)
+    internal bool IsSignaled => _signal.Task.IsCompleted;
+    internal void SetCompletionWork(Action work, Action? cleanup)
     {
-        if (IsSignaled) callback(state);
-        else _signal.Task.GetAwaiter().OnCompleted(() => callback(state));
+        _work = work;
+        _cleanup = cleanup;
     }
 
     internal void Complete() => _signal.TrySetResult();
 
     internal void Fail(Exception failure)
     {
-        _failure = ExceptionDispatchInfo.Capture(failure);
-        _signal.TrySetResult();
+        _signal.TrySetException(failure);
     }
 
     internal void Cancel()
@@ -60,6 +60,20 @@ internal sealed class TerrainCompletion : IJobExternalFence
 
     private readonly struct CompleteWork(TerrainCompletion completion) : IJob
     {
-        public void Execute() => completion._failure?.Throw();
+        public void Execute()
+        {
+            try
+            {
+                completion._sourceResult.GetResult();
+                completion._work?.Invoke();
+            }
+            finally
+            {
+                Action? cleanup = completion._cleanup;
+                completion._work = null;
+                completion._cleanup = null;
+                cleanup?.Invoke();
+            }
+        }
     }
 }

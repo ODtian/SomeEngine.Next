@@ -4,6 +4,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using MeshOptimizer;
 using SomeEngine.Resources;
+using SomeEngine.Job;
 using SomeEngine.Resources.Geometry;
 
 namespace SomeEngine.Geometry.Cluster;
@@ -98,16 +99,14 @@ public static partial class ClusterMeshBuilder
         => BuildLod(config, positions, indices, materialIndicesArray.Select(static value => checked((uint)value)).ToArray(),
             clusters, globalIndices, vertexLocks, vertexAttributes);
 
-    public static void BuildLod(ClusterLodConfig config, ReadOnlySpan<Vector3> positions, ReadOnlySpan<uint> indices,
+    public static unsafe void BuildLod(ClusterLodConfig config, ReadOnlySpan<Vector3> positions, ReadOnlySpan<uint> indices,
         uint[] materialIndicesArray, List<ClusterMeshlet> clusters, List<uint> globalIndices,
         ReadOnlySpan<byte> vertexLocks = default, IReadOnlyList<RawAttribute>? vertexAttributes = null)
     {
-        HashSet<Vector3> materialBoundaries = FindMaterialBoundaries(positions,
-            materialIndicesArray);
+        HashSet<Vector3> materialBoundaries = FindMaterialBoundaries(positions, materialIndicesArray);
         Clusterize(config, indices, positions, materialIndicesArray, clusters, globalIndices);
         int nextGroupId = InitializeLeafClusters(positions, clusters, globalIndices);
         List<int> current = Enumerable.Range(0, clusters.Count).ToList();
-        var mergedIndices = new List<uint>();
         var attributes = current.Count > 1 ? new ClusterSimplificationAttributes(vertexAttributes ?? [], positions.Length) : null;
         while (current.Count > 1 && attributes!.CanSimplify)
         {
@@ -120,35 +119,18 @@ public static partial class ClusterMeshBuilder
                     locks[vertex] |= (byte)(vertexLocks[vertex] & 3);
                     if ((vertexLocks[vertex] & SourceVertexLockBit) != 0) locks[vertex] |= 1;
                 }
+            int[][] members = groups.Select(group => group.Select(index => current[index]).ToArray()).ToArray();
+            var results = new LodGroupData[groups.Count];
+            fixed (Vector3* positionData = positions)
+                JobSystem.ExecuteParallel(new ReduceLodGroups(config, positionData, positions.Length, materialIndicesArray,
+                    clusters, globalIndices, locks, members, attributes, results), results.Length);
             var next = new List<int>();
-            foreach (int[] groupIndices in groups)
+            for (int groupIndex = 0; groupIndex < members.Length; groupIndex++)
             {
-                int[] group = groupIndices.Select(index => current[index]).ToArray();
+                int[] group = members[groupIndex];
                 if (group.Length == 1) { next.Add(group[0]); continue; }
-                MergeGroupIndices(globalIndices, clusters, group, mergedIndices);
-                ClusterLodBounds groupBounds = BoundsMerge(clusters, group);
-                int parentCount = Math.Max(1, (mergedIndices.Count / 3 + config.MaxTriangles * 2 - 1) / (config.MaxTriangles * 2));
-                int targetClusterSize = config.MaxTriangles - 2;
-                float error = groupBounds.Error;
-                var parents = new List<ClusterMeshlet>();
-                var parentIndices = new List<uint>();
-                var reducedIndices = new List<uint>();
-                float[] attributeWeights = attributes.GroupWeights(positions,
-                    CollectionsMarshal.AsSpan(mergedIndices));
-                do
-                {
-                    SimplifyLodGroup(positions,
-                        CollectionsMarshal.AsSpan(mergedIndices), locks, parentCount * targetClusterSize * 3,
-                        attributes.Values, attributeWeights, config.SimplifyPermissive, out float reductionError, reducedIndices);
-                    error = groupBounds.Error + reductionError;
-                    parents.Clear();
-                    parentIndices.Clear();
-                    Clusterize(config, CollectionsMarshal.AsSpan(reducedIndices),
-                        positions, materialIndicesArray, parents, parentIndices);
-                    if (parents.Count <= parentCount) break;
-                    targetClusterSize -= 2;
-                } while (targetClusterSize > config.MaxTriangles / 2);
-                if (parents.Count >= group.Length)
+                LodGroupData result = results[groupIndex];
+                if (result.Clusters.Count >= group.Length)
                 {
                     foreach (int index in group)
                     {
@@ -162,32 +144,19 @@ public static partial class ClusterMeshBuilder
                 foreach (int index in group)
                 {
                     ClusterMeshlet child = clusters[index];
-                    child.ParentError = error; child.ParentGroupId = groupId;
-                    child.LodCenter = groupBounds.Center; child.LodRadius = groupBounds.Radius;
+                    child.ParentError = result.Error; child.ParentGroupId = groupId;
+                    child.LodCenter = result.Bounds.Center; child.LodRadius = result.Bounds.Radius;
                     clusters[index] = child;
                 }
-                int firstParent = clusters.Count;
                 int firstIndex = globalIndices.Count;
-                foreach (uint index in parentIndices)
-                    globalIndices.Add(index);
-                foreach (ClusterMeshlet data in parents)
+                globalIndices.AddRange(result.Indices);
+                foreach (ClusterMeshlet data in result.Clusters)
                 {
                     ClusterMeshlet parent = data;
                     parent.IndicesOffset += firstIndex;
+                    parent.GroupId = groupId;
+                    next.Add(clusters.Count);
                     clusters.Add(parent);
-                }
-                int level = group.Max(index => clusters[index].Level) + 1;
-                for (int index = firstParent; index < clusters.Count; index++)
-                {
-                    ClusterMeshlet parent = clusters[index];
-                    ClusterLodBounds bounds = BoundsCompute(positions,
-                        CollectionsMarshal.AsSpan(globalIndices).Slice(parent.IndicesOffset, parent.IndicesCount), 0);
-                    parent.Level = level; parent.Error = error; parent.GroupId = groupId; parent.ParentGroupId = -1;
-                    parent.Center = bounds.Center; parent.Radius = bounds.Radius;
-                    parent.LodCenter = parent.SelfLodCenter = groupBounds.Center;
-                    parent.LodRadius = parent.SelfLodRadius = groupBounds.Radius;
-                    clusters[index] = parent;
-                    next.Add(index);
                 }
             }
             current = next;
@@ -198,6 +167,59 @@ public static partial class ClusterMeshBuilder
             clusters[index] = root;
         }
         ConstrainMeshlets(clusters, globalIndices, materialIndicesArray);
+    }
+
+    private sealed record LodGroupData(List<ClusterMeshlet> Clusters, List<uint> Indices,
+        ClusterLodBounds Bounds, float Error);
+
+    private readonly unsafe struct ReduceLodGroups(ClusterLodConfig config, Vector3* positionData, int vertexCount,
+        uint[] materialIndices, List<ClusterMeshlet> clusters, List<uint> indices, byte[] locks,
+        int[][] groups, ClusterSimplificationAttributes attributes, LodGroupData[] results) : IJobParallelFor
+    {
+        public void Execute(int groupIndex)
+        {
+            int[] group = groups[groupIndex];
+            if (group.Length == 1) return;
+            ReadOnlySpan<Vector3> positions = new(positionData, vertexCount);
+            var mergedIndices = new List<uint>();
+            MergeGroupIndices(indices, clusters, group, mergedIndices);
+            ClusterLodBounds groupBounds = BoundsMerge(clusters, group);
+            int parentCount = Math.Max(1, (mergedIndices.Count / 3 + config.MaxTriangles * 2 - 1) / (config.MaxTriangles * 2));
+            int targetClusterSize = config.MaxTriangles - 2;
+            float error = groupBounds.Error;
+            var parents = new List<ClusterMeshlet>();
+            var parentIndices = new List<uint>();
+            var reducedIndices = new List<uint>();
+            float[] attributeWeights = attributes.GroupWeights(positions, CollectionsMarshal.AsSpan(mergedIndices));
+            do
+            {
+                SimplifyLodGroup(positions, CollectionsMarshal.AsSpan(mergedIndices), locks, parentCount * targetClusterSize * 3,
+                    attributes.Values, attributeWeights, config.SimplifyPermissive, out float reductionError, reducedIndices);
+                error = groupBounds.Error + reductionError;
+                parents.Clear();
+                parentIndices.Clear();
+                Clusterize(config, CollectionsMarshal.AsSpan(reducedIndices), positions, materialIndices, parents, parentIndices);
+                if (parents.Count <= parentCount) break;
+                targetClusterSize -= 2;
+            } while (targetClusterSize > config.MaxTriangles / 2);
+            if (parents.Count < group.Length)
+            {
+                int level = 0;
+                foreach (int index in group) level = Math.Max(level, clusters[index].Level + 1);
+                for (int index = 0; index < parents.Count; index++)
+                {
+                    ClusterMeshlet parent = parents[index];
+                    ClusterLodBounds bounds = BoundsCompute(positions,
+                        CollectionsMarshal.AsSpan(parentIndices).Slice(parent.IndicesOffset, parent.IndicesCount), 0);
+                    parent.Level = level; parent.Error = error; parent.ParentGroupId = -1;
+                    parent.Center = bounds.Center; parent.Radius = bounds.Radius;
+                    parent.LodCenter = parent.SelfLodCenter = groupBounds.Center;
+                    parent.LodRadius = parent.SelfLodRadius = groupBounds.Radius;
+                    parents[index] = parent;
+                }
+            }
+            results[groupIndex] = new(parents, parentIndices, groupBounds, error);
+        }
     }
 
     private static int InitializeLeafClusters(ReadOnlySpan<Vector3> positions,

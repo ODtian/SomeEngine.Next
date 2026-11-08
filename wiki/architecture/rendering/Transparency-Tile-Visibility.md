@@ -8,6 +8,10 @@
 
 ## 数据与片上执行
 
+CPU tile 数据由研究入口的原数据对象保持。`TileVisibilityGeometry` 按三角形并行计算覆盖矩形与深度平面，再按三角形输入次序累加 `FirstAssociation`，供硬件覆盖使用。共享的 `TileReferenceData` 将固定覆盖输入分成连续批次：各批独占计数区域，协调阶段按 tile、批次顺序形成前缀，再由各批写入独立引用区间，因此每个 tile 保留原输入次序。`BlendEffectData` 沿原随机与模型生成顺序形成输入，共用同一引用生成算法；word 数量前缀确定输出范围后，各 tile 独立填入每 32 条引用的 word。
+
+各范围复用构造时的 `JobSystem.Current`，声明实际输入数组读取和输出数组写入；`ExecuteParallel` 汇合后推进下一阶段，构造返回时交付完整数组。现有 `TileVisibilityColorFeature` 与 `BlendEffectColorFeature` 继续上传这些公开结果并写入场景颜色。源码入口：[tile 几何](../../../tools/SomeEngine.Transparency.Research/TileVisibilityGeometry.cs)、[共享引用](../../../tools/SomeEngine.Transparency.Research/TileReferenceData.cs)、[混合数据](../../../tools/SomeEngine.Transparency.Research/BlendEffectData.cs)。
+
 每个 tile 为 16×16 像素。本次 RTX 3080 上，一个 256 线程工作组包含 8 个 32-lane warp。线程加载连续图元引用；工作组共享图元缓存与深度下界排序；每像素通过寄存器合成。
 
 | 数据 | 存储 | 大小与用途 |

@@ -5,13 +5,10 @@ using System.Runtime.ExceptionServices;
 
 namespace SomeEngine.Job;
 
-internal abstract class WorkStream
+internal abstract class QueuedWork
 {
-    internal abstract int MakeReady(int slot, int maxDrainers, int priorityIndex);
-
-    internal abstract int MakeReady(ReadOnlySpan<int> slots, int count, int maxDrainers, int priorityIndex);
-
-    internal abstract void Cancel(int slot);
+    internal JobCategory? Category { get; set; }
+    internal virtual void DrainExited() { }
 
     internal abstract int DrainAndFinish(
         Scheduler scheduler,
@@ -20,6 +17,15 @@ internal abstract class WorkStream
         int maxDrainers,
         out int retiredItems,
         out bool hasMoreWork);
+}
+
+internal abstract class WorkStream : QueuedWork
+{
+    internal abstract int MakeReady(int slot, int maxDrainers, int priorityIndex);
+
+    internal abstract int MakeReady(ReadOnlySpan<int> slots, int count, int maxDrainers, int priorityIndex);
+
+    internal abstract void Cancel(int slot);
 }
 
 internal readonly struct WorkItemExecutionResult
@@ -51,6 +57,8 @@ internal interface IWorkStreamItem<TSelf>
     static abstract JobHandle GetState(in TSelf item);
 
     static abstract bool AllowBatchDrain { get; }
+
+    static abstract int CompletionCountOnRetire { get; }
 
     static abstract WorkItemExecutionResult Execute(ref TSelf item);
 
@@ -432,6 +440,8 @@ internal struct ScheduledJob<T> : IWorkStreamItem<ScheduledJob<T>>
 
     public static bool AllowBatchDrain => true;
 
+    public static int CompletionCountOnRetire => 0;
+
     public static WorkItemExecutionResult Execute(ref ScheduledJob<T> item)
     {
         item._job.Execute();
@@ -491,6 +501,8 @@ internal struct ScheduledParallelToken<T> : IWorkStreamItem<ScheduledParallelTok
     // single drainer must not capture every token for the same parallel group.
     public static bool AllowBatchDrain => false;
 
+    public static int CompletionCountOnRetire => 1;
+
     public static WorkItemExecutionResult Execute(ref ScheduledParallelToken<T> item)
     {
         ParallelJobGroup<T> group = item._group
@@ -524,7 +536,7 @@ internal sealed class ParallelJobGroup<T>
     private int _batchCount;
     private int _nextBatch;
     private int _references;
-    private bool _measureCost;
+    private ParallelBatchSizer<T>? _batchSizer;
 
     private ParallelJobGroup()
     {
@@ -535,7 +547,7 @@ internal sealed class ParallelJobGroup<T>
         int length,
         int batchSize,
         int batchCount,
-        bool measureCost)
+        ParallelBatchSizer<T>? batchSizer)
     {
         ParallelJobGroup<T> group;
         lock (PoolGate) group = Pool.Count > 0 ? Pool.Pop() : new();
@@ -546,7 +558,7 @@ internal sealed class ParallelJobGroup<T>
         group._batchCount = batchCount;
         group._nextBatch = 0;
         group._references = 1; // scheduling owner; prepared tokens add their own references
-        group._measureCost = measureCost;
+        group._batchSizer = batchSizer;
         return group;
     }
 
@@ -565,7 +577,7 @@ internal sealed class ParallelJobGroup<T>
         _batchSize = 0;
         _batchCount = 0;
         _nextBatch = 0;
-        _measureCost = false;
+        _batchSizer = null;
         lock (PoolGate) Pool.Push(this);
     }
 
@@ -575,7 +587,7 @@ internal sealed class ParallelJobGroup<T>
         int faulted = 0;
         int processedItems = 0;
         ExceptionDispatchInfo? firstFault = null;
-        long startedAt = _measureCost ? Stopwatch.GetTimestamp() : 0;
+        long startedAt = _batchSizer is not null ? Stopwatch.GetTimestamp() : 0;
 
         while (completed < ClaimQuantum)
         {
@@ -601,9 +613,10 @@ internal sealed class ParallelJobGroup<T>
             completed++;
         }
 
-        if (_measureCost && completed > 0)
+        if (_batchSizer is not null && completed > 0)
         {
-            ParallelBatchSizer<T>.Record(
+            _batchSizer.Record(
+                _length,
                 Stopwatch.GetTimestamp() - startedAt,
                 processedItems);
         }

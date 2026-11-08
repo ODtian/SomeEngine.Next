@@ -163,7 +163,7 @@ internal sealed class ClusterBvh
         }
     }
 
-    public ClusterBvhRegistration Prepare(
+    public static ClusterBvhRegistration Prepare(
         Mesh mesh,
         in ClusterBvhDestination destination,
         uint firstPage,
@@ -171,8 +171,6 @@ internal sealed class ClusterBvh
     {
         ArgumentNullException.ThrowIfNull(mesh);
 
-        if (_roots.ContainsKey(mesh))
-            throw new InvalidOperationException($"Mesh '{mesh}' already has a registered Cluster BVH.");
         if (destination.Memory.IsEmpty || destination.Memory.Length % checked((int)NodeBytes) != 0)
             throw new InvalidDataException(
                 $"Cluster BVH data must contain a non-empty whole number of {NodeBytes}-byte nodes.");

@@ -3,6 +3,7 @@ using SomeEngine.Serialization.Containers;
 using SomeEngine.Serialization.IO;
 using SomeEngine.Serialization.Streaming;
 using System.Runtime.InteropServices;
+using SomeEngine.Job;
 
 namespace SomeEngine.Assets;
 
@@ -75,16 +76,33 @@ public sealed class AssetFile : IDisposable, IAsyncDisposable
 
     public async ValueTask<byte[]> ReadBytesAsync(ulong key, CancellationToken cancellationToken = default)
     {
+        Scheduler scheduler = JobSystem.Current;
         await using AssetFile access = Retain();
         FileContent content = access._content.Read;
         BinaryChunkEntry chunk = await content.Document.FindChunkAsync(key, cancellationToken).ConfigureAwait(false)
             ?? throw new KeyNotFoundException($"Chunk {key:X16} is absent.");
         if (chunk.DecodedLength > content.MaxDecodedBytes)
             throw new InvalidDataException("The requested data exceeds the configured read limit.");
+        if (chunk.Compression == ChunkCompression.Brotli)
+        {
+            BinaryChunkInput input = await content.Document.ReadChunkInputAsync(
+                new BinaryChunkRef(key, chunk.DecodedLength), cancellationToken).ConfigureAwait(false);
+            byte[] decoded = GC.AllocateUninitializedArray<byte>(checked((int)chunk.DecodedLength));
+            JobHandle decode = await scheduler.ScheduleAsync(new DecodeChunk(input, decoded, cancellationToken),
+                new JobScheduleOptions(JobPriority.Low) { Category = AssetDecodeJobs.GetCategory(scheduler) },
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+            await decode.CompleteAsync().ConfigureAwait(false);
+            return decoded;
+        }
         Memory<byte> bytes = await content.Document.CopyChunkAsync(new BinaryChunkRef(key, chunk.DecodedLength),
             cancellationToken).ConfigureAwait(false);
         MemoryMarshal.TryGetArray((ReadOnlyMemory<byte>)bytes, out ArraySegment<byte> array);
         return array.Array!;
+    }
+
+    private readonly struct DecodeChunk(BinaryChunkInput input, byte[] destination, CancellationToken cancellationToken) : IJob
+    {
+        public void Execute() => input.DecodeInto(destination, cancellationToken);
     }
 
     public async ValueTask<BinaryChunkEntry> DescribeChunkAsync(ulong key, CancellationToken cancellationToken = default)

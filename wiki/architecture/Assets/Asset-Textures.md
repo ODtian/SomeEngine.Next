@@ -4,6 +4,8 @@
 
 ## tile 与取得
 
+glTF 的 `GltfTextureImporter` 先异步读取外部图像字节，或取得嵌入图像自己的字节数组，再通过 `ImportContext.Scheduler.ScheduleAsync` 提交独立图像解码。每张图像的来源数组、解码状态和 RGBA 输出由本次调用保持；`JobHandle.CompleteAsync` 交付解码完成后，导入续体集中填写 `TextureBlock` 的尺寸、tile 与像素并安装 Block。失败经 Job 结果传播，取消与 Context 关闭保持读取及解码到真实完成后再清理。公开导入、保存重开和 `TextureBlock.CreateAsync` 的像素消费见 `GltfTextureImportTests`，包含零 worker 与有 worker 的相同输入。
+
 每个 tile 对应独立文件 chunk，记录 mip、层、face、深度切片、二维位置、尺寸、行跨度、切片跨度和内容键。打开资产可以只取得这些元数据，像素仍未解码。
 
 `TextureBlock.CreateAsync` 默认取得最粗 mip，并保留本编辑分支已经提供的像素；调用方也可明确选择起始 mip。所选像素在返回前完成取得，Texture 直接持有托管字节，业务与渲染使用方通过普通引用保持它的使用期。

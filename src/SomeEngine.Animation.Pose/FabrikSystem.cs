@@ -85,7 +85,7 @@ public struct FabrikSystem : ISystem<PoseNodeContext>
                 .CopyTo(copy.Values));
         chain.Samples.ReadParents();
         chain.Sampled = true;
-        jobs.Add(JobSystem.Schedule(new SolveChain(chain.Samples, chain.Target), chain.Samples.Accesses));
+        jobs.Add(PoseAnimation.GetScheduler(world).Schedule(new SolveChain(chain.Samples, chain.Target), chain.Samples.Accesses));
     }
 
     public void OnDestroy(ref PoseNodeContext context) => context.Frame.World.ReleaseQuery(_chains);

@@ -10,11 +10,11 @@
 
 `VoxelSphereDeltaBrushGpu` 接受已驻留的 `Shader`、`VoxelGrid`、球心、半径和标量增量，调用 [terrain_voxel_delta.slang](../../../assets/Shaders/terrain_voxel_delta.slang) 的 `AddVoxelSphereDelta` 入口。球心和半径使用地形局部米制坐标，增量从球心到半径边界线性衰减。对应的 [Shader 定义](../../../assets/Shaders/terrain_voxel_delta.shader) 使用相同资产读取与编译路径。
 
-`Terrain` 持有请求序号和待提取的请求。`TerrainSource` 组件将地形请求纳入 Game world 到 Rendering world 的既有提取；同一 Terrain 的多个实体共用一份捕获请求。一次应用运行的多个 `TerrainGeometryFeature` 共用同一 `TerrainRenderExtractor` 和 `RenderTerrainData`，设备字段页、准备、帧录制和完成观察由这份数据统一持有，各 Scene 保留各自的三个游戏系统。
+`Terrain` 持有请求序号和待提取的请求。`TerrainSource` 组件将地形请求纳入 Game world 到 Rendering world 的既有提取；同一 Terrain 的多个实体共用一份捕获请求。一次应用运行的多个 `TerrainGeometryFeature` 共用同一 `TerrainRenderExtractor` 和 `RenderTerrainData`，设备字段页、准备、帧录制和完成观察由这份数据统一持有，各 Scene 保留各自的提交与 LOD 游戏系统，后台几何批次在游戏计算完成后、提取前由帧协调者提交。Scene 继续持有跨帧构建完成；地形 GPU 页请求随后经同一提取入口提交。
 
 `RenderTerrainData` 持有设备页和管线。它按请求需要上传 CPU 页，建立源页表，并在持久图的扩展点录制当帧复制和 compute 工作。每次编辑使用捕获的输入页，写入新输出页。
 
-RenderGraph 提交回执使 Terrain 释放对应的待提取请求。实际队列完成经后端等待确认后，才通过现有外部 fence 完成 `TerrainEdit.Completion`。`TerrainEdit.WaitAsync` 因此等待本次 GPU 结果就绪。
+RenderGraph 提交回执使 Terrain 释放对应的待提取请求。实际队列完成经后端等待确认后，通过共同 Task fence 进入请求的终态 Job，再完成 `TerrainEdit.Completion`。`TerrainEdit.WaitAsync` 因此等待本次 GPU 结果就绪。
 
 应用停止时先等待已提交 GPU 使用，随后由 Terrain 结束尚待图提交的字段请求，并在排空游戏系统 Job 前处理对应 CPU 网格依赖。撤销的字段编辑与页读回返回 `OperationCanceledException`；已提交字段工作保持真实队列完成结果。实现入口为 [TerrainDataRequest](../../../src/SomeEngine.Resources/Terrain/TerrainDataRequest.cs)、[TerrainScene](../../../src/SomeEngine.Terrain/TerrainScene.cs) 和 [ApplicationGeometry](../../../src/SomeEngine.Runtime/ApplicationGeometry.cs)。
 
@@ -22,7 +22,7 @@ RenderGraph 提交回执使 Terrain 释放对应的待提取请求。实际队�
 
 ## 局部读取与后续 CPU 工作
 
-`HeightField.ReadCpuAsync(range)` 与 `VoxelField.ReadCpuAsync(range)` 在调用时捕获字段版本，并为所需 GPU 页请求 CPU 物化。读回保存该页的原版本；同一页版本的后续读取共用 CPU 数组及其完成依赖。返回的 `HeightFieldRead` 或 `VoxelFieldRead` 继续保持调用时的样本版本。
+`HeightField.ReadCpuAsync(range)` 与 `VoxelField.ReadCpuAsync(range)` 在调用时捕获字段版本，并为所需 GPU 页请求 CPU 物化。GPU 就绪信号与 CPU 数据完成分别由共同 fence 和请求的最终 Job 表达。最终 Job 在样本数组写访问中映射读回缓冲、复制样本并标记页内容，随后清理缓冲；GPU 失败和复制失败也经过同一终态清理。公开 CPU 读取完成点覆盖复制、映射释放和缓冲清理，`RenderTerrainData` 的关闭等待跟随该最终完成点。读回保存该页的原版本；同一页版本的后续读取共用 CPU 数组及其完成依赖。返回的 `HeightFieldRead` 或 `VoxelFieldRead` 继续保持调用时的样本版本。
 
 GPU 请求由安装了地形功能的应用帧处理。CPU 查询、后续 CPU 笔刷和 CPU 网格任务通过相同的捕获入口取得所需页，并等待对应完成依赖。`HeightSurface` 和 `VoxelSurface` 的 `ReadCpuAsync`、`ScheduleRead` 共用这条数据就绪路径。
 

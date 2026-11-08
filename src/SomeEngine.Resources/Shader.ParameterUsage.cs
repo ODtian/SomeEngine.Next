@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using SlangShaderSharp;
 using SomeEngine.Graphics;
+using SomeEngine.Job;
 
 namespace SomeEngine.Resources;
 
@@ -35,8 +36,14 @@ public partial class Shader
     }
 
     private static ImmutableArray<ImmutableHashSet<SlangDescriptorLocation>> ReadSlangUsedParameters(
-        IComponentType code, int targetCount, int entryCount, ImmutableArray<bool> unboundEntries)
+        SlangShaderData slangData, int targetCount, int entryCount, ImmutableArray<bool> unboundEntries,
+        Scheduler? scheduler = null)
     {
+        scheduler ??= JobSystem.Current;
+        var metadataByEntry = new IMetadata[targetCount * entryCount];
+        scheduler.ExecuteParallel(new ReadParameterMetadata(slangData, entryCount, unboundEntries, metadataByEntry),
+            metadataByEntry.Length, options: new() { Category = ShaderCodeJobs.GetCategory(scheduler) });
+        IComponentType code = slangData.Code;
         var result = ImmutableArray.CreateBuilder<ImmutableHashSet<SlangDescriptorLocation>>();
         for (int target = 0; target < targetCount; target++)
         {
@@ -47,17 +54,14 @@ public partial class Shader
                     result.Add(ImmutableHashSet<SlangDescriptorLocation>.Empty);
                     continue;
                 }
-                SlangResult status = code.GetEntryPointMetadata(entry, target, out IMetadata metadata,
-                    out ISlangBlob? diagnostics);
-                if (status.Failed)
-                    throw new InvalidDataException("Slang resource usage failed: " + DiagnosticText(diagnostics));
+                IMetadata metadata = metadataByEntry[target * entryCount + entry];
                 ShaderReflection targetLayout = code.GetLayout(target, out _);
                 SlangDescriptorLocation[] locations = CollectSlangParameterLocations(
                     targetLayout.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null);
                 var used = ImmutableHashSet.CreateBuilder<SlangDescriptorLocation>();
                 foreach (SlangDescriptorLocation location in locations)
                 {
-                    status = metadata.IsParameterLocationUsed(location.Category, checked((nuint)location.Space),
+                    SlangResult status = metadata.IsParameterLocationUsed(location.Category, checked((nuint)location.Space),
                         checked((nuint)location.Register), out bool referenced);
                     if (status.Failed)
                         throw new InvalidDataException("Slang parameter usage failed: " + status);
@@ -67,6 +71,21 @@ public partial class Shader
             }
         }
         return result.ToImmutable();
+    }
+
+    private readonly record struct ReadParameterMetadata(SlangShaderData SlangData, int EntryCount,
+        ImmutableArray<bool> UnboundEntries, IMetadata[] Values) : IJobParallelFor
+    {
+        public void Execute(int index)
+        {
+            int entry = index % EntryCount;
+            if (UnboundEntries[entry]) return;
+            SlangResult status = SlangData.Code.GetEntryPointMetadata(entry, index / EntryCount,
+                out IMetadata metadata, out ISlangBlob? diagnostics);
+            if (status.Failed)
+                throw new InvalidDataException("Slang resource usage failed: " + DiagnosticText(diagnostics));
+            Values[index] = metadata;
+        }
     }
 
     private static SlangDescriptorLocation[] CollectSlangParameterLocations(VariableLayoutReflection layout)

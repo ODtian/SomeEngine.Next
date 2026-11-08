@@ -152,6 +152,7 @@ public class TimelineTests
         Assert.Equal(2u, world.Read<Timeline>(entity).Completions);
         Assert.Equal(members, world.MembershipVersion(timelines));
         Assert.Equal(entity, Assert.Single(tables.Read().Entities));
+        Assert.True(world.Has<Timeline>(entity));
         world.ReleaseQuery(timelines);
     }
 

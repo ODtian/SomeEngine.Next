@@ -64,7 +64,7 @@ public sealed class JobSystemTests
         public void Execute()
         {
             Interlocked.Increment(ref counts[0]);
-            if (depth > 0) JobSystem.Schedule(new RecursiveJob(counts, depth - 1)).Complete();
+            if (depth > 0) JobSystem.Schedule(new RecursiveJob(counts, depth - 1));
         }
     }
 }

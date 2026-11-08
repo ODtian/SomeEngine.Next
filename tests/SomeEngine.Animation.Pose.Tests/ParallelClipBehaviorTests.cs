@@ -9,6 +9,77 @@ namespace SomeEngine.Animation.Pose.Tests;
 public sealed class ParallelClipBehaviorTests
 {
     [Fact]
+    public void CommonClipGraphSamplesOnTheWorldsSchedulerBeforePublishingItsPose()
+    {
+        using var scheduler = new Scheduler(new() { WorkerCount = 2 });
+        using var world = WorldJobs.CreateWorld(scheduler: scheduler);
+        var skeleton = new Skeleton([-1], [Bone(Vector3.Zero)], [1]);
+        var samples = new ClipExecution();
+        var clip = new AnimationClip(skeleton, 1, ClipSampler.Create<ClipExecution, ExecutionSampler>(samples));
+        var storage = new PoseStorage();
+        using SkeletonInstance character = storage.CreateInstance(skeleton);
+        Entity target = PoseAnimation.CreateTarget(world, character);
+        using var builder = new AnimationBuilder(world);
+        builder.Leaf<ClipParameters, ClipLeaf>(Entity.Null, new(clip, new(0)));
+        using CompiledGraph graph = builder.Compile();
+        graph.Play(world, target);
+        using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
+        PoseAnimation.AddSystems(systems);
+        var context = new ImmediateSystemContext(world, 0, 0, .25);
+
+        systems.Update(ref context);
+
+        Assert.Same(scheduler, samples.Scheduler);
+        Assert.Equal(new Vector3(1, 0, 0), character.ModelPose.Transforms[0].Translation);
+        Assert.Equal(.25, character.ModelPose.SampleTime);
+    }
+
+    private sealed class ClipExecution
+    {
+        internal Scheduler? Scheduler;
+    }
+
+    private readonly struct ExecutionSampler : IClipSampler<ClipExecution>
+    {
+        public static void SampleLocal(ClipExecution data, float time, Span<BoneTransform> destination)
+        {
+            data.Scheduler = JobSystem.Current;
+            destination[0].Translation.X = time * 4;
+        }
+    }
+    [Fact]
+    public void ScheduledSamplesUseTheCallingSchedulersResourcesAndCompleteTheirChildren()
+    {
+        var skeleton = new Skeleton([-1], [Bone(Vector3.Zero)], [1]);
+        var data = new RawClipData(2,
+            [new(0, BoneTransformProperty.Translation, ClipInterpolation.Linear, [0, 2],
+                [Vector4.Zero, new(8, 0, 0, 0)])]);
+        var clip = new AnimationClip(skeleton, 2, ClipSampler.Create<RawClipData, RawClipSampler>(data));
+        var batch = new ClipSampleBatch([new(clip), new(clip)], samplesPerJob: 1);
+        float[] times = [.5f, 1.5f];
+        var local = new BoneTransform[2];
+        var model = new Matrix4x4[2];
+        using var scheduler = new Scheduler();
+
+        scheduler.Schedule(new SampleBatch(batch, times, local, model)).Complete();
+
+        Assert.Equal(new Vector3(2, 0, 0), local[0].Translation);
+        Assert.Equal(new Vector3(6, 0, 0), local[1].Translation);
+        Assert.Equal(local[0].ToMatrix(), model[0]);
+        Assert.Equal(local[1].ToMatrix(), model[1]);
+    }
+
+    private readonly record struct SampleBatch(ClipSampleBatch Batch, float[] Times,
+        BoneTransform[] Local, Matrix4x4[] Model) : IJob
+    {
+        public void Execute()
+        {
+            JobHandle local = Batch.ScheduleLocal(Times, Local);
+            Batch.ScheduleModel(Times, Model, local);
+        }
+    }
+
+    [Fact]
     public async Task ScheduledModelSamplesFollowParentWritesAfterAttachmentAndDetachment()
     {
         var body = new Skeleton([-1], [Bone(Vector3.Zero)], [1]);

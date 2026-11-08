@@ -40,6 +40,12 @@ public readonly ref partial struct QueryChunkView
 
     public uint CurrentSystemVersion { get; }
 
+    internal (QueryArchetypeMatch Match, Chunk Chunk) BorrowReadOnlyChunk()
+    {
+        RequireChunkAccess();
+        return (_match, _chunk);
+    }
+
     public ReadOnlySpan<Entity> Entities
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
