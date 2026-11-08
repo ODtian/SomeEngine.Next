@@ -34,6 +34,7 @@ internal sealed class ActivePredictionData : IDisposable
     private readonly Vector3 _acceleration;
     private readonly int _rowsPerPacket;
     private readonly JobResourceAccess[] _accesses;
+    private readonly PhysicsQueryWindow _window;
     private readonly Lock _gate = new();
     private readonly Stack<PredictionRows> _available = [];
 
@@ -41,6 +42,7 @@ internal sealed class ActivePredictionData : IDisposable
     {
         _world = world; _acceleration = acceleration; _rowsPerPacket = rowsPerPacket;
         QueryDefinition members = world.GetQueryDefinition(bodies).AsReadOnly();
+        _window = new(members);
         QueryDefinition inputs = members.WithAccess(new QueryDefinitionBuilder().Read<BodyPose>().Read<BodyVelocity>().Read<BodyMass>()
             .ReadWrite<BodyStepState>().Optional<BodyActivity>(QueryAccess.ReadWrite).Build());
         _inputs = world.Query(inputs);
@@ -48,6 +50,7 @@ internal sealed class ActivePredictionData : IDisposable
         _motion = world.Query(inputs.WithAccess(new QueryDefinitionBuilder().ReadWrite<BodyPose>().ReadWrite<BodyVelocity>().Build()));
         var accesses = new List<JobResourceAccess>();
         PhysicsQueryAccess.AddAccesses(world, _reads, accesses);
+        accesses.Add(JobResourceAccess.Write(WorldJobs.GetScheduler(world).GetResourceToken(this)));
         _accesses = accesses.ToArray();
     }
 
@@ -61,11 +64,11 @@ internal sealed class ActivePredictionData : IDisposable
         return scheduler.CombineDependencies([handle, cleanup]);
     }
 
-    private bool ReadMembers(PredictionRows rows, bool resume)
+    private bool ReadMembers(PredictionRows rows, bool resume, in PhysicsStepContext context)
     {
         rows.NextAll.Clear(); rows.NextMoving.Clear();
-        var selection = new ReadSelection(rows, resume);
-        _world.ExecuteReadQuery(_reads, ref selection, static (scoped QueryCursor query, ref ReadSelection state) => state.Execute(query));
+        var selection = new ReadSelection(rows, resume, _window);
+        _world.ExecuteReadQuery(_reads, _window.Begin(context), ref selection, static (scoped QueryCursor query, ref ReadSelection state) => state.Execute(query));
         bool changed = !CollectionsMarshal.AsSpan(rows.All).SequenceEqual(CollectionsMarshal.AsSpan(rows.NextAll))
             || !CollectionsMarshal.AsSpan(rows.Moving).SequenceEqual(CollectionsMarshal.AsSpan(rows.NextMoving));
         (rows.All, rows.NextAll) = (rows.NextAll, rows.All);
@@ -73,10 +76,11 @@ internal sealed class ActivePredictionData : IDisposable
         return changed;
     }
 
-    private readonly struct ReadSelection(PredictionRows rows, bool resume)
+    private readonly struct ReadSelection(PredictionRows rows, bool resume, PhysicsQueryWindow window)
     {
         public void Execute(scoped QueryCursor query)
         {
+            window.Accept(query.CurrentSystemVersion);
             foreach (QueryRow row in query.Rows)
             {
                 rows.NextAll.Add(row.Entity);
@@ -101,7 +105,7 @@ internal sealed class ActivePredictionData : IDisposable
     {
         public void Execute()
         {
-            data.ReadMembers(rows, resume);
+            data.ReadMembers(rows, resume, in context);
             EntityQueryJobs.ScheduleGroup(context.World, new Work(data, rows, resume), new Predict(data, rows, context, resume), data._accesses);
         }
     }
@@ -117,7 +121,7 @@ internal sealed class ActivePredictionData : IDisposable
     {
         public bool Execute(scoped EntityQueryGroup group)
         {
-            if (data.ReadMembers(rows, resume)) return false;
+            if (data.ReadMembers(rows, resume, in context)) return false;
             if (!resume)
             {
                 var inputs = new Packets(data._inputs, rows.All, data._rowsPerPacket);

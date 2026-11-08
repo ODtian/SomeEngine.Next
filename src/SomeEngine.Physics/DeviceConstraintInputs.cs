@@ -18,6 +18,7 @@ public readonly struct WriteDeviceConstraintInputs<TComponent, TData, TSource> :
     private readonly QueryReadResources _resources;
     private readonly List<Entity> _entities;
     private readonly int _rowsPerPacket;
+    private readonly PhysicsQueryWindow _window;
     internal WriteDeviceConstraintInputs(World world, QueryHandle rows, DeviceConstraintData<TData> data, TSource source,
         int rowsPerPacket, ReadOnlySpan<JobResourceAccess> extraAccesses)
     {
@@ -28,7 +29,7 @@ public readonly struct WriteDeviceConstraintInputs<TComponent, TData, TSource> :
         QueryDefinition definition = source.AddReads(QueryDefinition.Empty.WithAccessFrom(inputs)
             .WithOptionalRead<TComponent>().WithOptionalRead<DeviceConstraintBinding<TData>>());
         _access = world.Query(definition);
-        _inputs = world.Query(inputs.WithAccess(definition));
+        _inputs = world.Query(inputs.WithAccess(definition)); _window = new(inputs);
         _resources = new QueryReadResources();
         source.AddReadResources(_resources);
         _resources.Add<TComponent, TSource>();
@@ -42,24 +43,27 @@ public readonly struct WriteDeviceConstraintInputs<TComponent, TData, TSource> :
             JobResourceAccess.Write(WorldJobs.GetScheduler(world).GetResourceToken(_entities))];
     }
     public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) =>
-        WorldJobs.GetScheduler(context.World).Schedule(new Capture(this), _captureAccesses, dependency);
+        WorldJobs.GetScheduler(context.World).Schedule(new Capture(this, context), _captureAccesses, dependency);
 
-    private readonly struct Capture(WriteDeviceConstraintInputs<TComponent, TData, TSource> inputs) : IJob
+    private readonly struct Capture(WriteDeviceConstraintInputs<TComponent, TData, TSource> inputs, PhysicsStepContext context) : IJob
     {
         public void Execute()
         {
             inputs._entities.Clear();
             var selected = new ReadMembers(inputs._data, inputs._entities);
-            inputs._world.ExecuteReadQuery(inputs._inputs, ref selected,
+            inputs._world.ExecuteReadQuery(inputs._inputs, inputs._window.Begin(context), ref selected,
                 static (scoped QueryCursor rows, ref ReadMembers selected) => selected.Execute(rows));
-            EntityQueryJobs.Schedule(inputs._world, new Packets(inputs._inputs, inputs._entities, inputs._rowsPerPacket),
+            inputs._window.Accept(selected.Version);
+            EntityQueryJobs.Schedule(inputs._world, new Packets(inputs._access, inputs._entities, inputs._rowsPerPacket),
                 new Write(inputs), inputs._accesses, inputs._resources);
         }
     }
-    private readonly struct ReadMembers(DeviceConstraintData<TData> data, List<Entity> entities)
+    private struct ReadMembers(DeviceConstraintData<TData> data, List<Entity> entities)
     {
+        internal uint Version;
         public void Execute(scoped QueryCursor rows)
         {
+            Version = rows.CurrentSystemVersion;
             foreach (QueryRow row in rows.Rows)
                 if (row.Has<TComponent>() && row.TryRead<DeviceConstraintBinding<TData>>(out var binding)
                     && ReferenceEquals(binding.Data, data)) entities.Add(row.Entity);

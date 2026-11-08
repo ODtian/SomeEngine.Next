@@ -2,7 +2,7 @@
 #define PHYSICS_BEND_GRAPH
 #include "physics_constraint_graph.slang"
 #include "physics_bend_data.slang"
-StructuredBuffer<uint2> DeviceBendsSelection;
+StructuredBuffer<uint2, ScalarDataLayout> DeviceBendsSelection;
 struct DeviceBendBodies : IDeviceConstraintBodies
 {
     uint count() { uint rows, stride; DeviceBends.GetDimensions(rows, stride); return rows; }

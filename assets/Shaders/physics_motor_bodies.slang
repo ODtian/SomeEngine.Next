@@ -2,7 +2,7 @@
 #define PHYSICS_MOTOR_BODIES
 #include "physics_constraint_graph.slang"
 #include "physics_motor_data.slang"
-StructuredBuffer<uint2> DeviceMotorsSelection;
+StructuredBuffer<uint2, ScalarDataLayout> DeviceMotorsSelection;
 struct DeviceMotorBodies : IDeviceConstraintBodies
 {
     uint count() { uint rows,stride; DeviceMotors.GetDimensions(rows,stride); return rows; }

@@ -24,8 +24,8 @@ public sealed class CompletedPhysicsEventsTests
         QueryHandle bodies = world.Query(new QueryDefinitionBuilder().ReadWrite<BodyPose>().Read<BodyMass>().Read<BodyStepState>());
         QueryHandle lengths = world.Query(new QueryDefinitionBuilder().ReadWrite<XpbdLength>().Read<UndirectedRelationEndpoints<XpbdLength>>()
             .Read<ConstraintBreakSettings>());
-        QueryHandle events = world.Query(new QueryDefinitionBuilder().Read<PhysicsStepEvents>().ReadBuffer<PhysicsEvent>());
-        using var output = new PhysicsEventBuffer(scheduler, 4);
+        QueryHandle events = world.Query(new QueryDefinitionBuilder().Read<PhysicsStepEvents>().Enabled<PhysicsStepEvents>().ReadBuffer<PhysicsEvent>());
+        using var output = new PhysicsEventBuffer(world, 4);
         using var breaking = new BreakConstraints<XpbdLength, XpbdLengthProjection>(world, bodies, lengths, output);
         var solve = SolveXpbd.Create(world, bodies, new XpbdConstraints<XpbdLength, XpbdLengthProjection>(lengths), 1);
         var received = new List<(long Number, PhysicsEvent Event)>();
@@ -62,8 +62,8 @@ public sealed class CompletedPhysicsEventsTests
             .Read<BodyStepState>().ReadWrite<AvbdBodyEquation>());
         QueryHandle joints = world.Query(new QueryDefinitionBuilder().Read<JointConstraint>().Read<DirectedRelationEndpoints<JointConstraint>>()
             .ReadWrite<AvbdJointState>().Read<ConstraintBreakSettings>());
-        QueryHandle events = world.Query(new QueryDefinitionBuilder().Read<PhysicsStepEvents>().ReadBuffer<PhysicsEvent>());
-        using var output = new PhysicsEventBuffer(scheduler, 4);
+        QueryHandle events = world.Query(new QueryDefinitionBuilder().Read<PhysicsStepEvents>().Enabled<PhysicsStepEvents>().ReadBuffer<PhysicsEvent>());
+        using var output = new PhysicsEventBuffer(world, 4);
         using var breaking = new BreakConstraints<JointConstraint, AvbdJointMath>(world, bodies, joints, output);
         var solve = SolveAvbd.Create(world, bodies, new AvbdConstraints<JointConstraint, AvbdJointMath>(joints), 48, 0, 0);
         var received = new List<(long Number, PhysicsEvent Event)>();
@@ -100,8 +100,8 @@ public sealed class CompletedPhysicsEventsTests
         world.Add(point, new TriggerContact()); world.Add(point, new ContactEventState<CollisionEvents>());
         QueryHandle bodies = world.Query(new QueryDefinitionBuilder().Read<BodyPose>());
         QueryHandle contacts = world.Query(new QueryDefinitionBuilder().Read<ContactPoint>());
-        QueryHandle events = world.Query(new QueryDefinitionBuilder().Read<PhysicsStepEvents>().ReadBuffer<PhysicsEvent>());
-        using var output = new PhysicsEventBuffer(scheduler, 4);
+        QueryHandle events = world.Query(new QueryDefinitionBuilder().Read<PhysicsStepEvents>().Enabled<PhysicsStepEvents>().ReadBuffer<PhysicsEvent>());
+        using var output = new PhysicsEventBuffer(world, 4);
         using var observation = new ContactEvents<CollisionEvents>(world, bodies, contacts, output, 0);
         var received = new List<(long Number, PhysicsEvent Event)>();
         using var consumer = new ConsumePhysicsEvents<RecordEvents>(world, events, new(received),
@@ -137,9 +137,9 @@ public sealed class CompletedPhysicsEventsTests
             .Read<BodyStepState>().ReadWrite<AvbdBodyEquation>());
         QueryHandle contacts = world.Query(new QueryDefinitionBuilder().Read<ContactPoint>().Read<ContactMaterial>()
             .ReadBuffer<ContactBodyLink>().Read<UndirectedRelationEndpoints<ContactPoint>>()
-            .Optional<DirectedRelationEndpoints<ContactParticipant>>(QueryAccess.Read).ReadWrite<AvbdContactState>().ReadWrite<ContactResponse>());
-        QueryHandle events = world.Query(new QueryDefinitionBuilder().Read<PhysicsStepEvents>().ReadBuffer<PhysicsEvent>());
-        using var output = new PhysicsEventBuffer(scheduler, 8);
+            .ReadWrite<AvbdContactState>().ReadWrite<ContactResponse>());
+        QueryHandle events = world.Query(new QueryDefinitionBuilder().Read<PhysicsStepEvents>().Enabled<PhysicsStepEvents>().ReadBuffer<PhysicsEvent>());
+        using var output = new PhysicsEventBuffer(world, 8);
         using var observation = new ContactEvents<CollisionEvents>(world, bodies, contacts, output, .001f);
         var solve = SolveAvbd.Create(world, bodies, new AvbdConstraints<ContactPoint, AvbdContactMath>(contacts), 32, 0, 0);
         var received = new List<(long Number, PhysicsEvent Event)>();
@@ -176,8 +176,8 @@ public sealed class CompletedPhysicsEventsTests
         world.Add(body, new BodyActivity { Radius = 1 });
         QueryHandle bodies = world.Query(new QueryDefinitionBuilder().ReadWrite<BodyPose>().Read<BodyMass>().Read<BodyVelocity>().Read<BodyStepState>());
         QueryHandle lengths = world.Query(new QueryDefinitionBuilder().ReadWrite<XpbdLength>().Read<UndirectedRelationEndpoints<XpbdLength>>());
-        QueryHandle events = world.Query(new QueryDefinitionBuilder().Read<PhysicsStepEvents>().ReadBuffer<PhysicsEvent>());
-        using var output = new PhysicsEventBuffer(scheduler, 4);
+        QueryHandle events = world.Query(new QueryDefinitionBuilder().Read<PhysicsStepEvents>().Enabled<PhysicsStepEvents>().ReadBuffer<PhysicsEvent>());
+        using var output = new PhysicsEventBuffer(world, 4);
         using var solve = SolveXpbdGraph.Create(world, bodies, new XpbdGraphConstraints<XpbdLength, XpbdLengthProjection>(lengths),
             new PhysicsGraphSettings(PhysicsGraphOrder.Islands, 1, 1, 16, 16, false), 1);
         using var activity = solve.Activity(new BodyActivitySettings(.05f, .1f, .01f, .01f), output);
@@ -236,8 +236,8 @@ public sealed class CompletedPhysicsEventsTests
         {
             Normal = Vector3.UnitY, Separation = separation, BodyAnchorDelta = delta, FirstBodyCount = 1,
         }).Entity;
-        var first = world.CreateRelation(point, floor, new ContactParticipant());
-        var second = world.CreateRelation(point, body, new ContactParticipant());
+        var first = floor;
+        var second = body;
         world.AddBuffer<ContactBodyLink>(point);
         world.ExecuteBufferWrite<ContactBodyLink>(point, links => { links.Add(new(first, Vector3.Zero, 1)); links.Add(new(second, bodyAnchor, 1)); });
         world.Add(point, new ContactMaterial { NormalStiffness = float.PositiveInfinity });

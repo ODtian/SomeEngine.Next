@@ -5,15 +5,32 @@
 
 #include "physics_geometry_reference_data.slang"
 #include "physics_contact_body.slang"
-RWStructuredBuffer<DeviceContactBody> CollisionContactBodies;
-RWStructuredBuffer<uint> CollisionContactBodyCounts;
+RWStructuredBuffer<DeviceContactBody, ScalarDataLayout> CollisionContactBodies;
+RWStructuredBuffer<uint, ScalarDataLayout> CollisionContactBodyCounts;
+RWStructuredBuffer<DeviceContactBody, ScalarDataLayout> CollisionWorkBodies;
+RWStructuredBuffer<uint, ScalarDataLayout> CollisionWorkBodyCounts;
+void writeDeviceCollisionContacts(uint pair, uint work, uint count)
+{
+    uint begin = reserveDeviceCollisionContacts(pair,count);
+    for (uint point = 0; point < count; point++)
+    {
+        uint source = work*4+point, target = begin+point;
+        if(target>=DetectionParameters.contacts) continue;
+        CollisionContacts[target] = CollisionWorkContacts[source];
+        uint bodies = CollisionWorkBodyCounts[source];
+        CollisionContactBodyCounts[target] = bodies;
+        for (uint body = 0; body < bodies; body++)
+            CollisionContactBodies[target*DetectionParameters.bodiesPerContact+body] = CollisionWorkBodies[source*DetectionParameters.bodiesPerContact+body];
+    }
+}
 
-struct DeviceTriangle : IDevicePointGeometry
+struct DeviceTriangleAt<TPoints : IDeviceGeometryPointSample> : IDevicePointGeometry
+
 {
     DeviceGeometryPointDistance distanceToPoint(DeviceGeometryInput geometry, float3 point)
     {
-        uint start = geometry.geometryIndex*3;
-        float3 a=DeviceGeometryPoints[start], b=DeviceGeometryPoints[start+1], c=DeviceGeometryPoints[start+2];
+        TPoints points;
+        float3 a=points.read(geometry,0), b=points.read(geometry,1), c=points.read(geometry,2);
         float3 normal = normalize(cross(b-a,c-a));
         float height = dot(normal,point-a);
         float3 weights;
@@ -28,13 +45,13 @@ struct DeviceTriangle : IDevicePointGeometry
     }
     DeviceFeaturePoint support(DeviceGeometryInput geometry, float3 direction)
     {
-        uint first = geometry.geometryIndex * 3;
+        TPoints points;
         DeviceFeaturePoint result;
-        result.point = DeviceGeometryPoints[first];
+        result.point = points.read(geometry,0);
         result.feature = 2;
         for (uint index = 1; index < 3; index++)
         {
-            float3 point = DeviceGeometryPoints[first + index];
+            float3 point = points.read(geometry,index);
             if (dot(point, direction) > dot(result.point, direction))
             { result.point = point; result.feature = int(index + 2); }
         }
@@ -43,8 +60,8 @@ struct DeviceTriangle : IDevicePointGeometry
     float radius(DeviceGeometryInput geometry) { return geometry.convexRadius; }
     uint face(DeviceGeometryInput geometry, float3 direction, uint output)
     {
-        uint first = geometry.geometryIndex * 3;
-        float3 a = DeviceGeometryPoints[first], b = DeviceGeometryPoints[first + 1], c = DeviceGeometryPoints[first + 2];
+        TPoints points;
+        float3 a = points.read(geometry,0), b = points.read(geometry,1), c = points.read(geometry,2);
         float3 normal = normalize(cross(b - a, c - a));
         bool front = dot(normal, direction) >= 0;
         float3 offset = normal * (front ? geometry.convexRadius : -geometry.convexRadius);
@@ -57,7 +74,10 @@ struct DeviceTriangle : IDevicePointGeometry
     }
 };
 
-uint writeDeviceGeometryBodies(uint geometryIndex, float3 point, uint output, uint normalReference)
+typedef DeviceTriangleAt<DeviceCurrentGeometryPoints> DeviceTriangle;
+typedef DeviceTriangleAt<DeviceStartGeometryPoints> DeviceStartingTriangle;
+
+uint writeDeviceGeometryBodies(uint geometryIndex, float3 point, uint output, uint normalReference, uint sample = 0, bool temporary = false)
 {
     DeviceGeometryReference reference = DeviceGeometryReferences[geometryIndex];
     uint indices[3] = { reference.firstBody, reference.secondBody, reference.thirdBody };
@@ -65,22 +85,22 @@ uint writeDeviceGeometryBodies(uint geometryIndex, float3 point, uint output, ui
     float3 weights = float3(1, 0, 0);
     if (reference.kind == 1)
     {
-        float3 first = deviceBodyPoint(indices[0], local[0]);
-        float3 second = deviceBodyPoint(indices[1], local[1]);
+        float3 first = deviceGeometryPoint(indices[0], local[0], sample);
+        float3 second = deviceGeometryPoint(indices[1], local[1], sample);
         float3 edge = second - first;
         float parameter = saturate(dot(point - first, edge) / dot(edge, edge));
         weights = float3(1 - parameter, parameter, 0);
     }
     else if (reference.kind == 2)
     {
-        float3 first = deviceBodyPoint(indices[0], local[0]);
-        float3 second = deviceBodyPoint(indices[1], local[1]);
-        float3 third = deviceBodyPoint(indices[2], local[2]);
+        float3 first = deviceGeometryPoint(indices[0], local[0], sample);
+        float3 second = deviceGeometryPoint(indices[1], local[1], sample);
+        float3 third = deviceGeometryPoint(indices[2], local[2], sample);
         closestDeviceTriangle(first - point, second - point, third - point, weights);
     }
     [loop] for (uint index = 0; index < reference.bodyCount; index++)
     {
-        DeviceBodyState state = DeviceBodyStates[indices[index]];
+        DeviceBodyState state = deviceGeometryBody(indices[index], sample);
         DeviceContactBody body;
         body.entity = uint2(state.entityIndex, state.entityGeneration);
         body.localPoint = reference.kind == 0
@@ -88,7 +108,8 @@ uint writeDeviceGeometryBodies(uint geometryIndex, float3 point, uint output, ui
         body.weight = weights[index];
         body.stateIndex = indices[index];
         body.normalReference = normalReference;
-        CollisionContactBodies[output + index] = body;
+        if (temporary) CollisionWorkBodies[output + index] = body;
+        else CollisionContactBodies[output + index] = body;
     }
     return reference.bodyCount;
 }
@@ -111,7 +132,8 @@ void detectDeviceReferencedCollision<TKernel : IDeviceCollisionNarrowPhase>(uint
         uint count = CollisionContactCounts[index];
         [loop] for (uint point = 0; point < count; point++)
         {
-            uint contactIndex = index * 4 + point;
+            uint contactIndex = CollisionContactOffsets[index] + point;
+            if(contactIndex>=DetectionParameters.contacts) continue;
             DeviceCollisionContact contact = CollisionContacts[contactIndex];
             float3 firstPoint = first.position + rotateDeviceDirection(first.rotation, contact.firstLocalPoint);
             float3 secondPoint = second.position + rotateDeviceDirection(second.rotation, contact.secondLocalPoint);

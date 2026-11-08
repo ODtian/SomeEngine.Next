@@ -2,23 +2,22 @@
 #include "physics_collision_contact.slang"
 #include "physics_constraint_math.slang"
 #include "physics_contact_anchor_math.slang"
-struct DeviceContactGeometrySettings { uint pairs; uint bodiesPerContact; uint inputBodiesPerContact; };
-ConstantBuffer<DeviceContactGeometrySettings> ContactGeometrySettings;
-StructuredBuffer<uint> DeviceContactGeometryRows;
+struct DeviceContactGeometrySettings { uint contacts; uint bodiesPerContact; uint inputBodiesPerContact; };
+ConstantBuffer<DeviceContactGeometrySettings, ScalarDataLayout> ContactGeometrySettings;
+RWStructuredBuffer<uint, ScalarDataLayout> DeviceContactGeometryRows;
 #include "physics_dispatch.slang"
-StructuredBuffer<DeviceCollisionContact> DeviceMatchInputContacts;
-StructuredBuffer<uint> DeviceMatchInputCounts;
-StructuredBuffer<uint> DeviceMatchInputBodyCounts;
-StructuredBuffer<DeviceContactBody> DeviceMatchInputBodies;
-RWStructuredBuffer<DeviceContactConstraint> DeviceContacts;
-RWStructuredBuffer<DeviceContactBody> DeviceContactBodyLinks;
+StructuredBuffer<DeviceCollisionContact, ScalarDataLayout> DeviceMatchInputContacts;
+StructuredBuffer<uint, ScalarDataLayout> DeviceMatchInputCounts;
+StructuredBuffer<uint, ScalarDataLayout> DeviceMatchInputBodyCounts;
+StructuredBuffer<DeviceContactBody, ScalarDataLayout> DeviceMatchInputBodies;
+RWStructuredBuffer<DeviceContactConstraint, ScalarDataLayout> DeviceContacts;
+RWStructuredBuffer<DeviceContactBody, ScalarDataLayout> DeviceContactBodyLinks;
 [shader("compute")][numthreads(64,1,1)]
 void UpdateDeviceContactGeometry(uint3 id:SV_DispatchThreadID)
 {
     uint input=devicePhysicsThreadIndex(id,64);
-    if(input>=ContactGeometrySettings.pairs*4) return;
-    if(input%4>=DeviceMatchInputCounts[input/4]) return;
-    uint row=DeviceContactGeometryRows[input];
+    if(input>=ContactGeometrySettings.contacts) return;
+    uint row=DeviceContactGeometryRows[input]&0x7fffffffu;
     uint count=DeviceMatchInputBodyCounts[input];
     if(count==0) return;
     DeviceCollisionContact current=DeviceMatchInputContacts[input];

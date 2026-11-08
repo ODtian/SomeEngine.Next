@@ -12,7 +12,7 @@
     <ProjectReference Include="../../src/SomeEngine.RenderGraph/SomeEngine.RenderGraph.csproj" />
     <ProjectReference Include="../../src/SomeEngine.Runtime/SomeEngine.Runtime.csproj" />
     <Content Include="Shaders/*.slang" CopyToOutputDirectory="PreserveNewest" />
-    <Content Include="../../external/dxc/bin/x64/dxcompiler.dll" Link="dxcompiler.dll" CopyToOutputDirectory="PreserveNewest" />
-    <Content Include="../../external/dxc/bin/x64/dxil.dll" Link="dxil.dll" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../../external/dxc/bin/x64/dxcompiler.dll" DependencyBinary="true" Link="dxcompiler.dll" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../../external/dxc/bin/x64/dxil.dll" DependencyBinary="true" Link="dxil.dll" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

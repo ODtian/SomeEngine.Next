@@ -101,7 +101,7 @@ public sealed class MeshPreparationTests
         for (int page = 0; page < pages.Length; page++)
             Assert.True(mesh.TryGetPage(page, out pages[page]));
         return Mesh.Create(mesh.Name!, mesh.VertexEncoding, mesh.PageDigests, bvh, pages, mesh.Bounds,
-            mesh.Regions, mesh.LowestDetailPageIndices, mesh.ClusterGeometryIndices);
+            mesh.Regions, mesh.LowestDetailPageIndices, mesh.ClusterGeometryIndices, mesh.ClusterGroups);
     }
 
     private sealed class BvhBytes(byte[] bytes) : MemoryManager<byte>

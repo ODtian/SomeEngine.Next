@@ -27,7 +27,7 @@ count 按发起实体 × 具体类型 bin 计数，同时缓存已选择配对�
 
 ## 具体 Slang 扩展与资源
 
-[physics_grid.slang](../../../assets/Shaders/physics_grid.slang) 给出内置 Count、Write 入口。用户源码包含 `physics_grid_common.slang`，用具体结构体实现 `IDevicePairRule.matches` 和 `IDevicePairClassifier.classify`，再从具体入口调用 `countDevicePairs`、`writeDevicePairs`。两次调用使用相同具体规则值和分类器值；count 执行规则和分类，write 消费其已选择的配对引用。`DevicePairAnd` 与 `DevicePairExcept` 持有并组合具体规则值。`DeviceCollisionRules` 读取相同设备输入，按显式 `DevicePairRules` 执行类别位图及键关系。
+[physics_grid.slang](../../../assets/Shaders/physics_grid.slang) 给出内置 Count、Write 入口。用户源码包含 `physics_grid_common.slang`，用具体结构体实现 `IDevicePairRule.matches` 和 `IDevicePairClassifier.classify`，再从具体入口调用 `countDevicePairs`、`writeDevicePairs`。两次调用在同一设备输入上使用相同具体规则值和分类器值：count 保存分区与类型计数，prefix 形成输出范围，write 再枚举相同候选并直接写入最终类型 bin。批次持有计数、偏移及最终 pair 输出。`DevicePairAnd` 与 `DevicePairExcept` 持有并组合具体规则值。`DeviceCollisionRules` 读取相同设备输入，按显式 `DevicePairRules` 执行类别位图及键关系。
 
 网格构造接收七个现有 `ComputePipelineDesc`。Shader 代码及反射从既有 Shader 资产、就绪 Shader 或后端编译入口提供；绑定按原 Slang 反射描述解释，并在构造时整理成后端使用的绑定数组。用户规则和分类器所需的额外设备资源通过 `extraBindings` 接入，并用 `extraAccesses` 声明对应实际资源范围。规则在相同具体设备入口中读取这些资源。
 
@@ -35,7 +35,7 @@ count 按发起实体 × 具体类型 bin 计数，同时缓存已选择配对�
 
 ## 完成、消费与归还
 
-提交沿现有 RHI `CreateComputePipeline`、`Dispatch` 和 `Submit` 执行，阶段间通过资源 barrier 连接。实际 `QueueCompletion` 经 [DeviceQueueFence](../../../src/SomeEngine.Physics/DeviceQueueFence.cs) 适配到现有 `IJobExternalFence`；等待使用现有 Scheduler 作业调用 `WaitCpu`，设备错误由 fence 的终态结果传播。
+提交沿现有 RHI `CreateComputePipeline`、`Dispatch` 和 `Submit` 执行，阶段间通过资源 barrier 连接。实际 `QueueCompletion` 经 [DeviceQueueFence](../../../src/SomeEngine.Physics/DeviceQueueFence.cs) 的 RHI 异步完成通知适配到现有 `IJobExternalFence`，设备错误由 fence 的终态结果传播。
 
 `DevicePairReadback.Pairs` 在提交中复制偏移和配对，设备完成后由 CPU 作业读回。返回的 `PhysicsStepResult.Completion` 覆盖提交、外部 fence、选定读回与 CPU 接受、`ScheduleFinally` 调用的后端 `CollectCompleted`。完成后 `Number`、`Time` 表达这批设备结果所属的物理步编号和子步结束时间。
 

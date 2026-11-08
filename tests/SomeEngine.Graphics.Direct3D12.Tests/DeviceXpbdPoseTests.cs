@@ -43,11 +43,11 @@ public sealed partial class DeviceXpbdTests
             .Read<UndirectedRelationEndpoints<XpbdLength>>().Read<DeviceConstraintBinding<DeviceLengthConstraint>>()
             .All<DeviceXpbdState<float>>());
         QueryHandle bendRows = world.Query(world.QueryDefinition().Read<XpbdBend>().ReadBuffer<ConstraintBodyLink>()
-            .Optional<DirectedRelationEndpoints<ConstraintParticipant>>(QueryAccess.Read)
+
             .Read<DeviceConstraintBinding<DeviceBendConstraint>>().All<DeviceXpbdState<float>>());
         using var writeLengths = lengths.WriteInputs<XpbdLength, DeviceLengthSource>(world, lengthRows, new(), 64);
         using var writeBends = bends.WriteInputs<XpbdBend, DeviceBendSource>(world, bendRows, new(), 64);
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
         using var results = new DeviceBodyResults(backend, device, bodies);
         using var projectLengths = new DeviceXpbdProjection<DeviceLengthConstraint, float>(backend, device, world,
             lengthRows, bodies, dynamics, lengths, lengthMultipliers, CompileLength(), 64);

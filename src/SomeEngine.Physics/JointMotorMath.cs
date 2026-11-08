@@ -9,6 +9,13 @@ internal readonly record struct JointMotorRow(JointEquationRow Derivative, float
 
 internal static class JointMotorMath
 {
+    internal static bool IsAxisEnabled(in JointMotor motor, int dof)
+    {
+        int axis = dof % 3;
+        return dof < 3 ? motor.LinearStiffness[axis] != 0 || motor.LinearDamping[axis] != 0
+            : motor.AngularStiffness[axis] != 0 || motor.AngularDamping[axis] != 0;
+    }
+
     internal static PhysicsConstraintError GetActivityError(in JointConstraint constraint, scoped QueryRow row,
         scoped PhysicsBodies bodies, in PhysicsStepContext context)
     {

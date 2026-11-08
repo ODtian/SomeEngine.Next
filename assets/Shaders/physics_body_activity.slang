@@ -11,15 +11,15 @@ struct DeviceActivityStep
     uint substep; uint padding; uint2 number; uint2 startTime; uint2 endTime;
 };
 uniform DeviceActivityStep ActivityStep;
-RWStructuredBuffer<uint> DeviceActivityIslandSignals;
+RWStructuredBuffer<uint, ScalarDataLayout> DeviceActivityIslandSignals;
 struct DeviceActivityRow
 {
     uint entityIndex; uint entityGeneration; uint bodyCount;
     uint firstVersion; uint secondVersion;
 };
-RWStructuredBuffer<DeviceActivityRow> DeviceActivityPreviousRows;
+RWStructuredBuffer<DeviceActivityRow, ScalarDataLayout> DeviceActivityPreviousRows;
 // Body index, write role and actual Body Entity/generation.
-RWStructuredBuffer<uint4> DeviceActivityPreviousParticipants;
+RWStructuredBuffer<uint4, ScalarDataLayout> DeviceActivityPreviousParticipants;
 interface IDeviceConstraintActivity : IDeviceConstraintBodies
 {
     uint2 entity(uint row);
@@ -71,7 +71,7 @@ void ClearDeviceActivitySignals(uint3 id:SV_DispatchThreadID)
     {
         uint rows,stride;
         DeviceActivityPreviousRows.GetDimensions(rows,stride);
-        if(index<rows) DeviceActivityPreviousRows[index]=(DeviceActivityRow)0;
+        if(index<ActivityStep.rows) DeviceActivityPreviousRows[deviceGraphSourceRow(index)]=(DeviceActivityRow)0;
     }
     else if(index<ActivityStep.bodies) DeviceActivityIslandSignals[index]=0;
 }
@@ -118,44 +118,45 @@ uint4 deviceActivityParticipant<T : IDeviceConstraintActivity>(T rows,uint index
 void readDeviceActivityRows<T : IDeviceConstraintActivity>(uint index,T rows)
 {
     if(index>=ActivityStep.rows) return;
-    bool active=index<rows.count()&&rows.active(index);
-    uint count=active?rows.bodyCount(index):0;
+    uint input=deviceGraphSourceRow(index);
+    bool active=input<rows.count()&&rows.active(input);
+    uint count=active?rows.bodyCount(input):0;
     if(ActivityStep.phase==1)
     {
-        uint2 entity=active?rows.entity(index):uint2(0);
-        uint2 versions=active?rows.sourceVersions(index):uint2(0);
+        uint2 entity=active?rows.entity(input):uint2(0);
+        uint2 versions=active?rows.sourceVersions(input):uint2(0);
         DeviceActivityRow current;
         current.entityIndex=entity.x; current.entityGeneration=entity.y; current.bodyCount=count;
         current.firstVersion=versions.x; current.secondVersion=versions.y;
-        DeviceActivityRow previous=DeviceActivityPreviousRows[index];
-        uint start=index*ConstraintGraphParameters.bodiesPerRow;
+        DeviceActivityRow previous=DeviceActivityPreviousRows[deviceGraphSourceRow(index)];
+        uint start=input*ConstraintGraphParameters.bodiesPerRow;
         bool changed=current.entityIndex!=previous.entityIndex||current.entityGeneration!=previous.entityGeneration
             ||count!=previous.bodyCount||current.firstVersion!=previous.firstVersion||current.secondVersion!=previous.secondVersion;
         for(uint end=0;end<min(previous.bodyCount,count);end++)
-            changed=changed||any(DeviceActivityPreviousParticipants[start+end]!=deviceActivityParticipant(rows,index,end));
+            changed=changed||any(DeviceActivityPreviousParticipants[start+end]!=deviceActivityParticipant(rows,input,end));
         if(changed)
         {
             for(uint end=0;end<previous.bodyCount;end++) deviceActivityWakeParticipant(DeviceActivityPreviousParticipants[start+end]);
-            for(uint end=0;end<count;end++) deviceActivityWakeParticipant(deviceActivityParticipant(rows,index,end));
+            for(uint end=0;end<count;end++) deviceActivityWakeParticipant(deviceActivityParticipant(rows,input,end));
         }
-        for(uint end=0;end<count;end++) DeviceActivityPreviousParticipants[start+end]=deviceActivityParticipant(rows,index,end);
-        DeviceActivityPreviousRows[index]=current;
+        for(uint end=0;end<count;end++) DeviceActivityPreviousParticipants[start+end]=deviceActivityParticipant(rows,input,end);
+        DeviceActivityPreviousRows[deviceGraphSourceRow(index)]=current;
     }
     if(!active) return;
-    float2 error=rows.error(index,ActivityStep);
+    float2 error=rows.error(input,ActivityStep);
     bool exceeds=error.x>ActivityStep.linearErrorThreshold||error.y>ActivityStep.angularErrorThreshold;
     bool changed=false;
-    for(uint end=0;end<rows.bodyCount(index);end++)
+    for(uint end=0;end<rows.bodyCount(input);end++)
     {
-        uint body=rows.body(index,end);
+        uint body=rows.body(input,end);
         changed=changed||deviceActivityBodyChanged(body);
         if(ConstraintGraphParents[body]==0xffffffff)
             changed=changed||any(DeviceBodyStates[body].linearVelocity!=float3(0))||any(DeviceBodyStates[body].angularVelocity!=float3(0));
     }
     if(!exceeds&&!changed) return;
-    for(uint end=0;end<rows.bodyCount(index);end++)
+    for(uint end=0;end<rows.bodyCount(input);end++)
     {
-        uint body=rows.body(index,end),root=ConstraintGraphParents[body];
+        uint body=rows.body(input,end),root=ConstraintGraphParents[body];
         if(root!=0xffffffff) InterlockedOr(DeviceActivityIslandSignals[root],(exceeds?3u:0u)|(changed?9u:0u));
     }
 }
@@ -203,4 +204,5 @@ void FinishDeviceBodyActivity(uint3 id:SV_DispatchThreadID)
     DeviceBodyState body=DeviceBodyStates[index]; body.linearVelocity=body.angularVelocity=float3(0);
     DeviceBodyStates[index]=body; ConstraintGraphActiveBodies[index]=0;
 }
+
 #endif

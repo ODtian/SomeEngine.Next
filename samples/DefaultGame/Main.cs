@@ -131,6 +131,10 @@ public static class SampleApplication
             WorldNameplates = startupOptions.WorldNameplates || !crowdOnly,
         };
         if (physicsOnly) startupOptions = startupOptions with { FixedFrameSeconds = 1f / 60, SynchronousFrames = true };
+        if (devicePhysics) startupOptions = startupOptions with
+        {
+            OptionalDeviceFeatures = startupOptions.OptionalDeviceFeatures | DeviceFeatures.SparseResources,
+        };
         string? clusterEffect = args.FirstOrDefault(static value => value.StartsWith("--cluster-effect=", StringComparison.Ordinal))
             ?["--cluster-effect=".Length..] ?? (args.Contains("--cluster-oit", StringComparer.Ordinal) ? "glass" : null);
         ClusterBlendAssets? clusterAssets = clusterEffect is null && (regressionOnly || crowdOnly) ? null
@@ -219,7 +223,7 @@ public static class SampleApplication
         var adapters = new AdapterInfo[count];
         backend.TryEnumerateAdapters(new(AdapterPreference.HighPerformance, IncludeSoftware: false), adapters, out _);
         using Device device = backend.CreateDevice(new(adapters.First(adapter => adapter.HardwareAccelerated).Id,
-            [new(QueueType.Compute)], requiredFeatures: PhysicsCrowdScale.Read(id).HasValue ? DeviceFeatures.IndirectCommands : default,
+            [new(QueueType.Graphics), new(QueueType.Compute)], optionalFeatures: DeviceFeatures.SparseResources, requiredFeatures: PhysicsCrowdScale.Read(id).HasValue ? DeviceFeatures.IndirectCommands : default,
             label: "Scene physics measurement"));
         return MeasurePhysicsScenes.RunDevice(Console.Out, backend, device, id);
     }

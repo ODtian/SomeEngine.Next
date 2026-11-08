@@ -144,7 +144,7 @@ public sealed partial class PhysicsCrowdScene : IGameFramePhysics
         DevicePoseBodyStages poses = sources.CreateBodyStages(DevicePoseShaders.GetBodies(device.Capabilities.CompileTarget));
         var motorTargets = Keep(new DeviceCrowdMotorTargets(backend, device, world, characters, sources,
             physics.Bodies, joints.Data, motors.Data, shaders.CrowdMotorTargets()));
-        var dynamics = Keep(new DeviceBodyDynamics(backend, device, world, members, physics.Bodies, shaders.CrowdBodies(), 64));
+        var dynamics = Keep(new BodyDynamicsCommands(backend, device, world, members, physics.Bodies, shaders.CrowdBodies(), 64));
         var lengths = Keep(new DeviceConstraintSelection<XpbdLength, DeviceLengthConstraint, DeviceXpbdStateRows<float>>(
             backend, device, world, lengthRows, physics.Lengths, new(physics.LengthMultipliers), "DeviceLengthsSelection"));
         var bends = Keep(new DeviceConstraintSelection<XpbdBend, DeviceBendConstraint, DeviceXpbdStateRows<float>>(
@@ -162,7 +162,7 @@ public sealed partial class PhysicsCrowdScene : IGameFramePhysics
         graphSelections.Add(contacts.Selection);
         var graph = Keep(new DeviceConstraintGraph(backend, device, physics.Bodies, dynamics, shaders.CrowdGraph(jointNet),
             new(count * (lengthsPerCharacter + bendsPerCharacter + 1) + contacts.Parameters.Capacity
-                + (jointNet ? joints.Data.Capacity : 0), 5), bindings, reads, 64, graphSelections.ToArray()));
+                + (jointNet ? joints.Data.Capacity : 0), 5) { ContactStart = count * (lengthsPerCharacter + bendsPerCharacter + 1) + (jointNet ? joints.Data.Capacity : 0) }, bindings, reads, 64, graphSelections.ToArray()));
         JobResourceAccess[] solverReads = [.. reads, physics.LengthMultipliers.GetReadAccess(scheduler),
             physics.BendMultipliers.GetReadAccess(scheduler), motors.States.GetWriteAccess(scheduler),
             contacts.Histories.GetWriteAccess(scheduler), contacts.Responses.GetWriteAccess(scheduler)];
@@ -173,17 +173,17 @@ public sealed partial class PhysicsCrowdScene : IGameFramePhysics
             solverReads = [.. solverReads, joints.States.GetWriteAccess(scheduler)];
             solverSelections.Add(joints.StateSelection);
         }
-        var avbd = Keep(new DeviceAvbdSolver(backend, device, physics.Bodies, equations, graph, shaders.CrowdAvbd(jointNet, physics.Bodies.Capacity),
+        var avbd = Keep(new AvbdGraphCommands(backend, device, physics.Bodies, equations, graph, shaders.CrowdAvbd(jointNet, physics.Bodies.Capacity),
             new(1, 1, .8f, 0), bindings, solverReads, 64,
-            solverSelections.ToArray()));
-        var xpbd = Keep(new DeviceXpbdSolver(backend, device, physics.Bodies, graph,
+            solverSelections.ToArray(), equationBindingsFixed: true));
+        var xpbd = Keep(new XpbdGraphCommands(backend, device, physics.Bodies, graph,
             shaders.CrowdXpbd(backend.TryGetCapability<IndirectCommands>(device, out _), jointNet), new(1, 64),
             bindings, reads, new[] { physics.LengthMultipliers.States, physics.BendMultipliers.States }, 64));
         var results = Keep(new DeviceBodyResults(backend, device, physics.Bodies));
         var response = Keep(new DeviceContactActions(backend, device, physics.Bodies, graph, contacts.Responses,
             shaders.CrowdResponses(jointNet), bindings, reads, 64, new IDeviceConstraintSelection[] { contacts.ResponseSelection }));
         var controls = Keep(new AdvanceCrowdTargets(world));
-        var equationInputs = new CrowdEquationInputs(avbd);
+        var equationInputs = SolveAvbdGraph.Create(avbd, buildGraph: false);
         var constraintInputs = Keep(DeviceCrowdConstraintInputs.Create(world, members, lengthRows, bendRows, jointRows,
             physics.Lengths.BeginInputs().Then(writeLengths).Then(physics.Lengths.UploadInputs())
                 .Then(physics.Bends.BeginInputs()).Then(writeBends).Then(physics.Bends.UploadInputs()).Then(joints.Upload())));
@@ -204,7 +204,7 @@ public sealed partial class PhysicsCrowdScene : IGameFramePhysics
             .Then(contacts.Detect().Measure(timings, "Geometry and persistent contacts"))
             .Then(response.Initialize().Measure(timings, "Contact response inputs"))
             .Then(graph.Build().Measure(timings, "Constraint graph"))
-            .Then(new InitializeCrowdEquations(equationInputs).Measure(timings, "Body equations"))
+            .Then(equationInputs.Initialize().Measure(timings, "Body equations"))
             .Then(xpbd.Initialize(buildGraph: false).Measure(timings, "XPBD history"))
             .Then(new SolveCrowdConstraints(avbd.Iterate(1, buildGraph: false), xpbd.Iterate(1, buildGraph: false), 8, timings)
                 .Measure(timings, "AVBD and XPBD"))
@@ -262,22 +262,7 @@ internal readonly struct CrowdPhysicsBody : IComponent;
 internal readonly record struct CrowdPose(float Phase) : IComponent;
 internal readonly record struct CrowdMotorTarget(Vector3 Position) : IComponent;
 
-internal sealed class CrowdEquationInputs(DeviceAvbdSolver solver)
-{
-    private bool _uploaded;
-    internal JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency)
-    {
-        DeviceInputTransfer transfer = _uploaded ? DeviceInputTransfer.Resident : DeviceInputTransfer.Upload;
-        _uploaded = true;
-        return solver.Initialize(buildGraph: false, equationInputs: transfer).Schedule(in context, dependency);
-    }
-}
-internal readonly struct InitializeCrowdEquations(CrowdEquationInputs inputs) : IPhysicsStage
-{
-    public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) => inputs.Schedule(in context, dependency);
-}
-
-internal readonly struct SolveCrowdConstraints(IterateDeviceAvbd avbd, IterateDeviceXpbdGraph xpbd, int iterations,
+internal readonly struct SolveCrowdConstraints(IterateAvbdGraph avbd, IterateXpbdGraph xpbd, int iterations,
     PhysicsSceneTimings? timings) : IPhysicsStage
 {
     public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency)

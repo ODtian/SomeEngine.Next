@@ -55,7 +55,7 @@ public sealed partial class DeviceXpbdTests
             new(PhysicsGraphOrder.Colors, SmallIslandBodyLimit: 2, BodiesPerBatch: 4, LargeIslandBodyLimit: 1, RowsPerBlock: 2, UseSimd: false), 8);
         var referenceStages = new PredictBodies(Vector3.Zero, 64).Then(scalar).Then(new UpdateBodyVelocities(64));
         using var write = lengths.WriteInputs<XpbdLength, DeviceLengthSource>(world, rows, new(), 64);
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
         using var results = new DeviceBodyResults(backend, device, bodies);
         using var selection = new DeviceConstraintSelection<XpbdLength, DeviceLengthConstraint, DeviceXpbdStateRows<float>>(
             backend, device, world, rows, lengths, new(multipliers), "DeviceLengthsSelection");
@@ -63,8 +63,8 @@ public sealed partial class DeviceXpbdTests
         lengths.AddBindings(bindings); multipliers.AddBindings(bindings);
         using var graph = new DeviceConstraintGraph(backend, device, bodies, dynamics, CompileLengthGraph(),
             new(10, 2), bindings, lengths.GetReadAccesses(jobs), 64, new[] { selection });
-        using var solve = new DeviceXpbdSolver(backend, device, bodies, graph, CompileGraphLengthProjection(),
-            new DeviceXpbdSettings(Iterations: 8, RowsPerBlock: 2), bindings, lengths.GetReadAccesses(jobs),
+        using var solve = new XpbdGraphCommands(backend, device, bodies, graph, CompileGraphLengthProjection(),
+            new XpbdIterationSettings(Iterations: 8, RowsPerBlock: 2), bindings, lengths.GetReadAccesses(jobs),
             new[] { multipliers.States }, threadsPerGroup: 64);
         var stages = lengths.BeginInputs().Then(write).Then(lengths.UploadInputs())
             .Then(bodies.WriteInputs(64)).Then(bodies.UploadInputs()).Then(dynamics.Predict(Vector3.Zero))
@@ -96,7 +96,7 @@ public sealed partial class DeviceXpbdTests
         ComputePipelineDesc Entry(int index) => new(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(index), shader.GetEntryCode(index));
         return new(Entry(0), Entry(1));
     }
-    private DeviceXpbdKernels CompileGraphLengthProjection()
+    private XpbdGraphKernels CompileGraphLengthProjection()
     {
         D3D12TestShader shader = shaderCompiler.CompileWithSearchPaths("xpbd_length_colors", """
             #include "physics_xpbd_graph.slang"

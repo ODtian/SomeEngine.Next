@@ -67,7 +67,11 @@ struct DeviceContactResponseActions<TSelection : IDeviceBodySelection> : IDevice
     }
 };
 void initializeDeviceContactResponses<T : IDeviceContactResponseActions>(uint row,T actions)
-{ if(row<actions.count()&&actions.active(row)) actions.initialize(row,ContactStep); }
+{
+    if(row>=ConstraintGraphParameters.rows) return;
+    uint input=deviceGraphSourceRow(row);
+    if(input<actions.count()&&actions.active(input)) actions.initialize(input,ContactStep);
+}
 void applyDeviceContactRestitution<T : IDeviceContactResponseActions>(uint index,T actions)
 {
     uint2 range=ConstraintGraphRowRanges[ContactStep.stage];

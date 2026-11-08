@@ -31,18 +31,27 @@ public readonly struct DeviceXpbdStateRows<TState>(DeviceConstraintState<TState>
 public sealed class DeviceConstraintState<TState> : IDisposable where TState : unmanaged
 {
     private readonly string _bindingName;
+    private bool _initialized;
     internal readonly BufferUav View;
-    public DeviceConstraintState(IGraphicsBackend backend, Device device, int capacity, string bindingName)
+    public DeviceConstraintState(IGraphicsBackend backend, Device device, int capacity, string bindingName, DeviceContactMemory? memory = null)
     {
-        _bindingName = bindingName; Capacity = capacity;
+        _bindingName = bindingName; Capacity = capacity; Memory = memory;
         uint stride = (uint)Unsafe.SizeOf<TState>();
-        States = backend.CreateBuffer(device, new((ulong)capacity * stride,
-            BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopySource | BufferUsages.CopyDestination,
-            bindingName), MemoryType.DeviceLocal);
+        var description = new BufferDesc((ulong)capacity * stride,
+            BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopySource | BufferUsages.CopyDestination, bindingName);
+        States = memory is null ? backend.CreateBuffer(device, description) : memory.CreateBuffer(description, stride);
         View = backend.CreateBufferUav(device, new(States, new(0, States.Info.Size), StructureStride: stride));
     }
     public int Capacity { get; }
+    public DeviceContactMemory? Memory { get; }
     public Buffer States { get; }
+    internal void BeginWrite(IGraphicsBackend backend,CommandContext commands,PipelineSync sync,ResourceAccess access)
+    {
+        bool continuing=_initialized||Memory?.UsesSparseBuffers==true;
+        backend.Barrier(commands,new BufferBarrier(States,continuing?PipelineSync.ComputeShading:States.InitialSync,
+            sync,continuing?ResourceAccess.UnorderedAccess:States.InitialAccess,access));
+        _initialized=true;
+    }
     public void AddBindings(Dictionary<string, ResourceBinding[]> bindings) =>
         bindings.Add(_bindingName, [ResourceBinding.WritableBuffer(View)]);
     public JobResourceAccess GetWriteAccess(Scheduler scheduler) =>

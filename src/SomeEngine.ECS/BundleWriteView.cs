@@ -47,6 +47,9 @@ public readonly ref struct BundleWriteView
         where T : struct, IComponent =>
         _runtime.Write(_token, in value);
 
+    internal void WriteRelationshipSource<T>(in T value) where T : struct, IRelationshipSource =>
+        _runtime.Write(_token, in value, relationshipSource: true);
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void WriteSparse<T>(in T value)
         where T : struct, ISparseComponent =>
@@ -125,6 +128,7 @@ internal sealed class BundleWriteRuntime
     private int _index;
     private bool _preserveEntity;
     private bool _preparedBatch;
+    private uint _preparedWriteVersion;
     private bool _hasMaterialized;
     private bool _active;
 
@@ -227,7 +231,7 @@ internal sealed class BundleWriteRuntime
         Owners.Bundles owner,
         BundleSpawnMap plan,
         ReadOnlySpan<int> sparseComponentIds,
-        long token)
+        long token, uint writeVersion)
     {
         Begin(
             owner,
@@ -239,6 +243,7 @@ internal sealed class BundleWriteRuntime
             token,
             index: 0);
         _preparedBatch = true;
+        _preparedWriteVersion = writeVersion;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -274,7 +279,7 @@ internal sealed class BundleWriteRuntime
         return _materialized.Entity;
     }
 
-    internal void Write<T>(long token, in T value)
+    internal void Write<T>(long token, in T value, bool relationshipSource = false)
         where T : struct, IComponent
     {
         ValidateCallbackAccess(token);
@@ -289,11 +294,11 @@ internal sealed class BundleWriteRuntime
         if (descriptorIndex < 0)
             ThrowUndeclared<T>();
 
-        GuardCallbackWrite<T>();
+        if (!relationshipSource) GuardCallbackWrite<T>();
         MarkWritten(descriptorIndex, typeof(T).Name);
         EnsureMaterialized();
         if (_preparedBatch && _owner.CanUsePreparedRawComponentWrites())
-            _owner.WritePreparedComponent(in _materialized, in value);
+            _owner.WritePreparedComponent(in _materialized, in value, _preparedWriteVersion);
         else
             _owner.WriteComponent(in _materialized, in value, _mode);
     }

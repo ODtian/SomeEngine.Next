@@ -2,9 +2,9 @@
 #define PHYSICS_XPBD
 #include "physics_xpbd_types.slang"
 #include "physics_constraint_data.slang"
-ConstantBuffer<DeviceXpbdStep> XpbdStep;
-StructuredBuffer<uint4> DeviceXpbdRows;
-RWStructuredBuffer<DeviceConstraintMetadata> DeviceXpbdMetadata;
+ConstantBuffer<DeviceXpbdStep, ScalarDataLayout> XpbdStep;
+StructuredBuffer<uint4, ScalarDataLayout> DeviceXpbdRows;
+RWStructuredBuffer<DeviceConstraintMetadata, ScalarDataLayout> DeviceXpbdMetadata;
 bool deviceXpbdSelected(uint4 selected)
 {
     DeviceConstraintMetadata metadata = DeviceXpbdMetadata[selected.x];

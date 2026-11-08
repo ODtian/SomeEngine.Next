@@ -30,8 +30,8 @@ public sealed class AvbdContactTests
             Normal = geometry.Normal, Separation = geometry.Separation,
             BodyAnchorDelta = geometry.SecondPoint - geometry.FirstPoint, FirstBodyCount = 1,
         });
-        var first = world.CreateRelation(point.Entity, sphere, new ContactParticipant());
-        var second = world.CreateRelation(point.Entity, plane, new ContactParticipant());
+        var first = sphere;
+        var second = plane;
         world.AddBuffer<ContactBodyLink>(point.Entity);
         world.ExecuteBufferWrite<ContactBodyLink>(point.Entity, links =>
         {
@@ -45,7 +45,7 @@ public sealed class AvbdContactTests
             .Read<BodyStepState>().Read<BodyVelocity>().ReadWrite<AvbdBodyEquation>());
         QueryHandle contacts = world.Query(new QueryDefinitionBuilder().Read<ContactPoint>()
             .Read<UndirectedRelationEndpoints<ContactPoint>>().Read<ContactMaterial>().ReadBuffer<ContactBodyLink>()
-            .Optional<DirectedRelationEndpoints<ContactParticipant>>(QueryAccess.Read).ReadWrite<AvbdContactState>().ReadWrite<ContactResponse>());
+            .ReadWrite<AvbdContactState>().ReadWrite<ContactResponse>());
         var constraints = new AvbdConstraints<ContactPoint, AvbdContactMath>(contacts);
         var stages = new PredictBodies(new Vector3(0, -10, 0), 64)
             .Then(new InitializeContactResponses(world, bodies, contacts))
@@ -71,9 +71,9 @@ public sealed class AvbdContactTests
         {
             Normal = Vector3.UnitY, Separation = 0, BodyAnchorDelta = Vector3.UnitY, FirstBodyCount = 1,
         });
-        var fixedAnchor = world.CreateRelation(point.Entity, floor, new ContactParticipant());
-        var firstAnchor = world.CreateRelation(point.Entity, body, new ContactParticipant());
-        var secondAnchor = world.CreateRelation(point.Entity, body, new ContactParticipant());
+        var fixedAnchor = floor;
+        var firstAnchor = body;
+        var secondAnchor = body;
         world.AddBuffer<ContactBodyLink>(point.Entity);
         world.ExecuteBufferWrite<ContactBodyLink>(point.Entity, links =>
         {
@@ -88,7 +88,7 @@ public sealed class AvbdContactTests
             .Read<BodyStepState>().Read<BodyVelocity>().ReadWrite<AvbdBodyEquation>());
         QueryHandle contacts = world.Query(new QueryDefinitionBuilder().Read<ContactPoint>()
             .Read<ContactMaterial>().ReadBuffer<ContactBodyLink>()
-            .Optional<DirectedRelationEndpoints<ContactParticipant>>(QueryAccess.Read).ReadWrite<AvbdContactState>().ReadWrite<ContactResponse>());
+            .ReadWrite<AvbdContactState>().ReadWrite<ContactResponse>());
         var stages = new PredictBodies(new Vector3(0, -10, 0), 64)
             .Then(new InitializeContactResponses(world, bodies, contacts))
             .Then(SolveAvbd.Create(world, bodies, new AvbdConstraints<ContactPoint, AvbdContactMath>(contacts), 1, 0, 0))
@@ -115,8 +115,8 @@ public sealed class AvbdContactTests
         {
             Normal = Vector3.UnitY, Separation = 0, BodyAnchorDelta = Vector3.UnitY, FirstBodyCount = 1,
         });
-        var first = world.CreateRelation(point.Entity, floor, new ContactParticipant());
-        var second = world.CreateRelation(point.Entity, body, new ContactParticipant());
+        var first = floor;
+        var second = body;
         world.AddBuffer<ContactBodyLink>(point.Entity);
         world.ExecuteBufferWrite<ContactBodyLink>(point.Entity, links =>
         {
@@ -132,7 +132,7 @@ public sealed class AvbdContactTests
         QueryHandle bodies = world.Query(new QueryDefinitionBuilder().ReadWrite<BodyPose>().Read<BodyMass>()
             .Read<BodyStepState>().Read<BodyVelocity>().ReadWrite<AvbdBodyEquation>());
         QueryHandle contacts = world.Query(new QueryDefinitionBuilder().Read<ContactPoint>().Read<ContactMaterial>()
-            .ReadBuffer<ContactBodyLink>().Optional<DirectedRelationEndpoints<ContactParticipant>>(QueryAccess.Read)
+            .ReadBuffer<ContactBodyLink>()
             .ReadWrite<AvbdContactState>().ReadWrite<ContactResponse>());
         var stages = new PredictBodies(new Vector3(0, -10, 0), 64)
             .Then(new InitializeContactResponses(world, bodies, contacts))
@@ -159,8 +159,8 @@ public sealed class AvbdContactTests
         {
             Normal = Vector3.UnitY, Separation = 0, BodyAnchorDelta = Vector3.UnitY, FirstBodyCount = 1,
         });
-        var first = world.CreateRelation(point.Entity, floor, new ContactParticipant());
-        var second = world.CreateRelation(point.Entity, body, new ContactParticipant());
+        var first = floor;
+        var second = body;
         world.AddBuffer<ContactBodyLink>(point.Entity);
         world.ExecuteBufferWrite<ContactBodyLink>(point.Entity, links =>
         {
@@ -176,7 +176,7 @@ public sealed class AvbdContactTests
         QueryHandle bodies = world.Query(new QueryDefinitionBuilder().ReadWrite<BodyPose>().Read<BodyMass>()
             .Read<BodyStepState>().Read<BodyVelocity>().ReadWrite<AvbdBodyEquation>());
         QueryHandle contacts = world.Query(new QueryDefinitionBuilder().Read<ContactPoint>().Read<ContactMaterial>()
-            .ReadBuffer<ContactBodyLink>().Optional<DirectedRelationEndpoints<ContactParticipant>>(QueryAccess.Read)
+            .ReadBuffer<ContactBodyLink>()
             .ReadWrite<AvbdContactState>().ReadWrite<ContactResponse>());
         var stages = new PredictBodies(new Vector3(0, -10, 0), 64)
             .Then(new InitializeContactResponses(world, bodies, contacts))
@@ -203,8 +203,8 @@ public sealed class AvbdContactTests
         {
             Normal = Vector3.UnitY, Separation = 0, BodyAnchorDelta = Vector3.UnitY, FirstBodyCount = 1,
         });
-        var first = world.CreateRelation(point.Entity, floor, new ContactParticipant());
-        var second = world.CreateRelation(point.Entity, body, new ContactParticipant());
+        var first = floor;
+        var second = body;
         world.AddBuffer<ContactBodyLink>(point.Entity);
         world.ExecuteBufferWrite<ContactBodyLink>(point.Entity, links =>
         {
@@ -217,7 +217,7 @@ public sealed class AvbdContactTests
         QueryHandle bodies = world.Query(new QueryDefinitionBuilder().ReadWrite<BodyPose>().Read<BodyMass>()
             .Read<BodyStepState>().Read<BodyVelocity>().ReadWrite<AvbdBodyEquation>());
         QueryHandle contacts = world.Query(new QueryDefinitionBuilder().Read<ContactPoint>().Read<ContactMaterial>()
-            .ReadBuffer<ContactBodyLink>().Optional<DirectedRelationEndpoints<ContactParticipant>>(QueryAccess.Read)
+            .ReadBuffer<ContactBodyLink>()
             .ReadWrite<AvbdContactState>().ReadWrite<ContactResponse>());
         var stages = new PredictBodies(Vector3.Zero, 64)
             .Then(new InitializeContactResponses(world, bodies, contacts))
@@ -247,8 +247,8 @@ public sealed class AvbdContactTests
         {
             Normal = Vector3.UnitY, Separation = 0, BodyAnchorDelta = Vector3.UnitY, FirstBodyCount = 1,
         });
-        var first = world.CreateRelation(point.Entity, floor, new ContactParticipant());
-        var second = world.CreateRelation(point.Entity, body, new ContactParticipant());
+        var first = floor;
+        var second = body;
         world.AddBuffer<ContactBodyLink>(point.Entity);
         world.ExecuteBufferWrite<ContactBodyLink>(point.Entity, links =>
         {
@@ -262,7 +262,7 @@ public sealed class AvbdContactTests
             .Read<BodyStepState>().Read<BodyVelocity>().ReadWrite<AvbdBodyEquation>());
         QueryHandle velocities = world.Query(new QueryDefinitionBuilder().Read<BodyPose>().Read<BodyMass>().ReadWrite<BodyVelocity>());
         QueryHandle contacts = world.Query(new QueryDefinitionBuilder().Read<ContactPoint>().Read<ContactMaterial>()
-            .ReadBuffer<ContactBodyLink>().Optional<DirectedRelationEndpoints<ContactParticipant>>(QueryAccess.Read)
+            .ReadBuffer<ContactBodyLink>()
             .ReadWrite<AvbdContactState>().ReadWrite<ContactResponse>());
         var stages = new PredictBodies(Vector3.Zero, 64)
             .Then(new InitializeContactResponses(world, bodies, contacts))
@@ -294,8 +294,8 @@ public sealed class AvbdContactTests
         {
             Normal = Vector3.UnitY, Separation = 0, BodyAnchorDelta = Vector3.UnitY, FirstBodyCount = 1, WarmStart = true,
         });
-        var first = world.CreateRelation(point.Entity, floor, new ContactParticipant());
-        var second = world.CreateRelation(point.Entity, body, new ContactParticipant());
+        var first = floor;
+        var second = body;
         world.AddBuffer<ContactBodyLink>(point.Entity);
         world.ExecuteBufferWrite<ContactBodyLink>(point.Entity, links =>
         {
@@ -308,7 +308,7 @@ public sealed class AvbdContactTests
         QueryHandle bodies = world.Query(new QueryDefinitionBuilder().ReadWrite<BodyPose>().Read<BodyMass>()
             .Read<BodyStepState>().Read<BodyVelocity>().ReadWrite<AvbdBodyEquation>());
         QueryHandle contacts = world.Query(new QueryDefinitionBuilder().Read<ContactPoint>().Read<ContactMaterial>()
-            .ReadBuffer<ContactBodyLink>().Optional<DirectedRelationEndpoints<ContactParticipant>>(QueryAccess.Read)
+            .ReadBuffer<ContactBodyLink>()
             .ReadWrite<AvbdContactState>().ReadWrite<ContactResponse>());
         var constraints = new AvbdConstraints<ContactPoint, AvbdContactMath>(contacts);
         var support = new PredictBodies(new Vector3(0, -10, 0), 64)
@@ -349,7 +349,7 @@ public sealed class AvbdContactTests
         QueryHandle bodies = world.Query(new QueryDefinitionBuilder().ReadWrite<BodyPose>().Read<BodyMass>()
             .Read<BodyStepState>().Read<BodyVelocity>().ReadWrite<AvbdBodyEquation>());
         QueryHandle contacts = world.Query(new QueryDefinitionBuilder().Read<ContactPoint>().Read<ContactMaterial>()
-            .ReadBuffer<ContactBodyLink>().Optional<DirectedRelationEndpoints<ContactParticipant>>(QueryAccess.Read)
+            .ReadBuffer<ContactBodyLink>()
             .ReadWrite<AvbdContactState>().ReadWrite<ContactResponse>());
         var pairs = world.Between(spheres, planes).PartitionPairs();
         QueryHandle pointScope = world.Query(new QueryDefinitionBuilder().Read<ContactPoint>());
@@ -459,7 +459,8 @@ public sealed class AvbdContactTests
 
         Assert.False(world.IsAlive(previous.Entity));
         Assert.Equal(1, world.GetIncidentRelations<ContactPoint>(sphereGeometry).Count);
-        Assert.Equal(1, world.GetIncomingRelations<ContactParticipant>(replacement).Count);
+        Entity current = world.GetIncidentRelations<ContactPoint>(sphereGeometry).Entries[0].Edge.Entity;
+        world.ExecuteBufferRead<ContactBodyLink>(current, links => Assert.Equal(replacement, links[1].Body));
         world.ReleaseQuery(scope);
         world.ReleaseQuery(poses);
     }
@@ -489,8 +490,8 @@ public sealed class AvbdContactTests
         var error = new InvalidOperationException("The selected contact component failed.");
         using var points = ContactPoints.Create(world, poses, pointScope, detected, new AverageContactMaterials(),
             new FailingContactComponents(error), new ContactRefreshSettings(.1f, .99f, true));
-        using var events = new PhysicsEventBuffer(scheduler, 1);
-        QueryHandle eventRows = world.Query(new QueryDefinitionBuilder().Read<PhysicsStepEvents>().ReadBuffer<PhysicsEvent>());
+        using var events = new PhysicsEventBuffer(world, 1);
+        QueryHandle eventRows = world.Query(new QueryDefinitionBuilder().Read<PhysicsStepEvents>().Enabled<PhysicsStepEvents>().ReadBuffer<PhysicsEvent>());
         using var consumption = new ConsumePhysicsEvents<AcknowledgeContactEvents>(world, eventRows, default);
         var physics = PhysicsSimulation.Create(world, QueryDefinition.Empty,
             detection.Then(points.Refresh()).Then(events.Emit()).Then(consumption), substeps: 1);

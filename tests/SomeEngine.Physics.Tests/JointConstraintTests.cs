@@ -11,6 +11,30 @@ namespace SomeEngine.Physics.Tests;
 public sealed class JointConstraintTests
 {
     [Fact]
+    public void XpbdFixedJointMovesAPointMassWhileKeepingItsLockedRotation()
+    {
+        using var scheduler = new Scheduler(new() { WorkerCount = 2 });
+        using var world = WorldJobs.CreateWorld(scheduler: scheduler);
+        Entity source = CreateBody(world, new BodyPose { Rotation = Quaternion.Identity }, BodyMotion.Static);
+        Entity target = CreateBody(world, new BodyPose { Position = Vector3.UnitX, Rotation = Quaternion.Identity }, BodyMotion.Dynamic);
+        world.Replace(target, new BodyMass { Motion = BodyMotion.Dynamic, InverseMass = 1 });
+        var joint = world.CreateRelation(source, target,
+            JointConstraints.CreateFixed(JointFrame.Identity, JointFrame.Identity, float.PositiveInfinity, float.PositiveInfinity));
+        world.Add(joint.Entity, new XpbdJointState());
+        QueryHandle bodies = world.Query(new QueryDefinitionBuilder().ReadWrite<BodyPose>().Read<BodyMass>().Read<BodyStepState>());
+        QueryHandle joints = world.Query(new QueryDefinitionBuilder().Read<JointConstraint>()
+            .Read<DirectedRelationEndpoints<JointConstraint>>().ReadWrite<XpbdJointState>());
+        var solve = SolveXpbd.Create(world, bodies, new XpbdConstraints<JointConstraint, XpbdJointProjection>(joints), 1);
+
+        PhysicsSimulation.Create(world, QueryDefinition.Empty, new PredictBodies(Vector3.Zero, 64).Then(solve), 1)
+            .Schedule(0, 0, 1d / 60).Complete();
+
+        Assert.InRange(world.Read<BodyPose>(target).Position.Length(), 0, 1e-6f);
+        Assert.Equal(Quaternion.Identity, world.Read<BodyPose>(target).Rotation);
+        world.ReleaseQuery(joints); world.ReleaseQuery(bodies);
+    }
+
+    [Fact]
     public void AvbdFixedJointAlignsBothLocalFrames()
     {
         using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });

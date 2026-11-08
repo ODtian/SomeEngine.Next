@@ -1,4 +1,5 @@
 using SomeEngine.Core.Diagnostics;
+using SomeEngine.Graphics;
 using SomeEngine.Render.Cluster.Pipeline;
 
 
@@ -27,6 +28,7 @@ public sealed record RuntimeStartupOptions(
     public bool ForceHardwareRaster { get; init; }
     public bool UseInstanceGroups { get; init; }
     public bool DisableMeshShaders { get; init; }
+    public DeviceFeatures OptionalDeviceFeatures { get; init; }
     public string? TraceOutput { get; init; }
     public bool TraceDetail { get; init; }
     public bool TraceAllocations { get; init; }

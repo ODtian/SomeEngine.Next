@@ -17,7 +17,7 @@ public sealed partial class DeviceAvbdBodyEquations
             _inputRows.Add(key, rows = new(context.World, context.Bodies));
         JobResourceAccess[] writes = [.. rows.Accesses,
             JobResourceAccess.Write(scheduler.GetResourceToken(_metadataUpload), 0, (long)_metadataUpload.Info.Size)];
-        JobHandle written = scheduler.Schedule(new WriteInputRows(this, rows), writes, dependency);
+        JobHandle written = scheduler.Schedule(new WriteInputRows(this, rows, context), writes, dependency);
         JobResourceAccess[] accesses = [JobResourceAccess.Write(scheduler.GetResourceToken(_metadata), 0, (long)_metadata.Info.Size),
             JobResourceAccess.Read(scheduler.GetResourceToken(_metadataUpload), 0, (long)_metadataUpload.Info.Size),
             JobResourceAccess.Write(scheduler.GetResourceToken(_commands))];
@@ -28,6 +28,7 @@ public sealed partial class DeviceAvbdBodyEquations
     {
         internal readonly World World;
         internal readonly QueryHandle Query;
+        internal readonly PhysicsQueryWindow Window;
         internal readonly JobResourceAccess[] Accesses;
 
         internal EquationInputRows(World world, QueryDefinition bodies)
@@ -38,7 +39,7 @@ public sealed partial class DeviceAvbdBodyEquations
                 GeneratedQueryAccess.Table<DeviceBodyBinding, DeviceBodyReferenceResources>(GeneratedQueryMode.Read),
                 GeneratedQueryAccess.Table<DeviceAvbdEquationBinding, EquationInputReferences>(GeneratedQueryMode.Read));
             QueryDefinition definition = input.WithFilter(bodies.AsFilter()).Query;
-            Query = world.Query(definition);
+            Query = world.Query(definition); Window = new(definition);
             var references = new QueryReadResources();
             references.Add<DeviceBodyBinding, DeviceBodyReferenceResources>();
             references.Add<DeviceAvbdEquationBinding, EquationInputReferences>();
@@ -54,21 +55,22 @@ public sealed partial class DeviceAvbdBodyEquations
         public static void Collect(in DeviceAvbdEquationBinding component, ref JobResourceAccessBuilder resources) { }
     }
 
-    private readonly struct WriteInputRows(DeviceAvbdBodyEquations equations, EquationInputRows rows) : IJob
+    private readonly struct WriteInputRows(DeviceAvbdBodyEquations equations, EquationInputRows rows, PhysicsStepContext context) : IJob
     {
         public void Execute()
         {
             equations._mapping.Bytes.Clear();
-            DeviceAvbdBodyEquations destination = equations;
-            rows.World.ExecuteReadQuery(rows.Query, ref destination,
-                static (scoped QueryCursor query, ref DeviceAvbdBodyEquations output) =>
+            var destination = (Equations: equations, Window: rows.Window);
+            rows.World.ExecuteReadQuery(rows.Query, rows.Window.Begin(context), ref destination,
+                static (scoped QueryCursor query, ref (DeviceAvbdBodyEquations Equations, PhysicsQueryWindow Window) output) =>
                 {
+                    output.Window.Accept(query.CurrentSystemVersion);
                     foreach (QueryRow row in query.Rows)
                     {
                         ref readonly DeviceBodyBinding body = ref row.ReadRef<DeviceBodyBinding>();
                         ref readonly DeviceAvbdEquationBinding binding = ref row.ReadRef<DeviceAvbdEquationBinding>();
-                        if (ReferenceEquals(binding.Equations, output) && ReferenceEquals(body.Bodies, output.Bodies))
-                            output.Write(binding.Index, body.Index, row.Entity);
+                        if (ReferenceEquals(binding.Equations, output.Equations) && ReferenceEquals(body.Bodies, output.Equations.Bodies))
+                            output.Equations.Write(binding.Index, body.Index, row.Entity);
                     }
                 });
         }

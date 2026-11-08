@@ -245,7 +245,7 @@ public sealed class PhysicsActivityTests
         QueryHandle bodies = world.Query(new QueryDefinitionBuilder().ReadWrite<BodyPose>().Read<BodyMass>()
             .Read<BodyStepState>().Read<BodyVelocity>().ReadWrite<AvbdBodyEquation>());
         QueryHandle contacts = world.Query(new QueryDefinitionBuilder().Read<ContactPoint>().Read<ContactMaterial>()
-            .ReadBuffer<ContactBodyLink>().Optional<DirectedRelationEndpoints<ContactParticipant>>(QueryAccess.Read)
+            .ReadBuffer<ContactBodyLink>()
             .ReadWrite<AvbdContactState>().ReadWrite<ContactResponse>());
         QueryHandle scope = world.Query(new QueryDefinitionBuilder().Read<ContactPoint>());
         using var detected = new ContactPointBuffer(scheduler, 4, 8);

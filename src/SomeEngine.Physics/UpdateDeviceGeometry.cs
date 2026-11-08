@@ -16,6 +16,7 @@ public sealed class UpdateDeviceGeometry : IDisposable, IDevicePhysicsSubmission
     private readonly DeviceCollisionGeometry _geometry;
     private readonly DeviceInputTransfer _transfer;
     private readonly uint _geometryType;
+    private readonly float _contactDistance;
     private readonly Pipeline _pipeline;
     private readonly VariableLayoutReflection _layout;
     private readonly ResourceBinding[] _bindings;
@@ -26,9 +27,11 @@ public sealed class UpdateDeviceGeometry : IDisposable, IDevicePhysicsSubmission
 
     public UpdateDeviceGeometry(IGraphicsBackend backend, Device device, DeviceCollisionGrid grid,
         DeviceCollisionGeometry geometry, ComputePipelineDesc kernel, uint geometryType, DeviceInputTransfer transfer,
-        IReadOnlyDictionary<string, ResourceBinding[]>? extraBindings = null, ReadOnlyMemory<JobResourceAccess> extraAccesses = default)
+        IReadOnlyDictionary<string, ResourceBinding[]>? extraBindings = null, ReadOnlyMemory<JobResourceAccess> extraAccesses = default,
+        float contactDistance = 0)
     {
         _backend = backend; _device = device; _grid = grid; _geometry = geometry; _transfer = transfer; _geometryType = geometryType;
+        _contactDistance = contactDistance;
         _extraAccesses = extraAccesses.ToArray();
         _parameters = backend.CreateBuffer(device, new(256, BufferUsages.Constant, "Geometry update parameters"), MemoryType.Upload);
         _parameterView = backend.CreateBufferCbv(device, new(_parameters, new(0, 256)));
@@ -49,6 +52,7 @@ public sealed class UpdateDeviceGeometry : IDisposable, IDevicePhysicsSubmission
     private readonly JobResourceAccess[] _extraAccesses;
     IGraphicsBackend IDevicePhysicsSubmission.Backend => _backend;
     Device IDevicePhysicsSubmission.Device => _device;
+    SomeEngine.Graphics.Queue IDevicePhysicsSubmission.Queue => _backend.GetQueue(_device, QueueType.Compute);
     public UpdateDeviceGeometryStage Update() => new(this);
     public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency)
     {
@@ -71,10 +75,10 @@ public sealed class UpdateDeviceGeometry : IDisposable, IDevicePhysicsSubmission
 
     private QueueCompletion Submit(float duration)
     {
-        var parameters = new GeometryUpdateParameters((uint)_geometry.Capacity.Bodies, _geometryType, duration);
+        var parameters = new GeometryUpdateParameters((uint)_geometry.Capacity.Bodies, _geometryType, duration, _contactDistance);
         using (MappedBuffer mapping = _backend.Map(_parameters, MapType.Write, BufferRange.Whole))
         {
-            MemoryMarshal.Write(mapping.Bytes, in parameters); mapping.Flush(new(0, 12));
+            MemoryMarshal.Write(mapping.Bytes, in parameters); mapping.Flush(new(0, 16));
         }
         _backend.Begin(_commands, new(32, 0, 32));
         _geometry.UploadInputs(_commands, _transfer);
@@ -87,12 +91,13 @@ public sealed class UpdateDeviceGeometry : IDisposable, IDevicePhysicsSubmission
         using RecordedCommands recorded = _backend.End(_commands);
         return _backend.Submit(_backend.GetQueue(_device, QueueType.Compute), new([], [], [recorded], [], []));
     }
-    private readonly record struct GeometryUpdateParameters(uint Count, uint GeometryType, float Duration);
+    private readonly record struct GeometryUpdateParameters(uint Count, uint GeometryType, float Duration, float ContactDistance);
 
     private readonly struct SubmitGeometry(UpdateDeviceGeometry update, float duration) : IDevicePhysicsSubmission
     {
         public IGraphicsBackend Backend => update._backend;
         public Device Device => update._device;
+        public SomeEngine.Graphics.Queue Queue => Backend.GetQueue(Device, QueueType.Compute);
         public QueueCompletion Submit() => update.Submit(duration);
     }
     public void Dispose()

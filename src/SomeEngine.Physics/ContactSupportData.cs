@@ -17,6 +17,7 @@ internal sealed partial class ContactSupportData
     private readonly Stack<List<Entity>> _unusedLists = [];
     private readonly List<SupportCandidate> _candidates = [];
     private readonly List<Entity> _order = [];
+    internal bool HasGraphChanges;
 
     internal ContactSupportData(ContactSupportSettings settings)
     {
@@ -32,7 +33,7 @@ internal sealed partial class ContactSupportData
         foreach (QueryRow row in contacts.Rows)
         {
             ref LongRangeContactSupport state = ref row.ReadWrite<LongRangeContactSupport>();
-            state.ExtraForceOnSecond *= row.ReadRef<ContactPoint>().WarmStart ? _settings.MultiplierRetention : 0;
+            state.ExtraForceOnSecond *= row.ReadRef<ContactPoint>().WarmStart ? context.FirstIteration == 0 ? _settings.MultiplierRetention : 1 : 0;
         }
         UpdateMotion(workBodies, bodies);
         Build(workBodies, contacts, bodies, in context);
@@ -65,6 +66,7 @@ internal sealed partial class ContactSupportData
 
     private void Build(scoped PhysicsQueryRows workBodies, scoped PhysicsQueryRows contacts, scoped PhysicsBodies bodies, in PhysicsStepContext context)
     {
+        HasGraphChanges = true;
         foreach (ContactSupportPolygon polygon in _polygons.Values) { polygon.Clear(); _unusedPolygons.Push(polygon); }
         _polygons.Clear();
         foreach (List<Entity> points in _byBody.Values) { points.Clear(); _unusedLists.Push(points); }

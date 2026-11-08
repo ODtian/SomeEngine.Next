@@ -25,15 +25,15 @@ public sealed partial class DeviceXpbdTests
         world.Add(first, new BodyActivity { Radius = 1 }); world.Add(other, new BodyActivity { Radius = 1 });
         world.AddBuffer<BodyWake>(first);
         QueryHandle members = world.Query(world.QueryDefinition().Read<DeviceBodyBinding>());
-        QueryHandle events = world.Query(new QueryDefinitionBuilder().Read<PhysicsStepEvents>().ReadBuffer<PhysicsEvent>());
+        QueryHandle events = world.Query(new QueryDefinitionBuilder().Read<PhysicsStepEvents>().Enabled<PhysicsStepEvents>().ReadBuffer<PhysicsEvent>());
         using var activities = new DeviceBodyActivities(backend, device, world, members, bodies);
         world.Add(first, new DeviceBodyActivityBinding(activities)); world.Add(other, new DeviceBodyActivityBinding(activities));
         var bindings = new Dictionary<string, ResourceBinding[]>(); activities.AddBindings(bindings);
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileActiveBodyDynamics(), 64,
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileActiveBodyDynamics(), 64,
             bindings, activities.GetWriteAccesses(jobs));
         using var results = new DeviceBodyResults(backend, device, bodies);
         using var bodyInputs = new DeviceBodyInputs(world, members, bodies);
-        using var output = new PhysicsEventBuffer(jobs, 8);
+        using var output = new PhysicsEventBuffer(world, 8);
         using var graph = new DeviceConstraintGraph(backend, device, bodies, dynamics, CompileEmptyActivityGraph(),
             new(1, 1), bindings, activities.GetReadAccesses(jobs), 64);
         using var activity = new DevicePhysicsActivity(backend, device, activities, graph, CompileEmptyActivityKernels(),
@@ -89,15 +89,15 @@ public sealed partial class DeviceXpbdTests
     private DeviceActivityKernels CompileEmptyActivityKernels()
     {
         D3D12TestShader shader = shaderCompiler.CompileWithSearchPaths("empty_activity", """
-            #include "physics_body_activity.slang"
+            #include "physics_body_activity_results.slang"
             [shader("compute")][numthreads(64,1,1)]
             void ReadRows(uint3 id:SV_DispatchThreadID) { DeviceNoConstraintActivity rows; readDeviceActivityRows(id.x,rows); }
             """, [new("ApplyDeviceActivityInputs", SlangStage.Compute), new("ClearDeviceActivitySignals", SlangStage.Compute),
                 new("CollectDeviceActivityBodies", SlangStage.Compute), new("ReadRows", SlangStage.Compute),
                 new("WakeDeviceBodies", SlangStage.Compute), new("AdvanceDeviceBodyQuietTime", SlangStage.Compute),
-                new("FinishDeviceBodyActivity", SlangStage.Compute)], "sm_6_0", ShaderDirectory());
+                new("FinishDeviceBodyActivity", SlangStage.Compute), new("CollectDeviceBodyActivityResults", SlangStage.Compute)], "sm_6_0", ShaderDirectory());
         ComputePipelineDesc Entry(int index) => new(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(index), shader.GetEntryCode(index));
-        return new(Entry(0), Entry(1), Entry(2), Entry(3), Entry(4), Entry(5), Entry(6));
+        return new(Entry(0), Entry(1), Entry(2), Entry(3), Entry(4), Entry(5), Entry(6), CollectResults: Entry(7));
     }
     private readonly struct RecordDeviceActivityEvents(List<(long Number, PhysicsEvent Event)> values) : IPhysicsEventConsumer
     {

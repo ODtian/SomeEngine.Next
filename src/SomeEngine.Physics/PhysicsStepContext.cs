@@ -14,6 +14,8 @@ public readonly record struct PhysicsStepContext(
     double StartTime,
     double Duration)
 {
+    public int FirstIteration { get; init; }
+    public bool UseCurrentContacts => FirstIteration > 0;
     public double EndTime => StartTime + Duration;
 }
 

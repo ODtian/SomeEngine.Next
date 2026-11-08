@@ -29,8 +29,8 @@ public sealed partial class DeviceAvbdTests
         Entity anchor = CreateBody(world, bodies, equations, 2, new(0, 2, 0), BodyMotion.Static);
         Entity point = world.CreateRelation(floor, moving, new ContactPoint
             { Normal = Vector3.UnitY, BodyAnchorDelta = Vector3.UnitY, FirstBodyCount = 1 }).Entity;
-        var first = world.CreateRelation(point, floor, new ContactParticipant());
-        var second = world.CreateRelation(point, moving, new ContactParticipant());
+        var first = floor;
+        var second = moving;
         world.AddBuffer<ContactBodyLink>(point);
         world.ExecuteBufferWrite<ContactBodyLink>(point, links =>
         { links.Add(new(first, Vector3.Zero, 1)); links.Add(new(second, Vector3.Zero, 1)); });
@@ -60,7 +60,7 @@ public sealed partial class DeviceAvbdTests
         using var writeStates = new DeviceAvbdStateInputs<AvbdContactState, DeviceContactConstraint,
             DeviceAvbdContactState, DeviceAvbdContactStateSource>(backend, device, world, contactStateRows, contacts, contactStates, default);
         using var writeLengths = lengths.WriteInputs<XpbdLength, DeviceLengthSource>(world, lengthRows, default, 64);
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileDynamics(), 64);
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileDynamics(), 64);
         using var selectedContacts = new DeviceConstraintSelection<ContactPoint, DeviceContactConstraint>(backend, device, world,
             contactRows, contacts, "DeviceContactsSelection");
         using var selectedContactStates = new DeviceConstraintSelection<ContactPoint, DeviceContactConstraint, DeviceAvbdStateRows<DeviceAvbdContactState>>(
@@ -76,7 +76,7 @@ public sealed partial class DeviceAvbdTests
         using var graph = new DeviceConstraintGraph(backend, device, bodies, dynamics, CompileComplementaryGraph(), new(2, 2),
             bindings, reads, 64, new IDeviceConstraintSelection[] { selectedContacts, selectedLengths });
         JobResourceAccess[] solveAccesses = [.. reads, contactStates.GetWriteAccess(jobs), responses.GetWriteAccess(jobs), lengthStates.GetReadAccess(jobs)];
-        using var avbd = new DeviceAvbdSolver(backend, device, bodies, equations, graph, CompileComplementaryAvbd(), new(1, 1, 0, 0),
+        using var avbd = new AvbdGraphCommands(backend, device, bodies, equations, graph, CompileComplementaryAvbd(), new(1, 1, 0, 0),
             bindings, solveAccesses, 64,
             new IDeviceConstraintSelection[] { selectedContactStates, selectedResponses });
         using var xpbd = new DeviceXpbdProjection<DeviceLengthConstraint, float>(backend, device, world, lengthRows,
@@ -144,7 +144,7 @@ public sealed partial class DeviceAvbdTests
             """, [new("WriteRows", SlangStage.Compute), new("BuildGraph", SlangStage.Compute)], "sm_6_0", ShaderDirectory());
         return new(Entry(shader, 0), Entry(shader, 1));
     }
-    private DeviceAvbdKernels CompileComplementaryAvbd()
+    private AvbdGraphKernels CompileComplementaryAvbd()
     {
         D3D12TestShader shader = shaderCompiler.CompileWithSearchPaths("contact_length_avbd", """
             #include "physics_avbd_contact.slang"
@@ -160,7 +160,7 @@ public sealed partial class DeviceAvbdTests
             "sm_6_0", ShaderDirectory());
         return new(Entry(shader, 0), Entry(shader, 1), Entry(shader, 2));
     }
-    private DeviceXpbdKernels CompileComplementaryLength()
+    private XpbdGraphKernels CompileComplementaryLength()
     {
         D3D12TestShader shader = shaderCompiler.CompileWithSearchPaths("contact_internal_length", """
             #include "physics_xpbd_length.slang"
@@ -172,7 +172,7 @@ public sealed partial class DeviceAvbdTests
             """, [new("Initialize", SlangStage.Compute), new("Project", SlangStage.Compute)], "sm_6_0", ShaderDirectory());
         return new(Entry(shader, 0), Entry(shader, 1));
     }
-    private readonly struct AlternateContactAndLength(IterateDeviceAvbd contacts,
+    private readonly struct AlternateContactAndLength(IterateAvbdGraph contacts,
         IterateDeviceXpbd<DeviceLengthConstraint, float> lengths, int iterations) : IPhysicsStage
     {
         public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency)

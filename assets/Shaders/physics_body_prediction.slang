@@ -30,10 +30,8 @@ DeviceBodyState updateDeviceBodyVelocityState(DeviceBodyState body, float durati
 {
     if (body.motion == 0) return body;
     float3 center=bodyCenterOfMass(body);
-    body.linearVelocity=body.motion==2
-        ?body.linearVelocity+(center-body.predictedCenterOfMass)/duration
-        :(center-body.startCenterOfMass)/duration;
-    body.angularVelocity = bodyRotationVelocity(body.startRotation, body.rotation, duration);
+    body.linearVelocity+=(center-body.predictedCenterOfMass)/duration;
+    body.angularVelocity+=bodyRotationVelocity(body.predictedRotation,body.rotation,duration);
     return body;
 }
 #endif

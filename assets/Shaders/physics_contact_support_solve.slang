@@ -61,7 +61,7 @@ void correctDeviceContactSupport(uint body,DeviceAvbdStep context,DeviceAvbdEqua
 {
     if(!deviceSupportBodySelected(body)) return;
     DeviceBodySupportState center=DeviceSupportBodyStates[body]; center.reaction=0;
-    uint start=body*(ContactSupportSettings.contactsPerBody+1),count=0;
+    uint start=ConstraintGraphBodyOffsets[body],count=0;
     float3 up=ContactSupportSettings.up;
     if(center.enabled!=0)
     {
@@ -72,7 +72,7 @@ void correctDeviceContactSupport(uint body,DeviceAvbdStep context,DeviceAvbdEqua
     }
     for(uint index=0;index<center.pointCount;index++)
     {
-        uint pointRow=DeviceSupportBodyContacts[body*ContactSupportSettings.contactsPerBody+index];
+        uint pointRow=DeviceSupportBodyContacts[start+index];
         DeviceContactSupportState state=DeviceSupportContactStates[pointRow]; state.reaction=0; DeviceSupportContactStates[pointRow]=state;
         DeviceContactConstraint point=DeviceContacts[pointRow];
         DeviceSupportEquation equation=(DeviceSupportEquation)0; equation.contact=pointRow;

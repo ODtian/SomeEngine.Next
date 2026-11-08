@@ -38,6 +38,9 @@ public ref struct JobCommandWriter
 
     public DeferredEntity CreateEntity() => _segment.CreateEntity();
 
+    public ComponentAddScope AddComponents(Entity entity) => _segment.AddComponents(entity);
+    public ComponentAddScope AddComponents(DeferredEntity entity) => _segment.AddComponents(entity);
+
     public void DestroyEntity(Entity entity) => _segment.DestroyEntity(entity);
 
     public void DestroyEntity(DeferredEntity entity) => _segment.DestroyEntity(entity);
@@ -478,6 +481,7 @@ public sealed class JobCommandBuffer : IDisposable
         try
         {
             using JobCommandProducerScope scope = _world.EnterJobCommandProducer(segment.Buffer);
+            using CommandBuffer.RecordAccessScope recording = segment.Buffer.EnterRecordAccess();
             var writer = new JobCommandWriter(segment.Buffer);
             producer.Execute(ref writer);
             CompleteProducer(segment, exception: null);
@@ -495,6 +499,7 @@ public sealed class JobCommandBuffer : IDisposable
         try
         {
             using JobCommandProducerScope scope = _world.EnterJobCommandProducer(segment.Buffer);
+            using CommandBuffer.RecordAccessScope recording = segment.Buffer.EnterRecordAccess();
             var writer = new JobCommandWriter(segment.Buffer);
             producer.Execute(producerKey, ref writer);
             CompleteProducer(segment, exception: null);

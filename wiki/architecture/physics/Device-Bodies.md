@@ -55,9 +55,11 @@ StepState 的四列写版本，再按原筛选行比较主体来源；变化行�
 起点质心/旋转位于 128/144，预测质心/旋转位于 160/176，
 步号/结果时刻位于 192/200。Entity 索引和代次位于 60/76。
 
+共同物理 shader 的 `StructuredBuffer`、`RWStructuredBuffer` 和 `ConstantBuffer` 声明显式使用 `ScalarDataLayout`，与 C# 数据及 shader 中的显式 padding 对齐。该声明随同一组 include 供场景、角色、动画和用户内核使用；Vulkan 端启用 scalar block layout。接触头、加权端点与几何点分别保持 104、32 和 12 字节步幅。布局参数见 [Slang 缓冲布局](https://docs.shader-slang.org/en/latest/external/slang/docs/user-guide/a2-01-spirv-target-specific.html#constantbuffer-structuredbuffer-and-byteaddressbuffer)。
+
 ## 预测、速度与组件消费
 
-[DeviceBodyDynamics](../../../src/SomeEngine.Physics/DeviceBodyDynamics.cs) 接收原参与查询、
+[BodyDynamicsCommands](../../../src/SomeEngine.Physics/BodyDynamicsCommands.cs) 接收原参与查询、
 `DeviceBodies` 和项目显式提供的 `DeviceBodyKernels`。`Predict(acceleration)` 从当前组件绑定
 生成本轮主体索引，再在设备原位写入起点、预测值及所属物理时刻；动态体接受加速度，
 动态体与运动学体按速度积分，静态体保持位姿。旋转与平移围绕原局部质心计算。

@@ -76,7 +76,7 @@ public sealed partial class DeviceAvbdTests
             backend, device, world, points, parameters, new(histories), "DeviceContactAvbdSelection");
         using var selectedResponse = new DeviceConstraintSelection<ContactPoint, DeviceContactConstraint, DeviceContactResponseRows>(
             backend, device, world, points, parameters, new(responses), "DeviceContactResponsesSelection");
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileDynamics(), 64);
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileDynamics(), 64);
         using var results = new DeviceBodyResults(backend, device, bodies);
         using var contactResults = new DeviceContactResults(backend, device, parameters, responses);
         var bindings = new Dictionary<string, ResourceBinding[]>();
@@ -84,7 +84,7 @@ public sealed partial class DeviceAvbdTests
         JobResourceAccess[] reads = [.. parameters.GetReadAccesses(jobs), anchors.GetReadAccess(jobs)];
         using var graph = new DeviceConstraintGraph(backend, device, bodies, dynamics, CompileContactGraph(), new(32, 2),
             bindings, reads, 64, new[] { selected });
-        using var solver = new DeviceAvbdSolver(backend, device, bodies, equations, graph, CompileContactAvbd(), new(1, 1, 1, 0),
+        using var solver = new AvbdGraphCommands(backend, device, bodies, equations, graph, CompileContactAvbd(), new(1, 1, 1, 0),
             bindings, reads.Concat(new[] { histories.GetWriteAccess(jobs), responses.GetWriteAccess(jobs) }).ToArray(), 64,
             new IDeviceConstraintSelection[] { selectedState, selectedResponse });
         using var response = new DeviceContactActions(backend, device, bodies, graph, responses, CompileContactActions(),

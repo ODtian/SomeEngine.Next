@@ -11,47 +11,60 @@ using Buffer = SomeEngine.Graphics.Buffer;
 
 namespace SomeEngine.Physics;
 
-/// <summary>Completed world forces and center-of-mass torques from a concrete device constraint type.</summary>
+/// <summary>Reads completed loads, with optional device filtering by force and torque limits.</summary>
 public sealed class DeviceConstraintForceSamples<TData> : IDisposable where TData : unmanaged
 {
     private readonly IGraphicsBackend _backend;
     private readonly Device _device;
     private readonly DeviceBodies _bodies;
-    private readonly Buffer _rows, _forces, _rowReadback, _forceReadback;
-    private readonly BufferUav _rowView, _forceView;
+    private readonly Buffer _rows, _forces, _counter, _counterReadback, _zero;
+    private Buffer _rowReadback, _forceReadback;
+    private readonly BufferUav _rowView, _forceView, _counterView;
+    private readonly BufferSrv _dummyRows, _dummyLimits;
     private readonly CommandContext _commands;
     private readonly Pipeline _pipeline;
     private readonly VariableLayoutReflection _layout;
     private readonly ResourceBinding[] _bindings;
     private readonly JobResourceAccess[] _inputAccesses;
     private readonly IDeviceConstraintSelection[] _selections;
+    private readonly DeviceConstraintForceLimits<TData>? _limits;
     private readonly int _threadsPerGroup;
+    private readonly List<int> _reported = [];
     private bool _initialized;
+    private int _resultCount;
     internal readonly DeviceConstraintData<TData> Parameters;
     internal readonly int BodiesPerConstraint;
-    internal readonly DeviceConstraintForceRow[] Rows;
-    internal readonly DeviceBodyForce[] Forces;
+    internal DeviceConstraintForceRow[] Rows = [];
+    internal DeviceBodyForce[] Forces = [];
+    public int Count => _resultCount;
 
     public DeviceConstraintForceSamples(IGraphicsBackend backend, Device device, DeviceBodies bodies,
         DeviceConstraintData<TData> parameters, ComputePipelineDesc kernel, int bodiesPerConstraint,
         IReadOnlyDictionary<string, ResourceBinding[]> inputs, ReadOnlyMemory<JobResourceAccess> inputAccesses,
-        int threadsPerGroup, ReadOnlyMemory<IDeviceConstraintSelection> selections)
+        int threadsPerGroup, ReadOnlyMemory<IDeviceConstraintSelection> selections,
+        DeviceConstraintForceLimits<TData>? limits = null)
     {
-        _backend = backend; _device = device; _bodies = bodies; Parameters = parameters;
+        _backend = backend; _device = device; _bodies = bodies; Parameters = parameters; _limits = limits;
         BodiesPerConstraint = bodiesPerConstraint; _threadsPerGroup = threadsPerGroup;
         _inputAccesses = inputAccesses.ToArray(); _selections = selections.ToArray();
-        Rows = new DeviceConstraintForceRow[parameters.Capacity];
-        Forces = new DeviceBodyForce[parameters.Capacity * bodiesPerConstraint];
-        _rows = backend.CreateBuffer(device, new((ulong)Rows.Length * 16,
-            BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopySource, "Constraint force identities"), MemoryType.DeviceLocal);
-        _forces = backend.CreateBuffer(device, new((ulong)Forces.Length * 48,
-            BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopySource, "Current constraint body forces"), MemoryType.DeviceLocal);
+        var rowDescription = new BufferDesc((ulong)parameters.Capacity * 16,
+            BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopySource);
+        var forceDescription = new BufferDesc((ulong)parameters.Capacity * (ulong)bodiesPerConstraint * 48,
+            BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopySource);
+        _rows = parameters.Memory is { } memory ? memory.CreateBuffer(rowDescription, 16) : backend.CreateBuffer(device, rowDescription);
+        _forces = parameters.Memory is { } contactMemory ? contactMemory.CreateBuffer(forceDescription, (uint)bodiesPerConstraint * 48)
+            : backend.CreateBuffer(device, forceDescription);
+        _counter = backend.CreateBuffer(device, new(4, BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopySource | BufferUsages.CopyDestination));
+        _counterReadback = backend.CreateBuffer(device, new(4, BufferUsages.CopyDestination), MemoryType.Readback);
+        _zero = backend.CreateBuffer(device, new(4, BufferUsages.CopySource), MemoryType.Upload);
+        using (MappedBuffer zero = backend.Map(_zero, MapType.Write, BufferRange.Whole)) { zero.Bytes.Clear(); zero.Flush(zero.Range); }
         _rowView = backend.CreateBufferUav(device, new(_rows, new(0, _rows.Info.Size), StructureStride: 16));
         _forceView = backend.CreateBufferUav(device, new(_forces, new(0, _forces.Info.Size), StructureStride: 48));
-        _rowReadback = backend.CreateBuffer(device, new(_rows.Info.Size, BufferUsages.CopyDestination,
-            "Completed constraint force identities"), MemoryType.Readback);
-        _forceReadback = backend.CreateBuffer(device, new(_forces.Info.Size, BufferUsages.CopyDestination,
-            "Completed constraint body forces"), MemoryType.Readback);
+        _counterView = backend.CreateBufferUav(device, new(_counter, new(0, 4), StructureStride: 4));
+        _dummyRows = backend.CreateBufferSrv(device, new(_rows, new(0, _rows.Info.Size), StructureStride: 4));
+        _dummyLimits = backend.CreateBufferSrv(device, new(_forces, new(0, _forces.Info.Size), StructureStride: 8));
+        _rowReadback = backend.CreateBuffer(device, new(16, BufferUsages.CopyDestination), MemoryType.Readback);
+        _forceReadback = backend.CreateBuffer(device, new((ulong)bodiesPerConstraint * 48, BufferUsages.CopyDestination), MemoryType.Readback);
         _commands = backend.CreateCommandContext(device, new(QueueType.Compute, 0, 1, Label: "Constraint force observations"));
         _pipeline = backend.CreateComputePipeline(device, kernel);
         _layout = kernel.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null;
@@ -60,92 +73,122 @@ public sealed class DeviceConstraintForceSamples<TData> : IDisposable where TDat
             ["DeviceBodyStates"] = [ResourceBinding.WritableBuffer(bodies.View)],
             ["DeviceConstraintForceRows"] = [ResourceBinding.WritableBuffer(_rowView)],
             ["DeviceConstraintBodyForces"] = [ResourceBinding.WritableBuffer(_forceView)],
+            ["DeviceConstraintForceCount"] = [ResourceBinding.WritableBuffer(_counterView)],
+            ["DeviceConstraintForceInputRows"] = [limits?.RowsBinding ?? ResourceBinding.ReadOnlyBuffer(_dummyRows)],
+            ["DeviceConstraintForceLimits"] = [limits?.LimitsBinding ?? ResourceBinding.ReadOnlyBuffer(_dummyLimits)],
         };
         foreach (var input in inputs) bindings.Add(input.Key, input.Value);
         foreach (IDeviceConstraintSelection selection in _selections) selection.AddBindings(bindings);
         _bindings = DeviceCollisionGrid.OrderBindings(_layout, bindings);
     }
-
     public ReadDeviceConstraintForces<TData> Readback() => new(this);
     public JobResourceAccess[] GetReadAccesses(Scheduler scheduler) =>
-        [JobResourceAccess.Read(scheduler, Rows), JobResourceAccess.Read(scheduler, Forces)];
-
+        [JobResourceAccess.Read(scheduler.GetResourceToken(this))];
     internal JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency)
     {
         Scheduler scheduler = WorldJobs.GetScheduler(context.World);
-        var accesses = new List<JobResourceAccess>(_inputAccesses) { _bodies.GetReadAccess(scheduler) };
+        var accesses = new List<JobResourceAccess>(_inputAccesses) { _bodies.GetReadAccess(scheduler), JobResourceAccess.Write(scheduler.GetResourceToken(this)) };
         accesses.AddRange(Parameters.GetReadAccesses(scheduler));
-        accesses.Add(JobResourceAccess.Write(scheduler.GetResourceToken(_rows), 0, (long)_rows.Info.Size));
-        accesses.Add(JobResourceAccess.Write(scheduler.GetResourceToken(_forces), 0, (long)_forces.Info.Size));
-        accesses.Add(JobResourceAccess.Write(scheduler.GetResourceToken(_rowReadback), 0, (long)_rowReadback.Info.Size));
-        accesses.Add(JobResourceAccess.Write(scheduler.GetResourceToken(_forceReadback), 0, (long)_forceReadback.Info.Size));
+        foreach (Buffer buffer in new[] { _rows, _forces, _counter, _counterReadback, _zero })
+            accesses.Add(JobResourceAccess.Write(scheduler.GetResourceToken(buffer), 0, (long)buffer.Info.Size));
         accesses.Add(JobResourceAccess.Write(scheduler.GetResourceToken(_commands)));
         foreach (IDeviceConstraintSelection selection in _selections) selection.AddAccesses(scheduler, accesses);
+        _limits?.AddAccesses(scheduler, accesses);
         JobHandle copied = DevicePhysicsJobs.Schedule(scheduler, new Submission(this, context), accesses.ToArray(), dependency);
-        return scheduler.Schedule(new Map(this), new[]
-        {
-            JobResourceAccess.Read(scheduler.GetResourceToken(_rowReadback), 0, (long)_rowReadback.Info.Size),
-            JobResourceAccess.Read(scheduler.GetResourceToken(_forceReadback), 0, (long)_forceReadback.Info.Size),
-            JobResourceAccess.Write(scheduler, Rows), JobResourceAccess.Write(scheduler, Forces),
-        }, copied);
+        return scheduler.Schedule(new Map(this), [JobResourceAccess.Write(scheduler.GetResourceToken(this))], copied);
     }
-    private QueueCompletion Record(in PhysicsStepContext context)
+    private async ValueTask<QueueCompletion> RecordAsync(PhysicsStepContext context)
     {
-        foreach (IDeviceConstraintSelection selection in _selections) selection.Capture();
-        var step = new DeviceConstraintForceStep((float)context.Duration, (uint)Parameters.Capacity,
-            (uint)BodiesPerConstraint, (uint)context.Substep, context.Number, context.StartTime, context.EndTime, 0);
+        foreach (IDeviceConstraintSelection selection in _selections) selection.Capture(in context);
+        _limits?.Capture(in context);
+        Parameters.Memory?.EnsureRows(1);
+        int count = _limits?.Count ?? Parameters.RowCount;
+        _resultCount = _limits is null ? count : 0;
+        if (_limits is null) GrowReadback(count);
+        var step = new DeviceConstraintForceStep((float)context.Duration, (uint)count,
+            (uint)BodiesPerConstraint, (uint)context.Substep, context.Number, context.StartTime, context.EndTime, _limits is null ? 0UL : 1UL);
         _backend.Begin(_commands, new(0, 0, 8));
         if (!_initialized)
-        {
-            _backend.Barrier(_commands, new BufferBarrier(_rows, _rows.InitialSync, PipelineSync.ComputeShading,
-                _rows.InitialAccess, ResourceAccess.UnorderedAccess));
-            _backend.Barrier(_commands, new BufferBarrier(_forces, _forces.InitialSync, PipelineSync.ComputeShading,
-                _forces.InitialAccess, ResourceAccess.UnorderedAccess));
-        }
+            foreach (Buffer buffer in new[] { _rows, _forces, _counter })
+                if (Parameters.Memory?.Contains(buffer) != true) _backend.Barrier(_commands, new BufferBarrier(buffer, buffer.InitialSync, PipelineSync.ComputeShading,
+                    buffer.InitialAccess, ResourceAccess.UnorderedAccess));
+        _backend.Barrier(_commands, new BufferBarrier(_counter, PipelineSync.ComputeShading, PipelineSync.Copy, ResourceAccess.UnorderedAccess, ResourceAccess.CopyDestination));
+        _backend.CopyBuffer(_commands, new(_zero, 0, _counter, 0, 4));
+        _backend.Barrier(_commands, new BufferBarrier(_counter, PipelineSync.Copy, PipelineSync.ComputeShading, ResourceAccess.CopyDestination, ResourceAccess.UnorderedAccess));
         _backend.SetPipeline(_commands, _pipeline);
-        _backend.SetTransientParameterBindings(_commands, new(_layout, _bindings,
-            MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in step, 1))));
-        _backend.Dispatch(_commands, DevicePhysicsDispatch.CreateGroups((Parameters.Capacity + _threadsPerGroup - 1) / _threadsPerGroup));
-        Copy(_rows, _rowReadback); Copy(_forces, _forceReadback);
-        using RecordedCommands recorded = _backend.End(_commands);
+        _backend.SetTransientParameterBindings(_commands, new(_layout, _bindings, MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(in step, 1))));
+        if (count != 0) _backend.Dispatch(_commands, DevicePhysicsDispatch.CreateGroups((count + _threadsPerGroup - 1) / _threadsPerGroup));
+        if (_limits is null) CopyResults(); else Copy(_counter, _counterReadback, 4);
+        QueueCompletion completion;
+        using (RecordedCommands recorded = _backend.End(_commands))
+            completion = _backend.Submit(_backend.GetQueue(_device, QueueType.Compute), new([], [], [recorded], [], []));
         _initialized = true;
-        return _backend.Submit(_backend.GetQueue(_device, QueueType.Compute), new([], [], [recorded], [], []));
+        if (_limits is null) return completion;
+        await _backend.WaitAsync(completion).ConfigureAwait(false);
+        using (MappedBuffer mapping = _backend.Map(_counterReadback, MapType.Read, new(0, 4)))
+        { mapping.Invalidate(mapping.Range); _resultCount = MemoryMarshal.Read<int>(mapping.Bytes); }
+        if (_resultCount == 0) return completion;
+        GrowReadback(_resultCount);
+        _backend.Begin(_commands, new(0, 0, 8)); CopyResults();
+        using RecordedCommands prefix = _backend.End(_commands);
+        return _backend.Submit(_backend.GetQueue(_device, QueueType.Compute), new([], [], [prefix], [], []));
     }
-    private void Copy(Buffer source, Buffer destination)
+    private void GrowReadback(int count)
     {
-        _backend.Barrier(_commands, new BufferBarrier(source, PipelineSync.ComputeShading, PipelineSync.Copy,
-            ResourceAccess.UnorderedAccess, ResourceAccess.CopySource));
-        _backend.CopyBuffer(_commands, new(source, 0, destination, 0, source.Info.Size));
-        _backend.Barrier(_commands, new BufferBarrier(source, PipelineSync.Copy, PipelineSync.ComputeShading,
-            ResourceAccess.CopySource, ResourceAccess.UnorderedAccess));
+        if (_rowReadback.Info.Size < (ulong)count * 16)
+        { _rowReadback.Dispose(); _rowReadback = _backend.CreateBuffer(_device, new((ulong)count * 16, BufferUsages.CopyDestination), MemoryType.Readback); }
+        if (_forceReadback.Info.Size < (ulong)count * (ulong)BodiesPerConstraint * 48)
+        { _forceReadback.Dispose(); _forceReadback = _backend.CreateBuffer(_device, new((ulong)count * (ulong)BodiesPerConstraint * 48, BufferUsages.CopyDestination), MemoryType.Readback); }
+    }
+    private void CopyResults()
+    {
+        if (_resultCount == 0) return;
+        Copy(_rows, _rowReadback, (ulong)_resultCount * 16);
+        Copy(_forces, _forceReadback, (ulong)_resultCount * (ulong)BodiesPerConstraint * 48);
+    }
+    private void Copy(Buffer source, Buffer destination, ulong bytes)
+    {
+        _backend.Barrier(_commands, new BufferBarrier(source, PipelineSync.ComputeShading, PipelineSync.Copy, ResourceAccess.UnorderedAccess, ResourceAccess.CopySource));
+        _backend.CopyBuffer(_commands, new(source, 0, destination, 0, bytes));
+        _backend.Barrier(_commands, new BufferBarrier(source, PipelineSync.Copy, PipelineSync.ComputeShading, ResourceAccess.CopySource, ResourceAccess.UnorderedAccess));
     }
     private readonly struct Submission(DeviceConstraintForceSamples<TData> samples, PhysicsStepContext context) : IDevicePhysicsSubmission
     {
         public IGraphicsBackend Backend => samples._backend;
         public Device Device => samples._device;
-        public QueueCompletion Submit() => samples.Record(in context);
+        public SomeEngine.Graphics.Queue Queue => Backend.GetQueue(Device, QueueType.Compute);
+        public QueueCompletion Submit() => samples.RecordAsync(context).AsTask().GetAwaiter().GetResult();
+        public ValueTask<QueueCompletion> SubmitAsync() => samples.RecordAsync(context);
     }
     private readonly struct Map(DeviceConstraintForceSamples<TData> samples) : IJob
     {
         public void Execute()
         {
-            using (MappedBuffer mapping = samples._backend.Map(samples._rowReadback, MapType.Read, BufferRange.Whole))
+            foreach (int row in samples._reported) samples.Rows[row] = default;
+            samples._reported.Clear();
+            if (samples.Rows.Length < samples.Parameters.RowCount) Array.Resize(ref samples.Rows, samples.Parameters.RowCount);
+            if (samples.Forces.Length < samples.Parameters.RowCount * samples.BodiesPerConstraint) Array.Resize(ref samples.Forces, samples.Parameters.RowCount * samples.BodiesPerConstraint);
+            if (samples._resultCount == 0) return;
+            using MappedBuffer rows = samples._backend.Map(samples._rowReadback, MapType.Read, new(0, (ulong)samples._resultCount * 16));
+            using MappedBuffer forces = samples._backend.Map(samples._forceReadback, MapType.Read, new(0, (ulong)samples._resultCount * (ulong)samples.BodiesPerConstraint * 48));
+            rows.Invalidate(rows.Range); forces.Invalidate(forces.Range);
+            ReadOnlySpan<DeviceConstraintForceRow> values = MemoryMarshal.Cast<byte, DeviceConstraintForceRow>(rows.Bytes);
+            ReadOnlySpan<DeviceBodyForce> bodyForces = MemoryMarshal.Cast<byte, DeviceBodyForce>(forces.Bytes);
+            for (int index = 0; index < values.Length; index++)
             {
-                mapping.Invalidate(mapping.Range);
-                MemoryMarshal.Cast<byte, DeviceConstraintForceRow>(mapping.Bytes).CopyTo(samples.Rows);
-            }
-            using (MappedBuffer mapping = samples._backend.Map(samples._forceReadback, MapType.Read, BufferRange.Whole))
-            {
-                mapping.Invalidate(mapping.Range);
-                MemoryMarshal.Cast<byte, DeviceBodyForce>(mapping.Bytes).CopyTo(samples.Forces);
+                DeviceConstraintForceRow value = values[index];
+                if (value.Active == 0) continue;
+                int row = (int)value.Active - 1;
+                samples.Rows[row] = value; samples._reported.Add(row);
+                bodyForces.Slice(index * samples.BodiesPerConstraint, (int)value.BodyCount).CopyTo(samples.Forces.AsSpan(row * samples.BodiesPerConstraint));
             }
             samples._backend.CollectCompleted(samples._device);
         }
     }
     public void Dispose()
     {
-        _pipeline.Dispose(); _commands.Dispose(); _rowView.Dispose(); _forceView.Dispose();
-        _rows.Dispose(); _forces.Dispose(); _rowReadback.Dispose(); _forceReadback.Dispose();
+        _pipeline.Dispose(); _commands.Dispose(); _rowView.Dispose(); _forceView.Dispose(); _counterView.Dispose(); _dummyRows.Dispose(); _dummyLimits.Dispose();
+        foreach (Buffer buffer in new[] { _rows, _forces, _counter, _counterReadback, _zero, _rowReadback, _forceReadback }) buffer.Dispose();
     }
 }
 
@@ -182,7 +225,7 @@ public readonly struct DeviceConstraintForceResources<TData> : IJobComponentReso
 {
     public static void Collect(in DeviceConstraintForceBinding<TData> component, ref JobResourceAccessBuilder resources)
     {
-        resources.Read(component.Samples.Rows.AsMemory()); resources.Read(component.Samples.Forces.AsMemory());
+        resources.Read(component.Samples);
     }
 }
 
@@ -219,6 +262,7 @@ public readonly struct DeviceConstraintForces<TConstraint, TData> : IPhysicsCons
         ref readonly var binding = ref row.ReadRef<DeviceConstraintBinding<TData>>();
         start = binding.Index * samples.BodiesPerConstraint;
         if (!ReferenceEquals(binding.Data, samples.Parameters)) return 0;
+        if (binding.Index >= samples.Rows.Length) return 0;
         ref readonly DeviceConstraintForceRow value = ref samples.Rows[binding.Index];
         return value.Active != 0 && value.EntityIndex == (uint)row.Entity.Index && value.EntityGeneration == (uint)row.Entity.Generation
             ? (int)value.BodyCount : 0;

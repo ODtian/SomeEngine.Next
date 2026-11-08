@@ -4,25 +4,25 @@
 #include "physics_body_selection.slang"
 #include "physics_constraint_selection.slang"
 #include "physics_constraint_bodies.slang"
-struct DeviceConstraintGraphParameters { uint bodies; uint rows; uint bodiesPerRow; uint activeWorkOnly; };
-ConstantBuffer<DeviceConstraintGraphParameters> ConstraintGraphParameters;
+struct DeviceConstraintGraphParameters { uint bodies; uint rows; uint bodiesPerRow; uint activeWorkOnly; uint contactCapacity; uint contactRows; uint contactStart; };
+ConstantBuffer<DeviceConstraintGraphParameters, ScalarDataLayout> ConstraintGraphParameters;
 // Row = participant start/count, concrete query group, active.
-RWStructuredBuffer<uint4> ConstraintGraphRows;
+RWStructuredBuffer<uint4, ScalarDataLayout> ConstraintGraphRows;
 // Participant = body index, write role. Static/unselected bodies remain read inputs.
-RWStructuredBuffer<uint2> ConstraintGraphParticipants;
-globallycoherent RWStructuredBuffer<uint> ConstraintGraphParents;
-RWStructuredBuffer<uint> ConstraintGraphActiveBodies;
-RWStructuredBuffer<uint> ConstraintGraphBodyColors;
-RWStructuredBuffer<uint> ConstraintGraphRowColors;
-RWStructuredBuffer<uint> ConstraintGraphBodyOrder;
-RWStructuredBuffer<uint> ConstraintGraphRowOrder;
-RWStructuredBuffer<uint2> ConstraintGraphBodyRanges;
-RWStructuredBuffer<uint2> ConstraintGraphRowRanges;
-RWStructuredBuffer<uint> ConstraintGraphBodyOffsets;
-RWStructuredBuffer<uint> ConstraintGraphAdjacency;
-RWStructuredBuffer<uint> ConstraintGraphCounts;
-RWStructuredBuffer<uint> ConstraintGraphScratch;
-RWStructuredBuffer<uint> ConstraintGraphIslands;
+RWStructuredBuffer<uint2, ScalarDataLayout> ConstraintGraphParticipants;
+globallycoherent RWStructuredBuffer<uint, ScalarDataLayout> ConstraintGraphParents;
+RWStructuredBuffer<uint, ScalarDataLayout> ConstraintGraphActiveBodies;
+globallycoherent RWStructuredBuffer<uint, ScalarDataLayout> ConstraintGraphBodyColors;
+RWStructuredBuffer<uint, ScalarDataLayout> ConstraintGraphRowColors;
+RWStructuredBuffer<uint, ScalarDataLayout> ConstraintGraphBodyOrder;
+RWStructuredBuffer<uint, ScalarDataLayout> ConstraintGraphRowOrder;
+RWStructuredBuffer<uint2, ScalarDataLayout> ConstraintGraphBodyRanges;
+RWStructuredBuffer<uint2, ScalarDataLayout> ConstraintGraphRowRanges;
+RWStructuredBuffer<uint, ScalarDataLayout> ConstraintGraphBodyOffsets;
+RWStructuredBuffer<uint, ScalarDataLayout> ConstraintGraphAdjacency;
+RWStructuredBuffer<uint, ScalarDataLayout> ConstraintGraphCounts;
+RWStructuredBuffer<uint, ScalarDataLayout> ConstraintGraphScratch;
+RWStructuredBuffer<uint, ScalarDataLayout> ConstraintGraphIslands;
 struct DeviceGraphBodies : IDeviceBodySelection
 {
     bool contains(uint body) { return ConstraintGraphActiveBodies[body]!=0; }
@@ -40,15 +40,18 @@ bool deviceGraphRowActive(uint4 row)
 #ifndef DEVICE_GRAPH_BODY_ACTIVE
 #define DEVICE_GRAPH_BODY_ACTIVE(body) true
 #endif
+uint deviceGraphSourceRow(uint row)
+{ return row < ConstraintGraphParameters.contactStart + ConstraintGraphParameters.contactRows ? row : row + ConstraintGraphParameters.contactCapacity - ConstraintGraphParameters.contactRows; }
 void writeDeviceConstraintGraphRows<T : IDeviceConstraintBodies>(uint row, T source)
 {
     if (row >= ConstraintGraphParameters.rows) return;
+    uint input = deviceGraphSourceRow(row);
     uint first = row * ConstraintGraphParameters.bodiesPerRow;
-    if (row >= source.count() || !source.active(row)) { ConstraintGraphRows[row] = uint4(first,0,0,0); return; }
-    uint count = source.bodyCount(row);
-    ConstraintGraphRows[row] = uint4(first, count, source.group(row), 1);
+    if (input >= source.count() || !source.active(input)) { ConstraintGraphRows[row] = uint4(first,0,0,0); return; }
+    uint count = source.bodyCount(input);
+    ConstraintGraphRows[row] = uint4(first, count, source.group(input), input + 1);
     for (uint end = 0; end < count; end++)
-        ConstraintGraphParticipants[first + end] = uint2(source.body(row,end), source.writes(row,end) ? 1 : 0);
+        ConstraintGraphParticipants[first + end] = uint2(source.body(input,end), source.writes(input,end) ? 1 : 0);
 }
 uint deviceGraphRoot(uint body)
 {
@@ -206,7 +209,7 @@ void buildDeviceConstraintGraph()
             uint first = rowPosition;
             for (uint index = 0; index < rows; index++)
                 if (deviceGraphRowActive(ConstraintGraphRows[index]) && ConstraintGraphRows[index].z == group && ConstraintGraphRowColors[index] == color)
-                    ConstraintGraphRowOrder[rowPosition++] = index;
+                    ConstraintGraphRowOrder[rowPosition++] = ConstraintGraphRows[index].w - 1;
             ConstraintGraphRowRanges[stages++] = uint2(first,rowPosition-first);
         }
     }

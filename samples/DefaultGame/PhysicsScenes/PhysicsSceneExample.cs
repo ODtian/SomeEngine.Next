@@ -34,7 +34,7 @@ public sealed partial class PhysicsSceneExample(PhysicsSceneDescription descript
             ContactDistance = .02f,
             ContactNormalPenalty = 100,
             ContactTangentPenalty = 100,
-            Graph = new PhysicsGraphSettings(PhysicsGraphOrder.Islands, 16, 16, 64, 4, false),
+            Graph = new PhysicsGraphSettings(PhysicsGraphOrder.Colors, 16, 128, 64, 128, true),
             Timings = timings,
         });
 
@@ -254,8 +254,8 @@ internal sealed class ScenePhysicsEventCounts
         Scale?.ReadEvent(in step, in value);
         var key = (value.Kind, value.Phase);
         if (_counts.TryGetValue(key, out ScenePhysicsEventCount count))
-            _counts[key] = count with { Count = count.Count + 1, LastStep = step.Number, LastTime = value.Time };
-        else _counts[key] = new(1, step.Number, step.Number, value.Time, value.Time);
+            _counts[key] = count with { Count = count.Count + value.Occurrences, LastStep = step.Number, LastTime = value.Time };
+        else _counts[key] = new(value.Occurrences, step.Number, step.Number, value.Time, value.Time);
     }
     public JsonArray Describe() => new(_counts.Select(pair => (JsonNode)new JsonObject
     {
@@ -269,6 +269,7 @@ internal readonly record struct ScenePhysicsEventCount(int Count, long FirstStep
 
 internal readonly struct CountScenePhysicsEvents(ScenePhysicsEventCounts counts) : IPhysicsEventConsumer
 {
+    public bool RequiresContactDetails => counts.Scale is not null;
     public void Consume(scoped in PhysicsStepEvents step, scoped ReadOnlySpan<PhysicsEvent> events, ref JobCommandWriter commands)
     { foreach (PhysicsEvent value in events) counts.Add(in step, in value); }
 }

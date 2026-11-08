@@ -11,6 +11,23 @@ namespace SomeEngine.Physics.Tests;
 public sealed class IntervalCandidateTests
 {
     [Fact]
+    public void PartitionedIntervalsKeepAnUnboundedMemberBesideADistantBody()
+    {
+        using var world = new World();
+        Entity plane = world.CreateEntity(new CollisionBounds(new(float.NegativeInfinity), new(float.PositiveInfinity)));
+        Entity body = world.CreateEntity(new CollisionBounds(new(1000000, 0, 0), new(1000001, 1, 1)));
+        QueryHandle members = world.Query(world.QueryDefinition().All<CollisionBounds>());
+        var intervals = Collision.CreatePartitionedSap(CollisionAxis.X, 1);
+        var pairs = new List<(Entity, Entity)>();
+        var output = new IntervalPairList(pairs);
+
+        intervals.Candidates(world.Within(members)).Enumerate(ref output);
+
+        Assert.Equal([(plane, body)], pairs);
+        world.ReleaseQuery(members);
+    }
+
+    [Fact]
     public void SapCandidatesDeliverOverlappingEntitiesToConcreteDetection()
     {
         using var jobs = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });

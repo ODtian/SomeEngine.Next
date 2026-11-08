@@ -60,7 +60,7 @@ public sealed partial class DeviceAvbdTests
             backend, device, world, connections, elastic, new(elasticStates), "DeviceElasticAvbdSelection");
         using var targetHistorySelection = new DeviceConstraintSelection<ProjectEnergy, ProjectEnergyData, DeviceAvbdStateRows<ProjectEnergyState>>(
             backend, device, world, energies, targets, new(targetStates), "ProjectEnergyAvbdSelection");
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileDynamics(), 64);
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileDynamics(), 64);
         using var results = new DeviceBodyResults(backend, device, bodies);
         using SomeEngine.Graphics.Buffer scale = backend.CreateBuffer(device, new(4, BufferUsages.ShaderRead), MemoryType.Upload);
         using (MappedBuffer mapping = backend.Map(scale, MapType.Write, BufferRange.Whole))
@@ -74,7 +74,7 @@ public sealed partial class DeviceAvbdTests
         JobResourceAccess[] reads = [.. elastic.GetReadAccesses(jobs), .. targets.GetReadAccesses(jobs), JobResourceAccess.Read(jobs.GetResourceToken(scale), 0, 4)];
         using var graph = new DeviceConstraintGraph(backend, device, bodies, dynamics, CompileProjectEnergyGraph(), new(2, 2), bindings, reads,
             64, new IDeviceConstraintSelection[] { elasticSelection, targetSelection });
-        using var solver = new DeviceAvbdSolver(backend, device, bodies, equations, graph, CompileProjectEnergyAvbd(), new(32, 1, 0, 0), bindings,
+        using var solver = new AvbdGraphCommands(backend, device, bodies, equations, graph, CompileProjectEnergyAvbd(), new(32, 1, 0, 0), bindings,
             reads.Concat(new[] { elasticStates.GetWriteAccess(jobs), targetStates.GetWriteAccess(jobs) }).ToArray(), 64,
             new IDeviceConstraintSelection[] { elasticHistorySelection, targetHistorySelection });
         var step = bodies.WriteInputs(64).Then(bodies.UploadInputs())
@@ -139,7 +139,7 @@ public sealed partial class DeviceAvbdTests
             """, [new("WriteRows", SlangStage.Compute), new("BuildGraph", SlangStage.Compute)], "sm_6_0", ShaderDirectory());
         return new(Entry(shader, 0), Entry(shader, 1));
     }
-    private DeviceAvbdKernels CompileProjectEnergyAvbd()
+    private AvbdGraphKernels CompileProjectEnergyAvbd()
     {
         D3D12TestShader shader = shaderCompiler.CompileWithSearchPaths("project_energy_avbd", "#include \"physics_avbd_elastic.slang\"\n"
             + ProjectEnergyBodies + ProjectEnergyMath + """

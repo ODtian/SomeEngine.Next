@@ -65,6 +65,7 @@ internal sealed class DeviceSceneStatistics : IDisposable, IDevicePhysicsSubmiss
     internal ReadDeviceSceneStatistics Readback() => new(this);
     IGraphicsBackend IDevicePhysicsSubmission.Backend => _backend;
     Device IDevicePhysicsSubmission.Device => _device;
+    SomeEngine.Graphics.Queue IDevicePhysicsSubmission.Queue => _backend.GetQueue(_device, QueueType.Compute);
 
     internal JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency)
     {
@@ -77,7 +78,7 @@ internal sealed class DeviceSceneStatistics : IDisposable, IDevicePhysicsSubmiss
         accesses.Add(JobResourceAccess.Write(scheduler.GetResourceToken(_readback), 0, 16));
         accesses.Add(JobResourceAccess.Write(scheduler.GetResourceToken(_commands)));
         _selection.AddAccesses(scheduler, accesses);
-        JobHandle copied = DevicePhysicsJobs.Schedule(scheduler, this, accesses.ToArray(), dependency);
+        JobHandle copied = DevicePhysicsJobs.Schedule(scheduler, new Submission(this, context), accesses.ToArray(), dependency);
         return scheduler.Schedule(new Read(this), new[]
         {
             JobResourceAccess.Read(scheduler.GetResourceToken(_readback), 0, 16),
@@ -85,9 +86,10 @@ internal sealed class DeviceSceneStatistics : IDisposable, IDevicePhysicsSubmiss
         }, copied);
     }
 
-    QueueCompletion IDevicePhysicsSubmission.Submit()
+    QueueCompletion IDevicePhysicsSubmission.Submit() => Submit(default);
+    private QueueCompletion Submit(in PhysicsStepContext context)
     {
-        _selection.Capture();
+        _selection.Capture(in context);
         _backend.Begin(_commands, new(0, 0, 8));
         if (!_initialized)
         {
@@ -106,7 +108,7 @@ internal sealed class DeviceSceneStatistics : IDisposable, IDevicePhysicsSubmiss
         _backend.Dispatch(_commands, DevicePhysicsDispatch.CreateGroups((_bodies.Capacity + 63) / 64));
         _backend.SetPipeline(_commands, _pipelines[2]);
         _backend.SetTransientParameterBindings(_commands, new(_layouts[2], _bindings[2], []));
-        _backend.Dispatch(_commands, DevicePhysicsDispatch.CreateGroups((_contacts.Capacity + 63) / 64));
+        _backend.Dispatch(_commands, DevicePhysicsDispatch.CreateGroups((_contacts.RowCount + 63) / 64));
         _backend.Barrier(_commands, new BufferBarrier(_values, PipelineSync.ComputeShading, PipelineSync.Copy,
             ResourceAccess.UnorderedAccess, ResourceAccess.CopySource));
         _backend.CopyBuffer(_commands, new(_values, 0, _readback, 0, 16));
@@ -117,6 +119,13 @@ internal sealed class DeviceSceneStatistics : IDisposable, IDevicePhysicsSubmiss
         return _backend.Submit(_backend.GetQueue(_device, QueueType.Compute), new([], [], [commands], [], []));
     }
 
+    private readonly struct Submission(DeviceSceneStatistics statistics, PhysicsStepContext context) : IDevicePhysicsSubmission
+    {
+        public IGraphicsBackend Backend => statistics._backend;
+        public Device Device => statistics._device;
+        public SomeEngine.Graphics.Queue Queue => Backend.GetQueue(Device, QueueType.Compute);
+        public QueueCompletion Submit() => statistics.Submit(in context);
+    }
     private readonly struct Read(DeviceSceneStatistics result) : IJob
     {
         public void Execute()

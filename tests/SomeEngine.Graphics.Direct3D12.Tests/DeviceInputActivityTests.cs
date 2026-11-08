@@ -33,12 +33,12 @@ public sealed partial class DeviceXpbdTests
         QueryHandle members = world.Query(world.QueryDefinition().Read<DeviceBodyBinding>());
         QueryHandle rows = world.Query(world.QueryDefinition().Read<XpbdLength>().Read<UndirectedRelationEndpoints<XpbdLength>>()
             .Read<DeviceConstraintBinding<DeviceLengthConstraint>>().All<DeviceXpbdState<float>>());
-        QueryHandle events = world.Query(world.QueryDefinition().Read<PhysicsStepEvents>().ReadBuffer<PhysicsEvent>());
+        QueryHandle events = world.Query(world.QueryDefinition().Read<PhysicsStepEvents>().Enabled<PhysicsStepEvents>().ReadBuffer<PhysicsEvent>());
         using var activities = new DeviceBodyActivities(backend, device, world, members, bodies);
         foreach (Entity body in new[] { moving, other })
         { world.Add(body, new BodyActivity { Radius = 1 }); world.Add(body, new DeviceBodyActivityBinding(activities)); }
         var bindings = new Dictionary<string, ResourceBinding[]>(); activities.AddBindings(bindings);
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileActiveBodyDynamics(), 64,
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileActiveBodyDynamics(), 64,
             bindings, activities.GetWriteAccesses(jobs));
         using var bodyInputs = new DeviceBodyInputs(world, members, bodies);
         using var timed = new DeviceBodyInputBuffers(backend, device, world, members, bodies, CompileBodyInputBuffers(), 64);
@@ -50,12 +50,12 @@ public sealed partial class DeviceXpbdTests
         JobResourceAccess[] reads = [.. lengths.GetReadAccesses(jobs), .. activities.GetReadAccesses(jobs)];
         using var graph = new DeviceConstraintGraph(backend, device, bodies, dynamics, CompileActiveLengthGraph(),
             new(1, 2), bindings, reads, 64, new[] { selected });
-        using var solve = new DeviceXpbdSolver(backend, device, bodies, graph, CompileGraphLengthProjection(), new(4, 1),
+        using var solve = new XpbdGraphCommands(backend, device, bodies, graph, CompileGraphLengthProjection(), new(4, 1),
             bindings, reads, new[] { multipliers.States }, 64);
         timed.AddBindings(bindings);
         using var activity = new DevicePhysicsActivity(backend, device, activities, graph, CompileTimedLengthActivity(),
             new(.05f, .2f, .01f, .01f), bindings, reads.Concat(timed.GetReadAccesses(jobs)).ToArray(), 64);
-        using var output = new PhysicsEventBuffer(jobs, 8);
+        using var output = new PhysicsEventBuffer(world, 8);
         var received = new List<(long Number, PhysicsEvent Event)>();
         using var consumer = new ConsumePhysicsEvents<RecordDeviceActivityEvents>(world, events, new(received),
             [JobResourceAccess.Write(jobs.GetResourceToken(received))]);

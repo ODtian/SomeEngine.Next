@@ -104,7 +104,7 @@ public sealed partial class DeviceCollisionDetectionTests(D3D12TestCompiler shad
             .Read<BodyStepState>().Read<BodyVelocity>().ReadWrite<AvbdBodyEquation>());
         QueryHandle responsePoints = world.Query(world.QueryDefinition().Read<ContactPoint>()
             .Read<UndirectedRelationEndpoints<ContactPoint>>().Read<ContactMaterial>().ReadBuffer<ContactBodyLink>()
-            .Optional<DirectedRelationEndpoints<ContactParticipant>>(QueryAccess.Read).ReadWrite<AvbdContactState>()
+            .ReadWrite<AvbdContactState>()
             .ReadWrite<ContactResponse>());
         var consume = query.WriteContacts(new ContactPointOutput(detected), new JobResourceAccess[] { detected.WriteAccess })
             .Then(points.Refresh())

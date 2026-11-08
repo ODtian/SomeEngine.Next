@@ -25,13 +25,15 @@ public sealed partial class DeviceBodyResults
         private readonly BodyResultSource[] _sources;
         private readonly Dictionary<int, int> _ordinals = [];
         private int _count;
+        private readonly PhysicsQueryWindow _window;
+        private uint _baseline;
         internal QueryDefinition Definition { get; }
 
         internal SelectedResultRanges(DeviceBodyResults results, World world, QueryHandle members)
         {
             _results = results; _world = world; _sources = new BodyResultSource[results.States.Length];
             Definition = world.GetQueryDefinition(members).AsFilter().WithOptionalRead<DeviceBodyBinding>();
-            _members = world.Query(Definition);
+            _members = world.Query(Definition); _window = new(Definition);
             var resources = new QueryReadResources();
             resources.Add<DeviceBodyBinding, DeviceBodyReferenceResources>();
             _accesses = new JobResourceAccess[QueryJobAccess.Count(Definition)];
@@ -41,19 +43,21 @@ public sealed partial class DeviceBodyResults
         internal bool TryGetOrdinal(int index, Entity entity, out int ordinal) =>
             _ordinals.TryGetValue(index, out ordinal) && _sources[ordinal].Entity == entity;
 
-        internal JobHandle Schedule(ResultRows rows, int rowsPerPacket, JobHandle dependency)
+        internal JobHandle Schedule(PhysicsStepContext context, ResultRows rows, int rowsPerPacket, JobHandle dependency)
         {
             Scheduler scheduler = WorldJobs.GetScheduler(_world);
             JobResourceAccess[] accesses = [.. _accesses, JobResourceAccess.Write(scheduler.GetResourceToken(this))];
-            return scheduler.Schedule(new Capture(this, rows, scheduler, rowsPerPacket), accesses, dependency);
+            return scheduler.Schedule(new Capture(this, rows, scheduler, rowsPerPacket, context), accesses, dependency);
         }
 
-        private void CaptureMembers()
+        private void CaptureMembers(in PhysicsStepContext context)
         {
+            _baseline = _window.Begin(context);
             _count = 0; _ordinals.Clear();
             SelectedResultRanges selected = this;
-            _world.ExecuteReadQuery(_members, ref selected, static (scoped QueryCursor query, ref SelectedResultRanges selected) =>
+            _world.ExecuteReadQuery(_members, _baseline, ref selected, static (scoped QueryCursor query, ref SelectedResultRanges selected) =>
             {
+                selected._window.Accept(query.CurrentSystemVersion);
                 foreach (QueryRow row in query.Rows)
                     if (row.TryRead<DeviceBodyBinding>(out var binding) && ReferenceEquals(binding.Bodies, selected._results.Bodies))
                         selected._sources[selected._count++] = new(binding.Index, row.Entity);
@@ -62,11 +66,11 @@ public sealed partial class DeviceBodyResults
             for (int ordinal = 0; ordinal < _count; ordinal++) _ordinals.Add(_sources[ordinal].Index, ordinal);
         }
 
-        private readonly struct Capture(SelectedResultRanges selected, ResultRows rows, Scheduler scheduler, int rowsPerPacket) : IJob
+        private readonly struct Capture(SelectedResultRanges selected, ResultRows rows, Scheduler scheduler, int rowsPerPacket, PhysicsStepContext context) : IJob
         {
             public void Execute()
             {
-                selected.CaptureMembers();
+                selected.CaptureMembers(in context); rows.Baseline = selected._baseline;
                 DeviceBodyResults results = selected._results;
                 var accesses = new List<JobResourceAccess>
                 {
@@ -126,6 +130,7 @@ public sealed partial class DeviceBodyResults
         {
             public IGraphicsBackend Backend => selection._results._backend;
             public Device Device => selection._results._device;
+            public SomeEngine.Graphics.Queue Queue => Backend.GetQueue(Device, QueueType.Compute);
             public QueueCompletion Submit() => selection.Submit();
         }
         private readonly record struct BodyResultSource(int Index, Entity Entity);

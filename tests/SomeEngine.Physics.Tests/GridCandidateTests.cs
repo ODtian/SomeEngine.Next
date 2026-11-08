@@ -12,6 +12,23 @@ namespace SomeEngine.Physics.Tests;
 public sealed class GridCandidateTests
 {
     [Fact]
+    public void AnUnboundedMemberMeetsAFiniteBodyFarFromTheGridOrigin()
+    {
+        using var world = new World();
+        Entity plane = world.CreateEntity(new CollisionBounds(new(float.NegativeInfinity), new(float.PositiveInfinity)));
+        Entity body = world.CreateEntity(new CollisionBounds(new(1000000, 0, 0), new(1000001, 1, 1)));
+        QueryHandle members = world.Query(world.QueryDefinition().All<CollisionBounds>());
+        var grid = Collision.CreateUniformGrid(1);
+        var pairs = new List<(Entity, Entity)>();
+        var output = new GridPairList(pairs);
+
+        grid.Candidates(world.Within(members)).Enumerate(ref output);
+
+        Assert.Equal([(plane, body)], Ordered(pairs));
+        world.ReleaseQuery(members);
+    }
+
+    [Fact]
     public void UniformGridReturnsEachOverlapOnceAcrossSharedCells()
     {
         using var world = new World();

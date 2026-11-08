@@ -9,13 +9,13 @@ namespace SomeEngine.Physics;
 public readonly struct ApplyKinematicTargets(int rowsPerPacket) : IPhysicsStage
 {
     public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) =>
-        new ApplyKinematicTargetsJob(context.EndTime).ScheduleParallel(context.World,
+        new ApplyKinematicTargetsJob(context.EndTime, (float)context.Duration).ScheduleParallel(context.World,
             new JobEntityScheduleOptions(rowsPerPacket: rowsPerPacket, filter: context.Bodies), dependency);
 }
 
-internal readonly partial struct ApplyKinematicTargetsJob(double time) : IJobEntity
+internal readonly partial struct ApplyKinematicTargetsJob(double time, float duration) : IJobEntity
 {
-    public void Execute(ref BodyPose pose, in BodyMass mass, ref BodyStepState state, BufferView<BodyKinematicTarget> targets)
+    public void Execute(ref BodyPose pose, in BodyMass mass, ref BodyStepState state, ref BodyVelocity velocity, BufferView<BodyKinematicTarget> targets)
     {
         if (mass.Motion != BodyMotion.Kinematic) return;
         double latestStart = double.NegativeInfinity;
@@ -29,5 +29,10 @@ internal readonly partial struct ApplyKinematicTargetsJob(double time) : IJobEnt
         }
         state.PredictedCenterOfMass = pose.GetCenterOfMass(in mass);
         state.PredictedRotation = pose.Rotation;
+        if (latestStart != double.NegativeInfinity)
+        {
+            velocity.Linear = (state.PredictedCenterOfMass - state.StartCenterOfMass) / duration;
+            velocity.Angular = BodyRotation.Velocity(state.StartRotation, state.PredictedRotation, duration);
+        }
     }
 }

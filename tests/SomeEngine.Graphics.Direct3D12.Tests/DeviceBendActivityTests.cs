@@ -35,7 +35,7 @@ public sealed partial class DeviceXpbdTests
         foreach (Entity body in new[] { last, other })
         { world.Add(body, new BodyActivity { Radius = 1 }); world.Add(body, new DeviceBodyActivityBinding(activities)); }
         var bindings = new Dictionary<string, ResourceBinding[]>(); activities.AddBindings(bindings);
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileActiveBodyDynamics(), 64,
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileActiveBodyDynamics(), 64,
             bindings, activities.GetWriteAccesses(jobs));
         using var bodyInputs = new DeviceBodyInputs(world, members, bodies);
         using var results = new DeviceBodyResults(backend, device, bodies);
@@ -46,11 +46,11 @@ public sealed partial class DeviceXpbdTests
         JobResourceAccess[] reads = [.. parameters.GetReadAccesses(jobs), .. activities.GetReadAccesses(jobs)];
         using var graph = new DeviceConstraintGraph(backend, device, bodies, dynamics, CompileBendActivityGraph(), new(1, 3),
             bindings, reads, 64, new[] { selected });
-        using var solve = new DeviceXpbdSolver(backend, device, bodies, graph, CompileBendActivityProjection(), new(1, 1),
+        using var solve = new XpbdGraphCommands(backend, device, bodies, graph, CompileBendActivityProjection(), new(1, 1),
             bindings, reads, new[] { multipliers.States }, 64);
         using var activity = new DevicePhysicsActivity(backend, device, activities, graph, CompileBendActivity(),
             new(.05f, .2f, .01f, 1), bindings, reads, 64);
-        using var output = new PhysicsEventBuffer(jobs, 8);
+        using var output = new PhysicsEventBuffer(world, 8);
         var stages = bodyInputs.Upload().Then(parameters.BeginInputs()).Then(write).Then(parameters.UploadInputs())
             .Then(activity.UploadInputs()).Then(dynamics.UpdateSelection()).Then(activity.WakeConnected())
             .Then(dynamics.Predict(Vector3.Zero)).Then(solve.Solve()).Then(dynamics.UpdateVelocities())
@@ -79,7 +79,7 @@ public sealed partial class DeviceXpbdTests
         { DeviceBendBodies rows; writeDeviceConstraintGraphRows(id.x,rows); }
         """, ShaderDirectory());
 
-    private DeviceXpbdKernels CompileBendActivityProjection()
+    private XpbdGraphKernels CompileBendActivityProjection()
     {
         D3D12TestShader shader = shaderCompiler.CompileWithSearchPaths("bend_activity_projection", """
             #include "physics_xpbd_graph.slang"

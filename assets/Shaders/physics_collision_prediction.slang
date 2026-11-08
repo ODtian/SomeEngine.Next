@@ -74,6 +74,7 @@ DeviceGeometryDistance getDeviceCollisionSampleDistance<TKernel : IDeviceCollisi
 // Each rigid reference supplies one body. The selected narrow phase samples its finite convex geometry.
 void predictDeviceRigidCollision<TKernel : IDeviceCollisionPrediction>(uint work, TKernel kernel)
 {
+    if (DetectionParameters.prediction == 0) { detectDeviceReferencedCollision(work,kernel); return; }
     if (work >= DetectionParameters.workItems) return;
     uint begin = DetectionBinOffsets[DetectionParameters.bin];
     uint end = DetectionBinOffsets[DetectionParameters.bin + 1];
@@ -101,7 +102,7 @@ void predictDeviceRigidCollision<TKernel : IDeviceCollisionPrediction>(uint work
         result.first = uint2(pair.firstEntity, pair.firstGeneration);
         result.second = uint2(pair.secondEntity, pair.secondGeneration);
         result.distance = nearest;
-        CollisionDistances[index] = result;
+        if (DetectionParameters.distances != 0) CollisionDistances[index] = result;
         float firstTravel = getDeviceRigidTravel(kernel, first, firstBody, nearest.normal);
         float secondTravel = getDeviceRigidTravel(kernel, second, secondBody, -nearest.normal);
         float manifoldDistance = max(DetectionParameters.contactDistance, nearest.separation) + firstTravel + secondTravel;
@@ -136,14 +137,83 @@ void predictDeviceRigidCollision<TKernel : IDeviceCollisionPrediction>(uint work
             contact.firstBodyCount = 1; contact.predictionAlignment = 0;
             contact.prediction.enabled = 1; contact.prediction.padding = 0;
             contact.prediction.sampleTime = DetectionParameters.startTime;
-            uint contactIndex = index * 4 + written++;
-            CollisionContacts[contactIndex] = contact;
+            uint contactIndex = work * 4 + written++;
+            CollisionWorkContacts[contactIndex] = contact;
             uint bodyOffset = contactIndex * DetectionParameters.bodiesPerContact;
-            CollisionContactBodies[bodyOffset] = getDeviceRigidStartContactBody(firstIndex, firstStart, firstLocal, firstNormalReference);
-            CollisionContactBodies[bodyOffset + 1] = getDeviceRigidStartContactBody(secondIndex, secondStart, secondLocal, secondNormalReference);
-            CollisionContactBodyCounts[contactIndex] = 2;
+            CollisionWorkBodies[bodyOffset] = getDeviceRigidStartContactBody(firstIndex, firstStart, firstLocal, firstNormalReference);
+            CollisionWorkBodies[bodyOffset + 1] = getDeviceRigidStartContactBody(secondIndex, secondStart, secondLocal, secondNormalReference);
+            CollisionWorkBodyCounts[contactIndex] = 2;
         }
-        CollisionContactCounts[index] = written;
+        writeDeviceCollisionContacts(index,work,written);
+    }
+}
+
+float3 deviceGeometryContactDelta(uint offset, uint firstCount, uint count, uint sample)
+{
+    float3 delta = 0;
+    for (uint index = 0; index < count; index++)
+    {
+        DeviceContactBody link = CollisionWorkBodies[offset+index];
+        float3 point = deviceGeometryPoint(link.stateIndex,deviceContactNormalLocalPoint(link),sample);
+        delta += point * link.weight * (index < firstCount ? -1 : 1);
+    }
+    return delta;
+}
+float deviceGeometryTravel<TKernel : IDeviceCollisionPrediction>(TKernel kernel, DeviceGeometryInput geometry, float3 direction)
+{
+    DeviceGeometryReference reference = DeviceGeometryReferences[geometry.geometryIndex];
+    if (reference.kind == 0) return getDeviceRigidTravel(kernel,geometry,DeviceBodyStates[reference.firstBody],direction);
+    uint indices[3] = { reference.firstBody,reference.secondBody,reference.thirdBody };
+    float3 local[3] = { reference.firstLocalPoint,reference.secondLocalPoint,reference.thirdLocalPoint };
+    float travel = 0;
+    for (uint index = 0; index < reference.bodyCount; index++)
+        travel = max(travel,dot(direction,deviceGeometryPoint(indices[index],local[index],2)-deviceGeometryPoint(indices[index],local[index],1)));
+    return travel;
+}
+void predictDeviceReferencedCollision<TKernel : IDeviceCollisionPrediction>(uint work, TKernel kernel)
+{
+    if (DetectionParameters.prediction == 0) { detectDeviceReferencedCollision(work,kernel); return; }
+    if (work >= DetectionParameters.workItems) return;
+    uint begin = DetectionBinOffsets[DetectionParameters.bin], end = DetectionBinOffsets[DetectionParameters.bin+1];
+    uint outputBegin = begin-DetectionBinOffsets[DetectionParameters.firstBin];
+    for (uint local = work; local < end-begin; local += DetectionParameters.workItems)
+    {
+        uint row = outputBegin+local;
+        DeviceCollisionPair pair = DetectionPairs[begin+local];
+        DeviceGeometryInput first = deviceGeometryStart(DeviceGeometries[pair.firstGeometry]);
+        DeviceGeometryInput second = deviceGeometryStart(DeviceGeometries[pair.secondGeometry]);
+        DeviceGeometryDistance nearest = kernel.distance(work,first,second);
+        DeviceCollisionDistance result;
+        result.first = uint2(pair.firstEntity,pair.firstGeneration); result.second = uint2(pair.secondEntity,pair.secondGeneration);
+        result.distance = nearest; if (DetectionParameters.distances != 0) CollisionDistances[row] = result;
+        float reach = max(DetectionParameters.contactDistance,nearest.separation)
+            + deviceGeometryTravel(kernel,first,nearest.normal)+deviceGeometryTravel(kernel,second,-nearest.normal);
+        DeviceGeometryDistance points[4];
+        uint count = kernel.getPredictedManifold(work,first,second,nearest,reach,points);
+        if (count == 0) { points[0] = nearest; count = 1; }
+        uint written = 0;
+        for (uint point = 0; point < count; point++)
+        {
+            DeviceGeometryDistance distance = points[point];
+            uint contactIndex = work*4+written, offset = contactIndex*DetectionParameters.bodiesPerContact;
+            uint firstCount = writeDeviceGeometryBodies(pair.firstGeometry,distance.firstPoint,offset,kernel.getNormalReference(first),1,true);
+            uint secondCount = writeDeviceGeometryBodies(pair.secondGeometry,distance.secondPoint,offset+firstCount,kernel.getNormalReference(second),1,true);
+            float3 start = deviceGeometryContactDelta(offset,firstCount,firstCount+secondCount,1);
+            float3 predicted = deviceGeometryContactDelta(offset,firstCount,firstCount+secondCount,2);
+            float gap = distance.separation+dot(distance.normal,predicted-start);
+            if (distance.separation > DetectionParameters.contactDistance && gap > DetectionParameters.contactDistance) continue;
+            DeviceCollisionContact contact;
+            contact.first = result.first; contact.second = result.second;
+            contact.firstFeature = distance.firstFeature; contact.secondFeature = distance.secondFeature; contact.pointIndex = int(point);
+            contact.firstLocalPoint = rotateDeviceDirection(float4(-first.rotation.xyz,first.rotation.w),distance.firstPoint-first.position);
+            contact.secondLocalPoint = rotateDeviceDirection(float4(-second.rotation.xyz,second.rotation.w),distance.secondPoint-second.position);
+            contact.worldPoint = (distance.firstPoint+distance.secondPoint)*.5f; contact.normal = distance.normal; contact.separation = distance.separation;
+            contact.firstBodyCount = int(firstCount); contact.predictionAlignment = 0;
+            contact.prediction.enabled = 1; contact.prediction.padding = 0; contact.prediction.sampleTime = DetectionParameters.startTime;
+            CollisionWorkContacts[contactIndex] = contact; CollisionWorkBodyCounts[contactIndex] = firstCount+secondCount;
+            written++;
+        }
+        writeDeviceCollisionContacts(row,work,written);
     }
 }
 #endif

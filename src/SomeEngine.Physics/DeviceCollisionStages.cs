@@ -25,19 +25,19 @@ public readonly struct WriteDeviceCollisionInputs<TComponent, TReader> : IPhysic
     public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency)
     {
         WorldJobs.TryGetScheduler(context.World, out Scheduler? scheduler);
-        var accesses = new List<JobResourceAccess>();
+        var accesses = new List<JobResourceAccess>(_participants.GetReadAccesses());
         var resources = new JobResourceAccessBuilder(scheduler!, accesses);
         resources.Write(_grid.Upload, 0, (long)_grid.Capacity.Bodies * DeviceCollisionGrid.InputStride);
-        JobHandle begun = scheduler!.Schedule(new BeginDeviceInputWrite(_grid), CollectionsMarshal.AsSpan(accesses), dependency);
+        JobHandle begun = scheduler!.Schedule(new BeginDeviceInputWrite(_grid, _participants, context), CollectionsMarshal.AsSpan(accesses), dependency);
         var options = new JobEntityScheduleOptions(rowsPerPacket: _rowsPerPacket);
         return new WriteDeviceCollisionInputsJob<TComponent, TReader>(_grid, _participants, _reader)
             .ScheduleParallel(context.World, _participants.GetReadAccesses(), options, begun);
     }
 }
 
-internal readonly struct BeginDeviceInputWrite(DeviceCollisionGrid grid) : IJob
+internal readonly struct BeginDeviceInputWrite(DeviceCollisionGrid grid, DeviceCollisionParticipants? participants = null, PhysicsStepContext context = default) : IJob
 {
-    public void Execute() => grid.BeginInputWrite();
+    public void Execute() { if (participants is { } selected) grid.CaptureMemberVersions(selected, in context); grid.BeginInputWrite(); }
 }
 
 internal readonly partial struct WriteDeviceCollisionInputsJob<TComponent, TReader>(DeviceCollisionGrid grid,
@@ -53,7 +53,7 @@ internal readonly partial struct WriteDeviceCollisionInputsJob<TComponent, TRead
         DeviceCollisionInput input = reader.Read(entity, in component);
         input.EntityIndex = (uint)entity.Index;
         input.EntityGeneration = (uint)entity.Generation;
-        input.Members = participants.ReadMembers(entity);
+        input.Members = participants.ReadMembers(entity, grid.FirstMemberVersion, grid.SecondMemberVersion);
         body.Grid.WriteInput(body.Index, in input);
     }
 }
@@ -106,15 +106,15 @@ internal readonly record struct DeviceCollisionParticipants(World World, QueryHa
         return accesses;
     }
 
-    internal uint ReadMembers(Entity entity)
+    internal uint ReadMembers(Entity entity, uint firstVersion, uint secondVersion)
     {
         var first = new FindDeviceMember(entity);
-        World.ExecuteQuery(First, ref first);
+        World.ExecuteQuery(First, firstVersion, ref first);
         uint members = first.Found ? (uint)DevicePairMembership.First : 0;
         if (Pairing != DevicePairing.Within)
         {
             var second = new FindDeviceMember(entity);
-            World.ExecuteQuery(Second, ref second);
+            World.ExecuteQuery(Second, secondVersion, ref second);
             if (second.Found)
                 members |= (uint)DevicePairMembership.Second;
         }

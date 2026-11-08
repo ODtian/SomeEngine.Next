@@ -2,6 +2,7 @@ using System.Numerics;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Relations;
+using SomeEngine.ECS.Entities;
 
 namespace SomeEngine.Physics;
 
@@ -24,12 +25,8 @@ public struct ContactPoint : IComponent
     public ContactPrediction Prediction;
 }
 
-/// <summary>A protected point-to-simulated-body relationship for one weighted anchor occurrence.</summary>
-[RelationSchema(RelationDirection.Directed)]
-public struct ContactParticipant : IComponent;
-
 [BufferCapacity(4)]
-public readonly record struct ContactBodyLink(RelationEdge<ContactParticipant> Participant,
+public readonly record struct ContactBodyLink(Entity Body,
     Vector3 LocalPoint, float Weight,
     ContactNormalReference NormalReference = ContactNormalReference.MaterialPoint) : IBufferElement
 {

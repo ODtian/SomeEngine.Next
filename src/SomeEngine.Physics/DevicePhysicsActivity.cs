@@ -10,10 +10,10 @@ namespace SomeEngine.Physics;
 
 public readonly record struct DeviceActivityKernels(ComputePipelineDesc ApplyInputs, ComputePipelineDesc ClearSignals,
     ComputePipelineDesc CollectBodies, ComputePipelineDesc ReadRows, ComputePipelineDesc WakeBodies,
-    ComputePipelineDesc AdvanceQuiet, ComputePipelineDesc FinishBodies, ComputePipelineDesc? ReadBodyInputs = null);
+    ComputePipelineDesc AdvanceQuiet, ComputePipelineDesc FinishBodies, ComputePipelineDesc? ReadBodyInputs = null, ComputePipelineDesc? CollectResults = null);
 
 /// <summary>Wake, quiet-time and completed activity results over the solver's original full device graph.</summary>
-public sealed class DevicePhysicsActivity : IDisposable
+public sealed partial class DevicePhysicsActivity : IDisposable
 {
     private static readonly TraceSite CopyCommandsTrace = new("physics", "Activity.CopyCommands");
     private static readonly TraceSite MapResultsTrace = new("physics", "Activity.MapResults");
@@ -43,29 +43,37 @@ public sealed class DevicePhysicsActivity : IDisposable
         _signals = backend.CreateBuffer(device, new((ulong)activities.Bodies.Capacity * 4,
             BufferUsages.ShaderRead | BufferUsages.ShaderWrite, "Activity island signals"), MemoryType.DeviceLocal);
         _signalsView = backend.CreateBufferUav(device, new(_signals, new(0, _signals.Info.Size), StructureStride: 4));
-        _previousRows = backend.CreateBuffer(device, new((ulong)graph.ConstraintCapacity * 20,
-            BufferUsages.ShaderRead | BufferUsages.ShaderWrite, "Activity constraint identities"), MemoryType.DeviceLocal);
-        _previousParticipants = backend.CreateBuffer(device, new((ulong)graph.ConstraintCapacity * (ulong)graph.BodiesPerConstraint * 16,
-            BufferUsages.ShaderRead | BufferUsages.ShaderWrite, "Activity previous participants"), MemoryType.DeviceLocal);
+        var rowsDescription = new BufferDesc((ulong)graph.ConstraintCapacity * 20,
+            BufferUsages.ShaderRead | BufferUsages.ShaderWrite, "Activity constraint identities");
+        var participantsDescription = new BufferDesc((ulong)graph.ConstraintCapacity * (ulong)graph.BodiesPerConstraint * 16,
+            BufferUsages.ShaderRead | BufferUsages.ShaderWrite, "Activity previous participants");
+        _previousRows = graph.Memory is { } memory ? memory.CreateBuffer(rowsDescription, 20, graph.ContactStart)
+            : backend.CreateBuffer(device, rowsDescription);
+        _previousParticipants = graph.Memory is { } contactMemory ? contactMemory.CreateBuffer(participantsDescription,
+            (uint)graph.BodiesPerConstraint * 16, graph.ContactStart) : backend.CreateBuffer(device, participantsDescription);
         _previousRowsView = backend.CreateBufferUav(device, new(_previousRows, new(0, _previousRows.Info.Size), StructureStride: 20));
         _previousParticipantsView = backend.CreateBufferUav(device, new(_previousParticipants, new(0, _previousParticipants.Info.Size), StructureStride: 16));
-        _readback = backend.CreateBuffer(device, new(activities.States.Info.Size, BufferUsages.CopyDestination,
+        _readback = backend.CreateBuffer(device, new(kernels.CollectResults.HasValue ? 4 + (ulong)activities.Bodies.Capacity * 36 : activities.States.Info.Size, BufferUsages.CopyDestination,
             "Completed body activity"), MemoryType.Readback);
         _commands = backend.CreateCommandContext(device, new(QueueType.Compute, 0, 1, Label: "Device body activity"));
         var descriptions = new List<ComputePipelineDesc> { kernels.ApplyInputs, kernels.ClearSignals, kernels.CollectBodies, kernels.ReadRows,
             kernels.WakeBodies, kernels.AdvanceQuiet, kernels.FinishBodies };
         _readBodyInputs = kernels.ReadBodyInputs.HasValue ? descriptions.Count : -1;
         if (kernels.ReadBodyInputs is { } readBodyInputs) descriptions.Add(readBodyInputs);
+        CreateResultBuffers(kernels, descriptions);
         _pipelines = descriptions.Select(kernel => backend.CreateComputePipeline(device, kernel)).ToArray();
         _layouts = descriptions.Select(kernel => kernel.Reflection.GetGlobalParamsVarLayout() ?? VariableLayoutReflection.Null).ToArray();
         var bindings = new Dictionary<string, ResourceBinding[]>(); graph.AddBindings(bindings);
         bindings.Add("DeviceActivityIslandSignals", [ResourceBinding.WritableBuffer(_signalsView)]);
         bindings.Add("DeviceActivityPreviousRows", [ResourceBinding.WritableBuffer(_previousRowsView)]);
         bindings.Add("DeviceActivityPreviousParticipants", [ResourceBinding.WritableBuffer(_previousParticipantsView)]);
+        AddResultBindings(bindings);
         foreach (var input in inputs) bindings.Add(input.Key, input.Value);
         _bindings = _layouts.Select(layout => DeviceCollisionGrid.OrderBindings(layout, bindings)).ToArray();
     }
 
+    internal IReadOnlyList<object> RecordingInputs => _graph.RecordingInputs;
+    internal object InputData => _activities;
     public DeviceActivityStage UploadInputs() => new(this, 0);
     public DeviceActivityStage WakeConnected() => new(this, 1);
     public DeviceActivityStage WakeConnected(bool buildGraph) => new(this, 1, buildGraph);
@@ -85,11 +93,12 @@ public sealed class DevicePhysicsActivity : IDisposable
         accesses.Add(JobResourceAccess.Write(scheduler.GetResourceToken(_commands)));
         return DevicePhysicsJobs.Schedule(scheduler, new Submission(this, context, phase, buildGraph), accesses.ToArray(), dependency);
     }
-    private QueueCompletion Record(in PhysicsStepContext context, int phase, bool buildGraph)
+    private async ValueTask<QueueCompletion> RecordAsync(PhysicsStepContext context, int phase, bool buildGraph)
     {
         if (phase == 0) _activities.CaptureInputs(in context);
-        if (phase == 1 && buildGraph) _graph.BuildAndWait();
-        var step = new ActivityStep((uint)_activities.Bodies.Capacity, (uint)_graph.ConstraintCapacity,
+        if (phase == 1 && buildGraph) await _graph.BuildAsync(context).ConfigureAwait(false);
+        _graph.Memory?.EnsureRows(1);
+        var step = new ActivityStep((uint)_activities.Bodies.Capacity, (uint)_graph.RowCount,
             (float)context.Duration, _settings, (uint)phase, (uint)context.Substep, context.Number, context.StartTime, context.EndTime);
         _backend.Begin(_commands, new(0, 0, 16));
         if (!_initialized)
@@ -98,11 +107,11 @@ public sealed class DevicePhysicsActivity : IDisposable
                 _activities.States.InitialAccess, ResourceAccess.UnorderedAccess));
             _backend.Barrier(_commands, new BufferBarrier(_signals, _signals.InitialSync, PipelineSync.ComputeShading,
                 _signals.InitialAccess, ResourceAccess.UnorderedAccess));
-            _backend.Barrier(_commands, new BufferBarrier(_previousRows, _previousRows.InitialSync, PipelineSync.ComputeShading,
+            if (_graph.Memory?.Contains(_previousRows) != true) _backend.Barrier(_commands, new BufferBarrier(_previousRows, _previousRows.InitialSync, PipelineSync.ComputeShading,
                 _previousRows.InitialAccess, ResourceAccess.UnorderedAccess));
-            _backend.Barrier(_commands, new BufferBarrier(_previousParticipants, _previousParticipants.InitialSync, PipelineSync.ComputeShading,
+            if (_graph.Memory?.Contains(_previousParticipants) != true) _backend.Barrier(_commands, new BufferBarrier(_previousParticipants, _previousParticipants.InitialSync, PipelineSync.ComputeShading,
                 _previousParticipants.InitialAccess, ResourceAccess.UnorderedAccess));
-            int count = _graph.ConstraintCapacity;
+            int count = _graph.RowCount;
             ActivityStep initialize = step;
             initialize.Phase = 0;
             Dispatch(1, (count + _threadsPerGroup - 1) / _threadsPerGroup, in initialize);
@@ -117,7 +126,7 @@ public sealed class DevicePhysicsActivity : IDisposable
         {
             Dispatch(1, bodies, in step);
             Dispatch(2, bodies, in step);
-            Dispatch(3, (_graph.ConstraintCapacity + _threadsPerGroup - 1) / _threadsPerGroup, in step);
+            Dispatch(3, (_graph.RowCount + _threadsPerGroup - 1) / _threadsPerGroup, in step);
             if (phase == 1) Dispatch(4, bodies, in step);
             else { Dispatch(5, bodies, in step); Dispatch(6, bodies, in step); }
         }
@@ -149,7 +158,9 @@ public sealed class DevicePhysicsActivity : IDisposable
     {
         public IGraphicsBackend Backend => activity._backend;
         public Device Device => activity._device;
-        public QueueCompletion Submit() => activity.Record(in context, phase, buildGraph);
+        public SomeEngine.Graphics.Queue Queue => Backend.GetQueue(Device, QueueType.Compute);
+        public QueueCompletion Submit() => SubmitAsync().GetAwaiter().GetResult();
+        public ValueTask<QueueCompletion> SubmitAsync() => activity.RecordAsync(context, phase, buildGraph);
     }
     internal JobHandle ScheduleReadback(in PhysicsStepContext context, PhysicsEventBuffer events, JobHandle dependency)
     {
@@ -157,6 +168,14 @@ public sealed class DevicePhysicsActivity : IDisposable
         JobResourceAccess[] accesses = [.. _activities.GetReadAccesses(scheduler),
             JobResourceAccess.Write(scheduler.GetResourceToken(_readback), 0, (long)_readback.Info.Size),
             JobResourceAccess.Write(scheduler.GetResourceToken(_commands))];
+        if (_collectResults >= 0)
+        {
+            var all = new List<JobResourceAccess>(accesses); AddResultAccesses(scheduler, all);
+            JobHandle copied = DevicePhysicsJobs.Schedule(scheduler, new ResultSubmission(this, context), all.ToArray(), dependency);
+            return scheduler.Schedule(new Apply(this, context, events), [JobResourceAccess.Write(scheduler.GetResourceToken(_activities)),
+                JobResourceAccess.Read(scheduler.GetResourceToken(_readback), 0, (long)_readback.Info.Size),
+                .. _activities.ResultAccesses, events.WriteAccess], copied);
+        }
         return scheduler.Schedule(new Copy(this, scheduler, context, events, accesses), accesses, dependency);
     }
     private readonly struct Copy(DevicePhysicsActivity activity, Scheduler scheduler, PhysicsStepContext context,
@@ -186,9 +205,14 @@ public sealed class DevicePhysicsActivity : IDisposable
         {
             using (EngineTrace.Begin(MapResultsTrace))
             {
-                using MappedBuffer mapping = activity._backend.Map(activity._readback, MapType.Read, BufferRange.Whole);
-                mapping.Invalidate(mapping.Range);
-                MemoryMarshal.Cast<byte, DeviceBodyActivityState>(mapping.Bytes).CopyTo(activity._activities.Results);
+                if (activity._collectResults >= 0) activity.AcceptResultChanges();
+                else
+                {
+                    activity._activities.UseResultCandidates = false;
+                    using MappedBuffer mapping = activity._backend.Map(activity._readback, MapType.Read, BufferRange.Whole);
+                    mapping.Invalidate(mapping.Range);
+                    MemoryMarshal.Cast<byte, DeviceBodyActivityState>(mapping.Bytes).CopyTo(activity._activities.Results);
+                }
             }
             using (EngineTrace.Begin(ApplyResultsTrace)) activity._activities.ApplyResults(in context, events);
             activity._backend.CollectCompleted(activity._device);
@@ -197,12 +221,17 @@ public sealed class DevicePhysicsActivity : IDisposable
     public void Dispose()
     {
         foreach (Pipeline pipeline in _pipelines) pipeline.Dispose();
+        DisposeResultBuffers();
         _commands.Dispose(); _signalsView.Dispose(); _signals.Dispose(); _readback.Dispose();
         _previousRowsView.Dispose(); _previousParticipantsView.Dispose(); _previousRows.Dispose(); _previousParticipants.Dispose();
     }
 }
-public readonly struct DeviceActivityStage(DevicePhysicsActivity activity, int phase) : IPhysicsStage
+public readonly struct DeviceActivityStage(DevicePhysicsActivity activity, int phase) : IDevicePhysicsStage
 {
+    public object InputKey => activity;
+    public object? SharedInputKey => activity.InputData;
+    public IReadOnlyList<object> SharedInputs => activity.RecordingInputs;
+    public bool CanBatch => phase != 1 || !_buildGraph;
     private readonly bool _buildGraph = true;
     internal DeviceActivityStage(DevicePhysicsActivity activity, int phase, bool buildGraph) : this(activity, phase) => _buildGraph = buildGraph;
     public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) => activity.Schedule(in context, phase, _buildGraph, dependency);

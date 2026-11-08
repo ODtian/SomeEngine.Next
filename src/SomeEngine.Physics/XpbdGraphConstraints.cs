@@ -23,12 +23,11 @@ public readonly struct XpbdGraphConstraints<TConstraint, TProjection>(QueryHandl
         scoped PhysicsBodies bodies, ref PhysicsActivityErrors errors) =>
         PhysicsActivityRows<TConstraint, TProjection>.Read(new(queries.Get(queryOffset), queries.Get(2)), bodies, in context, ref errors);
 
-    public void ReadGraph(in PhysicsStepContext context, ReadOnlySpan<QueryHandle> queries, int queryOffset,
+    public void ReadGraph(in PhysicsStepContext context, scoped EntityQueryViews queries, int queryOffset,
         ref PhysicsConstraintGraphBuilder graph)
     {
-        var read = new ReadParticipants(context, graph, queryOffset);
-        context.World.ExecuteReadQuery(queries[queryOffset], ref read,
-            static (scoped QueryCursor rows, ref ReadParticipants state) => state.Execute(rows));
+        foreach (QueryRow row in queries.Get(queryOffset).Rows)
+            graph.Add<TConstraint, TProjection>(queryOffset - 3, row, in context);
     }
 
     public void Initialize(in PhysicsStepContext context, scoped EntityQueryViews queries, int queryOffset) =>
@@ -60,6 +59,7 @@ public readonly struct XpbdGraphConstraintGroups<TFirst, TSecond>(TFirst first, 
     where TFirst : struct, IXpbdGraphConstraints where TSecond : struct, IXpbdGraphConstraints
 {
     public int QueryCount => first.QueryCount + second.QueryCount;
+    public bool HasGraphChanges => first.HasGraphChanges || second.HasGraphChanges;
     public QueryHandle GetQuery(int index) => index < first.QueryCount ? first.GetQuery(index) : second.GetQuery(index - first.QueryCount);
     public void AddResources(World world, List<JobResourceAccess> accesses, PhysicsGraphPhase phase)
     { first.AddResources(world, accesses, phase); second.AddResources(world, accesses, phase); }
@@ -75,7 +75,7 @@ public readonly struct XpbdGraphConstraintGroups<TFirst, TSecond>(TFirst first, 
         first.ReadActivityErrors(in context, queries, offset, bodies, ref errors);
         second.ReadActivityErrors(in context, queries, offset + first.QueryCount, bodies, ref errors);
     }
-    public void ReadGraph(in PhysicsStepContext context, ReadOnlySpan<QueryHandle> queries, int offset,
+    public void ReadGraph(in PhysicsStepContext context, scoped EntityQueryViews queries, int offset,
         ref PhysicsConstraintGraphBuilder graph)
     {
         first.ReadGraph(in context, queries, offset, ref graph);

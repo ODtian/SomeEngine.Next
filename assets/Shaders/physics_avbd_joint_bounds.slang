@@ -12,7 +12,7 @@ struct DeviceJointBoundState
     float2 multiplier; float penalty; uint padding0;
     float2 initialError; uint2 padding1;
 };
-RWStructuredBuffer<DeviceJointBoundState> DeviceJointBoundStates;
+RWStructuredBuffer<DeviceJointBoundState, ScalarDataLayout> DeviceJointBoundStates;
 void deviceEvaluateJointBound(DeviceJointBoundConstraint bound,DeviceJointBoundState state,float distance,
     out float force,out float penalty,out float2 multiplier)
 {
@@ -43,7 +43,7 @@ struct DeviceJointBoundAvbdConstraints : IDeviceAvbdConstraints
             mobility+=bodyConstraintWeight(DeviceBodyStates[geometry.lastBody],direction,cross(geometry.lastOffset,direction));
         state.penalty=mobility>0?JointLongRangeSettings.penaltyScale/(context.duration*context.duration*mobility):0;
         state.initialError=float2(max(0,start.distance-bound.maximum),max(0,bound.minimum-start.distance));
-        state.multiplier*=JointLongRangeSettings.retention;
+        state.multiplier*=context.firstIteration==0?JointLongRangeSettings.retention:1;
         DeviceJointBoundStates[row]=state;
     }
     void accumulate(uint row,uint bodyIndex,DeviceAvbdStep context,inout DeviceAvbdEquation equation)

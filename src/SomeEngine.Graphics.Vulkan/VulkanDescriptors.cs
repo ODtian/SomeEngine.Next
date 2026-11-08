@@ -228,6 +228,13 @@ internal sealed unsafe partial class VulkanBackend
             bindings);
         VulkanDescriptorArena arena = command.RecordingDescriptorArena;
         ReadOnlySpan<uint> setIndices = block.SetIndices;
+        if (arena.TryGetDescriptorSets(block, bindings, out VkDescriptorSet[] cachedSets))
+        {
+            if (block.Ordinary is VulkanOrdinaryBinding { PushConstants: true } cachedOrdinary)
+                PushOrdinaryData(command, pipeline, cachedOrdinary, bindings.OrdinaryData);
+            BindDescriptorSets(command, pipeline, setIndices, cachedSets);
+            return;
+        }
         Span<VkDescriptorSet> sets = arena.PrepareSetStorage(setIndices.Length);
         for (int index = 0; index < sets.Length; index++)
         {
@@ -239,16 +246,7 @@ internal sealed unsafe partial class VulkanBackend
         {
             if (ordinary.PushConstants)
             {
-                fixed (byte* data = bindings.OrdinaryData)
-                {
-                    Api.CmdPushConstants(
-                        command.NativeRecording,
-                        pipeline.Layout.Native,
-                        ordinary.Stages,
-                        ordinary.PushConstantOffset,
-                        ordinary.Size,
-                        data);
-                }
+                PushOrdinaryData(command, pipeline, ordinary, bindings.OrdinaryData);
             }
             else
             {
@@ -282,6 +280,21 @@ internal sealed unsafe partial class VulkanBackend
                 value);
         }
 
+        arena.StoreDescriptorSets(block, bindings, sets);
+        BindDescriptorSets(command, pipeline, setIndices, sets);
+    }
+
+    private void PushOrdinaryData(VulkanCommandContext command, VulkanPipeline pipeline,
+        in VulkanOrdinaryBinding ordinary, ReadOnlySpan<byte> bytes)
+    {
+        fixed (byte* data = bytes)
+            Api.CmdPushConstants(command.NativeRecording, pipeline.Layout.Native, ordinary.Stages,
+                ordinary.PushConstantOffset, ordinary.Size, data);
+    }
+
+    private void BindDescriptorSets(VulkanCommandContext command, VulkanPipeline pipeline,
+        ReadOnlySpan<uint> setIndices, ReadOnlySpan<VkDescriptorSet> sets)
+    {
         PipelineBindPoint bindPoint = ToBindPoint(pipeline.Type);
         for (int index = 0; index < sets.Length; index++)
         {
@@ -647,8 +660,32 @@ internal sealed unsafe partial class VulkanBackend
         private VkDescriptorSet[] _setScratch = [];
         private VulkanUploadPage[] _uploadPages = [];
         private int _uploadPageCount;
+        private readonly Dictionary<VulkanBlockLayout, List<VulkanTransientDescriptorSets>> _setsByBlock = [];
 
         internal VulkanDescriptorArena(VulkanDevice device) => _device = device;
+
+        internal bool TryGetDescriptorSets(VulkanBlockLayout block, in ParameterBlockBindings bindings,
+            out VkDescriptorSet[] sets)
+        {
+            if (_setsByBlock.TryGetValue(block, out List<VulkanTransientDescriptorSets>? values))
+                foreach (VulkanTransientDescriptorSets value in values)
+                    if ((block.Ordinary is { PushConstants: true } || bindings.OrdinaryData.SequenceEqual(value.OrdinaryData))
+                        && bindings.Resources.SequenceEqual(value.Resources))
+                    {
+                        sets = value.Sets;
+                        return true;
+                    }
+            sets = [];
+            return false;
+        }
+
+        internal void StoreDescriptorSets(VulkanBlockLayout block, in ParameterBlockBindings bindings,
+            ReadOnlySpan<VkDescriptorSet> sets)
+        {
+            if (!_setsByBlock.TryGetValue(block, out List<VulkanTransientDescriptorSets>? values))
+                _setsByBlock.Add(block, values = []);
+            values.Add(new(bindings.Resources.ToArray(), block.Ordinary is { PushConstants: true } ? [] : bindings.OrdinaryData.ToArray(), sets.ToArray()));
+        }
 
         internal Span<VkDescriptorSet> PrepareSetStorage(int count)
         {
@@ -694,6 +731,7 @@ internal sealed unsafe partial class VulkanBackend
 
         internal void ResetAfterCompletion()
         {
+            _setsByBlock.Clear();
             for (int index = _allocationCount - 1; index >= 0; index--)
             {
                 _device.DescriptorAllocator.Free(_allocations[index]);
@@ -721,6 +759,8 @@ internal sealed unsafe partial class VulkanBackend
             Array.Resize(ref storage, Math.Max(capacity, count));
         }
     }
+
+    private sealed record VulkanTransientDescriptorSets(ResourceBinding[] Resources, byte[] OrdinaryData, VkDescriptorSet[] Sets);
 
     private sealed class VulkanUploadPage
     {

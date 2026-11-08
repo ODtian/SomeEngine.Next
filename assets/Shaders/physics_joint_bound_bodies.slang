@@ -2,7 +2,7 @@
 #define PHYSICS_JOINT_BOUND_BODIES
 #include "physics_constraint_graph.slang"
 #include "physics_joint_bound_data.slang"
-StructuredBuffer<uint2> DeviceJointBoundSetsSelection;
+StructuredBuffer<uint2, ScalarDataLayout> DeviceJointBoundSetsSelection;
 uint deviceJointBoundSetIndex(uint row) { return row/JointLongRangeSettings.boundsPerJoint; }
 struct DeviceJointBoundBodies : IDeviceConstraintBodies
 {

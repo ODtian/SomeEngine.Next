@@ -106,6 +106,7 @@ public sealed class DeviceJointBounds : IDisposable, IDevicePhysicsSubmission
     internal DeviceConstraintData<DeviceJointConstraint> Frames { get; }
     IGraphicsBackend IDevicePhysicsSubmission.Backend => _backend;
     Device IDevicePhysicsSubmission.Device => _device;
+    SomeEngine.Graphics.Queue IDevicePhysicsSubmission.Queue => _backend.GetQueue(_device, QueueType.Compute);
     public BuildDeviceJointBounds BuildInputs() => new(this);
     public UploadDeviceJointBounds UploadInputs() => new(this);
     public WriteDeviceConstraintInputs<JointConstraint, DeviceJointBoundSet, DeviceJointBoundSource> WriteInputs(int rowsPerPacket)

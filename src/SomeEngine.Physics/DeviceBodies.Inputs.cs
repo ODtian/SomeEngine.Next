@@ -12,17 +12,21 @@ public sealed partial class DeviceBodies
     [Flags]
     internal enum BodyInputComponents : byte { Pose = 1, Mass = 2, Velocity = 4, Step = 8, All = 15 }
     internal readonly record struct BodyInputVersions(Entity Entity, uint Pose, uint Mass, uint Velocity, uint Step,
-        BodyInputComponents Known);
+        BodyInputComponents Known, uint InputVersion = 0);
 
     internal BodyInputVersions ReadCpuVersions(int index) => _cpuVersions[index];
     internal void AcceptCpuVersions(int index, in BodyInputVersions version) => _cpuVersions[index] = version;
-    internal void AcceptCpuResult(int index, Entity entity, uint version)
+    internal void AcceptCpuResult(int index, Entity entity, uint version, BodyInputComponents components)
     {
         BodyInputVersions previous = _cpuVersions[index];
-        bool same = previous.Entity == entity;
-        _cpuVersions[index] = new(entity, version, same ? previous.Mass : 0, version, version,
-            BodyInputComponents.Pose | BodyInputComponents.Velocity | BodyInputComponents.Step
-                | (same ? previous.Known & BodyInputComponents.Mass : 0));
+        _cpuVersions[index] = previous with
+        {
+            Entity = entity,
+            Pose = (components & BodyInputComponents.Pose) != 0 ? version : previous.Pose,
+            Velocity = (components & BodyInputComponents.Velocity) != 0 ? version : previous.Velocity,
+            Step = (components & BodyInputComponents.Step) != 0 ? version : previous.Step,
+            Known = previous.Known | components,
+        };
     }
     internal void CollectCpuResult(int index, ref JobResourceAccessBuilder resources) =>
         CollectCpuResults(index, 1, ref resources);

@@ -2,7 +2,7 @@
 #define PHYSICS_DISTANCE_RANGE_BODIES
 #include "physics_constraint_graph.slang"
 #include "physics_distance_range_data.slang"
-StructuredBuffer<uint2> DeviceDistanceRangesSelection;
+StructuredBuffer<uint2, ScalarDataLayout> DeviceDistanceRangesSelection;
 struct DeviceDistanceRangeBodies : IDeviceConstraintBodies
 {
     uint count() { uint rows,stride; DeviceDistanceRanges.GetDimensions(rows,stride); return rows; }

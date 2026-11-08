@@ -11,8 +11,8 @@ struct DeviceAvbdContactState
     float3 initialDelta; uint padding0;
     float3 tangentMultiplier; uint padding1;
 };
-RWStructuredBuffer<DeviceAvbdContactState> DeviceAvbdContactStates;
-StructuredBuffer<uint2> DeviceContactAvbdSelection;
+RWStructuredBuffer<DeviceAvbdContactState, ScalarDataLayout> DeviceAvbdContactStates;
+StructuredBuffer<uint2, ScalarDataLayout> DeviceContactAvbdSelection;
 struct DeviceAvbdContactEquation
 {
     float normalForce; float normalDual; float normalStiffness;

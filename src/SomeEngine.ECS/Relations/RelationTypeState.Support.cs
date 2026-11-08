@@ -91,20 +91,49 @@ internal sealed class RelationAdjacencyBatchDiagnosticCounter
         _frozenShards);
 }
 
+internal readonly struct RelationAffectedShards
+{
+    private readonly RelationAffectedShard _first, _second;
+    private readonly RelationAffectedShard[]? _entries;
+
+    internal RelationAffectedShards(RelationAffectedShard first)
+    {
+        _first = first;
+        Length = 1;
+    }
+
+    internal RelationAffectedShards(RelationAffectedShard first, RelationAffectedShard second)
+    {
+        _first = first; _second = second;
+        Length = 2;
+    }
+
+    private RelationAffectedShards(RelationAffectedShard[] entries)
+    {
+        _entries = entries;
+        Length = entries.Length;
+    }
+
+    internal int Length { get; }
+    internal RelationAffectedShard this[int index] =>
+        _entries is not null ? _entries[index] : index == 0 ? _first : _second;
+    public static implicit operator RelationAffectedShards(RelationAffectedShard[] entries) => new(entries);
+}
+
 internal readonly struct PreparedRelationState<T>
     where T : struct, IComponent
 {
-    private readonly RelationAffectedShard[] _affectedShards;
+    private readonly RelationAffectedShards _affectedShards;
 
     internal PreparedRelationState(
         RelationGeneration<T> previous,
         RelationGeneration<T> next,
-        RelationAffectedShard[] ownedAffectedShards,
+        RelationAffectedShards affectedShards,
         bool hasChanges = true)
     {
         Previous = previous;
         Next = next;
-        _affectedShards = ownedAffectedShards;
+        _affectedShards = affectedShards;
         HasChanges = hasChanges;
     }
 
@@ -112,7 +141,7 @@ internal readonly struct PreparedRelationState<T>
 
     internal RelationGeneration<T> Next { get; }
 
-    internal ReadOnlySpan<RelationAffectedShard> AffectedShards =>
+    internal RelationAffectedShards AffectedShards =>
         _affectedShards;
 
     internal bool HasChanges { get; }
@@ -174,8 +203,11 @@ internal abstract class RelationAdjacencyShard<T>
 internal sealed class MutableRelationAdjacencyShard<T>
     where T : struct, IComponent
 {
-    private readonly List<RelationAdjacencyEntry<T>> _entries;
-    private readonly Dictionary<Entity, int> _indices;
+    private const int LinearSearchLimit = 8;
+    private List<RelationAdjacencyEntry<T>>? _entries;
+    private RelationAdjacencyEntry<T> _first, _second;
+    private int _smallCount;
+    private Dictionary<Entity, int>? _indices;
     private readonly TopologyOrderDiagnosticCounter _orderDiagnostics;
 
     internal MutableRelationAdjacencyShard(
@@ -184,62 +216,90 @@ internal sealed class MutableRelationAdjacencyShard<T>
     {
         Policy = source.Policy;
         _orderDiagnostics = orderDiagnostics;
-        _entries = new List<RelationAdjacencyEntry<T>>(source.Entries.Length);
-        for (int index = 0; index < source.Entries.Length; index++)
-            _entries.Add(source.Entries[index]);
-        _indices = new Dictionary<Entity, int>(source.Entries.Length);
-        for (int i = 0; i < source.Entries.Length; i++)
-            _indices.Add(source.Entries[i].Edge.Entity, i);
+        ReadOnlySpan<RelationAdjacencyEntry<T>> entries = source.Entries;
+        if (Policy == RelationAdjacencyOrderPolicy.Unordered && entries.Length <= 2)
+        {
+            if (entries.Length > 0) _first = entries[0];
+            if (entries.Length > 1) _second = entries[1];
+            _smallCount = entries.Length;
+        }
+        else
+        {
+            _entries = new List<RelationAdjacencyEntry<T>>(Math.Max(2, entries.Length));
+            for (int index = 0; index < entries.Length; index++) _entries.Add(entries[index]);
+        }
+        if (Policy == RelationAdjacencyOrderPolicy.Ordered || Count > LinearSearchLimit) CreateIndices();
     }
 
-    internal int Count => _entries.Count;
+    internal int Count => _entries?.Count ?? _smallCount;
 
     internal RelationAdjacencyOrderPolicy Policy { get; private set; }
 
-    internal bool Contains(RelationEdge<T> edge) => _indices.ContainsKey(edge.Entity);
+    internal bool Contains(RelationEdge<T> edge) => FindIndex(edge.Entity) >= 0;
 
     internal void Add(RelationAdjacencyEntry<T> entry, int? insertIndex)
     {
-        if (_indices.ContainsKey(entry.Edge.Entity))
+        if (FindIndex(entry.Edge.Entity) >= 0)
             throw new InvalidOperationException($"Edge {entry.Edge.Entity} already exists in adjacency.");
 
         if (Policy == RelationAdjacencyOrderPolicy.Unordered)
         {
             if (insertIndex is not null)
                 throw new InvalidOperationException("Unordered relation adjacency does not accept an index.");
-            _indices.Add(entry.Edge.Entity, _entries.Count);
-            _entries.Add(entry);
+            if (_entries is null && _smallCount < 2)
+            {
+                if (_smallCount == 0) _first = entry;
+                else _second = entry;
+                _smallCount++;
+            }
+            else
+            {
+                EnsureEntries();
+                _entries!.Add(entry);
+            }
+            if (_indices is not null) _indices.Add(entry.Edge.Entity, Count - 1);
+            else if (Count > LinearSearchLimit) CreateIndices();
             return;
         }
 
         _orderDiagnostics.RecordOrderedPath();
-        int index = insertIndex ?? _entries.Count;
-        if ((uint)index > (uint)_entries.Count)
+        int index = insertIndex ?? Count;
+        if ((uint)index > (uint)Count)
             throw new ArgumentOutOfRangeException(nameof(insertIndex));
-        _entries.Insert(index, entry);
+        _entries!.Insert(index, entry);
         RefreshIndices(index);
     }
 
     internal void Remove(RelationEdge<T> edge)
     {
-        if (!_indices.Remove(edge.Entity, out int index))
+        int index = FindIndex(edge.Entity);
+        if (index < 0)
             throw new InvalidOperationException($"Adjacency does not contain edge {edge.Entity}.");
+        _indices?.Remove(edge.Entity);
 
         if (Policy == RelationAdjacencyOrderPolicy.Unordered)
         {
-            int last = _entries.Count - 1;
+            int last = Count - 1;
+            if (_entries is null)
+            {
+                if (index == 0) _first = Entry(last);
+                if (last == 0) _first = default;
+                else _second = default;
+                _smallCount--;
+                return;
+            }
             if (index != last)
             {
                 RelationAdjacencyEntry<T> moved = _entries[last];
                 _entries[index] = moved;
-                _indices[moved.Edge.Entity] = index;
+                if (_indices is not null) _indices[moved.Edge.Entity] = index;
             }
             _entries.RemoveAt(last);
             return;
         }
 
         _orderDiagnostics.RecordOrderedPath();
-        _entries.RemoveAt(index);
+        _entries!.RemoveAt(index);
         RefreshIndices(index);
     }
 
@@ -247,15 +307,16 @@ internal sealed class MutableRelationAdjacencyShard<T>
     {
         if (Policy != RelationAdjacencyOrderPolicy.Ordered)
             throw new InvalidOperationException("Relation adjacency is not ordered.");
-        if (!_indices.TryGetValue(edge.Entity, out int oldIndex))
+        int oldIndex = FindIndex(edge.Entity);
+        if (oldIndex < 0)
             throw new InvalidOperationException($"Adjacency does not contain edge {edge.Entity}.");
-        if ((uint)insertIndex >= (uint)_entries.Count)
+        if ((uint)insertIndex >= (uint)Count)
             throw new ArgumentOutOfRangeException(nameof(insertIndex));
         if (oldIndex == insertIndex)
             return false;
 
         _orderDiagnostics.RecordOrderedPath();
-        RelationAdjacencyEntry<T> entry = _entries[oldIndex];
+        RelationAdjacencyEntry<T> entry = _entries![oldIndex];
         _entries.RemoveAt(oldIndex);
         _entries.Insert(insertIndex, entry);
         RefreshIndices(Math.Min(oldIndex, insertIndex));
@@ -269,8 +330,10 @@ internal sealed class MutableRelationAdjacencyShard<T>
         Policy = policy;
         if (policy == RelationAdjacencyOrderPolicy.Ordered)
         {
+            EnsureEntries();
+            if (_indices is null) CreateIndices();
             _orderDiagnostics.RecordOrderedPath();
-            _entries.Sort(static (left, right) =>
+            _entries!.Sort(static (left, right) =>
             {
                 int index = left.Edge.Entity.Index.CompareTo(right.Edge.Entity.Index);
                 return index != 0
@@ -283,9 +346,15 @@ internal sealed class MutableRelationAdjacencyShard<T>
 
     internal RelationAdjacencyShard<T>? Freeze()
     {
-        RelationAdjacencyEntry<T>[] entries = _entries.ToArray();
-        if (entries.Length == 0 && Policy == RelationAdjacencyOrderPolicy.Unordered)
-            return null;
+        if (Count == 0 && Policy == RelationAdjacencyOrderPolicy.Unordered) return null;
+        RelationAdjacencyEntry<T>[] entries;
+        if (_entries is null)
+        {
+            entries = new RelationAdjacencyEntry<T>[_smallCount];
+            if (_smallCount > 0) entries[0] = _first;
+            if (_smallCount > 1) entries[1] = _second;
+        }
+        else entries = _entries.ToArray();
         return Policy == RelationAdjacencyOrderPolicy.Ordered
             ? new OrderedRelationAdjacencyShard<T>(entries)
             : new UnorderedRelationAdjacencyShard<T>(entries);
@@ -296,9 +365,35 @@ internal sealed class MutableRelationAdjacencyShard<T>
 
     private void RefreshIndices(int start)
     {
-        _orderDiagnostics.RecordOrderedIndexWork(_entries.Count - start);
-        for (int i = start; i < _entries.Count; i++)
-            _indices[_entries[i].Edge.Entity] = i;
+        _orderDiagnostics.RecordOrderedIndexWork(Count - start);
+        for (int i = start; i < Count; i++)
+            _indices![Entry(i).Edge.Entity] = i;
+    }
+
+    private int FindIndex(Entity edge)
+    {
+        if (_indices is not null) return _indices.TryGetValue(edge, out int position) ? position : -1;
+        for (int index = 0; index < Count; index++)
+            if (Entry(index).Edge.Entity == edge) return index;
+        return -1;
+    }
+
+    private void CreateIndices()
+    {
+        _indices = new Dictionary<Entity, int>(Count);
+        for (int index = 0; index < Count; index++) _indices.Add(Entry(index).Edge.Entity, index);
+    }
+
+    private RelationAdjacencyEntry<T> Entry(int index) =>
+        _entries is not null ? _entries[index] : index == 0 ? _first : _second;
+
+    private void EnsureEntries()
+    {
+        if (_entries is not null) return;
+        _entries = new List<RelationAdjacencyEntry<T>>(4);
+        if (_smallCount > 0) _entries.Add(_first);
+        if (_smallCount > 1) _entries.Add(_second);
+        _first = default; _second = default; _smallCount = 0;
     }
 }
 

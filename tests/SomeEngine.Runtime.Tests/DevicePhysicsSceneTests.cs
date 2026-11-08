@@ -21,7 +21,7 @@ public sealed class DevicePhysicsSceneTests
         PhysicsSceneDescription description = PhysicsScenes.All.Single(scene => scene.Id == "angular-locked-train");
         using var scene = PhysicsScenes.CreateDevice(world, description, backend, device,
             new PhysicsSceneSettings(Iterations: 128, BodyIterations: 3, StepBudgetMilliseconds: 1000d / 60),
-            new DeviceGridSettings(2, 3), new DeviceGridCapacity(8, 512, 1031, 128, 1), contactCapacity: 128, contactDistance: .02f,
+            new DeviceGridSettings(2, 3), new DeviceGridCapacity(8, 512, 1031, 128, 1), contactCapacity: 4096, contactDistance: .02f,
             readbackBodyIndices: [0, 1, 2, 3, 4, 5, 6, 7], shaderDirectory: Path.Combine(AppContext.BaseDirectory, "PhysicsShaders"));
         PhysicsStepResult result = default;
 
@@ -51,7 +51,7 @@ public sealed class DevicePhysicsSceneTests
         PhysicsSceneDescription description = PhysicsScenes.All.Single(scene => scene.Id == "face-drop");
         using var scene = PhysicsScenes.CreateDevice(world, description, backend, device,
             new PhysicsSceneSettings(Iterations: 16, BodyIterations: 2, StepBudgetMilliseconds: 1000d / 60),
-            new DeviceGridSettings(2, 3), new DeviceGridCapacity(2, 256, 257, 16, 1), contactCapacity: 16, contactDistance: .02f,
+            new DeviceGridSettings(2, 3), new DeviceGridCapacity(2, 256, 257, 16, 1), contactCapacity: 4096, contactDistance: .02f,
             readbackBodyIndices: [1], shaderDirectory: Path.Combine(AppContext.BaseDirectory, "PhysicsShaders"));
         var box = scene.Bodies.Span[1];
         PhysicsStepResult result = default;
@@ -78,6 +78,6 @@ public sealed class DevicePhysicsSceneTests
         var adapters = new AdapterInfo[count];
         backend.TryEnumerateAdapters(new(AdapterPreference.HighPerformance, IncludeSoftware: false), adapters, out _);
         return backend.CreateDevice(new(adapters.First(adapter => adapter.HardwareAccelerated).Id,
-            [new(QueueType.Compute)], label: "DefaultGame device physics"));
+            [new(QueueType.Graphics), new(QueueType.Compute)], optionalFeatures: DeviceFeatures.SparseResources, label: "DefaultGame device physics"));
     }
 }

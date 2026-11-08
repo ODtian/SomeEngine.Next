@@ -34,26 +34,26 @@ public sealed partial class DeviceCollisionDetection
     private void CreateContactBodies(Dictionary<string, ResourceBinding[]> bindings)
     {
         if (_geometry.Bodies is null) return;
-        ContactBodies = CreateWorkBuffer("CollisionContactBodies", (ulong)Capacity.Pairs * 4 * (ulong)Capacity.BodiesPerContact * 32, 32, bindings);
-        ContactBodyCounts = CreateWorkBuffer("CollisionContactBodyCounts", (ulong)Capacity.Pairs * 4 * 4, 4, bindings);
+        ContactBodies = CreateWorkBuffer("CollisionContactBodies", (ulong)Capacity.Contacts * (ulong)Capacity.BodiesPerContact * 32, 32, bindings, contactBytes: (uint)Capacity.BodiesPerContact * 32);
+        ContactBodyCounts = CreateWorkBuffer("CollisionContactBodyCounts", (ulong)Capacity.Contacts * 4, 4, bindings, contactBytes: 4);
+        CreateWorkBuffer("CollisionWorkBodies", (ulong)Capacity.WorkItems * 4 * (ulong)Capacity.BodiesPerContact * 32, 32, bindings);
+        CreateWorkBuffer("CollisionWorkBodyCounts", (ulong)Capacity.WorkItems * 4 * 4, 4, bindings);
         if ((_readback & DeviceCollisionReadback.Contacts) == 0) return;
-        _contactBodies = new DeviceContactBody[Capacity.Pairs * 4 * Capacity.BodiesPerContact];
-        _contactBodyCounts = new int[Capacity.Pairs * 4];
     }
     private ulong ContactBodyCountReadbackOffset => ContactReadbackOffset +
-        ((_readback & DeviceCollisionReadback.Contacts) != 0 ? Contacts.Info.Size : 0);
+        (!ReadsContactChanges && (_readback & DeviceCollisionReadback.Contacts) != 0 ? (ulong)ContactCount * ContactStride : 0);
     private ulong ContactBodyReadbackOffset => ContactBodyCountReadbackOffset +
-        ((_readback & DeviceCollisionReadback.Contacts) != 0 ? ContactBodyCounts?.Info.Size ?? 0 : 0);
+        (!ReadsContactChanges && (_readback & DeviceCollisionReadback.Contacts) != 0 ? ContactBodyCounts is null ? 0 : (ulong)ContactCount * 4 : 0);
     private ulong ResultReadbackSize => ContactBodyReadbackOffset +
-        ((_readback & DeviceCollisionReadback.Contacts) != 0 ? ContactBodies?.Info.Size ?? 0 : 0);
+        (!ReadsContactChanges && (_readback & DeviceCollisionReadback.Contacts) != 0 ? ContactBodies is null ? 0 : (ulong)ContactCount * (ulong)Capacity.BodiesPerContact * 32 : 0);
 
     public ReadOnlySpan<DeviceContactBody> ReadContactBodies(int pair, int point) =>
-        _contactBodies.AsSpan((pair * 4 + point) * Capacity.BodiesPerContact, _contactBodyCounts[pair * 4 + point]);
+        _contactBodies.AsSpan((_contactOffsets[pair] + point) * Capacity.BodiesPerContact, _contactBodyCounts[_contactOffsets[pair] + point]);
 
     private void AcceptContactBodies()
     {
         if (_geometry.Bodies is null || (_readback & DeviceCollisionReadback.Contacts) == 0) return;
-        ReadResults(ContactBodyCountReadbackOffset, _contactBodyCounts.AsSpan(0, Count * 4));
-        ReadResults(ContactBodyReadbackOffset, _contactBodies.AsSpan(0, Count * 4 * Capacity.BodiesPerContact));
+        ReadResults(ContactBodyCountReadbackOffset, _contactBodyCounts.AsSpan(0, ContactCount));
+        ReadResults(ContactBodyReadbackOffset, _contactBodies.AsSpan(0, ContactCount * Capacity.BodiesPerContact));
     }
 }

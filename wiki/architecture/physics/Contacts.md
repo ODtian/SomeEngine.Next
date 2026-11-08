@@ -4,9 +4,29 @@
 
 ## 接触身份与作用端
 
-几何检测的 `CollisionContact` 与双方 `ContactBody` 跨度是本次检测的派生输出，原几何及模拟状态继续由实体组件持有。`ContactPointOutput` 将结果写入可复用的 `ContactPointBuffer`，接触头和双方作用端分别使用连续容量。检测的形状、reader 与流形语义见[实体几何](Geometry.md)和[动态几何](Dynamic-Geometry.md)。
+几何检测的 `CollisionContact` 与双方 `ContactBody` 跨度是本次检测的派生输出，原几何及模拟状态继续由实体组件持有。`ContactPointOutput` 将结果写入可复用的 `ContactPointBuffer`，每页持有 1024 个接触头及本页连续作用端。CPU 检测按候选分区独立写入，再沿输出顺序归并。检测的形状、reader 与流形语义见[实体几何](Geometry.md)和[动态几何](Dynamic-Geometry.md)。
 
-持久的 `ContactPoint` 是无向原生关系的 payload；受保护的 `UndirectedRelationEndpoints<ContactPoint>` 持有双方几何实体及其原始位置角色。点 payload 保存特征、流形点序号、双方几何局部接触点、世界见证中点、法向、间距及采样锚基准。每个实际作用端通过 `ContactParticipant` 有向关系连接 Point→Body；受保护的 Target 是该作用端的模拟实体。点上的 `ContactBodyLink` Buffer 保存参与边引用、body 局部材料锚、法向参考选择及权重。
+接触刷新先建立或移除点身份，再记录组件与直接作用端引用。新点的相邻组件添加通过 `AddComponents` 合并为一次 Bundle 迁移。
+点创建命令在组件记录完成后释放，组件命令在链接写回后释放；返回 Job 覆盖数值写回与两段清理。
+
+驻留表示使用 [ContactIdentities](../../../src/SomeEngine.Physics/ContactIdentities.cs)：真实接触 Entity 保存
+`ContactPointReference` 的双方几何 Entity，以及项目安装的参数行、数值状态和响应资源引用。
+检测几何、加权锚、响应和求解历史由所选设备资源持有。GPU 匹配按距离及 input 顺序完成一对一声明，
+输出新增 input/双方 Entity 和移除 row 的紧凑变化；CPU 通过原 `JobCommandBuffer` 创建、销毁真实实体，
+在一次回放后关联 Entity 与参数行。新增行标记驱动几何写入及历史初始化，保留行继续使用原数值状态。
+
+项目组合 `identities.UploadInputs() → matching.Match() → identities.Update() → matching.UpdateRows()`，
+随后执行当前几何、数值历史初始化和求解阶段。实体引用和材料的实际版本变化进入输入上传；
+材料合成继续使用项目提供的 `IContactMaterialCombine`，用户组件通过 `IContactIdentityComponents` 在延迟实体上安装。
+参数输入采用每条 48B 的紧凑变化流，设备内核只更新材料、触发标记、热启动选项与身份 metadata；
+驻留几何沿原行保存。移除行按原 Entity 及代次核对后清理。相同组件布局的新实体由既有
+`ExecuteSpawnBatch` 批量创建，整批取得新的组件写版本，查询变化窗口据此观察新增行。
+组件列计算继续使用下述 `ContactPoint`、`ContactBodyLink` 和 `ContactPoints` 入口；
+需要 CPU 消费的具体结果通过选定的读回阶段交付。
+
+接触内存按实际行数取整提交。检测结果与持久接触使用各自的容量域；同一身份选择可通过明确的绑定名称供匹配和求解复用。
+
+持久的 `ContactPoint` 是无向原生关系的 payload；受保护的 `UndirectedRelationEndpoints<ContactPoint>` 持有双方几何实体及其原始位置角色。点 payload 保存特征、流形点序号、双方几何局部接触点、世界见证中点、法向、间距及采样锚基准。点上的 `ContactBodyLink` Buffer 直接保存实际 Body 的 Entity、局部材料锚、法向参考选择及权重；Buffer 顺序及 `FirstBodyCount` 表达作用端角色。实体代次随原 Entity 引用保持，接触刷新读取参与体的当前存活状态。
 
 一个 Body 可在一侧或双方出现多次。数值适配先合并该 Body 的全部带符号权重和相对质心杠杆，形成一个六维 Jacobian；body→constraint 派生索引让该点进入该 Body 的方程一次。这样同一刚体的多个采样点、两节点胶囊及三节点面共用相同响应入口。
 
@@ -213,3 +233,5 @@ PhysicsSimulation.Create(world, bodyFilter, stages, substeps: 1)
 用户响应以具体 `IAvbdConstraint<T>` 接入相同集合；`GetBodyCount`、`GetBody` 和各数值阶段均接收完整 `PhysicsStepContext`，可以沿同一受保护参与关系读取作用端，并通过原 `QueryRow` 更新自己的状态。
 
 显式选用[长程约束](Long-Range-Constraints.md)时，`AvbdSupportedContactMath` 将接触自己的 LRC 世界辅助力加入总压力与摩擦投影，原 AVBD 乘子和辅助反力分别保存在各自组件。共同 `ContactResponse` 继续向恢复和后续消费者交付实际总力。
+
+计算内核表示由原接触实体上的状态资源引用选中。`UpdateContactRows` 提交新分配行，几何阶段消费驻留行映射；`ContactStateInitialization<TState>` 将一份初值写入本轮新行，后续数值历史由该状态 buffer 持有。CPU 状态编辑通过必选编辑 payload 的查询及 `DeviceAvbdStateInputs` 阶段在初始化之后上传。

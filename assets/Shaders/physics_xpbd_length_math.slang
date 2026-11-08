@@ -4,7 +4,7 @@
 #include "physics_xpbd_projection_math.slang"
 #include "physics_body_math.slang"
 #include "physics_length_data.slang"
-RWStructuredBuffer<float> DeviceLengthMultipliers;
+RWStructuredBuffer<float, ScalarDataLayout> DeviceLengthMultipliers;
 float deviceLengthGradient(float3 first,float3 second,out float3 gradient)
 {
     float3 difference=second-first;

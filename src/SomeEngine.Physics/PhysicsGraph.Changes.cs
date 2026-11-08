@@ -54,26 +54,33 @@ internal sealed partial class PhysicsGraphData
         int readEntityCount = TBodies.GetReadEntityCount(in constraint, row, in context);
         for (int index = 0; index < readEntityCount; index++)
             _references.Add(TBodies.GetReadEntity(in constraint, row, index, in context));
-        Store(query, row.Entity);
+        Store(query, row.Entity, TBodies.GetInputVersion(in constraint, row));
     }
 
-    internal void Add(int query, Entity entity, ReadOnlySpan<PhysicsConstraintBody> bodies, ReadOnlySpan<Entity> references)
+    internal void Add(int query, Entity entity, ReadOnlySpan<PhysicsConstraintBody> bodies, ReadOnlySpan<Entity> references, int element = 0)
     {
         _bodyUses.Clear(); _references.Clear();
         foreach (PhysicsConstraintBody body in bodies)
             _bodyUses[body.Body] = body.Writes || (_bodyUses.TryGetValue(body.Body, out bool writes) && writes);
         foreach (Entity reference in references) _references.Add(reference);
-        Store(query, entity);
+        Store(query, entity, 0, element);
     }
 
-    private void Store(int query, Entity entity)
+    private void Store(int query, Entity entity, uint inputVersion, int element = 0)
     {
-        var identity = new PhysicsConstraintIdentity(query, entity);
+        var identity = new PhysicsConstraintIdentity(query, entity, element);
         if (!_constraints.TryGetValue(identity, out ConstraintInput? constraint))
         {
             constraint = new(identity);
             _constraints.Add(identity, constraint);
             _dirtyConstraints.Add(constraint);
+        }
+        if (inputVersion != constraint.SolverWriteVersion)
+        {
+            if (constraint.Read != 0 && constraint.InputVersion != inputVersion)
+                foreach (Entity body in _bodyUses.Keys)
+                    if (_bodies[body].Motion == BodyMotion.Dynamic) _activityChanges.Add(body);
+            constraint.InputVersion = inputVersion;
         }
         constraint.Order = _orders[query]++;
         constraint.Read = _read;
@@ -254,8 +261,8 @@ internal sealed partial class PhysicsGraphData
             island.BodyOrder.AddRange(island.DynamicBodies.OrderBy(body => _bodies[body].Order));
             if (IsColored(island))
             {
-                BuildProjectionColors(island);
                 if (_bodyUpdates) BuildBodyColors(island);
+                else BuildProjectionColors(island);
             }
         }
         _islands.Sort((a, b) => FirstOrder(a).CompareTo(FirstOrder(b)));

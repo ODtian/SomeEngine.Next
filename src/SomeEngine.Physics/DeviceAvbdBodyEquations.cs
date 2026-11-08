@@ -64,6 +64,7 @@ public sealed partial class DeviceAvbdBodyEquations : IDisposable, IDevicePhysic
     }
     IGraphicsBackend IDevicePhysicsSubmission.Backend => _backend;
     Device IDevicePhysicsSubmission.Device => _device;
+    SomeEngine.Graphics.Queue IDevicePhysicsSubmission.Queue => _backend.GetQueue(_device, QueueType.Compute);
     QueueCompletion IDevicePhysicsSubmission.Submit()
     {
         _mapping.Flush(_mapping.Range);

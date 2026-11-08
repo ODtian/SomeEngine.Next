@@ -14,7 +14,7 @@ public readonly record struct DeviceBodyKernels(ComputePipelineDesc Predict, Com
     ComputePipelineDesc? GyroscopicTorque = null, ComputePipelineDesc? Resume = null);
 
 /// <summary>Integrates and reconstructs the selected entities in their existing device body buffer.</summary>
-public sealed class DeviceBodyDynamics : IDisposable
+public sealed class BodyDynamicsCommands : IDisposable
 {
     private readonly IGraphicsBackend _backend;
     private readonly Device _device;
@@ -33,17 +33,19 @@ public sealed class DeviceBodyDynamics : IDisposable
     private readonly JobResourceAccess[] _queryAccesses;
     private readonly JobResourceAccess[] _extraAccesses;
     private readonly int _gyroKernel, _resumeKernel;
-    private uint _membershipVersion, _selectionSystemVersion;
+    private uint _membershipVersion;
+    private readonly PhysicsQueryWindow _selectionWindow;
     private int _selectionCount;
     private bool _hasSelection;
 
-    public DeviceBodyDynamics(IGraphicsBackend backend, Device device, World world, QueryHandle members,
+    public BodyDynamicsCommands(IGraphicsBackend backend, Device device, World world, QueryHandle members,
         DeviceBodies bodies, DeviceBodyKernels kernels, int threadsPerGroup,
         IReadOnlyDictionary<string, ResourceBinding[]>? extraBindings = null, ReadOnlyMemory<JobResourceAccess> extraAccesses = default)
     {
         _backend = backend; _device = device; _world = world; _bodies = bodies; _threadsPerGroup = threadsPerGroup;
         _extraAccesses = extraAccesses.ToArray();
         QueryDefinition definition = world.GetQueryDefinition(members).AsReadOnly();
+        _selectionWindow = new(definition);
         _members = world.Query(definition);
         var resources = new QueryReadResources();
         resources.Add<DeviceBodyBinding, DeviceBodyReferenceResources>();
@@ -74,11 +76,11 @@ public sealed class DeviceBodyDynamics : IDisposable
         _bindings = _layouts.Select(layout => DeviceCollisionGrid.OrderBindings(layout, bindings)).ToArray();
     }
 
-    public PredictDeviceBodies Predict(Vector3 acceleration) => new(this, acceleration);
-    public UpdateDeviceBodyVelocities UpdateVelocities() => new(this);
-    public ApplyDeviceGyroscopicTorque ApplyGyroscopicTorque() => new(this);
-    public ResumeDeviceBodies Resume(Vector3 acceleration) => new(this, acceleration);
-    public UpdateDeviceBodySelection UpdateSelection() => new(this);
+    public Commands.PredictBodies Predict(Vector3 acceleration) => new(this, acceleration);
+    public Commands.UpdateBodyVelocities UpdateVelocities() => new(this);
+    public Commands.ApplyGyroscopicTorque ApplyGyroscopicTorque() => new(this);
+    public Commands.ResumeBodies Resume(Vector3 acceleration) => new(this, acceleration);
+    public Commands.UpdateBodySelection UpdateSelection() => new(this);
     internal JobHandle ScheduleResume(in PhysicsStepContext context, Vector3 acceleration, JobHandle dependency) =>
         Schedule(in context, acceleration, _resumeKernel, dependency);
     internal JobHandle ScheduleGyroscopicTorque(in PhysicsStepContext context, JobHandle dependency) =>
@@ -118,9 +120,10 @@ public sealed class DeviceBodyDynamics : IDisposable
 
     private int CaptureSelection(in PhysicsStepContext context, Vector3 acceleration)
     {
+        uint baseline = _selectionWindow.Begin(context);
         uint membershipVersion = _world.MembershipVersion(_members);
-        var changes = (Changed: !_hasSelection || membershipVersion != _membershipVersion, Version: 0u);
-        _world.ExecuteReadQuery(_members, _selectionSystemVersion, ref changes,
+        var changes = (Changed: !_hasSelection || membershipVersion != _membershipVersion || _selectionWindow.UsesVersions, Version: 0u);
+        _world.ExecuteReadQuery(_members, baseline, ref changes,
             static (scoped QueryCursor rows, ref (bool Changed, uint Version) changes) =>
             {
                 changes.Version = rows.CurrentSystemVersion;
@@ -134,14 +137,14 @@ public sealed class DeviceBodyDynamics : IDisposable
             using MappedBuffer membership = _backend.Map(_membership, MapType.Write, BufferRange.Whole);
             membership.Bytes.Clear();
             var selection = new Selection(_bodies, mapping, membership);
-            _world.ExecuteReadQuery(_members, ref selection,
+            _world.ExecuteReadQuery(_members, baseline, ref selection,
                 static (scoped QueryCursor rows, ref Selection selected) => selected.Read(rows));
             _selectionCount = selection.Count;
             mapping.Flush(new(0, (ulong)_selectionCount * 4));
             membership.Flush(membership.Range);
             _hasSelection = true;
         }
-        _membershipVersion = membershipVersion; _selectionSystemVersion = changes.Version;
+        _membershipVersion = membershipVersion; _selectionWindow.Accept(changes.Version);
         var parameters = new BodyStep((uint)_selectionCount, (float)context.Duration, (uint)context.Substep,
             acceleration, context.Number, context.EndTime);
         using (MappedBuffer mapping = _backend.Map(_parameters, MapType.Write, BufferRange.Whole))
@@ -194,14 +197,15 @@ public sealed class DeviceBodyDynamics : IDisposable
             (Count, Duration, Substep, Acceleration, Number, Time) = (count, duration, substep, acceleration, number, time);
     }
 
-    private readonly struct Dynamics(DeviceBodyDynamics dynamics, PhysicsStepContext context, Vector3 acceleration, int kernel)
+    private readonly struct Dynamics(BodyDynamicsCommands dynamics, PhysicsStepContext context, Vector3 acceleration, int kernel)
         : IDevicePhysicsSubmission
     {
         public IGraphicsBackend Backend => dynamics._backend;
         public Device Device => dynamics._device;
+        public SomeEngine.Graphics.Queue Queue => Backend.GetQueue(Device, QueueType.Compute);
         public QueueCompletion Submit() => dynamics.Submit(in context, acceleration, kernel);
     }
-    private readonly struct ReadSelection(DeviceBodyDynamics dynamics, PhysicsStepContext context) : IJob
+    private readonly struct ReadSelection(BodyDynamicsCommands dynamics, PhysicsStepContext context) : IJob
     {
         public void Execute() => dynamics.CaptureSelection(in context, Vector3.Zero);
     }
@@ -215,23 +219,3 @@ public sealed class DeviceBodyDynamics : IDisposable
     }
 }
 
-public readonly struct PredictDeviceBodies(DeviceBodyDynamics dynamics, Vector3 acceleration) : IPhysicsStage
-{
-    public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) => dynamics.Schedule(in context, acceleration, 0, dependency);
-}
-public readonly struct UpdateDeviceBodySelection(DeviceBodyDynamics dynamics) : IPhysicsStage
-{
-    public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) => dynamics.ScheduleSelection(in context, dependency);
-}
-public readonly struct UpdateDeviceBodyVelocities(DeviceBodyDynamics dynamics) : IPhysicsStage
-{
-    public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) => dynamics.Schedule(in context, Vector3.Zero, 1, dependency);
-}
-public readonly struct ApplyDeviceGyroscopicTorque(DeviceBodyDynamics dynamics) : IPhysicsStage
-{
-    public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) => dynamics.ScheduleGyroscopicTorque(in context, dependency);
-}
-public readonly struct ResumeDeviceBodies(DeviceBodyDynamics dynamics, Vector3 acceleration) : IPhysicsStage
-{
-    public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) => dynamics.ScheduleResume(in context, acceleration, dependency);
-}

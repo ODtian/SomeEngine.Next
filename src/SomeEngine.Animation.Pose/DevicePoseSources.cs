@@ -19,7 +19,7 @@ public readonly record struct DevicePoseCapacity(int Targets, int Bones, int Ble
     int Controls, int DefinitionBytes, int Goals = 1, int Operations = 1);
 
 /// <summary>Game-world source inputs and their device model transforms, before entity physics and rendering extraction.</summary>
-public sealed partial class DevicePoseSources : IDisposable
+public sealed partial class DevicePoseSources : IDisposable, IDeviceXpbdChainInputs
 {
     private readonly IGraphicsBackend _backend;
     private readonly Device _device;
@@ -195,7 +195,15 @@ public sealed partial class DevicePoseSources : IDisposable
             Dispatch(0, _advanceBindings, _order.Count);
             for (int level = 0; level < _sampleBindings.Count; level++) Dispatch(1, _sampleBindings[level], _workCounts[level]);
             foreach (RigOperation operation in _rigOperations)
-                if (targetKernel < 0) Dispatch(operation.Kernel, operation.Bindings, operation.Count);
+                if (targetKernel == -2 && operation.Kernel == _xpbdKernel)
+                {
+                    DispatchBodyOperation(_chainCaptureKernel, operation);
+                    _bindings["GpuPoseWork"] = [ResourceBinding.ReadOnlyBuffer(operation.Work)];
+                    var work = new DeviceXpbdChainWork(operation.Count, _bindings);
+                    _chainSolver!.Record(_commands, in work);
+                    DispatchBodyOperation(_chainMapKernel, operation);
+                }
+                else if (targetKernel < 0) Dispatch(operation.Kernel, operation.Bindings, operation.Count);
                 else if (operation.Kernel == _xpbdKernel) DispatchBodyOperation(targetKernel, operation);
                 else if (!operation.AfterPhysics) Dispatch(operation.Kernel, operation.Bindings, operation.Count);
         }

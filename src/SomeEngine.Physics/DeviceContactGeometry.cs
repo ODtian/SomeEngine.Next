@@ -19,7 +19,7 @@ public sealed class DeviceContactGeometry : IDisposable, IDevicePhysicsSubmissio
     private readonly DeviceBodies _bodies;
     private readonly DeviceContactBodies _anchors;
     private readonly Buffer _rows, _settings;
-    private readonly BufferSrv _rowsView, _contactsView, _bodyCountsView, _pointCountsView, _bodiesView;
+    private readonly BufferSrv _contactsView, _bodyCountsView, _pointCountsView, _bodiesView;
     private readonly BufferCbv _settingsView;
     private readonly CommandContext _commands;
     private readonly Pipeline _pipeline;
@@ -32,9 +32,8 @@ public sealed class DeviceContactGeometry : IDisposable, IDevicePhysicsSubmissio
     {
         _backend = backend; _device = device; _matches = matches; _parameters = parameters;
         _detection = detection; _bodies = bodies; _anchors = anchors;
-        _rows = backend.CreateBuffer(device, new((ulong)detection.Capacity.Pairs * 4 * 4, BufferUsages.ShaderRead), MemoryType.Upload);
+        _rows = matches.RowBuffer;
         _settings = backend.CreateBuffer(device, new(256, BufferUsages.Constant), MemoryType.Upload);
-        _rowsView = backend.CreateBufferSrv(device, new(_rows, new(0, _rows.Info.Size), StructureStride: 4));
         _contactsView = backend.CreateBufferSrv(device, new(detection.Contacts, new(0, detection.Contacts.Info.Size), StructureStride: DeviceCollisionDetection.ContactStride));
         _bodyCountsView = backend.CreateBufferSrv(device, new(detection.ContactBodyCounts!, new(0, detection.ContactBodyCounts!.Info.Size), StructureStride: 4));
         _pointCountsView = backend.CreateBufferSrv(device, new(detection.ContactCounts, new(0, detection.ContactCounts.Info.Size), StructureStride: 4));
@@ -42,7 +41,7 @@ public sealed class DeviceContactGeometry : IDisposable, IDevicePhysicsSubmissio
         _settingsView = backend.CreateBufferCbv(device, new(_settings, new(0, 256)));
         var bindings = new Dictionary<string, ResourceBinding[]>
         {
-            ["DeviceContactGeometryRows"] = [ResourceBinding.ReadOnlyBuffer(_rowsView)],
+            ["DeviceContactGeometryRows"] = [ResourceBinding.WritableBuffer(matches.RowView)],
             ["DeviceMatchInputContacts"] = [ResourceBinding.ReadOnlyBuffer(_contactsView)],
             ["DeviceMatchInputBodyCounts"] = [ResourceBinding.ReadOnlyBuffer(_bodyCountsView)],
             ["DeviceMatchInputCounts"] = [ResourceBinding.ReadOnlyBuffer(_pointCountsView)],
@@ -58,6 +57,7 @@ public sealed class DeviceContactGeometry : IDisposable, IDevicePhysicsSubmissio
     }
     IGraphicsBackend IDevicePhysicsSubmission.Backend => _backend;
     Device IDevicePhysicsSubmission.Device => _device;
+    SomeEngine.Graphics.Queue IDevicePhysicsSubmission.Queue => _backend.GetQueue(_device, QueueType.Compute);
     public UpdateDeviceContactGeometry Update() => new(this);
     public DeviceContactGeometryMatches Results => new(_matches);
     internal JobHandle Schedule(Scheduler scheduler, JobHandle dependency)
@@ -72,29 +72,24 @@ public sealed class DeviceContactGeometry : IDisposable, IDevicePhysicsSubmissio
             JobResourceAccess.Read(scheduler.GetResourceToken(_detection.ContactCounts), 0, (long)_detection.ContactCounts.Info.Size),
             JobResourceAccess.Read(scheduler.GetResourceToken(_detection.ContactBodyCounts!), 0, (long)_detection.ContactBodyCounts!.Info.Size),
             JobResourceAccess.Read(scheduler.GetResourceToken(_detection.ContactBodies!), 0, (long)_detection.ContactBodies!.Info.Size),
-            JobResourceAccess.Write(scheduler.GetResourceToken(_rows), 0, (long)_rows.Info.Size),
+            JobResourceAccess.Read(scheduler.GetResourceToken(_rows), 0, (long)_rows.Info.Size),
             JobResourceAccess.Write(scheduler.GetResourceToken(_settings), 0, 256),
             JobResourceAccess.Write(scheduler.GetResourceToken(_commands))]);
         return DevicePhysicsJobs.Schedule(scheduler, this, accesses.ToArray(), dependency);
     }
     QueueCompletion IDevicePhysicsSubmission.Submit()
     {
-        using (MappedBuffer mapping = _backend.Map(_rows, MapType.Write, BufferRange.Whole))
-        {
-            _matches.WriteParameterIndices(MemoryMarshal.Cast<byte, uint>(mapping.Bytes));
-            mapping.Flush(new(0, (ulong)_detection.Count * 4 * 4));
-        }
         using (MappedBuffer mapping = _backend.Map(_settings, MapType.Write, BufferRange.Whole))
         {
             Span<uint> values = MemoryMarshal.Cast<byte, uint>(mapping.Bytes);
-            values[0] = (uint)_detection.Count; values[1] = (uint)_anchors.BodiesPerContact;
+            values[0] = (uint)_detection.ContactCount; values[1] = (uint)_anchors.BodiesPerContact;
             values[2] = (uint)_detection.Capacity.BodiesPerContact;
             mapping.Flush(new(0, 12));
         }
         _backend.Begin(_commands, new(0, 0, 8));
         _backend.SetPipeline(_commands, _pipeline);
         _backend.SetTransientParameterBindings(_commands, new(_layout, _bindings, []));
-        if (_detection.Count != 0) _backend.Dispatch(_commands, DevicePhysicsDispatch.CreateGroups((_detection.Count * 4 + 63) / 64));
+        if (_detection.ContactCount != 0) _backend.Dispatch(_commands, DevicePhysicsDispatch.CreateGroups((_detection.ContactCount + 63) / 64));
         _backend.Barrier(_commands, new MemoryBarrier(PipelineSync.ComputeShading, PipelineSync.ComputeShading,
             ResourceAccess.UnorderedAccess, ResourceAccess.UnorderedAccess));
         using RecordedCommands recorded = _backend.End(_commands);
@@ -102,18 +97,23 @@ public sealed class DeviceContactGeometry : IDisposable, IDevicePhysicsSubmissio
     }
     public void Dispose()
     {
-        _commands.Dispose(); _pipeline.Dispose(); _rowsView.Dispose(); _contactsView.Dispose(); _bodyCountsView.Dispose(); _pointCountsView.Dispose(); _bodiesView.Dispose();
-        _settingsView.Dispose(); _rows.Dispose(); _settings.Dispose();
+        _commands.Dispose(); _pipeline.Dispose(); _contactsView.Dispose(); _bodyCountsView.Dispose(); _pointCountsView.Dispose(); _bodiesView.Dispose();
+        _settingsView.Dispose(); _settings.Dispose();
     }
 }
 public readonly struct DeviceContactGeometryMatches(DeviceContactMatches matches) : IContactPointMatches
 {
+    public bool InputsAreChanges => matches.InputsAreChanges;
+    public ReadOnlySpan<Entity> RemovedPoints => matches.RemovedPoints;
     public bool RetainsGeometry => true;
+    public bool RetainsBodyReferences => true;
     public void AddAccesses(List<JobResourceAccess> accesses) => accesses.Add(matches.WriteAccess);
     public bool TryGetMatch(int input, out Entity point, out float distanceSquared) => matches.Read(input, out point, out distanceSquared);
     public void RecordPoint(int input, Entity point) => matches.Record(input, point);
 }
-public readonly struct UpdateDeviceContactGeometry(DeviceContactGeometry geometry) : IPhysicsStage
+public readonly struct UpdateDeviceContactGeometry(DeviceContactGeometry geometry) : IDevicePhysicsStage
 {
+    public object InputKey => geometry;
+    public bool CanBatch => true;
     public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) => geometry.Schedule(WorldJobs.GetScheduler(context.World), dependency);
 }

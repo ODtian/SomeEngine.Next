@@ -30,11 +30,11 @@ public sealed partial class DeviceXpbdTests
         using var activities = new DeviceBodyActivities(backend, device, world, members, bodies);
         world.Add(first, new DeviceBodyActivityBinding(activities)); world.Add(other, new DeviceBodyActivityBinding(activities));
         var bindings = new Dictionary<string, ResourceBinding[]>(); activities.AddBindings(bindings);
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileActiveBodyDynamics(), 64,
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileActiveBodyDynamics(), 64,
             bindings, activities.GetWriteAccesses(jobs));
         using var results = new DeviceBodyResults(backend, device, bodies);
         using var bodyInputs = new DeviceBodyInputs(world, members, bodies);
-        using var output = new PhysicsEventBuffer(jobs, 8);
+        using var output = new PhysicsEventBuffer(world, 8);
         using var graph = new DeviceConstraintGraph(backend, device, bodies, dynamics, CompileEmptyActivityGraph(),
             new(1, 1), bindings, activities.GetReadAccesses(jobs), 64);
         using var activity = new DevicePhysicsActivity(backend, device, activities, graph, CompileEmptyActivityKernels(),

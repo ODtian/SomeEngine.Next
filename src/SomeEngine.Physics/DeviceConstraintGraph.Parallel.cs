@@ -9,9 +9,11 @@ public readonly record struct DeviceGraphParallelKernels(ComputePipelineDesc Ini
     ComputePipelineDesc ProposeRowColors, ComputePipelineDesc ResolveRowColors, ComputePipelineDesc CountColors,
     ComputePipelineDesc OffsetGroups, ComputePipelineDesc CountRows, ComputePipelineDesc OffsetRanges, ComputePipelineDesc WriteWork)
 {
+    public ComputePipelineDesc? PrepareColors { get; init; }
     internal ComputePipelineDesc[] Descriptions(ComputePipelineDesc writeRows) =>
         [writeRows, Initialize, Connect, Compress, ScanDegrees, OffsetBlocks, AddDegreeOffsets, WriteAdjacency, ResetColorProgress,
-            ProposeBodyColors, ResolveBodyColors, ProposeRowColors, ResolveRowColors, CountColors, OffsetGroups, CountRows, OffsetRanges, WriteWork];
+            ProposeBodyColors, ResolveBodyColors, ProposeRowColors, ResolveRowColors, CountColors, OffsetGroups, CountRows, OffsetRanges, WriteWork,
+            .. PrepareColors is { } coloring ? new[] { coloring } : Array.Empty<ComputePipelineDesc>()];
 }
 
 public sealed partial class DeviceConstraintGraph
@@ -21,10 +23,10 @@ public sealed partial class DeviceConstraintGraph
         Initialize = 1, Connect, Compress, ScanDegrees, OffsetBlocks, AddDegreeOffsets, WriteAdjacency, ResetColorProgress,
         ProposeBodyColors, ResolveBodyColors, ProposeRowColors, ResolveRowColors, CountColors, OffsetGroups, CountRows, OffsetRanges, WriteWork,
     }
-    private void BuildParallelAndWait(bool activeWorkOnly = false)
+    private async ValueTask BuildParallelAsync(bool activeWorkOnly = false)
     {
         int bodyGroups = (_bodies.Capacity + _threadsPerGroup - 1) / _threadsPerGroup;
-        int rowGroups = (_capacity.Constraints + _threadsPerGroup - 1) / _threadsPerGroup;
+        int rowGroups = (RowCount + _threadsPerGroup - 1) / _threadsPerGroup;
         BeginParallelGraph();
         if (activeWorkOnly)
         {
@@ -32,43 +34,56 @@ public sealed partial class DeviceConstraintGraph
             DispatchGraphKernel(GraphKernel.Compress, bodyGroups);
         }
         else RecordParallelConnectivity();
-        RecordColorRounds(bodyGroups, bodies: true);
-        SubmitGraphAndReadCounts();
-        while (_colorProgress[0] != 0)
+        int rounds = 1;
+        bool colorBodies = true, colorRows = true;
+        if (_parallel!.Value.PrepareColors.HasValue)
         {
+            DispatchGraphKernel(18, Math.Max(bodyGroups, rowGroups));
+            await SubmitGraphAndReadCountsAsync().ConfigureAwait(false);
+            colorBodies = _colorProgress[0] != 0; colorRows = _colorProgress[1] != 0;
             _backend.Begin(_commands, new(0, 0, 32));
-            RecordColorRounds(bodyGroups, bodies: true);
-            SubmitGraphAndReadCounts();
         }
-        _backend.Begin(_commands, new(0, 0, 32));
-        RecordColorRounds(rowGroups, bodies: false);
-        SubmitGraphAndReadCounts();
-        while (_colorProgress[1] != 0)
+        while (colorBodies || colorRows)
         {
+            for (int round = 0; round < rounds; round++)
+            {
+                DispatchGraphKernel(GraphKernel.ResetColorProgress, 1);
+                if (colorBodies)
+                {
+                    DispatchGraphKernel(GraphKernel.ProposeBodyColors, bodyGroups);
+                    DispatchGraphKernel(GraphKernel.ResolveBodyColors, bodyGroups);
+                }
+                if (colorRows)
+                {
+                    DispatchGraphKernel(GraphKernel.ProposeRowColors, rowGroups);
+                    DispatchGraphKernel(GraphKernel.ResolveRowColors, rowGroups);
+                }
+            }
+            await SubmitGraphAndReadCountsAsync().ConfigureAwait(false);
+            colorBodies = _colorProgress[0] != 0; colorRows = _colorProgress[1] != 0;
             _backend.Begin(_commands, new(0, 0, 32));
-            RecordColorRounds(rowGroups, bodies: false);
-            SubmitGraphAndReadCounts();
+            if (!colorBodies && !colorRows) break;
+            rounds = Math.Min(rounds * 2, Math.Max(_bodies.Capacity, RowCount));
         }
-        _backend.Begin(_commands, new(0, 0, 16));
         DispatchGraphKernel(GraphKernel.CountColors, Math.Max(bodyGroups, rowGroups));
         DispatchGraphKernel(GraphKernel.OffsetGroups, 1);
         DispatchGraphKernel(GraphKernel.CountRows, rowGroups);
         DispatchGraphKernel(GraphKernel.OffsetRanges, 1);
         DispatchGraphKernel(GraphKernel.WriteWork, Math.Max(bodyGroups, rowGroups));
-        SubmitGraphAndReadCounts();
+        await SubmitGraphAndReadCountsAsync().ConfigureAwait(false);
     }
     private void BeginParallelGraph()
     {
         _backend.Begin(_commands, new(0, 0, 32));
         if (!_initialized)
             foreach (var buffer in _buffers)
-                _backend.Barrier(_commands, new BufferBarrier(buffer, buffer.InitialSync, PipelineSync.ComputeShading,
+                if (Memory?.Contains(buffer) != true) _backend.Barrier(_commands, new BufferBarrier(buffer, buffer.InitialSync, PipelineSync.ComputeShading,
                     buffer.InitialAccess, ResourceAccess.UnorderedAccess));
     }
     private void RecordParallelConnectivity()
     {
         int bodyGroups = (_bodies.Capacity + _threadsPerGroup - 1) / _threadsPerGroup;
-        int rowGroups = (_capacity.Constraints + _threadsPerGroup - 1) / _threadsPerGroup;
+        int rowGroups = (RowCount + _threadsPerGroup - 1) / _threadsPerGroup;
         DispatchGraphKernel(0, rowGroups);
         DispatchGraphKernel(GraphKernel.Initialize, Math.Max(bodyGroups, rowGroups));
         DispatchGraphKernel(GraphKernel.Connect, rowGroups);
@@ -77,15 +92,6 @@ public sealed partial class DeviceConstraintGraph
         DispatchGraphKernel(GraphKernel.OffsetBlocks, 1);
         DispatchGraphKernel(GraphKernel.AddDegreeOffsets, bodyGroups);
         DispatchGraphKernel(GraphKernel.WriteAdjacency, rowGroups);
-    }
-    private void RecordColorRounds(int groups, bool bodies)
-    {
-        for (int round = 0; round < 8; round++)
-        {
-            DispatchGraphKernel(GraphKernel.ResetColorProgress, 1);
-            DispatchGraphKernel(bodies ? GraphKernel.ProposeBodyColors : GraphKernel.ProposeRowColors, groups);
-            DispatchGraphKernel(bodies ? GraphKernel.ResolveBodyColors : GraphKernel.ResolveRowColors, groups);
-        }
     }
     private void DispatchGraphKernel(GraphKernel kernel, int groups) => DispatchGraphKernel((int)kernel, groups);
     private void DispatchGraphKernel(int kernel, int groups)
@@ -96,7 +102,7 @@ public sealed partial class DeviceConstraintGraph
         _backend.Barrier(_commands, new MemoryBarrier(PipelineSync.ComputeShading, PipelineSync.ComputeShading,
             ResourceAccess.UnorderedAccess, ResourceAccess.UnorderedAccess));
     }
-    private void SubmitGraphAndReadCounts()
+    private async ValueTask SubmitGraphAndReadCountsAsync()
     {
         _backend.Barrier(_commands, new BufferBarrier(_countBuffer, PipelineSync.ComputeShading, PipelineSync.Copy,
             ResourceAccess.UnorderedAccess, ResourceAccess.CopySource));
@@ -109,7 +115,7 @@ public sealed partial class DeviceConstraintGraph
         _backend.Barrier(_commands, new BufferBarrier(_buildProgress!, PipelineSync.Copy, PipelineSync.ComputeShading,
             ResourceAccess.CopySource, ResourceAccess.UnorderedAccess));
         QueueCompletion completed = SubmitGraphCommands();
-        if (_backend.WaitCpu(in completed, TimeSpan.FromSeconds(60)) != WaitStatus.Completed) throw new TimeoutException();
+        await _backend.WaitAsync(completed).ConfigureAwait(false);
         using (MappedBuffer mapping = _backend.Map(_readback, MapType.Read, BufferRange.Whole))
         {
             mapping.Invalidate(mapping.Range);

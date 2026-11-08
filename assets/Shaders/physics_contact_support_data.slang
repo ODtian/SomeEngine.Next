@@ -5,10 +5,9 @@ struct DeviceSupportSettings
 {
     float3 up; float distanceTolerance;
     float motionTolerance; float angularMotionTolerance; float stickDistance; float retention;
-    float initialErrorFraction; float relativePivotTolerance; uint contactsPerBody; uint bodies;
-    uint contacts;
+    float initialErrorFraction; float relativePivotTolerance; uint bodies; uint contacts;
 };
-ConstantBuffer<DeviceSupportSettings> ContactSupportSettings;
+ConstantBuffer<DeviceSupportSettings, ScalarDataLayout> ContactSupportSettings;
 struct DeviceBodySupportState
 {
     float minimumHeight; float initialError; float reaction; uint enabled;
@@ -37,15 +36,17 @@ struct DeviceSupportEquation
     float3 rotationResponse; uint padding4;
     float heightError; float reaction; uint2 padding5;
 };
-globallycoherent RWStructuredBuffer<DeviceBodySupportState> DeviceSupportBodyStates;
-globallycoherent RWStructuredBuffer<DeviceContactSupportState> DeviceSupportContactStates;
-globallycoherent RWStructuredBuffer<uint> DeviceSupportBodyContacts;
-RWStructuredBuffer<DeviceSupportLoad> DeviceSupportBodyLoads;
-RWStructuredBuffer<DeviceSupportLoad> DeviceSupportContactLoads;
-RWStructuredBuffer<DeviceSupportCandidate> DeviceSupportCandidates;
-RWStructuredBuffer<uint> DeviceSupportOrder;
-RWStructuredBuffer<DeviceSupportEquation> DeviceSupportEquations;
-StructuredBuffer<uint2> DeviceContactSupportSelection;
+globallycoherent RWStructuredBuffer<DeviceBodySupportState, ScalarDataLayout> DeviceSupportBodyStates;
+globallycoherent RWStructuredBuffer<DeviceContactSupportState, ScalarDataLayout> DeviceSupportContactStates;
+globallycoherent RWStructuredBuffer<uint, ScalarDataLayout> DeviceSupportBodyContacts;
+globallycoherent RWStructuredBuffer<uint, ScalarDataLayout> DeviceSupportSortedContacts;
+globallycoherent RWStructuredBuffer<uint, ScalarDataLayout> DeviceSupportHullContacts;
+RWStructuredBuffer<DeviceSupportLoad, ScalarDataLayout> DeviceSupportBodyLoads;
+RWStructuredBuffer<DeviceSupportLoad, ScalarDataLayout> DeviceSupportContactLoads;
+RWStructuredBuffer<DeviceSupportCandidate, ScalarDataLayout> DeviceSupportCandidates;
+RWStructuredBuffer<uint, ScalarDataLayout> DeviceSupportOrder;
+RWStructuredBuffer<DeviceSupportEquation, ScalarDataLayout> DeviceSupportEquations;
+StructuredBuffer<uint2, ScalarDataLayout> DeviceContactSupportSelection;
 interface IDeviceContactSupportWork
 {
     uint bodyCount(); uint body(uint index);

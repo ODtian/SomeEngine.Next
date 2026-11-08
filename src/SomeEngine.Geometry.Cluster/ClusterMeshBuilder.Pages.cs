@@ -10,6 +10,7 @@ using System.Runtime.InteropServices;
 using MeshOptimizer;
 using SomeEngine.Resources.Geometry;
 using SomeEngine.Resources;
+using SomeEngine.Job;
 using ValueType = SomeEngine.Resources.Geometry.ValueType;
 using Stream = System.IO.Stream;
 
@@ -25,10 +26,26 @@ public static partial class ClusterMeshBuilder
         {
             MeshInput mesh = PrepareMesh(positions, attributes, indices, materialIndices, strategy, scratch);
             MeshletBuild meshlets = BuildMeshletData(mesh, strategy);
-            var encoded = new List<EncodedClusterGeometry>(meshlets.Meshlets.Count);
-            for (int index = 0; index < meshlets.Meshlets.Count; index++)
+            var encoded = new EncodedClusterGeometry[meshlets.Meshlets.Count];
+            JobSystem.ExecuteParallel(new EncodeClusterBatches(mesh, meshlets.Meshlets.ToArray(), strategy, encoded),
+                (encoded.Length + 15) / 16, 1);
+            int regionCount = materialCount ?? checked((int)((ulong)materialIndices.Max() + 1));
+            MeshRegion[] regions = Enumerable.Range(0, regionCount).Select(static index => new MeshRegion { Name = "Material " + index.ToString(System.Globalization.CultureInfo.InvariantCulture) }).ToArray();
+            return ClusterMeshPages.Build(name, attributes.Compatibility, encoded, CreateBounds(meshlets.Bounds), regions);
+        }
+        finally { scratch.Return(); }
+    }
+
+    private readonly record struct EncodeClusterBatches(MeshInput mesh, ClusterMeshlet[] clusters,
+        ClusterBuildStrategy strategy, EncodedClusterGeometry[] results) : IJobParallelFor
+    {
+        public void Execute(int batch)
+        {
+            VertexData attributes = mesh.Attributes.CreateBatch();
+            int batchStart = batch * 16, batchEnd = Math.Min(batchStart + 16, clusters.Length);
+            for (int index = batchStart; index < batchEnd; index++)
             {
-                ClusterMeshlet cluster = meshlets.Meshlets[index];
+                ClusterMeshlet cluster = clusters[index];
                 uint[] vertices = cluster.LocalVertices;
                 byte[] local = cluster.LocalIndices;
                 uint[] materials = new uint[local.Length / 3];
@@ -42,7 +59,7 @@ public static partial class ClusterMeshBuilder
                     edgeSquared = Math.Max(edgeSquared, Math.Max(SquaredEdge(first, second),
                         Math.Max(SquaredEdge(second, third), SquaredEdge(third, first))));
                 }
-                EncodedClusterVertices data = mesh.Attributes.Encode(mesh.Positions.AsSpan(0, mesh.VertexCount), vertices.AsSpan());
+                EncodedClusterVertices data = attributes.Encode(mesh.Positions.AsSpan(0, mesh.VertexCount), vertices.AsSpan());
                 byte[] blob = new byte[16 + data.Blob.Length];
                 int positionBytes = data.PositionBytes == 0 ? data.Blob.Length : data.PositionBytes;
                 BinaryPrimitives.WriteUInt32LittleEndian(blob, 16);
@@ -50,7 +67,7 @@ public static partial class ClusterMeshBuilder
                 BinaryPrimitives.WriteUInt32LittleEndian(blob.AsSpan(8), (uint)(data.PositionBytes == 0 ? 16 : 16 + positionBytes));
                 BinaryPrimitives.WriteUInt32LittleEndian(blob.AsSpan(12), (uint)(data.PositionBytes == 0 ? data.Blob.Length : data.Blob.Length - positionBytes));
                 data.Blob.Span.CopyTo(blob.AsSpan(16));
-                encoded.Add(new()
+                results[index] = new()
                 {
                     VertexBlob = blob, TriangleIndices = local, TriangleMaterials = materials, VertexCount = vertices.Length,
                     BoundMin = data.BoundMin, BoundMax = data.BoundMax, Center = cluster.Center,
@@ -59,13 +76,9 @@ public static partial class ClusterMeshBuilder
                     Level = cluster.Level, Error = cluster.Error, ParentError = cluster.ParentError,
                     Group = cluster.GroupId, ParentGroup = strategy == ClusterBuildStrategy.Realtime ? index : cluster.ParentGroupId,
                     SourceClusterIndex = (uint)index, MaximumEdgeLength = Math.Sqrt(edgeSquared),
-                });
+                };
             }
-            int regionCount = materialCount ?? checked((int)((ulong)materialIndices.Max() + 1));
-            MeshRegion[] regions = Enumerable.Range(0, regionCount).Select(static index => new MeshRegion { Name = "Material " + index.ToString(System.Globalization.CultureInfo.InvariantCulture) }).ToArray();
-            return ClusterMeshPages.Build(name, attributes.Compatibility, encoded, CreateBounds(meshlets.Bounds), regions);
         }
-        finally { scratch.Return(); }
     }
 
     private static double SquaredEdge(Vector3 first, Vector3 second)

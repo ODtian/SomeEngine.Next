@@ -8,7 +8,7 @@ namespace SomeEngine.Physics;
 /// <summary>Device geometry frames and parameters derived from the selected body representation.</summary>
 public sealed partial class DeviceCollisionGeometry : IDisposable
 {
-    public const int InputStride = 112;
+    public const int InputStride = 128;
     private readonly IGraphicsBackend _backend;
     private readonly List<IDisposable> _objects = [];
     private MappedBuffer _mapping;

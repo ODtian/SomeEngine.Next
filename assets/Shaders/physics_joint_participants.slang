@@ -2,7 +2,7 @@
 #define PHYSICS_JOINT_PARTICIPANTS
 #include "physics_constraint_bodies.slang"
 #include "physics_joint_data.slang"
-StructuredBuffer<uint2> DeviceJointsSelection;
+StructuredBuffer<uint2, ScalarDataLayout> DeviceJointsSelection;
 struct DeviceJointBodies : IDeviceConstraintBodies
 {
     uint count() { uint rows,stride; DeviceJoints.GetDimensions(rows,stride); return rows; }

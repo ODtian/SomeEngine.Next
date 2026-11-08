@@ -40,6 +40,9 @@ public struct GeometryPairDetection<TFirst, TSecond, TFirstReader, TSecondReader
     where TKernel : struct, ICollisionNarrowPhase<TFirst, TSecond>
     where TOutput : struct, ICollisionContactOutput
 {
+    public bool SupportsParallel => output.SupportsParallel;
+    public void BeginParallel(int partitions) => output.BeginParallel(partitions);
+    public void SelectPartition(int partition) => output.SelectPartition(partition);
     public QueryDefinition AddReads(QueryDefinition definition) => secondReader.AddReads(firstReader.AddReads(definition));
 
     public void Execute(in CollisionGeometryPair pair, scoped QueryCursor access,

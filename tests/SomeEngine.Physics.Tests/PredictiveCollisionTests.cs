@@ -28,7 +28,7 @@ public sealed class PredictiveCollisionTests
             .Read<BodyStepState>().Read<BodyVelocity>().ReadWrite<AvbdBodyEquation>());
         QueryHandle scope = world.Query(new QueryDefinitionBuilder().Read<ContactPoint>());
         QueryHandle contacts = world.Query(new QueryDefinitionBuilder().Read<ContactPoint>().Read<ContactMaterial>()
-            .ReadBuffer<ContactBodyLink>().Optional<DirectedRelationEndpoints<ContactParticipant>>(QueryAccess.Read)
+            .ReadBuffer<ContactBodyLink>()
             .ReadWrite<AvbdContactState>().ReadWrite<ContactResponse>());
         var candidates = Collision.Candidates<CollisionBounds, CollisionBoundsReader>(world, geometryMembers, new CollisionTree(), default);
         using var maintenance = candidates.CreateMaintenance(scheduler);
@@ -90,7 +90,7 @@ public sealed class PredictiveCollisionTests
             .Read<BodyStepState>().Read<BodyVelocity>().ReadWrite<AvbdBodyEquation>());
         QueryHandle scope = world.Query(new QueryDefinitionBuilder().Read<ContactPoint>());
         QueryHandle contacts = world.Query(new QueryDefinitionBuilder().Read<ContactPoint>().Read<ContactMaterial>()
-            .ReadBuffer<ContactBodyLink>().Optional<DirectedRelationEndpoints<ContactParticipant>>(QueryAccess.Read)
+            .ReadBuffer<ContactBodyLink>()
             .ReadWrite<AvbdContactState>().ReadWrite<ContactResponse>());
         var candidates = Collision.Candidates<CollisionBounds, CollisionBoundsReader>(world, geometryMembers, new CollisionTree(), default);
         using var maintenance = candidates.CreateMaintenance(scheduler);
@@ -113,8 +113,8 @@ public sealed class PredictiveCollisionTests
 
         Assert.InRange(world.Read<BodyPose>(body).Position.X, -.6001f, -.5999f);
         Assert.InRange(world.Read<BodyVelocity>(body).Linear.Length(), 0, 1e-3f);
-        Assert.Equal(1, world.GetIncomingRelations<ContactParticipant>(body).Count);
         var point = world.GetIncidentRelations<ContactPoint>(geometry).Entries[0].Edge;
+        world.ExecuteBufferRead<ContactBodyLink>(point.Entity, links => Assert.Contains(links.AsSpan().ToArray(), link => link.Body == body));
         Assert.Equal(2.1, world.Read<ContactPoint>(point.Entity).Prediction.SampleTime);
         Assert.Equal(2.1, world.Read<ContactResponse>(point.Entity).StartTime);
         Assert.Equal(2.2, world.Read<ContactResponse>(point.Entity).EndTime);

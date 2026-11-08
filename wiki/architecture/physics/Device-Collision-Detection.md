@@ -79,8 +79,12 @@ detectDeviceCollision(id.x, kernel);
 
 `DeviceDetectionCapacity(Pairs, FaceVertices, WorkItems)` 分别给出结果 pair 容量、支持面顶点容量
 和并行设备工作项数量。每个工作项按 `work + k × WorkItems` 处理当前 bin 中的 pair，
-复用自己的 EPA 与裁剪工作区；每个 pair 只在自身结果位置写出。
-数值 scratch 按 `WorkItems` 分配，持久结果按 `Pairs` 分配。
+复用自己的 EPA 与裁剪工作区。每个 pair 保存点数与连续接触范围的起点，
+实际命中点通过 `ContactTotal` 分配到共同紧凑输出。
+数值 scratch 按 `WorkItems` 分配，pair 索引按 `Pairs` 分配，接触列按 `Contacts` 预留。
+内置四点流形使用 `Contacts = 4 × Pairs`；DefaultGame 普通、料仓和百万体场景沿该关系配置上限。
+`DeviceContactMemory` 统一持有接触列的稀疏映射，按实际点数与持久参数行提交页。
+首次检测回传所需点数，增长完成后重新写入这段实际输出；参数、历史、图、响应与支撑共用该行范围。
 构造可接收从 `firstBin` 开始的连续 `ComputePipelineDesc` 范围；每个 bin 由项目提供具体 kernel。
 各派发复用同一 scratch，派发间沿原 Buffer 屏障同步，独立参数保存在各自的 256 字节范围。
 结果索引为原 pair 位置减去首 bin 的起点，全部 bin 共用 `Distances`、`Contacts` 和 `ContactCounts`。
@@ -93,10 +97,21 @@ detectDeviceCollision(id.x, kernel);
 
 `Distances` 保存双方实体和共同 `CollisionDistance`；见证点为世界坐标，法向从第一方指向第二方，
 间距为正表示分离、为负表示穿透。
-`Contacts` 为每个 pair 保留至多四个共同 `CollisionContact`，`ContactCounts` 保存实际点数。
+`Contacts` 连续保存实际 `CollisionContact`，`ContactCounts` 与 `ContactOffsets` 定位各 pair 的范围。
 接触头包括原实体、特征、点序号、双方几何局部锚、世界见证中点、法向、间距及共同预测字段。
 104 字节设备头与当前 CPU 结构对齐，普通检测写入 `Prediction.Enabled=false` 和零样本时刻；
 样本时刻的设备布局使用两个 uint 保存原 double 位模式。
+
+`DeviceCollisionReadback.ContactChanges` 与匹配阶段组合：匹配身份回传给 ECS 生命周期，
+新增点回传几何及加权端点，保留点的几何更新沿 GPU 匹配出的参数行执行。
+匹配与几何更新共用 `DeviceContactMatches` 持有的参数行映射；GPU 写候选行，CPU 的新建及替换判决覆写对应行，几何阶段读取同一份结果。候选引用按实际次数持有原参数行，最后一处引用释放后再供新点分配。
+`IContactPointMatches.InputsAreChanges` 与 `RemovedPoints` 交接身份变化集。所选接触成员及来源版本保持已接受值时，输出流只包含新点，生命周期阶段按明确移除身份销毁旧点；保留点沿设备几何更新继续推进。来源编辑、版本筛选查询与重复候选沿完整匹配路径处理。
+新增几何在 `WriteContactRows` 的有效映射中直接读取，随后交给原 `ICollisionContactOutput`。
+`ContactPointBuffer` 以可复用的 1024 点页持有输出和本页端点，容量增长限制在当前页。
+参数及历史的 `DeviceInputPages` 按约 64 KiB 分配转运页，各列按元素大小换算页内行数。
+大范围复制枚举实际存在的页面，局部字段更新继续按所声明的字节范围复制。
+DefaultGame 的 GPU 物理配置通过 `RuntimeStartupOptions.OptionalDeviceFeatures` 把 `SparseResources`
+传给既有 `DeviceDesc`。窗口设备重用同时比较该选择；独立物理检查也显式请求相同能力。
 
 ## 刚体预测接触
 
@@ -196,3 +211,9 @@ RHI 提交之后接原 `DeviceQueueFence`；界限读回就绪后，有效结果
 `ContactPointOutput` 可直接接入现有 [ContactPoints.Refresh 和响应](Contacts.md)。
 多个设备 bin 向同一输出追加，项目在每步写入前持有该输出的写范围并清理一次，
 再把各 bin 的写入及刷新放入同一完成链。
+
+接触匹配持有点实体到参数行的主索引，以及本轮新增、移除范围。
+`DeviceContactInputs.Upload(matching)` 与 `DeviceAvbdStateInputs.Upload(matching)` 复用该生命周期数据；
+匹配器确认同一 World、参数池和源查询筛选后，上传器先清除移除行，再按 changed chunk 写入新增或编辑的值。
+普通参与端创建由本轮生命周期数据覆盖；材料、触发器、主体绑定和状态组件编辑继续沿各自版本读取。
+历史输入以点查询作为成员范围，在 changed chunk 中移除退出其组件或状态绑定的缓存，重新接入时从组件恢复历史。

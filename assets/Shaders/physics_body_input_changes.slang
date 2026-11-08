@@ -6,7 +6,7 @@ struct DeviceBodyCpuInputChange
     uint entityIndex, entityGeneration, components, substep;
     uint2 number;
 };
-StructuredBuffer<DeviceBodyCpuInputChange> DeviceBodyCpuInputChanges;
+StructuredBuffer<DeviceBodyCpuInputChange, ScalarDataLayout> DeviceBodyCpuInputChanges;
 bool deviceBodyCpuInputChanged(uint body, uint2 number, uint substep)
 {
     DeviceBodyCpuInputChange change = DeviceBodyCpuInputChanges[body];

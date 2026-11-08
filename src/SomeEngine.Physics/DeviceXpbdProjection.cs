@@ -10,7 +10,7 @@ using Buffer = SomeEngine.Graphics.Buffer;
 
 namespace SomeEngine.Physics;
 
-public readonly record struct DeviceXpbdKernels(ComputePipelineDesc Initialize, ComputePipelineDesc Project)
+public readonly record struct XpbdGraphKernels(ComputePipelineDesc Initialize, ComputePipelineDesc Project)
 {
     public ComputePipelineDesc? WriteDispatchArguments { get; init; }
 }
@@ -21,7 +21,7 @@ public sealed class DeviceXpbdProjection<TData, TState> : IDisposable where TDat
     private readonly IGraphicsBackend _backend;
     private readonly Device _device;
     private readonly DeviceBodies _bodies;
-    private readonly DeviceBodyDynamics _dynamics;
+    private readonly BodyDynamicsCommands _dynamics;
     private readonly DeviceConstraintData<TData> _data;
     private readonly DeviceConstraintState<TState> _state;
     private readonly World _world;
@@ -39,10 +39,11 @@ public sealed class DeviceXpbdProjection<TData, TState> : IDisposable where TDat
     private readonly int _threadsPerGroup;
     private readonly JobResourceAccess[] _extraAccesses;
     private bool _initialized;
+    private readonly PhysicsQueryWindow _window;
 
     public DeviceXpbdProjection(IGraphicsBackend backend, Device device, World world, QueryHandle rows,
-        DeviceBodies bodies, DeviceBodyDynamics dynamics, DeviceConstraintData<TData> data,
-        DeviceConstraintState<TState> state, DeviceXpbdKernels kernels, int threadsPerGroup,
+        DeviceBodies bodies, BodyDynamicsCommands dynamics, DeviceConstraintData<TData> data,
+        DeviceConstraintState<TState> state, XpbdGraphKernels kernels, int threadsPerGroup,
         IReadOnlyDictionary<string, ResourceBinding[]>? extraBindings = null, ReadOnlyMemory<JobResourceAccess> extraAccesses = default)
     {
         _backend = backend; _device = device; _bodies = bodies; _data = data; _state = state; _threadsPerGroup = threadsPerGroup;
@@ -50,7 +51,7 @@ public sealed class DeviceXpbdProjection<TData, TState> : IDisposable where TDat
         _world = world;
         QueryDefinition definition = world.GetQueryDefinition(rows).AsReadOnly()
             .WithOptionalRead<DeviceXpbdState<TState>>();
-        _rows = world.Query(definition);
+        _rows = world.Query(definition); _window = new(definition);
         var resources = new QueryReadResources();
         resources.Add<DeviceConstraintBinding<TData>, DeviceConstraintReferenceResources<TData>>();
         resources.Add<DeviceXpbdState<TState>, DeviceXpbdStateResources<TState>>();
@@ -99,8 +100,9 @@ public sealed class DeviceXpbdProjection<TData, TState> : IDisposable where TDat
         using (MappedBuffer mapping = _backend.Map(_indices, MapType.Write, BufferRange.Whole))
         {
             var selected = new SelectedRows(_data, _state, mapping);
-            _world.ExecuteReadQuery(_rows, ref selected,
+            _world.ExecuteReadQuery(_rows, _window.Begin(context), ref selected,
                 static (scoped QueryCursor rows, ref SelectedRows selection) => selection.Read(rows));
+            _window.Accept(selected.Version);
             count = selected.Count;
             mapping.Flush(new(0, (ulong)count * 16));
         }
@@ -111,8 +113,9 @@ public sealed class DeviceXpbdProjection<TData, TState> : IDisposable where TDat
             MemoryMarshal.Write(mapping.Bytes, in step);
             mapping.Flush(new(0, (ulong)Unsafe.SizeOf<XpbdStep>()));
         }
+        _state.Memory?.EnsureRows(_data.RowCount);
         _backend.Begin(_commands, new(0, 0, 16));
-        if (!_initialized)
+        if (!_initialized && _state.Memory?.Contains(_state.States) != true)
             _backend.Barrier(_commands, new BufferBarrier(_state.States, _state.States.InitialSync, PipelineSync.ComputeShading,
                 _state.States.InitialAccess, ResourceAccess.UnorderedAccess));
         _backend.SetPipeline(_commands, _pipelines[kernel]);
@@ -127,7 +130,7 @@ public sealed class DeviceXpbdProjection<TData, TState> : IDisposable where TDat
         _initialized = true;
         return _backend.Submit(_backend.GetQueue(_device, QueueType.Compute), new([], [], [recorded], [], []));
     }
-    [StructLayout(LayoutKind.Sequential)]
+    [StructLayout(LayoutKind.Sequential, Size = 48)]
     private readonly record struct XpbdStep(uint Capacity, float Duration, long Number, double StartTime,
         double EndTime, uint Substep, uint Substeps);
     [StructLayout(LayoutKind.Sequential, Size = 16)]
@@ -135,8 +138,10 @@ public sealed class DeviceXpbdProjection<TData, TState> : IDisposable where TDat
     private struct SelectedRows(DeviceConstraintData<TData> data, DeviceConstraintState<TState> state, MappedBuffer mapping)
     {
         internal int Count;
+        internal uint Version;
         internal void Read(scoped QueryCursor rows)
         {
+            Version = rows.CurrentSystemVersion;
             foreach (QueryRow row in rows.Rows)
             {
                 DeviceConstraintBinding<TData> binding = row.Read<DeviceConstraintBinding<TData>>();
@@ -151,6 +156,7 @@ public sealed class DeviceXpbdProjection<TData, TState> : IDisposable where TDat
     {
         public IGraphicsBackend Backend => project._backend;
         public Device Device => project._device;
+        public SomeEngine.Graphics.Queue Queue => Backend.GetQueue(Device, QueueType.Compute);
         public QueueCompletion Submit() => project.Submit(in context, kernel, iterations);
     }
     public void Dispose()

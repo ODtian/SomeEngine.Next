@@ -61,14 +61,14 @@ public sealed partial class DeviceAvbdTests
             backend, device, world, points, parameters, new(histories), "DeviceContactAvbdSelection");
         using var selectedResponse = new DeviceConstraintSelection<ContactPoint, DeviceContactConstraint, DeviceContactResponseRows>(
             backend, device, world, points, parameters, new(responses), "DeviceContactResponsesSelection");
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileDynamics(), 64);
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileDynamics(), 64);
         using var results = new DeviceBodyResults(backend, device, bodies);
         using var contactResults = new DeviceContactResults(backend, device, parameters, responses);
         var bindings = new Dictionary<string, ResourceBinding[]>();
         parameters.AddBindings(bindings); anchors.AddBindings(bindings); histories.AddBindings(bindings); responses.AddBindings(bindings);
         JobResourceAccess[] reads = [.. parameters.GetReadAccesses(jobs), anchors.GetReadAccess(jobs)];
         using var graph = new DeviceConstraintGraph(backend, device, bodies, dynamics, CompileContactGraph(), new(4, 2), bindings, reads, 64, new[] { selected });
-        using var solver = new DeviceAvbdSolver(backend, device, bodies, equations, graph, CompileContactAvbd(), new(1, 1, 1, 0), bindings,
+        using var solver = new AvbdGraphCommands(backend, device, bodies, equations, graph, CompileContactAvbd(), new(1, 1, 1, 0), bindings,
             reads.Concat(new[] { histories.GetWriteAccess(jobs), responses.GetWriteAccess(jobs) }).ToArray(), 64,
             new IDeviceConstraintSelection[] { selectedState, selectedResponse });
         using var response = new DeviceContactActions(backend, device, bodies, graph, responses, CompileContactActions(), bindings, reads, 64, new[] { selectedResponse });
@@ -90,8 +90,9 @@ public sealed partial class DeviceAvbdTests
         simulation.Schedule(1, .1, .1).Complete();
 
         Assert.Equal(original, SinglePoint(world, points));
-        Assert.InRange(world.Read<BodyPose>(moving).Position.X, 1.94443f, 1.94446f);
+        Assert.Equal(1, world.Read<BodyStepState>(moving).Number);
         Assert.InRange(world.Read<BodyVelocity>(moving).Linear.X, 2.7776f, 2.7780f);
+        Assert.InRange(world.Read<BodyPose>(moving).Position.X, 1.94443f, 1.94446f);
         Assert.InRange(world.Read<ContactResponse>(original).ForceOnSecond.X, 11.110f, 11.113f);
         Assert.Equal(1, world.Read<BodyStepState>(moving).Number);
         world.ReleaseQuery(stateRows); world.ReleaseQuery(points); world.ReleaseQuery(poses);
@@ -121,15 +122,11 @@ public sealed partial class DeviceAvbdTests
         }
         QueryHandle members = world.Query(new QueryDefinitionBuilder().Read<DeviceBodyBinding>());
         QueryHandle spheres = world.Query(new QueryDefinitionBuilder().Read<SphereGeometry>());
-        QueryHandle poses = world.Query(new QueryDefinitionBuilder().Read<BodyPose>());
-        QueryHandle points = world.Query(new QueryDefinitionBuilder().Read<ContactPoint>());
-        QueryHandle stateRows = world.Query(new QueryDefinitionBuilder().Read<AvbdContactState>()
-            .Read<DeviceConstraintBinding<DeviceContactConstraint>>().Read<DeviceAvbdState<DeviceAvbdContactState>>());
+        QueryHandle points = world.Query(new QueryDefinitionBuilder().Read<ContactPointReference>());
         var pairs = world.Within(spheres);
         using var detection = new DeviceCollisionDetection(backend, device, grid, geometry, CompileHistoryReferencedDetection(), 0,
             new DeviceDetectionCapacity(4, 4, 1) { BodiesPerContact = 2 }, new(1e-5f, 32, 64), 0,
-            DeviceInputTransfer.Resident, DeviceCollisionReadback.Contacts);
-        using var detected = new ContactPointBuffer(jobs, 4, 8);
+            DeviceInputTransfer.Resident, DeviceCollisionReadback.ContactChanges);
         using var parameters = new DeviceConstraintData<DeviceContactConstraint>(backend, device, 4, "DeviceContacts");
         using var anchors = new DeviceContactBodies(backend, device, 4, 2);
         using var histories = new DeviceConstraintState<DeviceAvbdContactState>(backend, device, 4, "DeviceAvbdContactStates");
@@ -137,17 +134,16 @@ public sealed partial class DeviceAvbdTests
         using var matching = new DeviceContactMatches(backend, device, world, points, parameters, detection, bodies, anchors,
             CompileContactMatching(), new(.25f, .99f, true), bucketCount: 17, threadsPerGroup: 64);
         using var currentContacts = matching.CreateGeometryUpdate(bodies, anchors, CompileCurrentContactGeometry());
-        using var refresh = ContactPoints.Create(world, poses, points, detected, new AverageContactMaterials(),
-            matching.Components(new DeviceHistoryComponents(histories, responses)), new(.25f, .99f, true));
-        using var input = parameters.WriteInputs<ContactPoint, DeviceContactSource>(world, points, new(anchors), 64, [anchors.GetUploadAccess(jobs)]);
-        using var stateInput = new DeviceAvbdStateInputs<AvbdContactState, DeviceContactConstraint, DeviceAvbdContactState, DeviceAvbdContactStateSource>(
-            backend, device, world, stateRows, parameters, histories, default);
-        using var selected = new DeviceConstraintSelection<ContactPoint, DeviceContactConstraint>(backend, device, world, points, parameters, "DeviceContactsSelection");
-        using var selectedState = new DeviceConstraintSelection<ContactPoint, DeviceContactConstraint, DeviceAvbdStateRows<DeviceAvbdContactState>>(
+        using var identities = new ContactIdentities<AverageContactMaterials, DeviceIdentityHistoryComponents>(world, points, matching, parameters,
+            CompileHistoryIdentityInputs(), new(), new(histories, responses));
+        using var initializeStates = new ContactStateInitialization<DeviceAvbdContactState>(backend, device, matching, histories,
+            new() { NormalPenalty = 100, TangentPenalty = 100 }, CompileHistoryStateInitialization());
+        using var selected = new DeviceConstraintSelection<ContactPointReference, DeviceContactConstraint>(backend, device, world, points, parameters, "DeviceContactsSelection");
+        using var selectedState = new DeviceConstraintSelection<DeviceAvbdState<DeviceAvbdContactState>, DeviceContactConstraint, DeviceAvbdStateRows<DeviceAvbdContactState>>(
             backend, device, world, points, parameters, new(histories), "DeviceContactAvbdSelection");
-        using var selectedResponse = new DeviceConstraintSelection<ContactPoint, DeviceContactConstraint, DeviceContactResponseRows>(
+        using var selectedResponse = new DeviceConstraintSelection<DeviceContactResponseBinding, DeviceContactConstraint, DeviceContactResponseRows>(
             backend, device, world, points, parameters, new(responses), "DeviceContactResponsesSelection");
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileDynamics(), 64);
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileDynamics(), 64);
         using var bodyInputs = new DeviceBodyInputs(world, members, bodies);
         using var sphereInputs = grid.WriteGeometryReferences<SphereGeometry, DeviceComponentSource<SphereGeometry, DeviceSphereReader>>(pairs, default, 0, 64);
         using var update = new UpdateDeviceGeometry(backend, device, grid, geometry, CompileHistoryGeometryUpdate(), 0, DeviceInputTransfer.Upload);
@@ -156,17 +152,15 @@ public sealed partial class DeviceAvbdTests
         var bindings = new Dictionary<string, ResourceBinding[]>();
         parameters.AddBindings(bindings); anchors.AddBindings(bindings); histories.AddBindings(bindings); responses.AddBindings(bindings);
         JobResourceAccess[] reads = [.. parameters.GetReadAccesses(jobs), anchors.GetReadAccess(jobs)];
-        using var graph = new DeviceConstraintGraph(backend, device, bodies, dynamics, CompileContactGraph(), new(4, 2), bindings, reads, 64, new[] { selected });
-        using var solver = new DeviceAvbdSolver(backend, device, bodies, equations, graph, CompileContactAvbd(), new(1, 1, 1, 0), bindings,
+        using var graph = new DeviceConstraintGraph(backend, device, bodies, dynamics, CompileHistoryAvbdGraph(), new(4, 2), bindings, reads, 64, new[] { selected });
+        using var solver = new AvbdGraphCommands(backend, device, bodies, equations, graph, CompileContactAvbd(), new(1, 1, 1, 0), bindings,
             reads.Concat(new[] { histories.GetWriteAccess(jobs), responses.GetWriteAccess(jobs) }).ToArray(), 64,
             new IDeviceConstraintSelection[] { selectedState, selectedResponse });
         using var response = new DeviceContactActions(backend, device, bodies, graph, responses, CompileContactActions(), bindings, reads, 64, new[] { selectedResponse });
         var stages = bodyInputs.Upload().Then(grid.BeginInputs()).Then(sphereInputs).Then(update.Update())
             .Then(grid.Build(pairs, DevicePairRules.None, DeviceInputTransfer.Resident, DevicePairReadback.None)).Then(detection.Detect())
-            .Then(detection.WriteContacts(new ContactPointOutput(detected), new JobResourceAccess[] { detected.WriteAccess }))
-            .Then(matching.Match()).Then(refresh.Refresh(matching.Results))
-            .Then(parameters.BeginInputs()).Then(input).Then(parameters.UploadInputs()).Then(anchors.UploadInputs()).Then(stateInput.Upload())
-            .Then(currentContacts.Update()).Then(dynamics.Predict(Vector3.Zero)).Then(response.Initialize())
+            .Then(identities.UploadInputs()).Then(matching.Match()).Then(identities.Update())
+            .Then(matching.UpdateRows().Then(currentContacts.Update()).Then(initializeStates.Initialize())).Then(dynamics.Predict(Vector3.Zero)).Then(response.Initialize())
             .Then(solver.Solve()).Then(dynamics.UpdateVelocities());
         var simulation = PhysicsSimulation.Create(world, QueryDefinition.Empty, stages, 1);
         var initialize = new PhysicsStepContext(world, QueryDefinition.Empty, 0, 0, 1, 0, .1);
@@ -174,7 +168,7 @@ public sealed partial class DeviceAvbdTests
 
         simulation.Schedule(0, 0, .1).Complete();
         Entity original = SinglePoint(world, points);
-        detected.Clear();
+        world.Add(original, new ContactResponse());
         PhysicsStepResult completed = simulation.Schedule(1, .1, .1);
         var outputContext = new PhysicsStepContext(world, QueryDefinition.Empty, 1, 0, 1, .1, .1);
         results.Readback(64).Then(contactResults.Readback(64)).Schedule(in outputContext, completed.Completion).Complete();
@@ -184,7 +178,7 @@ public sealed partial class DeviceAvbdTests
         Assert.InRange(world.Read<BodyVelocity>(moving).Linear.X, 2.7776f, 2.7780f);
         Assert.InRange(world.Read<ContactResponse>(original).ForceOnSecond.X, 11.110f, 11.113f);
         Assert.Equal(1, world.Read<BodyStepState>(moving).Number);
-        world.ReleaseQuery(stateRows); world.ReleaseQuery(points); world.ReleaseQuery(poses);
+        world.ReleaseQuery(points);
         world.ReleaseQuery(spheres); world.ReleaseQuery(members);
     }
 
@@ -211,14 +205,10 @@ public sealed partial class DeviceAvbdTests
         }
         QueryHandle members = world.Query(new QueryDefinitionBuilder().Read<DeviceBodyBinding>());
         QueryHandle spheres = world.Query(new QueryDefinitionBuilder().Read<SphereGeometry>());
-        QueryHandle poses = world.Query(new QueryDefinitionBuilder().Read<BodyPose>());
-        QueryHandle points = world.Query(new QueryDefinitionBuilder().Read<ContactPoint>());
-        QueryHandle stateRows = world.Query(new QueryDefinitionBuilder().Read<AvbdContactState>()
-            .Read<DeviceConstraintBinding<DeviceContactConstraint>>().Read<DeviceAvbdState<DeviceAvbdContactState>>());
+        QueryHandle points = world.Query(new QueryDefinitionBuilder().Read<ContactPointReference>());
         var pairs = world.Within(spheres);
         using var detection = new DeviceCollisionDetection(backend, device, grid, geometry, CompileHistoryReferencedDetection(), 0,
-            new(4, 4, 1), new(1e-5f, 32, 64), 0, DeviceInputTransfer.Resident, DeviceCollisionReadback.Contacts);
-        using var detected = new ContactPointBuffer(jobs, 4, 8);
+            new(4, 4, 1), new(1e-5f, 32, 64), 0, DeviceInputTransfer.Resident, DeviceCollisionReadback.ContactChanges);
         using var parameters = new DeviceConstraintData<DeviceContactConstraint>(backend, device, 4, "DeviceContacts");
         using var anchors = new DeviceContactBodies(backend, device, 4, 2);
         using var histories = new DeviceConstraintState<DeviceAvbdContactState>(backend, device, 4, "DeviceAvbdContactStates");
@@ -226,17 +216,16 @@ public sealed partial class DeviceAvbdTests
         using var matching = new DeviceContactMatches(backend, device, world, points, parameters, detection, bodies, anchors,
             CompileContactMatching(), new(.25f, .99f, true), bucketCount: 17, threadsPerGroup: 64);
         using var currentContacts = matching.CreateGeometryUpdate(bodies, anchors, CompileCurrentContactGeometry());
-        using var refresh = ContactPoints.Create(world, poses, points, detected, new AverageContactMaterials(),
-            matching.Components(new DeviceHistoryComponents(histories, responses)), new(.25f, .99f, true));
-        using var input = parameters.WriteInputs<ContactPoint, DeviceContactSource>(world, points, new(anchors), 64, [anchors.GetUploadAccess(jobs)]);
-        using var stateInput = new DeviceAvbdStateInputs<AvbdContactState, DeviceContactConstraint, DeviceAvbdContactState, DeviceAvbdContactStateSource>(
-            backend, device, world, stateRows, parameters, histories, default);
-        using var selected = new DeviceConstraintSelection<ContactPoint, DeviceContactConstraint>(backend, device, world, points, parameters, "DeviceContactsSelection");
-        using var selectedState = new DeviceConstraintSelection<ContactPoint, DeviceContactConstraint, DeviceAvbdStateRows<DeviceAvbdContactState>>(
+        using var identities = new ContactIdentities<AverageContactMaterials, DeviceIdentityHistoryComponents>(world, points, matching, parameters,
+            CompileHistoryIdentityInputs(), new(), new(histories, responses));
+        using var initializeStates = new ContactStateInitialization<DeviceAvbdContactState>(backend, device, matching, histories,
+            new() { NormalPenalty = 100, TangentPenalty = 100 }, CompileHistoryStateInitialization());
+        using var selected = new DeviceConstraintSelection<ContactPointReference, DeviceContactConstraint>(backend, device, world, points, parameters, "DeviceContactsSelection");
+        using var selectedState = new DeviceConstraintSelection<DeviceAvbdState<DeviceAvbdContactState>, DeviceContactConstraint, DeviceAvbdStateRows<DeviceAvbdContactState>>(
             backend, device, world, points, parameters, new(histories), "DeviceContactAvbdSelection");
-        using var selectedResponse = new DeviceConstraintSelection<ContactPoint, DeviceContactConstraint, DeviceContactResponseRows>(
+        using var selectedResponse = new DeviceConstraintSelection<DeviceContactResponseBinding, DeviceContactConstraint, DeviceContactResponseRows>(
             backend, device, world, points, parameters, new(responses), "DeviceContactResponsesSelection");
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileDynamics(), 64);
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileDynamics(), 64);
         using var bodyInputs = new DeviceBodyInputs(world, members, bodies);
         using var sphereInputs = grid.WriteGeometryReferences<SphereGeometry, DeviceComponentSource<SphereGeometry, DeviceSphereReader>>(pairs, default, 0, 64);
         using var update = new UpdateDeviceGeometry(backend, device, grid, geometry, CompileHistoryGeometryUpdate(), 0, DeviceInputTransfer.Upload);
@@ -245,17 +234,15 @@ public sealed partial class DeviceAvbdTests
         var bindings = new Dictionary<string, ResourceBinding[]>();
         parameters.AddBindings(bindings); anchors.AddBindings(bindings); histories.AddBindings(bindings); responses.AddBindings(bindings);
         JobResourceAccess[] reads = [.. parameters.GetReadAccesses(jobs), anchors.GetReadAccess(jobs)];
-        using var graph = new DeviceConstraintGraph(backend, device, bodies, dynamics, CompileContactGraph(), new(4, 2), bindings, reads, 64, new[] { selected });
-        using var solver = new DeviceAvbdSolver(backend, device, bodies, equations, graph, CompileContactAvbd(), new(1, 1, 1, 0), bindings,
+        using var graph = new DeviceConstraintGraph(backend, device, bodies, dynamics, CompileHistoryAvbdGraph(), new(4, 2), bindings, reads, 64, new[] { selected });
+        using var solver = new AvbdGraphCommands(backend, device, bodies, equations, graph, CompileContactAvbd(), new(1, 1, 1, 0), bindings,
             reads.Concat(new[] { histories.GetWriteAccess(jobs), responses.GetWriteAccess(jobs) }).ToArray(), 64,
             new IDeviceConstraintSelection[] { selectedState, selectedResponse });
         using var response = new DeviceContactActions(backend, device, bodies, graph, responses, CompileContactActions(), bindings, reads, 64, new[] { selectedResponse });
         var stages = bodyInputs.Upload().Then(grid.BeginInputs()).Then(sphereInputs).Then(update.Update())
             .Then(grid.Build(pairs, DevicePairRules.None, DeviceInputTransfer.Resident, DevicePairReadback.None)).Then(detection.Detect())
-            .Then(detection.WriteContacts(new ContactPointOutput(detected), new JobResourceAccess[] { detected.WriteAccess }))
-            .Then(matching.Match()).Then(refresh.Refresh(matching.Results))
-            .Then(parameters.BeginInputs()).Then(input).Then(parameters.UploadInputs()).Then(anchors.UploadInputs()).Then(stateInput.Upload())
-            .Then(currentContacts.Update()).Then(dynamics.Predict(Vector3.Zero)).Then(response.Initialize())
+            .Then(identities.UploadInputs()).Then(matching.Match()).Then(identities.Update())
+            .Then(matching.UpdateRows().Then(currentContacts.Update()).Then(initializeStates.Initialize())).Then(dynamics.Predict(Vector3.Zero)).Then(response.Initialize())
             .Then(solver.Solve()).Then(dynamics.UpdateVelocities());
         var simulation = PhysicsSimulation.Create(world, QueryDefinition.Empty, stages, 1);
         var initialize = new PhysicsStepContext(world, QueryDefinition.Empty, 0, 0, 1, 0, .1);
@@ -269,18 +256,19 @@ public sealed partial class DeviceAvbdTests
         world.Add(replacement, new ContactMaterial { NormalStiffness = 100 });
         world.Add(replacement, new DeviceCollisionBody(grid, 1));
         world.Add(replacement, new DeviceGeometryBinding(geometry, 1));
-        detected.Clear();
         PhysicsStepResult completed = simulation.Schedule(1, .1, .1);
+        completed.Complete();
+        Entity current = SinglePoint(world, points);
+        world.Add(current, new ContactResponse());
         var outputContext = new PhysicsStepContext(world, QueryDefinition.Empty, 1, 0, 1, .1, .1);
         results.Readback(64).Then(contactResults.Readback(64)).Schedule(in outputContext, completed.Completion).Complete();
 
-        Entity current = SinglePoint(world, points);
         Assert.NotEqual(original, current);
         Assert.InRange(world.Read<BodyPose>(replacement).Position.X, 1.66665f, 1.66669f);
         Assert.InRange(world.Read<BodyVelocity>(replacement).Linear.X, 1.6665f, 1.6669f);
         Assert.InRange(world.Read<ContactResponse>(current).ForceOnSecond.X, 16.665f, 16.668f);
         Assert.Equal(1, world.Read<BodyStepState>(replacement).Number);
-        world.ReleaseQuery(stateRows); world.ReleaseQuery(points); world.ReleaseQuery(poses);
+        world.ReleaseQuery(points);
         world.ReleaseQuery(spheres); world.ReleaseQuery(members);
     }
 
@@ -332,7 +320,7 @@ public sealed partial class DeviceAvbdTests
             backend, device, world, points, parameters, new(histories), "DeviceContactAvbdSelection");
         using var selectedResponse = new DeviceConstraintSelection<ContactPoint, DeviceContactConstraint, DeviceContactResponseRows>(
             backend, device, world, points, parameters, new(responses), "DeviceContactResponsesSelection");
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileDynamics(), 64);
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileDynamics(), 64);
         using var bodyInputs = new DeviceBodyInputs(world, members, bodies);
         using var sphereInputs = grid.WriteGeometryReferences<SphereGeometry, DeviceComponentSource<SphereGeometry, DeviceSphereReader>>(pairs, default, 0, 64);
         using var update = new UpdateDeviceGeometry(backend, device, grid, geometry, CompileHistoryGeometryUpdate(), 0, DeviceInputTransfer.Upload);
@@ -342,7 +330,7 @@ public sealed partial class DeviceAvbdTests
         parameters.AddBindings(bindings); anchors.AddBindings(bindings); histories.AddBindings(bindings); responses.AddBindings(bindings);
         JobResourceAccess[] reads = [.. parameters.GetReadAccesses(jobs), anchors.GetReadAccess(jobs)];
         using var graph = new DeviceConstraintGraph(backend, device, bodies, dynamics, CompileContactGraph(), new(4, 2), bindings, reads, 64, new[] { selected });
-        using var solver = new DeviceAvbdSolver(backend, device, bodies, equations, graph, CompileContactAvbd(), new(1, 1, 1, 0), bindings,
+        using var solver = new AvbdGraphCommands(backend, device, bodies, equations, graph, CompileContactAvbd(), new(1, 1, 1, 0), bindings,
             reads.Concat(new[] { histories.GetWriteAccess(jobs), responses.GetWriteAccess(jobs) }).ToArray(), 64,
             new IDeviceConstraintSelection[] { selectedState, selectedResponse });
         using var response = new DeviceContactActions(backend, device, bodies, graph, responses, CompileContactActions(), bindings, reads, 64, new[] { selectedResponse });
@@ -351,7 +339,7 @@ public sealed partial class DeviceAvbdTests
             .Then(detection.WriteContacts(new ContactPointOutput(detected), new JobResourceAccess[] { detected.WriteAccess }))
             .Then(matching.Match()).Then(refresh.Refresh(currentContacts.Results))
             .Then(input.Upload()).Then(stateInput.Upload())
-            .Then(currentContacts.Update()).Then(dynamics.Predict(Vector3.Zero)).Then(response.Initialize())
+            .Then(matching.UpdateRows().Then(currentContacts.Update())).Then(dynamics.Predict(Vector3.Zero)).Then(response.Initialize())
             .Then(solver.Solve()).Then(dynamics.UpdateVelocities());
         var simulation = PhysicsSimulation.Create(world, QueryDefinition.Empty, stages, 1);
         var initialize = new PhysicsStepContext(world, QueryDefinition.Empty, 0, 0, 1, 0, .1);
@@ -386,6 +374,51 @@ public sealed partial class DeviceAvbdTests
             commands.Add(point, new DeviceContactResponseBinding(responses));
         }
     }
+    private readonly struct DeviceIdentityHistoryComponents(DeviceConstraintState<DeviceAvbdContactState> histories,
+        DeviceConstraintState<DeviceContactResponseState> responses) : IContactIdentityComponents
+    {
+        public void Add(ref JobCommandWriter commands, DeferredEntity point, in ContactPointReference geometry, in PhysicsStepContext context)
+        {
+            commands.Add(point, new DeviceAvbdState<DeviceAvbdContactState>(histories));
+            commands.Add(point, new DeviceContactResponseBinding(responses));
+        }
+    }
+    private ComputePipelineDesc CompileHistoryStateInitialization()
+    {
+        D3D12TestShader shader = shaderCompiler.CompileWithSearchPaths("contact_history_initialization", "#include \"physics_contact_state_initialization.slang\"",
+            [new("InitializeContactStateRows", SlangStage.Compute)], "sm_6_0", ShaderDirectory());
+        return Entry(shader, 0);
+    }
+    private ContactIdentityKernels CompileHistoryIdentityInputs()
+    {
+        D3D12TestShader shader = shaderCompiler.CompileWithSearchPaths("contact_history_inputs", "#include \"physics_contact_identity_inputs.slang\"",
+            [new("ClearRemovedContactInputs", SlangStage.Compute), new("WriteContactIdentityInputs", SlangStage.Compute)], "sm_6_0", ShaderDirectory());
+        return new(Entry(shader, 0), Entry(shader, 1));
+    }
+    private DeviceGraphKernels CompileHistoryAvbdGraph()
+    {
+        D3D12TestShader shader = shaderCompiler.CompileWithSearchPaths("contact_history_parallel_graph", """
+            #include "physics_contact_data.slang"
+            [shader("compute")][numthreads(64,1,1)]
+            void WriteRows(uint3 id:SV_DispatchThreadID)
+            { DeviceContactBodies rows; writeDeviceConstraintGraphRows(devicePhysicsThreadIndex(id,64),rows); }
+            #include "physics_constraint_graph_parallel.slang"
+            #include "physics_avbd_graph_colors.slang"
+            """, [new("WriteRows", SlangStage.Compute), new("InitializeDeviceGraph", SlangStage.Compute),
+            new("ConnectDeviceGraph", SlangStage.Compute), new("CompressDeviceGraph", SlangStage.Compute),
+            new("ScanDeviceGraphDegrees", SlangStage.Compute), new("OffsetDeviceGraphBlocks", SlangStage.Compute),
+            new("AddDeviceGraphDegreeOffsets", SlangStage.Compute), new("WriteDeviceGraphAdjacency", SlangStage.Compute),
+            new("ResetDeviceGraphColorProgress", SlangStage.Compute), new("ProposeDeviceBodyColors", SlangStage.Compute),
+            new("ResolveDeviceBodyColors", SlangStage.Compute), new("ProposeDeviceRowColors", SlangStage.Compute),
+            new("ResolveDeviceRowColors", SlangStage.Compute), new("CountDeviceGraphColors", SlangStage.Compute),
+            new("OffsetDeviceGraphGroups", SlangStage.Compute), new("CountDeviceGraphRows", SlangStage.Compute),
+            new("OffsetDeviceGraphRanges", SlangStage.Compute), new("WriteDeviceGraphWork", SlangStage.Compute),
+            new("PrepareAvbdGraphColors", SlangStage.Compute)], "sm_6_0", ShaderDirectory());
+        return new(Entry(shader, 0), new DeviceGraphParallelKernels(Entry(shader, 1), Entry(shader, 2), Entry(shader, 3), Entry(shader, 4),
+            Entry(shader, 5), Entry(shader, 6), Entry(shader, 7), Entry(shader, 8), Entry(shader, 9), Entry(shader, 10),
+            Entry(shader, 11), Entry(shader, 12), Entry(shader, 13), Entry(shader, 14), Entry(shader, 15), Entry(shader, 16),
+            Entry(shader, 17)) { PrepareColors = Entry(shader, 18) });
+    }
     private static Entity SinglePoint(World world, QueryHandle points)
     {
         var entities = new List<Entity>();
@@ -414,8 +447,9 @@ public sealed partial class DeviceAvbdTests
     {
         D3D12TestShader shader = shaderCompiler.CompileWithSearchPaths("contact_history_matching", "#include \"physics_contact_matching.slang\"",
             [new("ClearDeviceContactMatches", SlangStage.Compute), new("IndexDeviceContactMatches", SlangStage.Compute),
-                new("MatchDeviceContacts", SlangStage.Compute)], "sm_6_0", ShaderDirectory());
-        return new(Entry(shader, 0), Entry(shader, 1), Entry(shader, 2));
+                new("MatchDeviceContacts", SlangStage.Compute), new("ClaimContactInputs", SlangStage.Compute),
+                new("CollectNewContactInputs", SlangStage.Compute), new("CollectRemovedContactRows", SlangStage.Compute)], "sm_6_0", ShaderDirectory());
+        return new(Entry(shader, 0), Entry(shader, 1), Entry(shader, 2), Entry(shader, 3), Entry(shader, 4), Entry(shader, 5));
     }
     private ComputePipelineDesc CompileHistoryReferencedDetection()
     {

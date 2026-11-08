@@ -53,7 +53,7 @@ public sealed partial class DeviceAvbdTests
             .Read<DeviceConstraintBinding<DeviceContactConstraint>>().Read<DeviceAvbdState<DeviceAvbdContactState>>());
         var pairs = world.Within(shapes);
         using var bodyInputs = new DeviceBodyInputs(world, members, bodies);
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileDynamics(), 64);
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileDynamics(), 64);
         using var sphereInputs = grid.WriteGeometryReferences<SphereGeometry, DeviceComponentSource<SphereGeometry, DeviceSphereReader>>(pairs, default, 0, 64);
         using var boxInputs = grid.WriteGeometryReferences<BoxGeometry, DeviceComponentSource<BoxGeometry, DeviceBoxReader>>(pairs, default, 1, 64);
         using var hullInputs = grid.WriteGeometryReferences<ConvexHullGeometry, DeviceComponentSource<ConvexHullGeometry, DeviceHullReader>>(pairs, default, 2, 64);
@@ -87,7 +87,7 @@ public sealed partial class DeviceAvbdTests
         JobResourceAccess[] reads = [.. parameters.GetReadAccesses(jobs), anchors.GetReadAccess(jobs)];
         using var graph = new DeviceConstraintGraph(backend, device, bodies, dynamics, CompileContactGraph(), new(16, 2), bindings, reads, 64, new[] { selected });
         JobResourceAccess[] solveAccesses = [.. reads, histories.GetWriteAccess(jobs), responses.GetWriteAccess(jobs)];
-        using var solve = new DeviceAvbdSolver(backend, device, bodies, equations, graph, CompileContactAvbd(), new(16, 2, .8f, 0),
+        using var solve = new AvbdGraphCommands(backend, device, bodies, equations, graph, CompileContactAvbd(), new(16, 2, .8f, 0),
             bindings, solveAccesses, 64,
             new IDeviceConstraintSelection[] { selectedState, selectedResponse });
         using var response = new DeviceContactActions(backend, device, bodies, graph, responses, CompileContactActions(), bindings, reads, 64, new[] { selectedResponse });
@@ -100,7 +100,7 @@ public sealed partial class DeviceAvbdTests
             .Then(new ClearThinFloorContacts(detected)).Then(detection.Detect())
             .Then(detection.WriteContacts(new ContactPointOutput(detected), new[] { detected.WriteAccess }))
             .Then(matching.Match()).Then(refresh.Refresh(current.Results)).Then(input.Upload()).Then(stateInput.Upload())
-            .Then(current.Update()).Then(response.Initialize()).Then(solve.Solve()).Then(dynamics.UpdateVelocities());
+            .Then(matching.UpdateRows().Then(current.Update())).Then(response.Initialize()).Then(solve.Solve()).Then(dynamics.UpdateVelocities());
         var initialize = new PhysicsStepContext(world, QueryDefinition.Empty, 17, 0, 1, 10, h);
         parameters.BeginInputs().Then(parameters.UploadInputs()).Schedule(in initialize, default).Complete();
         using var frame = PhysicsSimulation.Create(world, QueryDefinition.Empty, stages, 1)

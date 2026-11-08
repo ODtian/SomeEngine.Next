@@ -108,6 +108,13 @@ public readonly ref struct ReadOnlyQueryPacket
         return true;
     }
 
+    /// <summary>Returns the original component write versions for this borrowed row range.</summary>
+    public ReadOnlySpan<uint> ReadWriteVersions<T>() where T : struct
+    {
+        int column = QueryAccessGuards.RequireAccess<T>(_match, read: true, write: false);
+        return _chunk.WriteVersionRows(column).Slice(_rowStart, Count);
+    }
+
     /// <summary>
     /// Tests whether any component row in this packet changed since the system version.
     /// A sliced packet tests only its own rows. The coarse column version rejects

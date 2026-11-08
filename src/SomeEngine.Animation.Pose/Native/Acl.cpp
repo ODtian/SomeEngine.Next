@@ -12,6 +12,12 @@
 #include <cstring>
 #include <utility>
 
+#if defined(_WIN32)
+#define SE_ACL_EXPORT __declspec(dllexport)
+#else
+#define SE_ACL_EXPORT __attribute__((visibility("default")))
+#endif
+
 struct BoneTransform
 {
     float translation[3];
@@ -41,7 +47,7 @@ struct PoseWriter final : acl::track_writer
     }
 };
 
-extern "C" __declspec(dllexport) int se_acl_compress(const BoneTransform* samples,
+extern "C" SE_ACL_EXPORT int se_acl_compress(const BoneTransform* samples,
     uint32_t bone_count, uint32_t sample_count, float sample_rate, const int16_t* parents,
     float precision, float shell_distance, void** output, uint32_t* output_size,
     char* error, int error_capacity)
@@ -90,12 +96,12 @@ extern "C" __declspec(dllexport) int se_acl_compress(const BoneTransform* sample
     return 0;
 }
 
-extern "C" __declspec(dllexport) void se_acl_free(void* data)
+extern "C" SE_ACL_EXPORT void se_acl_free(void* data)
 {
     std::free(data);
 }
 
-extern "C" __declspec(dllexport) int se_acl_info(const void* data, uint32_t size,
+extern "C" SE_ACL_EXPORT int se_acl_info(const void* data, uint32_t size,
     uint32_t* bone_count, float* sample_rate, char* error, int error_capacity)
 {
     if (size < sizeof(acl::compressed_tracks))
@@ -120,7 +126,7 @@ extern "C" __declspec(dllexport) int se_acl_info(const void* data, uint32_t size
     return 0;
 }
 
-extern "C" __declspec(dllexport) void se_acl_sample(const void* data, const float* times,
+extern "C" SE_ACL_EXPORT void se_acl_sample(const void* data, const float* times,
     int sample_count, const int16_t* bones, int bone_count, BoneTransform* output, int row_stride)
 {
     const auto& tracks = *static_cast<const acl::compressed_tracks*>(data);

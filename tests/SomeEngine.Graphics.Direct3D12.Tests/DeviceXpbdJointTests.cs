@@ -54,7 +54,7 @@ public sealed partial class DeviceXpbdTests
         var rows = world.Query(world.QueryDefinition().Read<JointConstraint>().Read<DirectedRelationEndpoints<JointConstraint>>()
             .Read<DeviceConstraintBinding<DeviceJointConstraint>>().All<DeviceXpbdState<XpbdJointState>>());
         using var write = joints.WriteInputs<JointConstraint, DeviceJointSource>(world, rows, new(), 64);
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
         using var results = new DeviceBodyResults(backend, device, bodies);
         using var project = new DeviceXpbdProjection<DeviceJointConstraint, XpbdJointState>(backend, device, world,
             rows, bodies, dynamics, joints, multipliers, CompileXpbdJoint(), 64);
@@ -101,7 +101,7 @@ public sealed partial class DeviceXpbdTests
             .Read<DeviceConstraintBinding<DeviceMotorConstraint>>().All<DeviceXpbdState<XpbdMotorState>>());
         using var writeJoints = joints.WriteInputs<JointConstraint, DeviceJointSource>(world, jointRows, new(), 64);
         using var writeMotors = motors.WriteInputs<JointMotor, DeviceMotorSource>(world, motorRows, new(), 64);
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
         using var results = new DeviceBodyResults(backend, device, bodies);
         var bindings = new Dictionary<string, ResourceBinding[]>();
         joints.AddBindings(bindings);
@@ -153,7 +153,7 @@ public sealed partial class DeviceXpbdTests
             .Read<DeviceConstraintBinding<DeviceMotorConstraint>>().All<DeviceXpbdState<XpbdMotorState>>());
         using var writeJoints = joints.WriteInputs<JointConstraint, DeviceJointSource>(world, jointRows, new(), 64);
         using var writeMotors = motors.WriteInputs<JointMotor, DeviceMotorSource>(world, motorRows, new(), 64);
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
         using var results = new DeviceBodyResults(backend, device, bodies);
         var bindings = new Dictionary<string, ResourceBinding[]>();
         joints.AddBindings(bindings);
@@ -196,7 +196,7 @@ public sealed partial class DeviceXpbdTests
             .Read<DirectedRelationEndpoints<JointConstraint>>().Read<DeviceConstraintBinding<DeviceJointConstraint>>()
             .All<DeviceXpbdState<XpbdJointState>>());
         using var write = joints.WriteInputs<JointConstraint, DeviceJointSource>(world, rows, new(), 64);
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
         using var results = new DeviceBodyResults(backend, device, bodies);
         using var project = new DeviceXpbdProjection<DeviceJointConstraint, XpbdJointState>(backend, device, world,
             rows, bodies, dynamics, joints, multipliers, CompileXpbdJoint(), 64);
@@ -213,7 +213,7 @@ public sealed partial class DeviceXpbdTests
         world.ReleaseQuery(members);
     }
 
-    private DeviceXpbdKernels CompileXpbdJoint()
+    private XpbdGraphKernels CompileXpbdJoint()
     {
         D3D12TestShader shader = shaderCompiler.CompileWithSearchPaths("xpbd_joint", """
             #include "physics_xpbd_joint.slang"
@@ -228,7 +228,7 @@ public sealed partial class DeviceXpbdTests
         return new(Entry(0), Entry(1));
     }
 
-    private DeviceXpbdKernels CompileXpbdMotor()
+    private XpbdGraphKernels CompileXpbdMotor()
     {
         D3D12TestShader shader = shaderCompiler.CompileWithSearchPaths("xpbd_motor", """
             #include "physics_xpbd_motor.slang"

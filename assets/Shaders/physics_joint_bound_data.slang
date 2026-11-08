@@ -9,8 +9,8 @@ struct DeviceJointBoundConstraint
 };
 struct DeviceJointLongRangeSettings
 { float penaltyScale; float retention; float initialErrorFraction; uint boundsPerJoint; };
-RWStructuredBuffer<DeviceJointBoundSet> DeviceJointBoundSets;
-RWStructuredBuffer<DeviceConstraintMetadata> DeviceJointBoundSetsMetadata;
-RWStructuredBuffer<DeviceJointBoundConstraint> DeviceJointBoundValues;
-ConstantBuffer<DeviceJointLongRangeSettings> JointLongRangeSettings;
+RWStructuredBuffer<DeviceJointBoundSet, ScalarDataLayout> DeviceJointBoundSets;
+RWStructuredBuffer<DeviceConstraintMetadata, ScalarDataLayout> DeviceJointBoundSetsMetadata;
+RWStructuredBuffer<DeviceJointBoundConstraint, ScalarDataLayout> DeviceJointBoundValues;
+ConstantBuffer<DeviceJointLongRangeSettings, ScalarDataLayout> JointLongRangeSettings;
 #endif

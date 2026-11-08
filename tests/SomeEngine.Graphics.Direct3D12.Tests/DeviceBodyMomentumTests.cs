@@ -21,7 +21,7 @@ public sealed partial class DeviceXpbdTests
         var body = AddBody(world, bodies, 0, new(0, 0, 10), BodyMotion.Dynamic);
         QueryHandle members = world.Query(world.QueryDefinition().Read<DeviceBodyBinding>());
         using var inputs = new DeviceBodyInputs(world, members, bodies);
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
         using var results = new DeviceBodyResults(backend, device, bodies);
         var stages = inputs.Upload().Then(dynamics.Predict(new(0, 0, -10)))
             .Then(dynamics.UpdateVelocities()).Then(results.Readback(64));

@@ -11,6 +11,29 @@ namespace SomeEngine.Physics.Tests;
 public sealed class XpbdContactTests
 {
     [Fact]
+    public void RigidXpbdContactRemovesThePenetrationOfAPointMass()
+    {
+        using var scheduler = new Scheduler(new() { WorkerCount = 2 });
+        using var world = WorldJobs.CreateWorld(scheduler: scheduler);
+        Entity floor = CreateBody(world, new BodyPose { Rotation = Quaternion.Identity }, new BodyMass { Motion = BodyMotion.Static });
+        Entity body = CreateBody(world, new BodyPose { Position = new(0, -.1f, 0), Rotation = Quaternion.Identity },
+            new BodyMass { Motion = BodyMotion.Dynamic, InverseMass = 1 });
+        CreateContact(world, floor, body, new ContactPoint { Normal = Vector3.UnitY, Separation = -.1f },
+            new ContactMaterial { NormalStiffness = float.PositiveInfinity }, [new(floor, Vector3.Zero, 1)], [new(body, Vector3.Zero, 1)]);
+        QueryHandle bodies = world.Query(new QueryDefinitionBuilder().ReadWrite<BodyPose>().Read<BodyMass>()
+            .Read<BodyStepState>().Read<BodyVelocity>());
+        QueryHandle contacts = ReadContacts(world);
+        var stages = new PredictBodies(Vector3.Zero, 64).Then(new InitializeContactResponses(world, bodies, contacts))
+            .Then(SolveXpbd.Create(world, bodies, new XpbdConstraints<ContactPoint, XpbdContactProjection>(contacts), 1));
+
+        PhysicsSimulation.Create(world, QueryDefinition.Empty, stages, 1).Schedule(0, 0, 1d / 60).Complete();
+
+        Assert.InRange(world.Read<BodyPose>(body).Position.Length(), 0, 1e-6f);
+        Assert.Equal(Quaternion.Identity, world.Read<BodyPose>(body).Rotation);
+        world.ReleaseQuery(contacts); world.ReleaseQuery(bodies);
+    }
+
+    [Fact]
     public void XpbdContactSupportsTheSphereAndWritesItsPhysicalForce()
     {
         using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
@@ -67,7 +90,7 @@ public sealed class XpbdContactTests
             .Read<BodyStepState>().Read<BodyVelocity>().ReadWrite<AvbdBodyEquation>());
         QueryHandle lengths = world.Query(new QueryDefinitionBuilder().ReadWrite<XpbdLength>().Read<UndirectedRelationEndpoints<XpbdLength>>());
         QueryHandle contacts = world.Query(new QueryDefinitionBuilder().Read<ContactPoint>().Read<ContactMaterial>()
-            .ReadBuffer<ContactBodyLink>().Optional<DirectedRelationEndpoints<ContactParticipant>>(QueryAccess.Read)
+            .ReadBuffer<ContactBodyLink>()
             .ReadWrite<AvbdContactState>().ReadWrite<ContactResponse>());
         QueryHandle pointScope = world.Query(new QueryDefinitionBuilder().Read<ContactPoint>());
         var pairs = world.Between(planes, edges).PartitionPairs();
@@ -192,7 +215,7 @@ public sealed class XpbdContactTests
         QueryHandle bodies = world.Query(new QueryDefinitionBuilder().ReadWrite<BodyPose>().Read<BodyMass>()
             .Read<BodyStepState>().Read<BodyVelocity>().ReadWrite<AvbdBodyEquation>());
         QueryHandle contacts = world.Query(new QueryDefinitionBuilder().Read<ContactPoint>().Read<ContactMaterial>()
-            .ReadBuffer<ContactBodyLink>().Optional<DirectedRelationEndpoints<ContactParticipant>>(QueryAccess.Read)
+            .ReadBuffer<ContactBodyLink>()
             .ReadWrite<AvbdContactState>().ReadWrite<ContactResponse>());
         QueryHandle lengths = world.Query(new QueryDefinitionBuilder().ReadWrite<XpbdLength>().Read<UndirectedRelationEndpoints<XpbdLength>>());
         QueryHandle bends = world.Query(ConstraintBodies.AddReads(new QueryDefinitionBuilder().ReadWrite<XpbdBend>().Build()));
@@ -211,7 +234,7 @@ public sealed class XpbdContactTests
             .Then(graphAvbd.Initialize()).Then(graphXpbd.Initialize())
             .Then(Alternate(graphAvbd.Iterate(1), graphXpbd.Iterate(1), 64)).Then(new UpdateBodyVelocities(64));
         PhysicsSimulation.Create(world, QueryDefinition.Empty, stages, 1).Schedule(0, 0, 1).Complete();
-    
+
 
 
         Vector3 a = world.Read<BodyPose>(first).Position;
@@ -253,7 +276,7 @@ public sealed class XpbdContactTests
         QueryHandle bodies = world.Query(new QueryDefinitionBuilder().ReadWrite<BodyPose>().Read<BodyMass>()
             .Read<BodyStepState>().Read<BodyVelocity>().ReadWrite<AvbdBodyEquation>());
         QueryHandle contacts = world.Query(new QueryDefinitionBuilder().Read<ContactPoint>().Read<ContactMaterial>()
-            .ReadBuffer<ContactBodyLink>().Optional<DirectedRelationEndpoints<ContactParticipant>>(QueryAccess.Read)
+            .ReadBuffer<ContactBodyLink>()
             .ReadWrite<AvbdContactState>().ReadWrite<ContactResponse>());
         QueryHandle lengths = world.Query(new QueryDefinitionBuilder().ReadWrite<XpbdLength>().Read<UndirectedRelationEndpoints<XpbdLength>>());
         QueryHandle bends = world.Query(ConstraintBodies.AddReads(new QueryDefinitionBuilder().ReadWrite<XpbdBend>().Build()));
@@ -269,7 +292,7 @@ public sealed class XpbdContactTests
             .Then(avbd.Initialize()).Then(xpbd.Initialize()).Then(Alternate(avbd.Iterate(1), xpbd.Iterate(1), 64))
             .Then(new UpdateBodyVelocities(64));
         PhysicsSimulation.Create(world, QueryDefinition.Empty, stages, 1).Schedule(0, 0, 1).Complete();
-    
+
 
 
         Vector3 a = world.Read<BodyPose>(first).Position;
@@ -469,7 +492,7 @@ public sealed class XpbdContactTests
 
     private static QueryHandle ReadContacts(World world) => world.Query(new QueryDefinitionBuilder()
         .Read<ContactPoint>().Read<ContactMaterial>().ReadBuffer<ContactBodyLink>()
-        .Optional<DirectedRelationEndpoints<ContactParticipant>>(QueryAccess.Read)
+
         .ReadWrite<XpbdContactState>().ReadWrite<ContactResponse>());
 
     private static Entity CreateBody(World world, BodyPose pose, BodyMass mass)
@@ -504,7 +527,7 @@ public sealed class XpbdContactTests
         world.AddBuffer<ContactBodyLink>(contact);
         foreach (ContactBody anchor in firstBodies.Concat(secondBodies))
         {
-            var participant = world.CreateRelation(contact, anchor.Body, new ContactParticipant());
+            var participant = anchor.Body;
             world.ExecuteBufferWrite<ContactBodyLink>(contact,
                 buffer => buffer.Add(new(participant, anchor.LocalPoint, anchor.Weight)));
         }

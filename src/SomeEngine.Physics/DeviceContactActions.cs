@@ -22,6 +22,7 @@ public sealed class DeviceContactActions : IDisposable
     private readonly CommandContext _commands;
     private readonly JobResourceAccess[] _inputAccesses;
     private readonly IDeviceConstraintSelection[] _selections;
+    private readonly object[] _recordingInputs;
     private readonly int _threadsPerGroup;
     private bool _initialized;
 
@@ -31,7 +32,7 @@ public sealed class DeviceContactActions : IDisposable
         int threadsPerGroup, ReadOnlyMemory<IDeviceConstraintSelection> selections)
     {
         _backend = backend; _device = device; _bodies = bodies; _graph = graph; _responses = responses;
-        _inputAccesses = inputAccesses.ToArray(); _selections = selections.ToArray(); _threadsPerGroup = threadsPerGroup;
+        _inputAccesses = inputAccesses.ToArray(); _selections = selections.ToArray(); _recordingInputs = [.. graph.RecordingInputs, .. _selections]; _threadsPerGroup = threadsPerGroup;
         _commands = backend.CreateCommandContext(device, new(QueueType.Compute, 0, 1, Label: "Common device contact response"));
         ComputePipelineDesc[] descriptions = [kernels.Initialize, kernels.ApplyRestitution];
         _pipelines = descriptions.Select(kernel => backend.CreateComputePipeline(device, kernel)).ToArray();
@@ -42,6 +43,7 @@ public sealed class DeviceContactActions : IDisposable
         foreach (IDeviceConstraintSelection selection in _selections) selection.AddBindings(bindings);
         _bindings = _layouts.Select(layout => DeviceCollisionGrid.OrderBindings(layout, bindings)).ToArray();
     }
+    internal IReadOnlyList<object> RecordingInputs => _recordingInputs;
     public InitializeDeviceContactResponses Initialize() => new(this);
     public ApplyDeviceContactRestitution ApplyRestitution(int iterations) => new(this, iterations);
     public ApplyDeviceContactRestitution ApplyRestitution(int iterations, bool buildGraph) => new(this, iterations, buildGraph);
@@ -57,12 +59,12 @@ public sealed class DeviceContactActions : IDisposable
         foreach (IDeviceConstraintSelection selection in _selections) selection.AddAccesses(scheduler, accesses);
         return DevicePhysicsJobs.Schedule(scheduler, new ResponseSubmission(this, context, initialize, iterations, buildGraph), accesses.ToArray(), dependency);
     }
-    private QueueCompletion Record(in PhysicsStepContext context, bool initialize, int iterations, bool buildGraph)
+    private async ValueTask<QueueCompletion> RecordAsync(PhysicsStepContext context, bool initialize, int iterations, bool buildGraph)
     {
-        if (initialize) _graph.CaptureSelections();
+        if (initialize) _graph.CaptureSelections(in context);
         if (initialize || buildGraph)
-            foreach (IDeviceConstraintSelection selection in _selections) selection.Capture();
-        if (!initialize && buildGraph) _graph.BuildAndWait();
+            foreach (IDeviceConstraintSelection selection in _selections) selection.Capture(in context);
+        if (!initialize && buildGraph) await _graph.BuildAsync(context).ConfigureAwait(false);
         var step = new ResponseStep((float)context.Duration, 0, 0, context.StartTime, context.EndTime);
         _backend.Begin(_commands, new(0, 0, 16));
         if (!_initialized)
@@ -93,7 +95,7 @@ public sealed class DeviceContactActions : IDisposable
     }
     private void Dispatch()
     {
-        _backend.Dispatch(_commands, DevicePhysicsDispatch.CreateGroups((_graph.ConstraintCapacity + _threadsPerGroup - 1) / _threadsPerGroup));
+        _backend.Dispatch(_commands, DevicePhysicsDispatch.CreateGroups((_graph.RowCount + _threadsPerGroup - 1) / _threadsPerGroup));
         _backend.Barrier(_commands, new MemoryBarrier(PipelineSync.ComputeShading, PipelineSync.ComputeShading,
             ResourceAccess.UnorderedAccess, ResourceAccess.UnorderedAccess));
     }
@@ -110,16 +112,24 @@ public sealed class DeviceContactActions : IDisposable
     {
         public IGraphicsBackend Backend => actions._backend;
         public Device Device => actions._device;
-        public QueueCompletion Submit() => actions.Record(in context, initialize, iterations, buildGraph);
+        public SomeEngine.Graphics.Queue Queue => Backend.GetQueue(Device, QueueType.Compute);
+        public QueueCompletion Submit() => SubmitAsync().GetAwaiter().GetResult();
+        public ValueTask<QueueCompletion> SubmitAsync() => actions.RecordAsync(context, initialize, iterations, buildGraph);
     }
     public void Dispose() { foreach (Pipeline pipeline in _pipelines) pipeline.Dispose(); _commands.Dispose(); }
 }
-public readonly struct InitializeDeviceContactResponses(DeviceContactActions actions) : IPhysicsStage
+public readonly struct InitializeDeviceContactResponses(DeviceContactActions actions) : IDevicePhysicsStage
 {
+    public object InputKey => actions;
+    public IReadOnlyList<object> SharedInputs => actions.RecordingInputs;
+    public bool CanBatch => true;
     public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) => actions.Schedule(in context, true, 0, dependency);
 }
-public readonly struct ApplyDeviceContactRestitution(DeviceContactActions actions, int iterations) : IPhysicsStage
+public readonly struct ApplyDeviceContactRestitution(DeviceContactActions actions, int iterations) : IDevicePhysicsStage
 {
+    public object InputKey => actions;
+    public IReadOnlyList<object> SharedInputs => actions.RecordingInputs;
+    public bool CanBatch => !_buildGraph;
     private readonly bool _buildGraph = true;
     internal ApplyDeviceContactRestitution(DeviceContactActions actions, int iterations, bool buildGraph) : this(actions, iterations) => _buildGraph = buildGraph;
     public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) => actions.Schedule(in context, false, iterations, _buildGraph, dependency);

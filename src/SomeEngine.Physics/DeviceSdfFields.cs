@@ -65,6 +65,7 @@ public sealed class DeviceSdfFields : IDisposable, IDevicePhysicsSubmission
     public Buffer? Samples { get; }
     IGraphicsBackend IDevicePhysicsSubmission.Backend => _backend;
     Device IDevicePhysicsSubmission.Device => _device;
+    SomeEngine.Graphics.Queue IDevicePhysicsSubmission.Queue => _backend.GetQueue(_device, QueueType.Compute);
     public UploadDeviceSdfInputs UploadInputs() => new(this);
     public IReadOnlyDictionary<string, ResourceBinding[]> GetBindings()
     {

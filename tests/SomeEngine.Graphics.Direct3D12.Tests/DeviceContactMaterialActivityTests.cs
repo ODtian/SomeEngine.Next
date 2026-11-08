@@ -26,8 +26,8 @@ public sealed partial class DeviceXpbdTests
         world.Add(moving, new BodyActivity { Radius = 1 });
         Entity point = world.CreateRelation(floor, moving, new ContactPoint
             { Normal = Vector3.UnitY, BodyAnchorDelta = Vector3.UnitY, FirstBodyCount = 1, WarmStart = true }).Entity;
-        var first = world.CreateRelation(point, floor, new ContactParticipant());
-        var second = world.CreateRelation(point, moving, new ContactParticipant());
+        var first = floor;
+        var second = moving;
         world.AddBuffer<ContactBodyLink>(point);
         world.ExecuteBufferWrite<ContactBodyLink>(point, buffer =>
         { buffer.Add(new(first, Vector3.Zero, 1)); buffer.Add(new(second, Vector3.Zero, 1)); });
@@ -43,11 +43,11 @@ public sealed partial class DeviceXpbdTests
         QueryHandle contacts = world.Query(world.QueryDefinition().Read<ContactPoint>());
         QueryHandle states = world.Query(world.QueryDefinition().Read<AvbdContactState>()
             .Read<DeviceConstraintBinding<DeviceContactConstraint>>().Read<DeviceAvbdState<DeviceAvbdContactState>>());
-        QueryHandle events = world.Query(world.QueryDefinition().Read<PhysicsStepEvents>().ReadBuffer<PhysicsEvent>());
+        QueryHandle events = world.Query(world.QueryDefinition().Read<PhysicsStepEvents>().Enabled<PhysicsStepEvents>().ReadBuffer<PhysicsEvent>());
         using var activities = new DeviceBodyActivities(backend, device, world, members, bodies);
         world.Add(moving, new DeviceBodyActivityBinding(activities));
         var bindings = new Dictionary<string, ResourceBinding[]>(); activities.AddBindings(bindings);
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileActiveBodyDynamics(), 64,
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileActiveBodyDynamics(), 64,
             bindings, activities.GetWriteAccesses(jobs));
         using var bodyInputs = new DeviceBodyInputs(world, members, bodies);
         using var bodyResults = new DeviceBodyResults(backend, device, bodies);
@@ -64,14 +64,14 @@ public sealed partial class DeviceXpbdTests
         JobResourceAccess[] reads = [.. parameters.GetReadAccesses(jobs), links.GetReadAccess(jobs), .. activities.GetReadAccesses(jobs)];
         using var graph = new DeviceConstraintGraph(backend, device, bodies, dynamics, CompileSleepingContactGraph(), new(1, 2),
             bindings, reads, 64, new[] { selected });
-        using var solve = new DeviceAvbdSolver(backend, device, bodies, equations, graph, CompileSleepingContactAvbd(), new(16, 1, .5f, 0),
+        using var solve = new AvbdGraphCommands(backend, device, bodies, equations, graph, CompileSleepingContactAvbd(), new(16, 1, .5f, 0),
             bindings, reads.Concat(new[] { histories.GetWriteAccess(jobs), responses.GetWriteAccess(jobs) }).ToArray(), 64,
             new IDeviceConstraintSelection[] { selectedStates, selectedResponses });
         using var actions = new DeviceContactActions(backend, device, bodies, graph, responses, CompileSleepingContactActions(), bindings,
             reads, 64, new[] { selectedResponses });
         using var activity = new DevicePhysicsActivity(backend, device, activities, graph, CompileSleepingContactActivity(),
             new(.05f, .2f, .01f, .01f), bindings, reads, 64);
-        using var output = new PhysicsEventBuffer(jobs, 8);
+        using var output = new PhysicsEventBuffer(world, 8);
         var received = new List<(long Number, PhysicsEvent Event)>();
         using var consumer = new ConsumePhysicsEvents<RecordDeviceActivityEvents>(world, events, new(received),
             [JobResourceAccess.Write(jobs.GetResourceToken(received))]);

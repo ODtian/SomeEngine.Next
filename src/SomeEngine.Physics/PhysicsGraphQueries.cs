@@ -15,6 +15,7 @@ internal sealed class PhysicsGraphQueries : IDisposable
     private readonly List<Entity>[] _solverConstraints;
     private List<Entity> _dynamic = [], _nextDynamic = [];
     private readonly bool _bodyUpdates;
+    private readonly PhysicsQueryWindow[] _windows;
     internal readonly QueryHandle[] Queries, Reads;
     internal readonly JobResourceAccess[] MetadataAccesses;
     internal World World => _world;
@@ -30,6 +31,8 @@ internal sealed class PhysicsGraphQueries : IDisposable
         _next = CreateMembers(constraints.Length + 1);
         _solverConstraints = CreateMembers(constraints.Length);
         QueryDefinition bodyDefinition = world.GetQueryDefinition(bodies).WithOptionalRead<BodyActivity>();
+        _windows = new PhysicsQueryWindow[constraints.Length + 1];
+        _windows[0] = new(bodyDefinition);
         Queries[0] = world.Query(bodyDefinition.AsReadOnly());
         Queries[1] = world.Query(bodyDefinition);
         QueryDefinition references = QueryDefinition.Empty.WithAccessFrom(bodyDefinition.AsReadOnly());
@@ -38,6 +41,7 @@ internal sealed class PhysicsGraphQueries : IDisposable
         for (int index = 0; index < constraints.Length; index++)
         {
             QueryDefinition definition = world.GetQueryDefinition(constraints[index]);
+            _windows[index + 1] = new(definition);
             Queries[index + 3] = world.Query(definition);
             Reads[index] = world.Query(definition.AsReadOnly());
             references = references.WithAccessFrom(definition.AsReadOnly());
@@ -50,7 +54,7 @@ internal sealed class PhysicsGraphQueries : IDisposable
 
     private static List<Entity>[] CreateMembers(int count) => Enumerable.Range(0, count).Select(static _ => new List<Entity>()).ToArray();
 
-    internal bool ReadMembers()
+    internal bool ReadMembers(in PhysicsStepContext context)
     {
         bool changed = false;
         _nextDynamic.Clear();
@@ -58,12 +62,15 @@ internal sealed class PhysicsGraphQueries : IDisposable
         {
             List<Entity> next = _next[index];
             next.Clear();
+            PhysicsQueryWindow window = _windows[index];
+            uint baseline = window.Begin(context);
             if (index == 0 && _bodyUpdates)
             {
-                var state = (Members: next, Dynamic: _nextDynamic);
-                _world.ExecuteReadQuery(Queries[0], ref state,
-                    static (scoped QueryCursor rows, ref (List<Entity> Members, List<Entity> Dynamic) members) =>
+                var state = (Members: next, Dynamic: _nextDynamic, Window: window);
+                _world.ExecuteReadQuery(Queries[0], baseline, ref state,
+                    static (scoped QueryCursor rows, ref (List<Entity> Members, List<Entity> Dynamic, PhysicsQueryWindow Window) members) =>
                     {
+                        members.Window.Accept(rows.CurrentSystemVersion);
                         foreach (QueryRow row in rows.Rows)
                         {
                             members.Members.Add(row.Entity);
@@ -72,9 +79,15 @@ internal sealed class PhysicsGraphQueries : IDisposable
                     });
             }
             else
-                _world.ExecuteReadQuery(index == 0 ? Queries[0] : Reads[index - 1], ref next,
-                    static (scoped QueryCursor rows, ref List<Entity> members) =>
-                    { foreach (QueryRow row in rows.Rows) members.Add(row.Entity); });
+            {
+                var state = (Members: next, Window: window);
+                _world.ExecuteReadQuery(index == 0 ? Queries[0] : Reads[index - 1], baseline, ref state,
+                    static (scoped QueryCursor rows, ref (List<Entity> Members, PhysicsQueryWindow Window) members) =>
+                    {
+                        members.Window.Accept(rows.CurrentSystemVersion);
+                        foreach (QueryRow row in rows.Rows) members.Members.Add(row.Entity);
+                    });
+            }
             changed |= !CollectionsMarshal.AsSpan(next).SequenceEqual(CollectionsMarshal.AsSpan(_members[index]));
         }
         (_members, _next) = (_next, _members);
@@ -83,7 +96,7 @@ internal sealed class PhysicsGraphQueries : IDisposable
         return changed;
     }
 
-    internal void ReadBodies(PhysicsGraphData graph) => _world.ExecuteReadQuery(Queries[0], ref graph,
+    internal void ReadBodies(PhysicsGraphData graph, in PhysicsStepContext context) => _world.ExecuteReadQuery(Queries[0], _windows[0].Begin(context), ref graph,
         static (scoped QueryCursor rows, ref PhysicsGraphData data) => data.ReadBodies(rows));
 
     internal void ReadGraph<TInputs>(PhysicsGraphData graph, TInputs inputs, in PhysicsStepContext context,
@@ -92,19 +105,8 @@ internal sealed class PhysicsGraphQueries : IDisposable
     {
         var bodies = new PhysicsBodies(global.Get(0), global.Get(1), global.Get(2));
         inputs.RefreshGraph(in context, global, 3, bodies);
-        var read = new ReadGraphInputs<TInputs>(this, graph, inputs, context);
-        _world.ExecuteReadQuery(Queries[2], ref read,
-            static (scoped QueryCursor rows, ref ReadGraphInputs<TInputs> state) => state.Execute(rows));
-    }
-
-    private readonly struct ReadGraphInputs<TInputs>(PhysicsGraphQueries queries, PhysicsGraphData graph,
-        TInputs inputs, PhysicsStepContext context) where TInputs : struct, IPhysicsGraphInputs
-    {
-        public void Execute(scoped QueryCursor rows)
-        {
-            var builder = new PhysicsConstraintGraphBuilder(graph, new PhysicsBodies(rows));
-            inputs.ReadGraph(in context, queries.Reads, 0, ref builder);
-        }
+        var builder = new PhysicsConstraintGraphBuilder(graph, bodies);
+        inputs.ReadGraph(in context, global, 3, ref builder);
     }
 
     internal ReadOnlySpan<Entity> GlobalEntities(int query, PhysicsGraphData graph) => query switch
@@ -131,4 +133,12 @@ internal sealed class PhysicsGraphQueries : IDisposable
         foreach (QueryHandle query in Reads) _world.ReleaseQuery(query);
         foreach (QueryHandle query in Queries) _world.ReleaseQuery(query);
     }
+}
+
+internal readonly struct PhysicsSolverRows(PhysicsGraphQueries queries, PhysicsGraphData graph) : IEntityQueryWork
+{
+    public int Count => 1;
+    public int QueryCount => queries.Queries.Length;
+    public QueryHandle GetQuery(int workIndex, int queryIndex) => queries.Queries[queryIndex];
+    public ReadOnlySpan<Entity> GetEntities(int workIndex, int queryIndex) => queries.SolverEntities(queryIndex, graph);
 }

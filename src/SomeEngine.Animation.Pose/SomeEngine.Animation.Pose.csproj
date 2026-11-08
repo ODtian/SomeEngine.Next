@@ -3,24 +3,30 @@
     <TargetFramework>net10.0</TargetFramework>
     <IsAotCompatible>true</IsAotCompatible>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AclNativeBuildDirectory>$(MSBuildProjectDirectory)/obj/native/$(NETCoreSdkRuntimeIdentifier)</AclNativeBuildDirectory>
+    <AclNativeLibrary Condition="$([MSBuild]::IsOSPlatform('Windows'))">$(AclNativeBuildDirectory)/Release/SomeEngineAcl.dll</AclNativeLibrary>
+    <AclNativeLibrary Condition="$([MSBuild]::IsOSPlatform('Linux'))">$(AclNativeBuildDirectory)/Release/libSomeEngineAcl.so</AclNativeLibrary>
+    <AclNativeLibrary Condition="$([MSBuild]::IsOSPlatform('OSX'))">$(AclNativeBuildDirectory)/Release/libSomeEngineAcl.dylib</AclNativeLibrary>
+    <AclCmakeArchitecture Condition="$([MSBuild]::IsOSPlatform('Windows'))">-A x64</AclCmakeArchitecture>
+    <AclBuildArguments Condition="$([MSBuild]::IsOSPlatform('Windows'))">-- /nodeReuse:false</AclBuildArguments>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../SomeEngine.Animation/SomeEngine.Animation.csproj" />
     <ProjectReference Include="../SomeEngine.Assets/SomeEngine.Assets.csproj" />
     <ProjectReference Include="../SomeEngine.Core/SomeEngine.Core.csproj" />
-    <ProjectReference Include="../SomeEngine.Physics/SomeEngine.Physics.csproj" />
+    <ProjectReference Include="../SomeEngine.Physics/SomeEngine.Physics.csproj" GlobalPropertiesToRemove="SomeEngineDevelopment;PublishAot;PublishAotUsingRuntimePack;SelfContained;RuntimeIdentifier" />
     <ProjectReference Include="../SomeEngine.Generators/SomeEngine.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="../../assets/Shaders/gpu_pose_sampling.slang;../../assets/Shaders/gpu_pose_translation.slang;../../assets/Shaders/gpu_pose_rig.slang;../../assets/Shaders/gpu_pose_physics.slang;../../assets/Shaders/physics_body_prediction.slang;../../assets/Shaders/physics_body_step.slang;../../assets/Shaders/physics_body_math.slang;../../assets/Shaders/physics_bodies.slang;../../assets/Shaders/physics_xpbd_types.slang;../../assets/Shaders/physics_xpbd_length_math.slang;../../assets/Shaders/physics_xpbd_bend_math.slang;../../assets/Shaders/physics_length_data.slang;../../assets/Shaders/physics_bend_data.slang;../../assets/Shaders/physics_constraint_data.slang"
                       LogicalName="SomeEngine.Animation.Pose.Shaders.%(Filename)%(Extension)" />
-    <EmbeddedResource Include="../../assets/Shaders/physics_xpbd_projection_math.slang"
+    <EmbeddedResource Include="../../assets/Shaders/physics_xpbd_projection_math.slang;../../assets/Shaders/physics_xpbd_chains.slang"
                       LogicalName="SomeEngine.Animation.Pose.Shaders.%(Filename)%(Extension)" />
   </ItemGroup>
   <ItemGroup>
     <AclNativeSource Include="Native/**/*;../../external/acl/includes/**/*;../../external/rtm/includes/**/*" />
-    <Content Include="$(MSBuildProjectDirectory)/obj/native/Release/SomeEngineAcl.dll"
-             Link="SomeEngineAcl.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="$(AclNativeLibrary)"
+             Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" DependencyBinary="true" />
     <Content Include="../../external/acl/LICENSE" Link="licenses/ACL-LICENSE.txt"
              CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="../../external/rtm/LICENSE" Link="licenses/RTM-LICENSE.txt"
@@ -29,8 +35,8 @@
              CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
   <Target Name="BuildAclNative" BeforeTargets="PrepareForBuild;GetCopyToOutputDirectoryItems"
-          Inputs="@(AclNativeSource)" Outputs="$(MSBuildProjectDirectory)/obj/native/Release/SomeEngineAcl.dll">
-    <Exec Command="cmake -S &quot;$(MSBuildProjectDirectory)/Native&quot; -B &quot;$(MSBuildProjectDirectory)/obj/native&quot; -A x64" />
-    <Exec Command="cmake --build &quot;$(MSBuildProjectDirectory)/obj/native&quot; --config Release --parallel 1 -- /nodeReuse:false" />
+          Inputs="@(AclNativeSource)" Outputs="$(AclNativeLibrary)">
+    <Exec Command="cmake -S &quot;$(MSBuildProjectDirectory)/Native&quot; -B &quot;$(AclNativeBuildDirectory)&quot; $(AclCmakeArchitecture) -DCMAKE_BUILD_TYPE=Release" />
+    <Exec Command="cmake --build &quot;$(AclNativeBuildDirectory)&quot; --config Release --parallel 1 $(AclBuildArguments)" />
   </Target>
 </Project>

@@ -23,8 +23,9 @@ public readonly struct GpuPoseTargetResources : IJobComponentResources<GpuPoseTa
 
 public sealed partial class DevicePoseSources
 {
-    internal JobHandle ScheduleEvaluate(in PhysicsStepContext context, JobHandle dependency, int targetKernel = -1)
+    internal JobHandle ScheduleEvaluate(in PhysicsStepContext context, JobHandle dependency, int targetKernel = -1, bool commonBodies = true)
     {
+        if (targetKernel == -1 && _physics is not null) return ScheduleChains(in context, dependency);
         Scheduler scheduler = WorldJobs.GetScheduler(_world);
         JobHandle members = scheduler.Schedule(new CaptureEntities(this),
             [.. _queryAccesses, JobResourceAccess.Write(scheduler.GetResourceToken(this))], dependency);
@@ -33,7 +34,7 @@ public sealed partial class DevicePoseSources
             writes.Add(JobResourceAccess.Write(scheduler.GetResourceToken(upload.Buffer), 0, (long)upload.Buffer.Info.Size));
         if (_physics is not null) writes.AddRange(_physics.CaptureAccesses);
         JobHandle captured = _resources.ScheduleEntities(_world, _targets, new SourceEntities(this),
-            new CaptureInputs(this, context, targetKernel >= 0), writes.ToArray(), members);
+            new CaptureInputs(this, context, targetKernel >= 0 && commonBodies), writes.ToArray(), members);
         return scheduler.Schedule(new SubmitSources(this, targetKernel), [JobResourceAccess.Write(scheduler.GetResourceToken(this))], captured);
     }
     private readonly struct SubmitSources(DevicePoseSources sources, int targetKernel) : IJob

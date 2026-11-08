@@ -27,8 +27,8 @@ public sealed partial class DeviceXpbdTests
         world.Replace(moving, new BodyVelocity { Linear = new(0, -2, 0) });
         Entity point = world.CreateRelation(floor, moving, new ContactPoint
             { Normal = Vector3.UnitY, BodyAnchorDelta = Vector3.UnitY, FirstBodyCount = 1 }).Entity;
-        var first = world.CreateRelation(point, floor, new ContactParticipant());
-        var second = world.CreateRelation(point, moving, new ContactParticipant());
+        var first = floor;
+        var second = moving;
         world.AddBuffer<ContactBodyLink>(point);
         world.ExecuteBufferWrite<ContactBodyLink>(point, links =>
         {
@@ -46,7 +46,7 @@ public sealed partial class DeviceXpbdTests
         QueryHandle contacts = world.Query(world.QueryDefinition().Read<ContactPoint>().Read<ContactMaterial>().ReadBuffer<ContactBodyLink>()
             .Read<DeviceConstraintBinding<DeviceContactConstraint>>().All<DeviceXpbdState<XpbdContactState>>());
         using var write = parameters.WriteInputs<ContactPoint, DeviceContactSource>(world, contacts, new(side), 64, [side.GetUploadAccess(jobs)]);
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
         using var results = new DeviceBodyResults(backend, device, bodies);
         using var contactResults = new DeviceContactResults(backend, device, parameters, responses);
         var bindings = new Dictionary<string, ResourceBinding[]>();
@@ -58,7 +58,7 @@ public sealed partial class DeviceXpbdTests
         JobResourceAccess[] inputs = [.. parameters.GetReadAccesses(jobs), side.GetReadAccess(jobs)];
         using var graph = new DeviceConstraintGraph(backend, device, bodies, dynamics, CompileXpbdContactGraph(),
             new(1, 2), bindings, inputs, 64, new[] { selected });
-        using var solve = new DeviceXpbdSolver(backend, device, bodies, graph, CompileXpbdContact(),
+        using var solve = new XpbdGraphCommands(backend, device, bodies, graph, CompileXpbdContact(),
             new(Iterations: 2, RowsPerBlock: 4), bindings, inputs.Append(responses.GetWriteAccess(jobs)).ToArray(),
             new[] { histories.States }, 64, new[] { selectedResponses });
         using var actions = new DeviceContactActions(backend, device, bodies, graph, responses, CompileXpbdContactActions(),
@@ -97,9 +97,9 @@ public sealed partial class DeviceXpbdTests
         world.Replace(moving, new BodyVelocity { Linear = new(tangentialSpeed, 0, 0) });
         Entity point = world.CreateRelation(floor, moving, new ContactPoint
             { Normal = Vector3.UnitY, BodyAnchorDelta = Vector3.UnitY, FirstBodyCount = 1 }).Entity;
-        var fixedAnchor = world.CreateRelation(point, floor, new ContactParticipant());
-        var firstAnchor = world.CreateRelation(point, moving, new ContactParticipant());
-        var secondAnchor = world.CreateRelation(point, moving, new ContactParticipant());
+        var fixedAnchor = floor;
+        var firstAnchor = moving;
+        var secondAnchor = moving;
         world.AddBuffer<ContactBodyLink>(point);
         world.ExecuteBufferWrite<ContactBodyLink>(point, links =>
         {
@@ -120,7 +120,7 @@ public sealed partial class DeviceXpbdTests
         QueryHandle contacts = world.Query(world.QueryDefinition().Read<ContactPoint>().Read<ContactMaterial>().ReadBuffer<ContactBodyLink>()
             .Read<DeviceConstraintBinding<DeviceContactConstraint>>().All<DeviceXpbdState<XpbdContactState>>());
         using var write = parameters.WriteInputs<ContactPoint, DeviceContactSource>(world, contacts, new(side), 64, [side.GetUploadAccess(jobs)]);
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
         using var results = new DeviceBodyResults(backend, device, bodies);
         using var contactResults = new DeviceContactResults(backend, device, parameters, responses);
         var bindings = new Dictionary<string, ResourceBinding[]>();
@@ -132,7 +132,7 @@ public sealed partial class DeviceXpbdTests
         JobResourceAccess[] inputs = [.. parameters.GetReadAccesses(jobs), side.GetReadAccess(jobs)];
         using var graph = new DeviceConstraintGraph(backend, device, bodies, dynamics, CompileXpbdContactGraph(),
             new(1, 3), bindings, inputs, 64, new[] { selected });
-        using var solve = new DeviceXpbdSolver(backend, device, bodies, graph, CompileXpbdContact(),
+        using var solve = new XpbdGraphCommands(backend, device, bodies, graph, CompileXpbdContact(),
             new(Iterations: 2, RowsPerBlock: 4), bindings, inputs.Append(responses.GetWriteAccess(jobs)).ToArray(),
             new[] { histories.States }, 64, new[] { selectedResponses });
         using var actions = new DeviceContactActions(backend, device, bodies, graph, responses, CompileXpbdContactActions(),
@@ -164,7 +164,7 @@ public sealed partial class DeviceXpbdTests
         ComputePipelineDesc Entry(int index) => new(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(index), shader.GetEntryCode(index));
         return new(Entry(0), Entry(1));
     }
-    private DeviceXpbdKernels CompileXpbdContact()
+    private XpbdGraphKernels CompileXpbdContact()
     {
         D3D12TestShader shader = shaderCompiler.CompileWithSearchPaths("xpbd_contact", """
             #include "physics_xpbd_graph.slang"

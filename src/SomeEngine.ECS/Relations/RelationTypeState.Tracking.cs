@@ -144,7 +144,7 @@ internal sealed partial class RelationTypeState<T> : IRelationTypeState
         {
             Entity edge = pair.Key;
             _bulkIndexBuildEdgeVisits++;
-            if (!world.IsAlive(edge) ||
+            if (!world.Entities.Alive(edge) ||
                 !RelationEndpointAccess.HasCurrent<T>(world, edge, Schema))
             {
                 continue;
@@ -283,7 +283,7 @@ internal sealed partial class RelationTypeState<T> : IRelationTypeState
         RelationGeneration<T> generation = CurrentGeneration;
         foreach (Entity edge in bucket)
         {
-            if (world.IsAlive(edge) && generation.Edges.ContainsKey(edge))
+            if (world.Entities.Alive(edge) && generation.Edges.ContainsKey(edge))
                 matches.Add(new RelationEdge<T>(edge));
         }
         RelationEdge<T>[] result = matches.ToArray();
@@ -427,7 +427,7 @@ internal sealed partial class RelationTypeState<T> : IRelationTypeState
         foreach (KeyValuePair<Entity, byte> pair in _dirtyEdges)
         {
             Entity edgeEntity = pair.Key;
-            if (!world.IsAlive(edgeEntity) || !generation.Edges.ContainsKey(edgeEntity))
+            if (!world.Entities.Alive(edgeEntity) || !generation.Edges.ContainsKey(edgeEntity))
                 continue;
 
             var edge = new RelationEdge<T>(edgeEntity);

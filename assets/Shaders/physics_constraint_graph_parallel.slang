@@ -2,12 +2,12 @@
 #define PHYSICS_CONSTRAINT_GRAPH_PARALLEL
 #include "physics_constraint_graph.slang"
 #include "physics_dispatch.slang"
-RWStructuredBuffer<uint> ConstraintGraphBlockTotals;
-RWStructuredBuffer<uint> ConstraintGraphBlockOffsets;
-RWStructuredBuffer<uint> ConstraintGraphRowProposals;
-RWStructuredBuffer<uint> ConstraintGraphGroupColors;
-RWStructuredBuffer<uint> ConstraintGraphGroupOffsets;
-RWStructuredBuffer<uint> ConstraintGraphBuildProgress;
+RWStructuredBuffer<uint, ScalarDataLayout> ConstraintGraphBlockTotals;
+RWStructuredBuffer<uint, ScalarDataLayout> ConstraintGraphBlockOffsets;
+RWStructuredBuffer<uint, ScalarDataLayout> ConstraintGraphRowProposals;
+RWStructuredBuffer<uint, ScalarDataLayout> ConstraintGraphGroupColors;
+RWStructuredBuffer<uint, ScalarDataLayout> ConstraintGraphGroupOffsets;
+RWStructuredBuffer<uint, ScalarDataLayout> ConstraintGraphBuildProgress;
 groupshared uint GraphDegreeScan[256];
 
 uint deviceGraphPriority(uint index)
@@ -260,7 +260,7 @@ void WriteDeviceGraphWork(uint3 id:SV_DispatchThreadID)
     {
         uint stage=ConstraintGraphGroupOffsets[ConstraintGraphRows[index].z]+ConstraintGraphRowColors[index],position;
         InterlockedAdd(ConstraintGraphRowProposals[stage],1,position);
-        ConstraintGraphRowOrder[ConstraintGraphRowRanges[stage].x+position]=index;
+        ConstraintGraphRowOrder[ConstraintGraphRowRanges[stage].x+position]=ConstraintGraphRows[index].w-1;
     }
 }
 #endif

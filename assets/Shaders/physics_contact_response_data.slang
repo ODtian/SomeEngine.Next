@@ -6,6 +6,6 @@ struct DeviceContactResponseState
     float3 forceOnSecond; uint padding1;
     uint2 startTime; uint2 endTime;
 };
-RWStructuredBuffer<DeviceContactResponseState> DeviceContactResponses;
-StructuredBuffer<uint2> DeviceContactResponsesSelection;
+RWStructuredBuffer<DeviceContactResponseState, ScalarDataLayout> DeviceContactResponses;
+StructuredBuffer<uint2, ScalarDataLayout> DeviceContactResponsesSelection;
 #endif

@@ -30,17 +30,31 @@ public readonly struct JointLongRangeGraphConstraints(QueryHandle joints, JointL
         scoped PhysicsBodies bodies) =>
         _data.RefreshGraph(new(queries.Get(queryOffset), queries.Get(2)), bodies, in context);
 
-    public void ReadGraph(in PhysicsStepContext context, ReadOnlySpan<QueryHandle> queries, int queryOffset,
+    public void ReadGraph(in PhysicsStepContext context, scoped EntityQueryViews queries, int queryOffset,
         ref PhysicsConstraintGraphBuilder graph)
     {
-        var read = new ReadParticipants(context, graph, queryOffset);
-        context.World.ExecuteReadQuery(queries[queryOffset], ref read,
-            static (scoped QueryCursor rows, ref ReadParticipants state) => state.Execute(rows));
+        Span<PhysicsConstraintBody> bodies = stackalloc PhysicsConstraintBody[2];
+        Span<Entity> references = stackalloc Entity[1];
+        foreach (QueryRow row in queries.Get(queryOffset).Rows)
+        {
+            ReadOnlySpan<LongRangeJointBound> bounds = row.ReadBuffer<LongRangeJointBound>().AsSpan();
+            for (int index = 0; index < bounds.Length; index++)
+            {
+                ref readonly LongRangeJointBound bound = ref bounds[index];
+                queries.Get(queryOffset).TryGetRow(bound.OtherJoint, out QueryRow other);
+                var first = row.Read<DirectedRelationEndpoints<JointConstraint>>();
+                var last = other.Read<DirectedRelationEndpoints<JointConstraint>>();
+                bodies[0] = new(bound.FirstEnd == JointEnd.Source ? first.Source : first.Target, true);
+                bodies[1] = new(bound.OtherEnd == JointEnd.Source ? last.Source : last.Target, true);
+                references[0] = bound.OtherJoint;
+                graph.Add(queryOffset - 3, row.Entity, index, bodies, references);
+            }
+        }
     }
 
     public void Initialize(in PhysicsStepContext context, scoped EntityQueryViews queries, int queryOffset,
         scoped PhysicsBodies bodies, float retention) =>
-        _data.Initialize(new(queries.Get(queryOffset), queries.Get(2)), bodies, in context);
+        _data.Initialize(new(queries.Get(queryOffset), queries.Get(2)), bodies, in context, refreshGraph: false);
 
     public void AccumulateBodyEquation(in PhysicsStepContext context, scoped EntityQueryViews queries, int queryOffset,
         Entity body, scoped PhysicsBodies bodies, float initialErrorFraction, ref AvbdBodyEquation equation) =>
@@ -53,14 +67,7 @@ public readonly struct JointLongRangeGraphConstraints(QueryHandle joints, JointL
         scoped PhysicsBodies bodies, float initialErrorFraction) =>
         _data.Update(new(queries.Get(queryOffset), queries.Get(2)), bodies);
 
-    private ref struct ReadParticipants(PhysicsStepContext context, PhysicsConstraintGraphBuilder graph, int query)
-    {
-        private PhysicsConstraintGraphBuilder _graph = graph;
-        public void Execute(scoped QueryCursor rows)
-        {
-            foreach (QueryRow row in rows.Rows) _graph.Add<JointConstraint, JointLongRangeBodies>(query, row, in context);
-        }
-    }
+
 }
 
 /// <summary>Reads each generated distance bound's bodies from its two original joint roles.</summary>

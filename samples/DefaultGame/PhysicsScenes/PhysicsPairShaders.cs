@@ -27,7 +27,7 @@ internal sealed partial class PhysicsSceneShaders
         """;
 
     private ComputePipelineDesc ShapePairDetection(string name, int firstType, string first, string second,
-        bool hull = false, bool prediction = false, bool firstBodyOrigin = false, bool secondBodyOrigin = false)
+        bool hull = false, bool prediction = false, bool firstBodyOrigin = false, bool secondBodyOrigin = false, bool referencedPrediction = false)
     {
         string predictionMethods = prediction ? $$"""
             override float4 getSampleRotation(DeviceGeometryInput geometry, DeviceBodyState body)
@@ -82,7 +82,7 @@ internal sealed partial class PhysicsSceneShaders
         };
         [shader("compute")][numthreads(64,1,1)]
         void Detect(uint3 id : SV_DispatchThreadID)
-        { ShapePairCollision shape; {{(prediction ? "predictDeviceRigidCollision" : "detectDeviceReferencedCollision")}}(id.x, shape); }
+        { ShapePairCollision shape; {{(referencedPrediction ? "predictDeviceReferencedCollision" : prediction ? "predictDeviceRigidCollision" : "detectDeviceReferencedCollision")}}(id.x, shape); }
         """, "Detect")[0];
     }
 }

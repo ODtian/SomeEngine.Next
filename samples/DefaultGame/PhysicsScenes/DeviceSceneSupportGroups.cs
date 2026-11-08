@@ -15,10 +15,11 @@ internal sealed class DeviceSceneSupportGroups : IDisposable, IDevicePhysicsSubm
     private readonly List<BufferUav> _views = [];
     private readonly Dictionary<string, ResourceBinding[]> _bindings = [];
     private bool _initialized;
+    private readonly DeviceContactMemory? _memory;
 
-    internal DeviceSceneSupportGroups(IGraphicsBackend backend, Device device, int bodies, int contacts, bool enabled)
+    internal DeviceSceneSupportGroups(IGraphicsBackend backend, Device device, int bodies, int contacts, bool enabled, DeviceContactMemory? memory = null)
     {
-        _backend = backend; _device = device;
+        _backend = backend; _device = device; _memory = memory;
         if (!enabled) return;
         _commands = backend.CreateCommandContext(device, new(QueueType.Compute, 0, 1, Label: "Support group buffers"));
         Add("DeviceSupportGroupRanges", bodies, 16);
@@ -27,23 +28,23 @@ internal sealed class DeviceSceneSupportGroups : IDisposable, IDevicePhysicsSubm
         Add("DeviceSupportGroupBlockSums", (bodies + 255) / 256, 8);
         Add("DeviceSupportGroupBlockOffsets", (bodies + 255) / 256 + 1, 8);
         Add("DeviceSupportGroupBodies", bodies, 4);
-        Add("DeviceSupportGroupContacts", contacts, 4);
-        Add("DeviceSupportGroupContactKeys", contacts, 16);
-        Add("DeviceSupportGroupSortContacts", contacts, 4);
+        Add("DeviceSupportGroupContacts", contacts, 4, 4);
+        Add("DeviceSupportGroupContactKeys", contacts, 16, 16);
+        Add("DeviceSupportGroupSortContacts", contacts, 4, 4);
         Add("DeviceSupportGroupSortRange", 1, 8);
-        Add("DeviceSupportContactOrder", contacts, 4);
-        Add("DeviceSupportContactEnds", contacts, 8);
-        Add("DeviceSupportContactPredecessors", contacts, 8);
-        Add("DeviceSupportContactSuccessors", contacts, 8);
+        Add("DeviceSupportContactOrder", contacts, 4, 4);
+        Add("DeviceSupportContactEnds", contacts, 8, 8);
+        Add("DeviceSupportContactPredecessors", contacts, 8, 8);
+        Add("DeviceSupportContactSuccessors", contacts, 8, 8);
         Add("DeviceSupportGroupRebuild", bodies, 4);
-        Add("DeviceSupportContactTasks", contacts, 16);
-        Add("DeviceSupportLoadLinks", (contacts + bodies) * 3, 12);
+        Add("DeviceSupportContactTasks", contacts, 16, 16);
+        Add("DeviceSupportLoadLinks", (contacts + bodies) * 3, 12, 36);
         Add("DeviceSupportWorkQueue", 3, 4);
 
-        void Add(string name, int count, uint stride)
+        void Add(string name, int count, uint stride, uint contactBytes = 0)
         {
-            Buffer buffer = backend.CreateBuffer(device, new((ulong)count * stride,
-                BufferUsages.ShaderRead | BufferUsages.ShaderWrite, name), MemoryType.DeviceLocal);
+            var description = new BufferDesc((ulong)count * stride, BufferUsages.ShaderRead | BufferUsages.ShaderWrite, name);
+            Buffer buffer = memory is not null && contactBytes != 0 ? memory.CreateBuffer(description, contactBytes) : backend.CreateBuffer(device, description);
             BufferUav view = backend.CreateBufferUav(device, new(buffer, new(0, buffer.Info.Size), StructureStride: stride));
             _buffers.Add(buffer); _views.Add(view);
             _bindings.Add(name, [ResourceBinding.WritableBuffer(view)]);
@@ -70,12 +71,15 @@ internal sealed class DeviceSceneSupportGroups : IDisposable, IDevicePhysicsSubm
 
     IGraphicsBackend IDevicePhysicsSubmission.Backend => _backend;
     Device IDevicePhysicsSubmission.Device => _device;
+
+    SomeEngine.Graphics.Queue IDevicePhysicsSubmission.Queue => _backend.GetQueue(_device, QueueType.Compute);
     QueueCompletion IDevicePhysicsSubmission.Submit()
     {
+        _memory?.EnsureRows(1);
         _backend.Begin(_commands!, new(0, 0, 16));
         if (!_initialized)
             foreach (Buffer buffer in _buffers)
-                _backend.Barrier(_commands!, new BufferBarrier(buffer, buffer.InitialSync, PipelineSync.ComputeShading,
+                if (_memory?.Contains(buffer) != true) _backend.Barrier(_commands!, new BufferBarrier(buffer, buffer.InitialSync, PipelineSync.ComputeShading,
                     buffer.InitialAccess, ResourceAccess.UnorderedAccess));
         using RecordedCommands recorded = _backend.End(_commands!);
         _initialized = true;

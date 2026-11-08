@@ -50,6 +50,7 @@ public sealed class VulkanParameterBindingTests(VulkanTestCompiler shaderCompile
             backend.SetPipeline(commands, pipeline);
             Bind(index == 0);
             Bind(index != 0);
+            Bind(index == 0);
             if (index == 0)
                 backend.Barrier(commands, new BufferBarrier(input, input.InitialSync, PipelineSync.ComputeShading,
                     input.InitialAccess, ResourceAccess.ShaderResource));

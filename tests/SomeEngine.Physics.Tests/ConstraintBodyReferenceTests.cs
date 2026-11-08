@@ -8,10 +8,10 @@ using SomeEngine.Job;
 
 namespace SomeEngine.Physics.Tests;
 
-public sealed class ConstraintParticipantTests
+public sealed class ConstraintBodyReferenceTests
 {
     [Fact]
-    public void AUserConstraintFollowsFiveProtectedParticipantsThroughRetargetingAndDestruction()
+    public void AUserConstraintFollowsFiveBodyReferencesThroughRetargetingAndDestruction()
     {
         using var scheduler = new Scheduler(new() { WorkerCount = 2 });
         using var world = WorldJobs.CreateWorld(scheduler: scheduler);
@@ -27,9 +27,7 @@ public sealed class ConstraintParticipantTests
         physics.Schedule(0, 0, 1).Complete();
         foreach (Entity node in nodes) { Assert.InRange(MathF.Abs(world.Read<BodyPose>(node).Position.Y), 0, 1e-6f); world.Replace(node, new BodyVelocity()); }
         Entity replacement = CreateBody(world, new Vector3(2, 5, 0));
-        RelationEdge<ConstraintParticipant> participant = default;
-        world.ExecuteBufferRead<ConstraintBodyLink>(constraint, links => participant = links[2].Participant);
-        world.RetargetRelationImmediate(participant, constraint, replacement);
+        world.ExecuteBufferWrite<ConstraintBodyLink>(constraint, links => links[2] = new(replacement));
 
         physics.Schedule(1, 1, .25).Complete();
 
@@ -41,7 +39,7 @@ public sealed class ConstraintParticipantTests
         physics.Schedule(2, 1.25, .25).Complete();
         Assert.False(world.IsAlive(constraint));
         Assert.InRange(world.Read<BodyPose>(nodes[0]).Position.Y, -.750001f, -.749999f);
-        Assert.Equal(0, world.GetIncomingRelations<ConstraintParticipant>(nodes[0]).Count);
+
         world.ReleaseQuery(constraints); world.ReleaseQuery(bodies);
     }
 
@@ -53,7 +51,7 @@ public sealed class ConstraintParticipantTests
             ConstraintBodies.GetBody(in row.ReadBuffer<ConstraintBodyLink>().AsSpan()[index], in context);
         public static int GetReadEntityCount(in MeanHeight constraint, scoped QueryRow row, in PhysicsStepContext context) => GetBodyCount(in constraint, row, in context);
         public static Entity GetReadEntity(in MeanHeight constraint, scoped QueryRow row, int index, in PhysicsStepContext context) =>
-            row.ReadBuffer<ConstraintBodyLink>().AsSpan()[index].Participant.Entity;
+            row.ReadBuffer<ConstraintBodyLink>().AsSpan()[index].Body;
         public static void Initialize(in MeanHeight constraint, scoped QueryRow row, in PhysicsStepContext context) { }
         public static void Project(in MeanHeight constraint, scoped QueryRow row, scoped PhysicsBodies bodies, in PhysicsStepContext context)
         {
@@ -98,14 +96,14 @@ public sealed class ConstraintParticipantTests
         physics.Schedule(1, 1, .1).Complete();
 
         Assert.False(world.IsAlive(bend));
-        Assert.Equal(0, world.GetIncomingRelations<ConstraintParticipant>(first).Count);
-        Assert.Equal(0, world.GetIncomingRelations<ConstraintParticipant>(last).Count);
+
+
         Assert.InRange(Vector3.Distance(position + Vector3.UnitX * .1f, world.Read<BodyPose>(first).Position), 0, 1e-6f);
         world.ReleaseQuery(bends); world.ReleaseQuery(bodies);
     }
 
     [Fact]
-    public void RetargetingABendParticipantMovesTheNewBodyAndDestroyingTheBendReleasesItsEdges()
+    public void RetargetingABendParticipantMovesTheNewBodyAndDestroyingTheBendReleasesItsReferences()
     {
         using var scheduler = new Scheduler(new() { WorkerCount = 2 });
         using var world = WorldJobs.CreateWorld(scheduler: scheduler);
@@ -114,9 +112,7 @@ public sealed class ConstraintParticipantTests
         Entity middle = CreateBody(world, Vector3.UnitX);
         Entity last = CreateBody(world, new Vector3(1, 1, 0));
         Entity bend = ConstraintBodies.Create(world, new XpbdBend { MinimumCosine = .5f }, [first, oldMiddle, last]);
-        RelationEdge<ConstraintParticipant> participant = default;
-        world.ExecuteBufferRead<ConstraintBodyLink>(bend, links => participant = links[1].Participant);
-        world.RetargetRelationImmediate(participant, bend, middle);
+        world.ExecuteBufferWrite<ConstraintBodyLink>(bend, links => links[1] = new(middle));
         QueryHandle bodies = world.Query(new QueryDefinitionBuilder().ReadWrite<BodyPose>().Read<BodyMass>().Read<BodyStepState>());
         QueryHandle bends = world.Query(ConstraintBodies.AddReads(new QueryDefinitionBuilder().ReadWrite<XpbdBend>().Build()));
         using var solve = SolveXpbdGraph.Create(world, bodies, new XpbdGraphConstraints<XpbdBend, XpbdBendProjection>(bends),
@@ -130,9 +126,9 @@ public sealed class ConstraintParticipantTests
         Assert.Equal(new Vector3(0, -.125f, 0), world.Read<BodyPose>(first).Position);
         Assert.Equal(new Vector3(1.125f, 1, 0), world.Read<BodyPose>(last).Position);
         world.DestroyEntity(bend);
-        Assert.Equal(0, world.GetIncomingRelations<ConstraintParticipant>(first).Count);
-        Assert.Equal(0, world.GetIncomingRelations<ConstraintParticipant>(middle).Count);
-        Assert.Equal(0, world.GetIncomingRelations<ConstraintParticipant>(last).Count);
+
+
+
         world.ReleaseQuery(bends);
         world.ReleaseQuery(bodies);
     }

@@ -38,15 +38,6 @@ struct DeviceGridCell
     uint2 padding;
 };
 
-struct DeviceGridPairReference
-{
-    uint firstBody;
-    uint secondBody;
-    uint firstGeometry;
-    uint secondGeometry;
-    uint next;
-};
-
 struct DeviceGridParameters
 {
     uint bodyCount;
@@ -62,21 +53,19 @@ struct DeviceGridParameters
     uint2 padding;
 };
 
-ConstantBuffer<DeviceGridParameters> GridParameters;
-RWStructuredBuffer<DeviceCollisionInput> CollisionBodies;
-RWStructuredBuffer<uint> GridHeads;
-RWStructuredBuffer<DeviceGridCell> GridCells;
-RWStructuredBuffer<uint> GridCounters;
-RWStructuredBuffer<uint> BodyLevels;
-RWStructuredBuffer<uint> PairCounts;
-RWStructuredBuffer<uint> PairOffsets;
-RWStructuredBuffer<uint> BlockTotals;
-RWStructuredBuffer<uint> BlockOffsets;
-RWStructuredBuffer<uint> BinOffsets;
-RWStructuredBuffer<uint> PairWritePositions;
-RWStructuredBuffer<uint> GridPairHeads;
-RWStructuredBuffer<DeviceGridPairReference> GridPairReferences;
-RWStructuredBuffer<DeviceCollisionPair> CollisionPairs;
+ConstantBuffer<DeviceGridParameters, ScalarDataLayout> GridParameters;
+RWStructuredBuffer<DeviceCollisionInput, ScalarDataLayout> CollisionBodies;
+RWStructuredBuffer<uint, ScalarDataLayout> GridHeads;
+RWStructuredBuffer<DeviceGridCell, ScalarDataLayout> GridCells;
+RWStructuredBuffer<uint, ScalarDataLayout> GridCounters;
+RWStructuredBuffer<uint, ScalarDataLayout> BodyLevels;
+RWStructuredBuffer<uint, ScalarDataLayout> PairCounts;
+RWStructuredBuffer<uint, ScalarDataLayout> PairOffsets;
+RWStructuredBuffer<uint, ScalarDataLayout> BlockTotals;
+RWStructuredBuffer<uint, ScalarDataLayout> BlockOffsets;
+RWStructuredBuffer<uint, ScalarDataLayout> BinOffsets;
+RWStructuredBuffer<uint, ScalarDataLayout> PairWritePositions;
+RWStructuredBuffer<DeviceCollisionPair, ScalarDataLayout> CollisionPairs;
 
 struct DevicePairClassification
 {
@@ -145,7 +134,6 @@ void ClearDeviceGrid(uint3 id : SV_DispatchThreadID)
     if (id.x == 0)
     {
         GridCounters[0] = 0;
-        GridCounters[2] = 0;
     }
 }
 
@@ -157,6 +145,11 @@ void BuildDeviceGrid(uint3 id : SV_DispatchThreadID)
     if (bodyIndex >= GridParameters.bodyCount) return;
     DeviceCollisionInput body = CollisionBodies[bodyIndex];
     if (!isCurrentBody(body)) return;
+    if (!all(isfinite(body.min)) || !all(isfinite(body.max)))
+    {
+        BodyLevels[bodyIndex] = 0xffffffffu;
+        return;
+    }
     float3 extent = body.max - body.min;
     float size = max(extent.x, max(extent.y, extent.z));
     uint level = uint(clamp(ceil(log2(max(1.0f, size / GridParameters.cellSize))), 0.0f,
@@ -254,6 +247,19 @@ void enumerateDevicePairs<TRule : IDevicePairRule, TClassifier : IDevicePairClas
     uint firstLevel = BodyLevels[bodyIndex];
     if (GridParameters.pairing == 2)
         emitDeviceMembership(bodyIndex, bodyIndex, rule, classifier, output);
+    if (firstLevel == 0xffffffffu)
+    {
+        for (uint other = 0; other < GridParameters.bodyCount; other++)
+        {
+            DeviceCollisionInput second = CollisionBodies[other];
+            if (other == bodyIndex || !isCurrentBody(second)) continue;
+            if (BodyLevels[other] == 0xffffffffu && !entityPrecedes(first, second)) continue;
+            if (any(first.max < second.min) || any(second.max < first.min)) continue;
+            if (entityPrecedes(first, second)) emitDeviceMembership(bodyIndex, other, rule, classifier, output);
+            else emitDeviceMembership(other, bodyIndex, rule, classifier, output);
+        }
+        return;
+    }
     for (uint level = firstLevel; level < GridParameters.levelCount; level++)
     {
         int3 minimum = gridMinimum(first, level);
@@ -285,17 +291,7 @@ struct DevicePairCountOutput : IDevicePairOutput
     uint partition;
     void add(uint firstIndex, uint secondIndex, DevicePairClassification type)
     {
-        uint index;
-        InterlockedAdd(GridCounters[2], 1, index);
         uint bucket = partition * GridParameters.binCount + type.bin;
-        DeviceGridPairReference pair;
-        pair.firstBody = firstIndex;
-        pair.secondBody = secondIndex;
-        pair.firstGeometry = type.firstGeometry;
-        pair.secondGeometry = type.secondGeometry;
-        pair.next = GridPairHeads[bucket];
-        GridPairReferences[index] = pair;
-        GridPairHeads[bucket] = index;
         PairCounts[bucket]++;
     }
 };
@@ -333,7 +329,6 @@ void countDevicePairs<TRule : IDevicePairRule, TClassifier : IDevicePairClassifi
     for (uint bin = 0; bin < GridParameters.binCount; bin++)
     {
         PairCounts[bodyIndex * GridParameters.binCount + bin] = 0;
-        GridPairHeads[bodyIndex * GridParameters.binCount + bin] = 0xffffffffu;
     }
     DevicePairCountOutput output;
     output.partition = bodyIndex;
@@ -348,23 +343,12 @@ void writeDevicePairs<TRule : IDevicePairRule, TClassifier : IDevicePairClassifi
     for (uint bin = 0; bin < GridParameters.binCount; bin++)
     {
         uint bucket = bodyIndex * GridParameters.binCount + bin;
-        uint node = GridPairHeads[bucket];
-        uint end = BinOffsets[bin]
-            + BlockOffsets[bin * GridParameters.blockCount + block]
-            + PairOffsets[bucket] + PairCounts[bucket];
-        PairWritePositions[bucket] = end;
-        uint position = end;
-        while (node != 0xffffffffu)
-        {
-            DeviceGridPairReference pair = GridPairReferences[node];
-            DevicePairClassification type;
-            type.bin = bin;
-            type.firstGeometry = pair.firstGeometry;
-            type.secondGeometry = pair.secondGeometry;
-            writeDevicePair(--position, pair.firstBody, pair.secondBody, type);
-            node = pair.next;
-        }
+        PairWritePositions[bucket] = BinOffsets[bin]
+            + BlockOffsets[bin * GridParameters.blockCount + block] + PairOffsets[bucket];
     }
+    DevicePairWriteOutput output;
+    output.partition = bodyIndex;
+    enumerateDevicePairs(bodyIndex, rule, classifier, output);
 }
 
 groupshared uint ScanValues[256];

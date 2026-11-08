@@ -121,6 +121,8 @@ public readonly struct WriteDeviceGeometryReferences<TComponent, TSource> : IPhy
         private readonly QueryReadResources _resources = new();
         private readonly JobResourceAccess[] _accesses;
         private readonly List<Entity> _entities = [];
+        private readonly PhysicsQueryWindow _firstWindow, _secondWindow;
+        private uint _firstBaseline, _secondBaseline;
         private World World => _participants.World;
         public int Count => _entities.Count;
         public Entity GetEntity(int index) => _entities[index];
@@ -129,6 +131,8 @@ public readonly struct WriteDeviceGeometryReferences<TComponent, TSource> : IPhy
             TSource source, uint geometryType, int rowsPerPacket)
         {
             _grid = grid; _participants = participants; _source = source;
+            _firstWindow = new(participants.World.GetQueryDefinition(participants.First));
+            _secondWindow = new(participants.World.GetQueryDefinition(participants.Second));
             _geometryType = geometryType; _rowsPerPacket = rowsPerPacket;
             QueryDefinition references = source.AddReads(QueryDefinition.Empty);
             QueryDefinition geometries = source.AddReads(new QueryDefinitionBuilder().Read<DeviceCollisionBody>()
@@ -153,7 +157,7 @@ public readonly struct WriteDeviceGeometryReferences<TComponent, TSource> : IPhy
         internal JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency)
         {
             dependency = _source.Prepare(in context, QueryDefinition.Empty, _rowsPerPacket, dependency);
-            return WorldJobs.GetScheduler(World).Schedule(new ReadMembers(this), _accesses, dependency);
+            return WorldJobs.GetScheduler(World).Schedule(new ReadMembers(this, context), _accesses, dependency);
         }
 
         public void Dispose()
@@ -162,10 +166,11 @@ public readonly struct WriteDeviceGeometryReferences<TComponent, TSource> : IPhy
             World.ReleaseQuery(_references);
         }
 
-        private readonly struct ReadMembers(GeometryInputRows inputs) : IJob
+        private readonly struct ReadMembers(GeometryInputRows inputs, PhysicsStepContext context) : IJob
         {
             public void Execute()
             {
+                inputs._firstBaseline = inputs._firstWindow.Begin(context); inputs._secondBaseline = inputs._secondWindow.Begin(context);
                 inputs._entities.Clear();
                 GeometryInputRows state = inputs;
                 inputs.World.ExecuteReadQuery(inputs._geometries, ref state,
@@ -189,7 +194,7 @@ public readonly struct WriteDeviceGeometryReferences<TComponent, TSource> : IPhy
                     static (scoped QueryCursor references, ref GeometryInputRows output) =>
                     {
                         var read = new ReadFirstMembers(output, references);
-                        output.World.ExecuteReadQuery(output._participants.First, ref read,
+                        output.World.ExecuteReadQuery(output._participants.First, output._firstBaseline, ref read,
                             static (scoped QueryCursor first, ref ReadFirstMembers state) => state.Execute(first));
                     });
             }
@@ -201,6 +206,7 @@ public readonly struct WriteDeviceGeometryReferences<TComponent, TSource> : IPhy
 
             internal void Execute(scoped QueryCursor first)
             {
+                inputs._firstWindow.Accept(first.CurrentSystemVersion);
                 if (inputs._participants.Pairing == DevicePairing.Within)
                 {
                     var write = new WriteGeometryRows(inputs, _references, first, first);
@@ -209,7 +215,7 @@ public readonly struct WriteDeviceGeometryReferences<TComponent, TSource> : IPhy
                     return;
                 }
                 var read = new ReadSecondMembers(inputs, _references, first);
-                inputs.World.ExecuteReadQuery(inputs._participants.Second, ref read,
+                inputs.World.ExecuteReadQuery(inputs._participants.Second, inputs._secondBaseline, ref read,
                     static (scoped QueryCursor second, ref ReadSecondMembers state) => state.Execute(second));
             }
         }
@@ -220,6 +226,7 @@ public readonly struct WriteDeviceGeometryReferences<TComponent, TSource> : IPhy
 
             internal void Execute(scoped QueryCursor second)
             {
+                inputs._secondWindow.Accept(second.CurrentSystemVersion);
                 var write = new WriteGeometryRows(inputs, _references, _first, second);
                 inputs.World.ExecuteReadQuery(inputs._geometries, ref write,
                     static (scoped QueryCursor rows, ref WriteGeometryRows state) => state.Execute(rows));

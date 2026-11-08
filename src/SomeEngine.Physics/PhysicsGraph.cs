@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Queries;
+using SomeEngine.ECS.Systems;
 using SomeEngine.Job;
 
 namespace SomeEngine.Physics;
@@ -19,12 +20,14 @@ public readonly ref struct PhysicsConstraintGraphBuilder
     internal PhysicsConstraintGraphBuilder(PhysicsGraphData data, PhysicsBodies bodies) { _data = data; _bodies = bodies; }
     public void Add(int query, Entity constraint, ReadOnlySpan<PhysicsConstraintBody> bodies, ReadOnlySpan<Entity> references) =>
         _data.Add(query, constraint, bodies, references);
+    public void Add(int query, Entity constraint, int element, ReadOnlySpan<PhysicsConstraintBody> bodies, ReadOnlySpan<Entity> references) =>
+        _data.Add(query, constraint, bodies, references, element);
     public void Add<TConstraint, TBodies>(int query, scoped QueryRow row, in PhysicsStepContext context)
         where TConstraint : struct, SomeEngine.ECS.IComponent where TBodies : struct, IPhysicsConstraintBodies<TConstraint> =>
         _data.Add<TConstraint, TBodies>(query, row, _bodies, in context);
 }
 
-internal readonly record struct PhysicsConstraintIdentity(int Query, Entity Entity);
+internal readonly record struct PhysicsConstraintIdentity(int Query, Entity Entity, int Element = 0);
 
 /// <summary>Entity connectivity and reusable execution ranges; all numerical state remains in components.</summary>
 internal sealed partial class PhysicsGraphData : IDisposable
@@ -70,6 +73,13 @@ internal sealed partial class PhysicsGraphData : IDisposable
     internal readonly List<PhysicsGraphBatch> Batches = [], ScalarBatches = [];
     internal readonly List<List<PhysicsGraphBatch>> ProjectionGroups = [], BodyGroups = [];
     internal readonly List<Entity> Writes = [], References = [];
+    internal void RecordNumericalWrites(uint version, scoped EntityQueryViews rows)
+    {
+        for (int query = 0; query < _queryCount; query++)
+            foreach (QueryRow row in rows.Get(query + 3).Rows)
+                if (_constraints.TryGetValue(new(query, row.Entity), out ConstraintInput? constraint))
+                    constraint.SolverWriteVersion = version;
+    }
     internal JobResourceAccess ReadAccess => JobResourceAccess.Read(_resource);
     internal JobResourceAccess WriteAccess => JobResourceAccess.Write(_resource);
     internal int ProjectionWorkCount => ScalarBatches.Count + ProjectionGroups.Sum(static group => group.Count);
@@ -125,13 +135,29 @@ internal sealed partial class PhysicsGraphData : IDisposable
         for (int query = 0; query < _queryCount; query++)
         {
             var colors = new List<List<ConstraintInput>>();
+            var bodyColors = new Dictionary<Entity, ProjectionColorUses>();
+            var used = new HashSet<int>();
             foreach (ConstraintInput constraint in island.Records.Where(row => row.Identity.Query == query))
             {
+                used.Clear();
+                foreach (var participant in constraint.Bodies)
+                {
+                    if (_bodies[participant.Key].Motion != BodyMotion.Dynamic
+                        || !bodyColors.TryGetValue(participant.Key, out ProjectionColorUses? previous)) continue;
+                    used.UnionWith(previous.Writes);
+                    if (participant.Value) used.UnionWith(previous.Reads);
+                }
                 int color = 0;
-                for (; color < colors.Count; color++)
-                    if (colors[color].All(other => !Conflicts(constraint, other))) break;
+                while (used.Contains(color)) color++;
                 if (color == colors.Count) colors.Add([]);
                 colors[color].Add(constraint);
+                foreach (var participant in constraint.Bodies)
+                {
+                    if (_bodies[participant.Key].Motion != BodyMotion.Dynamic) continue;
+                    if (!bodyColors.TryGetValue(participant.Key, out ProjectionColorUses? previous))
+                        bodyColors.Add(participant.Key, previous = new());
+                    (participant.Value ? previous.Writes : previous.Reads).Add(color);
+                }
             }
             for (int color = 0; color < colors.Count; color++)
             {
@@ -148,11 +174,9 @@ internal sealed partial class PhysicsGraphData : IDisposable
         }
     }
 
-    private bool Conflicts(ConstraintInput first, ConstraintInput second)
+    private sealed class ProjectionColorUses
     {
-        foreach (var use in first.Bodies)
-            if (_bodies[use.Key].Motion == BodyMotion.Dynamic && second.Bodies.TryGetValue(use.Key, out bool writes) && (use.Value || writes)) return true;
-        return false;
+        internal readonly HashSet<int> Reads = [], Writes = [];
     }
 
     private void BuildBodyColors(Island island)
@@ -246,6 +270,8 @@ internal sealed partial class PhysicsGraphData : IDisposable
         internal readonly Dictionary<Entity, bool> Bodies = [];
         internal readonly HashSet<Entity> References = [];
         internal long Read;
+        internal uint InputVersion;
+        internal uint SolverWriteVersion;
         internal int Order;
         internal Island? Island;
     }
@@ -277,17 +303,19 @@ internal sealed class PhysicsGraphBatch(int queryCount)
     private readonly List<Entity>[] _entities = Enumerable.Range(0, queryCount).Select(static _ => new List<Entity>()).ToArray();
     private readonly HashSet<Entity>[] _unique = Enumerable.Range(0, queryCount).Select(static _ => new HashSet<Entity>()).ToArray();
     internal readonly List<PhysicsGraphData.Island> Islands = [];
+    private readonly HashSet<PhysicsConstraintIdentity> _constraints = [];
     internal int DynamicCount => Islands.Sum(static island => island.DynamicBodies.Count);
     internal ReadOnlySpan<Entity> Entities(int query) => CollectionsMarshal.AsSpan(_entities[query]);
     internal void Clear()
     {
         foreach (List<Entity> entities in _entities) entities.Clear();
         foreach (HashSet<Entity> entities in _unique) entities.Clear();
-        Islands.Clear();
+        Islands.Clear(); _constraints.Clear();
     }
     internal void AddIsland(PhysicsGraphData.Island island)
     {
         Islands.Add(island); island.Batch = this;
+        foreach (var constraint in island.Records) _constraints.Add(constraint.Identity);
         Add(0, island.Reads); Add(1, island.Writes); Add(2, island.References);
         for (int index = 0; index < island.Constraints.Length; index++) Add(index + 3, island.Constraints[index]);
     }
@@ -300,6 +328,7 @@ internal sealed class PhysicsGraphBatch(int queryCount)
             Add(0, use.Key);
             if (writes && use.Value && masses[use.Key].Motion == BodyMotion.Dynamic) Add(1, use.Key);
         }
+        _constraints.Add(identity);
         Add(2, references); Add(identity.Query + 3, identity.Entity);
     }
     private void Add(int query, Entity entity) { if (_unique[query].Add(entity)) _entities[query].Add(entity); }
@@ -313,8 +342,7 @@ internal sealed class PhysicsGraphBatch(int queryCount)
     internal void RefreshReferences(Dictionary<PhysicsConstraintIdentity, PhysicsGraphData.ConstraintInput> constraints)
     {
         _entities[2].Clear(); _unique[2].Clear();
-        for (int query = 3; query < _entities.Length; query++)
-            foreach (Entity entity in _entities[query])
-                Add(2, constraints[new(query - 3, entity)].References);
+        foreach (PhysicsConstraintIdentity identity in _constraints)
+            if (constraints.TryGetValue(identity, out PhysicsGraphData.ConstraintInput? constraint)) Add(2, constraint.References);
     }
 }

@@ -17,7 +17,7 @@ public readonly struct InitializeContactResponses : IPhysicsStage, IDisposable
     {
         _world = world;
         _bodies = world.Query(QueryDefinition.Empty.WithAccessFrom(world.GetQueryDefinition(bodies).AsReadOnly())
-            .WithOptionalRead<BodyActivity>().WithOptionalRead<DirectedRelationEndpoints<ContactParticipant>>());
+            .WithOptionalRead<BodyActivity>());
         _contacts = contacts;
         var accesses = new List<JobResourceAccess>();
         PhysicsQueryAccess.AddAccesses(world, _bodies, accesses);

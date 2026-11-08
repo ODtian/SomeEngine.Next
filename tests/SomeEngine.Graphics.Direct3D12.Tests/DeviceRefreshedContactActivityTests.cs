@@ -42,7 +42,7 @@ public sealed partial class DeviceXpbdTests
         QueryHandle points = world.Query(world.QueryDefinition().Read<ContactPoint>());
         QueryHandle states = world.Query(world.QueryDefinition().Read<AvbdContactState>()
             .Read<DeviceConstraintBinding<DeviceContactConstraint>>().Read<DeviceAvbdState<DeviceAvbdContactState>>());
-        QueryHandle events = world.Query(world.QueryDefinition().Read<PhysicsStepEvents>().ReadBuffer<PhysicsEvent>());
+        QueryHandle events = world.Query(world.QueryDefinition().Read<PhysicsStepEvents>().Enabled<PhysicsStepEvents>().ReadBuffer<PhysicsEvent>());
         var pairs = world.Within(spheres);
         using var detection = new DeviceCollisionDetection(backend, device, grid, geometry, CompileSleepingRefreshDetection(), 0,
             new(4, 4, 1), new(1e-5f, 32, 64), .02f, DeviceInputTransfer.Resident, DeviceCollisionReadback.Contacts);
@@ -69,16 +69,17 @@ public sealed partial class DeviceXpbdTests
         world.Add(moving, new DeviceBodyActivityBinding(activities));
         var bindings = new Dictionary<string, ResourceBinding[]>(); activities.AddBindings(bindings);
         parameters.AddBindings(bindings); anchors.AddBindings(bindings); histories.AddBindings(bindings); responses.AddBindings(bindings);
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileActiveBodyDynamics(), 64,
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileActiveBodyDynamics(), 64,
             bindings, activities.GetWriteAccesses(jobs));
         using var bodyInputs = new DeviceBodyInputs(world, members, bodies);
         using var bodyResults = new DeviceBodyResults(backend, device, bodies);
         using var sphereInputs = grid.WriteGeometryReferences<SphereGeometry, DeviceComponentSource<SphereGeometry, DeviceSphereReader>>(pairs, default, 0, 64);
-        using var update = new UpdateDeviceGeometry(backend, device, grid, geometry, CompileSleepingRefreshGeometry(), 0, DeviceInputTransfer.Upload);
+        using var update = new UpdateDeviceGeometry(backend, device, grid, geometry, CompileSleepingRefreshGeometry(), 0, DeviceInputTransfer.Upload,
+            contactDistance: .02f);
         JobResourceAccess[] reads = [.. parameters.GetReadAccesses(jobs), anchors.GetReadAccess(jobs), .. activities.GetReadAccesses(jobs)];
         using var graph = new DeviceConstraintGraph(backend, device, bodies, dynamics, CompileSleepingContactGraph(), new(4, 2),
             bindings, reads, 64, new[] { selected });
-        using var solve = new DeviceAvbdSolver(backend, device, bodies, equations, graph, CompileSleepingContactAvbd(), new(16, 1, .5f, 0),
+        using var solve = new AvbdGraphCommands(backend, device, bodies, equations, graph, CompileSleepingContactAvbd(), new(16, 1, .5f, 0),
             bindings, reads.Concat(new[] { histories.GetWriteAccess(jobs), responses.GetWriteAccess(jobs) }).ToArray(), 64,
             new IDeviceConstraintSelection[] { selectedStates, selectedResponses });
         using var actions = new DeviceContactActions(backend, device, bodies, graph, responses, CompileSleepingContactActions(), bindings,
@@ -87,7 +88,7 @@ public sealed partial class DeviceXpbdTests
             new(.05f, .2f, .01f, .01f), bindings, reads, 64);
         using var samples = new DeviceContactSamples(backend, device, bodies, parameters, CompileSleepingContactSamples(), bindings,
             reads.Append(responses.GetReadAccess(jobs)).ToArray(), 64, new IDeviceConstraintSelection[] { selected, selectedResponses });
-        using var output = new PhysicsEventBuffer(jobs, 16);
+        using var output = new PhysicsEventBuffer(world, 16);
         using var observation = new ContactEvents<RefreshedSleepingContactNotifications, DeviceContactEventSource>(world, members, points, output, .001f, new(samples));
         var received = new List<(long Number, PhysicsEvent Event)>();
         using var consumer = new ConsumePhysicsEvents<RecordDeviceActivityEvents>(world, events, new(received),
@@ -96,7 +97,7 @@ public sealed partial class DeviceXpbdTests
             .Then(grid.Build(pairs, DevicePairRules.None, DeviceInputTransfer.Resident, DevicePairReadback.None)).Then(detection.Detect())
             .Then(detection.WriteContacts(new ContactPointOutput(detected), new[] { detected.WriteAccess }))
             .Then(matching.Match()).Then(refresh.Refresh(currentGeometry.Results)).Then(input.Upload()).Then(stateInput.Upload())
-            .Then(currentGeometry.Update()).Then(activity.UploadInputs()).Then(dynamics.UpdateSelection()).Then(activity.WakeConnected())
+            .Then(matching.UpdateRows().Then(currentGeometry.Update())).Then(activity.UploadInputs()).Then(dynamics.UpdateSelection()).Then(activity.WakeConnected())
             .Then(dynamics.Predict(new(0, -10, 0))).Then(actions.Initialize()).Then(solve.Solve()).Then(dynamics.UpdateVelocities())
             .Then(activity.Finish()).Then(activity.Readback(output)).Then(samples.Readback()).Then(observation).Then(output.Emit());
         using var frame = PhysicsSimulation.Create(world, QueryDefinition.Empty, stages, 1).CreateFrame(consumer, .1, 0, 0, 0);
@@ -165,8 +166,9 @@ public sealed partial class DeviceXpbdTests
     {
         D3D12TestShader shader = shaderCompiler.CompileWithSearchPaths("sleeping_refresh_matching", "#include \"physics_contact_matching.slang\"",
             [new("ClearDeviceContactMatches", SlangStage.Compute), new("IndexDeviceContactMatches", SlangStage.Compute),
-                new("MatchDeviceContacts", SlangStage.Compute)], "sm_6_0", ShaderDirectory());
+                new("MatchDeviceContacts", SlangStage.Compute), new("ClaimContactInputs", SlangStage.Compute),
+                new("CollectNewContactInputs", SlangStage.Compute), new("CollectRemovedContactRows", SlangStage.Compute)], "sm_6_0", ShaderDirectory());
         ComputePipelineDesc Entry(int index) => new(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(index), shader.GetEntryCode(index));
-        return new(Entry(0), Entry(1), Entry(2));
+        return new(Entry(0), Entry(1), Entry(2), Entry(3), Entry(4), Entry(5));
     }
 }

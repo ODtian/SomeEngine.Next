@@ -110,7 +110,7 @@ public readonly struct DetectContactPoints<TEnumerable, TPartition, TClassifier,
             return scheduler.Schedule(new FillAndDetect(_pairs, _bins, _classifier, _narrowPhases, _output, _reads, context), _accesses, dependency);
         JobHandle filled = scheduler.Schedule(new Fill(_pairs, _bins, _classifier, _output, _reads), _accesses, dependency);
         return _resources.ScheduleEntities(context.World, _reads.Access, new PairEntities(_bins),
-            new Detect(_bins, _narrowPhases, _reads, context), _detectionAccesses, filled);
+            new Detect(_bins, _narrowPhases, _output, _reads, context), _detectionAccesses, filled);
     }
 
     private readonly struct FillAndDetect(RelationQuery<TEnumerable, (Entity, Entity)> pairs, CollisionPairBins<TPartition> bins,
@@ -125,8 +125,10 @@ public readonly struct DetectContactPoints<TEnumerable, TPartition, TClassifier,
         }
         public void Execute(scoped RelationQueryViews views)
         {
-            pairs.FillPairBins(bins, classifier, views);
-            narrowPhases.Detect(in context, views.Access, bins);
+            pairs.FillPairBinsParallel(bins, classifier, views);
+            output.BeginParallelWrites();
+            try { narrowPhases.Detect(in context, views.Access, bins); }
+            finally { output.CompleteParallelWrites(); }
         }
     }
 
@@ -140,10 +142,10 @@ public readonly struct DetectContactPoints<TEnumerable, TPartition, TClassifier,
             reads.Execute(ref work);
         }
 
-        public void Execute(scoped RelationQueryViews views) => pairs.FillPairBins(bins, classifier, views);
+        public void Execute(scoped RelationQueryViews views) => pairs.FillPairBinsParallel(bins, classifier, views);
     }
 
-    private readonly struct Detect(CollisionPairBins<TPartition> bins, TNarrowPhases narrowPhases,
+    private readonly struct Detect(CollisionPairBins<TPartition> bins, TNarrowPhases narrowPhases, ContactPointBuffer output,
         RelationQueryReads reads, PhysicsStepContext context) : IJob, IRelationQueryExecution
     {
         public void Execute()
@@ -152,7 +154,12 @@ public readonly struct DetectContactPoints<TEnumerable, TPartition, TClassifier,
             reads.Execute(ref work);
         }
 
-        public void Execute(scoped RelationQueryViews views) => narrowPhases.Detect(in context, views.Access, bins);
+        public void Execute(scoped RelationQueryViews views)
+        {
+            output.BeginParallelWrites();
+            try { narrowPhases.Detect(in context, views.Access, bins); }
+            finally { output.CompleteParallelWrites(); }
+        }
     }
 
     private readonly struct PairEntities(CollisionPairBins<TPartition> bins) : IQueryReadEntities

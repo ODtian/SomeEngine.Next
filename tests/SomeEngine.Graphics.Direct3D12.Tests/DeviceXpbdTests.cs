@@ -35,7 +35,7 @@ public sealed partial class DeviceXpbdTests(D3D12TestCompiler shaderCompiler)
         QueryHandle rows = world.Query(world.QueryDefinition().Read<XpbdLength>().Read<UndirectedRelationEndpoints<XpbdLength>>()
             .Read<DeviceConstraintBinding<DeviceLengthConstraint>>().All<DeviceXpbdState<float>>());
         using var write = lengths.WriteInputs<XpbdLength, DeviceLengthSource>(world, rows, new(), 64);
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
         using var results = new DeviceBodyResults(backend, device, bodies);
         using var project = new DeviceXpbdProjection<DeviceLengthConstraint, float>(backend, device, world, rows,
             bodies, dynamics, lengths, multipliers, CompileLength(), 64);
@@ -71,7 +71,7 @@ public sealed partial class DeviceXpbdTests(D3D12TestCompiler shaderCompiler)
         Entity first = AddBody(world, bodies, 0, Vector3.Zero, BodyMotion.Dynamic);
         world.Replace(first, new BodyVelocity { Linear = Vector3.UnitX });
         QueryHandle members = world.Query(world.QueryDefinition().Read<DeviceBodyBinding>());
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
         using var results = new DeviceBodyResults(backend, device, bodies);
         var compute = bodies.WriteInputs(64).Then(bodies.UploadInputs()).Then(dynamics.Predict(Vector3.Zero))
             .Then(dynamics.UpdateVelocities());
@@ -112,10 +112,10 @@ public sealed partial class DeviceXpbdTests(D3D12TestCompiler shaderCompiler)
         world.Add(bend, new DeviceXpbdState<float>(multipliers));
         QueryHandle members = world.Query(world.QueryDefinition().Read<DeviceBodyBinding>());
         QueryHandle constraints = world.Query(world.QueryDefinition().Read<XpbdBend>().ReadBuffer<ConstraintBodyLink>()
-            .Optional<DirectedRelationEndpoints<ConstraintParticipant>>(QueryAccess.Read)
+
             .Read<DeviceConstraintBinding<DeviceBendConstraint>>().All<DeviceXpbdState<float>>());
         using var write = bends.WriteInputs<XpbdBend, DeviceBendSource>(world, constraints, new(), 64);
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
         using var results = new DeviceBodyResults(backend, device, bodies);
         using var project = new DeviceXpbdProjection<DeviceBendConstraint, float>(backend, device, world, constraints,
             bodies, dynamics, bends, multipliers, CompileBend(), 64);
@@ -154,7 +154,7 @@ public sealed partial class DeviceXpbdTests(D3D12TestCompiler shaderCompiler)
             .Read<UndirectedRelationEndpoints<XpbdLength>>().Read<DeviceConstraintBinding<DeviceLengthConstraint>>()
             .All<DeviceXpbdState<float>>());
         using var write = lengths.WriteInputs<XpbdLength, ProjectLengthSource>(world, constraints, new(), 64);
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
         using var results = new DeviceBodyResults(backend, device, bodies);
         using SomeEngine.Graphics.Buffer scale = backend.CreateBuffer(device, new(4, BufferUsages.ShaderRead), MemoryType.Upload);
         using (MappedBuffer mapping = backend.Map(scale, MapType.Write, BufferRange.Whole))
@@ -198,7 +198,7 @@ public sealed partial class DeviceXpbdTests(D3D12TestCompiler shaderCompiler)
         world.Replace(body, mass); world.Replace(body, velocity);
         reference.Add(expected, mass); reference.Add(expected, velocity); reference.Add(expected, new BodyStepState());
         QueryHandle members = world.Query(world.QueryDefinition().Read<DeviceBodyBinding>());
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileBodyGyroscope(), 64);
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileBodyGyroscope(), 64);
         using var results = new DeviceBodyResults(backend, device, bodies);
         var gpu = bodies.WriteInputs(64).Then(bodies.UploadInputs()).Then(dynamics.ApplyGyroscopicTorque())
             .Then(dynamics.Predict(Vector3.Zero)).Then(dynamics.UpdateVelocities()).Then(results.Readback(64));
@@ -234,7 +234,7 @@ public sealed partial class DeviceXpbdTests(D3D12TestCompiler shaderCompiler)
             .Read<UndirectedRelationEndpoints<XpbdLength>>().Read<DeviceConstraintBinding<DeviceLengthConstraint>>()
             .All<DeviceXpbdState<float>>());
         using var write = lengths.WriteInputs<XpbdLength, DeviceLengthSource>(world, constraints, new(), 64);
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
         using var results = new DeviceBodyResults(backend, device, bodies);
         using var project = new DeviceXpbdProjection<DeviceLengthConstraint, float>(backend, device, world, constraints, bodies, dynamics, lengths, multipliers,
             CompileLength(), threadsPerGroup: 64);
@@ -267,7 +267,7 @@ public sealed partial class DeviceXpbdTests(D3D12TestCompiler shaderCompiler)
         world.Add(body, new BodyStepState());
         world.Add(body, new DeviceBodyBinding(bodies, 3));
         QueryHandle members = world.Query(world.QueryDefinition().Read<DeviceBodyBinding>());
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies,
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies,
             CompileBodyDynamics(), threadsPerGroup: 64);
         using var results = new DeviceBodyResults(backend, device, bodies);
         var stages = bodies.WriteInputs(64).Then(bodies.UploadInputs())
@@ -299,7 +299,7 @@ public sealed partial class DeviceXpbdTests(D3D12TestCompiler shaderCompiler)
         return new(Entry(0), Entry(1));
     }
 
-    private DeviceXpbdKernels CompileLength()
+    private XpbdGraphKernels CompileLength()
     {
         D3D12TestShader shader = shaderCompiler.CompileWithSearchPaths("xpbd_length", """
             #include "physics_xpbd_length.slang"
@@ -314,7 +314,7 @@ public sealed partial class DeviceXpbdTests(D3D12TestCompiler shaderCompiler)
         return new(Entry(0), Entry(1));
     }
 
-    private DeviceXpbdKernels CompileBend()
+    private XpbdGraphKernels CompileBend()
     {
         D3D12TestShader shader = shaderCompiler.CompileWithSearchPaths("xpbd_bend", """
             #include "physics_xpbd_bend.slang"
@@ -339,7 +339,7 @@ public sealed partial class DeviceXpbdTests(D3D12TestCompiler shaderCompiler)
         return new(Entry(0), Entry(1), Entry(2));
     }
 
-    private DeviceXpbdKernels CompileProjectLength()
+    private XpbdGraphKernels CompileProjectLength()
     {
         D3D12TestShader shader = shaderCompiler.CompileWithSearchPaths("project_xpbd", """
             #include "physics_xpbd_length.slang"

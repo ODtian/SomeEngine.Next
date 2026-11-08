@@ -3,7 +3,7 @@
 本页维护当前设备 ALM 数学、约束实体绑定和共同接触阶段。
 主体表示和积分见[设备主体](Device-Bodies.md)，共同参数和 source writer 见
 [设备约束输入](Device-XPBD.md#原实体与设备数据)。
-源码入口为 [DeviceAvbdSolver](../../../src/SomeEngine.Physics/DeviceAvbdSolver.cs)、
+源码入口为 [AvbdGraphCommands](../../../src/SomeEngine.Physics/AvbdGraphCommands.cs)、
 [局部方程](../../../src/SomeEngine.Physics/DeviceAvbdBodyEquations.cs)、
 [数值输入](../../../src/SomeEngine.Physics/DeviceAvbdStateInputs.cs) 和
 [公开设备步行为](../../../tests/SomeEngine.Graphics.Direct3D12.Tests/DeviceAvbdTests.cs)。
@@ -58,7 +58,7 @@ Jacobian、惯性块与响应共同投影到该子空间。
 与数值罚参数。`physics_avbd_elastic.slang` 从原 `ElasticConnection` 的同一物理参数
 组装线性/角弹性，当前误差与累积对偶力共同进入 Body 方程。
 
-`DeviceAvbdSolver.Initialize()` 先从当前参与和选择构建约束图，再初始化子步历史、
+`AvbdGraphCommands.Initialize()` 先从当前参与和选择构建约束图，再初始化子步历史、
 Body 方程索引和组数据；接触调节与支撑分组读取同次图的活动主体及连通根。
 `Iterate(n)` 在当前子步继续 primal/dual 迭代；`Solve()` 在同一次调度和设备记录中先初始化，
 再执行配置的 primal/dual 迭代，复用初始化时构建的图与原派发间 UAV barrier。
@@ -67,15 +67,15 @@ Body 方程索引和组数据；接触调节与支撑分组读取同次图的活
 `Solve(false, equationInputs)` 在同一设备记录中初始化并迭代，使用项目已交付的图；
 DefaultGame 的设备场景通过此入口复用接触唤醒后的图和固定方程绑定选择。
 `Graph.ConstraintStageCount` 为零时，迭代跳过行对偶派发；组更新保持逐轮执行。
-`DeviceAvbdKernels.ClearBodyIndices` 选择独立的逐 Body 索引清理内核，
+`AvbdGraphKernels.ClearBodyIndices` 选择独立的逐 Body 索引清理内核，
 其具体入口调用 `clearDeviceAvbdBodyIndices`；随后的初始化内核调用
 `initializeDeviceAvbdRows`，逐方程行沿原 Entity metadata 建立 Body 到方程的映射。
 清理与映射之间的 UAV barrier 保持同一索引 buffer 的读写顺序。
 原 `initializeDeviceAvbd` 入口继续提供合并初始化。
-`DeviceAvbdKernels.InitializeGroups` 和 `UpdateGroups` 是可选的具体组阶段，
+`AvbdGraphKernels.InitializeGroups` 和 `UpdateGroups` 是可选的具体组阶段，
 分别位于逐行初始化之后和每轮逐行对偶更新之后；阶段之间使用同一提交内的 UAV barrier。
 `GroupInitializationDispatches` 和 `GroupUpdateDispatches` 在对应阶段接续具体的
-`DeviceAvbdGroupDispatch` 序列。每项给出 `ComputePipelineDesc` 与 RHI `DispatchArguments`，
+`AvbdGraphDispatch` 序列。每项给出 `ComputePipelineDesc` 与 RHI `DispatchArguments`，
 求解器沿同一 `DeviceAvbdStep`、原资源绑定和提交记录派发，并在相邻派发之间维护 UAV barrier。
 混合场景通过现有初始化派发选择 `restoreDeviceAvbdBodyStartPose`，
 在原行历史初始化之后，把活动方程主体的当前姿势放回本步 start pose，作为首个 primal 迭代值。
@@ -92,7 +92,7 @@ DefaultGame 的设备场景通过此入口复用接触唤醒后的图和固定�
 再选择 `Iterate(iterations, buildGraph: false)` 复用该次图结果。
 该继续迭代入口同时复用本次初始化与建图已经捕获的参数成员和数值行索引；
 约束输入及选择在相应初始化、建图阶段交付。默认继续迭代入口沿当前输入捕获并建图。
-`DeviceXpbdSolver.Initialize(buildGraph: false)` 与同名迭代重载使用同一完成依赖；
+`XpbdGraphCommands.Initialize(buildGraph: false)` 与同名迭代重载使用同一完成依赖；
 原默认入口继续在自身求解链构建图。AVBD/XPBD 交替时各阶段共享当前主体、数值历史与图。
 接触反弹的显式图复用重载同样沿其初始化阶段捕获的响应行执行。
 主体、约束及并行图派发复用 `DevicePhysicsDispatch.CreateGroups` 的 X/Y 范围；
@@ -210,7 +210,7 @@ header 与 side 输入共享原 source 读取和输出访问，随后沿同一�
 ## 多端接触参数与公共作用量
 
 [DeviceContactSource](../../../src/SomeEngine.Physics/DeviceContactData.cs) 在同一次原行读取中
-解析 `ContactPoint`、`ContactMaterial`、`ContactBodyLink` 及受保护的 `ContactParticipant` 端点。
+解析 `ContactPoint`、`ContactMaterial`、`ContactBodyLink` 中的直接实体引用。
 128 字节 header 保存双方端数、法向、间距、几何采样锚差、世界见证中点、材料、预测采样时刻及双方几何身份和特征。
 `DeviceContactBodies` 保存原 32 字节 `DeviceContactBody`：实际 Entity、局部锚、插值权重
 及共同 Body 状态索引。项目显式给出接触数和每点端数容量。
@@ -281,10 +281,10 @@ Body 位置与速度沿共同 `DeviceBodyResults` 返回原实体。
 DefaultGame 使用 [并行支撑阶段](../../../assets/Shaders/physics_contact_support_parallel.slang)。
 高度排序的逆表与原 graph 邻接给出每个接触两端的相邻访问：动态下层的足迹读取和上层的接触追加
 沿相同端点的原高度顺序形成依赖，独立端点链同时推进。固定下层保留共同只读输入角色。
-就绪接触由至多 128 个、每组 64 lane 的持久消费者处理。映射阶段清空全部接触容量的票位，并确定本次任务总数；
+就绪接触由至多 128 个、每组 64 lane 的持久消费者处理。映射阶段按本次选中接触数清理票位，并确定本次任务总数；
 生产者领取递增写票，在前序写回可见后发布接触。消费者初次及每完成一项时领取递增读票，
 沿自己的票位读取已发布接触，写回后释放后继；读票到达固定总数时结束。
 运动变化只重建所属连通分量。原仿射权重同时产生目标接触的 incoming 引用；反向阶段等待上方接触载荷完成，
 由目标接触单独汇总 Body 反力和上方接触载荷，再写回自身世界辅助力及共同响应。
 跨组读写的支撑状态和整数依赖使用全设备可见的 UAV，发布就绪项前执行设备内存屏障。
-阶段之间沿原 `DeviceAvbdSolver` 的 UAV 屏障推进，主轮数和每体局部轮数继续使用原设置。
+阶段之间沿原 `AvbdGraphCommands` 的 UAV 屏障推进，主轮数和每体局部轮数继续使用原设置。

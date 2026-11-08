@@ -161,6 +161,7 @@ internal sealed class DeviceCrowdMotorTargets : IDisposable
     {
         public IGraphicsBackend Backend => targets._backend;
         public Device Device => targets._device;
+        public SomeEngine.Graphics.Queue Queue => Backend.GetQueue(Device, QueueType.Compute);
         public QueueCompletion Submit() => targets.Submit(in context);
     }
     public void Dispose()

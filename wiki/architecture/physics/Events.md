@@ -10,8 +10,9 @@
 ## 所属步与持有者
 
 `PhysicsEventBuffer` 复用各子步的派生输出容量，提供显式 `ReadAccess` 与 `WriteAccess`。
-`Emit()` 在最后子步通过原 `JobCommandBuffer` 创建事件实体；
-实体上的 `PhysicsStepEvents` 保存完整步号和起止时刻，`PhysicsEvent` Buffer 保存该步发生的全部结果。
+`Emit()` 初始化时通过原 `JobCommandBuffer` 创建事件流实体，随后复用该实体与缓冲容量。
+最后子步把结果追加到 `PhysicsEvent` Buffer，并以 `PhysicsStepEventRange` 保存各完成步的范围及起止时刻。
+实体上的 `PhysicsStepEvents` 指向最早待消费步；其启用状态表达当前存在待消费结果。
 `Emit(components)` 允许具体 `IPhysicsEventComponents` 添加项目的事件筛选组件。
 Buffer 先于 Header 记录，结构完成依赖覆盖创建、回放与命令释放。
 
@@ -25,10 +26,11 @@ Buffer 先于 Header 记录，结构完成依赖覆盖创建、回放与命令�
 `ConsumePhysicsEvents<TConsumer>` 保留调用者查询的成员筛选，读取步号不超过所消费结果的事件实体。
 具体 `IPhysicsEventConsumer.Consume` 在有效借用内接收 Header、事件跨度和原 `JobCommandWriter`，
 项目可记录后续 ECS 命令，并为回调使用的外部数据提供显式资源声明。
-消费后记录事件实体销毁；返回完成句柄覆盖回调、确认回放和命令释放。
+消费后移除已确认的缓冲前缀并推进 Header；缓冲为空时关闭 Header 的启用状态。
+返回完成句柄覆盖回调、确认回放和命令释放，事件流实体随 `PhysicsEventBuffer.Dispose` 释放。
 
 该阶段可作为 [PhysicsFrame](Physics-Frames.md) 的原消费者或与其他具体消费者组合。
-中间步的实体保留到消费确认，帧层继续只保存完成步、时刻与 Job 句柄。
+各中间步的事件范围保留到消费确认，帧层继续只保存完成步、时刻与 Job 句柄。
 确认完成成为下一次实际物理写入的依赖。
 
 ## 接触、触发与生命周期
@@ -44,7 +46,7 @@ Buffer 先于 Header 记录，结构完成依赖覆盖创建、回放与命令�
 观察状态保存 Touching 与上一条历史事件，采用原 `ICleanupComponent` 生命周期。
 几何或点销毁后，原受保护关系及数值组件按 ECS 职责释放，cleanup 保留最后结果直到 End 入队；
 观察阶段在同一命令链记录本流 cleanup 组件与点上参与边的
-`Removed<Outgoing<ContactParticipant>>` 事实确认；实体收尾继续沿原 ECS cleanup 职责进行。
+实体收尾继续沿原 ECS cleanup 职责进行。
 筛选离开通过同流的派生成员索引和历史结果发出 End，容量持续复用。
 
 `ContactEvents<TScope,TSource>` 用具体 `IContactEventSource` 提供当前
@@ -59,6 +61,9 @@ Buffer 先于 Header 记录，结构完成依赖覆盖创建、回放与命令�
 `Readback()` 先执行具体采样内核，再沿真实 RHI fence 读取观测数组；
 `DeviceContactEventSource` 按原参数绑定和点的实体代次读取该观测。
 主体结果可以在选定的结果消费者中读取，事件流继续经过原 `PhysicsEventBuffer` 和 Frame。
+`IPhysicsEventConsumer.RequiresContactDetails` 由消费者声明实际数据需求。
+计数消费者由设备汇总接触 Begin/Stay/End，以 `PhysicsEvent.Occurrences` 交付数量；
+明细消费者读取实际选中接触行的采样。活动读回交付变化行，断裂读回交付设备筛出的超限约束及载荷。
 [共同采样数学](../../../assets/Shaders/physics_contact_samples.slang) 使用当前加权见证点的中点、
 共同接触间距和原参数中的几何身份。`DeviceTriggerEventForces` 返回零力，
 `DeviceResponseEventForces` 在 [响应采样头](../../../assets/Shaders/physics_contact_response_samples.slang)

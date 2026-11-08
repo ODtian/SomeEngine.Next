@@ -76,7 +76,7 @@ public sealed partial class DeviceReferencedGeometryTests
             .Read<BodyStepState>().Read<BodyVelocity>().ReadWrite<AvbdBodyEquation>());
         QueryHandle responsePoints = world.Query(world.QueryDefinition().Read<ContactPoint>()
             .Read<UndirectedRelationEndpoints<ContactPoint>>().Read<ContactMaterial>().ReadBuffer<ContactBodyLink>()
-            .Optional<DirectedRelationEndpoints<ContactParticipant>>(QueryAccess.Read).ReadWrite<AvbdContactState>().ReadWrite<ContactResponse>());
+            .ReadWrite<AvbdContactState>().ReadWrite<ContactResponse>());
         var stages = new PredictBodies(Vector3.Zero, 64).Then(bodies.WriteInputs(64)).Then(bodies.UploadInputs())
             .Then(grid.BeginInputs()).Then(edgeInputs).Then(fieldInputs).Then(fields.UploadInputs())
             .Then(edgeUpdate.Update()).Then(fieldUpdate.Update())

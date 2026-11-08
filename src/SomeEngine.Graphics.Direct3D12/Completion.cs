@@ -80,6 +80,21 @@ internal sealed unsafe partial class D3D12Backend
         }
     }
 
+    public ValueTask WaitAsync(QueueCompletion completion)
+    {
+        D3D12Queue queue = RequireQueue(completion.Queue, nameof(completion));
+        if (queue.IsComplete(completion.Value)) return ValueTask.CompletedTask;
+        var completed = new EventWaitHandle(false, EventResetMode.AutoReset);
+        try
+        {
+            ThrowIfFailed(queue.NativeDevice,
+                ResourceTrace.SetEventOnCompletion(queue.Fence, completion.Value, (void*)completed.SafeWaitHandle.DangerousGetHandle()),
+                NativeOperationType.Ordinary, "ID3D12Fence::SetEventOnCompletion");
+            return D3D12QueueWait.Complete(completed, () => queue.IsComplete(completion.Value));
+        }
+        catch { completed.Dispose(); throw; }
+    }
+
     private static WaitStatus ThrowWaitFailure(D3D12Device device)
     {
         ThrowAfterDeviceRemovedReasonQuery(
@@ -87,5 +102,22 @@ internal sealed unsafe partial class D3D12Backend
             Marshal.GetHRForLastWin32Error(),
             "Waiting for a Direct3D 12 completion");
         return default;
+    }
+}
+
+internal static class D3D12QueueWait
+{
+    internal static async ValueTask Complete(EventWaitHandle completed, Func<bool> isComplete)
+    {
+        var signal = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        RegisteredWaitHandle registration = ThreadPool.RegisterWaitForSingleObject(completed,
+            static (state, _) => ((TaskCompletionSource)state!).SetResult(), signal, Timeout.Infinite, true);
+        try
+        {
+            await signal.Task.ConfigureAwait(false);
+            if (!isComplete())
+                throw new GraphicsException(GraphicsError.NativeFailure, "The queue completion event preceded its fence value.");
+        }
+        finally { registration.Unregister(null); completed.Dispose(); }
     }
 }

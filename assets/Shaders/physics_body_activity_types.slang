@@ -11,8 +11,8 @@ struct DeviceBodyActivityInput
     uint entityIndex; uint entityGeneration; uint flags; uint sleeping;
     float quietSeconds; float radius; uint2 padding;
 };
-RWStructuredBuffer<DeviceBodyActivityState> DeviceBodyActivities;
-StructuredBuffer<DeviceBodyActivityInput> DeviceBodyActivityInputs;
+RWStructuredBuffer<DeviceBodyActivityState, ScalarDataLayout> DeviceBodyActivities;
+StructuredBuffer<DeviceBodyActivityInput, ScalarDataLayout> DeviceBodyActivityInputs;
 bool deviceBodyActivityAwake(uint index)
 {
     DeviceBodyActivityState activity=DeviceBodyActivities[index];

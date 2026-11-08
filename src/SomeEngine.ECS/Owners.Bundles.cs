@@ -355,7 +355,7 @@ internal readonly struct Bundles
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal void WritePreparedComponent<T>(
         in BundleMaterializedRow row,
-        in T value)
+        in T value, uint writeVersion)
         where T : struct, IComponent
     {
         int componentId = ComponentMetadata<T>.Id;
@@ -367,7 +367,7 @@ internal readonly struct Bundles
             columnIndex,
             row.Row,
             in value,
-            _clock.Tick,
+            writeVersion,
             enableMaskIndex);
         _structure.ComponentWriteVersions.Advance(componentId);
     }
@@ -623,7 +623,7 @@ internal readonly struct Bundles
                 this,
                 plan,
                 sparseComponentIds,
-                token);
+                token, unchecked(_clock.Acquire() + 1));
             for (int index = 0; index < count; index++)
             {
                 runtime.BeginPreparedRow(index);
@@ -656,7 +656,7 @@ internal readonly struct Bundles
                 this,
                 plan,
                 sparseComponentIds,
-                token);
+                token, unchecked(_clock.Acquire() + 1));
             for (int index = 0; index < count; index++)
             {
                 runtime.BeginPreparedRow(index);

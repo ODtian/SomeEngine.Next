@@ -13,6 +13,34 @@ namespace SomeEngine.Graphics.Direct3D12.Tests;
 public sealed partial class DeviceXpbdTests
 {
     [Fact]
+    public void KinematicDeviceVelocityTargetsKeepTheirAngularSpeedAcrossMultipleTurns()
+    {
+        using var backend = D3D12GraphicsBackend.Create();
+        using Device device = CreateDevice(backend);
+        using var jobs = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using World world = WorldJobs.CreateWorld(scheduler: jobs);
+        using var bodies = new DeviceBodies(backend, device, 1);
+        Entity body = AddBody(world, bodies, 0, Vector3.Zero, BodyMotion.Kinematic);
+        Vector3 angular = new(0, 0, 200 * MathF.PI);
+        world.AddBuffer<BodyVelocityTarget>(body);
+        world.ExecuteBufferWrite<BodyVelocityTarget>(body, targets => targets.Add(new() { Angular = angular, Time = 0 }));
+        QueryHandle members = world.Query(world.QueryDefinition().Read<DeviceBodyBinding>());
+        using var inputs = new DeviceBodyInputs(world, members, bodies);
+        using var timed = new DeviceBodyInputBuffers(backend, device, world, members, bodies, CompileBodyInputBuffers(), 64);
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
+        using var results = new DeviceBodyResults(backend, device, bodies);
+        var stages = inputs.Upload().Then(timed.WriteInputs()).Then(timed.Apply()).Then(dynamics.Predict(Vector3.Zero))
+            .Then(dynamics.UpdateVelocities()).Then(results.Readback(64));
+        var simulation = PhysicsSimulation.Create(world, QueryDefinition.Empty, stages, 1);
+
+        simulation.Schedule(0, 0, 1d / 60).Complete();
+        simulation.Schedule(1, 1d / 60, 1d / 60).Complete();
+
+        Assert.InRange(Vector3.Distance(angular, world.Read<BodyVelocity>(body).Angular), 0, 1e-4f);
+        world.ReleaseQuery(members);
+    }
+
+    [Fact]
     public void TimedForcesAndImpulsesUseTheCurrentResidentVelocityMassAndRotatedInertia()
     {
         using var backend = D3D12GraphicsBackend.Create();
@@ -24,7 +52,7 @@ public sealed partial class DeviceXpbdTests
         world.Replace(body, new BodyVelocity { Linear = Vector3.UnitX, Angular = Vector3.UnitZ * MathF.PI });
         QueryHandle members = world.Query(world.QueryDefinition().Read<DeviceBodyBinding>());
         using var inputs = new DeviceBodyInputs(world, members, bodies);
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
         using var results = new DeviceBodyResults(backend, device, bodies, world, members, capacity: 1);
         var first = inputs.Upload().Then(dynamics.Predict(new(10, 0, 0))).Then(dynamics.UpdateVelocities());
         PhysicsSimulation.Create(world, QueryDefinition.Empty, first, 1).Schedule(0, 0, .1).Complete();
@@ -79,7 +107,7 @@ public sealed partial class DeviceXpbdTests
         QueryHandle members = world.Query(world.QueryDefinition().Read<DeviceBodyBinding>());
         using var inputs = new DeviceBodyInputs(world, members, bodies);
         using var timed = new DeviceBodyInputBuffers(backend, device, world, members, bodies, CompileBodyInputBuffers(), 64);
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
         using var results = new DeviceBodyResults(backend, device, bodies, world, members, capacity: 1);
         var stages = inputs.Upload().Then(timed.WriteInputs()).Then(timed.Apply())
             .Then(dynamics.Predict(Vector3.Zero)).Then(dynamics.UpdateVelocities());
@@ -119,7 +147,7 @@ public sealed partial class DeviceXpbdTests
         QueryHandle members = world.Query(world.QueryDefinition().Read<DeviceBodyBinding>());
         using var inputs = new DeviceBodyInputs(world, members, bodies);
         using var timed = new DeviceBodyInputBuffers(backend, device, world, members, bodies, CompileBodyInputBuffers(), 64);
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
         using var results = new DeviceBodyResults(backend, device, bodies, world, members, capacity: 1);
         var stages = inputs.Upload().Then(timed.WriteInputs()).Then(timed.Apply())
             .Then(dynamics.Predict(Vector3.Zero)).Then(timed.ApplyKinematicTargets())

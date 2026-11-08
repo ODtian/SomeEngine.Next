@@ -16,6 +16,6 @@ struct DeviceMotorConstraint
     float3 targetAngularVelocity; uint padding9;
     uint2 targetTime; uint2 padding10;
 };
-RWStructuredBuffer<DeviceMotorConstraint> DeviceMotors;
-RWStructuredBuffer<DeviceConstraintMetadata> DeviceMotorsMetadata;
+RWStructuredBuffer<DeviceMotorConstraint, ScalarDataLayout> DeviceMotors;
+RWStructuredBuffer<DeviceConstraintMetadata, ScalarDataLayout> DeviceMotorsMetadata;
 #endif

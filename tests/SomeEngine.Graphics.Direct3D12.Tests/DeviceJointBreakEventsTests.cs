@@ -37,7 +37,7 @@ public sealed partial class DeviceAvbdTests
             .Read<DeviceConstraintBinding<DeviceJointConstraint>>().Read<DeviceAvbdState<DeviceAvbdJointState>>());
         QueryHandle breakingRows = world.Query(world.QueryDefinition().Read<JointConstraint>().Read<ConstraintBreakSettings>()
             .Read<DeviceConstraintBinding<DeviceJointConstraint>>().Read<DeviceConstraintForceBinding<DeviceJointConstraint>>());
-        QueryHandle events = world.Query(world.QueryDefinition().Read<PhysicsStepEvents>().ReadBuffer<PhysicsEvent>());
+        QueryHandle events = world.Query(world.QueryDefinition().Read<PhysicsStepEvents>().Enabled<PhysicsStepEvents>().ReadBuffer<PhysicsEvent>());
         using var input = parameters.WriteInputs<JointConstraint, DeviceJointSource>(world, joints, default, 64);
         using var stateInput = new DeviceAvbdStateInputs<AvbdJointState, DeviceJointConstraint, DeviceAvbdJointState, DeviceAvbdJointStateSource>(
             backend, device, world, states, parameters, histories, default);
@@ -45,13 +45,13 @@ public sealed partial class DeviceAvbdTests
             parameters, "DeviceJointsSelection");
         using var selectedStates = new DeviceConstraintSelection<JointConstraint, DeviceJointConstraint, DeviceAvbdStateRows<DeviceAvbdJointState>>(
             backend, device, world, joints, parameters, new(histories), "DeviceJointAvbdSelection");
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileDynamics(), 64);
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileDynamics(), 64);
         using var bodyInputs = new DeviceBodyInputs(world, members, bodies);
         using var bodyResults = new DeviceBodyResults(backend, device, bodies);
         var bindings = new Dictionary<string, ResourceBinding[]>(); parameters.AddBindings(bindings); histories.AddBindings(bindings);
         JobResourceAccess[] reads = [.. parameters.GetReadAccesses(jobs), histories.GetReadAccess(jobs)];
         using var graph = new DeviceConstraintGraph(backend, device, bodies, dynamics, CompileJointGraph(), new(4, 2), bindings, reads, 64, new[] { selected });
-        using var solve = new DeviceAvbdSolver(backend, device, bodies, equations, graph, CompileJointAvbd(), new(32, 1, 0, 0),
+        using var solve = new AvbdGraphCommands(backend, device, bodies, equations, graph, CompileJointAvbd(), new(32, 1, 0, 0),
             bindings, parameters.GetReadAccesses(jobs).Append(histories.GetWriteAccess(jobs)).ToArray(), 64, new[] { selectedStates });
         using var forces = new DeviceConstraintForceSamples<DeviceJointConstraint>(backend, device, bodies, parameters,
             CompileJointForceSamples(), 2, bindings, reads, 64, new IDeviceConstraintSelection[] { selected, selectedStates });
@@ -60,7 +60,7 @@ public sealed partial class DeviceAvbdTests
         descriptions.Add<DeviceBodyBinding, DeviceBodyReferenceResources>();
         descriptions.Add<DeviceConstraintBinding<DeviceJointConstraint>, DeviceConstraintReferenceResources<DeviceJointConstraint>>();
         descriptions.Add<DeviceConstraintForceBinding<DeviceJointConstraint>, DeviceConstraintForceResources<DeviceJointConstraint>>();
-        using var output = new PhysicsEventBuffer(jobs, 4);
+        using var output = new PhysicsEventBuffer(world, 4);
         using var breaking = new BreakConstraints<JointConstraint, DeviceConstraintForces<JointConstraint, DeviceJointConstraint>>(
             world, members, breakingRows, output, descriptions, forces.GetReadAccesses(jobs));
         var received = new List<(long Number, PhysicsEvent Event)>();

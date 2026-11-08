@@ -8,6 +8,6 @@ struct DeviceDistanceRangeConstraint
     float3 secondAnchor; uint padding2;
     float minimum; float maximum; float stiffness; uint padding3;
 };
-RWStructuredBuffer<DeviceDistanceRangeConstraint> DeviceDistanceRanges;
-RWStructuredBuffer<DeviceConstraintMetadata> DeviceDistanceRangesMetadata;
+RWStructuredBuffer<DeviceDistanceRangeConstraint, ScalarDataLayout> DeviceDistanceRanges;
+RWStructuredBuffer<DeviceConstraintMetadata, ScalarDataLayout> DeviceDistanceRangesMetadata;
 #endif

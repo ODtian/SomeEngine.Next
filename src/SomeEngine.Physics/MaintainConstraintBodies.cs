@@ -6,7 +6,7 @@ using SomeEngine.Job;
 
 namespace SomeEngine.Physics;
 
-/// <summary>Removes selected constraints whose original protected participation edges have ended.</summary>
+/// <summary>Removes selected constraints whose referenced bodies have ended.</summary>
 public readonly struct MaintainConstraintBodies : IPhysicsStage, IDisposable
 {
     private readonly World _world;
@@ -46,8 +46,7 @@ public readonly struct MaintainConstraintBodies : IPhysicsStage, IDisposable
             foreach (QueryRow row in rows.Rows)
                 foreach (ref readonly ConstraintBodyLink link in row.ReadBuffer<ConstraintBodyLink>().AsSpan())
                 {
-                    if (world.Has<DirectedRelationEndpoints<ConstraintParticipant>>(link.Participant.Entity)
-                        && world.GetDirectedRelationEndpoints(link.Participant).Source == row.Entity) continue;
+                    if (world.IsAlive(link.Body)) continue;
                     _commands.DestroyEntity(row.Entity);
                     break;
                 }

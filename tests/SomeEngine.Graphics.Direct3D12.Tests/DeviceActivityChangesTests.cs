@@ -31,11 +31,11 @@ public sealed partial class DeviceXpbdTests
         foreach (var body in new[] { first, other })
         { world.Add(body, new BodyActivity { Radius = 1 }); world.Add(body, new DeviceBodyActivityBinding(activities)); }
         var activityBindings = new Dictionary<string, ResourceBinding[]>(); activities.AddBindings(activityBindings);
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileActiveBodyDynamics(), 64,
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileActiveBodyDynamics(), 64,
             activityBindings, activities.GetWriteAccesses(jobs));
         using var bodyInputs = new DeviceBodyInputs(world, members, bodies);
         using var results = new DeviceBodyResults(backend, device, bodies);
-        using var output = new PhysicsEventBuffer(jobs, 8);
+        using var output = new PhysicsEventBuffer(world, 8);
         using var inputs = lengths.WriteInputs<XpbdLength, DeviceLengthSource>(world, rows, default, 64);
         using var selected = new DeviceConstraintSelection<XpbdLength, DeviceLengthConstraint, DeviceXpbdStateRows<float>>(
             backend, device, world, rows, lengths, new(multipliers), "DeviceLengthsSelection");
@@ -44,7 +44,7 @@ public sealed partial class DeviceXpbdTests
         JobResourceAccess[] reads = [.. lengths.GetReadAccesses(jobs), .. activities.GetReadAccesses(jobs)];
         using var graph = new DeviceConstraintGraph(backend, device, bodies, dynamics, CompileActiveLengthGraph(),
             new(1, 2), bindings, reads, 64, new[] { selected });
-        using var solve = new DeviceXpbdSolver(backend, device, bodies, graph, CompileGraphLengthProjection(), new(4, 1),
+        using var solve = new XpbdGraphCommands(backend, device, bodies, graph, CompileGraphLengthProjection(), new(4, 1),
             bindings, reads, new[] { multipliers.States }, 64);
         using var activity = new DevicePhysicsActivity(backend, device, activities, graph, CompileLengthActivityKernels(),
             new(.05f, .25f, .01f, .01f), bindings, reads, 64);

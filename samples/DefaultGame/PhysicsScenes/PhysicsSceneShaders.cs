@@ -69,20 +69,30 @@ internal sealed partial class PhysicsSceneShaders
 
     internal ComputePipelineDesc Detection() => Compile("scene_box_detection", """
         #include "physics_geometry_references.slang"
+        #include "physics_box_box_collision.slang"
         [shader("compute")][numthreads(64,1,1)]
         void Detect(uint3 id : SV_DispatchThreadID)
-        { DeviceConvexCollision<DeviceBox,DeviceBox> collision; detectDeviceReferencedCollision(devicePhysicsThreadIndex(id,64),collision); }
+        { BoxBoxCollision collision; detectDeviceReferencedCollision(devicePhysicsThreadIndex(id,64),collision); }
         """, "Detect")[0];
 
     internal DeviceContactMatchKernels Matching()
     {
         ComputePipelineDesc[] entries = Compile("scene_contact_matching", "#include \"physics_contact_matching.slang\"",
-            "ClearDeviceContactMatches", "IndexDeviceContactMatches", "MatchDeviceContacts");
-        return new(entries[0], entries[1], entries[2]);
+            "ClearDeviceContactMatches", "IndexDeviceContactMatches", "MatchDeviceContacts",
+            "ClaimContactInputs", "CollectNewContactInputs", "CollectRemovedContactRows");
+        return new(entries[0], entries[1], entries[2], entries[3], entries[4], entries[5]);
     }
 
     internal ComputePipelineDesc ContactGeometry() => Compile("scene_contact_geometry",
         "#include \"physics_contact_geometry.slang\"", "UpdateDeviceContactGeometry")[0];
+    internal ComputePipelineDesc ContactStateInitialization() => Compile("scene_contact_state_initialization",
+        "#include \"physics_contact_state_initialization.slang\"", "InitializeContactStateRows")[0];
+    internal ContactIdentityKernels ContactIdentityInputs()
+    {
+        ComputePipelineDesc[] entries = Compile("scene_contact_identity_inputs", "#include \"physics_contact_identity_inputs.slang\"",
+            "ClearRemovedContactInputs", "WriteContactIdentityInputs");
+        return new(entries[0], entries[1]);
+    }
 
     internal DeviceGraphKernels Graph(bool contactSupports, bool jointBounds)
     {
@@ -111,18 +121,19 @@ internal sealed partial class PhysicsSceneShaders
             void WriteRows(uint3 id : SV_DispatchThreadID)
             { SceneGraphRows rows; writeDeviceConstraintGraphRows(devicePhysicsThreadIndex(id,64),rows); }
             #include "physics_constraint_graph_parallel.slang"
+            #include "physics_avbd_graph_colors.slang"
             """, "WriteRows", "InitializeDeviceGraph", "ConnectDeviceGraph", "CompressDeviceGraph",
             "ScanDeviceGraphDegrees", "OffsetDeviceGraphBlocks", "AddDeviceGraphDegreeOffsets",
             "WriteDeviceGraphAdjacency", "ResetDeviceGraphColorProgress", "ProposeDeviceBodyColors",
             "ResolveDeviceBodyColors", "ProposeDeviceRowColors", "ResolveDeviceRowColors",
             "CountDeviceGraphColors", "OffsetDeviceGraphGroups", "CountDeviceGraphRows",
-            "OffsetDeviceGraphRanges", "WriteDeviceGraphWork");
+            "OffsetDeviceGraphRanges", "WriteDeviceGraphWork", "PrepareAvbdGraphColors");
         return new(entries[0], new DeviceGraphParallelKernels(entries[1], entries[2], entries[3], entries[4],
             entries[5], entries[6], entries[7], entries[8], entries[9], entries[10], entries[11], entries[12],
-            entries[13], entries[14], entries[15], entries[16], entries[17]));
+            entries[13], entries[14], entries[15], entries[16], entries[17]) { PrepareColors = entries[18] });
     }
 
-    internal DeviceAvbdKernels Avbd(bool contactSupports, bool jointBounds, int bodyCount, int contactCapacity,
+    internal AvbdGraphKernels Avbd(bool contactSupports, bool jointBounds, int bodyCount, int contactCapacity,
         bool hasJoints, bool hasDistanceRanges)
     {
         string[] names = ["ClearBodyIndices", "Initialize", "UpdateBody", "UpdateDuals", "InitializeSupports",
@@ -300,29 +311,29 @@ internal sealed partial class PhysicsSceneShaders
             """, names);
         DispatchArguments bodies = DevicePhysicsDispatch.CreateGroups((bodyCount + 63) / 64);
         DispatchArguments rows = DevicePhysicsDispatch.CreateGroups((Math.Max(bodyCount, contactCapacity) + 63) / 64);
-        // Persistent consumers share one ready list; mapping kernels still cover every row.
+        // Persistent consumers share the selected contact list and their ready work queue.
         const int maximumSupportWorkerGroups = 128;
         DispatchArguments supportWorkers = DevicePhysicsDispatch.CreateGroups(Math.Min(maximumSupportWorkerGroups,
             (bodyCount + 63) / 64));
-        var initialization = new List<DeviceAvbdGroupDispatch>();
-        var updates = new List<DeviceAvbdGroupDispatch>();
+        var initialization = new List<AvbdGraphDispatch>();
+        var updates = new List<AvbdGraphDispatch>();
         if (contactSupports)
         {
-            initialization.AddRange([new(entries[6], bodies), new(entries[7], bodies), new(entries[8], rows),
+            initialization.AddRange([new(entries[6], bodies), new(entries[7], bodies), new(entries[8], rows, true, true),
                 new(entries[9], DevicePhysicsDispatch.CreateGroups((bodyCount + 255) / 256)), new(entries[10], new(1, 1, 1)),
-                new(entries[11], bodies), new(entries[12], rows)]);
+                new(entries[11], bodies), new(entries[12], rows, true, true)]);
             for (long width = 1; width < contactCapacity; width *= 2)
             {
-                initialization.Add(new(entries[13], rows));
-                initialization.Add(new(entries[14], new(1, 1, 1)));
+                initialization.Add(new(entries[13], rows, true, SortWidth: (int)width));
+                initialization.Add(new(entries[14], new(1, 1, 1), SortWidth: (int)width));
             }
-            initialization.Add(new(entries[15], rows));
-            Add(initialization, "ClearDeviceSupportContactOrder", rows);
-            Add(initialization, "WriteDeviceSupportContactOrder", rows);
-            Add(initialization, "WriteDeviceSupportContactEnds", rows);
-            Add(initialization, "WriteDeviceSupportDependencies", rows);
+            initialization.Add(new(entries[15], rows, true));
+            Add(initialization, "ClearDeviceSupportContactOrder", rows, contacts: true);
+            Add(initialization, "WriteDeviceSupportContactOrder", rows, contacts: true);
+            Add(initialization, "WriteDeviceSupportContactEnds", rows, contacts: true);
+            Add(initialization, "WriteDeviceSupportDependencies", rows, contacts: true);
             Add(initialization, "InitializeDeviceSupportRebuild", bodies);
-            Add(initialization, "InitializeDeviceSupportWarmStart", rows);
+            Add(initialization, "InitializeDeviceSupportWarmStart", rows, contacts: true);
             Add(initialization, "CheckDeviceSupportMotion", bodies);
             AddBuild(initialization);
 
@@ -330,28 +341,28 @@ internal sealed partial class PhysicsSceneShaders
             Add(updates, "CheckDeviceSupportMotion", bodies);
             AddBuild(updates);
             Add(updates, "ClearDeviceSupportWorkQueue", new(1, 1, 1));
-            Add(updates, "QueueDeviceSupportLoads", rows);
-            Add(updates, "SeedDeviceSupportLoads", rows);
+            Add(updates, "QueueDeviceSupportLoads", rows, contacts: true);
+            Add(updates, "SeedDeviceSupportLoads", rows, contacts: true);
             Add(updates, "UpdateSupports", supportWorkers);
         }
         return new(entries[1], entries[2], entries[3], ClearBodyIndices: entries[0])
         { GroupInitializationDispatches = initialization.ToArray(), GroupUpdateDispatches = updates.ToArray() };
 
-        void Add(List<DeviceAvbdGroupDispatch> dispatches, string name, DispatchArguments groups) =>
-            dispatches.Add(new(entries[Array.IndexOf(names, name)], groups));
+        void Add(List<AvbdGraphDispatch> dispatches, string name, DispatchArguments groups, bool contacts = false) =>
+            dispatches.Add(new(entries[Array.IndexOf(names, name)], groups, contacts, name == "WriteDeviceSupportIncoming"));
 
-        void AddBuild(List<DeviceAvbdGroupDispatch> dispatches)
+        void AddBuild(List<AvbdGraphDispatch> dispatches)
         {
             Add(dispatches, "PrepareDeviceSupportBodies", bodies);
-            Add(dispatches, "PrepareDeviceSupportCandidates", rows);
+            Add(dispatches, "PrepareDeviceSupportCandidates", rows, contacts: true);
             Add(dispatches, "ClearDeviceSupportWorkQueue", new(1, 1, 1));
-            Add(dispatches, "QueueDeviceSupportCandidates", rows);
-            Add(dispatches, "SeedDeviceSupportCandidates", rows);
+            Add(dispatches, "QueueDeviceSupportCandidates", rows, contacts: true);
+            Add(dispatches, "SeedDeviceSupportCandidates", rows, contacts: true);
             Add(dispatches, "InitializeSupports", supportWorkers);
             Add(dispatches, "FinishDeviceSupportBodies", bodies);
-            Add(dispatches, "ReleaseDeviceUnsupportedContacts", rows);
-            Add(dispatches, "ClearDeviceSupportIncoming", rows);
-            Add(dispatches, "WriteDeviceSupportIncoming", rows);
+            Add(dispatches, "ReleaseDeviceUnsupportedContacts", rows, contacts: true);
+            Add(dispatches, "ClearDeviceSupportIncoming", rows, contacts: true);
+            Add(dispatches, "WriteDeviceSupportIncoming", rows, contacts: true);
         }
     }
 
@@ -377,6 +388,7 @@ internal sealed partial class PhysicsSceneShaders
             #include "physics_distance_range_activity.slang"
             #include "physics_constraint_activity.slang"
             #include "physics_body_input_activity.slang"
+            #include "physics_body_activity_results.slang"
             #if SCENE_CONTACT_SUPPORTS
             #include "physics_contact_support_activity.slang"
             typedef DeviceConstraintActivityGroups<DeviceSupportedContactActivity,DeviceSupportBodyActivity> SceneContactActivity;
@@ -396,8 +408,8 @@ internal sealed partial class PhysicsSceneShaders
             void ReadRows(uint3 id : SV_DispatchThreadID)
             { SceneActivityRows rows; readDeviceActivityRows(devicePhysicsThreadIndex(id,64),rows); }
             """, "ApplyDeviceActivityInputs", "ClearDeviceActivitySignals", "CollectDeviceActivityBodies", "ReadRows",
-            "WakeDeviceBodies", "AdvanceDeviceBodyQuietTime", "FinishDeviceBodyActivity", "ReadDeviceBodyInputActivity");
-        return new(entries[0], entries[1], entries[2], entries[3], entries[4], entries[5], entries[6], ReadBodyInputs: entries[7]);
+            "WakeDeviceBodies", "AdvanceDeviceBodyQuietTime", "FinishDeviceBodyActivity", "ReadDeviceBodyInputActivity", "CollectDeviceBodyActivityResults");
+        return new(entries[0], entries[1], entries[2], entries[3], entries[4], entries[5], entries[6], ReadBodyInputs: entries[7], CollectResults: entries[8]);
     }
 
     private static string SceneDefines(bool contactSupports, bool jointBounds) =>
@@ -410,6 +422,13 @@ internal sealed partial class PhysicsSceneShaders
         void ReadForces(uint3 id:SV_DispatchThreadID)
         { DeviceJointAvbdForces rows; readDeviceConstraintForces(devicePhysicsThreadIndex(id,64),rows); }
         """, "ReadForces")[0];
+
+    internal DeviceContactCountKernels ContactEventCounts()
+    {
+        ComputePipelineDesc[] entries = Compile("scene_contact_event_counts", "#include \"physics_contact_event_counts.slang\"",
+            "ClearDeviceContactEventCounts", "CountDeviceContactEvents");
+        return new(entries[0], entries[1]);
+    }
 
     internal ComputePipelineDesc ContactSamples() => Compile("scene_contact_samples", """
         #include "physics_contact_response_samples.slang"

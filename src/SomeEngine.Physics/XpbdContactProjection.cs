@@ -15,13 +15,14 @@ public struct XpbdContactState : IComponent
 /// <summary>Projects the shared contact gap through its combined body Jacobians.</summary>
 public readonly struct XpbdContactProjection : IXpbdConstraint<ContactPoint>, IXpbdConstraintForces<ContactPoint>
 {
+    public static uint GetInputVersion(in ContactPoint point, scoped QueryRow row) => row.WriteVersion<ContactMaterial>();
     public static PhysicsConstraintError GetActivityError(in ContactPoint point, scoped QueryRow row,
         scoped PhysicsBodies bodies, in PhysicsStepContext context) => ContactBodyMath.GetActivityError(in point, row, bodies, in context);
 
     public static int GetReadEntityCount(in ContactPoint point, scoped QueryRow row, in PhysicsStepContext context) =>
         row.ReadBuffer<ContactBodyLink>().Count;
     public static Entity GetReadEntity(in ContactPoint point, scoped QueryRow row, int index, in PhysicsStepContext context) =>
-        row.ReadBuffer<ContactBodyLink>().AsSpan()[index].Participant.Entity;
+        row.ReadBuffer<ContactBodyLink>().AsSpan()[index].Body;
     public static int GetBodyCount(in ContactPoint point, scoped QueryRow row, in PhysicsStepContext context) =>
         row.ReadBuffer<ContactBodyLink>().Count;
 
@@ -62,11 +63,10 @@ public readonly struct XpbdContactProjection : IXpbdConstraint<ContactPoint>, IX
         float startGap = point.Separation + Vector3.Dot(point.Normal,
             ContactBodyMath.GetDelta(in point, links, bodies, in context, true, normal: true) - point.BodyAnchorDelta);
         float duration = (float)context.Duration;
-        float stiffness = material.NormalStiffness * duration * duration;
-        float damping = gap < MathF.Min(startGap, 0) ? material.NormalDamping * duration : 0;
+        float damping = gap < MathF.Min(startGap, 0) ? material.NormalDamping : 0;
+        var terms = new XpbdMaterialTerms(material.NormalStiffness, damping, duration);
         float weight = GetWeight(in point, links, bodies, in context, point.Normal, normal: true);
-        float multiplier = MathF.Max(0, state.NormalMultiplier - (stiffness * gap + damping * (gap - startGap) + state.NormalMultiplier)
-            / (1 + (stiffness + damping) * weight));
+        float multiplier = MathF.Max(0, terms.Project(gap, startGap, weight, state.NormalMultiplier));
         ApplyCorrection(in point, links, bodies, in context, point.Normal, multiplier - state.NormalMultiplier, normal: true);
         state.NormalMultiplier = multiplier;
         ProjectFriction(in point, links, bodies, in context, start, in material, ref state);

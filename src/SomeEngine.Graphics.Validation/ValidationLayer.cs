@@ -237,6 +237,25 @@ public sealed partial class ValidationLayer : IGraphicsBackend
         }
     }
 
+    public async ValueTask WaitAsync(QueueCompletion completion)
+    {
+        RequireQueue(completion.Queue);
+        bool reserved = false;
+        lock (_gate)
+        {
+            if (!_completedQueueValues.ContainsKey(completion.Queue))
+            {
+                ReserveCompletionCapacity(); reserved = true;
+            }
+        }
+        try
+        {
+            await Backend.WaitAsync(completion).ConfigureAwait(false);
+            RecordCompletion(completion);
+        }
+        finally { if (reserved) ReleaseCompletionCapacity(); }
+    }
+
     public void Dispose()
     {
         if (!_disposeGate.TryEnter())

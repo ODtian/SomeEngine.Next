@@ -894,18 +894,8 @@ public ref struct RelationCommandWriter<T>
         RelationMaintenanceTiming timing)
     {
         ValidateTiming(timing);
-        var cell = new DeferredRelationEdgeCell<T>(_buffer);
-        Record(
-            new CreateRelationCommand<T>(
-                cell,
-                first,
-                second,
-                in payload,
-                placementKind,
-                directedPlacement,
-                undirectedPlacement,
-                timing));
-        return new DeferredRelationEdge<T>(cell);
+        return _buffer.RecordRelationCreateUnderGate(
+            first, second, in payload, placementKind, directedPlacement, undirectedPlacement, timing);
     }
 
     private void RecordDestroy(RelationCommandEdge<T> edge)
@@ -1091,6 +1081,17 @@ internal sealed class DeferredRelationEdgeCell<T>
         }
     }
 
+    internal bool TryResolve(CommandBuffer owner, World world, long publicationEpoch, out RelationEdge<T> edge)
+    {
+        lock (_owner.CommandGate)
+        {
+            bool prepared = _prepared && !_invalidated && ReferenceEquals(_owner, owner)
+                && ReferenceEquals(_world, world) && _publicationEpoch == publicationEpoch;
+            edge = prepared ? _edge : default;
+            return prepared;
+        }
+    }
+
     internal void InvalidatePending()
     {
         lock (_owner.CommandGate)
@@ -1158,69 +1159,6 @@ internal enum RelationCreatePlacement : byte
     Undirected,
 }
 
-internal sealed class CreateRelationCommand<T> : TypedRelationshipCommand
-    where T : struct, IComponent
-{
-    private readonly DeferredRelationEdgeCell<T> _cell;
-    private readonly CommandEntity _first;
-    private readonly CommandEntity _second;
-    private readonly T _payload;
-    private readonly RelationCreatePlacement _placementKind;
-    private readonly DirectedRelationPlacement _directedPlacement;
-    private readonly UndirectedRelationPlacement _undirectedPlacement;
-    private readonly RelationMaintenanceTiming _timing;
-
-    internal CreateRelationCommand(
-        DeferredRelationEdgeCell<T> cell,
-        CommandEntity first,
-        CommandEntity second,
-        in T payload,
-        RelationCreatePlacement placementKind,
-        DirectedRelationPlacement directedPlacement,
-        UndirectedRelationPlacement undirectedPlacement,
-        RelationMaintenanceTiming timing)
-    {
-        _cell = cell;
-        _first = first;
-        _second = second;
-        _payload = payload;
-        _placementKind = placementKind;
-        _directedPlacement = directedPlacement;
-        _undirectedPlacement = undirectedPlacement;
-        _timing = timing;
-    }
-
-    public override void Playback(World world, CommandPlaybackContext context)
-    {
-        if (context.IsResolved(_cell))
-            throw new InvalidOperationException("Relation Create command has already been played back.");
-
-        Entity first = _first.Resolve(context);
-        Entity second = _second.Resolve(context);
-        RelationEdge<T> edge = _placementKind switch
-        {
-            RelationCreatePlacement.None =>
-                world.CreateRelation(first, second, in _payload, _timing),
-            RelationCreatePlacement.Directed =>
-                world.CreateRelation(first, second, in _payload, _directedPlacement, _timing),
-            RelationCreatePlacement.Undirected =>
-                world.CreateRelation(first, second, in _payload, _undirectedPlacement, _timing),
-            _ => throw new InvalidOperationException("Unknown relation create placement kind."),
-        };
-        context.Complete(_cell, edge);
-    }
-
-    public override void Cancel()
-    {
-        _cell.InvalidatePending();
-    }
-
-    public override void PlaybackFailed()
-    {
-        _cell.Invalidate();
-    }
-}
-
 internal sealed class DestroyRelationCommand<T> : TypedRelationshipCommand
     where T : struct, IComponent
 {
@@ -1231,8 +1169,11 @@ internal sealed class DestroyRelationCommand<T> : TypedRelationshipCommand
         _edge = edge;
     }
 
-    public override void Playback(World world, CommandPlaybackContext context) =>
-        world.DestroyRelation(_edge.Resolve(context));
+    public override void Playback(World world, CommandPlaybackContext context)
+    {
+        world.BumpTopologyRevision();
+        world.RelationGraph.Destroy(world, _edge.Resolve(context));
+    }
 }
 
 internal sealed class RetargetRelationCommand<T> : TypedRelationshipCommand

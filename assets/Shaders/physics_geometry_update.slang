@@ -1,7 +1,7 @@
 #ifndef PHYSICS_GEOMETRY_UPDATE
 #define PHYSICS_GEOMETRY_UPDATE
 #include "physics_geometry_reference_data.slang"
-RWStructuredBuffer<DeviceGeometryInput> DeviceGeometries;
+RWStructuredBuffer<DeviceGeometryInput, ScalarDataLayout> DeviceGeometries;
 
 struct GeometryCollisionInput
 {
@@ -11,9 +11,9 @@ struct GeometryCollisionInput
     uint2 key; uint2 categories; uint2 allowed; uint hasKey; uint userValue;
 };
 struct DeviceGeometryBounds { float3 min; float3 max; };
-struct DeviceGeometryUpdateParameters { uint count; uint geometryType; float duration; };
-ConstantBuffer<DeviceGeometryUpdateParameters> GeometryUpdateParameters;
-RWStructuredBuffer<GeometryCollisionInput> GeometryCollisionInputs;
+struct DeviceGeometryUpdateParameters { uint count; uint geometryType; float duration; float contactDistance; };
+ConstantBuffer<DeviceGeometryUpdateParameters, ScalarDataLayout> GeometryUpdateParameters;
+RWStructuredBuffer<GeometryCollisionInput, ScalarDataLayout> GeometryCollisionInputs;
 
 interface IDeviceGeometryUpdate
 {
@@ -104,6 +104,16 @@ struct DeviceSphereUpdate : IDeviceGeometryUpdate, IDeviceGeometryBounds
     }
 };
 
+DeviceGeometryBounds deviceEndpointMotionBounds(uint body, float3 local, float radius)
+{
+    float3 now = deviceGeometryPoint(body, local, 0), first = deviceGeometryPoint(body, local, 1), last = deviceGeometryPoint(body, local, 2);
+    DeviceBodyState state = DeviceBodyStates[body];
+    if (state.motion != 0) radius += length(local-state.centerOfMass) * min(length(state.angularVelocity)*GeometryUpdateParameters.duration,2);
+    DeviceGeometryBounds bounds;
+    bounds.min = min(now,min(first,last))-radius; bounds.max = max(now,max(first,last))+radius;
+    return bounds;
+}
+
 struct DeviceDynamicCapsuleUpdate : IDeviceGeometryUpdate
 {
     DeviceGeometryBounds update(uint index, inout DeviceGeometryInput geometry)
@@ -121,8 +131,9 @@ struct DeviceDynamicCapsuleUpdate : IDeviceGeometryUpdate
         geometry.position = (first + second) * .5f;
         geometry.halfHeight = size * .5f;
         DeviceGeometryBounds bounds;
-        bounds.min = min(first, second) - geometry.convexRadius;
-        bounds.max = max(first, second) + geometry.convexRadius;
+        DeviceGeometryBounds a = deviceEndpointMotionBounds(reference.firstBody,reference.firstLocalPoint,geometry.convexRadius);
+        DeviceGeometryBounds b = deviceEndpointMotionBounds(reference.secondBody,reference.secondLocalPoint,geometry.convexRadius);
+        bounds.min = min(a.min,b.min); bounds.max = max(a.max,b.max);
         return bounds;
     }
 };
@@ -156,8 +167,10 @@ struct DeviceDynamicFaceUpdate : IDeviceGeometryUpdate
         geometry.position = body.position;
         geometry.rotation = body.rotation;
         DeviceGeometryBounds bounds;
-        bounds.min = min(first, min(second, third)) - geometry.convexRadius;
-        bounds.max = max(first, max(second, third)) + geometry.convexRadius;
+        DeviceGeometryBounds a = deviceEndpointMotionBounds(reference.firstBody,reference.firstLocalPoint,geometry.convexRadius);
+        DeviceGeometryBounds b = deviceEndpointMotionBounds(reference.secondBody,reference.secondLocalPoint,geometry.convexRadius);
+        DeviceGeometryBounds c = deviceEndpointMotionBounds(reference.thirdBody,reference.thirdLocalPoint,geometry.convexRadius);
+        bounds.min = min(a.min,min(b.min,c.min)); bounds.max = max(a.max,max(b.max,c.max));
         return bounds;
     }
 };
@@ -173,8 +186,8 @@ void updateDeviceGeometry<TUpdate : IDeviceGeometryUpdate>(uint index)
     DeviceGeometryBounds bounds = update.update(index, geometry);
     DeviceGeometries[index] = geometry;
     GeometryCollisionInput input = GeometryCollisionInputs[reference.gridIndex];
-    input.min = bounds.min;
-    input.max = bounds.max;
+    input.min = bounds.min - GeometryUpdateParameters.contactDistance;
+    input.max = bounds.max + GeometryUpdateParameters.contactDistance;
     GeometryCollisionInputs[reference.gridIndex] = input;
 }
 #endif

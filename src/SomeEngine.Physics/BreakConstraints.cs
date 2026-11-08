@@ -18,6 +18,7 @@ public readonly struct BreakConstraints<TConstraint, TForces> : IPhysicsStage, I
     private readonly PhysicsEventBuffer _events;
     private readonly QueryReadResources? _resources;
     private readonly JobResourceAccess[] _accesses;
+    private readonly PhysicsQueryWindow _bodyWindow, _constraintWindow;
     public BreakConstraints(World world, QueryHandle bodies, QueryHandle constraints, PhysicsEventBuffer events, QueryReadResources? resources = null)
         : this(world, bodies, constraints, events, resources, default) { }
 
@@ -28,6 +29,7 @@ public readonly struct BreakConstraints<TConstraint, TForces> : IPhysicsStage, I
         _bodies = world.Query(world.GetQueryDefinition(bodies).AsReadOnly().WithAccess(new QueryDefinitionBuilder()
             .Read<BodyPose>().Read<BodyMass>().Read<BodyStepState>().Build()));
         _constraints = world.Query(world.GetQueryDefinition(constraints).AsReadOnly().WithOptionalRead<ConstraintBreakSettings>());
+        _bodyWindow = new(world.GetQueryDefinition(_bodies)); _constraintWindow = new(world.GetQueryDefinition(_constraints));
         var accesses = new List<JobResourceAccess> { events.WriteAccess };
         PhysicsQueryAccess.AddAccesses(world, _bodies, accesses, resources); PhysicsQueryAccess.AddAccesses(world, _constraints, accesses, resources);
         foreach (JobResourceAccess access in extraAccesses) accesses.Add(access);
@@ -47,7 +49,7 @@ public readonly struct BreakConstraints<TConstraint, TForces> : IPhysicsStage, I
         public void Execute(ref JobCommandWriter commands)
         {
             var read = new ReadBodies(stage, context, commands);
-            stage._world.ExecuteQuery(stage._bodies, ref read);
+            stage._world.ExecuteQuery(stage._bodies, stage._bodyWindow.Begin(context), ref read);
         }
     }
     private ref struct ReadBodies(BreakConstraints<TConstraint, TForces> stage, PhysicsStepContext context, JobCommandWriter commands) : IQueryExecution
@@ -55,6 +57,7 @@ public readonly struct BreakConstraints<TConstraint, TForces> : IPhysicsStage, I
         private JobCommandWriter _commands = commands;
         public void Execute(scoped QueryCursor rows)
         {
+            stage._bodyWindow.Accept(rows.CurrentSystemVersion);
             if (stage._resources is null) ExecuteRows(rows);
             else
             {
@@ -64,16 +67,17 @@ public readonly struct BreakConstraints<TConstraint, TForces> : IPhysicsStage, I
         }
         private void ExecuteRows(scoped QueryCursor rows)
         {
-            var read = new ReadConstraints(stage._events, stage._resources, context, new PhysicsBodies(rows), _commands);
-            stage._world.ExecuteQuery(stage._constraints, ref read);
+            var read = new ReadConstraints(stage._events, stage._resources, stage._constraintWindow, context, new PhysicsBodies(rows), _commands);
+            stage._world.ExecuteQuery(stage._constraints, stage._constraintWindow.Begin(context), ref read);
         }
     }
-    private ref struct ReadConstraints(PhysicsEventBuffer events, QueryReadResources? resources, PhysicsStepContext context, PhysicsBodies bodies, JobCommandWriter commands) : IQueryExecution
+    private ref struct ReadConstraints(PhysicsEventBuffer events, QueryReadResources? resources, PhysicsQueryWindow window, PhysicsStepContext context, PhysicsBodies bodies, JobCommandWriter commands) : IQueryExecution
     {
         private readonly PhysicsBodies _bodies = bodies;
         private JobCommandWriter _commands = commands;
         public void Execute(scoped QueryCursor rows)
         {
+            window.Accept(rows.CurrentSystemVersion);
             if (resources is null) ExecuteRows(rows);
             else
             {

@@ -208,7 +208,7 @@ internal sealed partial class RelationTypeState<T> : IRelationTypeState
         return new PreparedRelationState<T>(
             previous,
             next,
-            [new RelationAffectedShard(endpoint, role)]);
+            new RelationAffectedShards(new(endpoint, role)));
     }
 
     internal PreparedRelationState<T> PrepareReorder(
@@ -231,7 +231,7 @@ internal sealed partial class RelationTypeState<T> : IRelationTypeState
         return new PreparedRelationState<T>(
             previous,
             next,
-            [new RelationAffectedShard(endpoint, role)]);
+            new RelationAffectedShards(new(endpoint, role)));
     }
 
     internal void Publish(PreparedRelationState<T> prepared)

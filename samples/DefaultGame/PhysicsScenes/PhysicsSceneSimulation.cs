@@ -21,6 +21,7 @@ public readonly record struct PhysicsSceneSettings(int Iterations, int BodyItera
     public float ContactDistance { get; init; }
     public bool GeometryInputsFixed { get; init; }
     public bool EquationBindingsFixed { get; init; }
+    public double MaximumResultDelay { get; init; }
     public PhysicsSceneTimings? Timings { get; init; }
 }
 

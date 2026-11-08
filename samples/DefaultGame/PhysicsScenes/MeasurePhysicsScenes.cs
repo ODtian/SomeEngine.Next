@@ -166,9 +166,9 @@ internal sealed class ReadScenePhysicsResults : IDisposable
         if (_accuracy is not null) bodyResults.Read<BoxGeometry>();
         _bodies = world.Query(bodyResults);
         if (scene.ReadbackBodies.Length < scene.Bodies.Length) _readbackBodies = scene.ReadbackBodies.ToArray().ToHashSet();
-        var contactResults = new QueryDefinitionBuilder().Any<ScenePhysicsContact>().Any<ScenePhysicsBody>().Any<ContactParticipant>()
+        var contactResults = new QueryDefinitionBuilder().Any<ScenePhysicsContact>().Any<ScenePhysicsBody>()
             .Optional<ContactPoint>(QueryAccess.Read).Optional<BodyPose>(QueryAccess.Read)
-            .Optional<SomeEngine.ECS.Relations.DirectedRelationEndpoints<ContactParticipant>>(QueryAccess.Read)
+
             .OptionalBuffer<ContactBodyLink>(QueryAccess.Read);
         if (_silo is not null) contactResults.Optional<BodyMass>(QueryAccess.Read).Optional<DeviceBodyBinding>(QueryAccess.Read);
         _contacts = world.Query(contactResults);
@@ -251,8 +251,7 @@ internal sealed class ReadScenePhysicsResults : IDisposable
                 for (int index = 0; index < links.Length; index++)
                 {
                     ref readonly ContactBodyLink link = ref links[index];
-                    rows.TryGetRow(link.Participant.Entity, out QueryRow participant);
-                    Entity body = participant.ReadRef<SomeEngine.ECS.Relations.DirectedRelationEndpoints<ContactParticipant>>().Target;
+                    Entity body = link.Body;
                     rows.TryGetRow(body, out QueryRow bodyRow);
                     ref readonly BodyPose pose = ref bodyRow.ReadRef<BodyPose>();
                     Vector3 anchor = pose.Position + Vector3.Transform(link.NormalLocalPoint, pose.Rotation);

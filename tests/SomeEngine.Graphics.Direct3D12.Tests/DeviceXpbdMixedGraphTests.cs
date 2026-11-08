@@ -63,7 +63,7 @@ public sealed partial class DeviceXpbdTests
         var scalarStages = new PredictBodies(Vector3.Zero, 64).Then(scalar).Then(new UpdateBodyVelocities(64));
         using var writeJoints = joints.WriteInputs<JointConstraint, DeviceJointSource>(world, jointRows, new(), 64);
         using var writeMotors = motors.WriteInputs<JointMotor, DeviceMotorSource>(world, motorRows, new(), 64);
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
         using var results = new DeviceBodyResults(backend, device, bodies);
         using var selectedJoints = new DeviceConstraintSelection<JointConstraint, DeviceJointConstraint, DeviceXpbdStateRows<XpbdJointState>>(
             backend, device, world, jointRows, joints, new(jointStates), "DeviceJointsSelection");
@@ -72,10 +72,10 @@ public sealed partial class DeviceXpbdTests
         var bindings = new Dictionary<string, ResourceBinding[]>();
         joints.AddBindings(bindings); motors.AddBindings(bindings); jointStates.AddBindings(bindings); motorStates.AddBindings(bindings);
         JobResourceAccess[] reads = [.. joints.GetReadAccesses(jobs), .. motors.GetReadAccesses(jobs)];
-        (DeviceGraphKernels graphKernels, DeviceXpbdKernels xpbdKernels) = CompileMixedJointMotor();
+        (DeviceGraphKernels graphKernels, XpbdGraphKernels xpbdKernels) = CompileMixedJointMotor();
         using var graph = new DeviceConstraintGraph(backend, device, bodies, dynamics, graphKernels, new(2, 2),
             bindings, reads, 64, new IDeviceConstraintSelection[] { selectedJoints, selectedMotors });
-        using var solve = new DeviceXpbdSolver(backend, device, bodies, graph, xpbdKernels, new(8, 2), bindings, reads,
+        using var solve = new XpbdGraphCommands(backend, device, bodies, graph, xpbdKernels, new(8, 2), bindings, reads,
             new[] { jointStates.States, motorStates.States }, 64);
         var stages = joints.BeginInputs().Then(writeJoints).Then(joints.UploadInputs())
             .Then(motors.BeginInputs()).Then(writeMotors).Then(motors.UploadInputs())
@@ -142,7 +142,7 @@ public sealed partial class DeviceXpbdTests
         var scalarStages = new PredictBodies(Vector3.Zero, 64).Then(scalar).Then(new UpdateBodyVelocities(64));
         using var writeLengths = lengths.WriteInputs<XpbdLength, ProjectLengthSource>(world, lengthRows, new(), 64);
         using var writeBends = bends.WriteInputs<XpbdBend, DeviceBendSource>(world, bendRows, new(), 64);
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
         using var results = new DeviceBodyResults(backend, device, bodies);
         using var selectedLengths = new DeviceConstraintSelection<XpbdLength, DeviceLengthConstraint, DeviceXpbdStateRows<float>>(
             backend, device, world, lengthRows, lengths, new(lengthStates), "DeviceLengthsSelection");
@@ -151,10 +151,10 @@ public sealed partial class DeviceXpbdTests
         var bindings = new Dictionary<string, ResourceBinding[]>();
         lengths.AddBindings(bindings); bends.AddBindings(bindings); lengthStates.AddBindings(bindings); bendStates.AddBindings(bindings);
         JobResourceAccess[] reads = [.. lengths.GetReadAccesses(jobs), .. bends.GetReadAccesses(jobs)];
-        (DeviceGraphKernels graphKernels, DeviceXpbdKernels xpbdKernels) = CompileMixedLengthBend();
+        (DeviceGraphKernels graphKernels, XpbdGraphKernels xpbdKernels) = CompileMixedLengthBend();
         using var graph = new DeviceConstraintGraph(backend, device, bodies, dynamics, graphKernels, new(3, 3),
             bindings, reads, 64, new IDeviceConstraintSelection[] { selectedLengths, selectedBends });
-        using var solve = new DeviceXpbdSolver(backend, device, bodies, graph, xpbdKernels, new(6, 2), bindings, reads,
+        using var solve = new XpbdGraphCommands(backend, device, bodies, graph, xpbdKernels, new(6, 2), bindings, reads,
             new[] { lengthStates.States, bendStates.States }, 64);
         var stages = lengths.BeginInputs().Then(writeLengths).Then(lengths.UploadInputs())
             .Then(bends.BeginInputs()).Then(writeBends).Then(bends.UploadInputs())
@@ -174,7 +174,7 @@ public sealed partial class DeviceXpbdTests
         reference.ReleaseQuery(referenceBends); reference.ReleaseQuery(referenceLengths); reference.ReleaseQuery(referenceBodies);
     }
 
-    private (DeviceGraphKernels, DeviceXpbdKernels) CompileMixedJointMotor()
+    private (DeviceGraphKernels, XpbdGraphKernels) CompileMixedJointMotor()
     {
         D3D12TestShader graph = shaderCompiler.CompileWithSearchPaths("xpbd_joint_motor_graph", """
             #include "physics_joint_bodies.slang"
@@ -205,7 +205,7 @@ public sealed partial class DeviceXpbdTests
         return (new(Entry(graph, 0), Entry(graph, 1)), new(Entry(shader, 0), Entry(shader, 1)));
     }
 
-    private (DeviceGraphKernels, DeviceXpbdKernels) CompileMixedLengthBend()
+    private (DeviceGraphKernels, XpbdGraphKernels) CompileMixedLengthBend()
     {
         D3D12TestShader graph = shaderCompiler.CompileWithSearchPaths("xpbd_mixed_length_bend_graph", """
             #include "physics_length_graph.slang"

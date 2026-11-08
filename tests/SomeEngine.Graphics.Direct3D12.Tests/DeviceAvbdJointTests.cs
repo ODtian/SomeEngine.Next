@@ -39,13 +39,13 @@ public sealed partial class DeviceAvbdTests
         using var selected = new DeviceConstraintSelection<JointConstraint, DeviceJointConstraint>(backend, device, world, joints, parameters, "DeviceJointsSelection");
         using var selectedStates = new DeviceConstraintSelection<JointConstraint, DeviceJointConstraint, DeviceAvbdStateRows<DeviceAvbdJointState>>(
             backend, device, world, joints, parameters, new(histories), "DeviceJointAvbdSelection");
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileDynamics(), 64);
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileDynamics(), 64);
         using var results = new DeviceBodyResults(backend, device, bodies);
         var bindings = new Dictionary<string, ResourceBinding[]>();
         parameters.AddBindings(bindings); histories.AddBindings(bindings);
         using var graph = new DeviceConstraintGraph(backend, device, bodies, dynamics, CompileJointGraph(), new(4, 2), bindings,
             parameters.GetReadAccesses(jobs), 64, new[] { selected });
-        using var solver = new DeviceAvbdSolver(backend, device, bodies, equations, graph, CompileJointAvbd(), new(32, 1, 0, 0), bindings,
+        using var solver = new AvbdGraphCommands(backend, device, bodies, equations, graph, CompileJointAvbd(), new(32, 1, 0, 0), bindings,
             parameters.GetReadAccesses(jobs).Append(histories.GetWriteAccess(jobs)).ToArray(), 64, new[] { selectedStates });
         var step = bodies.WriteInputs(64).Then(bodies.UploadInputs())
             .Then(parameters.BeginInputs()).Then(input).Then(parameters.UploadInputs()).Then(stateInput.Upload())
@@ -94,13 +94,13 @@ public sealed partial class DeviceAvbdTests
         using var selected = new DeviceConstraintSelection<JointMotor, DeviceMotorConstraint>(backend, device, world, motors, motorsData, "DeviceMotorsSelection");
         using var selectedStates = new DeviceConstraintSelection<JointMotor, DeviceMotorConstraint, DeviceAvbdStateRows<DeviceAvbdMotorState>>(
             backend, device, world, motors, motorsData, new(histories), "DeviceMotorAvbdSelection");
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileDynamics(), 64);
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileDynamics(), 64);
         using var results = new DeviceBodyResults(backend, device, bodies);
         var bindings = new Dictionary<string, ResourceBinding[]>();
         jointsData.AddBindings(bindings); motorsData.AddBindings(bindings); histories.AddBindings(bindings);
         JobResourceAccess[] reads = [.. jointsData.GetReadAccesses(jobs), .. motorsData.GetReadAccesses(jobs)];
         using var graph = new DeviceConstraintGraph(backend, device, bodies, dynamics, CompileMotorGraph(), new(1, 2), bindings, reads, 64, new[] { selected });
-        using var solver = new DeviceAvbdSolver(backend, device, bodies, equations, graph, CompileMotorAvbd(), new(32, 1, 0, 0), bindings,
+        using var solver = new AvbdGraphCommands(backend, device, bodies, equations, graph, CompileMotorAvbd(), new(32, 1, 0, 0), bindings,
             reads.Append(histories.GetWriteAccess(jobs)).ToArray(), 64, new[] { selectedStates });
         var step = bodies.WriteInputs(64).Then(bodies.UploadInputs())
             .Then(jointsData.BeginInputs()).Then(jointInputs).Then(jointsData.UploadInputs())
@@ -154,13 +154,13 @@ public sealed partial class DeviceAvbdTests
         using var selected = new DeviceConstraintSelection<JointMotor, DeviceMotorConstraint>(backend, device, world, motors, motorsData, "DeviceMotorsSelection");
         using var selectedStates = new DeviceConstraintSelection<JointMotor, DeviceMotorConstraint, DeviceAvbdStateRows<DeviceAvbdMotorState>>(
             backend, device, world, motors, motorsData, new(histories), "DeviceMotorAvbdSelection");
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileDynamics(), 64);
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileDynamics(), 64);
         using var results = new DeviceBodyResults(backend, device, bodies);
         var bindings = new Dictionary<string, ResourceBinding[]>();
         jointsData.AddBindings(bindings); motorsData.AddBindings(bindings); histories.AddBindings(bindings);
         JobResourceAccess[] reads = [.. jointsData.GetReadAccesses(jobs), .. motorsData.GetReadAccesses(jobs)];
         using var graph = new DeviceConstraintGraph(backend, device, bodies, dynamics, CompileMotorGraph(), new(1, 2), bindings, reads, 64, new[] { selected });
-        using var solver = new DeviceAvbdSolver(backend, device, bodies, equations, graph, CompileMotorAvbd(), new(32, 1, 0, 0), bindings,
+        using var solver = new AvbdGraphCommands(backend, device, bodies, equations, graph, CompileMotorAvbd(), new(32, 1, 0, 0), bindings,
             reads.Append(histories.GetWriteAccess(jobs)).ToArray(), 64, new[] { selectedStates });
         var step = bodies.WriteInputs(64).Then(bodies.UploadInputs())
             .Then(jointsData.BeginInputs()).Then(jointInputs).Then(jointsData.UploadInputs())
@@ -190,7 +190,7 @@ public sealed partial class DeviceAvbdTests
             """, [new("WriteRows", SlangStage.Compute), new("BuildGraph", SlangStage.Compute)], "sm_6_0", ShaderDirectory());
         return new(Entry(shader, 0), Entry(shader, 1));
     }
-    private DeviceAvbdKernels CompileJointAvbd()
+    private AvbdGraphKernels CompileJointAvbd()
     {
         D3D12TestShader shader = shaderCompiler.CompileWithSearchPaths("avbd_joint_step", """
             #include "physics_avbd_joint.slang"
@@ -216,7 +216,7 @@ public sealed partial class DeviceAvbdTests
             """, [new("WriteRows", SlangStage.Compute), new("BuildGraph", SlangStage.Compute)], "sm_6_0", ShaderDirectory());
         return new(Entry(shader, 0), Entry(shader, 1));
     }
-    private DeviceAvbdKernels CompileMotorAvbd()
+    private AvbdGraphKernels CompileMotorAvbd()
     {
         D3D12TestShader shader = shaderCompiler.CompileWithSearchPaths("avbd_motor_step", """
             #include "physics_avbd_motor.slang"

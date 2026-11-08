@@ -13,6 +13,7 @@ namespace DefaultGame;
 internal readonly struct SceneContactPenaltyMath<TMath> : IAvbdConstraint<ContactPoint>
     where TMath : struct, IAvbdConstraint<ContactPoint>
 {
+    public static uint GetInputVersion(in ContactPoint point, scoped QueryRow row) => TMath.GetInputVersion(in point, row);
     public static int GetBodyCount(in ContactPoint point, scoped QueryRow row, in PhysicsStepContext context) =>
         TMath.GetBodyCount(in point, row, in context);
     public static Entity GetBody(in ContactPoint point, scoped QueryRow row, int index, in PhysicsStepContext context) =>
@@ -101,6 +102,5 @@ internal static class SceneContactPenalty
     }
 
     private static Entity ReadBody(in ContactBodyLink link, scoped PhysicsBodies bodies, in PhysicsStepContext context) =>
-        bodies.TryReadReference<DirectedRelationEndpoints<ContactParticipant>>(link.Participant.Entity, out var endpoint)
-            ? endpoint.Value.Target : context.World.GetDirectedRelationEndpoints(link.Participant).Target;
+        link.Body;
 }

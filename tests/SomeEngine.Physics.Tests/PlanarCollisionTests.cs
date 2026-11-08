@@ -46,7 +46,7 @@ public sealed class PlanarCollisionTests
             .Read<BodyStepState>().Read<BodyVelocity>().ReadWrite<AvbdBodyEquation>());
         QueryHandle scope = world.Query(new QueryDefinitionBuilder().Read<ContactPoint>());
         QueryHandle contacts = world.Query(new QueryDefinitionBuilder().Read<ContactPoint>().Read<ContactMaterial>()
-            .ReadBuffer<ContactBodyLink>().Optional<DirectedRelationEndpoints<ContactParticipant>>(QueryAccess.Read)
+            .ReadBuffer<ContactBodyLink>()
             .ReadWrite<AvbdContactState>().ReadWrite<ContactResponse>());
         using var output = new ContactPointBuffer(scheduler, 2, 4);
         using var bins = new CollisionPairBins<RelationPairPartition>(scheduler, 1, 1);

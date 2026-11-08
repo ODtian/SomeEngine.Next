@@ -8,9 +8,9 @@ struct DeviceElasticConstraint
     float3 secondAnchor; uint padding1;
     float4 restRotation;
 };
-RWStructuredBuffer<DeviceElasticConstraint> DeviceElasticConstraints;
-RWStructuredBuffer<DeviceConstraintMetadata> DeviceElasticConstraintsMetadata;
-StructuredBuffer<uint2> DeviceElasticConstraintsSelection;
+RWStructuredBuffer<DeviceElasticConstraint, ScalarDataLayout> DeviceElasticConstraints;
+RWStructuredBuffer<DeviceConstraintMetadata, ScalarDataLayout> DeviceElasticConstraintsMetadata;
+StructuredBuffer<uint2, ScalarDataLayout> DeviceElasticConstraintsSelection;
 struct DeviceElasticBodies : IDeviceConstraintBodies
 {
     uint count() { uint count,stride; DeviceElasticConstraints.GetDimensions(count,stride); return count; }

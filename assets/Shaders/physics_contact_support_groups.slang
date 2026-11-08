@@ -3,16 +3,16 @@
 #include "physics_contact_support_solve.slang"
 #include "physics_dispatch.slang"
 
-RWStructuredBuffer<uint4> DeviceSupportGroupRanges;
-RWStructuredBuffer<uint2> DeviceSupportGroupWriteCounts;
-RWStructuredBuffer<uint2> DeviceSupportGroupBlockSums;
-RWStructuredBuffer<uint2> DeviceSupportGroupBlockOffsets;
-RWStructuredBuffer<uint> DeviceSupportGroupBodies;
-RWStructuredBuffer<uint> DeviceSupportGroupContacts;
-RWStructuredBuffer<uint> DeviceSupportGroupOrderCounts;
-RWStructuredBuffer<uint4> DeviceSupportGroupContactKeys;
-RWStructuredBuffer<uint> DeviceSupportGroupSortContacts;
-RWStructuredBuffer<uint2> DeviceSupportGroupSortRange;
+RWStructuredBuffer<uint4, ScalarDataLayout> DeviceSupportGroupRanges;
+RWStructuredBuffer<uint2, ScalarDataLayout> DeviceSupportGroupWriteCounts;
+RWStructuredBuffer<uint2, ScalarDataLayout> DeviceSupportGroupBlockSums;
+RWStructuredBuffer<uint2, ScalarDataLayout> DeviceSupportGroupBlockOffsets;
+RWStructuredBuffer<uint, ScalarDataLayout> DeviceSupportGroupBodies;
+RWStructuredBuffer<uint, ScalarDataLayout> DeviceSupportGroupContacts;
+RWStructuredBuffer<uint, ScalarDataLayout> DeviceSupportGroupOrderCounts;
+RWStructuredBuffer<uint4, ScalarDataLayout> DeviceSupportGroupContactKeys;
+RWStructuredBuffer<uint, ScalarDataLayout> DeviceSupportGroupSortContacts;
+RWStructuredBuffer<uint2, ScalarDataLayout> DeviceSupportGroupSortRange;
 
 struct DeviceContactSupportGroupWork : IDeviceContactSupportWork
 {
@@ -60,9 +60,10 @@ void CountDeviceSupportGroups(uint3 id:SV_DispatchThreadID)
         uint root=ConstraintGraphParents[index];
         if(root!=0xffffffff) InterlockedAdd(DeviceSupportGroupRanges[root].y,1);
     }
-    if(index<ContactSupportSettings.contacts)
+    uint contact=deviceSelectedContactRow(index);
+    if(contact<ContactSupportSettings.contacts)
     {
-        uint root=deviceSupportContactRoot(index);
+        uint root=deviceSupportContactRoot(contact);
         if(root!=0xffffffff) InterlockedAdd(DeviceSupportGroupRanges[root].w,1);
     }
 }
@@ -125,18 +126,19 @@ void WriteDeviceSupportGroups(uint3 id:SV_DispatchThreadID)
             DeviceSupportGroupBodies[DeviceSupportGroupRanges[root].x+position]=index;
         }
     }
-    if(index<ContactSupportSettings.contacts)
+    uint contact=deviceSelectedContactRow(index);
+    if(contact<ContactSupportSettings.contacts)
     {
-        uint root=deviceSupportContactRoot(index),position;
+        uint root=deviceSupportContactRoot(contact),position;
         if(root!=0xffffffff)
         {
             InterlockedAdd(DeviceSupportGroupWriteCounts[root].y,1,position);
-            DeviceSupportGroupContacts[DeviceSupportGroupRanges[root].z+position]=index;
-            DeviceConstraintMetadata metadata=DeviceContactsMetadata[index];
-            float heightValue=dot(DeviceContacts[index].worldPoint,ContactSupportSettings.up);
+            DeviceSupportGroupContacts[DeviceSupportGroupRanges[root].z+position]=contact;
+            DeviceConstraintMetadata metadata=DeviceContactsMetadata[contact];
+            float heightValue=dot(DeviceContacts[contact].worldPoint,ContactSupportSettings.up);
             uint height=heightValue==0?0:asuint(heightValue);
             uint heightOrder=(height&0x80000000)!=0?~height:height^0x80000000;
-            DeviceSupportGroupContactKeys[index]=uint4(root,heightOrder,metadata.entityIndex,metadata.entityGeneration);
+            DeviceSupportGroupContactKeys[contact]=uint4(root,heightOrder,metadata.entityIndex,metadata.entityGeneration);
         }
     }
 }

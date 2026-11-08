@@ -54,22 +54,21 @@ public sealed partial class PhysicsSceneExample : IApplicationGeometryFeature
         PhysicsSceneData data, PhysicsSceneSettings settings)
     {
         if (settings.JointBounds.Levels > 0 && settings.JointBoundsPerJoint == 0)
-            settings = settings with { JointBoundsPerJoint = Math.Max(1, data.Joints.Length - 1) };
+            settings = settings with { JointBoundsPerJoint = settings.JointBounds.Levels + 1 };
         int bodyCount = data.Bodies.Length;
         bool silo = _siloParticles > 0;
         bool million = description.Id == "million-activity";
         var gridSettings = new DeviceGridSettings(silo ? .5f : 1, 16);
         var capacity = new DeviceGridCapacity(bodyCount, bodyCount * 8, bodyCount * 16 + 1,
             million ? bodyCount - 1 : bodyCount * (silo ? 16 : 32), silo ? 6 : 1);
-        int contacts = million ? (bodyCount - 1) * 4
-            : silo ? Math.Max(128, _siloParticles * 12 + PhysicsSiloScenes.StaticBodies * 4) : bodyCount * 32;
+        int contacts = capacity.Pairs * 4;
         _workload["Device"] = "GPU";
         _workload["Adapter"] = _device!.Adapter.Name;
         _workload["Driver"] = _device.Adapter.DriverVersion;
         _workload["DedicatedVideoMemoryBytes"] = _device.Adapter.DedicatedVideoMemory;
         _workload["BroadPhase"] = "Hierarchical grid";
         _workload["NarrowPhase"] = silo ? "Sphere, Box and Hull: six concrete bidirectional bins"
-            : "DeviceConvexCollision<DeviceBox, DeviceBox>";
+            : "Box separating axes and clipped manifold";
         _workload["BodiesPerContact"] = 2;
         _workload["GeometryInputsFixed"] = settings.GeometryInputsFixed;
         _workload["EquationBindingsFixed"] = settings.EquationBindingsFixed;

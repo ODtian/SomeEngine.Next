@@ -69,14 +69,14 @@ public sealed partial class DeviceAvbdTests
             backend, device, world, boundRows, sets, new(bounds), "DeviceJointBoundSetsSelection");
         using var selectedStates = new DeviceConstraintSelection<JointConstraint, DeviceJointConstraint, DeviceAvbdStateRows<DeviceAvbdJointState>>(
             backend, device, world, joints, frames, new(frameStates), "DeviceJointAvbdSelection");
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileDynamics(), 64);
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileDynamics(), 64);
         using var results = new DeviceBodyResults(backend, device, bodies);
         var bindings = new Dictionary<string, ResourceBinding[]>();
         frames.AddBindings(bindings); frameStates.AddBindings(bindings); sets.AddBindings(bindings); bounds.AddBindings(bindings);
         JobResourceAccess[] reads = [.. frames.GetReadAccesses(jobs), .. sets.GetReadAccesses(jobs), .. bounds.GetReadAccesses(jobs)];
         using var graph = new DeviceConstraintGraph(backend, device, bodies, dynamics, CompileJointBoundsGraph(),
             new(frames.Capacity + bounds.Capacity, 2), bindings, reads, 64, new IDeviceConstraintSelection[] { selected, selectedBounds });
-        using var solver = new DeviceAvbdSolver(backend, device, bodies, equations, graph, CompileJointBoundsAvbd(), new(1, 1, 0, 0), bindings,
+        using var solver = new AvbdGraphCommands(backend, device, bodies, equations, graph, CompileJointBoundsAvbd(), new(1, 1, 0, 0), bindings,
             frames.GetReadAccesses(jobs).Concat(sets.GetReadAccesses(jobs)).Concat(bounds.GetWriteAccesses(jobs)).Append(frameStates.GetWriteAccess(jobs)).ToArray(),
             64, new[] { selectedStates });
         var gpu = bounds.BuildInputs().Then(frames.BeginInputs()).Then(frameInputs).Then(frames.UploadInputs()).Then(stateInputs.Upload())
@@ -129,7 +129,7 @@ public sealed partial class DeviceAvbdTests
             """, [new("WriteRows", SlangStage.Compute), new("BuildGraph", SlangStage.Compute)], "sm_6_0", ShaderDirectory());
         return new(Entry(shader, 0), Entry(shader, 1));
     }
-    private DeviceAvbdKernels CompileJointBoundsAvbd()
+    private AvbdGraphKernels CompileJointBoundsAvbd()
     {
         D3D12TestShader shader = shaderCompiler.CompileWithSearchPaths("avbd_joint_bounds", """
             #include "physics_avbd_joint.slang"

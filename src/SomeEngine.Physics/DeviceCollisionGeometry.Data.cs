@@ -12,7 +12,7 @@ public readonly record struct DeviceGeometryCapacity(int Bodies, int Vertices, i
 /// <summary>The entity's geometry resource and its index in that resource.</summary>
 public readonly record struct DeviceGeometryBinding(DeviceCollisionGeometry Geometry, int Index) : IComponent;
 
-[StructLayout(LayoutKind.Sequential, Size = 112)]
+[StructLayout(LayoutKind.Sequential, Size = 128)]
 public struct DeviceGeometryInput
 {
     public Vector3 Position;
@@ -32,6 +32,8 @@ public struct DeviceGeometryInput
     public float PlaneOffset;
     public uint GeometryType;
     public Vector3 BoundsCenter;
+    public uint Sample;
+    private Vector3 _samplePadding;
 }
 
 public interface IDeviceGeometryReader<TGeometry> : IJobComponentResources<TGeometry>

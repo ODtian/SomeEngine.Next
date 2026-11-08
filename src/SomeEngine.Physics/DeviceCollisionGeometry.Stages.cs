@@ -36,6 +36,10 @@ public readonly struct WriteDeviceGeometryInputs<TGeometry, TReader> : IPhysicsS
     public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency)
     {
         dependency = _reader.Prepare(in context, QueryDefinition.Empty, _rowsPerPacket, dependency);
+        Scheduler scheduler = WorldJobs.GetScheduler(context.World);
+        JobResourceAccess[] membership = [.. _participants.GetReadAccesses(),
+            JobResourceAccess.Write(scheduler.GetResourceToken(_grid.Upload), 0, (long)_grid.Upload.Info.Size)];
+        dependency = scheduler.Schedule(new CaptureDeviceMemberVersions(_grid, _participants, context), membership, dependency);
         return new WriteDeviceGeometryInputsJob<TGeometry, TReader>(_grid, _participants, _reader, _geometryType)
             .ScheduleParallel(context.World, _participants.GetReadAccesses(),
                 new JobEntityScheduleOptions(rowsPerPacket: _rowsPerPacket), dependency);
@@ -61,7 +65,7 @@ internal readonly partial struct WriteDeviceGeometryInputsJob<TGeometry, TReader
         {
             Min = bounds.Min, Max = bounds.Max, EntityIndex = (uint)entity.Index,
             EntityGeneration = (uint)entity.Generation, GeometryType = geometryType,
-            GeometryIndex = (uint)binding.Index, Members = participants.ReadMembers(entity),
+            GeometryIndex = (uint)binding.Index, Members = participants.ReadMembers(entity, grid.FirstMemberVersion, grid.SecondMemberVersion),
         };
         grid.WriteInput(body.Index, in input);
     }
@@ -126,4 +130,10 @@ public sealed partial class DeviceCollisionGrid
         DevicePairRules rules, DeviceInputTransfer transfer, DevicePairReadback readback) => new(this,
         new(pairs.Enumerable.World, pairs.Enumerable.GetQuery(0), pairs.Enumerable.GetQuery(1), DevicePairing.Product),
         rules, transfer, readback);
+}
+
+internal readonly struct CaptureDeviceMemberVersions(DeviceCollisionGrid grid, DeviceCollisionParticipants participants,
+    PhysicsStepContext context) : IJob
+{
+    public void Execute() => grid.CaptureMemberVersions(participants, in context);
 }

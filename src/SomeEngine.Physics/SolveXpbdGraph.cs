@@ -6,15 +6,16 @@ using SomeEngine.Job;
 
 namespace SomeEngine.Physics;
 
-public static class SolveXpbdGraph
+public readonly partial struct SolveXpbdGraph
 {
+    public static SolveXpbdGraph Create(XpbdGraphCommands commands, bool buildGraph = true) => new(commands, buildGraph);
     public static SolveXpbdGraph<TConstraints> Create<TConstraints>(World world, QueryHandle bodies,
         TConstraints constraints, PhysicsGraphSettings settings, int iterations, QueryReadResources? resources = null)
         where TConstraints : struct, IXpbdGraphConstraints => new(world, bodies, constraints, settings, iterations, resources);
 }
 
 /// <summary>Projects original constraint components in independent entity batches.</summary>
-public readonly struct SolveXpbdGraph<TConstraints> : IPhysicsStage, IDisposable where TConstraints : struct, IXpbdGraphConstraints
+public readonly struct SolveXpbdGraph<TConstraints> : IPhysicsStage, IPhysicsIterations, IDisposable where TConstraints : struct, IXpbdGraphConstraints
 {
     private readonly TConstraints _constraints;
     private readonly PhysicsGraphData _graph;
@@ -47,6 +48,8 @@ public readonly struct SolveXpbdGraph<TConstraints> : IPhysicsStage, IDisposable
     public IterateXpbdGraph<TConstraints> Iterate(int iterations) => new(this, iterations);
     public PhysicsActivity<TConstraints> Activity(BodyActivitySettings settings, PhysicsEventBuffer? events = null) => new(_graph, _queries, _constraints, settings, _resources, events);
     public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) => Schedule(in context, true, _iterations, dependency);
+    public JobHandle ScheduleIterations(in PhysicsStepContext context, int iterations, JobHandle dependency) =>
+        Schedule(in context, context.FirstIteration == 0, iterations, dependency);
     internal JobHandle Schedule(in PhysicsStepContext context, bool initialize, int iterations, JobHandle dependency) =>
         WorldJobs.GetScheduler(context.World).Schedule(new CaptureMembers(this, context, initialize, iterations), _accesses, dependency);
 
@@ -54,7 +57,7 @@ public readonly struct SolveXpbdGraph<TConstraints> : IPhysicsStage, IDisposable
     {
         public void Execute()
         {
-            solve._queries.ReadMembers();
+            solve._queries.ReadMembers(in context);
             EntityQueryJobs.ScheduleGroup(context.World, new Work(solve), new Solve(solve, context, initialize, iterations),
                 solve._accesses, solve._resources);
         }
@@ -74,12 +77,15 @@ public readonly struct SolveXpbdGraph<TConstraints> : IPhysicsStage, IDisposable
     {
         public bool Execute(scoped EntityQueryGroup group)
         {
-            if (solve._queries.ReadMembers()) return false;
+            if (solve._queries.ReadMembers(in context)) return false;
             solve._graph.Begin();
-            solve._queries.ReadBodies(solve._graph);
+            solve._queries.ReadBodies(solve._graph, in context);
             solve._queries.ReadGraph(solve._graph, solve._constraints, in context, group.Get(0));
             if (solve._graph.Finish()) return false;
-            if (initialize) solve._constraints.Initialize(in context, group.Get(0), 3);
+            var selectedWork = new PhysicsSolverRows(solve._queries, solve._graph);
+            using EntityQueryGroup selectedRows = group.Borrow(in selectedWork);
+            if (initialize) solve._constraints.Initialize(in context, selectedRows.Get(0), 3);
+            solve._graph.RecordNumericalWrites(group.Get(0).Get(1).CurrentSystemVersion, selectedRows.Get(0));
             group.ExecuteParallel(new Project(solve, context, iterations, false), 1, solve._graph.ScalarBatches.Count);
             for (int iteration = 0; iteration < iterations; iteration++)
             {

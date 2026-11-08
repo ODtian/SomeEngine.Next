@@ -84,7 +84,7 @@ internal sealed class ContactEventData<TScope, TSource> : IDisposable
         source.AddReadResources(_bodyResources); source.AddReadResources(_pointResources);
         _resource = WorldJobs.GetScheduler(world).CreateResourceToken("Contact event membership");
         _bodies = world.Query(source.AddBodyReads(world.GetQueryDefinition(bodies).AsFilter()).AsReadOnly());
-        QueryDefinition reads = new QueryDefinitionBuilder().All<ContactPoint>().ReadWrite<ContactEventState<TScope>>()
+        QueryDefinition reads = new QueryDefinitionBuilder().ReadWrite<ContactEventState<TScope>>()
             .Optional<TriggerContact>(QueryAccess.Read).Build();
         _points = world.Query(source.AddReads(world.GetQueryDefinition(points).AsFilter()).AsReadOnly().WithAccess(reads));
         _history = world.Query(new QueryDefinitionBuilder().ReadWrite<ContactEventState<TScope>>());
@@ -171,8 +171,6 @@ internal sealed class ContactEventData<TScope, TSource> : IDisposable
                 if (destroyed)
                 {
                     _commands.Remove<ContactEventState<TScope>>(row.Entity);
-                    if (row.Has<Removed<Outgoing<ContactParticipant>>>())
-                        _commands.Remove<Removed<Outgoing<ContactParticipant>>>(row.Entity);
                 }
             }
         }

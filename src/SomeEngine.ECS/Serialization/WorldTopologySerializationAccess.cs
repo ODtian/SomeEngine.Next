@@ -632,12 +632,18 @@ internal sealed partial class RelationGraph
         RelationEndpointPair endpoints)
         where T : struct, IComponent
     {
-        AddCanonicalEndpoints<T>(
-            world,
-            edge,
-            RelationSchema.For<T>(),
-            endpoints.First,
-            endpoints.Second);
+        if (RelationSchema.For<T>().Direction == RelationDirection.Directed)
+            world.Components.Add(edge, new DirectedRelationEndpoints<T>
+            {
+                Source = endpoints.First,
+                Target = endpoints.Second,
+            });
+        else
+            world.Components.Add(edge, new UndirectedRelationEndpoints<T>
+            {
+                EndpointA = endpoints.First,
+                EndpointB = endpoints.Second,
+            });
         world.Components.Add(edge, new AppliedRelationEndpoints<T>
         {
             EndpointA = endpoints.First,

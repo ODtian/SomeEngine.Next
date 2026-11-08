@@ -6,7 +6,7 @@ using SomeEngine.ECS.Relations;
 
 namespace SomeEngine.Physics;
 
-// JointDistances.cs: rigid-body segments, rooted shortest paths and doubled graph levels.
+// Joint bounds follow a nearest-attachment forest and doubled paths through that forest.
 internal sealed class JointLongRangeGraph
 {
     private readonly List<Entity> _nodes = [];
@@ -17,9 +17,9 @@ internal sealed class JointLongRangeGraph
     private readonly Dictionary<Entity, List<JointGraphSegment>> _adjacent = [];
     private readonly Stack<List<JointGraphSegment>> _unusedSegments = [];
     private readonly List<JointGraphSegment> _segments = [];
-    private readonly Dictionary<(Entity, Entity), JointGraphSegment> _combined = [];
     private readonly Dictionary<(Entity, Entity), JointGraphRange> _ranges = [];
-    private readonly Dictionary<Entity, (float Distance, float Largest)> _distances = [];
+    private readonly Dictionary<Entity, JointGraphPath> _paths = [];
+    private readonly Dictionary<Entity, JointGraphSegment> _jumps = [], _nextJumps = [];
     private readonly PriorityQueue<Entity, float> _queue = new();
 
     internal bool Refresh(scoped PhysicsQueryRows joints, scoped PhysicsBodies bodies, in PhysicsStepContext context, int levels)
@@ -44,29 +44,29 @@ internal sealed class JointLongRangeGraph
         BuildSegments(joints, bodies);
         BuildAdjacent();
         _ranges.Clear();
-        BuildAttachments(joints, bodies);
-        for (int level = 0; level < levels && _segments.Count > 0; level++)
+        BuildPaths(joints, bodies);
+        _jumps.Clear();
+        foreach (var entry in _paths)
         {
-            BuildAdjacent();
-            _combined.Clear();
-            foreach (List<JointGraphSegment> touching in _adjacent.Values)
-                for (int first = 0; first < touching.Count; first++)
-                    for (int second = first + 1; second < touching.Count; second++)
-                    {
-                        JointGraphSegment left = touching[first].Reverse(), right = touching[second];
-                        if (left.First.Joint == right.Last.Joint || ReadBody(joints, left.Last) == ReadBody(joints, right.First)) continue;
-                        float minimum = MathF.Max(0, MathF.Max(left.Minimum - right.Maximum, right.Minimum - left.Maximum));
-                        var segment = new JointGraphSegment(left.First, right.Last, minimum, left.Maximum + right.Maximum);
-                        if (EntityOrder.Compare(segment.First.Joint, segment.Last.Joint) > 0) segment = segment.Reverse();
-                        var key = (segment.First.Joint, segment.Last.Joint);
-                        if (_combined.TryGetValue(key, out JointGraphSegment old))
-                            segment = segment with { Minimum = MathF.Max(old.Minimum, segment.Minimum), Maximum = MathF.Min(old.Maximum, segment.Maximum) };
-                        _combined[key] = segment;
-                    }
-            _segments.Clear();
-            _segments.AddRange(_combined.Values);
-            foreach (JointGraphSegment segment in _segments)
-                AddRange(joints, bodies, segment.First.OtherSide(), segment.Last.OtherSide(), segment.Minimum, segment.Maximum);
+            JointGraphPath path = entry.Value;
+            bool attached = bodies.ReadMass(ReadBody(joints, path.Root)).Motion != BodyMotion.Dynamic;
+            if (entry.Key != path.Root.Joint && attached)
+                AddRange(joints, bodies, path.Arrival.OtherSide(), path.Root, MathF.Max(0, 2 * path.Largest - path.Distance), path.Distance);
+            if (!attached && path.Previous is { } previous) _jumps.Add(entry.Key, previous.Reverse());
+        }
+        for (int level = 0; level < levels && _jumps.Count > 0; level++)
+        {
+            _nextJumps.Clear();
+            foreach (var entry in _jumps)
+            {
+                JointGraphSegment first = entry.Value;
+                AddRange(joints, bodies, first.First.OtherSide(), first.Last.OtherSide(), first.Minimum, first.Maximum);
+                if (!_jumps.TryGetValue(first.Last.Joint, out JointGraphSegment second)) continue;
+                float minimum = MathF.Max(0, MathF.Max(first.Minimum - second.Maximum, second.Minimum - first.Maximum));
+                _nextJumps.Add(entry.Key, new(first.First, second.Last, minimum, first.Maximum + second.Maximum));
+            }
+            _jumps.Clear();
+            foreach (var entry in _nextJumps) _jumps.Add(entry.Key, entry.Value);
         }
         foreach (QueryRow row in joints.Rows) row.Buffer<LongRangeJointBound>().Clear();
         foreach (JointGraphRange range in _ranges.Values)
@@ -129,32 +129,42 @@ internal sealed class JointLongRangeGraph
         adjacent.Add(segment);
     }
 
-    private void BuildAttachments(scoped PhysicsQueryRows joints, scoped PhysicsBodies bodies)
+    private void BuildPaths(scoped PhysicsQueryRows joints, scoped PhysicsBodies bodies)
     {
+        _paths.Clear();
+        _queue.Clear();
         foreach (Entity root in _nodes)
         {
             if (!IsRigidNode(joints, root)) continue;
-            var fixedAnchor = new JointGraphAnchor(root, JointEnd.Source);
-            if (bodies.ReadMass(ReadBody(joints, fixedAnchor)).Motion == BodyMotion.Dynamic)
-                fixedAnchor = fixedAnchor.OtherSide();
-            if (bodies.ReadMass(ReadBody(joints, fixedAnchor)).Motion == BodyMotion.Dynamic) continue;
-            _distances.Clear();
-            _queue.Clear();
-            _distances.Add(root, (0, 0));
+            var anchor = new JointGraphAnchor(root, JointEnd.Source);
+            if (bodies.ReadMass(ReadBody(joints, anchor)).Motion == BodyMotion.Dynamic) anchor = anchor.OtherSide();
+            if (bodies.ReadMass(ReadBody(joints, anchor)).Motion == BodyMotion.Dynamic) continue;
+            _paths.Add(root, new(anchor, anchor, null, 0, 0));
             _queue.Enqueue(root, 0);
-            while (_queue.TryDequeue(out Entity current, out float distance))
+        }
+        GrowPaths();
+        foreach (Entity root in _nodes)
+        {
+            if (_paths.ContainsKey(root) || !IsRigidNode(joints, root)) continue;
+            var anchor = new JointGraphAnchor(root, JointEnd.Source);
+            _paths.Add(root, new(anchor, anchor, null, 0, 0));
+            _queue.Enqueue(root, 0);
+            GrowPaths();
+        }
+    }
+
+    private void GrowPaths()
+    {
+        while (_queue.TryDequeue(out Entity current, out float distance))
+        {
+            JointGraphPath previous = _paths[current];
+            if (distance != previous.Distance || !_adjacent.TryGetValue(current, out List<JointGraphSegment>? adjacent)) continue;
+            foreach (JointGraphSegment segment in adjacent)
             {
-                var previous = _distances[current];
-                if (distance != previous.Distance || !_adjacent.TryGetValue(current, out List<JointGraphSegment>? adjacent)) continue;
-                foreach (JointGraphSegment segment in adjacent)
-                {
-                    float total = distance + segment.Maximum;
-                    if (_distances.TryGetValue(segment.Last.Joint, out var old) && total >= old.Distance) continue;
-                    float largest = MathF.Max(previous.Largest, segment.Maximum);
-                    _distances[segment.Last.Joint] = (total, largest);
-                    _queue.Enqueue(segment.Last.Joint, total);
-                    AddRange(joints, bodies, fixedAnchor, segment.Last.OtherSide(), MathF.Max(0, 2 * largest - total), total);
-                }
+                float total = distance + segment.Maximum;
+                if (_paths.TryGetValue(segment.Last.Joint, out JointGraphPath old) && total >= old.Distance) continue;
+                _paths[segment.Last.Joint] = new(previous.Root, segment.Last, segment, total, MathF.Max(previous.Largest, segment.Maximum));
+                _queue.Enqueue(segment.Last.Joint, total);
             }
         }
     }
@@ -164,7 +174,6 @@ internal sealed class JointLongRangeGraph
     {
         Entity firstBody = ReadBody(joints, first), lastBody = ReadBody(joints, last);
         if (firstBody == lastBody || bodies.ReadMass(firstBody).Motion != BodyMotion.Dynamic && bodies.ReadMass(lastBody).Motion != BodyMotion.Dynamic) return;
-        if (EntityOrder.Compare(first.Joint, last.Joint) > 0) (first, last) = (last, first);
         var key = (first.Joint, last.Joint);
         if (_ranges.TryGetValue(key, out JointGraphRange old))
         {
@@ -197,6 +206,7 @@ internal sealed class JointLongRangeGraph
         return anchor.End == JointEnd.Source ? joint.SourceFrame.Position : joint.TargetFrame.Position;
     }
 
+    private readonly record struct JointGraphPath(JointGraphAnchor Root, JointGraphAnchor Arrival, JointGraphSegment? Previous, float Distance, float Largest);
     private readonly record struct JointGraphVersion(uint Joint, uint Endpoints, uint SourceMass, uint TargetMass);
     private readonly record struct JointGraphRange(JointGraphAnchor First, JointGraphAnchor Last, float Minimum, float Maximum);
     private readonly record struct JointGraphSegment(JointGraphAnchor First, JointGraphAnchor Last, float Minimum, float Maximum)

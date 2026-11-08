@@ -2,7 +2,7 @@
 #define PHYSICS_LENGTH_GRAPH
 #include "physics_constraint_graph.slang"
 #include "physics_length_data.slang"
-StructuredBuffer<uint2> DeviceLengthsSelection;
+StructuredBuffer<uint2, ScalarDataLayout> DeviceLengthsSelection;
 struct DeviceLengthBodies : IDeviceConstraintBodies
 {
     uint count() { uint rows, stride; DeviceLengthsMetadata.GetDimensions(rows, stride); return rows; }

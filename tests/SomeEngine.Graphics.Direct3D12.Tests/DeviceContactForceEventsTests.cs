@@ -28,8 +28,8 @@ public sealed partial class DeviceAvbdTests
         Entity moving = CreateBody(world, bodies, equations, 1, Vector3.UnitY, BodyMotion.Dynamic);
         Entity point = world.CreateRelation(floor, moving, new ContactPoint
             { Normal = Vector3.UnitY, BodyAnchorDelta = Vector3.UnitY, FirstBodyCount = 1 }).Entity;
-        var first = world.CreateRelation(point, floor, new ContactParticipant());
-        var second = world.CreateRelation(point, moving, new ContactParticipant());
+        var first = floor;
+        var second = moving;
         world.AddBuffer<ContactBodyLink>(point);
         world.ExecuteBufferWrite<ContactBodyLink>(point, links =>
         { links.Add(new(first, Vector3.Zero, 1)); links.Add(new(second, Vector3.Zero, 1)); });
@@ -46,11 +46,11 @@ public sealed partial class DeviceAvbdTests
         QueryHandle contacts = world.Query(world.QueryDefinition().Read<ContactPoint>());
         QueryHandle states = world.Query(world.QueryDefinition().Read<AvbdContactState>()
             .Read<DeviceConstraintBinding<DeviceContactConstraint>>().Read<DeviceAvbdState<DeviceAvbdContactState>>());
-        QueryHandle events = world.Query(world.QueryDefinition().Read<PhysicsStepEvents>().ReadBuffer<PhysicsEvent>());
+        QueryHandle events = world.Query(world.QueryDefinition().Read<PhysicsStepEvents>().Enabled<PhysicsStepEvents>().ReadBuffer<PhysicsEvent>());
         using var inputs = new DeviceContactInputs(world, contacts, parameters, anchors);
         using var stateInputs = new DeviceAvbdStateInputs<AvbdContactState, DeviceContactConstraint, DeviceAvbdContactState, DeviceAvbdContactStateSource>(
             backend, device, world, states, parameters, histories, default);
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileDynamics(), 64);
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileDynamics(), 64);
         using var bodyInputs = new DeviceBodyInputs(world, members, bodies);
         using var selected = new DeviceConstraintSelection<ContactPoint, DeviceContactConstraint>(backend, device, world, contacts,
             parameters, "DeviceContactsSelection");
@@ -62,13 +62,13 @@ public sealed partial class DeviceAvbdTests
         parameters.AddBindings(bindings); anchors.AddBindings(bindings); histories.AddBindings(bindings); responses.AddBindings(bindings);
         JobResourceAccess[] reads = [.. parameters.GetReadAccesses(jobs), anchors.GetReadAccess(jobs)];
         using var graph = new DeviceConstraintGraph(backend, device, bodies, dynamics, CompileContactGraph(), new(1, 2), bindings, reads, 64, new[] { selected });
-        using var solve = new DeviceAvbdSolver(backend, device, bodies, equations, graph, CompileContactAvbd(), new(1, 1, 0, 0),
+        using var solve = new AvbdGraphCommands(backend, device, bodies, equations, graph, CompileContactAvbd(), new(1, 1, 0, 0),
             bindings, reads.Concat(new[] { histories.GetWriteAccess(jobs), responses.GetWriteAccess(jobs) }).ToArray(), 64,
             new IDeviceConstraintSelection[] { selectedStates, selectedResponses });
         using var actions = new DeviceContactActions(backend, device, bodies, graph, responses, CompileContactActions(), bindings, reads, 64, new[] { selectedResponses });
         using var samples = new DeviceContactSamples(backend, device, bodies, parameters, CompileResponseContactSamples(), bindings,
             reads.Append(responses.GetReadAccess(jobs)).ToArray(), 64, new IDeviceConstraintSelection[] { selected, selectedResponses });
-        using var output = new PhysicsEventBuffer(jobs, 4);
+        using var output = new PhysicsEventBuffer(world, 4);
         using var observation = new ContactEvents<ContactNotifications, DeviceContactEventSource>(world, members, contacts, output, 0, new(samples));
         var received = new List<(long Number, PhysicsEvent Event)>();
         using var consumer = new ConsumePhysicsEvents<RecordContactNotifications>(world, events, new(received),

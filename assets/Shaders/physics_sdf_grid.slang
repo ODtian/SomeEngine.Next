@@ -1,7 +1,7 @@
 #ifndef PHYSICS_SDF_GRID
 #define PHYSICS_SDF_GRID
 #include "physics_sdf_data.slang"
-RWStructuredBuffer<float> DeviceSdfSamples;
+RWStructuredBuffer<float, ScalarDataLayout> DeviceSdfSamples;
 struct DeviceTrilinearSdfGrid : IDeviceSdfField
 {
     DeviceSdfSample sample(DeviceSdfInput field, float3 point)

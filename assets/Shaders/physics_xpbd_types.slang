@@ -5,7 +5,7 @@ struct DeviceXpbdStep
 {
     uint capacity; float duration; uint2 number;
     uint2 startTime; uint2 endTime;
-    uint substep; uint substeps;
+    uint substep; uint substeps; uint2 padding;
 };
 interface IDeviceXpbdProjection
 {

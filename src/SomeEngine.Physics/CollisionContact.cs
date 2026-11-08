@@ -34,5 +34,8 @@ public readonly record struct ContactBody(Entity Body, Vector3 LocalPoint, float
 
 public interface ICollisionContactOutput
 {
+    bool SupportsParallel => false;
+    void BeginParallel(int partitions) { }
+    void SelectPartition(int partition) { }
     void Add(in CollisionContact contact, ReadOnlySpan<ContactBody> first, ReadOnlySpan<ContactBody> second);
 }

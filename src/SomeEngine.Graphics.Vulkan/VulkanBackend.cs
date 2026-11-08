@@ -48,8 +48,9 @@ internal sealed unsafe partial class VulkanBackend : IGraphicsBackend, INativeVa
         _instance = CreateInstance();
         try
         {
-            if (!_vk.TryGetInstanceExtension(_instance, out _surfaceApi) ||
-                !_vk.TryGetInstanceExtension(_instance, out _win32SurfaceApi))
+            if (OperatingSystem.IsWindows() &&
+                (!_vk.TryGetInstanceExtension(_instance, out _surfaceApi) ||
+                !_vk.TryGetInstanceExtension(_instance, out _win32SurfaceApi)))
                 throw new PlatformNotSupportedException("The Vulkan Win32 surface extensions could not be loaded.");
             CreateDebugMessenger();
             _adapters = EnumerateAdapters();
@@ -205,10 +206,14 @@ internal sealed unsafe partial class VulkanBackend : IGraphicsBackend, INativeVa
             ? Vk.Version13
             : _options.ApiVersion;
         string[] availableExtensions = EnumerateInstanceExtensions();
-        RequireName(availableExtensions, SurfaceExtension, "instance extension");
-        RequireName(availableExtensions, Win32SurfaceExtension, "instance extension");
-
-        List<string> extensions = [SurfaceExtension, Win32SurfaceExtension];
+        List<string> extensions = [];
+        if (OperatingSystem.IsWindows())
+        {
+            RequireName(availableExtensions, SurfaceExtension, "instance extension");
+            RequireName(availableExtensions, Win32SurfaceExtension, "instance extension");
+            extensions.Add(SurfaceExtension);
+            extensions.Add(Win32SurfaceExtension);
+        }
         if (_options.EnableDebugMessages && availableExtensions.Contains(DebugUtilsExtension))
             extensions.Add(DebugUtilsExtension);
 

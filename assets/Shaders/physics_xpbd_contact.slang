@@ -1,13 +1,14 @@
 #ifndef PHYSICS_XPBD_CONTACT
 #define PHYSICS_XPBD_CONTACT
 #include "physics_xpbd_types.slang"
+#include "physics_xpbd_material.slang"
 #include "physics_contact_math.slang"
 struct DeviceXpbdContactState
 {
     float normalMultiplier;
     float3 tangentMultiplier;
 };
-RWStructuredBuffer<DeviceXpbdContactState> DeviceXpbdContactStates;
+RWStructuredBuffer<DeviceXpbdContactState, ScalarDataLayout> DeviceXpbdContactStates;
 struct DeviceXpbdContactProjection<TSelection : IDeviceBodySelection> : IDeviceXpbdProjection
 {
     bool active(uint row)
@@ -24,12 +25,10 @@ struct DeviceXpbdContactProjection<TSelection : IDeviceBodySelection> : IDeviceX
         float3 start = deviceContactDelta(point, true);
         float gap = point.separation + dot(point.normal, deviceContactNormalDelta(point,false) - point.bodyAnchorDelta);
         float startGap = point.separation + dot(point.normal, deviceContactNormalDelta(point,true) - point.bodyAnchorDelta);
-        float stiffness = point.normalStiffness * context.duration * context.duration;
-        float damping = gap < min(startGap, 0) ? point.normalDamping * context.duration : 0;
+        float damping = gap < min(startGap, 0) ? point.normalDamping : 0;
         float weight = deviceContactWeight(point, point.normal, selection, true);
-        float multiplier = max(0, state.normalMultiplier -
-            (stiffness * gap + damping * (gap - startGap) + state.normalMultiplier) /
-            (1 + (stiffness + damping) * weight));
+        float multiplier = max(0, deviceXpbdProjectMaterial(point.normalStiffness, damping, context.duration,
+            gap, startGap, weight, state.normalMultiplier));
         deviceContactApplyCorrection(point, point.normal, multiplier - state.normalMultiplier, selection, true);
         state.normalMultiplier = multiplier;
         float3 slip = deviceContactDelta(point, false) - start;

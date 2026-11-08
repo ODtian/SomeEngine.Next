@@ -16,6 +16,8 @@ public sealed partial class DeviceBodyResults
         internal readonly JobResourceAccess[] Accesses, WriteAccesses;
         internal List<BodyResultTarget>[] PacketTargets = [];
         internal int Count;
+        internal readonly PhysicsQueryWindow Window;
+        internal uint Baseline;
 
         internal ResultRows(World world, QueryDefinition members, int capacity)
         {
@@ -24,7 +26,7 @@ public sealed partial class DeviceBodyResults
             QueryDefinition writes = definition.WithAccess(new QueryDefinitionBuilder()
                 .ReadWrite<BodyPose>().ReadWrite<BodyVelocity>().ReadWrite<BodyStepState>().Build());
             QueryDefinition reads = writes.AsFilter().WithOptionalRead<DeviceBodyBinding>();
-            Members = world.Query(reads);
+            Members = world.Query(reads); Window = new(reads);
             Writes = world.Query(writes);
             var resources = new QueryReadResources();
             resources.Add<DeviceBodyBinding, BodyResultResources>();
@@ -50,7 +52,7 @@ public sealed partial class DeviceBodyResults
             if (results._selection is not null)
             {
                 var read = new CaptureRows(results, rows, rowsPerPacket);
-                rows.World.ExecuteReadQuery(rows.Members, ref read,
+                rows.World.ExecuteReadQuery(rows.Members, rows.Baseline, ref read,
                     static (scoped QueryCursor query, ref CaptureRows read) => read.Execute(query));
             }
             JobHandle applied = default;
@@ -91,6 +93,7 @@ public sealed partial class DeviceBodyResults
     {
         internal void Execute(scoped QueryCursor query)
         {
+            Rows.Window.Accept(query.CurrentSystemVersion);
             using ReadOnlyQueryPacketPlan packets = ReadOnlyQueryPacketJobs.CreatePlan(query, RowsPerPacket);
             if (Rows.PacketTargets.Length < packets.PacketCount)
             {
@@ -138,7 +141,7 @@ public sealed partial class DeviceBodyResults
         public void Execute()
         {
             var writes = new ResultWrites(results, rows);
-            rows.World.ExecuteQuery(rows.Writes, ref writes);
+            rows.World.ExecuteQuery(rows.Writes, rows.Baseline, ref writes);
         }
     }
 
@@ -146,9 +149,13 @@ public sealed partial class DeviceBodyResults
     {
         public void Execute(scoped QueryCursor query)
         {
+            rows.Window.Accept(query.CurrentSystemVersion);
             foreach (QueryChunkView chunk in query.Chunks)
             {
                 if (!chunk.Has<DeviceBodyBinding>()) continue;
+                ReadOnlySpan<uint> poseVersions = chunk.ReadWriteVersions<BodyPose>();
+                ReadOnlySpan<uint> velocityVersions = chunk.ReadWriteVersions<BodyVelocity>();
+                ReadOnlySpan<uint> stepVersions = chunk.ReadWriteVersions<BodyStepState>();
                 ComponentWriteColumn<BodyPose> poses = chunk.ReadWriteColumn<BodyPose>();
                 ComponentWriteColumn<BodyVelocity> velocities = chunk.ReadWriteColumn<BodyVelocity>();
                 ComponentWriteColumn<BodyStepState> steps = chunk.ReadWriteColumn<BodyStepState>();
@@ -167,15 +174,30 @@ public sealed partial class DeviceBodyResults
                     ref readonly DeviceBodyState state = ref results.States[ordinal];
                     if (results._selection is null && (state.EntityIndex != (uint)entity.Index
                         || state.EntityGeneration != (uint)entity.Generation)) continue;
-                    ref BodyPose pose = ref poses[index];
-                    ref BodyVelocity velocity = ref velocities[index];
-                    ref BodyStepState step = ref steps[index];
-                    pose.Position = state.Position; pose.Rotation = state.Rotation;
-                    velocity.Linear = state.LinearVelocity; velocity.Angular = state.AngularVelocity;
-                    step.StartCenterOfMass = state.StartCenterOfMass; step.StartRotation = state.StartRotation;
-                    step.PredictedCenterOfMass = state.PredictedCenterOfMass; step.PredictedRotation = state.PredictedRotation;
-                    step.Number = state.Number; step.Substep = state.Substep; step.Time = state.Time;
-                    results.Bodies.AcceptCpuResult(binding.Index, entity, chunk.CurrentSystemVersion);
+                    DeviceBodies.BodyInputVersions accepted = results.Bodies.ReadCpuVersions(binding.Index);
+                    if (accepted.Entity != entity || accepted.InputVersion != state.InputVersion) continue;
+                    DeviceBodies.BodyInputComponents applied = 0;
+                    if (poseVersions[index] == accepted.Pose)
+                    {
+                        ref BodyPose pose = ref poses[index];
+                        pose.Position = state.Position; pose.Rotation = state.Rotation;
+                        applied |= DeviceBodies.BodyInputComponents.Pose;
+                    }
+                    if (velocityVersions[index] == accepted.Velocity)
+                    {
+                        ref BodyVelocity velocity = ref velocities[index];
+                        velocity.Linear = state.LinearVelocity; velocity.Angular = state.AngularVelocity;
+                        applied |= DeviceBodies.BodyInputComponents.Velocity;
+                    }
+                    if (stepVersions[index] == accepted.Step)
+                    {
+                        ref BodyStepState step = ref steps[index];
+                        step.StartCenterOfMass = state.StartCenterOfMass; step.StartRotation = state.StartRotation;
+                        step.PredictedCenterOfMass = state.PredictedCenterOfMass; step.PredictedRotation = state.PredictedRotation;
+                        step.Number = state.Number; step.Substep = state.Substep; step.Time = state.Time;
+                        applied |= DeviceBodies.BodyInputComponents.Step;
+                    }
+                    results.Bodies.AcceptCpuResult(binding.Index, entity, chunk.CurrentSystemVersion, applied);
                 }
             }
         }

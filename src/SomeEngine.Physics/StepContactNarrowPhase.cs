@@ -5,6 +5,9 @@ namespace SomeEngine.Physics;
 
 public interface IPhysicsCollisionPairDetection
 {
+    bool SupportsParallel => false;
+    void BeginParallel(int partitions) { }
+    void SelectPartition(int partition) { }
     QueryDefinition AddReads(QueryDefinition definition);
     void Execute(in CollisionGeometryPair pair, scoped QueryCursor access, scoped QueryRow first, scoped QueryRow second,
         in PhysicsStepContext context);
@@ -30,8 +33,11 @@ public readonly struct StepContactNarrowPhase<TDetection>(int bin, TDetection de
         where TPartition : struct =>
         CollisionPairQueries.DetectBinWithQuery(access, bins, bin, new StepDetection(detection, context), resources);
 
-    private readonly struct StepDetection(TDetection detection, PhysicsStepContext context) : ICollisionPairQueryDetection
+    private struct StepDetection(TDetection detection, PhysicsStepContext context) : ICollisionPairQueryDetection
     {
+        public bool SupportsParallel => detection.SupportsParallel;
+        public void BeginParallel(int partitions) => detection.BeginParallel(partitions);
+        public void SelectPartition(int partition) => detection.SelectPartition(partition);
         private readonly PhysicsStepContext _context = context;
         public QueryDefinition AddReads(QueryDefinition definition) => detection.AddReads(definition);
         public void Execute(in CollisionGeometryPair pair, scoped QueryCursor access, scoped QueryRow first, scoped QueryRow second) =>

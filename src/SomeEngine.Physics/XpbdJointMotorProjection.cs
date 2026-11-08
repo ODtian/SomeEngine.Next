@@ -7,6 +7,7 @@ namespace SomeEngine.Physics;
 
 public readonly struct XpbdJointMotorProjection : IXpbdConstraint<JointConstraint>, IXpbdConstraintForces<JointConstraint>
 {
+    public static uint GetInputVersion(in JointConstraint constraint, scoped QueryRow row) => AvbdJointMotorMath.GetInputVersion(in constraint, row);
     public static PhysicsConstraintError GetActivityError(in JointConstraint constraint, scoped QueryRow row,
         scoped PhysicsBodies bodies, in PhysicsStepContext context) => JointMotorMath.GetActivityError(in constraint, row, bodies, in context);
 
@@ -28,11 +29,13 @@ public readonly struct XpbdJointMotorProjection : IXpbdConstraint<JointConstrain
     {
         ref readonly var endpoints = ref row.ReadRef<DirectedRelationEndpoints<JointConstraint>>();
         ref readonly XpbdMotorState state = ref row.ReadRef<XpbdMotorState>();
-        bool react = row.ReadRef<JointMotor>().Response == JointMotorResponse.Both;
+        ref readonly JointMotor motor = ref row.ReadRef<JointMotor>();
+        bool react = motor.Response == JointMotorResponse.Both;
         float duration = (float)context.Duration;
         force = torque = Vector3.Zero;
         for (int dof = 0; dof < 6; dof++)
         {
+            if (!JointMotorMath.IsAxisEnabled(in motor, dof)) continue;
             float multiplier = (dof < 3 ? state.LinearMultiplier[dof] : state.AngularMultiplier[dof - 3]) / (duration * duration);
             if (multiplier == 0) continue;
             JointEquationRow derivative = JointMotorMath.GetRow(in constraint, row, bodies, in context, dof).Derivative;
@@ -66,21 +69,24 @@ public readonly struct XpbdJointMotorProjection : IXpbdConstraint<JointConstrain
         for (int dof = 0; dof < 6; dof++)
         {
             int axis = dof % 3;
-            if (dof < 3 ? motor.LinearStiffness[axis] == 0 && motor.LinearDamping[axis] == 0
-                : motor.AngularStiffness[axis] == 0 && motor.AngularDamping[axis] == 0) continue;
+            if (!JointMotorMath.IsAxisEnabled(in motor, dof))
+            {
+                if (dof < 3) state.LinearMultiplier[axis] = 0;
+                else state.AngularMultiplier[axis] = 0;
+                continue;
+            }
             JointMotorRow motorRow = JointMotorMath.GetRow(in constraint, row, bodies, in context, dof);
             ref readonly BodyPose pose = ref bodies.ReadPose(endpoints.Target);
-            float alpha = 1 / (motorRow.Stiffness * duration * duration);
             float weight = BodyConstraintMath.GetWeight(in mass, in pose,
                 motorRow.Derivative.TargetLinear, motorRow.Derivative.TargetAngular);
             if (react && motor.Space == JointMotorSpace.Source)
                 weight += BodyConstraintMath.GetWeight(in sourceMass, in bodies.ReadPose(endpoints.Source),
                     motorRow.Derivative.SourceLinear, motorRow.Derivative.SourceAngular);
             float multiplier = dof < 3 ? state.LinearMultiplier[axis] : state.AngularMultiplier[axis];
-            float change = (-motorRow.Error - alpha * multiplier) / (weight + alpha);
             float maximum = motorRow.Maximum * duration * duration;
-            float next = Math.Clamp(multiplier + change, -maximum, maximum);
-            change = next - multiplier;
+            var terms = new XpbdMaterialTerms(motorRow.Stiffness, 0, duration);
+            float next = Math.Clamp(terms.Project(motorRow.Error, motorRow.Error, weight, multiplier), -maximum, maximum);
+            float change = next - multiplier;
             if (dof < 3) state.LinearMultiplier[axis] = next;
             else state.AngularMultiplier[axis] = next;
             BodyConstraintMath.ApplyCorrection(bodies, endpoints.Target, in mass,

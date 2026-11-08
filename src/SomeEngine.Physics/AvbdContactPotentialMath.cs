@@ -15,6 +15,7 @@ namespace SomeEngine.Physics;
 /// <summary>Clamped contact potential metrics with a positive angular curvature bound.</summary>
 public readonly struct AvbdContactPotentialMath : IAvbdConstraint<ContactPoint>
 {
+    public static uint GetInputVersion(in ContactPoint point, scoped QueryRow row) => AvbdContactMath.GetInputVersion(in point, row);
     public static int GetBodyCount(in ContactPoint point, scoped QueryRow row, in PhysicsStepContext context) =>
         AvbdContactMath.GetBodyCount(in point, row, in context);
     public static Entity GetBody(in ContactPoint point, scoped QueryRow row, int index, in PhysicsStepContext context) =>
@@ -40,6 +41,7 @@ public readonly struct AvbdContactPotentialMath : IAvbdConstraint<ContactPoint>
 /// <summary>The same contact potential with the selected long-range support's force and height response.</summary>
 public readonly struct AvbdSupportedContactPotentialMath : IAvbdConstraint<ContactPoint>
 {
+    public static uint GetInputVersion(in ContactPoint point, scoped QueryRow row) => AvbdContactMath.GetInputVersion(in point, row);
     public static int GetBodyCount(in ContactPoint point, scoped QueryRow row, in PhysicsStepContext context) =>
         AvbdContactPotentialMath.GetBodyCount(in point, row, in context);
     public static Entity GetBody(in ContactPoint point, scoped QueryRow row, int index, in PhysicsStepContext context) =>

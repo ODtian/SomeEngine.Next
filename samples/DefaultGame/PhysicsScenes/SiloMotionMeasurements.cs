@@ -94,8 +94,7 @@ internal sealed class SiloMotionMeasurements
             bool hasDischarged = false, hasStatic = false;
             foreach (ref readonly ContactBodyLink link in row.ReadBuffer<ContactBodyLink>().AsSpan())
             {
-                rows.TryGetRow(link.Participant.Entity, out QueryRow participant);
-                Entity body = participant.ReadRef<DirectedRelationEndpoints<ContactParticipant>>().Target;
+                Entity body = link.Body;
                 rows.TryGetRow(body, out QueryRow bodyRow);
                 if (bodyRow.ReadRef<BodyMass>().Motion == BodyMotion.Static) hasStatic = true;
                 else

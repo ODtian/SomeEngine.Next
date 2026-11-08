@@ -58,7 +58,7 @@ public sealed partial class DeviceXpbdTests
             world.Add(body, new BodyActivity { Radius = 1 }); world.Add(body, new DeviceBodyActivityBinding(activities));
         }
         var bindings = new Dictionary<string, ResourceBinding[]>(); activities.AddBindings(bindings);
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileActiveBodyDynamics(), 64,
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileActiveBodyDynamics(), 64,
             bindings, activities.GetWriteAccesses(jobs));
         using var bodyInputs = new DeviceBodyInputs(world, members, bodies);
         using var results = new DeviceBodyResults(backend, device, bodies);
@@ -69,7 +69,7 @@ public sealed partial class DeviceXpbdTests
             new(bounds.Capacity, 2), bindings, reads, 64, new[] { selected });
         using var activity = new DevicePhysicsActivity(backend, device, activities, graph, CompileJointBoundActivity(),
             new(.01f, .2f, .00001f, .01f), bindings, reads, 64);
-        using var output = new PhysicsEventBuffer(jobs, 16);
+        using var output = new PhysicsEventBuffer(world, 16);
         var stages = bounds.BuildInputs().Then(frames.BeginInputs()).Then(frameInputs).Then(frames.UploadInputs())
             .Then(sets.BeginInputs()).Then(boundInputs).Then(sets.UploadInputs()).Then(bounds.UploadInputs())
             .Then(bodyInputs.Upload()).Then(activity.UploadInputs()).Then(dynamics.UpdateSelection()).Then(activity.WakeConnected())

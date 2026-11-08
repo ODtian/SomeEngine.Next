@@ -8,8 +8,8 @@ struct DeviceAvbdDistanceRangeState
     float2 multiplier; float penalty; uint padding0;
     float2 initialError; uint2 padding1;
 };
-RWStructuredBuffer<DeviceAvbdDistanceRangeState> DeviceAvbdDistanceRangeStates;
-StructuredBuffer<uint2> DeviceDistanceRangeAvbdSelection;
+RWStructuredBuffer<DeviceAvbdDistanceRangeState, ScalarDataLayout> DeviceAvbdDistanceRangeStates;
+StructuredBuffer<uint2, ScalarDataLayout> DeviceDistanceRangeAvbdSelection;
 struct DeviceDistanceRangeAvbdConstraints : IDeviceAvbdConstraints
 {
     DeviceDistanceRangeBodies participants;

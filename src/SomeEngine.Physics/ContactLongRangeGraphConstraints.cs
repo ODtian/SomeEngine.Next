@@ -13,6 +13,7 @@ public readonly struct ContactLongRangeGraphConstraints(QueryHandle supportBodie
 {
     private readonly ContactSupportData _data = new(settings);
     public int QueryCount => 2;
+    public bool HasGraphChanges => _data.HasGraphChanges;
     public QueryHandle GetQuery(int index) => index == 0 ? supportBodies : contacts;
     public void ReadActivityErrors(in PhysicsStepContext context, scoped EntityQueryViews queries, int offset,
         scoped PhysicsBodies bodies, ref PhysicsActivityErrors errors) =>
@@ -25,15 +26,14 @@ public readonly struct ContactLongRangeGraphConstraints(QueryHandle supportBodie
             ? JobResourceAccess.Write(resource) : JobResourceAccess.Read(resource));
     }
 
-    public void ReadGraph(in PhysicsStepContext context, ReadOnlySpan<QueryHandle> queries, int queryOffset,
+    public void ReadGraph(in PhysicsStepContext context, scoped EntityQueryViews queries, int queryOffset,
         ref PhysicsConstraintGraphBuilder graph)
     {
-        var bodies = new ReadBodyParticipants(context, graph, queryOffset);
-        context.World.ExecuteReadQuery(queries[queryOffset], ref bodies,
-            static (scoped QueryCursor rows, ref ReadBodyParticipants state) => state.Execute(rows));
-        var points = new ReadContactParticipants(context, graph, queryOffset + 1);
-        context.World.ExecuteReadQuery(queries[queryOffset + 1], ref points,
-            static (scoped QueryCursor rows, ref ReadContactParticipants state) => state.Execute(rows));
+        foreach (QueryRow row in queries.Get(queryOffset).Rows)
+            graph.Add<LongRangeBodySupport, BodySupportBodies>(queryOffset - 3, row, in context);
+        foreach (QueryRow row in queries.Get(queryOffset + 1).Rows)
+            graph.Add<ContactPoint, ContactLongRangeBodies>(queryOffset - 2, row, in context);
+        _data.HasGraphChanges = false;
     }
 
     public void Initialize(in PhysicsStepContext context, scoped EntityQueryViews queries, int queryOffset,
@@ -84,6 +84,7 @@ public readonly struct BodySupportBodies : IPhysicsConstraintBodies<LongRangeBod
 /// <summary>Original contact participants and lower contacts referenced by the generated load path.</summary>
 public readonly struct ContactLongRangeBodies : IPhysicsConstraintBodies<ContactPoint>
 {
+    public static uint GetInputVersion(in ContactPoint point, scoped QueryRow row) => AvbdContactMath.GetInputVersion(in point, row);
     public static int GetBodyCount(in ContactPoint point, scoped QueryRow row, in PhysicsStepContext context) =>
         AvbdContactMath.GetBodyCount(in point, row, in context);
     public static Entity GetBody(in ContactPoint point, scoped QueryRow row, int index, in PhysicsStepContext context) =>
@@ -95,6 +96,6 @@ public readonly struct ContactLongRangeBodies : IPhysicsConstraintBodies<Contact
     public static Entity GetReadEntity(in ContactPoint point, scoped QueryRow row, int index, in PhysicsStepContext context)
     {
         ReadOnlySpan<ContactBodyLink> links = row.ReadBuffer<ContactBodyLink>().AsSpan();
-        return index < links.Length ? links[index].Participant.Entity : row.ReadBuffer<LongRangeSupportLoad>().AsSpan()[index - links.Length].Contact;
+        return index < links.Length ? links[index].Body : row.ReadBuffer<LongRangeSupportLoad>().AsSpan()[index - links.Length].Contact;
     }
 }

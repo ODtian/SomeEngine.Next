@@ -4,7 +4,7 @@
 #include "physics_xpbd_projection_math.slang"
 #include "physics_body_math.slang"
 #include "physics_bend_data.slang"
-RWStructuredBuffer<float> DeviceBendMultipliers;
+RWStructuredBuffer<float, ScalarDataLayout> DeviceBendMultipliers;
 float deviceBendGradients(float3 first,float3 middle,float3 last,
     out float3 firstGradient,out float3 middleGradient,out float3 lastGradient)
 {

@@ -28,7 +28,7 @@ public readonly struct XpbdBendProjection : IXpbdConstraint<XpbdBend>, IXpbdCons
         ConstraintBodies.GetBody(in row.ReadBuffer<ConstraintBodyLink>().AsSpan()[index], in context);
     public static int GetReadEntityCount(in XpbdBend constraint, scoped QueryRow row, in PhysicsStepContext context) => 3;
     public static Entity GetReadEntity(in XpbdBend constraint, scoped QueryRow row, int index, in PhysicsStepContext context) =>
-        row.ReadBuffer<ConstraintBodyLink>().AsSpan()[index].Participant.Entity;
+        row.ReadBuffer<ConstraintBodyLink>().AsSpan()[index].Body;
 
     public static void GetBodyForce(in XpbdBend constraint, scoped QueryRow row, Entity body,
         scoped PhysicsBodies bodies, in PhysicsStepContext context, out Vector3 force, out Vector3 torque)

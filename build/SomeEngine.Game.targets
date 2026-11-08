@@ -15,6 +15,7 @@
     <Content Include="$(SomeEnginePath)/external/dxc/bin/x64/dxcompiler.dll;$(SomeEnginePath)/external/dxc/bin/x64/dxil.dll"
              Condition="'$(NETCoreSdkRuntimeIdentifier)' == 'win-x64'">
       <Link>%(Filename)%(Extension)</Link>
+      <DependencyBinary>true</DependencyBinary>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>

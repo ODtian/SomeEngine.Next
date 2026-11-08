@@ -1,7 +1,7 @@
 #ifndef PHYSICS_CONTACT_SUPPORT_BODIES
 #define PHYSICS_CONTACT_SUPPORT_BODIES
 #include "physics_constraint_graph.slang"
-StructuredBuffer<uint4> DeviceSupportBodySelection;
+StructuredBuffer<uint4, ScalarDataLayout> DeviceSupportBodySelection;
 bool deviceSupportBodySelected(uint body)
 {
     DeviceSelectedBodies selectedBodies;

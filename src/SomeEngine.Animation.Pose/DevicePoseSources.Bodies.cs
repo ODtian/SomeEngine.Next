@@ -10,6 +10,7 @@ public readonly record struct DevicePoseBodyKernels(ComputePipelineDesc WriteTar
 /// <summary>Animation targets before the shared body step, and its completed bone mapping before later rig operations.</summary>
 public readonly struct DevicePoseBodyStages(DevicePoseSources sources, int targetKernel, int mapKernel)
 {
+    internal int TargetKernel => targetKernel;
     public WriteDevicePoseBodyTargets WriteTargets() => new(sources, targetKernel);
     public MapDevicePoseBodyBones MapBones() => new(sources, mapKernel);
 }
@@ -26,6 +27,30 @@ public readonly struct MapDevicePoseBodyBones(DevicePoseSources sources, int ker
 
 public sealed partial class DevicePoseSources
 {
+    private DeviceXpbdChains<DevicePoseSources>? _chainSolver;
+    private int _chainCaptureKernel, _chainMapKernel;
+    int IDeviceXpbdChainInputs.WorkCount => _rigOperations.Count(operation => operation.Kernel == _xpbdKernel);
+    DeviceXpbdChainWork IDeviceXpbdChainInputs.GetWork(int index)
+    {
+        RigOperation operation = _rigOperations.Where(operation => operation.Kernel == _xpbdKernel).ElementAt(index);
+        _bindings["GpuPoseWork"] = [ResourceBinding.ReadOnlyBuffer(operation.Work)];
+        return new(operation.Count, _bindings);
+    }
+    void IDeviceXpbdChainInputs.AddAccesses(Scheduler scheduler, List<JobResourceAccess> accesses) =>
+        accesses.AddRange(GetDeviceAccesses(scheduler, false));
+
+    private JobHandle ScheduleChains(in PhysicsStepContext context, JobHandle dependency)
+    {
+        if (_chainSolver is null)
+        {
+            var target = _device.Capabilities.CompileTarget;
+            _chainSolver = Keep(new DeviceXpbdChains<DevicePoseSources>(_backend, _device, this, DevicePoseShaders.GetChains(target)));
+            _chainCaptureKernel = AddKernel(DevicePoseShaders.GetChainTargets(target));
+            _chainMapKernel = AddKernel(DevicePoseShaders.GetBodies(target).MapBones);
+        }
+        return ScheduleEvaluate(in context, dependency, targetKernel: -2, commonBodies: false);
+    }
+
     public DevicePoseBodyStages CreateBodyStages(DevicePoseBodyKernels kernels)
     {
         int targets = AddKernel(kernels.WriteTargets), bones = AddKernel(kernels.MapBones);

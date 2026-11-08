@@ -20,7 +20,7 @@ void ApplyDeviceKinematicTargets(uint3 id : SV_DispatchThreadID)
     if ((input.kinds & 4u) == 0) return;
     DeviceBodyState body = DeviceBodyStates[input.bodyIndex];
     if (!deviceBodyInputMatches(body, input)) return;
-    applyDeviceKinematicTarget(body, input.targetPosition, input.targetRotation);
+    applyDeviceKinematicTarget(body, input.targetPosition, input.targetRotation, BodyInputParameters.duration);
     DeviceBodyStates[input.bodyIndex] = body;
 }
 #endif

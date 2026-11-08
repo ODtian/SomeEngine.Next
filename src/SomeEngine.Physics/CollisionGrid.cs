@@ -27,17 +27,16 @@ public sealed partial class CollisionGrid<TSettings>(TSettings settings)
     internal void Update(Entity entity, in CollisionBounds bounds)
     {
         ref GridMember member = ref CollectionsMarshal.GetValueRefOrAddDefault(_members, entity, out bool exists);
-        int level = settings.GetLevel(in bounds);
-        GridCells cells = GetCells(in bounds, level);
+        GridCells cells = bounds.IsFinite ? GetCells(in bounds, settings.GetLevel(in bounds)) : default;
         if (!exists)
         {
             _entities.Add(entity);
-            AddCells(entity, cells);
+            if (bounds.IsFinite) AddCells(entity, cells);
         }
-        else if (member.Cells != cells)
+        else if (member.Bounds.IsFinite != bounds.IsFinite || member.Cells != cells)
         {
-            RemoveCells(entity, member.Cells);
-            AddCells(entity, cells);
+            if (member.Bounds.IsFinite) RemoveCells(entity, member.Cells);
+            if (bounds.IsFinite) AddCells(entity, cells);
         }
         member = new(bounds, cells, _update);
     }
@@ -50,7 +49,7 @@ public sealed partial class CollisionGrid<TSettings>(TSettings settings)
             GridMember member = _members[entity];
             if (member.SeenUpdate == _update)
                 continue;
-            RemoveCells(entity, member.Cells);
+            if (member.Bounds.IsFinite) RemoveCells(entity, member.Cells);
             _members.Remove(entity);
             _entities[index] = _entities[^1];
             _entities.RemoveAt(_entities.Count - 1);
@@ -82,6 +81,18 @@ public sealed partial class CollisionGrid<TSettings>(TSettings settings)
                 var self = (entity, entity);
                 if (!TPairing.Emit(in self, queries, ref output))
                     return false;
+            }
+            if (!first.Bounds.IsFinite)
+            {
+                foreach (Entity other in CollectionsMarshal.AsSpan(_entities))
+                {
+                    GridMember second = _members[other];
+                    if (entity == other || !second.Bounds.IsFinite && !EntityOrder.Precedes(entity, other)
+                        || !first.Bounds.Overlaps(in second.Bounds)) continue;
+                    var pair = EntityOrder.OrderPair(entity, other);
+                    if (!TPairing.Emit(in pair, queries, ref output)) return false;
+                }
+                continue;
             }
             for (int level = first.Cells.Min.Level; level < settings.LevelCount; level++)
             {

@@ -10,13 +10,14 @@ namespace SomeEngine.Physics;
 
 public readonly struct AvbdContactMath : IAvbdConstraint<ContactPoint>
 {
+    public static uint GetInputVersion(in ContactPoint point, scoped QueryRow row) => row.WriteVersion<ContactMaterial>();
     public static PhysicsConstraintError GetActivityError(in ContactPoint point, scoped QueryRow row,
         scoped PhysicsBodies bodies, in PhysicsStepContext context) => ContactBodyMath.GetActivityError(in point, row, bodies, in context);
 
     public static int GetReadEntityCount(in ContactPoint point, scoped QueryRow row, in PhysicsStepContext context) =>
         row.ReadBuffer<ContactBodyLink>().Count;
     public static Entity GetReadEntity(in ContactPoint point, scoped QueryRow row, int index, in PhysicsStepContext context) =>
-        row.ReadBuffer<ContactBodyLink>().AsSpan()[index].Participant.Entity;
+        row.ReadBuffer<ContactBodyLink>().AsSpan()[index].Body;
     public static int GetBodyCount(in ContactPoint point, scoped QueryRow row, in PhysicsStepContext context) =>
         row.ReadBuffer<ContactBodyLink>().Count;
 

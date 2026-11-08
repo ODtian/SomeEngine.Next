@@ -36,7 +36,7 @@ public sealed partial class DeviceCollisionDetectionTests
         QueryHandle members = world.Query(bodies);
         var pairs = world.Within(members);
         using var detection = new DeviceCollisionDetection(backend, device, grid, geometry,
-            CompileDetection("DeviceConvexCollision<DeviceBox, DeviceBox>"), 0, new(4, 4, 1), new(1e-5f, 32, 64), .02f,
+            CompileDetection("BoxBoxCollision", "#include \"physics_box_box_collision.slang\""), 0, new(4, 4, 1), new(1e-5f, 32, 64), .02f,
             DeviceInputTransfer.Upload, DeviceCollisionReadback.Distances | DeviceCollisionReadback.Contacts);
         var stages = grid.BeginInputs()
             .Then(grid.WriteGeometryInputs<BoxGeometry, DeviceBoxReader>(pairs, default, 0, 64))

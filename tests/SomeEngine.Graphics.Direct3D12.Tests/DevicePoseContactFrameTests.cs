@@ -56,13 +56,13 @@ public sealed partial class DeviceAvbdTests
         QueryHandle points = world.Query(new QueryDefinitionBuilder().Read<ContactPoint>());
         QueryHandle stateRows = world.Query(new QueryDefinitionBuilder().Read<AvbdContactState>()
             .Read<DeviceConstraintBinding<DeviceContactConstraint>>().Read<DeviceAvbdState<DeviceAvbdContactState>>());
-        QueryHandle events = world.Query(new QueryDefinitionBuilder().Read<PhysicsStepEvents>().ReadBuffer<PhysicsEvent>());
+        QueryHandle events = world.Query(new QueryDefinitionBuilder().Read<PhysicsStepEvents>().Enabled<PhysicsStepEvents>().ReadBuffer<PhysicsEvent>());
         using var bodyInputs = new DeviceBodyInputs(world, members, poseBodies.Bodies);
         using var activities = new DeviceBodyActivities(backend, device, world, members, poseBodies.Bodies);
         foreach (Entity body in new[] { actor[0], actor[1], floor })
         { world.Add(body, new BodyActivity { Radius = 1 }); world.Add(body, new DeviceBodyActivityBinding(activities)); }
         var activityBindings = new Dictionary<string, ResourceBinding[]>(); activities.AddBindings(activityBindings);
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, poseBodies.Bodies,
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, poseBodies.Bodies,
             CompilePoseBodyDynamics(), 64, activityBindings, activities.GetWriteAccesses(jobs));
         using var grid = new DeviceCollisionGrid(backend, device, CompileHistoryGrid(), new(2, 4), new(2, 256, 257, 4, 3));
         using var geometry = new DeviceCollisionGeometry(backend, device, new(2, 0, 0, 0), poseBodies.Bodies);
@@ -106,7 +106,7 @@ public sealed partial class DeviceAvbdTests
         using var graph = new DeviceConstraintGraph(backend, device, poseBodies.Bodies, dynamics, CompilePoseContactGraph(), new(5, 3),
             bindings, reads, 64, new IDeviceConstraintSelection[] { selected, selectedLengths });
         JobResourceAccess[] solveAccesses = [.. reads, histories.GetWriteAccess(jobs), responses.GetWriteAccess(jobs), poseBodies.LengthMultipliers.GetReadAccess(jobs)];
-        using var avbd = new DeviceAvbdSolver(backend, device, poseBodies.Bodies, equations, graph, CompileComplementaryAvbd(), new(1, 1, 1, 0),
+        using var avbd = new AvbdGraphCommands(backend, device, poseBodies.Bodies, equations, graph, CompileComplementaryAvbd(), new(1, 1, 1, 0),
             bindings, solveAccesses,
             64, new IDeviceConstraintSelection[] { selectedStates, selectedResponses });
         using var xpbd = new DeviceXpbdProjection<DeviceLengthConstraint, float>(backend, device, world, lengths,
@@ -117,7 +117,7 @@ public sealed partial class DeviceAvbdTests
         JobResourceAccess[] sampleAccesses = [.. reads, responses.GetReadAccess(jobs)];
         using var samples = new DeviceContactSamples(backend, device, poseBodies.Bodies, parameters, CompileResponseContactSamples(), bindings,
             sampleAccesses, 64, new IDeviceConstraintSelection[] { selected, selectedResponses });
-        using var output = new PhysicsEventBuffer(jobs, 8);
+        using var output = new PhysicsEventBuffer(world, 8);
         using var contactEvents = new ContactEvents<ContactNotifications, DeviceContactEventSource>(world, members, points, output, .001f, new(samples));
         var received = new List<(long Number, PhysicsEvent Event)>();
         using var eventConsumer = new ConsumePhysicsEvents<RecordContactNotifications>(world, events, new(received),
@@ -136,7 +136,7 @@ public sealed partial class DeviceAvbdTests
             .Then(new ClearPoseContacts(detected)).Then(detection.Detect())
             .Then(detection.WriteContacts(new ContactPointOutput(detected), new[] { detected.WriteAccess }))
             .Then(matching.Match()).Then(refresh.Refresh(currentGeometry.Results)).Then(contactInputs.Upload()).Then(stateInputs.Upload())
-            .Then(currentGeometry.Update()).Then(activity.WakeConnected()).Then(dynamics.Resume(new(0, -6, 0)))
+            .Then(matching.UpdateRows().Then(currentGeometry.Update())).Then(activity.WakeConnected()).Then(dynamics.Resume(new(0, -6, 0)))
             .Then(graph.Build()).Then(response.Initialize()).Then(new InitializeMappedPoseEquations(avbd)).Then(xpbd.Initialize())
             .Then(new AlternateContactAndLength(avbd.Iterate(1, buildGraph: false), xpbd.Iterate(1), 64)).Then(dynamics.UpdateVelocities())
             .Then(response.ApplyRestitution(1, buildGraph: false))
@@ -185,7 +185,7 @@ public sealed partial class DeviceAvbdTests
         public void Execute() => contacts.Clear();
     }
 
-    private readonly struct InitializeMappedPoseEquations(DeviceAvbdSolver solver) : IPhysicsStage
+    private readonly struct InitializeMappedPoseEquations(AvbdGraphCommands solver) : IPhysicsStage
     {
         public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) =>
             solver.Initialize(context.Number == 7 ? DeviceInputTransfer.Upload : DeviceInputTransfer.Resident)

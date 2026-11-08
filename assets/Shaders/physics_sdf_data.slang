@@ -9,7 +9,7 @@ struct DeviceSdfInput
     float3 max; uint padding1;
 };
 struct DeviceSdfSample { float distance; float3 gradient; int feature; };
-RWStructuredBuffer<DeviceSdfInput> DeviceSdfInputs;
+RWStructuredBuffer<DeviceSdfInput, ScalarDataLayout> DeviceSdfInputs;
 interface IDeviceSdfField
 {
     DeviceSdfSample sample(DeviceSdfInput field, float3 point);

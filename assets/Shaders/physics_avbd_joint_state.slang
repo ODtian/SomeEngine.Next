@@ -9,6 +9,6 @@ struct DeviceAvbdJointState
     float3 initialLinearError; uint padding4;
     float3 initialAngularError; uint padding5;
 };
-RWStructuredBuffer<DeviceAvbdJointState> DeviceAvbdJointStates;
-StructuredBuffer<uint2> DeviceJointAvbdSelection;
+RWStructuredBuffer<DeviceAvbdJointState, ScalarDataLayout> DeviceAvbdJointStates;
+StructuredBuffer<uint2, ScalarDataLayout> DeviceJointAvbdSelection;
 #endif

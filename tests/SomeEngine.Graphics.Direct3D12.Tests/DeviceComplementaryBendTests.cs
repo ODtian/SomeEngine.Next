@@ -28,8 +28,8 @@ public sealed partial class DeviceAvbdTests
         Vector3 normal = Vector3.Normalize(new Vector3(1, -1, 0));
         Entity point = world.CreateRelation(firstAnchor, moving, new ContactPoint
             { Normal = normal, Separation = -.1f, BodyAnchorDelta = Vector3.UnitX, FirstBodyCount = 1 }).Entity;
-        var first = world.CreateRelation(point, firstAnchor, new ContactParticipant());
-        var second = world.CreateRelation(point, moving, new ContactParticipant());
+        var first = firstAnchor;
+        var second = moving;
         world.AddBuffer<ContactBodyLink>(point);
         world.ExecuteBufferWrite<ContactBodyLink>(point, links =>
         { links.Add(new(first, Vector3.Zero, 1)); links.Add(new(second, Vector3.Zero, 1)); });
@@ -65,7 +65,7 @@ public sealed partial class DeviceAvbdTests
             backend, device, world, points, contacts, new(responses), "DeviceContactResponsesSelection");
         using var selectedBends = new DeviceConstraintSelection<XpbdBend, DeviceBendConstraint, DeviceXpbdStateRows<float>>(
             backend, device, world, bendRows, bends, new(multipliers), "DeviceBendsSelection");
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileDynamics(), 64);
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileDynamics(), 64);
         var bindings = new Dictionary<string, ResourceBinding[]>();
         contacts.AddBindings(bindings); ends.AddBindings(bindings); states.AddBindings(bindings); responses.AddBindings(bindings);
         bends.AddBindings(bindings); multipliers.AddBindings(bindings);
@@ -73,7 +73,7 @@ public sealed partial class DeviceAvbdTests
         using var graph = new DeviceConstraintGraph(backend, device, bodies, dynamics, CompileContactBendGraph(), new(2, 3),
             bindings, reads, 64, new IDeviceConstraintSelection[] { selectedContacts, selectedBends });
         JobResourceAccess[] solveAccesses = [.. reads, states.GetWriteAccess(jobs), responses.GetWriteAccess(jobs), multipliers.GetReadAccess(jobs)];
-        using var avbd = new DeviceAvbdSolver(backend, device, bodies, equations, graph, CompileContactBendAvbd(), new(1, 1, 0, 0),
+        using var avbd = new AvbdGraphCommands(backend, device, bodies, equations, graph, CompileContactBendAvbd(), new(1, 1, 0, 0),
             bindings, solveAccesses, 64,
             new IDeviceConstraintSelection[] { selectedStates, selectedResponses });
         using var xpbd = new DeviceXpbdProjection<DeviceBendConstraint, float>(backend, device, world, bendRows,
@@ -108,7 +108,7 @@ public sealed partial class DeviceAvbdTests
         { DeviceConstraintBodyGroups<DeviceContactBodies,DeviceBendBodies> rows; writeDeviceConstraintGraphRows(id.x,rows); }
         """, ShaderDirectory());
 
-    private DeviceAvbdKernels CompileContactBendAvbd()
+    private AvbdGraphKernels CompileContactBendAvbd()
     {
         D3D12TestShader shader = shaderCompiler.CompileWithSearchPaths("contact_bend_avbd", """
             #include "physics_avbd_contact.slang"
@@ -123,7 +123,7 @@ public sealed partial class DeviceAvbdTests
             """, [new("Initialize", SlangStage.Compute), new("UpdateBody", SlangStage.Compute), new("UpdateDuals", SlangStage.Compute)], "sm_6_0", ShaderDirectory());
         return new(Entry(shader, 0), Entry(shader, 1), Entry(shader, 2));
     }
-    private DeviceXpbdKernels CompileContactBendProjection()
+    private XpbdGraphKernels CompileContactBendProjection()
     {
         D3D12TestShader shader = shaderCompiler.CompileWithSearchPaths("contact_bend_projection", """
             #include "physics_xpbd_bend.slang"
@@ -135,7 +135,7 @@ public sealed partial class DeviceAvbdTests
             """, [new("Initialize", SlangStage.Compute), new("Project", SlangStage.Compute)], "sm_6_0", ShaderDirectory());
         return new(Entry(shader, 0), Entry(shader, 1));
     }
-    private readonly struct AlternateContactAndBend(IterateDeviceAvbd contacts, IterateDeviceXpbd<DeviceBendConstraint, float> bends, int iterations) : IPhysicsStage
+    private readonly struct AlternateContactAndBend(IterateAvbdGraph contacts, IterateDeviceXpbd<DeviceBendConstraint, float> bends, int iterations) : IPhysicsStage
     {
         public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency)
         {

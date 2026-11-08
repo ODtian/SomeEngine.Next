@@ -2,21 +2,21 @@
 #define PHYSICS_CONTACT_SUPPORT_PARALLEL
 #include "physics_contact_support_groups.slang"
 
-RWStructuredBuffer<uint> DeviceSupportContactOrder;
-RWStructuredBuffer<uint2> DeviceSupportContactEnds;
-RWStructuredBuffer<uint2> DeviceSupportContactPredecessors;
-RWStructuredBuffer<uint2> DeviceSupportContactSuccessors;
-globallycoherent RWStructuredBuffer<uint> DeviceSupportGroupRebuild;
+RWStructuredBuffer<uint, ScalarDataLayout> DeviceSupportContactOrder;
+RWStructuredBuffer<uint2, ScalarDataLayout> DeviceSupportContactEnds;
+RWStructuredBuffer<uint2, ScalarDataLayout> DeviceSupportContactPredecessors;
+RWStructuredBuffer<uint2, ScalarDataLayout> DeviceSupportContactSuccessors;
+globallycoherent RWStructuredBuffer<uint, ScalarDataLayout> DeviceSupportGroupRebuild;
 struct DeviceSupportContactTask
 {
     uint waiting; uint queuedContact; uint incoming; uint incomingContacts;
 };
-globallycoherent RWStructuredBuffer<DeviceSupportContactTask> DeviceSupportContactTasks;
+globallycoherent RWStructuredBuffer<DeviceSupportContactTask, ScalarDataLayout> DeviceSupportContactTasks;
 // A source below contacts denotes a contact; the remaining indices denote bodies.
 struct DeviceSupportLoadLink { uint source; uint next; float weight; };
-RWStructuredBuffer<DeviceSupportLoadLink> DeviceSupportLoadLinks;
+RWStructuredBuffer<DeviceSupportLoadLink, ScalarDataLayout> DeviceSupportLoadLinks;
 // Read ticket, write ticket and the fixed number of contacts in this dispatch.
-globallycoherent RWStructuredBuffer<uint> DeviceSupportWorkQueue;
+globallycoherent RWStructuredBuffer<uint, ScalarDataLayout> DeviceSupportWorkQueue;
 
 bool deviceSupportRebuilds(uint row)
 {
@@ -46,7 +46,7 @@ void releaseDeviceSupportContact(uint row)
 [shader("compute")][numthreads(64,1,1)]
 void ClearDeviceSupportContactOrder(uint3 id:SV_DispatchThreadID)
 {
-    uint row=devicePhysicsThreadIndex(id,64);
+    uint row=deviceSelectedContactRow(devicePhysicsThreadIndex(id,64));
     if(row<ContactSupportSettings.contacts) DeviceSupportContactOrder[row]=0xffffffff;
 }
 [shader("compute")][numthreads(64,1,1)]
@@ -59,7 +59,7 @@ void WriteDeviceSupportContactOrder(uint3 id:SV_DispatchThreadID)
 [shader("compute")][numthreads(64,1,1)]
 void WriteDeviceSupportContactEnds(uint3 id:SV_DispatchThreadID)
 {
-    uint row=devicePhysicsThreadIndex(id,64);
+    uint row=deviceSelectedContactRow(devicePhysicsThreadIndex(id,64));
     if(row>=ContactSupportSettings.contacts) return;
     uint2 ends=uint2(0xffffffff);
     DeviceAwakeBodies bodies;
@@ -83,7 +83,7 @@ void WriteDeviceSupportContactEnds(uint3 id:SV_DispatchThreadID)
 [shader("compute")][numthreads(64,1,1)]
 void WriteDeviceSupportDependencies(uint3 id:SV_DispatchThreadID)
 {
-    uint row=devicePhysicsThreadIndex(id,64);
+    uint row=deviceSelectedContactRow(devicePhysicsThreadIndex(id,64));
     if(row>=ContactSupportSettings.contacts) return;
     uint2 previous=uint2(0xffffffff),next=uint2(0xffffffff),ends=DeviceSupportContactEnds[row];
     uint order=DeviceSupportContactOrder[row];
@@ -95,7 +95,7 @@ void WriteDeviceSupportDependencies(uint3 id:SV_DispatchThreadID)
         // SceneGraphRows starts with DeviceContactBodies: contact rows retain their original indices.
         for(uint entry=ConstraintGraphBodyOffsets[body];entry<ConstraintGraphBodyOffsets[body+1];entry++)
         {
-            uint other=ConstraintGraphAdjacency[entry];
+            uint other=ConstraintGraphRows[ConstraintGraphAdjacency[entry]].w-1;
             if(other>=ContactSupportSettings.contacts||other==row) continue;
             uint2 otherEnds=DeviceSupportContactEnds[other];
             if(all(otherEnds!=body)) continue;
@@ -135,11 +135,11 @@ void CheckDeviceSupportMotion(uint3 id:SV_DispatchThreadID)
 [shader("compute")][numthreads(64,1,1)]
 void InitializeDeviceSupportWarmStart(uint3 id:SV_DispatchThreadID)
 {
-    uint row=devicePhysicsThreadIndex(id,64);
+    uint row=deviceSelectedContactRow(devicePhysicsThreadIndex(id,64));
     DeviceAwakeBodies bodies;
     if(row>=ContactSupportSettings.contacts||!deviceSupportContactRuns(row,bodies)) return;
     DeviceContactSupportState state=DeviceSupportContactStates[row];
-    state.extraForceOnSecond*=DeviceContacts[row].warmStart!=0?ContactSupportSettings.retention:0;
+    state.extraForceOnSecond*=DeviceContacts[row].warmStart!=0?(AvbdStep.firstIteration==0?ContactSupportSettings.retention:1):0;
     DeviceSupportContactStates[row]=state;
 }
 [shader("compute")][numthreads(64,1,1)]
@@ -156,7 +156,7 @@ void PrepareDeviceSupportBodies(uint3 id:SV_DispatchThreadID)
 [shader("compute")][numthreads(64,1,1)]
 void PrepareDeviceSupportCandidates(uint3 id:SV_DispatchThreadID)
 {
-    uint row=devicePhysicsThreadIndex(id,64);
+    uint row=deviceSelectedContactRow(devicePhysicsThreadIndex(id,64));
     DeviceAwakeBodies bodies;
     if(row>=ContactSupportSettings.contacts||!deviceSupportContactRuns(row,bodies)||!deviceSupportRebuilds(row)) return;
     DeviceContactSupportState state=DeviceSupportContactStates[row];
@@ -171,9 +171,10 @@ void ClearDeviceSupportWorkQueue(uint3 id:SV_DispatchThreadID)
 [shader("compute")][numthreads(64,1,1)]
 void QueueDeviceSupportCandidates(uint3 id:SV_DispatchThreadID)
 {
-    uint row=devicePhysicsThreadIndex(id,64);
+    uint work=devicePhysicsThreadIndex(id,64);
+    uint row=deviceSelectedContactRow(work);
     if(row>=ContactSupportSettings.contacts) return;
-    DeviceSupportContactTasks[row].queuedContact=0xffffffff;
+    DeviceSupportContactTasks[work].queuedContact=0xffffffff;
     DeviceAwakeBodies bodies;
     if(!deviceSupportContactRuns(row,bodies)||!deviceSupportRebuilds(row)) return;
     uint2 previous=DeviceSupportContactPredecessors[row];
@@ -183,7 +184,7 @@ void QueueDeviceSupportCandidates(uint3 id:SV_DispatchThreadID)
 [shader("compute")][numthreads(64,1,1)]
 void SeedDeviceSupportCandidates(uint3 id:SV_DispatchThreadID)
 {
-    uint row=devicePhysicsThreadIndex(id,64);
+    uint row=deviceSelectedContactRow(devicePhysicsThreadIndex(id,64));
     DeviceAwakeBodies bodies;
     if(row<ContactSupportSettings.contacts&&deviceSupportContactRuns(row,bodies)&&deviceSupportRebuilds(row)
         &&DeviceSupportContactTasks[row].waiting==0) pushDeviceSupportContact(row);
@@ -220,7 +221,7 @@ void FinishDeviceSupportBodies(uint3 id:SV_DispatchThreadID)
 [shader("compute")][numthreads(64,1,1)]
 void ReleaseDeviceUnsupportedContacts(uint3 id:SV_DispatchThreadID)
 {
-    uint row=devicePhysicsThreadIndex(id,64);
+    uint row=deviceSelectedContactRow(devicePhysicsThreadIndex(id,64));
     DeviceAwakeBodies bodies;
     if(row<ContactSupportSettings.contacts&&deviceSupportContactRuns(row,bodies)&&deviceSupportRebuilds(row)
         &&DeviceSupportContactStates[row].enabled==0) deviceReleaseContactSupport(row);
@@ -228,7 +229,7 @@ void ReleaseDeviceUnsupportedContacts(uint3 id:SV_DispatchThreadID)
 [shader("compute")][numthreads(64,1,1)]
 void ClearDeviceSupportIncoming(uint3 id:SV_DispatchThreadID)
 {
-    uint row=devicePhysicsThreadIndex(id,64);
+    uint row=deviceSelectedContactRow(devicePhysicsThreadIndex(id,64));
     if(row<ContactSupportSettings.contacts&&DeviceSupportContactOrder[row]!=0xffffffff&&deviceSupportRebuilds(row))
     { DeviceSupportContactTasks[row].incoming=0xffffffff; DeviceSupportContactTasks[row].incomingContacts=0; }
 }
@@ -244,13 +245,14 @@ void writeDeviceSupportLoadLink(uint index,uint source,DeviceSupportLoad load,bo
 void WriteDeviceSupportIncoming(uint3 id:SV_DispatchThreadID)
 {
     uint index=devicePhysicsThreadIndex(id,64);
+    uint contact=deviceSelectedContactRow(index);
     DeviceAwakeBodies bodies;
-    if(index<ContactSupportSettings.contacts&&deviceSupportContactRuns(index,bodies)&&deviceSupportRebuilds(index))
+    if(contact<ContactSupportSettings.contacts&&deviceSupportContactRuns(contact,bodies)&&deviceSupportRebuilds(contact))
     {
-        DeviceContactSupportState state=DeviceSupportContactStates[index];
+        DeviceContactSupportState state=DeviceSupportContactStates[contact];
         if(state.enabled!=0)
             for(uint load=0;load<state.loadCount;load++)
-                writeDeviceSupportLoadLink(index*3+load,index,DeviceSupportContactLoads[index*3+load],true);
+                writeDeviceSupportLoadLink(contact*3+load,contact,DeviceSupportContactLoads[contact*3+load],true);
     }
     if(index<ContactSupportSettings.bodies&&deviceSupportBodySelected(index)&&bodies.contains(index)
         &&DeviceSupportGroupRebuild[ConstraintGraphParents[index]]!=0)
@@ -265,9 +267,10 @@ void WriteDeviceSupportIncoming(uint3 id:SV_DispatchThreadID)
 [shader("compute")][numthreads(64,1,1)]
 void QueueDeviceSupportLoads(uint3 id:SV_DispatchThreadID)
 {
-    uint row=devicePhysicsThreadIndex(id,64);
+    uint work=devicePhysicsThreadIndex(id,64);
+    uint row=deviceSelectedContactRow(work);
     if(row>=ContactSupportSettings.contacts) return;
-    DeviceSupportContactTasks[row].queuedContact=0xffffffff;
+    DeviceSupportContactTasks[work].queuedContact=0xffffffff;
     DeviceAwakeBodies bodies;
     if(!deviceSupportContactRuns(row,bodies)||DeviceSupportContactStates[row].enabled==0) return;
     DeviceSupportContactTasks[row].waiting=DeviceSupportContactTasks[row].incomingContacts;
@@ -276,7 +279,7 @@ void QueueDeviceSupportLoads(uint3 id:SV_DispatchThreadID)
 [shader("compute")][numthreads(64,1,1)]
 void SeedDeviceSupportLoads(uint3 id:SV_DispatchThreadID)
 {
-    uint row=devicePhysicsThreadIndex(id,64);
+    uint row=deviceSelectedContactRow(devicePhysicsThreadIndex(id,64));
     DeviceAwakeBodies bodies;
     if(row<ContactSupportSettings.contacts&&deviceSupportContactRuns(row,bodies)&&DeviceSupportContactStates[row].enabled!=0
         &&DeviceSupportContactTasks[row].waiting==0) pushDeviceSupportContact(row);

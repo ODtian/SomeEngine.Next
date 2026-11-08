@@ -71,9 +71,9 @@ internal sealed class JointLongRangeData(JointLongRangeSettings settings)
     internal void RefreshGraph(scoped PhysicsQueryRows joints, scoped PhysicsBodies bodies, in PhysicsStepContext context) =>
         _graph.Refresh(joints, bodies, in context, settings.Levels);
 
-    internal void Initialize(scoped PhysicsQueryRows joints, scoped PhysicsBodies bodies, in PhysicsStepContext context)
+    internal void Initialize(scoped PhysicsQueryRows joints, scoped PhysicsBodies bodies, in PhysicsStepContext context, bool refreshGraph = true)
     {
-        RefreshGraph(joints, bodies, in context);
+        if (refreshGraph) RefreshGraph(joints, bodies, in context);
         foreach (List<JointBoundReference> references in _byBody.Values) { references.Clear(); _unused.Push(references); }
         _byBody.Clear();
         float squaredDuration = (float)(context.Duration * context.Duration);
@@ -92,7 +92,7 @@ internal sealed class JointLongRangeData(JointLongRangeSettings settings)
                         direction, Vector3.Cross(geometry.LastOffset, direction));
                 bound.Penalty = settings.PenaltyScale / (squaredDuration * mobility);
                 bound.InitialError = new(MathF.Max(0, start.Distance - bound.Maximum), MathF.Max(0, bound.Minimum - start.Distance));
-                bound.Multiplier *= settings.MultiplierRetention;
+                bound.Multiplier *= context.FirstIteration == 0 ? settings.MultiplierRetention : 1;
                 var reference = new JointBoundReference(row.Entity, index);
                 Add(geometry.FirstBody, reference);
                 Add(geometry.LastBody, reference);

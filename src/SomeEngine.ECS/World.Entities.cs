@@ -82,6 +82,11 @@ public partial class World
     public void DestroyEntity(Entity entity)
     {
         using WorldJobAdmissionScope admission = EnterJobTopologyWrite();
+        NotifyAndDestroyEntity(entity);
+    }
+
+    internal void NotifyAndDestroyEntity(Entity entity)
+    {
         NotifyEntityDestroying(entity);
         _entities.Destroy(entity);
     }

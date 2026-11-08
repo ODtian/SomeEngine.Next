@@ -152,51 +152,11 @@ internal sealed partial class RelationGraph
                 secondInsertIndex);
         }
 
-        var edgeEntity = world.CreateEntity();
-        var edge = new RelationEdge<T>(edgeEntity);
-        PreparedRelationState<T> prepared;
-        try
-        {
-            bool applyImmediately = timing == RelationMaintenanceTiming.Immediate;
-            prepared = applyImmediately
-                ? state.PrepareAdd(edge, endpointPair, firstInsertIndex, secondInsertIndex)
-                : state.PrepareRegister(edge);
-        }
-        catch
-        {
-            world.DestroyEntity(edgeEntity);
-            throw;
-        }
-
-        try
-        {
-            AddCanonicalEndpoints<T>(world, edgeEntity, state.Schema, first, second);
-            world.Add(edgeEntity, new AppliedRelationEndpoints<T>
-            {
-                EndpointA = first,
-                EndpointB = second,
-                IsApplied = timing == RelationMaintenanceTiming.Immediate,
-            });
-            world.Add(edgeEntity, in payload);
-            PublishWithMarkers(world, state, prepared);
-            if (timing == RelationMaintenanceTiming.Deferred)
-            {
-                state.MarkDirty(
-                    edge,
-                    new RelationAppliedEndpointImage(endpointPair, IsApplied: false),
-                    endpointPair,
-                    firstInsertIndex,
-                    secondInsertIndex);
-            }
-            return edge;
-        }
-        catch
-        {
-            state.Restore(prepared.Previous);
-            if (world.IsAlive(edgeEntity))
-                world.DestroyEntity(edgeEntity);
-            throw;
-        }
+        return state.Schema.Direction == RelationDirection.Directed
+            ? SpawnRelationComponents(world, state, endpointPair, in payload,
+                new DirectedRelationEndpoints<T> { Source = first, Target = second }, timing, firstInsertIndex, secondInsertIndex)
+            : SpawnRelationComponents(world, state, endpointPair, in payload,
+                new UndirectedRelationEndpoints<T> { EndpointA = first, EndpointB = second }, timing, firstInsertIndex, secondInsertIndex);
     }
 
     internal void Destroy<T>(World world, RelationEdge<T> edge)
@@ -493,7 +453,7 @@ internal sealed partial class RelationGraph
                 if (entries[i].OtherEndpoint != second)
                     continue;
                 RelationEdge<T> edge = entries[i].Edge;
-                if (world.IsAlive(edge.Entity) && state.IsEdge(edge.Entity))
+                if (world.Entities.Alive(edge.Entity) && state.IsEdge(edge.Entity))
                     DestroyAppliedEdge(world, state, edge);
             }
             return;
@@ -502,7 +462,7 @@ internal sealed partial class RelationGraph
         RelationEdge<T>[] edges = state.CommandBatchEdgesBetween(world, first, second);
         for (int i = 0; i < edges.Length; i++)
         {
-            if (world.IsAlive(edges[i].Entity) && state.IsEdge(edges[i].Entity))
+            if (world.Entities.Alive(edges[i].Entity) && state.IsEdge(edges[i].Entity))
                 DestroyAppliedEdge(world, state, edges[i]);
         }
     }
@@ -525,7 +485,7 @@ internal sealed partial class RelationGraph
             for (int i = 0; i < entries.Length; i++)
             {
                 RelationEdge<T> edge = entries[i].Edge;
-                if (world.IsAlive(edge.Entity) && state.IsEdge(edge.Entity))
+                if (world.Entities.Alive(edge.Entity) && state.IsEdge(edge.Entity))
                     DestroyAppliedEdge(world, state, edge);
             }
             return;
@@ -535,7 +495,7 @@ internal sealed partial class RelationGraph
         for (int i = 0; i < edges.Length; i++)
         {
             RelationEdge<T> edge = edges[i];
-            if (world.IsAlive(edge.Entity) && state.IsEdge(edge.Entity))
+            if (world.Entities.Alive(edge.Entity) && state.IsEdge(edge.Entity))
                 DestroyAppliedEdge(world, state, edge);
         }
     }
@@ -627,7 +587,7 @@ internal sealed partial class RelationGraph
         for (int i = 0; i < dirty.Length; i++)
         {
             RelationEdge<T> edge = dirty[i];
-            if (!world.IsAlive(edge.Entity) || !state.IsEdge(edge.Entity))
+            if (!world.Entities.Alive(edge.Entity) || !state.IsEdge(edge.Entity))
                 continue;
             RelationEndpointPair current =
                 RelationEndpointAccess.ReadCurrent<T>(world, edge.Entity, state.Schema);
@@ -693,7 +653,7 @@ internal sealed partial class RelationGraph
         for (int i = 0; i < dirty.Length; i++)
         {
             var edge = dirty[i];
-            if (!world.IsAlive(edge.Entity) || !state.IsEdge(edge.Entity))
+            if (!world.Entities.Alive(edge.Entity) || !state.IsEdge(edge.Entity))
                 continue;
             var current = RelationEndpointAccess.ReadCurrent<T>(world, edge.Entity, state.Schema);
             var applied = RelationEndpointAccess.ReadAppliedImage<T>(world, edge.Entity);
@@ -736,8 +696,8 @@ internal sealed partial class RelationGraph
             for (int i = 0; i < transitions.Count; i++)
             {
                 var pair = transitions[i].Applied;
-                if (world.IsAlive(transitions[i].Edge.Entity) &&
-                    world.Has<AppliedRelationEndpoints<T>>(transitions[i].Edge.Entity))
+                if (world.Entities.Alive(transitions[i].Edge.Entity) &&
+                    world.Components.Has<AppliedRelationEndpoints<T>>(transitions[i].Edge.Entity))
                 {
                     world.Components.Replace(transitions[i].Edge.Entity, new AppliedRelationEndpoints<T>
                     {
@@ -767,7 +727,7 @@ internal sealed partial class RelationGraph
             var edge = dirty[i];
             if (edge == candidate)
                 continue;
-            if (!world.IsAlive(edge.Entity) || !state.IsEdge(edge.Entity))
+            if (!world.Entities.Alive(edge.Entity) || !state.IsEdge(edge.Entity))
                 continue;
             var applied = RelationEndpointAccess.ReadAppliedImage<T>(world, edge.Entity);
             var current = RelationEndpointAccess.ReadCurrent<T>(world, edge.Entity, state.Schema);
@@ -808,7 +768,7 @@ internal sealed partial class RelationGraph
         for (int i = 0; i < dirty.Length; i++)
         {
             var edge = dirty[i];
-            if (!world.IsAlive(edge.Entity) || !state.IsEdge(edge.Entity))
+            if (!world.Entities.Alive(edge.Entity) || !state.IsEdge(edge.Entity))
                 continue;
             var applied = RelationEndpointAccess.ReadAppliedImage<T>(world, edge.Entity);
             var current = RelationEndpointAccess.ReadCurrent<T>(world, edge.Entity, state.Schema);
@@ -848,11 +808,12 @@ internal sealed partial class RelationGraph
             PublishWithMarkers(world, state, prepared);
             try
             {
-                world.DestroyEntity(edge.Entity);
+                world.BumpTopologyRevision();
+                world.NotifyAndDestroyEntity(edge.Entity);
             }
             catch
             {
-                if (world.IsAlive(edge.Entity) && !world.IsPendingCleanup(edge.Entity))
+                if (world.Entities.Alive(edge.Entity) && !world.Entities.Pending(edge.Entity))
                 {
                     state.Restore(prepared.Previous);
                     SynchronizeMarkers(
@@ -888,8 +849,11 @@ internal sealed partial class RelationGraph
             var prepared = state.PrepareRemove(edge, applied.Endpoints, applied.IsApplied);
             state.ClearDirty([edge]);
             PublishWithMarkers(world, state, prepared);
-            if (destroyEntity && world.IsAlive(edgeEntity))
-                world.DestroyEntity(edgeEntity);
+            if (destroyEntity && world.Entities.Alive(edgeEntity))
+            {
+                world.BumpTopologyRevision();
+                world.NotifyAndDestroyEntity(edgeEntity);
+            }
         }
         finally
         {
@@ -928,14 +892,14 @@ internal sealed partial class RelationGraph
         World world,
         RelationTypeState<T> state,
         RelationGeneration<T> next,
-        ReadOnlySpan<RelationAffectedShard> affectedShards)
+        RelationAffectedShards affectedShards)
         where T : struct, IComponent
     {
         for (int i = 0; i < affectedShards.Length; i++)
         {
             Entity endpoint = affectedShards[i].Endpoint;
             RelationAdjacencyRole role = affectedShards[i].Role;
-            if (!world.IsAlive(endpoint) || world.IsPendingCleanup(endpoint))
+            if (!world.Entities.Alive(endpoint) || world.Entities.Pending(endpoint))
                 continue;
             var shard = state.GetShardMetrics(next, endpoint, role);
             bool shouldExist = shard.Count != 0 ||
@@ -964,7 +928,7 @@ internal sealed partial class RelationGraph
         bool shouldExist)
         where TMarker : struct, IRelationshipTarget
     {
-        bool exists = world.Has<TMarker>(endpoint);
+        bool exists = world.Components.Has<TMarker>(endpoint);
         if (!shouldExist)
         {
             if (exists)
@@ -978,29 +942,70 @@ internal sealed partial class RelationGraph
             world.Components.Add(endpoint, in marker);
     }
 
-    private static void AddCanonicalEndpoints<T>(
-        World world,
-        Entity edge,
-        RelationSchema schema,
-        Entity first,
-        Entity second)
-        where T : struct, IComponent
+    private static RelationEdge<T> SpawnRelationComponents<T, TEndpoints>(World world, RelationTypeState<T> state,
+        RelationEndpointPair endpoints, in T payload, TEndpoints sources, RelationMaintenanceTiming timing,
+        int? firstInsertIndex, int? secondInsertIndex)
+        where T : struct, IComponent where TEndpoints : struct, IRelationshipSource
     {
-        if (schema.Direction == RelationDirection.Directed)
+        var values = new RelationCreateValues<T, TEndpoints>(state, endpoints, sources, payload, timing,
+            firstInsertIndex, secondInsertIndex);
+        try
         {
-            world.Components.Add(edge, new DirectedRelationEndpoints<T>
+            world.Bundles.ExecuteSpawn(
+                [ComponentMetadata<TEndpoints>.Id, ComponentMetadata<AppliedRelationEndpoints<T>>.Id, ComponentMetadata<T>.Id],
+                ReadOnlySpan<int>.Empty, ref values,
+                static (BundleWriteView row, ref RelationCreateValues<T, TEndpoints> values) =>
+                {
+                    values.Entity = row.Entity;
+                    var edge = new RelationEdge<T>(values.Entity);
+                    values.RelationState = values.Timing == RelationMaintenanceTiming.Immediate
+                        ? values.State.PrepareAdd(edge, values.Endpoints, values.FirstInsertIndex, values.SecondInsertIndex)
+                        : values.State.PrepareRegister(edge);
+                    values.HasRelationState = true;
+                    var applied = new AppliedRelationEndpoints<T>
+                    {
+                        EndpointA = values.Endpoints.First,
+                        EndpointB = values.Endpoints.Second,
+                        IsApplied = values.Timing == RelationMaintenanceTiming.Immediate,
+                    };
+                    row.WriteRelationshipSource(in values.Sources);
+                    row.Write(in applied);
+                    row.Write(in values.Payload);
+                });
+            PublishWithMarkers(world, state, values.RelationState);
+            var result = new RelationEdge<T>(values.Entity);
+            if (timing == RelationMaintenanceTiming.Deferred)
             {
-                Source = first,
-                Target = second,
-            });
-            return;
+                state.MarkDirty(result, new RelationAppliedEndpointImage(endpoints, IsApplied: false), endpoints,
+                    firstInsertIndex, secondInsertIndex);
+            }
+            return result;
         }
-
-        world.Components.Add(edge, new UndirectedRelationEndpoints<T>
+        catch
         {
-            EndpointA = first,
-            EndpointB = second,
-        });
+            if (values.HasRelationState) state.Restore(values.RelationState.Previous);
+            if (values.Entity != Entity.Null && world.Entities.Alive(values.Entity))
+            {
+                world.BumpTopologyRevision();
+                world.NotifyAndDestroyEntity(values.Entity);
+            }
+            throw;
+        }
+    }
+
+    private struct RelationCreateValues<T, TEndpoints>(RelationTypeState<T> state, RelationEndpointPair endpoints,
+        TEndpoints sources, T payload, RelationMaintenanceTiming timing, int? firstInsertIndex, int? secondInsertIndex)
+        where T : struct, IComponent where TEndpoints : struct, IRelationshipSource
+    {
+        internal readonly RelationTypeState<T> State = state;
+        internal readonly RelationEndpointPair Endpoints = endpoints;
+        internal readonly TEndpoints Sources = sources;
+        internal readonly T Payload = payload;
+        internal readonly RelationMaintenanceTiming Timing = timing;
+        internal readonly int? FirstInsertIndex = firstInsertIndex, SecondInsertIndex = secondInsertIndex;
+        internal Entity Entity;
+        internal PreparedRelationState<T> RelationState;
+        internal bool HasRelationState;
     }
 
     private static void WriteCanonicalEndpoints<T>(
@@ -1036,7 +1041,7 @@ internal sealed partial class RelationGraph
         bool wasApplied)
         where T : struct, IComponent
     {
-        if (!world.IsAlive(edge))
+        if (!world.Entities.Alive(edge))
             return;
         WriteCanonicalEndpoints<T>(world, edge, schema, current);
         world.Components.Replace(edge, new AppliedRelationEndpoints<T>
@@ -1053,7 +1058,7 @@ internal sealed partial class RelationGraph
         RelationEdge<T> edge)
         where T : struct, IComponent
     {
-        if (!world.IsAlive(edge.Entity) ||
+        if (!world.Entities.Alive(edge.Entity) ||
             !state.IsEdge(edge.Entity) ||
             !RelationEndpointAccess.HasCurrent<T>(world, edge.Entity, state.Schema))
         {
@@ -1135,9 +1140,9 @@ internal sealed partial class RelationGraph
 
     private static void ValidateEndpoint(World world, Entity endpoint, string parameter)
     {
-        if (endpoint == Entity.Null || !world.IsAlive(endpoint))
+        if (endpoint == Entity.Null || !world.Entities.Alive(endpoint))
             throw new InvalidOperationException($"Relation {parameter} endpoint {endpoint} is not alive.");
-        if (world.IsPendingCleanup(endpoint))
+        if (world.Entities.Pending(endpoint))
             throw new InvalidOperationException($"Relation {parameter} endpoint {endpoint} is pending cleanup.");
     }
 

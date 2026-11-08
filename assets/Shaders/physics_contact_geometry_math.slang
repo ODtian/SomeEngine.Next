@@ -59,11 +59,6 @@ float deviceContactSpeed(DeviceContactConstraint point,float duration,bool stepI
         uint bodyIndex=DeviceContactBodyLinks[point.bodyOffset+end].stateIndex;
         DeviceBodyState body=DeviceBodyStates[bodyIndex];
         float3 linearVelocity=body.linearVelocity,angularVelocity=body.angularVelocity;
-        if(stepInput&&body.motion==1)
-        {
-            linearVelocity=(body.predictedCenterOfMass-body.startCenterOfMass)/duration;
-            angularVelocity=bodyRotationVelocity(body.startRotation,body.predictedRotation,duration);
-        }
         float3 linear,angular;
         deviceContactNormalJacobian(point,bodyIndex,point.normal,linear,angular);
         speed+=dot(linear,linearVelocity)+dot(angular,angularVelocity);

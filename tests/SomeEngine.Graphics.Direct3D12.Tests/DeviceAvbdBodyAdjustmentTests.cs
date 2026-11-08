@@ -23,12 +23,12 @@ public sealed partial class DeviceAvbdTests
         using var equations = new DeviceAvbdBodyEquations(backend, device, bodies);
         Entity moving = CreateBody(world, bodies, equations, 1, Vector3.Zero, BodyMotion.Dynamic);
         QueryHandle members = world.Query(new QueryDefinitionBuilder().Read<DeviceBodyBinding>().All<DeviceAvbdEquationBinding>());
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileDynamics(), 64);
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileDynamics(), 64);
         using var results = new DeviceBodyResults(backend, device, bodies);
         var bindings = new Dictionary<string, ResourceBinding[]>();
         using var graph = new DeviceConstraintGraph(backend, device, bodies, dynamics, CompileBodyAdjustmentGraph(),
             new(1, 1), bindings, default, 64);
-        using var solve = new DeviceAvbdSolver(backend, device, bodies, equations, graph, CompileProjectBodyAdjustment(),
+        using var solve = new AvbdGraphCommands(backend, device, bodies, equations, graph, CompileProjectBodyAdjustment(),
             new(2, 1, 0, 0), bindings, default, 64);
         var stages = bodies.WriteInputs(64).Then(bodies.UploadInputs()).Then(dynamics.Predict(Vector3.Zero))
             .Then(solve.Solve()).Then(dynamics.UpdateVelocities()).Then(results.Readback(64));
@@ -54,7 +54,7 @@ public sealed partial class DeviceAvbdTests
         return new(Entry(shader, 0), Entry(shader, 1));
     }
 
-    private DeviceAvbdKernels CompileProjectBodyAdjustment()
+    private AvbdGraphKernels CompileProjectBodyAdjustment()
     {
         D3D12TestShader shader = shaderCompiler.CompileWithSearchPaths("project_body_adjustment", """
             #include "physics_avbd.slang"

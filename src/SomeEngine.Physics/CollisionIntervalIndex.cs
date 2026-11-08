@@ -18,6 +18,8 @@ public sealed partial class CollisionIntervalIndex<TSettings>(TSettings settings
     private readonly Stack<IntervalPartition> _emptyPartitions = [];
     private int _update;
     private int _entryCount;
+    private int _finiteEntryCount;
+    private readonly List<int> _unbounded = [];
 
     public TSettings Settings => settings;
     public JobResourceAccess GetWriteAccess(Scheduler scheduler) => JobResourceAccess.Write(scheduler, _entityIndices);
@@ -28,8 +30,8 @@ public sealed partial class CollisionIntervalIndex<TSettings>(TSettings settings
     {
         float minimum = ReadAxis(bounds.Min);
         float maximum = ReadAxis(bounds.Max);
-        var interval = new CollisionInterval(entity, bounds, minimum, maximum, settings.GetPartition(minimum),
-            settings.GetPartition(maximum), _update);
+        var interval = new CollisionInterval(entity, bounds, minimum, maximum, bounds.IsFinite ? settings.GetPartition(minimum) : 0,
+            bounds.IsFinite ? settings.GetPartition(maximum) : 0, _update);
         if (_entityIndices.TryGetValue(entity, out int index))
             _intervals[index] = interval;
         else
@@ -75,6 +77,27 @@ public sealed partial class CollisionIntervalIndex<TSettings>(TSettings settings
     {
         ReadOnlySpan<CollisionInterval> intervals = CollectionsMarshal.AsSpan(_intervals);
         int end = partition.Start + partition.Count;
+        int firstUnbounded = Math.Max(0, partition.Start - _finiteEntryCount);
+        int lastUnbounded = Math.Min(_unbounded.Count, end - _finiteEntryCount);
+        for (int item = firstUnbounded; item < lastUnbounded; item++)
+        {
+            int firstIndex = _unbounded[item];
+            ref readonly CollisionInterval first = ref intervals[firstIndex];
+            if (TPairing.IncludesSelf)
+            {
+                var self = (first.Entity, first.Entity);
+                if (!TPairing.Emit(in self, queries, ref output)) return false;
+            }
+            for (int other = 0; other < intervals.Length; other++)
+            {
+                ref readonly CollisionInterval second = ref intervals[other];
+                if (other == firstIndex || !second.Bounds.IsFinite && other < firstIndex
+                    || !first.Bounds.Overlaps(in second.Bounds)) continue;
+                var pair = EntityOrder.OrderPair(first.Entity, second.Entity);
+                if (!TPairing.Emit(in pair, queries, ref output)) return false;
+            }
+        }
+        end = Math.Min(end, _finiteEntryCount);
         for (int partitionIndex = FindPartition(partition.Start);
             partitionIndex < _partitions.Count && _partitions[partitionIndex].Start < end; partitionIndex++)
         {
@@ -113,9 +136,11 @@ public sealed partial class CollisionIntervalIndex<TSettings>(TSettings settings
     {
         foreach (IntervalPartition partition in _partitions)
             partition.Intervals.Clear();
+        _unbounded.Clear();
         for (int index = 0; index < _intervals.Count; index++)
         {
             CollisionInterval interval = _intervals[index];
+            if (!interval.Bounds.IsFinite) { _unbounded.Add(index); continue; }
             for (int key = interval.FirstPartition; key <= interval.LastPartition; key++)
             {
                 if (!_partitionsByIndex.TryGetValue(key, out IntervalPartition? partition))
@@ -145,6 +170,8 @@ public sealed partial class CollisionIntervalIndex<TSettings>(TSettings settings
             partition.Start = _entryCount;
             _entryCount += partition.Intervals.Count;
         }
+        _finiteEntryCount = _entryCount;
+        _entryCount += _unbounded.Count;
     }
 
     private int FindPartition(int entry)

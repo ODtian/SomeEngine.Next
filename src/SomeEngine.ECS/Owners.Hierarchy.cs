@@ -23,6 +23,7 @@ internal sealed partial class Hierarchy
     // admission. Domain discovery must therefore remain safe while a topology writer registers
     // another domain, but the read path must never create a domain as a side effect.
     private readonly ConcurrentDictionary<Type, IHierarchyDomainStore> _domains = new();
+    private volatile bool _hasDomains;
     private readonly Dictionary<int, IHierarchyDomainStore> _parentComponents = new();
     private readonly Dictionary<int, IHierarchyDomainStore> _childrenComponents = new();
     private readonly object _registrationLock = new();
@@ -35,7 +36,7 @@ internal sealed partial class Hierarchy
 
     private int _editDepth;
 
-    internal bool Any => _domains.Count != 0;
+    internal bool Any => _hasDomains;
 
     /// <summary>
     /// Creates an exact hierarchy image whose typed domains retain their current backing
@@ -188,6 +189,7 @@ internal sealed partial class Hierarchy
             throw new InvalidOperationException($"Hierarchy domain {store.DomainType} is already registered.");
         _parentComponents[store.ParentComponentId] = store;
         _childrenComponents[store.ChildrenComponentId] = store;
+        _hasDomains = true;
     }
 
     private bool TryResolve(

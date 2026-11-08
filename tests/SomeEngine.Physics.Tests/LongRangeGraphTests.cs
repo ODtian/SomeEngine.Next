@@ -83,8 +83,8 @@ public sealed class LongRangeGraphTests
                 {
                     Normal = Vector3.UnitY, FirstBodyCount = 1, WorldPoint = new(corner.X, layer * 2, corner.Y),
                 });
-                var first = world.CreateRelation(point.Entity, firstBody, new ContactParticipant());
-                var second = world.CreateRelation(point.Entity, secondBody, new ContactParticipant());
+                var first = firstBody;
+                var second = secondBody;
                 world.AddBuffer<ContactBodyLink>(point.Entity);
                 world.ExecuteBufferWrite<ContactBodyLink>(point.Entity, links =>
                 {
@@ -102,7 +102,7 @@ public sealed class LongRangeGraphTests
         QueryHandle supportBodies = world.Query(new QueryDefinitionBuilder().ReadWrite<LongRangeBodySupport>()
             .WriteBuffer<LongRangeSupportLoad>().WriteBuffer<LongRangeSupportEquation>());
         QueryHandle contacts = world.Query(new QueryDefinitionBuilder().Read<ContactPoint>().Read<ContactMaterial>()
-            .ReadBuffer<ContactBodyLink>().Optional<DirectedRelationEndpoints<ContactParticipant>>(QueryAccess.Read)
+            .ReadBuffer<ContactBodyLink>()
             .ReadWrite<AvbdContactState>().ReadWrite<ContactResponse>().ReadWrite<LongRangeContactSupport>()
             .WriteBuffer<LongRangeSupportLoad>());
         var constraints = AvbdGraphConstraints.Combine(new AvbdGraphConstraints<ContactPoint, AvbdSupportedContactMath>(contacts),

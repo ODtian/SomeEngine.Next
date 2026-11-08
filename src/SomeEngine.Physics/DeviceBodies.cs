@@ -26,6 +26,7 @@ public struct DeviceBodyState
     [FieldOffset(64)] public Vector3 CenterOfMass;
     [FieldOffset(76)] public uint EntityGeneration;
     [FieldOffset(80)] public Vector3 InverseInertiaX;
+    [FieldOffset(92)] public uint InputVersion;
     [FieldOffset(96)] public Vector3 InverseInertiaY;
     [FieldOffset(112)] public Vector3 InverseInertiaZ;
     [FieldOffset(128)] public Vector3 StartCenterOfMass;
@@ -46,6 +47,7 @@ public sealed partial class DeviceBodies : IDisposable, IDevicePhysicsSubmission
     private readonly CommandContext _commands;
     private MappedBuffer _mapping;
     private bool _initialized;
+    private readonly Dictionary<(World World, SomeEngine.ECS.Queries.QueryDefinition Members), DeviceBodyInputs> _inputWriters = [];
 
     public DeviceBodies(IGraphicsBackend backend, Device device, int capacity)
     {
@@ -66,8 +68,18 @@ public sealed partial class DeviceBodies : IDisposable, IDevicePhysicsSubmission
     internal BufferUav View { get; }
     IGraphicsBackend IDevicePhysicsSubmission.Backend => _backend;
     Device IDevicePhysicsSubmission.Device => _device;
+    SomeEngine.Graphics.Queue IDevicePhysicsSubmission.Queue => _backend.GetQueue(_device, QueueType.Compute);
     public WriteDeviceBodyInputs WriteInputs(int rowsPerPacket) => new(this, rowsPerPacket);
     public UploadDeviceBodyInputs UploadInputs() => new(this);
+    internal DeviceBodyInputs GetInputWriter(World world, SomeEngine.ECS.Queries.QueryDefinition members)
+    {
+        if (_inputWriters.TryGetValue((world, members), out DeviceBodyInputs? writer)) return writer;
+        SomeEngine.ECS.Queries.QueryHandle query = world.Query(members);
+        try { writer = new(world, query, this); }
+        finally { world.ReleaseQuery(query); }
+        _inputWriters.Add((world, members), writer);
+        return writer;
+    }
     public JobResourceAccess GetReadAccess(Scheduler scheduler) =>
         JobResourceAccess.Read(scheduler.GetResourceToken(States), 0, (long)States.Info.Size);
     public JobResourceAccess GetWriteAccess(Scheduler scheduler) =>
@@ -112,6 +124,7 @@ public sealed partial class DeviceBodies : IDisposable, IDevicePhysicsSubmission
 
     public void Dispose()
     {
+        foreach (DeviceBodyInputs writer in _inputWriters.Values) writer.Dispose();
         _mapping.Dispose(); _commands.Dispose(); _cpuInputChanges?.Dispose(); _upload.Dispose(); View.Dispose(); States.Dispose();
     }
 }
@@ -119,12 +132,13 @@ public sealed partial class DeviceBodies : IDisposable, IDevicePhysicsSubmission
 public readonly struct WriteDeviceBodyInputs(DeviceBodies bodies, int rowsPerPacket) : IPhysicsStage
 {
     public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) =>
-        new WriteDeviceBodyInputJob(bodies).ScheduleParallel(context.World,
-            new JobEntityScheduleOptions(rowsPerPacket: rowsPerPacket, filter: context.Bodies), dependency);
+        bodies.GetInputWriter(context.World, context.Bodies).ScheduleWrite(in context, rowsPerPacket, dependency);
 }
 
-public readonly struct UploadDeviceBodyInputs(DeviceBodies bodies) : IPhysicsStage
+public readonly struct UploadDeviceBodyInputs(DeviceBodies bodies) : IDevicePhysicsStage
 {
+    public object InputKey => bodies;
+    public bool CanBatch => true;
     public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) =>
         bodies.ScheduleUpload(WorldJobs.GetScheduler(context.World), dependency);
 }
@@ -139,15 +153,4 @@ public readonly struct DeviceBodyUploadResources : IJobComponentResources<Device
 public readonly struct DeviceBodyReferenceResources : IJobComponentResources<DeviceBodyBinding>
 {
     public static void Collect(in DeviceBodyBinding component, ref JobResourceAccessBuilder resources) { }
-}
-
-internal readonly partial struct WriteDeviceBodyInputJob(DeviceBodies destination) : IJobEntity
-{
-    public void Execute(Entity entity, [JobResources<DeviceBodyUploadResources>] in DeviceBodyBinding binding,
-        in BodyPose pose, in BodyMass mass, in BodyVelocity velocity, in BodyStepState step)
-    {
-        if (!ReferenceEquals(binding.Bodies, destination)) return;
-        DeviceBodyState state = DeviceBodies.ReadInput(entity, in pose, in mass, in velocity, in step);
-        destination.WriteInput(binding.Index, in state);
-    }
 }

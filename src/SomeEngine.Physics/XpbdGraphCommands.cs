@@ -7,16 +7,16 @@ using Buffer = SomeEngine.Graphics.Buffer;
 
 namespace SomeEngine.Physics;
 
-public readonly record struct DeviceXpbdSettings(int Iterations, int RowsPerBlock);
+public readonly record struct XpbdIterationSettings(int Iterations, int RowsPerBlock);
 
 /// <summary>Projects current typed rows in the shared device graph's query/color order.</summary>
-public sealed class DeviceXpbdSolver : IDisposable
+public sealed class XpbdGraphCommands : IDisposable
 {
     private readonly IGraphicsBackend _backend;
     private readonly Device _device;
     private readonly DeviceBodies _bodies;
     private readonly DeviceConstraintGraph _graph;
-    private readonly DeviceXpbdSettings _settings;
+    private readonly XpbdIterationSettings _settings;
     private readonly int _threadsPerGroup;
     private readonly Buffer[] _histories;
     private readonly Pipeline[] _pipelines;
@@ -29,9 +29,10 @@ public sealed class DeviceXpbdSolver : IDisposable
     private readonly JobResourceAccess[] _extraAccesses;
     private readonly IDeviceConstraintSelection[] _selections;
     private bool _initialized;
+    internal int Iterations => _settings.Iterations;
 
-    public DeviceXpbdSolver(IGraphicsBackend backend, Device device, DeviceBodies bodies, DeviceConstraintGraph graph,
-        DeviceXpbdKernels kernels, DeviceXpbdSettings settings, IReadOnlyDictionary<string, ResourceBinding[]> inputs,
+    public XpbdGraphCommands(IGraphicsBackend backend, Device device, DeviceBodies bodies, DeviceConstraintGraph graph,
+        XpbdGraphKernels kernels, XpbdIterationSettings settings, IReadOnlyDictionary<string, ResourceBinding[]> inputs,
         ReadOnlyMemory<JobResourceAccess> inputAccesses, ReadOnlyMemory<Buffer> histories, int threadsPerGroup,
         ReadOnlyMemory<IDeviceConstraintSelection> selections = default)
     {
@@ -47,8 +48,10 @@ public sealed class DeviceXpbdSolver : IDisposable
         graph.AddBindings(bindings);
         if (kernels.WriteDispatchArguments.HasValue)
         {
-            _dispatchArguments = backend.CreateBuffer(device, new((ulong)graph.ConstraintCapacity * 12,
-                BufferUsages.ShaderWrite | BufferUsages.Indirect, "XPBD row dispatch arguments"), MemoryType.DeviceLocal);
+            var argumentsDescription = new BufferDesc((ulong)graph.ConstraintCapacity * 12,
+                BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.Indirect, "XPBD row dispatch arguments");
+            _dispatchArguments = graph.Memory is { } memory ? memory.CreateBuffer(argumentsDescription, 12,
+                graph.ConstraintCapacity - memory.Capacity) : backend.CreateBuffer(device, argumentsDescription);
             _dispatchArgumentsView = backend.CreateBufferUav(device,
                 new(_dispatchArguments, new(0, _dispatchArguments.Info.Size), StructureStride: 4));
             _dispatchLayout = backend.CreateIndirectCommandLayout(device, new([new(IndirectArgumentType.Dispatch)], 12));
@@ -59,11 +62,11 @@ public sealed class DeviceXpbdSolver : IDisposable
         _bindings = _layouts.Select(layout => DeviceCollisionGrid.OrderBindings(layout, bindings)).ToArray();
     }
 
-    public SolveDeviceXpbd Solve() => new(this);
-    public InitializeDeviceXpbdGraph Initialize() => new(this);
-    public InitializeDeviceXpbdGraph Initialize(bool buildGraph) => new(this, buildGraph);
-    public IterateDeviceXpbdGraph Iterate(int iterations) => new(this, iterations);
-    public IterateDeviceXpbdGraph Iterate(int iterations, bool buildGraph) => new(this, iterations, buildGraph);
+    public SolveXpbdGraph Solve() => new(this);
+    public InitializeXpbdGraph Initialize() => new(this);
+    public InitializeXpbdGraph Initialize(bool buildGraph) => new(this, buildGraph);
+    public IterateXpbdGraph Iterate(int iterations) => new(this, iterations);
+    public IterateXpbdGraph Iterate(int iterations, bool buildGraph) => new(this, iterations, buildGraph);
     internal JobHandle Schedule(in PhysicsStepContext context, bool initialize, int iterations, JobHandle dependency)
         => Schedule(in context, initialize, iterations, true, dependency);
     internal JobHandle Schedule(in PhysicsStepContext context, bool initialize, int iterations, bool buildGraph, JobHandle dependency)
@@ -83,25 +86,25 @@ public sealed class DeviceXpbdSolver : IDisposable
     internal JobHandle ScheduleSolve(in PhysicsStepContext context, JobHandle dependency) =>
         Schedule(in context, true, _settings.Iterations, dependency);
 
-    private QueueCompletion Record(in PhysicsStepContext context, bool initialize, int iterations, bool buildGraph)
+    private async ValueTask<QueueCompletion> RecordAsync(PhysicsStepContext context, bool initialize, int iterations, bool buildGraph)
     {
         if (initialize || buildGraph)
-            foreach (IDeviceConstraintSelection selection in _selections) selection.Capture();
-        if (buildGraph) _graph.BuildAndWait();
-        var step = new DeviceStep((uint)_graph.ConstraintCapacity, (float)context.Duration, context.Number,
+            foreach (IDeviceConstraintSelection selection in _selections) selection.Capture(in context);
+        if (buildGraph) await _graph.BuildAsync(context).ConfigureAwait(false);
+        var step = new DeviceStep((uint)_graph.RowCount, (float)context.Duration, context.Number,
             context.StartTime, context.EndTime, (uint)context.Substep, (uint)context.Substeps,
             0, (uint)_settings.RowsPerBlock, (uint)_threadsPerGroup);
         _backend.Begin(_commands, new(0, 0, 32));
         if (!_initialized)
         {
             foreach (Buffer history in _histories)
-                _backend.Barrier(_commands, new BufferBarrier(history, history.InitialSync, PipelineSync.ComputeShading,
+                if (_graph.Memory?.Contains(history) != true) _backend.Barrier(_commands, new BufferBarrier(history, history.InitialSync, PipelineSync.ComputeShading,
                     history.InitialAccess, ResourceAccess.UnorderedAccess));
-            if (_dispatchArguments is { } arguments)
+            if (_dispatchArguments is { } arguments && _graph.Memory?.Contains(arguments) != true)
                 _backend.Barrier(_commands, new BufferBarrier(arguments, arguments.InitialSync, PipelineSync.ComputeShading,
                     arguments.InitialAccess, ResourceAccess.UnorderedAccess));
         }
-        DispatchArguments blocks = DevicePhysicsDispatch.CreateGroups((_graph.ConstraintCapacity + _settings.RowsPerBlock - 1) / _settings.RowsPerBlock);
+        DispatchArguments blocks = DevicePhysicsDispatch.CreateGroups((_graph.RowCount + _settings.RowsPerBlock - 1) / _settings.RowsPerBlock);
         if (initialize)
         {
             Bind(0, in step);
@@ -150,14 +153,18 @@ public sealed class DeviceXpbdSolver : IDisposable
         public float Duration = duration;
         public long Number = number;
         public double StartTime = startTime, EndTime = endTime;
-        public uint Substep = substep, Substeps = substeps, Stage = stage, RowsPerBlock = rowsPerBlock, ThreadsPerGroup = threadsPerGroup;
+        public uint Substep = substep, Substeps = substeps;
+        public ulong StepPadding;
+        public uint Stage = stage, RowsPerBlock = rowsPerBlock, ThreadsPerGroup = threadsPerGroup;
         public uint Padding;
     }
-    private readonly struct Submission(DeviceXpbdSolver solve, PhysicsStepContext context, bool initialize, int iterations, bool buildGraph) : IDevicePhysicsSubmission
+    private readonly struct Submission(XpbdGraphCommands solve, PhysicsStepContext context, bool initialize, int iterations, bool buildGraph) : IDevicePhysicsSubmission
     {
         public IGraphicsBackend Backend => solve._backend;
         public Device Device => solve._device;
-        public QueueCompletion Submit() => solve.Record(in context, initialize, iterations, buildGraph);
+        public SomeEngine.Graphics.Queue Queue => Backend.GetQueue(Device, QueueType.Compute);
+        public QueueCompletion Submit() => SubmitAsync().GetAwaiter().GetResult();
+        public ValueTask<QueueCompletion> SubmitAsync() => solve.RecordAsync(context, initialize, iterations, buildGraph);
     }
     public void Dispose()
     {
@@ -165,19 +172,26 @@ public sealed class DeviceXpbdSolver : IDisposable
         _commands.Dispose(); _dispatchLayout?.Dispose(); _dispatchArgumentsView?.Dispose(); _dispatchArguments?.Dispose();
     }
 }
-public readonly struct SolveDeviceXpbd(DeviceXpbdSolver solve) : IPhysicsStage
-{
-    public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) => solve.ScheduleSolve(in context, dependency);
-}
-public readonly struct InitializeDeviceXpbdGraph(DeviceXpbdSolver solve) : IPhysicsStage
+public readonly partial struct SolveXpbdGraph(XpbdGraphCommands solve) : IPhysicsStage, IPhysicsIterations
 {
     private readonly bool _buildGraph = true;
-    internal InitializeDeviceXpbdGraph(DeviceXpbdSolver solve, bool buildGraph) : this(solve) => _buildGraph = buildGraph;
+    internal SolveXpbdGraph(XpbdGraphCommands solve, bool buildGraph) : this(solve) => _buildGraph = buildGraph;
+    public InitializeXpbdGraph Initialize() => new(solve, _buildGraph);
+    public IterateXpbdGraph Iterate(int iterations) => new(solve, iterations, _buildGraph);
+    public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) => _buildGraph
+        ? solve.ScheduleSolve(in context, dependency) : solve.Schedule(in context, true, solve.Iterations, false, dependency);
+    public JobHandle ScheduleIterations(in PhysicsStepContext context, int iterations, JobHandle dependency) =>
+        solve.Schedule(in context, context.FirstIteration == 0, iterations, _buildGraph, dependency);
+}
+public readonly struct InitializeXpbdGraph(XpbdGraphCommands solve) : IPhysicsStage
+{
+    private readonly bool _buildGraph = true;
+    internal InitializeXpbdGraph(XpbdGraphCommands solve, bool buildGraph) : this(solve) => _buildGraph = buildGraph;
     public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) => solve.Schedule(in context, true, 0, _buildGraph, dependency);
 }
-public readonly struct IterateDeviceXpbdGraph(DeviceXpbdSolver solve, int iterations) : IPhysicsStage
+public readonly struct IterateXpbdGraph(XpbdGraphCommands solve, int iterations) : IPhysicsStage
 {
     private readonly bool _buildGraph = true;
-    internal IterateDeviceXpbdGraph(DeviceXpbdSolver solve, int iterations, bool buildGraph) : this(solve, iterations) => _buildGraph = buildGraph;
+    internal IterateXpbdGraph(XpbdGraphCommands solve, int iterations, bool buildGraph) : this(solve, iterations) => _buildGraph = buildGraph;
     public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) => solve.Schedule(in context, false, iterations, _buildGraph, dependency);
 }

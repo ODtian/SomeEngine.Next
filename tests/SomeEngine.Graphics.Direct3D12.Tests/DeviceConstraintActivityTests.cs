@@ -40,12 +40,12 @@ public sealed partial class DeviceXpbdTests
         QueryHandle members = world.Query(world.QueryDefinition().Read<DeviceBodyBinding>());
         QueryHandle jointRows = world.Query(world.QueryDefinition().Read<JointConstraint>().Read<DirectedRelationEndpoints<JointConstraint>>());
         QueryHandle motorRows = world.Query(world.QueryDefinition().Read<JointMotor>().Read<JointMotorTarget>());
-        QueryHandle events = world.Query(world.QueryDefinition().Read<PhysicsStepEvents>().ReadBuffer<PhysicsEvent>());
+        QueryHandle events = world.Query(world.QueryDefinition().Read<PhysicsStepEvents>().Enabled<PhysicsStepEvents>().ReadBuffer<PhysicsEvent>());
         using var activities = new DeviceBodyActivities(backend, device, world, members, bodies);
         foreach (Entity body in new[] { moving, other })
         { world.Add(body, new BodyActivity { Radius = 1 }); world.Add(body, new DeviceBodyActivityBinding(activities)); }
         var bindings = new Dictionary<string, ResourceBinding[]>(); activities.AddBindings(bindings);
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileActiveBodyDynamics(), 64,
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileActiveBodyDynamics(), 64,
             bindings, activities.GetWriteAccesses(jobs));
         using var bodyInputs = new DeviceBodyInputs(world, members, bodies);
         using var results = new DeviceBodyResults(backend, device, bodies);
@@ -59,11 +59,11 @@ public sealed partial class DeviceXpbdTests
         JobResourceAccess[] reads = [.. joints.GetReadAccesses(jobs), .. motors.GetReadAccesses(jobs), .. activities.GetReadAccesses(jobs)];
         using var graph = new DeviceConstraintGraph(backend, device, bodies, dynamics, CompileMixedActivityGraph(), new(2, 2),
             bindings, reads, 64, new IDeviceConstraintSelection[] { selectedJoints, selectedMotors });
-        using var solve = new DeviceXpbdSolver(backend, device, bodies, graph, CompileMixedActivityProjection(), new(4, 1),
+        using var solve = new XpbdGraphCommands(backend, device, bodies, graph, CompileMixedActivityProjection(), new(4, 1),
             bindings, reads, new[] { jointMultipliers.States, motorMultipliers.States }, 64);
         using var activity = new DevicePhysicsActivity(backend, device, activities, graph, CompileMixedActivity(),
             new(.05f, .2f, .01f, .01f), bindings, reads, 64);
-        using var output = new PhysicsEventBuffer(jobs, 8);
+        using var output = new PhysicsEventBuffer(world, 8);
         var received = new List<(long Number, PhysicsEvent Event)>();
         using var consumer = new ConsumePhysicsEvents<RecordDeviceActivityEvents>(world, events, new(received),
             [JobResourceAccess.Write(jobs.GetResourceToken(received))]);
@@ -97,7 +97,7 @@ public sealed partial class DeviceXpbdTests
         { DeviceConstraintBodyGroups<DeviceJointBodies,DeviceMotorBodies> rows; writeDeviceConstraintGraphRows(id.x,rows); }
         """, ShaderDirectory());
 
-    private DeviceXpbdKernels CompileMixedActivityProjection()
+    private XpbdGraphKernels CompileMixedActivityProjection()
     {
         D3D12TestShader shader = shaderCompiler.CompileWithSearchPaths("mixed_activity_projection", """
             #include "physics_xpbd_graph.slang"

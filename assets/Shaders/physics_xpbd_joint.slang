@@ -1,13 +1,14 @@
 #ifndef PHYSICS_XPBD_JOINT
 #define PHYSICS_XPBD_JOINT
 #include "physics_xpbd_selection.slang"
+#include "physics_xpbd_material.slang"
 #include "physics_joint_math.slang"
 struct DeviceXpbdJointState
 {
     float3 linearMultiplier;
     float3 angularMultiplier;
 };
-RWStructuredBuffer<DeviceXpbdJointState> DeviceJointMultipliers;
+RWStructuredBuffer<DeviceXpbdJointState, ScalarDataLayout> DeviceJointMultipliers;
 struct DeviceXpbdJointProjection<TSelection : IDeviceBodySelection> : IDeviceXpbdProjection
 {
     bool active(uint row) { return DeviceJointsMetadata[row].active != 0; }
@@ -29,12 +30,11 @@ struct DeviceXpbdJointProjection<TSelection : IDeviceBodySelection> : IDeviceXpb
             float multiplier = dof < 3 ? state.linearMultiplier[axis] : state.angularMultiplier[axis];
             float error; uint side;
             if (!deviceJointTryError(limit, derivative.coordinate, -multiplier, error, side)) continue;
-            float alpha = 1 / (stiffness * context.duration * context.duration);
             float weight = deviceXpbdBodyWeight(joint.sourceBody, derivative.sourceLinear, derivative.sourceAngular, selection) +
                 deviceXpbdBodyWeight(joint.targetBody, derivative.targetLinear, derivative.targetAngular, selection);
-            float change = (-error - alpha * multiplier) / (weight + alpha);
-            float next = -deviceJointProjectForce(side, -(multiplier + change));
-            change = next - multiplier;
+            float next = -deviceJointProjectForce(side, -deviceXpbdProjectMaterial(stiffness, 0,
+                context.duration, error, error, weight, multiplier));
+            float change = next - multiplier;
             if (dof < 3) state.linearMultiplier[axis] = next;
             else state.angularMultiplier[axis] = next;
             deviceXpbdBodyCorrection(joint.sourceBody, derivative.sourceLinear, derivative.sourceAngular, change, selection);

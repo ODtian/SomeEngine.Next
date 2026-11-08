@@ -23,7 +23,7 @@ public sealed partial class DeviceBodyActivities
         try
         {
             var read = new ReadResults(this);
-            World.ExecuteReadQuery(_resultReads, ref read,
+            World.ExecuteReadQuery(_resultReads, _resultBaseline, ref read,
                 static (scoped QueryCursor rows, ref ReadResults read) => read.Execute(rows));
             EngineTrace.Counter(NativeWritesTrace, _writeTargets.Count);
             if (_writeTargets.Count != 0)
@@ -54,40 +54,20 @@ public sealed partial class DeviceBodyActivities
         }
     }
 
+    internal bool UseResultCandidates;
+    internal readonly List<Entity> ResultCandidates = [];
+
     private readonly record struct ActivityChange(Entity Entity, int BodyIndex);
     private readonly record struct ReadResults(DeviceBodyActivities Activities)
     {
         internal void Execute(scoped QueryCursor rows)
         {
-            foreach (QueryChunkView chunk in rows.Chunks)
+            if (Activities.UseResultCandidates)
             {
-                if (!chunk.Has<BodyActivity>() || !chunk.Has<DeviceBodyActivityBinding>()) continue;
-                ReadOnlySpan<uint> versions = chunk.ReadWriteVersions<BodyActivity>();
-                foreach (int index in chunk.RowIndices)
-                {
-                    DeviceBodyBinding body = chunk.Read<DeviceBodyBinding>(index);
-                    if (!ReferenceEquals(body.Bodies, Activities.Bodies)
-                        || !ReferenceEquals(chunk.Read<DeviceBodyActivityBinding>(index).Activities, Activities)) continue;
-                    Entity entity = chunk.GetEntity(index);
-                    ref readonly DeviceBodyActivityState result = ref Activities.Results[body.Index];
-                    if (result.EntityIndex != (uint)entity.Index || result.EntityGeneration != (uint)entity.Generation) continue;
-                    BodyActivity current = chunk.Read<BodyActivity>(index);
-                    bool sleeping = (result.Flags & 4) != 0, motionPredicted = (result.Flags & 8) != 0;
-                    bool changed = current.Sleeping != sleeping || current.QuietSeconds != result.QuietSeconds
-                        || current.Radius != result.Radius || current.MotionPredicted != motionPredicted;
-                    if (changed)
-                    {
-                        CpuVersion version = Activities._versions[body.Index];
-                        changed = version.Entity == entity && version.Activity == versions[index];
-                    }
-                    if (changed)
-                    {
-                        Activities._writeTargets.Add(entity);
-                        Activities._writeIndices.Add(body.Index);
-                    }
-                    if (changed || (result.Flags & 48) != 0) Activities._resultChanges.Add(new(entity, body.Index));
-                }
+                foreach (Entity entity in Activities.ResultCandidates)
+                    if (rows.TryGetRow(entity, out QueryRow row)) Read(row);
             }
+            else foreach (QueryRow row in rows.Rows) Read(row);
             if (Activities._writeTargets.Count != 0 && Activities._sourceVersionFilters == QueryTermFilter.None)
             {
                 using ReadOnlyQueryPacketPlan packets = ReadOnlyQueryPacketJobs.CreatePlan(rows);
@@ -99,6 +79,28 @@ public sealed partial class DeviceBodyActivities
                 packets.ExecuteParallel(new ReadSourceChanges(Activities), outputs);
             }
         }
+        private void Read(scoped QueryRow row)
+        {
+            if (!row.Has<BodyActivity>() || !row.Has<DeviceBodyActivityBinding>()) return;
+            DeviceBodyBinding body = row.Read<DeviceBodyBinding>();
+            if (!ReferenceEquals(body.Bodies, Activities.Bodies)
+                || !ReferenceEquals(row.Read<DeviceBodyActivityBinding>().Activities, Activities)) return;
+            Entity entity = row.Entity;
+            ref readonly DeviceBodyActivityState result = ref Activities.Results[body.Index];
+            if (result.EntityIndex != (uint)entity.Index || result.EntityGeneration != (uint)entity.Generation) return;
+            BodyActivity current = row.Read<BodyActivity>();
+            bool sleeping = (result.Flags & 4) != 0, motionPredicted = (result.Flags & 8) != 0;
+            bool changed = current.Sleeping != sleeping || current.QuietSeconds != result.QuietSeconds
+                || current.Radius != result.Radius || current.MotionPredicted != motionPredicted;
+            if (changed)
+            {
+                CpuVersion version = Activities._versions[body.Index];
+                changed = version.Entity == entity && version.Activity == row.WriteVersion<BodyActivity>();
+            }
+            if (changed) { Activities._writeTargets.Add(entity); Activities._writeIndices.Add(body.Index); }
+            if (changed || (result.Flags & 48) != 0) Activities._resultChanges.Add(new(entity, body.Index));
+        }
+
     }
     private readonly struct ReadSourceChanges(DeviceBodyActivities activities) : IReadOnlyQueryPacketJob
     {

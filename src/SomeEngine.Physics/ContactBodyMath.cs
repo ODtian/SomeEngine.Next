@@ -14,11 +14,10 @@ internal static class ContactBodyMath
     }
 
     internal static Entity GetBody(in ContactBodyLink link, in PhysicsStepContext context) =>
-        context.World.GetDirectedRelationEndpoints(link.Participant).Target;
+        link.Body;
 
     internal static Entity GetBody(in ContactBodyLink link, scoped PhysicsBodies bodies, in PhysicsStepContext context) =>
-        bodies.TryReadReference<SomeEngine.ECS.Relations.DirectedRelationEndpoints<ContactParticipant>>(
-            link.Participant.Entity, out var endpoints) ? endpoints.Value.Target : GetBody(in link, in context);
+        link.Body;
 
     internal static bool IsFirstOccurrence(ReadOnlySpan<ContactBodyLink> links, int index, in PhysicsStepContext context)
     {
@@ -46,12 +45,6 @@ internal static class ContactBodyMath
             if (!IsFirstOccurrence(links, index, bodies, in context)) continue;
             Entity body = GetBody(in links[index], bodies, in context);
             BodyVelocity velocity = bodies.GetRow(body).Read<BodyVelocity>();
-            if (stepInput && bodies.ReadMass(body).Motion == BodyMotion.Kinematic)
-            {
-                ref readonly BodyStepState state = ref bodies.ReadStepState(body);
-                velocity.Linear = (state.PredictedCenterOfMass - state.StartCenterOfMass) / (float)context.Duration;
-                velocity.Angular = BodyRotation.Velocity(state.StartRotation, state.PredictedRotation, (float)context.Duration);
-            }
             GetJacobian(in point, links, body, bodies, in context, point.Normal, out Vector3 linear, out Vector3 angular, normal: true);
             speed += Vector3.Dot(linear, velocity.Linear) + Vector3.Dot(angular, velocity.Angular);
         }

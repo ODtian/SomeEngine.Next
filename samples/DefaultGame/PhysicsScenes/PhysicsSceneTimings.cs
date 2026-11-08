@@ -47,9 +47,14 @@ internal sealed class PhysicsSceneStageTime(string name, long number, int subste
     public double CompletionMilliseconds => Stopwatch.GetElapsedTime(Started, Completed).TotalMilliseconds;
 }
 
-internal readonly struct MeasuredPhysicsSceneStage<TStage>(TStage stage, PhysicsSceneTimings? timings, string name) : IPhysicsStage
+internal readonly struct MeasuredPhysicsSceneStage<TStage>(TStage stage, PhysicsSceneTimings? timings, string name) : IPhysicsStage, IPhysicsStageComposition
     where TStage : struct, IPhysicsStage
 {
+    public void Append(PhysicsStageCommands commands)
+    {
+        if (timings is null) commands.Append(stage);
+        else commands.Schedule(this);
+    }
     public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency)
     {
         if (timings is null) return stage.Schedule(in context, dependency);

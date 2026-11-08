@@ -55,7 +55,7 @@ public sealed partial class DeviceXpbdTests
         QueryHandle poses = world.Query(world.QueryDefinition().ReadWrite<BodyPose>());
         QueryHandle poseReads = world.Query(world.QueryDefinition().Read<BodyPose>());
         using var writeLengths = lengths.WriteInputs<XpbdLength, DeviceLengthSource>(world, rows, new(), 64);
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
         using var results = new DeviceBodyResults(backend, device, bodies, world, members, 2);
         using var projection = new DeviceXpbdProjection<DeviceLengthConstraint, float>(backend, device, world,
             rows, bodies, dynamics, lengths, multipliers, CompileLength(), 64);

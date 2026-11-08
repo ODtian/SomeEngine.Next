@@ -11,6 +11,32 @@ namespace SomeEngine.Physics.Tests;
 public sealed class PhysicsGraphSolveTests
 {
     [Fact]
+    public void ChangedBodiesAndConstraintsKeepTheirSelectionThroughPredictionAndGraphSolve()
+    {
+        using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using var world = WorldJobs.CreateWorld(scheduler: scheduler);
+        Entity anchor = CreateBody(world, Vector3.Zero, 0);
+        Entity body = CreateBody(world, new(2, 0, 0), 1);
+        world.CreateRelation(anchor, body, new XpbdLength { RestLength = 1 });
+        QueryHandle bodies = world.Query(new QueryDefinitionBuilder().ReadWrite<BodyPose>().Read<BodyMass>()
+            .Read<BodyStepState>().Changed<BodyPose>());
+        QueryHandle lengths = world.Query(new QueryDefinitionBuilder().ReadWrite<XpbdLength>()
+            .Read<UndirectedRelationEndpoints<XpbdLength>>().Changed<XpbdLength>());
+        using var prediction = new PredictActiveBodies(world, bodies, Vector3.Zero, 16);
+        using var solve = SolveXpbdGraph.Create(world, bodies,
+            new XpbdGraphConstraints<XpbdLength, XpbdLengthProjection>(lengths),
+            new(PhysicsGraphOrder.Colors, 0, 4, 1, 1, false), 1);
+        var stages = prediction.Then(prediction.Resume()).Then(solve).Then(new UpdateBodyVelocities(16));
+
+        PhysicsSimulation.Create(world, QueryDefinition.Empty, stages, 1).Schedule(0, 0, 1).Complete();
+
+        Assert.Equal(Vector3.UnitX, world.Read<BodyPose>(body).Position);
+        Assert.Equal(-Vector3.UnitX, world.Read<BodyVelocity>(body).Linear);
+        world.ReleaseQuery(lengths);
+        world.ReleaseQuery(bodies);
+    }
+
+    [Fact]
     public void AvbdTargetOnlyMotorReadsTheDynamicSourceAfterItsLengthProjection()
     {
         using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });

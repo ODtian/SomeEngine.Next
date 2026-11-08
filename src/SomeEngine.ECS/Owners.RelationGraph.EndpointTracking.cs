@@ -114,7 +114,7 @@ internal sealed partial class RelationGraph
             bool hasLiveEdge = false;
             foreach (var (edgeEntity, preimage) in preimages)
             {
-                if (!world.IsAlive(edgeEntity) || !_state.IsEdge(edgeEntity))
+                if (!world.Entities.Alive(edgeEntity) || !_state.IsEdge(edgeEntity))
                     continue;
                 hasLiveEdge = true;
                 var current = RelationEndpointAccess.ReadCurrent<T>(world, edgeEntity, _state.Schema);
@@ -171,7 +171,7 @@ internal sealed partial class RelationGraph
             {
                 Entity edgeEntity = entries[i].Key;
                 trackedEdges.Add(new RelationEdge<T>(edgeEntity));
-                if (!world.IsAlive(edgeEntity) || !_state.IsEdge(edgeEntity))
+                if (!world.Entities.Alive(edgeEntity) || !_state.IsEdge(edgeEntity))
                     continue;
 
                 WriteCanonicalEndpoints<T>(
@@ -185,7 +185,7 @@ internal sealed partial class RelationGraph
             for (int i = 0; i < entries.Length; i++)
             {
                 if (!entries[i].Value.WasDirty ||
-                    !world.IsAlive(entries[i].Key) ||
+                    !world.Entities.Alive(entries[i].Key) ||
                     !_state.IsEdge(entries[i].Key))
                 {
                     continue;

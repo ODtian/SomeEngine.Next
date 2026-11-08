@@ -56,12 +56,10 @@ public readonly struct XpbdForces<TConstraint, TProjection> : IAvbdConstraints, 
         JobResourceToken token = WorldJobs.GetScheduler(world).GetResourceToken(_byBody);
         accesses.Add(phase == PhysicsGraphPhase.Initialize ? JobResourceAccess.Write(token) : JobResourceAccess.Read(token));
     }
-    public void ReadGraph(in PhysicsStepContext context, ReadOnlySpan<QueryHandle> queries, int offset,
+    public void ReadGraph(in PhysicsStepContext context, scoped EntityQueryViews queries, int offset,
         ref PhysicsConstraintGraphBuilder graph)
     {
-        var read = new ReadGraphParticipants(context, graph, offset);
-        context.World.ExecuteReadQuery(queries[offset], ref read,
-            static (scoped QueryCursor rows, ref ReadGraphParticipants state) => state.Execute(rows));
+        foreach (QueryRow row in queries.Get(offset).Rows) graph.Add<TConstraint, TProjection>(offset - 3, row, in context);
     }
     public void Initialize(in PhysicsStepContext context, scoped EntityQueryViews queries, int offset,
         scoped PhysicsBodies bodies, float retention)

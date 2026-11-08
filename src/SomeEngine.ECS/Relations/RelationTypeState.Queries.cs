@@ -126,11 +126,15 @@ internal sealed partial class RelationTypeState<T> : IRelationTypeState
             RelationAdjacencyRole.Incident));
     }
 
-    private RelationAffectedShard[] StableAffected(RelationEndpointPair endpoints)
+    private RelationAffectedShards StableAffected(RelationEndpointPair endpoints)
     {
-        var affected = new HashSet<RelationAffectedShard>();
-        AddAffected(affected, endpoints);
-        return StableAffected(affected);
+        if (Schema.Direction == RelationDirection.Directed)
+            return new(new(endpoints.First, RelationAdjacencyRole.Outgoing), new(endpoints.Second, RelationAdjacencyRole.Incoming));
+        if (endpoints.First == endpoints.Second)
+            return new(new(endpoints.First, RelationAdjacencyRole.Incident));
+        return CompareEntities(endpoints.First, endpoints.Second) < 0
+            ? new(new(endpoints.First, RelationAdjacencyRole.Incident), new(endpoints.Second, RelationAdjacencyRole.Incident))
+            : new(new(endpoints.Second, RelationAdjacencyRole.Incident), new(endpoints.First, RelationAdjacencyRole.Incident));
     }
 
     private static RelationAffectedShard[] StableAffected(
@@ -216,7 +220,7 @@ internal sealed partial class RelationTypeState<T> : IRelationTypeState
         Entity edgeEntity,
         ExceptionAccumulator faults)
     {
-        if (edgeEntity == endpoint || !world.IsAlive(edgeEntity) || !IsEdge(edgeEntity))
+        if (edgeEntity == endpoint || !world.Entities.Alive(edgeEntity) || !IsEdge(edgeEntity))
             return;
 
         try

@@ -34,35 +34,40 @@ public sealed class DeviceConstraintData<TData> : IDisposable, IDevicePhysicsSub
     private readonly IGraphicsBackend _backend;
     private readonly Device _device;
     private readonly string _bindingName;
-    private readonly Buffer _upload, _metadataUpload;
+    private readonly DeviceInputPages _upload, _metadataUpload;
     private readonly BufferUav _view, _metadataView;
     private readonly CommandContext _commands;
-    private MappedBuffer _mapping, _metadataMapping;
     private bool _initialized;
+    private readonly bool[] _allocatedRows;
+    private readonly Stack<int> _freeRows = [];
+    private int _nextRow;
     internal static readonly int Stride = Unsafe.SizeOf<TData>();
 
-    public DeviceConstraintData(IGraphicsBackend backend, Device device, int capacity, string bindingName)
+    public DeviceConstraintData(IGraphicsBackend backend, Device device, int capacity, string bindingName, DeviceContactMemory? memory = null)
     {
-        _backend = backend; _device = device; Capacity = capacity; _bindingName = bindingName;
-        Data = backend.CreateBuffer(device, new((ulong)capacity * (ulong)Stride,
-            BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopyDestination, bindingName), MemoryType.DeviceLocal);
-        Metadata = backend.CreateBuffer(device, new((ulong)capacity * 16,
-            BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopyDestination, bindingName + " metadata"), MemoryType.DeviceLocal);
+        _backend = backend; _device = device; Capacity = capacity; _bindingName = bindingName; Memory = memory;
+        _allocatedRows = new bool[capacity];
+        var dataDescription = new BufferDesc((ulong)capacity * (ulong)Stride,
+            BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopyDestination, bindingName);
+        var metadataDescription = new BufferDesc((ulong)capacity * 16,
+            BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopyDestination, bindingName + " metadata");
+        Data = memory is null ? backend.CreateBuffer(device, dataDescription) : memory.CreateBuffer(dataDescription, (uint)Stride);
+        Metadata = memory is null ? backend.CreateBuffer(device, metadataDescription) : memory.CreateBuffer(metadataDescription, 16);
         _view = backend.CreateBufferUav(device, new(Data, new(0, Data.Info.Size), StructureStride: (uint)Stride));
         _metadataView = backend.CreateBufferUav(device, new(Metadata, new(0, Metadata.Info.Size), StructureStride: 16));
-        _upload = backend.CreateBuffer(device, new(Data.Info.Size, BufferUsages.CopySource, bindingName + " upload"), MemoryType.Upload);
-        _metadataUpload = backend.CreateBuffer(device, new(Metadata.Info.Size, BufferUsages.CopySource, bindingName + " metadata upload"), MemoryType.Upload);
-        _mapping = backend.Map(_upload, MapType.Write, BufferRange.Whole);
-        _metadataMapping = backend.Map(_metadataUpload, MapType.Write, BufferRange.Whole);
-        _mapping.Bytes.Clear(); _metadataMapping.Bytes.Clear();
+        _upload = new(backend, device, capacity, Stride, bindingName + " upload");
+        _metadataUpload = new(backend, device, capacity, 16, bindingName + " metadata upload");
         _commands = backend.CreateCommandContext(device, new(QueueType.Compute, 0, 1, Label: bindingName + " transfer"));
     }
 
     public int Capacity { get; }
+    public DeviceContactMemory? Memory { get; }
+    public int RowCount => Memory?.Rows ?? Capacity;
     public Buffer Data { get; }
     public Buffer Metadata { get; }
     IGraphicsBackend IDevicePhysicsSubmission.Backend => _backend;
     Device IDevicePhysicsSubmission.Device => _device;
+    SomeEngine.Graphics.Queue IDevicePhysicsSubmission.Queue => _backend.GetQueue(_device, QueueType.Compute);
     public void AddBindings(Dictionary<string, ResourceBinding[]> bindings)
     {
         bindings.Add(_bindingName, [ResourceBinding.WritableBuffer(_view)]);
@@ -78,28 +83,31 @@ public sealed class DeviceConstraintData<TData> : IDisposable, IDevicePhysicsSub
         where TComponent : struct, IComponent where TSource : struct, IDeviceConstraintSource<TComponent, TData> =>
         new(world, rows, this, source, rowsPerPacket, extraAccesses);
 
-    internal void BeginWrite() => _metadataMapping.Bytes.Clear();
+    internal void BeginWrite() => _metadataUpload.Clear();
     internal void WriteInput(int index, Entity entity, in TData data, uint inputVersion = 0)
     {
-        MemoryMarshal.Write(_mapping.Bytes.Slice(index * Stride, Stride), in data);
+        MemoryMarshal.Write(_upload.Row(index), in data);
         WriteInputMetadata(index, entity, inputVersion);
     }
     internal void WriteInputMetadata(int index, Entity entity, uint inputVersion)
     {
+        Volatile.Write(ref _allocatedRows[index], true);
+        Memory?.EnsureRows(index + 1);
         var metadata = new DeviceConstraintMetadata
         { EntityIndex = (uint)entity.Index, EntityGeneration = (uint)entity.Generation, Active = 1, InputVersion = inputVersion };
-        MemoryMarshal.Write(_metadataMapping.Bytes.Slice(index * 16, 16), in metadata);
+        MemoryMarshal.Write(_metadataUpload.Row(index), in metadata);
     }
     internal void WriteInputField<TField>(int index, int offset, in TField value) where TField : unmanaged =>
-        MemoryMarshal.Write(_mapping.Bytes.Slice(index * Stride + offset, Unsafe.SizeOf<TField>()), in value);
-    internal void ClearInputMetadata(int index) => _metadataMapping.Bytes.Slice(index * 16, 16).Clear();
+        MemoryMarshal.Write(_upload.Row(index).Slice(offset, Unsafe.SizeOf<TField>()), in value);
+    internal void ClearInputMetadata(int index) => _metadataUpload.Row(index).Clear();
     internal void CollectUploadWrite(int index, ref JobResourceAccessBuilder resources)
     {
         resources.Write(_upload, (long)index * Stride, Stride);
         resources.Write(_metadataUpload, (long)index * 16, 16);
+        resources.Write(_allocatedRows.AsMemory(index, 1));
     }
     internal JobHandle ScheduleBegin(Scheduler scheduler, JobHandle dependency) => scheduler.Schedule(new Begin(this),
-        JobResourceAccess.Write(scheduler.GetResourceToken(_metadataUpload), 0, (long)_metadataUpload.Info.Size), dependency);
+        JobResourceAccess.Write(scheduler.GetResourceToken(_metadataUpload), 0, (long)(ulong)_metadataUpload.Size), dependency);
     internal JobHandle ScheduleUpload(Scheduler scheduler, JobHandle dependency)
     {
         return DevicePhysicsJobs.Schedule(scheduler, this, GetInputAccesses(scheduler), dependency);
@@ -107,46 +115,103 @@ public sealed class DeviceConstraintData<TData> : IDisposable, IDevicePhysicsSub
     internal JobResourceAccess[] GetInputAccesses(Scheduler scheduler, bool writeInputs = false) =>
         [JobResourceAccess.Write(scheduler.GetResourceToken(Data), 0, (long)Data.Info.Size),
             JobResourceAccess.Write(scheduler.GetResourceToken(Metadata), 0, (long)Metadata.Info.Size),
-            writeInputs ? JobResourceAccess.Write(scheduler.GetResourceToken(_upload), 0, (long)_upload.Info.Size)
-                : JobResourceAccess.Read(scheduler.GetResourceToken(_upload), 0, (long)_upload.Info.Size),
-            writeInputs ? JobResourceAccess.Write(scheduler.GetResourceToken(_metadataUpload), 0, (long)_metadataUpload.Info.Size)
-                : JobResourceAccess.Read(scheduler.GetResourceToken(_metadataUpload), 0, (long)_metadataUpload.Info.Size),
+            writeInputs ? JobResourceAccess.Write(scheduler.GetResourceToken(_upload), 0, (long)(ulong)_upload.Size)
+                : JobResourceAccess.Read(scheduler.GetResourceToken(_upload), 0, (long)(ulong)_upload.Size),
+            writeInputs ? JobResourceAccess.Write(scheduler.GetResourceToken(_metadataUpload), 0, (long)(ulong)_metadataUpload.Size)
+                : JobResourceAccess.Read(scheduler.GetResourceToken(_metadataUpload), 0, (long)(ulong)_metadataUpload.Size),
             JobResourceAccess.Write(scheduler.GetResourceToken(_commands))];
+    internal JobResourceAccess[] GetUploadWriteAccesses(Scheduler scheduler) =>
+        [JobResourceAccess.Write(scheduler.GetResourceToken(_upload), 0, _upload.Size),
+            JobResourceAccess.Write(scheduler.GetResourceToken(_metadataUpload), 0, _metadataUpload.Size), GetRowAllocationAccess(scheduler)];
+    internal JobResourceAccess[] GetDeviceWriteAccesses(Scheduler scheduler) =>
+        [JobResourceAccess.Write(scheduler.GetResourceToken(Data), 0, (long)Data.Info.Size),
+            JobResourceAccess.Write(scheduler.GetResourceToken(Metadata), 0, (long)Metadata.Info.Size),
+            JobResourceAccess.Read(scheduler.GetResourceToken(_metadataUpload), 0, _metadataUpload.Size)];
+    internal void BeginDeviceWrite(CommandContext commands)
+    {
+        Memory?.EnsureRows(1);
+        if (_initialized) return;
+        if (Memory?.UsesSparseBuffers != true)
+        {
+            _backend.Barrier(commands, new BufferBarrier(Data, Data.InitialSync, PipelineSync.ComputeShading,
+                Data.InitialAccess, ResourceAccess.UnorderedAccess));
+            _backend.Barrier(commands, new BufferBarrier(Metadata, Metadata.InitialSync, PipelineSync.Copy,
+                Metadata.InitialAccess, ResourceAccess.CopyDestination));
+            _metadataUpload.Zero(commands, Metadata);
+            _backend.Barrier(commands, new BufferBarrier(Metadata, PipelineSync.Copy, PipelineSync.ComputeShading,
+                ResourceAccess.CopyDestination, ResourceAccess.UnorderedAccess));
+        }
+        _initialized = true;
+    }
+    internal JobResourceAccess GetRowAllocationAccess(Scheduler scheduler) => JobResourceAccess.Write(scheduler, _allocatedRows);
+    internal int ReserveRow()
+    {
+        lock (_allocatedRows) return ReserveRowCore();
+    }
+    internal void ReserveRows(Span<int> rows)
+    {
+        lock (_allocatedRows)
+            for (int index = 0; index < rows.Length; index++) rows[index] = ReserveRowCore();
+        Memory?.EnsureRows(_nextRow);
+    }
+    private int ReserveRowCore()
+    {
+        while (_freeRows.TryPop(out int freed))
+        {
+            if (Volatile.Read(ref _allocatedRows[freed])) continue;
+            _allocatedRows[freed] = true;
+            return freed;
+        }
+        while (Volatile.Read(ref _allocatedRows[_nextRow])) _nextRow++;
+        int row = _nextRow++;
+        _allocatedRows[row] = true;
+        return row;
+    }
+    internal void ReleaseRow(int row)
+    {
+        lock (_allocatedRows) { _allocatedRows[row] = false; _freeRows.Push(row); }
+    }
+    internal void RetainRow(int row) => Volatile.Write(ref _allocatedRows[row], true);
 
     QueueCompletion IDevicePhysicsSubmission.Submit() =>
         SubmitInputRanges([new(0, Data.Info.Size)], [new(0, Metadata.Info.Size)]);
 
     internal QueueCompletion SubmitInputRanges(ReadOnlySpan<BufferRange> dataRanges, ReadOnlySpan<BufferRange> metadataRanges)
     {
-        if (!_initialized) metadataRanges = new BufferRange[] { new(0, Metadata.Info.Size) };
-        foreach (BufferRange range in dataRanges) _mapping.Flush(range);
-        foreach (BufferRange range in metadataRanges) _metadataMapping.Flush(range);
+        Memory?.EnsureRows(1);
         _backend.Begin(_commands, new(0, 0, 8));
+        if (!_initialized && Memory?.UsesSparseBuffers != true)
+        {
+            _backend.Barrier(_commands, new BufferBarrier(Metadata, Metadata.InitialSync, PipelineSync.Copy,
+                Metadata.InitialAccess, ResourceAccess.CopyDestination));
+            _metadataUpload.Zero(_commands, Metadata);
+            _backend.Barrier(_commands, new BufferBarrier(Metadata, PipelineSync.Copy, PipelineSync.ComputeShading,
+                ResourceAccess.CopyDestination, ResourceAccess.UnorderedAccess));
+        }
         Copy(_upload, Data, dataRanges); Copy(_metadataUpload, Metadata, metadataRanges);
         using RecordedCommands recorded = _backend.End(_commands);
         _initialized = true;
         return _backend.Submit(_backend.GetQueue(_device, QueueType.Compute), new([], [], [recorded], [], []));
     }
-    private void Copy(Buffer upload, Buffer destination, ReadOnlySpan<BufferRange> ranges)
+    private void Copy(DeviceInputPages upload, Buffer destination, ReadOnlySpan<BufferRange> ranges)
     {
         if (ranges.IsEmpty)
         {
-            if (!_initialized)
+            if (!_initialized && Memory?.Contains(destination) != true && !ReferenceEquals(destination, Metadata))
                 _backend.Barrier(_commands, new BufferBarrier(destination, destination.InitialSync, PipelineSync.ComputeShading,
                     destination.InitialAccess, ResourceAccess.UnorderedAccess));
             return;
         }
-        _backend.Barrier(_commands, new BufferBarrier(destination, _initialized ? PipelineSync.ComputeShading : destination.InitialSync,
-            PipelineSync.Copy, _initialized ? ResourceAccess.UnorderedAccess : destination.InitialAccess, ResourceAccess.CopyDestination));
-        foreach (BufferRange range in ranges)
-            _backend.CopyBuffer(_commands, new(upload, range.Offset, destination, range.Offset, range.Size));
+        _backend.Barrier(_commands, new BufferBarrier(destination, _initialized || Memory?.Contains(destination) == true || ReferenceEquals(destination, Metadata) ? PipelineSync.ComputeShading : destination.InitialSync,
+            PipelineSync.Copy, _initialized || Memory?.Contains(destination) == true || ReferenceEquals(destination, Metadata) ? ResourceAccess.UnorderedAccess : destination.InitialAccess, ResourceAccess.CopyDestination));
+        upload.Copy(_commands, destination, ranges);
         _backend.Barrier(_commands, new BufferBarrier(destination, PipelineSync.Copy, PipelineSync.ComputeShading,
             ResourceAccess.CopyDestination, ResourceAccess.UnorderedAccess));
     }
     private readonly struct Begin(DeviceConstraintData<TData> data) : IJob { public void Execute() => data.BeginWrite(); }
     public void Dispose()
     {
-        _mapping.Dispose(); _metadataMapping.Dispose(); _commands.Dispose(); _upload.Dispose(); _metadataUpload.Dispose();
+        _commands.Dispose(); _upload.Dispose(); _metadataUpload.Dispose();
         _view.Dispose(); _metadataView.Dispose(); Data.Dispose(); Metadata.Dispose();
     }
 }
@@ -156,8 +221,10 @@ public readonly struct BeginDeviceConstraintInputs<TData>(DeviceConstraintData<T
     public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) =>
         data.ScheduleBegin(WorldJobs.GetScheduler(context.World), dependency);
 }
-public readonly struct UploadDeviceConstraintInputs<TData>(DeviceConstraintData<TData> data) : IPhysicsStage where TData : unmanaged
+public readonly struct UploadDeviceConstraintInputs<TData>(DeviceConstraintData<TData> data) : IDevicePhysicsStage where TData : unmanaged
 {
+    public object InputKey => data;
+    public bool CanBatch => true;
     public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency) =>
         data.ScheduleUpload(WorldJobs.GetScheduler(context.World), dependency);
 }

@@ -7,7 +7,7 @@ struct DeviceBodyState
     float3 linearVelocity; float inverseMass;
     float3 angularVelocity; uint entityIndex;
     float3 centerOfMass; uint entityGeneration;
-    float3 inverseInertiaX; uint padding0;
+    float3 inverseInertiaX; uint inputVersion;
     float3 inverseInertiaY; uint padding1;
     float3 inverseInertiaZ; uint padding2;
     float3 startCenterOfMass; int substep;
@@ -17,5 +17,5 @@ struct DeviceBodyState
     uint2 number;
     uint2 time;
 };
-RWStructuredBuffer<DeviceBodyState> DeviceBodyStates;
+RWStructuredBuffer<DeviceBodyState, ScalarDataLayout> DeviceBodyStates;
 #endif

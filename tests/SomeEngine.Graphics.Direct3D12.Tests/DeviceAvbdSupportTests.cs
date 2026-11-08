@@ -38,8 +38,9 @@ public sealed partial class DeviceAvbdTests
         using var responses = new DeviceConstraintState<DeviceContactResponseState>(backend, device, 8, "DeviceContactResponses");
         QueryHandle supportBodies = world.Query(new QueryDefinitionBuilder().Read<LongRangeBodySupport>()
             .ReadBuffer<LongRangeSupportLoad>().ReadBuffer<LongRangeSupportEquation>());
+        var graphCapacity = new DeviceGraphCapacity(12, 2);
         using var supports = new DeviceContactSupports(backend, device, world, supportBodies, bodies, parameters,
-            new(Vector3.UnitY, 1e-5f, 1e-4f, 1e-4f, 1e-4f, .99f, .99f, 1e-6f), contactsPerBody: 8);
+            new(Vector3.UnitY, 1e-5f, 1e-4f, 1e-4f, 1e-4f, .99f, .99f, 1e-6f), graphCapacity);
         world.Add(lower, new DeviceSupportBodyBinding(supports)); world.Add(upper, new DeviceSupportBodyBinding(supports));
         Entity[] contacts = new Entity[8];
         int row = 0;
@@ -49,8 +50,8 @@ public sealed partial class DeviceAvbdTests
                 Entity firstBody = layer == 0 ? floor : lower, secondBody = layer == 0 ? lower : upper;
                 Entity point = world.CreateRelation(firstBody, secondBody, new ContactPoint
                 { Normal = Vector3.UnitY, FirstBodyCount = 1, WorldPoint = new(corner.X, layer * 2, corner.Y) }).Entity;
-                var first = world.CreateRelation(point, firstBody, new ContactParticipant());
-                var second = world.CreateRelation(point, secondBody, new ContactParticipant());
+                var first = firstBody;
+                var second = secondBody;
                 world.AddBuffer<ContactBodyLink>(point);
                 world.ExecuteBufferWrite<ContactBodyLink>(point, buffer =>
                 {
@@ -85,16 +86,16 @@ public sealed partial class DeviceAvbdTests
             backend, device, world, points, parameters, new(supports.ContactStates), "DeviceContactSupportSelection");
         using var selectedResponse = new DeviceConstraintSelection<ContactPoint, DeviceContactConstraint, DeviceContactResponseRows>(
             backend, device, world, points, parameters, new(responses), "DeviceContactResponsesSelection");
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileDynamics(), 64);
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileDynamics(), 64);
         using var results = new DeviceBodyResults(backend, device, bodies);
         using var contactResults = new DeviceContactResults(backend, device, parameters, responses);
         var bindings = new Dictionary<string, ResourceBinding[]>();
         parameters.AddBindings(bindings); links.AddBindings(bindings); histories.AddBindings(bindings);
         responses.AddBindings(bindings); supports.AddBindings(bindings);
         JobResourceAccess[] reads = [.. parameters.GetReadAccesses(jobs), links.GetReadAccess(jobs), .. supports.GetReadAccesses(jobs)];
-        using var graph = new DeviceConstraintGraph(backend, device, bodies, dynamics, CompileSupportGraph(), new(12, 2), bindings, reads,
+        using var graph = new DeviceConstraintGraph(backend, device, bodies, dynamics, CompileSupportGraph(), graphCapacity, bindings, reads,
             64, new IDeviceConstraintSelection[] { selected, selectedSupport, supports });
-        using var solver = new DeviceAvbdSolver(backend, device, bodies, equations, graph, CompileSupportAvbd(), new(1, 1, 0, 0), bindings,
+        using var solver = new AvbdGraphCommands(backend, device, bodies, equations, graph, CompileSupportAvbd(), new(1, 1, 0, 0), bindings,
             parameters.GetReadAccesses(jobs).Append(links.GetReadAccess(jobs)).Append(histories.GetWriteAccess(jobs)).Append(responses.GetWriteAccess(jobs))
                 .Concat(supports.GetWriteAccesses(jobs)).ToArray(), 64, new IDeviceConstraintSelection[] { selectedState, selectedResponse });
         using var response = new DeviceContactActions(backend, device, bodies, graph, responses, CompileContactActions(), bindings, reads,
@@ -128,7 +129,7 @@ public sealed partial class DeviceAvbdTests
             """, [new("WriteRows", SlangStage.Compute), new("BuildGraph", SlangStage.Compute)], "sm_6_0", ShaderDirectory());
         return new(Entry(shader, 0), Entry(shader, 1));
     }
-    private DeviceAvbdKernels CompileSupportAvbd()
+    private AvbdGraphKernels CompileSupportAvbd()
     {
         D3D12TestShader shader = shaderCompiler.CompileWithSearchPaths("contact_support_avbd", """
             #include "physics_avbd_contact_support.slang"

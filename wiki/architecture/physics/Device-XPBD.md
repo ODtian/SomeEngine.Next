@@ -39,7 +39,7 @@ writer 采集原查询中的实体引用，以 `rowsPerPacket` 交给 `EntityQue
 提供的额外资源；两者的结果继续沿同一个物理步完成链返回原实体。
 `Initialize()` 初始化所选行的子步历史，`Iterate(n)` 在相同子步内累计乘子。
 同轮可同时写入的行由调用者提供的独立约束范围决定。
-该入口同时接收 `DeviceBodyDynamics`，通过其原选择成员标记限定可写 Body。
+该入口同时接收 `BodyDynamicsCommands`，通过其原选择成员标记限定可写 Body。
 每轮之间沿 RHI UAV barrier 保证前轮写入对后轮可见；提交和完成沿共同设备 Job/fence 链。
 
 [DeviceLengthSource](../../../src/SomeEngine.Physics/DeviceChainConstraints.cs) 从原
@@ -83,9 +83,9 @@ Source/World 空间和 Target/Both 反馈由原 motor 参数选择。
 
 ## 图与 SIMT 行块
 
-[DeviceXpbdSolver](../../../src/SomeEngine.Physics/DeviceXpbdSolver.cs) 接收同一
+[XpbdGraphCommands](../../../src/SomeEngine.Physics/XpbdGraphCommands.cs) 接收同一
 `DeviceConstraintGraph`、项目编译的具体入口、输入资源与原乘子 buffers。
-`DeviceXpbdSettings` 显式选择迭代数和 `RowsPerBlock`，线程组大小与实际 shader 对齐。
+`XpbdIterationSettings` 显式选择迭代数和 `RowsPerBlock`，线程组大小与实际 shader 对齐。
 初始化、继续迭代和完整求解分别由 `Initialize()`、`Iterate(n)` 与 `Solve()` 提供。
 
 [physics_xpbd_graph](../../../assets/Shaders/physics_xpbd_graph.slang) 用
@@ -95,7 +95,7 @@ Source/World 空间和 Target/Both 反馈由原 motor 参数选择。
 独立岛的同色行合在同一范围，块间和块内的独立行沿实际 SIMT 工作项执行。
 颜色之间使用 UAV barrier，原主体状态与乘子在设备原位更新。
 
-项目可在 `DeviceXpbdKernels.WriteDispatchArguments` 提供具体尺寸生成内核，
+项目可在 `XpbdGraphKernels.WriteDispatchArguments` 提供具体尺寸生成内核，
 源码定义 `PHYSICS_XPBD_INDIRECT_DISPATCH` 后，其入口调用
 `writeDeviceXpbdDispatchArguments(stage)`；设备显式请求 `IndirectCommands`。
 求解器先从当前 `RowRanges` 生成每阶段的 12 字节派发参数，再沿原类型组及颜色次序
@@ -127,6 +127,7 @@ typedef DeviceXpbdConstraintGroups<LengthRows, BendRows> ProjectionRows;
 用户的 `IDeviceXpbdProjection` 可以替换上述任一具体投影，并保持同一角色、颜色和完成链。
 构图入口使用自身的常量 buffer 参数，数值入口使用 `XpbdGraphStep` 的普通数据布局；
 项目分别编译两组入口，使各自反射布局与提交的数据对应。
+共同 `DeviceXpbdStep` 为 48 字节，尾部 padding 将图阶段参数放在偏移 48；完整图步参数为 64 字节。AVBD 步参数同为 64 字节，C# 与 shader 显式保存相同的尾部 padding，保持 Direct3D12 与 Vulkan 的普通数据范围一致。
 完整组装见 [DeviceXpbdMixedGraphTests](../../../tests/SomeEngine.Graphics.Direct3D12.Tests/DeviceXpbdMixedGraphTests.cs)。
 
 ## 共同点接触

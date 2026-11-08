@@ -48,7 +48,7 @@ internal sealed partial class PhysicsSceneShaders
             entries[13], entries[14], entries[15], entries[16], entries[17]));
     }
 
-    internal DeviceAvbdKernels CrowdAvbd(bool jointNet, int bodyCapacity)
+    internal AvbdGraphKernels CrowdAvbd(bool jointNet, int bodyCapacity)
     {
         ComputePipelineDesc[] entries = Compile("crowd_avbd", (jointNet ? "#define CROWD_JOINT_NET 1\n" : "") + """
             #include "physics_dispatch.slang"
@@ -78,14 +78,14 @@ internal sealed partial class PhysicsSceneShaders
             """, "Initialize", "UpdateBody", "UpdateDuals", "ClearBodyIndices", "RestoreBodyStarts");
         return new(entries[0], entries[1], entries[2], ClearBodyIndices: entries[3])
         {
-            GroupInitializationDispatches = new DeviceAvbdGroupDispatch[]
+            GroupInitializationDispatches = new AvbdGraphDispatch[]
             {
                 new(entries[4], DevicePhysicsDispatch.CreateGroups((bodyCapacity + 63) / 64)),
             },
         };
     }
 
-    internal DeviceXpbdKernels CrowdXpbd(bool indirect = false, bool jointNet = false)
+    internal XpbdGraphKernels CrowdXpbd(bool indirect = false, bool jointNet = false)
     {
         string source = (indirect ? "#define PHYSICS_XPBD_INDIRECT_DISPATCH\n" : "")
             + (jointNet ? "#define CROWD_JOINT_NET 1\n" : "") + CrowdBodyRows + """
@@ -179,36 +179,16 @@ internal sealed partial class PhysicsSceneShaders
         void Update(uint3 id:SV_DispatchThreadID) { updateDeviceGeometry<CrowdGeometryUpdate>(devicePhysicsThreadIndex(id,64)); }
         """, "Update")[0];
 
-    internal ComputePipelineDesc CrowdCapsuleFaces() => Compile("crowd_capsule_faces", """
-        #include "physics_geometry_references.slang"
-        struct CrowdCapsuleFaceCollision : IDeviceCollisionNarrowPhase
-        {
-            DeviceGeometryDistance distance(uint work,DeviceGeometryInput first,DeviceGeometryInput second)
-            {
-                if(first.geometryType==1)
-                { DeviceConvexCollision<DeviceCapsule,DeviceTriangle> shapes; return shapes.distance(work,first,second); }
-                DeviceConvexCollision<DeviceTriangle,DeviceCapsule> shapes; return shapes.distance(work,first,second);
-            }
-            uint manifold(uint work,DeviceGeometryInput first,DeviceGeometryInput second,
-                DeviceGeometryDistance distance,out DeviceGeometryDistance points[4])
-            {
-                if(first.geometryType==1)
-                { DeviceConvexCollision<DeviceCapsule,DeviceTriangle> shapes; return shapes.manifold(work,first,second,distance,points); }
-                DeviceConvexCollision<DeviceTriangle,DeviceCapsule> shapes; return shapes.manifold(work,first,second,distance,points);
-            }
-        };
-        [shader("compute")][numthreads(64,1,1)]
-        void Detect(uint3 id:SV_DispatchThreadID)
-        { CrowdCapsuleFaceCollision shapes; detectDeviceReferencedCollision(id.x,shapes); }
-        """, "Detect")[0];
+    internal ComputePipelineDesc CrowdCapsuleFaces() =>
+        ShapePairDetection("crowd_capsule_face", 1, "DeviceCapsule", "DeviceStartingTriangle", prediction: true, referencedPrediction: true);
 
     internal ComputePipelineDesc[] CrowdDetection() =>
     [
-        ShapePairDetection("crowd_box_box", 0, "DeviceBox", "DeviceBox"),
-        ShapePairDetection("crowd_box_capsule", 0, "DeviceBox", "DeviceCapsule"),
-        ShapePairDetection("crowd_capsule_capsule", 1, "DeviceCapsule", "DeviceCapsule"),
-        ShapePairDetection("crowd_box_face", 0, "DeviceBox", "DeviceTriangle"),
-        CrowdCapsuleFaces(),
+        ShapePairDetection("crowd_box_box", 0, "DeviceBox", "DeviceBox", prediction: true, referencedPrediction: true),
+        ShapePairDetection("crowd_box_capsule", 0, "DeviceBox", "DeviceCapsule", prediction: true, referencedPrediction: true),
+        ShapePairDetection("crowd_capsule_capsule", 1, "DeviceCapsule", "DeviceCapsule", prediction: true, referencedPrediction: true),
+        ShapePairDetection("crowd_box_face", 0, "DeviceBox", "DeviceStartingTriangle", prediction: true, referencedPrediction: true),
+        ShapePairDetection("crowd_capsule_face", 1, "DeviceCapsule", "DeviceStartingTriangle", prediction: true, referencedPrediction: true),
     ];
 
     internal DeviceContactKernels CrowdResponses(bool jointNet = false)

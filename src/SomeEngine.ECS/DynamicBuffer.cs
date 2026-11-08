@@ -114,6 +114,39 @@ public ref struct DynamicBuffer<T> where T : struct, IBufferElement
         MarkHeaderChanged();
     }
 
+    public void AddRange(scoped ReadOnlySpan<T> values)
+    {
+        if (values.IsEmpty) return;
+        ref DynamicBufferHeader<T> header = ref Header;
+        int start = header.Count, count = start + values.Length;
+        if (header.HasOverflow || count > header.InlineCapacity)
+        {
+            values.CopyTo(EnsureOverflow(ref header, count).Slice(start, values.Length));
+            header.Count = count;
+            MarkHeaderChanged();
+        }
+        else
+        {
+            values.CopyTo(InlineSpan(header.InlineCapacity).Slice(start, values.Length));
+            header.Count = count;
+            MarkChanged();
+        }
+    }
+
+    /// <summary>Removes an ordered range while retaining the buffer's allocated capacity.</summary>
+    public void RemoveRange(int start, int count)
+    {
+        int length = Count;
+        if ((uint)start > (uint)length || (uint)count > (uint)(length - start))
+            throw new ArgumentOutOfRangeException(nameof(count));
+        if (count == 0) return;
+        Span<T> values = AsSpan();
+        values[(start + count)..].CopyTo(values[start..]);
+        if (RuntimeHelpers.IsReferenceOrContainsReferences<T>()) values[(length - count)..].Clear();
+        Header.Count = length - count;
+        MarkHeaderChanged();
+    }
+
     public void SwapRemoveAt(int index)
     {
         ref readonly var readOnlyHeader = ref ReadOnlyHeader;

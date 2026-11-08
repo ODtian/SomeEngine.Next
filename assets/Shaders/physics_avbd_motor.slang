@@ -10,14 +10,8 @@ struct DeviceAvbdMotorState
     float3 angularMultiplier; uint padding2;
     float3 angularPenalty; uint padding3;
 };
-RWStructuredBuffer<DeviceAvbdMotorState> DeviceAvbdMotorStates;
-StructuredBuffer<uint2> DeviceMotorAvbdSelection;
-bool deviceMotorAxisEnabled(DeviceMotorConstraint motor,uint dof)
-{
-    uint axis=dof%3;
-    return dof<3?motor.linearStiffness[axis]!=0||motor.linearDamping[axis]!=0
-        :motor.angularStiffness[axis]!=0||motor.angularDamping[axis]!=0;
-}
+RWStructuredBuffer<DeviceAvbdMotorState, ScalarDataLayout> DeviceAvbdMotorStates;
+StructuredBuffer<uint2, ScalarDataLayout> DeviceMotorAvbdSelection;
 struct DeviceMotorAvbdConstraints : IDeviceAvbdConstraints
 {
     DeviceMotorBodies participants;
@@ -32,7 +26,14 @@ struct DeviceMotorAvbdConstraints : IDeviceAvbdConstraints
     void initialize(uint row,DeviceAvbdStep context)
     {
         DeviceAvbdMotorState state=DeviceAvbdMotorStates[row];
-        state.linearMultiplier*=context.retention; state.angularMultiplier*=context.retention;
+        DeviceMotorConstraint motor=DeviceMotors[row];
+        for(uint dof=0;dof<6;dof++)
+        {
+            uint axis=dof%3;
+            bool enabled=deviceMotorAxisEnabled(motor,dof);
+            if(dof<3) state.linearMultiplier[axis]=enabled?state.linearMultiplier[axis]*context.retention:0;
+            else state.angularMultiplier[axis]=enabled?state.angularMultiplier[axis]*context.retention:0;
+        }
         DeviceAvbdMotorStates[row]=state;
     }
     void accumulate(uint row,uint bodyIndex,DeviceAvbdStep context,inout DeviceAvbdEquation equation)
@@ -52,7 +53,7 @@ struct DeviceMotorAvbdConstraints : IDeviceAvbdConstraints
             float2 terms=deviceAvbdMaterial(drive.stiffness,penalty);
             float force=terms.x*multiplier+terms.y*(drive.error-context.initialErrorFraction*drive.initialError);
             float limited=clamp(force,-drive.maximum,drive.maximum);
-            float curvature=abs(force)<drive.maximum&&!(isSource&&motor.space==1)?terms.y:0;
+            float curvature=isSource&&motor.space==1?0:terms.y;
             deviceAvbdAddRow(equation,isSource?drive.derivative.sourceLinear:drive.derivative.targetLinear,
                 isSource?drive.derivative.sourceAngular:drive.derivative.targetAngular,limited,curvature);
         }
@@ -65,8 +66,12 @@ struct DeviceMotorAvbdConstraints : IDeviceAvbdConstraints
         DeviceBodyState source=DeviceBodyStates[joint.sourceBody],target=DeviceBodyStates[joint.targetBody];
         for(uint dof=0;dof<6;dof++)
         {
-            if(!deviceMotorAxisEnabled(motor,dof)) continue;
             uint axis=dof%3;
+            if(!deviceMotorAxisEnabled(motor,dof))
+            {
+                if(dof<3) state.linearMultiplier[axis]=0; else state.angularMultiplier[axis]=0;
+                continue;
+            }
             DeviceMotorRow drive=deviceMotorRow(motor,source,target,context.duration,asdouble(context.endTime.x,context.endTime.y),dof);
             float penalty=dof<3?state.linearPenalty[axis]:state.angularPenalty[axis];
             float multiplier=dof<3?state.linearMultiplier[axis]:state.angularMultiplier[axis];

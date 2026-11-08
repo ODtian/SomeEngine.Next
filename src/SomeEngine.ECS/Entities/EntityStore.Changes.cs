@@ -5,7 +5,7 @@ namespace SomeEngine.ECS.Entities;
 internal sealed partial class EntityStore
 {
     private readonly object _tableChangesLock = new();
-    private ImmutableDictionary<EntityTableChanges, ImmutableDictionary<Entity, long>> _tableChanges =
+    private volatile ImmutableDictionary<EntityTableChanges, ImmutableDictionary<Entity, long>> _tableChanges =
         ImmutableDictionary<EntityTableChanges, ImmutableDictionary<Entity, long>>.Empty;
     private long _tableChangeVersion;
 
@@ -54,6 +54,7 @@ internal sealed partial class EntityStore
 
     internal void RecordTableChange(Entity entity)
     {
+        if (_tableChanges.IsEmpty) return;
         lock (_tableChangesLock)
         {
             if (_tableChanges.IsEmpty) return;

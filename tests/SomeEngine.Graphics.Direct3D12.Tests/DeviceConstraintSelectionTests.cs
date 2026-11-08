@@ -46,14 +46,14 @@ public sealed partial class DeviceAvbdTests
         using var selectedStates = new DeviceConstraintSelection<ElasticConnection, DeviceElasticConstraint,
             DeviceAvbdStateRows<DeviceAvbdElasticState>>(backend, device, world, connections, parameters,
                 new(histories), "DeviceElasticAvbdSelection");
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileDynamics(), 64);
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileDynamics(), 64);
         using var results = new DeviceBodyResults(backend, device, bodies);
         var bindings = new Dictionary<string, ResourceBinding[]>();
         parameters.AddBindings(bindings); histories.AddBindings(bindings);
         JobResourceAccess[] reads = [.. parameters.GetReadAccesses(scheduler), histories.GetReadAccess(scheduler)];
         using var graph = new DeviceConstraintGraph(backend, device, bodies, dynamics, CompileGraph(), new(1, 2),
             bindings, reads, 64, new[] { selected });
-        using var solve = new DeviceAvbdSolver(backend, device, bodies, equations, graph, CompileAvbd(),
+        using var solve = new AvbdGraphCommands(backend, device, bodies, equations, graph, CompileAvbd(),
             new(1, 1, 0, 0), bindings,
             parameters.GetReadAccesses(scheduler).Append(histories.GetWriteAccess(scheduler)).ToArray(), 64,
             new[] { selectedStates });

@@ -39,11 +39,11 @@
     <ProjectReference Include="../../src/SomeEngine.RenderGraph/SomeEngine.RenderGraph.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <Content Include="../../external/dxc/bin/x64/dxcompiler.dll"
+    <Content Include="../../external/dxc/bin/x64/dxcompiler.dll" DependencyBinary="true"
              Link="dxcompiler.dll"
              CopyToOutputDirectory="PreserveNewest"
              CopyToPublishDirectory="PreserveNewest" />
-    <Content Include="../../external/dxc/bin/x64/dxil.dll"
+    <Content Include="../../external/dxc/bin/x64/dxil.dll" DependencyBinary="true"
              Link="dxil.dll"
              CopyToOutputDirectory="PreserveNewest"
              CopyToPublishDirectory="PreserveNewest" />

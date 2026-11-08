@@ -67,7 +67,7 @@ internal sealed class PhysicsActivityData<TInputs> : IDisposable where TInputs :
     {
         public void Execute()
         {
-            data._queries.ReadMembers();
+            data._queries.ReadMembers(in context);
             EntityQueryJobs.ScheduleGroup(context.World, new Work(data), new Update(data, context, finish), data._accesses, data._resources);
         }
     }
@@ -84,8 +84,8 @@ internal sealed class PhysicsActivityData<TInputs> : IDisposable where TInputs :
     {
         public bool Execute(scoped EntityQueryGroup group)
         {
-            if (data._queries.ReadMembers()) return false;
-            data._graph.Begin(); data._queries.ReadBodies(data._graph);
+            if (data._queries.ReadMembers(in context)) return false;
+            data._graph.Begin(); data._queries.ReadBodies(data._graph, in context);
             data._queries.ReadGraph(data._graph, data._inputs, in context, group.Get(0));
             if (data._graph.Finish()) return false;
             EntityQueryViews global = group.Get(0);

@@ -28,8 +28,8 @@ public sealed partial class DeviceXpbdTests
         world.Replace(moving, new BodyVelocity { Linear = new(0, -2, 0) });
         Entity point = world.CreateRelation(floor, moving, new ContactPoint
             { Normal = Vector3.UnitY, Separation = .125f, BodyAnchorDelta = Vector3.UnitY * .125f, FirstBodyCount = 1 }).Entity;
-        var first = world.CreateRelation(point, floor, new ContactParticipant());
-        var second = world.CreateRelation(point, moving, new ContactParticipant());
+        var first = floor;
+        var second = moving;
         world.AddBuffer<ContactBodyLink>(point);
         world.ExecuteBufferWrite<ContactBodyLink>(point, links =>
         { links.Add(new(first, Vector3.Zero, 1)); links.Add(new(second, Vector3.Zero, 1)); });
@@ -40,12 +40,12 @@ public sealed partial class DeviceXpbdTests
         world.Add(point, new DeviceConstraintBinding<DeviceContactConstraint>(parameters, 0));
         QueryHandle members = world.Query(world.QueryDefinition().Read<DeviceBodyBinding>());
         QueryHandle contacts = world.Query(world.QueryDefinition().Read<ContactPoint>());
-        QueryHandle events = world.Query(world.QueryDefinition().Read<PhysicsStepEvents>().ReadBuffer<PhysicsEvent>());
+        QueryHandle events = world.Query(world.QueryDefinition().Read<PhysicsStepEvents>().Enabled<PhysicsStepEvents>().ReadBuffer<PhysicsEvent>());
         using var write = parameters.WriteInputs<ContactPoint, DeviceContactSource>(world, contacts, new(anchors), 64,
             [anchors.GetUploadAccess(jobs)]);
         using var selected = new DeviceConstraintSelection<ContactPoint, DeviceContactConstraint>(backend, device, world,
             contacts, parameters, "DeviceContactsSelection");
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
         using var bodyInputs = new DeviceBodyInputs(world, members, bodies);
         using var results = new DeviceBodyResults(backend, device, bodies);
         var bindings = new Dictionary<string, ResourceBinding[]>();
@@ -53,7 +53,7 @@ public sealed partial class DeviceXpbdTests
         JobResourceAccess[] reads = [.. parameters.GetReadAccesses(jobs), anchors.GetReadAccess(jobs)];
         using var samples = new DeviceContactSamples(backend, device, bodies, parameters, CompileTriggerContactSamples(),
             bindings, reads, 64, new[] { selected });
-        using var output = new PhysicsEventBuffer(jobs, 4);
+        using var output = new PhysicsEventBuffer(world, 4);
         using var observation = new ContactEvents<DeviceTriggers, DeviceContactEventSource>(world, members, contacts,
             output, 0, new(samples));
         var received = new List<(long Number, PhysicsEvent Event)>();

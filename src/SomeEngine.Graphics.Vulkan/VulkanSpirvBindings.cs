@@ -404,6 +404,12 @@ internal sealed unsafe partial class VulkanBackend
                 uint sourceBinding = EncodeDescriptorBinding(sourceGroup.Key, group.Key.RegisterClass);
                 named = named.Where(target => target.Binding == sourceBinding).ToArray();
             }
+            if (named.Length == 0)
+            {
+                uint sourceBinding = EncodeDescriptorBinding(sourceGroup.Key, group.Key.RegisterClass);
+                named = available.Where(target => string.IsNullOrWhiteSpace(target.Name)
+                    && target.Binding == sourceBinding).ToArray();
+            }
             if (named.Select(static target => (target.Set, target.Binding)).Distinct().Count() != 1)
             {
                 if (sourceGroup.Any(static source => !string.IsNullOrWhiteSpace(source.Name)) &&

@@ -55,58 +55,81 @@ bool deviceSupportContactBefore(uint first,uint second)
     DeviceConstraintMetadata a=DeviceContactsMetadata[first],b=DeviceContactsMetadata[second];
     return a.entityIndex<b.entityIndex||(a.entityIndex==b.entityIndex&&a.entityGeneration<b.entityGeneration);
 }
-uint findDeviceSupportNextContact(uint body,uint current)
+uint buildDeviceSupportHull(uint body)
 {
-    uint count=DeviceSupportBodyStates[body].pointCount,start=body*ContactSupportSettings.contactsPerBody;
-    uint next=current; float2 origin=deviceSupportWitness(current),nextPoint=origin;
-    for(uint index=0;index<count;index++)
+    uint start=ConstraintGraphBodyOffsets[body],length=DeviceSupportBodyStates[body].pointCount;
+    for(uint index=0;index<length;index++) DeviceSupportSortedContacts[start+index]=DeviceSupportBodyContacts[start+index];
+    for(uint index=1;index<length;index++)
     {
-        uint contact=DeviceSupportBodyContacts[start+index]; float2 point=deviceSupportWitness(contact);
-        if(all(point==origin)) continue;
-        double turn=deviceSupportOrientation(origin,nextPoint,point);
-        double previousX=double(nextPoint.x)-origin.x,previousY=double(nextPoint.y)-origin.y;
-        double candidateX=double(point.x)-origin.x,candidateY=double(point.y)-origin.y;
-        double previousDistance=previousX*previousX+previousY*previousY;
-        double candidateDistance=candidateX*candidateX+candidateY*candidateY;
-        if(next==current||turn<0||(turn==0&&(candidateDistance>previousDistance
-            ||(candidateDistance==previousDistance&&deviceSupportContactBefore(contact,next)))))
-        { next=contact; nextPoint=point; }
+        uint contact=DeviceSupportSortedContacts[start+index],target=index;
+        float2 point=deviceSupportWitness(contact);
+        while(target>0)
+        {
+            uint prior=DeviceSupportSortedContacts[start+target-1]; float2 previous=deviceSupportWitness(prior);
+            bool before=point.x<previous.x||(point.x==previous.x&&(point.y<previous.y
+                ||(point.y==previous.y&&deviceSupportContactBefore(contact,prior))));
+            if(!before) break;
+            DeviceSupportSortedContacts[start+target]=prior; target--;
+        }
+        DeviceSupportSortedContacts[start+target]=contact;
     }
-    return next;
+    uint unique=0;
+    for(uint index=0;index<length;index++)
+    {
+        uint contact=DeviceSupportSortedContacts[start+index];
+        if(unique==0||any(deviceSupportWitness(contact)!=deviceSupportWitness(DeviceSupportSortedContacts[start+unique-1])))
+            DeviceSupportSortedContacts[start+unique++]=contact;
+    }
+    if(unique<=2)
+    {
+        for(uint index=0;index<unique;index++) DeviceSupportHullContacts[start+index]=DeviceSupportSortedContacts[start+index];
+        return unique;
+    }
+    uint count=0;
+    for(uint index=0;index<unique;index++)
+    {
+        uint contact=DeviceSupportSortedContacts[start+index]; float2 point=deviceSupportWitness(contact);
+        while(count>=2&&deviceSupportOrientation(deviceSupportWitness(DeviceSupportHullContacts[start+count-2]),
+            deviceSupportWitness(DeviceSupportHullContacts[start+count-1]),point)<=0) count--;
+        DeviceSupportHullContacts[start+count++]=contact;
+    }
+    uint lowerCount=count;
+    for(int index=int(unique)-2;index>=0;index--)
+    {
+        uint contact=DeviceSupportSortedContacts[start+uint(index)]; float2 point=deviceSupportWitness(contact);
+        while(count>lowerCount&&deviceSupportOrientation(deviceSupportWitness(DeviceSupportHullContacts[start+count-2]),
+            deviceSupportWitness(DeviceSupportHullContacts[start+count-1]),point)<=0) count--;
+        DeviceSupportHullContacts[start+count++]=contact;
+    }
+    return count-1;
 }
-// Walk the same convex footprint and triangle fan used by ContactSupportPolygon.
+// The sorted, unique monotone hull and its affine weights follow ContactSupportPolygon.
 bool deviceSupportWeights(uint body,float2 point,out uint3 contacts,out float3 weights,out uint count)
 {
     contacts=uint3(0); weights=float3(0); count=0;
-    uint length=DeviceSupportBodyStates[body].pointCount,start=body*ContactSupportSettings.contactsPerBody;
+    uint length=buildDeviceSupportHull(body),start=ConstraintGraphBodyOffsets[body];
     if(length==0) return false;
-    uint first=DeviceSupportBodyContacts[start]; float2 a=deviceSupportWitness(first);
-    for(uint index=1;index<length;index++)
-    {
-        uint contact=DeviceSupportBodyContacts[start+index]; float2 vertex=deviceSupportWitness(contact);
-        if(vertex.x<a.x||(vertex.x==a.x&&(vertex.y<a.y
-            ||(vertex.y==a.y&&deviceSupportContactBefore(contact,first)))))
-        { first=contact; a=vertex; }
-    }
+    uint first=DeviceSupportHullContacts[start]; float2 a=deviceSupportWitness(first);
     float tolerance=ContactSupportSettings.distanceTolerance;
-    uint second=findDeviceSupportNextContact(body,first);
-    if(second==first)
+    if(length<=2)
     {
-        if(dot(point-a,point-a)>tolerance*tolerance) return false;
-        contacts.x=first; weights.x=1; count=1; return true;
-    }
-    uint third=findDeviceSupportNextContact(body,second); float2 b=deviceSupportWitness(second);
-    if(third==first)
-    {
-        float2 line=b-a; float fraction=dot(point-a,line)/dot(line,line);
+        uint last=DeviceSupportHullContacts[start+length-1]; float2 b=deviceSupportWitness(last),line=b-a;
+        float squared=dot(line,line);
+        if(squared==0)
+        {
+            if(dot(point-a,point-a)>tolerance*tolerance) return false;
+            contacts.x=first; weights.x=1; count=1; return true;
+        }
+        float fraction=dot(point-a,line)/squared;
         if(fraction < -tolerance||fraction>1+tolerance) return false;
         fraction=clamp(fraction,0,1); float2 delta=a+line*fraction-point;
         if(dot(delta,delta)>tolerance*tolerance) return false;
-        contacts=uint3(first,second,0); weights=float3(1-fraction,fraction,0); count=2; return true;
+        contacts=uint3(first,last,0); weights=float3(1-fraction,fraction,0); count=2; return true;
     }
-    for(uint vertex=2;vertex<length;vertex++)
+    for(uint index=1;index<length-1;index++)
     {
-        float2 c=deviceSupportWitness(third);
+        uint second=DeviceSupportHullContacts[start+index],third=DeviceSupportHullContacts[start+index+1];
+        float2 b=deviceSupportWitness(second),c=deviceSupportWitness(third);
         double area=deviceSupportOrientation(a,b,c);
         double wb=deviceSupportOrientation(a,point,c)/area,wc=deviceSupportOrientation(a,b,point)/area,wa=1-wb-wc;
         if(min(wa,min(wb,wc))>=-tolerance)
@@ -115,8 +138,6 @@ bool deviceSupportWeights(uint body,float2 point,out uint3 contacts,out float3 w
             contacts=uint3(first,second,third); weights=float3(float(wa/total),float(wb/total),float(wc/total));
             count=3; return true;
         }
-        second=third; b=c; third=findDeviceSupportNextContact(body,second);
-        if(third==first) break;
     }
     return false;
 }
@@ -193,7 +214,7 @@ bool deviceBuildSupportCandidate(DeviceSupportCandidate candidate,uint order)
     state.initialError=max(0,state.minimumHeight-dot(deviceSupportSidePoint(point,candidate.upperIsSecond!=0,true),ContactSupportSettings.up));
     DeviceSupportContactStates[candidate.contact]=state;
     DeviceBodySupportState body=DeviceSupportBodyStates[candidate.upper];
-    DeviceSupportBodyContacts[candidate.upper*ContactSupportSettings.contactsPerBody+body.pointCount++]=candidate.contact;
+    DeviceSupportBodyContacts[ConstraintGraphBodyOffsets[candidate.upper]+body.pointCount++]=candidate.contact;
     DeviceSupportBodyStates[candidate.upper]=body;
     return true;
 }
@@ -267,7 +288,7 @@ void initializeDeviceContactSupports<T : IDeviceBodySelection,TWork : IDeviceCon
         uint row=work.contact(contactOffset);
         if(!deviceSupportContactRuns(row,bodies)) continue;
         DeviceContactSupportState state=DeviceSupportContactStates[row];
-        state.extraForceOnSecond*=DeviceContacts[row].warmStart!=0?ContactSupportSettings.retention:0;
+        state.extraForceOnSecond*=DeviceContacts[row].warmStart!=0?(context.firstIteration==0?ContactSupportSettings.retention:1):0;
         DeviceSupportContactStates[row]=state;
     }
     deviceSupportUpdateMotion(bodies,work); buildDeviceContactSupports(context,bodies,work);

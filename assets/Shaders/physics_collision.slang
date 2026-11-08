@@ -61,22 +61,33 @@ struct DeviceDetectionParameters
     uint bodiesPerContact;
     uint firstBin;
     uint2 startTime;
+    uint distances; uint prediction; uint contacts;
 };
 
-ConstantBuffer<DeviceDetectionParameters> DetectionParameters;
-RWStructuredBuffer<DeviceCollisionPair> DetectionPairs;
-RWStructuredBuffer<uint> DetectionBinOffsets;
-RWStructuredBuffer<DeviceGeometryInput> DeviceGeometries;
-RWStructuredBuffer<DeviceCollisionDistance> CollisionDistances;
-RWStructuredBuffer<DeviceCollisionContact> CollisionContacts;
-RWStructuredBuffer<uint> CollisionContactCounts;
-RWStructuredBuffer<DeviceSupportPoint> PenetrationVertices;
-RWStructuredBuffer<DevicePenetrationFace> PenetrationFaces;
-RWStructuredBuffer<int2> PenetrationEdges;
-RWStructuredBuffer<DeviceFeaturePoint> CollisionFaces;
-RWStructuredBuffer<DeviceFeaturePoint> ContactPolygon;
-RWStructuredBuffer<DeviceFeaturePoint> ContactClip;
-RWStructuredBuffer<DeviceGeometryDistance> ManifoldCandidates;
+ConstantBuffer<DeviceDetectionParameters, ScalarDataLayout> DetectionParameters;
+RWStructuredBuffer<DeviceCollisionPair, ScalarDataLayout> DetectionPairs;
+RWStructuredBuffer<uint, ScalarDataLayout> DetectionBinOffsets;
+RWStructuredBuffer<DeviceGeometryInput, ScalarDataLayout> DeviceGeometries;
+RWStructuredBuffer<DeviceCollisionDistance, ScalarDataLayout> CollisionDistances;
+RWStructuredBuffer<DeviceCollisionContact, ScalarDataLayout> CollisionContacts;
+RWStructuredBuffer<uint, ScalarDataLayout> CollisionContactCounts;
+RWStructuredBuffer<uint, ScalarDataLayout> CollisionContactOffsets;
+RWStructuredBuffer<uint, ScalarDataLayout> CollisionContactTotal;
+RWStructuredBuffer<DeviceCollisionContact, ScalarDataLayout> CollisionWorkContacts;
+uint reserveDeviceCollisionContacts(uint pair, uint count)
+{
+    uint begin = 0;
+    if (count != 0) InterlockedAdd(CollisionContactTotal[0],count,begin);
+    CollisionContactCounts[pair] = count; CollisionContactOffsets[pair] = begin;
+    return begin;
+}
+RWStructuredBuffer<DeviceSupportPoint, ScalarDataLayout> PenetrationVertices;
+RWStructuredBuffer<DevicePenetrationFace, ScalarDataLayout> PenetrationFaces;
+RWStructuredBuffer<int2, ScalarDataLayout> PenetrationEdges;
+RWStructuredBuffer<DeviceFeaturePoint, ScalarDataLayout> CollisionFaces;
+RWStructuredBuffer<DeviceFeaturePoint, ScalarDataLayout> ContactPolygon;
+RWStructuredBuffer<DeviceFeaturePoint, ScalarDataLayout> ContactClip;
+RWStructuredBuffer<DeviceGeometryDistance, ScalarDataLayout> ManifoldCandidates;
 
 interface IDeviceConvex
 {
@@ -449,13 +460,14 @@ void detectDeviceCollision<TKernel : IDeviceCollisionNarrowPhase>(uint work, TKe
         DeviceGeometryInput first = DeviceGeometries[pair.firstGeometry];
         DeviceGeometryInput second = DeviceGeometries[pair.secondGeometry];
         result.distance = kernel.distance(work, first, second);
-        CollisionDistances[index] = result;
+        if (DetectionParameters.distances != 0) CollisionDistances[index] = result;
         DeviceGeometryDistance points[4];
         uint count = result.distance.separation <= DetectionParameters.contactDistance
             ? kernel.manifold(work, first, second, result.distance, points) : 0;
-        CollisionContactCounts[index] = count;
+        uint contactBegin = reserveDeviceCollisionContacts(index,count);
         for (uint point = 0; point < count; point++)
         {
+            if(contactBegin+point>=DetectionParameters.contacts) continue;
             DeviceGeometryDistance distance = points[point];
             DeviceCollisionContact contact;
             contact.first = result.first;
@@ -475,7 +487,7 @@ void detectDeviceCollision<TKernel : IDeviceCollisionNarrowPhase>(uint work, TKe
             contact.prediction.enabled = 0;
             contact.prediction.padding = 0;
             contact.prediction.sampleTime = uint2(0, 0);
-            CollisionContacts[index * 4 + point] = contact;
+            CollisionContacts[contactBegin + point] = contact;
         }
     }
 }

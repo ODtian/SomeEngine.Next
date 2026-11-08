@@ -1,13 +1,14 @@
 #ifndef PHYSICS_XPBD_MOTOR
 #define PHYSICS_XPBD_MOTOR
 #include "physics_xpbd_selection.slang"
+#include "physics_xpbd_material.slang"
 #include "physics_motor_math.slang"
 struct DeviceXpbdMotorState
 {
     float3 linearMultiplier;
     float3 angularMultiplier;
 };
-RWStructuredBuffer<DeviceXpbdMotorState> DeviceMotorMultipliers;
+RWStructuredBuffer<DeviceXpbdMotorState, ScalarDataLayout> DeviceMotorMultipliers;
 struct DeviceXpbdMotorProjection<TSelection : IDeviceBodySelection> : IDeviceXpbdProjection
 {
     bool active(uint row) { return DeviceMotorsMetadata[row].active != 0; }
@@ -23,20 +24,22 @@ struct DeviceXpbdMotorProjection<TSelection : IDeviceBodySelection> : IDeviceXpb
         for (uint dof = 0; dof < 6; dof++)
         {
             uint axis = dof % 3;
-            if (dof < 3 ? motor.linearStiffness[axis] == 0 && motor.linearDamping[axis] == 0
-                : motor.angularStiffness[axis] == 0 && motor.angularDamping[axis] == 0) continue;
+            if (!deviceMotorAxisEnabled(motor, dof))
+            {
+                if (dof < 3) state.linearMultiplier[axis] = 0; else state.angularMultiplier[axis] = 0;
+                continue;
+            }
             DeviceBodyState source = DeviceBodyStates[joint.sourceBody], target = DeviceBodyStates[joint.targetBody];
             DeviceMotorRow drive = deviceMotorRow(motor, source, target, context.duration,
                 asdouble(context.endTime.x, context.endTime.y), dof);
-            float alpha = 1 / (drive.stiffness * context.duration * context.duration);
             float weight = deviceXpbdBodyWeight(joint.targetBody, drive.derivative.targetLinear, drive.derivative.targetAngular, selection);
             if (react && motor.space == 0)
                 weight += deviceXpbdBodyWeight(joint.sourceBody, drive.derivative.sourceLinear, drive.derivative.sourceAngular, selection);
             float multiplier = dof < 3 ? state.linearMultiplier[axis] : state.angularMultiplier[axis];
-            float change = (-drive.error - alpha * multiplier) / (weight + alpha);
             float maximum = drive.maximum * context.duration * context.duration;
-            float next = clamp(multiplier + change, -maximum, maximum);
-            change = next - multiplier;
+            float next = clamp(deviceXpbdProjectMaterial(drive.stiffness, 0, context.duration,
+                drive.error, drive.error, weight, multiplier), -maximum, maximum);
+            float change = next - multiplier;
             if (dof < 3) state.linearMultiplier[axis] = next;
             else state.angularMultiplier[axis] = next;
             deviceXpbdBodyCorrection(joint.targetBody, drive.derivative.targetLinear, drive.derivative.targetAngular, change, selection);

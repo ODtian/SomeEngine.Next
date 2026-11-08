@@ -2,6 +2,7 @@ using System.Runtime.CompilerServices;
 using SomeEngine.ECS.Collections;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
+using SomeEngine.ECS.Registry;
 
 namespace SomeEngine.ECS.Commands;
 
@@ -13,6 +14,7 @@ internal interface ICommandPayloadList
 
 internal interface IComponentCommandList : ICommandPayloadList
 {
+    void WriteBundle(BundleWriteView row, int dataIndex);
     void PlaybackAdd(World world, Entity entity, int dataIndex);
     void PlaybackReplace(World world, Entity entity, int dataIndex);
     void PlaybackRemove(World world, Entity entity);
@@ -20,6 +22,8 @@ internal interface IComponentCommandList : ICommandPayloadList
 
 internal interface IBufferCommandList : ICommandPayloadList
 {
+    void AddComponentIds(List<int> components);
+    void WriteBundle(BundleWriteView row, int dataIndex);
     void PlaybackAdd(World world, Entity entity, int dataIndex);
     void PlaybackReplace(World world, Entity entity, int dataIndex);
     void PlaybackRemove(World world, Entity entity);
@@ -39,14 +43,25 @@ internal sealed class CommandDataList<T> : IComponentCommandList
         return _count++;
     }
 
-    public void PlaybackAdd(World world, Entity entity, int dataIndex) =>
-        world.Add(entity, in _data[dataIndex]);
+    public void PlaybackAdd(World world, Entity entity, int dataIndex)
+    {
+        world.BumpTopologyRevision();
+        world.Components.Add(entity, in _data[dataIndex]);
+    }
 
-    public void PlaybackReplace(World world, Entity entity, int dataIndex) =>
-        world.Replace(entity, in _data[dataIndex]);
+    public void WriteBundle(BundleWriteView row, int dataIndex) => row.Write(in _data[dataIndex]);
 
-    public void PlaybackRemove(World world, Entity entity) =>
-        world.Remove<T>(entity);
+    public void PlaybackReplace(World world, Entity entity, int dataIndex)
+    {
+        if (world.HasValueReplaceHookCallbacks(ComponentMetadata<T>.Id)) world.BumpTopologyRevision();
+        world.Components.Replace(entity, in _data[dataIndex]);
+    }
+
+    public void PlaybackRemove(World world, Entity entity)
+    {
+        world.BumpTopologyRevision();
+        world.Components.Remove<T>(entity);
+    }
 
     public void Clear()
     {
@@ -71,12 +86,14 @@ internal sealed class SparseCommandDataList<T> : IComponentCommandList
     }
 
     public void PlaybackAdd(World world, Entity entity, int dataIndex) =>
-        world.AddSparse(entity, in _data[dataIndex]);
+        world.Sparse.Add(entity, in _data[dataIndex]);
+
+    public void WriteBundle(BundleWriteView row, int dataIndex) => row.WriteSparse(in _data[dataIndex]);
 
     public void PlaybackReplace(World world, Entity entity, int dataIndex) =>
-        world.ReplaceSparse(entity, in _data[dataIndex]);
+        world.Sparse.Replace(entity, in _data[dataIndex]);
 
-    public void PlaybackRemove(World world, Entity entity) => world.RemoveSparse<T>(entity);
+    public void PlaybackRemove(World world, Entity entity) => world.Sparse.Remove<T>(entity);
 
     public void Clear()
     {
@@ -118,6 +135,15 @@ internal sealed class BufferCommandDataList<T> : IBufferCommandList
     {
         Range(dataIndex, out int start, out int length);
         world.Buffers.Add<T>(entity, _items.AsMemory(start, length));
+    }
+
+    public void AddComponentIds(List<int> components)
+    { components.Add(BufferComponents.Header<T>()); components.Add(BufferComponents.Inline<T>()); }
+    public void WriteBundle(BundleWriteView row, int dataIndex)
+    {
+        Range(dataIndex, out int start, out int length);
+        ReadOnlyMemory<T> values = _items.AsMemory(start, length);
+        row.WriteBuffer(in values);
     }
 
     public void PlaybackReplace(World world, Entity entity, int dataIndex)

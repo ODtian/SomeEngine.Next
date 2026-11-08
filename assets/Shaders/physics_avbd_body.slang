@@ -12,10 +12,10 @@ struct DeviceAvbdEquation
     float4 rotationFrame;
     uint constraintRows; float duration;
 };
-RWStructuredBuffer<DeviceAvbdEquation> DeviceAvbdBodyEquations;
+RWStructuredBuffer<DeviceAvbdEquation, ScalarDataLayout> DeviceAvbdBodyEquations;
 // Metadata = body index, actual Entity index/generation, active.
-RWStructuredBuffer<uint4> DeviceAvbdEquationMetadata;
-RWStructuredBuffer<uint> DeviceAvbdEquationIndices;
+RWStructuredBuffer<uint4, ScalarDataLayout> DeviceAvbdEquationMetadata;
+RWStructuredBuffer<uint, ScalarDataLayout> DeviceAvbdEquationIndices;
 uint deviceAvbdMatrixIndex(uint row,uint column) { return row * (row+1) / 2 + column; }
 float3 deviceAvbdInertia(DeviceAvbdEquation equation,float3 value)
 { return value.x * equation.inertiaX + value.y * equation.inertiaY + value.z * equation.inertiaZ; }

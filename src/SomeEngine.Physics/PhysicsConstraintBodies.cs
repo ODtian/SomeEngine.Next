@@ -8,6 +8,7 @@ namespace SomeEngine.Physics;
 /// <summary>A concrete constraint's affected bodies and additional read dependencies.</summary>
 public interface IPhysicsConstraintBodies<TConstraint> where TConstraint : struct, IComponent
 {
+    static virtual uint GetInputVersion(in TConstraint constraint, scoped QueryRow row) => row.WriteVersion<TConstraint>();
     static abstract int GetBodyCount(in TConstraint constraint, scoped QueryRow row, in PhysicsStepContext context);
     static abstract Entity GetBody(in TConstraint constraint, scoped QueryRow row, int index, in PhysicsStepContext context);
     /// <summary>Reads participation from the stage's borrowed references when this constraint supports it.</summary>

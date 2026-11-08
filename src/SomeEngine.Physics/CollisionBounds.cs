@@ -10,6 +10,9 @@ public readonly struct CollisionBounds(Vector3 min, Vector3 max) : IComponent
 
     public Vector3 Max { get; } = max;
 
+    public bool IsFinite => float.IsFinite(Min.X) && float.IsFinite(Min.Y) && float.IsFinite(Min.Z)
+        && float.IsFinite(Max.X) && float.IsFinite(Max.Y) && float.IsFinite(Max.Z);
+
     public bool Overlaps(in CollisionBounds other) =>
         Min.X <= other.Max.X && Max.X >= other.Min.X &&
         Min.Y <= other.Max.Y && Max.Y >= other.Min.Y &&

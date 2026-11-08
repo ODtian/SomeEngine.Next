@@ -6,6 +6,10 @@ SPIR-V decoration 到原生 set/binding 的映射只属于 Vulkan pipeline 创�
 
 同名资源候选通过 SPIR-V 的来源 set、寄存器类别与 binding 对照 Slang 反射位置区分。映射目标以完整的 `(set, binding)` 标识，候选归并和移除保留这一位置。实现位于 [VulkanSpirvBindings](../../../../../src/SomeEngine.Graphics.Vulkan/VulkanSpirvBindings.cs)，公开应用检查 `VulkanFrameLoopPresentsItsCapturedFrame` 消费具有同名材质资源的原场景 Shader。
 
+具名资源优先按声明名关联。Slang 为全局普通数据生成的 uniform buffer 名称通过同组的原 binding 对应匿名反射目标，使普通 uniform 与显式常量缓冲共同使用同一套映射。
+
+瞬态绑定由当前 command arena 保存已分配的 descriptor sets。相同反射块、资源引用及范围、uniform 普通数据字节复用原生 sets；push constant 数据每次独立提交，其字节变化继续复用资源 sets。缓存与上传页面、sets 一起沿 command slot 的 GPU 完成边界清理。
+
 同步创建当场消费代码；异步创建持有代码副本和 Slang COM 身份直到完成。pipeline 保留直接反射句柄所需的所有者。
 
 `WriteDescriptor` 只改变 CPU staging；`PublishDescriptors` 统一提交更新。已录制命令保留它实际使用的 descriptor generation，后续 publish/dispose 不改变已接受 GPU work。

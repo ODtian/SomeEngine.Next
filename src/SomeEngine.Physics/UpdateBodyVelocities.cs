@@ -18,9 +18,7 @@ internal readonly partial struct UpdateBodyVelocityJob(float duration) : IJobEnt
     {
         if (mass.Motion == BodyMotion.Static) return;
         Vector3 center = pose.GetCenterOfMass(in mass);
-        velocity.Linear = mass.Motion == BodyMotion.Dynamic
-            ? velocity.Linear + (center - state.PredictedCenterOfMass) / duration
-            : (center - state.StartCenterOfMass) / duration;
-        velocity.Angular = BodyRotation.Velocity(state.StartRotation, pose.Rotation, duration);
+        velocity.Linear += (center - state.PredictedCenterOfMass) / duration;
+        velocity.Angular += BodyRotation.Velocity(state.PredictedRotation, pose.Rotation, duration);
     }
 }

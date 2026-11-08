@@ -27,12 +27,14 @@ public sealed partial class DeviceCollisionDetection : IDisposable
     private readonly ResourceBinding[][] _bindings;
     private readonly JobResourceAccess[] _extraAccesses;
     private readonly Buffer _parameters;
-    private readonly Buffer? _readbackBuffer;
+    private Buffer? _readbackBuffer;
+    private readonly object _results = new();
     private readonly CommandContext _commands;
-    private readonly DeviceCollisionDistance[] _distances;
-    private readonly CollisionContact[] _contacts;
-    private readonly int[] _contactCounts;
-    private readonly int[] _binBounds = new int[2];
+    private DeviceCollisionDistance[] _distances = [];
+    private CollisionContact[] _contacts = [];
+    private int[] _contactCounts = [];
+    private int[] _contactOffsets = [];
+    private readonly int[] _binBounds = new int[3];
     private bool _initialized;
 
     public DeviceCollisionDetection(IGraphicsBackend backend, Device device, DeviceCollisionGrid grid,
@@ -61,9 +63,12 @@ public sealed partial class DeviceCollisionDetection : IDisposable
         _readback = readback;
         _extraAccesses = extraAccesses.ToArray();
         var bindings = new Dictionary<string, ResourceBinding[]>(StringComparer.Ordinal);
-        Distances = CreateWorkBuffer("CollisionDistances", (ulong)capacity.Pairs * 64, 64, bindings);
-        Contacts = CreateWorkBuffer("CollisionContacts", (ulong)capacity.Pairs * 4 * ContactStride, ContactStride, bindings);
+        Distances = CreateWorkBuffer("CollisionDistances", (ulong)(capacity.Distances ? capacity.Pairs : 1) * 64, 64, bindings);
+        Contacts = CreateWorkBuffer("CollisionContacts", (ulong)capacity.Contacts * ContactStride, ContactStride, bindings, contactBytes: ContactStride);
         ContactCounts = CreateWorkBuffer("CollisionContactCounts", (ulong)capacity.Pairs * 4, 4, bindings);
+        ContactOffsets = CreateWorkBuffer("CollisionContactOffsets", (ulong)capacity.Pairs * 4, 4, bindings);
+        ContactTotal = CreateWorkBuffer("CollisionContactTotal", 4, 4, bindings, BufferUsages.CopyDestination);
+        CreateWorkBuffer("CollisionWorkContacts", (ulong)capacity.WorkItems * 4 * ContactStride, ContactStride, bindings);
         CreateContactBodies(bindings);
         ulong vertices = (ulong)(4 + settings.PenetrationIterations);
         CreateWorkBuffer("PenetrationVertices", (ulong)capacity.WorkItems * vertices * 32, 32, bindings);
@@ -78,10 +83,10 @@ public sealed partial class DeviceCollisionDetection : IDisposable
             new(grid.Pairs, new(0, grid.Pairs.Info.Size), StructureStride: DeviceCollisionGrid.PairStride)));
         BufferUav boundsView = Keep(backend.CreateBufferUav(device,
             new(grid.BinOffsets, new(0, grid.BinOffsets.Info.Size), StructureStride: 4)));
-        _parameters = Keep(backend.CreateBuffer(device, new((ulong)kernels.Length * 256, BufferUsages.Constant,
+        _parameters = Keep(backend.CreateBuffer(device, new((ulong)(kernels.Length + 1) * 256, BufferUsages.Constant | BufferUsages.CopySource,
             "Device collision parameters"), MemoryType.Upload));
-        _readbackBuffer = readback == DeviceCollisionReadback.None ? null :
-            Keep(backend.CreateBuffer(device, new(ResultReadbackSize,
+        _readbackBuffer = readback == DeviceCollisionReadback.None && capacity.Memory?.UsesSparseBuffers != true ? null :
+            Keep(backend.CreateBuffer(device, new(12,
                 BufferUsages.CopyDestination, "Device collision result readback"), MemoryType.Readback));
         bindings.Add("DetectionParameters", []);
         bindings.Add("DetectionPairs", [ResourceBinding.WritableBuffer(pairsView)]);
@@ -102,44 +107,36 @@ public sealed partial class DeviceCollisionDetection : IDisposable
         }
         _commands = Keep(backend.CreateCommandContext(device,
             new CommandContextDesc(QueueType.Compute, 0, 1, Label: "Device collision detection")));
-        _distances = (readback & DeviceCollisionReadback.Distances) != 0 ? new DeviceCollisionDistance[capacity.Pairs] : [];
-        _contacts = (readback & DeviceCollisionReadback.Contacts) != 0 ? new CollisionContact[capacity.Pairs * 4] : [];
-        _contactCounts = (readback & DeviceCollisionReadback.Contacts) != 0 ? new int[capacity.Pairs] : [];
+
     }
 
     public DeviceDetectionCapacity Capacity { get; }
     public Buffer Distances { get; }
     public Buffer Contacts { get; }
     public Buffer ContactCounts { get; }
+    public Buffer ContactOffsets { get; }
+    public Buffer ContactTotal { get; }
+    internal bool ReadsContactChanges => (_readback & DeviceCollisionReadback.ContactChanges) != 0;
+    internal bool ReadsContactRows => (_readback & DeviceCollisionReadback.Contacts) != 0;
+    internal JobResourceAccess GetChangesWriteAccess(Scheduler scheduler) => JobResourceAccess.Write(scheduler.GetResourceToken(_results));
+    public int GetContactCount(int pair) => _contactCounts[pair];
+    public int ContactCount => _binBounds[2];
+    public int GetContactOffset(int pair) => _contactOffsets[pair];
     public QueueCompletion Completion { get; private set; }
     public long Number { get; private set; }
     public double Time { get; private set; }
     public int Count => _binBounds[1] - _binBounds[0];
     public ReadOnlySpan<DeviceCollisionDistance> ReadDistances() => _distances.AsSpan(0, Count);
-    public ReadOnlySpan<CollisionContact> ReadContacts(int pair) => _contacts.AsSpan(pair * 4, _contactCounts[pair]);
+    public ReadOnlySpan<CollisionContact> ReadContacts(int pair) => _contacts.AsSpan(_contactOffsets[pair], _contactCounts[pair]);
     public DetectDeviceCollision Detect() => new(this);
-    private ulong CountReadbackOffset => 8 + ((_readback & DeviceCollisionReadback.Distances) != 0 ? Distances.Info.Size : 0);
-    private ulong ContactReadbackOffset => CountReadbackOffset +
-        ((_readback & DeviceCollisionReadback.Contacts) != 0 ? ContactCounts.Info.Size : 0);
+    private ulong CountReadbackOffset => 12 + ((_readback & DeviceCollisionReadback.Distances) != 0 ? (ulong)Count * 64 : 0);
+    private ulong ContactOffsetReadbackOffset => CountReadbackOffset +
+        (ReadsContactRows ? (ulong)Count * 4 : 0);
+    private ulong ContactReadbackOffset => ContactOffsetReadbackOffset +
+        (ReadsContactRows ? (ulong)Count * 4 : 0);
 
-    public JobResourceAccess[] GetReadbackAccesses(Scheduler scheduler)
-    {
-        if (_readback == DeviceCollisionReadback.None) return [];
-        var accesses = new List<JobResourceAccess> { JobResourceAccess.Read(scheduler, _binBounds) };
-        if ((_readback & DeviceCollisionReadback.Distances) != 0)
-            accesses.Add(JobResourceAccess.Read(scheduler, _distances));
-        if ((_readback & DeviceCollisionReadback.Contacts) != 0)
-        {
-            accesses.Add(JobResourceAccess.Read(scheduler, _contacts));
-            accesses.Add(JobResourceAccess.Read(scheduler, _contactCounts));
-            if (_geometry.Bodies is not null)
-            {
-                accesses.Add(JobResourceAccess.Read(scheduler, _contactBodies));
-                accesses.Add(JobResourceAccess.Read(scheduler, _contactBodyCounts));
-            }
-        }
-        return [.. accesses];
-    }
+    public JobResourceAccess[] GetReadbackAccesses(Scheduler scheduler) =>
+        _readback == DeviceCollisionReadback.None ? [] : [JobResourceAccess.Read(scheduler.GetResourceToken(_results))];
 
     public JobHandle Schedule(in PhysicsStepContext context, JobHandle dependency)
     {
@@ -152,8 +149,8 @@ public sealed partial class DeviceCollisionDetection : IDisposable
         foreach (Buffer buffer in _workBuffers) resources.Write(buffer, 0, (long)buffer.Info.Size);
         resources.Write(_parameters, 0, (long)_parameters.Info.Size);
         resources.Write(_commands);
-        if (_readback != DeviceCollisionReadback.None)
-            resources.Write(_readbackBuffer!, 0, (long)_readbackBuffer!.Info.Size);
+        if (_readbackBuffer is not null)
+            resources.Write(_results);
         accesses.AddRange(_extraAccesses);
         JobResourceAccess[] deviceAccesses = [.. accesses];
         return scheduler!.Schedule(new SubmitDetection(this, scheduler, context, deviceAccesses), deviceAccesses, dependency);
@@ -162,10 +159,11 @@ public sealed partial class DeviceCollisionDetection : IDisposable
     [StructLayout(LayoutKind.Sequential)]
     private readonly record struct DetectionParameters(uint Bin, uint PairCapacity, float Tolerance,
         uint DistanceIterations, uint PenetrationIterations, uint FaceCapacity, float ContactDistance, uint WorkItems,
-        uint BodiesPerContact, uint FirstBin, double StartTime);
+        uint BodiesPerContact, uint FirstBin, double StartTime, uint Distances, uint Prediction, uint Contacts);
 
     private QueueCompletion Submit(in PhysicsStepContext context)
     {
+        Capacity.Memory?.EnsureRows(1);
         using (MappedBuffer mapping = _backend.Map(_parameters, MapType.Write, BufferRange.Whole))
         {
             for (int index = 0; index < _pipelines.Length; index++)
@@ -173,9 +171,10 @@ public sealed partial class DeviceCollisionDetection : IDisposable
                 var parameters = new DetectionParameters((uint)(_firstBin + index), (uint)Capacity.Pairs, _settings.Tolerance,
                     (uint)_settings.DistanceIterations, (uint)_settings.PenetrationIterations,
                     (uint)Capacity.FaceVertices, _contactDistance, (uint)Capacity.WorkItems,
-                    (uint)Capacity.BodiesPerContact, (uint)_firstBin, context.StartTime);
+                    (uint)Capacity.BodiesPerContact, (uint)_firstBin, context.StartTime, Capacity.Distances ? 1u : 0u, context.UseCurrentContacts ? 0u : 1u, (uint)(Capacity.Memory?.Rows ?? Capacity.Contacts));
                 MemoryMarshal.Write(mapping.Bytes[(index * 256)..], in parameters);
             }
+            mapping.Bytes.Slice(_pipelines.Length * 256, 4).Clear();
             mapping.Flush(mapping.Range);
         }
         uint descriptorCapacity = 64u * (uint)_pipelines.Length;
@@ -183,8 +182,13 @@ public sealed partial class DeviceCollisionDetection : IDisposable
         _geometry.UploadInputs(_commands, _transfer);
         if (!_initialized)
             foreach (Buffer buffer in _workBuffers)
-                _backend.Barrier(_commands, new BufferBarrier(buffer, buffer.InitialSync, PipelineSync.ComputeShading,
+                if (Capacity.Memory?.Contains(buffer) != true) _backend.Barrier(_commands, new BufferBarrier(buffer, buffer.InitialSync, PipelineSync.ComputeShading,
                     buffer.InitialAccess, ResourceAccess.UnorderedAccess));
+        _backend.Barrier(_commands, new BufferBarrier(ContactTotal, PipelineSync.ComputeShading, PipelineSync.Copy,
+            ResourceAccess.UnorderedAccess, ResourceAccess.CopyDestination));
+        _backend.CopyBuffer(_commands, new(_parameters, (ulong)_pipelines.Length * 256, ContactTotal, 0, 4));
+        _backend.Barrier(_commands, new BufferBarrier(ContactTotal, PipelineSync.Copy, PipelineSync.ComputeShading,
+            ResourceAccess.CopyDestination, ResourceAccess.UnorderedAccess));
         for (int index = 0; index < _pipelines.Length; index++)
         {
             if (index != 0)
@@ -195,10 +199,11 @@ public sealed partial class DeviceCollisionDetection : IDisposable
             _backend.SetTransientParameterBindings(_commands, new(_layouts[index], _bindings[index], []));
             _backend.Dispatch(_commands, new((uint)((Capacity.WorkItems + 63) / 64), 1, 1));
         }
-        if (_readback != DeviceCollisionReadback.None)
+        if (_readbackBuffer is not null)
         {
             CopyResults(_grid.BinOffsets, (ulong)_firstBin * 4, 0, 4);
             CopyResults(_grid.BinOffsets, (ulong)(_firstBin + _pipelines.Length) * 4, 4, 4);
+            CopyResults(ContactTotal, 0, 8, 4);
         }
         using RecordedCommands commands = _backend.End(_commands);
         Completion = _backend.Submit(_backend.GetQueue(_device, QueueType.Compute), new([], [], [commands], [], []));
@@ -224,27 +229,11 @@ public sealed partial class DeviceCollisionDetection : IDisposable
             JobHandle ready = scheduler.CreateExternalFenceHandle(
                 new DeviceQueueFence(scheduler, detection._backend, completion), deviceAccesses);
             var accesses = new List<JobResourceAccess>();
-            var resources = new JobResourceAccessBuilder(scheduler, accesses);
             if (detection._readback != DeviceCollisionReadback.None)
-            {
-                resources.Read(detection._readbackBuffer!, 0, (long)detection._readbackBuffer!.Info.Size);
-                resources.Write(detection._binBounds.AsMemory());
-            }
-            if ((detection._readback & DeviceCollisionReadback.Distances) != 0)
-                resources.Write(detection._distances.AsMemory());
-            if ((detection._readback & DeviceCollisionReadback.Contacts) != 0)
-            {
-                resources.Write(detection._contacts.AsMemory());
-                resources.Write(detection._contactCounts.AsMemory());
-                if (detection._geometry.Bodies is not null)
-                {
-                    resources.Write(detection._contactBodies.AsMemory());
-                    resources.Write(detection._contactBodyCounts.AsMemory());
-                }
-            }
+                accesses.Add(JobResourceAccess.Write(scheduler.GetResourceToken(detection._results)));
             JobResourceAccess[] accepted = [.. accesses];
             JobHandle consumed;
-            if (detection._readback == DeviceCollisionReadback.None)
+            if (detection._readbackBuffer is null)
                 consumed = detection.ScheduleAccept(scheduler, in context, accepted, ready);
             else
             {
@@ -271,10 +260,10 @@ public sealed partial class DeviceCollisionDetection : IDisposable
         return value;
     }
 
-    private Buffer CreateWorkBuffer(string name, ulong bytes, uint stride, Dictionary<string, ResourceBinding[]> bindings)
+    private Buffer CreateWorkBuffer(string name, ulong bytes, uint stride, Dictionary<string, ResourceBinding[]> bindings, BufferUsages extraUsages = 0, uint contactBytes = 0)
     {
-        Buffer buffer = Keep(_backend.CreateBuffer(_device, new(bytes,
-            BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopySource, name), MemoryType.DeviceLocal));
+        var description = new BufferDesc(bytes, BufferUsages.ShaderRead | BufferUsages.ShaderWrite | BufferUsages.CopySource | extraUsages, name);
+        Buffer buffer = Keep(contactBytes != 0 && Capacity.Memory is { } memory ? memory.CreateBuffer(description, contactBytes) : _backend.CreateBuffer(_device, description));
         BufferUav view = Keep(_backend.CreateBufferUav(_device, new(buffer, new(0, bytes), StructureStride: stride)));
         bindings.Add(name, [ResourceBinding.WritableBuffer(view)]);
         _workBuffers.Add(buffer);

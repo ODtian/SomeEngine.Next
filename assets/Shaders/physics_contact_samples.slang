@@ -10,20 +10,21 @@ struct DeviceContactEventSample
     float3 force; uint padding2;
     uint2 first; uint2 second;
 };
-RWStructuredBuffer<DeviceContactEventSample> DeviceContactEventSamples;
+RWStructuredBuffer<DeviceContactEventSample, ScalarDataLayout> DeviceContactEventSamples;
+uniform uint2 ContactSampleStep;
+StructuredBuffer<uint, ScalarDataLayout> DeviceContactSampleRows;
 
 interface IDeviceContactEventForces { float3 read(uint row); };
 struct DeviceTriggerEventForces : IDeviceContactEventForces
 {
     float3 read(uint row) { return float3(0); }
 };
-void readDeviceContactSamples<TForces : IDeviceContactEventForces>(uint row, TForces forces)
+void readDeviceContactSamples<TForces : IDeviceContactEventForces>(uint work, TForces forces)
 {
-    uint count, stride;
-    DeviceContactEventSamples.GetDimensions(count, stride);
-    if (row >= count) return;
+    if(work>=ContactSampleStep.x) return;
+    uint row=ContactSampleStep.y!=0?DeviceContactSampleRows[work+1]:work;
     DeviceContactEventSample sample;
-    sample.entity = uint2(0); sample.active = sample.padding0 = sample.padding1 = sample.padding2 = 0;
+    sample.entity = uint2(0); sample.active = sample.padding1 = sample.padding2 = 0; sample.padding0=row;
     sample.worldPoint = sample.normal = sample.force = float3(0); sample.separation = 0;
     sample.first = sample.second = uint2(0);
     if (deviceContactSelected(row))
@@ -36,6 +37,6 @@ void readDeviceContactSamples<TForces : IDeviceContactEventForces>(uint row, TFo
         sample.separation = point.separation + dot(point.normal, deviceContactNormalDelta(point,false) - point.bodyAnchorDelta);
         sample.force = forces.read(row); sample.first = point.firstGeometry; sample.second = point.secondGeometry;
     }
-    DeviceContactEventSamples[row] = sample;
+    DeviceContactEventSamples[work] = sample;
 }
 #endif

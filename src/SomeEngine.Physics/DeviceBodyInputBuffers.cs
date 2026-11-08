@@ -37,6 +37,7 @@ public sealed class DeviceBodyInputBuffers : IDisposable
     private readonly IGraphicsBackend _backend;
     private readonly Device _device;
     private readonly World _world;
+    private readonly PhysicsQueryWindow _window;
     private readonly QueryHandle _members;
     private readonly DeviceBodies _bodies;
     private readonly JobResourceAccess[] _queryAccesses, _extraAccesses;
@@ -61,7 +62,7 @@ public sealed class DeviceBodyInputBuffers : IDisposable
         QueryDefinition definition = world.GetQueryDefinition(members).AsFilter().WithAccess(new QueryDefinitionBuilder()
             .Read<DeviceBodyBinding>().OptionalBuffer<BodyForce>(QueryAccess.Read).OptionalBuffer<BodyImpulse>(QueryAccess.Read)
             .OptionalBuffer<BodyVelocityTarget>(QueryAccess.Read).OptionalBuffer<BodyKinematicTarget>(QueryAccess.Read).Build());
-        _members = world.Query(definition);
+        _members = world.Query(definition); _window = new(definition);
         var resources = new QueryReadResources();
         resources.Add<DeviceBodyBinding, DeviceBodyReferenceResources>();
         _queryAccesses = new JobResourceAccess[QueryJobAccess.Count(definition)];
@@ -102,25 +103,25 @@ public sealed class DeviceBodyInputBuffers : IDisposable
         JobResourceAccess[] accesses = [.. _queryAccesses, JobResourceAccess.Write(scheduler.GetResourceToken(this)),
             JobResourceAccess.Write(scheduler.GetResourceToken(_inputs), 0, (long)_inputs.Info.Size),
             JobResourceAccess.Write(scheduler.GetResourceToken(_parameters), 0, 256)];
-        return scheduler.Schedule(new ReadInputs(this, context.StartTime, context.EndTime), accesses, dependency);
+        return scheduler.Schedule(new ReadInputs(this, context), accesses, dependency);
     }
-    private readonly struct ReadInputs(DeviceBodyInputBuffers inputs, double start, double end) : IJob
+    private readonly struct ReadInputs(DeviceBodyInputBuffers inputs, PhysicsStepContext context) : IJob
     {
         public void Execute()
         {
             inputs._count = 0;
-            var read = new ReadRows(inputs, start, end);
-            inputs._world.ExecuteReadQuery(inputs._members, ref read,
+            var read = new ReadRows(inputs, context.StartTime, context.EndTime);
+            inputs._world.ExecuteReadQuery(inputs._members, inputs._window.Begin(context), ref read,
                 static (scoped QueryCursor rows, ref ReadRows read) => read.Execute(rows));
             Array.Sort(inputs._indices, 0, inputs._count);
             if (inputs._count != 0) inputs._inputMapping.Flush(new(0, (ulong)inputs._count * 112));
-            var parameters = new InputParameters((uint)inputs._count);
+            var parameters = new InputParameters((uint)inputs._count, (float)context.Duration);
             MemoryMarshal.Write(inputs._parameterMapping.Bytes, in parameters);
             inputs._parameterMapping.Flush(new(0, 16));
         }
     }
     [StructLayout(LayoutKind.Sequential, Size = 16)]
-    private readonly record struct InputParameters(uint Count);
+    private readonly record struct InputParameters(uint Count, float Duration);
 
     internal JobHandle ScheduleApply(in PhysicsStepContext context, int kernel, JobHandle dependency)
     {
@@ -161,6 +162,7 @@ public sealed class DeviceBodyInputBuffers : IDisposable
     {
         public IGraphicsBackend Backend => inputs._backend;
         public Device Device => inputs._device;
+        public SomeEngine.Graphics.Queue Queue => Backend.GetQueue(Device, QueueType.Compute);
         public QueueCompletion Submit() => inputs.Submit(kernel);
     }
     public void Dispose()
@@ -175,6 +177,7 @@ public sealed class DeviceBodyInputBuffers : IDisposable
     {
         internal void Execute(scoped QueryCursor rows)
         {
+            Inputs._window.Accept(rows.CurrentSystemVersion);
             foreach (QueryChunkView chunk in rows.Chunks)
             {
                 if (!chunk.HasBuffer<BodyForce>() && !chunk.HasBuffer<BodyImpulse>()

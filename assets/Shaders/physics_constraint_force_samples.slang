@@ -15,8 +15,11 @@ struct DeviceBodyForceSample
     float3 force; uint padding1;
     float3 torque; uint padding2;
 };
-RWStructuredBuffer<uint4> DeviceConstraintForceRows;
-RWStructuredBuffer<DeviceBodyForceSample> DeviceConstraintBodyForces;
+RWStructuredBuffer<uint4, ScalarDataLayout> DeviceConstraintForceRows;
+RWStructuredBuffer<DeviceBodyForceSample, ScalarDataLayout> DeviceConstraintBodyForces;
+RWStructuredBuffer<uint, ScalarDataLayout> DeviceConstraintForceCount;
+StructuredBuffer<uint, ScalarDataLayout> DeviceConstraintForceInputRows;
+StructuredBuffer<float2, ScalarDataLayout> DeviceConstraintForceLimits;
 
 interface IDeviceConstraintForces : IDeviceConstraintBodies
 {
@@ -24,9 +27,25 @@ interface IDeviceConstraintForces : IDeviceConstraintBodies
     void force(uint row,uint body,DeviceConstraintForceStep context,out float3 force,out float3 torque);
 };
 
-void readDeviceConstraintForces<T : IDeviceConstraintForces>(uint row,T constraints)
+void readDeviceConstraintForces<T : IDeviceConstraintForces>(uint work,T constraints)
 {
-    if(row>=ConstraintForceStep.rows) return;
+    if(work>=ConstraintForceStep.rows) return;
+    bool limited=ConstraintForceStep.padding.x!=0;
+    uint row=limited?DeviceConstraintForceInputRows[work+1]:work;
+    uint output=work;
+    if(limited)
+    {
+        if(row>=constraints.count()||!constraints.active(row)) return;
+        float2 limits=DeviceConstraintForceLimits[row]; bool exceeded=false;
+        for(uint end=0;end<constraints.bodyCount(row);end++)
+        {
+            if(!constraints.writes(row,end)) continue;
+            float3 force,torque; constraints.force(row,constraints.body(row,end),ConstraintForceStep,force,torque);
+            exceeded=exceeded||dot(force,force)>limits.x*limits.x||dot(torque,torque)>limits.y*limits.y;
+        }
+        if(!exceeded) return;
+        InterlockedAdd(DeviceConstraintForceCount[0],1,output);
+    }
     uint4 result=uint4(0);
     if(row<constraints.count()&&constraints.active(row))
     {
@@ -42,10 +61,10 @@ void readDeviceConstraintForces<T : IDeviceConstraintForces>(uint row,T constrai
             DeviceBodyForceSample sample=(DeviceBodyForceSample)0;
             sample.bodyEntity=uint2(state.entityIndex,state.entityGeneration);
             constraints.force(row,body,ConstraintForceStep,sample.force,sample.torque);
-            DeviceConstraintBodyForces[row*ConstraintForceStep.bodiesPerConstraint+count++]=sample;
+            DeviceConstraintBodyForces[output*ConstraintForceStep.bodiesPerConstraint+count++]=sample;
         }
-        result=uint4(constraints.entity(row),count,1);
+        result=uint4(constraints.entity(row),count,row+1);
     }
-    DeviceConstraintForceRows[row]=result;
+    DeviceConstraintForceRows[output]=result;
 }
 #endif

@@ -28,7 +28,7 @@ public readonly struct BodyContactEventSource : IContactEventSource
         new QueryDefinitionBuilder().Read<BodyPose>().Build());
     public QueryDefinition AddReads(QueryDefinition definition) => definition.WithAccess(new QueryDefinitionBuilder()
         .Read<ContactPoint>().Read<UndirectedRelationEndpoints<ContactPoint>>().ReadBuffer<ContactBodyLink>()
-        .Optional<ContactResponse>(QueryAccess.Read).Optional<DirectedRelationEndpoints<ContactParticipant>>(QueryAccess.Read).Build());
+        .Optional<ContactResponse>(QueryAccess.Read).Build());
     public bool TryRead(scoped QueryRow row, scoped PhysicsBodies bodies,
         in PhysicsStepContext context, out ContactEventSample sample)
     {

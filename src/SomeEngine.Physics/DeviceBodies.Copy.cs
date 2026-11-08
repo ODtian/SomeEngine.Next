@@ -37,6 +37,7 @@ public sealed partial class DeviceBodies
     {
         public IGraphicsBackend Backend => destination._backend;
         public Device Device => destination._device;
+        public SomeEngine.Graphics.Queue Queue => Backend.GetQueue(Device, QueueType.Compute);
         public QueueCompletion Submit() => destination.SubmitCopy(source);
     }
 }

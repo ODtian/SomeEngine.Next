@@ -10,6 +10,43 @@ namespace SomeEngine.Physics.Tests;
 public sealed class BodyPredictionMomentumTests
 {
     [Fact]
+    public void KinematicVelocityTargetsKeepTheirAngularSpeedAcrossMultipleTurns()
+    {
+        using var scheduler = new Scheduler(new() { WorkerCount = 2 });
+        using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+        var body = world.CreateEntity(new BodyPose { Rotation = Quaternion.Identity });
+        world.Add(body, new BodyMass { Motion = BodyMotion.Kinematic });
+        world.Add(body, new BodyVelocity()); world.Add(body, new BodyStepState());
+        Vector3 angular = new(0, 0, 200 * MathF.PI);
+        world.AddBuffer<BodyVelocityTarget>(body);
+        world.ExecuteBufferWrite<BodyVelocityTarget>(body, targets => targets.Add(new() { Angular = angular, Time = 0 }));
+        var stages = new ApplyBodyInputs(64).Then(new PredictBodies(Vector3.Zero, 64)).Then(new UpdateBodyVelocities(64));
+        var simulation = PhysicsSimulation.Create(world, QueryDefinition.Empty, stages, 1);
+
+        simulation.Schedule(0, 0, 1d / 60).Complete();
+        simulation.Schedule(1, 1d / 60, 1d / 60).Complete();
+
+        Assert.InRange(Vector3.Distance(angular, world.Read<BodyVelocity>(body).Angular), 0, 1e-4f);
+    }
+
+    [Fact]
+    public void FreeRotationKeepsItsAngularVelocityAcrossMultipleTurns()
+    {
+        using var scheduler = new Scheduler(new() { WorkerCount = 2 });
+        using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+        var body = world.CreateEntity(new BodyPose { Rotation = Quaternion.Identity });
+        world.Add(body, new BodyMass { Motion = BodyMotion.Dynamic, InverseMass = 1, InverseInertia = Matrix4x4.Identity });
+        Vector3 angular = new(0, 0, 200 * MathF.PI);
+        world.Add(body, new BodyVelocity { Angular = angular });
+        world.Add(body, new BodyStepState());
+        var stages = new PredictBodies(Vector3.Zero, 64).Then(new UpdateBodyVelocities(64));
+
+        PhysicsSimulation.Create(world, QueryDefinition.Empty, stages, 1).Schedule(0, 0, 1d / 60).Complete();
+
+        Assert.InRange(Vector3.Distance(angular, world.Read<BodyVelocity>(body).Angular), 0, 1e-4f);
+    }
+
+    [Fact]
     public void GravityKeepsTheCompletedFreeBodyMomentum()
     {
         using var scheduler = new Scheduler(new() { WorkerCount = 2 });

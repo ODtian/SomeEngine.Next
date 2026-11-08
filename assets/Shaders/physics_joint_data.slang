@@ -17,6 +17,6 @@ struct DeviceJointConstraint
     float3 linearStiffness; uint padding9;
     float3 angularStiffness; uint padding10;
 };
-RWStructuredBuffer<DeviceJointConstraint> DeviceJoints;
-RWStructuredBuffer<DeviceConstraintMetadata> DeviceJointsMetadata;
+RWStructuredBuffer<DeviceJointConstraint, ScalarDataLayout> DeviceJoints;
+RWStructuredBuffer<DeviceConstraintMetadata, ScalarDataLayout> DeviceJointsMetadata;
 #endif

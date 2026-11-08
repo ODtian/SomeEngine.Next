@@ -14,6 +14,59 @@ namespace SomeEngine.Graphics.Direct3D12.Tests;
 public sealed partial class DeviceXpbdTests
 {
     [Fact]
+    public void CompletedDeviceMotionPreservesANewerCpuPoseAndVelocity()
+    {
+        using var backend = D3D12GraphicsBackend.Create();
+        using Device device = CreateDevice(backend);
+        using var jobs = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using World world = WorldJobs.CreateWorld(scheduler: jobs);
+        using var bodies = new DeviceBodies(backend, device, 1);
+        Entity body = AddBody(world, bodies, 0, Vector3.Zero, BodyMotion.Dynamic);
+        world.Replace(body, new BodyVelocity { Linear = Vector3.UnitX });
+        QueryHandle members = world.Query(world.QueryDefinition().Read<DeviceBodyBinding>());
+        using var inputs = new DeviceBodyInputs(world, members, bodies);
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
+        using var results = new DeviceBodyResults(backend, device, bodies);
+        var motion = PhysicsSimulation.Create(world, QueryDefinition.Empty,
+            inputs.Upload().Then(dynamics.Predict(Vector3.Zero)).Then(dynamics.UpdateVelocities()), 1);
+        motion.Schedule(0, 0, .1).Complete();
+        world.Replace(body, new BodyPose { Position = new(100, 0, 0), Rotation = Quaternion.Identity });
+        world.Replace(body, new BodyVelocity { Linear = new(5, 0, 0) });
+
+        PhysicsSimulation.Create(world, QueryDefinition.Empty, results.Readback(64), 1).Schedule(0, 0, .1).Complete();
+
+        Near(new(100, 0, 0), world.Read<BodyPose>(body).Position);
+        Near(new(5, 0, 0), world.Read<BodyVelocity>(body).Linear);
+        motion.Schedule(1, .1, .1).Complete();
+        PhysicsSimulation.Create(world, QueryDefinition.Empty, results.Readback(64), 1).Schedule(1, .1, .1).Complete();
+        Near(new(100.5f, 0, 0), world.Read<BodyPose>(body).Position);
+        world.ReleaseQuery(members);
+    }
+
+    [Fact]
+    public void ChangedBodyMembershipStaysSelectedThroughDeviceMotionAndReadback()
+    {
+        using var backend = D3D12GraphicsBackend.Create();
+        using Device device = CreateDevice(backend);
+        using var jobs = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });
+        using World world = WorldJobs.CreateWorld(scheduler: jobs);
+        using var bodies = new DeviceBodies(backend, device, 1);
+        Entity body = AddBody(world, bodies, 0, new(20, 0, 0), BodyMotion.Dynamic);
+        world.Replace(body, new BodyVelocity { Linear = Vector3.UnitX });
+        QueryHandle members = world.Query(world.QueryDefinition().Read<DeviceBodyBinding>().Changed<BodyPose>());
+        using var inputs = new DeviceBodyInputs(world, members, bodies);
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
+        using var results = new DeviceBodyResults(backend, device, bodies, world, members, 1);
+        var motion = inputs.Upload().Then(dynamics.Predict(Vector3.Zero)).Then(dynamics.UpdateVelocities()).Then(results.Readback(64));
+
+        PhysicsSimulation.Create(world, QueryDefinition.Empty, motion, 1).Schedule(0, 0, .1).Complete();
+
+        Near(new(20.1f, 0, 0), world.Read<BodyPose>(body).Position);
+        Near(Vector3.UnitX, world.Read<BodyVelocity>(body).Linear);
+        world.ReleaseQuery(members);
+    }
+
+    [Fact]
     public async Task SelectedDeviceBodyResultsCopyOnlyTheRequestedBodyRange()
     {
         using var backend = D3D12GraphicsBackend.Create();
@@ -29,7 +82,7 @@ public sealed partial class DeviceXpbdTests
         QueryHandle members = world.Query(world.QueryDefinition().Read<DeviceBodyBinding>());
         QueryHandle requested = world.Query(world.QueryDefinition().Read<DeviceBodyBinding>().All<CpuBodyResult>());
         using var inputs = new DeviceBodyInputs(world, members, bodies);
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
         using var results = new DeviceBodyResults(backend, device, bodies, world, requested, capacity: 1);
         var motion = inputs.Upload().Then(dynamics.Predict(Vector3.Zero)).Then(dynamics.UpdateVelocities());
         PhysicsSimulation.Create(world, QueryDefinition.Empty, motion, 1).Schedule(0, 0, .1).Complete();
@@ -78,7 +131,7 @@ public sealed partial class DeviceXpbdTests
                 new("Resume", SlangStage.Compute)], "sm_6_0", ShaderDirectory());
         ComputePipelineDesc Entry(int index) => new(shader.SlangCode, shader.Reflection, shader.GetEntryPoint(index), shader.GetEntryCode(index));
         using var inputs = new DeviceBodyInputs(world, members, bodies);
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies,
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies,
             new(Entry(0), Entry(1), Resume: Entry(2)), 64);
         using var results = new DeviceBodyResults(backend, device, bodies);
         var suspend = inputs.Upload().Then(dynamics.Predict(new(0, -10, 0))).Then(results.Readback(64));
@@ -113,7 +166,7 @@ public sealed partial class DeviceXpbdTests
         var poseAccesses = new JobResourceAccess[QueryJobAccess.Count(poseWrite)];
         QueryJobAccess.CopyAccesses(world, poseWrite, poseAccesses);
         using var inputs = new DeviceBodyInputs(world, members, bodies);
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
         using var results = new DeviceBodyResults(backend, device, bodies);
         var motion = dynamics.Predict(Vector3.Zero).Then(dynamics.UpdateVelocities());
         PhysicsStepResult first = PhysicsSimulation.Create(world, QueryDefinition.Empty, inputs.Upload().Then(motion), 1)
@@ -154,7 +207,7 @@ public sealed partial class DeviceXpbdTests
         world.Replace(resident, new BodyVelocity { Linear = new(2, 0, 0) });
         QueryHandle members = world.Query(world.QueryDefinition().Read<DeviceBodyBinding>());
         using var inputs = new DeviceBodyInputs(world, members, bodies);
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
         using var results = new DeviceBodyResults(backend, device, bodies);
         var motion = inputs.Upload().Then(dynamics.Predict(Vector3.Zero))
             .Then(dynamics.UpdateVelocities());

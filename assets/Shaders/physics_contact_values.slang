@@ -3,10 +3,10 @@
 #include "physics_body_math.slang"
 #include "physics_constraint_selection.slang"
 #include "physics_contact_types.slang"
-RWStructuredBuffer<DeviceContactConstraint> DeviceContacts;
-RWStructuredBuffer<DeviceConstraintMetadata> DeviceContactsMetadata;
-RWStructuredBuffer<DeviceContactBody> DeviceContactBodyLinks;
-StructuredBuffer<uint2> DeviceContactsSelection;
+RWStructuredBuffer<DeviceContactConstraint, ScalarDataLayout> DeviceContacts;
+RWStructuredBuffer<DeviceConstraintMetadata, ScalarDataLayout> DeviceContactsMetadata;
+RWStructuredBuffer<DeviceContactBody, ScalarDataLayout> DeviceContactBodyLinks;
+StructuredBuffer<uint2, ScalarDataLayout> DeviceContactsSelection;
 bool deviceContactSelected(uint row)
 {
     if (!deviceConstraintSelected(DeviceContactsMetadata[row], DeviceContactsSelection[row])) return false;
@@ -19,4 +19,7 @@ bool deviceContactSelected(uint row)
     }
     return true;
 }
+StructuredBuffer<uint, ScalarDataLayout> DeviceContactsSelectionRows;
+uint deviceSelectedContactRow(uint work)
+{ return work<DeviceContactsSelectionRows[0]?DeviceContactsSelectionRows[work+1]:0xffffffff; }
 #endif

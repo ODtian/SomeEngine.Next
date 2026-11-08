@@ -7,6 +7,6 @@ struct DeviceAvbdElasticState
     float3 initialLinearError; uint padding0;
     float3 initialAngularError; uint padding1;
 };
-RWStructuredBuffer<DeviceAvbdElasticState> DeviceAvbdElasticStates;
-StructuredBuffer<uint2> DeviceElasticAvbdSelection;
+RWStructuredBuffer<DeviceAvbdElasticState, ScalarDataLayout> DeviceAvbdElasticStates;
+StructuredBuffer<uint2, ScalarDataLayout> DeviceElasticAvbdSelection;
 #endif

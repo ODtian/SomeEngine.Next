@@ -23,7 +23,7 @@ public sealed partial class DeviceXpbdTests
             InverseInertia = new Matrix4x4 { M33 = .5f, M44 = 1 } });
         world.Replace(body, new BodyVelocity { Angular = new(0, 0, 3) });
         QueryHandle members = world.Query(world.QueryDefinition().Read<DeviceBodyBinding>());
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileBodyGyroscope(), 64);
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileBodyGyroscope(), 64);
         using var results = new DeviceBodyResults(backend, device, bodies);
         var stages = bodies.WriteInputs(64).Then(bodies.UploadInputs()).Then(dynamics.ApplyGyroscopicTorque())
             .Then(dynamics.Predict(Vector3.Zero)).Then(dynamics.UpdateVelocities()).Then(results.Readback(64));

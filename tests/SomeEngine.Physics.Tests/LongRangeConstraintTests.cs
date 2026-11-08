@@ -98,8 +98,8 @@ public sealed class LongRangeConstraintTests
                 {
                     Normal = Vector3.UnitY, FirstBodyCount = 1, WorldPoint = new(corner.X, layer * 2, corner.Y),
                 });
-                var first = world.CreateRelation(point.Entity, firstBody, new ContactParticipant());
-                var second = world.CreateRelation(point.Entity, secondBody, new ContactParticipant());
+                var first = firstBody;
+                var second = secondBody;
                 world.AddBuffer<ContactBodyLink>(point.Entity);
                 world.ExecuteBufferWrite<ContactBodyLink>(point.Entity, links =>
                 {
@@ -117,7 +117,7 @@ public sealed class LongRangeConstraintTests
         QueryHandle supportBodies = world.Query(new QueryDefinitionBuilder().ReadWrite<LongRangeBodySupport>()
             .Buffer<LongRangeSupportLoad>(QueryAccess.ReadWrite).Buffer<LongRangeSupportEquation>(QueryAccess.ReadWrite));
         QueryHandle contacts = world.Query(new QueryDefinitionBuilder().Read<ContactPoint>().Read<ContactMaterial>()
-            .ReadBuffer<ContactBodyLink>().Optional<DirectedRelationEndpoints<ContactParticipant>>(QueryAccess.Read)
+            .ReadBuffer<ContactBodyLink>()
             .ReadWrite<AvbdContactState>().ReadWrite<ContactResponse>().ReadWrite<LongRangeContactSupport>()
             .Buffer<LongRangeSupportLoad>(QueryAccess.ReadWrite));
         var constraints = AvbdConstraintGroups.Combine(new AvbdConstraints<ContactPoint, AvbdSupportedContactMath>(contacts),
@@ -254,8 +254,8 @@ public sealed class LongRangeConstraintTests
             {
                 Normal = Vector3.UnitY, FirstBodyCount = 1, WorldPoint = new(corner.X, 0, corner.Y), WarmStart = true,
             });
-            var first = world.CreateRelation(point.Entity, floor, new ContactParticipant());
-            var second = world.CreateRelation(point.Entity, body, new ContactParticipant());
+            var first = floor;
+            var second = body;
             world.AddBuffer<ContactBodyLink>(point.Entity);
             world.ExecuteBufferWrite<ContactBodyLink>(point.Entity, links =>
             {
@@ -273,7 +273,7 @@ public sealed class LongRangeConstraintTests
         QueryHandle supportBodies = world.Query(new QueryDefinitionBuilder().ReadWrite<LongRangeBodySupport>()
             .Buffer<LongRangeSupportLoad>(QueryAccess.ReadWrite).Buffer<LongRangeSupportEquation>(QueryAccess.ReadWrite));
         QueryHandle contacts = world.Query(new QueryDefinitionBuilder().Read<ContactPoint>().Read<ContactMaterial>()
-            .ReadBuffer<ContactBodyLink>().Optional<DirectedRelationEndpoints<ContactParticipant>>(QueryAccess.Read)
+            .ReadBuffer<ContactBodyLink>()
             .ReadWrite<AvbdContactState>().ReadWrite<ContactResponse>().ReadWrite<LongRangeContactSupport>()
             .Buffer<LongRangeSupportLoad>(QueryAccess.ReadWrite));
         var constraints = AvbdConstraintGroups.Combine(new AvbdConstraints<ContactPoint, AvbdSupportedContactMath>(contacts),

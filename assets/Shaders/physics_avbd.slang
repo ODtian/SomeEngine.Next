@@ -7,6 +7,7 @@ struct DeviceAvbdStep
     float duration; float retention; float initialErrorFraction; uint bodyIterations;
     uint color; uint substep; uint2 number;
     uint2 startTime; uint2 endTime;
+    uint firstIteration; uint iterationPadding; uint2 stepPadding;
 };
 uniform DeviceAvbdStep AvbdStep;
 interface IDeviceAvbdConstraints : IDeviceConstraintBodies
@@ -67,7 +68,8 @@ void initializeDeviceAvbdRows<T : IDeviceAvbdConstraints,TSelection : IDeviceBod
         deviceAvbdWriteEquationIndex(index);
         initializeDeviceAvbdEquation(index,bodies);
     }
-    if(index<constraints.count()&&constraints.active(index)) constraints.initialize(index,AvbdStep);
+    uint input=deviceGraphSourceRow(index);
+    if(index<ConstraintGraphParameters.rows&&input<constraints.count()&&constraints.active(input)) constraints.initialize(input,AvbdStep);
 }
 void initializeDeviceAvbdRows<T : IDeviceAvbdConstraints>(uint index,T constraints)
 { DeviceAllEquationBodies bodies; initializeDeviceAvbdRows(index,constraints,bodies); }
@@ -82,7 +84,8 @@ void initializeDeviceAvbd<T : IDeviceAvbdConstraints,TSelection : IDeviceBodySel
             deviceAvbdWriteEquationIndex(row);
     }
     if(index<equations) initializeDeviceAvbdEquation(index,bodies);
-    if(index<constraints.count()&&constraints.active(index)) constraints.initialize(index,AvbdStep);
+    uint input=deviceGraphSourceRow(index);
+    if(index<ConstraintGraphParameters.rows&&input<constraints.count()&&constraints.active(input)) constraints.initialize(input,AvbdStep);
 }
 void initializeDeviceAvbd<T : IDeviceAvbdConstraints>(uint index,T constraints)
 { DeviceAllEquationBodies bodies; initializeDeviceAvbd(index,constraints,bodies); }
@@ -121,8 +124,9 @@ void updateDeviceAvbdBody<T : IDeviceAvbdConstraints>(uint index,T constraints)
             for(uint entry=first;entry<end;entry++)
             {
                 uint row=ConstraintGraphAdjacency[entry];
-                if(constraints.active(row)&&deviceGraphRowWrites(ConstraintGraphRows[row],bodyIndex))
-                    constraints.accumulate(row,bodyIndex,AvbdStep,equation);
+                uint input=ConstraintGraphRows[row].w-1;
+                if(constraints.active(input)&&deviceGraphRowWrites(ConstraintGraphRows[row],bodyIndex))
+                    constraints.accumulate(input,bodyIndex,AvbdStep,equation);
             }
             deviceAvbdFactorize(equation);
             equation.constraintRows=constraintRows; equation.duration=AvbdStep.duration;
@@ -137,5 +141,9 @@ void updateDeviceAvbdBody<T : IDeviceAvbdConstraints>(uint index,T constraints)
     DeviceAvbdBodyEquations[equationIndex]=equation;
 }
 void updateDeviceAvbdDuals<T : IDeviceAvbdConstraints>(uint row,T constraints)
-{ if(row<constraints.count()&&constraints.active(row)&&deviceGraphRowActive(ConstraintGraphRows[row])) constraints.updateDuals(row,AvbdStep); }
+{
+    if(row>=ConstraintGraphParameters.rows||!deviceGraphRowActive(ConstraintGraphRows[row])) return;
+    uint input=ConstraintGraphRows[row].w-1;
+    if(constraints.active(input)) constraints.updateDuals(input,AvbdStep);
+}
 #endif

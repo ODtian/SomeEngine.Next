@@ -10,6 +10,9 @@ namespace SomeEngine.Physics;
 /// <summary>Reads the complete active query when geometry refers to additional simulated entities.</summary>
 public interface ICollisionPairQueryDetection
 {
+    bool SupportsParallel => false;
+    void BeginParallel(int partitions) { }
+    void SelectPartition(int partition) { }
     QueryDefinition AddReads(QueryDefinition definition);
     void Execute(in CollisionGeometryPair pair, scoped QueryCursor access, scoped QueryRow first, scoped QueryRow second);
 }
@@ -58,11 +61,46 @@ public static partial class CollisionPairQueries
         public void Execute(scoped QueryCursor access)
         {
             TDetection kernel = detection;
+            const int pairsPerJob = 128;
+            int count = bins.ReadBin(bin).Length;
+            if (kernel.SupportsParallel && count > pairsPerJob)
+            {
+                int partitions = (count + pairsPerJob - 1) / pairsPerJob;
+                kernel.BeginParallel(partitions);
+                var ranges = new DetectPairRanges<TPartition, TDetection>(bins, bin, kernel, pairsPerJob);
+                ReadOnlyQueryTripleJobs.ExecuteParallel(access, access, access, ranges, partitions, []);
+                return;
+            }
+            if (kernel.SupportsParallel)
+            {
+                kernel.BeginParallel(1);
+                kernel.SelectPartition(0);
+            }
             foreach (ref readonly CollisionGeometryPair pair in bins.ReadBin(bin))
             {
                 access.TryGetRow(pair.First, out QueryRow first);
                 access.TryGetRow(pair.Second, out QueryRow second);
                 kernel.Execute(in pair, access, first, second);
+            }
+        }
+    }
+
+    private readonly struct DetectPairRanges<TPartition, TDetection>(CollisionPairBins<TPartition> bins,
+        int bin, TDetection detection, int pairsPerJob) : IReadOnlyQueryTripleJob
+        where TPartition : struct where TDetection : struct, ICollisionPairQueryDetection
+    {
+        public void Execute(int index, scoped QueryCursor access, scoped QueryCursor firstRows, scoped QueryCursor secondRows)
+        {
+            TDetection kernel = detection;
+            kernel.SelectPartition(index);
+            ReadOnlySpan<CollisionGeometryPair> pairs = bins.ReadBin(bin);
+            int first = index * pairsPerJob, last = Math.Min(first + pairsPerJob, pairs.Length);
+            for (int pairIndex = first; pairIndex < last; pairIndex++)
+            {
+                ref readonly CollisionGeometryPair pair = ref pairs[pairIndex];
+                access.TryGetRow(pair.First, out QueryRow firstRow);
+                access.TryGetRow(pair.Second, out QueryRow secondRow);
+                kernel.Execute(in pair, access, firstRow, secondRow);
             }
         }
     }

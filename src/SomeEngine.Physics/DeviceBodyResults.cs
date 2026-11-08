@@ -43,11 +43,11 @@ public sealed partial class DeviceBodyResults : IDisposable
         QueryDefinition members = _selection?.Definition ?? context.Bodies;
         if (!_rows.TryGetValue((context.World, members), out ResultRows? rows))
             _rows.Add((context.World, members), rows = new(context.World, members, States.Length));
-        if (_selection is { } selection) return selection.Schedule(rows, rowsPerPacket, dependency);
+        if (_selection is { } selection) return selection.Schedule(context, rows, rowsPerPacket, dependency);
         JobResourceAccess[] accesses = [Bodies.GetReadAccess(scheduler),
             JobResourceAccess.Write(scheduler.GetResourceToken(_readback), 0, (long)_readback.Info.Size),
             JobResourceAccess.Write(scheduler.GetResourceToken(_commands))];
-        return scheduler.Schedule(new Copy(this, scheduler, rows, rowsPerPacket, accesses), accesses, dependency);
+        return scheduler.Schedule(new Copy(this, scheduler, rows, rowsPerPacket, accesses, context), accesses, dependency);
     }
 
     private QueueCompletion Submit()
@@ -63,10 +63,11 @@ public sealed partial class DeviceBodyResults : IDisposable
     }
 
     private readonly struct Copy(DeviceBodyResults results, Scheduler scheduler, ResultRows rows,
-        int rowsPerPacket, JobResourceAccess[] accesses) : IJob
+        int rowsPerPacket, JobResourceAccess[] accesses, PhysicsStepContext context) : IJob
     {
         public void Execute()
         {
+            rows.Baseline = rows.Window.Begin(context);
             QueueCompletion completion = results.Submit();
             JobHandle ready = scheduler.CreateExternalFenceHandle(new DeviceQueueFence(scheduler, results._backend, completion), accesses);
             JobResourceAccess[] read = [JobResourceAccess.Read(scheduler.GetResourceToken(results._readback), 0, (long)results._readback.Info.Size),

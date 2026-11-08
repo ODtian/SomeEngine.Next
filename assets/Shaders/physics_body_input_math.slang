@@ -15,10 +15,12 @@ void applyDeviceBodyInput(inout DeviceBodyState body, DeviceBodyInput input)
     if ((input.kinds & 2u) != 0)
     { body.linearVelocity = input.targetLinearVelocity; body.angularVelocity = input.targetAngularVelocity; }
 }
-void applyDeviceKinematicTarget(inout DeviceBodyState body, float3 position, float4 rotation)
+void applyDeviceKinematicTarget(inout DeviceBodyState body, float3 position, float4 rotation, float duration)
 {
     if (body.motion != 1) return;
     body.position = position; body.rotation = rotation;
     body.predictedCenterOfMass = bodyCenterOfMass(body); body.predictedRotation = body.rotation;
+    body.linearVelocity = (body.predictedCenterOfMass - body.startCenterOfMass) / duration;
+    body.angularVelocity = bodyRotationVelocity(body.startRotation, body.predictedRotation, duration);
 }
 #endif

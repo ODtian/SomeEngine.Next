@@ -14,8 +14,10 @@ namespace SomeEngine.ECS.Commands;
 internal enum CommandType : byte
 {
     CreateEntity,
+    CreateComponents,
     DestroyEntity,
     AddComponent,
+    AddComponents,
     RemoveComponent,
     ReplaceComponent,
     AddSparse,
@@ -26,6 +28,7 @@ internal enum CommandType : byte
     ReplaceBuffer,
     RemoveBuffer,
     TypedRelationship,
+    CreateRelation,
 }
 
 /// <summary>
@@ -169,6 +172,17 @@ internal sealed class DeferredEntityCell
         }
     }
 
+    internal bool TryResolve(CommandBuffer owner, World world, long publicationEpoch, out Entity entity)
+    {
+        lock (_owner.CommandGate)
+        {
+            bool prepared = _prepared && !_invalidated && ReferenceEquals(_owner, owner)
+                && ReferenceEquals(_world, world) && _publicationEpoch == publicationEpoch;
+            entity = prepared ? _entity : Entity.Null;
+            return prepared;
+        }
+    }
+
     internal void InvalidatePending()
     {
         lock (_owner.CommandGate)
@@ -221,6 +235,8 @@ internal readonly struct CommandEntity
     internal Entity Resolve(CommandPlaybackContext context) =>
         _deferred is null ? _live : context.Resolve(_deferred);
 
+    internal bool Matches(CommandEntity other) => _live == other._live && ReferenceEquals(_deferred, other._deferred);
+
     internal void Complete(CommandPlaybackContext context, Entity entity)
     {
         if (_deferred is null)
@@ -231,13 +247,13 @@ internal readonly struct CommandEntity
 
 internal sealed class CommandPlaybackContext
 {
+    private readonly CommandBuffer _owner;
     private readonly World _world;
     private readonly long _publicationEpoch;
-    private readonly Dictionary<object, Entity> _edges = new();
-    private readonly Dictionary<DeferredEntityCell, Entity> _entities = new();
 
-    internal CommandPlaybackContext(World world, long publicationEpoch)
+    internal CommandPlaybackContext(CommandBuffer owner, World world, long publicationEpoch)
     {
+        _owner = owner;
         _world = world ?? throw new ArgumentNullException(nameof(world));
         if (publicationEpoch <= 0)
             throw new ArgumentOutOfRangeException(nameof(publicationEpoch));
@@ -246,36 +262,32 @@ internal sealed class CommandPlaybackContext
 
     internal void Complete(DeferredEntityCell cell, Entity entity)
     {
-        if (!_entities.TryAdd(cell, entity))
-            throw new InvalidOperationException("Entity Create command has already been played back.");
         cell.Prepare(_world, entity, _publicationEpoch);
     }
 
     internal Entity Resolve(DeferredEntityCell cell)
     {
-        if (!_entities.TryGetValue(cell, out Entity entity))
+        if (!cell.TryResolve(_owner, _world, _publicationEpoch, out Entity entity))
             throw new InvalidOperationException("Deferred entity has not been created in the command image.");
         return entity;
     }
 
     internal bool IsResolved<T>(DeferredRelationEdgeCell<T> cell)
         where T : struct, IComponent =>
-        _edges.ContainsKey(cell);
+        cell.TryResolve(_owner, _world, _publicationEpoch, out _);
 
     internal void Complete<T>(DeferredRelationEdgeCell<T> cell, RelationEdge<T> edge)
         where T : struct, IComponent
     {
-        if (!_edges.TryAdd(cell, edge.Entity))
-            throw new InvalidOperationException("Relation Create command has already been played back.");
         cell.Prepare(_world, edge, _publicationEpoch);
     }
 
     internal RelationEdge<T> Resolve<T>(DeferredRelationEdgeCell<T> cell)
         where T : struct, IComponent
     {
-        if (!_edges.TryGetValue(cell, out Entity edge))
+        if (!cell.TryResolve(_owner, _world, _publicationEpoch, out RelationEdge<T> edge))
             throw new InvalidOperationException("Deferred relation edge has not been created in the command image.");
-        return new RelationEdge<T>(edge);
+        return edge;
     }
 }
 
@@ -297,6 +309,7 @@ public sealed partial class CommandBuffer : IDisposable
     private readonly List<CommandHeader> _commands = new();
     private ICommandPayloadList?[] _dataLists = new ICommandPayloadList?[8];
     private readonly List<ITypedRelationshipCommand> _typedRelationshipCommands = new();
+    private IRelationCreateCommands?[] _relationCreates = new IRelationCreateCommands?[8];
     private readonly List<DeferredEntityCell> _deferredEntities = new();
     private bool _playbackAttempted;
     private bool _playbackReserved;
@@ -755,7 +768,7 @@ public sealed partial class CommandBuffer : IDisposable
         try
         {
             using StructuralMutationScope mutation = _world.BeginStructuralMutation();
-            var context = new CommandPlaybackContext(_world, mutation.PublicationEpoch);
+            var context = new CommandPlaybackContext(this, _world, mutation.PublicationEpoch);
             PlaybackInto(_world, context);
             mutation.Commit();
             published = true;
@@ -788,21 +801,39 @@ public sealed partial class CommandBuffer : IDisposable
 
     private void PlaybackCommandsInto(World world, CommandPlaybackContext context)
     {
-        foreach (var command in _commands)
+        for (int commandIndex = 0; commandIndex < _commands.Count; commandIndex++)
         {
+            CommandHeader command = _commands[commandIndex];
             switch (command.Type)
             {
                 case CommandType.CreateEntity:
-                    command.Entity.Complete(context, world.CreateEntity());
+                    world.BumpTopologyRevision();
+                    command.Entity.Complete(context, world.Entities.Create());
+                    break;
+
+                case CommandType.CreateComponents:
+                    int created = 1;
+                    while (commandIndex + created < _commands.Count
+                        && _commands[commandIndex + created].Type == CommandType.CreateComponents
+                        && SameComponentAdds(command, _commands[commandIndex + created])) created++;
+                    world.BumpTopologyRevision();
+                    PlaybackCreatedComponents(world, context, commandIndex, created);
+                    commandIndex += created - 1;
                     break;
 
                 case CommandType.DestroyEntity:
-                    world.DestroyEntity(command.Entity.Resolve(context));
+                    world.BumpTopologyRevision();
+                    world.NotifyAndDestroyEntity(command.Entity.Resolve(context));
                     break;
 
                 case CommandType.AddComponent:
                     var addList = DataList(command.ComponentId);
                     addList.PlaybackAdd(world, command.Entity.Resolve(context), command.DataIndex);
+                    break;
+
+                case CommandType.AddComponents:
+                    world.BumpTopologyRevision();
+                    PlaybackComponentAdds(world, command.Entity.Resolve(context), command.DataIndex, command.ComponentId);
                     break;
 
                 case CommandType.ReplaceComponent:
@@ -826,14 +857,17 @@ public sealed partial class CommandBuffer : IDisposable
                     break;
 
                 case CommandType.AddTag:
-                    world.AddTagId(command.Entity.Resolve(context), command.ComponentId);
+                    world.BumpTopologyRevision();
+                    world.Components.AddTag(command.Entity.Resolve(context), command.ComponentId);
                     break;
 
                 case CommandType.RemoveTag:
-                    world.RemoveTagId(command.Entity.Resolve(context), command.ComponentId);
+                    world.BumpTopologyRevision();
+                    world.Components.RemoveTag(command.Entity.Resolve(context), command.ComponentId);
                     break;
 
                 case CommandType.AddBuffer:
+                    world.BumpTopologyRevision();
                     var addBuffer = BufferDataList(command.ComponentId);
                     addBuffer.PlaybackAdd(world, command.Entity.Resolve(context), command.DataIndex);
                     break;
@@ -844,12 +878,18 @@ public sealed partial class CommandBuffer : IDisposable
                     break;
 
                 case CommandType.RemoveBuffer:
+                    world.BumpTopologyRevision();
                     var removeBuffer = BufferDataList(command.ComponentId);
                     removeBuffer.PlaybackRemove(world, command.Entity.Resolve(context));
                     break;
 
                 case CommandType.TypedRelationship:
                     _typedRelationshipCommands[command.DataIndex].Playback(world, context);
+                    break;
+
+                case CommandType.CreateRelation:
+                    world.BumpTopologyRevision();
+                    _relationCreates[command.ComponentId]!.Playback(world, context, command.DataIndex);
                     break;
             }
         }
@@ -945,7 +985,7 @@ public sealed partial class CommandBuffer : IDisposable
 
             try
             {
-                var context = new CommandPlaybackContext(_world, publicationEpoch);
+                var context = new CommandPlaybackContext(this, _world, publicationEpoch);
                 PlaybackCommandsInto(_world, context);
                 return true;
             }
@@ -1018,6 +1058,7 @@ public sealed partial class CommandBuffer : IDisposable
         InvalidateDeferredEntities();
         CancelTypedRelationshipCommands();
         _commands.Clear();
+        _componentAdds.Clear(); _addedComponentIds.Clear();
         ClearDataLists();
         _playbackAttempted = false;
     }
@@ -1051,7 +1092,14 @@ public sealed partial class CommandBuffer : IDisposable
             InvalidateDeferredEntities();
             CancelTypedRelationshipCommands();
             _commands.Clear();
+            _componentAdds.Clear(); _addedComponentIds.Clear();
+            _commands.Capacity = 0;
+            _componentAdds.Capacity = 0;
+            _addedComponentIds.Capacity = 0;
+            _typedRelationshipCommands.Capacity = 0;
+            _deferredEntities.Capacity = 0;
             _dataLists = Array.Empty<ICommandPayloadList?>();
+            _relationCreates = [];
             _playbackReserved = false;
             _disposed = true;
         }
@@ -1109,12 +1157,16 @@ public sealed partial class CommandBuffer : IDisposable
         for (int i = 0; i < _typedRelationshipCommands.Count; i++)
             _typedRelationshipCommands[i].Cancel();
         _typedRelationshipCommands.Clear();
+        foreach (IRelationCreateCommands? creates in _relationCreates)
+            creates?.Clear();
     }
 
     private void FailTypedRelationshipCommands()
     {
         for (int i = 0; i < _typedRelationshipCommands.Count; i++)
             _typedRelationshipCommands[i].PlaybackFailed();
+        foreach (IRelationCreateCommands? creates in _relationCreates)
+            creates?.PlaybackFailed();
     }
 
     private void InvalidateDeferredEntities()
@@ -1127,6 +1179,11 @@ public sealed partial class CommandBuffer : IDisposable
     internal RecordAccessScope EnterRecordAccess()
     {
         _world.ThrowIfJobCommandBufferAccess(this);
+        if (_jobProducerOwned && Monitor.IsEntered(_commandGate))
+        {
+            ThrowIfRecordUnavailableUnderGate();
+            return default;
+        }
         Monitor.Enter(_commandGate);
         try
         {

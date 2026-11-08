@@ -12,21 +12,21 @@ public sealed class DeviceContactResults : IDisposable
 {
     private readonly IGraphicsBackend _backend;
     private readonly Device _device;
-    private readonly Buffer _readback;
+    private Buffer _readback;
+    internal int _rowCount;
+    private static readonly int ResponseStride = Marshal.SizeOf<DeviceContactResponseState>();
     private readonly CommandContext _commands;
     internal readonly DeviceConstraintData<DeviceContactConstraint> Parameters;
     internal readonly DeviceConstraintState<DeviceContactResponseState> Responses;
-    internal readonly DeviceContactResponseState[] Values;
-    internal readonly DeviceConstraintMetadata[] Metadata;
+    internal DeviceContactResponseState[] Values = [];
+    internal DeviceConstraintMetadata[] Metadata = [];
 
     public DeviceContactResults(IGraphicsBackend backend, Device device, DeviceConstraintData<DeviceContactConstraint> parameters,
         DeviceConstraintState<DeviceContactResponseState> responses)
     {
         _backend = backend; _device = device; Parameters = parameters; Responses = responses;
-        Values = new DeviceContactResponseState[parameters.Capacity];
-        Metadata = new DeviceConstraintMetadata[parameters.Capacity];
-        _readback = backend.CreateBuffer(device, new(responses.States.Info.Size + parameters.Metadata.Info.Size,
-            BufferUsages.CopyDestination, "Completed contact responses"), MemoryType.Readback);
+        _readback = backend.CreateBuffer(device, new((ulong)(ResponseStride + 16), BufferUsages.CopyDestination,
+            "Completed contact responses"), MemoryType.Readback);
         _commands = backend.CreateCommandContext(device, new(QueueType.Compute, 0, 1, Label: "Contact response readback"));
     }
     public ReadDeviceContactResults Readback(int rowsPerPacket) => new(this, rowsPerPacket);
@@ -34,22 +34,28 @@ public sealed class DeviceContactResults : IDisposable
     {
         Scheduler scheduler = WorldJobs.GetScheduler(context.World);
         JobResourceAccess[] accesses = [Responses.GetReadAccess(scheduler), .. Parameters.GetReadAccesses(scheduler),
-            JobResourceAccess.Write(scheduler.GetResourceToken(_readback), 0, (long)_readback.Info.Size),
+            JobResourceAccess.Write(scheduler.GetResourceToken(this)),
             JobResourceAccess.Write(scheduler.GetResourceToken(_commands))];
         return scheduler.Schedule(new Copy(this, scheduler, context, rowsPerPacket, accesses), accesses, dependency);
     }
     private QueueCompletion Submit()
     {
+        _rowCount = Parameters.RowCount;
+        Responses.Memory?.EnsureRows(_rowCount);
+        ulong bytes = (ulong)_rowCount * (ulong)(ResponseStride + 16);
+        if (_readback.Info.Size < bytes)
+        { _readback.Dispose(); _readback = _backend.CreateBuffer(_device, new(bytes, BufferUsages.CopyDestination), MemoryType.Readback); }
         _backend.Begin(_commands, new(0, 0, 8));
-        CopyBuffer(Responses.States, 0); CopyBuffer(Parameters.Metadata, Responses.States.Info.Size);
+        CopyBuffer(Responses.States, 0, (ulong)_rowCount * (ulong)ResponseStride);
+        CopyBuffer(Parameters.Metadata, (ulong)_rowCount * (ulong)ResponseStride, (ulong)_rowCount * 16);
         using RecordedCommands recorded = _backend.End(_commands);
         return _backend.Submit(_backend.GetQueue(_device, QueueType.Compute), new([], [], [recorded], [], []));
     }
-    private void CopyBuffer(Buffer source, ulong offset)
+    private void CopyBuffer(Buffer source, ulong offset, ulong bytes)
     {
         _backend.Barrier(_commands, new BufferBarrier(source, PipelineSync.ComputeShading, PipelineSync.Copy,
             ResourceAccess.UnorderedAccess, ResourceAccess.CopySource));
-        _backend.CopyBuffer(_commands, new(source, 0, _readback, offset, source.Info.Size));
+        _backend.CopyBuffer(_commands, new(source, 0, _readback, offset, bytes));
         _backend.Barrier(_commands, new BufferBarrier(source, PipelineSync.Copy, PipelineSync.ComputeShading,
             ResourceAccess.CopySource, ResourceAccess.UnorderedAccess));
     }
@@ -61,10 +67,10 @@ public sealed class DeviceContactResults : IDisposable
             QueueCompletion completion = results.Submit();
             JobHandle ready = scheduler.CreateExternalFenceHandle(new DeviceQueueFence(scheduler, results._backend, completion), accesses);
             JobResourceAccess[] read = [JobResourceAccess.Read(scheduler.GetResourceToken(results._readback), 0, (long)results._readback.Info.Size),
-                JobResourceAccess.Write(scheduler, results.Values), JobResourceAccess.Write(scheduler, results.Metadata)];
+                JobResourceAccess.Write(scheduler.GetResourceToken(results))];
             JobHandle mapped = scheduler.Schedule(new Map(results), read, ready);
             JobHandle applied = new ApplyDeviceContactResults(results).ScheduleParallel(context.World,
-                new[] { JobResourceAccess.Read(scheduler, results.Values), JobResourceAccess.Read(scheduler, results.Metadata) },
+                new[] { JobResourceAccess.Read(scheduler.GetResourceToken(results)) },
                 new JobEntityScheduleOptions(rowsPerPacket: rowsPerPacket), mapped);
             scheduler.ScheduleFinally(new Collect(results), default, applied);
         }
@@ -73,9 +79,12 @@ public sealed class DeviceContactResults : IDisposable
     {
         public void Execute()
         {
-            using MappedBuffer mapping = results._backend.Map(results._readback, MapType.Read, BufferRange.Whole);
+            if (results.Values.Length < results._rowCount) Array.Resize(ref results.Values, results._rowCount);
+            if (results.Metadata.Length < results._rowCount) Array.Resize(ref results.Metadata, results._rowCount);
+            using MappedBuffer mapping = results._backend.Map(results._readback, MapType.Read,
+                new(0, (ulong)results._rowCount * (ulong)(ResponseStride + 16)));
             mapping.Invalidate(mapping.Range);
-            int responseBytes = (int)results.Responses.States.Info.Size;
+            int responseBytes = results._rowCount * ResponseStride;
             MemoryMarshal.Cast<byte, DeviceContactResponseState>(mapping.Bytes[..responseBytes]).CopyTo(results.Values);
             MemoryMarshal.Cast<byte, DeviceConstraintMetadata>(mapping.Bytes[responseBytes..]).CopyTo(results.Metadata);
         }
@@ -96,6 +105,7 @@ internal readonly partial struct ApplyDeviceContactResults(DeviceContactResults 
         [JobResources<DeviceContactResponseResources>] in DeviceContactResponseBinding responseBinding, ref ContactResponse response)
     {
         if (!ReferenceEquals(binding.Data, results.Parameters) || !ReferenceEquals(responseBinding.Responses, results.Responses)) return;
+        if (binding.Index >= results._rowCount) return;
         ref readonly DeviceConstraintMetadata metadata = ref results.Metadata[binding.Index];
         if (metadata.Active == 0 || metadata.EntityIndex != (uint)entity.Index || metadata.EntityGeneration != (uint)entity.Generation) return;
         ref readonly DeviceContactResponseState value = ref results.Values[binding.Index];

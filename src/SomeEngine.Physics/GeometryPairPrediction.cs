@@ -13,11 +13,21 @@ public struct GeometryPairPrediction<TFirst, TSecond, TFirstMotion, TSecondMotio
     where TKernel : struct, ICollisionNarrowPhase<TFirst, TSecond>
     where TOutput : struct, ICollisionContactOutput
 {
+    public bool SupportsParallel => output.SupportsParallel;
+    public void BeginParallel(int partitions) => output.BeginParallel(partitions);
+    public void SelectPartition(int partition) => output.SelectPartition(partition);
     public QueryDefinition AddReads(QueryDefinition definition) => secondMotion.AddReads(firstMotion.AddReads(definition));
 
     public void Execute(in CollisionGeometryPair pair, scoped QueryCursor access, scoped QueryRow first, scoped QueryRow second,
         in PhysicsStepContext context)
     {
+        if (context.UseCurrentContacts)
+        {
+            var current = new GeometryPairDetection<TFirst, TSecond, TFirstMotion, TSecondMotion, TKernel, TOutput>(
+                firstMotion, secondMotion, kernel, output, contactDistance);
+            current.Execute(in pair, access, first, second);
+            return;
+        }
         TFirst firstGeometry = firstMotion.ReadStartGeometry(first, access, out BodyPose firstPose);
         TSecond secondGeometry = secondMotion.ReadStartGeometry(second, access, out BodyPose secondPose);
         CollisionDistance nearest = kernel.Distance(in firstGeometry, in firstPose, in secondGeometry, in secondPose);

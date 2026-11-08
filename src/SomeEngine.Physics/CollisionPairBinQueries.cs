@@ -23,6 +23,13 @@ public static partial class CollisionPairQueries
 
     public static void FillPairBinsParallel<TEnumerable, TPartition, TClassifier>(
         this RelationQuery<TEnumerable, (Entity, Entity)> query, CollisionPairBins<TPartition> bins,
+        TClassifier classifier, scoped RelationQueryViews views)
+        where TEnumerable : struct, ICollisionPartitionEnumerable<TPartition>
+        where TPartition : struct
+        where TClassifier : struct, ICollisionPairClassifier => bins.Fill(query.Enumerable, classifier, views, true);
+
+    public static void FillPairBinsParallel<TEnumerable, TPartition, TClassifier>(
+        this RelationQuery<TEnumerable, (Entity, Entity)> query, CollisionPairBins<TPartition> bins,
         TClassifier classifier)
         where TEnumerable : struct, ICollisionPartitionEnumerable<TPartition>
         where TPartition : struct

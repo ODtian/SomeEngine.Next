@@ -8,7 +8,7 @@ struct DeviceContactConstraint
     float3 bodyAnchorDelta; float normalStiffness;
     float normalDamping; float staticFriction; float dynamicFriction; float restitution;
     float restitutionThreshold; uint predicted; uint2 sampleTime;
-    float3 worldPoint; uint padding;
+    float3 worldPoint; uint trigger;
     uint2 firstGeometry; uint2 secondGeometry;
     int firstFeature; int secondFeature; int pointIndex; uint padding2;
 };

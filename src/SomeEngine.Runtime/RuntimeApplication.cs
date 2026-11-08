@@ -274,11 +274,12 @@ internal static class RuntimeApplication
         private bool _windowVSync;
         private bool _meshShadersDisabled;
         private bool _validation;
+        private DeviceFeatures _optionalDeviceFeatures;
 
         internal void Initialize(RuntimeStartupOptions options, bool useWarp, string title, ApplicationSettingsBlock boot)
         {
             if (Window is not null && _meshShadersDisabled == options.DisableMeshShaders &&
-                _validation == options.DeviceValidation)
+                _validation == options.DeviceValidation && _optionalDeviceFeatures == options.OptionalDeviceFeatures)
             {
                 if (_windowVSync != options.WindowVSync)
                     ReconfigureSwapchain(Backend, Swapchain, options, Window.ClientWidth, Window.ClientHeight,
@@ -289,6 +290,7 @@ internal static class RuntimeApplication
             _windowVSync = options.WindowVSync;
             _meshShadersDisabled = options.DisableMeshShaders;
             _validation = options.DeviceValidation;
+            _optionalDeviceFeatures = options.OptionalDeviceFeatures;
             if (Window is not null)
             {
                 Swapchain.Dispose();
@@ -322,7 +324,7 @@ internal static class RuntimeApplication
                 queues,
                 requiredFeatures: DeviceFeatures.Presentation | DeviceFeatures.IndirectCommands |
                     (options.MeasureBlending ? DeviceFeatures.CalibratedTimestamps : DeviceFeatures.None),
-                optionalFeatures: DeviceFeatures.CalibratedTimestamps |
+                optionalFeatures: options.OptionalDeviceFeatures | DeviceFeatures.CalibratedTimestamps |
                     (options.DisableMeshShaders ? DeviceFeatures.None : DeviceFeatures.MeshShaders),
                 label: "SomeEngine Runtime Device"));
             Swapchain = Backend.CreateSwapchain(Device, new SwapchainDesc(
@@ -1453,7 +1455,7 @@ internal static class RuntimeApplication
             coordinator.WaitForTrackedSubmissions();
             renderGraph.CollectCompleted();
             if (elementSystems.Physics is { } physics)
-                RuntimeWait.Job(physics.Completion.WaitAsync(), window, FrameTimeout);
+                RuntimeWait.WaitForCompletion(physics.Completion.WaitAsync(), window, FrameTimeout);
             application?.Shutdown?.Invoke(applicationFrame);
             geometry.FinishGame();
             ui?.Dispose();

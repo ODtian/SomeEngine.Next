@@ -43,7 +43,7 @@ struct DeviceXpbdGraphStep
 };
 uniform DeviceXpbdGraphStep XpbdGraphStep;
 #ifdef PHYSICS_XPBD_INDIRECT_DISPATCH
-RWStructuredBuffer<uint> DeviceXpbdDispatchArguments;
+RWStructuredBuffer<uint, ScalarDataLayout> DeviceXpbdDispatchArguments;
 void writeDeviceXpbdDispatchArguments(uint stage)
 {
     if (stage >= ConstraintGraphCounts[2]) return;
@@ -60,7 +60,8 @@ void initializeDeviceXpbdGraph<T : IDeviceXpbdConstraints>(uint block, uint thre
     for (uint offset = thread; offset < XpbdGraphStep.rowsPerBlock; offset += XpbdGraphStep.threadsPerGroup)
     {
         uint row = block * XpbdGraphStep.rowsPerBlock + offset;
-        if (row < rows.count() && rows.active(row) && deviceGraphRowActive(ConstraintGraphRows[row])) rows.initialize(row, XpbdGraphStep.step);
+        if (row < ConstraintGraphParameters.rows && deviceGraphRowActive(ConstraintGraphRows[row]))
+        { uint input=ConstraintGraphRows[row].w-1; if(rows.active(input)) rows.initialize(input,XpbdGraphStep.step); }
     }
 }
 void projectDeviceXpbdGraph<T : IDeviceXpbdConstraints>(uint block, uint thread, T rows)

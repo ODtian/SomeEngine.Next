@@ -18,7 +18,7 @@ internal sealed class DeviceCrowdConstraintInputs<TInputs> : IDisposable where T
 {
     private readonly World _world;
     private readonly TInputs _inputs;
-    private readonly QueryHandle _lengths, _bends, _joints, _participants;
+    private readonly QueryHandle _lengths, _bends, _joints, _references;
     private readonly JobResourceAccess[] _accesses;
     private readonly uint[] _memberships = new uint[4];
     private uint _bodyTagVersion, _bodyBindingVersion;
@@ -33,10 +33,10 @@ internal sealed class DeviceCrowdConstraintInputs<TInputs> : IDisposable where T
         QueryDefinition lengthReads = world.GetQueryDefinition(lengths).AsReadOnly();
         QueryDefinition bendReads = world.GetQueryDefinition(bends).AsReadOnly();
         QueryDefinition jointReads = world.GetQueryDefinition(joints).AsReadOnly();
-        QueryDefinition participantReads = new QueryDefinitionBuilder().Read<DirectedRelationEndpoints<ConstraintParticipant>>().Build();
+        QueryDefinition referenceReads = new QueryDefinitionBuilder().ReadBuffer<ConstraintBodyLink>().Build();
         _lengths = world.Query(lengthReads); _bends = world.Query(bendReads);
         _joints = world.Query(jointReads);
-        _participants = world.Query(participantReads);
+        _references = world.Query(referenceReads);
         var resources = new QueryReadResources();
         resources.Add<DeviceBodyBinding, DeviceBodyReferenceResources>();
         resources.Add<DeviceConstraintBinding<DeviceLengthConstraint>, DeviceConstraintReferenceResources<DeviceLengthConstraint>>();
@@ -44,7 +44,7 @@ internal sealed class DeviceCrowdConstraintInputs<TInputs> : IDisposable where T
         resources.Add<DeviceConstraintBinding<DeviceJointConstraint>, DeviceConstraintReferenceResources<DeviceJointConstraint>>();
         resources.Add<DeviceAvbdState<DeviceAvbdJointState>, DeviceAvbdStateResources<DeviceAvbdJointState>>();
         var accesses = new List<JobResourceAccess>();
-        foreach (QueryDefinition definition in new[] { bodyReads, lengthReads, bendReads, jointReads, participantReads })
+        foreach (QueryDefinition definition in new[] { bodyReads, lengthReads, bendReads, jointReads, referenceReads })
         {
             var queryAccesses = new JobResourceAccess[QueryJobAccess.Count(definition)];
             QueryJobAccess.CopyAccesses(world, definition, queryAccesses, resources);
@@ -66,7 +66,7 @@ internal sealed class DeviceCrowdConstraintInputs<TInputs> : IDisposable where T
         var changes = new ChangedInputs { Changed = bodyTagVersion != _bodyTagVersion || bodyBindingsChanged };
         _bodyTagVersion = bodyTagVersion;
         _bodyBindingVersion = bodyBindingVersion;
-        ReadOnlySpan<QueryHandle> queries = [_lengths, _bends, _joints, _participants];
+        ReadOnlySpan<QueryHandle> queries = [_lengths, _bends, _joints, _references];
         for (int index = 0; index < queries.Length; index++)
         {
             uint membership = _world.MembershipVersion(queries[index]);
@@ -108,13 +108,13 @@ internal sealed class DeviceCrowdConstraintInputs<TInputs> : IDisposable where T
                         || chunk.HasChangedSinceLastSystemVersion<DeviceAvbdState<DeviceAvbdJointState>>())
                     { changes.Changed = true; break; }
             });
-        _world.ExecuteReadQuery(_participants, _lastSystemVersion, ref changes,
+        _world.ExecuteReadQuery(_references, _lastSystemVersion, ref changes,
             static (scoped QueryCursor rows, ref ChangedInputs changes) =>
             {
                 changes.Version = rows.CurrentSystemVersion;
                 if (changes.Changed) return;
                 foreach (QueryChunkView chunk in rows.Chunks)
-                    if (chunk.HasChangedSinceLastSystemVersion<DirectedRelationEndpoints<ConstraintParticipant>>())
+                    if (chunk.HasBufferChangedSinceLastSystemVersion<ConstraintBodyLink>())
                     { changes.Changed = true; break; }
             });
         _lastSystemVersion = changes.Version;
@@ -132,7 +132,7 @@ internal sealed class DeviceCrowdConstraintInputs<TInputs> : IDisposable where T
     }
     public void Dispose()
     {
-        _world.ReleaseQuery(_participants); _world.ReleaseQuery(_joints); _world.ReleaseQuery(_bends);
+        _world.ReleaseQuery(_references); _world.ReleaseQuery(_joints); _world.ReleaseQuery(_bends);
         _world.ReleaseQuery(_lengths);
     }
 }

@@ -39,7 +39,7 @@ public sealed partial class DeviceAvbdTests
         using var inputs = parameters.WriteInputs<ElasticConnection, DeviceElasticSource>(world, springs, default, 64);
         using var stateInputs = new DeviceAvbdStateInputs<AvbdElasticState, DeviceElasticConstraint, DeviceAvbdElasticState, DeviceAvbdElasticStateSource>(
             backend, device, world, states, parameters, histories, default);
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileDynamics(), 64);
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileDynamics(), 64);
         using var results = new DeviceBodyResults(backend, device, bodies);
         var bindings = new Dictionary<string, ResourceBinding[]>();
         parameters.AddBindings(bindings); histories.AddBindings(bindings);
@@ -49,7 +49,7 @@ public sealed partial class DeviceAvbdTests
             backend, device, world, springs, parameters, new(histories), "DeviceElasticAvbdSelection");
         using var graph = new DeviceConstraintGraph(backend, device, bodies, dynamics, CompileGraph(), new(1, 2),
             bindings, parameters.GetReadAccesses(jobs), 64, new[] { selected });
-        using var solve = new DeviceAvbdSolver(backend, device, bodies, equations, graph, CompileAvbd(), new(1, 1, 0, 0),
+        using var solve = new AvbdGraphCommands(backend, device, bodies, equations, graph, CompileAvbd(), new(1, 1, 0, 0),
             bindings, parameters.GetReadAccesses(jobs).Append(histories.GetWriteAccess(jobs)).ToArray(), 64, new[] { selectedStates });
         var stages = bodies.WriteInputs(64).Then(bodies.UploadInputs()).Then(parameters.BeginInputs()).Then(inputs)
             .Then(parameters.UploadInputs()).Then(stateInputs.Upload()).Then(dynamics.Predict(Vector3.Zero))

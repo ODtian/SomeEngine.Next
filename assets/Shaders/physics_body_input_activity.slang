@@ -15,7 +15,7 @@ void ReadDeviceBodyInputActivity(uint3 id : SV_DispatchThreadID)
     if (!deviceBodyInputMatches(body, input)) return;
     DeviceBodyState next = body;
     applyDeviceBodyInput(next, input);
-    if ((input.kinds & 4u) != 0) applyDeviceKinematicTarget(next, input.targetPosition, input.targetRotation);
+    if ((input.kinds & 4u) != 0) applyDeviceKinematicTarget(next, input.targetPosition, input.targetRotation, BodyInputParameters.duration);
     bool rotationChanged = any(next.rotation != body.rotation) && any(next.rotation != -body.rotation);
     if (any(next.position != body.position) || rotationChanged ||
         any(next.linearVelocity != body.linearVelocity) || any(next.angularVelocity != body.angularVelocity))

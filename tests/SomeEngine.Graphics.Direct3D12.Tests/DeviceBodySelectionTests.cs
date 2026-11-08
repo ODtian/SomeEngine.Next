@@ -23,7 +23,7 @@ public sealed partial class DeviceXpbdTests
         world.Replace(body, new BodyVelocity { Linear = new(2, 0, 0) });
         QueryHandle members = world.Query(world.QueryDefinition().Read<DeviceBodyBinding>());
         using var inputs = new DeviceBodyInputs(world, members, bodies);
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileBodyDynamics(), 64);
         using var results = new DeviceBodyResults(backend, device, bodies, world, members, 1);
         var context = new PhysicsStepContext(world, QueryDefinition.Empty, 4, 0, 1, 2, .1);
         inputs.Upload().Schedule(in context, default).Complete();

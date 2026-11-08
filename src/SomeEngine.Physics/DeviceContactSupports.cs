@@ -48,6 +48,7 @@ public sealed class DeviceContactSupports : IDisposable, IDeviceConstraintSelect
     private readonly World _world;
     private readonly QueryHandle _bodyRows;
     private readonly DeviceBodies _bodies;
+    private readonly DeviceContactMemory? _memory;
     private readonly Buffer _bodySelection, _parameters, _bodyStates;
     private readonly BufferSrv _bodySelectionView;
     private readonly BufferCbv _parametersView;
@@ -59,12 +60,13 @@ public sealed class DeviceContactSupports : IDisposable, IDeviceConstraintSelect
     private bool _initialized;
 
     public DeviceContactSupports(IGraphicsBackend backend, Device device, World world, QueryHandle workBodies,
-        DeviceBodies bodies, DeviceConstraintData<DeviceContactConstraint> contacts, ContactSupportSettings settings, int contactsPerBody)
+        DeviceBodies bodies, DeviceConstraintData<DeviceContactConstraint> contacts, ContactSupportSettings settings, DeviceGraphCapacity graphCapacity)
     {
-        _backend = backend; _device = device; _world = world; _bodies = bodies;
+        _backend = backend; _device = device; _world = world; _bodies = bodies; _memory = contacts.Memory;
         QueryDefinition definition = world.GetQueryDefinition(workBodies).AsFilter()
             .WithOptionalRead<DeviceBodyBinding>().WithOptionalRead<DeviceSupportBodyBinding>();
         _bodyRows = world.Query(definition);
+        _window = new(definition);
         var resources = new QueryReadResources();
         resources.Add<DeviceBodyBinding, DeviceBodyReferenceResources>();
         resources.Add<DeviceSupportBodyBinding, DeviceSupportBodyResources>();
@@ -72,21 +74,29 @@ public sealed class DeviceContactSupports : IDisposable, IDeviceConstraintSelect
         QueryJobAccess.CopyAccesses(world, definition, _queryAccesses, resources);
         _bodySelection = backend.CreateBuffer(device, new((ulong)bodies.Capacity * 16, BufferUsages.ShaderRead, "Selected support body identities"), MemoryType.Upload);
         _bodySelectionView = backend.CreateBufferSrv(device, new(_bodySelection, new(0, _bodySelection.Info.Size), StructureStride: 16));
-        ContactStates = new(backend, device, contacts.Capacity, "DeviceSupportContactStates");
+        ContactStates = new(backend, device, contacts.Capacity, "DeviceSupportContactStates", contacts.Memory);
         _bodyStates = AddBuffer("DeviceSupportBodyStates", bodies.Capacity, 32, BufferUsages.CopyDestination);
-        AddBuffer("DeviceSupportBodyContacts", bodies.Capacity * contactsPerBody, 4);
+        int adjacencyCapacity = graphCapacity.Constraints * graphCapacity.BodiesPerConstraint;
+        int extraRows = graphCapacity.Constraints - contacts.Capacity;
+        AddBuffer("DeviceSupportBodyContacts", adjacencyCapacity, 4,
+            contactBytes: 4 * (uint)graphCapacity.BodiesPerConstraint, extraRows: extraRows);
+        AddBuffer("DeviceSupportSortedContacts", adjacencyCapacity, 4,
+            contactBytes: 4 * (uint)graphCapacity.BodiesPerConstraint, extraRows: extraRows);
+        AddBuffer("DeviceSupportHullContacts", adjacencyCapacity, 4,
+            contactBytes: 4 * (uint)graphCapacity.BodiesPerConstraint, extraRows: extraRows);
         AddBuffer("DeviceSupportBodyLoads", bodies.Capacity * 3, 8);
-        AddBuffer("DeviceSupportContactLoads", contacts.Capacity * 3, 8);
-        AddBuffer("DeviceSupportCandidates", contacts.Capacity, 48);
-        AddBuffer("DeviceSupportOrder", contacts.Capacity + 1, 4);
-        AddBuffer("DeviceSupportEquations", bodies.Capacity * (contactsPerBody + 1), 96);
+        AddBuffer("DeviceSupportContactLoads", contacts.Capacity * 3, 8, contactBytes: 24);
+        AddBuffer("DeviceSupportCandidates", contacts.Capacity, 48, contactBytes: 48);
+        AddBuffer("DeviceSupportOrder", contacts.Capacity + 1, 4, contactBytes: 4);
+        AddBuffer("DeviceSupportEquations", adjacencyCapacity, 96,
+            contactBytes: 96 * (uint)graphCapacity.BodiesPerConstraint, extraRows: extraRows);
         _parameters = backend.CreateBuffer(device, new(256, BufferUsages.Constant, "Contact support settings"), MemoryType.Upload);
         _parametersView = backend.CreateBufferCbv(device, new(_parameters, new(0, 256)));
         using (MappedBuffer mapping = backend.Map(_parameters, MapType.Write, BufferRange.Whole))
         {
             var value = new Settings(settings.UpDirection, settings.DistanceTolerance, settings.MotionTolerance,
                 settings.AngularMotionTolerance, settings.StickDistance, settings.MultiplierRetention, settings.InitialErrorFraction,
-                settings.RelativePivotTolerance, (uint)contactsPerBody, (uint)bodies.Capacity, (uint)contacts.Capacity);
+                settings.RelativePivotTolerance, (uint)bodies.Capacity, (uint)contacts.Capacity);
             MemoryMarshal.Write(mapping.Bytes, in value); mapping.Flush(new(0, (ulong)Marshal.SizeOf<Settings>()));
         }
         _commands = backend.CreateCommandContext(device, new(QueueType.Compute, 0, 1, Label: "Contact support buffers"));
@@ -94,6 +104,7 @@ public sealed class DeviceContactSupports : IDisposable, IDeviceConstraintSelect
     public DeviceConstraintState<DeviceContactSupportState> ContactStates { get; }
     IGraphicsBackend IDevicePhysicsSubmission.Backend => _backend;
     Device IDevicePhysicsSubmission.Device => _device;
+    SomeEngine.Graphics.Queue IDevicePhysicsSubmission.Queue => _backend.GetQueue(_device, QueueType.Compute);
     public InitializeDeviceContactSupportBuffers InitializeBuffers() => new(this);
     public void AddBindings(Dictionary<string, ResourceBinding[]> bindings)
     {
@@ -108,24 +119,36 @@ public sealed class DeviceContactSupports : IDisposable, IDeviceConstraintSelect
         accesses.AddRange(_queryAccesses);
         accesses.Add(JobResourceAccess.Write(scheduler.GetResourceToken(_bodySelection), 0, (long)_bodySelection.Info.Size));
     }
-    void IDeviceConstraintSelection.Capture()
+    private int _selectedBodyCount;
+    private readonly PhysicsQueryWindow _window;
+    int IDeviceConstraintSelection.Count => _selectedBodyCount;
+    void IDeviceConstraintSelection.Capture() => Capture(null);
+    void IDeviceConstraintSelection.Capture(in PhysicsStepContext context) => Capture(context);
+    private void Capture(PhysicsStepContext? context)
     {
+        if (!PhysicsStageCommands.CaptureInput(this)) return;
+        uint baseline = _window.Begin(context);
+        _selectedBodyCount = 0;
         using MappedBuffer mapping = _backend.Map(_bodySelection, MapType.Write, BufferRange.Whole);
         mapping.Bytes.Clear();
         var read = new ReadSelection(this, mapping);
-        _world.ExecuteReadQuery(_bodyRows, ref read, static (scoped QueryCursor rows, ref ReadSelection state) => state.Read(rows));
+        _world.ExecuteReadQuery(_bodyRows, baseline, ref read, static (scoped QueryCursor rows, ref ReadSelection state) => state.Read(rows));
+        _window.Accept(read.Version);
         mapping.Flush(mapping.Range);
     }
-    private readonly ref struct ReadSelection(DeviceContactSupports supports, MappedBuffer mapping)
+    private ref struct ReadSelection(DeviceContactSupports supports, MappedBuffer mapping)
     {
+        internal uint Version;
         internal void Read(scoped QueryCursor rows)
         {
+            Version = rows.CurrentSystemVersion;
             foreach (QueryRow row in rows.Rows)
             {
                 if (!row.TryRead<DeviceBodyBinding>(out var body) || !ReferenceEquals(body.Bodies, supports._bodies)
                     || !row.TryRead<DeviceSupportBodyBinding>(out var binding) || !ReferenceEquals(binding.Supports, supports)) continue;
                 Span<uint> values = MemoryMarshal.Cast<byte, uint>(mapping.Bytes.Slice(body.Index * 16, 16));
                 values[0] = (uint)row.Entity.Index; values[1] = (uint)row.Entity.Generation; values[2] = 1;
+                supports._selectedBodyCount++;
             }
         }
     }
@@ -135,10 +158,11 @@ public sealed class DeviceContactSupports : IDisposable, IDeviceConstraintSelect
     public JobResourceAccess[] GetWriteAccesses(Scheduler scheduler) =>
         _buffers.Select(buffer => JobResourceAccess.Write(scheduler.GetResourceToken(buffer), 0, (long)buffer.Info.Size))
             .Append(ContactStates.GetWriteAccess(scheduler)).Append(JobResourceAccess.Read(scheduler.GetResourceToken(_parameters), 0, 256)).ToArray();
-    private Buffer AddBuffer(string name, int count, uint stride, BufferUsages extraUsages = default)
+    private Buffer AddBuffer(string name, int count, uint stride, BufferUsages extraUsages = default,
+        uint contactBytes = 0, int extraRows = 0)
     {
-        Buffer buffer = _backend.CreateBuffer(_device, new((ulong)count * stride,
-            BufferUsages.ShaderRead | BufferUsages.ShaderWrite | extraUsages, name), MemoryType.DeviceLocal);
+        var description = new BufferDesc((ulong)count * stride, BufferUsages.ShaderRead | BufferUsages.ShaderWrite | extraUsages, name);
+        Buffer buffer = _memory is not null && contactBytes != 0 ? _memory.CreateBuffer(description, contactBytes, extraRows) : _backend.CreateBuffer(_device, description);
         BufferUav view = _backend.CreateBufferUav(_device, new(buffer, new(0, buffer.Info.Size), StructureStride: stride));
         _buffers.Add(buffer); _views.Add(view); _bindings.Add(name, [ResourceBinding.WritableBuffer(view)]);
         return buffer;
@@ -151,6 +175,7 @@ public sealed class DeviceContactSupports : IDisposable, IDeviceConstraintSelect
     }
     QueueCompletion IDevicePhysicsSubmission.Submit()
     {
+        _memory?.EnsureRows(1);
         _backend.Begin(_commands, new(0, 0, 16));
         if (!_initialized)
             foreach (Buffer buffer in _buffers)
@@ -163,7 +188,7 @@ public sealed class DeviceContactSupports : IDisposable, IDeviceConstraintSelect
                     _backend.Barrier(_commands, new BufferBarrier(buffer, PipelineSync.Copy, PipelineSync.ComputeShading,
                         ResourceAccess.CopyDestination, ResourceAccess.UnorderedAccess));
                 }
-                else _backend.Barrier(_commands, new BufferBarrier(buffer, buffer.InitialSync, PipelineSync.ComputeShading,
+                else if (_memory?.Contains(buffer) != true) _backend.Barrier(_commands, new BufferBarrier(buffer, buffer.InitialSync, PipelineSync.ComputeShading,
                     buffer.InitialAccess, ResourceAccess.UnorderedAccess));
             }
         using RecordedCommands recorded = _backend.End(_commands);
@@ -172,8 +197,7 @@ public sealed class DeviceContactSupports : IDisposable, IDeviceConstraintSelect
     }
     [StructLayout(LayoutKind.Sequential)]
     private readonly record struct Settings(Vector3 Up, float DistanceTolerance, float MotionTolerance, float AngularMotionTolerance,
-        float StickDistance, float Retention, float InitialErrorFraction, float RelativePivotTolerance, uint ContactsPerBody,
-        uint Bodies, uint Contacts);
+        float StickDistance, float Retention, float InitialErrorFraction, float RelativePivotTolerance, uint Bodies, uint Contacts);
     public void Dispose()
     {
         _world.ReleaseQuery(_bodyRows); _commands.Dispose(); _bodySelectionView.Dispose(); _bodySelection.Dispose();

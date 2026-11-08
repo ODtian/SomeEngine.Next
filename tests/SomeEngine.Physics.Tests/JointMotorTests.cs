@@ -11,6 +11,62 @@ namespace SomeEngine.Physics.Tests;
 public sealed class JointMotorTests
 {
     [Fact]
+    public void DisablingAnXpbdMotorClearsItsPreviouslyAppliedLoad()
+    {
+        using var scheduler = new Scheduler(new() { WorkerCount = 2 });
+        using var world = WorldJobs.CreateWorld(scheduler: scheduler);
+        Entity source = CreateBody(world, new BodyPose { Rotation = Quaternion.Identity }, BodyMotion.Static);
+        Entity target = CreateBody(world, new BodyPose { Rotation = Quaternion.Identity }, BodyMotion.Dynamic);
+        var joint = world.CreateRelation(source, target, new JointConstraint { SourceFrame = JointFrame.Identity, TargetFrame = JointFrame.Identity });
+        world.Add(joint.Entity, new JointMotor { Space = JointMotorSpace.Source, Response = JointMotorResponse.Target,
+            LinearStiffness = new(100, 0, 0), MaximumForce = new(100) });
+        world.Add(joint.Entity, new JointMotorTarget { Frame = new JointFrame(Vector3.UnitX, Quaternion.Identity) });
+        world.Add(joint.Entity, new XpbdMotorState());
+        QueryHandle bodies = world.Query(new QueryDefinitionBuilder().ReadWrite<BodyPose>().Read<BodyMass>().ReadWrite<BodyStepState>().ReadWrite<BodyVelocity>());
+        QueryHandle motors = world.Query(new QueryDefinitionBuilder().Read<JointConstraint>().Read<DirectedRelationEndpoints<JointConstraint>>()
+            .Read<JointMotor>().Read<JointMotorTarget>().ReadWrite<XpbdMotorState>());
+        var solve = SolveXpbd.Create(world, bodies, new XpbdConstraints<JointConstraint, XpbdJointMotorProjection>(motors), 8);
+        var stages = new PredictBodies(Vector3.Zero, 64).Then(solve).Then(new UpdateBodyVelocities(64));
+        var simulation = PhysicsSimulation.Create(world, QueryDefinition.Empty, stages, 1);
+        simulation.Schedule(0, 0, .1).Complete();
+        Assert.True(world.Read<XpbdMotorState>(joint.Entity).LinearMultiplier.Length() > 0);
+        world.Replace(joint.Entity, new JointMotor { Space = JointMotorSpace.Source, Response = JointMotorResponse.Target, MaximumForce = new(100) });
+
+        simulation.Schedule(1, .1, .1).Complete();
+
+        Assert.Equal(Vector3.Zero, world.Read<XpbdMotorState>(joint.Entity).LinearMultiplier);
+        Assert.Equal(Vector3.Zero, world.Read<XpbdMotorState>(joint.Entity).AngularMultiplier);
+        world.ReleaseQuery(motors); world.ReleaseQuery(bodies);
+    }
+
+    [Fact]
+    public void AvbdLimitedMotorConvergesAfterCrossingItsForceLimit()
+    {
+        using var scheduler = new Scheduler(new() { WorkerCount = 2 });
+        using var world = WorldJobs.CreateWorld(scheduler: scheduler);
+        Entity source = CreateBody(world, new BodyPose { Rotation = Quaternion.Identity }, BodyMotion.Static);
+        Entity target = CreateBody(world, new BodyPose { Position = new(.01f, 0, 0), Rotation = Quaternion.Identity }, BodyMotion.Dynamic);
+        var joint = world.CreateRelation(source, target, new JointConstraint { SourceFrame = JointFrame.Identity, TargetFrame = JointFrame.Identity });
+        world.Add(joint.Entity, new JointMotor
+        {
+            Space = JointMotorSpace.World, LinearStiffness = new(100000, 0, 0), MaximumForce = new(100),
+        });
+        world.Add(joint.Entity, new JointMotorTarget { Frame = JointFrame.Identity });
+        world.Add(joint.Entity, new AvbdMotorState { LinearPenalty = new(100000) });
+        QueryHandle bodies = world.Query(new QueryDefinitionBuilder().ReadWrite<BodyPose>().Read<BodyMass>()
+            .Read<BodyStepState>().ReadWrite<AvbdBodyEquation>());
+        QueryHandle motors = world.Query(new QueryDefinitionBuilder().Read<JointConstraint>()
+            .Read<DirectedRelationEndpoints<JointConstraint>>().Read<JointMotor>().Read<JointMotorTarget>().ReadWrite<AvbdMotorState>());
+        var solve = SolveAvbd.Create(world, bodies, new AvbdConstraints<JointConstraint, AvbdJointMotorMath>(motors), 32, 0, 0);
+        var stages = new PredictBodies(Vector3.Zero, 64).Then(solve).Then(new UpdateBodyVelocities(64));
+
+        PhysicsSimulation.Create(world, QueryDefinition.Empty, stages, 1).Schedule(0, 0, 1d / 60).Complete();
+
+        Assert.InRange(world.Read<BodyPose>(target).Position.X, .0003473f, .0003477f);
+        world.ReleaseQuery(motors); world.ReleaseQuery(bodies);
+    }
+
+    [Fact]
     public void AvbdMotorUsesTimedParentTargetWithSpringAndDamping()
     {
         using var scheduler = new Scheduler(new JobRuntimeConfig { WorkerCount = 2 });

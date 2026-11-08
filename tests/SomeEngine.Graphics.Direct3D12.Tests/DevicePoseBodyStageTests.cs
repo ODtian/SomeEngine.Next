@@ -51,11 +51,11 @@ public sealed partial class DeviceAvbdTests
         QueryHandle lengths = world.Query(new QueryDefinitionBuilder().Read<XpbdLength>().Read<UndirectedRelationEndpoints<XpbdLength>>()
             .Read<DeviceConstraintBinding<DeviceLengthConstraint>>().All<DeviceXpbdState<float>>());
         using var bodyInputs = new DeviceBodyInputs(world, members, poseBodies.Bodies);
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, poseBodies.Bodies, CompileDynamics(), 64);
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, poseBodies.Bodies, CompileDynamics(), 64);
         Entity point = world.CreateRelation(floor, actor[1], new ContactPoint
             { Normal = Vector3.UnitY, BodyAnchorDelta = Vector3.UnitY, FirstBodyCount = 1 }).Entity;
-        var first = world.CreateRelation(point, floor, new ContactParticipant());
-        var second = world.CreateRelation(point, actor[1], new ContactParticipant());
+        var first = floor;
+        var second = actor[1];
         world.AddBuffer<ContactBodyLink>(point);
         world.ExecuteBufferWrite<ContactBodyLink>(point, links =>
         { links.Add(new(first, Vector3.Zero, 1)); links.Add(new(second, Vector3.Zero, 1)); });
@@ -90,7 +90,7 @@ public sealed partial class DeviceAvbdTests
         using var graph = new DeviceConstraintGraph(backend, device, poseBodies.Bodies, dynamics, CompileComplementaryGraph(), new(2, 2),
             bindings, reads, 64, new IDeviceConstraintSelection[] { selectedContacts, selectedLengths });
         JobResourceAccess[] solveAccesses = [.. reads, contactStates.GetWriteAccess(jobs), responses.GetWriteAccess(jobs), poseBodies.LengthMultipliers.GetReadAccess(jobs)];
-        using var avbd = new DeviceAvbdSolver(backend, device, poseBodies.Bodies, equations, graph, CompileComplementaryAvbd(), new(1, 1, 0, 0),
+        using var avbd = new AvbdGraphCommands(backend, device, poseBodies.Bodies, equations, graph, CompileComplementaryAvbd(), new(1, 1, 0, 0),
             bindings, solveAccesses, 64, new IDeviceConstraintSelection[] { selectedStates, selectedResponses });
         using var xpbd = new DeviceXpbdProjection<DeviceLengthConstraint, float>(backend, device, world, lengths,
             poseBodies.Bodies, dynamics, poseBodies.Lengths, poseBodies.LengthMultipliers, CompileComplementaryLength(), 64);

@@ -42,6 +42,8 @@ public sealed partial class DeviceBodyActivities : IDisposable
     private readonly QueryTermFilter _sourceVersionFilters;
     private readonly List<int> _transientInputs = [];
     private MappedBuffer _inputMapping;
+    private readonly PhysicsQueryWindow _window;
+    private uint _resultBaseline;
     private uint _membershipVersion, _activityMembershipVersion, _lastSystemVersion;
 
     public DeviceBodyActivities(IGraphicsBackend backend, Device device, World world, QueryHandle members, DeviceBodies bodies)
@@ -62,6 +64,7 @@ public sealed partial class DeviceBodyActivities : IDisposable
             .Optional<BodyActivity>(QueryAccess.Read).OptionalBuffer<BodyWake>(QueryAccess.Read).Build());
         foreach (QueryTerm term in definition.Terms)
             _sourceVersionFilters |= term.Filters & (QueryTermFilter.Added | QueryTermFilter.Changed | QueryTermFilter.ChunkChanged);
+        _window = new(definition);
         SourceRows = world.Query(definition);
         ResultRows = world.Query(definition.WithAccess(new QueryDefinitionBuilder().ReadWrite<BodyActivity>().Build()));
         _resultReads = world.Query(world.GetQueryDefinition(ResultRows).AsReadOnly());
@@ -96,6 +99,7 @@ public sealed partial class DeviceBodyActivities : IDisposable
     internal void CaptureInputs(in PhysicsStepContext context)
     {
         using var trace = EngineTrace.Begin(CaptureInputsTrace);
+        _resultBaseline = _window.Begin(context);
         uint membership = World.MembershipVersion(SourceRows);
         uint activityMembership = World.MembershipVersion(_activityMembers);
         bool readAll = membership != _membershipVersion || activityMembership != _activityMembershipVersion;
@@ -108,7 +112,7 @@ public sealed partial class DeviceBodyActivities : IDisposable
         _transientInputs.Clear();
         var source = new ReadSources(this, readAll);
         var read = (Source: source, Version: 0u);
-        World.ExecuteReadQuery(SourceRows, _lastSystemVersion, ref read,
+        World.ExecuteReadQuery(SourceRows, _resultBaseline, ref read,
             static (scoped QueryCursor rows, ref (ReadSources Source, uint Version) read) =>
             {
                 read.Source.Execute(rows);
@@ -120,7 +124,7 @@ public sealed partial class DeviceBodyActivities : IDisposable
         _inputMapping.Flush(_inputMapping.Range);
         _membershipVersion = membership;
         _activityMembershipVersion = activityMembership;
-        _lastSystemVersion = read.Version;
+        _lastSystemVersion = read.Version; _window.Accept(read.Version);
     }
 
     private readonly record struct CpuVersion(Entity Entity, uint Activity);

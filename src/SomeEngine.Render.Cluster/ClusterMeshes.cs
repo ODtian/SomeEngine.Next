@@ -278,21 +278,6 @@ internal sealed partial class ClusterMeshes : IDisposable
         }
     }
 
-    internal void ResolvePages(Dictionary<uint, uint> priorities, List<KeyValuePair<uint, uint>> unresolved)
-    {
-        lock (_gate)
-        {
-            unresolved.Clear();
-            foreach ((uint page, uint priority) in priorities)
-            {
-                PageFaultResolution resolution = ResolvePageCore(page);
-                if (resolution.Kind is not (PageFaultResolutionKind.Satisfied or PageFaultResolutionKind.Pending or PageFaultResolutionKind.Unknown))
-                    unresolved.Add(new(page, priority));
-            }
-
-        }
-    }
-
     internal ClusterStreamingDemand SetReferencedPages(IEnumerable<uint> pages, bool complete)
     {
         lock (_gate)

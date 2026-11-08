@@ -8,6 +8,12 @@ struct DeviceMotorRow
     DeviceJointRow derivative;
     float error; float initialError; float stiffness; float maximum;
 };
+bool deviceMotorAxisEnabled(DeviceMotorConstraint motor, uint dof)
+{
+    uint axis = dof % 3;
+    return dof < 3 ? motor.linearStiffness[axis] != 0 || motor.linearDamping[axis] != 0
+        : motor.angularStiffness[axis] != 0 || motor.angularDamping[axis] != 0;
+}
 DeviceMotorRow deviceMotorRow(DeviceMotorConstraint motor, DeviceBodyState source, DeviceBodyState target,
     float duration, double endTime, uint dof)
 {

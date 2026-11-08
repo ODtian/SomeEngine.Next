@@ -43,14 +43,14 @@ public sealed partial class DeviceAvbdTests
             world, ranges, parameters, "DeviceDistanceRangesSelection");
         using var selectedStates = new DeviceConstraintSelection<DistanceRange, DeviceDistanceRangeConstraint, DeviceAvbdStateRows<DeviceAvbdDistanceRangeState>>(
             backend, device, world, ranges, parameters, new(histories), "DeviceDistanceRangeAvbdSelection");
-        using var dynamics = new DeviceBodyDynamics(backend, device, world, members, bodies, CompileDynamics(), 64);
+        using var dynamics = new BodyDynamicsCommands(backend, device, world, members, bodies, CompileDynamics(), 64);
         using var results = new DeviceBodyResults(backend, device, bodies);
         var bindings = new Dictionary<string, ResourceBinding[]>();
         parameters.AddBindings(bindings); histories.AddBindings(bindings);
         JobResourceAccess[] reads = parameters.GetReadAccesses(jobs);
         using var graph = new DeviceConstraintGraph(backend, device, bodies, dynamics, CompileDistanceRangeGraph(), new(2, 2),
             bindings, reads, 64, new[] { selected });
-        using var solve = new DeviceAvbdSolver(backend, device, bodies, equations, graph, CompileDistanceRangeAvbd(),
+        using var solve = new AvbdGraphCommands(backend, device, bodies, equations, graph, CompileDistanceRangeAvbd(),
             new(32, 2, 0, 0), bindings, reads.Append(histories.GetWriteAccess(jobs)).ToArray(), 64, new[] { selectedStates });
         var steps = bodies.WriteInputs(64).Then(bodies.UploadInputs()).Then(parameters.BeginInputs()).Then(inputs)
             .Then(parameters.UploadInputs()).Then(stateInputs.Upload()).Then(dynamics.Predict(Vector3.Zero))
@@ -79,7 +79,7 @@ public sealed partial class DeviceAvbdTests
         return new(Entry(shader, 0), Entry(shader, 1));
     }
 
-    private DeviceAvbdKernels CompileDistanceRangeAvbd()
+    private AvbdGraphKernels CompileDistanceRangeAvbd()
     {
         D3D12TestShader shader = shaderCompiler.CompileWithSearchPaths("distance_range_avbd", """
             #include "physics_avbd_distance_range.slang"

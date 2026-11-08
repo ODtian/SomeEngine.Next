@@ -113,64 +113,59 @@ void MapDevicePoseBodyBones(uint3 thread : SV_DispatchThreadID)
     mapDevicePoseBones(GpuPoseClips.Load4(work.y),GpuPosePhysicsFrames[work.x]);
 }
 
-[shader("compute")]
-[numthreads(64, 1, 1)]
-void SimulateDevicePoseChain(uint3 thread : SV_DispatchThreadID)
+#include "physics_xpbd_chains.slang"
+struct DevicePoseChainInput : IDeviceXpbdChain
 {
-    uint count, stride;
-    GpuPoseWork.GetDimensions(count, stride);
-    if (thread.x >= count) return;
-    uint4 work = GpuPoseWork[thread.x];
-    if ((GpuPoseControls[work.x].flags & 1u) == 0u) return;
-    uint4 chain = GpuPoseClips.Load4(work.y);
-    float3 acceleration = asfloat(GpuPoseClips.Load3(work.y + 16u));
-    float maximumStep = asfloat(GpuPoseClips.Load(work.y + 28u));
-    float damping = asfloat(GpuPoseClips.Load(work.y + 32u));
-    uint iterations = GpuPoseClips.Load(work.y + 36u);
-    GpuPosePhysicsFrame frame = GpuPosePhysicsFrames[work.x];
-    captureDevicePoseTargets(chain,frame);
-    DeviceXpbdLengthProjection<DevicePoseChainBodies> lengthProjection;
-    DeviceXpbdBendProjection<DevicePoseChainBodies> bendProjection;
-    DeviceXpbdStep projection = (DeviceXpbdStep)0;
-    projection.number = frame.number;
-    uint steps = uint(ceil(frame.duration / maximumStep));
-    for (uint step = 0u; step < steps; step++)
+    bool active(uint index)
     {
-        float h = frame.duration / float(steps);
-        DeviceBodyStep context = (DeviceBodyStep)0;
-        context.duration = h; context.acceleration = acceleration;
-        context.number = frame.number; context.time = frame.time;
-        context.substep = uint(frame.substep) * steps + step;
-        for (uint point = 0u; point < chain.y; point++)
-        {
-            uint4 bone = GpuPoseClips.Load4(chain.x + point * 32u);
-            DeviceBodyState body = DeviceBodyStates[bone.w];
-            if (body.motion == 1)
-            {
-                float3 anchor = mul(float4(GpuPosePhysicsSources[bone.w][3].xyz, 1), frame.modelToWorld).xyz;
-                body.linearVelocity = (anchor - body.position) / (float(steps - step) * h);
-            }
-            else body.linearVelocity *= exp(-damping * h);
-            DeviceBodyStates[bone.w] = predictDeviceBodyState(body, context, true, false);
-        }
-        projection.duration = h;
-        for (uint point = 1u; point < chain.y; point++)
-            lengthProjection.initialize(GpuPoseClips.Load(chain.x + point * 32u + 28u), projection);
-        for (uint bend = 0u; bend < chain.w; bend++)
-            bendProjection.initialize(GpuPoseClips.Load(chain.z + bend * 4u), projection);
-        for (uint iteration = 0u; iteration < iterations; iteration++)
-        {
-            for (uint point = 1u; point < chain.y; point++)
-                lengthProjection.project(GpuPoseClips.Load(chain.x + point * 32u + 28u), projection);
-            for (uint bend = 0u; bend < chain.w; bend++)
-                bendProjection.project(GpuPoseClips.Load(chain.z + bend * 4u), projection);
-        }
-        for (uint point = 0u; point < chain.y; point++)
-        {
-            uint body = GpuPoseClips.Load(chain.x + point * 32u + 12u);
-            DeviceBodyStates[body] = updateDeviceBodyVelocityState(DeviceBodyStates[body], h);
-        }
+        uint count,stride; GpuPoseWork.GetDimensions(count,stride);
+        return index<count && (GpuPoseControls[GpuPoseWork[index].x].flags&1u)!=0;
     }
+    DeviceXpbdChainStep step(uint index)
+    {
+        uint4 work=GpuPoseWork[index];
+        GpuPosePhysicsFrame frame=GpuPosePhysicsFrames[work.x];
+        DeviceXpbdChainStep result;
+        result.duration=frame.duration; result.maximumStep=asfloat(GpuPoseClips.Load(work.y+28));
+        result.damping=asfloat(GpuPoseClips.Load(work.y+32)); result.iterations=GpuPoseClips.Load(work.y+36);
+        result.acceleration=asfloat(GpuPoseClips.Load3(work.y+16));
+        result.number=frame.number; result.time=frame.time; result.substep=frame.substep;
+        return result;
+    }
+    uint bodyCount(uint index) { return GpuPoseClips.Load(GpuPoseWork[index].y+4); }
+    uint body(uint index,uint point) { return GpuPoseClips.Load(GpuPoseClips.Load(GpuPoseWork[index].y)+point*32+12); }
+    float3 target(uint index,uint point)
+    {
+        uint4 work=GpuPoseWork[index];
+        return mul(float4(GpuPosePhysicsSources[body(index,point)][3].xyz,1),GpuPosePhysicsFrames[work.x].modelToWorld).xyz;
+    }
+    uint lengthRow(uint index,uint point) { return GpuPoseClips.Load(GpuPoseClips.Load(GpuPoseWork[index].y)+point*32+28); }
+    uint bendCount(uint index) { return GpuPoseClips.Load(GpuPoseWork[index].y+12); }
+    uint bendRow(uint index,uint bend) { return GpuPoseClips.Load(GpuPoseClips.Load(GpuPoseWork[index].y+8)+bend*4); }
+};
+[shader("compute")][numthreads(64,1,1)]
+void SolveDevicePoseBodies(uint3 thread:SV_DispatchThreadID)
+{ DevicePoseChainInput input; solveDeviceXpbdChain(thread.x,input); }
+
+[shader("compute")][numthreads(64,1,1)]
+void CaptureDevicePoseBodies(uint3 thread:SV_DispatchThreadID)
+{
+    DevicePoseChainInput input;
+    if (!input.active(thread.x)) return;
+    uint4 work=GpuPoseWork[thread.x];
+    captureDevicePoseTargets(GpuPoseClips.Load4(work.y),GpuPosePhysicsFrames[work.x]);
+}
+
+[shader("compute")][numthreads(64,1,1)]
+void SimulateDevicePoseChain(uint3 thread:SV_DispatchThreadID)
+{
+    DevicePoseChainInput input;
+    if (!input.active(thread.x)) return;
+    uint4 work=GpuPoseWork[thread.x];
+    uint4 chain=GpuPoseClips.Load4(work.y);
+    GpuPosePhysicsFrame frame=GpuPosePhysicsFrames[work.x];
+    captureDevicePoseTargets(chain,frame);
+    solveDeviceXpbdChain(thread.x,input);
     mapDevicePoseBones(chain,frame);
 }
 #endif
