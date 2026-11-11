@@ -36,6 +36,7 @@ public static class ImportedSceneBuild
         foreach (AssetEntry entry in imported.Assets.Values.Where(entry => entry.AssetType != ApplicationSettingsAsset.FileType
             && entry.AssetType != MaterialAsset.FileType))
         {
+            if (project.Manifest.Assets.ContainsKey(entry.AssetGuid)) continue;
             string destination = Path.Combine(projectRoot, entry.Path);
             Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
             if (!File.Exists(destination)) File.Copy(Path.Combine(importedDirectory, entry.Path), destination);
