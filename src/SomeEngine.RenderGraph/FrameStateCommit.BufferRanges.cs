@@ -115,4 +115,35 @@ internal sealed partial class FrameExecutor
         _bufferContentScratch.Clear();
         return true;
     }
+
+    private static void MergeBufferStateRanges(List<BufferStateValue> states)
+    {
+        int count = 0;
+        for (int index = 0; index < states.Count; index++)
+        {
+            BufferStateValue value = states[index];
+            if (count != 0)
+            {
+                BufferStateValue previous = states[count - 1];
+                if (previous.State.ContentScope == BufferContentScope.FullRange &&
+                    value.State.ContentScope == BufferContentScope.FullRange &&
+                    previous.CompletionSource == value.CompletionSource &&
+                    previous.State.ReadyAfter == value.State.ReadyAfter &&
+                    previous.State.Range.Offset + previous.State.Range.Size == value.State.Range.Offset &&
+                    BufferBoundaryMatches(previous.State with { Range = value.State.Range }, value.State))
+                {
+                    states[count - 1] = previous with
+                    {
+                        State = previous.State with
+                        {
+                            Range = new(previous.State.Range.Offset, previous.State.Range.Size + value.State.Range.Size),
+                        },
+                    };
+                    continue;
+                }
+            }
+            states[count++] = value;
+        }
+        states.RemoveRange(count, states.Count - count);
+    }
 }

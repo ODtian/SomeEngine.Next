@@ -576,6 +576,7 @@ internal sealed partial class FrameExecutor
             ReleaseBufferStates(_bufferBoundaryScratch, _passes[_submissionPasses[update.Submission][0]].Queue!,
                 ReleaseDestination(release.DestinationQueueType));
         _bufferBoundaryScratch.Sort(static (left, right) => left.State.Range.Offset.CompareTo(right.State.Range.Offset));
+        MergeBufferStateRanges(_bufferBoundaryScratch);
         // Published boundaries can remain in a resource cache after this update is reused.
         BufferBoundaryState[] values = new BufferBoundaryState[_bufferBoundaryScratch.Count];
         PrepareArray(ref update.CompletionSources, values.Length);
