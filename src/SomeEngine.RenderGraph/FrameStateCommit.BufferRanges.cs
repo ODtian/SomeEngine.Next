@@ -17,11 +17,13 @@ internal sealed partial class FrameExecutor
             FrameResourceAccess access = _accesses[index];
             if (step.Writes)
             {
-                if (access.Mode != GraphAccessMode.Write ||
+                if (access.Mode is not (GraphAccessMode.Write or GraphAccessMode.ReadWrite)) return false;
+                if (access.Mode == GraphAccessMode.Write &&
                     access.Coverage != WriteCoverage.Complete && !access.ResultContents.HasValue)
                     return false;
                 ResourceContentState written = access.ResultContents ?? ResourceContentState.Defined;
-                BufferContentScope scope = written == ResourceContentState.Defined && access.ResultContents.HasValue
+                BufferContentScope scope = written == ResourceContentState.Defined &&
+                    (access.ResultContents.HasValue || access.Mode == GraphAccessMode.ReadWrite)
                     ? access.BufferContentScope : BufferContentScope.FullRange;
                 if (!first && (written != contents || scope != writeScope)) return false;
                 contents = written;

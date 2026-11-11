@@ -61,8 +61,12 @@ public sealed class AtomicBufferFrameTests
                 GraphPassId pass = edit.AddComputeFramePass("atomic data access", PassQueueSelection.AnyOfType(QueueType.Graphics),
                     data, new PassOptions(Culling: PassCullingMode.NeverCull),
                     static (ref PassDefinition access, ref (GraphBufferId Buffer, BufferRange Range, PipelineSync Sync) value) =>
-                        access.ReadWrite(value.Buffer, value.Range, value.Sync, ResourceAccess.UnorderedAccess,
-                            unorderedAccessHazards: UnorderedAccessHazardMode.AtomicMergeable),
+                    {
+                        for (ulong offset = 0; offset < value.Range.Size; offset += 4)
+                            access.ReadWrite(value.Buffer, new BufferRange(value.Range.Offset + offset, 4),
+                                value.Sync, ResourceAccess.UnorderedAccess,
+                                unorderedAccessHazards: UnorderedAccessHazardMode.AtomicMergeable);
+                    },
                     static (ref ComputePassCommandScope commands, in (GraphBufferId Buffer, BufferRange Range, PipelineSync Sync) value) => { });
                 edit.OrderAfter(pass, previous);
                 previous = pass;
