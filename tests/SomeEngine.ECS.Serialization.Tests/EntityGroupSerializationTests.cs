@@ -64,6 +64,28 @@ public sealed class EntityGroupSerializationTests
             Assert.Equal([new RelationEntry(second[1], second[2])], outgoing.Entries.ToArray());
     }
 
+    [Fact]
+    public void ChildFirstEntityGroupsKeepTheirInverseHierarchyThroughBatchUnload()
+    {
+        using var source = new World();
+        Entity parent = source.Create(new DescribedPosition { Value = 1 });
+        Entity child = source.Create(new DescribedPosition { Value = 2 });
+        Hierarchy<EntityGroupDomain>.SetParent(source, child, parent);
+        using var output = new MemoryStream();
+        WorldSerializer.WriteEntities(output, source, [child, parent], new(Purpose: SavePurpose.DurableSave));
+        using var target = new World();
+
+        Entity[] members = WorldSerializer.ReadEntities(output.ToArray().AsMemory(), target);
+
+        Assert.Equal(members[1], Hierarchy<EntityGroupDomain>.GetParent(target, members[0]));
+        using (ChildrenRead children = Hierarchy<EntityGroupDomain>.GetChildren(target, members[1]))
+            Assert.Equal([members[0]], children.Entities.ToArray());
+
+        target.Destroy(members.AsSpan());
+
+        Assert.Equal(0, target.Query(new QueryDescription().Without<Destroyed>()).Count);
+    }
+
     [Theory]
     [InlineData(MissingReferenceMode.KeepOriginal)]
     [InlineData(MissingReferenceMode.Clear)]

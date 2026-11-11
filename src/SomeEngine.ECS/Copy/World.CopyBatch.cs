@@ -212,15 +212,23 @@ public sealed partial class World
                     _valueIndexes[type.Id]?.AddFromEntity(entity, in chunk.Columns[type.Id], record.Row);
             if (chunk.Archetype.Groupable.Length != 0) ArrangeCreatedGroups(entity);
         }
+        // Clear copied derived values before primary initializers rebuild their inverses.
+        InitializeCopiedComponents(entities, computed: true);
+        InitializeCopiedComponents(entities, computed: false);
+        if (publishMembership) PublishCreatedMembership(entities);
+    }
+
+    private void InitializeCopiedComponents(ReadOnlySpan<Entity> entities, bool computed)
+    {
         foreach (Entity entity in entities)
         {
             ComponentType[] initializers = Records[entity.Id].Chunk!.Archetype.Initializers;
             foreach (ComponentType type in initializers)
             {
+                if (type.IsComputed != computed) continue;
                 ref EntityRecord record = ref Records[entity.Id];
                 if (record.Chunk!.Columns[type.Id].Has(record.Row)) type.InitializeEntity(this, entity);
             }
         }
-        if (publishMembership) PublishCreatedMembership(entities);
     }
 }
