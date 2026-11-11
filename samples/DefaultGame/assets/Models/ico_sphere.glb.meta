@@ -79,6 +79,7 @@
   "element_ids": {
     "mesh:index:0": "9cc63de3-c663-4f55-8656-bd4587b0fde5",
     "material:index:0": "18f67d63-e2a1-4319-ad3f-411ba7b05b94",
-    "scene:index:0": "a6099bdc-aa52-4f50-a693-b922c43e5d39"
+    "scene:index:0": "a6099bdc-aa52-4f50-a693-b922c43e5d39",
+    "entities:index:0": "43bc9f3f-7d6d-4c4d-90de-a431be42309c"
   }
 }
