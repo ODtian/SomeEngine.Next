@@ -19,6 +19,7 @@ bool dependencies = args.Contains("--dependencies", StringComparer.OrdinalIgnore
 bool categories = args.Contains("--categories", StringComparer.OrdinalIgnoreCase);
 bool storage = args.Contains("--storage", StringComparer.OrdinalIgnoreCase);
 bool sizing = args.Contains("--sizing", StringComparer.OrdinalIgnoreCase);
+bool worldEdits = args.Contains("--world-edits", StringComparer.OrdinalIgnoreCase);
 
 JobSystem.Initialize(new JobConfiguration
 {
@@ -37,6 +38,12 @@ try
             : dependencies ? "predecessors=1,16,256,4096,16384 | input-copies=1,2 | "
             : $"length={parallelLength} | batch={(automatic ? "auto" : "explicit")} | ") +
         $"spin={spinCount}/{busySpinCount} | counters={counters}");
+
+    if (worldEdits)
+    {
+        WorldEditBenchmarks.Run(JobSystem.Default, parallelLength, warmups, samples);
+        return;
+    }
 
     if (sizing)
     {

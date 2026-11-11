@@ -10,6 +10,11 @@ Options:
 
 - `--auto` uses `JobScheduleOptions.AutomaticBatchSize` for parallel jobs.
 - `--workers N` selects the worker count.
+- `--world-edits --length 1000` compares the same N entity additions with per-entity
+  structure access and one explicit `World.OpenStructureWrite()` range. Entity creation
+  and component removal occur outside the measured interval. Every measured batch emits
+  `world_add ... batch_ms=...` for the queue's sample target check, followed by p50/p95;
+  the resulting entity count and values are checked after each row.
 - `--spin N` and `--busy-spin N` compare wait policies.
 - `--counters` includes the default runtime diagnostics path.
 - `--synchronous` compares `ScheduleParallel(...).Complete()` and `ExecuteParallel(...)` with the
