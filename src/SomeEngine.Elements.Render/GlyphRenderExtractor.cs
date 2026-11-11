@@ -30,6 +30,7 @@ public sealed partial class GlyphRenderExtractor(Entity atlasSource) : IRenderEx
 
     /// <summary>Computes detached glyph instances with chunk jobs.</summary>
     public bool Parallel { get; set; } = true;
+    public bool CanApplyChangesDirect => true;
 
     public void DeclareReads(RenderExtractionQuery query)
     {
@@ -229,6 +230,20 @@ public sealed partial class GlyphRenderExtractor(Entity atlasSource) : IRenderEx
             context.RemoveIfExists<CanvasGlyphAtlas>(mirror.RenderEntity);
             if (context.World.Has<Buffer<GlyphInstance>>(mirror.RenderEntity))
                 context.World.RemoveBuffer<GlyphInstance>(mirror.RenderEntity);
+        }
+    }
+
+    public void ValidateChanges(RenderExtractionContext context)
+    {
+        if (_atlasChanged)
+            _ = context.World.Read<RenderGlyphAtlas>(context.RequireMirror(atlasSource));
+        foreach (Entity source in _canvasGlyphs.Keys)
+        {
+            using ReadOnlyBuffer<GlyphInstance> glyphs = context.World.ReadBuffer<GlyphInstance>(context.RequireMirror(source));
+        }
+        foreach (Entity source in _textGlyphs.Keys)
+        {
+            using ReadOnlyBuffer<GlyphInstance> glyphs = context.World.ReadBuffer<GlyphInstance>(context.RequireMirror(source));
         }
     }
 

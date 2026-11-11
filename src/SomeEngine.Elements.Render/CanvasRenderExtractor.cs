@@ -26,6 +26,7 @@ public partial class CanvasRenderExtractor : IRenderExtractionSystem
 
     /// <summary>Computes detached visual instances with chunk jobs.</summary>
     public bool Parallel { get; set; } = true;
+    public bool CanApplyChangesDirect => true;
 
     public void DeclareReads(RenderExtractionQuery query)
     {
@@ -230,6 +231,27 @@ public partial class CanvasRenderExtractor : IRenderExtractionSystem
                 context.World.RemoveBuffer<SurfaceInstance>(mirror.RenderEntity);
             if (context.World.Has<Buffer<ImageInstance>>(mirror.RenderEntity))
                 context.World.RemoveBuffer<ImageInstance>(mirror.RenderEntity);
+        }
+    }
+
+    public void ValidateChanges(RenderExtractionContext context)
+    {
+        foreach (Entity source in _canvasChanges.Keys)
+            _ = context.World.Read<RenderCanvas>(context.RequireMirror(source));
+        foreach (Entity source in _canvasInstances.Keys)
+        {
+            Entity canvas = context.RequireMirror(source);
+            _ = context.World.Read<RenderCanvas>(canvas);
+            using ReadOnlyBuffer<SurfaceInstance> surfaces = context.World.ReadBuffer<SurfaceInstance>(canvas);
+            using ReadOnlyBuffer<ImageInstance> images = context.World.ReadBuffer<ImageInstance>(canvas);
+        }
+        foreach (Entity source in _surfaceValuesByCanvas.Keys)
+        {
+            using ReadOnlyBuffer<SurfaceInstance> surfaces = context.World.ReadBuffer<SurfaceInstance>(context.RequireMirror(source));
+        }
+        foreach (Entity source in _imageValuesByCanvas.Keys)
+        {
+            using ReadOnlyBuffer<ImageInstance> images = context.World.ReadBuffer<ImageInstance>(context.RequireMirror(source));
         }
     }
 
