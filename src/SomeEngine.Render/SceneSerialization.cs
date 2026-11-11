@@ -12,6 +12,8 @@ namespace SomeEngine.Render;
 /// <summary>Codecs for the components used by the sample scenes, using the normal ECS World format.</summary>
 public static class SceneSerialization
 {
+    static SceneSerialization() => ComponentCodec.RegisterDefaultHierarchy<DefaultHierarchyDomain>();
+
     public static ImmutableArray<ComponentCodec> Codecs { get; } =
     [
         ComponentCodec.Create<WorldTransform, TransformCodec>(Key(nameof(WorldTransform), "rotation:4f;position:3f;stretch:3f;scale:f"), new()),
