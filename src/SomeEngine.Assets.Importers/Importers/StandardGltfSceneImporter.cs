@@ -9,7 +9,7 @@ using GltfTexture = SharpGLTF.Schema2.Texture;
 namespace SomeEngine.Assets.Importers;
 
 /// <summary>Builds Standard and Unlit materials while the base importer assembles glTF nodes.</summary>
-[AssetImporter("9c14a7ba-e69d-4d6d-b8a1-5aec78ae6b3b", typeof(WorldBlock), SettingsProvider = typeof(GltfSceneSettingsProvider))]
+[AssetImporter("9c14a7ba-e69d-4d6d-b8a1-5aec78ae6b3b", typeof(EntityBlock), SettingsProvider = typeof(GltfSceneSettingsProvider))]
 public sealed class StandardGltfSceneImporter : GltfSceneImporter
 {
     public static readonly Guid ImporterId = new("9c14a7ba-e69d-4d6d-b8a1-5aec78ae6b3b");

@@ -1,3 +1,4 @@
+using SomeEngine.ECS.Spatial;
 using System.Numerics;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Systems;
@@ -11,15 +12,15 @@ public sealed class SceneSurfaceQueryTests
     public void SceneQueriesReturnNearestSupportOnFlatSlopeAndStepGeometry()
     {
         using var world = new World();
-        var ground = world.CreateEntity(new CollisionSurface(Quad(
+        var ground = world.Create(new CollisionSurface(Quad(
             new(-4, 0, -2), new(4, 0, -2), new(4, 0, 2), new(-4, 0, 2)), Matrix4x4.Identity, 11));
-        var slope = world.CreateEntity(new CollisionSurface(Quad(
+        var slope = world.Create(new CollisionSurface(Quad(
             new(-1, 0, -1), new(1, 1, -1), new(1, 1, 1), new(-1, 0, 1)), Matrix4x4.Identity, 12));
-        var step = world.CreateEntity(new CollisionSurface(Quad(
+        var step = world.Create(new CollisionSurface(Quad(
             new(2, 0.75f, -1), new(4, 0.75f, -1), new(4, 0.75f, 1), new(2, 0.75f, 1)), Matrix4x4.Identity, 13));
-        var members = world.Query(world.QueryDefinition().All<CollisionSurface>());
-        CollisionTree tree = Collision.Build<CollisionSurface, CollisionSurfaceReader>(world, members, default);
-        using var surfaces = Collision.Query(world, members, tree);
+        var members = world.Query(new QueryDescription().WithStored<CollisionSurface>());
+        BoundsTree tree = SpatialQueries.Build<CollisionSurface, CollisionSurfaceReader>(world, members, default);
+        var surfaces = Collision.Query(world, members, tree);
 
         CollisionRay[] rays = [new(new(-3, 2, 0), -Vector3.UnitY, 3),
             new(new(0, 2, 0), -Vector3.UnitY, 3), new(new(3, 2, 0), -Vector3.UnitY, 3)];
@@ -45,23 +46,23 @@ public sealed class SceneSurfaceQueryTests
         Near(Vector3.UnitY, stepHit.Normal);
         Assert.Equal(1.25f, stepHit.Distance);
         Assert.Equal(13UL, stepHit.SurfaceVersion);
-        world.ReleaseQuery(members);
+
     }
 
     [Fact]
     public void MovingSurfaceUpdatesKeepTheContactAnchorAndSphereSweepOnItsCurrentTransform()
     {
         using var jobs = new Scheduler(new JobConfiguration { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
-        using var world = WorldJobs.CreateWorld(scheduler: jobs);
+        using var world = new World(execution: new WorldJobs(jobs));
         CollisionMesh mesh = Quad(new(-1, 0, -1), new(1, 0, -1), new(1, 0, 1), new(-1, 0, 1));
         var reader = new PlatformReader(mesh);
-        var platform = world.CreateEntity(new Platform(Matrix4x4.CreateTranslation(0, 0.5f, 0), 21));
-        var members = world.Query(world.QueryDefinition().All<Platform>());
-        CollisionTree tree = Collision.Build<Platform, PlatformReader>(world, members, reader);
-        using var maintenance = Collision.Candidates<Platform, PlatformReader>(world, members, tree, reader)
+        var platform = world.Create(new Platform(Matrix4x4.CreateTranslation(0, 0.5f, 0), 21));
+        var members = world.Query(new QueryDescription().WithStored<Platform>());
+        BoundsTree tree = SpatialQueries.Build<Platform, PlatformReader>(world, members, reader);
+        using var maintenance = SpatialQueries.Candidates<Platform, PlatformReader>(world, members, tree, reader)
             .CreateMaintenance(jobs);
         maintenance.Schedule().Complete();
-        using var surfaces = Collision.Query<Platform, PlatformReader>(world, members, tree, reader);
+        var surfaces = Collision.Query<Platform, PlatformReader>(world, members, tree, reader);
 
         Assert.True(surfaces.SweepSphere(new(new(0.5f, 2, 0), 0.2f, -Vector3.UnitY, 3), out CollisionHit first));
         Assert.Equal(platform, first.Entity);
@@ -72,8 +73,8 @@ public sealed class SceneSurfaceQueryTests
         Vector3 localAnchor = Vector3.Transform(first.Point, inverse);
 
         Matrix4x4 moved = Matrix4x4.CreateRotationZ(MathF.PI / 6) * Matrix4x4.CreateTranslation(1, 1, 0);
-        world.AcquireSystemVersion();
-        world.Replace(platform, new Platform(moved, 22));
+
+        world.Set(platform, new Platform(moved, 22));
         maintenance.Schedule().Complete();
         Assert.True(surfaces.TryGetSurface(platform, out CollisionSurface current));
         Near(new(1.4330127f, 1.25f, 0), Vector3.Transform(localAnchor, current.Transform));
@@ -86,14 +87,14 @@ public sealed class SceneSurfaceQueryTests
         Near(1.5190599f, second.Distance);
         Assert.Equal(22UL, second.SurfaceVersion);
         Assert.Equal(moved, second.Transform);
-        world.ReleaseQuery(members);
+
     }
 
-    private readonly record struct Platform(Matrix4x4 Transform, ulong Version) : IComponent;
+    private readonly record struct Platform(Matrix4x4 Transform, ulong Version) : IAddedComponent;
 
     private readonly struct PlatformReader(CollisionMesh mesh) : ICollisionSurfaceReader<Platform>
     {
-        public CollisionBounds Read(in Platform component) => ReadSurface(in component).Bounds;
+        public SpatialBounds Read(in Platform component) => ReadSurface(in component).Bounds;
         public CollisionSurface ReadSurface(in Platform component) => new(mesh, component.Transform, component.Version);
     }
 

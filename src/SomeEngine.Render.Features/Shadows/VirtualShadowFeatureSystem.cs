@@ -1,4 +1,4 @@
-using SomeEngine.ECS.Queries;
+using SomeEngine.ECS;
 using SomeEngine.ECS.Systems;
 using SomeEngine.ECS.Entities;
 using SomeEngine.Render.Components;
@@ -14,7 +14,7 @@ public sealed class VirtualShadowFeatureSystem : ISystem<RenderFrameSystemContex
 
     private readonly VirtualShadowFeature _feature;
     private readonly RenderLightSetSystem _lights;
-    private QueryHandle _viewQuery;
+    private Query _viewQuery;
 
     public VirtualShadowFeatureSystem(
         VirtualShadowFeature feature,
@@ -25,7 +25,7 @@ public sealed class VirtualShadowFeatureSystem : ISystem<RenderFrameSystemContex
     }
 
     public void OnCreate(ref RenderFrameSystemContext context) =>
-        _viewQuery = context.World.Query(new QueryDefinitionBuilder().Read<RenderView>());
+        _viewQuery = context.World.World.Query(new QueryDescription().WithStored<RenderView>());
 
     public void OnUpdate(ref RenderFrameSystemContext context)
     {
@@ -33,10 +33,7 @@ public sealed class VirtualShadowFeatureSystem : ISystem<RenderFrameSystemContex
         RenderView receiver = default;
         int count = 0;
         var collector = new ReceiverCollector();
-        context.World.ExecuteQuery(
-            _viewQuery,
-            ref collector,
-            static (QueryCursor cursor, ref ReceiverCollector value) => value.Collect(cursor));
+        using (QueryScope query = _viewQuery.OpenRead()) collector.Collect(query);
         receiver = collector.View;
         count = collector.Count;
         if (count != 1)
@@ -48,8 +45,6 @@ public sealed class VirtualShadowFeatureSystem : ISystem<RenderFrameSystemContex
 
     public void OnDestroy(ref RenderFrameSystemContext context)
     {
-        if (_viewQuery.IsValid)
-            context.World.ReleaseQuery(_viewQuery);
         _viewQuery = default;
     }
 
@@ -59,14 +54,17 @@ public sealed class VirtualShadowFeatureSystem : ISystem<RenderFrameSystemContex
         internal Entity Entity;
         internal int Count;
 
-        internal void Collect(QueryCursor cursor)
+        internal void Collect(scoped QueryScope query)
         {
-            foreach (QueryRow row in cursor.Rows)
+            foreach (QueryChunk chunk in query)
             {
-                if (++Count > 1)
-                    return;
-                View = row.Read<RenderView>();
-                Entity = row.Entity;
+                ReadOnlySpan<RenderView> values = chunk.Read<RenderView>();
+                for (int row = 0; row < values.Length; row++)
+                {
+                    if (++Count > 1) return;
+                    View = values[row];
+                    Entity = chunk.Entities[row];
+                }
             }
         }
     }

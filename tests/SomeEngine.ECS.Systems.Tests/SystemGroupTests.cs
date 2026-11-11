@@ -49,13 +49,16 @@ public class SystemGroupTests
         group.Add(new LifecycleSystem("A"));
 
         group.Initialize();
-        SystemSlot initialized = group.GetSlot(0);
+        SystemState initialized = group.GetState(0);
+        bool initializedCreated = initialized.Created;
+        ulong initializedLast = initialized.LastSystemVersion;
+        ulong initializedCurrent = initialized.CurrentSystemVersion;
         group.Update();
         group.Dispose();
 
-        Assert.True(initialized.Created);
-        Assert.Equal(1u, initialized.LastSystemVersion);
-        Assert.Equal(1u, initialized.CurrentSystemVersion);
+        Assert.True(initializedCreated);
+        Assert.Equal(1ul, initializedLast);
+        Assert.Equal(1ul, initializedCurrent);
         Assert.Equal(
             new[]
             {
@@ -104,8 +107,8 @@ public class SystemGroupTests
 
         Assert.Equal(new[] { "enabled" }, log.Events);
 
-        var enabledSlot = group.GetSlot(enabled);
-        var disabledSlot = group.GetSlot(disabled);
+        var enabledSlot = group.GetState(enabled);
+        var disabledSlot = group.GetState(disabled);
         Assert.True(enabledSlot.Created);
         Assert.Equal(1u, enabledSlot.LastSystemVersion);
         Assert.False(disabledSlot.Created);
@@ -173,8 +176,8 @@ public class SystemGroupTests
         group.Update();
         group.Update();
 
-        Assert.Equal(3u, world.CurrentTick);
-        Assert.Equal(3u, group.GetSlot(0).LastSystemVersion);
+        Assert.Equal(2ul, world.Version);
+        Assert.Equal(2ul, group.GetState(0).LastSystemVersion);
     }
 
     [Fact]
@@ -244,7 +247,7 @@ public class SystemGroupTests
 
     private readonly struct TestSystemContext
     {
-        public TestSystemContext(SystemEventLog log, uint lastSystemVersion, uint currentSystemVersion)
+        public TestSystemContext(SystemEventLog log, ulong lastSystemVersion, ulong currentSystemVersion)
         {
             Log = log;
             LastSystemVersion = lastSystemVersion;
@@ -253,16 +256,16 @@ public class SystemGroupTests
 
         public SystemEventLog Log { get; }
 
-        public uint LastSystemVersion { get; }
+        public ulong LastSystemVersion { get; }
 
-        public uint CurrentSystemVersion { get; }
+        public ulong CurrentSystemVersion { get; }
     }
 
     private sealed class RecordingDriver : ISystemDriver<TestSystemContext>
     {
         private readonly SystemEventLog _log;
         private readonly bool _recordDriverEvents;
-        private uint _nextVersion = 1;
+        private ulong _nextVersion = 1;
 
         public RecordingDriver(SystemEventLog log, bool recordDriverEvents = true)
         {
@@ -270,7 +273,7 @@ public class SystemGroupTests
             _recordDriverEvents = recordDriverEvents;
         }
 
-        public uint AcquireSystemVersion(ref SystemSlot slot)
+        public ulong AcquireSystemVersion(ref SystemState slot)
         {
             if (_recordDriverEvents)
                 _log.Add($"driver:acquire:{slot.Index}:{slot.LastSystemVersion}");
@@ -278,7 +281,7 @@ public class SystemGroupTests
             return _nextVersion++;
         }
 
-        public TestSystemContext CreateContext(ref SystemSlot slot)
+        public TestSystemContext CreateContext(scoped ref SystemState slot)
         {
             if (_recordDriverEvents)
                 _log.Add($"driver:create:{slot.Index}:{slot.LastSystemVersion}:{slot.CurrentSystemVersion}");
@@ -286,13 +289,13 @@ public class SystemGroupTests
             return new TestSystemContext(_log, slot.LastSystemVersion, slot.CurrentSystemVersion);
         }
 
-        public void BeforeUpdate(ref SystemSlot slot, ref TestSystemContext context)
+        public void BeforeUpdate(ref SystemState slot, ref TestSystemContext context)
         {
             if (_recordDriverEvents)
                 _log.Add($"driver:before:{slot.Index}");
         }
 
-        public void AfterUpdate(ref SystemSlot slot, ref TestSystemContext context)
+        public void AfterUpdate(ref SystemState slot, ref TestSystemContext context)
         {
             if (_recordDriverEvents)
                 _log.Add($"driver:after:{slot.Index}");

@@ -13,21 +13,21 @@ public sealed partial class BuildErrorTests
     public void FailedParentPreservesTheChildsUnconsumedParameterChange()
     {
         using var frames = new HeadlessFrameDriver();
-        Entity source = frames.World.CreateEntity(new Content(1));
+        Entity source = frames.World.Create(new Content(1));
         var first = new State<int>(3);
         var second = new State<int>(7);
         Entity root = Views.Spawn(frames.World, Entity.Null, new OutputGroup(source, first, second, false));
         frames.Frame();
-        Entity child = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        frames.World.Replace(child, new OutputChild(3, first, second, false));
-        frames.World.Replace(source, new Content(2));
+        Entity child = Assert.Single(ElementChildren.Read(frames.World, root));
+        frames.World.Set(child, new OutputChild(3, first, second, false));
+        frames.World.Set(source, new Content(2));
 
         frames.Frame();
 
-        Assert.Equal(3, frames.World.Read<OutputChild>(child).Value);
-        Assert.Equal(7, frames.World.Read<Display>(child).Value);
+        Assert.Equal(3, frames.World.ReadComponentData<OutputChild>(child).Value);
+        Assert.Equal(7, frames.World.ReadComponentData<Display>(child).Value);
         frames.Frame();
-        Assert.Equal(7, frames.World.Read<Display>(child).Value);
+        Assert.Equal(7, frames.World.ReadComponentData<Display>(child).Value);
     }
 
     [Theory]
@@ -36,33 +36,33 @@ public sealed partial class BuildErrorTests
     public void FailedParentRestoresChildOutputAndItsPreviousDependencies(bool calculation)
     {
         using var frames = new HeadlessFrameDriver();
-        Entity source = frames.World.CreateEntity(new Content(1));
+        Entity source = frames.World.Create(new Content(1));
         var first = new State<int>(3);
         var second = new State<int>(7);
         Entity root = Views.Spawn(frames.World, Entity.Null, new OutputGroup(source, first, second, calculation));
         frames.Frame();
-        Entity child = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        frames.World.Replace(source, new Content(2));
+        Entity child = Assert.Single(ElementChildren.Read(frames.World, root));
+        frames.World.Set(source, new Content(2));
 
         frames.Frame();
 
-        Assert.Equal(1, frames.World.Read<OutputChild>(child).Value);
-        Assert.Equal(3, frames.World.Read<Display>(child).Value);
-        Assert.Equal(3, frames.World.ReadSparse<SparseDisplay>(child).Value);
+        Assert.Equal(1, frames.World.ReadComponentData<OutputChild>(child).Value);
+        Assert.Equal(3, frames.World.ReadComponentData<Display>(child).Value);
+        Assert.Equal(3, frames.World.ReadComponentData<SparseDisplay>(child).Value);
         Assert.False(frames.World.Has<AddedDisplay>(child));
         Assert.False(frames.World.HasSparse<AddedSparseDisplay>(child));
-        Entity tip = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, child));
-        Assert.Equal("3", frames.World.Read<Text>(tip).Value);
+        Entity tip = Assert.Single(ElementChildren.Read(frames.World, child));
+        Assert.Equal("3", frames.World.ReadComponentData<Text>(tip).Value);
         frames.Frame();
-        Assert.Equal(3, frames.World.Read<Display>(child).Value);
+        Assert.Equal(3, frames.World.ReadComponentData<Display>(child).Value);
 
         first.Value = 9;
         frames.Frame();
 
-        Assert.Equal(1, frames.World.Read<OutputChild>(child).Value);
-        Assert.Equal(9, frames.World.Read<Display>(child).Value);
-        Assert.Equal(9, frames.World.ReadSparse<SparseDisplay>(child).Value);
-        Assert.Equal("9", frames.World.Read<Text>(tip).Value);
+        Assert.Equal(1, frames.World.ReadComponentData<OutputChild>(child).Value);
+        Assert.Equal(9, frames.World.ReadComponentData<Display>(child).Value);
+        Assert.Equal(9, frames.World.ReadComponentData<SparseDisplay>(child).Value);
+        Assert.Equal("9", frames.World.ReadComponentData<Text>(tip).Value);
     }
 
     [Theory]
@@ -71,39 +71,39 @@ public sealed partial class BuildErrorTests
     public void FailedCallerContentRestoresTheContainerChildren(bool insideContent)
     {
         using var frames = new HeadlessFrameDriver();
-        Entity source = frames.World.CreateEntity(new Content(1));
+        Entity source = frames.World.Create(new Content(1));
         var error = new InvalidOperationException("caller content failed");
         Entity root = Views.Spawn(frames.World, Entity.Null, new ChangingCallerContent(source, insideContent, error));
         frames.Frame();
-        Entity group = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Entity[] children = Hierarchy<ElementTree>.GetChildren(frames.World, group).ToArray();
-        frames.World.Replace(source, new Content(2));
+        Entity group = Assert.Single(ElementChildren.Read(frames.World, root));
+        Entity[] children = ElementChildren.Read(frames.World, group);
+        frames.World.Set(source, new Content(2));
 
         frames.Frame();
 
-        Assert.Same(error, frames.World.ReadSparse<BuildError>(root).Exception);
-        Assert.Equal(group, Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root)));
-        Assert.Equal(children, Hierarchy<ElementTree>.GetChildren(frames.World, group).ToArray());
-        Assert.Equal(new[] { "first", "second" }, children.Select(child => frames.World.Read<Text>(child).Value));
-        Entity tip = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, children[1]));
-        Assert.Equal("second", frames.World.Read<Tip>(tip).Value);
+        Assert.Same(error, frames.World.ReadComponentData<BuildError>(root).Exception);
+        Assert.Equal(group, Assert.Single(ElementChildren.Read(frames.World, root)));
+        Assert.Equal(children, ElementChildren.Read(frames.World, group));
+        Assert.Equal(new[] { "first", "second" }, children.Select(child => frames.World.ReadComponentData<Text>(child).Value));
+        Entity tip = Assert.Single(ElementChildren.Read(frames.World, children[1]));
+        Assert.Equal("second", frames.World.ReadComponentData<Tip>(tip).Value);
     }
 
     [Fact]
     public void FailedParentRestoresThePreviousCallbackInEqualChildParameters()
     {
         using var frames = new HeadlessFrameDriver();
-        Entity source = frames.World.CreateEntity(new Content(1));
+        Entity source = frames.World.Create(new Content(1));
         Entity root = Views.Spawn(frames.World, Entity.Null, new CallbackGroup(source));
         frames.Frame();
-        Entity child = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        frames.World.Replace(source, new Content(2));
+        Entity child = Assert.Single(ElementChildren.Read(frames.World, root));
+        frames.World.Set(source, new Content(2));
 
         frames.Frame();
 
-        Assert.Equal(child, Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root)));
-        Assert.Equal("before", frames.World.ReadSparse<CallbackText>(child).TextCallback());
-        Assert.Equal(2UL, frames.World.ReadSparse<BuildError>(root).Frame);
+        Assert.Equal(child, Assert.Single(ElementChildren.Read(frames.World, root)));
+        Assert.Equal("before", frames.World.ReadComponentData<CallbackText>(child).TextCallback());
+        Assert.Equal(2UL, frames.World.ReadComponentData<BuildError>(root).Frame);
     }
 
     [Fact]
@@ -111,7 +111,7 @@ public sealed partial class BuildErrorTests
     {
         using var frames = new HeadlessFrameDriver();
         var error = new InvalidOperationException("completed async content failed");
-        Entity source = frames.World.CreateEntity(new Content(2));
+        Entity source = frames.World.Create(new Content(2));
         Entity root = Views.Spawn(frames.World, Entity.Null, new AsyncContent(source, error));
         using var messages = new ErrorMessages();
         System.Diagnostics.Trace.Listeners.Add(messages);
@@ -124,20 +124,20 @@ public sealed partial class BuildErrorTests
             System.Diagnostics.Trace.Listeners.Remove(messages);
         }
 
-        Assert.Same(error, frames.World.ReadSparse<BuildError>(root).Exception);
-        Assert.Equal(1UL, frames.World.ReadSparse<BuildError>(root).Frame);
-        Assert.Empty(Hierarchy<ElementTree>.GetChildren(frames.World, root));
+        Assert.Same(error, frames.World.ReadComponentData<BuildError>(root).Exception);
+        Assert.Equal(1UL, frames.World.ReadComponentData<BuildError>(root).Frame);
+        Assert.Empty(ElementChildren.Read(frames.World, root));
 #if DEBUG
         Assert.NotEmpty(messages.Values);
 #else
         Assert.Empty(messages.Values);
 #endif
 
-        frames.World.Replace(source, new Content(3));
+        frames.World.Set(source, new Content(3));
         frames.Frame();
         Assert.False(frames.World.HasSparse<BuildError>(root));
-        Entity child = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Assert.Equal("3", frames.World.Read<Text>(child).Value);
+        Entity child = Assert.Single(ElementChildren.Read(frames.World, root));
+        Assert.Equal("3", frames.World.ReadComponentData<Text>(child).Value);
     }
 
     [Theory]
@@ -146,56 +146,56 @@ public sealed partial class BuildErrorTests
     public void AncestorDisplaysTheChildErrorAndRestoresContentAfterTheChildRecovers(bool firstBuildFailure)
     {
         using var frames = new HeadlessFrameDriver();
-        Entity source = frames.World.CreateEntity(new Content(firstBuildFailure ? 2 : 1));
+        Entity source = frames.World.Create(new Content(firstBuildFailure ? 2 : 1));
         Entity root = Views.Spawn(frames.World, Entity.Null, new ErrorDisplay(source));
         frames.Frame();
-        Entity child = Hierarchy<ElementTree>.GetChildren(frames.World, root)[0];
+        Entity child = ElementChildren.Read(frames.World, root)[0];
         if (!firstBuildFailure)
-            frames.World.Replace(source, new Content(2));
+            frames.World.Set(source, new Content(2));
 
         frames.Frame();
         frames.Frame();
 
-        Entity fallback = Hierarchy<ElementTree>.GetChildren(frames.World, root)[1];
-        Assert.Equal("fallback: content failed", frames.World.Read<Text>(fallback).Value);
-        Assert.Equal(firstBuildFailure ? 1UL : 2UL, frames.World.ReadSparse<BuildError>(child).Frame);
+        Entity fallback = ElementChildren.Read(frames.World, root)[1];
+        Assert.Equal("fallback: content failed", frames.World.ReadComponentData<Text>(fallback).Value);
+        Assert.Equal(firstBuildFailure ? 1UL : 2UL, frames.World.ReadComponentData<BuildError>(child).Frame);
         Assert.False(frames.World.HasSparse<BuildError>(root));
 
-        frames.World.Replace(source, new Content(3));
+        frames.World.Set(source, new Content(3));
         frames.Frame();
         frames.Frame();
 
-        Entity content = Hierarchy<ElementTree>.GetChildren(frames.World, root)[1];
-        Assert.Equal(child, Hierarchy<ElementTree>.GetChildren(frames.World, root)[0]);
-        Assert.Equal("content", frames.World.Read<Text>(content).Value);
+        Entity content = ElementChildren.Read(frames.World, root)[1];
+        Assert.Equal(child, ElementChildren.Read(frames.World, root)[0]);
+        Assert.Equal("content", frames.World.ReadComponentData<Text>(content).Value);
         Assert.False(frames.World.HasSparse<BuildError>(child));
-        Assert.False(frames.World.IsAlive(fallback));
+        Assert.False(frames.World.IsAlive(fallback) && frames.World.Has<ViewType>(fallback));
     }
 
     [Fact]
     public void FailedBuildRecordsItsExceptionAndFrameAndRecoversWhenItsDependencyChanges()
     {
         using var frames = new HeadlessFrameDriver();
-        Entity source = frames.World.CreateEntity(new Content(2));
+        Entity source = frames.World.Create(new Content(2));
         Entity root = Views.Spawn(frames.World, Entity.Null, new ChangingContent(source, 1));
 
         frames.Frame();
 
-        BuildError error = frames.World.ReadSparse<BuildError>(root);
+        BuildError error = frames.World.ReadComponentData<BuildError>(root);
         Assert.IsType<InvalidOperationException>(error.Exception);
         Assert.Equal(1UL, error.Frame);
-        Assert.Empty(Hierarchy<ElementTree>.GetChildren(frames.World, root));
+        Assert.Empty(ElementChildren.Read(frames.World, root));
         frames.Frame();
         frames.Frame();
-        Assert.Equal(error, frames.World.ReadSparse<BuildError>(root));
+        Assert.Equal(error, frames.World.ReadComponentData<BuildError>(root));
 
-        frames.World.Replace(source, new Content(3));
+        frames.World.Set(source, new Content(3));
         frames.Frame();
 
         Assert.False(frames.World.HasSparse<BuildError>(root));
         Assert.Equal(new[] { "first", "second", "third" },
-            Hierarchy<ElementTree>.GetChildren(frames.World, root)
-                .Select(child => frames.World.Read<Text>(child).Value).ToArray());
+            ElementChildren.Read(frames.World, root)
+                .Select(child => frames.World.ReadComponentData<Text>(child).Value).ToArray());
     }
 
     [Theory]
@@ -204,32 +204,32 @@ public sealed partial class BuildErrorTests
     public void FailedChildDeclarationsKeepThePreviousTreeAndTheSiblingBuildsWithinTheFrame(bool inline)
     {
         using var frames = new HeadlessFrameDriver();
-        Entity source = frames.World.CreateEntity(new Content(1));
+        Entity source = frames.World.Create(new Content(1));
         Entity root = Views.Spawn(frames.World, Entity.Null, new ContentGroup(source, 1));
         frames.Frame();
-        Entity[] branches = Hierarchy<ElementTree>.GetChildren(frames.World, root).ToArray();
-        Entity[] children = Hierarchy<ElementTree>.GetChildren(frames.World, branches[0]).ToArray();
-        Entity tip = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, children[1]));
-        Entity changedTip = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, children[2]));
-        int entityCount = frames.World.EntityCount;
-        frames.World.Replace(source, new Content(2));
+        Entity[] branches = ElementChildren.Read(frames.World, root);
+        Entity[] children = ElementChildren.Read(frames.World, branches[0]);
+        Entity tip = Assert.Single(ElementChildren.Read(frames.World, children[1]));
+        Entity changedTip = Assert.Single(ElementChildren.Read(frames.World, children[2]));
+        int entityCount = frames.World.Query(new QueryDescription().With<ViewType>()).Count;
+        frames.World.Set(source, new Content(2));
         if (inline)
-            frames.World.Replace(root, new ContentGroup(source, 2));
+            frames.World.Set(root, new ContentGroup(source, 2));
 
         frames.Frame();
 
-        Assert.Equal(branches, Hierarchy<ElementTree>.GetChildren(frames.World, root).ToArray());
-        Assert.Equal(children, Hierarchy<ElementTree>.GetChildren(frames.World, branches[0]).ToArray());
+        Assert.Equal(branches, ElementChildren.Read(frames.World, root));
+        Assert.Equal(children, ElementChildren.Read(frames.World, branches[0]));
         Assert.Equal(new[] { "first", "second", "third" },
-            children.Select(child => frames.World.Read<Text>(child).Value).ToArray());
-        Assert.Equal(tip, Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, children[1])));
-        Assert.Equal("second", frames.World.Read<Tip>(tip).Value);
-        Assert.Equal(changedTip, Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, children[2])));
-        Assert.Equal("third", frames.World.Read<Tip>(changedTip).Value);
-        Assert.Equal(entityCount, frames.World.EntityCount);
-        Assert.Equal(2UL, frames.World.ReadSparse<BuildError>(branches[0]).Frame);
-        Entity siblingText = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, branches[1]));
-        Assert.Equal("2", frames.World.Read<Text>(siblingText).Value);
+            children.Select(child => frames.World.ReadComponentData<Text>(child).Value).ToArray());
+        Assert.Equal(tip, Assert.Single(ElementChildren.Read(frames.World, children[1])));
+        Assert.Equal("second", frames.World.ReadComponentData<Tip>(tip).Value);
+        Assert.Equal(changedTip, Assert.Single(ElementChildren.Read(frames.World, children[2])));
+        Assert.Equal("third", frames.World.ReadComponentData<Tip>(changedTip).Value);
+        Assert.Equal(entityCount, frames.World.Query(new QueryDescription().With<ViewType>()).Count);
+        Assert.Equal(2UL, frames.World.ReadComponentData<BuildError>(branches[0]).Frame);
+        Entity siblingText = Assert.Single(ElementChildren.Read(frames.World, branches[1]));
+        Assert.Equal("2", frames.World.ReadComponentData<Text>(siblingText).Value);
     }
 
     private readonly record struct ChangingCallerContent(Entity Source, bool InsideContent, Exception Error) : IView, IComponent
@@ -359,7 +359,7 @@ public sealed partial class BuildErrorTests
         }
     }
 
-    private readonly record struct Text(string Value) : IView, IComponent
+    private readonly record struct Text(string Value) : IView, ITrackedComponent
     {
         public BuildTask Build()
         {
@@ -378,7 +378,7 @@ public sealed partial class BuildErrorTests
         public BuildTask Build() => default;
     }
 
-    private readonly record struct Content(int Value) : IComponent;
+    private readonly record struct Content(int Value) : ITrackedComponent;
 
     private readonly record struct Display(int Value) : IComponent;
     private readonly record struct SparseDisplay(int Value) : ISparseComponent;

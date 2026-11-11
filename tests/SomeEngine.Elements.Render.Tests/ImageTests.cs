@@ -33,7 +33,7 @@ public sealed partial class ImageTests(SurfaceExtractionDevice graphics) : IClas
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
         systems.Add(new ViewRebuildSystem());
         systems.Add(new LayoutSystem(new ImageTextures(_ => texture)));
-        Entity canvas = world.CreateEntity(new Canvas { Size = new Size(200, 150) });
+        Entity canvas = world.Create(new Canvas { Size = new Size(200, 150) });
         Entity root = Views.Views.Spawn(world, canvas, new Absolute());
         Entity image = Views.Views.Spawn(world, root, new Image(source, fit));
         world.Add(image, new Box { Fixed = new Size(100, 100) });
@@ -45,7 +45,7 @@ public sealed partial class ImageTests(SurfaceExtractionDevice graphics) : IClas
         graphics.Apply(extraction, render);
         ImageInstance instance = Assert.Single(ReadImages(render, extraction.RequireMirror(canvas)));
 
-        Assert.Equal(new Rect(0, 0, 100, 100), world.Read<LayoutRect>(image).Value);
+        Assert.Equal(new Rect(0, 0, 100, 100), world.ReadComponentData<LayoutRect>(image).Value);
         Assert.Equal(new Rect(x, y, drawWidth, drawHeight), instance.Rectangle);
         Assert.Equal(new Rect(u, v, uvWidth, uvHeight), instance.Uv);
         Assert.Same(texture, instance.Texture);
@@ -60,13 +60,13 @@ public sealed partial class ImageTests(SurfaceExtractionDevice graphics) : IClas
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
         systems.Add(new ViewRebuildSystem());
         systems.Add(new LayoutSystem(new ImageTextures(id => id == source ? texture : null)));
-        Entity canvas = world.CreateEntity(new Canvas { Size = new Size(200, 150) });
+        Entity canvas = world.Create(new Canvas { Size = new Size(200, 150) });
         Entity root = Views.Views.Spawn(world, canvas, new Absolute());
         Entity image = Views.Views.Spawn(world, root, new Image(source));
 
         systems.Update();
 
-        Assert.Equal(new Rect(0, 0, 80, 40), world.Read<LayoutRect>(image).Value);
+        Assert.Equal(new Rect(0, 0, 80, 40), world.ReadComponentData<LayoutRect>(image).Value);
     }
 
     [Fact]
@@ -79,24 +79,24 @@ public sealed partial class ImageTests(SurfaceExtractionDevice graphics) : IClas
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
         systems.Add(new ViewRebuildSystem());
         systems.Add(new LayoutSystem(new ImageTextures(_ => ready)));
-        Entity canvas = world.CreateEntity(new Canvas { Size = new Size(200, 150) });
+        Entity canvas = world.Create(new Canvas { Size = new Size(200, 150) });
         Entity root = Views.Views.Spawn(world, canvas, new Absolute());
         Entity content = Views.Views.Spawn(world, root, new ImageContent(source));
         systems.Update();
-        Entity image = Assert.Single(Hierarchy<ElementTree>.GetChildren(world, content));
+        Entity image = Assert.Single(ElementChildren.Read(world, content));
         using var render = new RenderWorld();
         using var extraction = new RenderExtractionSystems(render, new CanvasRenderExtractor());
         extraction.Extract(world);
         graphics.Apply(extraction, render);
         Entity mirror = extraction.RequireMirror(canvas);
-        Assert.Equal(new Rect(7, 9, 1, 1), world.Read<LayoutRect>(image).Value);
+        Assert.Equal(new Rect(7, 9, 1, 1), world.ReadComponentData<LayoutRect>(image).Value);
         Assert.Null(Assert.Single(ReadImages(render, mirror)).Texture);
 
         ready = texture;
         systems.Update();
         extraction.Extract(world);
         graphics.Apply(extraction, render);
-        Assert.Equal(new Rect(7, 9, 80, 40), world.Read<LayoutRect>(image).Value);
+        Assert.Equal(new Rect(7, 9, 80, 40), world.ReadComponentData<LayoutRect>(image).Value);
         ImageInstance loaded = Assert.Single(ReadImages(render, mirror));
         Assert.Same(texture, loaded.Texture);
         Assert.Equal(new Rect(7, 9, 80, 40), loaded.Rectangle);
@@ -116,7 +116,7 @@ public sealed partial class ImageTests(SurfaceExtractionDevice graphics) : IClas
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
         systems.Add(new ViewRebuildSystem());
         systems.Add(new LayoutSystem(new ImageTextures(_ => texture)));
-        Entity canvas = world.CreateEntity(new Canvas { Size = new Size(200, 150) });
+        Entity canvas = world.Create(new Canvas { Size = new Size(200, 150) });
         Entity root = Views.Views.Spawn(world, canvas, new Absolute());
         Entity image = Views.Views.Spawn(world, root, new Image(source));
         world.Add(image, new Box { Fixed = new Size(100, 100), Padding = new Thickness(10, 20, 10, 20) });
@@ -128,13 +128,13 @@ public sealed partial class ImageTests(SurfaceExtractionDevice graphics) : IClas
         Entity mirror = extraction.RequireMirror(canvas);
         Assert.Equal(new Rect(10, 30, 80, 40), Assert.Single(ReadImages(render, mirror)).Rectangle);
 
-        world.Replace(image, new Box { Fixed = new Size(100, 100), Padding = new Thickness(10, 10, 10, 10) });
-        world.Replace(image, new Image(source, ImageFit.Cover));
+        world.Set(image, new Box { Fixed = new Size(100, 100), Padding = new Thickness(10, 10, 10, 10) });
+        world.Set(image, new Image(source, ImageFit.Cover));
         systems.Update();
         extraction.Extract(world);
         graphics.Apply(extraction, render);
         ImageInstance covered = Assert.Single(ReadImages(render, mirror));
-        Assert.Equal(new Rect(0, 0, 100, 100), world.Read<LayoutRect>(image).Value);
+        Assert.Equal(new Rect(0, 0, 100, 100), world.ReadComponentData<LayoutRect>(image).Value);
         Assert.Equal(new Rect(10, 10, 80, 80), covered.Rectangle);
         Assert.Equal(new Rect(0.25f, 0, 0.5f, 1), covered.Uv);
     }
@@ -150,7 +150,7 @@ public sealed partial class ImageTests(SurfaceExtractionDevice graphics) : IClas
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
         systems.Add(new ViewRebuildSystem());
         systems.Add(new LayoutSystem(new ImageTextures(_ => texture)));
-        Entity canvas = world.CreateEntity(new Canvas { Size = new Size(200, 150) });
+        Entity canvas = world.Create(new Canvas { Size = new Size(200, 150) });
         Entity root = Views.Views.Spawn(world, canvas, new Absolute());
         Entity image = Views.Views.Spawn(world, root, new Image(default, fit));
         world.Add(image, new Box { Fixed = default(Size) });
@@ -160,7 +160,7 @@ public sealed partial class ImageTests(SurfaceExtractionDevice graphics) : IClas
         extraction.Extract(world);
         graphics.Apply(extraction, render);
         ImageInstance instance = Assert.Single(ReadImages(render, extraction.RequireMirror(canvas)));
-        Assert.Equal(default(Rect), world.Read<LayoutRect>(image).Value);
+        Assert.Equal(default(Rect), world.ReadComponentData<LayoutRect>(image).Value);
         Assert.Equal(default(Rect), instance.Rectangle);
         Assert.Equal(new Rect(0, 0, 1, 1), instance.Uv);
     }
@@ -173,7 +173,7 @@ public sealed partial class ImageTests(SurfaceExtractionDevice graphics) : IClas
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
         systems.Add(new ViewRebuildSystem());
         systems.Add(new LayoutSystem());
-        Entity canvas = world.CreateEntity(new Canvas { Size = new Size(200, 150) });
+        Entity canvas = world.Create(new Canvas { Size = new Size(200, 150) });
         Views.Views.Spawn(world, canvas, new Image(default));
         Assert.Throws<InvalidOperationException>(systems.Update);
     }
@@ -186,7 +186,7 @@ public sealed partial class ImageTests(SurfaceExtractionDevice graphics) : IClas
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
         systems.Add(new ViewRebuildSystem());
         systems.Add(new LayoutSystem(new ImageTextures(_ => texture)));
-        Entity canvas = world.CreateEntity(new Canvas { Size = new Size(200, 150) });
+        Entity canvas = world.Create(new Canvas { Size = new Size(200, 150) });
         Views.Views.Spawn(world, canvas, new Image(default, (ImageFit)99));
         Assert.Throws<InvalidOperationException>(systems.Update);
     }
@@ -197,11 +197,11 @@ public sealed partial class ImageTests(SurfaceExtractionDevice graphics) : IClas
     {
         Texture texture = CreateTexture(80, 40);
         using var world = new World();
-        Entity canvas = world.CreateEntity(new Canvas { Size = new Size(200, 150) });
-        Entity viewport = world.CreateEntity(new LayoutRect { Value = new Rect(20, 10, 100, 60) });
+        Entity canvas = world.Create(new Canvas { Size = new Size(200, 150) });
+        Entity viewport = world.Create(new LayoutRect { Value = new Rect(20, 10, 100, 60) });
         world.Add(viewport, new ScrollOffset());
         Hierarchy<ElementTree>.SetParent(world, viewport, canvas);
-        Entity image = world.CreateEntity(new Image(default, ImageFit.Stretch));
+        Entity image = world.Create(new Image(default, ImageFit.Stretch));
         world.Add(image, new ImageTexture(texture, new Size(80, 40), texture.Revision));
         world.Add(image, new LayoutRect { Value = new Rect(20, 10, 180, 100) });
         Hierarchy<ElementTree>.SetParent(world, image, viewport);
@@ -212,7 +212,7 @@ public sealed partial class ImageTests(SurfaceExtractionDevice graphics) : IClas
         Entity mirror = extraction.RequireMirror(canvas);
         Assert.Equal(new Rect(20, 10, 100, 60), Assert.Single(ReadImages(render, mirror)).ClipRectangle);
 
-        world.Replace(viewport, new LayoutRect { Value = new Rect(20, 10, 60, 40) });
+        world.Set(viewport, new LayoutRect { Value = new Rect(20, 10, 60, 40) });
         extraction.Extract(world);
         graphics.Apply(extraction, render);
         ImageInstance clipped = Assert.Single(ReadImages(render, mirror));
@@ -245,7 +245,8 @@ public sealed partial class ImageTests(SurfaceExtractionDevice graphics) : IClas
     private static ImageInstance[] ReadImages(RenderWorld world, Entity canvas)
     {
         ImageInstance[] result = [];
-        world.ExecuteBufferRead<ImageInstance>(canvas, buffer => result = buffer.AsSpan().ToArray());
+        using (ReadOnlyBuffer<ImageInstance> buffer = world.World.ReadBuffer<ImageInstance>(canvas))
+            result = buffer.AsSpan().ToArray();
         return result;
     }
 }

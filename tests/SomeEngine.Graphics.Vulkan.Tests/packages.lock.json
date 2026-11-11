@@ -168,7 +168,14 @@
         "type": "Project",
         "dependencies": {
           "SomeEngine.Diagnostics": "[1.0.0, )",
-          "SomeEngine.Job.Contracts": "[1.0.0, )"
+          "SomeEngine.Job": "[1.0.0, )",
+          "SomeEngine.Job.Resources": "[1.0.0, )"
+        }
+      },
+      "someengine.ecs.relationships": {
+        "type": "Project",
+        "dependencies": {
+          "SomeEngine.ECS": "[1.0.0, )"
         }
       },
       "someengine.ecs.systems": {
@@ -176,8 +183,9 @@
         "dependencies": {
           "SomeEngine.Diagnostics": "[1.0.0, )",
           "SomeEngine.ECS": "[1.0.0, )",
+          "SomeEngine.ECS.Relationships": "[1.0.0, )",
           "SomeEngine.Job": "[1.0.0, )",
-          "SomeEngine.Job.Contracts": "[1.0.0, )"
+          "SomeEngine.Job.Resources": "[1.0.0, )"
         }
       },
       "someengine.graphics": {
@@ -209,10 +217,10 @@
         "type": "Project",
         "dependencies": {
           "SomeEngine.Diagnostics": "[1.0.0, )",
-          "SomeEngine.Job.Contracts": "[1.0.0, )"
+          "SomeEngine.Job.Resources": "[1.0.0, )"
         }
       },
-      "someengine.job.contracts": {
+      "someengine.job.resources": {
         "type": "Project"
       },
       "someengine.rendergraph": {

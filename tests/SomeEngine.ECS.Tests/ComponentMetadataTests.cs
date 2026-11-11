@@ -9,63 +9,63 @@ namespace SomeEngine.ECS.Tests;
 // 测试用组件类型
 // ——————————————————————————————————————————————————
 
-public struct Position : SomeEngine.ECS.IComponent
+public struct Position : SomeEngine.ECS.IAddedComponent
 {
     public float X;
     public float Y;
 }
 
-public struct Velocity : SomeEngine.ECS.IComponent
+public struct Velocity : SomeEngine.ECS.IAddedComponent
 {
     public float X;
     public float Y;
 }
 
-public struct Health : SomeEngine.ECS.IComponent
+public struct Health : SomeEngine.ECS.IAddedComponent
 {
     public int Value;
 }
 
-public struct PlayerTag : SomeEngine.ECS.Components.ITag { }
+public struct PlayerTag : SomeEngine.ECS.ITag { }
 
-public struct EnemyTag : SomeEngine.ECS.Components.ITag { }
+public struct EnemyTag : SomeEngine.ECS.ITag { }
 
-public struct Stunned : SomeEngine.ECS.IEnableableComponent
+public struct Stunned : SomeEngine.ECS.IEnableableComponent, IAddedComponent
 {
     public float Duration;
 }
 
-public struct Damage : SomeEngine.ECS.Components.ISparseComponent
+public struct Damage : SomeEngine.ECS.Components.ISparseComponent, IAddedComponent
 {
     public int Amount;
 }
 
 [RelationSchema(RelationDirection.Directed, RelationCardinality.Parallel)]
-public struct Likes : SomeEngine.ECS.IComponent
+public struct Likes : SomeEngine.ECS.IAddedComponent
 {
     public float Strength;
 }
 
 [RelationSchema(RelationDirection.Directed, RelationCardinality.UniqueSource)]
-public struct Owns : SomeEngine.ECS.IComponent
+public struct Owns : SomeEngine.ECS.IAddedComponent
 {
     public int Slot;
 }
 
-public struct NamedComponent : SomeEngine.ECS.IComponent
+public struct NamedComponent : SomeEngine.ECS.IAddedComponent
 {
     public string Name;   // managed 引用字段
     public int Id;
 }
 
-public struct PureUnmanaged : SomeEngine.ECS.IComponent
+public struct PureUnmanaged : SomeEngine.ECS.IAddedComponent
 {
     public int A;
     public float B;
     public double C;
 }
 
-public struct NameIndex : SomeEngine.ECS.Components.IIndexedComponent<string>
+public struct NameIndex : SomeEngine.ECS.IIndexedComponent<string>, IAddedComponent
 {
     public string Value;
     public string GetKey() => Value;
@@ -78,18 +78,20 @@ public struct NameIndex : SomeEngine.ECS.Components.IIndexedComponent<string>
 public class ComponentMetadataTests
 {
     [Fact]
-    public void IdStartsOne()
+    public void ComponentIdentityCanAddressStoredBytes()
     {
-        // 任何组件的 Id 都应该 >= 1（0 保留为无效值）
-        Assert.True(ComponentMetadata<Position>.Id >= 1);
+        using var world = new World();
+        var entity = world.Create(new Position { X = 3 });
+        float value = System.Runtime.CompilerServices.Unsafe.ReadUnaligned<float>(in world.ReadBytes(entity, ComponentId<Position>.Value));
+        Assert.Equal(3, value);
     }
 
     [Fact]
     public void IdStaysStable()
     {
-        int first = ComponentMetadata<Position>.Id;
-        int second = ComponentMetadata<Position>.Id;
-        int third = ComponentMetadata<Position>.Id;
+        int first = ComponentId<Position>.Value;
+        int second = ComponentId<Position>.Value;
+        int third = ComponentId<Position>.Value;
         Assert.Equal(first, second);
         Assert.Equal(second, third);
     }
@@ -97,51 +99,64 @@ public class ComponentMetadataTests
     [Fact]
     public void IdsDiffer()
     {
-        int posId = ComponentMetadata<Position>.Id;
-        int velId = ComponentMetadata<Velocity>.Id;
-        int healthId = ComponentMetadata<Health>.Id;
-        int tagId = ComponentMetadata<PlayerTag>.Id;
-        int sparseId = ComponentMetadata<Damage>.Id;
-
-        var ids = new HashSet<int> { posId, velId, healthId, tagId, sparseId };
+        var ids = new HashSet<int>
+        {
+            ComponentId<Position>.Value, ComponentId<Velocity>.Value, ComponentId<Health>.Value,
+            ComponentId<PlayerTag>.Value, ComponentId<Damage>.Value,
+        };
         Assert.Equal(5, ids.Count);
     }
 
     [Fact]
     public void TableStorage()
     {
-        Assert.Equal(StoragePath.Table, ComponentMetadata<Position>.Storage);
-        Assert.Equal(StoragePath.Table, ComponentMetadata<Velocity>.Storage);
-        Assert.Equal(StoragePath.Table, ComponentMetadata<Health>.Storage);
+        using var world = new World();
+        var entity = world.Create(new Position { X = 1 }, new Velocity { Y = 2 }, new Health { Value = 3 });
+        Assert.Equal(1, world.Read<Position>(entity).X);
+        Assert.Equal(2, world.Read<Velocity>(entity).Y);
+        Assert.Equal(3, world.Read<Health>(entity).Value);
     }
 
     [Fact]
     public void TagStorage()
     {
-        Assert.Equal(StoragePath.Tag, ComponentMetadata<PlayerTag>.Storage);
-        Assert.Equal(StoragePath.Tag, ComponentMetadata<EnemyTag>.Storage);
+        using var world = new World();
+        var entity = world.Create(new PlayerTag(), new EnemyTag());
+        world.Remove<PlayerTag>(entity);
+        Assert.False(world.Has<PlayerTag>(entity));
+        Assert.True(world.Has<EnemyTag>(entity));
     }
 
     [Fact]
     public void EnableableStorage()
     {
-        Assert.Equal(StoragePath.Table, ComponentMetadata<Stunned>.Storage);
-        Assert.True(ComponentMetadata<Stunned>.IsEnableable);
+        using var world = new World();
+        var entity = world.Create(new Stunned { Duration = 2 });
+        world.Disable<Stunned>(entity);
+        Assert.True(world.Has<Stunned>(entity));
+        Assert.Equal(0, world.Query<Stunned>().Count);
+        Assert.Equal(2, world.Read<Stunned>(entity).Duration);
     }
 
     [Fact]
     public void SparseStorage()
     {
-        Assert.Equal(StoragePath.Sparse, ComponentMetadata<Damage>.Storage);
+        using var world = new World();
+        var entity = world.Create();
+        world.SetSparse(entity, new Damage { Amount = 3 });
+        Assert.True(world.HasSparse<Damage>(entity));
+        Assert.False(world.Has<Damage>(entity));
+        Assert.Equal(3, world.ReadSparse<Damage>(entity).Amount);
     }
 
     [Fact]
     public void RelationPayloadUsesOrdinaryTableStorage()
     {
-        Assert.Equal(StoragePath.Table, ComponentMetadata<Likes>.Storage);
-        Assert.Equal(StoragePath.Table, ComponentMetadata<Owns>.Storage);
-        Assert.False(ComponentMetadata<Likes>.IsRelationshipSource);
-        Assert.False(ComponentMetadata<Owns>.IsRelationshipTarget);
+        using var world = new World();
+        var entity = world.Create(new Likes { Strength = 0.5f }, new Owns { Slot = 7 });
+        Assert.Equal(0.5f, world.Read<Likes>(entity).Strength);
+        Assert.Equal(7, world.Read<Owns>(entity).Slot);
+        Assert.False(world.Has<RelationEndpoints<Likes>>(entity));
         Assert.Equal(RelationCardinality.Parallel, RelationSchema.For<Likes>().Cardinality);
         Assert.Equal(RelationCardinality.UniqueSource, RelationSchema.For<Owns>().Cardinality);
     }
@@ -149,37 +164,59 @@ public class ComponentMetadataTests
     [Fact]
     public void IndexedStorage()
     {
-        Assert.Equal(StoragePath.Table, ComponentMetadata<NameIndex>.Storage);
-        Assert.True(ComponentMetadata<NameIndex>.IsIndexed);
+        using var world = new World();
+        ValueIndex<NameIndex, string> index = world.Index<NameIndex, string>();
+        var entity = world.Create(new NameIndex { Value = "first" });
+        world.Set(entity, new NameIndex { Value = "second" });
+        using IndexMembers previous = index.Find("first");
+        using IndexMembers current = index.Find("second");
+        Assert.Equal(0, previous.Count);
+        Assert.Equal([entity], current.Entities.ToArray());
     }
 
     [Fact]
-    public void PureRefsFalse()
+    public void UnmanagedComponentBytesExposeTheStoredValue()
     {
-        Assert.False(ComponentMetadata<Position>.ContainsReferences);
-        Assert.False(ComponentMetadata<PureUnmanaged>.ContainsReferences);
-        Assert.False(ComponentMetadata<Health>.ContainsReferences);
+        using var world = new World();
+        var entity = world.Create(new PureUnmanaged { A = 7, B = 3, C = 2 });
+        PureUnmanaged value = System.Runtime.CompilerServices.Unsafe.ReadUnaligned<PureUnmanaged>(
+            in world.ReadBytes(entity, ComponentId<PureUnmanaged>.Value));
+        Assert.Equal(7, value.A);
+        Assert.Equal(3, value.B);
+        Assert.Equal(2, value.C);
     }
 
     [Fact]
-    public void ManagedRefsTrue()
+    public void ManagedComponentValuesKeepTheirObjectReferences()
     {
-        Assert.True(ComponentMetadata<NamedComponent>.ContainsReferences);
+        using var world = new World();
+        string text = new(['I', 'r', 'i', 's']);
+        var entity = world.Create(new NamedComponent { Name = text, Id = 3 });
+        Assert.Same(text, world.Read<NamedComponent>(entity).Name);
+        Assert.Equal(3, world.Read<NamedComponent>(entity).Id);
     }
 
     [Fact]
-    public void KnownSizeCorrect()
+    public void ComponentBytesPreserveAdjacentFields()
     {
-        // Position 有两个 float 字段 = 8 bytes
-        Assert.Equal(8, ComponentMetadata<Position>.Size);
-        // Health 有一个 int 字段 = 4 bytes
-        Assert.Equal(4, ComponentMetadata<Health>.Size);
+        using var world = new World();
+        var entity = world.Create(new Position { X = 1, Y = 2 }, new Health { Value = 3 });
+        System.Runtime.CompilerServices.Unsafe.WriteUnaligned(ref world.WriteBytes(entity,
+            ComponentId<Position>.Value, sizeof(float), sizeof(float)), 7f);
+        Assert.Equal(1, world.Read<Position>(entity).X);
+        Assert.Equal(7, world.Read<Position>(entity).Y);
+        Assert.Equal(3, world.Read<Health>(entity).Value);
     }
 
     [Fact]
-    public void TagSizePositive()
+    public void TagsParticipateInTypedQueries()
     {
-        // Tag struct 即使无字段，Unsafe.SizeOf 也会返回 1（CLR 规则：空 struct size=1）
-        Assert.True(ComponentMetadata<PlayerTag>.Size >= 1);
+        using var world = new World();
+        var player = world.Create(new PlayerTag());
+        world.Create(new EnemyTag());
+        Query players = world.Query<PlayerTag>();
+        using QueryScope scope = players.OpenRead();
+        Assert.True(scope.Contains(player));
+        Assert.Equal(1, players.Count);
     }
 }

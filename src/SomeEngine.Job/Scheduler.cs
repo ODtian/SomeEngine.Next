@@ -476,6 +476,7 @@ public sealed partial class Scheduler : IDisposable
                 batchCount + tokenCount,
                 pendingDependencies: 0,
                 scheduleDependenciesSealed: !hasScheduleDependencies);
+            _completion.SetConcurrentExecution(state, batchCount > 1);
             if (deferResourceActivation)
                 reservation = ReserveAccesses<T>(accesses);
             else
@@ -662,6 +663,9 @@ public sealed partial class Scheduler
     public void ReleaseResource(JobResource resource)
     {
         _resources.Release(resource);
+        lock (_submissionObserverGate)
+            _submissionObservers.Remove(
+                new SubmissionResourceIdentity(ResourceKind.Resource, resource.Id, resource.Version, resource.Generation));
     }
 
     public void ReleaseResourceToken(JobResourceToken token)

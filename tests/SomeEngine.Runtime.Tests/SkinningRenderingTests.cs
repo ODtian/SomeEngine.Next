@@ -49,11 +49,11 @@ public sealed partial class SkinningRenderingTests
                 var binding = new SkinBinding([Matrix4x4.Identity, Matrix4x4.Identity], [0, 1]);
                 foreach (Entity entity in frame.Scene.MeshEntities)
                 {
-                    bool upper = frame.World.Read<WorldTransform>(entity).Qvvs.Position.Y > 0;
-                    frame.World.Add(entity, new MeshSkin(upper ? first : second, binding));
+                    bool upper = frame.World.ReadComponentData<WorldTransform>(entity).Qvvs.Position.Y > 0;
+                    frame.World.Set(entity, new MeshSkin(upper ? first : second, binding));
                 }
-                Assert.Same(frame.World.Read<MeshInstance>(frame.Scene.MeshEntities[0]).Mesh,
-                    frame.World.Read<MeshInstance>(frame.Scene.MeshEntities[1]).Mesh);
+                Assert.Same(frame.World.ReadComponentData<MeshInstance>(frame.Scene.MeshEntities[0]).Mesh,
+                    frame.World.ReadComponentData<MeshInstance>(frame.Scene.MeshEntities[1]).Mesh);
             },
         };
         SceneImage? animated = null;
@@ -111,8 +111,8 @@ public sealed partial class SkinningRenderingTests
                 PropertyAnimation.SetSpeed(frame.World, graph.Play(frame.World, targets[2]), .5f);
                 foreach (Entity mesh in frame.Scene.MeshEntities)
                 {
-                    bool right = frame.World.Read<WorldTransform>(mesh).Qvvs.Position.X > 0;
-                    frame.World.Add(mesh, new MeshSkin(right ? second : first, GpuBinding(right)));
+                    bool right = frame.World.ReadComponentData<WorldTransform>(mesh).Qvvs.Position.X > 0;
+                    frame.World.Set(mesh, new MeshSkin(right ? second : first, GpuBinding(right)));
                 }
             },
             UpdateFrame = frame => repeat.Repeat = frame.Index == 5,
@@ -221,8 +221,8 @@ public sealed partial class SkinningRenderingTests
                 PropertyAnimation.SetSpeed(frame.World, graph.Play(frame.World, secondTarget), .5f);
                 foreach (Entity entity in frame.Scene.MeshEntities)
                 {
-                    bool right = frame.World.Read<WorldTransform>(entity).Qvvs.Position.X > 0;
-                    frame.World.Add(entity, new MeshSkin(right ? second : first, Binding(right)));
+                    bool right = frame.World.ReadComponentData<WorldTransform>(entity).Qvvs.Position.X > 0;
+                    frame.World.Set(entity, new MeshSkin(right ? second : first, Binding(right)));
                 }
             },
         };
@@ -385,16 +385,14 @@ public sealed partial class SkinningRenderingTests
             using var world = new World();
             foreach (Vector3 position in positions)
             {
-                Entity entity = world.CreateEntity(new WorldTransform { Qvvs = new(position, Quaternion.Identity) });
-                world.Add(entity, new MeshSource { Mesh = new(mesh.Id), BoundsExpansion = 0 });
+                Entity entity = world.Create(new WorldTransform { Qvvs = new(position, Quaternion.Identity) });
+                world.Set(entity, new MeshSource { Mesh = new(mesh.Id), BoundsExpansion = 0 });
             }
-            world.CreateEntity(new SceneCamera { Position = Vector3.Zero, Target = Vector3.UnitZ, Up = Vector3.UnitY,
+            world.Create(new SceneCamera { Position = Vector3.Zero, Target = Vector3.UnitZ, Up = Vector3.UnitY,
                 VerticalFieldOfView = 1.1f, NearPlane = .1f, FarPlane = 100 });
-            world.CreateEntity(new DirectionalLight(new(.35f, -.85f, .4f), Vector3.One, 3));
+            world.Create(new DirectionalLight(new(.35f, -.85f, .4f), Vector3.One, 3));
             AssetEntry entry = project.Manifest.List(WorldAsset.FileType).Single(item => item.Name == "Default");
-            using var scene = new WorldAsset(entry.AssetGuid) { Name = "Default" };
-            scene.WriteWorld(world, SceneSerialization.CreateRegistry());
-            project.RegisterAsset(await scene.SaveAsync(Path.Combine(project.RootPath, entry.Path)));
+            await SceneEntityFiles.SaveAsync(project, world, entry);
         }
         private string SkinShader(string reader, string encoding) =>
             "#define CLUSTER_VERTEX_ENCODING \"someengine.cluster.positions.uint16.v1+" + encoding + "\"\n" + shader
@@ -453,16 +451,14 @@ public sealed partial class SkinningRenderingTests
                 bool previous = index % 2 == 1, right = index >= 2;
                 using MeshAsset mesh = await create(index, previous, right);
                 project.RegisterAsset(await mesh.SaveAsync(Path.Combine(project.RootPath, $"assets/Models/panel-{index}.mesh.asset")));
-                Entity entity = world.CreateEntity(new WorldTransform { Qvvs = new(new(right ? .75f : -2.5f, previous ? -1f : 1f, 6), Quaternion.Identity) });
-                world.Add(entity, new MeshSource { Mesh = new(mesh.Id), BoundsExpansion = 3 });
+                Entity entity = world.Create(new WorldTransform { Qvvs = new(new(right ? .75f : -2.5f, previous ? -1f : 1f, 6), Quaternion.Identity) });
+                world.Set(entity, new MeshSource { Mesh = new(mesh.Id), BoundsExpansion = 3 });
             }
-            world.CreateEntity(new SceneCamera { Position = Vector3.Zero, Target = Vector3.UnitZ, Up = Vector3.UnitY,
+            world.Create(new SceneCamera { Position = Vector3.Zero, Target = Vector3.UnitZ, Up = Vector3.UnitY,
                 VerticalFieldOfView = 1.1f, NearPlane = .1f, FarPlane = 100 });
-            world.CreateEntity(new DirectionalLight(new(.35f, -.85f, .4f), Vector3.One, 3));
+            world.Create(new DirectionalLight(new(.35f, -.85f, .4f), Vector3.One, 3));
             AssetEntry entry = project.Manifest.List(WorldAsset.FileType).Single(item => item.Name == "Default");
-            using var scene = new WorldAsset(entry.AssetGuid) { Name = "Default" };
-            scene.WriteWorld(world, SceneSerialization.CreateRegistry());
-            project.RegisterAsset(await scene.SaveAsync(Path.Combine(project.RootPath, entry.Path)));
+            await SceneEntityFiles.SaveAsync(project, world, entry);
         }
 
         private async Task<MeshAsset> ImportPanelAsync(int index, Vector3[] positions)

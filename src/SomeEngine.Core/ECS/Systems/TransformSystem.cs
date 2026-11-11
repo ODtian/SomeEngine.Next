@@ -2,7 +2,6 @@ using SomeEngine.Core.ECS.Components;
 using System.Runtime.InteropServices;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Hierarchy;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 
 namespace SomeEngine.Core.ECS.Systems;
@@ -18,58 +17,55 @@ public sealed class TransformSystem : ISystem<ImmediateSystemContext>
     private readonly List<EntityId> _staleParentScratch = [];
     private readonly HashSet<EntityId> _seenParentSet = [];
     private readonly Dictionary<EntityId, EntityId> _knownParents = [];
-    private QueryHandle _transformQuery;
-    private QueryHandle _parentedTopologyQuery;
-    private QueryDefinition _flatTransformFilter = null!;
-    private QueryHandle _changedLocalQuery;
-    private QueryHandle _changedParentQuery;
+    private Query _transformQuery;
+    private Query _parentedTopologyQuery;
+    private QueryDescription _flatTransformFilter = null!;
+    private Query _changedLocalQuery;
+    private Query _changedParentQuery;
     private bool _forceFullUpdate = true;
 
     public void OnCreate(ref ImmediateSystemContext context)
     {
         World world = context.World;
         _transformQuery = world.Query(
-            new QueryDefinitionBuilder()
-                .Read<LocalTransform>()
-                .Read<WorldTransform>()
-                .Optional<Parent<DefaultHierarchyDomain>>(QueryAccess.Read)
-                .Any<Parent<DefaultHierarchyDomain>>()
-                .Any<Children<DefaultHierarchyDomain>>());
+            new QueryDescription()
+                .WithStored<LocalTransform>()
+                .WithStored<WorldTransform>()
+                .Optional<Parent<DefaultHierarchyDomain>>()
+                .WithAny<Parent<DefaultHierarchyDomain>>()
+                .WithAny<Children<DefaultHierarchyDomain>>());
         _parentedTopologyQuery = world.Query(
-            new QueryDefinitionBuilder()
-                .Read<Parent<DefaultHierarchyDomain>>());
-        _flatTransformFilter = new QueryDefinitionBuilder()
-            .Changed<LocalTransform>()
-            .None<Parent<DefaultHierarchyDomain>>()
-            .None<Children<DefaultHierarchyDomain>>()
-            .Build();
+            new QueryDescription()
+                .WithStored<Parent<DefaultHierarchyDomain>>());
+        _flatTransformFilter = new QueryDescription()
+            .WithChanged<LocalTransform>(0)
+            .WithStored<WorldTransform>()
+            .Without<Parent<DefaultHierarchyDomain>>()
+            .Without<Children<DefaultHierarchyDomain>>();
         _changedLocalQuery = world.Query(
-            new QueryDefinitionBuilder()
-                .Read<LocalTransform>()
-                .Read<WorldTransform>()
-                .Changed<LocalTransform>()
-                .Any<Parent<DefaultHierarchyDomain>>()
-                .Any<Children<DefaultHierarchyDomain>>());
+            new QueryDescription()
+                .WithStored<LocalTransform>()
+                .WithStored<WorldTransform>()
+                .WithChanged<LocalTransform>(0)
+                .WithAny<Parent<DefaultHierarchyDomain>>()
+                .WithAny<Children<DefaultHierarchyDomain>>());
         _changedParentQuery = world.Query(
-            new QueryDefinitionBuilder()
-                .Read<Parent<DefaultHierarchyDomain>>()
-                .Changed<Parent<DefaultHierarchyDomain>>());
+            new QueryDescription()
+                .WithStored<Parent<DefaultHierarchyDomain>>()
+                .WithChanged<Parent<DefaultHierarchyDomain>>(0));
     }
 
     public void OnUpdate(ref ImmediateSystemContext context)
     {
         using var scope = SomeEngine.Diagnostics.EngineTrace.Begin(OnUpdateTrace);
         World world = context.World;
-        HierarchyMaintenanceDependency<DefaultHierarchyDomain> maintenance =
-            HierarchyMaintenanceSystem<DefaultHierarchyDomain>.ScheduleDependency(world);
-        maintenance.Handle.Complete();
+        Hierarchy<DefaultHierarchyDomain>.Maintain(world);
 
         using (SomeEngine.Diagnostics.EngineTrace.Begin(UpdateHierarchyTrace))
         {
             using (SomeEngine.Diagnostics.EngineTrace.Begin(UpdateFlatLeafTransformsTrace))
                 new UpdateFlatTransformsJob().ScheduleParallel(world,
-                    new JobEntityScheduleOptions(lastSystemVersion: _forceFullUpdate ? 0 : context.LastSystemVersion,
-                        filter: _flatTransformFilter)).Complete();
+                    query: world.Query(_flatTransformFilter).Since(_forceFullUpdate ? 0 : context.LastSystemVersion)).Complete();
 
             bool hasDirtyTransforms;
             using (SomeEngine.Diagnostics.EngineTrace.Begin(CollectDirtyRootsTrace))
@@ -78,14 +74,14 @@ public sealed class TransformSystem : ISystem<ImmediateSystemContext>
             if (hasDirtyTransforms)
             {
                 using var propagation = SomeEngine.Diagnostics.EngineTrace.Begin(UpdateDirtyRootsTrace);
-                ParallelTransformPropagation.Schedule(world, CollectionsMarshal.AsSpan(_dirtyTransforms), maintenance)
-                    .Handle.Complete();
+                ParallelTransformPropagation.Schedule(world, CollectionsMarshal.AsSpan(_dirtyTransforms), default)
+                    .Complete();
             }
             _forceFullUpdate = false;
         }
     }
 
-    private bool CollectDirtyTransforms(World world, uint lastSystemVersion)
+    private bool CollectDirtyTransforms(World world, ulong lastSystemVersion)
     {
         _dirtyTransforms.Clear();
 
@@ -104,55 +100,35 @@ public sealed class TransformSystem : ISystem<ImmediateSystemContext>
 
     private void CollectHierarchyTransforms(World world)
     {
-        world.ExecuteQuery(_transformQuery, cursor =>
-        {
-            foreach (QueryChunkView chunk in cursor.Chunks)
-                _dirtyTransforms.AddRange(chunk.Entities);
-        });
+        using QueryScope scope = _transformQuery.OpenRead();
+        foreach (QueryChunk chunk in scope) _dirtyTransforms.AddRange(chunk.Entities);
     }
 
-    private void CollectChanged(World world, uint lastSystemVersion)
+    private void CollectChanged(World world, ulong lastSystemVersion)
     {
-        world.ExecuteQuery(_changedLocalQuery, lastSystemVersion, cursor =>
-        {
-            foreach (QueryChunkView chunk in cursor.Chunks)
-            {
-                foreach (int row in chunk.RowIndices)
-                    AddDirtyTransform(chunk.GetEntity(row));
-            }
-        });
+        using QueryScope scope = _changedLocalQuery.Since(lastSystemVersion).OpenRead();
+        foreach (QueryChunk chunk in scope)
+            foreach (EntityId entity in chunk.Entities) AddDirtyTransform(entity);
     }
 
-    private void CollectChangedParents(World world, uint lastSystemVersion)
+    private void CollectChangedParents(World world, ulong lastSystemVersion)
     {
-        world.ExecuteQuery(_changedParentQuery, lastSystemVersion, cursor =>
-        {
-            foreach (QueryChunkView chunk in cursor.Chunks)
-            {
-                foreach (int row in chunk.RowIndices)
-                    AddDirtyTransform(chunk.GetEntity(row));
-            }
-        });
+        using QueryScope scope = _changedParentQuery.Since(lastSystemVersion).OpenRead();
+        foreach (QueryChunk chunk in scope)
+            foreach (EntityId entity in chunk.Entities) AddDirtyTransform(entity);
     }
 
     private void RefreshKnownParents(World world, bool markChangesDirty)
     {
         _seenParentSet.Clear();
-        world.ExecuteQuery(_parentedTopologyQuery, cursor =>
-        {
-            foreach (QueryChunkView chunk in cursor.Chunks)
-            {
-                ReadOnlySpan<EntityId> entities = chunk.Entities;
-                for (int i = 0; i < entities.Length; i++)
+        using (QueryScope scope = _parentedTopologyQuery.OpenRead())
+            foreach (QueryChunk chunk in scope)
+                foreach (EntityId entity in chunk.Entities)
                 {
-                    EntityId entity = entities[i];
                     EntityId parent = Hierarchy.GetParent(world, entity);
                     _seenParentSet.Add(entity);
                     RefreshKnownParent(entity, parent, markChangesDirty);
                 }
-            }
-        });
-
         RemoveStaleKnownParents(world, markChangesDirty);
     }
 

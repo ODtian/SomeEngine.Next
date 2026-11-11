@@ -5,7 +5,6 @@ using SomeEngine.Animation.Pose;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Job;
 using SomeEngine.Render.Features.Skinning;
@@ -50,7 +49,7 @@ public sealed partial class SkinningRenderingTests
                 animation = graph.Play(frame.World);
                 trace.Animation = animation;
                 foreach (Entity mesh in frame.Scene.MeshEntities)
-                    frame.World.Add(mesh, new MeshSkin(body, new SkinBinding([Matrix4x4.Identity, Matrix4x4.Identity], [1, 2])));
+                    frame.World.Set(mesh, new MeshSkin(body, new SkinBinding([Matrix4x4.Identity, Matrix4x4.Identity], [1, 2])));
             },
             UpdateFrame = frame =>
             {
@@ -133,7 +132,7 @@ public sealed partial class SkinningRenderingTests
                 builder.Leaf<FeedbackParameters, FeedbackLeaf>(target, new(clip, trace));
                 builder.Play();
                 foreach (Entity mesh in frame.Scene.MeshEntities)
-                    frame.World.Add(mesh, new MeshSkin(body, new SkinBinding([Matrix4x4.Identity, Matrix4x4.Identity], [1, 2])));
+                    frame.World.Set(mesh, new MeshSkin(body, new SkinBinding([Matrix4x4.Identity, Matrix4x4.Identity], [1, 2])));
             },
             UpdateFrame = frame =>
             {
@@ -221,7 +220,6 @@ public sealed partial class SkinningRenderingTests
         }
     }
     private readonly record struct FeedbackParameters(QuantizedClipData Clip, FeedbackTrace Trace, float MinimumX = .1f);
-    [BufferCapacity(1)]
     private struct FeedbackNode : IBufferElement
     {
         internal FeedbackParameters Parameters;
@@ -236,42 +234,55 @@ public sealed partial class SkinningRenderingTests
         public static void Install(World world, Entity animation, Entity target,
             AnimationLeafBatch<FeedbackParameters> definitions, int index, in AnimationLeafPlacement placement)
         {
-            if (!world.HasBuffer<FeedbackNode>(animation)) world.AddBuffer<FeedbackNode>(animation);
+            if (!world.Has<Buffer<FeedbackNode>>(animation)) world.AddBuffer<FeedbackNode>(animation, capacity: 1);
             var node = new FeedbackNode { Parameters = definitions.Parameters[index], Placement = placement, Target = target };
-            world.ExecuteBufferWrite<FeedbackNode, FeedbackNode>(animation, ref node, static (nodes, ref node) => nodes.Add(node));
+            {
+                using DynamicBuffer<FeedbackNode> nodes = world.GetBuffer<FeedbackNode>(animation);
+                nodes.Add(node);
+            }
         }
-        public static void Release(World world, Entity animation) =>
-            world.ExecuteBufferWrite<FeedbackNode>(animation, static nodes => nodes.Clear());
+        public static void Release(World world, Entity animation)
+        {
+            using DynamicBuffer<FeedbackNode> nodes = world.GetBuffer<FeedbackNode>(animation);
+            nodes.Clear();
+        }
     }
     private struct FeedbackNodeSystem : ISystem<ImmediateSystemContext>
     {
-        private QueryHandle _nodes;
+        private Query _nodes;
         public void OnCreate(ref ImmediateSystemContext context) => _nodes = context.World.Query(AnimationGraph.WithTimeAccess(
-            context.World.QueryDefinition().ReadWrite<Timeline>().Enabled<Timeline>().WriteBuffer<FeedbackNode>().Optional<GpuPoseTarget>(QueryAccess.ReadWrite)));
+            new QueryDescription().With<Timeline>().With<Buffer<FeedbackNode>>().Optional<GpuPoseTarget>()));
         public void OnUpdate(ref ImmediateSystemContext context)
         {
             World world = context.World;
-            world.ExecuteQuery(_nodes, ref world, static (scoped QueryCursor rows, ref World world) =>
+            using QueryScope source = _nodes.Open();
+            foreach (QueryChunk chunk in source)
+            for (int row = 0; row < chunk.Count; row++)
             {
-                foreach (QueryRow row in rows.Rows)
-                foreach (ref FeedbackNode node in row.Buffer<FeedbackNode>().AsSpan())
+                using DynamicBuffer<FeedbackNode> nodes = chunk.GetBuffer<FeedbackNode>(row);
+                foreach (ref FeedbackNode node in nodes.AsSpan())
                 {
-                    AnimationLeafTime time = AnimationGraph.ReadTime(world, row.Entity, in node.Placement);
+                    AnimationLeafTime time = AnimationGraph.ReadTime(world, chunk.Entities[row], in node.Placement);
                     if (!time.Active) continue;
-                    GpuPoseTarget output = world.Read<GpuPoseTarget>(node.Target);
+                    GpuPoseTarget output = world.ReadComponentData<GpuPoseTarget>(node.Target);
                     output.Clip = node.Parameters.Clip;
                     output.SampleTime = time.Time.Time;
                     output.Starts = time.Starts;
                     output.AnimationStarts = node.Placement.Starts;
-                    world.Replace(node.Target, output);
-                    if (time.Time.Time == 0) { AnimationGraph.Submit(world, row.Entity, in node.Placement, true); continue; }
+                    world.Set(node.Target, output);
+                    if (time.Time.Time == 0)
+                    {
+                        AnimationGraph.Submit(world, chunk.Entities[row], in node.Placement, true);
+                        continue;
+                    }
                     FeedbackTrace trace = node.Parameters.Trace;
                     if (node.Request?.Completion.IsCanceled == true) node.Request = null;
                     if (node.Request is null)
                     {
                         if (trace.Requests.Count > 0 && trace.Requests[0].Completion.IsCompletedSuccessfully)
                         {
-                            if (!GpuPoseAnimation.SubmitFeedback(world, row.Entity, node.Target, in node.Placement, trace.Requests[0], finished: true))
+                            if (!GpuPoseAnimation.SubmitFeedback(world, chunk.Entities[row], node.Target,
+                                in node.Placement, trace.Requests[0], finished: true))
                                 trace.StaleResults++;
                         }
                         node.Request = GpuPoseAnimation.RequestReadback(world, node.Target, new PoseRange(1, 2));
@@ -284,18 +295,18 @@ public sealed partial class SkinningRenderingTests
                     }
                     bool finished = node.Request.Completion.IsCompletedSuccessfully
                         && node.Request.Completion.Result.Current.Span[1].M41 >= node.Parameters.MinimumX;
-                    if (GpuPoseAnimation.SubmitFeedback(world, row.Entity, node.Target, in node.Placement, node.Request, finished))
+                    if (GpuPoseAnimation.SubmitFeedback(world, chunk.Entities[row], node.Target, in node.Placement, node.Request, finished))
                         trace.AcceptedResults++;
                 }
-            });
+            }
         }
-        public void OnDestroy(ref ImmediateSystemContext context) => context.World.ReleaseQuery(_nodes);
+        public void OnDestroy(ref ImmediateSystemContext context) => _nodes = default;
     }
     private sealed class ReadFeedbackStages(FeedbackTrace trace) : ISystem<ImmediateSystemContext>
     {
         public void OnUpdate(ref ImmediateSystemContext context)
         {
-            Timeline time = context.World.Read<Timeline>(trace.Animation);
+            Timeline time = context.World.ReadComponentData<Timeline>(trace.Animation);
             trace.Stages.Add((time.Stage, time.Time, time.Completions));
         }
     }

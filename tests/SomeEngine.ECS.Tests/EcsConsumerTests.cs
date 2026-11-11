@@ -8,7 +8,7 @@ public sealed class EcsConsumerTests
     public void WorldCanCreateEntityAndStoreComponent()
     {
         var world = new World();
-        var entity = world.CreateEntity();
+        var entity = world.Create();
 
         world.Add(entity, new Position { X = 3, Y = 7 });
 
@@ -17,7 +17,7 @@ public sealed class EcsConsumerTests
         Assert.Equal(7, world.Read<Position>(entity).Y);
     }
 
-    private struct Position : SomeEngine.ECS.IComponent
+    private struct Position : SomeEngine.ECS.IAddedComponent
     {
         public int X;
         public int Y;

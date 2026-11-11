@@ -1,6 +1,6 @@
+using SomeEngine.ECS.Commands;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
 using SomeEngine.Job;
 
 namespace SomeEngine.ECS.Systems.Tests;
@@ -8,301 +8,174 @@ namespace SomeEngine.ECS.Systems.Tests;
 public sealed class ReadOnlyQueryPacketJobTests : JobTest
 {
     [Fact]
-    public void SlicedPacketsOnlyReportComponentAndBufferChangesInsideTheirRows()
+    public void SlicedRangesOnlyReportComponentAndBufferChangesInsideTheirRows()
     {
-        var world = new World();
-        Entity[] entities = Enumerable.Range(0, 6).Select(i => world.CreateEntity(new PacketValue(i))).ToArray();
-        foreach (Entity entity in entities) world.AddBuffer<PacketElement>(entity);
-        uint baseline = world.CurrentTick;
-        _ = world.AcquireSystemVersion();
-        world.Replace(entities[1], new PacketValue(42));
-        world.ExecuteBufferWrite<PacketElement>(entities[4], buffer => buffer.Add(new PacketElement(7)));
-        QueryHandle query = world.Query(new QueryDefinitionBuilder().Read<PacketValue>().ReadBuffer<PacketElement>().Build());
-        var changed = new int[6];
-        world.ExecuteReadSnapshot(query, cursor =>
-        {
-            using ReadOnlyQueryPacketPlan packets = ReadOnlyQueryPacketJobs.CreatePlan(cursor, rowsPerPacket: 3);
-            var job = new ReadChangesJob(baseline, changed);
-            packets.ExecuteInline(in job);
-        });
+        using var world = new World();
+        Entity[] entities = Enumerable.Range(0, 6).Select(index => world.Create(new RangeValue(index))).ToArray();
+        foreach (Entity entity in entities) world.AddBuffer<RangeElement>(entity);
+        ulong baseline = world.Version;
+        world.Set(entities[1], new RangeValue(42));
+        using (DynamicBuffer<RangeElement> buffer = world.GetBuffer<RangeElement>(entities[4])) buffer.Add(new(7));
+        Query query = world.Query(new QueryDescription().WithStored<RangeValue>().WithStored<Buffer<RangeElement>>());
+        int[] changed = new int[6];
+        int output = 0;
+        using (QueryScope rows = query.OpenRead())
+            foreach (QueryChunk chunk in rows)
+                for (int row = 0; row < chunk.Count; row++)
+                {
+                    QueryChunk slice = chunk.Slice(row, 1);
+                    changed[output++] = (slice.WasWritten<RangeValue>(0, baseline) ? 1 : 0) |
+                        (slice.WasWritten<Buffer<RangeElement>>(0, baseline) ? 2 : 0);
+                }
         Assert.Equal([0, 1, 0, 0, 2, 0], changed);
-        world.ReleaseQuery(query);
-    }
-
-    private readonly struct ReadChangesJob(uint baseline, int[] changes) : IReadOnlyQueryPacketJob
-    {
-        public void Execute(in ReadOnlyQueryPacketContext context, ReadOnlyQueryPacket packet)
-        {
-            for (int row = 0; row < packet.Count; row++)
-            {
-                ReadOnlyQueryPacket slice = packet.Slice(row, 1);
-                changes[context.OutputStart + row] = (slice.ChangedSince<PacketValue>(baseline) ? 1 : 0) |
-                    (slice.BufferChangedSince<PacketElement>(baseline) ? 2 : 0);
-            }
-            Assert.False(packet.Slice(0, 0).ChangedSince<PacketValue>(baseline));
-        }
     }
 
     [Fact]
     public void ChangedRowSliceChecksDoesNotThrow()
     {
-        var world = new World();
-        Entity[] entities = Enumerable.Range(0, 4).Select(i => world.CreateEntity(new PacketValue(i))).ToArray();
-        uint baseline = world.CurrentTick;
-        _ = world.AcquireSystemVersion();
-        world.Replace(entities[0], new PacketValue(10));
-        world.Replace(entities[1], new PacketValue(11));
-        QueryHandle query = world.Query(new QueryDefinitionBuilder().Read<PacketValue>().Build());
-
-        world.ExecuteReadSnapshot(query, cursor =>
+        using var world = new World();
+        Entity[] entities = Enumerable.Range(0, 4).Select(index => world.Create(new RangeValue(index))).ToArray();
+        ulong baseline = world.Version;
+        world.Set(entities[0], new RangeValue(10));
+        world.Set(entities[1], new RangeValue(11));
+        Query query = world.Query<RangeValue>();
+        using QueryScope rows = query.OpenRead();
+        foreach (QueryChunk chunk in rows)
         {
-            using ReadOnlyQueryPacketPlan packets = ReadOnlyQueryPacketJobs.CreatePlan(cursor, rowsPerPacket: 4);
-            var job = new AllRowsChangedJob(baseline);
-            packets.ExecuteInline(in job);
-        });
-
-        world.ReleaseQuery(query);
-    }
-
-    private readonly struct AllRowsChangedJob(uint baseline) : IReadOnlyQueryPacketJob
-    {
-        public void Execute(in ReadOnlyQueryPacketContext context, ReadOnlyQueryPacket packet)
-        {
-            Assert.Equal(0, context.OutputStart);
-            Assert.Equal(4, packet.Count);
-            Assert.False(packet.AllRowsChangedSince<PacketValue>(baseline));
-            Assert.True(packet.Slice(0, 2).AllRowsChangedSince<PacketValue>(baseline));
-            Assert.False(packet.Slice(1, 2).AllRowsChangedSince<PacketValue>(baseline));
-            Assert.False(packet.Slice(0, 0).AllRowsChangedSince<PacketValue>(baseline));
+            Assert.Equal(4, chunk.Count);
+            QueryChunk first = chunk.Slice(0, 2), middle = chunk.Slice(1, 2), empty = chunk.Slice(0, 0);
+            Assert.True(first.WasWritten<RangeValue>(0, baseline));
+            Assert.True(first.WasWritten<RangeValue>(1, baseline));
+            Assert.True(middle.WasWritten<RangeValue>(0, baseline));
+            Assert.False(middle.WasWritten<RangeValue>(1, baseline));
+            Assert.Equal(0, empty.Count);
         }
     }
 
-    private readonly record struct PacketElement(int Value) : IBufferElement;
-
     [Fact]
-    public void RowFiltersBecomeDenseContiguousPacketsWithDisjointOutputRanges()
+    public void RowFiltersBecomeContiguousRangesWithDisjointOutputRanges()
     {
-        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        var world = global::SomeEngine.ECS.Systems.WorldJobs.CreateWorld();
+        World world = CreateJobWorld();
         Entity[] source = new Entity[6];
         for (int index = 0; index < source.Length; index++)
-        {
-            source[index] = world.CreateEntity(new PacketValue(index + 10));
-            world.Add(source[index], new PacketGate());
-        }
-        world.Disable<PacketGate>(source[1]);
-        world.Disable<PacketGate>(source[4]);
-
-        QueryHandle query = world.Query(
-            new QueryDefinitionBuilder()
-                .Read<PacketValue>()
-                .Read<PacketGate>()
-                .Enabled<PacketGate>()
-                .Build());
-        int[] values = new int[4];
+            source[index] = world.Create(new RangeValue(index + 10), default(RangeGate));
+        world.Disable<RangeGate>(source[1]);
+        world.Disable<RangeGate>(source[4]);
+        Query query = world.Query(new QueryDescription().WithStored<RangeValue>().With<RangeGate>());
+        var expected = new List<Entity>();
+        using (QueryScope rows = query.OpenRead())
+            foreach (QueryChunk chunk in rows)
+                foreach (Entity entity in chunk.Entities) expected.Add(entity);
+        Dictionary<Entity, int> input = source.Select((entity, index) => new KeyValuePair<Entity, int>(entity, index + 10)).ToDictionary();
+        int[] values = new int[4], starts = new int[4], counts = new int[4];
         Entity[] entities = new Entity[4];
-        int[] packetStarts = new int[4];
-        int[] packetCounts = new int[4];
-        Array.Fill(packetStarts, -1);
-
-        int written = -1;
-        world.ExecuteReadSnapshot(query, cursor =>
+        Array.Fill(starts, -1);
+        using (QueryScope rows = query.OpenRead())
         {
-            using ReadOnlyQueryPacketPlan plan =
-                ReadOnlyQueryPacketJobs.CreatePlan(cursor, rowsPerPacket: 2);
-            Assert.Equal(4, plan.RowCount);
-            var job = new CopyPacketJob(
-                values,
-                entities,
-                packetStarts,
-                packetCounts);
-            JobResourceAccess[] outputs =
-            [
-                JobResourceAccess.Write(values),
-                JobResourceAccess.Write(entities),
-                JobResourceAccess.Write(packetStarts),
-                JobResourceAccess.Write(packetCounts),
-            ];
-            written = plan.ExecuteParallel(
-                in job,
-                outputs);
-        });
-
-        Assert.Equal(4, written);
-        Assert.Equal([10, 12, 13, 15], values);
-        Assert.Equal([source[0], source[2], source[3], source[5]], entities);
-        Assert.Equal([0, 1, 3, -1], packetStarts);
-        Assert.Equal([1, 2, 1, 0], packetCounts);
-
-        world.ReleaseQuery(query);
+            var ranges = new List<ReadRange>();
+            int output = 0;
+            foreach (QueryChunk chunk in rows)
+                for (int start = 0; start < chunk.Count; start += 2)
+                {
+                    QueryChunk part = chunk.Slice(start, Math.Min(2, chunk.Count - start));
+                    ranges.Add(new(part, output, ranges.Count));
+                    output += part.Count;
+                }
+            ReadRange[] work = ranges.ToArray();
+            world.Execution!.ExecuteRanges(work, work.Length, new CopyRows(values, entities, starts, counts));
+            Assert.Equal(4, output);
+        }
+        Assert.Equal(expected, entities);
+        Assert.Equal(expected.Select(entity => input[entity]), values);
+        Assert.All(counts, count => Assert.InRange(count, 0, 2));
+        Assert.Equal(Enumerable.Range(0, 4), starts.Zip(counts)
+            .Where(range => range.Second > 0).SelectMany(range => Enumerable.Range(range.First, range.Second)));
     }
 
     [Fact]
-    public void PacketReadRejectsComponentsNotDeclaredByTheQuery()
+    public void RangeReadRejectsComponentsNotDeclaredByTheQuery()
     {
-        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        var world = CreateJobWorld();
-        Entity entity = world.CreateEntity(new PacketValue(7));
-        world.Add(entity, new UndeclaredValue(9));
-        QueryHandle query = world.Query(
-            new QueryDefinitionBuilder()
-                .Read<PacketValue>()
-                .Build());
-        var job = new UndeclaredReadJob();
-
-        world.ExecuteReadSnapshot(query, cursor =>
-        {
-            InvalidOperationException? error = null;
-            try
-            {
-                _ = ReadOnlyQueryPacketJobs.ExecuteParallel(cursor, in job);
-            }
-            catch (InvalidOperationException caught)
-            {
-                error = caught;
-            }
-            Assert.NotNull(error);
-
-        });
-
-        world.ReleaseQuery(query);
+        World world = CreateJobWorld();
+        world.Create(new RangeValue(7), new UndeclaredValue(9));
+        Query query = world.Query<RangeValue>();
+        using QueryScope rows = query.OpenRead();
+        QueryChunk[] chunks = new QueryChunk[1];
+        foreach (QueryChunk chunk in rows) chunks[0] = chunk;
+        Assert.Throws<JobResourceSafetyException>(() =>
+            world.Execution!.ExecuteRanges(chunks, chunks.Length, new UndeclaredRead()));
     }
 
     [Fact]
-    public void PreparedPlanReusesPacketsForSeveralPassesAndCommandRecording()
+    public void ReadRangesServeSeveralPassesAndCommandRecordingInsideTheirScope()
     {
-        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        var world = CreateJobWorld();
-        Entity[] entities = new Entity[5];
-        for (int index = 0; index < entities.Length; index++)
-            entities[index] = world.CreateEntity(new PacketValue(index + 20));
-
-        QueryHandle query = world.Query(
-            new QueryDefinitionBuilder()
-                .Read<PacketValue>()
-                .Build());
-        int[] first = new int[entities.Length];
-        int[] second = new int[entities.Length];
-        JobResource firstOutput = Jobs.CreateResource("first output");
-        JobResource secondOutput = Jobs.CreateResource("second output");
-        JobCommandBuffer? commands = null;
-
-        world.ExecuteReadSnapshot(query, cursor =>
+        World world = CreateJobWorld();
+        Entity[] entities = Enumerable.Range(0, 5).Select(index => world.Create(new RangeValue(index + 20))).ToArray();
+        Query query = world.Query<RangeValue>();
+        int[] first = new int[5], second = new int[5];
+        using var commands = new CommandBatch(world, 3);
+        using (QueryScope rows = query.OpenRead())
         {
-            ReadOnlyQueryPacketPlan plan =
-                ReadOnlyQueryPacketJobs.CreatePlan(cursor, rowsPerPacket: 2);
-            try
-            {
-                Assert.Equal(entities.Length, plan.RowCount);
-                Assert.Equal(cursor.LastSystemVersion, plan.LastSystemVersion);
-
-                var firstJob = new CopyValuesJob(first);
-                Assert.Equal(
-                    entities.Length,
-                    plan.ExecuteParallel(
-                        in firstJob,
-                        [JobResourceAccess.Write(firstOutput)]));
-
-                var secondJob = new CopyValuesJob(second);
-                Assert.Equal(
-                    entities.Length,
-                    plan.ExecuteParallel(
-                        in secondJob,
-                        [JobResourceAccess.Write(secondOutput)]));
-
-                var commandJob = new AddPacketMarkerJob();
-                commands = plan.RecordParallel(in commandJob);
-            }
-            finally
-            {
-                plan.Dispose();
-            }
-
-            var rejectedJob = new CopyValuesJob(first);
-            ObjectDisposedException? disposed = null;
-            try
-            {
-                _ = plan.ExecuteParallel(in rejectedJob);
-            }
-            catch (ObjectDisposedException failure)
-            {
-                disposed = failure;
-            }
-            Assert.NotNull(disposed);
-        });
-
+            var ranges = new List<ReadRange>();
+            int output = 0;
+            foreach (QueryChunk chunk in rows)
+                for (int start = 0; start < chunk.Count; start += 2)
+                {
+                    QueryChunk part = chunk.Slice(start, Math.Min(2, chunk.Count - start));
+                    ranges.Add(new(part, output, ranges.Count));
+                    output += part.Count;
+                }
+            ReadRange[] work = ranges.ToArray();
+            world.Execution!.ExecuteRanges(work, work.Length, new CopyValues(first));
+            world.Execution.ExecuteRanges(work, work.Length, new CopyValues(second));
+            world.Execution.ExecuteRanges(work, work.Length, new RecordMarkers(commands));
+        }
         Assert.Equal([20, 21, 22, 23, 24], first);
         Assert.Equal(first, second);
-        using (commands)
-            commands!.Playback();
+        commands.Playback();
         for (int index = 0; index < entities.Length; index++)
-            Assert.Equal(index + 20, world.Read<PacketMarker>(entities[index]).Value);
-
-        world.ReleaseQuery(query);
+            Assert.Equal(index + 20, world.ReadComponentData<RangeMarker>(entities[index]).Value);
+        Assert.Throws<InvalidOperationException>(() => commands[0].Add(entities[0], new RangeMarker(99)));
     }
 
-    private readonly struct CopyPacketJob(
-        int[] values,
-        Entity[] entities,
-        int[] packetStarts,
-        int[] packetCounts) : IReadOnlyQueryPacketJob
+    private readonly record struct ReadRange(QueryChunk Chunk, int OutputStart, int Index);
+    private readonly record struct CopyRows(int[] Values, Entity[] Entities, int[] Starts, int[] Counts) : IRangeWork<ReadRange>
     {
-        public void Execute(
-            in ReadOnlyQueryPacketContext context,
-            ReadOnlyQueryPacket packet)
+        public void Execute(in ReadRange range)
         {
-            Assert.Equal(context.RowCount, packet.Count);
-            packetStarts[context.PacketIndex] = context.OutputStart;
-            packetCounts[context.PacketIndex] = context.RowCount;
-            ReadOnlySpan<PacketValue> sourceValues = packet.Read<PacketValue>();
-            for (int row = 0; row < packet.Count; row++)
+            Starts[range.Index] = range.OutputStart;
+            Counts[range.Index] = range.Chunk.Count;
+            ReadOnlySpan<RangeValue> values = range.Chunk.Read<RangeValue>();
+            for (int row = 0; row < range.Chunk.Count; row++)
             {
-                int output = checked(context.OutputStart + row);
-                values[output] = sourceValues[row].Value;
-                entities[output] = packet.Entities[row];
+                Values[range.OutputStart + row] = values[row].Value;
+                Entities[range.OutputStart + row] = range.Chunk.Entities[row];
             }
         }
     }
-
-    private readonly struct UndeclaredReadJob : IReadOnlyQueryPacketJob
+    private readonly struct UndeclaredRead : IRangeWork<QueryChunk>
     {
-        public void Execute(
-            in ReadOnlyQueryPacketContext context,
-            ReadOnlyQueryPacket packet) =>
-            _ = packet.Read<UndeclaredValue>();
+        public void Execute(in QueryChunk chunk) => _ = chunk.Read<UndeclaredValue>();
     }
-
-    private readonly struct CopyValuesJob(int[] destination) : IReadOnlyQueryPacketJob
+    private readonly struct CopyValues(int[] values) : IRangeWork<ReadRange>
     {
-        public void Execute(
-            in ReadOnlyQueryPacketContext context,
-            ReadOnlyQueryPacket packet)
+        public void Execute(in ReadRange range)
         {
-            ReadOnlySpan<PacketValue> values = packet.Read<PacketValue>();
-            for (int row = 0; row < packet.Count; row++)
-                destination[checked(context.OutputStart + row)] = values[row].Value;
+            ReadOnlySpan<RangeValue> source = range.Chunk.Read<RangeValue>();
+            for (int row = 0; row < source.Length; row++) values[range.OutputStart + row] = source[row].Value;
         }
     }
-
-    private readonly struct AddPacketMarkerJob : IReadOnlyQueryPacketCommandJob
+    private readonly struct RecordMarkers(CommandBatch commands) : IRangeWork<ReadRange>
     {
-        public void Execute(
-            in ReadOnlyQueryPacketContext context,
-            ReadOnlyQueryPacket packet,
-            ref JobCommandWriter commands)
+        public void Execute(in ReadRange range)
         {
-            ReadOnlySpan<PacketValue> values = packet.Read<PacketValue>();
-            for (int row = 0; row < packet.Count; row++)
-                commands.Add(packet.Entities[row], new PacketMarker(values[row].Value));
+            ReadOnlySpan<RangeValue> values = range.Chunk.Read<RangeValue>();
+            for (int row = 0; row < values.Length; row++)
+                commands[range.Index].Add(range.Chunk.Entities[row], new RangeMarker(values[row].Value));
         }
     }
-
-    private readonly record struct PacketValue(int Value) : IComponent;
-
+    private readonly record struct RangeValue(int Value) : IComponent, ITrackedComponent;
+    private readonly record struct RangeElement(int Value) : IBufferElement, ITrackedComponent;
     private readonly record struct UndeclaredValue(int Value) : IComponent;
-
-    private readonly record struct PacketMarker(int Value) : IComponent;
-
-    private readonly struct PacketGate : IEnableableComponent;
-
+    private readonly record struct RangeMarker(int Value) : IComponent;
+    private readonly struct RangeGate : IEnableableComponent;
 }

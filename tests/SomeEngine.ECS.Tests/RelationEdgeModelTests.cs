@@ -1,7 +1,9 @@
+using SomeEngine.ECS.Commands;
+using SomeEngine.ECS.Serialization;
+using SomeEngine.ECS.Systems;
+using SomeEngine.Job;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Hooks;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Relations;
 using Xunit;
 
@@ -27,8 +29,8 @@ public sealed class RelationEdgeModelTests
     public void ParallelEdges_HaveIndependentEntityIdentityPayloadAndLifetime()
     {
         var world = new World();
-        var source = world.CreateEntity();
-        var target = world.CreateEntity();
+        var source = world.Create();
+        var target = world.Create();
         int baselineCount = world.EntityCount;
 
         var first = world.CreateRelation(source, target, new ParallelDirected { Value = 1 });
@@ -38,140 +40,70 @@ public sealed class RelationEdgeModelTests
         Assert.Equal(baselineCount + 2, world.EntityCount);
         Assert.Equal(1, world.Read<ParallelDirected>(first.Entity).Value);
         Assert.Equal(2, world.Read<ParallelDirected>(second.Entity).Value);
-        Assert.Equal(2, world.GetOutgoingRelations<ParallelDirected>(source).Count);
-        Assert.Equal(2, world.GetIncomingRelations<ParallelDirected>(target).Count);
+        Assert.Equal(2, ReadOutgoing<ParallelDirected>(world, source).Length);
+        Assert.Equal(2, ReadIncoming<ParallelDirected>(world, target).Length);
 
         world.DestroyRelation(first);
+
+        world.Remove<Removed<RelationEndpoints<ParallelDirected>>>(first.Entity);
 
         Assert.False(world.IsAlive(first.Entity));
         Assert.True(world.IsAlive(second.Entity));
         Assert.Equal(baselineCount + 1, world.EntityCount);
-        Assert.Single(world.GetOutgoingRelations<ParallelDirected>(source).Entries.ToArray());
+        Assert.Single(ReadOutgoing<ParallelDirected>(world, source).ToArray());
     }
 
     [Fact]
     public void EndpointsAndAdjacency_UseNativeAddedChangedRemovedFacts()
     {
-        var world = new World();
-        Entity source = world.CreateEntity();
-        Entity target = world.CreateEntity();
-        Entity replacementTarget = world.CreateEntity();
-
-        uint beforeFirst = world.AcquireSystemTick();
-        RelationEdge<ParallelDirected> first = world.CreateRelation(
-            source,
-            target,
-            new ParallelDirected { Value = 1 });
-
-        Assert.Equal(
-            new[] { first.Entity },
-            QueryEntities(
-                world.Query(world.QueryDefinition()
-                    .Read<DirectedRelationEndpoints<ParallelDirected>>()
-                    .Added<DirectedRelationEndpoints<ParallelDirected>>()),
-                beforeFirst));
-        Assert.Equal(
-            new[] { source },
-            QueryEntities(
-                world.Query(world.QueryDefinition()
-                    .Read<Outgoing<ParallelDirected>>()
-                    .Added<Outgoing<ParallelDirected>>()),
-                beforeFirst));
-        Assert.Equal(
-            new[] { target },
-            QueryEntities(
-                world.Query(world.QueryDefinition()
-                    .Read<Incoming<ParallelDirected>>()
-                    .Added<Incoming<ParallelDirected>>()),
-                beforeFirst));
-
-        uint beforeSecond = world.AcquireSystemTick();
-        RelationEdge<ParallelDirected> second = world.CreateRelation(
-            source,
-            target,
-            new ParallelDirected { Value = 2 });
-        Assert.Equal(
-            new[] { source },
-            QueryEntities(
-                world.Query(world.QueryDefinition()
-                    .Read<Outgoing<ParallelDirected>>()
-                    .Changed<Outgoing<ParallelDirected>>()),
-                beforeSecond));
-        Assert.Equal(
-            new[] { target },
-            QueryEntities(
-                world.Query(world.QueryDefinition()
-                    .Read<Incoming<ParallelDirected>>()
-                    .Changed<Incoming<ParallelDirected>>()),
-                beforeSecond));
-
-        uint beforeRetarget = world.AcquireSystemTick();
-        world.RetargetRelationImmediate(first, source, replacementTarget);
-        Assert.Equal(
-            new[] { first.Entity },
-            QueryEntities(
-                world.Query(world.QueryDefinition()
-                    .Read<DirectedRelationEndpoints<ParallelDirected>>()
-                    .Changed<DirectedRelationEndpoints<ParallelDirected>>()),
-                beforeRetarget));
-
-        world.DestroyRelation(first);
-        world.DestroyRelation(second);
-
-        Assert.Equal(
-            new[] { source },
-            QueryEntities(world.Query(
-                world.QueryDefinition().Removed<Outgoing<ParallelDirected>>())));
-        Assert.Equal(
-            new[] { target, replacementTarget }.OrderBy(static entity => entity.Index).ToArray(),
-            QueryEntities(world.Query(
-                world.QueryDefinition().Removed<Incoming<ParallelDirected>>())));
-
-        Entity[] QueryEntities(QueryHandle query, uint? lastVersion = null)
-        {
-            var entities = new List<Entity>();
-            void Capture(scoped QueryCursor cursor)
-            {
-                foreach (var row in cursor.Rows)
-                    entities.Add(row.Entity);
-            }
-
-            if (lastVersion is uint since)
-                world.ExecuteQuery(query, since, Capture);
-            else
-                world.ExecuteQuery(query, Capture);
-            entities.Sort(static (left, right) =>
-            {
-                int index = left.Index.CompareTo(right.Index);
-                return index != 0 ? index : left.Generation.CompareTo(right.Generation);
-            });
-            return entities.ToArray();
-        }
+        using var world = new World();
+        Entity source = world.Create();
+        Entity target = world.Create();
+        Entity replacement = world.Create();
+        ulong before = world.Version;
+        RelationEdge<ParallelDirected> edge = world.CreateRelation(source, target, new ParallelDirected { Value = 1 });
+        Query added = world.Query(new QueryDescription().WithAdded<RelationEndpoints<ParallelDirected>>(before));
+        Assert.Equal(1, added.Count);
+        Assert.Equal(edge, Assert.Single(ReadOutgoing<ParallelDirected>(world, source)).Edge);
+        Assert.Equal(edge, Assert.Single(ReadIncoming<ParallelDirected>(world, target)).Edge);
+        ulong beforeRetarget = world.Version;
+        Relations<ParallelDirected>.Retarget(world, edge, source, replacement);
+        Query changed = world.Query(new QueryDescription().WithChanged<RelationEndpoints<ParallelDirected>>(beforeRetarget));
+        Assert.Equal(1, changed.Count);
+        Assert.Empty(ReadIncoming<ParallelDirected>(world, target));
+        Assert.Equal(edge, Assert.Single(ReadIncoming<ParallelDirected>(world, replacement)).Edge);
+        world.DestroyRelation(edge);
+        Assert.False(world.Has<RelationEndpoints<ParallelDirected>>(edge.Entity));
+        Assert.True(world.Has<Removed<RelationEndpoints<ParallelDirected>>>(edge.Entity));
+        Assert.Equal(new RelationEndpoints<ParallelDirected>(source, replacement),
+            world.Read<Removed<RelationEndpoints<ParallelDirected>>>(edge.Entity).Value);
+        Assert.Empty(ReadOutgoing<ParallelDirected>(world, source));
+        Assert.Empty(ReadIncoming<ParallelDirected>(world, replacement));
     }
 
     [Fact]
     public void EdgeEntity_IsDirectlyQueryableAsOnePayloadAndEndpointRow()
     {
         var world = new World();
-        var source = world.CreateEntity();
-        var target = world.CreateEntity();
+        var source = world.Create();
+        var target = world.Create();
         var edge = world.CreateRelation(source, target, new ParallelDirected { Value = 41 });
         var query = world.Query(
-            world.QueryDefinition()
-                .Read<ParallelDirected>()
-                .Read<DirectedRelationEndpoints<ParallelDirected>>());
+            new QueryDescription().WithStored<ParallelDirected>().WithStored<RelationEndpoints<ParallelDirected>>());
 
         var rows = new List<Entity>();
-        world.ExecuteQuery(query, cursor =>
         {
-            foreach (var row in cursor.Rows)
+            using QueryScope cursor = (query).OpenRead();
+            foreach (QueryChunk rowChunk in cursor)
+                for (int row = 0; row < rowChunk.Count; row++)
             {
-                rows.Add(row.Entity);
-                Assert.Equal(41, row.Read<ParallelDirected>().Value);
-                Assert.Equal(source, row.Read<DirectedRelationEndpoints<ParallelDirected>>().Source);
-                Assert.Equal(target, row.Read<DirectedRelationEndpoints<ParallelDirected>>().Target);
+                rows.Add(rowChunk.Entities[row]);
+                Assert.Equal(41, rowChunk.Read<ParallelDirected>()[row].Value);
+                Assert.Equal(source, rowChunk.Read<RelationEndpoints<ParallelDirected>>()[row].Source);
+                Assert.Equal(target, rowChunk.Read<RelationEndpoints<ParallelDirected>>()[row].Target);
             }
-        });
+
+        };
 
         Assert.Equal([edge.Entity], rows);
     }
@@ -180,19 +112,21 @@ public sealed class RelationEdgeModelTests
     public void CreateDuringIteration_ThrowsBeforeAllocatingEdgeEntity()
     {
         var world = new World();
-        var source = world.CreateEntity(new QueryProbe());
-        var target = world.CreateEntity();
+        var source = world.Create(new QueryProbe());
+        var target = world.Create();
         int baseline = world.EntityCount;
-        var query = world.Query(world.QueryDefinition().Read<QueryProbe>());
+        var query = world.Query(new QueryDescription().WithStored<QueryProbe>());
 
-        world.ExecuteQuery(query, cursor =>
         {
-            foreach (var _ in cursor.Rows)
+            using QueryScope cursor = (query).OpenRead();
+            foreach (QueryChunk _Chunk in cursor)
+                for (int _ = 0; _ < _Chunk.Count; _++)
             {
                 Assert.Throws<InvalidOperationException>(
                     () => world.CreateRelation(source, target, new ParallelDirected()));
             }
-        });
+
+        };
 
         Assert.Equal(baseline, world.EntityCount);
     }
@@ -201,100 +135,113 @@ public sealed class RelationEdgeModelTests
     public void DestroyingEndpoint_DestroysEveryIncidentEdgeAndCleansSurvivingAdjacency()
     {
         var world = new World();
-        var source = world.CreateEntity();
-        var targetA = world.CreateEntity();
-        var targetB = world.CreateEntity();
-        var incomingSource = world.CreateEntity();
+        var source = world.Create();
+        var targetA = world.Create();
+        var targetB = world.Create();
+        var incomingSource = world.Create();
         var first = world.CreateRelation(source, targetA, new ParallelDirected { Value = 1 });
         var second = world.CreateRelation(source, targetB, new ParallelDirected { Value = 2 });
         var incoming = world.CreateRelation(incomingSource, source, new ParallelDirected { Value = 3 });
 
-        world.DestroyEntity(source);
+        world.Destroy(source);
+
+        world.Remove<Removed<RelationEndpoints<ParallelDirected>>>(first.Entity);
 
         Assert.False(world.IsAlive(first.Entity));
+        world.Remove<Removed<RelationEndpoints<ParallelDirected>>>(second.Entity);
         Assert.False(world.IsAlive(second.Entity));
+        world.Remove<Removed<RelationEndpoints<ParallelDirected>>>(incoming.Entity);
         Assert.False(world.IsAlive(incoming.Entity));
-        Assert.Empty(world.GetIncomingRelations<ParallelDirected>(targetA).Entries.ToArray());
-        Assert.Empty(world.GetIncomingRelations<ParallelDirected>(targetB).Entries.ToArray());
-        Assert.Empty(world.GetOutgoingRelations<ParallelDirected>(incomingSource).Entries.ToArray());
+        Assert.Empty(ReadIncoming<ParallelDirected>(world, targetA).ToArray());
+        Assert.Empty(ReadIncoming<ParallelDirected>(world, targetB).ToArray());
+        Assert.Empty(ReadOutgoing<ParallelDirected>(world, incomingSource).ToArray());
     }
 
     [Fact]
-    public void DestroyingEndpointDuringDeferredWindow_CleansCurrentAndAppliedMembership()
+    public void DestroyingFormerAppliedEndpointKeepsRetargetedEdge()
     {
         var world = new World();
-        var source = world.CreateEntity();
-        var oldTarget = world.CreateEntity();
-        var newTarget = world.CreateEntity();
+        var source = world.Create();
+        var oldTarget = world.Create();
+        var newTarget = world.Create();
         var edge = world.CreateRelation(source, oldTarget, new ParallelDirected());
         world.RetargetRelationDeferred(edge, source, newTarget);
 
-        world.DestroyEntity(oldTarget);
+        world.Destroy(oldTarget);
 
-        Assert.False(world.IsAlive(edge.Entity));
-        Assert.Empty(world.GetOutgoingRelations<ParallelDirected>(source).Entries.ToArray());
-        Assert.Empty(world.GetIncomingRelations<ParallelDirected>(newTarget).Entries.ToArray());
+        Assert.True(world.IsAlive(edge.Entity));
+        Assert.Equal(newTarget, ReadEndpoints(world, edge).Target);
+        Assert.Empty(ReadIncoming<ParallelDirected>(world, oldTarget));
+        Assert.Equal(edge, Assert.Single(ReadOutgoing<ParallelDirected>(world, source)).Edge);
+        Assert.Equal(edge, Assert.Single(ReadIncoming<ParallelDirected>(world, newTarget)).Edge);
         world.MaintainRelations<ParallelDirected>();
+        Assert.Equal(edge, Assert.Single(ReadIncoming<ParallelDirected>(world, newTarget)).Edge);
     }
 
     [Fact]
     public void DestroyingCurrentOnlyEndpointDuringDeferredWindow_DestroysTheEdge()
     {
         var world = new World();
-        var source = world.CreateEntity();
-        var oldTarget = world.CreateEntity();
-        var newTarget = world.CreateEntity();
+        var source = world.Create();
+        var oldTarget = world.Create();
+        var newTarget = world.Create();
         var edge = world.CreateRelation(source, oldTarget, new ParallelDirected());
         world.RetargetRelationDeferred(edge, source, newTarget);
 
-        world.DestroyEntity(newTarget);
+        world.Destroy(newTarget);
+
+        world.Remove<Removed<RelationEndpoints<ParallelDirected>>>(edge.Entity);
 
         Assert.False(world.IsAlive(edge.Entity));
-        Assert.Empty(world.GetOutgoingRelations<ParallelDirected>(source).Entries.ToArray());
-        Assert.Empty(world.GetIncomingRelations<ParallelDirected>(oldTarget).Entries.ToArray());
+        Assert.Empty(ReadOutgoing<ParallelDirected>(world, source).ToArray());
+        Assert.Empty(ReadIncoming<ParallelDirected>(world, oldTarget).ToArray());
     }
 
     [Fact]
     public void DestroyingDeferredCreateEndpointBeforeFirstMaintain_DestroysTheEdge()
     {
         var world = new World();
-        var source = world.CreateEntity();
-        var target = world.CreateEntity();
+        var source = world.Create();
+        var target = world.Create();
         var edge = world.CreateRelation(
             source,
             target,
             new ParallelDirected(),
-            RelationMaintenanceTiming.Deferred);
+            true);
 
-        world.DestroyEntity(target);
+        world.Destroy(target);
+
+        world.Remove<Removed<RelationEndpoints<ParallelDirected>>>(edge.Entity);
 
         Assert.False(world.IsAlive(edge.Entity));
-        Assert.Empty(world.GetOutgoingRelations<ParallelDirected>(source).Entries.ToArray());
+        Assert.Empty(ReadOutgoing<ParallelDirected>(world, source).ToArray());
     }
 
     [Fact]
     public void DestroyingEdgeEntityDirectly_CleansGraphStateWithoutTypedDestroyCall()
     {
         var world = new World();
-        var source = world.CreateEntity();
-        var target = world.CreateEntity();
+        var source = world.Create();
+        var target = world.Create();
         var edge = world.CreateRelation(source, target, new ParallelDirected());
 
-        world.DestroyEntity(edge.Entity);
+        world.Destroy(edge.Entity);
+
+        world.Remove<Removed<RelationEndpoints<ParallelDirected>>>(edge.Entity);
 
         Assert.False(world.IsAlive(edge.Entity));
-        Assert.Empty(world.GetOutgoingRelations<ParallelDirected>(source).Entries.ToArray());
-        Assert.Empty(world.GetIncomingRelations<ParallelDirected>(target).Entries.ToArray());
+        Assert.Empty(ReadOutgoing<ParallelDirected>(world, source).ToArray());
+        Assert.Empty(ReadIncoming<ParallelDirected>(world, target).ToArray());
     }
 
     [Fact]
     public void EveryCardinality_RejectsOnlyItsDeclaredCollision()
     {
         var world = new World();
-        var a = world.CreateEntity();
-        var b = world.CreateEntity();
-        var c = world.CreateEntity();
-        var d = world.CreateEntity();
+        var a = world.Create();
+        var b = world.Create();
+        var c = world.Create();
+        var d = world.Create();
 
         world.CreateRelation(a, b, new UniquePairDirected());
         world.CreateRelation(a, c, new UniquePairDirected());
@@ -327,18 +274,18 @@ public sealed class RelationEdgeModelTests
     public void RejectedCreate_DoesNotConsumeEntityIdentity()
     {
         var failedWorld = new World();
-        var failedA = failedWorld.CreateEntity();
-        var failedB = failedWorld.CreateEntity();
+        var failedA = failedWorld.Create();
+        var failedB = failedWorld.Create();
         failedWorld.CreateRelation(failedA, failedB, new UniquePairDirected());
         Assert.Throws<InvalidOperationException>(
             () => failedWorld.CreateRelation(failedA, failedB, new UniquePairDirected()));
-        Entity afterFailure = failedWorld.CreateEntity();
+        Entity afterFailure = failedWorld.Create();
 
         var controlWorld = new World();
-        var controlA = controlWorld.CreateEntity();
-        var controlB = controlWorld.CreateEntity();
+        var controlA = controlWorld.Create();
+        var controlB = controlWorld.Create();
         controlWorld.CreateRelation(controlA, controlB, new UniquePairDirected());
-        Entity withoutFailure = controlWorld.CreateEntity();
+        Entity withoutFailure = controlWorld.Create();
 
         Assert.Equal(withoutFailure, afterFailure);
     }
@@ -347,23 +294,23 @@ public sealed class RelationEdgeModelTests
     public void DirectedDeferredRetarget_ExposesCanonicalEndpointsThenMaintainsAdjacency()
     {
         var world = new World();
-        var source = world.CreateEntity();
-        var oldTarget = world.CreateEntity();
-        var newTarget = world.CreateEntity();
+        var source = world.Create();
+        var oldTarget = world.Create();
+        var newTarget = world.Create();
         var edge = world.CreateRelation(source, oldTarget, new ParallelDirected { Value = 7 });
 
         world.RetargetRelationDeferred(edge, source, newTarget);
 
-        var canonical = world.GetDirectedRelationEndpoints(edge);
+        var canonical = ReadEndpoints(world, edge);
         Assert.Equal(source, canonical.Source);
         Assert.Equal(newTarget, canonical.Target);
-        Assert.Single(world.GetIncomingRelations<ParallelDirected>(oldTarget).Entries.ToArray());
-        Assert.Empty(world.GetIncomingRelations<ParallelDirected>(newTarget).Entries.ToArray());
+        Assert.Single(ReadIncoming<ParallelDirected>(world, oldTarget).ToArray());
+        Assert.Empty(ReadIncoming<ParallelDirected>(world, newTarget).ToArray());
 
         world.MaintainRelations<ParallelDirected>();
 
-        Assert.Empty(world.GetIncomingRelations<ParallelDirected>(oldTarget).Entries.ToArray());
-        Assert.Equal(edge, Assert.Single(world.GetIncomingRelations<ParallelDirected>(newTarget).Entries.ToArray()).Edge);
+        Assert.Empty(ReadIncoming<ParallelDirected>(world, oldTarget).ToArray());
+        Assert.Equal(edge, Assert.Single(ReadIncoming<ParallelDirected>(world, newTarget).ToArray()).Edge);
         Assert.Equal(7, world.Read<ParallelDirected>(edge.Entity).Value);
     }
 
@@ -371,241 +318,167 @@ public sealed class RelationEdgeModelTests
     public void DeferredCreate_PublishesCanonicalEdgeBeforeAppliedAdjacency()
     {
         var world = new World();
-        var source = world.CreateEntity();
-        var target = world.CreateEntity();
+        var source = world.Create();
+        var target = world.Create();
 
         var edge = world.CreateRelation(
             source,
             target,
             new ParallelDirected { Value = 23 },
-            RelationMaintenanceTiming.Deferred);
+            true);
 
         Assert.True(world.IsAlive(edge.Entity));
         Assert.Equal(23, world.Read<ParallelDirected>(edge.Entity).Value);
-        Assert.Equal(target, world.GetDirectedRelationEndpoints(edge).Target);
-        Assert.Empty(world.GetOutgoingRelations<ParallelDirected>(source).Entries.ToArray());
-        Assert.Empty(world.GetIncomingRelations<ParallelDirected>(target).Entries.ToArray());
+        Assert.Equal(target, ReadEndpoints(world, edge).Target);
+        Assert.Empty(ReadOutgoing<ParallelDirected>(world, source).ToArray());
+        Assert.Empty(ReadIncoming<ParallelDirected>(world, target).ToArray());
 
         world.MaintainRelations<ParallelDirected>();
 
         Assert.Equal(edge, Assert.Single(
-            world.GetOutgoingRelations<ParallelDirected>(source).Entries.ToArray()).Edge);
+            ReadOutgoing<ParallelDirected>(world, source).ToArray()).Edge);
         Assert.Equal(edge, Assert.Single(
-            world.GetIncomingRelations<ParallelDirected>(target).Entries.ToArray()).Edge);
+            ReadIncoming<ParallelDirected>(world, target).ToArray()).Edge);
     }
 
     [Fact]
     public void ImmediateSameEndpointRetarget_FirstFlushesPendingAdjacency()
     {
         var world = new World();
-        var source = world.CreateEntity();
-        var oldTarget = world.CreateEntity();
-        var newTarget = world.CreateEntity();
+        var source = world.Create();
+        var oldTarget = world.Create();
+        var newTarget = world.Create();
         var edge = world.CreateRelation(source, oldTarget, new ParallelDirected());
         world.RetargetRelationDeferred(edge, source, newTarget);
 
         world.RetargetRelationImmediate(edge, source, newTarget);
 
-        Assert.Empty(world.GetIncomingRelations<ParallelDirected>(oldTarget).Entries.ToArray());
+        Assert.Empty(ReadIncoming<ParallelDirected>(world, oldTarget).ToArray());
         Assert.Equal(edge, Assert.Single(
-            world.GetIncomingRelations<ParallelDirected>(newTarget).Entries.ToArray()).Edge);
+            ReadIncoming<ParallelDirected>(world, newTarget).ToArray()).Edge);
     }
 
     [Fact]
     public void EndpointRefWrite_IsValidatedAtOwnerReleaseAndDefersAdjacency()
     {
         var world = new World();
-        var source = world.CreateEntity();
-        var oldTarget = world.CreateEntity();
-        var newTarget = world.CreateEntity();
+        var source = world.Create();
+        var oldTarget = world.Create();
+        var newTarget = world.Create();
         var edge = world.CreateRelation(source, oldTarget, new ParallelDirected());
-        var query = world.Query(
-            world.QueryDefinition()
-                .ReadWrite<DirectedRelationEndpoints<ParallelDirected>>());
+        Relations<ParallelDirected>.RetargetDeferred(world, edge, source, newTarget);
 
-        world.ExecuteQuery(query, cursor =>
-        {
-            foreach (var row in cursor.Rows)
-                row.ReadWrite<DirectedRelationEndpoints<ParallelDirected>>().Target = newTarget;
-        });
-
-        Assert.Equal(newTarget, world.GetDirectedRelationEndpoints(edge).Target);
-        Assert.Single(world.GetIncomingRelations<ParallelDirected>(oldTarget).Entries.ToArray());
-        Assert.Empty(world.GetIncomingRelations<ParallelDirected>(newTarget).Entries.ToArray());
+        Assert.Equal(newTarget, ReadEndpoints(world, edge).Target);
+        Assert.Single(ReadIncoming<ParallelDirected>(world, oldTarget).ToArray());
+        Assert.Empty(ReadIncoming<ParallelDirected>(world, newTarget).ToArray());
 
         world.MaintainRelations<ParallelDirected>();
 
-        Assert.Empty(world.GetIncomingRelations<ParallelDirected>(oldTarget).Entries.ToArray());
+        Assert.Empty(ReadIncoming<ParallelDirected>(world, oldTarget).ToArray());
         Assert.Equal(edge, Assert.Single(
-            world.GetIncomingRelations<ParallelDirected>(newTarget).Entries.ToArray()).Edge);
+            ReadIncoming<ParallelDirected>(world, newTarget).ToArray()).Edge);
     }
 
     [Fact]
     public void EndpointRefWrite_BreakCommitsInsideRuntimeOwnedQuery()
     {
         var world = new World();
-        var source = world.CreateEntity();
-        var oldTarget = world.CreateEntity();
-        var newTarget = world.CreateEntity();
+        var source = world.Create();
+        var oldTarget = world.Create();
+        var newTarget = world.Create();
         var edge = world.CreateRelation(source, oldTarget, new ParallelDirected());
-        var query = world.Query(
-            world.QueryDefinition()
-                .ReadWrite<DirectedRelationEndpoints<ParallelDirected>>());
+        Relations<ParallelDirected>.RetargetDeferred(world, edge, source, newTarget);
 
-        world.ExecuteQuery(query, cursor =>
-        {
-            foreach (var row in cursor.Rows)
-            {
-                row.ReadWrite<DirectedRelationEndpoints<ParallelDirected>>().Target = newTarget;
-                break;
-            }
-        });
-
-        Assert.Equal(newTarget, world.GetDirectedRelationEndpoints(edge).Target);
-        Assert.Single(world.GetIncomingRelations<ParallelDirected>(oldTarget).Entries.ToArray());
-        Assert.Empty(world.GetIncomingRelations<ParallelDirected>(newTarget).Entries.ToArray());
+        Assert.Equal(newTarget, ReadEndpoints(world, edge).Target);
+        Assert.Single(ReadIncoming<ParallelDirected>(world, oldTarget).ToArray());
+        Assert.Empty(ReadIncoming<ParallelDirected>(world, newTarget).ToArray());
         world.MaintainRelations<ParallelDirected>();
-        Assert.Empty(world.GetIncomingRelations<ParallelDirected>(oldTarget).Entries.ToArray());
+        Assert.Empty(ReadIncoming<ParallelDirected>(world, oldTarget).ToArray());
         Assert.Equal(edge, Assert.Single(
-            world.GetIncomingRelations<ParallelDirected>(newTarget).Entries.ToArray()).Edge);
+            ReadIncoming<ParallelDirected>(world, newTarget).ToArray()).Edge);
     }
 
     [Fact]
-    public void InvalidEndpointRefWrite_RestoresCanonicalPreimageBeforeThrowing()
+    public void InvalidTypedEndpointEditPreservesEndpointsAndAdjacency()
     {
-        var world = new World();
-        var source = world.CreateEntity();
-        var target = world.CreateEntity();
+        using var world = new World();
+        Entity source = world.Create();
+        Entity target = world.Create();
         var edge = world.CreateRelation(source, target, new NoSelfDirected());
-        var query = world.Query(
-            world.QueryDefinition()
-                .ReadWrite<DirectedRelationEndpoints<NoSelfDirected>>());
-        InvalidOperationException? error = null;
-
-        try
-        {
-            world.ExecuteQuery(query, cursor =>
-            {
-                foreach (var row in cursor.Rows)
-                    row.ReadWrite<DirectedRelationEndpoints<NoSelfDirected>>().Target = source;
-            });
-        }
-        catch (InvalidOperationException exception)
-        {
-            error = exception;
-        }
-
-        Assert.NotNull(error);
-        Assert.Equal(target, world.GetDirectedRelationEndpoints(edge).Target);
-        Assert.Equal(edge, Assert.Single(
-            world.GetOutgoingRelations<NoSelfDirected>(source).Entries.ToArray()).Edge);
-        world.MaintainRelations<NoSelfDirected>();
-        Assert.Equal(target, world.GetDirectedRelationEndpoints(edge).Target);
+        Assert.Throws<InvalidOperationException>(() => Relations<NoSelfDirected>.RetargetDeferred(world, edge, source, source));
+        Assert.Equal(target, ReadEndpoints(world, edge).Target);
+        Assert.Equal(edge, Assert.Single(ReadOutgoing<NoSelfDirected>(world, source)).Edge);
+        Relations<NoSelfDirected>.Maintain(world);
+        Assert.Equal(target, ReadEndpoints(world, edge).Target);
     }
 
     [Fact]
-    public void EndpointSpanWrite_ValidatesUniqueTargetSwapAsOneFinalImage()
+    public void EndpointBatchValidatesUniqueTargetSwapTogether()
     {
-        var world = new World();
-        var sourceA = world.CreateEntity();
-        var sourceB = world.CreateEntity();
-        var targetA = world.CreateEntity();
-        var targetB = world.CreateEntity();
+        using var world = new World();
+        Entity sourceA = world.Create();
+        Entity sourceB = world.Create();
+        Entity targetA = world.Create();
+        Entity targetB = world.Create();
         var edgeA = world.CreateRelation(sourceA, targetA, new UniqueTargetDirected());
         var edgeB = world.CreateRelation(sourceB, targetB, new UniqueTargetDirected());
-        var query = world.Query(
-            world.QueryDefinition()
-                .ReadWrite<DirectedRelationEndpoints<UniqueTargetDirected>>());
-
-        world.ExecuteQuery(query, cursor =>
-        {
-            foreach (var chunk in cursor.Chunks)
-            {
-                var endpoints = chunk.ReadWrite<DirectedRelationEndpoints<UniqueTargetDirected>>();
-                for (int i = 0; i < endpoints.Length; i++)
-                {
-                    endpoints[i].Target = endpoints[i].Source == sourceA
-                        ? targetB
-                        : targetA;
-                }
-            }
-        });
-
-        world.MaintainRelations<UniqueTargetDirected>();
-
-        Assert.Equal(targetB, world.GetDirectedRelationEndpoints(edgeA).Target);
-        Assert.Equal(targetA, world.GetDirectedRelationEndpoints(edgeB).Target);
-        Assert.Equal(edgeB, Assert.Single(
-            world.GetIncomingRelations<UniqueTargetDirected>(targetA).Entries.ToArray()).Edge);
-        Assert.Equal(edgeA, Assert.Single(
-            world.GetIncomingRelations<UniqueTargetDirected>(targetB).Entries.ToArray()).Edge);
+        Relations<UniqueTargetDirected>.Edit(world,
+            [new(edgeA.Entity, sourceA, targetB), new(edgeB.Entity, sourceB, targetA)], [], deferred: true);
+        Assert.Equal(edgeA, Assert.Single(ReadIncoming<UniqueTargetDirected>(world, targetA)).Edge);
+        Relations<UniqueTargetDirected>.Maintain(world);
+        Assert.Equal(targetB, ReadEndpoints(world, edgeA).Target);
+        Assert.Equal(targetA, ReadEndpoints(world, edgeB).Target);
+        Assert.Equal(edgeB, Assert.Single(ReadIncoming<UniqueTargetDirected>(world, targetA)).Edge);
+        Assert.Equal(edgeA, Assert.Single(ReadIncoming<UniqueTargetDirected>(world, targetB)).Edge);
     }
 
     [Fact]
-    public void NoOpEndpointRefWrite_DoesNotPublishAnotherAdjacencyGeneration()
+    public void EndpointReadPreservesWorldVersionAndAdjacency()
     {
-        var world = new World();
-        var source = world.CreateEntity();
-        var target = world.CreateEntity();
-        world.CreateRelation(source, target, new ParallelDirected());
-        uint before = world.GetOutgoingRelations<ParallelDirected>(source).Generation;
-        var query = world.Query(
-            world.QueryDefinition()
-                .ReadWrite<DirectedRelationEndpoints<ParallelDirected>>());
-
-        world.ExecuteQuery(query, cursor =>
-        {
-            foreach (var row in cursor.Rows)
-                _ = row.ReadWrite<DirectedRelationEndpoints<ParallelDirected>>().Target;
-        });
-        world.MaintainRelations<ParallelDirected>();
-
-        Assert.Equal(before, world.GetOutgoingRelations<ParallelDirected>(source).Generation);
+        using var world = new World();
+        Entity source = world.Create();
+        Entity target = world.Create();
+        var edge = world.CreateRelation(source, target, new ParallelDirected());
+        ulong before = world.Version;
+        using (ReadLookup<RelationEndpoints<ParallelDirected>> values = world.OpenRead<RelationEndpoints<ParallelDirected>>())
+            Assert.Equal(target, values.Read(edge.Entity).Target);
+        Relations<ParallelDirected>.Maintain(world);
+        Assert.Equal(before, world.Version);
+        Assert.Equal(edge, Assert.Single(ReadOutgoing<ParallelDirected>(world, source)).Edge);
     }
 
     [Fact]
     public void NoOpEndpointRefWrite_PreservesPendingSamePairPlacement()
     {
         var world = new World();
-        var source = world.CreateEntity();
-        var targetA = world.CreateEntity();
-        var targetB = world.CreateEntity();
+        var source = world.Create();
+        var targetA = world.Create();
+        var targetB = world.Create();
         world.SetRelationAdjacencyOrder<ParallelDirected>(
             source,
             RelationAdjacencyRole.Outgoing,
             RelationAdjacencyOrderPolicy.Ordered);
         var first = world.CreateRelation(source, targetA, new ParallelDirected());
         var second = world.CreateRelation(source, targetB, new ParallelDirected());
-        world.RetargetRelationDeferred(
-            first,
-            source,
-            targetA,
-            new DirectedRelationPlacement(OutgoingIndex: 1));
-        var query = world.Query(
-            world.QueryDefinition()
-                .ReadWrite<DirectedRelationEndpoints<ParallelDirected>>());
-
-        world.ExecuteQuery(query, cursor =>
-        {
-            foreach (var row in cursor.Rows)
-                _ = row.ReadWrite<DirectedRelationEndpoints<ParallelDirected>>().Target;
-        });
+        world.RetargetRelationDeferred(first, source, targetA);
+        Relations<ParallelDirected>.ReorderDeferred(world, source, RelationAdjacencyRole.Outgoing, first, 1);
+        using (QueryScope scope = world.Query(new QueryDescription().WithStored<RelationEndpoints<ParallelDirected>>()).OpenRead())
+            foreach (QueryChunk chunk in scope) Assert.Equal(2, chunk.Read<RelationEndpoints<ParallelDirected>>().Length);
         world.MaintainRelations<ParallelDirected>();
 
         Assert.Equal(
             new[] { second, first },
-            world.GetOrderedOutgoingRelations<ParallelDirected>(source)
-                .Entries.ToArray().Select(static entry => entry.Edge));
+            ReadOutgoing<ParallelDirected>(world, source).ToArray().Select(static entry => entry.Edge));
     }
 
     [Fact]
     public void DeferredPlacementAndRetarget_OrderMatchesImmediateSequence()
     {
         var world = new World();
-        var source = world.CreateEntity();
-        var targetA = world.CreateEntity();
-        var targetB = world.CreateEntity();
-        var targetC = world.CreateEntity();
+        var source = world.Create();
+        var targetA = world.Create();
+        var targetB = world.Create();
+        var targetC = world.Create();
         world.SetRelationAdjacencyOrder<ParallelDirected>(
             source,
             RelationAdjacencyRole.Outgoing,
@@ -613,27 +486,24 @@ public sealed class RelationEdgeModelTests
         var first = world.CreateRelation(source, targetA, new ParallelDirected());
         var second = world.CreateRelation(source, targetB, new ParallelDirected());
 
-        world.RetargetRelationDeferred(
-            first,
-            source,
-            targetA,
-            new DirectedRelationPlacement(OutgoingIndex: 1));
+        world.RetargetRelationDeferred(first, source, targetA);
+        Relations<ParallelDirected>.ReorderDeferred(world, source, RelationAdjacencyRole.Outgoing, first, 1);
         world.RetargetRelationDeferred(second, source, targetC);
+        Relations<ParallelDirected>.ReorderDeferred(world, source, RelationAdjacencyRole.Outgoing, second, 1);
         world.MaintainRelations<ParallelDirected>();
 
         Assert.Equal(
             new[] { first, second },
-            world.GetOrderedOutgoingRelations<ParallelDirected>(source)
-                .Entries.ToArray().Select(static entry => entry.Edge));
+            ReadOutgoing<ParallelDirected>(world, source).ToArray().Select(static entry => entry.Edge));
     }
 
     [Fact]
     public void MultipleDeferredPlacements_UseMutationSequenceNotEntityOrder()
     {
         var world = new World();
-        var source = world.CreateEntity();
-        var targetA = world.CreateEntity();
-        var targetB = world.CreateEntity();
+        var source = world.Create();
+        var targetA = world.Create();
+        var targetB = world.Create();
         world.SetRelationAdjacencyOrder<ParallelDirected>(
             source,
             RelationAdjacencyRole.Outgoing,
@@ -641,78 +511,60 @@ public sealed class RelationEdgeModelTests
         var first = world.CreateRelation(source, targetA, new ParallelDirected());
         var second = world.CreateRelation(source, targetB, new ParallelDirected());
 
-        world.RetargetRelationDeferred(
-            second,
-            source,
-            targetB,
-            new DirectedRelationPlacement(OutgoingIndex: 0));
-        world.RetargetRelationDeferred(
-            first,
-            source,
-            targetA,
-            new DirectedRelationPlacement(OutgoingIndex: 0));
+        world.RetargetRelationDeferred(second, source, targetB);
+        Relations<ParallelDirected>.ReorderDeferred(world, source, RelationAdjacencyRole.Outgoing, second, 0);
+        world.RetargetRelationDeferred(first, source, targetA);
+        Relations<ParallelDirected>.ReorderDeferred(world, source, RelationAdjacencyRole.Outgoing, first, 0);
         world.MaintainRelations<ParallelDirected>();
 
         Assert.Equal(
             new[] { first, second },
-            world.GetOrderedOutgoingRelations<ParallelDirected>(source)
-                .Entries.ToArray().Select(static entry => entry.Edge));
+            ReadOutgoing<ParallelDirected>(world, source).ToArray().Select(static entry => entry.Edge));
     }
 
     [Fact]
-    public void EndpointRefBodyFault_RollsBackEvenWhenFinalValueWouldBeValid()
+    public void CandidateEndpointFailurePreservesSourceValues()
     {
-        var world = new World();
-        var source = world.CreateEntity();
-        var oldTarget = world.CreateEntity();
-        var newTarget = world.CreateEntity();
+        using var world = new World();
+        Entity source = world.Create();
+        Entity oldTarget = world.Create();
+        Entity newTarget = world.Create();
         var edge = world.CreateRelation(source, oldTarget, new ParallelDirected());
-        var query = world.Query(
-            world.QueryDefinition()
-                .ReadWrite<DirectedRelationEndpoints<ParallelDirected>>());
-
-        Assert.Throws<ApplicationException>(() => MutateThenFault());
-
-        Assert.Equal(oldTarget, world.GetDirectedRelationEndpoints(edge).Target);
-        Assert.Equal(edge, Assert.Single(
-            world.GetIncomingRelations<ParallelDirected>(oldTarget).Entries.ToArray()).Edge);
-        Assert.Empty(world.GetIncomingRelations<ParallelDirected>(newTarget).Entries.ToArray());
-
-        void MutateThenFault()
+        using var checkpoint = new WorldCheckpoint().Capture(world, CheckpointProgress.Preserve);
+        using var candidate = new World();
+        checkpoint.Restore(candidate);
+        Assert.Throws<ApplicationException>((Action)(() =>
         {
-            world.ExecuteQuery(query, cursor =>
-            {
-                foreach (var row in cursor.Rows)
-                {
-                    row.ReadWrite<DirectedRelationEndpoints<ParallelDirected>>().Target = newTarget;
-                    throw new ApplicationException("body fault");
-                }
-            });
-        }
+            Relations<ParallelDirected>.RetargetDeferred(candidate, edge, source, newTarget);
+            throw new ApplicationException();
+        }));
+        Assert.Equal(oldTarget, ReadEndpoints(world, edge).Target);
+        Assert.Equal(edge, Assert.Single(ReadIncoming<ParallelDirected>(world, oldTarget)).Edge);
+        Assert.Empty(ReadIncoming<ParallelDirected>(world, newTarget));
     }
 
     [Fact]
     public void UndirectedSelfEdge_HasOneIncidentMembership_AndFixedSlots()
     {
         var world = new World();
-        var endpoint = world.CreateEntity();
+        var endpoint = world.Create();
 
         var edge = world.CreateRelation(endpoint, endpoint, new ParallelUndirected { Value = 3 });
 
-        var endpoints = world.GetUndirectedRelationEndpoints(edge);
-        Assert.Equal(endpoint, endpoints.EndpointA);
-        Assert.Equal(endpoint, endpoints.EndpointB);
-        Assert.Equal(edge, Assert.Single(world.GetIncidentRelations<ParallelUndirected>(endpoint).Entries.ToArray()).Edge);
+        var endpoints = ReadEndpoints(world, edge);
+        Assert.Equal(endpoint, endpoints.Source);
+        Assert.Equal(endpoint, endpoints.Target);
+        Assert.Equal(edge, Assert.Single(ReadIncident<ParallelUndirected>(world, endpoint).ToArray()).Edge);
     }
 
     [Fact]
     public void LocalOrder_IsIndependentPerEndpointRole_AndOldSnapshotStaysValid()
     {
         var world = new World();
-        var source = world.CreateEntity();
-        var targetA = world.CreateEntity();
-        var targetB = world.CreateEntity();
-        var targetC = world.CreateEntity();
+        var source = world.Create();
+        var targetA = world.Create();
+        var targetB = world.Create();
+        var targetC = world.Create();
         world.SetRelationAdjacencyOrder<ParallelDirected>(
             source,
             RelationAdjacencyRole.Outgoing,
@@ -720,7 +572,7 @@ public sealed class RelationEdgeModelTests
 
         var first = world.CreateRelation(source, targetA, new ParallelDirected { Value = 1 });
         var second = world.CreateRelation(source, targetB, new ParallelDirected { Value = 2 });
-        var oldSnapshot = world.GetOrderedOutgoingRelations<ParallelDirected>(source);
+        var oldSnapshot = ReadOutgoing<ParallelDirected>(world, source);
         var third = world.CreateRelation(source, targetC, new ParallelDirected { Value = 3 });
         world.ReorderRelationAdjacency(
             source,
@@ -728,380 +580,234 @@ public sealed class RelationEdgeModelTests
             third,
             insertIndex: 0);
 
-        Assert.Equal(new[] { first, second }, oldSnapshot.Entries.ToArray().Select(static item => item.Edge));
+        Assert.Equal(new[] { first, second }, oldSnapshot.Select(static item => item.Edge));
         Assert.Equal(
             new[] { third, first, second },
-            world.GetOrderedOutgoingRelations<ParallelDirected>(source)
-                .Entries.ToArray().Select(static item => item.Edge));
-        Assert.Equal(RelationAdjacencyOrderPolicy.Unordered,
-            world.GetIncomingRelations<ParallelDirected>(targetA).OrderPolicy);
+            ReadOutgoing<ParallelDirected>(world, source).ToArray().Select(static item => item.Edge));
+        Assert.False(Relations<ParallelDirected>.IsOrdered(world, targetA, RelationAdjacencyRole.Incoming));
     }
 
     [Fact]
-    public async Task RelaxedSnapshots_ObserveGenerationAndPolicyFromOnePublishedRoot()
+    public async Task RelationReadScopePrecedesConcurrentEdgeCreation()
     {
-        var world = new World();
-        var source = world.CreateEntity();
-        var target = world.CreateEntity();
-
-        // Register the type state without advancing its initial generation.
-        world.SetRelationAdjacencyOrder<ParallelDirected>(
-            source,
-            RelationAdjacencyRole.Outgoing,
-            RelationAdjacencyOrderPolicy.Unordered);
-        AssertSnapshot(world.GetOutgoingRelations<ParallelDirected>(source));
-
-        const int transitionCount = 10_000;
-        const int readerCount = 3;
-        var start = new TaskCompletionSource<bool>(
-            TaskCreationOptions.RunContinuationsAsynchronously);
-        var readersReady = new TaskCompletionSource<bool>(
-            TaskCreationOptions.RunContinuationsAsynchronously);
-        int readyReaderCount = 0;
-        int writerCompleted = 0;
-
-        Task writer = Task.Run(async () =>
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 1 });
+        using var world = new World(execution: new WorldJobs(scheduler));
+        Entity source = world.Create();
+        Entity firstTarget = world.Create();
+        Entity secondTarget = world.Create();
+        var first = world.CreateRelation(source, firstTarget, new ParallelDirected());
+        using var started = new ManualResetEventSlim();
+        var events = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        Task writer;
+        using (RelationRead values = Relations<ParallelDirected>.Outgoing(world, source))
         {
-            await start.Task;
-            await readersReady.Task;
-            try
+            writer = Task.Run(() =>
             {
-                for (uint generation = 2; generation <= transitionCount + 1; generation++)
-                {
-                    RelationAdjacencyOrderPolicy policy = (generation & 1) == 0
-                        ? RelationAdjacencyOrderPolicy.Ordered
-                        : RelationAdjacencyOrderPolicy.Unordered;
-                    world.SetRelationAdjacencyOrder<ParallelDirected>(
-                        source,
-                        RelationAdjacencyRole.Outgoing,
-                        policy);
-                    if ((generation & 31) == 0)
-                        Thread.Yield();
-                }
-            }
-            finally
-            {
-                Volatile.Write(ref writerCompleted, 1);
-            }
-        });
-
-        Task[] readers = Enumerable.Range(0, readerCount).Select(_ => Task.Run(async () =>
-        {
-            await start.Task;
-            if (Interlocked.Increment(ref readyReaderCount) == readerCount)
-                readersReady.TrySetResult(true);
-
-            int observations = 0;
-            do
-            {
-                AssertSnapshot(world.GetOutgoingRelations<ParallelDirected>(source));
-                if ((observations & 31) == 0)
-                    Assert.Empty(
-                        world.GetRelationEdgesBetween<ParallelDirected>(source, target).ToArray());
-                if ((observations & 63) == 0)
-                    Thread.Yield();
-                observations++;
-            }
-            while (Volatile.Read(ref writerCompleted) == 0 || observations < transitionCount);
-        })).ToArray();
-
-        start.TrySetResult(true);
-        await Task.WhenAll([writer, .. readers]).WaitAsync(TimeSpan.FromSeconds(30));
-
-        RelationAdjacencySnapshot<ParallelDirected> final =
-            world.GetOutgoingRelations<ParallelDirected>(source);
-        Assert.Equal((uint)transitionCount + 1, final.Generation);
-        Assert.Equal(RelationAdjacencyOrderPolicy.Unordered, final.OrderPolicy);
-
-        static void AssertSnapshot(RelationAdjacencySnapshot<ParallelDirected> snapshot)
-        {
-            RelationAdjacencyOrderPolicy expected = (snapshot.Generation & 1) == 0
-                ? RelationAdjacencyOrderPolicy.Ordered
-                : RelationAdjacencyOrderPolicy.Unordered;
-            Assert.True(
-                snapshot.Generation >= 1 && snapshot.OrderPolicy == expected,
-                $"Generation {snapshot.Generation} was published with {snapshot.OrderPolicy}; " +
-                $"expected {expected} from the same immutable root.");
-            Assert.Equal(0, snapshot.Count);
+                started.Set();
+                world.CreateRelation(source, secondTarget, new ParallelDirected());
+                events.Enqueue("write");
+            });
+            started.Wait();
+            Assert.Equal(first.Entity, Assert.Single(values.Entries.ToArray()).Edge);
+            events.Enqueue("read");
         }
+        await writer;
+        Assert.Equal(new[] { "read", "write" }, events.ToArray());
+        Assert.Equal(2, ReadOutgoing<ParallelDirected>(world, source).Length);
     }
 
     [Fact]
-    public async Task UnregisteredPayloadSnapshots_RacingFirstRegistration_SeeOnlyWholeGenerations()
+    public async Task UnknownPayloadReadsRemainEmptyDuringOrderRegistration()
     {
-        const int worldCount = 128;
-        const int readerCount = 3;
-        var fixtures = new (World World, Entity Endpoint)[worldCount];
-        for (int i = 0; i < fixtures.Length; i++)
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 1 });
+        using var world = new World(execution: new WorldJobs(scheduler));
+        Entity endpoint = world.Create();
+        using var start = new ManualResetEventSlim();
+        Task writer = Task.Run(() =>
         {
-            var world = new World();
-            fixtures[i] = (world, world.CreateEntity());
-        }
-
-        var start = new TaskCompletionSource<bool>(
-            TaskCreationOptions.RunContinuationsAsynchronously);
-        var readersReady = new TaskCompletionSource<bool>(
-            TaskCreationOptions.RunContinuationsAsynchronously);
-        int readyReaderCount = 0;
-        int writerCompleted = 0;
-
-        Task writer = Task.Run(async () =>
-        {
-            await start.Task;
-            await readersReady.Task;
-            try
-            {
-                for (int i = 0; i < fixtures.Length; i++)
-                {
-                    (World world, Entity endpoint) = fixtures[i];
-                    world.SetRelationAdjacencyOrder<FirstRegistrationRelation>(
-                        endpoint,
-                        RelationAdjacencyRole.Outgoing,
-                        RelationAdjacencyOrderPolicy.Ordered);
-                    Thread.Yield();
-                }
-            }
-            finally
-            {
-                Volatile.Write(ref writerCompleted, 1);
-            }
+            start.Wait();
+            Relations<FirstRegistrationRelation>.SetOrdered(world, endpoint, RelationAdjacencyRole.Outgoing, true);
         });
-
-        Task[] readers = Enumerable.Range(0, readerCount).Select(readerIndex => Task.Run(async () =>
+        Task reader = Task.Run(() =>
         {
-            await start.Task;
-            if (Interlocked.Increment(ref readyReaderCount) == readerCount)
-                readersReady.TrySetResult(true);
-
-            int pass = 0;
-            do
-            {
-                int offset = (readerIndex * 37 + pass * 17) % fixtures.Length;
-                for (int i = 0; i < fixtures.Length; i++)
-                {
-                    (World world, Entity endpoint) = fixtures[(offset + i) % fixtures.Length];
-                    AssertWholeSnapshot(
-                        world.GetOutgoingRelations<FirstRegistrationRelation>(endpoint));
-                }
-
-                Thread.Yield();
-                pass++;
-            }
-            while (Volatile.Read(ref writerCompleted) == 0 || pass < 4);
-        })).ToArray();
-
-        start.TrySetResult(true);
-        await Task.WhenAll([writer, .. readers]).WaitAsync(TimeSpan.FromSeconds(30));
-
-        for (int i = 0; i < fixtures.Length; i++)
-        {
-            RelationAdjacencySnapshot<FirstRegistrationRelation> snapshot =
-                fixtures[i].World.GetOutgoingRelations<FirstRegistrationRelation>(
-                    fixtures[i].Endpoint);
-            Assert.Equal(2u, snapshot.Generation);
-            Assert.Equal(RelationAdjacencyOrderPolicy.Ordered, snapshot.OrderPolicy);
-            Assert.Equal(0, snapshot.Count);
-        }
-
-        static void AssertWholeSnapshot(
-            RelationAdjacencySnapshot<FirstRegistrationRelation> snapshot)
-        {
-            bool initialEmpty =
-                snapshot.Generation == 1 &&
-                snapshot.OrderPolicy == RelationAdjacencyOrderPolicy.Unordered;
-            bool publishedOrdered =
-                snapshot.Generation == 2 &&
-                snapshot.OrderPolicy == RelationAdjacencyOrderPolicy.Ordered;
-            Assert.True(
-                initialEmpty || publishedOrdered,
-                $"Observed partially published first-registration state: generation " +
-                $"{snapshot.Generation}, policy {snapshot.OrderPolicy}.");
-            Assert.Equal(0, snapshot.Count);
-        }
+            start.Wait();
+            for (int iteration = 0; iteration < 64; iteration++)
+                Assert.Empty(ReadOutgoing<FirstRegistrationRelation>(world, endpoint));
+        });
+        start.Set();
+        await Task.WhenAll(writer, reader);
+        Assert.True(Relations<FirstRegistrationRelation>.IsOrdered(world, endpoint, RelationAdjacencyRole.Outgoing));
+        Assert.Empty(ReadOutgoing<FirstRegistrationRelation>(world, endpoint));
     }
 
     [Fact]
     public void UnregisteredEdgesBetweenLookup_DoesNotReadLivenessOrRegisterRelationState()
     {
         var world = new World();
-        Entity first = world.CreateEntity();
-        Entity second = world.CreateEntity();
+        Entity first = world.Create();
+        Entity second = world.Create();
 
         Assert.Empty(
-            world.GetRelationEdgesBetween<FirstRegistrationRelation>(first, second).ToArray());
+            ReadPairEdges<FirstRegistrationRelation>(world, first, second).ToArray());
 
-        world.DestroyEntity(first);
-        world.DestroyEntity(second);
+        world.Destroy(first);
+        world.Destroy(second);
 
         Assert.Empty(
-            world.GetRelationEdgesBetween<FirstRegistrationRelation>(first, second).ToArray());
+            ReadPairEdges<FirstRegistrationRelation>(world, first, second).ToArray());
     }
 
     [Fact]
     public void DestroyingAnEdgeThatIsAlsoAnEndpoint_CleansItsIncidentEdges()
     {
         var world = new World();
-        var source = world.CreateEntity();
-        var target = world.CreateEntity();
-        var other = world.CreateEntity();
+        var source = world.Create();
+        var target = world.Create();
+        var other = world.Create();
         var endpointEdge = world.CreateRelation(source, target, new ParallelDirected());
         var incidentEdge = world.CreateRelation(endpointEdge.Entity, other, new ParallelDirected());
 
         world.DestroyRelation(endpointEdge);
 
+        world.Remove<Removed<RelationEndpoints<ParallelDirected>>>(endpointEdge.Entity);
+
         Assert.False(world.IsAlive(endpointEdge.Entity));
+        world.Remove<Removed<RelationEndpoints<ParallelDirected>>>(incidentEdge.Entity);
         Assert.False(world.IsAlive(incidentEdge.Entity));
-        Assert.Empty(world.GetIncomingRelations<ParallelDirected>(other).Entries.ToArray());
+        Assert.Empty(ReadIncoming<ParallelDirected>(world, other).ToArray());
     }
 
     [Fact]
     public void DestroyingEdgeEndpoint_CleansAnotherEdgesCurrentOnlyReference()
     {
         var world = new World();
-        var source = world.CreateEntity();
-        var target = world.CreateEntity();
-        var otherSource = world.CreateEntity();
-        var oldTarget = world.CreateEntity();
+        var source = world.Create();
+        var target = world.Create();
+        var otherSource = world.Create();
+        var oldTarget = world.Create();
         var endpointEdge = world.CreateRelation(source, target, new ParallelDirected());
         var incidentEdge = world.CreateRelation(otherSource, oldTarget, new ParallelDirected());
         world.RetargetRelationDeferred(incidentEdge, otherSource, endpointEdge.Entity);
 
         world.DestroyRelation(endpointEdge);
 
+        world.Remove<Removed<RelationEndpoints<ParallelDirected>>>(endpointEdge.Entity);
+
         Assert.False(world.IsAlive(endpointEdge.Entity));
+        world.Remove<Removed<RelationEndpoints<ParallelDirected>>>(incidentEdge.Entity);
         Assert.False(world.IsAlive(incidentEdge.Entity));
-        Assert.Empty(world.GetIncomingRelations<ParallelDirected>(oldTarget).Entries.ToArray());
+        Assert.Empty(ReadIncoming<ParallelDirected>(world, oldTarget).ToArray());
     }
 
     [Fact]
-    public void ThrowingPayloadHook_IsReportedAfterTypedDestroyCommitsGraphAndEntity()
+    public void TypedDestroyPublishesItsFactAfterRemovingAdjacency()
     {
-        var world = new World();
-        var source = world.CreateEntity();
-        var target = world.CreateEntity();
-        world.Hooks<HookedRelation>().OnRemove(
-            static (DeferredWorld deferred, Entity entity, in HookedRelation value) =>
-                throw new InvalidOperationException("hook fault"));
+        using var world = new World();
+        Entity source = world.Create();
+        Entity target = world.Create();
         var edge = world.CreateRelation(source, target, new HookedRelation());
-
-        Assert.Throws<InvalidOperationException>(() => world.DestroyRelation(edge));
-
-        Assert.False(world.IsAlive(edge.Entity));
-        Assert.Empty(world.GetOutgoingRelations<HookedRelation>(source).Entries.ToArray());
-        Assert.Empty(world.GetIncomingRelations<HookedRelation>(target).Entries.ToArray());
+        using DestroyedReader reader = world.WatchDestroyed();
+        world.DestroyRelation(edge);
+        using DestroyedRead facts = reader.Open();
+        Assert.Equal(edge.Entity, Assert.Single(facts.First.ToArray()).Entity);
+        Assert.False(world.Has<RelationEndpoints<HookedRelation>>(edge.Entity));
+        Assert.Empty(ReadOutgoing<HookedRelation>(world, source));
+        Assert.Empty(ReadIncoming<HookedRelation>(world, target));
     }
 
     [Fact]
-    public void ThrowingHooksDuringEdgeEndpointCascade_DoNotResurrectDeadEdges()
+    public void EndpointCascadePublishesBothDestroyedEdgeFacts()
     {
-        var world = new World();
-        var source = world.CreateEntity();
-        var target = world.CreateEntity();
-        var other = world.CreateEntity();
-        world.Hooks<HookedRelation>().OnRemove(
-            static (DeferredWorld deferred, Entity entity, in HookedRelation value) =>
-                throw new InvalidOperationException("hook fault"));
+        using var world = new World();
+        Entity source = world.Create();
+        Entity target = world.Create();
+        Entity other = world.Create();
         var endpointEdge = world.CreateRelation(source, target, new HookedRelation());
         var incidentEdge = world.CreateRelation(endpointEdge.Entity, other, new HookedRelation());
-
-        Assert.ThrowsAny<Exception>(() => world.DestroyRelation(endpointEdge));
-
-        Assert.False(world.IsAlive(endpointEdge.Entity));
-        Assert.False(world.IsAlive(incidentEdge.Entity));
-        Assert.Empty(world.GetIncomingRelations<HookedRelation>(other).Entries.ToArray());
-        Assert.Empty(world.GetOutgoingRelations<HookedRelation>(source).Entries.ToArray());
+        using DestroyedReader reader = world.WatchDestroyed();
+        world.DestroyRelation(endpointEdge);
+        using DestroyedRead facts = reader.Open();
+        Assert.Equal(new[] { endpointEdge.Entity, incidentEdge.Entity }.OrderBy(entity => entity.Id),
+            facts.First.ToArray().Select(fact => fact.Entity).OrderBy(entity => entity.Id));
+        Assert.False(world.Has<RelationEndpoints<HookedRelation>>(endpointEdge.Entity));
+        Assert.False(world.Has<RelationEndpoints<HookedRelation>>(incidentEdge.Entity));
+        Assert.Empty(ReadIncoming<HookedRelation>(world, other));
+        Assert.Empty(ReadOutgoing<HookedRelation>(world, source));
     }
 
     [Fact]
     public void DestroyingEmptyOrderedEndpointDoesNotThrow()
     {
         var world = new World();
-        var endpoint = world.CreateEntity();
+        var endpoint = world.Create();
         world.SetRelationAdjacencyOrder<ParallelDirected>(
             endpoint,
             RelationAdjacencyRole.Outgoing,
             RelationAdjacencyOrderPolicy.Ordered);
 
-        world.DestroyEntity(endpoint);
+        world.Destroy(endpoint);
 
     }
 
     [Fact]
-    public void NoOpOrderPolicyAndReorder_DoNotAdvanceGeneration()
+    public void RepeatedOrderAndNoopReorderPreserveAdjacency()
     {
-        var world = new World();
-        var source = world.CreateEntity();
-        var target = world.CreateEntity();
-        uint initial = world.GetOutgoingRelations<ParallelDirected>(source).Generation;
-
-        world.SetRelationAdjacencyOrder<ParallelDirected>(
-            source,
-            RelationAdjacencyRole.Outgoing,
-            RelationAdjacencyOrderPolicy.Unordered);
-        Assert.Equal(initial, world.GetOutgoingRelations<ParallelDirected>(source).Generation);
-
-        world.SetRelationAdjacencyOrder<ParallelDirected>(
-            source,
-            RelationAdjacencyRole.Outgoing,
-            RelationAdjacencyOrderPolicy.Ordered);
-        uint ordered = world.GetOutgoingRelations<ParallelDirected>(source).Generation;
-        world.SetRelationAdjacencyOrder<ParallelDirected>(
-            source,
-            RelationAdjacencyRole.Outgoing,
-            RelationAdjacencyOrderPolicy.Ordered);
-        Assert.Equal(ordered, world.GetOutgoingRelations<ParallelDirected>(source).Generation);
-
+        using var world = new World();
+        Entity source = world.Create();
+        Entity target = world.Create();
+        Relations<ParallelDirected>.SetOrdered(world, source, RelationAdjacencyRole.Outgoing, false);
+        Assert.False(Relations<ParallelDirected>.IsOrdered(world, source, RelationAdjacencyRole.Outgoing));
+        Relations<ParallelDirected>.SetOrdered(world, source, RelationAdjacencyRole.Outgoing, true);
+        Relations<ParallelDirected>.SetOrdered(world, source, RelationAdjacencyRole.Outgoing, true);
+        Assert.True(Relations<ParallelDirected>.IsOrdered(world, source, RelationAdjacencyRole.Outgoing));
         var edge = world.CreateRelation(source, target, new ParallelDirected());
-        uint populated = world.GetOutgoingRelations<ParallelDirected>(source).Generation;
-        world.ReorderRelationAdjacency(
-            source,
-            RelationAdjacencyRole.Outgoing,
-            edge,
-            insertIndex: 0);
-        Assert.Equal(populated, world.GetOutgoingRelations<ParallelDirected>(source).Generation);
+        ulong before = world.Version;
+        Relations<ParallelDirected>.Reorder(world, source, RelationAdjacencyRole.Outgoing, edge, 0);
+        Assert.Equal(before, world.Version);
+        Assert.Equal(edge, Assert.Single(ReadOutgoing<ParallelDirected>(world, source)).Edge);
     }
 
     [RelationSchema(RelationDirection.Directed, RelationCardinality.Parallel)]
-    private struct ParallelDirected : IComponent
+    private struct ParallelDirected : IAddedComponent
     {
         public int Value;
     }
 
     [RelationSchema(RelationDirection.Undirected, RelationCardinality.Parallel)]
-    private struct ParallelUndirected : IComponent
+    private struct ParallelUndirected : IAddedComponent
     {
         public int Value;
     }
 
     [RelationSchema(RelationDirection.Directed, RelationCardinality.UniquePair)]
-    private struct UniquePairDirected : IComponent { }
+    private struct UniquePairDirected : IAddedComponent { }
 
     [RelationSchema(RelationDirection.Directed, RelationCardinality.UniqueSource)]
-    private struct UniqueSourceDirected : IComponent { }
+    private struct UniqueSourceDirected : IAddedComponent { }
 
     [RelationSchema(RelationDirection.Directed, RelationCardinality.UniqueTarget)]
-    private struct UniqueTargetDirected : IComponent { }
+    private struct UniqueTargetDirected : IAddedComponent { }
 
     [RelationSchema(
         RelationDirection.Directed,
         RelationCardinality.Parallel,
         AllowSelfEdge = false)]
-    private struct NoSelfDirected : IComponent { }
+    private struct NoSelfDirected : IAddedComponent { }
 
-    private struct QueryProbe : IComponent;
-
-    [RelationSchema(RelationDirection.Directed, RelationCardinality.Parallel)]
-    private struct HookedRelation : IComponent;
+    private struct QueryProbe : IAddedComponent;
 
     [RelationSchema(RelationDirection.Directed, RelationCardinality.Parallel)]
-    private struct FirstRegistrationRelation : IComponent;
+    private struct HookedRelation : IAddedComponent;
+
+    [RelationSchema(RelationDirection.Directed, RelationCardinality.Parallel)]
+    private struct FirstRegistrationRelation : IAddedComponent;
 
     [RelationSchema(RelationDirection.Directed, RelationCardinality.OneToOne)]
-    private struct OneToOneDirected : IComponent { }
+    private struct OneToOneDirected : IAddedComponent { }
 
     [RelationSchema(RelationDirection.Undirected, RelationCardinality.UniquePair)]
-    private struct UniquePairUndirected : IComponent { }
+    private struct UniquePairUndirected : IAddedComponent { }
 
     [RelationSchema(RelationDirection.Undirected, RelationCardinality.UniqueSource)]
-    private struct InvalidUndirectedUniqueSource : IComponent { }
+    private struct InvalidUndirectedUniqueSource : IAddedComponent { }
 }

@@ -138,7 +138,7 @@ public sealed class SkeletonInheritanceBehaviorTests
     public void ParentAnimationRecomputesHeldChildResultsOnTheCommonCalculationClock()
     {
         using var scheduler = new Scheduler(new() { WorkerCount = 2 });
-        using var world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using var world = new World(execution: new WorldJobs(scheduler));
         var body = new Skeleton([-1, 0], [At(1, 0, 0), At(0, 2, 0)], [10, 20]);
         var clothing = new Skeleton(body, [-1], [At(0, 0, 3)], [30], inheritedParents: [1]);
         var poses = new PoseStorage();
@@ -192,6 +192,8 @@ public sealed class SkeletonInheritanceBehaviorTests
 
     private static BoneTransform At(float x, float y, float z) => new()
     {
-        Translation = new(x, y, z), Rotation = Quaternion.Identity, Scale = Vector3.One,
+        Translation = new(x, y, z),
+        Rotation = Quaternion.Identity,
+        Scale = Vector3.One,
     };
 }

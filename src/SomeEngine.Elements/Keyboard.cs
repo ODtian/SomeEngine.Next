@@ -17,7 +17,7 @@ public static class Keyboard
     public static void Composition(World world, string text, int caret)
     {
         DevelopmentCheck.Require(text is not null, "Keyboard.Composition requires text.");
-        DevelopmentCheck.Require((uint)caret <= (uint)text.Length,
+        DevelopmentCheck.Require((uint)caret <= (uint)text!.Length,
             "Keyboard.Composition requires a caret inside its text.");
         FocusInputData.Enqueue(world, new FocusInput
         {

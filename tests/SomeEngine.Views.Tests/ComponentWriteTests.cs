@@ -16,30 +16,30 @@ public sealed partial class ComponentWriteTests
     public void EqualWritesPreserveTheComponentValueAndVersion(bool sparse)
     {
         using var frames = new HeadlessFrameDriver();
-        Entity source = frames.World.CreateEntity();
+        Entity source = frames.World.Create();
         if (sparse)
-            frames.World.AddSparse(source, new SparseNumber(3));
+            frames.World.SetSparse(source, new SparseNumber(3));
         else
             frames.World.Add(source, new Number(3));
-        uint version = sparse
-            ? frames.World.SparseWriteVersion<SparseNumber>(source)
-            : frames.World.WriteVersion<Number>(source);
-        uint typeVersion = sparse
-            ? frames.World.ComponentWriteVersion<SparseNumber>()
-            : frames.World.ComponentWriteVersion<Number>();
+        ulong version = sparse
+            ? frames.World.ComponentDataWriteVersion<SparseNumber>(source)
+            : frames.World.ComponentDataWriteVersion<Number>(source);
+        ulong typeVersion = sparse
+            ? frames.World.ComponentWriteVersion(ComponentId<SparseNumber>.Value)
+            : frames.World.ComponentWriteVersion(ComponentId<Number>.Value);
         Views.Spawn(frames.World, Entity.Null, new NumberWriter(source, sparse, 3));
 
         frames.Frame();
 
         Assert.Equal(3, sparse
-            ? frames.World.ReadSparse<SparseNumber>(source).Value
-            : frames.World.Read<Number>(source).Value);
+            ? frames.World.ReadComponentData<SparseNumber>(source).Value
+            : frames.World.ReadComponentData<Number>(source).Value);
         Assert.Equal(version, sparse
-            ? frames.World.SparseWriteVersion<SparseNumber>(source)
-            : frames.World.WriteVersion<Number>(source));
+            ? frames.World.ComponentDataWriteVersion<SparseNumber>(source)
+            : frames.World.ComponentDataWriteVersion<Number>(source));
         Assert.Equal(typeVersion, sparse
-            ? frames.World.ComponentWriteVersion<SparseNumber>()
-            : frames.World.ComponentWriteVersion<Number>());
+            ? frames.World.ComponentWriteVersion(ComponentId<SparseNumber>.Value)
+            : frames.World.ComponentWriteVersion(ComponentId<Number>.Value));
     }
 
     [Theory]
@@ -50,30 +50,30 @@ public sealed partial class ComponentWriteTests
     public void ChangedWritesCommitTheirValuesWhenTheBuildCompletes(bool sparse, bool exists)
     {
         using var frames = new HeadlessFrameDriver();
-        Entity source = frames.World.CreateEntity();
+        Entity source = frames.World.Create();
         if (exists)
         {
             if (sparse)
-                frames.World.AddSparse(source, new SparseNumber(3));
+                frames.World.SetSparse(source, new SparseNumber(3));
             else
                 frames.World.Add(source, new Number(3));
         }
-        uint version = !exists ? 0 : sparse
-            ? frames.World.SparseWriteVersion<SparseNumber>(source)
-            : frames.World.WriteVersion<Number>(source);
+        ulong version = !exists ? 0 : sparse
+            ? frames.World.ComponentDataWriteVersion<SparseNumber>(source)
+            : frames.World.ComponentDataWriteVersion<Number>(source);
         Entity root = Views.Spawn(frames.World, Entity.Null, new DeferredNumberWriter(source, sparse));
 
         frames.Frame();
 
-        Assert.Equal(exists ? 3 : 0, frames.World.Read<ObservedNumber>(root).CopyValue);
-        Assert.Equal(exists ? 3 : 0, frames.World.Read<ObservedNumber>(root).StoredValue);
-        Assert.Equal(version, frames.World.Read<ObservedNumber>(root).Version);
+        Assert.Equal(exists ? 3 : 0, frames.World.ReadComponentData<ObservedNumber>(root).CopyValue);
+        Assert.Equal(exists ? 3 : 0, frames.World.ReadComponentData<ObservedNumber>(root).StoredValue);
+        Assert.Equal(version, frames.World.ReadComponentData<ObservedNumber>(root).Version);
         Assert.Equal(7, sparse
-            ? frames.World.ReadSparse<SparseNumber>(source).Value
-            : frames.World.Read<Number>(source).Value);
+            ? frames.World.ReadComponentData<SparseNumber>(source).Value
+            : frames.World.ReadComponentData<Number>(source).Value);
         Assert.NotEqual(version, sparse
-            ? frames.World.SparseWriteVersion<SparseNumber>(source)
-            : frames.World.WriteVersion<Number>(source));
+            ? frames.World.ComponentDataWriteVersion<SparseNumber>(source)
+            : frames.World.ComponentDataWriteVersion<Number>(source));
     }
 
     [Theory]
@@ -84,27 +84,27 @@ public sealed partial class ComponentWriteTests
     public void EnsureSuppliesDefaultDataAndPreservesExistingValues(bool sparse, bool exists)
     {
         using var frames = new HeadlessFrameDriver();
-        Entity source = frames.World.CreateEntity();
+        Entity source = frames.World.Create();
         if (exists)
         {
             if (sparse)
-                frames.World.AddSparse(source, new SparseNumber(11));
+                frames.World.SetSparse(source, new SparseNumber(11));
             else
                 frames.World.Add(source, new Number(11));
         }
-        uint version = !exists ? 0 : sparse
-            ? frames.World.SparseWriteVersion<SparseNumber>(source)
-            : frames.World.WriteVersion<Number>(source);
+        ulong version = !exists ? 0 : sparse
+            ? frames.World.ComponentDataWriteVersion<SparseNumber>(source)
+            : frames.World.ComponentDataWriteVersion<Number>(source);
         Views.Spawn(frames.World, Entity.Null, new NumberRequirement(source, sparse));
 
         frames.Frame();
 
         Assert.Equal(exists ? 11 : 0, sparse
-            ? frames.World.ReadSparse<SparseNumber>(source).Value
-            : frames.World.Read<Number>(source).Value);
-        uint addedVersion = sparse
-            ? frames.World.SparseWriteVersion<SparseNumber>(source)
-            : frames.World.WriteVersion<Number>(source);
+            ? frames.World.ReadComponentData<SparseNumber>(source).Value
+            : frames.World.ReadComponentData<Number>(source).Value);
+        ulong addedVersion = sparse
+            ? frames.World.ComponentDataWriteVersion<SparseNumber>(source)
+            : frames.World.ComponentDataWriteVersion<Number>(source);
         if (exists)
             Assert.Equal(version, addedVersion);
         else
@@ -119,11 +119,11 @@ public sealed partial class ComponentWriteTests
     public void ReadWriteSuppliesDefaultDataAndTracksLaterChanges(bool sparse, bool exists)
     {
         using var frames = new HeadlessFrameDriver();
-        Entity source = frames.World.CreateEntity();
+        Entity source = frames.World.Create();
         if (exists)
         {
             if (sparse)
-                frames.World.AddSparse(source, new SparseNumber(11));
+                frames.World.SetSparse(source, new SparseNumber(11));
             else
                 frames.World.Add(source, new Number(11));
         }
@@ -131,18 +131,18 @@ public sealed partial class ComponentWriteTests
 
         frames.Frame();
 
-        Assert.Equal(exists ? 11 : 0, frames.World.Read<DisplayedNumber>(root).Value);
+        Assert.Equal(exists ? 11 : 0, frames.World.ReadComponentData<DisplayedNumber>(root).Value);
         Assert.Equal(exists ? 11 : 0, sparse
-            ? frames.World.ReadSparse<SparseNumber>(source).Value
-            : frames.World.Read<Number>(source).Value);
+            ? frames.World.ReadComponentData<SparseNumber>(source).Value
+            : frames.World.ReadComponentData<Number>(source).Value);
         if (sparse)
-            frames.World.ReplaceSparse(source, new SparseNumber(17));
+            frames.World.SetSparse(source, new SparseNumber(17));
         else
-            frames.World.Replace(source, new Number(17));
+            frames.World.Set(source, new Number(17));
 
         frames.Frame();
 
-        Assert.Equal(17, frames.World.Read<DisplayedNumber>(root).Value);
+        Assert.Equal(17, frames.World.ReadComponentData<DisplayedNumber>(root).Value);
     }
 
     [Theory]
@@ -153,28 +153,28 @@ public sealed partial class ComponentWriteTests
     public void CounterButtonDisplaysTheLatestCountWithinTheFrame(bool sparse, bool readWrite)
     {
         using var frames = new HeadlessFrameDriver();
-        Entity source = frames.World.CreateEntity();
+        Entity source = frames.World.Create();
         if (sparse)
-            frames.World.AddSparse(source, new SparseNumber(0));
+            frames.World.SetSparse(source, new SparseNumber(0));
         else
             frames.World.Add(source, new Number(0));
-        Entity clicks = frames.World.CreateEntity(new ClickCount(4));
+        Entity clicks = frames.World.Create(new ClickCount(4));
         Entity root = Views.Spawn(frames.World, Entity.Null, new CounterButton(source, clicks, sparse, readWrite));
 
         frames.Frame();
 
-        Assert.Equal(4, frames.World.Read<DisplayedNumber>(root).Value);
+        Assert.Equal(4, frames.World.ReadComponentData<DisplayedNumber>(root).Value);
         Assert.Equal(4, sparse
-            ? frames.World.ReadSparse<SparseNumber>(source).Value
-            : frames.World.Read<Number>(source).Value);
-        frames.World.Replace(clicks, new ClickCount(7));
+            ? frames.World.ReadComponentData<SparseNumber>(source).Value
+            : frames.World.ReadComponentData<Number>(source).Value);
+        frames.World.Set(clicks, new ClickCount(7));
 
         frames.Frame();
 
-        Assert.Equal(7, frames.World.Read<DisplayedNumber>(root).Value);
-        uint displayVersion = frames.World.WriteVersion<DisplayedNumber>(root);
+        Assert.Equal(7, frames.World.ReadComponentData<DisplayedNumber>(root).Value);
+        ulong displayVersion = frames.World.ComponentDataWriteVersion<DisplayedNumber>(root);
         frames.Frame();
-        Assert.Equal(displayVersion, frames.World.WriteVersion<DisplayedNumber>(root));
+        Assert.Equal(displayVersion, frames.World.ComponentDataWriteVersion<DisplayedNumber>(root));
     }
 
     [Theory]
@@ -183,41 +183,41 @@ public sealed partial class ComponentWriteTests
     public void WriteKeepsExternalChangesUntilItsParametersChange(bool sparse)
     {
         using var frames = new HeadlessFrameDriver();
-        Entity source = frames.World.CreateEntity();
+        Entity source = frames.World.Create();
         Entity root = Views.Spawn(frames.World, Entity.Null, new NumberWriter(source, sparse, 3));
         frames.Frame();
         if (sparse)
-            frames.World.ReplaceSparse(source, new SparseNumber(7));
+            frames.World.SetSparse(source, new SparseNumber(7));
         else
-            frames.World.Replace(source, new Number(7));
+            frames.World.Set(source, new Number(7));
 
         frames.Frame();
 
         Assert.Equal(7, sparse
-            ? frames.World.ReadSparse<SparseNumber>(source).Value
-            : frames.World.Read<Number>(source).Value);
-        frames.World.Replace(root, new NumberWriter(source, sparse, 11));
+            ? frames.World.ReadComponentData<SparseNumber>(source).Value
+            : frames.World.ReadComponentData<Number>(source).Value);
+        frames.World.Set(root, new NumberWriter(source, sparse, 11));
         frames.Frame();
         Assert.Equal(11, sparse
-            ? frames.World.ReadSparse<SparseNumber>(source).Value
-            : frames.World.Read<Number>(source).Value);
+            ? frames.World.ReadComponentData<SparseNumber>(source).Value
+            : frames.World.ReadComponentData<Number>(source).Value);
     }
 
     [Fact]
     public void WriteReferencesSurviveStructureChangesAndNestedBuilds()
     {
         using var frames = new HeadlessFrameDriver();
-        Entity source = frames.World.CreateEntity(new Number(3));
-        frames.World.AddSparse(source, new SparseNumber(5));
+        Entity source = frames.World.Create(new Number(3));
+        frames.World.SetSparse(source, new SparseNumber(5));
         Entity root = Views.Spawn(frames.World, Entity.Null, new ReferenceGroup(source));
 
         frames.Frame();
 
-        Assert.Equal(43, frames.World.Read<Number>(source).Value);
-        Assert.Equal(49, frames.World.ReadSparse<SparseNumber>(source).Value);
-        Assert.Equal(43, frames.World.Read<DisplayedNumber>(root).Value);
-        Entity child = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Assert.Equal(101, frames.World.Read<Number>(child).Value);
+        Assert.Equal(43, frames.World.ReadComponentData<Number>(source).Value);
+        Assert.Equal(49, frames.World.ReadComponentData<SparseNumber>(source).Value);
+        Assert.Equal(43, frames.World.ReadComponentData<DisplayedNumber>(root).Value);
+        Entity child = Assert.Single(ElementChildren.Read(frames.World, root));
+        Assert.Equal(101, frames.World.ReadComponentData<Number>(child).Value);
         Assert.True(frames.World.Has<ExtraData>(source));
     }
 
@@ -227,9 +227,9 @@ public sealed partial class ComponentWriteTests
     public void CompletionComparesTheCopyWithTheValueCurrentlyStored(bool sparse)
     {
         using var frames = new HeadlessFrameDriver();
-        Entity source = frames.World.CreateEntity();
+        Entity source = frames.World.Create();
         if (sparse)
-            frames.World.AddSparse(source, new SparseNumber(3));
+            frames.World.SetSparse(source, new SparseNumber(3));
         else
             frames.World.Add(source, new Number(3));
         Entity root = Views.Spawn(frames.World, Entity.Null, new CurrentNumberWriter(source, sparse));
@@ -237,29 +237,29 @@ public sealed partial class ComponentWriteTests
         frames.Frame();
 
         Assert.Equal(7, sparse
-            ? frames.World.ReadSparse<SparseNumber>(source).Value
-            : frames.World.Read<Number>(source).Value);
-        Assert.Equal(frames.World.Read<ObservedNumber>(root).Version, sparse
-            ? frames.World.SparseWriteVersion<SparseNumber>(source)
-            : frames.World.WriteVersion<Number>(source));
+            ? frames.World.ReadComponentData<SparseNumber>(source).Value
+            : frames.World.ReadComponentData<Number>(source).Value);
+        Assert.Equal(frames.World.ReadComponentData<ObservedNumber>(root).Version, sparse
+            ? frames.World.ComponentDataWriteVersion<SparseNumber>(source)
+            : frames.World.ComponentDataWriteVersion<Number>(source));
     }
 
     [Fact]
     public void AFailedBuildPreservesStoredDataAndAllowsALaterSuccessfulBuild()
     {
         using var frames = new HeadlessFrameDriver();
-        Entity source = frames.World.CreateEntity(new Number(3));
+        Entity source = frames.World.Create(new Number(3));
         Entity root = Views.Spawn(frames.World, Entity.Null, new FailingWriter(source, true));
-        uint version = frames.World.WriteVersion<Number>(source);
+        ulong version = frames.World.ComponentDataWriteVersion<Number>(source);
 
         frames.Frame();
 
-        Assert.IsType<InvalidOperationException>(frames.World.ReadSparse<BuildError>(root).Exception);
-        Assert.Equal(3, frames.World.Read<Number>(source).Value);
-        Assert.Equal(version, frames.World.WriteVersion<Number>(source));
-        frames.World.Replace(root, new FailingWriter(source, false));
+        Assert.IsType<InvalidOperationException>(frames.World.ReadComponentData<BuildError>(root).Exception);
+        Assert.Equal(3, frames.World.ReadComponentData<Number>(source).Value);
+        Assert.Equal(version, frames.World.ComponentDataWriteVersion<Number>(source));
+        frames.World.Set(root, new FailingWriter(source, false));
         frames.Frame();
-        Assert.Equal(7, frames.World.Read<Number>(source).Value);
+        Assert.Equal(7, frames.World.ReadComponentData<Number>(source).Value);
         Assert.False(frames.World.HasSparse<BuildError>(root));
     }
 
@@ -288,18 +288,18 @@ public sealed partial class ComponentWriteTests
     {
         public BuildTask Build()
         {
-            uint version;
+            ulong version;
             if (Sparse)
             {
                 Scope.Write<SparseNumber>(Source) = new SparseNumber(7);
-                Scope.World.ReplaceSparse(Source, new SparseNumber(7));
-                version = Scope.World.SparseWriteVersion<SparseNumber>(Source);
+                Scope.World.SetSparse(Source, new SparseNumber(7));
+                version = Scope.World.ComponentDataWriteVersion<SparseNumber>(Source);
             }
             else
             {
                 Scope.Write<Number>(Source) = new Number(7);
-                Scope.World.Replace(Source, new Number(7));
-                version = Scope.World.WriteVersion<Number>(Source);
+                Scope.World.Set(Source, new Number(7));
+                version = Scope.World.ComponentDataWriteVersion<Number>(Source);
             }
             Scope.World.Add(Scope.Entity, new ObservedNumber(3, 7, version));
             return default;
@@ -315,8 +315,8 @@ public sealed partial class ComponentWriteTests
             Scope.Ensure<ExtraData>(Source);
             for (int value = 0; value < 128; value++)
             {
-                Entity entity = Scope.World.CreateEntity();
-                Scope.World.AddSparse(entity, new SparseNumber(value));
+                Entity entity = Scope.World.Create();
+                Scope.World.SetSparse(entity, new SparseNumber(value));
                 Scope.Write<Number>(entity) = new Number(value);
             }
             Scope.View(new NestedNumber(101));
@@ -360,7 +360,7 @@ public sealed partial class ComponentWriteTests
         }
     }
 
-    private readonly record struct ClickCount(int Value) : IComponent;
+    private readonly record struct ClickCount(int Value) : ITrackedComponent;
 
     private readonly record struct NumberDisplay(Entity Source, bool Sparse) : IView, IComponent
     {
@@ -400,15 +400,15 @@ public sealed partial class ComponentWriteTests
         {
             int copyValue;
             int storedValue;
-            uint version;
+            ulong version;
             if (Sparse)
             {
                 ref SparseNumber number = ref Scope.Write<SparseNumber>(Source);
                 copyValue = number.Value;
                 number = new SparseNumber(7);
                 bool exists = Scope.World.HasSparse<SparseNumber>(Source);
-                storedValue = exists ? Scope.World.ReadSparse<SparseNumber>(Source).Value : 0;
-                version = exists ? Scope.World.SparseWriteVersion<SparseNumber>(Source) : 0;
+                storedValue = exists ? Scope.World.ReadComponentData<SparseNumber>(Source).Value : 0;
+                version = exists ? Scope.World.ComponentDataWriteVersion<SparseNumber>(Source) : 0;
             }
             else
             {
@@ -416,15 +416,15 @@ public sealed partial class ComponentWriteTests
                 copyValue = number.Value;
                 number = new Number(7);
                 bool exists = Scope.World.Has<Number>(Source);
-                storedValue = exists ? Scope.World.Read<Number>(Source).Value : 0;
-                version = exists ? Scope.World.WriteVersion<Number>(Source) : 0;
+                storedValue = exists ? Scope.World.ReadComponentData<Number>(Source).Value : 0;
+                version = exists ? Scope.World.ComponentDataWriteVersion<Number>(Source) : 0;
             }
             Scope.World.Add(Scope.Entity, new ObservedNumber(copyValue, storedValue, version));
             return default;
         }
     }
 
-    private readonly record struct ObservedNumber(int CopyValue, int StoredValue, uint Version) : IComponent;
+    private readonly record struct ObservedNumber(int CopyValue, int StoredValue, ulong Version) : IComponent;
 
     private readonly record struct NumberWriter(Entity Source, bool Sparse, int Value) : IView, IComponent
     {
@@ -438,6 +438,6 @@ public sealed partial class ComponentWriteTests
         }
     }
 
-    private readonly record struct Number(int Value) : IComponent;
-    private readonly record struct SparseNumber(int Value) : ISparseComponent;
+    private readonly record struct Number(int Value) : ITrackedComponent;
+    private readonly record struct SparseNumber(int Value) : ISparseComponent, ITrackedComponent;
 }

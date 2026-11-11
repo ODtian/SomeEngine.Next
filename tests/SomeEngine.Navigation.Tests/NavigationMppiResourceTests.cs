@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+using SomeEngine.ECS;
 using System.Numerics;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Job;
@@ -7,13 +9,14 @@ namespace SomeEngine.Navigation.Tests;
 public sealed class NavigationMppiResourceTests
 {
     [Fact]
-    public void CandidateAndSelectedTrajectoryReadSpaceBeforeAnIndependentWriterChangesIt()
+    public async Task CandidateAndSelectedTrajectoryReadSpaceBeforeAnIndependentWriterChangesIt()
     {
         using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        using var world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using var world = new World(execution: new WorldJobs(scheduler));
         var space = new MutableSpace(scheduler);
+        using var checkpoints = space.Checkpoints;
         var profile = new NavigationProfile([new Vector2(-0.1f), new(0.1f, -0.1f), new(0.1f), new(-0.1f, 0.1f)], 1);
-        var actor = world.CreateEntity(new TestMotion());
+        var actor = world.Create(new TestMotion());
         world.Add(actor, new NavigationAgent(profile, new NavigationPolicy(), 1));
         world.Add(actor, new NavigationGoal(new Vector3(0, 0, 5)));
         world.Add(actor, default(NavigationPathResult));
@@ -24,13 +27,31 @@ public sealed class NavigationMppiResourceTests
         using var neighbors = new NavigationNeighborSystem<TestMotion, TestMotionReader>(world, scheduler);
         var mppi = new NavigationAvoidanceSystem<MutableSpace, MutableSpaceModel, TestMotion, TestMotionReader>(world, neighbors);
 
-        mppi.Schedule(0, default, neighbors.Schedule()).Complete();
+        JobHandle selected = mppi.Schedule(0, default, neighbors.Schedule());
+        var coordinations = new List<Task>();
+        Task completed = Task.Run(() =>
+        {
+            try { selected.Complete(); }
+            finally { space.Checkpoints.CompleteAdding(); }
+        });
+        foreach ((int read, ManualResetEventSlim release) in space.Checkpoints.GetConsumingEnumerable())
+        {
+            JobHandle checkpoint = scheduler.Schedule(new EvaluationCheckpoint(space, read), new JobScheduleOptions(JobPriority.Low));
+            coordinations.Add(Task.Run(() =>
+            {
+                try { checkpoint.Complete(); }
+                finally { release.Set(); }
+            }));
+        }
+        await completed;
+        await Task.WhenAll(coordinations);
         scheduler.CombineDependencies(space.Writes.ToArray()).Complete();
 
-        Assert.Equal(NavigationMppiStatus.Ready, world.Read<NavigationMppiResult>(actor).Status);
+        Assert.Equal(NavigationMppiStatus.Ready, world.ReadValue<NavigationMppiResult>(actor).Status);
         Assert.NotEmpty(space.Writes);
+        string[] events = space.Events.ToArray();
         for (int read = 0; read < space.Writes.Count; read++)
-            Assert.True(space.Events.IndexOf($"read {read}") < space.Events.IndexOf($"write {read}"));
+            Assert.True(Array.IndexOf(events, $"read {read}") < Array.IndexOf(events, $"write {read}"));
     }
 
     // A mutable travel multiplier is an example resource supplied by a game-defined space.
@@ -39,7 +60,8 @@ public sealed class NavigationMppiResourceTests
         public Scheduler Scheduler { get; } = scheduler;
         public float[] Values { get; } = [1];
         public List<JobHandle> Writes { get; } = [];
-        public List<string> Events { get; } = [];
+        public ConcurrentQueue<string> Events { get; } = new();
+        public BlockingCollection<(int Read, ManualResetEventSlim Release)> Checkpoints { get; } = new();
         public static void CollectResources(MutableSpace space, ref JobResourceAccessBuilder resources) => resources.Read(space.Values.AsMemory());
     }
 
@@ -53,14 +75,15 @@ public sealed class NavigationMppiResourceTests
             NavigationProfile profile, NavigationPolicy policy, float time, out NavigationMotion next, out float cost)
         {
             int read = space.Writes.Count;
-            // A separate submitting thread gives this writer its own scope. With no workers,
-            // the low-priority checkpoint dispatches any ready high-priority writer first.
+            // This writer has an independent scope; the test coordinates its checkpoint outside the model job.
             JobHandle writer = Task.Run(() => space.Scheduler.Schedule(new ChangeSpace(space, read),
                 JobResourceAccess.Write(space.Scheduler.GetResourceToken(space.Values)), new JobScheduleOptions(JobPriority.High))).GetAwaiter().GetResult();
             space.Writes.Add(writer);
-            space.Scheduler.Schedule(new EvaluationCheckpoint(space, read), new JobScheduleOptions(JobPriority.Low)).Complete();
+            using var release = new ManualResetEventSlim();
+            space.Checkpoints.Add((read, release));
+            release.Wait();
             cost = space.Values[0];
-            space.Events.Add($"read {read}");
+            space.Events.Enqueue($"read {read}");
             next = Integrate(in actual, control, profile, time);
             return true;
         }
@@ -70,10 +93,10 @@ public sealed class NavigationMppiResourceTests
 
     private readonly struct ChangeSpace(MutableSpace space, int read) : IJob
     {
-        public void Execute() { space.Values[0]++; space.Events.Add($"write {read}"); }
+        public void Execute() { space.Values[0]++; space.Events.Enqueue($"write {read}"); }
     }
     private readonly struct EvaluationCheckpoint(MutableSpace space, int read) : IJob
     {
-        public void Execute() => space.Events.Add($"checkpoint {read}");
+        public void Execute() => space.Events.Enqueue($"checkpoint {read}");
     }
 }

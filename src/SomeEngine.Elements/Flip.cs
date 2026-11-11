@@ -19,14 +19,14 @@ public static class Flip
             world.Add(node, PresentationOffset.Identity);
         PropertyAnimation.Declare<Matrix3x2>(world, node);
         PropertyAnimation.Declare<float>(world, node);
-        Timeline timeline = world.Read<Timeline>(node);
+        Timeline timeline = world.ReadComponentData<Timeline>(node);
         if (timeline.Clock != TimelineClock.Interface)
         {
             timeline.Clock = TimelineClock.Interface;
-            world.Replace(node, timeline);
+            world.Set(node, timeline);
         }
         var settings = new FlipSettings { Spec = spec };
-        if (world.Has<FlipSettings>(node)) world.Replace(node, settings);
+        if (world.Has<FlipSettings>(node)) world.Set(node, settings);
         else world.Add(node, settings);
         if (!world.Has<FlipFrame>(node)) world.Add(node, new FlipFrame());
     }

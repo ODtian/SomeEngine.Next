@@ -20,5 +20,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\SomeEngine.ECS\SomeEngine.ECS.csproj" />
+    <ProjectReference Include="../../src/SomeEngine.ECS.Relationships/SomeEngine.ECS.Relationships.csproj" />
+    <ProjectReference Include="../../src/SomeEngine.ECS.Serialization/SomeEngine.ECS.Serialization.csproj" />
   </ItemGroup>
 </Project>

@@ -11,11 +11,11 @@ public sealed class BitmapRelationTests
     public void CustomPermissionsKeepTheirMatchAlgorithmThroughResultCallbacks()
     {
         using var world = new World();
-        var first = world.CreateEntity(new CollisionLayer
+        var first = world.Create(new CollisionLayer
             { Categories = CollisionCategory.Character, AllowedCategories = CollisionCategory.Character | CollisionCategory.Scenery });
-        var second = world.CreateEntity(new CollisionLayer { Categories = CollisionCategory.Scenery });
-        world.CreateEntity(new CollisionLayer { Categories = CollisionCategory.Scenery | CollisionCategory.Sensor });
-        var layers = world.Query(world.QueryDefinition().All<CollisionLayer>());
+        var second = world.Create(new CollisionLayer { Categories = CollisionCategory.Scenery });
+        world.Create(new CollisionLayer { Categories = CollisionCategory.Scenery | CollisionCategory.Sensor });
+        var layers = world.Query(new QueryDescription().WithStored<CollisionLayer>());
         var rows = new List<(Entity, Entity)>();
         var output = new PairList(rows);
 
@@ -23,20 +23,19 @@ public sealed class BitmapRelationTests
 
         Assert.Equal([(first, second)], rows);
         Assert.Equal(2, world.Within(layers).Except(default(WholeCategoryContacts), default(WholeCategoryBitmap)).Count());
-        world.ReleaseQuery(layers);
     }
 
     [Fact]
     public void OneWayBitmapUsesFirstMaskAndSecondCategories()
     {
         using var world = new World();
-        var first = world.CreateEntity(new CollisionLayer
+        var first = world.Create(new CollisionLayer
             { Categories = CollisionCategory.Character, AllowedCategories = CollisionCategory.Scenery });
-        var second = world.CreateEntity(new CollisionLayer
+        var second = world.Create(new CollisionLayer
             { Categories = CollisionCategory.Scenery, AllowedCategories = CollisionCategory.Sensor });
-        var third = world.CreateEntity(new CollisionLayer
+        var third = world.Create(new CollisionLayer
             { Categories = CollisionCategory.Sensor });
-        var layers = world.Query(world.QueryDefinition().All<CollisionLayer>());
+        var layers = world.Query(new QueryDescription().WithStored<CollisionLayer>());
         var direct = new List<(Entity, Entity)>();
         var bitmap = new List<(Entity, Entity)>();
         var directOutput = new PairList(direct);
@@ -48,20 +47,19 @@ public sealed class BitmapRelationTests
         Assert.True(direct.ToHashSet().SetEquals([(first, second), (second, third)]));
         Assert.Equal(2, bitmap.Count);
         Assert.True(bitmap.ToHashSet().SetEquals(direct));
-        world.ReleaseQuery(layers);
     }
 
     [Fact]
     public void MutualBitmapRequiresEachSideToPermitTheOther()
     {
         using var world = new World();
-        var first = world.CreateEntity(new CollisionLayer
+        var first = world.Create(new CollisionLayer
             { Categories = CollisionCategory.Character, AllowedCategories = CollisionCategory.Scenery | CollisionCategory.Sensor });
-        var second = world.CreateEntity(new CollisionLayer
+        var second = world.Create(new CollisionLayer
             { Categories = CollisionCategory.Scenery, AllowedCategories = CollisionCategory.Character });
-        var third = world.CreateEntity(new CollisionLayer
+        var third = world.Create(new CollisionLayer
             { Categories = CollisionCategory.Sensor, AllowedCategories = CollisionCategory.Scenery });
-        var layers = world.Query(world.QueryDefinition().All<CollisionLayer>());
+        var layers = world.Query(new QueryDescription().WithStored<CollisionLayer>());
         var direct = new List<(Entity, Entity)>();
         var bitmap = new List<(Entity, Entity)>();
         var directOutput = new PairList(direct);
@@ -75,20 +73,19 @@ public sealed class BitmapRelationTests
         Assert.True(bitmap.ToHashSet().SetEquals(direct));
         Assert.Equal(4, world.Product(layers, layers).Where(default(OneWayContacts), default(OneWayContactBitmap)).Count());
         Assert.Equal(7, world.Product(layers, layers).Except(default(MutualContacts), default(MutualContactBitmap)).Count());
-        world.ReleaseQuery(layers);
     }
 
     [Fact]
     public void OneWayFixedCandidatesShareRowsAndContactCountsAcrossImplementations()
     {
         using var world = new World();
-        var first = world.CreateEntity(new CollisionLayer
+        var first = world.Create(new CollisionLayer
             { Categories = CollisionCategory.Character, AllowedCategories = CollisionCategory.Scenery | CollisionCategory.Sensor });
-        var second = world.CreateEntity(new CollisionLayer
+        var second = world.Create(new CollisionLayer
             { Categories = CollisionCategory.Scenery, AllowedCategories = CollisionCategory.Character });
-        var third = world.CreateEntity(new CollisionLayer
+        var third = world.Create(new CollisionLayer
             { Categories = CollisionCategory.Sensor, AllowedCategories = CollisionCategory.Scenery });
-        var layers = world.Query(world.QueryDefinition().All<CollisionLayer>());
+        var layers = world.Query(new QueryDescription().WithStored<CollisionLayer>());
         (Entity, Entity)[] candidates = [(first, second), (second, first), (first, third), (third, second), (third, first)];
         var direct = new BitmapPairOutput(new (Entity, Entity)[candidates.Length]);
         var bitmap = new BitmapPairOutput(new (Entity, Entity)[candidates.Length]);
@@ -103,25 +100,24 @@ public sealed class BitmapRelationTests
         Assert.Equal(expected, direct.Pairs.ToArray());
         Assert.Equal(expected, bitmap.Pairs.ToArray());
         Assert.Equal(expected, handwritten.Pairs.ToArray());
-        Span<int> contactCounts = stackalloc int[third.Index + 1];
+        Span<int> contactCounts = stackalloc int[third.Id + 1];
         BitmapCollisionConsumption.CountContacts(bitmap.Pairs, contactCounts);
-        Assert.Equal(3, contactCounts[first.Index]);
-        Assert.Equal(3, contactCounts[second.Index]);
-        Assert.Equal(2, contactCounts[third.Index]);
-        world.ReleaseQuery(layers);
+        Assert.Equal(3, contactCounts[first.Id]);
+        Assert.Equal(3, contactCounts[second.Id]);
+        Assert.Equal(2, contactCounts[third.Id]);
     }
 
     [Fact]
     public void MutualFixedCandidatesShareRowsAndContactCountsAcrossImplementations()
     {
         using var world = new World();
-        var first = world.CreateEntity(new CollisionLayer
+        var first = world.Create(new CollisionLayer
             { Categories = CollisionCategory.Character, AllowedCategories = CollisionCategory.Scenery | CollisionCategory.Sensor });
-        var second = world.CreateEntity(new CollisionLayer
+        var second = world.Create(new CollisionLayer
             { Categories = CollisionCategory.Scenery, AllowedCategories = CollisionCategory.Character });
-        var third = world.CreateEntity(new CollisionLayer
+        var third = world.Create(new CollisionLayer
             { Categories = CollisionCategory.Sensor, AllowedCategories = CollisionCategory.Scenery });
-        var layers = world.Query(world.QueryDefinition().All<CollisionLayer>());
+        var layers = world.Query(new QueryDescription().WithStored<CollisionLayer>());
         (Entity, Entity)[] candidates = [(first, second), (second, first), (first, third), (third, second), (third, first)];
         var direct = new BitmapPairOutput(new (Entity, Entity)[candidates.Length]);
         var bitmap = new BitmapPairOutput(new (Entity, Entity)[candidates.Length]);
@@ -136,26 +132,25 @@ public sealed class BitmapRelationTests
         Assert.Equal(expected, direct.Pairs.ToArray());
         Assert.Equal(expected, bitmap.Pairs.ToArray());
         Assert.Equal(expected, handwritten.Pairs.ToArray());
-        Span<int> contactCounts = stackalloc int[third.Index + 1];
+        Span<int> contactCounts = stackalloc int[third.Id + 1];
         BitmapCollisionConsumption.CountContacts(bitmap.Pairs, contactCounts);
-        Assert.Equal(2, contactCounts[first.Index]);
-        Assert.Equal(2, contactCounts[second.Index]);
-        Assert.Equal(0, contactCounts[third.Index]);
-        world.ReleaseQuery(layers);
+        Assert.Equal(2, contactCounts[first.Id]);
+        Assert.Equal(2, contactCounts[second.Id]);
+        Assert.Equal(0, contactCounts[third.Id]);
     }
 
     [Fact]
     public void BitmapFiltersForwardCountExistenceAndRefStructEarlyStop()
     {
         using var jobs = new Scheduler(new JobConfiguration { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
-        using var world = WorldJobs.CreateWorld(scheduler: jobs);
-        var first = world.CreateEntity(new CollisionLayer
+        using var world = new World(execution: new WorldJobs(jobs));
+        var first = world.Create(new CollisionLayer
             { Categories = CollisionCategory.Character, AllowedCategories = CollisionCategory.Scenery | CollisionCategory.Sensor });
-        var second = world.CreateEntity(new CollisionLayer
+        var second = world.Create(new CollisionLayer
             { Categories = CollisionCategory.Scenery, AllowedCategories = CollisionCategory.Character });
-        var third = world.CreateEntity(new CollisionLayer
+        var third = world.Create(new CollisionLayer
             { Categories = CollisionCategory.Sensor, AllowedCategories = CollisionCategory.Scenery });
-        var layers = world.Query(world.QueryDefinition().Read<CollisionLayer>());
+        var layers = world.Query(new QueryDescription().WithStored<CollisionLayer>());
         (Entity, Entity)[] candidates = [(first, second), (second, first), (first, third), (third, second)];
         var selected = BitmapCollisionExample.Candidates(world, layers, candidates)
             .Where(default(OneWayContacts), default(OneWayContactBitmap))
@@ -170,21 +165,20 @@ public sealed class BitmapRelationTests
         Assert.Equal((first, third), result[0]);
         Assert.Equal(2, selected.Count());
         Assert.True(selected.Any());
-        world.ReleaseQuery(layers);
     }
 
     [Fact]
     public void BitmapPermissionsComposeWithMotionAndHairRules()
     {
         using var world = new World();
-        var characterA = world.CreateEntity();
-        var characterB = world.CreateEntity();
-        var a1 = world.CreateEntity(new Body { Kind = MotionKind.Dynamic });
-        var a2 = world.CreateEntity(new Body { Kind = MotionKind.Dynamic });
-        var b = world.CreateEntity(new Body { Kind = MotionKind.Dynamic });
-        var s = world.CreateEntity(new Body { Kind = MotionKind.Static });
-        var k = world.CreateEntity(new Body { Kind = MotionKind.Kinematic });
-        var d = world.CreateEntity(new Body { Kind = MotionKind.Dynamic });
+        var characterA = world.Create();
+        var characterB = world.Create();
+        var a1 = world.Create(new Body { Kind = MotionKind.Dynamic });
+        var a2 = world.Create(new Body { Kind = MotionKind.Dynamic });
+        var b = world.Create(new Body { Kind = MotionKind.Dynamic });
+        var s = world.Create(new Body { Kind = MotionKind.Static });
+        var k = world.Create(new Body { Kind = MotionKind.Kinematic });
+        var d = world.Create(new Body { Kind = MotionKind.Dynamic });
         world.Add(a1, new Hair { Character = characterA });
         world.Add(a2, new Hair { Character = characterA });
         world.Add(b, new Hair { Character = characterB });
@@ -196,7 +190,7 @@ public sealed class BitmapRelationTests
         world.Add(d, dynamicLayer);
         world.Add(s, new CollisionLayer { Categories = CollisionCategory.Scenery, AllowedCategories = CollisionCategory.Character });
         world.Add(k, new CollisionLayer { Categories = CollisionCategory.Sensor, AllowedCategories = CollisionCategory.Character });
-        var bodies = world.Query(world.QueryDefinition().All<Body>());
+        var bodies = world.Query(new QueryDescription().WithStored<Body>());
         var source = world.Within(bodies).Where(default(DefaultContacts))
             .Except(default(SameCharacterHair), default(HairCharacterIndex));
         var oneWayDirect = new BitmapPairOutput(new (Entity, Entity)[15]);
@@ -221,7 +215,6 @@ public sealed class BitmapRelationTests
         Assert.True(mutualDirect.Pairs.ToArray().ToHashSet().SetEquals(expectedMutual));
         Assert.Equal(9, mutualBitmap.Count);
         Assert.True(mutualBitmap.Pairs.ToArray().ToHashSet().SetEquals(expectedMutual));
-        world.ReleaseQuery(bodies);
     }
 
     private ref struct FirstPair : IRelationOutput<(Entity, Entity)>

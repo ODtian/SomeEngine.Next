@@ -29,20 +29,20 @@ public sealed partial class SwiftUIStateTests
         using var frames = new HeadlessFrameDriver();
         Entity root = Views.Spawn(frames.World, Entity.Null, new CounterGroup("first"));
         frames.Frame();
-        Entity counter = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Assert.Equal("first:0", frames.World.Read<CounterText>(counter).Value);
+        Entity counter = Assert.Single(ElementChildren.Read(frames.World, root));
+        Assert.Equal("first:0", frames.World.ReadComponentData<CounterText>(counter).Value);
 
-        frames.World.Replace(counter, new IncrementRequest(true));
+        frames.World.Set(counter, new IncrementRequest(true));
         frames.Frame();
-        Assert.Equal("first:1", frames.World.Read<CounterText>(counter).Value);
+        Assert.Equal("first:1", frames.World.ReadComponentData<CounterText>(counter).Value);
         frames.Frame();
-        Assert.Equal("first:1", frames.World.Read<CounterText>(counter).Value);
+        Assert.Equal("first:1", frames.World.ReadComponentData<CounterText>(counter).Value);
 
-        frames.World.Replace(root, new CounterGroup("second"));
+        frames.World.Set(root, new CounterGroup("second"));
         frames.Frame();
 
-        Assert.Equal("second:1", frames.World.Read<CounterText>(
-            Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root))).Value);
+        Assert.Equal("second:1", frames.World.ReadComponentData<CounterText>(
+            Assert.Single(ElementChildren.Read(frames.World, root))).Value);
     }
 
     [Fact]
@@ -51,20 +51,20 @@ public sealed partial class SwiftUIStateTests
         using var frames = new HeadlessFrameDriver();
         Entity root = Views.Spawn(frames.World, Entity.Null, new EditableCounter("first", 3));
         frames.Frame();
-        Entity editor = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Assert.Equal("first:3", frames.World.Read<CounterText>(root).Value);
-        Assert.Equal("editor:3", frames.World.Read<CounterText>(editor).Value);
+        Entity editor = Assert.Single(ElementChildren.Read(frames.World, root));
+        Assert.Equal("first:3", frames.World.ReadComponentData<CounterText>(root).Value);
+        Assert.Equal("editor:3", frames.World.ReadComponentData<CounterText>(editor).Value);
 
-        frames.World.Replace(editor, new EditRequest(true, 7));
+        frames.World.Set(editor, new EditRequest(true, 7));
         frames.Frame();
 
-        Assert.Equal("first:7", frames.World.Read<CounterText>(root).Value);
-        Assert.Equal("editor:7", frames.World.Read<CounterText>(editor).Value);
-        frames.World.ReplaceSparse(root, new EditableCounter("second", 99));
+        Assert.Equal("first:7", frames.World.ReadComponentData<CounterText>(root).Value);
+        Assert.Equal("editor:7", frames.World.ReadComponentData<CounterText>(editor).Value);
+        frames.World.SetSparse(root, new EditableCounter("second", 99));
         frames.Frame();
-        Assert.Equal("second:7", frames.World.Read<CounterText>(root).Value);
-        Assert.Equal("editor:7", frames.World.Read<CounterText>(
-            Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root))).Value);
+        Assert.Equal("second:7", frames.World.ReadComponentData<CounterText>(root).Value);
+        Assert.Equal("editor:7", frames.World.ReadComponentData<CounterText>(
+            Assert.Single(ElementChildren.Read(frames.World, root))).Value);
     }
 
     [Fact]
@@ -73,29 +73,29 @@ public sealed partial class SwiftUIStateTests
         using var frames = new HeadlessFrameDriver();
         Entity root = Views.Spawn(frames.World, Entity.Null, new BranchGroup("left", false));
         frames.Frame();
-        Entity left = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        frames.World.Replace(left, new IncrementRequest(true));
+        Entity left = Assert.Single(ElementChildren.Read(frames.World, root));
+        frames.World.Set(left, new IncrementRequest(true));
         frames.Frame();
-        frames.World.Replace(root, new BranchGroup("left updated", false));
+        frames.World.Set(root, new BranchGroup("left updated", false));
         frames.Frame();
-        Assert.Equal("left updated:1", frames.World.Read<CounterText>(left).Value);
+        Assert.Equal("left updated:1", frames.World.ReadComponentData<CounterText>(left).Value);
 
-        frames.World.Replace(root, new BranchGroup("right", true));
+        frames.World.Set(root, new BranchGroup("right", true));
         frames.Frame();
-        Entity right = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Assert.Equal("right:0", frames.World.Read<CounterText>(right).Value);
-        frames.World.Replace(right, new IncrementRequest(true));
+        Entity right = Assert.Single(ElementChildren.Read(frames.World, root));
+        Assert.Equal("right:0", frames.World.ReadComponentData<CounterText>(right).Value);
+        frames.World.Set(right, new IncrementRequest(true));
         frames.Frame();
-        frames.World.Replace(right, new IncrementRequest(true));
+        frames.World.Set(right, new IncrementRequest(true));
         frames.Frame();
-        frames.World.Replace(root, new BranchGroup("right updated", true));
+        frames.World.Set(root, new BranchGroup("right updated", true));
         frames.Frame();
-        Assert.Equal("right updated:2", frames.World.Read<CounterText>(right).Value);
+        Assert.Equal("right updated:2", frames.World.ReadComponentData<CounterText>(right).Value);
 
-        frames.World.Replace(root, new BranchGroup("left recreated", false));
+        frames.World.Set(root, new BranchGroup("left recreated", false));
         frames.Frame();
-        Assert.Equal("left recreated:0", frames.World.Read<CounterText>(
-            Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root))).Value);
+        Assert.Equal("left recreated:0", frames.World.ReadComponentData<CounterText>(
+            Assert.Single(ElementChildren.Read(frames.World, root))).Value);
     }
 
     [Fact]
@@ -104,17 +104,17 @@ public sealed partial class SwiftUIStateTests
         using var frames = new HeadlessFrameDriver();
         Entity root = Views.Spawn(frames.World, Entity.Null, new ValuePair<string>("ready", "first"));
         frames.Frame();
-        Assert.Equal("first:ready:3", frames.World.Read<CounterText>(root).Value);
-        Entity child = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Assert.Equal("ready", frames.World.Read<CounterText>(child).Value);
+        Assert.Equal("first:ready:3", frames.World.ReadComponentData<CounterText>(root).Value);
+        Entity child = Assert.Single(ElementChildren.Read(frames.World, root));
+        Assert.Equal("ready", frames.World.ReadComponentData<CounterText>(child).Value);
 
-        frames.World.ReplaceSparse(root, new ValueEdit<string>(true, "changed"));
+        frames.World.SetSparse(root, new ValueEdit<string>(true, "changed"));
         frames.Frame();
-        Assert.Equal("first:changed:4", frames.World.Read<CounterText>(root).Value);
-        Assert.Equal("changed", frames.World.Read<CounterText>(child).Value);
-        frames.World.ReplaceSparse(root, new ValuePair<string>("replacement", "second"));
+        Assert.Equal("first:changed:4", frames.World.ReadComponentData<CounterText>(root).Value);
+        Assert.Equal("changed", frames.World.ReadComponentData<CounterText>(child).Value);
+        frames.World.SetSparse(root, new ValuePair<string>("replacement", "second"));
         frames.Frame();
-        Assert.Equal("second:changed:4", frames.World.Read<CounterText>(root).Value);
+        Assert.Equal("second:changed:4", frames.World.ReadComponentData<CounterText>(root).Value);
     }
 
 #if DEBUG
@@ -127,7 +127,7 @@ public sealed partial class SwiftUIStateTests
         using var frames = new HeadlessFrameDriver();
         Entity root = Views.Spawn(frames.World, Entity.Null, new ForeignCounterRead());
         frames.Frame();
-        error = Assert.IsType<InvalidOperationException>(frames.World.ReadSparse<BuildError>(root).Exception);
+        error = Assert.IsType<InvalidOperationException>(frames.World.ReadComponentData<BuildError>(root).Exception);
     }
 
     [Fact]
@@ -245,8 +245,8 @@ public sealed partial class SwiftUIStateTests
         }
     }
 
-    private readonly record struct IncrementRequest(bool Increase) : IComponent;
-    private readonly record struct EditRequest(bool Set, int Value) : IComponent;
-    private readonly record struct ValueEdit<T>(bool Set, T Value) : ISparseComponent;
+    private readonly record struct IncrementRequest(bool Increase) : IComponent, ITrackedComponent;
+    private readonly record struct EditRequest(bool Set, int Value) : IComponent, ITrackedComponent;
+    private readonly record struct ValueEdit<T>(bool Set, T Value) : ISparseComponent, ITrackedComponent;
     private readonly record struct CounterText(string Value) : IComponent;
 }

@@ -31,7 +31,7 @@ public sealed class NavigationLinkAssetTests : IDisposable
             links = await (await asset.GetBlockAsync<NavigationLinkBlock>()).CreateAsync();
 
         using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using World world = new World(execution: new WorldJobs(scheduler));
         var profile = new NavigationProfile([new Vector2(-0.1f), new(0.1f, -0.1f), new(0.1f), new(-0.1f, 0.1f)],
             1, maximumSpeed: 2, capabilities: 1);
         var policy = new NavigationPolicy();
@@ -46,20 +46,20 @@ public sealed class NavigationLinkAssetTests : IDisposable
         scene.ScheduleLinks(links, scheduler: scheduler).Complete();
         var navigation = new NavigationSystems<NavigationScene, SceneNavigationSearch, SceneSearchState,
             AssetVehicleMotion, AssetVehicleMotionReader>(world);
-        Entity actor = world.CreateEntity(new AssetVehicleMotion(new(1, 0, 1), default, 0));
+        Entity actor = world.Create(new AssetVehicleMotion(new(1, 0, 1), default, 0));
         navigation.AddAgent(actor, scene, profile, policy, new(new Vector3(7, 0, 1), 0.05f), 2);
-        for (int step = 0; step < 80 && world.Read<NavigationProgress>(actor).Status != NavigationStatus.Arrived; step++)
+        for (int step = 0; step < 80 && world.ReadComponentData<NavigationProgress>(actor).Status != NavigationStatus.Arrived; step++)
         {
             NavigationStep next = navigation.Schedule(0.1f, 32);
             navigation.ScheduleProgress(new ConsumeAssetAction(0.1f).ScheduleParallel(world, next.Steering)).Complete();
         }
 
-        NavigationTraversalRequest request = world.Read<NavigationTraversalRequest>(actor);
+        NavigationTraversalRequest request = world.ReadComponentData<NavigationTraversalRequest>(actor);
         Assert.Equal(definition, links.GetLink(71));
         Assert.Equal(9, request.Action);
         Assert.Equal(definition.Parameters, request.Parameters);
         Assert.Equal(NavigationTraversalStatus.Completed, request.Status);
-        Assert.Equal(NavigationStatus.Arrived, world.Read<NavigationProgress>(actor).Status);
+        Assert.Equal(NavigationStatus.Arrived, world.ReadComponentData<NavigationProgress>(actor).Status);
     }
 }
 

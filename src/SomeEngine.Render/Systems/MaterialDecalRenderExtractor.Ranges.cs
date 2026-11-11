@@ -1,3 +1,4 @@
+using SomeEngine.ECS;
 using SomeEngine.ECS.Systems;
 
 namespace SomeEngine.Render.Systems;
@@ -9,7 +10,7 @@ public sealed partial class MaterialDecalRenderExtractor : IRenderExtractionRang
     public IRenderExtractionCollector CreateRangeCollector() => new MaterialDecalRenderExtractor();
     public void Dispose() => Reset();
 
-    void IRenderExtractionCollector.Collect(ReadOnlyQueryPacket packet, uint lastSystemVersion, bool fullCollection)
+    void IRenderExtractionCollector.Collect(QueryChunk packet, ulong lastSystemVersion, bool fullCollection)
     {
         if (fullCollection) Collect(packet);
         else CollectChanges(packet, lastSystemVersion);

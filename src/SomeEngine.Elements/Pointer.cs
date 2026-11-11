@@ -44,25 +44,23 @@ public static class Pointer
     {
         DevelopmentCheck.Require(world is not null && world.IsAlive(canvas) && world.Has<Canvas>(canvas),
             "Pointer input requires a live Canvas in the supplied World.");
-        if (!world.Has<PointerData>(canvas))
+        if (!world!.Has<PointerData>(canvas))
         {
             world.Add(canvas, new PointerData());
             world.AddBuffer<PointerEvent>(canvas);
         }
-        world.ExecuteBufferWrite<PointerEvent, PointerEvent>(canvas, ref input,
-            static (events, ref value) => events.Add(value));
+        using DynamicBuffer<PointerEvent> events = world.GetBuffer<PointerEvent>(canvas);
+        events.Add(input);
     }
 
     internal static void TakeEvents(World world, Entity canvas, List<PointerEvent> events)
     {
         events.Clear();
-        world.ExecuteBufferWrite<PointerEvent, List<PointerEvent>>(canvas, ref events, static (buffer, ref values) =>
-        {
-            foreach (PointerEvent input in buffer.ReadSpan())
-                values.Add(input);
-            buffer.Clear();
-        });
+        using DynamicBuffer<PointerEvent> buffer = world.GetBuffer<PointerEvent>(canvas);
+        foreach (PointerEvent input in buffer.AsSpan()) events.Add(input);
+        buffer.Clear();
     }
+
 }
 
 internal enum PointerEventKind : byte { Move, Press, Release, Wheel }

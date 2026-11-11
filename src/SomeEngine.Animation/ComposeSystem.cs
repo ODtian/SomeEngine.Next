@@ -2,7 +2,6 @@ using System.Buffers;
 using SomeEngine.Core.Diagnostics;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Job;
 
@@ -14,8 +13,8 @@ public struct ComposeSystem<T, TOps>(TrackFields fields = TrackFields.Properties
     where TOps : struct, IValueOps<T>
 {
     private readonly TrackFields _fields = fields;
-    private QueryHandle _targets;
-    private QueryHandle _sources;
+    private Query _targets;
+    private Query _sources;
     private FieldWrite<T>[] _writes = [];
     private CompositionTargets _compositionTargets = null!;
 
@@ -23,35 +22,41 @@ public struct ComposeSystem<T, TOps>(TrackFields fields = TrackFields.Properties
     {
         _writes = ArrayPool<FieldWrite<T>>.Shared.Rent(64);
         _compositionTargets = new();
-        _targets = context.World.Query(context.World.QueryDefinition()
-            .WriteBuffer<Contribution<T>>().Optional<AnimationLayers>(QueryAccess.Read)
-            .OptionalBuffer<BaseValue<T>>(QueryAccess.Read).OptionalBuffer<PropertySource<T>>(QueryAccess.Read)
-            .OptionalBuffer<LayerChannel>(QueryAccess.Read));
-        _sources = context.World.Query(context.World.QueryDefinition().WriteBuffer<PropertySource<T>>()
-            .WriteBuffer<Contribution<T>>().Optional<AnimationLayers>(QueryAccess.Read)
-            .ReadBuffer<PropertyChannelRange<T>>().OptionalBuffer<LayerChannel>(QueryAccess.Read).OptionalBuffer<BaseValue<T>>(QueryAccess.Read));
+        _targets = context.World.Query(new QueryDescription()
+            .WithStored<Buffer<Contribution<T>>>().Optional<AnimationLayers>()
+            .Optional<Buffer<BaseValue<T>>>().Optional<Buffer<PropertySource<T>>>()
+            .Optional<Buffer<LayerChannel>>());
+        _sources = context.World.Query(new QueryDescription().WithStored<Buffer<PropertySource<T>>>()
+            .WithStored<Buffer<Contribution<T>>>().Optional<AnimationLayers>()
+            .WithStored<Buffer<PropertyChannelRange<T>>>().Optional<Buffer<LayerChannel>>().Optional<Buffer<BaseValue<T>>>());
     }
 
     public unsafe void OnUpdate(ref ImmediateSystemContext context)
     {
         World world = context.World;
-        if (!world.HasQueryMembers(_targets)) return;
+        if (!(_targets.Count != 0)) return;
         var composition = (World: world, WeightChannels: _fields == TrackFields.LayerWeights, Writes: _writes, Count: 0, Targets: _compositionTargets);
-        world.ExecuteQuery(_targets, context.LastSystemVersion, ref composition, &ComposeDynamic);
-        world.ExecuteQuery(_sources, context.LastSystemVersion, ref composition, &ComposeFixed);
+        {
+            using QueryScope read = _targets.Since(context.LastSystemVersion).Open();
+            ComposeDynamic(in read, ref composition);
+        }
+        {
+            using QueryScope read = _sources.Since(context.LastSystemVersion).Open();
+            ComposeFixed(in read, ref composition);
+        }
         FieldWrites<T>.Flush(world, composition.Writes, ref composition.Count);
         _writes = composition.Writes;
 
-        static void ComposeDynamic(QueryCursor rows, ref (World World, bool WeightChannels, FieldWrite<T>[] Writes, int Count, CompositionTargets Targets) composition)
+        static void ComposeDynamic(scoped in QueryScope rows, ref (World World, bool WeightChannels, FieldWrite<T>[] Writes, int Count, CompositionTargets Targets) composition)
         {
             CompositionTargets targets = composition.Targets;
             targets.Count = 0;
-            foreach (QueryChunkView chunk in rows.Chunks)
+            foreach (QueryChunk chunk in rows)
             {
-                if (chunk.HasBuffer<PropertySource<T>>()) continue;
-                foreach (QueryRow row in chunk.Rows)
-                    if (row.ReadBuffer<Contribution<T>>().Count > 0)
-                        targets.Add(row);
+                if (chunk.Has<Buffer<PropertySource<T>>>()) continue;
+                for (int rowIndex = 0; rowIndex < chunk.Count; rowIndex++)
+                    if (chunk.ReadBuffer<Contribution<T>>(rowIndex).Count > 0)
+                        targets.Add(chunk, rowIndex);
             }
             if (targets.Count == 0) return;
             var work = new ComposeDynamicRanges(targets, composition.WeightChannels);
@@ -69,34 +74,37 @@ public struct ComposeSystem<T, TOps>(TrackFields fields = TrackFields.Properties
                     FieldWrites<T>.Add(ref composition.Writes, ref composition.Count, write.Target, write.Channel, write.Value);
                 }
             }
-            foreach (QueryChunkView chunk in rows.Chunks)
+            foreach (QueryChunk chunk in rows)
             {
-                if (chunk.HasBuffer<PropertySource<T>>()) continue;
-                foreach (QueryRow row in chunk.Rows)
+                if (chunk.Has<Buffer<PropertySource<T>>>()) continue;
+                var buffers0 = chunk.Has<Buffer<Contribution<T>>>() ? chunk.GetBuffers<Contribution<T>>() : default;
+                for (int rowIndex = 0; rowIndex < chunk.Count; rowIndex++)
                 {
-                    DynamicBuffer<Contribution<T>> buffer = row.Buffer<Contribution<T>>();
+                    DynamicBuffer<Contribution<T>> buffer = buffers0[rowIndex];
                     for (int index = buffer.Count - 1; index >= 0; index--)
-                        if ((buffer.Read(index).Channel.Component == ComponentId<AnimationLayers>.Value) == composition.WeightChannels)
-                            buffer.SwapRemoveAt(index);
+                        if ((buffer[index].Channel.Component == ComponentId<AnimationLayers>.Value) == composition.WeightChannels)
+                            buffer.RemoveAtSwapBack(index);
+
                 }
             }
             targets.Count = 0;
         }
     }
-    private static void ComposeFixed(QueryCursor rows, ref (World World, bool WeightChannels, FieldWrite<T>[] Writes, int Count, CompositionTargets Targets) composition)
+    private static void ComposeFixed(scoped in QueryScope rows, ref (World World, bool WeightChannels, FieldWrite<T>[] Writes, int Count, CompositionTargets Targets) composition)
     {
         CompositionTargets targets = composition.Targets;
         targets.Count = 0;
-        foreach (QueryChunkView chunk in rows.Chunks)
+        foreach (QueryChunk chunk in rows)
         {
-            int rowIndex = 0;
-            foreach (QueryRow row in chunk.Rows)
+
+            for (int rowIndex = 0; rowIndex < chunk.Count; rowIndex++)
             {
-                CompositionTarget target = targets.Add(row);
-                target.BasesChanged = chunk.HasBuffer<BaseValue<T>>() && chunk.RowBufferChangedSinceLastSystemVersion<BaseValue<T>>(rowIndex);
-                target.LayersChanged = chunk.Has<AnimationLayers>() && chunk.RowChangedSinceLastSystemVersion<AnimationLayers>(rowIndex);
-                target.MaskChanged = target.LayersChanged || chunk.HasBuffer<LayerChannel>() && chunk.RowBufferChangedSinceLastSystemVersion<LayerChannel>(rowIndex);
-                rowIndex++;
+                CompositionTarget target = targets.Add(chunk, rowIndex);
+                target.BasesChanged = chunk.Has<Buffer<BaseValue<T>>>() && chunk.WasWritten<Buffer<BaseValue<T>>>(rowIndex, rows.SinceVersion);
+                target.LayersChanged = chunk.Has<AnimationLayers>() && chunk.WasWritten<AnimationLayers>(rowIndex, rows.SinceVersion);
+                target.MaskChanged = target.LayersChanged || chunk.Has<Buffer<LayerChannel>>() && chunk.WasWritten<Buffer<LayerChannel>>(rowIndex, rows.SinceVersion);
+
+
             }
         }
         if (targets.Count == 0) return;
@@ -107,18 +115,24 @@ public struct ComposeSystem<T, TOps>(TrackFields fields = TrackFields.Properties
             for (int index = 0; index < targets.Count; index++)
                 work.Execute(index);
         int targetIndex = 0;
-        foreach (QueryRow row in rows.Rows)
+        foreach (QueryChunk chunk in rows)
         {
-            CompositionTarget target = targets.Items[targetIndex++];
-            target.Sources.AsSpan(0, target.SourceCount).CopyTo(row.Buffer<PropertySource<T>>().AsSpan());
-            DynamicBuffer<Contribution<T>> contributions = row.Buffer<Contribution<T>>();
-            for (int index = contributions.Count - 1; index >= 0; index--)
-                if ((contributions.Read(index).Channel.Component == ComponentId<AnimationLayers>.Value) == composition.WeightChannels)
-                    contributions.SwapRemoveAt(index);
-            for (int index = 0; index < target.WriteCount; index++)
+            var buffers0 = chunk.Has<Buffer<PropertySource<T>>>() ? chunk.GetBuffers<PropertySource<T>>() : default;
+            var buffers1 = chunk.Has<Buffer<Contribution<T>>>() ? chunk.GetBuffers<Contribution<T>>() : default;
+            for (int rowIndex = 0; rowIndex < chunk.Count; rowIndex++)
             {
-                FieldWrite<T> write = target.Writes[index];
-                FieldWrites<T>.Add(ref composition.Writes, ref composition.Count, write.Target, write.Channel, write.Value);
+                CompositionTarget target = targets.Items[targetIndex++];
+                target.Sources.AsSpan(0, target.SourceCount).CopyTo(buffers0[rowIndex].AsSpan());
+                DynamicBuffer<Contribution<T>> contributions = buffers1[rowIndex];
+                for (int index = contributions.Count - 1; index >= 0; index--)
+                    if ((contributions[index].Channel.Component == ComponentId<AnimationLayers>.Value) == composition.WeightChannels)
+                        contributions.RemoveAtSwapBack(index);
+                for (int index = 0; index < target.WriteCount; index++)
+                {
+                    FieldWrite<T> write = target.Writes[index];
+                    FieldWrites<T>.Add(ref composition.Writes, ref composition.Count, write.Target, write.Channel, write.Value);
+                }
+
             }
         }
         targets.Count = 0;
@@ -184,8 +198,11 @@ public struct ComposeSystem<T, TOps>(TrackFields fields = TrackFields.Properties
                 if (fixedValue == fixedIndex && dynamicValue == dynamicIndex) break;
                 Contribution<T> fixedContribution = fixedValue < fixedIndex ? new()
                 {
-                    Channel = channel, Layer = sources[fixedValue].Layer, Value = sources[fixedValue].Value,
-                    Source = sources[fixedValue].Animation, Output = (uint)sources[fixedValue].Track,
+                    Channel = channel,
+                    Layer = sources[fixedValue].Layer,
+                    Value = sources[fixedValue].Value,
+                    Source = sources[fixedValue].Animation,
+                    Output = (uint)sources[fixedValue].Track,
                 } : default;
                 bool useFixed = dynamicValue == dynamicIndex || fixedValue < fixedIndex && Compare(fixedContribution, dynamic[dynamicValue]) <= 0;
                 bool selected;
@@ -256,23 +273,23 @@ public struct ComposeSystem<T, TOps>(TrackFields fields = TrackFields.Properties
         internal readonly List<CompositionTarget> Items = [];
         internal int Count;
 
-        internal CompositionTarget Add(QueryRow row)
+        internal CompositionTarget Add(QueryChunk chunk, int rowIndex)
         {
             if (Count == Items.Count) Items.Add(new());
             CompositionTarget target = Items[Count++];
-            target.Entity = row.Entity;
-            target.ContributionCount = Copy(ref target.Contributions, row.ReadBuffer<Contribution<T>>().AsSpan());
-            target.BaseCount = row.HasBuffer<BaseValue<T>>()
-                ? Copy(ref target.Bases, row.ReadBuffer<BaseValue<T>>().AsSpan()) : 0;
-            target.HasChannels = row.HasBuffer<LayerChannel>();
+            target.Entity = chunk.Entities[rowIndex];
+            target.ContributionCount = Copy(ref target.Contributions, chunk.ReadBuffer<Contribution<T>>(rowIndex).AsSpan());
+            target.BaseCount = chunk.Has<Buffer<BaseValue<T>>>(rowIndex)
+                ? Copy(ref target.Bases, chunk.ReadBuffer<BaseValue<T>>(rowIndex).AsSpan()) : 0;
+            target.HasChannels = chunk.Has<Buffer<LayerChannel>>(rowIndex);
             target.ChannelCount = target.HasChannels
-                ? Copy(ref target.Channels, row.ReadBuffer<LayerChannel>().AsSpan()) : 0;
-            target.HasLayers = row.Has<AnimationLayers>();
-            target.Layers = target.HasLayers ? row.Read<AnimationLayers>() : default;
-            target.SourceCount = row.HasBuffer<PropertySource<T>>()
-                ? Copy(ref target.Sources, row.ReadBuffer<PropertySource<T>>().AsSpan()) : 0;
-            target.RangeCount = row.HasBuffer<PropertyChannelRange<T>>()
-                ? Copy(ref target.Ranges, row.ReadBuffer<PropertyChannelRange<T>>().AsSpan()) : 0;
+                ? Copy(ref target.Channels, chunk.ReadBuffer<LayerChannel>(rowIndex).AsSpan()) : 0;
+            target.HasLayers = chunk.Has<AnimationLayers>(rowIndex);
+            target.Layers = target.HasLayers ? chunk.Read<AnimationLayers>()[rowIndex] : default;
+            target.SourceCount = chunk.Has<Buffer<PropertySource<T>>>(rowIndex)
+                ? Copy(ref target.Sources, chunk.ReadBuffer<PropertySource<T>>(rowIndex).AsSpan()) : 0;
+            target.RangeCount = chunk.Has<Buffer<PropertyChannelRange<T>>>(rowIndex)
+                ? Copy(ref target.Ranges, chunk.ReadBuffer<PropertyChannelRange<T>>(rowIndex).AsSpan()) : 0;
             target.WriteCount = 0;
             return target;
         }
@@ -387,7 +404,7 @@ public struct ComposeSystem<T, TOps>(TrackFields fields = TrackFields.Properties
         if (order == 0)
             order = first.Layer.CompareTo(second.Layer);
         if (order == 0)
-            order = first.Source.Index.CompareTo(second.Source.Index);
+            order = first.Source.Id.CompareTo(second.Source.Id);
         if (order == 0)
             order = first.Source.Generation.CompareTo(second.Source.Generation);
         return order != 0 ? order : first.Output.CompareTo(second.Output);
@@ -395,8 +412,8 @@ public struct ComposeSystem<T, TOps>(TrackFields fields = TrackFields.Properties
 
     public void OnDestroy(ref ImmediateSystemContext context)
     {
-        context.World.ReleaseQuery(_targets);
-        context.World.ReleaseQuery(_sources);
+
+
         ArrayPool<FieldWrite<T>>.Shared.Return(_writes);
     }
 }

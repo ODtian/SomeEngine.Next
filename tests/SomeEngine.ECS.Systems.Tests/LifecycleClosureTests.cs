@@ -1,7 +1,7 @@
+using SomeEngine.ECS.Entities;
 using ManualResetEventSlim = SomeEngine.Testing.TestSignal;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Commands;
-using SomeEngine.ECS.Registry;
 using SomeEngine.Job;
 
 namespace SomeEngine.ECS.Systems.Tests;
@@ -108,7 +108,7 @@ public sealed class LifecycleClosureTests : JobTest
         Assert.Null(await removal.WaitAsync(TimeSpan.FromSeconds(5)));
         Assert.True(state.Destroyed.IsSet);
         Assert.Equal(1, group.Count);
-        Assert.Equal(0, group.GetSlot(0).Index);
+        Assert.Equal(0, group.GetState(0).Index);
         group.Dispose();
     }
 
@@ -134,7 +134,7 @@ public sealed class LifecycleClosureTests : JobTest
                 group.Remove(slot);
         }));
         Assert.True(SpinWait.SpinUntil(
-            () => !group.GetSlot(slot).Enabled,
+            () => !group.GetState(slot).Enabled,
             TimeSpan.FromSeconds(5)));
 
         using var externalCountStarted = new ManualResetEventSlim();
@@ -181,7 +181,7 @@ public sealed class LifecycleClosureTests : JobTest
                     group.Remove(slot);
             }));
             Assert.True(SpinWait.SpinUntil(
-                () => !group.GetSlot(slot).Enabled,
+                () => !group.GetState(slot).Enabled,
                 TimeSpan.FromSeconds(5)));
 
             waiter = StartLongRunning(() =>
@@ -391,7 +391,7 @@ public sealed class LifecycleClosureTests : JobTest
         ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using var state = new LifetimeState(Jobs);
         var world = CreateJobWorld();
-        world.CreateEntity(new LifetimeComponent());
+        world.Create(new LifetimeComponent());
         var group = new SystemGroup<LifetimeContext>(new LifetimeDriver(state));
         group.Add(new ManyRootsSystem(world));
 
@@ -410,7 +410,7 @@ public sealed class LifecycleClosureTests : JobTest
         ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using var state = new LifetimeState(Jobs);
         var world = CreateJobWorld();
-        world.CreateEntity(new LifetimeComponent());
+        world.Create(new LifetimeComponent());
         var group = new SystemGroup<LifetimeContext>(new LifetimeDriver(state));
         group.Add(new ManyObservedFaultRootsSystem(world));
 
@@ -438,7 +438,7 @@ public sealed class LifecycleClosureTests : JobTest
             Assert.Throws<InvalidOperationException>(() => disposer.Complete());
 
         Assert.Equal(1, group.Count);
-        Assert.True(group.GetSlot(0).Enabled);
+        Assert.True(group.GetState(0).Enabled);
         group.Update();
         group.Dispose();
     }
@@ -467,7 +467,7 @@ public sealed class LifecycleClosureTests : JobTest
                     $"{operation} was not rejected during " +
                     (invokeOnCreate ? "OnCreate." : "OnUpdate."));
                 Assert.Equal(1, group.Count);
-                Assert.True(group.GetSlot(0).Enabled);
+                Assert.True(group.GetState(0).Enabled);
                 group.Update();
                 group.Dispose();
             }
@@ -507,8 +507,8 @@ public sealed class LifecycleClosureTests : JobTest
 
             Assert.IsType<InvalidOperationException>(state.ReentrantError);
             Assert.Equal(2, group.Count);
-            Assert.True(group.GetSlot(activeSlot).Enabled);
-            Assert.False(group.GetSlot(disabledSlot).Enabled);
+            Assert.True(group.GetState(activeSlot).Enabled);
+            Assert.False(group.GetState(disabledSlot).Enabled);
             Assert.Equal(1, Volatile.Read(ref state.UpdateCount));
 
             group.Update();
@@ -565,7 +565,7 @@ public sealed class LifecycleClosureTests : JobTest
 
             Assert.IsType<InvalidOperationException>(state.ReentrantError);
             Assert.Equal(1, group.Count);
-            Assert.False(group.GetSlot(0).Enabled);
+            Assert.False(group.GetState(0).Enabled);
         }
         finally
         {
@@ -579,16 +579,16 @@ public sealed class LifecycleClosureTests : JobTest
         ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using var state = new LifetimeState(Jobs);
         var world = CreateJobWorld();
-        world.CreateEntity(new LifetimeComponent { Value = 1 });
+        world.Create(new LifetimeComponent { Value = 1 });
 
         JobHandle root = Jobs.Schedule(
             new WorldRootJob(world, state),
-            ComponentJobAccess<LifetimeComponent>.Read(world));
+            [.. world.Execution!.StructureRead, ((WorldJobs)world.Execution!).Read<LifetimeComponent>()]);
         Assert.True(state.RootStarted.Wait(TimeSpan.FromSeconds(5)));
 
         Task<Exception?> disposal = Task.Run(() => Capture(world.Dispose));
         Assert.True(SpinWait.SpinUntil(
-            () => ThrowsDisposed(() => _ = world.CreateEntity()),
+            () => ThrowsDisposed(() => _ = world.EntityCount),
             TimeSpan.FromSeconds(5)));
 
         state.AllowDescendant.Set();
@@ -598,9 +598,9 @@ public sealed class LifecycleClosureTests : JobTest
 
         Assert.Null(await disposal.WaitAsync(TimeSpan.FromSeconds(5)));
         Assert.True(root.IsCompleted);
-        Assert.Throws<ObjectDisposedException>(() => world.CreateEntity());
+        Assert.Throws<ObjectDisposedException>(() => world.Create());
         Assert.Throws<ObjectDisposedException>(
-            () => ComponentJobAccess<LifetimeComponent>.Read(world));
+            () => ((WorldJobs)world.Execution!).Read<LifetimeComponent>());
         world.Dispose();
     }
 
@@ -610,10 +610,10 @@ public sealed class LifecycleClosureTests : JobTest
         ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         using var state = new LifetimeState(Jobs);
         var world = CreateJobWorld();
-        world.CreateEntity(new LifetimeComponent());
+        world.Create(new LifetimeComponent());
         _ = Jobs.Schedule(
             new BlockingRootJob(state),
-            ComponentJobAccess<LifetimeComponent>.Read(world));
+            [.. world.Execution!.StructureRead, ((WorldJobs)world.Execution!).Read<LifetimeComponent>()]);
         Assert.True(state.RootStarted.Wait(TimeSpan.FromSeconds(5)));
 
         Task<Exception?> disposal = StartLongRunning(() => Capture(world.Dispose));
@@ -639,9 +639,9 @@ public sealed class LifecycleClosureTests : JobTest
     {
         ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
-        world.CreateEntity(new LifetimeComponent());
+        world.Create(new LifetimeComponent());
         JobHandle task = Jobs.Schedule(
-            new ThrowingJob(), ComponentJobAccess<LifetimeComponent>.Read(world));
+            new ThrowingJob(), [.. world.Execution!.StructureRead, ((WorldJobs)world.Execution!).Read<LifetimeComponent>()]);
         world.Dispose();
         Assert.True(task.IsCompleted);
         Assert.Equal("job-fault", Assert.Throws<TestFault>(task.Complete).Code);
@@ -654,15 +654,15 @@ public sealed class LifecycleClosureTests : JobTest
     {
         ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
-        var entity = world.CreateEntity(new LifetimeComponent { Value = 7 });
-        var query = world.Query(world.QueryDefinition().Read<LifetimeComponent>());
+        var entity = world.Create(new LifetimeComponent { Value = 7 });
+        var query = world.Query(new QueryDescription().WithStored<LifetimeComponent>());
         Exception? disposeError = null;
 
-        world.ExecuteQuery(query, _ => disposeError = Capture(world.Dispose));
+        using (QueryScope rows = query.OpenRead()) disposeError = Capture(world.Dispose);
 
         Assert.IsType<InvalidOperationException>(disposeError);
         Assert.Equal(1, world.EntityCount);
-        Assert.Equal(7, world.Read<LifetimeComponent>(entity).Value);
+        Assert.Equal(7, world.ReadComponentData<LifetimeComponent>(entity).Value);
         world.Dispose();
     }
 
@@ -671,38 +671,27 @@ public sealed class LifecycleClosureTests : JobTest
     {
         ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateJobWorld();
-        int[] componentIds = [ComponentMetadata<LifetimeComponent>.Id];
-        Exception? disposeError = null;
-
-        var entity = world.ExecuteBundleSpawn(
-            componentIds,
-            view =>
-            {
-                disposeError = Capture(world.Dispose);
-                var component = new LifetimeComponent { Value = 11 };
-                view.Write(in component);
-            });
-
-        Assert.IsType<InvalidOperationException>(disposeError);
+        int[] componentIds = [ComponentId<LifetimeComponent>.Value];
+        var result = new DisposeResult();
+        var state = new DisposeBundleState(world, result);
+        Entity entity = world.ExecuteBundleSpawn(componentIds, in state, default(DisposeBundleWriter));
+        Assert.IsType<InvalidOperationException>(result.Error);
         Assert.True(world.IsAlive(entity));
-        Assert.Equal(11, world.Read<LifetimeComponent>(entity).Value);
+        Assert.Equal(11, world.ReadComponentData<LifetimeComponent>(entity).Value);
         world.Dispose();
     }
 
     [Fact]
-    public void WorldDispose_FromBoundHookCallbackRejectsBeforeClosing()
+    public void WorldDisposeInsideAStructureWriteRangeRejectsBeforeClosing()
     {
-        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        var world = CreateJobWorld();
-        Exception? hookError = null;
-        world.Hooks<LifetimeComponent>().OnAdd(
-            (SomeEngine.ECS.Hooks.DeferredWorld _,
-                SomeEngine.ECS.Entities.Entity _,
-                in LifetimeComponent _) => hookError = Capture(world.Dispose));
-
-        world.CreateEntity(new LifetimeComponent());
-
-        Assert.IsType<InvalidOperationException>(hookError);
+        World world = CreateJobWorld();
+        Exception? error;
+        using (WorldStructureWriteScope structure = world.OpenStructureWrite())
+        {
+            world.Create(new LifetimeComponent());
+            error = Capture(world.Dispose);
+        }
+        Assert.IsType<InvalidOperationException>(error);
         Assert.Equal(1, world.EntityCount);
         world.Dispose();
     }
@@ -714,17 +703,17 @@ public sealed class LifecycleClosureTests : JobTest
         using var entered = new ManualResetEventSlim();
         using var release = new ManualResetEventSlim();
         var world = CreateJobWorld();
-        world.CreateEntity(new LifetimeComponent { Value = 7 });
-        var query = world.Query(world.QueryDefinition().Read<LifetimeComponent>());
+        world.Create(new LifetimeComponent { Value = 7 });
+        var query = world.Query(new QueryDescription().WithStored<LifetimeComponent>());
         int readValue = 0;
-        Task reading = Task.Run(() => world.ExecuteQuery(query, cursor =>
+        Task reading = Task.Run(() =>
         {
+            using QueryScope rows = query.OpenRead();
             entered.Set();
-            if (!release.Wait(TimeSpan.FromSeconds(5)))
-                throw new TimeoutException("Query was not released.");
-            foreach (var row in cursor.Rows)
-                readValue += row.Read<LifetimeComponent>().Value;
-        }));
+            if (!release.Wait(TimeSpan.FromSeconds(5))) throw new TimeoutException();
+            foreach (QueryChunk chunk in rows)
+                foreach (LifetimeComponent value in chunk.Read<LifetimeComponent>()) readValue += value.Value;
+        });
         Task? closing = null;
         try
         {
@@ -745,7 +734,7 @@ public sealed class LifecycleClosureTests : JobTest
                 world.Dispose();
         }
         Assert.Equal(7, readValue);
-        Assert.Throws<ObjectDisposedException>(() => world.CreateEntity());
+        Assert.Throws<ObjectDisposedException>(() => world.Create());
     }
 
     [Fact]
@@ -757,16 +746,14 @@ public sealed class LifecycleClosureTests : JobTest
         using var lateStarted = new ManualResetEventSlim();
         var events = new System.Collections.Concurrent.ConcurrentQueue<string>();
         var world = CreateJobWorld();
-        world.CreateEntity(new LifetimeComponent());
-        var query = world.Query(world.QueryDefinition().ReadWrite<LifetimeComponent>());
+        world.Create(new LifetimeComponent());
+        var query = world.Query(new QueryDescription().WithStored<LifetimeComponent>());
         Task<int> holder = StartLongRunning(() =>
         {
-            world.ExecuteQuery(query, _ =>
-            {
-                holderEntered.Set();
-                releaseHolder.Wait();
-                events.Enqueue("query released");
-            });
+            using QueryScope rows = query.OpenRead();
+            holderEntered.Set();
+            releaseHolder.Wait();
+            events.Enqueue("query released");
             return 0;
         });
         var lateResult = new TaskCompletionSource<Exception?>(
@@ -774,7 +761,7 @@ public sealed class LifecycleClosureTests : JobTest
         var lateThread = new Thread(() =>
         {
             lateStarted.Set();
-            lateResult.SetResult(Capture(() => world.CreateEntity()));
+            lateResult.SetResult(Capture(() => world.Create()));
         }) { IsBackground = true };
         Task<Exception?>? disposal = null;
         try
@@ -848,35 +835,47 @@ public sealed class LifecycleClosureTests : JobTest
             TaskCreationOptions.LongRunning,
             TaskScheduler.Default);
 
+    private sealed class DisposeResult { internal Exception? Error; }
+    private readonly record struct DisposeBundleState(World World, DisposeResult Result);
+    private readonly struct DisposeBundleWriter : IBundleWriter<DisposeBundleState>
+    {
+        public void Write(BundleWriteView view, in DisposeBundleState state)
+        {
+            try { state.World.Dispose(); }
+            catch (Exception error) { state.Result.Error = error; }
+            view.Write(new LifetimeComponent { Value = 11 });
+        }
+    }
+
     private sealed class LifetimeDriver : ISystemDriver<LifetimeContext>
     {
         private readonly LifetimeState _state;
-        private uint _version;
+        private ulong _version;
 
         internal LifetimeDriver(LifetimeState state)
         {
             _state = state;
         }
 
-        public uint AcquireSystemVersion(ref SystemSlot slot)
+        public ulong AcquireSystemVersion(ref SystemState slot)
         {
             _state.InvokeDriverReentrantControl(
                 DriverLifecycleCallback.AcquireSystemVersion);
             return ++_version;
         }
 
-        public LifetimeContext CreateContext(ref SystemSlot slot)
+        public LifetimeContext CreateContext(scoped ref SystemState slot)
         {
             _state.InvokeDriverReentrantControl(DriverLifecycleCallback.CreateContext);
             return new LifetimeContext(_state);
         }
 
-        public void BeforeUpdate(ref SystemSlot slot, ref LifetimeContext context)
+        public void BeforeUpdate(ref SystemState slot, ref LifetimeContext context)
         {
             _state.InvokeDriverReentrantControl(DriverLifecycleCallback.BeforeUpdate);
         }
 
-        public void AfterUpdate(ref SystemSlot slot, ref LifetimeContext context)
+        public void AfterUpdate(ref SystemState slot, ref LifetimeContext context)
         {
             _state.InvokeDriverReentrantControl(DriverLifecycleCallback.AfterUpdate);
         }
@@ -1103,7 +1102,7 @@ public sealed class LifecycleClosureTests : JobTest
 
         public void OnUpdate(ref LifetimeContext context)
         {
-            ComponentJobAccess<LifetimeComponent>.ScheduleRead(_world, new CountWorkJob(context.State));
+            _world.Execution!.Scheduler!.Schedule(new CountWorkJob(context.State), [.. _world.Execution!.StructureRead, ((WorldJobs)_world.Execution!).Read<LifetimeComponent>()]);
         }
     }
 
@@ -1124,9 +1123,7 @@ public sealed class LifecycleClosureTests : JobTest
         public void OnUpdate(ref LifetimeContext context)
         {
             context.State.LastHandle =
-                ComponentJobAccess<LifetimeComponent>.ScheduleRead(
-                    _world,
-                    new ThrowingJob());
+                _world.Execution!.Scheduler!.Schedule(new ThrowingJob(), [.. _world.Execution!.StructureRead, ((WorldJobs)_world.Execution!).Read<LifetimeComponent>()]);
         }
     }
 
@@ -1244,9 +1241,7 @@ public sealed class LifecycleClosureTests : JobTest
         {
             _state.RootStarted.Set();
             _state.AllowDescendant.Wait();
-            ComponentJobAccess<LifetimeComponent>.ScheduleRead(
-                _world,
-                new WorldDescendantJob(_world, _state));
+            _world.Execution!.Scheduler!.Schedule(new WorldDescendantJob(_world, _state), [.. _world.Execution!.StructureRead, ((WorldJobs)_world.Execution!).Read<LifetimeComponent>()]);
         }
     }
 

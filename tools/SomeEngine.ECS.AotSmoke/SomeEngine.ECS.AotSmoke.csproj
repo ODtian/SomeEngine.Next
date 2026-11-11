@@ -10,6 +10,7 @@
     <PublishAotUsingRuntimePack>true</PublishAotUsingRuntimePack>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../tests/SomeEngine.Views.Tests/ElementChildren.cs" Link="ElementChildren.cs" />
     <Compile Include="../../tests/SomeEngine.ECS.Tests/FieldAccessChecks.cs"
              Link="FieldAccessChecks.cs" />
     <Compile Include="../../tests/SomeEngine.ECS.Tests/ManagedComponentChecks.cs"
@@ -39,6 +40,7 @@
   <ItemGroup>
     <ProjectReference Include="../../src/SomeEngine.Animation/SomeEngine.Animation.csproj"
                       GlobalPropertiesToRemove="PublishAot" />
+    <ProjectReference Include="../../src/SomeEngine.ECS.Relationships/SomeEngine.ECS.Relationships.csproj" GlobalPropertiesToRemove="PublishAot" />
     <ProjectReference Include="../../src/SomeEngine.ECS/SomeEngine.ECS.csproj"
                       GlobalPropertiesToRemove="PublishAot" />
     <ProjectReference Include="../../src/SomeEngine.ECS.Systems/SomeEngine.ECS.Systems.csproj"

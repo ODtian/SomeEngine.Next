@@ -1,787 +1,392 @@
-using SomeEngine.ECS.Components;
+using System.Collections.Concurrent;
+using SomeEngine.ECS.Commands;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Relations;
+using SomeEngine.ECS.Serialization;
 using SomeEngine.Job;
-using Commands = SomeEngine.ECS.Commands;
-using Hierarchy = SomeEngine.ECS.Hierarchy;
+using ManualResetEventSlim = SomeEngine.Testing.TestSignal;
 
 namespace SomeEngine.ECS.Systems.Tests;
 
 public sealed class JobCommandBufferTests : JobTest
 {
     [Fact]
-    public void ParallelProducersMergeByStableLogicalIndex()
+    public void ParallelProducersPublishEntitiesInProducerIndexOrder()
     {
-        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        var world = CreateJobWorld();
-        using var commands = new JobCommandBuffer(world, producerCount: 32);
+        World world = CreateJobWorld();
+        using var commands = new CommandBatch(world, 32);
+        Jobs.ExecuteParallel(new CreateByIndex(commands), commands.ProducerCount, 1);
+        Jobs.Schedule(new PlayCommands(commands), ((WorldJobs)world.Execution!).StructureWrite).Complete();
 
-        commands.ScheduleParallel(new CreateByIndexProducer(), batchSize: 1);
-        commands.SchedulePlayback().Complete();
-
-        var rows = new List<(int EntityIndex, int Value)>();
-        var query = world.Query(world.QueryDefinition().Read<JobCommandValue>());
-        world.ExecuteQuery(query, cursor =>
+        var rows = new List<(Entity Entity, int Value)>();
+        using QueryScope source = world.Query(new QueryDescription().With<JobCommandValue>()).OpenRead();
+        foreach (QueryChunk chunk in source)
         {
-            foreach (var row in cursor.Rows)
-                rows.Add((row.Entity.Index, row.Read<JobCommandValue>().Value));
-        });
-
+            ReadOnlySpan<JobCommandValue> values = chunk.Read<JobCommandValue>();
+            for (int row = 0; row < chunk.Count; row++) rows.Add((chunk.Entities[row], values[row].Value));
+        }
         Assert.Equal(32, rows.Count);
-        Assert.Equal(
-            Enumerable.Range(0, 32),
-            rows.OrderBy(static row => row.EntityIndex).Select(static row => row.Value));
+        Assert.Equal(Enumerable.Range(0, 32), rows.OrderBy(row => row.Entity.Id).Select(row => row.Value));
     }
 
     [Fact]
-    public void ManyRelationshipProducerSegmentsShareOneTypedGenerationAndLinearAdjacencyBatch()
+    public void RelationshipProducersPublishEveryEdgeAndDeferredResult()
     {
-        const int ProducerCount = 1024;
-        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        var world = CreateJobWorld();
-        Entity source = world.CreateEntity();
-        var targets = new Entity[ProducerCount];
-        var pending = new Commands.DeferredRelationEdge<JobCommandLink>[ProducerCount];
-        for (int i = 0; i < targets.Length; i++)
-            targets[i] = world.CreateEntity();
+        const int Count = 1024;
+        World world = CreateJobWorld();
+        Entity source = world.Create();
+        Entity[] targets = Enumerable.Range(0, Count).Select(_ => world.Create()).ToArray();
+        var created = new DeferredEntity[Count];
+        using var commands = new CommandBatch(world, Count);
+        Jobs.ExecuteParallel(new CreateRelations(commands, source, targets, created), Count, 16);
+        Jobs.Schedule(new PlayCommands(commands), ((WorldJobs)world.Execution!).StructureWrite).Complete();
 
-        using var commands = new JobCommandBuffer(world, ProducerCount);
-
-        commands.ScheduleParallel(
-            new SameSourceRelationProducer(source, targets, pending),
-            batchSize: 16);
-        commands.SchedulePlayback().Complete();
-
-        Assert.Equal(
-            ProducerCount,
-            world.GetOutgoingRelations<JobCommandLink>(source).Entries.Length);
-        Assert.All(pending, static edge => Assert.True(edge.TryResolve(out _)));
+        using RelationRead outgoing = Relations<JobCommandLink>.Outgoing(world, source);
+        Assert.Equal(Count, outgoing.Entries.Length);
+        Assert.All(created, edge => Assert.True(edge.TryResolve(out _)));
+        Assert.Equal(Enumerable.Range(0, Count), outgoing.Entries.ToArray()
+            .Select(edge => world.ReadComponentData<JobCommandLink>(edge.Edge).Value).Order());
     }
 
     [Fact]
-    public void DeferredUniqueTargetSwapAcrossSegmentsValidatesTheMergedFinalImage()
+    public void ProducerEndpointEditsValidateTheCombinedUniqueTargetSwap()
     {
-        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        var world = CreateJobWorld();
-        Entity sourceA = world.CreateEntity();
-        Entity sourceB = world.CreateEntity();
-        Entity targetA = world.CreateEntity();
-        Entity targetB = world.CreateEntity();
-        RelationEdge<JobCommandUniqueTarget> edgeA = world.CreateRelation(
-            sourceA,
-            targetA,
-            new JobCommandUniqueTarget());
-        RelationEdge<JobCommandUniqueTarget> edgeB = world.CreateRelation(
-            sourceB,
-            targetB,
-            new JobCommandUniqueTarget());
-        using var commands = new JobCommandBuffer(world, producerCount: 2);
+        World world = CreateJobWorld();
+        Entity sourceA = world.Create(), sourceB = world.Create();
+        Entity targetA = world.Create(), targetB = world.Create();
+        RelationEdge<JobCommandUniqueTarget> edgeA = Relations<JobCommandUniqueTarget>.CreateEdge(world, sourceA, targetA, default);
+        RelationEdge<JobCommandUniqueTarget> edgeB = Relations<JobCommandUniqueTarget>.CreateEdge(world, sourceB, targetB, default);
+        var edits = new EndpointCommandEdit[2];
+        Jobs.ExecuteParallel(new SwapTargets(edits, edgeA.Entity, edgeB.Entity, sourceA, sourceB, targetA, targetB), 2, 1);
+        using var commands = new CommandBatch(world, 1);
+        commands[0].EditEndpoints<JobCommandUniqueTarget>(edits, deferred: true);
+        Jobs.Schedule(new PlayCommands(commands), ((WorldJobs)world.Execution!).StructureWrite).Complete();
 
-        commands.Schedule(
-            0,
-            new DeferredUniqueTargetRetargetProducer(edgeA, sourceA, targetB));
-        commands.Schedule(
-            1,
-            new DeferredUniqueTargetRetargetProducer(edgeB, sourceB, targetA));
-        commands.SchedulePlayback().Complete();
-
-        Assert.Equal(targetB, world.GetDirectedRelationEndpoints(edgeA).Target);
-        Assert.Equal(targetA, world.GetDirectedRelationEndpoints(edgeB).Target);
-        Assert.Equal(
-            edgeA,
-            Assert.Single(
-                world.GetIncomingRelations<JobCommandUniqueTarget>(targetA).Entries.ToArray()).Edge);
-        Assert.Equal(
-            edgeB,
-            Assert.Single(
-                world.GetIncomingRelations<JobCommandUniqueTarget>(targetB).Entries.ToArray()).Edge);
-
-        world.MaintainRelations<JobCommandUniqueTarget>();
-
-        Assert.Equal(
-            edgeA,
-            Assert.Single(
-                world.GetIncomingRelations<JobCommandUniqueTarget>(targetB).Entries.ToArray()).Edge);
-        Assert.Equal(
-            edgeB,
-            Assert.Single(
-                world.GetIncomingRelations<JobCommandUniqueTarget>(targetA).Entries.ToArray()).Edge);
+        Assert.Equal(targetB, world.ReadComponentData<RelationEndpoints<JobCommandUniqueTarget>>(edgeA.Entity).Target);
+        Assert.Equal(targetA, world.ReadComponentData<RelationEndpoints<JobCommandUniqueTarget>>(edgeB.Entity).Target);
+        using (RelationRead incoming = Relations<JobCommandUniqueTarget>.Incoming(world, targetA))
+            Assert.Equal(edgeA.Entity, Assert.Single(incoming.Entries.ToArray()).Edge);
+        Relations<JobCommandUniqueTarget>.Maintain(world);
+        using (RelationRead incoming = Relations<JobCommandUniqueTarget>.Incoming(world, targetB))
+            Assert.Equal(edgeA.Entity, Assert.Single(incoming.Entries.ToArray()).Edge);
+        using (RelationRead incoming = Relations<JobCommandUniqueTarget>.Incoming(world, targetA))
+            Assert.Equal(edgeB.Entity, Assert.Single(incoming.Entries.ToArray()).Edge);
     }
 
     [Fact]
-    public void RelationshipFaultInLaterSegmentRollsBackWholeMergedBatch()
+    public void FailedCandidateRelationshipsKeepTheSourceWorldUnchanged()
     {
-        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        var world = CreateJobWorld();
-        Entity sourceA = world.CreateEntity();
-        Entity sourceB = world.CreateEntity();
-        Entity target = world.CreateEntity();
-        var pending = new Commands.DeferredRelationEdge<JobCommandUniqueTarget>[2];
-        int entityCountBefore = world.EntityCount;
-        using var commands = new JobCommandBuffer(world, producerCount: 2);
+        World world = CreateJobWorld();
+        Entity sourceA = world.Create(), sourceB = world.Create(), target = world.Create();
+        int before = world.EntityCount;
+        using var checkpoint = new WorldCheckpoint();
+        checkpoint.Capture(world, CheckpointProgress.Preserve);
+        using var candidate = new World(execution: new WorldJobs(Jobs));
+        checkpoint.Restore(candidate);
+        using var commands = new CommandBatch(candidate, 2);
+        var created = new DeferredEntity[2];
+        commands[0].EditEndpoints<JobCommandUniqueTarget>([EndpointCommandEdit.Create(sourceA, target)], created.AsSpan(0, 1));
+        commands[1].EditEndpoints<JobCommandUniqueTarget>([EndpointCommandEdit.Create(sourceB, target)], created.AsSpan(1, 1));
 
-        commands.Schedule(
-            0,
-            new CapturedUniqueTargetCreateProducer(sourceA, target, pending, captureIndex: 0));
-        commands.Schedule(
-            1,
-            new CapturedUniqueTargetCreateProducer(sourceB, target, pending, captureIndex: 1));
+        Assert.Throws<InvalidOperationException>(() => Jobs.Schedule(new PlayCommands(commands),
+            ((WorldJobs)candidate.Execution!).StructureWrite).Complete());
 
-        Assert.Throws<InvalidOperationException>(() => commands.SchedulePlayback().Complete());
-        Assert.Equal(entityCountBefore, world.EntityCount);
-        Assert.All(pending, static edge => Assert.False(edge.TryResolve(out _)));
-        Assert.Empty(world.GetOutgoingRelations<JobCommandUniqueTarget>(sourceA).Entries.ToArray());
-        Assert.Empty(world.GetOutgoingRelations<JobCommandUniqueTarget>(sourceB).Entries.ToArray());
-        Assert.Empty(world.GetIncomingRelations<JobCommandUniqueTarget>(target).Entries.ToArray());
+        Assert.Equal(before, world.EntityCount);
+        using (RelationRead outgoing = Relations<JobCommandUniqueTarget>.Outgoing(world, sourceA)) Assert.Empty(outgoing.Entries.ToArray());
+        using (RelationRead outgoing = Relations<JobCommandUniqueTarget>.Outgoing(world, sourceB)) Assert.Empty(outgoing.Entries.ToArray());
+        using (RelationRead incoming = Relations<JobCommandUniqueTarget>.Incoming(world, target)) Assert.Empty(incoming.Entries.ToArray());
     }
 
     [Fact]
-    public void ProducerFaultInvalidatesEverySegmentWithoutPublishing()
+    public void ProducerFailureDiscardsEveryRecordedSegmentBeforePlayback()
     {
-        ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        var world = CreateJobWorld();
-        var deferred = new Commands.DeferredEntity[8];
-        using var commands = new JobCommandBuffer(world, deferred.Length);
+        World world = CreateJobWorld();
+        using var commands = new CommandBatch(world, 8);
+        var created = new DeferredEntity[8];
+        JobHandle producer = Jobs.ScheduleParallel(new FaultingCreate(commands, created, 3), 8, 1);
+        JobHandle playback = Jobs.Schedule(new PlayCommands(commands), ((WorldJobs)world.Execution!).StructureWrite, dependency: producer);
+        int[] cleaned = [0];
+        JobHandle cleanup = Jobs.ScheduleFinally(new ClearCommands(commands, playback.GetAwaiter(), cleaned), default, playback);
 
-        commands.ScheduleParallel(
-            new FaultingCreateProducer(deferred, faultIndex: 3),
-            batchSize: 1);
-        JobHandle playback = commands.SchedulePlayback();
+        Assert.ThrowsAny<Exception>(cleanup.Complete);
 
-        AggregateException error = Assert.Throws<AggregateException>(() => playback.Complete());
-        Assert.Contains(
-            error.InnerExceptions,
-            static exception => exception is ProducerProbeException);
+        Assert.Equal(1, cleaned[0]);
         Assert.Equal(0, world.EntityCount);
-        Assert.All(deferred, static entity => Assert.False(entity.TryResolve(out _)));
+        Assert.All(created, entity => Assert.False(entity.TryResolve(out _)));
     }
 
     [Fact]
-    public void PlaybackFaultRollsBackEarlierProducerSegments()
+    public void FailedCandidatePlaybackPreservesTheSourceAndItsMembershipLog()
     {
-        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        var world = CreateJobWorld();
-        Entity target = world.CreateEntity();
-        var deferred = new Commands.DeferredEntity[1];
-        using var commands = new JobCommandBuffer(world, producerCount: 2);
+        World world = CreateJobWorld();
+        Entity original = world.Create();
+        Query members = world.Query(new QueryDescription().With<JobCommandValue>());
+        using EventReader<MembershipChange> changes = world.WatchMembership(members);
+        using var checkpoint = new WorldCheckpoint();
+        checkpoint.Capture(world, CheckpointProgress.Preserve);
+        using var candidate = new World(execution: new WorldJobs(Jobs));
+        checkpoint.Restore(candidate);
+        using var commands = new CommandBatch(candidate, 2);
+        DeferredEntity created = commands[0].Create(new JobCommandValue { Value = 7 });
+        commands[1].Set(Entity.Null, new JobCommandValue { Value = 9 });
 
-        commands.Schedule(0, new CaptureCreateProducer(deferred));
-        commands.Schedule(1, new InvalidRemoveProducer(target));
-        JobHandle playback = commands.SchedulePlayback();
+        Assert.Throws<ArgumentException>(() => Jobs.Schedule(new PlayCommands(commands),
+            ((WorldJobs)candidate.Execution!).StructureWrite).Complete());
 
-        Assert.Throws<InvalidOperationException>(() => playback.Complete());
         Assert.Equal(1, world.EntityCount);
-        Assert.True(world.IsAlive(target));
-        Assert.False(world.Has<JobCommandValue>(target));
-        Assert.False(deferred[0].TryResolve(out _));
+        Assert.True(world.IsAlive(original));
+        Assert.True(created.TryResolve(out Entity candidateEntity));
+        Assert.False(world.IsAlive(candidateEntity));
+        using EventRead<MembershipChange> read = changes.Open();
+        Assert.Equal(0, read.Count);
     }
 
     [Fact]
-    public void EmptyBatchConsumesNoTopologyRevision()
+    public void EmptyProducerBatchPreservesTheWorldVersion()
     {
-        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        var world = CreateJobWorld();
-        using var commands = new JobCommandBuffer(world, producerCount: 1);
+        World world = CreateJobWorld();
+        ulong before = world.Version;
+        using var commands = new CommandBatch(world, 1);
+        Jobs.Schedule(new PlayCommands(commands), ((WorldJobs)world.Execution!).StructureWrite).Complete();
+        Assert.Equal(0, world.EntityCount);
+        Assert.Equal(before, world.Version);
+    }
 
-        commands.Schedule(0, new EmptyProducer());
-        commands.SchedulePlayback().Complete();
-
+    [Fact]
+    public void CommandProducerCannotMutateWorldWithoutDeclaredStructureAccess()
+    {
+        World world = CreateJobWorld();
+        JobHandle producer = Jobs.Schedule(new CreateWithoutStructureAccess(world));
+        Assert.Throws<JobResourceSafetyException>(producer.Complete);
         Assert.Equal(0, world.EntityCount);
     }
 
     [Fact]
-    public void ProducerScopeDoesNotAuthorizeWorldSharedCommandBuffer()
+    public void CommandProducerCannotPlayItsBatchWithoutDeclaredStructureAccess()
     {
-        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        var world = CreateJobWorld();
-        using var commands = new JobCommandBuffer(world, producerCount: 1);
-
-        commands.Schedule(0, new SharedBufferEscapeProducer(world));
-        AggregateException error = Assert.Throws<AggregateException>(() =>
-            commands.SchedulePlayback().Complete());
-
-        Assert.Contains(
-            error.InnerExceptions,
-            static exception => exception is InvalidOperationException invalid);
+        World world = CreateJobWorld();
+        using var commands = new CommandBatch(world, 1);
+        commands[0].Create(new JobCommandValue { Value = 7 });
+        JobHandle producer = Jobs.Schedule(new PlayCommands(commands));
+        Assert.Throws<JobResourceSafetyException>(producer.Complete);
         Assert.Equal(0, world.EntityCount);
     }
 
     [Fact]
-    public void ProducerCannotSynchronouslyPlaybackItsOwningBatch()
+    public void PlaybackDependencyIncludesCommandsRecordedByProducerChildren()
     {
-        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        var world = CreateJobWorld();
-        using var commands = new JobCommandBuffer(world, producerCount: 1);
+        World world = CreateJobWorld();
+        using var commands = new CommandBatch(world, 1);
+        var created = new DeferredEntity[1];
+        JobHandle producer = Jobs.Schedule(new StartChildProducer(Jobs, commands[0], created));
+        Jobs.Schedule(new PlayCommands(commands), ((WorldJobs)world.Execution!).StructureWrite, dependency: producer).Complete();
+        Assert.True(created[0].TryResolve(out Entity entity));
+        Assert.Equal(7, world.ReadComponentData<JobCommandValue>(entity).Value);
+    }
 
-        commands.Schedule(0, new OwningPlaybackEscapeProducer(commands));
-        AggregateException error = Assert.Throws<AggregateException>(() =>
-            commands.SchedulePlayback().Complete());
-
-        Assert.Contains(
-            error.InnerExceptions,
-            static exception => exception is InvalidOperationException invalid);
+    [Fact]
+    public void FaultedProducerDependencyStillClearsEverySegment()
+    {
+        World world = CreateJobWorld();
+        using var commands = new CommandBatch(world, 1);
+        commands[0].Create(new JobCommandValue());
+        JobHandle dependency = Jobs.Schedule(new ThrowingDependency());
+        JobHandle playback = Jobs.Schedule(new PlayCommands(commands), ((WorldJobs)world.Execution!).StructureWrite, dependency: dependency);
+        int[] cleaned = [0];
+        JobHandle cleanup = Jobs.ScheduleFinally(new ClearCommands(commands, playback.GetAwaiter(), cleaned), default, playback);
+        Assert.Throws<ProducerDependencyException>(cleanup.Complete);
+        Assert.Equal(1, cleaned[0]);
+        Assert.Equal(0, commands[0].Count);
         Assert.Equal(0, world.EntityCount);
     }
 
     [Fact]
-    public void ProducerCannotSchedulePlaybackForItsOwningBatch()
+    public void FaultedStructurePredecessorRunsCleanupAndPreservesTheSource()
     {
-        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        var world = CreateJobWorld();
-        using var commands = new JobCommandBuffer(world, producerCount: 1);
-
-        commands.Schedule(0, new OwningSchedulePlaybackEscapeProducer(commands));
-        AggregateException error = Assert.Throws<AggregateException>(() =>
-            commands.SchedulePlayback().Complete());
-
-        Assert.Contains(
-            error.InnerExceptions,
-            static exception => exception is InvalidOperationException invalid);
+        World world = CreateJobWorld();
+        using var commands = new CommandBatch(world, 1);
+        JobHandle predecessor = Jobs.Schedule(new ThrowingDependency(), ((WorldJobs)world.Execution!).StructureWrite);
+        JobHandle playback = Jobs.Schedule(new PlayCommands(commands), ((WorldJobs)world.Execution!).StructureWrite, dependency: predecessor);
+        int[] cleaned = [0];
+        JobHandle cleanup = Jobs.ScheduleFinally(new ClearCommands(commands, playback.GetAwaiter(), cleaned), default, playback);
+        Assert.Throws<ProducerDependencyException>(cleanup.Complete);
+        Assert.Equal(1, cleaned[0]);
         Assert.Equal(0, world.EntityCount);
     }
 
     [Fact]
-    public void FaultedProducerDependencyStillRunsCleanupAndReleasesPlaybackOwnership()
+    public void SchedulingFailureLeavesRecordedCommandsAvailableForPlayback()
     {
-        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        var world = CreateJobWorld();
-        var commands = new JobCommandBuffer(world, producerCount: 1);
-        JobHandle dependency = Jobs.Schedule(new ThrowingDependencyJob());
-
-        commands.Schedule(0, new EmptyProducer(), dependency);
-        JobHandle playback = commands.SchedulePlayback();
-
-        var error = Assert.Throws<ProducerDependencyException>(() => playback.Complete());
-
-        Assert.Equal(0, world.EntityCount);
-
-        // The mandatory finalizer must leave the owner in a terminal state rather than pinning it
-        // in PlaybackOwned after the scheduler cancels publication.
-        commands.Dispose();
-        commands.Dispose();
-    }
-
-    [Fact]
-    public void FaultedTopologyPredecessorStillRunsCleanup()
-    {
-        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        for (int iteration = 0; iteration < 32; iteration++)
+        ConfigureJobs(new JobConfiguration { WorkerCount = 0, MaxCompletionStates = 1 });
+        World world = CreateJobWorld();
+        using var commands = new CommandBatch(world, 1);
+        DeferredEntity created = commands[0].Create(new JobCommandValue { Value = 7 });
+        var released = new TaskCompletionSource();
+        JobHandle blocker = Jobs.CreateExternalFenceHandle(released.Task);
+        try
         {
-            using var release = new ManualResetEventSlim();
-            using var started = new ManualResetEventSlim();
-            using var world = CreateJobWorld();
-            var commands = new JobCommandBuffer(world, producerCount: 1);
-            JobHandle predecessor = Jobs.Schedule(
-                new BlockingTopologyFaultJob(release, started),
-                RelationshipJobAccess.TopologyWrite(world));
+            Assert.Throws<InvalidOperationException>(() => Jobs.Schedule(new PlayCommands(commands),
+                ((WorldJobs)world.Execution!).StructureWrite));
+        }
+        finally { released.SetResult(); blocker.Complete(); }
+        commands.Playback();
+        Assert.True(created.TryResolve(out Entity entity));
+        Assert.Equal(7, world.ReadComponentData<JobCommandValue>(entity).Value);
+    }
 
-            JobHandle playback = default;
-            JobHandle producer = default;
-            bool startedInTime = false;
-            Exception? schedulingFault = null;
-            try
-            {
-                startedInTime = started.Wait(TimeSpan.FromSeconds(10));
-                if (startedInTime)
-                {
-                    try
-                    {
-                        // The fault is a semantic prerequisite as well as a resource owner.
-                        // Resource hazards alone only order work and never propagate failure.
-                        producer = commands.Schedule(0, new EmptyProducer(), predecessor);
-                        playback = commands.SchedulePlayback();
-                    }
-                    catch (Exception exception)
-                    {
-                        schedulingFault = exception;
-                    }
-                }
-            }
-            finally
-            {
-                release.Set();
-            }
-
-            Exception? playbackFault = startedInTime && schedulingFault is null
-                ? Record.Exception(() => playback.Complete())
-                : null;
-            Exception? producerFault = startedInTime && schedulingFault is null
-                ? Record.Exception(() => producer.Complete())
-                : null;
-            Exception? predecessorFault = Record.Exception(() => predecessor.Complete());
-            commands.Dispose();
-
-            Assert.True(startedInTime, "Topology predecessor did not start within ten seconds.");
-            Assert.Null(schedulingFault);
-            Assert.IsType<TopologyPredecessorException>(playbackFault);
-            Assert.IsType<TopologyPredecessorException>(producerFault);
-            Assert.True(predecessor.IsCompleted);
-            Assert.IsType<TopologyPredecessorException>(predecessorFault);
+    [Fact]
+    public void PlaybackRunsAfterTheExplicitProducerDependency()
+    {
+        World world = CreateJobWorld();
+        using var commands = new CommandBatch(world, 1);
+        using var entered = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        JobHandle producer = Jobs.Schedule(new BlockingCreate(commands[0], entered, release));
+        JobHandle playback = default;
+        try
+        {
+            Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
+            playback = Jobs.Schedule(new PlayCommands(commands), ((WorldJobs)world.Execution!).StructureWrite, dependency: producer);
             Assert.Equal(0, world.EntityCount);
         }
-    }
-
-    [Fact]
-    public void FinalizerScheduleFailureRecoversAlreadyScheduledPublication()
-    {
-        ConfigureJobs(new JobConfiguration
-        {
-            WorkerCount = 0,
-            MaxCompletionStates = 1,
-            SafetyMode = JobSafetyMode.Checked,
-            ManagedPayloadPolicy = ManagedPayloadPolicy.Allow,
-        });
-        var world = CreateJobWorld();
-        var deferred = new Commands.DeferredEntity[1];
-        var commands = new JobCommandBuffer(world, producerCount: 1);
-        JobHandle producer = commands.Schedule(0, new CaptureCreateProducer(deferred));
-        producer.Complete();
-
-        var error = Assert.Throws<InvalidOperationException>(() => commands.SchedulePlayback());
-
+        finally { release.Set(); playback.Complete(); producer.Complete(); }
         Assert.Equal(1, world.EntityCount);
-        Assert.True(deferred[0].TryResolve(out Entity created));
-        Assert.True(world.IsAlive(created));
-        commands.Dispose();
     }
 
     [Fact]
-    public async Task ScheduleAndPlaybackRaceIsLinearizable()
+    public void DisposalFollowsEveryProducerCompletion()
     {
-        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-
-        for (int iteration = 0; iteration < 32; iteration++)
+        World world = CreateJobWorld();
+        var commands = new CommandBatch(world, 1);
+        using var entered = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        var events = new ConcurrentQueue<string>();
+        JobHandle producer = Jobs.Schedule(new BlockingCreate(commands[0], entered, release, events));
+        JobHandle disposal = default;
+        try
         {
-            using var start = new Barrier(participantCount: 2);
-            using var producerRelease = new ManualResetEventSlim();
-            var world = CreateJobWorld();
-            var commands = new JobCommandBuffer(world, producerCount: 1);
-            JobHandle producer = default;
-            JobHandle playback = default;
-            Exception? producerScheduleFault = null;
-            Exception? playbackScheduleFault = null;
-
-            Task producerTask = Task.Run(() =>
-            {
-                start.SignalAndWait();
-                try
-                {
-                    producer = commands.Schedule(0, new BlockingProducer(producerRelease));
-                }
-                catch (Exception exception)
-                {
-                    producerScheduleFault = exception;
-                }
-            });
-            Task playbackTask = Task.Run(() =>
-            {
-                start.SignalAndWait();
-                try
-                {
-                    playback = commands.SchedulePlayback();
-                }
-                catch (Exception exception)
-                {
-                    playbackScheduleFault = exception;
-                }
-            });
-
-            try
-            {
-                await Task.WhenAll(producerTask, playbackTask);
-            }
-            finally
-            {
-                producerRelease.Set();
-            }
-
-            Assert.Null(producerScheduleFault);
-            if (playbackScheduleFault is null)
-            {
-                playback.Complete();
-            }
-            else
-            {
-                Assert.IsType<InvalidOperationException>(playbackScheduleFault);
-                producer.Complete();
-                commands.SchedulePlayback().Complete();
-            }
-
-            commands.Dispose();
+            Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
+            disposal = Jobs.ScheduleFinally(new DisposeCommands(commands, producer.GetAwaiter(), events), default, producer);
         }
-    }
-
-    [Fact]
-    public async Task ScheduleAndDisposeRaceHasExactlyOneOwner()
-    {
-        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-
-        for (int iteration = 0; iteration < 32; iteration++)
-        {
-            using var start = new Barrier(participantCount: 2);
-            using var producerRelease = new ManualResetEventSlim();
-            var world = CreateJobWorld();
-            var commands = new JobCommandBuffer(world, producerCount: 1);
-            JobHandle producer = default;
-            Exception? producerScheduleFault = null;
-            Exception? disposeFault = null;
-
-            Task producerTask = Task.Run(() =>
-            {
-                start.SignalAndWait();
-                try
-                {
-                    producer = commands.Schedule(0, new BlockingProducer(producerRelease));
-                }
-                catch (Exception exception)
-                {
-                    producerScheduleFault = exception;
-                }
-            });
-            Task disposeTask = Task.Run(() =>
-            {
-                start.SignalAndWait();
-                try
-                {
-                    commands.Dispose();
-                }
-                catch (Exception exception)
-                {
-                    disposeFault = exception;
-                }
-            });
-
-            try
-            {
-                await Task.WhenAll(producerTask, disposeTask);
-            }
-            finally
-            {
-                producerRelease.Set();
-            }
-
-            Assert.NotEqual(producerScheduleFault is null, disposeFault is null);
-            if (producerScheduleFault is null)
-            {
-                Assert.IsType<InvalidOperationException>(disposeFault);
-                producer.Complete();
-                commands.Dispose();
-            }
-            else
-            {
-                Assert.IsType<InvalidOperationException>(producerScheduleFault);
-                Assert.Null(disposeFault);
-            }
-        }
-    }
-
-    [Fact]
-    public void ZeroProducerBatchIsAValidTopologyFreeNoOp()
-    {
-        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        var world = CreateJobWorld();
-        using var commands = new JobCommandBuffer(world, producerCount: 0);
-
-        commands.SchedulePlayback().Complete();
-
+        finally { release.Set(); disposal.Complete(); producer.Complete(); }
+        Assert.Equal(["recorded", "disposed"], events.ToArray());
         Assert.Equal(0, world.EntityCount);
     }
 
     [Fact]
-    public void ZeroProducerParallelSchedulePreservesItsExplicitDependency()
+    public void ZeroProducerBatchPreservesTheWorldVersion()
     {
-        ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        var world = CreateJobWorld();
-        var visits = new int[1];
-        var commands = new JobCommandBuffer(world, producerCount: 0);
-        JobHandle dependency = Jobs.Schedule(new ThrowingDependencyJob());
-
-        commands.ScheduleParallel(
-            new EmptyParallelProducer(visits),
-            batchSize: 1,
-            dependency);
-        JobHandle playback = commands.SchedulePlayback();
-
-        Assert.Throws<ProducerDependencyException>(() => playback.Complete());
-        Assert.Equal(0, visits[0]);
-        commands.Dispose();
+        World world = CreateJobWorld();
+        ulong before = world.Version;
+        using var commands = new CommandBatch(world, 0);
+        commands.Playback();
+        Assert.Equal(0, world.EntityCount);
+        Assert.Equal(before, world.Version);
     }
 
-    private readonly struct CreateByIndexProducer : IJobParallelCommandProducer
+    [Fact]
+    public void ZeroProducerSchedulePreservesItsExplicitDependency()
     {
-        public void Execute(int producerIndex, ref JobCommandWriter commands)
-        {
-            Commands.DeferredEntity entity = commands.CreateEntity();
-            commands.Add(entity, new JobCommandValue { Value = producerIndex });
-        }
+        World world = CreateJobWorld();
+        using var commands = new CommandBatch(world, 0);
+        JobHandle dependency = Jobs.Schedule(new ThrowingDependency());
+        JobHandle producer = Jobs.ScheduleParallel(new CreateByIndex(commands), 0, 1, dependency);
+        Assert.Throws<ProducerDependencyException>(producer.Complete);
+        Assert.Equal(0, world.EntityCount);
     }
 
-    private readonly struct SameSourceRelationProducer : IJobParallelCommandProducer
+    private readonly struct CreateByIndex(CommandBatch commands) : IJobParallelFor
     {
-        private readonly Entity _source;
-        private readonly Entity[] _targets;
-        private readonly Commands.DeferredRelationEdge<JobCommandLink>[] _capture;
+        public void Execute(int index) => commands[index].Create(new JobCommandValue { Value = index });
+    }
 
-        internal SameSourceRelationProducer(
-            Entity source,
-            Entity[] targets,
-            Commands.DeferredRelationEdge<JobCommandLink>[] capture)
+    private readonly struct CreateRelations(CommandBatch commands, Entity source, Entity[] targets,
+        DeferredEntity[] created) : IJobParallelFor
+    {
+        public void Execute(int index)
         {
-            _source = source;
-            _targets = targets;
-            _capture = capture;
-        }
-
-        public void Execute(int producerIndex, ref JobCommandWriter commands)
-        {
-            var relations = commands.Relations<JobCommandLink>();
-            _capture[producerIndex] = relations.Create(
-                _source,
-                _targets[producerIndex],
-                new JobCommandLink { Value = producerIndex },
-                RelationMaintenanceTiming.Immediate);
+            CommandBuffer buffer = commands[index];
+            buffer.EditEndpoints<JobCommandLink>([EndpointCommandEdit.Create(source, targets[index])], created.AsSpan(index, 1));
+            buffer.Set(created[index], new JobCommandLink { Value = index });
         }
     }
 
-    private readonly struct DeferredUniqueTargetRetargetProducer : IJobCommandProducer
+    private readonly struct SwapTargets(EndpointCommandEdit[] edits, Entity first, Entity second,
+        Entity sourceA, Entity sourceB, Entity targetA, Entity targetB) : IJobParallelFor
     {
-        private readonly RelationEdge<JobCommandUniqueTarget> _edge;
-        private readonly Entity _source;
-        private readonly Entity _target;
-
-        internal DeferredUniqueTargetRetargetProducer(
-            RelationEdge<JobCommandUniqueTarget> edge,
-            Entity source,
-            Entity target)
-        {
-            _edge = edge;
-            _source = source;
-            _target = target;
-        }
-
-        public void Execute(ref JobCommandWriter commands) =>
-            commands.Relations<JobCommandUniqueTarget>().Retarget(
-                _edge,
-                _source,
-                _target,
-                RelationMaintenanceTiming.Deferred);
+        public void Execute(int index) => edits[index] = index == 0
+            ? new(first, sourceA, targetB) : new(second, sourceB, targetA);
     }
 
-    private readonly struct CapturedUniqueTargetCreateProducer : IJobCommandProducer
+    private readonly struct PlayCommands(CommandBatch commands) : IJob
     {
-        private readonly Entity _source;
-        private readonly Entity _target;
-        private readonly Commands.DeferredRelationEdge<JobCommandUniqueTarget>[] _capture;
-        private readonly int _captureIndex;
+        public void Execute() => commands.Playback();
+    }
 
-        internal CapturedUniqueTargetCreateProducer(
-            Entity source,
-            Entity target,
-            Commands.DeferredRelationEdge<JobCommandUniqueTarget>[] capture,
-            int captureIndex)
+    private readonly struct FaultingCreate(CommandBatch commands, DeferredEntity[] created, int failureIndex) : IJobParallelFor
+    {
+        public void Execute(int index)
         {
-            _source = source;
-            _target = target;
-            _capture = capture;
-            _captureIndex = captureIndex;
-        }
-
-        public void Execute(ref JobCommandWriter commands)
-        {
-            _capture[_captureIndex] = commands.Relations<JobCommandUniqueTarget>().Create(
-                _source,
-                _target,
-                new JobCommandUniqueTarget(),
-                RelationMaintenanceTiming.Immediate);
+            created[index] = commands[index].Create(new JobCommandValue { Value = index });
+            if (index == failureIndex) throw new ProducerProbeException();
         }
     }
 
-    private readonly struct FaultingCreateProducer : IJobParallelCommandProducer
-    {
-        private readonly Commands.DeferredEntity[] _entities;
-        private readonly int _faultIndex;
-
-        internal FaultingCreateProducer(Commands.DeferredEntity[] entities, int faultIndex)
-        {
-            _entities = entities;
-            _faultIndex = faultIndex;
-        }
-
-        public void Execute(int producerIndex, ref JobCommandWriter commands)
-        {
-            Commands.DeferredEntity entity = commands.CreateEntity();
-            _entities[producerIndex] = entity;
-            commands.Add(entity, new JobCommandValue { Value = producerIndex });
-            if (producerIndex == _faultIndex)
-                throw new ProducerProbeException();
-        }
-    }
-
-    private readonly struct CaptureCreateProducer : IJobCommandProducer
-    {
-        private readonly Commands.DeferredEntity[] _capture;
-
-        internal CaptureCreateProducer(Commands.DeferredEntity[] capture)
-        {
-            _capture = capture;
-        }
-
-        public void Execute(ref JobCommandWriter commands)
-        {
-            Commands.DeferredEntity entity = commands.CreateEntity();
-            _capture[0] = entity;
-            commands.Add(entity, new JobCommandValue { Value = 7 });
-        }
-    }
-
-    private readonly struct InvalidRemoveProducer : IJobCommandProducer
-    {
-        private readonly Entity _target;
-
-        internal InvalidRemoveProducer(Entity target)
-        {
-            _target = target;
-        }
-
-        public void Execute(ref JobCommandWriter commands) =>
-            commands.Remove<JobCommandValue>(_target);
-    }
-
-    private readonly struct EmptyProducer : IJobCommandProducer
-    {
-        public void Execute(ref JobCommandWriter commands)
-        {
-            _ = commands;
-        }
-    }
-
-    private readonly struct SharedBufferEscapeProducer : IJobCommandProducer
-    {
-        private readonly World _world;
-
-        internal SharedBufferEscapeProducer(World world)
-        {
-            _world = world;
-        }
-
-        public void Execute(ref JobCommandWriter commands)
-        {
-            _ = commands;
-            _world.Commands().CreateEntity();
-        }
-    }
-
-    private readonly struct EmptyParallelProducer : IJobParallelCommandProducer
-    {
-        private readonly int[] _visits;
-
-        internal EmptyParallelProducer(int[] visits)
-        {
-            _visits = visits;
-        }
-
-        public void Execute(int producerIndex, ref JobCommandWriter commands)
-        {
-            _ = producerIndex;
-            _ = commands;
-            Interlocked.Increment(ref _visits[0]);
-        }
-    }
-
-    private readonly struct OwningPlaybackEscapeProducer : IJobCommandProducer
-    {
-        private readonly JobCommandBuffer _owner;
-
-        internal OwningPlaybackEscapeProducer(JobCommandBuffer owner)
-        {
-            _owner = owner;
-        }
-
-        public void Execute(ref JobCommandWriter commands)
-        {
-            _ = commands;
-            _owner.Playback();
-        }
-    }
-
-    private readonly struct OwningSchedulePlaybackEscapeProducer : IJobCommandProducer
-    {
-        private readonly JobCommandBuffer _owner;
-
-        internal OwningSchedulePlaybackEscapeProducer(JobCommandBuffer owner)
-        {
-            _owner = owner;
-        }
-
-        public void Execute(ref JobCommandWriter commands)
-        {
-            _ = commands;
-            _owner.SchedulePlayback();
-        }
-    }
-
-    private readonly struct ThrowingDependencyJob : IJob
+    private readonly struct ClearCommands(CommandBatch commands, JobHandleAwaiter result, int[] cleaned) : IJob
     {
         public void Execute()
         {
-            throw new ProducerDependencyException("producer dependency failed");
+            try { result.GetResult(); }
+            finally { commands.Clear(); cleaned[0]++; }
         }
     }
 
-    private readonly struct BlockingTopologyFaultJob : IJob
+    private readonly struct DisposeCommands(CommandBatch commands, JobHandleAwaiter result,
+        ConcurrentQueue<string> events) : IJob
     {
-        private readonly ManualResetEventSlim _release;
-        private readonly ManualResetEventSlim _started;
-
-        internal BlockingTopologyFaultJob(
-            ManualResetEventSlim release,
-            ManualResetEventSlim started)
-        {
-            _release = release;
-            _started = started;
-        }
-
         public void Execute()
         {
-            _started.Set();
-            _release.Wait();
-            throw new TopologyPredecessorException();
+            try { result.GetResult(); }
+            finally { commands.Dispose(); events.Enqueue("disposed"); }
         }
     }
 
-    private readonly struct BlockingProducer : IJobCommandProducer
+    private readonly struct CreateWithoutStructureAccess(World world) : IJob
     {
-        private readonly ManualResetEventSlim _release;
+        public void Execute() => world.Create(new JobCommandValue());
+    }
 
-        internal BlockingProducer(ManualResetEventSlim release)
+    private readonly struct StartChildProducer(Scheduler scheduler, CommandBuffer commands, DeferredEntity[] created) : IJob
+    {
+        public void Execute() => scheduler.Schedule(new CaptureCreate(commands, created));
+    }
+
+    private readonly struct CaptureCreate(CommandBuffer commands, DeferredEntity[] created) : IJob
+    {
+        public void Execute() => created[0] = commands.Create(new JobCommandValue { Value = 7 });
+    }
+
+    private readonly struct BlockingCreate(CommandBuffer commands, ManualResetEventSlim entered,
+        ManualResetEventSlim release, ConcurrentQueue<string>? events = null) : IJob
+    {
+        public void Execute()
         {
-            _release = release;
-        }
-
-        public void Execute(ref JobCommandWriter commands)
-        {
-            _ = commands;
-            _release.Wait();
+            entered.Set();
+            if (!release.Wait(TimeSpan.FromSeconds(5))) throw new TimeoutException();
+            commands.Create(new JobCommandValue());
+            events?.Enqueue("recorded");
         }
     }
 
-    private struct JobCommandValue : IComponent
+    private readonly struct ThrowingDependency : IJob
     {
-        internal int Value;
+        public void Execute() => throw new ProducerDependencyException();
     }
 
-    [RelationSchema(RelationDirection.Directed, RelationCardinality.Parallel)]
-    private struct JobCommandLink : IComponent
-    {
-        internal int Value;
-    }
-
+    private struct JobCommandValue { internal int Value; }
+    private struct JobCommandLink { internal int Value; }
     [RelationSchema(RelationDirection.Directed, RelationCardinality.UniqueTarget)]
-    private struct JobCommandUniqueTarget : IComponent;
-
+    private struct JobCommandUniqueTarget;
     private sealed class ProducerProbeException : Exception;
-
-    private sealed class ProducerDependencyException(string message) : Exception(message);
-
-    private sealed class TopologyPredecessorException : Exception;
+    private sealed class ProducerDependencyException : Exception;
 }

@@ -325,7 +325,7 @@ public sealed class SkeletonBehaviorTests
 [AssetCapabilities]
 public static partial class PoseTestAssets;
 
-[AssetImporter("b3220a1c-e36c-45bc-a053-c98c3cc4ab51", typeof(WorldBlock), SettingsProvider = typeof(GltfSceneSettingsProvider))]
+[AssetImporter("b3220a1c-e36c-45bc-a053-c98c3cc4ab51", typeof(EntityBlock), SettingsProvider = typeof(GltfSceneSettingsProvider))]
 public sealed class PoseSceneImporter : GltfSceneImporter
 {
     public static readonly Guid Id = new("b3220a1c-e36c-45bc-a053-c98c3cc4ab51");

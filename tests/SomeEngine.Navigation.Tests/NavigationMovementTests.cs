@@ -12,23 +12,23 @@ public sealed class NavigationMovementTests
     public void MovingEntityTargetKeepsBudgetedSearchProgressAndActorMovement()
     {
         using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using World world = new World(execution: new WorldJobs(scheduler));
         var navigation = new NavigationSystems<NavigationMesh, PolygonNavigationSearch,
             PolygonSearchState, TestMotion, TestMotionReader>(world);
-        Entity target = world.CreateEntity(new TestMotion { Position = new(5, 0, 1) });
-        Entity actor = world.CreateEntity(new TestMotion { Position = new(1, 0, 1) });
+        Entity target = world.Create(new TestMotion { Position = new(5, 0, 1) });
+        Entity actor = world.Create(new TestMotion { Position = new(1, 0, 1) });
         navigation.AddAgent(actor, FlatMesh(), Profile(), new NavigationPolicy(), new NavigationGoal(target, 0.2f), 2);
 
         for (int frame = 0; frame < 60; frame++)
         {
-            world.Replace(target, new TestMotion { Position = new(5 + frame * 0.01f, 0, 1) });
+            world.Set(target, new TestMotion { Position = new(5 + frame * 0.01f, 0, 1) });
             navigation.ScheduleProgress(new ConsumeSteering(0.1f)
                 .ScheduleParallel(world, navigation.Schedule(0.1f, expansionBudget: 1).Steering)).Complete();
         }
 
-        Assert.True(world.Read<TestMotion>(actor).Position.X > 4);
-        Assert.Equal(world.Read<TestMotion>(target).Position, world.Read<NavigationPathResult>(actor).TargetPosition);
-        Assert.Equal(NavigationStatus.Arrived, world.Read<NavigationProgress>(actor).Status);
+        Assert.True(world.ReadValue<TestMotion>(actor).Position.X > 4);
+        Assert.Equal(world.ReadValue<TestMotion>(target).Position, world.ReadValue<NavigationPathResult>(actor).TargetPosition);
+        Assert.Equal(NavigationStatus.Arrived, world.ReadValue<NavigationProgress>(actor).Status);
     }
 
     [Fact]
@@ -39,116 +39,116 @@ public sealed class NavigationMovementTests
             WorkerCount = 4,
             ManagedPayloadPolicy = ManagedPayloadPolicy.Allow,
         });
-        using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using World world = new World(execution: new WorldJobs(scheduler));
         var profile = new NavigationProfile(
             [new(-0.2f, -0.2f), new(0.2f, -0.2f), new(0.2f, 0.2f), new(-0.2f, 0.2f)],
             1.8f, maximumSpeed: 2f);
         var navigation = new NavigationSystems<NavigationMesh, PolygonNavigationSearch,
             PolygonSearchState, TestMotion, TestMotionReader>(world);
-        Entity entity = world.CreateEntity(new TestMotion { Position = new(1, 0, 1) });
+        Entity entity = world.Create(new TestMotion { Position = new(1, 0, 1) });
         navigation.AddAgent(entity, ObstacleMesh(), profile, new NavigationPolicy(),
             new NavigationGoal(new Vector3(5, 0, 1), 0.1f), desiredSpeed: 2f);
 
-        for (int step = 0; step < 100 && world.Read<NavigationProgress>(entity).Status != NavigationStatus.Arrived; step++)
+        for (int step = 0; step < 100 && world.ReadValue<NavigationProgress>(entity).Status != NavigationStatus.Arrived; step++)
         {
             NavigationStep scheduled = navigation.Schedule(0.1f, expansionBudget: 2);
             JobHandle moved = new ConsumeSteering(0.1f).ScheduleParallel(world, scheduled.Steering);
             navigation.ScheduleProgress(moved).Complete();
-            Vector3 position = world.Read<TestMotion>(entity).Position;
+            Vector3 position = world.ReadValue<TestMotion>(entity).Position;
             Assert.False(position.X > 2.001f && position.X < 3.999f && position.Z < 1.999f);
         }
 
-        Assert.Equal(NavigationStatus.Arrived, world.Read<NavigationProgress>(entity).Status);
+        Assert.Equal(NavigationStatus.Arrived, world.ReadValue<NavigationProgress>(entity).Status);
     }
 
     [Fact]
     public void ReplacingTheGoalContinuesMovementTowardTheNewPoint()
     {
         using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using World world = new World(execution: new WorldJobs(scheduler));
         var navigation = new NavigationSystems<NavigationMesh, PolygonNavigationSearch,
             PolygonSearchState, TestMotion, TestMotionReader>(world);
-        Entity entity = world.CreateEntity(new TestMotion { Position = new(2, 0, 1) });
+        Entity entity = world.Create(new TestMotion { Position = new(2, 0, 1) });
         navigation.AddAgent(entity, FlatMesh(), Profile(), new NavigationPolicy(),
             new NavigationGoal(position: new(8, 0, 1)), desiredSpeed: 2f);
         Move(navigation, world);
-        NavigationPathResult previous = world.Read<NavigationPathResult>(entity);
-        Vector3 before = world.Read<TestMotion>(entity).Position;
+        NavigationPathResult previous = world.ReadValue<NavigationPathResult>(entity);
+        Vector3 before = world.ReadValue<TestMotion>(entity).Position;
 
-        world.Replace(entity, new NavigationGoal(position: new(1, 0, 1)));
+        world.Set(entity, new NavigationGoal(position: new(1, 0, 1)));
         Move(navigation, world);
 
-        NavigationPathResult changed = world.Read<NavigationPathResult>(entity);
+        NavigationPathResult changed = world.ReadValue<NavigationPathResult>(entity);
         Assert.True(changed.RequestVersion > previous.RequestVersion);
-        Assert.True(world.Read<TestMotion>(entity).Position.X < before.X);
+        Assert.True(world.ReadValue<TestMotion>(entity).Position.X < before.X);
     }
 
     [Fact]
     public void EntityGoalUsesTheTargetsCurrentPositionAndReportsDistanceToItsRange()
     {
         using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using World world = new World(execution: new WorldJobs(scheduler));
         var navigation = new NavigationSystems<NavigationMesh, PolygonNavigationSearch,
             PolygonSearchState, TestMotion, TestMotionReader>(world);
-        Entity target = world.CreateEntity(new TestMotion { Position = new(5, 0, 1) });
-        Entity entity = world.CreateEntity(new TestMotion { Position = new(1, 0, 1) });
+        Entity target = world.Create(new TestMotion { Position = new(5, 0, 1) });
+        Entity entity = world.Create(new TestMotion { Position = new(1, 0, 1) });
         navigation.AddAgent(entity, FlatMesh(), Profile(), new NavigationPolicy(),
             new NavigationGoal(target, arrivalRange: 0.5f), desiredSpeed: 2f);
         Move(navigation, world);
 
-        world.Replace(target, new TestMotion { Position = new(0, 0, 1) });
+        world.Set(target, new TestMotion { Position = new(0, 0, 1) });
         Move(navigation, world);
 
-        Assert.Equal(new Vector3(0, 0, 1), world.Read<NavigationPathResult>(entity).TargetPosition);
-        Assert.Equal(0.5f, world.Read<NavigationProgress>(entity).Distance, 4);
+        Assert.Equal(new Vector3(0, 0, 1), world.ReadValue<NavigationPathResult>(entity).TargetPosition);
+        Assert.Equal(0.5f, world.ReadValue<NavigationProgress>(entity).Distance, 4);
     }
 
     [Fact]
     public void GoalEnablementPausesAndResumesMovement()
     {
         using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using World world = new World(execution: new WorldJobs(scheduler));
         var navigation = new NavigationSystems<NavigationMesh, PolygonNavigationSearch,
             PolygonSearchState, TestMotion, TestMotionReader>(world);
-        Entity entity = world.CreateEntity(new TestMotion { Position = new(1, 0, 1) });
+        Entity entity = world.Create(new TestMotion { Position = new(1, 0, 1) });
         navigation.AddAgent(entity, FlatMesh(), Profile(), new NavigationPolicy(),
             new NavigationGoal(position: new(8, 0, 1)), desiredSpeed: 2f);
         Move(navigation, world);
-        Vector3 stoppedAt = world.Read<TestMotion>(entity).Position;
+        Vector3 stoppedAt = world.ReadValue<TestMotion>(entity).Position;
 
         world.Disable<NavigationGoal>(entity);
         Move(navigation, world);
-        NavigationProgress paused = world.Read<NavigationProgress>(entity);
-        Vector3 pausedAt = world.Read<TestMotion>(entity).Position;
+        NavigationProgress paused = world.ReadValue<NavigationProgress>(entity);
+        Vector3 pausedAt = world.ReadValue<TestMotion>(entity).Position;
         world.Enable<NavigationGoal>(entity);
         Move(navigation, world);
 
         Assert.Equal(stoppedAt, pausedAt);
         Assert.Equal(NavigationStatus.Idle, paused.Status);
-        Assert.True(world.Read<TestMotion>(entity).Position.X > pausedAt.X);
-        Assert.True(world.Read<NavigationProgress>(entity).RequestVersion > paused.RequestVersion);
+        Assert.True(world.ReadValue<TestMotion>(entity).Position.X > pausedAt.X);
+        Assert.True(world.ReadValue<NavigationProgress>(entity).RequestVersion > paused.RequestVersion);
     }
 
     [Fact]
     public void ArrivalWaitsForTheMovementConsumersActualHeading()
     {
         using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using World world = new World(execution: new WorldJobs(scheduler));
         var navigation = new NavigationSystems<NavigationMesh, PolygonNavigationSearch,
             PolygonSearchState, TestMotion, TestMotionReader>(world);
-        Entity entity = world.CreateEntity(new TestMotion { Position = new(1, 0, 1) });
+        Entity entity = world.Create(new TestMotion { Position = new(1, 0, 1) });
         navigation.AddAgent(entity, FlatMesh(), Profile(), new NavigationPolicy(),
             new NavigationGoal(position: new(1, 0, 1), heading: MathF.PI / 2), desiredSpeed: 2f);
 
         NavigationStep step = navigation.Schedule(0.1f, 8);
         JobHandle partlyTurned = new ConsumeHalfHeading().ScheduleParallel(world, step.Steering);
         navigation.ScheduleProgress(partlyTurned).Complete();
-        NavigationProgress turning = world.Read<NavigationProgress>(entity);
+        NavigationProgress turning = world.ReadValue<NavigationProgress>(entity);
         Move(navigation, world);
 
         Assert.Equal(NavigationStatus.Aligning, turning.Status);
         Assert.Equal(MathF.PI / 4, turning.HeadingError, 4);
-        Assert.Equal(NavigationStatus.Arrived, world.Read<NavigationProgress>(entity).Status);
+        Assert.Equal(NavigationStatus.Arrived, world.ReadValue<NavigationProgress>(entity).Status);
     }
 
     private static void Move(NavigationSystems<NavigationMesh, PolygonNavigationSearch,

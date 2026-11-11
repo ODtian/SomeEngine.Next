@@ -1,6 +1,5 @@
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Benchmarks.Relations;
-using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Job;
 
@@ -12,16 +11,16 @@ public sealed class KeyRelationTests
     public void KeyBucketsSelectSameCharacterPairsFromParticipatingBodies()
     {
         using var world = new World();
-        var characterA = world.CreateEntity();
-        var characterB = world.CreateEntity();
-        var first = world.CreateEntity(new Body());
-        var second = world.CreateEntity(new Body());
-        var third = world.CreateEntity(new Body());
+        var characterA = world.Create();
+        var characterB = world.Create();
+        var first = world.Create(new Body());
+        var second = world.Create(new Body());
+        var third = world.Create(new Body());
         world.Add(first, new Hair { Character = characterA });
         world.Add(second, new Hair { Character = characterA });
         world.Add(third, new Hair { Character = characterB });
-        world.CreateEntity(new Hair { Character = characterA });
-        var bodies = world.Query(world.QueryDefinition().All<Body>());
+        world.Create(new Hair { Character = characterA });
+        var bodies = world.Query(new QueryDescription().WithStored<Body>());
         var direct = new List<(Entity, Entity)>();
         var indexed = new List<(Entity, Entity)>();
         var directOutput = new PairList(direct);
@@ -32,23 +31,22 @@ public sealed class KeyRelationTests
 
         Assert.Equal(new[] { (first, second) }, direct);
         Assert.Equal(direct, indexed);
-        world.ReleaseQuery(bodies);
     }
 
     [Fact]
     public void KeyExceptKeepsOrdinaryBodiesInComposedRules()
     {
         using var world = new World();
-        var characterA = world.CreateEntity();
-        var characterB = world.CreateEntity();
-        var first = world.CreateEntity(new Body { Kind = MotionKind.Dynamic });
-        var second = world.CreateEntity(new Body { Kind = MotionKind.Dynamic });
-        var third = world.CreateEntity(new Body { Kind = MotionKind.Dynamic });
-        var ordinary = world.CreateEntity(new Body { Kind = MotionKind.Static });
+        var characterA = world.Create();
+        var characterB = world.Create();
+        var first = world.Create(new Body { Kind = MotionKind.Dynamic });
+        var second = world.Create(new Body { Kind = MotionKind.Dynamic });
+        var third = world.Create(new Body { Kind = MotionKind.Dynamic });
+        var ordinary = world.Create(new Body { Kind = MotionKind.Static });
         world.Add(first, new Hair { Character = characterA });
         world.Add(second, new Hair { Character = characterA });
         world.Add(third, new Hair { Character = characterB });
-        var bodies = world.Query(world.QueryDefinition().All<Body>());
+        var bodies = world.Query(new QueryDescription().WithStored<Body>());
         var pairs = new List<(Entity, Entity)>();
         var output = new PairList(pairs);
 
@@ -62,25 +60,24 @@ public sealed class KeyRelationTests
             (first, third), (first, ordinary), (second, third), (second, ordinary), (third, ordinary)]));
         Assert.Equal(5, world.Within(bodies).Where(default(DefaultContacts))
             .Except(default(SameCharacterHair), default(HairCharacterIndex)).Count());
-        world.ReleaseQuery(bodies);
     }
 
     [Fact]
     public void KeyProductKeepsInputRolesAndSemanticParameters()
     {
         using var world = new World();
-        var characterA = world.CreateEntity();
-        var characterB = world.CreateEntity();
-        var first = world.CreateEntity(new Hair { Character = characterA });
-        var second = world.CreateEntity(new Hair { Character = characterA });
-        var third = world.CreateEntity(new Hair { Character = characterB });
-        world.AddTag<LeftSet>(second);
-        world.AddTag<LeftSet>(third);
-        world.AddTag<RightSet>(first);
-        world.AddTag<RightSet>(second);
-        world.AddTag<RightSet>(third);
-        var left = world.Query(world.QueryDefinition().All<LeftSet>());
-        var right = world.Query(world.QueryDefinition().All<RightSet>());
+        var characterA = world.Create();
+        var characterB = world.Create();
+        var first = world.Create(new Hair { Character = characterA });
+        var second = world.Create(new Hair { Character = characterA });
+        var third = world.Create(new Hair { Character = characterB });
+        world.Add(second, new LeftSet());
+        world.Add(third, new LeftSet());
+        world.Add(first, new RightSet());
+        world.Add(second, new RightSet());
+        world.Add(third, new RightSet());
+        var left = world.Query(new QueryDescription().WithStored<LeftSet>());
+        var right = world.Query(new QueryDescription().WithStored<RightSet>());
         var pairs = new List<(Entity, Entity)>();
         var output = new PairList(pairs);
         RelationQuery<KeyPairs<KeyProduct2, SelectedCharacterHair, SelectedCharacterIndex, Hair, Entity>, (Entity, Entity)> selected =
@@ -90,28 +87,26 @@ public sealed class KeyRelationTests
 
         Assert.Equal(2, pairs.Count);
         Assert.True(pairs.ToHashSet().SetEquals([(second, first), (second, second)]));
-        world.ReleaseQuery(left);
-        world.ReleaseQuery(right);
     }
 
     [Fact]
     public void KeyBetweenOrdersPairsAndDeduplicatesOverlap()
     {
         using var world = new World();
-        var characterA = world.CreateEntity();
-        var characterB = world.CreateEntity();
-        var first = world.CreateEntity(new Hair { Character = characterA });
-        var second = world.CreateEntity(new Hair { Character = characterA });
-        var third = world.CreateEntity(new Hair { Character = characterA });
-        var fourth = world.CreateEntity(new Hair { Character = characterB });
-        world.AddTag<RightSet>(first);
-        world.AddTag<LeftSet>(second);
-        world.AddTag<RightSet>(second);
-        world.AddTag<LeftSet>(third);
-        world.AddTag<RightSet>(third);
-        world.AddTag<LeftSet>(fourth);
-        var left = world.Query(world.QueryDefinition().All<LeftSet>());
-        var right = world.Query(world.QueryDefinition().All<RightSet>());
+        var characterA = world.Create();
+        var characterB = world.Create();
+        var first = world.Create(new Hair { Character = characterA });
+        var second = world.Create(new Hair { Character = characterA });
+        var third = world.Create(new Hair { Character = characterA });
+        var fourth = world.Create(new Hair { Character = characterB });
+        world.Add(first, new RightSet());
+        world.Add(second, new LeftSet());
+        world.Add(second, new RightSet());
+        world.Add(third, new LeftSet());
+        world.Add(third, new RightSet());
+        world.Add(fourth, new LeftSet());
+        var left = world.Query(new QueryDescription().WithStored<LeftSet>());
+        var right = world.Query(new QueryDescription().WithStored<RightSet>());
         var pairs = new List<(Entity, Entity)>();
         var output = new PairList(pairs);
         RelationQuery<KeyPairs<KeyPairsBetween, SameCharacterHair, HairCharacterIndex, Hair, Entity>, (Entity, Entity)> selected =
@@ -122,24 +117,22 @@ public sealed class KeyRelationTests
         Assert.Equal(3, pairs.Count);
         Assert.True(pairs.ToHashSet().SetEquals([(first, second), (first, third), (second, third)]));
         Assert.Equal(3, world.Between(left, right).Except(default(SameCharacterHair), default(HairCharacterIndex)).Count());
-        world.ReleaseQuery(left);
-        world.ReleaseQuery(right);
     }
 
     [Fact]
     public void HandwrittenKeyBucketsReturnTheTypedImplementationRows()
     {
         using var world = new World();
-        var characterA = world.CreateEntity();
-        var characterB = world.CreateEntity();
-        var first = world.CreateEntity(new Body());
-        var second = world.CreateEntity(new Body());
-        var third = world.CreateEntity(new Body());
-        var ordinary = world.CreateEntity(new Body());
+        var characterA = world.Create();
+        var characterB = world.Create();
+        var first = world.Create(new Body());
+        var second = world.Create(new Body());
+        var third = world.Create(new Body());
+        var ordinary = world.Create(new Body());
         world.Add(first, new Hair { Character = characterA });
         world.Add(second, new Hair { Character = characterA });
         world.Add(third, new Hair { Character = characterB });
-        var bodies = world.Query(world.QueryDefinition().All<Body>());
+        var bodies = world.Query(new QueryDescription().WithStored<Body>());
         var indexed = new List<(Entity, Entity)>();
         var handwritten = new List<(Entity, Entity)>();
         var indexedOutput = new PairList(indexed);
@@ -152,21 +145,20 @@ public sealed class KeyRelationTests
         Assert.True(handwritten.ToHashSet().SetEquals([
             (first, third), (first, ordinary), (second, third), (second, ordinary), (third, ordinary)]));
         Assert.True(indexed.ToHashSet().SetEquals(handwritten));
-        world.ReleaseQuery(bodies);
     }
 
     [Fact]
     public void KeyBetweenBindsKeysAfterIdentityOrdering()
     {
         using var world = new World();
-        var characterA = world.CreateEntity();
-        var characterB = world.CreateEntity();
-        var first = world.CreateEntity(new Hair { Character = characterA });
-        var second = world.CreateEntity(new Hair { Character = characterB });
-        world.AddTag<RightSet>(first);
-        world.AddTag<LeftSet>(second);
-        var left = world.Query(world.QueryDefinition().All<LeftSet>());
-        var right = world.Query(world.QueryDefinition().All<RightSet>());
+        var characterA = world.Create();
+        var characterB = world.Create();
+        var first = world.Create(new Hair { Character = characterA });
+        var second = world.Create(new Hair { Character = characterB });
+        world.Add(first, new RightSet());
+        world.Add(second, new LeftSet());
+        var left = world.Query(new QueryDescription().WithStored<LeftSet>());
+        var right = world.Query(new QueryDescription().WithStored<RightSet>());
         var pairs = new List<(Entity, Entity)>();
         var output = new PairList(pairs);
 
@@ -174,19 +166,17 @@ public sealed class KeyRelationTests
             .Enumerate(ref output);
 
         Assert.Equal(new[] { (first, second) }, pairs);
-        world.ReleaseQuery(left);
-        world.ReleaseQuery(right);
     }
 
     [Fact]
     public void KeyBucketsForwardRefStructOutputAndEarlyStop()
     {
         using var jobs = new Scheduler(new JobConfiguration { WorkerCount = 0, SafetyMode = JobSafetyMode.Checked });
-        using var world = WorldJobs.CreateWorld(scheduler: jobs);
-        var first = world.CreateEntity(new IndexedWord { Value = "cloth" });
-        var second = world.CreateEntity(new IndexedWord { Value = "cloth" });
-        var third = world.CreateEntity(new IndexedWord { Value = "cloth" });
-        var words = world.Query(world.QueryDefinition().Read<IndexedWord>());
+        using var world = new World(execution: new WorldJobs(jobs));
+        var first = world.Create(new IndexedWord { Value = "cloth" });
+        var second = world.Create(new IndexedWord { Value = "cloth" });
+        var third = world.Create(new IndexedWord { Value = "cloth" });
+        var words = world.Query(new QueryDescription().WithStored<IndexedWord>());
         Span<(Entity, Entity)> result = stackalloc (Entity, Entity)[1];
         var output = new FirstPair(result);
         var selected = world.Within(words)
@@ -199,36 +189,28 @@ public sealed class KeyRelationTests
         Assert.Equal(1, output.Count);
         Assert.Contains(result[0], new[] { (first, second), (first, third), (second, third) });
         Assert.True(selected.Any());
-        world.ReleaseQuery(words);
     }
 
     [Fact]
-    public void KeyPairsFollowReferenceWritesComponentChangesAndEntityDestruction()
+    public void KeyPairsFollowIndexedWritesComponentChangesAndEntityDestruction()
     {
         using var world = new World();
-        var characterA = world.CreateEntity();
-        var characterB = world.CreateEntity();
-        var first = world.CreateEntity(new Body());
-        var second = world.CreateEntity(new Body());
-        var third = world.CreateEntity(new Body());
+        var characterA = world.Create();
+        var characterB = world.Create();
+        var first = world.Create(new Body());
+        var second = world.Create(new Body());
+        var third = world.Create(new Body());
         world.Add(first, new Hair { Character = characterA });
         world.Add(second, new Hair { Character = characterA });
         world.Add(third, new Hair { Character = characterB });
-        var bodies = world.Query(world.QueryDefinition().All<Body>());
+        var bodies = world.Query(new QueryDescription().WithStored<Body>());
         var selected = world.Within(bodies).Where(default(SameCharacterHair), default(HairCharacterIndex));
         var pairs = new List<(Entity, Entity)>();
         var output = new PairList(pairs);
         selected.Enumerate(ref output);
         Assert.Equal(new[] { (first, second) }, pairs);
 
-        var writes = world.Query(world.QueryDefinition().ReadWrite<Hair>());
-        world.ExecuteQuery(writes, query =>
-        {
-            foreach (var row in query.Rows)
-                if (row.Entity == second)
-                    row.ReadWrite<Hair>().Character = characterB;
-        });
-        world.ReleaseQuery(writes);
+        world.Set(second, new Hair { Character = characterB });
         pairs.Clear();
         selected.Enumerate(ref output);
         Assert.Equal(new[] { (second, third) }, pairs);
@@ -243,11 +225,10 @@ public sealed class KeyRelationTests
         selected.Enumerate(ref output);
         Assert.Equal(new[] { (first, third) }, pairs);
 
-        world.DestroyEntity(first);
+        world.Destroy(first);
         pairs.Clear();
         selected.Enumerate(ref output);
         Assert.Empty(pairs);
-        world.ReleaseQuery(bodies);
     }
 
     private ref struct FirstPair : IRelationOutput<(Entity, Entity)>

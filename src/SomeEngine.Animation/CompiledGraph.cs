@@ -4,7 +4,6 @@ using SomeEngine.Core.Diagnostics;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
 
 namespace SomeEngine.Animation;
 
@@ -15,7 +14,7 @@ public unsafe struct CompiledGraph : IDisposable
     private readonly int _version;
     internal CompiledGraph(GraphData[] data) => (_data, _version) = (data, data[0].Version);
 
-    public ReadOnlySpan<QueryDefinition> Inputs => _data![0].Inputs;
+    public ReadOnlySpan<QueryDescription> Inputs => _data![0].Inputs;
 
     public Entity Play(World world, Entity target = default)
     {
@@ -36,11 +35,13 @@ public unsafe struct CompiledGraph : IDisposable
                     root = animation;
                 else
                 {
-                    if (!world.HasBuffer<GraphBranch>(root))
+                    if (!world.Has<Buffer<GraphBranch>>(root))
                         world.AddBuffer<GraphBranch>(root);
                     var branch = new GraphBranch { Id = data.Parts[part].Id, Animation = animation };
-                    world.ExecuteBufferWrite<GraphBranch, GraphBranch>(root, ref branch,
-                        static (DynamicBuffer<GraphBranch> branches, ref GraphBranch branch) => branches.Add(branch));
+                    {
+                        using var branches = world.GetBuffer<GraphBranch>(root);
+                        branches.Add(branch);
+                    }
                 }
             }
         }
@@ -69,25 +70,27 @@ public unsafe struct CompiledGraph : IDisposable
         Entity animation = inline == Entity.Null ? RentEntity(world) : inline;
         if (!world.Has<Timeline>(animation))
             world.Add(animation, new Timeline());
-        if (world.HasBuffer<GraphBranch>(animation))
-            world.ExecuteBufferWrite<GraphBranch>(animation, static branches => branches.Clear());
-        Timeline previous = world.Read<Timeline>(animation);
+        if (world.Has<Buffer<GraphBranch>>(animation))
+        {
+            using var branches = world.GetBuffer<GraphBranch>(animation);
+            branches.Clear();
+        }
+        Timeline previous = world.ReadComponentData<Timeline>(animation);
         PropertyAnimation.Stop(world, animation);
         var timeline = new Timeline { Starts = previous.Starts + 1, Completions = previous.Completions };
         if (sharedTime != Entity.Null)
-            timeline = world.Read<Timeline>(sharedTime);
-        world.Replace(animation, timeline);
+            timeline = world.ReadComponentData<Timeline>(sharedTime);
+        world.Set(animation, timeline);
         GraphPlayback.Start(world, animation, _data, part, sharedTime);
-        if (!world.HasBuffer<TimelineStage>(animation))
+        if (!world.Has<Buffer<TimelineStage>>(animation))
             world.AddBuffer<TimelineStage>(animation);
         var stages = data.Parts![part];
-        world.ExecuteBufferWrite<TimelineStage, GraphPart>(animation, ref stages,
-            static (DynamicBuffer<TimelineStage> buffer, ref GraphPart stages) =>
-            {
-                buffer.Clear();
-                for (int i = 0; i < stages.StageCount; i++)
-                    buffer.Add(stages.Stages![i]);
-            });
+        {
+            using var buffer = world.GetBuffer<TimelineStage>(animation);
+            buffer.Clear();
+            for (int i = 0; i < stages.StageCount; i++)
+                buffer.Add(stages.Stages![i]);
+        }
         for (int i = 0; i < data.TrackCount; i++)
         {
             GraphTrack track = data.Tracks![i];
@@ -102,34 +105,41 @@ public unsafe struct CompiledGraph : IDisposable
             if (track.Part == part && track.Node.Leaf is { } leaf && leaves.Add(leaf.Type))
                 leaf.Complete(world, animation);
         }
-        world.Replace(animation, timeline);
+        world.Set(animation, timeline);
         world.Enable<Timeline>(animation);
         return animation;
     }
 
     private static Entity RentEntity(World world)
     {
-        QueryHandle query = world.Query(GraphQueries.Pool);
+        Query query = world.Query(GraphQueries.Pool);
         Entity available = Entity.Null;
         try
         {
             var search = (World: world, Available: available);
-            world.ExecuteQuery(query, ref search, static (QueryCursor rows, ref (World World, Entity Available) search) =>
             {
-                foreach (QueryRow row in rows.Rows)
-                    if (!search.World.IsEnabled<Timeline>(row.Entity))
-                    {
-                        search.Available = row.Entity;
-                        break;
-                    }
-            });
+                using QueryScope read = query.Open();
+                Visit(in read, ref search);
+
+                static void Visit(scoped in QueryScope rows, ref (World World, Entity Available) search)
+                {
+                    foreach (QueryChunk chunk in rows)
+                        for (int rowIndex = 0; rowIndex < chunk.Count; rowIndex++)
+                            if (!search.World.IsEnabled<Timeline>(chunk.Entities[rowIndex]))
+                            {
+                                search.Available = chunk.Entities[rowIndex];
+                                break;
+                            }
+
+                }
+            }
             available = search.Available;
         }
-        finally { world.ReleaseQuery(query); }
+        finally { }
         if (available == Entity.Null)
         {
-            available = world.CreateEntity(new Timeline());
-            world.AddTag<PooledGraph>(available);
+            available = world.Create(new Timeline());
+            world.Add(available, default(PooledGraph));
         }
         return available;
     }
@@ -198,7 +208,7 @@ internal struct GraphData
     public int[]? GroupMotions, TransitionNodes, BlendMotions, PartGroups;
     public int GroupCount, MotionCount, References, CompileReference, Version;
     public GraphParameters Parameters;
-    public QueryDefinition[]? Inputs;
+    public QueryDescription[]? Inputs;
     private static int _nextVersion;
     public static int NextVersion() => Interlocked.Increment(ref _nextVersion);
 
@@ -254,78 +264,97 @@ internal static class GraphTracks
         if (source.Node.DefinesLayer)
         {
             bool exists = world.Has<AnimationLayers>(target);
-            AnimationLayers layers = exists ? world.Read<AnimationLayers>(target) : default;
+            AnimationLayers layers = exists ? world.ReadComponentData<AnimationLayers>(target) : default;
             while (layers.Count <= source.Node.Layer)
                 layers.Items[layers.Count++] = new AnimationLayer { Weight = 1 };
             layers.Items[source.Node.Layer] = source.Node.LayerDefinition;
             if (exists)
-                world.Replace(target, layers);
+                world.Set(target, layers);
             else
                 world.Add(target, layers);
         }
         PropertyAnimation.Declare<T>(world, animation);
         var track = new Track<T>
         {
-            Target = target == animation ? Entity.Null : target, Channel = channel, To = value,
-            Duration = source.Node.Spec.Duration, Curve = source.Node.Spec.Curve, Layer = source.Node.Layer,
-            Stage = source.Stage, Start = source.Start, SampleTime = source.Start, StartId = starts,
-            Endpoints = source.Node.Endpoints, CaptureStart = true,
-            GraphMotion = source.Motion, GraphGroup = source.Group, MotionStage = source.MotionStage,
+            Target = target == animation ? Entity.Null : target,
+            Channel = channel,
+            To = value,
+            Duration = source.Node.Spec.Duration,
+            Curve = source.Node.Spec.Curve,
+            Layer = source.Node.Layer,
+            Stage = source.Stage,
+            Start = source.Start,
+            SampleTime = source.Start,
+            StartId = starts,
+            Endpoints = source.Node.Endpoints,
+            CaptureStart = true,
+            GraphMotion = source.Motion,
+            GraphGroup = source.Group,
+            MotionStage = source.MotionStage,
             GraphOutput = source.Output,
             FromGraph = true,
         };
         var addition = (Track: track, Shared: false);
-        world.ExecuteBufferWrite<Track<T>, (Track<T> Track, bool Shared)>(animation, ref addition,
-            static (DynamicBuffer<Track<T>> tracks, ref (Track<T> Track, bool Shared) addition) =>
-            {
-                Track<T> track = addition.Track;
-                if (tracks.Count > 0 && tracks.Read(0).StartId != track.StartId)
-                    tracks.Clear();
-                foreach (Track<T> other in tracks.AsSpan())
-                    if (other.Target == track.Target && other.Channel == track.Channel &&
-                        (other.Layer != track.Layer || other.GraphGroup != track.GraphGroup))
-                        addition.Shared = true;
-                tracks.Add(track);
-            });
+        {
+            using var tracks = world.GetBuffer<Track<T>>(animation);
+            Track<T> additionTrack = addition.Track;
+            if (tracks.Count > 0 && tracks[0].StartId != additionTrack.StartId)
+                tracks.Clear();
+            foreach (Track<T> other in tracks.AsSpan())
+                if (other.Target == additionTrack.Target && other.Channel == additionTrack.Channel &&
+                    (other.Layer != additionTrack.Layer || other.GraphGroup != additionTrack.GraphGroup))
+                    addition.Shared = true;
+            tracks.Add(track);
+        }
         if ((addition.Shared || HasOtherSource(world, animation, target, channel)) &&
-            !world.HasBuffer<Contribution<T>>(target))
+            !world.Has<Buffer<Contribution<T>>>(target))
             world.AddBuffer<Contribution<T>>(target);
     }
 
     private static bool HasOtherSource<T>(World world, Entity animation, Entity target, Channel<T> channel) where T : unmanaged
     {
-        QueryHandle query = world.Query(GraphTrackQueries<T>.Sources);
+        Query query = world.Query(GraphTrackQueries<T>.Sources);
         var field = (Animation: animation, Target: target, Channel: channel, Shared: false);
         try
         {
-            world.ExecuteQuery(query, ref field,
-                static (QueryCursor rows, ref (Entity Animation, Entity Target, Channel<T> Channel, bool Shared) field) =>
+            {
+                using QueryScope read = query.Open();
+                Visit(in read, ref field);
+
+                static void Visit(scoped in QueryScope rows, ref (Entity Animation, Entity Target, Channel<T> Channel, bool Shared) field)
                 {
-                    foreach (QueryRow row in rows.Rows)
+                    foreach (QueryChunk chunk in rows)
                     {
-                        if (row.Entity == field.Animation)
-                            continue;
-                        uint starts = row.Read<Timeline>().Starts;
-                        foreach (Track<T> track in row.ReadBuffer<Track<T>>().AsSpan())
+                        chunk.TryRead<Timeline>(out var values0);
+                        for (int rowIndex = 0; rowIndex < chunk.Count; rowIndex++)
                         {
-                            Entity target = track.Target == Entity.Null ? row.Entity : track.Target;
-                            if (target == field.Target && track.Channel == field.Channel && track.StartId == starts &&
-                                (!track.Finished || track.FromGraph))
+                            if (chunk.Entities[rowIndex] == field.Animation)
+                                continue;
+                            uint starts = values0[rowIndex].Starts;
+                            foreach (Track<T> track in chunk.ReadBuffer<Track<T>>(rowIndex).AsSpan())
                             {
-                                field.Shared = true;
-                                return;
+                                Entity target = track.Target == Entity.Null ? chunk.Entities[rowIndex] : track.Target;
+                                if (target == field.Target && track.Channel == field.Channel && track.StartId == starts &&
+                                    (!track.Finished || track.FromGraph))
+                                {
+                                    field.Shared = true;
+                                    return;
+                                }
                             }
+
                         }
                     }
-                });
+
+                }
+            }
         }
-        finally { world.ReleaseQuery(query); }
+        finally { }
         return field.Shared;
     }
 }
 
 internal static class GraphTrackQueries<T> where T : unmanaged
 {
-    internal static readonly QueryDefinition Sources = new QueryDefinitionBuilder()
-        .Read<Timeline>().Enabled<Timeline>().ReadBuffer<Track<T>>().Build();
+    internal static readonly QueryDescription Sources = new QueryDescription()
+        .WithStored<Timeline>().With<Timeline>().WithStored<Buffer<Track<T>>>();
 }

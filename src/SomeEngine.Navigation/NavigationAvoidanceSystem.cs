@@ -2,7 +2,6 @@ using System.Numerics;
 using System.Runtime.InteropServices;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Job;
 
@@ -15,24 +14,22 @@ public sealed class NavigationAvoidanceSystem<TSolver, TMotion, TReader>(World w
     where TReader : struct, INavigationMotionReader<TMotion>
 {
     private JobHandle _completion;
-    private readonly QueryDefinition _actors = world.QueryDefinition()
-        .All<NavigationAgent>().All<AvoidanceAgent>().All<TMotion>().Build();
+    private readonly QueryDescription _actors = new QueryDescription()
+        .WithStored<NavigationAgent>().WithStored<AvoidanceAgent>().WithStored<TMotion>();
 
     public JobHandle SchedulePathBoundaries<TSpace>(JobHandle motionReady = default)
         where TSpace : class, INavigationSpace<TSpace> =>
         new NavigationPathBoundaries<TSpace, TMotion, TReader>().ScheduleParallel(world,
-            WorldJobs.CombineDependencies(world, [_completion, motionReady]));
+            world.Execution!.Scheduler!.CombineDependencies([_completion, motionReady]));
 
     public JobHandle ScheduleFlowBoundaries(JobHandle motionReady = default) =>
         new NavigationFlowBoundaries<TMotion, TReader>().ScheduleParallel(world,
-            WorldJobs.CombineDependencies(world, [_completion, motionReady]));
+            world.Execution!.Scheduler!.CombineDependencies([_completion, motionReady]));
 
     public JobHandle Schedule(float deltaTime, JobHandle guidanceReady, JobHandle neighborsReady, JobHandle boundariesReady)
     {
-        JobHandle ready = WorldJobs.CombineDependencies(world, [_completion, guidanceReady, neighborsReady, boundariesReady]);
-        _completion = new NavigationAvoidanceJob<TSolver>(neighbors.Data, deltaTime).ScheduleParallel(world,
-            [JobResourceAccess.Read(neighbors.Scheduler.GetResourceToken(neighbors.Data))],
-            new JobEntityScheduleOptions(filter: _actors), ready);
+        JobHandle ready = world.Execution!.Scheduler!.CombineDependencies([_completion, guidanceReady, neighborsReady, boundariesReady]);
+        _completion = new NavigationAvoidanceJob<TSolver>(neighbors.Data, deltaTime).ScheduleParallel(world, dependency: ready, query: world.Query(_actors));
         return _completion;
     }
 }
@@ -84,6 +81,8 @@ internal readonly struct FlowBoundaryResources : IJobComponentResources<FlowFoll
 internal partial struct NavigationAvoidanceJob<TSolver>(NavigationNeighbors neighbors, float deltaTime) : IJobEntity
     where TSolver : struct, INavigationAvoidanceSolver
 {
+    public void CollectAdditionalResources(ref JobResourceAccessBuilder resources) => resources.Read(_neighbors);
+
     private readonly NavigationNeighbors _neighbors = neighbors;
     private readonly float _deltaTime = deltaTime;
 

@@ -3,7 +3,6 @@ using System.Runtime.InteropServices;
 using SomeEngine.Core.Diagnostics;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
 
 namespace SomeEngine.Views;
 
@@ -25,7 +24,7 @@ public static class RebuildDiagnostics
     public static ReadOnlySpan<RebuildRecord> LastFrame(World world)
     {
         DevelopmentCheck.Require(world is not null, "Rebuild diagnostics require a World.");
-        return s_frames is { } frames && frames.TryGetValue(world, out var records)
+        return s_frames is { } frames && frames.TryGetValue(world!, out var records)
             ? CollectionsMarshal.AsSpan(records) : [];
     }
 
@@ -40,9 +39,9 @@ public static class RebuildDiagnostics
         frames.GetValue(world, static _ => new()).Clear();
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal static void Record<T>(World world, Entity view, ulong frame, bool firstBuild, uint parameterVersion) where T : struct, IView
+    internal static void Record<T>(World world, Entity view, ulong frame, bool firstBuild, ulong parameterVersion) where T : struct, IView
     {
-        if (s_frames is { } frames && frames.TryGetValue(world, out var records))
+        if (s_frames is { } frames && frames.TryGetValue(world!, out var records))
             RecordSources(world, view, frame, records, firstBuild, T.Mode == BuildMode.Rerun, ComponentId<T>.Value, parameterVersion);
     }
 
@@ -57,7 +56,7 @@ public static class RebuildDiagnostics
     }
 
     private static void RecordSources(World world, Entity view, ulong frame, List<RebuildRecord> records,
-        bool firstBuild, bool rerun, ushort component, uint parameterVersion)
+        bool firstBuild, bool rerun, int component, ulong parameterVersion)
     {
         if (firstBuild)
         {
@@ -74,16 +73,15 @@ public static class RebuildDiagnostics
 
     private static void RecordDependencies(World world, Entity view, List<RebuildRecord> records)
     {
-        if (!world.HasBuffer<Dependency>(view))
+        if (!world.Has<Buffer<Dependency>>(view))
             return;
 
         var changes = (World: world, View: view, Records: records);
-        world.ExecuteBufferRead<Dependency, (World World, Entity View, List<RebuildRecord> Records)>(
-            view, ref changes, static (buffer, ref result) =>
-            {
+        {
+            using var buffer = world.ReadBuffer<Dependency>(view);
                 foreach (Dependency dependency in buffer.AsSpan())
-                    RecordDependency(result.World, result.View, result.Records, dependency);
-            });
+                    RecordDependency(changes.World, changes.View, changes.Records, dependency);
+        }
     }
 
     private static void RecordDependency(World world, Entity view, List<RebuildRecord> records, Dependency read)
@@ -102,10 +100,10 @@ public static class RebuildDiagnostics
 
 /// <summary>A rebuilt view and the entity component that caused its rebuild.</summary>
 /// <remarks>First builds use Entity.Null as Source and zero as Component. Parameter changes use the view as Source.</remarks>
-public readonly record struct RebuildRecord(Entity View, Entity Source, ushort Component)
+public readonly record struct RebuildRecord(Entity View, Entity Source, int Component)
 {
     /// <summary>The query whose membership changed, or an invalid handle for entity sources and first builds.</summary>
-    public QueryHandle Query { get; init; }
+    public Query Query { get; init; }
 
     /// <summary>The State, Memo, or version cell whose observed data changed.</summary>
     public VersionCell? SourceObject { get; init; }

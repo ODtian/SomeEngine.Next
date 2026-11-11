@@ -1,6 +1,5 @@
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Render.Components;
 using SomeEngine.Render.Systems;
@@ -30,13 +29,13 @@ public sealed partial class TerrainRenderExtractor : IRenderExtractionSystem
 
     private readonly TerrainSources _inputs = new();
 
-    public void Collect(QueryChunkView chunk) => CollectInputs(chunk, true);
+    public void Collect(QueryChunk chunk) => CollectInputs(chunk, 0, true);
 
-    public bool CollectChanges(QueryChunkView chunk, RenderExtractionContext context) => CollectInputs(chunk, false);
+    public bool CollectChanges(QueryChunk chunk, ulong since, RenderExtractionContext context) => CollectInputs(chunk, since, false);
 
-    private bool CollectInputs(QueryChunkView chunk, bool fullCollection)
+    private bool CollectInputs(QueryChunk chunk, ulong since, bool fullCollection)
     {
-        _inputs.Collect(ReadOnlyQueryPacketJobs.Borrow(chunk), chunk.LastSystemVersion, fullCollection);
+        _inputs.Collect(chunk, since, fullCollection);
         bool changed = MergeInputs(_inputs);
         _inputs.Reset();
         return changed;
@@ -85,4 +84,4 @@ public sealed partial class TerrainRenderExtractor : IRenderExtractionSystem
     }
 }
 
-internal readonly record struct RenderTerrainRequests(TerrainDataRequest[] Requests) : IComponent;
+internal readonly record struct RenderTerrainRequests(TerrainDataRequest[] Requests) : IComponent, ITrackedComponent;

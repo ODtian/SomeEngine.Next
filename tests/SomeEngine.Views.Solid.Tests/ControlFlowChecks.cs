@@ -31,16 +31,16 @@ public static partial class ControlFlowChecks
         frames.Frame();
         Entity sample = text.Sample;
         Entity binding = text.Binding;
-        frames.World.Replace(root, new ValueSource(second, text));
+        frames.World.Set(root, new ValueSource(second, text));
         frames.Frame();
         Require(text.Sample == sample && text.Binding == binding, "Show retains its selected branch and text nodes.");
-        Require(frames.World.Read<Elements.Text>(binding).Value == "second", "The retained getter follows the current condition source.");
-        Require(frames.World.Read<Elements.Text>(sample).Value == "first", "The branch keeps its initial sampled text.");
+        Require(frames.World.ReadComponentData<Elements.Text>(binding).Value == "second", "The retained getter follows the current condition source.");
+        Require(frames.World.ReadComponentData<Elements.Text>(sample).Value == "first", "The branch keeps its initial sampled text.");
         Require(text.Value!() == "second", "The getter reads the latest condition when called outside a build.");
         first.Value = "previous source";
         second.Value = "third";
         frames.Frame();
-        Require(frames.World.Read<Elements.Text>(binding).Value == "third", "The retained binding tracks the new source's updates.");
+        Require(frames.World.ReadComponentData<Elements.Text>(binding).Value == "third", "The retained binding tracks the new source's updates.");
     }
 
     private sealed class ValueText
@@ -85,7 +85,7 @@ public static partial class ControlFlowChecks
         using var frames = new SolidFrames();
         var count = new State<int>(1);
         var sample = new State<string>("first");
-        Entity output = frames.World.CreateEntity(new Display("empty"));
+        Entity output = frames.World.Create(new Display("empty"));
         Entity label = Entity.Null;
         Entity fallback = Entity.Null;
         Views.Spawn(frames.World, Entity.Null, new OnceView(() => Show(() => count.Value > 0, () =>
@@ -99,22 +99,22 @@ public static partial class ControlFlowChecks
         sample.Value = "second";
         count.Value = 2;
         frames.Frame();
-        Require(label == first && frames.World.Read<Elements.Text>(label).Value == "first",
+        Require(label == first && frames.World.ReadComponentData<Elements.Text>(label).Value == "first",
             "Show preserves Once content when its reads or its true condition's source change.");
-        Require(frames.World.Read<Display>(output).Value == "second", "Effects in active content follow their own reads.");
+        Require(frames.World.ReadComponentData<Display>(output).Value == "second", "Effects in active content follow their own reads.");
 
         count.Value = 0;
         sample.Value = "removed";
         frames.Frame();
-        Require(!frames.World.IsAlive(first) && frames.World.Read<Elements.Text>(fallback).Value == "fallback",
+        Require(!frames.World.Has<global::SomeEngine.Views.ViewType>(first) && frames.World.ReadComponentData<Elements.Text>(fallback).Value == "fallback",
             "Show releases its previous content and creates the fallback.");
-        Require(frames.World.Read<Display>(output).Value == "second", "Released content stops writing external data.");
+        Require(frames.World.ReadComponentData<Display>(output).Value == "second", "Released content stops writing external data.");
         Entity empty = fallback;
 
         count.Value = 1;
         frames.Frame();
-        Require(!frames.World.IsAlive(empty) && label != first &&
-            frames.World.Read<Elements.Text>(label).Value == "removed", "Returning to Show content creates new nodes.");
+        Require(!frames.World.Has<global::SomeEngine.Views.ViewType>(empty) && label != first &&
+            frames.World.ReadComponentData<Elements.Text>(label).Value == "removed", "Returning to Show content creates new nodes.");
     }
 
     private static void ValueBranches(bool keyed)
@@ -135,30 +135,30 @@ public static partial class ControlFlowChecks
 
         name.Value = "second";
         frames.Frame();
-        Require((sampled != firstSample) == keyed && frames.World.IsAlive(firstSample) == !keyed,
+        Require((sampled != firstSample) == keyed && frames.World.Has<global::SomeEngine.Views.ViewType>(firstSample) == !keyed,
             "The keyed option determines whether changed present values create new content.");
-        Require(frames.World.Read<Elements.Text>(sampled).Value == (keyed ? "second" : "first") &&
-            frames.World.Read<Elements.Text>(bound).Value == "second", "Value getters update bindings on the selected branch.");
+        Require(frames.World.ReadComponentData<Elements.Text>(sampled).Value == (keyed ? "second" : "first") &&
+            frames.World.ReadComponentData<Elements.Text>(bound).Value == "second", "Value getters update bindings on the selected branch.");
         if (!keyed)
             Require(bound == firstBinding, "Unkeyed bindings keep their node when their value changes.");
         sampled.SetText(frames.World, "edited");
         Entity secondSample = sampled;
         name.Value = "second";
         frames.Frame();
-        Require(sampled == secondSample && frames.World.Read<Elements.Text>(sampled).Value == "edited",
+        Require(sampled == secondSample && frames.World.ReadComponentData<Elements.Text>(sampled).Value == "edited",
             "Equal condition values preserve edited branch content.");
 
         Entity secondBinding = bound;
         name.Value = null;
         frames.Frame();
-        Require(!frames.World.IsAlive(secondSample) && !frames.World.IsAlive(secondBinding) &&
-            frames.World.Read<Elements.Text>(fallback).Value == "empty", "Null values select the fallback and release bindings.");
+        Require(!frames.World.Has<global::SomeEngine.Views.ViewType>(secondSample) && !frames.World.Has<global::SomeEngine.Views.ViewType>(secondBinding) &&
+            frames.World.ReadComponentData<Elements.Text>(fallback).Value == "empty", "Null values select the fallback and release bindings.");
         Entity empty = fallback;
 
         name.Value = "third";
         frames.Frame();
-        Require(!frames.World.IsAlive(empty) && sampled != firstSample &&
-            frames.World.Read<Elements.Text>(sampled).Value == "third", "Present values create content after the fallback.");
+        Require(!frames.World.Has<global::SomeEngine.Views.ViewType>(empty) && sampled != firstSample &&
+            frames.World.ReadComponentData<Elements.Text>(sampled).Value == "third", "Present values create content after the fallback.");
     }
 
     private static void NullableValueBranches()
@@ -172,16 +172,16 @@ public static partial class ControlFlowChecks
             () => fallback = Text("empty"), keyed: true)));
         frames.Frame();
         Entity empty = fallback;
-        Require(frames.World.Read<Elements.Text>(empty).Value == "empty", "An absent nullable number selects the fallback.");
+        Require(frames.World.ReadComponentData<Elements.Text>(empty).Value == "empty", "An absent nullable number selects the fallback.");
 
         number.Value = 0;
         frames.Frame();
-        Require(!frames.World.IsAlive(empty) && frames.World.Read<Elements.Text>(label).Value == "0",
+        Require(!frames.World.Has<global::SomeEngine.Views.ViewType>(empty) && frames.World.ReadComponentData<Elements.Text>(label).Value == "0",
             "Zero is a present nullable number.");
         Entity zero = label;
         number.Value = 1;
         frames.Frame();
-        Require(!frames.World.IsAlive(zero) && label != zero && frames.World.Read<Elements.Text>(label).Value == "1",
+        Require(!frames.World.Has<global::SomeEngine.Views.ViewType>(zero) && label != zero && frames.World.ReadComponentData<Elements.Text>(label).Value == "1",
             "Changed keyed nullable numbers create new nodes.");
     }
 
@@ -203,23 +203,23 @@ public static partial class ControlFlowChecks
         first.Value = 2;
         second.Value = false;
         frames.Frame();
-        Require(label == firstLabel && frames.World.Read<Elements.Text>(label).Value == "edited",
+        Require(label == firstLabel && frames.World.ReadComponentData<Elements.Text>(label).Value == "edited",
             "Switch preserves the first matching branch and its Once content.");
 
         first.Value = 0;
         second.Value = true;
         frames.Frame();
-        Require(!frames.World.IsAlive(firstLabel) && label != firstLabel &&
-            frames.World.Read<Elements.Text>(label).Value == "second",
+        Require(!frames.World.Has<global::SomeEngine.Views.ViewType>(firstLabel) && label != firstLabel &&
+            frames.World.ReadComponentData<Elements.Text>(label).Value == "second",
             "Switch distinguishes selected cases that share a content function.");
         Entity secondLabel = label;
         second.Value = false;
         frames.Frame();
-        Require(!frames.World.IsAlive(secondLabel), "Switch releases content when all conditions become false.");
+        Require(!frames.World.Has<global::SomeEngine.Views.ViewType>(secondLabel), "Switch releases content when all conditions become false.");
 
         first.Value = 1;
         frames.Frame();
-        Require(label != firstLabel && label != secondLabel && frames.World.Read<Elements.Text>(label).Value == "second",
+        Require(label != firstLabel && label != secondLabel && frames.World.ReadComponentData<Elements.Text>(label).Value == "second",
             "Returning to a Switch case creates its content again.");
     }
 
@@ -237,18 +237,18 @@ public static partial class ControlFlowChecks
         label.SetText(frames.World, "edited");
         selection.Value = 2;
         frames.Frame();
-        Require(label == firstLabel && frames.World.Read<Elements.Text>(label).Value == "edited",
+        Require(label == firstLabel && frames.World.ReadComponentData<Elements.Text>(label).Value == "edited",
             "Dynamic preserves the current component when its getter selects the same function.");
 
         selection.Value = 1;
         frames.Frame();
-        Require(!frames.World.IsAlive(firstLabel) && label != firstLabel &&
-            frames.World.Read<Elements.Text>(label).Value == "second", "Dynamic creates content for a different function.");
+        Require(!frames.World.Has<global::SomeEngine.Views.ViewType>(firstLabel) && label != firstLabel &&
+            frames.World.ReadComponentData<Elements.Text>(label).Value == "second", "Dynamic creates content for a different function.");
         Entity secondLabel = label;
         selection.Value = 0;
         frames.Frame();
-        Require(!frames.World.IsAlive(secondLabel) && label != firstLabel &&
-            frames.World.Read<Elements.Text>(label).Value == "first", "Returning to a component function creates new nodes.");
+        Require(!frames.World.Has<global::SomeEngine.Views.ViewType>(secondLabel) && label != firstLabel &&
+            frames.World.ReadComponentData<Elements.Text>(label).Value == "first", "Returning to a component function creates new nodes.");
     }
 
     private static void Require(bool condition, string message)

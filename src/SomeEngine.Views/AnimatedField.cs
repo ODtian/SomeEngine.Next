@@ -9,10 +9,9 @@ using SomeEngine.ECS.Entities;
 namespace SomeEngine.Views;
 
 /// <summary>A caller-written field and the typed function used at component-copy commit.</summary>
-[BufferCapacity(AnimatedFields.InlineCapacity)]
 internal unsafe struct AnimatedField : IBufferElement
 {
-    internal ushort Component;
+    internal int Component;
     internal ushort Offset;
     internal uint Field;
     internal bool ThroughReference;
@@ -43,15 +42,15 @@ internal static unsafe partial class AnimatedFields
         bool keepMotion = false)
         where T : unmanaged
     {
-        if (!keepMotion || !world.HasBuffer<Track<T>>(entity))
+        if (!keepMotion || !world.Has<Buffer<Track<T>>>(entity))
             PropertyAnimation.Declare<T>(world, entity);
         Timeline timeline = world.Read<Timeline>(entity);
         if (timeline.Clock != TimelineClock.Interface)
         {
             timeline.Clock = TimelineClock.Interface;
-            world.Replace(entity, timeline);
+            world.Set(entity, timeline);
         }
-        if (!world.HasBuffer<AnimatedField>(entity))
+        if (!world.Has<Buffer<AnimatedField>>(entity))
             world.AddBuffer<AnimatedField>(entity);
         var declaration = (Field: new AnimatedField
         {
@@ -59,31 +58,34 @@ internal static unsafe partial class AnimatedFields
             ThroughReference = channel.ThroughReference,
             HasValue = hasValue, ValueFunction = &CopyValue<T>, SubmitFunction = &SubmitValue<T>,
 #if DEBUG
-            ValueComponent = BufferComponents.Header<BaseValue<T>>(),
+            ValueComponent = ComponentId<Buffer<BaseValue<T>>>.Value,
 #endif
         }, Added: false, KeepMotion: keepMotion);
-        world.ExecuteBufferWrite<AnimatedField, (AnimatedField Field, bool Added, bool KeepMotion)>(entity, ref declaration,
-            static (fields, ref declaration) =>
+        {
+            using DynamicBuffer<AnimatedField> fields = world.GetBuffer<AnimatedField>(entity);
+            int existing = -1;
+            for (int index = 0; index < fields.Count; index++)
             {
-                for (int index = 0; index < fields.Count; index++)
-                {
-                    AnimatedField field = fields.Read(index);
-                    if (field.Component != declaration.Field.Component || field.Field != declaration.Field.Field)
-                        continue;
+                AnimatedField field = fields[index];
+                if (field.Component != declaration.Field.Component || field.Field != declaration.Field.Field) continue;
 #if DEBUG
-                    DevelopmentCheck.Require(field.ValueComponent == declaration.Field.ValueComponent,
-                        "An animated field keeps one value type at its component offset.");
+                DevelopmentCheck.Require(field.ValueComponent == declaration.Field.ValueComponent,
+                    "An animated field keeps one value type at its component offset.");
 #endif
-                    field.Spec = declaration.Field.Spec;
-                    if (!declaration.KeepMotion) field.Motion = null;
-                    field.ValueFunction = declaration.Field.ValueFunction;
-                    field.SubmitFunction = declaration.Field.SubmitFunction;
-                    fields[index] = field;
-                    return;
-                }
+                field.Spec = declaration.Field.Spec;
+                if (!declaration.KeepMotion) field.Motion = null;
+                field.ValueFunction = declaration.Field.ValueFunction;
+                field.SubmitFunction = declaration.Field.SubmitFunction;
+                fields[index] = field;
+                existing = index;
+                break;
+            }
+            if (existing < 0)
+            {
                 fields.Add(declaration.Field);
                 declaration.Added = true;
-            });
+            }
+        }
         if (declaration.Added)
             PropertyAnimation.SetBase(world, entity, channel, value);
     }
@@ -99,12 +101,11 @@ internal static unsafe partial class AnimatedFields
 
     private static bool Copy<T>(World world, Entity entity, ref T value, in T presented, FieldValue fieldValue) where T : struct
     {
-        if (!world.HasBuffer<AnimatedField>(entity))
+        if (!world.Has<Buffer<AnimatedField>>(entity))
             return false;
         var selection = (Component: ComponentId<T>.Value, Count: 0, Found: false, Fields: default(FieldCopies));
-        world.ExecuteBufferRead<AnimatedField, (ushort Component, int Count, bool Found, FieldCopies Fields)>(entity, ref selection,
-            static (fields, ref selection) =>
-            {
+        {
+            using var fields = world.ReadBuffer<AnimatedField>(entity);
                 selection.Count = fields.Count;
                 foreach (ref readonly AnimatedField field in fields.AsSpan())
                     if (field.Component == selection.Component && !field.ThroughReference)
@@ -114,26 +115,28 @@ internal static unsafe partial class AnimatedFields
                     }
                 if (selection.Found && selection.Count <= InlineCapacity)
                     fields.AsSpan().CopyTo(selection.Fields);
-            });
+        }
         if (!selection.Found) return false;
         int count = selection.Count;
         AnimatedField[]? overflow = null;
-        Span<AnimatedField> fields = selection.Fields;
+        Span<AnimatedField> copies = selection.Fields;
         if (count > InlineCapacity)
         {
             overflow = ArrayPool<AnimatedField>.Shared.Rent(count);
             var storage = (Fields: overflow, Count: count);
-            world.ExecuteBufferRead<AnimatedField, (AnimatedField[] Fields, int Count)>(entity, ref storage,
-                static (fields, ref storage) => fields.AsSpan().CopyTo(storage.Fields.AsSpan(0, storage.Count)));
-            fields = overflow.AsSpan(0, count);
+            {
+                using var fields = world.ReadBuffer<AnimatedField>(entity);
+                fields.AsSpan().CopyTo(storage.Fields.AsSpan(0, storage.Count));
+            }
+            copies = overflow.AsSpan(0, count);
         }
-        else fields = fields[..count];
+        else copies = copies[..count];
         try
         {
             bool changed = false;
             for (int index = 0; index < count; index++)
             {
-                ref AnimatedField field = ref fields[index];
+                ref AnimatedField field = ref copies[index];
                 if (field.Component != ComponentId<T>.Value || field.ThroughReference)
                     continue;
                 bool hadValue = field.HasValue;
@@ -144,14 +147,17 @@ internal static unsafe partial class AnimatedFields
             if (changed)
             {
                 if (overflow is null)
-                    world.ExecuteBufferWrite<AnimatedField, (ushort Component, int Count, bool Found, FieldCopies Fields)>(
-                        entity, ref selection, static (fields, ref selection) =>
-                            ((ReadOnlySpan<AnimatedField>)selection.Fields)[..selection.Count].CopyTo(fields.AsSpan()));
+                    {
+                        using var fields = world.GetBuffer<AnimatedField>(entity);
+                        ((ReadOnlySpan<AnimatedField>)selection.Fields)[..selection.Count].CopyTo(fields.AsSpan());
+                    }
                 else
                 {
                     var storage = (Fields: overflow, Count: count);
-                    world.ExecuteBufferWrite<AnimatedField, (AnimatedField[] Fields, int Count)>(entity, ref storage,
-                        static (fields, ref storage) => storage.Fields.AsSpan(0, storage.Count).CopyTo(fields.AsSpan()));
+                    {
+                        using var fields = world.GetBuffer<AnimatedField>(entity);
+                        storage.Fields.AsSpan(0, storage.Count).CopyTo(fields.AsSpan());
+                    }
                 }
             }
             return true;
@@ -177,16 +183,15 @@ internal static unsafe partial class AnimatedFields
             return;
         }
         var basis = (Component: field.Component, Field: field.Field, Value: default(BaseValue<T>));
-        world.ExecuteBufferRead<BaseValue<T>, (ushort Component, uint Field, BaseValue<T> Value)>(entity, ref basis,
-            static (values, ref basis) =>
-            {
-                foreach (BaseValue<T> value in values.AsSpan())
-                    if (value.Channel.Component == basis.Component && value.Channel.Field == basis.Field)
-                    {
-                        basis.Value = value;
-                        return;
-                    }
-            });
+        {
+            using ReadOnlyBuffer<BaseValue<T>> values = world.ReadBuffer<BaseValue<T>>(entity);
+            foreach (BaseValue<T> value in values.AsSpan())
+                if (value.Channel.Component == basis.Component && value.Channel.Field == basis.Field)
+                {
+                    basis.Value = value;
+                    break;
+                }
+        }
         if (fieldValue == FieldValue.Base)
         {
             if (field.HasValue) channel.WriteRoot(ref component, in basis.Value.Value);

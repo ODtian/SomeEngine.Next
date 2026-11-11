@@ -85,8 +85,16 @@ public sealed class KusudamaBehaviorTests
         for (int step = 1; step <= 5; step++)
         {
             float weight = .1f * step;
-            world.ExecuteBufferWrite<EwbikInstance, float>(softAnimation, ref weight,
-                static (instances, ref weight) => instances[0].PreferenceWeights[0] = weight);
+            {
+                using var instances = world.GetBuffer<EwbikInstance>(softAnimation);
+                Visit(instances, ref weight);
+
+                static void Visit(DynamicBuffer<EwbikInstance> instances, ref float weight)
+                {
+                    instances[0].PreferenceWeights[0] = weight;
+
+                }
+            }
             systems.Update(ref context);
             Vector3 actual = Vector3.Transform(Vector3.UnitY, Relative(soft));
             Assert.InRange(MathF.Abs(actual.Z), 0, .1200f);
@@ -110,10 +118,26 @@ public sealed class KusudamaBehaviorTests
             Quaternion orientation = limitingModel * Aim(direction) * Quaternion.CreateFromAxisAngle(Vector3.UnitY, twist);
             EwbikTarget[] targets = [new(origin + Vector3.Transform(direction, limitingModel), orientation, Weight: 50),
                 new(origin, orientation, AxisPriorities: Vector3.One), new(rightTip, rightOrientation, AxisPriorities: Vector3.One)];
-            world.ExecuteBufferWrite<EwbikInstance, EwbikTarget[]>(hardAnimation, ref targets,
-                static (instances, ref targets) => targets.CopyTo(instances[0].Targets, 0));
-            world.ExecuteBufferWrite<EwbikInstance, EwbikTarget[]>(softAnimation, ref targets,
-                static (instances, ref targets) => targets.CopyTo(instances[0].Targets, 0));
+            {
+                using var instances = world.GetBuffer<EwbikInstance>(hardAnimation);
+                Visit(instances, ref targets);
+
+                static void Visit(DynamicBuffer<EwbikInstance> instances, ref EwbikTarget[] targets)
+                {
+                    targets.CopyTo(instances[0].Targets, 0);
+
+                }
+            }
+            {
+                using var instances = world.GetBuffer<EwbikInstance>(softAnimation);
+                Visit(instances, ref targets);
+
+                static void Visit(DynamicBuffer<EwbikInstance> instances, ref EwbikTarget[] targets)
+                {
+                    targets.CopyTo(instances[0].Targets, 0);
+
+                }
+            }
         }
     }
 

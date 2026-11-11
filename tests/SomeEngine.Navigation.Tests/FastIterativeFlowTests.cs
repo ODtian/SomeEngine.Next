@@ -12,7 +12,7 @@ public sealed class FastIterativeFlowTests
     public void BudgetedIsotropicFieldGuidesAlongTheGeometricDirectionInUniformTerrain()
     {
         using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 3, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using World world = new World(execution: new WorldJobs(scheduler));
         NavigationGrid grid = OpenGrid(24, 20, 0.5f);
         var profile = new NavigationProfile([new Vector2(-0.1f), new(0.1f, -0.1f), new(0.1f), new(-0.1f, 0.1f)], 1);
         NavigationCosts costs = NavigationCostSystem.Schedule(grid, new NavigationPolicy(), scheduler: scheduler).Complete().Costs;
@@ -24,11 +24,11 @@ public sealed class FastIterativeFlowTests
         NavigationFlowStatus firstStatus = first.Status;
         FastIterativeFlowState completed = integration.Schedule().Complete();
         var navigation = new NavigationSystems<TestMotion, TestMotionReader>(world);
-        Entity entity = world.CreateEntity(new TestMotion { Position = start });
+        Entity entity = world.Create(new TestMotion { Position = start });
         navigation.AddFlowAgent(entity, flow, 2);
         navigation.Schedule(0.1f).Steering.Complete();
 
-        Vector3 direction = Vector3.Normalize(world.Read<NavigationGuidance>(entity).Velocity);
+        Vector3 direction = Vector3.Normalize(world.ReadValue<NavigationGuidance>(entity).Velocity);
         Assert.Same(first, completed);
         Assert.Equal(NavigationFlowStatus.Searching, firstStatus);
         Assert.Equal(NavigationFlowStatus.Ready, completed.Status);
@@ -42,7 +42,7 @@ public sealed class FastIterativeFlowTests
     public void FollowerGoesAroundScalarHighCostTerrainAndReportsArrivalFromActualMovement()
     {
         using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 3, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using World world = new World(execution: new WorldJobs(scheduler));
         NavigationGrid open = OpenGrid(26, 20, 0.5f);
         NavigationGridCell[] cells = open.Cells.ToArray();
         for (int cell = 0; cell < cells.Length; cell++)
@@ -58,22 +58,22 @@ public sealed class FastIterativeFlowTests
         var flow = new NavigationFlow(costs, profile, [new(goal, 0.15f)]);
         new NavigationFlowSystem<FastIterativeFlow, FastIterativeFlowState>(flow, scheduler).Schedule().Complete();
         var navigation = new NavigationSystems<TestMotion, TestMotionReader>(world);
-        Entity entity = world.CreateEntity(new TestMotion { Position = new(1.25f, 0, 5.25f) });
+        Entity entity = world.Create(new TestMotion { Position = new(1.25f, 0, 5.25f) });
         navigation.AddFlowAgent(entity, flow, 2);
         var positions = new List<Vector3>();
 
-        for (int step = 0; step < 200 && world.Read<NavigationProgress>(entity).Status != NavigationStatus.Arrived; step++)
+        for (int step = 0; step < 200 && world.ReadValue<NavigationProgress>(entity).Status != NavigationStatus.Arrived; step++)
         {
             NavigationFlowStep scheduled = navigation.Schedule(0.1f);
             JobHandle moved = new ConsumeSteering(0.1f).ScheduleParallel(world, scheduled.Steering);
             navigation.ScheduleProgress(moved).Complete();
-            positions.Add(world.Read<TestMotion>(entity).Position);
+            positions.Add(world.ReadValue<TestMotion>(entity).Position);
         }
 
         Assert.Contains(positions, position => position.X >= 4 && position.X < 8 && position.Z < 3);
         Assert.All(positions, position => Assert.Equal(0, grid.Cells.Span[grid.FindCell(position)].Area));
-        Assert.Equal(NavigationStatus.Arrived, world.Read<NavigationProgress>(entity).Status);
-        Assert.InRange(Vector3.Distance(world.Read<TestMotion>(entity).Position, goal), 0, 0.1501f);
+        Assert.Equal(NavigationStatus.Arrived, world.ReadValue<NavigationProgress>(entity).Status);
+        Assert.InRange(Vector3.Distance(world.ReadValue<TestMotion>(entity).Position, goal), 0, 0.1501f);
     }
 
     // This regular open support is an example of the public scalar terrain input.

@@ -1,6 +1,6 @@
+using SomeEngine.ECS.Serialization;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Commands;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Registry;
 
 namespace SomeEngine.ECS.Tests;
@@ -10,42 +10,42 @@ public sealed class ComponentWriteVersionTests
     [Fact]
     public void ReplacingTableValueAdvancesItsWriteVersion()
     {
-        var world = new World();
-        var entity = world.CreateEntity();
+        using var world = new World();
+        var entity = world.Create();
         world.Add(entity, new Position { X = 1 });
-        uint addedVersion = world.WriteVersion<Position>(entity);
+        ulong addedVersion = world.ComponentDataWriteVersion<Position>(entity);
 
-        world.Replace(entity, new Position { X = 2 });
+        world.Set(entity, new Position { X = 2 });
 
-        Assert.NotEqual(addedVersion, world.WriteVersion<Position>(entity));
+        Assert.NotEqual(addedVersion, world.ComponentDataWriteVersion<Position>(entity));
         Assert.Equal(2, world.Read<Position>(entity).X);
     }
 
     [Fact]
     public void ReaddingTableComponentAdvancesItsWriteVersion()
     {
-        var world = new World();
-        var entity = world.CreateEntity(new Position { X = 1 });
-        uint version = world.WriteVersion<Position>(entity);
+        using var world = new World();
+        var entity = world.Create(new Position { X = 1 });
+        ulong version = world.ComponentDataWriteVersion<Position>(entity);
 
         world.Remove<Position>(entity);
         world.Add(entity, new Position { X = 2 });
 
-        Assert.NotEqual(version, world.WriteVersion<Position>(entity));
+        Assert.NotEqual(version, world.ComponentDataWriteVersion<Position>(entity));
         Assert.Equal(2, world.Read<Position>(entity).X);
     }
 
     [Fact]
     public void ReplacingSparseValueAdvancesItsWriteVersion()
     {
-        var world = new World();
-        var entity = world.CreateEntity();
-        world.AddSparse(entity, new Damage { Amount = 1 });
-        uint addedVersion = world.SparseWriteVersion<Damage>(entity);
+        using var world = new World();
+        var entity = world.Create();
+        world.SetSparse(entity, new Damage { Amount = 1 });
+        ulong addedVersion = world.ComponentDataWriteVersion<Damage>(entity);
 
-        world.ReplaceSparse(entity, new Damage { Amount = 2 });
+        world.SetSparse(entity, new Damage { Amount = 2 });
 
-        Assert.NotEqual(addedVersion, world.SparseWriteVersion<Damage>(entity));
+        Assert.NotEqual(addedVersion, world.ComponentDataWriteVersion<Damage>(entity));
         Assert.Equal(2, world.ReadSparse<Damage>(entity).Amount);
     }
 
@@ -54,62 +54,77 @@ public sealed class ComponentWriteVersionTests
     [InlineData(true)]
     public void BorrowingSparseValuesForWriteAdvancesTheirVersions(bool withState)
     {
-        var world = new World();
-        var entity = world.CreateEntity();
-        world.AddSparse(entity, new Damage { Amount = 1 });
-        uint version = world.SparseWriteVersion<Damage>(entity);
+        using var world = new World();
+        var entity = world.Create();
+        world.SetSparse(entity, new Damage { Amount = 1 });
+        ulong version = world.ComponentDataWriteVersion<Damage>(entity);
 
         if (withState)
         {
             int amount = 3;
-            world.ExecuteSparseWrite<Damage, int>(ref amount,
-                static (ReadOnlySpan<Entity> entities, Span<Damage> values, ref int state)
-                    => values[0].Amount = state);
+            {
+                var sparseScope = world.OpenSparseWrite<Damage>();
+                try
+                {
+                    ReadOnlySpan<Entity> entities = sparseScope.Entities;
+                    Span<Damage> values = sparseScope.Values;
+                    values[0].Amount = amount;
+                }
+                finally { sparseScope.Dispose(); }
+            }
         }
         else
         {
-            world.ExecuteSparseWrite<Damage>(
-                static (entities, values) => values[0].Amount = 3);
+            {
+                var sparseScope = world.OpenSparseWrite<Damage>();
+                try
+                {
+                    ReadOnlySpan<Entity> entities = sparseScope.Entities;
+                    Span<Damage> values = sparseScope.Values;
+                    values[0].Amount = 3;
+                }
+                finally { sparseScope.Dispose(); }
+            }
         }
 
-        Assert.NotEqual(version, world.SparseWriteVersion<Damage>(entity));
+        Assert.NotEqual(version, world.ComponentDataWriteVersion<Damage>(entity));
         Assert.Equal(3, world.ReadSparse<Damage>(entity).Amount);
     }
 
     [Fact]
     public void CommandReplayAddsAndReplacesSparseValuesWithNewVersions()
     {
-        var world = new World();
-        var entity = world.CreateEntity();
+        using var world = new World();
+        var entity = world.Create();
         using var commands = new CommandBuffer(world);
-        commands.AddSparse(entity, new Damage { Amount = 1 });
+        commands.SetSparse(entity, new Damage { Amount = 1 });
         commands.Playback();
-        uint version = world.SparseWriteVersion<Damage>(entity);
+        ulong version = world.ComponentDataWriteVersion<Damage>(entity);
 
         commands.Clear();
-        commands.ReplaceSparse(entity, new Damage { Amount = 2 });
+        commands.SetSparse(entity, new Damage { Amount = 2 });
         commands.Playback();
 
-        Assert.NotEqual(version, world.SparseWriteVersion<Damage>(entity));
+        Assert.NotEqual(version, world.ComponentDataWriteVersion<Damage>(entity));
         Assert.Equal(2, world.ReadSparse<Damage>(entity).Amount);
     }
 
     [Fact]
     public void CopyingAnEntityAdvancesWrittenTableAndSparseVersions()
     {
-        var world = new World();
-        var source = world.CreateEntity(new Position { X = 1 });
-        world.AddSparse(source, new Damage { Amount = 2 });
-        var target = world.CreateEntity(new Position { X = 3 });
-        world.AddSparse(target, new Damage { Amount = 4 });
-        world.CopyEntity(source, target);
-        uint tableVersion = world.WriteVersion<Position>(target);
-        uint sparseVersion = world.SparseWriteVersion<Damage>(target);
+        using var world = new World();
+        var source = world.Create(new Position { X = 1 });
+        world.SetSparse(source, new Damage { Amount = 2 });
+        var target = world.Create(new Position { X = 3 });
+        world.SetSparse(target, new Damage { Amount = 4 });
+        world.Copy(source, target);
+        ulong tableVersion = world.ComponentDataWriteVersion<Position>(target);
+        ulong sparseVersion = world.ComponentDataWriteVersion<Damage>(target);
 
-        world.CopyEntity(source, target);
+        world.Copy(source, target);
 
-        Assert.NotEqual(tableVersion, world.WriteVersion<Position>(target));
-        Assert.NotEqual(sparseVersion, world.SparseWriteVersion<Damage>(target));
+        Assert.NotEqual(tableVersion, world.ComponentDataWriteVersion<Position>(target));
+        Assert.NotEqual(sparseVersion, world.ComponentDataWriteVersion<Damage>(target));
         Assert.Equal(1, world.Read<Position>(target).X);
         Assert.Equal(2, world.ReadSparse<Damage>(target).Amount);
     }
@@ -117,155 +132,155 @@ public sealed class ComponentWriteVersionTests
     [Fact]
     public void BundleReplacementAdvancesTableAndSparseWriteVersions()
     {
-        var world = new World();
-        var entity = world.CreateEntity(new Position { X = 1 });
-        uint tableVersion = world.WriteVersion<Position>(entity);
+        using var world = new World();
+        var entity = world.Create(new Position { X = 1 });
+        ulong tableVersion = world.ComponentDataWriteVersion<Position>(entity);
 
-        world.ExecuteBundleReplace(entity, [ComponentMetadata<Position>.Id],
-            static view => view.Write(new Position { X = 3 }));
+        world.ExecuteBundleReplace(entity, [ComponentId<Position>.Value], [], 0, new PositionReplacement());
 
-        Assert.NotEqual(tableVersion, world.WriteVersion<Position>(entity));
-        world.AddSparse(entity, new Damage { Amount = 2 });
-        uint sparseVersion = world.SparseWriteVersion<Damage>(entity);
-        world.ExecuteBundleReplace(entity, [], [ComponentMetadata<Damage>.Id],
-            static view => view.WriteSparse(new Damage { Amount = 4 }));
+        Assert.NotEqual(tableVersion, world.ComponentDataWriteVersion<Position>(entity));
+        world.SetSparse(entity, new Damage { Amount = 2 });
+        ulong sparseVersion = world.ComponentDataWriteVersion<Damage>(entity);
+        world.ExecuteBundleReplace(entity, [], [ComponentId<Damage>.Value], 0, new SparseReplacement());
 
-        Assert.NotEqual(sparseVersion, world.SparseWriteVersion<Damage>(entity));
+        Assert.NotEqual(sparseVersion, world.ComponentDataWriteVersion<Damage>(entity));
         Assert.Equal(3, world.Read<Position>(entity).X);
         Assert.Equal(4, world.ReadSparse<Damage>(entity).Amount);
     }
 
-    [Theory]
-    [InlineData("RowWrite")]
-    [InlineData("RowReadWrite")]
-    [InlineData("ChunkWrite")]
-    [InlineData("ChunkReadWrite")]
-    [InlineData("ChunkRowWrite")]
-    [InlineData("ChunkRowReadWrite")]
-    public void TableWriteBorrowAdvancesVersion(string access)
+    [Fact]
+    public void TableRowWriteBorrowAdvancesVersion()
     {
-        var world = new World();
-        var entity = world.CreateEntity(new Position { X = 1 });
-        uint version = world.WriteVersion<Position>(entity);
-        var query = world.Query(world.QueryDefinition().ReadWrite<Position>());
+        using var world = new World();
+        Entity entity = world.Create(new Position { X = 1 });
+        ulong version = world.ComponentDataWriteVersion<Position>(entity);
+        using (QueryScope scope = world.Query<Position>().Open())
+            foreach (QueryChunk chunk in scope) chunk.Write<Position>(0).X = 2;
+        Assert.NotEqual(version, world.ComponentDataWriteVersion<Position>(entity));
+        Assert.Equal(2, world.Read<Position>(entity).X);
+    }
 
-        world.ExecuteQuery(query, cursor =>
-        {
-            if (access == "RowWrite" || access == "RowReadWrite")
-            {
-                foreach (var row in cursor.Rows)
-                {
-                    if (access == "RowWrite")
-                        row.Write<Position>().X = 2;
-                    else
-                        row.ReadWrite<Position>().X = 2;
-                }
-                return;
-            }
-
-            foreach (var chunk in cursor.Chunks)
-            {
-                switch (access)
-                {
-                    case "ChunkWrite": chunk.Write<Position>()[0].X = 2; break;
-                    case "ChunkReadWrite": chunk.ReadWrite<Position>()[0].X = 2; break;
-                    case "ChunkRowWrite": chunk.Write<Position>(0).X = 2; break;
-                    case "ChunkRowReadWrite": chunk.ReadWrite<Position>(0).X = 2; break;
-                }
-            }
-        });
-
-        Assert.NotEqual(version, world.WriteVersion<Position>(entity));
+    [Fact]
+    public void TableColumnWriteBorrowAdvancesVersion()
+    {
+        using var world = new World();
+        Entity entity = world.Create(new Position { X = 1 });
+        ulong version = world.ComponentDataWriteVersion<Position>(entity);
+        using (QueryScope scope = world.Query<Position>().Open())
+            foreach (QueryChunk chunk in scope) chunk.Write<Position>()[0].X = 2;
+        Assert.NotEqual(version, world.ComponentDataWriteVersion<Position>(entity));
         Assert.Equal(2, world.Read<Position>(entity).X);
     }
 
     [Fact]
     public void ReadsPreserveTableAndSparseWriteVersions()
     {
-        var world = new World();
-        var entity = world.CreateEntity(new Position { X = 1 });
-        world.AddSparse(entity, new Damage { Amount = 2 });
-        uint tableVersion = world.WriteVersion<Position>(entity);
-        uint sparseVersion = world.SparseWriteVersion<Damage>(entity);
-        var query = world.Query(world.QueryDefinition().Read<Position>());
-        uint tick = world.CurrentTick;
+        using var world = new World();
+        var entity = world.Create(new Position { X = 1 });
+        world.SetSparse(entity, new Damage { Amount = 2 });
+        ulong tableVersion = world.ComponentDataWriteVersion<Position>(entity);
+        ulong sparseVersion = world.ComponentDataWriteVersion<Damage>(entity);
+        var query = world.Query(new QueryDescription().WithStored<Position>());
+        ulong tick = world.Version;
 
-        world.ExecuteQuery(query, static cursor =>
         {
-            foreach (var row in cursor.Rows)
-                Assert.Equal(1, row.Read<Position>().X);
-            foreach (var chunk in cursor.Chunks)
+            using QueryScope cursor = query.OpenRead();
+            foreach (QueryChunk rowChunk in cursor)
+                for (int row = 0; row < rowChunk.Count; row++)
+                    Assert.Equal(1, rowChunk.Read<Position>()[row].X);
+            foreach (var chunk in cursor)
                 Assert.Equal(1, chunk.Read<Position>()[0].X);
-        });
-        world.ExecuteSparseRead<Damage>(
-            static (entities, values) => Assert.Equal(2, values[0].Amount));
+
+        }
+        {
+            var sparseScope = world.OpenSparseRead<Damage>();
+            try
+            {
+                ReadOnlySpan<Entity> entities = sparseScope.Entities;
+                ReadOnlySpan<Damage> values = sparseScope.Values;
+                Assert.Equal(2, values[0].Amount);
+            }
+            finally { sparseScope.Dispose(); }
+        }
         int amount = 0;
-        world.ExecuteSparseRead<Damage, int>(ref amount,
-            static (ReadOnlySpan<Entity> entities, ReadOnlySpan<Damage> values, ref int state)
-                => state = values[0].Amount);
+        {
+            var sparseScope = world.OpenSparseRead<Damage>();
+            try
+            {
+                ReadOnlySpan<Entity> entities = sparseScope.Entities;
+                ReadOnlySpan<Damage> values = sparseScope.Values;
+                amount = values[0].Amount;
+            }
+            finally { sparseScope.Dispose(); }
+        }
         Assert.Equal(1, world.Read<Position>(entity).X);
         Assert.Equal(2, world.ReadSparse<Damage>(entity).Amount);
         Assert.Equal(2, amount);
-        Assert.Equal(tableVersion, world.WriteVersion<Position>(entity));
-        Assert.Equal(sparseVersion, world.SparseWriteVersion<Damage>(entity));
-        Assert.Equal(tick, world.CurrentTick);
+        Assert.Equal(tableVersion, world.ComponentDataWriteVersion<Position>(entity));
+        Assert.Equal(sparseVersion, world.ComponentDataWriteVersion<Damage>(entity));
+        Assert.Equal(tick, world.Version);
     }
 
     [Fact]
     public void CommandReplayAddsAndReplacesTableValuesWithNewVersions()
     {
-        var world = new World();
-        var entity = world.CreateEntity();
+        using var world = new World();
+        var entity = world.Create();
         using var commands = new CommandBuffer(world);
         commands.Add(entity, new Position { X = 1 });
         commands.Playback();
-        uint version = world.WriteVersion<Position>(entity);
+        ulong version = world.ComponentDataWriteVersion<Position>(entity);
         commands.Clear();
 
-        commands.Replace(entity, new Position { X = 2 });
+        commands.Set(entity, new Position { X = 2 });
         commands.Playback();
 
-        Assert.NotEqual(version, world.WriteVersion<Position>(entity));
+        Assert.NotEqual(version, world.ComponentDataWriteVersion<Position>(entity));
         Assert.Equal(2, world.Read<Position>(entity).X);
     }
 
     [Fact]
     public void SparseCommandsResolveDeferredEntities()
     {
-        var world = new World();
+        using var world = new World();
         using var commands = new CommandBuffer(world);
-        var deferred = commands.CreateEntity();
-        commands.AddSparse(deferred, new Damage { Amount = 1 });
-        commands.ReplaceSparse(deferred, new Damage { Amount = 2 });
+        var deferred = commands.Create();
+        commands.SetSparse(deferred, new Damage { Amount = 1 });
+        commands.SetSparse(deferred, new Damage { Amount = 2 });
 
         commands.Playback();
         var entity = deferred.Resolve();
-        uint version = world.SparseWriteVersion<Damage>(entity);
+        ulong version = world.ComponentDataWriteVersion<Damage>(entity);
         commands.Clear();
-        commands.ReplaceSparse(entity, new Damage { Amount = 3 });
+        commands.SetSparse(entity, new Damage { Amount = 3 });
         commands.Playback();
 
-        Assert.NotEqual(version, world.SparseWriteVersion<Damage>(entity));
+        Assert.NotEqual(version, world.ComponentDataWriteVersion<Damage>(entity));
         Assert.Equal(3, world.ReadSparse<Damage>(entity).Amount);
     }
 
     [Fact]
-    public void FailedCommandReplayRetainsValuesAndWriteVersions()
+    public void FailedCandidateCommandReplayRetainsSourceValuesAndWriteVersions()
     {
-        var world = new World();
-        var entity = world.CreateEntity(new Position { X = 1 });
-        world.AddSparse(entity, new Damage { Amount = 2 });
-        uint tableVersion = world.WriteVersion<Position>(entity);
-        uint sparseVersion = world.SparseWriteVersion<Damage>(entity);
-        using var commands = new CommandBuffer(world);
-        commands.Replace(entity, new Position { X = 3 });
-        commands.ReplaceSparse(entity, new Damage { Amount = 4 });
-        commands.Remove<Health>(entity);
+        using var world = new World();
+        var entity = world.Create(new Position { X = 1 });
+        world.SetSparse(entity, new Damage { Amount = 2 });
+        ulong tableVersion = world.ComponentDataWriteVersion<Position>(entity);
+        ulong sparseVersion = world.ComponentDataWriteVersion<Damage>(entity);
+        Entity expired = world.Create();
+        world.Destroy(expired);
+        using var checkpoint = new WorldCheckpoint().Capture(world, CheckpointProgress.Preserve);
+        using var candidate = new World();
+        checkpoint.Restore(candidate);
+        using var commands = new CommandBuffer(candidate);
+        commands.Set(entity, new Position { X = 3 });
+        commands.SetSparse(entity, new Damage { Amount = 4 });
+        commands.Set(expired, new Position { X = 9 });
 
-        Assert.Throws<InvalidOperationException>(commands.Playback);
+        Assert.Throws<ArgumentException>(commands.Playback);
 
-        Assert.Equal(tableVersion, world.WriteVersion<Position>(entity));
-        Assert.Equal(sparseVersion, world.SparseWriteVersion<Damage>(entity));
+        Assert.Equal(tableVersion, world.ComponentDataWriteVersion<Position>(entity));
+        Assert.Equal(sparseVersion, world.ComponentDataWriteVersion<Damage>(entity));
         Assert.Equal(1, world.Read<Position>(entity).X);
         Assert.Equal(2, world.ReadSparse<Damage>(entity).Amount);
     }
@@ -273,85 +288,99 @@ public sealed class ComponentWriteVersionTests
     [Fact]
     public void MovingComponentStorageRetainsExistingWriteVersions()
     {
-        var world = new World();
-        var first = world.CreateEntity(new Position { X = 1 });
-        var second = world.CreateEntity(new Position { X = 2 });
-        world.AddSparse(first, new Damage { Amount = 3 });
-        world.AddSparse(second, new Damage { Amount = 4 });
-        uint firstVersion = world.WriteVersion<Position>(first);
-        uint tableVersion = world.WriteVersion<Position>(second);
-        uint sparseVersion = world.SparseWriteVersion<Damage>(second);
+        using var world = new World();
+        var first = world.Create(new Position { X = 1 });
+        var second = world.Create(new Position { X = 2 });
+        world.SetSparse(first, new Damage { Amount = 3 });
+        world.SetSparse(second, new Damage { Amount = 4 });
+        ulong firstVersion = world.ComponentDataWriteVersion<Position>(first);
+        ulong tableVersion = world.ComponentDataWriteVersion<Position>(second);
+        ulong sparseVersion = world.ComponentDataWriteVersion<Damage>(second);
 
         world.Add(first, new Velocity { X = 5 });
         world.RemoveSparse<Damage>(first);
 
-        Assert.Equal(firstVersion, world.WriteVersion<Position>(first));
-        Assert.Equal(tableVersion, world.WriteVersion<Position>(second));
-        Assert.Equal(sparseVersion, world.SparseWriteVersion<Damage>(second));
+        Assert.Equal(firstVersion, world.ComponentDataWriteVersion<Position>(first));
+        Assert.Equal(tableVersion, world.ComponentDataWriteVersion<Position>(second));
+        Assert.Equal(sparseVersion, world.ComponentDataWriteVersion<Damage>(second));
         Assert.Equal(2, world.Read<Position>(second).X);
         Assert.Equal(4, world.ReadSparse<Damage>(second).Amount);
     }
 
     [Fact]
-    public void FaultingSparseWriteKeepsItsValueAndWriteVersion()
+    public void FaultingSparseWriteRetainsWrittenValueAndAdvancesVersion()
     {
-        var world = new World();
-        var entity = world.CreateEntity();
-        world.AddSparse(entity, new Damage { Amount = 1 });
-        uint version = world.SparseWriteVersion<Damage>(entity);
+        using var world = new World();
+        var entity = world.Create();
+        world.SetSparse(entity, new Damage { Amount = 1 });
+        ulong version = world.ComponentDataWriteVersion<Damage>(entity);
 
-        Assert.Throws<ArithmeticException>(() => world.ExecuteSparseWrite<Damage>(
-            static (entities, values) =>
+        Assert.Throws<ArithmeticException>((Action)(() =>
+        {
+            var sparseScope = world.OpenSparseWrite<Damage>();
+            try
             {
+                ReadOnlySpan<Entity> entities = sparseScope.Entities;
+                Span<Damage> values = sparseScope.Values;
+
                 values[0].Amount = 3;
                 throw new ArithmeticException();
-            }));
 
-        Assert.NotEqual(version, world.SparseWriteVersion<Damage>(entity));
+            }
+            finally { sparseScope.Dispose(); }
+        }));
+
+        Assert.NotEqual(version, world.ComponentDataWriteVersion<Damage>(entity));
         Assert.Equal(3, world.ReadSparse<Damage>(entity).Amount);
     }
 
     [Fact]
-    public void DestroyedEntitiesUseTheExistingReadGuardForVersions()
+    public void DestroyedEntitiesRejectValueReadsAndReportAbsentVersions()
     {
-        var world = new World();
-        var entity = world.CreateEntity(new Position { X = 1 });
-        world.AddSparse(entity, new Damage { Amount = 2 });
-        world.DestroyEntity(entity);
+        using var world = new World();
+        var entity = world.Create(new Position { X = 1 });
+        world.SetSparse(entity, new Damage { Amount = 2 });
+        world.Destroy(entity);
 
-        Assert.Throws<InvalidOperationException>(
+        Assert.Throws<ArgumentException>(
             () => world.Read<Position>(entity));
-        Assert.Throws<InvalidOperationException>(
-            () => world.WriteVersion<Position>(entity));
-        Assert.Throws<InvalidOperationException>(
+        Assert.Null(world.ComponentDataWriteVersion(entity, ComponentId<Position>.Value));
+        Assert.Throws<ArgumentException>(
             () => world.ReadSparse<Damage>(entity));
-        Assert.Throws<InvalidOperationException>(
-            () => world.SparseWriteVersion<Damage>(entity));
+        Assert.Null(world.ComponentDataWriteVersion(entity, ComponentId<Damage>.Value));
     }
 
 #if DEBUG
     [Fact]
-    public void ReadingMissingTableComponentVersionTriggersTheReadCheck()
+    public void ReadingMissingTableComponentReportsAbsentVersion()
     {
-        var world = new World();
-        var entity = world.CreateEntity();
+        using var world = new World();
+        var entity = world.Create();
 
-        Assert.Throws<InvalidOperationException>(
-            () => world.WriteVersion<Position>(entity));
+        Assert.Null(world.ComponentDataWriteVersion(entity, ComponentId<Position>.Value));
     }
 
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void ReadingMissingSparseComponentVersionTriggersTheReadCheck(bool typeAlreadyUsed)
+    public void ReadingMissingSparseComponentReportsAbsentVersion(bool typeAlreadyUsed)
     {
-        var world = new World();
-        var entity = world.CreateEntity();
+        using var world = new World();
+        var entity = world.Create();
         if (typeAlreadyUsed)
-            world.AddSparse(world.CreateEntity(), new Damage { Amount = 1 });
+            world.SetSparse(world.Create(), new Damage { Amount = 1 });
 
-        Assert.Throws<InvalidOperationException>(
-            () => world.SparseWriteVersion<Damage>(entity));
+        Assert.Null(world.ComponentDataWriteVersion(entity, ComponentId<Damage>.Value));
     }
 #endif
+
+    private readonly struct PositionReplacement : IBundleWriter<int>
+    {
+        public void Write(BundleWriteView view, in int value) => view.Write(new Position { X = 3 });
+    }
+    private readonly struct SparseReplacement : IBundleWriter<int>
+    {
+        public void Write(BundleWriteView view, in int value) => view.WriteSparse(new Damage { Amount = 4 });
+    }
+
 }

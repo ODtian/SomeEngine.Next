@@ -21,10 +21,10 @@ public sealed class ViewFunctionTests
 
         frames.Frame();
 
-        Entity[] children = Hierarchy<ElementTree>.GetChildren(frames.World, root).ToArray();
+        Entity[] children = ElementChildren.Read(frames.World, root).ToArray();
         Assert.Equal(2, children.Length);
-        Assert.Equal(5, frames.World.Read<Number>(children[0]).Value);
-        Assert.Equal(6, frames.World.Read<Number>(children[1]).Value);
+        Assert.Equal(5, frames.World.ReadComponentData<Number>(children[0]).Value);
+        Assert.Equal(6, frames.World.ReadComponentData<Number>(children[1]).Value);
     }
 
     [Fact]
@@ -33,15 +33,15 @@ public sealed class ViewFunctionTests
         using var frames = new HeadlessFrameDriver();
         Entity root = Views.Spawn(frames.World, Entity.Null, new LambdaCards(false));
         frames.Frame();
-        Entity first = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        frames.World.Replace(first, new CardState(8));
-        frames.World.Replace(root, new LambdaCards(true));
+        Entity first = Assert.Single(ElementChildren.Read(frames.World, root));
+        frames.World.Set(first, new CardState(8));
+        frames.World.Set(root, new LambdaCards(true));
 
         frames.Frame();
 
-        Entity second = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
+        Entity second = Assert.Single(ElementChildren.Read(frames.World, root));
         Assert.NotEqual(first, second);
-        Assert.Equal(0, frames.World.Read<CardState>(second).Value);
+        Assert.Equal(0, frames.World.ReadComponentData<CardState>(second).Value);
     }
 
     [Fact]
@@ -51,12 +51,12 @@ public sealed class ViewFunctionTests
         Entity root = Views.Spawn(frames.World, Entity.Null, new UninterceptedCards(1));
 #if DEBUG
         frames.Frame();
-        var error = Assert.IsType<InvalidOperationException>(frames.World.ReadSparse<BuildError>(root).Exception);
+        var error = Assert.IsType<InvalidOperationException>(frames.World.ReadComponentData<BuildError>(root).Exception);
 #else
         frames.Frame();
-        Entity child = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Assert.Equal(0UL, frames.World.Read<ElementKey>(child).Key);
-        Assert.Equal(new Card("1"), frames.World.ReadSparse<Card>(child));
+        Entity child = Assert.Single(ElementChildren.Read(frames.World, root));
+        Assert.Equal(0UL, frames.World.ReadComponentData<ElementKey>(child).Key);
+        Assert.Equal(new Card("1"), frames.World.ReadComponentData<Card>(child));
 #endif
     }
 
@@ -66,15 +66,15 @@ public sealed class ViewFunctionTests
         using var frames = new HeadlessFrameDriver();
         Entity root = Views.Spawn(frames.World, Entity.Null, new NestedCards.Parent(false));
         frames.Frame();
-        Entity first = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        frames.World.Replace(first, new CardState(8));
-        frames.World.Replace(root, new NestedCards.Parent(true));
+        Entity first = Assert.Single(ElementChildren.Read(frames.World, root));
+        frames.World.Set(first, new CardState(8));
+        frames.World.Set(root, new NestedCards.Parent(true));
 
         frames.Frame();
 
-        Entity second = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
+        Entity second = Assert.Single(ElementChildren.Read(frames.World, root));
         Assert.NotEqual(first, second);
-        Assert.Equal(0, frames.World.Read<CardState>(second).Value);
+        Assert.Equal(0, frames.World.ReadComponentData<CardState>(second).Value);
     }
 
     [Fact]
@@ -85,8 +85,8 @@ public sealed class ViewFunctionTests
 
         frames.Frame();
 
-        Entity child = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Assert.Equal(new Caption<string>("two", 2), frames.World.ReadSparse<Caption<string>>(child));
+        Entity child = Assert.Single(ElementChildren.Read(frames.World, root));
+        Assert.Equal(new Caption<string>("two", 2), frames.World.ReadComponentData<Caption<string>>(child));
     }
 
     [Fact]
@@ -97,8 +97,9 @@ public sealed class ViewFunctionTests
 
         frames.Frame();
 
-        Entity child = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Assert.Equal("hello", frames.World.ReadSparse<DefaultCard>(child).Title);
+        Entity child = Assert.Single(ElementChildren.Read(frames.World, root));
+        Assert.True(frames.World.HasSparse<DefaultCard>(child));
+        Assert.Equal("hello", frames.World.ReadComponentData<DefaultCard>(child).Title);
     }
 
     [Theory]
@@ -109,17 +110,17 @@ public sealed class ViewFunctionTests
         using var frames = new HeadlessFrameDriver();
         Entity root = Views.Spawn(frames.World, Entity.Null, new SameLineCards(true, named));
         frames.Frame();
-        Entity[] children = Hierarchy<ElementTree>.GetChildren(frames.World, root).ToArray();
+        Entity[] children = ElementChildren.Read(frames.World, root).ToArray();
         Assert.Equal(2, children.Length);
-        Assert.NotEqual(frames.World.Read<ElementKey>(children[0]).Key,
-            frames.World.Read<ElementKey>(children[1]).Key);
-        frames.World.Replace(children[1], new CardState(7));
-        frames.World.Replace(root, new SameLineCards(false, named));
+        Assert.NotEqual(frames.World.ReadComponentData<ElementKey>(children[0]).Key,
+            frames.World.ReadComponentData<ElementKey>(children[1]).Key);
+        frames.World.Set(children[1], new CardState(7));
+        frames.World.Set(root, new SameLineCards(false, named));
 
         frames.Frame();
 
-        Assert.Equal(children[1], Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root)));
-        Assert.Equal(7, frames.World.Read<CardState>(children[1]).Value);
+        Assert.Equal(children[1], Assert.Single(ElementChildren.Read(frames.World, root)));
+        Assert.Equal(7, frames.World.ReadComponentData<CardState>(children[1]).Value);
     }
 
     [Theory]
@@ -130,16 +131,16 @@ public sealed class ViewFunctionTests
         using var frames = new HeadlessFrameDriver();
         Entity root = Views.Spawn(frames.World, Entity.Null, new BranchCards(false, named));
         frames.Frame();
-        Entity first = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        frames.World.Replace(first, new CardState(9));
-        frames.World.Replace(root, new BranchCards(true, named));
+        Entity first = Assert.Single(ElementChildren.Read(frames.World, root));
+        frames.World.Set(first, new CardState(9));
+        frames.World.Set(root, new BranchCards(true, named));
 
         frames.Frame();
 
-        Entity second = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
+        Entity second = Assert.Single(ElementChildren.Read(frames.World, root));
         Assert.NotEqual(first, second);
-        Assert.Equal(0, frames.World.Read<CardState>(second).Value);
-        Assert.False(frames.World.IsAlive(first));
+        Assert.Equal(0, frames.World.ReadComponentData<CardState>(second).Value);
+        Assert.False(frames.World.Has<ViewType>(first));
     }
 
     [Fact]
@@ -150,10 +151,10 @@ public sealed class ViewFunctionTests
 
         frames.Frame();
 
-        Entity[] children = Hierarchy<ElementTree>.GetChildren(frames.World, root).ToArray();
+        Entity[] children = ElementChildren.Read(frames.World, root).ToArray();
         Assert.Equal(2, children.Length);
-        Assert.Equal(new Card("Inventory"), frames.World.ReadSparse<Card>(children[0]));
-        Assert.Equal(frames.World.ReadSparse<Card>(children[0]), frames.World.ReadSparse<Card>(children[1]));
+        Assert.Equal(new Card("Inventory"), frames.World.ReadComponentData<Card>(children[0]));
+        Assert.Equal(frames.World.ReadComponentData<Card>(children[0]), frames.World.ReadComponentData<Card>(children[1]));
     }
 }
 
@@ -178,7 +179,7 @@ public static partial class NestedCards
             if (!Scope.World.Has<CardState>(Scope.Entity))
             {
                 Scope.World.Add(Scope.Entity, new CardState(0));
-                Scope.World.AddTag<LocalState>(Scope.Entity);
+                Scope.World.Add(Scope.Entity, default(LocalState));
             }
             return default;
         }
@@ -192,7 +193,7 @@ public readonly record struct Card(string Title) : IView, ISparseComponent
         if (!Scope.World.Has<CardState>(Scope.Entity))
         {
             Scope.World.Add(Scope.Entity, new CardState(0));
-            Scope.World.AddTag<LocalState>(Scope.Entity);
+            Scope.World.Add(Scope.Entity, default(LocalState));
         }
         return default;
     }

@@ -1,5 +1,4 @@
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
 
 namespace SomeEngine.ECS.Relations.Tests;
 
@@ -19,31 +18,32 @@ public readonly struct TransferFits : IRelation<Score, Weight, Score>
 
 public static class TransferQueries
 {
-    public static RelationQuery<TransferFacts, (Entity, Entity, Entity)> Transfers(this World world, QueryHandle facts) =>
+    public static RelationQuery<TransferFacts, (Entity, Entity, Entity)> Transfers(this World world, Query facts) =>
         new(new TransferFacts(world, facts));
 }
 
-public readonly struct TransferFacts(World world, QueryHandle facts) : IQueryRelationEnumerable<(Entity, Entity, Entity)>
+public readonly struct TransferFacts(World world, Query facts) : IQueryRelationEnumerable<(Entity, Entity, Entity)>
 {
     public World World => world;
 
     public int QueryCount => 1;
 
-    public QueryHandle GetQuery(int position) => facts;
+    public Query GetQuery(int position) => facts;
 
-    public QueryDefinition AddReads(QueryDefinition definition, int position) =>
-        definition.WithOptionalRead<TransferFact>();
+    public QueryDescription AddReads(QueryDescription definition, int position) =>
+        definition.Optional<TransferFact>();
 
     public bool Enumerate<TOutput>(scoped RelationQueryViews queries, ref TOutput output)
         where TOutput : struct, IQueryRelationOutput<(Entity, Entity, Entity)>, allows ref struct
     {
-        foreach (var entity in queries.First.Rows)
+        foreach (QueryChunk chunk in queries.First)
         {
-            queries.Access.TryGetRow(entity.Entity, out var row);
-            ref readonly var fact = ref row.ReadRef<TransferFact>();
-            var transfer = (fact.Source, fact.Carrier, fact.Destination);
-            if (!output.Add(in transfer))
-                return false;
+            ReadOnlySpan<TransferFact> facts = chunk.Read<TransferFact>();
+            foreach (ref readonly TransferFact fact in facts)
+            {
+                var transfer = (fact.Source, fact.Carrier, fact.Destination);
+                if (!output.Add(in transfer)) return false;
+            }
         }
         return true;
     }

@@ -45,43 +45,28 @@ internal static unsafe partial class AnimatedFields
     {
         PropertyAnimation.Declare(world, entity, channel, spec);
         Declare(world, entity, channel, default(Spec), value, hasValue, keepMotion: true);
-        var declaration = (Channel: channel, Spec: spec);
-        world.ExecuteBufferWrite<AnimatedField, (Channel<T> Channel, Spec<T, TOps, TParameters, TState, TEvaluator> Spec)>(
-            entity, ref declaration, static (fields, ref declaration) =>
-            {
-                for (int index = 0; index < fields.Count; index++)
-                {
-                    ref AnimatedField field = ref fields[index];
-                    if (field.Component != declaration.Channel.Component || field.Field != declaration.Channel.Field)
-                        continue;
-                    var motion = FieldMotion<T, TOps, TParameters, TState, TEvaluator>.Select(ref field);
-                    field.Motion = motion;
-                    motion.Channel = declaration.Channel;
-                    motion.Spec = declaration.Spec;
-                    field.ValueFunction = &CopyTypedValue<T, TOps, TParameters, TState, TEvaluator>;
-                    field.SubmitFunction = &SubmitTypedValue<T, TOps, TParameters, TState, TEvaluator>;
-                    return;
-                }
-            });
+        using DynamicBuffer<AnimatedField> fields = world.GetBuffer<AnimatedField>(entity);
+        for (int index = 0; index < fields.Count; index++)
+        {
+            ref AnimatedField field = ref fields[index];
+            if (field.Component != channel.Component || field.Field != channel.Field) continue;
+            var motion = FieldMotion<T, TOps, TParameters, TState, TEvaluator>.Select(ref field);
+            field.Motion = motion;
+            motion.Channel = channel;
+            motion.Spec = spec;
+            field.ValueFunction = &CopyTypedValue<T, TOps, TParameters, TState, TEvaluator>;
+            field.SubmitFunction = &SubmitTypedValue<T, TOps, TParameters, TState, TEvaluator>;
+            return;
+        }
     }
 
     internal static T ReadTarget<T>(World world, Entity entity, Channel<T> channel) where T : unmanaged
     {
-        if (world.HasBuffer<BaseValue<T>>(entity))
+        if (world.Has<Buffer<BaseValue<T>>>(entity))
         {
-            var basis = (Channel: channel, Value: default(T), Found: false);
-            world.ExecuteBufferRead<BaseValue<T>, (Channel<T> Channel, T Value, bool Found)>(entity, ref basis,
-                static (values, ref basis) =>
-                {
-                    foreach (BaseValue<T> value in values.AsSpan())
-                        if (value.Channel == basis.Channel)
-                        {
-                            basis.Value = value.Value;
-                            basis.Found = true;
-                            return;
-                        }
-                });
-            if (basis.Found) return basis.Value;
+            using ReadOnlyBuffer<BaseValue<T>> values = world.ReadBuffer<BaseValue<T>>(entity);
+            foreach (BaseValue<T> value in values.AsSpan())
+                if (value.Channel == channel) return value.Value;
         }
         return channel.Read(world, entity);
     }
@@ -89,46 +74,38 @@ internal static unsafe partial class AnimatedFields
     internal static void Submit<T>(World world, Entity entity, Channel<T> channel, in T value) where T : unmanaged
     {
         var target = (Channel: channel, Index: -1, Field: default(AnimatedField));
-        if (world.HasBuffer<AnimatedField>(entity))
-            world.ExecuteBufferRead<AnimatedField, (Channel<T> Channel, int Index, AnimatedField Field)>(
-                entity, ref target, static (fields, ref target) =>
-                {
-                    for (int index = 0; index < fields.Count; index++)
-                    {
-                        AnimatedField field = fields.Read(index);
-                        if (field.Component != target.Channel.Component || field.Field != target.Channel.Field)
-                            continue;
-                        target.Field = field;
-                        target.Index = index;
-                        return;
-                    }
-                });
+        if (world.Has<Buffer<AnimatedField>>(entity))
+        {
+            using ReadOnlyBuffer<AnimatedField> fields = world.ReadBuffer<AnimatedField>(entity);
+            for (int index = 0; index < fields.Count; index++)
+            {
+                AnimatedField field = fields[index];
+                if (field.Component != channel.Component || field.Field != channel.Field) continue;
+                target.Field = field;
+                target.Index = index;
+                break;
+            }
+        }
         if (target.Index >= 0)
         {
             T submitted = value;
             bool hadValue = target.Field.HasValue;
             target.Field.SubmitFunction(world, entity, ref target.Field, ref Unsafe.As<T, byte>(ref submitted));
             if (target.Field.HasValue != hadValue)
-                world.ExecuteBufferWrite<AnimatedField, (Channel<T> Channel, int Index, AnimatedField Field)>(
-                    entity, ref target, static (fields, ref target) => fields[target.Index] = target.Field);
+                {
+                    using var fields = world.GetBuffer<AnimatedField>(entity);
+                    fields[target.Index] = target.Field;
+                }
         }
         else channel.Write(world, entity, in value);
     }
 
     private static Channel<T> FindChannel<T>(World world, Entity entity, in AnimatedField field) where T : unmanaged
     {
-        var basis = (Component: field.Component, Field: field.Field, Channel: default(Channel<T>));
-        world.ExecuteBufferRead<BaseValue<T>, (ushort Component, uint Field, Channel<T> Channel)>(entity, ref basis,
-            static (values, ref basis) =>
-            {
-                foreach (BaseValue<T> value in values.AsSpan())
-                    if (value.Channel.Component == basis.Component && value.Channel.Field == basis.Field)
-                    {
-                        basis.Channel = value.Channel;
-                        return;
-                    }
-            });
-        return basis.Channel;
+        using ReadOnlyBuffer<BaseValue<T>> values = world.ReadBuffer<BaseValue<T>>(entity);
+        foreach (BaseValue<T> value in values.AsSpan())
+            if (value.Channel.Component == field.Component && value.Channel.Field == field.Field) return value.Channel;
+        return default;
     }
 
     private static void SubmitValue<T>(World world, Entity entity, ref AnimatedField field, ref byte bytes) where T : unmanaged

@@ -13,23 +13,23 @@ internal static partial class SwiftUIChecks
     {
         Entity root = Views.Spawn(frames.World, Entity.Null, new Panel("first", 3, false));
         frames.Frame();
-        Entity counter = Hierarchy<ElementTree>.GetChildren(frames.World, root).Single();
-        Entity editor = Hierarchy<ElementTree>.GetChildren(frames.World, counter).Single();
-        Require(frames.World.Read<DisplayText>(counter).Value == "first:3:1", "SwiftUI properties use their initial values.");
-        Require(frames.World.Read<DisplayText>(editor).Value == "3", "The child Binding reads the property's initial value.");
+        Entity counter = ElementChildren.Read(frames.World, root).Single();
+        Entity editor = ElementChildren.Read(frames.World, counter).Single();
+        Require(frames.World.ReadComponentData<DisplayText>(counter).Value == "first:3:1", "SwiftUI properties use their initial values.");
+        Require(frames.World.ReadComponentData<DisplayText>(editor).Value == "3", "The child Binding reads the property's initial value.");
 
         GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true, compacting: true);
         frames.World.ReplaceSparse(editor, new Edit<int>(true, 7));
         frames.Frame();
-        Require(frames.World.Read<DisplayText>(counter).Value == "first:7:1", "The child Binding refreshes its parent's display.");
-        frames.World.Replace(root, new Panel("second", 99, false));
+        Require(frames.World.ReadComponentData<DisplayText>(counter).Value == "first:7:1", "The child Binding refreshes its parent's display.");
+        frames.World.Set(root, new Panel("second", 99, false));
         frames.Frame();
-        Require(frames.World.Read<DisplayText>(counter).Value == "second:7:1", "New parent parameters preserve both state properties.");
+        Require(frames.World.ReadComponentData<DisplayText>(counter).Value == "second:7:1", "New parent parameters preserve both state properties.");
 
-        frames.World.Replace(root, new Panel("other", 99, true));
+        frames.World.Set(root, new Panel("other", 99, true));
         frames.Frame();
-        Entity other = Hierarchy<ElementTree>.GetChildren(frames.World, root).Single();
-        Require(frames.World.Read<DisplayText>(other).Value == "other:99:1", "The other branch creates its own state.");
+        Entity other = ElementChildren.Read(frames.World, root).Single();
+        Require(frames.World.ReadComponentData<DisplayText>(other).Value == "other:99:1", "The other branch creates its own state.");
 
         var state = new State<int>(11);
         var binding = new Binding<int>(state);
@@ -78,7 +78,7 @@ internal static partial class SwiftUIChecks
         }
     }
 
-    private readonly record struct Edit<T>(bool Set, T Value) : ISparseComponent;
+    private readonly record struct Edit<T>(bool Set, T Value) : ISparseComponent, ITrackedComponent;
     private readonly record struct DisplayText(string Value) : IComponent;
 
     private static void Require(bool value, string message)

@@ -10,13 +10,13 @@ public sealed class AnimationRangeTests
     public void IndependentMotionInstancesEvaluateTogetherBeforeTimelineCompletion()
     {
         using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        using var world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using var world = new World(execution: new WorldJobs(scheduler));
         using var reached = new CountdownEvent(2);
         var spec = Spec.Create<float, FloatOps, TogetherParameters, TogetherState, TogetherMotion>(new(reached));
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
         AnimationSystems.Add(systems, spec);
-        var first = world.CreateEntity(new FieldPanel());
-        var second = world.CreateEntity(new FieldPanel());
+        var first = world.Create(new FieldPanel());
+        var second = world.Create(new FieldPanel());
         PropertyAnimation.Declare(world, first, FieldPanelChannels.Opacity, spec);
         PropertyAnimation.Declare(world, second, FieldPanelChannels.Opacity, spec);
         PropertyAnimation.To(world, first, FieldPanelChannels.Opacity, 3f, spec);
@@ -25,10 +25,10 @@ public sealed class AnimationRangeTests
         var frame = new ImmediateSystemContext(world, 0, 0, 0.25);
         systems.Update(ref frame);
 
-        Assert.Equal(3f, world.Read<FieldPanel>(first).Opacity);
-        Assert.Equal(7f, world.Read<FieldPanel>(second).Opacity);
-        Assert.Equal(1u, world.Read<Timeline>(first).Completions);
-        Assert.Equal(1u, world.Read<Timeline>(second).Completions);
+        Assert.Equal(3f, world.ReadComponentData<FieldPanel>(first).Opacity);
+        Assert.Equal(7f, world.ReadComponentData<FieldPanel>(second).Opacity);
+        Assert.Equal(1u, world.ReadComponentData<Timeline>(first).Completions);
+        Assert.Equal(1u, world.ReadComponentData<Timeline>(second).Completions);
     }
 
     private readonly record struct TogetherParameters(CountdownEvent Reached);

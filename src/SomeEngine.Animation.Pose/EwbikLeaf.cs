@@ -7,7 +7,6 @@ namespace SomeEngine.Animation.Pose;
 
 public readonly record struct EwbikParameters(EwbikRig Rig, PoseResultId Source, PoseResultId Output);
 
-[BufferCapacity(1)]
 public struct EwbikInstance : IBufferElement
 {
     public AnimationLeafBatch<EwbikParameters> Definition;
@@ -31,16 +30,19 @@ public readonly struct EwbikLeaf : IAnimationLeaf<EwbikParameters>
     public static void Install(World world, Entity animation, Entity target,
         AnimationLeafBatch<EwbikParameters> definitions, int index, in AnimationLeafPlacement placement)
     {
-        if (!world.HasBuffer<EwbikInstance>(animation)) world.AddBuffer<EwbikInstance>(animation);
+        if (!world.Has<Buffer<EwbikInstance>>(animation)) world.AddBuffer<EwbikInstance>(animation);
         EwbikParameters parameters = definitions.Parameters[index];
-        SkeletonInstance skeleton = world.Read<PoseTarget>(target).Skeleton;
+        SkeletonInstance skeleton = world.ReadComponentData<PoseTarget>(target).Skeleton;
         var instance = new EwbikInstance
         {
-            Definition = definitions, Index = index, Placement = placement,
+            Definition = definitions,
+            Index = index,
+            Placement = placement,
             Source = PoseAnimation.Resolve(world, target, parameters.Source),
             Output = PoseAnimation.Resolve(world, target, parameters.Output),
             Targets = new EwbikTarget[parameters.Rig.Effectors.Length],
-            Samples = new(PoseAnimation.GetScheduler(world), parameters.Rig, skeleton), Settings = parameters.Rig.Settings,
+            Samples = new(PoseAnimation.GetScheduler(world), parameters.Rig, skeleton),
+            Settings = parameters.Rig.Settings,
             PreferenceWeights = new float[parameters.Rig.Constraints.Length],
         };
         for (int constraint = 0; constraint < instance.PreferenceWeights.Length; constraint++)
@@ -54,15 +56,27 @@ public readonly struct EwbikLeaf : IAnimationLeaf<EwbikParameters>
         }
         short[] bones = parameters.Rig.Bones;
         instance.Node = PoseAnimation.RegisterNode(world, animation, instance.Output, [instance.Source], in placement, bones);
-        world.ExecuteBufferWrite<EwbikInstance, EwbikInstance>(animation, ref instance,
-            static (instances, ref instance) => instances.Add(instance));
+        {
+            using var instances = world.GetBuffer<EwbikInstance>(animation);
+            Visit(instances, ref instance);
+
+            static void Visit(DynamicBuffer<EwbikInstance> instances, ref EwbikInstance instance)
+            {
+                instances.Add(instance);
+
+            }
+        }
     }
 
     public static void Complete(World world, Entity animation) => PoseAnimation.CompleteNodes(world, animation);
 
     public static void Release(World world, Entity animation)
     {
-        world.ExecuteBufferWrite<EwbikInstance>(animation, static instances => instances.Clear());
+        {
+            using var instances = world.GetBuffer<EwbikInstance>(animation);
+            instances.Clear();
+
+        }
         PoseAnimation.ReleaseNodes(world, animation);
     }
 }

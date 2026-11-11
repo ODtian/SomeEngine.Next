@@ -3,12 +3,12 @@ using SomeEngine.ECS;
 
 namespace SomeEngine.Core.ECS.Components;
 
-public struct LocalTransform : IComponent
+public struct LocalTransform : IAddedComponent
 {
     public TransformQvvs Value;
 }
 
-public struct WorldTransform : IComponent
+public struct WorldTransform : IAddedComponent
 {
     public TransformQvvs Qvvs;
 }

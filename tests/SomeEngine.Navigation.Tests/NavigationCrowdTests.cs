@@ -12,7 +12,7 @@ public sealed class NavigationCrowdTests
     public void PolicyScalarFeedbackGuidesEikonalFollowersThroughTheAvailableChannel()
     {
         using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 3 });
-        using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using World world = new World(execution: new WorldJobs(scheduler));
         var profile = new NavigationProfile([new(-0.1f, -0.1f), new(0.1f, -0.1f), new(0.1f, 0.1f), new(-0.1f, 0.1f)], 1);
         var policy = new NavigationPolicy([new(8, 1.5f)], crowd: new NavigationCrowdPolicy
         {
@@ -28,7 +28,7 @@ public sealed class NavigationCrowdTests
         var crowd = new NavigationCrowdSystem<TestMotion, TestMotionReader>(world, scheduler);
         for (int x = 2; x < 10; x++)
         {
-            Entity actor = world.CreateEntity(new TestMotion { Position = new(x + 0.5f, 0, 0.5f) });
+            Entity actor = world.Create(new TestMotion { Position = new(x + 0.5f, 0, 0.5f) });
             navigation.AddFlowAgent(actor, flow, 0.25f);
             world.Add(actor, new NavigationCrowdAgent(1));
         }
@@ -42,7 +42,7 @@ public sealed class NavigationCrowdTests
         Assert.True(flow.Field!.SampleDirection(fork).Z > 0);
         Assert.True(flow.Costs.CellCosts.Span[grid.FindCell(new(5.5f, 0, 0.5f))] >
             flow.Costs.CellCosts.Span[grid.FindCell(new(5.5f, 0, 2.5f))]);
-        Entity fresh = world.CreateEntity(new TestMotion { Position = fork });
+        Entity fresh = world.Create(new TestMotion { Position = fork });
         navigation.AddFlowAgent(fresh, flow, 2);
         world.Add(fresh, new NavigationCrowdAgent(1));
         var positions = new List<Vector3>();
@@ -54,18 +54,18 @@ public sealed class NavigationCrowdTests
             applied = NavigationCostSystem.ScheduleApply(adjusted, new[] { flow }, scheduler);
             JobHandle updated = solver.Schedule(dependency: applied).Completion;
             navigation.ScheduleProgress(scheduler.CombineDependencies([moved, updated])).Complete();
-            positions.Add(world.Read<TestMotion>(fresh).Position);
-            if (world.Read<NavigationProgress>(fresh).Status == NavigationStatus.Arrived) break;
+            positions.Add(world.ReadValue<TestMotion>(fresh).Position);
+            if (world.ReadValue<NavigationProgress>(fresh).Status == NavigationStatus.Arrived) break;
         }
         Assert.Contains(positions, position => position.X > 4 && position.X < 9 && position.Z > 2);
-        Assert.Equal(NavigationStatus.Arrived, world.Read<NavigationProgress>(fresh).Status);
+        Assert.Equal(NavigationStatus.Arrived, world.ReadValue<NavigationProgress>(fresh).Status);
     }
 
     [Fact]
     public void ActualSlowTrafficRaisesSharedChannelCostsAndNewFollowersReachTheGoalThroughTheOtherChannel()
     {
         using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 3 });
-        using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using World world = new World(execution: new WorldJobs(scheduler));
         var profile = new NavigationProfile([new(-0.1f, -0.1f), new(0.1f, -0.1f), new(0.1f, 0.1f), new(-0.1f, 0.1f)], 1);
         var policy = new NavigationPolicy([new(8, 1.5f)]);
         NavigationGrid grid = NavigationGridRegionBuilder.Schedule(TwoChannels(), profile, policy, scheduler: scheduler).Complete().Grid;
@@ -87,7 +87,7 @@ public sealed class NavigationCrowdTests
         var traffic = new List<Entity>();
         for (int x = 2; x < 10; x++)
         {
-            Entity actor = world.CreateEntity(new TestMotion { Position = new(x + 0.5f, 0, 0.5f) });
+            Entity actor = world.Create(new TestMotion { Position = new(x + 0.5f, 0, 0.5f) });
             navigation.AddFlowAgent(actor, flow, 0.25f);
             NavigationComponents.AddAvoidance(world, actor, new(0.15f, NeighborDistance: 1, MaximumNeighbors: 4));
             world.Add(actor, new NavigationCrowdAgent(1));
@@ -107,13 +107,13 @@ public sealed class NavigationCrowdTests
         NavigationCrowdField first = measured.State.Field;
         NavigationCrowdCell sample = first.Sample(new(5.5f, 0, 0.5f));
         Assert.InRange(sample.Density, 0.9f, 1.1f);
-        float actualSpeed = world.Read<TestMotion>(traffic[3]).Velocity.X;
+        float actualSpeed = world.ReadValue<TestMotion>(traffic[3]).Velocity.X;
         Assert.InRange(actualSpeed, 0.17f, 0.18f);
         Assert.Equal(actualSpeed, sample.AverageVelocity.X, 4);
         Assert.Equal(0f, first.Sample(new(5.5f, 0, 2.5f)).Density);
         Assert.True(flow.Field!.SampleDirection(fork).Z > 0);
         Assert.Same(flow.Costs, other.Costs);
-        Entity fresh = world.CreateEntity(new TestMotion { Position = fork });
+        Entity fresh = world.Create(new TestMotion { Position = fork });
         navigation.AddFlowAgent(fresh, flow, 2);
         NavigationComponents.AddAvoidance(world, fresh, new(0.15f, NeighborDistance: 1, MaximumNeighbors: 4));
         world.Add(fresh, new NavigationCrowdAgent(1));
@@ -128,12 +128,12 @@ public sealed class NavigationCrowdTests
             applied = NavigationCostSystem.ScheduleApply(adjusted, new[] { flow, other }, scheduler);
             JobHandle updated = solver.Schedule(dependency: applied).Completion;
             navigation.ScheduleProgress(scheduler.CombineDependencies([moved, updated])).Complete();
-            positions.Add(world.Read<TestMotion>(fresh).Position);
-            if (world.Read<NavigationProgress>(fresh).Status == NavigationStatus.Arrived) break;
+            positions.Add(world.ReadValue<TestMotion>(fresh).Position);
+            if (world.ReadValue<NavigationProgress>(fresh).Status == NavigationStatus.Arrived) break;
         }
         Assert.Contains(positions, position => position.X > 4 && position.X < 9 && position.Z > 2);
-        Assert.Equal(NavigationStatus.Arrived, world.Read<NavigationProgress>(fresh).Status);
-        Assert.Same(world.Read<FlowFollower>(traffic[0]).Flow, world.Read<FlowFollower>(fresh).Flow);
+        Assert.Equal(NavigationStatus.Arrived, world.ReadValue<NavigationProgress>(fresh).Status);
+        Assert.Same(world.ReadValue<FlowFollower>(traffic[0]).Flow, world.ReadValue<FlowFollower>(fresh).Flow);
         Assert.Equal(actualSpeed, first.Sample(new(5.5f, 0, 0.5f)).AverageVelocity.X, 4);
     }
 

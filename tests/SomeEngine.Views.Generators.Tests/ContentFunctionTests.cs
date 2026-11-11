@@ -26,19 +26,19 @@ public sealed class ContentFunctionTests
                         new Composition.Rows_View<int>(new[] { 2, 5 }, true,
                             static item => Scope.View(new Card(item.ToString()))));
                     frames.Frame();
-                    Entity[] content = Hierarchy<ElementTree>.GetChildren(frames.World, root).ToArray();
-                    string[] titles = content.Select(child => frames.World.ReadSparse<Card>(
-                        Hierarchy<ElementTree>.GetChildren(frames.World, child).Single()).Title).ToArray();
+                    Entity[] content = ElementChildren.Read(frames.World, root).ToArray();
+                    string[] titles = content.Select(child => frames.World.ReadComponentData<Card>(
+                        ElementChildren.Read(frames.World, child).Single()).Title).ToArray();
                     if (!titles.SequenceEqual(new[] { "0", "2", "5" }))
                         return false;
 
-                    frames.World.ReplaceSparse(root, frames.World.ReadSparse<Composition.Rows_View<int>>(root) with
+                    frames.World.SetSparse(root, frames.World.ReadComponentData<Composition.Rows_View<int>>(root) with
                         { header = false, items = new[] { 7, 8 } });
                     frames.Frame();
-                    Entity[] rows = Hierarchy<ElementTree>.GetChildren(frames.World, root).ToArray();
-                    return rows.SequenceEqual(content.Skip(1)) && !frames.World.IsAlive(content[0]) &&
-                        rows.Select(child => frames.World.ReadSparse<Card>(
-                            Hierarchy<ElementTree>.GetChildren(frames.World, child).Single()).Title)
+                    Entity[] rows = ElementChildren.Read(frames.World, root).ToArray();
+                    return rows.SequenceEqual(content.Skip(1)) && !frames.World.Has<ViewType>(content[0]) &&
+                        rows.Select(child => frames.World.ReadComponentData<Card>(
+                            ElementChildren.Read(frames.World, child).Single()).Title)
                         .SequenceEqual(new[] { "7", "8" });
                 }
             }
@@ -80,18 +80,18 @@ public sealed class ContentFunctionTests
                     using var frames = new HeadlessFrameDriver();
                     Entity root = Views.Spawn(frames.World, Entity.Null, new Panel(new Action<int>(Composition.Draw), 0));
                     frames.Frame();
-                    Entity rows = Hierarchy<ElementTree>.GetChildren(frames.World, root).Single();
-                    Entity content = Hierarchy<ElementTree>.GetChildren(frames.World, rows).Single();
-                    Entity card = Hierarchy<ElementTree>.GetChildren(frames.World, content).Single();
-                    if (frames.World.ReadSparse<Card>(card).Title != "3 old")
+                    Entity rows = ElementChildren.Read(frames.World, root).Single();
+                    Entity content = ElementChildren.Read(frames.World, rows).Single();
+                    Entity card = ElementChildren.Read(frames.World, content).Single();
+                    if (frames.World.ReadComponentData<Card>(card).Title != "3 old")
                         return false;
 
                     Composition.Decoration = " new";
-                    frames.World.Replace(root, new Panel(new Action<int>(Composition.Draw), 1));
+                    frames.World.Set(root, new Panel(new Action<int>(Composition.Draw), 1));
                     frames.Frame();
-                    return Hierarchy<ElementTree>.GetChildren(frames.World, root).Single() == rows &&
-                        Hierarchy<ElementTree>.GetChildren(frames.World, rows).Single() == content &&
-                        frames.World.ReadSparse<Card>(card).Title == "3 new";
+                    return ElementChildren.Read(frames.World, root).Single() == rows &&
+                        ElementChildren.Read(frames.World, rows).Single() == content &&
+                        frames.World.ReadComponentData<Card>(card).Title == "3 new";
                 }
             }
 
@@ -134,20 +134,20 @@ public sealed class ContentFunctionTests
                     using var frames = new HeadlessFrameDriver();
                     Entity root = Views.Spawn(frames.World, Entity.Null, new Panel(3, 0));
                     frames.Frame();
-                    Entity rows = Hierarchy<ElementTree>.GetChildren(frames.World, root).Single();
-                    Entity content = Hierarchy<ElementTree>.GetChildren(frames.World, rows).Single();
-                    Entity card = Hierarchy<ElementTree>.GetChildren(frames.World, content).Single();
+                    Entity rows = ElementChildren.Read(frames.World, root).Single();
+                    Entity content = ElementChildren.Read(frames.World, rows).Single();
+                    Entity card = ElementChildren.Read(frames.World, content).Single();
                     Composition.Decoration = " new";
-                    frames.World.Replace(root, new Panel(3, 1));
+                    frames.World.Set(root, new Panel(3, 1));
                     frames.Frame();
-                    if (frames.World.ReadSparse<Card>(card).Title != "3 old" ||
-                        frames.World.Read<Refresh>(rows).Value != 1)
+                    if (frames.World.ReadComponentData<Card>(card).Title != "3 old" ||
+                        frames.World.ReadComponentData<Refresh>(rows).Value != 1)
                         return false;
 
-                    frames.World.Replace(root, new Panel(4, 2));
+                    frames.World.Set(root, new Panel(4, 2));
                     frames.Frame();
-                    return Hierarchy<ElementTree>.GetChildren(frames.World, rows).Single() == content &&
-                        frames.World.ReadSparse<Card>(card).Title == "4 new";
+                    return ElementChildren.Read(frames.World, rows).Single() == content &&
+                        frames.World.ReadComponentData<Card>(card).Title == "4 new";
                 }
             }
 
@@ -159,7 +159,7 @@ public sealed class ContentFunctionTests
                 public static void Rows(int item, int tick, [Composable] Action<int> row)
                 {
                     if (Scope.World.Has<Refresh>(Scope.Entity))
-                        Scope.World.Replace(Scope.Entity, new Refresh(tick));
+                        Scope.World.Set(Scope.Entity, new Refresh(tick));
                     else
                         Scope.World.Add(Scope.Entity, new Refresh(tick));
                     row(item);
@@ -248,16 +248,16 @@ public sealed class ContentFunctionTests
                     var second = new State<int>(5);
                     Entity root = Views.Spawn(frames.World, Entity.Null, new Panel(new[] { first, second }));
                     frames.Frame();
-                    Entity rows = Hierarchy<ElementTree>.GetChildren(frames.World, root).Single();
-                    Entity list = Hierarchy<ElementTree>.GetChildren(frames.World, rows).Single();
-                    Entity[] content = Hierarchy<ElementTree>.GetChildren(frames.World, list).ToArray();
-                    Entity[] cards = content.Select(child => Hierarchy<ElementTree>.GetChildren(frames.World, child).Single()).ToArray();
+                    Entity rows = ElementChildren.Read(frames.World, root).Single();
+                    Entity list = ElementChildren.Read(frames.World, rows).Single();
+                    Entity[] content = ElementChildren.Read(frames.World, list).ToArray();
+                    Entity[] cards = content.Select(child => ElementChildren.Read(frames.World, child).Single()).ToArray();
                     Composition.Decoration = " new";
                     first.Value = 7;
                     frames.Frame();
-                    return content.SequenceEqual(Hierarchy<ElementTree>.GetChildren(frames.World, list)) &&
-                        frames.World.ReadSparse<Card>(cards[0]).Title == "7 new" &&
-                        frames.World.ReadSparse<Card>(cards[1]).Title == "5 old";
+                    return content.SequenceEqual(ElementChildren.Read(frames.World, list)) &&
+                        frames.World.ReadComponentData<Card>(cards[0]).Title == "7 new" &&
+                        frames.World.ReadComponentData<Card>(cards[1]).Title == "5 old";
                 }
             }
 
@@ -302,20 +302,20 @@ public sealed class ContentFunctionTests
                             Scope.View(new Card(title));
                         }));
                     frames.Frame();
-                    Entity content = Hierarchy<ElementTree>.GetChildren(frames.World, root).Single();
-                    Entity card = Hierarchy<ElementTree>.GetChildren(frames.World, content).Single();
-                    var view = frames.World.ReadSparse<Composition.Rows_View>(root);
-                    frames.World.ReplaceSparse(root, view with { title = "failed" });
+                    Entity content = ElementChildren.Read(frames.World, root).Single();
+                    Entity card = ElementChildren.Read(frames.World, content).Single();
+                    var view = frames.World.ReadComponentData<Composition.Rows_View>(root);
+                    frames.World.SetSparse(root, view with { title = "failed" });
                     frames.Frame();
                     if (frames.World.HasSparse<BuildError>(root) ||
-                        frames.World.ReadSparse<BuildError>(content).Exception is not System.InvalidOperationException ||
-                        frames.World.ReadSparse<Card>(card).Title != "first")
+                        frames.World.ReadComponentData<BuildError>(content).Exception is not System.InvalidOperationException ||
+                        frames.World.ReadComponentData<Card>(card).Title != "first")
                         return false;
 
-                    frames.World.ReplaceSparse(root, view with { title = "restored" });
+                    frames.World.SetSparse(root, view with { title = "restored" });
                     frames.Frame();
-                    return Hierarchy<ElementTree>.GetChildren(frames.World, root).Single() == content &&
-                        frames.World.ReadSparse<Card>(card).Title == "restored" &&
+                    return ElementChildren.Read(frames.World, root).Single() == content &&
+                        frames.World.ReadComponentData<Card>(card).Title == "restored" &&
                         !frames.World.HasSparse<BuildError>(root) && !frames.World.HasSparse<BuildError>(content);
                 }
             }
@@ -376,9 +376,9 @@ public sealed class ContentFunctionTests
                         new Screens.Composition<int>.Rows_View(9,
                             static (content, suffix) => Scope.View(new Card(content + suffix))));
                     frames.Frame();
-                    return Hierarchy<ElementTree>.GetChildren(frames.World, root)
-                        .Select(child => frames.World.ReadSparse<Card>(
-                            Hierarchy<ElementTree>.GetChildren(frames.World, child).Single()).Title)
+                    return ElementChildren.Read(frames.World, root)
+                        .Select(child => frames.World.ReadComponentData<Card>(
+                            ElementChildren.Read(frames.World, child).Single()).Title)
                         .SequenceEqual(new[] { "9!", "9?" });
                 }
             }

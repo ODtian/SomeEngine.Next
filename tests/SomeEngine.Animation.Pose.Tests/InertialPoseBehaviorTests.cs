@@ -24,7 +24,7 @@ public sealed class InertialPoseBehaviorTests
             new(new(.3f, -.8f, .6f), new(0, .7f, .2f), new(.06f, -.02f, .01f)));
         AnimationClip clipA = Clip(skeleton, actionA), clipB = Clip(skeleton, actionB), clipC = Clip(skeleton, actionC);
         using var scheduler = new Scheduler(new() { WorkerCount = 2 });
-        using var world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using var world = new World(execution: new WorldJobs(scheduler));
         var storage = new PoseStorage();
         using SkeletonInstance first = storage.CreateInstance(skeleton), second = storage.CreateInstance(skeleton);
         Entity firstTarget = PoseAnimation.CreateTarget(world, first, resultCount: 3, output: new(2));
@@ -104,23 +104,36 @@ public sealed class InertialPoseBehaviorTests
 
     private static void SelectAction(World world, Entity animation, ulong action, BoneVelocity velocity)
     {
-        GraphParameters controls = world.Read<GraphParameters>(animation);
+        GraphParameters controls = world.ReadComponentData<GraphParameters>(animation);
         controls.Values[0] = action;
-        world.Replace(animation, controls);
+        world.Set(animation, controls);
         var change = (Action: action, Velocity: velocity);
-        world.ExecuteBufferWrite<InertialPoseInstance, (ulong Action, BoneVelocity Velocity)>(animation, ref change,
-            static (instances, ref change) =>
+        {
+            using var instances = world.GetBuffer<InertialPoseInstance>(animation);
+            Visit(instances, ref change);
+
+            static void Visit(DynamicBuffer<InertialPoseInstance> instances, ref (ulong Action, BoneVelocity Velocity) change)
             {
                 instances[0].Action = change.Action;
                 instances[0].SourceVelocities[1] = change.Velocity;
-            });
+
+            }
+        }
     }
 
     private static BoneVelocity Velocity(World world, Entity animation)
     {
         BoneVelocity velocity = default;
-        world.ExecuteBufferRead<InertialPoseInstance, BoneVelocity>(animation, ref velocity,
-            static (instances, ref velocity) => velocity = instances[0].Velocities[1]);
+        {
+            using var instances = world.ReadBuffer<InertialPoseInstance>(animation);
+            Visit(instances, ref velocity);
+
+            static void Visit(ReadOnlyBuffer<InertialPoseInstance> instances, ref BoneVelocity velocity)
+            {
+                velocity = instances[0].Velocities[1];
+
+            }
+        }
         return velocity;
     }
 

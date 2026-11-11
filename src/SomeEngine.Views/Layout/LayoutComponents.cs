@@ -6,7 +6,7 @@ using SomeEngine.ECS.Entities;
 namespace SomeEngine.Layout;
 
 /// <summary>Caller-written outer size limits and inner spacing.</summary>
-public struct Box : IComponent
+public struct Box : ITrackedComponent
 {
     public Thickness Padding;
     public Size Min;
@@ -18,13 +18,13 @@ public struct Box : IComponent
 }
 
 /// <summary>The rectangle in canvas coordinates, written by the layout system.</summary>
-public struct LayoutRect : IComponent
+public struct LayoutRect : ITrackedComponent
 {
     public Rect Value;
 }
 
 /// <summary>The last measurement and its layout input version, written by the layout system.</summary>
-public struct LayoutCache : IComponent
+public struct LayoutCache : ITrackedComponent
 {
     public Constraints Constraints;
     public Size Size;
@@ -32,7 +32,7 @@ public struct LayoutCache : IComponent
 }
 
 /// <summary>Application-written target, target size, and pixels per canvas unit.</summary>
-public struct Canvas : IComponent
+public struct Canvas : IComponent, ITrackedComponent
 {
     public CanvasTarget Target;
     public Size Size;
@@ -57,7 +57,7 @@ public readonly record struct CanvasTarget(CanvasTargetKind Kind, Entity Entity)
 }
 
 /// <summary>Caller-written position relative to an Absolute parent's content origin.</summary>
-public struct AbsolutePosition : IComponent, IEquatable<AbsolutePosition>
+public struct AbsolutePosition : IComponent, IEquatable<AbsolutePosition>, ITrackedComponent
 {
     public Vector2 Value;
     public readonly bool Equals(AbsolutePosition other) => Value.Equals(other.Value);

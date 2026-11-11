@@ -48,20 +48,20 @@ public sealed class NavigationMeshAssetTests : IDisposable
         using (var asset = await NavigationAsset.OpenAsync(meshPath))
             mesh = await (await asset.GetBlockAsync<NavigationMeshBlock>()).CreateAsync(selection);
         using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
-        using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using World world = new World(execution: new WorldJobs(scheduler));
         var navigation = new NavigationSystems<NavigationMesh, PolygonNavigationSearch,
             PolygonSearchState, AssetMotion, AssetMotionReader>(world);
-        var entity = world.CreateEntity(new AssetMotion(new(0.5f, 0, 1), default, 0));
+        var entity = world.Create(new AssetMotion(new(0.5f, 0, 1), default, 0));
         navigation.AddAgent(entity, mesh, profile, policy, new NavigationGoal(new Vector3(3.5f, 0, 1), 0.1f), 2f);
-        for (int step = 0; step < 60 && world.Read<NavigationProgress>(entity).Status != NavigationStatus.Arrived; step++)
+        for (int step = 0; step < 60 && world.ReadComponentData<NavigationProgress>(entity).Status != NavigationStatus.Arrived; step++)
         {
             navigation.Schedule(0.1f, 2).Steering.Complete();
-            NavigationSteering steering = world.Read<NavigationSteering>(entity);
-            AssetMotion motion = world.Read<AssetMotion>(entity);
-            world.Replace(entity, new AssetMotion(motion.Position + steering.Velocity * 0.1f, steering.Velocity, steering.Heading));
+            NavigationSteering steering = world.ReadComponentData<NavigationSteering>(entity);
+            AssetMotion motion = world.ReadComponentData<AssetMotion>(entity);
+            world.Set(entity, new AssetMotion(motion.Position + steering.Velocity * 0.1f, steering.Velocity, steering.Heading));
             navigation.ScheduleProgress(default).Complete();
         }
-        Assert.Equal(NavigationStatus.Arrived, world.Read<NavigationProgress>(entity).Status);
+        Assert.Equal(NavigationStatus.Arrived, world.ReadComponentData<NavigationProgress>(entity).Status);
     }
 
     private readonly record struct AssetMotion(Vector3 Position, Vector3 Velocity, float Heading) : IComponent;

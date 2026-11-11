@@ -1,58 +1,46 @@
+using SomeEngine.ECS;
+using SomeEngine.ECS.Spatial;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Relations;
-using SomeEngine.Physics;
 
 namespace SomeEngine.ECS.Benchmarks.Relations.Spatial;
 
 /// <summary>Direct character-key exclusion over the same collision nodes and key summaries.</summary>
 public static class HandwrittenSpatialKeys
 {
-    public static bool Except<TOutput>(World world, QueryHandle bodies, CollisionTree tree,
-        ReadOnlySpan<CollisionKeyData<Entity>> keys, ref TOutput output)
+    public static bool Except<TOutput>(World world, Query bodies, BoundsTree tree,
+        ReadOnlySpan<BoundsKeyData<Entity>> keys, ref TOutput output)
         where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
     {
-        QueryDefinition original = world.GetQueryDefinition(bodies);
-        QueryDefinition definition = original.WithOptionalRead<Body>().WithOptionalRead<Hair>();
-        bool temporaryQuery = definition.CanWrite || !ReferenceEquals(original, definition);
-        QueryHandle query = temporaryQuery ? world.Query(definition) : bodies;
+        using QueryScope scope = bodies.WithOptionalRead<Body>().WithOptionalRead<Hair>().OpenRead();
         var execution = new KeyPairs<TOutput>(tree, keys, output);
-        try
-        {
-            world.ExecuteQuery(query, ref execution);
-            return execution.Completed;
-        }
-        finally
-        {
-            output = execution.Output;
-            if (temporaryQuery)
-                world.ReleaseQuery(query);
-        }
+        try { execution.Execute(scope); return execution.Completed; }
+        finally { output = execution.Output; }
     }
 
-    private ref struct KeyPairs<TOutput>(CollisionTree tree,
-        ReadOnlySpan<CollisionKeyData<Entity>> keys, TOutput output) : IQueryExecution
+    private ref struct KeyPairs<TOutput>(BoundsTree tree,
+        ReadOnlySpan<BoundsKeyData<Entity>> keys, TOutput output)
         where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
     {
-        private readonly ReadOnlySpan<CollisionKeyData<Entity>> _keys = keys;
+        private readonly ReadOnlySpan<BoundsKeyData<Entity>> _keys = keys;
         public TOutput Output = output;
         public bool Completed;
 
-        public void Execute(scoped QueryCursor members) => Completed = Traverse(members);
+        public void Execute(scoped QueryScope members) => Completed = Traverse(members);
 
-        private bool Traverse(scoped QueryCursor members)
+        private bool Traverse(scoped QueryScope members)
         {
             if (tree.Root < 0)
                 return true;
-            ReadOnlySpan<CollisionNode> nodes = tree.Nodes;
+            ReadOnlySpan<BoundsNode> nodes = tree.Nodes;
             Span<KeyNodePair> work = stackalloc KeyNodePair[2 * tree.Height + 1];
             int count = 0;
             work[count++] = new(tree.Root, tree.Root, default, default);
             while (count > 0)
             {
                 KeyNodePair pair = work[--count];
-                ref readonly CollisionNode first = ref nodes[pair.First];
-                ref readonly CollisionNode second = ref nodes[pair.Second];
+                ref readonly BoundsNode first = ref nodes[pair.First];
+                ref readonly BoundsNode second = ref nodes[pair.Second];
                 if (pair.First == pair.Second && first.IsLeaf ||
                     pair.First != pair.Second && !first.Bounds.Overlaps(in second.Bounds))
                     continue;
@@ -75,7 +63,7 @@ public static class HandwrittenSpatialKeys
                     if (match == GroupMatch.All)
                         continue;
                     var entities = (nodes[firstNode].Entity, nodes[secondNode].Entity);
-                    if (!members.TryGetRow(entities.Item1, out _) || !members.TryGetRow(entities.Item2, out _))
+                    if (!members.Contains(entities.Item1) || !members.Contains(entities.Item2))
                         continue;
                     if (match == GroupMatch.Unknown)
                     {
@@ -102,8 +90,8 @@ public static class HandwrittenSpatialKeys
         }
     }
 
-    private static GroupMatch Groups(ReadOnlySpan<CollisionNode> nodes,
-        ReadOnlySpan<CollisionKeyData<Entity>> keys, int firstNode, int secondNode, GroupMatch inherited)
+    private static GroupMatch Groups(ReadOnlySpan<BoundsNode> nodes,
+        ReadOnlySpan<BoundsKeyData<Entity>> keys, int firstNode, int secondNode, GroupMatch inherited)
     {
         if (inherited != GroupMatch.Unknown)
             return inherited;

@@ -22,9 +22,9 @@ public sealed class RootComponentContractTests
         Assert.Equal(31, component.Value);
 
         using var source = new World();
-        Entity entity = source.CreateEntity(new RootOnlySerializedValue { Value = 32 });
+        Entity entity = source.Create(new RootOnlySerializedValue { Value = 32 });
         using var worldStream = new MemoryStream();
-        WorldSerializer.WriteWorld(worldStream, source, registry);
+        new WorldSerializer(registry).Save(source, worldStream);
 
         worldStream.Position = 0;
         using World loaded = WorldSerializer.ReadWorld(worldStream, registry);
@@ -37,22 +37,22 @@ public sealed class RootComponentContractTests
     {
         var registry = new SerializationRegistry()
             .Register<RootOnlySerializedRelation>()
-            .RegisterRelationTopology<RootOnlySerializedRelation>();
+            .RegisterRelation<RootOnlySerializedRelation>();
         using var sourceWorld = new World();
-        Entity source = sourceWorld.CreateEntity();
-        Entity target = sourceWorld.CreateEntity();
+        Entity source = sourceWorld.Create();
+        Entity target = sourceWorld.Create();
         RelationEdge<RootOnlySerializedRelation> edge = sourceWorld.CreateRelation(
             source,
             target,
             new RootOnlySerializedRelation { Value = 41 });
         using var stream = new MemoryStream();
 
-        WorldSerializer.WriteWorld(stream, sourceWorld, registry);
+        new WorldSerializer(registry).Save(sourceWorld, stream);
         stream.Position = 0;
         using World loaded = WorldSerializer.ReadWorld(stream, registry);
 
         RelationEdge<RootOnlySerializedRelation> loadedEdge = Assert.Single(
-            loaded.GetRelationEdgesBetween<RootOnlySerializedRelation>(source, target).ToArray());
+            TopologyValues.Between<RootOnlySerializedRelation>(loaded, source, target).ToArray());
         Assert.Equal(edge, loadedEdge);
         Assert.Equal(41, loaded.Read<RootOnlySerializedRelation>(loadedEdge.Entity).Value);
     }

@@ -1,6 +1,5 @@
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Graphics;
 using SomeEngine.Render.Systems;
@@ -32,15 +31,15 @@ public sealed class ApplicationGeometryTransferTests(SceneContentFixture content
         Assert.Equal([14u, 22u], feature.ReadValues);
     }
 
-    private readonly record struct GeometrySample(uint Value) : IComponent;
-    private readonly record struct RenderGeometrySample(uint Value) : IComponent;
+    private readonly record struct GeometrySample(uint Value) : ITrackedComponent;
+    private readonly record struct RenderGeometrySample(uint Value) : ITrackedComponent;
 
     private sealed class GeometrySampleSystem : ISystem<ImmediateSystemContext>
     {
         private Entity _entity;
-        public void OnCreate(ref ImmediateSystemContext context) => _entity = context.World.CreateEntity(new GeometrySample(3));
+        public void OnCreate(ref ImmediateSystemContext context) => _entity = context.World.Create(new GeometrySample(3));
         public void OnUpdate(ref ImmediateSystemContext context) =>
-            context.World.Replace(_entity, new GeometrySample(context.World.Read<GeometrySample>(_entity).Value + 4));
+            context.World.Set(_entity, new GeometrySample(context.World.ReadComponentData<GeometrySample>(_entity).Value + 4));
     }
 
     private sealed class GeometrySampleExtractor : IRenderExtractionSystem
@@ -57,7 +56,7 @@ public sealed class ApplicationGeometryTransferTests(SceneContentFixture content
 
         public void Reset() => _collected = false;
 
-        public void Collect(QueryChunkView chunk)
+        public void Collect(QueryChunk chunk)
         {
             if (!chunk.TryRead<GeometrySample>(out var values)) return;
             _source = chunk.Entities[0];
@@ -65,9 +64,9 @@ public sealed class ApplicationGeometryTransferTests(SceneContentFixture content
             _collected = true;
         }
 
-        public bool CollectChanges(QueryChunkView chunk, RenderExtractionContext context)
+        public bool CollectChanges(QueryChunk chunk, ulong since, RenderExtractionContext context)
         {
-            if (!chunk.Has<GeometrySample>() || !chunk.HasChangedSinceLastSystemVersion<GeometrySample>()) return false;
+            if (!chunk.Has<GeometrySample>() || !chunk.WasWritten<GeometrySample>(since)) return false;
             Collect(chunk);
             return true;
         }
@@ -107,7 +106,7 @@ public sealed class ApplicationGeometryTransferTests(SceneContentFixture content
         private readonly Buffer _output;
         private readonly GraphBufferInput _input;
         private readonly GraphPassId _copy;
-        private QueryHandle _query;
+        private Query _query;
         private uint _value;
         private QueueCompletion _lastCompletion;
 
@@ -137,15 +136,15 @@ public sealed class ApplicationGeometryTransferTests(SceneContentFixture content
         }
 
         public void OnCreate(ref RenderPrepareSystemContext context) =>
-            _query = context.World.Query(new QueryDefinitionBuilder().Read<RenderGeometrySample>());
+            _query = context.World.World.Query(new QueryDescription().With<RenderGeometrySample>());
 
-        public void OnUpdate(ref RenderPrepareSystemContext context) =>
-            context.World.ExecuteQuery(_query, query =>
-            {
-                foreach (QueryChunkView chunk in query.Chunks) _value = chunk.Read<RenderGeometrySample>()[0].Value * 2;
-            });
+        public void OnUpdate(ref RenderPrepareSystemContext context)
+        {
+            using QueryScope source = _query.OpenRead();
+            foreach (QueryChunk chunk in source) _value = chunk.Read<RenderGeometrySample>()[0].Value * 2;
+        }
 
-        public void OnDestroy(ref RenderPrepareSystemContext context) => context.World.ReleaseQuery(_query);
+        public void OnDestroy(ref RenderPrepareSystemContext context) => _query = default;
 
         public void OnUpdate(ref RenderFrameSystemContext context)
         {

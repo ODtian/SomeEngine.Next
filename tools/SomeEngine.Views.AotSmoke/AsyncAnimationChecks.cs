@@ -14,8 +14,8 @@ internal static partial class AsyncAnimationChecks
     internal static void Run()
     {
         using var world = new World();
-        Entity time = world.CreateEntity(new AnimationTime(0));
-        Entity target = world.CreateEntity(new Paint { Fill = new Color(1, 0, 0) });
+        Entity time = world.Create(new AnimationTime(0));
+        Entity target = world.Create(new Paint { Fill = new Color(1, 0, 0) });
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
         systems.Add(new ViewRebuildSystem());
         AnimationSystems.AddDefaults(systems, time);
@@ -23,7 +23,7 @@ internal static partial class AsyncAnimationChecks
         Entity root = global::SomeEngine.Views.Views.Spawn(world, Entity.Null, new PaintGroup(target, new Color(1, 0, 0), null, error));
         Frame(0);
         var ready = new TaskCompletionSource();
-        world.Replace(root, new PaintGroup(target, new Color(0, 0, 1), ready.Task, error));
+        world.Set(root, new PaintGroup(target, new Color(0, 0, 1), ready.Task, error));
         Frame(0);
         Frame(0.25f);
         Require(world.Read<Paint>(target).Fill == new Color(0.75f, 0, 0.25f), "The suspended child commits its target.");
@@ -41,7 +41,7 @@ internal static partial class AsyncAnimationChecks
             new LaunchedPaint(target, new Color(1, 0, 0), null, error));
         Frame(0);
         var launchedReady = new TaskCompletionSource();
-        world.Replace(launched, new LaunchedPaint(target, new Color(0, 0, 1), launchedReady.Task, error));
+        world.Set(launched, new LaunchedPaint(target, new Color(0, 0, 1), launchedReady.Task, error));
         Frame(0);
         Frame(0.25f);
         Require(world.Read<Paint>(target).Fill == new Color(0.75f, 0, 0.25f), "Launch commits its suspended target.");
@@ -54,10 +54,10 @@ internal static partial class AsyncAnimationChecks
         Require(world.Read<Paint>(target).Fill == new Color(1, 0, 0), "Launch restores the completed target.");
 
         var canceledReady = new TaskCompletionSource();
-        world.Replace(launched, new LaunchedPaint(target, new Color(0, 0, 1), canceledReady.Task, error));
+        world.Set(launched, new LaunchedPaint(target, new Color(0, 0, 1), canceledReady.Task, error));
         Frame(0);
         Frame(0.25f);
-        world.Replace(launched, new LaunchedPaint(target, new Color(0, 1, 0), null, error));
+        world.Set(launched, new LaunchedPaint(target, new Color(0, 1, 0), null, error));
         Frame(0);
         Require(world.Read<Paint>(target).Fill == new Color(0.75f, 0, 0.25f), "Launch cancellation keeps the presented color.");
         canceledReady.SetResult();
@@ -68,7 +68,7 @@ internal static partial class AsyncAnimationChecks
 
         void Frame(float delta)
         {
-            world.Replace(time, new AnimationTime(delta, gamePaused: true));
+            world.Set(time, new AnimationTime(delta, gamePaused: true));
             systems.Update();
         }
     }
@@ -78,7 +78,7 @@ internal static partial class AsyncAnimationChecks
         if (!value) throw new InvalidOperationException(message);
     }
 
-    private struct Paint : IComponent
+    private struct Paint : IComponent, ITrackedComponent
     {
         public Color Fill;
     }

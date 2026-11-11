@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 using SlangShaderSharp;
 using SomeEngine.Core.Math;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
+using SomeEngine.ECS;
 using SomeEngine.Graphics;
 using SomeEngine.Render.Components;
 using SomeEngine.Render.Materials;
@@ -58,8 +58,7 @@ public sealed partial class ClusterPipelineSystem
         }
     }
 
-    private QueryHandle _decalQuery;
-    private RenderWorld? _decalWorld;
+    private Query _decalQuery;
     private readonly List<MaterialDecalSource> _decalSources = [];
     private readonly Dictionary<(Shader Shader, Type Type), ScalarLayout.ScalarMaterialLayout> _decalLayouts = [];
 
@@ -150,16 +149,16 @@ public sealed partial class ClusterPipelineSystem
     {
         MaterialDecalData data = GraphData.Decals!;
         _decalSources.Clear();
-        List<MaterialDecalSource> collected = _decalSources;
-        _decalWorld!.ExecuteQuery(_decalQuery, ref collected, static (QueryCursor rows, ref List<MaterialDecalSource> values) =>
-        {
-            foreach (QueryRow row in rows.Rows)
+        using (QueryScope query = _decalQuery.OpenRead())
+            foreach (QueryChunk chunk in query)
             {
-                RenderMaterialDecal decal = row.Read<RenderMaterialDecal>();
-                values.Add(new(row.Entity, row.Read<RenderTransform>(), decal.Material, decal.Material.Revision, decal.Order));
+                ReadOnlySpan<RenderMaterialDecal> decals = chunk.Read<RenderMaterialDecal>();
+                ReadOnlySpan<RenderTransform> transforms = chunk.Read<RenderTransform>();
+                for (int row = 0; row < chunk.Count; row++)
+                    _decalSources.Add(new(chunk.Entities[row], transforms[row], decals[row].Material,
+                        decals[row].Material.Revision, decals[row].Order));
             }
-        });
-        MaterialDecalSource[] sources = _decalSources.OrderBy(value => value.Order).ThenBy(value => value.Entity.Index).ToArray();
+        MaterialDecalSource[] sources = _decalSources.OrderBy(value => value.Order).ThenBy(value => value.Entity.Id).ToArray();
         if (sources.AsSpan().SequenceEqual(data.Sources)) return false;
         var volumes = new MaterialDecalVolume[Math.Max(1, sources.Length)];
         var properties = new List<byte>();

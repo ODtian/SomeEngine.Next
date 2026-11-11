@@ -15,16 +15,16 @@ public sealed class ComposeGroupScopeTests
         using var frames = new HeadlessFrameDriver();
         Entity root = Views.Spawn(frames.World, Entity.Null, new GroupedComposition.Items_View([1, 2]));
         frames.Frame();
-        Entity[] children = Hierarchy<ElementTree>.GetChildren(frames.World, root).ToArray();
-        frames.World.ReadSparse<CounterLabel<int>>(children[0]).Value.Value = 11;
-        frames.World.ReadSparse<CounterLabel<int>>(children[1]).Value.Value = 22;
+        Entity[] children = ElementChildren.Read(frames.World, root).ToArray();
+        frames.World.ReadComponentData<CounterLabel<int>>(children[0]).Value.Value = 11;
+        frames.World.ReadComponentData<CounterLabel<int>>(children[1]).Value.Value = 22;
 
-        frames.World.ReplaceSparse(root, new GroupedComposition.Items_View([2, 1]));
+        frames.World.SetSparse(root, new GroupedComposition.Items_View([2, 1]));
         frames.Frame();
 
-        Entity[] reordered = Hierarchy<ElementTree>.GetChildren(frames.World, root).ToArray();
+        Entity[] reordered = ElementChildren.Read(frames.World, root).ToArray();
         Assert.Equal([children[1], children[0]], reordered);
-        Assert.Equal([22, 11], reordered.Select(child => frames.World.ReadSparse<CounterNumber<int>>(child).Value));
+        Assert.Equal([22, 11], reordered.Select(child => frames.World.ReadComponentData<CounterNumber<int>>(child).Value));
     }
 
     [Fact]
@@ -33,15 +33,15 @@ public sealed class ComposeGroupScopeTests
         using var frames = new HeadlessFrameDriver();
         Entity root = Views.Spawn(frames.World, Entity.Null, new GroupedComposition.Recovery_View(false));
         frames.Frame();
-        Entity child = Hierarchy<ElementTree>.GetChildren(frames.World, root).Single();
-        frames.World.ReadSparse<CounterLabel<int>>(child).Value.Value = 22;
+        Entity child = ElementChildren.Read(frames.World, root).Single();
+        frames.World.ReadComponentData<CounterLabel<int>>(child).Value.Value = 22;
 
-        frames.World.ReplaceSparse(root, new GroupedComposition.Recovery_View(true));
+        frames.World.SetSparse(root, new GroupedComposition.Recovery_View(true));
         frames.Frame();
 
-        Assert.Equal(child, Hierarchy<ElementTree>.GetChildren(frames.World, root).Single());
-        Assert.Equal(22, frames.World.ReadSparse<CounterNumber<int>>(child).Value);
-        Assert.IsType<InvalidOperationException>(frames.World.ReadSparse<FailureError>(root).Value);
+        Assert.Equal(child, ElementChildren.Read(frames.World, root).Single());
+        Assert.Equal(22, frames.World.ReadComponentData<CounterNumber<int>>(child).Value);
+        Assert.IsType<InvalidOperationException>(frames.World.ReadComponentData<FailureError>(root).Value);
     }
 }
 

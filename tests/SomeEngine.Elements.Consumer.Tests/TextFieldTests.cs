@@ -61,7 +61,7 @@ public sealed class TextFieldTests
         frames.Frame();
 
         Assert.True(frames.World.HasSparse<BuildError>(root));
-        var error = Assert.IsType<InvalidOperationException>(frames.World.ReadSparse<BuildError>(root).Exception);
+        var error = Assert.IsType<InvalidOperationException>(frames.World.ReadComponentData<BuildError>(root).Exception);
     }
 
     [Theory]

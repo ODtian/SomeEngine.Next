@@ -1,3 +1,4 @@
+using SomeEngine.ECS;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using SomeEngine.Animation;
@@ -55,7 +56,7 @@ public sealed partial class SkinningRenderingTests
                     graph.Play(frame.World, targets[actor]);
                 }
                 foreach (Entity mesh in frame.Scene.MeshEntities)
-                    frame.World.Add(mesh, new MeshSkin(frame.World.Read<WorldTransform>(mesh).Qvvs.Position.X > 0 ? second : first, binding));
+                    frame.World.Set(mesh, new MeshSkin(frame.World.ReadComponentData<WorldTransform>(mesh).Qvvs.Position.X > 0 ? second : first, binding));
             },
             UpdateFrame = frame =>
             {
@@ -63,10 +64,10 @@ public sealed partial class SkinningRenderingTests
                 {
                     float speed = frame.Index == 0 ? 1 : frame.Index == 1 && actor == 1 ? .5f : 1.5f;
                     Vector3 direction = frame.Index < 2 ? Vector3.UnitX : new(MathF.Sqrt(.5f), 0, (actor == 0 ? 1 : -1) * MathF.Sqrt(.5f));
-                    GpuPoseTarget target = frame.World.Read<GpuPoseTarget>(targets[actor]);
+                    GpuPoseTarget target = frame.World.ReadComponentData<GpuPoseTarget>(targets[actor]);
                     // This example strides along +X while the source body faces +Z.
                     target.Movement = new(direction * speed, Vector3.UnitX, Vector3.UnitZ);
-                    frame.World.Replace(targets[actor], target);
+                    frame.World.Set(targets[actor], target);
                     var contacts = new GpuPoseGoal[]
                     {
                         new() { Position = new(-1, 0, 0), PositionWeight = actor == 0 ? 1 : 0,
@@ -74,8 +75,10 @@ public sealed partial class SkinningRenderingTests
                         new() { Position = new(1, 0, 0), PositionWeight = actor == 1 ? 1 : 0,
                             Orientation = Quaternion.Identity, OrientationWeight = actor == 1 ? 1 : 0, BendDirection = Vector3.UnitZ },
                     };
-                    frame.World.ExecuteBufferWrite<GpuPoseGoal, GpuPoseGoal[]>(targets[actor], ref contacts,
-                        static (goals, ref contacts) => contacts.AsSpan().CopyTo(goals.AsSpan()));
+                    {
+                        using DynamicBuffer<GpuPoseGoal> goals = frame.World.GetBuffer<GpuPoseGoal>(targets[actor]);
+                        contacts.AsSpan().CopyTo(goals.AsSpan());
+                    }
                 }
             },
         };

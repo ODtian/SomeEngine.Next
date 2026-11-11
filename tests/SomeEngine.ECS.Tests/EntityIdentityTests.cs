@@ -13,7 +13,7 @@ public class EntityIdentityTests
     public void Entity_Null_IsDefault()
     {
         Assert.Equal(default(Entity), Entity.Null);
-        Assert.Equal(0, Entity.Null.Index);
+        Assert.Equal(0, Entity.Null.Id);
         Assert.Equal(0, Entity.Null.Generation);
     }
 
@@ -21,7 +21,7 @@ public class EntityIdentityTests
     public void Entity_Equals_SameValues()
     {
         using var world = new World();
-        var a = world.CreateEntity();
+        var a = world.Create();
         var b = a;
         Assert.True(a == b);
         Assert.False(a != b);
@@ -33,8 +33,8 @@ public class EntityIdentityTests
     public void Entity_NotEquals_DifferentIndex()
     {
         using var world = new World();
-        var a = world.CreateEntity();
-        var b = world.CreateEntity();
+        var a = world.Create();
+        var b = world.Create();
         Assert.True(a != b);
         Assert.False(a == b);
     }
@@ -43,9 +43,9 @@ public class EntityIdentityTests
     public void Entity_NotEquals_DifferentGeneration()
     {
         using var world = new World();
-        var a = world.CreateEntity();
-        world.DestroyEntity(a);
-        var b = world.CreateEntity();
+        var a = world.Create();
+        world.Destroy(a);
+        var b = world.Create();
         Assert.True(a != b);
     }
 
@@ -53,7 +53,7 @@ public class EntityIdentityTests
     public void Entity_GetHashCode_ConsistentForEqualValues()
     {
         using var world = new World();
-        var a = world.CreateEntity();
+        var a = world.Create();
         var b = a;
         Assert.Equal(a.GetHashCode(), b.GetHashCode());
     }
@@ -64,8 +64,8 @@ public class EntityIdentityTests
     {
         var dict = new Dictionary<Entity, string>();
         using var world = new World();
-        var e1 = world.CreateEntity();
-        var e2 = world.CreateEntity();
+        var e1 = world.Create();
+        var e2 = world.Create();
         dict[e1] = "first";
         dict[e2] = "second";
         Assert.Equal("first", dict[e1]);

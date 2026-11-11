@@ -18,75 +18,75 @@ public sealed partial class LayoutCacheTests
     public void MovingAParentUpdatesEveryCachedDescendantInCanvasCoordinates()
     {
         using var frames = new LayoutFrames();
-        Entity canvas = frames.World.CreateEntity(new Canvas { Size = new Size(800, 600) });
+        Entity canvas = frames.World.Create(new Canvas { Size = new Size(800, 600) });
         Entity root = Views.Views.Spawn(frames.World, canvas, new PositionedTree());
         frames.Frame();
-        Entity absolute = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Entity parent = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, absolute));
-        Entity leaf = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, parent));
+        Entity absolute = Assert.Single(ElementChildren.Read(frames.World, root));
+        Entity parent = Assert.Single(ElementChildren.Read(frames.World, absolute));
+        Entity leaf = Assert.Single(ElementChildren.Read(frames.World, parent));
 
-        frames.World.Replace(parent, new AbsolutePosition { Value = new Vector2(70, 90) });
+        frames.World.Set(parent, new AbsolutePosition { Value = new Vector2(70, 90) });
         frames.Frame();
         frames.Frame();
 
-        Assert.Equal(new Rect(70, 90, 200, 100), frames.World.Read<LayoutRect>(parent).Value);
-        Assert.Equal(new Rect(70, 90, 20, 10), frames.World.Read<LayoutRect>(leaf).Value);
+        Assert.Equal(new Rect(70, 90, 200, 100), frames.World.ReadComponentData<LayoutRect>(parent).Value);
+        Assert.Equal(new Rect(70, 90, 20, 10), frames.World.ReadComponentData<LayoutRect>(leaf).Value);
     }
 
     [Fact]
     public void UserLayoutReadsTrackExternalValuesPresenceAndSparseParameters()
     {
         using var frames = new LayoutFrames();
-        Entity source = frames.World.CreateEntity(new ContentSize(new Size(20, 10)));
-        Entity canvas = frames.World.CreateEntity(new Canvas { Size = new Size(800, 600) });
+        Entity source = frames.World.Create(new ContentSize(new Size(20, 10)));
+        Entity canvas = frames.World.Create(new Canvas { Size = new Size(800, 600) });
         Entity root = Views.Views.Spawn(frames.World, canvas, new SourceTree(source));
         frames.Frame();
-        Entity absolute = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Entity leaf = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, absolute));
-        Assert.Equal(new Rect(0, 0, 20, 10), frames.World.Read<LayoutRect>(leaf).Value);
+        Entity absolute = Assert.Single(ElementChildren.Read(frames.World, root));
+        Entity leaf = Assert.Single(ElementChildren.Read(frames.World, absolute));
+        Assert.Equal(new Rect(0, 0, 20, 10), frames.World.ReadComponentData<LayoutRect>(leaf).Value);
 
-        frames.World.Replace(source, new ContentSize(new Size(40, 30)));
+        frames.World.Set(source, new ContentSize(new Size(40, 30)));
         frames.Frame();
-        Assert.Equal(new Rect(0, 0, 40, 30), frames.World.Read<LayoutRect>(leaf).Value);
+        Assert.Equal(new Rect(0, 0, 40, 30), frames.World.ReadComponentData<LayoutRect>(leaf).Value);
 
-        frames.World.AddSparse(source, new ExtraWidth(10));
+        frames.World.SetSparse(source, new ExtraWidth(10));
         frames.Frame();
-        Assert.Equal(new Rect(0, 0, 50, 30), frames.World.Read<LayoutRect>(leaf).Value);
+        Assert.Equal(new Rect(0, 0, 50, 30), frames.World.ReadComponentData<LayoutRect>(leaf).Value);
 
-        frames.World.ReplaceSparse(source, new ExtraWidth(20));
+        frames.World.SetSparse(source, new ExtraWidth(20));
         frames.Frame();
-        Assert.Equal(new Rect(0, 0, 60, 30), frames.World.Read<LayoutRect>(leaf).Value);
+        Assert.Equal(new Rect(0, 0, 60, 30), frames.World.ReadComponentData<LayoutRect>(leaf).Value);
 
         frames.World.RemoveSparse<ExtraWidth>(source);
         frames.Frame();
-        Assert.Equal(new Rect(0, 0, 40, 30), frames.World.Read<LayoutRect>(leaf).Value);
+        Assert.Equal(new Rect(0, 0, 40, 30), frames.World.ReadComponentData<LayoutRect>(leaf).Value);
 
-        frames.World.ReplaceSparse(leaf, new SourceSize(source, 5));
+        frames.World.SetSparse(leaf, new SourceSize(source, 5));
         frames.Frame();
-        Assert.Equal(new Rect(0, 0, 45, 30), frames.World.Read<LayoutRect>(leaf).Value);
+        Assert.Equal(new Rect(0, 0, 45, 30), frames.World.ReadComponentData<LayoutRect>(leaf).Value);
 
-        frames.World.DestroyEntity(source);
+        frames.World.Destroy(source);
         frames.Frame();
-        Assert.Equal(new Rect(0, 0, 5, 0), frames.World.Read<LayoutRect>(leaf).Value);
+        Assert.Equal(new Rect(0, 0, 5, 0), frames.World.ReadComponentData<LayoutRect>(leaf).Value);
     }
 
     [Fact]
     public void AStretchedFlexChildStillUpdatesItsIntrinsicBasisWhenContentChanges()
     {
         using var frames = new LayoutFrames();
-        Entity canvas = frames.World.CreateEntity(new Canvas { Size = new Size(200, 100) });
+        Entity canvas = frames.World.Create(new Canvas { Size = new Size(200, 100) });
         Entity root = Views.Views.Spawn(frames.World, canvas, new GrowingTree());
         frames.Frame();
-        Entity row = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Entity[] children = Hierarchy<ElementTree>.GetChildren(frames.World, row).ToArray();
-        Entity leaf = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, children[0]));
-        Assert.Equal(new Rect(0, 0, 100, 100), frames.World.Read<LayoutRect>(children[0]).Value);
+        Entity row = Assert.Single(ElementChildren.Read(frames.World, root));
+        Entity[] children = ElementChildren.Read(frames.World, row);
+        Entity leaf = Assert.Single(ElementChildren.Read(frames.World, children[0]));
+        Assert.Equal(new Rect(0, 0, 100, 100), frames.World.ReadComponentData<LayoutRect>(children[0]).Value);
 
-        frames.World.Replace(leaf, new IntrinsicSize(new Size(80, 20)));
+        frames.World.Set(leaf, new IntrinsicSize(new Size(80, 20)));
         frames.Frame();
 
-        Assert.Equal(new Rect(0, 0, 130, 100), frames.World.Read<LayoutRect>(children[0]).Value);
-        Assert.Equal(new Rect(130, 0, 70, 100), frames.World.Read<LayoutRect>(children[1]).Value);
+        Assert.Equal(new Rect(0, 0, 130, 100), frames.World.ReadComponentData<LayoutRect>(children[0]).Value);
+        Assert.Equal(new Rect(130, 0, 70, 100), frames.World.ReadComponentData<LayoutRect>(children[1]).Value);
     }
 
 #if DEBUG
@@ -96,11 +96,11 @@ public sealed partial class LayoutCacheTests
     public void EachMeasurementRequiresMeasuredChildrenThroughDevelopmentChecks(bool placeChild)
     {
         using var frames = new LayoutFrames();
-        Entity canvas = frames.World.CreateEntity(new Canvas { Size = new Size(800, 600) });
+        Entity canvas = frames.World.Create(new Canvas { Size = new Size(800, 600) });
         Entity root = Views.Views.Spawn(frames.World, canvas, new MeasurementUsage(false, placeChild));
         frames.Frame();
 
-        frames.World.Replace(root, new MeasurementUsage(true, placeChild));
+        frames.World.Set(root, new MeasurementUsage(true, placeChild));
 
         Assert.Throws<InvalidOperationException>(frames.Frame);
     }
@@ -110,23 +110,23 @@ public sealed partial class LayoutCacheTests
     public void PromotingAPositionedLayoutToCanvasUsesTheNewCanvasOrigin()
     {
         using var frames = new LayoutFrames();
-        Entity canvas = frames.World.CreateEntity(new Canvas { Size = new Size(800, 600) });
+        Entity canvas = frames.World.Create(new Canvas { Size = new Size(800, 600) });
         Entity root = Views.Views.Spawn(frames.World, canvas, new PositionedTree());
         frames.Frame();
-        Entity absolute = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Entity nestedCanvas = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, absolute));
-        Entity leaf = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, nestedCanvas));
-        Assert.Equal(new Rect(30, 40, 20, 10), frames.World.Read<LayoutRect>(leaf).Value);
+        Entity absolute = Assert.Single(ElementChildren.Read(frames.World, root));
+        Entity nestedCanvas = Assert.Single(ElementChildren.Read(frames.World, absolute));
+        Entity leaf = Assert.Single(ElementChildren.Read(frames.World, nestedCanvas));
+        Assert.Equal(new Rect(30, 40, 20, 10), frames.World.ReadComponentData<LayoutRect>(leaf).Value);
 
         frames.World.Add(nestedCanvas, new Canvas { Size = new Size(200, 100) });
         frames.Frame();
 
-        Assert.Equal(new Rect(0, 0, 200, 100), frames.World.Read<LayoutRect>(leaf).Value);
+        Assert.Equal(new Rect(0, 0, 200, 100), frames.World.ReadComponentData<LayoutRect>(leaf).Value);
 
         frames.World.Remove<Canvas>(nestedCanvas);
         frames.Frame();
 
-        Assert.Equal(new Rect(30, 40, 20, 10), frames.World.Read<LayoutRect>(leaf).Value);
+        Assert.Equal(new Rect(30, 40, 20, 10), frames.World.ReadComponentData<LayoutRect>(leaf).Value);
     }
 
     [Theory]
@@ -137,7 +137,7 @@ public sealed partial class LayoutCacheTests
     public void IncrementalRectanglesMatchFullMeasurementAfterRandomTreeChanges(int seed)
     {
         using var frames = new LayoutFrames();
-        Entity canvas = frames.World.CreateEntity(new Canvas { Size = new Size(800, 600) });
+        Entity canvas = frames.World.Create(new Canvas { Size = new Size(800, 600) });
         Entity root = Views.Views.Spawn(frames.World, canvas, new RandomTree(seed));
         frames.Frame();
         Entity[] nodes = Descendants(frames.World, root)
@@ -153,7 +153,7 @@ public sealed partial class LayoutCacheTests
                     ChangeInputs(frames.World, node, random);
                 }
                 if (round % 4 == 0)
-                    frames.World.Replace(canvas, new Canvas
+                    frames.World.Set(canvas, new Canvas
                     {
                         Size = new Size(random.Next(400, 1000), random.Next(300, 700)),
                         Scale = random.Next(1, 3),
@@ -164,14 +164,14 @@ public sealed partial class LayoutCacheTests
                 nodes = Descendants(frames.World, root)
                     .Where(entity => frames.World.Has<LayoutRect>(entity)).Prepend(canvas).ToArray();
             }
-            Rect[] incremental = nodes.Select(entity => frames.World.Read<LayoutRect>(entity).Value).ToArray();
+            Rect[] incremental = nodes.Select(entity => frames.World.ReadComponentData<LayoutRect>(entity).Value).ToArray();
 
             foreach (Entity node in nodes)
                 if (frames.World.Has<LayoutCache>(node))
                     frames.World.Remove<LayoutCache>(node);
             frames.Frame();
 
-            Assert.Equal(incremental, nodes.Select(entity => frames.World.Read<LayoutRect>(entity).Value).ToArray());
+            Assert.Equal(incremental, nodes.Select(entity => frames.World.ReadComponentData<LayoutRect>(entity).Value).ToArray());
         }
     }
 
@@ -179,20 +179,20 @@ public sealed partial class LayoutCacheTests
     public void ChangesInsideATightChildPreserveSurroundingRectangleVersions()
     {
         using var frames = new LayoutFrames();
-        Entity canvas = frames.World.CreateEntity(new Canvas { Size = new Size(800, 600) });
+        Entity canvas = frames.World.Create(new Canvas { Size = new Size(800, 600) });
         Entity root = Views.Views.Spawn(frames.World, canvas, new TightTree());
         frames.Frame();
-        Entity[] children = Hierarchy<ElementTree>.GetChildren(frames.World, root).ToArray();
+        Entity[] children = ElementChildren.Read(frames.World, root);
         Entity boundary = children[0];
-        Entity leaf = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, boundary));
+        Entity leaf = Assert.Single(ElementChildren.Read(frames.World, boundary));
         Entity[] surroundings = [canvas, root, boundary, children[1]];
-        uint[] versions = surroundings.Select(frames.World.WriteVersion<LayoutRect>).ToArray();
+        ulong[] versions = surroundings.Select(frames.World.ComponentDataWriteVersion<LayoutRect>).ToArray();
 
-        frames.World.Replace(leaf, new IntrinsicSize(new Size(40, 30)));
+        frames.World.Set(leaf, new IntrinsicSize(new Size(40, 30)));
         frames.Frame();
 
-        Assert.Equal(new Rect(0, 0, 40, 30), frames.World.Read<LayoutRect>(leaf).Value);
-        Assert.Equal(versions, surroundings.Select(frames.World.WriteVersion<LayoutRect>).ToArray());
+        Assert.Equal(new Rect(0, 0, 40, 30), frames.World.ReadComponentData<LayoutRect>(leaf).Value);
+        Assert.Equal(versions, surroundings.Select(frames.World.ComponentDataWriteVersion<LayoutRect>).ToArray());
     }
 
     private readonly record struct TightTree : ILayout, IComponent
@@ -235,8 +235,8 @@ public sealed partial class LayoutCacheTests
         public Size Measure(ref LayoutPass pass, in Constraints constraints) => Value;
     }
 
-    private readonly record struct ContentSize(Size Value) : IComponent;
-    private readonly record struct ExtraWidth(float Value) : ISparseComponent;
+    private readonly record struct ContentSize(Size Value) : IComponent, ITrackedComponent;
+    private readonly record struct ExtraWidth(float Value) : ISparseComponent, ITrackedComponent;
 
     private readonly record struct SourceTree(Entity Source) : IView, IComponent
     {
@@ -296,7 +296,7 @@ public sealed partial class LayoutCacheTests
     private static IEnumerable<Entity> Descendants(World world, Entity node)
     {
         yield return node;
-        foreach (Entity child in Hierarchy<ElementTree>.GetChildren(world, node))
+        foreach (Entity child in ElementChildren.Read(world, node))
             foreach (Entity descendant in Descendants(world, child))
                 yield return descendant;
     }
@@ -306,30 +306,30 @@ public sealed partial class LayoutCacheTests
         switch (random.Next(5))
         {
             case 0 when world.Has<IntrinsicSize>(node):
-                world.Replace(node, new IntrinsicSize(new Size(random.Next(10, 120), random.Next(10, 90))));
+                world.Set(node, new IntrinsicSize(new Size(random.Next(10, 120), random.Next(10, 90))));
                 break;
             case 1 when world.Has<Flex>(node):
-                world.Replace(node, new Flex((Axis)random.Next(2), random.Next(8),
+                world.Set(node, new Flex((Axis)random.Next(2), random.Next(8),
                     (Align)random.Next((int)Align.Start, (int)Align.Stretch),
                     (Align)random.Next((int)Align.Start, (int)Align.Stretch + 1), random.Next(2) == 0));
                 break;
             case 2:
-                world.Replace(node, new FlexItem
+                world.Set(node, new FlexItem
                 {
                     Grow = random.Next(3), Shrink = random.Next(3),
                     Basis = random.Next(2) == 0 ? float.NaN : random.Next(20, 100),
                 });
                 break;
             case 3:
-                world.Replace(node, new AbsolutePosition { Value = new Vector2(random.Next(20), random.Next(20)) });
+                world.Set(node, new AbsolutePosition { Value = new Vector2(random.Next(20), random.Next(20)) });
                 break;
             default:
-                Box box = world.Read<Box>(node);
+                Box box = world.ReadComponentData<Box>(node);
                 float padding = random.Next(8);
                 box.Padding = new Thickness(padding, padding, padding, padding);
                 box.Fixed = random.Next(3) == 0 ? new Size(random.Next(50, 200), random.Next(40, 150)) : Size.Auto;
                 box.Min = new Size(random.Next(20), random.Next(15));
-                world.Replace(node, in box);
+                world.Set(node, in box);
                 break;
         }
     }
@@ -349,15 +349,15 @@ public sealed partial class LayoutCacheTests
                 world.Add(added, new FlexItem { Grow = 1 });
                 break;
             case 1 when leaves.Length > 1:
-                world.DestroyEntity(leaves[random.Next(leaves.Length)]);
+                world.Destroy(leaves[random.Next(leaves.Length)]);
                 break;
             case 2 when leaves.Length > 0:
                 Hierarchy<ElementTree>.SetParent(world, leaves[random.Next(leaves.Length)], parent);
                 break;
             default:
-                var children = Hierarchy<ElementTree>.GetChildren(world, parent);
-                if (children.Count > 1)
-                    Hierarchy<ElementTree>.Reorder(world, children[0], children.Count - 1);
+                var children = ElementChildren.Read(world, parent);
+                if (children.Length > 1)
+                    Hierarchy<ElementTree>.SetParent(world, children[0], parent, children.Length - 1);
                 break;
         }
     }

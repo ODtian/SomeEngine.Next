@@ -12,7 +12,7 @@ public sealed class ParallelClipBehaviorTests
     public void CommonClipGraphSamplesOnTheWorldsSchedulerBeforePublishingItsPose()
     {
         using var scheduler = new Scheduler(new() { WorkerCount = 2 });
-        using var world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using var world = new World(execution: new WorldJobs(scheduler));
         var skeleton = new Skeleton([-1], [Bone(Vector3.Zero)], [1]);
         var samples = new ClipExecution();
         var clip = new AnimationClip(skeleton, 1, ClipSampler.Create<ClipExecution, ExecutionSampler>(samples));
@@ -163,9 +163,9 @@ public sealed class ParallelClipBehaviorTests
             PropertyAnimation.SetSpeed(world, animation, (index % 8 + 1) * .5f);
             demanded[index] = storage.CreateInstance(skeleton);
             Entity gpuTarget = GpuPoseAnimation.CreateTarget(world, demanded[index]);
-            GpuPoseTarget gpu = world.Read<GpuPoseTarget>(gpuTarget);
+            GpuPoseTarget gpu = world.ReadComponentData<GpuPoseTarget>(gpuTarget);
             gpu.CpuBones = new(selections[index].Clip, [2]);
-            world.Replace(gpuTarget, gpu);
+            world.Set(gpuTarget, gpu);
             PropertyAnimation.SetSpeed(world, gpuGraph.Play(world, gpuTarget), (index % 8 + 1) * .5f);
         }
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));

@@ -30,8 +30,8 @@ internal sealed partial class SphereNameplates : ISystem<ImmediateSystemContext>
             const int columns = 32;
             if (index / columns != columns - 1 || index % 4 != 0) continue;
             Entity sphere = spheres[index];
-            Entity canvas = world.CreateEntity(new WorldTransform { Qvvs = PlateTransform(sphere) });
-            world.Add(canvas, new Canvas
+            Entity canvas = world.Create(new WorldTransform { Qvvs = PlateTransform(sphere) });
+            world.Set(canvas, new Canvas
             {
                 Target = CanvasTarget.WorldSpace(canvas), Size = new Size(160, 44), DepthTest = true,
             });
@@ -43,11 +43,11 @@ internal sealed partial class SphereNameplates : ISystem<ImmediateSystemContext>
     public void OnUpdate(ref ImmediateSystemContext context)
     {
         foreach ((Entity sphere, Entity canvas) in _nameplates)
-            _world.Replace(canvas, new WorldTransform { Qvvs = PlateTransform(sphere) });
+            _world.Set(canvas, new WorldTransform { Qvvs = PlateTransform(sphere) });
     }
 
     private TransformQvvs PlateTransform(Entity sphere) => TransformQvvs.Combine(
-        _world.Read<WorldTransform>(sphere).Qvvs,
+        _world.ReadComponentData<WorldTransform>(sphere).Qvvs,
         new TransformQvvs(new Vector3(2.4f, 2.5f, -0.2f),
             Quaternion.CreateFromAxisAngle(Vector3.UnitY, MathF.PI), 0.03f));
 

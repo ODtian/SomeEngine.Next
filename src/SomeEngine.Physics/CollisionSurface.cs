@@ -1,3 +1,4 @@
+using SomeEngine.ECS.Spatial;
 using System.Numerics;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
@@ -9,7 +10,7 @@ public sealed class CollisionMesh
 {
     public ReadOnlyMemory<Vector3> Positions { get; }
     public ReadOnlyMemory<uint> Indices { get; }
-    public CollisionBounds Bounds { get; }
+    public SpatialBounds Bounds { get; }
 
     public CollisionMesh(ReadOnlyMemory<Vector3> positions, ReadOnlyMemory<uint> indices)
     {
@@ -28,11 +29,11 @@ public sealed class CollisionMesh
 /// <summary>A scene mesh, its current local-to-world transform, and caller-provided surface revision.</summary>
 public readonly record struct CollisionSurface(CollisionMesh Mesh, Matrix4x4 Transform, ulong Version) : IComponent
 {
-    public CollisionBounds Bounds
+    public SpatialBounds Bounds
     {
         get
         {
-            CollisionBounds local = Mesh.Bounds;
+            SpatialBounds local = Mesh.Bounds;
             Vector3 min = Vector3.Transform(local.Min, Transform), max = min;
             for (int corner = 1; corner < 8; corner++)
             {
@@ -49,14 +50,14 @@ public readonly record struct CollisionSurface(CollisionMesh Mesh, Matrix4x4 Tra
 }
 
 /// <summary>Reads a caller's concrete scene component through the same collision-tree input.</summary>
-public interface ICollisionSurfaceReader<TComponent> : ICollisionBoundsReader<TComponent>
+public interface ICollisionSurfaceReader<TComponent> : ISpatialBoundsReader<TComponent>
 {
     CollisionSurface ReadSurface(in TComponent component);
 }
 
 public readonly struct CollisionSurfaceReader : ICollisionSurfaceReader<CollisionSurface>
 {
-    public CollisionBounds Read(in CollisionSurface component) => component.Bounds;
+    public SpatialBounds Read(in CollisionSurface component) => component.Bounds;
     public CollisionSurface ReadSurface(in CollisionSurface component) => component;
 }
 

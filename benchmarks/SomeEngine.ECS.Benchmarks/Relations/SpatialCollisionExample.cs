@@ -1,7 +1,7 @@
-using SomeEngine.ECS.Components;
+using SomeEngine.ECS;
+using SomeEngine.ECS.Spatial;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Relations;
-using SomeEngine.Physics;
 
 namespace SomeEngine.ECS.Benchmarks.Relations.Spatial;
 
@@ -13,14 +13,14 @@ public enum MotionKind
     Kinematic,
 }
 
-public struct Body : IComponent
+public struct Body : IAddedComponent
 {
     public MotionKind Kind;
-    public CollisionBounds Bounds;
+    public SpatialBounds Bounds;
     public CategoryBits CollisionCategories;
 }
 
-public struct Hair : IIndexedComponent<Entity>
+public struct Hair : IIndexedComponent<Entity>, IAddedComponent
 {
     public Entity Character;
 
@@ -29,9 +29,9 @@ public struct Hair : IIndexedComponent<Entity>
 
 public struct ExcludedBody : ITag;
 
-public readonly struct BodyBoundsReader : ICollisionBoundsReader<Body>
+public readonly struct BodyBoundsReader : ISpatialBoundsReader<Body>
 {
-    public CollisionBounds Read(in Body component) => component.Bounds;
+    public SpatialBounds Read(in Body component) => component.Bounds;
 }
 
 public readonly struct DefaultContacts : IRelation<Body, Body>

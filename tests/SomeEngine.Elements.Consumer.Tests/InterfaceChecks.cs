@@ -37,18 +37,18 @@ internal static partial class InterfaceChecks
         CheckDisplay(world, root, "Clicks: 0");
         Entity button = ButtonChecks.DescendantsWith<Pressable>(world, root).Single();
         Entity label = FindText(world, root, "Add one");
-        var labelRect = world.Read<LayoutRect>(label).Value;
+        var labelRect = world.ReadComponentData<LayoutRect>(label).Value;
         var position = new Vector2(labelRect.X + labelRect.Width / 2, labelRect.Y + labelRect.Height / 2);
 
         Pointer.Move(world, frames.Canvas, position);
         Pointer.Press(world, frames.Canvas, PointerButton.Primary);
         frames.Frame();
-        Require(world.Read<Hover>(button).Pressed, "The pointer holds the button pressed.");
+        Require(world.ReadComponentData<Hover>(button).Pressed, "The pointer holds the button pressed.");
         CheckDisplay(world, root, "Clicks: 0");
 
         Pointer.Release(world, frames.Canvas, PointerButton.Primary);
         frames.Frame();
-        Require(world.Read<Clicks>(button).Count == 1, "The pointer release completes one click.");
+        Require(world.ReadComponentData<Clicks>(button).Count == 1, "The pointer release completes one click.");
         CheckDisplay(world, root, "Clicks: 1");
 
         Keyboard.Key(world, Key.Down, true);
@@ -61,11 +61,11 @@ internal static partial class InterfaceChecks
 
         Gamepad.Confirm(world);
         frames.Frame();
-        Require(world.Read<Clicks>(button).Count == 3, "Pointer, keyboard and gamepad each complete a click.");
+        Require(world.ReadComponentData<Clicks>(button).Count == 3, "Pointer, keyboard and gamepad each complete a click.");
         CheckDisplay(world, root, "Clicks: 3");
 
         frames.Frame();
-        world.Replace(frames.Canvas, new Canvas { Size = new Size(480, 320) });
+        world.Set(frames.Canvas, new Canvas { Size = new Size(480, 320) });
         frames.Frame();
         CheckDisplay(world, root, "Clicks: 3");
         Console.WriteLine($"Interface counter passed: {frontend}, {(jobs ? "Job World" : "World")}.");
@@ -73,13 +73,13 @@ internal static partial class InterfaceChecks
 
     private static Entity FindText(World world, Entity root, string value) =>
         ButtonChecks.DescendantsWith<TextContent>(world, root)
-            .Single(node => world.Read<TextContent>(node).Value == value);
+            .Single(node => world.ReadComponentData<TextContent>(node).Value == value);
 
     private static void CheckDisplay(World world, Entity root, string value)
     {
         Entity label = FindText(world, root, value);
-        Require(world.Read<Text>(label).Value == value, "The text parameter matches its displayed content.");
-        var rect = world.Read<LayoutRect>(label).Value;
+        Require(world.ReadComponentData<Text>(label).Value == value, "The text parameter matches its displayed content.");
+        var rect = world.ReadComponentData<LayoutRect>(label).Value;
         Require(rect.Width > 0 && rect.Height > 0, "The displayed count has a measured layout rectangle.");
     }
 
@@ -105,7 +105,7 @@ internal static partial class InterfaceChecks
         }
     }
 
-    private record struct CounterValue(int Value) : IComponent;
+    private record struct CounterValue(int Value) : IComponent, ITrackedComponent;
 
     [Composable]
     private static void ComposeCounter()
@@ -174,7 +174,7 @@ internal static partial class InterfaceChecks
         {
             World = new World(execution: jobs ? new WorldJobs(JobSystem.Default) : null);
             _font = Font.Load(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fonts", "Latin.ttf")));
-            Canvas = World.CreateEntity(new Canvas { Size = new Size(320, 240) });
+            Canvas = World.Create(new Canvas { Size = new Size(320, 240) });
             World.Add(Canvas, new TextTheme(new TextStyle { Font = _font, Size = 20 }));
             _systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(World));
             var shaping = new TextShapingSystem();

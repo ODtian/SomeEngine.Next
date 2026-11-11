@@ -17,17 +17,17 @@ public sealed class ContentCallbackTests
         ContentCallbackScreens.Decoration = " old";
         Entity root = Views.Spawn(frames.World, Entity.Null, new ContentCallbackScreens.Screen_View(refresh, clicked));
         frames.Frame();
-        Entity container = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Entity content = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, container));
-        var button = frames.World.ReadSparse<ContentButton<int>>(content);
+        Entity container = Assert.Single(ElementChildren.Read(frames.World, root));
+        Entity content = Assert.Single(ElementChildren.Read(frames.World, container));
+        var button = frames.World.ReadComponentData<ContentButton<int>>(content);
         Assert.Equal("3 old", button.Text);
 
         ContentCallbackScreens.Decoration = " new";
         refresh.Value = 1;
         frames.Frame();
 
-        Assert.Equal("1", frames.World.ReadSparse<ComposeText>(container).Value);
-        var current = frames.World.ReadSparse<ContentButton<int>>(content);
+        Assert.Equal("1", frames.World.ReadComponentData<ComposeText>(container).Value);
+        var current = frames.World.ReadComponentData<ContentButton<int>>(content);
         Assert.Equal("3 old", current.Text);
         Assert.Equal("tick 1", current.Tooltip());
         button.Change(7);

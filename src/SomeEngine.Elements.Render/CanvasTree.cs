@@ -43,9 +43,9 @@ internal sealed class CanvasTree
             value = new CanvasNode(node, entry.Clip, _drawOrder++);
             Rect childClip = _world.Has<ScrollOffset>(node) && _world.Has<LayoutRect>(node)
                 ? Intersect(entry.Clip, _world.Read<LayoutRect>(node).Value) : entry.Clip;
-            var children = Hierarchy<ElementTree>.GetChildren(_world, node);
+            using var children = Hierarchy<ElementTree>.GetChildren(_world, node);
             for (int index = children.Count - 1; index >= 0; index--)
-                _nodes.Push((children[index], childClip));
+                _nodes.Push((children.Entities[index], childClip));
             return true;
         }
         value = default;

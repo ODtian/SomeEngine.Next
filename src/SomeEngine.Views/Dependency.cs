@@ -1,6 +1,6 @@
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
+using SomeEngine.ECS;
 
 namespace SomeEngine.Views;
 
@@ -9,9 +9,9 @@ public struct Dependency : IBufferElement
 {
     public DependencyKind Kind;
     public Entity Entity;
-    public ushort Component;
-    public QueryHandle Query;
-    public uint Version;
+    public int Component;
+    public Query Query;
+    public ulong Version;
 
     internal readonly bool HasSameSource(in Dependency other) => Kind == other.Kind &&
         (Kind == DependencyKind.Membership

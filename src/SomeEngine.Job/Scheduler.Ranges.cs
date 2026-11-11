@@ -213,7 +213,7 @@ public sealed partial class Scheduler
             }
             s_executing = scheduler;
             int previousDepth = s_synchronousParallelDepth;
-            s_synchronousParallelDepth++;
+            if (_count > 1) s_synchronousParallelDepth++;
             JobThreads.Enter();
             try
             {

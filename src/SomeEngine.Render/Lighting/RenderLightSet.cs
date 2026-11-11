@@ -1,4 +1,3 @@
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS;
 using SomeEngine.Render.Components;
@@ -55,9 +54,9 @@ public sealed class RenderLightSet
 
     internal void CommitChanges() => Revision = checked(Revision + 1uL);
 
-    public void CollectDirectional(QueryCursor rows) => _directional.Append(rows);
-    public void CollectPoint(QueryCursor rows) => _points.Append(rows);
-    public void CollectSpot(QueryCursor rows) => _spots.Append(rows);
+    public void CollectDirectional(QueryScope rows) => _directional.Append(rows);
+    public void CollectPoint(QueryScope rows) => _points.Append(rows);
+    public void CollectSpot(QueryScope rows) => _spots.Append(rows);
     public void AddDirectional(in RenderDirectionalLight light) => _directional.Add(light, null);
     public void AddDirectional(Entity entity, in RenderDirectionalLight light) => _directional.Set(entity, light, null);
     public void AddDirectional(in RenderDirectionalLight light, in RenderLightCookie cookie) => _directional.Add(light, cookie);
@@ -73,9 +72,9 @@ public sealed class RenderLightSet
         _points.UpdateMembership(world, entity) |
         _spots.UpdateMembership(world, entity);
 
-    internal bool UpdateDirectional(QueryCursor rows) => _directional.Update(rows);
-    internal bool UpdatePoints(QueryCursor rows) => _points.Update(rows);
-    internal bool UpdateSpots(QueryCursor rows) => _spots.Update(rows);
+    internal bool UpdateDirectional(QueryScope rows) => _directional.Update(rows);
+    internal bool UpdatePoints(QueryScope rows) => _points.Update(rows);
+    internal bool UpdateSpots(QueryScope rows) => _spots.Update(rows);
 
     private struct LightMovement
     {
@@ -144,17 +143,22 @@ public sealed class RenderLightSet
             _movement.Add(NewMovement(value));
         }
 
-        internal void Append(QueryCursor query)
+        internal void Append(QueryScope query)
         {
-            foreach (QueryRow row in query.Rows)
-                Set(row.Entity, row.Read<T>(), row.TryRead<RenderLightCookie>(out var cookie) ? cookie : null);
+            foreach (QueryChunk chunk in query)
+            {
+                ReadOnlySpan<T> values = chunk.Read<T>();
+                bool hasCookies = chunk.TryRead<RenderLightCookie>(out var cookies);
+                for (int row = 0; row < chunk.Count; row++)
+                    if (chunk.Has<T>(row)) Set(chunk.Entities[row], values[row], hasCookies && chunk.Has<RenderLightCookie>(row) ? cookies[row] : null);
+            }
         }
 
         internal bool UpdateMembership(World world, Entity entity)
         {
             if (world.IsAlive(entity) && world.Has<T>(entity))
-                return Set(entity, world.Read<T>(entity), world.Has<RenderLightCookie>(entity)
-                    ? world.Read<RenderLightCookie>(entity) : null);
+                return Set(entity, world.ReadComponentData<T>(entity), world.Has<RenderLightCookie>(entity)
+                    ? world.ReadComponentData<RenderLightCookie>(entity) : null);
             if (!_rows.Remove(entity, out int index)) return false;
             int last = Values.Count - 1;
             if (index != last)
@@ -172,21 +176,21 @@ public sealed class RenderLightSet
             return true;
         }
 
-        internal bool Update(QueryCursor query)
+        internal bool Update(QueryScope query)
         {
             bool changed = false;
-            foreach (QueryChunkView chunk in query.Chunks)
+            foreach (QueryChunk chunk in query)
             {
                 bool hasCookies = chunk.Has<RenderLightCookie>();
-                bool valuesChanged = chunk.HasChangedSinceLastSystemVersion<T>();
-                bool cookiesChanged = hasCookies && chunk.HasChangedSinceLastSystemVersion<RenderLightCookie>();
+                bool valuesChanged = chunk.WasWritten<T>(query.SinceVersion);
+                bool cookiesChanged = hasCookies && chunk.WasWritten<RenderLightCookie>(query.SinceVersion);
                 if (!valuesChanged && !cookiesChanged) continue;
                 ReadOnlySpan<T> values = chunk.Read<T>();
                 ReadOnlySpan<RenderLightCookie> cookies = hasCookies ? chunk.Read<RenderLightCookie>() : default;
                 for (int row = 0; row < values.Length; row++)
-                    if (valuesChanged && chunk.RowChangedSinceLastSystemVersion<T>(row) ||
-                        cookiesChanged && chunk.RowChangedSinceLastSystemVersion<RenderLightCookie>(row))
-                        changed |= Set(chunk.Entities[row], values[row], hasCookies ? cookies[row] : null);
+                    if (valuesChanged && chunk.WasWritten<T>(row, query.SinceVersion) ||
+                        cookiesChanged && chunk.WasWritten<RenderLightCookie>(row, query.SinceVersion))
+                        changed |= Set(chunk.Entities[row], values[row], hasCookies && chunk.Has<RenderLightCookie>(row) ? cookies[row] : null);
             }
             return changed;
         }

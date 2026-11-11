@@ -18,35 +18,35 @@ public sealed partial class LayoutTests
     public void FixedSizeSupportsZeroAndAnAutomaticAxis(float width, float height, float expectedWidth, float expectedHeight)
     {
         using var frames = new LayoutFrames();
-        Entity canvas = frames.World.CreateEntity(new Canvas { Size = new Size(800, 600) });
+        Entity canvas = frames.World.Create(new Canvas { Size = new Size(800, 600) });
         Entity root = Views.Views.Spawn(frames.World, canvas, new StyledLeaf(new Size(width, height), default));
         frames.Frame();
-        Entity absolute = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Entity leaf = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, absolute));
+        Entity absolute = Assert.Single(ElementChildren.Read(frames.World, root));
+        Entity leaf = Assert.Single(ElementChildren.Read(frames.World, absolute));
 
-        Assert.Equal(new Rect(0, 0, expectedWidth, expectedHeight), frames.World.Read<LayoutRect>(leaf).Value);
+        Assert.Equal(new Rect(0, 0, expectedWidth, expectedHeight), frames.World.ReadComponentData<LayoutRect>(leaf).Value);
     }
 
     [Fact]
     public void DefaultBoxSupportsIntrinsicSizingAndAsymmetricPadding()
     {
         using var frames = new LayoutFrames();
-        Entity canvas = frames.World.CreateEntity(new Canvas { Size = new Size(800, 600) });
+        Entity canvas = frames.World.Create(new Canvas { Size = new Size(800, 600) });
         Entity root = Views.Views.Spawn(frames.World, canvas, new StyledLeaf(Size.Auto, new Thickness(3, 5, 7, 11)));
         frames.Frame();
-        Entity absolute = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Entity leaf = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, absolute));
+        Entity absolute = Assert.Single(ElementChildren.Read(frames.World, root));
+        Entity leaf = Assert.Single(ElementChildren.Read(frames.World, absolute));
 
-        Assert.Equal(new Rect(0, 0, 60, 36), frames.World.Read<LayoutRect>(leaf).Value);
+        Assert.Equal(new Rect(0, 0, 60, 36), frames.World.ReadComponentData<LayoutRect>(leaf).Value);
     }
 
     [Fact]
     public void EachCanvasUsesItsOwnSizeAndScaleIncludingNestedCanvases()
     {
         using var frames = new LayoutFrames();
-        Entity first = frames.World.CreateEntity(new Canvas { Size = new Size(800, 600) });
+        Entity first = frames.World.Create(new Canvas { Size = new Size(800, 600) });
         Entity firstRoot = Views.Views.Spawn(frames.World, first, new Fill());
-        Entity second = frames.World.CreateEntity(new Canvas
+        Entity second = frames.World.Create(new Canvas
         {
             Size = new Size(200, 100), Scale = 2, Target = CanvasTarget.RenderTexture(first),
         });
@@ -55,8 +55,8 @@ public sealed partial class LayoutTests
 
         frames.Frame();
 
-        Assert.Equal(new Rect(0, 0, 800, 600), frames.World.Read<LayoutRect>(firstRoot).Value);
-        Assert.Equal(new Rect(0, 0, 100, 50), frames.World.Read<LayoutRect>(secondRoot).Value);
+        Assert.Equal(new Rect(0, 0, 800, 600), frames.World.ReadComponentData<LayoutRect>(firstRoot).Value);
+        Assert.Equal(new Rect(0, 0, 100, 50), frames.World.ReadComponentData<LayoutRect>(secondRoot).Value);
     }
 
     [Fact]
@@ -67,7 +67,7 @@ public sealed partial class LayoutTests
     public void ConflictingBoxLimitsAreReportedByDevelopmentChecks()
     {
         using var frames = new LayoutFrames();
-        Entity canvas = frames.World.CreateEntity(new Canvas { Size = new Size(800, 600) });
+        Entity canvas = frames.World.Create(new Canvas { Size = new Size(800, 600) });
         Entity root = Views.Views.Spawn(frames.World, canvas, new Fill());
         frames.World.Add(root, new Box { Min = new Size(150, 80), Max = new Size(100, 100) });
 
@@ -79,39 +79,39 @@ public sealed partial class LayoutTests
     public void NamedAbsoluteFunctionDeclaresAndPlacesCallerChildren()
     {
         using var frames = new LayoutFrames();
-        Entity canvas = frames.World.CreateEntity(new Canvas { Size = new Size(800, 600) });
+        Entity canvas = frames.World.Create(new Canvas { Size = new Size(800, 600) });
         Entity root = Views.Views.Spawn(frames.World, canvas, new NamedChildren());
         frames.Frame();
-        Entity absolute = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Entity leaf = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, absolute));
+        Entity absolute = Assert.Single(ElementChildren.Read(frames.World, root));
+        Entity leaf = Assert.Single(ElementChildren.Read(frames.World, absolute));
 
-        Assert.Equal(new Rect(7, 9, 30, 40), frames.World.Read<LayoutRect>(leaf).Value);
+        Assert.Equal(new Rect(7, 9, 30, 40), frames.World.ReadComponentData<LayoutRect>(leaf).Value);
     }
 
     [Fact]
     public void PaddingChangesChildAvailableSizeAndContentOriginInTheSameFrame()
     {
         using var frames = new LayoutFrames();
-        Entity canvas = frames.World.CreateEntity(new Canvas { Size = new Size(800, 600) });
+        Entity canvas = frames.World.Create(new Canvas { Size = new Size(800, 600) });
         Entity root = Views.Views.Spawn(frames.World, canvas, new PaddedChildren(10));
         frames.Frame();
-        Entity absolute = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Entity box = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, absolute));
-        Entity fill = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, box));
-        Assert.Equal(new Rect(30, 40, 200, 100), frames.World.Read<LayoutRect>(box).Value);
-        Assert.Equal(new Rect(45, 57, 175, 73), frames.World.Read<LayoutRect>(fill).Value);
+        Entity absolute = Assert.Single(ElementChildren.Read(frames.World, root));
+        Entity box = Assert.Single(ElementChildren.Read(frames.World, absolute));
+        Entity fill = Assert.Single(ElementChildren.Read(frames.World, box));
+        Assert.Equal(new Rect(30, 40, 200, 100), frames.World.ReadComponentData<LayoutRect>(box).Value);
+        Assert.Equal(new Rect(45, 57, 175, 73), frames.World.ReadComponentData<LayoutRect>(fill).Value);
 
-        frames.World.Replace(root, new PaddedChildren(20));
+        frames.World.Set(root, new PaddedChildren(20));
         frames.Frame();
 
-        Assert.Equal(new Rect(55, 67, 155, 53), frames.World.Read<LayoutRect>(fill).Value);
+        Assert.Equal(new Rect(55, 67, 155, 53), frames.World.ReadComponentData<LayoutRect>(fill).Value);
     }
 
     [Fact]
     public void CanvasPlacesTwoFixedChildrenAtTheirAbsolutePositions()
     {
         using var frames = new LayoutFrames();
-        Entity canvas = frames.World.CreateEntity(new Canvas
+        Entity canvas = frames.World.Create(new Canvas
         {
             Size = new Size(800, 600), Scale = 1,
         });
@@ -119,44 +119,44 @@ public sealed partial class LayoutTests
 
         frames.Frame();
 
-        Entity absolute = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Entity[] children = Hierarchy<ElementTree>.GetChildren(frames.World, absolute).ToArray();
-        Assert.Equal(new Rect(0, 0, 800, 600), frames.World.Read<LayoutRect>(absolute).Value);
-        Assert.Equal(new Rect(10, 20, 100, 50), frames.World.Read<LayoutRect>(children[0]).Value);
-        Assert.Equal(new Rect(300, 200, 80, 120), frames.World.Read<LayoutRect>(children[1]).Value);
+        Entity absolute = Assert.Single(ElementChildren.Read(frames.World, root));
+        Entity[] children = ElementChildren.Read(frames.World, absolute);
+        Assert.Equal(new Rect(0, 0, 800, 600), frames.World.ReadComponentData<LayoutRect>(absolute).Value);
+        Assert.Equal(new Rect(10, 20, 100, 50), frames.World.ReadComponentData<LayoutRect>(children[0]).Value);
+        Assert.Equal(new Rect(300, 200, 80, 120), frames.World.ReadComponentData<LayoutRect>(children[1]).Value);
     }
 
     [Fact]
     public void CompositionBetweenAnAbsoluteAndItsChildrenPreservesTheirPositions()
     {
         using var frames = new LayoutFrames();
-        Entity canvas = frames.World.CreateEntity(new Canvas { Size = new Size(800, 600) });
+        Entity canvas = frames.World.Create(new Canvas { Size = new Size(800, 600) });
         Entity root = Views.Views.Spawn(frames.World, canvas, new WrappedChildren());
         frames.Frame();
-        Entity absolute = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Entity composition = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, absolute));
-        Entity[] children = Hierarchy<ElementTree>.GetChildren(frames.World, composition).ToArray();
+        Entity absolute = Assert.Single(ElementChildren.Read(frames.World, root));
+        Entity composition = Assert.Single(ElementChildren.Read(frames.World, absolute));
+        Entity[] children = ElementChildren.Read(frames.World, composition);
 
-        Assert.Equal(new Rect(10, 20, 100, 50), frames.World.Read<LayoutRect>(children[0]).Value);
-        Assert.Equal(new Rect(300, 200, 80, 120), frames.World.Read<LayoutRect>(children[1]).Value);
+        Assert.Equal(new Rect(10, 20, 100, 50), frames.World.ReadComponentData<LayoutRect>(children[0]).Value);
+        Assert.Equal(new Rect(300, 200, 80, 120), frames.World.ReadComponentData<LayoutRect>(children[1]).Value);
     }
 
     [Fact]
     public void UserRingPlacesNestedAbsoluteContentInCanvasCoordinates()
     {
         using var frames = new LayoutFrames();
-        Entity canvas = frames.World.CreateEntity(new Canvas { Size = new Size(800, 600) });
+        Entity canvas = frames.World.Create(new Canvas { Size = new Size(800, 600) });
         Entity root = Views.Views.Spawn(frames.World, canvas, new RingChildren());
         frames.Frame();
-        Entity absolute = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Entity ring = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, absolute));
-        Entity[] children = Hierarchy<ElementTree>.GetChildren(frames.World, ring).ToArray();
-        Entity leaf = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, children[0]));
+        Entity absolute = Assert.Single(ElementChildren.Read(frames.World, root));
+        Entity ring = Assert.Single(ElementChildren.Read(frames.World, absolute));
+        Entity[] children = ElementChildren.Read(frames.World, ring);
+        Entity leaf = Assert.Single(ElementChildren.Read(frames.World, children[0]));
 
-        Assert.Equal(new Rect(40, 30, 200, 200), frames.World.Read<LayoutRect>(ring).Value);
-        AssertRect(new Rect(195, 120, 20, 20), frames.World.Read<LayoutRect>(children[0]).Value);
-        AssertRect(new Rect(65, 120, 20, 20), frames.World.Read<LayoutRect>(children[1]).Value);
-        AssertRect(new Rect(198, 125, 4, 6), frames.World.Read<LayoutRect>(leaf).Value);
+        Assert.Equal(new Rect(40, 30, 200, 200), frames.World.ReadComponentData<LayoutRect>(ring).Value);
+        AssertRect(new Rect(195, 120, 20, 20), frames.World.ReadComponentData<LayoutRect>(children[0]).Value);
+        AssertRect(new Rect(65, 120, 20, 20), frames.World.ReadComponentData<LayoutRect>(children[1]).Value);
+        AssertRect(new Rect(198, 125, 4, 6), frames.World.ReadComponentData<LayoutRect>(leaf).Value);
     }
 
     [Theory]
@@ -165,13 +165,13 @@ public sealed partial class LayoutTests
     public void BoxLimitsAnIntrinsicSizeThroughModifiers(float width, float height, float expectedWidth, float expectedHeight)
     {
         using var frames = new LayoutFrames();
-        Entity canvas = frames.World.CreateEntity(new Canvas { Size = new Size(800, 600) });
+        Entity canvas = frames.World.Create(new Canvas { Size = new Size(800, 600) });
         Entity root = Views.Views.Spawn(frames.World, canvas, new BoundedChildren(new Size(width, height)));
         frames.Frame();
-        Entity absolute = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Entity child = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, absolute));
+        Entity absolute = Assert.Single(ElementChildren.Read(frames.World, root));
+        Entity child = Assert.Single(ElementChildren.Read(frames.World, absolute));
 
-        Assert.Equal(new Rect(0, 0, expectedWidth, expectedHeight), frames.World.Read<LayoutRect>(child).Value);
+        Assert.Equal(new Rect(0, 0, expectedWidth, expectedHeight), frames.World.ReadComponentData<LayoutRect>(child).Value);
     }
 
     private readonly record struct PositionedChildren : IView, IComponent

@@ -25,7 +25,7 @@ public sealed partial class TextFieldVisibilityTests
 
         Rect caret = ReadCaret(frames.World, field);
         Rect viewport = ReadViewport(frames.World, field);
-        Assert.Equal(text, frames.World.Read<EditableText>(field).Text);
+        Assert.Equal(text, frames.World.ReadComponentData<EditableText>(field).Text);
         Assert.InRange(caret.X, viewport.X - 0.001f, viewport.X + viewport.Width - caret.Width + 0.001f);
         Assert.InRange(caret.Y, viewport.Y - 0.001f, viewport.Y + viewport.Height - caret.Height + 0.001f);
     }
@@ -74,8 +74,8 @@ public sealed partial class TextFieldVisibilityTests
             caret = ReadCaret(frames.World, field);
             Assert.InRange(caret.X, viewport.X - 0.001f, viewport.X + viewport.Width - caret.Width + 0.001f);
         }
-        Assert.Equal(0, frames.World.Read<EditableText>(field).Caret);
-        Assert.Equal(text, frames.World.Read<EditableText>(field).Text);
+        Assert.Equal(0, frames.World.ReadComponentData<EditableText>(field).Caret);
+        Assert.Equal(text, frames.World.ReadComponentData<EditableText>(field).Text);
     }
 
     [Theory]
@@ -93,8 +93,8 @@ public sealed partial class TextFieldVisibilityTests
         Rect caret = ReadCaret(frames.World, field);
         Rect viewport = ReadViewport(frames.World, field);
         Assert.Equal(viewport.X + viewport.Width, caret.X + caret.Width, 3);
-        Assert.Equal("", frames.World.Read<EditableText>(field).Text);
-        Assert.Equal(candidate, frames.World.Read<TextContent>(ButtonChecks.DescendantsWith<TextContent>(frames.World, field).Single()).Value);
+        Assert.Equal("", frames.World.ReadComponentData<EditableText>(field).Text);
+        Assert.Equal(candidate, frames.World.ReadComponentData<TextContent>(ButtonChecks.DescendantsWith<TextContent>(frames.World, field).Single()).Value);
 
         Keyboard.Composition(frames.World, candidate, 0);
         frames.Frame();
@@ -104,8 +104,8 @@ public sealed partial class TextFieldVisibilityTests
         frames.Frame();
         caret = ReadCaret(frames.World, field);
         Assert.Equal(viewport.X + viewport.Width, caret.X + caret.Width, 3);
-        Assert.Equal(candidate, frames.World.Read<EditableText>(field).Text);
-        Assert.Equal("", frames.World.Read<EditableText>(field).Composition);
+        Assert.Equal(candidate, frames.World.ReadComponentData<EditableText>(field).Text);
+        Assert.Equal("", frames.World.ReadComponentData<EditableText>(field).Composition);
     }
 
     [Theory]
@@ -124,15 +124,15 @@ public sealed partial class TextFieldVisibilityTests
         Pointer.Move(frames.World, frames.Canvas, new Vector2(viewport.X + 1, viewport.Y + 1));
         Pointer.Wheel(frames.World, frames.Canvas, new Vector2(-1000, 0));
         frames.Frame();
-        Assert.Equal(0, frames.World.Read<ScrollOffset>(scroll).Value.X);
+        Assert.Equal(0, frames.World.ReadComponentData<ScrollOffset>(scroll).Value.X);
         frames.Frame();
-        Assert.Equal(0, frames.World.Read<ScrollOffset>(scroll).Value.X);
+        Assert.Equal(0, frames.World.ReadComponentData<ScrollOffset>(scroll).Value.X);
 
         Keyboard.Key(frames.World, Key.Left, true);
         frames.Frame();
 
         Rect caret = ReadCaret(frames.World, field);
-        Assert.Equal(29, frames.World.Read<EditableText>(field).Caret);
+        Assert.Equal(29, frames.World.ReadComponentData<EditableText>(field).Caret);
         Assert.InRange(caret.X, viewport.X - 0.001f, viewport.X + viewport.Width - caret.Width + 0.001f);
     }
 
@@ -152,31 +152,31 @@ public sealed partial class TextFieldVisibilityTests
         string entered = new('A', 30);
         Keyboard.Text(frames.World, entered);
         frames.Frame();
-        Entity field = frames.World.Read<FieldReference>(root).Field;
+        Entity field = frames.World.ReadComponentData<FieldReference>(root).Field;
         Rect viewport = ReadViewport(frames.World, field);
         Rect caret = ReadCaret(frames.World, field);
         Assert.Equal(entered, value.Value);
         Assert.InRange(caret.X, viewport.X - 0.001f, viewport.X + viewport.Width - caret.Width + 0.001f);
-        Assert.Equal("Name", frames.World.Read<AccessibleName>(field).Value);
+        Assert.Equal("Name", frames.World.ReadComponentData<AccessibleName>(field).Value);
 
-        frames.World.Replace(root, new BoundField(value, "Account", declare));
+        frames.World.Set(root, new BoundField(value, "Account", declare));
         frames.Frame();
         caret = ReadCaret(frames.World, field);
-        Assert.Equal(Role.TextField, frames.World.Read<AccessibleRole>(field).Value);
-        Assert.Equal("Account", frames.World.Read<AccessibleName>(field).Value);
+        Assert.Equal(Role.TextField, frames.World.ReadComponentData<AccessibleRole>(field).Value);
+        Assert.Equal("Account", frames.World.ReadComponentData<AccessibleName>(field).Value);
         Assert.Equal(entered, value.Value);
         Assert.InRange(caret.X, viewport.X - 0.001f, viewport.X + viewport.Width - caret.Width + 0.001f);
 
         value.Value = "Z";
         frames.Frame();
-        Assert.Equal("Z", frames.World.Read<EditableText>(field).Text);
+        Assert.Equal("Z", frames.World.ReadComponentData<EditableText>(field).Text);
         Keyboard.Key(frames.World, Key.Backspace, true);
         frames.Frame();
         viewport = ReadViewport(frames.World, field);
         Assert.Equal("", value.Value);
-        Assert.Equal("Account", frames.World.Read<TextContent>(ButtonChecks.DescendantsWith<TextContent>(frames.World, field).Single()).Value);
+        Assert.Equal("Account", frames.World.ReadComponentData<TextContent>(ButtonChecks.DescendantsWith<TextContent>(frames.World, field).Single()).Value);
         Assert.Equal(viewport.X, ReadCaret(frames.World, field).X, 3);
-        Assert.Equal("Account", frames.World.Read<AccessibleName>(field).Value);
+        Assert.Equal("Account", frames.World.ReadComponentData<AccessibleName>(field).Value);
     }
 
     private readonly record struct BoundField(State<string> Value, string Placeholder, Func<string, string, Entity> Declare)
@@ -201,17 +201,17 @@ public sealed partial class TextFieldVisibilityTests
         ? Views.Views.Spawn(frames.World, frames.Canvas, new Rewrites.TextField(text, placeholder))
         : Views.Views.Spawn(frames.World, frames.Canvas, new TextField(text, placeholder));
 
-    private static Rect ReadCaret(World world, Entity field) => world.Read<LayoutRect>(
-        ButtonChecks.DescendantsWith<Surface>(world, field).Single(node => world.Read<Surface>(node).Fill == new Color(1, 1, 1))).Value;
+    private static Rect ReadCaret(World world, Entity field) => world.ReadComponentData<LayoutRect>(
+        ButtonChecks.DescendantsWith<Surface>(world, field).Single(node => world.ReadComponentData<Surface>(node).Fill == new Color(1, 1, 1))).Value;
 
-    private static Rect ReadSelection(World world, Entity field) => world.Read<LayoutRect>(
-        ButtonChecks.DescendantsWith<Surface>(world, field).Single(node => world.Read<Surface>(node).Fill == new Color(0.15f, 0.45f, 0.85f, 0.35f))).Value;
+    private static Rect ReadSelection(World world, Entity field) => world.ReadComponentData<LayoutRect>(
+        ButtonChecks.DescendantsWith<Surface>(world, field).Single(node => world.ReadComponentData<Surface>(node).Fill == new Color(0.15f, 0.45f, 0.85f, 0.35f))).Value;
 
     private static Rect ReadViewport(World world, Entity field)
     {
         Entity viewport = ButtonChecks.DescendantsWith<ScrollOffset>(world, field).Single();
-        Rect rectangle = world.Read<LayoutRect>(viewport).Value;
-        Thickness padding = world.Read<Box>(viewport).Padding;
+        Rect rectangle = world.ReadComponentData<LayoutRect>(viewport).Value;
+        Thickness padding = world.ReadComponentData<Box>(viewport).Padding;
         return new Rect(rectangle.X + padding.Left, rectangle.Y + padding.Top,
             rectangle.Width - padding.Left - padding.Right, rectangle.Height - padding.Top - padding.Bottom);
     }

@@ -15,13 +15,11 @@ using var extraction = new RenderExtractionSystems(
 extraction.Extract(gameWorld);
 prepareSystems.ApplyExtraction(prepareScope);
 Entity canvasMirror = extraction.RequireMirror(canvas);
-renderWorld.ExecuteBufferRead<SurfaceInstance>(canvasMirror, instances =>
+using var instances = renderWorld.World.ReadBuffer<SurfaceInstance>(canvasMirror);
+foreach (SurfaceInstance instance in instances.AsSpan())
 {
-    foreach (SurfaceInstance instance in instances.AsSpan())
-    {
-        // Consume the rectangle, fill, corners, border, shadow, clip, presentation, order, and version.
-    }
-});
+    // Consume the rectangle, fill, corners, border, shadow, clip, presentation, order, and version.
+}
 ```
 
 Each canvas mirror holds `RenderCanvas` and one ECS buffer of `SurfaceInstance`.
@@ -139,7 +137,7 @@ read pixels on D3D12 WARP and Vulkan with graphics validation enabled.
 Text uses a CPU atlas entity and the same extraction stage:
 
 ```csharp
-Entity textAtlas = gameWorld.CreateEntity(new TextAtlas(new GlyphAtlas()));
+Entity textAtlas = gameWorld.Create(new TextAtlas(new GlyphAtlas()));
 using var extraction = new RenderExtractionSystems(renderWorld,
     new SurfaceRenderExtractor(), new GlyphRenderExtractor(textAtlas));
 using GlyphsMaterial glyphs = GlyphsMaterial.Create(device.Capabilities.CompileTarget);

@@ -24,20 +24,20 @@ public sealed partial class SurfaceExtractionTests
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(game));
         systems.Add(new ViewRebuildSystem());
         systems.Add(new LayoutSystem());
-        Entity canvas = game.CreateEntity(new Canvas { Size = new Size(800, 600) });
+        Entity canvas = game.Create(new Canvas { Size = new Size(800, 600) });
         Entity root = Views.Views.Spawn(game, canvas, new ScrollClipScene());
         systems.Update();
-        Entity panel = Hierarchy<ElementTree>.GetChildren(game, root)[0];
-        Entity outer = Hierarchy<ElementTree>.GetChildren(game, panel)[0];
+        Entity panel = ElementChildren.Read(game, root)[0];
+        Entity outer = ElementChildren.Read(game, panel)[0];
         extraction.Extract(game);
         graphics.Apply(extraction, render);
         Entity mirror = extraction.RequireMirror(canvas);
         SurfaceInstance before = Assert.Single(ReadInstances(render, mirror));
         Assert.Equal(new Rect(90, 40, 30, 30), before.ClipRectangle);
 
-        Box box = game.Read<Box>(outer);
+        Box box = game.ReadComponentData<Box>(outer);
         box.Fixed = new Size(120, 80);
-        game.Replace(outer, box);
+        game.Set(outer, box);
         systems.Update();
         extraction.Extract(game);
         graphics.Apply(extraction, render);
@@ -54,8 +54,8 @@ public sealed partial class SurfaceExtractionTests
         using var game = new World();
         using var render = new RenderWorld();
         using var extraction = new RenderExtractionSystems(render, new SurfaceRenderExtractor());
-        Entity canvas = game.CreateEntity(new Canvas { Size = new Size(800, 600) });
-        Entity viewport = game.CreateEntity(new LayoutRect { Value = new Rect(20, 10, 100, 60) });
+        Entity canvas = game.Create(new Canvas { Size = new Size(800, 600) });
+        Entity viewport = game.Create(new LayoutRect { Value = new Rect(20, 10, 100, 60) });
         Hierarchy<ElementTree>.SetParent(game, viewport, canvas);
         AddPanel(game, viewport, new Rect(20, 10, 180, 100), new Color(1, 0, 0));
         extraction.Extract(game);

@@ -1,3 +1,4 @@
+using SomeEngine.ECS;
 using System.Numerics;
 using SomeEngine.ECS.Components;
 
@@ -56,8 +57,7 @@ public sealed class GpuAimPose(GpuPoseSource source, GpuAimChain chain, int goal
 }
 
 /// <summary>Actor-model-space input read at the normal Game-world extraction boundary.</summary>
-[BufferCapacity(4)]
-public struct GpuPoseGoal : IBufferElement
+public struct GpuPoseGoal : IBufferElement, ITrackedComponent
 {
     public Vector3 Position;
     public float PositionWeight;

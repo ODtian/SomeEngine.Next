@@ -1,7 +1,6 @@
 using SomeEngine.Core.ECS.Components;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Render.Components;
 using SomeEngine.Render.Systems;
@@ -37,59 +36,66 @@ internal sealed partial class TerrainGeometryExtractor(object scene) : IRenderEx
         _selection = null;
     }
 
-    public void Collect(QueryChunkView chunk) => Collect(ReadOnlyQueryPacketJobs.Borrow(chunk));
-
-    private void Collect(ReadOnlyQueryPacket chunk)
+    public void Collect(QueryChunk chunk)
     {
         if (chunk.TryRead<TerrainGpuSelection>(out var selections))
             for (int row = 0; row < selections.Length; row++)
-                if (ReferenceEquals(selections[row].Scene, scene)) _selection = (chunk.Entities[row], selections[row]);
+                if (chunk.Has<TerrainGpuSelection>(row) && ReferenceEquals(selections[row].Scene, scene)) _selection = (chunk.Entities[row], selections[row]);
         if (!chunk.TryRead<TerrainGpuSource>(out var sources)) return;
         var values = chunk.Read<TerrainChunk>();
         var transforms = chunk.Read<WorldTransform>();
         for (int row = 0; row < sources.Length; row++)
         {
-            if (!ReferenceEquals(sources[row].Scene, scene)) continue;
-            var bindings = chunk.ReadBuffer<MeshMaterialBinding>(row).AsSpan();
+            if (!chunk.Has<TerrainGpuSource>(row) || !ReferenceEquals(sources[row].Scene, scene)) continue;
+            using ReadOnlyBuffer<MeshMaterialBinding> buffer = chunk.ReadBuffer<MeshMaterialBinding>(row);
+            ReadOnlySpan<MeshMaterialBinding> bindings = buffer.AsSpan();
             var materials = new Material[bindings.Length];
             for (int index = 0; index < materials.Length; index++) materials[index] = bindings[index].Material;
             _chunks.Add(new(chunk.Entities[row], values[row], new RenderTransform(transforms[row].Qvvs), materials));
         }
     }
 
-    public bool CollectChanges(QueryChunkView chunk, RenderExtractionContext context)
+    public bool CollectChanges(QueryChunk chunk, ulong since, RenderExtractionContext context)
     {
-        bool changed = CollectChanges(ReadOnlyQueryPacketJobs.Borrow(chunk), chunk.LastSystemVersion);
+        bool changed = CollectChanges(chunk, since);
         _transformChanges.Merge(context);
         return changed;
     }
 
-    private bool CollectChanges(ReadOnlyQueryPacket chunk, uint lastSystemVersion)
+    private bool CollectChanges(QueryChunk chunk, ulong lastSystemVersion)
     {
-        if (chunk.Has<TerrainGpuSelection>() && chunk.ChangedSince<TerrainGpuSelection>(lastSystemVersion))
+        if (chunk.Has<TerrainGpuSelection>() && chunk.WasWritten<TerrainGpuSelection>(lastSystemVersion))
         {
             Collect(chunk);
             return true;
         }
         if (!chunk.Has<TerrainGpuSource>()) return false;
-        if (chunk.ChangedSince<WorldTransform>(lastSystemVersion)) _transformChanges.Collect(chunk, lastSystemVersion);
-        if (!chunk.ChangedSince<TerrainChunk>(lastSystemVersion)
-            && !chunk.ChangedSince<WorldTransform>(lastSystemVersion)
-            && !chunk.BufferChangedSince<MeshMaterialBinding>(lastSystemVersion)) return false;
+        if (chunk.WasWritten<WorldTransform>(lastSystemVersion))
+        {
+            ReadOnlySpan<TerrainGpuSource> sources = chunk.Read<TerrainGpuSource>();
+            ReadOnlySpan<WorldTransform> transforms = chunk.Read<WorldTransform>();
+            for (int row = 0; row < chunk.Count; row++)
+                if (chunk.Has<TerrainGpuSource>(row) && ReferenceEquals(sources[row].Scene, scene)
+                    && chunk.WasWritten<WorldTransform>(row, lastSystemVersion))
+                    _transformChanges.Add(chunk.Entities[row], new RenderTransform(transforms[row].Qvvs));
+        }
+        if (!chunk.WasWritten<TerrainChunk>(lastSystemVersion)
+            && !chunk.WasWritten<WorldTransform>(lastSystemVersion)
+            && !chunk.WasWritten<Buffer<MeshMaterialBinding>>(lastSystemVersion)) return false;
         Collect(chunk);
         return true;
     }
 
-    public void CollectResources(scoped QueryCursor source, RenderExtractionResources resources)
+    public void CollectResources(scoped QueryScope source, RenderExtractionResources resources)
     {
-        foreach (QueryChunkView chunk in source.Chunks)
+        foreach (QueryChunk chunk in source)
         {
             if (!chunk.TryRead<TerrainGpuSource>(out var sources)) continue;
             for (int row = 0; row < sources.Length; row++)
             {
-                if (!ReferenceEquals(sources[row].Scene, scene)) continue;
-                foreach (MeshMaterialBinding binding in chunk.ReadBuffer<MeshMaterialBinding>(row).AsSpan())
-                    resources.Add(binding.Material);
+                if (!chunk.Has<TerrainGpuSource>(row) || !ReferenceEquals(sources[row].Scene, scene)) continue;
+                using ReadOnlyBuffer<MeshMaterialBinding> bindings = chunk.ReadBuffer<MeshMaterialBinding>(row);
+                foreach (MeshMaterialBinding binding in bindings.AsSpan()) resources.Add(binding.Material);
             }
         }
     }

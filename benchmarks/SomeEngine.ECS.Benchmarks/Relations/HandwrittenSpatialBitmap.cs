@@ -1,61 +1,49 @@
+using SomeEngine.ECS;
+using SomeEngine.ECS.Spatial;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Relations;
-using SomeEngine.Physics;
 
 namespace SomeEngine.ECS.Benchmarks.Relations.Spatial;
 
 /// <summary>Independent direct bitmap proofs over the same collision nodes and summary fields.</summary>
 public static class HandwrittenSpatialBitmap
 {
-    public static bool OneWay<TOutput>(World world, QueryHandle bodies, CollisionTree tree,
-        ReadOnlySpan<CollisionBitmapData> categories, ref TOutput output)
+    public static bool OneWay<TOutput>(World world, Query bodies, BoundsTree tree,
+        ReadOnlySpan<BoundsBitmapData> categories, ref TOutput output)
         where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
     {
-        QueryDefinition original = world.GetQueryDefinition(bodies);
-        QueryDefinition definition = original.WithOptionalRead<Body>();
-        bool temporaryQuery = definition.CanWrite || !ReferenceEquals(original, definition);
-        QueryHandle query = temporaryQuery ? world.Query(definition) : bodies;
+        using QueryScope scope = bodies.WithOptionalRead<Body>().OpenRead();
         var execution = new OneWayPairs<TOutput>(tree, categories, output);
-        try
-        {
-            world.ExecuteQuery(query, ref execution);
-            return execution.Completed;
-        }
-        finally
-        {
-            output = execution.Output;
-            if (temporaryQuery)
-                world.ReleaseQuery(query);
-        }
+        try { execution.Execute(scope); return execution.Completed; }
+        finally { output = execution.Output; }
     }
 
-    private ref struct OneWayPairs<TOutput>(CollisionTree tree,
-        ReadOnlySpan<CollisionBitmapData> categories, TOutput output) : IQueryExecution
+    private ref struct OneWayPairs<TOutput>(BoundsTree tree,
+        ReadOnlySpan<BoundsBitmapData> categories, TOutput output)
         where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
     {
-        private readonly ReadOnlySpan<CollisionBitmapData> _categories = categories;
+        private readonly ReadOnlySpan<BoundsBitmapData> _categories = categories;
         public TOutput Output = output;
         public bool Completed;
 
-        public void Execute(scoped QueryCursor members)
+        public void Execute(scoped QueryScope members)
         {
             Completed = Traverse(members);
         }
 
-        private bool Traverse(scoped QueryCursor members)
+        private bool Traverse(scoped QueryScope members)
         {
             if (tree.Root < 0)
                 return true;
-            ReadOnlySpan<CollisionNode> nodes = tree.Nodes;
+            ReadOnlySpan<BoundsNode> nodes = tree.Nodes;
             Span<BitmapNodePair> work = stackalloc BitmapNodePair[2 * tree.Height + 1];
             int count = 0;
             work[count++] = new(tree.Root, tree.Root, default, default);
             while (count > 0)
             {
                 BitmapNodePair pair = work[--count];
-                ref readonly CollisionNode first = ref nodes[pair.First];
-                ref readonly CollisionNode second = ref nodes[pair.Second];
+                ref readonly BoundsNode first = ref nodes[pair.First];
+                ref readonly BoundsNode second = ref nodes[pair.Second];
                 if (pair.First == pair.Second && first.IsLeaf ||
                     pair.First != pair.Second && !first.Bounds.Overlaps(in second.Bounds))
                     continue;
@@ -78,7 +66,7 @@ public static class HandwrittenSpatialBitmap
                     if (match == GroupMatch.None)
                         continue;
                     var entities = (nodes[firstNode].Entity, nodes[secondNode].Entity);
-                    if (!members.TryGetRow(entities.Item1, out _) || !members.TryGetRow(entities.Item2, out _))
+                    if (!members.Contains(entities.Item1) || !members.Contains(entities.Item2))
                         continue;
                     if (match == GroupMatch.Unknown)
                     {
@@ -106,8 +94,8 @@ public static class HandwrittenSpatialBitmap
         }
     }
 
-    private static GroupMatch OneWayGroups(ReadOnlySpan<CollisionNode> nodes,
-        ReadOnlySpan<CollisionBitmapData> categories, int firstNode, int secondNode, GroupMatch inherited)
+    private static GroupMatch OneWayGroups(ReadOnlySpan<BoundsNode> nodes,
+        ReadOnlySpan<BoundsBitmapData> categories, int firstNode, int secondNode, GroupMatch inherited)
     {
         if (inherited != GroupMatch.Unknown)
             return inherited;
@@ -122,54 +110,42 @@ public static class HandwrittenSpatialBitmap
         return GroupMatch.Unknown;
     }
 
-    public static bool Mutual<TOutput>(World world, QueryHandle bodies, CollisionTree tree,
-        ReadOnlySpan<CollisionBitmapData> categories, ref TOutput output)
+    public static bool Mutual<TOutput>(World world, Query bodies, BoundsTree tree,
+        ReadOnlySpan<BoundsBitmapData> categories, ref TOutput output)
         where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
     {
-        QueryDefinition original = world.GetQueryDefinition(bodies);
-        QueryDefinition definition = original.WithOptionalRead<Body>();
-        bool temporaryQuery = definition.CanWrite || !ReferenceEquals(original, definition);
-        QueryHandle query = temporaryQuery ? world.Query(definition) : bodies;
+        using QueryScope scope = bodies.WithOptionalRead<Body>().OpenRead();
         var execution = new MutualPairs<TOutput>(tree, categories, output);
-        try
-        {
-            world.ExecuteQuery(query, ref execution);
-            return execution.Completed;
-        }
-        finally
-        {
-            output = execution.Output;
-            if (temporaryQuery)
-                world.ReleaseQuery(query);
-        }
+        try { execution.Execute(scope); return execution.Completed; }
+        finally { output = execution.Output; }
     }
 
-    private ref struct MutualPairs<TOutput>(CollisionTree tree,
-        ReadOnlySpan<CollisionBitmapData> categories, TOutput output) : IQueryExecution
+    private ref struct MutualPairs<TOutput>(BoundsTree tree,
+        ReadOnlySpan<BoundsBitmapData> categories, TOutput output)
         where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
     {
-        private readonly ReadOnlySpan<CollisionBitmapData> _categories = categories;
+        private readonly ReadOnlySpan<BoundsBitmapData> _categories = categories;
         public TOutput Output = output;
         public bool Completed;
 
-        public void Execute(scoped QueryCursor members)
+        public void Execute(scoped QueryScope members)
         {
             Completed = Traverse(members);
         }
 
-        private bool Traverse(scoped QueryCursor members)
+        private bool Traverse(scoped QueryScope members)
         {
             if (tree.Root < 0)
                 return true;
-            ReadOnlySpan<CollisionNode> nodes = tree.Nodes;
+            ReadOnlySpan<BoundsNode> nodes = tree.Nodes;
             Span<BitmapNodePair> work = stackalloc BitmapNodePair[2 * tree.Height + 1];
             int count = 0;
             work[count++] = new(tree.Root, tree.Root, default, default);
             while (count > 0)
             {
                 BitmapNodePair pair = work[--count];
-                ref readonly CollisionNode first = ref nodes[pair.First];
-                ref readonly CollisionNode second = ref nodes[pair.Second];
+                ref readonly BoundsNode first = ref nodes[pair.First];
+                ref readonly BoundsNode second = ref nodes[pair.Second];
                 if (pair.First == pair.Second && first.IsLeaf ||
                     pair.First != pair.Second && !first.Bounds.Overlaps(in second.Bounds))
                     continue;
@@ -192,7 +168,7 @@ public static class HandwrittenSpatialBitmap
                     if (match == GroupMatch.None)
                         continue;
                     var entities = (nodes[firstNode].Entity, nodes[secondNode].Entity);
-                    if (!members.TryGetRow(entities.Item1, out _) || !members.TryGetRow(entities.Item2, out _))
+                    if (!members.Contains(entities.Item1) || !members.Contains(entities.Item2))
                         continue;
                     if (match == GroupMatch.Unknown)
                     {
@@ -221,8 +197,8 @@ public static class HandwrittenSpatialBitmap
         }
     }
 
-    private static GroupMatch MutualGroups(ReadOnlySpan<CollisionNode> nodes,
-        ReadOnlySpan<CollisionBitmapData> categories, int firstNode, int secondNode, GroupMatch inherited)
+    private static GroupMatch MutualGroups(ReadOnlySpan<BoundsNode> nodes,
+        ReadOnlySpan<BoundsBitmapData> categories, int firstNode, int secondNode, GroupMatch inherited)
     {
         if (inherited != GroupMatch.Unknown)
             return inherited;

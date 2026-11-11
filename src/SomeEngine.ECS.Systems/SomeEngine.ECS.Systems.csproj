@@ -6,10 +6,8 @@
   <ItemGroup>
     <ProjectReference Include="../SomeEngine.Diagnostics/SomeEngine.Diagnostics.csproj" />
     <ProjectReference Include="../SomeEngine.ECS/SomeEngine.ECS.csproj" />
-    <ProjectReference Include="../SomeEngine.Job.Contracts/SomeEngine.Job.Contracts.csproj" />
+    <ProjectReference Include="../SomeEngine.ECS.Relationships/SomeEngine.ECS.Relationships.csproj" />
+    <ProjectReference Include="../SomeEngine.Job.Resources/SomeEngine.Job.Resources.csproj" />
     <ProjectReference Include="..\SomeEngine.Job\SomeEngine.Job.csproj" />
-  </ItemGroup>
-  <ItemGroup>
-    <InternalsVisibleTo Include="SomeEngine.Core" />
   </ItemGroup>
 </Project>

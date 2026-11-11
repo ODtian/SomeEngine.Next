@@ -1,5 +1,6 @@
+using SomeEngine.Core.ECS.Components;
+using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Render.Components;
 
@@ -21,27 +22,26 @@ public sealed partial class WorldOriginRenderExtractor : IRenderExtractionSystem
 
     public void Reset() { _origins.Clear(); _sources.Clear(); }
 
-    public void Collect(QueryChunkView chunk) => Collect(ReadOnlyQueryPacketJobs.Borrow(chunk));
-
-    private void Collect(ReadOnlyQueryPacket chunk)
+    public void Collect(QueryChunk chunk)
     {
         if (!chunk.TryRead<WorldOrigin>(out ReadOnlySpan<WorldOrigin> origins)) return;
         for (int row = 0; row < chunk.Count; row++)
         {
+            if (!chunk.Has<WorldOrigin>(row)) continue;
             _origins.Add((chunk.Entities[row], origins[row]));
             _sources.Add(chunk.Entities[row]);
         }
     }
 
-    public bool CollectChanges(QueryChunkView chunk, RenderExtractionContext context) =>
-        CollectChanges(ReadOnlyQueryPacketJobs.Borrow(chunk), chunk.LastSystemVersion);
+    public bool CollectChanges(QueryChunk chunk, ulong since, RenderExtractionContext context) =>
+        CollectChanges(chunk, since);
 
-    private bool CollectChanges(ReadOnlyQueryPacket chunk, uint lastSystemVersion)
+    private bool CollectChanges(QueryChunk chunk, ulong lastSystemVersion)
     {
         if (!chunk.TryRead<WorldOrigin>(out ReadOnlySpan<WorldOrigin> origins) ||
-            !chunk.ChangedSince<WorldOrigin>(lastSystemVersion)) return false;
+            !chunk.WasWritten<WorldOrigin>(lastSystemVersion)) return false;
         for (int row = 0; row < chunk.Count; row++)
-            if (chunk.RowChangedSince<WorldOrigin>(row, lastSystemVersion))
+            if (chunk.WasWritten<WorldOrigin>(row, lastSystemVersion))
                 _origins.Add((chunk.Entities[row], origins[row]));
         return _origins.Count != 0;
     }

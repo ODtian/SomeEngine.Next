@@ -28,7 +28,11 @@ internal static class GraphCompiler
             int machine = data.GroupCount++;
             data.Groups![machine] = new GraphGroupData
             {
-                Node = index, Part = part, Stage = start.Stage, Start = start.Time, ParentMotion = motion,
+                Node = index,
+                Part = part,
+                Stage = start.Stage,
+                Start = start.Time,
+                ParentMotion = motion,
                 OutputGroup = group == 0 ? machine + 1 : group,
             };
             bool hasState = false;
@@ -72,8 +76,14 @@ internal static class GraphCompiler
             data.Tracks![data.TrackCount++] = new GraphTrack
             {
                 Order = data.TrackCount - 1,
-                Node = node, Stage = motion == 0 ? start.Stage : data.Groups![data.Motions![motion - 1].Group].Stage,
-                Start = start.Time, Part = part, TimelinePart = part, Motion = motion, Group = group, MotionStage = start.Stage,
+                Node = node,
+                Stage = motion == 0 ? start.Stage : data.Groups![data.Motions![motion - 1].Group].Stage,
+                Start = start.Time,
+                Part = part,
+                TimelinePart = part,
+                Motion = motion,
+                Group = group,
+                MotionStage = start.Stage,
             };
             data.Parts![part].TrackCount++;
             MotionBoundary boundary = node.Leaf is not null ? node.Boundary :
@@ -186,7 +196,10 @@ internal static class GraphCompiler
                     destination = data.PartCount++;
                     data.Parts![destination] = new GraphPart
                     {
-                        Id = -destination, TimelinePart = part, Stages = data.Parts[part].Stages, StageCount = data.Parts[part].StageCount,
+                        Id = -destination,
+                        TimelinePart = part,
+                        Stages = data.Parts[part].Stages,
+                        StageCount = data.Parts[part].StageCount,
                     };
                 }
                 for (int j = i; j < data.TrackCount; j++)
@@ -218,7 +231,7 @@ internal static class GraphCompiler
     private static void CompileLeaves(ref GraphData data)
     {
         var batches = new HashSet<(Type Type, int Part)>();
-        var outputs = new Dictionary<(int Part, SomeEngine.ECS.Entities.Entity Target, ushort Component, uint Field, byte Layer, int Group), int>();
+        var outputs = new Dictionary<(int Part, SomeEngine.ECS.Entities.Entity Target, int Component, uint Field, byte Layer, int Group), int>();
         Span<GraphTrack> tracks = data.Tracks.AsSpan(0, data.TrackCount);
         for (int index = 0; index < tracks.Length; index++)
         {
@@ -306,7 +319,7 @@ internal static class GraphCompiler
     private static void CompileConditions(ref GraphData data)
     {
         var types = new Dictionary<Type, int>();
-        var inputs = new HashSet<SomeEngine.ECS.Queries.QueryDefinition>();
+        var inputs = new HashSet<SomeEngine.ECS.QueryDescription>();
         for (int index = 0; index < data.NodeCount; index++)
         {
             ref GraphNode node = ref data.Nodes![index];
@@ -315,7 +328,7 @@ internal static class GraphCompiler
             types.TryGetValue(condition.Type, out int count);
             node.ConditionIndex = count;
             types[condition.Type] = count + 1;
-            if (condition.Inputs != SomeEngine.ECS.Queries.QueryDefinition.Empty)
+            if (condition.Inputs is not null)
                 inputs.Add(condition.Inputs);
         }
         data.Inputs = inputs.ToArray();

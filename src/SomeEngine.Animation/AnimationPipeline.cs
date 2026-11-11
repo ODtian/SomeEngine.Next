@@ -3,7 +3,6 @@ using SomeEngine.Core.Diagnostics;
 using SomeEngine.Core.Math;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 
 namespace SomeEngine.Animation;
@@ -144,7 +143,6 @@ internal sealed unsafe class AnimationPipeline : ISystem<ImmediateSystemContext>
         List<PhaseSystems> systems = _systems!;
         foreach (PhaseSystems phase in systems) phase.Systems.Complete();
         foreach (PhaseSystems phase in systems) phase.Systems.Dispose();
-        foreach (TrackMembers tracks in _tracks) context.World.ReleaseQuery(tracks.Query);
     }
 
     private void AddAdditionalSystems(ISystemCollection systems, AnimationPhase phase)
@@ -231,7 +229,7 @@ internal sealed unsafe class AnimationPipeline : ISystem<ImmediateSystemContext>
                 if (candidate.ValueType == typeof(T)) { members = candidate; break; }
             if (members is null)
             {
-                QueryHandle query = world.Query(world.QueryDefinition().Read<Timeline>().ReadBuffer<Track<T>>());
+                Query query = world.Query(new QueryDescription().WithStored<Timeline>().WithStored<Buffer<Track<T>>>());
                 members = new(typeof(T), query);
                 tracks.Add(members);
             }
@@ -247,10 +245,10 @@ internal sealed unsafe class AnimationPipeline : ISystem<ImmediateSystemContext>
         public void AddTracks<T, TSystem>(TSystem system) where T : unmanaged where TSystem : ISystem<ImmediateSystemContext> => Add(system);
     }
 
-    private sealed class TrackMembers(Type valueType, QueryHandle query)
+    private sealed class TrackMembers(Type valueType, Query query)
     {
         internal readonly Type ValueType = valueType;
-        internal readonly QueryHandle Query = query;
+        internal readonly Query Query = query;
     }
 
     private sealed class TrackNodes(TrackMembers members)
@@ -278,7 +276,7 @@ internal sealed unsafe class AnimationPipeline : ISystem<ImmediateSystemContext>
         {
             foreach (TrackNodes nodes in _tracks)
             {
-                bool enabled = context.World.HasQueryMembers(nodes.Members.Query);
+                bool enabled = (nodes.Members.Query.Count != 0);
                 if (enabled == nodes.Enabled) continue;
                 foreach (int index in nodes.Indices)
                     if (enabled) Systems.Enable(index);

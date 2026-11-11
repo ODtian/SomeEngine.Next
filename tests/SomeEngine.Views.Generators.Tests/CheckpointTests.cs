@@ -32,10 +32,10 @@ public sealed class CheckpointTests
 
             restored.Frame();
 
-            Assert.Equal(13, restored.World.Read<CheckpointValue>(root).Value);
+            Assert.Equal(13, restored.World.ReadComponentData<CheckpointValue>(root).Value);
             CheckpointContainer.Number.Value = 19;
             restored.Frame();
-            Assert.Equal(13, restored.World.Read<CheckpointValue>(root).Value);
+            Assert.Equal(13, restored.World.ReadComponentData<CheckpointValue>(root).Value);
         }
         finally
         {
@@ -63,8 +63,8 @@ public sealed class CheckpointTests
 
         restored.Frame();
 
-        Assert.Equal(new Caption<int>(9, 2), restored.World.ReadSparse<Caption<int>>(first));
-        Assert.Equal(new Caption<long>(19, 3), restored.World.ReadSparse<Caption<long>>(second));
+        Assert.Equal(new Caption<int>(9, 2), restored.World.ReadComponentData<Caption<int>>(first));
+        Assert.Equal(new Caption<long>(19, 3), restored.World.ReadComponentData<Caption<long>>(second));
     }
 
     [Fact]
@@ -74,13 +74,13 @@ public sealed class CheckpointTests
         CardFunctions.RegisterSerialization<CheckpointCardCodec>(writerRegistry, CardFunctions.SerializationType);
         var card = new Card("Inventory");
         using var stream = new MemoryStream();
-        WorldSerializer.WriteDurableComponent(stream, in card, writerRegistry);
+        WorldSerializer.WriteComponent(stream, in card, writerRegistry, new(Purpose: SavePurpose.DurableSave));
         var readerRegistry = new SerializationRegistry();
         CardFunctions.RegisterSerialization<CheckpointCardCodec>(readerRegistry,
             CardFunctions.SerializationType with { SchemaFingerprint = 2 });
         stream.Position = 0;
 
-        Assert.Throws<InvalidDataException>(() => WorldSerializer.ReadDurableComponent<Card>(stream, readerRegistry));
+        Assert.Throws<InvalidDataException>(() => WorldSerializer.ReadComponent<Card>(stream, readerRegistry, new(RequiredPurpose: SavePurpose.DurableSave)));
     }
 
     [Fact]
@@ -92,9 +92,9 @@ public sealed class CheckpointTests
             new Guid("2fbf0bb2-f4b4-4af5-85a2-c025ebde9047"), "背包");
         using var stream = new MemoryStream();
 
-        WorldSerializer.WriteDurableComponent(stream, in options, registry);
+        WorldSerializer.WriteComponent(stream, in options, registry, new(Purpose: SavePurpose.DurableSave));
         stream.Position = 0;
-        CheckpointOptions restored = WorldSerializer.ReadDurableComponent<CheckpointOptions>(stream, registry);
+        CheckpointOptions restored = WorldSerializer.ReadComponent<CheckpointOptions>(stream, registry, new(RequiredPurpose: SavePurpose.DurableSave));
 
         Assert.Equal(options, restored);
     }
@@ -109,32 +109,28 @@ public sealed class CheckpointTests
         registry.Register<CheckpointValue, CheckpointValueCodec>(new SerializationTypeKey(
             new Guid("a31f6356-7460-4bc4-9b82-d0d1f839284c"), "CheckpointValue", 1));
         using var frames = new HeadlessFrameDriver();
-        Entity removed = frames.World.CreateEntity();
-        frames.World.DestroyEntity(removed);
-        Entity source = frames.World.CreateEntity(new CheckpointValue(7));
+        Entity removed = frames.World.Create();
+        Entity source = frames.World.Create(new CheckpointValue(7));
         Views.Spawn(frames.World, Entity.Null, new CheckpointRoot(source));
         frames.Frame();
+        frames.World.Destroy(removed);
         using var save = new MemoryStream();
-        WorldSerializer.WriteDurableWorld(save, frames.World, registry);
+        new WorldSerializer(registry).Save(frames.World, save, SavePurpose.DurableSave);
         save.Position = 0;
-        using var restored = new HeadlessFrameDriver(WorldSerializer.ReadDurableWorld(save, registry,
-            new WorldLoadOptions(IdentityMode: EntityIdentityMode.Remap)));
+        using var restored = new HeadlessFrameDriver(WorldSerializer.ReadWorld(save, registry, new WorldLoadOptions(IdentityMode: EntityIdentityMode.Remap) with { RequiredPurpose = SavePurpose.DurableSave }));
         Entity root = Entity.Null;
-        var query = restored.World.Query(restored.World.QueryDefinition().Read<CheckpointRoot>());
-        restored.World.ExecuteQuery(query, ref root, static (rows, ref found) =>
-        {
-            foreach (var row in rows.Rows)
-                found = row.Entity;
-        });
-        restored.World.ReleaseQuery(query);
-        Entity restoredSource = restored.World.Read<CheckpointRoot>(root).Source;
+        Query query = restored.World.Query(new QueryDescription().WithStored<CheckpointRoot>());
+        using (QueryScope rows = query.OpenRead())
+            foreach (QueryChunk chunk in rows)
+                foreach (Entity entity in chunk.Entities) root = entity;
+        Entity restoredSource = restored.World.ReadComponentData<CheckpointRoot>(root).Source;
         Assert.NotEqual(source, restoredSource);
-        restored.World.Replace(restoredSource, new CheckpointValue(29));
+        restored.World.Set(restoredSource, new CheckpointValue(29));
 
         restored.Frame();
 
-        Entity child = Assert.Single(Hierarchy<ElementTree>.GetChildren(restored.World, root));
-        Assert.Equal(new CheckpointLabel(29), restored.World.ReadSparse<CheckpointLabel>(child));
+        Entity child = Assert.Single(ElementChildren.Read(restored.World, root));
+        Assert.Equal(new CheckpointLabel(29), restored.World.ReadComponentData<CheckpointLabel>(child));
     }
 
     [Fact]
@@ -145,9 +141,9 @@ public sealed class CheckpointTests
         var card = new Card("Inventory");
         using var stream = new MemoryStream();
 
-        WorldSerializer.WriteCheckpointComponent(stream, in card, registry);
+        WorldSerializer.WriteComponent(stream, in card, registry, new(Purpose: SavePurpose.RawCheckpoint));
         stream.Position = 0;
-        Card restored = WorldSerializer.ReadCheckpointComponent<Card>(stream, registry);
+        Card restored = WorldSerializer.ReadComponent<Card>(stream, registry, new(RequiredPurpose: SavePurpose.RawCheckpoint));
 
         Assert.Equal("Inventory", restored.Title);
     }
@@ -161,10 +157,10 @@ public sealed class CheckpointTests
         CheckpointLabelFunctions.RegisterSerialization(registry);
         registry.Register<CheckpointValue>();
         using var frames = new HeadlessFrameDriver();
-        Entity source = frames.World.CreateEntity(new CheckpointValue(7));
+        Entity source = frames.World.Create(new CheckpointValue(7));
         Entity root = Views.Spawn(frames.World, Entity.Null, new CheckpointRoot(source));
         frames.Frame();
-        Entity child = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
+        Entity child = Assert.Single(ElementChildren.Read(frames.World, root));
         using var checkpoint = new MemoryStream();
         WorldCheckpointCodec.Write(checkpoint, frames.World, registry);
         checkpoint.Position = 0;
@@ -172,13 +168,13 @@ public sealed class CheckpointTests
 
         restored.Frame();
 
-        Assert.Equal(child, Assert.Single(Hierarchy<ElementTree>.GetChildren(restored.World, root)));
-        Assert.Equal(new CheckpointRoot(source), restored.World.Read<CheckpointRoot>(root));
-        Assert.Equal(new CheckpointLabel(7), restored.World.ReadSparse<CheckpointLabel>(child));
-        restored.World.Replace(source, new CheckpointValue(13));
+        Assert.Equal(child, Assert.Single(ElementChildren.Read(restored.World, root)));
+        Assert.Equal(new CheckpointRoot(source), restored.World.ReadComponentData<CheckpointRoot>(root));
+        Assert.Equal(new CheckpointLabel(7), restored.World.ReadComponentData<CheckpointLabel>(child));
+        restored.World.Set(source, new CheckpointValue(13));
         restored.Frame();
-        Assert.Equal(child, Assert.Single(Hierarchy<ElementTree>.GetChildren(restored.World, root)));
-        Assert.Equal(new CheckpointLabel(13), restored.World.ReadSparse<CheckpointLabel>(child));
+        Assert.Equal(child, Assert.Single(ElementChildren.Read(restored.World, root)));
+        Assert.Equal(new CheckpointLabel(13), restored.World.ReadComponentData<CheckpointLabel>(child));
     }
 
     [Fact]
@@ -196,9 +192,9 @@ public sealed class CheckpointTests
         using var frames = new HeadlessFrameDriver();
         Entity root = Views.Spawn(frames.World, Entity.Null, new CheckpointContent());
         frames.Frame();
-        Entity container = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Entity text = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, container));
-        Entity label = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, text));
+        Entity container = Assert.Single(ElementChildren.Read(frames.World, root));
+        Entity text = Assert.Single(ElementChildren.Read(frames.World, container));
+        Entity label = Assert.Single(ElementChildren.Read(frames.World, text));
         using var checkpoint = new MemoryStream();
         WorldCheckpointCodec.Write(checkpoint, frames.World, registry);
         checkpoint.Position = 0;
@@ -208,14 +204,14 @@ public sealed class CheckpointTests
 
         restored.Frame();
 
-        Assert.Equal(container, Assert.Single(Hierarchy<ElementTree>.GetChildren(restored.World, root)));
-        Assert.Equal(text, Assert.Single(Hierarchy<ElementTree>.GetChildren(restored.World, container)));
-        Assert.Equal(label, Assert.Single(Hierarchy<ElementTree>.GetChildren(restored.World, text)));
-        Assert.Equal(17, restored.World.Read<CheckpointValue>(container).Value);
-        Assert.Equal(new CheckpointLabel(19), restored.World.ReadSparse<CheckpointLabel>(label));
+        Assert.Equal(container, Assert.Single(ElementChildren.Read(restored.World, root)));
+        Assert.Equal(text, Assert.Single(ElementChildren.Read(restored.World, container)));
+        Assert.Equal(label, Assert.Single(ElementChildren.Read(restored.World, text)));
+        Assert.Equal(17, restored.World.ReadComponentData<CheckpointValue>(container).Value);
+        Assert.Equal(new CheckpointLabel(19), restored.World.ReadComponentData<CheckpointLabel>(label));
         CheckpointObjectText.Number.Value = 23;
         restored.Frame();
-        Assert.Equal(new CheckpointLabel(23), restored.World.ReadSparse<CheckpointLabel>(label));
+        Assert.Equal(new CheckpointLabel(23), restored.World.ReadComponentData<CheckpointLabel>(label));
     }
 }
 
@@ -228,13 +224,13 @@ public struct CheckpointCardCodec : IComponentCodec<Card>
     public void Read(ref DataReader reader, out Card value) => value = new Card(reader.ReadString()!);
 }
 
-public struct CheckpointValueCodec : ICanonicalComponentCodec<CheckpointValue>
+public struct CheckpointValueCodec : IDurableComponentCodec<CheckpointValue>
 {
     public void Write(ref DataWriter writer, in CheckpointValue value) => writer.WriteInt32(value.Value);
     public void Read(ref DataReader reader, out CheckpointValue value) => value = new CheckpointValue(reader.ReadInt32());
 }
 
-public struct CaptionIntCodec : ICanonicalComponentCodec<Caption<int>>
+public struct CaptionIntCodec : IDurableComponentCodec<Caption<int>>
 {
     public void Write(ref DataWriter writer, in Caption<int> value)
     {
@@ -245,7 +241,7 @@ public struct CaptionIntCodec : ICanonicalComponentCodec<Caption<int>>
         value = new Caption<int>(reader.ReadInt32(), reader.ReadInt32());
 }
 
-public struct CaptionLongCodec : ICanonicalComponentCodec<Caption<long>>
+public struct CaptionLongCodec : IDurableComponentCodec<Caption<long>>
 {
     public void Write(ref DataWriter writer, in Caption<long> value)
     {
@@ -263,7 +259,7 @@ public readonly record struct CheckpointOptions(CheckpointColor Color, Guid Id, 
     public BuildTask Build() => default;
 }
 
-public readonly record struct CheckpointValue(int Value) : IComponent;
+public readonly record struct CheckpointValue(int Value) : IComponent, ITrackedComponent;
 
 public readonly record struct CheckpointRoot(Entity Source) : IView, IComponent
 {
@@ -300,7 +296,7 @@ public readonly record struct CheckpointContainer : IView, IComponent
     {
         var value = new CheckpointValue(Number.Value);
         if (Scope.World.Has<CheckpointValue>(Scope.Entity))
-            Scope.World.Replace(Scope.Entity, in value);
+            Scope.World.Set(Scope.Entity, in value);
         else
             Scope.World.Add(Scope.Entity, in value);
         return default;

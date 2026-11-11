@@ -18,19 +18,19 @@ internal static partial class TextEditingChecks
         Keyboard.Text(frames.World, "好");
         frames.Frame();
 
-        EditDisplay display = frames.World.Read<EditDisplay>(root);
+        EditDisplay display = frames.World.ReadComponentData<EditDisplay>(root);
         Require(display.Text == "你好" && display.Caret == 2 && display.SelectionStart == 2,
             "Text injected after focus inserts in event order and leaves a collapsed selection.");
         Require(display.EditedText == "你好" && display.ConsumedEdits == 1 && !display.SecondEdit,
             "One read consumes all new edits and returns the committed text.");
 
         frames.Frame();
-        Require(frames.World.Read<EditDisplay>(root).ConsumedEdits == 1,
+        Require(frames.World.ReadComponentData<EditDisplay>(root).ConsumedEdits == 1,
             "A later frame preserves the caller's consumed edit count.");
         Keyboard.Text(frames.World, "！");
         frames.Frame();
-        Require(frames.World.Read<EditDisplay>(root).Text == "你好！" &&
-            frames.World.Read<EditDisplay>(root).ConsumedEdits == 2,
+        Require(frames.World.ReadComponentData<EditDisplay>(root).Text == "你好！" &&
+            frames.World.ReadComponentData<EditDisplay>(root).ConsumedEdits == 2,
             "A later input updates both the text and its caller through the public dependency.");
     }
 
@@ -59,7 +59,7 @@ internal static partial class TextEditingChecks
             Keyboard.Key(frames.World, move.Key, true);
             Keyboard.Key(frames.World, move.Key, false);
             frames.Frame();
-            EditDisplay display = frames.World.Read<EditDisplay>(root);
+            EditDisplay display = frames.World.ReadComponentData<EditDisplay>(root);
             Require(display.Text == "A😀e\u0301中" && display.Caret == move.Caret &&
                 display.SelectionStart == move.Caret && display.ConsumedEdits == 1,
                 "Caret movement uses whole characters and preserves the committed edit display.");
@@ -139,13 +139,13 @@ internal static partial class TextEditingChecks
         Keyboard.Key(frames.World, Key.Right, true);
         Keyboard.Key(frames.World, Key.Right, true);
         frames.Frame();
-        EditDisplay display = frames.World.Read<EditDisplay>(root);
+        EditDisplay display = frames.World.ReadComponentData<EditDisplay>(root);
         Require(display.Caret == 2 && display.SelectionStart == 0 && display.ConsumedEdits == 1,
             "Shift extends a forward selection while preserving the anchor and text edit display.");
         Keyboard.Text(frames.World, "XY");
         Keyboard.Key(frames.World, Key.Shift, false);
         frames.Frame();
-        display = frames.World.Read<EditDisplay>(root);
+        display = frames.World.ReadComponentData<EditDisplay>(root);
         Require(display.Text == "XYcd" && display.Caret == 2 && display.SelectionStart == 2,
             "Input replaces the forward selection and collapses it after the inserted text.");
 
@@ -154,13 +154,13 @@ internal static partial class TextEditingChecks
         Keyboard.Key(frames.World, Key.Left, true);
         Keyboard.Key(frames.World, Key.Left, true);
         frames.Frame();
-        display = frames.World.Read<EditDisplay>(root);
+        display = frames.World.ReadComponentData<EditDisplay>(root);
         Require(display.Caret == 2 && display.SelectionStart == 4,
             "Shift also extends a reversed selection from its anchor.");
         Keyboard.Text(frames.World, "Z");
         Keyboard.Key(frames.World, Key.Shift, false);
         frames.Frame();
-        display = frames.World.Read<EditDisplay>(root);
+        display = frames.World.ReadComponentData<EditDisplay>(root);
         Require(display.Text == "XYZ" && display.Caret == 3 && display.SelectionStart == 3,
             "Input replaces the reversed selection at its lower boundary.");
 
@@ -170,7 +170,7 @@ internal static partial class TextEditingChecks
         Keyboard.Key(frames.World, Key.Shift, false);
         Keyboard.Key(frames.World, Key.Left, true);
         frames.Frame();
-        display = frames.World.Read<EditDisplay>(root);
+        display = frames.World.ReadComponentData<EditDisplay>(root);
         Require(display.Caret == 1 && display.SelectionStart == 1,
             "Left collapses an existing selection to its start.");
         Keyboard.Key(frames.World, Key.Shift, true);
@@ -179,12 +179,12 @@ internal static partial class TextEditingChecks
         Keyboard.Key(frames.World, Key.Shift, false);
         Keyboard.Key(frames.World, Key.Right, true);
         frames.Frame();
-        display = frames.World.Read<EditDisplay>(root);
+        display = frames.World.ReadComponentData<EditDisplay>(root);
         Require(display.Caret == 3 && display.SelectionStart == 3 && display.ConsumedEdits == 3,
             "Right collapses to the selection's end and movement preserves the committed edit count.");
     }
 
-    private record struct ConsumedEdits(int Value) : IComponent;
+    private record struct ConsumedEdits(int Value) : IComponent, ITrackedComponent;
     private static Entity DeclareEditor(Entity node, bool rewritten) => rewritten
         ? Rewrites.TextEditingFunctions.TextEditing(node) : TextEditingFunctions.TextEditing(node);
     private readonly record struct EditDisplay(Entity Node, string Text, int Caret, int SelectionStart,

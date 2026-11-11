@@ -15,14 +15,14 @@ public sealed class ClusterDeformationImportBehaviorTests
     {
         var attributes = new Dictionary<string, VertexStream>
         {
-            ["POSITION"] = new(3, [0,0,0, 1,0,0, 0,1,0, 1,1,0]),
-            ["NORMAL"] = new(3, [0,0,1, 0,0,1, 0,0,1, 0,0,1]),
-            ["JOINTS_0"] = new(4, [0,1,2,3, 4,5,6,7, 8,9,10,11, 12,13,14,15]),
-            ["JOINTS_7"] = new(4, [16,17,18,19, 20,21,22,23, 24,25,26,27, 28,29,30,31]),
-            ["WEIGHTS_0"] = new(4, [.5,.125,0,0, .25,.25,0,0, .125,.125,.125,.125, 0,0,.5,0]),
-            ["WEIGHTS_7"] = new(4, [.125,.125,.125,0, .125,.125,.125,.125, .25,.25,0,0, .25,0,0,.25]),
+            ["POSITION"] = new(3, [0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0]),
+            ["NORMAL"] = new(3, [0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1]),
+            ["JOINTS_0"] = new(4, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]),
+            ["JOINTS_7"] = new(4, [16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31]),
+            ["WEIGHTS_0"] = new(4, [.5, .125, 0, 0, .25, .25, 0, 0, .125, .125, .125, .125, 0, 0, .5, 0]),
+            ["WEIGHTS_7"] = new(4, [.125, .125, .125, 0, .125, .125, .125, .125, .25, .25, 0, 0, .25, 0, 0, .25]),
         };
-        var primitive = new VertexPrimitive(0, 0, [2,0,1, 1,3,2], [40,10,30,20], attributes, []);
+        var primitive = new VertexPrimitive(0, 0, [2, 0, 1, 1, 3, 2], [40, 10, 30, 20], attributes, []);
         await using ImportResult imported = await ImportAsync(primitive);
         using var files = new MeshFiles();
         await imported.Asset.SaveAsync(files.Path);
@@ -54,9 +54,9 @@ public sealed class ClusterDeformationImportBehaviorTests
     {
         var attributes = new Dictionary<string, VertexStream>
         {
-            ["POSITION"] = new(3, [0,0,0, 1,0,0, 0,1,0, 1,1,0]),
-            ["NORMAL"] = new(3, [0,0,1, 0,0,1, 0,0,1, 0,0,1]),
-            ["TANGENT"] = new(4, [1,0,0,1, 1,0,0,1, 1,0,0,1, 1,0,0,1]),
+            ["POSITION"] = new(3, [0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0]),
+            ["NORMAL"] = new(3, [0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1]),
+            ["TANGENT"] = new(4, [1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1]),
         };
         IReadOnlyDictionary<string, VertexStream>[] targets =
         [
@@ -74,8 +74,8 @@ public sealed class ClusterDeformationImportBehaviorTests
             },
         ];
         VertexStream?[] sourceTangents =
-            [new(3, [.75,.5,.25, .5,.25,0, .25,0,-.25, 0,-.25,-.5]), null];
-        var primitive = new VertexPrimitive(0, 0, [2,0,1, 1,3,2], [40,10,30,20], attributes, targets,
+            [new(3, [.75, .5, .25, .5, .25, 0, .25, 0, -.25, 0, -.25, -.5]), null];
+        var primitive = new VertexPrimitive(0, 0, [2, 0, 1, 1, 3, 2], [40, 10, 30, 20], attributes, targets,
             sourceMorphTangents: sourceTangents);
         await using ImportResult imported = await ImportAsync(primitive);
         using var files = new MeshFiles();

@@ -16,7 +16,7 @@ public sealed class NavigationSceneTests
             WorkerCount = 4,
             ManagedPayloadPolicy = ManagedPayloadPolicy.Allow,
         });
-        using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using World world = new World(execution: new WorldJobs(scheduler));
         var profile = new NavigationProfile(
             [new(-0.1f, -0.1f), new(0.1f, -0.1f), new(0.1f, 0.1f), new(-0.1f, 0.1f)],
             1.8f, maximumSpeed: 2f);
@@ -29,21 +29,21 @@ public sealed class NavigationSceneTests
             [new NavigationSceneConnection(90, 10, 7, 20, 7)], profile, policy, scheduler: scheduler).Complete().Scene;
         var navigation = new NavigationSystems<NavigationScene, SceneNavigationSearch,
             SceneSearchState, TestMotion, TestMotionReader>(world);
-        Entity entity = world.CreateEntity(new TestMotion { Position = new(1, 0, 1) });
+        Entity entity = world.Create(new TestMotion { Position = new(1, 0, 1) });
         navigation.AddAgent(entity, scene, profile, policy,
             new NavigationGoal(new Vector3(11, 0, 1), 0.05f), desiredSpeed: 2f);
 
-        for (int step = 0; step < 200 && world.Read<NavigationProgress>(entity).Status != NavigationStatus.Arrived; step++)
+        for (int step = 0; step < 200 && world.ReadValue<NavigationProgress>(entity).Status != NavigationStatus.Arrived; step++)
         {
             NavigationStep scheduled = navigation.Schedule(0.1f, expansionBudget: 2);
             JobHandle moved = new ConsumeSteering(0.1f).ScheduleParallel(world, scheduled.Steering);
             navigation.ScheduleProgress(moved).Complete();
-            Vector3 position = world.Read<TestMotion>(entity).Position;
+            Vector3 position = world.ReadValue<TestMotion>(entity).Position;
             Assert.False(position.X > 2.001f && position.X < 3.999f && position.Z < 1.999f);
             Assert.False(position.X > 8.001f && position.X < 9.999f && position.Z > 0.001f);
         }
 
-        NavigationPathResult result = world.Read<NavigationPathResult>(entity);
+        NavigationPathResult result = world.ReadValue<NavigationPathResult>(entity);
         Assert.Equal(NavigationSearchStatus.Found, result.Status);
         NavigationPath path = Assert.IsType<NavigationPath>(result.Path);
         NavigationRegionRoute route = Assert.IsType<NavigationRegionRoute>(path.RegionRoute);
@@ -58,7 +58,7 @@ public sealed class NavigationSceneTests
             Assert.Contains(new NavigationPathDependency(tile, 17, region), path.Dependencies.Span.ToArray());
         Assert.Contains(new NavigationConnectionDependency(90, 1), path.ConnectionDependencies.Span.ToArray());
         Assert.Equal([10, 20], path.Sections.Span.ToArray().Select(section => section.Region).Distinct());
-        Assert.Equal(NavigationStatus.Arrived, world.Read<NavigationProgress>(entity).Status);
+        Assert.Equal(NavigationStatus.Arrived, world.ReadValue<NavigationProgress>(entity).Status);
     }
 
     // This programmatic mesh is an example of a two-tile region with a bent detailed corridor.

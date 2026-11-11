@@ -8,18 +8,18 @@ public sealed class CollisionRelationExampleTests
     public void BodyAndHairRulesReturnTheThirteenExamplePairs()
     {
         using var world = new World();
-        var characterA = world.CreateEntity();
-        var characterB = world.CreateEntity();
-        var a1 = world.CreateEntity(new Body { Kind = MotionKind.Dynamic });
-        var a2 = world.CreateEntity(new Body { Kind = MotionKind.Dynamic });
-        var b = world.CreateEntity(new Body { Kind = MotionKind.Dynamic });
-        var s = world.CreateEntity(new Body { Kind = MotionKind.Static });
-        var k = world.CreateEntity(new Body { Kind = MotionKind.Kinematic });
-        var d = world.CreateEntity(new Body { Kind = MotionKind.Dynamic });
+        var characterA = world.Create();
+        var characterB = world.Create();
+        var a1 = world.Create(new Body { Kind = MotionKind.Dynamic });
+        var a2 = world.Create(new Body { Kind = MotionKind.Dynamic });
+        var b = world.Create(new Body { Kind = MotionKind.Dynamic });
+        var s = world.Create(new Body { Kind = MotionKind.Static });
+        var k = world.Create(new Body { Kind = MotionKind.Kinematic });
+        var d = world.Create(new Body { Kind = MotionKind.Dynamic });
         world.Add(a1, new Hair { Character = characterA });
         world.Add(a2, new Hair { Character = characterA });
         world.Add(b, new Hair { Character = characterB });
-        var bodies = world.Query(world.QueryDefinition().All<Body>());
+        var bodies = world.Query(new QueryDescription().WithStored<Body>());
         var pairs = new List<(Entity, Entity)>();
         var output = new PairList(pairs);
 
@@ -45,9 +45,9 @@ public sealed class CollisionRelationExampleTests
     public void DefaultContactsMatchTheMotionKinds(MotionKind first, MotionKind second, bool expected)
     {
         using var world = new World();
-        world.CreateEntity(new Body { Kind = first });
-        world.CreateEntity(new Body { Kind = second });
-        var bodies = world.Query(world.QueryDefinition().All<Body>());
+        world.Create(new Body { Kind = first });
+        world.Create(new Body { Kind = second });
+        var bodies = world.Query(new QueryDescription().WithStored<Body>());
 
         Assert.Equal(expected, world.Within(bodies).Where(default(DefaultContacts)).Any());
     }
@@ -56,10 +56,10 @@ public sealed class CollisionRelationExampleTests
     public void BinaryFiltersForwardRefStructOutputAndEarlyStop()
     {
         using var world = new World();
-        var first = world.CreateEntity(new Body { Kind = MotionKind.Dynamic });
-        var second = world.CreateEntity(new Body { Kind = MotionKind.Dynamic });
-        var third = world.CreateEntity(new Body { Kind = MotionKind.Dynamic });
-        var bodies = world.Query(world.QueryDefinition().All<Body>());
+        var first = world.Create(new Body { Kind = MotionKind.Dynamic });
+        var second = world.Create(new Body { Kind = MotionKind.Dynamic });
+        var third = world.Create(new Body { Kind = MotionKind.Dynamic });
+        var bodies = world.Query(new QueryDescription().WithStored<Body>());
         Span<(Entity, Entity)> result = stackalloc (Entity, Entity)[1];
         var output = new FirstPair(result);
 

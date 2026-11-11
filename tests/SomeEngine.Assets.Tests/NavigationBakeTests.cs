@@ -117,23 +117,23 @@ public sealed class NavigationBakeTests
 
     private static (NavigationStatus Status, Vector3[] Positions) Move(NavigationMesh mesh, NavigationProfile profile, NavigationPolicy policy, Scheduler scheduler)
     {
-        using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using World world = new World(execution: new WorldJobs(scheduler));
         var navigation = new NavigationSystems<NavigationMesh, PolygonNavigationSearch,
             PolygonSearchState, BakeMotion, BakeMotionReader>(world);
-        var entity = world.CreateEntity(new BakeMotion(new(1.5f, 0, 2), default, 0));
+        var entity = world.Create(new BakeMotion(new(1.5f, 0, 2), default, 0));
         navigation.AddAgent(entity, mesh, profile, policy, new NavigationGoal(position: new(10.5f, 0, 2), arrivalRange: 0.1f), 2f);
         var positions = new List<Vector3>();
-        for (int step = 0; step < 180 && world.Read<NavigationProgress>(entity).Status != NavigationStatus.Arrived; step++)
+        for (int step = 0; step < 180 && world.ReadComponentData<NavigationProgress>(entity).Status != NavigationStatus.Arrived; step++)
         {
             navigation.Schedule(0.1f, 16).Steering.Complete();
-            NavigationSteering steering = world.Read<NavigationSteering>(entity);
-            BakeMotion motion = world.Read<BakeMotion>(entity);
+            NavigationSteering steering = world.ReadComponentData<NavigationSteering>(entity);
+            BakeMotion motion = world.ReadComponentData<BakeMotion>(entity);
             var position = motion.Position + steering.Velocity * 0.1f;
-            world.Replace(entity, new BakeMotion(position, steering.Velocity, steering.Heading));
+            world.Set(entity, new BakeMotion(position, steering.Velocity, steering.Heading));
             positions.Add(position);
             navigation.ScheduleProgress(default).Complete();
         }
-        return (world.Read<NavigationProgress>(entity).Status, positions.ToArray());
+        return (world.ReadComponentData<NavigationProgress>(entity).Status, positions.ToArray());
     }
 
     private readonly record struct BakeMotion(Vector3 Position, Vector3 Velocity, float Heading) : IComponent;

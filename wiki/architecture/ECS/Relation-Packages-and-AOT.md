@@ -1,59 +1,61 @@
 # 关系包与 NativeAOT
 
-关系查询通过 `SomeEngine.ECS.Relations` 提供固定泛型执行体，空间来源由 `SomeEngine.Physics` 提供，Job 借用与资源声明由 `SomeEngine.ECS.Systems` 接入。`SomeEngine.ECS.SourceGen` 随使用方编译生成语义薄入口、Job 描述和程序集级类型登记。
+配对、均匀网格、BVH、空间条件和分区输出由 `SomeEngine.ECS.Relationships` 提供。配对命名空间为 `SomeEngine.ECS.Relations`，空间命名空间为 `SomeEngine.ECS.Spatial`。World、Query 与原生列读取由 Core 持有，Job 执行与资源声明分别接入 Job 和 Systems。
 
-## 包依赖与使用方
+## 项目与包边界
 
-| 包 | SomeEngine 包依赖 | 提供的数据或行为 |
+| 项目 | 直接 SomeEngine 引用 | 主要内容 |
 | --- | --- | --- |
-| SomeEngine.Diagnostics | — | 统一检查支持 |
-| SomeEngine.Job.Contracts | — | Job 公共数据类型 |
-| SomeEngine.Job | Diagnostics、Job.Contracts | Scheduler、依赖和资源执行 |
-| SomeEngine.ECS | Job.Contracts | World、组件、查询、显式边、类型元数据；WithOptionalRead、TryReadRef、ReadRows、Requires、ComponentReference与chunk行版本读取 |
-| SomeEngine.ECS.Relations | ECS | 固定 1–8 元语义、绑定、筛选与积；二元IsSymmetric事实、具体类别标量读取与许可算法 |
-| SomeEngine.ECS.Systems | ECS、Job.Contracts、Job | typed/generated Job 访问和查询读取范围 |
-| SomeEngine.Physics | ECS.Relations、ECS.Systems | 空间树、维护、串行和并行输出 |
-| SomeEngine.ECS.SourceGen | — | analyzer DLL 与构建时生成入口 |
+| Job.Resources | — | 资源身份、共享线程标记；namespace SomeEngine.Job |
+| Job | Job.Resources、Diagnostics | Scheduler、依赖、范围执行、事件日志 |
+| ECS | Job.Resources、Job、Diagnostics | World、Query/QueryScope/QueryChunk、组件存储、成员事实、类型元数据 |
+| ECS.Relationships | ECS | 原生边、Hierarchy、Pairing、通用 Spatial |
+| ECS.Systems | ECS、Relationships、Job.Resources、Job、Diagnostics | 生成式 Job、资源准备、系统版本与调度 |
+| ECS.SourceGen | — | 构建时 analyzer 与类型/关系/Job 生成 |
+| Physics | Relationships、Systems | 碰撞表面、查询及碰撞专用组织 |
 
-`tools/SomeEngine.ECS.Relations.AotSmoke` 是业务使用方例子，直接 PackageReference ECS、Relations、Systems、Job、Physics 和 SourceGen，传递取得另外两个包。它定义自己的 `Number<int>`、八个参与位置、带 schema 的泛型边、Body/Hair 语义、键实现、bitmap 实现和结果输出。
+关系及通用空间使用方直接引用 Relationships。SourceGen 作为 analyzer 参与调用方编译。实际引用分别见 [Relationships.csproj](../../../src/SomeEngine.ECS.Relationships/SomeEngine.ECS.Relationships.csproj)、[Systems.csproj](../../../src/SomeEngine.ECS.Systems/SomeEngine.ECS.Systems.csproj) 与 [Physics.csproj](../../../src/SomeEngine.Physics/SomeEngine.Physics.csproj)。
 
-`Build-Consumer.ps1` 通过公共队列依次构建、打包、恢复、JIT 运行、NativeAOT 发布和原生运行。包版本保存在使用方 csproj，feed/cache 位于仓库的 `artifacts/ecs-relations`，原生产物位于使用方 `bin/Release/net10.0/win-x64/native-publish`。再次刷新同一版本时，脚本先更新八个包，再替换该目录内对应版本的包缓存，随后恢复使用方。
+## 类型数据的主要持有者
 
-脚本的 `QueueScript` 参数指定公共队列脚本，默认按当前仓库的tools定位。本次实际执行显式传入 `F:\SomeEngine.Next\tools\Invoke-Benchmark.ps1`，与性能测量使用同一公共队列。
+[EcsTypeGenerator](../../../src/SomeEngine.ECS.SourceGen/EcsTypeGenerator.cs) 从声明、封闭泛型类型与方法实参收集可访问类型，并与 [JobStorageTypeAnalysis](../../../src/SomeEngine.ECS.SourceGen/JobStorageTypeAnalysis.cs) 分析实际实例字段。该分析覆盖 backing field、引用程序集的私有字段及递归值成员。带关系 schema 的封闭 payload 同时登记 `RelationEndpoints<T>`。
 
-```powershell
-& tools/SomeEngine.ECS.Relations.AotSmoke/Build-Consumer.ps1
-```
-
-## 元数据的主要持有处
-
-`EcsTypeGenerator` 收集声明、泛型类型和泛型方法实参中已知的可访问封闭组件类型，读取 schema attribute，并用 `JobStorageTypeAnalysis` 分析实际实例字段。字段分析与 `JobEntityGenerator` 共用，包含自动属性 backing field 及引用程序集的私有字段。带 schema 的封闭 payload 同时登记构造后的 directed/undirected endpoints 类型。
-
-每个程序集生成一个 `EcsTypeRegistration` 静态初始化类；标准初始化方法调用 `GeneratedEcsTypes.RegisterJobStorage<T>` 和 `RegisterRelationSchema<T>`。初始化登记数据，普通 API 读取既有类型级持有处：
+每个使用方程序集生成一个带初始化方法的 `EcsTypeRegistration`，分别调用 `GeneratedEcsTypes.RegisterJobStorage<T>(isAliasFree)` 与 `RelationSchema.Register<T>(schema)`。前者写入 Core 的 [JobStorageTypeMetadata<T>](../../../src/SomeEngine.ECS/Registry/JobStorageTypeMetadata.cs)，后者写入 Relationships 的 [RelationType<T>](../../../src/SomeEngine.ECS.Relationships/Relations/RelationSchema.cs)。普通入口和生成入口读取同一份类型数据。
 
 ```mermaid
 flowchart TD
-  A[EcsTypeRegistration] --> B[JobStorageTypeMetadata T]
-  A --> C[RelationSchemaCache T]
-  D[ComponentJobAccess T] --> B
-  E[GeneratedQueryAccess] --> B
-  F[QueryJobAccess] --> G[ComponentInfo Operations getter]
-  G --> B
-  H[World CreateRelation and endpoints] --> I[RelationSchema For T]
-  I --> C
-  J[CollisionMaintenance ScheduleRead] --> F
+    A[EcsTypeRegistration] --> B[JobStorageTypeMetadata T]
+    A --> C[RelationType T]
+    B --> D[WorldJobs.Read T 与 CollectReadAccess]
+    B --> E[生成式 chunk Job 的存储声明]
+    C --> F[RelationSchema.For T]
+    F --> G[原生边创建与修改]
 ```
 
-`JobStorageTypeMetadata<T>` 的一个整数保存未知、可直接访问、含别名三种状态。生成的布尔分类写入该处；普通 typed access 与生成工厂读取它。`ComponentMetadata<T>` 创建的操作表保存该 getter 的函数指针，按组件 ID 收集资源的 `QueryJobAccess` 因而读取相同分类。可直接访问的表组件随后沿既有 WorldStorageResourceKey 映射为 Scheduler 读写资源。
+存储分类以一个整数表示未知、可直接使用或包含外部别名。分析要求字段组成满足直接 Job 存储的条件；托管引用、byref、指针、native-sized handle、fixed buffer 及包含这些字段的递归值需要对应的实际资源描述。普通 `WorldJobs.Read<T>()`、`CollectReadAccess(query)` 与生成式入口复用这一分类。`IJobComponentResources<T>` 的显式特化沿真实 chunk 范围收集实际对象或 native 资源，保持类型分类和具体资源登记各自的职责。
 
-`RelationSchemaCache<T>` 持有一个 Lazy schema。生成登记把已知方向、基数和 self-edge 数据写入这个 Lazy，首次 `RelationSchema.For<T>` 执行原有 `ValidateFor`。私有封闭类型等按需路径继续由该持有处取得字段分类或 attribute 数据。
+关系 schema 由类型级的 `SchemaValue` 保存，首次初始化与显式生成登记通过同一 `RelationType<T>` 形成。`RelationSchema.For<T>()` 校验方向/基数组合，端点创建、重定向与维护继续沿原生关系内核检查事实。
 
-## 生成物归属
+Buffer、Removed、Parent、Children 和关系端点提供其具体值操作、引用操作与初始化入口，`EntityFields<T>` 复用该类型的引用操作。真正保留旧值的类型通过 `ComponentValues.RegisterRemoved<T>()` 绑定一个 `IRemovedValues` 动作；普通移除沿此动作捕获旧值并取得 Removed 类型。生成式登记和内建拓扑使用同一元数据持有者。实现见 [值操作](../../../src/SomeEngine.ECS/Storage/ComponentOperations.cs)、[引用操作](../../../src/SomeEngine.ECS/Copy/EntityReferenceOperations.cs) 与 [旧值捕获](../../../src/SomeEngine.ECS/Changes/RemovedValueOperations.cs)。
 
-Relations 库构建生成八组固定族：每组包含 `IRelation`、`ComponentRelation`、`ComponentWhere`、`ComponentExcept` 和 Product 描述，另有一个 `RelationQueryViews`。固定生成类型共 41 个；它们按 arity 与行为参数化。
+## 泛型执行与列绑定
 
-使用方的普通语义、边、键、bitmap 和空间重载都返回这些库中共享的具体泛型类型。组件绑定通过 `QueryRow.TryReadRef<T>` 借用实际只读引用，二元Within通过 `ReadRows<TFirst,TSecond>` 在块边界绑定可选列并沿原成员枚举读取。`ComponentReference<T>` 仅借用原组件引用，HasValue表达可选存在性，Value返回同一 `ref readonly T`；其有效期为World查询回调。身份行、语义描述和输出状态按值传递。第八位置使用 C# 八元 tuple 的 `Item8`，IL 对应 `Rest.Item1`。
+[RelationFamilyGenerator](../../../src/SomeEngine.ECS.SourceGen/RelationFamilyGenerator.cs) 在 Relationships 构建时生成一至八元语义、组件绑定、Where/Except、位置积与 `RelationQueryViews`，共 41 个固定类型。业务语义、键、bitmap、边与空间生成器形成薄重载，返回这些具体泛型执行体。
 
-程序集初始化类集中保存生成登记。Job 专属描述类型对应用户的 `IJobEntity`。业务组件专属生成类型数量为 0。
+一、二元来源在 chunk 对边界调用 `Bind(QueryChunk,QueryChunk)`，之后传递行号和身份换位事实；绑定保存实际 `ReadOnlySpan<T>` 并检查 `Has<T>(row)`。仅有身份或更多元数的来源通过类型化 `ReadLookup<T>` 读取。两条路径都借用真实 `QueryScope`，端点、值和成员继续来自原 World 存储。输出采用普通实体或实体 ValueTuple，第八位置沿 C# 的 `Item8` 读取。
 
-当次实际包、生成清单、行为结果、IL 和原生代码摘录见 [2026-10-19 包与 AOT 证据](../../../docs/ECS-Relations-Packages-AOT-2026-10-19.md)。空间读取范围和结果 token 的完整调用见 [空间关系分区执行](Spatial-Parallel-Queries.md)。
+## 独立使用方
+
+[SomeEngine.ECS.Relations.AotSmoke](../../../tools/SomeEngine.ECS.Relations.AotSmoke/) 使用 PackageReference 引入 ECS、Relationships、Systems、Job 与 SourceGen。它定义自己的封闭泛型 Number、八个位置、关系 payload/schema、Body/Hair、键与 bitmap 实现，以及 Span 输出。
+
+消费者覆盖一至八元、八元提前结束、原生点读取、生成式 Job、普通类型化访问、native handle 分类拒绝、平行边身份、Deferred/Maintain、键与 bitmap、空间树维护、串行与并行结果及接触消费。通用空间调用沿 `SpatialQueries` 和 `SpatialPairBuffer<BoundsNodePair>` 进入 Relationships。
+
+[Build-Consumer.ps1](../../../tools/SomeEngine.ECS.Relations.AotSmoke/Build-Consumer.ps1) 顺序提交源码增量构建、七包打包、消费者 restore/build、JIT 运行、NativeAOT 发布与原生运行。包版本由使用方 csproj 持有，每个源码版本使用对应包版本。当前 feed/cache 复用 `artifacts/ecs-relations`，原生输出复用项目的 `native-publish`。每步 stdout、stderr、退出码与配置由同一公共队列结果持有。
+
+```powershell
+& tools/SomeEngine.ECS.Relations.AotSmoke/Build-Consumer.ps1 `
+    -QueueScript F:/SomeEngine.Next/tools/Invoke-Benchmark.ps1 `
+    -Session ecs-physics-integration
+```
+
+[2026-10-19 包与 AOT 记录](../../../docs/ECS-Relations-Packages-AOT-2026-10-19.md) 对应当时提交的包和 IL。当前接口、依赖与生成物以本页链接的源码和消费者实际构建为准。空间资源及结果范围见 [空间并行查询](Spatial-Parallel-Queries.md)。

@@ -17,7 +17,6 @@ public sealed class PoseBlend(ReadOnlySpan<PoseBlendInput> inputs)
 
 public readonly record struct PoseBlendParameters(PoseBlend Blend, PoseResultId Output, MotionBoundary Boundary);
 
-[BufferCapacity(1)]
 public struct PoseBlendInstance : IBufferElement
 {
     public AnimationLeafBatch<PoseBlendParameters> Definition;
@@ -57,7 +56,7 @@ public readonly struct PoseBlendLeaf : IAnimationLeaf<PoseBlendParameters>
     public static void Install(World world, Entity animation, Entity target,
         AnimationLeafBatch<PoseBlendParameters> definitions, int index, in AnimationLeafPlacement placement)
     {
-        if (!world.HasBuffer<PoseBlendInstance>(animation)) world.AddBuffer<PoseBlendInstance>(animation);
+        if (!world.Has<Buffer<PoseBlendInstance>>(animation)) world.AddBuffer<PoseBlendInstance>(animation);
         if (!world.Has<GraphParameters>(animation)) world.Add(animation, new GraphParameters());
         PoseBlendParameters parameters = definitions.Parameters[index];
         PoseResultReference output = PoseAnimation.Resolve(world, target, parameters.Output);
@@ -66,17 +65,33 @@ public readonly struct PoseBlendLeaf : IAnimationLeaf<PoseBlendParameters>
             inputs[input] = PoseAnimation.Resolve(world, target, parameters.Blend.Inputs[input].Result);
         var instance = new PoseBlendInstance
         {
-            Definition = definitions, Index = index, Placement = placement, Output = output, Inputs = inputs,
+            Definition = definitions,
+            Index = index,
+            Placement = placement,
+            Output = output,
+            Inputs = inputs,
             Node = PoseAnimation.RegisterNode(world, animation, output, inputs, in placement),
             Samples = new PoseBlendSamples(PoseAnimation.GetScheduler(world), output.Range.Count, inputs.Length),
         };
-        world.ExecuteBufferWrite<PoseBlendInstance, PoseBlendInstance>(animation, ref instance,
-            static (instances, ref instance) => instances.Add(instance));
+        {
+            using var instances = world.GetBuffer<PoseBlendInstance>(animation);
+            Visit(instances, ref instance);
+
+            static void Visit(DynamicBuffer<PoseBlendInstance> instances, ref PoseBlendInstance instance)
+            {
+                instances.Add(instance);
+
+            }
+        }
     }
 
     public static void Release(World world, Entity animation)
     {
-        world.ExecuteBufferWrite<PoseBlendInstance>(animation, static instances => instances.Clear());
+        {
+            using var instances = world.GetBuffer<PoseBlendInstance>(animation);
+            instances.Clear();
+
+        }
         PoseAnimation.ReleaseNodes(world, animation);
     }
 

@@ -15,7 +15,7 @@ internal static partial class ListChecks
     internal static void Run(bool rewritten)
     {
         using var world = new World();
-        Entity canvas = world.CreateEntity(new Canvas { Size = new Size(200, 120) });
+        Entity canvas = world.Create(new Canvas { Size = new Size(200, 120) });
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
         systems.Add(new HitTestSystem());
         systems.Add(new ViewRebuildSystem());
@@ -24,40 +24,40 @@ internal static partial class ListChecks
         Entity root = Views.Views.Spawn(world, canvas, new ListExample(rewritten, label));
         systems.Update();
         systems.Update();
-        Entity panel = Hierarchy<ElementTree>.GetChildren(world, root)[0];
-        Entity list = Hierarchy<ElementTree>.GetChildren(world, panel)[0];
-        Entity[] before = Hierarchy<ElementTree>.GetChildren(world, list).ToArray();
-        Require(before.Length == 3 && world.Read<ScrollOffset>(list).Max.Y == 319936,
+        Entity panel = ElementChildren.Read(world, root)[0];
+        Entity list = ElementChildren.Read(world, panel)[0];
+        Entity[] before = ElementChildren.Read(world, list);
+        Require(before.Length == 3 && world.ReadComponentData<ScrollOffset>(list).Max.Y == 319936,
             "Ten thousand items create the two viewport rows and a buffer row, with the full content extent.");
-        world.Replace(before[1], new LabelText("Editing item 1"));
+        world.Set(before[1], new LabelText("Editing item 1"));
         Pointer.Move(world, canvas, new Vector2(10, 10));
         Pointer.Wheel(world, canvas, new Vector2(0, 64));
         systems.Update();
         systems.Update();
-        Entity[] after = Hierarchy<ElementTree>.GetChildren(world, list).ToArray();
-        Require(world.Read<ListRange>(root).Value == new VisibleRange(1, 5) && after.Length == 4,
+        Entity[] after = ElementChildren.Read(world, list);
+        Require(world.ReadComponentData<ListRange>(root).Value == new VisibleRange(1, 5) && after.Length == 4,
             "Scrolling updates the caller's visible range.");
-        Require(after[0] == before[1] && after[1] == before[2] && !world.IsAlive(before[0]),
+        Require(after[0] == before[1] && after[1] == before[2] && !world.Has<global::SomeEngine.Views.ViewType>(before[0]),
             "Keyed rows keep their identities while departing rows are released.");
-        Require(world.Read<LabelText>(after[0]).Value == "Editing item 1" && world.Read<LabelText>(after[2]).Value == "Item 3",
+        Require(world.ReadComponentData<LabelText>(after[0]).Value == "Editing item 1" && world.ReadComponentData<LabelText>(after[2]).Value == "Item 3",
             "Retained row data is preserved and new rows receive their content.");
         label.Value = "Updated item 2";
         systems.Update();
-        Require(world.Read<LabelText>(after[1]).Value == "Updated item 2" && world.Read<LabelText>(after[0]).Value == "Editing item 1",
+        Require(world.ReadComponentData<LabelText>(after[1]).Value == "Updated item 2" && world.ReadComponentData<LabelText>(after[0]).Value == "Editing item 1",
             "A row data change refreshes that row's display while its neighbor retains its data.");
 
         Entity scrollRoot = Views.Views.Spawn(world, canvas, new ScrollExample(rewritten));
         systems.Update();
-        Entity scrollPanel = Hierarchy<ElementTree>.GetChildren(world, scrollRoot)[0];
-        Entity scroll = Hierarchy<ElementTree>.GetChildren(world, scrollPanel)[0];
-        Entity content = Hierarchy<ElementTree>.GetChildren(world, scroll)[0];
+        Entity scrollPanel = ElementChildren.Read(world, scrollRoot)[0];
+        Entity scroll = ElementChildren.Read(world, scrollPanel)[0];
+        Entity content = ElementChildren.Read(world, scroll)[0];
         Pointer.Move(world, canvas, new Vector2(130, 10));
         Pointer.Wheel(world, canvas, new Vector2(20, 30));
         systems.Update();
-        Require(world.Read<ScrollOffset>(scroll).Max == new Vector2(80, 60) &&
-            world.Read<ScrollOffset>(scroll).Value == new Vector2(20, 30),
+        Require(world.ReadComponentData<ScrollOffset>(scroll).Max == new Vector2(80, 60) &&
+            world.ReadComponentData<ScrollOffset>(scroll).Value == new Vector2(20, 30),
             "The caller-content ScrollView exposes its measured scrolling range.");
-        var rectangle = world.Read<LayoutRect>(content).Value;
+        var rectangle = world.ReadComponentData<LayoutRect>(content).Value;
         Require(rectangle.X == 100 && rectangle.Y == -30,
             "ScrollView content follows the layout-written offset.");
     }

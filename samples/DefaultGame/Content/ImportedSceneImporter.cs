@@ -18,7 +18,7 @@ using GltfTexture = SharpGLTF.Schema2.Texture;
 
 namespace DefaultGame.Content;
 
-[AssetImporter("a91c86d1-551d-48e3-8e33-a25e30e2c2f4", typeof(WorldBlock), SettingsProvider = typeof(GltfSceneSettingsProvider))]
+[AssetImporter("a91c86d1-551d-48e3-8e33-a25e30e2c2f4", typeof(EntityBlock), SettingsProvider = typeof(GltfSceneSettingsProvider))]
 public sealed class ImportedSceneImporter : GltfSceneImporter
 {
     public static readonly Guid ImporterId = new("a91c86d1-551d-48e3-8e33-a25e30e2c2f4");
@@ -225,14 +225,14 @@ public sealed class ImportedSceneImporter : GltfSceneImporter
     {
         string name = Path.GetFileNameWithoutExtension(context.SourcePath);
         bool sponza = name.Equals("Sponza", StringComparison.OrdinalIgnoreCase);
-        world.CreateEntity(new SceneCamera
+        world.Create(new SceneCamera
         {
             Position = sponza ? new(-9, 2, 0) : new(-8, 3, 0),
             Target = sponza ? new(5, 2, 0) : new(0, 2, 0),
             Up = Vector3.UnitY, VerticalFieldOfView = MathF.PI / 3, NearPlane = 0.05f, FarPlane = 2000,
         });
-        world.CreateEntity(new DirectionalLight(new(0.35f, -0.85f, 0.4f), new(1, 0.96f, 0.9f), 3));
-        if (sponza) world.CreateEntity(new PointLight(new(0, 4, 0), 30, new(1, 0.95f, 0.9f), 15));
+        world.Create(new DirectionalLight(new(0.35f, -0.85f, 0.4f), new(1, 0.96f, 0.9f), 3));
+        if (sponza) world.Create(new PointLight(new(0, 4, 0), 30, new(1, 0.95f, 0.9f), 15));
         return ValueTask.CompletedTask;
     }
 

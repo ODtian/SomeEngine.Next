@@ -1,7 +1,6 @@
 using SomeEngine.ECS;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Relations;
 using SomeEngine.ECS.Systems;
 using System.Runtime.CompilerServices;
@@ -76,12 +75,12 @@ public readonly struct WeightedTotal8(int minimum) : IRelation<Number<int>, Numb
         6 * sixth.Value + 7 * seventh.Value + 8 * eighth.Value >= minimum;
 }
 
-public struct IncreaseNumbers : IJobEntity
+public partial struct IncreaseNumbers : IJobEntity
 {
     public void Execute(ref Number<int> number) => number.Value++;
 }
 
-[RelationSchema(RelationDirection.Directed)]
+[RelationSchema(RelationDirection.Directed, RelationCardinality.Parallel)]
 public struct Wire<T> : IComponent where T : unmanaged;
 
 [RelationSchema(RelationDirection.Undirected, RelationCardinality.UniquePair, AllowSelfEdge = false)]
@@ -108,17 +107,5 @@ internal ref struct EighthEntity : IRelationOutput<(Entity, Entity, Entity, Enti
     {
         _result[Count++] = row.Item8;
         return false;
-    }
-}
-
-internal struct NumberPointValue(Entity entity) : IQueryExecution
-{
-    private readonly Entity _entity = entity;
-
-    internal int Value;
-
-    public void Execute(scoped QueryCursor query)
-    {
-        Value = query.TryReadRef<Number<int>>(_entity, out var number) ? number.Value.Value : -1;
     }
 }

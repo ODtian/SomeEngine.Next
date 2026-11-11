@@ -20,16 +20,14 @@ public struct Timeline : IEnableableComponent
 public enum TimelineClock : byte { Game, Interface, Unscaled }
 
 public enum StageEnd : byte { Duration, Settled, External }
-[BufferCapacity(4)]
 public struct TimelineStage : IBufferElement { public StageEnd End; public float Duration; }
-[BufferCapacity(4)]
 public struct TimelineEvent : IBufferElement { public ushort Id; public uint Count; }
 ```
 
 `SomeEngine.Animation` 的帧接缝使用 `SystemGroup<ImmediateSystemContext>`：先加入 `TimelineSystem`，再加入各求值系统，最后加入 `TimelineEndSystem`。三个系统阶段通过同一个实体上的 `Timeline` 交换时间和运行位。
 
 ```csharp
-Entity time = world.CreateEntity(new AnimationTime(delta, gameScale: 1, gamePaused: false));
+Entity time = world.Create(new AnimationTime(delta, gameScale: 1, gamePaused: false));
 systems.Add(new TimelineSystem(time));
 // 此处加入属性、姿势或用户自己的求值系统。
 systems.Add(new TimelineEndSystem());
@@ -52,10 +50,10 @@ systems.Add(new TimelineEndSystem());
 - 属性求值在收尾前按阶段顺序采样本帧经过的固定时长阶段，以各边界时间采样离开的阶段，并将剩余时间用于后续阶段。多个类型的求值系统读取同一时间线时间，收尾统一推进阶段与完成计数。
 - 固定时长等待和外部等待都使时间线保持启用；阶段表耗尽且运行位清空后完成。使用阶段表时，其数量最多为 `ushort.MaxValue`。直接使用运行位的动画可以省去阶段缓冲。
 - 事件以计数表达（`DynamicBuffer<TimelineEvent>`：事件编号加次数）。调用方先声明事件缓冲，求值系统通过 `Animation.EmitEvent(world, entity, id)` 推进对应计数。读取方通过登记依赖或比较计数得知事件。
-- 阶段和事件缓冲使用 ECS 的内联缓冲机制；启用、完成、外部推进和已有事件计数的写入都保留实体的表格成员关系。
+- 阶段和事件缓冲使用 ECS 的每实体独立数组及 World 缓冲池；启用、完成、外部推进和已有事件计数的写入都保留实体的表格成员关系。
 
 ## Verification
-`tests/SomeEngine.Animation.Tests/TimelineTests.cs` 通过公开 World、系统组和组件/缓冲 API 验证时钟暂停、时间缩放、运行位、完成计数、三个阶段边界与事件。未加启用过滤的 Timeline 查询成员版本验证反复启用和完成后的成员关系；`ObserveEntityTables()` 验证启用位变化发布到对应实体。开发构建通过 `DevelopmentCheck` 报告边界类型和外部推进的使用错误。
+`tests/SomeEngine.Animation.Tests/TimelineTests.cs` 通过公开 World、系统组和组件/缓冲 API 验证时钟暂停、时间缩放、运行位、完成计数、三个阶段边界与事件。未加启用过滤的 Timeline 查询成员版本验证反复启用和完成后的成员关系；`WatchMembership(query)` 验证带启用筛选的成员进出；读取者从登记后的变化开始独立消费。开发构建通过 `DevelopmentCheck` 报告边界类型和外部推进的使用错误。
 
 ## Relations
 [[architecture/animation/Animation-Graph|Animation Graph]] · [[architecture/animation/Property-Animation|Property Animation]] · ADR 0014

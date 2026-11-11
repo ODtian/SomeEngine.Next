@@ -1,437 +1,526 @@
-using System.Buffers;
+using System.Runtime.CompilerServices;
+using SomeEngine.ECS.Storage;
 using SomeEngine.Job;
 
 namespace SomeEngine.ECS.Systems;
 
-/// <summary>
-/// Bridges synchronous World calls into the same resource frontier used by scheduled work.
-/// Per-thread nesting keeps compound owner operations admitted without reacquiring resources that
-/// the active owner already covers.
-/// </summary>
-public sealed partial class WorldJobs : WorldExecution, IJobSubmissionObserver
+public sealed partial class WorldJobs(Scheduler scheduler) : WorldExecution
 {
-    [ThreadStatic]
-    private static Dictionary<World, AdmissionFrame>? s_frames;
+    [ThreadStatic] private static AccessFrame? s_current;
+    [ThreadStatic] private static AccessFrame[]? s_free;
+    [ThreadStatic] private static int s_freeCount;
 
-    [ThreadStatic]
-    private static Stack<AdmissionFrame>? s_framePool;
+    private readonly Scheduler _scheduler = scheduler;
+    private readonly Lock _resourcesLock = new();
+    private readonly object _usesLock = new();
+    private readonly WorldResourceEntry?[][] _resources = [[], [], [], [], []];
+    private World _world = null!;
+    private JobResource _structure;
+    private int _uses, _disposingThread;
+    private readonly JobLifetime _jobLifetime = new("World");
+    private bool IsClosed => !_jobLifetime.IsOpen;
+    private bool _clearing;
 
-    internal override bool HasCurrentJobScope => JobThreads.IsActive;
-
-    internal override bool HasCurrentThreadScope(World world)
+    public override Scheduler Scheduler => _scheduler;
+    internal JobResource Structure => _structure;
+    internal override bool CanBorrowStructureRead
     {
-        ArgumentNullException.ThrowIfNull(world);
-        return s_frames is { } frames &&
-            frames.TryGetValue(world, out AdmissionFrame? frame) &&
-            frame.Depth > 0;
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        get => s_current is { StructureWrite: false } frame
+            && ReferenceEquals(frame.Jobs, this) && frame.JobDepth == JobThreads.Depth;
     }
 
-    internal override void Enter(World world, in WorldJobAdmissionRequest request)
+    internal override void Attach(World world)
     {
-        RequestedStorage[]? rented = null;
-        int scratchLength = Math.Max(1, request.QueryStorageAccesses.Length);
-        Span<RequestedStorage> scratch = scratchLength <= 64
-            ? stackalloc RequestedStorage[scratchLength]
-            : (rented = ArrayPool<RequestedStorage>.Shared.Rent(scratchLength))
-                .AsSpan(0, scratchLength);
-        bool countUse = !JobThreads.IsActive && !HasCurrentThreadScope(world);
-        bool begun = false;
-        try
-        {
-            if (countUse)
-            {
-                BeginUse();
-                begun = true;
-            }
-            int storageCount = CollectStorage(in request, scratch);
-            EnterCore(world, in request, scratch[..storageCount]);
-        }
-        catch
-        {
-            if (begun)
-                EndUse();
-            throw;
-        }
-        finally
-        {
-            if (rented is not null)
-                ArrayPool<RequestedStorage>.Shared.Return(rented);
-        }
+        _world = world;
+        _structure = _scheduler.CreateResource("World structure", _jobLifetime);
+        world.BindEventScheduler(_scheduler);
     }
 
-    internal override void Exit(World world, in WorldJobAdmissionRequest request)
+    internal override void CheckActive()
     {
-        Dictionary<World, AdmissionFrame>? frames = s_frames;
-        if (frames is null || !frames.TryGetValue(world, out AdmissionFrame? frame))
-            throw new InvalidOperationException("World Job admission scope is not active.");
-        if (frame.Depth <= 0 || frame.Owners.Count != frame.Depth)
-            throw new InvalidOperationException("World Job admission scope depth is unbalanced.");
-        if (frame.Topology == WorldTopologyAccess.Read &&
-            request.Topology == WorldTopologyAccess.Write)
-        {
-            throw new InvalidOperationException("World Job admission topology mode is unbalanced.");
-        }
+        if (!IsClosed) return;
+        if (Environment.CurrentManagedThreadId == _disposingThread) return;
+        if (s_current is { } frame && ReferenceEquals(frame.Jobs, this) && frame.JobDepth == JobThreads.Depth) return;
+        if (JobThreads.IsActive && _jobLifetime.OwnsCurrentScope()) return;
+        throw new ObjectDisposedException(nameof(World));
+    }
 
-        RequestedStorage[]? rented = null;
-        int scratchLength = Math.Max(1, request.QueryStorageAccesses.Length);
-        Span<RequestedStorage> scratch = scratchLength <= 64
-            ? stackalloc RequestedStorage[scratchLength]
-            : (rented = ArrayPool<RequestedStorage>.Shared.Rent(scratchLength))
-                .AsSpan(0, scratchLength);
-        try
-        {
-            int storageCount = CollectStorage(in request, scratch);
-            RemoveStorage(frame, scratch[..storageCount]);
+    internal JobResource Resource(WorldValueKind kind, int type)
+    {
+        if (FindResourceEntry(kind, type) is { } found) return found.Value;
+        return CreateValueResource(kind, type);
+    }
 
-            bool endUse = frame.Depth == 1 && !JobThreads.IsActive;
-            SynchronousResourceAccess owner = frame.Owners.Pop();
-            frame.Depth--;
-            if (frame.Depth == 0)
-            {
-                if (frame.Storage.Count != 0)
-                    throw new InvalidOperationException("World storage admission depth is unbalanced.");
-                frames.Remove(world);
-                ReturnFrame(frame);
-            }
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private WorldResourceEntry? FindResourceEntry(WorldValueKind kind, int type)
+    {
+        WorldResourceEntry?[] entries = Volatile.Read(ref _resources[(int)kind]);
+        return (uint)type < (uint)entries.Length ? Volatile.Read(ref entries[type]) : null;
+    }
 
-            try { owner.Dispose(); }
-            finally
-            {
-                if (endUse)
-                    EndUse();
-            }
-        }
-        finally
+    private JobResource CreateValueResource(WorldValueKind kind, int type)
+    {
+        lock (_resourcesLock)
         {
-            if (rented is not null)
-                ArrayPool<RequestedStorage>.Shared.Return(rented);
+            WorldResourceEntry?[] entries = _resources[(int)kind];
+            if ((uint)type < (uint)entries.Length && entries[type] is { } found) return found.Value;
+            bool grew = type >= entries.Length;
+            if (grew) Array.Resize(ref entries, Math.Max(type + 1, Math.Max(16, entries.Length * 2)));
+            JobResource resource = _scheduler.CreateResource($"World {kind} {type}");
+            Volatile.Write(ref entries[type], new WorldResourceEntry(resource));
+            if (grew) Volatile.Write(ref _resources[(int)kind], entries);
+            return resource;
         }
     }
 
-    internal override void ValidateCommandBufferAccess(World world)
+    private sealed class WorldResourceEntry(JobResource value)
     {
-        ArgumentNullException.ThrowIfNull(world);
-        if (!JobThreads.IsActive)
+        internal readonly JobResource Value = value;
+        internal QueryValues? Queries;
+    }
+
+    private sealed class QueryValues(QueryDefinition definition, in AccessBuilder<JobResourceAccess> values, QueryValues? next)
+    {
+        internal readonly QueryDefinition Definition = definition;
+        internal readonly AccessBuilder<JobResourceAccess> Values = values;
+        internal readonly QueryValues? Next = next;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal void BeginUse()
+    {
+        if (!JobThreads.IsActive && !IsClosed && !Volatile.Read(ref _clearing))
+        {
+            Interlocked.Increment(ref _uses);
+            if (!IsClosed && !Volatile.Read(ref _clearing)) return;
+            EndUse();
+        }
+        BeginUseSlow();
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private void BeginUseSlow()
+    {
+        bool child = JobThreads.IsActive && _jobLifetime.OwnsCurrentScope();
+        lock (_usesLock)
+        {
+            while (_clearing && !child) Monitor.Wait(_usesLock);
+            ObjectDisposedException.ThrowIf(IsClosed && !child, _world);
+            Interlocked.Increment(ref _uses);
+        }
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal void EndUse()
+    {
+        if (Interlocked.Decrement(ref _uses) != 0) return;
+        if (!IsClosed && !Volatile.Read(ref _clearing)) return;
+        NotifyUses();
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private void NotifyUses()
+    {
+        lock (_usesLock)
+        {
+            if (Volatile.Read(ref _uses) == 0 && (IsClosed || _clearing)) Monitor.PulseAll(_usesLock);
+        }
+    }
+
+    internal SynchronousResourceAccess BeginQueryAccess()
+    {
+        BeginUse();
+        try { return _scheduler.AcquireSynchronousAccess([JobResourceAccess.Read(_structure)]); }
+        catch { EndUse(); throw; }
+    }
+
+    internal void EndQueryAccess(SynchronousResourceAccess access)
+    {
+        try { access.Dispose(); }
+        finally { EndUse(); }
+    }
+
+    internal override WorldAccess OpenStructure(bool write)
+    {
+        if (HasStructureWrite()) return default;
+        EnterStructure(write);
+        return new(this);
+    }
+
+    internal override WorldAccess OpenValues(ReadOnlySpan<WorldValueAccess> values)
+        => TryOpenValues(values) ? new(this) : default;
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal ValuesScope OpenTypedValues(ReadOnlySpan<WorldValueAccess> values)
+        => TryOpenValues(values) ? new(this) : default;
+
+    private bool TryOpenValues(ReadOnlySpan<WorldValueAccess> values)
+    {
+        if (HasStructureWrite()) return false;
+        EnterValues(values);
+        return true;
+    }
+
+    internal readonly struct ValuesScope(WorldJobs? owner) : IDisposable
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void Dispose() => owner?.ExitCore();
+    }
+
+    internal override void EnterStructure(bool write)
+    {
+        if (s_current is { } current && ReferenceEquals(current.Jobs, this) && current.JobDepth == JobThreads.Depth)
+        {
+            if (write && (!current.StructureWrite || current.JobDepth != JobThreads.Depth))
+                Require(JobResourceAccess.Write(_structure), true);
+            current.Depth++;
             return;
-
-        throw new InvalidOperationException(
-            "CommandBuffer recording, playback, clearing, and disposal are not job-safe APIs. " +
-            "Perform structural command work outside the Job callback or use a dedicated typed " +
-            "job adapter that owns its producer storage.");
+        }
+        Enter(write, default(AccessBuilder<JobResourceAccess>));
     }
 
-    private void EnterCore(
-        World world,
-        in WorldJobAdmissionRequest request,
-        ReadOnlySpan<RequestedStorage> storage)
+    internal override void EnterValues(ReadOnlySpan<WorldValueAccess> values)
     {
-        Dictionary<World, AdmissionFrame> frames = s_frames ??= new Dictionary<World, AdmissionFrame>();
-        frames.TryGetValue(world, out AdmissionFrame? frame);
-        bool runningJob = JobThreads.IsActive;
-        ValidateNesting(frame, in request, storage, runningJob);
-
-        int maximumResourceCount = storage.Length + 1;
-        JobResourceAccess[]? rented = null;
-        Span<JobResourceAccess> resourceScratch = maximumResourceCount <= 65
-            ? stackalloc JobResourceAccess[maximumResourceCount]
-            : (rented = ArrayPool<JobResourceAccess>.Shared.Rent(maximumResourceCount))
-                .AsSpan(0, maximumResourceCount);
+        foreach (WorldValueAccess value in values) RequireSharedJobValue(value);
+        if (HasStructureWrite()) { EnterStructure(false); return; }
+        foreach (WorldValueAccess value in values)
+            if (value.Structural && value.Write) { EnterStructure(true); return; }
+        if (HasRangeWrite)
+        {
+            Enter(false, default(AccessBuilder<JobResourceAccess>));
+            try { foreach (WorldValueAccess value in values) RequireValue(value); }
+            catch { Exit(); throw; }
+            return;
+        }
+        AccessBuilder<JobResourceAccess> accesses = new();
         try
         {
-            int resourceCount = CollectRequiredResources(
-                world,
-                frame,
-                in request,
-                storage,
-                runningJob,
-                resourceScratch);
-            ReadOnlySpan<JobResourceAccess> required = resourceScratch[..resourceCount];
+            foreach (WorldValueAccess value in values) AddValue(ref accesses, value);
+            Enter(false, accesses);
+        }
+        finally { accesses.Clear(); }
+    }
 
-            SynchronousResourceAccess owner = default;
-            if (runningJob)
+    private void AddValue(ref AccessBuilder<JobResourceAccess> accesses, in WorldValueAccess value)
+    {
+        if (value.Structural) return;
+        JobResource resource = Resource(value.Kind, value.Type);
+        accesses.Add(value.Write ? JobResourceAccess.Write(resource) : JobResourceAccess.Read(resource));
+        if (value.Tracked && value.Kind is WorldValueKind.Table or WorldValueKind.Sparse)
+            accesses.Add(value.Write ? JobResourceAccess.Write(Resource(ChangeKind(value.Kind), value.Type))
+                : JobResourceAccess.Read(Resource(ChangeKind(value.Kind), value.Type)));
+    }
+
+    internal override void EnterQuery(Query query, ReadOnlySpan<int> writes, bool writeAll)
+    {
+        if (HasStructureWrite()) { EnterStructure(false); return; }
+        QueryDescription description = query.Description;
+        QueryDefinition definition = description.Definition;
+        int writeType = !writeAll && writes.Length == 1 && definition.AccessTypes.Length <= 2
+            && description.Shared.Length == 0 && description.Groups.Length == 0 ? writes[0] : -1;
+        if (writeType >= 0 && FindQueryValues(definition, writeType) is { } cached)
+        {
+            Enter(false, in cached.Values);
+            return;
+        }
+        EnterQueryCold(description, definition, writes, writeAll, writeType);
+    }
+
+    private QueryValues? FindQueryValues(QueryDefinition definition, int writeType)
+    {
+        WorldResourceEntry? entry = FindResourceEntry(WorldValueKind.Table, writeType);
+        if (entry is null) return null;
+        for (QueryValues? values = Volatile.Read(ref entry.Queries); values is not null; values = values.Next)
+            if (ReferenceEquals(values.Definition, definition)) return values;
+        return null;
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private void EnterQueryCold(QueryDescription description, QueryDefinition definition, ReadOnlySpan<int> writes, bool writeAll, int writeType)
+    {
+        AccessBuilder<JobResourceAccess> accesses = new();
+        try
+        {
+            BuildQueryValues(description, definition, writes, writeAll, ref accesses);
+            bool cache = writeType >= 0 && definition.AccessTypes.AsSpan().Contains(writeType)
+                && !ComponentTypes.Get(writeType).UsesStructureWrites;
+            Enter(false, in accesses);
+            try { if (cache) CacheQueryValues(definition, writeType, in accesses); }
+            catch { Exit(); throw; }
+        }
+        finally { accesses.Clear(); }
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private void BuildQueryValues(QueryDescription description, QueryDefinition definition, ReadOnlySpan<int> writes, bool writeAll,
+        ref AccessBuilder<JobResourceAccess> accesses)
+    {
+        foreach (int type in definition.AccessTypes)
+        {
+            ComponentType component = ComponentTypes.Get(type);
+            bool structural = component.UsesStructureWrites;
+            bool write = !structural && (writeAll || writes.Contains(type));
+            AddValue(ref accesses, new(type, WorldValueKind.Table, write, component.TracksWrites, structural));
+        }
+    }
+
+    private void CacheQueryValues(QueryDefinition definition, int writeType, in AccessBuilder<JobResourceAccess> accesses)
+    {
+        WorldResourceEntry entry = FindResourceEntry(WorldValueKind.Table, writeType)!;
+        lock (_resourcesLock)
+        {
+            QueryValues? first = Volatile.Read(ref entry.Queries);
+            for (QueryValues? values = first; values is not null; values = values.Next)
+                if (ReferenceEquals(values.Definition, definition)) return;
+            var cached = new QueryValues(definition, in accesses, first);
+            Volatile.Write(ref entry.Queries, cached);
+        }
+    }
+
+    private void Enter(bool structureWrite, in AccessBuilder<JobResourceAccess> accesses)
+    {
+        if (s_current is { } current && ReferenceEquals(current.Jobs, this) && current.JobDepth == JobThreads.Depth)
+        {
+            if (!current.StructureWrite)
             {
-                // Whole-World writes are ordinary scalar APIs. A Write capability serializes
-                // different owners, but does not partition multiple work items belonging to the
-                // same parallel owner. Only runtime-owned packet/range adapters may write from a
-                // multi-work-item owner because they carry a separate aliasing proof.
-                bool requireSingleWorkItem =
-                    request.Topology == WorldTopologyAccess.Write ||
-                    request.CanWrite;
-                for (int i = 0; i < required.Length; i++)
+                if (accesses.Count != 0 && !current.ValuesBound && current.Access.Handle.Index != 0 && !JobThreads.IsActive)
                 {
-                    Scheduler.RequireCurrentAccess(
-                        required[i],
-                        requireSingleWorkItem);
+                    _scheduler.AppendSynchronousAccess(current.Handle, accesses);
+                    current.ValuesBound = true;
                 }
+                else for (int i = 0; i < accesses.Count; i++) Require(accesses.Get(i), accesses.Get(i).Mode != JobAccessMode.Read);
+            }
+            current.Depth++;
+            return;
+        }
+
+        bool job = JobThreads.IsActive;
+        bool disposal = Environment.CurrentManagedThreadId == _disposingThread;
+        SynchronousResourceAccess access = default;
+        bool counted = !job && !disposal;
+        if (counted) BeginUse();
+        try
+        {
+            if (job)
+            {
+                JobResourceAccess structure = structureWrite ? JobResourceAccess.Write(_structure) : JobResourceAccess.Read(_structure);
+                _scheduler.RequireCurrentAccess(structure, structureWrite);
+                bool completeStructure = _scheduler.HasCurrentAccess(JobResourceAccess.Write(_structure));
+                if (completeStructure)
+                {
+                    _scheduler.RequireCurrentAccess(JobResourceAccess.Write(_structure), requireSingleWorkItem: true);
+                    structureWrite = true;
+                }
+                else for (int i = 0; i < accesses.Count; i++)
+                    _scheduler.RequireCurrentAccess(accesses.Get(i), accesses.Get(i).Mode != JobAccessMode.Read);
             }
             else
             {
-                owner = Scheduler.AcquireSynchronousAccess(required);
+                if (structureWrite)
+                {
+                    AccessBuilder<JobResourceAccess> structure = new();
+                    try
+                    {
+                        _world.CollectEventAccesses(ref structure, true);
+                        access = _scheduler.AcquireSynchronousAccess(JobResourceAccess.Write(_structure), structure);
+                    }
+                    finally { structure.Clear(); }
+                }
+                else access = _scheduler.AcquireSynchronousAccess(JobResourceAccess.Read(_structure), accesses);
             }
-
-            CommitOwner(frames, world, frame, in request, storage, owner);
-        }
-        finally
-        {
-            if (rented is not null)
-                ArrayPool<JobResourceAccess>.Shared.Return(rented);
-        }
-    }
-
-    private static void CommitOwner(
-        Dictionary<World, AdmissionFrame> frames,
-        World world,
-        AdmissionFrame? existing,
-        in WorldJobAdmissionRequest request,
-        ReadOnlySpan<RequestedStorage> storage,
-        SynchronousResourceAccess owner)
-    {
-        AdmissionFrame frame = existing ?? RentFrame(request.Topology);
-        int storageAdded = 0;
-        bool ownerPushed = false;
-        bool depthIncremented = false;
-        bool frameAdded = false;
-        try
-        {
-            frame.Owners.Push(owner);
-            ownerPushed = true;
-            for (; storageAdded < storage.Length; storageAdded++)
-                AddStorage(frame, storage[storageAdded]);
-
-            frame.Depth++;
-            depthIncremented = true;
-            if (existing is null)
-            {
-                frames.Add(world, frame);
-                frameAdded = true;
-            }
+            if (counted) CheckActive();
+            AccessFrame frame = RentFrame();
+            frame.Jobs = this;
+            frame.Previous = s_current;
+            frame.Access = access;
+            frame.Handle = job ? _scheduler.GetCurrentScope() : access.Handle;
+            frame.StructureWrite = structureWrite;
+            frame.JobDepth = JobThreads.Depth;
+            frame.Counted = counted;
+            frame.ValuesBound = job || accesses.Count != 0;
+            frame.Depth = 1;
+            s_current = frame;
         }
         catch
         {
-            for (int i = storageAdded - 1; i >= 0; i--)
-                RemoveStorage(frame, storage[i]);
-            if (depthIncremented)
-                frame.Depth--;
-            if (frameAdded)
-                frames.Remove(world);
-            if (ownerPushed)
-                frame.Owners.Pop();
-            owner.Dispose();
-            if (existing is null)
-                ReturnFrame(frame);
+            access.Dispose();
+            if (counted) EndUse();
             throw;
         }
     }
 
-    private static void ValidateNesting(
-        AdmissionFrame? frame,
-        in WorldJobAdmissionRequest request,
-        ReadOnlySpan<RequestedStorage> storage,
-        bool runningJob)
+    internal override void RequireValue(in WorldValueAccess value)
     {
-        if (frame is null)
+        RequireSharedJobValue(value);
+        if (HasStructureWrite()) return;
+        if (HasRangeWrite && value.Kind == WorldValueKind.Table && value.Write && !value.Structural)
+        {
+            RequireRangeValue(value);
             return;
-
-        if (frame.Topology == WorldTopologyAccess.Read &&
-            request.Topology == WorldTopologyAccess.Write)
-        {
-            throw new InvalidOperationException(
-                "Cannot upgrade a nested World topology admission from read to write.");
         }
-
-        for (int i = 0; i < storage.Length; i++)
+        if (value.Structural)
         {
-            RequestedStorage requested = storage[i];
-            if (frame.Storage.TryGetValue(requested.Key, out StorageFrame existing))
-            {
-                if (existing.Access == WorldStorageAccess.Read &&
-                    requested.Access == WorldStorageAccess.Write)
-                {
-                    throw new InvalidOperationException(
-                        "Cannot upgrade a nested World storage admission from read to write.");
-                }
+            Require(value.Write ? JobResourceAccess.Write(_structure) : JobResourceAccess.Read(_structure), value.Write);
+            return;
+        }
+        JobResource resource = Resource(value.Kind, value.Type);
+        Require(value.Write ? JobResourceAccess.Write(resource) : JobResourceAccess.Read(resource), value.Write);
+        if (value.Write && value.Tracked)
+            Require(JobResourceAccess.Write(Resource(ChangeKind(value.Kind), value.Type)), true);
+    }
 
-                continue;
-            }
+    private void RequireSharedJobValue(in WorldValueAccess value)
+    {
+        if (!value.Structural || value.Kind != WorldValueKind.Table || !JobThreads.IsActive) return;
+        if (s_current is { Counted: true } current && ReferenceEquals(current.Jobs, this)
+            && current.JobDepth == JobThreads.Depth) return;
+        ComponentType component = ComponentTypes.Get(value.Type);
+        if (component.IsShared) RequireJobStorage(component);
+    }
 
-            if (!runningJob &&
-                frame.Topology == WorldTopologyAccess.Read &&
-                !frame.Storage.ContainsKey(requested.Key))
-            {
-                throw new InvalidOperationException(
-                    "Cannot expand a nested World topology-read owner with a new storage resource. " +
-                    "Declare the storage on the outer query/callback owner.");
-            }
+    private bool HasStructureWrite()
+    {
+        if (s_current is { } frame && ReferenceEquals(frame.Jobs, this) && frame.JobDepth == JobThreads.Depth)
+            return frame.StructureWrite;
+        if (JobThreads.IsActive && _scheduler.HasCurrentAccess(JobResourceAccess.Write(_structure)))
+        {
+            _scheduler.RequireCurrentAccess(JobResourceAccess.Write(_structure), true);
+            return true;
+        }
+        return false;
+    }
+
+    private void Require(JobResourceAccess required, bool single)
+    {
+        if (JobThreads.IsActive) _scheduler.RequireCurrentAccess(required, single);
+        else if (s_current is { } current && ReferenceEquals(current.Jobs, this))
+            _scheduler.RequireAccess(current.Handle, required, single);
+        else throw new InvalidOperationException("Open a World value scope before borrowing a connected value.");
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal override void Exit() => ExitCore();
+
+    private void ExitCore()
+    {
+        AccessFrame frame = s_current!;
+        if (--frame.Depth != 0) return;
+        s_current = frame.Previous;
+        bool counted = frame.Counted;
+        try { frame.Access.Dispose(); }
+        finally
+        {
+            frame.Jobs = null!;
+            frame.Previous = null;
+            frame.Access = default;
+            frame.Handle = default;
+            ReturnFrame(frame);
+            if (counted) EndUse();
         }
     }
 
-    private static int CollectRequiredResources(
-        World world,
-        AdmissionFrame? frame,
-        in WorldJobAdmissionRequest request,
-        ReadOnlySpan<RequestedStorage> storage,
-        bool runningJob,
-        Span<JobResourceAccess> destination)
+    internal override void ValidateDisposePreconditions()
     {
-        int count = 0;
-        // A running Job verifies every request, even if an ECS owner scope is nested. For a
-        // synchronous caller, an existing owner already covers its topology resource.
-        if (runningJob || frame is null)
-        {
-            destination[count++] = request.Topology == WorldTopologyAccess.Write
-                ? RelationshipJobAccess.TopologyWrite(world)
-                : RelationshipJobAccess.TopologyRead(world);
-        }
-
-        for (int i = 0; i < storage.Length; i++)
-        {
-            RequestedStorage requested = storage[i];
-            // A synchronous topology writer owns all World storage. A running Job must still
-            // declare each logical storage resource explicitly.
-            if (!runningJob &&
-                (request.Topology == WorldTopologyAccess.Write ||
-                 frame?.Topology == WorldTopologyAccess.Write))
-            {
-                continue;
-            }
-            if (!runningJob && frame is not null && frame.Storage.ContainsKey(requested.Key))
-            {
-                continue;
-            }
-
-            destination[count++] = requested.Access == WorldStorageAccess.Write
-                ? WorldStorageJobResources.Write(world, requested.Key)
-                : WorldStorageJobResources.Read(world, requested.Key);
-        }
-
-        return count;
+        if (JobThreads.IsActive || s_current is { } current && ReferenceEquals(current.Jobs, this))
+            throw new InvalidOperationException("Finish the current World scope before disposing it.");
     }
 
-    private static int CollectStorage(
-        in WorldJobAdmissionRequest request,
-        Span<RequestedStorage> destination)
+    internal override void BeginDispose()
     {
-        if (request.StorageAccess != WorldStorageAccess.None)
+        ValidateDisposePreconditions();
+        lock (_usesLock)
         {
-            destination[0] = new RequestedStorage(
-                new WorldStorageResourceKey(
-                    request.StorageKind,
-                    request.StorageComponentId),
-                request.StorageAccess);
-            return 1;
+            while (_clearing) Monitor.Wait(_usesLock);
+            _disposingThread = Environment.CurrentManagedThreadId;
         }
-
-        ReadOnlySpan<WorldJobStorageAccess> queryAccesses =
-            request.QueryStorageAccesses.Span;
-        if (queryAccesses.IsEmpty)
-            return 0;
-
-        for (int i = 0; i < queryAccesses.Length; i++)
-        {
-            WorldJobStorageAccess entry = queryAccesses[i];
-            destination[i] = new RequestedStorage(
-                new WorldStorageResourceKey(entry.Kind, entry.ComponentId),
-                entry.Access);
-        }
-
-        return queryAccesses.Length;
+        _jobLifetime.CloseAndWait();
+        WaitForUses();
     }
 
-    private static void AddStorage(AdmissionFrame frame, RequestedStorage requested)
+    internal override void BeginClear()
     {
-        if (frame.Storage.TryGetValue(requested.Key, out StorageFrame existing))
+        if (JobThreads.IsActive || s_current is { } current && ReferenceEquals(current.Jobs, this))
+            throw new InvalidOperationException("Finish the current World scope before clearing it.");
+        lock (_usesLock)
         {
-            existing.Depth++;
-            frame.Storage[requested.Key] = existing;
+            while (_clearing) Monitor.Wait(_usesLock);
+            ObjectDisposedException.ThrowIf(IsClosed, _world);
+            Volatile.Write(ref _clearing, true);
+            _disposingThread = Environment.CurrentManagedThreadId;
         }
-        else
+        WaitForUses();
+    }
+
+    internal override void EndClear()
+    {
+        lock (_usesLock)
         {
-            frame.Storage.Add(
-                requested.Key,
-                new StorageFrame(requested.Access, depth: 1));
+            Volatile.Write(ref _clearing, false);
+            _disposingThread = 0;
+            Monitor.PulseAll(_usesLock);
         }
     }
 
-    private static void RemoveStorage(
-        AdmissionFrame frame,
-        ReadOnlySpan<RequestedStorage> storage)
+    private void WaitForUses()
     {
-        for (int i = 0; i < storage.Length; i++)
-            RemoveStorage(frame, storage[i]);
+        while (true)
+        {
+            lock (_usesLock) if (Interlocked.CompareExchange(ref _uses, 0, 0) == 0) return;
+            if (!_scheduler.HelpComplete())
+                lock (_usesLock) if (Interlocked.CompareExchange(ref _uses, 0, 0) != 0) Monitor.Wait(_usesLock, 10);
+        }
     }
 
-    private static void RemoveStorage(AdmissionFrame frame, RequestedStorage requested)
+    internal override void Release()
     {
-        if (!frame.Storage.TryGetValue(requested.Key, out StorageFrame existing) ||
-            existing.Depth <= 0)
+        for (int kind = 0; kind < _resources.Length; kind++)
         {
-            throw new InvalidOperationException("World storage admission scope is not active.");
+            foreach (WorldResourceEntry? entry in _resources[kind])
+                if (entry is not null) _scheduler.ReleaseResource(entry.Value);
+            _resources[kind] = [];
         }
-        if (existing.Access == WorldStorageAccess.Read &&
-            requested.Access == WorldStorageAccess.Write)
-        {
-            throw new InvalidOperationException("World storage admission mode is unbalanced.");
-        }
-
-        existing.Depth--;
-        if (existing.Depth == 0)
-            frame.Storage.Remove(requested.Key);
-        else
-            frame.Storage[requested.Key] = existing;
+        _scheduler.ReleaseResource(_structure);
+        _disposingThread = 0;
     }
 
-    private static AdmissionFrame RentFrame(WorldTopologyAccess topology)
+    private sealed class AccessFrame
     {
-        Stack<AdmissionFrame>? pool = s_framePool;
-        AdmissionFrame frame = pool is { Count: > 0 }
-            ? pool.Pop()
-            : new AdmissionFrame();
-        frame.Reset(topology);
+        internal WorldJobs Jobs = null!;
+        internal AccessFrame? Previous;
+        internal SynchronousResourceAccess Access;
+        internal JobHandle Handle;
+        internal int Depth;
+        internal int JobDepth;
+        internal bool StructureWrite, Counted, ValuesBound;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static AccessFrame RentFrame()
+    {
+        if (s_freeCount == 0) return CreateFrame();
+        int index = --s_freeCount;
+        AccessFrame frame = s_free![index];
+        s_free[index] = null!;
         return frame;
     }
 
-    private static void ReturnFrame(AdmissionFrame frame)
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static AccessFrame CreateFrame() => new();
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void ReturnFrame(AccessFrame frame)
     {
-        frame.Clear();
-        (s_framePool ??= new Stack<AdmissionFrame>()).Push(frame);
+        AccessFrame[]? free = s_free;
+        if (free is null || s_freeCount == free.Length) free = GrowFramePool(free);
+        free[s_freeCount++] = frame;
     }
 
-    private sealed class AdmissionFrame
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static AccessFrame[] GrowFramePool(AccessFrame[]? free)
     {
-        internal WorldTopologyAccess Topology { get; private set; }
-
-        internal int Depth { get; set; }
-
-        internal Dictionary<WorldStorageResourceKey, StorageFrame> Storage { get; } = new();
-
-        internal Stack<SynchronousResourceAccess> Owners { get; } = new();
-
-        internal void Reset(WorldTopologyAccess topology)
-        {
-            Topology = topology;
-        }
-
-        internal void Clear()
-        {
-            Depth = 0;
-            Storage.Clear();
-            Owners.Clear();
-        }
+        if (free is null) return s_free = new AccessFrame[4];
+        Array.Resize(ref free, free.Length * 2);
+        return s_free = free;
     }
-
-    private struct StorageFrame
-    {
-        internal StorageFrame(WorldStorageAccess access, int depth)
-        {
-            Access = access;
-            Depth = depth;
-        }
-
-        internal WorldStorageAccess Access;
-        internal int Depth;
-    }
-
-    private readonly record struct RequestedStorage(
-        WorldStorageResourceKey Key,
-        WorldStorageAccess Access);
 }

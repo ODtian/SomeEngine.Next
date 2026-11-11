@@ -1,3 +1,4 @@
+using SomeEngine.ECS;
 using SomeEngine.Animation.Pose;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Systems;
@@ -39,14 +40,14 @@ public sealed partial class SkinRenderExtractor : IRenderExtractionRangeSystem
         public void Reset() { Meshes.Clear(); Targets.Clear(); }
         public void Dispose() => Reset();
 
-        public void Collect(ReadOnlyQueryPacket packet, uint lastSystemVersion, bool fullCollection)
+        public void Collect(QueryChunk packet, ulong lastSystemVersion, bool fullCollection)
         {
             if (packet.TryRead<MeshSkin>(out var meshes)
-                && (fullCollection || packet.ChangedSince<MeshSkin>(lastSystemVersion)))
-                for (int row = 0; row < packet.Count; row++) Meshes.Add((packet.Entities[row], meshes[row].Joints));
+                && (fullCollection || packet.WasWritten<MeshSkin>(lastSystemVersion)))
+                for (int row = 0; row < packet.Count; row++) if (packet.Has<MeshSkin>(row)) Meshes.Add((packet.Entities[row], meshes[row].Joints));
             if (packet.TryRead<GpuPoseTarget>(out var targets)
-                && (fullCollection || packet.ChangedSince<GpuPoseTarget>(lastSystemVersion)))
-                for (int row = 0; row < packet.Count; row++) Targets.Add((packet.Entities[row], targets[row]));
+                && (fullCollection || packet.WasWritten<GpuPoseTarget>(lastSystemVersion)))
+                for (int row = 0; row < packet.Count; row++) if (packet.Has<GpuPoseTarget>(row)) Targets.Add((packet.Entities[row], targets[row]));
         }
     }
 }

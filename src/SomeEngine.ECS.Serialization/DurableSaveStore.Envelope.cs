@@ -1,5 +1,4 @@
 using System.Buffers.Binary;
-using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using SomeEngine.Serialization;
 using SomeEngine.Serialization.IO;
@@ -14,82 +13,31 @@ public sealed partial class DurableSaveStore
     private const int AuthenticationKindOffset = 14;
     private const int CopyBufferSize = 64 * 1024;
 
-    private void WriteTemporaryFile(
-        string temporaryPath,
-        ulong generation,
-        Action<Stream> writePayload)
+    private SaveFilesInspection InspectSlots()
     {
-        using (var file = new FileStream(
-                   temporaryPath,
-                   FileMode.CreateNew,
-                   FileAccess.ReadWrite,
-                   FileShare.None,
-                   CopyBufferSize,
-                   FileOptions.WriteThrough))
-        {
-            EnvelopeAuthenticationKind authenticationKind = WriteAuthenticationKind;
-            WriteHeader(
-                file,
-                authenticationKind,
-                generation,
-                payloadLength: 0,
-                default);
-
-            long payloadLength;
-            Digest256 envelopeHash;
-            using (IncrementalHash hasher = CreateEnvelopeHasher(authenticationKind))
-            {
-                using (var payloadStream = new HashingWriteStream(
-                           file,
-                           hasher,
-                           _options.MaximumPayloadBytes,
-                           leaveOpen: true,
-                           leaveHasherOpen: true))
-                {
-                    writePayload(payloadStream);
-                    payloadLength = payloadStream.BytesWritten;
-                }
-                Observe(DurableSaveWriteStage.PayloadWritten);
-
-                Span<byte> metadata = stackalloc byte[HashOffset];
-                WriteHeaderMetadata(metadata, authenticationKind, generation, payloadLength);
-                hasher.AppendData(metadata);
-                envelopeHash = Digest256.Finish(hasher);
-            }
-
-            file.Position = 0;
-            WriteHeader(file, authenticationKind, generation, payloadLength, envelopeHash);
-            file.SetLength(checked(HeaderSize + payloadLength));
-            file.Flush(flushToDisk: true);
-            Observe(DurableSaveWriteStage.TemporaryFileFlushed);
-        }
+        SaveFileInspection primary = InspectSlot(PrimaryPath);
+        SaveFileInspection previous = InspectSlot(PreviousPath);
+        return new SaveFilesInspection(primary, previous);
     }
 
-    private SlotSet InspectSlots()
+    private SaveFilesInspection InspectVerifiedSlots()
     {
-        SlotInspection primary = InspectSlot(PrimaryPath);
-        SlotInspection previous = InspectSlot(PreviousPath);
-        return new SlotSet(primary, previous);
+        SaveFileInspection primary = InspectSlot(PrimaryPath, verifyDigest: true);
+        SaveFileInspection previous = InspectSlot(PreviousPath, verifyDigest: true);
+        return new SaveFilesInspection(primary, previous);
     }
 
-    private SlotSet InspectVerifiedSlots()
-    {
-        SlotInspection primary = InspectSlot(PrimaryPath, verifyDigest: true);
-        SlotInspection previous = InspectSlot(PreviousPath, verifyDigest: true);
-        return new SlotSet(primary, previous);
-    }
-
-    private SlotInspection InspectSlot(string path)
+    private SaveFileInspection InspectSlot(string path)
     {
         return InspectSlot(path, verifyDigest: false);
     }
 
-    private SlotInspection VerifyTemporaryFile(string path)
+    private SaveFileInspection VerifyTemporaryFile(string path)
     {
         return InspectSlot(path, verifyDigest: true);
     }
 
-    private SlotInspection InspectSlot(string path, bool verifyDigest)
+    private SaveFileInspection InspectSlot(string path, bool verifyDigest)
     {
         try
         {
@@ -108,7 +56,7 @@ public sealed partial class DurableSaveStore
                 Digest256 actualHash = ComputeEnvelopeHash(file, header);
                 if (!actualHash.FixedTimeEquals(header.EnvelopeHash))
                 {
-                    return SlotInspection.Invalid(
+                    return SaveFileInspection.Invalid(
                         path,
                         "The envelope digest does not match its metadata or payload.");
                 }
@@ -116,29 +64,29 @@ public sealed partial class DurableSaveStore
 
             if (header.Generation < _options.MinimumAcceptedGeneration)
             {
-                return SlotInspection.Invalid(
+                return SaveFileInspection.Invalid(
                     path,
                     $"Generation {header.Generation} is below the configured anti-rollback floor " +
                     $"{_options.MinimumAcceptedGeneration}.", SerializationError.GenerationRejected);
             }
 
-            return SlotInspection.Valid(path, header.Generation, header.PayloadLength);
+            return SaveFileInspection.Valid(path, header.Generation, header.PayloadLength);
         }
         catch (FileNotFoundException)
         {
-            return SlotInspection.Missing(path);
+            return SaveFileInspection.Missing(path);
         }
         catch (DirectoryNotFoundException)
         {
-            return SlotInspection.Missing(path);
+            return SaveFileInspection.Missing(path);
         }
         catch (InvalidDataException exception)
         {
-            return SlotInspection.Invalid(path, exception.Message, SerializationErrors.GetError(exception));
+            return SaveFileInspection.Invalid(path, exception.Message, SerializationErrors.GetError(exception));
         }
         catch (EndOfStreamException exception)
         {
-            return SlotInspection.Invalid(path, exception.Message, SerializationError.IntegrityMismatch);
+            return SaveFileInspection.Invalid(path, exception.Message, SerializationError.IntegrityMismatch);
         }
     }
 
@@ -234,20 +182,6 @@ public sealed partial class DurableSaveStore
             header.Generation,
             header.PayloadLength);
         return payload.DrainAndCompleteDigest(metadata);
-    }
-
-    private static void RequireSynchronousWriter(Action<Stream> writePayload)
-    {
-        foreach (Delegate callback in writePayload.GetInvocationList())
-        {
-            if (callback.Method.IsDefined(typeof(AsyncStateMachineAttribute), inherit: false))
-            {
-                throw new ArgumentException(
-                    "DurableSaveStore.Write requires a synchronous writer; async void callbacks " +
-                    "can return before the payload is complete.",
-                    nameof(writePayload));
-            }
-        }
     }
 
     private static void WriteHeader(

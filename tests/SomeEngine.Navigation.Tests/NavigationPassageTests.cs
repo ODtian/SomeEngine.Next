@@ -12,7 +12,7 @@ public sealed class NavigationPassageTests
     public void ActorsUseACapacityOneConnectionInTheirWaitingOrder()
     {
         using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 3, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using World world = new World(execution: new WorldJobs(scheduler));
         var profile = new NavigationProfile([new Vector2(-0.1f), new(0.1f, -0.1f), new(0.1f), new(-0.1f, 0.1f)],
             1, maximumSpeed: 2);
         var policy = new NavigationPolicy();
@@ -36,26 +36,26 @@ public sealed class NavigationPassageTests
         var actors = new Entity[3];
         for (int index = 0; index < actors.Length; index++)
         {
-            Entity actor = world.CreateEntity(new TestMotion { Position = new(2.5f, 0, 1) });
+            Entity actor = world.Create(new TestMotion { Position = new(2.5f, 0, 1) });
             actors[index] = actor;
             world.Add(actor, new TestActionMotion());
             navigation.AddAgent(actor, scene, profile, policy, new(new Vector3(7, 0, 1), 0.05f), 2);
         }
         var began = new List<Entity>();
-        for (int step = 0; step < 100 && actors.Any(actor => world.Read<NavigationProgress>(actor).Status != NavigationStatus.Arrived); step++)
+        for (int step = 0; step < 100 && actors.Any(actor => world.ReadValue<NavigationProgress>(actor).Status != NavigationStatus.Arrived); step++)
         {
             NavigationStep next = navigation.Schedule(0.1f, 128);
             next.Steering.Complete();
             Assert.InRange(passage.InUse.Length, 0, 1);
             navigation.ScheduleProgress(new ConsumeActionOrSteering(0.1f).ScheduleParallel(world, next.Steering)).Complete();
             foreach (Entity actor in actors)
-                if (world.Read<TestActionMotion>(actor).Count == 1 && !began.Contains(actor)) began.Add(actor);
+                if (world.ReadValue<TestActionMotion>(actor).Count == 1 && !began.Contains(actor)) began.Add(actor);
         }
 
         Assert.Equal(actors, began);
         Assert.Equal(1, passage.Capacity);
         Assert.Empty(passage.Waiting.ToArray());
         Assert.Empty(passage.InUse.ToArray());
-        Assert.All(actors, actor => Assert.Equal(NavigationStatus.Arrived, world.Read<NavigationProgress>(actor).Status));
+        Assert.All(actors, actor => Assert.Equal(NavigationStatus.Arrived, world.ReadValue<NavigationProgress>(actor).Status));
     }
 }

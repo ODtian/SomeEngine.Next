@@ -1,3 +1,4 @@
+using SomeEngine.Core.ECS.Components;
 using System.Numerics;
 using SomeEngine.Animation.Pose;
 using SomeEngine.Core.Math;

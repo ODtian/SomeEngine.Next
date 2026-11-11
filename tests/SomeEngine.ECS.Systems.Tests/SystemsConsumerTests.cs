@@ -14,7 +14,7 @@ public sealed class SystemsConsumerTests
 
         group.Update();
 
-        Assert.Equal(2u, world.CurrentTick);
+        Assert.Equal(1ul, world.Version);
     }
 
     private readonly struct NoOpSystem : ISystem<ImmediateSystemContext>

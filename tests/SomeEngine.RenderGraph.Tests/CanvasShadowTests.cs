@@ -40,14 +40,16 @@ public sealed class CanvasShadowTests
         using var renderer = new CanvasRenderer(backend, device, graph, world, material, Format.R8G8B8A8UNorm);
         using SomeEngine.Graphics.Buffer readback = backend.CreateBuffer(device,
             new BufferDesc(64 * 256, BufferUsages.CopyDestination), MemoryType.Readback);
-        Entity canvas = world.CreateEntity(new RenderCanvas(CanvasTarget.Screen, new Size(64, 64), 1));
-        world.AddBuffer<SurfaceInstance>(canvas);
-        world.ExecuteBufferWrite<SurfaceInstance>(canvas, buffer =>
+        Entity canvas = world.World.Create(new RenderCanvas(CanvasTarget.Screen, new Size(64, 64), 1));
+        world.World.AddBuffer<SurfaceInstance>(canvas);
+        using (SomeEngine.ECS.DynamicBuffer<SurfaceInstance> buffer = world.World.GetBuffer<SurfaceInstance>(canvas))
+        {
             buffer.Add(new SurfaceInstance(Entity.Null, new Rect(8, 8, 24, 24), new Color(1, 0, 0), 4,
-                default, 0, new Rect(0, 0, 38, 64), 0, 1)
+                            default, 0, new Rect(0, 0, 38, 64), 0, 1)
             {
                 Shadow = new DropShadow(new Color(0, 1, 0, 0.5f), new Vector2(8, 8), 0),
-            }));
+            });
+        }
         GraphTextureId target;
         GraphPassId copy;
         using (RenderGraphEdit edit = graph.BeginEdit())
@@ -89,23 +91,35 @@ public sealed class CanvasShadowTests
 
         for (int index = 0; index < 4; index++)
         {
-            world.AcquireSystemTick();
+            world.World.AcquireSystemVersion();
             if (index == 1)
-                world.ExecuteBufferWrite<SurfaceInstance>(canvas, buffer => buffer[0] = buffer[0] with
+                using (SomeEngine.ECS.DynamicBuffer<SurfaceInstance> buffer = world.World.GetBuffer<SurfaceInstance>(canvas))
                 {
-                    Shadow = new DropShadow(new Color(0, 1, 0, 0.5f), new Vector2(8, 8), 4),
-                    ClipRectangle = new Rect(0, 0, 64, 64), Version = 2,
-                });
+                    buffer[0] = buffer[0] with
+                    {
+                        Shadow = new DropShadow(new Color(0, 1, 0, 0.5f), new Vector2(8, 8), 4),
+                        ClipRectangle = new Rect(0, 0, 64, 64),
+                        Version = 2,
+                    };
+                }
             if (index == 2)
-                world.ExecuteBufferWrite<SurfaceInstance>(canvas, buffer => buffer[0] = buffer[0] with
+                using (SomeEngine.ECS.DynamicBuffer<SurfaceInstance> buffer = world.World.GetBuffer<SurfaceInstance>(canvas))
                 {
-                    Shadow = new DropShadow(new Color(0, 0, 1), new Vector2(-4, 8), 0), Version = 3,
-                });
+                    buffer[0] = buffer[0] with
+                    {
+                        Shadow = new DropShadow(new Color(0, 0, 1), new Vector2(-4, 8), 0),
+                        Version = 3,
+                    };
+                }
             if (index == 3)
-                world.ExecuteBufferWrite<SurfaceInstance>(canvas, buffer => buffer[0] = buffer[0] with
+                using (SomeEngine.ECS.DynamicBuffer<SurfaceInstance> buffer = world.World.GetBuffer<SurfaceInstance>(canvas))
                 {
-                    Shadow = default, Version = 4,
-                });
+                    buffer[0] = buffer[0] with
+                    {
+                        Shadow = default,
+                        Version = 4,
+                    };
+                }
 
             renderer.ReconcileGraph(target);
             RenderGraphFrame frame = graph.BeginFrame();

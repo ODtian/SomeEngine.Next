@@ -185,7 +185,7 @@ public sealed class GltfExtensionBehaviorTests
             new SourceImporterSettings(ImporterId<PaintGltfTextureImporter>(), JsonSerializer.SerializeToElement(new PaintGltfTextureSettings(69), ExtensionGltfSettingsJson.Default.PaintGltfTextureSettings)));
         var project = new AssetProject(files.Directory, []);
         IReadOnlyList<Guid> ids = await project.ImportAsync(files.Source, CreateImporter());
-        Assert.Equal(4, ids.Count);
+        Assert.Equal(5, ids.Count);
         AssetEntry meshEntry = Assert.Single(project.Manifest.Assets.Values, value => value.AssetType == MeshAsset.FileType);
         AssetEntry materialEntry = Assert.Single(ids.Select(id => project.Manifest.Assets[id]), value => value.AssetType == MaterialAsset.FileType);
         AssetEntry textureEntry = Assert.Single(ids.Select(id => project.Manifest.Assets[id]), value => value.AssetType == TextureAsset.FileType);

@@ -74,20 +74,12 @@ public struct RelationBundle : SomeEngine.ECS.Components.IComponentBundle
         var diagnostics = RunGenerator("""
 using SomeEngine.ECS.Components;
 
-public struct ParentLike : SomeEngine.ECS.Components.IRelationshipSource
-{
-    public int Value;
-}
-
-public struct ChildrenLike : SomeEngine.ECS.Components.IRelationshipTarget
-{
-    public int Token;
-}
+public readonly struct Scene : global::SomeEngine.ECS.Hierarchy.IHierarchyDomain { }
 
 public struct InvalidRelationshipBundle : SomeEngine.ECS.Components.IComponentBundle
 {
-    public ParentLike Parent;
-    public ChildrenLike Children;
+    public global::SomeEngine.ECS.Hierarchy.Parent<Scene> Parent;
+    public global::SomeEngine.ECS.Hierarchy.Children<Scene> Children;
 }
 """);
 
@@ -150,7 +142,7 @@ public struct InvalidBufferBundle : SomeEngine.ECS.Components.IComponentBundle
         var diagnostics = RunGenerator("""
 using SomeEngine.ECS.Components;
 
-public struct Scene : SomeEngine.ECS.Components.ISharedComponent
+public struct Scene : SomeEngine.ECS.ISharedComponent
 {
     public int Value;
 }

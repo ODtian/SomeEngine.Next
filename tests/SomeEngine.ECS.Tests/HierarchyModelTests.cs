@@ -1,8 +1,10 @@
 using System.Collections.Concurrent;
+using SomeEngine.ECS.Serialization;
+using SomeEngine.ECS.Systems;
+using SomeEngine.Job;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hierarchy;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Registry;
 using DefaultHierarchy = SomeEngine.ECS.Hierarchy.Hierarchy;
 
@@ -18,7 +20,7 @@ public class HierarchyModelTests
 
     private readonly struct ComponentIdRegisteredDomain : IHierarchyDomain;
 
-    private struct SceneNode : IComponent
+    private struct SceneNode : IAddedComponent
     {
         public int Value;
     }
@@ -28,15 +30,17 @@ public class HierarchyModelTests
     {
         const int ChildCount = 1_024;
         var world = new World();
-        Entity root = world.CreateEntity();
+        Entity root = world.Create();
         var children = new Entity[ChildCount];
         for (int i = 0; i < children.Length; i++)
         {
-            children[i] = world.CreateEntity();
+            children[i] = world.Create();
             Hierarchy<SceneDomain>.SetParentDeferred(world, children[i], root);
         }
 
         Hierarchy<SceneDomain>.DestroySubtree(world, root);
+        world.ClearRemoved<Parent<SceneDomain>>(world.Version);
+        world.ClearRemoved<Children<SceneDomain>>(world.Version);
 
         Assert.False(world.IsAlive(root));
         for (int i = 0; i < children.Length; i++)
@@ -47,21 +51,21 @@ public class HierarchyModelTests
     public void OrdinaryDestroy_UsesAppliedAndDirtyLocalIndicesWithoutLosingChildren()
     {
         var world = new World();
-        Entity doomedParent = world.CreateEntity();
-        Entity oldParent = world.CreateEntity();
-        Entity appliedChild = world.CreateEntity();
-        Entity deferredChild = world.CreateEntity();
+        Entity doomedParent = world.Create();
+        Entity oldParent = world.Create();
+        Entity appliedChild = world.Create();
+        Entity deferredChild = world.Create();
         Hierarchy<SceneDomain>.SetParent(world, appliedChild, doomedParent);
         Hierarchy<SceneDomain>.SetParent(world, deferredChild, oldParent);
         Hierarchy<SceneDomain>.SetParentDeferred(world, deferredChild, doomedParent);
 
-        world.DestroyEntity(doomedParent);
+        world.Destroy(doomedParent);
 
         Assert.True(world.IsAlive(appliedChild));
         Assert.True(world.IsAlive(deferredChild));
         Assert.Equal(Entity.Null, Hierarchy<SceneDomain>.GetParent(world, appliedChild));
         Assert.Equal(Entity.Null, Hierarchy<SceneDomain>.GetParent(world, deferredChild));
-        Assert.Empty(Hierarchy<SceneDomain>.GetChildren(world, oldParent));
+        Assert.Empty(ReadChildren<SceneDomain>(world, oldParent));
     }
 
     [Fact]
@@ -70,22 +74,22 @@ public class HierarchyModelTests
         const int DirtyCount = 1_024;
         const int DestroyCount = 128;
         var world = new World();
-        Entity dirtyParent = world.CreateEntity();
+        Entity dirtyParent = world.Create();
         for (int i = 0; i < DirtyCount; i++)
         {
-            Entity child = world.CreateEntity();
+            Entity child = world.Create();
             Hierarchy<SceneDomain>.SetParentDeferred(world, child, dirtyParent);
         }
 
         var unrelated = new Entity[DestroyCount];
         for (int i = 0; i < unrelated.Length; i++)
-            unrelated[i] = world.CreateEntity();
+            unrelated[i] = world.Create();
 
         for (int i = 0; i < unrelated.Length; i++)
-            world.DestroyEntity(unrelated[i]);
+            world.Destroy(unrelated[i]);
 
         Hierarchy<SceneDomain>.Maintain(world);
-        Assert.Equal(DirtyCount, Hierarchy<SceneDomain>.GetChildren(world, dirtyParent).Count);
+        Assert.Equal(DirtyCount, ReadChildren<SceneDomain>(world, dirtyParent).Length);
         Assert.Equal(DirtyCount + 1, world.EntityCount);
         Assert.True(world.IsAlive(dirtyParent));
     }
@@ -94,17 +98,17 @@ public class HierarchyModelTests
     public void TypedDomains_AreIndependent_AndHaveNoMembershipComponent()
     {
         var world = new World();
-        Entity sceneParent = world.CreateEntity();
-        Entity uiParent = world.CreateEntity();
-        Entity child = world.CreateEntity();
+        Entity sceneParent = world.Create();
+        Entity uiParent = world.Create();
+        Entity child = world.Create();
 
         Hierarchy<SceneDomain>.SetParent(world, child, sceneParent);
         Hierarchy<UiDomain>.SetParent(world, child, uiParent);
 
         Assert.Equal(sceneParent, Hierarchy<SceneDomain>.GetParent(world, child));
         Assert.Equal(uiParent, Hierarchy<UiDomain>.GetParent(world, child));
-        Assert.Equal(new[] { child }, Hierarchy<SceneDomain>.GetChildren(world, sceneParent).ToArray());
-        Assert.Equal(new[] { child }, Hierarchy<UiDomain>.GetChildren(world, uiParent).ToArray());
+        Assert.Equal(new[] { child }, ReadChildren<SceneDomain>(world, sceneParent).ToArray());
+        Assert.Equal(new[] { child }, ReadChildren<UiDomain>(world, uiParent).ToArray());
         Assert.True(world.Has<Parent<SceneDomain>>(child));
         Assert.True(world.Has<Parent<UiDomain>>(child));
     }
@@ -113,22 +117,22 @@ public class HierarchyModelTests
     public void Root_IsWorkloadCandidateWithoutParent_NotGlobalMembership()
     {
         var world = new World();
-        Entity root = world.CreateEntity(new SceneNode { Value = 1 });
-        Entity child = world.CreateEntity(new SceneNode { Value = 2 });
-        _ = world.CreateEntity(); // Unrelated entity is not a SceneNode candidate.
+        Entity root = world.Create(new SceneNode { Value = 1 });
+        Entity child = world.Create(new SceneNode { Value = 2 });
+        _ = world.Create(); // Unrelated entity is not a SceneNode candidate.
         Hierarchy<SceneDomain>.SetParent(world, child, root);
 
         var roots = world.Query(
-            world.QueryDefinition()
-                .Read<SceneNode>()
-                .None<Parent<SceneDomain>>());
+            new QueryDescription().WithStored<SceneNode>().Without<Parent<SceneDomain>>());
 
         var found = new List<Entity>();
-        world.ExecuteQuery(roots, cursor =>
         {
-            foreach (var row in cursor.Rows)
-                found.Add(row.Entity);
-        });
+            using QueryScope cursor = (roots).OpenRead();
+            foreach (QueryChunk rowChunk in cursor)
+                for (int row = 0; row < rowChunk.Count; row++)
+                found.Add(rowChunk.Entities[row]);
+
+        };
 
         Assert.Equal(new[] { root }, found);
     }
@@ -137,85 +141,72 @@ public class HierarchyModelTests
     public void ParentAndChildren_UseNativeAddedChangedRemovedFacts()
     {
         var world = new World();
-        Entity firstParent = world.CreateEntity();
-        Entity secondParent = world.CreateEntity();
-        Entity child = world.CreateEntity();
-        Entity sibling = world.CreateEntity();
+        Entity firstParent = world.Create();
+        Entity secondParent = world.Create();
+        Entity child = world.Create();
+        Entity sibling = world.Create();
 
-        uint beforeAdd = world.AcquireSystemTick();
+        ulong beforeAdd = world.AcquireSystemVersion();
         Hierarchy<SceneDomain>.SetParent(world, child, firstParent);
 
         Assert.Equal(
             new[] { child },
             QueryEntities(
-                world.Query(world.QueryDefinition()
-                    .Read<Parent<SceneDomain>>()
-                    .Added<Parent<SceneDomain>>()),
+                world.Query(new QueryDescription().WithStored<Parent<SceneDomain>>().WithAdded<Parent<SceneDomain>>(0)),
                 beforeAdd));
         Assert.Equal(
             new[] { firstParent },
             QueryEntities(
-                world.Query(world.QueryDefinition()
-                    .Read<Children<SceneDomain>>()
-                    .Added<Children<SceneDomain>>()),
+                world.Query(new QueryDescription().WithStored<Children<SceneDomain>>().WithAdded<Children<SceneDomain>>(0)),
                 beforeAdd));
 
-        uint beforeChildrenChange = world.AcquireSystemTick();
+        ulong beforeChildrenChange = world.AcquireSystemVersion();
         Hierarchy<SceneDomain>.SetParent(world, sibling, firstParent);
         Assert.Equal(
             new[] { firstParent },
             QueryEntities(
-                world.Query(world.QueryDefinition()
-                    .Read<Children<SceneDomain>>()
-                    .Changed<Children<SceneDomain>>()),
+                world.Query(new QueryDescription().WithStored<Children<SceneDomain>>().WithChanged<Children<SceneDomain>>(0)),
                 beforeChildrenChange));
 
-        uint beforeParentChange = world.AcquireSystemTick();
+        ulong beforeParentChange = world.AcquireSystemVersion();
         Hierarchy<SceneDomain>.SetParent(world, child, secondParent);
         Assert.Equal(
             new[] { child },
             QueryEntities(
-                world.Query(world.QueryDefinition()
-                    .Read<Parent<SceneDomain>>()
-                    .Changed<Parent<SceneDomain>>()),
+                world.Query(new QueryDescription().WithStored<Parent<SceneDomain>>().WithChanged<Parent<SceneDomain>>(0)),
                 beforeParentChange));
 
         Hierarchy<SceneDomain>.Detach(world, child);
         Parent<SceneDomain>? removedParent = null;
         var removedParentQuery = world.Query(
-            world.QueryDefinition().Removed<Parent<SceneDomain>>());
-        world.ExecuteQuery(removedParentQuery, cursor =>
+            new QueryDescription().WithStored<Removed<Parent<SceneDomain>>>());
         {
-            foreach (var row in cursor.Rows)
+            using QueryScope cursor = (removedParentQuery).OpenRead();
+            foreach (QueryChunk rowChunk in cursor)
+                for (int row = 0; row < rowChunk.Count; row++)
             {
-                Assert.Equal(child, row.Entity);
-                removedParent = row.Read<Removed<Parent<SceneDomain>>>().Value;
+                Assert.Equal(child, rowChunk.Entities[row]);
+                removedParent = rowChunk.Read<Removed<Parent<SceneDomain>>>()[row].Value;
             }
-        });
+
+        };
         Assert.True(removedParent.HasValue);
         Assert.Equal(secondParent, removedParent.Value.Value);
 
         Assert.Equal(
             new[] { secondParent },
             QueryEntities(world.Query(
-                world.QueryDefinition().Removed<Children<SceneDomain>>())));
+                new QueryDescription().WithStored<Removed<Children<SceneDomain>>>())));
 
-        Entity[] QueryEntities(QueryHandle query, uint? lastVersion = null)
+        Entity[] QueryEntities(Query query, ulong? lastVersion = null)
         {
             var entities = new List<Entity>();
-            void Capture(scoped QueryCursor cursor)
-            {
-                foreach (var row in cursor.Rows)
-                    entities.Add(row.Entity);
-            }
-
-            if (lastVersion is uint since)
-                world.ExecuteQuery(query, since, Capture);
-            else
-                world.ExecuteQuery(query, Capture);
+            using QueryScope scope = query.Since(lastVersion ?? 0).OpenRead();
+            foreach (QueryChunk chunk in scope)
+                foreach (Entity entity in chunk.Entities) entities.Add(entity);
             entities.Sort(static (left, right) =>
             {
-                int index = left.Index.CompareTo(right.Index);
+                int index = left.Id.CompareTo(right.Id);
                 return index != 0 ? index : left.Generation.CompareTo(right.Generation);
             });
             return entities.ToArray();
@@ -226,30 +217,30 @@ public class HierarchyModelTests
     public void ImmediateAndDeferred_UseEquivalentTransitionSemantics()
     {
         var immediate = new World();
-        Entity immediateOld = immediate.CreateEntity();
-        Entity immediateNew = immediate.CreateEntity();
-        Entity immediateChild = immediate.CreateEntity();
+        Entity immediateOld = immediate.Create();
+        Entity immediateNew = immediate.Create();
+        Entity immediateChild = immediate.Create();
         Hierarchy<SceneDomain>.SetParent(immediate, immediateChild, immediateOld);
         Hierarchy<SceneDomain>.SetParent(immediate, immediateChild, immediateNew);
 
         var deferred = new World();
-        Entity deferredOld = deferred.CreateEntity();
-        Entity deferredNew = deferred.CreateEntity();
-        Entity deferredChild = deferred.CreateEntity();
+        Entity deferredOld = deferred.Create();
+        Entity deferredNew = deferred.Create();
+        Entity deferredChild = deferred.Create();
         Hierarchy<SceneDomain>.SetParent(deferred, deferredChild, deferredOld);
         Hierarchy<SceneDomain>.SetParentDeferred(deferred, deferredChild, deferredNew);
 
-        Assert.Equal(new[] { deferredChild }, Hierarchy<SceneDomain>.GetChildren(deferred, deferredOld).ToArray());
-        Assert.Empty(Hierarchy<SceneDomain>.GetChildren(deferred, deferredNew));
+        Assert.Equal(new[] { deferredChild }, ReadChildren<SceneDomain>(deferred, deferredOld).ToArray());
+        Assert.Empty(ReadChildren<SceneDomain>(deferred, deferredNew));
         Assert.Equal(deferredNew, Hierarchy<SceneDomain>.GetParent(deferred, deferredChild));
 
         Hierarchy<SceneDomain>.Maintain(deferred);
 
-        Assert.Empty(Hierarchy<SceneDomain>.GetChildren(immediate, immediateOld));
-        Assert.Empty(Hierarchy<SceneDomain>.GetChildren(deferred, deferredOld));
+        Assert.Empty(ReadChildren<SceneDomain>(immediate, immediateOld));
+        Assert.Empty(ReadChildren<SceneDomain>(deferred, deferredOld));
         Assert.Equal(
-            Hierarchy<SceneDomain>.GetChildren(immediate, immediateNew).Count,
-            Hierarchy<SceneDomain>.GetChildren(deferred, deferredNew).Count);
+            ReadChildren<SceneDomain>(immediate, immediateNew).Length,
+            ReadChildren<SceneDomain>(deferred, deferredNew).Length);
         Assert.Equal(deferredNew, Hierarchy<SceneDomain>.GetParent(deferred, deferredChild));
     }
 
@@ -257,36 +248,36 @@ public class HierarchyModelTests
     public void DeferredMultipleWrites_CompareFinalParentWithAppliedParent()
     {
         var world = new World();
-        Entity a = world.CreateEntity();
-        Entity b = world.CreateEntity();
-        Entity c = world.CreateEntity();
-        Entity child = world.CreateEntity();
+        Entity a = world.Create();
+        Entity b = world.Create();
+        Entity c = world.Create();
+        Entity child = world.Create();
         Hierarchy<SceneDomain>.SetParent(world, child, a);
 
         Hierarchy<SceneDomain>.SetParentDeferred(world, child, b);
         Hierarchy<SceneDomain>.SetParentDeferred(world, child, c);
 
-        Assert.Equal(new[] { child }, Hierarchy<SceneDomain>.GetChildren(world, a).ToArray());
+        Assert.Equal(new[] { child }, ReadChildren<SceneDomain>(world, a).ToArray());
         Hierarchy<SceneDomain>.Maintain(world);
 
-        Assert.Empty(Hierarchy<SceneDomain>.GetChildren(world, a));
-        Assert.Empty(Hierarchy<SceneDomain>.GetChildren(world, b));
-        Assert.Equal(new[] { child }, Hierarchy<SceneDomain>.GetChildren(world, c).ToArray());
+        Assert.Empty(ReadChildren<SceneDomain>(world, a));
+        Assert.Empty(ReadChildren<SceneDomain>(world, b));
+        Assert.Equal(new[] { child }, ReadChildren<SceneDomain>(world, c).ToArray());
     }
 
     [Fact]
     public void InvalidTypedMutations_AreRejectedBeforeCanonicalPublication()
     {
         var world = new World();
-        Entity root = world.CreateEntity();
-        Entity child = world.CreateEntity();
-        Entity grandchild = world.CreateEntity();
+        Entity root = world.Create();
+        Entity child = world.Create();
+        Entity grandchild = world.Create();
         Hierarchy<SceneDomain>.SetParent(world, child, root);
         Hierarchy<SceneDomain>.SetParent(world, grandchild, child);
 
-        Assert.Throws<InvalidOperationException>(
+        Assert.Throws<ArgumentException>(
             () => Hierarchy<SceneDomain>.SetParentDeferred(world, root, grandchild));
-        Assert.Throws<InvalidOperationException>(
+        Assert.Throws<ArgumentException>(
             () => Hierarchy<SceneDomain>.SetParent(world, root, root));
 
         Assert.Equal(Entity.Null, Hierarchy<SceneDomain>.GetParent(world, root));
@@ -298,216 +289,181 @@ public class HierarchyModelTests
     public void InvalidOwnerBoundParentWrite_RollsBackAtValidation()
     {
         var world = new World();
-        Entity root = world.CreateEntity();
-        Entity child = world.CreateEntity();
+        Entity root = world.Create();
+        Entity child = world.Create();
         Hierarchy<SceneDomain>.SetParent(world, child, root);
 
-        Assert.Throws<InvalidOperationException>(() => WriteInvalidSelfParent(world, child));
+        Assert.Throws<ArgumentException>(() => WriteInvalidSelfParent(world, child));
 
         Assert.Equal(root, Hierarchy<SceneDomain>.GetParent(world, child));
-        Assert.Equal(new[] { child }, Hierarchy<SceneDomain>.GetChildren(world, root).ToArray());
+        Assert.Equal(new[] { child }, ReadChildren<SceneDomain>(world, root).ToArray());
     }
 
     [Fact]
-    public void OwnerBoundParentWrite_BodyFaultRollsBackAValidPartialEdit()
+    public void CandidateBodyFailurePreservesSourceParentAndChildren()
     {
-        var world = new World();
-        Entity oldParent = world.CreateEntity();
-        Entity newParent = world.CreateEntity();
-        Entity child = world.CreateEntity();
+        using var world = new World();
+        Entity oldParent = world.Create();
+        Entity newParent = world.Create();
+        Entity child = world.Create();
         Hierarchy<SceneDomain>.SetParent(world, child, oldParent);
-        var query = world.Query(
-            world.QueryDefinition().ReadWrite<Parent<SceneDomain>>());
-
-        Assert.Throws<ApplicationException>(() => MutateThenFault());
-
-        Assert.Equal(oldParent, Hierarchy<SceneDomain>.GetParent(world, child));
-        Assert.Equal(new[] { child }, Hierarchy<SceneDomain>.GetChildren(world, oldParent).ToArray());
-        Assert.Empty(Hierarchy<SceneDomain>.GetChildren(world, newParent));
-
-        void MutateThenFault()
+        using var checkpoint = new WorldCheckpoint().Capture(world, CheckpointProgress.Preserve);
+        using var candidate = new World();
+        checkpoint.Restore(candidate);
+        Assert.Throws<ApplicationException>((Action)(() =>
         {
-            world.ExecuteQuery(query, cursor =>
-            {
-                foreach (var row in cursor.Rows)
-                {
-                    row.ReadWrite<Parent<SceneDomain>>().Value = newParent;
-                    throw new ApplicationException("body fault");
-                }
-            });
-        }
+            Hierarchy<SceneDomain>.SetParentDeferred(candidate, child, newParent);
+            throw new ApplicationException();
+        }));
+        Assert.Equal(oldParent, Hierarchy<SceneDomain>.GetParent(world, child));
+        Assert.Equal(new[] { child }, ReadChildren<SceneDomain>(world, oldParent));
+        Assert.Empty(ReadChildren<SceneDomain>(world, newParent));
     }
 
     [Fact]
     public void OwnerBoundInvalidWrite_AfterTypedDeferred_RestoresDeferredCanonicalParent()
     {
         var world = new World();
-        Entity oldParent = world.CreateEntity();
-        Entity deferredParent = world.CreateEntity();
-        Entity child = world.CreateEntity();
+        Entity oldParent = world.Create();
+        Entity deferredParent = world.Create();
+        Entity child = world.Create();
         Hierarchy<SceneDomain>.SetParent(world, child, oldParent);
         Hierarchy<SceneDomain>.SetParentDeferred(world, child, deferredParent);
 
-        Assert.Throws<InvalidOperationException>(() => WriteInvalidSelfParent(world, child));
+        Assert.Throws<ArgumentException>(() => WriteInvalidSelfParent(world, child));
 
         Assert.Equal(deferredParent, Hierarchy<SceneDomain>.GetParent(world, child));
-        Assert.Equal(new[] { child }, Hierarchy<SceneDomain>.GetChildren(world, oldParent).ToArray());
-        Assert.Empty(Hierarchy<SceneDomain>.GetChildren(world, deferredParent));
+        Assert.Equal(new[] { child }, ReadChildren<SceneDomain>(world, oldParent).ToArray());
+        Assert.Empty(ReadChildren<SceneDomain>(world, deferredParent));
 
         Hierarchy<SceneDomain>.Maintain(world);
 
-        Assert.Empty(Hierarchy<SceneDomain>.GetChildren(world, oldParent));
-        Assert.Equal(new[] { child }, Hierarchy<SceneDomain>.GetChildren(world, deferredParent).ToArray());
+        Assert.Empty(ReadChildren<SceneDomain>(world, oldParent));
+        Assert.Equal(new[] { child }, ReadChildren<SceneDomain>(world, deferredParent).ToArray());
     }
 
     [Fact]
-    public void LaterOwnerBodyFault_RestoresPreviousUnmaintainedCanonicalParent()
+    public void FailedCandidatePreservesSourceDeferredParent()
     {
-        var world = new World();
-        Entity appliedParent = world.CreateEntity();
-        Entity firstDeferredParent = world.CreateEntity();
-        Entity faultingParent = world.CreateEntity();
-        Entity child = world.CreateEntity();
+        using var world = new World();
+        Entity appliedParent = world.Create();
+        Entity deferredParent = world.Create();
+        Entity faultingParent = world.Create();
+        Entity child = world.Create();
         Hierarchy<SceneDomain>.SetParent(world, child, appliedParent);
-        var query = world.Query(
-            world.QueryDefinition().ReadWrite<Parent<SceneDomain>>());
-
-        world.ExecuteQuery(query, cursor =>
+        Hierarchy<SceneDomain>.SetParentDeferred(world, child, deferredParent);
+        using var checkpoint = new WorldCheckpoint().Capture(world, CheckpointProgress.Preserve);
+        using var candidate = new World();
+        checkpoint.Restore(candidate);
+        Assert.Throws<ApplicationException>((Action)(() =>
         {
-            foreach (var row in cursor.Rows)
-                row.ReadWrite<Parent<SceneDomain>>().Value = firstDeferredParent;
-        });
-
-        Assert.Throws<ApplicationException>(() => MutateThenFault());
-
-        Assert.Equal(firstDeferredParent, Hierarchy<SceneDomain>.GetParent(world, child));
-        Assert.Equal(new[] { child }, Hierarchy<SceneDomain>.GetChildren(world, appliedParent).ToArray());
+            Hierarchy<SceneDomain>.SetParentDeferred(candidate, child, faultingParent);
+            throw new ApplicationException();
+        }));
+        Assert.Equal(deferredParent, Hierarchy<SceneDomain>.GetParent(world, child));
+        Assert.Equal(new[] { child }, ReadChildren<SceneDomain>(world, appliedParent));
         Hierarchy<SceneDomain>.Maintain(world);
-        Assert.Empty(Hierarchy<SceneDomain>.GetChildren(world, appliedParent));
-        Assert.Equal(new[] { child }, Hierarchy<SceneDomain>.GetChildren(world, firstDeferredParent).ToArray());
-
-        void MutateThenFault()
-        {
-            world.ExecuteQuery(query, cursor =>
-            {
-                foreach (var row in cursor.Rows)
-                {
-                    row.ReadWrite<Parent<SceneDomain>>().Value = faultingParent;
-                    throw new ApplicationException("body fault");
-                }
-            });
-        }
+        Assert.Empty(ReadChildren<SceneDomain>(world, appliedParent));
+        Assert.Equal(new[] { child }, ReadChildren<SceneDomain>(world, deferredParent));
     }
 
     [Fact]
-    public void RuntimeOwnedQueryBreak_CommitsDeferredCanonicalParent()
+    public void SelectedChildCanBeEditedAfterItsReadScopeEnds()
     {
-        var world = new World();
-        Entity oldParent = world.CreateEntity();
-        Entity newParent = world.CreateEntity();
-        Entity child = world.CreateEntity();
+        using var world = new World();
+        Entity oldParent = world.Create();
+        Entity newParent = world.Create();
+        Entity child = world.Create();
         Hierarchy<SceneDomain>.SetParent(world, child, oldParent);
-        var query = world.Query(
-            world.QueryDefinition().ReadWrite<Parent<SceneDomain>>());
-
-        world.ExecuteQuery(query, cursor =>
+        Entity selected;
         {
-            foreach (var row in cursor.Rows)
-            {
-                row.ReadWrite<Parent<SceneDomain>>().Value = newParent;
-                break;
-            }
-        });
-
+            using QueryScope scope = world.Query(new QueryDescription().WithStored<Parent<SceneDomain>>()).OpenRead();
+            selected = Entity.Null;
+            foreach (QueryChunk chunk in scope) { selected = chunk.Entities[0]; break; }
+        }
+        Hierarchy<SceneDomain>.SetParentDeferred(world, selected, newParent);
         Assert.Equal(newParent, Hierarchy<SceneDomain>.GetParent(world, child));
-        Assert.Equal(new[] { child }, Hierarchy<SceneDomain>.GetChildren(world, oldParent).ToArray());
-        Assert.Empty(Hierarchy<SceneDomain>.GetChildren(world, newParent));
-
+        Assert.Equal(new[] { child }, ReadChildren<SceneDomain>(world, oldParent));
+        Assert.Empty(ReadChildren<SceneDomain>(world, newParent));
         Hierarchy<SceneDomain>.Maintain(world);
-        Assert.Empty(Hierarchy<SceneDomain>.GetChildren(world, oldParent));
-        Assert.Equal(new[] { child }, Hierarchy<SceneDomain>.GetChildren(world, newParent).ToArray());
+        Assert.Empty(ReadChildren<SceneDomain>(world, oldParent));
+        Assert.Equal(new[] { child }, ReadChildren<SceneDomain>(world, newParent));
     }
 
     [Fact]
     public void ParentLocalOrder_MixesOrderedAndUnorderedWithoutTwoEngines()
     {
         var world = new World();
-        Entity orderedParent = world.CreateEntity();
-        Entity unorderedParent = world.CreateEntity();
-        Entity first = world.CreateEntity();
-        Entity second = world.CreateEntity();
-        Entity third = world.CreateEntity();
-        Entity unorderedChild = world.CreateEntity();
+        Entity orderedParent = world.Create();
+        Entity unorderedParent = world.Create();
+        Entity first = world.Create();
+        Entity second = world.Create();
+        Entity third = world.Create();
+        Entity unorderedChild = world.Create();
 
-        Hierarchy<SceneDomain>.SetChildOrderPolicy(
+        Hierarchy<SceneDomain>.SetOrdered(
             world,
             orderedParent,
-            ChildOrderPolicy.Ordered);
+            true);
         Hierarchy<SceneDomain>.SetParent(world, first, orderedParent);
         Hierarchy<SceneDomain>.SetParent(world, second, orderedParent);
-        Hierarchy<SceneDomain>.SetParent(world, third, orderedParent, insertIndex: 1);
+        Hierarchy<SceneDomain>.SetParent(world, third, orderedParent, insertAt: 1);
         Hierarchy<SceneDomain>.SetParent(world, unorderedChild, unorderedParent);
 
-        Assert.Equal(
-            ChildOrderPolicy.Ordered,
-            Hierarchy<SceneDomain>.GetChildOrderPolicy(world, orderedParent));
-        Assert.Equal(
-            ChildOrderPolicy.Unordered,
-            Hierarchy<SceneDomain>.GetChildOrderPolicy(world, unorderedParent));
+        Assert.True(Hierarchy<SceneDomain>.IsOrdered(world, orderedParent));
+        Assert.False(Hierarchy<SceneDomain>.IsOrdered(world, unorderedParent));
         Assert.Equal(
             new[] { first, third, second },
-            Hierarchy<SceneDomain>.GetChildren(world, orderedParent).ToArray());
+            ReadChildren<SceneDomain>(world, orderedParent).ToArray());
 
-        Hierarchy<SceneDomain>.Reorder(world, second, 0);
+        Hierarchy<SceneDomain>.SetParent(world, second, Hierarchy<SceneDomain>.GetParent(world, second), 0);
         Assert.Equal(
             new[] { second, first, third },
-            Hierarchy<SceneDomain>.GetChildren(world, orderedParent).ToArray());
-        Assert.Equal(new[] { unorderedChild }, Hierarchy<SceneDomain>.GetChildren(world, unorderedParent).ToArray());
+            ReadChildren<SceneDomain>(world, orderedParent).ToArray());
+        Assert.Equal(new[] { unorderedChild }, ReadChildren<SceneDomain>(world, unorderedParent).ToArray());
     }
 
     [Fact]
     public void OrderedDeferredInsertions_UseStableProjectedFifoImage()
     {
         var world = new World();
-        Entity parent = world.CreateEntity();
-        Entity first = world.CreateEntity();
-        Entity second = world.CreateEntity();
-        Hierarchy<SceneDomain>.SetChildOrderPolicy(world, parent, ChildOrderPolicy.Ordered);
+        Entity parent = world.Create();
+        Entity first = world.Create();
+        Entity second = world.Create();
+        Hierarchy<SceneDomain>.SetOrdered(world, parent, true);
 
-        Hierarchy<SceneDomain>.SetParentDeferred(world, first, parent, insertIndex: 0);
-        Hierarchy<SceneDomain>.SetParentDeferred(world, second, parent, insertIndex: 1);
+        Hierarchy<SceneDomain>.SetParentDeferred(world, first, parent, insertAt: 0);
+        Hierarchy<SceneDomain>.SetParentDeferred(world, second, parent, insertAt: 1);
         Hierarchy<SceneDomain>.Maintain(world);
 
         Assert.Equal(
             new[] { first, second },
-            Hierarchy<SceneDomain>.GetChildren(world, parent).ToArray());
+            ReadChildren<SceneDomain>(world, parent).ToArray());
     }
 
     [Fact]
     public void InvalidOrderedDeferredImage_DoesNotPartiallyPublishAndCanBeCorrected()
     {
         var world = new World();
-        Entity parent = world.CreateEntity();
-        Entity first = world.CreateEntity();
-        Entity second = world.CreateEntity();
-        Entity replacement = world.CreateEntity();
-        Hierarchy<SceneDomain>.SetChildOrderPolicy(world, parent, ChildOrderPolicy.Ordered);
+        Entity parent = world.Create();
+        Entity first = world.Create();
+        Entity second = world.Create();
+        Entity replacement = world.Create();
+        Hierarchy<SceneDomain>.SetOrdered(world, parent, true);
         Hierarchy<SceneDomain>.SetParent(world, first, parent);
         Hierarchy<SceneDomain>.SetParent(world, second, parent);
-        var before = Hierarchy<SceneDomain>.GetChildren(world, parent);
+        var before = ReadChildren<SceneDomain>(world, parent);
 
         Hierarchy<SceneDomain>.DetachDeferred(world, first);
-        Hierarchy<SceneDomain>.SetParentDeferred(world, replacement, parent, insertIndex: 2);
-
         Assert.Throws<ArgumentOutOfRangeException>(
-            () => Hierarchy<SceneDomain>.Maintain(world));
-        var afterFailure = Hierarchy<SceneDomain>.GetChildren(world, parent);
+            () => Hierarchy<SceneDomain>.SetParentDeferred(world, replacement, parent, insertAt: 2));
+        var afterFailure = ReadChildren<SceneDomain>(world, parent);
         Assert.Equal(new[] { first, second }, afterFailure.ToArray());
 
-        Hierarchy<SceneDomain>.SetParentDeferred(world, replacement, parent, insertIndex: 1);
+        Hierarchy<SceneDomain>.SetParentDeferred(world, replacement, parent, insertAt: 1);
         Hierarchy<SceneDomain>.Maintain(world);
 
-        Assert.Equal(new[] { second, replacement }, Hierarchy<SceneDomain>.GetChildren(world, parent).ToArray());
+        Assert.Equal(new[] { second, replacement }, ReadChildren<SceneDomain>(world, parent).ToArray());
         Assert.Equal(Entity.Null, Hierarchy<SceneDomain>.GetParent(world, first));
     }
 
@@ -515,57 +471,61 @@ public class HierarchyModelTests
     public void PolicyConversion_UsesExplicitPermutationAndCanDiscardOrder()
     {
         var world = new World();
-        Entity parent = world.CreateEntity();
-        Entity a = world.CreateEntity();
-        Entity b = world.CreateEntity();
-        Entity c = world.CreateEntity();
+        Entity parent = world.Create();
+        Entity a = world.Create();
+        Entity b = world.Create();
+        Entity c = world.Create();
         Hierarchy<SceneDomain>.SetParent(world, a, parent);
         Hierarchy<SceneDomain>.SetParent(world, b, parent);
         Hierarchy<SceneDomain>.SetParent(world, c, parent);
 
-        Hierarchy<SceneDomain>.SetChildOrderPolicy(
+        Hierarchy<SceneDomain>.SetOrdered(
             world,
             parent,
-            ChildOrderPolicy.Ordered,
+            true,
             [c, a, b]);
-        Assert.Equal(new[] { c, a, b }, Hierarchy<SceneDomain>.GetChildren(world, parent).ToArray());
+        Assert.Equal(new[] { c, a, b }, ReadChildren<SceneDomain>(world, parent).ToArray());
 
-        Hierarchy<SceneDomain>.SetChildOrderPolicy(world, parent, ChildOrderPolicy.Unordered);
-        Assert.Equal(ChildOrderPolicy.Unordered, Hierarchy<SceneDomain>.GetChildOrderPolicy(world, parent));
-        Assert.Equal(3, Hierarchy<SceneDomain>.GetChildren(world, parent).Count);
+        Hierarchy<SceneDomain>.SetOrdered(world, parent, false);
+        Assert.False(Hierarchy<SceneDomain>.IsOrdered(world, parent));
+        Assert.Equal(3, ReadChildren<SceneDomain>(world, parent).Length);
     }
 
     [Fact]
     public void OrdinaryDestroyHook_OrphansDirectChildrenAndPreservesGrandchildren()
     {
         var world = new World();
-        Entity parent = world.CreateEntity();
-        Entity child = world.CreateEntity();
-        Entity grandchild = world.CreateEntity();
+        Entity parent = world.Create();
+        Entity child = world.Create();
+        Entity grandchild = world.Create();
         Hierarchy<SceneDomain>.SetParent(world, child, parent);
         Hierarchy<SceneDomain>.SetParent(world, grandchild, child);
 
-        world.DestroyEntity(parent);
+        world.Destroy(parent);
+        world.ClearRemoved<Parent<SceneDomain>>(world.Version);
+        world.ClearRemoved<Children<SceneDomain>>(world.Version);
 
         Assert.False(world.IsAlive(parent));
         Assert.True(world.IsAlive(child));
         Assert.True(world.IsAlive(grandchild));
         Assert.Equal(Entity.Null, Hierarchy<SceneDomain>.GetParent(world, child));
         Assert.Equal(child, Hierarchy<SceneDomain>.GetParent(world, grandchild));
-        Assert.Equal(new[] { grandchild }, Hierarchy<SceneDomain>.GetChildren(world, child).ToArray());
+        Assert.Equal(new[] { grandchild }, ReadChildren<SceneDomain>(world, child).ToArray());
     }
 
     [Fact]
     public void DestroySubtree_IsTheExplicitCascadeOperation()
     {
         var world = new World();
-        Entity root = world.CreateEntity();
-        Entity child = world.CreateEntity();
-        Entity grandchild = world.CreateEntity();
+        Entity root = world.Create();
+        Entity child = world.Create();
+        Entity grandchild = world.Create();
         Hierarchy<SceneDomain>.SetParent(world, child, root);
         Hierarchy<SceneDomain>.SetParent(world, grandchild, child);
 
         Hierarchy<SceneDomain>.DestroySubtree(world, root);
+        world.ClearRemoved<Parent<SceneDomain>>(world.Version);
+        world.ClearRemoved<Children<SceneDomain>>(world.Version);
 
         Assert.False(world.IsAlive(root));
         Assert.False(world.IsAlive(child));
@@ -576,29 +536,29 @@ public class HierarchyModelTests
     public void ChildrenView_IsReadOnlyAndOwnsItsCapturedGeneration()
     {
         var world = new World();
-        Entity parent = world.CreateEntity();
-        Entity first = world.CreateEntity();
-        Entity second = world.CreateEntity();
-        Hierarchy<SceneDomain>.SetChildOrderPolicy(world, parent, ChildOrderPolicy.Ordered);
+        Entity parent = world.Create();
+        Entity first = world.Create();
+        Entity second = world.Create();
+        Hierarchy<SceneDomain>.SetOrdered(world, parent, true);
         Hierarchy<SceneDomain>.SetParent(world, first, parent);
-        var captured = Hierarchy<SceneDomain>.GetChildren(world, parent);
+        var captured = ReadChildren<SceneDomain>(world, parent);
 
         Hierarchy<SceneDomain>.SetParent(world, second, parent);
 
         Assert.Equal(new[] { first }, captured.ToArray());
-        Assert.Equal(new[] { first, second }, Hierarchy<SceneDomain>.GetChildren(world, parent).ToArray());
+        Assert.Equal(new[] { first, second }, ReadChildren<SceneDomain>(world, parent).ToArray());
     }
 
     [Fact]
     public void RepeatedChildrenReadsPreserveContents()
     {
         var world = new World();
-        Entity parent = world.CreateEntity();
-        Entity child = world.CreateEntity();
+        Entity parent = world.Create();
+        Entity child = world.Create();
         Hierarchy<SceneDomain>.SetParent(world, child, parent);
 
         // Warm generic statics, the domain dictionary lookup, and the test loop before measuring.
-        Assert.Equal(1, Hierarchy<SceneDomain>.GetChildren(world, parent).Span.Length);
+        Assert.Single(ReadChildren<SceneDomain>(world, parent));
         int observed = ReadRepeatedly();
         Assert.Equal(64, observed);
 
@@ -610,114 +570,47 @@ public class HierarchyModelTests
         {
             int count = 0;
             for (int i = 0; i < 64; i++)
-                count += Hierarchy<SceneDomain>.GetChildren(world, parent).Span.Length;
+                count += ReadChildren<SceneDomain>(world, parent).Length;
             return count;
         }
     }
 
     [Fact]
-    public async Task RelaxedChildrenPublication_IsCoherentDuringImmediateAndDeferredWriters()
+    public async Task ChildrenReadScopePrecedesConcurrentChildEdit()
     {
-        var world = new World();
-        Entity parent = world.CreateEntity();
-        Entity otherParent = world.CreateEntity();
-        Entity first = world.CreateEntity();
-        Entity second = world.CreateEntity();
-
-        Hierarchy<SceneDomain>.SetChildOrderPolicy(world, parent, ChildOrderPolicy.Ordered);
-        Hierarchy<SceneDomain>.SetParent(world, first, parent, insertIndex: 0);
-        Hierarchy<SceneDomain>.SetParent(world, second, parent, insertIndex: 1);
-
-        var expected = new ConcurrentDictionary<ulong, Entity[]>();
-        var observed = new ConcurrentQueue<(ulong Generation, Entity[] Children)>();
-        RecordExpected();
-
-        using var start = new ManualResetEventSlim();
-        int writerComplete = 0;
-        Task reader = Task.Run(() =>
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 1 });
+        using var world = new World(execution: new WorldJobs(scheduler));
+        Entity parent = world.Create();
+        Entity first = world.Create();
+        Entity second = world.Create();
+        Hierarchy<SceneDomain>.SetParent(world, first, parent);
+        using var started = new ManualResetEventSlim();
+        var events = new ConcurrentQueue<string>();
+        Task writer;
+        using (ChildrenRead children = Hierarchy<SceneDomain>.GetChildren(world, parent))
         {
-            start.Wait();
-            int captures = 0;
-            while (Volatile.Read(ref writerComplete) == 0)
+            writer = Task.Run(() =>
             {
-                if (captures++ < 100_000)
-                {
-                    HierarchyChildrenSnapshot<SceneDomain> view =
-                        Hierarchy<SceneDomain>.GetChildren(world, parent);
-                    observed.Enqueue((view.Generation, view.ToArray()));
-                }
-                else
-                {
-                    Thread.Yield();
-                }
-            }
-
-            HierarchyChildrenSnapshot<SceneDomain> final =
-                Hierarchy<SceneDomain>.GetChildren(world, parent);
-            observed.Enqueue((final.Generation, final.ToArray()));
-        });
-
-        Task writer = Task.Run(() =>
-        {
-            start.Wait();
-            try
-            {
-                for (int iteration = 0; iteration < 256; iteration++)
-                {
-                    Hierarchy<SceneDomain>.Reorder(world, first, iteration & 1);
-                    RecordExpected();
-
-                    Hierarchy<SceneDomain>.SetParent(world, second, otherParent);
-                    RecordExpected();
-                    Hierarchy<SceneDomain>.SetParent(world, second, parent, insertIndex: 1);
-                    RecordExpected();
-
-                    Hierarchy<SceneDomain>.SetParentDeferred(world, second, otherParent);
-                    Hierarchy<SceneDomain>.Maintain(world);
-                    RecordExpected();
-                    Hierarchy<SceneDomain>.SetParentDeferred(world, second, parent, insertIndex: 1);
-                    Hierarchy<SceneDomain>.Maintain(world);
-                    RecordExpected();
-
-                    Entity transient = world.CreateEntity();
-                    Hierarchy<SceneDomain>.SetParent(world, transient, parent, insertIndex: 0);
-                    RecordExpected();
-                    world.DestroyEntity(transient);
-                    RecordExpected();
-                }
-            }
-            finally
-            {
-                Volatile.Write(ref writerComplete, 1);
-            }
-        });
-
-        start.Set();
-        await Task.WhenAll(reader, writer);
-
-        Assert.NotEmpty(observed);
-        foreach (var observation in observed)
-        {
-            Assert.True(
-                expected.TryGetValue(observation.Generation, out Entity[]? children),
-                $"Reader observed unpublished hierarchy generation {observation.Generation}.");
-            Assert.Equal(children, observation.Children);
+                started.Set();
+                Hierarchy<SceneDomain>.SetParent(world, second, parent);
+                events.Enqueue("write");
+            });
+            started.Wait();
+            Assert.Equal(new[] { first }, children.Entities.ToArray());
+            events.Enqueue("read");
         }
-
-        void RecordExpected()
-        {
-            HierarchyChildrenSnapshot<SceneDomain> view =
-                Hierarchy<SceneDomain>.GetChildren(world, parent);
-            Assert.True(expected.TryAdd(view.Generation, view.ToArray()));
-        }
+        await writer;
+        Assert.Equal(new[] { "read", "write" }, events.ToArray());
+        Assert.Equal(new[] { first, second }, ReadChildren<SceneDomain>(world, parent));
     }
 
     [Fact]
     public async Task ConcurrentUnknownDomainReads_DoNotRegisterOrRaceWithKnownDomainRegistration()
     {
-        var world = new World();
-        Entity parent = world.CreateEntity();
-        Entity child = world.CreateEntity();
+        using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 1 });
+        using var world = new World(execution: new WorldJobs(scheduler));
+        Entity parent = world.Create();
+        Entity child = world.Create();
         using var start = new ManualResetEventSlim();
 
         Task writer = Task.Run(() =>
@@ -736,9 +629,8 @@ public class HierarchyModelTests
                 start.Wait();
                 for (int iteration = 0; iteration < 4_096; iteration++)
                 {
-                    HierarchyChildrenSnapshot<NeverRegisteredDomain> view =
-                        Hierarchy<NeverRegisteredDomain>.GetChildren(world, parent);
-                    Assert.Equal(0UL, view.Generation);
+                    Entity[] view =
+                        ReadChildren<NeverRegisteredDomain>(world, parent);
                     Assert.Empty(view);
                 }
             }))
@@ -753,26 +645,24 @@ public class HierarchyModelTests
     public void UnknownDomainScalarReadsReturnEmptyParentAndDefaultOrder()
     {
         var world = new World();
-        Entity entity = world.CreateEntity();
+        Entity entity = world.Create();
 
         Assert.Equal(Entity.Null, Hierarchy<NeverRegisteredDomain>.GetParent(world, entity));
-        Assert.Equal(
-            ChildOrderPolicy.Unordered,
-            Hierarchy<NeverRegisteredDomain>.GetChildOrderPolicy(world, entity));
+        Assert.False(Hierarchy<NeverRegisteredDomain>.IsOrdered(world, entity));
     }
 
     [Fact]
     public void RelationshipComponents_BlockPublicMutationSurfaces()
     {
         var world = new World();
-        Entity parent = world.CreateEntity();
-        Entity child = world.CreateEntity();
+        Entity parent = world.Create();
+        Entity child = world.Create();
         Hierarchy<SceneDomain>.SetParent(world, child, parent);
 
         Assert.Throws<InvalidOperationException>(
-            () => world.Replace(child, new Parent<SceneDomain>(parent)));
+            () => world.Set(child, new Parent<SceneDomain>(parent)));
         Assert.Throws<InvalidOperationException>(
-            () => world.Replace(parent, default(Children<SceneDomain>)));
+            () => world.Set(parent, default(Children<SceneDomain>)));
         Assert.Throws<InvalidOperationException>(() => world.Remove<Children<SceneDomain>>(parent));
     }
 
@@ -780,29 +670,18 @@ public class HierarchyModelTests
     public void DefaultFacade_RoutesToGenericDefaultDomain()
     {
         var world = new World();
-        Entity parent = world.CreateEntity();
-        Entity child = world.CreateEntity();
+        Entity parent = world.Create();
+        Entity child = world.Create();
 
         DefaultHierarchy.SetParent(world, child, parent);
 
         Assert.True(world.Has<Parent<DefaultHierarchyDomain>>(child));
         Assert.True(world.Has<Children<DefaultHierarchyDomain>>(parent));
         Assert.Equal(
-            Hierarchy<DefaultHierarchyDomain>.GetChildren(world, parent).ToArray(),
-            DefaultHierarchy.GetChildren(world, parent).ToArray());
+            ReadChildren<DefaultHierarchyDomain>(world, parent).ToArray(),
+            ReadChildren<DefaultHierarchyDomain>(world, parent).ToArray());
     }
 
     private static void WriteInvalidSelfParent(World world, Entity child)
-    {
-        var query = world.Query(
-            world.QueryDefinition().ReadWrite<Parent<SceneDomain>>());
-        world.ExecuteQuery(query, cursor =>
-        {
-            foreach (var row in cursor.Rows)
-            {
-                if (row.Entity == child)
-                    row.ReadWrite<Parent<SceneDomain>>().Value = child;
-            }
-        });
-    }
+        => Hierarchy<SceneDomain>.SetParentDeferred(world, child, child);
 }

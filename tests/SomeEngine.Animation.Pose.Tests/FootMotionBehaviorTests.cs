@@ -167,8 +167,10 @@ public sealed class FootMotionBehaviorTests
                 }
                 var accessor = new JsonObject
                 {
-                    ["bufferView"] = views.Count, ["componentType"] = 5126,
-                    ["count"] = values.Length / components, ["type"] = type,
+                    ["bufferView"] = views.Count,
+                    ["componentType"] = 5126,
+                    ["count"] = values.Length / components,
+                    ["type"] = type,
                 };
                 if (type == "SCALAR")
                 {
@@ -213,9 +215,9 @@ public sealed class FootMotionBehaviorTests
                     new JsonObject { ["foot"] = 0, ["start"] = 0.25f, ["end"] = 0.75f, ["kind"] = "ToePivot" }));
             int rotation = Accessor([0, 0, 0, 1, 0, 0.70710677f, 0, 0.70710677f], "VEC4", 4);
             turn["samplers"]!.AsArray().Add(new JsonObject
-                { ["input"] = rootTimes, ["output"] = rotation, ["interpolation"] = "LINEAR" });
+            { ["input"] = rootTimes, ["output"] = rotation, ["interpolation"] = "LINEAR" });
             turn["channels"]!.AsArray().Add(new JsonObject
-                { ["sampler"] = 3, ["target"] = new JsonObject { ["node"] = 0, ["path"] = "rotation" } });
+            { ["sampler"] = 3, ["target"] = new JsonObject { ["node"] = 0, ["path"] = "rotation" } });
             animations.Add(turn);
             animations.Add(Action("Landing",
                 [0.8f, 0, 0, 0.55f, -0.5f, 0, 0.3f, -1, 0, 0.05f, -1, 0, -0.2f, -1, 0],

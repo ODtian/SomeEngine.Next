@@ -41,8 +41,8 @@ public sealed class PhysicsPoseBehaviorTests
             builder.Leaf<ClipParameters, ClipLeaf>(target, new(clip, new(0), Loop: true));
         }
         Entity animation = builder.Play();
-        world.ExecuteBufferWrite<PhysicsPoseInstance>(animation, static instances =>
         {
+            using var instances = world.GetBuffer<PhysicsPoseInstance>(animation);
             ref PhysicsPoseInstance input = ref instances[0];
             input.ActorTransform = Matrix4x4.CreateRotationZ(MathF.PI / 2) * Matrix4x4.CreateTranslation(10, 20, 0);
             input.BodyTransforms[0] = Matrix4x4.CreateRotationX(MathF.PI / 2) *
@@ -50,7 +50,8 @@ public sealed class PhysicsPoseBehaviorTests
             input.BodyTransforms[1] = Matrix4x4.CreateRotationY(MathF.PI / 2) *
                 Matrix4x4.CreateRotationZ(MathF.PI) * Matrix4x4.CreateTranslation(9, 26, 0);
             input.BodyTransforms[2] = Matrix4x4.CreateRotationZ(-MathF.PI / 2) * Matrix4x4.CreateTranslation(9, 22, 0);
-        });
+
+        }
         var recovery = Spec.Tween<float, FloatOps, Linear>(1);
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
         AnimationSystems.Add(systems, recovery);
@@ -96,7 +97,9 @@ public sealed class PhysicsPoseBehaviorTests
 
     private static BoneTransform Transform(Vector3 translation, float radians) => new()
     {
-        Translation = translation, Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, radians), Scale = Vector3.One,
+        Translation = translation,
+        Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, radians),
+        Scale = Vector3.One,
     };
 
     private static void Tick(SystemGroup<ImmediateSystemContext> systems, World world, double seconds)

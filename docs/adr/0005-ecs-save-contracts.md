@@ -2,76 +2,34 @@
 status: accepted
 ---
 
-# Separate exact-build checkpoints from durable saves
+# 按用途区分同构建检查点与长期存档
 
-## Context
+World 容器采用版本 5，按用途保存同构建检查点或当前 schema 的长期存档。类型登记、字段 codec 与原生列存储共同决定编码；登记的类型构成保存投影，所有实体身份随 World 保存。该结构沿 ECS 重构规范的列式格式和 2026-11-08 已确认决策实施。
 
-An ECS snapshot has two distinct jobs. A crash/restart checkpoint for the same executable should use
-the cheapest exact-build representation available. A player save may cross runtime and platform ABI
-boundaries, but this runtime accepts it only when every stable type and 64-bit schema fingerprint is
-the current registered schema. Treating native struct bytes as durable data makes a fast checkpoint
-look portable even though padding, layout, endianness, runtime identity, or a changed component
-definition can silently reinterpret it.
+## 保存用途
 
-## Decision
+`RawCheckpoint` 绑定 Core 构建标识，以及值类型、codec、框架、架构、指针宽度和字节序的当前表示。原生值列使用连续复制，raw 类型键同时包含实际类型与布局的 schema 标识。
 
-Serialization format version 4 carries one explicit contract:
+`DurableSave` 使用显式类型标识、名称、64 位 schema 与字段 codec。生成的 codec 使用固定的小端字段编码；显式自定义 codec 承担自身的字节语义。隐式 raw 编码和自动推导的构建 schema 沿检查点用途使用，长期存档在写入头部前核对所有实际保存类型的用途。
 
-- `RawCheckpoint` is an exact-build artifact. Its header binds the payload to the current ECS and
-  serialization assembly module identities, runtime/OS architecture, pointer size, and endianness.
-  Every implicit raw component key is additionally bound to the actual CLR type/module/token,
-  layout, size, storage kind, and reference shape. A mismatch is rejected before applying data.
-- `DurableSave` accepts only an explicit stable 64-bit schema fingerprint and a canonical or custom
-  codec. Implicit native-layout codecs and build-derived schema identities are rejected. Generated
-  codecs encode fixed-width fields in canonical little-endian form and include field identity,
-  enum shape, nested schema, schema version, and codec version in the fingerprint.
+单声明、顺序 `Pack=1` 的固定宽度基本类型可以使用生成的连续复制路径。登记阶段将字段类型、连续位置、总宽度和布局证明与当前类型核对，通过后该路径产生与字段 codec 相同的字节；其他情况沿字段 codec 编码。
 
-The generated packed-primitive memcpy optimization is only an implementation of the same canonical
-wire image. Eligibility is proven and rechecked once during registration: the type must be a
-single-declaration sequential `Pack=1` value with a continuous, supported fixed-width field layout,
-and the generated layout fingerprint must match the runtime offsets. A caller-supplied byte size is
-not a proof. Failure to prove the layout falls back to the generated canonical codec; it never
-downgrades a durable save to native ABI bytes.
+## 版本 5 的组织
 
-Readers use strict UTF-8 plus shared count, string, payload, topology, and estimated-allocation
-budgets. Every type key contains exactly one non-zero 64-bit schema fingerprint. Unknown stable IDs,
-zero or mismatched fingerprints, pre-v4 envelopes, length-prefix frames, and unversioned delta
-sections fail closed. There is no 32-bit fallback, old primitive Guid/string decoder, unknown-type
-skip, or runtime schema-conversion registry.
+类型清单与表列按格式 GUID 递增描述实际保存类型，检查点登记身份也按该顺序计算。读进程以格式身份绑定 codec，组件编号用于恢复本地类型组合；两个进程可以按不同顺序登记同一组类型。读取按文件格式顺序核对类型清单和表列的唯一性及次序。World 随后写入实体世代与空闲复用顺序、Shared 主值、表与连续列、Sparse、资源、层级与关系主值、销毁事实与命名读取进度、拓扑进度，以及参与保存的系统版本。每列描述一次；raw 列由行数和宽度确定字节数，字段 codec 列以实际编码长度 footer 定界。层级和关系的主值由其段写入，邻接与索引按自己的主数据重建。
 
-Every component, buffer value, and topology section is encoded at most once. Writers stream bytes to
-the final destination through an online counter and append the measured length as a footer. Seekable
-and non-seekable destinations use the same wire; no measurement encode, encoded-frame backing,
-topology DTO, or mmap copy exists. `WriteWorld` and `WorldCheckpointCodec.Write` use a short
-topology-exclusive admission to validate one source root, retain it for the synchronous encoder, and
-publish a semantically identical copy-on-write successor. Caller-controlled output then reads the
-retained root while ordinary mutations target the successor and detach only touched backing.
-`World.Dispose` still waits for the explicit serialization lifetime. Same-thread World re-entry from
-a codec or destination fails immediately, and every exception path releases the read root, admission,
-and lifetime without advancing the topology revision or structural epoch.
+实体身份完整保存，值数据按登记类型投影。关系顺序和维护差额由 `CheckpointProgress` 明确选择：`Rebuild` 完成维护后保存主值，恢复时重建派生状态；`Preserve` 同时保存 Applied 差额、局部顺序、事件读取进度与系统观察进度，供继续执行。
 
-Canonical `BinaryPrimitiveEncoding`, `BinaryTypeId` / `BinaryFieldKey`, inline `Digest256`, bounded
-counting streams, and online hashing streams belong to `SomeEngine.Serialization` and are shared
-with the asset document system. Asset `BinaryReadLimits` and ECS `SerializationReadLimits` remain
-domain-specific because they meter different objects; ECS has no `BinaryLimits` projection. ECS
-keeps only its World/Entity/Relation contracts, registry identity, root admission, journal
-acknowledgement, and durable-slot policy. Sharing the mechanism does not make an asset document an
-ECS save and does not create a second runtime object model.
+读取使用严格 UTF-8 与统一的计数、字符串、载荷、拓扑和分配预算。类型、schema、列类别、长度和实体引用在输入边界核对。流读取保留实际消费边界，支持同一流中先读组件、再读 World；完整文件入口通过 `RequireEndOfInput` 核对尾部。
 
-World reads allocate one new World and fill its final slot, component, buffer, hierarchy, and
-relation structures directly. The caller replaces its World reference only after success. On any
-header, schema, codec, footer, remap, topology, cancellation, or stream failure the new World is
-disposed. APIs that require an old World and a complete candidate World to coexist—`LoadInto`,
-capture DTOs, checkpoint capture, and apply modes—are not part of the contract.
+## 范围、复制与交接
 
-## Consequences
+同步 `Save` 在显式结构读取和值读取范围内直接编码。源 World 继续变化的场景使用 `WorldCheckpoint.Capture` 后编码：buffer 的元素数组复制，普通 managed 引用及元素中的普通 managed 引用按引用浅复制；类型自己的值操作提供相应复制与释放。
 
-There is no serialization work with literally zero cost: bytes still have to be read and written.
-Registration and layout proof happen once, raw checkpoints retain the exact-build memcpy path, and
-proven packed canonical values retain the same memcpy inner loop for durable saves. Long-lived saves
-pay only for the one canonical encode and the I/O they actually perform.
+`ReadWorld` 建立新 World 并直接填入最终实体、列、buffer 与拓扑存储，完成读取后交给调用方。读取失败沿临时 World 的释放路径结束。整批原子应用采用候选 World，成功后显式交接；对原 World 使用恢复入口时，既有查询和读取者继续对应原对象。
 
-Version 4 is current-schema-only. A schema or wire change is a deliberate breaking data change;
-conversion of already released files, if a product chooses to provide it, belongs in an explicit
-offline tool outside this runtime. Shipping projects must keep golden fixtures for the one schema
-they currently claim to accept and must never infer that an older file is compatible.
+通用字段编码、严格文本、摘要和计数流由 `SomeEngine.Serialization` 提供。ECS 持有 World、实体、拓扑、登记表、重映射和自身读取预算。`WorldCheckpointCodec` 以 `SEWCP003` 包装当前 World 字节并校验登记身份与完整性；`DurableSaveStore` 的文件代数与原子提交包装继续使用版本 4。
+
+## 影响
+
+容器版本变更与当前 schema 一起验收。需要版本转换时，由独立离线工具明确接收旧格式并输出当前格式；内容构建按本次版本 5 与资产修改合成一次。

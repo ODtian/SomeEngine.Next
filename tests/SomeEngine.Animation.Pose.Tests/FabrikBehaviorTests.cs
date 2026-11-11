@@ -12,7 +12,7 @@ public sealed class FabrikBehaviorTests
     public void SharedFabrikGraphReachesEachTargetWhileKeepingBoneLengthsAndTheSelectedJointLimit()
     {
         using var scheduler = new Scheduler(new() { WorkerCount = 2 });
-        using var world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using var world = new World(execution: new WorldJobs(scheduler));
         var skeleton = new Skeleton([-1, 0, 1, 2, 3, 0],
         [
             new() { Translation = new(3, 4, 0), Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, MathF.PI / 2), Scale = Vector3.One },
@@ -44,8 +44,16 @@ public sealed class FabrikBehaviorTests
         Entity[] animations = [graph.Play(world, targets[0]), graph.Play(world, targets[1])];
         Vector3[] goals = [new(1, 5, 0), new(5, 5, 0)];
         for (int index = 0; index < animations.Length; index++)
-            world.ExecuteBufferWrite<FabrikInstance, Vector3>(animations[index], ref goals[index],
-                static (instances, ref goal) => instances[0].Target = goal);
+        {
+            using var fabrikInstances = world.GetBuffer<FabrikInstance>(animations[index]);
+            Visit(fabrikInstances, ref goals[index]);
+
+            static void Visit(DynamicBuffer<FabrikInstance> instances, ref Vector3 goal)
+            {
+                instances[0].Target = goal;
+
+            }
+        }
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
         PoseAnimation.AddSystems(systems, nodes: static nodes => nodes.Add(new FabrikSystem()));
         var context = new ImmediateSystemContext(world, 0, 0, .25);
@@ -70,8 +78,16 @@ public sealed class FabrikBehaviorTests
         }
 
         goals[0] = new(1.5f, 5.25f, 0);
-        world.ExecuteBufferWrite<FabrikInstance, Vector3>(animations[0], ref goals[0],
-            static (instances, ref goal) => instances[0].Target = goal);
+        {
+            using var fabrikInstances = world.GetBuffer<FabrikInstance>(animations[0]);
+            Visit(fabrikInstances, ref goals[0]);
+
+            static void Visit(DynamicBuffer<FabrikInstance> instances, ref Vector3 goal)
+            {
+                instances[0].Target = goal;
+
+            }
+        }
         systems.Update(ref context);
         Near(goals[0], first.ModelPose.GetBone(4).Transform.Translation, chain.Tolerance + .00001f);
         Near(goals[1], second.ModelPose.GetBone(4).Transform.Translation, chain.Tolerance + .00001f);

@@ -1,13 +1,12 @@
 using SomeEngine.ECS.Relations;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
 
 namespace SomeEngine.ECS.Benchmarks.Relations.Bitmap;
 
 public static class BitmapCollisionExample
 {
     public static RelationQuery<FixedCandidatePairs, (Entity, Entity)> Candidates(
-        World world, QueryHandle members, (Entity, Entity)[] pairs) => new(new FixedCandidatePairs(world, members, pairs));
+        World world, Query members, (Entity, Entity)[] pairs) => new(new FixedCandidatePairs(world, members, pairs));
 }
 
 // Business components and rules for the finite-category collision example and paired measurements.

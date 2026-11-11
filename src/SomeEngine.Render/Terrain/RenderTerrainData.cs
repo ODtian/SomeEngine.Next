@@ -1,6 +1,6 @@
+using SomeEngine.ECS;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Graphics;
 using SomeEngine.Job;
@@ -27,7 +27,7 @@ public sealed partial class RenderTerrainData : ISystem<RenderPrepareSystemConte
     private readonly Dictionary<TerrainGpuRequest, ReadbackData> _readbacks = [];
     private readonly HashSet<DevicePage> _framePages = [];
     private readonly List<Task> _completions = [];
-    private QueryHandle _query;
+    private Query _query;
 
     public RenderTerrainData(IGraphicsBackend backend, Device device, global::SomeEngine.RenderGraph.RenderGraph graph)
     {
@@ -39,18 +39,16 @@ public sealed partial class RenderTerrainData : ISystem<RenderPrepareSystemConte
     }
 
     public void OnCreate(ref RenderPrepareSystemContext context) =>
-        _query = context.World.Query(new QueryDefinitionBuilder().Read<RenderTerrainRequests>());
+        _query = context.World.World.Query(new QueryDescription().With<RenderTerrainRequests>());
 
     public void OnUpdate(ref RenderPrepareSystemContext context)
     {
         _requests.Clear();
-        context.World.ExecuteQuery(_query, query =>
-        {
-            foreach (QueryChunkView chunk in query.Chunks)
-            foreach (RenderTerrainRequests data in chunk.Read<RenderTerrainRequests>())
-            foreach (TerrainDataRequest request in data.Requests)
-                if (request is TerrainGpuRequest gpu && !gpu.IsSubmitted) _requests.Add(gpu);
-        });
+        using (QueryScope query = _query.OpenRead())
+            foreach (QueryChunk chunk in query)
+                foreach (RenderTerrainRequests data in chunk.Read<RenderTerrainRequests>())
+                    foreach (TerrainDataRequest request in data.Requests)
+                        if (request is TerrainGpuRequest gpu && !gpu.IsSubmitted) _requests.Add(gpu);
         _completions.RemoveAll(static task => task.IsCompletedSuccessfully);
     }
 
@@ -60,7 +58,7 @@ public sealed partial class RenderTerrainData : ISystem<RenderPrepareSystemConte
         finally
         {
             try { foreach (TerrainGpuRequest request in _requests) request.Cancel(); }
-            finally { context.World.ReleaseQuery(_query); }
+            finally { _query = default; }
         }
     }
 

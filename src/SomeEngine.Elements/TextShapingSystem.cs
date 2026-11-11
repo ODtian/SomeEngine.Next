@@ -27,18 +27,18 @@ public sealed class TextShapingSystem : ISystem<ImmediateSystemContext>, ILayout
                 _removed.Add(node);
                 continue;
             }
-            TextStyle style = context.World.Read<TextAppearance>(node).Style;
+            TextStyle style = context.World.ReadComponentData<TextAppearance>(node).Style;
             TextInputs inputs = ReadInputs(context.World, node);
             if (measurement.HasResult && measurement.ResultInputs == inputs &&
                 measurement.Style != style)
             {
                 measurement.Style = style;
-                context.World.Replace(node, new ShapedText(measurement, in style, measurement.Version));
+                context.World.Set(node, new ShapedText(measurement, in style, measurement.Version));
             }
             foreach (TextShapeBuffer shape in measurement.Buffers)
             {
                 if (shape.Used && shape.HasShape && shape.Inputs != inputs)
-                    _shapes.Add(new(shape, context.World.Read<TextContent>(node).Value, style, inputs));
+                    _shapes.Add(new(shape, context.World.ReadComponentData<TextContent>(node).Value, style, inputs));
                 shape.Used = false;
             }
         }
@@ -64,8 +64,8 @@ public sealed class TextShapingSystem : ISystem<ImmediateSystemContext>, ILayout
 
     private static TextInputs ReadInputs(World world, Entity node)
     {
-        TextStyle style = world.Read<TextAppearance>(node).Style;
-        return new(world.WriteVersion<TextContent>(node), style.Font, style.Size, style.LineHeight);
+        TextStyle style = world.ReadComponentData<TextAppearance>(node).Style;
+        return new(world.ComponentDataWriteVersion<TextContent>(node), style.Font, style.Size, style.LineHeight);
     }
 
     void ILayoutDataUpdate.Update(World world, Entity node, in Constraints constraints)
@@ -84,9 +84,9 @@ public sealed class TextShapingSystem : ISystem<ImmediateSystemContext>, ILayout
             measurement = new TextMeasurement();
             _measurements.Add(node, measurement);
         }
-        TextStyle style = world.Read<TextAppearance>(node).Style;
+        TextStyle style = world.ReadComponentData<TextAppearance>(node).Style;
         measurement.Inputs = ReadInputs(world, node);
-        measurement.Text = world.Read<TextContent>(node).Value;
+        measurement.Text = world.ReadComponentData<TextContent>(node).Value;
         measurement.Style = style;
         if (!world.Has<ShapedText>(node))
             world.Add(node, new ShapedText(measurement, in style, measurement.Version));
@@ -106,7 +106,7 @@ public sealed class TextShapingSystem : ISystem<ImmediateSystemContext>, ILayout
             measurement.ResultInputs = shape.Inputs;
             measurement.HasResult = true;
             measurement.Version++;
-            world.Replace(node, new ShapedText(measurement, in measurement.Style, measurement.Version));
+            world.Set(node, new ShapedText(measurement, in measurement.Style, measurement.Version));
         }
     }
 
@@ -184,11 +184,11 @@ public sealed class TextShapingSystem : ISystem<ImmediateSystemContext>, ILayout
         internal bool Used;
     }
 
-    internal readonly record struct TextInputs(uint Content, Font? Font, float Size, float LineHeight);
+    internal readonly record struct TextInputs(ulong Content, Font? Font, float Size, float LineHeight);
 
     private readonly record struct ShapeWork(TextShapeBuffer Shape, string Text, TextStyle Style, TextInputs Inputs);
 
-    private readonly struct ShapeJob(List<ShapeWork> shapes) : IJobChunk
+    private readonly struct ShapeJob(List<ShapeWork> shapes) : SomeEngine.Job.IJobChunk
     {
         public void Execute(JobChunk chunk)
         {

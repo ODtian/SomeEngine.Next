@@ -1,15 +1,11 @@
-# 同步 Execute  [[architecture/ECS-Architecture|ECS Architecture]]
+# 同步范围执行
 
-公共同步范围批次与便利入口见 [Job 状态与完成语义：同步范围执行](Job-Completion.md#同步范围执行)。
+公共同步执行使用 `Scheduler.ExecuteRanges<TWork,TItem>` 与具体 `IRangeWork<TItem>`。`ExecuteParallel` 负责确定资源访问与批大小，再进入同一范围执行内核。
 
-`Execute` 不是“先 Complete conflicts，再裸调用 body”。它自己是 owner：
+调用方先声明真实资源区间和显式完成依赖。Scheduler 等待语义前驱、取得资源、执行具体范围并释放工作访问，随后完成范围内提交的后代。等待使用协同执行，零 worker 配置沿相同路径前进。
 
-```text
-pin -> semantic wait -> atomic admission -> hazard wait
-    -> caller-thread body -> WorkReleased -> descendants join
-```
+每个工作项绑定自己的范围。单工作项沿当前访问权限执行；多个范围执行时增加并行深度，随机写能力沿既有声明限制。嵌套范围保留外层并行权限，返回时恢复原执行状态。
 
-admission 是线性化点：先存在的冲突 owner 是 predecessors，后提交的冲突 owner 会看到 Execute owner 并成为 successors，因此 wait 返回和 body 开始之间不存在 schedule-after-wait race。
+ECS 通过 `WorldJobs` 连接访问声明与范围：查询描述 → 组件/结构资源区间 → Job 依赖与资源准许 → 原生 `QueryChunk` 或具体列动作 → 完成。同步查询可使用 `Query.ForEach<...,TAction>`，手动读取使用 `Query.OpenRead()`，手动写入使用 `Query.Open()`。
 
-等待使用 cooperative pumping；zero-worker runtime 也能前进。小 workload 使用相同 Execute 语义。managed/thread-affine workload 还必须声明目标 executor 和真实 alias resource；“当前 caller”本身不构成线程或对象安全证明。
-
+源码：[范围内核](../../../src/SomeEngine.Job/Scheduler.Ranges.cs)、[执行连接](../../../src/SomeEngine.ECS.Systems/WorldJobs.cs)、[原生查询](../../../src/SomeEngine.ECS/Queries/Query.cs)。

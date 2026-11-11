@@ -31,7 +31,7 @@ public abstract class JobTest : IDisposable
 
     protected World CreateJobWorld(int initialEntityCapacity = 256, Scheduler? scheduler = null)
     {
-        var world = WorldJobs.CreateWorld(initialEntityCapacity, scheduler ?? Jobs);
+        var world = new World(initialEntityCapacity, execution: new WorldJobs(scheduler ?? Jobs));
         _worlds.Add(world);
         return world;
     }

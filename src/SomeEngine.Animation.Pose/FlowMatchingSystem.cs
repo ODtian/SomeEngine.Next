@@ -1,6 +1,5 @@
-using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
+using SomeEngine.ECS;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Job;
 
@@ -9,16 +8,16 @@ namespace SomeEngine.Animation.Pose;
 /// <summary>Completes concrete per-model flow batches before dependent pose nodes consume their results.</summary>
 public struct FlowMatchingSystem : ISystem<ImmediateSystemContext>, ISystem<PoseNodeContext>
 {
-    private QueryHandle _flows;
+    private Query _flows;
     private List<JobHandle> _jobs;
 
     public void OnCreate(ref ImmediateSystemContext context)
     {
         _jobs = [];
-        _flows = context.World.Query(AnimationGraph.WithTimeAccess(context.World.QueryDefinition()
-            .ReadWrite<Timeline>().Enabled<Timeline>().WriteBuffer<FlowMatchingInstance>().Read<GraphParameters>()
-            .Optional<AnimationLayers>(QueryAccess.Read)
-            .OptionalBuffer<LocalPose>(QueryAccess.ReadWrite).OptionalBuffer<PoseResult>(QueryAccess.ReadWrite)));
+        _flows = context.World.Query(AnimationGraph.WithTimeAccess(new QueryDescription()
+            .WithStored<Timeline>().With<Timeline>().WithStored<Buffer<FlowMatchingInstance>>().WithStored<GraphParameters>()
+            .Optional<AnimationLayers>()
+            .Optional<Buffer<LocalPose>>().Optional<Buffer<PoseResult>>()));
     }
 
     public void OnUpdate(ref ImmediateSystemContext context)
@@ -50,54 +49,88 @@ public struct FlowMatchingSystem : ISystem<ImmediateSystemContext>, ISystem<Pose
         foreach (FlowMatchingBatch batch in groups.Batches)
             foreach (FlowMatchingState state in batch.States) state.Active = false;
         frame.NextLevel = int.MaxValue;
-        frame.World.ExecuteQuery(_flows, ref frame, static (scoped QueryCursor rows, ref FlowFrame frame) =>
         {
-            foreach (QueryRow row in rows.Rows)
-                foreach (ref FlowMatchingInstance instance in row.Buffer<FlowMatchingInstance>().AsSpan())
+            using QueryScope read = _flows.Open();
+            Visit(in read, ref frame);
+
+            static void Visit(scoped in QueryScope rows, ref FlowFrame frame)
+            {
+                foreach (QueryChunk chunk in rows)
                 {
-                    if (instance.Node.Level > frame.Level) frame.NextLevel = Math.Min(frame.NextLevel, instance.Node.Level);
-                    if (instance.Node.Level == frame.Level) Gather(frame.World, row.Entity, ref instance);
+                    var buffers0 = chunk.Has<Buffer<FlowMatchingInstance>>() ? chunk.GetBuffers<FlowMatchingInstance>() : default;
+                    for (int rowIndex = 0; rowIndex < chunk.Count; rowIndex++)
+                    {
+                        foreach (ref FlowMatchingInstance instance in buffers0[rowIndex].AsSpan())
+                        {
+                            if (instance.Node.Level > frame.Level) frame.NextLevel = Math.Min(frame.NextLevel, instance.Node.Level);
+                            if (instance.Node.Level == frame.Level) Gather(frame.World, chunk.Entities[rowIndex], ref instance);
+                        }
+                    }
                 }
-        });
+
+            }
+        }
         _jobs.Clear();
         foreach (FlowMatchingBatch batch in groups.Batches)
             if (batch.HasSamples) _jobs.Add(PoseAnimation.GetScheduler(frame.World).Schedule(new GeneratePose(batch), batch.Accesses));
         foreach (JobHandle job in _jobs) job.Complete();
-        frame.World.ExecuteQuery(_flows, ref frame, static (scoped QueryCursor rows, ref FlowFrame frame) =>
         {
-            World world = frame.World;
-            foreach (QueryRow row in rows.Rows)
-                foreach (ref FlowMatchingInstance instance in row.Buffer<FlowMatchingInstance>().AsSpan())
+            using QueryScope read = _flows.Open();
+            Visit(in read, ref frame);
+
+            static void Visit(scoped in QueryScope rows, ref FlowFrame frame)
+            {
+                World world = frame.World;
+                foreach (QueryChunk chunk in rows)
                 {
-                    if (!instance.Active || instance.Node.Level != frame.Level) continue;
-                    FlowMatchingParameters parameters = instance.Definition.Parameters[instance.Index];
-                    if (instance.Sampled)
+                    var buffers0 = chunk.Has<Buffer<FlowMatchingInstance>>() ? chunk.GetBuffers<FlowMatchingInstance>() : default;
+                    for (int rowIndex = 0; rowIndex < chunk.Count; rowIndex++)
                     {
-                        var copy = (instance.State, instance.Output.Range, parameters.RootMotion);
-                        world.ExecuteBufferWrite<LocalPose, (FlowMatchingState State, PoseRange Range, RootMotionMode RootMotion)>(
-                            instance.Output.Entity, ref copy, static (poses, ref copy) =>
-                            {
-                                Span<BoneTransform> output = LocalPose.Transforms(poses.AsSpan().Slice(copy.Range.Start, copy.Range.Count));
-                                copy.State.Pose.CopyTo(output);
-                                if (copy.RootMotion == RootMotionMode.Extract) output[0] = copy.State.Skeleton.ReferencePose[0];
-                            });
-                    }
-                    var value = (instance.Output.Index, instance.Time, instance.Weight, instance.Starts, instance.Sampled,
-                        Motion: parameters.RootMotion == RootMotionMode.Extract ? instance.State.Motion : RootMotionDelta.Identity);
-                    world.ExecuteBufferWrite<PoseResult, (int Index, double Time, float Weight, uint Starts, bool Sampled, RootMotionDelta Motion)>(
-                        instance.Output.Entity, ref value, static (results, ref value) =>
+                        foreach (ref FlowMatchingInstance instance in buffers0[rowIndex].AsSpan())
                         {
-                            ref PoseResult result = ref results[value.Index];
-                            result.Weight = value.Weight;
-                            if (!value.Sampled) return;
-                            result.Time = value.Time;
-                            result.Starts = value.Starts;
-                            result.RootMotion = new(value.Motion.Transform * result.RootMotion.Transform);
-                            result.Version++;
-                        });
-                    AnimationGraph.Submit(world, row.Entity, in instance.Placement, running: true);
+                            if (!instance.Active || instance.Node.Level != frame.Level) continue;
+                            FlowMatchingParameters parameters = instance.Definition.Parameters[instance.Index];
+                            if (instance.Sampled)
+                            {
+                                var copy = (instance.State, instance.Output.Range, parameters.RootMotion);
+                                {
+                                    using var poses = world.GetBuffer<LocalPose>(instance.Output.Entity);
+                                    Visit(poses, ref copy);
+
+                                    static void Visit(DynamicBuffer<LocalPose> poses, ref (FlowMatchingState State, PoseRange Range, RootMotionMode RootMotion) copy)
+                                    {
+                                        Span<BoneTransform> output = LocalPose.Transforms(poses.AsSpan().Slice(copy.Range.Start, copy.Range.Count));
+                                        copy.State.Pose.CopyTo(output);
+                                        if (copy.RootMotion == RootMotionMode.Extract) output[0] = copy.State.Skeleton.ReferencePose[0];
+
+                                    }
+                                }
+                            }
+                            var value = (instance.Output.Index, instance.Time, instance.Weight, instance.Starts, instance.Sampled,
+                                Motion: parameters.RootMotion == RootMotionMode.Extract ? instance.State.Motion : RootMotionDelta.Identity);
+                            {
+                                using var results = world.GetBuffer<PoseResult>(instance.Output.Entity);
+                                Visit(results, ref value);
+
+                                static void Visit(DynamicBuffer<PoseResult> results, ref (int Index, double Time, float Weight, uint Starts, bool Sampled, RootMotionDelta Motion) value)
+                                {
+                                    ref PoseResult result = ref results[value.Index];
+                                    result.Weight = value.Weight;
+                                    if (!value.Sampled) return;
+                                    result.Time = value.Time;
+                                    result.Starts = value.Starts;
+                                    result.RootMotion = new(value.Motion.Transform * result.RootMotion.Transform);
+                                    result.Version++;
+
+                                }
+                            }
+                            AnimationGraph.Submit(world, chunk.Entities[rowIndex], in instance.Placement, running: true);
+                        }
+                    }
                 }
-        });
+
+            }
+        }
     }
 
     private static void Gather(World world, Entity animation, ref FlowMatchingInstance instance)
@@ -116,7 +149,7 @@ public struct FlowMatchingSystem : ISystem<ImmediateSystemContext>, ISystem<Pose
         instance.Weight = time.Weight;
         if (world.Has<AnimationLayers>(instance.Output.Entity))
         {
-            AnimationLayers layers = world.Read<AnimationLayers>(instance.Output.Entity);
+            AnimationLayers layers = world.ReadComponentData<AnimationLayers>(instance.Output.Entity);
             if (instance.Placement.Layer < layers.Count) instance.Weight *= layers.Items[instance.Placement.Layer].Weight;
         }
         instance.Time = time.Time.Time;
@@ -124,7 +157,7 @@ public struct FlowMatchingSystem : ISystem<ImmediateSystemContext>, ISystem<Pose
         instance.State.Sample = time.Time.Delta > 0;
         instance.State.Motion = RootMotionDelta.Identity;
         instance.Sampled |= instance.State.Sample;
-        GraphParameters graph = world.Read<GraphParameters>(animation);
+        GraphParameters graph = world.ReadComponentData<GraphParameters>(animation);
         if (parameters.ControlParameter is byte firstControl)
             for (int value = 0; value < instance.State.Control.Length; value++)
                 instance.State.Control[value] = graph.Values[firstControl + value];
@@ -134,8 +167,9 @@ public struct FlowMatchingSystem : ISystem<ImmediateSystemContext>, ISystem<Pose
                 instance.State.Noise[value] = graph.Values[parameters.NoiseParameter + value];
     }
 
-    public void OnDestroy(ref ImmediateSystemContext context) => context.World.ReleaseQuery(_flows);
-    public void OnDestroy(ref PoseNodeContext context) => context.Frame.World.ReleaseQuery(_flows);
+    public void OnDestroy(ref ImmediateSystemContext context) { }
+
+    public void OnDestroy(ref PoseNodeContext context) { }
 
     private struct FlowFrame
     {

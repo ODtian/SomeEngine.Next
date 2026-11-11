@@ -1,1293 +1,371 @@
-using System.Diagnostics.CodeAnalysis;
-using System.Reflection;
+using System.Buffers.Binary;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using SomeEngine.ECS;
-using SomeEngine.ECS.Components;
-using IComponent = global::SomeEngine.ECS.IComponent;
+using System.Text;
+using SomeEngine.ECS.Storage;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Serialization;
-using SomeEngine.ECS.Registry;
 using SomeEngine.Serialization;
 
 namespace SomeEngine.ECS.Serialization;
 
+internal enum SavedStorage : byte { Table, Tag, Buffer, Shared, Sparse, Resource, Parent, Endpoints, Children, Removed }
+
+internal interface IStoredValueCodec<T> where T : struct
+{
+    void WriteValue(ref DataWriter writer, in T value);
+    T ReadValue(ref DataReader reader);
+}
+
+internal interface ISelectionCodec<T> where T : struct
+{
+    bool Includes(in T value, IReadOnlySet<Entity> entities);
+    void Write(ref DataWriter writer, in T value, IReadOnlySet<Entity> entities);
+}
+
+internal abstract class SavedType(SerializationTypeKey key, SavedStorage storage, int type, int width, bool raw,
+    Type valueType, Type codecType)
+{
+    internal readonly SerializationTypeKey Key = key;
+    internal readonly SavedStorage Storage = storage;
+    internal readonly int Type = type, Width = width;
+    internal readonly bool Raw = raw;
+    internal readonly ComponentCodecKind CodecKind = DescribeCodec(codecType);
+    internal virtual object? EntityPatcher => null;
+    private readonly ISavedGroupBinding? _group = SavedGroups.Create(valueType);
+    internal bool SupportsDurable = storage == SavedStorage.Tag || !UsesRawCodec(codecType);
+    internal readonly SerializationTypeKey CheckpointKey = key with
+    {
+        StableName = string.Join('|', key.StableName, TypeBuild(valueType), TypeBuild(codecType), RuntimeInformation.FrameworkDescription,
+            RuntimeInformation.ProcessArchitecture, IntPtr.Size, BitConverter.IsLittleEndian),
+        SchemaFingerprint = UsesRawCodec(codecType) ? RawSchema(key, valueType, width) : key.SchemaFingerprint,
+    };
+    internal SerializationTypeKey KeyFor(SavePurpose format) => format == SavePurpose.RawCheckpoint ? CheckpointKey : Key;
+    internal virtual void Activate(World world) => _group?.Activate(world);
+    private static string TypeBuild(Type type) => type.AssemblyQualifiedName + "#" + type.Module.ModuleVersionId
+        + (type.IsGenericType ? "[" + string.Join(';', type.GetGenericArguments().Select(TypeBuild)) + "]" : "");
+    private static bool UsesRawCodec(Type type) => type.IsGenericType
+        && (type.GetGenericTypeDefinition() == typeof(RawCodec<>) || type.GetGenericArguments().Any(UsesRawCodec));
+
+    private static ComponentCodecKind DescribeCodec(Type type)
+    {
+        if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(PackedValueCodec<>))
+            return ComponentCodecKind.RawDurable;
+        if (UsesRawCodec(type)) return ComponentCodecKind.Raw;
+        if (type.GetInterfaces().Any(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IDurableComponentCodec<>)))
+            return ComponentCodecKind.Durable;
+        return ComponentCodecKind.Custom;
+    }
+
+    private static ulong RawSchema(SerializationTypeKey key, Type valueType, int width)
+    {
+        ulong schema = key.SchemaFingerprint;
+        string shape = string.Join('|', TypeBuild(valueType), width, IntPtr.Size, BitConverter.IsLittleEndian);
+        foreach (byte value in Encoding.UTF8.GetBytes(shape)) schema = (schema ^ value) * 1099511628211ul;
+        return schema == 0 ? 1 : schema;
+    }
+}
+
+internal abstract class SavedColumn(SerializationTypeKey key, SavedStorage storage, int type, int width, bool raw,
+    Type valueType, Type codecType) : SavedType(key, storage, type, width, raw, valueType, codecType)
+{
+    internal abstract void Write(ref DataWriter writer, ref ColumnEntry column, int count);
+    internal abstract void Read(ref DataReader reader, ref ColumnEntry column, int count);
+    internal virtual void PrepareRead(World world) { }
+    internal abstract void WriteCell(ref DataWriter writer, World world, ref ColumnEntry column, int row);
+    internal virtual bool IncludesCell(ref ColumnEntry column, int row, IReadOnlySet<Entity> entities) => column.Has(row);
+    internal virtual void WriteSelectedCell(ref DataWriter writer, World world, ref ColumnEntry column, int row,
+        IReadOnlySet<Entity> entities) => WriteCell(ref writer, world, ref column, row);
+    internal virtual void WriteEntityRows(ref DataWriter writer, ref ColumnEntry column, ReadOnlySpan<Entity> entities) => throw new InvalidOperationException();
+    internal virtual void ReadCell(ref DataReader reader, ref ColumnEntry column, int row) => throw new InvalidOperationException();
+}
+
+internal sealed unsafe class SavedColumn<T, TCodec>(SerializationTypeKey key, SavedStorage storage, TCodec codec, bool raw,
+    IReferencePatcher<T>? patcher = null, bool progress = false)
+    : SavedColumn(key, storage, ComponentValues.Bind<T>().Id, raw && !ComponentType<T>.IsTagType ? Unsafe.SizeOf<T>() : 0,
+        raw, typeof(T), typeof(TCodec)), IStoredValueCodec<T> where T : struct where TCodec : struct, IValueCodec<T>
+{
+    private readonly IReferencePatcher<T>? _patcher = patcher ?? ReferencePatchers.DefaultValue<T>();
+    private readonly ISelectionCodec<T>? _selection = codec is ISelectionCodec<T> selected ? selected : null;
+    internal override object? EntityPatcher => _patcher;
+    internal override bool IncludesCell(ref ColumnEntry column, int row, IReadOnlySet<Entity> entities)
+        => column.Has(row) && (_selection is null || _selection.Includes(ColumnEntry.At<T>(ref column, row), entities));
+    internal override void WriteSelectedCell(ref DataWriter writer, World world, ref ColumnEntry column, int row,
+        IReadOnlySet<Entity> entities)
+    {
+        if (_selection is { } selection) selection.Write(ref writer, ColumnEntry.At<T>(ref column, row), entities);
+        else WriteCell(ref writer, world, ref column, row);
+    }
+    internal override void PrepareRead(World world)
+    {
+        if (codec is IValueReadStorage storage) storage.PrepareRead(world);
+    }
+    internal override void WriteCell(ref DataWriter writer, World world, ref ColumnEntry column, int row)
+    {
+        if (ComponentType<T>.IsTagType) return;
+        TCodec item = codec;
+        item.Write(ref writer, ColumnEntry.At<T>(ref column, row));
+    }
+    public void WriteValue(ref DataWriter writer, in T value)
+    {
+        if (ComponentType<T>.IsTagType) return;
+        TCodec item = codec;
+        item.Write(ref writer, value);
+    }
+
+    public T ReadValue(ref DataReader reader)
+    {
+        if (ComponentType<T>.IsTagType) return default;
+        TCodec item = codec;
+        item.Read(ref reader, out T value);
+        return value;
+    }
+    internal override void WriteEntityRows(ref DataWriter writer, ref ColumnEntry column, ReadOnlySpan<Entity> entities)
+    {
+        Span<T> values = ColumnEntry.Span<T>(ref column, entities.Length);
+        if (column.Presence is null)
+        {
+            for (int row = 0; row < entities.Length; row++)
+            { writer.WriteEntity(entities[row]); TCodec item = codec; item.Write(ref writer, values[row]); }
+        }
+        else
+            for (int row = 0; row < entities.Length; row++)
+                if (column.Has(row))
+                { writer.WriteEntity(entities[row]); TCodec item = codec; item.Write(ref writer, values[row]); }
+    }
+    internal override void ReadCell(ref DataReader reader, ref ColumnEntry column, int row)
+    {
+        if (ComponentType<T>.IsTagType) return;
+        TCodec item = codec;
+        ref T value = ref ColumnEntry.At<T>(ref column, row);
+        item.Read(ref reader, out value);
+        if (reader.PatchesValues) reader.Patch(ref value, _patcher, progress);
+    }
+    internal override void Write(ref DataWriter writer, ref ColumnEntry column, int count)
+    {
+        if (ComponentType<T>.IsTagType) return;
+        if (Raw)
+        {
+            if (column.Presence is null) writer.WriteRawBytes(new ReadOnlySpan<byte>((void*)column.Rows, count * Width));
+            else for (int row = 0; row < count; row++)
+                if (column.Has(row)) writer.WriteRawBytes(new ReadOnlySpan<byte>((void*)(column.Rows + (nint)row * Width), Width));
+        }
+        else
+        {
+            long start = writer.Position;
+            Span<T> values = ColumnEntry.Span<T>(ref column, count);
+            if (column.Presence is null)
+            {
+                foreach (ref readonly T value in values) { TCodec itemCodec = codec; itemCodec.Write(ref writer, value); }
+            }
+            else
+                for (int row = 0; row < count; row++)
+                    if (column.Has(row)) { TCodec itemCodec = codec; itemCodec.Write(ref writer, values[row]); }
+            writer.WriteInt32(checked((int)(writer.Position - start)));
+        }
+    }
+
+    internal override void Read(ref DataReader reader, ref ColumnEntry column, int count)
+    {
+        if (ComponentType<T>.IsTagType) return;
+        if (Raw)
+        {
+            if (column.Presence is null) reader.ReadRawBytes(new Span<byte>((void*)column.Rows, count * Width));
+            else for (int row = 0; row < count; row++)
+                if (column.Has(row)) reader.ReadRawBytes(new Span<byte>((void*)(column.Rows + (nint)row * Width), Width));
+        }
+        else
+        {
+            long start = reader.Position;
+            Span<T> values = ColumnEntry.Span<T>(ref column, count);
+            for (int row = 0; row < count; row++)
+                if (column.Has(row)) { TCodec itemCodec = codec; itemCodec.Read(ref reader, out values[row]); }
+            long consumed = reader.Position - start;
+            int length = reader.ReadInt32();
+            if (consumed != length) throw new InvalidDataException("Component codec length differs from its column footer.");
+            reader.Budget.PayloadLength(length);
+        }
+        if (_patcher is not null && reader.PatchesValues)
+            for (int row = 0; row < count; row++)
+                if (column.Has(row)) reader.Patch(ref ColumnEntry.At<T>(ref column, row), _patcher, progress);
+    }
+}
+
+internal readonly struct RawCodec<T> : IComponentCodec<T> where T : struct
+{
+    public void Write(ref DataWriter writer, in T value)
+        => writer.WriteRawBytes(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(ref Unsafe.AsRef(in value), 1)));
+    public void Read(ref DataReader reader, out T value)
+    {
+        value = default;
+        reader.ReadRawBytes(MemoryMarshal.AsBytes(MemoryMarshal.CreateSpan(ref value, 1)));
+    }
+}
+
+internal readonly struct PackedValueCodec<T> : IDurableComponentCodec<T> where T : struct
+{
+    public void Write(ref DataWriter writer, in T value) => new RawCodec<T>().Write(ref writer, value);
+    public void Read(ref DataReader reader, out T value) => new RawCodec<T>().Read(ref reader, out value);
+    public bool SupportsParallelWrite => true;
+}
+
+internal interface IValueReadStorage
+{
+    void PrepareRead(World world);
+}
+
+internal readonly struct RemovedCodec<T, TCodec>(TCodec codec) : IComponentCodec<Removed<T>>, IValueReadStorage
+    where T : struct where TCodec : struct, IValueCodec<T>
+{
+    public void PrepareRead(World world)
+    {
+        if (codec is IValueReadStorage storage) storage.PrepareRead(world);
+    }
+    public void Write(ref DataWriter writer, in Removed<T> value)
+    { TCodec item = codec; item.Write(ref writer, value.Value); writer.WriteUInt64(value.Version); }
+    public void Read(ref DataReader reader, out Removed<T> value)
+    { TCodec item = codec; item.Read(ref reader, out T previous); value = new(previous, reader.ReadUInt64()); }
+}
+
+internal readonly struct BufferCodec<T, TCodec>(TCodec codec) : IComponentCodec<Buffer<T>>, IValueReadStorage
+    where T : struct where TCodec : struct, IValueCodec<T>
+{
+    public void PrepareRead(World world) => world.BufferPool<T>();
+    public void Write(ref DataWriter writer, in Buffer<T> value)
+    {
+        int count = value.Count;
+        writer.WriteInt32(count);
+        for (int i = 0; i < count; i++) { TCodec item = codec; item.Write(ref writer, value.Items![i]); }
+    }
+    public void Read(ref DataReader reader, out Buffer<T> value)
+    {
+        int count = reader.Budget.BufferElementCount<T>(reader.ReadInt32());
+        value = reader.ValuesWorld is { } world ? world.BufferPool<T>().Rent() : new() { Items = [] };
+        value.Reserve(count);
+        for (int i = 0; i < count; i++) { TCodec item = codec; item.Read(ref reader, out value.Items![i]); value.Count = i + 1; }
+    }
+}
+
 public sealed partial class SerializationRegistry
 {
-    private readonly List<SerializationTypeRuntime> _runtimes = new();
-    private readonly Dictionary<Guid, SerializationTypeRuntime> _byStableId = new();
-    private readonly Dictionary<Type, SerializationTypeRuntime> _byType = new();
-    private SerializationTypeEntry[] _publishedEntries = Array.Empty<SerializationTypeEntry>();
+    public SerializationRegistry()
+        => RegisterColumn<Destroyed, RawCodec<Destroyed>>(
+            new(new Guid("d2a68e47-3bef-4b89-a213-d8151bf19872"), "SomeEngine.ECS.Destroyed", 1),
+            default, true, SavedStorage.Tag, describe: false);
+    private readonly List<SerializationTypeEntry> _entries = [];
+    public ReadOnlySpan<SerializationTypeEntry> Entries => CollectionsMarshal.AsSpan(_entries);
+    internal readonly List<SavedType> Types = [];
+    internal readonly Dictionary<int, SavedColumn> Columns = [];
+    internal readonly Dictionary<Guid, SavedType> ById = [];
+    private readonly Dictionary<(SavedStorage Storage, int Type), int> _orders = [];
+    internal int GetOrder(SavedType type) => _orders[(type.Storage, type.Type)];
+    internal int Version;
 
-    public ReadOnlySpan<SerializationTypeEntry> Entries => _publishedEntries;
+    private TBinding Add<TBinding>(TBinding type) where TBinding : SavedType
+    {
+        if (type.Key.StableId == Guid.Empty || type.Key.SchemaFingerprint == 0)
+            throw new ArgumentException("Serialization types require a stable identity and a nonzero schema.");
+        _orders.Add((type.Storage, type.Type), Types.Count);
+        Types.Add(type);
+        ById.Add(type.Key.StableId, type);
+        if (type is SavedColumn column) Columns.Add(type.Type, column);
+        Version++;
+        return type;
+    }
+    internal static SerializationTypeKey Derived(SerializationTypeKey key, byte role, string name)
+    {
+        Span<byte> bytes = stackalloc byte[16];
+        key.StableId.TryWriteBytes(bytes);
+        bytes[15] ^= role;
+        return new(new Guid(bytes), key.StableName + "." + name, key.SchemaFingerprint);
+    }
+    internal static SerializationTypeKey RawKey<T>()
+    {
+        Span<byte> bytes = stackalloc byte[16];
+        typeof(T).Module.ModuleVersionId.TryWriteBytes(bytes);
+        ulong schema = BinaryPrimitives.ReadUInt64LittleEndian(bytes);
+        return new(typeof(T).GUID, typeof(T).FullName!, schema == 0 ? 1 : schema);
+    }
 
-    /// <summary>Registers a caller-supplied codec with its per-registry data.</summary>
-    /// <remarks>The codec value is copied for each value read or written. Reference fields retain caller-selected shared data.</remarks>
+    public SerializationRegistry Register<T>() where T : struct => Register<T>(RawKey<T>());
+    public SerializationRegistry Register<T>(SerializationTypeKey key) where T : struct
+    {
+        return RegisterColumn<T, RawCodec<T>>(key, default, true,
+            ComponentType<T>.IsTagType ? SavedStorage.Tag : SavedStorage.Table);
+    }
+    public SerializationRegistry Register<T, TCodec>(SerializationTypeKey key, TCodec codec = default)
+        where T : struct where TCodec : struct, IComponentCodec<T>
+        => RegisterColumn<T, TCodec>(key, codec, false, ComponentType<T>.IsTagType ? SavedStorage.Tag : SavedStorage.Table);
+
+    public SerializationRegistry RegisterDurable<
+        [System.Diagnostics.CodeAnalysis.DynamicallyAccessedMembers(
+            System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicFields |
+            System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.NonPublicFields)] T, TCodec>(
+        SerializationTypeKey key, int encodedSize = -1, ulong layoutProof = 0)
+        where T : struct where TCodec : struct, IDurableComponentCodec<T>
+        => PackedValueLayout.IsVerified<T>(encodedSize, layoutProof)
+            ? Register<T, PackedValueCodec<T>>(key)
+            : Register<T, TCodec>(key);
+
     public SerializationRegistry RegisterCodec<T, TCodec>(TCodec codec)
-        where T : struct, IComponent
-        where TCodec : struct, IComponentCodec<T>
+        where T : struct where TCodec : struct, IComponentCodec<T>
     {
-        ValidateOrdinaryComponent<T>();
-        return Register(new ComponentSerializationRuntime<T>(
-            CreateTypeKey<T>(ComponentMetadata<T>.Storage, SerializationValueKind.Component),
-            CreateExplicitCodec<T, TCodec>(codec),
-            patcher: null,
-            schemaSource: SerializationSchemaSource.RuntimeDerived));
-    }
-
-    /// <summary>Registers a caller-supplied codec for an explicitly identified serialized type.</summary>
-    public SerializationRegistry RegisterCodec<T, TCodec>(SerializationTypeKey typeKey, TCodec codec)
-        where T : struct, IComponent
-        where TCodec : struct, IComponentCodec<T>
-    {
-        ValidateOrdinaryComponent<T>();
-        return Register(new ComponentSerializationRuntime<T>(typeKey, CreateExplicitCodec<T, TCodec>(codec), patcher: null));
-    }
-
-    public SerializationRegistry Register<T>()
-        where T : struct, IComponent
-    {
-        ValidateOrdinaryComponent<T>();
-        return Register(new ComponentSerializationRuntime<T>(
-            CreateTypeKey<T>(ComponentMetadata<T>.Storage, SerializationValueKind.Component),
-            CreateDefaultCodec<T>(),
-            patcher: null,
-            schemaSource: SerializationSchemaSource.RuntimeDerived));
-    }
-
-    public SerializationRegistry Register<T>(SerializationTypeKey typeKey)
-        where T : struct, IComponent
-    {
-        ValidateOrdinaryComponent<T>();
-        return Register(new ComponentSerializationRuntime<T>(typeKey, CreateDefaultCodec<T>(), patcher: null));
-    }
-
-    public SerializationRegistry Register<T, TCodec>()
-        where T : struct, IComponent
-        where TCodec : struct, IComponentCodec<T>
-    {
-        ValidateOrdinaryComponent<T>();
-        return Register(new ComponentSerializationRuntime<T>(
-            CreateTypeKey<T>(ComponentMetadata<T>.Storage, SerializationValueKind.Component),
-            CreateExplicitCodec<T, TCodec>(),
-            patcher: null,
-            schemaSource: SerializationSchemaSource.RuntimeDerived));
-    }
-
-    public SerializationRegistry Register<T, TCodec>(SerializationTypeKey typeKey)
-        where T : struct, IComponent
-        where TCodec : struct, IComponentCodec<T>
-    {
-        ValidateOrdinaryComponent<T>();
-        return Register(new ComponentSerializationRuntime<T>(typeKey, CreateExplicitCodec<T, TCodec>(), patcher: null));
-    }
-
-    public SerializationRegistry Register<T, TCodec, TPatcher>()
-        where T : struct, IComponent
-        where TCodec : struct, IComponentCodec<T>
-        where TPatcher : struct, IReferencePatcher<T>
-    {
-        ValidateOrdinaryComponent<T>();
-        return Register(new ComponentSerializationRuntime<T>(
-            CreateTypeKey<T>(ComponentMetadata<T>.Storage, SerializationValueKind.Component),
-            CreateExplicitCodec<T, TCodec>(),
-            new CustomReferencePatcher<T, TPatcher>(),
-            schemaSource: SerializationSchemaSource.RuntimeDerived));
-    }
-
-    public SerializationRegistry Register<T, TCodec, TPatcher>(SerializationTypeKey typeKey)
-        where T : struct, IComponent
-        where TCodec : struct, IComponentCodec<T>
-        where TPatcher : struct, IReferencePatcher<T>
-    {
-        ValidateOrdinaryComponent<T>();
-        return Register(new ComponentSerializationRuntime<T>(
-            typeKey,
-            CreateExplicitCodec<T, TCodec>(),
-            new CustomReferencePatcher<T, TPatcher>()));
-    }
-
-    public SerializationRegistry RegisterTag<T>()
-        where T : struct, ITag =>
-        Register(new TagSerializationRuntime<T>(
-            CreateTypeKey<T>(StoragePath.Tag, SerializationValueKind.Tag),
-            schemaSource: SerializationSchemaSource.RuntimeDerived));
-
-    public SerializationRegistry RegisterTag<T>(SerializationTypeKey typeKey)
-        where T : struct, ITag =>
-        Register(new TagSerializationRuntime<T>(typeKey));
-
-    public SerializationRegistry RegisterShared<T>()
-        where T : struct, ISharedComponent =>
-        Register(new SharedSerializationRuntime<T>(
-            CreateTypeKey<T>(StoragePath.Shared, SerializationValueKind.Shared),
-            CreateDefaultCodec<T>(),
-            patcher: null,
-            schemaSource: SerializationSchemaSource.RuntimeDerived));
-
-    public SerializationRegistry RegisterShared<T>(SerializationTypeKey typeKey)
-        where T : struct, ISharedComponent =>
-        Register(new SharedSerializationRuntime<T>(typeKey, CreateDefaultCodec<T>(), patcher: null));
-
-    public SerializationRegistry RegisterShared<T, TCodec>()
-        where T : struct, ISharedComponent
-        where TCodec : struct, IComponentCodec<T> =>
-        Register(new SharedSerializationRuntime<T>(
-            CreateTypeKey<T>(StoragePath.Shared, SerializationValueKind.Shared),
-            CreateExplicitCodec<T, TCodec>(),
-            patcher: null,
-            schemaSource: SerializationSchemaSource.RuntimeDerived));
-
-    public SerializationRegistry RegisterShared<T, TCodec>(SerializationTypeKey typeKey)
-        where T : struct, ISharedComponent
-        where TCodec : struct, IComponentCodec<T> =>
-        Register(new SharedSerializationRuntime<T>(typeKey, CreateExplicitCodec<T, TCodec>(), patcher: null));
-
-    public SerializationRegistry RegisterShared<T, TCodec, TPatcher>()
-        where T : struct, ISharedComponent
-        where TCodec : struct, IComponentCodec<T>
-        where TPatcher : struct, IReferencePatcher<T> =>
-        Register(new SharedSerializationRuntime<T>(
-            CreateTypeKey<T>(StoragePath.Shared, SerializationValueKind.Shared),
-            new CustomValueCodec<T, TCodec>(),
-            new CustomReferencePatcher<T, TPatcher>(),
-            schemaSource: SerializationSchemaSource.RuntimeDerived));
-
-    public SerializationRegistry RegisterShared<T, TCodec, TPatcher>(SerializationTypeKey typeKey)
-        where T : struct, ISharedComponent
-        where TCodec : struct, IComponentCodec<T>
-        where TPatcher : struct, IReferencePatcher<T> =>
-        Register(new SharedSerializationRuntime<T>(
-            typeKey,
-            new CustomValueCodec<T, TCodec>(),
-            new CustomReferencePatcher<T, TPatcher>()));
-
-    /// <summary>Registers a caller-supplied codec with its per-registry data.</summary>
-    /// <remarks>The codec value is copied for each value read or written. Reference fields retain caller-selected shared data.</remarks>
-    public SerializationRegistry RegisterBufferCodec<T, TCodec>(TCodec codec)
-        where T : struct, IBufferElement
-        where TCodec : struct, IComponentCodec<T>
-    {
-        return Register(new BufferSerializationRuntime<T>(
-            CreateTypeKey<T>(StoragePath.Table, SerializationValueKind.Buffer),
-            CreateExplicitCodec<T, TCodec>(codec),
-            patcher: null,
-            schemaSource: SerializationSchemaSource.RuntimeDerived));
-    }
-
-    /// <summary>Registers a caller-supplied codec for an explicitly identified serialized type.</summary>
-    public SerializationRegistry RegisterBufferCodec<T, TCodec>(SerializationTypeKey typeKey, TCodec codec)
-        where T : struct, IBufferElement
-        where TCodec : struct, IComponentCodec<T>
-    {
-        return Register(new BufferSerializationRuntime<T>(typeKey, CreateExplicitCodec<T, TCodec>(codec), patcher: null));
-    }
-
-    public SerializationRegistry RegisterBuffer<T>()
-        where T : struct, IBufferElement =>
-        Register(new BufferSerializationRuntime<T>(
-            CreateTypeKey<T>(StoragePath.Table, SerializationValueKind.Buffer),
-            CreateDefaultCodec<T>(),
-            patcher: null,
-            schemaSource: SerializationSchemaSource.RuntimeDerived));
-
-    public SerializationRegistry RegisterBuffer<T>(SerializationTypeKey typeKey)
-        where T : struct, IBufferElement =>
-        Register(new BufferSerializationRuntime<T>(typeKey, CreateDefaultCodec<T>(), patcher: null));
-
-    public SerializationRegistry RegisterBuffer<T, TCodec>()
-        where T : struct, IBufferElement
-        where TCodec : struct, IComponentCodec<T> =>
-        Register(new BufferSerializationRuntime<T>(
-            CreateTypeKey<T>(StoragePath.Table, SerializationValueKind.Buffer),
-            CreateExplicitCodec<T, TCodec>(),
-            patcher: null,
-            schemaSource: SerializationSchemaSource.RuntimeDerived));
-
-    public SerializationRegistry RegisterBuffer<T, TCodec>(SerializationTypeKey typeKey)
-        where T : struct, IBufferElement
-        where TCodec : struct, IComponentCodec<T> =>
-        Register(new BufferSerializationRuntime<T>(typeKey, CreateExplicitCodec<T, TCodec>(), patcher: null));
-
-    public SerializationRegistry RegisterBuffer<T, TCodec, TPatcher>()
-        where T : struct, IBufferElement
-        where TCodec : struct, IComponentCodec<T>
-        where TPatcher : struct, IReferencePatcher<T> =>
-        Register(new BufferSerializationRuntime<T>(
-            CreateTypeKey<T>(StoragePath.Table, SerializationValueKind.Buffer),
-            CreateExplicitCodec<T, TCodec>(),
-            new CustomReferencePatcher<T, TPatcher>(),
-            schemaSource: SerializationSchemaSource.RuntimeDerived));
-
-    public SerializationRegistry RegisterBuffer<T, TCodec, TPatcher>(SerializationTypeKey typeKey)
-        where T : struct, IBufferElement
-        where TCodec : struct, IComponentCodec<T>
-        where TPatcher : struct, IReferencePatcher<T> =>
-        Register(new BufferSerializationRuntime<T>(
-            typeKey,
-            CreateExplicitCodec<T, TCodec>(),
-            new CustomReferencePatcher<T, TPatcher>()));
-}
-
-public sealed partial class SerializationRegistry
-{
-    public SerializationRegistry RegisterSparse<T>()
-        where T : struct, ISparseComponent =>
-        Register(new SparseSerializationRuntime<T>(
-            CreateTypeKey<T>(StoragePath.Sparse, SerializationValueKind.Sparse),
-            CreateDefaultCodec<T>(),
-            patcher: null,
-            schemaSource: SerializationSchemaSource.RuntimeDerived));
-
-    public SerializationRegistry RegisterSparse<T>(SerializationTypeKey typeKey)
-        where T : struct, ISparseComponent =>
-        Register(new SparseSerializationRuntime<T>(typeKey, CreateDefaultCodec<T>(), patcher: null));
-
-    public SerializationRegistry RegisterSparse<T, TCodec>()
-        where T : struct, ISparseComponent
-        where TCodec : struct, IComponentCodec<T> =>
-        Register(new SparseSerializationRuntime<T>(
-            CreateTypeKey<T>(StoragePath.Sparse, SerializationValueKind.Sparse),
-            CreateExplicitCodec<T, TCodec>(),
-            patcher: null,
-            schemaSource: SerializationSchemaSource.RuntimeDerived));
-
-    public SerializationRegistry RegisterSparse<T, TCodec>(SerializationTypeKey typeKey)
-        where T : struct, ISparseComponent
-        where TCodec : struct, IComponentCodec<T> =>
-        Register(new SparseSerializationRuntime<T>(typeKey, CreateExplicitCodec<T, TCodec>(), patcher: null));
-
-    public SerializationRegistry RegisterSparse<T, TCodec, TPatcher>()
-        where T : struct, ISparseComponent
-        where TCodec : struct, IComponentCodec<T>
-        where TPatcher : struct, IReferencePatcher<T> =>
-        Register(new SparseSerializationRuntime<T>(
-            CreateTypeKey<T>(StoragePath.Sparse, SerializationValueKind.Sparse),
-            CreateExplicitCodec<T, TCodec>(),
-            new CustomReferencePatcher<T, TPatcher>(),
-            SerializationSchemaSource.RuntimeDerived));
-
-    public SerializationRegistry RegisterSparse<T, TCodec, TPatcher>(SerializationTypeKey typeKey)
-        where T : struct, ISparseComponent
-        where TCodec : struct, IComponentCodec<T>
-        where TPatcher : struct, IReferencePatcher<T> =>
-        Register(new SparseSerializationRuntime<T>(
-            typeKey,
-            CreateExplicitCodec<T, TCodec>(),
-            new CustomReferencePatcher<T, TPatcher>()));
-
-}
-
-public sealed partial class SerializationRegistry
-{
-    /// <summary>
-    /// Registers a source-generated canonical component codec. When the generator proves that
-    /// the packed CLR layout is identical to the canonical little-endian representation,
-    /// <paramref name="rawCanonicalSize"/> and <paramref name="rawCanonicalLayoutFingerprint"/>
-    /// enable a memcpy fast path on compatible hosts. Supplying a size without the generated
-    /// layout proof always falls back to the canonical codec.
-    /// </summary>
-    public SerializationRegistry RegisterCanonical<
-        [DynamicallyAccessedMembers(
-            DynamicallyAccessedMemberTypes.PublicFields |
-            DynamicallyAccessedMemberTypes.NonPublicFields)] T,
-        TCodec>(
-        SerializationTypeKey typeKey,
-        int rawCanonicalSize = -1,
-        ulong rawCanonicalLayoutFingerprint = 0)
-        where T : struct, IComponent
-        where TCodec : struct, ICanonicalComponentCodec<T>
-    {
-        ValidateOrdinaryComponent<T>();
-        return Register(new ComponentSerializationRuntime<T>(
-            typeKey,
-            CreateGeneratedCodec<T, TCodec>(rawCanonicalSize, rawCanonicalLayoutFingerprint),
-            patcher: null));
-    }
-
-    public SerializationRegistry RegisterSharedCanonical<
-        [DynamicallyAccessedMembers(
-            DynamicallyAccessedMemberTypes.PublicFields |
-            DynamicallyAccessedMemberTypes.NonPublicFields)] T,
-        TCodec>(
-        SerializationTypeKey typeKey,
-        int rawCanonicalSize = -1,
-        ulong rawCanonicalLayoutFingerprint = 0)
-        where T : struct, ISharedComponent
-        where TCodec : struct, ICanonicalComponentCodec<T> =>
-        Register(new SharedSerializationRuntime<T>(
-            typeKey,
-            CreateGeneratedCodec<T, TCodec>(rawCanonicalSize, rawCanonicalLayoutFingerprint),
-            patcher: null));
-
-    public SerializationRegistry RegisterBufferCanonical<
-        [DynamicallyAccessedMembers(
-            DynamicallyAccessedMemberTypes.PublicFields |
-            DynamicallyAccessedMemberTypes.NonPublicFields)] T,
-        TCodec>(
-        SerializationTypeKey typeKey,
-        int rawCanonicalSize = -1,
-        ulong rawCanonicalLayoutFingerprint = 0)
-        where T : struct, IBufferElement
-        where TCodec : struct, ICanonicalComponentCodec<T> =>
-        Register(new BufferSerializationRuntime<T>(
-            typeKey,
-            CreateGeneratedCodec<T, TCodec>(rawCanonicalSize, rawCanonicalLayoutFingerprint),
-            patcher: null));
-
-    public SerializationRegistry RegisterSparseCanonical<
-        [DynamicallyAccessedMembers(
-            DynamicallyAccessedMemberTypes.PublicFields |
-            DynamicallyAccessedMemberTypes.NonPublicFields)] T,
-        TCodec>(
-        SerializationTypeKey typeKey,
-        int rawCanonicalSize = -1,
-        ulong rawCanonicalLayoutFingerprint = 0)
-        where T : struct, ISparseComponent
-        where TCodec : struct, ICanonicalComponentCodec<T> =>
-        Register(new SparseSerializationRuntime<T>(
-            typeKey,
-            CreateGeneratedCodec<T, TCodec>(rawCanonicalSize, rawCanonicalLayoutFingerprint),
-            patcher: null));
-
-    internal ReadOnlySpan<SerializationTypeRuntime> RuntimeTypes =>
-        CollectionsMarshal.AsSpan(_runtimes);
-    internal SerializationTypeRuntime GetRegistered<T>()
-        where T : struct
-    {
-        if (_byType.TryGetValue(typeof(T), out var runtime))
-            return runtime;
-
-        throw new InvalidOperationException($"Type {typeof(T).FullName} is not registered for serialization.");
-    }
-
-    internal SerializationTypeRuntime Resolve(SerializationTypeKey fileKey)
-    {
-        if (!_byStableId.TryGetValue(fileKey.StableId, out var runtime))
-        {
-            throw SerializationErrors.CreateDataException(
-                SerializationError.UnknownType,
-                $"Unknown serialized type '{fileKey.StableName}' ({fileKey.StableId}).");
-        }
-
-        if (fileKey.SchemaFingerprint == 0 ||
-            runtime.Entry.TypeKey.SchemaFingerprint != fileKey.SchemaFingerprint)
-        {
-            throw SerializationErrors.CreateDataException(
-                SerializationError.SchemaMismatch,
-                $"Schema mismatch for '{fileKey.StableName}': file=0x{fileKey.SchemaFingerprint:X16}, " +
-                $"local=0x{runtime.Entry.TypeKey.SchemaFingerprint:X16}.");
-        }
-        if (!string.Equals(
-                runtime.Entry.TypeKey.StableName,
-                fileKey.StableName,
-                StringComparison.Ordinal))
-        {
-            throw SerializationErrors.CreateDataException(
-                SerializationError.SchemaMismatch,
-                $"Serialized type key name '{fileKey.StableName}' does not exactly match " +
-                $"registered name '{runtime.Entry.TypeKey.StableName}'.");
-        }
-
-        return runtime;
-    }
-
-    internal SerializationTypeRuntime ResolveExact(SerializationTypeKey fileKey) => Resolve(fileKey);
-
-    private SerializationRegistry Register(SerializationTypeRuntime runtime)
-    {
-        SerializationTypeKey typeKey = runtime.Entry.TypeKey;
-
-        if (typeKey.SchemaFingerprint == 0)
-        {
-            throw new ArgumentException(
-                $"Serialization type '{typeKey.StableName}' must declare a non-zero 64-bit schema fingerprint.",
-                nameof(runtime));
-        }
-
-        if (_byStableId.ContainsKey(typeKey.StableId))
-            throw new InvalidOperationException($"Serialization stable id {typeKey.StableId} is already registered.");
-
-        if (_byType.ContainsKey(runtime.ValueType))
-            throw new InvalidOperationException($"Type {runtime.ValueType.FullName} is already registered for serialization.");
-
-        _runtimes.Add(runtime);
-        _runtimes.Sort(static (left, right) => CompareTypeKeys(left.Entry.TypeKey, right.Entry.TypeKey));
-        var entries = new SerializationTypeEntry[_runtimes.Count];
-        for (int i = 0; i < _runtimes.Count; i++)
-            entries[i] = _runtimes[i].Entry;
-        _publishedEntries = entries;
-        _byStableId.Add(typeKey.StableId, runtime);
-        _byType.Add(runtime.ValueType, runtime);
+        Register<T, TCodec>(RawKey<T>(), codec);
+        Columns[ComponentType<T>.TypeId].SupportsDurable = false;
         return this;
     }
 
-    internal static int CompareTypeKeys(SerializationTypeKey left, SerializationTypeKey right)
+    public SerializationRegistry RegisterCodec<T, TCodec>(SerializationTypeKey typeKey, TCodec codec)
+        where T : struct where TCodec : struct, IComponentCodec<T>
+        => Register<T, TCodec>(typeKey, codec);
+
+    public SerializationRegistry RegisterCodec<T, TCodec, TPatcher>(SerializationTypeKey typeKey, TCodec codec, TPatcher patcher)
+        where T : struct where TCodec : struct, IComponentCodec<T> where TPatcher : struct, IReferencePatcher<T>
+        => RegisterColumn<T, TCodec>(typeKey, codec, false, ComponentType<T>.IsTagType ? SavedStorage.Tag : SavedStorage.Table,
+            ReferencePatchers.Bind<T, TPatcher>(patcher));
+
+    private SerializationRegistry RegisterColumn<T, TCodec>(SerializationTypeKey key, TCodec codec, bool raw, SavedStorage kind,
+        IReferencePatcher<T>? patcher = null, bool progress = false, bool describe = true)
+        where T : struct where TCodec : struct, IValueCodec<T>
     {
-        int stableIdCompare = left.StableId.CompareTo(right.StableId);
-        return stableIdCompare != 0
-            ? stableIdCompare
-            : string.CompareOrdinal(left.StableName, right.StableName);
+        ComponentValues.Bind<T>();
+        if ((kind is SavedStorage.Table or SavedStorage.Tag) && typeof(IControlledComponent).IsAssignableFrom(typeof(T)))
+            throw new InvalidOperationException("Controlled topology values require their hierarchy or relation registration.");
+        if (raw && RuntimeHelpers.IsReferenceOrContainsReferences<T>() && kind != SavedStorage.Tag)
+            throw new ArgumentException("Register a value codec for managed component fields.");
+        patcher ??= ReferencePatchers.DefaultValue<T>();
+        var binding = Add(new SavedColumn<T, TCodec>(key, kind, codec, raw, patcher, progress));
+        if (describe) _entries.Add(binding.Describe());
+        if (ComponentType<T>.IsEnableableType)
+            Add(new SavedColumn<World.EnableGroup<T>, RawCodec<World.EnableGroup<T>>>(Derived(key, 8, "EnableGroup"), SavedStorage.Tag, default, true));
+        if (ComponentType<T>.KeepsRemovedType && !Columns.ContainsKey(ComponentType<Removed<T>>.TypeId))
+            Add(new SavedColumn<Removed<T>, RemovedCodec<T, TCodec>>(Derived(key, 32, "Removed"), SavedStorage.Removed,
+                new(codec), raw, ReferencePatchers.Removed(patcher), progress));
+        return this;
     }
 
-    private static void ValidateOrdinaryComponent<T>()
-        where T : struct, IComponent
+    public SerializationRegistry RegisterBuffer<T>(SerializationTypeKey key) where T : struct
     {
-        if (!ComponentMetadata<T>.IsRelationshipSource &&
-            !ComponentMetadata<T>.IsRelationshipTarget)
-        {
-            return;
-        }
+        if (RuntimeHelpers.IsReferenceOrContainsReferences<T>()) throw new ArgumentException("Register a buffer element codec for managed fields.");
+        return RegisterBuffer<T, RawCodec<T>>(key);
+    }
+    public SerializationRegistry RegisterBuffer<T, TCodec>(SerializationTypeKey key, TCodec codec = default)
+        where T : struct where TCodec : struct, IComponentCodec<T>
+        => RegisterColumn<Buffer<T>, BufferCodec<T, TCodec>>(key, new(codec), false, SavedStorage.Buffer);
 
-        // Parent/endpoints are encoded by TopologySerializationRegistry in the canonical topology
-        // section; derived Children/adjacency views are rebuilt on import. They must never enter
-        // the ordinary per-entity value registry independently.
-        throw new InvalidOperationException(
-            $"Relationship topology component {typeof(T).FullName} cannot be registered as an " +
-            "ordinary entity-row value. Register relation payload components with Register<T>(); " +
-            "topology requires the canonical relationship/hierarchy serialization section.");
+    public SerializationRegistry RegisterBufferCodec<T, TCodec>(TCodec codec)
+        where T : struct where TCodec : struct, IComponentCodec<T>
+    {
+        RegisterBuffer<T, TCodec>(RawKey<Buffer<T>>(), codec);
+        Columns[ComponentType<Buffer<T>>.TypeId].SupportsDurable = false;
+        return this;
     }
 
-    private static IValueCodec<T> CreateDefaultCodec<T>()
-        where T : struct
-    {
-        return RuntimeHelpers.IsReferenceOrContainsReferences<T>()
-            ? MissingValueCodec<T>.Instance
-            : RawValueCodec<T>.Instance;
-    }
+    public SerializationRegistry RegisterBufferCodec<T, TCodec>(SerializationTypeKey typeKey, TCodec codec)
+        where T : struct where TCodec : struct, IComponentCodec<T>
+        => RegisterBuffer<T, TCodec>(typeKey, codec);
 
-    private static IValueCodec<T> CreateExplicitCodec<T, TCodec>(TCodec codec = default)
-        where T : struct
-        where TCodec : struct, IComponentCodec<T>
-    {
-        return typeof(ICanonicalComponentCodec<T>).IsAssignableFrom(typeof(TCodec))
-            ? new CanonicalValueCodec<T, TCodec>(codec)
-            : new CustomValueCodec<T, TCodec>(codec);
-    }
-
-    private static IValueCodec<T> CreateGeneratedCodec<
-        [DynamicallyAccessedMembers(
-            DynamicallyAccessedMemberTypes.PublicFields |
-            DynamicallyAccessedMemberTypes.NonPublicFields)] T,
-        TCodec>(
-        int rawCanonicalSize,
-        ulong rawCanonicalLayoutFingerprint)
-        where T : struct
-        where TCodec : struct, ICanonicalComponentCodec<T>
-    {
-        if (RawCanonicalLayout.IsVerified<T>(
-                rawCanonicalSize,
-                rawCanonicalLayoutFingerprint))
-        {
-            return RawCanonicalValueCodec<T>.Instance;
-        }
-
-        return new CanonicalValueCodec<T, TCodec>();
-    }
-
-    private static SerializationTypeKey CreateTypeKey<T>(StoragePath storage, SerializationValueKind kind)
-        where T : struct
-    {
-        var type = typeof(T);
-        var attr = (SerializableComponentAttribute?)Attribute.GetCustomAttribute(
-            type,
-            typeof(SerializableComponentAttribute));
-        string stableName = type.FullName ?? type.Name;
-        ulong schemaFingerprint = ComputeSchemaFingerprint<T>(stableName, storage, kind);
-        Guid stableId = attr?.StableId ?? CreateDeterministicGuid(stableName);
-        return new SerializationTypeKey(stableId, stableName, schemaFingerprint);
-    }
-
-    private static Guid CreateDeterministicGuid(string stableName)
-    {
-        return BinaryTypeId.FromLogicalName("SomeEngine.ECS.Serialization:" + stableName);
-    }
-
-    private static ulong ComputeSchemaFingerprint<T>(string stableName, StoragePath storage, SerializationValueKind kind)
-        where T : struct
-    {
-        ulong hash = BinaryFieldKey.FromName(stableName);
-        foreach (byte b in typeof(T).Module.ModuleVersionId.ToByteArray())
-            hash = (hash ^ b) * 1099511628211ul;
-        hash = (hash ^ (uint)Unsafe.SizeOf<T>()) * 1099511628211ul;
-        hash = (hash ^ (uint)storage) * 1099511628211ul;
-        hash = (hash ^ (uint)kind) * 1099511628211ul;
-        hash = (hash ^ (RuntimeHelpers.IsReferenceOrContainsReferences<T>() ? 1u : 0u)) * 1099511628211ul;
-        return hash == 0 ? 1ul : hash;
-    }
-
+    public SerializationRegistry RegisterBufferCodec<T, TCodec, TPatcher>(SerializationTypeKey typeKey, TCodec codec, TPatcher patcher)
+        where T : struct where TCodec : struct, IComponentCodec<T> where TPatcher : struct, IReferencePatcher<T>
+        => RegisterColumn<Buffer<T>, BufferCodec<T, TCodec>>(typeKey, new(codec), false, SavedStorage.Buffer,
+            new BufferReferencePatcher<T>(ReferencePatchers.Bind<T, TPatcher>(patcher)));
 }
-
-internal interface IValueCodec<T>
-    where T : struct
-{
-    ComponentCodecKind Kind { get; }
-    bool SupportsParallelWrite => false;
-    void Write(ref DataWriter writer, in T value);
-    T Read(ref DataReader reader);
-}
-
-internal interface IValuePatcher<T>
-    where T : struct
-{
-    void Remap(ref T value, IReferenceRemapper remapper);
-}
-
-internal sealed class MissingValueCodec<T> : IValueCodec<T>
-    where T : struct
-{
-    public static readonly MissingValueCodec<T> Instance = new();
-
-    public ComponentCodecKind Kind => ComponentCodecKind.Missing;
-
-    public void Write(ref DataWriter writer, in T value)
-    {
-        throw new InvalidOperationException(
-            $"Type {typeof(T).FullName} contains references and requires a registered serialization codec.");
-    }
-
-    public T Read(ref DataReader reader)
-    {
-        throw new InvalidOperationException(
-            $"Type {typeof(T).FullName} contains references and requires a registered serialization codec.");
-    }
-}
-
-internal sealed class RawValueCodec<T> : IValueCodec<T>
-    where T : struct
-{
-    public static readonly RawValueCodec<T> Instance = new();
-
-    public ComponentCodecKind Kind => ComponentCodecKind.Raw;
-    public bool SupportsParallelWrite => true;
-
-    public void Write(ref DataWriter writer, in T value)
-    {
-        ref var mutable = ref Unsafe.AsRef(in value);
-        ReadOnlySpan<byte> bytes = MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(ref mutable, 1));
-        writer.WriteRawBytes(bytes);
-    }
-
-    public T Read(ref DataReader reader)
-    {
-        T value = default;
-        reader.ReadRawBytes(MemoryMarshal.AsBytes(MemoryMarshal.CreateSpan(ref value, 1)));
-        return value;
-    }
-}
-
-internal sealed class RawCanonicalValueCodec<T> : IValueCodec<T>
-    where T : struct
-{
-    public static readonly RawCanonicalValueCodec<T> Instance = new();
-
-    public ComponentCodecKind Kind => ComponentCodecKind.RawCanonical;
-    public bool SupportsParallelWrite => true;
-
-    public void Write(ref DataWriter writer, in T value)
-    {
-        ref T mutable = ref Unsafe.AsRef(in value);
-        writer.WriteRawBytes(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(ref mutable, 1)));
-    }
-
-    public T Read(ref DataReader reader)
-    {
-        T value = default;
-        reader.ReadRawBytes(MemoryMarshal.AsBytes(MemoryMarshal.CreateSpan(ref value, 1)));
-        return value;
-    }
-}
-
-internal sealed class CustomValueCodec<T, TCodec> : IValueCodec<T>
-    where T : struct
-    where TCodec : struct, IComponentCodec<T>
-{
-    private readonly TCodec _codec;
-
-    internal CustomValueCodec(TCodec codec = default) => _codec = codec;
-
-    public ComponentCodecKind Kind => ComponentCodecKind.Custom;
-    public bool SupportsParallelWrite => _codec.SupportsParallelWrite;
-
-    public void Write(ref DataWriter writer, in T value)
-    {
-        var codec = _codec;
-        codec.Write(ref writer, in value);
-    }
-
-    public T Read(ref DataReader reader)
-    {
-        var codec = _codec;
-        codec.Read(ref reader, out var value);
-        return value;
-    }
-}
-
-internal sealed class CanonicalValueCodec<T, TCodec> : IValueCodec<T>
-    where T : struct
-    where TCodec : struct, IComponentCodec<T>
-{
-    private readonly TCodec _codec;
-
-    internal CanonicalValueCodec(TCodec codec = default) => _codec = codec;
-
-    public ComponentCodecKind Kind => ComponentCodecKind.Canonical;
-    public bool SupportsParallelWrite => _codec.SupportsParallelWrite;
-
-    public void Write(ref DataWriter writer, in T value)
-    {
-        var codec = _codec;
-        codec.Write(ref writer, in value);
-    }
-
-    public T Read(ref DataReader reader)
-    {
-        var codec = _codec;
-        codec.Read(ref reader, out T value);
-        return value;
-    }
-}
-
-internal sealed class CustomReferencePatcher<T, TPatcher> : IValuePatcher<T>
-    where T : struct
-    where TPatcher : struct, IReferencePatcher<T>
-{
-    public void Remap(ref T value, IReferenceRemapper remapper)
-    {
-        var patcher = default(TPatcher);
-        patcher.Remap(ref value, remapper);
-    }
-}
-
-internal abstract class SerializationTypeRuntime
-{
-    protected SerializationTypeRuntime(SerializationTypeEntry entry, Type valueType)
-    {
-        Entry = entry;
-        ValueType = valueType;
-    }
-
-    public SerializationTypeEntry Entry { get; }
-    public Type ValueType { get; }
-    public virtual bool SupportsParallelWrite => false;
-
-    public abstract bool IsPresent(AdmittedWorldWrite admitted, Entity entity);
-    internal virtual void CollectSparsePresence(
-        AdmittedWorldWrite admitted,
-        SparseSerializationPresence destination)
-    {
-    }
-    protected abstract void WriteItemAdmitted(
-        ref DataWriter writer,
-        AdmittedWorldWrite admitted,
-        Entity entity);
-    protected abstract void ApplyStream(
-        ref DataReader reader,
-        World world,
-        Entity entity,
-        IReferenceRemapper? remapper);
-
-    internal void WriteAdmitted(
-        ref DataWriter writer,
-        AdmittedWorldWrite admitted,
-        Entity entity) =>
-        WriteItemAdmitted(ref writer, admitted, entity);
-
-    internal void Apply(
-        ref DataReader reader,
-        World world,
-        Entity entity,
-        IReferenceRemapper? remapper) =>
-        ApplyStream(ref reader, world, entity, remapper);
-}
-
-internal abstract class ValueSerializationRuntime<T> : SerializationTypeRuntime
-    where T : struct
-{
-    protected readonly IValueCodec<T> Codec;
-    private readonly IValuePatcher<T>? _patcher;
-
-    protected ValueSerializationRuntime(
-        SerializationTypeKey typeKey,
-        int runtimeComponentId,
-        StoragePath storage,
-        SerializationValueKind kind,
-        IValueCodec<T> codec,
-        IValuePatcher<T>? patcher,
-        SerializationSchemaSource schemaSource = SerializationSchemaSource.Explicit)
-        : base(
-            new SerializationTypeEntry(
-                RawAbiTypeKey.Bind<T>(typeKey, storage, kind, codec.Kind),
-                runtimeComponentId,
-                storage,
-                kind,
-                codec.Kind,
-                schemaSource,
-                RuntimeHelpers.IsReferenceOrContainsReferences<T>(),
-                containsEntityReferences: patcher is not null),
-            typeof(T))
-    {
-        Codec = codec;
-        _patcher = patcher;
-    }
-
-    protected void WriteValue(ref DataWriter writer, in T value) => Codec.Write(ref writer, in value);
-    public override bool SupportsParallelWrite => Codec.SupportsParallelWrite;
-
-    internal void WriteStandalone(ref DataWriter writer, in T value) =>
-        Codec.Write(ref writer, in value);
-
-    internal T ReadStandalone(ref DataReader reader) => Codec.Read(ref reader);
-
-    protected T ReadValue(ref DataReader reader) => Codec.Read(ref reader);
-
-    protected void RemapValue(ref T value, IReferenceRemapper remapper)
-    {
-        if (!Entry.ContainsEntityReferences)
-            return;
-
-        if (_patcher is null)
-        {
-            throw new InvalidOperationException(
-                $"Type {ValueType.FullName} contains entity references but no reference patcher is registered.");
-        }
-
-        _patcher.Remap(ref value, remapper);
-    }
-}
-
-/// <summary>
-/// Independently verifies the source generator's claim that a CLR value layout is byte-for-byte
-/// identical to its fixed-width little-endian canonical encoding. This work runs once at
-/// registration; verified values retain the allocation-free memcpy codec on the hot path.
-/// </summary>
-internal static class RawCanonicalLayout
-{
-    private const string FingerprintDomain = "SomeEngine.ECS.RawCanonicalLayout.v1";
-
-    internal static bool IsVerified<
-        [DynamicallyAccessedMembers(
-            DynamicallyAccessedMemberTypes.PublicFields |
-            DynamicallyAccessedMemberTypes.NonPublicFields)] T>(
-        int expectedSize,
-        ulong expectedFingerprint)
-        where T : struct
-    {
-        if (expectedSize < 0 ||
-            expectedFingerprint == 0 ||
-            !BitConverter.IsLittleEndian ||
-            RuntimeHelpers.IsReferenceOrContainsReferences<T>() ||
-            Unsafe.SizeOf<T>() != expectedSize)
-        {
-            return false;
-        }
-
-        Type type = typeof(T);
-        StructLayoutAttribute? layout = type.StructLayoutAttribute;
-        if (layout is null ||
-            layout.Value != LayoutKind.Sequential ||
-            layout.Pack != 1)
-        {
-            return false;
-        }
-
-        FieldInfo[] fields = type.GetFields(
-            BindingFlags.Instance |
-            BindingFlags.Public |
-            BindingFlags.NonPublic |
-            BindingFlags.DeclaredOnly);
-        var fieldLayouts = new List<FieldLayout>(fields.Length);
-        int nextOffset = 0;
-        for (int i = 0; i < fields.Length; i++)
-        {
-            FieldInfo field = fields[i];
-            if (!TryGetFixedWidthPrimitive(field.FieldType, out uint kind, out int size))
-                return false;
-
-            // Modern reflection returns declared fields in metadata order. Sequential Pack=1
-            // layout uses that same order and cannot introduce alignment padding, so the actual
-            // offset is the accumulated fixed-width field size. Avoid Marshal.OffsetOf here:
-            // NativeAOT intentionally omits structure-marshalling data for types that are not
-            // used by an interop signature, even though their managed layout is fully known.
-            if (nextOffset > int.MaxValue - size)
-                return false;
-            fieldLayouts.Add(new FieldLayout(nextOffset, kind, size));
-            nextOffset += size;
-        }
-
-        return nextOffset == expectedSize &&
-               ComputeFingerprint(
-                   expectedSize,
-                   CollectionsMarshal.AsSpan(fieldLayouts)) == expectedFingerprint;
-    }
-
-    private static bool TryGetFixedWidthPrimitive(Type type, out uint kind, out int size)
-    {
-        if (type == typeof(byte))
-            return Shape(1, 1, out kind, out size);
-        if (type == typeof(sbyte))
-            return Shape(2, 1, out kind, out size);
-        if (type == typeof(short))
-            return Shape(3, 2, out kind, out size);
-        if (type == typeof(ushort))
-            return Shape(4, 2, out kind, out size);
-        if (type == typeof(char))
-            return Shape(5, 2, out kind, out size);
-        if (type == typeof(int))
-            return Shape(6, 4, out kind, out size);
-        if (type == typeof(uint))
-            return Shape(7, 4, out kind, out size);
-        if (type == typeof(float))
-            return Shape(8, 4, out kind, out size);
-        if (type == typeof(long))
-            return Shape(9, 8, out kind, out size);
-        if (type == typeof(ulong))
-            return Shape(10, 8, out kind, out size);
-        if (type == typeof(double))
-            return Shape(11, 8, out kind, out size);
-
-        kind = 0;
-        size = 0;
-        return false;
-    }
-
-    private static bool Shape(uint valueKind, int valueSize, out uint kind, out int size)
-    {
-        kind = valueKind;
-        size = valueSize;
-        return true;
-    }
-
-    private static ulong ComputeFingerprint(
-        int size,
-        ReadOnlySpan<FieldLayout> fields)
-    {
-        ulong hash = BinaryFieldKey.FromName(FingerprintDomain);
-        AddUInt32(ref hash, unchecked((uint)size));
-        AddUInt32(ref hash, unchecked((uint)fields.Length));
-        for (int i = 0; i < fields.Length; i++)
-        {
-            FieldLayout field = fields[i];
-            AddUInt32(ref hash, field.Kind);
-            AddUInt32(ref hash, unchecked((uint)field.Offset));
-            AddUInt32(ref hash, unchecked((uint)field.Size));
-        }
-
-        return hash == 0 ? 1ul : hash;
-    }
-
-    private static void AddUInt32(ref ulong hash, uint value)
-    {
-        for (int shift = 0; shift < 32; shift += 8)
-            hash = (hash ^ (byte)(value >> shift)) * 1099511628211ul;
-    }
-
-    private static void AddBytes(ref ulong hash, ReadOnlySpan<byte> bytes)
-    {
-        for (int i = 0; i < bytes.Length; i++)
-            hash = (hash ^ bytes[i]) * 1099511628211ul;
-    }
-
-    private readonly struct FieldLayout
-    {
-        internal FieldLayout(int offset, uint kind, int size)
-        {
-            Offset = offset;
-            Kind = kind;
-            Size = size;
-        }
-
-        internal int Offset { get; }
-
-        internal uint Kind { get; }
-
-        internal int Size { get; }
-    }
-}
-
-/// <summary>
-/// Binds native-layout codecs to the actual CLR type ABI in addition to the caller's logical
-/// serialization key. This prevents an explicit stable key from accidentally making a raw
-/// checkpoint portable across rebuilds of the assembly that owns <typeparamref name="T"/>.
-/// Canonical and custom codecs retain their caller-supplied durable schema keys unchanged.
-/// </summary>
-internal static class RawAbiTypeKey
-{
-    internal static SerializationTypeKey Bind<T>(
-        SerializationTypeKey logicalKey,
-        StoragePath storage,
-        SerializationValueKind kind,
-        ComponentCodecKind codecKind)
-        where T : struct
-    {
-        if (codecKind != ComponentCodecKind.Raw)
-            return logicalKey;
-
-        Type type = typeof(T);
-        StructLayoutAttribute? layout = type.StructLayoutAttribute;
-        ulong hash = BinaryFieldKey.FromName("SomeEngine.ECS.RawAbi.v1");
-        Span<byte> stableIdBytes = stackalloc byte[16];
-        BinaryPrimitiveEncoding.WriteGuid(stableIdBytes, logicalKey.StableId);
-        AddBytes(ref hash, stableIdBytes);
-        AddString(ref hash, logicalKey.StableName);
-        AddUInt64(ref hash, logicalKey.SchemaFingerprint);
-        AddString(ref hash, type.FullName ?? type.Name);
-        AddBytes(ref hash, type.Module.ModuleVersionId.ToByteArray());
-        AddUInt32(ref hash, unchecked((uint)type.MetadataToken));
-        AddUInt32(ref hash, unchecked((uint)Unsafe.SizeOf<T>()));
-        AddUInt32(ref hash, (uint)storage);
-        AddUInt32(ref hash, (uint)kind);
-        AddUInt32(ref hash, RuntimeHelpers.IsReferenceOrContainsReferences<T>() ? 1u : 0u);
-        AddUInt32(ref hash, unchecked((uint)IntPtr.Size));
-        AddUInt32(ref hash, BitConverter.IsLittleEndian ? 1u : 0u);
-        AddUInt32(ref hash, layout is null ? uint.MaxValue : (uint)layout.Value);
-        AddUInt32(ref hash, layout is null ? 0u : unchecked((uint)layout.Pack));
-        AddUInt32(ref hash, layout is null ? 0u : unchecked((uint)layout.Size));
-
-        if (hash == 0)
-            hash = 1;
-        return new SerializationTypeKey(
-            logicalKey.StableId,
-            logicalKey.StableName,
-            hash);
-    }
-
-    private static void AddString(ref ulong hash, string value) =>
-        AddBytes(ref hash, SerializationBinary.StrictUtf8.GetBytes(value));
-
-    private static void AddBytes(ref ulong hash, ReadOnlySpan<byte> bytes)
-    {
-        for (int i = 0; i < bytes.Length; i++)
-            hash = (hash ^ bytes[i]) * 1099511628211ul;
-    }
-
-    private static void AddUInt32(ref ulong hash, uint value) => AddUInt64(ref hash, value);
-
-    private static void AddUInt64(ref ulong hash, ulong value)
-    {
-        for (int shift = 0; shift < 64; shift += 8)
-            hash = (hash ^ (byte)(value >> shift)) * 1099511628211ul;
-    }
-}
-
-internal sealed class ComponentSerializationRuntime<T> : ValueSerializationRuntime<T>
-    where T : struct, IComponent
-{
-    public ComponentSerializationRuntime(
-        SerializationTypeKey typeKey,
-        IValueCodec<T> codec,
-        IValuePatcher<T>? patcher,
-        SerializationSchemaSource schemaSource = SerializationSchemaSource.Explicit)
-        : base(
-            typeKey,
-            ComponentMetadata<T>.Id,
-            StoragePath.Table,
-            SerializationValueKind.Component,
-            codec,
-            patcher,
-            schemaSource)
-    {
-    }
-
-    public override bool IsPresent(AdmittedWorldWrite admitted, Entity entity) =>
-        admitted.HasValue<T>(entity);
-
-    protected override void WriteItemAdmitted(
-        ref DataWriter writer,
-        AdmittedWorldWrite admitted,
-        Entity entity)
-    {
-        if (ComponentMetadata<T>.IsEnableable)
-        {
-            writer.WriteBoolean(
-                admitted.IsValueEnabled(entity, ComponentMetadata<T>.Id));
-        }
-
-        ref readonly T component = ref admitted.ReadValue<T>(entity);
-        WriteValue(ref writer, in component);
-    }
-
-    protected override void ApplyStream(
-        ref DataReader reader,
-        World world,
-        Entity entity,
-        IReferenceRemapper? remapper)
-    {
-        bool isEnableable = ComponentMetadata<T>.IsEnableable;
-        bool enabled = isEnableable && reader.ReadBoolean();
-        T component = ReadValue(ref reader);
-        if (remapper is not null)
-            RemapValue(ref component, remapper);
-
-        if (world.Has<T>(entity))
-            world.Replace(entity, in component);
-        else
-            world.Add(entity, in component);
-
-        if (ComponentMetadata<T>.IsEnableable)
-            world.WriteEnabledId(entity, ComponentMetadata<T>.Id, enabled);
-    }
-
-}
-
-internal sealed class TagSerializationRuntime<T> : SerializationTypeRuntime
-    where T : struct, ITag
-{
-    public override bool SupportsParallelWrite => true;
-
-    public TagSerializationRuntime(
-        SerializationTypeKey typeKey,
-        SerializationSchemaSource schemaSource = SerializationSchemaSource.Explicit)
-        : base(
-            new SerializationTypeEntry(
-                typeKey,
-                ComponentMetadata<T>.Id,
-                StoragePath.Tag,
-                SerializationValueKind.Tag,
-                ComponentCodecKind.Missing,
-                schemaSource,
-                containsReferences: false,
-                containsEntityReferences: false),
-            typeof(T))
-    {
-    }
-
-    public override bool IsPresent(AdmittedWorldWrite admitted, Entity entity) =>
-        admitted.HasValue<T>(entity);
-    protected override void WriteItemAdmitted(
-        ref DataWriter writer,
-        AdmittedWorldWrite admitted,
-        Entity entity)
-    {
-    }
-
-    protected override void ApplyStream(
-        ref DataReader reader,
-        World world,
-        Entity entity,
-        IReferenceRemapper? remapper)
-    {
-        if (!world.Has<T>(entity))
-            world.AddTag<T>(entity);
-    }
-
-}
-
-internal sealed class SharedSerializationRuntime<T> : ValueSerializationRuntime<T>
-    where T : struct, ISharedComponent
-{
-    public SharedSerializationRuntime(
-        SerializationTypeKey typeKey,
-        IValueCodec<T> codec,
-        IValuePatcher<T>? patcher,
-        SerializationSchemaSource schemaSource = SerializationSchemaSource.Explicit)
-        : base(
-            typeKey,
-            ComponentMetadata<T>.Id,
-            StoragePath.Shared,
-            SerializationValueKind.Shared,
-            codec,
-            patcher,
-            schemaSource)
-    {
-    }
-
-    public override bool IsPresent(AdmittedWorldWrite admitted, Entity entity) =>
-        admitted.HasShared<T>(entity);
-
-    protected override void WriteItemAdmitted(
-        ref DataWriter writer,
-        AdmittedWorldWrite admitted,
-        Entity entity)
-    {
-        ref readonly T shared = ref admitted.ReadShared<T>(entity);
-        WriteValue(ref writer, in shared);
-    }
-
-    protected override void ApplyStream(
-        ref DataReader reader,
-        World world,
-        Entity entity,
-        IReferenceRemapper? remapper)
-    {
-        T shared = ReadValue(ref reader);
-        if (remapper is not null)
-            RemapValue(ref shared, remapper);
-
-        world.MergeShared(entity, in shared);
-    }
-
-}
-
-internal sealed class SparseSerializationRuntime<T> : ValueSerializationRuntime<T>
-    where T : struct, ISparseComponent
-{
-    public SparseSerializationRuntime(
-        SerializationTypeKey typeKey,
-        IValueCodec<T> codec,
-        IValuePatcher<T>? patcher,
-        SerializationSchemaSource schemaSource = SerializationSchemaSource.Explicit)
-        : base(
-            typeKey,
-            ComponentMetadata<T>.Id,
-            StoragePath.Sparse,
-            SerializationValueKind.Sparse,
-            codec,
-            patcher,
-            schemaSource)
-    {
-    }
-
-    public override bool IsPresent(AdmittedWorldWrite admitted, Entity entity) =>
-        admitted.HasSparse<T>(entity);
-
-    internal override void CollectSparsePresence(
-        AdmittedWorldWrite admitted,
-        SparseSerializationPresence destination)
-    {
-        if (admitted.TrySparseSet<T>(out SomeEngine.ECS.Sparse.SparseSet<T>? sparseSet))
-            destination.Add(this, sparseSet.DenseEntities);
-    }
-
-    protected override void WriteItemAdmitted(
-        ref DataWriter writer,
-        AdmittedWorldWrite admitted,
-        Entity entity)
-    {
-        ref readonly T sparse = ref admitted.ReadSparse<T>(entity);
-        WriteValue(ref writer, in sparse);
-    }
-
-    protected override void ApplyStream(
-        ref DataReader reader,
-        World world,
-        Entity entity,
-        IReferenceRemapper? remapper)
-    {
-        T sparse = ReadValue(ref reader);
-        if (remapper is not null)
-            RemapValue(ref sparse, remapper);
-
-        if (world.HasSparse<T>(entity))
-            world.ReplaceSparse(entity, in sparse);
-        else
-            world.AddSparse(entity, in sparse);
-    }
-
-}
-
-internal sealed class BufferSerializationRuntime<T> : ValueSerializationRuntime<T>
-    where T : struct, IBufferElement
-{
-    public BufferSerializationRuntime(
-        SerializationTypeKey typeKey,
-        IValueCodec<T> codec,
-        IValuePatcher<T>? patcher,
-        SerializationSchemaSource schemaSource = SerializationSchemaSource.Explicit)
-        : base(
-            typeKey,
-            BufferComponents.Header<T>(),
-            StoragePath.Table,
-            SerializationValueKind.Buffer,
-            codec,
-            patcher,
-            schemaSource)
-    {
-    }
-
-    public override bool IsPresent(AdmittedWorldWrite admitted, Entity entity) =>
-        admitted.HasBuffer<T>(entity);
-
-    protected override void WriteItemAdmitted(
-        ref DataWriter writer,
-        AdmittedWorldWrite admitted,
-        Entity entity)
-    {
-        BufferView<T> buffer = admitted.BorrowBuffer<T>(entity);
-        ReadOnlySpan<T> values = buffer.AsSpan();
-        writer.WriteInt32(values.Length);
-        for (int i = 0; i < values.Length; i++)
-            WriteValue(ref writer, in values[i]);
-    }
-
-    protected override void ApplyStream(
-        ref DataReader reader,
-        World world,
-        Entity entity,
-        IReferenceRemapper? remapper)
-    {
-        int count = reader.ReadBufferElementCount<T>();
-
-        bool hadBuffer = world.HasBuffer<T>(entity);
-        if (!hadBuffer)
-            world.AddBuffer<T>(entity);
-
-        var state = new BufferApplyState(
-            this,
-            reader.Reader,
-            reader.Budget,
-            count,
-            remapper,
-            preserveAddVersion: !hadBuffer);
-        world.ExecuteBufferWrite<T, BufferApplyState>(
-            entity,
-            ref state,
-            static (DynamicBuffer<T> buffer, ref BufferApplyState apply) =>
-            {
-                Span<T> destination = apply.PreserveAddVersion
-                    ? buffer.LoadUninitialized(apply.Count)
-                    : buffer.ReplaceWithUninitialized(apply.Count);
-                var itemReader = new DataReader(apply.Reader, apply.Budget);
-                apply.Runtime.ReadValuesDirect(
-                    ref itemReader,
-                    destination,
-                    apply.Remapper);
-            });
-    }
-
-    private void ReadValuesDirect(
-        ref DataReader reader,
-        Span<T> destination,
-        IReferenceRemapper? remapper)
-    {
-        for (int i = 0; i < destination.Length; i++)
-        {
-            T value = ReadValue(ref reader);
-            if (remapper is not null)
-                RemapValue(ref value, remapper);
-            destination[i] = value;
-        }
-    }
-
-    private readonly struct BufferApplyState
-    {
-        internal BufferApplyState(
-            BufferSerializationRuntime<T> runtime,
-            BinaryReader reader,
-            SerializationReadBudget? budget,
-            int count,
-            IReferenceRemapper? remapper,
-            bool preserveAddVersion)
-        {
-            Runtime = runtime;
-            Reader = reader;
-            Budget = budget;
-            Count = count;
-            Remapper = remapper;
-            PreserveAddVersion = preserveAddVersion;
-        }
-
-        internal BufferSerializationRuntime<T> Runtime { get; }
-
-        internal BinaryReader Reader { get; }
-
-        internal SerializationReadBudget? Budget { get; }
-
-        internal int Count { get; }
-
-        internal IReferenceRemapper? Remapper { get; }
-
-        internal bool PreserveAddVersion { get; }
-    }
-}
-

@@ -23,6 +23,24 @@ public sealed partial class Scheduler
 
     internal bool HelpComplete() => _workQueue.TryExecuteOne(wait: false);
 
+    internal JobResource CreateResource(string name, IJobSubmissionObserver user)
+    {
+        JobResource resource = CreateResource(name);
+        try
+        {
+            lock (_submissionObserverGate)
+                _submissionObservers.Add(
+                    new SubmissionResourceIdentity(ResourceKind.Resource, resource.Id, resource.Version, resource.Generation),
+                    user);
+            return resource;
+        }
+        catch
+        {
+            ReleaseResource(resource);
+            throw;
+        }
+    }
+
     internal JobResourceToken CreateResourceToken(string name, IJobSubmissionObserver user)
     {
         JobResourceToken token = CreateResourceToken(name);

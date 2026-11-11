@@ -2,7 +2,6 @@ using System.Numerics;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hierarchy;
-using SomeEngine.ECS.Queries;
 using SomeEngine.Layout;
 using SomeEngine.Views;
 
@@ -10,7 +9,7 @@ namespace SomeEngine.Elements;
 
 public sealed partial class HitTestSystem
 {
-    private QueryHandle _scrollQuery;
+    private Query _scrollQuery;
     private readonly Dictionary<Entity, ScrollInput> _scrollInputs = new();
 
     private void BeginScrollFrame(World world)
@@ -19,7 +18,7 @@ public sealed partial class HitTestSystem
         _scrollInputs.Clear();
         foreach (Entity node in _nodes)
         {
-            ScrollInput input = world.Read<ScrollInput>(node);
+            ScrollInput input = world.ReadComponentData<ScrollInput>(node);
             input.Delta = Vector2.Zero;
             _scrollInputs.Add(node, input);
         }
@@ -43,7 +42,7 @@ public sealed partial class HitTestSystem
     {
         if (!_scrollInputs.TryGetValue(node, out ScrollInput input))
             return;
-        ScrollOffset offset = world.Read<ScrollOffset>(node);
+        ScrollOffset offset = world.ReadComponentData<ScrollOffset>(node);
         Vector2 value = Vector2.Clamp(offset.Value + input.Delta + delta, Vector2.Zero, offset.Max);
         input.Delta = value - offset.Value;
         input.Count = unchecked(input.Count + 1);
@@ -54,9 +53,9 @@ public sealed partial class HitTestSystem
     {
         foreach (var (node, input) in _scrollInputs)
         {
-            ScrollInput previous = world.Read<ScrollInput>(node);
+            ScrollInput previous = world.ReadComponentData<ScrollInput>(node);
             if (input.Delta != previous.Delta || input.Count != previous.Count)
-                world.Replace(node, input);
+                world.Set(node, input);
         }
     }
 }

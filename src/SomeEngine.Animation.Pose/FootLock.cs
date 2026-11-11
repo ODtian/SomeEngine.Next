@@ -38,7 +38,6 @@ public readonly record struct FootLockParameters(FootLockRig Rig, PosePrediction
     ICollisionQueries Scene, FootSupportSettings Support, float ContactWindow = 1,
     float Duration = float.PositiveInfinity, FootPlacementSettings? Prediction = null);
 
-[BufferCapacity(1)]
 public struct FootLockInstance : IBufferElement
 {
     public AnimationLeafBatch<FootLockParameters> Definition;
@@ -64,23 +63,37 @@ public readonly struct FootLockLeaf : IAnimationLeaf<FootLockParameters>
     public static void Install(World world, Entity animation, Entity target,
         AnimationLeafBatch<FootLockParameters> definitions, int index, in AnimationLeafPlacement placement)
     {
-        if (!world.HasBuffer<FootLockInstance>(animation)) world.AddBuffer<FootLockInstance>(animation);
+        if (!world.Has<Buffer<FootLockInstance>>(animation)) world.AddBuffer<FootLockInstance>(animation);
         var instance = new FootLockInstance
         {
-            Definition = definitions, Index = index, Placement = placement, Target = target, Actor = target, Starts = placement.Starts,
+            Definition = definitions,
+            Index = index,
+            Placement = placement,
+            Target = target,
+            Actor = target,
+            Starts = placement.Starts,
             Source = definitions.Parameters[index].Source,
-            Samples = new(definitions.Parameters[index], world.Read<GpuPoseTarget>(target).Skeleton),
+            Samples = new(definitions.Parameters[index], world.ReadComponentData<GpuPoseTarget>(target).Skeleton),
         };
-        world.ExecuteBufferWrite<FootLockInstance, FootLockInstance>(animation, ref instance,
-            static (instances, ref instance) =>
+        {
+            using var instances = world.GetBuffer<FootLockInstance>(animation);
+            Visit(instances, ref instance);
+
+            static void Visit(DynamicBuffer<FootLockInstance> instances, ref FootLockInstance instance)
             {
-                if (instances.Count > 0 && instances.Read(0).Placement.Starts != instance.Placement.Starts) instances.Clear();
+                if (instances.Count > 0 && instances[0].Placement.Starts != instance.Placement.Starts) instances.Clear();
                 instances.Add(instance);
-            });
+
+            }
+        }
     }
 
-    public static void Release(World world, Entity animation) =>
-        world.ExecuteBufferWrite<FootLockInstance>(animation, static instances => instances.Clear());
+    public static void Release(World world, Entity animation)
+    {
+        using var instances = world.GetBuffer<FootLockInstance>(animation);
+        instances.Clear();
+
+    }
 }
 
 public static partial class PoseGraphExtensions

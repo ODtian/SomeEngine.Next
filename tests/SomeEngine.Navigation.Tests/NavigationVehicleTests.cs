@@ -12,7 +12,7 @@ public sealed class NavigationVehicleTests
     public void StateLatticeExecutesACompleteLongTurnFromItsSuppliedMotionControl()
     {
         using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using World world = new World(execution: new WorldJobs(scheduler));
         var model = new NavigationVehicleModel(1);
         var profile = new NavigationProfile([new Vector2(-0.1f), new(0.1f, -0.1f), new(0.1f), new(-0.1f, 0.1f)],
             1, maximumSpeed: 1, vehicleModel: model);
@@ -41,26 +41,26 @@ public sealed class NavigationVehicleTests
         var navigation = new NavigationSystems<NavigationVehicleSpace, StateLatticeSearch, StateLatticeSearchState, TestMotion, TestMotionReader>(world);
         var start = new NavigationPose(new(2.25f, 0, 2.25f), 0);
         NavigationPose goal = model.Integrate(start, control, control.Duration);
-        Entity actor = world.CreateEntity(new TestMotion { Position = start.Position });
+        Entity actor = world.Create(new TestMotion { Position = start.Position });
         navigation.AddAgent(actor, space, profile, new NavigationPolicy(), new(goal.Position, 0.001f, goal.Heading, 0.001f), 1);
         float traveled = 0;
-        for (int frame = 0; frame < 60 && world.Read<NavigationProgress>(actor).Status != NavigationStatus.Arrived; frame++)
+        for (int frame = 0; frame < 60 && world.ReadValue<NavigationProgress>(actor).Status != NavigationStatus.Arrived; frame++)
         {
-            Vector3 previous = world.Read<TestMotion>(actor).Position;
+            Vector3 previous = world.ReadValue<TestMotion>(actor).Position;
             navigation.ScheduleProgress(new ConsumeVehicleMotion(0.1f, model).ScheduleParallel(world, navigation.Schedule(0.1f, 8).Steering)).Complete();
-            traveled += Vector3.Distance(previous, world.Read<TestMotion>(actor).Position);
+            traveled += Vector3.Distance(previous, world.ReadValue<TestMotion>(actor).Position);
         }
-        Assert.Equal(NavigationStatus.Arrived, world.Read<NavigationProgress>(actor).Status);
+        Assert.Equal(NavigationStatus.Arrived, world.ReadValue<NavigationProgress>(actor).Status);
         Assert.InRange(traveled, 4.7f, 4.72f);
-        Assert.InRange(Vector3.Distance(goal.Position, world.Read<TestMotion>(actor).Position), 0, 0.001f);
-        Assert.InRange(MathF.Abs(NavigationHeading.Difference(goal.Heading, world.Read<TestMotion>(actor).Heading)), 0, 0.001f);
+        Assert.InRange(Vector3.Distance(goal.Position, world.ReadValue<TestMotion>(actor).Position), 0, 0.001f);
+        Assert.InRange(MathF.Abs(NavigationHeading.Difference(goal.Heading, world.ReadValue<TestMotion>(actor).Heading)), 0, 0.001f);
     }
 
     [Fact]
     public void HybridAStarDrivesFromAnArbitraryHeadingToTheDockingPoseUsingContinuousControls()
     {
         using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using World world = new World(execution: new WorldJobs(scheduler));
         var model = new NavigationVehicleModel(minimumTurningRadius: 2);
         var profile = new NavigationProfile(
             [new(-0.25f, -0.6f), new(0.25f, -0.6f), new(0.25f, 0.6f), new(-0.25f, 0.6f)],
@@ -72,15 +72,15 @@ public sealed class NavigationVehicleTests
             HybridAStarSearchState, TestMotion, TestMotionReader>(world);
         var start = new NavigationPose(new(1.35f, 0, 1.45f), 0.27f);
         var goal = new NavigationPose(new(6.62f, 0, 5.13f), 1.13f);
-        Entity entity = world.CreateEntity(new TestMotion { Position = start.Position, Heading = start.Heading });
+        Entity entity = world.Create(new TestMotion { Position = start.Position, Heading = start.Heading });
         navigation.AddAgent(entity, space, profile, new NavigationPolicy(), new(goal.Position, 0.05f, goal.Heading, 0.025f), 1);
         navigation.Schedule(0.1f, 1).Steering.Complete();
-        Assert.Equal(NavigationSearchStatus.Searching, world.Read<NavigationPathResult>(entity).Status);
-        for (int frame = 0; frame < 700 && world.Read<NavigationProgress>(entity).Status != NavigationStatus.Arrived; frame++)
+        Assert.Equal(NavigationSearchStatus.Searching, world.ReadValue<NavigationPathResult>(entity).Status);
+        for (int frame = 0; frame < 700 && world.ReadValue<NavigationProgress>(entity).Status != NavigationStatus.Arrived; frame++)
         {
             NavigationStep next = navigation.Schedule(0.1f, 64);
             navigation.ScheduleProgress(new ConsumeVehicleMotion(0.1f, model).ScheduleParallel(world, next.Steering)).Complete();
-            TestMotion actual = world.Read<TestMotion>(entity);
+            TestMotion actual = world.ReadValue<TestMotion>(entity);
             foreach (Vector2 corner in profile.Footprint.Span)
             {
                 float cosine = MathF.Cos(actual.Heading), sine = MathF.Sin(actual.Heading);
@@ -88,11 +88,11 @@ public sealed class NavigationVehicleTests
                 Assert.True(point.X >= 0 && point.X <= 9 && point.Z >= 0 && point.Z <= 7 && (point.X <= 4 || point.Z >= 3));
             }
         }
-        Assert.Equal(NavigationStatus.Arrived, world.Read<NavigationProgress>(entity).Status);
-        NavigationPath path = world.Read<NavigationPathResult>(entity).Path!;
+        Assert.Equal(NavigationStatus.Arrived, world.ReadValue<NavigationProgress>(entity).Status);
+        NavigationPath path = world.ReadValue<NavigationPathResult>(entity).Path!;
         Assert.Equal(start, path.Poses.Span[0]);
-        Assert.InRange(Vector3.Distance(world.Read<TestMotion>(entity).Position, goal.Position), 0, 0.0501f);
-        Assert.InRange(MathF.Abs(NavigationHeading.Difference(goal.Heading, world.Read<TestMotion>(entity).Heading)), 0, 0.0251f);
+        Assert.InRange(Vector3.Distance(world.ReadValue<TestMotion>(entity).Position, goal.Position), 0, 0.0501f);
+        Assert.InRange(MathF.Abs(NavigationHeading.Difference(goal.Heading, world.ReadValue<TestMotion>(entity).Heading)), 0, 0.0251f);
         Assert.Contains(path.MotionSegments.ToArray(), segment =>
             MathF.Abs(NavigationHeading.Difference(segment.End.Heading, start.Heading)) is > 0.05f and < 1.3f);
         foreach (NavigationMotionSegment segment in path.MotionSegments.Span)
@@ -108,7 +108,7 @@ public sealed class NavigationVehicleTests
     public void StateLatticeControlsDriveTheVehicleThroughABendWithinItsTurningRadius()
     {
         using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using World world = new World(execution: new WorldJobs(scheduler));
         var model = new NavigationVehicleModel(minimumTurningRadius: 2);
         var profile = new NavigationProfile(
             [new(-0.25f, -0.6f), new(0.25f, -0.6f), new(0.25f, 0.6f), new(-0.25f, 0.6f)],
@@ -117,18 +117,18 @@ public sealed class NavigationVehicleTests
         var space = new NavigationVehicleSpace(BendGrid(profile), motions);
         var navigation = new NavigationSystems<NavigationVehicleSpace, StateLatticeSearch,
             StateLatticeSearchState, TestMotion, TestMotionReader>(world);
-        Entity entity = world.CreateEntity(new TestMotion { Position = new(1.75f, 0, 1.25f) });
+        Entity entity = world.Create(new TestMotion { Position = new(1.75f, 0, 1.25f) });
         navigation.AddAgent(entity, space, profile, new NavigationPolicy(),
             new NavigationGoal(new(6.75f, 0, 5.25f), 0.04f, MathF.PI / 2, 0.03f), 1);
 
-        for (int step = 0; step < 240 && world.Read<NavigationProgress>(entity).Status != NavigationStatus.Arrived; step++)
+        for (int step = 0; step < 240 && world.ReadValue<NavigationProgress>(entity).Status != NavigationStatus.Arrived; step++)
         {
             NavigationStep next = navigation.Schedule(0.1f, 32);
             navigation.ScheduleProgress(new ConsumeVehicleMotion(0.1f, model).ScheduleParallel(world, next.Steering)).Complete();
-            NavigationSteering steering = world.Read<NavigationSteering>(entity);
+            NavigationSteering steering = world.ReadValue<NavigationSteering>(entity);
             if (steering.VehicleControl is { } control)
                 Assert.InRange(MathF.Abs(control.Curvature), 0, 0.50001f);
-            TestMotion actual = world.Read<TestMotion>(entity);
+            TestMotion actual = world.ReadValue<TestMotion>(entity);
             foreach (Vector2 corner in profile.Footprint.Span)
             {
                 float cosine = MathF.Cos(actual.Heading), sine = MathF.Sin(actual.Heading);
@@ -137,8 +137,8 @@ public sealed class NavigationVehicleTests
             }
         }
 
-        Assert.Equal(NavigationStatus.Arrived, world.Read<NavigationProgress>(entity).Status);
-        Assert.Contains(world.Read<NavigationPathResult>(entity).Path!.MotionSegments.ToArray(),
+        Assert.Equal(NavigationStatus.Arrived, world.ReadValue<NavigationProgress>(entity).Status);
+        Assert.Contains(world.ReadValue<NavigationPathResult>(entity).Path!.MotionSegments.ToArray(),
             segment => MathF.Abs(segment.Control.Curvature) > 0.1f);
     }
 

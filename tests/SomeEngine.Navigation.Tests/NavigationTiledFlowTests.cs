@@ -84,7 +84,7 @@ public sealed class NavigationTiledFlowTests
     public void EikonalFieldCrossesSuccessiveDetailedTilesAndMatchesTheWholeGridAtTheirBoundaries()
     {
         using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 3 });
-        using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using World world = new World(execution: new WorldJobs(scheduler));
         var profile = new NavigationProfile([new(-0.1f, -0.1f), new(0.1f, -0.1f), new(0.1f, 0.1f), new(-0.1f, 0.1f)], 1);
         var policy = new NavigationPolicy();
         NavigationFlowGoal[] goals = [new(new(8.5f, 0, 3.5f), 0.05f)];
@@ -96,7 +96,7 @@ public sealed class NavigationTiledFlowTests
             profile, policy, goals, scheduler: scheduler).Complete().Flow;
         var solver = new NavigationFlowSystem<FastIterativeFlow, FastIterativeFlowState>(flow, scheduler);
         var navigation = new NavigationSystems<Motion, MotionReader>(world);
-        var actor = world.CreateEntity(new Motion(new(0.5f, 0, 0.5f), default, 0));
+        var actor = world.Create(new Motion(new(0.5f, 0, 0.5f), default, 0));
         navigation.AddFlowAgent(actor, flow, 2);
         for (int count = 1; count <= 3; count++)
         {
@@ -109,16 +109,16 @@ public sealed class NavigationTiledFlowTests
             for (int frame = 0; frame < 150; frame++)
             {
                 navigation.Schedule(0.1f, solver.Schedule(64).Completion).Steering.Complete();
-                Motion motion = world.Read<Motion>(actor);
-                NavigationSteering steering = world.Read<NavigationSteering>(actor);
-                world.Replace(actor, new Motion(motion.Position + steering.Velocity * 0.1f, steering.Velocity, steering.Heading));
+                Motion motion = world.ReadValue<Motion>(actor);
+                NavigationSteering steering = world.ReadValue<NavigationSteering>(actor);
+                world.Set(actor, new Motion(motion.Position + steering.Velocity * 0.1f, steering.Velocity, steering.Heading));
                 navigation.ScheduleProgress(default).Complete();
                 if (ReferenceEquals(flow.Field?.Input, flow.Input) &&
-                    world.Read<NavigationProgress>(actor).Status is NavigationStatus.WaitingForTiles or NavigationStatus.Arrived) break;
+                    world.ReadValue<NavigationProgress>(actor).Status is NavigationStatus.WaitingForTiles or NavigationStatus.Arrived) break;
             }
-            if (count < 3) Assert.Equal(count * 3 - 0.5f, world.Read<Motion>(actor).Position.X, 3);
+            if (count < 3) Assert.Equal(count * 3 - 0.5f, world.ReadValue<Motion>(actor).Position.X, 3);
         }
-        Assert.Equal(NavigationStatus.Arrived, world.Read<NavigationProgress>(actor).Status);
+        Assert.Equal(NavigationStatus.Arrived, world.ReadValue<NavigationProgress>(actor).Status);
         Assert.Equal(3, flow.Field!.Tiles.Length);
         foreach (Vector3 position in new Vector3[] { new(2.5f, 0, 1.5f), new(3.5f, 0, 2.5f), new(6.5f, 0, 1.5f) })
         {

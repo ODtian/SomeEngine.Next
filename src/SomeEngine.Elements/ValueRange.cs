@@ -4,7 +4,7 @@ using SomeEngine.ECS;
 namespace SomeEngine.Elements;
 
 /// <summary>Caller-supplied value, inclusive limits, and edit quantization.</summary>
-public record struct ValueRange(float Value, float Minimum = 0, float Maximum = 1, float Step = 0) : IComponent
+public record struct ValueRange(float Value, float Minimum = 0, float Maximum = 1, float Step = 0) : ITrackedComponent
 {
     /// <summary>The caller's value expressed as a fraction of the range for presentation.</summary>
     public readonly float Ratio => Maximum == Minimum ? 0 :
@@ -15,7 +15,7 @@ public record struct ValueRange(float Value, float Minimum = 0, float Maximum = 
 public record struct ValueDrag(Vector2 Direction, float Distance) : IComponent;
 
 /// <summary>The input stage's most recent edit and its increasing change count.</summary>
-public struct ValueEdit : IComponent
+public struct ValueEdit : ITrackedComponent
 {
     public float Value;
     public uint Count;

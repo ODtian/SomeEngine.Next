@@ -4,7 +4,7 @@ using SomeEngine.ECS.Components;
 namespace SomeEngine.Animation;
 
 /// <summary>Time and completion counters shared by animation evaluators.</summary>
-public struct Timeline : IEnableableComponent
+public struct Timeline : IEnableableComponent, ITrackedComponent
 {
     public Timeline() => Speed = 1;
 
@@ -31,14 +31,12 @@ public enum TimelineClock : byte { Game, Interface, Unscaled }
 
 public enum StageEnd : byte { Duration, Settled, External }
 
-[BufferCapacity(4)]
 public struct TimelineStage : IBufferElement
 {
     public StageEnd End;
     public float Duration;
 }
 
-[BufferCapacity(4)]
 public struct TimelineEvent : IBufferElement
 {
     public ushort Id;

@@ -46,9 +46,9 @@ public sealed class NavigationGridStreamingTests
             var interest = new NavigationInterest(new(0.5f, 0, 1.5f), 0.1f) { LookAheadDistance = 5 };
             streaming.Interests.Add(interest);
             var solver = new NavigationFlowSystem<ReverseDijkstraFlow, ReverseDijkstraFlowState>(flow, scheduler);
-            using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+            using World world = new World(execution: new WorldJobs(scheduler));
             var navigation = new NavigationSystems<Motion, MotionReader>(world);
-            var actor = world.CreateEntity(new Motion(interest.Position, default, 0));
+            var actor = world.Create(new Motion(interest.Position, default, 0));
             navigation.AddFlowAgent(actor, flow, 2);
             var visited = new List<Vector3>();
             try
@@ -57,20 +57,20 @@ public sealed class NavigationGridStreamingTests
                 {
                     for (int frame = 0; frame < 100; frame++)
                     {
-                        interest.Position = world.Read<Motion>(actor).Position;
+                        interest.Position = world.ReadComponentData<Motion>(actor).Position;
                         streaming.Update();
                         JobHandle solved = solver.Schedule(64, streaming.Applied).Completion;
                         navigation.Schedule(0.1f, solved).Steering.Complete();
-                        Motion motion = world.Read<Motion>(actor);
-                        NavigationSteering steering = world.Read<NavigationSteering>(actor);
+                        Motion motion = world.ReadComponentData<Motion>(actor);
+                        NavigationSteering steering = world.ReadComponentData<NavigationSteering>(actor);
                         Vector3 position = motion.Position + steering.Velocity * 0.1f;
-                        world.Replace(actor, new Motion(position, steering.Velocity, steering.Heading));
+                        world.Set(actor, new Motion(position, steering.Velocity, steering.Heading));
                         visited.Add(position);
                         navigation.ScheduleProgress(default).Complete();
-                        if (world.Read<NavigationProgress>(actor).Status is NavigationStatus.WaitingForTiles or NavigationStatus.Arrived) break;
+                        if (world.ReadComponentData<NavigationProgress>(actor).Status is NavigationStatus.WaitingForTiles or NavigationStatus.Arrived) break;
                     }
                     if (tile == 3) break;
-                    Assert.Equal(tile * 4 - 0.5f, world.Read<Motion>(actor).Position.X, 3);
+                    Assert.Equal(tile * 4 - 0.5f, world.ReadComponentData<Motion>(actor).Position.X, 3);
                     Assert.Contains(new NavigationTileCoordinate(tile, 0), flow.Field!.RequiredTiles.ToArray());
                     streaming.Update();
                     await signals.Started[tile - 1].Task;
@@ -79,7 +79,7 @@ public sealed class NavigationGridStreamingTests
                 }
             }
             finally { foreach (TaskCompletionSource signal in signals.Release) signal.TrySetResult(); }
-            Assert.Equal(NavigationStatus.Arrived, world.Read<NavigationProgress>(actor).Status);
+            Assert.Equal(NavigationStatus.Arrived, world.ReadComponentData<NavigationProgress>(actor).Status);
             Assert.True(visited.Max(position => position.Z) > 2.4f);
             Assert.True(visited.Min(position => position.Z) > 1.4f);
             Vector3 start = new(0.5f, 0, 1.5f);

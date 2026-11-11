@@ -11,7 +11,7 @@ public partial struct TrackSystem<T, TOps>
     {
         for (int i = 0; i < tracks.Count; i++)
         {
-            Track<T> previous = tracks.Read(i);
+            Track<T> previous = tracks[i];
             if (previous.Typed || previous.GraphMotion == 0 || previous.StartId != starts ||
                 (previous.Channel.Component == ComponentId<AnimationLayers>.Value) != weightChannels)
                 continue;
@@ -52,11 +52,11 @@ public partial struct TrackSystem<T, TOps>
             SampleValue(world, animation, target, tracks, i, ref track, track.MotionStage, time, starts, keyframes);
             motion.Running |= !track.Finished;
         }
-        if (world.HasBuffer<GraphFieldOutput<T>>(animation))
+        if (world.Has<Buffer<GraphFieldOutput<T>>>(animation))
             return;
         for (int i = 0; i < tracks.Count; i++)
         {
-            Track<T> track = tracks.Read(i);
+            Track<T> track = tracks[i];
             if (track.GraphMotion == 0 || track.StartId != starts ||
                 (track.Channel.Component == ComponentId<AnimationLayers>.Value) != weightChannels)
                 continue;
@@ -67,11 +67,11 @@ public partial struct TrackSystem<T, TOps>
             float total = 0;
             for (int j = 0; j < tracks.Count; j++)
             {
-                Track<T> candidate = tracks.Read(j);
+                Track<T> candidate = tracks[j];
                 if (candidate.GraphMotion == 0 || candidate.GraphGroup != track.GraphGroup || candidate.Target != track.Target ||
                     candidate.Channel != track.Channel || candidate.Layer != track.Layer || candidate.StartId != starts || candidate.CaptureStart)
                     continue;
-                GraphMotion motion = motions.Read(candidate.GraphMotion - 1);
+                GraphMotion motion = motions[candidate.GraphMotion - 1];
                 if (motion.Weight <= 0 || HasLaterGraphValue(tracks, j, in candidate, in motion))
                     continue;
                 T sample = ReadValue(world, target, in candidate);
@@ -80,14 +80,20 @@ public partial struct TrackSystem<T, TOps>
             }
             if (total == 0)
                 continue;
-            if (world.HasBuffer<Contribution<T>>(target))
+            if (world.Has<Buffer<Contribution<T>>>(target))
             {
                 var contribution = new Contribution<T>
                 {
-                    Channel = track.Channel, Layer = track.Layer, Value = value, Source = animation, Output = (uint)i,
+                    Channel = track.Channel,
+                    Layer = track.Layer,
+                    Value = value,
+                    Source = animation,
+                    Output = (uint)i,
                 };
-                world.ExecuteBufferWrite<Contribution<T>, Contribution<T>>(target, ref contribution,
-                    static (DynamicBuffer<Contribution<T>> buffer, ref Contribution<T> value) => buffer.Add(value));
+                {
+                    using var buffer = world.GetBuffer<Contribution<T>>(target);
+                    buffer.Add(contribution);
+                }
             }
             else
                 PropertyAnimation.WriteSingle<T, TOps>(world, target, track.Channel, track.Layer, value);
@@ -98,7 +104,7 @@ public partial struct TrackSystem<T, TOps>
     {
         for (int i = 0; i < index; i++)
         {
-            Track<T> earlier = tracks.Read(i);
+            Track<T> earlier = tracks[i];
             if (earlier.GraphGroup == track.GraphGroup && earlier.Target == track.Target && earlier.Channel == track.Channel &&
                 earlier.Layer == track.Layer && earlier.StartId == track.StartId)
                 return true;
@@ -110,7 +116,7 @@ public partial struct TrackSystem<T, TOps>
     {
         for (int i = index + 1; i < tracks.Count; i++)
         {
-            Track<T> later = tracks.Read(i);
+            Track<T> later = tracks[i];
             if (later.GraphMotion == track.GraphMotion && later.Target == track.Target && later.Channel == track.Channel &&
                 later.Layer == track.Layer && later.StartId == track.StartId && !later.CaptureStart &&
                 (later.MotionStage > track.MotionStage || later.MotionStage == track.MotionStage && later.Start >= track.Start))

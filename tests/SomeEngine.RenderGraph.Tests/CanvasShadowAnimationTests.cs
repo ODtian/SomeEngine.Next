@@ -52,7 +52,7 @@ public sealed partial class CanvasCompositionTests
         using var frames = new RenderFrameCoordinator(renderDevice);
         using var graph = new RenderGraph(backend, device, [backend.GetQueue(device, QueueType.Graphics)]);
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(game));
-        Entity time = game.CreateEntity(new AnimationTime(0));
+        Entity time = game.Create(new AnimationTime(0));
         systems.Add(new ViewRebuildSystem());
         systems.Add(new TimelineSystem(time));
         systems.Add(new TrackSystem<Color, ColorOps>());
@@ -61,20 +61,21 @@ public sealed partial class CanvasCompositionTests
         systems.Add(new TimelineEndSystem());
         systems.Add(new LayoutSystem());
         systems.Add(new FlipSystem());
-        Entity canvasTransform = game.CreateEntity(new WorldTransform
+        Entity canvasTransform = game.Create(new WorldTransform
         {
             Qvvs = new TransformQvvs(new Vector3(-1, 1, 0.25f), Quaternion.Identity, 1f / 32),
         });
-        Entity canvas = game.CreateEntity(new Canvas
+        Entity canvas = game.Create(new Canvas
         {
             Target = worldSpace ? CanvasTarget.WorldSpace(canvasTransform) : CanvasTarget.Screen,
-            Size = new Size(64, 64), DepthTest = worldSpace,
+            Size = new Size(64, 64),
+            DepthTest = worldSpace,
         });
         Entity root = Views.Views.Spawn(game, canvas, new AnimatedShadow(false));
         using var extraction = new RenderExtractionSystems(render, new CanvasRenderExtractor());
         SurfaceMaterial material = SurfaceMaterial.Create(device.Capabilities.CompileTarget);
         using var renderer = new CanvasRenderer(backend, device, graph, render, material, Format.R8G8B8A8UNorm);
-        Entity view = render.CreateEntity(new RenderView(Matrix4x4.Identity, Matrix4x4.Identity, 64, 64));
+        Entity view = render.World.Create(new RenderView(Matrix4x4.Identity, Matrix4x4.Identity, 64, 64));
         using SomeEngine.Graphics.Buffer readback = backend.CreateBuffer(device,
             new BufferDesc(64 * 256, BufferUsages.CopyDestination), MemoryType.Readback);
         GraphTextureId target = CreateTarget(graph, readback, out GraphTextureId depth, out GraphPassId copy);
@@ -83,12 +84,12 @@ public sealed partial class CanvasCompositionTests
         ulong structure = 0;
         for (int index = 0; index < (worldSpace ? 5 : 4); index++)
         {
-            if (index == 1) game.Replace(root, new AnimatedShadow(true));
-            if (index == 4) game.Replace(canvasTransform, new WorldTransform
+            if (index == 1) game.Set(root, new AnimatedShadow(true));
+            if (index == 4) game.Set(canvasTransform, new WorldTransform
             {
                 Qvvs = new TransformQvvs(new Vector3(-1, 1, 0.75f), Quaternion.Identity, 1f / 32),
             });
-            game.Replace(time, new AnimationTime(index is 2 or 3 ? 0.5f : 0, gamePaused: true));
+            game.Set(time, new AnimationTime(index is 2 or 3 ? 0.5f : 0, gamePaused: true));
             systems.Update();
             extraction.Extract(game);
             using (var prepare = new RenderPrepareSystems(render, extraction))
@@ -103,11 +104,15 @@ public sealed partial class CanvasCompositionTests
             }
             renderer.ReconcileGraph(target, worldTarget);
             Entity mirror = extraction.RequireMirror(canvas);
-            Entity container = Hierarchy<ElementTree>.GetChildren(game, root)[0];
-            Entity viewport = Hierarchy<ElementTree>.GetChildren(game, container)[0];
-            Assert.Equal(new Rect(0, 0, 64, 27), game.Read<LayoutRect>(viewport).Value);
-            render.ExecuteBufferRead<SurfaceInstance>(mirror, values =>
-                Assert.Equal(new Rect(0, 0, 64, 27), Assert.Single(values.AsSpan().ToArray()).ClipRectangle));
+            Entity container;
+            using (ChildrenRead children = Hierarchy<ElementTree>.GetChildren(game, root)) container = children.Entities[0];
+            Entity viewport;
+            using (ChildrenRead children = Hierarchy<ElementTree>.GetChildren(game, container)) viewport = children.Entities[0];
+            Assert.Equal(new Rect(0, 0, 64, 27), game.ReadComponentData<LayoutRect>(viewport).Value);
+            using (SomeEngine.ECS.ReadOnlyBuffer<SurfaceInstance> values = render.World.ReadBuffer<SurfaceInstance>(mirror))
+            {
+                Assert.Equal(new Rect(0, 0, 64, 27), Assert.Single(values.AsSpan().ToArray()).ClipRectangle);
+            }
             Assert.True(renderer.TryGetPass(mirror, out GraphPassId current));
             if (index == 0)
             {
@@ -157,7 +162,8 @@ public sealed partial class CanvasCompositionTests
                     .Animate(SurfaceChannels.Fill, Spec.Tween(1));
                 Scope.Write<ElementTransform>(panel) = new ElementTransform
                 {
-                    Matrix = Matrix3x2.CreateTranslation(4, 4), Alpha = Moved ? 1 : 0.5f,
+                    Matrix = Matrix3x2.CreateTranslation(4, 4),
+                    Alpha = Moved ? 1 : 0.5f,
                 };
                 Flip.Enable(panel, Spec.Tween(1));
             }

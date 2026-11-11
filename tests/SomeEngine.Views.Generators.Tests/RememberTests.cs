@@ -78,26 +78,26 @@ public sealed partial class RememberTests
                     using var frames = new HeadlessFrameDriver();
                     Entity root = Views.Spawn(frames.World, Entity.Null, new Composition.Screen_View(false));
                     frames.Frame();
-                    var first = frames.World.ReadSparse<Display>(root);
+                    var first = frames.World.ReadComponentData<Display>(root);
                     if (first.Value != 20 || first.Tail != 30)
                         return false;
                     first.Change(23);
                     first.ChangeTail(37);
                     frames.Frame();
-                    frames.World.ReplaceSparse(root, new Composition.Screen_View(true));
+                    frames.World.SetSparse(root, new Composition.Screen_View(true));
                     frames.Frame();
-                    var second = frames.World.ReadSparse<Display>(root);
+                    var second = frames.World.ReadComponentData<Display>(root);
                     if (second.Value != 10 || second.Tail != 37)
                         return false;
                     second.Change(11);
                     frames.Frame();
-                    frames.World.ReplaceSparse(root, new Composition.Screen_View(false));
+                    frames.World.SetSparse(root, new Composition.Screen_View(false));
                     frames.Frame();
-                    if (frames.World.ReadSparse<Display>(root).Value != 23)
+                    if (frames.World.ReadComponentData<Display>(root).Value != 23)
                         return false;
-                    frames.World.ReplaceSparse(root, new Composition.Screen_View(true));
+                    frames.World.SetSparse(root, new Composition.Screen_View(true));
                     frames.Frame();
-                    var returned = frames.World.ReadSparse<Display>(root);
+                    var returned = frames.World.ReadComponentData<Display>(root);
                     return returned.Value == 11 && returned.Tail == 37;
                 }
             }

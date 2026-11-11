@@ -1,7 +1,6 @@
 using SomeEngine.ECS.Commands;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Hooks;
-using SomeEngine.ECS.Queries;
+using SomeEngine.ECS.Serialization;
 
 namespace SomeEngine.ECS.Tests;
 
@@ -11,12 +10,12 @@ public sealed class QueryMembershipTests
     public void CreatingMatchingEntityAdvancesMembershipVersion()
     {
         using var world = new World();
-        QueryHandle query = world.Query(world.QueryDefinition().All<Position>());
-        uint before = world.MembershipVersion(query);
+        Query query = world.Query(new QueryDescription().WithStored<Position>());
+        ulong before = query.MembershipVersion;
 
-        Entity entity = world.CreateEntity(new Position { X = 1 });
+        Entity entity = world.Create(new Position { X = 1 });
 
-        Assert.NotEqual(before, world.MembershipVersion(query));
+        Assert.NotEqual(before, query.MembershipVersion);
         Assert.Equal([entity], Members(world, query));
     }
 
@@ -24,25 +23,25 @@ public sealed class QueryMembershipTests
     public void EnableFiltersTrackEntitiesEnteringAndLeavingMembership()
     {
         using var world = new World();
-        Entity entity = world.CreateEntity(new VisibilityState());
-        QueryHandle enabled = world.Query(world.QueryDefinition().Enabled<VisibilityState>());
-        QueryHandle disabled = world.Query(world.QueryDefinition().Disabled<VisibilityState>());
-        uint enabledBefore = world.MembershipVersion(enabled);
-        uint disabledBefore = world.MembershipVersion(disabled);
+        Entity entity = world.Create(new VisibilityState());
+        Query enabled = world.Query(new QueryDescription().With<VisibilityState>());
+        Query disabled = world.Query(new QueryDescription().WithDisabled<VisibilityState>());
+        ulong enabledBefore = enabled.MembershipVersion;
+        ulong disabledBefore = disabled.MembershipVersion;
 
         world.Disable<VisibilityState>(entity);
 
-        Assert.NotEqual(enabledBefore, world.MembershipVersion(enabled));
-        Assert.NotEqual(disabledBefore, world.MembershipVersion(disabled));
+        Assert.NotEqual(enabledBefore, enabled.MembershipVersion);
+        Assert.NotEqual(disabledBefore, disabled.MembershipVersion);
         Assert.Empty(Members(world, enabled));
         Assert.Equal([entity], Members(world, disabled));
-        enabledBefore = world.MembershipVersion(enabled);
-        disabledBefore = world.MembershipVersion(disabled);
+        enabledBefore = enabled.MembershipVersion;
+        disabledBefore = disabled.MembershipVersion;
 
         world.Enable<VisibilityState>(entity);
 
-        Assert.NotEqual(enabledBefore, world.MembershipVersion(enabled));
-        Assert.NotEqual(disabledBefore, world.MembershipVersion(disabled));
+        Assert.NotEqual(enabledBefore, enabled.MembershipVersion);
+        Assert.NotEqual(disabledBefore, disabled.MembershipVersion);
         Assert.Equal([entity], Members(world, enabled));
         Assert.Empty(Members(world, disabled));
     }
@@ -51,47 +50,42 @@ public sealed class QueryMembershipTests
     public void SuccessfulValuePlaybackRetainsMembershipVersion()
     {
         using var world = new World();
-        QueryHandle query = world.Query(world.QueryDefinition().Read<Position>());
-        Entity first = world.CreateEntity(new Position { X = 1 });
-        _ = world.MembershipVersion(query);
-        Entity second = world.CreateEntity(new Position { X = 2 });
-        uint before = world.MembershipVersion(query);
+        Query query = world.Query(new QueryDescription().WithStored<Position>());
+        Entity first = world.Create(new Position { X = 1 });
+        _ = query.MembershipVersion;
+        Entity second = world.Create(new Position { X = 2 });
+        ulong before = query.MembershipVersion;
 
         using var commands = new CommandBuffer(world);
-        commands.Replace(first, new Position { X = 3 });
+        commands.Set(first, new Position { X = 3 });
         commands.Playback();
 
-        Assert.Equal(before, world.MembershipVersion(query));
+        Assert.Equal(before, query.MembershipVersion);
         Assert.Equal([first, second], Members(world, query));
         Assert.Equal(3, world.Read<Position>(first).X);
     }
 
     [Fact]
-    public void FailedStructuralPlaybackRestoresMembershipVersionAndOrder()
+    public void ExplicitCandidateFailurePreservesSourceMembershipVersionAndOrder()
     {
         using var world = new World();
-        QueryHandle query = world.Query(world.QueryDefinition().All<Position>());
-        Entity first = world.CreateEntity(new Position());
-        _ = world.MembershipVersion(query);
-        Entity second = world.CreateEntity(new Position());
-        Entity third = world.CreateEntity(new Position());
-        uint before = world.MembershipVersion(query);
-        uint candidateVersion = before;
-        world.Hooks<MembershipFault>().OnAdd(
-            (DeferredWorld _, Entity _, in MembershipFault _) =>
-            {
-                candidateVersion = world.MembershipVersion(query);
-                throw new MembershipException();
-            });
+        Query query = world.Query(new QueryDescription().WithStored<Position>());
+        Entity first = world.Create(new Position());
+        Entity second = world.Create(new Position());
+        Entity third = world.Create(new Position());
+        ulong before = query.MembershipVersion;
+        using var checkpoint = new WorldCheckpoint().Capture(world, CheckpointProgress.Preserve);
+        using var candidate = new World();
+        checkpoint.Restore(candidate);
+        Query candidateQuery = candidate.Query(new QueryDescription().WithStored<Position>());
+        using var commands = new CommandBuffer(candidate);
+        commands.Destroy(first);
+        commands.Add(Entity.Null, new MembershipFault());
 
-        using var commands = new CommandBuffer(world);
-        commands.DestroyEntity(first);
-        commands.Add(second, new MembershipFault());
+        Assert.Throws<ArgumentException>(commands.Playback);
 
-        Assert.Throws<MembershipException>(commands.Playback);
-
-        Assert.NotEqual(before, candidateVersion);
-        Assert.Equal(before, world.MembershipVersion(query));
+        Assert.NotEqual(before, candidateQuery.MembershipVersion);
+        Assert.Equal(before, query.MembershipVersion);
         Assert.Equal([first, second, third], Members(world, query));
     }
 
@@ -99,13 +93,13 @@ public sealed class QueryMembershipTests
     public void DestroyingMatchingEntityAdvancesMembershipVersion()
     {
         using var world = new World();
-        Entity entity = world.CreateEntity(new Position());
-        QueryHandle query = world.Query(world.QueryDefinition().All<Position>());
-        uint before = world.MembershipVersion(query);
+        Entity entity = world.Create(new Position());
+        Query query = world.Query(new QueryDescription().WithStored<Position>());
+        ulong before = query.MembershipVersion;
 
-        world.DestroyEntity(entity);
+        world.Destroy(entity);
 
-        Assert.NotEqual(before, world.MembershipVersion(query));
+        Assert.NotEqual(before, query.MembershipVersion);
         Assert.Empty(Members(world, query));
     }
 
@@ -113,13 +107,13 @@ public sealed class QueryMembershipTests
     public void AddingRequiredComponentAdvancesMembershipVersion()
     {
         using var world = new World();
-        Entity entity = world.CreateEntity();
-        QueryHandle query = world.Query(world.QueryDefinition().All<Position>());
-        uint before = world.MembershipVersion(query);
+        Entity entity = world.Create();
+        Query query = world.Query(new QueryDescription().WithStored<Position>());
+        ulong before = query.MembershipVersion;
 
         world.Add(entity, new Position());
 
-        Assert.NotEqual(before, world.MembershipVersion(query));
+        Assert.NotEqual(before, query.MembershipVersion);
         Assert.Equal([entity], Members(world, query));
     }
 
@@ -127,13 +121,13 @@ public sealed class QueryMembershipTests
     public void RemovingRequiredComponentAdvancesMembershipVersion()
     {
         using var world = new World();
-        Entity entity = world.CreateEntity(new Position());
-        QueryHandle query = world.Query(world.QueryDefinition().All<Position>());
-        uint before = world.MembershipVersion(query);
+        Entity entity = world.Create(new Position());
+        Query query = world.Query(new QueryDescription().WithStored<Position>());
+        ulong before = query.MembershipVersion;
 
         world.Remove<Position>(entity);
 
-        Assert.NotEqual(before, world.MembershipVersion(query));
+        Assert.NotEqual(before, query.MembershipVersion);
         Assert.Empty(Members(world, query));
     }
 
@@ -141,58 +135,60 @@ public sealed class QueryMembershipTests
     public void ComponentValueWritesRetainMembershipVersion()
     {
         using var world = new World();
-        Entity entity = world.CreateEntity(new Position { X = 1 });
-        QueryHandle query = world.Query(world.QueryDefinition().ReadWrite<Position>());
-        uint before = world.MembershipVersion(query);
+        Entity entity = world.Create(new Position { X = 1 });
+        Query query = world.Query(new QueryDescription().WithStored<Position>());
+        ulong before = query.MembershipVersion;
 
-        world.Replace(entity, new Position { X = 2 });
-        Assert.Equal(before, world.MembershipVersion(query));
+        world.Set(entity, new Position { X = 2 });
+        Assert.Equal(before, query.MembershipVersion);
 
-        world.ExecuteQuery(query, rows =>
         {
-            foreach (var row in rows.Rows)
-                row.ReadWrite<Position>().X = 3;
-        });
-        Assert.Equal(before, world.MembershipVersion(query));
+            using QueryScope rows = (query).Open();
+            foreach (QueryChunk rowChunk in rows)
+                for (int row = 0; row < rowChunk.Count; row++)
+                rowChunk.Write<Position>(row).X = 3;
+
+        };
+        Assert.Equal(before, query.MembershipVersion);
         Assert.Equal([entity], Members(world, query));
         Assert.Equal(3, world.Read<Position>(entity).X);
     }
 
     [Fact]
-    public void SwapDeleteAdvancesVersionWhenMatchedEntitiesChangeOrder()
+    public void DestroyingFilteredEntityPreservesTheSelectedMembersAndVersion()
     {
         using var world = new World();
-        Entity hidden = world.CreateEntity(new VisibilityState());
-        Entity first = world.CreateEntity(new VisibilityState());
-        Entity second = world.CreateEntity(new VisibilityState());
-        Entity third = world.CreateEntity(new VisibilityState());
+        Entity hidden = world.Create(new VisibilityState());
+        Entity first = world.Create(new VisibilityState());
+        Entity second = world.Create(new VisibilityState());
+        Entity third = world.Create(new VisibilityState());
         world.Disable<VisibilityState>(hidden);
-        QueryHandle query = world.Query(world.QueryDefinition().Enabled<VisibilityState>());
-        uint before = world.MembershipVersion(query);
-        Assert.Equal([first, second, third], Members(world, query));
+        Query query = world.Query(new QueryDescription().With<VisibilityState>());
+        ulong before = query.MembershipVersion;
+        Assert.Equal([first, second, third], Members(world, query).OrderBy(entity => entity.Id));
 
-        world.DestroyEntity(hidden);
+        world.Destroy(hidden);
 
-        Assert.NotEqual(before, world.MembershipVersion(query));
-        Assert.Equal([third, first, second], Members(world, query));
+        Assert.Equal(before, query.MembershipVersion);
+        Assert.Equal([first, second, third], Members(world, query).OrderBy(entity => entity.Id));
     }
 
     [Fact]
     public void UnrelatedStructureAndEnableChangesRetainMembershipVersion()
     {
         using var world = new World();
-        Entity entity = world.CreateEntity(new Position());
+        Entity entity = world.Create(new Position());
         world.Add(entity, new VisibilityState());
-        QueryHandle query = world.Query(world.QueryDefinition().All<Position>());
-        uint before = world.MembershipVersion(query);
+        Query query = world.Query(new QueryDescription().WithStored<Position>());
+        ulong before = query.MembershipVersion;
 
-        Entity unrelated = world.CreateEntity(new Health());
+        Entity unrelated = world.Create(new Health());
         world.Add(unrelated, new Velocity());
         world.Remove<Velocity>(unrelated);
-        world.DestroyEntity(unrelated);
+        world.Destroy(unrelated);
         world.Disable<VisibilityState>(entity);
 
-        Assert.Equal(before, world.MembershipVersion(query));
+        Assert.Equal(before, query.MembershipVersion);
         Assert.Equal([entity], Members(world, query));
     }
 
@@ -200,16 +196,17 @@ public sealed class QueryMembershipTests
     public void RepeatedQueryAcquisitionsShareMembershipVersion()
     {
         using var world = new World();
-        QueryHandle first = world.Query(world.QueryDefinition().All<Position>());
-        QueryHandle second = world.Query(world.QueryDefinition().All<Position>());
-        uint before = world.MembershipVersion(first);
-        Assert.Equal(before, world.MembershipVersion(second));
+        Query first = world.Query(new QueryDescription().WithStored<Position>());
+        Query second = world.Query(new QueryDescription().WithStored<Position>());
+        ulong before = first.MembershipVersion;
+        Assert.Equal(before, second.MembershipVersion);
 
-        world.ReleaseQuery(first);
-        Entity entity = world.CreateEntity(new Position());
+        Query retained = first;
+        first = default;
+        Entity entity = world.Create(new Position());
 
-        Assert.NotEqual(before, world.MembershipVersion(second));
-        Assert.Equal(world.MembershipVersion(second), world.MembershipVersion(first));
+        Assert.NotEqual(before, second.MembershipVersion);
+        Assert.Equal(second.MembershipVersion, retained.MembershipVersion);
         Assert.Equal([entity], Members(world, second));
     }
 
@@ -217,14 +214,14 @@ public sealed class QueryMembershipTests
     public void ReplacingLastEntityBetweenReadsAdvancesMembershipVersion()
     {
         using var world = new World();
-        Entity first = world.CreateEntity(new Position());
-        QueryHandle query = world.Query(world.QueryDefinition().All<Position>());
-        uint before = world.MembershipVersion(query);
+        Entity first = world.Create(new Position());
+        Query query = world.Query(new QueryDescription().WithStored<Position>());
+        ulong before = query.MembershipVersion;
 
-        world.DestroyEntity(first);
-        Entity replacement = world.CreateEntity(new Position());
+        world.Destroy(first);
+        Entity replacement = world.Create(new Position());
 
-        Assert.NotEqual(before, world.MembershipVersion(query));
+        Assert.NotEqual(before, query.MembershipVersion);
         Assert.Equal([replacement], Members(world, query));
     }
 
@@ -232,56 +229,49 @@ public sealed class QueryMembershipTests
     public void QueryVersionWindowRetainsStructuralMembershipVersion()
     {
         using var world = new World();
-        Entity entity = world.CreateEntity(new Position { X = 1 });
-        uint last = world.AcquireSystemTick();
-        QueryHandle query = world.Query(
-            world.QueryDefinition().Read<Position>().Changed<Position>());
-        uint before = world.MembershipVersion(query);
+        Entity entity = world.Create(new Position { X = 1 });
+        ulong last = world.AcquireSystemVersion();
+        Query query = world.Query(
+            new QueryDescription().WithStored<Position>().WithChanged<Position>(0));
+        ulong before = query.MembershipVersion;
         var entities = new List<Entity>();
-        world.ExecuteQuery(query, last, rows =>
         {
-            foreach (var row in rows.Rows)
-                entities.Add(row.Entity);
-        });
+            using QueryScope rows = (query).Since(last).OpenRead();
+            foreach (QueryChunk rowChunk in rows)
+                for (int row = 0; row < rowChunk.Count; row++)
+                entities.Add(rowChunk.Entities[row]);
+
+        };
         Assert.Empty(entities);
 
-        world.Replace(entity, new Position { X = 2 });
+        world.Set(entity, new Position { X = 2 });
 
-        Assert.Equal(before, world.MembershipVersion(query));
-        world.ExecuteQuery(query, last, rows =>
+        Assert.Equal(before, query.MembershipVersion);
         {
-            foreach (var row in rows.Rows)
-                entities.Add(row.Entity);
-        });
+            using QueryScope rows = (query).Since(last).OpenRead();
+            foreach (QueryChunk rowChunk in rows)
+                for (int row = 0; row < rowChunk.Count; row++)
+                entities.Add(rowChunk.Entities[row]);
+
+        };
         Assert.Equal([entity], entities);
     }
 
-#if DEBUG
-    [Fact]
-    public void MembershipVersionReportsInvalidAndReleasedQueries()
-    {
-        using var world = new World();
-        Assert.Throws<InvalidOperationException>(() => world.MembershipVersion(default));
-        QueryHandle query = world.Query(world.QueryDefinition().All<Position>());
-        world.ReleaseQuery(query);
-        _ = world.Query(world.QueryDefinition().All<Health>());
 
-        Assert.Throws<InvalidOperationException>(() => world.MembershipVersion(query));
-    }
-#endif
 
-    private static Entity[] Members(World world, QueryHandle query)
+    private static Entity[] Members(World world, Query query)
     {
         var entities = new List<Entity>();
-        world.ExecuteQuery(query, rows =>
         {
-            foreach (var row in rows.Rows)
-                entities.Add(row.Entity);
-        });
+            using QueryScope rows = (query).OpenRead();
+            foreach (QueryChunk rowChunk in rows)
+                for (int row = 0; row < rowChunk.Count; row++)
+                entities.Add(rowChunk.Entities[row]);
+
+        };
         return entities.ToArray();
     }
 
-    private struct MembershipFault : IComponent;
+    private struct MembershipFault : IAddedComponent;
 
-    private sealed class MembershipException : Exception;
 }

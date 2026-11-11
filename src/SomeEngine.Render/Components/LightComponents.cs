@@ -34,7 +34,7 @@ public readonly record struct DirectionalLight(
     Vector3 Color,
     float Intensity,
     uint LayerMask = LightDefaults.LayerMask,
-    LightShadowSettings ShadowSettings = default) : IComponent;
+    LightShadowSettings ShadowSettings = default) : ITrackedComponent;
 
 /// <summary>Point-light semantics authored in the main world.</summary>
 public readonly record struct PointLight(
@@ -43,7 +43,7 @@ public readonly record struct PointLight(
     Vector3 Color,
     float Intensity,
     uint LayerMask = LightDefaults.LayerMask,
-    LightShadowSettings ShadowSettings = default) : IComponent;
+    LightShadowSettings ShadowSettings = default) : ITrackedComponent;
 
 /// <summary>Spot-light semantics authored in the main world.</summary>
 public readonly record struct SpotLight(
@@ -55,14 +55,14 @@ public readonly record struct SpotLight(
     Vector3 Color,
     float Intensity,
     uint LayerMask = LightDefaults.LayerMask,
-    LightShadowSettings ShadowSettings = default) : IComponent;
+    LightShadowSettings ShadowSettings = default) : ITrackedComponent;
 
 /// <summary>Optional semantic cookie attached to a light in the main world.</summary>
 public readonly record struct LightCookie(
     Texture Texture,
     float Strength,
     Vector4 ScaleOffset,
-    Matrix4x4 WorldToCookie) : IComponent;
+    Matrix4x4 WorldToCookie) : ITrackedComponent;
 
 /// <summary>Directional-light snapshot owned by the render world.</summary>
 public readonly record struct RenderDirectionalLight(
@@ -70,7 +70,7 @@ public readonly record struct RenderDirectionalLight(
     Vector3 Color,
     float Intensity,
     uint LayerMask,
-    LightShadowSettings ShadowSettings = default) : IComponent;
+    LightShadowSettings ShadowSettings = default) : ITrackedComponent;
 
 /// <summary>Point-light snapshot owned by the render world.</summary>
 public readonly record struct RenderPointLight(
@@ -79,7 +79,7 @@ public readonly record struct RenderPointLight(
     Vector3 Color,
     float Intensity,
     uint LayerMask,
-    LightShadowSettings ShadowSettings = default) : IComponent;
+    LightShadowSettings ShadowSettings = default) : ITrackedComponent;
 
 /// <summary>Spot-light snapshot owned by the render world.</summary>
 public readonly record struct RenderSpotLight(
@@ -91,11 +91,11 @@ public readonly record struct RenderSpotLight(
     Vector3 Color,
     float Intensity,
     uint LayerMask,
-    LightShadowSettings ShadowSettings = default) : IComponent;
+    LightShadowSettings ShadowSettings = default) : ITrackedComponent;
 
 /// <summary>Light-cookie snapshot owned by the render world.</summary>
 public readonly record struct RenderLightCookie(
     Texture Texture,
     float Strength,
     Vector4 ScaleOffset,
-    Matrix4x4 WorldToCookie) : IComponent;
+    Matrix4x4 WorldToCookie) : ITrackedComponent;

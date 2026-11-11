@@ -1,5 +1,5 @@
 $ErrorActionPreference = 'Stop'
-if ($args.Count -eq 0) { throw 'Usage: Invoke-Benchmark.ps1 [--cpu|--gpu] [--session id] [--timeout seconds] <executable> [arguments...]' }
+if ($args.Count -eq 0) { throw 'Usage: Invoke-Benchmark.ps1 [--cpu|--gpu] [--session id] [--timeout seconds] [--sample-pattern regex --sample-max target|--sample-min target] [--diagnostic scope] <executable> [arguments...]' }
 
 $project = Join-Path $PSScriptRoot 'BenchmarkQueue/BenchmarkQueue.csproj'
 $application = Join-Path $PSScriptRoot 'BenchmarkQueue/bin/ResourceQueue/Release/net10.0/SomeEngine.CommandQueue.dll'

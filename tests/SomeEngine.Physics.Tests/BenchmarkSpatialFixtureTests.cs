@@ -1,3 +1,4 @@
+using SomeEngine.ECS.Spatial;
 using System.Numerics;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Benchmarks.Relations.Spatial;
@@ -11,12 +12,12 @@ public sealed class BenchmarkSpatialFixtureTests
     public void OneWayHandwrittenGroupsReturnTheTwoAscendingPermissionPairs()
     {
         using var world = new World();
-        var first = world.CreateEntity(new Body { Bounds = Box(0.8f), CollisionCategories = new(1, 2) });
-        var second = world.CreateEntity(new Body { Bounds = Box(0.4f), CollisionCategories = new(2, 0) });
-        var third = world.CreateEntity(new Body { Bounds = Box(0), CollisionCategories = new(2, 1) });
-        var bodies = world.Query(world.QueryDefinition().Read<Body>());
-        var tree = Collision.Build<Body, BodyBoundsReader>(world, bodies, default);
-        var contacts = Collision.Candidates<Body, BodyBoundsReader>(world, bodies, tree, default)
+        var first = world.Create(new Body { Bounds = Box(0.8f), CollisionCategories = new(1, 2) });
+        var second = world.Create(new Body { Bounds = Box(0.4f), CollisionCategories = new(2, 0) });
+        var third = world.Create(new Body { Bounds = Box(0), CollisionCategories = new(2, 1) });
+        var bodies = world.Query(new QueryDescription().WithStored<Body>());
+        var tree = SpatialQueries.Build<Body, BodyBoundsReader>(world, bodies, default);
+        var contacts = SpatialQueries.Candidates<Body, BodyBoundsReader>(world, bodies, tree, default)
             .Where(default(OneWayCategories), default(OneWayCategoryBitmap));
         contacts.RebuildSummaries();
         var output = new SpatialPairOutput(new (Entity, Entity)[3]);
@@ -28,9 +29,9 @@ public sealed class BenchmarkSpatialFixtureTests
 
         Assert.Equal(2, output.Count);
         Assert.Equal([(first, second), (first, third)], pairs.AsSpan(0, handwritten.Count).ToArray()
-            .OrderBy(pair => pair.Item2.Index));
-        world.ReleaseQuery(bodies);
+            .OrderBy(pair => pair.Item2.Id));
+
     }
 
-    private static CollisionBounds Box(float x) => new(new Vector3(x, 0, 0), new Vector3(x + 1, 1, 1));
+    private static SpatialBounds Box(float x) => new(new Vector3(x, 0, 0), new Vector3(x + 1, 1, 1));
 }

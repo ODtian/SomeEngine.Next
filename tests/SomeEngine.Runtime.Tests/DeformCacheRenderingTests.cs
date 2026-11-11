@@ -68,14 +68,12 @@ public sealed class DeformCacheRenderingTests
             AssetEntry sceneEntry = project.Manifest.List(WorldAsset.FileType).Single(entry => entry.Name == "Default");
             using (var world = new World())
             {
-                var sphere = world.CreateEntity(new WorldTransform { Qvvs = new(new(0, 0, 4), Quaternion.Identity) });
-                world.Add(sphere, new MeshSource { Mesh = new(project.Manifest.List(MeshAsset.FileType).Single().AssetGuid), BoundsExpansion = .3f });
-                world.CreateEntity(new SceneCamera { Position = Vector3.Zero, Target = Vector3.UnitZ, Up = Vector3.UnitY,
+                var sphere = world.Create(new WorldTransform { Qvvs = new(new(0, 0, 4), Quaternion.Identity) });
+                world.Set(sphere, new MeshSource { Mesh = new(project.Manifest.List(MeshAsset.FileType).Single().AssetGuid), BoundsExpansion = .3f });
+                world.Create(new SceneCamera { Position = Vector3.Zero, Target = Vector3.UnitZ, Up = Vector3.UnitY,
                     VerticalFieldOfView = 1f, NearPlane = .1f, FarPlane = 100f });
-                world.CreateEntity(new DirectionalLight(new(.35f, -.85f, .4f), Vector3.One, 3));
-                using var scene = new WorldAsset(sceneEntry.AssetGuid) { Name = "Deform cache" };
-                scene.WriteWorld(world, SceneSerialization.CreateRegistry());
-                project.RegisterAsset(await scene.SaveAsync(Path.Combine(content, sceneEntry.Path)));
+                world.Create(new DirectionalLight(new(.35f, -.85f, .4f), Vector3.One, 3));
+                await SceneEntityFiles.SaveAsync(project, world, sceneEntry, "Deform cache");
             }
             return new(project, shader);
         }

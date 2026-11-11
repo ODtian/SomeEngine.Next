@@ -42,43 +42,43 @@ public sealed class HeadingNavigationMeshTests
                 using var streaming = new HeadingNavigationStreaming(scene, controlled, scheduler);
                 var interest = new NavigationInterest(new(3, 0, 2), 0.1f) { LookAheadDistance = 3 };
                 streaming.Interests.Add(interest);
-                using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+                using World world = new World(execution: new WorldJobs(scheduler));
                 var navigation = new NavigationSystems<HeadingNavigationScene, HeadingSceneNavigationSearch, HeadingSceneSearchState, HeadingMotion, HeadingReader>(world);
-                var actor = world.CreateEntity(new HeadingMotion(new(3, 0, 2), default, 0));
+                var actor = world.Create(new HeadingMotion(new(3, 0, 2), default, 0));
                 navigation.AddAgent(actor, scene, profile, policy, new(new Vector3(9, 0, 7), 0.05f, MathF.PI / 2, 0.01f), 2);
                 ulong version = 0;
                 void Frame()
                 {
-                    HeadingMotion before = world.Read<HeadingMotion>(actor);
-                    interest.Position = before.Position; interest.Path = world.Read<NavigationPathResult>(actor).Path;
+                    HeadingMotion before = world.ReadComponentData<HeadingMotion>(actor);
+                    interest.Position = before.Position; interest.Path = world.ReadComponentData<NavigationPathResult>(actor).Path;
                     streaming.Update();
                     navigation.Schedule(0.1f, 1024, streaming.Applied).Steering.Complete();
-                    NavigationSteering steering = world.Read<NavigationSteering>(actor);
+                    NavigationSteering steering = world.ReadComponentData<NavigationSteering>(actor);
                     float heading = before.Heading + Math.Clamp(NavigationHeading.Difference(steering.Heading, before.Heading),
                         -profile.MaximumAngularSpeed * 0.1f, profile.MaximumAngularSpeed * 0.1f);
-                    world.Replace(actor, new HeadingMotion(before.Position + steering.Velocity * 0.1f, steering.Velocity, heading));
+                    world.Set(actor, new HeadingMotion(before.Position + steering.Velocity * 0.1f, steering.Velocity, heading));
                     navigation.ScheduleProgress(default).Complete();
-                    ulong current = world.Read<NavigationProgress>(actor).RequestVersion;
+                    ulong current = world.ReadComponentData<NavigationProgress>(actor).RequestVersion;
                     if (version == 0) version = current;
                     Assert.Equal(version, current);
                 }
                 try
                 {
-                    for (int frame = 0; frame < 600 && world.Read<NavigationProgress>(actor).Status != NavigationStatus.WaitingForTiles; frame++) Frame();
-                    Assert.Equal(NavigationStatus.WaitingForTiles, world.Read<NavigationProgress>(actor).Status);
-                    Assert.True(Vector3.Distance(world.Read<HeadingMotion>(actor).Position, new(3, 0, 2)) > 1);
-                    NavigationPath retained = world.Read<NavigationPathResult>(actor).Path!;
+                    for (int frame = 0; frame < 600 && world.ReadComponentData<NavigationProgress>(actor).Status != NavigationStatus.WaitingForTiles; frame++) Frame();
+                    Assert.Equal(NavigationStatus.WaitingForTiles, world.ReadComponentData<NavigationProgress>(actor).Status);
+                    Assert.True(Vector3.Distance(world.ReadComponentData<HeadingMotion>(actor).Position, new(3, 0, 2)) > 1);
+                    NavigationPath retained = world.ReadComponentData<NavigationPathResult>(actor).Path!;
                     Assert.NotEmpty(retained.RequiredTiles.ToArray());
                     interest.Path = retained; streaming.Update();
                     release.SetResult();
                     foreach (NavigationStreamingRead read in streaming.Reads) read.Completion.Complete();
-                    for (int frame = 0; frame < 600 && world.Read<NavigationProgress>(actor).Status != NavigationStatus.Arrived; frame++)
+                    for (int frame = 0; frame < 600 && world.ReadComponentData<NavigationProgress>(actor).Status != NavigationStatus.Arrived; frame++)
                     {
                         Frame();
                         foreach (NavigationStreamingRead read in streaming.Reads) read.Completion.Complete();
                     }
-                    Assert.Equal(NavigationStatus.Arrived, world.Read<NavigationProgress>(actor).Status);
-                    Assert.InRange(MathF.Abs(NavigationHeading.Difference(MathF.PI / 2, world.Read<HeadingMotion>(actor).Heading)), 0, 0.01f);
+                    Assert.Equal(NavigationStatus.Arrived, world.ReadComponentData<NavigationProgress>(actor).Status);
+                    Assert.InRange(MathF.Abs(NavigationHeading.Difference(MathF.PI / 2, world.ReadComponentData<HeadingMotion>(actor).Heading)), 0, 0.01f);
                     streaming.Interests.Clear(); streaming.ResidentTileBudget = 0;
                     streaming.Update(); streaming.Applied.Complete();
                     Assert.Empty(scene.Content.Tiles.ToArray());

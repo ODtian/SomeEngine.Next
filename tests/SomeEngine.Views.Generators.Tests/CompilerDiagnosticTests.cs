@@ -44,12 +44,12 @@ public sealed class CompilerDiagnosticTests
                     using var frames = new HeadlessFrameDriver();
                     Entity root = Views.Spawn(frames.World, Entity.Null, new Group(false));
                     frames.Frame();
-                    Entity first = Hierarchy<ElementTree>.GetChildren(frames.World, root).Single();
-                    frames.World.Replace(first, new CardState(9));
-                    frames.World.Replace(root, new Group(true));
+                    Entity first = ElementChildren.Read(frames.World, root).Single();
+                    frames.World.Set(first, new CardState(9));
+                    frames.World.Set(root, new Group(true));
                     frames.Frame();
-                    Entity second = Hierarchy<ElementTree>.GetChildren(frames.World, root).Single();
-                    return first != second && frames.World.Read<CardState>(second).Value == 0;
+                    Entity second = ElementChildren.Read(frames.World, root).Single();
+                    return first != second && frames.World.ReadComponentData<CardState>(second).Value == 0;
                 }
             }
 

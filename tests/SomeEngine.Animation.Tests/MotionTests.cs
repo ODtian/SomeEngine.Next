@@ -11,7 +11,7 @@ public class MotionTests
     public void ConsumerMotionAddedAfterDefaultsRunsInTheCommonEvaluationStage()
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new MotionTarget());
+        Entity target = world.Create(new MotionTarget());
         Channel<float> channel = Channel<float>.Of<MotionTarget>(static (ref MotionTarget value) => ref value.Value);
         var spec = Spec.Create<float, FloatOps, HistoryParameters, HistoryState, HistoryMotion>(new(1, 0.5f, "path"));
         PropertyAnimation.Declare(world, target, channel, spec);
@@ -23,7 +23,7 @@ public class MotionTests
 
         systems.Update(ref frame);
 
-        Assert.Equal(2.5f, world.Read<MotionTarget>(target).Value);
+        Assert.Equal(2.5f, world.ReadComponentData<MotionTarget>(target).Value);
     }
 
     [Fact]

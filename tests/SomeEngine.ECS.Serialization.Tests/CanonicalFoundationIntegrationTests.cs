@@ -20,7 +20,7 @@ public struct CanonicalFoundationPrimitives : IComponent
     public double Double;
 }
 
-public struct CanonicalFoundationPrimitivesCodec : ICanonicalComponentCodec<CanonicalFoundationPrimitives>
+public struct CanonicalFoundationPrimitivesCodec : IDurableComponentCodec<CanonicalFoundationPrimitives>
 {
     public void Write(ref DataWriter writer, in CanonicalFoundationPrimitives value)
     {
@@ -64,7 +64,7 @@ public struct CanonicalFoundationReferenceFields : IComponent
     public string? Name;
 }
 
-public struct CanonicalFoundationReferenceFieldsCodec : ICanonicalComponentCodec<CanonicalFoundationReferenceFields>
+public struct CanonicalFoundationReferenceFieldsCodec : IDurableComponentCodec<CanonicalFoundationReferenceFields>
 {
     public void Write(ref DataWriter writer, in CanonicalFoundationReferenceFields value)
     {
@@ -104,7 +104,7 @@ public sealed class CanonicalFoundationIntegrationTests
             Double = Math.PI,
         };
         var registry = new SerializationRegistry()
-            .Register<CanonicalFoundationPrimitives, CanonicalFoundationPrimitivesCodec>();
+            .RegisterCodec<CanonicalFoundationPrimitives, CanonicalFoundationPrimitivesCodec>(default);
 
         using var stream = new MemoryStream();
         WorldSerializer.WriteComponent(stream, value, registry);
@@ -155,7 +155,7 @@ public sealed class CanonicalFoundationIntegrationTests
             Name = "current-\u4E16\u754C",
         };
         var registry = new SerializationRegistry()
-            .Register<CanonicalFoundationReferenceFields, CanonicalFoundationReferenceFieldsCodec>();
+            .RegisterCodec<CanonicalFoundationReferenceFields, CanonicalFoundationReferenceFieldsCodec>(default);
 
         using var stream = new MemoryStream();
         WorldSerializer.WriteComponent(stream, value, registry);
@@ -182,7 +182,7 @@ public sealed class CanonicalFoundationIntegrationTests
     public void SharedCanonicalBooleanValidationRejectsNonCanonicalWireValue()
     {
         var registry = new SerializationRegistry()
-            .Register<CanonicalFoundationPrimitives, CanonicalFoundationPrimitivesCodec>();
+            .RegisterCodec<CanonicalFoundationPrimitives, CanonicalFoundationPrimitivesCodec>(default);
         using var stream = new MemoryStream();
         WorldSerializer.WriteComponent(stream, new CanonicalFoundationPrimitives(), registry);
         byte[] envelope = stream.ToArray();
@@ -199,7 +199,7 @@ public sealed class CanonicalFoundationIntegrationTests
     public void CurrentStringEnvelopeUsesStreamingUtf8ReaderAndEcsDomainLimits()
     {
         var registry = new SerializationRegistry()
-            .Register<CanonicalFoundationReferenceFields, CanonicalFoundationReferenceFieldsCodec>();
+            .RegisterCodec<CanonicalFoundationReferenceFields, CanonicalFoundationReferenceFieldsCodec>(default);
         using var stream = new MemoryStream();
         WorldSerializer.WriteComponent(
             stream,
@@ -209,7 +209,7 @@ public sealed class CanonicalFoundationIntegrationTests
         stream.Position = 0;
         var limits = SerializationReadLimits.Default with { MaxStringBytes = 3 };
         InvalidDataException limitError = Assert.Throws<InvalidDataException>(() =>
-            WorldSerializer.ReadComponent<CanonicalFoundationReferenceFields>(stream, registry, limits));
+            WorldSerializer.ReadComponent<CanonicalFoundationReferenceFields>(stream, registry, new SerializationReadOptions(ReadLimits: limits)));
         Assert.Equal(SerializationError.LimitExceeded, SerializationErrors.GetError(limitError));
 
         byte[] envelope = stream.ToArray();
@@ -231,9 +231,9 @@ public sealed class CanonicalFoundationIntegrationTests
     public void ComponentKeysRepeatAcrossRegistriesAndDistinguishValueTypes()
     {
         var first = new SerializationRegistry()
-            .Register<CanonicalFoundationPrimitives, CanonicalFoundationPrimitivesCodec>();
+            .RegisterCodec<CanonicalFoundationPrimitives, CanonicalFoundationPrimitivesCodec>(default);
         var second = new SerializationRegistry()
-            .Register<CanonicalFoundationPrimitives, CanonicalFoundationPrimitivesCodec>();
+            .RegisterCodec<CanonicalFoundationPrimitives, CanonicalFoundationPrimitivesCodec>(default);
         SerializationTypeKey firstKey = Assert.Single(first.Entries.ToArray()).TypeKey;
         SerializationTypeKey secondKey = Assert.Single(second.Entries.ToArray()).TypeKey;
         var different = new SerializationRegistry().Register<SerPosition>();
@@ -259,7 +259,8 @@ public sealed class CanonicalFoundationIntegrationTests
         Assert.True(stableNameCharacters > 0);
         _ = reader.ReadBytes(stableNameCharacters);
         _ = reader.ReadUInt64();
-        Assert.Equal(0, reader.ReadInt32());
+        _ = reader.ReadByte();
+        _ = reader.ReadInt32();
         int payloadOffset = checked((int)stream.Position);
         int payloadLength = checked(envelope.Length - payloadOffset - sizeof(int));
         byte[] payload = reader.ReadBytes(payloadLength);

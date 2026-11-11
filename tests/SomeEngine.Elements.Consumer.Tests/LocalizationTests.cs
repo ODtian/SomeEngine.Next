@@ -20,24 +20,24 @@ public sealed partial class LocalizationTests
     public void RepeatedNumberWritesUseTheWorldsLanguageAndKeepZeroAllocations()
     {
         using var world = new World();
-        Entity language = world.CreateEntity(new Locale { Name = "en-US" });
-        Entity node = world.CreateEntity(new Text(""));
+        Entity language = world.Create(new Locale { Name = "en-US" });
+        Entity node = world.Create(new Text(""));
         for (int index = 0; index < 1000; index++)
             node.SetText(world, 1234.5m, "N2");
-        uint version = world.WriteVersion<Text>(node);
+        ulong version = world.ComponentDataWriteVersion<Text>(node);
 
         long before = GC.GetAllocatedBytesForCurrentThread();
         for (int index = 0; index < 10000; index++)
             node.SetText(world, 1234.5m, "N2");
         long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
 
-        Assert.Equal("1,234.50", world.Read<Text>(node).Value);
+        Assert.Equal("1,234.50", world.ReadComponentData<Text>(node).Value);
         Assert.Equal(0, allocated);
-        Assert.Equal(version, world.WriteVersion<Text>(node));
-        world.DestroyEntity(language);
-        world.CreateEntity(new Locale { Name = "de-DE" });
+        Assert.Equal(version, world.ComponentDataWriteVersion<Text>(node));
+        world.Destroy(language);
+        world.Create(new Locale { Name = "de-DE" });
         node.SetText(world, 1234.5m, "N2");
-        Assert.Equal("1.234,50", world.Read<Text>(node).Value);
+        Assert.Equal("1.234,50", world.ReadComponentData<Text>(node).Value);
     }
 
     [Fact]
@@ -45,33 +45,33 @@ public sealed partial class LocalizationTests
     {
         using Font font = Font.Load(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fonts", "Latin.ttf")));
         using var frames = new TextFrames();
-        Entity language = frames.World.CreateEntity(new Locale { Name = "en-US" });
+        Entity language = frames.World.Create(new Locale { Name = "en-US" });
         frames.World.Add(language, BuildTranslations("""
             {
               "en-US": { "menu.start": "Start" },
               "zh-CN": { "menu.start": "开始" }
             }
             """));
-        Entity canvas = frames.World.CreateEntity(new Canvas { Size = new Size(320, 240) });
+        Entity canvas = frames.World.Create(new Canvas { Size = new Size(320, 240) });
         frames.World.Add(canvas, new TextTheme(new TextStyle { Font = font }));
         Entity root = Views.Views.Spawn(frames.World, canvas, new Menu());
         frames.Frame();
-        Entity[] texts = Hierarchy<ElementTree>.GetChildren(frames.World, root).ToArray();
-        Assert.Equal("Start", frames.World.Read<TextContent>(texts[0]).Value);
-        Assert.Equal("SomeEngine", frames.World.Read<TextContent>(texts[1]).Value);
-        uint ordinaryTextVersion = frames.World.WriteVersion<TextContent>(texts[1]);
-        uint ordinaryShapeVersion = frames.World.Read<ShapedText>(texts[1]).Version;
-        uint localizedShapeVersion = frames.World.Read<ShapedText>(texts[0]).Version;
+        Entity[] texts = ElementChildren.Read(frames.World, root);
+        Assert.Equal("Start", frames.World.ReadComponentData<TextContent>(texts[0]).Value);
+        Assert.Equal("SomeEngine", frames.World.ReadComponentData<TextContent>(texts[1]).Value);
+        ulong ordinaryTextVersion = frames.World.ComponentDataWriteVersion<TextContent>(texts[1]);
+        uint ordinaryShapeVersion = frames.World.ReadComponentData<ShapedText>(texts[1]).Version;
+        uint localizedShapeVersion = frames.World.ReadComponentData<ShapedText>(texts[0]).Version;
 
-        frames.World.Replace(language, new Locale { Name = "zh-CN" });
+        frames.World.Set(language, new Locale { Name = "zh-CN" });
         frames.Frame();
 
-        Assert.Equal("开始", frames.World.Read<TextContent>(texts[0]).Value);
-        Assert.Equal("SomeEngine", frames.World.Read<TextContent>(texts[1]).Value);
-        Assert.Equal(ordinaryTextVersion, frames.World.WriteVersion<TextContent>(texts[1]));
-        Assert.Equal(ordinaryShapeVersion, frames.World.Read<ShapedText>(texts[1]).Version);
-        Assert.NotEqual(localizedShapeVersion, frames.World.Read<ShapedText>(texts[0]).Version);
-        Assert.Equal(texts, Hierarchy<ElementTree>.GetChildren(frames.World, root).ToArray());
+        Assert.Equal("开始", frames.World.ReadComponentData<TextContent>(texts[0]).Value);
+        Assert.Equal("SomeEngine", frames.World.ReadComponentData<TextContent>(texts[1]).Value);
+        Assert.Equal(ordinaryTextVersion, frames.World.ComponentDataWriteVersion<TextContent>(texts[1]));
+        Assert.Equal(ordinaryShapeVersion, frames.World.ReadComponentData<ShapedText>(texts[1]).Version);
+        Assert.NotEqual(localizedShapeVersion, frames.World.ReadComponentData<ShapedText>(texts[0]).Version);
+        Assert.Equal(texts, ElementChildren.Read(frames.World, root));
     }
 
     private static Translations BuildTranslations(string source)
@@ -92,7 +92,7 @@ public sealed partial class LocalizationTests
     public void BuiltPluralRulesSelectEnglishAndChineseText(double count, string english, string chinese)
     {
         using var frames = new TextFrames();
-        Entity language = frames.World.CreateEntity(new Locale { Name = "en-US" });
+        Entity language = frames.World.Create(new Locale { Name = "en-US" });
         frames.World.Add(language, BuildTranslations("""
             {
               "en-US": { "items": { "argument": 0, "one": "{0} item", "other": "{0} items" } },
@@ -102,17 +102,17 @@ public sealed partial class LocalizationTests
         Entity node = Views.Views.Spawn(frames.World, Entity.Null, new Text(Loc.Key("items", count)));
 
         frames.Frame();
-        Assert.Equal(english, frames.World.Read<TextContent>(node).Value);
-        frames.World.Replace(language, new Locale { Name = "zh-CN" });
+        Assert.Equal(english, frames.World.ReadComponentData<TextContent>(node).Value);
+        frames.World.Set(language, new Locale { Name = "zh-CN" });
         frames.Frame();
-        Assert.Equal(chinese, frames.World.Read<TextContent>(node).Value);
+        Assert.Equal(chinese, frames.World.ReadComponentData<TextContent>(node).Value);
     }
 
     [Fact]
     public void NumbersDatesAndTranslationArgumentsUseTheCurrentLanguage()
     {
         using var frames = new TextFrames();
-        Entity language = frames.World.CreateEntity(new Locale { Name = "en-US" });
+        Entity language = frames.World.Create(new Locale { Name = "en-US" });
         frames.World.Add(language, BuildTranslations("""
             {
               "en-US": { "formatted": "{0:N2} / {1:MMMM}" },
@@ -121,20 +121,20 @@ public sealed partial class LocalizationTests
             """));
         Entity root = Views.Views.Spawn(frames.World, Entity.Null, new FormattedLabels(new DateTime(2026, 10, 4)));
         frames.Frame();
-        Entity[] nodes = Hierarchy<ElementTree>.GetChildren(frames.World, root).ToArray();
+        Entity[] nodes = ElementChildren.Read(frames.World, root);
         Assert.Equal(["1,234.50 / October", "1,234.50", "October", "1234.50"],
-            nodes.Select(node => frames.World.Read<TextContent>(node).Value));
-        uint explicitCultureVersion = frames.World.WriteVersion<TextContent>(nodes[3]);
+            nodes.Select(node => frames.World.ReadComponentData<TextContent>(node).Value));
+        ulong explicitCultureVersion = frames.World.ComponentDataWriteVersion<TextContent>(nodes[3]);
 
-        frames.World.Replace(language, new Locale { Name = "de-DE" });
+        frames.World.Set(language, new Locale { Name = "de-DE" });
         frames.Frame();
 
         Assert.Equal(["1.234,50 / Oktober", "1.234,50", "Oktober", "1234.50"],
-            nodes.Select(node => frames.World.Read<TextContent>(node).Value));
-        Assert.Equal(explicitCultureVersion, frames.World.WriteVersion<TextContent>(nodes[3]));
+            nodes.Select(node => frames.World.ReadComponentData<TextContent>(node).Value));
+        Assert.Equal(explicitCultureVersion, frames.World.ComponentDataWriteVersion<TextContent>(nodes[3]));
         nodes[1].SetText(frames.World, 9876.5m, "N2");
         frames.Frame();
-        Assert.Equal("9.876,50", frames.World.Read<TextContent>(nodes[1]).Value);
+        Assert.Equal("9.876,50", frames.World.ReadComponentData<TextContent>(nodes[1]).Value);
     }
 
     private readonly record struct FormattedLabels(DateTime Date) : IView, IComponent
@@ -153,30 +153,30 @@ public sealed partial class LocalizationTests
     public void EqualKeysAndArgumentsPreserveTextParametersAndChangedArgumentsUpdateTheDisplay()
     {
         using var frames = new TextFrames();
-        Entity language = frames.World.CreateEntity(new Locale { Name = "en-US" });
+        Entity language = frames.World.Create(new Locale { Name = "en-US" });
         frames.World.Add(language, BuildTranslations("""
             { "en-US": { "count": "Count: {0}" } }
             """));
         Entity root = Views.Views.Spawn(frames.World, Entity.Null, new CounterLabel(1));
         frames.Frame();
-        Entity node = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        uint parameterVersion = frames.World.WriteVersion<Text>(node);
-        uint contentVersion = frames.World.WriteVersion<TextContent>(node);
+        Entity node = Assert.Single(ElementChildren.Read(frames.World, root));
+        ulong parameterVersion = frames.World.ComponentDataWriteVersion<Text>(node);
+        ulong contentVersion = frames.World.ComponentDataWriteVersion<TextContent>(node);
 
-        frames.World.Replace(root, new CounterLabel(1));
+        frames.World.Set(root, new CounterLabel(1));
         frames.Frame();
 
-        Assert.Equal(parameterVersion, frames.World.WriteVersion<Text>(node));
-        Assert.Equal(contentVersion, frames.World.WriteVersion<TextContent>(node));
-        frames.World.Replace(root, new CounterLabel(2));
+        Assert.Equal(parameterVersion, frames.World.ComponentDataWriteVersion<Text>(node));
+        Assert.Equal(contentVersion, frames.World.ComponentDataWriteVersion<TextContent>(node));
+        frames.World.Set(root, new CounterLabel(2));
         frames.Frame();
-        Assert.Equal(node, Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root)));
-        Assert.Equal("Count: 2", frames.World.Read<TextContent>(node).Value);
-        frames.World.Replace(language, BuildTranslations("""
+        Assert.Equal(node, Assert.Single(ElementChildren.Read(frames.World, root)));
+        Assert.Equal("Count: 2", frames.World.ReadComponentData<TextContent>(node).Value);
+        frames.World.Set(language, BuildTranslations("""
             { "en-US": { "count": "Total: {0}" } }
             """));
         frames.Frame();
-        Assert.Equal("Total: 2", frames.World.Read<TextContent>(node).Value);
+        Assert.Equal("Total: 2", frames.World.ReadComponentData<TextContent>(node).Value);
     }
 
     private readonly record struct CounterLabel(int Count) : IView, IComponent
@@ -192,7 +192,7 @@ public sealed partial class LocalizationTests
     public void WritingAnOrdinaryStringReplacesTheLocalizedTextIncludingAnEmptyString()
     {
         using var frames = new TextFrames();
-        Entity language = frames.World.CreateEntity(new Locale { Name = "en-US" });
+        Entity language = frames.World.Create(new Locale { Name = "en-US" });
         frames.World.Add(language, BuildTranslations("""
             { "en-US": { "start": "Start" }, "zh-CN": { "start": "开始" } }
             """));
@@ -202,31 +202,31 @@ public sealed partial class LocalizationTests
         node.SetText(frames.World, "");
         frames.Frame();
 
-        Assert.Equal("", frames.World.Read<TextContent>(node).Value);
-        uint contentVersion = frames.World.WriteVersion<TextContent>(node);
-        frames.World.Replace(language, new Locale { Name = "zh-CN" });
+        Assert.Equal("", frames.World.ReadComponentData<TextContent>(node).Value);
+        ulong contentVersion = frames.World.ComponentDataWriteVersion<TextContent>(node);
+        frames.World.Set(language, new Locale { Name = "zh-CN" });
         frames.Frame();
-        Assert.Equal("", frames.World.Read<TextContent>(node).Value);
-        Assert.Equal(contentVersion, frames.World.WriteVersion<TextContent>(node));
+        Assert.Equal("", frames.World.ReadComponentData<TextContent>(node).Value);
+        Assert.Equal(contentVersion, frames.World.ComponentDataWriteVersion<TextContent>(node));
     }
 
     [Fact]
     public void DecimalPrecisionChangesTheEnglishPluralAndDisplayedArgument()
     {
         using var frames = new TextFrames();
-        Entity language = frames.World.CreateEntity(new Locale { Name = "en-US" });
+        Entity language = frames.World.Create(new Locale { Name = "en-US" });
         frames.World.Add(language, BuildTranslations("""
             { "en-US": { "items": { "argument": 0, "one": "{0} item", "other": "{0} items" } } }
             """));
         Entity root = Views.Views.Spawn(frames.World, Entity.Null, new DecimalLabel(1m));
         frames.Frame();
-        Entity node = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Assert.Equal("1 item", frames.World.Read<TextContent>(node).Value);
+        Entity node = Assert.Single(ElementChildren.Read(frames.World, root));
+        Assert.Equal("1 item", frames.World.ReadComponentData<TextContent>(node).Value);
 
-        frames.World.Replace(root, new DecimalLabel(1.0m));
+        frames.World.Set(root, new DecimalLabel(1.0m));
         frames.Frame();
 
-        Assert.Equal("1.0 items", frames.World.Read<TextContent>(node).Value);
+        Assert.Equal("1.0 items", frames.World.ReadComponentData<TextContent>(node).Value);
     }
 
     private readonly record struct DecimalLabel(decimal Count) : IView, IComponent
@@ -255,19 +255,19 @@ public sealed partial class LocalizationTests
             _ => ((object)0f, (object)BitConverter.Int32BitsToSingle(int.MinValue), "number", "0", "-0"),
         };
         using var frames = new TextFrames();
-        Entity language = frames.World.CreateEntity(new Locale { Name = "en-US" });
+        Entity language = frames.World.Create(new Locale { Name = "en-US" });
         frames.World.Add(language, BuildTranslations("""
             { "en-US": { "date": "{0:yyyy-MM-ddK}", "offset": "{0:HH:mm zzz}", "number": "{0}" } }
             """));
         Entity root = Views.Views.Spawn(frames.World, Entity.Null, new ArgumentLabel(key, first));
         frames.Frame();
-        Entity node = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Assert.Equal(before, frames.World.Read<TextContent>(node).Value);
+        Entity node = Assert.Single(ElementChildren.Read(frames.World, root));
+        Assert.Equal(before, frames.World.ReadComponentData<TextContent>(node).Value);
 
-        frames.World.Replace(root, new ArgumentLabel(key, second));
+        frames.World.Set(root, new ArgumentLabel(key, second));
         frames.Frame();
 
-        Assert.Equal(after, frames.World.Read<TextContent>(node).Value);
+        Assert.Equal(after, frames.World.ReadComponentData<TextContent>(node).Value);
     }
 
     private readonly record struct ArgumentLabel(string Key, object Value) : IView, IComponent
@@ -292,13 +292,13 @@ public sealed partial class LocalizationTests
         using var frames = new TextFrames();
         if (example != "locale")
         {
-            Entity language = frames.World.CreateEntity(new Locale { Name = example == "name" ? null! : "en-US" });
+            Entity language = frames.World.Create(new Locale { Name = example == "name" ? null! : "en-US" });
             if (example != "catalog")
                 frames.World.Add(language, BuildTranslations("""
                     { "en-US": { "greeting": "Hello, {0}" } }
                     """));
             if (example == "duplicate")
-                frames.World.CreateEntity(new Locale { Name = "zh-CN" });
+                frames.World.Create(new Locale { Name = "zh-CN" });
         }
         LocalizedText text = example switch
         {
@@ -310,7 +310,7 @@ public sealed partial class LocalizationTests
 
         frames.Frame();
 
-        Assert.IsType<InvalidOperationException>(frames.World.ReadSparse<BuildError>(node).Exception);
+        Assert.IsType<InvalidOperationException>(frames.World.ReadComponentData<BuildError>(node).Exception);
     }
 
     [Theory]
@@ -319,7 +319,7 @@ public sealed partial class LocalizationTests
     public void PluralArgumentsRequireNumbersThroughDevelopmentChecks(string languageName)
     {
         using var frames = new TextFrames();
-        Entity language = frames.World.CreateEntity(new Locale { Name = languageName });
+        Entity language = frames.World.Create(new Locale { Name = languageName });
         frames.World.Add(language, BuildTranslations("""
             {
               "en-US": { "items": { "argument": 0, "one": "{0} item", "other": "{0} items" } },
@@ -330,7 +330,7 @@ public sealed partial class LocalizationTests
 
         frames.Frame();
 
-        Assert.IsType<InvalidOperationException>(frames.World.ReadSparse<BuildError>(node).Exception);
+        Assert.IsType<InvalidOperationException>(frames.World.ReadComponentData<BuildError>(node).Exception);
     }
 #endif
 

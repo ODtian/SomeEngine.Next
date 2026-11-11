@@ -80,7 +80,7 @@ public sealed class ImageDrawingTests
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(game));
         systems.Add(new ViewRebuildSystem());
         systems.Add(new LayoutSystem(new ImageTextures(id => id == source ? ready : secondTexture)));
-        Entity canvas = game.CreateEntity(new Canvas { Size = new Size(64, 64) });
+        Entity canvas = game.Create(new Canvas { Size = new Size(64, 64) });
         Entity root = Views.Views.Spawn(game, canvas, new Absolute());
         Entity image = Views.Views.Spawn(game, root, new Image(source, fit));
         game.Add(image, new Box { Fixed = new Size(32, 32) });
@@ -109,7 +109,7 @@ public sealed class ImageDrawingTests
         {
             if (index == 1) ready = texture;
             systems.Update();
-            Assert.Equal(new Rect(8, 8, 32, 32), game.Read<LayoutRect>(image).Value);
+            Assert.Equal(new Rect(8, 8, 32, 32), game.ReadComponentData<LayoutRect>(image).Value);
             extraction.Extract(game);
             using var prepare = new RenderPrepareSystems(render, extraction);
             Assert.True(frames.TryBeginPrepare(out var scope));
@@ -186,7 +186,12 @@ public sealed class ImageDrawingTests
                 (color ?? colors[(y < 2 ? 0 : 2) + (x < 4 ? 0 : 1)]).CopyTo(pixels, (y * 8 + x) * 4);
         var tile = new TextureMipTile
         {
-            Width = 8, Height = 4, RowPitch = 32, SlicePitch = 128, ChunkKey = 0, DecodedLength = 128,
+            Width = 8,
+            Height = 4,
+            RowPitch = 32,
+            SlicePitch = 128,
+            ChunkKey = 0,
+            DecodedLength = 128,
         };
         return Texture.Create(new TextureDesc(TextureDimension.Texture2D, 8, 4, 1, 1, 1, 1,
             Format.R8G8B8A8UNorm, TextureUsages.Sampled | TextureUsages.CopyDestination),

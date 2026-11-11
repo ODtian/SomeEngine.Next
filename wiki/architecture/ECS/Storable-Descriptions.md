@@ -1,39 +1,24 @@
-# 可存储  Parent: [[Borrow-and-Storable-Descriptions]] 
+# 可存储的访问描述
 
-- `QueryDefinition` / `QueryHandle`
-- `ComponentLookupHandle<T>`
-- generated access descriptor
-- `HierarchyChildrenSnapshot<D>`（固定一份已发布的 immutable child generation）
-- `SystemChangeCheckpoints`（仅限 `SystemGroup` 同步 update callback 的成功提交范围）
-- future asynchronous `QueryCheckpointHandle`（跨 Job scope 的 terminal lane 当前未实现）
+`QueryDescription` 表达组件、共享值、分组和变化筛选；`World.Query(description)` 绑定为可复用 `Query`。`Query.Since(version)` 保存本次观察窗口，`Query.MembershipVersion` 读取该查询的成员版本。`SystemState` 保存系统级版本和生命周期状态。
 
-它们只描述未来访问，不包含可解引用的 storage capability。handle 必须携带并验证 World/runtime generation。
-
-manual synchronous shape使用现有`QueryHandle`与runtime-owned callback，不保留`RunQuery(lastSystemVersion, currentSystemVersion)`，也不让caller提供current version：
+这些值用于稍后建立访问范围。实际引用与列由 `Query.OpenRead()`、`Query.Open()` 或具体 `IComponentAction` 执行时取得。
 
 ```csharp
-QueryHandle moving = world.Query(
-    world.QueryDefinition()
-        .Read<Velocity>()
-        .Write<Position>());
+Query moving = world.Query(new QueryDescription().With<Position>().With<Velocity>());
+var action = new Move();
+moving.ForEach<Position, Velocity, Move>(ref action);
 
-world.ExecuteQuery(moving, lastSystemVersion, cursor =>
+struct Move : IComponentAction<Position, Velocity>
 {
-    foreach (QueryRow row in cursor.Rows)
-        row.ReadWrite<Position>().Value += row.Read<Velocity>().Value;
-});
-
-world.ExecuteQuery(moving, lastSystemVersion, cursor =>
-{
-    foreach (QueryChunkView chunk in cursor.Chunks)
+    public void Execute(Span<Position> positions, ReadOnlySpan<Velocity> velocities)
     {
-        ReadOnlySpan<Velocity> velocity = chunk.Read<Velocity>();
-        Span<Position> position = chunk.ReadWrite<Position>();
-        for (int i = 0; i < chunk.Count; i++)
-            position[i].Value += velocity[i].Value;
+        for (int row = 0; row < positions.Length; row++)
+            positions[row].Value += velocities[row].Value;
     }
-});
+}
 ```
 
-`QueryCursor`、`Rows/Chunks` enumerator、`QueryRow`、`QueryChunkView`与其中的span/ref都只在callback owner内创建；callback返回后没有release capability或borrow可逃逸。query declaration之外的component访问拒绝。具体tuple sugar可由SG添加，但正确性不依赖call-site rewriting。
+只读消费使用 `using QueryScope rows = moving.OpenRead()` 并枚举 `QueryChunk`。可写消费使用 `Open()`；按实体读取和写入使用类型 lookup。数据引用的寿命由 [活跃范围](Active-Owner-Borrow-Creation.md) 持有。
 
+源码：[Query 与描述](../../../src/SomeEngine.ECS/Queries/Query.cs)、[具体动作](../../../src/SomeEngine.ECS/Queries/Query.Components.cs)。

@@ -66,10 +66,10 @@ public sealed partial class NavigationSaveTests
             .Register<SaveAction, SaveActionCodec>(new(Guid.Parse("35602cb1-c236-4d23-8e03-74baa01ad7a8"), "navigation-save-action", 1));
         Entity[] actors;
         using var saved = new MemoryStream();
-        using (World world = WorldJobs.CreateWorld(scheduler: scheduler))
+        using (World world = new World(execution: new WorldJobs(scheduler)))
         {
-            actors = [world.CreateEntity(new SaveMotion(new(2, 0, 2), default, MathF.PI / 2)),
-                world.CreateEntity(new SaveMotion(new(2.1f, 0, 2), default, MathF.PI / 2))];
+            actors = [world.Create(new SaveMotion(new(2, 0, 2), default, MathF.PI / 2)),
+                world.Create(new SaveMotion(new(2.1f, 0, 2), default, MathF.PI / 2))];
             NavigationComponents.AddFlow(world, actors[0], firstFlow, 2);
             NavigationComponents.AddFlow(world, actors[1], secondFlow, 2);
             foreach (Entity actor in actors) world.Add(actor, default(SaveAction));
@@ -80,7 +80,7 @@ public sealed partial class NavigationSaveTests
         await using (var loader = new AssetLoader(new LooseAssetStorage(_directory, manifest)))
             restored = await NavigationSave.ReadAsync(saved, registry, loader, scheduler);
         using World loaded = restored.World;
-        NavigationFlow first = loaded.Read<FlowFollower>(actors[0]).Flow, second = loaded.Read<FlowFollower>(actors[1]).Flow;
+        NavigationFlow first = loaded.ReadComponentData<FlowFollower>(actors[0]).Flow, second = loaded.ReadComponentData<FlowFollower>(actors[1]).Flow;
         HeadingNavigationFlowGraph restoredGraph = first.Input.HeadingGraph!;
         Assert.Same(first.Costs, second.Costs);
         Assert.Same(restoredGraph, second.Input.HeadingGraph);
@@ -90,12 +90,12 @@ public sealed partial class NavigationSaveTests
         Assert.Equal(72, first.Field!.Sample(new(new(2, 0, 7), 0)).Traversal!.Value.Connection);
         var navigation = new NavigationSystems<SaveMotion, SaveMotionReader>(loaded);
         var selected = new List<int>();
-        for (int frame = 0; frame < 160 && actors.Any(actor => loaded.Read<NavigationProgress>(actor).Status != NavigationStatus.Arrived); frame++)
+        for (int frame = 0; frame < 160 && actors.Any(actor => loaded.ReadComponentData<NavigationProgress>(actor).Status != NavigationStatus.Arrived); frame++)
         {
             MoveActions(loaded, navigation, actors);
             foreach (Entity actor in actors)
             {
-                NavigationTraversalRequest request = loaded.Read<NavigationTraversalRequest>(actor);
+                NavigationTraversalRequest request = loaded.ReadComponentData<NavigationTraversalRequest>(actor);
                 if (request.Status is NavigationTraversalStatus.Requested or NavigationTraversalStatus.Executing)
                     selected.Add(request.Connection);
             }
@@ -104,8 +104,8 @@ public sealed partial class NavigationSaveTests
         Assert.All(selected, connection => Assert.Equal(72, connection));
         Assert.All(actors, actor =>
         {
-            Assert.Equal(1, loaded.Read<SaveAction>(actor).Count);
-            Assert.Equal(NavigationStatus.Arrived, loaded.Read<NavigationProgress>(actor).Status);
+            Assert.Equal(1, loaded.ReadComponentData<SaveAction>(actor).Count);
+            Assert.Equal(NavigationStatus.Arrived, loaded.ReadComponentData<NavigationProgress>(actor).Status);
         });
         using var savedAgain = new MemoryStream();
         NavigationSave.Write(savedAgain, loaded, registry, restored.Resources);

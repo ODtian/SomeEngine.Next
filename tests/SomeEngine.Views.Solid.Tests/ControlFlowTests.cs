@@ -31,19 +31,19 @@ public sealed partial class SolidTests
             Show(() => count.Value > 0, () => label = Text(sample.Value))));
         frames.Frame();
         Entity first = label;
-        Assert.Equal("initial", frames.World.Read<Elements.Text>(first).Value);
+        Assert.Equal("initial", frames.World.ReadComponentData<Elements.Text>(first).Value);
 
         sample.Value = "latest";
         frames.Frame();
         Assert.Equal(first, label);
-        Assert.True(frames.World.IsAlive(first));
-        Assert.Equal("initial", frames.World.Read<Elements.Text>(first).Value);
+        Assert.True(frames.World.Has<global::SomeEngine.Views.ViewType>(first));
+        Assert.Equal("initial", frames.World.ReadComponentData<Elements.Text>(first).Value);
 
         count.Value = 2;
         frames.Frame();
         Assert.Equal(first, label);
-        Assert.True(frames.World.IsAlive(first));
-        Assert.Equal("initial", frames.World.Read<Elements.Text>(first).Value);
+        Assert.True(frames.World.Has<global::SomeEngine.Views.ViewType>(first));
+        Assert.Equal("initial", frames.World.ReadComponentData<Elements.Text>(first).Value);
     }
 
     [Fact]
@@ -67,18 +67,18 @@ public sealed partial class SolidTests
 
         visible.Value = false;
         frames.Frame();
-        Assert.False(frames.World.IsAlive(firstBranch));
-        Assert.False(frames.World.IsAlive(container));
-        Assert.False(frames.World.IsAlive(firstLabel));
-        Assert.Equal("fallback", frames.World.Read<Elements.Text>(fallback).Value);
+        Assert.False(frames.World.Has<global::SomeEngine.Views.ViewType>(firstBranch));
+        Assert.False(frames.World.Has<global::SomeEngine.Views.ViewType>(container));
+        Assert.False(frames.World.Has<global::SomeEngine.Views.ViewType>(firstLabel));
+        Assert.Equal("fallback", frames.World.ReadComponentData<Elements.Text>(fallback).Value);
         Entity firstFallback = fallback;
 
         visible.Value = true;
         frames.Frame();
-        Assert.False(frames.World.IsAlive(firstFallback));
+        Assert.False(frames.World.Has<global::SomeEngine.Views.ViewType>(firstFallback));
         Assert.NotEqual(firstBranch, branch);
         Assert.NotEqual(firstLabel, label);
-        Assert.Equal("visible", frames.World.Read<Elements.Text>(label).Value);
+        Assert.Equal("visible", frames.World.ReadComponentData<Elements.Text>(label).Value);
     }
 
     [Fact]
@@ -97,29 +97,29 @@ public sealed partial class SolidTests
         frames.Frame();
         Entity firstSample = sampled;
         Entity firstBinding = bound;
-        Assert.Equal("first", frames.World.Read<Elements.Text>(sampled).Value);
+        Assert.Equal("first", frames.World.ReadComponentData<Elements.Text>(sampled).Value);
 
         name.Value = "second";
         frames.Frame();
         Assert.Equal(firstSample, sampled);
         Assert.Equal(firstBinding, bound);
-        Assert.Equal("first", frames.World.Read<Elements.Text>(sampled).Value);
-        Assert.Equal("second", frames.World.Read<Elements.Text>(bound).Value);
+        Assert.Equal("first", frames.World.ReadComponentData<Elements.Text>(sampled).Value);
+        Assert.Equal("second", frames.World.ReadComponentData<Elements.Text>(bound).Value);
 
         name.Value = null;
         frames.Frame();
-        Assert.False(frames.World.IsAlive(firstSample));
-        Assert.False(frames.World.IsAlive(firstBinding));
-        Assert.Equal("empty", frames.World.Read<Elements.Text>(fallback).Value);
+        Assert.False(frames.World.Has<global::SomeEngine.Views.ViewType>(firstSample));
+        Assert.False(frames.World.Has<global::SomeEngine.Views.ViewType>(firstBinding));
+        Assert.Equal("empty", frames.World.ReadComponentData<Elements.Text>(fallback).Value);
         Entity empty = fallback;
 
         name.Value = "third";
         frames.Frame();
-        Assert.False(frames.World.IsAlive(empty));
+        Assert.False(frames.World.Has<global::SomeEngine.Views.ViewType>(empty));
         Assert.NotEqual(firstSample, sampled);
         Assert.NotEqual(firstBinding, bound);
-        Assert.Equal("third", frames.World.Read<Elements.Text>(sampled).Value);
-        Assert.Equal("third", frames.World.Read<Elements.Text>(bound).Value);
+        Assert.Equal("third", frames.World.ReadComponentData<Elements.Text>(sampled).Value);
+        Assert.Equal("third", frames.World.ReadComponentData<Elements.Text>(bound).Value);
     }
 
     [Fact]
@@ -133,32 +133,32 @@ public sealed partial class SolidTests
             value => label = Text(value().Text), keyed: true)));
         frames.Frame();
         Entity odd = label;
-        Assert.Equal("odd", frames.World.Read<Elements.Text>(label).Value);
+        Assert.Equal("odd", frames.World.ReadComponentData<Elements.Text>(label).Value);
         label.SetText(frames.World, "edited odd");
 
         number.Value = 3;
         frames.Frame();
         Assert.Equal(odd, label);
-        Assert.Equal("edited odd", frames.World.Read<Elements.Text>(label).Value);
+        Assert.Equal("edited odd", frames.World.ReadComponentData<Elements.Text>(label).Value);
 
         number.Value = 2;
         frames.Frame();
-        Assert.False(frames.World.IsAlive(odd));
+        Assert.False(frames.World.Has<global::SomeEngine.Views.ViewType>(odd));
         Assert.NotEqual(odd, label);
-        Assert.Equal("even", frames.World.Read<Elements.Text>(label).Value);
+        Assert.Equal("even", frames.World.ReadComponentData<Elements.Text>(label).Value);
         Entity even = label;
         label.SetText(frames.World, "edited even");
 
         number.Value = 4;
         frames.Frame();
         Assert.Equal(even, label);
-        Assert.Equal("edited even", frames.World.Read<Elements.Text>(label).Value);
+        Assert.Equal("edited even", frames.World.ReadComponentData<Elements.Text>(label).Value);
 
         number.Value = 1;
         frames.Frame();
-        Assert.False(frames.World.IsAlive(even));
+        Assert.False(frames.World.Has<global::SomeEngine.Views.ViewType>(even));
         Assert.NotEqual(odd, label);
-        Assert.Equal("odd", frames.World.Read<Elements.Text>(label).Value);
+        Assert.Equal("odd", frames.World.ReadComponentData<Elements.Text>(label).Value);
     }
 
     [Fact]
@@ -176,27 +176,27 @@ public sealed partial class SolidTests
         keyed.Value = true;
         frames.Frame();
         Assert.Equal(first, label);
-        Assert.Equal("first", frames.World.Read<Elements.Text>(label).Value);
+        Assert.Equal("first", frames.World.ReadComponentData<Elements.Text>(label).Value);
 
         name.Value = "second";
         frames.Frame();
-        Assert.False(frames.World.IsAlive(first));
+        Assert.False(frames.World.Has<global::SomeEngine.Views.ViewType>(first));
         Assert.NotEqual(first, label);
-        Assert.Equal("second", frames.World.Read<Elements.Text>(label).Value);
+        Assert.Equal("second", frames.World.ReadComponentData<Elements.Text>(label).Value);
         Entity second = label;
 
         keyed.Value = false;
         name.Value = "third";
         frames.Frame();
         Assert.Equal(second, label);
-        Assert.Equal("second", frames.World.Read<Elements.Text>(label).Value);
+        Assert.Equal("second", frames.World.ReadComponentData<Elements.Text>(label).Value);
 
         keyed.Value = true;
         name.Value = "fourth";
         frames.Frame();
-        Assert.False(frames.World.IsAlive(second));
+        Assert.False(frames.World.Has<global::SomeEngine.Views.ViewType>(second));
         Assert.NotEqual(second, label);
-        Assert.Equal("fourth", frames.World.Read<Elements.Text>(label).Value);
+        Assert.Equal("fourth", frames.World.ReadComponentData<Elements.Text>(label).Value);
     }
 
     [Fact]
@@ -220,31 +220,31 @@ public sealed partial class SolidTests
         second.Value = false;
         frames.Frame();
         Assert.Equal(firstLabel, label);
-        Assert.Equal("edited first", frames.World.Read<Elements.Text>(label).Value);
+        Assert.Equal("edited first", frames.World.ReadComponentData<Elements.Text>(label).Value);
 
         first.Value = 0;
         second.Value = true;
         frames.Frame();
-        Assert.False(frames.World.IsAlive(firstLabel));
+        Assert.False(frames.World.Has<global::SomeEngine.Views.ViewType>(firstLabel));
         Assert.NotEqual(firstLabel, label);
-        Assert.Equal("latest", frames.World.Read<Elements.Text>(label).Value);
+        Assert.Equal("latest", frames.World.ReadComponentData<Elements.Text>(label).Value);
         Entity secondLabel = label;
         label.SetText(frames.World, "edited second");
 
         first.Value = -1;
         frames.Frame();
         Assert.Equal(secondLabel, label);
-        Assert.Equal("edited second", frames.World.Read<Elements.Text>(label).Value);
+        Assert.Equal("edited second", frames.World.ReadComponentData<Elements.Text>(label).Value);
 
         second.Value = false;
         frames.Frame();
-        Assert.False(frames.World.IsAlive(secondLabel));
+        Assert.False(frames.World.Has<global::SomeEngine.Views.ViewType>(secondLabel));
 
         first.Value = 1;
         frames.Frame();
         Assert.NotEqual(firstLabel, label);
         Assert.NotEqual(secondLabel, label);
-        Assert.Equal("latest", frames.World.Read<Elements.Text>(label).Value);
+        Assert.Equal("latest", frames.World.ReadComponentData<Elements.Text>(label).Value);
     }
 
     [Fact]
@@ -266,26 +266,26 @@ public sealed partial class SolidTests
         selection.Value = 2;
         frames.Frame();
         Assert.Equal(firstLabel, label);
-        Assert.Equal("edited first", frames.World.Read<Elements.Text>(label).Value);
+        Assert.Equal("edited first", frames.World.ReadComponentData<Elements.Text>(label).Value);
 
         selection.Value = 1;
         frames.Frame();
-        Assert.False(frames.World.IsAlive(firstLabel));
+        Assert.False(frames.World.Has<global::SomeEngine.Views.ViewType>(firstLabel));
         Assert.NotEqual(firstLabel, label);
-        Assert.Equal("second latest", frames.World.Read<Elements.Text>(label).Value);
+        Assert.Equal("second latest", frames.World.ReadComponentData<Elements.Text>(label).Value);
         Entity secondLabel = label;
         label.SetText(frames.World, "edited second");
 
         selection.Value = 3;
         frames.Frame();
         Assert.Equal(secondLabel, label);
-        Assert.Equal("edited second", frames.World.Read<Elements.Text>(label).Value);
+        Assert.Equal("edited second", frames.World.ReadComponentData<Elements.Text>(label).Value);
 
         selection.Value = 0;
         frames.Frame();
-        Assert.False(frames.World.IsAlive(secondLabel));
+        Assert.False(frames.World.Has<global::SomeEngine.Views.ViewType>(secondLabel));
         Assert.NotEqual(firstLabel, label);
-        Assert.Equal("first latest", frames.World.Read<Elements.Text>(label).Value);
+        Assert.Equal("first latest", frames.World.ReadComponentData<Elements.Text>(label).Value);
     }
 
     [Fact]
@@ -294,7 +294,7 @@ public sealed partial class SolidTests
         using var frames = new SolidFrames();
         var visible = new State<bool>(true);
         var sample = new State<string>("first");
-        Entity output = frames.World.CreateEntity(new Display("empty"));
+        Entity output = frames.World.Create(new Display("empty"));
         Entity bound = Entity.Null;
         Entity before = Entity.Null;
         Entity after = Entity.Null;
@@ -321,28 +321,28 @@ public sealed partial class SolidTests
         sample.Value = "second";
         frames.Frame();
         Assert.Equal(firstBinding, bound);
-        Assert.Equal("second", frames.World.Read<Elements.Text>(bound).Value);
-        Assert.Equal("second", frames.World.Read<Display>(output).Value);
+        Assert.Equal("second", frames.World.ReadComponentData<Elements.Text>(bound).Value);
+        Assert.Equal("second", frames.World.ReadComponentData<Display>(output).Value);
 
         visible.Value = false;
         sample.Value = "removed";
         frames.Frame();
-        Assert.False(frames.World.IsAlive(firstBinding));
-        Assert.Equal("second", frames.World.Read<Display>(output).Value);
+        Assert.False(frames.World.Has<global::SomeEngine.Views.ViewType>(firstBinding));
+        Assert.Equal("second", frames.World.ReadComponentData<Display>(output).Value);
 
         sample.Value = "third";
         frames.Frame();
-        Assert.Equal("second", frames.World.Read<Display>(output).Value);
+        Assert.Equal("second", frames.World.ReadComponentData<Display>(output).Value);
         Assert.Equal(firstBefore, before);
         Assert.Equal(firstAfter, after);
-        Assert.Equal("edited before", frames.World.Read<Elements.Text>(before).Value);
-        Assert.Equal("edited after", frames.World.Read<Elements.Text>(after).Value);
+        Assert.Equal("edited before", frames.World.ReadComponentData<Elements.Text>(before).Value);
+        Assert.Equal("edited after", frames.World.ReadComponentData<Elements.Text>(after).Value);
 
         visible.Value = true;
         frames.Frame();
         Assert.NotEqual(firstBinding, bound);
-        Assert.Equal("third", frames.World.Read<Elements.Text>(bound).Value);
-        Assert.Equal("third", frames.World.Read<Display>(output).Value);
+        Assert.Equal("third", frames.World.ReadComponentData<Elements.Text>(bound).Value);
+        Assert.Equal("third", frames.World.ReadComponentData<Display>(output).Value);
     }
 
     [Theory]
@@ -359,26 +359,26 @@ public sealed partial class SolidTests
             () => fallback = Text("empty"), keyed)));
         frames.Frame();
         Entity empty = fallback;
-        Assert.Equal("empty", frames.World.Read<Elements.Text>(fallback).Value);
+        Assert.Equal("empty", frames.World.ReadComponentData<Elements.Text>(fallback).Value);
 
         number.Value = 0;
         frames.Frame();
-        Assert.False(frames.World.IsAlive(empty));
-        Assert.Equal("0", frames.World.Read<Elements.Text>(label).Value);
+        Assert.False(frames.World.Has<global::SomeEngine.Views.ViewType>(empty));
+        Assert.Equal("0", frames.World.ReadComponentData<Elements.Text>(label).Value);
         Entity zero = label;
 
         number.Value = 1;
         frames.Frame();
         Assert.Equal(keyed, zero != label);
-        Assert.Equal(!keyed, frames.World.IsAlive(zero));
-        Assert.Equal("1", frames.World.Read<Elements.Text>(label).Value);
+        Assert.Equal(!keyed, frames.World.Has<global::SomeEngine.Views.ViewType>(zero));
+        Assert.Equal("1", frames.World.ReadComponentData<Elements.Text>(label).Value);
 
         Entity one = label;
         number.Value = null;
         frames.Frame();
-        Assert.False(frames.World.IsAlive(one));
+        Assert.False(frames.World.Has<global::SomeEngine.Views.ViewType>(one));
         Assert.NotEqual(empty, fallback);
-        Assert.Equal("empty", frames.World.Read<Elements.Text>(fallback).Value);
+        Assert.Equal("empty", frames.World.ReadComponentData<Elements.Text>(fallback).Value);
     }
 
     [Fact]
@@ -395,14 +395,14 @@ public sealed partial class SolidTests
         Views.Spawn(frames.World, Entity.Null, new OnceView(() => Switch(cases.AsSpan())));
         frames.Frame();
         Entity firstLabel = label;
-        Assert.Equal("first", frames.World.Read<Elements.Text>(label).Value);
+        Assert.Equal("first", frames.World.ReadComponentData<Elements.Text>(label).Value);
 
         cases[0] = Match(() => true, () => label = Text("changed input"));
         cases[1] = Match(() => true, () => label = Text("changed input"));
         first.Value = false;
         frames.Frame();
-        Assert.False(frames.World.IsAlive(firstLabel));
-        Assert.Equal("second", frames.World.Read<Elements.Text>(label).Value);
+        Assert.False(frames.World.Has<global::SomeEngine.Views.ViewType>(firstLabel));
+        Assert.Equal("second", frames.World.ReadComponentData<Elements.Text>(label).Value);
     }
 
     [Fact]
@@ -414,7 +414,7 @@ public sealed partial class SolidTests
             Match(() => true, () => label = Text("selected")),
             Match(() => throw new InvalidOperationException("later condition"), () => Text("later")))));
         frames.Frame();
-        Assert.Equal("selected", frames.World.Read<Elements.Text>(label).Value);
+        Assert.Equal("selected", frames.World.ReadComponentData<Elements.Text>(label).Value);
     }
 
     [Fact]
@@ -442,7 +442,7 @@ public sealed partial class SolidTests
 
         visible.Value = false;
         frames.Frame();
-        Assert.False(frames.World.IsAlive(visibleLabel));
+        Assert.False(frames.World.Has<global::SomeEngine.Views.ViewType>(visibleLabel));
         Assert.Equal(["edited sibling"], ReadTextValues(root));
         Assert.Equal(firstSibling, sibling);
 
@@ -455,8 +455,8 @@ public sealed partial class SolidTests
             void Read(Entity current)
             {
                 if (frames.World.Has<Elements.Text>(current))
-                    values.Add(frames.World.Read<Elements.Text>(current).Value);
-                foreach (Entity child in Hierarchy<ElementTree>.GetChildren(frames.World, current))
+                    values.Add(frames.World.ReadComponentData<Elements.Text>(current).Value);
+                foreach (Entity child in ElementChildren.Read(frames.World, current))
                     Read(child);
             }
         }
@@ -486,8 +486,8 @@ public sealed partial class SolidTests
         using var frames = new SolidFrames();
         Entity root = Views.Spawn(frames.World, Entity.Null, new OnceView(() => Dynamic(() => null!)));
         frames.Frame();
-        Entity component = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Exception error = frames.World.ReadSparse<BuildError>(component).Exception;
+        Entity component = Assert.Single(ElementChildren.Read(frames.World, root));
+        Exception error = frames.World.ReadComponentData<BuildError>(component).Exception;
         Assert.IsType<InvalidOperationException>(error);
     }
 #endif

@@ -12,31 +12,31 @@ internal static partial class ComputationChecks
     {
         using var frames = new HeadlessFrameDriver();
         var number = new State<int>(3);
-        Entity target = frames.World.CreateEntity(new Number());
+        Entity target = frames.World.Create(new Number());
         Entity root = Views.Spawn(frames.World, Entity.Null, new NumberDisplay(number, target));
         frames.Frame();
-        MemoResults memos = frames.World.ReadSparse<MemoResults>(root);
+        MemoResults memos = frames.World.ReadComponentData<MemoResults>(root);
         uint signVersion = memos.Positive.Version;
-        frames.World.Replace(root, new Text("edited"));
+        frames.World.Set(root, new Text("edited"));
         GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true, compacting: true);
 
         number.Value = 7;
         Require(memos.Doubled.Value == 14, "Reading the Memo presents a state written in the same frame.");
         frames.Frame();
-        Require(frames.World.Read<Number>(target).Value == 7, "The binding presents the changed state.");
-        Require(frames.World.Read<Text>(root).Value == "edited", "An equal Memo result preserves the edited display.");
+        Require(frames.World.ReadComponentData<Number>(target).Value == 7, "The binding presents the changed state.");
+        Require(frames.World.ReadComponentData<Text>(root).Value == "edited", "An equal Memo result preserves the edited display.");
         Require(memos.Positive.Version == signVersion, "An equal Memo result preserves its public version.");
         Require(!frames.World.HasSparse<BuildError>(root), "The bindings preserve the completed view build.");
 
         number.Value = -1;
         frames.Frame();
-        Require(frames.World.Read<Text>(root).Value == "negative", "A changed Memo result updates its display.");
+        Require(frames.World.ReadComponentData<Text>(root).Value == "negative", "A changed Memo result updates its display.");
 
         Hierarchy<ElementTree>.DestroySubtree(frames.World, root);
-        frames.World.Replace(target, new Number(41));
+        frames.World.Set(target, new Number(41));
         number.Value = 11;
         frames.Frame();
-        Require(frames.World.Read<Number>(target).Value == 41, "The released view leaves its former target available.");
+        Require(frames.World.ReadComponentData<Number>(target).Value == 41, "The released view leaves its former target available.");
     }
 
     private static void Require(bool condition, string message)
@@ -53,16 +53,16 @@ internal static partial class ComputationChecks
             Entity target = Target;
             Memo<int> doubled = Scope.Memo(() => number.Value * 2);
             Memo<bool> positive = Scope.Memo(() => number.Value > 0);
-            Scope.World.AddSparse(Scope.Entity, new MemoResults(doubled, positive));
+            Scope.World.SetSparse(Scope.Entity, new MemoResults(doubled, positive));
             Scope.World.Add(Scope.Entity, new Text("built"));
             Scope.Compute(() => Scope.Write<Number>(target) = new Number(number.Value));
-            Scope.Compute(() => Scope.World.Replace(Scope.Entity,
+            Scope.Compute(() => Scope.World.Set(Scope.Entity,
                 new Text(positive.Value ? "positive" : "negative")));
             return default;
         }
     }
 
     private readonly record struct MemoResults(Memo<int> Doubled, Memo<bool> Positive) : ISparseComponent;
-    private readonly record struct Number(int Value) : IComponent;
-    private readonly record struct Text(string Value) : IComponent;
+    private readonly record struct Number(int Value) : ITrackedComponent;
+    private readonly record struct Text(string Value) : ITrackedComponent;
 }

@@ -1,4 +1,4 @@
-﻿using System.Numerics;
+using System.Numerics;
 using SomeEngine.Render.Frame;
 
 namespace SomeEngine.Render.Tests;

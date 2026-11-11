@@ -29,8 +29,8 @@ public static class BitmapCollisionConsumption
     {
         foreach (var pair in pairs)
         {
-            contactCounts[pair.Item1.Index]++;
-            contactCounts[pair.Item2.Index]++;
+            contactCounts[pair.Item1.Id]++;
+            contactCounts[pair.Item2.Id]++;
         }
     }
 }

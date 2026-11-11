@@ -12,8 +12,8 @@ public sealed class QvvsTransformConsumerTests
     public void ParentChildHierarchyProducesExpectedWorldTransform()
     {
         using var world = new GameWorld();
-        var root = world.World.CreateEntity();
-        var child = world.World.CreateEntity();
+        var root = world.World.Create();
+        var child = world.World.Create();
 
         world.World.Add(root, new LocalTransform { Value = new TransformQvvs(new Vector3(10, 0, 0), Quaternion.Identity) });
         world.World.Add(root, new WorldTransform());
@@ -23,6 +23,6 @@ public sealed class QvvsTransformConsumerTests
 
         world.Update(0);
 
-        Assert.Equal(new Vector3(12, 0, 0), world.World.Read<WorldTransform>(child).Qvvs.Position);
+        Assert.Equal(new Vector3(12, 0, 0), world.World.ReadComponentData<WorldTransform>(child).Qvvs.Position);
     }
 }

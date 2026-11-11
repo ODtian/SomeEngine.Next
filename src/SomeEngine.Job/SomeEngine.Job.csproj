@@ -8,7 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../SomeEngine.Job.Contracts/SomeEngine.Job.Contracts.csproj" />
+    <ProjectReference Include="../SomeEngine.Job.Resources/SomeEngine.Job.Resources.csproj" />
     <ProjectReference Include="../SomeEngine.Diagnostics/SomeEngine.Diagnostics.csproj" />
   </ItemGroup>
 
@@ -24,6 +24,9 @@
     </AssemblyAttribute>
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
       <_Parameter1>SomeEngine.Core</_Parameter1>
+    </AssemblyAttribute>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>SomeEngine.ECS.Comparison</_Parameter1>
     </AssemblyAttribute>
   </ItemGroup>
 

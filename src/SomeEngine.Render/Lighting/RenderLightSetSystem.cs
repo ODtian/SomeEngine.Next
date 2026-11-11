@@ -1,4 +1,5 @@
-using SomeEngine.ECS.Queries;
+using SomeEngine.ECS;
+using SomeEngine.Job;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Render.Components;
@@ -15,10 +16,10 @@ public sealed class RenderLightSetSystem(uint lightActiveFrameCount = 10) : ISys
     private static readonly SomeEngine.Diagnostics.TraceSite UpdateTrace = new("render", "LightSet.Update", detail: true);
 
     private readonly RenderLightSet _lights = new();
-    private QueryHandle _directional;
-    private QueryHandle _point;
-    private QueryHandle _spot;
-    private EntityTableChanges? _tableChanges;
+    private Query _directional;
+    private Query _point;
+    private Query _spot;
+    private EventReader<MembershipChange>[] _members = [];
     private bool _created;
     private ulong _renderedFrame;
     private readonly uint _lightActiveFrameCount = Math.Max(1u, lightActiveFrameCount);
@@ -31,34 +32,13 @@ public sealed class RenderLightSetSystem(uint lightActiveFrameCount = 10) : ISys
     {
         if (_created)
             throw new InvalidOperationException("The render-light set system is already created.");
-        QueryHandle directional = default;
-        QueryHandle point = default;
-        try
-        {
-            directional = context.World.Query(
-                new QueryDefinitionBuilder()
-                    .Read<RenderDirectionalLight>()
-                    .Optional<RenderLightCookie>(QueryAccess.Read));
-            point = context.World.Query(
-                new QueryDefinitionBuilder()
-                    .Read<RenderPointLight>()
-                    .Optional<RenderLightCookie>(QueryAccess.Read));
-            _spot = context.World.Query(
-                new QueryDefinitionBuilder()
-                    .Read<RenderSpotLight>()
-                    .Optional<RenderLightCookie>(QueryAccess.Read));
-            _directional = directional;
-            _point = point;
-            _tableChanges = context.World.ObserveEntityTables();
-            _created = true;
-        }
-        catch
-        {
-            if (_spot.IsValid) context.World.ReleaseQuery(_spot);
-            if (point.IsValid) context.World.ReleaseQuery(point);
-            if (directional.IsValid) context.World.ReleaseQuery(directional);
-            throw;
-        }
+        World world = context.World.World;
+        _directional = world.Query(new QueryDescription().With<RenderDirectionalLight>().Optional<RenderLightCookie>());
+        _point = world.Query(new QueryDescription().With<RenderPointLight>().Optional<RenderLightCookie>());
+        _spot = world.Query(new QueryDescription().With<RenderSpotLight>().Optional<RenderLightCookie>());
+        _members = [world.WatchMembership(_directional), world.WatchMembership(_point), world.WatchMembership(_spot),
+            world.WatchMembership(world.Query(new QueryDescription().WithStored<RenderLightCookie>()))];
+        _created = true;
     }
 
     public void OnUpdate(ref RenderPrepareSystemContext context)
@@ -66,41 +46,33 @@ public sealed class RenderLightSetSystem(uint lightActiveFrameCount = 10) : ISys
         using var trace = SomeEngine.Diagnostics.EngineTrace.Begin(UpdateTrace);
         if (!_created)
             throw new InvalidOperationException("The render-light set system was not created.");
-        EntityTableChangeBatch membership = _tableChanges!.Read();
-        var update = new LightChanges(_lights);
-        foreach (Entity entity in membership.Entities)
-            update.Changed |= _lights.UpdateMembership(context.World, entity);
-        context.World.ExecuteQuery(_directional, context.LastSystemVersion, ref update,
-            static (QueryCursor rows, ref LightChanges value) => value.Changed |= value.Lights.UpdateDirectional(rows));
-        context.World.ExecuteQuery(_point, context.LastSystemVersion, ref update,
-            static (QueryCursor rows, ref LightChanges value) => value.Changed |= value.Lights.UpdatePoints(rows));
-        context.World.ExecuteQuery(_spot, context.LastSystemVersion, ref update,
-            static (QueryCursor rows, ref LightChanges value) => value.Changed |= value.Lights.UpdateSpots(rows));
+        World world = context.World.World;
+        bool changed = false;
+        foreach (EventReader<MembershipChange> reader in _members)
+        {
+            EventReadRange range = reader.Capture();
+            using EventRead<MembershipChange> read = reader.Open(range);
+            foreach (MembershipChange value in read) changed |= _lights.UpdateMembership(world, value.Entity);
+            reader.Advance(range.Through);
+        }
+        using (QueryScope rows = _directional.Since(context.LastSystemVersion).OpenRead()) changed |= _lights.UpdateDirectional(rows);
+        using (QueryScope rows = _point.Since(context.LastSystemVersion).OpenRead()) changed |= _lights.UpdatePoints(rows);
+        using (QueryScope rows = _spot.Since(context.LastSystemVersion).OpenRead()) changed |= _lights.UpdateSpots(rows);
         _lights.AdvanceLightMovement(checked(++_renderedFrame), _lightActiveFrameCount);
-        if (update.Changed) _lights.CommitChanges();
-        _tableChanges.Accept(membership);
-    }
-
-    private struct LightChanges(RenderLightSet lights)
-    {
-        internal readonly RenderLightSet Lights = lights;
-        internal bool Changed;
+        if (changed) _lights.CommitChanges();
     }
 
     public void OnDestroy(ref RenderPrepareSystemContext context)
     {
         if (!_created)
             return;
-        context.World.ReleaseQuery(_spot);
-        context.World.ReleaseQuery(_point);
-        context.World.ReleaseQuery(_directional);
         _spot = default;
         _point = default;
         _directional = default;
         _lights.Clear();
         _renderedFrame = 0;
-        _tableChanges!.Dispose();
-        _tableChanges = null;
+        foreach (EventReader<MembershipChange> reader in _members) reader.Dispose();
+        _members = [];
         _created = false;
     }
 }

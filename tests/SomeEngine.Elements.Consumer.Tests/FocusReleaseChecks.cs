@@ -14,28 +14,30 @@ internal static partial class FocusChecks
         using var frames = new FocusFrames();
         Entity root = Views.Views.Spawn(frames.World, frames.Canvas, new FocusFamily(true, true, focusableRoot));
         frames.Frame();
-        Entity parent = Hierarchy<ElementTree>.GetChildren(frames.World, root)[0];
-        Entity group = Hierarchy<ElementTree>.GetChildren(frames.World, parent)[0];
-        Entity leaf = Hierarchy<ElementTree>.GetChildren(frames.World, group)[0];
+        Entity parent = ElementChildren.Read(frames.World, root)[0];
+        Entity group = ElementChildren.Read(frames.World, parent)[0];
+        Entity leaf = ElementChildren.Read(frames.World, group)[0];
         Gamepad.Navigate(frames.World, Direction.Right);
         frames.Frame();
         Require(frames.World.HasSparse<Focused>(leaf), "The top-left child receives the first focus.");
-        Require(frames.World.Read<FamilyDisplay>(root).Index == 2, "The caller displays the child's focus.");
+        Require(frames.World.ReadComponentData<FamilyDisplay>(root).Index == 2, "The caller displays the child's focus.");
 
         if (direct)
-            frames.World.DestroyEntity(leaf);
-        frames.World.Replace(root, new FocusFamily(true, false, focusableRoot));
+            frames.World.Destroy(leaf);
+        frames.World.Set(root, new FocusFamily(true, false, focusableRoot));
         frames.Frame();
+        if (!direct) frames.Frame();
         Require(frames.World.HasSparse<Focused>(parent), "The nearest focusable ancestor receives focus.");
-        Require(frames.World.Read<FamilyDisplay>(root).Index == 1, "The caller displays the ancestor's focus.");
+        Require(frames.World.ReadComponentData<FamilyDisplay>(root).Index == 1, "The caller displays the ancestor's focus.");
 
         if (direct)
             Hierarchy<ElementTree>.DestroySubtree(frames.World, parent);
-        frames.World.Replace(root, new FocusFamily(false, false, focusableRoot));
+        frames.World.Set(root, new FocusFamily(false, false, focusableRoot));
         frames.Frame();
+        if (!direct) frames.Frame();
         Require(frames.World.HasSparse<Focused>(root) == focusableRoot,
             "Focus returns to the root when it accepts focus, and otherwise clears.");
-        Require(frames.World.Read<FamilyDisplay>(root).Index == (focusableRoot ? 0 : -1),
+        Require(frames.World.ReadComponentData<FamilyDisplay>(root).Index == (focusableRoot ? 0 : -1),
             "The caller displays the final focus result.");
     }
 
@@ -44,16 +46,16 @@ internal static partial class FocusChecks
         using var frames = new FocusFrames();
         Entity root = Views.Views.Spawn(frames.World, frames.Canvas, new FocusFamily(true, true, false));
         frames.Frame();
-        Entity parent = Hierarchy<ElementTree>.GetChildren(frames.World, root)[0];
-        Entity group = Hierarchy<ElementTree>.GetChildren(frames.World, parent)[0];
-        Entity leaf = Hierarchy<ElementTree>.GetChildren(frames.World, group)[0];
+        Entity parent = ElementChildren.Read(frames.World, root)[0];
+        Entity group = ElementChildren.Read(frames.World, parent)[0];
+        Entity leaf = ElementChildren.Read(frames.World, group)[0];
         Gamepad.Navigate(frames.World, Direction.Right);
         frames.Frame();
         frames.World.Remove<Focusable>(leaf);
         frames.Frame();
         Require(frames.World.HasSparse<Focused>(parent) && frames.World.IsAlive(leaf),
             "A live node that loses focusability returns focus to its focusable ancestor.");
-        Require(frames.World.Read<FamilyDisplay>(root).Index == 1, "The caller displays the ancestor's focus.");
+        Require(frames.World.ReadComponentData<FamilyDisplay>(root).Index == 1, "The caller displays the ancestor's focus.");
     }
 
     internal static void RunBranchRelease(bool focusableRoot)
@@ -61,15 +63,15 @@ internal static partial class FocusChecks
         using var frames = new FocusFrames();
         Entity root = Views.Views.Spawn(frames.World, frames.Canvas, new FocusFamily(true, true, focusableRoot));
         frames.Frame();
-        Entity parent = Hierarchy<ElementTree>.GetChildren(frames.World, root)[0];
+        Entity parent = ElementChildren.Read(frames.World, root)[0];
         Gamepad.Navigate(frames.World, Direction.Right);
         frames.Frame();
         Hierarchy<ElementTree>.DestroySubtree(frames.World, parent);
-        frames.World.Replace(root, new FocusFamily(false, false, focusableRoot));
+        frames.World.Set(root, new FocusFamily(false, false, focusableRoot));
         frames.Frame();
         Require(frames.World.HasSparse<Focused>(root) == focusableRoot,
             "A whole branch releases focus through its ancestors to the surviving root or clears it.");
-        Require(frames.World.Read<FamilyDisplay>(root).Index == (focusableRoot ? 0 : -1),
+        Require(frames.World.ReadComponentData<FamilyDisplay>(root).Index == (focusableRoot ? 0 : -1),
             "The caller displays the surviving focus after the whole branch is released.");
     }
 
@@ -78,16 +80,17 @@ internal static partial class FocusChecks
         using var frames = new FocusFrames();
         Entity root = Views.Views.Spawn(frames.World, frames.Canvas, new FocusFamily(true, true, false));
         frames.Frame();
-        Entity previousParent = Hierarchy<ElementTree>.GetChildren(frames.World, root)[0];
-        Entity group = Hierarchy<ElementTree>.GetChildren(frames.World, previousParent)[0];
-        Entity leaf = Hierarchy<ElementTree>.GetChildren(frames.World, group)[0];
+        Entity previousParent = ElementChildren.Read(frames.World, root)[0];
+        Entity group = ElementChildren.Read(frames.World, previousParent)[0];
+        Entity leaf = ElementChildren.Read(frames.World, group)[0];
         Gamepad.Navigate(frames.World, Direction.Right);
         frames.Frame();
-        Entity parent = frames.World.CreateEntity(new Focusable());
+        Entity parent = frames.World.Create(new Focusable());
         frames.World.Add(parent, new Clicks());
         Hierarchy<ElementTree>.SetParent(frames.World, parent, frames.Canvas);
         Hierarchy<ElementTree>.SetParent(frames.World, leaf, parent);
-        frames.World.DestroyEntity(leaf);
+        frames.World.Destroy(leaf);
+        frames.Frame();
         Require(frames.World.HasSparse<Focused>(parent) && !frames.World.HasSparse<Focused>(previousParent),
             "Release uses the parent chain changed since the previous navigation frame.");
     }

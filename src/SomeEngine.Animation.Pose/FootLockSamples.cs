@@ -91,8 +91,12 @@ internal sealed class FootLockSamples
         {
             int start = 1 + foot * 5;
             Matrix4x4.Decompose(_models[start + 2], out _, out Quaternion rotation, out Vector3 position);
-            Goals[foot] = new() { Position = position, Orientation = rotation,
-                BendDirection = Vector3.Normalize(Vector3.TransformNormal(Parameters.Rig.Legs[foot].BendDirection, _models[start])) };
+            Goals[foot] = new()
+            {
+                Position = position,
+                Orientation = rotation,
+                BendDirection = Vector3.Normalize(Vector3.TransformNormal(Parameters.Rig.Legs[foot].BendDirection, _models[start]))
+            };
             _motion[foot] = _prediction.Sample(foot, time, calculationTime);
         }
         long poseTicks = Stopwatch.GetTimestamp() - poseStart;

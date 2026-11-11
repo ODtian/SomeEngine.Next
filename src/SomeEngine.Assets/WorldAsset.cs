@@ -1,11 +1,9 @@
-using SomeEngine.ECS;
-using SomeEngine.ECS.Serialization;
 using SomeEngine.Serialization;
 using SomeEngine.Serialization.Containers;
 
 namespace SomeEngine.Assets;
 
-/// <summary>A scene identity whose ECS content is an independently acquired block.</summary>
+/// <summary>A scene identity and its directory of independently loadable entity content.</summary>
 [BinarySerializable(LogicalName = "SomeEngine.Assets.WorldFile")]
 [BinaryFields(nameof(Id), nameof(Name), nameof(AssetType), nameof(BlockDescriptions))]
 public sealed partial class WorldAsset : Asset
@@ -20,8 +18,6 @@ public sealed partial class WorldAsset : Asset
         get => base.BlockDescriptions;
         private set => base.BlockDescriptions = value;
     }
-    [BinaryIgnore] public ulong ContentLength => GetBlock<WorldBlock>().ContentLength;
-    [BinaryIgnore] public ImmutableArray<AssetId<Asset>> ExternalReferences => GetBlock<WorldBlock>().ExternalReferences;
     public WorldAsset() : this(Guid.Empty) { }
     public WorldAsset(Guid id = default) : base(id)
     {
@@ -32,11 +28,6 @@ public sealed partial class WorldAsset : Asset
     private WorldAsset(WorldAsset source) : base(source) { }
     public override WorldAsset Duplicate() { lock (SyncRoot) { RequireIdle(); return new(this); } }
     public override WorldAsset CreateCopy(Guid id = default) => (WorldAsset)base.CreateCopy(id);
-    public void WriteWorld(World world, SerializationRegistry registry, SerializeOptions options = default)
-        => GetBlock<WorldBlock>().WriteWorld(world, registry, options);
-    public ValueTask<World> LoadAsync(SerializationRegistry registry, WorldLoadOptions options = default,
-        CancellationToken cancellationToken = default)
-        => GetBlock<WorldBlock>().LoadAsync(registry, options, cancellationToken);
     public AssetEntry Describe() => Describe(SchemaHash, BlockReferences());
     public override async ValueTask<AssetEntry> SaveAsync(string path, CancellationToken cancellationToken = default)
     {
@@ -65,8 +56,7 @@ public sealed partial class WorldAsset : Asset
         {
             asset.ReadBlockContent(file);
             asset.AttachFile(file);
-            WorldBlock world = await asset.GetBlockAsync<WorldBlock>(cancellationToken).ConfigureAwait(false);
-            if (world.ContentLength == 0) throw new InvalidDataException("The World file has no content.");
+            await asset.GetBlockAsync<WorldBlock>(cancellationToken).ConfigureAwait(false);
             return asset;
         }
         catch { asset.Dispose(); throw; }

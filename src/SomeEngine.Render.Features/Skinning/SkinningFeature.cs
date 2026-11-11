@@ -2,7 +2,7 @@ using System.Numerics;
 using System.Runtime.InteropServices;
 using SomeEngine.Animation.Pose;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
+using SomeEngine.ECS;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Graphics;
 using SomeEngine.Render.Assets;
@@ -46,8 +46,8 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
     private Section[] _sectionOrder = [];
     private byte[] _definitionBytes = [];
     private BufferRange _sectionBytes, _jointBytes, _inverseBytes;
-    private QueryHandle _sectionQuery, _meshQuery;
-    private uint _meshMembersVersion;
+    private Query _sectionQuery, _meshQuery;
+    private ulong _meshMembersVersion;
     private GraphPassId _uploadPass, _advancePass, _loadPass, _cpuPass, _storePass;
     private ulong _collection;
     private int _boneCount = 1;
@@ -112,17 +112,17 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
 
     public void OnCreate(ref RenderPrepareSystemContext context)
     {
-        _sectionQuery = context.World.Query(new QueryDefinitionBuilder().Read<RenderBoneSectionData>().Write<RenderPoseSection>());
-        _meshQuery = context.World.Query(new QueryDefinitionBuilder().Read<RenderMeshSkin>().Write<RenderSkinBinding>());
+        _sectionQuery = context.World.World.Query(new QueryDescription().WithStored<RenderBoneSectionData>().WithStored<RenderPoseSection>());
+        _meshQuery = context.World.World.Query(new QueryDescription().WithStored<RenderMeshSkin>().WithStored<RenderSkinBinding>());
     }
 
     public void OnUpdate(ref RenderPrepareSystemContext context)
     {
         _collection++;
         SkinningFeature feature = this;
-        context.World.ExecuteQuery(_sectionQuery, ref feature, static (QueryCursor rows, ref SkinningFeature feature) =>
+        using (QueryScope rows = _sectionQuery.OpenRead())
         {
-            foreach (QueryChunkView chunk in rows.Chunks)
+            foreach (QueryChunk chunk in rows)
             {
                 ReadOnlySpan<Entity> entities = chunk.Entities;
                 ReadOnlySpan<RenderBoneSectionData> values = chunk.Read<RenderBoneSectionData>();
@@ -146,19 +146,18 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
                     section.Collection = feature._collection;
                 }
             }
-        });
+        }
         _removed.Clear();
         foreach ((Entity entity, Section section) in _sections)
             if (section.Collection != _collection) _removed.Add(entity);
         foreach (Entity entity in _removed) { _sections.Remove(entity); _membershipChanged = _definitionsChanged = true; }
-        uint meshMembers = context.World.MembershipVersion(_meshQuery);
+        ulong meshMembers = _meshQuery.MembershipVersion;
         var meshChanges = new MeshChanges(this, meshMembers != _meshMembersVersion);
-        context.World.ExecuteQuery(_meshQuery, context.LastSystemVersion, ref meshChanges, static (QueryCursor rows, ref MeshChanges changes) =>
+        using (QueryScope rows = _meshQuery.OpenRead())
         {
-            SkinningFeature feature = changes.Feature;
-            foreach (QueryChunkView chunk in rows.Chunks)
+            foreach (QueryChunk chunk in rows)
             {
-                if (!changes.MembersChanged && !chunk.HasChangedSinceLastSystemVersion<RenderMeshSkin>()) continue;
+                if (!meshChanges.MembersChanged && !chunk.WasWritten<RenderMeshSkin>(context.LastSystemVersion)) continue;
                 ReadOnlySpan<Entity> entities = chunk.Entities;
                 ReadOnlySpan<RenderMeshSkin> values = chunk.Read<RenderMeshSkin>();
                 for (int index = 0; index < entities.Length; index++)
@@ -175,7 +174,7 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
                     mesh.Collection = feature._collection;
                 }
             }
-        });
+        }
         if (meshChanges.MembersChanged)
         {
             _removed.Clear();
@@ -185,12 +184,12 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
         }
         _meshMembersVersion = meshMembers;
 
-        if (_definitionsChanged) Rebuild(context.World);
+        if (_definitionsChanged) Rebuild(context.World.World);
         else RetireHistories();
         PrepareEvaluations();
-        context.World.ExecuteQuery(_sectionQuery, ref feature, static (QueryCursor rows, ref SkinningFeature feature) =>
+        using (QueryScope rows = _sectionQuery.Open())
         {
-            foreach (QueryChunkView chunk in rows.Chunks)
+            foreach (QueryChunk chunk in rows)
             {
                 ReadOnlySpan<Entity> entities = chunk.Entities;
                 Span<RenderPoseSection> values = chunk.Write<RenderPoseSection>();
@@ -202,7 +201,7 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
                         data.StateMachine is null && data.Blend is null ? data.SampleTime : data.PlaybackTime, section.Index, section.FrameVersion);
                 }
             }
-        });
+        }
         RequestReadbacks();
     }
 
@@ -292,7 +291,7 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
         }
     }
 
-    private void Rebuild(RenderWorld world)
+    private void Rebuild(World world)
     {
         _sectionOrder = [.. _sections.Values];
         int boneCount = 0, blendStates = 0, blendLocals = 0;
@@ -368,7 +367,7 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
             RenderMeshSkin mesh = input.Data;
             uint jointOffset = (uint)(((ulong)bytes.Position - jointsStart) / 4);
             foreach (RenderSkinJoint joint in mesh.Joints) writer.Write((uint)(_sections[joint.Section].Range.Start + joint.Bone));
-            world.Replace(entity, new RenderSkinBinding(jointOffset, bindOffsets[mesh.Binding]));
+            world.Set(entity, new RenderSkinBinding(jointOffset, bindOffsets[mesh.Binding]));
         }
         if ((ulong)bytes.Position == jointsStart) writer.Write(0u);
         _jointBytes = new(jointsStart, (ulong)bytes.Position - jointsStart);
@@ -657,7 +656,7 @@ public sealed partial class SkinningFeature : IGraphResourceProvider, IDisposabl
     }
 
     public void OnDestroy(ref RenderPrepareSystemContext context)
-    { context.World.ReleaseQuery(_sectionQuery); context.World.ReleaseQuery(_meshQuery); }
+    { _sectionQuery = default; _meshQuery = default; }
 
     public bool TryResolve(string name, ResourceBindingType type, out GraphResourceBinder binder)
     {

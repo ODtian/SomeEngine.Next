@@ -21,27 +21,27 @@ internal static partial class ButtonChecks
         using var frames = new ButtonFrames();
         Entity root = Views.Views.Spawn(frames.World, frames.Canvas, new ClickingButtonExample(kind, "AV"));
         frames.Frame();
-        Entity button = frames.World.Read<ClickDisplay>(root).Button;
-        Require(frames.World.Read<AccessibleRole>(button).Value == Role.Button &&
-            frames.World.Read<AccessibleName>(button).Value == "AV",
+        Entity button = frames.World.ReadComponentData<ClickDisplay>(root).Button;
+        Require(frames.World.ReadComponentData<AccessibleRole>(button).Value == Role.Button &&
+            frames.World.ReadComponentData<AccessibleName>(button).Value == "AV",
             "Built-in, user, and icon buttons expose the button role and their label.");
-        Require(frames.World.Read<ClickDisplay>(root).Count == 0, "A new button displays zero consumed clicks.");
+        Require(frames.World.ReadComponentData<ClickDisplay>(root).Count == 0, "A new button displays zero consumed clicks.");
 
         Pointer.Move(frames.World, frames.Canvas, new Vector2(4, 4));
         Pointer.Press(frames.World, frames.Canvas, PointerButton.Primary);
         frames.Frame();
-        Require(frames.World.Read<ClickDisplay>(root).Count == 0, "Holding a press keeps the caller's click count.");
-        Require(frames.World.Read<Surface>(DescendantsWith<Surface>(frames.World, button).Single()).Fill ==
+        Require(frames.World.ReadComponentData<ClickDisplay>(root).Count == 0, "Holding a press keeps the caller's click count.");
+        Require(frames.World.ReadComponentData<Surface>(DescendantsWith<Surface>(frames.World, button).Single()).Fill ==
             new Color(0.1f, 0.1f, 0.1f), "The held button uses its default pressed fill.");
         Pointer.Release(frames.World, frames.Canvas, PointerButton.Primary);
         frames.Frame();
-        Require(frames.World.Read<ClickDisplay>(root).Count == 1 && !frames.World.Read<ClickDisplay>(root).SecondClick,
+        Require(frames.World.ReadComponentData<ClickDisplay>(root).Count == 1 && !frames.World.ReadComponentData<ClickDisplay>(root).SecondClick,
             "The caller consumes a completed click once across successive reads.");
-        Require(frames.World.Read<Clicks>(button).Count == 1, "A completed click advances the public count.");
+        Require(frames.World.ReadComponentData<Clicks>(button).Count == 1, "A completed click advances the public count.");
 
         Pointer.Release(frames.World, frames.Canvas, PointerButton.Primary);
         frames.Frame();
-        Require(frames.World.Read<ClickDisplay>(root).Count == 1 && !frames.World.Read<ClickDisplay>(root).SecondClick,
+        Require(frames.World.ReadComponentData<ClickDisplay>(root).Count == 1 && !frames.World.ReadComponentData<ClickDisplay>(root).SecondClick,
             "A repeated release preserves the consumed click display.");
         for (int click = 0; click < 2; click++)
         {
@@ -49,9 +49,9 @@ internal static partial class ButtonChecks
             Pointer.Release(frames.World, frames.Canvas, PointerButton.Primary);
         }
         frames.Frame();
-        Require(frames.World.Read<ClickDisplay>(root).Count == 2 && !frames.World.Read<ClickDisplay>(root).SecondClick,
+        Require(frames.World.ReadComponentData<ClickDisplay>(root).Count == 2 && !frames.World.ReadComponentData<ClickDisplay>(root).SecondClick,
             "One read consumes all clicks completed since the previous read.");
-        Require(frames.World.Read<Clicks>(button).Count == 3, "Each completed click remains in the public count.");
+        Require(frames.World.ReadComponentData<Clicks>(button).Count == 3, "Each completed click remains in the public count.");
 
         Pointer.Press(frames.World, frames.Canvas, PointerButton.Primary);
         frames.Frame();
@@ -64,34 +64,34 @@ internal static partial class ButtonChecks
             Padding = new Thickness(3, 5, 7, 11),
             CornerRadius = 12,
         };
-        frames.World.Replace(root, new ClickingButtonExample(kind, "OK", theme));
+        frames.World.Set(root, new ClickingButtonExample(kind, "OK", theme));
         frames.Frame();
-        button = frames.World.Read<ClickDisplay>(root).Button;
-        Require(frames.World.Read<AccessibleRole>(button).Value == Role.Button &&
-            frames.World.Read<AccessibleName>(button).Value == "OK",
+        button = frames.World.ReadComponentData<ClickDisplay>(root).Button;
+        Require(frames.World.ReadComponentData<AccessibleRole>(button).Value == Role.Button &&
+            frames.World.ReadComponentData<AccessibleName>(button).Value == "OK",
             "A changed label updates the button's accessibility name.");
         List<Entity> texts = DescendantsWith<Text>(frames.World, button);
-        Require(texts.Count(node => frames.World.Read<Text>(node).Value == "OK") == 1,
+        Require(texts.Count(node => frames.World.ReadComponentData<Text>(node).Value == "OK") == 1,
             "Updated parameters display the new button label.");
-        Require(frames.World.Read<Hover>(button).Pressed && frames.World.Read<ClickDisplay>(root).Count == 2,
+        Require(frames.World.ReadComponentData<Hover>(button).Pressed && frames.World.ReadComponentData<ClickDisplay>(root).Count == 2,
             "Updating the label and theme preserves the held press and consumed clicks.");
         Entity surface = DescendantsWith<Surface>(frames.World, button).Single();
-        Require(frames.World.Read<Surface>(surface).Fill == new Color(0.2f, 0.3f, 0.4f) &&
-            frames.World.Read<Surface>(surface).CornerRadius == 12 &&
-            frames.World.Read<Box>(surface).Padding == new Thickness(3, 5, 7, 11),
+        Require(frames.World.ReadComponentData<Surface>(surface).Fill == new Color(0.2f, 0.3f, 0.4f) &&
+            frames.World.ReadComponentData<Surface>(surface).CornerRadius == 12 &&
+            frames.World.ReadComponentData<Box>(surface).Padding == new Thickness(3, 5, 7, 11),
             "Provide updates pressed fill, corners, and asymmetric padding within the frame.");
         foreach (Entity text in texts)
-            Require(frames.World.Read<ShapedText>(text).Style.Color == new Color(0.8f, 0.7f, 0.6f, 0.5f),
+            Require(frames.World.ReadComponentData<ShapedText>(text).Style.Color == new Color(0.8f, 0.7f, 0.6f, 0.5f),
                 "The label and glyph use the provided text color.");
         Pointer.Release(frames.World, frames.Canvas, PointerButton.Primary);
         frames.Frame();
-        Require(frames.World.Read<ClickDisplay>(root).Count == 3 && !frames.World.Read<ClickDisplay>(root).SecondClick,
+        Require(frames.World.ReadComponentData<ClickDisplay>(root).Count == 3 && !frames.World.ReadComponentData<ClickDisplay>(root).SecondClick,
             "The held press completes one later click after the parameter update.");
-        Require(frames.World.Read<Surface>(surface).Fill == new Color(0.5f, 0.6f, 0.7f),
+        Require(frames.World.ReadComponentData<Surface>(surface).Fill == new Color(0.5f, 0.6f, 0.7f),
             "Release uses the provided hover fill.");
         Pointer.Move(frames.World, frames.Canvas, new Vector2(300, 200));
         frames.Frame();
-        Require(frames.World.Read<Surface>(surface).Fill == new Color(0.4f, 0.5f, 0.6f),
+        Require(frames.World.ReadComponentData<Surface>(surface).Fill == new Color(0.4f, 0.5f, 0.6f),
             "Moving away uses the provided normal fill.");
     }
 
@@ -106,7 +106,7 @@ internal static partial class ButtonChecks
     internal static List<Entity> DescendantsWith<T>(World world, Entity node) where T : struct, IComponent
     {
         var result = new List<Entity>();
-        foreach (Entity child in Hierarchy<ElementTree>.GetChildren(world, node))
+        foreach (Entity child in ElementChildren.Read(world, node))
         {
             if (world.Has<T>(child))
                 result.Add(child);
@@ -141,7 +141,7 @@ internal static partial class ButtonChecks
         }
     }
 
-    private record struct ClickCount(int Value) : IComponent;
+    private record struct ClickCount(int Value) : ITrackedComponent;
     private readonly record struct ClickDisplay(Entity Button, int Count, bool SecondClick) : IComponent;
 }
 
@@ -162,7 +162,7 @@ internal sealed class ButtonFrames : IDisposable
     public ButtonFrames()
     {
         _font = Font.Load(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fonts", "Latin.ttf")));
-        Canvas = World.CreateEntity(new Canvas { Size = new Size(320, 240) });
+        Canvas = World.Create(new Canvas { Size = new Size(320, 240) });
         World.Add(Canvas, new TextTheme(new TextStyle { Font = _font, Size = 20 }));
         _systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(World));
         var shaping = new TextShapingSystem();

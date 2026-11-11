@@ -37,9 +37,9 @@ public static partial class BuildResumeChecks
         frames.Frame();
         key.Value = 2;
         frames.Frame();
-        Require(frames.World.ReadSparse<BuildError>(root).Exception is AggregateException aggregate &&
+        Require(frames.World.ReadComponentData<BuildError>(root).Exception is AggregateException aggregate &&
             aggregate.InnerExceptions.Contains(error), "The child cancellation callback reaches the view error boundary.");
-        Require(frames.World.ReadSparse<BuildError>(root).Frame == 2, "The callback error records the restart frame.");
+        Require(frames.World.ReadComponentData<BuildError>(root).Frame == 2, "The callback error records the restart frame.");
         frames.Frame();
         Require(!frames.World.HasSparse<BuildError>(root), "The successful replacement child clears its cancellation callback error.");
     }
@@ -79,14 +79,14 @@ public static partial class BuildResumeChecks
         Entity root = Views.Spawn(frames.World, Entity.Null, new LaunchErrors(first, second, firstError, secondError));
         frames.Frame();
         frames.Frame();
-        Require(ReferenceEquals(frames.World.ReadSparse<BuildError>(root).Exception, secondError),
+        Require(ReferenceEquals(frames.World.ReadComponentData<BuildError>(root).Exception, secondError),
             "The view presents the latest asynchronous child error.");
         second.Value = 2;
         frames.Frame();
-        Require(ReferenceEquals(frames.World.ReadSparse<BuildError>(root).Exception, secondError),
+        Require(ReferenceEquals(frames.World.ReadComponentData<BuildError>(root).Exception, secondError),
             "The previous error remains visible while the replacement child is suspended.");
         frames.Frame();
-        Require(ReferenceEquals(frames.World.ReadSparse<BuildError>(root).Exception, firstError),
+        Require(ReferenceEquals(frames.World.ReadComponentData<BuildError>(root).Exception, firstError),
             "A successful child preserves the other child's error.");
         first.Value = 2;
         frames.Frame();
@@ -128,12 +128,12 @@ public static partial class BuildResumeChecks
         Entity root = Views.Spawn(frames.World, Entity.Null, new LaunchContent(key, output, error));
         frames.Frame();
         frames.Frame();
-        Require(ReferenceEquals(frames.World.ReadSparse<BuildError>(root).Exception, error),
+        Require(ReferenceEquals(frames.World.ReadComponentData<BuildError>(root).Exception, error),
             "The failed asynchronous child computation reports its original error.");
         key.Value = 2;
         frames.Frame();
         frames.Frame();
-        Require(frames.World.Read<Number>(root).Value == 2, "The successful child result updates its bound display.");
+        Require(frames.World.ReadComponentData<Number>(root).Value == 2, "The successful child result updates its bound display.");
         Require(!frames.World.HasSparse<BuildError>(root), "The successful child computation clears its previous error.");
     }
 
@@ -173,8 +173,8 @@ public static partial class BuildResumeChecks
         source.Value = 2;
         frames.Frame();
         Require(output.Value == 2, "The callback failure reaches the view error boundary and the new build starts.");
-        Require(frames.World.Read<Number>(sibling).Value == 2, "The frame continues updating subsequent views.");
-        Require(frames.World.ReadSparse<BuildError>(root).Exception is AggregateException aggregate &&
+        Require(frames.World.ReadComponentData<Number>(sibling).Value == 2, "The frame continues updating subsequent views.");
+        Require(frames.World.ReadComponentData<BuildError>(root).Exception is AggregateException aggregate &&
             aggregate.InnerExceptions.Contains(error), "The view error contains the failing cancellation callback.");
         completion.SetResult();
         frames.Frame();
@@ -208,5 +208,5 @@ public static partial class BuildResumeChecks
         }
     }
 
-    private readonly record struct Number(int Value) : IComponent;
+    private readonly record struct Number(int Value) : ITrackedComponent;
 }

@@ -228,10 +228,8 @@ public sealed class SerializationGenerator : IIncrementalGenerator
             model.Fields.Add(fieldModel);
         }
 
-        model.RawCanonicalSize = GetRawCanonicalSize(
-            model,
-            out ulong rawCanonicalLayoutFingerprint);
-        model.RawCanonicalLayoutFingerprint = rawCanonicalLayoutFingerprint;
+        model.PackedSize = GetPackedSize(model, out ulong proof);
+        model.LayoutProof = proof;
         return ok;
     }
 
@@ -308,6 +306,12 @@ public sealed class SerializationGenerator : IIncrementalGenerator
         builder.AppendLine();
         builder.AppendLine("internal static partial class GameSerializationModule");
         builder.AppendLine("{");
+        builder.AppendLine("    [global::System.Runtime.CompilerServices.ModuleInitializer]");
+        builder.AppendLine("    internal static void RegisterDefaults()");
+        builder.AppendLine("    {");
+        foreach (var model in models.OrderBy(static model => model.StableId))
+            builder.AppendLine($"        {GetDefaultRegistrationLine(model)}");
+        builder.AppendLine("    }");
         builder.AppendLine("    public static void RegisterAll(global::SomeEngine.ECS.Serialization.SerializationRegistry registry)");
         builder.AppendLine("    {");
         foreach (var model in models.OrderBy(static model => model.StableId))
@@ -335,36 +339,44 @@ public sealed class SerializationGenerator : IIncrementalGenerator
         string typeName = model.TypeName;
         string codec = GetCodecName(model);
         string patcher = GetPatcherName(model);
-        string rawSize = model.RawCanonicalSize >= 0 ? model.RawCanonicalSize.ToString() : "-1";
-        string rawLayoutFingerprint = $"0x{model.RawCanonicalLayoutFingerprint:X16}ul";
 
         return model.Kind switch
         {
             SerializableKind.Component when model.ContainsEntityReferences =>
-                $"registry.Register<{typeName}, {codec}, {patcher}>({typeKey});",
+                $"registry.RegisterCodec<{typeName}, {codec}, {patcher}>({typeKey}, new {codec}(), new {patcher}());",
             SerializableKind.Component =>
-                $"registry.RegisterCanonical<{typeName}, {codec}>({typeKey}, {rawSize}, {rawLayoutFingerprint});",
+                $"registry.RegisterDurable<{typeName}, {codec}>({typeKey}, {model.PackedSize}, 0x{model.LayoutProof:X16}ul);",
             SerializableKind.Tag =>
-                $"registry.RegisterTag<{typeName}>({typeKey});",
+                $"registry.Register<{typeName}>({typeKey});",
             SerializableKind.Shared when model.ContainsEntityReferences =>
-                $"registry.RegisterShared<{typeName}, {codec}, {patcher}>({typeKey});",
+                $"registry.RegisterShared<{typeName}, {codec}, {patcher}>({typeKey}, new {codec}(), new {patcher}());",
             SerializableKind.Shared =>
-                $"registry.RegisterSharedCanonical<{typeName}, {codec}>({typeKey}, {rawSize}, {rawLayoutFingerprint});",
+                $"registry.RegisterShared<{typeName}, {codec}>({typeKey});",
             SerializableKind.Buffer when model.ContainsEntityReferences =>
-                $"registry.RegisterBuffer<{typeName}, {codec}, {patcher}>({typeKey});",
+                $"registry.RegisterBufferCodec<{typeName}, {codec}, {patcher}>({typeKey}, new {codec}(), new {patcher}());",
             SerializableKind.Buffer =>
-                $"registry.RegisterBufferCanonical<{typeName}, {codec}>({typeKey}, {rawSize}, {rawLayoutFingerprint});",
+                $"registry.RegisterBuffer<{typeName}, {codec}>({typeKey});",
             SerializableKind.Sparse when model.ContainsEntityReferences =>
-                $"registry.RegisterSparse<{typeName}, {codec}, {patcher}>({typeKey});",
+                $"registry.RegisterSparse<{typeName}, {codec}, {patcher}>({typeKey}, new {codec}(), new {patcher}());",
             SerializableKind.Sparse =>
-                $"registry.RegisterSparseCanonical<{typeName}, {codec}>({typeKey}, {rawSize}, {rawLayoutFingerprint});",
+                $"registry.RegisterSparse<{typeName}, {codec}>({typeKey});",
             _ => throw new InvalidOperationException("Unsupported serializable kind."),
         };
     }
 
+    private static string GetDefaultRegistrationLine(SerializableModel model)
+    {
+        string format = $"new global::SomeEngine.ECS.Serialization.SerializationTypeKey(new global::System.Guid(\"{model.StableIdText}\"), \"{model.Symbol.ToDisplayString()}\", 0x{model.SchemaFingerprint:X16}ul)";
+        string method = "global::SomeEngine.ECS.Serialization.ComponentCodec.RegisterDefault";
+        if (model.Kind == SerializableKind.Tag) return $"{method}Tag<{model.TypeName}>({format});";
+        string types = $"{model.TypeName}, {GetCodecName(model)}";
+        if (model.ContainsEntityReferences) types += $", {GetPatcherName(model)}";
+        return $"{method}<{types}>({format});";
+    }
+
     private static void GenerateCodec(StringBuilder builder, SerializableModel model)
     {
-        builder.AppendLine($"internal struct {GetCodecName(model)} : global::SomeEngine.ECS.Serialization.ICanonicalComponentCodec<{model.TypeName}>");
+        builder.AppendLine($"internal struct {GetCodecName(model)} : global::SomeEngine.ECS.Serialization.IDurableComponentCodec<{model.TypeName}>");
         builder.AppendLine("{");
         builder.AppendLine("    public bool SupportsParallelWrite => true;");
         builder.AppendLine($"    public void Write(ref global::SomeEngine.ECS.Serialization.DataWriter writer, in {model.TypeName} value)");
@@ -486,7 +498,7 @@ public sealed class SerializationGenerator : IIncrementalGenerator
                 yield return $"{access} = reader.ReadGuid();";
                 break;
             case FieldKind.String:
-                yield return $"{access} = reader.ReadString();";
+                yield return $"{access} = reader.ReadString()!;";
                 break;
             case FieldKind.Entity:
                 yield return $"{access} = reader.ReadEntity();";
@@ -640,7 +652,7 @@ public sealed class SerializationGenerator : IIncrementalGenerator
         return model.SchemaFingerprint;
     }
 
-    private static int GetRawCanonicalSize(
+    private static int GetPackedSize(
         SerializableModel model,
         out ulong layoutFingerprint)
     {
@@ -672,19 +684,19 @@ public sealed class SerializationGenerator : IIncrementalGenerator
         int size = 0;
         foreach (FieldModel field in model.Fields)
         {
-            if (!TryGetRawCanonicalFieldShape(field.Kind, out _, out int fieldSize))
+            if (!TryGetPackedFieldShape(field.Kind, out _, out int fieldSize))
                 return -1;
             size = checked(size + fieldSize);
         }
 
         ulong hash = 14695981039346656037ul;
-        AddString(ref hash, "SomeEngine.ECS.RawCanonicalLayout.v1");
+        AddString(ref hash, "SomeEngine.ECS.PackedValueLayout.v1");
         AddRawLayoutUInt32(ref hash, unchecked((uint)size));
         AddRawLayoutUInt32(ref hash, unchecked((uint)model.Fields.Count));
         int offset = 0;
         foreach (FieldModel field in model.Fields)
         {
-            _ = TryGetRawCanonicalFieldShape(field.Kind, out uint kind, out int fieldSize);
+            _ = TryGetPackedFieldShape(field.Kind, out uint kind, out int fieldSize);
             AddRawLayoutUInt32(ref hash, kind);
             AddRawLayoutUInt32(ref hash, unchecked((uint)offset));
             AddRawLayoutUInt32(ref hash, unchecked((uint)fieldSize));
@@ -695,7 +707,7 @@ public sealed class SerializationGenerator : IIncrementalGenerator
         return size;
     }
 
-    private static bool TryGetRawCanonicalFieldShape(
+    private static bool TryGetPackedFieldShape(
         FieldKind fieldKind,
         out uint kind,
         out int size)
@@ -804,8 +816,8 @@ public sealed class SerializationGenerator : IIncrementalGenerator
         public List<FieldModel> Fields { get; } = new();
         public bool ContainsEntityReferences { get; set; }
         public ulong SchemaFingerprint { get; set; }
-        public int RawCanonicalSize { get; set; } = -1;
-        public ulong RawCanonicalLayoutFingerprint { get; set; }
+        public int PackedSize { get; set; } = -1;
+        public ulong LayoutProof { get; set; }
     }
 
     private sealed class FieldModel
@@ -864,4 +876,3 @@ public sealed class SerializationGenerator : IIncrementalGenerator
         Nested,
     }
 }
-

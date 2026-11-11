@@ -13,7 +13,7 @@ public sealed partial class GlyphAtlas
     public void Save(Stream destination)
     {
         DevelopmentCheck.Require(destination is not null && destination.CanWrite, "Saving an atlas needs a writable stream.");
-        using var writer = new BinaryWriter(destination, Encoding.UTF8, leaveOpen: true);
+        using var writer = new BinaryWriter(destination!, Encoding.UTF8, leaveOpen: true);
         writer.Write(FileSignature);
         writer.Write(FileVersion);
         writer.Write(PageWidth);
@@ -48,7 +48,7 @@ public sealed partial class GlyphAtlas
     public static GlyphAtlas Load(Stream source, ReadOnlySpan<Font> fonts)
     {
         DevelopmentCheck.Require(source is not null && source.CanRead, "Loading an atlas needs a readable stream.");
-        using var reader = new BinaryReader(source, Encoding.UTF8, leaveOpen: true);
+        using var reader = new BinaryReader(source!, Encoding.UTF8, leaveOpen: true);
         if (reader.ReadInt32() != FileSignature || reader.ReadInt32() != FileVersion)
             throw new InvalidDataException("The glyph atlas file needs a supported GSDF header and version.");
 
@@ -71,7 +71,7 @@ public sealed partial class GlyphAtlas
         foreach (Font font in fonts)
         {
             DevelopmentCheck.Require(font is not null, "Each atlas font entry needs a font.");
-            string hash = Convert.ToHexString(font.Data.GetAssetHash());
+            string hash = Convert.ToHexString(font!.Data.GetAssetHash());
             if (!fontsByHash.TryGetValue(hash, out List<Font>? fontsWithHash))
                 fontsByHash.Add(hash, fontsWithHash = []);
             fontsWithHash.Add(font);

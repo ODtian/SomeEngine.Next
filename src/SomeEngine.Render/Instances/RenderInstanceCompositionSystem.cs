@@ -1,4 +1,4 @@
-using SomeEngine.ECS.Queries;
+using SomeEngine.ECS;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Render.Systems;
 
@@ -17,11 +17,11 @@ public sealed class RenderInstanceCompositionSystem<TGroupKey, TComposer> :
 {
     private readonly TComposer _composer;
     private readonly RenderInstanceBatchBuilder<TGroupKey> _builder;
-    private QueryHandle _query;
+    private Query _query;
     private bool _created;
 
     public RenderInstanceCompositionSystem(
-        QueryDefinition entities,
+        QueryDescription entities,
         in TComposer composer,
         int groupingPartitions,
         int rowsPerPacket = 0,
@@ -40,7 +40,7 @@ public sealed class RenderInstanceCompositionSystem<TGroupKey, TComposer> :
     /// <see cref="RenderInstanceBatches{TGroupKey}.RowsForEntity(int)"/>. A CPU queue consumer
     /// should use this same definition rather than independently reconstructing a broader query.
     /// </summary>
-    public QueryDefinition EntityQuery { get; }
+    public QueryDescription EntityQuery { get; }
 
     public RenderInstanceBatches<TGroupKey>? Current => _builder.Current;
 
@@ -50,7 +50,7 @@ public sealed class RenderInstanceCompositionSystem<TGroupKey, TComposer> :
     {
         if (_created)
             throw new InvalidOperationException("The render-instance composition system is already created.");
-        _query = context.World.Query(EntityQuery);
+        _query = context.World.World.Query(EntityQuery);
         _created = true;
     }
 
@@ -66,35 +66,15 @@ public sealed class RenderInstanceCompositionSystem<TGroupKey, TComposer> :
         if (!_created)
             return;
 
-        List<Exception>? failures = null;
         try
         {
             _builder.Clear(context);
         }
-        catch (Exception failure)
+        finally
         {
-            failures = [failure];
-        }
-
-        try
-        {
-            context.World.ReleaseQuery(_query);
-        }
-        catch (Exception failure)
-        {
-            (failures ??= []).Add(failure);
-        }
-
-        _query = default;
-        _created = false;
-        Changed = false;
-        if (failures is not null)
-        {
-            throw failures.Count == 1
-                ? failures[0]
-                : new AggregateException(
-                    "Render-instance composition could not release every owned resource.",
-                    failures);
+            _query = default;
+            _created = false;
+            Changed = false;
         }
     }
 }

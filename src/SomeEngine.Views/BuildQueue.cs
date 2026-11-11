@@ -3,6 +3,8 @@ using SomeEngine.Core.Diagnostics;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hierarchy;
+using SomeEngine.ECS.Systems;
+using SomeEngine.Job;
 
 namespace SomeEngine.Views;
 
@@ -12,7 +14,8 @@ internal sealed class BuildQueue
     private static readonly ConditionalWeakTable<World, BuildQueue> s_worlds = new();
     private readonly Lock _gate = new();
     private readonly Dictionary<Entity, Scope.ScopeData> _builds = new();
-    private readonly HashSet<Scope.ScopeData> _computations = new();
+    private readonly Dictionary<Entity, HashSet<Scope.ScopeData>> _computations = new();
+    private DestroyedReader _destroyed;
     private List<BuildStateMachine> _ready = new();
     private List<BuildStateMachine> _resuming = new();
     private List<Action> _nextFrame = new();
@@ -27,30 +30,32 @@ internal sealed class BuildQueue
     internal void CountBuild() => BuildCount++;
     internal void CountComputation() => ComputationCount++;
 
-    internal static BuildQueue For(World world) => s_worlds.GetValue(world, static world =>
-    {
-        var queue = new BuildQueue();
-        world.EntityDestroying += (_, entity) => queue.Release(world, entity);
-        return queue;
-    });
+    private BuildQueue(World world) => _destroyed = world.WatchDestroyed();
+
+    internal static BuildQueue For(World world) => s_worlds.GetValue(world, static world => new(world));
 
     internal void Add(Scope.ScopeData data)
     {
         if (data.Computation is null)
             _builds.Add(data.Entity, data);
         else
-            _computations.Add(data);
+        {
+            if (!_computations.TryGetValue(data.Entity, out var computations))
+                _computations.Add(data.Entity, computations = []);
+            computations.Add(data);
+        }
     }
 
-    internal void Open()
+    internal void Open(World world)
     {
         lock (_gate)
             _closed = false;
+        if (_destroyed.IsCompleted) _destroyed = world.WatchDestroyed();
     }
 
     internal bool HasParameterChanges(World world, Entity entity) =>
         _builds.TryGetValue(entity, out Scope.ScopeData? data)
-            ? data.ParameterVersion is uint version &&
+            ? data.ParameterVersion is ulong version &&
                 world.ComponentDataWriteVersion(entity, data.ParameterComponent) != version
             : ViewTypes.HasParameterChanges(world, entity);
 
@@ -62,7 +67,7 @@ internal sealed class BuildQueue
 
     internal void Cancel(Scope.ScopeData data, bool restore)
     {
-        if (_computations.Remove(data))
+        if (RemoveComputation(data))
             Scope.CancelBuild(data, restore);
         else if (_builds.TryGetValue(data.Entity, out Scope.ScopeData? current) && current == data)
             Cancel(data.Entity, restore);
@@ -73,31 +78,52 @@ internal sealed class BuildQueue
         Cancel(entity, restore: false);
         if (world.HasSparse<Computations>(entity))
             world.ReadSparse<Computations>(entity).List.ReleaseChildren();
-        while (true)
+        if (world.HasSparse<Computations>(entity)) world.RemoveSparse<Computations>(entity);
+        while (_computations.TryGetValue(entity, out var computations))
+            Cancel(computations.First(), restore: false);
+    }
+
+    private bool RemoveComputation(Scope.ScopeData data)
+    {
+        if (!_computations.TryGetValue(data.Entity, out var computations) || !computations.Remove(data)) return false;
+        if (computations.Count == 0) _computations.Remove(data.Entity);
+        return true;
+    }
+
+    internal void ReleaseDestroyed(World world)
+    {
+        var job = new ReleaseDestroyedJob(world, this);
+        if (world.Execution is WorldJobs jobs)
         {
-            Scope.ScopeData? next = null;
-            foreach (Scope.ScopeData data in _computations)
-                if (data.Entity == entity)
-                {
-                    next = data;
-                    break;
-                }
-            if (next is null)
-                return;
-            Cancel(next, restore: false);
+            JobResourceAccess[] values = jobs.CollectAccess(new SystemAccesses().WriteSparse<Computations>(), structureWrite: true);
+            var accesses = new JobResourceAccess[values.Length + 1];
+            values.CopyTo(accesses, 0);
+            accesses[^1] = _destroyed.Read;
+            jobs.Scheduler.Schedule(job, accesses, dependency: _destroyed.Ready).Complete();
+        }
+        else job.Execute();
+    }
+
+    private readonly struct ReleaseDestroyedJob(World world, BuildQueue builds) : IJob
+    {
+        public void Execute()
+        {
+            using DestroyedRead read = builds._destroyed.Open();
+            foreach (DestroyedEntity value in read) builds.Release(world, value.Entity);
+            builds._destroyed.Advance(read.Through);
         }
     }
 
     internal void CancelChanged(World world, DependencyChanges changes)
     {
         foreach (Scope.ScopeData data in _builds.Values)
-            if (!world.IsAlive(data.Entity) || world.Read<ViewType>(data.Entity).RebuildRequired ||
+            if (!world.IsAlive(data.Entity) || !world.Has<ViewType>(data.Entity) || world.Read<ViewType>(data.Entity).RebuildRequired ||
                 HasParameterChanges(world, data.Entity) || changes.HasChanges(world, data.Entity, recheck: true))
                 _changedBuilds.Add(data);
         foreach (Scope.ScopeData data in _changedBuilds)
         {
             data.Frame = changes.Frame;
-            Cancel(data.Entity, restore: world.IsAlive(data.Entity));
+            Cancel(data.Entity, restore: world.IsAlive(data.Entity) && world.Has<ViewType>(data.Entity));
         }
         _changedBuilds.Clear();
     }
@@ -145,7 +171,7 @@ internal sealed class BuildQueue
         {
             int comparison = left.Depth.CompareTo(right.Depth);
             if (comparison == 0)
-                comparison = left.Entity.Index.CompareTo(right.Entity.Index);
+                comparison = left.Entity.Id.CompareTo(right.Entity.Id);
             if (comparison == 0)
                 comparison = left.Entity.Generation.CompareTo(right.Entity.Generation);
             return comparison;
@@ -164,7 +190,7 @@ internal sealed class BuildQueue
                     Cancel(view, restore: false);
                 bool active = view.Computation is null
                     ? _builds.TryGetValue(build.Entity, out Scope.ScopeData? currentBuild) && currentBuild == view
-                    : _computations.Contains(view);
+                    : _computations.TryGetValue(view.Entity, out var computations) && computations.Contains(view);
                 if (!view.IsCanceled && !active)
                     continue;
                 bool completed = false;
@@ -208,16 +234,16 @@ internal sealed class BuildQueue
                     if (completed)
                     {
                         Scope.FinishChildren(view);
-                        if (!view.IsCanceled && view.ParameterVersion is uint version)
+                        if (!view.IsCanceled && view.ParameterVersion is ulong version)
                         {
                             if (world.Has<ParameterVersion>(build.Entity))
-                                world.Replace(build.Entity, new ParameterVersion(version));
+                                world.Set(build.Entity, new ParameterVersion(version));
                             else
                                 world.Add(build.Entity, new ParameterVersion(version));
                         }
                         if (_builds.TryGetValue(build.Entity, out Scope.ScopeData? current) && current == view)
                             _builds.Remove(build.Entity);
-                        _computations.Remove(view);
+                        RemoveComputation(view);
                         Scope.Release(view);
                     }
                 }
@@ -235,7 +261,7 @@ internal sealed class BuildQueue
     internal void Close(World world, ulong frame)
     {
         _changedBuilds.AddRange(_builds.Values);
-        _changedBuilds.AddRange(_computations);
+        foreach (var computations in _computations.Values) _changedBuilds.AddRange(computations);
         foreach (Scope.ScopeData data in _changedBuilds)
             Cancel(data, restore: false);
         _changedBuilds.Clear();
@@ -255,6 +281,7 @@ internal sealed class BuildQueue
         _depths.Clear();
         _builds.Clear();
         _computations.Clear();
+        _destroyed.Dispose();
     }
 
     private readonly record struct BuildDepth(BuildStateMachine StateMachine, Entity Entity, int Depth);

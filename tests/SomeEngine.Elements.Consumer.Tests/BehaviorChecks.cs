@@ -18,60 +18,60 @@ internal static partial class BehaviorChecks
     internal static void Run(bool rewritten)
     {
         using var world = new World();
-        Entity canvas = world.CreateEntity(new Canvas { Size = new Size(200, 120) });
+        Entity canvas = world.Create(new Canvas { Size = new Size(200, 120) });
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
         systems.Add(new HitTestSystem());
         systems.Add(new ViewRebuildSystem());
         systems.Add(new LayoutSystem());
         Entity root = Views.Views.Spawn(world, canvas, new BehaviorExample(rewritten, 0));
         systems.Update();
-        Entity container = Hierarchy<ElementTree>.GetChildren(world, root)[0];
-        var children = Hierarchy<ElementTree>.GetChildren(world, container);
+        Entity container = ElementChildren.Read(world, root)[0];
+        var children = ElementChildren.Read(world, container);
         Entity dragNode = children[0];
         Entity selection = children[1];
         Entity scroll = children[2];
-        Entity content = Hierarchy<ElementTree>.GetChildren(world, scroll)[0];
+        Entity content = ElementChildren.Read(world, scroll)[0];
 
         Pointer.Move(world, canvas, new Vector2(10, 10));
         Pointer.Press(world, canvas, PointerButton.Primary);
         Pointer.Move(world, canvas, new Vector2(14, 13));
         systems.Update();
-        Drag drag = world.Read<Drag>(dragNode);
+        Drag drag = world.ReadComponentData<Drag>(dragNode);
         Require(drag.Active && drag.Count == 1 && drag.Delta == new Vector2(4, 3) && drag.Total == new Vector2(4, 3),
             "The declared drag reports its first movement.");
         Pointer.Release(world, canvas, PointerButton.Primary);
         systems.Update();
-        drag = world.Read<Drag>(dragNode);
+        drag = world.ReadComponentData<Drag>(dragNode);
         Require(!drag.Active && drag.Delta == Vector2.Zero && drag.Total == new Vector2(4, 3) && drag.Count == 1,
             "Release preserves the completed drag total.");
-        Require(world.Read<Clicks>(dragNode).Count == 0, "The drag completes its own pointer gesture.");
+        Require(world.ReadComponentData<Clicks>(dragNode).Count == 0, "The drag completes its own pointer gesture.");
 
         Pointer.Move(world, canvas, new Vector2(70, 10));
         Pointer.Press(world, canvas, PointerButton.Primary);
         Pointer.Release(world, canvas, PointerButton.Primary);
         systems.Update();
-        Require(world.Read<Selected>(selection).Value, "A click selects the declared node.");
-        world.Replace(root, new BehaviorExample(rewritten, 1));
+        Require(world.ReadComponentData<Selected>(selection).Value, "A click selects the declared node.");
+        world.Set(root, new BehaviorExample(rewritten, 1));
         systems.Update();
-        Require(world.Read<Selected>(selection).Value && world.Read<Drag>(dragNode).Count == 1,
+        Require(world.ReadComponentData<Selected>(selection).Value && world.ReadComponentData<Drag>(dragNode).Count == 1,
             "Repeated declarations preserve input-written behavior data.");
 
         Pointer.Move(world, canvas, new Vector2(20, 60));
         Pointer.Wheel(world, canvas, new Vector2(20, 30));
         systems.Update();
-        ScrollOffset offset = world.Read<ScrollOffset>(scroll);
+        ScrollOffset offset = world.ReadComponentData<ScrollOffset>(scroll);
         Require(offset.Max == new Vector2(100, 80) && offset.Value == new Vector2(20, 30),
             "Wheel input uses the measured content range.");
-        var rect = world.Read<LayoutRect>(content).Value;
+        var rect = world.ReadComponentData<LayoutRect>(content).Value;
         Require(rect.X == -20 && rect.Y == 20, "The content rectangle follows its scroll offset.");
 
         Pointer.Press(world, canvas, PointerButton.Primary);
         Pointer.Move(world, canvas, new Vector2(10, 40));
         Pointer.Release(world, canvas, PointerButton.Primary);
         systems.Update();
-        Require(world.Read<ScrollOffset>(scroll).Value == new Vector2(30, 50),
+        Require(world.ReadComponentData<ScrollOffset>(scroll).Value == new Vector2(30, 50),
             "Dragging scrolls opposite the pointer movement and retains the pressed target outside the viewport.");
-        Require(world.Read<Drag>(scroll).Count == 1 && !world.Read<Drag>(scroll).Active,
+        Require(world.ReadComponentData<Drag>(scroll).Count == 1 && !world.ReadComponentData<Drag>(scroll).Active,
             "A scrollable node exposes the same drag data.");
     }
 

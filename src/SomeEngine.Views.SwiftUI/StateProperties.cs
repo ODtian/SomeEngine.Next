@@ -20,9 +20,9 @@ public static class StateProperties
         CheckView<TView>();
         if (!world.HasSparse<StateValues>(entity))
         {
-            world.AddSparse(entity, new StateValues(new List<object?>()));
+            world.SetSparse(entity, new StateValues(new List<object?>()));
             if (!world.Has<LocalState>(entity))
-                world.AddTag<LocalState>(entity);
+                world.Add(entity, default(LocalState));
         }
         List<object?> values = world.ReadSparse<StateValues>(entity).Values;
         while (values.Count <= propertyNumber)

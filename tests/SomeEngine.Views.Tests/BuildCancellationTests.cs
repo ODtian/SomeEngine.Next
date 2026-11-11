@@ -107,7 +107,7 @@ public sealed partial class BuildCancellationTests
     }
 
     private static string Text(HeadlessFrameDriver frames, Entity root) =>
-        frames.World.Read<Label>(Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root))).Value;
+        frames.World.ReadComponentData<Label>(Assert.Single(ElementChildren.Read(frames.World, root))).Value;
 
     [Fact]
     public void RemovingAWaitingOnceViewCancelsItsIoAndRunsFinallyAndUsing()
@@ -119,17 +119,17 @@ public sealed partial class BuildCancellationTests
         Entity root = Views.Spawn(frames.World, Entity.Null,
             new ConditionalContent(visible, completion.Task, cleanup));
         frames.Frame();
-        Entity child = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
+        Entity child = Assert.Single(ElementChildren.Read(frames.World, root));
 
         visible.Value = false;
         frames.Frame();
 
-        Assert.False(frames.World.IsAlive(child));
+        Assert.False(frames.World.IsAlive(child) && frames.World.Has<ViewType>(child));
         Assert.True(cleanup.Cancel.IsCancellationRequested);
         frames.Frame();
         Assert.True(cleanup.Finally);
         Assert.True(cleanup.Disposed);
-        Assert.Empty(Hierarchy<ElementTree>.GetChildren(frames.World, root));
+        Assert.Empty(ElementChildren.Read(frames.World, root));
         Assert.False(frames.World.HasSparse<BuildError>(root));
     }
 
@@ -172,7 +172,7 @@ public sealed partial class BuildCancellationTests
         var value = new State<string>("old");
         var completion = new TaskCompletionSource();
         var cleanup = new CleanupData();
-        Entity target = frames.World.CreateEntity(new Number());
+        Entity target = frames.World.Create(new Number());
         Entity root = Views.Spawn(frames.World, Entity.Null, new HelperContent(value, completion.Task, target, cleanup));
         frames.Frame();
         value.Value = "new";
@@ -185,7 +185,7 @@ public sealed partial class BuildCancellationTests
 
         frames.Frame();
 
-        Assert.Equal(42, frames.World.Read<Number>(target).Value);
+        Assert.Equal(42, frames.World.ReadComponentData<Number>(target).Value);
         frames.Frame();
         Assert.True(cleanup.Finally);
         Assert.True(cleanup.Disposed);
@@ -225,7 +225,7 @@ public sealed partial class BuildCancellationTests
         }
     }
 
-    private readonly record struct Number(int Value) : IComponent;
+    private readonly record struct Number(int Value) : ITrackedComponent;
 
     [Fact]
     public void ReadsFromCanceledCleanupKeepTheNewViewsDependenciesSeparate()
@@ -336,12 +336,12 @@ public sealed partial class BuildCancellationTests
             ? Views.Spawn(frames.World, Entity.Null, new ParameterGroup("old", first.Task, previous))
             : Views.Spawn(frames.World, Entity.Null, new ParameterContent("old", first.Task, previous));
         frames.Frame();
-        Entity content = child ? Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root)) : root;
+        Entity content = child ? Assert.Single(ElementChildren.Read(frames.World, root)) : root;
 
         if (child)
-            frames.World.Replace(root, new ParameterGroup("new", second.Task, current));
+            frames.World.Set(root, new ParameterGroup("new", second.Task, current));
         else
-            frames.World.Replace(root, new ParameterContent("new", second.Task, current));
+            frames.World.Set(root, new ParameterContent("new", second.Task, current));
         frames.Frame();
 
         Assert.True(previous.Cancel.IsCancellationRequested);

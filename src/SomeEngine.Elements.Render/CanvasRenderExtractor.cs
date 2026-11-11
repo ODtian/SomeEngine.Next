@@ -5,7 +5,6 @@ using SomeEngine.Core.Math;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hierarchy;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Layout;
 using SomeEngine.Render.Systems;
@@ -55,14 +54,14 @@ public partial class CanvasRenderExtractor : IRenderExtractionSystem
         _drawings.Clear();
     }
 
-    public void Collect(QueryChunkView chunk)
+    public void Collect(QueryChunk chunk)
     {
-        _changes.Collect(ReadOnlyQueryPacketJobs.Borrow(chunk), chunk.LastSystemVersion, fullCollection: true);
+        _changes.Collect(chunk, 0, fullCollection: true);
     }
 
-    public bool CollectChanges(QueryChunkView chunk, RenderExtractionContext context)
+    public bool CollectChanges(QueryChunk chunk, ulong since, RenderExtractionContext context)
     {
-        _changes.Collect(ReadOnlyQueryPacketJobs.Borrow(chunk), chunk.LastSystemVersion, fullCollection: false);
+        _changes.Collect(chunk, since, fullCollection: false);
         return false;
     }
 
@@ -218,18 +217,18 @@ public partial class CanvasRenderExtractor : IRenderExtractionSystem
         {
             Entity entity = context.RetainMirror(source);
             context.Upsert(entity, canvas.Canvas);
-            if (!context.World.HasBuffer<SurfaceInstance>(entity)) context.World.AddBuffer<SurfaceInstance>(entity);
+            if (!context.World.Has<Buffer<SurfaceInstance>>(entity)) context.World.AddBuffer<SurfaceInstance>(entity);
             UpdateSurfaceInstances(context.World, entity, canvas.Surfaces);
-            if (!context.World.HasBuffer<ImageInstance>(entity)) context.World.AddBuffer<ImageInstance>(entity);
+            if (!context.World.Has<Buffer<ImageInstance>>(entity)) context.World.AddBuffer<ImageInstance>(entity);
             UpdateImageInstances(context.World, entity, canvas.Images);
         }
         foreach (RenderMirror mirror in context.Mirrors)
         {
             if (_canvasInstances.ContainsKey(mirror.Source)) continue;
             context.RemoveIfExists<RenderCanvas>(mirror.RenderEntity);
-            if (context.World.HasBuffer<SurfaceInstance>(mirror.RenderEntity))
+            if (context.World.Has<Buffer<SurfaceInstance>>(mirror.RenderEntity))
                 context.World.RemoveBuffer<SurfaceInstance>(mirror.RenderEntity);
-            if (context.World.HasBuffer<ImageInstance>(mirror.RenderEntity))
+            if (context.World.Has<Buffer<ImageInstance>>(mirror.RenderEntity))
                 context.World.RemoveBuffer<ImageInstance>(mirror.RenderEntity);
         }
     }
@@ -248,11 +247,11 @@ public partial class CanvasRenderExtractor : IRenderExtractionSystem
         foreach ((Entity source, Dictionary<Entity, SurfaceValue> values) in _surfaceValuesByCanvas)
         {
             Entity entity = context.RequireMirror(source);
-            context.World.ExecuteBufferWrite<SurfaceInstance>(entity, buffer =>
             {
+            using DynamicBuffer<SurfaceInstance> buffer = context.World.GetBuffer<SurfaceInstance>(entity);
                 for (int index = 0; index < buffer.Count; index++)
                 {
-                    SurfaceInstance before = buffer.Read(index);
+                    SurfaceInstance before = buffer[index];
                     if (!values.TryGetValue(before.Node, out SurfaceValue value)) continue;
                     SurfaceInstance after = before with
                     {
@@ -263,16 +262,16 @@ public partial class CanvasRenderExtractor : IRenderExtractionSystem
                     };
                     if (before != after) buffer[index] = after with { Version = unchecked(before.Version + 1) };
                 }
-            });
+                    }
         }
         foreach ((Entity source, Dictionary<Entity, ImageInstance> values) in _imageValuesByCanvas)
         {
             Entity entity = context.RequireMirror(source);
-            context.World.ExecuteBufferWrite<ImageInstance>(entity, buffer =>
             {
+            using DynamicBuffer<ImageInstance> buffer = context.World.GetBuffer<ImageInstance>(entity);
                 for (int index = 0; index < buffer.Count; index++)
                 {
-                    ImageInstance before = buffer.Read(index);
+                    ImageInstance before = buffer[index];
                     if (!values.TryGetValue(before.Node, out ImageInstance value)) continue;
                     ImageInstance after = value with
                     {
@@ -280,17 +279,17 @@ public partial class CanvasRenderExtractor : IRenderExtractionSystem
                     };
                     if (before != after) buffer[index] = after with { Version = unchecked(before.Version + 1) };
                 }
-            });
+                    }
         }
     }
 
-    private static void UpdateSurfaceInstances(RenderWorld world, Entity canvas, List<SurfaceInstance> instances)
+    private static void UpdateSurfaceInstances(World world, Entity canvas, List<SurfaceInstance> instances)
     {
         var previous = new Dictionary<Entity, SurfaceInstance>();
-        world.ExecuteBufferRead<SurfaceInstance>(canvas, buffer =>
         {
+            using ReadOnlyBuffer<SurfaceInstance> buffer = world.ReadBuffer<SurfaceInstance>(canvas);
             foreach (SurfaceInstance instance in buffer.AsSpan()) previous.Add(instance.Node, instance);
-        });
+                }
         for (int index = 0; index < instances.Count; index++)
         {
             SurfaceInstance value = instances[index];
@@ -302,25 +301,25 @@ public partial class CanvasRenderExtractor : IRenderExtractionSystem
             else value = value with { Version = 1 };
             instances[index] = value;
         }
-        world.ExecuteBufferWrite<SurfaceInstance>(canvas, buffer =>
         {
+            using DynamicBuffer<SurfaceInstance> buffer = world.GetBuffer<SurfaceInstance>(canvas);
             for (int index = 0; index < instances.Count; index++)
             {
                 SurfaceInstance value = instances[index];
                 if (index >= buffer.Count) buffer.Add(value);
-                else if (buffer.Read(index) != value) buffer[index] = value;
+                else if (buffer[index] != value) buffer[index] = value;
             }
-            while (buffer.Count > instances.Count) buffer.SwapRemoveAt(buffer.Count - 1);
-        });
+            while (buffer.Count > instances.Count) buffer.RemoveAtSwapBack(buffer.Count - 1);
+                }
     }
 
-    private static void UpdateImageInstances(RenderWorld world, Entity canvas, List<ImageInstance> instances)
+    private static void UpdateImageInstances(World world, Entity canvas, List<ImageInstance> instances)
     {
         var previous = new Dictionary<Entity, ImageInstance>();
-        world.ExecuteBufferRead<ImageInstance>(canvas, buffer =>
         {
+            using ReadOnlyBuffer<ImageInstance> buffer = world.ReadBuffer<ImageInstance>(canvas);
             foreach (ImageInstance instance in buffer.AsSpan()) previous.Add(instance.Node, instance);
-        });
+                }
         for (int index = 0; index < instances.Count; index++)
         {
             ImageInstance value = instances[index];
@@ -332,16 +331,16 @@ public partial class CanvasRenderExtractor : IRenderExtractionSystem
             else value = value with { Version = 1 };
             instances[index] = value;
         }
-        world.ExecuteBufferWrite<ImageInstance>(canvas, buffer =>
         {
+            using DynamicBuffer<ImageInstance> buffer = world.GetBuffer<ImageInstance>(canvas);
             for (int index = 0; index < instances.Count; index++)
             {
                 ImageInstance value = instances[index];
                 if (index >= buffer.Count) buffer.Add(value);
-                else if (buffer.Read(index) != value) buffer[index] = value;
+                else if (buffer[index] != value) buffer[index] = value;
             }
-            while (buffer.Count > instances.Count) buffer.SwapRemoveAt(buffer.Count - 1);
-        });
+            while (buffer.Count > instances.Count) buffer.RemoveAtSwapBack(buffer.Count - 1);
+                }
     }
 
     private readonly record struct CanvasInstances(RenderCanvas Canvas, List<SurfaceInstance> Surfaces, List<ImageInstance> Images);
@@ -366,7 +365,7 @@ public partial class CanvasRenderExtractor : IRenderExtractionSystem
         internal ImageInstance ImageInstance;
     }
 
-    private readonly struct DrawingJob(List<DrawingData> drawings) : IJobChunk
+    private readonly struct DrawingJob(List<DrawingData> drawings) : SomeEngine.Job.IJobChunk
     {
         public void Execute(JobChunk chunk)
         {

@@ -2,7 +2,6 @@ using System.Collections.Concurrent;
 using System.Numerics;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Job;
 
@@ -121,7 +120,7 @@ public sealed class NavigationSourceSystem<TTransform, TReader>
     private readonly World _world;
     private readonly NavigationRegionSources _region;
     private readonly Scheduler _scheduler;
-    private readonly QueryDefinition _sources, _obstacles;
+    private readonly QueryDescription _sources, _obstacles;
     private readonly Dictionary<NavigationSourceKey, NavigationSourceRecord> _previous = [];
     private JobHandle _completion;
 
@@ -129,19 +128,17 @@ public sealed class NavigationSourceSystem<TTransform, TReader>
     {
         _world = world;
         _region = region;
-        _scheduler = scheduler ?? WorldJobs.GetScheduler(world);
-        _sources = world.QueryDefinition().All<TTransform>().Enabled<NavigationSource>().Build();
-        _obstacles = world.QueryDefinition().All<TTransform>().Enabled<NavigationObstacle>().Build();
+        _scheduler = scheduler ?? world.Execution!.Scheduler!;
+        _sources = new QueryDescription().WithStored<TTransform>().With<NavigationSource>();
+        _obstacles = new QueryDescription().WithStored<TTransform>().With<NavigationObstacle>();
     }
 
     public NavigationBuild<NavigationSourceChanges> Schedule(JobHandle transformReady = default)
     {
         var state = new NavigationSourceChanges(_region, _region.Settings);
         JobHandle ready = _scheduler.CombineDependencies([_completion, transformReady]);
-        JobHandle sources = new CollectNavigationSources<TTransform, TReader>(state.Records).ScheduleParallel(_world,
-            new JobEntityScheduleOptions(filter: _sources), ready);
-        JobHandle obstacles = new CollectNavigationObstacles<TTransform, TReader>(state.Records).ScheduleParallel(_world,
-            new JobEntityScheduleOptions(filter: _obstacles), ready);
+        JobHandle sources = new CollectNavigationSources<TTransform, TReader>(state.Records).ScheduleParallel(_world, dependency: ready, query: _world.Query(_sources));
+        JobHandle obstacles = new CollectNavigationObstacles<TTransform, TReader>(state.Records).ScheduleParallel(_world, dependency: ready, query: _world.Query(_obstacles));
         _completion = _scheduler.Schedule(new MergeSources(state, _previous),
             [JobResourceAccess.Exclusive(_scheduler.GetResourceToken(_region)),
              NavigationJobAccess.Read(_scheduler, state.Settings.Profile.Footprint)], _scheduler.CombineDependencies([sources, obstacles]));
@@ -186,7 +183,7 @@ public sealed class NavigationSourceSystem<TTransform, TReader>
                 ulong version = (old?.Version ?? region.InitialVersion) + 1;
                 ulong[] tileVersions = old is not null && old.TileVersions.Length == changed.Length ? old.TileVersions.ToArray() : new ulong[changed.Length];
                 for (int index = 0; index < changed.Length; index++) if (changed[index]) tileVersions[index] = version;
-                NavigationGeometrySource[] sources = current.Values.OrderBy(record => record.Key.Entity.Index).ThenBy(record => record.Key.Obstacle)
+                NavigationGeometrySource[] sources = current.Values.OrderBy(record => record.Key.Entity.Id).ThenBy(record => record.Key.Obstacle)
                     .Select(record => new NavigationGeometrySource(record.Geometry, record.Transform, record.Version,
                         record.Walkable, record.Key.Obstacle)).ToArray();
                 float padding = NavigationSurfaceTraversal.GetRotationRadius(settings.Profile.Footprint.Span) + 2 * settings.Surface.CellSize;
@@ -251,6 +248,8 @@ internal partial struct CollectNavigationSources<TTransform, TReader>(Concurrent
     where TTransform : unmanaged, IComponent
     where TReader : struct, INavigationTransformReader<TTransform>
 {
+    public void CollectAdditionalResources(ref JobResourceAccessBuilder resources) => resources.Write(_records);
+
     private readonly ConcurrentQueue<NavigationSourceRecord> _records = records;
     public void Execute(Entity entity, [JobResources<NavigationSourceResources>] in NavigationSource source, in TTransform transform) =>
         _records.Enqueue(NavigationSourceRecord.Create(entity, false, source.Geometry, TReader.Read(in transform), source.Version, true));
@@ -260,6 +259,8 @@ internal partial struct CollectNavigationObstacles<TTransform, TReader>(Concurre
     where TTransform : unmanaged, IComponent
     where TReader : struct, INavigationTransformReader<TTransform>
 {
+    public void CollectAdditionalResources(ref JobResourceAccessBuilder resources) => resources.Write(_records);
+
     private readonly ConcurrentQueue<NavigationSourceRecord> _records = records;
     public void Execute(Entity entity, [JobResources<NavigationObstacleResources>] in NavigationObstacle obstacle, in TTransform transform) =>
         _records.Enqueue(NavigationSourceRecord.Create(entity, true, obstacle.Geometry, TReader.Read(in transform), obstacle.Version,

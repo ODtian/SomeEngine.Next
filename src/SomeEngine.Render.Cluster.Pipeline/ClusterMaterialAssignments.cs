@@ -4,9 +4,7 @@ using System.Collections.Immutable;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Resources;
 using SomeEngine.ECS;
-using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Job;
 using SomeEngine.Render.Components;
@@ -282,7 +280,7 @@ public sealed class ClusterMaterialAssignmentSet
         {
             if (_entryCount == 0) return;
             var entries = new MaterialEntry[_entryCount];
-            Scheduler scheduler = WorldJobs.TryGetScheduler(_world, out var selected) ? selected : JobSystem.Default;
+            Scheduler scheduler = _world.World.Execution?.Scheduler ?? JobSystem.Default;
             scheduler.ExecuteParallel(new WriteEntriesJob(_newSequences, entries), _newSequences.Count);
             foreach (MaterialEntry entry in entries)
             {
@@ -413,158 +411,162 @@ internal sealed class ClusterMaterialSequence : IEquatable<ClusterMaterialSequen
 /// <summary>Applies changed render-world rows before instance producers consume their offsets.</summary>
 public sealed class ClusterMaterialAssignmentSystem : ISystem<RenderPrepareSystemContext>
 {
-    private static readonly SomeEngine.Diagnostics.TraceSite UpdateTrace =
-        new("render", "Prepare.ClusterMaterials");
+    private static readonly SomeEngine.Diagnostics.TraceSite UpdateTrace = new("render", "Prepare.ClusterMaterials");
     private readonly ClusterMaterialAssignments _assignments;
-    private QueryHandle _query;
-    private QueryHandle _materialQuery;
-    private EntityTableChanges? _tableChanges;
-    private bool _created;
+    private Query _query, _materialQuery;
+    private EventReader<MembershipChange>? _memberships, _xrayMemberships;
+    private bool _created, _firstCollection;
     private readonly List<AssignmentRange> _ranges = [];
+    private AssignmentChunk[] _chunks = [];
     public ClusterMaterialAssignmentSystem(ClusterMaterialAssignments assignments) =>
         _assignments = assignments ?? throw new ArgumentNullException(nameof(assignments));
-    public static QueryDefinition EntityQuery() => new QueryDefinitionBuilder()
-        .Read<RenderInstance>().Read<RenderTransform>().Read<RenderPreviousTransform>()
-        .Read<RenderClusterGeometry>().Optional<RenderMesh>(QueryAccess.Read).ReadBuffer<RenderMaterialBinding>().Optional<RenderXray>(QueryAccess.Read).Build();
+    public static QueryDescription EntityQuery() => new QueryDescription()
+        .WithStored<RenderInstance>().WithStored<RenderTransform>().WithStored<RenderPreviousTransform>()
+        .WithStored<RenderClusterGeometry>().Optional<RenderMesh>().WithStored<Buffer<RenderMaterialBinding>>().Optional<RenderXray>();
     public void OnCreate(ref RenderPrepareSystemContext context)
     {
         if (_created) throw new InvalidOperationException("The material assignment system is already created.");
-        _query = context.World.Query(EntityQuery());
-        try
-        {
-            _materialQuery = context.World.Query(new QueryDefinitionBuilder().Read<RenderMaterialReference>());
-            _tableChanges = context.World.ObserveEntityTables();
-        }
-        catch
-        {
-            if (_materialQuery.IsValid) context.World.ReleaseQuery(_materialQuery);
-            context.World.ReleaseQuery(_query);
-            throw;
-        }
-        _created = true;
+        World world = context.World.World;
+        _query = world.Query(EntityQuery());
+        _materialQuery = world.Query(new QueryDescription().WithStored<RenderMaterialReference>());
+        _memberships = world.WatchMembership(_query);
+        try { _xrayMemberships = world.WatchMembership(world.Query(EntityQuery().WithStored<RenderXray>())); }
+        catch { _memberships.Dispose(); _memberships = null; throw; }
+        _firstCollection = _created = true;
     }
     public void OnUpdate(ref RenderPrepareSystemContext context)
     {
         using var trace = SomeEngine.Diagnostics.EngineTrace.Begin(UpdateTrace);
         if (!_created) throw new InvalidOperationException("The material assignment system was not created.");
-        EntityTableChangeBatch membership = _tableChanges!.Read();
         var update = new AssignmentChanges(_assignments.Current, context.World, _ranges);
-        foreach (Entity entity in membership.Entities) update.CollectMembership(context.World, entity);
-        context.World.ExecuteQuery(_query, context.LastSystemVersion, ref update,
-            static (QueryCursor query, ref AssignmentChanges changes) => changes.Collect(query));
-        context.World.ExecuteQuery(_materialQuery, context.LastSystemVersion, ref update,
-            static (QueryCursor query, ref AssignmentChanges changes) => changes.CollectMaterials(query));
+        ulong through, xrayThrough;
+        using (EventRead<MembershipChange> membership = _memberships!.Open())
+        {
+            foreach (MembershipChange change in membership.First) update.CollectMembership(context.World, change.Entity);
+            foreach (MembershipChange change in membership.Second) update.CollectMembership(context.World, change.Entity);
+            through = membership.Through;
+        }
+        using (EventRead<MembershipChange> membership = _xrayMemberships!.Open())
+        {
+            foreach (MembershipChange change in membership.First) update.CollectMembership(context.World, change.Entity);
+            foreach (MembershipChange change in membership.Second) update.CollectMembership(context.World, change.Entity);
+            xrayThrough = membership.Through;
+        }
+        using (QueryScope query = _query.OpenRead())
+        {
+            if (_firstCollection)
+                foreach (QueryChunk chunk in query)
+                    foreach (Entity entity in chunk.Entities) update.CollectMembership(context.World, entity);
+            update.Collect(query, context.World.World, context.LastSystemVersion, ref _chunks);
+        }
+        using (QueryScope query = _materialQuery.OpenRead()) update.CollectMaterials(query);
         _assignments.Publish(update.Complete());
-        _tableChanges.Accept(membership);
+        _memberships.Advance(through);
+        _xrayMemberships.Advance(xrayThrough);
+        _firstCollection = false;
     }
     public void OnDestroy(ref RenderPrepareSystemContext context)
     {
         if (!_created) return;
-        context.World.ReleaseQuery(_query);
-        context.World.ReleaseQuery(_materialQuery);
-        _query = default;
-        _materialQuery = default;
-        _tableChanges!.Dispose();
-        _tableChanges = null;
+        _memberships!.Dispose(); _xrayMemberships!.Dispose();
+        _memberships = _xrayMemberships = null;
+        _query = _materialQuery = default;
+        _chunks = [];
+        _ranges.Clear();
         _created = false;
     }
+    private readonly record struct AssignmentChunk(QueryChunk Chunk, AssignmentRange Range);
     private sealed class AssignmentRange
     {
         internal readonly List<MaterialSequenceGroup> Groups = [];
         internal readonly List<(Entity Entity, bool Enabled)> Xray = [];
         private readonly Dictionary<ClusterMaterialSequence, MaterialSequenceGroup> _groups = [];
-
         internal void Reset() { Groups.Clear(); Xray.Clear(); _groups.Clear(); }
-
-        internal void Collect(ReadOnlyQueryPacket packet, uint version, ClusterMaterialAssignmentSet source, HashSet<Entity> membership)
+        internal void Collect(QueryChunk chunk, ulong version, ClusterMaterialAssignmentSet source, HashSet<Entity> membership)
         {
-            bool bindingsChanged = packet.BufferChangedSince<RenderMaterialBinding>(version);
-            bool meshesChanged = packet.ChangedSince<RenderClusterGeometry>(version);
-            bool xray = packet.Has<RenderXray>();
-            bool xrayChanged = xray && packet.ChangedSince<RenderXray>(version);
+            bool bindingsChanged = chunk.WasWritten<Buffer<RenderMaterialBinding>>(version);
+            bool meshesChanged = chunk.WasWritten<RenderClusterGeometry>(version);
+            bool xrayChanged = chunk.Has<RenderXray>() && chunk.WasWritten<RenderXray>(version);
             if (!bindingsChanged && !meshesChanged && !xrayChanged && membership.Count == 0) return;
-            ReadOnlySpan<RenderClusterGeometry> meshes = packet.Read<RenderClusterGeometry>();
-            for (int row = 0; row < packet.Count; row++)
+            ReadOnlySpan<RenderClusterGeometry> meshes = chunk.Read<RenderClusterGeometry>();
+            for (int row = 0; row < chunk.Count; row++)
             {
-                Entity entity = packet.Entities[row];
+                Entity entity = chunk.Entities[row];
                 if (!membership.Contains(entity)
-                    && !(bindingsChanged && packet.RowBufferChangedSince<RenderMaterialBinding>(row, version))
-                    && !(meshesChanged && packet.RowChangedSince<RenderClusterGeometry>(row, version))
-                    && !(xrayChanged && packet.RowChangedSince<RenderXray>(row, version))) continue;
-                var bindings = packet.ReadBuffer<RenderMaterialBinding>(row).AsSpan();
+                    && !(bindingsChanged && chunk.WasWritten<Buffer<RenderMaterialBinding>>(row, version))
+                    && !(meshesChanged && chunk.WasWritten<RenderClusterGeometry>(row, version))
+                    && !(xrayChanged && chunk.WasWritten<RenderXray>(row, version))) continue;
+                using ReadOnlyBuffer<RenderMaterialBinding> values = chunk.ReadBuffer<RenderMaterialBinding>(row);
+                ReadOnlySpan<RenderMaterialBinding> bindings = values.AsSpan();
                 string encoding = meshes[row].Geometry.VertexEncoding;
                 if (!source.Matches(entity, bindings, encoding))
                 {
                     var sequence = new ClusterMaterialSequence(bindings, encoding);
-                    if (!_groups.TryGetValue(sequence, out var group))
+                    if (!_groups.TryGetValue(sequence, out MaterialSequenceGroup? group))
                     {
-                        group = new(sequence);
-                        _groups.Add(sequence, group);
+                        _groups.Add(sequence, group = new(sequence));
                         Groups.Add(group);
                     }
                     group.Entities.Add(entity);
                 }
-                Xray.Add((entity, xray));
+                Xray.Add((entity, chunk.Has<RenderXray>(row)));
             }
         }
     }
-
     private sealed class MaterialSequenceGroup(ClusterMaterialSequence sequence)
     {
         internal readonly ClusterMaterialSequence Sequence = sequence;
         internal readonly List<Entity> Entities = [];
     }
-
     private sealed class AssignmentChanges(ClusterMaterialAssignmentSet source, RenderWorld world, List<AssignmentRange> ranges)
     {
         private readonly ClusterMaterialAssignmentSet.Update _update = new(source, world);
         private readonly HashSet<Entity> _membership = [];
-
         internal void CollectMembership(RenderWorld world, Entity entity)
         {
             _membership.Add(entity);
-            if (!world.IsAlive(entity) || !world.Has<RenderInstance>(entity) ||
-                !world.Has<RenderTransform>(entity) || !world.Has<RenderPreviousTransform>(entity) ||
-                !world.Has<RenderClusterGeometry>(entity) || !world.HasBuffer<RenderMaterialBinding>(entity))
+            World entities = world.World;
+            if (!entities.IsAlive(entity) || !entities.Has<RenderInstance>(entity)
+                || !entities.Has<RenderTransform>(entity) || !entities.Has<RenderPreviousTransform>(entity)
+                || !entities.Has<RenderClusterGeometry>(entity) || !entities.Has<Buffer<RenderMaterialBinding>>(entity))
                 _update.Remove(entity);
         }
-
-        internal void CollectMaterials(QueryCursor query)
+        internal void CollectMaterials(scoped QueryScope query)
         {
-            foreach (QueryChunkView chunk in query.Chunks)
+            foreach (QueryChunk chunk in query)
                 foreach (RenderMaterialReference value in chunk.Read<RenderMaterialReference>()) _update.SetValue(value.Material);
         }
-
-        private readonly struct CollectRangeJob(AssignmentChanges changes) : IReadOnlyQueryPacketJob
+        private readonly struct CollectAssignments(ClusterMaterialAssignmentSet source, HashSet<Entity> membership,
+            ulong version) : IRangeWork<AssignmentChunk>
         {
-            public void Execute(in ReadOnlyQueryPacketContext context, ReadOnlyQueryPacket packet) =>
-                changes.CollectRange(context.PacketIndex, packet, context.LastSystemVersion);
+            public void Execute(in AssignmentChunk input) => input.Range.Collect(input.Chunk, version, source, membership);
         }
-
-        private void CollectRange(int index, ReadOnlyQueryPacket packet, uint version) =>
-            ranges[index].Collect(packet, version, source, _membership);
-
-        internal void Collect(QueryCursor query)
+        internal void Collect(scoped QueryScope query, World entities, ulong version, ref AssignmentChunk[] chunks)
         {
             if (_membership.Count == 0)
             {
                 bool changed = false;
-                foreach (QueryChunkView chunk in query.Chunks)
-                    if (chunk.HasBufferChangedSinceLastSystemVersion<RenderMaterialBinding>()
-                        || chunk.HasChangedSinceLastSystemVersion<RenderClusterGeometry>()
-                        || chunk.Has<RenderXray>() && chunk.HasChangedSinceLastSystemVersion<RenderXray>())
-                    {
-                        changed = true;
-                        break;
-                    }
+                foreach (QueryChunk chunk in query)
+                    if (chunk.WasWritten<Buffer<RenderMaterialBinding>>(version)
+                        || chunk.WasWritten<RenderClusterGeometry>(version)
+                        || chunk.Has<RenderXray>() && chunk.WasWritten<RenderXray>(version)) { changed = true; break; }
                 if (!changed) return;
             }
-            using ReadOnlyQueryPacketPlan packets = ReadOnlyQueryPacketJobs.CreatePlan(query);
-            while (ranges.Count < packets.PacketCount) ranges.Add(new());
+            int count = 0;
+            foreach (QueryChunk chunk in query)
+            {
+                if (count == ranges.Count) ranges.Add(new());
+                if (count == chunks.Length) Array.Resize(ref chunks, Math.Max(4, chunks.Length * 2));
+                chunks[count] = new(chunk, ranges[count]);
+                count++;
+            }
             try
             {
-                packets.ExecuteParallel(new CollectRangeJob(this));
-                for (int index = 0; index < packets.PacketCount; index++)
+                var work = new CollectAssignments(source, _membership, version);
+                if (entities.Execution is { } execution) execution.ExecuteRanges(chunks, count, work);
+                else
+                    for (int index = 0; index < count; index++) work.Execute(in chunks[index]);
+                for (int index = 0; index < count; index++)
                 {
                     AssignmentRange range = ranges[index];
                     foreach (MaterialSequenceGroup group in range.Groups)
@@ -574,10 +576,10 @@ public sealed class ClusterMaterialAssignmentSystem : ISystem<RenderPrepareSyste
             }
             finally
             {
-                for (int index = 0; index < packets.PacketCount; index++) ranges[index].Reset();
+                for (int index = 0; index < count; index++) ranges[index].Reset();
+                Array.Clear(chunks, 0, count);
             }
         }
-
         internal ClusterMaterialAssignmentSet Complete() => _update.Complete();
     }
 }
@@ -586,35 +588,35 @@ public sealed class ClusterMaterialAssignmentSystem : ISystem<RenderPrepareSyste
 public readonly struct ClusterMaterialOffsetProducer : IRenderInstanceProducer
 {
     private readonly ClusterMaterialAssignments _assignments;
-    private readonly ResolvedRenderInstanceProperty<uint> _slot;
+    private readonly ResolvedRenderInstanceProperty<uint> _offset;
     private readonly ResolvedRenderInstanceProperty<uint> _blendOcclusion;
 
     internal ClusterMaterialOffsetProducer(ClusterMaterialAssignments assignments)
     {
         _assignments = assignments;
         Properties = ClusterRenderFeature.MaterialSlotLayout;
-        _slot = Properties.Resolve<uint>(ClusterRenderFeature.MaterialSlotOffsetKey);
+        _offset = Properties.Resolve<uint>(ClusterRenderFeature.MaterialSlotOffsetKey);
         _blendOcclusion = Properties.Resolve<uint>(ClusterRenderFeature.BlendOcclusionKey);
     }
 
     public RenderInstancePropertyLayout Properties { get; }
 
     public RenderInstanceChanges GetChanges(
-        ReadOnlyQueryPacket packet,
-        uint lastSystemVersion) =>
-        packet.BufferChangedSince<RenderMaterialBinding>(lastSystemVersion) ||
-        packet.ChangedSince<RenderClusterGeometry>(lastSystemVersion) ||
+        QueryChunk packet,
+        ulong lastSystemVersion) =>
+        packet.WasWritten<Buffer<RenderMaterialBinding>>(lastSystemVersion) ||
+        packet.WasWritten<RenderClusterGeometry>(lastSystemVersion) ||
         _assignments.Current.BlendOcclusionChanged
             ? RenderInstanceChanges.Values
             : RenderInstanceChanges.None;
 
     public void Bind(RenderInstanceWriteSlice destination)
     {
-        destination.BindPerInstance(_slot);
+        destination.BindPerInstance(_offset);
         destination.BindPerInstance(_blendOcclusion);
     }
 
-    public void Write(RenderInstanceWriteSlice destination, ReadOnlyQueryPacket packet)
+    public void Write(RenderInstanceWriteSlice destination, QueryChunk packet)
     {
         ClusterMaterialAssignmentSet assignments = _assignments.Current;
         uint[] storage = ArrayPool<uint>.Shared.Rent(packet.Entities.Length);
@@ -622,7 +624,7 @@ public readonly struct ClusterMaterialOffsetProducer : IRenderInstanceProducer
         {
             Span<uint> values = storage.AsSpan(0, packet.Entities.Length);
             assignments.Resolve(packet.Entities, values);
-            destination.Write(_slot, values);
+            destination.Write(_offset, values);
             assignments.ResolveBlendOcclusion(packet.Entities, values);
             destination.Write(_blendOcclusion, values);
         }

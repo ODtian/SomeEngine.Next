@@ -650,7 +650,7 @@ public sealed class TerrainGpuEditingTests(SceneContentFixture content)
 
     private sealed class FieldSourceSystem(Terrain terrain) : ISystem<ImmediateSystemContext>
     {
-        public void OnCreate(ref ImmediateSystemContext context) => context.World.CreateEntity(new TerrainSource(terrain));
+        public void OnCreate(ref ImmediateSystemContext context) => context.World.Create(new TerrainSource(terrain));
         public void OnUpdate(ref ImmediateSystemContext context) { }
     }
 

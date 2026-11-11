@@ -50,19 +50,19 @@ public sealed partial class AsyncBuildTests
 
         frames.Frame();
 
-        Assert.Equal("加载中", frames.World.Read<DisplayText>(root).Value);
-        Entity loading = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Assert.Equal("加载中", frames.World.Read<TextView>(loading).Value);
+        Assert.Equal("加载中", frames.World.ReadComponentData<DisplayText>(root).Value);
+        Entity loading = Assert.Single(ElementChildren.Read(frames.World, root));
+        Assert.Equal("加载中", frames.World.ReadComponentData<TextView>(loading).Value);
         completion.SetResult("结果");
-        Assert.Equal("加载中", frames.World.Read<DisplayText>(root).Value);
+        Assert.Equal("加载中", frames.World.ReadComponentData<DisplayText>(root).Value);
 
         frames.Frame();
 
-        Assert.Equal("结果", frames.World.Read<DisplayText>(root).Value);
-        var children = Hierarchy<ElementTree>.GetChildren(frames.World, root);
-        Assert.Equal(2, children.Count);
+        Assert.Equal("结果", frames.World.ReadComponentData<DisplayText>(root).Value);
+        var children = ElementChildren.Read(frames.World, root);
+        Assert.Equal(2, children.Length);
         Assert.Equal(loading, children[0]);
-        Assert.Equal("结果", frames.World.Read<TextView>(children[1]).Value);
+        Assert.Equal("结果", frames.World.ReadComponentData<TextView>(children[1]).Value);
     }
 
     [Fact]
@@ -71,15 +71,15 @@ public sealed partial class AsyncBuildTests
         using var frames = new HeadlessFrameDriver();
         Entity root = Views.Spawn(frames.World, Entity.Null, new FrameSteps());
         frames.Frame();
-        Assert.Equal(0, frames.World.Read<DisplayedStep>(root).Number);
+        Assert.Equal(0, frames.World.ReadComponentData<DisplayedStep>(root).Number);
 
         for (int step = 1; step <= 30; step++)
         {
             frames.Frame();
-            Assert.Equal(step, frames.World.Read<DisplayedStep>(root).Number);
+            Assert.Equal(step, frames.World.ReadComponentData<DisplayedStep>(root).Number);
         }
         frames.Frame();
-        Assert.Equal(30, frames.World.Read<DisplayedStep>(root).Number);
+        Assert.Equal(30, frames.World.ReadComponentData<DisplayedStep>(root).Number);
     }
 
     [Fact]
@@ -99,14 +99,14 @@ public sealed partial class AsyncBuildTests
         });
         worker.Start();
         worker.Join();
-        Assert.Equal("加载中", frames.World.Read<DisplayText>(root).Value);
+        Assert.Equal("加载中", frames.World.ReadComponentData<DisplayText>(root).Value);
 
         frames.Frame();
 
         Assert.NotEqual(rebuildThread, workerThread);
-        Assert.Equal(rebuildThread, frames.World.Read<DisplayedThread>(root).Id);
-        Entity child = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Assert.Equal("worker result", frames.World.Read<TextView>(child).Value);
+        Assert.Equal(rebuildThread, frames.World.ReadComponentData<DisplayedThread>(root).Id);
+        Entity child = Assert.Single(ElementChildren.Read(frames.World, root));
+        Assert.Equal("worker result", frames.World.ReadComponentData<TextView>(child).Value);
     }
 
     [Theory]
@@ -115,7 +115,7 @@ public sealed partial class AsyncBuildTests
     public void ReadyViewsDisplayTheirResultsByDepthThenEntityRegardlessOfCompletionOrder(bool reverse)
     {
         using var frames = new HeadlessFrameDriver();
-        Entity history = frames.World.CreateEntity(new DisplayText(""));
+        Entity history = frames.World.Create(new DisplayText(""));
         var parent = new TaskCompletionSource();
         var child = new TaskCompletionSource();
         var first = new TaskCompletionSource();
@@ -131,11 +131,11 @@ public sealed partial class AsyncBuildTests
             : [parent, first, child, second];
         foreach (var completion in completions)
             completion.SetResult();
-        Assert.Equal("", frames.World.Read<DisplayText>(history).Value);
+        Assert.Equal("", frames.World.ReadComponentData<DisplayText>(history).Value);
 
         frames.Frame();
 
-        Assert.Equal("parent;first;second;child", frames.World.Read<DisplayText>(history).Value);
+        Assert.Equal("parent;first;second;child", frames.World.ReadComponentData<DisplayText>(history).Value);
     }
 
     [Fact]
@@ -145,26 +145,26 @@ public sealed partial class AsyncBuildTests
         var completion = new TaskCompletionSource<string>();
         Entity root = Views.Spawn(frames.World, Entity.Null, new HelperView(completion.Task));
         frames.Frame();
-        Entity first = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Assert.Equal(77ul, frames.World.Read<ElementKey>(first).Key);
+        Entity first = Assert.Single(ElementChildren.Read(frames.World, root));
+        Assert.Equal(77ul, frames.World.ReadComponentData<ElementKey>(first).Key);
         var worker = new Thread(() => completion.SetResult("helper result"));
         worker.Start();
         worker.Join();
 
         frames.Frame();
 
-        var children = Hierarchy<ElementTree>.GetChildren(frames.World, root);
-        Assert.Equal(2, children.Count);
-        Assert.Equal("helper result", frames.World.Read<TextView>(children[1]).Value);
-        Assert.Equal(77ul, frames.World.Read<ElementKey>(children[1]).Key);
-        Assert.Equal(1, frames.World.Read<ElementKey>(children[1]).Occurrence);
+        var children = ElementChildren.Read(frames.World, root);
+        Assert.Equal(2, children.Length);
+        Assert.Equal("helper result", frames.World.ReadComponentData<TextView>(children[1]).Value);
+        Assert.Equal(77ul, frames.World.ReadComponentData<ElementKey>(children[1]).Key);
+        Assert.Equal(1, frames.World.ReadComponentData<ElementKey>(children[1]).Occurrence);
 
         frames.Frame();
 
-        children = Hierarchy<ElementTree>.GetChildren(frames.World, root);
-        Assert.Equal(3, children.Count);
-        Assert.Equal("done", frames.World.Read<TextView>(children[2]).Value);
-        Assert.Equal(0ul, frames.World.Read<ElementKey>(children[2]).Key);
+        children = ElementChildren.Read(frames.World, root);
+        Assert.Equal(3, children.Length);
+        Assert.Equal("done", frames.World.ReadComponentData<TextView>(children[2]).Value);
+        Assert.Equal(0ul, frames.World.ReadComponentData<ElementKey>(children[2]).Key);
     }
 
     [Fact]
@@ -173,26 +173,26 @@ public sealed partial class AsyncBuildTests
         using var frames = new HeadlessFrameDriver();
         Entity root = Views.Spawn(frames.World, Entity.Null, new ChangingGroup(null));
         frames.Frame();
-        Entity[] previous = Hierarchy<ElementTree>.GetChildren(frames.World, root).ToArray();
+        Entity[] previous = ElementChildren.Read(frames.World, root);
         Assert.Equal(3, previous.Length);
         var completion = new TaskCompletionSource();
-        frames.World.Replace(root, new ChangingGroup(completion.Task));
+        frames.World.Set(root, new ChangingGroup(completion.Task));
 
         frames.Frame();
 
-        Assert.Equal(previous, Hierarchy<ElementTree>.GetChildren(frames.World, root).ToArray());
+        Assert.Equal(previous, ElementChildren.Read(frames.World, root));
         frames.Frame();
-        Assert.Equal(previous, Hierarchy<ElementTree>.GetChildren(frames.World, root).ToArray());
+        Assert.Equal(previous, ElementChildren.Read(frames.World, root));
         completion.SetResult();
 
         frames.Frame();
 
-        var children = Hierarchy<ElementTree>.GetChildren(frames.World, root);
-        Assert.Equal(2, children.Count);
+        var children = ElementChildren.Read(frames.World, root);
+        Assert.Equal(2, children.Length);
         Assert.Equal(previous[0], children[0]);
-        Assert.Equal("new", frames.World.Read<TextView>(children[1]).Value);
-        Assert.False(frames.World.IsAlive(previous[1]));
-        Assert.False(frames.World.IsAlive(previous[2]));
+        Assert.Equal("new", frames.World.ReadComponentData<TextView>(children[1]).Value);
+        Assert.False(frames.World.IsAlive(previous[1]) && frames.World.Has<ViewType>(previous[1]));
+        Assert.False(frames.World.IsAlive(previous[2]) && frames.World.Has<ViewType>(previous[2]));
     }
 
     [Fact]
@@ -202,13 +202,13 @@ public sealed partial class AsyncBuildTests
         var wait = new ManualWait();
         Entity root = Views.Spawn(frames.World, Entity.Null, new WaitingView(wait));
         frames.Frame();
-        Assert.Equal("waiting", frames.World.Read<DisplayText>(root).Value);
+        Assert.Equal("waiting", frames.World.ReadComponentData<DisplayText>(root).Value);
         wait.Complete();
-        Assert.Equal("waiting", frames.World.Read<DisplayText>(root).Value);
+        Assert.Equal("waiting", frames.World.ReadComponentData<DisplayText>(root).Value);
 
         frames.Frame();
 
-        Assert.Equal("ready", frames.World.Read<DisplayText>(root).Value);
+        Assert.Equal("ready", frames.World.ReadComponentData<DisplayText>(root).Value);
     }
 
 #if !DEBUG
@@ -243,15 +243,15 @@ public sealed partial class AsyncBuildTests
 
         frames.Frame();
 
-        Assert.Same(failure, frames.World.ReadSparse<BuildError>(first).Exception);
-        Assert.Equal(2ul, frames.World.ReadSparse<BuildError>(first).Frame);
-        Assert.Equal("ready result", frames.World.Read<DisplayText>(second).Value);
+        Assert.Same(failure, frames.World.ReadComponentData<BuildError>(first).Exception);
+        Assert.Equal(2ul, frames.World.ReadComponentData<BuildError>(first).Frame);
+        Assert.Equal("ready result", frames.World.ReadComponentData<DisplayText>(second).Value);
         var recovered = new TaskCompletionSource<string>();
         Entity third = Views.Spawn(frames.World, Entity.Null, new ResultView(recovered.Task));
         frames.Frame();
         recovered.SetResult("recovered result");
         frames.Frame();
-        Assert.Equal("recovered result", frames.World.Read<DisplayText>(third).Value);
+        Assert.Equal("recovered result", frames.World.ReadComponentData<DisplayText>(third).Value);
     }
 
     [Fact]
@@ -268,14 +268,14 @@ public sealed partial class AsyncBuildTests
         firstResult.SetResult("first world");
 
         second.Frame();
-        Assert.Equal("waiting", first.World.Read<DisplayText>(firstRoot).Value);
-        Assert.Equal("waiting", second.World.Read<DisplayText>(secondRoot).Value);
+        Assert.Equal("waiting", first.World.ReadComponentData<DisplayText>(firstRoot).Value);
+        Assert.Equal("waiting", second.World.ReadComponentData<DisplayText>(secondRoot).Value);
         first.Frame();
-        Assert.Equal("first world", first.World.Read<DisplayText>(firstRoot).Value);
-        Assert.Equal("waiting", second.World.Read<DisplayText>(secondRoot).Value);
+        Assert.Equal("first world", first.World.ReadComponentData<DisplayText>(firstRoot).Value);
+        Assert.Equal("waiting", second.World.ReadComponentData<DisplayText>(secondRoot).Value);
         secondResult.SetResult("second world");
         second.Frame();
-        Assert.Equal("second world", second.World.Read<DisplayText>(secondRoot).Value);
+        Assert.Equal("second world", second.World.ReadComponentData<DisplayText>(secondRoot).Value);
     }
 
     [Fact]
@@ -285,25 +285,25 @@ public sealed partial class AsyncBuildTests
         var wait = new ManualWait();
         Entity root = Views.Spawn(frames.World, Entity.Null, new ContentHelperView(wait));
         frames.Frame();
-        Entity group = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Entity before = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, group));
-        Assert.Equal("before", frames.World.Read<TextView>(before).Value);
+        Entity group = Assert.Single(ElementChildren.Read(frames.World, root));
+        Entity before = Assert.Single(ElementChildren.Read(frames.World, group));
+        Assert.Equal("before", frames.World.ReadComponentData<TextView>(before).Value);
         wait.Complete();
 
         frames.Frame();
 
-        Assert.Equal(group, Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root)));
-        var content = Hierarchy<ElementTree>.GetChildren(frames.World, group);
-        Assert.Equal(2, content.Count);
-        Assert.Equal("result", frames.World.Read<TextView>(content[1]).Value);
+        Assert.Equal(group, Assert.Single(ElementChildren.Read(frames.World, root)));
+        var content = ElementChildren.Read(frames.World, group);
+        Assert.Equal(2, content.Length);
+        Assert.Equal("result", frames.World.ReadComponentData<TextView>(content[1]).Value);
 
         frames.Frame();
 
-        var children = Hierarchy<ElementTree>.GetChildren(frames.World, root);
-        Assert.Equal(2, children.Count);
+        var children = ElementChildren.Read(frames.World, root);
+        Assert.Equal(2, children.Length);
         Assert.Equal(group, children[0]);
-        Assert.Equal("done", frames.World.Read<TextView>(children[1]).Value);
-        Assert.Equal(2, Hierarchy<ElementTree>.GetChildren(frames.World, group).Count);
+        Assert.Equal("done", frames.World.ReadComponentData<TextView>(children[1]).Value);
+        Assert.Equal(2, ElementChildren.Read(frames.World, group).Length);
     }
 
     [Theory]
@@ -317,26 +317,26 @@ public sealed partial class AsyncBuildTests
             ? Views.Spawn(frames.World, Entity.Null, new AsyncGroupParent(Task.CompletedTask, false, error))
             : Views.Spawn(frames.World, Entity.Null, new AsyncChangingGroup(Task.CompletedTask, false, error));
         frames.Frame();
-        Entity group = nested ? Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root)) : root;
-        Entity[] previous = Hierarchy<ElementTree>.GetChildren(frames.World, group).ToArray();
+        Entity group = nested ? Assert.Single(ElementChildren.Read(frames.World, root)) : root;
+        Entity[] previous = ElementChildren.Read(frames.World, group);
         var completion = new TaskCompletionSource();
         if (nested)
-            frames.World.Replace(root, new AsyncGroupParent(completion.Task, true, error));
+            frames.World.Set(root, new AsyncGroupParent(completion.Task, true, error));
         else
-            frames.World.Replace(root, new AsyncChangingGroup(completion.Task, true, error));
+            frames.World.Set(root, new AsyncChangingGroup(completion.Task, true, error));
 
         frames.Frame();
 
-        Assert.Equal("changed third", frames.World.Read<TextView>(previous[2]).Value);
-        Assert.Equal(4, Hierarchy<ElementTree>.GetChildren(frames.World, group).Count);
+        Assert.Equal("changed third", frames.World.ReadComponentData<TextView>(previous[2]).Value);
+        Assert.Equal(4, ElementChildren.Read(frames.World, group).Length);
         completion.SetResult();
         frames.Frame();
 
-        Assert.Same(error, frames.World.ReadSparse<BuildError>(group).Exception);
-        Assert.Equal(3ul, frames.World.ReadSparse<BuildError>(group).Frame);
-        Assert.Equal(previous, Hierarchy<ElementTree>.GetChildren(frames.World, group).ToArray());
-        Assert.Equal("second", frames.World.Read<TextView>(previous[1]).Value);
-        Assert.Equal("third", frames.World.Read<TextView>(previous[2]).Value);
+        Assert.Same(error, frames.World.ReadComponentData<BuildError>(group).Exception);
+        Assert.Equal(3ul, frames.World.ReadComponentData<BuildError>(group).Frame);
+        Assert.Equal(previous, ElementChildren.Read(frames.World, group));
+        Assert.Equal("second", frames.World.ReadComponentData<TextView>(previous[1]).Value);
+        Assert.Equal("third", frames.World.ReadComponentData<TextView>(previous[2]).Value);
     }
 
     private readonly record struct AsyncGroupParent(Task Result, bool Fail, Exception Error) : IView, IComponent
@@ -393,7 +393,7 @@ public sealed partial class AsyncBuildTests
         {
             Scope.World.Add(Scope.Entity, new DisplayText("waiting"));
             string result = await Result;
-            Scope.World.Replace(Scope.Entity, new DisplayText(result));
+            Scope.World.Set(Scope.Entity, new DisplayText(result));
         }
     }
 
@@ -414,7 +414,7 @@ public sealed partial class AsyncBuildTests
         Assert.True(method.IsFaulted);
         var error = Assert.Throws<InvalidOperationException>(() => Complete(method));
         frames.Frame();
-        Assert.Same(error, frames.World.ReadSparse<BuildError>(root).Exception);
+        Assert.Same(error, frames.World.ReadComponentData<BuildError>(root).Exception);
     }
 
     private readonly record struct TaskHelperView(Task Result, Action<Task> TaskOutput) : IView, IComponent
@@ -470,7 +470,7 @@ public sealed partial class AsyncBuildTests
         {
             Scope.World.Add(Scope.Entity, new DisplayText("waiting"));
             await Wait;
-            Scope.World.Replace(Scope.Entity, new DisplayText("ready"));
+            Scope.World.Set(Scope.Entity, new DisplayText("ready"));
         }
     }
 
@@ -532,8 +532,8 @@ public sealed partial class AsyncBuildTests
 
     private static void Append(Entity entity, string text)
     {
-        string previous = Scope.World.Read<DisplayText>(entity).Value;
-        Scope.World.Replace(entity, new DisplayText(previous.Length == 0 ? text : $"{previous};{text}"));
+        string previous = Scope.World.ReadComponentData<DisplayText>(entity).Value;
+        Scope.World.Set(entity, new DisplayText(previous.Length == 0 ? text : $"{previous};{text}"));
     }
 
     private readonly record struct ConfiguredView(Task<string> Result) : IView, IComponent
@@ -542,7 +542,7 @@ public sealed partial class AsyncBuildTests
         {
             Scope.World.Add(Scope.Entity, new DisplayText("加载中"));
             string result = await Result.ConfigureAwait(false);
-            Scope.World.Replace(Scope.Entity, new DisplayText(result));
+            Scope.World.Set(Scope.Entity, new DisplayText(result));
             Scope.World.Add(Scope.Entity, new DisplayedThread(Environment.CurrentManagedThreadId));
             Scope.View(new TextView(result), 0);
         }
@@ -558,7 +558,7 @@ public sealed partial class AsyncBuildTests
             for (int step = 1; step <= 30; step++)
             {
                 await Scope.NextFrame();
-                Scope.World.Replace(Scope.Entity, new DisplayedStep(step));
+                Scope.World.Set(Scope.Entity, new DisplayedStep(step));
             }
         }
     }
@@ -572,7 +572,7 @@ public sealed partial class AsyncBuildTests
             Scope.World.Add(Scope.Entity, new DisplayText("加载中"));
             Scope.View(new TextView("加载中"), 0);
             string result = await Result;
-            Scope.World.Replace(Scope.Entity, new DisplayText(result));
+            Scope.World.Set(Scope.Entity, new DisplayText(result));
             Scope.View(new TextView(result), 0);
         }
     }
@@ -582,5 +582,5 @@ public sealed partial class AsyncBuildTests
         public BuildTask Build() => default;
     }
 
-    private readonly record struct DisplayText(string Value) : IComponent;
+    private readonly record struct DisplayText(string Value) : ITrackedComponent;
 }

@@ -8,7 +8,6 @@ public readonly record struct FlowMatchingParameters(FlowMatchingModel Model, Po
     byte? ControlParameter = null, int NoiseParameter = -1, uint Seed = 1,
     RootMotionMode RootMotion = RootMotionMode.SourcePose, ReadOnlyMemory<float> InitialHistory = default);
 
-[BufferCapacity(1)]
 public struct FlowMatchingInstance : IBufferElement
 {
     public AnimationLeafBatch<FlowMatchingParameters> Definition;
@@ -30,18 +29,29 @@ public readonly struct FlowMatchingLeaf : IAnimationLeaf<FlowMatchingParameters>
     public static void Install(World world, Entity animation, Entity target,
         AnimationLeafBatch<FlowMatchingParameters> definitions, int index, in AnimationLeafPlacement placement)
     {
-        if (!world.HasBuffer<FlowMatchingInstance>(animation)) world.AddBuffer<FlowMatchingInstance>(animation);
+        if (!world.Has<Buffer<FlowMatchingInstance>>(animation)) world.AddBuffer<FlowMatchingInstance>(animation);
         if (!world.Has<GraphParameters>(animation)) world.Add(animation, new GraphParameters());
         FlowMatchingParameters parameters = definitions.Parameters[index];
         PoseResultReference output = PoseAnimation.Resolve(world, target, parameters.Output);
         var instance = new FlowMatchingInstance
         {
-            Definition = definitions, Index = index, Placement = placement, Output = output,
-            State = new(parameters.Model, world.Read<PoseTarget>(target).Skeleton.Skeleton),
+            Definition = definitions,
+            Index = index,
+            Placement = placement,
+            Output = output,
+            State = new(parameters.Model, world.ReadComponentData<PoseTarget>(target).Skeleton.Skeleton),
             Node = PoseAnimation.RegisterNode(world, animation, output, [], in placement),
         };
-        world.ExecuteBufferWrite<FlowMatchingInstance, FlowMatchingInstance>(animation, ref instance,
-            static (instances, ref instance) => instances.Add(instance));
+        {
+            using var instances = world.GetBuffer<FlowMatchingInstance>(animation);
+            Visit(instances, ref instance);
+
+            static void Visit(DynamicBuffer<FlowMatchingInstance> instances, ref FlowMatchingInstance instance)
+            {
+                instances.Add(instance);
+
+            }
+        }
         FlowMatchingGroups.For(world).Add(animation, instance.State);
     }
 
@@ -50,7 +60,11 @@ public readonly struct FlowMatchingLeaf : IAnimationLeaf<FlowMatchingParameters>
     public static void Release(World world, Entity animation)
     {
         FlowMatchingGroups.For(world).Remove(animation);
-        world.ExecuteBufferWrite<FlowMatchingInstance>(animation, static instances => instances.Clear());
+        {
+            using var instances = world.GetBuffer<FlowMatchingInstance>(animation);
+            instances.Clear();
+
+        }
         PoseAnimation.ReleaseNodes(world, animation);
     }
 }

@@ -2,7 +2,8 @@ using SomeEngine.Assets;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Resources;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
+using SomeEngine.ECS;
+using SomeEngine.Job;
 using SomeEngine.Render.Components;
 using SomeEngine.Render.Frame;
 using SomeEngine.Render.Systems;
@@ -15,26 +16,26 @@ namespace SomeEngine.Render.Cluster;
 /// </summary>
 internal sealed class ClusterMeshPrepareSystem : IDisposable
 {
-    private readonly RenderWorld _world;
+    private readonly World _world;
     private readonly ClusterResidency _residency;
-    private readonly QueryHandle _meshQuery;
-    private readonly EntityTableChanges _tableChanges;
+    private readonly Query _meshQuery;
+    private readonly EventReader<MembershipChange> _membership;
+    private bool _initialized;
     private readonly Dictionary<Entity, RenderMesh> _entityMeshes = [];
     private readonly HashSet<Entity> _geometryChanges = [];
     private readonly HashSet<Mesh> _unusedMeshes = [];
     private readonly Dictionary<Mesh, int> _meshReferences = [];
     private readonly Dictionary<Mesh, RenderMesh> _missing = [];
-    private uint _lastVersion;
+    private ulong _lastVersion;
     private int _preparing;
     private int _disposed;
 
     internal ClusterMeshPrepareSystem(RenderWorld world, ClusterResidency residency)
     {
-        _world = world ?? throw new ArgumentNullException(nameof(world));
+        _world = world.World;
         _residency = residency;
-        _meshQuery = world.Query(new QueryDefinitionBuilder().Read<RenderMesh>());
-        try { _tableChanges = world.ObserveEntityTables(); }
-        catch { world.ReleaseQuery(_meshQuery); throw; }
+        _meshQuery = _world.Query(new QueryDescription().With<RenderMesh>());
+        _membership = _world.WatchMembership(_meshQuery);
     }
 
     internal ValueTask<ClusterMeshPrepareResult> PrepareAsync(
@@ -50,30 +51,33 @@ internal sealed class ClusterMeshPrepareSystem : IDisposable
 
         try
         {
-            EntityTableChangeBatch membership = _tableChanges.Read();
-            foreach (Entity entity in membership.Entities)
+            ulong through;
+            using (EventRead<MembershipChange> membership = _membership.Open())
             {
-                if (!_world.IsAlive(entity) || !_world.Has<RenderMesh>(entity))
-                    SetMesh(entity, null);
-                else
-                    SetMesh(entity, _world.Read<RenderMesh>(entity));
-            }
-            uint version = _lastVersion;
-            _world.ExecuteQuery(_meshQuery, _lastVersion, cursor =>
-            {
-                version = cursor.CurrentSystemVersion;
-                foreach (QueryChunkView chunk in cursor.Chunks)
+                foreach (MembershipChange change in membership)
                 {
-                    if (!chunk.HasChangedSinceLastSystemVersion<RenderMesh>()) continue;
+                    Entity entity = change.Entity;
+                    SetMesh(entity, _world.IsAlive(entity) && _world.Has<RenderMesh>(entity)
+                        ? _world.ReadComponentData<RenderMesh>(entity) : null);
+                }
+                through = membership.Through;
+            }
+            ulong version;
+            using (QueryScope source = _meshQuery.OpenRead())
+            {
+                version = _world.Version;
+                foreach (QueryChunk chunk in source)
+                {
+                    if (_initialized && !chunk.WasWritten<RenderMesh>(_lastVersion)) continue;
                     ReadOnlySpan<RenderMesh> meshes = chunk.Read<RenderMesh>();
                     for (int row = 0; row < meshes.Length; row++)
-                        if (chunk.RowChangedSinceLastSystemVersion<RenderMesh>(row))
+                        if (!_initialized || chunk.WasWritten<RenderMesh>(row, _lastVersion))
                             SetMesh(chunk.Entities[row], meshes[row]);
                 }
-            });
-            // These indexes describe observed input only. Registration obligations remain in
-            // _missing until each registration succeeds, even when a later operation fails.
-            _tableChanges.Accept(membership);
+            }
+            // Input observation advances here; failed registrations remain in _missing.
+            _membership.Advance(through);
+            _initialized = true;
             _lastVersion = version;
             _residency.ReleaseUnusedMeshes();
             if (_missing.Count == 0)
@@ -154,8 +158,7 @@ internal sealed class ClusterMeshPrepareSystem : IDisposable
             {
                 if (!_residency.TryGetGeometry(mesh.Mesh, out ClusterGeometry geometry)) continue;
                 var value = new RenderClusterGeometry(geometry, mesh.BoundsExpansion);
-                if (_world.Has<RenderClusterGeometry>(entity)) _world.Replace(entity, value);
-                else _world.Add(entity, value);
+                _world.Set(entity, value);
             }
             else if (_world.IsAlive(entity) && _world.Has<RenderClusterGeometry>(entity))
                 _world.Remove<RenderClusterGeometry>(entity);
@@ -179,8 +182,7 @@ internal sealed class ClusterMeshPrepareSystem : IDisposable
                 throw new InvalidOperationException(
                     "Cannot dispose Cluster mesh preparation during an active scan.");
             }
-            _world.ReleaseQuery(_meshQuery);
-            _tableChanges.Dispose();
+            _membership.Dispose();
             _entityMeshes.Clear();
             _geometryChanges.Clear();
             _unusedMeshes.Clear();

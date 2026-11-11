@@ -15,11 +15,11 @@ public static class Shaper
     {
         DevelopmentCheck.Require(output is not null, "Text shaping needs a buffer.");
         DevelopmentCheck.Require(style.Font is not null, "Text needs a font.");
-        DevelopmentCheck.Require(!style.Font.Data.IsClosed, "The font must be alive while shaping.");
+        DevelopmentCheck.Require(!style.Font!.Data.IsClosed, "The font must be alive while shaping.");
         DevelopmentCheck.Require(float.IsFinite(style.FontSize) && style.FontSize > 0, "Font size must be positive and finite.");
         DevelopmentCheck.Require(float.IsFinite(style.LineHeight) && style.LineHeight >= 0, "Line height must be finite and nonnegative.");
         DevelopmentCheck.Require(!float.IsNaN(wrapWidth), "Wrap width must be a number.");
-        output.Reset();
+        output!.Reset();
         if (text.IsEmpty) return;
 
         int start = 0;
@@ -69,7 +69,7 @@ public static class Shaper
         foreach (Font font in style.Fallbacks.Span)
         {
             DevelopmentCheck.Require(font is not null, "Each fallback entry needs a font.");
-            if (font.Supports(text)) return font;
+            if (font!.Supports(text)) return font;
         }
         return style.Font;
     }

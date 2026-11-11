@@ -1,3 +1,5 @@
+using SomeEngine.Core.ECS.Components;
+using SomeEngine.Core.ECS;
 using System.Diagnostics;
 using System.Numerics;
 using SlangShaderSharp;
@@ -7,7 +9,6 @@ using SomeEngine.Assets.Schema;
 using SomeEngine.Resources;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Systems;
-using SomeEngine.ECS.Queries;
 using SomeEngine.Job;
 using SomeEngine.Layout;
 using SomeEngine.Views;
@@ -108,27 +109,39 @@ internal static class RuntimeApplication
             new AssetId<ApplicationSettingsAsset>(runtimeRecords[0].AssetGuid)).AsTask());
         ApplicationSettingsBlock boot = display.Wait(settings.GetBlockAsync<ApplicationSettingsBlock>().AsTask());
         string title = settings.Name;
-        Task<WorldAsset> sceneTask = WorldAsset.OpenAsync(assets, boot.Scene).AsTask();
+        using var gameWorld = new GameWorld(new WorldJobs(JobSystem.Default));
+        var streaming = new WorldStreamSystem(gameWorld.World, assets, boot.Scene, new(),
+            new(Codecs: SceneSerialization.Codecs));
+        gameWorld.Systems.Add(streaming);
+        gameWorld.Systems.Initialize();
         Task<ClusterShaders> pipelineTask = CreateClusterShadersAsync().AsTask();
         Task<VirtualShadowMapShaders> virtualShadowTask = CreateShadowShadersAsync().AsTask();
         Task<Shader> uiShaderTask = ShaderAsset.GetAsync(assets, boot.UiShader, content.ShaderValues, content.Slang, content.ShaderSettings).AsTask();
         Task<Shader> presentationShaderTask = ShaderAsset.GetAsync(assets, boot.PresentationShader, content.ShaderValues, content.Slang, content.ShaderSettings).AsTask();
         Task<Shader> lightingShaderTask = ShaderAsset.GetAsync(assets, boot.LightingShader, content.ShaderValues, content.Slang, content.ShaderSettings).AsTask();
         Task<Shader> temporalShaderTask = ShaderAsset.GetAsync(assets, boot.TemporalShader, content.ShaderValues, content.Slang, content.ShaderSettings).AsTask();
-        Task<World> worldTask = Task.Run(async () =>
+        Task worldTask = Task.Run(async () =>
         {
             long started = Stopwatch.GetTimestamp();
-            WorldAsset sceneAsset = await sceneTask.ConfigureAwait(false);
-            World world = await sceneAsset.LoadAsync(SceneSerialization.CreateRegistry(),
-                new(Execution: new WorldJobs(JobSystem.Default))).ConfigureAwait(false);
+            WorldStream stream = streaming.Stream;
+            await stream.ContentsReady.ConfigureAwait(false);
+            int count = stream.Contents.Length;
+            for (int index = 0; index < count; index++) stream.Request(index);
+            while (true)
+            {
+                stream.Update();
+                int index = 0;
+                while (index < count && stream.LoadedGroups.TryGetEntities(index, out _)) index++;
+                if (index == count) break;
+                await stream.CompleteReadsAsync().ConfigureAwait(false);
+            }
             startup.RecordWork("WorldLoad", started);
-            return world;
         });
         Task<RuntimeScene> sceneResourcesTask = Task.Run(async () =>
         {
-            World world = await worldTask.ConfigureAwait(false);
+            await worldTask.ConfigureAwait(false);
             long started = Stopwatch.GetTimestamp();
-            RuntimeScene scene = await RuntimeScene.CreateAsync<TMaterials>(world, content).ConfigureAwait(false);
+            RuntimeScene scene = await RuntimeScene.CreateAsync<TMaterials>(gameWorld.World, content).ConfigureAwait(false);
             startup.RecordWork("SceneResources", started);
             return scene;
         });
@@ -158,7 +171,6 @@ internal static class RuntimeApplication
             return shaders.Create(file.Name, references, blueNoise);
         }
         Task contentReads = Task.WhenAll(
-            sceneTask,
             pipelineTask,
             virtualShadowTask,
             uiShaderTask,
@@ -185,9 +197,7 @@ internal static class RuntimeApplication
             {
                 if (!ReferenceEquals(readFailure, failure)) errors.Add(readFailure);
             }
-            CloseCompleted(sceneTask, errors);
             CloseCompleted(sceneResourcesTask, errors);
-            CloseCompleted(worldTask, errors);
             if (errors.Count != 1)
                 throw new AggregateException("Application content creation and cleanup failed.", errors);
             throw;
@@ -209,12 +219,9 @@ internal static class RuntimeApplication
         content.Pipeline = clusterShaders;
         content.Shadows = shadowShaders;
         content.SharedShaders = [uiCode, presentationCode, lightingCode, temporalCode];
-        using WorldAsset sceneFile = sceneTask.Result;
-
         if (display.Window is not null && !display.Window.PumpMessages())
         {
             sceneResourcesTask.Result.Dispose();
-            worldTask.Result.Dispose();
             return 0;
         }
         return RunRenderer(
@@ -224,7 +231,8 @@ internal static class RuntimeApplication
             display.Device,
             display.Swapchain,
             display.Window!,
-            worldTask.Result,
+            gameWorld,
+            streaming,
             sceneResourcesTask.Result,
             pipelineTask.Result,
             virtualShadowTask.Result,
@@ -480,7 +488,8 @@ internal static class RuntimeApplication
         Device device,
         Swapchain swapchain,
         NativeWindow window,
-        World loadedWorld,
+        GameWorld gameWorld,
+        WorldStreamSystem streaming,
         RuntimeScene scene,
         ClusterShaders pipelineConfiguration,
         VirtualShadowMapShaders virtualShadowConfiguration,
@@ -492,7 +501,7 @@ internal static class RuntimeApplication
         string title,
         bool forceHardwareRaster, Func<Material, float, bool>? animateMaterial, ApplicationScene? application, SceneScript? script)
     {
-        using World mainWorld = loadedWorld;
+        World mainWorld = gameWorld.World;
         using ScreenText? screenText = options.SurfacePanel || options.HudOverlay ? new ScreenText(mainWorld) : null;
         using SurfacePanelExample? surfacePanel = options.SurfacePanel
             ? new SurfacePanelExample(mainWorld, boot.Width, boot.Height, screenText!) : null;
@@ -523,7 +532,7 @@ internal static class RuntimeApplication
             boot.Width,
             boot.Height,
             temporalFrameIndex: 0);
-        Entity viewEntity = renderWorld.CreateEntity(initialView.View);
+        Entity viewEntity = renderWorld.World.Create(initialView.View);
 
         using var renderDevice = new RenderDevice(backend, device, FrameTimeout);
         using var coordinator = new RenderFrameCoordinator(renderDevice, FrameTimeout);
@@ -558,8 +567,8 @@ internal static class RuntimeApplication
         var materialSystem = new ClusterMaterialAssignmentSystem(materialAssignments);
         var instanceSystem = new ClusterInstanceSystem<RenderInstanceProducerBundle<ClusterMaterialOffsetProducer, SkinInstanceProducer>>(
             cluster,
-            new QueryDefinitionBuilder().Read<RenderInstance>().Read<RenderTransform>().Read<RenderPreviousTransform>()
-                .Read<RenderClusterGeometry>().ReadBuffer<RenderMaterialBinding>().Optional<RenderSkinBinding>(QueryAccess.Read).Build(),
+            new QueryDescription().WithStored<RenderInstance>().WithStored<RenderTransform>().WithStored<RenderPreviousTransform>()
+                .WithStored<RenderClusterGeometry>().WithStored<Buffer<RenderMaterialBinding>>().Optional<RenderSkinBinding>(),
             instanceLayout,
             new(materialAssignments.CreateProducer(), new SkinInstanceProducer()));
         var prepareSystems = new RenderPrepareSystems(renderWorld, instances, extraction);
@@ -725,6 +734,7 @@ internal static class RuntimeApplication
 
         IEnumerable<ValueTask> UpdateInterface(int frameNumber, int canvasWidth, int canvasHeight, double deltaSeconds, long gameUpdateStarted)
         {
+            gameWorld.Update(deltaSeconds);
             geometry.UpdateGame(deltaSeconds);
             yield return geometry.CompleteGameAsync();
             geometry.ScheduleTerrainBuilds();
@@ -1098,8 +1108,8 @@ internal static class RuntimeApplication
                 foreach (var request in sceneEdit.PoseReads)
                 {
                     Entity target = extraction.RequireMirror(request.Target);
-                    Entity section = renderWorld.Read<RenderGpuPoseTarget>(target).Section;
-                    skinning.RequestReadback(renderWorld.Read<RenderPoseSection>(section), request.Receive);
+                    Entity section = renderWorld.World.ReadComponentData<RenderGpuPoseTarget>(target).Section;
+                    skinning.RequestReadback(renderWorld.World.ReadComponentData<RenderPoseSection>(section), request.Receive);
                 }
                 long reconcileStarted = Stopwatch.GetTimestamp();
                 if (sceneEdit.ShadingPath is { } selectedShadingPath) shadingPath = selectedShadingPath;
@@ -1449,6 +1459,16 @@ internal static class RuntimeApplication
             renderGraph.CollectCompleted();
             application?.Shutdown?.Invoke(applicationFrame);
             geometry.FinishGame();
+            if (!coordinator.TryBeginPrepare(out RenderPrepareScope? finalScope))
+                throw new InvalidOperationException("The final extraction boundary is not available.");
+            using (finalScope)
+            {
+                _ = prepareSystems.ApplyExtraction(finalScope);
+                streaming.Stream.Dispose();
+                extraction.Extract(mainWorld);
+                _ = prepareSystems.ApplyExtraction(finalScope);
+                finalScope.Commit();
+            }
             ui?.Dispose();
             presentation?.Dispose();
             temporal?.Dispose();

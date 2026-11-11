@@ -33,16 +33,16 @@ public sealed partial class SurfacePanelExample : IDisposable
     {
         _world = world;
         _text = text;
-        _canvas = world.CreateEntity(new Canvas { Size = new Size(width, height) });
+        _canvas = world.Create(new Canvas { Size = new Size(width, height) });
         _view = Views.Views.Spawn(world, _canvas, new PanelView(width, height, text.Font, _clickCount));
     }
 
     public void Resize(int width, int height)
     {
         Size size = new(width, height);
-        if (_world.Read<Canvas>(_canvas).Size == size) return;
-        _world.Replace(_canvas, new Canvas { Size = size });
-        _world.Replace(_view, new PanelView(width, height, _text.Font, _clickCount));
+        if (_world.ReadComponentData<Canvas>(_canvas).Size == size) return;
+        _world.Set(_canvas, new Canvas { Size = size });
+        _world.Set(_view, new PanelView(width, height, _text.Font, _clickCount));
     }
 
     public void Dispose()

@@ -27,26 +27,26 @@ public sealed partial class SolidTests
         var count = new State<string>("three");
         Entity root = Views.Spawn(frames.World, Entity.Null, new OnceView(Counter));
         frames.Frame();
-        Entity[] children = Hierarchy<ElementTree>.GetChildren(frames.World, root).ToArray();
+        Entity[] children = ElementChildren.Read(frames.World, root);
         Entity label = children[0];
         Entity sibling = children[1];
-        uint textVersion = frames.World.WriteVersion<Elements.Text>(label);
-        uint styleVersion = frames.World.WriteVersion<TextStyle>(label);
-        uint surfaceVersion = frames.World.WriteVersion<Surface>(label);
-        frames.World.Replace(root, new Display("edited component"));
+        ulong textVersion = frames.World.ComponentDataWriteVersion<Elements.Text>(label);
+        ulong styleVersion = frames.World.ComponentDataWriteVersion<TextStyle>(label);
+        ulong surfaceVersion = frames.World.ComponentDataWriteVersion<Surface>(label);
+        frames.World.Set(root, new Display("edited component"));
         sibling.SetText(frames.World, "edited sibling");
 
         count.Value = "seven";
         count.Value = "eleven";
         frames.Frame();
 
-        Assert.Equal(children, Hierarchy<ElementTree>.GetChildren(frames.World, root).ToArray());
-        Assert.Equal("eleven", frames.World.Read<Elements.Text>(label).Value);
-        Assert.NotEqual(textVersion, frames.World.WriteVersion<Elements.Text>(label));
-        Assert.Equal(styleVersion, frames.World.WriteVersion<TextStyle>(label));
-        Assert.Equal(surfaceVersion, frames.World.WriteVersion<Surface>(label));
-        Assert.Equal("edited component", frames.World.Read<Display>(root).Value);
-        Assert.Equal("edited sibling", frames.World.Read<Elements.Text>(sibling).Value);
+        Assert.Equal(children, ElementChildren.Read(frames.World, root));
+        Assert.Equal("eleven", frames.World.ReadComponentData<Elements.Text>(label).Value);
+        Assert.NotEqual(textVersion, frames.World.ComponentDataWriteVersion<Elements.Text>(label));
+        Assert.Equal(styleVersion, frames.World.ComponentDataWriteVersion<TextStyle>(label));
+        Assert.Equal(surfaceVersion, frames.World.ComponentDataWriteVersion<Surface>(label));
+        Assert.Equal("edited component", frames.World.ReadComponentData<Display>(root).Value);
+        Assert.Equal("edited sibling", frames.World.ReadComponentData<Elements.Text>(sibling).Value);
 
         void Counter()
         {
@@ -68,23 +68,23 @@ public sealed partial class SolidTests
             Text(() => positive() ? "positive" : "negative");
         }));
         frames.Frame();
-        Entity label = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
+        Entity label = Assert.Single(ElementChildren.Read(frames.World, root));
         label.SetText(frames.World, "edited");
-        uint version = frames.World.WriteVersion<Elements.Text>(label);
+        ulong version = frames.World.ComponentDataWriteVersion<Elements.Text>(label);
 
         count.Value = 7;
         Assert.True(positive());
         frames.Frame();
 
-        Assert.Equal("edited", frames.World.Read<Elements.Text>(label).Value);
-        Assert.Equal(version, frames.World.WriteVersion<Elements.Text>(label));
+        Assert.Equal("edited", frames.World.ReadComponentData<Elements.Text>(label).Value);
+        Assert.Equal(version, frames.World.ComponentDataWriteVersion<Elements.Text>(label));
 
         count.Value = -1;
         Assert.False(positive());
         frames.Frame();
 
-        Assert.Equal("negative", frames.World.Read<Elements.Text>(label).Value);
-        Assert.NotEqual(version, frames.World.WriteVersion<Elements.Text>(label));
+        Assert.Equal("negative", frames.World.ReadComponentData<Elements.Text>(label).Value);
+        Assert.NotEqual(version, frames.World.ComponentDataWriteVersion<Elements.Text>(label));
     }
 
     [Fact]
@@ -97,19 +97,19 @@ public sealed partial class SolidTests
         Entity root = Views.Spawn(frames.World, Entity.Null, new OnceView(() =>
             Effect(() => Scope.Write<Total>(Scope.Entity).Value = Untrack(readSample) + trigger.Value)));
         frames.Frame();
-        Assert.Equal(8, frames.World.Read<Total>(root).Value);
+        Assert.Equal(8, frames.World.ReadComponentData<Total>(root).Value);
 
         sample.Value = 7;
         Assert.Equal(7, sample.Value);
         frames.Frame();
-        Assert.Equal(8, frames.World.Read<Total>(root).Value);
+        Assert.Equal(8, frames.World.ReadComponentData<Total>(root).Value);
 
         trigger.Value = 9;
         trigger.Value = 11;
-        Assert.Equal(8, frames.World.Read<Total>(root).Value);
+        Assert.Equal(8, frames.World.ReadComponentData<Total>(root).Value);
         frames.Frame();
 
-        Assert.Equal(18, frames.World.Read<Total>(root).Value);
+        Assert.Equal(18, frames.World.ReadComponentData<Total>(root).Value);
     }
 
     [Fact]
@@ -121,26 +121,26 @@ public sealed partial class SolidTests
         Entity root = Views.Spawn(frames.World, Entity.Null, new OnceView(() =>
             Text("label").Corner(4).Background(() => fill.Value).Border(border, 2)));
         frames.Frame();
-        Entity label = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Assert.Equal(fill.Value, frames.World.Read<Surface>(label).Fill);
-        Assert.Equal(4, frames.World.Read<Surface>(label).CornerRadius);
-        Assert.Equal(border, frames.World.Read<Surface>(label).BorderColor);
-        Assert.Equal(2, frames.World.Read<Surface>(label).BorderWidth);
-        frames.World.Replace(label, new Surface { Fill = fill.Value, CornerRadius = 8, BorderColor = border, BorderWidth = 3 });
-        uint textVersion = frames.World.WriteVersion<Elements.Text>(label);
+        Entity label = Assert.Single(ElementChildren.Read(frames.World, root));
+        Assert.Equal(fill.Value, frames.World.ReadComponentData<Surface>(label).Fill);
+        Assert.Equal(4, frames.World.ReadComponentData<Surface>(label).CornerRadius);
+        Assert.Equal(border, frames.World.ReadComponentData<Surface>(label).BorderColor);
+        Assert.Equal(2, frames.World.ReadComponentData<Surface>(label).BorderWidth);
+        frames.World.Set(label, new Surface { Fill = fill.Value, CornerRadius = 8, BorderColor = border, BorderWidth = 3 });
+        ulong textVersion = frames.World.ComponentDataWriteVersion<Elements.Text>(label);
 
         fill.Value = new Color(0, 1, 0);
         frames.Frame();
 
-        Assert.Equal(fill.Value, frames.World.Read<Surface>(label).Fill);
-        Assert.Equal(8, frames.World.Read<Surface>(label).CornerRadius);
-        Assert.Equal(border, frames.World.Read<Surface>(label).BorderColor);
-        Assert.Equal(3, frames.World.Read<Surface>(label).BorderWidth);
-        Assert.Equal(textVersion, frames.World.WriteVersion<Elements.Text>(label));
-        uint surfaceVersion = frames.World.WriteVersion<Surface>(label);
+        Assert.Equal(fill.Value, frames.World.ReadComponentData<Surface>(label).Fill);
+        Assert.Equal(8, frames.World.ReadComponentData<Surface>(label).CornerRadius);
+        Assert.Equal(border, frames.World.ReadComponentData<Surface>(label).BorderColor);
+        Assert.Equal(3, frames.World.ReadComponentData<Surface>(label).BorderWidth);
+        Assert.Equal(textVersion, frames.World.ComponentDataWriteVersion<Elements.Text>(label));
+        ulong surfaceVersion = frames.World.ComponentDataWriteVersion<Surface>(label);
         fill.Value = new Color(0, 1, 0);
         frames.Frame();
-        Assert.Equal(surfaceVersion, frames.World.WriteVersion<Surface>(label));
+        Assert.Equal(surfaceVersion, frames.World.ComponentDataWriteVersion<Surface>(label));
     }
 
     [Fact]
@@ -158,23 +158,23 @@ public sealed partial class SolidTests
             Text(() => count.Value);
         }));
         frames.Frame();
-        Entity[] labels = Hierarchy<ElementTree>.GetChildren(frames.World, root).ToArray();
-        Assert.Equal("0042", frames.World.Read<Elements.Text>(labels[0]).Value);
-        Assert.Equal("0042", frames.World.Read<Elements.Text>(labels[1]).Value);
-        Assert.Equal("12,34", frames.World.Read<Elements.Text>(labels[2]).Value);
-        Assert.Equal("42", frames.World.Read<Elements.Text>(labels[3]).Value);
-        Assert.Equal("42", frames.World.Read<Elements.Text>(labels[4]).Value);
-        uint version = frames.World.WriteVersion<Elements.Text>(labels[2]);
-        string text = frames.World.Read<Elements.Text>(labels[2]).Value;
+        Entity[] labels = ElementChildren.Read(frames.World, root);
+        Assert.Equal("0042", frames.World.ReadComponentData<Elements.Text>(labels[0]).Value);
+        Assert.Equal("0042", frames.World.ReadComponentData<Elements.Text>(labels[1]).Value);
+        Assert.Equal("12,34", frames.World.ReadComponentData<Elements.Text>(labels[2]).Value);
+        Assert.Equal("42", frames.World.ReadComponentData<Elements.Text>(labels[3]).Value);
+        Assert.Equal("42", frames.World.ReadComponentData<Elements.Text>(labels[4]).Value);
+        ulong version = frames.World.ComponentDataWriteVersion<Elements.Text>(labels[2]);
+        string text = frames.World.ReadComponentData<Elements.Text>(labels[2]).Value;
 
         count.Value = 43;
         amount.Value = 12.342;
         frames.Frame();
 
-        Assert.Equal("0043", frames.World.Read<Elements.Text>(labels[1]).Value);
-        Assert.Equal("43", frames.World.Read<Elements.Text>(labels[4]).Value);
-        Assert.Same(text, frames.World.Read<Elements.Text>(labels[2]).Value);
-        Assert.Equal(version, frames.World.WriteVersion<Elements.Text>(labels[2]));
+        Assert.Equal("0043", frames.World.ReadComponentData<Elements.Text>(labels[1]).Value);
+        Assert.Equal("43", frames.World.ReadComponentData<Elements.Text>(labels[4]).Value);
+        Assert.Same(text, frames.World.ReadComponentData<Elements.Text>(labels[2]).Value);
+        Assert.Equal(version, frames.World.ComponentDataWriteVersion<Elements.Text>(labels[2]));
     }
 
     [Fact]
@@ -189,14 +189,14 @@ public sealed partial class SolidTests
             Text(total, "D4");
         }));
         frames.Frame();
-        Entity[] labels = Hierarchy<ElementTree>.GetChildren(frames.World, root).ToArray();
+        Entity[] labels = ElementChildren.Read(frames.World, root);
         for (int index = 0; index < 1000; index++)
         {
             count.Value = index;
             frames.Frame();
         }
-        string text = frames.World.Read<Elements.Text>(labels[0]).Value;
-        uint version = frames.World.WriteVersion<Elements.Text>(labels[0]);
+        string text = frames.World.ReadComponentData<Elements.Text>(labels[0]).Value;
+        ulong version = frames.World.ComponentDataWriteVersion<Elements.Text>(labels[0]);
 
         long before = GC.GetAllocatedBytesForCurrentThread();
         for (int index = 0; index < 4096; index++)
@@ -209,13 +209,13 @@ public sealed partial class SolidTests
 #if !DEBUG
         Assert.Equal(0, allocated);
 #endif
-        Assert.Same(text, frames.World.Read<Elements.Text>(labels[0]).Value);
-        Assert.Equal(version, frames.World.WriteVersion<Elements.Text>(labels[0]));
-        Assert.Equal(labels, Hierarchy<ElementTree>.GetChildren(frames.World, root).ToArray());
+        Assert.Same(text, frames.World.ReadComponentData<Elements.Text>(labels[0]).Value);
+        Assert.Equal(version, frames.World.ComponentDataWriteVersion<Elements.Text>(labels[0]));
+        Assert.Equal(labels, ElementChildren.Read(frames.World, root));
         count.Value = 10000;
         frames.Frame();
-        Assert.Equal("0001", frames.World.Read<Elements.Text>(labels[0]).Value);
-        Assert.Equal("0001", frames.World.Read<Elements.Text>(labels[1]).Value);
+        Assert.Equal("0001", frames.World.ReadComponentData<Elements.Text>(labels[0]).Value);
+        Assert.Equal("0001", frames.World.ReadComponentData<Elements.Text>(labels[1]).Value);
     }
 
     [Fact]
@@ -229,7 +229,7 @@ public sealed partial class SolidTests
             Text(number, "D4", CultureInfo.InvariantCulture);
         }));
         frames.Frame();
-        Entity label = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
+        Entity label = Assert.Single(ElementChildren.Read(frames.World, root));
         for (int index = 0; index < 1000; index++)
         {
             count.Value = index;
@@ -252,8 +252,8 @@ public sealed partial class SolidTests
 #if !DEBUG
         Assert.Equal(formattingBytes, frameBytes);
 #endif
-        Assert.Equal("4095", frames.World.Read<Elements.Text>(label).Value);
-        Assert.Equal(label, Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root)));
+        Assert.Equal("4095", frames.World.ReadComponentData<Elements.Text>(label).Value);
+        Assert.Equal(label, Assert.Single(ElementChildren.Read(frames.World, root)));
     }
 
     [Fact]
@@ -271,33 +271,33 @@ public sealed partial class SolidTests
             Text("label").Font(() => font.Value).FontSize(() => size.Value)
                 .TextColor(() => color.Value).LineHeight(() => height.Value)));
         frames.Frame();
-        Entity label = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        TextStyle style = frames.World.Read<TextStyle>(label);
+        Entity label = Assert.Single(ElementChildren.Read(frames.World, root));
+        TextStyle style = frames.World.ReadComponentData<TextStyle>(label);
         Assert.Same(first, style.Font);
         Assert.Equal(20, style.Size);
         Assert.Equal(color.Value, style.Color);
         Assert.Equal(24, style.LineHeight);
         style.Size = 33;
-        frames.World.Replace(label, style);
-        uint textVersion = frames.World.WriteVersion<Elements.Text>(label);
+        frames.World.Set(label, style);
+        ulong textVersion = frames.World.ComponentDataWriteVersion<Elements.Text>(label);
 
         font.Value = second;
         color.Value = new Color(0, 1, 0);
         height.Value = 48;
         frames.Frame();
 
-        style = frames.World.Read<TextStyle>(label);
+        style = frames.World.ReadComponentData<TextStyle>(label);
         Assert.Same(second, style.Font);
         Assert.Equal(33, style.Size);
         Assert.Equal(color.Value, style.Color);
         Assert.Equal(48, style.LineHeight);
-        Assert.Equal(textVersion, frames.World.WriteVersion<Elements.Text>(label));
+        Assert.Equal(textVersion, frames.World.ComponentDataWriteVersion<Elements.Text>(label));
 
         size.Value = 32;
         frames.Frame();
-        Assert.Equal(32, frames.World.Read<TextStyle>(label).Size);
-        Assert.Equal(color.Value, frames.World.Read<TextStyle>(label).Color);
-        Assert.Equal(48, frames.World.Read<TextStyle>(label).LineHeight);
+        Assert.Equal(32, frames.World.ReadComponentData<TextStyle>(label).Size);
+        Assert.Equal(color.Value, frames.World.ReadComponentData<TextStyle>(label).Color);
+        Assert.Equal(48, frames.World.ReadComponentData<TextStyle>(label).LineHeight);
     }
 
     [Fact]
@@ -311,12 +311,12 @@ public sealed partial class SolidTests
         Entity root = Views.Spawn(frames.World, Entity.Null, new OnceView(() =>
             Text("label").Background(fill).Corner(() => radius.Value).Border(() => color.Value, () => width.Value)));
         frames.Frame();
-        Entity label = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Assert.Equal(fill, frames.World.Read<Surface>(label).Fill);
-        Assert.Equal(4, frames.World.Read<Surface>(label).CornerRadius);
-        Assert.Equal(color.Value, frames.World.Read<Surface>(label).BorderColor);
-        Assert.Equal(2, frames.World.Read<Surface>(label).BorderWidth);
-        frames.World.Replace(label, new Surface { Fill = new Color(0, 1, 0), CornerRadius = 4,
+        Entity label = Assert.Single(ElementChildren.Read(frames.World, root));
+        Assert.Equal(fill, frames.World.ReadComponentData<Surface>(label).Fill);
+        Assert.Equal(4, frames.World.ReadComponentData<Surface>(label).CornerRadius);
+        Assert.Equal(color.Value, frames.World.ReadComponentData<Surface>(label).BorderColor);
+        Assert.Equal(2, frames.World.ReadComponentData<Surface>(label).BorderWidth);
+        frames.World.Set(label, new Surface { Fill = new Color(0, 1, 0), CornerRadius = 4,
             BorderColor = color.Value, BorderWidth = 2 });
 
         radius.Value = 8;
@@ -324,10 +324,10 @@ public sealed partial class SolidTests
         width.Value = 3;
         frames.Frame();
 
-        Assert.Equal(new Color(0, 1, 0), frames.World.Read<Surface>(label).Fill);
-        Assert.Equal(8, frames.World.Read<Surface>(label).CornerRadius);
-        Assert.Equal(color.Value, frames.World.Read<Surface>(label).BorderColor);
-        Assert.Equal(3, frames.World.Read<Surface>(label).BorderWidth);
+        Assert.Equal(new Color(0, 1, 0), frames.World.ReadComponentData<Surface>(label).Fill);
+        Assert.Equal(8, frames.World.ReadComponentData<Surface>(label).CornerRadius);
+        Assert.Equal(color.Value, frames.World.ReadComponentData<Surface>(label).BorderColor);
+        Assert.Equal(3, frames.World.ReadComponentData<Surface>(label).BorderWidth);
     }
 
     [Fact]
@@ -340,13 +340,13 @@ public sealed partial class SolidTests
         Entity root = Views.Spawn(frames.World, Entity.Null, new OnceView(() =>
             Text("label").Corner(4).Background(() => count.Value % 2 == 0 ? red : green)));
         frames.Frame();
-        Entity label = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
+        Entity label = Assert.Single(ElementChildren.Read(frames.World, root));
         for (int index = 0; index < 1000; index++)
         {
             count.Value = index;
             frames.Frame();
         }
-        uint textVersion = frames.World.WriteVersion<Elements.Text>(label);
+        ulong textVersion = frames.World.ComponentDataWriteVersion<Elements.Text>(label);
 
         long before = GC.GetAllocatedBytesForCurrentThread();
         for (int index = 0; index < 4096; index++)
@@ -359,9 +359,9 @@ public sealed partial class SolidTests
 #if !DEBUG
         Assert.Equal(0, allocated);
 #endif
-        Assert.Equal(green, frames.World.Read<Surface>(label).Fill);
-        Assert.Equal(4, frames.World.Read<Surface>(label).CornerRadius);
-        Assert.Equal(textVersion, frames.World.WriteVersion<Elements.Text>(label));
+        Assert.Equal(green, frames.World.ReadComponentData<Surface>(label).Fill);
+        Assert.Equal(4, frames.World.ReadComponentData<Surface>(label).CornerRadius);
+        Assert.Equal(textVersion, frames.World.ComponentDataWriteVersion<Elements.Text>(label));
     }
 
     [Fact]
@@ -378,21 +378,21 @@ public sealed partial class SolidTests
             return count.Value;
         })));
         frames.Frame();
-        Entity label = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        uint version = frames.World.WriteVersion<Elements.Text>(label);
+        Entity label = Assert.Single(ElementChildren.Read(frames.World, root));
+        ulong version = frames.World.ComponentDataWriteVersion<Elements.Text>(label);
 
         fail.Value = true;
         count.Value = "latest";
         frames.Frame();
 
-        Assert.Same(error, frames.World.ReadSparse<BuildError>(root).Exception);
-        Assert.Equal("initial", frames.World.Read<Elements.Text>(label).Value);
-        Assert.Equal(version, frames.World.WriteVersion<Elements.Text>(label));
+        Assert.Same(error, frames.World.ReadComponentData<BuildError>(root).Exception);
+        Assert.Equal("initial", frames.World.ReadComponentData<Elements.Text>(label).Value);
+        Assert.Equal(version, frames.World.ComponentDataWriteVersion<Elements.Text>(label));
 
         fail.Value = false;
         frames.Frame();
 
-        Assert.Equal("latest", frames.World.Read<Elements.Text>(label).Value);
+        Assert.Equal("latest", frames.World.ReadComponentData<Elements.Text>(label).Value);
         Assert.False(frames.World.HasSparse<BuildError>(root));
     }
 
@@ -415,7 +415,7 @@ public sealed partial class SolidTests
 #endif
 
     private record struct Display(string Value) : IComponent;
-    private record struct Total(int Value) : IComponent;
+    private record struct Total(int Value) : ITrackedComponent;
 
     private readonly record struct OnceView(Action Content) : IView, IComponent
     {

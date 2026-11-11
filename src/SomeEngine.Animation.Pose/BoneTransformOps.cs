@@ -15,7 +15,9 @@ public readonly struct BoneTransformOps : IValueOps<BoneTransform>
 
     public static BoneTransform Add(in BoneTransform a, in BoneTransform b) => new()
     {
-        Translation = a.Translation + b.Translation, Rotation = a.Rotation + b.Rotation, Scale = a.Scale + b.Scale,
+        Translation = a.Translation + b.Translation,
+        Rotation = a.Rotation + b.Rotation,
+        Scale = a.Scale + b.Scale,
     };
 
     /// <summary>Applies a weighted reference-relative translation, rotation delta and scale ratio.</summary>
@@ -33,12 +35,16 @@ public readonly struct BoneTransformOps : IValueOps<BoneTransform>
 
     public static BoneTransform Subtract(in BoneTransform a, in BoneTransform b) => new()
     {
-        Translation = a.Translation - b.Translation, Rotation = a.Rotation - b.Rotation, Scale = a.Scale - b.Scale,
+        Translation = a.Translation - b.Translation,
+        Rotation = a.Rotation - b.Rotation,
+        Scale = a.Scale - b.Scale,
     };
 
     public static BoneTransform Scale(in BoneTransform value, float scale) => new()
     {
-        Translation = value.Translation * scale, Rotation = value.Rotation * scale, Scale = value.Scale * scale,
+        Translation = value.Translation * scale,
+        Rotation = value.Rotation * scale,
+        Scale = value.Scale * scale,
     };
 
     public static float Distance(in BoneTransform a, in BoneTransform b) => MathF.Sqrt(
@@ -90,7 +96,8 @@ public readonly struct BoneTransformOps : IValueOps<BoneTransform>
             }
             result[bone] = new BoneTransform
             {
-                Translation = translation, Scale = scale,
+                Translation = translation,
+                Scale = scale,
                 Rotation = Quaternion.Normalize(new Quaternion(rotation.GetElement(0), rotation.GetElement(1),
                     rotation.GetElement(2), rotation.GetElement(3))),
             };

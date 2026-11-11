@@ -3,12 +3,10 @@ using SomeEngine.Core.Diagnostics;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 
 namespace SomeEngine.Animation;
 
-[BufferCapacity(4)]
 public struct GraphBranch : IBufferElement
 {
     public int Id;
@@ -18,30 +16,34 @@ public struct GraphBranch : IBufferElement
 public static partial class AnimationGraph
 {
     /// <summary>Declares the shared time and completion storage used by public leaf systems.</summary>
-    public static QueryDefinitionBuilder WithTimeAccess(QueryDefinitionBuilder query) => query
-        .Optional<Timeline>(QueryAccess.ReadWrite).Optional<GraphInstance>(QueryAccess.Read)
-        .OptionalBuffer<TimelineStage>(QueryAccess.Read).OptionalBuffer<GraphMotion>(QueryAccess.ReadWrite);
+    public static QueryDescription WithTimeAccess(QueryDescription query) => query
+        .Optional<Timeline>().Optional<GraphInstance>()
+        .Optional<Buffer<TimelineStage>>().Optional<Buffer<GraphMotion>>();
 
     /// <summary>Reads the shared phase time and weight selected for an installed public leaf.</summary>
     public static AnimationLeafTime ReadTime(World world, Entity animation, in AnimationLeafPlacement placement)
     {
-        Timeline timeline = world.Read<Timeline>(animation);
+        Timeline timeline = world.ReadComponentData<Timeline>(animation);
         LeafPhase phase = CreatePhase(in timeline, in placement);
         float weight = 1;
         uint starts = timeline.Starts;
         if (placement.Motion == 0)
         {
-            if (world.HasBuffer<TimelineStage>(animation))
-                world.ExecuteBufferRead<TimelineStage, LeafPhase>(animation, ref phase,
-                    static (stages, ref phase) => phase.Select(stages.AsSpan()));
+            if (world.Has<Buffer<TimelineStage>>(animation))
+            {
+                using var stages = world.ReadBuffer<TimelineStage>(animation);
+                phase.Select(stages.AsSpan());
+            }
             else phase.Select(default);
         }
         else
         {
             var motion = (Index: placement.Motion - 1, Value: default(GraphMotion));
-            world.ExecuteBufferRead<GraphMotion, (int Index, GraphMotion Value)>(animation, ref motion,
-                static (motions, ref motion) => motion.Value = motions[motion.Index]);
-            GraphData[] graph = world.Read<GraphInstance>(animation).Data!;
+            {
+                using var motions = world.ReadBuffer<GraphMotion>(animation);
+                motion.Value = motions[motion.Index];
+            }
+            GraphData[] graph = world.ReadComponentData<GraphInstance>(animation).Data!;
             SelectMotion(ref phase, in motion.Value, graph, in placement);
             weight = motion.Value.Weight;
             starts = motion.Value.Starts;
@@ -51,35 +53,39 @@ public static partial class AnimationGraph
     }
 
     /// <summary>Reads the same phase clock directly from a row declared with WithTimeAccess.</summary>
-    public static AnimationLeafTime ReadTime(scoped in QueryRow row, in AnimationLeafPlacement placement)
+    public static AnimationLeafTime ReadTime(QueryChunk chunk, int rowIndex, in AnimationLeafPlacement placement)
     {
-        Timeline timeline = row.Read<Timeline>();
-        return ReadTime(in row, in timeline, in placement);
+        Timeline timeline = chunk.Read<Timeline>()[rowIndex];
+        return ReadTime(chunk, rowIndex, in timeline, in placement);
     }
 
     /// <summary>Reads the same phase clock while borrowing the Timeline already selected by the query.</summary>
-    public static AnimationLeafTime ReadTime(scoped in QueryRow row, scoped in Timeline timeline,
+    public static AnimationLeafTime ReadTime(QueryChunk chunk, int rowIndex, scoped in Timeline timeline,
         in AnimationLeafPlacement placement)
     {
         LeafPhase phase = CreatePhase(in timeline, in placement);
         float weight = 1;
         uint starts = timeline.Starts;
         if (placement.Motion == 0)
-            phase.Select(row.HasBuffer<TimelineStage>() ? row.ReadBuffer<TimelineStage>().AsSpan() : default);
+            phase.Select(chunk.Has<Buffer<TimelineStage>>(rowIndex) ? chunk.ReadBuffer<TimelineStage>(rowIndex).AsSpan() : default);
         else
         {
-            GraphMotion motion = row.ReadBuffer<GraphMotion>()[placement.Motion - 1];
-            SelectMotion(ref phase, in motion, row.Read<GraphInstance>().Data!, in placement);
+            GraphMotion motion = chunk.ReadBuffer<GraphMotion>(rowIndex)[placement.Motion - 1];
+            SelectMotion(ref phase, in motion, chunk.Read<GraphInstance>()[rowIndex].Data!, in placement);
             weight = motion.Weight;
             starts = motion.Starts;
         }
-        return new(phase.Sample, weight, starts, row.IsComponentEnabled<Timeline>() && phase.Active && weight > 0);
+        return new(phase.Sample, weight, starts, chunk.Optional<Timeline>(rowIndex).IsEnabled && phase.Active && weight > 0);
     }
 
     private static LeafPhase CreatePhase(in Timeline timeline, in AnimationLeafPlacement placement) => new()
     {
-        Stage = timeline.Stage, Time = timeline.Time, Delta = timeline.Delta,
-        Paused = timeline.Paused, Target = placement.Stage, Start = placement.Start,
+        Stage = timeline.Stage,
+        Time = timeline.Time,
+        Delta = timeline.Delta,
+        Paused = timeline.Paused,
+        Target = placement.Stage,
+        Start = placement.Start,
     };
 
     private static void SelectMotion(ref LeafPhase phase, in GraphMotion motion, GraphData[] graph,
@@ -119,38 +125,43 @@ public static partial class AnimationGraph
     {
         if (placement.Motion == 0)
         {
-            Timeline timeline = world.Read<Timeline>(animation);
+            Timeline timeline = world.ReadComponentData<Timeline>(animation);
             timeline.Submit(running);
-            world.Replace(animation, timeline);
+            world.Set(animation, timeline);
         }
         else
         {
             var result = (Index: placement.Motion - 1, Running: running);
-            world.ExecuteBufferWrite<GraphMotion, (int Index, bool Running)>(animation, ref result,
-                static (motions, ref result) => motions[result.Index].Running |= result.Running);
+            {
+                using var motions = world.GetBuffer<GraphMotion>(animation);
+                motions[result.Index].Running |= result.Running;
+            }
         }
     }
 
     /// <summary>Submits stage completion through the Timeline or nested motion borrowed by WithTimeAccess.</summary>
-    public static void Submit(scoped in QueryRow row, in AnimationLeafPlacement placement, bool running)
+    public static void Submit(QueryChunk chunk, int rowIndex, in AnimationLeafPlacement placement, bool running)
     {
-        if (placement.Motion == 0) row.ReadWrite<Timeline>().Submit(running);
-        else row.Buffer<GraphMotion>()[placement.Motion - 1].Running |= running;
+        if (placement.Motion == 0) chunk.Write<Timeline>()[rowIndex].Submit(running);
+        else chunk.GetBuffers<GraphMotion>()[rowIndex][placement.Motion - 1].Running |= running;
     }
 
     /// <summary>Submits completion using the Timeline already borrowed by the query or its nested motion.</summary>
-    public static void Submit(scoped in QueryRow row, scoped ref Timeline timeline,
+    public static void Submit(QueryChunk chunk, int rowIndex, scoped ref Timeline timeline,
         in AnimationLeafPlacement placement, bool running)
     {
         if (placement.Motion == 0) timeline.Submit(running);
-        else row.Buffer<GraphMotion>()[placement.Motion - 1].Running |= running;
+        else chunk.GetBuffers<GraphMotion>()[rowIndex][placement.Motion - 1].Running |= running;
     }
 
     public static Entity GetBranch(World world, Entity animation, int id)
     {
         var branch = (Id: id, Animation: Entity.Null);
-        world.ExecuteBufferRead<GraphBranch, (int Id, Entity Animation)>(animation, ref branch,
-            static (BufferView<GraphBranch> branches, ref (int Id, Entity Animation) branch) =>
+        {
+            using var branches = world.ReadBuffer<GraphBranch>(animation);
+            Visit(branches, ref branch);
+
+            static void Visit(ReadOnlyBuffer<GraphBranch> branches, ref (int Id, Entity Animation) branch)
             {
                 foreach (GraphBranch candidate in branches.AsSpan())
                     if (candidate.Id == branch.Id)
@@ -158,7 +169,9 @@ public static partial class AnimationGraph
                         branch.Animation = candidate.Animation;
                         return;
                     }
-            });
+
+            }
+        }
         DevelopmentCheck.Require(branch.Animation != Entity.Null, "The graph requires a branch with the requested id.");
         return branch.Animation;
     }
@@ -169,21 +182,23 @@ public readonly record struct AnimationLeafTime(MotionTime Time, float Weight, u
 /// <summary>Updates parameter-driven graphs before property evaluation.</summary>
 public struct GraphSystem : ISystem<ImmediateSystemContext>
 {
-    private QueryHandle _pool;
-    private QueryHandle _instances;
+    private Query _instances;
+    private List<Entity> _cleanup;
+    private List<Entity> _disabled;
     private int _conditions;
 
     public void OnCreate(ref ImmediateSystemContext context)
     {
-        _pool = context.World.Query(GraphQueries.Pool);
+        _cleanup = [];
+        _disabled = [];
         _instances = CreateQuery(context.World);
     }
 
-    private QueryHandle CreateQuery(World world)
+    private Query CreateQuery(World world)
     {
-        var query = world.QueryDefinition().ReadWrite<GraphInstance>()
-            .Optional<Timeline>(QueryAccess.ReadWrite).Optional<GraphParameters>(QueryAccess.Read)
-            .OptionalBuffer<GraphState>(QueryAccess.ReadWrite).OptionalBuffer<GraphMotion>(QueryAccess.ReadWrite);
+        var query = new QueryDescription().WithStored<GraphInstance>()
+            .Optional<Timeline>().Optional<GraphParameters>()
+            .Optional<Buffer<GraphState>>().Optional<Buffer<GraphMotion>>();
         GraphConditionAccesses.Declare(query);
         _conditions = GraphConditionAccesses.Version;
         return world.Query(query);
@@ -192,103 +207,146 @@ public struct GraphSystem : ISystem<ImmediateSystemContext>
     public void OnUpdate(ref ImmediateSystemContext context)
     {
         World world = context.World;
+        _cleanup.Clear();
+        _disabled.Clear();
         if (_conditions != GraphConditionAccesses.Version)
         {
-            world.ReleaseQuery(_instances);
+
             _instances = CreateQuery(world);
         }
-        world.ExecuteQuery(_instances, context.LastSystemVersion, ref world,
-            static (QueryCursor rows, ref World world) =>
+        {
+            using QueryScope read = _instances.Since(context.LastSystemVersion).Open();
+            Visit(in read, ref world, _cleanup);
+
+            static void Visit(scoped in QueryScope rows, ref World world, List<Entity> cleanup)
             {
-                foreach (QueryRow row in rows.Rows)
+                foreach (QueryChunk chunk in rows)
                 {
-                    ref GraphInstance instance = ref row.ReadWrite<GraphInstance>();
-                    if (!row.Has<Timeline>())
+                    var values0 = chunk.Has<GraphInstance>() ? chunk.Write<GraphInstance>() : default;
+                    chunk.TryRead<Timeline>(out var values1);
+                    chunk.TryRead<GraphParameters>(out var values2);
+                    var buffers0 = chunk.Has<Buffer<GraphState>>() ? chunk.GetBuffers<GraphState>() : default;
+                    var buffers1 = chunk.Has<Buffer<GraphMotion>>() ? chunk.GetBuffers<GraphMotion>() : default;
+                    for (int rowIndex = 0; rowIndex < chunk.Count; rowIndex++)
                     {
-                        if (instance.Data is not null)
+                        ref GraphInstance instance = ref values0[rowIndex];
+                        if (!chunk.Has<Timeline>(rowIndex))
                         {
-                            GraphData.Release(instance.Data);
-                        }
-                        instance.Data = null;
-                        if (!instance.CleanupQueued)
-                        {
-                            world.Commands().Remove<GraphInstance>(row.Entity);
-                            instance.CleanupQueued = true;
-                        }
-                        continue;
-                    }
-                    if (instance.Data is null)
-                        continue;
-                    if (!world.IsEnabled<Timeline>(row.Entity))
-                    {
-                        GraphPlayback.ReleaseConditions(world, row.Entity, instance.Data);
-                        GraphData.Release(instance.Data);
-                        instance.Data = null;
-                        continue;
-                    }
-                    if (instance.TimeSource != Entity.Null)
-                        continue;
-                    if (instance.Data[0].GroupCount == 0)
-                        continue;
-                    GraphPlayback.Update(world, row.Entity, instance.Data, instance.Part, row.Read<Timeline>(), row.Read<GraphParameters>(),
-                        row.Buffer<GraphState>(), row.Buffer<GraphMotion>());
-                }
-            });
-        world.ExecuteQuery(_instances, context.LastSystemVersion, ref world,
-            static (QueryCursor rows, ref World world) =>
-            {
-                foreach (QueryRow row in rows.Rows)
-                {
-                    GraphInstance instance = row.Read<GraphInstance>();
-                    if (instance.Data is not null && instance.TimeSource != Entity.Null &&
-                        row.Has<Timeline>() && world.IsEnabled<Timeline>(row.Entity))
-                    {
-                        if (!world.IsAlive(instance.TimeSource) || !world.Has<Timeline>(instance.TimeSource) || !world.IsEnabled<Timeline>(instance.TimeSource))
-                        {
-                            world.Disable<Timeline>(row.Entity);
+                            if (instance.Data is not null)
+                            {
+                                GraphData.Release(instance.Data);
+                            }
+                            instance.Data = null;
+                            if (!instance.CleanupQueued)
+                            {
+                                cleanup.Add(chunk.Entities[rowIndex]);
+                                instance.CleanupQueued = true;
+                            }
                             continue;
                         }
-                        row.ReadWrite<Timeline>() = world.Read<Timeline>(instance.TimeSource);
-                        if (instance.Data[0].GroupCount > 0)
+                        if (instance.Data is null)
+                            continue;
+                        if (!world.IsEnabled<Timeline>(chunk.Entities[rowIndex]))
                         {
-                            DynamicBuffer<GraphMotion> motions = row.Buffer<GraphMotion>();
-                            GraphMotion[] values = ArrayPool<GraphMotion>.Shared.Rent(motions.Count);
-                            try
-                            {
-                                world.ExecuteBufferRead<GraphMotion, GraphMotion[]>(instance.TimeSource, ref values,
-                                    static (BufferView<GraphMotion> source, ref GraphMotion[] destination) => source.AsSpan().CopyTo(destination));
-                                values.AsSpan(0, motions.Count).CopyTo(motions.AsSpan());
-                            }
-                            finally { ArrayPool<GraphMotion>.Shared.Return(values); }
+                            GraphPlayback.ReleaseConditions(world, chunk.Entities[rowIndex], instance.Data);
+                            GraphData.Release(instance.Data);
+                            instance.Data = null;
+                            continue;
                         }
+                        if (instance.TimeSource != Entity.Null)
+                            continue;
+                        if (instance.Data[0].GroupCount == 0)
+                            continue;
+                        GraphPlayback.Update(world, chunk.Entities[rowIndex], instance.Data, instance.Part, values1[rowIndex], values2[rowIndex],
+                            buffers0[rowIndex], buffers1[rowIndex]);
+
                     }
                 }
-            });
+
+            }
+        }
+        {
+            using QueryScope read = _instances.Since(context.LastSystemVersion).Open();
+            Visit(in read, ref world, _disabled);
+
+            static void Visit(scoped in QueryScope rows, ref World world, List<Entity> disabled)
+            {
+                foreach (QueryChunk chunk in rows)
+                {
+                    var values0 = chunk.Has<Timeline>() ? chunk.Write<Timeline>() : default;
+                    chunk.TryRead<GraphInstance>(out var values1);
+                    var buffers0 = chunk.Has<Buffer<GraphMotion>>() ? chunk.GetBuffers<GraphMotion>() : default;
+                    for (int rowIndex = 0; rowIndex < chunk.Count; rowIndex++)
+                    {
+                        GraphInstance instance = values1[rowIndex];
+                        if (instance.Data is not null && instance.TimeSource != Entity.Null &&
+                            chunk.Has<Timeline>(rowIndex) && world.IsEnabled<Timeline>(chunk.Entities[rowIndex]))
+                        {
+                            if (!world.IsAlive(instance.TimeSource) || !world.Has<Timeline>(instance.TimeSource) || !world.IsEnabled<Timeline>(instance.TimeSource))
+                            {
+                                disabled.Add(chunk.Entities[rowIndex]);
+                                continue;
+                            }
+                            values0[rowIndex] = world.ReadComponentData<Timeline>(instance.TimeSource);
+                            if (instance.Data[0].GroupCount > 0)
+                            {
+                                DynamicBuffer<GraphMotion> motions = buffers0[rowIndex];
+                                GraphMotion[] values = ArrayPool<GraphMotion>.Shared.Rent(motions.Count);
+                                try
+                                {
+                                    {
+                                        using var source = world.ReadBuffer<GraphMotion>(instance.TimeSource);
+                                        source.AsSpan().CopyTo(values);
+                                    }
+                                    values.AsSpan(0, motions.Count).CopyTo(motions.AsSpan());
+                                }
+                                finally { ArrayPool<GraphMotion>.Shared.Return(values); }
+                            }
+                        }
+
+                    }
+                }
+
+            }
+        }
+        foreach (Entity entity in _disabled) world.Disable<Timeline>(entity);
+        foreach (Entity entity in _cleanup) world.Remove<GraphInstance>(entity);
     }
 
     public void OnDestroy(ref ImmediateSystemContext context)
     {
         World world = context.World;
-        context.World.ExecuteQuery(_instances, ref world, static (QueryCursor rows, ref World world) =>
         {
-            foreach (QueryRow row in rows.Rows)
+            using QueryScope read = _instances.Open();
+            Visit(in read, ref world);
+
+            static void Visit(scoped in QueryScope rows, ref World world)
             {
-                ref GraphInstance instance = ref row.ReadWrite<GraphInstance>();
-                if (instance.Data is not null)
+                foreach (QueryChunk chunk in rows)
                 {
-                    if (row.Has<Timeline>())
-                        GraphPlayback.ReleaseConditions(world, row.Entity, instance.Data);
-                    GraphData.Release(instance.Data);
+                    var values0 = chunk.Has<GraphInstance>() ? chunk.Write<GraphInstance>() : default;
+                    for (int rowIndex = 0; rowIndex < chunk.Count; rowIndex++)
+                    {
+                        ref GraphInstance instance = ref values0[rowIndex];
+                        if (instance.Data is not null)
+                        {
+                            if (chunk.Has<Timeline>(rowIndex))
+                                GraphPlayback.ReleaseConditions(world, chunk.Entities[rowIndex], instance.Data);
+                            GraphData.Release(instance.Data);
+                        }
+                        instance.Data = null;
+
+                    }
                 }
-                instance.Data = null;
+
             }
-        });
-        context.World.ReleaseQuery(_instances);
-        context.World.ReleaseQuery(_pool);
+        }
+
+
     }
 }
 
 internal static class GraphQueries
 {
-    internal static readonly QueryDefinition Pool = new QueryDefinitionBuilder().Read<Timeline>().All<PooledGraph>().Build();
+    internal static readonly QueryDescription Pool = new QueryDescription().WithStored<Timeline>().WithStored<PooledGraph>();
 }

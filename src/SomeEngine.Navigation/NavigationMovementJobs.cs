@@ -90,6 +90,8 @@ internal partial struct NavigationProgressJob<TMotion, TReader>(World world) : I
     where TMotion : unmanaged, IComponent
     where TReader : struct, INavigationMotionReader<TMotion>
 {
+    public static SystemAccesses AdditionalAccesses { get; } = new SystemAccesses().ReadRandom<TMotion>();
+
     private readonly World _world = world;
 
     public void Execute(in NavigationGoal goal,

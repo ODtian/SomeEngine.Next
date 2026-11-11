@@ -92,6 +92,7 @@
       "someengine.core": {
         "type": "Project",
         "dependencies": {
+          "SomeEngine.Diagnostics": "[1.0.0, )",
           "SomeEngine.ECS": "[1.0.0, )",
           "SomeEngine.ECS.Systems": "[1.0.0, )",
           "SomeEngine.Job": "[1.0.0, )"
@@ -103,15 +104,25 @@
       "someengine.ecs": {
         "type": "Project",
         "dependencies": {
-          "SomeEngine.Job.Contracts": "[1.0.0, )"
+          "SomeEngine.Diagnostics": "[1.0.0, )",
+          "SomeEngine.Job": "[1.0.0, )",
+          "SomeEngine.Job.Resources": "[1.0.0, )"
+        }
+      },
+      "someengine.ecs.relationships": {
+        "type": "Project",
+        "dependencies": {
+          "SomeEngine.ECS": "[1.0.0, )"
         }
       },
       "someengine.ecs.systems": {
         "type": "Project",
         "dependencies": {
+          "SomeEngine.Diagnostics": "[1.0.0, )",
           "SomeEngine.ECS": "[1.0.0, )",
+          "SomeEngine.ECS.Relationships": "[1.0.0, )",
           "SomeEngine.Job": "[1.0.0, )",
-          "SomeEngine.Job.Contracts": "[1.0.0, )"
+          "SomeEngine.Job.Resources": "[1.0.0, )"
         }
       },
       "someengine.graphics": {
@@ -127,7 +138,8 @@
           "Microsoft.Direct3D.D3D12": "[1.619.5, )",
           "Silk.NET.DXGI": "[2.23.0, )",
           "Silk.NET.Direct3D12": "[2.23.0, )",
-          "SomeEngine.Graphics": "[1.0.0, )"
+          "SomeEngine.Graphics": "[1.0.0, )",
+          "SomeEngine.Job": "[1.0.0, )"
         }
       },
       "someengine.graphics.validation": {
@@ -144,17 +156,18 @@
           "Silk.NET.Vulkan.Extensions.EXT": "[2.23.0, )",
           "Silk.NET.Vulkan.Extensions.KHR": "[2.23.0, )",
           "Silk.NET.Vulkan.Extensions.NV": "[2.23.0, )",
-          "SomeEngine.Graphics": "[1.0.0, )"
+          "SomeEngine.Graphics": "[1.0.0, )",
+          "SomeEngine.Job": "[1.0.0, )"
         }
       },
       "someengine.job": {
         "type": "Project",
         "dependencies": {
           "SomeEngine.Diagnostics": "[1.0.0, )",
-          "SomeEngine.Job.Contracts": "[1.0.0, )"
+          "SomeEngine.Job.Resources": "[1.0.0, )"
         }
       },
-      "someengine.job.contracts": {
+      "someengine.job.resources": {
         "type": "Project"
       },
       "someengine.rendergraph": {

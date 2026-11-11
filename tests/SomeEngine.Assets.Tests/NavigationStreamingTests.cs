@@ -87,9 +87,9 @@ public sealed class NavigationStreamingTests
             source.Dispose();
             var interest = new NavigationInterest(new(1, 0, 1), 0.1f) { LookAheadDistance = 5f };
             streaming.Interests.Add(interest);
-            using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+            using World world = new World(execution: new WorldJobs(scheduler));
             var navigation = new NavigationSystems<NavigationScene, TSearch, TState, Motion, MotionReader>(world);
-            var actor = world.CreateEntity(new Motion(new(1, 0, 1), default, 0));
+            var actor = world.Create(new Motion(new(1, 0, 1), default, 0));
             navigation.AddAgent(actor, scene, profile, policy, new NavigationGoal(new Vector3(11, 0, 1), 0.05f), 2f);
             using var background = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
             using var main = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
@@ -102,23 +102,23 @@ public sealed class NavigationStreamingTests
                 {
                     for (int frame = 0; frame < 100; frame++)
                     {
-                        interest.Position = world.Read<Motion>(actor).Position;
-                        interest.Path = world.Read<NavigationPathResult>(actor).Path;
+                        interest.Position = world.ReadComponentData<Motion>(actor).Position;
+                        interest.Path = world.ReadComponentData<NavigationPathResult>(actor).Path;
                         background.Update();
                         main.Update();
                         main.Complete();
-                        Motion motion = world.Read<Motion>(actor);
-                        NavigationSteering steering = world.Read<NavigationSteering>(actor);
-                        world.Replace(actor, new Motion(motion.Position + steering.Velocity * 0.1f, steering.Velocity, steering.Heading));
+                        Motion motion = world.ReadComponentData<Motion>(actor);
+                        NavigationSteering steering = world.ReadComponentData<NavigationSteering>(actor);
+                        world.Set(actor, new Motion(motion.Position + steering.Velocity * 0.1f, steering.Velocity, steering.Heading));
                         navigation.ScheduleProgress(default).Complete();
-                        NavigationProgress progress = world.Read<NavigationProgress>(actor);
+                        NavigationProgress progress = world.ReadComponentData<NavigationProgress>(actor);
                         if (version == 0) version = progress.RequestVersion;
                         Assert.Equal(version, progress.RequestVersion);
                         if (progress.Status is NavigationStatus.WaitingForTiles or NavigationStatus.Arrived) break;
                     }
                     if (section == 3) break;
-                    Assert.Equal(4f * section, world.Read<Motion>(actor).Position.X, 3);
-                    NavigationPathResult result = world.Read<NavigationPathResult>(actor);
+                    Assert.Equal(4f * section, world.ReadComponentData<Motion>(actor).Position.X, 3);
+                    NavigationPathResult result = world.ReadComponentData<NavigationPathResult>(actor);
                     Assert.Equal(NavigationSearchStatus.WaitingForTiles, result.Status);
                     Assert.Contains(new NavigationSceneTileId(10, new(section, 0)), result.Path!.RequiredTiles.ToArray());
                     interest.Path = result.Path;
@@ -130,8 +130,8 @@ public sealed class NavigationStreamingTests
             }
             finally { foreach (TaskCompletionSource signal in signals.Release) signal.TrySetResult(); }
             background.Complete();
-            Assert.Equal(NavigationStatus.Arrived, world.Read<NavigationProgress>(actor).Status);
-            Assert.Equal(NavigationSearchStatus.Found, world.Read<NavigationPathResult>(actor).Status);
+            Assert.Equal(NavigationStatus.Arrived, world.ReadComponentData<NavigationProgress>(actor).Status);
+            Assert.Equal(NavigationSearchStatus.Found, world.ReadComponentData<NavigationPathResult>(actor).Status);
         }
         finally
         {

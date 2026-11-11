@@ -97,8 +97,10 @@ public sealed partial class Scheduler
             return;
         }
 
-        ReleaseAccessesIfRegistered(release.Accesses);
-        ReleaseAccessesIfRegistered(release.AdditionalAccesses);
+        AccessBuilder<ResourceAccessRegistration> registrations = release.Accesses;
+        for (int index = 0; index < registrations.Count; index++)
+            _resources.ReleaseAccesses(registrations.Get(index), handle);
+        registrations.Clear();
         WorkCallbacks callbacks = _execution.EndWork(handle);
         if (callbacks.Continuations is null)
         {
@@ -124,6 +126,9 @@ public sealed partial class Scheduler
             _resources.ReleaseScopeOwned(release.Resources);
             release.Resources.Clear();
         }
+
+        try { release.JobData?.Release(); }
+        catch (Exception exception) { RecordFault(handle, ExceptionDispatchInfo.Capture(exception)); }
 
         CompleteCallbacks callbacks = _execution.EndDispatch(handle);
         if (callbacks.Completed)

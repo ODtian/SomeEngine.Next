@@ -1,7 +1,6 @@
-using SomeEngine.ECS;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
+using SomeEngine.ECS;
 using SomeEngine.ECS.Systems;
 
 namespace SomeEngine.Animation.Pose;
@@ -25,7 +24,6 @@ public sealed class PoseNode
 /// <summary>The frame and compiled dependency level being evaluated by concrete pose systems.</summary>
 public readonly record struct PoseNodeContext(ImmediateSystemContext Frame, int Level);
 
-[BufferCapacity(1)]
 internal struct PoseNodeEntry : IBufferElement
 {
     internal PoseNode Node;
@@ -43,19 +41,31 @@ public static partial class PoseAnimation
     public static PoseNode RegisterNode(World world, Entity animation, PoseResultReference output,
         ReadOnlySpan<PoseResultReference> inputs, in AnimationLeafPlacement placement, ReadOnlySpan<short> modelBones = default)
     {
-        if (!world.HasBuffer<PoseNodeEntry>(animation)) world.AddBuffer<PoseNodeEntry>(animation);
+        if (!world.Has<Buffer<PoseNodeEntry>>(animation)) world.AddBuffer<PoseNodeEntry>(animation);
         if (!world.Has<PoseNodeGraph>(animation)) world.Add(animation, new PoseNodeGraph { Starts = placement.Starts });
-        PoseNodeGraph graph = world.Read<PoseNodeGraph>(animation);
+        PoseNodeGraph graph = world.ReadComponentData<PoseNodeGraph>(animation);
         if (graph.Starts != placement.Starts)
         {
-            world.ExecuteBufferWrite<PoseNodeEntry>(animation, static nodes => nodes.Clear());
+            {
+                using var nodes = world.GetBuffer<PoseNodeEntry>(animation);
+                nodes.Clear();
+
+            }
             graph = new PoseNodeGraph { Starts = placement.Starts };
         }
         graph.Complete = false;
-        world.Replace(animation, graph);
+        world.Set(animation, graph);
         var node = new PoseNode(output, inputs, modelBones);
-        world.ExecuteBufferWrite<PoseNodeEntry, PoseNode>(animation, ref node,
-            static (nodes, ref node) => nodes.Add(new PoseNodeEntry { Node = node }));
+        {
+            using var nodes = world.GetBuffer<PoseNodeEntry>(animation);
+            Visit(nodes, ref node);
+
+            static void Visit(DynamicBuffer<PoseNodeEntry> nodes, ref PoseNode node)
+            {
+                nodes.Add(new PoseNodeEntry { Node = node });
+
+            }
+        }
         CpuBoneDemands.For(world).Changed = true;
         return node;
     }
@@ -63,23 +73,35 @@ public static partial class PoseAnimation
     /// <summary>Compiles the installed graph's acyclic pose connections after all leaves are installed.</summary>
     public static void CompleteNodes(World world, Entity animation)
     {
-        PoseNodeGraph graph = world.Read<PoseNodeGraph>(animation);
+        PoseNodeGraph graph = world.ReadComponentData<PoseNodeGraph>(animation);
         if (graph.Complete) return;
         graph.Complete = true;
-        world.Replace(animation, graph);
+        world.Set(animation, graph);
         RefreshModelDependencies(world);
     }
 
     internal static Dictionary<PoseResultReference, PoseNode> ReadNodes(World world)
     {
         var nodes = new Dictionary<PoseResultReference, PoseNode>();
-        QueryHandle query = world.Query(new QueryDefinitionBuilder().ReadBuffer<PoseNodeEntry>());
-        world.ExecuteQuery(query, ref nodes, static (scoped QueryCursor rows, ref Dictionary<PoseResultReference, PoseNode> nodes) =>
+        Query query = world.Query(new QueryDescription().WithStored<Buffer<PoseNodeEntry>>());
         {
-            foreach (QueryRow row in rows.Rows)
-                foreach (PoseNodeEntry entry in row.ReadBuffer<PoseNodeEntry>().AsSpan()) nodes[entry.Node.Output] = entry.Node;
-        });
-        world.ReleaseQuery(query);
+            using QueryScope read = query.Open();
+            Visit(in read, ref nodes);
+
+            static void Visit(scoped in QueryScope rows, ref Dictionary<PoseResultReference, PoseNode> nodes)
+            {
+                foreach (QueryChunk chunk in rows)
+                {
+
+                    for (int rowIndex = 0; rowIndex < chunk.Count; rowIndex++)
+                    {
+                        foreach (PoseNodeEntry entry in chunk.ReadBuffer<PoseNodeEntry>(rowIndex).AsSpan()) nodes[entry.Node.Output] = entry.Node;
+                    }
+                }
+
+            }
+        }
+
         return nodes;
     }
 
@@ -92,7 +114,7 @@ public static partial class PoseAnimation
             node.Level = -1;
             var parents = new List<PoseResultReference>();
             if (node.ModelBones.Length != 0)
-                for (SkeletonInstance? parent = world.Read<PoseTarget>(node.Output.Entity).Skeleton.ParentInstance;
+                for (SkeletonInstance? parent = world.ReadComponentData<PoseTarget>(node.Output.Entity).Skeleton.ParentInstance;
                     parent is not null; parent = parent.ParentInstance)
                     if (sources.TryGetValue(parent, out PoseResultReference source)) parents.Add(source);
             node.ModelInputs = parents.ToArray();
@@ -114,36 +136,64 @@ public static partial class PoseAnimation
     internal static Dictionary<SkeletonInstance, PoseResultReference> ReadModelSources(World world)
     {
         var sources = new Dictionary<SkeletonInstance, PoseResultReference>();
-        QueryHandle targets = world.Query(new QueryDefinitionBuilder().Read<PoseTarget>());
-        world.ExecuteQuery(targets, ref sources, static (scoped QueryCursor rows, ref Dictionary<SkeletonInstance, PoseResultReference> sources) =>
+        Query targets = world.Query(new QueryDescription().WithStored<PoseTarget>());
         {
-            foreach (QueryRow row in rows.Rows)
+            using QueryScope read = targets.Open();
+            Visit(in read, ref sources);
+
+            static void Visit(scoped in QueryScope rows, ref Dictionary<SkeletonInstance, PoseResultReference> sources)
             {
-                PoseTarget target = row.Read<PoseTarget>();
-                sources[target.Skeleton] = target.Output;
+                foreach (QueryChunk chunk in rows)
+                {
+                    chunk.TryRead<PoseTarget>(out var values0);
+                    for (int rowIndex = 0; rowIndex < chunk.Count; rowIndex++)
+                    {
+
+                        PoseTarget target = values0[rowIndex];
+                        sources[target.Skeleton] = target.Output;
+
+                    }
+                }
+
             }
-        });
-        world.ReleaseQuery(targets);
-        targets = world.Query(new QueryDefinitionBuilder().Read<GpuPoseTarget>());
-        world.ExecuteQuery(targets, ref sources, static (scoped QueryCursor rows, ref Dictionary<SkeletonInstance, PoseResultReference> sources) =>
+        }
+
+        targets = world.Query(new QueryDescription().WithStored<GpuPoseTarget>());
         {
-            foreach (QueryRow row in rows.Rows)
+            using QueryScope read = targets.Open();
+            Visit(in read, ref sources);
+
+            static void Visit(scoped in QueryScope rows, ref Dictionary<SkeletonInstance, PoseResultReference> sources)
             {
-                GpuPoseTarget target = row.Read<GpuPoseTarget>();
-                if (target.CpuBones?.Source is { } source) sources[target.Skeleton] = source;
+                foreach (QueryChunk chunk in rows)
+                {
+                    chunk.TryRead<GpuPoseTarget>(out var values0);
+                    for (int rowIndex = 0; rowIndex < chunk.Count; rowIndex++)
+                    {
+
+                        GpuPoseTarget target = values0[rowIndex];
+                        if (target.CpuBones?.Source is { } source) sources[target.Skeleton] = source;
+
+                    }
+                }
+
             }
-        });
-        world.ReleaseQuery(targets);
+        }
+
         return sources;
     }
 
     /// <summary>Releases the installed connection table with the graph's concrete leaf state.</summary>
     public static void ReleaseNodes(World world, Entity animation)
     {
-        world.ExecuteBufferWrite<PoseNodeEntry>(animation, static nodes => nodes.Clear());
-        PoseNodeGraph graph = world.Read<PoseNodeGraph>(animation);
+        {
+            using var nodes = world.GetBuffer<PoseNodeEntry>(animation);
+            nodes.Clear();
+
+        }
+        PoseNodeGraph graph = world.ReadComponentData<PoseNodeGraph>(animation);
         graph.Complete = false;
-        world.Replace(animation, graph);
+        world.Set(animation, graph);
         CpuBoneDemands.For(world).Changed = true;
         RefreshModelDependencies(world);
     }
@@ -151,19 +201,20 @@ public static partial class PoseAnimation
 
 internal sealed class PoseNodeDriver(World world) : ISystemDriver<PoseNodeContext>
 {
-    public uint AcquireSystemVersion(ref SystemSlot slot) => world.AcquireSystemVersion();
+    public World World => world;
+    public ulong AcquireSystemVersion(ref SystemState state) => world.AcquireSystemVersion();
 
-    public PoseNodeContext CreateContext(ref SystemSlot slot) =>
-        new(new(world, slot.LastSystemVersion, slot.CurrentSystemVersion), 0);
+    public PoseNodeContext CreateContext(ref SystemState state) =>
+        new(new(world, state.LastSystemVersion, state.CurrentSystemVersion), 0);
 
-    public void CreateContext(ref SystemSlot slot, ref PoseNodeContext context) =>
-        context = new(new(world, slot.LastSystemVersion, slot.CurrentSystemVersion, context.Frame.DeltaTime), context.Level);
+    public void CreateContext(ref SystemState state, ref PoseNodeContext context) =>
+        context = new(new(world, state.LastSystemVersion, state.CurrentSystemVersion, context.Frame.DeltaTime), context.Level);
 }
 
 internal struct PoseNodeSystem(Action<SystemGroup<PoseNodeContext>> configure) : ISystem<ImmediateSystemContext>
 {
     private SystemGroup<PoseNodeContext> _nodes = null!;
-    private QueryHandle _graphs;
+    private Query _graphs;
     private PoseCompositionSystem _models;
     private double _time;
 
@@ -172,7 +223,7 @@ internal struct PoseNodeSystem(Action<SystemGroup<PoseNodeContext>> configure) :
         _nodes = new(new PoseNodeDriver(context.World));
         configure(_nodes);
         _models.OnCreate(ref context);
-        _graphs = context.World.Query(context.World.QueryDefinition().Read<PoseNodeGraph>().ReadBuffer<PoseNodeEntry>().Read<Timeline>().Enabled<Timeline>());
+        _graphs = context.World.Query(new QueryDescription().WithStored<PoseNodeGraph>().WithStored<Buffer<PoseNodeEntry>>().WithStored<Timeline>().With<Timeline>());
     }
 
     public void OnUpdate(ref ImmediateSystemContext context)
@@ -181,11 +232,23 @@ internal struct PoseNodeSystem(Action<SystemGroup<PoseNodeContext>> configure) :
         CpuBoneDemands cpu = CpuBoneDemands.For(context.World);
         cpu.EnsureBound();
         int depth = -1;
-        context.World.ExecuteQuery(_graphs, ref depth, static (scoped QueryCursor rows, ref int depth) =>
         {
-            foreach (QueryRow row in rows.Rows)
-                foreach (PoseNodeEntry entry in row.ReadBuffer<PoseNodeEntry>().AsSpan()) depth = Math.Max(depth, entry.Node.Level);
-        });
+            using QueryScope read = _graphs.Open();
+            Visit(in read, ref depth);
+
+            static void Visit(scoped in QueryScope rows, ref int depth)
+            {
+                foreach (QueryChunk chunk in rows)
+                {
+
+                    for (int rowIndex = 0; rowIndex < chunk.Count; rowIndex++)
+                    {
+                        foreach (PoseNodeEntry entry in chunk.ReadBuffer<PoseNodeEntry>(rowIndex).AsSpan()) depth = Math.Max(depth, entry.Node.Level);
+                    }
+                }
+
+            }
+        }
         for (int level = 0; level <= depth; level++)
         {
             _models.CopyInputs(context.World);
@@ -200,6 +263,6 @@ internal struct PoseNodeSystem(Action<SystemGroup<PoseNodeContext>> configure) :
     {
         _nodes.Dispose();
         _models.OnDestroy(ref context);
-        context.World.ReleaseQuery(_graphs);
+
     }
 }

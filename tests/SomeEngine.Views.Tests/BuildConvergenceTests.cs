@@ -2,7 +2,6 @@ using SomeEngine.ECS;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hierarchy;
-using SomeEngine.ECS.Queries;
 
 namespace SomeEngine.Views.Tests;
 
@@ -14,9 +13,9 @@ public sealed partial class BuildConvergenceTests
     public void MutualComponentWritesStopAtTheConfiguredLimitAndCanRecover(int iterationLimit)
     {
         using var frames = new HeadlessFrameDriver(iterationLimit);
-        Entity enabled = frames.World.CreateEntity(new FeedbackEnabled(true));
-        Entity source = frames.World.CreateEntity(new Number(0));
-        frames.World.AddSparse(source, new SparseNumber(0));
+        Entity enabled = frames.World.Create(new FeedbackEnabled(true));
+        Entity source = frames.World.Create(new Number(0));
+        frames.World.SetSparse(source, new SparseNumber(0));
         Views.Spawn(frames.World, Entity.Null, new TableFeedback(source, enabled));
         Views.Spawn(frames.World, Entity.Null, new SparseFeedback(source, enabled));
 
@@ -26,55 +25,55 @@ public sealed partial class BuildConvergenceTests
         frames.Frame();
 #endif
 
-        int table = frames.World.Read<Number>(source).Value;
-        int sparse = frames.World.ReadSparse<SparseNumber>(source).Value;
+        int table = frames.World.ReadComponentData<Number>(source).Value;
+        int sparse = frames.World.ReadComponentData<SparseNumber>(source).Value;
         Assert.True(table > 0);
         Assert.True(sparse > 0);
-        uint tableVersion = frames.World.WriteVersion<Number>(source);
-        uint sparseVersion = frames.World.SparseWriteVersion<SparseNumber>(source);
-        frames.World.Replace(enabled, new FeedbackEnabled(false));
+        ulong tableVersion = frames.World.ComponentDataWriteVersion<Number>(source);
+        ulong sparseVersion = frames.World.ComponentDataWriteVersion<SparseNumber>(source);
+        frames.World.Set(enabled, new FeedbackEnabled(false));
 
         frames.Frame();
         frames.Frame();
 
-        Assert.Equal(table, frames.World.Read<Number>(source).Value);
-        Assert.Equal(sparse, frames.World.ReadSparse<SparseNumber>(source).Value);
-        Assert.Equal(tableVersion, frames.World.WriteVersion<Number>(source));
-        Assert.Equal(sparseVersion, frames.World.SparseWriteVersion<SparseNumber>(source));
+        Assert.Equal(table, frames.World.ReadComponentData<Number>(source).Value);
+        Assert.Equal(sparse, frames.World.ReadComponentData<SparseNumber>(source).Value);
+        Assert.Equal(tableVersion, frames.World.ComponentDataWriteVersion<Number>(source));
+        Assert.Equal(sparseVersion, frames.World.ComponentDataWriteVersion<SparseNumber>(source));
     }
 
     [Fact]
     public void RebuildsCanConvergeOnTheLastAllowedRound()
     {
         using var frames = new HeadlessFrameDriver(iterationLimit: 2);
-        Entity source = frames.World.CreateEntity(new Number(0));
+        Entity source = frames.World.Create(new Number(0));
         Entity root = Views.Spawn(frames.World, Entity.Null, new ConvergingDisplay(source));
 
         frames.Frame();
 
-        Assert.Equal(1, frames.World.Read<Number>(source).Value);
-        Assert.Equal(1, frames.World.Read<DisplayedNumber>(root).Value);
+        Assert.Equal(1, frames.World.ReadComponentData<Number>(source).Value);
+        Assert.Equal(1, frames.World.ReadComponentData<DisplayedNumber>(root).Value);
     }
 
     [Fact]
     public void PresenceAndMembershipObserveComponentAdditionsWithinTheFrame()
     {
         using var frames = new HeadlessFrameDriver();
-        Entity source = frames.World.CreateEntity();
-        QueryHandle query = frames.World.Query(frames.World.QueryDefinition().All<Number>());
+        Entity source = frames.World.Create();
+        Query query = frames.World.Query(new QueryDescription().With<Number>());
         Entity root = Views.Spawn(frames.World, Entity.Null, new StructureGroup(source, query));
 
         frames.Frame();
 
-        Entity observer = Hierarchy<ElementTree>.GetChildren(frames.World, root)[0];
-        Assert.Equal(new StructureValues(true, 1), frames.World.Read<StructureValues>(observer));
-        Assert.Equal(7, frames.World.Read<Number>(source).Value);
-        uint displayVersion = frames.World.WriteVersion<StructureValues>(observer);
+        Entity observer = ElementChildren.Read(frames.World, root)[0];
+        Assert.Equal(new StructureValues(true, 1), frames.World.ReadComponentData<StructureValues>(observer));
+        Assert.Equal(7, frames.World.ReadComponentData<Number>(source).Value);
+        ulong displayVersion = frames.World.ComponentDataWriteVersion<StructureValues>(observer);
         frames.Frame();
-        Assert.Equal(displayVersion, frames.World.WriteVersion<StructureValues>(observer));
+        Assert.Equal(displayVersion, frames.World.ComponentDataWriteVersion<StructureValues>(observer));
     }
 
-    private readonly record struct StructureGroup(Entity Source, QueryHandle Query) : IView, IComponent
+    private readonly record struct StructureGroup(Entity Source, Query Query) : IView, IComponent
     {
         public BuildTask Build()
         {
@@ -84,7 +83,7 @@ public sealed partial class BuildConvergenceTests
         }
     }
 
-    private readonly record struct StructureDisplay(Entity Source, QueryHandle Query) : IView, IComponent
+    private readonly record struct StructureDisplay(Entity Source, Query Query) : IView, IComponent
     {
         public BuildTask Build()
         {
@@ -140,8 +139,8 @@ public sealed partial class BuildConvergenceTests
         }
     }
 
-    private readonly record struct Number(int Value) : IComponent;
-    private readonly record struct SparseNumber(int Value) : ISparseComponent;
-    private readonly record struct FeedbackEnabled(bool Value) : IComponent;
+    private readonly record struct Number(int Value) : ITrackedComponent;
+    private readonly record struct SparseNumber(int Value) : ISparseComponent, ITrackedComponent;
+    private readonly record struct FeedbackEnabled(bool Value) : ITrackedComponent;
     private readonly record struct DisplayedNumber(int Value) : IComponent;
 }

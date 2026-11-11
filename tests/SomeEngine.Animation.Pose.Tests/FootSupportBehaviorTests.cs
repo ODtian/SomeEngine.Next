@@ -1,3 +1,4 @@
+using SomeEngine.ECS.Spatial;
 using System.Numerics;
 using SomeEngine.ECS;
 using SomeEngine.Physics;
@@ -23,15 +24,15 @@ public sealed class FootSupportBehaviorTests
         Assert.True(prediction.TryGetNextContact(0, 10, 10, out FootPredictionSample contact));
 
         using var world = new World();
-        var ground = world.CreateEntity(new CollisionSurface(Quad(
+        var ground = world.Create(new CollisionSurface(Quad(
             new(-4, 0, -2), new(4, 0, -2), new(4, 0, 2), new(-4, 0, 2)), Matrix4x4.Identity, 11));
-        var slope = world.CreateEntity(new CollisionSurface(Quad(
+        var slope = world.Create(new CollisionSurface(Quad(
             new(-1, 0, -1), new(1, 1, -1), new(1, 1, 1), new(-1, 0, 1)), Matrix4x4.Identity, 12));
         CollisionMesh stepMesh = Quad(new(-1, 0, -1), new(1, 0, -1), new(1, 0, 1), new(-1, 0, 1));
-        var step = world.CreateEntity(new CollisionSurface(stepMesh, Matrix4x4.CreateTranslation(3, .75f, 0), 13));
-        var members = world.Query(world.QueryDefinition().All<CollisionSurface>());
-        CollisionTree tree = Collision.Build<CollisionSurface, CollisionSurfaceReader>(world, members, default);
-        using var scene = Collision.Query(world, members, tree);
+        var step = world.Create(new CollisionSurface(stepMesh, Matrix4x4.CreateTranslation(3, .75f, 0), 13));
+        var members = world.Query(new QueryDescription().WithStored<CollisionSurface>());
+        BoundsTree tree = SpatialQueries.Build<CollisionSurface, CollisionSurfaceReader>(world, members, default);
+        var scene = Collision.Query(world, members, tree);
         var feet = new FootSupportQueries(scene, new(Vector3.UnitY, 2, 2), capacity: 3);
         FootSupportRequest[] requests =
         [
@@ -60,27 +61,27 @@ public sealed class FootSupportBehaviorTests
         Near(Vector3.UnitY, targets[2].LocalNormal);
 
         Matrix4x4 moved = Matrix4x4.CreateRotationZ(MathF.PI / 6) * Matrix4x4.CreateTranslation(4, 1, 0);
-        world.Replace(step, new CollisionSurface(stepMesh, moved, 14));
+        world.Set(step, new CollisionSurface(stepMesh, moved, 14));
         Assert.True(feet.TryRefresh(targets[2], out FootContactTarget current));
         Near(new(4.4330127f, 1.25f, 0), current.Support.Point);
         Near(new(-.5f, .8660254f, 0), current.Support.Normal);
         Assert.Equal(14UL, current.Support.SurfaceVersion);
         Assert.Equal(10.5, current.Time);
         Assert.Equal(FootContactKind.ToePivot, current.Kind);
-        world.ReleaseQuery(members);
+
     }
 
     [Fact]
     public void StrideEnvelopeIncludesRaisedGeometryBetweenItsFlatDepartureAndLanding()
     {
         using var world = new World();
-        var ground = world.CreateEntity(new CollisionSurface(Quad(
+        var ground = world.Create(new CollisionSurface(Quad(
             new(-2, 0, -2), new(2, 0, -2), new(2, 0, 2), new(-2, 0, 2)), Matrix4x4.Identity, 31));
-        var step = world.CreateEntity(new CollisionSurface(Quad(
+        var step = world.Create(new CollisionSurface(Quad(
             new(.08f, .8f, -.5f), new(.12f, .8f, -.5f), new(.12f, .8f, .5f), new(.08f, .8f, .5f)), Matrix4x4.Identity, 32));
-        var members = world.Query(world.QueryDefinition().All<CollisionSurface>());
-        CollisionTree tree = Collision.Build<CollisionSurface, CollisionSurfaceReader>(world, members, default);
-        using var scene = Collision.Query(world, members, tree);
+        var members = world.Query(new QueryDescription().WithStored<CollisionSurface>());
+        BoundsTree tree = SpatialQueries.Build<CollisionSurface, CollisionSurfaceReader>(world, members, default);
+        var scene = Collision.Query(world, members, tree);
         var feet = new FootSupportQueries(scene, new(Vector3.UnitY, 2, 2), capacity: 5);
         var samples = new FootTerrainSample[5];
 
@@ -99,7 +100,7 @@ public sealed class FootSupportBehaviorTests
         Near(new(.08f, .8f, 0), samples[2].Support.Point);
         Near(new(-.5333333f, .8459052f, 0), samples[2].Support.Normal);
         Assert.Equal(32UL, samples[2].Support.SurfaceVersion);
-        world.ReleaseQuery(members);
+
     }
 
     private static CollisionMesh Quad(Vector3 a, Vector3 b, Vector3 c, Vector3 d)

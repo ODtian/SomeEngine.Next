@@ -1,7 +1,6 @@
 using ManualResetEventSlim = SomeEngine.Testing.TestSignal;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Hooks;
 using SomeEngine.Job;
 
 namespace SomeEngine.ECS.Systems.Tests;
@@ -13,10 +12,10 @@ public sealed class SparseJobAccessTests : JobTest
     {
         ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateWorldWith<SparseA>();
-        _ = SparseJobAccess<SparseA>.Read(world);
+
         JobHandle handle = Jobs.Schedule(
             new ReadSparseJob<SparseA>(world),
-            RelationshipJobAccess.TopologyRead(world));
+            world.Execution!.StructureRead);
 
         Assert.Throws<JobResourceSafetyException>(() => handle.Complete());
     }
@@ -28,7 +27,7 @@ public sealed class SparseJobAccessTests : JobTest
         var world = CreateWorldWith<SparseA>();
         JobHandle handle = Jobs.Schedule(
             new ReadSparseJob<SparseA>(world),
-            SparseJobAccess<SparseA>.Read(world));
+            ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().ReadSparse<SparseA>()).Except(world.Execution!.StructureRead).ToArray());
 
         Assert.Throws<JobResourceSafetyException>(() => handle.Complete());
     }
@@ -44,14 +43,10 @@ public sealed class SparseJobAccessTests : JobTest
         JobHandle first = default;
         try
         {
-            first = SparseJobAccess<SparseA>.ScheduleRead(
-                world,
-                new BlockingReadJob<SparseA>(world, firstStarted, releaseFirst));
+            first = world.Execution!.Scheduler!.Schedule(new BlockingReadJob<SparseA>(world, firstStarted, releaseFirst), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().ReadSparse<SparseA>()));
             Assert.True(firstStarted.Wait(TimeSpan.FromSeconds(5)));
 
-            JobHandle second = SparseJobAccess<SparseA>.ScheduleRead(
-                world,
-                new SignalReadJob<SparseA>(world, secondStarted));
+            JobHandle second = world.Execution!.Scheduler!.Schedule(new SignalReadJob<SparseA>(world, secondStarted), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().ReadSparse<SparseA>()));
             Assert.True(secondStarted.Wait(TimeSpan.FromSeconds(5)));
             second.Complete();
         }
@@ -78,17 +73,11 @@ public sealed class SparseJobAccessTests : JobTest
         JobHandle writer = default;
         try
         {
-            writer = SparseJobAccess<SparseA>.ScheduleWrite(
-                world,
-                new BlockingWriteJob<SparseA>(world, writerStarted, releaseWriter));
+            writer = world.Execution!.Scheduler!.Schedule(new BlockingWriteJob<SparseA>(world, writerStarted, releaseWriter), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().WriteSparse<SparseA>()));
             Assert.True(writerStarted.Wait(TimeSpan.FromSeconds(5)));
 
-            JobHandle reader = SparseJobAccess<SparseA>.ScheduleRead(
-                world,
-                new SignalJob(readerStarted));
-            JobHandle laterWriter = SparseJobAccess<SparseA>.ScheduleWrite(
-                world,
-                new SignalJob(laterWriterStarted));
+            JobHandle reader = world.Execution!.Scheduler!.Schedule(new SignalJob(readerStarted), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().ReadSparse<SparseA>()));
+            JobHandle laterWriter = world.Execution!.Scheduler!.Schedule(new SignalJob(laterWriterStarted), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().WriteSparse<SparseA>()));
 
             releaseWriter.Set();
             reader.Complete();
@@ -124,17 +113,11 @@ public sealed class SparseJobAccessTests : JobTest
         JobHandle blocker = default;
         try
         {
-            blocker = SparseJobAccess<SparseA>.ScheduleWrite(
-                world,
-                new BlockingWriteJob<SparseA>(world, blockerStarted, releaseBlocker));
+            blocker = world.Execution!.Scheduler!.Schedule(new BlockingWriteJob<SparseA>(world, blockerStarted, releaseBlocker), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().WriteSparse<SparseA>()));
             Assert.True(blockerStarted.Wait(TimeSpan.FromSeconds(5)));
 
-            JobHandle otherType = SparseJobAccess<SparseB>.ScheduleWrite(
-                world,
-                new SignalWriteJob<SparseB>(world, otherTypeStarted));
-            JobHandle otherWorldHandle = SparseJobAccess<SparseA>.ScheduleWrite(
-                otherWorld,
-                new SignalWriteJob<SparseA>(otherWorld, otherWorldStarted));
+            JobHandle otherType = world.Execution!.Scheduler!.Schedule(new SignalWriteJob<SparseB>(world, otherTypeStarted), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().WriteSparse<SparseB>()));
+            JobHandle otherWorldHandle = otherWorld.Execution!.Scheduler!.Schedule(new SignalWriteJob<SparseA>(otherWorld, otherWorldStarted), ((WorldJobs)otherWorld.Execution!).CollectAccess(new SystemAccesses().WriteSparse<SparseA>()));
 
             Assert.True(otherTypeStarted.Wait(TimeSpan.FromSeconds(5)));
             Assert.True(otherWorldStarted.Wait(TimeSpan.FromSeconds(5)));
@@ -154,7 +137,7 @@ public sealed class SparseJobAccessTests : JobTest
         var events = new System.Collections.Concurrent.ConcurrentQueue<string>();
         ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateWorldWith<SparseA>();
-        _ = SparseJobAccess<SparseA>.Write(world);
+
         using var directStarted = new ManualResetEventSlim();
         using var releaseDirect = new ManualResetEventSlim();
         releaseDirect.WaitCallback = () => events.Enqueue("released");
@@ -166,12 +149,12 @@ public sealed class SparseJobAccessTests : JobTest
             try
             {
                 var state = new BlockingState(directStarted, releaseDirect);
-                world.ExecuteSparseWrite<SparseA, BlockingState>(
-                    ref state,
-                    static (
-                        ReadOnlySpan<Entity> _,
-                        Span<SparseA> _,
-                        ref BlockingState blocking) => blocking.Block());
+                {
+                    using var range = world.OpenSparseWrite<SparseA>();
+                    ReadOnlySpan<Entity> entities = range.Entities;
+                    Span<SparseA> values = range.Values;
+                    state.Block();
+                }
             }
             catch (Exception exception)
             {
@@ -183,9 +166,7 @@ public sealed class SparseJobAccessTests : JobTest
         {
             thread.Start();
             Assert.True(directStarted.Wait(TimeSpan.FromSeconds(5)));
-            scheduled = SparseJobAccess<SparseA>.ScheduleRead(
-                world,
-                new SignalJob(scheduledStarted));
+            scheduled = world.Execution!.Scheduler!.Schedule(new SignalJob(scheduledStarted), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().ReadSparse<SparseA>()));
 
             releaseDirect.Set();
             Assert.True(thread.Join(TimeSpan.FromSeconds(5)));
@@ -220,15 +201,13 @@ public sealed class SparseJobAccessTests : JobTest
         directCompleted.SetCallback = () => events.Enqueue("directCompleted");
         Entity sparseEntity = FirstSparseEntity<SparseA>(world);
         Exception? directFault = null;
-        JobHandle writer = SparseJobAccess<SparseA>.ScheduleWrite(
-            world,
-            new BlockingWriteJob<SparseA>(world, writerStarted, releaseWriter));
+        JobHandle writer = world.Execution!.Scheduler!.Schedule(new BlockingWriteJob<SparseA>(world, writerStarted, releaseWriter), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().WriteSparse<SparseA>()));
         Thread direct = new(() =>
         {
             attempted.Set();
             try
             {
-                _ = world.ReadSparse<SparseA>(sparseEntity);
+                _ = world.ReadComponentData<SparseA>(sparseEntity);
                 directCompleted.Set();
             }
             catch (Exception exception)
@@ -267,15 +246,14 @@ public sealed class SparseJobAccessTests : JobTest
     {
         ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateWorldWith<SparseA>();
-        _ = SparseJobAccess<SparseA>.Write(world);
 
-        Assert.Throws<ProbeException>(() =>
-            world.ExecuteSparseWrite<SparseA>(static (_, _) => throw new ProbeException()));
+
+        Assert.Throws<ProbeException>((Action)(() =>
+            { using var range = world.OpenSparseWrite<SparseA>(); ReadOnlySpan<Entity> entities = range.Entities; Span<SparseA> values = range.Values; throw new ProbeException(); }));
 
         AddSparse<SparseB>(world);
         using var started = new ManualResetEventSlim();
-        SparseJobAccess<SparseA>
-            .ScheduleWrite(world, new SignalWriteJob<SparseA>(world, started))
+        world.Execution!.Scheduler!.Schedule(new SignalWriteJob<SparseA>(world, started), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().WriteSparse<SparseA>()))
             .Complete();
         Assert.True(started.IsSet);
     }
@@ -285,7 +263,7 @@ public sealed class SparseJobAccessTests : JobTest
     {
         ConfigureJobs(new JobConfiguration { WorkerCount = 2, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateWorldWith<SparseA>();
-        _ = SparseJobAccess<SparseA>.Write(world);
+
         Entity sparseEntity = FirstSparseEntity<SparseA>(world);
         int callbacks = 0;
         {
@@ -293,13 +271,13 @@ public sealed class SparseJobAccessTests : JobTest
             {
                 ExecuteCountedRead(world, ref callbacks);
                 ExecuteCountedWrite(world, ref callbacks);
-                _ = world.ReadSparse<SparseA>(sparseEntity);
+                _ = world.ReadComponentData<SparseA>(sparseEntity);
             }
             for (int i = 0; i < 1_000; i++)
             {
                 ExecuteCountedRead(world, ref callbacks);
                 ExecuteCountedWrite(world, ref callbacks);
-                _ = world.ReadSparse<SparseA>(sparseEntity);
+                _ = world.ReadComponentData<SparseA>(sparseEntity);
             }
 
         }
@@ -308,12 +286,12 @@ public sealed class SparseJobAccessTests : JobTest
     }
 
     [Fact]
-    public void TopologyWriteHook_CanBorrowSparseAfterLaterSparseOwnerWasRegistered()
+    public void StructureWriteCanBorrowSparseDataAfterALaterSparseJobRegisters()
     {
         ConfigureJobs(new JobConfiguration { WorkerCount = 4, SafetyMode = JobSafetyMode.Checked, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
         var world = CreateWorldWith<SparseA>();
-        Entity entity = world.CreateEntity();
-        _ = SparseJobAccess<SparseA>.Write(world);
+        Entity entity = world.Create();
+
         using var hookStarted = new ManualResetEventSlim();
         using var laterRegistered = new ManualResetEventSlim();
         using var nestedBorrowCompleted = new ManualResetEventSlim();
@@ -323,21 +301,16 @@ public sealed class SparseJobAccessTests : JobTest
         JobHandle later = default;
         try
         {
-            world.Hooks<ProbeComponent>().OnAdd(
-                (DeferredWorld _, Entity _, in ProbeComponent _) =>
-                {
-                    hookStarted.Set();
-                    laterRegistered.Wait();
-                    world.ExecuteSparseWrite<SparseA>(
-                        static (_, values) => values[0].Value++);
-                    nestedBorrowCompleted.Set();
-                });
-
             mutationThread = new Thread(() =>
             {
                 try
                 {
+                    using WorldStructureWriteScope structure = world.OpenStructureWrite();
                     world.Add(entity, new ProbeComponent { Value = 1 });
+                    hookStarted.Set();
+                    Assert.True(laterRegistered.Wait(TimeSpan.FromSeconds(5)));
+                    using (SparseWriteScope<SparseA> values = world.OpenSparseWrite<SparseA>()) values.Values[0].Value++;
+                    nestedBorrowCompleted.Set();
                 }
                 catch (Exception exception)
                 {
@@ -347,9 +320,7 @@ public sealed class SparseJobAccessTests : JobTest
             mutationThread.Start();
             Assert.True(hookStarted.Wait(TimeSpan.FromSeconds(5)));
 
-            later = SparseJobAccess<SparseA>.ScheduleWrite(
-                world,
-                new SignalWriteJob<SparseA>(world, laterJobStarted));
+            later = world.Execution!.Scheduler!.Schedule(new SignalWriteJob<SparseA>(world, laterJobStarted), ((WorldJobs)world.Execution!).CollectAccess(new SystemAccesses().WriteSparse<SparseA>()));
             laterRegistered.Set();
 
             Assert.True(nestedBorrowCompleted.Wait(TimeSpan.FromSeconds(5)));
@@ -377,40 +348,40 @@ public sealed class SparseJobAccessTests : JobTest
     private void AddSparse<T>(World world)
         where T : struct, ISparseComponent
     {
-        Entity entity = world.CreateEntity();
-        world.AddSparse(entity, default(T));
+        Entity entity = world.Create();
+        world.SetSparse(entity, default(T));
     }
 
     private void ExecuteCountedRead(World world, ref int callbacks)
     {
-        world.ExecuteSparseRead<SparseA, int>(
-            ref callbacks,
-            static (
-                ReadOnlySpan<Entity> _,
-                ReadOnlySpan<SparseA> _,
-                ref int count) => count++);
+        {
+            using var range = world.OpenSparseRead<SparseA>();
+            ReadOnlySpan<Entity> entities = range.Entities;
+            ReadOnlySpan<SparseA> values = range.Values;
+            callbacks++;
+        }
     }
 
     private void ExecuteCountedWrite(World world, ref int callbacks)
     {
-        world.ExecuteSparseWrite<SparseA, int>(
-            ref callbacks,
-            static (
-                ReadOnlySpan<Entity> _,
-                Span<SparseA> _,
-                ref int count) => count++);
+        {
+            using var range = world.OpenSparseWrite<SparseA>();
+            ReadOnlySpan<Entity> entities = range.Entities;
+            Span<SparseA> values = range.Values;
+            callbacks++;
+        }
     }
 
     private Entity FirstSparseEntity<T>(World world)
         where T : struct, ISparseComponent
     {
         Entity entity = default;
-        world.ExecuteSparseRead<T, Entity>(
-            ref entity,
-            static (
-                ReadOnlySpan<Entity> entities,
-                ReadOnlySpan<T> _,
-                ref Entity result) => result = entities[0]);
+        {
+            using var range = world.OpenSparseRead<T>();
+            ReadOnlySpan<Entity> entities = range.Entities;
+            ReadOnlySpan<T> values = range.Values;
+            entity = entities[0];
+        }
         return entity;
     }
 
@@ -421,7 +392,7 @@ public sealed class SparseJobAccessTests : JobTest
 
         internal ReadSparseJob(World world) => _world = world;
 
-        public void Execute() => _world.ExecuteSparseRead<T>(static (_, _) => { });
+        public void Execute() { using var range = _world.OpenSparseRead<T>(); ReadOnlySpan<Entity> entities = range.Entities; ReadOnlySpan<T> values = range.Values;   }
     }
 
     private readonly struct BlockingReadJob<T> : IJob
@@ -444,12 +415,12 @@ public sealed class SparseJobAccessTests : JobTest
         public void Execute()
         {
             var state = new BlockingState(_started, _release);
-            _world.ExecuteSparseRead<T, BlockingState>(
-                ref state,
-                static (
-                    ReadOnlySpan<Entity> _,
-                    ReadOnlySpan<T> _,
-                    ref BlockingState blocking) => blocking.Block());
+            {
+                using var range = _world.OpenSparseRead<T>();
+                ReadOnlySpan<Entity> entities = range.Entities;
+                ReadOnlySpan<T> values = range.Values;
+                state.Block();
+            }
         }
     }
 
@@ -473,12 +444,12 @@ public sealed class SparseJobAccessTests : JobTest
         public void Execute()
         {
             var state = new BlockingState(_started, _release);
-            _world.ExecuteSparseWrite<T, BlockingState>(
-                ref state,
-                static (
-                    ReadOnlySpan<Entity> _,
-                    Span<T> _,
-                    ref BlockingState blocking) => blocking.Block());
+            {
+                using var range = _world.OpenSparseWrite<T>();
+                ReadOnlySpan<Entity> entities = range.Entities;
+                Span<T> values = range.Values;
+                state.Block();
+            }
         }
     }
 
@@ -497,12 +468,12 @@ public sealed class SparseJobAccessTests : JobTest
         public void Execute()
         {
             ManualResetEventSlim state = _started;
-            _world.ExecuteSparseRead<T, ManualResetEventSlim>(
-                ref state,
-                static (
-                    ReadOnlySpan<Entity> _,
-                    ReadOnlySpan<T> _,
-                    ref ManualResetEventSlim started) => started.Set());
+            {
+                using var range = _world.OpenSparseRead<T>();
+                ReadOnlySpan<Entity> entities = range.Entities;
+                ReadOnlySpan<T> values = range.Values;
+                state.Set();
+            }
         }
     }
 
@@ -521,12 +492,12 @@ public sealed class SparseJobAccessTests : JobTest
         public void Execute()
         {
             ManualResetEventSlim state = _started;
-            _world.ExecuteSparseWrite<T, ManualResetEventSlim>(
-                ref state,
-                static (
-                    ReadOnlySpan<Entity> _,
-                    Span<T> _,
-                    ref ManualResetEventSlim started) => started.Set());
+            {
+                using var range = _world.OpenSparseWrite<T>();
+                ReadOnlySpan<Entity> entities = range.Entities;
+                Span<T> values = range.Values;
+                state.Set();
+            }
         }
     }
 

@@ -4,7 +4,7 @@ using SomeEngine.Layout;
 namespace SomeEngine.Views;
 
 /// <summary>A node whose fields supply its parameters and whose build declares its content.</summary>
-public interface IView
+public interface IView : SomeEngine.ECS.ITrackedComponent
 {
     /// <summary>Declares the node's own data and child views in the active scope.</summary>
     BuildTask Build();

@@ -70,7 +70,11 @@ internal sealed class GpuClipSignals
         output.RootMotion = new(motion * inversePrevious * output.RootMotion.Transform);
         _previousMotion = motion;
         Matrix4x4.Invert(phase, out Matrix4x4 correction);
-        output.RootCorrection = new() { Translation = correction.Translation,
-            Rotation = Quaternion.CreateFromRotationMatrix(correction), Scale = Vector3.One };
+        output.RootCorrection = new()
+        {
+            Translation = correction.Translation,
+            Rotation = Quaternion.CreateFromRotationMatrix(correction),
+            Scale = Vector3.One
+        };
     }
 }

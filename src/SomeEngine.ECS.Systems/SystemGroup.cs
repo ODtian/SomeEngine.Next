@@ -1,648 +1,300 @@
-namespace SomeEngine.ECS.Systems;
-
-using SomeEngine.Diagnostics;
+using SomeEngine.ECS.Commands;
+using SomeEngine.ECS.Storage;
 using SomeEngine.Job;
 
-/// <summary>
-/// Registration-order system container for a single concrete context type.
-/// </summary>
-public sealed class SystemGroup<TContext> : IDisposable
-    where TContext : allows ref struct
+namespace SomeEngine.ECS.Systems;
+
+public sealed partial class SystemState
 {
-    private const int LifecycleControlIdle = 0;
-    private const int LifecycleControlPending = 1;
+    public ulong LastSystemVersion { get; internal set; }
+    public ulong CurrentSystemVersion { get; internal set; }
+    public int Index { get; internal set; }
+    public bool Created { get; internal set; }
+    public bool Enabled { get; internal set; } = true;
+}
 
-    private readonly ISystemDriver<TContext> _driver;
-    private readonly object _gate = new();
-    private readonly List<SystemNode<TContext>> _nodes = new();
-    private readonly List<SystemSlot> _slots = new();
-    private int _disposeState;
-    private int _lifecycleControlState;
-    private int _activeLifecycleCallbackThreadId;
+public sealed partial class SystemGroup(World world, Scheduler scheduler, int rangeRows = 1024) : ISystemVersions
+{
+    private readonly SystemRunner _runner = new(world, scheduler, rangeRows);
+    private readonly List<SystemEntry> _systems = [];
+    private int[][] _predecessors = [];
+    private JobHandle[] _handles = [];
+    private JobHandle[] _dependencies = [];
+    private int[] _order = [];
+    private bool _changed;
+    private JobHandle _previousRun;
 
-    public SystemGroup(ISystemDriver<TContext> driver)
+    public int GraphBuildCount { get; private set; }
+    public int VersionCount => _systems.Count;
+
+    public void Complete() => _previousRun.Complete();
+    public void CopyVersions(Span<ulong> versions)
     {
-        _driver = driver ?? throw new ArgumentNullException(nameof(driver));
+        for (int i = 0; i < _systems.Count; i++)
+        {
+            SystemState state = _systems[i].State;
+            versions[i * 2] = state.LastSystemVersion;
+            versions[i * 2 + 1] = state.CurrentSystemVersion;
+        }
+    }
+    public void RestoreVersions(ReadOnlySpan<ulong> versions)
+    {
+        for (int i = 0; i < _systems.Count; i++)
+        {
+            SystemState state = _systems[i].State;
+            state.LastSystemVersion = versions[i * 2];
+            state.CurrentSystemVersion = versions[i * 2 + 1];
+        }
     }
 
-    public int Count
+    public SystemState Add<T, TAction>(Query query, in TAction action,
+        SystemAccesses? accesses = null, CommandBatch? commands = null, bool parallel = true)
+        where T : struct where TAction : struct, IComponentAction<T>
+        => Add<T, T, SystemRunner.SingleAction<T, TAction>>(query, new(action), accesses, commands, parallel);
+
+    public SystemState Add<T1, T2, TAction>(Query query, in TAction action,
+        SystemAccesses? accesses = null, CommandBatch? commands = null,
+        bool parallel = true)
+        where T1 : struct where T2 : struct where TAction : struct, IComponentAction<T1, T2>
     {
-        get
+        var system = new ComponentSystem<T1, T2, TAction>(_runner, world, scheduler, query,
+            action, accesses, commands, parallel);
+        system.State.Index = _systems.Count;
+        _systems.Add(system);
+        _changed = true;
+        return system.State;
+    }
+
+    public SystemState Add<T1, T2, T3, TAction>(Query query, in TAction action,
+        SystemAccesses? accesses = null, CommandBatch? commands = null, bool parallel = true)
+        where T1 : struct where T2 : struct where T3 : struct where TAction : struct, IComponentAction<T1, T2, T3>
+    {
+        var system = new ComponentSystem<T1, T2, T3, TAction>(_runner, world, scheduler, query,
+            action, accesses, commands, parallel);
+        system.State.Index = _systems.Count;
+        _systems.Add(system);
+        _changed = true;
+        return system.State;
+    }
+
+    public void After(SystemState system, SystemState predecessor)
+    {
+        _systems[system.Index].ExplicitPredecessors.Add(predecessor.Index);
+        _changed = true;
+    }
+
+    public SystemState AddJob<TJob>(in TJob job, SystemAccesses? accesses = null, bool structureWrite = false)
+        where TJob : struct, IJob
+    {
+        var system = new ScheduledSystemJob<TJob>(world, scheduler, job, accesses, structureWrite);
+        system.State.Index = _systems.Count;
+        _systems.Add(system);
+        _changed = true;
+        return system.State;
+    }
+
+    public void Execute(JobHandle dependency = default) => Schedule(dependency).Complete();
+
+    public JobHandle Schedule(JobHandle dependency = default)
+    {
+        foreach (SystemEntry system in _systems)
+            if (system.DeclarationVersion != (system.Accesses?.Revision ?? 0)) _changed = true;
+        if (_changed) BuildGraph();
+        JobHandle previous = _previousRun.IsCompleted ? default
+            : scheduler.ScheduleFinally(new GroupBoundary(), default, _previousRun);
+        JobHandle root = scheduler.CombineDependencies([dependency, previous]);
+        foreach (int i in _order)
         {
-            lock (_gate)
+            int[] predecessors = _predecessors[i];
+            JobHandle before = root;
+            if (predecessors.Length != 0)
             {
-                ThrowIfDisposed();
-                return _nodes.Count;
+                Span<JobHandle> dependencies = _dependencies.AsSpan(0, predecessors.Length + 1);
+                dependencies[0] = root;
+                for (int j = 0; j < predecessors.Length; j++) dependencies[j + 1] = _handles[predecessors[j]];
+                before = scheduler.CombineDependencies(dependencies);
             }
+            _handles[i] = _systems[i].Schedule(before);
         }
+        return _previousRun = scheduler.CombineDependencies(_handles);
     }
 
-    public int Add<TSystem>()
-        where TSystem : struct, ISystem<TContext>
+    private void BuildGraph()
     {
-        return Add(default(TSystem));
-    }
-
-    /// <summary>Describes the registered system types in their execution order.</summary>
-    public Type[] DescribeSystems()
-    {
-        lock (_gate)
+        _predecessors = new int[_systems.Count][];
+        _handles = new JobHandle[_systems.Count];
+        _dependencies = new JobHandle[_systems.Count + 1];
+        _order = new int[_systems.Count];
+        foreach (SystemEntry system in _systems) system.RebuildDeclarations();
+        for (int i = 0; i < _systems.Count; i++)
         {
-            ThrowIfDisposed();
-            return _nodes.Select(node => node.SystemType).ToArray();
+            SystemEntry system = _systems[i];
+            List<int> before = new(system.ExplicitPredecessors);
+            for (int j = 0; j < i; j++)
+                if (system.Conflicts(_systems[j]) && !_systems[j].ExplicitPredecessors.Contains(i) && !before.Contains(j)) before.Add(j);
+            _predecessors[i] = before.ToArray();
         }
-    }
-
-    public int Add<TSystem>(TSystem system)
-        where TSystem : ISystem<TContext>
-    {
-        ThrowIfLifecycleCallbackReentry();
-        ThrowIfJobCallbackWouldWaitForLifecycleControl();
-        ThrowIfDisposed();
-        lock (_gate)
+        int written = 0;
+        bool[] emitted = new bool[_systems.Count];
+        while (written < _systems.Count)
         {
-            WaitForLifecycleControlUnderGate();
-            ThrowIfDisposed();
-
-            int index = _nodes.Count;
-            _nodes.Add(new SystemNode<TSystem, TContext>(system));
-            var slot = new SystemSlot
+            int start = written;
+            for (int i = 0; i < _systems.Count; i++)
             {
-                Index = index,
-                Enabled = true,
-            };
-            slot.InitializeJobLifetime();
-            _slots.Add(slot);
-
-            return index;
-        }
-    }
-
-    public SystemSlot GetSlot(int index)
-    {
-        lock (_gate)
-        {
-            ThrowIfDisposed();
-            ValidateIndex(index);
-            return _slots[index];
-        }
-    }
-
-    public void Enable(int index)
-    {
-        WriteEnabled(index, true);
-    }
-
-    public void Disable(int index)
-    {
-        WriteEnabled(index, false);
-    }
-
-    private void WriteEnabled(int index, bool enabled)
-    {
-        ThrowIfLifecycleCallbackReentry();
-        if (!enabled)
-            ThrowIfJobCallbackTeardown("disabled");
-        ThrowIfJobCallbackWouldWaitForLifecycleControl();
-        ThrowIfDisposed();
-        SystemSlot closingSlot = default;
-        lock (_gate)
-        {
-            WaitForLifecycleControlUnderGate();
-            ThrowIfDisposed();
-            ValidateIndex(index);
-            var slot = _slots[index];
-            if (slot.Enabled == enabled)
-                return;
-
-            if (enabled)
-            {
-                slot.ResetJobLifetime();
-                slot.Enabled = true;
-                _slots[index] = slot;
-                return;
+                if (emitted[i]) continue;
+                bool ready = true;
+                foreach (int before in _predecessors[i]) if (!emitted[before]) { ready = false; break; }
+                if (ready) { emitted[i] = true; _order[written++] = i; }
             }
-
-            slot.Enabled = false;
-            _slots[index] = slot;
-            closingSlot = slot;
-            Volatile.Write(ref _lifecycleControlState, LifecycleControlPending);
+            if (start == written) throw new InvalidOperationException("System dependencies contain a cycle.");
         }
-
-        var exceptions = new List<Exception>();
-        try
-        {
-            closingSlot.RequireJobLifetime().CloseAndComplete(exceptions);
-        }
-        catch (Exception exception)
-        {
-            exceptions.Add(exception);
-        }
-        finally
-        {
-            CompleteLifecycleControl();
-        }
-
-        ThrowIfTeardownFailed(exceptions, "System disable failed.");
+        _changed = false;
+        GraphBuildCount++;
     }
 
-    public void Update()
+    private readonly struct GroupBoundary : IJob { public void Execute() { } }
+
+    private sealed class ScheduledSystemJob<TJob>(World world, Scheduler scheduler, TJob job,
+        SystemAccesses? accesses, bool structureWrite) : SystemEntry(accesses, structureWrite)
+        where TJob : struct, IJob
     {
-        TContext template = default!;
-        UpdateCore(useTemplate: false, ref template);
-    }
+        protected override void AddComponents() { }
 
-    /// <summary>
-    /// Runs the group with one scoped context template. A fresh copy is refreshed for every
-    /// system, so a callback cannot corrupt the context observed by a later system.
-    /// </summary>
-    public void Update(ref TContext template) =>
-        UpdateCore(useTemplate: true, ref template);
-
-    /// <summary>
-    /// Creates enabled systems without running their update callbacks. This is used when a
-    /// system must publish long-lived structure before the first update boundary.
-    /// </summary>
-    public void Initialize()
-    {
-        TContext template = default!;
-        InitializeCore(useTemplate: false, ref template);
-    }
-
-    public void Initialize(ref TContext template) =>
-        InitializeCore(useTemplate: true, ref template);
-
-    private void InitializeCore(bool useTemplate, ref TContext template)
-    {
-        ThrowIfLifecycleCallbackReentry();
-        ThrowIfJobCallbackWouldWaitForLifecycleControl();
-        ThrowIfDisposed();
-        lock (_gate)
+        internal override JobHandle Schedule(JobHandle dependency)
         {
-            WaitForLifecycleControlUnderGate();
-            ThrowIfDisposed();
-
-            for (int i = 0; i < _nodes.Count; i++)
-            {
-                SystemSlot slot = _slots[i];
-                if (!slot.Enabled || slot.Created)
-                    continue;
-
-                using JobSubmissionScope submissions =
-                    slot.RequireJobLifetime().EnterSubmissionScope();
-                EnterLifecycleCallback();
-                try
-                {
-                    slot.CurrentSystemVersion = _driver.AcquireSystemVersion(ref slot);
-                    TContext context;
-                    if (useTemplate)
-                    {
-                        context = template;
-                        _driver.CreateContext(ref slot, ref context);
-                    }
-                    else
-                    {
-                        context = _driver.CreateContext(ref slot);
-                    }
-                    _driver.BeforeUpdate(ref slot, ref context);
-                    _nodes[i].OnCreate(ref context);
-                    slot.Created = true;
-                    _driver.AfterUpdate(ref slot, ref context);
-                    slot.LastSystemVersion = slot.CurrentSystemVersion;
-                    _slots[i] = slot;
-                }
-                finally
-                {
-                    ExitLifecycleCallback();
-                }
-            }
-        }
-    }
-
-    /// <summary>
-    /// Completes work submitted by previous updates, including child tasks. Systems remain
-    /// enabled and may run again. Use this at a data-visibility boundary, not after each system.
-    /// </summary>
-    public async ValueTask CompleteAsync()
-    {
-        ThrowIfLifecycleCallbackReentry();
-        ThrowIfJobCallbackTeardown("completed");
-        lock (_gate)
-        {
-            WaitForLifecycleControlUnderGate();
-            ThrowIfDisposed();
-            Volatile.Write(ref _lifecycleControlState, LifecycleControlPending);
-        }
-
-        List<Exception>? failures = null;
-        try
-        {
-            // Callback submission has ended and lifecycle control keeps this set of
-            // systems unchanged while their existing roots reach scope completion.
-            foreach (SystemSlot slot in _slots)
-            {
-                if (!slot.Enabled) continue;
-                Exception[] errors = await slot.RequireJobLifetime().WaitCurrentRootsAsync().ConfigureAwait(false);
-                if (errors.Length != 0) (failures ??= []).AddRange(errors);
-            }
-        }
-        finally
-        {
-            CompleteLifecycleControl();
-        }
-        if (failures is not null) ThrowIfTeardownFailed(failures, "System work failed.");
-    }
-
-    /// <summary>Waits current system roots and their descendants at a data visibility boundary.</summary>
-    public void Complete()
-    {
-        ThrowIfLifecycleCallbackReentry();
-        ThrowIfJobCallbackTeardown("completed");
-        lock (_gate)
-        {
-            WaitForLifecycleControlUnderGate();
-            ThrowIfDisposed();
-            Volatile.Write(ref _lifecycleControlState, LifecycleControlPending);
-        }
-
-        List<Exception> failures = [];
-        try
-        {
-            foreach (SystemSlot slot in _slots)
-            {
-                if (!slot.Enabled)
-                    continue;
-                try { slot.RequireJobLifetime().CompleteCurrentRoots(failures); }
-                catch (Exception failure) { failures.Add(failure); }
-            }
-        }
-        finally
-        {
-            CompleteLifecycleControl();
-        }
-        ThrowIfTeardownFailed(failures, "System work failed.");
-    }
-
-    private unsafe void UpdateCore(bool useTemplate, ref TContext template)
-    {
-        ThrowIfLifecycleCallbackReentry();
-        ThrowIfJobCallbackWouldWaitForLifecycleControl();
-        lock (_gate)
-        {
-            WaitForLifecycleControlUnderGate();
-            ThrowIfDisposed();
-            Volatile.Write(ref _lifecycleControlState, LifecycleControlPending);
-        }
-
-        try
-        {
-            // Registration and teardown wait for this execution boundary. The collection cannot
-            // change, but no lock is held while drivers or user systems run or wait for Jobs.
-            for (int i = 0; i < _nodes.Count; i++)
-            {
-                SystemSlot slot;
-                lock (_gate)
-                    slot = _slots[i];
-                if (!slot.Enabled)
-                    continue;
-
-                SystemNode<TContext> node = _nodes[i];
-                using var trace = EngineTrace.Begin(node.UpdateTrace);
-                using JobSubmissionScope submissions = slot.RequireJobLifetime().EnterSubmissionScope();
-                EnterLifecycleCallback();
-                try
-                {
-                    slot.CurrentSystemVersion = _driver.AcquireSystemVersion(ref slot);
-                    TContext context;
-                    if (useTemplate)
-                    {
-                        context = template;
-                        _driver.CreateContext(ref slot, ref context);
-                    }
-                    else
-                    {
-                        context = _driver.CreateContext(ref slot);
-                    }
-                    _driver.BeforeUpdate(ref slot, ref context);
-                    if (!slot.Created)
-                    {
-                        node.OnCreate(ref context);
-                        slot.Created = true;
-                        lock (_gate)
-                            _slots[i] = slot;
-                    }
-                    node.Update(node, ref context);
-                    _driver.AfterUpdate(ref slot, ref context);
-                    slot.LastSystemVersion = slot.CurrentSystemVersion;
-                    lock (_gate)
-                        _slots[i] = slot;
-                }
-                finally
-                {
-                    ExitLifecycleCallback();
-                }
-            }
-        }
-        finally
-        {
-            CompleteLifecycleControl();
-        }
-    }
-
-    /// <summary>
-    /// Removes one system after draining update work, running OnDestroy with live submission
-    /// admission, and waiting every cleanup root through full scope completion. Later slot indices
-    /// shift down by one.
-    /// </summary>
-    public void Remove(int index)
-    {
-        ThrowIfLifecycleCallbackReentry();
-        ThrowIfJobCallbackTeardown("removed");
-        ThrowIfJobCallbackWouldWaitForLifecycleControl();
-        ThrowIfDisposed();
-        var exceptions = new List<Exception>();
-        SystemSlot slot;
-        lock (_gate)
-        {
-            WaitForLifecycleControlUnderGate();
-            ThrowIfDisposed();
-            ValidateIndex(index);
-
-            slot = _slots[index];
-            slot.Enabled = false;
-            slot.PrepareJobLifetimeForDestroy();
-            _slots[index] = slot;
-            Volatile.Write(ref _lifecycleControlState, LifecycleControlPending);
-        }
-
-        try
-        {
-            slot.RequireJobLifetime().CompleteCurrentRoots(exceptions);
-        }
-        catch (Exception exception)
-        {
-            exceptions.Add(exception);
-        }
-
-        try
-        {
-            DestroySlot(index, ref slot, exceptions);
-            lock (_gate)
-            {
-                _nodes.RemoveAt(index);
-                _slots.RemoveAt(index);
-                for (int i = index; i < _slots.Count; i++)
-                {
-                    SystemSlot shifted = _slots[i];
-                    shifted.Index = i;
-                    _slots[i] = shifted;
-                }
-            }
-        }
-        finally
-        {
-            CompleteLifecycleControl();
-        }
-
-        ThrowIfTeardownFailed(exceptions, "System removal failed.");
-    }
-
-    public void Dispose()
-    {
-        ValidateDisposePreconditions();
-        if (Interlocked.CompareExchange(ref _disposeState, 1, 0) != 0)
-        {
-            lock (_gate)
-            {
-                while (Volatile.Read(ref _disposeState) == 1)
-                    Monitor.Wait(_gate);
-                return;
-            }
-        }
-
-        var exceptions = new List<Exception>();
-        try
-        {
-            lock (_gate)
-            {
-                WaitForLifecycleControlUnderGate();
-                for (int i = 0; i < _slots.Count; i++)
-                {
-                    SystemSlot slot = _slots[i];
-                    slot.Enabled = false;
-                    slot.PrepareJobLifetimeForDestroy();
-                    _slots[i] = slot;
-                }
-            }
-
-            for (int i = 0; i < _slots.Count; i++)
-            {
-                try
-                {
-                    _slots[i].RequireJobLifetime().CompleteCurrentRoots(exceptions);
-                }
-                catch (Exception exception)
-                {
-                    exceptions.Add(exception);
-                }
-            }
-
-            for (int i = 0; i < _nodes.Count; i++)
-            {
-                SystemSlot slot = _slots[i];
-                DestroySlot(i, ref slot, exceptions);
-                lock (_gate)
-                    _slots[i] = slot;
-            }
-            lock (_gate)
-            {
-                _nodes.Clear();
-                _slots.Clear();
-            }
-        }
-        finally
-        {
-            lock (_gate)
-            {
-                Volatile.Write(ref _disposeState, 2);
-                Monitor.PulseAll(_gate);
-            }
-        }
-
-        ThrowIfTeardownFailed(exceptions, "System group disposal failed.");
-    }
-
-    internal void ValidateDisposePreconditions()
-    {
-        ThrowIfLifecycleCallbackReentry();
-        ThrowIfJobCallbackTeardown("disposed");
-    }
-
-    internal void ValidateDisposePreconditions(World world)
-    {
-        ArgumentNullException.ThrowIfNull(world);
-        ValidateDisposePreconditions();
-        world.ValidateDisposePreconditions();
-    }
-
-    private void DestroySlot(
-        int index,
-        ref SystemSlot slot,
-        List<Exception> exceptions)
-    {
-        if (slot.Created)
-        {
+            var jobs = (WorldJobs)world.Execution!;
+            jobs.BeginUse();
+            JobHandle work;
             try
             {
-                using JobSubmissionScope submissions =
-                    slot.RequireJobLifetime().EnterSubmissionScope();
-                EnterLifecycleCallback();
-                try
+                JobResourceAccess[] declarations = Accesses is null
+                    ? ChangesStructure ? jobs.StructureWrite : jobs.StructureRead
+                    : jobs.CollectAccess(Accesses, ChangesStructure);
+                work = scheduler.Schedule(new RunSystemJob<TJob>(world, State, job), declarations, dependency: dependency);
+            }
+            catch { jobs.EndUse(); throw; }
+            return scheduler.ScheduleStages(new SystemCompletion(world, jobs, State, null), work);
+        }
+    }
+
+    private readonly struct RunSystemJob<TJob>(World world, SystemState state, TJob job) : IJob
+        where TJob : struct, IJob
+    {
+        public void Execute()
+        {
+            state.CurrentSystemVersion = world.AdvanceVersion();
+            using World.BatchVersionScope version = world.BeginBatchVersion(state.CurrentSystemVersion);
+            job.Execute();
+        }
+    }
+
+    private abstract class SystemEntry(SystemAccesses? accesses, bool changesStructure)
+    {
+        internal readonly SystemState State = new();
+        internal readonly List<int> ExplicitPredecessors = [];
+        internal readonly List<WorldValueAccess> Values = [];
+        internal readonly SystemAccesses? Accesses = accesses;
+        internal int DeclarationVersion;
+        protected abstract void AddComponents();
+        internal abstract JobHandle Schedule(JobHandle dependency);
+
+        protected void AddQueryReads(Query query, int first, int second, int third = -1)
+        {
+            foreach (int type in query.Description.Definition.AccessTypes)
+                if (type != first && type != second && type != third)
                 {
-                    TContext context = _driver.CreateContext(ref slot);
-                    _nodes[index].OnDestroy(ref context);
+                    ComponentType component = ComponentTypes.Get(type);
+                    Values.Add(new(type, WorldValueKind.Table, false, false, component.UsesStructureWrites));
                 }
-                finally
-                {
-                    ExitLifecycleCallback();
-                }
-            }
-            catch (Exception exception)
-            {
-                exceptions.Add(exception);
-            }
         }
 
-        try
+        internal void RebuildDeclarations()
         {
-            // Closing happens only after OnDestroy has left its ambient submission scope, so every
-            // cleanup root scheduled by that callback is captured and drained before slot state is
-            // released. Faults never skip this boundary.
-            slot.RequireJobLifetime().CloseAndComplete(exceptions);
+            Values.Clear();
+            AddComponents();
+            if (Accesses is not null) Values.AddRange(Accesses.Values);
+            DeclarationVersion = Accesses?.Revision ?? 0;
         }
-        catch (Exception exception)
+
+        internal bool Conflicts(SystemEntry other)
         {
-            exceptions.Add(exception);
+            if (changesStructure || other.ChangesStructure) return true;
+            foreach (WorldValueAccess first in Values)
+                foreach (WorldValueAccess second in other.Values)
+                    if (first.Kind == second.Kind && first.Type == second.Type && (first.Write || second.Write)) return true;
+            return false;
         }
-        finally
+
+        protected bool ChangesStructure => changesStructure;
+    }
+
+    private sealed class ComponentSystem<T1, T2, TAction>(SystemRunner runner, World world, Scheduler scheduler,
+        Query query, TAction action, SystemAccesses? accesses, CommandBatch? commands,
+        bool parallel) : SystemEntry(accesses, commands is not null)
+        where T1 : struct where T2 : struct where TAction : struct, IComponentAction<T1, T2>
+    {
+        protected override void AddComponents()
         {
-            slot.Created = false;
+            Values.Add(new(ComponentType<T1>.TypeId, WorldValueKind.Table, true, ComponentType<T1>.TracksWritesType));
+            Values.Add(new(ComponentType<T2>.TypeId, WorldValueKind.Table, false, ComponentType<T2>.TracksWritesType));
+            AddQueryReads(query, ComponentType<T1>.TypeId, ComponentType<T2>.TypeId);
+            for (int type = 0; type < ComponentTypes.Count; type++)
+                if (query.Description.Changed.Has(type)) Values.Add(new(type, WorldValueKind.Table, false, true));
         }
-    }
 
-    private static void ThrowIfTeardownFailed(
-        List<Exception>? exceptions,
-        string message)
-    {
-        if (exceptions is { Count: > 0 })
-            throw new AggregateException(message, exceptions);
-    }
-
-    private void ValidateIndex(int index)
-    {
-        if ((uint)index >= (uint)_slots.Count)
-            throw new ArgumentOutOfRangeException(nameof(index));
-    }
-
-    private void ThrowIfDisposed()
-    {
-        if (Volatile.Read(ref _disposeState) != 0)
-            throw new ObjectDisposedException(nameof(SystemGroup<TContext>));
-    }
-
-    private void WaitForLifecycleControlUnderGate()
-    {
-        while (Volatile.Read(ref _lifecycleControlState) != LifecycleControlIdle)
+        internal override JobHandle Schedule(JobHandle dependency)
         {
-            if (IsLifecycleCallbackThread())
-                return;
-            ThrowIfJobCallbackLifecycleControlWait();
-            Monitor.Wait(_gate);
+            var jobs = (WorldJobs)world.Execution!;
+            jobs.BeginUse();
+            JobHandle rows;
+            try { rows = runner.Schedule<T1, T2, TAction>(query, action, Accesses, dependency, parallel, State); }
+            catch { commands?.Clear(); jobs.EndUse(); throw; }
+            return scheduler.ScheduleStages(new SystemCompletion(world, jobs, State, commands), rows);
         }
     }
 
-    private void CompleteLifecycleControl()
+    private readonly struct SystemCompletion(World world, WorldJobs jobs, SystemState state, CommandBatch? commands) : IStagedJob
     {
-        lock (_gate)
+        public static int StageCount => 1;
+        public void Prepare(int stage, ref AccessBuilder<JobResourceAccess> accesses)
         {
-            if (Volatile.Read(ref _lifecycleControlState) != LifecycleControlPending)
-            {
-                throw new InvalidOperationException(
-                    "System lifecycle control completion is unbalanced.");
-            }
-
-            Volatile.Write(ref _lifecycleControlState, LifecycleControlIdle);
-            Monitor.PulseAll(_gate);
+            if (commands is not null) jobs.AddStructureAccess(true, ref accesses);
+        }
+        public void Execute()
+        {
+            using WorldAccess access = commands is not null ? world.OpenStructure() : default;
+            commands?.Playback();
+            state.LastSystemVersion = state.CurrentSystemVersion;
+        }
+        public void Release()
+        {
+            try { commands?.Clear(); }
+            finally { jobs.EndUse(); }
         }
     }
 
-    private void ThrowIfJobCallbackWouldWaitForLifecycleControl()
+    private sealed class ComponentSystem<T1, T2, T3, TAction>(SystemRunner runner, World world, Scheduler scheduler,
+        Query query, TAction action, SystemAccesses? accesses, CommandBatch? commands,
+        bool parallel) : SystemEntry(accesses, commands is not null)
+        where T1 : struct where T2 : struct where T3 : struct where TAction : struct, IComponentAction<T1, T2, T3>
     {
-        if (JobThreads.IsActive &&
-            (Volatile.Read(ref _lifecycleControlState) != LifecycleControlIdle ||
-             Volatile.Read(ref _disposeState) == 1))
+        protected override void AddComponents()
         {
-            ThrowIfJobCallbackLifecycleControlWait();
+            Values.Add(new(ComponentType<T1>.TypeId, WorldValueKind.Table, true, ComponentType<T1>.TracksWritesType));
+            Values.Add(new(ComponentType<T2>.TypeId, WorldValueKind.Table, false, ComponentType<T2>.TracksWritesType));
+            Values.Add(new(ComponentType<T3>.TypeId, WorldValueKind.Table, false, ComponentType<T3>.TracksWritesType));
+            AddQueryReads(query, ComponentType<T1>.TypeId, ComponentType<T2>.TypeId, ComponentType<T3>.TypeId);
+            for (int type = 0; type < ComponentTypes.Count; type++)
+                if (query.Description.Changed.Has(type)) Values.Add(new(type, WorldValueKind.Table, false, true));
         }
-    }
-
-    private static void ThrowIfJobCallbackLifecycleControlWait()
-    {
-        if (JobThreads.IsActive)
+        internal override JobHandle Schedule(JobHandle dependency)
         {
-            throw new InvalidOperationException(
-                "A running Job callback cannot wait for SystemGroup lifecycle control.");
-        }
-    }
-
-    private bool IsLifecycleCallbackThread() =>
-        Volatile.Read(ref _activeLifecycleCallbackThreadId) ==
-        Environment.CurrentManagedThreadId;
-
-    private void EnterLifecycleCallback()
-    {
-        int threadId = Environment.CurrentManagedThreadId;
-        if (Interlocked.CompareExchange(
-                ref _activeLifecycleCallbackThreadId,
-                threadId,
-                comparand: 0) != 0)
-        {
-            throw new InvalidOperationException(
-                "System lifecycle callback execution is already active.");
-        }
-    }
-
-    private void ExitLifecycleCallback()
-    {
-        int threadId = Environment.CurrentManagedThreadId;
-        if (Interlocked.CompareExchange(
-                ref _activeLifecycleCallbackThreadId,
-                0,
-                comparand: threadId) != threadId)
-        {
-            throw new InvalidOperationException(
-                "System lifecycle callback execution is unbalanced or exited on another thread.");
-        }
-    }
-
-    private void ThrowIfLifecycleCallbackReentry()
-    {
-        if (Volatile.Read(ref _activeLifecycleCallbackThreadId) ==
-            Environment.CurrentManagedThreadId)
-        {
-            throw new InvalidOperationException(
-                "System registration and lifecycle control cannot be re-entered from " +
-                "a system or driver lifecycle callback on the same thread.");
-        }
-    }
-
-    private static void ThrowIfJobCallbackTeardown(string operation)
-    {
-        if (JobThreads.IsActive)
-        {
-            throw new InvalidOperationException(
-                $"A system cannot be {operation} from a running Job callback.");
+            var jobs = (WorldJobs)world.Execution!;
+            jobs.BeginUse();
+            JobHandle rows;
+            try { rows = runner.Schedule<T1, T2, T3, TAction>(query, action, Accesses, dependency, parallel, State); }
+            catch { commands?.Clear(); jobs.EndUse(); throw; }
+            return scheduler.ScheduleStages(new SystemCompletion(world, jobs, State, commands), rows);
         }
     }
 }
-

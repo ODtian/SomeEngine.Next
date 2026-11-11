@@ -20,11 +20,11 @@ public sealed partial class ViewRebuildSystem
     {
         _views.Clear();
         _changedViews.Clear();
-        List<Entity> views = _views;
-        world.ExecuteQuery(_viewQuery, ref views, static (rows, ref viewEntities) =>
         {
-            foreach (var row in rows.Rows) viewEntities.Add(row.Entity);
-        });
+            using QueryScope read = _viewQuery.OpenRead();
+            foreach (QueryChunk chunk in read)
+                foreach (Entity entity in chunk.Entities) _views.Add(entity);
+        }
         if (_views.Count == 0) return;
 
         RefreshDependencies(world);

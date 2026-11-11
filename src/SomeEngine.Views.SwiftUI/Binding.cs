@@ -10,7 +10,7 @@ public readonly struct Binding<T>
     public Binding(State<T> state)
     {
         DevelopmentCheck.Require(state is not null, "Binding requires a State.");
-        _state = state;
+        _state = state!;
     }
 
     /// <summary>Reads or writes the shared State, recording reads in the current computation.</summary>
@@ -19,12 +19,12 @@ public readonly struct Binding<T>
         get
         {
             DevelopmentCheck.Require(_state is not null, "Construct a Binding from a State before reading its value.");
-            return _state.Value;
+            return _state!.Value;
         }
         set
         {
             DevelopmentCheck.Require(_state is not null, "Construct a Binding from a State before writing its value.");
-            _state.Value = value;
+            _state!.Value = value;
         }
     }
 }

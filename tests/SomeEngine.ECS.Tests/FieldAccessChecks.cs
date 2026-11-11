@@ -1,6 +1,5 @@
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
 
 namespace SomeEngine.ECS.Tests;
 
@@ -15,7 +14,7 @@ internal static class FieldAccessChecks
         SparseReferenceLeafWritesAdvanceTheRootWriteVersion();
         QueryFieldWritesAppearInChangedQueries();
         QueryFunctionWritesTypedComponentsAndCallerState();
-        QueryFunctionAndDelegatePublishTheSameVersionRules();
+        RepeatedQueryWritesAdvanceTheirObservationVersions();
         ManagedGenericBufferElementsKeepReferencesThroughGrowthAndRemoval();
         TypedRootBatchesWriteFieldsWithOneSharedVersion();
         SparseRootBatchesWriteFieldsWithOneSharedVersion();
@@ -26,65 +25,53 @@ internal static class FieldAccessChecks
     }
 
 
-    internal static unsafe void TypedRootBatchesWriteFieldsWithOneSharedVersion()
+    internal static void TypedRootBatchesWriteFieldsWithOneSharedVersion()
     {
         using var world = new World();
-        Entity first = world.CreateEntity(new FieldData<Box> { Reference = new Box() });
-        Entity second = world.CreateEntity(new FieldData<Box> { Reference = new Box() });
-        uint before = world.WriteVersion<FieldData<Box>>(first);
-        var batch = new FieldBatch([first, second], 7f);
-
-        world.ExecuteComponentWrite<FieldData<Box>, FieldBatch>(ref batch, &WriteRootBatch);
-
-        Require(batch.Version != before);
-        RequireEqual((batch.Version, batch.Version, 7f, 7f), (
-            world.WriteVersion<FieldData<Box>>(first), world.WriteVersion<FieldData<Box>>(second),
-            world.ReadField<FieldData<Box>, float, ReferenceAccess>(first),
-            world.ReadField<FieldData<Box>, float, ReferenceAccess>(second)));
+        Entity first = world.Create(new FieldData<Box> { Reference = new Box() });
+        Entity second = world.Create(new FieldData<Box> { Reference = new Box() });
+        ulong before = world.ComponentDataWriteVersion<FieldData<Box>>(first);
+        var roots = world.OpenWrite<FieldData<Box>>();
+        try
+        {
+            ReferenceAccess.Write(ref roots.Get(first), 7f);
+            ReferenceAccess.Write(ref roots.Get(second), 7f);
+        }
+        finally { roots.Dispose(); }
+        ulong version = world.ComponentDataWriteVersion<FieldData<Box>>(first);
+        Require(version != before);
+        RequireEqual((version, version, 7f, 7f), (
+            world.ComponentDataWriteVersion<FieldData<Box>>(first), world.ComponentDataWriteVersion<FieldData<Box>>(second),
+            world.ReadField<FieldData<Box>, float, ReferenceAccess>(first), world.ReadField<FieldData<Box>, float, ReferenceAccess>(second)));
     }
 
-    internal static unsafe void SparseRootBatchesWriteFieldsWithOneSharedVersion()
+    internal static void SparseRootBatchesWriteFieldsWithOneSharedVersion()
     {
         using var world = new World();
-        Entity first = world.CreateEntity();
-        Entity second = world.CreateEntity();
-        world.AddSparse(first, new SparseFields { Data = new FieldData<Box> { Reference = new Box() } });
-        world.AddSparse(second, new SparseFields { Data = new FieldData<Box> { Reference = new Box() } });
-        uint before = world.SparseWriteVersion<SparseFields>(first);
-        var batch = new FieldBatch([first, second], 7f);
-
-        world.ExecuteComponentWrite<SparseFields, FieldBatch>(ref batch, &WriteSparseBatch);
-
-        Require(batch.Version != before);
-        RequireEqual((batch.Version, batch.Version, 7f, 7f), (
-            world.SparseWriteVersion<SparseFields>(first), world.SparseWriteVersion<SparseFields>(second),
+        Entity first = world.Create();
+        Entity second = world.Create();
+        world.SetSparse(first, new SparseFields { Data = new FieldData<Box> { Reference = new Box() } });
+        world.SetSparse(second, new SparseFields { Data = new FieldData<Box> { Reference = new Box() } });
+        ulong before = world.ComponentDataWriteVersion<SparseFields>(first);
+        var roots = world.OpenSparseWrite<SparseFields>();
+        try
+        {
+            SparseAccess<ReferenceAccess>.Write(ref roots.Get(first), 7f);
+            SparseAccess<ReferenceAccess>.Write(ref roots.Get(second), 7f);
+        }
+        finally { roots.Dispose(); }
+        ulong version = world.ComponentDataWriteVersion<SparseFields>(first);
+        Require(version != before);
+        RequireEqual((version, version, 7f, 7f), (
+            world.ComponentDataWriteVersion<SparseFields>(first), world.ComponentDataWriteVersion<SparseFields>(second),
             world.ReadField<SparseFields, float, SparseAccess<ReferenceAccess>>(first),
             world.ReadField<SparseFields, float, SparseAccess<ReferenceAccess>>(second)));
-    }
-
-    private static void WriteRootBatch(ComponentWriteBatch<FieldData<Box>> roots, ref FieldBatch batch)
-    {
-        foreach (Entity entity in batch.Entities) ReferenceAccess.Write(ref roots.Write(entity), in batch.Value);
-        batch.Version = roots.CurrentSystemVersion;
-    }
-
-    private static void WriteSparseBatch(ComponentWriteBatch<SparseFields> roots, ref FieldBatch batch)
-    {
-        foreach (Entity entity in batch.Entities) SparseAccess<ReferenceAccess>.Write(ref roots.Write(entity), in batch.Value);
-        batch.Version = roots.CurrentSystemVersion;
-    }
-
-    private ref struct FieldBatch(ReadOnlySpan<Entity> entities, float value)
-    {
-        public readonly ReadOnlySpan<Entity> Entities = entities;
-        public readonly float Value = value;
-        public uint Version;
     }
 
     internal static void TableFieldsUseTypedAccessThroughValuesReferencesAndProperties()
     {
         using var world = new World();
-        Entity entity = world.CreateEntity(new FieldData<Box> { Reference = new Box() });
+        Entity entity = world.Create(new FieldData<Box> { Reference = new Box() });
 
         world.WriteField<FieldData<Box>, float, NumberAccess>(entity, 1f);
         world.WriteField<FieldData<Box>, float, NestedAccess>(entity, 2f);
@@ -101,8 +88,8 @@ internal static class FieldAccessChecks
     internal static void SparseFieldsUseTypedAccessThroughValuesReferencesAndProperties()
     {
         using var world = new World();
-        Entity entity = world.CreateEntity();
-        world.AddSparse(entity, new SparseFields { Data = new FieldData<Box> { Reference = new Box() } });
+        Entity entity = world.Create();
+        world.SetSparse(entity, new SparseFields { Data = new FieldData<Box> { Reference = new Box() } });
 
         world.WriteField<SparseFields, float, SparseAccess<NumberAccess>>(entity, 1f);
         world.WriteField<SparseFields, float, SparseAccess<NestedAccess>>(entity, 2f);
@@ -120,7 +107,7 @@ internal static class FieldAccessChecks
     {
         using var world = new World();
         var reference = new Box();
-        Entity entity = world.CreateEntity(new FieldData<Box> { Number = 9f, Reference = reference });
+        Entity entity = world.Create(new FieldData<Box> { Number = 9f, Reference = reference });
 
         world.WriteField<FieldData<Box>, float, ReferenceAccess>(entity, 3f);
 
@@ -131,92 +118,97 @@ internal static class FieldAccessChecks
     internal static void ReferenceLeafWritesAdvanceTheRootWriteVersion()
     {
         using var world = new World();
-        Entity entity = world.CreateEntity(new FieldData<Box> { Reference = new Box() });
-        uint version = world.WriteVersion<FieldData<Box>>(entity);
+        Entity entity = world.Create(new FieldData<Box> { Reference = new Box() });
+        ulong version = world.ComponentDataWriteVersion<FieldData<Box>>(entity);
 
         world.WriteField<FieldData<Box>, float, ReferenceAccess>(entity, 3f);
 
-        RequireDifferent(version, world.WriteVersion<FieldData<Box>>(entity));
+        RequireDifferent(version, world.ComponentDataWriteVersion<FieldData<Box>>(entity));
     }
 
     internal static void SparseReferenceLeafWritesAdvanceTheRootWriteVersion()
     {
         using var world = new World();
-        Entity entity = world.CreateEntity();
-        world.AddSparse(entity, new SparseFields { Data = new FieldData<Box> { Reference = new Box() } });
-        uint version = world.SparseWriteVersion<SparseFields>(entity);
+        Entity entity = world.Create();
+        world.SetSparse(entity, new SparseFields { Data = new FieldData<Box> { Reference = new Box() } });
+        ulong version = world.ComponentDataWriteVersion<SparseFields>(entity);
 
         world.WriteField<SparseFields, float, SparseAccess<ReferenceAccess>>(entity, 3f);
 
-        RequireDifferent(version, world.SparseWriteVersion<SparseFields>(entity));
+        RequireDifferent(version, world.ComponentDataWriteVersion<SparseFields>(entity));
     }
 
     internal static void QueryFieldWritesAppearInChangedQueries()
     {
         using var world = new World();
-        world.CreateEntity(new FieldData<Box> { Reference = new Box() });
-        QueryHandle query = world.Query(world.QueryDefinition().Write<FieldData<Box>>());
-        uint version = world.CurrentTick;
+        world.Create(new FieldData<Box> { Reference = new Box() });
+        Query query = world.Query(new QueryDescription().WithStored<FieldData<Box>>());
+        ulong version = world.Version;
 
-        world.ExecuteQuery(query, static cursor =>
         {
-            foreach (QueryRow row in cursor.Rows)
-                row.WriteField<FieldData<Box>, float, ReferenceAccess>(7f);
-        });
+            using QueryScope cursor = (query).Open();
+            foreach (QueryChunk rowChunk in cursor)
+                for (int row = 0; row < rowChunk.Count; row++)
+                ReferenceAccess.Write(ref rowChunk.Write<FieldData<Box>>(row), 7f);
 
-        QueryHandle changed = world.Query(world.QueryDefinition().Read<FieldData<Box>>().Changed<FieldData<Box>>());
+        };
+
+        Query changed = world.Query(new QueryDescription().WithStored<FieldData<Box>>().WithChanged<FieldData<Box>>(0));
         var values = new List<float>();
-        world.ExecuteQuery(changed, version, cursor =>
         {
-            foreach (QueryRow row in cursor.Rows)
-                values.Add(row.ReadField<FieldData<Box>, float, ReferenceAccess>());
-        });
+            using QueryScope cursor = (changed).Since(version).OpenRead();
+            foreach (QueryChunk rowChunk in cursor)
+                for (int row = 0; row < rowChunk.Count; row++)
+                values.Add(ReferenceAccess.Read(in rowChunk.Read<FieldData<Box>>()[row]));
+
+        };
         Require(values.SequenceEqual([7f]));
     }
 
     internal static unsafe void QueryFunctionWritesTypedComponentsAndCallerState()
     {
         using var world = new World();
-        Entity entity = world.CreateEntity(new FieldData<Box> { Reference = new Box() });
-        QueryHandle query = world.Query(world.QueryDefinition().Write<FieldData<Box>>());
+        Entity entity = world.Create(new FieldData<Box> { Reference = new Box() });
+        Query query = world.Query(new QueryDescription().WithStored<FieldData<Box>>());
         float value = 9f;
 
-        world.ExecuteQuery(query, ref value, &WriteReferenceFields);
+        using (QueryScope scope = query.Open()) WriteReferenceFields(scope, ref value);
 
         RequireEqual((9f, 10f), (world.ReadField<FieldData<Box>, float, ReferenceAccess>(entity), value));
     }
 
-    internal static unsafe void QueryFunctionAndDelegatePublishTheSameVersionRules()
+    internal static unsafe void RepeatedQueryWritesAdvanceTheirObservationVersions()
     {
         using var world = new World();
-        Entity entity = world.CreateEntity(new FieldData<Box> { Reference = new Box() });
-        QueryHandle query = world.Query(world.QueryDefinition().Write<FieldData<Box>>());
-        uint before = world.WriteVersion<FieldData<Box>>(entity);
-        world.ExecuteQuery(query, WriteNestedFields);
-        uint delegateVersion = world.WriteVersion<FieldData<Box>>(entity);
+        Entity entity = world.Create(new FieldData<Box> { Reference = new Box() });
+        Query query = world.Query(new QueryDescription().WithStored<FieldData<Box>>());
+        ulong before = world.ComponentDataWriteVersion<FieldData<Box>>(entity);
+        using (QueryScope scope = query.Open()) WriteNestedFields(scope);
+        ulong firstVersion = world.ComponentDataWriteVersion<FieldData<Box>>(entity);
 
-        world.ExecuteQuery(query, &WriteNestedFields);
+        using (QueryScope scope = query.Open()) WriteNestedFields(scope);
 
-        Require(delegateVersion != before && world.WriteVersion<FieldData<Box>>(entity) != delegateVersion);
+        Require(firstVersion != before && world.ComponentDataWriteVersion<FieldData<Box>>(entity) != firstVersion);
     }
 
     internal static void ManagedGenericBufferElementsKeepReferencesThroughGrowthAndRemoval()
     {
         using var world = new World();
-        Entity entity = world.CreateEntity();
+        Entity entity = world.Create();
         world.AddBuffer<BufferData<Box>>(entity);
         var box = new Box { Value = 5f };
-        world.ExecuteBufferWrite<BufferData<Box>>(entity, buffer =>
+        var buffer = world.GetBuffer<BufferData<Box>>(entity);
+        try
         {
             buffer.Add(new BufferData<Box> { Value = new Box() });
             buffer.Add(new BufferData<Box> { Value = box });
             buffer.Add(new BufferData<Box> { Value = new Box() });
-            buffer.SwapRemoveAt(0);
+            buffer.RemoveAtSwapBack(0);
             buffer[1].Value.Value = 7f;
-        });
-
-        world.ExecuteBufferRead<BufferData<Box>>(entity, buffer =>
-            RequireEqual((2, box, 7f), (buffer.Count, buffer.Read(1).Value, buffer.Read(1).Value.Value)));
+        }
+        finally { buffer.Dispose(); }
+        using (ReadOnlyBuffer<BufferData<Box>> read = world.ReadBuffer<BufferData<Box>>(entity))
+            RequireEqual((2, box, 7f), (read.Count, read[1].Value, read[1].Value.Value));
         world.RemoveBuffer<BufferData<Box>>(entity);
     }
 
@@ -224,27 +216,30 @@ internal static class FieldAccessChecks
     internal static void QueryFieldWritesReportTheRequiredWritePermission()
     {
         using var world = new World();
-        world.CreateEntity(new FieldData<Box> { Reference = new Box() });
-        QueryHandle query = world.Query(world.QueryDefinition().Read<FieldData<Box>>());
+        world.Create(new FieldData<Box> { Reference = new Box() });
+        Query query = world.Query(new QueryDescription().WithStored<FieldData<Box>>());
 
-        RequireInvalidOperation(() => world.ExecuteQuery(query, static cursor =>
-        {
-            foreach (QueryRow row in cursor.Rows)
-                row.WriteField<FieldData<Box>, float, ReferenceAccess>(7f);
-        }));
+        RequireInvalidOperation(() => {
+            using QueryScope cursor = (query).OpenRead();
+            foreach (QueryChunk rowChunk in cursor)
+                for (int row = 0; row < rowChunk.Count; row++)
+                ReferenceAccess.Write(ref rowChunk.Write<FieldData<Box>>(row), 7f);
+
+        });
     }
 
     internal static void QueryFieldReadsReportTheCurrentChunkRowRange()
     {
         using var world = new World();
-        world.CreateEntity(new FieldData<Box> { Reference = new Box() });
-        QueryHandle query = world.Query(world.QueryDefinition().Read<FieldData<Box>>());
+        world.Create(new FieldData<Box> { Reference = new Box() });
+        Query query = world.Query(new QueryDescription().WithStored<FieldData<Box>>());
 
-        RequireInvalidOperation(() => world.ExecuteQuery(query, static cursor =>
-        {
-            foreach (QueryChunkView chunk in cursor.Chunks)
-                chunk.ReadField<FieldData<Box>, float, ReferenceAccess>(chunk.Count);
-        }));
+        RequireOutOfRange(() => {
+            using QueryScope cursor = (query).OpenRead();
+            foreach (QueryChunk chunk in cursor)
+                ReferenceAccess.Read(in chunk.Read<FieldData<Box>>()[chunk.Count]);
+
+        });
     }
 #endif
 
@@ -264,23 +259,28 @@ internal static class FieldAccessChecks
         catch (InvalidOperationException) { return; }
         throw new InvalidOperationException("Typed ECS field development check must report the invalid access.");
     }
-    private static void WriteReferenceFields(QueryCursor cursor, ref float value)
+    private static void WriteReferenceFields(QueryScope scope, ref float value)
     {
-        foreach (QueryChunkView chunk in cursor.Chunks)
+        foreach (QueryChunk chunk in scope)
         {
-            FieldWriteView<FieldData<Box>, float, ReferenceAccess> fields =
-                chunk.WriteFields<FieldData<Box>, float, ReferenceAccess>();
-            for (int i = 0; i < fields.Count; i++)
-                fields.Write(i, in value);
+            Span<FieldData<Box>> fields = chunk.Write<FieldData<Box>>();
+            for (int row = 0; row < fields.Length; row++) ReferenceAccess.Write(ref fields[row], in value);
         }
         value++;
     }
 
-    private static void WriteNestedFields(QueryCursor cursor)
+    private static void WriteNestedFields(QueryScope scope)
     {
-        foreach (QueryChunkView chunk in cursor.Chunks)
-            foreach (int row in chunk.RowIndices)
-                chunk.WriteField<FieldData<Box>, float, NestedAccess>(row, 4f);
+        foreach (QueryChunk chunk in scope)
+            for (int row = 0; row < chunk.Count; row++)
+                NestedAccess.Write(ref chunk.Write<FieldData<Box>>(row), 4f);
+    }
+
+    private static void RequireOutOfRange(Action action)
+    {
+        try { action(); }
+        catch (IndexOutOfRangeException) { return; }
+        throw new InvalidOperationException("The typed range must report the invalid row index.");
     }
 
     private sealed class Box
@@ -294,14 +294,14 @@ internal static class FieldAccessChecks
         public float Value;
     }
 
-    private struct FieldData<T> : IComponent where T : class
+    private struct FieldData<T> : IAddedComponent where T : class
     {
         public float Number;
         public Number Nested;
         public T Reference;
     }
 
-    private struct SparseFields : IComponent, ISparseComponent
+    private struct SparseFields : IAddedComponent, ISparseComponent
     {
         public FieldData<Box> Data;
     }
@@ -337,8 +337,7 @@ internal static class FieldAccessChecks
         public static void Write(ref SparseFields component, in float value) => TAccess.Write(ref component.Data, in value);
     }
 
-    [BufferCapacity(2)]
-    private struct BufferData<T> : IBufferElement where T : class
+    private struct BufferData<T> : IBufferElement, IAddedComponent where T : class
     {
         public T Value;
     }

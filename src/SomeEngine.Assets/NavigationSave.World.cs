@@ -1,7 +1,6 @@
 using System.Numerics;
-using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
+using SomeEngine.ECS;
 using SomeEngine.Job;
 using SomeEngine.Navigation;
 
@@ -88,44 +87,57 @@ public static partial class NavigationSave
     private static NavigationSavedCrowd[] CaptureCrowd(World world)
     {
         var result = new List<NavigationSavedCrowd>();
-        QueryHandle query = world.Query(world.QueryDefinition().Read<NavigationCrowdAgent>());
-        try
+        Query query = world.Query(new QueryDescription().WithStored<NavigationCrowdAgent>());
         {
-            world.ExecuteReadSnapshot(query, cursor =>
             {
-                foreach (QueryRow row in cursor.Rows)
-                    result.Add(new(row.Entity, row.Read<NavigationCrowdAgent>().Weight, world.IsEnabled<NavigationCrowdAgent>(row.Entity)));
-            });
+                using QueryScope cursor = query.OpenRead();
+                foreach (QueryChunk chunk in cursor)
+                {
+                    ReadOnlySpan<NavigationCrowdAgent> crowd = chunk.Read<NavigationCrowdAgent>();
+                    for (int row = 0; row < chunk.Count; row++)
+                        result.Add(new(chunk.Entities[row], crowd[row].Weight, world.IsEnabled<NavigationCrowdAgent>(chunk.Entities[row])));
+                }
+
+            }
         }
-        finally { world.ReleaseQuery(query); }
         return result.ToArray();
     }
 
     private static NavigationSavedSource[] CaptureSources(World world, NavigationSaveResourceCapture capture)
     {
         var result = new List<NavigationSavedSource>();
-        QueryHandle sources = world.Query(world.QueryDefinition().Read<NavigationSource>());
-        QueryHandle obstacles = world.Query(world.QueryDefinition().Read<NavigationObstacle>());
-        try
+        Query sources = world.Query(new QueryDescription().WithStored<NavigationSource>());
+        Query obstacles = world.Query(new QueryDescription().WithStored<NavigationObstacle>());
         {
-            world.ExecuteReadSnapshot(sources, cursor =>
             {
-                foreach (QueryRow row in cursor.Rows)
+                using QueryScope cursor = sources.OpenRead();
+                foreach (QueryChunk chunk in cursor)
                 {
-                    NavigationSource source = row.Read<NavigationSource>();
-                    result.Add(new(row.Entity, capture.Add(source.Geometry), false, default, source.Version, world.IsEnabled<NavigationSource>(row.Entity)));
+                    for (int rowIndex = 0; rowIndex < chunk.Count; rowIndex++)
+                    {
+
+                        NavigationSource source = chunk.Read<NavigationSource>()[rowIndex];
+                        result.Add(new(chunk.Entities[rowIndex], capture.Add(source.Geometry), false, default, source.Version, world.IsEnabled<NavigationSource>(chunk.Entities[rowIndex])));
+
+                    }
                 }
-            });
-            world.ExecuteReadSnapshot(obstacles, cursor =>
+
+            }
             {
-                foreach (QueryRow row in cursor.Rows)
+                using QueryScope cursor = obstacles.OpenRead();
+                foreach (QueryChunk chunk in cursor)
                 {
-                    NavigationObstacle source = row.Read<NavigationObstacle>();
-                    result.Add(new(row.Entity, capture.Add(source.Geometry), true, source.Participation, source.Version, world.IsEnabled<NavigationObstacle>(row.Entity)));
+                    for (int rowIndex = 0; rowIndex < chunk.Count; rowIndex++)
+                    {
+
+                        NavigationObstacle source = chunk.Read<NavigationObstacle>()[rowIndex];
+                        result.Add(new(chunk.Entities[rowIndex], capture.Add(source.Geometry), true, source.Participation, source.Version, world.IsEnabled<NavigationObstacle>(chunk.Entities[rowIndex])));
+
+                    }
                 }
-            });
+
+            }
         }
-        finally { world.ReleaseQuery(sources); world.ReleaseQuery(obstacles); }
         return result.ToArray();
     }
 }

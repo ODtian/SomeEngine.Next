@@ -9,6 +9,8 @@ using SomeEngine.Assets.Importing;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Core.ECS.Components;
 using SomeEngine.ECS;
+using SomeEngine.ECS.Entities;
+using SomeEngine.ECS.Serialization;
 using SomeEngine.Render;
 using SomeEngine.Render.Components;
 using GltfMesh = SharpGLTF.Schema2.Mesh;
@@ -180,24 +182,35 @@ public static class CrowdContent
 
     private static async Task WriteSceneAsync(AssetProject project, Guid mesh)
     {
-        using var world = new World(initialEntityCapacity: 2048);
+        using var world = new World(capacity: 2048);
         for (int index = 0; index < CrowdExample.CharacterCount; index++)
         {
-            var entity = world.CreateEntity(new WorldTransform
+            var entity = world.Create(new WorldTransform
             {
                 Qvvs = new(new Vector3((index % 40 - 19.5f) * 1.45f, 0, index / 40 * 1.7f), Quaternion.Identity),
             });
-            world.Add(entity, new MeshSource { Mesh = new(mesh) });
+            world.Set(entity, new MeshSource { Mesh = new(mesh) });
         }
-        world.CreateEntity(new SceneCamera
+        world.Create(new SceneCamera
         {
             Position = new(0, 30, -35), Target = new(0, .8f, 20), Up = Vector3.UnitY,
             VerticalFieldOfView = .8f, NearPlane = 40, FarPlane = 90,
         });
-        world.CreateEntity(new DirectionalLight(new(.35f, -.85f, .4f), new(1, .96f, .9f), 3));
+        world.Create(new DirectionalLight(new(.35f, -.85f, .4f), new(1, .96f, .9f), 3));
         AssetEntry entry = project.Manifest.List(WorldAsset.FileType).Single(value => value.Name == "Default");
+        using WorldAsset previous = await WorldAsset.OpenAsync(Path.Combine(project.RootPath, entry.Path));
+        WorldContent content = previous.GetBlock<WorldBlock>().Contents.Single();
+        using var entities = new EntityAsset(content.Asset.Value) { Name = "1000 GPU character entities" };
+        var members = new List<Entity>();
+        using (QueryScope rows = world.Query(new QueryDescription().Without<Destroyed>()).OpenRead())
+            foreach (QueryChunk chunk in rows)
+                foreach (Entity entity in chunk.Entities) members.Add(entity);
+        entities.GetBlock<EntityBlock>().WriteEntities(world, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(members),
+            new(Codecs: SceneSerialization.Codecs));
+        project.RegisterAsset(await entities.SaveAsync(Path.Combine(project.RootPath, "assets/Scenes/default.entities.asset")));
         using var scene = new WorldAsset(entry.AssetGuid) { Name = "1000 GPU characters" };
-        scene.WriteWorld(world, SceneSerialization.CreateRegistry());
+        scene.GetBlock<WorldBlock>().Contents =
+            [new(new AssetId<SomeEngine.Assets.Asset>(entities.Id), new WorldBounds(-64, -64, -64, 64, 64, 128))];
         project.RegisterAsset(await scene.SaveAsync(Path.Combine(project.RootPath, entry.Path)));
     }
 

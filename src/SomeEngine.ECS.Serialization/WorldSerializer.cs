@@ -1,899 +1,338 @@
-using SomeEngine.Serialization;
-using System.Runtime.InteropServices;
-using System.Text;
-using SomeEngine.ECS;
-using SomeEngine.ECS.Components;
+using System.Buffers;
+using System.Numerics;
+using SomeEngine.Job;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
-using SomeEngine.ECS.Serialization;
-using SomeEngine.Serialization.IO;
+using SomeEngine.ECS.Shared;
+using SomeEngine.ECS.Sparse;
+using SomeEngine.ECS.Storage;
 
 namespace SomeEngine.ECS.Serialization;
 
-public static partial class WorldSerializer
+public sealed partial class WorldSerializer(SerializationRegistry registry)
 {
-    public static void WriteComponent<T>(
-        Stream stream,
-        in T value,
-        SerializationRegistry registry,
-        SerializeOptions options = default)
-        where T : struct
+    private const uint Magic = 0x53434553;
+    private const ushort FormatVersion = 5;
+    private readonly List<TableBinding> _tables = [];
+    private readonly List<SavedType> _used = [];
+    private readonly List<SavedService> _services = [];
+    private World? _boundWorld;
+    private TableBinding?[] _bindings = [];
+    private bool[] _seen = [];
+    private int[] _fileTypes = [];
+    private int _registryVersion = -1;
+
+    private void SynchronizeRegistry()
     {
-        ArgumentNullException.ThrowIfNull(stream);
-        ArgumentNullException.ThrowIfNull(registry);
-
-        SerializationTypeRuntime runtime = registry.GetRegistered<T>();
-        if (runtime is not ValueSerializationRuntime<T> valueRuntime)
-        {
-            throw new InvalidOperationException(
-                $"Serialized type {typeof(T).FullName} does not have a standalone value codec.");
-        }
-
-        using var writer = new BinaryWriter(stream, SerializationBinary.StrictUtf8, leaveOpen: true);
-        PayloadFormat.WriteHeader(writer, SnapshotPayloadKind.Component, new[] { runtime }, options.Contract);
-        writer.Write(0);
-        PayloadBytes.WriteComponent(writer, valueRuntime, in value, options.ExternalReferences);
+        if (_registryVersion == registry.Version) return;
+        _bindings = [];
+        _capturedChunks = null;
+        _registryVersion = registry.Version;
     }
 
-    public static T ReadComponent<T>(
-        Stream stream,
-        SerializationRegistry registry,
-        SerializationReadLimits? readLimits = null)
-        where T : struct =>
-        ReadComponent<T>(stream, registry, new SerializationReadOptions(readLimits));
-
-    public static T ReadComponent<T>(
-        Stream stream,
-        SerializationRegistry registry,
-        SerializationReadOptions options)
-        where T : struct
+    private sealed class TableBinding(Archetype table, SavedColumn[] columns)
     {
-        ArgumentNullException.ThrowIfNull(stream);
-        ArgumentNullException.ThrowIfNull(registry);
-
-        var budget = new SerializationReadBudget(options.ReadLimits);
-        using var binaryReader = new BinaryReader(stream, Encoding.UTF8, leaveOpen: true);
-        var (kind, manifest, contract) = PayloadFormat.ReadHeader(
-            binaryReader,
-            budget,
-            options.RequiredContract);
-        if (kind != SnapshotPayloadKind.Component)
-            throw new InvalidDataException($"Expected Component payload, found {kind}.");
-        if (manifest.Length != 1)
-            throw new InvalidDataException("Component payload must contain exactly one manifest entry.");
-
-        SerializationTypeRuntime runtime = registry.ResolveExact(manifest[0]);
-        PayloadFormat.ValidateReadContract(contract, runtime);
-        if (runtime.ValueType != typeof(T))
-            throw SerializationErrors.CreateDataException(
-                SerializationError.SchemaMismatch,
-                $"Component payload contains {runtime.ValueType.FullName}, not requested {typeof(T).FullName}.");
-        if (runtime is not ValueSerializationRuntime<T> valueRuntime)
-        {
-            throw new InvalidDataException(
-                $"Serialized type {typeof(T).FullName} does not have a standalone value codec.");
-        }
-
-        int manifestIndex = binaryReader.ReadInt32();
-        if (manifestIndex != 0)
-            throw new InvalidDataException("Invalid component payload manifest index.");
-
-        return new PayloadFrame(binaryReader, budget).ReadComponent(valueRuntime);
+        internal readonly Archetype Table = table;
+        internal readonly SavedColumn[] Columns = columns;
     }
 
-    public static void WriteEntity(
-        Stream stream,
-        World world,
-        Entity entity,
-        SerializationRegistry registry,
-        SerializeOptions options = default)
+    public void Save(World world, IBufferWriter<byte> output, SavePurpose purpose = SavePurpose.RawCheckpoint,
+        CheckpointProgress progress = CheckpointProgress.Rebuild, params ISystemVersions[] systems)
+        => Save(world, output, new SerializeOptions(Purpose: purpose), progress, systems);
+
+    public void Save(World world, IBufferWriter<byte> output, SerializeOptions options,
+        CheckpointProgress progress = CheckpointProgress.Rebuild, params ISystemVersions[] systems)
     {
-        ArgumentNullException.ThrowIfNull(stream);
-        ArgumentNullException.ThrowIfNull(world);
-        ArgumentNullException.ThrowIfNull(registry);
-        SerializationTypeRuntime[]? capturedManifest = null;
-        using AdmittedWorldWrite admitted = AdmittedWorldWrite.Enter(
-            world,
-            captured =>
-            {
-                if (!captured.IsAlive(entity))
-                {
-                    throw new InvalidOperationException(
-                        $"Cannot serialize {entity}: entity is not alive.");
-                }
-                capturedManifest = BuildEntityManifest(captured, entity, registry);
-            });
-        SerializationTypeRuntime[] manifest = capturedManifest ??
-            throw new InvalidOperationException("Entity capture manifest was not created.");
-        var manifestIndex = BuildManifestIndex(manifest);
-        using var writer = new BinaryWriter(stream, SerializationBinary.StrictUtf8, leaveOpen: true);
-        PayloadFormat.WriteHeader(writer, SnapshotPayloadKind.Entity, manifest, options.Contract);
-        EntityCodec.WriteRecord(writer, admitted, entity, manifest, manifestIndex, options.ExternalReferences);
-    }
-
-    public static void WriteEntities(
-        Stream stream,
-        World world,
-        ReadOnlySpan<Entity> entities,
-        SerializationRegistry registry,
-        SerializeOptions options = default)
-    {
-        ArgumentNullException.ThrowIfNull(stream);
-        ArgumentNullException.ThrowIfNull(world);
-        ArgumentNullException.ThrowIfNull(registry);
-        SerializationTypeRuntime[]? capturedManifest = null;
-        using AdmittedWorldWrite admitted = AdmittedWorldWrite.BeginCapture(world);
-        for (int i = 0; i < entities.Length; i++)
+        if (!options.Codecs.IsDefaultOrEmpty)
         {
-            if (!admitted.IsAlive(entities[i]))
-            {
-                throw new InvalidOperationException(
-                    $"Cannot serialize {entities[i]}: entity is not alive.");
-            }
+            new WorldSerializer(SerializationRegistry.Bind(registry, options.Codecs))
+                .Save(world, output, options with { Codecs = default }, progress, systems);
+            return;
         }
-        capturedManifest = BuildEntityManifest(admitted, entities, registry);
-        admitted.CompleteCapture();
-        SerializationTypeRuntime[] manifest = capturedManifest ??
-            throw new InvalidOperationException("Entity-set capture manifest was not created.");
-        var manifestIndex = BuildManifestIndex(manifest);
-        using var writer = new BinaryWriter(stream, SerializationBinary.StrictUtf8, leaveOpen: true);
-        PayloadFormat.WriteHeader(writer, SnapshotPayloadKind.EntitySet, manifest, options.Contract);
-        writer.Write(entities.Length);
-        for (int i = 0; i < entities.Length; i++)
-            EntityCodec.WriteRecord(writer, admitted, entities[i], manifest, manifestIndex, options.ExternalReferences);
-    }
-
-    public static void WriteQuery(
-        Stream stream,
-        World world,
-        QueryHandle query,
-        SerializationRegistry registry,
-        SerializeOptions options = default)
-    {
-        ArgumentNullException.ThrowIfNull(stream);
-        ArgumentNullException.ThrowIfNull(world);
-        ArgumentNullException.ThrowIfNull(registry);
-        int entityCount = 0;
-        SerializationTypeRuntime[]? capturedManifest = null;
-        using AdmittedWorldWrite admitted = AdmittedWorldWrite.Enter(
-            world,
-            captured =>
-            {
-                var present = new HashSet<SerializationTypeRuntime>();
-                captured.ExecuteQuery(query, cursor =>
-                {
-                    foreach (var row in cursor.Rows)
-                    {
-                        entityCount = checked(entityCount + 1);
-                        AddPresentRuntimes(captured, row.Entity, registry.RuntimeTypes, present);
-                    }
-                });
-                capturedManifest = SortManifest(present);
-            });
-        SerializationTypeRuntime[] manifest = capturedManifest ??
-            throw new InvalidOperationException("Query capture manifest was not created.");
-        var manifestIndex = BuildManifestIndex(manifest);
-
-        using var writer = new BinaryWriter(stream, SerializationBinary.StrictUtf8, leaveOpen: true);
-        PayloadFormat.WriteHeader(writer, SnapshotPayloadKind.QueryResult, manifest, options.Contract);
-        writer.Write(entityCount);
-        int written = 0;
-        admitted.ExecuteQuery(query, cursor =>
-        {
-            foreach (var row in cursor.Rows)
-            {
-                EntityCodec.WriteRecord(writer, admitted, row.Entity, manifest, manifestIndex, options.ExternalReferences);
-                written = checked(written + 1);
-            }
-        });
-        if (written != entityCount)
-            throw new InvalidOperationException("Captured query membership changed during serialization.");
-    }
-
-    public static void WriteWorld(
-        Stream stream,
-        World world,
-        SerializationRegistry registry,
-        SerializeOptions options = default) =>
-        WriteWorldCore(stream, world, registry, options, beforeOutput: null, afterOutput: null);
-
-    internal static void WriteWorldCore(
-        Stream stream,
-        World world,
-        SerializationRegistry registry,
-        SerializeOptions options,
-        Action? beforeOutput,
-        Action? afterOutput)
-    {
-        ArgumentNullException.ThrowIfNull(stream);
-        ArgumentNullException.ThrowIfNull(world);
-        ArgumentNullException.ThrowIfNull(registry);
-
-        TopologyCodec.ValidateWriteContract(registry, options.Contract);
-        if (options.MaximumSparseMemberships < 0)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(options),
-                $"{nameof(SerializeOptions.MaximumSparseMemberships)} cannot be negative.");
-        }
-        if (options.MaximumTopologyRecords < 0)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(options),
-                $"{nameof(SerializeOptions.MaximumTopologyRecords)} cannot be negative.");
-        }
-        if (options.MaximumTopologyPayloadBytes < 0)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(options),
-                $"{nameof(SerializeOptions.MaximumTopologyPayloadBytes)} cannot be negative.");
-        }
-        int maximumSparseMemberships = options.MaximumSparseMemberships == 0
-            ? int.MaxValue
-            : options.MaximumSparseMemberships;
-
-        // Validate and fork under one short topology control-plane admission. Encoding then reads
-        // the retained source root directly while mutations proceed against the published COW
-        // successor. World disposal alone waits for the explicit encoder lifetime.
-        WorldWritePlan? capturedPlan = null;
-        using AdmittedWorldWrite admitted = AdmittedWorldWrite.Enter(
-            world,
-            captured =>
-            {
-                TopologyCodec.ValidateWriteState(captured, registry);
-                capturedPlan = WorldWritePlan.Build(
-                    captured,
-                    registry,
-                    maximumSparseMemberships);
-                registry.ValidateWorldSnapshotCapture(capturedPlan.Manifest);
-            });
-        WorldWritePlan capturePlan = capturedPlan ??
-            throw new InvalidOperationException("World capture plan was not created.");
-
-        beforeOutput?.Invoke();
-        using var writer = new BinaryWriter(stream, SerializationBinary.StrictUtf8, leaveOpen: true);
-        ReadOnlySpan<SerializationTypeRuntime> manifest = capturePlan.Manifest;
-        var manifestIndex = BuildManifestIndex(manifest);
-        PayloadFormat.WriteHeader(writer, SnapshotPayloadKind.World, manifest, options.Contract);
-
-        writer.Write(admitted.CurrentTick);
-        writer.Write(admitted.SlotCount);
-        for (int i = 0; i < admitted.SlotCount; i++)
-        {
-            EntitySlotSnapshot slot = admitted.GetSlot(i);
-            writer.Write(slot.Index);
-            writer.Write(slot.Generation);
-            writer.Write(slot.IsAlive);
-        }
-
-        WriteWorldEntities(writer, admitted, capturePlan, manifestIndex, options.ExternalReferences);
-        TopologyCodec.WriteAll(
-            writer,
-            admitted,
-            registry,
-            options.Contract,
-            options.MaximumTopologyRecords,
-            options.MaximumTopologyPayloadBytes,
-            options.ExternalReferences);
+        ValidateWriteOptions(options);
+        var writer = new DataWriter(output, options.ExternalReferences);
+        Write(world, ref writer, options, progress, systems);
         writer.Flush();
-        afterOutput?.Invoke();
     }
 
-    public static World ReadWorld(
-        Stream stream,
-        SerializationRegistry registry,
-        WorldLoadOptions options = default)
+    public void Save(World world, Stream output, SavePurpose purpose = SavePurpose.RawCheckpoint,
+        CheckpointProgress progress = CheckpointProgress.Rebuild, params ISystemVersions[] systems)
+        => Save(world, output, new SerializeOptions(Purpose: purpose), progress, systems);
+
+    public void Save(World world, Stream output, SerializeOptions options,
+        CheckpointProgress progress = CheckpointProgress.Rebuild, params ISystemVersions[] systems)
     {
-        ArgumentNullException.ThrowIfNull(stream);
-        ArgumentNullException.ThrowIfNull(registry);
-        var budget = new SerializationReadBudget(options.ReadLimits);
-
-        if (options.IdentityMode is not EntityIdentityMode.Preserve and not EntityIdentityMode.Remap)
+        if (!options.Codecs.IsDefaultOrEmpty)
         {
-            throw new ArgumentOutOfRangeException(
-                nameof(options),
-                options.IdentityMode,
-                "World identity mode must be Preserve or Remap.");
+            new WorldSerializer(SerializationRegistry.Bind(registry, options.Codecs))
+                .Save(world, output, options with { Codecs = default }, progress, systems);
+            return;
         }
+        ValidateWriteOptions(options);
+        Write(world, output, options, progress, systems);
+    }
 
-        if (options.IdentityMode == EntityIdentityMode.Preserve)
+    private void Write(World world, Stream output, SerializeOptions options, CheckpointProgress progress,
+        ISystemVersions[] systems)
+    {
+        var writer = new DataWriter(output, options.ExternalReferences);
+        Write(world, ref writer, options, progress, systems);
+        writer.Flush();
+    }
+
+    private static void ValidateWriteOptions(in SerializeOptions options)
+    {
+        if (options.MaximumSparseMemberships < 0 || options.MaximumTopologyRecords < 0 || options.MaximumTopologyPayloadBytes < 0)
+            throw new ArgumentOutOfRangeException(nameof(options));
+    }
+
+    private static void CheckSparseMemberships(SparseStore?[] types, SerializationRegistry registry, int maximum)
+    {
+        if (maximum == 0) return;
+        int remaining = maximum;
+        for (int type = 0; type < types.Length; type++)
+            if (types[type] is { } values && registry.Sparse.ContainsKey(type))
+            {
+                if (values.Count > remaining) throw new InvalidOperationException("Sparse membership count exceeds the configured write limit.");
+                remaining -= values.Count;
+            }
+    }
+
+    internal static void CheckCaptureLimits(World world, SerializationRegistry registry, in SerializeOptions options,
+        CheckpointProgress progress)
+    {
+        if (world.SparseTypes is { } sparse) CheckSparseMemberships(sparse.Types, registry, options.MaximumSparseMemberships);
+        if (options.MaximumTopologyRecords == 0) return;
+        long remaining = options.MaximumTopologyRecords;
+        foreach (SavedService service in registry.Services)
         {
-            var loadedWorld = new World(execution: options.Execution);
+            long count = service.CountRecords(world, progress == CheckpointProgress.Preserve);
+            if (count > remaining) throw new InvalidOperationException("Topology records exceed the configured write limit.");
+            remaining -= count;
+        }
+    }
+
+    private void Select(World world)
+    {
+        SynchronizeRegistry();
+        foreach (SavedType type in _used) _seen[registry.GetOrder(type)] = false;
+        _used.Clear(); _tables.Clear(); _services.Clear();
+        if (_seen.Length < registry.Types.Count)
+        { Array.Resize(ref _seen, registry.Types.Count); Array.Resize(ref _fileTypes, registry.Types.Count); }
+        if (!ReferenceEquals(_boundWorld, world)) { _bindings = []; _boundWorld = world; }
+        if (_bindings.Length < world.ArchetypeCount) Array.Resize(ref _bindings, Math.Max(16, world.ArchetypeCount * 2));
+        for (int i = 0; i < world.ArchetypeCount; i++)
+        {
+            Archetype table = world.Archetypes[i];
+            bool nonempty = false;
+            foreach (Chunk chunk in table.AllChunks) if (chunk.Count != 0) { nonempty = true; break; }
+            if (!nonempty) continue;
+            TableBinding? binding = _bindings[table.Id];
+            if (binding is null)
+            {
+                var columns = new List<SavedColumn>();
+                foreach (ComponentType component in table.Components)
+                    if (registry.Columns.TryGetValue(component.Id, out SavedColumn? value)) columns.Add(value);
+                columns.Sort(static (left, right) => left.Key.StableId.CompareTo(right.Key.StableId));
+                _bindings[table.Id] = binding = new(table, columns.ToArray());
+            }
+            _tables.Add(binding);
+            foreach (SavedColumn column in binding.Columns) _seen[registry.GetOrder(column)] = true;
+        }
+        for (int type = 0; type < world.SharedTypes.Length; type++)
+            if (world.SharedTypes[type] is not null && registry.Columns.TryGetValue(type, out SavedColumn? shared)) _seen[registry.GetOrder(shared)] = true;
+        if (world.SparseTypes is { } sparse)
+            for (int type = 0; type < sparse.Types.Length; type++)
+                if (sparse.Types[type] is not null && registry.Sparse.TryGetValue(type, out SavedSparse? values)) _seen[registry.GetOrder(values)] = true;
+        for (int type = 0; type < world.ResourceValues.Capacity; type++)
+            if (world.ResourceValues.Get(type) is { HasValue: true } && registry.Resources.TryGetValue(type, out SavedResource? resource)) _seen[registry.GetOrder(resource)] = true;
+        foreach (SavedService service in registry.Services)
+            if (service.Find(world) is not null) { _services.Add(service); _seen[registry.GetOrder(service.Type)] = true; }
+        foreach (SavedType type in registry.Types)
+            if (_seen[registry.GetOrder(type)]) { _fileTypes[registry.GetOrder(type)] = _used.Count; _used.Add(type); }
+    }
+
+    private void Write(World world, ref DataWriter writer, SerializeOptions options, CheckpointProgress progress,
+        ISystemVersions[] systems)
+    {
+        foreach (ISystemVersions system in systems) system.Complete();
+        if (progress == CheckpointProgress.Rebuild)
+            foreach (SavedService service in registry.Services) service.Maintain(world);
+        using WorldAccess structure = world.OpenStructure(false);
+        using WorldAccess access = world.OpenValues(WorldCheckpoint.CaptureAccesses(world));
+        world.BeginRead();
+        try
+        {
+            Select(world);
+            CheckCaptureLimits(world, registry, options, progress);
+            WriteHeader(ref writer, options.Purpose);
+            writer.WriteByte((byte)progress); writer.WriteUInt64(world.Version);
+            writer.WriteInt32(world.Used); writer.WriteInt32(world.EntityCount);
+            int freeCount = 0;
+            for (int id = world.FirstFreeEntity; id != 0; id = world.Records[id].Row) freeCount++;
+            writer.WriteInt32(freeCount);
+            for (int id = 1; id <= world.Used; id++) writer.WriteInt32(world.Records[id].Generation);
+            for (int id = world.FirstFreeEntity; id != 0; id = world.Records[id].Row) writer.WriteInt32(id);
+
+            int sharedCount = 0, sparseCount = 0, resourceCount = 0;
+            foreach (SavedType type in _used)
+                if (type is SavedShared) sharedCount++;
+                else if (type is SavedSparse) sparseCount++;
+                else if (type is SavedResource) resourceCount++;
+            writer.WriteInt32(sharedCount);
+            foreach (SavedType type in _used)
+                if (type is SavedShared shared)
+                { writer.WriteInt32(_fileTypes[registry.GetOrder(type)]); shared.WriteValues(ref writer, world.SharedTypes[type.Type]!); }
+
+            writer.WriteInt32(_tables.Count);
+            foreach (TableBinding binding in _tables) WriteTable(ref writer, binding);
+            writer.WriteInt32(sparseCount);
+            foreach (SavedType type in _used)
+                if (type is SavedSparse sparse)
+                { writer.WriteInt32(_fileTypes[registry.GetOrder(type)]); sparse.Write(ref writer, world.SparseTypes!.Types[type.Type]!); }
+            writer.WriteInt32(resourceCount);
+            foreach (SavedType type in _used)
+                if (type is SavedResource resource)
+                { writer.WriteInt32(_fileTypes[registry.GetOrder(type)]); resource.Write(ref writer, world.ResourceValues.Get(type.Type)!); }
+            long topologyBytesRemaining = options.MaximumTopologyPayloadBytes;
+            WriteTopology(ref writer, world, options.MaximumTopologyPayloadBytes != 0, ref topologyBytesRemaining);
+            WriteEvents(ref writer, progress == CheckpointProgress.Preserve ? world.CopyEvents() : new([], world.DestroyedSequence, []));
+            writer.WriteInt32(_services.Count);
+            foreach (SavedService service in _services)
+            {
+                writer.WriteInt32(_fileTypes[registry.GetOrder(service.Type)]);
+                bool bounded = options.MaximumTopologyPayloadBytes != 0 && service.Type.Storage is SavedStorage.Parent or SavedStorage.Endpoints;
+                long start = writer.Position;
+                if (bounded) writer.LimitBytes(topologyBytesRemaining);
+                try { service.Write(ref writer, world, progress == CheckpointProgress.Preserve); }
+                finally { if (bounded) writer.EndByteLimit(); }
+                if (bounded) topologyBytesRemaining -= writer.Position - start;
+            }
+            writer.WriteInt32(systems.Length);
+            foreach (ISystemVersions system in systems)
+            {
+                writer.WriteInt32(system.VersionCount);
+                ulong[] versions = ArrayPool<ulong>.Shared.Rent(system.VersionCount * 2);
+                try
+                {
+                    Span<ulong> values = versions.AsSpan(0, system.VersionCount * 2);
+                    if (progress == CheckpointProgress.Preserve) system.CopyVersions(values);
+                    else values.Fill(world.Version);
+                    foreach (ulong value in values) writer.WriteUInt64(value);
+                }
+                finally { ArrayPool<ulong>.Shared.Return(versions); }
+            }
+        }
+        finally { world.EndRead(); }
+    }
+
+    private void WriteHeader(ref DataWriter writer, SavePurpose purpose, byte payloadKind = 0)
+    {
+        _used.Sort(static (left, right) => left.Key.StableId.CompareTo(right.Key.StableId));
+        if (_fileTypes.Length < registry.Types.Count) Array.Resize(ref _fileTypes, registry.Types.Count);
+        for (int index = 0; index < _used.Count; index++) _fileTypes[registry.GetOrder(_used[index])] = index;
+        foreach (SavedType type in _used)
+            if (purpose == SavePurpose.DurableSave && !type.SupportsDurable)
+                throw new InvalidOperationException("Durable save requires an explicit field codec and schema for every value type.");
+        writer.WriteUInt32(Magic); writer.WriteUInt16(FormatVersion);
+        writer.WriteByte((byte)purpose); writer.WriteByte(payloadKind);
+        writer.WriteGuid(purpose == SavePurpose.RawCheckpoint ? typeof(World).Module.ModuleVersionId : Guid.Empty);
+        writer.WriteInt32(_used.Count);
+        foreach (SavedType type in _used)
+        {
+            SerializationTypeKey key = type.KeyFor(purpose);
+            writer.WriteGuid(key.StableId); writer.WriteText(key.StableName); writer.WriteUInt64(key.SchemaFingerprint);
+            writer.WriteByte((byte)type.Storage); writer.WriteInt32(type.Width);
+        }
+    }
+
+    private void WriteTable(ref DataWriter writer, TableBinding binding)
+    {
+        Archetype table = binding.Table;
+        writer.WriteInt32(binding.Columns.Length);
+        foreach (SavedColumn column in binding.Columns) writer.WriteInt32(_fileTypes[registry.GetOrder(column)]);
+        int groupCount = 0;
+        for (int group = 0; group < table.GroupKeys.Length; group++)
+            if (registry.Columns.ContainsKey(table.Groups!.Groupings[group].Type)) groupCount++;
+        writer.WriteInt32(groupCount);
+        for (int group = 0; group < table.GroupKeys.Length; group++)
+            if (registry.Columns.TryGetValue(table.Groups!.Groupings[group].Type, out SavedColumn? grouped))
+            {
+                writer.WriteInt32(_fileTypes[registry.GetOrder(grouped)]);
+                writer.WriteInt32(table.GroupKeys[group]);
+            }
+        int count = 0;
+        foreach (Chunk chunk in table.AllChunks) if (chunk.Count != 0) count++;
+        writer.WriteInt32(count);
+        foreach (Chunk chunk in table.AllChunks)
+        {
+            if (chunk.Count == 0) continue;
+            writer.WriteInt32(chunk.Count);
+            writer.WriteEntities(chunk.Entities.AsSpan(0, chunk.Count));
+            foreach (SavedColumn bindingColumn in binding.Columns)
+            {
+                ComponentType type = ComponentTypes.Get(bindingColumn.Type);
+                ref ColumnEntry column = ref chunk.Columns[type.Id];
+                WriteMask(ref writer, column.Presence, chunk.Count);
+                if (bindingColumn.Storage is not (SavedStorage.Parent or SavedStorage.Endpoints or SavedStorage.Children))
+                    bindingColumn.Write(ref writer, ref column, chunk.Count);
+                ulong[]? enabled = chunk.Enabled is { } entries ? entries[column.ColumnPlusOne - 1] : null;
+                WriteMask(ref writer, enabled, chunk.Count);
+                SavedChanges.Write(ref writer, chunk.Changes is { } changes ? changes[column.ColumnPlusOne - 1] : default,
+                    chunk.Count, type.TracksWrites, type.TracksAdded);
+            }
+        }
+    }
+
+    private void WriteTopology(ref DataWriter writer, World world, bool bounded, ref long bytesRemaining)
+    {
+        int count = 0;
+        foreach (SavedType type in _used) if (type.Storage is SavedStorage.Parent or SavedStorage.Endpoints or SavedStorage.Children) count++;
+        writer.WriteInt32(count);
+        foreach (SavedType type in _used)
+        {
+            if (type.Storage is not (SavedStorage.Parent or SavedStorage.Endpoints or SavedStorage.Children)) continue;
+            var column = (SavedColumn)type;
+            writer.WriteInt32(_fileTypes[registry.GetOrder(type)]);
+            int rows = 0;
+            foreach (TableBinding table in _tables)
+                if (table.Table.Types.Bits.Has(type.Type))
+                    foreach (Chunk chunk in table.Table.AllChunks)
+                        if (chunk.Columns[type.Type].Presence is null) rows += chunk.Count;
+                        else for (int row = 0; row < chunk.Count; row++) if (chunk.Columns[type.Type].Has(row)) rows++;
+            writer.WriteInt32(rows);
+            long start = writer.Position;
+            if (bounded) writer.LimitBytes(bytesRemaining);
             try
             {
-                WorldRestorer.Restore(
-                    stream,
-                    loadedWorld,
-                    registry,
-                    budget,
-                    options.RequiredContract);
-                return loadedWorld;
+                foreach (TableBinding table in _tables)
+                    if (table.Table.Types.Bits.Has(type.Type))
+                        foreach (Chunk chunk in table.Table.AllChunks)
+                            column.WriteEntityRows(ref writer, ref chunk.Columns[type.Type], chunk.Entities.AsSpan(0, chunk.Count));
             }
-            catch (Exception restoreFailure)
-            {
-                RethrowAfterTemporaryWorldFailure(restoreFailure, loadedWorld.Dispose);
-                throw;
-            }
-        }
-
-        var importedWorld = new World(execution: options.Execution);
-        try
-        {
-            WorldImporter.Restore(
-                stream,
-                importedWorld,
-                registry,
-                budget,
-                options.RequiredContract,
-                options.MissingReferenceMode);
-            return importedWorld;
-        }
-        catch (Exception restoreFailure)
-        {
-            RethrowAfterTemporaryWorldFailure(restoreFailure, importedWorld.Dispose);
-            throw;
+            finally { if (bounded) writer.EndByteLimit(); }
+            if (bounded) bytesRemaining -= writer.Position - start;
+            writer.WriteInt32(checked((int)(writer.Position - start)));
         }
     }
 
-    [System.Diagnostics.CodeAnalysis.DoesNotReturn]
-    internal static void RethrowAfterTemporaryWorldFailure(
-        Exception restoreFailure,
-        Action disposeWorld)
+    private static void WriteMask(ref DataWriter writer, ulong[]? words, int count)
     {
-        ArgumentNullException.ThrowIfNull(restoreFailure);
-        ArgumentNullException.ThrowIfNull(disposeWorld);
-        try
-        {
-            disposeWorld();
-        }
-        catch (Exception disposeFailure)
-        {
-            throw new AggregateException(
-                "World restoration and temporary World disposal both failed.",
-                restoreFailure,
-                disposeFailure);
-        }
-
-        System.Runtime.ExceptionServices.ExceptionDispatchInfo
-            .Capture(restoreFailure)
-            .Throw();
-        throw new InvalidOperationException("Unreachable exception rethrow path.");
+        writer.WriteByte(words is null ? (byte)0 : (byte)1);
+        if (words is null) return;
+        int length = (count + 63) >> 6;
+        for (int word = 0; word < length; word++)
+            writer.WriteUInt64(words[word] & (word == length - 1 && (count & 63) != 0 ? (1UL << (count & 63)) - 1 : ulong.MaxValue));
     }
 
-    public static string ReadDebugSummary(
-        Stream stream,
-        SerializationReadLimits? readLimits = null)
+    private static void WriteEvents(ref DataWriter writer, in WorldEvents events)
     {
-        ArgumentNullException.ThrowIfNull(stream);
-        long position = stream.CanSeek ? stream.Position : 0;
-        try
-        {
-            var budget = new SerializationReadBudget(readLimits);
-            using var reader = new BinaryReader(stream, Encoding.UTF8, leaveOpen: true);
-            var (kind, manifest, contract) = PayloadFormat.ReadHeader(reader, budget);
-            var builder = new StringBuilder();
-            builder.AppendLine($"PayloadKind: {kind}");
-            builder.AppendLine($"Contract: {contract}");
-            builder.AppendLine($"ManifestCount: {manifest.Length}");
-            Array.Sort(manifest, SerializationRegistry.CompareTypeKeys);
-            foreach (var key in manifest)
-                builder.AppendLine($"- {key.StableName} {key.StableId} 0x{key.SchemaFingerprint:X16}");
-            return builder.ToString();
-        }
-        finally
-        {
-            if (stream.CanSeek)
-                stream.Position = position;
-        }
+        writer.WriteUInt64(events.Through); writer.WriteInt32(events.ValueCount);
+        foreach (DestroyedEntity value in events.Values.AsSpan(0, events.ValueCount)) { writer.WriteEntity(value.Entity); writer.WriteUInt64(value.Sequence); }
+        int count = 0;
+        foreach (EventReaderPosition position in events.ReaderPositions.AsSpan(0, events.ReaderCount))
+            if (position.Id != Guid.Empty) count++;
+        writer.WriteInt32(count);
+        foreach (EventReaderPosition position in events.ReaderPositions.AsSpan(0, events.ReaderCount))
+            if (position.Id != Guid.Empty) { writer.WriteGuid(position.Id); writer.WriteUInt64(position.Position); }
     }
 }
-
-public static partial class WorldSerializer
-{
-    private static void WriteWorldRows(
-        BinaryWriter writer,
-        AdmittedWorldWrite admitted,
-        WorldWritePlan capturePlan,
-        IReadOnlyDictionary<Guid, int> manifestIndex, ISet<ExternalReferenceKey>? references,
-        int firstIndex, int indexLimit)
-    {
-        for (int i = firstIndex; i < indexLimit; i++)
-        {
-            EntitySlotSnapshot slot = admitted.GetSlot(i);
-            if (!slot.IsAlive)
-                continue;
-
-            var entity = new Entity(slot.Index, slot.Generation);
-            EntityRecord record = admitted.ReadRecord(entity);
-            if (record.Archetype is null || record.Chunk is null)
-            {
-                throw new InvalidOperationException(
-                    $"Cannot serialize {entity}: its retained structural record is not placed.");
-            }
-
-            ReadOnlySpan<SerializationTypeRuntime> tableItems =
-                capturePlan.TableItems(record.Archetype);
-            ReadOnlySpan<SerializationTypeRuntime> sparseItems =
-                capturePlan.SparseItems(entity);
-
-            var dataWriter = new DataWriter(writer);
-            dataWriter.WriteEntity(entity);
-            writer.Write(checked(tableItems.Length + sparseItems.Length));
-
-            // Both inputs are ordered by stable type identity. Merge them to retain the exact
-            // canonical per-entity item ordering without materializing a second payload graph.
-            int tableIndex = 0;
-            int sparseIndex = 0;
-            while (tableIndex < tableItems.Length || sparseIndex < sparseItems.Length)
-            {
-                SerializationTypeRuntime runtime;
-                if (sparseIndex >= sparseItems.Length ||
-                    (tableIndex < tableItems.Length &&
-                     SerializationRegistry.CompareTypeKeys(
-                         tableItems[tableIndex].Entry.TypeKey,
-                         sparseItems[sparseIndex].Entry.TypeKey) < 0))
-                {
-                    runtime = tableItems[tableIndex++];
-                }
-                else
-                {
-                    runtime = sparseItems[sparseIndex++];
-                }
-
-                writer.Write(manifestIndex[runtime.Entry.TypeKey.StableId]);
-
-                PayloadBytes.WriteItemAdmitted(writer, runtime, admitted, entity, references);
-            }
-        }
-    }
-
-    private static class EntityCodec
-    {
-        internal static void WriteRecord(
-            BinaryWriter writer,
-            AdmittedWorldWrite admitted,
-            Entity entity,
-            ReadOnlySpan<SerializationTypeRuntime> manifest,
-            IReadOnlyDictionary<Guid, int> manifestIndex, ISet<ExternalReferenceKey>? references)
-        {
-            var dataWriter = new DataWriter(writer);
-            dataWriter.WriteEntity(entity);
-            int itemCount = 0;
-            for (int i = 0; i < manifest.Length; i++)
-            {
-                if (manifest[i].IsPresent(admitted, entity))
-                    itemCount++;
-            }
-            writer.Write(itemCount);
-
-            for (int i = 0; i < manifest.Length; i++)
-            {
-                SerializationTypeRuntime runtime = manifest[i];
-                if (!runtime.IsPresent(admitted, entity))
-                    continue;
-
-                writer.Write(manifestIndex[runtime.Entry.TypeKey.StableId]);
-                PayloadBytes.WriteItemAdmitted(writer, runtime, admitted, entity, references);
-            }
-        }
-    }
-
-    private static class WorldRestorer
-    {
-        public static void Restore(
-            Stream stream,
-            World world,
-            SerializationRegistry registry,
-            SerializationReadBudget budget,
-            SerializationContract? requiredContract)
-        {
-            using var reader = new BinaryReader(stream, Encoding.UTF8, leaveOpen: true);
-            var (kind, manifestKeys, contract) = PayloadFormat.ReadHeader(
-                reader,
-                budget,
-                requiredContract);
-            if (kind != SnapshotPayloadKind.World)
-                throw new InvalidDataException($"Expected World payload, found {kind}.");
-
-            SerializationTypeRuntime[] manifest =
-                ResolveManifest(registry, manifestKeys, contract);
-            uint tick = reader.ReadUInt32();
-            int slotCount = budget.EntitySlotCount(reader.ReadInt32());
-
-            {
-                world.BeginSerializationStore(slotCount);
-                int liveSlotCount = 0;
-                for (int i = 0; i < slotCount; i++)
-                {
-                    int expectedIndex = i + 1;
-                    int index = reader.ReadInt32();
-                    int generation = reader.ReadInt32();
-                    byte aliveByte = reader.ReadByte();
-                    if (index != expectedIndex)
-                    {
-                        throw new InvalidDataException(
-                            $"Expected serialized entity slot index {expectedIndex}, found {index}.");
-                    }
-                    if (generation < 0)
-                        throw new InvalidDataException($"Invalid serialized entity slot generation {generation}.");
-                    if (aliveByte > 1)
-                        throw new InvalidDataException($"Invalid serialized entity slot alive flag {aliveByte}.");
-                    bool isAlive = aliveByte != 0;
-                    world.AppendSerializationSlot(index, generation, isAlive);
-                    if (isAlive)
-                        liveSlotCount = checked(liveSlotCount + 1);
-                }
-                world.CompleteSerializationStore();
-
-                int payloadCount = budget.EntityCount(reader.ReadInt32());
-                if (payloadCount != liveSlotCount)
-                {
-                    throw new InvalidDataException(
-                        "Serialized entity payload count does not match live slot count.");
-                }
-
-                int previousEntityIndex = 0;
-                for (int i = 0; i < payloadCount; i++)
-                    LoadRecord(reader, manifest, world, budget, ref previousEntityIndex);
-
-                TopologyCodec.ReadApply(
-                    reader,
-                    registry,
-                    budget,
-                    contract,
-                    world,
-                    remapper: null);
-
-                world.Clock.Write(tick);
-            }
-
-        }
-
-        private static void LoadRecord(
-            BinaryReader reader,
-            ReadOnlySpan<SerializationTypeRuntime> manifest,
-            World world,
-            SerializationReadBudget budget,
-            ref int previousEntityIndex)
-        {
-            var dataReader = new DataReader(reader, budget);
-            Entity entity = dataReader.ReadEntity();
-            ValidateEntity(entity, world, ref previousEntityIndex);
-
-            int itemCount = budget.EntityItemCount(reader.ReadInt32());
-            int previousManifestIndex = -1;
-            for (int i = 0; i < itemCount; i++)
-            {
-                int manifestIndex = ReadCanonicalManifestIndex(
-                    reader, itemCount, manifest.Length, i, ref previousManifestIndex);
-
-                SerializationTypeRuntime runtime = manifest[manifestIndex];
-                new PayloadFrame(reader, budget).Apply(
-                    runtime,
-                    world,
-                    entity,
-                    remapper: null);
-            }
-        }
-
-        private static void ValidateEntity(
-            Entity entity,
-            World world,
-            ref int previousEntityIndex)
-        {
-            if (entity.Index <= previousEntityIndex)
-            {
-                throw new InvalidDataException(
-                    $"Serialized entity payload index {entity.Index} is duplicate or not canonical.");
-            }
-            if (!world.SerializationSlotMatches(entity))
-                throw new InvalidDataException($"Serialized entity payload {entity} has no matching live slot.");
-
-            previousEntityIndex = entity.Index;
-        }
-
-    }
-
-    /// <summary>
-    /// Streaming remap loader. Source identities are known from the slot table before entity
-    /// records begin, so destination entities and the complete remap can be created up front.
-    /// Each following item frame is then applied immediately; forward entity references do not
-    /// require retaining a decoded per-entity object graph.
-    /// </summary>
-    private static class WorldImporter
-    {
-        public static void Restore(
-            Stream stream,
-            World world,
-            SerializationRegistry registry,
-            SerializationReadBudget budget,
-            SerializationContract? requiredContract,
-            MissingReferenceMode missingReferenceMode)
-        {
-            using var reader = new BinaryReader(stream, Encoding.UTF8, leaveOpen: true);
-            var (kind, manifestKeys, contract) = PayloadFormat.ReadHeader(
-                reader,
-                budget,
-                requiredContract);
-            if (kind != SnapshotPayloadKind.World)
-                throw new InvalidDataException($"Expected World payload, found {kind}.");
-
-            SerializationTypeRuntime[] manifest =
-                ResolveManifest(registry, manifestKeys, contract);
-            uint tick = reader.ReadUInt32();
-            int slotCount = budget.EntitySlotCount(reader.ReadInt32());
-            var map = new Dictionary<Entity, Entity>();
-
-            {
-                // Source identity creation order is canonical slot order, so destination identity
-                // assignment is deterministic and the map is complete before any codec patches a
-                // forward reference.
-                int liveSlotCount = 0;
-                for (int i = 0; i < slotCount; i++)
-                {
-                    int expectedIndex = i + 1;
-                    int index = reader.ReadInt32();
-                    int generation = reader.ReadInt32();
-                    byte aliveByte = reader.ReadByte();
-                    if (index != expectedIndex)
-                    {
-                        throw new InvalidDataException(
-                            $"Expected serialized entity slot index {expectedIndex}, found {index}.");
-                    }
-                    if (generation < 0)
-                        throw new InvalidDataException($"Invalid serialized entity slot generation {generation}.");
-                    if (aliveByte > 1)
-                        throw new InvalidDataException($"Invalid serialized entity slot alive flag {aliveByte}.");
-                    if (aliveByte == 0)
-                        continue;
-
-                    var source = new Entity(index, generation);
-                    map.Add(source, world.CreateEntity());
-                    liveSlotCount = checked(liveSlotCount + 1);
-                }
-
-                int payloadCount = budget.EntityCount(reader.ReadInt32());
-                if (payloadCount != liveSlotCount)
-                {
-                    throw new InvalidDataException(
-                        "Serialized entity payload count does not match live slot count.");
-                }
-
-                var remapper = new PolicyReferenceRemapper(map, missingReferenceMode);
-                int previousEntityIndex = 0;
-                for (int i = 0; i < payloadCount; i++)
-                {
-                    LoadRecord(
-                        reader,
-                        manifest,
-                        map,
-                        remapper,
-                        world,
-                        budget,
-                        ref previousEntityIndex);
-                }
-
-                TopologyCodec.ReadApply(
-                    reader,
-                    registry,
-                    budget,
-                    contract,
-                    world,
-                    remapper);
-                world.Clock.Write(tick);
-            }
-
-        }
-
-        private static void LoadRecord(
-            BinaryReader reader,
-            ReadOnlySpan<SerializationTypeRuntime> manifest,
-            IReadOnlyDictionary<Entity, Entity> map,
-            IReferenceRemapper remapper,
-            World world,
-            SerializationReadBudget budget,
-            ref int previousEntityIndex)
-        {
-            var data = new DataReader(reader, budget);
-            Entity source = data.ReadEntity();
-            if (source.Index <= previousEntityIndex)
-            {
-                throw new InvalidDataException(
-                    $"Serialized entity payload index {source.Index} is duplicate or not canonical.");
-            }
-            if (!map.TryGetValue(source, out Entity target))
-            {
-                throw new InvalidDataException(
-                    $"Serialized entity payload {source} has no imported destination.");
-            }
-            previousEntityIndex = source.Index;
-
-            int itemCount = budget.EntityItemCount(reader.ReadInt32());
-            int previousManifestIndex = -1;
-            for (int i = 0; i < itemCount; i++)
-            {
-                int manifestIndex = ReadCanonicalManifestIndex(
-                    reader, itemCount, manifest.Length, i, ref previousManifestIndex);
-
-                new PayloadFrame(reader, budget).Apply(
-                    manifest[manifestIndex],
-                    world,
-                    target,
-                    remapper);
-            }
-        }
-
-    }
-
-    private static class PayloadBytes
-    {
-        public static void WriteComponent<T>(
-            BinaryWriter writer,
-            ValueSerializationRuntime<T> runtime,
-            in T value, ISet<ExternalReferenceKey>? references)
-            where T : struct
-        {
-            writer.Flush();
-            using var counter = new BoundedCountingWriteStream(
-                writer.BaseStream,
-                int.MaxValue,
-                limitExceeded: static (_, _, _) =>
-                    new InvalidOperationException("Serialized item payload is too large."));
-            using (var payloadBinaryWriter = new BinaryWriter(
-                       counter,
-                       SerializationBinary.StrictUtf8,
-                       leaveOpen: true))
-            {
-                var payloadWriter = new DataWriter(payloadBinaryWriter, references);
-                runtime.WriteStandalone(ref payloadWriter, in value);
-                payloadBinaryWriter.Flush();
-            }
-            writer.Write(checked((int)counter.BytesWritten));
-        }
-
-        public static void WriteItemAdmitted(
-            BinaryWriter writer,
-            SerializationTypeRuntime runtime,
-            AdmittedWorldWrite admitted,
-            Entity entity, ISet<ExternalReferenceKey>? references = null)
-        {
-            writer.Flush();
-            using var counter = new BoundedCountingWriteStream(
-                writer.BaseStream,
-                int.MaxValue,
-                limitExceeded: static (_, _, _) =>
-                    new InvalidOperationException("Serialized item payload is too large."));
-            using (var payloadBinaryWriter = new BinaryWriter(
-                       counter,
-                       SerializationBinary.StrictUtf8,
-                       leaveOpen: true))
-            {
-                var payloadWriter = new DataWriter(payloadBinaryWriter, references);
-                runtime.WriteAdmitted(ref payloadWriter, admitted, entity);
-                payloadBinaryWriter.Flush();
-            }
-            writer.Write(checked((int)counter.BytesWritten));
-        }
-
-    }
-
-    private readonly struct PayloadFrame
-    {
-        private readonly BinaryReader _reader;
-        private readonly SerializationReadBudget _budget;
-
-        public PayloadFrame(BinaryReader reader, SerializationReadBudget budget)
-        {
-            _reader = reader;
-            _budget = budget;
-        }
-
-        public T ReadComponent<T>(ValueSerializationRuntime<T> runtime)
-            where T : struct
-        {
-            using var payload = OpenPayload();
-            T value;
-            using (var binaryReader = OpenReader(payload))
-            {
-                var data = new DataReader(binaryReader, _budget);
-                value = runtime.ReadStandalone(ref data);
-            }
-            Finish(payload);
-            return value;
-        }
-
-        public void Apply(
-            SerializationTypeRuntime runtime,
-            World world,
-            Entity entity,
-            IReferenceRemapper? remapper)
-        {
-            using var payload = OpenPayload();
-            using (var binaryReader = OpenReader(payload))
-            {
-                var reader = new DataReader(binaryReader, _budget);
-                runtime.Apply(ref reader, world, entity, remapper);
-            }
-            Finish(payload);
-        }
-
-        private BoundedCountingReadStream OpenPayload() =>
-            new(
-                _reader.BaseStream,
-                _budget.Limits.MaxPayloadBytes,
-                limitExceeded: static (_, _, _) => SerializationErrors.CreateDataException(
-                    SerializationError.LimitExceeded,
-                    "Serialized item payload exceeds the configured byte limit."));
-
-        private static BinaryReader OpenReader(Stream payload) =>
-            new(payload, SerializationBinary.StrictUtf8, leaveOpen: true);
-
-        private void Finish(BoundedCountingReadStream payload)
-        {
-            int declaredLength;
-            try
-            {
-                declaredLength = _reader.ReadInt32();
-            }
-            catch (EndOfStreamException exception)
-            {
-                throw new InvalidDataException("Serialized item payload is missing its byte-count footer.", exception);
-            }
-            if (payload.BytesRead != declaredLength)
-            {
-                throw new InvalidDataException(
-                    "Serialized item payload footer does not match the bytes consumed by its codec.");
-            }
-            _budget.PayloadLength(declaredLength);
-        }
-
-    }
-
-    private sealed class PolicyReferenceRemapper : IReferenceRemapper
-    {
-        private readonly IReadOnlyDictionary<Entity, Entity> _map;
-        private readonly MissingReferenceMode _missingReferenceMode;
-
-        public PolicyReferenceRemapper(
-            IReadOnlyDictionary<Entity, Entity> map,
-            MissingReferenceMode missingReferenceMode)
-        {
-            _map = map;
-            _missingReferenceMode = missingReferenceMode;
-        }
-
-        public bool TryMap(Entity source, out Entity mapped)
-        {
-            if (source == Entity.Null)
-            {
-                mapped = Entity.Null;
-                return true;
-            }
-
-            if (_map.TryGetValue(source, out mapped))
-                return true;
-
-            switch (_missingReferenceMode)
-            {
-                case MissingReferenceMode.KeepOriginal:
-                    mapped = source;
-                    return true;
-
-                case MissingReferenceMode.Clear:
-                    mapped = Entity.Null;
-                    return true;
-
-                case MissingReferenceMode.Throw:
-                    throw new InvalidOperationException($"Missing entity reference remap for {source}.");
-
-                default:
-                    throw new ArgumentOutOfRangeException(
-                        nameof(_missingReferenceMode),
-                        _missingReferenceMode,
-                        null);
-            }
-        }
-    }
-
-}
-

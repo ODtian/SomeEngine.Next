@@ -1,3 +1,4 @@
+using SomeEngine.ECS;
 using SomeEngine.ECS.Systems;
 
 namespace SomeEngine.Render.Systems;
@@ -7,7 +8,7 @@ public sealed partial class LightRenderExtractor : IRenderExtractionRangeSystem,
     public IRenderExtractionCollector CreateRangeCollector() => new LightRenderExtractor();
     public void Dispose() => Reset();
 
-    void IRenderExtractionCollector.Collect(ReadOnlyQueryPacket packet, uint lastSystemVersion, bool fullCollection)
+    void IRenderExtractionCollector.Collect(QueryChunk packet, ulong lastSystemVersion, bool fullCollection)
     {
         if (fullCollection) Collect(packet);
         else CollectChanges(packet, lastSystemVersion);

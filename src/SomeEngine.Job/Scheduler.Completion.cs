@@ -128,6 +128,12 @@ public sealed partial class Scheduler
     }
 
     internal void Complete(JobHandle handle)
+        => Complete(handle, observeFault: true);
+
+    internal void WaitForScope(JobHandle handle)
+        => Complete(handle, observeFault: false);
+
+    private void Complete(JobHandle handle, bool observeFault)
     {
         using var trace = SomeEngine.Diagnostics.EngineTrace.Begin(JobTrace.Complete);
         if (handle.Index == 0)
@@ -175,7 +181,7 @@ public sealed partial class Scheduler
                 spinWait = new SpinWait();
             }
 
-            if (_completion.TryGetCompletedFault(lease, markObserved: true, out ExceptionDispatchInfo? fault)
+            if (observeFault && _completion.TryGetCompletedFault(lease, markObserved: true, out ExceptionDispatchInfo? fault)
                 && fault is not null)
             {
                 fault.Throw();
@@ -222,6 +228,7 @@ public sealed partial class Scheduler
 
     private void CancelUnscheduledState(JobHandle handle)
     {
+        _completion.TakeJobData(handle)?.Release();
         ScopeToken parent = _completion.CancelState(handle);
         if (parent.Index != 0 && _scopes.ReleaseChild(parent, null))
         {

@@ -23,7 +23,7 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
     private readonly List<Entity> _removed = new();
     private readonly List<(Entity Entity, Size Size)> _canvases = new();
     private readonly List<Subtree> _subtrees = new();
-    private readonly List<(Entity, ushort)> _unusedInputKeys = new();
+    private readonly List<(Entity, int)> _unusedInputKeys = new();
     private bool _parallelMeasurement;
     private ulong _frame;
     private uint _inputVersion;
@@ -104,7 +104,7 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
                 if (World.Has<ScrollOffset>(node.Entity))
                 {
                     UpdateScroll(node, measured);
-                    Vector2 scroll = World.Read<ScrollOffset>(node.Entity).Value;
+                    Vector2 scroll = World.ReadComponentData<ScrollOffset>(node.Entity).Value;
                     coordinatesChanged |= scroll != node.Scroll;
                     node.Scroll = scroll;
                 }
@@ -143,9 +143,9 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
             node = new NodeLayout(entity, dataUpdates.Length);
             _nodes.Add(entity, node);
         }
-        ushort viewType = World.Read<ViewType>(entity).Id;
+        ushort viewType = World.ReadComponentData<ViewType>(entity).Id;
         bool missingMeasurement = !node.HasMeasurement || !World.Has<LayoutCache>(entity) ||
-            World.Read<LayoutCache>(entity).InputVersion != node.InputVersion;
+            World.ReadComponentData<LayoutCache>(entity).InputVersion != node.InputVersion;
         bool readsChanged = HasReadChanges(node);
         foreach (ILayoutDataUpdate dataUpdate in dataUpdates)
             readsChanged |= dataUpdate.HasChanges(World, entity);
@@ -169,8 +169,8 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
         node.Measurable = ViewTypes.HasMeasure(World, entity);
         node.CacheWritten = false;
         node.CacheExists = World.Has<LayoutCache>(entity);
-        node.CacheVersion = node.CacheExists ? World.WriteVersion<LayoutCache>(entity) : 0;
-        if (node.CacheExists) node.Cache = World.Read<LayoutCache>(entity);
+        node.CacheVersion = node.CacheExists ? World.ComponentDataWriteVersion<LayoutCache>(entity) : 0;
+        if (node.CacheExists) node.Cache = World.ReadComponentData<LayoutCache>(entity);
         else node.HasMeasurement = false;
         if (node.InputsChanged)
             for (int index = 0; index < dataUpdates.Length; index++)
@@ -260,18 +260,18 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
 
     private void UpdateScroll(NodeLayout node, Size size)
     {
-        ScrollOffset previous = World.Read<ScrollOffset>(node.Entity);
+        ScrollOffset previous = World.ReadComponentData<ScrollOffset>(node.Entity);
         ScrollOffset offset = previous;
-        Box box = World.Has<Box>(node.Entity) ? World.Read<Box>(node.Entity) : default;
+        Box box = World.Has<Box>(node.Entity) ? World.ReadComponentData<Box>(node.Entity) : default;
         Vector2 viewport = new(MathF.Max(0, size.Width - box.Padding.Left - box.Padding.Right),
             MathF.Max(0, size.Height - box.Padding.Top - box.Padding.Bottom));
         offset.Max = Vector2.Max(Vector2.Zero, new Vector2(node.ContentSize.Width, node.ContentSize.Height) - viewport);
         bool hasSeen = World.Has<ScrollSeen>(node.Entity);
-        ScrollSeen seen = hasSeen ? World.Read<ScrollSeen>(node.Entity) : default;
+        ScrollSeen seen = hasSeen ? World.ReadComponentData<ScrollSeen>(node.Entity) : default;
         bool inputChanged = false;
         if (World.Has<ScrollInput>(node.Entity))
         {
-            ScrollInput input = World.Read<ScrollInput>(node.Entity);
+            ScrollInput input = World.ReadComponentData<ScrollInput>(node.Entity);
             if (input.Count != seen.Count)
             {
                 offset.Value += input.Delta;
@@ -282,7 +282,7 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
         offset.Value = Vector2.Clamp(offset.Value, Vector2.Zero, offset.Max);
         if (World.Has<ScrollTarget>(node.Entity))
         {
-            ScrollTarget target = World.Read<ScrollTarget>(node.Entity);
+            ScrollTarget target = World.ReadComponentData<ScrollTarget>(node.Entity);
             if (target.Count != seen.TargetCount)
             {
                 Rect region = target.Region;
@@ -296,12 +296,12 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
         if (inputChanged)
         {
             if (hasSeen)
-                World.Replace(node.Entity, seen);
+                World.Set(node.Entity, seen);
             else
                 World.Add(node.Entity, seen);
         }
         if (offset.Value != previous.Value || offset.Max != previous.Max)
-            World.Replace(node.Entity, offset);
+            World.Set(node.Entity, offset);
     }
 
     private static float ScrollToRegion(float offset, float viewport, float start, float size)
@@ -413,7 +413,7 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
 
     private LayoutInput<T> ReadInput<T>(Entity node, Entity entity) where T : struct
     {
-        Dictionary<(Entity, ushort), LayoutInput> inputs = _nodes[node].Inputs;
+        Dictionary<(Entity, int), LayoutInput> inputs = _nodes[node].Inputs;
         var key = (entity, ComponentId<T>.Value);
         if (!inputs.TryGetValue(key, out LayoutInput? input))
         {
@@ -421,15 +421,15 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
             input = new LayoutInput<T>(entity);
             inputs.Add(key, input);
         }
-        if (!_parallelMeasurement) input.Capture(World);
-        return (LayoutInput<T>)input;
+        if (!_parallelMeasurement) input!.Capture(World);
+        return (LayoutInput<T>)input!;
     }
 
     private void WriteCache(NodeLayout node)
     {
-        if (World.Has<LayoutCache>(node.Entity)) World.Replace(node.Entity, node.Cache);
+        if (World.Has<LayoutCache>(node.Entity)) World.Set(node.Entity, node.Cache);
         else World.Add(node.Entity, node.Cache);
-        node.CacheVersion = World.WriteVersion<LayoutCache>(node.Entity);
+        node.CacheVersion = World.ComponentDataWriteVersion<LayoutCache>(node.Entity);
         node.CacheWritten = false;
     }
 
@@ -518,7 +518,7 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
         node.HasMeasurement = false;
         node.CacheWritten = false;
         node.CacheExists = World.Has<LayoutCache>(entity);
-        node.Cache = node.CacheExists ? World.Read<LayoutCache>(entity) : default;
+        node.Cache = node.CacheExists ? World.ReadComponentData<LayoutCache>(entity) : default;
         foreach (Entity child in node.Children) RestoreMeasurements(child);
     }
 
@@ -585,7 +585,7 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
     private abstract class LayoutInput
     {
         internal bool Exists;
-        internal uint Version;
+        internal ulong Version;
         internal abstract void Capture(World world);
     }
 
@@ -594,7 +594,7 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
         internal T Value;
         internal override void Capture(World world)
         {
-            Exists = world.HasComponentData<T>(entity);
+            Exists = world.IsAlive(entity) && world.HasComponentData<T>(entity);
             Value = Exists ? world.ReadComponentData<T>(entity) : default;
             Version = Exists ? world.ComponentDataWriteVersion<T>(entity) : 0;
         }
@@ -618,13 +618,14 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
     {
         if (!World.Has<LayoutRect>(entity))
             World.Add(entity, new LayoutRect { Value = value });
-        else if (World.Read<LayoutRect>(entity).Value != value)
-            World.Replace(entity, new LayoutRect { Value = value });
+        else if (World.ReadComponentData<LayoutRect>(entity).Value != value)
+            World.Set(entity, new LayoutRect { Value = value });
     }
 
     private void CollectChildren(Entity node, List<Entity> children)
     {
-        foreach (Entity child in Hierarchy<ElementTree>.GetChildren(World, node))
+        using ChildrenRead childRange = Hierarchy<ElementTree>.GetChildren(World, node);
+        foreach (Entity child in childRange)
         {
             if (World.Has<Canvas>(child))
                 continue;
@@ -641,7 +642,7 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
         internal readonly List<Entity> Children = new();
         internal readonly List<Dependency> Reads = new();
         internal readonly List<CacheRead> CacheReads = new();
-        internal readonly Dictionary<(Entity, ushort), LayoutInput> Inputs = new();
+        internal readonly Dictionary<(Entity, int), LayoutInput> Inputs = new();
         internal readonly ILayoutContent?[] Content = new ILayoutContent?[contentCount];
         internal readonly Subtree Subtree = new(entity);
         internal Entity Parent;
@@ -651,7 +652,7 @@ internal sealed class LayoutData(World world, ILayoutDataUpdate[] dataUpdates)
         internal Vector2 CanvasPosition;
         internal Size ContentSize;
         internal LayoutCache Cache;
-        internal uint CacheVersion;
+        internal ulong CacheVersion;
         internal bool CacheExists;
         internal Entity MeasurementRoot;
         internal Rect Rectangle;

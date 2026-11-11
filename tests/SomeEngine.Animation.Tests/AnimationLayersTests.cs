@@ -25,7 +25,7 @@ public sealed class AnimationLayersTests
     public void FinishedValueTracksContinueBlendingWithChangingLayerWeights(bool inline, bool buffered)
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new Display { Value = 10 });
+        Entity target = world.Create(new Display { Value = 10 });
         var layers = new AnimationLayers { Count = 2 };
         layers.Items[0] = new AnimationLayer { Weight = 1 };
         layers.Items[1] = new AnimationLayer { Mode = LayerMode.Additive, Weight = 0 };
@@ -40,11 +40,11 @@ public sealed class AnimationLayersTests
         using var systems = Systems(world);
 
         Tick(systems, world, 0.25);
-        Assert.Equal(11.5f, world.Read<Display>(target).Value);
+        Assert.Equal(11.5f, world.ReadComponentData<Display>(target).Value);
         Tick(systems, world, 0.25);
-        Assert.Equal(13f, world.Read<Display>(target).Value);
+        Assert.Equal(13f, world.ReadComponentData<Display>(target).Value);
         Tick(systems, world, 0.5);
-        Assert.Equal(16f, world.Read<Display>(target).Value);
+        Assert.Equal(16f, world.ReadComponentData<Display>(target).Value);
     }
 
     [Theory]
@@ -53,7 +53,7 @@ public sealed class AnimationLayersTests
     public void LayerWeightsCanStartChangingAfterTheValueTrackCompletes(bool inline)
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new Display { Value = 10 });
+        Entity target = world.Create(new Display { Value = 10 });
         var layers = new AnimationLayers { Count = 2 };
         layers.Items[0] = new AnimationLayer { Weight = 1 };
         layers.Items[1] = new AnimationLayer { Mode = LayerMode.Additive, Weight = 0.25f };
@@ -64,14 +64,14 @@ public sealed class AnimationLayersTests
         PropertyAnimation.To(world, target, Value, 16f, Spec.Tween(0.25f), layer: 1);
         using var systems = Systems(world);
         Tick(systems, world, 0.25);
-        Assert.Equal(11.5f, world.Read<Display>(target).Value);
+        Assert.Equal(11.5f, world.ReadComponentData<Display>(target).Value);
 
         PropertyAnimation.To(world, target, HoverWeight, 1f, Spec.Tween(0.75f));
 
         Tick(systems, world, 0.25);
-        Assert.Equal(13f, world.Read<Display>(target).Value);
+        Assert.Equal(13f, world.ReadComponentData<Display>(target).Value);
         Tick(systems, world, 0.5);
-        Assert.Equal(16f, world.Read<Display>(target).Value);
+        Assert.Equal(16f, world.ReadComponentData<Display>(target).Value);
     }
 
     [Theory]
@@ -82,7 +82,7 @@ public sealed class AnimationLayersTests
     public void ToAfterCompletionStartsContinuouslyAtThePresentedValue(bool inline, bool buffered)
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new Display { Value = 10 });
+        Entity target = world.Create(new Display { Value = 10 });
         var layers = new AnimationLayers { Count = 1 };
         layers.Items[0] = new AnimationLayer { Mode = LayerMode.Additive, Weight = 1 };
         world.Add(target, layers);
@@ -94,16 +94,16 @@ public sealed class AnimationLayersTests
         PropertyAnimation.To(world, target, Value, 16f, Spec.Tween(1));
         using var systems = Systems(world);
         Tick(systems, world, 1);
-        Assert.Equal(16f, world.Read<Display>(target).Value);
+        Assert.Equal(16f, world.ReadComponentData<Display>(target).Value);
 
         PropertyAnimation.To(world, target, Value, 20f, Spec.Tween(1));
 
         Tick(systems, world, 0);
-        Assert.Equal(16f, world.Read<Display>(target).Value);
+        Assert.Equal(16f, world.ReadComponentData<Display>(target).Value);
         Tick(systems, world, 0.5);
-        Assert.Equal(18f, world.Read<Display>(target).Value);
+        Assert.Equal(18f, world.ReadComponentData<Display>(target).Value);
         Tick(systems, world, 0.5);
-        Assert.Equal(20f, world.Read<Display>(target).Value);
+        Assert.Equal(20f, world.ReadComponentData<Display>(target).Value);
     }
 
     [Theory]
@@ -112,7 +112,7 @@ public sealed class AnimationLayersTests
     public void ToAfterCompletionKeepsContinuityAtPartialLayerWeight(bool inline)
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new Display { Value = 10 });
+        Entity target = world.Create(new Display { Value = 10 });
         var layers = new AnimationLayers { Count = 1 };
         layers.Items[0] = new AnimationLayer { Mode = LayerMode.Additive, Weight = 0.5f };
         world.Add(target, layers);
@@ -122,16 +122,16 @@ public sealed class AnimationLayersTests
         PropertyAnimation.To(world, target, Value, 16f, Spec.Tween(1));
         using var systems = Systems(world);
         Tick(systems, world, 1);
-        Assert.Equal(13f, world.Read<Display>(target).Value);
+        Assert.Equal(13f, world.ReadComponentData<Display>(target).Value);
 
         PropertyAnimation.To(world, target, Value, 20f, Spec.Tween(1));
 
         Tick(systems, world, 0);
-        Assert.Equal(13f, world.Read<Display>(target).Value);
+        Assert.Equal(13f, world.ReadComponentData<Display>(target).Value);
         Tick(systems, world, 0.5);
-        Assert.Equal(14f, world.Read<Display>(target).Value);
+        Assert.Equal(14f, world.ReadComponentData<Display>(target).Value);
         Tick(systems, world, 0.5);
-        Assert.Equal(15f, world.Read<Display>(target).Value);
+        Assert.Equal(15f, world.ReadComponentData<Display>(target).Value);
     }
 
     [Theory]
@@ -140,7 +140,7 @@ public sealed class AnimationLayersTests
     public void BaseHoverAndFlipLayersComposeTheSameField(bool inline)
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new Display { Value = 10 });
+        Entity target = world.Create(new Display { Value = 10 });
         var layers = new AnimationLayers { Count = 3 };
         layers.Items[0] = new AnimationLayer { Mode = LayerMode.Override, Weight = 1 };
         layers.Items[1] = new AnimationLayer { Mode = LayerMode.Additive, Weight = 0.5f };
@@ -157,14 +157,14 @@ public sealed class AnimationLayersTests
         Tick(systems, world, 0.5);
 
         // The base tween presents 20; hover adds 1.5; FLIP blends 25% toward 30.
-        Assert.Equal(23.625f, world.Read<Display>(target).Value);
+        Assert.Equal(23.625f, world.ReadComponentData<Display>(target).Value);
     }
 
     [Fact]
     public void AnimatingLayerWeightFadesInItsAdditiveEffect()
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new Display { Value = 10 });
+        Entity target = world.Create(new Display { Value = 10 });
         var layers = new AnimationLayers { Count = 2 };
         layers.Items[0] = new AnimationLayer { Mode = LayerMode.Override, Weight = 1 };
         layers.Items[1] = new AnimationLayer { Mode = LayerMode.Additive, Weight = 0 };
@@ -175,13 +175,13 @@ public sealed class AnimationLayersTests
         using var systems = Systems(world);
 
         Tick(systems, world, 0.25);
-        Assert.Equal(10.375f, world.Read<Display>(target).Value);
+        Assert.Equal(10.375f, world.ReadComponentData<Display>(target).Value);
         Tick(systems, world, 0.25);
-        Assert.Equal(11.5f, world.Read<Display>(target).Value);
+        Assert.Equal(11.5f, world.ReadComponentData<Display>(target).Value);
         Tick(systems, world, 0.25);
-        Assert.Equal(13.375f, world.Read<Display>(target).Value);
+        Assert.Equal(13.375f, world.ReadComponentData<Display>(target).Value);
         Tick(systems, world, 0.25);
-        Assert.Equal(16f, world.Read<Display>(target).Value);
+        Assert.Equal(16f, world.ReadComponentData<Display>(target).Value);
     }
 
     [Theory]
@@ -190,7 +190,7 @@ public sealed class AnimationLayersTests
     public void OverlappingDisplacementsReturnToTheCallersBase(bool inline)
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new Display { Value = 10 });
+        Entity target = world.Create(new Display { Value = 10 });
         var layers = new AnimationLayers { Count = 1 };
         layers.Items[0] = new AnimationLayer { Mode = LayerMode.Additive, Weight = 1 };
         world.Add(target, layers);
@@ -200,17 +200,17 @@ public sealed class AnimationLayersTests
         PropertyAnimation.By(world, target, Value, 4f, Spec.Tween(1));
         using var systems = Systems(world);
         Tick(systems, world, 0.25);
-        Assert.Equal(13f, world.Read<Display>(target).Value);
+        Assert.Equal(13f, world.ReadComponentData<Display>(target).Value);
 
         PropertyAnimation.By(world, target, Value, 6f, Spec.Tween(1));
         Tick(systems, world, 0.25);
-        Assert.Equal(16.5f, world.Read<Display>(target).Value);
+        Assert.Equal(16.5f, world.ReadComponentData<Display>(target).Value);
         Tick(systems, world, 0.5);
-        Assert.Equal(11.5f, world.Read<Display>(target).Value);
+        Assert.Equal(11.5f, world.ReadComponentData<Display>(target).Value);
         Tick(systems, world, 0.25);
-        Assert.Equal(10f, world.Read<Display>(target).Value);
+        Assert.Equal(10f, world.ReadComponentData<Display>(target).Value);
         Tick(systems, world, 1);
-        Assert.Equal(10f, world.Read<Display>(target).Value);
+        Assert.Equal(10f, world.ReadComponentData<Display>(target).Value);
     }
 
     [Theory]
@@ -219,15 +219,15 @@ public sealed class AnimationLayersTests
     public void ContributionSystemsComposeInSourceOrder(bool reverse)
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new Display { Value = 10 });
+        Entity target = world.Create(new Display { Value = 10 });
         var layers = new AnimationLayers { Count = 1 };
         layers.Items[0] = new AnimationLayer { Mode = LayerMode.Override, Weight = 0.5f };
         world.Add(target, layers);
         PropertyAnimation.SetBase(world, target, Value, 10f);
         world.AddBuffer<Contribution<float>>(target);
-        Entity first = world.CreateEntity();
-        Entity second = world.CreateEntity();
-        Entity third = world.CreateEntity();
+        Entity first = world.Create();
+        Entity second = world.Create();
+        Entity third = world.Create();
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
         var a = new FieldContributionSystem(target, new Contribution<float> { Channel = Value, Value = 20, Source = first });
         var b = new FieldContributionSystem(target, new Contribution<float> { Channel = Value, Value = 40, Source = second });
@@ -238,9 +238,9 @@ public sealed class AnimationLayersTests
         systems.Add(new ComposeSystem<float, FloatOps>());
 
         Tick(systems, world, 0);
-        Assert.Equal(43.75f, world.Read<Display>(target).Value);
+        Assert.Equal(43.75f, world.ReadComponentData<Display>(target).Value);
         Tick(systems, world, 0);
-        Assert.Equal(43.75f, world.Read<Display>(target).Value);
+        Assert.Equal(43.75f, world.ReadComponentData<Display>(target).Value);
     }
 
     [Theory]
@@ -249,12 +249,16 @@ public sealed class AnimationLayersTests
     public void ALayerMaskSelectsItsChannels(bool buffered)
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new Display { Value = 10, Other = 50 });
+        Entity target = world.Create(new Display { Value = 10, Other = 50 });
         var layers = new AnimationLayers { Count = 1 };
         layers.Items[0] = new AnimationLayer { Mode = LayerMode.Additive, Weight = 0.5f, Mask = new LayerMask(0, 1) };
         world.Add(target, layers);
         world.AddBuffer<LayerChannel>(target);
-        world.ExecuteBufferWrite<LayerChannel>(target, static channels => channels.Add(LayerChannel.Of(Value)));
+        {
+            using var channels = world.GetBuffer<LayerChannel>(target);
+            channels.Add(LayerChannel.Of(Value));
+
+        }
         PropertyAnimation.SetBase(world, target, Value, 10f);
         PropertyAnimation.SetBase(world, target, Other, 50f);
         if (buffered)
@@ -265,14 +269,14 @@ public sealed class AnimationLayersTests
 
         Tick(systems, world, 0.5);
 
-        Assert.Equal(new Display { Value = 11, Other = 50 }, world.Read<Display>(target));
+        Assert.Equal(new Display { Value = 11, Other = 50 }, world.ReadComponentData<Display>(target));
     }
 
     [Fact]
     public void DefaultSystemsBlendPropertyLayers()
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new Display { Value = 10 });
+        Entity target = world.Create(new Display { Value = 10 });
         var layers = new AnimationLayers { Count = 1 };
         layers.Items[0] = new AnimationLayer { Mode = LayerMode.Additive, Weight = 1 };
         world.Add(target, layers);
@@ -284,14 +288,14 @@ public sealed class AnimationLayersTests
 
         Tick(systems, world, 0.5);
 
-        Assert.Equal(15f, world.Read<Display>(target).Value);
+        Assert.Equal(15f, world.ReadComponentData<Display>(target).Value);
     }
 
     [Fact]
     public void APausedLayerKeepsItsValueWhileAnotherLayerAdvances()
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new Display { Value = 10 });
+        Entity target = world.Create(new Display { Value = 10 });
         var layers = new AnimationLayers { Count = 2 };
         layers.Items[0] = new AnimationLayer { Mode = LayerMode.Override, Weight = 1 };
         layers.Items[1] = new AnimationLayer { Mode = LayerMode.Additive, Weight = 1 };
@@ -301,14 +305,14 @@ public sealed class AnimationLayersTests
         Entity hover = PropertyAnimation.By(world, target, Value, 4f, Spec.Tween(2), layer: 1);
         using var systems = Systems(world);
         Tick(systems, world, 0.5);
-        Assert.Equal(18f, world.Read<Display>(target).Value);
+        Assert.Equal(18f, world.ReadComponentData<Display>(target).Value);
 
         PropertyAnimation.Pause(world, hover);
         Tick(systems, world, 0.5);
-        Assert.Equal(23f, world.Read<Display>(target).Value);
+        Assert.Equal(23f, world.ReadComponentData<Display>(target).Value);
         PropertyAnimation.Resume(world, hover);
         Tick(systems, world, 0.5);
-        Assert.Equal(27f, world.Read<Display>(target).Value);
+        Assert.Equal(27f, world.ReadComponentData<Display>(target).Value);
     }
 
     [Theory]
@@ -317,7 +321,7 @@ public sealed class AnimationLayersTests
     public void CrossTypeEvaluatorsUseTheCurrentLayerWeights(bool reverse)
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new Display { Position = new Vector2(10, 20) });
+        Entity target = world.Create(new Display { Position = new Vector2(10, 20) });
         var layers = new AnimationLayers { Count = 2 };
         layers.Items[0] = new AnimationLayer { Mode = LayerMode.Override, Weight = 1 };
         layers.Items[1] = new AnimationLayer { Mode = LayerMode.Additive, Weight = 0 };
@@ -344,16 +348,16 @@ public sealed class AnimationLayersTests
         systems.Add(new TimelineEndSystem());
 
         Tick(systems, world, 0.25);
-        Assert.Equal(new Vector2(10.375f, 20.75f), world.Read<Display>(target).Position);
+        Assert.Equal(new Vector2(10.375f, 20.75f), world.ReadComponentData<Display>(target).Position);
         Tick(systems, world, 0.25);
-        Assert.Equal(new Vector2(11.5f, 23f), world.Read<Display>(target).Position);
+        Assert.Equal(new Vector2(11.5f, 23f), world.ReadComponentData<Display>(target).Position);
     }
 
     [Fact]
     public void DisplacementsFollowAnUpdatedBaseAndReturnToIt()
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new Display { Value = 10 });
+        Entity target = world.Create(new Display { Value = 10 });
         var layers = new AnimationLayers { Count = 1 };
         layers.Items[0] = new AnimationLayer { Mode = LayerMode.Additive, Weight = 1 };
         world.Add(target, layers);
@@ -361,16 +365,16 @@ public sealed class AnimationLayersTests
         PropertyAnimation.By(world, target, Value, 4f, Spec.Tween(1));
         using var systems = Systems(world);
         Tick(systems, world, 0.25);
-        Assert.Equal(13f, world.Read<Display>(target).Value);
+        Assert.Equal(13f, world.ReadComponentData<Display>(target).Value);
 
         PropertyAnimation.SetBase(world, target, Value, 20f);
         PropertyAnimation.By(world, target, Value, 6f, Spec.Tween(1));
         Tick(systems, world, 0.25);
-        Assert.Equal(26.5f, world.Read<Display>(target).Value);
+        Assert.Equal(26.5f, world.ReadComponentData<Display>(target).Value);
         Tick(systems, world, 0.5);
-        Assert.Equal(21.5f, world.Read<Display>(target).Value);
+        Assert.Equal(21.5f, world.ReadComponentData<Display>(target).Value);
         Tick(systems, world, 0.25);
-        Assert.Equal(20f, world.Read<Display>(target).Value);
+        Assert.Equal(20f, world.ReadComponentData<Display>(target).Value);
     }
 
     [Theory]
@@ -379,7 +383,7 @@ public sealed class AnimationLayersTests
     public void RetargetingOneLayerKeepsTheOtherLayersIndependent(bool repeatTo)
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new Display { Value = 10 });
+        Entity target = world.Create(new Display { Value = 10 });
         var layers = new AnimationLayers { Count = 2 };
         layers.Items[0] = new AnimationLayer { Mode = LayerMode.Override, Weight = 1 };
         layers.Items[1] = new AnimationLayer { Mode = LayerMode.Additive, Weight = 1 };
@@ -389,7 +393,7 @@ public sealed class AnimationLayersTests
         Entity hover = PropertyAnimation.To(world, target, Value, 16f, Spec.Tween(2), layer: 1);
         using var systems = Systems(world);
         Tick(systems, world, 0.5);
-        Assert.Equal(16.5f, world.Read<Display>(target).Value);
+        Assert.Equal(16.5f, world.ReadComponentData<Display>(target).Value);
 
         if (repeatTo)
             PropertyAnimation.To(world, target, Value, 18f, Spec.Tween(2), layer: 1);
@@ -397,22 +401,22 @@ public sealed class AnimationLayersTests
             PropertyAnimation.Retarget(world, hover, Value, 18f);
         Tick(systems, world, 0.5);
 
-        Assert.Equal(23.125f, world.Read<Display>(target).Value);
+        Assert.Equal(23.125f, world.ReadComponentData<Display>(target).Value);
     }
 
     [Fact]
     public void ASingleSourceWritesThroughItsDeclaredTrackStorage()
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new Display { Value = 10 });
+        Entity target = world.Create(new Display { Value = 10 });
         PropertyAnimation.Declare<float>(world, target);
         PropertyAnimation.To(world, target, Value, 20f, Spec.Tween(1));
         using var systems = Systems(world);
 
         Tick(systems, world, 0.5);
 
-        Assert.Equal(15f, world.Read<Display>(target).Value);
-        Assert.False(world.HasBuffer<Contribution<float>>(target));
+        Assert.Equal(15f, world.ReadComponentData<Display>(target).Value);
+        Assert.False(world.Has<Buffer<Contribution<float>>>(target));
     }
 
     [Fact]
@@ -420,7 +424,7 @@ public sealed class AnimationLayersTests
     {
         using var world = new World();
         Channel<Meter> channel = Channel<Meter>.Of<Reading>(static (ref Reading reading) => ref reading.Value);
-        Entity target = world.CreateEntity(new Reading { Value = new Meter(10) });
+        Entity target = world.Create(new Reading { Value = new Meter(10) });
         var layers = new AnimationLayers { Count = 1 };
         layers.Items[0] = new AnimationLayer { Mode = LayerMode.Additive, Weight = 1 };
         world.Add(target, layers);
@@ -434,9 +438,9 @@ public sealed class AnimationLayersTests
         systems.Add(new TimelineEndSystem());
 
         Tick(systems, world, 0.5);
-        Assert.Equal(new Meter(15), world.Read<Reading>(target).Value);
+        Assert.Equal(new Meter(15), world.ReadComponentData<Reading>(target).Value);
         Tick(systems, world, 0.5);
-        Assert.Equal(new Meter(10), world.Read<Reading>(target).Value);
+        Assert.Equal(new Meter(10), world.ReadComponentData<Reading>(target).Value);
     }
 
     [Theory]
@@ -445,7 +449,7 @@ public sealed class AnimationLayersTests
     public void WeightContributionsAreBlendedBeforePropertyValues(bool reverse)
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new Display { Value = 10 });
+        Entity target = world.Create(new Display { Value = 10 });
         var layers = new AnimationLayers { Count = 2 };
         layers.Items[0] = new AnimationLayer { Mode = LayerMode.Override, Weight = 1 };
         layers.Items[1] = new AnimationLayer { Mode = LayerMode.Additive, Weight = 0 };
@@ -453,8 +457,8 @@ public sealed class AnimationLayersTests
         PropertyAnimation.SetBase(world, target, Value, 10f);
         world.AddBuffer<Contribution<float>>(target);
         PropertyAnimation.To(world, target, Value, 16f, Spec.Tween(1), layer: 1);
-        Entity first = world.CreateEntity();
-        Entity second = world.CreateEntity();
+        Entity first = world.Create();
+        Entity second = world.Create();
         var a = new FieldContributionSystem(target, new Contribution<float> { Channel = HoverWeight, Value = 1, Source = first });
         var b = new FieldContributionSystem(target, new Contribution<float> { Channel = HoverWeight, Value = 0.5f, Source = second });
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
@@ -467,9 +471,9 @@ public sealed class AnimationLayersTests
         systems.Add(new TimelineEndSystem());
 
         Tick(systems, world, 0.5);
-        Assert.Equal(11.5f, world.Read<Display>(target).Value);
+        Assert.Equal(11.5f, world.ReadComponentData<Display>(target).Value);
         Tick(systems, world, 0.5);
-        Assert.Equal(13f, world.Read<Display>(target).Value);
+        Assert.Equal(13f, world.ReadComponentData<Display>(target).Value);
     }
 
     [Theory]
@@ -484,7 +488,7 @@ public sealed class AnimationLayersTests
     public void CrossingStagesBlendsTheLastReachedFieldValue(LayerMode mode, bool inline, double delta, float expected)
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new Display());
+        Entity target = world.Create(new Display());
         var layers = new AnimationLayers { Count = 1 };
         layers.Items[0] = new AnimationLayer { Mode = mode, Weight = 0.5f };
         world.Add(target, layers);
@@ -497,21 +501,34 @@ public sealed class AnimationLayersTests
         var next = new Track<float>
         {
             Target = inline ? Entity.Null : target,
-            Channel = Value, From = 10, Current = 10, To = 20,
-            Duration = 0.1f, Curve = Spec.Tween(0.1f).Curve, Stage = 1,
-            StartId = world.Read<Timeline>(animation).Starts,
+            Channel = Value,
+            From = 10,
+            Current = 10,
+            To = 20,
+            Duration = 0.1f,
+            Curve = Spec.Tween(0.1f).Curve,
+            Stage = 1,
+            StartId = world.ReadComponentData<Timeline>(animation).Starts,
         };
-        world.ExecuteBufferWrite<Track<float>, Track<float>>(animation, ref next,
-            static (DynamicBuffer<Track<float>> tracks, ref Track<float> track) => tracks.Add(track));
+        {
+            using var tracks = world.GetBuffer<Track<float>>(animation);
+            Visit(tracks, ref next);
+
+            static void Visit(DynamicBuffer<Track<float>> tracks, ref Track<float> track)
+            {
+                tracks.Add(track);
+
+            }
+        }
         using var systems = Systems(world);
 
         Tick(systems, world, delta);
-        Assert.Equal(expected, world.Read<Display>(target).Value, 5);
+        Assert.Equal(expected, world.ReadComponentData<Display>(target).Value, 5);
         Tick(systems, world, 0.25);
-        Assert.Equal(10f, world.Read<Display>(target).Value);
+        Assert.Equal(10f, world.ReadComponentData<Display>(target).Value);
         Assert.False(world.IsEnabled<Timeline>(animation));
         Tick(systems, world, 0.25);
-        Assert.Equal(10f, world.Read<Display>(target).Value);
+        Assert.Equal(10f, world.ReadComponentData<Display>(target).Value);
     }
 
     [Theory]
@@ -520,7 +537,7 @@ public sealed class AnimationLayersTests
     public void CrossingStagesUsesTheLastReachedLayerWeight(double delta, float expected)
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new Display());
+        Entity target = world.Create(new Display());
         var layers = new AnimationLayers { Count = 2 };
         layers.Items[0] = new AnimationLayer { Mode = LayerMode.Override, Weight = 1 };
         layers.Items[1] = new AnimationLayer { Mode = LayerMode.Additive, Weight = 0 };
@@ -531,36 +548,55 @@ public sealed class AnimationLayersTests
         PropertyAnimation.To(world, target, Value, 10f, Spec.Tween(0.1f), layer: 1);
         PropertyAnimation.To(world, target, HoverWeight, 1f, Spec.Tween(0.1f));
         AddDurationStages(world, target);
-        uint starts = world.Read<Timeline>(target).Starts;
-        world.ExecuteBufferWrite<Track<float>, uint>(target, ref starts,
-            static (DynamicBuffer<Track<float>> tracks, ref uint starts) =>
+        uint starts = world.ReadComponentData<Timeline>(target).Starts;
+        {
+            using var tracks = world.GetBuffer<Track<float>>(target);
+            Visit(tracks, ref starts);
+
+            static void Visit(DynamicBuffer<Track<float>> tracks, ref uint starts)
             {
                 tracks.Add(new Track<float>
                 {
-                    Channel = Value, From = 10, Current = 10, To = 20, Layer = 1,
-                    Duration = 0.1f, Curve = Spec.Tween(0.1f).Curve, Stage = 1, StartId = starts,
+                    Channel = Value,
+                    From = 10,
+                    Current = 10,
+                    To = 20,
+                    Layer = 1,
+                    Duration = 0.1f,
+                    Curve = Spec.Tween(0.1f).Curve,
+                    Stage = 1,
+                    StartId = starts,
                 });
                 tracks.Add(new Track<float>
                 {
-                    Channel = HoverWeight, From = 1, Current = 1, To = 0,
-                    Duration = 0.1f, Curve = Spec.Tween(0.1f).Curve, Stage = 1, StartId = starts,
+                    Channel = HoverWeight,
+                    From = 1,
+                    Current = 1,
+                    To = 0,
+                    Duration = 0.1f,
+                    Curve = Spec.Tween(0.1f).Curve,
+                    Stage = 1,
+                    StartId = starts,
                 });
-            });
+
+            }
+        }
         using var systems = Systems(world);
 
         Tick(systems, world, delta);
 
-        Assert.Equal(expected, world.Read<Display>(target).Value, 5);
+        Assert.Equal(expected, world.ReadComponentData<Display>(target).Value, 5);
     }
 
     private static void AddDurationStages(World world, Entity animation)
     {
-        if (!world.HasBuffer<TimelineStage>(animation)) world.AddBuffer<TimelineStage>(animation);
-        world.ExecuteBufferWrite<TimelineStage>(animation, static stages =>
+        if (!world.Has<Buffer<TimelineStage>>(animation)) world.AddBuffer<TimelineStage>(animation);
         {
+            using var stages = world.GetBuffer<TimelineStage>(animation);
             stages.Add(new TimelineStage { End = StageEnd.Duration, Duration = 0.1f });
             stages.Add(new TimelineStage { End = StageEnd.Duration, Duration = 0.1f });
-        });
+
+        }
     }
 
 #if DEBUG
@@ -568,7 +604,7 @@ public sealed class AnimationLayersTests
     public void SameLayerSourcesRequireDistinctIds()
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new Display());
+        Entity target = world.Create(new Display());
         world.AddBuffer<Contribution<float>>(target);
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
         systems.Add(new FieldContributionSystem(target, new Contribution<float> { Channel = Value, Value = 20 }));
@@ -584,8 +620,16 @@ public sealed class AnimationLayersTests
         public void OnUpdate(ref ImmediateSystemContext context)
         {
             Contribution<float> value = contribution;
-            context.World.ExecuteBufferWrite<Contribution<float>, Contribution<float>>(target, ref value,
-                static (DynamicBuffer<Contribution<float>> values, ref Contribution<float> value) => values.Add(value));
+            {
+                using var values = context.World.GetBuffer<Contribution<float>>(target);
+                Visit(values, ref value);
+
+                static void Visit(DynamicBuffer<Contribution<float>> values, ref Contribution<float> value)
+                {
+                    values.Add(value);
+
+                }
+            }
         }
     }
 

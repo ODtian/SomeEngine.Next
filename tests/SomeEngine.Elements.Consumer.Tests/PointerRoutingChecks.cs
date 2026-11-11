@@ -15,20 +15,20 @@ internal static partial class PointerChecks
     internal static void RunRouting(bool rewritten)
     {
         using var world = new World();
-        Entity canvas = world.CreateEntity(new Canvas { Size = new Size(800, 600) });
+        Entity canvas = world.Create(new Canvas { Size = new Size(800, 600) });
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
         systems.Add(new HitTestSystem());
         systems.Add(new ViewRebuildSystem());
         systems.Add(new LayoutSystem());
         Entity root = Views.Views.Spawn(world, canvas, new CardButtons(rewritten));
         systems.Update();
-        Entity container = Hierarchy<ElementTree>.GetChildren(world, root)[0];
-        Entity card = Hierarchy<ElementTree>.GetChildren(world, container)[0];
-        var children = Hierarchy<ElementTree>.GetChildren(world, card);
+        Entity container = ElementChildren.Read(world, root)[0];
+        Entity card = ElementChildren.Read(world, container)[0];
+        var children = ElementChildren.Read(world, card);
         Entity branch = children[0];
-        Entity button = Hierarchy<ElementTree>.GetChildren(world, branch)[0];
+        Entity button = ElementChildren.Read(world, branch)[0];
         Entity sibling = children[1];
-        Require(world.Read<DisplayedSubtree>(root) == new DisplayedSubtree(false, false),
+        Require(world.ReadComponentData<DisplayedSubtree>(root) == new DisplayedSubtree(false, false),
             "A new card displays the initial subtree state.");
 
         Pointer.Move(world, canvas, new Vector2(10, 10));
@@ -38,7 +38,7 @@ internal static partial class PointerChecks
         RequireHover(world, branch, hovered: false, pressed: false, within: true);
         RequireHover(world, card, hovered: false, pressed: false, within: true);
         RequireHover(world, sibling, hovered: false, pressed: false, within: false);
-        Require(world.Read<DisplayedSubtree>(root) == new DisplayedSubtree(true, true),
+        Require(world.ReadComponentData<DisplayedSubtree>(root) == new DisplayedSubtree(true, true),
             "A caller reading Hover observes entry into the button's subtree.");
 
         Pointer.Move(world, canvas, new Vector2(160, 10));
@@ -47,7 +47,7 @@ internal static partial class PointerChecks
         RequireHover(world, branch, hovered: false, pressed: false, within: false);
         RequireHover(world, card, hovered: false, pressed: false, within: true);
         RequireHover(world, sibling, hovered: true, pressed: false, within: true);
-        Require(world.Read<DisplayedSubtree>(root) == new DisplayedSubtree(true, false),
+        Require(world.ReadComponentData<DisplayedSubtree>(root) == new DisplayedSubtree(true, false),
             "Moving to a sibling leaves the branch and stays within the card.");
 
         Pointer.Move(world, canvas, new Vector2(400, 200));
@@ -55,37 +55,37 @@ internal static partial class PointerChecks
         RequireHover(world, button, hovered: false, pressed: true, within: false);
         RequireHover(world, branch, hovered: false, pressed: false, within: false);
         RequireHover(world, card, hovered: false, pressed: false, within: false);
-        Require(world.Read<DisplayedSubtree>(root) == new DisplayedSubtree(false, false),
+        Require(world.ReadComponentData<DisplayedSubtree>(root) == new DisplayedSubtree(false, false),
             "The caller observes exit from the whole card while the button holds its press.");
         Pointer.Release(world, canvas, PointerButton.Primary);
         systems.Update();
         RequireHover(world, button, hovered: false, pressed: false, within: false);
-        Require(world.Read<DisplayedClicks>(root) == new DisplayedClicks(0, 0),
+        Require(world.ReadComponentData<DisplayedClicks>(root) == new DisplayedClicks(0, 0),
             "Releasing outside preserves both displayed click counts.");
 
         Click(world, canvas);
         systems.Update();
-        Require(world.Read<Clicks>(card).Count == 1 && world.Read<Clicks>(button).Count == 1,
+        Require(world.ReadComponentData<Clicks>(card).Count == 1 && world.ReadComponentData<Clicks>(button).Count == 1,
             "A completed child click reaches the card through the branch.");
-        Require(world.Read<DisplayedClicks>(root) == new DisplayedClicks(1, 1),
+        Require(world.ReadComponentData<DisplayedClicks>(root) == new DisplayedClicks(1, 1),
             "The caller consumes the card's and child's clicks in the same frame.");
-        Require(world.Read<DisplayedSubtree>(root) == new DisplayedSubtree(true, true),
+        Require(world.ReadComponentData<DisplayedSubtree>(root) == new DisplayedSubtree(true, true),
             "The pointer can enter the subtree again.");
 
         world.Add(branch, new StopsPointer());
         Click(world, canvas);
         systems.Update();
-        Require(world.Read<Clicks>(card).Count == 1 && world.Read<Clicks>(button).Count == 2,
+        Require(world.ReadComponentData<Clicks>(card).Count == 1 && world.ReadComponentData<Clicks>(button).Count == 2,
             "A stopping branch retains the card count and advances the child count.");
-        Require(world.Read<DisplayedClicks>(root) == new DisplayedClicks(1, 2),
+        Require(world.ReadComponentData<DisplayedClicks>(root) == new DisplayedClicks(1, 2),
             "The caller observes the click boundary through Clicked.");
-        Require(world.Read<DisplayedSubtree>(root) == new DisplayedSubtree(true, true),
+        Require(world.ReadComponentData<DisplayedSubtree>(root) == new DisplayedSubtree(true, true),
             "The card's subtree state follows the hovered descendant across the click boundary.");
 
         world.Remove<StopsPointer>(branch);
         Click(world, canvas);
         systems.Update();
-        Require(world.Read<DisplayedClicks>(root) == new DisplayedClicks(2, 3),
+        Require(world.ReadComponentData<DisplayedClicks>(root) == new DisplayedClicks(2, 3),
             "Removing the click boundary lets the caller consume the next bubbled click.");
     }
 
@@ -98,7 +98,7 @@ internal static partial class PointerChecks
 
     private static void RequireHover(World world, Entity node, bool hovered, bool pressed, bool within)
     {
-        Hover value = world.Read<Hover>(node);
+        Hover value = world.ReadComponentData<Hover>(node);
         Require(value.Hovered == hovered && value.Pressed == pressed && value.Within == within,
             $"Node {node}: expected hovered={hovered}, pressed={pressed}, within={within}; " +
             $"received hovered={value.Hovered}, pressed={value.Pressed}, within={value.Within}.");
@@ -142,7 +142,7 @@ internal static partial class PointerChecks
         private bool ReadClick(Entity node) => Rewritten ? UserPressable.Clicked(node) : node.Clicked();
     }
 
-    private record struct CardButtonCounts(int Card, int Button) : IComponent;
+    private record struct CardButtonCounts(int Card, int Button) : IComponent, ITrackedComponent;
     private readonly record struct DisplayedClicks(int Card, int Button) : IComponent;
     private readonly record struct DisplayedSubtree(bool Card, bool Branch) : IComponent;
 }

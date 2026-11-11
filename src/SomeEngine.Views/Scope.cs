@@ -3,7 +3,6 @@ using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hierarchy;
 using SomeEngine.ECS.Components;
-using SomeEngine.ECS.Queries;
 using SomeEngine.Core.Diagnostics;
 
 namespace SomeEngine.Views;
@@ -64,7 +63,7 @@ public static partial class Scope
     {
         CheckBuild(Current);
         DevelopmentCheck.Require(compute is not null, "Scope.Memo requires a calculation.");
-        var memo = new Memo<T>(compute);
+        var memo = new Memo<T>(compute!);
         memo.Refresh(Current.Frame);
         return memo;
     }
@@ -84,7 +83,7 @@ public static partial class Scope
     {
         ScopeData current = Current;
         if (!current.World.HasSparse<Computations>(current.Entity))
-            current.World.AddSparse(current.Entity, new Computations(new ComputationList()));
+            current.World.SetSparse(current.Entity, new Computations(new ComputationList()));
         current.World.ReadSparse<Computations>(current.Entity).List.Items.Add(computation);
     }
 
@@ -95,7 +94,7 @@ public static partial class Scope
         if (s_scopes is not { Count: > 0 } || !s_scopes.Peek().DependenciesEnabled)
             return;
         DevelopmentCheck.Require(cell is not null, "Scope.Depend requires a version cell.");
-        Depend(cell, Volatile.Read(ref cell.Version));
+        Depend(cell!, Volatile.Read(ref cell!.Version));
     }
 
     internal static void Depend(VersionCell cell, uint version)
@@ -145,7 +144,7 @@ public static partial class Scope
         ScopeData current = Current;
         DevelopmentCheck.Require(default(T) is IComponent or ISparseComponent,
             $"Scope.ReadUp requires table or sparse component {typeof(T).Name}.");
-        ushort component = ComponentId<T>.Value;
+        int component = ComponentId<T>.Value;
         Entity source = EnvironmentLookup.FindSource(current.World, current.Entity, component);
         if (current.DependenciesEnabled)
         {
@@ -221,7 +220,7 @@ public static partial class Scope
         ScopeData current = Current;
         DevelopmentCheck.Require(default(T) is IComponent or ISparseComponent or ITag or ISharedComponent,
             $"Scope.Has requires a component or tag type, received {typeof(T).Name}.");
-        bool present = current.World.HasComponentData<T>(entity);
+        bool present = current.World.IsAlive(entity) && current.World.HasComponentData<T>(entity);
         if (current.DependenciesEnabled)
             RecordDependency(current, new Dependency
             {
@@ -235,10 +234,15 @@ public static partial class Scope
 
     /// <summary>Enumerates query entities and records membership as a dependency of a Rerun build.</summary>
     /// <remarks>Each call captures the current structural membership in query order.</remarks>
-    public static QueryRows Each(QueryHandle query)
+    public static QueryRows Each(Query query)
     {
         ScopeData current = Current;
-        ReadOnlySpan<Entity> entities = current.World.ReadQueryEntities(query, out uint version);
+        var members = new List<Entity>(query.Count);
+        using (QueryScope read = query.OpenRead())
+            foreach (QueryChunk chunk in read)
+                foreach (Entity entity in chunk.Entities) members.Add(entity);
+        ulong version = query.MembershipVersion;
+        ReadOnlySpan<Entity> entities = members.ToArray();
         if (current.DependenciesEnabled)
             RecordDependency(current, new Dependency
             {
@@ -256,15 +260,12 @@ public static partial class Scope
             computation.Add(dependency);
             return;
         }
-        if (!current.World.HasBuffer<Dependency>(current.Entity))
+        if (!current.World.Has<Buffer<Dependency>>(current.Entity))
             current.World.AddBuffer<Dependency>(current.Entity);
-        current.World.ExecuteBufferWrite<Dependency, Dependency>(current.Entity, ref dependency, static (buffer, ref read) =>
-        {
-            foreach (Dependency existing in buffer.ReadSpan())
-                if (existing.HasSameSource(in read))
-                    return;
-            buffer.Add(read);
-        });
+        using DynamicBuffer<Dependency> buffer = current.World.GetBuffer<Dependency>(current.Entity);
+        foreach (Dependency existing in buffer.AsSpan())
+            if (existing.HasSameSource(in dependency)) return;
+        buffer.Add(dependency);
     }
 
     private static class EnvironmentDefault<T> where T : struct
@@ -302,7 +303,7 @@ public static partial class Scope
         current.Occurrences.TryGetValue(key, out int occurrence);
         current.Occurrences[key] = occurrence + 1;
         var children = current.PreviousChildren;
-        for (int index = 0; index < children.Count; index++)
+        for (int index = 0; index < children.Length; index++)
         {
             Entity existing = children[index];
             ElementKey identity = current.World.Read<ElementKey>(existing);
@@ -412,8 +413,11 @@ public static partial class Scope
         ScopeData? parent = s_scopes is { Count: > 0 } ? s_scopes.Peek() : null;
         if (parent?.World == world)
             parent.Changes.RememberReads(world, entity);
-        if (world.HasBuffer<Dependency>(entity))
-            world.ExecuteBufferWrite<Dependency>(entity, static buffer => buffer.Clear());
+        if (world.Has<Buffer<Dependency>>(entity))
+            {
+                using var buffer = world.GetBuffer<Dependency>(entity);
+                buffer.Clear();
+            }
         if (world.Has<ObjectDependencies>(entity))
             world.Read<ObjectDependencies>(entity).Reads.Clear(frame);
         ScopeData current = s_reusableData is { } reusable && reusable.TryPop(out var available)
@@ -504,7 +508,7 @@ public static partial class Scope
         if (data.OutermostBuild)
             data.Changes.Clear();
         data.Changes = null!;
-        data.PreviousChildren = default;
+        data.PreviousChildren = [];
         data.DeclaredChildren.Clear();
         data.Completed = false;
         data.KeyPrefix = null;
@@ -563,13 +567,13 @@ public static partial class Scope
             return;
         }
         CheckSiblingCounts(data);
-        var children = Hierarchy<ElementTree>.GetChildren(data.World, data.Parent);
+        var children = ElementTree.CopyChildren(data.World, data.Parent);
         for (int index = 0; index < data.DeclaredChildren.Count; index++)
         {
             if (children[index] == data.DeclaredChildren[index])
                 continue;
             Hierarchy<ElementTree>.SetParent(data.World, data.DeclaredChildren[index], data.Parent, index);
-            children = Hierarchy<ElementTree>.GetChildren(data.World, data.Parent);
+            children = ElementTree.CopyChildren(data.World, data.Parent);
         }
         foreach (Entity child in data.PreviousChildren)
             if (!data.DeclaredChildren.Contains(child))
@@ -579,6 +583,7 @@ public static partial class Scope
 
     internal static void CommitWrites(ScopeData data, bool submitAnimations = false)
     {
+        using var batch = data.World.OpenWriteBatch();
         if (data.ComponentCopies is { } copies)
         {
             bool asynchronousCalculation = data.Computation?.Async is not null;
@@ -727,7 +732,7 @@ public static partial class Scope
     {
         if (world.Has<LocalState>(entity))
             return true;
-        foreach (Entity child in Hierarchy<ElementTree>.GetChildren(world, entity))
+        foreach (Entity child in ElementTree.CopyChildren(world, entity))
         {
             if (ContainsLocalState(world, child))
                 return true;
@@ -740,16 +745,16 @@ public static partial class Scope
 
     internal sealed class ScopeData
     {
-        private List<(Entity Entity, ushort Component, ulong Field)>? _unusedCopies;
+        private List<(Entity Entity, int Component, ulong Field)>? _unusedCopies;
         internal World World = null!;
         internal Entity Entity;
         internal Entity Parent;
         internal ScopeData ViewData = null!;
         internal List<ScopeData>? ContentData;
         internal Computation? Computation;
-        internal Dictionary<(Entity Entity, ushort Component, ulong Field), ComponentCopy>? ComponentCopies;
+        internal Dictionary<(Entity Entity, int Component, ulong Field), ComponentCopy>? ComponentCopies;
         internal ulong Frame;
-        internal HierarchyChildrenSnapshot<ElementTree> PreviousChildren;
+        internal Entity[] PreviousChildren = [];
         internal List<Entity> DeclaredChildren { get; } = new();
         internal ChildChanges Changes = null!;
         internal ChildChanges? OwnChanges;
@@ -771,8 +776,8 @@ public static partial class Scope
         internal CancellationTokenSource? Cancellation;
         internal CancellationToken CancellationToken => (Cancellation ??= new()).Token;
         internal bool IsCanceled => Cancellation?.IsCancellationRequested == true;
-        internal uint? ParameterVersion;
-        internal ushort ParameterComponent;
+        internal ulong? ParameterVersion;
+        internal int ParameterComponent;
         internal bool Suspended;
         internal Dictionary<ulong, int> Occurrences { get; } = new();
         internal Dictionary<ulong, int>? RememberOccurrences;
@@ -792,7 +797,7 @@ public static partial class Scope
         internal void BeginChildren(ulong frame, ChildChanges? changes)
         {
             Frame = frame;
-            PreviousChildren = DeclaresChildren ? Hierarchy<ElementTree>.GetChildren(World, Parent) : default;
+            PreviousChildren = DeclaresChildren ? ElementTree.CopyChildren(World, Parent) : [];
             OutermostBuild = changes is null;
             Changes = changes ?? (OwnChanges ??= new());
             FirstData = Changes.DataCount;
@@ -834,7 +839,7 @@ public static partial class Scope
     internal readonly struct BuildScope(ScopeData data, bool releaseOnExit) : IDisposable
     {
         internal bool IsSuspended => data.Suspended;
-        internal void Finish(BuildTask task, uint? parameterVersion, ushort parameterComponent)
+        internal void Finish(BuildTask task, ulong? parameterVersion, int parameterComponent)
         {
             data.Task = task;
             data.ParameterVersion = parameterVersion;

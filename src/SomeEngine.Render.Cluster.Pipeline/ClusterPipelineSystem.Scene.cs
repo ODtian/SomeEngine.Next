@@ -1,3 +1,4 @@
+using SomeEngine.Core.ECS.Components;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using MeshOptimizer;
@@ -6,7 +7,7 @@ using SomeEngine.Render.Components;
 using SomeEngine.Render.Instances;
 using SomeEngine.RenderGraph;
 using SomeEngine.Render.Systems;
-using SomeEngine.ECS.Queries;
+using SomeEngine.ECS;
 
 namespace SomeEngine.Render.Cluster.Pipeline;
 
@@ -95,8 +96,7 @@ public sealed partial class ClusterPipelineSystem
                 _sceneInstances = new uint[count];
             }
             var positions = new ScenePositions(_instances.Current!, _scenePositions);
-            world.ExecuteQuery(_sceneQuery, ref positions,
-                static (QueryCursor query, ref ScenePositions data) => data.Collect(query));
+            using (QueryScope query = _sceneQuery.OpenRead()) positions.Collect(query);
             if (count != 0)
                 Meshopt.SpatialSortRemap(_sceneRemap, MemoryMarshal.Cast<Vector3, float>(_scenePositions), 12u);
             for (uint index = 0; index < count; index++)
@@ -126,14 +126,12 @@ public sealed partial class ClusterPipelineSystem
     {
         private int _entityIndex;
 
-        internal void Collect(QueryCursor query)
+        internal void Collect(scoped QueryScope query)
         {
-            foreach (QueryRow row in query.Rows)
-            {
-                Vector3 position = row.Read<RenderTransform>().Position;
-                foreach (var address in batches.RowsForEntity(_entityIndex++))
-                    positions[address.Row] = position;
-            }
+            foreach (QueryChunk chunk in query)
+                foreach (RenderTransform transform in chunk.Read<RenderTransform>())
+                    foreach (var address in batches.RowsForEntity(_entityIndex++))
+                        positions[address.Row] = transform.Position;
         }
     }
 

@@ -5,9 +5,7 @@ using SomeEngine.Assets.Importers;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Core.Math;
 using SomeEngine.ECS;
-using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Graphics;
 using SomeEngine.Render.Cluster;
@@ -115,8 +113,8 @@ public sealed class GpuClusterExample : IApplicationGeometryFeature, IDisposable
     public void Dispose() => _material = null;
 
     private sealed record ExampleMesh(ulong Revision, Vector3[] Positions, Vector2[] Attributes, uint[] Indices, Bounds Bounds);
-    private readonly record struct ExampleGeometry(Material Material, ExampleMesh Mesh) : IComponent;
-    private readonly record struct ExampleRenderGeometry(ExampleMesh Mesh) : IComponent;
+    private readonly record struct ExampleGeometry(Material Material, ExampleMesh Mesh) : ITrackedComponent;
+    private readonly record struct ExampleRenderGeometry(ExampleMesh Mesh) : ITrackedComponent;
 
     private sealed class ExampleGame(GpuClusterExample example) : ISystem<ImmediateSystemContext>
     {
@@ -126,8 +124,8 @@ public sealed class GpuClusterExample : IApplicationGeometryFeature, IDisposable
         {
             if (example._material is null || _revision == example._mesh.Revision) return;
             var value = new ExampleGeometry(example._material, example._mesh);
-            if (_entity == default) _entity = context.World.CreateEntity(value);
-            else context.World.Replace(_entity, value);
+            if (_entity == default) _entity = context.World.Create(value);
+            else context.World.Set(_entity, value);
             _revision = example._mesh.Revision;
         }
     }
@@ -141,22 +139,23 @@ public sealed class GpuClusterExample : IApplicationGeometryFeature, IDisposable
             query.Write<ExampleRenderGeometry>();
             query.Write<RenderMaterialReference>();
         }
-        public void CollectResources(scoped QueryCursor source, RenderExtractionResources resources)
+        public void CollectResources(scoped QueryScope source, RenderExtractionResources resources)
         {
-            foreach (QueryChunkView chunk in source.Chunks)
+            foreach (QueryChunk chunk in source)
                 if (chunk.TryRead<ExampleGeometry>(out var values))
-                    foreach (var value in values) resources.Add(value.Material);
+                    for (int row = 0; row < chunk.Count; row++)
+                        if (chunk.Has<ExampleGeometry>(row)) resources.Add(values[row].Material);
         }
         public void Reset() => _values.Clear();
-        public void Collect(QueryChunkView chunk)
+        public void Collect(QueryChunk chunk)
         {
             if (!chunk.TryRead<ExampleGeometry>(out var geometries)) return;
             for (int index = 0; index < geometries.Length; index++)
-                _values.Add((chunk.Entities[index], geometries[index]));
+                if (chunk.Has<ExampleGeometry>(index)) _values.Add((chunk.Entities[index], geometries[index]));
         }
-        public bool CollectChanges(QueryChunkView chunk, RenderExtractionContext context)
+        public bool CollectChanges(QueryChunk chunk, ulong since, RenderExtractionContext context)
         {
-            if (!chunk.Has<ExampleGeometry>() || !chunk.HasChangedSinceLastSystemVersion<ExampleGeometry>()) return false;
+            if (!chunk.Has<ExampleGeometry>() || !chunk.WasWritten<ExampleGeometry>(since)) return false;
             Collect(chunk);
             return true;
         }
@@ -185,7 +184,7 @@ public sealed class GpuClusterExample : IApplicationGeometryFeature, IDisposable
         private readonly ClusterGpuBuilder _builder;
         private readonly IGraphicsBackend _backend;
         private readonly GpuClusterExample _example;
-        private QueryHandle _query;
+        private Query _query;
         private ClusterGeometry _geometry;
         private ExampleBuild? _build;
         private bool _reserved;
@@ -206,31 +205,29 @@ public sealed class GpuClusterExample : IApplicationGeometryFeature, IDisposable
                 new(shader, "BuildExampleCluster", Encoding, 64 * 20));
         }
         public void OnCreate(ref RenderPrepareSystemContext context) =>
-            _query = context.World.Query(new QueryDefinitionBuilder().Read<ExampleRenderGeometry>());
+            _query = context.World.World.Query(new QueryDescription().WithStored<ExampleRenderGeometry>());
         public void OnDestroy(ref RenderPrepareSystemContext context)
         {
             if (_reserved) _builder.Release(context, _geometry);
             if (_build is { } build && build.Geometry != _geometry) _builder.Release(context, build.Geometry);
-            context.World.ReleaseQuery(_query);
+            _query = default;
         }
         public void OnUpdate(ref RenderPrepareSystemContext context)
         {
             Entity entity = default;
             ExampleMesh? mesh = null;
-            context.World.ExecuteQuery(_query, query =>
-            {
-                foreach (QueryChunkView chunk in query.Chunks)
+            using (QueryScope query = _query.OpenRead())
+                foreach (QueryChunk chunk in query)
                 {
                     entity = chunk.Entities[0];
                     mesh = chunk.Read<ExampleRenderGeometry>()[0].Mesh;
                 }
-            });
             if (entity == default) return;
             if (_build is { Complete: true } completed)
             {
                 if (completed.Geometry != _geometry)
                 {
-                    context.World.Replace(entity, new RenderClusterGeometry(completed.Geometry, 0));
+                    context.World.World.Set(entity, new RenderClusterGeometry(completed.Geometry, 0));
                     _builder.Release(context, _geometry);
                     _geometry = completed.Geometry;
                     _example.GeometryRevision = _geometry.Revision;
@@ -244,7 +241,7 @@ public sealed class GpuClusterExample : IApplicationGeometryFeature, IDisposable
             if (!_reserved)
             {
                 _geometry = geometry;
-                context.World.Add(entity, new RenderClusterGeometry(_geometry, 0));
+                context.World.World.Set(entity, new RenderClusterGeometry(_geometry, 0));
                 _example.GeometryRevision = _geometry.Revision;
                 _reserved = true;
             }

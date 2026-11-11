@@ -43,7 +43,7 @@ public sealed partial class SkinningRenderingTests
                     animations[actor] = graphs[actor].Play(frame.World, targets[actor]);
                 }
                 foreach (Entity mesh in frame.Scene.MeshEntities)
-                    frame.World.Add(mesh, new MeshSkin(frame.World.Read<WorldTransform>(mesh).Qvvs.Position.X > 0 ? completed : stopped, binding));
+                    frame.World.Set(mesh, new MeshSkin(frame.World.ReadComponentData<WorldTransform>(mesh).Qvvs.Position.X > 0 ? completed : stopped, binding));
             },
             UpdateFrame = frame =>
             {

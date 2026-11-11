@@ -3,7 +3,7 @@ using SomeEngine.ECS;
 namespace SomeEngine.Elements;
 
 /// <summary>Committed text, UTF-16 caret and selection anchor, and displayed IME composition.</summary>
-public struct EditableText : IComponent
+public struct EditableText : ITrackedComponent
 {
     /// <summary>The committed string; default strings represent empty text.</summary>
     public string Text;

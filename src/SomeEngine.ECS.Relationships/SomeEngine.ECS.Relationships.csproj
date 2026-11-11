@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <SomeEngineGenerateRelationFamilies Condition="'$(SomeEngineIncludePairing)' != 'false'">true</SomeEngineGenerateRelationFamilies>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="SomeEngine.ECS.Serialization" />
+    <ProjectReference Include="../SomeEngine.ECS/SomeEngine.ECS.csproj" />
+    <CompilerVisibleProperty Include="SomeEngineGenerateRelationFamilies" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(SomeEngineIncludePairing)' == 'false'">
+    <Compile Remove="Pairing/**/*.cs" />
+  </ItemGroup>
+</Project>

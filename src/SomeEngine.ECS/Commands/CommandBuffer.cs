@@ -1,1225 +1,354 @@
-using SomeEngine.ECS.Collections;
-using SomeEngine.ECS.Components;
-using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Hooks;
-using SomeEngine.ECS.Registry;
-using SomeEngine.ECS.Relations;
 using System.Runtime.CompilerServices;
+using SomeEngine.ECS.Entities;
+using SomeEngine.ECS.Storage;
 
 namespace SomeEngine.ECS.Commands;
 
-/// <summary>
-/// 命令类型枚举。
-/// </summary>
-internal enum CommandType : byte
+internal enum CommandKind
 {
-    CreateEntity,
-    DestroyEntity,
-    AddComponent,
-    RemoveComponent,
-    ReplaceComponent,
-    AddSparse,
-    ReplaceSparse,
-    AddTag,
-    RemoveTag,
-    AddBuffer,
-    ReplaceBuffer,
-    RemoveBuffer,
-    TypedRelationship,
+    Create, Destroy, Set, Add, Remove, Enable, Disable, SetSparse, RemoveSparse,
+    SetBuffer, AppendBuffer, RemoveBuffer, Composite,
 }
 
-/// <summary>
-/// 命令头。固定大小，存储命令元信息。
-/// </summary>
-internal struct CommandHeader
+internal readonly record struct CommandHeader(CommandKind Kind, Entity Target, int TypeId, int DataIndex);
+
+internal abstract class CommandBucket
 {
-    public CommandType Type;
-    public CommandEntity Entity;
-    public int ComponentId;
-    public int DataIndex; // 指向 CommandDataList 的 index，-1 = 无数据
+    internal abstract Entity Execute(World world, in CommandHeader command, CommandResults? results);
+    internal abstract void Clear(World world);
 }
 
-/// <summary>
-/// Command-local identity for an entity that will be allocated during playback.
-/// No live <see cref="Entity"/> exists until a successful playback reaches its Create command.
-/// </summary>
-public readonly struct DeferredEntity : IEquatable<DeferredEntity>
+internal static class CommandTypes
 {
-    private readonly DeferredEntityCell? _cell;
-
-    internal DeferredEntity(DeferredEntityCell cell)
-    {
-        _cell = cell;
-    }
-
-    public bool IsResolved => _cell?.IsResolved == true;
-
-    public Entity Resolve()
-    {
-        if (_cell is null)
-            throw new InvalidOperationException("The deferred entity handle is default/uninitialized.");
-        return _cell.Resolve();
-    }
-
-    public bool TryResolve(out Entity entity)
-    {
-        if (_cell is not null && _cell.TryResolve(out entity))
-            return true;
-
-        entity = Entity.Null;
-        return false;
-    }
-
-    public bool Equals(DeferredEntity other) => ReferenceEquals(_cell, other._cell);
-
-    public override bool Equals(object? obj) => obj is DeferredEntity other && Equals(other);
-
-    public override int GetHashCode() =>
-        _cell is null ? 0 : RuntimeHelpers.GetHashCode(_cell);
-
-    public static bool operator ==(DeferredEntity left, DeferredEntity right) => left.Equals(right);
-
-    public static bool operator !=(DeferredEntity left, DeferredEntity right) => !left.Equals(right);
-
-    internal CommandEntity AsCommandEntity(CommandBuffer owner)
-    {
-        if (_cell is null)
-            throw new InvalidOperationException("The deferred entity handle is default/uninitialized.");
-        _cell.RequireOwner(owner);
-        return new CommandEntity(_cell);
-    }
+    private static int _next;
+    internal static int Next() => Interlocked.Increment(ref _next) - 1;
 }
 
-internal sealed class DeferredEntityCell
+internal static class CommandType<T> where T : CommandBucket
 {
-    private readonly CommandBuffer _owner;
-    private World? _world;
-    private Entity _entity;
-    private long _publicationEpoch;
-    private bool _prepared;
-    private bool _invalidated;
-
-    internal DeferredEntityCell(CommandBuffer owner)
-    {
-        _owner = owner;
-    }
-
-    internal bool IsResolved
-    {
-        get
-        {
-            lock (_owner.CommandGate)
-                return IsResolvedUnderGate;
-        }
-    }
-
-    private bool IsResolvedUnderGate =>
-        _prepared &&
-        !_invalidated &&
-        _world!.IsStructureEpochPublished(_publicationEpoch);
-
-    internal void Prepare(World world, Entity entity, long publicationEpoch)
-    {
-        lock (_owner.CommandGate)
-        {
-            ArgumentNullException.ThrowIfNull(world);
-            if (_invalidated)
-                throw new InvalidOperationException("Deferred entity was invalidated before playback.");
-            if (_prepared)
-                throw new InvalidOperationException("Entity Create command has already been played back.");
-            if (publicationEpoch <= 0)
-                throw new ArgumentOutOfRangeException(nameof(publicationEpoch));
-
-            _world = world;
-            _entity = entity;
-            _publicationEpoch = publicationEpoch;
-            _prepared = true;
-        }
-    }
-
-    internal Entity Resolve()
-    {
-        lock (_owner.CommandGate)
-        {
-            if (_invalidated)
-                throw new InvalidOperationException("Deferred entity command was cleared, disposed, or failed.");
-            if (!IsResolvedUnderGate)
-            {
-                throw new InvalidOperationException(
-                    _prepared
-                        ? "Deferred entity belongs to a structural transaction that has not been published."
-                        : "Deferred entity has not been created by playback yet.");
-            }
-            return _entity;
-        }
-    }
-
-    internal bool TryResolve(out Entity entity)
-    {
-        lock (_owner.CommandGate)
-        {
-            if (IsResolvedUnderGate)
-            {
-                entity = _entity;
-                return true;
-            }
-
-            entity = Entity.Null;
-            return false;
-        }
-    }
-
-    internal void InvalidatePending()
-    {
-        lock (_owner.CommandGate)
-        {
-            if (!IsResolvedUnderGate)
-                _invalidated = true;
-        }
-    }
-
-    internal void RequireOwner(CommandBuffer owner)
-    {
-        if (!ReferenceEquals(_owner, owner))
-        {
-            throw new InvalidOperationException(
-                "A deferred entity may only be referenced by the CommandBuffer that records its Create. " +
-                "After successful playback, Resolve it to a live Entity before using another buffer.");
-        }
-
-        lock (_owner.CommandGate)
-        {
-            if (_invalidated)
-                throw new InvalidOperationException("Deferred entity command was cleared, disposed, or failed.");
-            if (_prepared)
-            {
-                throw new InvalidOperationException(
-                    "A played-back deferred entity cannot be recorded again as command-local identity. " +
-                    "Resolve it to a live Entity first.");
-            }
-        }
-    }
+    internal static readonly int Id = CommandTypes.Next();
 }
 
-internal readonly struct CommandEntity
-{
-    private readonly Entity _live;
-    private readonly DeferredEntityCell? _deferred;
-
-    internal CommandEntity(Entity live)
-    {
-        _live = live;
-        _deferred = null;
-    }
-
-    internal CommandEntity(DeferredEntityCell deferred)
-    {
-        _live = Entity.Null;
-        _deferred = deferred;
-    }
-
-    internal Entity Resolve(CommandPlaybackContext context) =>
-        _deferred is null ? _live : context.Resolve(_deferred);
-
-    internal void Complete(CommandPlaybackContext context, Entity entity)
-    {
-        if (_deferred is null)
-            throw new InvalidOperationException("A CreateEntity command requires a deferred entity identity.");
-        context.Complete(_deferred, entity);
-    }
-}
-
-internal sealed class CommandPlaybackContext
-{
-    private readonly World _world;
-    private readonly long _publicationEpoch;
-    private readonly Dictionary<object, Entity> _edges = new();
-    private readonly Dictionary<DeferredEntityCell, Entity> _entities = new();
-
-    internal CommandPlaybackContext(World world, long publicationEpoch)
-    {
-        _world = world ?? throw new ArgumentNullException(nameof(world));
-        if (publicationEpoch <= 0)
-            throw new ArgumentOutOfRangeException(nameof(publicationEpoch));
-        _publicationEpoch = publicationEpoch;
-    }
-
-    internal void Complete(DeferredEntityCell cell, Entity entity)
-    {
-        if (!_entities.TryAdd(cell, entity))
-            throw new InvalidOperationException("Entity Create command has already been played back.");
-        cell.Prepare(_world, entity, _publicationEpoch);
-    }
-
-    internal Entity Resolve(DeferredEntityCell cell)
-    {
-        if (!_entities.TryGetValue(cell, out Entity entity))
-            throw new InvalidOperationException("Deferred entity has not been created in the command image.");
-        return entity;
-    }
-
-    internal bool IsResolved<T>(DeferredRelationEdgeCell<T> cell)
-        where T : struct, IComponent =>
-        _edges.ContainsKey(cell);
-
-    internal void Complete<T>(DeferredRelationEdgeCell<T> cell, RelationEdge<T> edge)
-        where T : struct, IComponent
-    {
-        if (!_edges.TryAdd(cell, edge.Entity))
-            throw new InvalidOperationException("Relation Create command has already been played back.");
-        cell.Prepare(_world, edge, _publicationEpoch);
-    }
-
-    internal RelationEdge<T> Resolve<T>(DeferredRelationEdgeCell<T> cell)
-        where T : struct, IComponent
-    {
-        if (!_edges.TryGetValue(cell, out Entity edge))
-            throw new InvalidOperationException("Deferred relation edge has not been created in the command image.");
-        return new RelationEdge<T>(edge);
-    }
-}
-
-/// <summary>
-/// CommandBuffer：在迭代期间收集延迟的结构变更命令，迭代结束后统一回放。
-/// </summary>
-/// <remarks>
-/// 设计引用：docs/DESIGN.md 决策 #30, #34
-/// - 命令头 + typed 数据分桶，零 boxing
-/// - FIFO 顺序回放
-/// - CreateEntity 仅分配命令局部句柄，回放时才分配真实 ID
-/// </remarks>
 public sealed partial class CommandBuffer : IDisposable
 {
-    private readonly World _world;
-    private readonly bool _worldOwned;
-    private readonly bool _jobProducerOwned;
-    private readonly object _commandGate;
-    private readonly List<CommandHeader> _commands = new();
-    private ICommandPayloadList?[] _dataLists = new ICommandPayloadList?[8];
-    private readonly List<ITypedRelationshipCommand> _typedRelationshipCommands = new();
-    private readonly List<DeferredEntityCell> _deferredEntities = new();
-    private bool _playbackAttempted;
-    private bool _playbackReserved;
-    private bool _sealedForWorldPlayback;
-    private bool _jobProducerCompleted;
-    private bool _disposed;
+    internal readonly World World;
+    private readonly CommandBatch? _batch;
+    private readonly int _producer;
+    private CommandHeader[] _commands;
+    private CommandBucket?[] _buckets = [];
+    private int[] _usedTypes = [];
+    private int _count, _usedCount, _createCount;
+    private bool _closed, _disposed;
+    private CommandResults? _results;
 
-    public CommandBuffer(World world)
-        : this(world, worldOwned: false, jobProducerOwned: false, commandGate: null)
+    public int Count => _count;
+    public int CompletedCommands { get; private set; }
+    internal int CreateCount => _createCount;
+    internal int Producer => _producer;
+
+    public CommandBuffer(World world, int capacity = 16)
+        => (World, _commands) = (world, new CommandHeader[capacity]);
+
+    internal CommandBuffer(World world, CommandBatch batch, int producer, int capacity, CommandResults results)
+        : this(world, capacity) => (_batch, _producer, _results) = (batch, producer, results);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal void RequireRecording()
     {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_closed) throw new InvalidOperationException("Clear the command batch before recording its next sequence.");
     }
 
-    internal CommandBuffer(World world, bool worldOwned)
-        : this(world, worldOwned, jobProducerOwned: false, commandGate: null)
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal TBucket Bucket<TBucket>(out int type) where TBucket : CommandBucket, new()
     {
+        type = CommandType<TBucket>.Id;
+        if ((uint)type < (uint)_buckets.Length && _buckets[type] is { } found) return Unsafe.As<TBucket>(found);
+        return AddBucket<TBucket>(type);
     }
 
-    internal CommandBuffer(
-        World world,
-        bool worldOwned,
-        bool jobProducerOwned,
-        object? commandGate)
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private TBucket AddBucket<TBucket>(int type) where TBucket : CommandBucket, new()
     {
-        _world = world ?? throw new ArgumentNullException(nameof(world));
-        _worldOwned = worldOwned;
-        _jobProducerOwned = jobProducerOwned;
-        _commandGate = commandGate ?? world.CommandGate;
-        if (worldOwned && jobProducerOwned)
-        {
-            throw new ArgumentException(
-                "A CommandBuffer cannot be both World-owned and Job-producer-owned.");
-        }
+        if (type >= _buckets.Length) Array.Resize(ref _buckets, Math.Max(type + 1, Math.Max(4, _buckets.Length * 2)));
+        var bucket = new TBucket();
+        _buckets[type] = bucket;
+        return bucket;
     }
 
-    /// <summary>已录入的命令数。</summary>
-    public int CommandCount
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal void Use(int type)
     {
-        get
-        {
-            _world.ThrowIfJobCommandBufferAccess();
-            lock (_commandGate)
-            {
-                ThrowIfDisposedCore();
-                if (_playbackReserved)
-                {
-                    throw new InvalidOperationException(
-                        "Cannot inspect CommandCount while CommandBuffer playback is reserved or running.");
-                }
-                return _commands.Count;
-            }
-        }
+        if (_usedCount == _usedTypes.Length) GrowUsedTypes();
+        _usedTypes[_usedCount++] = type;
     }
 
-    internal object CommandGate => _commandGate;
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private void GrowUsedTypes() => Array.Resize(ref _usedTypes, Math.Max(4, _usedCount * 2));
 
-    internal bool IsJobProducerOwned => _jobProducerOwned;
-
-    internal World OwnerWorld => _world;
-
-    internal bool HasRecordedCommandsUnderGate => _commands.Count != 0;
-
-    internal int JobProducerCommandCount
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal void Append(CommandKind kind, Entity target, int type, int dataIndex)
     {
-        get
-        {
-            if (!_jobProducerOwned)
-                throw new InvalidOperationException("Only a Job producer segment has a producer count.");
-            lock (_commandGate)
-                return _commands.Count;
-        }
+        if (_count == _commands.Length) GrowCommands();
+        _commands[_count++] = new(kind, target, type, dataIndex);
     }
 
-    internal void SealJobProducerSegment()
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private void GrowCommands() => Array.Resize(ref _commands, Math.Max(16, _count * 2));
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal Entity Encode(DeferredEntity entity)
     {
-        if (!_jobProducerOwned)
-            throw new InvalidOperationException("Only a Job producer segment can be sealed.");
-        lock (_commandGate)
-        {
-            ThrowIfDisposedCore();
-            _jobProducerCompleted = true;
-        }
+        if (entity.Results is null || entity.Results != _results)
+            throw new ArgumentException("The deferred entity belongs to another command batch.");
+        return new(-entity.LocalId - 1, entity.Producer + 1);
     }
 
-    // ════════════════════════════════════════════════
-    // 延迟命令录入
-    // ════════════════════════════════════════════════
-
-    /// <summary>
-    /// Records an entity creation without touching the World allocator. Resolve the returned handle
-    /// only after successful playback.
-    /// </summary>
-    public DeferredEntity CreateEntity()
+    internal Entity Encode(CommandEntity entity, int batchCreates = 0)
     {
-        using RecordAccessScope access = EnterRecordAccess();
-        return CreateEntityUnderGate();
+        if (entity.Results is not null) return Encode(new DeferredEntity(entity.Results, entity.Generation, entity.Id));
+        if (entity.Id < 0 && (entity.Generation != 0 || (uint)(-entity.Id - 1) >= (uint)batchCreates))
+            throw new ArgumentException("The batch entity index must name a creation in this composite command.");
+        return new(entity.Id, entity.Generation);
     }
 
-    internal DeferredEntity CreateEntity(HookCommandToken token)
+    internal int ReserveCreates(Span<DeferredEntity> created)
     {
-        using RecordAccessScope access = EnterRecordAccess(token);
-        return CreateEntityUnderGate();
+        int first = _createCount;
+        if (created.IsEmpty) return first;
+        CommandResults results = _results ??= new();
+        for (int i = 0; i < created.Length; i++) created[i] = new(results, _producer, first + i);
+        _createCount += created.Length;
+        return first;
     }
 
-    private DeferredEntity CreateEntityUnderGate()
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private DeferredEntity NewCreate(int type, int data)
     {
-        var cell = new DeferredEntityCell(this);
-        _deferredEntities.Add(cell);
-        _commands.Add(new CommandHeader
-        {
-            Type = CommandType.CreateEntity,
-            Entity = new CommandEntity(cell),
-            ComponentId = 0,
-            DataIndex = -1,
-        });
-        return new DeferredEntity(cell);
+        CommandResults results = _results ??= new();
+        int local = _createCount++;
+        Append(CommandKind.Create, new(local, 0), type, data);
+        return new(results, _producer, local);
     }
 
-    /// <summary>延迟销毁 entity。</summary>
-    public void DestroyEntity(Entity entity)
+    public DeferredEntity Create()
     {
-        using RecordAccessScope access = EnterRecordAccess();
-        DestroyEntityUnderGate(new CommandEntity(entity));
+        RequireRecording();
+        return NewCreate(-1, 0);
     }
 
-    public void DestroyEntity(DeferredEntity entity)
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public DeferredEntity Create<T>(in T value) where T : struct
     {
-        using RecordAccessScope access = EnterRecordAccess();
-        DestroyEntityUnderGate(entity.AsCommandEntity(this));
+        RequireRecording();
+        var bucket = Bucket<ValueCommands<T>>(out int type);
+        if (bucket.Count == 0) Use(type);
+        int data = bucket.Add(World, value);
+        return NewCreate(type, data);
     }
 
-    internal void DestroyEntity(HookCommandToken token, Entity entity)
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void Value<T>(CommandKind kind, Entity target, in T value) where T : struct
     {
-        using RecordAccessScope access = EnterRecordAccess(token);
-        DestroyEntityUnderGate(new CommandEntity(entity));
+        if (ComponentType<T>.IsControlledRemovalType)
+            throw new InvalidOperationException("Record relationship edits through their typed command entry.");
+        var bucket = Bucket<ValueCommands<T>>(out int type);
+        if (bucket.Count == 0) Use(type);
+        Append(kind, target, type, bucket.Add(World, value));
     }
 
-    internal void DestroyEntity(HookCommandToken token, DeferredEntity entity)
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void Typed<T>(CommandKind kind, Entity target) where T : struct
     {
-        using RecordAccessScope access = EnterRecordAccess(token);
-        DestroyEntityUnderGate(entity.AsCommandEntity(this));
+        if (ComponentType<T>.IsControlledRemovalType)
+            throw new InvalidOperationException("Record relationship edits through their typed command entry.");
+        Bucket<ValueCommands<T>>(out int type);
+        Append(kind, target, type, 0);
     }
 
-    private void DestroyEntityUnderGate(CommandEntity entity)
+    public void Set<T>(Entity entity, in T value) where T : struct
+    { RequireRecording(); Value(CommandKind.Set, entity, value); }
+    public void Set<T>(DeferredEntity entity, in T value) where T : struct
+    { RequireRecording(); Value(CommandKind.Set, Encode(entity), value); }
+    public void Add<T>(Entity entity, in T value) where T : struct
+    { RequireRecording(); Value(CommandKind.Add, entity, value); }
+    public void Add<T>(DeferredEntity entity, in T value) where T : struct
+    { RequireRecording(); Value(CommandKind.Add, Encode(entity), value); }
+    public void Remove<T>(Entity entity) where T : struct
+    { RequireRecording(); Typed<T>(CommandKind.Remove, entity); }
+    public void Remove<T>(DeferredEntity entity) where T : struct
+    { RequireRecording(); Typed<T>(CommandKind.Remove, Encode(entity)); }
+    public void SetSparse<T>(Entity entity, in T value) where T : struct
+    { RequireRecording(); Value(CommandKind.SetSparse, entity, value); }
+    public void SetSparse<T>(DeferredEntity entity, in T value) where T : struct
+    { RequireRecording(); Value(CommandKind.SetSparse, Encode(entity), value); }
+    public void RemoveSparse<T>(Entity entity) where T : struct
+    { RequireRecording(); Typed<T>(CommandKind.RemoveSparse, entity); }
+    public void RemoveSparse<T>(DeferredEntity entity) where T : struct
+    { RequireRecording(); Typed<T>(CommandKind.RemoveSparse, Encode(entity)); }
+    public void Destroy(Entity entity)
+    { RequireRecording(); Append(CommandKind.Destroy, entity, -1, 0); }
+    public void Destroy(DeferredEntity entity)
+    { RequireRecording(); Append(CommandKind.Destroy, Encode(entity), -1, 0); }
+
+    private void Enabled<T>(Entity target, bool enabled) where T : struct, IEnableableComponent
     {
-        _commands.Add(new CommandHeader
-        {
-            Type = CommandType.DestroyEntity,
-            Entity = entity,
-            ComponentId = 0,
-            DataIndex = -1,
-        });
+        Bucket<EnableCommands<T>>(out int type);
+        Append(enabled ? CommandKind.Enable : CommandKind.Disable, target, type, 0);
     }
+    public void Enable<T>(Entity entity) where T : struct, IEnableableComponent
+    { RequireRecording(); Enabled<T>(entity, true); }
+    public void Enable<T>(DeferredEntity entity) where T : struct, IEnableableComponent
+    { RequireRecording(); Enabled<T>(Encode(entity), true); }
+    public void Disable<T>(Entity entity) where T : struct, IEnableableComponent
+    { RequireRecording(); Enabled<T>(entity, false); }
+    public void Disable<T>(DeferredEntity entity) where T : struct, IEnableableComponent
+    { RequireRecording(); Enabled<T>(Encode(entity), false); }
 
-    /// <summary>延迟添加 Table 组件。</summary>
-    public void Add<T>(Entity entity, in T value) where T : struct, IComponent
+    private void Buffer<T>(CommandKind kind, Entity target, ReadOnlySpan<T> values) where T : struct
     {
-        using RecordAccessScope access = EnterRecordAccess();
-        AddUnderGate(new CommandEntity(entity), in value);
+        var bucket = Bucket<BufferCommands<T>>(out int type);
+        if (bucket.Count == 0) Use(type);
+        Append(kind, target, type, bucket.Add(values));
     }
+    public void SetBuffer<T>(Entity entity, ReadOnlySpan<T> values) where T : struct
+    { RequireRecording(); Buffer(CommandKind.SetBuffer, entity, values); }
+    public void SetBuffer<T>(DeferredEntity entity, ReadOnlySpan<T> values) where T : struct
+    { RequireRecording(); Buffer(CommandKind.SetBuffer, Encode(entity), values); }
+    public void AppendBuffer<T>(Entity entity, ReadOnlySpan<T> values) where T : struct
+    { RequireRecording(); Buffer(CommandKind.AppendBuffer, entity, values); }
+    public void AppendBuffer<T>(DeferredEntity entity, ReadOnlySpan<T> values) where T : struct
+    { RequireRecording(); Buffer(CommandKind.AppendBuffer, Encode(entity), values); }
+    public void RemoveBuffer<T>(Entity entity) where T : struct
+    { RequireRecording(); Bucket<BufferCommands<T>>(out int type); Append(CommandKind.RemoveBuffer, entity, type, 0); }
+    public void RemoveBuffer<T>(DeferredEntity entity) where T : struct
+    { RequireRecording(); Bucket<BufferCommands<T>>(out int type); Append(CommandKind.RemoveBuffer, Encode(entity), type, 0); }
 
-    public void Add<T>(DeferredEntity entity, in T value) where T : struct, IComponent
-    {
-        using RecordAccessScope access = EnterRecordAccess();
-        AddUnderGate(entity.AsCommandEntity(this), in value);
-    }
-
-    internal void Add<T>(HookCommandToken token, Entity entity, in T value)
-        where T : struct, IComponent
-    {
-        using RecordAccessScope access = EnterRecordAccess(token);
-        AddUnderGate(new CommandEntity(entity), in value);
-    }
-
-    internal void Add<T>(HookCommandToken token, DeferredEntity entity, in T value)
-        where T : struct, IComponent
-    {
-        using RecordAccessScope access = EnterRecordAccess(token);
-        AddUnderGate(entity.AsCommandEntity(this), in value);
-    }
-
-    private void AddUnderGate<T>(CommandEntity entity, in T value) where T : struct, IComponent
-    {
-        PublicComponentMutationGuard.Structural<T>("CommandBuffer.Add");
-        int componentId = ComponentMetadata<T>.Id;
-        var list = DataList<T>(componentId);
-        int dataIndex = list.Append(in value);
-        _commands.Add(new CommandHeader
-        {
-            Type = CommandType.AddComponent,
-            Entity = entity,
-            ComponentId = componentId,
-            DataIndex = dataIndex,
-        });
-    }
-
-    /// <summary>延迟整值替换 Table 组件（组件必须已存在）。</summary>
-    public void Replace<T>(Entity entity, in T value) where T : struct, IComponent
-    {
-        using RecordAccessScope access = EnterRecordAccess();
-        ReplaceUnderGate(new CommandEntity(entity), in value);
-    }
-
-    public void Replace<T>(DeferredEntity entity, in T value) where T : struct, IComponent
-    {
-        using RecordAccessScope access = EnterRecordAccess();
-        ReplaceUnderGate(entity.AsCommandEntity(this), in value);
-    }
-
-    internal void Replace<T>(HookCommandToken token, Entity entity, in T value)
-        where T : struct, IComponent
-    {
-        using RecordAccessScope access = EnterRecordAccess(token);
-        ReplaceUnderGate(new CommandEntity(entity), in value);
-    }
-
-    internal void Replace<T>(HookCommandToken token, DeferredEntity entity, in T value)
-        where T : struct, IComponent
-    {
-        using RecordAccessScope access = EnterRecordAccess(token);
-        ReplaceUnderGate(entity.AsCommandEntity(this), in value);
-    }
-
-    private void ReplaceUnderGate<T>(CommandEntity entity, in T value) where T : struct, IComponent
-    {
-        PublicComponentMutationGuard.Value<T>("CommandBuffer.Replace");
-        int componentId = ComponentMetadata<T>.Id;
-        var list = DataList<T>(componentId);
-        int dataIndex = list.Append(in value);
-        _commands.Add(new CommandHeader
-        {
-            Type = CommandType.ReplaceComponent,
-            Entity = entity,
-            ComponentId = componentId,
-            DataIndex = dataIndex,
-        });
-    }
-
-    /// <summary>延迟移除 Table 组件。</summary>
-    public void Remove<T>(Entity entity) where T : struct, IComponent
-    {
-        using RecordAccessScope access = EnterRecordAccess();
-        RemoveUnderGate<T>(new CommandEntity(entity));
-    }
-
-    public void Remove<T>(DeferredEntity entity) where T : struct, IComponent
-    {
-        using RecordAccessScope access = EnterRecordAccess();
-        RemoveUnderGate<T>(entity.AsCommandEntity(this));
-    }
-
-    internal void Remove<T>(HookCommandToken token, Entity entity)
-        where T : struct, IComponent
-    {
-        using RecordAccessScope access = EnterRecordAccess(token);
-        RemoveUnderGate<T>(new CommandEntity(entity));
-    }
-
-    internal void Remove<T>(HookCommandToken token, DeferredEntity entity)
-        where T : struct, IComponent
-    {
-        using RecordAccessScope access = EnterRecordAccess(token);
-        RemoveUnderGate<T>(entity.AsCommandEntity(this));
-    }
-
-    private void RemoveUnderGate<T>(CommandEntity entity) where T : struct, IComponent
-    {
-        PublicComponentMutationGuard.Structural<T>("CommandBuffer.Remove");
-        int componentId = ComponentMetadata<T>.Id;
-        DataList<T>(componentId);
-        _commands.Add(new CommandHeader
-        {
-            Type = CommandType.RemoveComponent,
-            Entity = entity,
-            ComponentId = componentId,
-            DataIndex = -1,
-        });
-    }
-
-    /// <summary>延迟添加 Tag。</summary>
-    public void AddTag<T>(Entity entity) where T : struct, ITag
-    {
-        using RecordAccessScope access = EnterRecordAccess();
-        AddTagUnderGate<T>(new CommandEntity(entity));
-    }
-
-    public void AddTag<T>(DeferredEntity entity) where T : struct, ITag
-    {
-        using RecordAccessScope access = EnterRecordAccess();
-        AddTagUnderGate<T>(entity.AsCommandEntity(this));
-    }
-
-    internal void AddTag<T>(HookCommandToken token, Entity entity)
-        where T : struct, ITag
-    {
-        using RecordAccessScope access = EnterRecordAccess(token);
-        AddTagUnderGate<T>(new CommandEntity(entity));
-    }
-
-    internal void AddTag<T>(HookCommandToken token, DeferredEntity entity)
-        where T : struct, ITag
-    {
-        using RecordAccessScope access = EnterRecordAccess(token);
-        AddTagUnderGate<T>(entity.AsCommandEntity(this));
-    }
-
-    private void AddTagUnderGate<T>(CommandEntity entity) where T : struct, ITag
-    {
-        _commands.Add(new CommandHeader
-        {
-            Type = CommandType.AddTag,
-            Entity = entity,
-            ComponentId = ComponentMetadata<T>.Id,
-            DataIndex = -1,
-        });
-    }
-
-    /// <summary>延迟移除 Tag。</summary>
-    public void RemoveTag<T>(Entity entity) where T : struct, ITag
-    {
-        using RecordAccessScope access = EnterRecordAccess();
-        RemoveTagUnderGate<T>(new CommandEntity(entity));
-    }
-
-    public void RemoveTag<T>(DeferredEntity entity) where T : struct, ITag
-    {
-        using RecordAccessScope access = EnterRecordAccess();
-        RemoveTagUnderGate<T>(entity.AsCommandEntity(this));
-    }
-
-    internal void RemoveTag<T>(HookCommandToken token, Entity entity)
-        where T : struct, ITag
-    {
-        using RecordAccessScope access = EnterRecordAccess(token);
-        RemoveTagUnderGate<T>(new CommandEntity(entity));
-    }
-
-    internal void RemoveTag<T>(HookCommandToken token, DeferredEntity entity)
-        where T : struct, ITag
-    {
-        using RecordAccessScope access = EnterRecordAccess(token);
-        RemoveTagUnderGate<T>(entity.AsCommandEntity(this));
-    }
-
-    private void RemoveTagUnderGate<T>(CommandEntity entity) where T : struct, ITag
-    {
-        _commands.Add(new CommandHeader
-        {
-            Type = CommandType.RemoveTag,
-            Entity = entity,
-            ComponentId = ComponentMetadata<T>.Id,
-            DataIndex = -1,
-        });
-    }
-
-    // ════════════════════════════════════════════════
-    // 回放
-    // ════════════════════════════════════════════════
-
-    /// <summary>按 FIFO 顺序回放所有命令到 World。</summary>
     public void Playback()
     {
-        if (!ReservePublicPlayback())
-            return;
-
-        try
-        {
-            using WorldJobAdmissionScope admission = _world.EnterJobTopologyWrite();
-            lock (_commandGate)
-                PlaybackReservedUnderExistingTopologyAdmissionUnderGate();
-        }
-        catch
-        {
-            lock (_commandGate)
-                CancelOwnedPlaybackReservationUnderGate();
-            throw;
-        }
+        using WorldAccess access = World.OpenStructure();
+        if (_batch is { } batch) { batch.Playback(); return; }
+        Seal();
+        World.RequireStructure();
+        CommandResults? results = _results;
+        if (results is not null) results.Created = new Entity[_createCount];
+        int created = 0;
+        try { Play(World, 0, ref created); }
+        finally { if (results is not null) Volatile.Write(ref results.CompletedCount, created + results.CompletedCompositeCreates); }
     }
 
-    private bool ReservePublicPlayback()
-    {
-        _world.ThrowIfJobCommandBufferAccess();
-        lock (_commandGate)
-        {
-            ThrowIfWorldOwnedLifecycleAccessUnderGate();
-            ThrowIfDisposedCore();
-            ThrowIfPlaybackUnavailableUnderGate();
-            if (_world.IsIterating)
-                throw new InvalidOperationException("Cannot playback CommandBuffer during iteration.");
+    internal void Seal() { RequireRecording(); _closed = true; }
 
-            if (_commands.Count == 0)
+    internal void Play(World world, int offset, ref int created)
+    {
+        CommandResults? results = _results;
+        ReadOnlySpan<CommandHeader> commands = _commands.AsSpan(0, _count);
+        CommandBucket?[] buckets = _buckets;
+        for (int i = 0; i < commands.Length; i++)
+        {
+            ref readonly CommandHeader command = ref commands[i];
+            if (command.Kind == CommandKind.Create)
             {
-                _playbackAttempted = true;
-                return false;
+                Entity entity = command.TypeId < 0 ? world.Create() : buckets[command.TypeId]!.Execute(world, command, results);
+                results!.Created[offset + command.Target.Id] = entity;
+                created++;
             }
-
-            _playbackReserved = true;
-            return true;
+            else if (command.Kind == CommandKind.Destroy)
+                world.Destroy(command.Target.Id >= 0 ? command.Target : results!.Decode(command.Target));
+            else buckets[command.TypeId]!.Execute(world, command, results);
+            CompletedCommands = i + 1;
         }
+        ClearPayloads();
+        _count = 0;
     }
 
-    internal void ReserveOwnedPlaybackUnderGate()
+    private void ClearPayloads()
     {
-        ThrowIfDisposedCore();
-        ThrowIfPlaybackUnavailableUnderGate();
-        if (_world.IsIterating)
-            throw new InvalidOperationException("Cannot playback CommandBuffer during iteration.");
-        _playbackReserved = true;
+        for (int i = 0; i < _usedCount; i++) _buckets[_usedTypes[i]]!.Clear(World);
+        _usedCount = 0;
     }
 
-    internal void CancelOwnedPlaybackReservationUnderGate()
+    internal void Reset(CommandResults? results)
     {
-        if (_playbackReserved && !_playbackAttempted)
-            _playbackReserved = false;
+        ClearPayloads();
+        _count = _createCount = CompletedCommands = 0;
+        _results = results;
+        _closed = false;
     }
 
-    internal void PlaybackReservedUnderExistingTopologyAdmissionUnderGate()
-    {
-        if (!_playbackReserved)
-            throw new InvalidOperationException("CommandBuffer playback was not reserved.");
-
-        try
-        {
-            ThrowIfDisposedCore();
-            if (_world.IsIterating)
-                throw new InvalidOperationException("Cannot playback CommandBuffer during iteration.");
-            if (_playbackAttempted)
-            {
-                throw new InvalidOperationException(
-                    "CommandBuffer is single-playback. Call Clear before recording/replaying another command set.");
-            }
-
-            _playbackAttempted = true;
-            if (_commands.Count != 0)
-                PlaybackUnderAdmission();
-        }
-        finally
-        {
-            _playbackReserved = false;
-        }
-    }
-
-    private void ThrowIfPlaybackUnavailableUnderGate()
-    {
-        if (_playbackReserved)
-            throw new InvalidOperationException("CommandBuffer playback is already reserved.");
-        if (_playbackAttempted)
-        {
-            throw new InvalidOperationException(
-                "CommandBuffer is single-playback. Call Clear before recording/replaying another command set.");
-        }
-    }
-
-    private void PlaybackUnderAdmission()
-    {
-        bool published = false;
-        try
-        {
-            using StructuralMutationScope mutation = _world.BeginStructuralMutation();
-            var context = new CommandPlaybackContext(_world, mutation.PublicationEpoch);
-            PlaybackInto(_world, context);
-            mutation.Commit();
-            published = true;
-        }
-        catch
-        {
-            if (!published)
-            {
-                FailTypedRelationshipCommands();
-                InvalidateDeferredEntities();
-            }
-            throw;
-        }
-    }
-
-    private void PlaybackInto(World world, CommandPlaybackContext context)
-    {
-        bool completed = false;
-        world.RelationGraph.BeginCommandBatch();
-        try
-        {
-            PlaybackCommandsInto(world, context);
-            completed = true;
-        }
-        finally
-        {
-            world.RelationGraph.EndCommandBatch(world, completed);
-        }
-    }
-
-    private void PlaybackCommandsInto(World world, CommandPlaybackContext context)
-    {
-        foreach (var command in _commands)
-        {
-            switch (command.Type)
-            {
-                case CommandType.CreateEntity:
-                    command.Entity.Complete(context, world.CreateEntity());
-                    break;
-
-                case CommandType.DestroyEntity:
-                    world.DestroyEntity(command.Entity.Resolve(context));
-                    break;
-
-                case CommandType.AddComponent:
-                    var addList = DataList(command.ComponentId);
-                    addList.PlaybackAdd(world, command.Entity.Resolve(context), command.DataIndex);
-                    break;
-
-                case CommandType.ReplaceComponent:
-                    var replaceList = DataList(command.ComponentId);
-                    replaceList.PlaybackReplace(world, command.Entity.Resolve(context), command.DataIndex);
-                    break;
-
-                case CommandType.RemoveComponent:
-                    var removeList = DataList(command.ComponentId);
-                    removeList.PlaybackRemove(world, command.Entity.Resolve(context));
-                    break;
-
-                case CommandType.AddSparse:
-                    DataList(command.ComponentId).PlaybackAdd(
-                        world, command.Entity.Resolve(context), command.DataIndex);
-                    break;
-
-                case CommandType.ReplaceSparse:
-                    DataList(command.ComponentId).PlaybackReplace(
-                        world, command.Entity.Resolve(context), command.DataIndex);
-                    break;
-
-                case CommandType.AddTag:
-                    world.AddTagId(command.Entity.Resolve(context), command.ComponentId);
-                    break;
-
-                case CommandType.RemoveTag:
-                    world.RemoveTagId(command.Entity.Resolve(context), command.ComponentId);
-                    break;
-
-                case CommandType.AddBuffer:
-                    var addBuffer = BufferDataList(command.ComponentId);
-                    addBuffer.PlaybackAdd(world, command.Entity.Resolve(context), command.DataIndex);
-                    break;
-
-                case CommandType.ReplaceBuffer:
-                    var replaceBuffer = BufferDataList(command.ComponentId);
-                    replaceBuffer.PlaybackReplace(world, command.Entity.Resolve(context), command.DataIndex);
-                    break;
-
-                case CommandType.RemoveBuffer:
-                    var removeBuffer = BufferDataList(command.ComponentId);
-                    removeBuffer.PlaybackRemove(world, command.Entity.Resolve(context));
-                    break;
-
-                case CommandType.TypedRelationship:
-                    _typedRelationshipCommands[command.DataIndex].Playback(world, context);
-                    break;
-            }
-        }
-    }
-
-    /// <summary>
-    /// Owns the one relationship validation/publication batch shared by every stable producer
-    /// segment in a JobCommandBuffer publication. Direct CommandBuffer playback continues to own
-    /// its batch inside <see cref="Playback"/>.
-    /// </summary>
-    internal sealed class JobProducerPlaybackBatch : IDisposable
-    {
-        private World? _world;
-
-        internal JobProducerPlaybackBatch(World world)
-        {
-            _world = world ?? throw new ArgumentNullException(nameof(world));
-            world.RelationGraph.BeginCommandBatch();
-        }
-
-        internal void RequireActiveFor(World world)
-        {
-            if (!ReferenceEquals(_world, world))
-            {
-                throw new InvalidOperationException(
-                    "The Job producer segment does not belong to the active playback batch.");
-            }
-        }
-
-        internal void Complete()
-        {
-            World world = _world ??
-                throw new InvalidOperationException("The Job producer playback batch is no longer active.");
-            _world = null;
-            world.RelationGraph.EndCommandBatch(world, completed: true);
-        }
-
-        public void Dispose()
-        {
-            World? world = _world;
-            _world = null;
-            if (world is not null)
-                world.RelationGraph.EndCommandBatch(world, completed: false);
-        }
-    }
-
-    internal static JobProducerPlaybackBatch BeginJobProducerPlaybackBatch(World world) =>
-        new(world);
-
-    /// <summary>
-    /// Replays one producer-private segment into an already-active structural candidate. The
-    /// caller owns the single topology admission and publication transaction for the complete
-    /// stable producer ordering.
-    /// </summary>
-    internal bool PlaybackJobProducerSegment(
-        long publicationEpoch,
-        JobProducerPlaybackBatch playbackBatch)
-    {
-        if (!_jobProducerOwned)
-            throw new InvalidOperationException("Only a Job producer segment can use batch playback.");
-        ArgumentNullException.ThrowIfNull(playbackBatch);
-        playbackBatch.RequireActiveFor(_world);
-
-        lock (_commandGate)
-        {
-            ThrowIfDisposedCore();
-            ThrowIfPlaybackUnavailableUnderGate();
-            if (_world.IsIterating)
-                throw new InvalidOperationException("Cannot playback Job command segments during iteration.");
-
-            _playbackAttempted = true;
-            if (_commands.Count == 0)
-                return false;
-
-            try
-            {
-                var context = new CommandPlaybackContext(_world, publicationEpoch);
-                PlaybackCommandsInto(_world, context);
-                return true;
-            }
-            catch
-            {
-                FailTypedRelationshipCommands();
-                InvalidateDeferredEntities();
-                throw;
-            }
-        }
-    }
-
-    /// <summary>Invalidates a segment whose candidate image will not be published.</summary>
-    internal void AbortJobProducerSegment(bool playbackCompleted)
-    {
-        if (!_jobProducerOwned)
-            throw new InvalidOperationException("Only a Job producer segment can be aborted as a batch segment.");
-
-        lock (_commandGate)
-        {
-            if (_disposed)
-                return;
-            if (playbackCompleted)
-                FailTypedRelationshipCommands();
-            InvalidateDeferredEntities();
-            DisposeCore();
-        }
-    }
-
-    /// <summary>Releases producer storage after its candidate was atomically published.</summary>
-    internal void CompleteJobProducerSegment()
-    {
-        if (!_jobProducerOwned)
-            throw new InvalidOperationException("Only a Job producer segment can complete batch playback.");
-
-        lock (_commandGate)
-            DisposeCore();
-    }
-
-    // ════════════════════════════════════════════════
-    // 清理
-    // ════════════════════════════════════════════════
-
-    /// <summary>清空命令但保留内部数组容量以复用。</summary>
     public void Clear()
     {
-        _world.ThrowIfJobCommandBufferAccess();
-        lock (_commandGate)
-        {
-            ThrowIfWorldOwnedLifecycleAccessUnderGate();
-            ThrowIfLifecycleMutationUnavailableUnderGate();
-            ClearCore();
-        }
+        if (_disposed) throw new ObjectDisposedException(nameof(CommandBuffer));
+        if (_batch is { } batch) batch.Clear(); else Reset(null);
     }
 
-    internal void ClearOwned()
+    internal void Release()
     {
-        lock (_commandGate)
-            ClearOwnedUnderGate();
-    }
-
-    internal void ClearOwnedUnderGate()
-    {
-        ThrowIfLifecycleMutationUnavailableUnderGate();
-        ClearCore();
-    }
-
-    private void ClearCore()
-    {
-        InvalidateDeferredEntities();
-        CancelTypedRelationshipCommands();
-        _commands.Clear();
-        ClearDataLists();
-        _playbackAttempted = false;
+        ClearPayloads();
+        _commands = []; _buckets = []; _usedTypes = []; _results = null;
+        _count = _createCount = CompletedCommands = 0;
+        _closed = _disposed = true;
     }
 
     public void Dispose()
     {
-        _world.ThrowIfJobCommandBufferAccess();
-        lock (_commandGate)
+        if (_batch is { } batch) batch.Dispose(); else Release();
+    }
+}
+
+public sealed class CommandBatch : IDisposable
+{
+    private readonly World _world;
+    private readonly CommandBuffer[] _producers;
+    private CommandResults _results = new();
+    private bool _disposed;
+    public int ProducerCount => _producers.Length;
+    public CommandBuffer this[int producer] => _producers[producer];
+
+    public CommandBatch(World world, int producers, int capacityPerProducer = 16)
+    {
+        _world = world;
+        _producers = new CommandBuffer[producers];
+        for (int i = 0; i < producers; i++) _producers[i] = new(world, this, i, capacityPerProducer, _results);
+    }
+
+    public void Playback()
+    {
+        using WorldAccess access = _world.OpenStructure();
+        foreach (CommandBuffer producer in _producers) producer.Seal();
+        _world.RequireStructure();
+        int count = 0;
+        if (_producers.Length > 1)
         {
-            ThrowIfWorldOwnedLifecycleAccessUnderGate();
-            ThrowIfLifecycleMutationUnavailableUnderGate();
-            DisposeCore();
+            _results.Offsets = new int[_producers.Length];
+            for (int i = 0; i < _producers.Length; i++)
+            {
+                _results.Offsets[i] = count;
+                count += _producers[i].CreateCount;
+            }
         }
-    }
-
-    internal void DisposeOwned()
-    {
-        lock (_commandGate)
-            DisposeOwnedUnderGate();
-    }
-
-    internal void DisposeOwnedUnderGate()
-    {
-        DisposeCore();
-    }
-
-    private void DisposeCore()
-    {
-        if (!_disposed)
-        {
-            InvalidateDeferredEntities();
-            CancelTypedRelationshipCommands();
-            _commands.Clear();
-            _dataLists = Array.Empty<ICommandPayloadList?>();
-            _playbackReserved = false;
-            _disposed = true;
-        }
-    }
-
-    // ════════════════════════════════════════════════
-    // 内部
-    // ════════════════════════════════════════════════
-
-    private CommandDataList<T> DataList<T>(int componentId) where T : struct, IComponent
-    {
-        ArrayGrowthExtensions.EnsureCapacity(ref _dataLists, componentId + 1, 8);
-
-        var existing = _dataLists[componentId];
-        if (existing != null)
-            return (CommandDataList<T>)existing;
-
-        var list = new CommandDataList<T>();
-        _dataLists[componentId] = list;
-        return list;
-    }
-
-    private IComponentCommandList DataList(int componentId)
-    {
-        return (IComponentCommandList)_dataLists[componentId]!;
-    }
-
-    private void ClearDataLists()
-    {
-        foreach (var obj in _dataLists)
-            obj?.Clear();
-    }
-
-    internal void RecordTypedRelationshipUnderGate(ITypedRelationshipCommand command)
-    {
-        if (!Monitor.IsEntered(_commandGate))
-        {
-            throw new InvalidOperationException(
-                "Typed relationship commands must be appended while the CommandBuffer gate is held.");
-        }
-        ArgumentNullException.ThrowIfNull(command);
-        int dataIndex = _typedRelationshipCommands.Count;
-        _typedRelationshipCommands.Add(command);
-        _commands.Add(new CommandHeader
-        {
-            Type = CommandType.TypedRelationship,
-            Entity = new CommandEntity(Entity.Null),
-            ComponentId = 0,
-            DataIndex = dataIndex,
-        });
-    }
-
-    private void CancelTypedRelationshipCommands()
-    {
-        for (int i = 0; i < _typedRelationshipCommands.Count; i++)
-            _typedRelationshipCommands[i].Cancel();
-        _typedRelationshipCommands.Clear();
-    }
-
-    private void FailTypedRelationshipCommands()
-    {
-        for (int i = 0; i < _typedRelationshipCommands.Count; i++)
-            _typedRelationshipCommands[i].PlaybackFailed();
-    }
-
-    private void InvalidateDeferredEntities()
-    {
-        for (int i = 0; i < _deferredEntities.Count; i++)
-            _deferredEntities[i].InvalidatePending();
-        _deferredEntities.Clear();
-    }
-
-    internal RecordAccessScope EnterRecordAccess()
-    {
-        _world.ThrowIfJobCommandBufferAccess(this);
-        Monitor.Enter(_commandGate);
+        else if (_producers.Length == 1) count = _producers[0].CreateCount;
+        _results.Created = new Entity[count];
+        int created = 0;
         try
         {
-            ThrowIfRecordUnavailableUnderGate();
-            return new RecordAccessScope(_commandGate);
+            for (int i = 0; i < _producers.Length; i++)
+                _producers[i].Play(_world, _results.Offsets is { } offsets ? offsets[i] : 0, ref created);
         }
-        catch
-        {
-            Monitor.Exit(_commandGate);
-            throw;
-        }
+        finally { Volatile.Write(ref _results.CompletedCount, created + _results.CompletedCompositeCreates); }
     }
 
-    internal RecordAccessScope EnterRecordAccess(HookCommandToken token)
+    public void Clear()
     {
-        Monitor.Enter(_commandGate);
-        try
-        {
-            _world.ValidateHookCommandBufferRecordAccessUnderGate(this, token);
-            ThrowIfRecordUnavailableUnderGate();
-            return new RecordAccessScope(_commandGate);
-        }
-        catch
-        {
-            Monitor.Exit(_commandGate);
-            throw;
-        }
+        if (_disposed) throw new ObjectDisposedException(nameof(CommandBatch));
+        _results = new();
+        foreach (CommandBuffer producer in _producers) producer.Reset(_results);
     }
 
-    internal void ValidateRecordAccess()
+    public void Dispose()
     {
-        using RecordAccessScope access = EnterRecordAccess();
-    }
-
-    internal void ValidateRecordAccess(HookCommandToken token)
-    {
-        using RecordAccessScope access = EnterRecordAccess(token);
-    }
-
-    private void ThrowIfRecordUnavailableUnderGate()
-    {
-        ThrowIfDisposedCore();
-        if (_sealedForWorldPlayback)
-        {
-            throw new InvalidOperationException(
-                "This World-owned CommandBuffer wave is sealed for FIFO playback. " +
-                "Call World.Commands() again to record into a later wave.");
-        }
-        if (_jobProducerCompleted)
-        {
-            throw new InvalidOperationException(
-                "This producer-private CommandBuffer segment is sealed when its Job callback returns.");
-        }
-        if (_playbackAttempted)
-        {
-            throw new InvalidOperationException(
-                "CommandBuffer has already attempted playback. Call Clear before recording again.");
-        }
-        if (_playbackReserved)
-        {
-            throw new InvalidOperationException(
-                "Cannot record commands while CommandBuffer playback is reserved or running.");
-        }
-    }
-
-    private void ThrowIfLifecycleMutationUnavailableUnderGate()
-    {
-        if (_playbackReserved)
-        {
-            throw new InvalidOperationException(
-                "Cannot clear or dispose CommandBuffer while playback is reserved or running.");
-        }
-    }
-
-    private void ThrowIfWorldOwnedLifecycleAccessUnderGate()
-    {
-        if (_worldOwned)
-        {
-            throw new InvalidOperationException(
-                "World-owned CommandBuffer playback, clearing, and disposal are managed by World.Flush().");
-        }
-    }
-
-    internal void SealOwnedForPlaybackUnderGate()
-    {
-        if (!_worldOwned)
-            throw new InvalidOperationException("Only a World-owned CommandBuffer wave can be sealed.");
-        ThrowIfDisposedCore();
-        if (_playbackReserved)
-            throw new InvalidOperationException("Cannot seal a CommandBuffer after playback was reserved.");
-        _sealedForWorldPlayback = true;
-    }
-
-    private void ThrowIfDisposedCore()
-    {
-        if (_disposed)
-            throw new ObjectDisposedException(nameof(CommandBuffer));
-    }
-
-    internal readonly struct RecordAccessScope : IDisposable
-    {
-        private readonly object? _gate;
-
-        internal RecordAccessScope(object gate)
-        {
-            _gate = gate;
-        }
-
-        public void Dispose()
-        {
-            if (_gate is not null)
-                Monitor.Exit(_gate);
-        }
+        foreach (CommandBuffer producer in _producers) producer.Release();
+        _results = null!;
+        _disposed = true;
     }
 }

@@ -4,17 +4,18 @@ using SomeEngine.Core.Math;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hierarchy;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Layout;
 using SomeEngine.Views;
+using SomeEngine.Job;
 
 namespace SomeEngine.Elements;
 
 /// <summary>Processes keyboard and gamepad input before game input and view rebuilds.</summary>
 public sealed class FocusNavigationSystem : ISystem<ImmediateSystemContext>
 {
-    private QueryHandle _focusableQuery;
+    private Query _focusableQuery;
+    private DestroyedReader _destroyed = null!;
     private Entity _input;
     private bool _shiftPressed;
     private readonly List<Entity> _nodes = new();
@@ -25,32 +26,28 @@ public sealed class FocusNavigationSystem : ISystem<ImmediateSystemContext>
     {
         World world = context.World;
         _input = FocusInputData.GetInput(world);
-        _focusableQuery = world.Query(world.QueryDefinition().All<Focusable>());
-        world.EntityDestroying += OnEntityDestroying;
+        _focusableQuery = world.Query(new QueryDescription().WithStored<Focusable>());
+        _destroyed = world.WatchDestroyed();
     }
 
     public void OnUpdate(ref ImmediateSystemContext context)
     {
         World world = context.World;
+        ReleaseDestroyed(world);
         _nodes.Clear();
-        List<Entity> nodes = _nodes;
-        world.ExecuteQuery(_focusableQuery, ref nodes, static (rows, ref values) =>
-        {
-            foreach (var row in rows.Rows)
-                values.Add(row.Entity);
-        });
+        using (QueryScope nodes = _focusableQuery.OpenRead())
+            foreach (QueryChunk chunk in nodes)
+                foreach (Entity node in chunk.Entities) _nodes.Add(node);
         _targets.Clear();
         foreach (Entity node in _nodes)
             if (TryGetRectangle(world, node, out Rect rect))
                 _targets.Add(new FocusTarget(node, rect, FindCanvas(world, node)));
         _events.Clear();
-        List<FocusInput> events = _events;
-        world.ExecuteBufferWrite<FocusInput, List<FocusInput>>(_input, ref events, static (buffer, ref values) =>
         {
-            foreach (FocusInput input in buffer.ReadSpan())
-                values.Add(input);
+            using DynamicBuffer<FocusInput> buffer = world.GetBuffer<FocusInput>(_input);
+            foreach (FocusInput input in buffer.AsSpan()) _events.Add(input);
             buffer.Clear();
-        });
+        }
         Entity focused = ReadFocus(world);
         if (focused != Entity.Null && !world.Has<Focusable>(focused))
             focused = ReturnFocus(world, focused);
@@ -87,25 +84,51 @@ public sealed class FocusNavigationSystem : ISystem<ImmediateSystemContext>
 
     private void WriteCapture(World world, Entity focused)
     {
-        InputCapture capture = world.Read<InputCapture>(_input);
+        InputCapture capture = world.ReadComponentData<InputCapture>(_input);
         if (capture.Keyboard != (focused != Entity.Null))
         {
             capture.Keyboard = focused != Entity.Null;
-            world.Replace(_input, capture);
+            world.Set(_input, capture);
         }
     }
 
-    private void OnEntityDestroying(World world, Entity node)
+    private void ReleaseDestroyed(World world)
     {
-        if (world.HasSparse<Focused>(node))
-            ReturnFocus(world, node);
+        var job = new ReleaseDestroyedJob(world, this);
+        if (world.Execution is WorldJobs jobs)
+        {
+            JobResourceAccess[] values = jobs.CollectAccess(new SystemAccesses().WriteSparse<Focused>(), structureWrite: true);
+            var accesses = new JobResourceAccess[values.Length + 1];
+            values.CopyTo(accesses, 0);
+            accesses[^1] = _destroyed.Read;
+            jobs.Scheduler.Schedule(job, accesses, dependency: _destroyed.Ready).Complete();
+        }
+        else job.Execute();
+    }
+
+    private readonly struct ReleaseDestroyedJob(World world, FocusNavigationSystem system) : IJob
+    {
+        public void Execute()
+        {
+            using DestroyedRead read = system._destroyed.Open();
+            foreach (DestroyedEntity fact in read)
+                if (world.HasSparse<Focused>(fact.Entity)) system.ReturnFocus(world, fact.Entity);
+            system._destroyed.Advance(read.Through);
+        }
+    }
+
+    private static Entity ReadParent(World world, Entity node)
+    {
+        if (world.Has<Parent<ElementTree>>(node)) return Hierarchy<ElementTree>.GetParent(world, node);
+        return world.Has<Removed<Parent<ElementTree>>>(node)
+            ? world.ReadComponentData<Removed<Parent<ElementTree>>>(node).Value.Value : Entity.Null;
     }
 
     private Entity ReturnFocus(World world, Entity node)
     {
-        Entity ancestor = Hierarchy<ElementTree>.GetParent(world, node);
+        Entity ancestor = ReadParent(world, node);
         while (ancestor != Entity.Null && !world.Has<Focusable>(ancestor))
-            ancestor = Hierarchy<ElementTree>.GetParent(world, ancestor);
+            ancestor = ReadParent(world, ancestor);
         MoveFocus(world, node, ancestor);
         WriteCapture(world, ancestor);
         return ancestor;
@@ -141,7 +164,7 @@ public sealed class FocusNavigationSystem : ISystem<ImmediateSystemContext>
             };
             float candidateDistance = delta.LengthSquared();
             if (ahead && (candidateDistance < distance ||
-                (candidateDistance == distance && (nearest is null || target.Node.Index < nearest.Value.Node.Index))))
+                (candidateDistance == distance && (nearest is null || target.Node.Id < nearest.Value.Node.Id))))
             {
                 nearest = target;
                 distance = candidateDistance;
@@ -166,7 +189,7 @@ public sealed class FocusNavigationSystem : ISystem<ImmediateSystemContext>
             if (order == 0)
                 order = target.Center.X.CompareTo(previous.Center.X);
             if (order == 0)
-                order = target.Node.Index.CompareTo(previous.Node.Index);
+                order = target.Node.Id.CompareTo(previous.Node.Id);
             if (order < 0)
                 first = target;
         }
@@ -183,28 +206,23 @@ public sealed class FocusNavigationSystem : ISystem<ImmediateSystemContext>
             world.RemoveSparse<Focused>(previous);
         }
         if (next != Entity.Null)
-            world.AddSparse(next, new Focused());
+            world.SetSparse(next, new Focused());
     }
 
     private static void Confirm(World world, Entity focused)
     {
         if (focused == Entity.Null)
             return;
-        Clicks clicks = world.Read<Clicks>(focused);
+        Clicks clicks = world.ReadComponentData<Clicks>(focused);
         clicks.Count = unchecked(clicks.Count + 1);
-        world.Replace(focused, clicks);
+        world.Set(focused, clicks);
     }
 
     private static Entity ReadFocus(World world)
     {
-        Entity focused = Entity.Null;
-        world.ExecuteSparseRead<Focused, Entity>(ref focused, static (entities, values, ref result) =>
-        {
-            DevelopmentCheck.Require(entities.Length <= 1, "Focus navigation requires one Focused node per World.");
-            if (entities.Length > 0)
-                result = entities[0];
-        });
-        return focused;
+        using SparseReadScope<Focused> focused = world.OpenSparseRead<Focused>();
+        DevelopmentCheck.Require(focused.Count <= 1, "Focus navigation requires one Focused node per World.");
+        return focused.Count == 0 ? Entity.Null : focused.Entities[0];
     }
 
     private static Entity FindCanvas(World world, Entity node)
@@ -222,12 +240,13 @@ public sealed class FocusNavigationSystem : ISystem<ImmediateSystemContext>
     {
         if (world.Has<LayoutRect>(node))
         {
-            rect = world.Read<LayoutRect>(node).Value;
+            rect = world.ReadComponentData<LayoutRect>(node).Value;
             return true;
         }
         rect = default;
         bool hasRectangle = false;
-        foreach (Entity child in Hierarchy<ElementTree>.GetChildren(world, node))
+        using ChildrenRead children = Hierarchy<ElementTree>.GetChildren(world, node);
+        foreach (Entity child in children)
         {
             if (world.Has<Canvas>(child) || !TryGetRectangle(world, child, out Rect content))
                 continue;
@@ -247,8 +266,8 @@ public sealed class FocusNavigationSystem : ISystem<ImmediateSystemContext>
 
     public void OnDestroy(ref ImmediateSystemContext context)
     {
-        context.World.EntityDestroying -= OnEntityDestroying;
-        context.World.ReleaseQuery(_focusableQuery);
+        _destroyed.Dispose();
+
     }
 
     private readonly record struct FocusTarget(Entity Node, Rect Rect, Entity Canvas)

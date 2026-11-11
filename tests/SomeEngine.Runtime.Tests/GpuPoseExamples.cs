@@ -51,8 +51,8 @@ internal static class GpuPoseExamples
         public void OnUpdate(ref ImmediateSystemContext context)
         {
             for (int index = 0; index < targets.Length; index++)
-                if (Repeat) context.World.Replace(targets[index], _inputs[index]);
-                else _inputs[index] = context.World.Read<GpuPoseTarget>(targets[index]);
+                if (Repeat) context.World.Set(targets[index], _inputs[index]);
+                else _inputs[index] = context.World.ReadComponentData<GpuPoseTarget>(targets[index]);
         }
     }
 }

@@ -121,8 +121,8 @@ public sealed partial class SkinningRenderingTests
                 PropertyAnimation.SetSpeed(frame.World, graph.Play(frame.World, secondTarget), .5f);
                 foreach (Entity entity in frame.Scene.MeshEntities)
                 {
-                    bool right = frame.World.Read<WorldTransform>(entity).Qvvs.Position.X > 0;
-                    frame.World.Add(entity, new MeshSkin(right ? second : first, Binding(right)));
+                    bool right = frame.World.ReadComponentData<WorldTransform>(entity).Qvvs.Position.X > 0;
+                    frame.World.Set(entity, new MeshSkin(right ? second : first, Binding(right)));
                 }
             },
             UpdateFrame = frame => (width, height) = (frame.Width, frame.Height),

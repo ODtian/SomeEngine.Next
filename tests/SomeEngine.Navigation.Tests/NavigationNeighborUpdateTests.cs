@@ -1,7 +1,6 @@
 using System.Numerics;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Job;
 
@@ -10,30 +9,29 @@ namespace SomeEngine.Navigation.Tests;
 public sealed class NavigationNeighborUpdateTests
 {
     [Fact]
-    public void DisposingNeighborsCompletesCollectionAndReleasesItsQuery()
+    public void DisposingNeighborsCompletesCollectionWhileWorldRetainsItsQuery()
     {
         using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 0 });
-        using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using World world = new World(execution: new WorldJobs(scheduler));
         var profile = new NavigationProfile([new Vector2(-.2f), new(.2f, -.2f), new(.2f), new(-.2f, .2f)], 1);
-        Entity actor = world.CreateEntity(new LayeredMotion { Position = new(1, 0, 2) });
+        Entity actor = world.Create(new LayeredMotion { Position = new(1, 0, 2) });
         world.Add(actor, new NavigationAgent(profile, new(), 1));
         world.Add(actor, new AvoidanceAgent(.3f));
-        QueryHandle query = world.Query(world.QueryDefinition().All<NavigationAgent>().All<AvoidanceAgent>().All<LayeredMotion>());
+        Query query = world.Query(new QueryDescription().WithStored<NavigationAgent>().WithStored<AvoidanceAgent>().WithStored<LayeredMotion>());
         using var neighbors = new NavigationNeighborSystem<LayeredMotion, LayeredMotionReader>(world, scheduler);
-        world.ReleaseQuery(query);
 
         neighbors.Schedule();
         neighbors.Dispose();
 
         Assert.Equal(actor, Assert.Single(neighbors.Data.Agents.ToArray()).Entity);
-        Assert.Throws<InvalidOperationException>(() => world.GetQueryDefinition(query));
+        Assert.Equal(1, query.Count);
     }
 
     [Fact]
     public void SharedNeighborsFollowMotionAndEntityReplacementAcrossTheCrowd()
     {
         using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 3 });
-        using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using World world = new World(execution: new WorldJobs(scheduler));
         var profile = new NavigationProfile([new Vector2(-.2f), new(.2f, -.2f), new(.2f), new(-.2f, .2f)], 1);
         var positions = new Dictionary<Entity, Vector3>();
         // This lattice is acceptance input spanning several query chunks and spatial cells.
@@ -44,7 +42,7 @@ public sealed class NavigationNeighborUpdateTests
         CheckNeighbors();
 
         Entity removed = positions.Keys.First();
-        world.DestroyEntity(removed);
+        world.Destroy(removed);
         positions.Remove(removed);
         Add(new(-.5f, 0, 0));
         JobHandle moved = new AdvanceNeighborSamples().ScheduleParallel(world);
@@ -54,7 +52,7 @@ public sealed class NavigationNeighborUpdateTests
 
         void Add(Vector3 position)
         {
-            Entity entity = world.CreateEntity(new LayeredMotion { Position = position, Velocity = new(.5f, 0, 0) });
+            Entity entity = world.Create(new LayeredMotion { Position = position, Velocity = new(.5f, 0, 0) });
             world.Add(entity, new NavigationAgent(profile, new(), 1));
             world.Add(entity, new AvoidanceAgent(.3f, NeighborDistance: 1.1f));
             positions.Add(entity, position);
@@ -69,9 +67,9 @@ public sealed class NavigationNeighborUpdateTests
                 Assert.Equal(positions[agent.Entity], agent.Motion.Position);
                 Entity[] expected = positions.Where(pair => pair.Key != agent.Entity &&
                         Vector3.DistanceSquared(pair.Value, agent.Motion.Position) <= 1.1f * 1.1f)
-                    .Select(pair => pair.Key).OrderBy(entity => entity.Index).ToArray();
+                    .Select(pair => pair.Key).OrderBy(entity => entity.Id).ToArray();
                 int[] indices = neighbors.Data.GetNeighbors(agent.Entity).ToArray();
-                Entity[] actual = indices.Select(index => agents[index].Entity).OrderBy(entity => entity.Index).ToArray();
+                Entity[] actual = indices.Select(index => agents[index].Entity).OrderBy(entity => entity.Id).ToArray();
                 Assert.Equal(expected, actual);
                 float[] distances = indices.Select(index => Vector3.DistanceSquared(agents[index].Motion.Position,
                     agent.Motion.Position)).ToArray();

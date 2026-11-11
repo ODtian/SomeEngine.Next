@@ -7,7 +7,6 @@ namespace SomeEngine.Animation.Pose;
 
 public readonly record struct FabrikParameters(FabrikChain Chain, PoseResultId Source, PoseResultId Output);
 
-[BufferCapacity(1)]
 public struct FabrikInstance : IBufferElement
 {
     public AnimationLeafBatch<FabrikParameters> Definition;
@@ -30,12 +29,14 @@ public readonly struct FabrikLeaf : IAnimationLeaf<FabrikParameters>
     public static void Install(World world, Entity animation, Entity target,
         AnimationLeafBatch<FabrikParameters> definitions, int index, in AnimationLeafPlacement placement)
     {
-        if (!world.HasBuffer<FabrikInstance>(animation)) world.AddBuffer<FabrikInstance>(animation);
+        if (!world.Has<Buffer<FabrikInstance>>(animation)) world.AddBuffer<FabrikInstance>(animation);
         FabrikParameters parameters = definitions.Parameters[index];
-        SkeletonInstance skeleton = world.Read<PoseTarget>(target).Skeleton;
+        SkeletonInstance skeleton = world.ReadComponentData<PoseTarget>(target).Skeleton;
         var instance = new FabrikInstance
         {
-            Definition = definitions, Index = index, Placement = placement,
+            Definition = definitions,
+            Index = index,
+            Placement = placement,
             Source = PoseAnimation.Resolve(world, target, parameters.Source),
             Output = PoseAnimation.Resolve(world, target, parameters.Output),
             Target = skeleton.ModelPose.GetBone(skeleton.Skeleton.InheritedBoneCount + parameters.Chain.Bones[^1]).Transform.Translation,
@@ -43,15 +44,27 @@ public readonly struct FabrikLeaf : IAnimationLeaf<FabrikParameters>
         };
         short[] bones = parameters.Chain.Bones.ToArray().Select(static bone => (short)bone).ToArray();
         instance.Node = PoseAnimation.RegisterNode(world, animation, instance.Output, [instance.Source], in placement, bones);
-        world.ExecuteBufferWrite<FabrikInstance, FabrikInstance>(animation, ref instance,
-            static (instances, ref instance) => instances.Add(instance));
+        {
+            using var instances = world.GetBuffer<FabrikInstance>(animation);
+            Visit(instances, ref instance);
+
+            static void Visit(DynamicBuffer<FabrikInstance> instances, ref FabrikInstance instance)
+            {
+                instances.Add(instance);
+
+            }
+        }
     }
 
     public static void Complete(World world, Entity animation) => PoseAnimation.CompleteNodes(world, animation);
 
     public static void Release(World world, Entity animation)
     {
-        world.ExecuteBufferWrite<FabrikInstance>(animation, static instances => instances.Clear());
+        {
+            using var instances = world.GetBuffer<FabrikInstance>(animation);
+            instances.Clear();
+
+        }
         PoseAnimation.ReleaseNodes(world, animation);
     }
 }

@@ -24,7 +24,7 @@ public sealed class FieldAccessTests
     public void QueryFunctionWritesTypedComponentsAndCallerState() => FieldAccessChecks.QueryFunctionWritesTypedComponentsAndCallerState();
 
     [Fact]
-    public void QueryFunctionAndDelegatePublishTheSameVersionRules() => FieldAccessChecks.QueryFunctionAndDelegatePublishTheSameVersionRules();
+    public void RepeatedQueryWritesAdvanceTheirObservationVersions() => FieldAccessChecks.RepeatedQueryWritesAdvanceTheirObservationVersions();
 
     [Fact]
     public void ManagedGenericBufferElementsKeepReferencesThroughGrowthAndRemoval() => FieldAccessChecks.ManagedGenericBufferElementsKeepReferencesThroughGrowthAndRemoval();

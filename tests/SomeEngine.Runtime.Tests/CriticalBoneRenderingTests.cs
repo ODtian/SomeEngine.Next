@@ -51,8 +51,8 @@ public sealed partial class SkinningRenderingTests
                 GpuPoseAnimation.SetCpuBones(frame.World, targets[1], new CpuBoneDemand(cpuSource, [0]));
                 foreach (Entity mesh in frame.Scene.MeshEntities)
                 {
-                    bool right = frame.World.Read<WorldTransform>(mesh).Qvvs.Position.X > 0;
-                    frame.World.Add(mesh, new MeshSkin(right ? visual : critical, CriticalBinding(right)));
+                    bool right = frame.World.ReadComponentData<WorldTransform>(mesh).Qvvs.Position.X > 0;
+                    frame.World.Set(mesh, new MeshSkin(right ? visual : critical, CriticalBinding(right)));
                 }
             },
             UpdateFrame = frame =>
@@ -102,8 +102,8 @@ public sealed partial class SkinningRenderingTests
                 UpdateReference(0);
                 foreach (Entity mesh in frame.Scene.MeshEntities)
                 {
-                    bool right = frame.World.Read<WorldTransform>(mesh).Qvvs.Position.X > 0;
-                    frame.World.Add(mesh, new MeshSkin(right ? referenceVisual : referenceCritical, CriticalBinding(right)));
+                    bool right = frame.World.ReadComponentData<WorldTransform>(mesh).Qvvs.Position.X > 0;
+                    frame.World.Set(mesh, new MeshSkin(right ? referenceVisual : referenceCritical, CriticalBinding(right)));
                 }
             },
             UpdateFrame = frame => UpdateReference((frame.Index + 1) * .25f),

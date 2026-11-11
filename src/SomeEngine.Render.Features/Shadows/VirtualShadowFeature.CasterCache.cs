@@ -15,8 +15,8 @@ public sealed partial class VirtualShadowFeature
     private byte[] _frameCasterCacheAges = [];
     private Entity[] _casterEntities = [];
     private Entity[] _frameCasterEntities = [];
-    private uint _casterInputVersion;
-    private uint _frameCasterInputVersion;
+    private ulong _casterInputVersion;
+    private ulong _frameCasterInputVersion;
     private readonly List<uint> _rebuiltCasterChanges = [];
     private uint[] _casterStaticBits = [];
     private uint[] _frameCasterStaticBits = [];

@@ -1,3 +1,4 @@
+using SomeEngine.Core.ECS.Components;
 using SomeEngine.Render.Components;
 using SomeEngine.Render.Lighting;
 using SomeEngine.ECS.Entities;

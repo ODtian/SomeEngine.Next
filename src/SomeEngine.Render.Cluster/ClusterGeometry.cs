@@ -20,4 +20,4 @@ public readonly record struct ClusterGeometry(
     ClusterGeometryAllocation Allocation);
 
 /// <summary>Rendering-world geometry and the material displacement allowance for one instance.</summary>
-public readonly record struct RenderClusterGeometry(ClusterGeometry Geometry, float BoundsExpansion) : IComponent;
+public readonly record struct RenderClusterGeometry(ClusterGeometry Geometry, float BoundsExpansion) : ITrackedComponent;

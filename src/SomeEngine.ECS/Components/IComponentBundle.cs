@@ -5,4 +5,3 @@ namespace SomeEngine.ECS.Components;
 /// Nested bundles are flattened by the generator; they do not create a runtime hierarchy.
 /// </summary>
 public interface IComponentBundle { }
-

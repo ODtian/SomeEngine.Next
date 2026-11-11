@@ -2,29 +2,28 @@ using System.Numerics;
 using SomeEngine.Animation.Pose;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Render.Systems;
 
 namespace SomeEngine.Render.Features.Skinning;
 
 /// <summary>A mesh's source joints bound to the skeleton instance producing its model transforms.</summary>
-public readonly struct MeshSkin : IComponent
+public readonly struct MeshSkin : ITrackedComponent
 {
     public SkinBindingInstance Joints { get; }
     public MeshSkin(SkeletonInstance skeleton, SkinBinding binding) => Joints = binding.Bind(skeleton);
 }
 
 /// <summary>The Rendering-world section produced by one extracted GPU target.</summary>
-public readonly record struct RenderGpuPoseTarget(Entity Section) : IComponent;
+public readonly record struct RenderGpuPoseTarget(Entity Section) : ITrackedComponent;
 
 /// <summary>A model-space output range, its GPU playback row and the extracted Game control input.</summary>
 public readonly record struct RenderPoseSection(PoseRange Range, uint Starts, ulong InputNumber,
-    double CalculationTime, float InputTime, int PlaybackIndex = 0, ulong Version = 0) : IComponent;
+    double CalculationTime, float InputTime, int PlaybackIndex = 0, ulong Version = 0) : ITrackedComponent;
 
 internal readonly record struct RenderBoneParent(Entity Section, int Bone);
 internal readonly record struct RenderSkinJoint(Entity Section, int Bone);
-internal readonly record struct RenderMeshSkin(SkinBinding Binding, RenderSkinJoint[] Joints) : IComponent;
+internal readonly record struct RenderMeshSkin(SkinBinding Binding, RenderSkinJoint[] Joints) : ITrackedComponent;
 internal record struct RenderBoneSectionData(Skeleton Skeleton, RenderBoneParent[] Parents,
     Matrix4x4[] Current, ulong Version, ulong BindingVersion, QuantizedClipData? Clip,
     uint Starts, ulong InputNumber, double CalculationTime, float SampleTime,
@@ -32,7 +31,7 @@ internal record struct RenderBoneSectionData(Skeleton Skeleton, RenderBoneParent
     GpuPoseRig? Rig, GpuPoseGoal[] Goals, Vector3 ModelOffset, GpuPoseMovement Movement, Matrix4x4 ModelToWorld,
     ReadOnlyMemory<short> CpuBones, PoseCalculation[] Calculations, GpuPoseIdentity Identity,
     ReadOnlyMemory<GpuPoseReadbackRequest> Readbacks, GpuPoseEvaluation? Evaluation,
-    bool ExtractRootMotion, BoneTransform RootCorrection) : IComponent
+    bool ExtractRootMotion, BoneTransform RootCorrection) : ITrackedComponent
 {
     internal readonly bool IsGpu => Clip is not null || StateMachine is not null || Blend is not null;
 }
@@ -69,17 +68,17 @@ public sealed partial class SkinRenderExtractor : IRenderExtractionSystem
 
     private readonly SkinInputs _inputs = new();
 
-    public void Collect(QueryChunkView chunk) => CollectInputs(chunk, true);
+    public void Collect(QueryChunk chunk) => CollectInputs(chunk, 0, true);
 
-    public bool CollectChanges(QueryChunkView chunk, RenderExtractionContext context)
+    public bool CollectChanges(QueryChunk chunk, ulong since, RenderExtractionContext context)
     {
-        CollectInputs(chunk, false);
+        CollectInputs(chunk, since, false);
         return false;
     }
 
-    private void CollectInputs(QueryChunkView chunk, bool fullCollection)
+    private void CollectInputs(QueryChunk chunk, ulong since, bool fullCollection)
     {
-        _inputs.Collect(ReadOnlyQueryPacketJobs.Borrow(chunk), chunk.LastSystemVersion, fullCollection);
+        _inputs.Collect(chunk, since, fullCollection);
         MergeInputs(_inputs);
         _inputs.Reset();
     }
@@ -113,9 +112,8 @@ public sealed partial class SkinRenderExtractor : IRenderExtractionSystem
                     section.GoalCapture = new GpuPoseGoal[rig.GoalCount];
                     section.GoalValues = new GpuPoseGoal[rig.GoalCount];
                 }
-                GpuPoseGoal[] capture = section.GoalCapture;
-                world.ExecuteBufferRead<GpuPoseGoal, GpuPoseGoal[]>(entity, ref capture,
-                    static (goals, ref capture) => goals.AsSpan().CopyTo(capture));
+                using ReadOnlyBuffer<GpuPoseGoal> goals = world.ReadBuffer<GpuPoseGoal>(entity);
+                goals.AsSpan().CopyTo(section.GoalCapture);
             }
             Mark(section);
         }
@@ -252,23 +250,18 @@ public sealed partial class SkinRenderExtractor : IRenderExtractionSystem
         }
     }
 
-    public unsafe void ApplyChanges(RenderExtractionContext context)
+    public void ApplyChanges(RenderExtractionContext context)
     {
         if (!_canApplyChangesDirect)
         {
             Publish(context, retain: false);
             return;
         }
-        SkinRenderExtractor extraction = this;
-        context.World.ExecuteComponentWrite<RenderBoneSectionData, SkinRenderExtractor>(ref extraction, &WriteSections);
-    }
-
-    private static void WriteSections(ComponentWriteBatch<RenderBoneSectionData> destination, ref SkinRenderExtractor extraction)
-    {
-        foreach (SourceSection section in extraction._sections.Values)
+        using WriteLookup<RenderBoneSectionData> destination = context.World.OpenWrite<RenderBoneSectionData>();
+        foreach (SourceSection section in _sections.Values)
         {
             section.SwapCapture();
-            destination.Write(section.Entity) = section.Data;
+            destination.GetKnown(section.Entity) = section.Data;
         }
     }
 
@@ -277,7 +270,7 @@ public sealed partial class SkinRenderExtractor : IRenderExtractionSystem
         foreach (SourceSection section in _sections.Values)
             if (section.Input == _input && section.Entity == Entity.Null)
             {
-                section.Entity = context.World.CreateEntity();
+                section.Entity = context.World.Create();
                 context.Upsert(section.Entity, new RenderPoseSection());
             }
         foreach (SourceSection section in _sections.Values)
@@ -321,7 +314,7 @@ public sealed partial class SkinRenderExtractor : IRenderExtractionSystem
         foreach (SkeletonInstance source in _removedSections)
         {
             SourceSection section = _sections[source];
-            if (section.Entity != Entity.Null) context.World.DestroyEntity(section.Entity);
+            if (section.Entity != Entity.Null) context.World.Destroy(section.Entity);
             _sections.Remove(source);
         }
         foreach (Entity source in _removedMeshes) _meshes.Remove(source);

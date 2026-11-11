@@ -12,75 +12,76 @@ public sealed class OrderTaxDiagnosticsTests
     public void HierarchyMaintenancePreservesChildrenAndSupportsReparenting(bool ordered)
     {
         var world = new World();
-        Entity parent = world.CreateEntity();
-        Entity other = world.CreateEntity();
-        Entity first = world.CreateEntity();
-        Entity second = world.CreateEntity();
+        Entity parent = world.Create();
+        Entity other = world.Create();
+        Entity first = world.Create();
+        Entity second = world.Create();
         if (ordered)
-            Hierarchy<DiagnosticDomain>.SetChildOrderPolicy(world, parent, ChildOrderPolicy.Ordered);
+            Hierarchy<DiagnosticDomain>.SetOrdered(world, parent, true);
         Hierarchy<DiagnosticDomain>.SetParent(world, first, parent);
         Hierarchy<DiagnosticDomain>.SetParentDeferred(world, second, parent);
         Hierarchy<DiagnosticDomain>.Maintain(world);
-        Entity[] children = Hierarchy<DiagnosticDomain>.GetChildren(world, parent).ToArray();
+        Entity[] children = ReadChildren<DiagnosticDomain>(world, parent).ToArray();
         Assert.Equal(2, children.Length);
         Assert.Contains(first, children);
         Assert.Contains(second, children);
         if (ordered) Assert.Equal(new[] { first, second }, children);
         Hierarchy<DiagnosticDomain>.SetParentDeferred(world, second, other);
         Hierarchy<DiagnosticDomain>.Maintain(world);
-        Assert.Equal(new[] { first }, Hierarchy<DiagnosticDomain>.GetChildren(world, parent).ToArray());
-        Assert.Equal(new[] { second }, Hierarchy<DiagnosticDomain>.GetChildren(world, other).ToArray());
+        Assert.Equal(new[] { first }, ReadChildren<DiagnosticDomain>(world, parent).ToArray());
+        Assert.Equal(new[] { second }, ReadChildren<DiagnosticDomain>(world, other).ToArray());
     }
     [Fact]
     public void RelationMaintenanceUpdatesBothEndpointsAndDestroyRemovesEdge()
     {
         var world = new World();
-        Entity source = world.CreateEntity();
-        Entity target = world.CreateEntity();
-        Entity next = world.CreateEntity();
+        Entity source = world.Create();
+        Entity target = world.Create();
+        Entity next = world.Create();
         RelationEdge<DiagnosticRelation> edge = world.CreateRelation(source, target, new DiagnosticRelation());
         world.RetargetRelationDeferred(edge, source, next);
         world.MaintainRelations<DiagnosticRelation>();
-        Assert.Empty(world.GetIncomingRelations<DiagnosticRelation>(target).Entries.ToArray());
-        Assert.Equal(edge, Assert.Single(world.GetIncomingRelations<DiagnosticRelation>(next).Entries.ToArray()).Edge);
+        Assert.Empty(ReadIncoming<DiagnosticRelation>(world, target).ToArray());
+        Assert.Equal(edge, Assert.Single(ReadIncoming<DiagnosticRelation>(world, next).ToArray()).Edge);
         world.DestroyRelation(edge);
+        world.Remove<Removed<RelationEndpoints<DiagnosticRelation>>>(edge.Entity);
         Assert.False(world.IsAlive(edge.Entity));
-        Assert.Empty(world.GetOutgoingRelations<DiagnosticRelation>(source).Entries.ToArray());
-        Assert.Empty(world.GetIncomingRelations<DiagnosticRelation>(next).Entries.ToArray());
+        Assert.Empty(ReadOutgoing<DiagnosticRelation>(world, source).ToArray());
+        Assert.Empty(ReadIncoming<DiagnosticRelation>(world, next).ToArray());
     }
 
     [Fact]
     public void ImmutableInverseLookups_UsePublishedGenerationWithoutEndpointLiveness()
     {
         var world = new World();
-        Entity parent = world.CreateEntity();
-        Entity child = world.CreateEntity();
+        Entity parent = world.Create();
+        Entity child = world.Create();
         Hierarchy<DiagnosticDomain>.SetParent(world, child, parent);
-        HierarchyChildrenSnapshot<DiagnosticDomain> pinnedChildren =
-            Hierarchy<DiagnosticDomain>.GetChildren(world, parent);
+        Entity[] pinnedChildren =
+            ReadChildren<DiagnosticDomain>(world, parent);
 
-        world.DestroyEntity(parent);
+        world.Destroy(parent);
 
         Assert.Equal(new[] { child }, pinnedChildren.ToArray());
-        Assert.Empty(Hierarchy<DiagnosticDomain>.GetChildren(world, parent).ToArray());
-        Assert.Empty(Hierarchy<DiagnosticDomain>.GetChildren(world, Entity.Null).ToArray());
+        Assert.Empty(ReadChildren<DiagnosticDomain>(world, parent).ToArray());
+        Assert.Empty(ReadChildren<DiagnosticDomain>(world, Entity.Null).ToArray());
 
-        Entity source = world.CreateEntity();
-        Entity target = world.CreateEntity();
+        Entity source = world.Create();
+        Entity target = world.Create();
         RelationEdge<DiagnosticRelation> edge = world.CreateRelation(
             source,
             target,
             new DiagnosticRelation());
-        RelationAdjacencySnapshot<DiagnosticRelation> pinnedAdjacency =
-            world.GetOutgoingRelations<DiagnosticRelation>(source);
+        var pinnedAdjacency =
+            ReadOutgoing<DiagnosticRelation>(world, source);
 
-        world.DestroyEntity(source);
+        world.Destroy(source);
 
-        Assert.Equal(edge, Assert.Single(pinnedAdjacency.Entries.ToArray()).Edge);
-        Assert.Empty(world.GetOutgoingRelations<DiagnosticRelation>(source).Entries.ToArray());
-        Assert.Empty(world.GetOutgoingRelations<DiagnosticRelation>(Entity.Null).Entries.ToArray());
+        Assert.Equal(edge, Assert.Single(pinnedAdjacency).Edge);
+        Assert.Empty(ReadOutgoing<DiagnosticRelation>(world, source).ToArray());
+        Assert.Empty(ReadOutgoing<DiagnosticRelation>(world, Entity.Null).ToArray());
     }
     private readonly struct DiagnosticDomain : IHierarchyDomain;
     [RelationSchema(RelationDirection.Directed, RelationCardinality.Parallel)]
-    private readonly struct DiagnosticRelation : IComponent;
+    private readonly struct DiagnosticRelation : IAddedComponent;
 }

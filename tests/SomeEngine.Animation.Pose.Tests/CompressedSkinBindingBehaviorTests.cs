@@ -25,8 +25,8 @@ public sealed class CompressedSkinBindingBehaviorTests
         Directory.CreateDirectory(directory);
         try
         {
-            Matrix4x4 expected = new(2,0,0,0, 0,3,0,0, 0,0,4,0, 5,-6,7,1);
-            float[] values = [2,0,0,0, 0,3,0,0, 0,0,4,0, 5,-6,7,1];
+            Matrix4x4 expected = new(2, 0, 0, 0, 0, 3, 0, 0, 0, 0, 4, 0, 5, -6, 7, 1);
+            float[] values = [2, 0, 0, 0, 0, 3, 0, 0, 0, 0, 4, 0, 5, -6, 7, 1];
             byte[] ordinary = System.Runtime.InteropServices.MemoryMarshal.AsBytes(values.AsSpan()).ToArray();
             byte[] payload = fallback == "ordinary" ? ordinary : Convert.FromBase64String(
                 "oaqqqqqqqqqqqqqqqqqqqqoAAABAAAAAAAAAAAAAAAAAAAAAAAAAQEAAAAAAAAAAAAAAAAAAAAAAAACAQAAAAAAAAKBAAADAwAAA4EAAAIA/AAAAAAAAAAAAAAAAAAAAAA==");
@@ -38,12 +38,16 @@ public sealed class CompressedSkinBindingBehaviorTests
                 var extra = new JsonObject { ["byteLength"] = 64 };
                 if (fallback == "identity") extra["uri"] = "data:application/octet-stream;base64,AACAPwAAAAAAAAAAAAAAAAAAAAAAAIA/AAAAAAAAAAAAAAAAAAAAAAAAgD8AAAAAAAAAAAAAAAAAAAAAAACAPw==";
                 buffers.Add(extra);
-                view["extensions"] = new JsonObject { ["EXT_meshopt_compression"] = new JsonObject
-                { ["buffer"] = 0, ["byteLength"] = payload.Length, ["count"] = 1, ["byteStride"] = 64, ["mode"] = "ATTRIBUTES", ["filter"] = "NONE" } };
+                view["extensions"] = new JsonObject
+                {
+                    ["EXT_meshopt_compression"] = new JsonObject
+                    { ["buffer"] = 0, ["byteLength"] = payload.Length, ["count"] = 1, ["byteStride"] = 64, ["mode"] = "ATTRIBUTES", ["filter"] = "NONE" }
+                };
             }
             JsonObject document = new()
             {
-                ["asset"] = new JsonObject { ["version"] = "2.0" }, ["buffers"] = buffers,
+                ["asset"] = new JsonObject { ["version"] = "2.0" },
+                ["buffers"] = buffers,
                 ["bufferViews"] = new JsonArray(view),
                 ["accessors"] = new JsonArray(new JsonObject { ["bufferView"] = 0, ["componentType"] = 5126, ["count"] = 1, ["type"] = "MAT4" }),
                 ["nodes"] = new JsonArray(new JsonObject { ["name"] = "joint" }),
@@ -83,7 +87,7 @@ public sealed class CompressedSkinBindingBehaviorTests
             SkeletonAsset asset = await context.GetAssetAsync<Skin, SkeletonAsset>(input);
             SkinBindingBlock binding = asset.GetBlock<SkinBindingBlock>();
             Assert.Equal(expected, Assert.Single(binding.InverseBindMatrices.ToArray()));
-            Assert.Equal(new short[] {0}, binding.JointBones.ToArray());
+            Assert.Equal(new short[] { 0 }, binding.JointBones.ToArray());
             string outputPath = Path.Combine(directory, "saved.skeleton.asset");
             await asset.SaveAsync(outputPath);
             using var reopened = await SkeletonAsset.OpenAsync(outputPath);

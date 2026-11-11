@@ -12,7 +12,6 @@ public readonly record struct BoneVelocity(Vector3 Translation, Vector3 Angular,
 public readonly record struct InertialPoseParameters(PoseResultId Source, PoseResultId Output,
     float DecayRate = 12, float Tolerance = .00001f);
 
-[BufferCapacity(1)]
 public struct InertialPoseInstance : IBufferElement
 {
     public AnimationLeafBatch<InertialPoseParameters> Definition;
@@ -65,25 +64,39 @@ public readonly struct InertialPoseLeaf : IAnimationLeaf<InertialPoseParameters>
     public static void Install(World world, Entity animation, Entity target,
         AnimationLeafBatch<InertialPoseParameters> definitions, int index, in AnimationLeafPlacement placement)
     {
-        if (!world.HasBuffer<InertialPoseInstance>(animation)) world.AddBuffer<InertialPoseInstance>(animation);
+        if (!world.Has<Buffer<InertialPoseInstance>>(animation)) world.AddBuffer<InertialPoseInstance>(animation);
         InertialPoseParameters parameters = definitions.Parameters[index];
         var instance = new InertialPoseInstance
         {
-            Definition = definitions, Index = index, Placement = placement,
+            Definition = definitions,
+            Index = index,
+            Placement = placement,
             Source = PoseAnimation.Resolve(world, target, parameters.Source),
             Output = PoseAnimation.Resolve(world, target, parameters.Output),
         };
         instance.Samples = new(PoseAnimation.GetScheduler(world), instance.Output.Range.Count);
         instance.Node = PoseAnimation.RegisterNode(world, animation, instance.Output, [instance.Source], in placement);
-        world.ExecuteBufferWrite<InertialPoseInstance, InertialPoseInstance>(animation, ref instance,
-            static (instances, ref instance) => instances.Add(instance));
+        {
+            using var instances = world.GetBuffer<InertialPoseInstance>(animation);
+            Visit(instances, ref instance);
+
+            static void Visit(DynamicBuffer<InertialPoseInstance> instances, ref InertialPoseInstance instance)
+            {
+                instances.Add(instance);
+
+            }
+        }
     }
 
     public static void Complete(World world, Entity animation) => PoseAnimation.CompleteNodes(world, animation);
 
     public static void Release(World world, Entity animation)
     {
-        world.ExecuteBufferWrite<InertialPoseInstance>(animation, static instances => instances.Clear());
+        {
+            using var instances = world.GetBuffer<InertialPoseInstance>(animation);
+            instances.Clear();
+
+        }
         PoseAnimation.ReleaseNodes(world, animation);
     }
 }

@@ -1,10 +1,9 @@
-using SomeEngine.ECS.Registry;
+using SomeEngine.ECS.Storage;
 
 namespace SomeEngine.ECS;
 
-/// <summary>Identifies a component type throughout the current process.</summary>
-/// <remarks>Values are assigned when types are first used and are valid within this process.</remarks>
 public static class ComponentId<T> where T : struct
 {
-    public static ushort Value { get; } = checked((ushort)ComponentMetadata<T>.Id);
+    private static readonly int Type = ComponentValues.Bind<T>().Id;
+    public static int Value => Type;
 }

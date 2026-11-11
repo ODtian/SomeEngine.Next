@@ -12,7 +12,7 @@ public sealed class HeadingNavigationFlowTests
     public void ChangedConnectionsAndGoalsUpdateTheSharedFieldFromActualPose()
     {
         using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using World world = new World(execution: new WorldJobs(scheduler));
         var profile = new NavigationProfile([new Vector2(-0.2f), new(0.2f, -0.2f), new(0.2f), new(-0.2f, 0.2f)], 1);
         var policy = new NavigationPolicy();
         HeadingNavigationFlowRegion[] regions = Regions();
@@ -23,41 +23,41 @@ public sealed class HeadingNavigationFlowTests
         var flow = new NavigationFlow(graph, profile, new NavigationFlowGoal[] { new(new(2, 0, 12), 0.05f, 0) });
         var solver = new NavigationFlowSystem<ReverseDijkstraFlow, ReverseDijkstraFlowState>(flow, scheduler);
         var navigation = new NavigationSystems<TestMotion, TestMotionReader>(world);
-        Entity actor = world.CreateEntity(new TestMotion { Position = new(2, 0, 5) });
+        Entity actor = world.Create(new TestMotion { Position = new(2, 0, 5) });
         world.Add(actor, new TestActionMotion());
         navigation.AddFlowAgent(actor, flow, 2);
         NavigationFlowStep first = navigation.Schedule(0.1f, solver.Schedule().Completion);
         navigation.ScheduleProgress(new ConsumeActionOrSteering(0.1f).ScheduleParallel(world, first.Steering)).Complete();
-        Assert.Equal(NavigationStatus.Unreachable, world.Read<NavigationProgress>(actor).Status);
+        Assert.Equal(NavigationStatus.Unreachable, world.ReadValue<NavigationProgress>(actor).Status);
         ReverseDijkstraFlowState retained = solver.State;
 
         graph = HeadingNavigationFlowBuilder.Schedule(regions, new(new[] { link with { Enabled = true } }), profile, policy,
             version: 2, scheduler: scheduler).Complete().Graph;
         flow.SetGraph(graph);
-        for (int frame = 0; frame < 100 && world.Read<NavigationProgress>(actor).Status != NavigationStatus.Arrived; frame++)
+        for (int frame = 0; frame < 100 && world.ReadValue<NavigationProgress>(actor).Status != NavigationStatus.Arrived; frame++)
         {
             NavigationFlowStep step = navigation.Schedule(0.1f, solver.Schedule(16).Completion);
             navigation.ScheduleProgress(new ConsumeActionOrSteering(0.1f).ScheduleParallel(world, step.Steering)).Complete();
         }
         Assert.Same(retained, solver.State);
         Assert.Same(links.GetPassage(71), flow.Input.HeadingGraph!.Links.GetPassage(71));
-        Assert.Equal(NavigationStatus.Arrived, world.Read<NavigationProgress>(actor).Status);
+        Assert.Equal(NavigationStatus.Arrived, world.ReadValue<NavigationProgress>(actor).Status);
 
-        Vector3 reached = world.Read<TestMotion>(actor).Position;
+        Vector3 reached = world.ReadValue<TestMotion>(actor).Position;
         flow.SetGoals(new[] { new NavigationFlowGoal(new(2, 0, 2), 0.05f, 0) });
         NavigationFlowStep changed = navigation.Schedule(0.1f, solver.Schedule().Completion);
         navigation.ScheduleProgress(new ConsumeActionOrSteering(0.1f).ScheduleParallel(world, changed.Steering)).Complete();
         Assert.Same(retained, solver.State);
         Assert.Equal(NavigationFlowAction.Unreachable, flow.Field!.Sample(new(new(2, 0, 5), 0)).Action);
-        Assert.Equal(NavigationStatus.Unreachable, world.Read<NavigationProgress>(actor).Status);
-        Assert.Equal(reached, world.Read<TestMotion>(actor).Position);
+        Assert.Equal(NavigationStatus.Unreachable, world.ReadValue<NavigationProgress>(actor).Status);
+        Assert.Equal(reached, world.ReadValue<TestMotion>(actor).Position);
     }
 
     [Fact]
     public void SharedFollowersTurnThroughAOneWayPassageAndHandOffTheSelectedAction()
     {
         using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 3, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using World world = new World(execution: new WorldJobs(scheduler));
         var profile = new NavigationProfile([new Vector2(-0.2f, -0.8f), new(0.2f, -0.8f), new(0.2f, 0.8f), new(-0.2f, 0.8f)],
             1.5f, maximumSpeed: 2, maximumAngularSpeed: MathF.PI);
         var policy = new NavigationPolicy();
@@ -71,8 +71,8 @@ public sealed class HeadingNavigationFlowTests
         var flow = new NavigationFlow(graph, profile, new NavigationFlowGoal[] { new(new(2, 0, 12), 0.05f, 0) });
         var solve = new NavigationFlowSystem<ReverseDijkstraFlow, ReverseDijkstraFlowState>(flow, scheduler);
         var navigation = new NavigationSystems<TestMotion, TestMotionReader>(world);
-        Entity[] actors = [world.CreateEntity(new TestMotion { Position = new(2, 0, 2), Heading = MathF.PI / 2 }),
-            world.CreateEntity(new TestMotion { Position = new(2.1f, 0, 2), Heading = MathF.PI / 2 })];
+        Entity[] actors = [world.Create(new TestMotion { Position = new(2, 0, 2), Heading = MathF.PI / 2 }),
+            world.Create(new TestMotion { Position = new(2.1f, 0, 2), Heading = MathF.PI / 2 })];
         foreach (Entity actor in actors)
         {
             world.Add(actor, new TestActionMotion());
@@ -82,13 +82,13 @@ public sealed class HeadingNavigationFlowTests
         Assert.Equal(NavigationFlowAction.Rotate, flow.Field!.Sample(new(new(2, 0, 2), MathF.PI / 2)).Action);
         Assert.Equal(NavigationFlowAction.Move, flow.Field.Sample(new(new(2, 0, 5), 0)).Action);
         Assert.Equal(NavigationFlowAction.Traversal, flow.Field.Sample(new(new(2, 0, 7), 0)).Action);
-        for (int frame = 0; frame < 150 && actors.Any(actor => world.Read<NavigationProgress>(actor).Status != NavigationStatus.Arrived); frame++)
+        for (int frame = 0; frame < 150 && actors.Any(actor => world.ReadValue<NavigationProgress>(actor).Status != NavigationStatus.Arrived); frame++)
         {
             NavigationFlowStep step = navigation.Schedule(0.1f);
             navigation.ScheduleProgress(new ConsumeActionOrSteering(0.1f).ScheduleParallel(world, step.Steering)).Complete();
             foreach (Entity actor in actors)
             {
-                TestMotion motion = world.Read<TestMotion>(actor);
+                TestMotion motion = world.ReadValue<TestMotion>(actor);
                 if (motion.Position.Z >= 4 && motion.Position.Z <= 8)
                     Assert.InRange(MathF.Abs(NavigationHeading.Difference(0, motion.Heading)), 0, 0.01f);
             }
@@ -96,9 +96,9 @@ public sealed class HeadingNavigationFlowTests
         }
         Assert.All(actors, actor =>
         {
-            Assert.Equal(1, world.Read<TestActionMotion>(actor).Count);
-            Assert.Equal(9, world.Read<TestActionMotion>(actor).Action);
-            Assert.Equal(NavigationStatus.Arrived, world.Read<NavigationProgress>(actor).Status);
+            Assert.Equal(1, world.ReadValue<TestActionMotion>(actor).Count);
+            Assert.Equal(9, world.ReadValue<TestActionMotion>(actor).Action);
+            Assert.Equal(NavigationStatus.Arrived, world.ReadValue<NavigationProgress>(actor).Status);
         });
     }
 

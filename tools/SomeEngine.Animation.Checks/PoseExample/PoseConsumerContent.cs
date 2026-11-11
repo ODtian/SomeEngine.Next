@@ -6,6 +6,7 @@ using SomeEngine.Assets.Importers;
 using SomeEngine.Assets.Schema;
 using SomeEngine.Core.ECS.Components;
 using SomeEngine.ECS;
+using SomeEngine.ECS.Serialization;
 using SomeEngine.ECS.Entities;
 using SomeEngine.Geometry.Cluster;
 using SomeEngine.Render;
@@ -95,15 +96,24 @@ internal static class PoseConsumerContent
         using var world = new World();
         foreach (float x in new[] { -1.1f, 1.1f })
         {
-            Entity entity = world.CreateEntity(new WorldTransform { Qvvs = new(new(x, 0, 5), Quaternion.Identity) });
+            Entity entity = world.Create(new WorldTransform { Qvvs = new(new(x, 0, 5), Quaternion.Identity) });
             world.Add(entity, new MeshSource { Mesh = new(mesh.Id), BoundsExpansion = 3 });
         }
-        world.CreateEntity(new SceneCamera { Position = Vector3.Zero, Target = Vector3.UnitZ, Up = Vector3.UnitY,
+        world.Create(new SceneCamera { Position = Vector3.Zero, Target = Vector3.UnitZ, Up = Vector3.UnitY,
             VerticalFieldOfView = 1.1f, NearPlane = .1f, FarPlane = 100 });
-        world.CreateEntity(new DirectionalLight(new(.35f, -.85f, .4f), Vector3.One, 3));
+        world.Create(new DirectionalLight(new(.35f, -.85f, .4f), Vector3.One, 3));
         AssetEntry sceneEntry = project.Manifest.List(WorldAsset.FileType).Single(value => value.Name == "Default");
+        using var entities = new EntityAsset(new Guid("ca18f662-2f9e-414f-85c4-b119a7658f97")) { Name = "Pose consumer entities" };
+        var members = new List<Entity>();
+        using (QueryScope rows = world.Query(new QueryDescription().Without<Destroyed>()).OpenRead())
+            foreach (QueryChunk chunk in rows)
+                foreach (Entity entity in chunk.Entities) members.Add(entity);
+        entities.GetBlock<EntityBlock>().WriteEntities(world, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(members),
+            new(Codecs: SceneSerialization.Codecs));
+        project.RegisterAsset(await entities.SaveAsync(Path.Combine(project.RootPath, "assets/Models/pose-consumer.entities.asset")));
         using var scene = new WorldAsset(sceneEntry.AssetGuid) { Name = "Default" };
-        scene.WriteWorld(world, SceneSerialization.CreateRegistry());
+        scene.GetBlock<WorldBlock>().Contents =
+            [new(new AssetId<Asset>(entities.Id), new WorldBounds(-4, -4, 0, 4, 4, 10))];
         project.RegisterAsset(await scene.SaveAsync(Path.Combine(project.RootPath, sceneEntry.Path)));
         AssetEntry settingsEntry = project.Manifest.List(ApplicationSettingsAsset.FileType).Single();
         using ApplicationSettingsAsset settings = await ApplicationSettingsAsset.OpenAsync(Path.Combine(project.RootPath, settingsEntry.Path));

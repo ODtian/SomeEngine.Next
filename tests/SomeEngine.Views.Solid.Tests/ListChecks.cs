@@ -1,7 +1,6 @@
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hierarchy;
-using SomeEngine.ECS.Queries;
 using SomeEngine.Elements;
 using static SomeEngine.Views.Solid.Solid;
 using SolidFrames = SomeEngine.Views.Tests.HeadlessFrameDriver;
@@ -25,8 +24,8 @@ public static partial class ListChecks
         var items = new State<IReadOnlyList<int>>([1, 2, 3]);
         var sample = new State<string>("first");
         Func<int> firstIndex = null!;
-        Entity[] outputs = [frames.World.CreateEntity(new Display("")), frames.World.CreateEntity(new Display("")),
-            frames.World.CreateEntity(new Display(""))];
+        Entity[] outputs = [frames.World.Create(new Display("")), frames.World.Create(new Display("")),
+            frames.World.Create(new Display(""))];
         Entity root = Views.Spawn(frames.World, Entity.Null, new OnceView(() =>
             For(() => items.Value, (item, index) =>
             {
@@ -52,13 +51,13 @@ public static partial class ListChecks
             ReadText(frames.World, reordered[1], 1) == "1", "For index getters follow the new order.");
         Require(firstIndex() == 1, "For index getters expose the moved row's position to callbacks.");
 
-        Entity removedText = Hierarchy<ElementTree>.GetChildren(frames.World, rows[1])[0];
+        Entity removedText = ElementChildren.Read(frames.World, rows[1])[0];
         items.Value = [3, 1];
         sample.Value = "third";
         frames.Frame();
-        Require(!frames.World.IsAlive(rows[1]) && !frames.World.IsAlive(removedText), "Removing an item releases its row and text.");
-        Require(frames.World.Read<Display>(outputs[0]).Value == "third" &&
-            frames.World.Read<Display>(outputs[1]).Value == "second", "Remaining row effects update their data after a row is released.");
+        Require(!frames.World.Has<global::SomeEngine.Views.ViewType>(rows[1]) && !frames.World.Has<global::SomeEngine.Views.ViewType>(removedText), "Removing an item releases its row and text.");
+        Require(frames.World.ReadComponentData<Display>(outputs[0]).Value == "third" &&
+            frames.World.ReadComponentData<Display>(outputs[1]).Value == "second", "Remaining row effects update their data after a row is released.");
     }
 
     private static void CheckIndexRows()
@@ -78,7 +77,7 @@ public static partial class ListChecks
         Entity list = GetList(frames.World, root);
         Entity[] rows = GetRows(frames.World, list);
         Require(firstItem() == "first", "Index item getters can be read outside a build.");
-        Entity firstText = Hierarchy<ElementTree>.GetChildren(frames.World, rows[0])[1];
+        Entity firstText = ElementChildren.Read(frames.World, rows[0])[1];
         firstText.SetText(frames.World, "edited first");
 
         items.Value = ["first", "changed"];
@@ -95,16 +94,16 @@ public static partial class ListChecks
         Require(firstItem() == "changed", "Index item getters expose the current position's value to callbacks.");
         items.Value = ["changed"];
         frames.Frame();
-        Require(!frames.World.IsAlive(rows[1]) && GetRows(frames.World, list).Single() == rows[0],
+        Require(!frames.World.Has<global::SomeEngine.Views.ViewType>(rows[1]) && GetRows(frames.World, list).Single() == rows[0],
             "A shortened list releases its trailing positions.");
     }
 
     private static void CheckQueryRows(bool byPosition)
     {
         using var frames = new SolidFrames();
-        QueryHandle query = frames.World.Query(frames.World.QueryDefinition().All<Number>());
-        Entity first = frames.World.CreateEntity(new Number(10));
-        Entity second = frames.World.CreateEntity(new Number(20));
+        Query query = frames.World.Query(new QueryDescription().With<Number>());
+        Entity first = frames.World.Create(new Number(10));
+        Entity second = frames.World.Create(new Number(20));
         Entity root = Views.Spawn(frames.World, Entity.Null, new OnceView(() =>
         {
             if (byPosition)
@@ -115,29 +114,29 @@ public static partial class ListChecks
         frames.Frame();
         Entity list = GetList(frames.World, root);
         Entity[] rows = GetRows(frames.World, list);
-        Hierarchy<ElementTree>.GetChildren(frames.World, rows[1])[0].SetText(frames.World, "edited second");
-        frames.World.Replace(first, new Number(15));
+        ElementChildren.Read(frames.World, rows[1])[0].SetText(frames.World, "edited second");
+        frames.World.Set(first, new Number(15));
         frames.Frame();
         Require(ReadText(frames.World, rows[0], 0) == "15" && ReadText(frames.World, rows[1], 0) == "edited second",
             "Each row's data reads update its own text.");
 
-        Entity third = frames.World.CreateEntity(new Number(30));
+        Entity third = frames.World.Create(new Number(30));
         frames.Frame();
         Entity[] expanded = GetRows(frames.World, list);
-        frames.World.DestroyEntity(first);
+        frames.World.Destroy(first);
         frames.Frame();
         Entity[] remaining = GetRows(frames.World, list);
         Require(remaining.SequenceEqual(byPosition ? rows : new[] { expanded[2], rows[1] }),
             "Each supplies entities while list keys determine the retained rows.");
         Require(ReadText(frames.World, remaining[0], 0) == "30" && ReadText(frames.World, remaining[1], 0) == "edited second",
             "Membership changes preserve independent row data.");
-        Require(!frames.World.IsAlive(byPosition ? expanded[2] : rows[0]), "Membership removal releases the omitted row.");
+        Require(!frames.World.Has<global::SomeEngine.Views.ViewType>(byPosition ? expanded[2] : rows[0]), "Membership removal releases the omitted row.");
     }
 
-    private static Entity GetList(World world, Entity root) => Hierarchy<ElementTree>.GetChildren(world, root).Single();
-    private static Entity[] GetRows(World world, Entity list) => Hierarchy<ElementTree>.GetChildren(world, list).ToArray();
+    private static Entity GetList(World world, Entity root) => ElementChildren.Read(world, root).Single();
+    private static Entity[] GetRows(World world, Entity list) => ElementChildren.Read(world, list);
     private static string ReadText(World world, Entity row, int index) =>
-        world.Read<Elements.Text>(Hierarchy<ElementTree>.GetChildren(world, row)[index]).Value;
+        world.ReadComponentData<Elements.Text>(ElementChildren.Read(world, row)[index]).Value;
 
     private static void Require(bool condition, string message)
     {
@@ -146,7 +145,7 @@ public static partial class ListChecks
     }
 
     private record struct Display(string Value) : IComponent;
-    private readonly record struct Number(int Value) : IComponent;
+    private readonly record struct Number(int Value) : ITrackedComponent;
     private readonly record struct OnceView(Action Content) : IView, IComponent
     {
         public static BuildMode Mode => BuildMode.Once;

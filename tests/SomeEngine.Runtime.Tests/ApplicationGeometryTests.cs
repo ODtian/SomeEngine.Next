@@ -1,4 +1,4 @@
-using SomeEngine.ECS.Queries;
+using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Render.Cluster;
@@ -81,7 +81,7 @@ public sealed class ApplicationGeometryTests(SceneContentFixture content)
 
     private sealed class GeometryInspection : IApplicationGeometryFeature, ISystem<RenderFrameSystemContext>
     {
-        private QueryHandle _query;
+        private Query _query;
         public Entity Source { get; set; }
         public List<ClusterGeometry> Geometries { get; } = [];
 
@@ -92,12 +92,12 @@ public sealed class ApplicationGeometryTests(SceneContentFixture content)
         }
 
         public void OnCreate(ref RenderFrameSystemContext context) =>
-            _query = context.World.Query(new QueryDefinitionBuilder().Read<RenderSource>().Read<RenderClusterGeometry>());
+            _query = context.World.World.Query(new QueryDescription().With<RenderSource>().With<RenderClusterGeometry>());
 
-        public void OnUpdate(ref RenderFrameSystemContext context) =>
-            context.World.ExecuteQuery(_query, query =>
-            {
-                foreach (QueryChunkView chunk in query.Chunks)
+        public void OnUpdate(ref RenderFrameSystemContext context)
+        {
+            using QueryScope source = _query.OpenRead();
+            foreach (QueryChunk chunk in source)
                 {
                     ReadOnlySpan<RenderSource> sources = chunk.Read<RenderSource>();
                     ReadOnlySpan<RenderClusterGeometry> geometries = chunk.Read<RenderClusterGeometry>();
@@ -109,8 +109,8 @@ public sealed class ApplicationGeometryTests(SceneContentFixture content)
                             Geometries.Add(geometry);
                     }
                 }
-            });
+        }
 
-        public void OnDestroy(ref RenderFrameSystemContext context) => context.World.ReleaseQuery(_query);
+        public void OnDestroy(ref RenderFrameSystemContext context) => _query = default;
     }
 }

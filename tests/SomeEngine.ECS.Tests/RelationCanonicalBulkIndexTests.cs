@@ -1,3 +1,4 @@
+using SomeEngine.ECS.Serialization;
 using SomeEngine.ECS.Commands;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
@@ -8,47 +9,49 @@ namespace SomeEngine.ECS.Tests;
 public sealed class RelationCanonicalBulkIndexTests
 {
     [RelationSchema(RelationDirection.Directed, RelationCardinality.Parallel)]
-    private readonly struct BulkLink : IComponent;
+    private readonly struct BulkLink : IAddedComponent;
 
     [RelationSchema(RelationDirection.Directed, RelationCardinality.UniqueTarget)]
-    private readonly struct FinalImageUnique : IComponent;
+    private readonly struct FinalImageUnique : IAddedComponent;
 
     [Fact]
     public void IntermediateOwnerValidation_CannotHideLaterImmediateFinalImageConflict()
     {
         var world = new World();
-        Entity existingSource = world.CreateEntity();
-        Entity immediateSource = world.CreateEntity();
-        Entity appliedTarget = world.CreateEntity();
-        Entity projectedTarget = world.CreateEntity();
+        Entity existingSource = world.Create();
+        Entity immediateSource = world.Create();
+        Entity appliedTarget = world.Create();
+        Entity projectedTarget = world.Create();
         RelationEdge<FinalImageUnique> existing = world.CreateRelation(
             existingSource,
             appliedTarget,
             new FinalImageUnique());
         int entityCount = world.EntityCount;
-        using var commands = new CommandBuffer(world);
-        var relations = commands.Relations<FinalImageUnique>();
-        relations.Retarget(existing, existingSource, projectedTarget, RelationMaintenanceTiming.Deferred);
-        relations.Create(immediateSource, projectedTarget, new FinalImageUnique(), RelationMaintenanceTiming.Immediate);
+        using var checkpoint = new WorldCheckpoint().Capture(world, CheckpointProgress.Preserve);
+        using var candidate = new World();
+        checkpoint.Restore(candidate);
+        using var commands = new CommandBuffer(candidate);
+        commands.RetargetRelation<FinalImageUnique>(existing, existingSource, projectedTarget, true);
+        commands.CreateRelation<FinalImageUnique>(immediateSource, projectedTarget, new FinalImageUnique(), false);
         Assert.Throws<InvalidOperationException>(commands.Playback);
 
         Assert.Equal(entityCount, world.EntityCount);
         Assert.Equal(
             appliedTarget,
-            world.GetDirectedRelationEndpoints(existing).Target);
+            ReadEndpoints(world, existing).Target);
         Assert.Equal(existing, Assert.Single(
-            world.GetIncomingRelations<FinalImageUnique>(appliedTarget).Entries.ToArray()).Edge);
-        Assert.Empty(world.GetIncomingRelations<FinalImageUnique>(projectedTarget).Entries.ToArray());
+            ReadIncoming<FinalImageUnique>(world, appliedTarget).ToArray()).Edge);
+        Assert.Empty(ReadIncoming<FinalImageUnique>(world, projectedTarget).ToArray());
     }
 
     [Fact]
     public void IntermediateOwnerValidation_DoesNotRejectHalfOfDeferredFinalImageSwap()
     {
         var world = new World();
-        Entity sourceA = world.CreateEntity();
-        Entity sourceB = world.CreateEntity();
-        Entity targetA = world.CreateEntity();
-        Entity targetB = world.CreateEntity();
+        Entity sourceA = world.Create();
+        Entity sourceB = world.Create();
+        Entity targetA = world.Create();
+        Entity targetB = world.Create();
         RelationEdge<FinalImageUnique> edgeA = world.CreateRelation(
             sourceA,
             targetA,
@@ -59,24 +62,22 @@ public sealed class RelationCanonicalBulkIndexTests
             new FinalImageUnique());
         using (var commands = new CommandBuffer(world))
         {
-            var relations = commands.Relations<FinalImageUnique>();
-            relations.Retarget(edgeA, sourceA, targetB, RelationMaintenanceTiming.Deferred);
-            relations.Retarget(edgeB, sourceB, targetA, RelationMaintenanceTiming.Deferred);
-            commands.Playback();
+            commands.EditEndpoints<FinalImageUnique>([new(edgeA.Entity, sourceA, targetB), new(edgeB.Entity, sourceB, targetA)], deferred: true);
+                commands.Playback();
         }
 
-        Assert.Equal(targetB, world.GetDirectedRelationEndpoints(edgeA).Target);
-        Assert.Equal(targetA, world.GetDirectedRelationEndpoints(edgeB).Target);
+        Assert.Equal(targetB, ReadEndpoints(world, edgeA).Target);
+        Assert.Equal(targetA, ReadEndpoints(world, edgeB).Target);
         Assert.Equal(edgeA, Assert.Single(
-            world.GetIncomingRelations<FinalImageUnique>(targetA).Entries.ToArray()).Edge);
+            ReadIncoming<FinalImageUnique>(world, targetA).ToArray()).Edge);
         Assert.Equal(edgeB, Assert.Single(
-            world.GetIncomingRelations<FinalImageUnique>(targetB).Entries.ToArray()).Edge);
+            ReadIncoming<FinalImageUnique>(world, targetB).ToArray()).Edge);
 
         world.MaintainRelations<FinalImageUnique>();
         Assert.Equal(edgeB, Assert.Single(
-            world.GetIncomingRelations<FinalImageUnique>(targetA).Entries.ToArray()).Edge);
+            ReadIncoming<FinalImageUnique>(world, targetA).ToArray()).Edge);
         Assert.Equal(edgeA, Assert.Single(
-            world.GetIncomingRelations<FinalImageUnique>(targetB).Entries.ToArray()).Edge);
+            ReadIncoming<FinalImageUnique>(world, targetB).ToArray()).Edge);
     }
 
     [Fact]
@@ -84,20 +85,15 @@ public sealed class RelationCanonicalBulkIndexTests
     {
         const int Count = 4096;
         var world = new World();
-        Entity source = world.CreateEntity();
+        Entity source = world.Create();
         var targets = new Entity[Count];
         var pending = new DeferredRelationEdge<BulkLink>[Count];
         using (var seed = new CommandBuffer(world))
         {
-            var relations = seed.Relations<BulkLink>();
             for (int i = 0; i < Count; i++)
             {
-                targets[i] = world.CreateEntity();
-                pending[i] = relations.Create(
-                    source,
-                    targets[i],
-                    new BulkLink(),
-                    RelationMaintenanceTiming.Immediate);
+                targets[i] = world.Create();
+                pending[i] = seed.CreateRelation<BulkLink>(source, targets[i], new BulkLink(), false);
             }
             seed.Playback();
         }
@@ -106,40 +102,42 @@ public sealed class RelationCanonicalBulkIndexTests
         for (int i = 0; i < Count; i++)
             edges[i] = pending[i].Resolve();
 
-        using (var failing = new CommandBuffer(world))
+        using var checkpoint = new WorldCheckpoint().Capture(world, CheckpointProgress.Preserve);
+        using var candidate = new World();
+        checkpoint.Restore(candidate);
+        using (var failing = new CommandBuffer(candidate))
         {
-            var relations = failing.Relations<BulkLink>();
             for (int i = 0; i < Count; i++)
-                relations.DestroyAllBetween(source, targets[i]);
-            relations.SetAdjacencyOrder(
-                source,
-                RelationAdjacencyRole.Incident,
-                RelationAdjacencyOrderPolicy.Ordered);
+                failing.DestroyRelationsBetween<BulkLink>(source, targets[i]);
+            failing.SetRelationOrder<BulkLink>(source, RelationAdjacencyRole.Incident, true);
 
-            Assert.Throws<InvalidOperationException>(() => failing.Playback());
+            Assert.Throws<ArgumentException>(() => failing.Playback());
         }
 
         Assert.All(edges, edge => Assert.True(world.IsAlive(edge.Entity)));
 
         using (var commands = new CommandBuffer(world))
         {
-            var relations = commands.Relations<BulkLink>();
             for (int i = 0; i < Count; i++)
-                relations.DestroyAllBetween(source, targets[i]);
+                commands.DestroyRelationsBetween<BulkLink>(source, targets[i]);
             commands.Playback();
         }
 
-        Assert.All(edges, edge => Assert.False(world.IsAlive(edge.Entity)));
+        Assert.All(edges, edge =>
+        {
+            world.Remove<Removed<RelationEndpoints<BulkLink>>>(edge.Entity);
+            Assert.False(world.IsAlive(edge.Entity));
+        });
     }
 
     [Fact]
     public void BuiltIndex_TracksDeferredMoveAndAtBulkUsesCanonicalRoleBucket()
     {
         var world = new World();
-        Entity oldSource = world.CreateEntity();
-        Entity oldTarget = world.CreateEntity();
-        Entity newSource = world.CreateEntity();
-        Entity newTarget = world.CreateEntity();
+        Entity oldSource = world.Create();
+        Entity oldTarget = world.Create();
+        Entity newSource = world.Create();
+        Entity newTarget = world.Create();
         RelationEdge<BulkLink> edge = world.CreateRelation(
             oldSource,
             oldTarget,
@@ -147,17 +145,14 @@ public sealed class RelationCanonicalBulkIndexTests
 
         using (var commands = new CommandBuffer(world))
         {
-            var relations = commands.Relations<BulkLink>();
-            relations.DestroyAllBetween(oldSource, newTarget);
-            relations.Retarget(
-                edge,
-                newSource,
-                newTarget,
-                RelationMaintenanceTiming.Deferred);
-            relations.DestroyAllBetween(oldSource, oldTarget);
-            relations.DestroyAllOutgoing(newSource);
+            commands.DestroyRelationsBetween<BulkLink>(oldSource, newTarget);
+            commands.RetargetRelation<BulkLink>(edge, newSource, newTarget, true);
+            commands.DestroyRelationsBetween<BulkLink>(oldSource, oldTarget);
+            commands.DestroyRelationsAt<BulkLink>(newSource, RelationAdjacencyRole.Outgoing);
             commands.Playback();
         }
+
+        world.Remove<Removed<RelationEndpoints<BulkLink>>>(edge.Entity);
 
         Assert.False(world.IsAlive(edge.Entity));
     }
@@ -166,10 +161,10 @@ public sealed class RelationCanonicalBulkIndexTests
     public void BuiltIndex_TracksImmediateCancellationOfDeferredCanonicalMove()
     {
         var world = new World();
-        Entity source = world.CreateEntity();
-        Entity appliedTarget = world.CreateEntity();
-        Entity projectedTarget = world.CreateEntity();
-        Entity unrelatedTarget = world.CreateEntity();
+        Entity source = world.Create();
+        Entity appliedTarget = world.Create();
+        Entity projectedTarget = world.Create();
+        Entity unrelatedTarget = world.Create();
         RelationEdge<BulkLink> edge = world.CreateRelation(
             source,
             appliedTarget,
@@ -177,28 +172,21 @@ public sealed class RelationCanonicalBulkIndexTests
 
         using (var commands = new CommandBuffer(world))
         {
-            var relations = commands.Relations<BulkLink>();
-            relations.DestroyAllBetween(source, unrelatedTarget);
-            relations.Retarget(
-                edge,
-                source,
-                projectedTarget,
-                RelationMaintenanceTiming.Deferred);
-            relations.Retarget(
-                edge,
-                source,
-                appliedTarget,
-                RelationMaintenanceTiming.Immediate);
-            relations.DestroyAllBetween(source, projectedTarget);
-            relations.DestroyAllBetween(source, appliedTarget);
+            commands.DestroyRelationsBetween<BulkLink>(source, unrelatedTarget);
+            commands.RetargetRelation<BulkLink>(edge, source, projectedTarget, true);
+            commands.RetargetRelation<BulkLink>(edge, source, appliedTarget, false);
+            commands.DestroyRelationsBetween<BulkLink>(source, projectedTarget);
+            commands.DestroyRelationsBetween<BulkLink>(source, appliedTarget);
             commands.Playback();
         }
+
+        world.Remove<Removed<RelationEndpoints<BulkLink>>>(edge.Entity);
 
         Assert.False(world.IsAlive(edge.Entity));
     }
 
     [Fact]
-    public void DirtyEndpointIndex_MakesUnrelatedCleanupLocalAndPreservesCurrentOrAppliedSemantics()
+    public void EndpointCleanupUsesCurrentReferencesAndAppliesRetargetedEdges()
     {
         const int Count = 4096;
         const int UnrelatedCount = 1024;
@@ -210,23 +198,18 @@ public sealed class RelationCanonicalBulkIndexTests
         var pending = new DeferredRelationEdge<BulkLink>[Count];
         for (int i = 0; i < Count; i++)
         {
-            sources[i] = world.CreateEntity();
-            oldTargets[i] = world.CreateEntity();
-            newTargets[i] = world.CreateEntity();
+            sources[i] = world.Create();
+            oldTargets[i] = world.Create();
+            newTargets[i] = world.Create();
         }
         for (int i = 0; i < UnrelatedCount; i++)
-            unrelated[i] = world.CreateEntity();
+            unrelated[i] = world.Create();
 
         using (var seed = new CommandBuffer(world))
         {
-            var relations = seed.Relations<BulkLink>();
             for (int i = 0; i < Count; i++)
             {
-                pending[i] = relations.Create(
-                    sources[i],
-                    oldTargets[i],
-                    new BulkLink(),
-                    RelationMaintenanceTiming.Immediate);
+                pending[i] = seed.CreateRelation<BulkLink>(sources[i], oldTargets[i], new BulkLink(), false);
             }
             seed.Playback();
         }
@@ -234,33 +217,32 @@ public sealed class RelationCanonicalBulkIndexTests
         var edges = new RelationEdge<BulkLink>[Count];
         using (var retarget = new CommandBuffer(world))
         {
-            var relations = retarget.Relations<BulkLink>();
             for (int i = 0; i < Count; i++)
             {
                 edges[i] = pending[i].Resolve();
-                relations.Retarget(
-                    edges[i],
-                    sources[i],
-                    newTargets[i],
-                    RelationMaintenanceTiming.Deferred);
+                retarget.RetargetRelation<BulkLink>(edges[i], sources[i], newTargets[i], true);
             }
             retarget.Playback();
         }
 
-        world.DestroyEntity(unrelated[0]);
+        world.Destroy(unrelated[0]);
 
         using (var cleanup = new CommandBuffer(world))
         {
             for (int i = 1; i < UnrelatedCount; i++)
-                cleanup.DestroyEntity(unrelated[i]);
+                cleanup.Destroy(unrelated[i]);
             cleanup.Playback();
         }
 
-        world.DestroyEntity(newTargets[0]);
+        world.Destroy(newTargets[0]);
+        world.Remove<Removed<RelationEndpoints<BulkLink>>>(edges[0].Entity);
         Assert.False(world.IsAlive(edges[0].Entity));
 
-        world.DestroyEntity(oldTargets[1]);
-        Assert.False(world.IsAlive(edges[1].Entity));
+        world.Destroy(oldTargets[1]);
+        Assert.True(world.IsAlive(edges[1].Entity));
+        Assert.Equal(newTargets[1], ReadEndpoints(world, edges[1]).Target);
+        Assert.Empty(ReadIncoming<BulkLink>(world, oldTargets[1]));
+        Assert.Equal(edges[1], Assert.Single(ReadIncoming<BulkLink>(world, newTargets[1])).Edge);
         Assert.True(world.IsAlive(edges[2].Entity));
     }
 }

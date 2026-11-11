@@ -20,7 +20,7 @@ public sealed class BakeContext
 
     public EntityId CreateRuntimeEntity()
     {
-        return RuntimeWorld.CreateEntity();
+        return RuntimeWorld.Create();
     }
 }
 

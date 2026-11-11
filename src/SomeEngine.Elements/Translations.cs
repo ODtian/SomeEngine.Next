@@ -7,7 +7,7 @@ using SomeEngine.ECS;
 namespace SomeEngine.Elements;
 
 /// <summary>A built translation directory stored beside the World's Locale.</summary>
-public readonly struct Translations : IComponent
+public readonly struct Translations : ITrackedComponent
 {
     private const uint FileTag = 0x534C4F43;
     private const int FileVersion = 1;
@@ -100,7 +100,7 @@ public readonly struct Translations : IComponent
         DevelopmentCheck.Require(language is not null, "Locale requires a culture name.");
         DevelopmentCheck.Require(!string.IsNullOrEmpty(text.Key), "Localized text requires a translation key.");
         DevelopmentCheck.Require(_languages is not null, "Localized text requires loaded Translations beside Locale.");
-        bool hasLanguage = _languages.TryGetValue(language, out LanguageTexts texts);
+        bool hasLanguage = _languages!.TryGetValue(language!, out LanguageTexts texts);
         DevelopmentCheck.Require(hasLanguage, $"Translations require language '{language}'.");
         bool hasText = texts.Texts.TryGetValue(text.Key, out TranslationText value);
         DevelopmentCheck.Require(hasText, $"Translations require key '{text.Key}' in language '{language}'.");
@@ -117,7 +117,7 @@ public readonly struct Translations : IComponent
         }
         DevelopmentCheck.Require(text.Arguments.Length >= format.MinimumArgumentCount,
             $"Translation '{text.Key}' requires {format.MinimumArgumentCount} format arguments.");
-        return string.Format(CultureInfo.GetCultureInfo(language), format, text.Arguments.Span);
+        return string.Format(CultureInfo.GetCultureInfo(language!), format, text.Arguments.Span);
     }
 
     private static bool IsIntegerOne(object? value) => value switch

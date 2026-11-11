@@ -21,12 +21,12 @@ public sealed class HudOverlayTests
         using var frames = new GameFrameSystems(world);
         frames.UpdateViews(0);
         frames.UpdateViews(0);
-        var rectangle = world.Read<LayoutRect>(FindText(world, "N00:000")).Value;
+        var rectangle = world.ReadComponentData<LayoutRect>(FindText(world, "N00:000")).Value;
 
         hud.Update(42);
         frames.MeasureViews(1d / 60);
 
-        Assert.Equal(rectangle, world.Read<LayoutRect>(FindText(world, "N00:042")).Value);
+        Assert.Equal(rectangle, world.ReadComponentData<LayoutRect>(FindText(world, "N00:042")).Value);
         FindText(world, "N99:042");
     }
 
@@ -40,22 +40,22 @@ public sealed class HudOverlayTests
         frames.UpdateViews(0);
         Entity list = FindList(world, hud.Canvas);
         Assert.NotEqual(Entity.Null, list);
-        Entity[] before = Hierarchy<ElementTree>.GetChildren(world, list).ToArray();
+        Entity[] before = ReadChildren(world, list);
         Assert.Equal(11, before.Length);
-        Assert.Equal("Item 00000", world.Read<TextContent>(before[0]).Value);
+        Assert.Equal("Item 00000", world.ReadComponentData<TextContent>(before[0]).Value);
 
-        var rectangle = world.Read<LayoutRect>(list).Value;
+        var rectangle = world.ReadComponentData<LayoutRect>(list).Value;
         using var input = new WindowInput(world);
         input.ScrollPointer(new Vector2(rectangle.X + 8, rectangle.Y + 8), new Vector2(0, 48));
         frames.UpdateInput();
         frames.UpdateViews(1d / 60);
         frames.UpdateViews(1d / 60);
 
-        Entity[] after = Hierarchy<ElementTree>.GetChildren(world, list).ToArray();
-        Assert.Equal("Item 00001", world.Read<TextContent>(after[0]).Value);
+        Entity[] after = ReadChildren(world, list);
+        Assert.Equal("Item 00001", world.ReadComponentData<TextContent>(after[0]).Value);
         Assert.Equal(before[1], after[0]);
-        Assert.False(world.IsAlive(before[0]));
-        Assert.Equal("Item 00012", world.Read<TextContent>(after[^1]).Value);
+        Assert.False(world.Has<global::SomeEngine.Views.ViewType>(before[0]));
+        Assert.Equal("Item 00012", world.ReadComponentData<TextContent>(after[^1]).Value);
     }
 
     [Theory]
@@ -81,7 +81,7 @@ public sealed class HudOverlayTests
         frames.UpdateViews(1d / 60);
         FindText(world, "N00:007");
         FindText(world, "799");
-        Assert.Equal(new Size(960, 540), world.Read<Canvas>(hud.Canvas).Size);
+        Assert.Equal(new Size(960, 540), world.ReadComponentData<Canvas>(hud.Canvas).Size);
     }
 
     [Fact]
@@ -106,10 +106,17 @@ public sealed class HudOverlayTests
         Assert.Equal(1, platform.SelectedScene);
     }
 
+    private static Entity[] ReadChildren(World world, Entity parent)
+    {
+        using ChildrenRead children = Hierarchy<ElementTree>.GetChildren(world, parent);
+        return children.Entities.ToArray();
+    }
+
     private static int CountChildren(World world, Entity parent)
     {
         int count = 0;
-        foreach (Entity child in Hierarchy<ElementTree>.GetChildren(world, parent))
+        using ChildrenRead children = Hierarchy<ElementTree>.GetChildren(world, parent);
+        foreach (Entity child in children)
             count += 1 + CountChildren(world, child);
         return count;
     }
@@ -117,7 +124,8 @@ public sealed class HudOverlayTests
     private static Entity FindList(World world, Entity parent)
     {
         if (world.HasSparse<VirtualList>(parent)) return parent;
-        foreach (Entity child in Hierarchy<ElementTree>.GetChildren(world, parent))
+        using ChildrenRead children = Hierarchy<ElementTree>.GetChildren(world, parent);
+        foreach (Entity child in children)
         {
             Entity list = FindList(world, child);
             if (list != Entity.Null) return list;
@@ -127,18 +135,15 @@ public sealed class HudOverlayTests
 
     private static Entity FindText(World world, string text)
     {
-        var query = world.Query(world.QueryDefinition().Read<TextContent>());
+        Query query = world.Query(new QueryDescription().With<TextContent>());
         var result = (Text: text, Node: Entity.Null);
-        try
+        using QueryScope source = query.OpenRead();
+        foreach (QueryChunk chunk in source)
         {
-            world.ExecuteQuery(query, ref result, static (rows, ref value) =>
-            {
-                foreach (var row in rows.Rows)
-                    if (row.Read<TextContent>().Value == value.Text)
-                        value.Node = row.Entity;
-            });
+            ReadOnlySpan<TextContent> values = chunk.Read<TextContent>();
+            for (int row = 0; row < chunk.Count; row++)
+                if (values[row].Value == text) result.Node = chunk.Entities[row];
         }
-        finally { world.ReleaseQuery(query); }
         Assert.NotEqual(Entity.Null, result.Node);
         return result.Node;
     }

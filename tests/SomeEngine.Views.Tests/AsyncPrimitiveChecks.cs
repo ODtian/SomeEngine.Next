@@ -12,11 +12,11 @@ internal static partial class AsyncPrimitiveChecks
         using var frames = new HeadlessFrameDriver();
         var work = new Work();
         var result = new TaskCompletionSource();
-        Entity target = frames.World.CreateEntity(new Number());
+        Entity target = frames.World.Create(new Number());
         Entity root = Views.Spawn(frames.World, Entity.Null, new ConcurrentContent(work, target, result.Task));
         frames.Frame();
         frames.Frame();
-        Require(frames.World.Read<Number>(target).Value == 42, "The child task commits its next-frame write.");
+        Require(frames.World.ReadComponentData<Number>(target).Value == 42, "The child task commits its next-frame write.");
         Require(work.Thread == Environment.CurrentManagedThreadId, "The child task resumes on the rebuild thread.");
         Require(Text(frames, root, 0) == "waiting", "The view keeps its waiting content while its child tasks run.");
         Finish(result.SetResult);
@@ -24,6 +24,7 @@ internal static partial class AsyncPrimitiveChecks
         Require(Text(frames, root, 0) == "complete", "The view completes alongside its child tasks.");
 
         Hierarchy<ElementTree>.DestroySubtree(frames.World, root);
+        frames.Frame();
         Require(work.First.IsCancellationRequested && work.Second.IsCancellationRequested,
             "Releasing the view cancels both child tasks.");
         Require(SpinWait.SpinUntil(() =>
@@ -60,7 +61,7 @@ internal static partial class AsyncPrimitiveChecks
     }
 
     private static string Text(HeadlessFrameDriver frames, Entity root, int index) =>
-        frames.World.Read<Label>(Hierarchy<ElementTree>.GetChildren(frames.World, root)[index]).Value;
+        frames.World.ReadComponentData<Label>(ElementChildren.Read(frames.World, root)[index]).Value;
 
     private static void Finish(Action complete)
     {
@@ -149,7 +150,7 @@ internal static partial class AsyncPrimitiveChecks
         }
     }
 
-    private readonly record struct Number(int Value) : IComponent;
+    private readonly record struct Number(int Value) : ITrackedComponent;
 
     private readonly record struct Label(string Value) : IView, IComponent
     {

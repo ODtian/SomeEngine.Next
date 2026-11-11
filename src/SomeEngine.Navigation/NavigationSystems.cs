@@ -1,6 +1,5 @@
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Job;
 
@@ -17,8 +16,8 @@ public sealed class NavigationSystems<TSpace, TSearch, TState, TMotion, TReader>
     where TReader : struct, INavigationMotionReader<TMotion>
 {
     private readonly World _world;
-    private readonly QueryDefinition _enabledGoal;
-    private readonly QueryDefinition _disabledGoal;
+    private readonly QueryDescription _enabledGoal;
+    private readonly QueryDescription _disabledGoal;
     private readonly NavigationTraversalSystem<TSpace, TState, TMotion, TReader> _traversal;
     private JobHandle _completion;
 
@@ -26,12 +25,12 @@ public sealed class NavigationSystems<TSpace, TSearch, TState, TMotion, TReader>
     {
         _world = world;
         _traversal = new(world, passages);
-        _enabledGoal = world.QueryDefinition()
-            .All<PathNavigation<TSpace>>().All<NavigationRequest<TSpace, TState>>().All<TMotion>()
-            .Enabled<NavigationGoal>().Build();
-        _disabledGoal = world.QueryDefinition()
-            .All<PathNavigation<TSpace>>().All<NavigationRequest<TSpace, TState>>().All<TMotion>()
-            .Disabled<NavigationGoal>().Build();
+        _enabledGoal = new QueryDescription()
+            .WithStored<PathNavigation<TSpace>>().WithStored<NavigationRequest<TSpace, TState>>().WithStored<TMotion>()
+            .With<NavigationGoal>();
+        _disabledGoal = new QueryDescription()
+            .WithStored<PathNavigation<TSpace>>().WithStored<NavigationRequest<TSpace, TState>>().WithStored<TMotion>()
+            .WithDisabled<NavigationGoal>();
     }
 
     public void AddAgent(Entity entity, TSpace space, NavigationProfile profile, NavigationPolicy policy,
@@ -42,8 +41,7 @@ public sealed class NavigationSystems<TSpace, TSearch, TState, TMotion, TReader>
     public NavigationStep Schedule(float deltaTime, int expansionBudget, JobHandle motionReady = default)
     {
         NavigationStep step = ScheduleGuidance(deltaTime, expansionBudget, motionReady);
-        JobHandle steering = new NavigationSteeringJob().ScheduleParallel(_world,
-            new JobEntityScheduleOptions(filter: _enabledGoal), step.Guidance);
+        JobHandle steering = new NavigationSteeringJob().ScheduleParallel(_world, dependency: step.Guidance, query: _world.Query(_enabledGoal));
         _completion = steering;
         return step with { Steering = steering };
     }
@@ -51,15 +49,15 @@ public sealed class NavigationSystems<TSpace, TSearch, TState, TMotion, TReader>
     /// <summary>Returns path guidance for a caller-selected steering or avoidance stage.</summary>
     public NavigationStep ScheduleGuidance(float deltaTime, int expansionBudget, JobHandle motionReady = default)
     {
-        JobHandle ready = WorldJobs.CombineDependencies(_world, [_completion, motionReady]);
-        var enabled = new JobEntityScheduleOptions(filter: _enabledGoal);
-        var disabled = new JobEntityScheduleOptions(filter: _disabledGoal);
+        JobHandle ready = _world.Execution!.Scheduler!.CombineDependencies([_completion, motionReady]);
+        Query enabled = _world.Query(_enabledGoal);
+        Query disabled = _world.Query(_disabledGoal);
         JobHandle stopped = new NavigationStopJob<TSpace, TState>()
-            .ScheduleParallel(_world, disabled, ready);
+            .ScheduleParallel(_world, dependency: ready, query: disabled);
         JobHandle paths = new NavigationPathJob<TSpace, TSearch, TState, TMotion, TReader>(_world, expansionBudget)
-            .ScheduleParallel(_world, [ComponentJobAccess<TMotion>.Read(_world)], enabled, stopped);
+            .ScheduleParallel(_world, dependency: stopped, query: enabled);
         JobHandle guidance = new NavigationGuidanceJob<TSpace, TState, TMotion, TReader>(deltaTime)
-            .ScheduleParallel(_world, enabled, paths);
+            .ScheduleParallel(_world, dependency: paths, query: enabled);
         JobHandle traversal = _traversal.Schedule(guidance);
         _completion = traversal;
         return new(paths, traversal, default, traversal);
@@ -68,10 +66,9 @@ public sealed class NavigationSystems<TSpace, TSearch, TState, TMotion, TReader>
     /// <summary>Reads actual positions and headings after the movement consumer has completed.</summary>
     public JobHandle ScheduleProgress(JobHandle motionCompletion)
     {
-        JobHandle moved = WorldJobs.CombineDependencies(_world, [_completion, motionCompletion]);
+        JobHandle moved = _world.Execution!.Scheduler!.CombineDependencies([_completion, motionCompletion]);
         _completion = new NavigationProgressJob<TMotion, TReader>(_world)
-            .ScheduleParallel(_world, [ComponentJobAccess<TMotion>.Read(_world)],
-                new JobEntityScheduleOptions(filter: _enabledGoal), moved);
+            .ScheduleParallel(_world, dependency: moved, query: _world.Query(_enabledGoal));
         return _completion;
     }
 }

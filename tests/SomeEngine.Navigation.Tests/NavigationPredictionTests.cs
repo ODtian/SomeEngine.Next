@@ -12,7 +12,7 @@ public sealed class NavigationPredictionTests
     public void AnimationReadsFutureTurningAndTheNextPredictionStartsAtActualFeedback()
     {
         using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using World world = new World(execution: new WorldJobs(scheduler));
         var profile = new NavigationProfile([new Vector2(-0.2f), new(0.2f, -0.2f), new(0.2f), new(-0.2f, 0.2f)],
             1, maximumSpeed: 1, maximumAcceleration: 2, maximumAngularSpeed: 1);
         // The open square and imposed displacement are examples of navigation and physical movement feedback.
@@ -22,7 +22,7 @@ public sealed class NavigationPredictionTests
         using var neighbors = new NavigationNeighborSystem<TestMotion, TestMotionReader>(world, scheduler);
         var avoidance = new NavigationAvoidanceSystem<AccelerationVelocityAvoidance, TestMotion, TestMotionReader>(world, neighbors);
         var prediction = new NavigationPredictionSystem<NavigationVelocityPrediction, TestMotion, TestMotionReader>(world);
-        Entity entity = world.CreateEntity(new TestMotion());
+        Entity entity = world.Create(new TestMotion());
         world.Add(entity, new AnimationMotionDemand());
         paths.AddAgent(entity, mesh, profile, new(), new(new Vector3(8, 0, 0)), 1);
         NavigationComponents.AddAvoidance(world, entity, new(0.3f, ResponseTime: 0.5f));
@@ -32,7 +32,7 @@ public sealed class NavigationPredictionTests
         JobHandle steering = avoidance.Schedule(0.1f, guidance, neighbors.Schedule(), avoidance.SchedulePathBoundaries<NavigationMesh>());
         JobHandle predicted = prediction.Schedule(100, steering);
         new ReadAnimationMotion().ScheduleParallel(world, predicted).Complete();
-        AnimationMotionDemand first = world.Read<AnimationMotionDemand>(entity);
+        AnimationMotionDemand first = world.ReadValue<AnimationMotionDemand>(entity);
         Assert.Equal(100, first.StartTime);
         Assert.Equal(100.8f, first.EndTime, 4);
         Assert.InRange(first.FutureHeading, 0.79f, 0.81f);
@@ -40,11 +40,11 @@ public sealed class NavigationPredictionTests
 
         JobHandle moved = new DeflectedPredictedMotion(0.1f, new(0, 0, 0.2f)).ScheduleParallel(world, predicted);
         paths.ScheduleProgress(moved).Complete();
-        TestMotion actual = world.Read<TestMotion>(entity);
+        TestMotion actual = world.ReadValue<TestMotion>(entity);
         guidance = paths.ScheduleGuidance(0.1f, 32).Guidance;
         steering = avoidance.Schedule(0.1f, guidance, neighbors.Schedule(), avoidance.SchedulePathBoundaries<NavigationMesh>());
         new ReadAnimationMotion().ScheduleParallel(world, prediction.Schedule(100.1f, steering)).Complete();
-        AnimationMotionDemand next = world.Read<AnimationMotionDemand>(entity);
+        AnimationMotionDemand next = world.ReadValue<AnimationMotionDemand>(entity);
 
         Assert.Equal(actual.Position, next.StartPosition);
         Assert.Equal(actual.Velocity, next.StartVelocity);
@@ -59,7 +59,7 @@ public record struct AnimationMotionDemand(Vector3 StartPosition, Vector3 StartV
 
 public partial struct ReadAnimationMotion : IJobEntity
 {
-    public void Execute(BufferView<NavigationTrajectoryPoint> trajectory, ref AnimationMotionDemand demand)
+    public void Execute(ReadOnlyBuffer<NavigationTrajectoryPoint> trajectory, ref AnimationMotionDemand demand)
     {
         NavigationTrajectoryPoint first = trajectory[0], last = trajectory[trajectory.Count - 1];
         demand = new(first.Position, first.Velocity, first.Time, last.Time, last.Heading, last.Velocity);

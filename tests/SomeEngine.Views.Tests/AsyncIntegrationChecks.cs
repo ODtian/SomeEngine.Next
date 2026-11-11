@@ -12,8 +12,8 @@ internal static partial class AsyncIntegrationChecks
     internal static void VerifyRecoveredReads(bool cancel)
     {
         using var frames = new HeadlessFrameDriver();
-        Entity source = frames.World.CreateEntity(new Number(1));
-        frames.World.AddSparse(source, new SparseNumber(1));
+        Entity source = frames.World.Create(new Number(1));
+        frames.World.SetSparse(source, new SparseNumber(1));
         var waiting = new State<bool>(true);
         var completion = new TaskCompletionSource();
         Entity writer = Views.Spawn(frames.World, Entity.Null,
@@ -21,7 +21,7 @@ internal static partial class AsyncIntegrationChecks
         Entity reader = Views.Spawn(frames.World, Entity.Null, new ReadingNumbers(source));
         frames.Frame();
         frames.Frame();
-        Require(frames.World.Read<ReadNumbers>(reader) == new ReadNumbers(2, 2),
+        Require(frames.World.ReadComponentData<ReadNumbers>(reader) == new ReadNumbers(2, 2),
             "The reader displays the table and sparse data exposed across frames.");
 
         if (cancel)
@@ -31,15 +31,15 @@ internal static partial class AsyncIntegrationChecks
         frames.Frame();
         frames.Frame();
 
-        Require(frames.World.Read<Number>(source).Value == 1, "Recovery restores the table source.");
-        Require(frames.World.ReadSparse<SparseNumber>(source).Value == 1, "Recovery restores the sparse source.");
-        Require(frames.World.Read<ReadNumbers>(reader) == new ReadNumbers(1, 1),
+        Require(frames.World.ReadComponentData<Number>(source).Value == 1, "Recovery restores the table source.");
+        Require(frames.World.ReadComponentData<SparseNumber>(source).Value == 1, "Recovery restores the sparse source.");
+        Require(frames.World.ReadComponentData<ReadNumbers>(reader) == new ReadNumbers(1, 1),
             "The reader follows the recovered table and sparse values.");
         Require(frames.World.HasSparse<BuildError>(writer) == !cancel,
             "The public error data distinguishes failure from cancellation.");
-        uint version = frames.World.WriteVersion<ReadNumbers>(reader);
+        ulong version = frames.World.ComponentDataWriteVersion<ReadNumbers>(reader);
         frames.Frame();
-        Require(frames.World.WriteVersion<ReadNumbers>(reader) == version,
+        Require(frames.World.ComponentDataWriteVersion<ReadNumbers>(reader) == version,
             "An unchanged recovered result retains its write version.");
     }
 
@@ -73,27 +73,27 @@ internal static partial class AsyncIntegrationChecks
         using var frames = new HeadlessFrameDriver();
         Entity writer = Views.Spawn(frames.World, Entity.Null, new RecoverableDeclaration(1, null));
         frames.Frame();
-        Entity source = Hierarchy<ElementTree>.GetChildren(frames.World, writer)[0];
+        Entity source = ElementChildren.Read(frames.World, writer)[0];
         Entity reader = Views.Spawn(frames.World, Entity.Null, new ReadingParameters(source));
         var completion = new TaskCompletionSource();
-        frames.World.Replace(writer, new RecoverableDeclaration(2, completion.Task));
+        frames.World.Set(writer, new RecoverableDeclaration(2, completion.Task));
         frames.Frame();
         frames.Frame();
-        Require(frames.World.Read<Number>(reader).Value == 2, "The reader displays the presented child parameters.");
+        Require(frames.World.ReadComponentData<Number>(reader).Value == 2, "The reader displays the presented child parameters.");
 
         if (cancel)
-            frames.World.Replace(writer, new RecoverableDeclaration(1, null));
+            frames.World.Set(writer, new RecoverableDeclaration(1, null));
         else
             completion.SetResult();
         frames.Frame();
         frames.Frame();
-        Require(frames.World.Read<NumberLabel>(source).Value == 1, "Recovery restores the child's parameters.");
-        Require(frames.World.Read<Number>(reader).Value == 1, "The reader follows recovered child parameters.");
+        Require(frames.World.ReadComponentData<NumberLabel>(source).Value == 1, "Recovery restores the child's parameters.");
+        Require(frames.World.ReadComponentData<Number>(reader).Value == 1, "The reader follows recovered child parameters.");
         if (cancel)
         {
             completion.SetResult();
             frames.Frame();
-            Require(frames.World.Read<Number>(reader).Value == 1, "Old cleanup preserves the current displayed parameters.");
+            Require(frames.World.ReadComponentData<Number>(reader).Value == 1, "Old cleanup preserves the current displayed parameters.");
         }
     }
 
@@ -121,53 +121,53 @@ internal static partial class AsyncIntegrationChecks
     internal static void VerifyWrites()
     {
         using var frames = new HeadlessFrameDriver();
-        Entity target = frames.World.CreateEntity(new Number(1));
-        frames.World.AddSparse(target, new SparseNumber(2));
+        Entity target = frames.World.Create(new Number(1));
+        frames.World.SetSparse(target, new SparseNumber(2));
         var completion = new TaskCompletionSource();
         Entity root = Views.Spawn(frames.World, Entity.Null, new WrittenContent(target, completion.Task));
         frames.Frame();
-        Require(frames.World.Read<Number>(target).Value == 10, "The first segment commits its table value.");
-        Require(frames.World.ReadSparse<SparseNumber>(target).Value == 20, "The first segment commits its sparse value.");
-        frames.World.Replace(target, new Number(40));
-        frames.World.ReplaceSparse(target, new SparseNumber(50));
+        Require(frames.World.ReadComponentData<Number>(target).Value == 10, "The first segment commits its table value.");
+        Require(frames.World.ReadComponentData<SparseNumber>(target).Value == 20, "The first segment commits its sparse value.");
+        frames.World.Set(target, new Number(40));
+        frames.World.SetSparse(target, new SparseNumber(50));
         completion.SetResult();
 
         frames.Frame();
 
-        Require(frames.World.Read<Number>(target).Value == 41, "The resumed segment writes from the current table value.");
-        Require(frames.World.ReadSparse<SparseNumber>(target).Value == 51, "The resumed segment writes from the current sparse value.");
-        Entity group = Hierarchy<ElementTree>.GetChildren(frames.World, root)[0];
-        Entity label = Hierarchy<ElementTree>.GetChildren(frames.World, group)[0];
-        Require(frames.World.Read<NumberLabel>(label).Value == 41, "Content uses the calling calculation's current copy.");
+        Require(frames.World.ReadComponentData<Number>(target).Value == 41, "The resumed segment writes from the current table value.");
+        Require(frames.World.ReadComponentData<SparseNumber>(target).Value == 51, "The resumed segment writes from the current sparse value.");
+        Entity group = ElementChildren.Read(frames.World, root)[0];
+        Entity label = ElementChildren.Read(frames.World, group)[0];
+        Require(frames.World.ReadComponentData<NumberLabel>(label).Value == 41, "Content uses the calling calculation's current copy.");
     }
 
     internal static void VerifyComputations()
     {
         using var frames = new HeadlessFrameDriver();
-        Entity target = frames.World.CreateEntity(new Number());
-        frames.World.AddSparse(target, new SparseNumber());
+        Entity target = frames.World.Create(new Number());
+        frames.World.SetSparse(target, new SparseNumber());
         var number = new State<int>(3);
         var completion = new TaskCompletionSource();
         Views.Spawn(frames.World, Entity.Null, new ComputedContent(number, target, completion.Task));
         frames.Frame();
-        Require(frames.World.Read<Number>(target).Value == 6, "The first segment creates its Memo binding.");
+        Require(frames.World.ReadComponentData<Number>(target).Value == 6, "The first segment creates its Memo binding.");
         number.Value = 7;
         frames.Frame();
-        Require(frames.World.Read<Number>(target).Value == 14, "The binding refreshes while the view awaits its result.");
+        Require(frames.World.ReadComponentData<Number>(target).Value == 14, "The binding refreshes while the view awaits its result.");
         completion.SetResult();
         frames.Frame();
-        Require(frames.World.ReadSparse<SparseNumber>(target).Value == 8, "The resumed segment creates another calculation.");
+        Require(frames.World.ReadComponentData<SparseNumber>(target).Value == 8, "The resumed segment creates another calculation.");
         number.Value = 9;
         frames.Frame();
-        Require(frames.World.Read<Number>(target).Value == 18, "The Memo binding survives asynchronous completion.");
-        Require(frames.World.ReadSparse<SparseNumber>(target).Value == 10, "The later calculation refreshes through shared dependency checks.");
+        Require(frames.World.ReadComponentData<Number>(target).Value == 18, "The Memo binding survives asynchronous completion.");
+        Require(frames.World.ReadComponentData<SparseNumber>(target).Value == 10, "The later calculation refreshes through shared dependency checks.");
     }
 
     internal static void VerifyFailureRecovery(bool nested = false)
     {
         using var frames = new HeadlessFrameDriver();
-        Entity target = frames.World.CreateEntity(new Number());
-        frames.World.AddSparse(target, new SparseNumber());
+        Entity target = frames.World.Create(new Number());
+        frames.World.SetSparse(target, new SparseNumber());
         var first = new State<int>(3);
         var second = new State<int>(7);
         var error = new InvalidOperationException("resumed content failed");
@@ -175,37 +175,37 @@ internal static partial class AsyncIntegrationChecks
             ? Views.Spawn(frames.World, Entity.Null, new RecoveringGroup(first, target, 3, null, error))
             : Views.Spawn(frames.World, Entity.Null, new RecoveringContent(first, target, 3, null, error));
         frames.Frame();
-        Entity content = nested ? Hierarchy<ElementTree>.GetChildren(frames.World, root)[0] : root;
+        Entity content = nested ? ElementChildren.Read(frames.World, root)[0] : root;
         var completion = new TaskCompletionSource();
         if (nested)
-            frames.World.Replace(root, new RecoveringGroup(second, target, 7, completion.Task, error));
+            frames.World.Set(root, new RecoveringGroup(second, target, 7, completion.Task, error));
         else
-            frames.World.Replace(root, new RecoveringContent(second, target, 7, completion.Task, error));
+            frames.World.Set(root, new RecoveringContent(second, target, 7, completion.Task, error));
 
         frames.Frame();
 
-        Require(frames.World.Read<Number>(target).Value == 14, "The suspended build exposes its new binding.");
-        Require(frames.World.ReadSparse<SparseNumber>(target).Value == 7, "The first segment exposes its sparse write.");
+        Require(frames.World.ReadComponentData<Number>(target).Value == 14, "The suspended build exposes its new binding.");
+        Require(frames.World.ReadComponentData<SparseNumber>(target).Value == 7, "The first segment exposes its sparse write.");
         Require(frames.World.Has<AddedNumber>(target), "The suspended build exposes its added component.");
         completion.SetResult();
         frames.Frame();
-        Require(frames.World.Read<Number>(target).Value == 100, "A later segment commits another table value.");
-        Require(frames.World.ReadSparse<SparseNumber>(target).Value == 200, "A later segment commits another sparse value.");
+        Require(frames.World.ReadComponentData<Number>(target).Value == 100, "A later segment commits another table value.");
+        Require(frames.World.ReadComponentData<SparseNumber>(target).Value == 200, "A later segment commits another sparse value.");
 
         frames.Frame();
 
-        Require(ReferenceEquals(frames.World.ReadSparse<BuildError>(content).Exception, error),
+        Require(ReferenceEquals(frames.World.ReadComponentData<BuildError>(content).Exception, error),
             "The final segment records the original error.");
-        Require(frames.World.ReadSparse<BuildError>(content).Frame == 4, "The error records its resumed frame.");
-        Require(frames.World.Read<Number>(target).Value == 6, "Failure restores the previous table output.");
-        Require(frames.World.ReadSparse<SparseNumber>(target).Value == 3, "Failure restores the previous sparse output.");
+        Require(frames.World.ReadComponentData<BuildError>(content).Frame == 4, "The error records its resumed frame.");
+        Require(frames.World.ReadComponentData<Number>(target).Value == 6, "Failure restores the previous table output.");
+        Require(frames.World.ReadComponentData<SparseNumber>(target).Value == 3, "Failure restores the previous sparse output.");
         Require(!frames.World.Has<AddedNumber>(target), "Failure restores the previous component presence.");
         first.Value = 9;
         frames.Frame();
-        Require(frames.World.Read<Number>(target).Value == 18, "The previous Memo binding refreshes after recovery.");
+        Require(frames.World.ReadComponentData<Number>(target).Value == 18, "The previous Memo binding refreshes after recovery.");
         second.Value = 11;
         frames.Frame();
-        Require(frames.World.Read<Number>(target).Value == 18, "The restored binding retains its own source.");
+        Require(frames.World.ReadComponentData<Number>(target).Value == 18, "The restored binding retains its own source.");
     }
 
     internal static void VerifyObjectFrames()
@@ -214,17 +214,17 @@ internal static partial class AsyncIntegrationChecks
         var text = new SharedText { Value = 7, Version = 1 };
         Entity root = Views.Spawn(frames.World, Entity.Null, new ObjectContent(text));
         frames.Frame();
-        Require(frames.World.Read<Number>(root).Value == 0, "The first segment presents loading data.");
+        Require(frames.World.ReadComponentData<Number>(root).Value == 0, "The first segment presents loading data.");
         text.Version = 2;
         frames.Frame();
-        Require(frames.World.Read<Number>(root).Value == 0, "A published object write restarts the waiting view.");
+        Require(frames.World.ReadComponentData<Number>(root).Value == 0, "A published object write restarts the waiting view.");
         frames.Frame();
-        Require(frames.World.Read<Number>(root).Value == 7, "The resumed read settles within its own frame.");
+        Require(frames.World.ReadComponentData<Number>(root).Value == 7, "The resumed read settles within its own frame.");
         text.Value = 11;
         text.Version = 4;
         frames.Frame();
         frames.Frame();
-        Require(frames.World.Read<Number>(root).Value == 11, "A later object version refreshes the asynchronous view.");
+        Require(frames.World.ReadComponentData<Number>(root).Value == 11, "A later object version refreshes the asynchronous view.");
     }
 
     internal static void VerifyRestoredBuild()
@@ -245,11 +245,11 @@ internal static partial class AsyncIntegrationChecks
         stream.Position = 0;
         using var restored = new HeadlessFrameDriver(WorldCheckpointCodec.Read(stream, registry));
         restored.Frame();
-        Require(restored.World.Read<Number>(root).Value == 0, "The restored Once view starts its asynchronous build.");
+        Require(restored.World.ReadComponentData<Number>(root).Value == 0, "The restored Once view starts its asynchronous build.");
         restored.Frame();
-        Require(restored.World.Read<Number>(root).Value == 17, "The restored build resumes with its saved parameters.");
+        Require(restored.World.ReadComponentData<Number>(root).Value == 17, "The restored build resumes with its saved parameters.");
         restored.Frame();
-        Require(restored.World.Read<Number>(root).Value == 17, "The completed restored view retains its result.");
+        Require(restored.World.ReadComponentData<Number>(root).Value == 17, "The completed restored view retains its result.");
     }
 
     private readonly record struct StoredAsyncView(int Value) : IView, IComponent
@@ -356,10 +356,10 @@ internal static partial class AsyncIntegrationChecks
         }
     }
 
-    private readonly record struct Number(int Value) : IComponent;
-    private readonly record struct SparseNumber(int Value) : ISparseComponent;
+    private readonly record struct Number(int Value) : ITrackedComponent;
+    private readonly record struct SparseNumber(int Value) : ISparseComponent, ITrackedComponent;
     private readonly record struct AddedNumber(int Value) : IComponent;
-    private readonly record struct NumberLabel(int Value) : IView, IComponent
+    private readonly record struct NumberLabel(int Value) : IView, ITrackedComponent
     {
         public BuildTask Build() => default;
     }

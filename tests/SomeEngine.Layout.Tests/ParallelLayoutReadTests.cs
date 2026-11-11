@@ -20,16 +20,16 @@ public sealed partial class ParallelLayoutReadTests
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
         systems.Add(new ViewRebuildSystem());
         systems.Add(new LayoutSystem { Parallel = parallel });
-        Entity canvas = world.CreateEntity(new Canvas { Size = new Size(320, 240) });
+        Entity canvas = world.Create(new Canvas { Size = new Size(320, 240) });
         Entity root = Views.Views.Spawn(world, canvas, new MeasuredPlacement());
         systems.Update();
-        Entity child = Hierarchy<ElementTree>.GetChildren(world, root)[0];
-        Assert.Equal(new Rect(20, 0, 20, 30), world.Read<LayoutRect>(child).Value);
+        Entity child = ElementChildren.Read(world, root)[0];
+        Assert.Equal(new Rect(20, 0, 20, 30), world.ReadComponentData<LayoutRect>(child).Value);
 
-        world.Replace(child, new Dimensions(new Size(40, 30)));
+        world.Set(child, new Dimensions(new Size(40, 30)));
         systems.Update();
 
-        Assert.Equal(new Rect(40, 0, 40, 30), world.Read<LayoutRect>(child).Value);
+        Assert.Equal(new Rect(40, 0, 40, 30), world.ReadComponentData<LayoutRect>(child).Value);
     }
 
     [Theory]
@@ -41,16 +41,16 @@ public sealed partial class ParallelLayoutReadTests
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
         systems.Add(new ViewRebuildSystem());
         systems.Add(new LayoutSystem { Parallel = parallel });
-        Entity canvas = world.CreateEntity(new Canvas { Size = new Size(320, 240) });
+        Entity canvas = world.Create(new Canvas { Size = new Size(320, 240) });
         Entity root = Views.Views.Spawn(world, canvas, new RepeatedPlacement());
         systems.Update();
-        Entity child = Hierarchy<ElementTree>.GetChildren(world, root)[0];
-        Assert.Equal(new Rect(20, 60, 60, 30), world.Read<LayoutRect>(child).Value);
+        Entity child = ElementChildren.Read(world, root)[0];
+        Assert.Equal(new Rect(20, 60, 60, 30), world.ReadComponentData<LayoutRect>(child).Value);
 
-        world.Replace(child, new Dimensions(new Size(40, 30)));
+        world.Set(child, new Dimensions(new Size(40, 30)));
         systems.Update();
 
-        Assert.Equal(new Rect(40, 60, 60, 30), world.Read<LayoutRect>(child).Value);
+        Assert.Equal(new Rect(40, 60, 60, 30), world.ReadComponentData<LayoutRect>(child).Value);
     }
 
     [Theory]
@@ -62,38 +62,38 @@ public sealed partial class ParallelLayoutReadTests
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
         systems.Add(new ViewRebuildSystem());
         systems.Add(new LayoutSystem { Parallel = parallel });
-        Entity source = world.CreateEntity(new Dimensions(new Size(20, 30)));
+        Entity source = world.Create(new Dimensions(new Size(20, 30)));
         world.Add(source, new SizeChoice(false));
         Entity[] leaves = new Entity[4];
         Entity[] roots = new Entity[4];
         for (int index = 0; index < leaves.Length; index++)
         {
-            Entity canvas = world.CreateEntity(new Canvas { Size = new Size(320, 240) });
+            Entity canvas = world.Create(new Canvas { Size = new Size(320, 240) });
             roots[index] = Views.Views.Spawn(world, canvas, new Panel(source));
         }
         systems.Update();
         Assert.All(roots, root => Assert.True(!world.HasSparse<BuildError>(root),
-            world.HasSparse<BuildError>(root) ? world.ReadSparse<BuildError>(root).Exception.ToString() : ""));
+            world.HasSparse<BuildError>(root) ? world.ReadComponentData<BuildError>(root).Exception.ToString() : ""));
         for (int index = 0; index < leaves.Length; index++)
         {
-            Entity container = Hierarchy<ElementTree>.GetChildren(world, roots[index])[0];
-            leaves[index] = Hierarchy<ElementTree>.GetChildren(world, container)[0];
+            Entity container = ElementChildren.Read(world, roots[index])[0];
+            leaves[index] = ElementChildren.Read(world, container)[0];
         }
-        Assert.All(leaves, node => Assert.Equal(new Rect(0, 0, 20, 30), world.Read<LayoutRect>(node).Value));
+        Assert.All(leaves, node => Assert.Equal(new Rect(0, 0, 20, 30), world.ReadComponentData<LayoutRect>(node).Value));
 
-        world.AddSparse(source, new SparseDimensions(new Size(40, 50)));
-        world.Replace(source, new SizeChoice(true));
+        world.SetSparse(source, new SparseDimensions(new Size(40, 50)));
+        world.Set(source, new SizeChoice(true));
         systems.Update();
-        Assert.All(leaves, node => Assert.Equal(new Rect(0, 0, 40, 50), world.Read<LayoutRect>(node).Value));
+        Assert.All(leaves, node => Assert.Equal(new Rect(0, 0, 40, 50), world.ReadComponentData<LayoutRect>(node).Value));
 
-        world.ReplaceSparse(source, new SparseDimensions(new Size(60, 70)));
+        world.SetSparse(source, new SparseDimensions(new Size(60, 70)));
         systems.Update();
-        Assert.All(leaves, node => Assert.Equal(new Rect(0, 0, 60, 70), world.Read<LayoutRect>(node).Value));
+        Assert.All(leaves, node => Assert.Equal(new Rect(0, 0, 60, 70), world.ReadComponentData<LayoutRect>(node).Value));
     }
 
-    private readonly record struct SizeChoice(bool Sparse) : IComponent;
-    private readonly record struct Dimensions(Size Value) : IComponent;
-    private readonly record struct SparseDimensions(Size Value) : ISparseComponent;
+    private readonly record struct SizeChoice(bool Sparse) : IComponent, ITrackedComponent;
+    private readonly record struct Dimensions(Size Value) : IComponent, ITrackedComponent;
+    private readonly record struct SparseDimensions(Size Value) : ISparseComponent, ITrackedComponent;
 
     private readonly record struct Panel(Entity Source) : IView, IComponent
     {

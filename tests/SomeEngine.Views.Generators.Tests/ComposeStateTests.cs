@@ -17,16 +17,16 @@ public sealed class ComposeStateTests
         StateScreens.Decoration = " old";
         Entity root = Views.Spawn(frames.World, Entity.Null, new StateScreens.Screen_View(state));
         frames.Frame();
-        Entity[] children = Hierarchy<ElementTree>.GetChildren(frames.World, root).ToArray();
-        Assert.Equal("3 old", frames.World.ReadSparse<ComposeText>(children[0]).Value);
+        Entity[] children = ElementChildren.Read(frames.World, root).ToArray();
+        Assert.Equal("3 old", frames.World.ReadComponentData<ComposeText>(children[0]).Value);
 
         StateScreens.Decoration = " new";
-        frames.World.ReadSparse<StateScreens.Controls_View>(children[1]).state.Value = 7;
+        frames.World.ReadComponentData<StateScreens.Controls_View>(children[1]).state.Value = 7;
         frames.Frame();
 
-        Assert.Equal("7 new", frames.World.ReadSparse<ComposeText>(children[0]).Value);
-        Assert.Equal("root old", frames.World.ReadSparse<ComposeText>(root).Value);
-        Assert.Equal("controls old", frames.World.ReadSparse<ComposeText>(children[1]).Value);
+        Assert.Equal("7 new", frames.World.ReadComponentData<ComposeText>(children[0]).Value);
+        Assert.Equal("root old", frames.World.ReadComponentData<ComposeText>(root).Value);
+        Assert.Equal("controls old", frames.World.ReadComponentData<ComposeText>(children[1]).Value);
     }
 
     [Fact]
@@ -38,21 +38,21 @@ public sealed class ComposeStateTests
         LiftedScreens.Decoration = " old";
         Entity root = Views.Spawn(frames.World, Entity.Null, new LiftedScreens.Screen_View(refresh, selectedTick));
         frames.Frame();
-        Entity child = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Assert.Equal("False old", frames.World.ReadSparse<ComposeText>(child).Value);
+        Entity child = Assert.Single(ElementChildren.Read(frames.World, root));
+        Assert.Equal("False old", frames.World.ReadComponentData<ComposeText>(child).Value);
 
         LiftedScreens.Decoration = " new";
         refresh.Value = 1;
         frames.Frame();
 
-        Assert.Equal("1", frames.World.ReadSparse<ComposeText>(root).Value);
-        Assert.Equal("False old", frames.World.ReadSparse<ComposeText>(child).Value);
-        var button = frames.World.ReadSparse<ToggleCallbacks>(child);
+        Assert.Equal("1", frames.World.ReadComponentData<ComposeText>(root).Value);
+        Assert.Equal("False old", frames.World.ReadComponentData<ComposeText>(child).Value);
+        var button = frames.World.ReadComponentData<ToggleCallbacks>(child);
         Assert.Equal("tick 1", button.Tooltip());
         button.Change(true);
         frames.Frame();
         Assert.Equal(1, selectedTick.Value);
-        Assert.Equal("True new", frames.World.ReadSparse<ComposeText>(child).Value);
+        Assert.Equal("True new", frames.World.ReadComponentData<ComposeText>(child).Value);
     }
 }
 

@@ -13,7 +13,7 @@ namespace SomeEngine.Core.ECS;
 /// the effective world transform instead.
 /// </summary>
 public static class TransformHierarchy<TDomain>
-    where TDomain : IHierarchyDomain
+    where TDomain : struct, IHierarchyDomain
 {
     /// <summary>
     /// Reparents <paramref name="child"/> while preserving its fresh effective world transform.
@@ -46,17 +46,17 @@ public static class TransformHierarchy<TDomain>
         }
 
         Parent<TDomain>? previousParent = world.Has<Parent<TDomain>>(child)
-            ? world.Read<Parent<TDomain>>(child)
+            ? world.ReadComponentData<Parent<TDomain>>(child)
             : null;
         int? previousSiblingIndex = GetOrderedSiblingIndex(world, child, previousParent);
-        LocalTransform previousLocal = world.Read<LocalTransform>(child);
-        WorldTransform previousWorld = world.Read<WorldTransform>(child);
+        LocalTransform previousLocal = world.ReadComponentData<LocalTransform>(child);
+        WorldTransform previousWorld = world.ReadComponentData<WorldTransform>(child);
 
         Hierarchy<TDomain>.SetParent(world, child, parent);
         try
         {
-            world.Replace(child, new LocalTransform { Value = newLocal });
-            world.Replace(child, new WorldTransform { Qvvs = childWorld });
+            world.Set(child, new LocalTransform { Value = newLocal });
+            world.Set(child, new WorldTransform { Qvvs = childWorld });
         }
         catch
         {
@@ -81,17 +81,17 @@ public static class TransformHierarchy<TDomain>
 
         TransformQvvs childWorld = ComputeWorldTransform(world, child);
         Parent<TDomain>? previousParent = world.Has<Parent<TDomain>>(child)
-            ? world.Read<Parent<TDomain>>(child)
+            ? world.ReadComponentData<Parent<TDomain>>(child)
             : null;
         int? previousSiblingIndex = GetOrderedSiblingIndex(world, child, previousParent);
-        LocalTransform previousLocal = world.Read<LocalTransform>(child);
-        WorldTransform previousWorld = world.Read<WorldTransform>(child);
+        LocalTransform previousLocal = world.ReadComponentData<LocalTransform>(child);
+        WorldTransform previousWorld = world.ReadComponentData<WorldTransform>(child);
 
         Hierarchy<TDomain>.Detach(world, child);
         try
         {
-            world.Replace(child, new LocalTransform { Value = childWorld });
-            world.Replace(child, new WorldTransform { Qvvs = childWorld });
+            world.Set(child, new LocalTransform { Value = childWorld });
+            world.Set(child, new WorldTransform { Qvvs = childWorld });
         }
         catch
         {
@@ -144,7 +144,7 @@ public static class TransformHierarchy<TDomain>
 
             if (hasLocal)
             {
-                TransformQvvs local = world.Read<LocalTransform>(node).Value;
+                TransformQvvs local = world.ReadComponentData<LocalTransform>(node).Value;
                 result = TransformQvvs.Combine(result, local);
             }
         }
@@ -172,8 +172,8 @@ public static class TransformHierarchy<TDomain>
         LocalTransform previousLocal,
         WorldTransform previousWorld)
     {
-        world.Replace(child, previousLocal);
-        world.Replace(child, previousWorld);
+        world.Set(child, previousLocal);
+        world.Set(child, previousWorld);
         if (previousParent is { } parent)
         {
             if (previousSiblingIndex is { } index)
@@ -191,14 +191,13 @@ public static class TransformHierarchy<TDomain>
         Parent<TDomain>? parent)
     {
         if (parent is not { } previousParent ||
-            Hierarchy<TDomain>.GetChildOrderPolicy(world, previousParent.Value) != ChildOrderPolicy.Ordered)
+            !Hierarchy<TDomain>.IsOrdered(world, previousParent.Value))
         {
             return null;
         }
 
-        ReadOnlySpan<Entity> siblings = Hierarchy<TDomain>
-            .GetChildren(world, previousParent.Value)
-            .Span;
+        using ChildrenRead children = Hierarchy<TDomain>.GetChildren(world, previousParent.Value);
+        ReadOnlySpan<Entity> siblings = children.Entities;
         for (int index = 0; index < siblings.Length; index++)
         {
             if (siblings[index] == child)

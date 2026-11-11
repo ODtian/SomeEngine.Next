@@ -12,7 +12,7 @@ public sealed class PbikBehaviorTests
     public void WholeBodyTargetsMoveThePelvisAndLimbsWithinJointLimitsWhileAnimationAndTargetsAdvance()
     {
         using var scheduler = new Scheduler(new() { WorkerCount = 2 });
-        using var world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using var world = new World(execution: new WorldJobs(scheduler));
         Skeleton skeleton = CreateBody();
         var raw = new RawClipData(1,
         [
@@ -56,8 +56,16 @@ public sealed class PbikBehaviorTests
             new(new(-1.2320508f, 1.5f, 0)), new(new(3.2320508f, 1.5f, 0)),
             new(new(.5f, -1.7320508f, 0)), new(new(1.5f, -1.7320508f, 0)),
         ];
-        world.ExecuteBufferWrite<PbikInstance, PbikTarget[]>(animation, ref goals,
-            static (instances, ref goals) => goals.CopyTo(instances[0].Targets, 0));
+        {
+            using var instances = world.GetBuffer<PbikInstance>(animation);
+            Visit(instances, ref goals);
+
+            static void Visit(DynamicBuffer<PbikInstance> instances, ref PbikTarget[] goals)
+            {
+                goals.CopyTo(instances[0].Targets, 0);
+
+            }
+        }
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
         PoseAnimation.AddSystems(systems, nodes: static nodes => nodes.Add(new PbikSystem()));
         var context = new ImmediateSystemContext(world, 0, 0, .25);
@@ -82,8 +90,16 @@ public sealed class PbikBehaviorTests
         Assert.InRange(AngleZ(instance.LocalPose[14].Rotation), MathF.PI / 8 - .0001f, MathF.PI / 8 + .0001f);
 
         goals[0] = new(goals[0].Position + new Vector3(.1f, 0, 0));
-        world.ExecuteBufferWrite<PbikInstance, PbikTarget[]>(animation, ref goals,
-            static (instances, ref goals) => goals.CopyTo(instances[0].Targets, 0));
+        {
+            using var instances = world.GetBuffer<PbikInstance>(animation);
+            Visit(instances, ref goals);
+
+            static void Visit(DynamicBuffer<PbikInstance> instances, ref PbikTarget[] goals)
+            {
+                goals.CopyTo(instances[0].Targets, 0);
+
+            }
+        }
         systems.Update(ref context);
         for (int effector = 0; effector < goals.Length; effector++)
             Near(goals[effector].Position, instance.ModelPose.GetBone(rig.Effectors[effector]).Transform.Translation,
@@ -143,11 +159,17 @@ public sealed class PbikBehaviorTests
             new(new(-1.9320508f, 1.5f, 0)), new(new(2.5320508f, 1.5f, 0)),
             new(new(-.2f, -1.7320508f, 0)), new(new(.8f, -1.7320508f, 0)),
         ];
-        world.ExecuteBufferWrite<PbikInstance, PbikTarget[]>(animation, ref goals, static (instances, ref goals) =>
         {
-            goals.CopyTo(instances[0].Targets, 0);
-            goals.CopyTo(instances[1].Targets, 0);
-        });
+            using var instances = world.GetBuffer<PbikInstance>(animation);
+            Visit(instances, ref goals);
+
+            static void Visit(DynamicBuffer<PbikInstance> instances, ref PbikTarget[] goals)
+            {
+                goals.CopyTo(instances[0].Targets, 0);
+                goals.CopyTo(instances[1].Targets, 0);
+
+            }
+        }
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
         PoseAnimation.AddSystems(systems, nodes: static nodes => nodes.Add(new PbikSystem()));
         var context = new ImmediateSystemContext(world, 0, 0, .25);
@@ -167,11 +189,17 @@ public sealed class PbikBehaviorTests
         Assert.True(MathF.Abs(AngleZ(freeBody.LocalPose[1].Rotation) - AngleZ(stiffBody.LocalPose[1].Rotation)) > .01f);
 
         for (int effector = 0; effector < goals.Length; effector++) goals[effector] = goals[effector] with { Weight = .25f };
-        world.ExecuteBufferWrite<PbikInstance, PbikTarget[]>(animation, ref goals, static (instances, ref goals) =>
         {
-            goals.CopyTo(instances[0].Targets, 0);
-            goals.CopyTo(instances[1].Targets, 0);
-        });
+            using var instances = world.GetBuffer<PbikInstance>(animation);
+            Visit(instances, ref goals);
+
+            static void Visit(DynamicBuffer<PbikInstance> instances, ref PbikTarget[] goals)
+            {
+                goals.CopyTo(instances[0].Targets, 0);
+                goals.CopyTo(instances[1].Targets, 0);
+
+            }
+        }
         systems.Update(ref context);
         Vector3[] weightedGoals =
         [

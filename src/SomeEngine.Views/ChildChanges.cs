@@ -49,13 +49,13 @@ internal sealed class ChildChanges
         _animationWrites?.Clear();
     }
 
-    internal void RememberOrder(Entity parent, HierarchyChildrenSnapshot<ElementTree> children)
+    internal void RememberOrder(Entity parent, Entity[] children)
     {
         ChildOrder? data = null;
         RememberOrder(parent, children, ref data);
     }
 
-    internal void RememberOrder(Entity parent, HierarchyChildrenSnapshot<ElementTree> children, ref ChildOrder? data)
+    internal void RememberOrder(Entity parent, Entity[] children, ref ChildOrder? data)
     {
         data ??= new();
         data.Capture(parent, children);
@@ -83,9 +83,11 @@ internal sealed class ChildChanges
     internal void RememberReads(World world, Entity entity)
     {
         Dependency[]? reads = null;
-        if (world.HasBuffer<Dependency>(entity))
-            world.ExecuteBufferRead<Dependency, Dependency[]?>(entity, ref reads,
-                static (buffer, ref values) => values = buffer.AsSpan().ToArray());
+        if (world.Has<Buffer<Dependency>>(entity))
+            {
+                using var buffer = world.ReadBuffer<Dependency>(entity);
+                reads = buffer.AsSpan().ToArray();
+            }
         ObjectDependencyList? objects = world.Has<ObjectDependencies>(entity)
             ? world.Read<ObjectDependencies>(entity).Reads : null;
         _previousData.Add(new ChildReads(entity, reads, objects));
@@ -171,10 +173,10 @@ internal sealed class ChildChanges
     internal sealed class ChildOrder : IChildData
     {
         private Entity _parent;
-        private HierarchyChildrenSnapshot<ElementTree> _children;
+        private Entity[] _children = [];
         private int _buildCount;
 
-        internal void Capture(Entity parent, HierarchyChildrenSnapshot<ElementTree> children)
+        internal void Capture(Entity parent, Entity[] children)
         {
             _parent = parent;
             _children = children;
@@ -186,14 +188,14 @@ internal sealed class ChildChanges
         public void Restore(World world)
         {
             Entity parent = _parent;
-            HierarchyChildrenSnapshot<ElementTree> children = _children;
-            var currentChildren = Hierarchy<ElementTree>.GetChildren(world, parent);
-            for (int index = 0; index < children.Count; index++)
+            Entity[] children = _children;
+            var currentChildren = ElementTree.CopyChildren(world, parent);
+            for (int index = 0; index < children.Length; index++)
             {
                 if (currentChildren[index] == children[index])
                     continue;
                 Hierarchy<ElementTree>.SetParent(world, children[index], parent, index);
-                currentChildren = Hierarchy<ElementTree>.GetChildren(world, parent);
+                currentChildren = ElementTree.CopyChildren(world, parent);
             }
             Complete();
         }
@@ -203,7 +205,7 @@ internal sealed class ChildChanges
             if (--_buildCount == 0)
             {
                 _parent = default;
-                _children = default;
+                _children = [];
             }
         }
     }
@@ -212,20 +214,20 @@ internal sealed class ChildChanges
     {
         private readonly ViewType _viewType = world.Read<ViewType>(entity);
         private readonly bool _buildRequested = world.Has<BuildRequest>(entity);
-        private readonly uint _parameterWriteVersion = T.Mode == BuildMode.Rerun ? world.ComponentDataWriteVersion<T>(entity) : 0;
-        private readonly uint? _parameterVersion = world.Has<ParameterVersion>(entity) ? world.Read<ParameterVersion>(entity).Value : null;
+        private readonly ulong _parameterWriteVersion = T.Mode == BuildMode.Rerun ? world.ComponentDataWriteVersion<T>(entity) : 0;
+        private readonly ulong? _parameterVersion = world.Has<ParameterVersion>(entity) ? world.Read<ParameterVersion>(entity).Value : null;
 
         public void Restore(World world)
         {
             RestoreValue(world, entity, in value);
             world.OverwriteComponentData(entity, in _viewType);
             if (_buildRequested && !world.Has<BuildRequest>(entity))
-                world.AddTag<BuildRequest>(entity);
+                world.Set(entity, default(BuildRequest));
             if (T.Mode != BuildMode.Rerun)
                 return;
-            if (_parameterVersion is uint previous)
+            if (_parameterVersion is ulong previous)
             {
-                uint version = previous == _parameterWriteVersion ? world.ComponentDataWriteVersion<T>(entity) : previous;
+                ulong version = previous == _parameterWriteVersion ? world.ComponentDataWriteVersion<T>(entity) : previous;
                 world.OverwriteComponentData(entity, new ParameterVersion(version));
             }
             else if (world.Has<ParameterVersion>(entity))
@@ -284,12 +286,12 @@ internal sealed class ChildChanges
                 if (!ReferenceEquals(current, computations))
                     current.ReleaseChildren(retained: computations);
                 if (computations is not null)
-                    world.ReplaceSparse(entity, new Computations(computations));
+                    world.SetSparse(entity, new Computations(computations));
                 else
                     world.RemoveSparse<Computations>(entity);
             }
             else if (computations is not null)
-                world.AddSparse(entity, new Computations(computations));
+                world.SetSparse(entity, new Computations(computations));
             _restored = true;
             Complete();
         }
@@ -314,19 +316,19 @@ internal sealed class ChildChanges
         public void Restore(World world)
         {
             if (reads is not null)
-                world.ExecuteBufferWrite<Dependency, Dependency[]>(entity, ref reads, static (buffer, ref values) =>
                 {
+                    using var buffer = world.GetBuffer<Dependency>(entity);
                     buffer.Clear();
-                    foreach (Dependency value in values)
+                    foreach (Dependency value in reads)
                         buffer.Add(value);
-                });
-            else if (world.HasBuffer<Dependency>(entity))
+                }
+            else if (world.Has<Buffer<Dependency>>(entity))
                 world.RemoveBuffer<Dependency>(entity);
             if (objects is not null)
             {
                 var dependencies = new ObjectDependencies(objects);
                 if (world.Has<ObjectDependencies>(entity))
-                    world.Replace(entity, dependencies);
+                    world.Set(entity, dependencies);
                 else
                     world.Add(entity, dependencies);
             }

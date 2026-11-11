@@ -4,7 +4,7 @@ using SomeEngine.ECS;
 namespace SomeEngine.Elements;
 
 /// <summary>The nearest button colors and spacing; omitted properties use the default button style.</summary>
-public struct ButtonTheme : IComponent
+public struct ButtonTheme : ITrackedComponent
 {
     private Color? _fill;
     private Color? _hoverFill;

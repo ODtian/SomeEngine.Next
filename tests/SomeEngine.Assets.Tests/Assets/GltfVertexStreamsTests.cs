@@ -7,6 +7,8 @@ using MeshOptimizer;
 using SharpGLTF.Schema2;
 using SomeEngine.Assets.Importing;
 using SomeEngine.Assets.Schema;
+using SomeEngine.ECS;
+using SomeEngine.ECS.Serialization;
 
 namespace SomeEngine.Assets.Tests.Assets;
 
@@ -457,11 +459,14 @@ public sealed class GltfVertexStreamsTests
         Assert.Equal(mixed, geometry is not null);
         Assert.Equal(mixed, await result.Asset.TryGetBlockAsync<ClusterVertexAttributesBlock>() is not null);
         SomeEngine.Assets.WorldAsset sceneAsset = await result.Imports.GetAssetAsync<SharpGLTF.Schema2.Scene, SomeEngine.Assets.WorldAsset>(result.Model.LogicalScenes[0]);
-        using var world = await sceneAsset.LoadAsync(SomeEngine.Render.SceneSerialization.CreateRegistry());
-        var query = world.Query(new SomeEngine.ECS.Queries.QueryDefinitionBuilder().Read<SomeEngine.Render.Components.MeshSource>());
-        int count = 0;
-        world.ExecuteQuery(query, rows => { foreach (var row in rows.Rows) count++; });
-        world.ReleaseQuery(query);
+        EntityAsset entities = await result.Imports.GetAssetAsync<Scene, EntityAsset>(result.Model.LogicalScenes[0]);
+        Assert.Equal(entities.Id, Assert.Single(sceneAsset.GetBlock<WorldBlock>().Contents).Asset.Value);
+        EntityBlock block = await entities.GetBlockAsync<EntityBlock>();
+        using var world = new World();
+        WorldSerializer.ReadEntities(await block.ReadBytesAsync(EntityBlock.ContentKey), world,
+            new(Codecs: SomeEngine.Render.SceneSerialization.Codecs));
+        var query = world.Query(new SomeEngine.ECS.QueryDescription().WithStored<SomeEngine.Render.Components.MeshSource>());
+        int count = query.Count;
         Assert.Equal(mixed ? 1 : 0, count);
     }
 
@@ -491,19 +496,27 @@ public sealed class GltfVertexStreamsTests
             await reopenedMesh.GetBlockAsync<ClusterVertexAttributesBlock>(), "reopened optional bounds");
         Assert.Equal(1, reopenedGeometry.PageCount);
         WorldAsset scene = await result.Imports.GetAssetAsync<SharpGLTF.Schema2.Scene, WorldAsset>(result.Model.LogicalScenes[0]);
+        EntityAsset entities = await result.Imports.GetAssetAsync<Scene, EntityAsset>(result.Model.LogicalScenes[0]);
+        string entitiesPath = Path.Combine(file.Directory, "optional.entities.asset");
+        await entities.SaveAsync(entitiesPath);
         string scenePath = Path.Combine(file.Directory, "optional.scene.asset");
         await scene.SaveAsync(scenePath);
         using WorldAsset reopened = await WorldAsset.OpenAsync(scenePath);
-        foreach (WorldAsset asset in new[] { scene, reopened })
+        using EntityAsset reopenedEntities = await EntityAsset.OpenAsync(entitiesPath);
+        foreach ((WorldAsset asset, EntityAsset group) in new[] { (scene, entities), (reopened, reopenedEntities) })
         {
-            using var world = await asset.LoadAsync(SomeEngine.Render.SceneSerialization.CreateRegistry());
-            var query = world.Query(new SomeEngine.ECS.Queries.QueryDefinitionBuilder().Read<SomeEngine.Render.Components.MeshSource>());
+            WorldContent content = Assert.Single(asset.GetBlock<WorldBlock>().Contents);
+            Assert.Equal(group.Id, content.Asset.Value);
+            Assert.True(content.Bounds.MinX <= 0 && content.Bounds.MaxX >= 1);
+            EntityBlock block = await group.GetBlockAsync<EntityBlock>();
+            using var world = new World();
+            WorldSerializer.ReadEntities(await block.ReadBytesAsync(EntityBlock.ContentKey), world,
+                new(Codecs: SomeEngine.Render.SceneSerialization.Codecs));
+            var query = world.Query(new SomeEngine.ECS.QueryDescription().WithStored<SomeEngine.Render.Components.MeshSource>());
             var references = new List<AssetId<MeshAsset>>();
-            world.ExecuteQuery(query, rows =>
-            {
-                foreach (var row in rows.Rows) references.Add(world.Read<SomeEngine.Render.Components.MeshSource>(row.Entity).Mesh);
-            });
-            world.ReleaseQuery(query);
+            using (var rows = query.OpenRead())
+                foreach (var chunk in rows)
+                    foreach (var value in chunk.Read<SomeEngine.Render.Components.MeshSource>()) references.Add(value.Mesh);
             Assert.Equal(result.Asset.Reference, Assert.Single(references));
         }
     }
@@ -516,8 +529,10 @@ public sealed class GltfVertexStreamsTests
         {
             if (renderable)
             {
-                context.EnableImporter<SharpGLTF.Schema2.Scene, SomeEngine.Assets.WorldAsset>(Guid.NewGuid(), [SomeEngine.Assets.WorldBlock.BlockTypeId],
-                    (scene, imports, output, token) => new MeshSceneImporter().ImportAsync(scene, new(), imports, output, token));
+                var sceneImporter = new MeshSceneImporter();
+                context.EnableImporter<Scene, EntityAsset>(new AssetImporter<Scene, GltfSceneSettings>(Guid.NewGuid(),
+                    [EntityBlock.BlockTypeId], sceneImporter, new()));
+                context.EnableImporter<Scene, WorldAsset>(new SceneDirectoryImporter(sceneImporter));
 
                 context.EnableImporter<SharpGLTF.Schema2.Mesh, MeshAsset>(Guid.NewGuid(), [MeshBlock.BlockTypeId],
                     (source, imports, output, token) =>
@@ -560,12 +575,23 @@ public sealed class GltfVertexStreamsTests
                     string key = $"scene/{scene.LogicalIndex}";
                     Guid id = context.GetAssetId(key);
                     context.AddAsset(scene, new SomeEngine.Assets.WorldAsset(id), key, id + ".scene.asset");
+                    string entitiesKey = $"entities/{scene.LogicalIndex}";
+                    Guid entitiesId = context.GetAssetId(entitiesKey);
+                    context.AddAsset(scene, new EntityAsset(entitiesId), entitiesKey, entitiesId + ".entities.asset");
                 }
             }
             MeshAsset asset = await context.GetAssetAsync<SharpGLTF.Schema2.Mesh, MeshAsset>(model.LogicalMeshes[0]);
             return new(context, asset, model);
         }
         catch { await context.DisposeAsync(); throw; }
+    }
+
+    private sealed class SceneDirectoryImporter(GltfSceneImporter importer) : IAssetImporter<Scene>
+    {
+        public Guid Id { get; } = new("4baf09c7-e63a-4caf-8973-7a6020029de6");
+        public IReadOnlyList<Guid> ProducedBlocks { get; } = [WorldBlock.BlockTypeId];
+        public ValueTask ImportAsync(Scene source, ImportContext context, ImportOutput output, CancellationToken cancellationToken = default)
+            => importer.ImportWorldAsync(source, context, output, cancellationToken);
     }
 
     private sealed class ImportResult(ImportContext context, MeshAsset asset, ModelRoot model) : IAsyncDisposable

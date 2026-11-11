@@ -65,16 +65,16 @@ public sealed class NavigationFlowAssetTests : IDisposable
             storedField = block.HasPrecomputedField;
             restored = await block.CreateAsync(loader, scheduler);
         }
-        using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using World world = new World(execution: new WorldJobs(scheduler));
         var navigation = new NavigationSystems<FlowMotion, FlowMotionReader>(world);
-        var entity = world.CreateEntity(new FlowMotion(new(0.5f, 0, 0.5f), default, 0));
+        var entity = world.Create(new FlowMotion(new(0.5f, 0, 0.5f), default, 0));
         navigation.AddFlowAgent(entity, restored, 2);
-        for (int step = 0; step < 40 && world.Read<NavigationProgress>(entity).Status != NavigationStatus.Arrived; step++)
+        for (int step = 0; step < 40 && world.ReadComponentData<NavigationProgress>(entity).Status != NavigationStatus.Arrived; step++)
         {
             navigation.Schedule(0.1f).Steering.Complete();
-            NavigationSteering steering = world.Read<NavigationSteering>(entity);
-            FlowMotion motion = world.Read<FlowMotion>(entity);
-            world.Replace(entity, new FlowMotion(motion.Position + steering.Velocity * 0.1f, steering.Velocity, steering.Heading));
+            NavigationSteering steering = world.ReadComponentData<NavigationSteering>(entity);
+            FlowMotion motion = world.ReadComponentData<FlowMotion>(entity);
+            world.Set(entity, new FlowMotion(motion.Position + steering.Velocity * 0.1f, steering.Velocity, steering.Heading));
             navigation.ScheduleProgress(default).Complete();
         }
 
@@ -84,7 +84,7 @@ public sealed class NavigationFlowAssetTests : IDisposable
         Assert.Equal(2, restored.Field!.Tiles.Length);
         Assert.Equal(2, restored.Field.BoundaryDependencies.Length);
         Assert.All(restored.Field.BoundaryDependencies.ToArray(), boundary => Assert.Equal(restored.Field.Round, boundary.Round));
-        Assert.Equal(NavigationStatus.Arrived, world.Read<NavigationProgress>(entity).Status);
+        Assert.Equal(NavigationStatus.Arrived, world.ReadComponentData<NavigationProgress>(entity).Status);
     }
 
     // These four cells in two tiles are an asset roundtrip example of an ordinary completed field.

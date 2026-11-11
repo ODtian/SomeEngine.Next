@@ -12,7 +12,7 @@ public sealed class AccelerationVelocityAvoidanceTests
     public void ActorsWithDifferentAccelerationAndResponsePassUsingActualFeedback()
     {
         using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 3, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using World world = new World(execution: new WorldJobs(scheduler));
         var paths = new NavigationSystems<NavigationMesh, PolygonNavigationSearch, PolygonSearchState, TestMotion, TestMotionReader>(world);
         using var neighbors = new NavigationNeighborSystem<TestMotion, TestMotionReader>(world, scheduler);
         var avoidance = new NavigationAvoidanceSystem<AccelerationVelocityAvoidance, TestMotion, TestMotionReader>(world, neighbors);
@@ -24,7 +24,7 @@ public sealed class AccelerationVelocityAvoidanceTests
 
         for (int step = 0; step < 180; step++)
         {
-            TestMotion[] before = actors.Select(world.Read<TestMotion>).ToArray();
+            TestMotion[] before = actors.Select(world.ReadValue<TestMotion>).ToArray();
             JobHandle guidance = paths.ScheduleGuidance(0.1f, 32).Guidance;
             JobHandle steering = avoidance.Schedule(0.1f, guidance, neighbors.Schedule(), avoidance.SchedulePathBoundaries<NavigationMesh>());
             JobHandle moved = new ConsumeResponseSteering(0.1f).ScheduleParallel(world, steering);
@@ -32,26 +32,26 @@ public sealed class AccelerationVelocityAvoidanceTests
             for (int index = 0; index < actors.Length; index++)
             {
                 Entity actor = actors[index];
-                NavigationSteering selected = world.Read<NavigationSteering>(actor);
-                NavigationProfile profile = world.Read<NavigationAgent>(actor).Profile;
-                TestMotion after = world.Read<TestMotion>(actor);
+                NavigationSteering selected = world.ReadValue<NavigationSteering>(actor);
+                NavigationProfile profile = world.ReadValue<NavigationAgent>(actor).Profile;
+                TestMotion after = world.ReadValue<TestMotion>(actor);
                 Assert.True(Vector3.Distance(before[index].Velocity, selected.Velocity) <= profile.MaximumAcceleration * selected.Response.TimeConstant + 0.0001f);
                 Assert.True(Vector3.Distance(before[index].Velocity, after.Velocity) <= profile.MaximumAcceleration * 0.1f + 0.0001f);
                 Assert.True(after.Velocity.Length() <= profile.MaximumSpeed + 0.0001f);
             }
             minimumSeparation = MathF.Min(minimumSeparation,
-                Vector3.Distance(world.Read<TestMotion>(first).Position, world.Read<TestMotion>(second).Position));
+                Vector3.Distance(world.ReadValue<TestMotion>(first).Position, world.ReadValue<TestMotion>(second).Position));
         }
 
         Assert.True(minimumSeparation >= 0.69f, $"minimum separation: {minimumSeparation}");
-        Assert.True(world.Read<TestMotion>(first).Position.X > 10);
-        Assert.True(world.Read<TestMotion>(second).Position.X < 2);
+        Assert.True(world.ReadValue<TestMotion>(first).Position.X > 10);
+        Assert.True(world.ReadValue<TestMotion>(second).Position.X < 2);
 
         Entity Add(Vector3 position, Vector3 velocity, Vector3 goal, float acceleration, float response)
         {
             var profile = new NavigationProfile([new Vector2(-0.2f), new(0.2f, -0.2f), new(0.2f), new(-0.2f, 0.2f)],
                 1, maximumSpeed: 1.5f, maximumAcceleration: acceleration);
-            Entity entity = world.CreateEntity(new TestMotion { Position = position, Velocity = velocity });
+            Entity entity = world.Create(new TestMotion { Position = position, Velocity = velocity });
             paths.AddAgent(entity, mesh, profile, new(), new(goal, 0.15f), 1.5f);
             NavigationComponents.AddAvoidance(world, entity,
                 new(0.3f, NeighborDistance: 8, TimeHorizon: 4, BoundaryTimeHorizon: 4, Spacing: 0.05f, ResponseTime: response));
@@ -63,10 +63,10 @@ public sealed class AccelerationVelocityAvoidanceTests
     public void FiniteAccelerationBrakesAgainstLocalBoundarySegments()
     {
         using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using World world = new World(execution: new WorldJobs(scheduler));
         var profile = new NavigationProfile([new Vector2(-0.2f), new(0.2f, -0.2f), new(0.2f), new(-0.2f, 0.2f)],
             1, maximumSpeed: 1.6f, maximumAcceleration: 0.8f);
-        Entity entity = world.CreateEntity(new TestMotion { Position = new(8, 0, 1.5f), Velocity = new(1, 0, -0.3f) });
+        Entity entity = world.Create(new TestMotion { Position = new(8, 0, 1.5f), Velocity = new(1, 0, -0.3f) });
         world.Add(entity, new NavigationAgent(profile, new(), 1.6f));
         world.Add(entity, new PathNavigation<NavigationMesh>(Corridor()));
         world.Add(entity, new NavigationGuidance(new(1, 0, -1), 0, 1, true));
@@ -79,14 +79,14 @@ public sealed class AccelerationVelocityAvoidanceTests
         {
             JobHandle steering = avoidance.Schedule(0.1f, default, neighbors.Schedule(), avoidance.SchedulePathBoundaries<NavigationMesh>());
             new ConsumeResponseSteering(0.1f).ScheduleParallel(world, steering).Complete();
-            Vector3 position = world.Read<TestMotion>(entity).Position;
+            Vector3 position = world.ReadValue<TestMotion>(entity).Position;
             Assert.InRange(position.X, 8, 11.66f);
             Assert.InRange(position.Z, 0.34f, 1.5f);
         }
 
-        Assert.True(world.Read<TestMotion>(entity).Position.X > 11);
-        Assert.True(world.Read<TestMotion>(entity).Position.Z < 0.6f);
-        Assert.True(world.Read<TestMotion>(entity).Velocity.Length() < 0.1f);
+        Assert.True(world.ReadValue<TestMotion>(entity).Position.X > 11);
+        Assert.True(world.ReadValue<TestMotion>(entity).Position.Z < 0.6f);
+        Assert.True(world.ReadValue<TestMotion>(entity).Velocity.Length() < 0.1f);
     }
 
     // These corridor dimensions are an example used to observe the shared model's public movement result.

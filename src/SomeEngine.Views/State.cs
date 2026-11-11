@@ -53,7 +53,7 @@ public sealed class State<T> : VersionCell
     public void Update(Change<T> change)
     {
         DevelopmentCheck.Require(change is not null, "State.Update requires a change callback.");
-        Update(change, static (ref T value, Change<T> callback) => callback(ref value));
+        Update(change!, static (ref T value, Change<T> callback) => callback(ref value));
     }
 
     /// <summary>Atomically changes the value with an argument, preserving equal values and their versions.</summary>
@@ -64,7 +64,7 @@ public sealed class State<T> : VersionCell
         try
         {
             T value = _value;
-            change(ref value, arg);
+            change!(ref value, arg);
             if (!EqualityComparer<T>.Default.Equals(_value, value))
             {
                 _value = value;

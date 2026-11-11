@@ -45,7 +45,7 @@ public readonly record struct FirstPersonMeshData
     }
 }
 
-public struct MeshInstance : IComponent
+public struct MeshInstance : IComponent, ITrackedComponent
 {
     public required Mesh Mesh;
     public float BoundsExpansion;

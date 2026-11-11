@@ -1,623 +1,261 @@
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hierarchy;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Relations;
 using SomeEngine.Job;
 
 namespace SomeEngine.ECS.Systems.Tests;
 
-public sealed class RelationshipChunkJobTests : JobTest
+public sealed partial class RelationshipChunkJobTests : JobTest
 {
     [Fact]
-    public void ParentChunks_BulkWriteCanonicalAndLeaveChildrenLastAppliedUntilMaintenance()
+    public void ParentBatchWritesMainValuesAndKeepsAppliedChildrenUntilMaintenance()
     {
-        WithJobRuntime(() =>
-        {
-            var world = CreateJobWorld();
-            Entity oldParent = world.CreateEntity();
-            Entity newParent = world.CreateEntity();
-            Entity childA = world.CreateEntity();
-            Entity childB = world.CreateEntity();
-            Hierarchy<Domain>.SetParent(world, childA, oldParent);
-            Hierarchy<Domain>.SetParent(world, childB, oldParent);
-            QueryHandle query = world.Query(
-                world.QueryDefinition().Write<Parent<Domain>>());
-
-            var ordering = new OrderingProbe();
-            JobHandle dependency = Jobs.Schedule(new MarkDependencyJob(ordering));
-            JobHandle writer = HierarchyJobAccess<Domain>.ScheduleParentWriteChunks(
-                world,
-                query,
-                new SetAllParentsJob<Domain>(newParent, ordering),
-                dependency);
-
-            writer.Complete();
-
-            Assert.Equal(1, Volatile.Read(ref ordering.Completed));
-            Assert.Equal(newParent, Hierarchy<Domain>.GetParent(world, childA));
-            Assert.Equal(newParent, Hierarchy<Domain>.GetParent(world, childB));
-            Assert.Equal(
-                new[] { childA, childB },
-                Hierarchy<Domain>.GetChildren(world, oldParent).ToArray());
-            Assert.Empty(Hierarchy<Domain>.GetChildren(world, newParent));
-
-            HierarchyMaintenanceSystem<Domain>.Schedule(world, writer).Complete();
-
-            Assert.Empty(Hierarchy<Domain>.GetChildren(world, oldParent));
-            Assert.Equal(
-                new[] { childA, childB },
-                Hierarchy<Domain>.GetChildren(world, newParent).ToArray());
-        });
+        World world = CreateJobWorld();
+        Entity oldParent = world.Create(), newParent = world.Create();
+        Entity first = world.Create(), second = world.Create();
+        Hierarchy<Domain>.SetParent(world, first, oldParent);
+        Hierarchy<Domain>.SetParent(world, second, oldParent);
+        var ordering = new OrderingProbe();
+        JobHandle dependency = Jobs.Schedule(new MarkDependency(ordering));
+        JobHandle written = Jobs.Schedule(new SetParents(world, [new(first, newParent), new(second, newParent)], ordering),
+            world.Execution!.StructureWrite, dependency);
+        written.Complete();
+        Assert.Equal(1, ordering.Completed);
+        Assert.Equal(newParent, Hierarchy<Domain>.GetParent(world, first));
+        Assert.Equal(newParent, Hierarchy<Domain>.GetParent(world, second));
+        Assert.Equal([first, second], Children(world, oldParent));
+        Assert.Empty(Children(world, newParent));
+        Jobs.Schedule(new MaintainHierarchy(world), world.Execution.StructureWrite, written).Complete();
+        Assert.Empty(Children(world, oldParent));
+        Assert.Equal([first, second], Children(world, newParent));
     }
 
     [Fact]
-    public void ParentChunks_InvalidFinalForestRollsBackEveryChunkWrite()
+    public void ParentBatchRejectsAnInvalidFinalForestBeforeChangingItsValues()
     {
-        WithJobRuntime(() =>
-        {
-            var world = CreateJobWorld();
-            Entity root = world.CreateEntity();
-            Entity first = world.CreateEntity();
-            Entity second = world.CreateEntity();
-            Hierarchy<Domain>.SetParent(world, first, root);
-            Hierarchy<Domain>.SetParent(world, second, first);
-            QueryHandle query = world.Query(
-                world.QueryDefinition().Write<Parent<Domain>>());
-
-            JobHandle writer = HierarchyJobAccess<Domain>.ScheduleParentWriteChunks(
-                world,
-                query,
-                new CreateParentCycleJob<Domain>(first, second));
-
-            Assert.Throws<InvalidOperationException>(() => writer.Complete());
-
-            Assert.Equal(root, Hierarchy<Domain>.GetParent(world, first));
-            Assert.Equal(first, Hierarchy<Domain>.GetParent(world, second));
-            Assert.Equal(
-                new[] { first },
-                Hierarchy<Domain>.GetChildren(world, root).ToArray());
-            Assert.Equal(
-                new[] { second },
-                Hierarchy<Domain>.GetChildren(world, first).ToArray());
-
-            Hierarchy<Domain>.Maintain(world);
-            Assert.Equal(root, Hierarchy<Domain>.GetParent(world, first));
-            Assert.Equal(first, Hierarchy<Domain>.GetParent(world, second));
-        });
+        World world = CreateJobWorld();
+        Entity root = world.Create(), first = world.Create(), second = world.Create();
+        Hierarchy<Domain>.SetParent(world, first, root);
+        Hierarchy<Domain>.SetParent(world, second, first);
+        JobHandle written = Jobs.Schedule(new SetParents(world, [new(first, second)], null), world.Execution!.StructureWrite);
+        Assert.Throws<ArgumentException>(written.Complete);
+        Assert.Equal(root, Hierarchy<Domain>.GetParent(world, first));
+        Assert.Equal(first, Hierarchy<Domain>.GetParent(world, second));
+        Assert.Equal([first], Children(world, root));
+        Assert.Equal([second], Children(world, first));
+        Hierarchy<Domain>.Maintain(world);
+        Assert.Equal(root, Hierarchy<Domain>.GetParent(world, first));
+        Assert.Equal(first, Hierarchy<Domain>.GetParent(world, second));
     }
 
     [Fact]
-    public void ParentChunks_RejectMissingReadonlyAndRowFilteredQueryShapes()
+    public void ParentColumnsRequireTypedHierarchyWritesForEveryQuerySelection()
     {
-        WithJobRuntime(() =>
-        {
-            var world = CreateJobWorld();
-            Entity parent = world.CreateEntity();
-            Entity child = world.CreateEntity();
-            Entity markerOnly = world.CreateEntity();
-            Hierarchy<Domain>.SetParent(world, child, parent);
-            world.Add(child, new EnabledProbe());
-            world.Add(child, new ChunkProbe());
-            world.Add(markerOnly, new ChunkProbe());
-            var job = new SetAllParentsJob<Domain>(parent, ordering: null);
-
-            QueryHandle missing = world.Query(
-                world.QueryDefinition().All<Parent<Domain>>());
-            QueryHandle readOnly = world.Query(
-                world.QueryDefinition().Read<Parent<Domain>>());
-            QueryHandle rowFiltered = world.Query(
-                world.QueryDefinition()
-                    .Write<Parent<Domain>>()
-                    .Enabled<EnabledProbe>());
-            QueryHandle optionalNonmatching = world.Query(
-                world.QueryDefinition()
-                    .All<ChunkProbe>()
-                    .Optional<Parent<Domain>>(QueryAccess.Write));
-
-            Assert.Throws<InvalidOperationException>(
-                () => HierarchyJobAccess<Domain>
-                    .ScheduleParentWriteChunks(world, missing, job)
-                    .Complete());
-            Assert.Throws<InvalidOperationException>(
-                () => HierarchyJobAccess<Domain>
-                    .ScheduleParentWriteChunks(world, readOnly, job)
-                    .Complete());
-            InvalidOperationException filteredError = Assert.Throws<InvalidOperationException>(
-                () => HierarchyJobAccess<Domain>
-                    .ScheduleParentWriteChunks(world, rowFiltered, job)
-                    .Complete());
-
-            Assert.Throws<InvalidOperationException>(
-                () => HierarchyJobAccess<Domain>
-                    .ScheduleParentWriteChunks(world, optionalNonmatching, job)
-                    .Complete());
-            Assert.Equal(parent, Hierarchy<Domain>.GetParent(world, child));
-        });
-    }
-
-    [Fact]
-    public void DirectedEndpointChunks_UniqueTargetSwapValidatesOneFinalImage()
-    {
-        WithJobRuntime(() =>
-        {
-            var world = CreateJobWorld();
-            Entity sourceA = world.CreateEntity();
-            Entity sourceB = world.CreateEntity();
-            Entity targetA = world.CreateEntity();
-            Entity targetB = world.CreateEntity();
-            RelationEdge<UniqueTargetDirected> edgeA =
-                world.CreateRelation(sourceA, targetA, new UniqueTargetDirected());
-            RelationEdge<UniqueTargetDirected> edgeB =
-                world.CreateRelation(sourceB, targetB, new UniqueTargetDirected());
-            QueryHandle query = world.Query(
-                world.QueryDefinition()
-                    .Write<DirectedRelationEndpoints<UniqueTargetDirected>>());
-
-            RelationJobAccess<UniqueTargetDirected>.ScheduleDirectedEndpointWriteChunks(
-                world,
-                query,
-                new SwapUniqueTargetsJob(sourceA, targetA, targetB))
-                .Complete();
-
-            Assert.Equal(
-                targetB,
-                world.GetDirectedRelationEndpoints(edgeA).Target);
-            Assert.Equal(
-                targetA,
-                world.GetDirectedRelationEndpoints(edgeB).Target);
-            Assert.Equal(
-                edgeA,
-                Assert.Single(
-                    world.GetIncomingRelations<UniqueTargetDirected>(targetA)
-                        .Entries.ToArray()).Edge);
-            Assert.Equal(
-                edgeB,
-                Assert.Single(
-                    world.GetIncomingRelations<UniqueTargetDirected>(targetB)
-                        .Entries.ToArray()).Edge);
-
-            RelationMaintenanceSystem<UniqueTargetDirected>.Schedule(world).Complete();
-
-            Assert.Equal(
-                edgeB,
-                Assert.Single(
-                    world.GetIncomingRelations<UniqueTargetDirected>(targetA)
-                        .Entries.ToArray()).Edge);
-            Assert.Equal(
-                edgeA,
-                Assert.Single(
-                    world.GetIncomingRelations<UniqueTargetDirected>(targetB)
-                        .Entries.ToArray()).Edge);
-        });
-    }
-
-    [Fact]
-    public void UndirectedEndpointChunks_BulkWriteCanonicalAndLeaveIncidentLastApplied()
-    {
-        WithJobRuntime(() =>
-        {
-            var world = CreateJobWorld();
-            Entity endpointA = world.CreateEntity();
-            Entity oldEndpointB = world.CreateEntity();
-            Entity newEndpointB = world.CreateEntity();
-            RelationEdge<UndirectedPayload> edge =
-                world.CreateRelation(endpointA, oldEndpointB, new UndirectedPayload());
-            QueryHandle query = world.Query(
-                world.QueryDefinition()
-                    .Write<UndirectedRelationEndpoints<UndirectedPayload>>());
-
-            RelationJobAccess<UndirectedPayload>.ScheduleUndirectedEndpointWriteChunks(
-                world,
-                query,
-                new SetUndirectedSecondEndpointJob(newEndpointB))
-                .Complete();
-
-            Assert.Equal(
-                newEndpointB,
-                world.GetUndirectedRelationEndpoints(edge).EndpointB);
-            Assert.Equal(
-                edge,
-                Assert.Single(
-                    world.GetIncidentRelations<UndirectedPayload>(oldEndpointB)
-                        .Entries.ToArray()).Edge);
-            Assert.Empty(
-                world.GetIncidentRelations<UndirectedPayload>(newEndpointB)
-                    .Entries.ToArray());
-
-            RelationMaintenanceSystem<UndirectedPayload>.Schedule(world).Complete();
-
-            Assert.Empty(
-                world.GetIncidentRelations<UndirectedPayload>(oldEndpointB)
-                    .Entries.ToArray());
-            Assert.Equal(
-                edge,
-                Assert.Single(
-                    world.GetIncidentRelations<UndirectedPayload>(newEndpointB)
-                        .Entries.ToArray()).Edge);
-        });
-    }
-
-    [Fact]
-    public void ReadChunkVariants_ExposeCanonicalProtectedSources()
-    {
-        WithJobRuntime(() =>
-        {
-            var world = CreateJobWorld();
-            Entity parent = world.CreateEntity();
-            Entity child = world.CreateEntity();
-            Hierarchy<Domain>.SetParent(world, child, parent);
-
-            Entity source = world.CreateEntity();
-            Entity target = world.CreateEntity();
-            RelationEdge<UniqueTargetDirected> directed =
-                world.CreateRelation(source, target, new UniqueTargetDirected());
-
-            Entity endpointA = world.CreateEntity();
-            Entity endpointB = world.CreateEntity();
-            RelationEdge<UndirectedPayload> undirected =
-                world.CreateRelation(endpointA, endpointB, new UndirectedPayload());
-
-            QueryHandle parentQuery = world.Query(
-                world.QueryDefinition().Read<Parent<Domain>>());
-            QueryHandle directedQuery = world.Query(
-                world.QueryDefinition()
-                    .Read<DirectedRelationEndpoints<UniqueTargetDirected>>());
-            QueryHandle undirectedQuery = world.Query(
-                world.QueryDefinition()
-                    .Read<UndirectedRelationEndpoints<UndirectedPayload>>());
-
-            var parentCapture = new ParentReadCapture();
-            var directedCapture = new DirectedReadCapture();
-            var undirectedCapture = new UndirectedReadCapture();
-
-            HierarchyJobAccess<Domain>.ScheduleParentReadChunks(
-                world,
-                parentQuery,
-                new CaptureParentChunksJob<Domain>(parentCapture))
-                .Complete();
-            RelationJobAccess<UniqueTargetDirected>.ScheduleDirectedEndpointReadChunks(
-                world,
-                directedQuery,
-                new CaptureDirectedChunksJob(directedCapture))
-                .Complete();
-            RelationJobAccess<UndirectedPayload>.ScheduleUndirectedEndpointReadChunks(
-                world,
-                undirectedQuery,
-                new CaptureUndirectedChunksJob(undirectedCapture))
-                .Complete();
-
-            Assert.Equal((child, parent), Assert.Single(parentCapture.Items));
-            Assert.Equal(
-                (directed.Entity, source, target),
-                Assert.Single(directedCapture.Items));
-            Assert.Equal(
-                (undirected.Entity, endpointA, endpointB),
-                Assert.Single(undirectedCapture.Items));
-        });
-    }
-
-    [Fact]
-    public void ParentReadChunks_WaitForSameWorldTopologyWriter()
-    {
-        WithJobRuntime(() =>
-        {
-            var world = CreateJobWorld();
-            Entity parent = world.CreateEntity();
-            Entity child = world.CreateEntity();
-            Hierarchy<Domain>.SetParent(world, child, parent);
-            QueryHandle query = world.Query(
-                world.QueryDefinition().Read<Parent<Domain>>());
-            var capture = new ParentReadCapture();
-            using var writerStarted = new ManualResetEventSlim();
-            using var releaseWriter = new ManualResetEventSlim();
-            JobHandle writer = default;
-            JobHandle reader = default;
-            try
+        World world = CreateJobWorld();
+        Entity parent = world.Create(), child = world.Create(), marker = world.Create(new ChunkProbe());
+        Hierarchy<Domain>.SetParent(world, child, parent);
+        world.Add(child, default(EnabledProbe));
+        world.Add(child, default(ChunkProbe));
+        Query[] selections =
+        [
+            world.Query<Parent<Domain>>(),
+            world.Query(new QueryDescription().Optional<Parent<Domain>>()),
+            world.Query(new QueryDescription().WithStored<Parent<Domain>>().With<EnabledProbe>()),
+            world.Query(new QueryDescription().WithStored<ChunkProbe>().Optional<Parent<Domain>>()),
+        ];
+        foreach (Query selection in selections)
+            Assert.Throws<InvalidOperationException>(() =>
             {
-                writer = HierarchyJobAccess<Domain>.ScheduleParentWrite(
-                    world,
-                    new BlockingJob(writerStarted, releaseWriter));
-                Assert.True(writerStarted.Wait(TimeSpan.FromSeconds(2)));
-
-                reader = HierarchyJobAccess<Domain>.ScheduleParentReadChunks(
-                    world,
-                    query,
-                    new CaptureParentChunksJob<Domain>(capture));
-
-                Assert.False(reader.IsCompleted);
-                releaseWriter.Set();
-                reader.Complete();
-                writer.Complete();
-            }
-            finally
-            {
-                releaseWriter.Set();
-                writer.Complete();
-                reader.Complete();
-            }
-
-            Assert.Equal((child, parent), Assert.Single(capture.Items));
-        });
+                using WorldStructureWriteScope structure = world.OpenStructureWrite();
+                using QueryScope rows = selection.Open();
+                foreach (QueryChunk chunk in rows) _ = chunk.Write<Parent<Domain>>();
+            });
+        Assert.Equal(parent, Hierarchy<Domain>.GetParent(world, child));
+        Assert.True(world.IsAlive(marker));
     }
 
     [Fact]
-    public void ParentReadChunks_RejectMissingAndWriteOnlyQueryAccess()
+    public void DirectedEndpointBatchValidatesAUniqueTargetSwapTogether()
     {
-        WithJobRuntime(() =>
-        {
-            var world = CreateJobWorld();
-            Entity parent = world.CreateEntity();
-            Entity child = world.CreateEntity();
-            Hierarchy<Domain>.SetParent(world, child, parent);
-            QueryHandle missing = world.Query(
-                world.QueryDefinition().All<Parent<Domain>>());
-            QueryHandle writeOnly = world.Query(
-                world.QueryDefinition().Write<Parent<Domain>>());
-            var capture = new ParentReadCapture();
-            var job = new CaptureParentChunksJob<Domain>(capture);
-
-            Assert.Throws<InvalidOperationException>(
-                () => HierarchyJobAccess<Domain>
-                    .ScheduleParentReadChunks(world, missing, job)
-                    .Complete());
-            Assert.Throws<InvalidOperationException>(
-                () => HierarchyJobAccess<Domain>
-                    .ScheduleParentReadChunks(world, writeOnly, job)
-                    .Complete());
-            Assert.Empty(capture.Items);
-        });
+        World world = CreateJobWorld();
+        Entity sourceA = world.Create(), sourceB = world.Create(), targetA = world.Create(), targetB = world.Create();
+        RelationEdge<UniqueTargetDirected> first = world.CreateRelation(sourceA, targetA, default(UniqueTargetDirected));
+        RelationEdge<UniqueTargetDirected> second = world.CreateRelation(sourceB, targetB, default(UniqueTargetDirected));
+        Jobs.Schedule(new SwapTargets(world, first, second, sourceA, sourceB, targetA, targetB), world.Execution!.StructureWrite).Complete();
+        Assert.Equal(targetB, world.ReadComponentData<RelationEndpoints<UniqueTargetDirected>>(first.Entity).Target);
+        Assert.Equal(targetA, world.ReadComponentData<RelationEndpoints<UniqueTargetDirected>>(second.Entity).Target);
+        Assert.Equal([first.Entity], Incoming<UniqueTargetDirected>(world, targetA));
+        Assert.Equal([second.Entity], Incoming<UniqueTargetDirected>(world, targetB));
+        Jobs.Schedule(new MaintainRelations<UniqueTargetDirected>(world), world.Execution.StructureWrite).Complete();
+        Assert.Equal([second.Entity], Incoming<UniqueTargetDirected>(world, targetA));
+        Assert.Equal([first.Entity], Incoming<UniqueTargetDirected>(world, targetB));
     }
 
-    private void WithJobRuntime(Action action)
+    [Fact]
+    public void UndirectedEndpointBatchKeepsIncidentEntriesUntilMaintenance()
     {
-        ManagedPayloadPolicy previousPolicy = Jobs.ManagedPayloadPolicy;
-        JobSafetyMode previousSafety = Jobs.SafetyMode;
-        ConfigureJobs(new JobConfiguration
-        {
-            WorkerCount = 4,
-            SafetyMode = previousSafety,
-            ManagedPayloadPolicy = ManagedPayloadPolicy.Allow,
-        });
+        World world = CreateJobWorld();
+        Entity first = world.Create(), oldSecond = world.Create(), newSecond = world.Create();
+        RelationEdge<UndirectedPayload> edge = world.CreateRelation(first, oldSecond, default(UndirectedPayload));
+        Jobs.Schedule(new RetargetUndirected(world, edge, first, newSecond), world.Execution!.StructureWrite).Complete();
+        Assert.Equal(newSecond, world.ReadComponentData<RelationEndpoints<UndirectedPayload>>(edge.Entity).Target);
+        Assert.Equal([edge.Entity], Incident<UndirectedPayload>(world, oldSecond));
+        Assert.Empty(Incident<UndirectedPayload>(world, newSecond));
+        Jobs.Schedule(new MaintainRelations<UndirectedPayload>(world), world.Execution.StructureWrite).Complete();
+        Assert.Empty(Incident<UndirectedPayload>(world, oldSecond));
+        Assert.Equal([edge.Entity], Incident<UndirectedPayload>(world, newSecond));
+    }
+
+    [Fact]
+    public void ReadRangesExposeTheCurrentProtectedParentAndEndpointValues()
+    {
+        World world = CreateJobWorld();
+        Entity parent = world.Create(), child = world.Create();
+        Hierarchy<Domain>.SetParent(world, child, parent);
+        Entity source = world.Create(), target = world.Create(), first = world.Create(), second = world.Create();
+        RelationEdge<UniqueTargetDirected> directed = world.CreateRelation(source, target, default(UniqueTargetDirected));
+        RelationEdge<UndirectedPayload> undirected = world.CreateRelation(first, second, default(UndirectedPayload));
+        var parents = new List<(Entity, Entity)>();
+        var directedValues = new List<(Entity, Entity, Entity)>();
+        var undirectedValues = new List<(Entity, Entity, Entity)>();
+        new CaptureParents(parents).Schedule(world).Complete();
+        new CaptureDirected(directedValues).Schedule(world).Complete();
+        new CaptureUndirected(undirectedValues).Schedule(world).Complete();
+        Assert.Equal((child, parent), Assert.Single(parents));
+        Assert.Equal((directed.Entity, source, target), Assert.Single(directedValues));
+        Assert.Equal((undirected.Entity, first, second), Assert.Single(undirectedValues));
+    }
+
+    [Fact]
+    public void ParentReadRangesFollowTheSameWorldStructureWriter()
+    {
+        World world = CreateJobWorld();
+        Entity parent = world.Create(), child = world.Create();
+        Hierarchy<Domain>.SetParent(world, child, parent);
+        using var entered = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        var parents = new List<(Entity, Entity)>();
+        JobHandle writer = Jobs.Schedule(new HoldStructure(entered, release), world.Execution!.StructureWrite);
+        JobHandle reader = default;
         try
         {
-            action();
+            Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
+            reader = new CaptureParents(parents).Schedule(world);
+            release.Set();
+            reader.Complete();
+            writer.Complete();
         }
-        finally
-        {
-            ConfigureJobs(new JobConfiguration
-            {
-                SafetyMode = previousSafety,
-                ManagedPayloadPolicy = previousPolicy,
-            });
-        }
+        finally { release.Set(); writer.Complete(); reader.Complete(); }
+        Assert.Equal((child, parent), Assert.Single(parents));
     }
 
-    private sealed class OrderingProbe
+    [Fact]
+    public void ParentReadRangesRequireAccessToTheirOwnWorld()
     {
-        internal int Completed;
+        World world = CreateJobWorld(), other = CreateJobWorld();
+        Entity parent = world.Create(), child = world.Create();
+        Hierarchy<Domain>.SetParent(world, child, parent);
+        Query query = world.Query<Parent<Domain>>();
+        var capture = new List<Entity>();
+        Assert.Throws<JobResourceSafetyException>(() => Jobs.Schedule(new ReadParentIdentities(query, capture)).Complete());
+        Assert.Throws<JobResourceSafetyException>(() => Jobs.Schedule(new ReadParentIdentities(query, capture), other.Execution!.StructureRead).Complete());
+        Assert.Empty(capture);
     }
 
-    private readonly struct MarkDependencyJob : IJob
+    private static Entity[] Children(World world, Entity parent)
     {
-        private readonly OrderingProbe _probe;
-
-        internal MarkDependencyJob(OrderingProbe probe)
-        {
-            _probe = probe;
-        }
-
+        using ChildrenRead children = Hierarchy<Domain>.GetChildren(world, parent);
+        return children.Entities.ToArray();
+    }
+    private static Entity[] Incoming<T>(World world, Entity target) where T : struct
+    {
+        using RelationRead edges = Relations<T>.Incoming(world, target);
+        Entity[] result = new Entity[edges.Count];
+        for (int index = 0; index < result.Length; index++) result[index] = edges.Entries[index].Edge;
+        return result;
+    }
+    private static Entity[] Incident<T>(World world, Entity target) where T : struct
+    {
+        using IncidentRelationsRead edges = Relations<T>.Incident(world, target);
+        Entity[] result = new Entity[edges.Count];
+        int index = 0;
+        foreach (RelationEntry entry in edges) result[index++] = entry.Edge;
+        return result;
+    }
+    private sealed class OrderingProbe { internal int Completed; }
+    private readonly struct MarkDependency(OrderingProbe probe) : IJob
+    {
+        public void Execute() => probe.Completed = 1;
+    }
+    private readonly struct SetParents(World world, ParentEdit[] edits, OrderingProbe? probe) : IJob
+    {
         public void Execute()
         {
-            Volatile.Write(ref _probe.Completed, 1);
+            if (probe is not null) Assert.Equal(1, probe.Completed);
+            Hierarchy<Domain>.SetParents(world, edits, deferred: true);
         }
     }
-
-    private readonly struct BlockingJob : IJob
+    private readonly struct MaintainHierarchy(World world) : IJob
     {
-        private readonly ManualResetEventSlim _started;
-        private readonly ManualResetEventSlim _release;
-
-        internal BlockingJob(ManualResetEventSlim started, ManualResetEventSlim release)
-        {
-            _started = started;
-            _release = release;
-        }
-
+        public void Execute() => Hierarchy<Domain>.Maintain(world);
+    }
+    private readonly struct MaintainRelations<T>(World world) : IJob where T : struct
+    {
+        public void Execute() => Relations<T>.Maintain(world);
+    }
+    private readonly struct SwapTargets(World world, RelationEdge<UniqueTargetDirected> first, RelationEdge<UniqueTargetDirected> second,
+        Entity sourceA, Entity sourceB, Entity targetA, Entity targetB) : IJob
+    {
+        public void Execute() => Relations<UniqueTargetDirected>.Edit(world,
+            [new(first.Entity, sourceA, targetB), new(second.Entity, sourceB, targetA)], [], deferred: true);
+    }
+    private readonly struct RetargetUndirected(World world, RelationEdge<UndirectedPayload> edge, Entity first, Entity second) : IJob
+    {
+        public void Execute() => Relations<UndirectedPayload>.Edit(world, [new(edge.Entity, first, second)], [], deferred: true);
+    }
+    private readonly struct HoldStructure(ManualResetEventSlim entered, ManualResetEventSlim release) : IJob
+    {
+        public void Execute() { entered.Set(); Assert.True(release.Wait(TimeSpan.FromSeconds(5))); }
+    }
+    private readonly struct ReadParentIdentities(Query query, List<Entity> capture) : IJob
+    {
         public void Execute()
         {
-            _started.Set();
-            _release.Wait();
+            using QueryScope rows = query.OpenRead();
+            foreach (QueryChunk chunk in rows)
+                foreach (Entity entity in chunk.Entities) capture.Add(entity);
         }
     }
-
-    private readonly struct SetAllParentsJob<TDomain> : IParentWriteChunkJob<TDomain>
-        where TDomain : IHierarchyDomain
+    private readonly partial struct CaptureParents(List<(Entity, Entity)> values) : IJobChunk
     {
-        private readonly Entity _parent;
-        private readonly OrderingProbe? _ordering;
-
-        internal SetAllParentsJob(Entity parent, OrderingProbe? ordering)
+        public void CollectAdditionalResources(ref JobResourceAccessBuilder resources) => resources.Write(values);
+        public void Execute(ReadOnlySpan<Entity> entities, ReadOnlySpan<Parent<Domain>> parents)
         {
-            _parent = parent;
-            _ordering = ordering;
-        }
-
-        public void Execute(
-            ReadOnlySpan<Entity> entities,
-            Span<Parent<TDomain>> parents)
-        {
-            Assert.Equal(entities.Length, parents.Length);
-            if (_ordering is not null)
-                Assert.Equal(1, Volatile.Read(ref _ordering.Completed));
-
-            for (int i = 0; i < parents.Length; i++)
-                parents[i].Value = _parent;
+            for (int index = 0; index < entities.Length; index++) values.Add((entities[index], parents[index].Value));
         }
     }
-
-    private readonly struct CreateParentCycleJob<TDomain> : IParentWriteChunkJob<TDomain>
-        where TDomain : IHierarchyDomain
+    private readonly partial struct CaptureDirected(List<(Entity, Entity, Entity)> values) : IJobChunk
     {
-        private readonly Entity _first;
-        private readonly Entity _second;
-
-        internal CreateParentCycleJob(Entity first, Entity second)
+        public void CollectAdditionalResources(ref JobResourceAccessBuilder resources) => resources.Write(values);
+        public void Execute(ReadOnlySpan<Entity> entities, ReadOnlySpan<RelationEndpoints<UniqueTargetDirected>> endpoints)
         {
-            _first = first;
-            _second = second;
-        }
-
-        public void Execute(
-            ReadOnlySpan<Entity> entities,
-            Span<Parent<TDomain>> parents)
-        {
-            for (int i = 0; i < entities.Length; i++)
-            {
-                if (entities[i] == _first)
-                    parents[i].Value = _second;
-            }
+            for (int index = 0; index < entities.Length; index++) values.Add((entities[index], endpoints[index].Source, endpoints[index].Target));
         }
     }
-
-    private readonly struct SwapUniqueTargetsJob :
-        IDirectedRelationEndpointsWriteChunkJob<UniqueTargetDirected>
+    private readonly partial struct CaptureUndirected(List<(Entity, Entity, Entity)> values) : IJobChunk
     {
-        private readonly Entity _sourceA;
-        private readonly Entity _targetA;
-        private readonly Entity _targetB;
-
-        internal SwapUniqueTargetsJob(Entity sourceA, Entity targetA, Entity targetB)
+        public void CollectAdditionalResources(ref JobResourceAccessBuilder resources) => resources.Write(values);
+        public void Execute(ReadOnlySpan<Entity> entities, ReadOnlySpan<RelationEndpoints<UndirectedPayload>> endpoints)
         {
-            _sourceA = sourceA;
-            _targetA = targetA;
-            _targetB = targetB;
-        }
-
-        public void Execute(
-            ReadOnlySpan<Entity> entities,
-            Span<DirectedRelationEndpoints<UniqueTargetDirected>> endpoints)
-        {
-            Assert.Equal(entities.Length, endpoints.Length);
-            for (int i = 0; i < endpoints.Length; i++)
-            {
-                endpoints[i].Target = endpoints[i].Source == _sourceA
-                    ? _targetB
-                    : _targetA;
-            }
+            for (int index = 0; index < entities.Length; index++) values.Add((entities[index], endpoints[index].Source, endpoints[index].Target));
         }
     }
-
-    private readonly struct SetUndirectedSecondEndpointJob :
-        IUndirectedRelationEndpointsWriteChunkJob<UndirectedPayload>
-    {
-        private readonly Entity _endpoint;
-
-        internal SetUndirectedSecondEndpointJob(Entity endpoint)
-        {
-            _endpoint = endpoint;
-        }
-
-        public void Execute(
-            ReadOnlySpan<Entity> entities,
-            Span<UndirectedRelationEndpoints<UndirectedPayload>> endpoints)
-        {
-            Assert.Equal(entities.Length, endpoints.Length);
-            for (int i = 0; i < endpoints.Length; i++)
-                endpoints[i].EndpointB = _endpoint;
-        }
-    }
-
-    private sealed class ParentReadCapture
-    {
-        internal List<(Entity Child, Entity Parent)> Items { get; } = [];
-    }
-
-    private readonly struct CaptureParentChunksJob<TDomain> : IParentReadChunkJob<TDomain>
-        where TDomain : IHierarchyDomain
-    {
-        private readonly ParentReadCapture _capture;
-
-        internal CaptureParentChunksJob(ParentReadCapture capture)
-        {
-            _capture = capture;
-        }
-
-        public void Execute(
-            ReadOnlySpan<Entity> entities,
-            ReadOnlySpan<Parent<TDomain>> parents)
-        {
-            Assert.Equal(entities.Length, parents.Length);
-            for (int i = 0; i < parents.Length; i++)
-                _capture.Items.Add((entities[i], parents[i].Value));
-        }
-    }
-
-    private sealed class DirectedReadCapture
-    {
-        internal List<(Entity Edge, Entity Source, Entity Target)> Items { get; } = [];
-    }
-
-    private readonly struct CaptureDirectedChunksJob :
-        IDirectedRelationEndpointsReadChunkJob<UniqueTargetDirected>
-    {
-        private readonly DirectedReadCapture _capture;
-
-        internal CaptureDirectedChunksJob(DirectedReadCapture capture)
-        {
-            _capture = capture;
-        }
-
-        public void Execute(
-            ReadOnlySpan<Entity> entities,
-            ReadOnlySpan<DirectedRelationEndpoints<UniqueTargetDirected>> endpoints)
-        {
-            Assert.Equal(entities.Length, endpoints.Length);
-            for (int i = 0; i < endpoints.Length; i++)
-            {
-                _capture.Items.Add(
-                    (entities[i], endpoints[i].Source, endpoints[i].Target));
-            }
-        }
-    }
-
-    private sealed class UndirectedReadCapture
-    {
-        internal List<(Entity Edge, Entity EndpointA, Entity EndpointB)> Items { get; } = [];
-    }
-
-    private readonly struct CaptureUndirectedChunksJob :
-        IUndirectedRelationEndpointsReadChunkJob<UndirectedPayload>
-    {
-        private readonly UndirectedReadCapture _capture;
-
-        internal CaptureUndirectedChunksJob(UndirectedReadCapture capture)
-        {
-            _capture = capture;
-        }
-
-        public void Execute(
-            ReadOnlySpan<Entity> entities,
-            ReadOnlySpan<UndirectedRelationEndpoints<UndirectedPayload>> endpoints)
-        {
-            Assert.Equal(entities.Length, endpoints.Length);
-            for (int i = 0; i < endpoints.Length; i++)
-            {
-                _capture.Items.Add(
-                    (entities[i], endpoints[i].EndpointA, endpoints[i].EndpointB));
-            }
-        }
-    }
-
     private readonly struct Domain : IHierarchyDomain;
-
     private struct EnabledProbe : IEnableableComponent;
-
     private struct ChunkProbe : IComponent;
-
     [RelationSchema(RelationDirection.Directed, RelationCardinality.UniqueTarget)]
     private struct UniqueTargetDirected : IComponent;
-
     [RelationSchema(RelationDirection.Undirected, RelationCardinality.Parallel)]
     private struct UndirectedPayload : IComponent;
 }

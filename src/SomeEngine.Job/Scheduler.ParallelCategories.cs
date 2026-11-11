@@ -52,6 +52,7 @@ public sealed partial class Scheduler
         try
         {
             state = CreateState(batchCount + tokenCount, pendingDependencies: 0);
+            _completion.SetConcurrentExecution(state, batchCount > 1);
             reservation = ReserveAccesses<T>(accesses);
             AttachToCurrentScope(state);
             submission.Bind(state);

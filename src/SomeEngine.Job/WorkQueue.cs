@@ -119,8 +119,7 @@ internal sealed partial class WorkQueue : IWorkQueue
         try
         {
             int worker = CurrentWorkerIndex;
-            ReadyTicket ticket = _counters.Enabled
-                ? new(new TimedRangeBatch(batch, epoch), SampleReadyTime()) : new(batch, epoch);
+            ReadyTicket ticket = new(batch, SampleReadyTime(), epoch);
             PublishTickets(ticket, count, JobPriorityOrder.PriorityIndex(options.Priority), worker, options.Category);
             _counters.Queued(count, options.Category is null && worker != NoWorkerThread && worker < _workers.Length);
             _counters.QueueHighWater(Volatile.Read(ref _queuedWorkItemCount));
@@ -709,29 +708,11 @@ internal sealed partial class WorkQueue : IWorkQueue
     private int StreamDrainerLimit(WorkStream stream) => stream.Category is { } category
         ? Math.Min(MaxStreamDrainers, category.Config.MaxExecuting) : MaxStreamDrainers;
 
-    private readonly struct ReadyTicket(object data, long metadata)
+    private readonly struct ReadyTicket(object data, long publishedAt, uint epoch = 0)
     {
         internal object Data { get; } = data;
-        internal long PublishedAt => metadata;
-        internal uint Epoch => (uint)metadata;
-    }
-
-    private sealed unsafe class TimedRangeBatch : SynchronousRangeBatch
-    {
-        private readonly SynchronousRangeBatch _batch;
-        private readonly uint _epoch;
-
-        internal TimedRangeBatch(SynchronousRangeBatch batch, uint epoch) : base(&ExecuteTimedBatch)
-        {
-            _batch = batch;
-            _epoch = epoch;
-        }
-
-        private static void ExecuteTimedBatch(SynchronousRangeBatch batch, Scheduler scheduler, uint _, int workerIndex)
-        {
-            var timed = (TimedRangeBatch)batch;
-            timed._batch.Execute(scheduler, timed._epoch, workerIndex);
-        }
+        internal long PublishedAt { get; } = publishedAt;
+        internal uint Epoch { get; } = epoch;
     }
 
 }

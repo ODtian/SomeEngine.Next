@@ -3,7 +3,7 @@ using SomeEngine.ECS;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Relations;
 using SomeEngine.ECS.Entities;
-using SomeEngine.Physics;
+using SomeEngine.ECS.Spatial;
 using System.Runtime.CompilerServices;
 
 namespace SomeEngine.Tools.RelationsSmoke;
@@ -11,22 +11,22 @@ namespace SomeEngine.Tools.RelationsSmoke;
 // Business example: movement, finite categories and a character entity key.
 public enum MotionKind { Dynamic, Static, Kinematic }
 
-public struct Body : IComponent
+public struct Body : ITrackedComponent
 {
     public MotionKind Motion;
-    public CollisionBounds Bounds;
+    public SpatialBounds Bounds;
     public CategoryBits Categories;
 }
 
-public struct Hair : IIndexedComponent<Entity>
+public struct Hair : IIndexedComponent<Entity>, ITrackedComponent
 {
     public Entity Character;
     public readonly Entity GetKey() => Character;
 }
 
-public readonly struct BodyBoundsReader : ICollisionBoundsReader<Body>
+public readonly struct BodyBoundsReader : ISpatialBoundsReader<Body>
 {
-    public CollisionBounds Read(in Body component) => component.Bounds;
+    public SpatialBounds Read(in Body component) => component.Bounds;
 }
 
 public readonly struct DefaultContacts : IRelation<Body, Body>

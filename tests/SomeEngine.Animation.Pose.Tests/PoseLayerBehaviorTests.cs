@@ -30,7 +30,7 @@ public sealed class PoseLayerBehaviorTests
         finally { File.Delete(path); }
 
         using var scheduler = new Scheduler(new() { WorkerCount = 2 });
-        using var world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using var world = new World(execution: new WorldJobs(scheduler));
         var skeleton = new Skeleton([-1, 0, 1],
             [Transform(Vector3.Zero, Quaternion.Identity, 1),
              Transform(Vector3.UnitY, new(0, 0, 0.70710677f, 0.70710677f), 2),
@@ -79,7 +79,7 @@ public sealed class PoseLayerBehaviorTests
         });
 
         Tick(systems, world, 0.5);
-        Assert.Equal(0.5f, world.Read<AnimationLayers>(target).Items[1].Weight);
+        Assert.Equal(0.5f, world.ReadComponentData<AnimationLayers>(target).Items[1].Weight);
         Near(new(4, 0, 0), instance.LocalPose[0].Translation);
         Near(new(0, 4.5f, 0), instance.LocalPose[1].Translation);
         Near(new(2.5f), instance.LocalPose[1].Scale);
@@ -88,7 +88,7 @@ public sealed class PoseLayerBehaviorTests
         Near(new(1.763932f, 5.618034f, 0), instance.ModelPose.Transforms[2].Translation);
 
         Tick(systems, world, 0.5);
-        Assert.Equal(1f, world.Read<AnimationLayers>(target).Items[1].Weight);
+        Assert.Equal(1f, world.ReadComponentData<AnimationLayers>(target).Items[1].Weight);
         Near(new(0, 5, 0), instance.LocalPose[1].Translation);
         Near(new(3), instance.LocalPose[1].Scale);
         Near(Vector3.UnitY, Vector3.Transform(Vector3.UnitX, instance.LocalPose[1].Rotation));

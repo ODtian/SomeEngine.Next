@@ -12,9 +12,12 @@ public unsafe ref partial struct AnimationBuilder
         ref BuildData data = ref _data![0];
         var node = new GraphNode
         {
-            Kind = GraphNodeKind.Track, Target = target, Layer = layer,
+            Kind = GraphNodeKind.Track,
+            Target = target,
+            Layer = layer,
             Leaf = new GraphLeafData<TParameters, TLeaf>(in parameters),
-            Boundary = TLeaf.Describe(in parameters), Field = TLeaf.Output(in parameters),
+            Boundary = TLeaf.Describe(in parameters),
+            Field = TLeaf.Output(in parameters),
             Install = &GraphLeaves<TParameters, TLeaf>.Install,
         };
         for (int parent = data.Current; parent != 0; parent = data.Nodes![parent].Parent)

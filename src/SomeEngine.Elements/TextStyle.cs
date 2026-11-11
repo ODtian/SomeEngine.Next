@@ -5,7 +5,7 @@ using SomeEngine.Typography;
 namespace SomeEngine.Elements;
 
 /// <summary>Caller-written text style fields; omitted fields use the nearest TextTheme.</summary>
-public record struct TextStyle : IComponent
+public record struct TextStyle : ITrackedComponent
 {
     public Font? Font;
     private float? _size;
@@ -28,4 +28,4 @@ public record struct TextStyle : IComponent
 }
 
 /// <summary>The nearest complete default text style supplied by an ElementTree ancestor.</summary>
-public readonly record struct TextTheme(TextStyle Style) : IComponent;
+public readonly record struct TextTheme(TextStyle Style) : ITrackedComponent;

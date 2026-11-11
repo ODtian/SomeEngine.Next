@@ -12,13 +12,13 @@
 
 | 主题 | 文档入口 | 对照源码与核对范围 |
 | --- | --- | --- |
-| 系统基线与查询版本 | [Change-Tracking](../../wiki/architecture/ECS/Change-Tracking.md)、[Systems](../../wiki/architecture/ECS/Systems.md) | `SystemGroup.UpdateCore`、`SystemSlot`、`ImmediateSystemDriver`、`World.Queries.cs`；每个系统的 Last/Current 版本及回调成功后的写回 |
+| 系统基线与查询版本 | [Change-Tracking](../../wiki/architecture/ECS/Change-Tracking.md)、[Systems](../../wiki/architecture/ECS/Systems.md) | `SystemGroup.UpdateCore`、`SystemState`、`ImmediateSystemDriver`、`Queries/Query.cs`；每个系统的 Last/Current 版本及回调成功后的写回 |
 | Job 依赖与资源访问 | ADR 0002、[Readiness-Admission](../../wiki/architecture/ECS/Readiness-Admission.md) | `Scheduler.cs`、`Scheduler.Dependency.cs`；资源保留、依赖结束后的访问激活、work release 与显式依赖错误策略 |
-| 查询与借用 | [Synchronous-Execute](../../wiki/architecture/ECS/Synchronous-Execute.md) | `QueryCursor`、`QueryRow`、`QueryChunkView`、`World.Queries.cs`；当前公共签名和查询回调边界 |
+| 查询与借用 | [Synchronous-Execute](../../wiki/architecture/ECS/Synchronous-Execute.md) | `Query`、`QueryScope`、`QueryChunk`、`ReadLookup<T>`/`WriteLookup<T>`；当前公共签名和范围寿命 |
 | Relation/Hierarchy | ADR 0003、[Hierarchy](../../wiki/architecture/ECS/Hierarchy.md)、[Structural-Transactions](../../wiki/architecture/ECS/Structural-Transactions.md) | `HierarchyComponents.cs`、`World.StructuralTransaction.cs`、`World.cs`、对应 Owners 实现；Parent/Children 模型和候选根提交。涉及 cardinality、顺序或批处理时继续查具体路径 |
 | 关系查询与空间候选 | [Relation-Queries](../../wiki/architecture/ECS/Relation-Queries.md)、[Spatial-Candidates](../../wiki/architecture/ECS/Spatial-Candidates.md)、[Spatial-Filtering](../../wiki/architecture/ECS/Spatial-Filtering.md)、[Spatial-Maintenance](../../wiki/architecture/ECS/Spatial-Maintenance.md)、[Spatial-Parallel-Queries](../../wiki/architecture/ECS/Spatial-Parallel-Queries.md) | `RelationQuery`、`IQueryRelationEnumerable`、`CollisionCandidates`、`SpatialCandidates`、具体 key/bitmap 摘要与 `SpatialRelationGenerator`；输入 QueryCount、Access 并集、正反逐条件证明、显式摘要写入及只读枚举；`CollisionMaintenance` 的表成员观察、行版本、父链 refit 和实际 Job 依赖；`ICollisionPartitionEnumerable`、`CollisionPairBuffer` 及 `ReadOnlyQueryPairJobs` 的有效读取范围、分区计数／前缀／填充和输出区间 |
 | 关系包与 AOT 元数据 | [Relation-Packages-and-AOT](../../wiki/architecture/ECS/Relation-Packages-and-AOT.md) | `EcsTypeGenerator`、`JobStorageTypeAnalysis`、`GeneratedEcsTypes`、`JobStorageTypeMetadata<T>`、`RelationSchemaCache<T>`；普通 typed/generated access 与 `QueryJobAccess` 的同一分类读取，schema 首次验证；实际 PackageReference 使用方的构建和原生执行 |
-| ECS 存档 | ADR 0005、[Save-Contracts](../../wiki/architecture/ECS/Save-Contracts.md) | `PayloadFormat.cs`、`SerializationOptions.cs`、对应 codec；版本 4、RawCheckpoint/DurableSave 两种用途 |
+| ECS 存档 | ADR 0005、[Save-Contracts](../../wiki/architecture/ECS/Save-Contracts.md) | `PayloadFormat.cs`、`SerializationOptions.cs`、对应 codec；payload 版本 5、Preserve/Normalize 拓扑与 Capture/Restore；durable 外封装版本 4 |
 | 持久 RenderGraph | [Render-Graph](../../wiki/architecture/Render-Graph.md) 与 `render-graph/` 原子页 | `RenderGraph.cs`、`GraphIds.cs`、`GraphEditChanges.cs`、`GraphStructureIndex.cs`、`PassOrder.cs`、帧执行状态；结构编辑、帧版本、增量数据和提交回调 |
 | GameWorld/RenderWorld | [GameWorld-and-RenderWorld](../../wiki/architecture/rendering/GameWorld-and-RenderWorld.md)、[Extraction](../../wiki/architecture/rendering/Extraction.md)、[RenderDevice](../../wiki/architecture/rendering/RenderDevice.md) | `RenderExtractionSchedule.cs`、`RenderInstanceCompositionSystem.cs`、`RenderDevice.cs`；提取、实例准备及业务 GPU 完成跟踪 |
 | RHI | [RHI/Index](../../wiki/architecture/RHI/Index.md) | `SomeEngine.Graphics`、具体 backend、`Graphics.Validation`；当前公共入口包含 CommandContext、RecordedCommands、QueueCompletion、固定 DescriptorTable 与 ValidationLayer。具体 backend/capability/lifetime 规则按实现核对 |
@@ -32,8 +32,8 @@
 
 - ADR 0006 标记为 `superseded`，当前入口为 Render-Graph 及其原子页。该 ADR 和 `wiki/history/` 用于解释历史取舍。
 - ADR 0001 的“渲染执行随后实现”属于早期阶段。当前执行入口为 `RenderFrameCoordinator` 与 `ClusterPipelineSystem`。
-- ECS 系统观察窗口采用 `SystemSlot.LastSystemVersion` / `CurrentSystemVersion`。用户已经选择按当前系统级基线整理；Change-Tracking 的拟写内容以此为准。
-- `Storable-Descriptions`、`Active-Owner-Borrow-Creation`、`Random-Lookup` 和 `Packet-Alias-Proof` 含旧的 SystemChangeCheckpoints、RefRO/RefRW、ComponentLookupHandle/View 接口或示例。当前形状从 QueryRow、QueryChunkView、QueryCursor 读取；相关 alias/检查策略按对应执行和生成器路径核对。
+- ECS 系统观察窗口采用 `SystemState.LastSystemVersion` / `CurrentSystemVersion`。用户已经选择按当前系统级基线整理；Change-Tracking 的拟写内容以此为准。
+- 当前查询入口为 `Query.OpenRead/Open`、`QueryScope`、`QueryChunk` 与具体动作；随机访问由类型 lookup 覆盖。`Random-Lookup` 和 `Packet-Alias-Proof` 的历史示例结合当前源码核对；目标布局由 `ECS/Rebuild` 持有。
 - `Scheduling-Heuristics` 的 dynamic-tree 切换作为优化提案。当前 hierarchy 环验证从 `Owners.Hierarchy.ValidateParent` 的父链检查读取。
 - Job 文档里的 `AfterCompletion` 表达依赖完成后的顺序语义；当前具体恢复/清理入口包括 `Scheduler.ScheduleFinally`，调用样例对应当前签名。
 - `Harness-Definition` 中的两个旧导航项可通过现有 `Architecture-Checks`、`Behavior-Checks`、`Harness-Performance-Evidence` 直接进入当前主题。

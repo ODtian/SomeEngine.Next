@@ -11,6 +11,11 @@ internal interface IStagedJob : IJob
 
 public sealed partial class Scheduler
 {
+    private interface ICompletionData
+    {
+        void Release();
+    }
+
     internal void AppendSynchronousAccess(JobHandle handle, in AccessBuilder<JobResourceAccess> accesses)
     {
         if (accesses.Count == 0) return;
@@ -75,6 +80,7 @@ public sealed partial class Scheduler
         ValidateDependency(dependency);
         JobHandle handle = CreateState(pendingWork: 1, pendingDependencies: 1, scheduleDependenciesSealed: false);
         StagedJobData<T> data = StagedJobData<T>.Rent(this, handle, job);
+        _completion.SetJobData(handle, data);
         retained = true;
         WorkBatch work = default;
         try
@@ -97,6 +103,23 @@ public sealed partial class Scheduler
 
     private sealed partial class CompletionStore
     {
+        internal void SetJobData(JobHandle handle, ICompletionData data)
+        {
+            CompletionState state = GetState(handle)!;
+            lock (state.Sync) state.JobData = data;
+        }
+
+        internal ICompletionData? TakeJobData(JobHandle handle)
+        {
+            CompletionState state = GetState(handle)!;
+            lock (state.Sync)
+            {
+                ICompletionData? data = state.JobData;
+                state.JobData = null;
+                return data;
+            }
+        }
+
         internal void BeginAccessStage(JobHandle handle)
         {
             CompletionState state = GetState(handle)!;
@@ -119,7 +142,7 @@ public sealed partial class Scheduler
         }
     }
 
-    private sealed class StagedJobData<T> where T : struct, IStagedJob
+    private sealed class StagedJobData<T> : ICompletionData where T : struct, IStagedJob
     {
         private static readonly object FreeLock = new();
         private static StagedJobData<T>[]? s_free;
@@ -149,7 +172,7 @@ public sealed partial class Scheduler
             data.Handle = handle;
             data._job = job;
             data._stage = 0;
-            data._references = 1;
+            data._references = 2;
             data._released = 0;
             return data;
         }
@@ -167,7 +190,13 @@ public sealed partial class Scheduler
             if (Interlocked.Exchange(ref _released, 1) == 0) _job.Release();
         }
 
-        internal void ReleaseReference()
+        void ICompletionData.Release()
+        {
+            try { ReleaseJob(); }
+            finally { ReleaseReference(); }
+        }
+
+        public void ReleaseReference()
         {
             if (Interlocked.Decrement(ref _references) != 0) return;
             ReleaseJob();
@@ -195,11 +224,6 @@ public sealed partial class Scheduler
                 ExceptionDispatchInfo? error = null;
                 try { _job.Execute(); }
                 catch (Exception exception) { error = ExceptionDispatchInfo.Capture(exception); }
-                finally
-                {
-                    try { ReleaseJob(); }
-                    catch (Exception exception) { error ??= ExceptionDispatchInfo.Capture(exception); }
-                }
                 scheduler.CompleteStreamItems(handle, 1, error);
                 return;
             }
@@ -225,7 +249,6 @@ public sealed partial class Scheduler
             catch (Exception exception)
             {
                 next.ReleaseJobs();
-                ReleaseJob();
                 scheduler.RecordFaultAndCancelPendingWork(handle, ExceptionDispatchInfo.Capture(exception));
                 if (!barrier)
                 {

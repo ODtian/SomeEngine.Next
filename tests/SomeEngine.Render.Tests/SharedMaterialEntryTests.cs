@@ -26,10 +26,10 @@ public sealed class SharedMaterialEntryTests(RenderTestDevice graphics) : IClass
         using var game = new World();
         using var render = new RenderWorld();
         using var extraction = new RenderExtractionSystems(render, new MeshRenderExtractor());
-        var entity = game.CreateEntity(new WorldTransform());
+        var entity = game.Create(new WorldTransform());
         game.Add(entity, new MeshInstance { Mesh = new TestAssets().Mesh(1) });
         game.AddBuffer<MeshMaterialBinding>(entity);
-        game.ExecuteBufferWrite<MeshMaterialBinding>(entity, values => values.Add(new(material)));
+        using (DynamicBuffer<MeshMaterialBinding> values = game.GetBuffer<MeshMaterialBinding>(entity)) values.Add(new(material));
         extraction.Extract(game);
         graphics.Apply(extraction, render);
         Assert.Same(material, render.ReadMaterial(material.MaterialId));
@@ -59,10 +59,10 @@ public sealed class SharedMaterialEntryTests(RenderTestDevice graphics) : IClass
         using var game = new World();
         using var render = new RenderWorld();
         using var extraction = new RenderExtractionSystems(render, new MeshRenderExtractor());
-        var entity = game.CreateEntity(new WorldTransform());
+        var entity = game.Create(new WorldTransform());
         game.Add(entity, new MeshInstance { Mesh = new TestAssets().Mesh(1) });
         game.AddBuffer<MeshMaterialBinding>(entity);
-        game.ExecuteBufferWrite<MeshMaterialBinding>(entity, values => values.Add(new(material)));
+        using (DynamicBuffer<MeshMaterialBinding> values = game.GetBuffer<MeshMaterialBinding>(entity)) values.Add(new(material));
         extraction.Extract(game);
         graphics.Apply(extraction, render);
         Assert.Equal(new float[] { .25f, .75f }, ExecuteEntries((StandardMaterial)render.ReadMaterial(material.MaterialId)));

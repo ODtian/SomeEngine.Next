@@ -25,26 +25,26 @@ public sealed class ComposeGroupTests
                     using var frames = new HeadlessFrameDriver();
                     Entity root = Views.Spawn(frames.World, Entity.Null, new Screen(true));
                     frames.Frame();
-                    Entity[] children = Hierarchy<ElementTree>.GetChildren(frames.World, root).ToArray();
+                    Entity[] children = ElementChildren.Read(frames.World, root).ToArray();
                     if (children.Length != 2)
                         return false;
-                    var first = frames.World.ReadSparse<CounterLabel<int>>(children[0]);
-                    var second = frames.World.ReadSparse<CounterLabel<int>>(children[1]);
+                    var first = frames.World.ReadComponentData<CounterLabel<int>>(children[0]);
+                    var second = frames.World.ReadComponentData<CounterLabel<int>>(children[1]);
                     first.Value.Value = 11;
                     second.Value.Value = 22;
                     frames.Frame();
-                    frames.World.Replace(root, new Screen(false));
+                    frames.World.Set(root, new Screen(false));
                     frames.Frame();
-                    if (Hierarchy<ElementTree>.GetChildren(frames.World, root).Single() != children[1] ||
-                        frames.World.ReadSparse<CounterNumber<int>>(children[1]).Value != 22)
+                    if (ElementChildren.Read(frames.World, root).Single() != children[1] ||
+                        frames.World.ReadComponentData<CounterNumber<int>>(children[1]).Value != 22)
                         return false;
-                    frames.World.Replace(root, new Screen(true));
+                    frames.World.Set(root, new Screen(true));
                     frames.Frame();
-                    Entity[] returned = Hierarchy<ElementTree>.GetChildren(frames.World, root).ToArray();
+                    Entity[] returned = ElementChildren.Read(frames.World, root).ToArray();
                     return returned.Length == 2 && returned[1] == children[1] &&
-                        frames.World.ReadSparse<CounterNumber<int>>(returned[0]).Value == 11 &&
-                        frames.World.ReadSparse<CounterNumber<int>>(returned[1]).Value == 22 &&
-                        frames.World.ReadSparse<CounterLabel<int>>(returned[1]).Text == "tail" &&
+                        frames.World.ReadComponentData<CounterNumber<int>>(returned[0]).Value == 11 &&
+                        frames.World.ReadComponentData<CounterNumber<int>>(returned[1]).Value == 22 &&
+                        frames.World.ReadComponentData<CounterLabel<int>>(returned[1]).Text == "tail" &&
                         !frames.World.HasSparse<BuildError>(root);
                 }
             }
@@ -84,17 +84,17 @@ public sealed class ComposeGroupTests
                     using var frames = new HeadlessFrameDriver();
                     Entity root = Views.Spawn(frames.World, Entity.Null, new Composition.Screen_View(0));
                     frames.Frame();
-                    Entity label = Hierarchy<ElementTree>.GetChildren(frames.World, root).Single();
-                    if (frames.World.ReadSparse<Label>(label).Value != 5)
+                    Entity label = ElementChildren.Read(frames.World, root).Single();
+                    if (frames.World.ReadComponentData<Label>(label).Value != 5)
                         return false;
-                    frames.World.ReadSparse<ChangeCounter>(root).Change(7);
+                    frames.World.ReadComponentData<ChangeCounter>(root).Change(7);
                     frames.Frame();
-                    if (frames.World.ReadSparse<Label>(label).Value != 12)
+                    if (frames.World.ReadComponentData<Label>(label).Value != 12)
                         return false;
-                    frames.World.ReplaceSparse(root, new Composition.Screen_View(1));
+                    frames.World.SetSparse(root, new Composition.Screen_View(1));
                     frames.Frame();
-                    return Hierarchy<ElementTree>.GetChildren(frames.World, root).Single() == label &&
-                        frames.World.ReadSparse<Label>(label).Value == 12 &&
+                    return ElementChildren.Read(frames.World, root).Single() == label &&
+                        frames.World.ReadComponentData<Label>(label).Value == 12 &&
                         !frames.World.HasSparse<BuildError>(root);
                 }
             }
@@ -143,31 +143,31 @@ public sealed class ComposeGroupTests
                     using var frames = new HeadlessFrameDriver();
                     Entity root = Views.Spawn(frames.World, Entity.Null, new Composition.Screen_View(true));
                     frames.Frame();
-                    Entity[] children = Hierarchy<ElementTree>.GetChildren(frames.World, root).ToArray();
+                    Entity[] children = ElementChildren.Read(frames.World, root).ToArray();
                     if (children.Length != 2 || frames.World.HasSparse<BuildError>(root))
                         return false;
                     Entity tail = children[1];
-                    var first = frames.World.ReadSparse<Label>(children[0]);
-                    var second = frames.World.ReadSparse<Label>(tail);
+                    var first = frames.World.ReadComponentData<Label>(children[0]);
+                    var second = frames.World.ReadComponentData<Label>(tail);
                     if (first.Text != "x" || first.Value != 10 || second.Text != "y" || second.Value != 20)
                         return false;
                     first.Change(11);
                     second.Change(22);
-                    frames.World.Replace(tail, new LabelState(77));
+                    frames.World.Set(tail, new LabelState(77));
                     frames.Frame();
-                    frames.World.ReplaceSparse(root, new Composition.Screen_View(false));
+                    frames.World.SetSparse(root, new Composition.Screen_View(false));
                     frames.Frame();
-                    Entity remaining = Hierarchy<ElementTree>.GetChildren(frames.World, root).Single();
-                    if (remaining != tail || frames.World.ReadSparse<Label>(remaining).Value != 22 ||
-                        frames.World.Read<LabelState>(remaining).Value != 77 || frames.World.HasSparse<BuildError>(root))
+                    Entity remaining = ElementChildren.Read(frames.World, root).Single();
+                    if (remaining != tail || frames.World.ReadComponentData<Label>(remaining).Value != 22 ||
+                        frames.World.ReadComponentData<LabelState>(remaining).Value != 77 || frames.World.HasSparse<BuildError>(root))
                         return false;
-                    frames.World.ReplaceSparse(root, new Composition.Screen_View(true));
+                    frames.World.SetSparse(root, new Composition.Screen_View(true));
                     frames.Frame();
-                    children = Hierarchy<ElementTree>.GetChildren(frames.World, root).ToArray();
+                    children = ElementChildren.Read(frames.World, root).ToArray();
                     return children.Length == 2 && children[1] == tail &&
-                        frames.World.ReadSparse<Label>(children[0]).Value == 11 &&
-                        frames.World.ReadSparse<Label>(tail).Value == 22 &&
-                        frames.World.Read<LabelState>(tail).Value == 77 &&
+                        frames.World.ReadComponentData<Label>(children[0]).Value == 11 &&
+                        frames.World.ReadComponentData<Label>(tail).Value == 22 &&
+                        frames.World.ReadComponentData<LabelState>(tail).Value == 77 &&
                         !frames.World.HasSparse<BuildError>(root);
                 }
             }
@@ -195,7 +195,7 @@ public sealed class ComposeGroupTests
                     if (!Scope.World.Has<LabelState>(Scope.Entity))
                     {
                         Scope.World.Add(Scope.Entity, new LabelState(0));
-                        Scope.World.AddTag<LocalState>(Scope.Entity);
+                        Scope.World.Add(Scope.Entity, default(LocalState));
                     }
                     return default;
                 }

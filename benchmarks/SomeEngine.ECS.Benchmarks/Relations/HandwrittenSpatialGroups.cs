@@ -1,9 +1,9 @@
+using SomeEngine.ECS;
+using SomeEngine.ECS.Spatial;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Relations;
-using SomeEngine.Physics;
-using GroupResults = System.ValueTuple<System.ValueTuple<SomeEngine.Physics.GroupMatch, SomeEngine.Physics.GroupMatch>, SomeEngine.Physics.GroupMatch>;
-using CategorySummary = SomeEngine.Physics.CollisionBitmapSummary<
+using GroupResults = System.ValueTuple<System.ValueTuple<SomeEngine.ECS.Spatial.GroupMatch, SomeEngine.ECS.Spatial.GroupMatch>, SomeEngine.ECS.Spatial.GroupMatch>;
+using CategorySummary = SomeEngine.ECS.Spatial.BoundsBitmapSummary<
     SomeEngine.ECS.Benchmarks.Relations.Spatial.MutualCategories,
     SomeEngine.ECS.Benchmarks.Relations.Spatial.MutualCategoryBitmap,
     SomeEngine.ECS.Benchmarks.Relations.Spatial.Body, SomeEngine.ECS.Relations.MutualPermission>;
@@ -12,11 +12,11 @@ namespace SomeEngine.ECS.Benchmarks.Relations.Spatial;
 
 public static partial class HandwrittenSpatialCollision
 {
-    public static bool EnumeratePartition<TOutput>(CollisionNodePair partition, scoped RelationQueryViews queries,
-        CollisionTree tree, CollisionKeySummary<Hair, Entity> keys, CategorySummary categories, ref TOutput output)
+    public static bool EnumeratePartition<TOutput>(BoundsNodePair partition, scoped RelationQueryViews queries,
+        BoundsTree tree, BoundsKeySummary<Hair, Entity> keys, CategorySummary categories, ref TOutput output)
         where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
     {
-        var execution = new FilteredPairs<TOutput>(tree, keys, categories, output, partition);
+        var execution = new FilteredPairs<TOutput>(queries.World, tree, keys, categories, output, partition);
         try
         {
             execution.Execute(queries.First);
@@ -28,68 +28,41 @@ public static partial class HandwrittenSpatialCollision
         }
     }
 
-    public static void RebuildFilteredSummaries(World world, QueryHandle bodies,
-        CollisionKeySummary<Hair, Entity> keys, CategorySummary categories)
+    public static void RebuildFilteredSummaries(World world, Query bodies,
+        BoundsKeySummary<Hair, Entity> keys, CategorySummary categories)
     {
-        QueryHandle access = world.Query(QueryDefinition.Empty.WithAccessFrom(world.GetQueryDefinition(bodies))
-            .WithOptionalRead<Body>().WithOptionalRead<Hair>());
-        var execution = new FilteredSummaryBuild(keys, categories);
-        try
-        {
-            world.ExecuteQuery(access, ref execution);
-        }
-        finally
-        {
-            world.ReleaseQuery(access);
-        }
+        using QueryScope scope = bodies.WithOptionalRead<Body>().WithOptionalRead<Hair>().OpenRead();
+        keys.Rebuild(world);
+        categories.Rebuild(world);
     }
 
-    public static bool Filtered<TOutput>(World world, QueryHandle bodies, CollisionTree tree,
-        CollisionKeySummary<Hair, Entity> keys, CategorySummary categories, ref TOutput output)
+    public static bool Filtered<TOutput>(World world, Query bodies, BoundsTree tree,
+        BoundsKeySummary<Hair, Entity> keys, CategorySummary categories, ref TOutput output)
         where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
     {
-        QueryDefinition original = world.GetQueryDefinition(bodies);
-        QueryDefinition definition = original.WithOptionalRead<Body>().WithOptionalRead<Hair>();
-        bool temporaryQuery = definition.CanWrite || !ReferenceEquals(original, definition);
-        QueryHandle query = temporaryQuery ? world.Query(definition) : bodies;
-        var execution = new FilteredPairs<TOutput>(tree, keys, categories, output);
-        try
-        {
-            world.ExecuteQuery(query, ref execution);
-            return execution.Completed;
-        }
-        finally
-        {
-            output = execution.Output;
-            if (temporaryQuery)
-                world.ReleaseQuery(query);
-        }
+        using QueryScope scope = bodies.WithOptionalRead<Body>().WithOptionalRead<Hair>().OpenRead();
+        var execution = new FilteredPairs<TOutput>(world, tree, keys, categories, output);
+        try { execution.Execute(scope); return execution.Completed; }
+        finally { output = execution.Output; }
     }
 
-    private struct FilteredSummaryBuild(CollisionKeySummary<Hair, Entity> keys, CategorySummary categories) : IQueryExecution
-    {
-        public void Execute(scoped QueryCursor access)
-        {
-            keys.Rebuild(access);
-            categories.Rebuild(access);
-        }
-    }
-
-    private ref struct FilteredPairs<TOutput> : IQueryExecution
+    private ref struct FilteredPairs<TOutput>
         where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
     {
-        private readonly CollisionTree _tree;
-        private readonly CollisionKeySummary<Hair, Entity> _keys;
+        private readonly World _world;
+        private readonly BoundsTree _tree;
+        private readonly BoundsKeySummary<Hair, Entity> _keys;
         private readonly CategorySummary _categories;
-        private readonly CollisionNodePair _partition;
+        private readonly BoundsNodePair _partition;
 
-        public FilteredPairs(CollisionTree tree, CollisionKeySummary<Hair, Entity> keys,
+        public FilteredPairs(World world, BoundsTree tree, BoundsKeySummary<Hair, Entity> keys,
             CategorySummary categories, TOutput output)
-            : this(tree, keys, categories, output, new CollisionNodePair(tree.Root, tree.Root)) { }
+            : this(world, tree, keys, categories, output, new BoundsNodePair(tree.Root, tree.Root)) { }
 
-        public FilteredPairs(CollisionTree tree, CollisionKeySummary<Hair, Entity> keys,
-            CategorySummary categories, TOutput output, CollisionNodePair partition)
+        public FilteredPairs(World world, BoundsTree tree, BoundsKeySummary<Hair, Entity> keys,
+            CategorySummary categories, TOutput output, BoundsNodePair partition)
         {
+            _world = world;
             _tree = tree;
             _keys = keys;
             _categories = categories;
@@ -101,21 +74,22 @@ public static partial class HandwrittenSpatialCollision
         public TOutput Output;
         public bool Completed;
 
-        public void Execute(scoped QueryCursor members) => Completed = Traverse(members);
+        public void Execute(scoped QueryScope members) => Completed = Traverse(members);
 
-        private bool Traverse(scoped QueryCursor members)
+        private bool Traverse(scoped QueryScope members)
         {
+            using ReadLookup<Body> values = _world.OpenRead<Body>();
             if (_tree.Root < 0)
                 return true;
-            ReadOnlySpan<CollisionNode> nodes = _tree.Nodes;
+            ReadOnlySpan<BoundsNode> nodes = _tree.Nodes;
             Span<FilteredNodePair> nodePairs = stackalloc FilteredNodePair[2 * _tree.Height + 1];
             int pairCount = 0;
             nodePairs[pairCount++] = new(_partition.First, _partition.Second, default, default);
             while (pairCount > 0)
             {
                 FilteredNodePair pair = nodePairs[--pairCount];
-                ref readonly CollisionNode first = ref nodes[pair.First];
-                ref readonly CollisionNode second = ref nodes[pair.Second];
+                ref readonly BoundsNode first = ref nodes[pair.First];
+                ref readonly BoundsNode second = ref nodes[pair.Second];
                 if (pair.First == pair.Second && first.IsLeaf ||
                     pair.First != pair.Second && !first.Bounds.Overlaps(in second.Bounds))
                     continue;
@@ -139,9 +113,9 @@ public static partial class HandwrittenSpatialCollision
                     if (match == GroupMatch.None)
                         continue;
                     var entities = (nodes[firstNode].Entity, nodes[secondNode].Entity);
-                    if (!members.TryGetRow(entities.Item1, out var firstRow) || !members.TryGetRow(entities.Item2, out var secondRow))
+                    if (!members.Contains(entities.Item1) || !members.Contains(entities.Item2))
                         continue;
-                    if (firstRow.ReadRef<Body>().Kind != MotionKind.Dynamic && secondRow.ReadRef<Body>().Kind != MotionKind.Dynamic)
+                    if (values.ReadKnown(entities.Item1).Kind != MotionKind.Dynamic && values.ReadKnown(entities.Item2).Kind != MotionKind.Dynamic)
                         continue;
                     if (results.Item1.Item2 == GroupMatch.Unknown)
                     {

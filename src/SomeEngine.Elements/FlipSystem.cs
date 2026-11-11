@@ -3,7 +3,6 @@ using SomeEngine.Animation;
 using SomeEngine.Core.Math;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Layout;
 
@@ -12,58 +11,56 @@ namespace SomeEngine.Elements;
 /// <summary>Runs after layout and retargets each entity's presentation back to identity.</summary>
 public struct FlipSystem : ISystem<ImmediateSystemContext>
 {
-    private QueryHandle _nodes;
+    private Query _nodes;
     private List<FlipTarget> _targets;
 
     public void OnCreate(ref ImmediateSystemContext context)
     {
         _targets = new();
-        _nodes = context.World.Query(context.World.QueryDefinition()
-            .Read<FlipSettings>().ReadWrite<FlipFrame>().ReadWrite<PresentationOffset>().Optional<LayoutRect>(QueryAccess.Read)
-            .Optional<ElementTransform>(QueryAccess.Read));
+        _nodes = context.World.Query(new QueryDescription()
+            .WithStored<FlipSettings>().WithStored<FlipFrame>().WithStored<PresentationOffset>().Optional<LayoutRect>()
+            .Optional<ElementTransform>());
     }
 
     public void OnUpdate(ref ImmediateSystemContext context)
     {
         World world = context.World;
         _targets.Clear();
-        List<FlipTarget> targets = _targets;
-        world.ExecuteQuery(_nodes, context.LastSystemVersion, ref targets, static (rows, ref targets) =>
-        {
-            foreach (QueryRow row in rows.Rows)
-            {
-                FlipFrame previous = row.Read<FlipFrame>();
-                if (!row.Has<LayoutRect>())
+        using (QueryScope range = _nodes.Since(context.LastSystemVersion).Open())
+            foreach (QueryChunk chunk in range)
+                foreach (Entity entity in chunk.Entities)
                 {
-                    if (previous.HasFrame) row.ReadWrite<FlipFrame>().HasFrame = false;
+                FlipFrame previous = world.ReadComponentData<FlipFrame>(entity);
+                if (!world.Has<LayoutRect>(entity))
+                {
+                    if (previous.HasFrame) world.Get<FlipFrame>(entity).HasFrame = false;
                     continue;
                 }
-                Rect rectangle = row.Read<LayoutRect>().Value;
-                ElementTransform transform = row.Has<ElementTransform>()
-                    ? row.Read<ElementTransform>() : ElementTransform.Identity;
+                Rect rectangle = world.ReadComponentData<LayoutRect>(entity).Value;
+                ElementTransform transform = world.Has<ElementTransform>(entity)
+                    ? world.ReadComponentData<ElementTransform>(entity) : ElementTransform.Identity;
                 if (previous.HasFrame && previous.Rectangle == rectangle &&
                     previous.Transform == transform.Matrix && previous.Alpha == transform.Alpha)
                     continue;
 
                 if (previous.HasFrame)
                 {
-                    PresentationOffset offset = row.Read<PresentationOffset>();
+                    PresentationOffset offset = world.ReadComponentData<PresentationOffset>(entity);
                     bool matrixChanged = previous.Rectangle != rectangle || previous.Transform != transform.Matrix;
                     bool alphaChanged = previous.Alpha != transform.Alpha;
-                    Spec spec = row.Read<FlipSettings>().Spec;
+                    Spec spec = world.ReadComponentData<FlipSettings>(entity).Spec;
                     if (matrixChanged) offset.Matrix = Invert(previous, rectangle, transform.Matrix) * offset.Matrix;
                     if (alphaChanged) offset.Alpha = transform.Alpha != 0 ? previous.Alpha * offset.Alpha / transform.Alpha : 1;
-                    row.ReadWrite<PresentationOffset>() = offset;
-                    targets.Add(new FlipTarget(row.Entity, spec, matrixChanged, alphaChanged));
+                    world.Get<PresentationOffset>(entity) = offset;
+                    _targets.Add(new FlipTarget(entity, spec, matrixChanged, alphaChanged));
                 }
 
                 previous.Rectangle = rectangle;
                 previous.Transform = transform.Matrix;
                 previous.Alpha = transform.Alpha;
                 previous.HasFrame = true;
-                row.ReadWrite<FlipFrame>() = previous;
-            }
-        });
+                world.Get<FlipFrame>(entity) = previous;
+                }
         foreach (FlipTarget target in _targets)
         {
             if (target.MatrixChanged)
@@ -88,8 +85,7 @@ public struct FlipSystem : ISystem<ImmediateSystemContext>
             * previous.Transform * Matrix3x2.CreateTranslation(previous.Rectangle.X, previous.Rectangle.Y);
     }
 
-    public void OnDestroy(ref ImmediateSystemContext context) => context.World.ReleaseQuery(_nodes);
-
+    public void OnDestroy(ref ImmediateSystemContext context) { }
     private readonly record struct FlipTarget(Entity Entity, Spec Spec,
         bool MatrixChanged, bool AlphaChanged);
 }

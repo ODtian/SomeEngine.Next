@@ -18,22 +18,22 @@ public sealed partial class ScrollViewTests
         using var frames = new PointerFrames();
         Entity root = Views.Views.Spawn(frames.World, frames.Canvas, new ScrollScene(0));
         frames.Frame();
-        Entity panel = Hierarchy<ElementTree>.GetChildren(frames.World, root)[0];
-        Entity scroll = Hierarchy<ElementTree>.GetChildren(frames.World, panel)[0];
-        Entity content = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, scroll));
-        Assert.Equal(new Rect(20, 10, 100, 60), frames.World.Read<LayoutRect>(scroll).Value);
-        Assert.Equal(new Vector2(160, 140), frames.World.Read<ScrollOffset>(scroll).Max);
+        Entity panel = ElementChildren.Read(frames.World, root)[0];
+        Entity scroll = ElementChildren.Read(frames.World, panel)[0];
+        Entity content = Assert.Single(ElementChildren.Read(frames.World, scroll));
+        Assert.Equal(new Rect(20, 10, 100, 60), frames.World.ReadComponentData<LayoutRect>(scroll).Value);
+        Assert.Equal(new Vector2(160, 140), frames.World.ReadComponentData<ScrollOffset>(scroll).Max);
 
         Pointer.Move(frames.World, frames.Canvas, new Vector2(40, 30));
         Pointer.Wheel(frames.World, frames.Canvas, new Vector2(30, 50));
         frames.Frame();
 
-        Assert.Equal(new Vector2(30, 50), frames.World.Read<ScrollOffset>(scroll).Value);
-        Assert.Equal(new Rect(0, -30, 240, 180), frames.World.Read<LayoutRect>(content).Value);
-        frames.World.Replace(root, new ScrollScene(1));
+        Assert.Equal(new Vector2(30, 50), frames.World.ReadComponentData<ScrollOffset>(scroll).Value);
+        Assert.Equal(new Rect(0, -30, 240, 180), frames.World.ReadComponentData<LayoutRect>(content).Value);
+        frames.World.Set(root, new ScrollScene(1));
         frames.Frame();
-        Assert.Equal(content, Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, scroll)));
-        Assert.Equal(new Vector2(30, 50), frames.World.Read<ScrollOffset>(scroll).Value);
+        Assert.Equal(content, Assert.Single(ElementChildren.Read(frames.World, scroll)));
+        Assert.Equal(new Vector2(30, 50), frames.World.ReadComponentData<ScrollOffset>(scroll).Value);
     }
 
     private readonly record struct ScrollScene(int Revision) : IView, IComponent

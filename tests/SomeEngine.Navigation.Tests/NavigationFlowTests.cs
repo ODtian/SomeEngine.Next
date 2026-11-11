@@ -36,7 +36,7 @@ public sealed class NavigationFlowTests
     public void SurfaceGridFollowersShareOneFieldAndReachItsGoalFromDifferentLayers()
     {
         using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 3, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using World world = new World(execution: new WorldJobs(scheduler));
         var profile = new NavigationProfile([new Vector2(-0.1f), new(0.1f, -0.1f), new(0.1f), new(-0.1f, 0.1f)],
             0.8f, maximumStepHeight: 1.1f, maximumSpeed: 2);
         NavigationGrid grid = NavigationGridBuilder.Schedule(LayeredSurface(), profile,
@@ -45,8 +45,8 @@ public sealed class NavigationFlowTests
         var flow = new NavigationFlow(costs, profile, [new(new(3.5f, 1, 0.5f), 0.2f)]);
         new NavigationFlowSystem<ReverseDijkstraFlow, ReverseDijkstraFlowState>(flow, scheduler).Schedule().Complete();
         var navigation = new NavigationSystems<TestMotion, TestMotionReader>(world);
-        Entity lower = world.CreateEntity(new TestMotion { Position = new(0.5f, 0, 0.5f) });
-        Entity upper = world.CreateEntity(new TestMotion { Position = new(0.5f, 3, 1.5f) });
+        Entity lower = world.Create(new TestMotion { Position = new(0.5f, 0, 0.5f) });
+        Entity upper = world.Create(new TestMotion { Position = new(0.5f, 3, 1.5f) });
         world.Add(lower, new TestActionMotion());
         world.Add(upper, new TestActionMotion());
         navigation.AddFlowAgent(lower, flow, desiredSpeed: 2);
@@ -57,15 +57,15 @@ public sealed class NavigationFlowTests
             NavigationFlowStep scheduled = navigation.Schedule(0.1f);
             JobHandle moved = new ConsumeActionOrSteering(0.1f).ScheduleParallel(world, scheduled.Steering);
             navigation.ScheduleProgress(moved).Complete();
-            if (world.Read<NavigationProgress>(lower).Status == NavigationStatus.Arrived &&
-                world.Read<NavigationProgress>(upper).Status == NavigationStatus.Arrived)
+            if (world.ReadValue<NavigationProgress>(lower).Status == NavigationStatus.Arrived &&
+                world.ReadValue<NavigationProgress>(upper).Status == NavigationStatus.Arrived)
                 break;
         }
 
-        Assert.Same(world.Read<FlowFollower>(lower).Flow, world.Read<FlowFollower>(upper).Flow);
-        Assert.Equal(NavigationStatus.Arrived, world.Read<NavigationProgress>(lower).Status);
-        Assert.Equal(NavigationStatus.Arrived, world.Read<NavigationProgress>(upper).Status);
-        Assert.Equal(4, world.Read<TestActionMotion>(upper).Action);
+        Assert.Same(world.ReadValue<FlowFollower>(lower).Flow, world.ReadValue<FlowFollower>(upper).Flow);
+        Assert.Equal(NavigationStatus.Arrived, world.ReadValue<NavigationProgress>(lower).Status);
+        Assert.Equal(NavigationStatus.Arrived, world.ReadValue<NavigationProgress>(upper).Status);
+        Assert.Equal(4, world.ReadValue<TestActionMotion>(upper).Action);
     }
 
     [Fact]
@@ -91,7 +91,7 @@ public sealed class NavigationFlowTests
     public void ReplacingSharedGoalsRedirectsAnExistingFollower()
     {
         using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using World world = new World(execution: new WorldJobs(scheduler));
         var profile = new NavigationProfile([new Vector2(-0.1f), new(0.1f, -0.1f), new(0.1f), new(-0.1f, 0.1f)], 1);
         NavigationCosts costs = NavigationCostSystem.Schedule(DirectedGrid(), new NavigationPolicy(), scheduler: scheduler).Complete().Costs;
         var flow = new NavigationFlow(costs, profile, [new(new(2.5f, 2, 0.5f))]);
@@ -99,19 +99,19 @@ public sealed class NavigationFlowTests
         solver.Schedule().Complete();
         var navigation = new NavigationSystems<TestMotion, TestMotionReader>(world);
         Vector3 start = new(0.5f, 0, 0.5f);
-        Entity entity = world.CreateEntity(new TestMotion { Position = start });
+        Entity entity = world.Create(new TestMotion { Position = start });
         navigation.AddFlowAgent(entity, flow, 2);
         JobHandle moved = new ConsumeSteering(0.1f).ScheduleParallel(world, navigation.Schedule(0.1f).Steering);
         navigation.ScheduleProgress(moved).Complete();
-        float distanceBefore = Vector3.Distance(start, world.Read<TestMotion>(entity).Position);
+        float distanceBefore = Vector3.Distance(start, world.ReadValue<TestMotion>(entity).Position);
 
         flow.SetGoals([new(start, 0.01f)]);
         JobHandle changed = solver.Schedule().Completion;
         moved = new ConsumeSteering(0.1f).ScheduleParallel(world, navigation.Schedule(0.1f, changed).Steering);
         navigation.ScheduleProgress(moved).Complete();
 
-        Assert.True(Vector3.Distance(start, world.Read<TestMotion>(entity).Position) < distanceBefore);
-        Assert.Equal(2UL, world.Read<NavigationGuidance>(entity).RequestVersion);
+        Assert.True(Vector3.Distance(start, world.ReadValue<TestMotion>(entity).Position) < distanceBefore);
+        Assert.Equal(2UL, world.ReadValue<NavigationGuidance>(entity).RequestVersion);
     }
 
     // These two support layers and stair heights are an example supplied through the public surface model.

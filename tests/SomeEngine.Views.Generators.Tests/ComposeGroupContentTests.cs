@@ -23,18 +23,18 @@ public sealed class ComposeGroupContentTests
                     State<int>[] values = [new(10), new(20)];
                     Entity root = Views.Spawn(frames.World, Entity.Null, new Composition.Screen_View(values));
                     frames.Frame();
-                    Entity[] content = Hierarchy<ElementTree>.GetChildren(frames.World, root).ToArray();
+                    Entity[] content = ElementChildren.Read(frames.World, root).ToArray();
                     if (content.Length != 2 || content.Any(child =>
-                        Hierarchy<ElementTree>.GetChildren(frames.World, child).Count != 1))
+                        ElementChildren.Read(frames.World, child).Length != 1))
                         return false;
                     Entity[] labels = content.Select(child =>
-                        Hierarchy<ElementTree>.GetChildren(frames.World, child).Single()).ToArray();
+                        ElementChildren.Read(frames.World, child).Single()).ToArray();
                     values[0].Value = 11;
                     frames.Frame();
-                    return content.SequenceEqual(Hierarchy<ElementTree>.GetChildren(frames.World, root)) &&
-                        frames.World.ReadSparse<Label>(labels[0]).Value == 11 &&
-                        frames.World.ReadSparse<Label>(labels[1]).Value == 20 &&
-                        frames.World.ReadSparse<DisplayedCount>(root).Value == 3 &&
+                    return content.SequenceEqual(ElementChildren.Read(frames.World, root)) &&
+                        frames.World.ReadComponentData<Label>(labels[0]).Value == 11 &&
+                        frames.World.ReadComponentData<Label>(labels[1]).Value == 20 &&
+                        frames.World.ReadComponentData<DisplayedCount>(root).Value == 3 &&
                         !frames.World.HasSparse<BuildError>(root);
                 }
             }
@@ -84,24 +84,24 @@ public sealed class ComposeGroupContentTests
                     using var frames = new HeadlessFrameDriver();
                     Entity root = Views.Spawn(frames.World, Entity.Null, new Composition.Screen_View(true));
                     frames.Frame();
-                    Entity[] panels = Hierarchy<ElementTree>.GetChildren(frames.World, root).ToArray();
-                    Entity first = Hierarchy<ElementTree>.GetChildren(frames.World, panels[0]).Single();
-                    Entity second = Hierarchy<ElementTree>.GetChildren(frames.World, panels[1]).Single();
-                    frames.World.ReadSparse<Label>(first).Change(11);
-                    frames.World.ReadSparse<Label>(second).Change(22);
+                    Entity[] panels = ElementChildren.Read(frames.World, root).ToArray();
+                    Entity first = ElementChildren.Read(frames.World, panels[0]).Single();
+                    Entity second = ElementChildren.Read(frames.World, panels[1]).Single();
+                    frames.World.ReadComponentData<Label>(first).Change(11);
+                    frames.World.ReadComponentData<Label>(second).Change(22);
                     frames.Frame();
-                    frames.World.ReplaceSparse(root, new Composition.Screen_View(false));
+                    frames.World.SetSparse(root, new Composition.Screen_View(false));
                     frames.Frame();
-                    if (Hierarchy<ElementTree>.GetChildren(frames.World, root).Single() != panels[1] ||
-                        Hierarchy<ElementTree>.GetChildren(frames.World, panels[1]).Single() != second ||
-                        frames.World.ReadSparse<Label>(second).Value != 22)
+                    if (ElementChildren.Read(frames.World, root).Single() != panels[1] ||
+                        ElementChildren.Read(frames.World, panels[1]).Single() != second ||
+                        frames.World.ReadComponentData<Label>(second).Value != 22)
                         return false;
-                    frames.World.ReplaceSparse(root, new Composition.Screen_View(true));
+                    frames.World.SetSparse(root, new Composition.Screen_View(true));
                     frames.Frame();
-                    panels = Hierarchy<ElementTree>.GetChildren(frames.World, root).ToArray();
-                    first = Hierarchy<ElementTree>.GetChildren(frames.World, panels[0]).Single();
-                    return frames.World.ReadSparse<Label>(first).Value == 11 &&
-                        frames.World.ReadSparse<Label>(second).Value == 22 &&
+                    panels = ElementChildren.Read(frames.World, root).ToArray();
+                    first = ElementChildren.Read(frames.World, panels[0]).Single();
+                    return frames.World.ReadComponentData<Label>(first).Value == 11 &&
+                        frames.World.ReadComponentData<Label>(second).Value == 22 &&
                         !frames.World.HasSparse<BuildError>(root);
                 }
             }

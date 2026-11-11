@@ -14,7 +14,7 @@ internal static partial class TextEditingChecks
         using var frames = new FocusFrames();
         Entity root = Views.Views.Spawn(frames.World, frames.Canvas, new TwoEditors(rewritten));
         frames.Frame();
-        EditorNodes nodes = frames.World.Read<EditorNodes>(root);
+        EditorNodes nodes = frames.World.ReadComponentData<EditorNodes>(root);
         Keyboard.Text(frames.World, "early");
         Gamepad.Navigate(frames.World, Direction.Down);
         Keyboard.Text(frames.World, "first");
@@ -26,8 +26,8 @@ internal static partial class TextEditingChecks
         Keyboard.Text(frames.World, "1");
         frames.Frame();
 
-        EditableText first = frames.World.Read<EditableText>(nodes.First);
-        EditableText second = frames.World.Read<EditableText>(nodes.Second);
+        EditableText first = frames.World.ReadComponentData<EditableText>(nodes.First);
+        EditableText second = frames.World.ReadComponentData<EditableText>(nodes.Second);
         Require(first.Text == "first1" && second.Text == "second" &&
             string.IsNullOrEmpty(first.Composition) && string.IsNullOrEmpty(second.Composition) &&
             first.CompositionCaret == 0 && second.CompositionCaret == 0 &&

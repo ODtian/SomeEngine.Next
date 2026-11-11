@@ -6,7 +6,7 @@ using SomeEngine.ECS.Components;
 namespace SomeEngine.Animation;
 
 /// <summary>Ordered layer definitions on the entity whose fields are animated.</summary>
-public struct AnimationLayers : IComponent
+public struct AnimationLayers : ITrackedComponent
 {
     public LayerArray Items;
     public byte Count;
@@ -46,10 +46,9 @@ public readonly struct LayerMask
 }
 
 /// <summary>A field selected by an animation layer mask.</summary>
-[BufferCapacity(8)]
-public struct LayerChannel : IBufferElement
+public struct LayerChannel : IBufferElement, ITrackedComponent
 {
-    public ushort Component;
+    public int Component;
     public ushort Offset;
     public uint Field;
 

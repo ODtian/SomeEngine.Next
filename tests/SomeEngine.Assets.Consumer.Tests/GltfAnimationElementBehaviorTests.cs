@@ -11,7 +11,7 @@ using SomeEngine.Assets.Schema;
 using SomeEngine.Core.ECS.Components;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
+using SomeEngine.ECS.Serialization;
 using SomeEngine.Render;
 using SomeEngine.Render.Components;
 using SomeEngine.Serialization;
@@ -121,18 +121,25 @@ public sealed class GltfAnimationElementBehaviorTests
         Guid secondSkin = Entries(project, SkeletonAsset.FileType).Single(entry => entry.SubAssetKey == "skin:id:rig-B").AssetGuid;
         Guid mesh = Entries(project, MeshAsset.FileType).Single(entry => entry.SubAssetKey == "mesh:id:mesh-A").AssetGuid;
         Guid staticMesh = Entries(project, MeshAsset.FileType).Single(entry => entry.SubAssetKey == "mesh:id:mesh-B").AssetGuid;
-        Assert.Equal(new[] { mesh, staticMesh, firstSkin, secondSkin }.Order(), asset.ExternalReferences.Select(id => id.Value).Order());
-        Assert.Equal(asset.ExternalReferences.Select(id => id.Value).Order(), scene.Dependencies.Order());
-        using World world = await asset.LoadAsync(SceneSerialization.CreateRegistry());
+        WorldContent content = Assert.Single(asset.GetBlock<WorldBlock>().Contents);
+        AssetEntry group = project.Manifest.Assets[content.Asset.Value];
+        using EntityAsset entityAsset = await EntityAsset.OpenAsync(Path.Combine(files.Directory, group.Path));
+        EntityBlock block = await entityAsset.GetBlockAsync<EntityBlock>();
+        Assert.Equal(new[] { mesh, staticMesh, firstSkin, secondSkin }.Order(), block.ExternalReferences.Select(id => id.Value).Order());
+        Assert.Equal(block.ExternalReferences.Select(id => id.Value).Order(), group.Dependencies.Order());
+        Assert.Equal([group.AssetGuid], scene.Dependencies);
+        using var world = new World();
+        WorldSerializer.ReadEntities(await block.ReadBytesAsync(EntityBlock.ContentKey), world,
+            new(Codecs: SceneSerialization.Codecs));
         Entity[] entities = MeshEntities(world);
         Assert.Equal(4, entities.Length);
         Entity[] skinned = entities.Where(entity => world.Has<SkeletonSource>(entity)).ToArray();
         Assert.Equal(3, skinned.Length);
-        Assert.All(skinned, entity => Assert.Equal(mesh, world.Read<MeshSource>(entity).Mesh.Value));
-        Assert.Equal(2, skinned.Count(entity => world.Read<SkeletonSource>(entity).Skeleton.Value == firstSkin));
-        Assert.Single(skinned, entity => world.Read<SkeletonSource>(entity).Skeleton.Value == secondSkin);
-        Entity first = entities.Single(entity => world.Read<WorldTransform>(entity).Qvvs.Position == new Vector3(1, 2, 3));
-        Assert.Equal(firstSkin, world.Read<SkeletonSource>(first).Skeleton.Value);
+        Assert.All(skinned, entity => Assert.Equal(mesh, world.ReadComponentData<MeshSource>(entity).Mesh.Value));
+        Assert.Equal(2, skinned.Count(entity => world.ReadComponentData<SkeletonSource>(entity).Skeleton.Value == firstSkin));
+        Assert.Single(skinned, entity => world.ReadComponentData<SkeletonSource>(entity).Skeleton.Value == secondSkin);
+        Entity first = entities.Single(entity => world.ReadComponentData<WorldTransform>(entity).Qvvs.Position == new Vector3(1, 2, 3));
+        Assert.Equal(firstSkin, world.ReadComponentData<SkeletonSource>(first).Skeleton.Value);
     }
 
     [Theory]
@@ -153,7 +160,13 @@ public sealed class GltfAnimationElementBehaviorTests
         Assert.Equal(animations ? 2 : 0, Directory.GetFiles(files.Directory, "*" + AnimationClipAsset.PathSuffix).Length);
         AssetEntry scene = Assert.Single(Entries(project, WorldAsset.FileType));
         using WorldAsset asset = await WorldAsset.OpenAsync(Path.Combine(files.Directory, scene.Path));
-        using World world = await asset.LoadAsync(SceneSerialization.CreateRegistry());
+        WorldContent content = Assert.Single(asset.GetBlock<WorldBlock>().Contents);
+        AssetEntry group = project.Manifest.Assets[content.Asset.Value];
+        using EntityAsset entityAsset = await EntityAsset.OpenAsync(Path.Combine(files.Directory, group.Path));
+        EntityBlock block = await entityAsset.GetBlockAsync<EntityBlock>();
+        using var world = new World();
+        WorldSerializer.ReadEntities(await block.ReadBytesAsync(EntityBlock.ContentKey), world,
+            new(Codecs: SceneSerialization.Codecs));
         Assert.Equal(skins ? 3 : 0, MeshEntities(world).Count(entity => world.Has<SkeletonSource>(entity)));
     }
 
@@ -205,15 +218,10 @@ public sealed class GltfAnimationElementBehaviorTests
     private static Entity[] MeshEntities(World world)
     {
         var entities = new List<Entity>();
-        QueryHandle query = world.Query(new QueryDefinitionBuilder().Read<MeshSource>());
-        try
-        {
-            world.ExecuteQuery(query, ref entities, static (QueryCursor rows, ref List<Entity> values) =>
-            {
-                foreach (var row in rows.Rows) values.Add(row.Entity);
-            });
-        }
-        finally { world.ReleaseQuery(query); }
+        Query query = world.Query(new QueryDescription().WithStored<MeshSource>());
+        using QueryScope rows = query.OpenRead();
+        foreach (QueryChunk chunk in rows)
+            foreach (Entity entity in chunk.Entities) entities.Add(entity);
         return entities.ToArray();
     }
 
@@ -331,7 +339,7 @@ public sealed class AnimationElementImporter : IAssetImporter<GltfAnimation, Ele
     }
 }
 
-[AssetImporter("963b35fa-1831-45f7-9d80-83f826c132a8", typeof(WorldBlock), SettingsProvider = typeof(GltfSceneSettingsProvider))]
+[AssetImporter("963b35fa-1831-45f7-9d80-83f826c132a8", typeof(EntityBlock), SettingsProvider = typeof(GltfSceneSettingsProvider))]
 public sealed class ElementSceneImporter : GltfSceneImporter
 {
     public static readonly Guid Id = new("963b35fa-1831-45f7-9d80-83f826c132a8");

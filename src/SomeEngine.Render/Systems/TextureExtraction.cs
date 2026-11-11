@@ -1,5 +1,5 @@
+using SomeEngine.ECS;
 using System.Collections.Immutable;
-using SomeEngine.ECS.Queries;
 using SomeEngine.Render.Components;
 using SomeEngine.Resources;
 
@@ -24,10 +24,10 @@ public sealed class RenderExtractionResources
 
 internal static class TextureExtraction
 {
-    internal static RenderExtractionResources Collect(scoped QueryCursor query)
+    internal static RenderExtractionResources Collect(scoped QueryScope query)
     {
         var resources = new RenderExtractionResources();
-        foreach (QueryChunkView chunk in query.Chunks)
+        foreach (QueryChunk chunk in query)
         {
             if (chunk.TryRead<LightCookie>(out ReadOnlySpan<LightCookie> cookies))
                 foreach (LightCookie cookie in cookies)

@@ -23,7 +23,7 @@ internal static class ManagedComponentChecks
     internal static void TableReferencesRemainReadableAfterCollection()
     {
         using var world = new World();
-        Entity entity = world.CreateEntity();
+        Entity entity = world.Create();
         ReferenceObservers references = AddTableReferences(world, entity);
 
         Collect();
@@ -34,7 +34,7 @@ internal static class ManagedComponentChecks
     internal static void SparseReferencesRemainReadableAfterCollection()
     {
         using var world = new World();
-        Entity entity = world.CreateEntity();
+        Entity entity = world.Create();
         ReferenceObservers references = AddSparseReferences(world, entity);
 
         Collect();
@@ -45,7 +45,7 @@ internal static class ManagedComponentChecks
     internal static void ReferenceFieldsCanBeWrittenThroughTraversal(bool sparse)
     {
         using var world = new World();
-        Entity entity = world.CreateEntity();
+        Entity entity = world.Create();
         ReferenceObservers previous = AddReferences(world, entity, sparse);
         Collect();
 
@@ -62,7 +62,7 @@ internal static class ManagedComponentChecks
     internal static void ReplacingReferencesReleasesPreviousValues(bool sparse)
     {
         using var world = new World();
-        Entity entity = world.CreateEntity();
+        Entity entity = world.Create();
         ReferenceObservers previous = AddReferences(world, entity, sparse);
         Collect();
 
@@ -78,14 +78,14 @@ internal static class ManagedComponentChecks
     internal static void EntityCopiesRetainReferencesAndCanChangeIndependently(bool sparse)
     {
         using var world = new World();
-        Entity source = world.CreateEntity();
+        Entity source = world.Create();
         ReferenceObservers original = AddReferences(world, source, sparse);
-        Entity target = world.CreateEntity();
+        Entity target = world.Create();
         ReferenceObservers previousTarget = AddReferences(world, target, sparse);
 
-        Entity clone = world.CloneEntity(source);
-        world.CopyEntity(source, target);
-        world.DestroyEntity(source);
+        Entity clone = world.Clone(source);
+        world.Copy(source, target);
+        world.Destroy(source);
         Collect();
 
         CheckStoredReferences(world, clone, sparse, original);
@@ -97,7 +97,7 @@ internal static class ManagedComponentChecks
         CheckStoredReferences(world, clone, sparse, changed);
         CheckStoredReferences(world, target, sparse, original);
 
-        world.DestroyEntity(target);
+        world.Destroy(target);
         Collect();
         CheckReleased(original);
         CheckStoredReferences(world, clone, sparse, changed);
@@ -106,9 +106,9 @@ internal static class ManagedComponentChecks
     internal static void RemovingReferencesReleasesValuesAfterRemovalFactsAreCleared(bool sparse)
     {
         using var world = new World();
-        Entity removed = world.CreateEntity();
-        ReferenceObservers released = AddReferences(world, removed, sparse);
-        Entity survivor = world.CreateEntity();
+        Entity removed = world.Create();
+        ReferenceObservers released = sparse ? AddSparseReferences(world, removed) : AddRemovedTableReferences(world, removed);
+        Entity survivor = world.Create();
         ReferenceObservers retained = AddReferences(world, survivor, sparse);
 
         if (sparse)
@@ -118,12 +118,12 @@ internal static class ManagedComponentChecks
         }
         else
         {
-            world.Remove<TableReferences>(removed);
-            Require(!world.Has<TableReferences>(removed), "Removed table component is still present.");
+            world.Remove<RemovedTableReferences>(removed);
+            Require(!world.Has<RemovedTableReferences>(removed), "Removed table component is still present.");
             Collect();
             CheckTableRemoval(world, removed, released);
             ClearTableRemoval(world, removed);
-            Require(!world.Has<Removed<TableReferences>>(removed), "Cleared removal fact is still present.");
+            Require(!world.Has<Removed<RemovedTableReferences>>(removed), "Cleared removal fact is still present.");
         }
 
         Collect();
@@ -139,7 +139,7 @@ internal static class ManagedComponentChecks
         var references = new ReferenceObservers[entities.Length];
         for (int i = 0; i < entities.Length; i++)
         {
-            entities[i] = world.CreateEntity();
+            entities[i] = world.Create();
             references[i] = AddReferences(world, entities[i], sparse);
         }
 
@@ -158,13 +158,13 @@ internal static class ManagedComponentChecks
 
     [MethodImpl(MethodImplOptions.NoInlining)]
     private static void CheckTableRemoval(World world, Entity entity, ReferenceObservers references) =>
-        CheckReferences(world.Read<Removed<TableReferences>>(entity).Value, references);
+        CheckReferences(world.Read<Removed<RemovedTableReferences>>(entity).Value, references);
 
     [MethodImpl(MethodImplOptions.NoInlining)]
     private static void ClearTableRemoval(World world, Entity entity)
     {
-        uint version = world.Read<Removed<TableReferences>>(entity).Version;
-        world.ClearRemoved<TableReferences>(version);
+        ulong version = world.Read<Removed<RemovedTableReferences>>(entity).Version;
+        world.ClearRemoved<RemovedTableReferences>(version);
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
@@ -172,9 +172,9 @@ internal static class ManagedComponentChecks
     {
         TableReferences value = CreateTableReferences();
         if (sparse)
-            world.ReplaceSparse(entity, new SparseReferences(value.Text, value.Callback, value.Data));
+            world.SetSparse(entity, new SparseReferences(value.Text, value.Callback, value.Data));
         else
-            world.Replace(entity, value);
+            world.Set(entity, value);
 
         return new(value.Text, value.Callback, value.Data);
     }
@@ -188,29 +188,38 @@ internal static class ManagedComponentChecks
         TableReferences value = CreateTableReferences();
         if (sparse)
         {
-            world.ExecuteSparseWrite<SparseReferences>((_, values) =>
             {
+            var sparseScope = world.OpenSparseWrite<SparseReferences>();
+            try
+            {
+                Span<SparseReferences> values = sparseScope.Values;
+
                 foreach (ref SparseReferences destination in values)
                 {
                     destination.Text = value.Text;
                     destination.Callback = value.Callback;
                     destination.Data = value.Data;
                 }
-            });
+
+            }
+            finally { sparseScope.Dispose(); }
+        };
         }
         else
         {
-            var query = world.Query(world.QueryDefinition().ReadWrite<TableReferences>());
-            world.ExecuteQuery(query, rows =>
+            var query = world.Query(new QueryDescription().WithStored<TableReferences>());
             {
-                foreach (var row in rows.Rows)
+            using QueryScope rows = (query).Open();
+                foreach (QueryChunk rowChunk in rows)
+                for (int row = 0; row < rowChunk.Count; row++)
                 {
-                    ref TableReferences destination = ref row.ReadWrite<TableReferences>();
+                    ref TableReferences destination = ref rowChunk.Write<TableReferences>(row);
                     destination.Text = value.Text;
                     destination.Callback = value.Callback;
                     destination.Data = value.Data;
                 }
-            });
+
+        };
         }
 
         return new(value.Text, value.Callback, value.Data);
@@ -229,24 +238,34 @@ internal static class ManagedComponentChecks
     {
         if (sparse)
         {
-            world.ExecuteSparseRead<SparseReferences>((entities, values) =>
             {
+            var sparseScope = world.OpenSparseRead<SparseReferences>();
+            try
+            {
+                ReadOnlySpan<Entity> entities = sparseScope.Entities;
+ReadOnlySpan<SparseReferences> values = sparseScope.Values;
+
                 Require(entities.SequenceEqual(new[] { entity }), "Sparse traversal returned different entities.");
                 CheckReferences(values[0], references);
-            });
+
+            }
+            finally { sparseScope.Dispose(); }
+        };
         }
         else
         {
             var observed = new List<Entity>();
-            var query = world.Query(world.QueryDefinition().Read<TableReferences>());
-            world.ExecuteQuery(query, rows =>
+            var query = world.Query(new QueryDescription().WithStored<TableReferences>());
             {
-                foreach (var row in rows.Rows)
+            using QueryScope rows = (query).OpenRead();
+                foreach (QueryChunk rowChunk in rows)
+                for (int row = 0; row < rowChunk.Count; row++)
                 {
-                    observed.Add(row.Entity);
-                    CheckReferences(row.Read<TableReferences>(), references);
+                    observed.Add(rowChunk.Entities[row]);
+                    CheckReferences(rowChunk.Read<TableReferences>()[row], references);
                 }
-            });
+
+        };
             Require(observed.SequenceEqual(new[] { entity }), "Table traversal returned different entities.");
         }
     }
@@ -268,11 +287,19 @@ internal static class ManagedComponentChecks
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
+    private static ReferenceObservers AddRemovedTableReferences(World world, Entity entity)
+    {
+        TableReferences value = CreateTableReferences();
+        world.Add(entity, new RemovedTableReferences(value.Text, value.Callback, value.Data));
+        return new(value.Text, value.Callback, value.Data);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
     private static ReferenceObservers AddSparseReferences(World world, Entity entity)
     {
         TableReferences fields = CreateTableReferences();
         var value = new SparseReferences(fields.Text, fields.Callback, fields.Data);
-        world.AddSparse(entity, value);
+        world.SetSparse(entity, value);
         return new(value.Text, value.Callback, value.Data);
     }
 
@@ -297,6 +324,10 @@ internal static class ManagedComponentChecks
     private static void CheckReferences(SparseReferences value, ReferenceObservers references) =>
         CheckReferences(new TableReferences(value.Text, value.Callback, value.Data), references);
 
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static void CheckReferences(RemovedTableReferences value, ReferenceObservers references)
+        => CheckReferences(new TableReferences(value.Text, value.Callback, value.Data), references);
+
     private static void Collect()
     {
         GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true, compacting: true);
@@ -313,11 +344,13 @@ internal static class ManagedComponentChecks
             throw new InvalidOperationException(message);
     }
 
-    private record struct TableReferences(string Text, Func<int> Callback, ReferenceData Data) : IComponent;
+    private record struct TableReferences(string Text, Func<int> Callback, ReferenceData Data) : IAddedComponent;
+
+    private record struct RemovedTableReferences(string Text, Func<int> Callback, ReferenceData Data) : IAddedComponent, IRemovedComponent;
 
     private record struct SparseReferences(string Text, Func<int> Callback, ReferenceData Data) : ISparseComponent;
 
-    private readonly record struct Number(int Value) : IComponent;
+    private readonly record struct Number(int Value) : IAddedComponent;
 
     private sealed class ReferenceData(int value)
     {

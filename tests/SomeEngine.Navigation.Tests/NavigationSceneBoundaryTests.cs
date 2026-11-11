@@ -11,7 +11,7 @@ public sealed class NavigationSceneBoundaryTests
     public void AvoidanceFollowsPlacedTileWallsAndPassesTheirConnectedRegionBoundary()
     {
         using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2 });
-        using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using World world = new World(execution: new WorldJobs(scheduler));
         var profile = new NavigationProfile([new(-0.1f, -0.1f), new(0.1f, -0.1f), new(0.1f, 0.1f), new(-0.1f, 0.1f)],
             1, maximumSpeed: 1.5f);
         var policy = new NavigationPolicy();
@@ -28,7 +28,7 @@ public sealed class NavigationSceneBoundaryTests
         NavigationScene scene = NavigationSceneBuilder.Schedule(
             [new(10, region, Matrix4x4.Identity), new(20, region, Matrix4x4.CreateTranslation(8, 0, 0))],
             [new(90, 10, 2, 20, 1)], profile, policy, scheduler: scheduler).Complete().Scene;
-        var entity = world.CreateEntity(new Motion(new(1, 0, 0.3f), default, 0));
+        var entity = world.Create(new Motion(new(1, 0, 0.3f), default, 0));
         world.Add(entity, new NavigationAgent(profile, policy, 1));
         world.Add(entity, new PathNavigation<NavigationScene>(scene));
         world.Add(entity, new NavigationGuidance(new(1, 0, -0.3f), 0, 1, true));
@@ -39,11 +39,11 @@ public sealed class NavigationSceneBoundaryTests
         for (int frame = 0; frame < 160; frame++)
         {
             avoidance.Schedule(0.1f, default, neighbors.Schedule(), avoidance.SchedulePathBoundaries<NavigationScene>()).Complete();
-            Motion motion = world.Read<Motion>(entity);
-            NavigationSteering steering = world.Read<NavigationSteering>(entity);
-            world.Replace(entity, new Motion(motion.Position + steering.Velocity * 0.1f, steering.Velocity, steering.Heading));
+            Motion motion = world.ReadValue<Motion>(entity);
+            NavigationSteering steering = world.ReadValue<NavigationSteering>(entity);
+            world.Set(entity, new Motion(motion.Position + steering.Velocity * 0.1f, steering.Velocity, steering.Heading));
         }
-        Vector3 position = world.Read<Motion>(entity).Position;
+        Vector3 position = world.ReadValue<Motion>(entity).Position;
         Assert.InRange(position.X, 14f, 15.86f);
         Assert.InRange(position.Z, 0.149f, 0.16f);
     }

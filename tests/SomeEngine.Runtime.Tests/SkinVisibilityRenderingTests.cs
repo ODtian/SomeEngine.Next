@@ -151,24 +151,24 @@ public sealed partial class SkinningRenderingTests
         var binding = new SkinBinding([Matrix4x4.Identity, Matrix4x4.Identity], [0, 1]);
         foreach (Entity entity in frame.Scene.MeshEntities)
         {
-            WorldTransform transform = frame.World.Read<WorldTransform>(entity);
+            WorldTransform transform = frame.World.ReadComponentData<WorldTransform>(entity);
             if (transform.Qvvs.Position.Z == 6)
             {
                 actor = entity;
-                frame.World.Add(entity, new MeshSkin(actorPose, binding));
+                frame.World.Set(entity, new MeshSkin(actorPose, binding));
             }
             else
             {
-                frame.World.Add(entity, new MeshSkin(backgroundPose, binding));
+                frame.World.Set(entity, new MeshSkin(backgroundPose, binding));
                 transform.Qvvs.Scale = backgroundScale;
-                frame.World.Replace(entity, transform);
+                frame.World.Set(entity, transform);
             }
         }
         return actor;
     }
 
     private static void PlacePanel(World world, Entity actor, BoneTransform transform) =>
-        world.Replace(actor, new WorldTransform
+        world.Set(actor, new WorldTransform
         {
             Qvvs = new(new Vector3(0, 0, 6) + transform.Translation, transform.Rotation) { Stretch = transform.Scale },
         });
@@ -214,16 +214,14 @@ public sealed partial class SkinningRenderingTests
             using var world = new World();
             foreach (Vector3 position in new Vector3[] { new(0, 0, 6), new(0, 0, 8) })
             {
-                Entity entity = world.CreateEntity(new WorldTransform { Qvvs = new(position, Quaternion.Identity) });
-                world.Add(entity, new MeshSource { Mesh = new(position.Z == 6 ? mesh.Id : receiver.Id) });
+                Entity entity = world.Create(new WorldTransform { Qvvs = new(position, Quaternion.Identity) });
+                world.Set(entity, new MeshSource { Mesh = new(position.Z == 6 ? mesh.Id : receiver.Id) });
             }
-            world.CreateEntity(new SceneCamera { Position = Vector3.Zero, Target = Vector3.UnitZ, Up = Vector3.UnitY,
+            world.Create(new SceneCamera { Position = Vector3.Zero, Target = Vector3.UnitZ, Up = Vector3.UnitY,
                 VerticalFieldOfView = 1.1f, NearPlane = .1f, FarPlane = 100 });
-            world.CreateEntity(new DirectionalLight(new(.6f, .2f, 1), Vector3.One, 3));
+            world.Create(new DirectionalLight(new(.6f, .2f, 1), Vector3.One, 3));
             AssetEntry entry = Project.Manifest.List(WorldAsset.FileType).Single(item => item.Name == "Default");
-            using var scene = new WorldAsset(entry.AssetGuid) { Name = "Default" };
-            scene.WriteWorld(world, SceneSerialization.CreateRegistry());
-            Project.RegisterAsset(await scene.SaveAsync(Path.Combine(Project.RootPath, entry.Path)));
+            await SceneEntityFiles.SaveAsync(Project, world, entry);
         }
     }
 }

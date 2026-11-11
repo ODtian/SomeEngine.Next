@@ -16,12 +16,12 @@ public sealed partial class ParameterBuildTests
 
         frames.Frame();
 
-        Assert.Equal(child, Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root)));
-        Assert.Equal("7", frames.World.Read<DisplayedValues>(child).Text);
-        Assert.Equal("7", frames.World.Read<DisplayedValues>(root).Text);
-        uint displayVersion = frames.World.WriteVersion<DisplayedValues>(child);
+        Assert.Equal(child, Assert.Single(ElementChildren.Read(frames.World, root)));
+        Assert.Equal("7", frames.World.ReadComponentData<DisplayedValues>(child).Text);
+        Assert.Equal("7", frames.World.ReadComponentData<DisplayedValues>(root).Text);
+        ulong displayVersion = frames.World.ComponentDataWriteVersion<DisplayedValues>(child);
         frames.Frame();
-        Assert.Equal(displayVersion, frames.World.WriteVersion<DisplayedValues>(child));
+        Assert.Equal(displayVersion, frames.World.ComponentDataWriteVersion<DisplayedValues>(child));
     }
 
     [Theory]
@@ -35,18 +35,18 @@ public sealed partial class ParameterBuildTests
             : Views.Spawn(frames.World, Entity.Null, new Display(3));
         frames.Frame();
         if (sparse)
-            frames.World.ReplaceSparse(root, new SparseDisplay(7));
+            frames.World.SetSparse(root, new SparseDisplay(7));
         else
-            frames.World.Replace(root, new Display(7));
+            frames.World.Set(root, new Display(7));
 
-        Assert.Equal(3, frames.World.Read<DisplayValue>(root).Value);
+        Assert.Equal(3, frames.World.ReadComponentData<DisplayValue>(root).Value);
         frames.Frame();
-        Assert.Equal(7, frames.World.Read<DisplayValue>(root).Value);
-        uint displayVersion = frames.World.WriteVersion<DisplayValue>(root);
+        Assert.Equal(7, frames.World.ReadComponentData<DisplayValue>(root).Value);
+        ulong displayVersion = frames.World.ComponentDataWriteVersion<DisplayValue>(root);
         frames.Frame();
 
-        Assert.Equal(7, frames.World.Read<DisplayValue>(root).Value);
-        Assert.Equal(displayVersion, frames.World.WriteVersion<DisplayValue>(root));
+        Assert.Equal(7, frames.World.ReadComponentData<DisplayValue>(root).Value);
+        Assert.Equal(displayVersion, frames.World.ComponentDataWriteVersion<DisplayValue>(root));
     }
 
     [Theory]
@@ -57,27 +57,27 @@ public sealed partial class ParameterBuildTests
         using var frames = new HeadlessFrameDriver();
         Entity root = Views.Spawn(frames.World, Entity.Null, new DisplayGroup(3, sparse));
         frames.Frame();
-        Entity child = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        uint parameterVersion = sparse
-            ? frames.World.SparseWriteVersion<SparseDisplay>(child)
-            : frames.World.WriteVersion<Display>(child);
-        uint displayVersion = frames.World.WriteVersion<DisplayValue>(child);
-        uint typeVersion = sparse
-            ? frames.World.ComponentWriteVersion<SparseDisplay>()
-            : frames.World.ComponentWriteVersion<Display>();
+        Entity child = Assert.Single(ElementChildren.Read(frames.World, root));
+        ulong parameterVersion = sparse
+            ? frames.World.ComponentDataWriteVersion<SparseDisplay>(child)
+            : frames.World.ComponentDataWriteVersion<Display>(child);
+        ulong displayVersion = frames.World.ComponentDataWriteVersion<DisplayValue>(child);
+        ulong typeVersion = sparse
+            ? frames.World.ComponentWriteVersion(ComponentId<SparseDisplay>.Value)
+            : frames.World.ComponentWriteVersion(ComponentId<Display>.Value);
 
-        frames.World.Replace(root, new DisplayGroup(3, sparse));
+        frames.World.Set(root, new DisplayGroup(3, sparse));
         frames.Frame();
 
-        Assert.Equal(child, Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root)));
+        Assert.Equal(child, Assert.Single(ElementChildren.Read(frames.World, root)));
         Assert.Equal(parameterVersion, sparse
-            ? frames.World.SparseWriteVersion<SparseDisplay>(child)
-            : frames.World.WriteVersion<Display>(child));
-        Assert.Equal(3, frames.World.Read<DisplayValue>(child).Value);
-        Assert.Equal(displayVersion, frames.World.WriteVersion<DisplayValue>(child));
+            ? frames.World.ComponentDataWriteVersion<SparseDisplay>(child)
+            : frames.World.ComponentDataWriteVersion<Display>(child));
+        Assert.Equal(3, frames.World.ReadComponentData<DisplayValue>(child).Value);
+        Assert.Equal(displayVersion, frames.World.ComponentDataWriteVersion<DisplayValue>(child));
         Assert.Equal(typeVersion, sparse
-            ? frames.World.ComponentWriteVersion<SparseDisplay>()
-            : frames.World.ComponentWriteVersion<Display>());
+            ? frames.World.ComponentWriteVersion(ComponentId<SparseDisplay>.Value)
+            : frames.World.ComponentWriteVersion(ComponentId<Display>.Value));
     }
 
     [Theory]
@@ -88,22 +88,22 @@ public sealed partial class ParameterBuildTests
         using var frames = new HeadlessFrameDriver();
         Entity root = Views.Spawn(frames.World, Entity.Null, new DisplayGroup(3, sparse));
         frames.Frame();
-        Entity child = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        uint parameterVersion = sparse
-            ? frames.World.SparseWriteVersion<SparseDisplay>(child)
-            : frames.World.WriteVersion<Display>(child);
-        frames.World.Replace(root, new DisplayGroup(7, sparse));
+        Entity child = Assert.Single(ElementChildren.Read(frames.World, root));
+        ulong parameterVersion = sparse
+            ? frames.World.ComponentDataWriteVersion<SparseDisplay>(child)
+            : frames.World.ComponentDataWriteVersion<Display>(child);
+        frames.World.Set(root, new DisplayGroup(7, sparse));
 
         frames.Frame();
 
-        Assert.Equal(child, Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root)));
+        Assert.Equal(child, Assert.Single(ElementChildren.Read(frames.World, root)));
         Assert.NotEqual(parameterVersion, sparse
-            ? frames.World.SparseWriteVersion<SparseDisplay>(child)
-            : frames.World.WriteVersion<Display>(child));
-        Assert.Equal(7, frames.World.Read<DisplayValue>(child).Value);
-        uint displayVersion = frames.World.WriteVersion<DisplayValue>(child);
+            ? frames.World.ComponentDataWriteVersion<SparseDisplay>(child)
+            : frames.World.ComponentDataWriteVersion<Display>(child));
+        Assert.Equal(7, frames.World.ReadComponentData<DisplayValue>(child).Value);
+        ulong displayVersion = frames.World.ComponentDataWriteVersion<DisplayValue>(child);
         frames.Frame();
-        Assert.Equal(displayVersion, frames.World.WriteVersion<DisplayValue>(child));
+        Assert.Equal(displayVersion, frames.World.ComponentDataWriteVersion<DisplayValue>(child));
     }
 
     [Fact]
@@ -112,17 +112,17 @@ public sealed partial class ParameterBuildTests
         using var frames = new HeadlessFrameDriver();
         Entity root = Views.Spawn(frames.World, Entity.Null, new HistoryGroup(3));
         frames.Frame();
-        Entity child = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        frames.World.Replace(child, new HistoryDisplay(99));
-        frames.World.Replace(root, new HistoryGroup(7));
+        Entity child = Assert.Single(ElementChildren.Read(frames.World, root));
+        frames.World.Set(child, new HistoryDisplay(99));
+        frames.World.Set(root, new HistoryGroup(7));
 
         frames.Frame();
 
-        Assert.Equal("3,7", frames.World.Read<DisplayedValues>(child).Text);
-        Assert.Equal("3,7", frames.World.Read<DisplayedValues>(root).Text);
-        uint displayVersion = frames.World.WriteVersion<DisplayedValues>(child);
+        Assert.Equal("3,7", frames.World.ReadComponentData<DisplayedValues>(child).Text);
+        Assert.Equal("3,7", frames.World.ReadComponentData<DisplayedValues>(root).Text);
+        ulong displayVersion = frames.World.ComponentDataWriteVersion<DisplayedValues>(child);
         frames.Frame();
-        Assert.Equal(displayVersion, frames.World.WriteVersion<DisplayedValues>(child));
+        Assert.Equal(displayVersion, frames.World.ComponentDataWriteVersion<DisplayedValues>(child));
     }
 
     [Theory]
@@ -135,20 +135,20 @@ public sealed partial class ParameterBuildTests
             ? Views.Spawn(frames.World, Entity.Null, new SparseOnceDisplay(3))
             : Views.Spawn(frames.World, Entity.Null, new OnceDisplay(3));
         frames.Frame();
-        uint displayVersion = frames.World.WriteVersion<DisplayValue>(root);
+        ulong displayVersion = frames.World.ComponentDataWriteVersion<DisplayValue>(root);
         if (sparse)
-            frames.World.ReplaceSparse(root, new SparseOnceDisplay(7));
+            frames.World.SetSparse(root, new SparseOnceDisplay(7));
         else
-            frames.World.Replace(root, new OnceDisplay(7));
+            frames.World.Set(root, new OnceDisplay(7));
 
         frames.Frame();
         frames.Frame();
 
         Assert.Equal(7, sparse
-            ? frames.World.ReadSparse<SparseOnceDisplay>(root).Value
-            : frames.World.Read<OnceDisplay>(root).Value);
-        Assert.Equal(3, frames.World.Read<DisplayValue>(root).Value);
-        Assert.Equal(displayVersion, frames.World.WriteVersion<DisplayValue>(root));
+            ? frames.World.ReadComponentData<SparseOnceDisplay>(root).Value
+            : frames.World.ReadComponentData<OnceDisplay>(root).Value);
+        Assert.Equal(3, frames.World.ReadComponentData<DisplayValue>(root).Value);
+        Assert.Equal(displayVersion, frames.World.ComponentDataWriteVersion<DisplayValue>(root));
     }
 
     [Theory]
@@ -159,25 +159,25 @@ public sealed partial class ParameterBuildTests
         using var frames = new HeadlessFrameDriver();
         Entity root = Views.Spawn(frames.World, Entity.Null, new DisplayGroup(3, sparse, Once: true));
         frames.Frame();
-        Entity child = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        uint parameterVersion = sparse
-            ? frames.World.SparseWriteVersion<SparseOnceDisplay>(child)
-            : frames.World.WriteVersion<OnceDisplay>(child);
-        uint displayVersion = frames.World.WriteVersion<DisplayValue>(child);
-        frames.World.Replace(root, new DisplayGroup(7, sparse, Once: true));
+        Entity child = Assert.Single(ElementChildren.Read(frames.World, root));
+        ulong parameterVersion = sparse
+            ? frames.World.ComponentDataWriteVersion<SparseOnceDisplay>(child)
+            : frames.World.ComponentDataWriteVersion<OnceDisplay>(child);
+        ulong displayVersion = frames.World.ComponentDataWriteVersion<DisplayValue>(child);
+        frames.World.Set(root, new DisplayGroup(7, sparse, Once: true));
 
         frames.Frame();
         frames.Frame();
 
-        Assert.Equal(child, Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root)));
+        Assert.Equal(child, Assert.Single(ElementChildren.Read(frames.World, root)));
         Assert.Equal(7, sparse
-            ? frames.World.ReadSparse<SparseOnceDisplay>(child).Value
-            : frames.World.Read<OnceDisplay>(child).Value);
+            ? frames.World.ReadComponentData<SparseOnceDisplay>(child).Value
+            : frames.World.ReadComponentData<OnceDisplay>(child).Value);
         Assert.NotEqual(parameterVersion, sparse
-            ? frames.World.SparseWriteVersion<SparseOnceDisplay>(child)
-            : frames.World.WriteVersion<OnceDisplay>(child));
-        Assert.Equal(3, frames.World.Read<DisplayValue>(child).Value);
-        Assert.Equal(displayVersion, frames.World.WriteVersion<DisplayValue>(child));
+            ? frames.World.ComponentDataWriteVersion<SparseOnceDisplay>(child)
+            : frames.World.ComponentDataWriteVersion<OnceDisplay>(child));
+        Assert.Equal(3, frames.World.ReadComponentData<DisplayValue>(child).Value);
+        Assert.Equal(displayVersion, frames.World.ComponentDataWriteVersion<DisplayValue>(child));
     }
 
     [Theory]
@@ -188,18 +188,18 @@ public sealed partial class ParameterBuildTests
         using var frames = new HeadlessFrameDriver();
         Entity root = Views.Spawn(frames.World, Entity.Null, new DisplayGroup(3, sparse));
         frames.Frame();
-        Entity child = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
+        Entity child = Assert.Single(ElementChildren.Read(frames.World, root));
         if (sparse)
-            frames.World.ReplaceSparse(child, new SparseDisplay(7));
+            frames.World.SetSparse(child, new SparseDisplay(7));
         else
-            frames.World.Replace(child, new Display(7));
+            frames.World.Set(child, new Display(7));
 
         frames.Frame();
 
-        Assert.Equal(7, frames.World.Read<DisplayValue>(child).Value);
-        uint displayVersion = frames.World.WriteVersion<DisplayValue>(child);
+        Assert.Equal(7, frames.World.ReadComponentData<DisplayValue>(child).Value);
+        ulong displayVersion = frames.World.ComponentDataWriteVersion<DisplayValue>(child);
         frames.Frame();
-        Assert.Equal(displayVersion, frames.World.WriteVersion<DisplayValue>(child));
+        Assert.Equal(displayVersion, frames.World.ComponentDataWriteVersion<DisplayValue>(child));
     }
 
     [Theory]
@@ -211,32 +211,32 @@ public sealed partial class ParameterBuildTests
         Entity root = Views.Spawn(frames.World, Entity.Null,
             new CallbackGroup(new CallbackValue(3, static () => 11), sparse));
         frames.Frame();
-        Entity child = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        uint parameterVersion = sparse
-            ? frames.World.SparseWriteVersion<SparseCallbackDisplay>(child)
-            : frames.World.WriteVersion<CallbackDisplay>(child);
-        uint typeVersion = sparse
-            ? frames.World.ComponentWriteVersion<SparseCallbackDisplay>()
-            : frames.World.ComponentWriteVersion<CallbackDisplay>();
-        uint displayVersion = frames.World.WriteVersion<DisplayValue>(child);
-        frames.World.Replace(root, new CallbackGroup(new CallbackValue(3, static () => 29), sparse));
+        Entity child = Assert.Single(ElementChildren.Read(frames.World, root));
+        ulong parameterVersion = sparse
+            ? frames.World.ComponentDataWriteVersion<SparseCallbackDisplay>(child)
+            : frames.World.ComponentDataWriteVersion<CallbackDisplay>(child);
+        ulong typeVersion = sparse
+            ? frames.World.ComponentWriteVersion(ComponentId<SparseCallbackDisplay>.Value)
+            : frames.World.ComponentWriteVersion(ComponentId<CallbackDisplay>.Value);
+        ulong displayVersion = frames.World.ComponentDataWriteVersion<DisplayValue>(child);
+        frames.World.Set(root, new CallbackGroup(new CallbackValue(3, static () => 29), sparse));
 
         frames.Frame();
         GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true, compacting: true);
 
-        Assert.Equal(child, Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root)));
+        Assert.Equal(child, Assert.Single(ElementChildren.Read(frames.World, root)));
         CallbackValue parameters = sparse
-            ? frames.World.ReadSparse<SparseCallbackDisplay>(child).Parameters
-            : frames.World.Read<CallbackDisplay>(child).Parameters;
+            ? frames.World.ReadComponentData<SparseCallbackDisplay>(child).Parameters
+            : frames.World.ReadComponentData<CallbackDisplay>(child).Parameters;
         Assert.Equal(29, parameters.NumberCallback());
-        Assert.Equal(3, frames.World.Read<DisplayValue>(child).Value);
+        Assert.Equal(3, frames.World.ReadComponentData<DisplayValue>(child).Value);
         Assert.Equal(parameterVersion, sparse
-            ? frames.World.SparseWriteVersion<SparseCallbackDisplay>(child)
-            : frames.World.WriteVersion<CallbackDisplay>(child));
+            ? frames.World.ComponentDataWriteVersion<SparseCallbackDisplay>(child)
+            : frames.World.ComponentDataWriteVersion<CallbackDisplay>(child));
         Assert.Equal(typeVersion, sparse
-            ? frames.World.ComponentWriteVersion<SparseCallbackDisplay>()
-            : frames.World.ComponentWriteVersion<CallbackDisplay>());
-        Assert.Equal(displayVersion, frames.World.WriteVersion<DisplayValue>(child));
+            ? frames.World.ComponentWriteVersion(ComponentId<SparseCallbackDisplay>.Value)
+            : frames.World.ComponentWriteVersion(ComponentId<CallbackDisplay>.Value));
+        Assert.Equal(displayVersion, frames.World.ComponentDataWriteVersion<DisplayValue>(child));
     }
 
     [Fact]
@@ -245,20 +245,20 @@ public sealed partial class ParameterBuildTests
         using var frames = new HeadlessFrameDriver();
         Entity root = Views.Spawn(frames.World, Entity.Null, new NestedGroup(3, 5));
         frames.Frame();
-        var children = Hierarchy<ElementTree>.GetChildren(frames.World, root);
+        var children = ElementChildren.Read(frames.World, root);
         Entity branch = children[0];
         Entity sibling = children[1];
-        Entity grandchild = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, branch));
-        uint grandchildVersion = frames.World.WriteVersion<DisplayValue>(grandchild);
-        frames.World.Replace(root, new NestedGroup(3, 7));
+        Entity grandchild = Assert.Single(ElementChildren.Read(frames.World, branch));
+        ulong grandchildVersion = frames.World.ComponentDataWriteVersion<DisplayValue>(grandchild);
+        frames.World.Set(root, new NestedGroup(3, 7));
 
         frames.Frame();
 
-        Assert.Equal(new[] { branch, sibling }, Hierarchy<ElementTree>.GetChildren(frames.World, root).ToArray());
-        Assert.Equal(grandchild, Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, branch)));
-        Assert.Equal(3, frames.World.Read<DisplayValue>(grandchild).Value);
-        Assert.Equal(grandchildVersion, frames.World.WriteVersion<DisplayValue>(grandchild));
-        Assert.Equal(7, frames.World.Read<DisplayValue>(sibling).Value);
+        Assert.Equal(new[] { branch, sibling }, ElementChildren.Read(frames.World, root));
+        Assert.Equal(grandchild, Assert.Single(ElementChildren.Read(frames.World, branch)));
+        Assert.Equal(3, frames.World.ReadComponentData<DisplayValue>(grandchild).Value);
+        Assert.Equal(grandchildVersion, frames.World.ComponentDataWriteVersion<DisplayValue>(grandchild));
+        Assert.Equal(7, frames.World.ReadComponentData<DisplayValue>(sibling).Value);
     }
 
     private readonly record struct NestedGroup(int First, int Second) : IView, IComponent
@@ -312,7 +312,7 @@ public sealed partial class ParameterBuildTests
         public BuildTask Build()
         {
             Entity child = Scope.View(new HistoryDisplay(Value), 0);
-            WriteDisplayedValues(Scope.World.Read<DisplayedValues>(child).Text);
+            WriteDisplayedValues(Scope.World.ReadComponentData<DisplayedValues>(child).Text);
             return default;
         }
     }
@@ -322,7 +322,7 @@ public sealed partial class ParameterBuildTests
         public BuildTask Build()
         {
             string text = Scope.World.Has<DisplayedValues>(Scope.Entity)
-                ? $"{Scope.World.Read<DisplayedValues>(Scope.Entity).Text},{Value}"
+                ? $"{Scope.World.ReadComponentData<DisplayedValues>(Scope.Entity).Text},{Value}"
                 : Value.ToString();
             WriteDisplayedValues(text);
             return default;
@@ -332,7 +332,7 @@ public sealed partial class ParameterBuildTests
     private static void WriteDisplayedValues(string text)
     {
         if (Scope.World.Has<DisplayedValues>(Scope.Entity))
-            Scope.World.Replace(Scope.Entity, new DisplayedValues(text));
+            Scope.World.Set(Scope.Entity, new DisplayedValues(text));
         else
             Scope.World.Add(Scope.Entity, new DisplayedValues(text));
     }
@@ -398,7 +398,7 @@ public sealed partial class ParameterBuildTests
     private static void WriteDisplay(int value)
     {
         if (Scope.World.Has<DisplayValue>(Scope.Entity))
-            Scope.World.Replace(Scope.Entity, new DisplayValue(value));
+            Scope.World.Set(Scope.Entity, new DisplayValue(value));
         else
             Scope.World.Add(Scope.Entity, new DisplayValue(value));
     }

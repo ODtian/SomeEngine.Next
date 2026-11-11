@@ -21,39 +21,39 @@ internal static partial class LayoutChecks
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
         systems.Add(new ViewRebuildSystem());
         systems.Add(new LayoutSystem());
-        Entity canvas = world.CreateEntity(new Canvas { Size = new Size(800, 600), Scale = 2 });
+        Entity canvas = world.Create(new Canvas { Size = new Size(800, 600), Scale = 2 });
         Entity root = Views.Spawn(world, canvas, new Content());
         systems.Update();
         Entity absolute = Child(world, root);
         Entity custom = Child(world, absolute);
         Entity nested = Child(world, custom);
         Entity leaf = Child(world, nested);
-        Require(world.Read<LayoutRect>(absolute).Value == new Rect(0, 0, 400, 300), "Canvas scale defines the available size.");
-        Require(world.Read<LayoutRect>(custom).Value == new Rect(10, 20, 100, 80), "Box defines the user layout's outer size.");
-        Require(world.Read<LayoutRect>(nested).Value == new Rect(19, 31, 20, 30), "The user layout places nested Absolute content.");
-        Require(world.Read<LayoutRect>(leaf).Value == new Rect(21, 34, 8, 9), "Nested placements resolve in canvas coordinates.");
+        Require(world.ReadComponentData<LayoutRect>(absolute).Value == new Rect(0, 0, 400, 300), "Canvas scale defines the available size.");
+        Require(world.ReadComponentData<LayoutRect>(custom).Value == new Rect(10, 20, 100, 80), "Box defines the user layout's outer size.");
+        Require(world.ReadComponentData<LayoutRect>(nested).Value == new Rect(19, 31, 20, 30), "The user layout places nested Absolute content.");
+        Require(world.ReadComponentData<LayoutRect>(leaf).Value == new Rect(21, 34, 8, 9), "Nested placements resolve in canvas coordinates.");
 
-        uint canvasVersion = world.WriteVersion<LayoutRect>(canvas);
-        uint absoluteVersion = world.WriteVersion<LayoutRect>(absolute);
-        uint customVersion = world.WriteVersion<LayoutRect>(custom);
-        uint nestedVersion = world.WriteVersion<LayoutRect>(nested);
-        world.Replace(leaf, new Box { Fixed = new Size(6, 7) });
+        ulong canvasVersion = world.ComponentDataWriteVersion<LayoutRect>(canvas);
+        ulong absoluteVersion = world.ComponentDataWriteVersion<LayoutRect>(absolute);
+        ulong customVersion = world.ComponentDataWriteVersion<LayoutRect>(custom);
+        ulong nestedVersion = world.ComponentDataWriteVersion<LayoutRect>(nested);
+        world.Set(leaf, new Box { Fixed = new Size(6, 7) });
         systems.Update();
-        Require(world.Read<LayoutRect>(leaf).Value == new Rect(21, 34, 6, 7), "A local size change updates the leaf inside fixed-size layouts.");
-        Require(world.WriteVersion<LayoutRect>(canvas) == canvasVersion &&
-            world.WriteVersion<LayoutRect>(absolute) == absoluteVersion &&
-            world.WriteVersion<LayoutRect>(custom) == customVersion &&
-            world.WriteVersion<LayoutRect>(nested) == nestedVersion,
+        Require(world.ReadComponentData<LayoutRect>(leaf).Value == new Rect(21, 34, 6, 7), "A local size change updates the leaf inside fixed-size layouts.");
+        Require(world.ComponentDataWriteVersion<LayoutRect>(canvas) == canvasVersion &&
+            world.ComponentDataWriteVersion<LayoutRect>(absolute) == absoluteVersion &&
+            world.ComponentDataWriteVersion<LayoutRect>(custom) == customVersion &&
+            world.ComponentDataWriteVersion<LayoutRect>(nested) == nestedVersion,
             "The surrounding rectangle versions remain equal after the local size change.");
 
         foreach (Entity entity in new[] { absolute, custom, nested, leaf })
             world.Remove<LayoutCache>(entity);
         systems.Update();
-        Require(world.Read<LayoutRect>(leaf).Value == new Rect(21, 34, 6, 7), "Full measurement after clearing caches preserves the leaf rectangle.");
+        Require(world.ReadComponentData<LayoutRect>(leaf).Value == new Rect(21, 34, 6, 7), "Full measurement after clearing caches preserves the leaf rectangle.");
 
-        world.Replace(canvas, new Canvas { Size = new Size(600, 400), Scale = 2 });
+        world.Set(canvas, new Canvas { Size = new Size(600, 400), Scale = 2 });
         systems.Update();
-        Require(world.Read<LayoutRect>(absolute).Value == new Rect(0, 0, 300, 200), "Changing canvas size updates its layout roots.");
+        Require(world.ReadComponentData<LayoutRect>(absolute).Value == new Rect(0, 0, 300, 200), "Changing canvas size updates its layout roots.");
     }
 
     private static void VerifyMeasuredCacheReads()
@@ -65,20 +65,20 @@ internal static partial class LayoutChecks
         Entity[] roots = new Entity[4];
         for (int index = 0; index < roots.Length; index++)
         {
-            Entity canvas = world.CreateEntity(new Canvas { Size = new Size(320, 240) });
+            Entity canvas = world.Create(new Canvas { Size = new Size(320, 240) });
             roots[index] = Views.Spawn(world, canvas, new CachePlacement());
         }
         systems.Update();
         foreach (Entity root in roots)
         {
             Entity child = Child(world, root);
-            Require(world.Read<LayoutRect>(child).Value == new Rect(20, 0, 20, 30),
+            Require(world.ReadComponentData<LayoutRect>(child).Value == new Rect(20, 0, 20, 30),
                 "Initial placement reads this measurement's child size.");
-            world.Replace(child, new MeasuredSize(new Size(40, 30)));
+            world.Set(child, new MeasuredSize(new Size(40, 30)));
         }
         systems.Update();
         foreach (Entity root in roots)
-            Require(world.Read<LayoutRect>(Child(world, root)).Value == new Rect(40, 0, 40, 30),
+            Require(world.ReadComponentData<LayoutRect>(Child(world, root)).Value == new Rect(40, 0, 40, 30),
                 "Parallel placement reads the changed child's current measured size.");
     }
 
@@ -107,31 +107,31 @@ internal static partial class LayoutChecks
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
         systems.Add(new ViewRebuildSystem());
         systems.Add(new LayoutSystem());
-        Entity canvas = world.CreateEntity(new Canvas { Size = new Size(800, 600) });
+        Entity canvas = world.Create(new Canvas { Size = new Size(800, 600) });
         Entity root = Views.Spawn(world, canvas, new RepeatedMeasurements());
         systems.Update();
-        var children = Hierarchy<ElementTree>.GetChildren(world, root);
+        var children = ElementChildren.Read(world, root);
         Entity container = children[0];
         Entity sibling = children[1];
         Entity leaf = Child(world, container);
         Entity[] nodes = [canvas, root, container, sibling, leaf];
-        Require(world.Read<LayoutRect>(sibling).Value == new Rect(100, 0, 10, 10),
+        Require(world.ReadComponentData<LayoutRect>(sibling).Value == new Rect(100, 0, 10, 10),
             "The custom layout places the sibling after the container's measured width.");
 
         foreach (float width in new[] { 60f, 140f, 45f })
         {
-            world.Replace(leaf, new MeasuredSize(new Size(width / 2, 30)));
+            world.Set(leaf, new MeasuredSize(new Size(width / 2, 30)));
             systems.Update();
-            world.Replace(container, new Box { Fixed = new Size(width, 80) });
+            world.Set(container, new Box { Fixed = new Size(width, 80) });
             systems.Update();
-            Require(world.Read<LayoutRect>(sibling).Value == new Rect(width, 0, 10, 10),
+            Require(world.ReadComponentData<LayoutRect>(sibling).Value == new Rect(width, 0, 10, 10),
                 "Consecutive content and container changes update the sibling's position.");
-            Rect[] incremental = nodes.Select(node => world.Read<LayoutRect>(node).Value).ToArray();
+            Rect[] incremental = nodes.Select(node => world.ReadComponentData<LayoutRect>(node).Value).ToArray();
             foreach (Entity node in nodes)
                 if (world.Has<LayoutCache>(node))
                     world.Remove<LayoutCache>(node);
             systems.Update();
-            Require(incremental.SequenceEqual(nodes.Select(node => world.Read<LayoutRect>(node).Value)),
+            Require(incremental.SequenceEqual(nodes.Select(node => world.ReadComponentData<LayoutRect>(node).Value)),
                 "Incremental rectangles match a full measurement after clearing public caches.");
         }
     }
@@ -170,8 +170,8 @@ internal static partial class LayoutChecks
 
     private static Entity Child(World world, Entity parent)
     {
-        var children = Hierarchy<ElementTree>.GetChildren(world, parent);
-        Require(children.Count == 1, "This layout example declares one child at each level.");
+        var children = ElementChildren.Read(world, parent);
+        Require(children.Length == 1, "This layout example declares one child at each level.");
         return children[0];
     }
 
@@ -181,7 +181,7 @@ internal static partial class LayoutChecks
             throw new InvalidOperationException(message);
     }
 
-    private readonly record struct Content : IView, IComponent
+    private readonly record struct Content : IView, ITrackedComponent
     {
         public BuildTask Build()
         {

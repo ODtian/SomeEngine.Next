@@ -28,9 +28,9 @@ public static class Consumer
         global::GameSerializationModule.RegisterAll(registry);
         var value = new RootGenerated { Value = 42 };
         using var stream = new System.IO.MemoryStream();
-        WorldSerializer.WriteDurableComponent(stream, in value, registry);
+        WorldSerializer.WriteComponent(stream, in value, registry, new SerializeOptions(Purpose: SavePurpose.DurableSave));
         stream.Position = 0;
-        return WorldSerializer.ReadDurableComponent<RootGenerated>(stream, registry).Value == 42;
+        return WorldSerializer.ReadComponent<RootGenerated>(stream, registry, new SerializationReadOptions(RequiredPurpose: SavePurpose.DurableSave)).Value == 42;
     }
 }
 """);
@@ -67,12 +67,12 @@ public static class Consumer
         var registry = new SerializationRegistry();
         global::GameSerializationModule.RegisterAll(registry);
         var world = new SomeEngine.ECS.World();
-        var target = world.CreateEntity();
-        var entity = world.CreateEntity(new GeneratedPosition { X = 17, Nested = new GeneratedNested { Target = target } });
+        var target = world.Create();
+        var entity = world.Create(new GeneratedPosition { X = 17, Nested = new GeneratedNested { Target = target } });
         using var stream = new System.IO.MemoryStream();
-        WorldSerializer.WriteCheckpointWorld(stream, world, registry);
+        new WorldSerializer(registry).Save(world, stream);
         stream.Position = 0;
-        var loaded = WorldSerializer.ReadCheckpointWorld(stream, registry);
+        var loaded = WorldSerializer.ReadWorld(stream, registry);
         var value = loaded.Read<GeneratedPosition>(entity);
         return value.X == 17 && value.Nested.Target == target && loaded.IsAlive(target);
     }
@@ -292,9 +292,9 @@ public static class Consumer
         global::GameSerializationModule.RegisterAll(registry);
         var value = new StableShape { Value = WideMode.Maximum };
         using var stream = new System.IO.MemoryStream();
-        WorldSerializer.WriteDurableComponent(stream, in value, registry);
+        WorldSerializer.WriteComponent(stream, in value, registry, new SerializeOptions(Purpose: SavePurpose.DurableSave));
         stream.Position = 0;
-        return WorldSerializer.ReadDurableComponent<StableShape>(stream, registry).Value == WideMode.Maximum;
+        return WorldSerializer.ReadComponent<StableShape>(stream, registry, new SerializationReadOptions(RequiredPurpose: SavePurpose.DurableSave)).Value == WideMode.Maximum;
     }
 }
 """);
@@ -325,9 +325,9 @@ public static class Consumer
         global::GameSerializationModule.RegisterAll(registry);
         var value = new PackedPosition { X = int.MinValue, Y = 123.5f };
         using var stream = new System.IO.MemoryStream();
-        WorldSerializer.WriteDurableComponent(stream, in value, registry);
+        WorldSerializer.WriteComponent(stream, in value, registry, new SerializeOptions(Purpose: SavePurpose.DurableSave));
         stream.Position = 0;
-        var loaded = WorldSerializer.ReadDurableComponent<PackedPosition>(stream, registry);
+        var loaded = WorldSerializer.ReadComponent<PackedPosition>(stream, registry, new SerializationReadOptions(RequiredPurpose: SavePurpose.DurableSave));
         return loaded.X == int.MinValue && loaded.Y == 123.5f;
     }
 }

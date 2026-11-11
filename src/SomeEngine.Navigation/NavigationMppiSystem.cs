@@ -1,6 +1,5 @@
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Job;
 
@@ -15,27 +14,26 @@ public sealed class NavigationAvoidanceSystem<TSpace, TModel, TMotion, TReader>
 {
     private readonly World _world;
     private readonly NavigationNeighborSystem<TMotion, TReader> _neighbors;
-    private readonly QueryDefinition _active, _stopped;
+    private readonly QueryDescription _active, _stopped;
     private JobHandle _completion;
 
     public NavigationAvoidanceSystem(World world, NavigationNeighborSystem<TMotion, TReader> neighbors)
     {
         _world = world;
         _neighbors = neighbors;
-        _active = world.QueryDefinition().All<NavigationMppi<TSpace, TModel>>().All<TMotion>().Enabled<NavigationGoal>().Build();
-        _stopped = world.QueryDefinition().All<NavigationMppi<TSpace, TModel>>().All<TMotion>().Disabled<NavigationGoal>().Build();
+        _active = new QueryDescription().WithStored<NavigationMppi<TSpace, TModel>>().WithStored<TMotion>().With<NavigationGoal>();
+        _stopped = new QueryDescription().WithStored<NavigationMppi<TSpace, TModel>>().WithStored<TMotion>().WithDisabled<NavigationGoal>();
     }
 
     public JobHandle Schedule(float time, JobHandle guidanceReady, JobHandle neighborsReady, JobHandle motionReady = default)
     {
-        JobHandle ready = WorldJobs.CombineDependencies(_world, [_completion, guidanceReady, neighborsReady, motionReady]);
+        JobHandle ready = _world.Execution!.Scheduler!.CombineDependencies([_completion, guidanceReady, neighborsReady, motionReady]);
         JobHandle stopped = new NavigationMppiStop<TSpace, TModel, TMotion, TReader>(time)
-            .ScheduleParallel(_world, new JobEntityScheduleOptions(filter: _stopped), ready);
+            .ScheduleParallel(_world, dependency: ready, query: _world.Query(_stopped));
         JobHandle candidates = new NavigationMppiPrepare<TSpace, TModel, TMotion, TReader>(time, _neighbors.Data, _neighbors.Scheduler)
-            .ScheduleParallel(_world, [JobResourceAccess.Read(_neighbors.Scheduler.GetResourceToken(_neighbors.Data))],
-                new JobEntityScheduleOptions(filter: _active), stopped);
+            .ScheduleParallel(_world, dependency: stopped, query: _world.Query(_active));
         _completion = new NavigationMppiOutput<TSpace, TModel>()
-            .ScheduleParallel(_world, new JobEntityScheduleOptions(filter: _active), candidates);
+            .ScheduleParallel(_world, dependency: candidates, query: _world.Query(_active));
         return _completion;
     }
 }
@@ -46,6 +44,8 @@ internal partial struct NavigationMppiPrepare<TSpace, TModel, TMotion, TReader>(
     where TMotion : unmanaged, IComponent
     where TReader : struct, INavigationMotionReader<TMotion>
 {
+    public void CollectAdditionalResources(ref JobResourceAccessBuilder resources) => resources.Read(_neighbors);
+
     private readonly float _time = time;
     private readonly NavigationNeighbors _neighbors = neighbors;
     private readonly Scheduler _scheduler = scheduler;

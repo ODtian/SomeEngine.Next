@@ -4,7 +4,6 @@ using SlangShaderSharp;
 using SomeEngine.Core.Diagnostics;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
 using SomeEngine.Graphics;
 using SomeEngine.Layout;
 using SomeEngine.Render;
@@ -28,12 +27,12 @@ public sealed class CanvasRenderer : IDisposable, IRenderGraphFrameExecutionObse
     private readonly Device _device;
     private readonly Dictionary<Entity, GlyphAtlasTextures> _atlases = [];
     private readonly RenderDevice? _renderDevice;
-    private readonly QueryHandle _query;
+    private readonly Query _query;
     private readonly Dictionary<Entity, CanvasBuffers> _canvases = [];
     private readonly List<CanvasData> _canvasData = [];
     private readonly HashSet<Entity> _canvasEntities = [];
     private Entity _view;
-    private uint _lastVersion;
+    private ulong _lastVersion;
     private bool _disposed;
 
     public CanvasRenderer(IGraphicsBackend backend, Device device,
@@ -69,9 +68,9 @@ public sealed class CanvasRenderer : IDisposable, IRenderGraphFrameExecutionObse
         {
             if (images is not null) _images = new ImageDrawing(backend, device, images, outputFormat);
             if (glyphs is not null) _glyphs = new GlyphDrawing(backend, device, glyphs, outputFormat);
-            _query = world.Query(new QueryDefinitionBuilder().Read<RenderCanvas>()
-                .OptionalBuffer<SurfaceInstance>(QueryAccess.Read).OptionalBuffer<ImageInstance>(QueryAccess.Read)
-                .OptionalBuffer<GlyphInstance>(QueryAccess.Read).Optional<CanvasGlyphAtlas>(QueryAccess.Read));
+            _query = world.World.Query(new QueryDescription().With<RenderCanvas>()
+                .Optional<SomeEngine.ECS.Buffer<SurfaceInstance>>().Optional<SomeEngine.ECS.Buffer<ImageInstance>>()
+                .Optional<SomeEngine.ECS.Buffer<GlyphInstance>>().Optional<CanvasGlyphAtlas>());
         }
         catch
         {
@@ -91,11 +90,8 @@ public sealed class CanvasRenderer : IDisposable, IRenderGraphFrameExecutionObse
         DevelopmentCheck.Require(!_disposed, "Canvas drawing must be active.");
         _canvasData.Clear();
         _canvasEntities.Clear();
-        var receiver = (Renderer: this, Screen: screenTarget, World: worldTarget);
-        _world.ExecuteQuery(_query, _lastVersion, ref receiver, static (rows, ref data) =>
-        {
-            CanvasRenderer renderer = data.Renderer;
-            foreach (QueryChunkView chunk in rows.Chunks)
+        using (QueryScope rows = _query.Since(_lastVersion).OpenRead())
+            foreach (QueryChunk chunk in rows)
             {
                 ReadOnlySpan<RenderCanvas> values = chunk.Read<RenderCanvas>();
                 for (int row = 0; row < chunk.Count; row++)
@@ -103,26 +99,25 @@ public sealed class CanvasRenderer : IDisposable, IRenderGraphFrameExecutionObse
                     RenderCanvas canvas = values[row];
                     if (canvas.Target.Kind == CanvasTargetKind.RenderTexture) continue;
                     bool worldSpace = canvas.Target.Kind == CanvasTargetKind.WorldSpace;
-                    GraphTextureId color = worldSpace ? data.World.Color : data.Screen;
-                    GraphTextureId depth = worldSpace && canvas.DepthTest ? data.World.Depth : default;
+                    GraphTextureId color = worldSpace ? worldTarget.Color : screenTarget;
+                    GraphTextureId depth = worldSpace && canvas.DepthTest ? worldTarget.Depth : default;
                     DevelopmentCheck.Require(color != default, "Canvas drawing requires its color target.");
                     DevelopmentCheck.Require(!worldSpace || !canvas.DepthTest || depth != default,
                         "World canvas depth testing requires the scene depth target.");
                     Entity entity = chunk.Entities[row];
-                    bool surfaces = chunk.HasBuffer<SurfaceInstance>();
-                    bool images = chunk.HasBuffer<ImageInstance>();
+                    bool surfaces = chunk.Has<SomeEngine.ECS.Buffer<SurfaceInstance>>(row);
+                    bool images = chunk.Has<SomeEngine.ECS.Buffer<ImageInstance>>(row);
                     Entity atlas = chunk.Has<CanvasGlyphAtlas>() ? chunk.Read<CanvasGlyphAtlas>()[row].Atlas : Entity.Null;
-                    bool glyphs = chunk.HasBuffer<GlyphInstance>() && atlas != Entity.Null;
-                    renderer._canvasEntities.Add(entity);
-                    renderer._canvasData.Add(new(entity, canvas, surfaces, images,
-                        surfaces && chunk.RowBufferChangedSinceLastSystemVersion<SurfaceInstance>(row),
-                        images && chunk.RowBufferChangedSinceLastSystemVersion<ImageInstance>(row),
-                        glyphs, glyphs && chunk.RowBufferChangedSinceLastSystemVersion<GlyphInstance>(row), atlas,
-                        new(color, depth, depth == default ? default : data.World.DepthFormat,
-                            depth == default ? default : data.World.DepthComparison, worldSpace)));
+                    bool glyphs = chunk.Has<SomeEngine.ECS.Buffer<GlyphInstance>>(row) && atlas != Entity.Null;
+                    _canvasEntities.Add(entity);
+                    _canvasData.Add(new(entity, canvas, surfaces, images,
+                        surfaces && chunk.WasWritten<SomeEngine.ECS.Buffer<SurfaceInstance>>(row, _lastVersion),
+                        images && chunk.WasWritten<SomeEngine.ECS.Buffer<ImageInstance>>(row, _lastVersion),
+                        glyphs, glyphs && chunk.WasWritten<SomeEngine.ECS.Buffer<GlyphInstance>>(row, _lastVersion), atlas,
+                        new(color, depth, depth == default ? default : worldTarget.DepthFormat,
+                            depth == default ? default : worldTarget.DepthComparison, worldSpace)));
                 }
             }
-        });
         bool editRequired = false;
         foreach (Entity entity in _canvases.Keys) editRequired |= !_canvasEntities.Contains(entity);
         foreach (CanvasData data in _canvasData)
@@ -185,7 +180,7 @@ public sealed class CanvasRenderer : IDisposable, IRenderGraphFrameExecutionObse
                 _graph.RetireAfterSubmittedFrames(_atlases[atlas]);
                 _atlases.Remove(atlas);
             }
-        _lastVersion = _world.CurrentTick;
+        _lastVersion = _world.World.Version;
     }
 
     /// <summary>Returns the canvas pass for application ordering and diagnostics.</summary>
@@ -208,7 +203,7 @@ public sealed class CanvasRenderer : IDisposable, IRenderGraphFrameExecutionObse
                 if (buffers.Atlas == Entity.Null || atlasFrames.ContainsKey(buffers.Atlas)) continue;
                 if (!_atlases.TryGetValue(buffers.Atlas, out GlyphAtlasTextures? atlas))
                     _atlases.Add(buffers.Atlas, atlas = new GlyphAtlasTextures(_backend, _device, _graph));
-                atlasFrames.Add(buffers.Atlas, atlas.UpdateFrame(ref frame, _world.Read<RenderGlyphAtlas>(buffers.Atlas)));
+                atlasFrames.Add(buffers.Atlas, atlas.UpdateFrame(ref frame, _world.World.ReadComponentData<RenderGlyphAtlas>(buffers.Atlas)));
             }
         Span<Vector4> canvas = stackalloc Vector4[16];
         foreach ((Entity entity, CanvasBuffers buffers) in _canvases)
@@ -232,8 +227,8 @@ public sealed class CanvasRenderer : IDisposable, IRenderGraphFrameExecutionObse
             Matrix4x4 transform;
             if (buffers.Target.WorldSpace)
             {
-                DevelopmentCheck.Require(_world.Has<RenderView>(_view), "World canvas drawing requires a RenderWorld view.");
-                RenderView view = _world.Read<RenderView>(_view);
+                DevelopmentCheck.Require(_world.World.Has<RenderView>(_view), "World canvas drawing requires a RenderWorld view.");
+                RenderView view = _world.World.ReadComponentData<RenderView>(_view);
                 width = (int)view.ViewportWidth;
                 height = (int)view.ViewportHeight;
                 float scale = buffers.Canvas.Scale;
@@ -263,11 +258,11 @@ public sealed class CanvasRenderer : IDisposable, IRenderGraphFrameExecutionObse
         ImageInstance[] images = [];
         GlyphInstance[] glyphs = [];
         if (buffers.HasSurfaces)
-            _world.ExecuteBufferRead<SurfaceInstance>(entity, values => surfaces = values.AsSpan().ToArray());
+            { using ReadOnlyBuffer<SurfaceInstance> values = _world.World.ReadBuffer<SurfaceInstance>(entity); surfaces = values.AsSpan().ToArray(); }
         if (buffers.HasImages)
-            _world.ExecuteBufferRead<ImageInstance>(entity, values => images = values.AsSpan().ToArray());
+            { using ReadOnlyBuffer<ImageInstance> values = _world.World.ReadBuffer<ImageInstance>(entity); images = values.AsSpan().ToArray(); }
         if (buffers.HasGlyphs)
-            _world.ExecuteBufferRead<GlyphInstance>(entity, values => glyphs = values.AsSpan().ToArray());
+            { using ReadOnlyBuffer<GlyphInstance> values = _world.World.ReadBuffer<GlyphInstance>(entity); glyphs = values.AsSpan().ToArray(); }
         DevelopmentCheck.Require(images.Length == 0 || _images is not null,
             "A canvas with images requires an Image material and RenderDevice.");
         DevelopmentCheck.Require(glyphs.Length == 0 || _glyphs is not null,
@@ -387,7 +382,6 @@ public sealed class CanvasRenderer : IDisposable, IRenderGraphFrameExecutionObse
         }
         foreach (CanvasBuffers buffers in _canvases.Values) RetireBuffers(buffers);
         _canvases.Clear();
-        _world.ReleaseQuery(_query);
         _graph.RetireAfterSubmittedFrames(_surfaces);
         if (_images is not null) _graph.RetireAfterSubmittedFrames(_images);
         if (_glyphs is not null) _graph.RetireAfterSubmittedFrames(_glyphs);

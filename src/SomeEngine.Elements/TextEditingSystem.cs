@@ -12,12 +12,12 @@ public static class TextEditingSystem
     public static bool HandleInput(World world, Entity node, in FocusInput input, bool selecting = false)
     {
         DevelopmentCheck.Require(world is not null, "TextEditingSystem requires a World.");
-        if (node == Entity.Null || !world.Has<EditableText>(node) || !world.HasSparse<Focused>(node))
+        if (node == Entity.Null || !world!.Has<EditableText>(node) || !world.HasSparse<Focused>(node))
             return false;
         if (input.Kind is not (FocusInputKind.Key or FocusInputKind.Text or FocusInputKind.Composition))
             return false;
 
-        EditableText value = world.Read<EditableText>(node);
+        EditableText value = world.ReadComponentData<EditableText>(node);
         string text = value.Text ?? string.Empty;
         DevelopmentCheck.Require((uint)value.Caret <= (uint)text.Length &&
             (uint)value.SelectionStart <= (uint)text.Length,
@@ -40,7 +40,7 @@ public static class TextEditingSystem
             {
                 value.Composition = composition;
                 value.CompositionCaret = compositionCaret;
-                world.Replace(node, value);
+                world.Set(node, value);
             }
             return true;
         }
@@ -50,7 +50,7 @@ public static class TextEditingSystem
             if (inserted.Length == 0)
                 return true;
             ReplaceSelection(ref value, inserted);
-            world.Replace(node, value);
+            world.Set(node, value);
             return true;
         }
         if (input.Kind != FocusInputKind.Key ||
@@ -68,7 +68,7 @@ public static class TextEditingSystem
             if (value.Caret != value.SelectionStart)
             {
                 ReplaceSelection(ref value, string.Empty);
-                world.Replace(node, value);
+                world.Set(node, value);
             }
             return true;
         }
@@ -89,7 +89,7 @@ public static class TextEditingSystem
         {
             value.Caret = caret;
             value.SelectionStart = selectionStart;
-            world.Replace(node, value);
+            world.Set(node, value);
         }
         return true;
     }
@@ -101,14 +101,14 @@ public static class TextEditingSystem
     public static void CancelComposition(World world, Entity node)
     {
         DevelopmentCheck.Require(world is not null, "TextEditingSystem requires a World.");
-        if (node == Entity.Null || !world.Has<EditableText>(node))
+        if (node == Entity.Null || !world!.Has<EditableText>(node))
             return;
-        EditableText value = world.Read<EditableText>(node);
+        EditableText value = world.ReadComponentData<EditableText>(node);
         if (string.IsNullOrEmpty(value.Composition) && value.CompositionCaret == 0)
             return;
         value.Composition = string.Empty;
         value.CompositionCaret = 0;
-        world.Replace(node, value);
+        world.Set(node, value);
     }
 
     private static void ReplaceSelection(ref EditableText value, string inserted)

@@ -1,3 +1,4 @@
+using SomeEngine.ECS;
 using System.Numerics;
 using SomeEngine.Animation;
 using SomeEngine.Animation.Pose;
@@ -52,8 +53,8 @@ public sealed partial class SkinningRenderingTests
                 }
                 foreach (Entity mesh in frame.Scene.MeshEntities)
                 {
-                    bool right = frame.World.Read<WorldTransform>(mesh).Qvvs.Position.X > 0;
-                    frame.World.Add(mesh, new MeshSkin(right ? second : first, binding));
+                    bool right = frame.World.ReadComponentData<WorldTransform>(mesh).Qvvs.Position.X > 0;
+                    frame.World.Set(mesh, new MeshSkin(right ? second : first, binding));
                 }
             },
             UpdateFrame = frame =>
@@ -64,9 +65,9 @@ public sealed partial class SkinningRenderingTests
                     float sign = (character == 0 ? 1 : -1) * (frame.Index < 2 ? 1 : -1);
                     float height = character == 0 ? .2f : -.1f;
                     float aimWeight = character == 0 ? 1 : .5f;
-                    GpuPoseTarget output = frame.World.Read<GpuPoseTarget>(targets[character]);
+                    GpuPoseTarget output = frame.World.ReadComponentData<GpuPoseTarget>(targets[character]);
                     output.ModelOffset = new(0, height, 0);
-                    frame.World.Replace(targets[character], output);
+                    frame.World.Set(targets[character], output);
                     var goals = new GpuPoseGoal[]
                     {
                         new() { Position = new(sign, character == 0 ? 1 + height : height - 1, 0),
@@ -75,8 +76,10 @@ public sealed partial class SkinningRenderingTests
                             OrientationWeight = character == 0 ? 1 : .5f },
                         new() { Position = new(100 * sign, 1 + height, 0), PositionWeight = aimWeight },
                     };
-                    frame.World.ExecuteBufferWrite<GpuPoseGoal, GpuPoseGoal[]>(targets[character], ref goals,
-                        static (values, ref goals) => goals.AsSpan().CopyTo(values.AsSpan()));
+                    {
+                        using DynamicBuffer<GpuPoseGoal> values = frame.World.GetBuffer<GpuPoseGoal>(targets[character]);
+                        goals.AsSpan().CopyTo(values.AsSpan());
+                    }
 
                     BoneTransform[] local = skeleton.ReferencePose.ToArray();
                     local[0].Translation.Y = height;
@@ -125,8 +128,8 @@ public sealed partial class SkinningRenderingTests
             {
                 foreach (Entity mesh in frame.Scene.MeshEntities)
                 {
-                    bool right = frame.World.Read<WorldTransform>(mesh).Qvvs.Position.X > 0;
-                    frame.World.Add(mesh, new MeshSkin(right ? referenceSecond : referenceFirst, binding));
+                    bool right = frame.World.ReadComponentData<WorldTransform>(mesh).Qvvs.Position.X > 0;
+                    frame.World.Set(mesh, new MeshSkin(right ? referenceSecond : referenceFirst, binding));
                 }
             },
             UpdateFrame = frame =>

@@ -1,7 +1,5 @@
 using System.Runtime.InteropServices;
-using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Relations;
 
 namespace SomeEngine.ECS.Benchmarks.Relations;
@@ -11,44 +9,38 @@ public static class HandwrittenKeyPairs<TComponent, TKey>
     where TComponent : struct, IIndexedComponent<TKey>
     where TKey : notnull, IEquatable<TKey>
 {
-    public static bool Where<TOutput>(World world, QueryHandle members, ref TOutput output)
+    public static bool Where<TOutput>(World world, Query members, ref TOutput output)
         where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
         => Enumerate(world, members, false, ref output);
 
-    public static bool Except<TOutput>(World world, QueryHandle members, ref TOutput output)
+    public static bool Except<TOutput>(World world, Query members, ref TOutput output)
         where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
         => Enumerate(world, members, true, ref output);
 
-    private static bool Enumerate<TOutput>(World world, QueryHandle members, bool exclude, ref TOutput output)
+    private static bool Enumerate<TOutput>(World world, Query members, bool exclude, ref TOutput output)
         where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
     {
-        QueryDefinition original = world.GetQueryDefinition(members);
-        QueryDefinition definition = original.WithOptionalRead<TComponent>();
-        bool temporaryQuery = definition.CanWrite || !ReferenceEquals(original, definition);
-        QueryHandle query = temporaryQuery ? world.Query(definition) : members;
-        var execution = new MemberExecution<TOutput>(world, exclude, output);
+        var index = world.Index<TComponent, TKey>();
+        using QueryScope reads = world.Query(new QueryDescription().Optional<TComponent>()).OpenRead();
+        using QueryScope query = members.OpenRead();
+        var execution = new MemberExecution<TOutput>(index, exclude, output);
         try
         {
-            world.ExecuteQuery(query, ref execution);
+            execution.Execute(query);
             return execution.Completed;
         }
-        finally
-        {
-            output = execution.Output;
-            if (temporaryQuery)
-                world.ReleaseQuery(query);
-        }
+        finally { output = execution.Output; }
     }
 
-    private ref struct MemberExecution<TOutput> : IQueryExecution
+    private ref struct MemberExecution<TOutput>
         where TOutput : struct, IRelationOutput<(Entity, Entity)>, allows ref struct
     {
-        private readonly World _world;
+        private readonly ValueIndex<TComponent, TKey> _index;
         private readonly bool _exclude;
 
-        public MemberExecution(World world, bool exclude, TOutput output)
+        public MemberExecution(ValueIndex<TComponent, TKey> index, bool exclude, TOutput output)
         {
-            _world = world;
+            _index = index;
             _exclude = exclude;
             Output = output;
         }
@@ -56,18 +48,17 @@ public static class HandwrittenKeyPairs<TComponent, TKey>
         public TOutput Output;
         public bool Completed { get; private set; }
 
-        public void Execute(scoped QueryCursor members)
+        public void Execute(scoped QueryScope members)
         {
             var keys = new HashSet<TKey>();
             var missing = new List<Entity>();
-            foreach (var member in members.Rows)
+            foreach (QueryChunk chunk in members)
             {
-                if (member.Has<TComponent>())
-                    keys.Add(member.ReadRef<TComponent>().GetKey());
-                else
-                    missing.Add(member.Entity);
+                chunk.TryRead<TComponent>(out ReadOnlySpan<TComponent> values);
+                for (int row = 0; row < chunk.Count; row++)
+                    if (!values.IsEmpty && chunk.Has<TComponent>(row)) keys.Add(values[row].GetKey());
+                    else missing.Add(chunk.Entities[row]);
             }
-
             var firstKeys = keys.GetEnumerator();
             bool firstMissing = false;
             while (true)
@@ -77,41 +68,51 @@ public static class HandwrittenKeyPairs<TComponent, TKey>
                     break;
                 firstMissing = !firstHasKey;
                 TKey firstKey = firstHasKey ? firstKeys.Current : default!;
-                ReadOnlySpan<Entity> firstEntities = firstHasKey
-                    ? _world.GetByIndex<TComponent, TKey>(firstKey) : CollectionsMarshal.AsSpan(missing);
-                var secondKeys = keys.GetEnumerator();
-                bool secondMissing = false;
-                while (true)
+                IndexMembers firstMembers = firstHasKey ? _index.Find(firstKey) : default;
+                try
                 {
-                    bool secondHasKey = secondKeys.MoveNext();
-                    if (!secondHasKey && (secondMissing || missing.Count == 0))
-                        break;
-                    secondMissing = !secondHasKey;
-                    TKey secondKey = secondHasKey ? secondKeys.Current : default!;
-                    ReadOnlySpan<Entity> secondEntities = secondHasKey
-                        ? _world.GetByIndex<TComponent, TKey>(secondKey) : CollectionsMarshal.AsSpan(missing);
-                    bool matches = firstHasKey && secondHasKey && firstKey.Equals(secondKey);
-                    if (matches == _exclude)
-                        continue;
-                    foreach (Entity first in firstEntities)
+                    ReadOnlySpan<Entity> firstEntities = firstHasKey
+                        ? firstMembers.Entities : CollectionsMarshal.AsSpan(missing);
+                    var secondKeys = keys.GetEnumerator();
+                    bool secondMissing = false;
+                    while (true)
                     {
-                        if (!members.Contains(first))
-                            continue;
-                        foreach (Entity second in secondEntities)
+                        bool secondHasKey = secondKeys.MoveNext();
+                        if (!secondHasKey && (secondMissing || missing.Count == 0))
+                            break;
+                        secondMissing = !secondHasKey;
+                        TKey secondKey = secondHasKey ? secondKeys.Current : default!;
+                        IndexMembers secondMembers = secondHasKey ? _index.Find(secondKey) : default;
+                        try
                         {
-                            bool ascending = first.Index < second.Index ||
-                                first.Index == second.Index && first.Generation < second.Generation;
-                            if (!ascending || !members.Contains(second))
+                            ReadOnlySpan<Entity> secondEntities = secondHasKey
+                                ? secondMembers.Entities : CollectionsMarshal.AsSpan(missing);
+                            bool matches = firstHasKey && secondHasKey && firstKey.Equals(secondKey);
+                            if (matches == _exclude)
                                 continue;
-                            var pair = (first, second);
-                            if (!Output.Add(in pair))
+                            foreach (Entity first in firstEntities)
                             {
-                                Completed = false;
-                                return;
+                                if (!members.Contains(first))
+                                    continue;
+                                foreach (Entity second in secondEntities)
+                                {
+                                    bool ascending = first.Id < second.Id ||
+                                        first.Id == second.Id && first.Generation < second.Generation;
+                                    if (!ascending || !members.Contains(second))
+                                        continue;
+                                    var pair = (first, second);
+                                    if (!Output.Add(in pair))
+                                    {
+                                        Completed = false;
+                                        return;
+                                    }
+                                }
                             }
                         }
+                        finally { if (secondHasKey) secondMembers.Dispose(); }
                     }
                 }
+                finally { if (firstHasKey) firstMembers.Dispose(); }
             }
             Completed = true;
         }

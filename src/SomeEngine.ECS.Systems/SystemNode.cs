@@ -57,4 +57,3 @@ internal static unsafe class SystemFunctions<TSystem, TContext>
     private static void UpdateSystem(SystemNode<TContext> node, ref TContext context) =>
         ((SystemNode<TSystem, TContext>)node).UpdateSystem(ref context);
 }
-

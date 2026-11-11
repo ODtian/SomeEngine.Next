@@ -51,7 +51,7 @@ public sealed partial class SkinningRenderingTests
             layers.Items[0] = new() { Mode = LayerMode.Override, Weight = 1 };
             layers.Items[1] = new() { Mode = LayerMode.Override, Weight = 1 };
             layers.Items[2] = new() { Mode = LayerMode.Additive, Weight = 1 };
-            cpuWorld.Add(target, layers);
+            cpuWorld.Set(target, layers);
             using var builder = new AnimationBuilder(cpuWorld);
             builder.BlendPose1D(target, cpuLine, new(0), 0);
             builder.BlendPose2D(target, cpuPlane, new(1), 0, 1);
@@ -83,8 +83,8 @@ public sealed partial class SkinningRenderingTests
                 var binding = new SkinBinding([Matrix4x4.Identity, Matrix4x4.CreateTranslation(0, -1, 0)], [0, 1]);
                 foreach (Entity mesh in frame.Scene.MeshEntities)
                 {
-                    bool right = frame.World.Read<WorldTransform>(mesh).Qvvs.Position.X > 0;
-                    frame.World.Add(mesh, new MeshSkin(right ? second : first, binding));
+                    bool right = frame.World.ReadComponentData<WorldTransform>(mesh).Qvvs.Position.X > 0;
+                    frame.World.Set(mesh, new MeshSkin(right ? second : first, binding));
                 }
             },
             UpdateFrame = frame =>
@@ -96,12 +96,12 @@ public sealed partial class SkinningRenderingTests
                     inputs.Values[1] = character == 0 ? .1f : .6f;
                     inputs.Values[2] = character == 0 ? .8f : .3f;
                     inputs.Values[3] = character == 0 ? .35f : .7f;
-                    frame.World.Replace(animations[character], inputs);
-                    cpuWorld.Replace(cpuAnimations[character], inputs);
-                    AnimationLayers layers = cpuWorld.Read<AnimationLayers>(cpuTargets[character]);
+                    frame.World.Set(animations[character], inputs);
+                    cpuWorld.Set(cpuAnimations[character], inputs);
+                    AnimationLayers layers = cpuWorld.ReadComponentData<AnimationLayers>(cpuTargets[character]);
                     layers.Items[1].Weight = inputs.Values[2];
                     layers.Items[2].Weight = inputs.Values[3];
-                    cpuWorld.Replace(cpuTargets[character], layers);
+                    cpuWorld.Set(cpuTargets[character], layers);
                 }
                 var context = new ImmediateSystemContext(cpuWorld, 0, 0, .25);
                 cpuSystems.Update(ref context);
@@ -136,8 +136,8 @@ public sealed partial class SkinningRenderingTests
                 var binding = new SkinBinding([Matrix4x4.Identity, Matrix4x4.CreateTranslation(0, -1, 0)], [0, 1]);
                 foreach (Entity mesh in frame.Scene.MeshEntities)
                 {
-                    bool right = frame.World.Read<WorldTransform>(mesh).Qvvs.Position.X > 0;
-                    frame.World.Add(mesh, new MeshSkin(right ? cpuSecond : cpuFirst, binding));
+                    bool right = frame.World.ReadComponentData<WorldTransform>(mesh).Qvvs.Position.X > 0;
+                    frame.World.Set(mesh, new MeshSkin(right ? cpuSecond : cpuFirst, binding));
                 }
             },
             UpdateFrame = frame =>

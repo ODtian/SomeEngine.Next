@@ -15,10 +15,10 @@ public static class Views
         Entity entity = Create(world, in view);
         if (parent != Entity.Null)
         {
-            Hierarchy<ElementTree>.SetChildOrderPolicy(world, parent, ChildOrderPolicy.Ordered);
+            Hierarchy<ElementTree>.SetOrdered(world, parent, true);
             Hierarchy<ElementTree>.SetParent(world, entity, parent);
         }
-        world.AddTag<BuildRequest>(entity);
+        world.Set(entity, default(BuildRequest));
         return entity;
     }
 
@@ -26,16 +26,16 @@ public static class Views
         where T : struct, IView, IEquatable<T>
     {
         ushort typeId = ViewRegistration<T>.Id;
-        Entity entity = world.CreateEntity(new ViewType { Id = typeId });
+        Entity entity = world.Create(new ViewType { Id = typeId });
         world.Add(entity, key);
         world.AddComponentData(entity, in view);
         if (T.Mode == BuildMode.Rerun)
             world.Add(entity, new ParameterVersion());
-        Hierarchy<ElementTree>.SetChildOrderPolicy(world, entity, ChildOrderPolicy.Ordered);
+        Hierarchy<ElementTree>.SetOrdered(world, entity, true);
         return entity;
     }
 }
 
 internal readonly struct BuildRequest : ITag;
 
-internal readonly record struct ParameterVersion(uint Value) : IComponent;
+internal readonly record struct ParameterVersion(ulong Value) : IComponent;

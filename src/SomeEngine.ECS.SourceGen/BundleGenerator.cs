@@ -219,7 +219,8 @@ public sealed class BundleGenerator : IIncrementalGenerator
             }
 
             if (ImplementsInterface(fieldType, ComponentsNamespace, "IRelationshipSource") ||
-                ImplementsInterface(fieldType, ComponentsNamespace, "IRelationshipTarget"))
+                ImplementsInterface(fieldType, ComponentsNamespace, "IRelationshipTarget") ||
+                fieldType.AllInterfaces.Any(value => value.Name is "IControlledComponent" or "IComputedComponent"))
             {
                 context.ReportDiagnostic(Diagnostic.Create(
                     RelationshipFieldDiagnostic,
@@ -355,11 +356,13 @@ public sealed class BundleGenerator : IIncrementalGenerator
               string.Join("\n", sparseComponentIdLines.Select(line => $"            {line},")) +
               "\n        };";
 
-        string callbackWrites = string.Join(
+        string fieldWrites = string.Join(
             "\n",
             sharedWriteLines.Concat(writeLines));
-        if (callbackWrites.Length > 0)
-            callbackWrites += "\n";
+        if (fieldWrites.Length > 0)
+            fieldWrites += "\n";
+        string writerName = new string((model.BundleTypeName + "Writer").Select(character =>
+            char.IsLetterOrDigit(character) ? character : '_').ToArray());
 
         string body = $$"""
 internal static partial class BundleExtensions
@@ -368,44 +371,51 @@ internal static partial class BundleExtensions
     {
 {{componentIdBlock}}
 {{sparseComponentIdBlock}}
-        var state = bundle;
         return world.ExecuteBundleSpawn(
             componentIds,
             sparseComponentIds,
-            ref state,
-            static (global::SomeEngine.ECS.BundleWriteView view, ref {{model.BundleTypeName}} state) =>
-            {
-{{callbackWrites}}            });
+            bundle,
+            new {{writerName}}());
     }
 
     internal static void AddBundle(this global::SomeEngine.ECS.World world, global::SomeEngine.ECS.Entities.Entity entity, in {{model.BundleTypeName}} bundle)
     {
 {{componentIdBlock}}
 {{sparseComponentIdBlock}}
-        var state = bundle;
         world.ExecuteBundleAdd(
             entity,
             componentIds,
             sparseComponentIds,
-            ref state,
-            static (global::SomeEngine.ECS.BundleWriteView view, ref {{model.BundleTypeName}} state) =>
-            {
-{{callbackWrites}}            });
+            bundle,
+            new {{writerName}}());
     }
 
     internal static void ReplaceBundle(this global::SomeEngine.ECS.World world, global::SomeEngine.ECS.Entities.Entity entity, in {{model.BundleTypeName}} bundle)
     {
 {{componentIdBlock}}
 {{sparseComponentIdBlock}}
-        var state = bundle;
         world.ExecuteBundleReplace(
             entity,
             componentIds,
             sparseComponentIds,
-            ref state,
-            static (global::SomeEngine.ECS.BundleWriteView view, ref {{model.BundleTypeName}} state) =>
-            {
-{{callbackWrites}}            });
+            bundle,
+            new {{writerName}}());
+    }
+
+    internal static void Spawn(this global::SomeEngine.ECS.World world,
+        global::System.ReadOnlySpan<{{model.BundleTypeName}}> bundles,
+        global::System.Span<global::SomeEngine.ECS.Entities.Entity> entities)
+    {
+{{componentIdBlock}}
+{{sparseComponentIdBlock}}
+        world.ExecuteBundleSpawn(entities, componentIds, sparseComponentIds, bundles, new {{writerName}}());
+    }
+
+    private readonly struct {{writerName}} : global::SomeEngine.ECS.IBundleWriter<{{model.BundleTypeName}}>
+    {
+        public void Write(global::SomeEngine.ECS.BundleWriteView view, in {{model.BundleTypeName}} state)
+        {
+{{fieldWrites}}        }
     }
 }
 """;
@@ -432,12 +442,11 @@ namespace {{model.Namespace}}
     {
         if (member.Kind == BundleMemberKind.Buffer)
         {
-            yield return $"global::SomeEngine.ECS.Components.BufferComponents.Header<{member.ElementTypeName}>()";
-            yield return $"global::SomeEngine.ECS.Components.BufferComponents.Inline<{member.ElementTypeName}>()";
+            yield return $"global::SomeEngine.ECS.ComponentId<global::SomeEngine.ECS.Buffer<{member.ElementTypeName}>>.Value";
             yield break;
         }
 
-        yield return $"global::SomeEngine.ECS.Registry.ComponentMetadata<{member.TypeName}>.Id";
+        yield return $"global::SomeEngine.ECS.ComponentId<{member.TypeName}>.Value";
     }
 
     private static string GetWriteLine(BundleMember member)

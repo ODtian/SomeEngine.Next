@@ -12,7 +12,7 @@ public sealed class NavigationAvoidanceTests
     public void PathAndFlowActorsShareNeighborsAndPassThroughTheCorridor()
     {
         using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 3, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using World world = new World(execution: new WorldJobs(scheduler));
         var profile = new NavigationProfile([new Vector2(-0.2f), new(0.2f, -0.2f), new(0.2f), new(-0.2f, 0.2f)],
             1, maximumSpeed: 1.5f);
         var policy = new NavigationPolicy();
@@ -25,10 +25,10 @@ public sealed class NavigationAvoidanceTests
         var flows = new NavigationSystems<TestMotion, TestMotionReader>(world);
         using var neighbors = new NavigationNeighborSystem<TestMotion, TestMotionReader>(world, scheduler);
         var avoidance = new NavigationAvoidanceSystem<OrcaAvoidance, TestMotion, TestMotionReader>(world, neighbors);
-        Entity path = world.CreateEntity(new TestMotion { Position = new(0.5f, 0, 1.4f) });
+        Entity path = world.Create(new TestMotion { Position = new(0.5f, 0, 1.4f) });
         paths.AddAgent(path, mesh, profile, policy, new(new Vector3(9.5f, 0, 1.4f), 0.15f), 1.5f);
-        Entity first = world.CreateEntity(new TestMotion { Position = new(8.5f, 0, 1.5f) });
-        Entity second = world.CreateEntity(new TestMotion { Position = new(9.5f, 0, 1.5f) });
+        Entity first = world.Create(new TestMotion { Position = new(8.5f, 0, 1.5f) });
+        Entity second = world.Create(new TestMotion { Position = new(9.5f, 0, 1.5f) });
         flows.AddFlowAgent(first, flow, 1.5f);
         flows.AddFlowAgent(second, flow, 1.5f);
         Entity[] actors = [path, first, second];
@@ -43,24 +43,24 @@ public sealed class NavigationAvoidanceTests
             JobHandle pathBoundary = avoidance.SchedulePathBoundaries<NavigationMesh>();
             JobHandle flowBoundary = avoidance.ScheduleFlowBoundaries();
             JobHandle steering = avoidance.Schedule(0.1f,
-                WorldJobs.CombineDependencies(world, [pathGuidance, flowGuidance]), neighborReady,
-                WorldJobs.CombineDependencies(world, [pathBoundary, flowBoundary]));
+                world.Execution!.Scheduler!.CombineDependencies([pathGuidance, flowGuidance]), neighborReady,
+                world.Execution!.Scheduler!.CombineDependencies([pathBoundary, flowBoundary]));
             JobHandle moved = new ConsumeSteering(0.1f).ScheduleParallel(world, steering);
-            WorldJobs.CombineDependencies(world, [paths.ScheduleProgress(moved), flows.ScheduleProgress(moved)]).Complete();
+            world.Execution!.Scheduler!.CombineDependencies([paths.ScheduleProgress(moved), flows.ScheduleProgress(moved)]).Complete();
             for (int a = 0; a < actors.Length; a++)
             {
-                Vector3 position = world.Read<TestMotion>(actors[a]).Position;
+                Vector3 position = world.ReadValue<TestMotion>(actors[a]).Position;
                 Assert.InRange(position.Z, 0.29f, 2.71f);
                 for (int b = a + 1; b < actors.Length; b++)
-                    minimumSeparation = MathF.Min(minimumSeparation, Vector3.Distance(position, world.Read<TestMotion>(actors[b]).Position));
+                    minimumSeparation = MathF.Min(minimumSeparation, Vector3.Distance(position, world.ReadValue<TestMotion>(actors[b]).Position));
             }
         }
 
         Assert.Equal(3, neighbors.Data.Agents.Length);
         Assert.True(minimumSeparation >= 0.69f, $"minimum separation: {minimumSeparation}");
-        Assert.True(world.Read<TestMotion>(path).Position.X > 8.5f);
-        Assert.True(world.Read<TestMotion>(first).Position.X < 1.5f);
-        Assert.True(world.Read<TestMotion>(second).Position.X < 2.5f);
+        Assert.True(world.ReadValue<TestMotion>(path).Position.X > 8.5f);
+        Assert.True(world.ReadValue<TestMotion>(first).Position.X < 1.5f);
+        Assert.True(world.ReadValue<TestMotion>(second).Position.X < 2.5f);
     }
 
     [Theory]
@@ -69,13 +69,13 @@ public sealed class NavigationAvoidanceTests
     public void BoundaryClearanceIncludesTheAlreadyBakedDisk(float bakedRadius)
     {
         using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using World world = new World(execution: new WorldJobs(scheduler));
         var profile = new NavigationProfile([new Vector2(-0.2f), new(0.2f, -0.2f), new(0.2f), new(-0.2f, 0.2f)], 1);
         var mesh = new NavigationMesh(
             [new(bakedRadius, 0, bakedRadius), new(10 - bakedRadius, 0, bakedRadius),
              new(10 - bakedRadius, 0, 3 - bakedRadius), new(bakedRadius, 0, 3 - bakedRadius)],
             [0, 1, 2, 3], [new(0, 4, 0, 0)], [], bakedRadius: bakedRadius);
-        Entity entity = world.CreateEntity(new TestMotion { Position = new(9.4f, 0, 0.8f) });
+        Entity entity = world.Create(new TestMotion { Position = new(9.4f, 0, 0.8f) });
         world.Add(entity, new NavigationAgent(profile, new(), 1));
         world.Add(entity, new PathNavigation<NavigationMesh>(mesh));
         world.Add(entity, new NavigationGuidance(new(1, 0, -1), 0, 1, true));
@@ -90,7 +90,7 @@ public sealed class NavigationAvoidanceTests
             new ConsumeSteering(0.05f).ScheduleParallel(world, steering).Complete();
         }
 
-        Vector3 position = world.Read<TestMotion>(entity).Position;
+        Vector3 position = world.ReadValue<TestMotion>(entity).Position;
         Assert.InRange(position.X, 9.64f, 9.66f);
         Assert.InRange(position.Z, 0.34f, 0.36f);
     }
@@ -99,7 +99,7 @@ public sealed class NavigationAvoidanceTests
     public void SharedIndexUsesActualLayersHeightAndInteractionRange()
     {
         using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 2, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using World world = new World(execution: new WorldJobs(scheduler));
         var profile = new NavigationProfile([new Vector2(-0.2f), new(0.2f, -0.2f), new(0.2f), new(-0.2f, 0.2f)], 1);
         Entity source = Add(new(0, 0, 0), 0, 1);
         Entity close = Add(new(1, 0, 0), 0, 1);
@@ -117,7 +117,7 @@ public sealed class NavigationAvoidanceTests
 
         Entity Add(Vector3 position, int layer, ulong mask)
         {
-            Entity entity = world.CreateEntity(new LayeredMotion { Position = position, Velocity = new(0.5f, 0, 0), Layer = layer });
+            Entity entity = world.Create(new LayeredMotion { Position = position, Velocity = new(0.5f, 0, 0), Layer = layer });
             world.Add(entity, new NavigationAgent(profile, new(), 1));
             NavigationComponents.AddAvoidance(world, entity, new(0.3f, NeighborDistance: 2, InteractionMask: mask));
             return entity;

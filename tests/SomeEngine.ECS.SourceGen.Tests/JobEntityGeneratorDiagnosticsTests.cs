@@ -24,7 +24,7 @@ public partial struct Integrate : IJobEntity
 {
     public void Execute(Entity entity, in Velocity velocity, ref Position position)
     {
-        position.X += velocity.X + entity.Index;
+        position.X += velocity.X + entity.Id;
     }
 }
 public static class Consumer
@@ -36,10 +36,10 @@ public static class Consumer
         try
         {
             using var world = new SomeEngine.ECS.World(execution: new WorldJobs(SomeEngine.Job.JobSystem.Default));
-            var entity = world.CreateEntity(new Position { X = 7 });
+            var entity = world.Create(new Position { X = 7 });
             world.Add(entity, new Velocity { X = 3 });
             new Integrate().ScheduleParallel(world).Complete();
-            return world.Read<Position>(entity).X - entity.Index;
+            return world.ReadComponentData<Position>(entity).X - entity.Id;
         }
         finally { SomeEngine.Job.JobSystem.Shutdown(); }
     }
@@ -76,10 +76,10 @@ public partial struct Invalid : IJobEntity
         GeneratorTestResult result = RunGenerator("""
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Systems;
-public struct Derived : IRelationshipTarget { public int Count; }
+public readonly struct Scene : global::SomeEngine.ECS.Hierarchy.IHierarchyDomain { }
 public partial struct Invalid : IJobEntity
 {
-    public void Execute(ref Derived derived) { }
+    public void Execute(ref global::SomeEngine.ECS.Hierarchy.Children<Scene> derived) { }
 }
 """);
 
@@ -131,7 +131,7 @@ public struct ManagedComponent : SomeEngine.ECS.IComponent { public string Name;
 public struct ManagedBuffer : IBufferElement { public object Value; }
 public partial struct Invalid : IJobEntity
 {
-    public void Execute(in ManagedComponent component, BufferView<ManagedBuffer> buffer) { }
+    public void Execute(in ManagedComponent component, ReadOnlyBuffer<ManagedBuffer> buffer) { }
 }
 """);
 
@@ -186,20 +186,19 @@ public partial struct Valid : IJobEntity
     }
 
     [Fact]
-    public void RelationshipWriterDefinitionProducesSerialAccessDiagnostic()
+    public void RejectsDirectParentWrites()
     {
         GeneratorTestResult result = RunGenerator("""
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Systems;
-public struct ParentLike : IRelationshipSource { public int Value; }
+public readonly struct Scene : global::SomeEngine.ECS.Hierarchy.IHierarchyDomain { }
 public partial struct SerialTopology : IJobEntity
 {
-    public void Execute(ref ParentLike parent) { }
+    public void Execute(ref global::SomeEngine.ECS.Hierarchy.Parent<Scene> parent) { }
 }
 """);
 
-        Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
-        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Id == "SECSSG108" && diagnostic.Location.IsInSource);
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Id == "SECSSG103" && diagnostic.Location.IsInSource);
     }
 
     [Fact]
@@ -213,7 +212,7 @@ public struct Item : IBufferElement { public int Value; }
 public struct Rare : ISparseComponent { public int Value; }
 public partial struct Mixed : IJobEntity
 {
-    public void Execute(BufferView<Item> items, ref Rare rare) { }
+    public void Execute(ReadOnlyBuffer<Item> items, ref Rare rare) { }
 }
 """);
 
@@ -253,7 +252,7 @@ public partial struct Integrate : IJobEntity
     }
 
     [Fact]
-    public void ParentAndEndpointJobDefinitionCompiles()
+    public void RejectsDirectEndpointWrites()
     {
         GeneratorTestResult result = RunGenerator("""
 using SomeEngine.ECS.Components;
@@ -266,12 +265,11 @@ public partial struct TopologyEdit : IJobEntity
 {
     public void Execute(
         in Parent<Scene> parent,
-        ref DirectedRelationEndpoints<Link> endpoints) { }
+        ref RelationEndpoints<Link> endpoints) { }
 }
 """);
 
-        Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
-        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Id == "SECSSG108" && diagnostic.Location.IsInSource);
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Id == "SECSSG103" && diagnostic.Location.IsInSource);
     }
 
     [Fact]

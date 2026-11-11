@@ -6,7 +6,6 @@ namespace SomeEngine.Animation;
 public enum TrackEndpoints : byte { Values, Displacement, DisplacementValues }
 
 /// <summary>The values, curve and stage of one animated component field.</summary>
-[BufferCapacity(4)]
 public struct Track<T> : IBufferElement where T : unmanaged
 {
     public Entity Target;

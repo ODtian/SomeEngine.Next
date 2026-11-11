@@ -7,7 +7,7 @@ using SomeEngine.Views;
 namespace SomeEngine.Elements;
 
 /// <summary>Caller-written text whose measured content comes from the text shaping system.</summary>
-public record struct Text(string Value) : IView, IComponent, ILayout
+public record struct Text(string Value) : IView, ITrackedComponent, ILayout
 {
     public static BuildMode Mode => BuildMode.Once;
 
@@ -62,6 +62,6 @@ public record struct Text(string Value) : IView, IComponent, ILayout
 }
 
 /// <summary>The displayed string resolved by a text view's build.</summary>
-public readonly record struct TextContent(string Value) : IComponent;
+public readonly record struct TextContent(string Value) : ITrackedComponent;
 
 internal readonly record struct TextAppearance(TextStyle Style) : IComponent;

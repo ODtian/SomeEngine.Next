@@ -1,3 +1,4 @@
+using SomeEngine.ECS.Spatial;
 using System.Numerics;
 using System.Text.Json;
 using SomeEngine.Animation;
@@ -5,7 +6,6 @@ using SomeEngine.Animation.Pose;
 using SomeEngine.Core.ECS.Components;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Job;
 using SomeEngine.Physics;
@@ -66,13 +66,13 @@ public sealed partial class SkinningRenderingTests
             FrameMeasured = times.Add,
             Initialize = frame =>
             {
-                frame.World.CreateEntity(new MovingStep(Matrix4x4.Identity, 1));
-                QueryHandle members = frame.World.Query(frame.World.QueryDefinition().All<MovingStep>());
-                CollisionTree tree = Collision.Build<MovingStep, StepReader>(frame.World, members, reader);
-                var maintenance = Collision.Candidates<MovingStep, StepReader>(frame.World, members, tree, reader).CreateMaintenance(JobSystem.Default);
+                frame.World.Create(new MovingStep(Matrix4x4.Identity, 1));
+                Query members = frame.World.Query(new QueryDescription().With<MovingStep>());
+                BoundsTree tree = SpatialQueries.Build<MovingStep, StepReader>(frame.World, members, reader);
+                var maintenance = SpatialQueries.Candidates<MovingStep, StepReader>(frame.World, members, tree, reader).CreateMaintenance(JobSystem.Default);
                 maintenance.Schedule().Complete();
                 var surfaces = Collision.Query<MovingStep, StepReader>(frame.World, members, tree, reader);
-                frame.Systems.AddGameSystem(new StepInputs(surfaces, maintenance, members));
+                frame.Systems.AddGameSystem(new StepInputs(maintenance));
                 GpuPoseAnimation.AddSystems(frame.Systems.Animation);
                 AnimationSystems.Add(frame.Systems.Animation, new FootLockSystem(), AnimationPhase.Composition);
                 AnimationSystems.Add(frame.Systems.Animation, new ObserveFootFrames(animations, targets, observed), AnimationPhase.Composition);
@@ -90,14 +90,17 @@ public sealed partial class SkinningRenderingTests
                 {
                     actors[subject] = meshes[subject];
                     var position = new Vector3(-3 + 2 * subject, 0, 6);
-                    frame.World.Replace(actors[subject], new WorldTransform { Qvvs = new(position, Quaternion.Identity) });
+                    frame.World.Set(actors[subject], new WorldTransform { Qvvs = new(position, Quaternion.Identity) });
                     trajectories[subject] = new([new(0, position, new(.04f, 0, 0), 0), new(2, position + new Vector3(.08f, 0, 0), new(.04f, 0, 0), 0)]);
                     targets[subject] = GpuPoseAnimation.CreateTarget(frame.World, characters[subject]);
                     animations[subject] = graph.Play(frame.World, targets[subject]);
                     var input = (Actor: actors[subject], Movement: new FootMovementInput(trajectories[subject], warp));
-                    frame.World.ExecuteBufferWrite<FootLockInstance, (Entity Actor, FootMovementInput Movement)>(animations[subject], ref input,
-                        static (instances, ref input) => { instances[0].Actor = input.Actor; instances[0].Movement = input.Movement; });
-                    frame.World.Add(actors[subject], new MeshSkin(characters[subject], binding));
+                    {
+                        using DynamicBuffer<FootLockInstance> instances = frame.World.GetBuffer<FootLockInstance>(animations[subject]);
+                        instances[0].Actor = input.Actor;
+                        instances[0].Movement = input.Movement;
+                    }
+                    frame.World.Set(actors[subject], new MeshSkin(characters[subject], binding));
                 }
             },
             UpdateFrame = frame =>
@@ -107,7 +110,7 @@ public sealed partial class SkinningRenderingTests
                 {
                     var position = new Vector3(-3 + 2 * subject + .04f * time, 0, 6);
                     Matrix4x4 actor = warp.Sample(time) * Matrix4x4.CreateTranslation(position);
-                    frame.World.Replace(actors[subject], new WorldTransform { Qvvs = new(actor.Translation, Quaternion.Identity) });
+                    frame.World.Set(actors[subject], new WorldTransform { Qvvs = new(actor.Translation, Quaternion.Identity) });
                     trajectories[subject].Points[0] = new(time, actor.Translation, new(.04f, 0, 0), 0);
                     trajectories[subject].Points[1] = new(time + 2, actor.Translation + new Vector3(.08f, 0, 0), new(.04f, 0, 0), 0);
                     actorMatrices[subject].Add(actor);
@@ -117,10 +120,14 @@ public sealed partial class SkinningRenderingTests
                 if (frame.Index == 11)
                 {
                     var request = new PosePredictionRequest(changed, new(0), 2);
-                    frame.World.ExecuteBufferWrite<FootLockInstance, PosePredictionRequest>(animations[3], ref request,
-                        static (instances, ref request) => instances[0].Source = request);
-                    frame.World.ExecuteBufferWrite<GpuRigInstance, GpuPoseRig>(animations[3], ref changedRig,
-                        static (instances, ref rig) => instances[0].Rig = rig);
+                    {
+                        using DynamicBuffer<FootLockInstance> instances = frame.World.GetBuffer<FootLockInstance>(animations[3]);
+                        instances[0].Source = request;
+                    }
+                    {
+                        using DynamicBuffer<GpuRigInstance> instances = frame.World.GetBuffer<GpuRigInstance>(animations[3]);
+                        instances[0].Rig = changedRig;
+                    }
                 }
                 if (frame.Index == 31) frame.Scene.CaptureImage(value => image = value);
             },
@@ -203,9 +210,9 @@ public sealed partial class SkinningRenderingTests
         {
             for (int subject = 0; subject < animations.Length; subject++)
             {
-                var data = (Time: context.World.Read<GpuPoseTarget>(targets[subject]).CalculationTime, Frames: frames[subject]);
-                context.World.ExecuteBufferRead<FootLockInstance, (double Time, List<FootFrame> Frames)>(animations[subject], ref data,
-                    static (instances, ref data) => data.Frames.Add(new(data.Time, instances[0].Contacts.ToArray(), instances[0].Landings.ToArray(), instances[0].Costs)));
+                var data = (Time: context.World.ReadComponentData<GpuPoseTarget>(targets[subject]).CalculationTime, Frames: frames[subject]);
+                using ReadOnlyBuffer<FootLockInstance> instances = context.World.ReadBuffer<FootLockInstance>(animations[subject]);
+                data.Frames.Add(new(data.Time, instances[0].Contacts.ToArray(), instances[0].Landings.ToArray(), instances[0].Costs));
             }
         }
     }

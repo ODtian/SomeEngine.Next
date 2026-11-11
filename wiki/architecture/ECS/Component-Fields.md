@@ -39,40 +39,30 @@ float radius = world.ReadField<Panel, float, RadiusAccess>(entity);
 
 ## 查询与批次
 
-`QueryRow.ReadField/WriteField<TComponent, TValue, TAccess>()` 用于当前匹配行。`QueryChunkView.ReadField/WriteField<TComponent, TValue, TAccess>(row)` 用于 chunk 中的当前行。
-
-整列批次通过 `ReadFields<TComponent, TValue, TAccess>()` 或 `WriteFields<TComponent, TValue, TAccess>()` 取得类型化字段视图。取得视图时解析查询声明和列位置；批内通过 `Read(row)` 或 `Write(row, in value)` 直接调用具体 `TAccess`，引用路径读取当前根中的对象。
+查询通过原生 `QueryScope` 和 `QueryChunk` 取得根组件列，再调用具体 `TAccess`。字段读取使用只读列；字段写入使用写列，行版本由取得列的入口维护。
 
 ```csharp
-static void WriteRadius(QueryCursor query, ref float radius)
+using QueryScope rows = query.Open();
+foreach (QueryChunk chunk in rows)
 {
-    foreach (QueryChunkView chunk in query.Chunks)
-    {
-        var fields = chunk.WriteFields<Panel, float, RadiusAccess>();
-        for (int row = 0; row < fields.Count; row++)
-            fields.Write(row, in radius);
-    }
+    Span<Panel> panels = chunk.Write<Panel>();
+    for (int row = 0; row < panels.Length; row++)
+        RadiusAccess.Write(ref panels[row], in radius);
 }
-
-world.ExecuteQuery(query, ref radius, &WriteRadius);
 ```
 
-字段视图与根组件 span 的有效范围为当前查询回调。整列视图要求 whole-chunk 选择；带行过滤的查询通过 `Rows` 或 `RowIndices` 访问匹配行。`DevelopmentCheck` 在取得字段能力时报告声明、权限与范围错误。
+按任意实体写入同一组件时，使用一个 `WriteLookup<TComponent>` 覆盖整批操作。表组件通过 `World.OpenWrite<TComponent>()`，sparse 通过 `OpenSparseWrite<TComponent>()` 取得范围；具体访问类型读取或修改当前根。访问结束调用 Dispose。
 
-调用方也可从已有 `chunk.Read<TComponent>()`、`chunk.Write<TComponent>()` 或 sparse 读写回调取得根组件 span，再在具体循环中调用 `TAccess`。包含引用的泛型根和缓冲元素继续使用共同的组件、缓冲和容量入口。
-
-跨任意实体的同组件批次使用 `World.ExecuteComponentWrite<TComponent, TState>(ref state, function)`。managed 函数指针接收 `ComponentWriteBatch<TComponent>` 和调用方的 `ref TState`；状态支持 `allows ref struct`。入口一次取得组件存储的写权限和共享版本，批内 `Write(entity)` 解析当前 table/sparse 根并返回 `ref TComponent`，具体访问实现随后直接调用。此能力适合按同一组件与字段归并后的动画最终写回。根引用的有效范围为当前批次回调。
-
-批次的 `ReadWriteColumn(chunk)` 可借用同一 World 查询中声明为读写的 table 组件列。调用方沿 `chunk.RowIndices` 索引返回的 `ComponentWriteColumn<TComponent>`；各访问行沿共同 `WriteRef` 发布批次共享版本，并维护关系、层级和索引。列的有效范围为查询与批次共同覆盖的回调。源码：[组件批次](../../../src/SomeEngine.ECS/ComponentWriteBatch.cs)、[查询列](../../../src/SomeEngine.ECS/Queries/QueryChunkView.Columns.cs)。
+带引用的根组件沿具体 Job 的资源收集入口登记实际访问的引用对象。属性动画先按根和字段归组，取得真实目标与资源，再执行具体批次。独立字段入口使用当前实体根；查询和 lookup 的根引用在其范围内使用。
 
 ## 版本与存储
 
-字段写入沿现有 table/sparse 写权限处理。单实体字段写入取得新 World 写版本；查询字段写入使用查询的 `CurrentSystemVersion`。整列写视图为该列全部行记录本次查询版本，单行写入记录对应行版本。
+字段写入沿现有 table/sparse 写权限处理。单实体字段写入取得新 World 写版本；查询字段写入使用该范围的共享写版本。整列写视图为该列全部行记录本次查询版本，单行写入记录对应行版本。
 
-引用对象内的叶值写入同样推进根的行版本和组件类型写版本。`WriteVersion<T>`、`SparseWriteVersion<T>` 与 `ComponentWriteVersion<T>` 提供公开观察；table 的 `Changed<T>` 使用同一行版本。读取保留已有版本。索引、层级与关系维护复用现有组件写引用和整列写入口。
+引用对象内的叶值写入同样推进根的行版本和组件类型写版本。`ComponentDataWriteVersion<T>` 与 `ComponentWriteVersion(ComponentId<T>.Value)` 提供公开观察；table 的 `Changed<T>` 使用同一行版本。读取保留已有版本。索引、层级与关系维护复用现有组件写引用和整列写入口。
 
-table 列由 `TComponent[]` 持有。组件操作函数指针使用具体类型赋值进行复制与交换移除，使托管引用沿 C# 赋值和 GC 写屏障语义存储。字节能力与类型化能力共同使用当前组件编号和写版本；字节访问的具体数据约束见 [[architecture/ECS/Component-Bytes|Component Bytes]]。
+普通 POD 列由 World 的类型缓冲持有，含引用组件使用具体类型数组。组件操作函数指针使用具体类型赋值进行复制与交换移除，使托管引用沿 C# 赋值和 GC 写屏障语义存储。字节能力与类型化能力共同使用当前组件编号和写版本；字节访问的具体数据约束见 [[architecture/ECS/Component-Bytes|Component Bytes]]。
 
-源码：[接口](../../../src/SomeEngine.ECS/IFieldAccess.cs)、[World 字段入口](../../../src/SomeEngine.ECS/World.Fields.cs)、[字段视图](../../../src/SomeEngine.ECS/Queries/QueryChunkView.Fields.cs)。公开验收：[FieldAccessTests](../../../tests/SomeEngine.ECS.Tests/FieldAccessTests.cs)、[独立消费者](../../../tools/SomeEngine.ECS.AotSmoke/TypedFieldSmoke.cs)。
+源码：[接口](../../../src/SomeEngine.ECS/IFieldAccess.cs)、[World 字段入口](../../../src/SomeEngine.ECS/World.Fields.cs)、[原生列与范围](../../../src/SomeEngine.ECS/Queries/Query.cs)。公开验收：[FieldAccessTests](../../../tests/SomeEngine.ECS.Tests/FieldAccessTests.cs)、[独立消费者](../../../tools/SomeEngine.ECS.AotSmoke/TypedFieldSmoke.cs)。
 
 相关主题：[[architecture/ECS/Change-Tracking|Change Tracking]] · [[architecture/ECS/Systems|Systems]] · [[architecture/animation/Property-Animation|Property Animation]]

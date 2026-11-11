@@ -113,16 +113,19 @@ public sealed class GlyphDrawingTests
         SurfaceMaterial surface = SurfaceMaterial.Create(device.Capabilities.CompileTarget);
         GlyphsMaterial glyphs = GlyphsMaterial.Create(device.Capabilities.CompileTarget);
         using var renderer = new CanvasRenderer(backend, device, graph, world, surface, Format.R8G8B8A8UNorm, glyphs);
-        Entity atlasEntity = world.CreateEntity(new RenderGlyphAtlas(
+        Entity atlasEntity = world.World.Create(new RenderGlyphAtlas(
             new[] { new GlyphPagePixels(atlas.Pages[0].Width, atlas.Pages[0].Height, atlas.Pages[0].Pixels.ToArray()) },
             new[] { glyph.Region }, atlas.DistanceSpread, 1));
-        Entity canvas = world.CreateEntity(new RenderCanvas(CanvasTarget.Screen, new Size(64, 64), 1));
-        world.AddBuffer<SurfaceInstance>(canvas);
-        world.AddBuffer<GlyphInstance>(canvas);
-        world.Add(canvas, new CanvasGlyphAtlas(atlasEntity));
-        world.ExecuteBufferWrite<GlyphInstance>(canvas, buffer => buffer.Add(new(Entity.Null, 0,
-            new Rect(8, 5, 47, 51), glyph.UV0, glyph.UV1, new Color(1, 1, 1),
-            new Rect(0, 0, 64, 64), 0, 0, 1)));
+        Entity canvas = world.World.Create(new RenderCanvas(CanvasTarget.Screen, new Size(64, 64), 1));
+        world.World.AddBuffer<SurfaceInstance>(canvas);
+        world.World.AddBuffer<GlyphInstance>(canvas);
+        world.World.Add(canvas, new CanvasGlyphAtlas(atlasEntity));
+        using (SomeEngine.ECS.DynamicBuffer<GlyphInstance> buffer = world.World.GetBuffer<GlyphInstance>(canvas))
+        {
+            buffer.Add(new(Entity.Null, 0,
+                        new Rect(8, 5, 47, 51), glyph.UV0, glyph.UV1, new Color(1, 1, 1),
+                        new Rect(0, 0, 64, 64), 0, 0, 1));
+        }
         using SomeEngine.Graphics.Buffer readback = backend.CreateBuffer(device,
             new BufferDesc(64 * 256, BufferUsages.CopyDestination), MemoryType.Readback);
         GraphTextureId target;
@@ -169,10 +172,12 @@ public sealed class GlyphDrawingTests
         byte[]? firstMask = null;
         for (int frameIndex = 0; frameIndex < (regionsAndTree ? 1 : 3); frameIndex++)
         {
-            world.AcquireSystemTick();
+            world.World.AcquireSystemVersion();
             if (frameIndex == 2)
-                world.ExecuteBufferWrite<GlyphInstance>(canvas, buffer =>
-                    buffer[0] = buffer[0] with { Color = new Color(0, 1, 0), Version = 2 });
+                using (SomeEngine.ECS.DynamicBuffer<GlyphInstance> buffer = world.World.GetBuffer<GlyphInstance>(canvas))
+                {
+                    buffer[0] = buffer[0] with { Color = new Color(0, 1, 0), Version = 2 };
+                }
             renderer.ReconcileGraph(target);
             RenderGraphFrame frame = graph.BeginFrame();
             try
@@ -203,34 +208,39 @@ public sealed class GlyphDrawingTests
             Assert.Equal(structure, graph.StructureVersion);
         }
         if (!regionsAndTree) return;
-        world.AcquireSystemTick();
+        world.World.AcquireSystemVersion();
         atlas.ClearDirtyRegions();
         atlas.Bake(font, [55u, 35u]);
         GlyphLocation second = atlas.Get(font, 55);
         GlyphLocation third = atlas.Get(font, 35);
         Assert.Equal(0, second.Region.PageIndex);
         Assert.Equal(1, third.Region.PageIndex);
-        world.Replace(atlasEntity, new RenderGlyphAtlas(atlas.Pages.ToArray()
+        world.World.Set(atlasEntity, new RenderGlyphAtlas(atlas.Pages.ToArray()
             .Select(page => new GlyphPagePixels(page.Width, page.Height, page.Pixels.ToArray())).ToArray(),
             atlas.DirtyRegions.ToArray(), atlas.DistanceSpread, 2));
-        world.ExecuteBufferWrite<SurfaceInstance>(canvas, buffer =>
+        using (SomeEngine.ECS.DynamicBuffer<SurfaceInstance> buffer = world.World.GetBuffer<SurfaceInstance>(canvas))
         {
             buffer.Add(new(Entity.Null, new Rect(0, 0, 64, 64), new Color(1, 0, 0), 0,
                 default, 0, new Rect(0, 0, 64, 64), 0, 1));
             buffer.Add(new(Entity.Null, new Rect(20, 16, 16, 20), new Color(0, 0, 1), 0,
                 default, 0, new Rect(0, 0, 64, 64), 2, 1));
-        });
-        world.ExecuteBufferWrite<GlyphInstance>(canvas, buffer =>
+        }
+        using (SomeEngine.ECS.DynamicBuffer<GlyphInstance> buffer = world.World.GetBuffer<GlyphInstance>(canvas))
         {
-            buffer[0] = buffer[0] with { Color = new Color(1, 1, 1, 0.5f),
-                ClipRectangle = new Rect(0, 0, 32, 64), DrawOrder = 1, Version = 2 };
+            buffer[0] = buffer[0] with
+            {
+                Color = new Color(1, 1, 1, 0.5f),
+                ClipRectangle = new Rect(0, 0, 32, 64),
+                DrawOrder = 1,
+                Version = 2
+            };
             buffer.Add(new(Entity.Null, 1,
                 new Rect(16 + second.Offset.X, 48 + second.Offset.Y, second.Region.Width, second.Region.Height),
                 second.UV0, second.UV1, new Color(0, 1, 0), new Rect(40, 0, 24, 64), second.Region.PageIndex, 3, 1));
             buffer.Add(new(Entity.Null, 2,
                 new Rect(third.Offset.X, 48 + third.Offset.Y, third.Region.Width, third.Region.Height),
                 third.UV0, third.UV1, new Color(0, 0, 1), new Rect(0, 0, 12, 64), third.Region.PageIndex, 4, 1));
-        });
+        }
         renderer.ReconcileGraph(target);
         RenderGraphFrame updated = graph.BeginFrame();
         try

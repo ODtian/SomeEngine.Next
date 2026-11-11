@@ -27,9 +27,11 @@ public static partial class AnimationGraph
             DevelopmentCheck.Require(spec.Boundary.End == track.End && spec.Boundary.Duration == track.Duration,
                 "Changing graph timing requires compiling and playing the updated definition.");
             var update = (Index: track.MotionIndex, Parameters: spec.Parameters, Initialized: track.MotionInitialized);
-            world.ExecuteBufferWrite<MotionInstance<T, TOps, TParameters, TState, TEvaluator>,
-                (int Index, TParameters Parameters, bool Initialized)>(animation, ref update,
-                static (instances, ref update) =>
+            {
+                using var instances = world.GetBuffer<MotionInstance<T, TOps, TParameters, TState, TEvaluator>>(animation);
+                Visit(instances, ref update);
+
+                static void Visit(DynamicBuffer<MotionInstance<T, TOps, TParameters, TState, TEvaluator>> instances, ref (int Index, TParameters Parameters, bool Initialized) update)
                 {
                     ref MotionData<T, TParameters, TState> data = ref instances[update.Index].Data;
                     if (TEvaluator.ParametersEqual(in data.Parameters, in update.Parameters))
@@ -37,7 +39,9 @@ public static partial class AnimationGraph
                     if (update.Initialized)
                         TEvaluator.UpdateParameters(in data.Parameters, in update.Parameters, ref data.State);
                     data.Parameters = update.Parameters;
-                });
+
+                }
+            }
             found = true;
         }
         DevelopmentCheck.Require(found, "Updating graph parameters requires a matching concrete property leaf.");

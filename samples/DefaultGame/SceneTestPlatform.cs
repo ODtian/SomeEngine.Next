@@ -415,6 +415,13 @@ public sealed partial class SceneTestPlatform
                 _firstSampleRenderedFrame = _renderedFrames;
             }
             _frames.Add(frame);
+            if (_fixedWindowError is null && _measurementError is null)
+            {
+                // ApplicationFrameTimes was captured before the FrameCompleted callback.
+                Console.WriteLine(FormattableString.Invariant(
+                    $"scene_sample phase=Measured scene=\"{JsonEncodedText.Encode(Current.Name)}\" frame={frame.SimulationFrame} frame_ms={frame.ElapsedMs:F6}"));
+                Console.Out.Flush();
+            }
         }
     }
 

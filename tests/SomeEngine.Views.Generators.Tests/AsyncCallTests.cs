@@ -21,13 +21,13 @@ public sealed class AsyncCallTests
                 {
                     using var frames = new HeadlessFrameDriver();
                     var source = new State<int>(1);
-                    Entity target = frames.World.CreateEntity(new Output(0));
+                    Entity target = frames.World.Create(new Output(0));
                     Views.Spawn(frames.World, Entity.Null, new Host(source, target));
                     frames.Frame();
-                    int first = frames.World.Read<Output>(target).Value;
+                    int first = frames.World.ReadComponentData<Output>(target).Value;
                     source.Value = 2;
                     frames.Frame();
-                    return [first, frames.World.Read<Output>(target).Value];
+                    return [first, frames.World.ReadComponentData<Output>(target).Value];
                 }
             }
 

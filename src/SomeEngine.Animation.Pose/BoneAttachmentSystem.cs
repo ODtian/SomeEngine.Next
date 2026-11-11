@@ -1,8 +1,7 @@
 using SomeEngine.Core.ECS.Components;
-using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hierarchy;
-using SomeEngine.ECS.Queries;
+using SomeEngine.ECS;
 using SomeEngine.ECS.Systems;
 
 namespace SomeEngine.Animation.Pose;
@@ -10,34 +9,47 @@ namespace SomeEngine.Animation.Pose;
 /// <summary>Consumes completed bone poses before ordinary entity transform propagation.</summary>
 public struct BoneAttachmentSystem : ISystem<ImmediateSystemContext>
 {
-    private QueryHandle _attachments;
+    private Query _attachments;
     private List<Entity> _released;
 
     public void OnCreate(ref ImmediateSystemContext context)
     {
         _released = [];
-        _attachments = context.World.Query(context.World.QueryDefinition()
-            .Read<BoneAttachment>().Read<WorldTransform>().ReadWrite<LocalTransform>());
+        _attachments = context.World.Query(new QueryDescription()
+            .WithStored<BoneAttachment>().WithStored<WorldTransform>().WithStored<LocalTransform>());
     }
 
     public void OnUpdate(ref ImmediateSystemContext context)
     {
         _released.Clear();
-        context.World.ExecuteQuery(_attachments, ref _released,
-            static (QueryCursor rows, ref List<Entity> released) =>
+        {
+            using QueryScope read = _attachments.Open();
+            Visit(in read, ref _released);
+
+            static void Visit(scoped in QueryScope rows, ref List<Entity> released)
             {
-                foreach (QueryRow row in rows.Rows)
+                foreach (QueryChunk chunk in rows)
                 {
-                    BoneAttachment attachment = row.Read<BoneAttachment>();
-                    if (attachment.Skeleton.IsDisposed || attachment.Bone.Instance.IsDisposed)
+                    var values0 = chunk.Has<LocalTransform>() ? chunk.Write<LocalTransform>() : default;
+                    chunk.TryRead<BoneAttachment>(out var values1);
+                    chunk.TryRead<WorldTransform>(out var values2);
+                    for (int rowIndex = 0; rowIndex < chunk.Count; rowIndex++)
                     {
-                        row.ReadWrite<LocalTransform>().Value = row.Read<WorldTransform>().Qvvs;
-                        released.Add(row.Entity);
+
+                        BoneAttachment attachment = values1[rowIndex];
+                        if (attachment.Skeleton.IsDisposed || attachment.Bone.Instance.IsDisposed)
+                        {
+                            values0[rowIndex].Value = values2[rowIndex].Qvvs;
+                            released.Add(chunk.Entities[rowIndex]);
+                        }
+                        else
+                            values0[rowIndex].Value = attachment.ReadLocalTransform();
+
                     }
-                    else
-                        row.ReadWrite<LocalTransform>().Value = attachment.ReadLocalTransform();
                 }
-            });
+
+            }
+        }
         foreach (Entity attachment in _released)
         {
             context.World.Remove<BoneAttachment>(attachment);
@@ -45,5 +57,5 @@ public struct BoneAttachmentSystem : ISystem<ImmediateSystemContext>
         }
     }
 
-    public void OnDestroy(ref ImmediateSystemContext context) => context.World.ReleaseQuery(_attachments);
+    public void OnDestroy(ref ImmediateSystemContext context) { }
 }

@@ -1,3 +1,4 @@
+using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hierarchy;
 using SomeEngine.ECS.Systems;
@@ -35,51 +36,56 @@ public sealed partial class GlyphRenderExtractor : IRenderExtractionRangeSystem
 
         public void Dispose() => Reset();
 
-        public void Collect(ReadOnlyQueryPacket packet, uint lastSystemVersion, bool fullCollection)
+        public void Collect(QueryChunk packet, ulong lastSystemVersion, bool fullCollection)
         {
             if (fullCollection) Collect(packet);
             else CollectChanges(packet, lastSystemVersion);
         }
 
-        private void Collect(ReadOnlyQueryPacket chunk)
+        public void Collect(QueryChunk chunk)
         {
-            if (chunk.Has<Canvas>())
-                foreach (Entity canvas in chunk.Entities) Canvases.Add(canvas);
-            if (chunk.Has<Canvas>() || chunk.Has<ShapedText>() || chunk.Has<LayoutRect>() ||
-                chunk.Has<Parent<ElementTree>>() || chunk.Has<Children<ElementTree>>())
-                foreach (Entity entity in chunk.Entities) TreeNodes.Add(entity);
+            for (int row = 0; row < chunk.Count; row++)
+            {
+                Entity entity = chunk.Entities[row];
+                if (chunk.Has<Canvas>(row)) Canvases.Add(entity);
+                if (chunk.Has<Canvas>(row) || chunk.Has<ShapedText>(row) || chunk.Has<LayoutRect>(row) ||
+                    chunk.Has<Parent<ElementTree>>(row) || chunk.Has<Children<ElementTree>>(row))
+                    TreeNodes.Add(entity);
+            }
         }
 
-        private bool CollectChanges(ReadOnlyQueryPacket chunk, uint lastSystemVersion)
+        private bool CollectChanges(QueryChunk chunk, ulong lastSystemVersion)
         {
             if (chunk.Has<Canvas>())
-                foreach (Entity canvas in chunk.Entities) Canvases.Add(canvas);
+                for (int row = 0; row < chunk.Count; row++)
+                    if (chunk.Has<Canvas>(row)) Canvases.Add(chunk.Entities[row]);
             bool text = chunk.Has<ShapedText>() && chunk.Has<LayoutRect>();
-            bool shapeChanged = text && chunk.ChangedSince<ShapedText>(lastSystemVersion);
-            bool rectChanged = text && chunk.ChangedSince<LayoutRect>(lastSystemVersion);
-            bool boxChanged = text && chunk.Has<Box>() && chunk.ChangedSince<Box>(lastSystemVersion);
+            bool shapeChanged = text && chunk.WasWritten<ShapedText>(lastSystemVersion);
+            bool rectChanged = text && chunk.WasWritten<LayoutRect>(lastSystemVersion);
+            bool boxChanged = text && chunk.Has<Box>() && chunk.WasWritten<Box>(lastSystemVersion);
             bool transformChanged = text && chunk.Has<ElementTransform>() &&
-                chunk.ChangedSince<ElementTransform>(lastSystemVersion);
+                chunk.WasWritten<ElementTransform>(lastSystemVersion);
             bool offsetChanged = text && chunk.Has<PresentationOffset>() &&
-                chunk.ChangedSince<PresentationOffset>(lastSystemVersion);
+                chunk.WasWritten<PresentationOffset>(lastSystemVersion);
             bool viewportChanged = chunk.Has<ScrollOffset>() && chunk.Has<LayoutRect>() &&
-                chunk.ChangedSince<LayoutRect>(lastSystemVersion);
-            bool canvasChanged = chunk.Has<Canvas>() && chunk.ChangedSince<Canvas>(lastSystemVersion);
-            bool parentChanged = chunk.Has<Parent<ElementTree>>() && chunk.ChangedSince<Parent<ElementTree>>(lastSystemVersion);
-            bool childrenChanged = chunk.Has<Children<ElementTree>>() && chunk.ChangedSince<Children<ElementTree>>(lastSystemVersion);
+                chunk.WasWritten<LayoutRect>(lastSystemVersion);
+            bool canvasChanged = chunk.Has<Canvas>() && chunk.WasWritten<Canvas>(lastSystemVersion);
+            bool parentChanged = chunk.Has<Parent<ElementTree>>() && chunk.WasWritten<Parent<ElementTree>>(lastSystemVersion);
+            bool childrenChanged = chunk.Has<Children<ElementTree>>() && chunk.WasWritten<Children<ElementTree>>(lastSystemVersion);
             for (int row = 0; row < chunk.Count; row++)
             {
                 Entity node = chunk.Entities[row];
-                if ((canvasChanged && chunk.RowChangedSince<Canvas>(row, lastSystemVersion)) ||
-                    (viewportChanged && chunk.RowChangedSince<LayoutRect>(row, lastSystemVersion)) ||
-                    (parentChanged && chunk.RowChangedSince<Parent<ElementTree>>(row, lastSystemVersion)) ||
-                    (childrenChanged && chunk.RowChangedSince<Children<ElementTree>>(row, lastSystemVersion)))
+                if ((canvasChanged && chunk.WasWritten<Canvas>(row, lastSystemVersion)) ||
+                    (viewportChanged && chunk.WasWritten<LayoutRect>(row, lastSystemVersion)) ||
+                    (parentChanged && chunk.WasWritten<Parent<ElementTree>>(row, lastSystemVersion)) ||
+                    (childrenChanged && chunk.WasWritten<Children<ElementTree>>(row, lastSystemVersion)))
                     TreeNodes.Add(node);
-                if ((shapeChanged && chunk.RowChangedSince<ShapedText>(row, lastSystemVersion)) ||
-                    (rectChanged && chunk.RowChangedSince<LayoutRect>(row, lastSystemVersion)) ||
-                    (boxChanged && chunk.RowChangedSince<Box>(row, lastSystemVersion)) ||
-                    (transformChanged && chunk.RowChangedSince<ElementTransform>(row, lastSystemVersion)) ||
-                    (offsetChanged && chunk.RowChangedSince<PresentationOffset>(row, lastSystemVersion)))
+                if (chunk.Has<ShapedText>(row) && chunk.Has<LayoutRect>(row) &&
+                    ((shapeChanged && chunk.WasWritten<ShapedText>(row, lastSystemVersion)) ||
+                    (rectChanged && chunk.WasWritten<LayoutRect>(row, lastSystemVersion)) ||
+                    (boxChanged && chunk.WasWritten<Box>(row, lastSystemVersion)) ||
+                    (transformChanged && chunk.WasWritten<ElementTransform>(row, lastSystemVersion)) ||
+                    (offsetChanged && chunk.WasWritten<PresentationOffset>(row, lastSystemVersion))))
                     TextNodes.Add(node);
             }
             return false;

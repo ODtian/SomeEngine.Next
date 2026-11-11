@@ -37,22 +37,22 @@ public sealed partial class TextTests
     {
         using Font font = LoadFont();
         using var frames = new TextFrames();
-        Entity canvas = frames.World.CreateEntity(new Canvas { Size = new Size(320, 240) });
+        Entity canvas = frames.World.Create(new Canvas { Size = new Size(320, 240) });
         frames.World.Add(canvas, new TextTheme(new TextStyle { Font = font, Size = 20 }));
         Entity node = Views.Views.Spawn(frames.World, canvas, new Text("AV"));
         frames.Frame();
-        ShapedText before = frames.World.Read<ShapedText>(node);
+        ShapedText before = frames.World.ReadComponentData<ShapedText>(node);
         var glyphs = before.Shape.Glyphs.ToArray();
-        uint rectangleVersion = frames.World.WriteVersion<LayoutRect>(node);
+        ulong rectangleVersion = frames.World.ComponentDataWriteVersion<LayoutRect>(node);
 
         frames.World.Add(node, new TextStyle { Color = new Color(0.2f, 0.4f, 0.6f) });
         frames.Frame();
 
-        ShapedText after = frames.World.Read<ShapedText>(node);
+        ShapedText after = frames.World.ReadComponentData<ShapedText>(node);
         Assert.Equal(before.Version, after.Version);
         Assert.Equal(glyphs, after.Shape.Glyphs.ToArray());
         Assert.Equal(before.Size, after.Size);
-        Assert.Equal(rectangleVersion, frames.World.WriteVersion<LayoutRect>(node));
+        Assert.Equal(rectangleVersion, frames.World.ComponentDataWriteVersion<LayoutRect>(node));
         Assert.Equal(new Color(0.2f, 0.4f, 0.6f), after.Style.Color);
     }
 
@@ -64,23 +64,23 @@ public sealed partial class TextTests
     {
         using Font font = LoadFont();
         using var frames = new TextFrames();
-        Entity canvas = frames.World.CreateEntity(new Canvas { Size = new Size(320, 240) });
+        Entity canvas = frames.World.Create(new Canvas { Size = new Size(320, 240) });
         Entity root = Views.Views.Spawn(frames.World, canvas, new TextColumn(font, "AV\nAV"));
 
         frames.Frame();
 
-        Entity column = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Entity[] children = Hierarchy<ElementTree>.GetChildren(frames.World, column).ToArray();
-        ShapedText first = frames.World.Read<ShapedText>(children[0]);
-        ShapedText second = frames.World.Read<ShapedText>(children[1]);
+        Entity column = Assert.Single(ElementChildren.Read(frames.World, root));
+        Entity[] children = ElementChildren.Read(frames.World, column);
+        ShapedText first = frames.World.ReadComponentData<ShapedText>(children[0]);
+        ShapedText second = frames.World.ReadComponentData<ShapedText>(children[1]);
         Assert.Equal(2, first.Shape.LineCount);
         Assert.Equal(23.98f, first.Size.Width, 3);
         Assert.Equal(54.48f, first.Size.Height, 3);
         Assert.Equal(51.90f, second.Size.Width, 3);
         Assert.Equal(27.24f, second.Size.Height, 3);
-        Assert.Equal(0, frames.World.Read<LayoutRect>(children[0]).Value.Y);
-        Assert.Equal(59.48f, frames.World.Read<LayoutRect>(children[1]).Value.Y, 3);
-        Assert.Equal(54.48f, frames.World.Read<LayoutRect>(children[0]).Value.Height, 3);
+        Assert.Equal(0, frames.World.ReadComponentData<LayoutRect>(children[0]).Value.Y);
+        Assert.Equal(59.48f, frames.World.ReadComponentData<LayoutRect>(children[1]).Value.Y, 3);
+        Assert.Equal(54.48f, frames.World.ReadComponentData<LayoutRect>(children[0]).Value.Height, 3);
     }
 
     [Fact]
@@ -88,32 +88,32 @@ public sealed partial class TextTests
     {
         using Font font = LoadFont();
         using var frames = new TextFrames();
-        Entity canvas = frames.World.CreateEntity(new Canvas { Size = new Size(320, 240) });
+        Entity canvas = frames.World.Create(new Canvas { Size = new Size(320, 240) });
         Entity root = Views.Views.Spawn(frames.World, canvas, new TextColumn(font, "AV"));
         frames.Frame();
-        Entity column = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Entity[] children = Hierarchy<ElementTree>.GetChildren(frames.World, column).ToArray();
-        uint textVersion = frames.World.WriteVersion<Text>(children[0]);
-        uint shapeVersion = frames.World.WriteVersion<ShapedText>(children[0]);
-        uint resultVersion = frames.World.Read<ShapedText>(children[0]).Version;
-        uint layoutVersion = frames.World.WriteVersion<LayoutRect>(children[1]);
+        Entity column = Assert.Single(ElementChildren.Read(frames.World, root));
+        Entity[] children = ElementChildren.Read(frames.World, column);
+        ulong textVersion = frames.World.ComponentDataWriteVersion<Text>(children[0]);
+        ulong shapeVersion = frames.World.ComponentDataWriteVersion<ShapedText>(children[0]);
+        uint resultVersion = frames.World.ReadComponentData<ShapedText>(children[0]).Version;
+        ulong layoutVersion = frames.World.ComponentDataWriteVersion<LayoutRect>(children[1]);
 
-        frames.World.Replace(root, new TextColumn(font, "AV"));
+        frames.World.Set(root, new TextColumn(font, "AV"));
         frames.Frame();
 
-        Assert.Equal(textVersion, frames.World.WriteVersion<Text>(children[0]));
-        Assert.Equal(shapeVersion, frames.World.WriteVersion<ShapedText>(children[0]));
-        Assert.Equal(resultVersion, frames.World.Read<ShapedText>(children[0]).Version);
-        Assert.Equal(layoutVersion, frames.World.WriteVersion<LayoutRect>(children[1]));
+        Assert.Equal(textVersion, frames.World.ComponentDataWriteVersion<Text>(children[0]));
+        Assert.Equal(shapeVersion, frames.World.ComponentDataWriteVersion<ShapedText>(children[0]));
+        Assert.Equal(resultVersion, frames.World.ReadComponentData<ShapedText>(children[0]).Version);
+        Assert.Equal(layoutVersion, frames.World.ComponentDataWriteVersion<LayoutRect>(children[1]));
 
-        frames.World.Replace(root, new TextColumn(font, "AV\nAV"));
+        frames.World.Set(root, new TextColumn(font, "AV\nAV"));
         frames.Frame();
 
-        Assert.NotEqual(shapeVersion, frames.World.WriteVersion<ShapedText>(children[0]));
-        Assert.NotEqual(resultVersion, frames.World.Read<ShapedText>(children[0]).Version);
-        Assert.NotEqual(layoutVersion, frames.World.WriteVersion<LayoutRect>(children[1]));
-        Assert.Equal(2, frames.World.Read<ShapedText>(children[0]).Shape.LineCount);
-        Assert.Equal(59.48f, frames.World.Read<LayoutRect>(children[1]).Value.Y, 3);
+        Assert.NotEqual(shapeVersion, frames.World.ComponentDataWriteVersion<ShapedText>(children[0]));
+        Assert.NotEqual(resultVersion, frames.World.ReadComponentData<ShapedText>(children[0]).Version);
+        Assert.NotEqual(layoutVersion, frames.World.ComponentDataWriteVersion<LayoutRect>(children[1]));
+        Assert.Equal(2, frames.World.ReadComponentData<ShapedText>(children[0]).Shape.LineCount);
+        Assert.Equal(59.48f, frames.World.ReadComponentData<LayoutRect>(children[1]).Value.Y, 3);
     }
 
     private static Font LoadFont() => Font.Load(File.ReadAllBytes(
@@ -124,13 +124,13 @@ public sealed partial class TextTests
     {
         using Font font = LoadFont();
         using var frames = new TextFrames();
-        Entity canvas = frames.World.CreateEntity(new Canvas { Size = new Size(320, 240) });
+        Entity canvas = frames.World.Create(new Canvas { Size = new Size(320, 240) });
         frames.World.Add(canvas, new TextTheme(new TextStyle { Font = font, Size = 20 }));
         Entity root = Views.Views.Spawn(frames.World, canvas, new NumberLabel(42, "D4"));
         frames.Frame();
-        Entity node = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Assert.Equal("0042", frames.World.Read<Text>(node).Value);
-        uint version = frames.World.WriteVersion<Text>(node);
+        Entity node = Assert.Single(ElementChildren.Read(frames.World, root));
+        Assert.Equal("0042", frames.World.ReadComponentData<Text>(node).Value);
+        ulong version = frames.World.ComponentDataWriteVersion<Text>(node);
         for (int index = 0; index < 1000; index++)
             node.SetText(frames.World, 42, "D4");
 
@@ -140,18 +140,18 @@ public sealed partial class TextTests
         long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
 
         Assert.Equal(0, allocated);
-        Assert.Equal(version, frames.World.WriteVersion<Text>(node));
-        frames.World.Replace(root, new NumberLabel(42, "D4"));
+        Assert.Equal(version, frames.World.ComponentDataWriteVersion<Text>(node));
+        frames.World.Set(root, new NumberLabel(42, "D4"));
         frames.Frame();
-        Assert.Equal(node, Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root)));
-        Assert.Equal(version, frames.World.WriteVersion<Text>(node));
+        Assert.Equal(node, Assert.Single(ElementChildren.Read(frames.World, root)));
+        Assert.Equal(version, frames.World.ComponentDataWriteVersion<Text>(node));
         node.SetText(frames.World, 43, "D4");
         frames.Frame();
-        Assert.Equal("0043", frames.World.Read<Text>(node).Value);
-        Assert.NotEqual(version, frames.World.WriteVersion<Text>(node));
+        Assert.Equal("0043", frames.World.ReadComponentData<Text>(node).Value);
+        Assert.NotEqual(version, frames.World.ComponentDataWriteVersion<Text>(node));
     }
 
-    private readonly record struct NumberLabel(int Value, string Format) : IView, IComponent
+    private readonly record struct NumberLabel(int Value, string Format) : IView, ITrackedComponent
     {
         public BuildTask Build()
         {
@@ -166,32 +166,32 @@ public sealed partial class TextTests
         using Font font = LoadFont();
         using Font otherFont = Font.Load(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fonts", "Cjk.otf")));
         using var frames = new TextFrames();
-        Entity canvas = frames.World.CreateEntity(new Canvas { Size = new Size(320, 240) });
+        Entity canvas = frames.World.Create(new Canvas { Size = new Size(320, 240) });
         frames.World.Add(canvas, new TextTheme(new TextStyle { Font = font, Size = 20 }));
         var color = new Color(0.2f, 0.4f, 0.6f, 0.8f);
         Entity root = Views.Views.Spawn(frames.World, canvas, new StyledLabel(10, 24, color));
         frames.Frame();
-        Entity node = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        ShapedText shape = frames.World.Read<ShapedText>(node);
+        Entity node = Assert.Single(ElementChildren.Read(frames.World, root));
+        ShapedText shape = frames.World.ReadComponentData<ShapedText>(node);
         Assert.Equal(11.99f, shape.Size.Width, 3);
         Assert.Equal(48, shape.Size.Height);
         Assert.Equal(24, shape.Shape.Lines[1].Baseline - shape.Shape.Lines[0].Baseline, 3);
         Assert.Equal(color, shape.Style.Color);
         Assert.Same(font, shape.Style.Font);
-        uint version = frames.World.WriteVersion<ShapedText>(node);
+        ulong version = frames.World.ComponentDataWriteVersion<ShapedText>(node);
 
-        frames.World.Replace(root, new StyledLabel(20, 32, new Color(1, 0, 0)));
+        frames.World.Set(root, new StyledLabel(20, 32, new Color(1, 0, 0)));
         frames.Frame();
-        Assert.Equal(23.98f, frames.World.Read<ShapedText>(node).Size.Width, 3);
-        Assert.Equal(64, frames.World.Read<ShapedText>(node).Size.Height);
-        Assert.Equal(new Color(1, 0, 0), frames.World.Read<ShapedText>(node).Style.Color);
-        Assert.NotEqual(version, frames.World.WriteVersion<ShapedText>(node));
+        Assert.Equal(23.98f, frames.World.ReadComponentData<ShapedText>(node).Size.Width, 3);
+        Assert.Equal(64, frames.World.ReadComponentData<ShapedText>(node).Size.Height);
+        Assert.Equal(new Color(1, 0, 0), frames.World.ReadComponentData<ShapedText>(node).Style.Color);
+        Assert.NotEqual(version, frames.World.ComponentDataWriteVersion<ShapedText>(node));
 
-        frames.World.Replace(canvas, new TextTheme(new TextStyle { Font = otherFont, Size = 30 }));
+        frames.World.Set(canvas, new TextTheme(new TextStyle { Font = otherFont, Size = 30 }));
         frames.Frame();
-        Assert.Same(otherFont, frames.World.Read<ShapedText>(node).Style.Font);
-        Assert.Equal(20, frames.World.Read<ShapedText>(node).Style.Size);
-        Assert.Equal(64, frames.World.Read<ShapedText>(node).Size.Height);
+        Assert.Same(otherFont, frames.World.ReadComponentData<ShapedText>(node).Style.Font);
+        Assert.Equal(20, frames.World.ReadComponentData<ShapedText>(node).Style.Size);
+        Assert.Equal(64, frames.World.ReadComponentData<ShapedText>(node).Size.Height);
     }
 
     private readonly record struct StyledLabel(float Size, float Height, Color Color) : IView, IComponent
@@ -208,31 +208,31 @@ public sealed partial class TextTests
     {
         using Font font = LoadFont();
         using var frames = new TextFrames();
-        Entity canvas = frames.World.CreateEntity(new Canvas { Size = new Size(64, 240) });
+        Entity canvas = frames.World.Create(new Canvas { Size = new Size(64, 240) });
         frames.World.Add(canvas, new TextTheme(new TextStyle { Font = font, Size = 20 }));
         Entity root = Views.Views.Spawn(frames.World, canvas, new TextRow());
         frames.Frame();
-        Entity row = Assert.Single(Hierarchy<ElementTree>.GetChildren(frames.World, root));
-        Entity text = Hierarchy<ElementTree>.GetChildren(frames.World, row)[0];
-        Assert.Equal(24, frames.World.Read<LayoutRect>(text).Value.Width, 3);
-        Assert.Equal(2, frames.World.Read<ShapedText>(text).Shape.LineCount);
-        Assert.Equal(54.48f, frames.World.Read<LayoutRect>(text).Value.Height, 3);
-        uint version = frames.World.WriteVersion<ShapedText>(text);
-        uint resultVersion = frames.World.Read<ShapedText>(text).Version;
-        uint layoutVersion = frames.World.WriteVersion<LayoutRect>(text);
+        Entity row = Assert.Single(ElementChildren.Read(frames.World, root));
+        Entity text = ElementChildren.Read(frames.World, row)[0];
+        Assert.Equal(24, frames.World.ReadComponentData<LayoutRect>(text).Value.Width, 3);
+        Assert.Equal(2, frames.World.ReadComponentData<ShapedText>(text).Shape.LineCount);
+        Assert.Equal(54.48f, frames.World.ReadComponentData<LayoutRect>(text).Value.Height, 3);
+        ulong version = frames.World.ComponentDataWriteVersion<ShapedText>(text);
+        uint resultVersion = frames.World.ReadComponentData<ShapedText>(text).Version;
+        ulong layoutVersion = frames.World.ComponentDataWriteVersion<LayoutRect>(text);
 
         frames.Frame();
 
-        Assert.Equal(version, frames.World.WriteVersion<ShapedText>(text));
-        Assert.Equal(resultVersion, frames.World.Read<ShapedText>(text).Version);
-        Assert.Equal(layoutVersion, frames.World.WriteVersion<LayoutRect>(text));
+        Assert.Equal(version, frames.World.ComponentDataWriteVersion<ShapedText>(text));
+        Assert.Equal(resultVersion, frames.World.ReadComponentData<ShapedText>(text).Version);
+        Assert.Equal(layoutVersion, frames.World.ComponentDataWriteVersion<LayoutRect>(text));
 
-        frames.World.Replace(canvas, new Canvas { Size = new Size(88, 240) });
+        frames.World.Set(canvas, new Canvas { Size = new Size(88, 240) });
         frames.Frame();
 
-        Assert.Equal(1, frames.World.Read<ShapedText>(text).Shape.LineCount);
-        Assert.Equal(27.24f, frames.World.Read<LayoutRect>(text).Value.Height, 3);
-        Assert.NotEqual(version, frames.World.WriteVersion<ShapedText>(text));
+        Assert.Equal(1, frames.World.ReadComponentData<ShapedText>(text).Shape.LineCount);
+        Assert.Equal(27.24f, frames.World.ReadComponentData<LayoutRect>(text).Value.Height, 3);
+        Assert.NotEqual(version, frames.World.ComponentDataWriteVersion<ShapedText>(text));
     }
 
     private readonly record struct TextRow : IView, IComponent
@@ -252,12 +252,12 @@ public sealed partial class TextTests
     public void LargeNumericFormatsReuseCharactersAndPreserveTextVersions()
     {
         using var world = new World();
-        Entity node = world.CreateEntity(new Text(""));
+        Entity node = world.Create(new Text(""));
         node.SetText(world, 42, "D700");
-        string text = world.Read<Text>(node).Value;
+        string text = world.ReadComponentData<Text>(node).Value;
         Assert.Equal(700, text.Length);
         Assert.Equal(new string('0', 698) + "42", text);
-        uint version = world.WriteVersion<Text>(node);
+        ulong version = world.ComponentDataWriteVersion<Text>(node);
         for (int index = 0; index < 1000; index++)
             node.SetText(world, 42, "D700");
         long before = GC.GetAllocatedBytesForCurrentThread();
@@ -265,10 +265,10 @@ public sealed partial class TextTests
             node.SetText(world, 42, "D700");
         long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
         Assert.Equal(0, allocated);
-        Assert.Equal(version, world.WriteVersion<Text>(node));
+        Assert.Equal(version, world.ComponentDataWriteVersion<Text>(node));
         node.SetText(world, 42, "D4");
-        Assert.Equal("0042", world.Read<Text>(node).Value);
-        Assert.NotEqual(version, world.WriteVersion<Text>(node));
+        Assert.Equal("0042", world.ReadComponentData<Text>(node).Value);
+        Assert.NotEqual(version, world.ComponentDataWriteVersion<Text>(node));
     }
 
 #if DEBUG
@@ -283,7 +283,7 @@ public sealed partial class TextTests
 
         frames.Frame();
 
-        Assert.IsType<InvalidOperationException>(frames.World.ReadSparse<BuildError>(root).Exception);
+        Assert.IsType<InvalidOperationException>(frames.World.ReadComponentData<BuildError>(root).Exception);
     }
 
     [Fact]
@@ -294,7 +294,7 @@ public sealed partial class TextTests
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
         systems.Add(new ViewRebuildSystem());
         systems.Add(new LayoutSystem());
-        Entity canvas = world.CreateEntity(new Canvas { Size = new Size(320, 240) });
+        Entity canvas = world.Create(new Canvas { Size = new Size(320, 240) });
         world.Add(canvas, new TextTheme(new TextStyle { Font = font }));
         Views.Views.Spawn(world, canvas, new Text("AV"));
 

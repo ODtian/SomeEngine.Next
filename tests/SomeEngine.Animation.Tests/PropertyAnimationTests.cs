@@ -18,74 +18,74 @@ public sealed class PropertyAnimationTests
     public void StartingAndRetargetingKeepThePresentedFieldAndItsWriteVersion()
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new Visual { Opacity = 0.25f });
+        Entity target = world.Create(new Visual { Opacity = 0.25f });
         PropertyAnimation.Declare<float>(world, target);
-        uint before = world.WriteVersion<Visual>(target);
-        uint typeBefore = world.ComponentWriteVersion<Visual>();
+        ulong before = world.ComponentDataWriteVersion<Visual>(target);
+        ulong typeBefore = world.ComponentWriteVersion(ComponentId<Visual>.Value);
 
         Entity animation = PropertyAnimation.To(world, target, Opacity, 1f, Spec.Tween(1));
 
-        Assert.Equal(0.25f, world.Read<Visual>(target).Opacity);
-        Assert.Equal(before, world.WriteVersion<Visual>(target));
-        Assert.Equal(typeBefore, world.ComponentWriteVersion<Visual>());
+        Assert.Equal(0.25f, world.ReadComponentData<Visual>(target).Opacity);
+        Assert.Equal(before, world.ComponentDataWriteVersion<Visual>(target));
+        Assert.Equal(typeBefore, world.ComponentWriteVersion(ComponentId<Visual>.Value));
         PropertyAnimation.Pause(world, animation);
         PropertyAnimation.Retarget(world, animation, Opacity, 2f);
-        Assert.Equal(0.25f, world.Read<Visual>(target).Opacity);
-        Assert.Equal(before, world.WriteVersion<Visual>(target));
-        Assert.Equal(typeBefore, world.ComponentWriteVersion<Visual>());
+        Assert.Equal(0.25f, world.ReadComponentData<Visual>(target).Opacity);
+        Assert.Equal(before, world.ComponentDataWriteVersion<Visual>(target));
+        Assert.Equal(typeBefore, world.ComponentWriteVersion(ComponentId<Visual>.Value));
         PropertyAnimation.Resume(world, animation);
         using var systems = FloatSystems(world);
         Tick(systems, world, 0.5);
-        Assert.Equal(1.125f, world.Read<Visual>(target).Opacity);
-        Assert.NotEqual(before, world.WriteVersion<Visual>(target));
+        Assert.Equal(1.125f, world.ReadComponentData<Visual>(target).Opacity);
+        Assert.NotEqual(before, world.ComponentDataWriteVersion<Visual>(target));
     }
 
     [Fact]
     public void TweenWritesTheSelectedFieldAndAdvancesItsVersionEveryFrame()
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new Visual { Number = 7, Opacity = 0.25f });
+        Entity target = world.Create(new Visual { Number = 7, Opacity = 0.25f });
         PropertyAnimation.Declare<float>(world, target);
         Entity animation = PropertyAnimation.To(world, target, Opacity, 0.75f, Spec.Tween(1));
         using var systems = FloatSystems(world);
-        uint before = world.WriteVersion<Visual>(target);
+        ulong before = world.ComponentDataWriteVersion<Visual>(target);
 
         Tick(systems, world, 0.5);
 
-        Assert.Equal(new Visual { Number = 7, Opacity = 0.5f }, world.Read<Visual>(target));
-        uint middle = world.WriteVersion<Visual>(target);
+        Assert.Equal(new Visual { Number = 7, Opacity = 0.5f }, world.ReadComponentData<Visual>(target));
+        ulong middle = world.ComponentDataWriteVersion<Visual>(target);
         Assert.NotEqual(before, middle);
         Assert.True(world.IsEnabled<Timeline>(animation));
 
         Tick(systems, world, 0.5);
 
-        Assert.Equal(0.75f, world.Read<Visual>(target).Opacity);
-        Assert.NotEqual(middle, world.WriteVersion<Visual>(target));
+        Assert.Equal(0.75f, world.ReadComponentData<Visual>(target).Opacity);
+        Assert.NotEqual(middle, world.ComponentDataWriteVersion<Visual>(target));
         Assert.False(world.IsEnabled<Timeline>(animation));
-        Assert.Equal(1u, world.Read<Timeline>(animation).Completions);
+        Assert.Equal(1u, world.ReadComponentData<Timeline>(animation).Completions);
     }
 
     [Fact]
     public void SpringAdvancesTheFieldToItsTargetAndVersionsEachSample()
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new Visual());
+        Entity target = world.Create(new Visual());
         PropertyAnimation.Declare<float>(world, target);
         Entity animation = PropertyAnimation.To(world, target, Opacity, 1f, Spec.Spring());
         using var systems = FloatSystems(world);
-        uint before = world.WriteVersion<Visual>(target);
+        ulong before = world.ComponentDataWriteVersion<Visual>(target);
 
         Tick(systems, world, 1d / 60);
 
-        Assert.Equal(0.035260417f, world.Read<Visual>(target).Opacity, 6);
-        Assert.NotEqual(before, world.WriteVersion<Visual>(target));
+        Assert.Equal(0.035260417f, world.ReadComponentData<Visual>(target).Opacity, 6);
+        Assert.NotEqual(before, world.ComponentDataWriteVersion<Visual>(target));
         for (int frame = 0; frame < 1200 && world.IsEnabled<Timeline>(animation); frame++)
         {
-            uint version = world.WriteVersion<Visual>(target);
+            ulong version = world.ComponentDataWriteVersion<Visual>(target);
             Tick(systems, world, 1d / 60);
-            Assert.NotEqual(version, world.WriteVersion<Visual>(target));
+            Assert.NotEqual(version, world.ComponentDataWriteVersion<Visual>(target));
         }
-        Assert.Equal(1, world.Read<Visual>(target).Opacity);
+        Assert.Equal(1, world.ReadComponentData<Visual>(target).Opacity);
         Assert.False(world.IsEnabled<Timeline>(animation));
     }
 
@@ -93,50 +93,50 @@ public sealed class PropertyAnimationTests
     public void RepeatedToRetargetsFromThePresentedValue()
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new Visual());
+        Entity target = world.Create(new Visual());
         PropertyAnimation.Declare<float>(world, target);
         Entity animation = PropertyAnimation.To(world, target, Opacity, 1f, Spec.Tween(1));
         using var systems = FloatSystems(world);
         Tick(systems, world, 0.25);
-        Assert.Equal(0.25f, world.Read<Visual>(target).Opacity);
+        Assert.Equal(0.25f, world.ReadComponentData<Visual>(target).Opacity);
 
         Entity retargeted = PropertyAnimation.To(world, target, Opacity, 2f, Spec.Tween(1));
 
         Assert.Equal(animation, retargeted);
-        Assert.Equal(0.25f, world.Read<Visual>(target).Opacity);
+        Assert.Equal(0.25f, world.ReadComponentData<Visual>(target).Opacity);
         Tick(systems, world, 0.5);
-        Assert.Equal(1.125f, world.Read<Visual>(target).Opacity);
+        Assert.Equal(1.125f, world.ReadComponentData<Visual>(target).Opacity);
         Tick(systems, world, 0.5);
-        Assert.Equal(2, world.Read<Visual>(target).Opacity);
-        Assert.Equal(1u, world.Read<Timeline>(animation).Completions);
+        Assert.Equal(2, world.ReadComponentData<Visual>(target).Opacity);
+        Assert.Equal(1u, world.ReadComponentData<Timeline>(animation).Completions);
     }
 
     [Fact]
     public void SpringToRetargetKeepsMomentumAndThePresentedValue()
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new Visual());
+        Entity target = world.Create(new Visual());
         PropertyAnimation.Declare<float>(world, target);
         Entity animation = PropertyAnimation.To(world, target, Opacity, 1f, Spec.Spring());
         using var systems = FloatSystems(world);
         Tick(systems, world, 1d / 60);
-        float presented = world.Read<Visual>(target).Opacity;
+        float presented = world.ReadComponentData<Visual>(target).Opacity;
 
         Entity retargeted = PropertyAnimation.To(world, target, Opacity, 2f, Spec.Spring());
 
         Assert.Equal(animation, retargeted);
-        Assert.Equal(presented, world.Read<Visual>(target).Opacity);
+        Assert.Equal(presented, world.ReadComponentData<Visual>(target).Opacity);
         Tick(systems, world, 1d / 60);
         // The reference spring keeps the first sample's velocity, then takes two 1/120 steps.
-        Assert.Equal(0.13907372f, world.Read<Visual>(target).Opacity, 6);
+        Assert.Equal(0.13907372f, world.ReadComponentData<Visual>(target).Opacity, 6);
     }
 
     [Fact]
     public void OrdinaryTargetsUsePooledEntitiesThatAreReusedAfterCompletion()
     {
         using var world = new World();
-        Entity first = world.CreateEntity(new Visual());
-        Entity second = world.CreateEntity(new Visual());
+        Entity first = world.Create(new Visual());
+        Entity second = world.Create(new Visual());
         Entity firstAnimation = PropertyAnimation.To(world, first, Opacity, 1f, Spec.Tween(1));
         Entity secondAnimation = PropertyAnimation.To(world, second, Opacity, 2f, Spec.Tween(1));
         Assert.NotEqual(first, firstAnimation);
@@ -146,8 +146,8 @@ public sealed class PropertyAnimationTests
 
         Tick(systems, world, 1);
 
-        Assert.Equal(1, world.Read<Visual>(first).Opacity);
-        Assert.Equal(2, world.Read<Visual>(second).Opacity);
+        Assert.Equal(1, world.ReadComponentData<Visual>(first).Opacity);
+        Assert.Equal(2, world.ReadComponentData<Visual>(second).Opacity);
         Assert.True(world.IsAlive(firstAnimation));
         Assert.True(world.IsAlive(secondAnimation));
         Assert.False(world.IsEnabled<Timeline>(firstAnimation));
@@ -162,21 +162,20 @@ public sealed class PropertyAnimationTests
         Assert.NotEqual(reusedFirst, reusedSecond);
         Assert.Equal(entityCount, world.EntityCount);
         Tick(systems, world, 1);
-        Assert.Equal(4, world.Read<Visual>(first).Opacity);
-        Assert.Equal(3, world.Read<Visual>(second).Opacity);
+        Assert.Equal(4, world.ReadComponentData<Visual>(first).Opacity);
+        Assert.Equal(3, world.ReadComponentData<Visual>(second).Opacity);
     }
 
     [Fact]
     public void DeclaredTargetCanStartRetargetAndStopOneHundredTimesWithTheSameTableAndEntityCount()
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new Visual());
+        Entity target = world.Create(new Visual());
         PropertyAnimation.Declare<float>(world, target);
         PropertyAnimation.Declare<float>(world, target);
-        var timelines = world.Query(world.QueryDefinition().Read<Timeline>());
-        uint members = world.MembershipVersion(timelines);
-        using var tables = world.ObserveEntityTables();
-        tables.Accept(tables.Read());
+        var timelines = world.Query(new QueryDescription().WithStored<Timeline>());
+        ulong members = timelines.MembershipVersion;
+        using var tables = world.WatchMembership(timelines);
         int entityCount = world.EntityCount;
         using var systems = FloatSystems(world);
 
@@ -185,76 +184,77 @@ public sealed class PropertyAnimationTests
             Entity animation = PropertyAnimation.To(world, target, Opacity, 1f, Spec.Tween(1));
             Assert.Equal(target, animation);
             Tick(systems, world, 0.25);
-            float before = world.Read<Visual>(target).Opacity;
+            float before = world.ReadComponentData<Visual>(target).Opacity;
             PropertyAnimation.Retarget(world, animation, Opacity, 2f);
-            Assert.Equal(before, world.Read<Visual>(target).Opacity);
+            Assert.Equal(before, world.ReadComponentData<Visual>(target).Opacity);
             Tick(systems, world, 0.5);
-            Assert.Equal((before + 2) / 2, world.Read<Visual>(target).Opacity, 5);
+            Assert.Equal((before + 2) / 2, world.ReadComponentData<Visual>(target).Opacity, 5);
             PropertyAnimation.Stop(world, animation);
-            float stopped = world.Read<Visual>(target).Opacity;
+            float stopped = world.ReadComponentData<Visual>(target).Opacity;
             Tick(systems, world, 1);
-            Assert.Equal(stopped, world.Read<Visual>(target).Opacity);
+            Assert.Equal(stopped, world.ReadComponentData<Visual>(target).Opacity);
             Assert.False(world.IsEnabled<Timeline>(animation));
         }
 
         Assert.Equal(entityCount, world.EntityCount);
-        Assert.Equal(members, world.MembershipVersion(timelines));
-        Assert.Equal(target, Assert.Single(tables.Read().Entities));
-        world.ReleaseQuery(timelines);
+        Assert.Equal(members, timelines.MembershipVersion);
+        using var membership = tables.Open();
+        Assert.Equal(0, membership.Count);
+
     }
 
     [Fact]
     public void PauseResumeAndSpeedPreserveProgressAndTableMembership()
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new Visual());
+        Entity target = world.Create(new Visual());
         PropertyAnimation.Declare<float>(world, target);
         Entity animation = PropertyAnimation.To(world, target, Opacity, 1f, Spec.Tween(2));
-        var timelines = world.Query(world.QueryDefinition().Read<Timeline>());
-        uint members = world.MembershipVersion(timelines);
-        using var tables = world.ObserveEntityTables();
-        tables.Accept(tables.Read());
+        var timelines = world.Query(new QueryDescription().WithStored<Timeline>());
+        ulong members = timelines.MembershipVersion;
+        using var tables = world.WatchMembership(timelines);
         using var systems = FloatSystems(world);
         Tick(systems, world, 0.25);
-        Assert.Equal(0.125f, world.Read<Visual>(target).Opacity);
+        Assert.Equal(0.125f, world.ReadComponentData<Visual>(target).Opacity);
 
         PropertyAnimation.SetSpeed(world, animation, 2);
         PropertyAnimation.Pause(world, animation);
         Tick(systems, world, 1);
-        Assert.Equal(0.125f, world.Read<Visual>(target).Opacity);
+        Assert.Equal(0.125f, world.ReadComponentData<Visual>(target).Opacity);
         Assert.True(world.IsEnabled<Timeline>(animation));
 
         PropertyAnimation.Resume(world, animation);
         Tick(systems, world, 0.25);
-        Assert.Equal(0.375f, world.Read<Visual>(target).Opacity);
+        Assert.Equal(0.375f, world.ReadComponentData<Visual>(target).Opacity);
         PropertyAnimation.SetSpeed(world, animation, 0);
         Tick(systems, world, 1);
-        Assert.Equal(0.375f, world.Read<Visual>(target).Opacity);
+        Assert.Equal(0.375f, world.ReadComponentData<Visual>(target).Opacity);
         Assert.True(world.IsEnabled<Timeline>(animation));
         PropertyAnimation.SetSpeed(world, animation, 1);
         Tick(systems, world, 0.25);
-        Assert.Equal(0.5f, world.Read<Visual>(target).Opacity);
+        Assert.Equal(0.5f, world.ReadComponentData<Visual>(target).Opacity);
         Tick(systems, world, 1);
-        Assert.Equal(1, world.Read<Visual>(target).Opacity);
-        Assert.Equal(members, world.MembershipVersion(timelines));
-        Assert.Equal(target, Assert.Single(tables.Read().Entities));
-        world.ReleaseQuery(timelines);
+        Assert.Equal(1, world.ReadComponentData<Visual>(target).Opacity);
+        Assert.Equal(members, timelines.MembershipVersion);
+        using var membership = tables.Open();
+        Assert.Equal(0, membership.Count);
+
     }
 
     [Fact]
     public void BySamplesADisplacementThatReturnsToThePresentedValue()
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new Visual { Opacity = 10 });
+        Entity target = world.Create(new Visual { Opacity = 10 });
         Entity animation = PropertyAnimation.By(world, target, Opacity, 4f, Spec.Tween(1));
         using var systems = FloatSystems(world);
-        Assert.Equal(10, world.Read<Visual>(target).Opacity);
+        Assert.Equal(10, world.ReadComponentData<Visual>(target).Opacity);
 
         Tick(systems, world, 0.5);
 
-        Assert.Equal(12, world.Read<Visual>(target).Opacity);
+        Assert.Equal(12, world.ReadComponentData<Visual>(target).Opacity);
         Tick(systems, world, 0.5);
-        Assert.Equal(10, world.Read<Visual>(target).Opacity);
+        Assert.Equal(10, world.ReadComponentData<Visual>(target).Opacity);
         Assert.False(world.IsEnabled<Timeline>(animation));
     }
 
@@ -262,7 +262,7 @@ public sealed class PropertyAnimationTests
     public void StoppingAnInlineTimelineThenStartingOneFieldKeepsTheOtherFieldsAtTheirStoppedValues()
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new Visual { Position = new Vector2(10, 20) });
+        Entity target = world.Create(new Visual { Position = new Vector2(10, 20) });
         PropertyAnimation.Declare<float>(world, target);
         PropertyAnimation.Declare<Vector2>(world, target);
         PropertyAnimation.To(world, target, Opacity, 1f, Spec.Tween(1));
@@ -273,21 +273,21 @@ public sealed class PropertyAnimationTests
         systems.Add(new TrackSystem<Vector2, Vector2Ops>());
         systems.Add(new TimelineEndSystem());
         Tick(systems, world, 0.25);
-        Assert.Equal(new Vector2(12.5f, 25), world.Read<Visual>(target).Position);
+        Assert.Equal(new Vector2(12.5f, 25), world.ReadComponentData<Visual>(target).Position);
 
         PropertyAnimation.Stop(world, target);
         PropertyAnimation.To(world, target, Opacity, 2f, Spec.Tween(1));
         Tick(systems, world, 0.5);
 
-        Assert.Equal(1.125f, world.Read<Visual>(target).Opacity);
-        Assert.Equal(new Vector2(12.5f, 25), world.Read<Visual>(target).Position);
+        Assert.Equal(1.125f, world.ReadComponentData<Visual>(target).Opacity);
+        Assert.Equal(new Vector2(12.5f, 25), world.ReadComponentData<Visual>(target).Position);
     }
 
     [Fact]
     public void ACompletedFieldCanBeChangedWhileAnotherFieldContinuesAnimating()
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new Visual());
+        Entity target = world.Create(new Visual());
         PropertyAnimation.Declare<float>(world, target);
         PropertyAnimation.Declare<Vector2>(world, target);
         PropertyAnimation.To(world, target, Opacity, 1f, Spec.Tween(0.25f));
@@ -298,15 +298,15 @@ public sealed class PropertyAnimationTests
         systems.Add(new TrackSystem<Vector2, Vector2Ops>());
         systems.Add(new TimelineEndSystem());
         Tick(systems, world, 0.25);
-        Visual visual = world.Read<Visual>(target);
+        Visual visual = world.ReadComponentData<Visual>(target);
         Assert.Equal(1, visual.Opacity);
         visual.Opacity = 0.5f;
-        world.Replace(target, visual);
+        world.Set(target, visual);
 
         Tick(systems, world, 0.25);
 
-        Assert.Equal(0.5f, world.Read<Visual>(target).Opacity);
-        Assert.Equal(new Vector2(2, 4), world.Read<Visual>(target).Position);
+        Assert.Equal(0.5f, world.ReadComponentData<Visual>(target).Opacity);
+        Assert.Equal(new Vector2(2, 4), world.ReadComponentData<Visual>(target).Position);
         Assert.True(world.IsEnabled<Timeline>(target));
     }
 
@@ -314,8 +314,8 @@ public sealed class PropertyAnimationTests
     public void DefaultSystemsAnimateBuiltInValuesWithTheSuppliedClock()
     {
         using var world = new World();
-        Entity time = world.CreateEntity(new AnimationTime(0.25f));
-        Entity target = world.CreateEntity(new Visual());
+        Entity time = world.Create(new AnimationTime(0.25f));
+        Entity target = world.Create(new Visual());
         PropertyAnimation.Declare<float>(world, target);
         PropertyAnimation.Declare<Vector2>(world, target);
         PropertyAnimation.To(world, target, Opacity, 1f, Spec.Tween(1));
@@ -325,12 +325,12 @@ public sealed class PropertyAnimationTests
 
         systems.Update();
 
-        Assert.Equal(0.25f, world.Read<Visual>(target).Opacity);
-        Assert.Equal(new Vector2(1, 2), world.Read<Visual>(target).Position);
-        world.Replace(time, new AnimationTime(0.75f));
+        Assert.Equal(0.25f, world.ReadComponentData<Visual>(target).Opacity);
+        Assert.Equal(new Vector2(1, 2), world.ReadComponentData<Visual>(target).Position);
+        world.Set(time, new AnimationTime(0.75f));
         systems.Update();
-        Assert.Equal(1, world.Read<Visual>(target).Opacity);
-        Assert.Equal(new Vector2(4, 8), world.Read<Visual>(target).Position);
+        Assert.Equal(1, world.ReadComponentData<Visual>(target).Opacity);
+        Assert.Equal(new Vector2(4, 8), world.ReadComponentData<Visual>(target).Position);
         Assert.False(world.IsEnabled<Timeline>(target));
     }
 
@@ -339,7 +339,7 @@ public sealed class PropertyAnimationTests
     {
         using var world = new World();
         Channel<Meter> channel = Channel<Meter>.Of<Reading>(static (ref Reading reading) => ref reading.Value);
-        Entity target = world.CreateEntity(new Reading { Value = new Meter(10) });
+        Entity target = world.Create(new Reading { Value = new Meter(10) });
         PropertyAnimation.Declare<Meter>(world, target);
         Entity animation = PropertyAnimation.To(world, target, channel, new Meter(20), Spec.Tween(1));
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
@@ -347,22 +347,22 @@ public sealed class PropertyAnimationTests
         systems.Add(new TrackSystem<Meter, MeterOps>());
         systems.Add(new TimelineEndSystem());
         Tick(systems, world, 0.5);
-        Assert.Equal(new Meter(15), world.Read<Reading>(target).Value);
+        Assert.Equal(new Meter(15), world.ReadComponentData<Reading>(target).Value);
         PropertyAnimation.Retarget(world, animation, channel, new Meter(30));
         Tick(systems, world, 0.5);
-        Assert.Equal(new Meter(22.5f), world.Read<Reading>(target).Value);
+        Assert.Equal(new Meter(22.5f), world.ReadComponentData<Reading>(target).Value);
         Tick(systems, world, 0.5);
-        Assert.Equal(new Meter(30), world.Read<Reading>(target).Value);
+        Assert.Equal(new Meter(30), world.ReadComponentData<Reading>(target).Value);
 
         PropertyAnimation.By(world, target, channel, new Meter(4), Spec.Tween(1));
         Tick(systems, world, 0.5);
-        Assert.Equal(new Meter(32), world.Read<Reading>(target).Value);
+        Assert.Equal(new Meter(32), world.ReadComponentData<Reading>(target).Value);
         Tick(systems, world, 0.5);
-        Assert.Equal(new Meter(30), world.Read<Reading>(target).Value);
+        Assert.Equal(new Meter(30), world.ReadComponentData<Reading>(target).Value);
         PropertyAnimation.To(world, target, channel, new Meter(40), Spec.Spring(tolerance: 0.0001f));
         for (int frame = 0; frame < 1200 && world.IsEnabled<Timeline>(animation); frame++)
             Tick(systems, world, 1d / 60);
-        Assert.Equal(new Meter(40), world.Read<Reading>(target).Value);
+        Assert.Equal(new Meter(40), world.ReadComponentData<Reading>(target).Value);
         Assert.False(world.IsEnabled<Timeline>(animation));
     }
 
@@ -370,12 +370,12 @@ public sealed class PropertyAnimationTests
     public void SteadyDefaultAnimationFramesAllocateZeroManagedBytes()
     {
         using var world = new World();
-        Entity inline = world.CreateEntity(new Visual());
-        Entity ordinary = world.CreateEntity(new Visual());
+        Entity inline = world.Create(new Visual());
+        Entity ordinary = world.Create(new Visual());
         PropertyAnimation.Declare<float>(world, inline);
         PropertyAnimation.To(world, inline, Opacity, 1f, Spec.Tween(10000));
         PropertyAnimation.To(world, ordinary, Opacity, 1f, Spec.Tween(10000));
-        Entity layered = world.CreateEntity(new Visual { Opacity = 10 });
+        Entity layered = world.Create(new Visual { Opacity = 10 });
         var layers = new AnimationLayers { Count = 1 };
         layers.Items[0] = new AnimationLayer { Mode = LayerMode.Additive, Weight = 1 };
         world.Add(layered, layers);
@@ -394,33 +394,34 @@ public sealed class PropertyAnimationTests
         long after = GC.GetAllocatedBytesForCurrentThread();
 
         Assert.Equal(0, after - before);
-        Assert.True(world.Read<Visual>(inline).Opacity > 0);
-        Assert.Equal(world.Read<Visual>(inline).Opacity, world.Read<Visual>(ordinary).Opacity);
-        Assert.InRange(world.Read<Visual>(layered).Opacity, 45.95f, 46f);
+        Assert.True(world.ReadComponentData<Visual>(inline).Opacity > 0);
+        Assert.Equal(world.ReadComponentData<Visual>(inline).Opacity, world.ReadComponentData<Visual>(ordinary).Opacity);
+        Assert.InRange(world.ReadComponentData<Visual>(layered).Opacity, 45.95f, 46f);
     }
 
     [Fact]
     public void KeyframeTracksSampleTheAnimationEntitysBuffer()
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new Visual());
+        Entity target = world.Create(new Visual());
         PropertyAnimation.Declare<float>(world, target);
         world.AddBuffer<Keyframe>(target);
-        world.ExecuteBufferWrite<Keyframe>(target, static keys =>
         {
+            using var keys = world.GetBuffer<Keyframe>(target);
             keys.Add(new Keyframe(0, 0));
             keys.Add(new Keyframe(0.5f, 0.8f, EasingType.QuadIn));
             keys.Add(new Keyframe(1, 1));
-        });
+
+        }
         PropertyAnimation.To(world, target, Opacity, 10f, Spec.Keyframes(2));
         using var systems = FloatSystems(world);
 
         Tick(systems, world, 0.5);
-        Assert.Equal(4, world.Read<Visual>(target).Opacity, 5);
+        Assert.Equal(4, world.ReadComponentData<Visual>(target).Opacity, 5);
         Tick(systems, world, 1);
-        Assert.Equal(8.5f, world.Read<Visual>(target).Opacity, 5);
+        Assert.Equal(8.5f, world.ReadComponentData<Visual>(target).Opacity, 5);
         Tick(systems, world, 0.5);
-        Assert.Equal(10, world.Read<Visual>(target).Opacity);
+        Assert.Equal(10, world.ReadComponentData<Visual>(target).Opacity);
         Assert.False(world.IsEnabled<Timeline>(target));
     }
 
@@ -430,7 +431,7 @@ public sealed class PropertyAnimationTests
     public void HigherLayersBlendAfterLowerLayers(bool inline)
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new Visual());
+        Entity target = world.Create(new Visual());
         if (inline)
             PropertyAnimation.Declare<float>(world, target);
         PropertyAnimation.To(world, target, Opacity, 1f, Spec.Tween(1), layer: 0);
@@ -439,56 +440,68 @@ public sealed class PropertyAnimationTests
 
         PropertyAnimation.To(world, target, Opacity, 2f, Spec.Tween(1), layer: 1);
         Tick(systems, world, 0.5);
-        Assert.Equal(1.125f, world.Read<Visual>(target).Opacity);
+        Assert.Equal(1.125f, world.ReadComponentData<Visual>(target).Opacity);
 
         PropertyAnimation.To(world, target, Opacity, 3f, Spec.Tween(1), layer: 0);
         Tick(systems, world, 0.5);
-        Assert.Equal(2f, world.Read<Visual>(target).Opacity);
+        Assert.Equal(2f, world.ReadComponentData<Visual>(target).Opacity);
         Tick(systems, world, 1);
-        Assert.Equal(3, world.Read<Visual>(target).Opacity);
+        Assert.Equal(3, world.ReadComponentData<Visual>(target).Opacity);
     }
 
     [Fact]
     public void OnePooledTimelineCanAnimateMultipleTargetsAndBeReusedAfterTheyFinish()
     {
         using var world = new World();
-        Entity first = world.CreateEntity(new Visual());
-        Entity second = world.CreateEntity(new Visual());
+        Entity first = world.Create(new Visual());
+        Entity second = world.Create(new Visual());
         Entity animation = PropertyAnimation.To(world, first, Opacity, 1f, Spec.Tween(1));
         var secondTrack = new Track<float>
         {
-            Target = second, Channel = Opacity, To = 2, Duration = 1,
-            Curve = Spec.Tween(1).Curve, StartId = world.Read<Timeline>(animation).Starts,
+            Target = second,
+            Channel = Opacity,
+            To = 2,
+            Duration = 1,
+            Curve = Spec.Tween(1).Curve,
+            StartId = world.ReadComponentData<Timeline>(animation).Starts,
         };
-        world.ExecuteBufferWrite<Track<float>, Track<float>>(animation, ref secondTrack,
-            static (DynamicBuffer<Track<float>> tracks, ref Track<float> track) => tracks.Add(track));
+        {
+            using var tracks = world.GetBuffer<Track<float>>(animation);
+            Visit(tracks, ref secondTrack);
+
+            static void Visit(DynamicBuffer<Track<float>> tracks, ref Track<float> track)
+            {
+                tracks.Add(track);
+
+            }
+        }
         using var systems = FloatSystems(world);
 
         Tick(systems, world, 0.5);
-        Assert.Equal(0.5f, world.Read<Visual>(first).Opacity);
-        Assert.Equal(1, world.Read<Visual>(second).Opacity);
+        Assert.Equal(0.5f, world.ReadComponentData<Visual>(first).Opacity);
+        Assert.Equal(1, world.ReadComponentData<Visual>(second).Opacity);
         Tick(systems, world, 0.5);
-        Assert.Equal(1, world.Read<Visual>(first).Opacity);
-        Assert.Equal(2, world.Read<Visual>(second).Opacity);
+        Assert.Equal(1, world.ReadComponentData<Visual>(first).Opacity);
+        Assert.Equal(2, world.ReadComponentData<Visual>(second).Opacity);
         Assert.False(world.IsEnabled<Timeline>(animation));
         Assert.Equal(animation, PropertyAnimation.To(world, first, Opacity, 3f, Spec.Tween(1)));
         Tick(systems, world, 1);
-        Assert.Equal(3, world.Read<Visual>(first).Opacity);
-        Assert.Equal(2, world.Read<Visual>(second).Opacity);
+        Assert.Equal(3, world.ReadComponentData<Visual>(first).Opacity);
+        Assert.Equal(2, world.ReadComponentData<Visual>(second).Opacity);
     }
 
     [Fact]
     public unsafe void AFunctionCurveAnimatesTheSelectedField()
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new Visual());
+        Entity target = world.Create(new Visual());
         PropertyAnimation.To(world, target, Opacity, 1f, new Spec(1, Curve.FromFunction(&Square)));
         using var systems = FloatSystems(world);
 
         Tick(systems, world, 0.5);
-        Assert.Equal(0.25f, world.Read<Visual>(target).Opacity);
+        Assert.Equal(0.25f, world.ReadComponentData<Visual>(target).Opacity);
         Tick(systems, world, 0.5);
-        Assert.Equal(1, world.Read<Visual>(target).Opacity);
+        Assert.Equal(1, world.ReadComponentData<Visual>(target).Opacity);
     }
 
     private static float Square(float value) => value * value;
@@ -499,67 +512,95 @@ public sealed class PropertyAnimationTests
     public void CrossingDurationStagesPresentsTheReachedValueInTheSameFrame(double delta, float expected, bool playing)
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new Visual());
+        Entity target = world.Create(new Visual());
         PropertyAnimation.Declare<float>(world, target);
-        if (!world.HasBuffer<TimelineStage>(target)) world.AddBuffer<TimelineStage>(target);
-        world.ExecuteBufferWrite<TimelineStage>(target, static stages =>
+        if (!world.Has<Buffer<TimelineStage>>(target)) world.AddBuffer<TimelineStage>(target);
         {
+            using var stages = world.GetBuffer<TimelineStage>(target);
             stages.Add(new TimelineStage { End = StageEnd.Duration, Duration = 0.1f });
             stages.Add(new TimelineStage { End = StageEnd.Duration, Duration = 0.1f });
-        });
+
+        }
         PropertyAnimation.To(world, target, Opacity, 1f, Spec.Tween(0.1f));
         var next = new Track<float>
         {
-            Channel = Opacity, From = 1, Current = 1, To = 2,
-            Duration = 0.1f, Curve = Spec.Tween(0.1f).Curve, Stage = 1,
-            StartId = world.Read<Timeline>(target).Starts,
+            Channel = Opacity,
+            From = 1,
+            Current = 1,
+            To = 2,
+            Duration = 0.1f,
+            Curve = Spec.Tween(0.1f).Curve,
+            Stage = 1,
+            StartId = world.ReadComponentData<Timeline>(target).Starts,
         };
-        world.ExecuteBufferWrite<Track<float>, Track<float>>(target, ref next,
-            static (DynamicBuffer<Track<float>> tracks, ref Track<float> track) => tracks.Add(track));
+        {
+            using var tracks = world.GetBuffer<Track<float>>(target);
+            Visit(tracks, ref next);
+
+            static void Visit(DynamicBuffer<Track<float>> tracks, ref Track<float> track)
+            {
+                tracks.Add(track);
+
+            }
+        }
         using var systems = new SystemGroup<ImmediateSystemContext>(new ImmediateSystemDriver(world));
         AnimationSystems.AddDefaults(systems);
 
         Tick(systems, world, delta);
 
-        Assert.Equal(expected, world.Read<Visual>(target).Opacity, 5);
+        Assert.Equal(expected, world.ReadComponentData<Visual>(target).Opacity, 5);
         Assert.Equal(playing, world.IsEnabled<Timeline>(target));
         Tick(systems, world, 0.25);
-        Assert.Equal(2, world.Read<Visual>(target).Opacity);
+        Assert.Equal(2, world.ReadComponentData<Visual>(target).Opacity);
         Assert.False(world.IsEnabled<Timeline>(target));
-        Assert.Equal(1u, world.Read<Timeline>(target).Completions);
+        Assert.Equal(1u, world.ReadComponentData<Timeline>(target).Completions);
         Tick(systems, world, 0.25);
-        Assert.Equal(2, world.Read<Visual>(target).Opacity);
+        Assert.Equal(2, world.ReadComponentData<Visual>(target).Opacity);
     }
 
     [Fact]
     public void PublicTrackDataSamplesOnlyItsCurrentTimelineStage()
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new Visual());
+        Entity target = world.Create(new Visual());
         PropertyAnimation.Declare<float>(world, target);
-        if (!world.HasBuffer<TimelineStage>(target)) world.AddBuffer<TimelineStage>(target);
-        world.ExecuteBufferWrite<TimelineStage>(target, static stages =>
+        if (!world.Has<Buffer<TimelineStage>>(target)) world.AddBuffer<TimelineStage>(target);
         {
+            using var stages = world.GetBuffer<TimelineStage>(target);
             stages.Add(new TimelineStage { End = StageEnd.Duration, Duration = 1 });
             stages.Add(new TimelineStage { End = StageEnd.Settled });
-        });
+
+        }
         PropertyAnimation.To(world, target, Opacity, 1f, Spec.Tween(1));
         var next = new Track<float>
         {
-            Channel = Opacity, From = 1, Current = 1, To = 3,
-            Duration = 1, Curve = Spec.Tween(1).Curve, Stage = 1,
-            StartId = world.Read<Timeline>(target).Starts,
+            Channel = Opacity,
+            From = 1,
+            Current = 1,
+            To = 3,
+            Duration = 1,
+            Curve = Spec.Tween(1).Curve,
+            Stage = 1,
+            StartId = world.ReadComponentData<Timeline>(target).Starts,
         };
-        world.ExecuteBufferWrite<Track<float>, Track<float>>(target, ref next,
-            static (DynamicBuffer<Track<float>> tracks, ref Track<float> track) => tracks.Add(track));
+        {
+            using var tracks = world.GetBuffer<Track<float>>(target);
+            Visit(tracks, ref next);
+
+            static void Visit(DynamicBuffer<Track<float>> tracks, ref Track<float> track)
+            {
+                tracks.Add(track);
+
+            }
+        }
         using var systems = FloatSystems(world);
 
         Tick(systems, world, 1);
-        Assert.Equal(1, world.Read<Visual>(target).Opacity);
+        Assert.Equal(1, world.ReadComponentData<Visual>(target).Opacity);
         Tick(systems, world, 0.5);
-        Assert.Equal(2, world.Read<Visual>(target).Opacity);
+        Assert.Equal(2, world.ReadComponentData<Visual>(target).Opacity);
         Tick(systems, world, 0.5);
-        Assert.Equal(3, world.Read<Visual>(target).Opacity);
+        Assert.Equal(3, world.ReadComponentData<Visual>(target).Opacity);
         Assert.False(world.IsEnabled<Timeline>(target));
     }
 
@@ -567,7 +608,7 @@ public sealed class PropertyAnimationTests
     public void RetargetContinuesSpringMomentumAcrossLayers()
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new Visual());
+        Entity target = world.Create(new Visual());
         var layers = new AnimationLayers { Count = 2 };
         layers.Items[0] = new AnimationLayer { Mode = LayerMode.Override, Weight = 1 };
         layers.Items[1] = new AnimationLayer { Mode = LayerMode.Override, Weight = 0 };
@@ -583,20 +624,23 @@ public sealed class PropertyAnimationTests
         PropertyAnimation.Retarget(world, target, Opacity, 4f);
         Tick(systems, world, 1d / 60);
 
-        Assert.Equal(0.20959455f, world.Read<Visual>(target).Opacity, 6);
+        Assert.Equal(0.20959455f, world.ReadComponentData<Visual>(target).Opacity, 6);
     }
 
     [Fact]
     public void AReusedPoolEntityStartsWithFreshSpeedAndStageData()
     {
         using var world = new World();
-        Entity first = world.CreateEntity(new Visual());
-        Entity second = world.CreateEntity(new Visual());
+        Entity first = world.Create(new Visual());
+        Entity second = world.Create(new Visual());
         Entity animation = PropertyAnimation.To(world, first, Opacity, 1f, Spec.Tween(1));
         PropertyAnimation.SetSpeed(world, animation, 2);
-        if (!world.HasBuffer<TimelineStage>(animation)) world.AddBuffer<TimelineStage>(animation);
-        world.ExecuteBufferWrite<TimelineStage>(animation, static stages =>
-            stages.Add(new TimelineStage { End = StageEnd.External }));
+        if (!world.Has<Buffer<TimelineStage>>(animation)) world.AddBuffer<TimelineStage>(animation);
+        {
+            using var stages = world.GetBuffer<TimelineStage>(animation);
+            stages.Add(new TimelineStage { End = StageEnd.External });
+
+        }
         PropertyAnimation.Pause(world, animation);
         PropertyAnimation.Stop(world, animation);
 
@@ -605,10 +649,10 @@ public sealed class PropertyAnimationTests
         using var systems = FloatSystems(world);
         Tick(systems, world, 0.5);
 
-        Assert.Equal(2, world.Read<Visual>(second).Opacity);
+        Assert.Equal(2, world.ReadComponentData<Visual>(second).Opacity);
         Assert.True(world.IsEnabled<Timeline>(reused));
         Tick(systems, world, 0.5);
-        Assert.Equal(4, world.Read<Visual>(second).Opacity);
+        Assert.Equal(4, world.ReadComponentData<Visual>(second).Opacity);
         Assert.False(world.IsEnabled<Timeline>(reused));
     }
 
@@ -616,7 +660,7 @@ public sealed class PropertyAnimationTests
     public void DeclaringInlineStorageMovesTheNextToOntoTheTargetAndKeepsSpringMomentum()
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new Visual());
+        Entity target = world.Create(new Visual());
         Entity pooled = PropertyAnimation.To(world, target, Opacity, 1f, Spec.Spring());
         using var systems = FloatSystems(world);
         Tick(systems, world, 1d / 60);
@@ -626,7 +670,7 @@ public sealed class PropertyAnimationTests
 
         Assert.Equal(target, inline);
         Tick(systems, world, 1d / 60);
-        Assert.Equal(0.13907372f, world.Read<Visual>(target).Opacity, 6);
+        Assert.Equal(0.13907372f, world.ReadComponentData<Visual>(target).Opacity, 6);
         Assert.False(world.IsEnabled<Timeline>(pooled));
     }
 
@@ -634,18 +678,18 @@ public sealed class PropertyAnimationTests
     public void PausingBeforeTheFirstDisplacementSampleKeepsThePresentedFieldUntilResume()
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new Visual { Opacity = 10 });
+        Entity target = world.Create(new Visual { Opacity = 10 });
         Entity animation = PropertyAnimation.By(world, target, Opacity, 4f, Spec.Tween(1));
         PropertyAnimation.Pause(world, animation);
         using var systems = FloatSystems(world);
 
         Tick(systems, world, 0.5);
 
-        Assert.Equal(10, world.Read<Visual>(target).Opacity);
+        Assert.Equal(10, world.ReadComponentData<Visual>(target).Opacity);
         Assert.True(world.IsEnabled<Timeline>(animation));
         PropertyAnimation.Resume(world, animation);
         Tick(systems, world, 0.5);
-        Assert.Equal(12, world.Read<Visual>(target).Opacity);
+        Assert.Equal(12, world.ReadComponentData<Visual>(target).Opacity);
     }
 
     [Fact]
@@ -653,14 +697,14 @@ public sealed class PropertyAnimationTests
     {
         using var world = new World();
         Channel<float> channel = Channel<float>.Of<PackedVisual>(static (ref PackedVisual visual) => ref visual.Opacity);
-        Entity target = world.CreateEntity(new PackedVisual { Kind = 7, Opacity = 0.25f });
+        Entity target = world.Create(new PackedVisual { Kind = 7, Opacity = 0.25f });
         PropertyAnimation.To(world, target, channel, 0.75f, Spec.Tween(1));
         using var systems = FloatSystems(world);
 
         Tick(systems, world, 0.5);
 
-        Assert.Equal((byte)7, world.Read<PackedVisual>(target).Kind);
-        Assert.Equal(0.5f, world.Read<PackedVisual>(target).Opacity);
+        Assert.Equal((byte)7, world.ReadComponentData<PackedVisual>(target).Kind);
+        Assert.Equal(0.5f, world.ReadComponentData<PackedVisual>(target).Opacity);
     }
 
     [Fact]
@@ -668,17 +712,17 @@ public sealed class PropertyAnimationTests
     {
         using var world = new World();
         Channel<float> channel = Channel<float>.Of<SparseVisual>(static (ref SparseVisual visual) => ref visual.Opacity);
-        Entity target = world.CreateEntity();
-        world.AddSparse(target, new SparseVisual { Number = 7, Opacity = 0.25f });
+        Entity target = world.Create();
+        world.SetSparse(target, new SparseVisual { Number = 7, Opacity = 0.25f });
         PropertyAnimation.To(world, target, channel, 0.75f, Spec.Tween(1));
-        uint before = world.SparseWriteVersion<SparseVisual>(target);
+        ulong before = world.ComponentDataWriteVersion<SparseVisual>(target);
         using var systems = FloatSystems(world);
 
         Tick(systems, world, 0.5);
 
         Assert.Equal(7, world.ReadSparse<SparseVisual>(target).Number);
         Assert.Equal(0.5f, world.ReadSparse<SparseVisual>(target).Opacity);
-        Assert.NotEqual(before, world.SparseWriteVersion<SparseVisual>(target));
+        Assert.NotEqual(before, world.ComponentDataWriteVersion<SparseVisual>(target));
     }
 
 #if DEBUG
@@ -689,21 +733,21 @@ public sealed class PropertyAnimationTests
     public void InvalidSpeedsReportDevelopmentChecks(float speed)
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new Visual());
+        Entity target = world.Create(new Visual());
         Entity animation = PropertyAnimation.To(world, target, Opacity, 1f, Spec.Tween(1));
 
         Assert.Throws<InvalidOperationException>(() => PropertyAnimation.SetSpeed(world, animation, speed));
 
         using var systems = FloatSystems(world);
         Tick(systems, world, 0.5);
-        Assert.Equal(0.5f, world.Read<Visual>(target).Opacity);
+        Assert.Equal(0.5f, world.ReadComponentData<Visual>(target).Opacity);
     }
 
     [Fact]
     public void RetargetRequiresAnActiveChannelThroughDevelopmentChecks()
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new Visual());
+        Entity target = world.Create(new Visual());
         Entity animation = PropertyAnimation.To(world, target, Opacity, 1f, Spec.Tween(1));
         Channel<float> other = Channel<float>.Of<PackedVisual>(static (ref PackedVisual visual) => ref visual.Opacity);
         Assert.Throws<InvalidOperationException>(() => PropertyAnimation.Retarget(world, animation, other, 2f));
@@ -719,7 +763,7 @@ public sealed class PropertyAnimationTests
         public float Opacity;
     }
 
-    public struct SparseVisual : IComponent, ISparseComponent
+    public struct SparseVisual : ITrackedComponent, ISparseComponent
     {
         public int Number;
         public float Opacity;
@@ -729,21 +773,21 @@ public sealed class PropertyAnimationTests
     public void DestroyingATargetCompletesItsPooledAnimationAndKeepsLaterEntitiesIntact()
     {
         using var world = new World();
-        Entity target = world.CreateEntity(new Visual());
+        Entity target = world.Create(new Visual());
         Entity animation = PropertyAnimation.To(world, target, Opacity, 1f, Spec.Tween(1));
-        world.DestroyEntity(target);
-        Entity replacement = world.CreateEntity(new Visual { Number = 42, Opacity = 7 });
+        world.Destroy(target);
+        Entity replacement = world.Create(new Visual { Number = 42, Opacity = 7 });
         using var systems = FloatSystems(world);
 
         Tick(systems, world, 0.5);
 
-        Assert.Equal(7, world.Read<Visual>(replacement).Opacity);
-        Assert.Equal(42, world.Read<Visual>(replacement).Number);
+        Assert.Equal(7, world.ReadComponentData<Visual>(replacement).Opacity);
+        Assert.Equal(42, world.ReadComponentData<Visual>(replacement).Number);
         Assert.True(world.IsAlive(animation));
         Assert.False(world.IsEnabled<Timeline>(animation));
         Assert.Equal(animation, PropertyAnimation.To(world, replacement, Opacity, 8f, Spec.Tween(1)));
         Tick(systems, world, 1);
-        Assert.Equal(8, world.Read<Visual>(replacement).Opacity);
+        Assert.Equal(8, world.ReadComponentData<Visual>(replacement).Opacity);
     }
 
     public readonly record struct Meter(float Value);
@@ -778,7 +822,7 @@ public sealed class PropertyAnimationTests
         systems.Update(ref frame);
     }
 
-    public struct Visual : IComponent
+    public struct Visual : ITrackedComponent
     {
         public int Number;
         public float Opacity;

@@ -1,6 +1,5 @@
 using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Render.Cluster;
 using SomeEngine.Render.Systems;
@@ -9,9 +8,9 @@ using SomeEngine.Resources.Geometry;
 namespace SomeEngine.Render.Features.Skinning;
 
 /// <summary>LBS influence boxes retained by a mesh instance.</summary>
-public readonly record struct MeshSkinBounds(ClusterSkinBounds Data) : IComponent;
+public readonly record struct MeshSkinBounds(ClusterSkinBounds Data) : ITrackedComponent;
 
-internal readonly record struct RenderSkinBounds(ClusterSkinBounds Data) : IComponent;
+internal readonly record struct RenderSkinBounds(ClusterSkinBounds Data) : ITrackedComponent;
 
 /// <summary>Copies ready influence data through normal Game-to-Rendering extraction.</summary>
 public sealed partial class SkinBoundsRenderExtractor : IRenderExtractionSystem
@@ -28,27 +27,26 @@ public sealed partial class SkinBoundsRenderExtractor : IRenderExtractionSystem
 
     public void Reset() { _values.Clear(); _sources.Clear(); }
 
-    public void Collect(QueryChunkView chunk) => Collect(ReadOnlyQueryPacketJobs.Borrow(chunk));
-
-    private void Collect(ReadOnlyQueryPacket chunk)
+    public void Collect(QueryChunk chunk)
     {
         if (!chunk.TryRead<MeshSkinBounds>(out var values)) return;
         for (int row = 0; row < values.Length; row++)
         {
+            if (!chunk.Has<MeshSkinBounds>(row)) continue;
             _values.Add((chunk.Entities[row], values[row].Data));
             _sources.Add(chunk.Entities[row]);
         }
     }
 
-    public bool CollectChanges(QueryChunkView chunk, RenderExtractionContext context) =>
-        CollectChanges(ReadOnlyQueryPacketJobs.Borrow(chunk), chunk.LastSystemVersion);
+    public bool CollectChanges(QueryChunk chunk, ulong lastSystemVersion, RenderExtractionContext context) =>
+        CollectChanges(chunk, lastSystemVersion);
 
-    private bool CollectChanges(ReadOnlyQueryPacket chunk, uint lastSystemVersion)
+    private bool CollectChanges(QueryChunk chunk, ulong lastSystemVersion)
     {
-        if (!chunk.TryRead<MeshSkinBounds>(out var values) || !chunk.ChangedSince<MeshSkinBounds>(lastSystemVersion)) return false;
+        if (!chunk.TryRead<MeshSkinBounds>(out var values) || !chunk.WasWritten<MeshSkinBounds>(lastSystemVersion)) return false;
         int before = _values.Count;
         for (int row = 0; row < values.Length; row++)
-            if (chunk.RowChangedSince<MeshSkinBounds>(row, lastSystemVersion)) _values.Add((chunk.Entities[row], values[row].Data));
+            if (chunk.WasWritten<MeshSkinBounds>(row, lastSystemVersion)) _values.Add((chunk.Entities[row], values[row].Data));
         return _values.Count != before;
     }
 

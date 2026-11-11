@@ -39,8 +39,13 @@ public unsafe ref partial struct AnimationBuilder
         data.ValueCount += size;
         var node = new GraphNode
         {
-            Kind = GraphNodeKind.Track, Target = target, Spec = spec, ValueOffset = offset,
-            Layer = layer, Endpoints = endpoints, Install = &GraphTracks.Install<T>,
+            Kind = GraphNodeKind.Track,
+            Target = target,
+            Spec = spec,
+            ValueOffset = offset,
+            Layer = layer,
+            Endpoints = endpoints,
+            Install = &GraphTracks.Install<T>,
             Field = LayerChannel.Of(channel),
         };
         for (int parent = data.Current; parent != 0; parent = data.Nodes![parent].Parent)
@@ -116,8 +121,13 @@ public unsafe ref partial struct AnimationBuilder
         var data = ArrayPool<GraphData>.Shared.Rent(1);
         data[0] = new GraphData
         {
-            Nodes = build.Nodes!, NodeCount = build.Count, Values = build.Values!, Parameters = build.Parameters, References = 1,
-            CompileReference = 1, Version = GraphData.NextVersion(),
+            Nodes = build.Nodes!,
+            NodeCount = build.Count,
+            Values = build.Values!,
+            Parameters = build.Parameters,
+            References = 1,
+            CompileReference = 1,
+            Version = GraphData.NextVersion(),
         };
         build.Nodes = null;
         build.Values = null;

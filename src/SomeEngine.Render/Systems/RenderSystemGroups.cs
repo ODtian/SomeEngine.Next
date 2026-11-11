@@ -1,4 +1,4 @@
-using SomeEngine.ECS.Queries;
+using SomeEngine.ECS;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Render.Frame;
 using SomeEngine.Render.Instances;
@@ -22,8 +22,8 @@ public readonly struct RenderPrepareSystemContext
         RenderInstanceStorageSystem? instances,
         RenderInstanceWriteScope? write,
         RenderPrepareScope? scope,
-        uint lastSystemVersion,
-        uint currentSystemVersion)
+        ulong lastSystemVersion,
+        ulong currentSystemVersion)
     {
         World = world;
         _instances = instances;
@@ -35,9 +35,9 @@ public readonly struct RenderPrepareSystemContext
 
     public RenderWorld World { get; }
 
-    public uint LastSystemVersion { get; }
+    public ulong LastSystemVersion { get; }
 
-    public uint CurrentSystemVersion { get; }
+    public ulong CurrentSystemVersion { get; }
 
     public RenderInstancePropertyLayout InstanceLayout => RequireInstances().Layout;
     public bool HasInstanceStorage => _instances is not null;
@@ -101,15 +101,15 @@ public ref struct RenderFrameSystemContext
     private readonly RenderFrame? _frame;
     private RenderGraphFrame _graph;
     private bool _hasGraph;
-    private uint _lastSystemVersion;
-    private uint _currentSystemVersion;
+    private ulong _lastSystemVersion;
+    private ulong _currentSystemVersion;
 
     internal RenderFrameSystemContext(
         RenderWorld world,
         RenderInstanceStorageSystem? instances,
         RenderFrame? frame,
-        uint lastSystemVersion,
-        uint currentSystemVersion)
+        ulong lastSystemVersion,
+        ulong currentSystemVersion)
     {
         World = world;
         _instances = instances;
@@ -137,9 +137,9 @@ public ref struct RenderFrameSystemContext
 
     public readonly RenderWorld World { get; }
 
-    public readonly uint LastSystemVersion => _lastSystemVersion;
+    public readonly ulong LastSystemVersion => _lastSystemVersion;
 
-    public readonly uint CurrentSystemVersion => _currentSystemVersion;
+    public readonly ulong CurrentSystemVersion => _currentSystemVersion;
 
     public readonly RenderInstancePropertyLayout InstanceLayout => RequireInstances().Layout;
     public readonly bool HasInstanceStorage => _instances is not null;
@@ -172,7 +172,7 @@ public ref struct RenderFrameSystemContext
         _frame ?? throw new InvalidOperationException(
             "A render frame is not active during this lifecycle callback.");
 
-    internal void SetSystemVersion(uint lastSystemVersion, uint currentSystemVersion)
+    internal void SetSystemVersion(ulong lastSystemVersion, ulong currentSystemVersion)
     {
         _lastSystemVersion = lastSystemVersion;
         _currentSystemVersion = currentSystemVersion;
@@ -326,15 +326,17 @@ public sealed class RenderPrepareSystems : IDisposable
         private RenderInstanceWriteScope? _write;
         private RenderPrepareScope? _scope;
 
-        public uint AcquireSystemVersion(ref SystemSlot slot) => world.AcquireSystemVersion();
+        public World World => world.World;
 
-        public RenderPrepareSystemContext CreateContext(ref SystemSlot slot) => new(
+        public ulong AcquireSystemVersion(ref SystemState state) => world.World.AcquireSystemVersion();
+
+        public RenderPrepareSystemContext CreateContext(ref SystemState state) => new(
             world,
             instances,
             _write,
             _scope,
-            slot.LastSystemVersion,
-            slot.CurrentSystemVersion);
+            state.LastSystemVersion,
+            state.CurrentSystemVersion);
 
         internal void Enter(RenderPrepareScope scope, bool writeInstances = true)
         {
@@ -437,20 +439,21 @@ public sealed class RenderFrameSystems : IDisposable
         RenderInstanceStorageSystem? instances) : ISystemDriver<RenderFrameSystemContext>
     {
         private RenderFrame? _frame;
+        public World World => world.World;
 
-        public uint AcquireSystemVersion(ref SystemSlot slot) => world.AcquireSystemVersion();
+        public ulong AcquireSystemVersion(ref SystemState state) => world.World.AcquireSystemVersion();
 
-        public RenderFrameSystemContext CreateContext(scoped ref SystemSlot slot) => new(
+        public RenderFrameSystemContext CreateContext(scoped ref SystemState state) => new(
             world,
             instances,
             _frame,
-            slot.LastSystemVersion,
-            slot.CurrentSystemVersion);
+            state.LastSystemVersion,
+            state.CurrentSystemVersion);
 
         public void CreateContext(
-            scoped ref SystemSlot slot,
+            scoped ref SystemState state,
             ref RenderFrameSystemContext context) =>
-            context.SetSystemVersion(slot.LastSystemVersion, slot.CurrentSystemVersion);
+            context.SetSystemVersion(state.LastSystemVersion, state.CurrentSystemVersion);
 
         internal RenderFrameSystemContext CreateRecordingContext(RenderGraphFrame graph) =>
             new(

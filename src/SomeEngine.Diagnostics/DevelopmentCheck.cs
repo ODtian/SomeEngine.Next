@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
 
 namespace SomeEngine.Core.Diagnostics;
 
@@ -9,20 +8,33 @@ namespace SomeEngine.Core.Diagnostics;
 /// </summary>
 public static class DevelopmentCheck
 {
+    private static volatile bool s_enabled = true;
+
+    public static bool Enabled
+    {
+        get => s_enabled;
+        set => s_enabled = value;
+    }
+
     [Conditional("DEBUG")]
     public static void Require(
-        [DoesNotReturnIf(false)] bool condition,
+        bool condition,
         string message)
     {
-        if (!condition)
+        if (s_enabled && !condition)
             throw new InvalidOperationException(message);
     }
 
     [Conditional("DEBUG")]
-    public static void Fail(string message) =>
-        throw new InvalidOperationException(message);
+    public static void Fail(string message)
+    {
+        if (s_enabled) throw new InvalidOperationException(message);
+    }
 
     /// <summary>Reports a recovered failure through the application's trace listeners.</summary>
     [Conditional("DEBUG")]
-    public static void Report(string message) => Trace.TraceError(message);
+    public static void Report(string message)
+    {
+        if (s_enabled) Trace.TraceError(message);
+    }
 }

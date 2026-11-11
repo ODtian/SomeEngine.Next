@@ -5,20 +5,19 @@ using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using SomeEngine.ECS.Components;
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Registry;
 
 namespace SomeEngine.ECS.Benchmarks;
 
 internal static partial class EcsBenchmarkSuite
 {
-    internal const int ReportSchemaVersion = 6;
+    internal const int ReportSchemaVersion = 7;
     private const ulong FnvOffsetBasis = 14695981039346656037UL;
     private const ulong FnvPrime = 1099511628211UL;
 
     private static readonly int[] PositionComponents =
     [
-        ComponentMetadata<Position>.Id,
+        ComponentId<Position>.Value,
     ];
 
     internal static EcsBenchmarkReport Run(BenchmarkOptions options)
@@ -27,7 +26,7 @@ internal static partial class EcsBenchmarkSuite
         long suiteStarted = Stopwatch.GetTimestamp();
         EcsBenchmarkEnvironment environment = CreateEnvironment();
         EcsBenchmarkSourceRevision sourceRevision = CreateSourceRevision();
-        PrimeRuntime();
+        PrimeQueries();
 
         var results = new List<EcsBenchmarkResult>();
         for (int entityIndex = 0; entityIndex < options.EntityCounts.Length; entityIndex++)
@@ -163,7 +162,7 @@ internal static partial class EcsBenchmarkSuite
                 $"storage-owners-{countLabel}",
                 entityCount,
                 OperationsPerSample: entityCount,
-                () => new StorageOwnersExecution(entityCount)),
+                () => new StorageCollectionsExecution(entityCount)),
             new ScenarioDefinition(
                 $"relation-maintenance-{countLabel}-fanout{topologyCount}",
                 entityCount,
@@ -186,12 +185,12 @@ internal static partial class EcsBenchmarkSuite
                 $"snapshot-write-{countLabel}",
                 entityCount,
                 OperationsPerSample: entityCount,
-                () => new SnapshotWriteExecution(entityCount)),
+                () => new CheckpointWriteExecution(entityCount)),
             new ScenarioDefinition(
                 $"snapshot-read-{countLabel}",
                 entityCount,
                 OperationsPerSample: entityCount,
-                () => new SnapshotReadExecution(entityCount)),
+                () => new CheckpointReadExecution(entityCount)),
             new ScenarioDefinition(
                 $"mixed-frame-update-snapshot-load-{countLabel}",
                 entityCount,
@@ -270,7 +269,6 @@ internal static partial class EcsBenchmarkSuite
             MetricDistribution.From(samples, static sample => sample.WorkingSetAfterBytes),
             MetricDistribution.From(samples, static sample => sample.WorkingSetDeltaBytes),
             AggregateGarbageCollections(samples),
-            AggregateStructuralMetrics(samples),
             BenchmarkWorkloadMetricAggregate.From(samples),
             expectedChecksum ?? throw new InvalidOperationException("A measured scenario had no samples."),
             samples);
@@ -278,7 +276,6 @@ internal static partial class EcsBenchmarkSuite
 
     private static EcsBenchmarkSample MeasureSample(int sample, IBenchmarkExecution execution)
     {
-        WorldStructuralMetrics structuralBefore = execution.World.GetStructuralMetrics();
         long workingSetBefore = Environment.WorkingSet;
         long managedMemoryBefore = GC.GetTotalMemory(forceFullCollection: false);
         var collectionsBefore = new GarbageCollectionCounts(
@@ -300,7 +297,6 @@ internal static partial class EcsBenchmarkSuite
             GC.CollectionCount(2));
         long managedMemoryAfter = GC.GetTotalMemory(forceFullCollection: false);
         long workingSetAfter = Environment.WorkingSet;
-        WorldStructuralMetrics structuralAfter = execution.World.GetStructuralMetrics();
         BenchmarkWorkloadMetricSample workloadMetrics = execution.WorkloadMetrics;
         string checksum = execution.ValidateAndGetChecksum();
 
@@ -315,7 +311,6 @@ internal static partial class EcsBenchmarkSuite
             workingSetBefore,
             workingSetAfter,
             workingSetAfter - workingSetBefore,
-            StructuralMetricSample.Between(structuralBefore, structuralAfter),
             workloadMetrics,
             checksum);
     }
@@ -335,75 +330,6 @@ internal static partial class EcsBenchmarkSuite
         return new GarbageCollectionCounts(generation0, generation1, generation2);
     }
 
-    private static StructuralMetricAggregate AggregateStructuralMetrics(
-        EcsBenchmarkSample[] samples)
-    {
-        long started = 0;
-        long published = 0;
-        long aborted = 0;
-        double prepareMilliseconds = 0;
-        double commitMilliseconds = 0;
-        double lifetimeMilliseconds = 0;
-        double worldMaximumPrepareMilliseconds = 0;
-        double worldMaximumCommitMilliseconds = 0;
-        double worldMaximumLifetimeMilliseconds = 0;
-        long clonedArchetypeShells = 0;
-        long worldMaximumClonedArchetypeShells = 0;
-        long clonedChunkShells = 0;
-        long worldMaximumClonedChunkShells = 0;
-        long clonedQueryMatches = 0;
-        long worldMaximumClonedQueryMatches = 0;
-        foreach (EcsBenchmarkSample sample in samples)
-        {
-            StructuralMetricSample metrics = sample.StructuralMetrics;
-            started = checked(started + metrics.Started);
-            published = checked(published + metrics.Published);
-            aborted = checked(aborted + metrics.Aborted);
-            prepareMilliseconds += metrics.PrepareMilliseconds;
-            commitMilliseconds += metrics.CommitMilliseconds;
-            lifetimeMilliseconds += metrics.LifetimeMilliseconds;
-            worldMaximumPrepareMilliseconds = Math.Max(
-                worldMaximumPrepareMilliseconds,
-                metrics.WorldMaximumPrepareMilliseconds);
-            worldMaximumCommitMilliseconds = Math.Max(
-                worldMaximumCommitMilliseconds,
-                metrics.WorldMaximumCommitMilliseconds);
-            worldMaximumLifetimeMilliseconds = Math.Max(
-                worldMaximumLifetimeMilliseconds,
-                metrics.WorldMaximumLifetimeMilliseconds);
-            clonedArchetypeShells = checked(
-                clonedArchetypeShells + metrics.ClonedArchetypeShells);
-            worldMaximumClonedArchetypeShells = Math.Max(
-                worldMaximumClonedArchetypeShells,
-                metrics.WorldMaximumClonedArchetypeShells);
-            clonedChunkShells = checked(clonedChunkShells + metrics.ClonedChunkShells);
-            worldMaximumClonedChunkShells = Math.Max(
-                worldMaximumClonedChunkShells,
-                metrics.WorldMaximumClonedChunkShells);
-            clonedQueryMatches = checked(clonedQueryMatches + metrics.ClonedQueryMatches);
-            worldMaximumClonedQueryMatches = Math.Max(
-                worldMaximumClonedQueryMatches,
-                metrics.WorldMaximumClonedQueryMatches);
-        }
-
-        return new StructuralMetricAggregate(
-            started,
-            published,
-            aborted,
-            prepareMilliseconds,
-            commitMilliseconds,
-            lifetimeMilliseconds,
-            worldMaximumPrepareMilliseconds,
-            worldMaximumCommitMilliseconds,
-            worldMaximumLifetimeMilliseconds,
-            clonedArchetypeShells,
-            worldMaximumClonedArchetypeShells,
-            clonedChunkShells,
-            worldMaximumClonedChunkShells,
-            clonedQueryMatches,
-            worldMaximumClonedQueryMatches);
-    }
-
     private static void CollectGarbage()
     {
         GC.Collect();
@@ -411,26 +337,20 @@ internal static partial class EcsBenchmarkSuite
         GC.Collect();
     }
 
-    private static void PrimeRuntime()
+    private static void PrimeQueries()
     {
         var world = new World();
-        world.ExecuteBundleSpawn(
-            PositionComponents,
-            static view =>
-            {
-                var position = default(Position);
-                view.Write(in position);
-            });
-        QueryHandle query = world.Query(world.QueryDefinition().Read<Position>());
+        world.ExecuteBundleSpawn(PositionComponents, 0, new DefaultPositionWriter());
+        Query query = world.Query(new QueryDescription().WithStored<Position>());
         int count = 0;
-        world.ExecuteQuery(
-            query,
-            ref count,
-            static (scoped QueryCursor cursor, ref int rows) =>
+        using (QueryScope source = query.OpenRead())
+            foreach (QueryChunk chunk in source)
             {
-                foreach (var _ in cursor.Rows)
-                    rows++;
-            });
+                for (int row = 0; row < chunk.Count; row++)
+                {
+                    count++;
+                }
+            }
         GC.KeepAlive(count);
     }
 
@@ -453,22 +373,21 @@ internal static partial class EcsBenchmarkSuite
         int addedEntityCount)
     {
         var state = new WorldChecksumState(FnvOffsetBasis);
-        QueryHandle query = world.Query(world.QueryDefinition().Read<Position>());
-        world.ExecuteQuery(
-            query,
-            ref state,
-            static (scoped QueryCursor cursor, ref WorldChecksumState checksum) =>
+        Query query = world.Query(new QueryDescription().WithStored<Position>());
+        using (QueryScope source = query.OpenRead())
+            foreach (QueryChunk chunk in source)
             {
-                foreach (var row in cursor.Rows)
+                ReadOnlySpan<Position> valuesPosition = chunk.Read<Position>();
+                for (int row = 0; row < chunk.Count; row++)
                 {
-                    Position position = row.Read<Position>();
-                    checksum.Count++;
-                    checksum.SumX += position.X;
-                    checksum.SumY += position.Y;
-                    checksum.Hash = Mix(checksum.Hash, unchecked((uint)position.X));
-                    checksum.Hash = Mix(checksum.Hash, unchecked((uint)position.Y));
+                    Position position = valuesPosition[row];
+                    state.Count++;
+                    state.SumX += position.X;
+                    state.SumY += position.Y;
+                    state.Hash = Mix(state.Hash, unchecked((uint)position.X));
+                    state.Hash = Mix(state.Hash, unchecked((uint)position.Y));
                 }
-            });
+            }
 
         int expectedCount = checked(initialEntityCount + addedEntityCount);
         long initialSumX = (long)initialEntityCount * (initialEntityCount - 1) / 2;
@@ -553,7 +472,7 @@ internal static partial class EcsBenchmarkSuite
     {
         private readonly int _entityCount;
         private readonly int _queryIterations;
-        private readonly QueryHandle _query;
+        private readonly Query _query;
         private long _timedChecksum;
 
         internal QueryExecution(int entityCount, int queryIterations)
@@ -561,7 +480,7 @@ internal static partial class EcsBenchmarkSuite
             _entityCount = entityCount;
             _queryIterations = queryIterations;
             World = CreatePopulatedWorld(entityCount);
-            _query = World.Query(World.QueryDefinition().Read<Position>());
+            _query = World.Query(new QueryDescription().WithStored<Position>());
         }
 
         public World World { get; }
@@ -571,18 +490,17 @@ internal static partial class EcsBenchmarkSuite
             long checksum = 0;
             for (int iteration = 0; iteration < _queryIterations; iteration++)
             {
-                World.ExecuteQuery(
-                    _query,
-                    ref checksum,
-                    static (scoped QueryCursor cursor, ref long sum) =>
-                    {
-                        foreach (var row in cursor.Rows)
-                        {
-                            Position position = row.Read<Position>();
-                            sum += position.X;
-                            sum += position.Y;
-                        }
-                    });
+                using (QueryScope source = _query.OpenRead())
+            foreach (QueryChunk chunk in source)
+            {
+                ReadOnlySpan<Position> valuesPosition = chunk.Read<Position>();
+                for (int row = 0; row < chunk.Count; row++)
+                {
+                    Position position = valuesPosition[row];
+                    checksum += position.X;
+                    checksum += position.Y;
+                }
+            }
             }
             _timedChecksum = checksum;
         }
@@ -606,15 +524,13 @@ internal static partial class EcsBenchmarkSuite
     {
         private readonly int _entityCount;
         private readonly int _structuralIterations;
-        private readonly WorldStructuralMetrics _before;
 
         internal StructuralExecution(int entityCount, int structuralIterations)
         {
             _entityCount = entityCount;
             _structuralIterations = structuralIterations;
             World = CreatePopulatedWorld(entityCount);
-            _ = World.Query(World.QueryDefinition().Read<Position>());
-            _before = World.GetStructuralMetrics();
+            _ = World.Query(new QueryDescription().WithStored<Position>());
         }
 
         public World World { get; }
@@ -624,28 +540,12 @@ internal static partial class EcsBenchmarkSuite
             for (int iteration = 0; iteration < _structuralIterations; iteration++)
             {
                 int value = _entityCount + iteration;
-                World.ExecuteBundleSpawn(
-                    PositionComponents,
-                    ref value,
-                    static (BundleWriteView view, ref int x) =>
-                    {
-                        var position = new Position(x, -x);
-                        view.Write(in position);
-                    });
+                World.ExecuteBundleSpawn(PositionComponents, value, new AddedPositionWriter());
             }
         }
 
         public string ValidateAndGetChecksum()
         {
-            WorldStructuralMetrics metrics = World.GetStructuralMetrics();
-            if (metrics.Published - _before.Published != _structuralIterations ||
-                metrics.Started - _before.Started != _structuralIterations ||
-                metrics.Aborted != _before.Aborted)
-            {
-                throw new InvalidOperationException(
-                    "Every benchmark structural candidate must start and publish exactly once " +
-                    "without an abort.");
-            }
             return FormatChecksum(
                 ValidateWorld(World, _entityCount, _structuralIterations));
         }
@@ -665,14 +565,7 @@ internal static partial class EcsBenchmarkSuite
         internal void Execute()
         {
             _world.ReserveBundle(PositionComponents, _count);
-            _world.ExecuteBundleSpawnBatch(
-                PositionComponents,
-                _count,
-                static view =>
-                {
-                    var position = new Position(view.Index, view.Index + 1);
-                    view.Write(in position);
-                });
+            _world.ExecuteBundleSpawnBatch(PositionComponents, _count, 0, new SequentialPositionWriter());
         }
     }
 
@@ -759,7 +652,6 @@ internal sealed record EcsBenchmarkResult(
     MetricDistribution WorkingSetBytes,
     MetricDistribution WorkingSetDeltaBytes,
     GarbageCollectionCounts GarbageCollections,
-    StructuralMetricAggregate StructuralMetrics,
     BenchmarkWorkloadMetricAggregate WorkloadMetrics,
     string Checksum,
     EcsBenchmarkSample[] Samples);
@@ -775,7 +667,6 @@ internal sealed record EcsBenchmarkSample(
     long WorkingSetBeforeBytes,
     long WorkingSetAfterBytes,
     long WorkingSetDeltaBytes,
-    StructuralMetricSample StructuralMetrics,
     BenchmarkWorkloadMetricSample WorkloadMetrics,
     string Checksum);
 
@@ -808,7 +699,7 @@ internal sealed record MetricDistribution(double P50, double P95, double P99, do
 internal sealed record BenchmarkWorkloadMetricSample(
     long PayloadBytes,
     double UpdateMilliseconds,
-    double SnapshotWriteMilliseconds,
+    double CheckpointWriteMilliseconds,
     double LoadMilliseconds,
     double DurableCommitMilliseconds,
     double DurableLoadMilliseconds)
@@ -819,7 +710,7 @@ internal sealed record BenchmarkWorkloadMetricSample(
 internal sealed record BenchmarkWorkloadMetricAggregate(
     MetricDistribution PayloadBytes,
     MetricDistribution UpdateMilliseconds,
-    MetricDistribution SnapshotWriteMilliseconds,
+    MetricDistribution CheckpointWriteMilliseconds,
     MetricDistribution LoadMilliseconds,
     MetricDistribution DurableCommitMilliseconds,
     MetricDistribution DurableLoadMilliseconds)
@@ -829,7 +720,7 @@ internal sealed record BenchmarkWorkloadMetricAggregate(
         MetricDistribution.From(samples, static sample => sample.WorkloadMetrics.UpdateMilliseconds),
         MetricDistribution.From(
             samples,
-            static sample => sample.WorkloadMetrics.SnapshotWriteMilliseconds),
+            static sample => sample.WorkloadMetrics.CheckpointWriteMilliseconds),
         MetricDistribution.From(samples, static sample => sample.WorkloadMetrics.LoadMilliseconds),
         MetricDistribution.From(samples, static sample => sample.WorkloadMetrics.DurableCommitMilliseconds),
         MetricDistribution.From(samples, static sample => sample.WorkloadMetrics.DurableLoadMilliseconds));
@@ -845,58 +736,3 @@ internal sealed record GarbageCollectionCounts(int Generation0, int Generation1,
             after.Generation1 - before.Generation1,
             after.Generation2 - before.Generation2);
 }
-
-internal sealed record StructuralMetricSample(
-    long Started,
-    long Published,
-    long Aborted,
-    double PrepareMilliseconds,
-    double CommitMilliseconds,
-    double LifetimeMilliseconds,
-    double WorldMaximumPrepareMilliseconds,
-    double WorldMaximumCommitMilliseconds,
-    double WorldMaximumLifetimeMilliseconds,
-    long ClonedArchetypeShells,
-    long WorldMaximumClonedArchetypeShells,
-    long ClonedChunkShells,
-    long WorldMaximumClonedChunkShells,
-    long ClonedQueryMatches,
-    long WorldMaximumClonedQueryMatches)
-{
-    internal static StructuralMetricSample Between(
-        WorldStructuralMetrics before,
-        WorldStructuralMetrics after) =>
-        new(
-            after.Started - before.Started,
-            after.Published - before.Published,
-            after.Aborted - before.Aborted,
-            (after.PrepareTime - before.PrepareTime).TotalMilliseconds,
-            (after.CommitTime - before.CommitTime).TotalMilliseconds,
-            (after.Lifetime - before.Lifetime).TotalMilliseconds,
-            after.MaximumPrepareTime.TotalMilliseconds,
-            after.MaximumCommitTime.TotalMilliseconds,
-            after.MaximumLifetime.TotalMilliseconds,
-            after.ClonedArchetypeShells - before.ClonedArchetypeShells,
-            after.MaximumClonedArchetypeShells,
-            after.ClonedChunkShells - before.ClonedChunkShells,
-            after.MaximumClonedChunkShells,
-            after.ClonedQueryMatches - before.ClonedQueryMatches,
-            after.MaximumClonedQueryMatches);
-}
-
-internal sealed record StructuralMetricAggregate(
-    long Started,
-    long Published,
-    long Aborted,
-    double PrepareMilliseconds,
-    double CommitMilliseconds,
-    double LifetimeMilliseconds,
-    double WorldMaximumPrepareMilliseconds,
-    double WorldMaximumCommitMilliseconds,
-    double WorldMaximumLifetimeMilliseconds,
-    long ClonedArchetypeShells,
-    long WorldMaximumClonedArchetypeShells,
-    long ClonedChunkShells,
-    long WorldMaximumClonedChunkShells,
-    long ClonedQueryMatches,
-    long WorldMaximumClonedQueryMatches);

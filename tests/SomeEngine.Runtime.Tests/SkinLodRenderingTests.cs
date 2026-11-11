@@ -91,7 +91,7 @@ public sealed partial class SkinningRenderingTests
         builder.Leaf<ClipParameters, ClipLeaf>(target, new(clip, new(0)));
         builder.Play();
         Matrix4x4 inverseBind = Matrix4x4.CreateScale(1.5f, .8f, 1.2f) * Matrix4x4.CreateRotationY(.25f);
-        frame.World.Add(frame.Scene.MeshEntities[0], new MeshSkin(pose, new SkinBinding([inverseBind, Matrix4x4.Identity], [1, 1])));
+        frame.World.Set(frame.Scene.MeshEntities[0], new MeshSkin(pose, new SkinBinding([inverseBind, Matrix4x4.Identity], [1, 1])));
     }
 
     private sealed class StretchedClip;
@@ -121,15 +121,13 @@ public sealed partial class SkinningRenderingTests
             });
             Project.RegisterAsset(await mesh.SaveAsync(Path.Combine(Project.RootPath, "assets/Models/lod-sphere.mesh.asset")));
             using var world = new World();
-            Entity entity = world.CreateEntity(new WorldTransform { Qvvs = new(new(0, 0, 15), Quaternion.Identity) });
-            world.Add(entity, new MeshSource { Mesh = new(mesh.Id) });
-            world.CreateEntity(new SceneCamera { Position = Vector3.Zero, Target = Vector3.UnitZ, Up = Vector3.UnitY,
+            Entity entity = world.Create(new WorldTransform { Qvvs = new(new(0, 0, 15), Quaternion.Identity) });
+            world.Set(entity, new MeshSource { Mesh = new(mesh.Id) });
+            world.Create(new SceneCamera { Position = Vector3.Zero, Target = Vector3.UnitZ, Up = Vector3.UnitY,
                 VerticalFieldOfView = 1.1f, NearPlane = .1f, FarPlane = 100 });
-            world.CreateEntity(new DirectionalLight(new(.35f, -.85f, .4f), Vector3.One, 3));
+            world.Create(new DirectionalLight(new(.35f, -.85f, .4f), Vector3.One, 3));
             AssetEntry entry = Project.Manifest.List(WorldAsset.FileType).Single(item => item.Name == "Default");
-            using var scene = new WorldAsset(entry.AssetGuid) { Name = "Default" };
-            scene.WriteWorld(world, SceneSerialization.CreateRegistry());
-            Project.RegisterAsset(await scene.SaveAsync(Path.Combine(Project.RootPath, entry.Path)));
+            await SceneEntityFiles.SaveAsync(Project, world, entry);
             return geometry.Clusters.Where(cluster => cluster.Level > 0).Min(cluster => cluster.Error);
         }
 

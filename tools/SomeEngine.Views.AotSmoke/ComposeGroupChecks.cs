@@ -13,36 +13,36 @@ internal static partial class ComposeGroupChecks
     {
         Entity root = Views.Spawn(frames.World, Entity.Null, new Screen_View(true));
         frames.Frame();
-        Entity[] children = Hierarchy<ElementTree>.GetChildren(frames.World, root).ToArray();
+        Entity[] children = ElementChildren.Read(frames.World, root).ToArray();
         Require(children.Length == 3, "Inline groups declare their content on the caller's tree.");
-        Entity first = Hierarchy<ElementTree>.GetChildren(frames.World, children[0]).Single();
-        Entity second = Hierarchy<ElementTree>.GetChildren(frames.World, children[1]).Single();
-        Require(frames.World.ReadSparse<CounterText>(first).Value == 10 &&
-            frames.World.ReadSparse<CounterText>(second).Value == 20,
+        Entity first = ElementChildren.Read(frames.World, children[0]).Single();
+        Entity second = ElementChildren.Read(frames.World, children[1]).Single();
+        Require(frames.World.ReadComponentData<CounterText>(first).Value == 10 &&
+            frames.World.ReadComponentData<CounterText>(second).Value == 20,
             "Each inline call site starts with its own remembered value.");
-        frames.World.ReadSparse<CounterText>(first).Change(11);
-        frames.World.ReadSparse<CounterText>(second).Change(22);
-        frames.World.ReadSparse<CounterChange>(root).Change(7);
-        frames.World.Replace(second, new Selection(77));
+        frames.World.ReadComponentData<CounterText>(first).Change(11);
+        frames.World.ReadComponentData<CounterText>(second).Change(22);
+        frames.World.ReadComponentData<CounterChange>(root).Change(7);
+        frames.World.Set(second, new Selection(77));
         frames.Frame();
 
         frames.World.ReplaceSparse(root, new Screen_View(false));
         frames.Frame();
-        Entity[] remaining = Hierarchy<ElementTree>.GetChildren(frames.World, root).ToArray();
+        Entity[] remaining = ElementChildren.Read(frames.World, root).ToArray();
         Require(remaining.SequenceEqual([children[1], children[2]]) &&
-            Hierarchy<ElementTree>.GetChildren(frames.World, remaining[0]).Single() == second &&
-            frames.World.ReadSparse<CounterText>(second).Value == 22 &&
-            frames.World.Read<Selection>(second).Value == 77,
+            ElementChildren.Read(frames.World, remaining[0]).Single() == second &&
+            frames.World.ReadComponentData<CounterText>(second).Value == 22 &&
+            frames.World.ReadComponentData<Selection>(second).Value == 77,
             "A following inline call keeps its node and state through a conditional sibling change.");
-        Require(frames.World.ReadSparse<Card>(remaining[1]).Title == "12",
+        Require(frames.World.ReadComponentData<Card>(remaining[1]).Title == "12",
             "A value-producing composable retains its state and supplies the expression result.");
 
         frames.World.ReplaceSparse(root, new Screen_View(true));
         frames.Frame();
-        children = Hierarchy<ElementTree>.GetChildren(frames.World, root).ToArray();
-        first = Hierarchy<ElementTree>.GetChildren(frames.World, children[0]).Single();
-        Require(frames.World.ReadSparse<CounterText>(first).Value == 11 &&
-            frames.World.ReadSparse<CounterText>(second).Value == 22 &&
+        children = ElementChildren.Read(frames.World, root).ToArray();
+        first = ElementChildren.Read(frames.World, children[0]).Single();
+        Require(frames.World.ReadComponentData<CounterText>(first).Value == 11 &&
+            frames.World.ReadComponentData<CounterText>(second).Value == 22 &&
             !frames.World.HasSparse<BuildError>(root),
             "Nested inline groups restore remembered values when caller content returns.");
         CheckContentFunctions(frames);
@@ -53,14 +53,14 @@ internal static partial class ComposeGroupChecks
         State<int>[] values = [new(10), new(20)];
         Entity root = Views.Spawn(frames.World, Entity.Null, new RowsScreen_View(values));
         frames.Frame();
-        Entity[] content = Hierarchy<ElementTree>.GetChildren(frames.World, root).ToArray();
+        Entity[] content = ElementChildren.Read(frames.World, root).ToArray();
         Require(content.Length == 2, "Value-producing groups declare each content call as a child view.");
-        Entity[] cards = content.Select(child => Hierarchy<ElementTree>.GetChildren(frames.World, child).Single()).ToArray();
+        Entity[] cards = content.Select(child => ElementChildren.Read(frames.World, child).Single()).ToArray();
         values[0].Value = 11;
         frames.Frame();
-        Require(frames.World.ReadSparse<Card>(cards[0]).Title == "11" &&
-            frames.World.ReadSparse<Card>(cards[1]).Title == "20" &&
-            frames.World.ReadSparse<GroupCount>(root).Value == 3,
+        Require(frames.World.ReadComponentData<Card>(cards[0]).Title == "11" &&
+            frames.World.ReadComponentData<Card>(cards[1]).Title == "20" &&
+            frames.World.ReadComponentData<GroupCount>(root).Value == 3,
             "Content functions in value-producing groups track their own state reads.");
     }
 
@@ -123,7 +123,7 @@ public readonly record struct CounterText(string Text, int Value, Action<int> Ch
         if (!Scope.World.Has<Selection>(Scope.Entity))
         {
             Scope.World.Add(Scope.Entity, new Selection(0));
-            Scope.World.AddTag<LocalState>(Scope.Entity);
+            Scope.World.Add(Scope.Entity, default(LocalState));
         }
         return default;
     }

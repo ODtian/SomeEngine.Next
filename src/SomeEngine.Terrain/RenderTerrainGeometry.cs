@@ -1,7 +1,7 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
+using SomeEngine.ECS;
 using SomeEngine.ECS.Systems;
 using SomeEngine.Graphics;
 using SomeEngine.Render.Assets;
@@ -29,7 +29,7 @@ internal sealed class RenderTerrainGeometry : ISystem<RenderPrepareSystemContext
     private readonly Dictionary<(int Geometry, ulong Revision), GeometryData> _geometries = [];
     private readonly Dictionary<(Shader Shader, string Entry), ComputeData> _pipelines = [];
     private readonly List<Task> _completions = [];
-    private QueryHandle _requests, _chunks, _selection;
+    private Query _requests, _chunks, _selection;
 
     internal RenderTerrainGeometry(IGraphicsBackend backend, Device device, ClusterRenderResources cluster,
         global::SomeEngine.RenderGraph.RenderGraph graph, RenderTerrainData fields, TerrainScene scene)
@@ -47,29 +47,29 @@ internal sealed class RenderTerrainGeometry : ISystem<RenderPrepareSystemContext
 
     public void OnCreate(ref RenderPrepareSystemContext context)
     {
-        _requests = context.World.Query(new QueryDefinitionBuilder().Read<RenderTerrainRequests>());
-        _chunks = context.World.Query(new QueryDefinitionBuilder().Read<RenderTerrainChunk>().ReadBuffer<RenderMaterialBinding>());
-        _selection = context.World.Query(new QueryDefinitionBuilder().Read<RenderTerrainSelection>());
+        _requests = context.World.World.Query(new QueryDescription().With<RenderTerrainRequests>());
+        _chunks = context.World.World.Query(new QueryDescription().With<RenderTerrainChunk>().With<SomeEngine.ECS.Buffer<RenderMaterialBinding>>());
+        _selection = context.World.World.Query(new QueryDescription().With<RenderTerrainSelection>());
     }
 
     public void OnUpdate(ref RenderPrepareSystemContext context)
     {
         var selected = new HashSet<int>();
-        context.World.ExecuteQuery(_selection, query =>
+        using (QueryScope source = _selection.OpenRead())
         {
-            foreach (QueryChunkView chunk in query.Chunks)
+            foreach (QueryChunk chunk in source)
             foreach (RenderTerrainSelection value in chunk.Read<RenderTerrainSelection>())
                 if (ReferenceEquals(value.Scene, _scene)) selected.UnionWith(value.GeometryIds);
-        });
+        }
         var requests = new HashSet<TerrainGeometryRequest>();
-        context.World.ExecuteQuery(_requests, query =>
+        using (QueryScope source = _requests.OpenRead())
         {
-            foreach (QueryChunkView chunk in query.Chunks)
+            foreach (QueryChunk chunk in source)
             foreach (RenderTerrainRequests value in chunk.Read<RenderTerrainRequests>())
             foreach (TerrainDataRequest request in value.Requests)
                 if (request is TerrainGeometryRequest geometry && ReferenceEquals(geometry.Scene, _scene)
                     && !geometry.IsSubmitted) requests.Add(geometry);
-        });
+        }
         foreach (TerrainGeometryRequest request in requests)
             _batches.TryAdd(request, new(request));
         foreach (Batch batch in _batches.Values)
@@ -100,21 +100,22 @@ internal sealed class RenderTerrainGeometry : ISystem<RenderPrepareSystemContext
         var world = context.World;
         var materials = new List<long>();
         var chunks = new List<(Entity Entity, RenderTerrainChunk Chunk, int FirstMaterial, int MaterialCount)>();
-        context.World.ExecuteQuery(_chunks, query =>
+        using (QueryScope source = _chunks.OpenRead())
         {
-            foreach (QueryChunkView chunk in query.Chunks)
+            foreach (QueryChunk chunk in source)
             {
                 var values = chunk.Read<RenderTerrainChunk>();
                 for (int row = 0; row < values.Length; row++)
                 {
                     if (!ReferenceEquals(values[row].Scene, _scene)) continue;
-                    ReadOnlySpan<RenderMaterialBinding> bindings = chunk.ReadBuffer<RenderMaterialBinding>(row).AsSpan();
+                    using ReadOnlyBuffer<RenderMaterialBinding> buffer = chunk.ReadBuffer<RenderMaterialBinding>(row);
+                    ReadOnlySpan<RenderMaterialBinding> bindings = buffer.AsSpan();
                     int first = materials.Count;
                     foreach (RenderMaterialBinding binding in bindings) materials.Add(binding.MaterialId);
                     chunks.Add((chunk.Entities[row], values[row], first, bindings.Length));
                 }
             }
-        });
+        }
         var visible = new Dictionary<int, ulong>();
         foreach (var value in chunks)
         {
@@ -126,8 +127,10 @@ internal sealed class RenderTerrainGeometry : ISystem<RenderPrepareSystemContext
             for (int material = value.FirstMaterial; material < value.FirstMaterial + value.MaterialCount; material++)
                 expansion = Math.Max(expansion, world.ReadMaterial(materials[material]).BoundsExpansion);
             var binding = new RenderClusterGeometry(geometry.Geometry, expansion);
-            if (!context.World.Has<RenderClusterGeometry>(value.Entity)) context.World.Add(value.Entity, binding);
-            else if (context.World.Read<RenderClusterGeometry>(value.Entity) != binding) context.World.Replace(value.Entity, binding);
+            World entities = context.World.World;
+            if (!entities.Has<RenderClusterGeometry>(value.Entity)
+                || entities.ReadComponentData<RenderClusterGeometry>(value.Entity) != binding)
+                entities.Set(value.Entity, binding);
         }
         foreach (TerrainGeometryRequest request in _batches.Keys)
             if (request.Chunks.All(chunk => !selected.Contains(chunk.GeometryId)
@@ -267,9 +270,7 @@ internal sealed class RenderTerrainGeometry : ISystem<RenderPrepareSystemContext
         Task.WhenAll(_completions).GetAwaiter().GetResult();
         foreach (TerrainGeometryRequest request in _batches.Keys) request.Withdraw();
         foreach (GeometryData geometry in _geometries.Values) _builder.Release(context, geometry.Geometry);
-        context.World.ReleaseQuery(_requests);
-        context.World.ReleaseQuery(_chunks);
-        context.World.ReleaseQuery(_selection);
+        _requests = _chunks = _selection = default;
     }
 
     public void Dispose()

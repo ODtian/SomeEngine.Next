@@ -1,4 +1,3 @@
-using SomeEngine.ECS.Queries;
 using SomeEngine.ECS.Entities;
 
 namespace SomeEngine.ECS.Tests;
@@ -9,16 +8,18 @@ public sealed class GenericQueryExecutionTests
     public void OptionalReadKeepsMembersAndReadsManagedComponentsByReference()
     {
         using var world = new World();
-        var named = world.CreateEntity(new Position { X = 1 });
+        Entity named = world.Create(new Position { X = 1 });
         world.Add(named, new DisplayName { Value = "Iris" });
-        world.CreateEntity(new Position { X = 2 });
-        world.CreateEntity(new DisplayName { Value = "Other" });
-        var members = world.Query(world.QueryDefinition().All<Position>());
-        var query = world.Query(world.GetQueryDefinition(members).WithOptionalRead<DisplayName>());
+        world.Create(new Position { X = 2 });
+        world.Create(new DisplayName { Value = "Other" });
+        Query query = world.Query<Position>().WithOptionalRead<DisplayName>();
         Span<int> lengths = stackalloc int[2];
-        var execution = new NameLengths(lengths);
+        int index = 0;
 
-        world.ExecuteQuery(query, ref execution);
+        using (QueryScope scope = query.OpenRead())
+            foreach (QueryChunk chunk in scope)
+                for (int row = 0; row < chunk.Count; row++)
+                    lengths[index++] = chunk.Has<DisplayName>(row) ? chunk.Read<DisplayName>()[row].Value.Length : -1;
 
         lengths.Sort();
         Assert.Equal([-1, 4], lengths.ToArray());
@@ -28,17 +29,21 @@ public sealed class GenericQueryExecutionTests
     public void TypedRowReadsRetainOptionalComponentsAndOriginalMembers()
     {
         using var world = new World();
-        var named = world.CreateEntity(new Position { X = 1 });
+        Entity named = world.Create(new Position { X = 1 });
         world.Add(named, new DisplayName { Value = "Iris" });
-        world.CreateEntity(new Position { X = 2 });
-        world.CreateEntity(new DisplayName { Value = "Other" });
-        var definition = world.QueryDefinition().All<Position>().Build()
-            .WithOptionalRead<Position>().WithOptionalRead<DisplayName>();
-        var query = world.Query(definition);
+        world.Create(new Position { X = 2 });
+        world.Create(new DisplayName { Value = "Other" });
+        Query query = world.Query(new QueryDescription().WithStored<Position>().Optional<Position>().Optional<DisplayName>());
         Span<int> values = stackalloc int[2];
-        var execution = new TypedNameLengths(values);
+        int index = 0;
 
-        world.ExecuteQuery(query, ref execution);
+        using (QueryScope scope = query.OpenRead())
+            foreach (QueryChunk chunk in scope)
+                for (int row = 0; row < chunk.Count; row++)
+                {
+                    OptionalComponent<DisplayName> name = chunk.Optional<DisplayName>(row);
+                    values[index++] = (int)chunk.Read<Position>()[row].X + (name.IsPresent ? name.Value.Value.Length : 0);
+                }
 
         values.Sort();
         Assert.Equal([2, 5], values.ToArray());
@@ -48,43 +53,43 @@ public sealed class GenericQueryExecutionTests
     public void RequiredComponentsFollowTheExecutingMemberQuery()
     {
         using var world = new World();
-        world.CreateEntity(new Position());
-        QueryDefinition definition = world.QueryDefinition().All<Position>().Build().WithOptionalRead<DisplayName>();
-        var query = world.Query(definition);
-        var execution = new RequiredNameComponents();
+        Entity entity = world.Create(new Position());
+        Query required = world.Query(new QueryDescription().WithStored<Position>().Optional<DisplayName>());
+        Query any = world.Query(new QueryDescription().WithAny<Position>().Optional<DisplayName>());
 
-        world.ExecuteQuery(query, ref execution);
-
-        Assert.True(definition.Requires<Position>());
-        Assert.False(definition.Requires<DisplayName>());
-        Assert.True(execution.RequiresPosition);
-        Assert.False(execution.RequiresName);
-
-        QueryDefinition any = world.QueryDefinition().Any<Position>().Build().WithOptionalRead<DisplayName>();
-        var anyExecution = new RequiredNameComponents();
-        world.ExecuteQuery(world.Query(any), ref anyExecution);
-
-        Assert.True(any.Requires<Position>());
-        Assert.False(any.Requires<DisplayName>());
-        Assert.True(anyExecution.RequiresPosition);
-        Assert.False(anyExecution.RequiresName);
+        using (QueryScope scope = required.OpenRead())
+        {
+            Assert.True(scope.Contains(entity));
+            foreach (QueryChunk chunk in scope)
+            {
+                Assert.True(chunk.Has<Position>());
+                Assert.False(chunk.Has<DisplayName>());
+            }
+        }
+        using QueryScope anyScope = any.OpenRead();
+        Assert.True(anyScope.Contains(entity));
+        foreach (QueryChunk chunk in anyScope)
+        {
+            Assert.True(chunk.Has<Position>());
+            Assert.False(chunk.Has<DisplayName>());
+        }
     }
 
     [Fact]
     public void MemberChecksFollowChangedRowsAndOptionalReads()
     {
         using var world = new World();
-        var changed = world.CreateEntity(new Position());
-        var unchanged = world.CreateEntity(new Position());
-        var other = world.CreateEntity(new DisplayName { Value = "Iris" });
-        var query = world.Query(world.QueryDefinition().Changed<Position>().Build()
-            .WithOptionalRead<DisplayName>());
-        uint baseline = world.AcquireSystemTick();
-        world.Replace(changed, new Position { X = 1 });
+        Entity changed = world.Create(new Position());
+        Entity unchanged = world.Create(new Position());
+        Entity other = world.Create(new DisplayName { Value = "Iris" });
+        Query query = world.Query(new QueryDescription().WithChanged<Position>(0).Optional<DisplayName>());
+        ulong baseline = world.Version;
+        world.Set(changed, new Position { X = 1 });
         var members = new List<Entity>();
-        var execution = new FindMembers([changed, unchanged, other], members);
 
-        world.ExecuteQuery(query, baseline, ref execution);
+        using (QueryScope scope = query.Since(baseline).OpenRead())
+            foreach (Entity entity in new[] { changed, unchanged, other })
+                if (scope.Contains(entity)) members.Add(entity);
 
         Assert.Equal([changed], members);
     }
@@ -93,21 +98,24 @@ public sealed class GenericQueryExecutionTests
     public void PointReadsBorrowOptionalManagedComponentsFromChangedMembers()
     {
         using var world = new World();
-        var changed = world.CreateEntity(new Position());
+        Entity changed = world.Create(new Position());
         world.Add(changed, new DisplayName { Value = "Iris" });
-        var missing = world.CreateEntity(new Position());
-        var unchanged = world.CreateEntity(new Position());
+        Entity missing = world.Create(new Position());
+        Entity unchanged = world.Create(new Position());
         world.Add(unchanged, new DisplayName { Value = "Rose" });
-        var other = world.CreateEntity(new DisplayName { Value = "Other" });
-        var query = world.Query(world.QueryDefinition().Changed<Position>().Build()
-            .WithOptionalRead<DisplayName>());
-        uint baseline = world.AcquireSystemTick();
-        world.Replace(changed, new Position { X = 1 });
-        world.Replace(missing, new Position { X = 2 });
+        Entity other = world.Create(new DisplayName { Value = "Other" });
+        Query query = world.Query(new QueryDescription().WithChanged<Position>(0).Optional<DisplayName>());
+        ulong baseline = world.Version;
+        world.Set(changed, new Position { X = 1 });
+        world.Set(missing, new Position { X = 2 });
+        Entity[] entities = [changed, missing, unchanged, other];
         Span<int> lengths = stackalloc int[4];
-        var execution = new PointNameLengths([changed, missing, unchanged, other], lengths);
 
-        world.ExecuteQuery(query, baseline, ref execution);
+        using (QueryScope scope = query.Since(baseline).OpenRead())
+        using (ReadLookup<DisplayName> names = world.OpenRead<DisplayName>())
+            for (int index = 0; index < entities.Length; index++)
+                lengths[index] = scope.Contains(entities[index]) && names.Has(entities[index])
+                    ? names.Read(entities[index]).Value.Length : -1;
 
         Assert.Equal([4, -1, -1, -1], lengths.ToArray());
     }
@@ -116,18 +124,20 @@ public sealed class GenericQueryExecutionTests
     public void ChunkChangeReadsKeepOptionalRowsAndTheirWriteVersions()
     {
         using var world = new World();
-        var changed = world.CreateEntity(new Position());
+        Entity changed = world.Create(new Position());
         world.Add(changed, new DisplayName { Value = "Iris" });
-        var unchanged = world.CreateEntity(new Position());
+        Entity unchanged = world.Create(new Position());
         world.Add(unchanged, new DisplayName { Value = "Rose" });
-        world.CreateEntity(new Position());
-        var query = world.Query(world.QueryDefinition().All<Position>().Build().WithOptionalRead<DisplayName>());
-        uint baseline = world.AcquireSystemTick();
-        world.Replace(changed, new DisplayName { Value = "Lily" });
+        world.Create(new Position());
+        Query query = world.Query(new QueryDescription().WithStored<Position>().Optional<DisplayName>());
+        ulong baseline = world.Version;
+        world.Set(changed, new DisplayName { Value = "Lily" });
         var entities = new List<Entity>();
-        var execution = new ChangedNameRows(entities);
 
-        world.ExecuteQuery(query, baseline, ref execution);
+        using (QueryScope scope = query.OpenRead())
+            foreach (QueryChunk chunk in scope)
+                for (int row = 0; row < chunk.Count; row++)
+                    if (chunk.WasWritten<DisplayName>(row, baseline)) entities.Add(chunk.Entities[row]);
 
         Assert.Equal([changed], entities);
     }
@@ -136,136 +146,39 @@ public sealed class GenericQueryExecutionTests
     public void OptionalReadsRetainAnyAndExcludedMemberConditions()
     {
         using var world = new World();
-        world.CreateEntity(new Position());
-        world.CreateEntity(new Velocity());
-        var excluded = world.CreateEntity(new Position());
+        Entity position = world.Create(new Position());
+        Entity velocity = world.Create(new Velocity());
+        Entity excluded = world.Create(new Position());
         world.Add(excluded, new DisplayName { Value = "Iris" });
-        QueryDefinition definition = world.QueryDefinition()
-            .Any<Position>().Any<Velocity>().None<DisplayName>().Build();
-        var query = world.Query(definition.WithOptionalRead<Velocity>().WithOptionalRead<DisplayName>());
-        var execution = new RowCount();
+        Query query = world.Query(new QueryDescription().WithAny<Position>().WithAny<Velocity>()
+            .Without<DisplayName>().Optional<Velocity>().Optional<DisplayName>());
+        var members = new List<Entity>();
 
-        world.ExecuteQuery(query, ref execution);
+        using (QueryScope scope = query.OpenRead())
+            foreach (QueryChunk chunk in scope) members.AddRange(chunk.Entities);
 
-        Assert.False(definition.Requires<Position>());
-        Assert.False(definition.Requires<Velocity>());
-        Assert.Equal(2, execution.Count);
+        Assert.Equal([position, velocity], members);
     }
 
     [Fact]
-    public void ReadRefAccessFailureReleasesTheQueryScope()
+    public void ScopedManagedReadsLeaveTheWorldReadyForFollowingStructureChanges()
     {
         using var world = new World();
-        var entity = world.CreateEntity(new DisplayName { Value = "Iris" });
-        var query = world.Query(world.QueryDefinition().All<DisplayName>());
-        var execution = new NameTotal();
+        Entity entity = world.Create(new DisplayName { Value = "Iris" });
+        Query query = world.Query<DisplayName>();
+        int total = 0;
+        using (QueryScope scope = query.OpenRead())
+            foreach (QueryChunk chunk in scope)
+                foreach (ref readonly DisplayName name in chunk.Read<DisplayName>()) total += name.Value.Length;
 
-        Assert.Throws<InvalidOperationException>(() => world.ExecuteQuery(query, ref execution));
         world.Add(entity, new Position { X = 7 });
 
+        Assert.Equal(4, total);
         Assert.Equal(7, world.Read<Position>(entity).X);
     }
 
-    private struct RowCount : IQueryExecution
-    {
-        public int Count;
-
-        public void Execute(scoped QueryCursor query)
-        {
-            foreach (var row in query.Rows)
-                Count++;
-        }
-    }
-
-    private struct NameTotal : IQueryExecution
-    {
-        public int Total;
-
-        public void Execute(scoped QueryCursor query)
-        {
-            foreach (var row in query.Rows)
-                Total += row.ReadRef<DisplayName>().Value.Length;
-        }
-    }
-
-    private struct DisplayName : IComponent
+    private struct DisplayName : IAddedComponent
     {
         public string Value;
-    }
-
-    private readonly struct FindMembers(Entity[] entities, List<Entity> members) : IQueryExecution
-    {
-        public void Execute(scoped QueryCursor query)
-        {
-            foreach (Entity entity in entities)
-                if (query.Contains(entity))
-                    members.Add(entity);
-        }
-    }
-
-    private readonly struct ChangedNameRows(List<Entity> entities) : IQueryExecution
-    {
-        public void Execute(scoped QueryCursor query)
-        {
-            foreach (var chunk in query.Chunks)
-            {
-                var changes = chunk.ReadRowChanges<DisplayName>();
-                foreach (int row in chunk.RowIndices)
-                    if (changes.HasChanged(row))
-                        entities.Add(chunk.GetEntity(row));
-            }
-        }
-    }
-
-    private struct RequiredNameComponents : IQueryExecution
-    {
-        public bool RequiresPosition;
-        public bool RequiresName;
-
-        public void Execute(scoped QueryCursor query)
-        {
-            RequiresPosition = query.Requires<Position>();
-            RequiresName = query.Requires<DisplayName>();
-        }
-    }
-
-    private ref struct NameLengths : IQueryExecution
-    {
-        private readonly Span<int> _lengths;
-
-        public NameLengths(Span<int> lengths) => _lengths = lengths;
-
-        public void Execute(scoped QueryCursor query)
-        {
-            int index = 0;
-            foreach (var row in query.Rows)
-                _lengths[index++] = row.TryReadRef<DisplayName>(out var name) ? name.Value.Value.Length : -1;
-        }
-    }
-
-    private ref struct TypedNameLengths(Span<int> values) : IQueryExecution
-    {
-        private readonly Span<int> _values = values;
-
-        public void Execute(scoped QueryCursor query)
-        {
-            int index = 0;
-            var rows = query.ReadRows<Position, DisplayName>();
-            while (rows.MoveNext(out var row, out var position, out var name))
-                _values[index++] = (int)position.Value.X + (name.HasValue ? name.Value.Value.Length : 0);
-        }
-    }
-
-    private ref struct PointNameLengths(Entity[] entities, Span<int> lengths) : IQueryExecution
-    {
-        private readonly Entity[] _entities = entities;
-        private readonly Span<int> _lengths = lengths;
-
-        public void Execute(scoped QueryCursor query)
-        {
-            for (int index = 0; index < _entities.Length; index++)
-                _lengths[index] = query.TryReadRef<DisplayName>(_entities[index], out var name)
-                    ? name.Value.Value.Length : -1;
-        }
     }
 }

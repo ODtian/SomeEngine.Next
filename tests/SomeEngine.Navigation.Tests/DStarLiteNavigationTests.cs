@@ -12,7 +12,7 @@ public sealed class DStarLiteNavigationTests
     public void MovingRequestRepairsChangedEntranceCostsAndArrivesThroughTheNewBestEntrance()
     {
         using var scheduler = new Scheduler(new JobConfiguration { WorkerCount = 3, ManagedPayloadPolicy = ManagedPayloadPolicy.Allow });
-        using World world = WorldJobs.CreateWorld(scheduler: scheduler);
+        using World world = new World(execution: new WorldJobs(scheduler));
         var profile = new NavigationProfile([new Vector2(-0.1f), new(0.1f, -0.1f), new(0.1f), new(-0.1f, 0.1f)], 1);
         var policy = new NavigationPolicy();
         // The two rectangles and two crossings are example scene inputs for changing directed connection costs.
@@ -25,16 +25,16 @@ public sealed class DStarLiteNavigationTests
             [new NavigationSceneConnection(90, 10, 7, 20, 9), new(91, 10, 8, 20, 10, Cost: 10)],
             profile, policy, scheduler: scheduler).Complete().Scene;
         var navigation = new NavigationSystems<NavigationScene, DStarLiteNavigationSearch, DStarLiteSearchState, TestMotion, TestMotionReader>(world);
-        Entity actor = world.CreateEntity(new TestMotion { Position = new(1, 0, 2) });
+        Entity actor = world.Create(new TestMotion { Position = new(1, 0, 2) });
         navigation.AddAgent(actor, scene, profile, policy, new(new Vector3(11, 0, 2), 0.05f), 2);
         navigation.Schedule(0.1f, 1).Steering.Complete();
-        Assert.Equal(NavigationSearchStatus.Searching, world.Read<NavigationPathResult>(actor).Status);
+        Assert.Equal(NavigationSearchStatus.Searching, world.ReadValue<NavigationPathResult>(actor).Status);
         for (int frame = 0; frame < 6; frame++)
             navigation.ScheduleProgress(new ConsumeSteering(0.1f).ScheduleParallel(world, navigation.Schedule(0.1f, 128).Steering)).Complete();
-        NavigationPath original = world.Read<NavigationPathResult>(actor).Path!;
+        NavigationPath original = world.ReadValue<NavigationPathResult>(actor).Path!;
         Assert.Contains(new NavigationConnectionDependency(90, 1), original.ConnectionDependencies.ToArray());
-        ulong version = world.Read<NavigationPathResult>(actor).RequestVersion;
-        Assert.True(world.Read<TestMotion>(actor).Position.X > 1);
+        ulong version = world.ReadValue<NavigationPathResult>(actor).RequestVersion;
+        Assert.True(world.ReadValue<TestMotion>(actor).Position.X > 1);
 
         NavigationSceneContent current = scene.Content;
         NavigationSceneConnection[] changed = current.Connections.ToArray();
@@ -42,21 +42,21 @@ public sealed class DStarLiteNavigationTests
         changed[1] = changed[1] with { Cost = 0, ContentVersion = 2 };
         JobHandle updated = scene.ScheduleApply(new(current.Regions, changed, current.Tiles), scheduler: scheduler);
         navigation.Schedule(0.1f, 1, updated).Steering.Complete();
-        Assert.Equal(NavigationSearchStatus.Searching, world.Read<NavigationPathResult>(actor).Status);
+        Assert.Equal(NavigationSearchStatus.Searching, world.ReadValue<NavigationPathResult>(actor).Status);
         var positions = new List<Vector3>();
-        for (int frame = 0; frame < 300 && world.Read<NavigationProgress>(actor).Status != NavigationStatus.Arrived; frame++)
+        for (int frame = 0; frame < 300 && world.ReadValue<NavigationProgress>(actor).Status != NavigationStatus.Arrived; frame++)
         {
             navigation.ScheduleProgress(new ConsumeSteering(0.1f).ScheduleParallel(world, navigation.Schedule(0.1f, 32).Steering)).Complete();
-            positions.Add(world.Read<TestMotion>(actor).Position);
+            positions.Add(world.ReadValue<TestMotion>(actor).Position);
         }
-        NavigationPath repaired = world.Read<NavigationPathResult>(actor).Path!;
-        Assert.Equal(version, world.Read<NavigationPathResult>(actor).RequestVersion);
+        NavigationPath repaired = world.ReadValue<NavigationPathResult>(actor).Path!;
+        Assert.Equal(version, world.ReadValue<NavigationPathResult>(actor).RequestVersion);
         Assert.Contains(new NavigationConnectionDependency(91, 2), repaired.ConnectionDependencies.ToArray());
         Assert.Contains(positions, position => position.X > 5.4f && position.X < 6.6f && position.Z > 5.9f);
-        Assert.Equal(NavigationStatus.Arrived, world.Read<NavigationProgress>(actor).Status);
+        Assert.Equal(NavigationStatus.Arrived, world.ReadValue<NavigationProgress>(actor).Status);
 
-        world.Replace(actor, new NavigationGoal(new Vector3(1, 0, 2), 0.05f));
+        world.Set(actor, new NavigationGoal(new Vector3(1, 0, 2), 0.05f));
         navigation.Schedule(0.1f, 1).Steering.Complete();
-        Assert.True(world.Read<NavigationPathResult>(actor).RequestVersion > version);
+        Assert.True(world.ReadValue<NavigationPathResult>(actor).RequestVersion > version);
     }
 }

@@ -3,7 +3,6 @@ using SomeEngine.Core.Diagnostics;
 using SomeEngine.ECS;
 using SomeEngine.ECS.Components;
 using SomeEngine.ECS.Entities;
-using SomeEngine.ECS.Queries;
 
 namespace SomeEngine.Animation;
 
@@ -22,7 +21,7 @@ public static partial class PropertyAnimation
             world.Add(entity, new Timeline());
             world.Disable<Timeline>(entity);
         }
-        if (!world.HasBuffer<Track<T>>(entity))
+        if (!world.Has<Buffer<Track<T>>>(entity))
             world.AddBuffer<Track<T>>(entity);
         _ = SourceQueries<T>.For(world);
     }
@@ -45,64 +44,80 @@ public static partial class PropertyAnimation
         bool hasLayers = channel.Component != ComponentId<AnimationLayers>.Value && world.Has<AnimationLayers>(target);
         if (hasLayers)
         {
-            AnimationLayers layers = world.Read<AnimationLayers>(target);
+            AnimationLayers layers = world.ReadComponentData<AnimationLayers>(target);
             DevelopmentCheck.Require(layers.Count <= 8 && layer < layers.Count,
                 "A property track requires a defined animation layer.");
             if (layers.Items[layer].Mode == LayerMode.Additive)
                 ReadBase(world, target, channel, ref current);
         }
-        bool inline = world.Has<Timeline>(target) && world.HasBuffer<Track<T>>(target);
+        bool inline = world.Has<Timeline>(target) && world.Has<Buffer<Track<T>>>(target);
         var matches = new FieldAnimations<T>
         {
-            World = world, Target = target, Channel = channel, Layer = layer, Endpoints = endpoints,
+            World = world,
+            Target = target,
+            Channel = channel,
+            Layer = layer,
+            Endpoints = endpoints,
             InlineTarget = inline ? target : Entity.Null,
         };
-        QueryHandle query = world.Query(world.QueryDefinition()
-            .Read<Timeline>().WriteBuffer<Track<T>>().Optional<PooledAnimation>());
+        Query query = world.Query(new QueryDescription()
+            .WithStored<Timeline>().WithStored<Buffer<Track<T>>>().Optional<PooledAnimation>());
         try
         {
-            world.ExecuteQuery(query, ref matches, static (QueryCursor rows, ref FieldAnimations<T> matches) =>
             {
-                foreach (QueryRow row in rows.Rows)
+                using QueryScope read = query.Open();
+                Visit(in read, ref matches);
+
+                static void Visit(scoped in QueryScope rows, ref FieldAnimations<T> matches)
                 {
-                    bool enabled = matches.World.IsEnabled<Timeline>(row.Entity);
-                    bool holdsValues = false;
-                    DynamicBuffer<Track<T>> tracks = row.Buffer<Track<T>>();
-                    Timeline timeline = row.Read<Timeline>();
-                    for (int i = 0; i < tracks.Count; i++)
+                    foreach (QueryChunk chunk in rows)
                     {
-                        Track<T> track = tracks.Read(i);
-                        bool holdsValue = HoldsLayerValue(matches.World, row.Entity, in track);
-                        holdsValues |= holdsValue;
-                        Entity target = track.Target == Entity.Null ? row.Entity : track.Target;
-                        if ((track.Finished ? !holdsValue : !enabled) || target != matches.Target || track.Channel != matches.Channel ||
-                            !holdsValue && (track.StartId != timeline.Starts || track.Stage != timeline.Stage))
-                            continue;
-                        if (track.Layer == matches.Layer && track.Endpoints == TrackEndpoints.Values && matches.Endpoints == TrackEndpoints.Values)
+                        chunk.TryRead<Timeline>(out var values0);
+                        var buffers0 = chunk.Has<Buffer<Track<T>>>() ? chunk.GetBuffers<Track<T>>() : default;
+                        for (int rowIndex = 0; rowIndex < chunk.Count; rowIndex++)
                         {
-                            matches.ExistingAnimation = row.Entity;
-                            matches.Track = track;
-                            if (matches.InlineTarget != Entity.Null && row.Entity != matches.InlineTarget)
-                                tracks.SwapRemoveAt(i--);
-                        }
-                        else
-                        {
-                            matches.SharedField = true;
+                            bool enabled = matches.World.IsEnabled<Timeline>(chunk.Entities[rowIndex]);
+                            bool holdsValues = false;
+                            DynamicBuffer<Track<T>> tracks = buffers0[rowIndex];
+                            Timeline timeline = values0[rowIndex];
+                            for (int i = 0; i < tracks.Count; i++)
+                            {
+                                Track<T> track = tracks[i];
+                                bool holdsValue = HoldsLayerValue(matches.World, chunk.Entities[rowIndex], in track);
+                                holdsValues |= holdsValue;
+                                Entity target = track.Target == Entity.Null ? chunk.Entities[rowIndex] : track.Target;
+                                if ((track.Finished ? !holdsValue : !enabled) || target != matches.Target || track.Channel != matches.Channel ||
+                                    !holdsValue && (track.StartId != timeline.Starts || track.Stage != timeline.Stage))
+                                    continue;
+                                if (track.Layer == matches.Layer && track.Endpoints == TrackEndpoints.Values && matches.Endpoints == TrackEndpoints.Values)
+                                {
+                                    matches.ExistingAnimation = chunk.Entities[rowIndex];
+                                    matches.Track = track;
+                                    if (matches.InlineTarget != Entity.Null && chunk.Entities[rowIndex] != matches.InlineTarget)
+                                        tracks.RemoveAtSwapBack(i--);
+                                }
+                                else
+                                {
+                                    matches.SharedField = true;
+                                }
+                            }
+                            if (!enabled && !holdsValues && chunk.Has<PooledAnimation>(rowIndex) && matches.AvailableAnimation == Entity.Null)
+                                matches.AvailableAnimation = chunk.Entities[rowIndex];
+
                         }
                     }
-                    if (!enabled && !holdsValues && row.Has<PooledAnimation>() && matches.AvailableAnimation == Entity.Null)
-                        matches.AvailableAnimation = row.Entity;
+
                 }
-            });
+            }
         }
         finally
         {
-            world.ReleaseQuery(query);
+
         }
 
-        if (matches.SharedField && !world.HasBuffer<Contribution<T>>(target))
+        if (matches.SharedField && !world.Has<Buffer<Contribution<T>>>(target))
             world.AddBuffer<Contribution<T>>(target);
-        bool composed = hasLayers || world.HasBuffer<Contribution<T>>(target);
+        bool composed = hasLayers || world.Has<Buffer<Contribution<T>>>(target);
         if (matches.ExistingAnimation != Entity.Null && (!inline || matches.ExistingAnimation == target) &&
             (composed || EqualityComparer<T>.Default.Equals(matches.Track.Current, current)) &&
             EqualityComparer<T>.Default.Equals(matches.Track.To, value) && matches.Track.Duration == spec.Duration &&
@@ -118,18 +133,24 @@ public static partial class PropertyAnimation
             animation = matches.ExistingAnimation != Entity.Null ? matches.ExistingAnimation : matches.AvailableAnimation;
             if (animation == Entity.Null)
             {
-                animation = world.CreateEntity(new Timeline());
-                world.AddTag<PooledAnimation>(animation);
+                animation = world.Create(new Timeline());
+                world.Add(animation, default(PooledAnimation));
                 world.AddBuffer<Track<T>>(animation);
                 world.Disable<Timeline>(animation);
             }
             if (matches.ExistingAnimation == Entity.Null)
             {
-                world.ExecuteBufferWrite<Track<T>>(animation, static tracks => tracks.Clear());
-                Timeline previous = world.Read<Timeline>(animation);
-                world.Replace(animation, new Timeline { Completions = previous.Completions, Starts = previous.Starts });
-                if (world.HasBuffer<TimelineStage>(animation))
-                    world.ExecuteBufferWrite<TimelineStage>(animation, static stages => stages.Clear());
+                {
+                    using var tracks = world.GetBuffer<Track<T>>(animation);
+                    tracks.Clear();
+                }
+                Timeline previous = world.ReadComponentData<Timeline>(animation);
+                world.Set(animation, new Timeline { Completions = previous.Completions, Starts = previous.Starts });
+                if (world.Has<Buffer<TimelineStage>>(animation))
+                {
+                    using var stages = world.GetBuffer<TimelineStage>(animation);
+                    stages.Clear();
+                }
             }
         }
 
@@ -137,20 +158,30 @@ public static partial class PropertyAnimation
         var track = new Track<T>
         {
             Target = animation == target ? Entity.Null : target,
-            Channel = channel, From = current, To = value, Current = current,
-            Duration = spec.Duration, Curve = spec.Curve, Layer = layer, Stage = timeline.Stage,
-            Start = timeline.Time, SampleTime = timeline.Time,
+            Channel = channel,
+            From = current,
+            To = value,
+            Current = current,
+            Duration = spec.Duration,
+            Curve = spec.Curve,
+            Layer = layer,
+            Stage = timeline.Stage,
+            Start = timeline.Time,
+            SampleTime = timeline.Time,
             StartId = timeline.Starts,
             Endpoints = endpoints,
             Velocity = endpoints == TrackEndpoints.Values && matches.Track.Curve.Kind == CurveKind.Spring && spec.Curve.Kind == CurveKind.Spring
                 ? matches.Track.Velocity : default,
         };
-        world.ExecuteBufferWrite<Track<T>, Track<T>>(animation, ref track,
-            static (DynamicBuffer<Track<T>> tracks, ref Track<T> track) =>
+        {
+            using var tracks = world.GetBuffer<Track<T>>(animation);
+            Visit(tracks, ref track);
+
+            static void Visit(DynamicBuffer<Track<T>> tracks, ref Track<T> track)
             {
                 for (int i = 0; i < tracks.Count; i++)
                 {
-                    Track<T> previous = tracks.Read(i);
+                    Track<T> previous = tracks[i];
                     if (previous.Target != track.Target || previous.Channel != track.Channel || previous.Layer != track.Layer)
                         continue;
                     if (!previous.Finished && previous.StartId == track.StartId &&
@@ -160,8 +191,10 @@ public static partial class PropertyAnimation
                     return;
                 }
                 tracks.Add(track);
-            });
-        world.Replace(animation, timeline);
+
+            }
+        }
+        world.Set(animation, timeline);
         world.Enable<Timeline>(animation);
         return animation;
     }
@@ -179,7 +212,7 @@ public static partial class PropertyAnimation
     public static unsafe void Retarget<T>(World world, Entity animation, Channel<T> channel, T value) where T : unmanaged
     {
         DevelopmentCheck.Require(world.IsEnabled<Timeline>(animation), "Retarget requires an enabled animation.");
-        Timeline timeline = world.Read<Timeline>(animation);
+        Timeline timeline = world.ReadComponentData<Timeline>(animation);
         bool found = false;
         int count = BufferCount<Track<T>>(world, animation);
         for (int index = 0; index < count; index++)
@@ -195,7 +228,7 @@ public static partial class PropertyAnimation
                 time = motion.Time;
             }
             Entity target = track.Target == Entity.Null ? animation : track.Target;
-            T current = track.Typed || world.Has<AnimationLayers>(target) || world.HasBuffer<Contribution<T>>(target)
+            T current = track.Typed || world.Has<AnimationLayers>(target) || world.Has<Buffer<Contribution<T>>>(target)
                 ? track.Current : track.Channel.Read(world, target);
             track.From = track.Current = current;
             track.To = value;
@@ -224,7 +257,7 @@ public static partial class PropertyAnimation
     /// <summary>Stops playback at the currently presented values.</summary>
     public static unsafe void Stop(World world, Entity animation)
     {
-        if (world.HasBuffer<MotionStop>(animation))
+        if (world.Has<Buffer<MotionStop>>(animation))
         {
             int count = BufferCount<MotionStop>(world, animation);
             for (int index = 0; index < count; index++) ReadBufferItem<MotionStop>(world, animation, index).Stop(world, animation);
@@ -235,29 +268,29 @@ public static partial class PropertyAnimation
 
     public static void Pause(World world, Entity animation)
     {
-        Timeline timeline = world.Read<Timeline>(animation);
+        Timeline timeline = world.ReadComponentData<Timeline>(animation);
         timeline.Paused = true;
-        world.Replace(animation, timeline);
+        world.Set(animation, timeline);
     }
 
     public static void Resume(World world, Entity animation)
     {
-        Timeline timeline = world.Read<Timeline>(animation);
+        Timeline timeline = world.ReadComponentData<Timeline>(animation);
         timeline.Paused = false;
-        world.Replace(animation, timeline);
+        world.Set(animation, timeline);
     }
 
     public static void SetSpeed(World world, Entity animation, float speed)
     {
         DevelopmentCheck.Require(float.IsFinite(speed) && speed >= 0, "Animation speed must be finite and nonnegative.");
-        Timeline timeline = world.Read<Timeline>(animation);
+        Timeline timeline = world.ReadComponentData<Timeline>(animation);
         timeline.Speed = speed;
-        world.Replace(animation, timeline);
+        world.Set(animation, timeline);
     }
 
     private static Timeline ReadStartingTimeline(World world, Entity animation)
     {
-        Timeline timeline = world.Read<Timeline>(animation);
+        Timeline timeline = world.ReadComponentData<Timeline>(animation);
         if (!world.IsEnabled<Timeline>(animation))
         {
             timeline.Time = 0;

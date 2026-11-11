@@ -12,10 +12,10 @@ using SomeEngine.Assets.Importers;
 using SomeEngine.Assets.Importing;
 using SomeEngine.Assets.Pipeline;
 using SomeEngine.Assets.Schema;
-using SomeEngine.ECS;
 using SomeEngine.ECS.Entities;
 using SomeEngine.ECS.Hierarchy;
-using SomeEngine.ECS.Queries;
+using SomeEngine.ECS;
+using SomeEngine.ECS.Serialization;
 using SomeEngine.Render;
 using SomeEngine.Render.Components;
 using SomeEngine.Resources;
@@ -40,21 +40,24 @@ public class GltfSourceImporterTests
             Assert.Equal(2, imported.Count(value => value.SubAssetKey.StartsWith("mesh:")));
             ImportedAsset scene = Assert.Single(imported, value => value.SubAssetKey.StartsWith("scene:"));
             using WorldAsset asset = await WorldAsset.OpenAsync(scene.OutputPath);
-            Assert.Equal(2, asset.ExternalReferences.Length);
-            using World world = await asset.LoadAsync(SceneSerialization.CreateRegistry());
+            WorldContent content = Assert.Single(asset.GetBlock<WorldBlock>().Contents);
+            ImportedAsset group = Assert.Single(imported, value => value.AssetGuid == content.Asset.Value);
+            using EntityAsset entitiesAsset = await EntityAsset.OpenAsync(group.OutputPath);
+            EntityBlock block = await entitiesAsset.GetBlockAsync<EntityBlock>();
+            Assert.Equal(2, block.ExternalReferences.Length);
+            Assert.True(content.Bounds.MinX <= 0 && content.Bounds.MaxX >= 1);
+            Assert.True(content.Bounds.MinY <= 0 && content.Bounds.MaxY >= 1);
+            using var world = new World();
+            WorldSerializer.ReadEntities(await block.ReadBytesAsync(EntityBlock.ContentKey), world,
+                new(Codecs: SceneSerialization.Codecs));
             var entities = new List<Entity>();
-            QueryHandle query = world.Query(new QueryDefinitionBuilder().Read<MeshSource>());
-            try
-            {
-                world.ExecuteQuery(query, ref entities, static (scoped QueryCursor rows, ref List<Entity> values) =>
-                {
-                    foreach (var row in rows.Rows) values.Add(row.Entity);
-                });
-            }
-            finally { world.ReleaseQuery(query); }
+            Query query = world.Query(new QueryDescription().WithStored<MeshSource>());
+            using (QueryScope rows = query.OpenRead())
+                foreach (QueryChunk chunk in rows)
+                    foreach (Entity entity in chunk.Entities) entities.Add(entity);
             Assert.Equal(3, entities.Count);
             Guid sharedMesh = Assert.Single(imported, value => value.SubAssetKey == "mesh:index:0").AssetGuid;
-            Entity[] matching = entities.Where(entity => world.Read<MeshSource>(entity).Mesh.Value == sharedMesh).ToArray();
+            Entity[] matching = entities.Where(entity => world.ReadComponentData<MeshSource>(entity).Mesh.Value == sharedMesh).ToArray();
             Assert.Equal(2, matching.Length);
             Assert.Single(matching, entity => matching.Contains(Hierarchy.GetParent(world, entity)));
         }
@@ -223,7 +226,7 @@ public class GltfSourceImporterTests
             IReadOnlyList<ImportedAsset> first = await ImportAsync(importer, dir, gltfPath);
             IReadOnlyList<ImportedAsset> second = await ImportAsync(importer, dir, gltfPath);
 
-            Assert.Equal(8, first.Count); // 3 textures, 2 materials, 2 meshes, 1 scene
+            Assert.Equal(9, first.Count); // 3 textures, 2 materials, 2 meshes, 1 scene directory, 1 entity group
             Assert.Equal(first.Count, first.Select(asset => asset.AssetGuid).Distinct().Count());
             Assert.Equal(first.Count, first.Select(asset => asset.SubAssetKey).Distinct().Count());
             Assert.Equal(
@@ -238,9 +241,13 @@ public class GltfSourceImporterTests
             ImportedAsset bodyMesh = Assert.Single(first, asset => asset.SubAssetKey == "mesh:index:0");
             ImportedAsset eyesMesh = Assert.Single(first, asset => asset.SubAssetKey == "mesh:index:1");
             ImportedAsset scene = Assert.Single(first, asset => asset.SubAssetKey == "scene:index:0");
-            Assert.Equal(new[] { bodyMesh.AssetGuid, eyesMesh.AssetGuid }.Order(), scene.Dependencies.Order());
+            ImportedAsset entities = Assert.Single(first, asset => asset.SubAssetKey == "entities:index:0");
+            Assert.Equal(new[] { bodyMesh.AssetGuid, eyesMesh.AssetGuid }.Order(), entities.Dependencies.Order());
+            Assert.Equal([entities.AssetGuid], scene.Dependencies);
             using WorldAsset worldAsset = await WorldAsset.OpenAsync(scene.OutputPath);
-            Assert.True(worldAsset.ContentLength > 0);
+            Assert.Equal(entities.AssetGuid, Assert.Single(worldAsset.GetBlock<WorldBlock>().Contents).Asset.Value);
+            using EntityAsset entityAsset = await EntityAsset.OpenAsync(entities.OutputPath);
+            Assert.True((await entityAsset.GetBlockAsync<EntityBlock>()).ContentLength > 0);
 
             using StandardMaterialAsset maskedAsset = await StandardMaterialAsset.OpenAsync(maskedMaterial.OutputPath);
             using UnlitMaterialAsset transparentAsset = await UnlitMaterialAsset.OpenAsync(transparentMaterial.OutputPath);
