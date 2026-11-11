@@ -40,10 +40,11 @@ internal static class WorldEditBenchmarks
             Console.Out.Flush();
         }
 
-        long sum = 0;
-        foreach (Entity entity in entities) sum += world.ReadComponentData<AddedValue>(entity).Value;
-        if (world.Query<AddedValue>().Count != count || sum != (long)count * (count - 1) / 2)
+        if (world.Query<AddedValue>().Count != count)
             throw new InvalidOperationException("World additions must retain every entity and value.");
+        for (int i = 0; i < entities.Length; i++)
+            if (world.ReadComponentData<AddedValue>(entities[i]).Value != i)
+                throw new InvalidOperationException("World additions must retain each entity's assigned value.");
         Array.Sort(milliseconds);
         double median = milliseconds[(samples - 1) / 2];
         double p95 = milliseconds[(int)Math.Ceiling(samples * 0.95) - 1];
