@@ -40,7 +40,9 @@ public static class ImportedSceneBuild
             string destination = Path.Combine(projectRoot, entry.Path);
             Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
             if (!File.Exists(destination)) File.Copy(Path.Combine(importedDirectory, entry.Path), destination);
-            if (entry.AssetType == ShaderAsset.FileType && entry.DefinitionPath.StartsWith("assets/Shaders/scene_", StringComparison.Ordinal))
+            bool sceneShader = entry.AssetType == ShaderAsset.FileType
+                && entry.DefinitionPath.StartsWith("assets/Shaders/scene_", StringComparison.Ordinal);
+            if (sceneShader)
             {
                 File.Copy(Path.Combine(importedDirectory, entry.DefinitionPath),
                     Path.Combine(projectRoot, entry.DefinitionPath), overwrite: true);
@@ -48,7 +50,7 @@ public static class ImportedSceneBuild
                 string cachedBuild = SourceMeta.GetBuildPath(Path.Combine(importedDirectory, entry.DefinitionPath));
                 if (!File.Exists(build) && File.Exists(cachedBuild)) File.Copy(cachedBuild, build);
             }
-            project.RegisterAsset(entry.AssetType == ShaderAsset.FileType && previous is not null
+            project.RegisterAsset(sceneShader && previous is not null
                 && previous.Assets.TryGetValue(entry.AssetGuid, out AssetEntry existing)
                 ? existing : entry);
         }
