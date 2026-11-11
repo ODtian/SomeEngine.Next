@@ -55,8 +55,12 @@ public static class ImportedSceneBuild
         var description = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(metadata))!;
         string source = description["source"]!.GetValue<string>();
         ModelRoot model = ModelRoot.Load(source);
+        AssetEntry firstMesh = imported.Assets.Values.First(entry => entry.AssetType == MeshAsset.FileType);
+        bool packedVertices;
+        using (MeshAsset mesh = await MeshAsset.OpenAsync(Path.Combine(projectRoot, firstMesh.Path)))
+            packedVertices = await mesh.TryGetBlockAsync<ClusterGeometryBlock>() is null;
         var importer = new ImportedSceneImporter();
-        await importer.BuildAsync(project, model, engineRoot, packedVertices: true);
+        await importer.BuildAsync(project, model, engineRoot, packedVertices);
         await importer.UpdateMaterialsAsync(project, model, imported);
         AssetEntry scene = imported.Assets.Values.Single(entry => entry.AssetType == WorldAsset.FileType);
         await importer.RebuildSceneAsync(project, model, imported, importedDirectory, scene);
