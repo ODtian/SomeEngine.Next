@@ -507,6 +507,13 @@ internal sealed partial class FrameExecutor
             previousMergeableWrites = step.MergeableWrites;
             bool retainDistinctQueueReaders = !step.Writes && !step.Acquired;
             BufferBoundaryState endpoint = default;
+            if (!step.Writes && TryUpdateBufferReadRanges(step, sync, queue, retainDistinctQueueReaders, out endpoint))
+            {
+                if (endpoint.Queue?.Device.Capabilities.SupportsConcurrentBufferReads != true)
+                    PublishBufferPhysicalState(CollectionsMarshal.AsSpan(_bufferBoundaryScratch), endpoint,
+                        retainDistinctQueueReaders, step.Acquired);
+                continue;
+            }
             foreach (int index in step.Accesses)
             {
                 FrameResourceAccess access = _accesses[index];
