@@ -26,7 +26,7 @@ internal sealed class SampleCheck(SampleLimit? limit, string? diagnosticScope)
             foreach (char character in output)
             {
                 if (character != '\n') { line.Append(character); continue; }
-                MatchCollection matches = _pattern.Matches(line.ToString());
+                MatchCollection matches = _pattern.Matches(line.ToString().TrimEnd('\r'));
                 line.Clear();
                 foreach (Match match in matches)
                 {
