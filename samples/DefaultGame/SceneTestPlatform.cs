@@ -120,6 +120,8 @@ public sealed partial class SceneTestPlatform
     public bool HudNumbersChange => Options.HudNumbersChange;
     private RuntimeStartupOptions Options { get => Application.Options; set => Application.Options = value; }
     private bool ReloadRequested => Application.ReloadRequested;
+    private static bool IsDiagnosticMeasurement => EngineTrace.IsEnabled ||
+        !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SOMEENGINE_BENCHMARK_DIAGNOSTIC_SCOPE"));
     internal TestScene Current => Scenes[SelectedScene];
     private readonly List<SceneTiming> _results = [];
     private readonly List<ApplicationFrameTimes> _frames = [];
@@ -349,7 +351,7 @@ public sealed partial class SceneTestPlatform
             _fixedWindowError ??= selection.Error;
             _measurementError ??= selection.Error;
             if (selection.Collect) CollectFrame();
-            finishedWindow = selection.Finished;
+            finishedWindow = selection.Finished || selection.Error is not null && !IsDiagnosticMeasurement;
             sampled = finishedWindow && _frames.Count == requested.FrameCount &&
                 _fixedWindowError is null && _measurementError is null;
         }
@@ -440,6 +442,7 @@ public sealed partial class SceneTestPlatform
 
     internal void EndScene(string? error = null)
     {
+        bool diagnosticMeasurement = IsDiagnosticMeasurement;
         _trace?.Dispose();
         _trace = null;
         if (!IsMeasuring || _sceneStarted == 0) return;
@@ -537,7 +540,7 @@ public sealed partial class SceneTestPlatform
         Application.FrameMeasured = Current.FrameMeasured;
         Application.UpdateFrame = SceneUpdate;
         _interactiveOptions = null;
-        if (ExitAfterMeasurements) Application.Exit();
+        if (ExitAfterMeasurements || _fixedWindowError is not null && !diagnosticMeasurement) Application.Exit();
     }
 
     internal void Draw()
