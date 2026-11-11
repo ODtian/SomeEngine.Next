@@ -86,15 +86,17 @@ public sealed class ImportedSceneImporter : GltfSceneImporter
         content.SetParameter(new("OcclusionStrength", MaterialParameterKind.Float) { Float = occlusion?.GetFactor("OcclusionStrength") ?? 1 });
     }
 
-    internal async Task UpdateMaterialsAsync(AssetProject project, ModelRoot model, AssetManifest imported)
+    internal async Task UpdateMaterialsAsync(AssetProject project, ModelRoot model, AssetManifest imported,
+        GltfImporterSettings settings)
     {
         var entries = imported.Assets.Values.Where(entry => entry.AssetType is TextureAsset.FileType or MaterialAsset.FileType
                 && entry.SubAssetKey.Length != 0).ToDictionary(entry => entry.SubAssetKey);
         var textures = model.LogicalTextures.ToDictionary(texture => texture,
-            texture => new AssetId<TextureAsset>(entries[$"texture:index:{texture.LogicalIndex}"].AssetGuid));
+            texture => new AssetId<TextureAsset>(entries[GltfSourceImporter.GetElementKey(
+                settings, "texture", texture.LogicalIndex, texture)].AssetGuid));
         foreach (GltfMaterial source in model.LogicalMaterials)
         {
-            AssetEntry entry = entries[$"material:index:{source.LogicalIndex}"];
+            AssetEntry entry = entries[GltfSourceImporter.GetElementKey(settings, "material", source.LogicalIndex, source)];
             using var asset = new MaterialAsset(entry.AssetGuid) { Name = entry.Name };
             MaterialBlock content = asset.GetBlock<MaterialBlock>();
             content.Parent = SampleSceneMaterials.ImportedTemplate;
@@ -110,12 +112,12 @@ public sealed class ImportedSceneImporter : GltfSceneImporter
     }
 
     internal async Task RebuildSceneAsync(AssetProject project, ModelRoot model, AssetManifest imported,
-        string importedDirectory, AssetEntry sceneEntry)
+        SourceMeta metadata, AssetEntry sceneEntry)
     {
         string sourcePath = imported.Sources[sceneEntry.SourceGuid];
         string localSource = Path.Combine(project.RootPath, sourcePath);
-        SourceMeta metadata = SourceMeta.Load(File.Exists(SourceMeta.GetMetaPath(localSource))
-            ? localSource : Path.Combine(importedDirectory, sourcePath));
+        GltfImporterSettings settings = metadata.GetSettings(GltfSourceImporter.SourceImporterId,
+            new GltfImporterSettings(), GltfSettingsJson.Default.GltfImporterSettings);
         project.Manifest.AddSource(metadata.SourceGuid, sourcePath);
         await using var loader = new AssetLoader(project.CreateStorage());
         await using var context = new ImportContext(project.RootPath, sourcePath, metadata);
@@ -124,13 +126,13 @@ public sealed class ImportedSceneImporter : GltfSceneImporter
             [EntityBlock.BlockTypeId], this, new()));
         foreach (SharpGLTF.Schema2.Mesh mesh in model.LogicalMeshes)
         {
-            string key = ElementKey("mesh", mesh.LogicalIndex, mesh);
+            string key = GltfSourceImporter.GetElementKey(settings, "mesh", mesh.LogicalIndex, mesh);
             AssetEntry entry = imported.Assets[metadata.ElementIds[key]];
             MeshAsset asset = await MeshAsset.OpenAsync(loader, new(entry.AssetGuid));
             context.AddAsset(mesh, asset, key, entry.Path);
         }
         Scene source = model.DefaultScene;
-        string entitiesKey = ElementKey("entities", source.LogicalIndex, source);
+        string entitiesKey = GltfSourceImporter.GetElementKey(settings, "entities", source.LogicalIndex, source);
         Guid entitiesId = context.GetAssetId(entitiesKey);
         string entitiesPath = Path.Combine(Path.GetDirectoryName(sceneEntry.Path)!,
             $"{Path.GetFileNameWithoutExtension(sourcePath)}.{entitiesId:N}.entities.asset");
@@ -145,10 +147,6 @@ public sealed class ImportedSceneImporter : GltfSceneImporter
             { SourceGuid = metadata.SourceGuid, SubAssetKey = sceneEntry.SubAssetKey });
         SourceMeta.Save(localSource, metadata);
     }
-
-    private static string ElementKey(string kind, int index, ExtraProperties source)
-        => source.Extras?["someengine_id"]?.GetValue<string>() is { Length: > 0 } id
-            ? $"{kind}:id:{id}" : $"{kind}:index:{index}";
 
     private sealed class ReusedMeshImporter : IAssetImporter<SharpGLTF.Schema2.Mesh>
     {

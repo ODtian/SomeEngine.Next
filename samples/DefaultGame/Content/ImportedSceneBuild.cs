@@ -61,9 +61,15 @@ public static class ImportedSceneBuild
             packedVertices = await mesh.TryGetBlockAsync<ClusterGeometryBlock>() is null;
         var importer = new ImportedSceneImporter();
         await importer.BuildAsync(project, model, engineRoot, packedVertices);
-        await importer.UpdateMaterialsAsync(project, model, imported);
         AssetEntry scene = imported.Assets.Values.Single(entry => entry.AssetType == WorldAsset.FileType);
-        await importer.RebuildSceneAsync(project, model, imported, importedDirectory, scene);
+        string sourcePath = imported.Sources[scene.SourceGuid];
+        string localSource = Path.Combine(projectRoot, sourcePath);
+        SourceMeta sourceMetadata = SourceMeta.Load(File.Exists(SourceMeta.GetMetaPath(localSource))
+            ? localSource : Path.Combine(importedDirectory, sourcePath));
+        GltfImporterSettings gltfSettings = sourceMetadata.GetSettings(GltfSourceImporter.SourceImporterId,
+            new GltfImporterSettings(), GltfSettingsJson.Default.GltfImporterSettings);
+        await importer.UpdateMaterialsAsync(project, model, imported, gltfSettings);
+        await importer.RebuildSceneAsync(project, model, imported, sourceMetadata, scene);
         string settingsPath = Path.Combine(projectRoot, "assets/Runtime/default.runtime.asset");
         using (ApplicationSettingsAsset settings = await ApplicationSettingsAsset.OpenAsync(settingsPath))
         {
@@ -142,8 +148,9 @@ public static class ImportedSceneBuild
                 !previous.TryGetValue(value.AssetGuid, out var old) || old != (value.Version, value.ContentHash)))
             throw new InvalidDataException("Unchanged reimport changed generated assets.");
 
-        string sceneKey = model.DefaultScene.Extras?["someengine_id"]?.GetValue<string>() is { Length: > 0 } id
-            ? $"scene:id:{id}" : $"scene:index:{model.DefaultScene.LogicalIndex}";
+        GltfImporterSettings gltfSettings = metadata.GetSettings(GltfSourceImporter.SourceImporterId,
+            new GltfImporterSettings(), GltfSettingsJson.Default.GltfImporterSettings);
+        string sceneKey = GltfSourceImporter.GetElementKey(gltfSettings, "scene", model.DefaultScene.LogicalIndex, model.DefaultScene);
         Guid sceneId = metadata.ElementIds[sceneKey];
         string settingsPath = Path.Combine(projectRoot, "assets", "Runtime", "default.runtime.asset");
         using (ApplicationSettingsAsset settings = await ApplicationSettingsAsset.OpenAsync(settingsPath))
