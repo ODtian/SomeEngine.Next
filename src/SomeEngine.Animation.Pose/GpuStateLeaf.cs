@@ -81,10 +81,10 @@ internal struct GpuStateSystem : ISystem<ImmediateSystemContext>
 
     public void OnUpdate(ref ImmediateSystemContext context)
     {
+        using QueryScope rows = _states.Open();
         var targets = context.World.OpenWrite<GpuPoseTarget>();
         try
         {
-            using QueryScope rows = _states.Open();
             UpdateTargets(ref targets, in rows);
         }
         finally { targets.Dispose(); }
