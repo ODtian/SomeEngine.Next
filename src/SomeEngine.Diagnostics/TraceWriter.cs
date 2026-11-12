@@ -4,6 +4,13 @@ namespace SomeEngine.Diagnostics;
 
 internal sealed class TraceWriter
 {
+    private static readonly TraceSite GcFramePause = new("gc", "GC.FramePauseTicks");
+    private static readonly TraceSite GcTotalPause = new("gc", "GC.TotalPauseTicks");
+    private static readonly TraceSite GcHeap = new("gc", "GC.HeapBytes");
+    private static readonly TraceSite GcHeapAfterCollection = new("gc", "GC.HeapBytesAfterCollection");
+    private static readonly TraceSite GcCommittedAfterCollection = new("gc", "GC.CommittedBytesAfterCollection");
+    private static readonly TraceSite GcCollection = new("gc", "GC.CollectionIndex");
+    private static readonly TraceSite GcGeneration = new("gc", "GC.CollectionGeneration");
     internal readonly TraceCapture Capture;
     internal readonly int ThreadId;
     private readonly int _managedThreadId = Environment.CurrentManagedThreadId;
@@ -28,10 +35,12 @@ internal sealed class TraceWriter
         if (!CanPush()) return default;
         if (kind != TraceEventKind.Frame) frame = Context.Frame;
         long id = NextId();
+        long gcPauseTicks = kind == TraceEventKind.Frame && Capture.Options.Detail && Capture.Options.Allocations
+            ? GC.GetTotalPauseDuration().Ticks : -1;
         long allocated = Capture.Options.Allocations ? GC.GetAllocatedBytesForCurrentThread() : 0;
         if (!Write(new TraceEvent(Stopwatch.GetTimestamp(), id, _span,
             Context.Span == _span ? 0 : Context.Span, frame, allocated, site.Id, kind))) return default;
-        _nesting[_depth++] = new TraceNesting(id, _span, Context, true);
+        _nesting[_depth++] = new TraceNesting(id, _span, Context, true, gcPauseTicks);
         _span = id;
         Context = new TraceContext(Capture.Id, id, frame);
         return new EngineTrace.TraceScope(this, id);
@@ -61,12 +70,27 @@ internal sealed class TraceWriter
             Capture.RecordMisuse();
             return;
         }
+        ref readonly TraceNesting nesting = ref _nesting[_depth - 1];
+        if (nesting.GcPauseTicks >= 0) RecordGarbageCollection(nesting.GcPauseTicks);
         long timestamp = Stopwatch.GetTimestamp();
         long allocated = Capture.Options.Allocations ? GC.GetAllocatedBytesForCurrentThread() : 0;
-        ref readonly TraceNesting nesting = ref _nesting[--_depth];
+        _depth--;
         _span = nesting.Span;
         Context = nesting.Context;
         if (nesting.Recorded) Write(new TraceEvent(timestamp, id, 0, 0, 0, allocated, 0, TraceEventKind.End));
+    }
+
+    private void RecordGarbageCollection(long pauseTicksAtStart)
+    {
+        long pauseTicks = GC.GetTotalPauseDuration().Ticks;
+        GCMemoryInfo memory = GC.GetGCMemoryInfo();
+        Counter(GcFramePause, pauseTicks - pauseTicksAtStart);
+        Counter(GcTotalPause, pauseTicks);
+        Counter(GcHeap, GC.GetTotalMemory(false));
+        Counter(GcHeapAfterCollection, memory.HeapSizeBytes);
+        Counter(GcCommittedAfterCollection, memory.TotalCommittedBytes);
+        Counter(GcCollection, memory.Index);
+        Counter(GcGeneration, memory.Generation);
     }
 
     internal void Counter(TraceSite site, long value)
@@ -97,7 +121,7 @@ internal sealed class TraceWriter
     }
 }
 
-internal readonly record struct TraceNesting(long Id, long Span, TraceContext Context, bool Recorded);
+internal readonly record struct TraceNesting(long Id, long Span, TraceContext Context, bool Recorded, long GcPauseTicks = -1);
 
 internal sealed class TraceBlock
 {

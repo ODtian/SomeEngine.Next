@@ -46,6 +46,25 @@ public sealed class TraceCaptureTests : IDisposable
     }
 
     [Fact]
+    public void DetailedAllocationFramesReportGarbageCollectionWork()
+    {
+        long before = GC.GetGCMemoryInfo().Index;
+        using (EngineTrace.Start(_path, new TraceOptions { Detail = true, Allocations = true }))
+        using (EngineTrace.BeginFrame(1)) GC.Collect();
+        TraceData data = TraceFile.Read(_path);
+        ThreadEvent frame = Assert.Single(data.Events, e => e.Event.Kind == TraceEventKind.Frame);
+        ThreadEvent[] counters = data.Events.Where(e => e.Event.Kind == TraceEventKind.Counter).ToArray();
+        var values = counters.ToDictionary(e => data.Sites.Single(s => s.Id == e.Event.Site).Name, e => e.Event.Value);
+        Assert.True(values["GC.CollectionIndex"] > before);
+        Assert.True(values["GC.FramePauseTicks"] >= 0);
+        Assert.True(values["GC.TotalPauseTicks"] >= values["GC.FramePauseTicks"]);
+        Assert.True(values["GC.HeapBytes"] > 0);
+        Assert.True(values["GC.CommittedBytesAfterCollection"] >= values["GC.HeapBytesAfterCollection"]);
+        Assert.All(counters, e => Assert.Equal(frame.Event.Id, e.Event.Parent));
+        Assert.Empty(TraceAnalyzer.Analyze(data).Issues);
+    }
+
+    [Fact]
     public void DetailFilteringDoesNotProduceOrphanEnds()
     {
         using (EngineTrace.Start(_path))
